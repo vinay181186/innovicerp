@@ -9,6 +9,7 @@ import { polSql } from '../../lib/pol';
 
 export const OSP_WIP_SF_COLUMNS: SfColumnMap = {
   jcCode: { sql: sql`w.jc_code`, type: 'text' },
+  jcDate: { sql: sql`jc.jc_date`, type: 'date' },
   clientPoLineNo: { sql: polSql('sol', 'rev_jwl'), type: 'text' },
   // CODE/REV as the cell prints it (itemCodeWithRev).
   itemCode: {

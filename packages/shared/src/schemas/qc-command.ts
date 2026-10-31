@@ -18,6 +18,8 @@ export interface QcCommandStats {
 export interface QcCommandQueueRow {
   jcOpId: string;
   jcCode: string;
+  /** ADR-261 lead JC Date — job_cards.jc_date as 'YYYY-MM-DD'. */
+  jcDate: string | null;
   opSeq: number;
   operation: string;
   itemCode: string | null;
@@ -76,6 +78,8 @@ export interface QcCommandFpy {
 export interface QcReworkRow {
   jcOpId: string;
   jcCode: string;
+  /** ADR-261 lead JC Date — job_cards.jc_date as 'YYYY-MM-DD'. */
+  jcDate: string | null;
   opSeq: number;
   operation: string;
   itemCode: string | null;

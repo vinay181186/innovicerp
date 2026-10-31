@@ -10,7 +10,7 @@ import { ActionLink } from '@/components/shared/action-link';
 import type { RunningOp } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
 import { ActualMachineCell, PlannedMachineCell } from '@/components/shared/machine-split';
-import { fmtDateAndTime, fmtDateTime } from '@/lib/date';
+import { fmtDate, fmtDateAndTime, fmtDateTime } from '@/lib/date';
 import { leadColumns, type DataTableColumn } from '@/ui/data';
 import { RunningOpStatusBadge } from './status-badge';
 
@@ -61,6 +61,16 @@ function identityColumns(
 ): DataTableColumn<RunningOpRow>[] {
   return leadColumns<RunningOpRow>({
     doc,
+    docDate: {
+      id: 'jc_date',
+      kind: 'date',
+      header: 'JC Date',
+      className: 'mono',
+      nowrap: true,
+      render: (r) => fmtDate(r.jcDate ?? null),
+      filterValue: (r) => r.jcDate ?? '',
+      ...(server ? { sortFilterField: 'jcDate' } : {}),
+    },
     soNo: (r) => r.soCode,
     internalSoNo: (r) => r.soInternalNo,
     pol: (r) => r.clientPoLineNo,

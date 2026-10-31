@@ -34,6 +34,15 @@ const columns: DataTableColumn<QcReworkRow>[] = [
         </>
       ),
     },
+    docDate: {
+      id: 'jc_date',
+      kind: 'date',
+      header: 'JC Date',
+      className: 'mono',
+      nowrap: true,
+      render: (g) => fmtDate(g.jcDate ?? null),
+      filterValue: (g) => g.jcDate ?? '',
+    },
     soNo: (g) => g.soCode,
     internalSoNo: (g) => g.soInternalNo,
     pol: (g) => g.clientPoLineNo,

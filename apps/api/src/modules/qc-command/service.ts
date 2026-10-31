@@ -67,6 +67,7 @@ function daysBetween(fromIso: string | null, toIso: string): number {
 interface PendingDbRow {
   jcOpId: string;
   jcCode: string;
+  jcDate: string | null;
   opSeq: number;
   operation: string | null;
   itemCode: string | null;
@@ -86,6 +87,7 @@ interface PendingDbRow {
 interface QcLogDbRow {
   jcOpId: string;
   jcCode: string;
+  jcDate: string | null;
   opSeq: number;
   operation: string | null;
   itemCode: string | null;
@@ -104,6 +106,7 @@ interface QcLogDbRow {
 interface OpGroup {
   jcOpId: string;
   jcCode: string;
+  jcDate: string | null;
   opSeq: number;
   operation: string;
   itemCode: string | null;
@@ -132,7 +135,8 @@ export async function getQcCommand(
       // 1. Pending QC ops (the queue base).
       tx.execute(sql`
         SELECT
-          vos.jc_op_id AS "jcOpId", jc.code AS "jcCode", vos.op_seq AS "opSeq",
+          vos.jc_op_id AS "jcOpId", jc.code AS "jcCode",
+          to_char(jc.jc_date, 'YYYY-MM-DD') AS "jcDate", vos.op_seq AS "opSeq",
           jo.operation, i.code AS "itemCode",
           -- The customer's drawing revision, read live off the SO line the card
           -- was raised against. It rides the sol LEFT JOIN that already produces
@@ -182,7 +186,8 @@ export async function getQcCommand(
       // each op's entries arrive oldest-first — entry[0] is the first attempt.
       tx.execute(sql`
         SELECT
-          l.jc_op_id AS "jcOpId", jc.code AS "jcCode", jo.op_seq AS "opSeq",
+          l.jc_op_id AS "jcOpId", jc.code AS "jcCode",
+          to_char(jc.jc_date, 'YYYY-MM-DD') AS "jcDate", jo.op_seq AS "opSeq",
           jo.operation, i.code AS "itemCode",
           -- Same live SO-line read as the queue query above: cast to text so a
           -- pre-0119 database cannot hand the UI a number, null for cards with no
@@ -249,6 +254,7 @@ export async function getQcCommand(
         g = {
           jcOpId: r.jcOpId,
           jcCode: r.jcCode,
+          jcDate: r.jcDate ?? null,
           opSeq: Number(r.opSeq),
           // display rule — see opSrNo in @innovic/shared
           operation: r.operation ?? `Op ${opSrNo(Number(r.opSeq))}`,
@@ -275,6 +281,7 @@ export async function getQcCommand(
       return {
         jcOpId: r.jcOpId,
         jcCode: r.jcCode,
+        jcDate: r.jcDate ?? null,
         opSeq: Number(r.opSeq),
         operation: r.operation ?? '',
         itemCode: r.itemCode ?? null,
@@ -352,6 +359,7 @@ export async function getQcCommand(
         return {
           jcOpId: g.jcOpId,
           jcCode: g.jcCode,
+          jcDate: g.jcDate,
           opSeq: g.opSeq,
           operation: g.operation,
           itemCode: g.itemCode,

@@ -17,6 +17,7 @@ const CODE_REV = sql`(i.code || COALESCE('/' || NULLIF(btrim(COALESCE(sol.revisi
  *  expression the SELECT shows, valid in the count query too. */
 export const MACHINE_LOAD_SF_COLUMNS: SfColumnMap = {
   jcCode: { sql: sql`jc.code`, type: 'text' },
+  jcDate: { sql: sql`jc.jc_date`, type: 'date' },
   opSeq: { sql: sql`jo.op_seq`, type: 'num' },
   operation: { sql: sql`jo.operation`, type: 'text' },
   itemCode: { sql: CODE_REV, type: 'text' },
@@ -42,6 +43,7 @@ const DEFAULT_ORDER = sql`(jc.priority = 'high') DESC, jc.due_date ASC NULLS LAS
 const SELECT_LIST = sql`
       SELECT
         jo.id AS "jcOpId", jo.job_card_id AS "jobCardId", jc.code AS "jobCardCode",
+        to_char(jc.jc_date, 'YYYY-MM-DD') AS "jcDate",
         jo.op_seq AS "opSeq", jo.operation, jo.machine_id AS "machineId",
         m.code AS "machineCode",
         i.code AS "itemCode", i.name AS "itemName",
@@ -104,6 +106,7 @@ function toOp(r: Record<string, unknown>): MachineLoadOp {
     jcOpId: r['jcOpId'] as string,
     jobCardId: r['jobCardId'] as string,
     jobCardCode: r['jobCardCode'] as string,
+    jcDate: (r['jcDate'] as string | null) ?? null,
     opSeq: Number(r['opSeq']),
     operation: (r['operation'] as string | null) ?? '',
     machineId: (r['machineId'] as string | null) ?? null,

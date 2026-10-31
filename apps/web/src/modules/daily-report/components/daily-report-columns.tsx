@@ -12,6 +12,7 @@
 
 import type { DailyReportRow } from '@innovic/shared';
 import { opSrNo, SHIFT_LABELS, type Shift } from '@innovic/shared';
+import { fmtDate } from '@/lib/date';
 import { leadColumns, type DataTableColumn } from '@/ui/data';
 
 /** Columns that live in the row's ▸ detail by default. */
@@ -35,6 +36,15 @@ export const dailyReportColumns: DataTableColumn<DailyReportRow>[] = [
       className: 'mono fw-700',
       nowrap: true,
       render: (r) => <span style={{ color: 'var(--cyan)' }}>{r.jcCode}</span>,
+    },
+    docDate: {
+      id: 'jc_date',
+      kind: 'date',
+      header: 'JC Date',
+      className: 'mono',
+      nowrap: true,
+      render: (r) => fmtDate(r.jcDate ?? null),
+      filterValue: (r) => r.jcDate ?? '',
     },
     soNo: (r) => r.soCode,
     internalSoNo: (r) => r.soInternalNo,

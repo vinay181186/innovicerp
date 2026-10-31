@@ -10,6 +10,8 @@ export const jobQueueRowSchema = z.object({
   jcOpId: z.string().uuid(),
   jcId: z.string().uuid(),
   jcCode: z.string(),
+  /** ADR-261 JC Date — job_cards.jc_date as 'YYYY-MM-DD'. */
+  jcDate: z.string().nullable(),
   itemCode: z.string().nullable(),
   /** The customer's drawing revision, taken from the SO line the job card was
    *  raised against (job_cards.source_so_line_id → sales_order_lines.revision).

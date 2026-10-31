@@ -40,6 +40,7 @@ export async function getDailyReport(
       SELECT
         l.id AS "logId",
         jc.code AS "jcCode",
+        to_char(jc.jc_date, 'YYYY-MM-DD') AS "jcDate",
         i.code AS "itemCode",
         -- The customer's drawing revision, followed from the job card already
         -- joined above to its SO line. LEFT JOIN, so a log entry against a
@@ -100,6 +101,7 @@ export async function getDailyReport(
       const row: DailyReportRow = {
         logId: r['logId'] as string,
         jcCode: String(r['jcCode'] ?? ''),
+        jcDate: (r['jcDate'] as string | null) ?? null,
         itemCode: (r['itemCode'] as string | null) ?? null,
         itemRevision: (r['itemRevision'] as string | null) ?? null,
         clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,

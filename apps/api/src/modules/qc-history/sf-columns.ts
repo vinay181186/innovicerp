@@ -12,6 +12,7 @@ import { ITEM_CODE_REV, PEND_SINCE, istDaySql } from './sql';
 
 const LEAD: SfColumnMap = {
   jcCode: { sql: sql`jc.code`, type: 'text' },
+  jcDate: { sql: sql`jc.jc_date`, type: 'date' },
   soCode: { sql: sql`so.code`, type: 'text' },
   // ADR-207 — the Internal SO No., off the `so` join BOTH feeds make
   // (pendingFrom / logsFrom), so either table can sort and filter on it.

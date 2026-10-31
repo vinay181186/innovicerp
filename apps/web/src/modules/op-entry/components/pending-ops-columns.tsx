@@ -10,6 +10,7 @@
 import { ActionLink } from '@/components/shared/action-link';
 import type { JcOpEnriched } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
+import { fmtDate } from '@/lib/date';
 import { leadColumns, type DataTableColumn } from '@/ui/data';
 
 /** One op this machine actually produced on, with THAT machine's share of the
@@ -50,6 +51,15 @@ function identityColumns<T>(
 ): DataTableColumn<T>[] {
   return leadColumns<T>({
     doc,
+    docDate: {
+      id: 'jc_date',
+      kind: 'date',
+      header: 'JC Date',
+      className: 'mono',
+      nowrap: true,
+      render: (row) => fmtDate(pick(row).jcDate ?? null),
+      filterValue: (row) => pick(row).jcDate ?? '',
+    },
     soNo: (row) => pick(row).soCode,
     internalSoNo: (row) => pick(row).soInternalNo,
     pol: (row) => pick(row).clientPoLineNo,

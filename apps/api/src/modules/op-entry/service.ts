@@ -180,6 +180,7 @@ export async function listJcOpsEnriched(
         o.id,
         o.job_card_id          AS "jobCardId",
         jc.code                AS "jobCardCode",
+        to_char(jc.jc_date, 'YYYY-MM-DD') AS "jcDate",
         -- WHAT is being made, next to WHICH JOB. Every screen built on this
         -- shape -- Op Entry, the JC Ops table, the machine-wise op list --
         -- printed the card number on its own and left the reader to look the
@@ -385,6 +386,7 @@ export async function listJcOpsEnriched(
       itemRevision: (r['itemRevision'] as string | null) ?? null,
       clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
       itemName: (r['itemName'] as string | null) ?? null,
+      jcDate: (r['jcDate'] as string | null) ?? null,
       createdAt: asIso((r['createdAt'] as Date | string | null) ?? null),
       machines: ((r['machines'] as Array<{ machineCode: string; qty: unknown }> | null) ?? []).map(
         (v) => ({ machineCode: String(v.machineCode), qty: Number(v.qty ?? 0) }),
@@ -2067,6 +2069,7 @@ export async function selectTimeChangeRequests(
       r.op_log_id                       AS "opLogId",
       r.jc_op_id                        AS "jcOpId",
       jc.code                           AS "jobCardCode",
+      to_char(jc.jc_date, 'YYYY-MM-DD') AS "jcDate",
       o.op_seq                          AS "opSeq",
       o.operation                       AS "operation",
       l.log_type::text                  AS "logType",
@@ -2125,6 +2128,7 @@ export async function selectTimeChangeRequests(
     itemRevision: (r['itemRevision'] as string | null) ?? null,
     clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
     itemName: (r['itemName'] as string | null) ?? null,
+    jcDate: (r['jcDate'] as string | null) ?? null,
     soCode: (r['soCode'] as string | null) ?? null,
     soInternalNo: (r['soInternalNo'] as string | null) ?? null,
     qty: Number(r['qty'] ?? 0),

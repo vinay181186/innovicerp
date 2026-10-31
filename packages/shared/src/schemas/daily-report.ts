@@ -8,6 +8,8 @@ import { z } from 'zod';
 export const dailyReportRowSchema = z.object({
   logId: z.string().uuid(),
   jcCode: z.string(),
+  /** ADR-261 JC Date — job_cards.jc_date as 'YYYY-MM-DD'. */
+  jcDate: z.string().nullable(),
   itemCode: z.string().nullable(),
   /** The customer's drawing revision behind this log entry, followed from the
    *  job card to its SO line (job_cards.source_so_line_id →

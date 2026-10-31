@@ -9,7 +9,7 @@
 // Rows tint by status (approved = done, rejected = cancelled) via ROW_TINT.
 
 import { type OpLogChangeStatus, type OpLogTimeChangeRequest, opSrNo } from '@innovic/shared';
-import { fmtDateAndTime, fmtDateTime } from '@/lib/date';
+import { fmtDate, fmtDateAndTime, fmtDateTime } from '@/lib/date';
 import { leadColumns, ROW_TINT, type DataTableColumn } from '@/ui/data';
 import { RowActions } from '@/ui/layout';
 
@@ -59,6 +59,16 @@ export function opEntryColumns(): DataTableColumn<OpLogTimeChangeRequest>[] {
         header: 'JC No.',
         className: 'mono fw-700',
         render: (r) => <span style={{ color: 'var(--cyan)' }}>{r.jobCardCode}</span>,
+      },
+      docDate: {
+        id: 'jc_date',
+        kind: 'date',
+        header: 'JC Date',
+        className: 'mono',
+        nowrap: true,
+        render: (r) => fmtDate(r.jcDate ?? null),
+        filterValue: (r) => r.jcDate ?? '',
+        sortFilterField: 'jcDate',
       },
       soNo: (r) => r.soCode,
       internalSoNo: (r) => r.soInternalNo,

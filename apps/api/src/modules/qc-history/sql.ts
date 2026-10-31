@@ -76,6 +76,7 @@ export function pendingFrom(companyId: string): SQL {
 // the SO line's, else the JWSO line's (ADR-236).
 export const PENDING_SELECT = sql`
   vos.jc_op_id AS "jcOpId", jc.id AS "jobCardId", jc.code AS "jcCode",
+  to_char(jc.jc_date, 'YYYY-MM-DD') AS "jcDate",
   vos.op_seq AS "opSeq", so.code AS "soCode", so.internal_so_no AS "soInternalNo",
   i.code AS "itemCode",
   COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
@@ -109,6 +110,7 @@ export function logsFrom(companyId: string): SQL {
 
 export const LOGS_SELECT = sql`
   ol.id AS "logId", jc.id AS "jobCardId", jc.code AS "jcCode", jo.op_seq AS "opSeq",
+  to_char(jc.jc_date, 'YYYY-MM-DD') AS "jcDate",
   so.code AS "soCode", so.internal_so_no AS "soInternalNo", i.code AS "itemCode",
   COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
   ${polSql('sol', 'rev_jwl')} AS "clientPoLineNo", i.name AS "itemName",
@@ -160,6 +162,7 @@ export function toPendingRow(r: Raw, today: string): QcHistoryPendingRow {
     jcOpId: r['jcOpId'] as string,
     jobCardId: r['jobCardId'] as string,
     jcCode: r['jcCode'] as string,
+    jcDate: s(r['jcDate']),
     opSeq: Number(r['opSeq']),
     soCode: s(r['soCode']),
     soInternalNo: s(r['soInternalNo']),
@@ -187,6 +190,7 @@ export function toLogRow(r: Raw): QcHistoryLogRow {
     logId: r['logId'] as string,
     jobCardId: s(r['jobCardId']),
     jcCode: r['jcCode'] as string,
+    jcDate: s(r['jcDate']),
     opSeq: Number(r['opSeq']),
     soCode: s(r['soCode']),
     soInternalNo: s(r['soInternalNo']),

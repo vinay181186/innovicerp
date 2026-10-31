@@ -199,6 +199,16 @@ export function pendingColumns(): DataTableColumn<PendingVM>[] {
             </Link>
           ),
       },
+      docDate: {
+        id: 'doc_date',
+        sortFilterField: 'docDate',
+        kind: 'date',
+        header: 'Doc Date',
+        className: 'mono',
+        nowrap: true,
+        render: (vm) => fmtDate(vm.docDate ?? null),
+        filterValue: (vm) => vm.docDate ?? '',
+      },
       soNo: soNoOf,
       internalSoNo: soInternalNoOf,
       pol: polOf,

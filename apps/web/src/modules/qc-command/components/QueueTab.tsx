@@ -80,6 +80,15 @@ export function QueueTab({
           </span>
         ),
       },
+      docDate: {
+        id: 'jc_date',
+        kind: 'date',
+        header: 'JC Date',
+        className: 'mono',
+        nowrap: true,
+        render: (it) => fmtDate(it.jcDate ?? null),
+        filterValue: (it) => it.jcDate ?? '',
+      },
       soNo: (it) => it.soCode,
       internalSoNo: (it) => it.soInternalNo,
       pol: (it) => it.clientPoLineNo,

@@ -22,6 +22,7 @@ interface WipRawRow {
   jc_op_id: string;
   job_card_id: string;
   jc_code: string;
+  jc_date: string | null;
   op_seq: number;
   operation: string | null;
   outsource_status: string | null;
@@ -99,7 +100,8 @@ export async function listOspWip(
 
     const result = (await tx.execute(sql`
       SELECT
-        w.jc_op_id, w.job_card_id, w.jc_code, w.op_seq, w.operation, w.outsource_status,
+        w.jc_op_id, w.job_card_id, w.jc_code, to_char(jc.jc_date, 'YYYY-MM-DD') AS jc_date,
+        w.op_seq, w.operation, w.outsource_status,
         w.item_id, w.item_code, w.item_name, w.so_code, w.vendor_name, w.vendor_code,
         w.order_qty, w.sent_qty, w.returned_qty, w.rejected_qty,
         w.accepted_qty, w.at_vendor_qty, w.not_sent_qty, w.in_qc_qty,
@@ -133,6 +135,7 @@ export async function listOspWip(
       jcOpId: r.jc_op_id,
       jobCardId: r.job_card_id,
       jcCode: r.jc_code,
+      jcDate: r.jc_date ?? null,
       opSeq: Number(r.op_seq),
       operation: r.operation,
       outsourceStatus: r.outsource_status,

@@ -25,6 +25,7 @@ export type ProductionDashboardCounters = z.infer<typeof productionDashboardCoun
 export const productionDashboardJcSchema = z.object({
   jobCardId: z.string().uuid(),
   code: z.string(),
+  jcDate: z.string().nullable(),
   itemCode: z.string().nullable(),
   /** The customer's drawing revision behind this card, read live off the SO
    *  line it was raised against (job_cards.source_so_line_id →
@@ -56,6 +57,7 @@ export const productionDashboardReadyOpSchema = z.object({
    *  to open. */
   jobCardId: z.string().uuid(),
   jobCardCode: z.string(),
+  jcDate: z.string().nullable(),
   opSeq: z.number().int(),
   operation: z.string(),
   /** WHAT is being made. A job-card number says WHICH JOB, not which part, so

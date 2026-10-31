@@ -45,6 +45,8 @@ export type TpiPendingRow = z.infer<typeof tpiPendingRowSchema>;
 export const tpiCompletedRowSchema = z.object({
   logId: z.string().uuid(),
   jcCode: z.string(),
+  /** ADR-261 lead JC Date — job_cards.jc_date as 'YYYY-MM-DD'. */
+  jcDate: z.string().nullable(),
   opSeq: z.number().int(),
   soCode: z.string().nullable(),
   /** ADR-207: that SO's Internal SO No. (live off sales_orders); null when none. */

@@ -68,6 +68,7 @@ export async function listOpenJobCards(
         pd_so.internal_so_no AS "soInternalNo",
         -- Created On = the job card's own created_at (the row IS the card).
         jc.created_at AS "createdAt",
+        to_char(jc.jc_date, 'YYYY-MM-DD') AS "jcDate",
         jc.priority, jc.order_qty AS "orderQty", jc.due_date AS "dueDate",
         s.total_ops AS "totalOps", s.done_ops AS "doneOps"
       ${from}
@@ -92,6 +93,7 @@ export async function listOpenJobCards(
       doneOps: Number(r['doneOps'] ?? 0),
       totalOps: Number(r['totalOps'] ?? 0),
       dueDate: r['dueDate'] != null ? String(r['dueDate']).slice(0, 10) : null,
+      jcDate: (r['jcDate'] as string | null) ?? null,
     }));
     return { items, total: Number(cnt?.c) || 0 };
   });
@@ -100,6 +102,7 @@ export async function listOpenJobCards(
 /** Sort & Filter (ADR-200) on the Available Now board — the SELECT's own expressions. */
 export const PROD_READY_SF_COLUMNS: SfColumnMap = {
   jobCardCode: { sql: sql`jc.code`, type: 'text' },
+  jcDate: { sql: sql`jc.jc_date`, type: 'date' },
   opSeq: { sql: sql`jo.op_seq`, type: 'num' },
   operation: { sql: sql`jo.operation`, type: 'text' },
   available: { sql: sql`vos.available`, type: 'num' },
@@ -145,7 +148,8 @@ export async function listReadyOps(
     const rows = (await tx.execute(sql`
       SELECT
         jo.id AS "jcOpId", jc.id AS "jobCardId",
-        jc.code AS "jobCardCode", jo.op_seq AS "opSeq",
+        jc.code AS "jobCardCode", to_char(jc.jc_date, 'YYYY-MM-DD') AS "jcDate",
+        jo.op_seq AS "opSeq",
         jo.operation, m.code AS "machineCode",
         i.code AS "itemCode", i.name AS "itemName", ${REV} AS "itemRevision",
         ${polSql('sol', 'rev_jwl')} AS "clientPoLineNo",
@@ -179,6 +183,7 @@ export async function listReadyOps(
       jcOpId: r['jcOpId'] as string,
       jobCardId: r['jobCardId'] as string,
       jobCardCode: r['jobCardCode'] as string,
+      jcDate: (r['jcDate'] as string | null) ?? null,
       opSeq: Number(r['opSeq']),
       operation: (r['operation'] as string | null) ?? '',
       itemCode: (r['itemCode'] as string | null) ?? null,

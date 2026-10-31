@@ -6,6 +6,7 @@
 // no bucket already speaks for. A zero reads "—" in the muted token.
 
 import { opSrNo, type OspWipRow } from '@innovic/shared';
+import { fmtDate } from '@/lib/date';
 import { leadColumns, type DataTableColumn } from '@/ui/data';
 
 function qty(
@@ -43,6 +44,16 @@ export function ospAtVendorColumns(): DataTableColumn<OspWipRow>[] {
         header: 'JC No.',
         className: 'td-code',
         render: (r) => <span style={{ color: 'var(--cyan)' }}>{r.jcCode}</span>,
+      },
+      docDate: {
+        id: 'jc_date',
+        sortFilterField: 'jcDate',
+        kind: 'date',
+        header: 'JC Date',
+        className: 'mono',
+        nowrap: true,
+        render: (r) => fmtDate(r.jcDate ?? null),
+        filterValue: (r) => r.jcDate ?? '',
       },
       soNo: (r) => r.soCode,
       internalSoNo: (r) => r.soInternalNo,

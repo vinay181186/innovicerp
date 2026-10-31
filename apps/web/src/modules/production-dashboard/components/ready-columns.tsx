@@ -9,6 +9,7 @@ import { ActionLink } from '@/components/shared/action-link';
 import type { ProductionDashboardReadyOp } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
 import { ActualMachineCell, PlannedMachineCell } from '@/components/shared/machine-split';
+import { fmtDate } from '@/lib/date';
 import { leadColumns, ROW_TINT } from '@/ui/data';
 import type { DataTableColumn, RowMenuItem } from '@/ui/data';
 import { OP_STATUS_BADGES, OpStatusBadge } from './op-status-badge';
@@ -67,6 +68,16 @@ export function prodReadyColumns(): DataTableColumn<ProductionDashboardReadyOp>[
             {op.jobCardCode}
           </ActionLink>
         ),
+      },
+      docDate: {
+        id: 'jc_date',
+        sortFilterField: 'jcDate',
+        kind: 'date',
+        header: 'JC Date',
+        className: 'mono',
+        nowrap: true,
+        render: (op) => fmtDate(op.jcDate ?? null),
+        filterValue: (op) => op.jcDate ?? '',
       },
       soNo: (op) => op.soCode,
       internalSoNo: (op) => op.soInternalNo,

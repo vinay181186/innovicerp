@@ -72,6 +72,16 @@ export function opsColumns(): DataTableColumn<MachineLoadOp>[] {
           </ActionLink>
         ),
       },
+      docDate: {
+        id: 'jc_date',
+        kind: 'date',
+        header: 'JC Date',
+        className: 'mono',
+        nowrap: true,
+        render: (op) => fmtDate(op.jcDate ?? null),
+        filterValue: (op) => op.jcDate ?? '',
+        sortFilterField: 'jcDate',
+      },
       soNo: (op) => op.soCode,
       internalSoNo: (op) => op.soInternalNo,
       pol: (op) => op.clientPoLineNo,

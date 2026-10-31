@@ -27,6 +27,8 @@ export const machineLoadOpSchema = z.object({
   jcOpId: z.string().uuid(),
   jobCardId: z.string().uuid(),
   jobCardCode: z.string(),
+  /** ADR-261 JC Date — job_cards.jc_date as 'YYYY-MM-DD'. */
+  jcDate: z.string().nullable(),
   opSeq: z.number().int(),
   operation: z.string(),
   /** The machine the REMAINING qty runs on — forward-looking. Not who made

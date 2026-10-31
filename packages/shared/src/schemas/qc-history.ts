@@ -12,6 +12,8 @@ export const qcHistoryPendingRowSchema = z.object({
   jcOpId: z.string().uuid(),
   jobCardId: z.string().uuid(),
   jcCode: z.string(),
+  /** ADR-261 lead JC Date — job_cards.jc_date as 'YYYY-MM-DD'. */
+  jcDate: z.string().nullable(),
   opSeq: z.number().int(),
   soCode: z.string().nullable(),
   /** ADR-207: that SO's Internal SO No. (live off sales_orders); null when none. */
@@ -61,6 +63,8 @@ export const qcHistoryLogRowSchema = z.object({
    *  page directly (ADR-169). Nullable + defaulted so older API builds parse. */
   jobCardId: z.string().uuid().nullable().default(null),
   jcCode: z.string(),
+  /** ADR-261 lead JC Date — job_cards.jc_date as 'YYYY-MM-DD'. */
+  jcDate: z.string().nullable(),
   opSeq: z.number().int(),
   /** True when this QC op is the job card's LAST live op — the terminal QC
    *  gate that credits finished stock (ADR-069). The QC Call Register's stage
@@ -301,6 +305,10 @@ export interface QcRegisterFacts {
   /** NAMING.md "Client PO No.": the SO's client_po_no, else the JWSO's
    *  (job_work_orders.client_po_no). Null on a purchase GRN call / when blank. */
   clientPoNo: string | null;
+  /** ADR-261 lead Doc Date — the date of the Doc No.'s own document, 'YYYY-MM-DD':
+   *  GRN calls goods_receipt_notes.grn_date, Party GRN calls party_grns.grn_date,
+   *  job-card calls job_cards.jc_date. */
+  docDate: string | null;
   /** Job-card calls only; null for GRN / Party GRN calls. */
   sourceStep: QcSourceStep | null;
 }
@@ -328,6 +336,8 @@ export const QC_REGISTER_PENDING_SF_FIELDS = [
   'soCode',
   'createdOn',
   'docNo',
+  /** ADR-261 lead Doc Date (GRN / Party GRN grn_date, JC jc_date). */
+  'docDate',
   'itemCode',
   'itemName',
   'qcPending',
@@ -347,6 +357,8 @@ export const QC_REGISTER_COMPLETED_SF_FIELDS = [
   'soCode',
   'createdOn',
   'docNo',
+  /** ADR-261 lead Doc Date (GRN / Party GRN grn_date, JC jc_date). */
+  'docDate',
   'itemCode',
   'itemName',
   'accepted',

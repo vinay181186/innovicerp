@@ -147,6 +147,15 @@ export function jobQueueColumns(opts: { today: string }): DataTableColumn<JobQue
           </ActionLink>
         ),
       },
+      docDate: {
+        id: 'jc_date',
+        kind: 'date',
+        header: 'JC Date',
+        className: 'mono',
+        nowrap: true,
+        render: (r) => fmtDate(r.jcDate ?? null),
+        filterValue: (r) => r.jcDate ?? '',
+      },
       soNo: (r) => r.soCode,
       internalSoNo: (r) => r.soInternalNo,
       pol: (r) => r.clientPoLineNo,

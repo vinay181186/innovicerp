@@ -13,6 +13,7 @@ const isOsp = sql`op.op_type = 'outsource'`;
 
 export const JC_OPS_SF_COLUMNS: SfColumnMap = {
   jcCode: { sql: sql`jc.code`, type: 'text' },
+  jcDate: { sql: sql`jc.jc_date`, type: 'date' },
   clientPoLineNo: { sql: polSql('sol', 'rev_jwl'), type: 'text' },
   // CODE/REV as the cell prints it (itemCodeWithRev).
   itemCode: {

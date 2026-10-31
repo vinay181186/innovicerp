@@ -19,6 +19,7 @@ import { selectTimeChangeRequests, TIME_CHANGE_FROM } from './service';
 /** Each expression is the one the list SELECT shows for that column. */
 export const TIME_CHANGE_SF_COLUMNS: SfColumnMap = {
   jcCode: { sql: sql`jc.code`, type: 'text' },
+  jcDate: { sql: sql`jc.jc_date`, type: 'date' },
   opSeq: { sql: sql`o.op_seq`, type: 'num' },
   itemCode: {
     sql: sql`(i.code || COALESCE('/' || NULLIF(btrim(COALESCE(${drawingRevOf(sql`jc.item_revision_id`)}, sol.revision::text, rev_jwl.revision::text)), ''), ''))`,

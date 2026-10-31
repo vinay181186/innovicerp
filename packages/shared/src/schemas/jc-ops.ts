@@ -16,6 +16,8 @@ export const jcOpsBoardRowSchema = z.object({
   jcOpId: z.string().uuid(),
   jcId: z.string().uuid().nullable(),
   jcCode: z.string(),
+  /** ADR-261 JC Date — job_cards.jc_date as 'YYYY-MM-DD'. */
+  jcDate: z.string().nullable(),
   jcItemCode: z.string().nullable(),
   /** The customer's drawing revision for the JC's item, taken from the SO line
    *  the card was raised against (job_cards.source_so_line_id →

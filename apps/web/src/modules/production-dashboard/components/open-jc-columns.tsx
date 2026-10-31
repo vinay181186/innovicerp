@@ -41,6 +41,15 @@ export function openJcColumns(): DataTableColumn<ProductionDashboardJc>[] {
           </ActionLink>
         ),
       },
+      docDate: {
+        id: 'jc_date',
+        kind: 'date',
+        header: 'JC Date',
+        className: 'mono',
+        nowrap: true,
+        render: (jc) => fmtDate(jc.jcDate ?? null),
+        filterValue: (jc) => jc.jcDate ?? '',
+      },
       soNo: (jc) => jc.soCode,
       internalSoNo: (jc) => jc.soInternalNo,
       pol: (jc) => jc.clientPoLineNo,

@@ -85,6 +85,7 @@ const PENDING_ORDER = sql`jc.code, vos.op_seq, vos.jc_op_id`;
 
 const COMPLETED_SELECT = sql`
   ol.id AS "logId", jc.code AS "jcCode", jo.op_seq AS "opSeq",
+  to_char(jc.jc_date, 'YYYY-MM-DD') AS "jcDate",
   so.code AS "soCode", so.internal_so_no AS "soInternalNo", i.code AS "itemCode",
   COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
   ${polSql('sol', 'rev_jwl')} AS "clientPoLineNo", i.name AS "itemName",
@@ -144,6 +145,7 @@ function toCompleted(r: Raw): TpiCompletedRow {
   return {
     logId: r['logId'] as string,
     jcCode: r['jcCode'] as string,
+    jcDate: s(r['jcDate']),
     opSeq: Number(r['opSeq']),
     soCode: s(r['soCode']),
     soInternalNo: s(r['soInternalNo']),

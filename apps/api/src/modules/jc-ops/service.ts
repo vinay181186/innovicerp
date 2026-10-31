@@ -92,6 +92,7 @@ export async function listJcOpsBoard(
         op.id AS "jcOpId",
         jc.id AS "jcId",
         jc.code AS "jcCode",
+        to_char(jc.jc_date, 'YYYY-MM-DD') AS "jcDate",
         i.code AS "jcItemCode",
         -- The customer's drawing revision for the JC's item, read live off the
         -- SO line the card was raised against — never items.revision, which
@@ -189,6 +190,7 @@ export async function listJcOpsBoard(
         jcOpId: r['jcOpId'] as string,
         jcId: (r['jcId'] as string | null) ?? null,
         jcCode: String(r['jcCode'] ?? ''),
+        jcDate: (r['jcDate'] as string | null) ?? null,
         jcItemCode: (r['jcItemCode'] as string | null) ?? null,
         itemRevision: (r['itemRevision'] as string | null) ?? null,
         clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,

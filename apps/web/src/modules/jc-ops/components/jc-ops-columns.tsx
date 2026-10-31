@@ -16,6 +16,7 @@ import {
   machineSplitTitle,
   resolveActualMachine,
 } from '@/components/shared/machine-split';
+import { fmtDate } from '@/lib/date';
 import { leadColumns, type DataTableColumn } from '@/ui/data';
 import { OP_STATUS } from '../../job-cards/lib/jc-op-labels';
 
@@ -122,6 +123,16 @@ export function jcOpsColumns(): DataTableColumn<JcOpsBoardRow>[] {
           ) : (
             <span style={{ color: 'var(--cyan)' }}>{o.jcCode}</span>
           ),
+      },
+      docDate: {
+        id: 'jc_date',
+        kind: 'date',
+        header: 'JC Date',
+        className: 'mono',
+        nowrap: true,
+        render: (o) => fmtDate(o.jcDate ?? null),
+        filterValue: (o) => o.jcDate ?? '',
+        sortFilterField: 'jcDate',
       },
       soNo: (o) => o.soCode,
       internalSoNo: (o) => o.soInternalNo,

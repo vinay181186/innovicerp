@@ -16,6 +16,7 @@ export const ospWipRowSchema = z.object({
   jcOpId: z.string().uuid(),
   jobCardId: z.string().uuid(),
   jcCode: z.string(),
+  jcDate: z.string().nullable(),
   opSeq: z.number().int(),
   operation: z.string().nullable(),
   outsourceStatus: z.string().nullable(),

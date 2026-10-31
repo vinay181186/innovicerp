@@ -21,6 +21,7 @@ const SHIFT_OPTIONS = Object.entries(SHIFT_LABELS as Record<string, string>).map
 
 interface QcRowBase {
   jcCode: string;
+  jcDate: string | null;
   opSeq: number;
   soCode: string | null;
   soInternalNo: string | null;
@@ -46,6 +47,16 @@ function qcLeadColumns<T extends QcRowBase>(): DataTableColumn<T>[] {
         header: 'JC No.',
         className: 'td-code cyan',
         render: (o) => o.jcCode,
+      },
+      docDate: {
+        id: 'jc_date',
+        sortFilterField: 'jcDate',
+        kind: 'date',
+        header: 'JC Date',
+        className: 'mono',
+        nowrap: true,
+        render: (o) => fmtDate(o.jcDate ?? null),
+        filterValue: (o) => o.jcDate ?? '',
       },
       soNo: (o) => o.soCode,
       internalSoNo: (o) => o.soInternalNo,
