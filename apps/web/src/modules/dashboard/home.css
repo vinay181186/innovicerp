@@ -7,6 +7,10 @@
   flex-direction: column;
   gap: var(--sp-2);
   min-width: 0;
+  /* Compact, centred board — not edge to edge on wide monitors (owner 31-Oct). */
+  width: 100%;
+  max-width: 1120px;
+  margin-inline: auto;
 }
 .dh-code {
   font-family: var(--mono);
