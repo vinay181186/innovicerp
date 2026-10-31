@@ -29,6 +29,8 @@ const COLS: ColSpec[] = [
   { field: 'rawMaterialGrade', headers: ['RM Grade'], required: false },
   { field: 'rawMaterialSize', headers: ['RM Size'], required: false },
   { field: 'remarks', headers: ['Line Remarks'], required: false },
+  // Optional (Drawing Rev register D2) — an old sheet without it still imports.
+  { field: 'childDrawingRev', headers: ['Drawing Rev'], required: false },
 ];
 
 const HEADER_OF: Record<RowField, string> = Object.fromEntries(
@@ -111,6 +113,10 @@ export async function parseMlBomWorkbook(buf: ArrayBuffer): Promise<MlBomSheetPa
       rawMaterialGrade: text('rawMaterialGrade') || null,
       rawMaterialSize: text('rawMaterialSize') || null,
       remarks: text('remarks') || null,
+      // Only when the sheet has the column: an old sheet sends no field at all.
+      ...(colOf.has('childDrawingRev')
+        ? { childDrawingRev: text('childDrawingRev') || null }
+        : {}),
     };
     const blank =
       !row.bomItemCode &&
@@ -119,7 +125,8 @@ export async function parseMlBomWorkbook(buf: ArrayBuffer): Promise<MlBomSheetPa
       !row.lineType &&
       !row.rawMaterialGrade &&
       !row.rawMaterialSize &&
-      !row.remarks;
+      !row.remarks &&
+      !row.childDrawingRev;
     if (blank) continue;
     rows.push(row);
     if (rows.length > ML_BOM_IMPORT_MAX_ROWS) break;

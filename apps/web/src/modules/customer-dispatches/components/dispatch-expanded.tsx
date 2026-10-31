@@ -3,7 +3,7 @@
 // DispatchCard. Alignment follows the 2026-09-26 table standard — text columns
 // centred, number columns (Dispatch Qty, Stock) right-aligned (th-num/td-num).
 
-import { itemCodeWithRev } from '@/lib/item-code';
+import { docDrawingRev, itemCodeWithRev } from '@/lib/item-code';
 import type { DispatchGroup } from './dispatch-group';
 
 export function DispatchExpanded({ g }: { g: DispatchGroup }): React.JSX.Element {
@@ -51,7 +51,7 @@ export function DispatchExpanded({ g }: { g: DispatchGroup }): React.JSX.Element
               {/* Code carries the customer's drawing revision ("IN-IT-0007/B"),
                   read off the SO line this piece shipped against. */}
               <td className="td-code mono fw-700" style={{ color: 'var(--text)' }}>
-                {itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.itemRevision)}
+                {itemCodeWithRev(l.itemCode ?? l.itemCodeText, docDrawingRev(l))}
               </td>
               <td className="fw-700">{l.itemName}</td>
               <td className="mono fw-700 td-num" style={{ color: 'var(--green2)' }}>

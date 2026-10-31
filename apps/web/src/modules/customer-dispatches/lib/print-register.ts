@@ -6,7 +6,7 @@
 // OSP/JW DC register print, this one IS line-grain — same as legacy.
 
 import type { Company, CustomerDispatchRegisterRow } from '@innovic/shared';
-import { itemCodeWithRev } from '@/lib/item-code';
+import { docDrawingRev, itemCodeWithRev } from '@/lib/item-code';
 import { esc, fmtDate } from '@/lib/print/doc-print';
 import { printWindow, printedMeta } from '@/lib/print/print-window';
 
@@ -28,7 +28,7 @@ export function printCustomerDispatchRegister(args: {
       <td style="font-family:monospace;font-size:10px">${esc(r.soNo || '—')}</td>
       <td style="font-family:monospace;font-size:10px">${esc(r.soInternalNo || '—')}</td>
       <td style="color:#7c3aed;font-weight:700">${esc(r.clientPoLineNo ?? '—')}</td>
-      <td style="color:#7c3aed;font-family:monospace">${esc(itemCodeWithRev(r.itemCode ?? r.itemCodeText, r.itemRevision))}</td>
+      <td style="color:#7c3aed;font-family:monospace">${esc(itemCodeWithRev(r.itemCode ?? r.itemCodeText, docDrawingRev(r)))}</td>
       <td>${esc(r.itemName)}</td>
       <td style="text-align:center;font-weight:700;color:#16a34a">${r.qty}</td>
       <td style="text-align:center">${esc(r.uom ?? '')}</td>

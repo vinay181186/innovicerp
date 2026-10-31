@@ -25,7 +25,7 @@ import type {
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { addDaysLocal, todayLocal } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
+import { docDrawingRev, itemCodeWithRev } from '@/lib/item-code';
 import { soNoWithInternal } from '@/lib/so-number';
 import { useSaveKey } from '@/lib/use-save-key';
 import { PLAN_DEFAULT_SPAN_DAYS } from '@/modules/plans/components/plan-form';
@@ -81,7 +81,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
   // ADR-218 — raw material is READ here, never set. The item's Route Card is
   // what the server will copy onto this plan, so the same lookup that served
   // the old prefill now just supplies the two values SHOWN below.
-  const { data: defaultOps } = useDefaultRouteOps(line.itemId ?? null);
+  const { data: defaultOps } = useDefaultRouteOps(line.itemId ?? null, line.itemRevisionId ?? null);
   // Reserve qty is adjustable — it starts at everything that's free to book,
   // but the planner can dial it down (or back up) before pressing Reserve.
   // Clamped on render instead of via an effect: after a reserve succeeds the
@@ -221,7 +221,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
   // planner can see which drawing they are planning against. A JW line has no
   // customer revision, and then this is the bare code with no trailing slash.
   const lineLabel = line.itemCode
-    ? itemCodeWithRev(line.itemCode, line.itemRevision)
+    ? itemCodeWithRev(line.itemCode, docDrawingRev(line))
     : (line.itemName ?? `Line ${line.lineNo}`);
 
   // ADR-180 — releasing needs a qty and a reason, so it has its own box, shared
@@ -254,7 +254,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
         <span>Ln {line.lineNo}</span>
         <IdentSep />
         {/* Item code is the main thing: strong mono, darkest text. */}
-        <IdentCode>{itemCodeWithRev(line.itemCode, line.itemRevision)}</IdentCode>
+        <IdentCode>{itemCodeWithRev(line.itemCode, docDrawingRev(line))}</IdentCode>
         {line.itemName ? <span>{line.itemName}</span> : null}
       </DocIdent>
 

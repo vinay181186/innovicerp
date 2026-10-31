@@ -185,6 +185,10 @@ const TYPE_ALIASES = ['bom_type', 'BOM Type', 'Type'];
 // built from the older three-column template must still import.
 const GRADE_ALIASES = ['rm_grade', 'RM Grade', 'Grade'];
 const SIZE_ALIASES = ['rm_size', 'RM Size', 'Size'];
+// Drawing Rev register: the child part's Drawing Rev (the server template has
+// it after BOM Type). Optional for the same reason — an older sheet without it
+// still imports, its lines simply carry no Rev.
+const DRAWING_REV_ALIASES = ['drawing_rev', 'Drawing Rev'];
 const REQUIRED_COLUMNS: ReadonlyArray<{ label: string; aliases: string[] }> = [
   { label: 'Item Code', aliases: CODE_ALIASES },
   { label: 'Qty / Set', aliases: QTY_ALIASES },
@@ -749,12 +753,14 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
         if (gradeRaw || sizeRaw) sawRmValue = true;
         if (gradeRaw && !grade) noteUnmatchedRm('RM Grade', gradeRaw);
         if (sizeRaw && !size) noteUnmatchedRm('RM Size', sizeRaw);
+        const drawingRev = getCol(row, DRAWING_REV_ALIASES).trim();
 
         seenInFile.set(item.id, idx);
         added.push({
           ...emptyLine(),
           childItemId: item.id,
           childItemCodeText: item.code,
+          childDrawingRev: drawingRev,
           qtyPerSet: String(qty),
           bomType,
           rawMaterialGradeId: grade?.id ?? null,

@@ -17,7 +17,7 @@ import type { CreatePlanInput, PlanningDetailResponse, PlanningLine } from '@inn
 import { Link } from '@tanstack/react-router';
 import { useEffect, useMemo, useState } from 'react';
 import { addDaysLocal, todayLocal } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
+import { docDrawingRev, itemCodeWithRev } from '@/lib/item-code';
 import {
   MaterialValueDisplay,
   RM_SOURCE_HELP,
@@ -97,7 +97,7 @@ export function PlanCreateForm({
       (so?.lines ?? []).map((l) => ({
         id: l.soLineId,
         code: `Ln ${l.lineNo}${l.clientPoLineNo ? ` · POL ${l.clientPoLineNo}` : ''}`,
-        name: `${itemCodeWithRev(l.itemCode, l.itemRevision, l.itemName ?? '')} · To Plan ${l.remaining}`,
+        name: `${itemCodeWithRev(l.itemCode, docDrawingRev(l), l.itemName ?? '')} · To Plan ${l.remaining}`,
       })),
     [so],
   );
@@ -117,7 +117,7 @@ export function PlanCreateForm({
   // what the server will copy onto this plan, so the same lookup that loads the
   // operations also supplies the two values SHOWN below. A different line is a
   // different item, so the lookup (and the display) follows the picked line.
-  const { data: defaultOps } = useDefaultRouteOps(line?.itemId ?? null);
+  const { data: defaultOps } = useDefaultRouteOps(line?.itemId ?? null, line?.itemRevisionId ?? null);
   const hasRouteCard = !!defaultOps && defaultOps.ops.length > 0;
 
   const build = (): { input: CreatePlanInput } | { error: string } => {
@@ -277,7 +277,7 @@ export function PlanCreateForm({
               <Fact label="Item">
                 {/* Item code is the main thing: strong mono, darkest text. */}
                 <b className="mono" style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}>
-                  {itemCodeWithRev(line.itemCode, line.itemRevision)}
+                  {itemCodeWithRev(line.itemCode, docDrawingRev(line))}
                 </b>
                 {line.itemName ? (
                   <span className="text2" style={{ fontSize: 12, marginLeft: 6 }}>

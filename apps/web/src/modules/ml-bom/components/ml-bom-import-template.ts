@@ -77,7 +77,7 @@ function esc(s: string): string {
     .replace(/"/g, '&quot;');
 }
 
-const COL_LETTERS = 'ABCDEFG';
+const COL_LETTERS = 'ABCDEFGH';
 
 type Cell = string | number | null;
 
@@ -93,15 +93,16 @@ function rowXml(r: number, cells: Cell[], styleOf: (col: number) => number): str
 }
 
 // Columns: A BOM Item Code · B Child Item Code · C Qty per Set · D Line Type ·
-// E RM Grade · F RM Size · G Line Remarks.
-const TEXT_COLS = new Set([0, 1, 4, 5]);
+// E RM Grade · F RM Size · G Line Remarks · H Drawing Rev (optional; Text so
+// a Rev typed as 1 or 01 stays as typed).
+const TEXT_COLS = new Set([0, 1, 4, 5, 7]);
 
 const EXAMPLE: Cell[][] = [
-  ['PS-100', 'MA-10', 1, BOM_LINE_TYPE_LABEL.manufacture, null, null, null],
-  ['PS-100', 'BP-200', 1, BOM_LINE_TYPE_LABEL.manufacture, null, null, null],
-  ['PS-100', 'CPL-25', 2, BOM_LINE_TYPE_LABEL.purchase, null, null, null],
-  ['MA-10', 'HSG-10', 1, BOM_LINE_TYPE_LABEL.manufacture, null, null, null],
-  ['MA-10', 'BLT-M8x25', 4, BOM_LINE_TYPE_LABEL.purchase, null, null, null],
+  ['PS-100', 'MA-10', 1, BOM_LINE_TYPE_LABEL.manufacture, null, null, null, null],
+  ['PS-100', 'BP-200', 1, BOM_LINE_TYPE_LABEL.manufacture, null, null, null, '1'],
+  ['PS-100', 'CPL-25', 2, BOM_LINE_TYPE_LABEL.purchase, null, null, null, null],
+  ['MA-10', 'HSG-10', 1, BOM_LINE_TYPE_LABEL.manufacture, null, null, null, '1'],
+  ['MA-10', 'BLT-M8x25', 4, BOM_LINE_TYPE_LABEL.purchase, null, null, null, null],
 ];
 
 function linesSheetXml(): string {
@@ -117,7 +118,7 @@ function linesSheetXml(): string {
       rowXml(i + 2, cells, (col) => (TEXT_COLS.has(col) ? S_EX_TEXT : S_EX)),
     ),
   ].join('');
-  const widths = [20, 20, 12, 14, 16, 16, 32];
+  const widths = [20, 20, 12, 14, 16, 16, 32, 12];
   const cols = widths
     .map(
       (w, i) =>
@@ -151,6 +152,7 @@ export const ML_BOM_TEMPLATE_RULES: readonly string[] = [
   `Line Type: ${BOM_LINE_TYPE_LABEL.manufacture}, ${BOM_LINE_TYPE_LABEL.purchase} or ${BOM_LINE_TYPE_LABEL.outsource}.`,
   `${BOM_LINE_TYPE_LABEL.purchase} and ${BOM_LINE_TYPE_LABEL.outsource} ignore the child's BOM.`,
   'Qty per Set: a number above 0, for one parent.',
+  "Drawing Rev (optional): the child part's drawing revision, e.g. 1. Leave blank for a bought part or when there is none.",
   'An item that already has a Default Multi-Level BOM gets a new BOM Rev.',
   `At most ${ML_BOM_IMPORT_MAX_ROWS} rows.`,
   'The whole file saves or nothing does.',
