@@ -23,6 +23,7 @@ import { sfRawParamSchema } from './list-query';
 import { expectedUpdatedAtSchema } from '../lib/edit-conflict';
 import { OP_TYPES } from '../enums/op-type';
 import { PLAN_TYPES } from '../enums/plan-type';
+import { drawingRevInputSchema } from './item-revision';
 
 // Note: opTypeSchema is exported from op-entry.ts; we use a local
 // alias to avoid the duplicate-export collision when both files are
@@ -44,6 +45,12 @@ export const routeCardSchema = z.object({
   companyId: z.string().uuid(),
   code: z.string(),
   itemId: z.string().uuid(),
+  /** Item + Drawing Rev this card is for (ABC/1). Null = old card made before
+   *  the register, or a Buy item — must be set by hand before a new PRO uses it. */
+  itemRevisionId: z.string().uuid().nullable().default(null),
+  drawingRev: z.string().nullable().default(null),
+  drawingFilePath: z.string().nullable().default(null),
+  drawingNo: z.string().nullable().default(null),
   // Revision 0 is the number a card is BORN with; the first edit makes it
   // Rev 1. nonnegative, not positive — `.positive()` here would reject every
   // freshly created card. Cards created before this change still start at 1
@@ -252,6 +259,14 @@ export const createRouteCardInputSchema = z.object({
   // if omitted (matches legacy _nextRcNo behaviour, L6933).
   code: z.string().min(1).max(64).optional(),
   itemId: z.string().uuid(),
+  /** Drawing Rev — compulsory for MAKE items (server checks
+   *  items.procurement_type). With itemId it finds or creates ABC/<rev>. */
+  drawingRev: drawingRevInputSchema.nullable().optional(),
+  /** Drawing file (qc-docs, folder `item-revision-drawings`). Optional. If
+   *  ABC/<rev> already has a different file the save is refused — use Replace
+   *  drawing with a reason. */
+  drawingFilePath: z.string().max(512).nullable().optional(),
+  drawingNo: z.string().trim().max(64).nullable().optional(),
   // Raw material for this item — both optional; see routeCardSchema.
   rawMaterialGradeId: z.string().uuid().nullable().optional(),
   rawMaterialGradeText: z.string().trim().max(120).nullable().optional(),
@@ -272,6 +287,14 @@ export type CreateRouteCardInput = z.infer<typeof createRouteCardInputSchema>;
 export const updateRouteCardInputSchema = z.object({
   code: z.string().min(1).max(64),
   itemId: z.string().uuid(),
+  /** Drawing Rev — may be SET once on an old card that has none;
+   *  a card that already has a Rev cannot move to another Rev (server refuses). With itemId it finds or creates ABC/<rev>. */
+  drawingRev: drawingRevInputSchema.nullable().optional(),
+  /** Drawing file (qc-docs, folder `item-revision-drawings`). Optional. If
+   *  ABC/<rev> already has a different file the save is refused — use Replace
+   *  drawing with a reason. */
+  drawingFilePath: z.string().max(512).nullable().optional(),
+  drawingNo: z.string().trim().max(64).nullable().optional(),
   // Raw material for this item — both optional; see routeCardSchema.
   rawMaterialGradeId: z.string().uuid().nullable().optional(),
   rawMaterialGradeText: z.string().trim().max(120).nullable().optional(),

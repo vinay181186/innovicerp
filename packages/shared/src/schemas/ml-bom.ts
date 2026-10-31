@@ -23,6 +23,7 @@ import { expectedUpdatedAtSchema } from '../lib/edit-conflict';
 import { BOM_LINE_TYPES } from '../enums/bom-line-type';
 import { activityReasonSchema } from '../enums/activity';
 import { positiveQtySchema } from '../lib/qty-rule';
+import { drawingRevInputSchema } from './item-revision';
 
 /** Deepest allowed tree, counting the top item as level 0. */
 export const ML_BOM_MAX_LEVELS = 10;
@@ -59,6 +60,10 @@ export const mlBomLineSchema = z.object({
   childItemId: z.string().uuid(),
   childItemCode: z.string().nullable().default(null),
   childItemName: z.string().nullable().default(null),
+  /** D2: the child part's Item + Drawing Rev (SHAFT/2). Null for Buy parts /
+   *  old lines. */
+  childItemRevisionId: z.string().uuid().nullable().default(null),
+  childDrawingRev: z.string().nullable().default(null),
   childUom: z.string().nullable().default(null),
   /** numeric(14,3) as string */
   qtyPerSet: z.string(),
@@ -187,6 +192,9 @@ export interface ListMlBomsResponse {
 
 export const mlBomLineInputSchema = z.object({
   childItemId: z.string().uuid(),
+  /** D2: the child part's Drawing Rev (SHAFT/2). Compulsory for a MAKE child
+   *  part; finds or creates the child's Item + Rev record. */
+  childDrawingRev: drawingRevInputSchema.nullable().optional(),
   qtyPerSet: positiveQtySchema,
   bomType: mlBomLineTypeSchema,
   rawMaterialGradeId: z.string().uuid().nullable().optional(),

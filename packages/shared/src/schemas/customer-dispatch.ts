@@ -18,6 +18,12 @@ export const dispatchableLineSchema = z.object({
    *  column and substituting it would put a plausible-looking wrong revision on
    *  the dispatch. Null is correct and renders as the bare code. */
   itemRevision: z.string().nullable().default(null),
+  /** Phase C: stock ready for THIS SO line per Item + Drawing Rev — a line can
+   *  hold pieces of two Revs (closed JC ABC/1 + later JC ABC/2). The dispatch
+   *  picks one Rev per row. Empty for Buy items. */
+  revBuckets: z
+    .array(z.object({ itemRevisionId: z.string().uuid().nullable(), label: z.string(), readyQty: z.number() }))
+    .default([]),
   /** The customer's PO line number (`POL`) typed on this same SO line — shown
    *  beside the item code on the dispatch form, as on every other document
    *  (user rule, 2026-09-23). Null when the customer's PO gave no line. */
@@ -69,6 +75,9 @@ export const createCustomerDispatchInputSchema = z.object({
     .array(
       z.object({
         salesOrderLineId: z.string().uuid(),
+        /** Phase C: which Item + Rev bucket the pieces come from (null = blank
+         *  bucket / Buy item). The same SO line may appear once per Rev. */
+        itemRevisionId: z.string().uuid().nullable().optional(),
         qty: z.coerce.number().int().positive(),
       }),
     )

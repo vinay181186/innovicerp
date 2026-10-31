@@ -67,6 +67,11 @@ export const jobCardListItemSchema = z.object({
   cancelledAt: z.string().nullable().default(null),
   jcDate: z.string(), // ISO date
   itemId: z.string().uuid(),
+  /** Item + Drawing Rev this document is for (ABC/1), stored on the document
+   *  (Phase B). Taken from the SO/JWSO line (or BOM child line) at creation;
+   *  moved by a line Rev change only while the work is open. */
+  itemRevisionId: z.string().uuid().nullable().default(null),
+  drawingRev: z.string().nullable().default(null),
   itemCode: z.string(),
   /** The customer's drawing revision, read from the SO line this card was
    *  raised against (job_cards.source_so_line_id → sales_order_lines.revision).

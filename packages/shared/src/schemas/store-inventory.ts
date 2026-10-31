@@ -95,6 +95,9 @@ export const MANUAL_RECEIPT_SOURCE_LABEL: Record<ManualReceiptSource, string> = 
 /** Manual stock adjustment (+ Add / − Remove). Writes a store_transactions row. */
 export const adjustStockInputSchema = z.object({
   itemId: z.string().uuid(),
+  /** Item + Drawing Rev bucket (Phase C). Compulsory for a MAKE item that has
+   *  Revs; null = the blank (old) bucket. */
+  itemRevisionId: z.string().uuid().nullable().optional(),
   direction: z.enum(['add', 'remove']),
   // ADR-193: decimal for KGS / MTR items; whole-number units are enforced by
   // the stock writer (lib/stock-ledger.ts) against the item's UOM.

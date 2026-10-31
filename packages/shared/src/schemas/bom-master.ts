@@ -15,6 +15,7 @@ import { expectedUpdatedAtSchema } from '../lib/edit-conflict';
 import { BOM_LINE_TYPES } from '../enums/bom-line-type';
 import { BOM_STATUSES } from '../enums/bom-status';
 import { positiveQtySchema } from '../lib/qty-rule';
+import { drawingRevInputSchema } from './item-revision';
 
 export const bomStatusSchema = z.enum(BOM_STATUSES);
 export const bomLineTypeSchema = z.enum(BOM_LINE_TYPES);
@@ -48,6 +49,10 @@ export const bomMasterLineSchema = z.object({
   bomMasterId: z.string().uuid(),
   lineNo: z.number().int().positive(),
   childItemId: z.string().uuid(),
+  /** D2: the child part's Item + Drawing Rev (SHAFT/2). Null for Buy parts /
+   *  old lines. */
+  childItemRevisionId: z.string().uuid().nullable().default(null),
+  childDrawingRev: z.string().nullable().default(null),
   qtyPerSet: z.string(), // numeric stored as string
   bomType: bomLineTypeSchema,
   // Raw material for THIS child part. A BOM child is a different part from its
@@ -131,6 +136,9 @@ export interface ListBomMastersResponse {
 
 export const createBomMasterLineInputSchema = z.object({
   childItemId: z.string().uuid(),
+  /** D2: the child part's Drawing Rev (SHAFT/2). Compulsory for a MAKE child
+   *  part; finds or creates the child's Item + Rev record. */
+  childDrawingRev: drawingRevInputSchema.nullable().optional(),
   /** Up to 3 decimals (numeric(14,3), 0184 — S9: 0.125 KG was saved as 0.13).
    *  A whole-number child unit (NOS / SET) is refused a fraction by the API. */
   qtyPerSet: positiveQtySchema,
