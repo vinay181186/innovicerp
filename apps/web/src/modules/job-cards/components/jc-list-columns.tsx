@@ -95,6 +95,15 @@ export function jobCardListColumns(
           </Link>
         ),
       },
+      docDate: {
+        id: 'jc_date',
+        sortFilterField: 'jcDate',
+        kind: 'date',
+        header: 'JC Date',
+        className: 'mono',
+        nowrap: true,
+        render: (jc) => fmtDate(jc.jcDate),
+      },
       soNo: (jc) => jc.sourceLink?.code,
       internalSoNo: (jc) => (jc.sourceLink?.type === 'so' ? jc.sourceLink.internalSoNo : null),
       pol: (jc) => jc.clientPoLineNo,
@@ -244,15 +253,6 @@ export function jobCardListColumns(
         ) : (
           <StatusBadge kind="jc" status={jc.computedStatus} draft={draftIds?.has(jc.id)} />
         ),
-    },
-    {
-      id: 'jc_date',
-      sortFilterField: 'jcDate',
-      kind: 'date',
-      header: 'JC Date',
-      className: 'mono',
-      nowrap: true,
-      render: (jc) => fmtDate(jc.jcDate),
     },
     {
       id: 'due_date',

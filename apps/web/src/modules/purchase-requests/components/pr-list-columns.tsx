@@ -53,6 +53,14 @@ export function prListColumns(
           </Link>
         ),
       },
+      docDate: {
+        id: 'pr_date',
+        sortFilterField: 'prDate',
+        header: 'PR Date',
+        kind: 'date',
+        nowrap: true,
+        render: (pr) => fmtDate(pr.prDate),
+      },
       soNo: (pr) => pr.soCode,
       internalSoNo: (pr) => pr.soInternalNo,
       pol: (pr) => pr.clientPoLineNo,
@@ -73,14 +81,6 @@ export function prListColumns(
       kind: 'num',
       className: 'text3',
       render: (_pr, i) => firstRowNo + i,
-    },
-    {
-      id: 'pr_date',
-      sortFilterField: 'prDate',
-      header: 'PR Date',
-      kind: 'date',
-      nowrap: true,
-      render: (pr) => fmtDate(pr.prDate),
     },
     {
       id: 'vendor',

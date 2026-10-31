@@ -42,6 +42,15 @@ export function partyGrnColumns(): DataTableColumn<PartyGrnLineListRow>[] {
           </span>
         ),
       },
+      docDate: {
+        id: 'grn_date',
+        sortFilterField: 'grnDate',
+        header: 'GRN Date',
+        kind: 'date',
+        className: 'mono',
+        nowrap: true,
+        render: (r) => fmtDate(r.docDate),
+      },
       so: 'jwso',
       soNo: (r) => r.jwCode,
       pol: (r) => r.clientPoLineNo,
@@ -57,15 +66,6 @@ export function partyGrnColumns(): DataTableColumn<PartyGrnLineListRow>[] {
         item_name: { sortFilterField: 'itemName' },
       },
     }),
-    {
-      id: 'grn_date',
-      sortFilterField: 'grnDate',
-      header: 'GRN Date',
-      kind: 'date',
-      className: 'mono',
-      nowrap: true,
-      render: (r) => fmtDate(r.docDate),
-    },
     {
       id: 'customer',
       sortFilterField: 'customer',

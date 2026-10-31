@@ -61,6 +61,15 @@ export function purchaseOrderListColumns({
           </Link>
         ),
       },
+      docDate: {
+        id: 'po_date',
+        sortFilterField: 'poDate',
+        kind: 'date',
+        header: 'PO Date',
+        className: 'mono',
+        nowrap: true,
+        render: (po) => fmtDate(po.docDate),
+      },
       soNo: (l) => l.soCode,
       internalSoNo: (l) => l.soInternalNo,
       pol: (l) => l.clientPoLineNo,
@@ -77,15 +86,6 @@ export function purchaseOrderListColumns({
         item_name: { sortFilterField: 'itemName' },
       },
     }),
-    {
-      id: 'po_date',
-      sortFilterField: 'poDate',
-      kind: 'date',
-      header: 'PO Date',
-      className: 'mono',
-      nowrap: true,
-      render: (po) => fmtDate(po.docDate),
-    },
     {
       id: 'po_type',
       sortFilterField: 'poType',

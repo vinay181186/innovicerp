@@ -47,6 +47,16 @@ export function capaListColumns(): DataTableColumn<CapaRecord>[] {
           </span>
         ),
       },
+      docDate: {
+        id: 'capa_date',
+        sortFilterField: 'capaDate',
+        kind: 'date',
+        header: 'CAPA Date',
+        className: 'mono',
+        nowrap: true,
+        render: (c) => fmtDate(c.capaDate ?? null),
+        filterValue: (c) => c.capaDate ?? '',
+      },
       soNo: (c) => c.soNo,
       internalSoNo: (c) => c.soInternalNo,
       pol: (c) => c.clientPoLineNo,

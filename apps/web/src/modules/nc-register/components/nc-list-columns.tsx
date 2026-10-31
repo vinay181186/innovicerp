@@ -113,6 +113,15 @@ export function ncListColumns(
           </Link>
         ),
       },
+      docDate: {
+        id: 'nc_date',
+        sortFilterField: 'ncDate',
+        kind: 'date',
+        header: 'NC Date',
+        className: 'mono',
+        nowrap: true,
+        render: (nc) => fmtDate(nc.ncDate),
+      },
       soNo: (nc) => nc.soCodeText,
       internalSoNo: (nc) => nc.soInternalNo,
       pol: (nc) => nc.clientPoLineNo,
@@ -170,15 +179,6 @@ export function ncListColumns(
       className: 'text2',
       render: (nc) => NC_REASON_CATEGORY_LABELS[nc.reasonCategory],
       filterValue: (nc) => NC_REASON_CATEGORY_LABELS[nc.reasonCategory],
-    },
-    {
-      id: 'nc_date',
-      sortFilterField: 'ncDate',
-      kind: 'date',
-      header: 'NC Date',
-      className: 'mono',
-      nowrap: true,
-      render: (nc) => fmtDate(nc.ncDate),
     },
   ];
 }

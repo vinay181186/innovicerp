@@ -66,6 +66,14 @@ export function invoiceListColumns(priceHidden: boolean): DataTableColumn<Invoic
           </Link>
         ),
       },
+      docDate: {
+        id: 'invoice_date',
+        kind: 'date',
+        sortFilterField: 'invoiceDate',
+        header: 'Invoice Date',
+        nowrap: true,
+        render: (r) => fmtDate(r.invoiceDate),
+      },
       soNo: (r) => r.soCode,
       internalSoNo: (r) => r.soInternalNo,
       pol: (r) => r.clientPoLineNo,
@@ -82,14 +90,6 @@ export function invoiceListColumns(priceHidden: boolean): DataTableColumn<Invoic
         item_name: { sortFilterField: 'itemName' },
       },
     }),
-    {
-      id: 'invoice_date',
-      kind: 'date',
-      sortFilterField: 'invoiceDate',
-      header: 'Invoice Date',
-      nowrap: true,
-      render: (r) => fmtDate(r.invoiceDate),
-    },
     {
       id: 'customer',
       header: 'Customer',

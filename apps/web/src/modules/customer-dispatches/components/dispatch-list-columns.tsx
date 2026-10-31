@@ -54,6 +54,15 @@ export function dispatchListColumns(
           </Link>
         ),
       },
+      docDate: {
+        id: 'dispatch_date',
+        sortFilterField: 'dispatchDate',
+        kind: 'date',
+        header: 'Dispatch Date',
+        className: 'mono',
+        nowrap: true,
+        render: (r) => fmtDate(r.date),
+      },
       soNo: (r) => r.soNo,
       internalSoNo: (r) => r.soInternalNo,
       pol: (r) => r.clientPoLineNo,
@@ -71,15 +80,6 @@ export function dispatchListColumns(
         item_name: { sortFilterField: 'itemName' },
       },
     }),
-    {
-      id: 'dispatch_date',
-      sortFilterField: 'dispatchDate',
-      kind: 'date',
-      header: 'Dispatch Date',
-      className: 'mono',
-      nowrap: true,
-      render: (r) => fmtDate(r.date),
-    },
     {
       id: 'customer',
       sortFilterField: 'customer',

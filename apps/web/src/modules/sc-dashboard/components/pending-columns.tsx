@@ -32,6 +32,13 @@ export function pendingColumns(priceHidden: boolean): DataTableColumn<ScPendingL
           </Link>
         ),
       },
+      docDate: {
+        id: 'po_date',
+        sortFilterField: 'poDate',
+        kind: 'date',
+        header: 'PO Date',
+        render: (p) => fmtDate(p.poDate),
+      },
       soNo: (p) => p.soCode,
       internalSoNo: (p) => p.soInternalNo,
       pol: (p) => p.clientPoLineNo,
@@ -56,13 +63,6 @@ export function pendingColumns(priceHidden: boolean): DataTableColumn<ScPendingL
       header: 'Ln',
       className: 'mono',
       render: (p) => p.lineNo,
-    },
-    {
-      id: 'po_date',
-      sortFilterField: 'poDate',
-      kind: 'date',
-      header: 'PO Date',
-      render: (p) => fmtDate(p.poDate),
     },
     {
       id: 'vendor',

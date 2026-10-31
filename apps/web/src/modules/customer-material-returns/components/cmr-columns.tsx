@@ -49,6 +49,15 @@ export function cmrColumns(): DataTableColumn<Row>[] {
           </span>
         ),
       },
+      docDate: {
+        id: 'return_date',
+        sortFilterField: 'returnDate',
+        kind: 'date',
+        header: 'Return Date',
+        className: 'mono text2',
+        nowrap: true,
+        render: (r) => fmtDate(r.docDate),
+      },
       so: 'jwso',
       soNo: (r) => r.jwCode,
       pol: (r) => r.clientPoLineNo,
@@ -64,15 +73,6 @@ export function cmrColumns(): DataTableColumn<Row>[] {
         item_name: { sortFilterField: 'itemName' },
       },
     }),
-    {
-      id: 'return_date',
-      sortFilterField: 'returnDate',
-      kind: 'date',
-      header: 'Return Date',
-      className: 'mono text2',
-      nowrap: true,
-      render: (r) => fmtDate(r.docDate),
-    },
     {
       id: 'customer',
       sortFilterField: 'customer',

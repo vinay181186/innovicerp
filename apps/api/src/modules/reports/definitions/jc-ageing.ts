@@ -28,13 +28,13 @@ export const jcAgeingReport: RegisteredReport = {
       // (blank for a standalone JC); Created On = the JC's created_at; the
       // customer drawing rev rides in Item Code as CODE/REV.
       { key: 'jc_code', label: 'JC No.', type: 'text' },
+      { key: 'jc_date', label: 'JC Date', type: 'date' },
       { key: 'so_code', label: 'SO No.', type: 'text' },
       { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
       { key: 'client_po_line_no', label: 'POL', type: 'text' },
       { key: 'created_on', label: 'Created On', type: 'date' },
       { key: 'item_code', label: 'Item Code', type: 'text' },
       { key: 'item_name', label: 'Item Name', type: 'text' },
-      { key: 'jc_date', label: 'JC Date', type: 'date' },
       { key: 'days_open', label: 'Days Open', type: 'number' },
       { key: 'qty', label: 'Order Qty', type: 'number' },
       { key: 'computed_status', label: 'JC Status', type: 'text' },

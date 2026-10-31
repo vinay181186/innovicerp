@@ -37,13 +37,13 @@ export const procurementTrackerReport: RegisteredReport = {
       // the JW line of the JC op the PR came from (blank for a stock PR).
       // Created On = the PR's created_at; the drawing rev rides in Item Code.
       { key: 'pr_code', label: 'PR No.', type: 'text' },
+      { key: 'pr_date', label: 'PR Date', type: 'date' },
       { key: 'so_code', label: 'SO No.', type: 'text' },
       { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
       { key: 'client_po_line_no', label: 'POL', type: 'text' },
       { key: 'created_on', label: 'Created On', type: 'date' },
       { key: 'item_code', label: 'Item Code', type: 'text' },
       { key: 'item_name', label: 'Item Name', type: 'text' },
-      { key: 'pr_date', label: 'PR Date', type: 'date' },
       { key: 'pr_type', label: 'PR Type', type: 'text' },
       { key: 'pr_qty', label: 'PR Qty', type: 'number' },
       { key: 'due_date', label: 'Due Date', type: 'date' },

@@ -46,6 +46,15 @@ export function issueRegisterColumns(): DataTableColumn<StoreIssueLineRow>[] {
           </>
         ),
       },
+      docDate: {
+        id: 'issue_date',
+        sortFilterField: 'issueDate',
+        kind: 'date',
+        header: 'Issue Date',
+        className: 'mono text2',
+        nowrap: true,
+        render: (r) => fmtDate(r.docDate),
+      },
       soNo: (r) => r.soCode,
       internalSoNo: (r) => r.soInternalNo,
       pol: (r) => r.clientPoLineNo,
@@ -62,15 +71,6 @@ export function issueRegisterColumns(): DataTableColumn<StoreIssueLineRow>[] {
         item_name: { sortFilterField: 'itemName' },
       },
     }),
-    {
-      id: 'issue_date',
-      sortFilterField: 'issueDate',
-      kind: 'date',
-      header: 'Issue Date',
-      className: 'mono text2',
-      nowrap: true,
-      render: (r) => fmtDate(r.docDate),
-    },
     {
       id: 'issue_against',
       sortFilterField: 'issueAgainst',

@@ -73,10 +73,14 @@ describe('leadColumns builder', () => {
   });
 
   it('own doc no. comes FIRST and is locked with the block', () => {
-    const cols = leadColumns<Row>({ ...spec, doc: { id: 'plan_no', header: 'Plan No.' } });
+    const cols = leadColumns<Row>({
+      ...spec,
+      doc: { id: 'plan_no', header: 'Plan No.' },
+      docDate: { id: 'plan_date', header: 'Plan Date' },
+    });
     const ids = cols.map((c) => c.id ?? '');
-    expect(ids).toEqual(['plan_no', ...LEAD]);
-    expect(lockedLeadIds(cols, ids)).toEqual(['plan_no', ...LEAD]);
+    expect(ids).toEqual(['plan_no', 'plan_date', ...LEAD]);
+    expect(lockedLeadIds(cols, ids)).toEqual(['plan_no', 'plan_date', ...LEAD]);
     const order = [...ids, 'qty'];
     const st = { order, pins: [], hidden: [] };
     const d = { order, pins: [], hidden: [] };

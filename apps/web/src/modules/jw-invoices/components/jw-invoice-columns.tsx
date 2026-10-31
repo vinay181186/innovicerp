@@ -55,6 +55,15 @@ export function jwInvoiceColumns(priceHidden: boolean): DataTableColumn<JwInvoic
           </span>
         ),
       },
+      docDate: {
+        id: 'invoice_date',
+        header: 'Invoice Date',
+        kind: 'date',
+        className: 'mono text2',
+        nowrap: true,
+        render: (r) => fmtDate(r.invoiceDate),
+        sortFilterField: 'invoiceDate',
+      },
       so: 'jwso',
       soNo: (r) => r.jwCodeText,
       pol: (r) => r.clientPoLineNo,
@@ -67,15 +76,6 @@ export function jwInvoiceColumns(priceHidden: boolean): DataTableColumn<JwInvoic
         item_code: { sortFilterField: 'itemCode' },
       },
     }),
-    {
-      id: 'invoice_date',
-      header: 'Invoice Date',
-      kind: 'date',
-      className: 'mono text2',
-      nowrap: true,
-      render: (r) => fmtDate(r.invoiceDate),
-      sortFilterField: 'invoiceDate',
-    },
     {
       id: 'customer',
       header: 'Customer',

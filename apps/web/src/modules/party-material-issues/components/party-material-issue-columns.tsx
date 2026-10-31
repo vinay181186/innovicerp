@@ -52,6 +52,15 @@ export function partyMaterialIssueColumns(): DataTableColumn<PartyMaterialIssueL
           </>
         ),
       },
+      docDate: {
+        id: 'issue_date',
+        sortFilterField: 'issueDate',
+        header: 'Issue Date',
+        kind: 'date',
+        className: 'text2',
+        nowrap: true,
+        render: (it) => fmtDate(it.issueDate),
+      },
       so: 'jwso',
       soNo: (it) => it.jwCodeText,
       pol: () => null,
@@ -65,15 +74,6 @@ export function partyMaterialIssueColumns(): DataTableColumn<PartyMaterialIssueL
         item_name: { sortFilterField: 'itemName' },
       },
     }),
-    {
-      id: 'issue_date',
-      sortFilterField: 'issueDate',
-      header: 'Issue Date',
-      kind: 'date',
-      className: 'text2',
-      nowrap: true,
-      render: (it) => fmtDate(it.issueDate),
-    },
     {
       id: 'jc_code',
       sortFilterField: 'jcCode',

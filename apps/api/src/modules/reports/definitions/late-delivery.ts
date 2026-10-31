@@ -32,13 +32,13 @@ export const lateDeliveryReport: RegisteredReport = {
       // ADR-261 lead columns. Created On = the dispatch line's created_at;
       // the SO line's drawing rev rides in Item Code as CODE/REV.
       { key: 'dispatch_code', label: 'Dispatch No.', type: 'text' },
+      { key: 'dispatch_date', label: 'Dispatch Date', type: 'date' },
       { key: 'so_code', label: 'SO No.', type: 'text' },
       { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
       { key: 'client_po_line_no', label: 'POL', type: 'text' },
       { key: 'created_on', label: 'Created On', type: 'date' },
       { key: 'item_code', label: 'Item Code', type: 'text' },
       { key: 'item_name', label: 'Item Name', type: 'text' },
-      { key: 'dispatch_date', label: 'Dispatch Date', type: 'date' },
       { key: 'client_name', label: 'Customer', type: 'text' },
       { key: 'qty', label: 'Dispatch Qty', type: 'number' },
       { key: 'due_date', label: 'Due Date', type: 'date' },

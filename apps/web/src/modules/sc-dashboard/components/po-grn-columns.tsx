@@ -33,6 +33,13 @@ export function poSummaryColumns(priceHidden: boolean): DataTableColumn<ScPoSumm
           </Link>
         ),
       },
+      docDate: {
+        id: 'po_date',
+        sortFilterField: 'poDate',
+        kind: 'date',
+        header: 'PO Date',
+        render: (g) => fmtDate(g.poDate),
+      },
       soNo: (g) => g.soCode,
       internalSoNo: (g) => g.soInternalNo,
       createdOn: (g) => g.createdAt,
@@ -42,13 +49,6 @@ export function poSummaryColumns(priceHidden: boolean): DataTableColumn<ScPoSumm
         created_on: { sortFilterField: 'createdOn' },
       },
     }),
-    {
-      id: 'po_date',
-      sortFilterField: 'poDate',
-      kind: 'date',
-      header: 'PO Date',
-      render: (g) => fmtDate(g.poDate),
-    },
     {
       id: 'vendor',
       sortFilterField: 'vendor',

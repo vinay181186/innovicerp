@@ -1,7 +1,7 @@
 // LEAD COLUMNS — the owner's fixed standard (2026-10-31). Every list that
 // carries an SO / JWSO line starts with these six columns, in this order:
 //
-//   [own doc no.] · SO No. · Internal SO No. · POL · Created On · Item Code (CODE/REV) · Item Name
+//   [own doc no. · own doc date] · SO No. · Internal SO No. · POL · Created On · Item Code (CODE/REV) · Item Name
 //
 // The page's own number (Plan No., JC No., PO No. …) comes FIRST, before SO No.
 // (owner, 31-Oct, amending the earlier "after Item Name" decision); every other
@@ -43,6 +43,9 @@ export interface LeadColumnSpec<T> {
    *  Must carry an `id`. Leave out only where the row IS the SO / JWSO (SO list,
    *  SO Overview …) — there SO No. is the own number. */
   doc?: DataTableColumn<T> | undefined;
+  /** The own document's DATE (Plan Date, GRN Date, JC Date …), drawn right after
+   *  `doc` and locked with it (owner 2026-10-31). Needs `doc`; must carry an `id`. */
+  docDate?: DataTableColumn<T> | undefined;
   /** 'so' (default) → header "SO No."; 'jwso' → "JWSO No." (JWSO-only lists). */
   so?: 'so' | 'jwso';
   soNo: (row: T) => Text;
@@ -73,6 +76,7 @@ export function leadColumns<T>(spec: LeadColumnSpec<T>): DataTableColumn<T>[] {
   const o = spec.overrides ?? {};
   const out: DataTableColumn<T>[] = [];
   if (spec.doc) out.push({ ...spec.doc, lead: true });
+  if (spec.doc && spec.docDate) out.push({ ...spec.docDate, lead: true });
   out.push(
     col<T>(
       {

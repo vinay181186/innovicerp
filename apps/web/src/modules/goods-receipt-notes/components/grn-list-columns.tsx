@@ -69,6 +69,15 @@ export function goodsReceiptNoteListColumns(
           </Link>
         ),
       },
+      docDate: {
+        id: 'grn_date',
+        sortFilterField: 'grnDate',
+        kind: 'date',
+        header: 'GRN Date',
+        className: 'mono',
+        nowrap: true,
+        render: (grn) => fmtDate(grn.docDate),
+      },
       soNo: (l) => l.soCode,
       internalSoNo: (l) => l.soInternalNo,
       pol: (l) => l.clientPoLineNo,
@@ -85,15 +94,6 @@ export function goodsReceiptNoteListColumns(
         item_name: { sortFilterField: 'itemName' },
       },
     }),
-    {
-      id: 'grn_date',
-      sortFilterField: 'grnDate',
-      kind: 'date',
-      header: 'GRN Date',
-      className: 'mono',
-      nowrap: true,
-      render: (grn) => fmtDate(grn.docDate),
-    },
     {
       id: 'vendor',
       sortFilterField: 'vendorName',

@@ -26,13 +26,13 @@ export const dailyOpLogReport: RegisteredReport = {
       // JC came from (SO line, else JWSO line); Created On is the log row's
       // own created_at (India day); the drawing rev rides in Item Code.
       { key: 'log_no', label: 'Log No.', type: 'text' },
+      { key: 'log_date', label: 'Log Date', type: 'date' },
       { key: 'so_code', label: 'SO No.', type: 'text' },
       { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
       { key: 'client_po_line_no', label: 'POL', type: 'text' },
       { key: 'created_on', label: 'Created On', type: 'date' },
       { key: 'item_code', label: 'Item Code', type: 'text' },
       { key: 'item_name', label: 'Item Name', type: 'text' },
-      { key: 'log_date', label: 'Log Date', type: 'date' },
       { key: 'log_type', label: 'Log Type', type: 'text' },
       { key: 'jc_code', label: 'JC No.', type: 'text' },
       { key: 'op_seq', label: 'Op', type: 'number' },

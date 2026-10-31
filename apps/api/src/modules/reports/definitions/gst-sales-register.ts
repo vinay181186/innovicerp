@@ -53,11 +53,11 @@ export const gstSalesRegisterReport: RegisteredReport = {
       // POL / item): SO No. = the SO of a Sales Invoice or the JWSO of a JW
       // Invoice; Created On = the invoice's created_at.
       { key: 'invoice_code', label: 'Invoice No.', type: 'text' },
+      { key: 'invoice_date', label: 'Invoice Date', type: 'date' },
       { key: 'so_code', label: 'SO No.', type: 'text' },
       { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
       { key: 'created_on', label: 'Created On', type: 'date' },
       { key: 'source', label: 'Source', type: 'text' },
-      { key: 'invoice_date', label: 'Invoice Date', type: 'date' },
       { key: 'client_name', label: 'Customer', type: 'text' },
       { key: 'client_gstin', label: 'Customer GSTIN', type: 'text' },
       { key: 'client_state', label: 'Customer State', type: 'text' },

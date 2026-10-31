@@ -39,6 +39,15 @@ export function inwardColumns(): DataTableColumn<JwDcInwardLineRow>[] {
             <span style={{ color: 'var(--green2)' }}>{inv.docCode}</span>
           ),
       },
+      docDate: {
+        id: 'inward_date',
+        sortFilterField: 'inwardDate',
+        kind: 'date',
+        header: 'Inward Date',
+        className: 'mono text2',
+        nowrap: true,
+        render: (inv) => fmtDate(inv.docDate),
+      },
       soNo: (r) => r.soCode ?? r.jwCode,
       internalSoNo: (r) => r.soInternalNo,
       pol: (r) => r.clientPoLineNo,
@@ -55,15 +64,6 @@ export function inwardColumns(): DataTableColumn<JwDcInwardLineRow>[] {
         item_name: { sortFilterField: 'itemName', filterType: 'text' },
       },
     }),
-    {
-      id: 'inward_date',
-      sortFilterField: 'inwardDate',
-      kind: 'date',
-      header: 'Inward Date',
-      className: 'mono text2',
-      nowrap: true,
-      render: (inv) => fmtDate(inv.docDate),
-    },
     {
       id: 'dc_no',
       sortFilterField: 'dcNo',

@@ -50,6 +50,15 @@ export function outwardColumns(): DataTableColumn<JwDcOutwardLineRow>[] {
           </Link>
         ),
       },
+      docDate: {
+        id: 'dc_date',
+        sortFilterField: 'dcDate',
+        kind: 'date',
+        header: 'DC Date',
+        className: 'mono text2',
+        nowrap: true,
+        render: (dc) => fmtDate(dc.docDate),
+      },
       soNo: (r) => r.soCode ?? r.jwCode,
       internalSoNo: (r) => r.soInternalNo,
       pol: (r) => r.clientPoLineNo,
@@ -66,15 +75,6 @@ export function outwardColumns(): DataTableColumn<JwDcOutwardLineRow>[] {
         item_name: { sortFilterField: 'itemName', filterType: 'text' },
       },
     }),
-    {
-      id: 'dc_date',
-      sortFilterField: 'dcDate',
-      kind: 'date',
-      header: 'DC Date',
-      className: 'mono text2',
-      nowrap: true,
-      render: (dc) => fmtDate(dc.docDate),
-    },
     {
       id: 'po_no',
       sortFilterField: 'poNo',

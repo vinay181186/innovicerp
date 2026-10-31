@@ -125,6 +125,15 @@ export function plansListColumns(
           </Link>
         ),
       },
+      docDate: {
+        id: 'plan_date',
+        sortFilterField: 'planDate',
+        kind: 'date',
+        header: 'Plan Date',
+        className: 'mono text2',
+        nowrap: true,
+        render: (row) => fmtDate(row.planDate),
+      },
       soNo: (row) => row.soCodeText,
       internalSoNo: (row) => row.soInternalNo,
       pol: (row) => row.clientPoLineNo,
@@ -153,15 +162,6 @@ export function plansListColumns(
         item_name: { sortFilterField: 'itemName' },
       },
     }),
-    {
-      id: 'plan_date',
-      sortFilterField: 'planDate',
-      kind: 'date',
-      header: 'Plan Date',
-      className: 'mono text2',
-      nowrap: true,
-      render: (row) => fmtDate(row.planDate),
-    },
     {
       // NAMING.md "Plan End Date" — plans.planned_end_date; blank on a plan
       // saved without a schedule.
