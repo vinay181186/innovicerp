@@ -4,8 +4,8 @@
 // Compared trimmed and case-insensitive. Blank is never checked (the shared
 // schema already refuses a blank challan).
 //
-// Differs from the Client PO No. rule (client-po-unique.ts): a cancelled Party
-// GRN is soft-deleted (deleted_at set), and that FREES its challan number — so
+// Like the Client PO No. rule (client-po-unique.ts), a cancelled document frees
+// its number: a cancelled Party GRN is soft-deleted (deleted_at set), so
 // "live" here = deleted_at IS NULL, and nothing else.
 //
 // §20: the advisory lock (same pattern as lockDocSeries / client-po-unique)

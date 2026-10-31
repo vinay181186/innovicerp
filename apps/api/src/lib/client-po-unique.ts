@@ -4,7 +4,10 @@
 //   - a JWSO's Client PO No. may not be on another live JWSO of the SAME customer;
 //   - a different customer may use the same number (it is the customer's own
 //     PO numbering), and the same number on one SO and one JWSO is allowed.
-// "Live" = not deleted; cancelled documents still count. Compared with every
+// "Live" = not deleted and not cancelled (owner 2026-10-31: a cancelled or
+// deleted order frees its number for a new order). Short-closed and closed
+// orders still hold it. Cancelled is final (no reopen); any future reopen /
+// un-cancel must call assertClientPoNoFree first (ADR-259). Compared with every
 // run of white space (tabs, NBSP from a pasted e-mail) as one space, trimmed
 // and case-insensitive — the same on both sides (keyOf / SQL_KEY). Blank is never checked. A legacy order with no customer
 // link is compared only with other unlinked orders.
@@ -56,6 +59,7 @@ export async function findClientPoNoHolder(
     SELECT code FROM public.${LIST[list]}
      WHERE company_id = ${companyId}::uuid
        AND deleted_at IS NULL
+       AND status::text <> 'cancelled'
        AND ${SQL_KEY} = ${key}
        AND ${clientId ? sql`client_id = ${clientId}::uuid` : sql`client_id IS NULL`}
        ${excludeId ? sql`AND id <> ${excludeId}::uuid` : sql``}
