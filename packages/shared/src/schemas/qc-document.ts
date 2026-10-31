@@ -280,6 +280,8 @@ export interface QcDossierEntry {
   inspectedOn: string | null;
   acceptedQty: number;
   rejectedQty: number;
+  /** QC Remarks typed at Submit QC (op_log.remarks); null when none. */
+  remarks: string | null;
   /** op_log.report_required as stamped at Submit QC; null = saved before
    *  ADR-252 (shown red here, never on the dashboard — D8). */
   reportRequired: boolean | null;

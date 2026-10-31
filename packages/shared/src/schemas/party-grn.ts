@@ -30,6 +30,9 @@ export const partyGrnLineSchema = z.object({
   acceptedQty: z.number().int().nonnegative(),
   rejectedQty: z.number().int().nonnegative(),
   rejectReason: z.string().nullable(),
+  /** QC Remarks typed at Incoming QC (migration 0232) — any line, deviated or
+   *  not. Not the gate-in `remarks` below. Null on lines inspected before. */
+  qcRemarks: z.string().nullable().default(null),
   qcBy: z.string().uuid().nullable(),
   /** ADR-203 (owner D4): QC is a SEPARATE step. Null = waiting for Incoming QC;
    *  accepted/rejected are 0 until then and nothing is in the register yet. */
@@ -113,6 +116,9 @@ export const partyGrnQcLineInputSchema = z
     acceptedQty: z.number().int().nonnegative(),
     rejectedQty: z.number().int().nonnegative(),
     rejectReason: z.string().trim().max(500).optional(),
+    /** QC Remarks (migration 0232) — optional on every line. Same length as
+     *  the Direct Purchase GRN's qcRemarks. */
+    qcRemarks: z.string().trim().max(2000).optional(),
   })
   .refine((l) => l.rejectedQty === 0 || (l.rejectReason?.length ?? 0) > 0, {
     message: 'A deviation reason is required when any quantity is deviated',

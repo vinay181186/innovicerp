@@ -257,6 +257,8 @@ export interface PartyGrnQcRow {
   acceptedQty: number;
   rejectedQty: number;
   rejectReason: string | null;
+  /** QC Remarks typed at Incoming QC (party_grn_lines.qc_remarks, 0232). */
+  qcRemarks: string | null;
   qcDate: string | null;
   qcByName: string | null;
   waitDays: number;
