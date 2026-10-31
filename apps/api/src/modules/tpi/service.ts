@@ -89,7 +89,7 @@ const COMPLETED_SELECT = sql`
   jo.qc_call_date AS "callDate", ol.log_date AS "attendedDate",
   CASE WHEN jo.qc_call_date IS NOT NULL THEN (ol.log_date - jo.qc_call_date)::int ELSE NULL END AS "respDays",
   ol.tpi_inspector AS "inspector", ol.tpi_organization AS "organization",
-  ol.tpi_cert_no AS "certNo",
+  ol.tpi_cert_no AS "certNo", ol.remarks AS "remarks",
   ol.qc_report_path AS "qcReportPath", ol.qc_report_name AS "qcReportName"`;
 const COMPLETED_ORDER = sql`ol.log_date DESC, ol.id DESC`;
 
@@ -155,6 +155,7 @@ function toCompleted(r: Raw): TpiCompletedRow {
     inspector: s(r['inspector']),
     organization: s(r['organization']),
     certNo: s(r['certNo']),
+    remarks: s(r['remarks']),
     qcReportPath: s(r['qcReportPath']),
     qcReportName: s(r['qcReportName']),
   };

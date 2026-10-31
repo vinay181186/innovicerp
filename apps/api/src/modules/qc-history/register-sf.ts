@@ -232,7 +232,8 @@ export const PGRN_COMPLETED_SF = sfSelect(C, {
   operation: PGRN_OPERATION,
   calledDate: sql`pg.grn_date`,
   logNo: null,
-  remarks: sql`pgl.reject_reason`,
+  // QC Remarks (0232) or, on older lines, the Deviation Reason.
+  remarks: sql`COALESCE(pgl.qc_remarks, pgl.reject_reason)`,
   plannedMachine: null,
   actualMachine: null,
 });

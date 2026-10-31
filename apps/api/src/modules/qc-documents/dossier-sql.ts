@@ -177,7 +177,7 @@ export async function loadDossierRaw(
       : rowsOf(
           await tx.execute(sql`
             SELECT ol.id, ol.log_no, ol.jc_op_id, ol.log_date::text AS log_date, ol.qty,
-                   ol.reject_qty, ol.report_required, ol.qc_report_path, ol.qc_report_name,
+                   ol.reject_qty, ol.remarks, ol.report_required, ol.qc_report_path, ol.qc_report_name,
                    ol.created_at, u.full_name AS created_by_name
             FROM public.op_log ol
             LEFT JOIN public.users u ON u.id = ol.created_by
@@ -193,6 +193,7 @@ export async function loadDossierRaw(
           logDate: s(r['log_date']),
           qty: n(r['qty']),
           rejectQty: n(r['reject_qty']),
+          remarks: s(r['remarks']),
           reportRequired: r['report_required'] === null ? null : r['report_required'] === true,
           qcReportPath: s(r['qc_report_path']),
           qcReportName: s(r['qc_report_name']),

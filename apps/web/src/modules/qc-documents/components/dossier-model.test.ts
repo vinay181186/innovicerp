@@ -108,6 +108,7 @@ describe('lineRows', () => {
               inspectedOn: '2026-10-20',
               acceptedQty: 15,
               rejectedQty: 0,
+              remarks: null,
               reportRequired: true,
               state: 'report_missing',
               files: [],

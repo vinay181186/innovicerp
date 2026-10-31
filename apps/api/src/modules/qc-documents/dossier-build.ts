@@ -221,6 +221,7 @@ export function buildDossier(raw: DossierRaw): DossierBuilt {
       inspectedOn: e.logDate ? e.logDate.slice(0, 10) : null,
       acceptedQty: e.qty,
       rejectedQty: e.rejectQty,
+      remarks: e.remarks,
       reportRequired: e.reportRequired,
       state: entryReportMissing(e, s, files.length > 0) ? 'report_missing' : 'report_in',
       files,

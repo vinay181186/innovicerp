@@ -36,6 +36,7 @@ export const grnQcLogReport: RegisteredReport = {
       { key: 'qc_accepted_qty', label: 'Accepted', type: 'number' },
       { key: 'qc_rejected_qty', label: 'Deviated', type: 'number' },
       { key: 'qc_date', label: 'QC Date', type: 'date' },
+      { key: 'qc_remarks', label: 'QC Remarks', type: 'text' },
       { key: 'po_code', label: 'PO No.', type: 'text' },
       { key: 'vendor_name', label: 'Vendor', type: 'text' },
     ],
@@ -68,6 +69,7 @@ export const grnQcLogReport: RegisteredReport = {
         grnl.qc_accepted_qty                           AS qc_accepted_qty,
         grnl.qc_rejected_qty                           AS qc_rejected_qty,
         grnl.qc_date                                   AS qc_date,
+        grnl.qc_remarks                                AS qc_remarks,
         po.code                                        AS po_code,
         v.name                                         AS vendor_name
       FROM public.goods_receipt_note_lines grnl
@@ -105,6 +107,7 @@ export const grnQcLogReport: RegisteredReport = {
           : r['qc_date'] != null
             ? String(r['qc_date'])
             : null,
+      qc_remarks: (r['qc_remarks'] as string | null) ?? null,
       po_code: (r['po_code'] as string | null) ?? null,
       vendor_name: (r['vendor_name'] as string | null) ?? null,
     }));

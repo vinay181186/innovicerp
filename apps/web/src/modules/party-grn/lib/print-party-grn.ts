@@ -12,6 +12,7 @@ import type { Client, Company, PartyGrnDetail } from '@innovic/shared';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { COMPANY_CARD_ADDRESS_LINES, buildDocCompany } from '@/lib/print/company';
 import { partyForPrint } from '@/lib/print/party-copy';
+import { sheetLineNotes } from '@/lib/print/sheet-line-notes';
 import {
   type SheetField,
   type SheetLine,
@@ -83,7 +84,10 @@ export function printPartyGrn(args: {
       acceptedQty: waiting ? '—' : String(l.acceptedQty),
       rejectedQty: waiting ? '—' : String(l.rejectedQty),
       qcStatus: waiting ? 'Waiting QC' : 'QC done',
-      ...(l.rejectReason ? { description: l.rejectReason, descLabel: 'Deviation Reason' } : {}),
+      ...sheetLineNotes([
+        { label: 'Deviation Reason', text: l.rejectReason },
+        { label: 'QC Remarks', text: l.qcRemarks },
+      ]),
     };
   });
   const totalReceived = sorted.reduce((s, l) => s + l.receivedQty, 0);

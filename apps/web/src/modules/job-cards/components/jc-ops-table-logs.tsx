@@ -9,6 +9,31 @@ import { fmtJcStamp } from '../lib/fmt-jc-date';
 
 const dash = <span className="text3">—</span>;
 
+/** The entry's remark, inline after the qty: muted, one line, cut with an
+ *  ellipsis; the entry's own title carries the full text. Nothing when blank. */
+export function LogRemark({ remarks }: { remarks: string | null }): React.JSX.Element | null {
+  const t = remarks?.trim();
+  if (!t) return null;
+  return (
+    <>
+      {' · '}
+      <span
+        style={{
+          display: 'inline-block',
+          maxWidth: '28ch',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          verticalAlign: 'bottom',
+          color: 'var(--text3)',
+        }}
+      >
+        &ldquo;{t}&rdquo;
+      </span>
+    </>
+  );
+}
+
 export function JcOpsTableLogs({ logs }: { logs: OpLog[] }): React.JSX.Element {
   /** `logs` is latest first (jc-status-view.tsx logsByOp). */
   const recent = logs.slice(0, 3);
@@ -30,6 +55,7 @@ export function JcOpsTableLogs({ logs }: { logs: OpLog[] }): React.JSX.Element {
                   <b className="jc-ops-bad">{l.rejectQty}</b>
                 </>
               ) : null}
+              <LogRemark remarks={l.remarks} />
               {' · '}
               <b>{l.operatorName ?? '—'}</b>
               {l.ncs.length > 0 ? (

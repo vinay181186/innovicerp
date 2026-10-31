@@ -39,6 +39,7 @@ import { OP_STATUS } from '../lib/jc-op-labels';
 import { fmtJcStamp } from '../lib/fmt-jc-date';
 import { JcOpFooter, OutsourceInfo } from './jc-op-actions';
 import { QtyChip } from './jc-op-card-parts';
+import { LogRemark } from './jc-ops-table-logs';
 
 // §6 of docs/QC-NC-HANDLING-DESIGN.md: an op that rejected pieces shows a
 // QUANTITY BREAKUP, not one overall status — 10 inspected, 8 accepted, 2
@@ -808,6 +809,7 @@ export function JcOpCard({
                       <b style={{ color: 'var(--red2)' }}>{l.rejectQty}</b>
                     </>
                   ) : null}
+                  <LogRemark remarks={l.remarks} />
                   {' · Operator '}
                   <b style={{ color: 'var(--text)' }}>{l.operatorName ?? '—'}</b>
                   {/* The NC the reject raised, with its status, straight to

@@ -1448,6 +1448,8 @@ export async function autoCreatePartyGrnMaterialNc(
     ncDate: string;
     reportedByText: string | null;
     reason: string;
+    /** QC Remarks typed at Incoming QC (0232); appended after the line ref. */
+    qcRemarks?: string | null;
   },
   user: AuthContext,
 ): Promise<{ id: string; code: string }> {
@@ -1460,7 +1462,9 @@ export async function autoCreatePartyGrnMaterialNc(
       itemCodeText: input.itemCodeText,
       itemNameText: input.itemNameText,
       rejectedQty: input.rejectedQty,
-      reason: `Auto-created from Party GRN Incoming QC: ${input.reason} on ${input.partyGrnCode} Ln ${input.lineNo}`,
+      reason:
+        `Auto-created from Party GRN Incoming QC: ${input.reason} on ${input.partyGrnCode} Ln ${input.lineNo}` +
+        (input.qcRemarks ? `; QC Remarks: ${input.qcRemarks}` : ''),
       reportedByText: input.reportedByText,
       source: { partyGrnLineId: input.partyGrnLineId },
       detail: `customer material deviated at Party GRN Incoming QC, ${input.partyGrnCode} Ln ${input.lineNo}`,

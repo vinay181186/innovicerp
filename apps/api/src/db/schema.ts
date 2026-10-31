@@ -5365,6 +5365,8 @@ export const partyGrnLines = pgTable(
     acceptedQty: integer('accepted_qty').notNull().default(0),
     rejectedQty: integer('rejected_qty').notNull().default(0),
     rejectReason: text('reject_reason'),
+    // Migration 0232: QC Remarks typed at Incoming QC — any line, deviated or not.
+    qcRemarks: text('qc_remarks'),
     qcBy: uuid('qc_by').references(() => users.id),
     qcAt: timestamp('qc_at', { withTimezone: true }),
     // ADR-203 (D3): rejected pieces already sent back on a Customer Material

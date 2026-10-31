@@ -47,6 +47,7 @@ import { MachineGroupPicker } from '@/modules/machines/components/machine-group-
 import { RowMenu } from '@/ui/data';
 import { cx } from '@/ui/forms/class-names';
 import { OP_STATUS } from '../lib/jc-op-labels';
+import { LogRemark } from './jc-ops-table-logs';
 
 /** Editable op row shape. `hasStarted` locks re-sequence/removal/retype;
  *  `available` drives the ADR-081 outsource-balance action. Structurally the
@@ -582,9 +583,10 @@ function JcEditOpDetail({
           <span className="text3">No entries</span>
         ) : (
           logs.map((l) => (
-            <span key={l.id}>
+            <span key={l.id} title={l.remarks ?? undefined}>
               <span className="mono text3">{fmtDate(l.logDate)}</span> · {SHIFT_LABELS[l.shift]} ·{' '}
-              <b className="jc-ops-good">+{l.qty}</b> · {l.operatorName ?? ''}
+              <b className="jc-ops-good">+{l.qty}</b>
+              <LogRemark remarks={l.remarks} /> · {l.operatorName ?? ''}
             </span>
           ))
         )}

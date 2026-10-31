@@ -393,6 +393,7 @@ function rowToLine(
     acceptedQty: row.acceptedQty,
     rejectedQty: row.rejectedQty,
     rejectReason: row.rejectReason,
+    qcRemarks: row.qcRemarks,
     qcBy: row.qcBy,
     qcAt: row.qcAt != null ? tsLike(row.qcAt) : null,
     // ADR-203 (D3): rejected pieces already sent back on a Customer Material Return.

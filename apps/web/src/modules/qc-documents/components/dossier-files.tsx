@@ -15,7 +15,13 @@ import { DataTable, type DataTableColumn } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ConfirmDialog } from '@/ui/feedback';
 import { saveQcDoc, useDeleteQcDocument } from '../api';
-import { entryLabel, folderFiles, SOURCE_LABEL, type DossierRow } from './dossier-model';
+import {
+  entryLabel,
+  entryRemarks,
+  folderFiles,
+  SOURCE_LABEL,
+  type DossierRow,
+} from './dossier-model';
 import { polLabel } from './dossier-tree';
 import { openStoragePath } from './qc-doc-shared';
 import { uploadSlotKey, type UploadTarget } from './use-dossier-upload';
@@ -203,9 +209,30 @@ export function DossierFileSheet({
         nowrap: true,
         render: (r) =>
           r.entry ? (
-            <span style={r.kind === 'missing' ? { color: 'var(--red2)' } : undefined}>
+            <span
+              style={r.kind === 'missing' ? { color: 'var(--red2)' } : undefined}
+              title={entryRemarks(r.entry) ?? undefined}
+            >
               {entryLabel(r.entry)}
               {r.kind === 'missing' ? ' · no report' : ''}
+              {entryRemarks(r.entry) ? (
+                <>
+                  {' · '}
+                  <span
+                    style={{
+                      display: 'inline-block',
+                      maxWidth: '28ch',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      verticalAlign: 'bottom',
+                      color: 'var(--text3)',
+                    }}
+                  >
+                    &ldquo;{entryRemarks(r.entry)}&rdquo;
+                  </span>
+                </>
+              ) : null}
             </span>
           ) : (
             <span className="text3">—</span>

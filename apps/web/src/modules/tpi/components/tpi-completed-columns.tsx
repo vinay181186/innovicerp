@@ -150,6 +150,18 @@ export function tpiCompletedColumns(): DataTableColumn<TpiCompletedRow>[] {
       render: (l) => <span style={{ color: 'var(--purple)' }}>{l.certNo ?? '—'}</span>,
     },
     {
+      // The QC Remarks typed on the TPI entry — one line; the full text is in
+      // the title and the ▸ detail row when the column folds away.
+      id: 'qc_remarks',
+      kind: 'text',
+      header: 'QC Remarks',
+      align: 'left',
+      ellipsis: true,
+      className: 'text2',
+      render: (l) => l.remarks?.trim() || '—',
+      title: (l) => l.remarks ?? '',
+    },
+    {
       id: 'report',
       kind: 'code',
       header: 'Report',
