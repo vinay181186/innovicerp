@@ -597,6 +597,8 @@ export type ExecutePlanResultShape = z.infer<typeof executePlanResultSchema>;
 
 export const defaultRouteOpsQuerySchema = z.object({
   itemId: z.string().uuid(),
+  /** Item + Drawing Rev — ops come from THAT Rev's Route Card. */
+  itemRevisionId: z.string().uuid().optional(),
 });
 export type DefaultRouteOpsQuery = z.infer<typeof defaultRouteOpsQuerySchema>;
 

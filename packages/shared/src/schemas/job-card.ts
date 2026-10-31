@@ -520,6 +520,10 @@ export const jobCardEditModelSchema = z.object({
    *  The shop floor reads them in order — SO line, JW line, this card's own,
    *  item master — and says on screen which one it is showing. */
   soLineDrawingFilePath: z.string().nullable().default(null),
+  /** The JC's own Item + Drawing Rev drawing (register). For a closed JC: the
+   *  file current when it closed. Shown before the SO / JW line file. */
+  revisionDrawingFilePath: z.string().nullable().default(null),
+  revisionLabel: z.string().nullable().default(null),
   jwLineDrawingFilePath: z.string().nullable().default(null),
   itemDrawingFilePath: z.string().nullable().default(null),
   /** Item Master product image (items.image_path), for the status-page header badge. */
