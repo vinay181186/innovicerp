@@ -14837,3 +14837,11 @@ both can view each other save entry"), set up from the Task menu tab that was "A
 - Positive: one table, one gate; Team Day Logs opens for a person as soon as a pair exists (live).
 - Risks: a wrong visibility rule would show a day to the wrong person — covered by team-cases tests.
 
+### ADR-258 correction (2026-10-31): Teams Config is ONE-WAY
+Owner: "user select aashvi, teammate parth → aashvi can see day log of parth. parth cannot see day log of
+aashvi unless parth → aashvi is set." The 30-Oct build read "both can view each other" as every pair being
+two-way — wrong. 0231 makes each row User → Team Mate (`user_id` sees `mate_id`); rows saved under 0230 take
+their direction from the CREATE activity; a row whose direction cannot be told is removed (never doubled) and
+re-added by the Super Admin. 0231 is additive (old columns dropped later) so the running API never breaks. Texts: "Aashvi can now see Parth's
+Day Log" / "Aashvi will no longer see Parth's Day Log".
+

@@ -342,8 +342,8 @@ function useAfterTeamWrite(): () => void {
   };
 }
 
-/** Teams Config › + Add: pair two people (two-way). One click = one pair
- *  (`saveKey`, ADR-172); 409 when they are already paired. */
+/** Teams Config › + Add: the User now sees the team mate (one-way). One click
+ *  = one row (`saveKey`, ADR-172); 409 when that User → mate is already set. */
 export function useAddDayLogTeamMate(saveKey?: SaveKey) {
   const after = useAfterTeamWrite();
   return useMutation<unknown, Error, AddDayLogTeamMateInput>({

@@ -1,10 +1,12 @@
-// Day Log — Teams Config (owner 2026-10-30, 0230). A Super Admin pairs two
-// people; the pair is TWO-WAY (one row, the two ids stored sorted) and gives
-// each person read-only sight of the other's day (access.ts canSeeUser).
+// Day Log — Teams Config (owner 2026-10-30; ONE-WAY since 0231, owner
+// 2026-10-31). A Super Admin picks a User and a team mate: the User gets
+// read-only sight of the mate's day (access.ts canSeeUser) — not the other way
+// round; that needs its own row (mate → User).
 // Mates never manage or approve. Only a Super Admin lists; only a Super Admin
 // who is not an Auditor adds or removes. A resent save is the Idempotency-Key
-// plugin's (ADR-172); two different adds of one pair meet the partial unique
-// (ON CONFLICT DO NOTHING → 409); a remove is a conditional UPDATE (§20.2).
+// plugin's (ADR-172); two adds of one User → mate meet the partial unique
+// (ON CONFLICT DO NOTHING → 409) — mate → User is a separate row; a remove is
+// a conditional UPDATE (§20.2).
 
 import type {
   AddDayLogTeamMateInput,
@@ -44,10 +46,6 @@ function assertManage(v: Viewer): void {
   }
 }
 
-/** The pair's other person, seen from `uid` (aliases m = pair). */
-const otherOf = (uid: string) =>
-  sql`CASE WHEN m.user_low_id = ${uid}::uuid THEN m.user_high_id ELSE m.user_low_id END`;
-
 /** GET — the chosen user's mates, by mate name. ONE statement (access + rows). */
 export async function listTeamMates(
   query: DayLogTeamMatesQuery,
@@ -66,12 +64,12 @@ export async function listTeamMates(
            COALESCE(u.full_name, u.email) AS mate_name, ua.main_dept,
            ${ts('m.created_at')} AS added_at
          FROM public.day_log_team_mates m
-         JOIN public.users u ON u.id = ${otherOf(uid)} AND u.company_id = m.company_id
+         JOIN public.users u ON u.id = m.mate_id AND u.company_id = m.company_id
            AND u.deleted_at IS NULL
          LEFT JOIN public.user_access ua
            ON ua.user_id = u.id AND ua.company_id = m.company_id AND ua.deleted_at IS NULL
          WHERE m.company_id = ${companyId}::uuid AND m.deleted_at IS NULL
-           AND (m.user_low_id = ${uid}::uuid OR m.user_high_id = ${uid}::uuid)) q) AS rows
+           AND m.user_id = ${uid}::uuid) q) AS rows
   `)) as unknown as Array<{
     access: unknown;
     rows: Array<{
@@ -145,7 +143,8 @@ function activeUser(u: PairUser | null, who: string): PairUser {
   return u;
 }
 
-/** POST — pair two people. 409 when they already are a pair (either order). */
+/** POST — the User now sees the team mate. 409 when that User → mate is
+ *  already set (mate → User is a different row). */
 export async function addTeamMate(
   input: AddDayLogTeamMateInput,
   user: AuthContext,
@@ -164,15 +163,14 @@ export async function addTeamMate(
     assertManage(viewerOf(user, await resolveAccess(user, r?.access)));
     const person = activeUser(r?.person ?? null, 'The chosen person');
     const mate = activeUser(r?.mate ?? null, 'The chosen team mate');
-    const [low, high] = [person.id, mate.id].sort();
 
-    // Two adds of one pair at once (either order): the partial unique lets
-    // exactly one in; the other gets 0 rows here.
+    // Two adds of one User → mate at once: the partial unique lets exactly
+    // one in; the other gets 0 rows here.
     const rows = (await tx.execute(sql`
       INSERT INTO public.day_log_team_mates
-        (company_id, user_low_id, user_high_id, created_by, updated_by)
-      VALUES (${companyId}::uuid, ${low}::uuid, ${high}::uuid, ${user.id}::uuid, ${user.id}::uuid)
-      ON CONFLICT (company_id, user_low_id, user_high_id) WHERE deleted_at IS NULL DO NOTHING
+        (company_id, user_id, mate_id, created_by, updated_by)
+      VALUES (${companyId}::uuid, ${person.id}::uuid, ${mate.id}::uuid, ${user.id}::uuid, ${user.id}::uuid)
+      ON CONFLICT (company_id, user_id, mate_id) WHERE deleted_at IS NULL DO NOTHING
       RETURNING id::text AS id, ${ts('created_at')} AS added_at
     `)) as unknown as Array<{ id: string; added_at: string }>;
     const row = rows[0];
@@ -183,7 +181,7 @@ export async function addTeamMate(
         action: 'CREATE',
         entity: ENTITY,
         entityId: row.id,
-        detail: `Teams Config: ${person.name} and ${mate.name} see each other's Day Log`,
+        detail: `Teams Config: ${person.name} can see ${mate.name}'s Day Log`,
       },
       companyId,
       user,
@@ -198,7 +196,7 @@ export async function addTeamMate(
   });
 }
 
-/** DELETE — remove a pair (soft). 409 when it is already removed. Never
+/** DELETE — remove one User → mate row (soft). 409 when it is already removed. Never
  *  touches anyone's Day Log. */
 export async function removeTeamMate(id: string, user: AuthContext): Promise<{ ok: true }> {
   const companyId = requireCompany(user);
@@ -210,9 +208,9 @@ export async function removeTeamMate(id: string, user: AuthContext): Promise<{ o
         SET deleted_at = now(), deleted_by = ${user.id}::uuid,
             updated_at = now(), updated_by = ${user.id}::uuid
         WHERE id = ${id}::uuid AND company_id = ${companyId}::uuid AND deleted_at IS NULL
-        RETURNING user_low_id, user_high_id)
-      SELECT (SELECT COALESCE(u.full_name, u.email) FROM public.users u WHERE u.id = m.user_low_id) AS a,
-        (SELECT COALESCE(u.full_name, u.email) FROM public.users u WHERE u.id = m.user_high_id) AS b
+        RETURNING user_id, mate_id)
+      SELECT (SELECT COALESCE(u.full_name, u.email) FROM public.users u WHERE u.id = m.user_id) AS a,
+        (SELECT COALESCE(u.full_name, u.email) FROM public.users u WHERE u.id = m.mate_id) AS b
       FROM m
     `)) as unknown as Array<{ a: string | null; b: string | null }>;
     const r = rows[0];
@@ -223,7 +221,7 @@ export async function removeTeamMate(id: string, user: AuthContext): Promise<{ o
         action: 'DELETE',
         entity: ENTITY,
         entityId: id,
-        detail: `Teams Config: ${r.a ?? '?'} and ${r.b ?? '?'} no longer see each other's Day Log`,
+        detail: `Teams Config: ${r.a ?? '?'} can no longer see ${r.b ?? '?'}'s Day Log`,
       },
       companyId,
       user,
