@@ -3,12 +3,14 @@ import {
   listItemRevisionsQuerySchema,
   lookupItemRevisionQuerySchema,
   replaceItemRevisionDrawingInputSchema,
+  setStockRevInputSchema,
 } from '@innovic/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
 import { getItemRevisionFixList } from './fix-list';
 import * as service from './service';
+import { setStockRev } from './stock-set-rev';
 
 const idParamSchema = z.object({ id: z.string().uuid() });
 
@@ -35,6 +37,13 @@ export async function itemRevisionRoutes(app: FastifyInstance): Promise<void> {
   app.get('/item-revisions/fix-list', async (req) => {
     if (!req.user) throw new AuthenticationError();
     return getItemRevisionFixList(req.user);
+  });
+
+  // Drawing Rev Phase C — Fix List → Set Rev: move blank-Rev (old) stock of a
+  // make item to an Item + Rev. Static path, declared before /:id.
+  app.post('/item-revisions/stock-set-rev', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    return setStockRev(setStockRevInputSchema.parse(req.body), req.user);
   });
 
   app.get('/item-revisions/:id', async (req) => {

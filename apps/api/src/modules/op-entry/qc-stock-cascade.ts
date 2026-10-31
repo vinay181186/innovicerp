@@ -143,7 +143,11 @@ export async function tryApplyQcStockCascade(
 
   // Resolve the JC's itemId — required for the ledger + the v_item_stock lookup.
   const jcRows = await tx
-    .select({ itemId: jobCards.itemId })
+    .select({
+      itemId: jobCards.itemId,
+      itemRevisionId: jobCards.itemRevisionId,
+      parentJobCardId: jobCards.parentJobCardId,
+    })
     .from(jobCards)
     .where(eq(jobCards.id, ctx.jobCardId))
     .limit(1);
@@ -165,9 +169,23 @@ export async function tryApplyQcStockCascade(
   // 'out' row (jw-returns/service.ts), so the pair balances the same way
   // qc_accept and dispatch do on the sales side.
 
+  // Drawing Rev Phase C — the pieces are ABC/<rev> of this Job Card (a
+  // rework / repair child with no Rev of its own takes its parent's). No Rev
+  // (old cards, Buy) = the blank bucket.
+  let itemRevisionId = jcRows[0]?.itemRevisionId ?? null;
+  if (!itemRevisionId && jcRows[0]?.parentJobCardId) {
+    const parent = await tx
+      .select({ itemRevisionId: jobCards.itemRevisionId, itemId: jobCards.itemId })
+      .from(jobCards)
+      .where(eq(jobCards.id, jcRows[0].parentJobCardId))
+      .limit(1);
+    if (parent[0]?.itemId === itemId) itemRevisionId = parent[0]?.itemRevisionId ?? null;
+  }
+
   const moved = await postStockMove(tx, {
     companyId: ctx.companyId,
     itemId,
+    itemRevisionId,
     txnType: 'in',
     qty: ctx.acceptedQty,
     sourceType: 'qc_accept',

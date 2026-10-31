@@ -34,7 +34,7 @@ import { lockItemForStock, postStockMove, roundQty } from '../../lib/stock-ledge
 import { readStockPosition } from '../../lib/stock-reservation';
 import { emitActivityLog } from '../activity-log/service';
 import { assertNoPendingCancel } from '../cancel-requests/pending-guard';
-import { checkLines, nextCode, writeLines } from './lines';
+import { checkLines, lineKey, nextCode, writeLines } from './lines';
 import { getStockCount } from './read';
 
 export { getStockCount, listStockCounts, resolveStockCountItems } from './read';
@@ -154,7 +154,7 @@ export async function replaceStockCountLines(
     const old = await liveLines(tx, id);
     const keep = new Map(
       old.map((l) => [
-        l.itemId,
+        lineKey(l.itemId, l.itemRevisionId),
         { countedQty: l.countedQty, systemQtyAtCount: l.systemQtyAtCount },
       ]),
     );
@@ -181,10 +181,10 @@ export async function replaceStockCountLines(
       HEADER_FIELDS,
     );
     if (headerChanges.length > 0) edits.push({ lineRef: null, changes: headerChanges });
-    const oldByItem = new Map(old.map((l) => [l.itemId, l]));
-    const newItems = new Set(input.lines.map((l) => l.itemId));
+    const oldByItem = new Map(old.map((l) => [lineKey(l.itemId, l.itemRevisionId), l]));
+    const newItems = new Set(input.lines.map((l) => lineKey(l.itemId, l.itemRevisionId)));
     input.lines.forEach((l, i) => {
-      const prev = oldByItem.get(l.itemId);
+      const prev = oldByItem.get(lineKey(l.itemId, l.itemRevisionId));
       const next = { countedQty: roundQty(l.countedQty), reason: l.reason ?? null };
       const changes = prev
         ? diffFields(prev, next, LINE_FIELDS)
@@ -200,7 +200,7 @@ export async function replaceStockCountLines(
       if (changes.length > 0) edits.push({ lineRef: `Line ${i + 1}`, changes });
     });
     for (const l of old) {
-      if (newItems.has(l.itemId)) continue;
+      if (newItems.has(lineKey(l.itemId, l.itemRevisionId))) continue;
       edits.push({
         lineRef: `Line ${l.lineNo}`,
         changes: [
@@ -248,7 +248,8 @@ export async function submitStockCount(id: string, user: AuthContext): Promise<S
     for (const l of [...ls].sort((a, b) => a.itemId.localeCompare(b.itemId))) {
       if (l.systemQtyAtCount !== null) continue;
       await lockItemForStock(tx, companyId, l.itemId);
-      const pos = await readStockPosition(tx, companyId, l.itemId);
+      // Drawing Rev Phase C — the counted bucket's on hand.
+      const pos = await readStockPosition(tx, companyId, l.itemId, l.itemRevisionId ?? null);
       await tx
         .update(stockCountLines)
         .set({
@@ -329,7 +330,8 @@ export async function approveStockCount(
         );
       }
       await lockItemForStock(tx, companyId, l.itemId);
-      const pos = await readStockPosition(tx, companyId, l.itemId);
+      // Drawing Rev Phase C — the line counts ONE bucket: its on hand / booked.
+      const pos = await readStockPosition(tx, companyId, l.itemId, l.itemRevisionId ?? null);
       const diff = roundQty(l.countedQty - (l.systemQtyAtCount ?? 0)); // C2 / P1
       const newInStock = roundQty(pos.physicalQty + diff);
       if (newInStock < 0) {
@@ -356,6 +358,7 @@ export async function approveStockCount(
       const moved = await postStockMove(tx, {
         companyId,
         itemId: p.line.itemId,
+        itemRevisionId: p.line.itemRevisionId ?? null,
         txnType: p.diff > 0 ? 'in' : 'out',
         qty: Math.abs(p.diff),
         sourceType: 'stock_count',

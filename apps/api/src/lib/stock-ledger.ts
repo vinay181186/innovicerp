@@ -20,6 +20,10 @@
 //                 booking, so Available would wrongly count it as taken).
 //   'none'      — no check (compensating reversals whose caller already
 //                 proved the stock, and legacy assembly — ADR-115).
+//
+// Drawing Rev Phase C (0233): `itemRevisionId` names the Item + Rev bucket.
+// Whatever the guard, an 'out' may not take a bucket below zero; under
+// 'available' it may not take more than the bucket's free qty either.
 
 import {
   ITEM_TYPE_RULES,
@@ -32,7 +36,13 @@ import { sql } from 'drizzle-orm';
 import { storeTransactions } from '../db/schema';
 import type { DbTransaction } from '../db/with-user-context';
 import { ConflictError, NotFoundError, ValidationError } from './errors';
-import { readStockPosition, type StockPosition } from './stock-reservation';
+import {
+  assertRevBelongsToItem,
+  bucketLabel,
+  readRevBucketPosition,
+  readStockPosition,
+  type StockPosition,
+} from './stock-reservation';
 
 /** Units that can only move in whole pieces, and the 3-decimal rounding —
  *  one definition for web + API since fix wave 2 (packages/shared
@@ -60,6 +70,13 @@ export interface StockMoveInput {
   allowance?: number;
   /** Wording for the refusal, e.g. "Issue Qty"; default "Qty". */
   qtyLabel?: string;
+  /** Drawing Rev Phase C (0233) — the Item + Rev bucket this move lands in /
+   *  leaves (store_transactions.item_revision_id; the trigger moves the
+   *  bucket). Omitted / null = the blank (old / no-Rev) bucket — Buy items,
+   *  RM, and every path that has no Rev. An 'out' is also refused when the
+   *  bucket would go below zero (and, under guard 'available', below its free
+   *  qty): the item total alone cannot see a wrong-Rev shipment. */
+  itemRevisionId?: string | null;
 }
 
 export interface StockMoveResult {
@@ -173,6 +190,28 @@ export async function postStockMove(
       `Item ${item.code}: ${label} (${qty}) cannot be more than In Stock (${before}) — stock cannot go below zero.`,
     );
   }
+  // Drawing Rev Phase C — the bucket guard, read under the same item lock.
+  const revId = input.itemRevisionId ?? null;
+  const revText = revId
+    ? await assertRevBelongsToItem(tx, input.companyId, input.itemId, revId)
+    : null;
+  if (input.txnType === 'out') {
+    const bucket = await readRevBucketPosition(tx, input.companyId, input.itemId, revId);
+    const bOnHand = roundQty(bucket.onHandQty);
+    const name = bucketLabel(item.code, revText);
+    if (qty > bOnHand) {
+      throw new ConflictError(
+        `${name}: ${label} (${qty}) cannot be more than In Stock of ${name} (${bOnHand}).` +
+          (revId ? '' : ' Stock with a Drawing Rev must be taken from its own Rev.'),
+      );
+    }
+    const allowance = roundQty(Math.max(0, input.allowance ?? 0));
+    if (guard === 'available' && qty > roundQty(bucket.freeQty + allowance)) {
+      throw new ConflictError(
+        `${name}: ${label} (${qty}) cannot be more than Available of ${name} (${roundQty(Math.max(0, bucket.freeQty))}) — In Stock ${bOnHand}, of which ${roundQty(bucket.reservedQty)} is reserved for orders.`,
+      );
+    }
+  }
   // Serial cover (P38): every move of a serial item — adjust, count, issue,
   // dispatch — must leave On Hand ≥ the pieces registered as on the shelf.
   if (item.trackSerial && input.txnType === 'out') {
@@ -197,6 +236,7 @@ export async function postStockMove(
       stockBefore: before,
       stockAfter: after,
       remarks: input.remarks ?? null,
+      itemRevisionId: revId,
       createdBy: input.userId,
     })
     .returning({ id: storeTransactions.id });

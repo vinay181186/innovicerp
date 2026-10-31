@@ -20,10 +20,11 @@
 // production_order_close_id, which is UNIQUE while live, so replaying a close
 // cannot book the same pieces again.
 
-import type { ReservationSource } from '@innovic/shared';
+import { itemRevLabel, type ReservationSource } from '@innovic/shared';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import {
   customerDispatches,
+  itemRevisions,
   items,
   salesOrderLines,
   soStockReservations,
@@ -53,17 +54,28 @@ export async function readStockPositionLocked(
   tx: DbTransaction,
   companyId: string,
   itemId: string,
+  itemRevisionId?: string | null,
 ): Promise<StockPosition> {
   await tx.execute(sql`SELECT 1 FROM public.items WHERE id = ${itemId}::uuid FOR UPDATE`);
-  return readStockPosition(tx, companyId, itemId);
+  return readStockPosition(tx, companyId, itemId, itemRevisionId);
 }
 
-/** Same three numbers without taking the lock — for read-only screens. */
+/** Same three numbers without taking the lock — for read-only screens.
+ *
+ *  Drawing Rev Phase C (0233): `itemRevisionId` omitted (undefined) = the ITEM
+ *  totals, exactly as before. Given (a uuid, or null = the blank / no-Rev
+ *  bucket) = that one Item + Rev bucket: physical = bucket on hand, reserved =
+ *  bookings held in that bucket, available = bucket free. */
 export async function readStockPosition(
   tx: DbTransaction,
   companyId: string,
   itemId: string,
+  itemRevisionId?: string | null,
 ): Promise<StockPosition> {
+  if (itemRevisionId !== undefined) {
+    const b = await readRevBucketPosition(tx, companyId, itemId, itemRevisionId);
+    return { physicalQty: b.onHandQty, reservedQty: b.reservedQty, availableQty: b.freeQty };
+  }
   const rows = (await tx.execute(sql`
     SELECT physical_qty, reserved_qty, available_qty
     FROM public.v_item_stock_availability
@@ -109,6 +121,201 @@ export async function readStockPositions(
     });
   }
   return out;
+}
+
+// ─── Drawing Rev Phase C: stock per Item + Rev bucket (0233) ──────────────
+//
+// item_rev_stock_balances splits each item's on hand into Rev buckets (blank
+// bucket = old stock / Buy / RM, key REV_KEY_BLANK). Item totals above are
+// untouched; these reads are the bucket view, with the same "reserved" rule as
+// v_item_stock_availability (SO bookings + assembly part bookings), per bucket.
+
+/** The blank (no-Rev) bucket key — mirrors REV_KEY_BLANK in db/schema.ts. */
+export const BLANK_REV_KEY = '00000000-0000-0000-0000-000000000000';
+
+/** One Item + Rev bucket's numbers. */
+export interface RevBucketPosition {
+  /** null = the blank (old / no-Rev) bucket. */
+  itemRevisionId: string | null;
+  onHandQty: number;
+  reservedQty: number;
+  freeQty: number;
+}
+
+/** Bucket key for SQL: the Rev id, or the all-zero blank key. */
+export function revKeyOf(itemRevisionId: string | null | undefined): string {
+  return itemRevisionId ?? BLANK_REV_KEY;
+}
+
+const r3 = (v: number): number => Math.round(v * 1000) / 1000;
+
+/** One bucket's numbers. A bucket with no balance row reads on hand 0, with
+ *  whatever is still booked against it (free may then be negative). Callers
+ *  that WRITE must hold the item row lock first (postStockMove /
+ *  readStockPositionLocked) — every bucket move goes through that lock, so the
+ *  figure read under it is the real one (§20.3). */
+export async function readRevBucketPosition(
+  tx: DbTransaction,
+  companyId: string,
+  itemId: string,
+  itemRevisionId: string | null,
+): Promise<RevBucketPosition> {
+  const key = revKeyOf(itemRevisionId);
+  const rows = (await tx.execute(sql`
+    SELECT
+      COALESCE((SELECT b.on_hand_qty FROM public.item_rev_stock_balances b
+                 WHERE b.company_id = ${companyId}::uuid AND b.item_id = ${itemId}::uuid
+                   AND b.rev_key = ${key}::uuid), 0)::float8 AS on_hand,
+      COALESCE((SELECT SUM(x.held) FROM (
+        SELECT (qty - consumed_qty - released_qty)::numeric AS held
+          FROM public.so_stock_reservations
+         WHERE company_id = ${companyId}::uuid AND item_id = ${itemId}::uuid
+           AND deleted_at IS NULL AND status IN ('active', 'partially_consumed')
+           AND COALESCE(item_revision_id, ${BLANK_REV_KEY}::uuid) = ${key}::uuid
+        UNION ALL
+        SELECT (qty - consumed_qty - released_qty)::numeric
+          FROM public.assembly_part_reservations
+         WHERE company_id = ${companyId}::uuid AND item_id = ${itemId}::uuid
+           AND deleted_at IS NULL AND status IN ('active', 'partially_consumed')
+           AND COALESCE(item_revision_id, ${BLANK_REV_KEY}::uuid) = ${key}::uuid
+      ) x), 0)::float8 AS reserved
+  `)) as unknown as Array<{ on_hand: number; reserved: number }>;
+  const onHand = num(rows[0]?.on_hand);
+  const reserved = num(rows[0]?.reserved);
+  return { itemRevisionId, onHandQty: onHand, reservedQty: reserved, freeQty: r3(onHand - reserved) };
+}
+
+/** Every bucket of many items (rows in the balance table, plus any bucket that
+ *  only has bookings). Map item id → buckets. Read-only screens. */
+export async function readRevBuckets(
+  tx: DbTransaction,
+  companyId: string,
+  itemIds: readonly string[],
+): Promise<Map<string, RevBucketPosition[]>> {
+  const out = new Map<string, RevBucketPosition[]>();
+  if (itemIds.length === 0) return out;
+  const ids = sql.param(itemIds as string[]);
+  const rows = (await tx.execute(sql`
+    WITH res AS (
+      SELECT item_id, COALESCE(item_revision_id, ${BLANK_REV_KEY}::uuid) AS rev_key,
+             SUM(qty - consumed_qty - released_qty)::numeric AS held
+        FROM (
+          SELECT item_id, item_revision_id, qty, consumed_qty, released_qty
+            FROM public.so_stock_reservations
+           WHERE company_id = ${companyId}::uuid AND deleted_at IS NULL
+             AND status IN ('active', 'partially_consumed')
+             AND item_id = ANY(${ids}::uuid[])
+          UNION ALL
+          SELECT item_id, item_revision_id, qty, consumed_qty, released_qty
+            FROM public.assembly_part_reservations
+           WHERE company_id = ${companyId}::uuid AND deleted_at IS NULL
+             AND status IN ('active', 'partially_consumed')
+             AND item_id = ANY(${ids}::uuid[])
+        ) r
+       GROUP BY 1, 2
+    ), bal AS (
+      SELECT item_id, rev_key, on_hand_qty
+        FROM public.item_rev_stock_balances
+       WHERE company_id = ${companyId}::uuid
+         AND item_id = ANY(${ids}::uuid[])
+    )
+    SELECT COALESCE(bal.item_id, res.item_id) AS item_id,
+           NULLIF(COALESCE(bal.rev_key, res.rev_key), ${BLANK_REV_KEY}::uuid) AS item_revision_id,
+           COALESCE(bal.on_hand_qty, 0)::float8 AS on_hand,
+           COALESCE(res.held, 0)::float8 AS reserved
+      FROM bal
+      FULL JOIN res ON res.item_id = bal.item_id AND res.rev_key = bal.rev_key
+  `)) as unknown as Array<{
+    item_id: string;
+    item_revision_id: string | null;
+    on_hand: number;
+    reserved: number;
+  }>;
+  for (const r of rows) {
+    const onHand = num(r.on_hand);
+    const reserved = num(r.reserved);
+    const list = out.get(r.item_id) ?? [];
+    list.push({
+      itemRevisionId: r.item_revision_id ?? null,
+      onHandQty: onHand,
+      reservedQty: reserved,
+      freeQty: r3(onHand - reserved),
+    });
+    out.set(r.item_id, list);
+  }
+  return out;
+}
+
+/** Pieces still held, per order line AND bucket. Map line id → (rev key → held). */
+export async function readReservedByLineRev(
+  tx: DbTransaction,
+  companyId: string,
+  soLineIds: readonly string[],
+): Promise<Map<string, Map<string, number>>> {
+  const out = new Map<string, Map<string, number>>();
+  if (soLineIds.length === 0) return out;
+  const rows = (await tx.execute(sql`
+    SELECT so_line_id, COALESCE(item_revision_id, ${BLANK_REV_KEY}::uuid)::text AS rev_key,
+           COALESCE(SUM(qty - consumed_qty - released_qty), 0)::int AS held
+    FROM public.so_stock_reservations
+    WHERE company_id = ${companyId}::uuid
+      AND deleted_at IS NULL AND status IN ('active', 'partially_consumed')
+      AND so_line_id = ANY(${sql.param(soLineIds as string[])}::uuid[])
+    GROUP BY 1, 2
+  `)) as unknown as Array<{ so_line_id: string; rev_key: string; held: number }>;
+  for (const r of rows) {
+    const m = out.get(r.so_line_id) ?? new Map<string, number>();
+    m.set(r.rev_key, num(r.held));
+    out.set(r.so_line_id, m);
+  }
+  return out;
+}
+
+/** "ABC/1", or "ABC · no Rev" for the blank bucket — the one bucket label. */
+export function bucketLabel(itemCode: string, rev: string | null | undefined): string {
+  return rev ? itemRevLabel(itemCode, rev) : `${itemCode} · no Rev`;
+}
+
+/** Same label, reading the Rev text from the register. */
+export async function revBucketLabel(
+  tx: DbTransaction,
+  itemCode: string,
+  itemRevisionId: string | null,
+): Promise<string> {
+  if (!itemRevisionId) return bucketLabel(itemCode, null);
+  const rows = await tx
+    .select({ rev: itemRevisions.rev })
+    .from(itemRevisions)
+    .where(eq(itemRevisions.id, itemRevisionId))
+    .limit(1);
+  return bucketLabel(itemCode, rows[0]?.rev ?? '?');
+}
+
+/** Refuse a Rev that is not a live register row of THIS item. Returns the Rev text. */
+export async function assertRevBelongsToItem(
+  tx: DbTransaction,
+  companyId: string,
+  itemId: string,
+  itemRevisionId: string,
+): Promise<string> {
+  const rows = await tx
+    .select({ rev: itemRevisions.rev })
+    .from(itemRevisions)
+    .where(
+      and(
+        eq(itemRevisions.id, itemRevisionId),
+        eq(itemRevisions.companyId, companyId),
+        eq(itemRevisions.itemId, itemId),
+        isNull(itemRevisions.deletedAt),
+      ),
+    )
+    .limit(1);
+  if (!rows[0]) {
+    throw new ValidationError(
+      'That Drawing Rev does not belong to this item. Pick the Item + Rev again.',
+    );
+  }
+  return rows[0].rev;
 }
 
 /** Pieces still held for one order line (across all its bookings). */
@@ -232,6 +439,29 @@ export interface CreateReservationArgs {
    *  booking after a production close passes true — it has already worked out
    *  its own quantity from the same requirement. */
   skipRequirementCap?: boolean;
+  /** Drawing Rev Phase C — the Item + Rev bucket the booking holds (null = the
+   *  blank / no-Rev bucket). Omitted: the order line's own Rev bucket when it
+   *  has enough free stock, else the blank bucket (Buy items: always blank). */
+  itemRevisionId?: string | null;
+}
+
+/** The Rev of the order line (SO line, or a JW line sharing the column) when it
+ *  is for the same item; null otherwise. */
+async function lineRevisionFor(
+  tx: DbTransaction,
+  companyId: string,
+  soLineId: string,
+  itemId: string,
+): Promise<string | null> {
+  const rows = (await tx.execute(sql`
+    SELECT item_revision_id FROM public.sales_order_lines
+     WHERE id = ${soLineId}::uuid AND company_id = ${companyId}::uuid AND item_id = ${itemId}::uuid
+    UNION ALL
+    SELECT item_revision_id FROM public.job_work_order_lines
+     WHERE id = ${soLineId}::uuid AND company_id = ${companyId}::uuid AND item_id = ${itemId}::uuid
+    LIMIT 1
+  `)) as unknown as Array<{ item_revision_id: string | null }>;
+  return rows[0]?.item_revision_id ?? null;
 }
 
 /**
@@ -318,6 +548,28 @@ export async function createReservation(
     );
   }
 
+  // Drawing Rev Phase C — the booking also holds a Rev bucket, and may not
+  // promise more than that bucket has free (read under the same item lock).
+  let bucketRevId: string | null;
+  if (args.itemRevisionId !== undefined) {
+    bucketRevId = args.itemRevisionId;
+    if (bucketRevId) await assertRevBelongsToItem(tx, args.companyId, args.itemId, bucketRevId);
+  } else {
+    const lineRev = await lineRevisionFor(tx, args.companyId, args.soLineId, args.itemId);
+    const lineFree = lineRev
+      ? (await readRevBucketPosition(tx, args.companyId, args.itemId, lineRev)).freeQty
+      : 0;
+    bucketRevId = lineRev && args.qty <= lineFree ? lineRev : null;
+  }
+  const bucket = await readRevBucketPosition(tx, args.companyId, args.itemId, bucketRevId);
+  if (args.qty > bucket.freeQty) {
+    const code = (await itemCodeFor(tx, args.itemId)) ?? 'item';
+    throw new ConflictError(
+      `Only ${Math.max(0, bucket.freeQty)} of ${await revBucketLabel(tx, code, bucketRevId)} free to reserve ` +
+        `(on the shelf ${bucket.onHandQty}, already reserved ${bucket.reservedQty}) — you asked for ${args.qty}.`,
+    );
+  }
+
   // The booking must be for the item the line actually ordered. Without this
   // any item's free stock could be parked on any line: the requirement cap is
   // computed from that line's order_qty, which says nothing about another
@@ -357,6 +609,7 @@ export async function createReservation(
       lineNo: args.lineNo,
       itemId: args.itemId,
       itemCodeText: args.itemCodeText,
+      itemRevisionId: bucketRevId,
       qty: args.qty,
       consumedQty: 0,
       releasedQty: 0,
@@ -406,6 +659,8 @@ async function holdingRowsForLine(
   tx: DbTransaction,
   companyId: string,
   soLineId: string,
+  /** undefined = every bucket (as before); string | null = that one bucket. */
+  itemRevisionId?: string | null,
 ): Promise<Array<typeof soStockReservations.$inferSelect>> {
   return tx
     .select()
@@ -416,6 +671,9 @@ async function holdingRowsForLine(
         eq(soStockReservations.soLineId, soLineId),
         isNull(soStockReservations.deletedAt),
         sql`${soStockReservations.status} IN ('active', 'partially_consumed')`,
+        itemRevisionId === undefined
+          ? undefined
+          : sql`COALESCE(${soStockReservations.itemRevisionId}, ${BLANK_REV_KEY}::uuid) = ${revKeyOf(itemRevisionId)}::uuid`,
       ),
     )
     .orderBy(soStockReservations.createdAt);
@@ -512,11 +770,14 @@ export async function consumeForLine(
     qty: number;
     dispatchCode: string;
     customerDispatchId?: string | null;
+    /** Drawing Rev Phase C — ship only the bookings of this bucket (null =
+     *  blank). Omitted = every bucket, oldest first (as before). */
+    itemRevisionId?: string | null;
   },
   user: AuthContext,
 ): Promise<number> {
   if (args.qty <= 0) return 0;
-  const rows = await holdingRowsForLine(tx, args.companyId, args.soLineId);
+  const rows = await holdingRowsForLine(tx, args.companyId, args.soLineId, args.itemRevisionId);
   let left = args.qty;
   let consumed = 0;
   for (const r of rows) {

@@ -75,10 +75,14 @@ async function moveReturnStock(
   // parent. Keeps one ledger row per child (distinct source_ref) and names the
   // child in the insufficient-stock error.
   component?: { code: string },
+  // Drawing Rev Phase C — the Item + Rev bucket the goods leave / return to
+  // (null = blank bucket). An 'out' never falls back to another bucket.
+  itemRevisionId: string | null = null,
 ): Promise<void> {
   if (!itemId || qty <= 0) return;
   try {
     await postStockMove(tx, {
+      itemRevisionId,
       companyId,
       itemId,
       txnType: dir,
@@ -216,6 +220,8 @@ interface JwBomComponent {
   childItemId: string;
   childItemCode: string;
   qtyPerSet: number;
+  /** Drawing Rev Phase C — the BOM line's child Rev (null = blank bucket). */
+  childItemRevisionId: string | null;
 }
 
 /**
@@ -225,7 +231,8 @@ interface JwBomComponent {
  */
 async function bomComponentsForLine(tx: DbTransaction, lineId: string): Promise<JwBomComponent[]> {
   const rows = (await tx.execute(sql`
-    SELECT bml.child_item_id, i.code AS child_code, bml.qty_per_set
+    SELECT bml.child_item_id, i.code AS child_code, bml.qty_per_set,
+           bml.child_item_revision_id
     FROM public.job_work_order_lines l
     JOIN public.bom_master_lines bml
       ON bml.bom_master_id = l.source_bom_master_id
@@ -238,11 +245,13 @@ async function bomComponentsForLine(tx: DbTransaction, lineId: string): Promise<
     child_item_id: string;
     child_code: string | null;
     qty_per_set: string | number;
+    child_item_revision_id: string | null;
   }>;
   return rows.map((r) => ({
     childItemId: r.child_item_id,
     childItemCode: r.child_code ?? r.child_item_id.slice(0, 8),
     qtyPerSet: Number(r.qty_per_set) || 0,
+    childItemRevisionId: r.child_item_revision_id ?? null,
   }));
 }
 
@@ -255,25 +264,49 @@ async function returnedComponents(
   tx: DbTransaction,
   companyId: string,
   code: string,
-): Promise<Array<{ itemId: string; itemCode: string; qty: number }>> {
+): Promise<Array<{ itemId: string; itemCode: string; qty: number; itemRevisionId: string | null }>> {
   const rows = (await tx.execute(sql`
-    SELECT st.item_id, st.qty, i.code AS item_code
+    SELECT st.item_id, st.qty, i.code AS item_code, st.item_revision_id
     FROM public.store_transactions st
     LEFT JOIN public.items i ON i.id = st.item_id
     WHERE st.company_id = ${companyId}::uuid
       AND st.source_type = 'jw_return'
       AND st.txn_type = 'out'
       AND st.source_ref LIKE ${`${code} / `} || '%'
-  `)) as unknown as Array<{ item_id: string | null; qty: number; item_code: string | null }>;
-  return rows
-    .filter((r): r is { item_id: string; qty: number; item_code: string | null } =>
-      Boolean(r.item_id),
-    )
-    .map((r) => ({
-      itemId: r.item_id,
-      itemCode: r.item_code ?? r.item_id.slice(0, 8),
-      qty: Number(r.qty) || 0,
-    }));
+  `)) as unknown as Array<{
+    item_id: string | null;
+    qty: number;
+    item_code: string | null;
+    item_revision_id: string | null;
+  }>;
+  return rows.flatMap((r) =>
+    r.item_id
+      ? [
+          {
+            itemId: r.item_id,
+            itemCode: r.item_code ?? r.item_id.slice(0, 8),
+            qty: Number(r.qty) || 0,
+            itemRevisionId: r.item_revision_id ?? null,
+          },
+        ]
+      : [],
+  );
+}
+
+/** Drawing Rev Phase C — the bucket a (non-assembly) return's 'out' row left,
+ *  so the cancel puts the goods back where they came from. Old rows: blank. */
+async function returnedRevisionId(
+  tx: DbTransaction,
+  companyId: string,
+  code: string,
+): Promise<string | null> {
+  const rows = (await tx.execute(sql`
+    SELECT item_revision_id FROM public.store_transactions
+     WHERE company_id = ${companyId}::uuid AND source_type = 'jw_return'
+       AND txn_type = 'out' AND source_ref = ${code}
+     ORDER BY created_at DESC LIMIT 1
+  `)) as unknown as Array<{ item_revision_id: string | null }>;
+  return rows[0]?.item_revision_id ?? null;
 }
 
 function rowToReturn(row: typeof jwReturnChallans.$inferSelect): JwReturnChallan {
@@ -327,6 +360,7 @@ export async function createJwReturnChallan(
         returnedQty: jobWorkOrderLines.returnedQty,
         jwId: jobWorkOrderLines.jobWorkOrderId,
         itemId: jobWorkOrderLines.itemId,
+        itemRevisionId: jobWorkOrderLines.itemRevisionId,
       })
       .from(jobWorkOrderLines)
       .where(
@@ -372,9 +406,18 @@ export async function createJwReturnChallan(
     // 3) Optional JC — it must be a card raised on THIS JWSO line (ADR-203),
     // or the challan would name a card that made a different part.
     let jobCardId: string | null = null;
+    // Drawing Rev Phase C — the bucket the goods leave: the picked Job Card's
+    // Rev (the card that made them), else the JWSO line's Rev. Never another
+    // bucket: a shortfall is refused naming the bucket.
+    let returnRevId: string | null = line.itemRevisionId ?? null;
     if (input.jobCardId) {
       const jcRows = await tx
-        .select({ id: jobCards.id, code: jobCards.code, sourceJwLineId: jobCards.sourceJwLineId })
+        .select({
+          id: jobCards.id,
+          code: jobCards.code,
+          sourceJwLineId: jobCards.sourceJwLineId,
+          itemRevisionId: jobCards.itemRevisionId,
+        })
         .from(jobCards)
         .where(
           and(
@@ -392,6 +435,7 @@ export async function createJwReturnChallan(
         );
       }
       jobCardId = jc.id;
+      if (jc.itemRevisionId) returnRevId = jc.itemRevisionId;
     }
 
     // 4) Insert return challan — with its legal copy of the customer (plan D7,
@@ -450,6 +494,7 @@ export async function createJwReturnChallan(
           c.childItemId,
           roundQty(input.qty * c.qtyPerSet), // S9: keep BOM decimals, never round to 0
           { code: c.childItemCode },
+          c.childItemRevisionId,
         );
       }
     } else {
@@ -462,6 +507,8 @@ export async function createJwReturnChallan(
         input.returnDate,
         line.itemId,
         input.qty,
+        undefined,
+        returnRevId,
       );
     }
 
@@ -738,6 +785,7 @@ export async function cancelJwReturnChallanTx(
         m.itemId,
         m.qty,
         { code: m.itemCode },
+        m.itemRevisionId,
       );
     }
   } else {
@@ -750,6 +798,8 @@ export async function cancelJwReturnChallanTx(
       dateLike(ret.returnDate),
       line.itemId,
       ret.qty,
+      undefined,
+      await returnedRevisionId(tx, companyId, ret.code),
     );
   }
 

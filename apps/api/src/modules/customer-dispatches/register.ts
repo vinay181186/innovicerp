@@ -34,6 +34,8 @@ type RegisterRow = {
   client_po_line_no: string | null;
   item_code: string | null;
   item_revision: string | null;
+  item_revision_id: string | null;
+  drawing_rev: string | null;
   item_code_text: string | null;
   item_name: string;
   qty: number;
@@ -136,6 +138,9 @@ export async function listDispatchRegister(
             -- The customer's drawing revision off the SO line (never
             -- items.revision); text cast for databases before 0119.
             sol.revision::text AS item_revision,
+            -- Drawing Rev Phase C: the Item + Rev actually shipped (null = old row).
+            l.item_revision_id::text AS item_revision_id,
+            (SELECT ir.rev FROM public.item_revisions ir WHERE ir.id = l.item_revision_id) AS drawing_rev,
             sol.client_po_line_no, sol.uom::text AS uom,
             u.full_name AS dispatched_by,
             st.stock_before, st.stock_after,
@@ -248,6 +253,8 @@ export async function listDispatchRegister(
         clientPoLineNo: r.client_po_line_no,
         itemCode: r.item_code,
         itemRevision: r.item_revision ?? null,
+        itemRevisionId: r.item_revision_id ?? null,
+        drawingRev: r.drawing_rev ?? null,
         itemCodeText: r.item_code_text,
         itemName: r.item_name,
         qty: Math.round(n(r.qty)),

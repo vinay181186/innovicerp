@@ -22,6 +22,7 @@ import {
   clients,
   customerDispatchLines,
   customerDispatches,
+  itemRevisions,
   items,
   salesOrderLines,
   salesOrders,
@@ -39,9 +40,15 @@ import { lockDocSeries } from '../../lib/doc-series-lock';
 import { assertRowUpdated } from '../../lib/row-lock';
 import { postStockMove } from '../../lib/stock-ledger';
 import {
+  assertRevBelongsToItem,
+  bucketLabel,
   consumeForLine,
   readReservedByLine,
+  readReservedByLineRev,
+  readRevBuckets,
   readStockPositions,
+  reconcileLineReservations,
+  revKeyOf,
   unconsumeForDispatch,
 } from '../../lib/stock-reservation';
 import { diffFields } from '../../lib/audit-trail';
@@ -163,6 +170,9 @@ async function moveDispatchStock(
   // the parent finished good — ADR-115). New dispatches move the parent itself,
   // so `component` is undefined and the insufficient-stock error names no child.
   component?: { code: string },
+  // Drawing Rev Phase C — the Item + Rev bucket shipped / put back (null =
+  // blank bucket: Buy items, old rows).
+  itemRevisionId: string | null = null,
 ): Promise<void> {
   if (!itemId || qty <= 0) return;
   // On-hand floor: never dispatch more finished goods than physically in stock
@@ -172,6 +182,7 @@ async function moveDispatchStock(
   await postStockMove(tx, {
     companyId,
     itemId,
+    itemRevisionId,
     txnType: dir,
     qty,
     sourceType: 'dispatch',
@@ -205,7 +216,13 @@ async function dispatchLineOut(
   code: string,
   dispatchDate: string,
   lineNo: number,
-  line: { salesOrderLineId: string | null; itemId: string | null; qty: number },
+  line: {
+    salesOrderLineId: string | null;
+    itemId: string | null;
+    qty: number;
+    /** Drawing Rev Phase C — the bucket this row ships (null = blank). */
+    itemRevisionId: string | null;
+  },
   customerDispatchId: string,
 ): Promise<void> {
   if (line.salesOrderLineId) {
@@ -227,6 +244,8 @@ async function dispatchLineOut(
         qty: line.qty,
         dispatchCode: code,
         customerDispatchId,
+        // Drawing Rev Phase C — only this Rev's bookings ship with this row.
+        itemRevisionId: line.itemRevisionId,
       },
       user,
     );
@@ -243,7 +262,33 @@ async function dispatchLineOut(
     lineNo,
     line.itemId,
     line.qty,
+    undefined,
+    line.itemRevisionId,
   );
+  // Drawing Rev Phase C — bookings of the OTHER Rev on this line are not
+  // shipped by this row, so the line could end up holding more than it is
+  // still owed. Release that excess (oldest first) so no booking outlives the
+  // order; a no-op whenever every booking was in the shipped bucket.
+  if (line.salesOrderLineId) {
+    const sol = await tx
+      .select({ orderQty: salesOrderLines.orderQty, dispatchedQty: salesOrderLines.dispatchedQty })
+      .from(salesOrderLines)
+      .where(eq(salesOrderLines.id, line.salesOrderLineId))
+      .limit(1);
+    if (sol[0]) {
+      await reconcileLineReservations(
+        tx,
+        {
+          companyId,
+          soLineId: line.salesOrderLineId,
+          newOrderQty: Number(sol[0].orderQty),
+          dispatchedQty: Number(sol[0].dispatchedQty),
+          reason: `${code}: line fully covered by dispatch from another Drawing Rev`,
+        },
+        user,
+      );
+    }
+  }
 }
 
 // REVERSE one line (the inverse of dispatchLineOut): give the dispatched_qty back
@@ -257,7 +302,14 @@ async function reverseDispatchLineStock(
   user: AuthContext,
   code: string,
   dispatchDate: string,
-  line: { salesOrderLineId: string | null; lineNo: number; itemId: string | null; qty: number },
+  line: {
+    salesOrderLineId: string | null;
+    lineNo: number;
+    itemId: string | null;
+    qty: number;
+    /** Drawing Rev Phase C — the bucket this row shipped; goes back there. */
+    itemRevisionId: string | null;
+  },
 ): Promise<void> {
   if (line.salesOrderLineId) {
     await tx
@@ -284,6 +336,7 @@ async function reverseDispatchLineStock(
         m.itemId,
         m.qty,
         { code: m.itemCode },
+        m.itemRevisionId,
       );
     }
   } else {
@@ -297,6 +350,8 @@ async function reverseDispatchLineStock(
       line.lineNo,
       line.itemId,
       line.qty,
+      undefined,
+      line.itemRevisionId,
     );
   }
 }
@@ -316,6 +371,17 @@ type DispatchableRow = {
   ready_qty: string | number;
   customer_dispatch_date: string | null;
   short_closed: boolean;
+  procurement_type: string | null;
+  line_item_revision_id: string | null;
+};
+
+/** loadDispatchable's line plus two server-only facts the create / edit checks
+ *  need (stripped before the screen sees the line). */
+type DispatchableLineX = DispatchableLine & {
+  /** Drawing Rev Phase C — the SO line's own Rev (the default bucket). */
+  lineItemRevisionId: string | null;
+  /** A MAKE item: its stock is counted per Item + Rev bucket. */
+  makeItem: boolean;
 };
 
 // Which BOM does this SO line build? Two places carry it and BOTH are load-
@@ -368,7 +434,7 @@ async function loadDispatchable(
   tx: DbTransaction,
   companyId: string,
   soId: string,
-): Promise<DispatchableLine[]> {
+): Promise<DispatchableLineX[]> {
   const cid = `'${companyId}'::uuid`;
   const sid = `'${soId}'::uuid`;
   const res = await tx.execute(
@@ -384,6 +450,9 @@ async function loadDispatchable(
         -- POL: the line number on the CUSTOMER's own purchase order, not ours.
         sol.client_po_line_no,
         sol.part_name AS item_name, sol.order_qty, sol.dispatched_qty, sol.rate,
+        -- Drawing Rev Phase C: make items carry per-Rev stock buckets.
+        i.procurement_type::text AS procurement_type,
+        sol.item_revision_id AS line_item_revision_id,
         -- The item master's name, shown beside a differing line name (plan v3 Step 4).
         i.name AS master_item_name,
         -- ADR-196 — a line closed short takes no more dispatch.
@@ -502,6 +571,32 @@ async function loadDispatchable(
   ];
   const reservedByLine = await readReservedByLine(tx, companyId, lineIds);
   const positions = await readStockPositions(tx, companyId, itemIds);
+  // Drawing Rev Phase C — per-Rev buckets of the MAKE items, the line's own
+  // bookings per bucket, and the Rev texts for the labels.
+  const makeItemIds = [
+    ...new Set(
+      rows.filter((r) => r.item_id && r.procurement_type === 'make').map((r) => r.item_id!),
+    ),
+  ];
+  const bucketsByItem = await readRevBuckets(tx, companyId, makeItemIds);
+  const heldByLineRev = await readReservedByLineRev(tx, companyId, lineIds);
+  const revIds = [
+    ...new Set(
+      [...bucketsByItem.values()].flatMap((bs) =>
+        bs.map((b) => b.itemRevisionId).filter((v): v is string => v !== null),
+      ),
+    ),
+  ];
+  const revText = new Map(
+    revIds.length
+      ? (
+          await tx
+            .select({ id: itemRevisions.id, rev: itemRevisions.rev })
+            .from(itemRevisions)
+            .where(inArray(itemRevisions.id, revIds))
+        ).map((r) => [r.id, r.rev])
+      : [],
+  );
 
   return rows.map((r) => {
     const ready = Math.max(0, Math.round(n(r.ready_qty)));
@@ -512,7 +607,37 @@ async function loadDispatchable(
     const orderQty = Math.round(n(r.order_qty));
     const owed = r.short_closed ? 0 : Math.max(0, orderQty - dispatched);
     const position = r.item_id ? positions.get(r.item_id) : undefined;
+    // Drawing Rev Phase C — ready per bucket = this line's own bookings in the
+    // bucket + the bucket's free stock (same rule as availableQty below, per
+    // bucket), never more than the bucket holds, capped at what is owed.
+    const makeItem = Boolean(r.item_id) && r.procurement_type === 'make';
+    const held = heldByLineRev.get(r.so_line_id);
+    const code = r.item_code ?? r.item_name;
+    const revBuckets = makeItem
+      ? (bucketsByItem.get(r.item_id!) ?? [])
+          .map((b) => {
+            const own = held?.get(revKeyOf(b.itemRevisionId)) ?? 0;
+            const ready = Math.floor(
+              Math.max(0, Math.min(b.onHandQty, own + Math.max(0, b.freeQty), owed)),
+            );
+            return {
+              itemRevisionId: b.itemRevisionId,
+              label: bucketLabel(
+                code,
+                b.itemRevisionId ? (revText.get(b.itemRevisionId) ?? '?') : null,
+              ),
+              readyQty: ready,
+            };
+          })
+          .filter((b) => b.readyQty > 0)
+          .sort((a, b) =>
+            a.itemRevisionId === null ? 1 : b.itemRevisionId === null ? -1 : a.label.localeCompare(b.label),
+          )
+      : [];
     return {
+      lineItemRevisionId: r.line_item_revision_id ?? null,
+      makeItem,
+      revBuckets,
       salesOrderLineId: r.so_line_id,
       lineNo: Number(r.line_no) || 0,
       itemCode: r.item_code,
@@ -569,26 +694,34 @@ async function loadDispatchedComponents(
   companyId: string,
   code: string,
   lineNo: number,
-): Promise<Array<{ itemId: string; itemCode: string; qty: number }>> {
+): Promise<Array<{ itemId: string; itemCode: string; qty: number; itemRevisionId: string | null }>> {
   const prefix = `${code} / ln ${lineNo} / `;
   const rows = (await tx.execute(sql`
-    SELECT st.item_id, st.qty, i.code AS item_code
+    SELECT st.item_id, st.qty, i.code AS item_code, st.item_revision_id
     FROM public.store_transactions st
     LEFT JOIN public.items i ON i.id = st.item_id
     WHERE st.company_id = ${companyId}::uuid
       AND st.source_type = 'dispatch'
       AND st.txn_type = 'out'
       AND st.source_ref LIKE ${prefix} || '%'
-  `)) as unknown as Array<{ item_id: string | null; qty: number; item_code: string | null }>;
-  return rows
-    .filter((r): r is { item_id: string; qty: number; item_code: string | null } =>
-      Boolean(r.item_id),
-    )
-    .map((r) => ({
-      itemId: r.item_id,
-      itemCode: r.item_code ?? r.item_id.slice(0, 8),
-      qty: n(r.qty),
-    }));
+  `)) as unknown as Array<{
+    item_id: string | null;
+    qty: number;
+    item_code: string | null;
+    item_revision_id: string | null;
+  }>;
+  return rows.flatMap((r) =>
+    r.item_id
+      ? [
+          {
+            itemId: r.item_id,
+            itemCode: r.item_code ?? r.item_id.slice(0, 8),
+            qty: n(r.qty),
+            itemRevisionId: r.item_revision_id ?? null,
+          },
+        ]
+      : [],
+  );
 }
 
 async function loadSo(
@@ -665,7 +798,9 @@ export async function getDispatchableSo(
   const showMoney = await canSeeFormPrice(user, 'so_create');
   return withUserContext(user, async (tx) => {
     const so = await loadSo(tx, companyId, soId);
-    const lines = await loadDispatchable(tx, companyId, soId);
+    const lines = (await loadDispatchable(tx, companyId, soId)).map(
+      ({ lineItemRevisionId: _r, makeItem: _m, ...l }): DispatchableLine => l,
+    );
     const out = showMoney ? lines : lines.map((l) => ({ ...l, rate: null }));
     return {
       salesOrderId: so.id,
@@ -841,6 +976,9 @@ async function getDispatchInternal(
       // saved name differs (plan v3 Step 4). Display only; the print keeps itemName.
       masterItemName: items.name,
       qty: customerDispatchLines.qty,
+      // Drawing Rev Phase C — the Item + Rev actually shipped on this row.
+      itemRevisionId: customerDispatchLines.itemRevisionId,
+      drawingRev: itemRevisions.rev,
       // POL + unit off the same SO line — the DC print carries both.
       clientPoLineNo: salesOrderLines.clientPoLineNo,
       uom: sql<string | null>`${salesOrderLines.uom}::text`,
@@ -853,6 +991,7 @@ async function getDispatchInternal(
     // nullable, and a line with no SO behind it must still come back — with a
     // null revision rather than vanishing from the dispatch.
     .leftJoin(salesOrderLines, eq(salesOrderLines.id, customerDispatchLines.salesOrderLineId))
+    .leftJoin(itemRevisions, eq(itemRevisions.id, customerDispatchLines.itemRevisionId))
     .where(
       and(
         eq(customerDispatchLines.customerDispatchId, id),
@@ -867,6 +1006,8 @@ async function getDispatchInternal(
     salesOrderLineId: l.salesOrderLineId,
     itemCode: l.itemCode,
     itemRevision: l.itemRevision ?? null,
+    itemRevisionId: l.itemRevisionId ?? null,
+    drawingRev: l.drawingRev ?? null,
     itemCodeText: l.itemCodeText,
     itemName: l.itemName,
     masterItemName: l.masterItemName ?? null,
@@ -914,6 +1055,90 @@ async function getDispatchInternal(
 export async function getDispatch(id: string, user: AuthContext): Promise<CustomerDispatchDetail> {
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => getDispatchInternal(tx, id, companyId));
+}
+
+/** Drawing Rev Phase C — refuse a row that ships more than its bucket has
+ *  ready for this SO line. Buy items / free-text lines have no buckets. */
+function assertBucketReady(d: DispatchableLineX, itemRevisionId: string | null, qty: number): void {
+  if (!d.makeItem || qty <= 0) return;
+  const b = d.revBuckets.find((x) => x.itemRevisionId === itemRevisionId);
+  const ready = b?.readyQty ?? 0;
+  if (qty > ready) {
+    const name = b?.label ?? (itemRevisionId ? `${d.itemCode ?? d.itemName} (that Rev)` : bucketLabel(d.itemCode ?? d.itemName, null));
+    throw new ConflictError(
+      `Ln ${d.lineNo} (${name}): Dispatch Qty (${qty}) cannot be more than Ready in ${name} (${ready}).` +
+        (d.revBuckets.length > 0
+          ? ` Ready by Drawing Rev: ${d.revBuckets.map((x) => `${x.label} ${x.readyQty}`).join(', ')}.`
+          : ''),
+    );
+  }
+}
+
+/** Drawing Rev Phase C — the bucket of every create row (index-aligned).
+ *  Given (uuid / null) = that bucket; omitted = Buy / no buckets → blank, else
+ *  the only bucket that can cover the row, preferring the SO line's own Rev;
+ *  more than one → the user must choose. Same SO line + same Rev twice →
+ *  refused. Each row is checked against its bucket's Ready. */
+async function resolveDispatchRevs(
+  tx: DbTransaction,
+  companyId: string,
+  lines: CreateCustomerDispatchInput['lines'],
+  byLine: Map<string, DispatchableLineX>,
+): Promise<Array<string | null>> {
+  const out: Array<string | null> = [];
+  const seen = new Set<string>();
+  const qtyByBucket = new Map<string, number>();
+  for (const l of lines) {
+    const d = byLine.get(l.salesOrderLineId);
+    if (!d) {
+      out.push(null);
+      continue;
+    }
+    let rev: string | null;
+    if (l.itemRevisionId !== undefined) {
+      rev = l.itemRevisionId;
+      if (rev && !d.makeItem) {
+        throw new ValidationError(
+          `Ln ${d.lineNo} (${d.itemCode ?? d.itemName}) is not a Make item — it has no Drawing Rev stock.`,
+        );
+      }
+      const itemId = d.makeItem ? await lineItemId(tx, l.salesOrderLineId) : null;
+      if (rev && itemId) await assertRevBelongsToItem(tx, companyId, itemId, rev);
+    } else if (!d.makeItem || d.revBuckets.length === 0) {
+      rev = null;
+    } else {
+      const fits = d.revBuckets.filter((b) => b.readyQty >= l.qty);
+      const own = fits.find((b) => b.itemRevisionId === d.lineItemRevisionId);
+      if (own) rev = own.itemRevisionId;
+      else if (fits.length === 1) rev = fits[0]!.itemRevisionId;
+      else {
+        throw new ValidationError(
+          `Ln ${d.lineNo} (${d.itemCode ?? d.itemName}): choose which Drawing Rev to ship — ` +
+            `Ready by Drawing Rev: ${d.revBuckets.map((x) => `${x.label} ${x.readyQty}`).join(', ')}.`,
+        );
+      }
+    }
+    const key = `${l.salesOrderLineId}|${rev ?? ''}`;
+    if (seen.has(key)) {
+      throw new ValidationError(
+        `Ln ${d.lineNo} (${d.itemCode ?? d.itemName}) is listed twice for the same Drawing Rev — keep one row per Rev.`,
+      );
+    }
+    seen.add(key);
+    qtyByBucket.set(key, (qtyByBucket.get(key) ?? 0) + l.qty);
+    assertBucketReady(d, rev, qtyByBucket.get(key)!);
+    out.push(rev);
+  }
+  return out;
+}
+
+async function lineItemId(tx: DbTransaction, soLineId: string): Promise<string | null> {
+  const rows = await tx
+    .select({ itemId: salesOrderLines.itemId })
+    .from(salesOrderLines)
+    .where(eq(salesOrderLines.id, soLineId))
+    .limit(1);
+  return rows[0]?.itemId ?? null;
 }
 
 export async function createDispatch(
@@ -983,12 +1208,22 @@ export async function createDispatch(
     const dispatchable = await loadDispatchable(tx, companyId, input.salesOrderId);
     const byLine = new Map(dispatchable.map((d) => [d.salesOrderLineId, d]));
 
-    // Validate every line belongs to the SO and qty <= available.
+    // Drawing Rev Phase C — each row ships ONE Item + Rev bucket; the same SO
+    // line may appear once per Rev. Resolved + checked per bucket here, then
+    // the line totals are checked against Dispatchable / Pending below.
+    const revByRow = await resolveDispatchRevs(tx, companyId, input.lines, byLine);
+    const qtyByLine = new Map<string, number>();
     for (const l of input.lines) {
-      const d = byLine.get(l.salesOrderLineId);
+      qtyByLine.set(l.salesOrderLineId, (qtyByLine.get(l.salesOrderLineId) ?? 0) + l.qty);
+    }
+
+    // Validate every line belongs to the SO and qty <= available.
+    for (const [soLineId, lineQty] of qtyByLine) {
+      const d = byLine.get(soLineId);
       if (!d) {
         throw new ValidationError(`This line is not on SO ${so.code}. Please reload the SO.`);
       }
+      const l = { qty: lineQty };
       if (l.qty > d.availableQty) {
         throw new ConflictError(
           `Ln ${d.lineNo} (${d.itemCode ?? d.itemName}): Dispatch Qty (${l.qty}) cannot be more than Dispatchable (${d.availableQty}).`,
@@ -1053,16 +1288,18 @@ export async function createDispatch(
     const itemIdByLine = new Map(solRows.map((r) => [r.id, r.itemId]));
 
     let lineNo = 0;
-    for (const l of input.lines) {
+    for (const [rowIdx, l] of input.lines.entries()) {
       lineNo += 1;
       const d = byLine.get(l.salesOrderLineId)!;
       const itemId = itemIdByLine.get(l.salesOrderLineId) ?? null;
+      const itemRevisionId = revByRow[rowIdx] ?? null;
       await tx.insert(customerDispatchLines).values({
         companyId,
         customerDispatchId: header.id,
         lineNo,
         salesOrderLineId: l.salesOrderLineId,
         itemId,
+        itemRevisionId,
         itemCodeText: d.itemCode,
         itemName: d.itemName,
         qty: l.qty,
@@ -1081,7 +1318,7 @@ export async function createDispatch(
         code,
         input.dispatchDate,
         lineNo,
-        { salesOrderLineId: l.salesOrderLineId, itemId, qty: l.qty },
+        { salesOrderLineId: l.salesOrderLineId, itemId, qty: l.qty, itemRevisionId },
         header.id,
       );
     }
@@ -1321,6 +1558,7 @@ export async function cancelDispatchTx(
       lineNo: l.lineNo,
       itemId: l.itemId,
       qty: Number(l.qty),
+      itemRevisionId: l.itemRevisionId ?? null,
     });
   }
 
@@ -1575,6 +1813,7 @@ export async function updateCustomerDispatchTx(
       lineNo: c.lineNo,
       itemId: c.itemId,
       qty: Number(c.qty),
+      itemRevisionId: c.itemRevisionId ?? null,
     });
   }
   await unconsumeForDispatch(tx, { companyId, customerDispatchId: id }, user);
@@ -1583,9 +1822,19 @@ export async function updateCustomerDispatchTx(
   // caps the SAME way createDispatch does (computed on the reversed state).
   const dispatchable = await loadDispatchable(tx, companyId, h.salesOrderId);
   const byLine = new Map(dispatchable.map((d) => [d.salesOrderLineId, d]));
+  // Drawing Rev Phase C — each row re-ships its own bucket: check it there,
+  // and check the SO line's TOTAL (a line may sit on two rows, one per Rev).
+  const editQtyByLine = new Map<string, number>();
   for (const c of currentLines) {
     if (!c.salesOrderLineId) continue;
     const newQty = newQtyById.get(c.id)!;
+    editQtyByLine.set(c.salesOrderLineId, (editQtyByLine.get(c.salesOrderLineId) ?? 0) + newQty);
+    const d = byLine.get(c.salesOrderLineId);
+    if (d) assertBucketReady(d, c.itemRevisionId ?? null, newQty);
+  }
+  for (const c of currentLines) {
+    if (!c.salesOrderLineId) continue;
+    const newQty = editQtyByLine.get(c.salesOrderLineId)!;
     const d = byLine.get(c.salesOrderLineId);
     if (!d) throw new ValidationError(`Ln ${c.lineNo} is not on SO ${so.code}. Please reload.`);
     if (newQty > d.availableQty) {
@@ -1616,7 +1865,12 @@ export async function updateCustomerDispatchTx(
       newCode,
       newDispatchDate,
       c.lineNo,
-      { salesOrderLineId: c.salesOrderLineId, itemId: c.itemId, qty: newQty },
+      {
+        salesOrderLineId: c.salesOrderLineId,
+        itemId: c.itemId,
+        qty: newQty,
+        itemRevisionId: c.itemRevisionId ?? null,
+      },
       id,
     );
   }

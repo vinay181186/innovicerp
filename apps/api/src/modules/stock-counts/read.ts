@@ -10,13 +10,13 @@ import type {
   StockCountLine,
 } from '@innovic/shared';
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
-import { items, stockCountLines } from '../../db/schema';
+import { itemRevisions, items, stockCountLines } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireAnyFormAccess, requireFormAccess, STORE_VIEW_FORMS } from '../../lib/access';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { roundQty } from '../../lib/stock-ledger';
-import { readStockPositions } from '../../lib/stock-reservation';
+import { readRevBuckets, readStockPositions } from '../../lib/stock-reservation';
 import { STOCK_COUNT_SF_COLUMNS } from './sf-columns';
 
 const FORM = 'stockcount_create' as const;
@@ -128,6 +128,8 @@ export async function getStockCount(id: string, user: AuthContext): Promise<Stoc
         id: stockCountLines.id,
         lineNo: stockCountLines.lineNo,
         itemId: stockCountLines.itemId,
+        itemRevisionId: stockCountLines.itemRevisionId,
+        drawingRev: itemRevisions.rev,
         itemCodeText: stockCountLines.itemCodeText,
         countedQty: stockCountLines.countedQty,
         systemQtyAtCount: stockCountLines.systemQtyAtCount,
@@ -139,20 +141,23 @@ export async function getStockCount(id: string, user: AuthContext): Promise<Stoc
       })
       .from(stockCountLines)
       .leftJoin(items, eq(items.id, stockCountLines.itemId))
+      .leftJoin(itemRevisions, eq(itemRevisions.id, stockCountLines.itemRevisionId))
       .where(and(eq(stockCountLines.stockCountId, id), isNull(stockCountLines.deletedAt)))
       .orderBy(asc(stockCountLines.lineNo));
-    const pos = await readStockPositions(
-      tx,
-      companyId,
-      ls.map((l) => l.itemId),
-    );
+    // Drawing Rev Phase C — "In Stock now" is the counted bucket's on hand.
+    const buckets = await readRevBuckets(tx, companyId, [...new Set(ls.map((l) => l.itemId))]);
     const lines: StockCountLine[] = ls.map((l) => {
-      const now = roundQty(pos.get(l.itemId)?.physicalQty ?? 0);
+      const b = (buckets.get(l.itemId) ?? []).find(
+        (x) => x.itemRevisionId === (l.itemRevisionId ?? null),
+      );
+      const now = roundQty(b?.onHandQty ?? 0);
       const base = l.systemQtyAtCount ?? now;
       return {
         id: l.id,
         lineNo: l.lineNo,
         itemId: l.itemId,
+        itemRevisionId: l.itemRevisionId ?? null,
+        drawingRev: l.drawingRev ?? null,
         itemCode: l.itemCode ?? l.itemCodeText,
         itemName: l.itemName ?? null,
         uom: l.uom ? String(l.uom) : null,

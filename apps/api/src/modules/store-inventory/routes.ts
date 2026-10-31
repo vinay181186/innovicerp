@@ -7,6 +7,7 @@ import {
   setReorderInputSchema,
 } from '@innovic/shared';
 import type { FastifyInstance } from 'fastify';
+import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
 import * as reorder from './reorder';
 import * as service from './service';
@@ -31,6 +32,13 @@ export async function storeInventoryRoutes(app: FastifyInstance): Promise<void> 
     const body = typeof req.body === 'object' && req.body !== null ? req.body : {};
     const input = setReorderInputSchema.parse({ ...body, itemId: req.params.id });
     return reorder.setReorder(input, req.user);
+  });
+
+  // Drawing Rev Phase C — stock of one item per Item + Rev bucket.
+  app.get<{ Params: { itemId: string } }>('/store-inventory/:itemId/revs', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { itemId } = z.object({ itemId: z.string().uuid() }).parse(req.params);
+    return service.listItemRevStock(itemId, req.user);
   });
 
   app.get('/store-inventory/reorder-list', async (req) => {

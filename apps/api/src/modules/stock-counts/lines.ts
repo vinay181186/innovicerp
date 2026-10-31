@@ -7,7 +7,11 @@ import { items, stockCountLines } from '../../db/schema';
 import type { DbTransaction } from '../../db/with-user-context';
 import { ValidationError } from '../../lib/errors';
 import { assertQtyFitsUom, roundQty } from '../../lib/stock-ledger';
-import { readStockPositions } from '../../lib/stock-reservation';
+import { assertRevBelongsToItem, readRevBuckets } from '../../lib/stock-reservation';
+
+/** Drawing Rev Phase C — one count line per Item + Rev bucket; this is its key. */
+export const lineKey = (itemId: string, itemRevisionId: string | null | undefined): string =>
+  `${itemId}|${itemRevisionId ?? ''}`;
 
 const CODE_PREFIX = 'IN-SC-';
 const CODE_PAD = 5;
@@ -42,6 +46,8 @@ export async function checkLines(
   for (const l of lines) {
     const it = byId.get(l.itemId)!;
     if (l.countedQty > 0) assertQtyFitsUom(it.code, it.uom, roundQty(l.countedQty), 'Counted Qty');
+    // Drawing Rev Phase C — a counted Rev must be a Rev of that item.
+    if (l.itemRevisionId) await assertRevBelongsToItem(tx, companyId, l.itemId, l.itemRevisionId);
   }
   return byId;
 }
@@ -53,27 +59,34 @@ export async function writeLines(
   lines: StockCountLineInput[],
   byId: Map<string, { code: string; uom: string }>,
   userId: string,
-  /** Previous snapshot per item, kept when the counted qty did not change. */
+  /** Previous snapshot per lineKey (item + Rev), kept when the counted qty did not change. */
   keep: Map<string, { countedQty: number; systemQtyAtCount: number | null }> = new Map(),
 ): Promise<void> {
   // ADR-193 review: the system qty is snapshotted when the line is KEYED (the
   // moment of counting), not at Submit — a draft keyed in the morning and
   // submitted in the afternoon must not double-count the issues in between.
   // A line whose counted qty is unchanged keeps its original snapshot.
+  // Drawing Rev Phase C — the snapshot is the counted BUCKET's on hand (the
+  // blank bucket when no Rev is named; for a Buy item that is the item total).
   const snap = new Map<string, number>();
-  const toRead = lines
-    .filter((l) => {
-      const k = keep.get(l.itemId);
-      return !(
-        k &&
-        k.systemQtyAtCount !== null &&
-        roundQty(k.countedQty) === roundQty(l.countedQty)
-      );
-    })
-    .map((l) => l.itemId);
+  const toRead = lines.filter((l) => {
+    const k = keep.get(lineKey(l.itemId, l.itemRevisionId));
+    return !(
+      k &&
+      k.systemQtyAtCount !== null &&
+      roundQty(k.countedQty) === roundQty(l.countedQty)
+    );
+  });
   if (toRead.length > 0) {
-    const pos = await readStockPositions(tx, companyId, toRead);
-    for (const id of toRead) snap.set(id, roundQty(pos.get(id)?.physicalQty ?? 0));
+    const buckets = await readRevBuckets(tx, companyId, [
+      ...new Set(toRead.map((l) => l.itemId)),
+    ]);
+    for (const l of toRead) {
+      const b = (buckets.get(l.itemId) ?? []).find(
+        (x) => x.itemRevisionId === (l.itemRevisionId ?? null),
+      );
+      snap.set(lineKey(l.itemId, l.itemRevisionId), roundQty(b?.onHandQty ?? 0));
+    }
   }
   await tx.insert(stockCountLines).values(
     lines.map((l, i) => ({
@@ -81,11 +94,12 @@ export async function writeLines(
       stockCountId: countId,
       lineNo: i + 1,
       itemId: l.itemId,
+      itemRevisionId: l.itemRevisionId ?? null,
       itemCodeText: byId.get(l.itemId)!.code,
       countedQty: roundQty(l.countedQty),
-      systemQtyAtCount: snap.has(l.itemId)
-        ? snap.get(l.itemId)!
-        : (keep.get(l.itemId)?.systemQtyAtCount ?? null),
+      systemQtyAtCount: snap.has(lineKey(l.itemId, l.itemRevisionId))
+        ? snap.get(lineKey(l.itemId, l.itemRevisionId))!
+        : (keep.get(lineKey(l.itemId, l.itemRevisionId))?.systemQtyAtCount ?? null),
       reason: l.reason ?? null,
       createdBy: userId,
       updatedBy: userId,
