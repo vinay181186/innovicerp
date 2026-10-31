@@ -19,7 +19,8 @@ import { partyGrn, partyGrnLines } from '../../db/schema';
 import type { DiffField } from '../../lib/audit-trail';
 import type { DocEditRegistryEntry, DocEditTarget } from '../document-edits/registry';
 import type { UpdatePartyGrnInput } from './schema';
-import { isPendingQc, PARTY_GRN_HEADER_FIELDS, updatePartyGrnTx } from './service';
+import { isQcUntouched } from './qc-state';
+import { PARTY_GRN_HEADER_FIELDS, updatePartyGrnTx } from './service';
 
 const PARTY_GRN_FORM_KEY: AccessFormKey = 'party_create';
 
@@ -79,8 +80,8 @@ export const partyGrnEditRegistryEntry: DocEditRegistryEntry = {
     const pg = rows[0];
     if (!pg) return null;
 
-    // Lines locked under the same scope; only lines still WAITING for Incoming QC
-    // are editable, so only they become diffable keys. A fully QC'd GRN has
+    // Lines locked under the same scope; only lines nothing has been inspected
+    // on yet (QC untouched — a part-inspected line is frozen too) are editable, so only they become diffable keys. A fully QC'd GRN has
     // none, so only its header fields can be staged.
     const lineRows = await tx
       .select()
@@ -95,7 +96,7 @@ export const partyGrnEditRegistryEntry: DocEditRegistryEntry = {
       .orderBy(asc(partyGrnLines.lineNo))
       .for('update');
     const pending: PartyGrnEditLine[] = lineRows
-      .filter(isPendingQc)
+      .filter(isQcUntouched)
       .map((l) => ({ id: l.id, lineNo: l.lineNo, receivedQty: l.receivedQty, remarks: l.remarks }));
 
     return {

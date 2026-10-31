@@ -16,6 +16,7 @@
 import type { PartyGrnListItem } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
 import type { DataTableColumn } from '@/ui/data';
+import { PGRN_QC_BADGE, pgrnQcLabel, pgrnQcStateOfGrn } from '../lib/qc-state';
 
 /** ADR-235 — a Cancelled GRN (listed with includeCancelled). cancelledAt is
  *  the standard Cancel's stamp; deletedAt alone is a GRN cancelled before it. */
@@ -120,23 +121,27 @@ export function partyGrnColumns(): DataTableColumn<PartyGrnListItem>[] {
     },
     {
       // ADR-203 (owner D4): Incoming QC is a separate step after the receipt.
-      // ADR-235: a Cancelled GRN reads "Cancelled" here instead.
+      // ADR-235: a Cancelled GRN reads "Cancelled" here instead. Partial QC
+      // (0233): Waiting QC · Partial · n pending · QC done (lib/qc-state.ts).
       id: 'qc_status',
       header: 'QC Status',
       nowrap: true,
-      render: (g) =>
-        isPartyGrnCancelled(g) ? (
-          <span className="badge b-red">Cancelled</span>
-        ) : g.qcPendingLines > 0 ? (
+      render: (g) => {
+        if (isPartyGrnCancelled(g)) return <span className="badge b-red">Cancelled</span>;
+        const st = pgrnQcStateOfGrn(g);
+        return (
           <span
-            className="badge b-amber"
-            title={`${g.qcPendingLines} line(s) waiting for Incoming QC`}
+            className={`badge ${PGRN_QC_BADGE[st]}`}
+            title={
+              st === 'done'
+                ? undefined
+                : `${g.qcPendingLines} line(s) with QC Pending · ${g.totalQcPendingQty} pcs`
+            }
           >
-            Waiting QC
+            {pgrnQcLabel(st, g.totalQcPendingQty)}
           </span>
-        ) : (
-          <span className="badge b-green">QC done</span>
-        ),
+        );
+      },
     },
     {
       id: 'lines',

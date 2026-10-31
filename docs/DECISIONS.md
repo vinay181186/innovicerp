@@ -14863,3 +14863,45 @@ Owner 2026-10-31: "cancelled or deleted SO, I can create a new SO with the same 
 
 - The same customer can now have one live order and one or more cancelled orders with the same number. List and Dossier searches show both, and the status tells them apart.
 - This relies on cancelled being final: there is no path out of cancelled (`SO_STATUS_MOVES.cancelled = []`, and JWSO edits refuse a cancelled order). If a reopen or un-cancel is ever added, it must call `assertClientPoNoFree` first.
+
+## ADR-260: Party GRN Incoming QC is partial, like the Direct Purchase GRN
+
+**Date:** 2026-10-31
+**Status:** Accepted (owner "a", then "go" on D1–D4, 2026-10-31)
+
+### Context
+
+ADR-203 made Party GRN Incoming QC one-shot: Accepted + Deviated had to equal the whole
+received qty in one entry (form, server and the 0193 CHECK). QC on TEST tried 6 of 60 and
+was refused. The Direct Purchase GRN on the same QC Call Register already allows partial
+inspections.
+
+### Decision
+
+- accepted_qty / rejected_qty are RUNNING totals; **QC Pending = received − accepted −
+  rejected**. Each inspection books only its own accepted pieces (bookPartyAccepted) and
+  raises one NC for its own deviated pieces. qc_at is stamped at the first inspection
+  (latest after). Migration 0233 swaps the CHECK to accepted + rejected ≤ received.
+- Two predicates, one place each: **untouched** (edit / stage freeze — a line is frozen
+  from its first inspection, D4) and **open** (QC Pending > 0 — register, Home, JWSO
+  Waiting QC, list counts).
+- **Receipt / order commitment counts received − deviated per line**, so uninspected
+  pieces still block over-receipt past the JWSO Order Qty.
+- Completed tab: one row per line with running totals and the latest inspection's date /
+  inspector / reason / remarks (D1, same as Direct Purchase GRN); "Partial" while QC
+  Pending > 0. Popup pre-fills Accepted = QC Pending (D2). Home Incoming QC qty = pending
+  for both GRN kinds (D3).
+
+### Alternatives Considered
+
+- Keep one-shot, pre-fill the form — rejected by the owner (lots are inspected in batches).
+- One row per inspection on the Completed tab — needs a new table neither GRN kind has.
+
+### Consequences
+
+- Positive: QC can inspect big lots in batches; accepted pieces reach stock as soon as
+  they are passed.
+- Negative: a line's Deviation Reason / QC Remarks show the latest inspection only; each
+  NC and the activity log keep every inspection's own text.
+- Risks: the over-receipt cap — covered by received − deviated and a test.
+

@@ -21,7 +21,7 @@ import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
 import { usePartyGrnDetail } from '../api';
 import { EditPartyGrnModal } from './edit-party-grn-modal';
 import { isPartyGrnCancelled } from './party-grn-columns';
-import { waitingQc } from '../lib/print-party-grn';
+import { PGRN_QC_BADGE, pgrnQcLabel, pgrnQcState, qcPendingQtyOf } from '../lib/qc-state';
 
 function lineColumns(): DataTableColumn<PartyGrnLine>[] {
   return [
@@ -94,12 +94,13 @@ function lineColumns(): DataTableColumn<PartyGrnLine>[] {
       headColor: 'var(--green)',
       className: 'mono fw-700',
       nowrap: true,
-      // ADR-203: 0 until Incoming QC — show a dash rather than a false zero.
+      // Partial QC (0233): the real figure once anything is accepted; a dash
+      // only while nothing has been (an untouched line, or all deviated).
       render: (l) =>
-        waitingQc(l) ? (
-          <span className="text3">—</span>
-        ) : (
+        l.acceptedQty > 0 ? (
           <span style={{ color: 'var(--green2)' }}>{l.acceptedQty}</span>
+        ) : (
+          <span className="text3">—</span>
         ),
     },
     {
@@ -127,6 +128,20 @@ function lineColumns(): DataTableColumn<PartyGrnLine>[] {
       render: (l) => (l.rejectedQty > 0 ? l.rejectedReturnedQty : '—'),
     },
     {
+      // Partial QC (0233): received − accepted − deviated, still to inspect.
+      id: 'qc_pending_qty',
+      header: 'QC Pending',
+      kind: 'num',
+      align: 'right',
+      headColor: 'var(--amber)',
+      className: 'mono fw-700',
+      nowrap: true,
+      render: (l) => {
+        const n = qcPendingQtyOf(l);
+        return n > 0 ? n : <span className="text3">—</span>;
+      },
+    },
+    {
       id: 'reject_reason',
       header: 'Deviation Reason',
       align: 'left',
@@ -147,19 +162,24 @@ function lineColumns(): DataTableColumn<PartyGrnLine>[] {
     },
     {
       // ADR-203: Incoming QC is a separate step. Who did it is in History below.
+      // Partial QC (0233): "Partial · n pending" + the last QC date.
       id: 'qc_at',
       header: 'QC At',
       kind: 'date',
       className: 'mono',
       nowrap: true,
-      render: (l) =>
-        waitingQc(l) ? (
-          <span className="badge b-amber">Waiting QC</span>
-        ) : l.qcAt ? (
-          fmtDateTime(l.qcAt)
-        ) : (
-          'QC done'
-        ),
+      render: (l) => {
+        const st = pgrnQcState(l);
+        if (st === 'done') return l.qcAt ? fmtDateTime(l.qcAt) : 'QC done';
+        return (
+          <>
+            <span className={`badge ${PGRN_QC_BADGE[st]}`}>
+              {pgrnQcLabel(st, qcPendingQtyOf(l))}
+            </span>
+            {st === 'partial' && l.qcAt ? ` ${fmtDateTime(l.qcAt)}` : null}
+          </>
+        );
+      },
     },
   ];
 }

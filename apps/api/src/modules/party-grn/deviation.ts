@@ -3,8 +3,8 @@
 // inside its transaction; it never decides the NC itself.
 //
 // The pieces move on the Party GRN line from Deviated to Accepted (accepted
-// += qty, rejected −= qty — the 0193 CHECKs accepted + rejected = received and
-// rejected_returned ≤ rejected still hold), then enter the customer-material
+// += qty, rejected −= qty — accepted + rejected is unchanged, so the 0233
+// CHECK accepted + rejected <= received and rejected_returned ≤ rejected hold), then enter the customer-material
 // register exactly as an Incoming QC accept does: postPartyStockMove
 // receive/in carrying the JWSO line, and party_materials.received_qty += qty.
 // Lock order matches a Customer Material Return: the JWSO line FIRST, then the

@@ -19,6 +19,7 @@ import {
   challanDate,
   openSheetPrintWindow,
 } from '@/lib/print/sheet-print';
+import { pgrnQcState, pgrnQcStateOfGrn, qcPendingQtyOf } from './qc-state';
 
 /** A Customer RM item is created with UOM NOS (ADR-203). */
 const PARTY_GRN_UOM = 'NOS';
@@ -50,7 +51,8 @@ export function printPartyGrn(args: {
   ];
 
   // GRN No. first — the PDF is named from it.
-  const qcDone = grn.qcPendingLines <= 0;
+  // Partial QC (0233): Waiting QC · Partial · QC done (lib/qc-state.ts).
+  const grnState = pgrnQcStateOfGrn(grn);
   const documentFields: SheetField[] = [
     { label: 'GRN No.', value: grn.code, variant: 'mono', strong: true },
     { label: 'GRN Date', value: challanDate(grn.grnDate), variant: 'mono' },
@@ -60,7 +62,10 @@ export function printPartyGrn(args: {
     documentFields.push({ label: 'Client PO No.', value: grn.clientPoNo, variant: 'mono' });
   if (grn.dcNo)
     documentFields.push({ label: 'Customer Challan No.', value: grn.dcNo, variant: 'mono' });
-  documentFields.push({ label: 'QC Status', value: qcDone ? 'QC done' : 'Waiting QC' });
+  documentFields.push({
+    label: 'QC Status',
+    value: grnState === 'waiting' ? 'Waiting QC' : grnState === 'partial' ? 'Partial' : 'QC done',
+  });
   if (grn.receivedByText) documentFields.push({ label: 'Received By', value: grn.receivedByText });
   if (grn.remarks) documentFields.push({ label: 'Remarks', value: grn.remarks });
 
@@ -71,7 +76,8 @@ export function printPartyGrn(args: {
     .filter((l) => cancelled || !l.deletedAt)
     .sort((a, b) => a.lineNo - b.lineNo);
   const lines: SheetLine[] = sorted.map((l) => {
-    const waiting = waitingQc(l);
+    const st = pgrnQcState(l);
+    const waiting = st === 'waiting';
     return {
       // Customer RM code; Party GRN lines carry no revision of their own.
       itemCode: itemCodeWithRev(l.partyMaterialCodeText, null, ''),
@@ -83,7 +89,11 @@ export function printPartyGrn(args: {
       // ADR-203: 0 until Incoming QC — print a dash, not a false zero.
       acceptedQty: waiting ? '—' : String(l.acceptedQty),
       rejectedQty: waiting ? '—' : String(l.rejectedQty),
-      qcStatus: waiting ? 'Waiting QC' : 'QC done',
+      qcStatus: waiting
+        ? 'Waiting QC'
+        : st === 'partial'
+          ? `Partial (${qcPendingQtyOf(l)} pending)`
+          : 'QC done',
       ...sheetLineNotes([
         { label: 'Deviation Reason', text: l.rejectReason },
         { label: 'QC Remarks', text: l.qcRemarks },
@@ -91,8 +101,9 @@ export function printPartyGrn(args: {
     };
   });
   const totalReceived = sorted.reduce((s, l) => s + l.receivedQty, 0);
-  const totalAccepted = sorted.reduce((s, l) => s + (waitingQc(l) ? 0 : l.acceptedQty), 0);
-  const totalRejected = sorted.reduce((s, l) => s + (waitingQc(l) ? 0 : l.rejectedQty), 0);
+  // An untouched line carries 0 / 0, so a plain sum is right.
+  const totalAccepted = sorted.reduce((s, l) => s + l.acceptedQty, 0);
+  const totalRejected = sorted.reduce((s, l) => s + l.rejectedQty, 0);
 
   return openSheetPrintWindow({
     title: 'Party GRN',
@@ -111,15 +122,4 @@ export function printPartyGrn(args: {
     totalUom: PARTY_GRN_UOM,
     receiverCell: 'Received By — Store<br>Name, Sign &amp; Date',
   });
-}
-
-/** Still waiting for Incoming QC — the server's rule (party-grn service
- *  isPendingQc): no QC stamp AND nothing accepted or rejected yet. Lines from
- *  before migration 0193 carry their split with no qc_at; they are QC done. */
-export function waitingQc(l: {
-  qcAt: string | null;
-  acceptedQty: number;
-  rejectedQty: number;
-}): boolean {
-  return l.qcAt == null && l.acceptedQty === 0 && l.rejectedQty === 0;
 }

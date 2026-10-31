@@ -5,6 +5,8 @@
 //   1. create (this file) — the gate-in: which JWSO line, how many pieces came.
 //      NOTHING enters the customer-material register here; every line waits for
 //      Incoming QC with accepted = rejected = 0 and qc_at NULL.
+//      Incoming QC may take a line in parts (0233): QC Pending Qty =
+//      received − accepted − rejected (./qc-state.ts).
 //   2. QC (./qc.ts) — books accepted / rejected per line; only the accepted qty
 //      is posted to the register (lib/party-stock-ledger, the one writer).
 // The customer material of a line is the JWSO line's own `<item>-RM` party
@@ -67,20 +69,26 @@ export async function requirePartyGrnRead(user: AuthContext): Promise<void> {
   ]);
 }
 
-/** A line still waiting for Incoming QC. Lines booked before QC existed
- *  (grandfathered by migration 0173: accepted = received, qc_at NULL) are NOT
- *  pending — their accepted qty is already in the register. */
-export const PENDING_QC_SQL = sql.raw(
-  '(pgl.qc_at IS NULL AND pgl.accepted_qty = 0 AND pgl.rejected_qty = 0)',
-);
-
-export function isPendingQc(l: {
-  qcAt: unknown;
-  acceptedQty: number;
-  rejectedQty: number;
-}): boolean {
-  return l.qcAt == null && l.acceptedQty === 0 && l.rejectedQty === 0;
-}
+// Partial Incoming QC (0233): the two line predicates live in ./qc-state.ts —
+// QC untouched (edit / stage gate only) and QC open (QC Pending Qty > 0).
+import {
+  QC_OPEN_SQL,
+  QC_PENDING_QTY_SQL,
+  QC_UNTOUCHED_SQL,
+  isQcOpen,
+  isQcUntouched,
+  qcPendingQtyOf,
+  qcUntouchedCond,
+} from './qc-state';
+export {
+  QC_OPEN_SQL,
+  QC_PENDING_QTY_SQL,
+  QC_UNTOUCHED_SQL,
+  isQcOpen,
+  isQcUntouched,
+  qcPendingQtyOf,
+  qcUntouchedCond,
+};
 
 function dateLike(v: unknown): string {
   if (v instanceof Date) return v.toISOString().slice(0, 10);
@@ -136,8 +144,10 @@ const LINE_AGG_SQL = sql`
   LEFT JOIN LATERAL (
     SELECT SUM(pgl.received_qty)::int AS total_received,
            SUM(pgl.accepted_qty)::int AS total_accepted,
-           COUNT(*) FILTER (WHERE ${PENDING_QC_SQL} AND pgl.deleted_at IS NULL)::int
+           COUNT(*) FILTER (WHERE ${QC_OPEN_SQL} AND pgl.deleted_at IS NULL)::int
              AS qc_pending_lines,
+           COALESCE(SUM(${QC_PENDING_QTY_SQL}) FILTER (WHERE pgl.deleted_at IS NULL), 0)::int
+             AS total_qc_pending,
            COUNT(*)::int AS lines_count
     FROM public.party_grn_lines pgl
     WHERE pgl.party_grn_id = pg.id AND ${PGL_OF_HEADER_SQL}
@@ -208,6 +218,7 @@ export async function listPartyGrn(
         COALESCE(agg.total_received, 0)::int AS "totalReceivedQty",
         COALESCE(agg.total_accepted, 0)::int AS "totalAcceptedQty",
         COALESCE(agg.qc_pending_lines, 0)::int AS "qcPendingLines",
+        COALESCE(agg.total_qc_pending, 0)::int AS "totalQcPendingQty",
         COALESCE(agg.lines_count, 0)::int AS "linesCount"
       FROM public.party_grn pg
       LEFT JOIN public.clients c ON c.id = pg.client_id AND c.deleted_at IS NULL
@@ -289,6 +300,7 @@ function toListItem(r: Record<string, unknown>): PartyGrnListItem {
     totalReceivedQty: Number(r['totalReceivedQty'] ?? 0),
     totalAcceptedQty: Number(r['totalAcceptedQty'] ?? 0),
     qcPendingLines: Number(r['qcPendingLines'] ?? 0),
+    totalQcPendingQty: Number(r['totalQcPendingQty'] ?? 0),
     linesCount: Number(r['linesCount'] ?? 0),
   };
 }
@@ -352,14 +364,17 @@ export async function loadPartyGrnDetail(
       ),
     )
     .orderBy(partyGrnLines.lineNo);
-  const lineRows = joined.map((r) => r.line);
-
-  const lines: PartyGrnLine[] = joined.map((r) => rowToLine(r.line, r.clientPoLineNo ?? null));
+  // A cancelled GRN waits for nothing: its lines show no QC Pending Qty.
+  const lines: PartyGrnLine[] = joined.map((r) => {
+    const l = rowToLine(r.line, r.clientPoLineNo ?? null);
+    return isCancelled ? { ...l, qcPendingQty: 0 } : l;
+  });
   return {
     ...toListItem(hRow),
     totalReceivedQty: lines.reduce((s, l) => s + l.receivedQty, 0),
     totalAcceptedQty: lines.reduce((s, l) => s + l.acceptedQty, 0),
-    qcPendingLines: isCancelled ? 0 : lineRows.filter(isPendingQc).length,
+    qcPendingLines: lines.filter(isQcOpenLine).length,
+    totalQcPendingQty: lines.reduce((s, l) => s + l.qcPendingQty, 0),
     linesCount: lines.length,
     lines,
   };
@@ -372,6 +387,8 @@ export async function getPartyGrnDetail(id: string, user: AuthContext): Promise<
     loadPartyGrnDetail(tx, companyId, id, { includeCancelled: true }),
   );
 }
+
+const isQcOpenLine = (l: PartyGrnLine): boolean => l.qcPendingQty > 0;
 
 function rowToLine(
   row: typeof partyGrnLines.$inferSelect,
@@ -398,6 +415,8 @@ function rowToLine(
     qcAt: row.qcAt != null ? tsLike(row.qcAt) : null,
     // ADR-203 (D3): rejected pieces already sent back on a Customer Material Return.
     rejectedReturnedQty: row.rejectedReturnedQty,
+    // Partial Incoming QC (0233): received − accepted − rejected.
+    qcPendingQty: qcPendingQtyOf(row),
     remarks: row.remarks,
     createdAt: tsLike(row.createdAt),
     createdBy: row.createdBy,
@@ -412,8 +431,10 @@ function rowToLine(
  *  line id `jwLineIdSql` (a bound `${id}::uuid` or a correlated column such as
  *  `l.id`). Every reader uses this — the Party GRN receipt cap, the JWSO
  *  "receivable" picker filter and the Order Qty floor — so they cannot drift:
- *    Σ received on live lines still waiting for Incoming QC
- *  + Σ accepted on live QC'd lines
+ *    Σ (received − rejected) on live lines — partial Incoming QC (0233): the
+ *    accepted pieces PLUS the pieces still waiting for QC (a line received 60,
+ *    6 accepted, counts 60; an untouched line counts its received; a fully
+ *    inspected one its accepted)
  *  + Σ rejected_qty of live NCs still 'pending' raised on a live line of a
  *    live Party GRN for this JWSO line (ADR-247: deviated pieces stay
  *    committed until the NC is decided; Return to Customer / Scrap reopen the
@@ -421,8 +442,7 @@ function rowToLine(
  *  Other deviated pieces do not use up the order (the customer re-sends). */
 export function partyCommittedQtySql(jwLineIdSql: SQL): SQL {
   return sql`((
-      SELECT COALESCE(SUM(CASE WHEN ${PENDING_QC_SQL} THEN pgl.received_qty
-                               ELSE pgl.accepted_qty END), 0)
+      SELECT COALESCE(SUM(pgl.received_qty - pgl.rejected_qty), 0)
         FROM public.party_grn_lines pgl
         JOIN public.party_grn pgc ON pgc.id = pgl.party_grn_id AND pgc.deleted_at IS NULL
        WHERE pgl.jw_line_id = ${jwLineIdSql} AND pgl.deleted_at IS NULL
@@ -741,7 +761,7 @@ type PartyGrnCancelLine = Awaited<ReturnType<typeof partyGrnCancelLines>>[number
 
 /** Only QC'd lines put anything into the register. */
 function linesToReverse(lines: readonly PartyGrnCancelLine[]): PartyGrnCancelLine[] {
-  return lines.filter((l) => !isPendingQc(l) && l.acceptedQty > 0 && l.partyMaterialId != null);
+  return lines.filter((l) => !isQcUntouched(l) && l.acceptedQty > 0 && l.partyMaterialId != null);
 }
 
 /** Σ accepted this GRN put in, per JWSO line + material (legacy lines with no
@@ -931,8 +951,7 @@ export async function partyGrnCancelEffects(
   const out: CancelEffect[] = [];
   for (const l of lines) {
     const at = `Ln ${l.lineNo} ${l.partyMaterialCodeText}`;
-    const pending = isPendingQc(l);
-    if (!pending && l.acceptedQty > 0 && l.partyMaterialId != null) {
+    if (l.acceptedQty > 0 && l.partyMaterialId != null) {
       out.push({
         kind: 'stock',
         text: `${at} — ${l.acceptedQty} leaves the customer material register`,
@@ -940,13 +959,14 @@ export async function partyGrnCancelEffects(
       });
     }
     // What the line held against its JWSO line's Order Qty (partyCommittedQtySql):
-    // received while waiting for QC, else accepted + pieces of a pending NC.
-    const committed = pending
-      ? l.receivedQty
-      : l.acceptedQty +
-        ncs
-          .filter((n) => n.lineId === l.id && n.status === 'pending')
-          .reduce((s, n) => s + Number(n.rejectedQty), 0);
+    // received − rejected (accepted + still waiting for QC, partial QC 0233)
+    // + pieces of a pending NC.
+    const committed =
+      l.receivedQty -
+      l.rejectedQty +
+      ncs
+        .filter((n) => n.lineId === l.id && n.status === 'pending')
+        .reduce((s, n) => s + Number(n.rejectedQty), 0);
     const jl = l.jwLineId ? jwById.get(l.jwLineId) : undefined;
     if (jl && committed > 0) {
       out.push({
@@ -1155,8 +1175,8 @@ export async function cancelPartyGrnTx(
 // RECORD/HEADER level enrolment of Party GRN in edit-approval. Editable: the
 // header's own fields (GRN Date, Customer Challan No., Remarks, Received By) and,
 // on a line STILL WAITING for Incoming QC only, its Received Qty and Remarks. A
-// line already through QC is frozen (accepted/rejected booked, stock posted), so
-// editing it is refused. Raising a waiting line's Received Qty re-checks the
+// line with any inspection booked (partial QC 0233: even 6 of 60) is frozen
+// (accepted/rejected booked, stock posted), so editing it is refused. Raising a waiting line's Received Qty re-checks the
 // JWSO-line receipt cap under that line's lock (§20.3). Header edits and a
 // waiting-line qty change touch NO stock — nothing enters the customer-material
 // register until QC (postPartyStockMove), which this path never calls.
@@ -1283,10 +1303,11 @@ export async function updatePartyGrnTx(
       throw new ConflictError(`A line in this edit is not on ${head.code}. Refresh the page.`);
     }
     const at = `${head.code} Ln ${current.lineNo}`;
-    // Only a line still waiting for Incoming QC may be edited.
-    if (!isPendingQc(current)) {
+    // Only a line nothing has been inspected on may be edited (a part-inspected
+    // line is frozen too — its received qty is what the inspections add up to).
+    if (!isQcUntouched(current)) {
       throw new ConflictError(
-        `${at} has already been through Incoming QC — its received qty and remarks can no longer be changed.`,
+        `${at} has already been inspected at Incoming QC — its received qty and remarks can no longer be changed.`,
       );
     }
 
@@ -1311,10 +1332,11 @@ export async function updatePartyGrnTx(
       // §20.3 — lock the JWSO line, THEN re-check the receipt cap and that the
       // new qty cannot fall below what has already been consumed downstream.
       const jwLine = await lockJwLine(tx, companyId, current.jwLineId);
-      // committed = Σ accepted on QC'd lines + Σ received on waiting lines (this
-      // line's OLD received included); swap in the new received for this line.
+      // committed = Σ (received − rejected) per live line (+ pending-NC pieces);
+      // this line's OLD share included — swap in the new received. Only an
+      // untouched line gets here (rejected 0, no NC), so its share is received.
       const committedNow = await jwLineCommittedQty(tx, current.jwLineId);
-      const committedOther = committedNow - current.receivedQty;
+      const committedOther = committedNow - (current.receivedQty - current.rejectedQty);
       const committedAfter = committedOther + li.receivedQty;
       if (committedAfter > jwLine.orderQty) {
         const open = Math.max(0, jwLine.orderQty - committedOther);
@@ -1349,13 +1371,7 @@ export async function updatePartyGrnTx(
         .update(partyGrnLines)
         .set({ ...lineSet, updatedAt: now, updatedBy: user.id })
         .where(
-          and(
-            eq(partyGrnLines.id, current.id),
-            isNull(partyGrnLines.qcAt),
-            eq(partyGrnLines.acceptedQty, 0),
-            eq(partyGrnLines.rejectedQty, 0),
-            isNull(partyGrnLines.deletedAt),
-          ),
+          and(eq(partyGrnLines.id, current.id), qcUntouchedCond(), isNull(partyGrnLines.deletedAt)),
         )
         .returning({ id: partyGrnLines.id });
       if (booked.length === 0) {
@@ -1507,9 +1523,9 @@ export async function updatePartyGrnOrStage(
             'A line in this edit is not on this Party GRN. Refresh the page.',
           );
         }
-        if (!isPendingQc(c)) {
+        if (!isQcUntouched(c)) {
           throw new ConflictError(
-            `Line ${c.lineNo} has already been through Incoming QC — it can no longer be edited.`,
+            `Line ${c.lineNo} has already been inspected at Incoming QC — it can no longer be edited.`,
           );
         }
       }

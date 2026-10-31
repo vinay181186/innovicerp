@@ -1,10 +1,13 @@
 // Incoming QC on a Party GRN (ADR-203, owner D4) — the separate step after the
-// receipt. One row per line still waiting for QC: Received (read-only),
-// Accepted, Rejected, a Reject Reason and optional QC Remarks. Accepted + Rejected must equal
-// Received, and a reason is required when anything is rejected — the same
-// refine the shared schema (partyGrnQcLineInputSchema) enforces, shown before
-// Save. Only the accepted qty enters the customer-material register; rejected
-// pieces are HELD until a Customer Material Return sends them back.
+// receipt. PARTIAL (0233, owner 2026-10-31): one row per line with QC Pending
+// > 0 — received 60, inspect 6 now and 54 later. Received, Inspected So Far and
+// QC Pending are read-only; Accepted prefills to the QC Pending and Deviated
+// follows it (owner D2). A line left at 0 / 0 is skipped (inspect it later);
+// at least one line must carry a qty. Accepted + Deviated <= QC Pending, and a
+// reason is required when anything is deviated — the shared refine
+// (partyGrnQcLineInputSchema) plus the server's limit, shown before Save. Only
+// the accepted qty enters the customer-material register; deviated pieces are
+// HELD until a Customer Material Return sends them back.
 //
 // Opened from the list's row ⋯ "Incoming QC", which is shown only to a user
 // holding qc_incoming · entry. The server checks the same permission. The QC
@@ -14,10 +17,22 @@
 import type { PartyGrnListItem, PartyGrnQcInput } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSaveKey } from '@/lib/use-save-key';
 import { useDiscardGuard } from '../../store-inventory/components/discard-guard';
 import { usePartyGrnDetail, useQcPartyGrn } from '../api';
+import { qcPendingQtyOf } from '../lib/qc-state';
 
-type QcEntry = { accepted: string; rejected: string; reason: string; qcRemarks: string };
+/** `seed` = the QC Pending the row was prefilled with (dirty compares to it). */
+type QcEntry = {
+  accepted: string;
+  rejected: string;
+  reason: string;
+  qcRemarks: string;
+  seed: string;
+};
+
+const isPristine = (e: QcEntry): boolean =>
+  e.accepted === e.seed && e.rejected === '0' && e.reason === '' && e.qcRemarks === '';
 
 /** The GRN header facts the popup shows — a list row carries them, and the
  *  QC Call Register builds the same shape off its Party GRN row. */
@@ -33,7 +48,7 @@ export function PartyGrnQcModal({
 }: {
   row: PartyGrnQcHeader;
   /** Focus one line: only it is listed and posted. Omitted = every line
-   *  still waiting for QC. */
+   *  with QC Pending > 0. */
   onlyLineId?: string | undefined;
   onClose: () => void;
 }): React.JSX.Element {
@@ -41,34 +56,33 @@ export function PartyGrnQcModal({
   const pending = useMemo(
     () =>
       (detailQ.data?.lines ?? [])
-        // Same rule as the server (isPendingQc): no QC date AND nothing booked —
-        // pre-QC (0173-grandfathered) lines carry accepted = received.
-        .filter((l) => l.qcAt == null && l.acceptedQty === 0 && l.rejectedQty === 0 && !l.deletedAt)
+        // Partial QC (0233): every live line with something still to inspect.
+        // Pre-QC (0173-grandfathered) lines carry accepted = received → 0 pending.
+        .filter((l) => qcPendingQtyOf(l) > 0 && !l.deletedAt)
         .filter((l) => !onlyLineId || l.id === onlyLineId)
         .sort((a, b) => a.lineNo - b.lineNo),
     [detailQ.data, onlyLineId],
   );
   const [entries, setEntries] = useState<Record<string, QcEntry>>({});
   const [err, setErr] = useState<string | null>(null);
-  const qcMut = useQcPartyGrn();
+  // ADR-172 — one save key for this popup; a retry after a timeout replays.
+  const saveKey = useSaveKey();
+  const qcMut = useQcPartyGrn(saveKey);
   // §20.1 — an instant in-flight latch: isPending only disables the button
   // after a re-render, so a fast double-click could send two requests.
   const inFlight = useRef(false);
 
-  // Default: everything received is accepted. Seeded once the lines arrive;
-  // a line already typed into is never overwritten by a refetch.
+  // Default (owner D2): the whole QC Pending is accepted. Seeded once the lines
+  // arrive; a refetch that moves QC Pending re-seeds only rows nobody typed in.
   useEffect(() => {
     if (pending.length === 0) return;
     setEntries((prev) => {
       const next = { ...prev };
       for (const l of pending) {
-        if (!next[l.id])
-          next[l.id] = {
-            accepted: String(l.receivedQty),
-            rejected: '0',
-            reason: '',
-            qcRemarks: '',
-          };
+        const seed = String(qcPendingQtyOf(l));
+        const cur = next[l.id];
+        if (!cur || (cur.seed !== seed && isPristine(cur)))
+          next[l.id] = { accepted: seed, rejected: '0', reason: '', qcRemarks: '', seed };
       }
       return next;
     });
@@ -76,18 +90,13 @@ export function PartyGrnQcModal({
 
   const dirty = pending.some((l) => {
     const e = entries[l.id];
-    return e
-      ? e.accepted !== String(l.receivedQty) ||
-          e.rejected !== '0' ||
-          e.reason !== '' ||
-          e.qcRemarks !== ''
-      : false;
+    return e ? !isPristine(e) : false;
   });
   const guard = useDiscardGuard(dirty, onClose);
 
   const setEntry = (id: string, patch: Partial<QcEntry>): void => {
     setEntries((prev) => {
-      const cur = prev[id] ?? { accepted: '', rejected: '0', reason: '', qcRemarks: '' };
+      const cur = prev[id] ?? { accepted: '', rejected: '0', reason: '', qcRemarks: '', seed: '' };
       return { ...prev, [id]: { ...cur, ...patch } };
     });
   };
@@ -99,6 +108,10 @@ export function PartyGrnQcModal({
       const e = entries[l.id];
       const accRaw = e?.accepted.trim() ?? '';
       const rejRaw = e?.rejected.trim() ?? '';
+      // Partial QC: a line left at 0 / 0 (or cleared) is skipped — inspect
+      // line 1 now and line 2 later. Only an all-skipped save is refused.
+      const zeroOrBlank = (v: string): boolean => v === '' || Number(v) === 0;
+      if (zeroOrBlank(accRaw) && zeroOrBlank(rejRaw)) continue;
       // A blank box is not a 0 — Number('') would quietly read it as one.
       if (accRaw === '' || rejRaw === '') {
         setErr(`Line ${l.lineNo}: Enter Accepted and Deviated (0 if none).`);
@@ -110,14 +123,15 @@ export function PartyGrnQcModal({
         setErr(`Line ${l.lineNo}: Accepted and Deviated — whole numbers only.`);
         return;
       }
-      if (
-        !Number.isInteger(accepted) ||
-        !Number.isInteger(rejected) ||
-        accepted < 0 ||
-        rejected < 0 ||
-        accepted + rejected !== l.receivedQty
-      ) {
-        setErr(`Line ${l.lineNo}: Accepted + Deviated must equal Received (${l.receivedQty}).`);
+      if (accepted < 0 || rejected < 0) {
+        setErr(`Line ${l.lineNo}: Accepted and Deviated cannot be negative.`);
+        return;
+      }
+      const qcPending = qcPendingQtyOf(l);
+      if (accepted + rejected > qcPending) {
+        setErr(
+          `Line ${l.lineNo}: Accepted + Deviated (${accepted + rejected}) cannot be more than QC Pending (${qcPending}).`,
+        );
         return;
       }
       const reason = e?.reason.trim() ?? '';
@@ -136,7 +150,11 @@ export function PartyGrnQcModal({
       });
     }
     if (lines.length === 0) {
-      setErr('No line is waiting for QC.');
+      setErr(
+        pending.length === 0
+          ? 'No line has QC Pending.'
+          : 'Enter the Accepted and/or Deviated qty.',
+      );
       return;
     }
     if (inFlight.current) return;
@@ -202,7 +220,7 @@ export function PartyGrnQcModal({
           </div>
         ) : pending.length === 0 ? (
           <div className="empty-state" style={{ padding: 14 }}>
-            No line is waiting for QC.
+            No line has QC Pending.
           </div>
         ) : (
           <div className="tbl-wrap">
@@ -212,6 +230,8 @@ export function PartyGrnQcModal({
                   <th className="th-num">Ln</th>
                   <th>Customer RM</th>
                   <th className="th-num">Received Qty</th>
+                  <th className="th-num">Inspected So Far</th>
+                  <th className="th-num">QC Pending</th>
                   <th className="th-num">
                     Accepted Qty<span className="req">★</span>
                   </th>
@@ -224,6 +244,7 @@ export function PartyGrnQcModal({
                 {pending.map((l) => {
                   const e = entries[l.id];
                   const rejectedNum = Number(e?.rejected || '0');
+                  const qcPending = qcPendingQtyOf(l);
                   return (
                     <tr key={l.id}>
                       <td className="td-num mono">{l.lineNo}</td>
@@ -233,6 +254,17 @@ export function PartyGrnQcModal({
                         </span>
                       </td>
                       <td className="td-num mono fw-700">{l.receivedQty}</td>
+                      <td
+                        className="td-num mono"
+                        title={`Accepted ${l.acceptedQty} / Deviated ${l.rejectedQty}`}
+                      >
+                        <span style={{ color: 'var(--green2)' }}>{l.acceptedQty}</span>
+                        {' / '}
+                        <span style={{ color: l.rejectedQty > 0 ? 'var(--red2)' : 'var(--text3)' }}>
+                          {l.rejectedQty}
+                        </span>
+                      </td>
+                      <td className="td-num mono fw-700">{qcPending}</td>
                       <td className="td-num">
                         <input
                           type="number"
@@ -242,16 +274,13 @@ export function PartyGrnQcModal({
                           aria-label={`Accepted Qty, line ${l.lineNo}`}
                           value={e?.accepted ?? ''}
                           onChange={(ev) => {
-                            // Keep the pair adding up: Rejected follows Accepted.
+                            // Keep the pair adding up to QC Pending: Deviated follows Accepted.
                             const a = ev.target.value;
                             const n = Number(a);
                             setEntry(l.id, {
                               accepted: a,
-                              ...(a.trim() !== '' &&
-                              Number.isInteger(n) &&
-                              n >= 0 &&
-                              n <= l.receivedQty
-                                ? { rejected: String(l.receivedQty - n) }
+                              ...(a.trim() !== '' && Number.isInteger(n) && n >= 0 && n <= qcPending
+                                ? { rejected: String(qcPending - n) }
                                 : {}),
                             });
                           }}
@@ -319,7 +348,7 @@ export function PartyGrnQcModal({
         ) : null}
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
-          <button type="button" className="btn btn-ghost" onClick={onClose}>
+          <button type="button" className="btn btn-ghost" onClick={guard.requestClose}>
             Cancel
           </button>
           <button

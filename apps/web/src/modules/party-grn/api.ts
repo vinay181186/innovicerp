@@ -163,13 +163,22 @@ export function useUpdatePartyGrn(id: string, saveKey?: SaveKey) {
 // hook is gone; the dialog uses the generic /cancel routes.
 
 /** ADR-203 (owner D4): Incoming QC on a Party GRN — a separate step after the
- *  receipt, gated by qc_incoming · entry. Only the accepted qty enters the
- *  customer-material register. */
-export function useQcPartyGrn() {
+ *  receipt, gated by qc_incoming · entry. Partial (0233): each save books part
+ *  of a line's QC Pending. Only the accepted qty enters the customer-material
+ *  register. */
+export function useQcPartyGrn(saveKey?: SaveKey) {
   const qc = useQueryClient();
   return useMutation<PartyGrnDetail, Error, { id: string } & PartyGrnQcInput>({
+    // ADR-172: one Idempotency-Key per QC popup — a retry after a timeout
+    // replays the first result instead of booking the same pieces twice.
     mutationFn: ({ id, ...body }) =>
-      apiFetch<PartyGrnDetail>(`/party-grn/${id}/qc`, { method: 'POST', json: body }),
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<PartyGrnDetail>(`/party-grn/${id}/qc`, {
+          method: 'POST',
+          json: body,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: partyGrnKeys.all });
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });

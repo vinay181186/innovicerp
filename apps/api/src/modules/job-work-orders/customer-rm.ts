@@ -10,7 +10,8 @@
 //     `jwLineRegister` (the Issue-to-JC cap; that file stays untouched).
 //     Accepted has NO qc_at filter — grandfathered pre-QC receipts carry
 //     accepted = received with qc_at NULL (migration 0173) and are in store.
-//   - qcPending = party-grn PENDING_QC_SQL (reused, not retyped).
+//   - qcPending = Σ party-grn QC_PENDING_QTY_SQL (received − accepted −
+//     rejected; partial QC 0233 — a part-inspected line counts what is left).
 //   - deviated  = the pending-NC half of party-grn `partyCommittedQtySql`
 //     (ADR-247), same joins.
 // Every table is company-filtered and soft-delete-filtered; a cancelled Party
@@ -19,7 +20,7 @@
 import { sql } from 'drizzle-orm';
 import type { CustomerRmQty } from '@innovic/shared';
 import type { DbTransaction } from '../../db/with-user-context';
-import { PENDING_QC_SQL } from '../party-grn/service';
+import { QC_PENDING_QTY_SQL } from '../party-grn/qc-state';
 
 export interface CustomerRmLineRow {
   jwId: string;
@@ -54,7 +55,7 @@ export async function customerRmByJw(
     grn AS (
       SELECT pgl.jw_line_id,
              SUM(pgl.received_qty) AS received_qty,
-             SUM(pgl.received_qty) FILTER (WHERE ${PENDING_QC_SQL}) AS qc_pending_qty,
+             SUM(${QC_PENDING_QTY_SQL}) AS qc_pending_qty,
              SUM(pgl.accepted_qty) AS accepted_qty
         FROM public.party_grn_lines pgl
         JOIN public.party_grn pg ON pg.id = pgl.party_grn_id AND pg.deleted_at IS NULL
