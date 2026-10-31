@@ -105,9 +105,10 @@ export function CheckTable({ check }: { check: DashCheck }): React.JSX.Element {
         columns={columns(check)}
         rows={check.rows}
         rowKey={(r) => r.key}
-        // ▾ sort/filter in the browser (ADR-200) only when these rows are the
-        // whole list; on a "Showing N of M" sample it would filter a part.
-        sortFilter={!more}
+        // No ▾ sort/filter: each check shows at most 8 rows of a server list, and
+        // every check shares one saved key per page, so a filter would cross-filter
+        // the other checks; full sort/filter lives on the View-all page.
+        sortFilter={false}
         emptyText="Nothing waiting."
       />
       {more ? (

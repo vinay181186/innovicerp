@@ -13,7 +13,7 @@ import { useDecideOpLogTimeChange } from '@/modules/op-entry/api';
 import { useApprovePurchaseOrder, useRejectPurchaseOrder } from '@/modules/purchase-orders/api';
 import { useApproveRouteCard, useRejectRouteCard } from '@/modules/route-cards/api';
 import { useToast } from '@/ui/feedback';
-import { dashboardKeys } from './api';
+import { dashboardKeys, notificationKeys } from './api';
 
 // PRs need no approval (owner rule 2026-10-31) — no 'pr' kind.
 export type InboxKind = 'po' | 'rc' | 'logEntry';
@@ -63,6 +63,8 @@ export function useApprovalActions(presentKeys: string) {
   const refresh = (): void => {
     void qc.invalidateQueries({ queryKey: dashboardKeys.home() });
     void qc.invalidateQueries({ queryKey: approvalsKeys.inbox() });
+    // The bell: a decision changes what the user is notified about.
+    void qc.invalidateQueries({ queryKey: notificationKeys.all });
   };
 
   async function approveOne(i: InboxItem): Promise<void> {

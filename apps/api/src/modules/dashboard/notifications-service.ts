@@ -23,9 +23,11 @@ import {
 } from '@innovic/shared';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { notificationReads } from '../../db/schema';
-import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
+import { hasFormAccess } from '../../lib/access';
 import { AuthorizationError } from '../../lib/errors';
-import { loadAccess } from './access';
+import { listPoApprovalInbox } from '../purchase-orders/approval-inbox';
+import { hasTick, loadAccess } from './access';
 import {
   bellCandidates,
   isStillOpen,
@@ -88,6 +90,19 @@ export async function getNotifications(
   const cid = requireCompany(user);
   const a = await loadAccess(user);
   const c = { cid, today: istToday(), myName: '' };
+  // ADR-264 — "waiting for your approval" on a PO follows the approvals
+  // inbox's own rule for this caller (approval ceiling, approver list, own
+  // POs). The access check opens its own transaction, so it runs first.
+  const canApprovePo =
+    hasTick(a, 'po_create', 'approve') && (await hasFormAccess(user, 'po_create', 'approve'));
+  const poInbox = canApprovePo
+    ? async (tx: DbTransaction) =>
+        new Set(
+          (await listPoApprovalInbox(tx, cid, user, { canApprove: true, showMoney: false })).map(
+            (r) => r.id,
+          ),
+        )
+    : async () => new Set<string>();
   return withUserContext(user, async (tx) => {
     const { replyNotes, cands, seenAt } = await readNoteCandidates(tx, a, c, user.id, {
       days: NOTIFICATION_DAYS,
@@ -126,10 +141,13 @@ export async function getNotifications(
 
     // Word the returned notes: Day Log replies carry their own text; events
     // read "still open?" once per kind of next step (approvals inbox not
-    // loaded — openSets asks the approval lists' own queries).
+    // loaded — POs ask the inbox's own rule via poInbox, Route Cards the
+    // approval list's query).
     const shown = new Set(res.items.map((n) => n.key));
     const shownCands = kept.filter((k) => shown.has(k.key));
-    const open = shownCands.length ? await openSets(tx, shownCands, c, user.id, null) : new Map();
+    const open = shownCands.length
+      ? await openSets(tx, shownCands, c, user.id, null, poInbox)
+      : new Map();
     const textByKey = new Map<string, NoteWithActor['text']>([
       ...replyNotes.map((n) => [n.key, n.text] as const),
       ...shownCands.map((k) => [k.key, noteText(k.ev, k.rule, isStillOpen(open, k))] as const),

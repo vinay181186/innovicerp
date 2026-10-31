@@ -9,7 +9,8 @@
 //                       cancelled, closed short or deleted, or on a header
 //                       that is not open, wants nothing more. soToPlanSql
 //                       groups by order, so the per-line SQL is written here
-//                       with the same coverage expressions.
+//                       with the same shared coverage fragments (SO and
+//                       JWSO, lib/so-line-coverage.ts).
 //                       Qty = To Plan, date = the line's Due Date,
 //                       reference = Client PO No.
 //   plan_rc_approval  — personal/rows-route-card.ts rcPendingSql (new Route
@@ -17,7 +18,12 @@
 //                       Created On (IST day), the status reads its age.
 
 import { type SQL, sql } from 'drizzle-orm';
-import { soLineDirectJcRaw, soLinePlannedRaw } from '../../../lib/so-line-coverage';
+import {
+  jwLineDirectJcRaw,
+  jwLinePlannedRaw,
+  soLineDirectJcRaw,
+  soLinePlannedRaw,
+} from '../../../lib/so-line-coverage';
 import { rcPendingSql } from '../personal/rows-route-card';
 import { orderHref } from './sales';
 import type { CheckCtx, CheckDef } from './types';
@@ -60,17 +66,8 @@ export function soLinesUnplannedSql(c: CheckCtx): SQL {
     FROM public.job_work_order_lines jwl
     JOIN public.job_work_orders jw
       ON jw.id = jwl.job_work_order_id AND jw.deleted_at IS NULL AND jw.status = 'open'
-    CROSS JOIN LATERAL (SELECT
-      COALESCE((SELECT SUM(p.plan_qty) FROM public.plans p
-                WHERE p.jw_line_id = jwl.id AND p.deleted_at IS NULL
-                  AND p.plan_status <> 'cancelled'), 0) AS planned,
-      COALESCE((SELECT SUM(jc.order_qty) FROM public.job_cards jc
-                WHERE jc.source_jw_line_id = jwl.id AND jc.deleted_at IS NULL
-                  AND jc.item_id IS NOT DISTINCT FROM jwl.item_id
-                  AND jc.production_order_id IS NULL AND jc.recovery_kind IS NULL
-                  AND NOT EXISTS (SELECT 1 FROM public.plans pj
-                                  WHERE pj.jc_id = jc.id AND pj.deleted_at IS NULL
-                                    AND pj.plan_status <> 'cancelled')), 0) AS direct) cov
+    CROSS JOIN LATERAL (SELECT ${sql.raw(jwLinePlannedRaw('jwl'))} AS planned,
+                               ${sql.raw(jwLineDirectJcRaw('jwl'))} AS direct) cov
     CROSS JOIN LATERAL (SELECT GREATEST(jwl.order_qty
              - LEAST((cov.planned + cov.direct)::numeric, jwl.order_qty), 0) AS to_plan) ln
     LEFT JOIN public.items i ON i.id = jwl.item_id

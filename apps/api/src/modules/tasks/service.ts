@@ -126,12 +126,16 @@ async function loadVisibleTask(
   id: string,
   companyId: string,
   user: AuthContext,
+  lock = false,
 ): Promise<TaskRecord> {
-  const rows = await tx
+  const q = tx
     .select()
     .from(tasks)
     .where(and(eq(tasks.id, id), eq(tasks.companyId, companyId), isNull(tasks.deletedAt)))
     .limit(1);
+  // CLAUDE.md §20.3 — a status change locks the row first, so the status read
+  // here is the real prior status and the history row records true before→after.
+  const rows = lock ? await q.for('update') : await q;
   const t = rows[0];
   if (!t || !canViewTask(t, user)) throw new NotFoundError('Task not found. Refresh the page.');
   return t;
@@ -672,7 +676,9 @@ async function transitionStatus(
   // 0 rows and is told who got there first. Complete / Cancel end the task
   // from ANY open status (ADR-264): someone moving it To Do → In Progress at
   // the same moment must not make the Complete fail. A move between open
-  // statuses stays conditional on the exact status we read.
+  // statuses stays conditional on the exact status we read. Every caller read
+  // `t` with FOR UPDATE, so this guard is belt-and-braces — `t.status` is the
+  // true prior status the history row below records.
   const fromCond =
     target === 'completed' || target === 'cancelled'
       ? inArray(tasks.status, [...OPEN_STATUSES])
@@ -736,7 +742,7 @@ export async function updateTaskStatus(
   await requireCanWrite(user);
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
-    const t = await loadVisibleTask(tx, id, companyId, user);
+    const t = await loadVisibleTask(tx, id, companyId, user, true);
     await transitionStatus(tx, t, input.status, { comment: input.comment }, companyId, user);
     return getTaskInternal(tx, id, companyId, user);
   });
@@ -750,7 +756,7 @@ export async function completeTask(
   await requireCanWrite(user);
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
-    const t = await loadVisibleTask(tx, id, companyId, user);
+    const t = await loadVisibleTask(tx, id, companyId, user, true);
     await transitionStatus(
       tx,
       t,
@@ -771,7 +777,7 @@ export async function cancelTask(
   await requireCanWrite(user);
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
-    const t = await loadVisibleTask(tx, id, companyId, user);
+    const t = await loadVisibleTask(tx, id, companyId, user, true);
     await transitionStatus(tx, t, 'cancelled', { reason: input.reason }, companyId, user);
     return getTaskInternal(tx, id, companyId, user);
   });

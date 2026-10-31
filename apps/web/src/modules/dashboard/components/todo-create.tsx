@@ -62,7 +62,6 @@ export function TodoCreate({ onClose }: { onClose: () => void }): React.JSX.Elem
   const [dueDate, setDueDate] = useState(todayIst());
   const [assignTo, setAssignTo] = useState<string>(ME);
   const [userTerm, setUserTerm] = useState('');
-  const [docId, setDocId] = useState<string | null>(null);
   // The picked document, kept at pick time: Save builds the link from this,
   // never from the latest search results (which may no longer hold it).
   const [docPick, setDocPick] = useState<{
@@ -108,7 +107,7 @@ export function TodoCreate({ onClose }: { onClose: () => void }): React.JSX.Elem
     if (!t) return setErr('Write what needs doing.');
     if (assignTo !== ME && !dueDate) return setErr('Due Date is required.');
     let linkedRef: TaskLinkedRef | undefined;
-    if (docId && docPick) {
+    if (docPick) {
       linkedRef = {
         type: docPick.type,
         id: docPick.opt.id,
@@ -192,7 +191,7 @@ export function TodoCreate({ onClose }: { onClose: () => void }): React.JSX.Elem
         </FormField>
         <FormField label="Linked document" size="lg">
           <SearchableSelect
-            value={docId}
+            value={docPick ? `${docPick.type}:${docPick.opt.id}` : null}
             valueLabel={docPick?.opt.code || undefined}
             options={docOptions}
             onSearch={onDocSearch}
@@ -204,7 +203,6 @@ export function TodoCreate({ onClose }: { onClose: () => void }): React.JSX.Elem
             selectedLabel={(o) => o.code ?? o.name}
             onChange={(id) => {
               const hit = id ? docs.byId.get(id) : undefined;
-              setDocId(hit ? id : null);
               setDocPick(hit ?? null);
             }}
           />

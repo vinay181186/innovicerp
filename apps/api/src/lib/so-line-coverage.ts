@@ -171,3 +171,26 @@ export function soLineCoveredRaw(sol: string): string {
 export function soLineOwnCoveredRaw(sol: string): string {
   return `(${soLineOwnPlannedRaw(sol)} + ${soLineDirectJcRaw(sol)})::numeric`;
 }
+
+// ADR-264 — JOB WORK order line coverage, the JWSO twin of soLinePlannedRaw /
+// soLineDirectJcRaw: Σ plan_qty of the line's live, non-cancelled plans, and
+// Σ order_qty of its DIRECT Job Cards (line's own item, no Production Order,
+// not a rework / repair child, not any live plan's jc_id). A JWSO line has no
+// part plans, PRs or sets. `jwl` is the job_work_order_lines alias. Read by
+// the home so_to_plan list and the plan_so_unplanned check — one copy.
+
+export function jwLinePlannedRaw(jwl: string): string {
+  return `COALESCE((SELECT SUM(p_jw.plan_qty) FROM public.plans p_jw
+              WHERE p_jw.jw_line_id = ${jwl}.id AND p_jw.deleted_at IS NULL
+                AND p_jw.plan_status <> 'cancelled'), 0)`;
+}
+
+export function jwLineDirectJcRaw(jwl: string): string {
+  return `COALESCE((SELECT SUM(jc_jw.order_qty) FROM public.job_cards jc_jw
+              WHERE jc_jw.source_jw_line_id = ${jwl}.id AND jc_jw.deleted_at IS NULL
+                AND jc_jw.item_id IS NOT DISTINCT FROM ${jwl}.item_id
+                AND jc_jw.production_order_id IS NULL AND jc_jw.recovery_kind IS NULL
+                AND NOT EXISTS (SELECT 1 FROM public.plans pj_jw
+                                WHERE pj_jw.jc_id = jc_jw.id AND pj_jw.deleted_at IS NULL
+                                  AND pj_jw.plan_status <> 'cancelled')), 0)`;
+}

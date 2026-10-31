@@ -12,7 +12,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 import { taskKeys } from '@/modules/tasks/api';
-import { dashboardKeys } from './api';
+import { dashboardKeys, notificationKeys } from './api';
 
 export type CreateTodoInput =
   | { kind: 'me'; input: CreatePersonalTodoInput }
@@ -23,6 +23,8 @@ function useInvalidateTodo(): () => void {
   return () => {
     void qc.invalidateQueries({ queryKey: taskKeys.all });
     void qc.invalidateQueries({ queryKey: dashboardKeys.home() });
+    // The bell: assigning or completing a to-do raises / clears notifications.
+    void qc.invalidateQueries({ queryKey: notificationKeys.all });
   };
 }
 

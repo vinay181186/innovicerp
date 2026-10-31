@@ -6,12 +6,13 @@
 // GET /me/ui-settings on first use; any failure (including a 404 before the
 // API side is deployed) falls back to Comfortable silently. A change applies
 // at once — the `density-compact` class on <body> — and is then saved with
-// PUT /me/ui-settings. A failed save keeps the choice for this session.
+// PUT /me/ui-settings. A failed save re-reads the settings from the server.
 
 import { useCallback, useEffect } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { type QueryClient, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   DEFAULT_DASHBOARD_LIST_OPEN,
+  type MeResponse,
   DEFAULT_TABLE_DENSITY,
   type SaveUiSettingsInput,
   type TableDensity,
@@ -20,7 +21,7 @@ import {
 } from '@innovic/shared';
 
 import { apiFetch } from './api';
-import { useSession } from './session';
+import { sessionQueryKey, useSession } from './session';
 
 /** Keyed by the logged-in user (shared PCs); every ['me', …] query is removed
  *  on sign-out (lib/session.ts). */
@@ -71,15 +72,40 @@ export function applyDensity(density: TableDensity): void {
 // ADR-264 — every PUT waits for the one before it. Without this, two quick
 // clicks (Show then Hide on one check, or a per-check toggle then a new
 // "Lists open as" default, which clears the overrides) could commit out of
-// order and leave the server different from the screen. One chain for the
-// whole app, because every hook instance shares the one settings row. A failed
-// save is swallowed (the choice stays for this session) and never blocks the
-// next one.
+// order and leave the server different from the screen. One chain per signed-in
+// user: a new user starts a fresh chain, and a queued save whose user is no
+// longer the session user is dropped when its turn comes (shared PCs). A failed
+// save never blocks the next one; once the queue has drained, a failure
+// refetches the settings so the screen shows what the server actually holds
+// instead of the optimistic value.
 let saveChain: Promise<unknown> = Promise.resolve();
-function enqueueSave(next: SaveUiSettingsInput): void {
+let chainUser: string | undefined;
+let pending = 0;
+let failed = false;
+function enqueueSave(qc: QueryClient, userId: string, next: SaveUiSettingsInput): void {
+  if (chainUser !== userId) {
+    chainUser = userId;
+    saveChain = Promise.resolve();
+    pending = 0;
+    failed = false;
+  }
+  pending += 1;
   saveChain = saveChain
-    .then(() => apiFetch<UiSettings>('/me/ui-settings', { method: 'PUT', json: next }))
-    .catch(() => undefined);
+    .then(async () => {
+      if (qc.getQueryData<MeResponse | null>(sessionQueryKey)?.id !== userId) return;
+      await apiFetch<UiSettings>('/me/ui-settings', { method: 'PUT', json: next });
+    })
+    .catch(() => {
+      if (chainUser === userId) failed = true;
+    })
+    .finally(() => {
+      if (chainUser !== userId) return; // chain was reset for another user
+      pending -= 1;
+      if (pending === 0 && failed) {
+        failed = false;
+        void qc.invalidateQueries({ queryKey: uiSettingsQueryKey(userId) });
+      }
+    });
 }
 
 export function useUiSettings(): {
@@ -122,7 +148,7 @@ export function useUiSettings(): {
         applySave(prev ?? FALLBACK, next),
       );
       if (next.tableDensity) applyDensity(next.tableDensity);
-      enqueueSave(next);
+      if (userId) enqueueSave(qc, userId, next);
     },
     [qc, userId],
   );

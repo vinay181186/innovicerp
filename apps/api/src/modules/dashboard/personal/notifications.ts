@@ -323,6 +323,11 @@ export function candidates(
   return out;
 }
 
+/** ADR-264 — the caller's PO approvals inbox ids (purchase-orders
+ *  listPoApprovalInbox: Approve tick, approver list, approval ceiling, own POs
+ *  at any value), for a caller that has not loaded the whole inbox. */
+export type PoInboxIds = (tx: DbTransaction) => Promise<Set<string>>;
+
 async function openIds(
   tx: DbTransaction,
   open: Open,
@@ -330,10 +335,13 @@ async function openIds(
   c: ListCtx,
   me: string,
   approvals: ApprovalInboxResponse | null,
+  poInbox?: PoInboxIds,
 ): Promise<Set<string>> {
   // The home has the approvals inbox already. The bell does not load it: it
-  // asks the "waiting for approval" list's own query instead (wording only).
+  // asks the PO inbox's own rule (poInbox) so "waiting for your approval"
+  // matches the inbox, else the "waiting for approval" list's query.
   if (open === 'approval_po' && approvals) return new Set((approvals.po ?? []).map((r) => r.id));
+  if (open === 'approval_po' && poInbox) return poInbox(tx);
   if (open === 'approval_rc' && approvals) return new Set((approvals.rc ?? []).map((r) => r.id));
   if (open === 'approval_po' || open === 'approval_rc') {
     const d = APPROVAL_DEFS[open === 'approval_po' ? 'po_draft' : 'rc_pending'];
@@ -402,13 +410,16 @@ export function noteText(ev: ActivityEvent, rule: NoteRule, open: boolean): Dash
   ];
 }
 
-/** One "still open?" read per kind of next step, over every candidate id. */
+/** One "still open?" read per kind of next step, over every candidate id —
+ *  the kinds are independent, so they run together (postgres-js queues them
+ *  on the transaction's one connection; no second pool connection). */
 export async function openSets(
   tx: DbTransaction,
   cands: readonly NoteCandidate[],
   c: ListCtx,
   me: string,
   approvals: ApprovalInboxResponse | null,
+  poInbox?: PoInboxIds,
 ): Promise<Map<Open, Set<string>>> {
   const byOpen = new Map<Open, Set<string>>();
   for (const { ev, rule } of cands) {
@@ -416,11 +427,13 @@ export async function openSets(
     s.add(ev.entityId);
     byOpen.set(rule.open, s);
   }
-  const out = new Map<Open, Set<string>>();
-  for (const [open, ids] of byOpen) {
-    out.set(open, await openIds(tx, open, [...ids], c, me, approvals));
-  }
-  return out;
+  const entries = await Promise.all(
+    [...byOpen].map(
+      async ([open, ids]) =>
+        [open, await openIds(tx, open, [...ids], c, me, approvals, poInbox)] as const,
+    ),
+  );
+  return new Map(entries);
 }
 
 /** True when this candidate's next step is in the open sets. */

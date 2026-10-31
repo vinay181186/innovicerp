@@ -7,7 +7,8 @@
 //                          PRO Target Date is on or before Sunday of this
 //                          week (IST) — overdue ones included, red, "N days
 //                          late". Qty = what is still to come (Order Qty −
-//                          credited).
+//                          credited); a PRO with nothing left to come is left
+//                          out, late or not.
 //   prod_rc_pending      — plans whose derived status (lib/plan-order-coverage
 //                          planDerivedStatusSql) reads "no Route Card" or
 //                          "Route Card waiting approval". Cancelled plans read
@@ -79,7 +80,8 @@ export function proDueWeekSql(c: CheckCtx): SQL {
     LEFT JOIN public.job_work_orders jw ON jw.id = jwl.job_work_order_id AND jw.deleted_at IS NULL
     WHERE pro.company_id = ${c.cid}::uuid AND pro.deleted_at IS NULL
       AND pro.status IN ('open', 'partially_closed')
-      AND pro.target_date <= ${weekEnd(c.today)}::date`;
+      AND pro.target_date <= ${weekEnd(c.today)}::date
+      AND pro.order_qty - COALESCE(pro.credited_qty, 0) > 0`;
 }
 
 const planBase = {
