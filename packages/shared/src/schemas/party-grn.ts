@@ -40,6 +40,9 @@ export const partyGrnLineSchema = z.object({
   /** ADR-203 (owner D3): rejected pieces already sent back on a Customer
    *  Material Return. Held = rejectedQty − rejectedReturnedQty. */
   rejectedReturnedQty: z.number().int().nonnegative().default(0),
+  /** Partial Incoming QC (0233): QC Pending Qty = received − accepted −
+   *  rejected, computed by the server. 0 = the line is fully inspected. */
+  qcPendingQty: z.number().int().nonnegative().default(0),
   remarks: z.string().nullable(),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
@@ -81,8 +84,11 @@ export const partyGrnListItemSchema = partyGrnSchema.extend({
   totalReceivedQty: z.number().int().nonnegative(),
   /** ADR-203: Σ acceptedQty across all lines (what entered the register). */
   totalAcceptedQty: z.number().int().nonnegative().default(0),
-  /** ADR-203: lines still waiting for Incoming QC. 0 = QC done. */
+  /** Lines with QC Pending Qty > 0 (untouched or part-inspected, 0233).
+   *  0 = QC done. */
   qcPendingLines: z.number().int().nonnegative().default(0),
+  /** Σ QC Pending Qty (received − accepted − rejected) across all lines. */
+  totalQcPendingQty: z.number().int().nonnegative().default(0),
   /** Number of line items. */
   linesCount: z.number().int().nonnegative(),
 });
@@ -106,9 +112,10 @@ export const createPartyGrnLineInputSchema = z.object({
 export type CreatePartyGrnLineInput = z.infer<typeof createPartyGrnLineInputSchema>;
 
 /** ADR-203 (owner D4): Incoming QC on a Party GRN — a separate step, gated by
- *  the Incoming QC permission (qc_incoming · entry). One entry per line still
- *  waiting; accepted + rejected must equal received; a reason when anything is
- *  rejected. Only the accepted qty enters the customer-material register;
+ *  the Incoming QC permission (qc_incoming · entry). Partial QC (0233, owner
+ *  2026-10-31): one entry per line with QC Pending Qty > 0; 0 < accepted +
+ *  rejected <= QC Pending Qty (the server checks the limit under the JWSO-line
+ *  lock); the line's totals ADD UP; a reason when anything is rejected. Only the accepted qty enters the customer-material register;
  *  rejected pieces are HELD until a Customer Material Return sends them back. */
 export const partyGrnQcLineInputSchema = z
   .object({
@@ -123,6 +130,10 @@ export const partyGrnQcLineInputSchema = z
   .refine((l) => l.rejectedQty === 0 || (l.rejectReason?.length ?? 0) > 0, {
     message: 'A deviation reason is required when any quantity is deviated',
     path: ['rejectReason'],
+  })
+  .refine((l) => l.acceptedQty + l.rejectedQty > 0, {
+    message: 'Enter the Accepted and/or Deviated qty',
+    path: ['acceptedQty'],
   });
 export const partyGrnQcInputSchema = z.object({
   lines: z.array(partyGrnQcLineInputSchema).min(1),

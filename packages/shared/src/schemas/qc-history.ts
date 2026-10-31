@@ -252,7 +252,8 @@ export interface PartyGrnQcRow {
   rmItemName: string | null;
   partyMaterialCode: string | null;
   receivedQty: number;
-  /** Pending rows: = receivedQty. Completed rows: 0. */
+  /** QC Pending Qty = received − accepted − rejected (0233 partial QC), on
+   *  Pending AND Completed rows. Completed row with pendingQty > 0 = Partial. */
   pendingQty: number;
   acceptedQty: number;
   rejectedQty: number;
