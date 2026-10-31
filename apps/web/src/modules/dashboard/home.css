@@ -1,6 +1,6 @@
-/* ADR-250 — the one per-person home. Compact, two columns, no page scroll
-   sideways. Tokens only: late = red, due = orange (the amber tokens), ok = green,
-   none = neutral. */
+/* ADR-264 — the home board: left menu + content, the department checks, My
+   to-do, Day Log, Approvals, All notifications and the bell. Tokens only:
+   late = red, due = orange (the amber tokens), ok = blue, none = neutral. */
 
 .dh {
   display: flex;
@@ -29,36 +29,133 @@ span.dh-link {
   color: var(--text3);
   cursor: default;
 }
+.dh-doc {
+  font-family: var(--mono);
+  font-weight: 700;
+  white-space: nowrap;
+}
+.dh-textbtn {
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  border: 0;
+  background: none;
+  color: var(--text-link);
+  padding: 2px 4px;
+  cursor: pointer;
+}
+.dh-textbtn:disabled {
+  color: var(--text3);
+  cursor: progress;
+}
 
-/* ── header row ── */
-.dh-top {
+/* ── board: menu + content ── */
+.dh-board {
+  display: flex;
+  flex-wrap: wrap;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius2);
+  overflow: hidden;
+  min-height: 560px;
+}
+.dh-menu {
+  flex: 1 1 210px;
+  max-width: 250px;
+  border-right: 1px solid var(--border);
+  background: var(--bg4);
+  padding: var(--sp-1) 0;
+  display: flex;
+  flex-direction: column;
+}
+.dh-mi {
+  font: inherit;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  text-align: left;
+  border: 0;
+  border-left: 3px solid transparent;
+  background: transparent;
+  color: var(--text);
+  padding: 10px 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.dh-mi:hover {
+  background: var(--bg3);
+}
+.dh-mi[aria-current='page'] {
+  background: var(--bg2);
+  border-left-color: var(--blue);
+  color: var(--blue);
+}
+.dh-mi > span:first-child {
+  flex: 1;
+  min-width: 0;
+}
+.dh-mbadge {
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--bg3);
+  color: var(--text2);
+}
+.dh-mi[aria-current='page'] .dh-mbadge {
+  background: var(--blue3);
+  color: var(--blue);
+}
+.dh-mhead {
+  padding: var(--sp-3) 14px var(--sp-1);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text3);
+}
+.dh-main {
+  flex: 999 1 560px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+@media (max-width: 760px) {
+  .dh-menu {
+    flex-basis: 100%;
+    max-width: none;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+}
+
+/* ── view header ── */
+.dh-vh {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--sp-2) var(--sp-3);
+  padding: var(--sp-2) var(--sp-4);
+  border-bottom: 1px solid var(--border);
+  min-height: 34px;
 }
-.dh-top h1 {
-  font-size: var(--fs-lg);
+.dh-vh h2 {
   margin: 0;
-  flex: 1 1 auto;
-  min-width: 0;
+  font-size: var(--fs-lg);
 }
-.dh-top h1 .dh-meta {
-  font-weight: 400;
-  font-size: var(--fs-sm);
+.dh-vh .dh-hint {
   color: var(--text3);
+  font-size: var(--fs-sm);
 }
-.dh-av {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: var(--blue);
-  color: var(--bg2);
-  display: grid;
-  place-items: center;
-  font-size: var(--fs-xs);
-  font-weight: 700;
-  flex: none;
+.dh-vh .dh-sp {
+  flex: 1;
+}
+.dh-ctl {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-sm);
 }
 .dh-seg {
   display: inline-flex;
@@ -66,8 +163,7 @@ span.dh-link {
   border-radius: var(--radius-sm);
   overflow: hidden;
 }
-.dh-seg button,
-.dh-tabs button {
+.dh-seg button {
   font: inherit;
   font-size: var(--fs-sm);
   border: 0;
@@ -81,139 +177,189 @@ span.dh-link {
   color: var(--blue);
   font-weight: 700;
 }
-.dh-bell {
-  font: inherit;
-  border: 1px solid var(--border);
-  background: var(--bg2);
-  color: var(--text);
-  border-radius: var(--radius-sm);
-  padding: 2px 8px;
-  cursor: pointer;
-}
-.dh-bell b {
-  color: var(--amber2);
-}
-
-/* ── headline + cues ── */
-.dh-headline {
-  background: var(--bg2);
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--blue);
-  border-radius: var(--radius2);
-  padding: 7px 12px;
-}
-.dh-headline .dh-link,
-.dh-headline span.dh-link,
-.dh-li .dh-link,
-.dh-li span.dh-link {
-  font-family: var(--mono);
-  font-weight: 700;
-}
-.dh-cues {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.dh-cue {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  background: var(--bg2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius2);
-  padding: 5px 10px;
-  color: var(--text);
-  text-decoration: none;
-  white-space: nowrap;
-}
-a.dh-cue:hover {
-  border-color: var(--blue);
-  background: var(--bg4);
-}
-.dh-cue .dh-n {
-  font-family: var(--mono);
-  font-weight: 700;
-  font-size: var(--fs-md);
-}
-.dh-cue .dh-s {
-  color: var(--text3);
-  font-size: var(--fs-sm);
-}
-.dh-cue.t-late .dh-n {
-  color: var(--red2);
-}
-.dh-cue.t-due .dh-n {
-  color: var(--amber2);
-}
-.dh-cue.t-ok .dh-n {
-  color: var(--green2);
-}
-
-/* ── two-column grid ── */
-.dh-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.75fr) minmax(0, 1fr);
-  gap: var(--sp-2);
-  align-items: start;
-}
-@media (max-width: 900px) {
-  .dh-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-.dh-col {
+.dh-body {
+  padding: var(--sp-3) var(--sp-4);
   display: flex;
   flex-direction: column;
-  gap: var(--sp-2);
+  gap: var(--sp-3);
   min-width: 0;
 }
 
-/* ── panel ── */
-.dh-panel {
-  background: var(--bg2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius2);
-  min-width: 0;
+/* ── department checks ── */
+.dh-check {
+  border-bottom: 1px solid var(--bg3);
 }
-.dh-ph {
+.dh-check-line {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-2);
-  padding: 6px 12px;
-  border-bottom: 1px solid var(--border);
-  flex-wrap: wrap;
+  gap: var(--sp-3);
+  padding: 10px var(--sp-4);
 }
-.dh-ph h2 {
-  font-size: var(--fs-body);
-  margin: 0;
+.dh-check-n {
+  font-family: var(--mono);
+  font-weight: 700;
+  color: var(--text3);
+  min-width: 22px;
+}
+.dh-check-label {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
 }
 .dh-cnt {
   font-family: var(--mono);
+  font-weight: 700;
+  padding: 1px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--bg4);
+  color: var(--text2);
+}
+.dh-cnt.t-late {
+  background: var(--red3);
+  color: var(--red2);
+}
+.dh-cnt.t-due {
+  background: var(--amber3);
+  color: var(--amber2);
+}
+.dh-cnt.t-ok {
+  background: var(--blue3);
+  color: var(--blue);
+}
+.dh-check-body {
+  padding: 0 var(--sp-4) var(--sp-3);
+  min-width: 0;
+}
+.dh-morerow {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  padding-top: var(--sp-1);
   font-size: var(--fs-sm);
   color: var(--text3);
-  font-weight: 400;
-  margin-left: 4px;
 }
+
+/* ── tabs + chips ── */
 .dh-tabs {
   display: flex;
   gap: 2px;
+  padding: var(--sp-2) var(--sp-3) 0;
+  border-bottom: 1px solid var(--border);
 }
 .dh-tabs button {
+  font: inherit;
+  border: 0;
+  border-bottom: 2px solid transparent;
   background: none;
-  padding: 2px 8px;
-  border-radius: var(--radius-sm);
+  color: var(--text3);
+  padding: 6px 10px;
+  font-weight: 600;
+  cursor: pointer;
 }
-.dh-tabs button[aria-pressed='true'] {
+.dh-tabs button[aria-selected='true'] {
+  color: var(--blue);
+  border-bottom-color: var(--blue);
+}
+.dh-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.dh-chip {
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  border: 0;
+  border-radius: 999px;
+  padding: 4px 12px;
   background: var(--bg3);
-  color: var(--text);
+  color: var(--text2);
+  cursor: pointer;
+}
+.dh-chip[aria-pressed='true'] {
+  background: var(--blue3);
+  color: var(--blue);
+}
+
+/* ── to-do rows ── */
+.dh-todo {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 8px var(--sp-4);
+  border-bottom: 1px solid var(--bg3);
+}
+.dh-todo[aria-busy='true'] {
+  opacity: 0.6;
+}
+.dh-todo input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+.dh-todo-code {
+  font-family: var(--mono);
+  font-size: var(--fs-sm);
+  color: var(--text3);
+  white-space: nowrap;
+}
+.dh-todo-title {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dh-todo.dh-unread .dh-todo-title {
   font-weight: 700;
 }
-.dh-empty {
-  padding: 8px 12px;
+.dh-due {
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  white-space: nowrap;
+  color: var(--text2);
+}
+.dh-due.t-late {
+  color: var(--red2);
+}
+.dh-due.t-due {
+  color: var(--amber2);
+}
+.dh-dayhead {
+  padding: var(--sp-2) var(--sp-4) var(--sp-1);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   color: var(--text3);
 }
-.dh-more {
-  padding: 5px 12px;
+.dh-create {
+  margin: var(--sp-3) var(--sp-4) 0;
+  border: 1px solid var(--blue);
+  border-radius: var(--radius2);
+  padding: var(--sp-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.dh-create h3 {
+  margin: 0;
+  font-size: var(--fs-md);
+}
+.dh-actions {
+  display: flex;
+  gap: var(--sp-2);
+}
+.dh-emptytab {
+  padding: var(--sp-4);
+  text-align: center;
+  color: var(--text3);
+}
+
+/* ── approvals links ── */
+.dh-otherap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-4);
   font-size: var(--fs-sm);
 }

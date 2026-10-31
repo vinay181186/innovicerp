@@ -1,5 +1,5 @@
-// What the ▸ row reveals under a Party Material GRN (ADR-199 fit table). The
-// list row carries only the header aggregates, so the per-line QC split is
+// What the row ⋯ "Show details" opens under a Party Material GRN (ADR-199 fit
+// table). The list row carries only the header aggregates, so the per-line QC split is
 // fetched lazily on expand (usePartyGrnDetail — there is no detail page, only
 // GET /party-grn/:id). Shows the Received By / Remarks meta line the old card
 // carried, the per-line QC table (nested compact DataTable), then the receipt's
@@ -7,9 +7,7 @@
 
 import type { PartyGrnLine, PartyGrnListItem } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
-import { useState } from 'react';
 import { fmtDateTime } from '@/lib/date';
-import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { undecidedChangesOf, usePendingEditForDoc } from '@/modules/document-edits/api';
 import {
@@ -19,15 +17,8 @@ import {
 } from '@/modules/document-edits/components/pending-change-chip';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
 import { usePartyGrnDetail } from '../api';
-import { EditPartyGrnModal } from './edit-party-grn-modal';
 import { isPartyGrnCancelled } from './party-grn-columns';
-import {
-  PGRN_QC_BADGE,
-  isQcUntouched,
-  pgrnQcLabel,
-  pgrnQcState,
-  qcPendingQtyOf,
-} from '../lib/qc-state';
+import { PGRN_QC_BADGE, pgrnQcLabel, pgrnQcState, qcPendingQtyOf } from '../lib/qc-state';
 
 function lineColumns(): DataTableColumn<PartyGrnLine>[] {
   return [
@@ -194,16 +185,9 @@ export function PartyGrnExpand({ g }: { g: PartyGrnListItem }): React.JSX.Elemen
   const detailQ = usePartyGrnDetail(g.id);
   const lines = detailQ.data?.lines ?? [];
 
-  const { data: eff } = useMyAccess();
-  // Edit is gated by the party_create form's edit action AND the receipt still
-  // having a line nobody has inspected (isQcUntouched — the edit modal's own
-  // rule). Once every line is inspected, even in part, nothing here is
-  // editable, so no Edit button. Cancel stays the way to undo.
-  const canEdit = effectiveFormPerms(eff, 'party_create').edit;
-  // ADR-235: a Cancelled GRN is read-only — no Edit, its reason shown instead.
+  // ADR-235: a Cancelled GRN is read-only — its reason shown instead. Edit is
+  // the list row's ⋯ item (owner 2026-10-31: no ▸, so not in here).
   const cancelled = isPartyGrnCancelled(g);
-  const isLive = !cancelled && lines.some((l) => !l.deletedAt && isQcUntouched(l));
-  const [editing, setEditing] = useState(false);
 
   // ADR-202 — edits staged against this receipt and awaiting a decision. Their
   // per-field changes drive the inline amber chips below (this expand already
@@ -213,8 +197,7 @@ export function PartyGrnExpand({ g }: { g: PartyGrnListItem }): React.JSX.Elemen
 
   return (
     <div style={{ padding: 'var(--sp-2) var(--sp-3) var(--sp-3) var(--sp-6)' }}>
-      {/* Received By + Remarks — carried on the header, no extra fetch. The ✏️
-          Edit trigger sits here (no detail page); it opens the edit modal. */}
+      {/* Received By + Remarks — carried on the header, no extra fetch. */}
       <div
         className="text3"
         style={{
@@ -237,17 +220,6 @@ export function PartyGrnExpand({ g }: { g: PartyGrnListItem }): React.JSX.Elemen
             <b>Reason:</b> {g.cancelReason ?? '—'}
             {g.cancelledAt ? ` · Cancelled ${fmtDateTime(g.cancelledAt)}` : ''}
           </span>
-        ) : null}
-        {canEdit && isLive ? (
-          <button
-            type="button"
-            className="btn btn-ghost"
-            style={{ marginLeft: 'auto' }}
-            onClick={() => setEditing(true)}
-            title="Edit this GRN"
-          >
-            ✏️ Edit
-          </button>
         ) : null}
       </div>
 
@@ -339,8 +311,6 @@ export function PartyGrnExpand({ g }: { g: PartyGrnListItem }): React.JSX.Elemen
           <DocumentHistory entity="PartyGrn" entityId={g.id} refId={g.code} />
         </Panel>
       </div>
-
-      {editing ? <EditPartyGrnModal row={g} onClose={() => setEditing(false)} /> : null}
     </div>
   );
 }

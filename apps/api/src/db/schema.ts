@@ -7606,6 +7606,53 @@ export const userTableColumns = pgTable(
   ],
 ).enableRLS();
 
+// notification_reads (0236, ADR-264): the bell's per-item read state. One row
+// per user per notification key; no row = read when the event is on or before
+// the user's notifications_seen_at. Private to the user (self-only RLS, not live).
+export const notificationReads = pgTable(
+  'notification_reads',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id),
+    noteKey: text('note_key').notNull(),
+    noteTs: timestamp('note_ts', { withTimezone: true }).notNull(),
+    isRead: boolean('is_read').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
+  },
+  (t) => [
+    uniqueIndex('notification_reads_company_user_key_uq')
+      .on(t.companyId, t.userId, t.noteKey)
+      .where(sql`${t.deletedAt} is null`),
+    index('notification_reads_company_user_ts_idx').on(t.companyId, t.userId, t.noteTs),
+    check('notification_reads_note_key_len', sql`char_length(${t.noteKey}) between 1 and 128`),
+    pgPolicy('notification_reads_self_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id() AND user_id = current_user_id()`,
+    }),
+    pgPolicy('notification_reads_self_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id() AND user_id = current_user_id()`,
+      withCheck: sql`company_id = current_company_id() AND user_id = current_user_id() AND updated_by = current_user_id() AND (deleted_by IS NULL OR deleted_by = current_user_id())`,
+    }),
+  ],
+).enableRLS();
+
 export type Company = typeof companies.$inferSelect;
 export type NewCompany = typeof companies.$inferInsert;
 export type User = typeof users.$inferSelect;

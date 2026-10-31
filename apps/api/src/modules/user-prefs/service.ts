@@ -11,7 +11,10 @@
 // screen preferences, so there is no edit-conflict check.
 
 import {
+  DASHBOARD_LIST_OPEN,
+  DEFAULT_DASHBOARD_LIST_OPEN,
   DEFAULT_TABLE_DENSITY,
+  type DashboardListOpen,
   TABLE_DENSITIES,
   type SaveTableLayoutInput,
   type SaveUiSettingsInput,
@@ -20,7 +23,7 @@ import {
   type TableLayoutColumn,
   type UiSettings,
 } from '@innovic/shared';
-import { and, asc, eq, inArray, isNull, notInArray, type SQL, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, like, notInArray, type SQL, sql } from 'drizzle-orm';
 import { userTableColumns, userUiSettings } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { softDeleteStamp } from '../../lib/audit-trail';
@@ -33,6 +36,11 @@ const requireCompany = (user: AuthContext): string => {
 
 /** setting_key for the table density (DB check: ^[a-z_]{1,64}$). */
 export const TABLE_DENSITY_KEY = 'table_density';
+/** ADR-264 home: how check lines open (collapsed / expanded). */
+export const DASHBOARD_LIST_OPEN_KEY = 'dashboard_list_open';
+/** ADR-264 home: one row per check the user opened / closed by hand,
+ *  `dash_open_<checkKey>` = 'open' | 'closed'. */
+export const DASH_OPEN_PREFIX = 'dash_open_';
 
 // ─── UI settings ───────────────────────────────────────────────────────────
 
@@ -58,8 +66,56 @@ async function loadSettings(
         isNull(userUiSettings.deletedAt),
       ),
     );
-  const density = rows.find((r) => r.key === TABLE_DENSITY_KEY)?.value;
-  return { tableDensity: toDensity(density) };
+  return settingsFromRows(rows);
+}
+
+function toListOpen(value: string | null | undefined): DashboardListOpen {
+  return (DASHBOARD_LIST_OPEN as readonly string[]).includes(value ?? '')
+    ? (value as DashboardListOpen)
+    : DEFAULT_DASHBOARD_LIST_OPEN;
+}
+
+/** Pure: the user's live setting rows → the full settings (defaults filled). */
+export function settingsFromRows(rows: ReadonlyArray<{ key: string; value: string }>): UiSettings {
+  const dashboardCheckOpen: Record<string, boolean> = {};
+  for (const r of rows) {
+    if (r.key.startsWith(DASH_OPEN_PREFIX) && r.key.length > DASH_OPEN_PREFIX.length) {
+      dashboardCheckOpen[r.key.slice(DASH_OPEN_PREFIX.length)] = r.value === 'open';
+    }
+  }
+  return {
+    tableDensity: toDensity(rows.find((r) => r.key === TABLE_DENSITY_KEY)?.value),
+    dashboardListOpen: toListOpen(rows.find((r) => r.key === DASHBOARD_LIST_OPEN_KEY)?.value),
+    dashboardCheckOpen,
+  };
+}
+
+/** Insert or overwrite one of the user's settings (last write wins). */
+async function upsertSetting(
+  tx: DbTransaction,
+  companyId: string,
+  user: AuthContext,
+  key: string,
+  value: string,
+): Promise<void> {
+  await tx
+    .insert(userUiSettings)
+    .values({
+      companyId,
+      userId: user.id,
+      settingKey: key,
+      settingValue: value,
+      createdBy: user.id,
+      updatedBy: user.id,
+    })
+    .onConflictDoUpdate({
+      target: [userUiSettings.companyId, userUiSettings.userId, userUiSettings.settingKey],
+      targetWhere: sql`deleted_at is null`,
+      set: {
+        settingValue: sql`excluded.setting_value`,
+        updatedBy: user.id,
+      },
+    });
 }
 
 export async function getUiSettings(user: AuthContext): Promise<UiSettings> {
@@ -72,25 +128,38 @@ export async function saveUiSettings(
   user: AuthContext,
 ): Promise<UiSettings> {
   const companyId = requireCompany(user);
+  // Partial save (ADR-264): only the fields sent change, in one transaction.
   return withUserContext(user, async (tx) => {
-    await tx
-      .insert(userUiSettings)
-      .values({
+    if (input.tableDensity) {
+      await upsertSetting(tx, companyId, user, TABLE_DENSITY_KEY, input.tableDensity);
+    }
+    if (input.dashboardListOpen) {
+      await upsertSetting(tx, companyId, user, DASHBOARD_LIST_OPEN_KEY, input.dashboardListOpen);
+      // A new "Lists open as" choice clears every per-check override.
+      await tx
+        .update(userUiSettings)
+        .set({ ...softDeleteStamp(user), updatedBy: user.id })
+        .where(
+          and(
+            eq(userUiSettings.companyId, companyId),
+            eq(userUiSettings.userId, user.id),
+            isNull(userUiSettings.deletedAt),
+            like(userUiSettings.settingKey, String.raw`dash\_open\_%`),
+          ),
+        );
+    }
+    // Per-check overrides sent in the SAME request apply after the clear.
+    // One row per check key (last one wins).
+    const perCheck = new Map((input.dashboardCheckOpen ?? []).map((c) => [c.checkKey, c.open]));
+    for (const [checkKey, open] of perCheck) {
+      await upsertSetting(
+        tx,
         companyId,
-        userId: user.id,
-        settingKey: TABLE_DENSITY_KEY,
-        settingValue: input.tableDensity,
-        createdBy: user.id,
-        updatedBy: user.id,
-      })
-      .onConflictDoUpdate({
-        target: [userUiSettings.companyId, userUiSettings.userId, userUiSettings.settingKey],
-        targetWhere: sql`deleted_at is null`,
-        set: {
-          settingValue: sql`excluded.setting_value`,
-          updatedBy: user.id,
-        },
-      });
+        user,
+        `${DASH_OPEN_PREFIX}${checkKey}`,
+        open ? 'open' : 'closed',
+      );
+    }
     return loadSettings(tx, companyId, user.id);
   });
 }

@@ -22,7 +22,7 @@ import { type SQL, sql } from 'drizzle-orm';
 import type { DbTransaction } from '../../../db/with-user-context';
 import { type DashAccess, hasTick } from '../access';
 import { dayLogReplyNote, readDayLogReplies } from './day-log-replies';
-import { type ListCtx, listDef } from './lists';
+import { APPROVAL_DEFS, type ListCtx, listDef } from './lists';
 import { runList } from './list-query';
 import { addDays, codePart, entityHref, str } from './util';
 
@@ -64,6 +64,10 @@ export interface NoteRule {
   toPending?: true;
   /** Show the activity's reason after the tail (a Route Card rejection). */
   withReason?: true;
+  /** ADR-264 bell — the tail once the next step is no longer open. Absent =
+   *  no tail: a call to action ("— waiting for your approval") is dropped,
+   *  leaving the plain past fact ("Jinal raised IN-PO-0421"). */
+  doneTail?: string;
 }
 
 /** ADR-253 — the one `changes` entry a resubmitted Route Card's EDIT carries
@@ -220,6 +224,7 @@ export const NOTE_RULES: readonly NoteRule[] = [
     open: 'raiser_pr',
     verb: 'rejected',
     tail: ' — your request',
+    doneTail: ' — your request',
     tone: 'late',
   },
   {
@@ -229,6 +234,7 @@ export const NOTE_RULES: readonly NoteRule[] = [
     open: 'raiser_po',
     verb: 'rejected',
     tail: ' — your order',
+    doneTail: ' — your order',
     tone: 'late',
   },
   {
@@ -241,6 +247,7 @@ export const NOTE_RULES: readonly NoteRule[] = [
     open: 'raiser_rc',
     verb: 'rejected',
     tail: ' — your Route Card',
+    doneTail: ' — your Route Card',
     tone: 'late',
     withReason: true,
   },
@@ -251,6 +258,7 @@ export const NOTE_RULES: readonly NoteRule[] = [
     open: 'raiser_rc_approved',
     verb: 'approved',
     tail: ' — your Route Card can be used now',
+    doneTail: ' — your Route Card',
     tone: 'ok',
   },
 ];
@@ -293,8 +301,10 @@ export interface ActivityEvent {
 
 /** Events that become candidate notes: a held rule, not the caller's own.
  *  One event can feed several next steps (a QC entry: next op can start AND
- *  upload its report) — one note per held rule, the first keyed by the event
- *  id as before, the others by event id + next step. */
+ *  upload its report) — one note per held rule, keyed `<event id>:<next
+ *  step>`. The key never depends on which of the caller's rules matched
+ *  first, so a rights change does not re-key a note and its
+ *  notification_reads row keeps matching (ADR-264). */
 export function candidates(
   events: readonly ActivityEvent[],
   rules: readonly NoteRule[],
@@ -303,17 +313,20 @@ export function candidates(
   const out: Array<{ ev: ActivityEvent; rule: NoteRule; key: string }> = [];
   for (const ev of events) {
     if (ev.userId === me) continue;
-    let first = true;
     for (const rule of rules) {
       if (rule.entity !== ev.entity || rule.action !== ev.action) continue;
       if (rule.opQc && (!ev.opRef || !(Number(ev.qty) > 0))) continue;
       if (rule.toPending && !ev.toPending) continue;
-      out.push({ ev, rule, key: first ? ev.id : `${ev.id}:${rule.open}` });
-      first = false;
+      out.push({ ev, rule, key: `${ev.id}:${rule.open}` });
     }
   }
   return out;
 }
+
+/** ADR-264 — the caller's PO approvals inbox ids (purchase-orders
+ *  listPoApprovalInbox: Approve tick, approver list, approval ceiling, own POs
+ *  at any value), for a caller that has not loaded the whole inbox. */
+export type PoInboxIds = (tx: DbTransaction) => Promise<Set<string>>;
 
 async function openIds(
   tx: DbTransaction,
@@ -322,9 +335,19 @@ async function openIds(
   c: ListCtx,
   me: string,
   approvals: ApprovalInboxResponse | null,
+  poInbox?: PoInboxIds,
 ): Promise<Set<string>> {
-  if (open === 'approval_po') return new Set((approvals?.po ?? []).map((r) => r.id));
-  if (open === 'approval_rc') return new Set((approvals?.rc ?? []).map((r) => r.id));
+  // The home has the approvals inbox already. The bell does not load it: it
+  // asks the PO inbox's own rule (poInbox) so "waiting for your approval"
+  // matches the inbox, else the "waiting for approval" list's query.
+  if (open === 'approval_po' && approvals) return new Set((approvals.po ?? []).map((r) => r.id));
+  if (open === 'approval_po' && poInbox) return poInbox(tx);
+  if (open === 'approval_rc' && approvals) return new Set((approvals.rc ?? []).map((r) => r.id));
+  if (open === 'approval_po' || open === 'approval_rc') {
+    const d = APPROVAL_DEFS[open === 'approval_po' ? 'po_draft' : 'rc_pending'];
+    const { rows } = await runList(tx, d.query(c, { ids }), { ids, limit: 1000 });
+    return new Set(rows.map((r) => r.id));
+  }
   if (open === 'raiser_pr' || open === 'raiser_po') {
     const table =
       open === 'raiser_pr'
@@ -354,20 +377,103 @@ async function openIds(
   return new Set(rows.map((r) => r.id));
 }
 
-export async function buildNotifications(
+/** ADR-264 — the bell reads the same notes over a longer window, as a history
+ *  (readNoteCandidates + bellCandidates + noteText). Defaults = the ADR-250
+ *  home block. */
+export interface NoteOptions {
+  days?: number;
+  /** Most notes kept (home: NOTE_MAX). */
+  max?: number;
+  /** Most activity rows read (home: 300). */
+  scan?: number;
+}
+
+/** A note plus who did it (the bell's initials circle). The home response
+ *  schema strips actorName. */
+export type NoteWithActor = DashNote & { actorName: string | null };
+
+export interface NoteCandidate {
+  ev: ActivityEvent;
+  rule: NoteRule;
+  key: string;
+}
+
+/** The note's words. `open` = its next step is still open: the rule's tail
+ *  (the call to action). Not open: the past fact — doneTail, or no tail. */
+export function noteText(ev: ActivityEvent, rule: NoteRule, open: boolean): DashNote['text'] {
+  const tail = open ? rule.tail : (rule.doneTail ?? '');
+  return [
+    { text: noteLead(ev, rule) },
+    codePart(ev.refId, entityHref(ev.entity, ev.entityId, ev.refId)),
+    ...(tail ? [{ text: tail }] : []),
+    ...(rule.withReason && ev.reason ? [{ text: ` — ${ev.reason}` }] : []),
+  ];
+}
+
+/** One "still open?" read per kind of next step, over every candidate id —
+ *  the kinds are independent, so they run together (postgres-js queues them
+ *  on the transaction's one connection; no second pool connection). */
+export async function openSets(
+  tx: DbTransaction,
+  cands: readonly NoteCandidate[],
+  c: ListCtx,
+  me: string,
+  approvals: ApprovalInboxResponse | null,
+  poInbox?: PoInboxIds,
+): Promise<Map<Open, Set<string>>> {
+  const byOpen = new Map<Open, Set<string>>();
+  for (const { ev, rule } of cands) {
+    const s = byOpen.get(rule.open) ?? new Set<string>();
+    s.add(ev.entityId);
+    byOpen.set(rule.open, s);
+  }
+  const entries = await Promise.all(
+    [...byOpen].map(
+      async ([open, ids]) =>
+        [open, await openIds(tx, open, [...ids], c, me, approvals, poInbox)] as const,
+    ),
+  );
+  return new Map(entries);
+}
+
+/** True when this candidate's next step is in the open sets. */
+export const isStillOpen = (sets: ReadonlyMap<Open, Set<string>>, cand: NoteCandidate): boolean =>
+  sets.get(cand.rule.open)?.has(cand.ev.entityId) ?? false;
+
+/** Keep one note per document where one is enough (ONE_NOTE_PER_DOC). Events
+ *  arrive newest first, so the note kept per document is the newest. */
+function onePerDoc(cands: readonly NoteCandidate[]): NoteCandidate[] {
+  const seen = new Set<string>();
+  return cands.filter(({ ev, rule }) => {
+    if (!ONE_NOTE_PER_DOC.has(rule.open)) return true;
+    const k = `${rule.open}:${ev.entityId}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
+/** The caller's Day Log reply notes, seen time and candidate events (newest
+ *  first, not yet filtered by "still open"). */
+export async function readNoteCandidates(
   tx: DbTransaction,
   a: DashAccess,
   c: ListCtx,
   me: string,
-  approvals: ApprovalInboxResponse | null,
-): Promise<{ items: DashNote[]; unseen: number; seenAt: string | null }> {
+  opts: NoteOptions = {},
+): Promise<{ replyNotes: NoteWithActor[]; cands: NoteCandidate[]; seenAt: string | null }> {
+  const days = opts.days ?? NOTE_DAYS;
+  const scan = opts.scan ?? 300;
   const seenAt = await readSeenAt(tx, c.cid, me);
   // Owner 2026-10-30: Day Log hidden ("Hide page") → no Day Log reply notes.
-  const replyNotes = hasTick(a, 'daylog_view', 'view')
-    ? (await readDayLogReplies(tx, c.cid, me)).map(dayLogReplyNote)
+  const replyNotes: NoteWithActor[] = hasTick(a, 'daylog_view', 'view')
+    ? (await readDayLogReplies(tx, c.cid, me)).map((r) => ({
+        ...dayLogReplyNote(r),
+        actorName: r.author,
+      }))
     : [];
   const rules = rulesFor(a);
-  if (rules.length === 0) return { items: replyNotes, unseen: replyNotes.length, seenAt };
+  if (rules.length === 0) return { replyNotes, cands: [], seenAt };
 
   const toPendingSql = sql`COALESCE(a.changes @> ${RC_TO_PENDING_CHANGE}::jsonb, false)`;
   const pairs: SQL[] = rules.map((r) =>
@@ -385,10 +491,10 @@ export async function buildNotifications(
     WHERE a.company_id = ${c.cid}::uuid
       AND a.user_id IS NOT NULL AND a.user_id <> ${me}::uuid
       AND a.entity_id IS NOT NULL AND a.ref_id IS NOT NULL
-      AND a.ts >= ((${addDays(c.today, -(NOTE_DAYS - 1))}::date)::timestamp AT TIME ZONE 'Asia/Kolkata')
+      AND a.ts >= ((${addDays(c.today, -(days - 1))}::date)::timestamp AT TIME ZONE 'Asia/Kolkata')
       AND (${sql.join(pairs, sql` OR `)})
     ORDER BY a.ts DESC
-    LIMIT 300
+    LIMIT ${scan}
   `)) as unknown as Array<Record<string, unknown>>;
   const events: ActivityEvent[] = res.map((r) => ({
     id: String(r['id']),
@@ -404,46 +510,44 @@ export async function buildNotifications(
     toPending: r['to_pending'] === true,
     reason: str(r['reason']),
   }));
-  const cands = candidates(events, rules, me);
+  return { replyNotes, cands: candidates(events, rules, me), seenAt };
+}
 
-  // One "still open?" read per kind of next step, over every candidate id.
-  const byOpen = new Map<Open, Set<string>>();
-  for (const { ev, rule } of cands) {
-    const s = byOpen.get(rule.open) ?? new Set<string>();
-    s.add(ev.entityId);
-    byOpen.set(rule.open, s);
-  }
-  const stillOpen = new Map<Open, Set<string>>();
-  for (const [open, ids] of byOpen)
-    stillOpen.set(open, await openIds(tx, open, [...ids], c, me, approvals));
+/** ADR-250 home block: notes whose next step is still open, newest first. */
+export async function buildNotifications(
+  tx: DbTransaction,
+  a: DashAccess,
+  c: ListCtx,
+  me: string,
+  approvals: ApprovalInboxResponse | null,
+  opts: NoteOptions = {},
+): Promise<{ items: NoteWithActor[]; unseen: number; seenAt: string | null }> {
+  const noteMax = opts.max ?? NOTE_MAX;
+  const { replyNotes, cands, seenAt } = await readNoteCandidates(tx, a, c, me, opts);
+  if (cands.length === 0) return { items: replyNotes, unseen: replyNotes.length, seenAt };
+  const stillOpen = await openSets(tx, cands, c, me, approvals);
 
   const seenMs = seenAt ? Date.parse(seenAt) : NaN;
-  // Events arrive newest first, so the first note kept per document is the newest.
-  const oneDoc = new Set<string>();
-  const items: DashNote[] = cands
-    .filter(({ ev, rule }) => stillOpen.get(rule.open)?.has(ev.entityId))
-    .filter(({ ev, rule }) => {
-      if (!ONE_NOTE_PER_DOC.has(rule.open)) return true;
-      const k = `${rule.open}:${ev.entityId}`;
-      if (oneDoc.has(k)) return false;
-      oneDoc.add(k);
-      return true;
-    })
-    .slice(0, Math.max(0, NOTE_MAX - replyNotes.length))
+  const items: NoteWithActor[] = onePerDoc(cands.filter((x) => isStillOpen(stillOpen, x)))
+    .slice(0, Math.max(0, noteMax - replyNotes.length))
     .map(({ ev, rule, key }) => ({
       key,
       ts: ev.ts.toISOString(),
       tone: rule.tone,
-      text: [
-        { text: noteLead(ev, rule) },
-        codePart(ev.refId, entityHref(ev.entity, ev.entityId, ev.refId)),
-        { text: rule.tail },
-        ...(rule.withReason && ev.reason ? [{ text: ` — ${ev.reason}` }] : []),
-      ],
+      actorName: ev.actor,
+      text: noteText(ev, rule, true),
       unseen: Number.isNaN(seenMs) || ev.ts.getTime() > seenMs,
     }));
   const unseen = replyNotes.length + items.filter((n) => n.unseen).length;
   return { items: [...replyNotes, ...items], unseen, seenAt };
+}
+
+/** ADR-264 bell: every note in the window as a history (no "still open"
+ *  filter), one per document where one is enough, capped at `max`. Text is
+ *  NOT built here — the caller words only the notes it shows (openSets +
+ *  noteText), so a 6-row popover never words 1,000 notes. */
+export function bellCandidates(cands: readonly NoteCandidate[], max: number): NoteCandidate[] {
+  return onePerDoc(cands).slice(0, Math.max(0, max));
 }
 
 // ── Seen time ──

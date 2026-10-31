@@ -1,81 +1,113 @@
-// ADR-250 — ONE per-person home for every user (replaces the admin /
-// specialist / operator layouts of ADR-044). The server sends only the blocks,
-// rows and actions the caller holds the right for; this file only lays them out.
+// ADR-264 — the home: ONE board, a left menu and a content area (owner design
+// 2026-10-31). The server sends only what the caller may see (departments,
+// checks, approvals); this file lays it out and keeps the chosen view in the
+// URL. Replaces the ADR-250 layout (Widgets / Customize modes, headline + cue
+// strip, Waiting on others, Sent by me, Shortcuts, the right column).
 
-import type { HomeResponse, HomeScope } from '@innovic/shared';
-import { useState } from 'react';
-import '../home.css';
+import { useEffect } from 'react';
+import { useCanOpen } from '@/components/shared/action-link';
+import { useMyAccess } from '@/lib/access-control';
+import { PageState } from '@/ui/layout';
+import { useDashChecks, useHome } from '../api';
 import '../home-rows.css';
-import { useNotificationsSeen } from '../use-notifications-seen';
-import { ApprovalInbox } from './approval-inbox';
-import { DashRowView, RowHead } from './dash-row';
-import { HomeCustomize } from './home-customize';
-import { HomeHeader, HomeHeadline, type HomeMode } from './home-header';
-import { DashListPanel, HomePanel } from './home-panel';
-import { DonePanel, NotificationsPanel, ShortcutsPanel, TodoPanel } from './home-side';
-import { HomeWidgets } from './home-widgets';
+import '../home.css';
+import { DAY_LOG_HREF, type HomeView, isDeptView } from '../home-views';
+import '../notifications.css';
+import { ApprovalsView, inboxTotal, useOtherApprovals } from './approvals-view';
+import { DayLogView } from './daylog-view';
+import { DeptView } from './dept-view';
+import { deptLabel, HomeMenu, type MenuItem } from './home-menu';
+import { NotificationsView } from './notifications-view';
+import { TodoView } from './todo-view';
+
+function LoadState({ error }: { error: boolean }): React.JSX.Element {
+  return error ? (
+    <PageState state="error" message="Could not load the dashboard. Try again." />
+  ) : (
+    <PageState state="loading" />
+  );
+}
 
 export function HomePage({
-  home,
-  scope,
-  onScope,
-  updatedAt,
-  onRefresh,
+  view,
+  onView,
 }: {
-  home: HomeResponse;
-  scope: HomeScope;
-  onScope: (s: HomeScope) => void;
-  updatedAt: number;
-  onRefresh: () => void;
+  view: HomeView;
+  onView: (v: HomeView, replace?: boolean) => void;
 }): React.JSX.Element {
-  const [mode, setMode] = useState<HomeMode>('home');
-  const seen = useNotificationsSeen(home.notifications);
+  const home = useHome();
+  const checks = useDashChecks();
+  const access = useMyAccess();
+  const canOpen = useCanOpen();
+  const others = useOtherApprovals();
+
+  const accessKnown = access.data !== undefined || access.isError;
+  // A failed access read: show it rather than hide it — the server still judges.
+  const canDayLog = access.isError || canOpen(DAY_LOG_HREF);
+  const h = home.data;
+  const blocks = checks.data?.depts ?? [];
+  const block = isDeptView(view) ? blocks.find((b) => b.dept === view) : undefined;
+
+  // A view this person does not have (hidden Day Log, a department the server
+  // did not send) falls back to My to-do — replace, so Back skips it.
+  const hiddenDayLog = view === 'daylog' && accessKnown && !canDayLog;
+  const hiddenDept = isDeptView(view) && checks.data !== undefined && !block;
+  useEffect(() => {
+    if (hiddenDayLog || hiddenDept) onView('todo', true);
+  }, [hiddenDayLog, hiddenDept, onView]);
+
+  const showApprovals = (h?.approvals ?? null) !== null || others.length > 0;
+  const top: MenuItem[] = [
+    {
+      view: 'todo',
+      label: 'My to-do',
+      badge: h ? h.todo.late.length + h.todo.today.length : undefined,
+    },
+    ...(canDayLog ? [{ view: 'daylog' as const, label: 'Day Log' }] : []),
+    ...(showApprovals || view === 'approvals'
+      ? [
+          {
+            view: 'approvals' as const,
+            label: 'Approvals',
+            badge: inboxTotal(h?.approvals ?? null) + others.reduce((s, o) => s + o.count, 0),
+          },
+        ]
+      : []),
+  ];
+
+  let content: React.ReactNode;
+  if (view === 'daylog') {
+    content = canDayLog ? <DayLogView /> : <LoadState error={false} />;
+  } else if (view === 'notifications') {
+    content = <NotificationsView />;
+  } else if (isDeptView(view)) {
+    content = block ? (
+      <DeptView block={block} label={deptLabel(block.dept)} />
+    ) : (
+      <LoadState error={checks.isError} />
+    );
+  } else if (!h) {
+    content = <LoadState error={home.isError} />;
+  } else if (view === 'approvals') {
+    content = <ApprovalsView home={h} others={others} />;
+  } else {
+    content = <TodoView home={h} />;
+  }
 
   return (
     <div className="dh">
-      <HomeHeader
-        home={home}
-        updatedAt={updatedAt}
-        mode={mode}
-        onMode={setMode}
-        onRefresh={onRefresh}
-        scope={scope}
-        onScope={onScope}
-        onBell={seen.openPanel}
-      />
-      {mode === 'customize' ? (
-        <HomeCustomize onClose={() => setMode('home')} />
-      ) : mode === 'widgets' ? (
-        <HomeWidgets quickLinkPages={home.quickLinks} />
-      ) : (
-        <>
-          <HomeHeadline home={home} />
-          <div className="dh-grid">
-            <div className="dh-col">
-              {home.approvals ? (
-                <ApprovalInbox approvals={home.approvals} sent={home.sentForApproval} />
-              ) : null}
-              {home.lists.map((l) => (
-                <DashListPanel key={l.key} list={l} />
-              ))}
-              {home.waitingTotal > 0 ? (
-                <HomePanel title="Waiting on others" count={home.waitingTotal}>
-                  <RowHead head={['Document', 'Item', 'Qty', 'Waiting']} />
-                  {home.waiting.map((r) => (
-                    <DashRowView key={r.key} row={r} />
-                  ))}
-                </HomePanel>
-              ) : null}
-            </div>
-            <div className="dh-col">
-              <NotificationsPanel notes={home.notifications} panelRef={seen.panelRef} />
-              <TodoPanel todo={home.todo} />
-              <DonePanel done={home.done} />
-              <ShortcutsPanel pages={home.quickLinks} />
-            </div>
-          </div>
-        </>
-      )}
+      <div className="dh-board">
+        <HomeMenu
+          top={top}
+          depts={blocks}
+          deptsState={checks.data ? 'ok' : checks.isError ? 'error' : 'loading'}
+          current={view}
+          onView={(v) => onView(v)}
+        />
+        <section className="dh-main" aria-label="Dashboard content">
+          {content}
+        </section>
+      </div>
     </div>
   );
 }

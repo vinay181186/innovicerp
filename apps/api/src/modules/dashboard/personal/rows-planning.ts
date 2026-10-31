@@ -12,7 +12,12 @@
 
 import { type SQL, sql } from 'drizzle-orm';
 import { PLAN_PENDING_QTY_SQL, planDerivedStatusSql } from '../../../lib/plan-order-coverage';
-import { soLineDirectJcRaw, soLinePlannedRaw } from '../../../lib/so-line-coverage';
+import {
+  jwLineDirectJcRaw,
+  jwLinePlannedRaw,
+  soLineDirectJcRaw,
+  soLinePlannedRaw,
+} from '../../../lib/so-line-coverage';
 import { filterFrag, type ListFilter } from './list-query';
 
 /** Shared tail of an order row built from per-line `ln` (to_plan, due_date…). */
@@ -65,17 +70,8 @@ export function soToPlanSql(cid: string, today: string, f: ListFilter): SQL {
              jwl.part_name AS item_name, jwl.uom,
              GREATEST(jwl.order_qty - LEAST((cov.planned + cov.direct)::numeric, jwl.order_qty), 0) AS to_plan
       FROM public.job_work_order_lines jwl
-      CROSS JOIN LATERAL (SELECT
-        COALESCE((SELECT SUM(p.plan_qty) FROM public.plans p
-                  WHERE p.jw_line_id = jwl.id AND p.deleted_at IS NULL
-                    AND p.plan_status <> 'cancelled'), 0) AS planned,
-        COALESCE((SELECT SUM(jc.order_qty) FROM public.job_cards jc
-                  WHERE jc.source_jw_line_id = jwl.id AND jc.deleted_at IS NULL
-                    AND jc.item_id IS NOT DISTINCT FROM jwl.item_id
-                    AND jc.production_order_id IS NULL AND jc.recovery_kind IS NULL
-                    AND NOT EXISTS (SELECT 1 FROM public.plans pj
-                                    WHERE pj.jc_id = jc.id AND pj.deleted_at IS NULL
-                                      AND pj.plan_status <> 'cancelled')), 0) AS direct) cov
+      CROSS JOIN LATERAL (SELECT ${sql.raw(jwLinePlannedRaw('jwl'))} AS planned,
+                                 ${sql.raw(jwLineDirectJcRaw('jwl'))} AS direct) cov
       WHERE jwl.job_work_order_id = jw.id AND jwl.deleted_at IS NULL
         AND jwl.status <> 'cancelled' AND jwl.short_closed_at IS NULL
     ) ln ON true

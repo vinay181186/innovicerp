@@ -86,7 +86,7 @@ describe('qc_report_missing', () => {
       'me',
     );
     expect(got.map((g) => [g.key, g.rule.open])).toEqual([
-      ['q1', 'ops_ready'],
+      ['q1:ops_ready', 'ops_ready'],
       ['q1:qc_report_missing', 'qc_report_missing'],
     ]);
   });

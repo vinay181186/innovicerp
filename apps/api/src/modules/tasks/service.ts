@@ -41,6 +41,7 @@ import { fileRegistry, taskComments, tasks, userAccess, users } from '../../db/s
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { canWrite, requireCanWrite } from '../../lib/access';
 import { lockDocSeries } from '../../lib/doc-series-lock';
+import { fmtDateTime } from '../../lib/format-date';
 import {
   AuthorizationError,
   ConflictError,
@@ -58,6 +59,7 @@ import {
   isOpenStatus,
   istToday,
   loadTaskHistory,
+  OPEN_STATUSES,
   loadUserNames,
   nameOf,
   permsFor,
@@ -124,12 +126,16 @@ async function loadVisibleTask(
   id: string,
   companyId: string,
   user: AuthContext,
+  lock = false,
 ): Promise<TaskRecord> {
-  const rows = await tx
+  const q = tx
     .select()
     .from(tasks)
     .where(and(eq(tasks.id, id), eq(tasks.companyId, companyId), isNull(tasks.deletedAt)))
     .limit(1);
+  // CLAUDE.md §20.3 — a status change locks the row first, so the status read
+  // here is the real prior status and the history row records true before→after.
+  const rows = lock ? await q.for('update') : await q;
   const t = rows[0];
   if (!t || !canViewTask(t, user)) throw new NotFoundError('Task not found. Refresh the page.');
   return t;
@@ -407,6 +413,9 @@ export async function createPersonalTodo(
   return withUserContext(user, async (tx) => {
     await lockDocSeries(tx, companyId, 'tasks'); // ADR-227
     const code = await nextCode(tx, companyId, 'personal');
+    // ADR-264: the home "Create to-do" may link a document — same columns as
+    // createTask. Still private: assigned_to = created_by = the caller.
+    const lr = input.linkedRef ?? null;
     const inserted = await tx
       .insert(tasks)
       .values({
@@ -422,6 +431,10 @@ export async function createPersonalTodo(
         reminderAt: input.reminderAt ? new Date(input.reminderAt) : null,
         status: 'todo',
         viewedAt: new Date(), // own to-do — never "unread" to its author
+        linkedRefType: lr?.type ?? null,
+        linkedRefId: lr?.id ?? null,
+        linkedRefDisplay: lr?.display ?? null,
+        linkedRefNavPage: lr?.navPage ?? null,
         createdBy: user.id,
         updatedBy: user.id,
       })
@@ -438,7 +451,12 @@ export async function createPersonalTodo(
     );
     await emitActivityLog(
       tx,
-      { action: 'CREATE', entity: 'Task', detail: `Added to-do ${code}`, refId: code },
+      {
+        action: 'CREATE',
+        entity: 'Task',
+        detail: `Added to-do ${code}${lr ? ` [${lr.display}]` : ''}`,
+        refId: code,
+      },
       companyId,
       user,
     );
@@ -580,6 +598,40 @@ async function addProgressComment(
   await recordHistory(tx, companyId, taskId, { action: 'comment', note: text }, user);
 }
 
+/** The 409 for a status change someone else made first: "Already completed
+ *  by Jinal at 31-Oct-2026 14:32" (IST). */
+async function statusConflict(
+  tx: DbTransaction,
+  taskId: string,
+  code: string,
+  companyId: string,
+): Promise<ConflictError> {
+  const rows = await tx
+    .select({
+      status: tasks.status,
+      completedAt: tasks.completedAt,
+      completedBy: tasks.completedBy,
+      updatedAt: tasks.updatedAt,
+      updatedBy: tasks.updatedBy,
+    })
+    .from(tasks)
+    .where(and(eq(tasks.id, taskId), eq(tasks.companyId, companyId)))
+    .limit(1);
+  const now = rows[0];
+  if (!now) return new ConflictError(`Task ${code} was changed by someone else — reload the page.`);
+  const byId = now.status === 'completed' ? (now.completedBy ?? now.updatedBy) : now.updatedBy;
+  const at = now.status === 'completed' ? (now.completedAt ?? now.updatedAt) : now.updatedAt;
+  const who = await tx
+    .select({ name: users.fullName, email: users.email })
+    .from(users)
+    .where(eq(users.id, byId))
+    .limit(1);
+  const name = who[0]?.name || who[0]?.email || 'someone else';
+  return new ConflictError(
+    `Already ${statusLabel(now.status).toLowerCase()} by ${name} at ${fmtDateTime(at)} (${code}) — reload the page.`,
+  );
+}
+
 async function transitionStatus(
   tx: DbTransaction,
   t: TaskRecord,
@@ -596,9 +648,7 @@ async function transitionStatus(
   } else if (!perms.canUpdateStatus) {
     throw new AuthorizationError('Only the assignee, the creator or an admin can update this task');
   }
-  if (!isOpenStatus(t.status)) {
-    throw new ConflictError(`Task ${t.code} is already ${statusLabel(t.status).toLowerCase()}`);
-  }
+  if (!isOpenStatus(t.status)) throw await statusConflict(tx, t.id, t.code, companyId);
   const today = istToday();
   const now = new Date();
 
@@ -622,7 +672,23 @@ async function transitionStatus(
     updates.completedDate = today; // legacy column kept in sync
     updates.completionRemark = opts.remark ?? null;
   }
-  await tx.update(tasks).set(updates).where(eq(tasks.id, t.id));
+  // CLAUDE.md §20.2 — conditional UPDATE: a second click / a second user finds
+  // 0 rows and is told who got there first. Complete / Cancel end the task
+  // from ANY open status (ADR-264): someone moving it To Do → In Progress at
+  // the same moment must not make the Complete fail. A move between open
+  // statuses stays conditional on the exact status we read. Every caller read
+  // `t` with FOR UPDATE, so this guard is belt-and-braces — `t.status` is the
+  // true prior status the history row below records.
+  const fromCond =
+    target === 'completed' || target === 'cancelled'
+      ? inArray(tasks.status, [...OPEN_STATUSES])
+      : eq(tasks.status, t.status);
+  const changed = await tx
+    .update(tasks)
+    .set(updates)
+    .where(and(eq(tasks.id, t.id), eq(tasks.companyId, companyId), fromCond))
+    .returning({ id: tasks.id });
+  if (changed.length === 0) throw await statusConflict(tx, t.id, t.code, companyId);
 
   await recordHistory(
     tx,
@@ -676,7 +742,7 @@ export async function updateTaskStatus(
   await requireCanWrite(user);
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
-    const t = await loadVisibleTask(tx, id, companyId, user);
+    const t = await loadVisibleTask(tx, id, companyId, user, true);
     await transitionStatus(tx, t, input.status, { comment: input.comment }, companyId, user);
     return getTaskInternal(tx, id, companyId, user);
   });
@@ -690,7 +756,7 @@ export async function completeTask(
   await requireCanWrite(user);
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
-    const t = await loadVisibleTask(tx, id, companyId, user);
+    const t = await loadVisibleTask(tx, id, companyId, user, true);
     await transitionStatus(
       tx,
       t,
@@ -711,7 +777,7 @@ export async function cancelTask(
   await requireCanWrite(user);
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
-    const t = await loadVisibleTask(tx, id, companyId, user);
+    const t = await loadVisibleTask(tx, id, companyId, user, true);
     await transitionStatus(tx, t, 'cancelled', { reason: input.reason }, companyId, user);
     return getTaskInternal(tx, id, companyId, user);
   });

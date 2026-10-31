@@ -1,20 +1,18 @@
 // ADR-250 — Approval inbox on the home. Rendered only when the server sends
 // `approvals` (the caller holds an Approve tick). Same rows as GET
 // /approvals/inbox; ✓ / ✕ call the Approvals page's own mutations
-// (use-approval-actions.ts). "Sent by me" lists the caller's documents waiting
-// for someone else's approval.
+// (use-approval-actions.ts). ADR-264: shown inside the home's Approvals view;
+// the "Sent by me" tab is gone (owner decision).
 
-import type { ApprovalInboxResponse, DashRow } from '@innovic/shared';
+import type { ApprovalInboxResponse } from '@innovic/shared';
 import { useMemo, useState } from 'react';
 import { ActionLink } from '@/components/shared/action-link';
 import { fmtDate } from '@/lib/date';
 import { ApprovalRejectDialog } from '@/modules/approvals/components/approval-reject-dialog';
 import { type InboxItem, inboxKey, useApprovalActions } from '../use-approval-actions';
-import { DashRowView, fmtAmount, fmtQty, ItemCell, RowHead, StatusPill } from './dash-row';
+import { fmtAmount, fmtQty, ItemCell, RowHead, StatusPill } from './dash-row';
 import { DocRef, linkProps } from './dash-text';
-import { Empty, HomePanel, HomeTabs, ViewAll } from './home-panel';
-
-type Tab = 'to' | 'sent';
+import { Empty, ViewAll } from './home-panel';
 
 function InboxRow({
   item,
@@ -95,12 +93,9 @@ function InboxRow({
 
 export function ApprovalInbox({
   approvals,
-  sent,
 }: {
   approvals: ApprovalInboxResponse;
-  sent: DashRow[];
 }): React.JSX.Element {
-  const [tab, setTab] = useState<Tab>('to');
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [rejecting, setRejecting] = useState<InboxItem | null>(null);
 
@@ -137,67 +132,43 @@ export function ApprovalInbox({
   };
 
   const body =
-    tab === 'to' ? (
-      items.length === 0 ? (
-        <Empty text="Nothing to approve." />
-      ) : (
-        <>
-          {selected.length > 0 ? (
-            <div className="dh-selbar">
-              {selected.length} selected
-              <button
-                type="button"
-                className="btn btn-primary btn-sm"
-                onClick={() => approve(selected)}
-              >
-                ✓ Approve {selected.length}
-              </button>
-            </div>
-          ) : null}
-          <RowHead head={['Document', 'Item', 'Qty', 'Raised On']} approve />
-          {items.map((i) => {
-            const k = inboxKey(i);
-            return (
-              <InboxRow
-                key={k}
-                item={i}
-                selected={sel.has(k)}
-                busy={actions.busy.has(k)}
-                onSelect={(on) => toggle(k, on)}
-                onApprove={() => approve([i])}
-                onReject={() => setRejecting(i)}
-              />
-            );
-          })}
-          {total > items.length ? <ViewAll href="/approvals" total={total} /> : null}
-        </>
-      )
-    ) : sent.length === 0 ? (
-      <Empty text="Nothing sent by you is waiting." />
+    items.length === 0 ? (
+      <Empty text="Nothing to approve." />
     ) : (
       <>
-        <RowHead head={['Document', 'Item', 'Qty', 'Waiting']} />
-        {sent.map((r) => (
-          <DashRowView key={r.key} row={r} />
-        ))}
+        {selected.length > 0 ? (
+          <div className="dh-selbar">
+            {selected.length} selected
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={() => approve(selected)}
+            >
+              ✓ Approve {selected.length}
+            </button>
+          </div>
+        ) : null}
+        <RowHead head={['Document', 'Item', 'Qty', 'Raised On']} approve />
+        {items.map((i) => {
+          const k = inboxKey(i);
+          return (
+            <InboxRow
+              key={k}
+              item={i}
+              selected={sel.has(k)}
+              busy={actions.busy.has(k)}
+              onSelect={(on) => toggle(k, on)}
+              onApprove={() => approve([i])}
+              onReject={() => setRejecting(i)}
+            />
+          );
+        })}
+        {total > items.length ? <ViewAll href="/approvals" total={total} /> : null}
       </>
     );
 
   return (
-    <HomePanel
-      title="Approval inbox"
-      count={total}
-      right={
-        <HomeTabs
-          tabs={[
-            { key: 'to', label: `To approve (${total})` },
-            { key: 'sent', label: `Sent by me (${sent.length})` },
-          ]}
-          value={tab}
-          onChange={setTab}
-        />
-      }
-    >
+    <section className="dh-panel" aria-label="Approval inbox">
       {body}
       {rejecting ? (
         <ApprovalRejectDialog
@@ -211,6 +182,6 @@ export function ApprovalInbox({
           }}
         />
       ) : null}
-    </HomePanel>
+    </section>
   );
 }

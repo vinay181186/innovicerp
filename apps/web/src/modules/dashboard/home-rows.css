@@ -1,5 +1,20 @@
-/* ADR-250 — home document rows, status pills, action symbols and the simple
-   lists (notifications, to-do, done). Tokens only; see home.css. */
+/* ADR-250 — the Approval inbox rows, status pills and action symbols (ADR-264:
+   shown in the home's Approvals view). Tokens only; see home.css. */
+
+.dh-panel {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius2);
+  min-width: 0;
+}
+.dh-empty {
+  padding: 8px 12px;
+  color: var(--text3);
+}
+.dh-more {
+  padding: 5px 12px;
+  font-size: var(--fs-sm);
+}
 
 /* ── document rows ── */
 .dh-row {
@@ -128,13 +143,6 @@
 .dh-ic.k-reject {
   color: var(--red2);
 }
-.dh-ic.k-create,
-.dh-ic.k-inspect,
-.dh-ic.k-start {
-  background: var(--blue);
-  border-color: var(--blue);
-  color: var(--bg2);
-}
 .dh-ic[aria-busy='true'] {
   cursor: progress;
 }
@@ -146,50 +154,4 @@
   padding: 5px 12px;
   background: var(--blue3);
   font-size: var(--fs-sm);
-}
-
-/* ── simple lists (notifications, to-do, done) ── */
-.dh-li {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: var(--sp-2);
-  align-items: center;
-  padding: 5px 12px;
-  border-bottom: 1px solid var(--bg3);
-}
-.dh-li:last-child {
-  border-bottom: 0;
-}
-.dh-li.dh-unseen > span:nth-child(2) {
-  font-weight: 700;
-}
-.dh-tm {
-  font-family: var(--mono);
-  font-size: var(--fs-sm);
-  color: var(--text3);
-  white-space: nowrap;
-}
-.dh-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--text3);
-}
-.dh-dot.t-late {
-  background: var(--red2);
-}
-.dh-dot.t-due {
-  background: var(--amber2);
-}
-.dh-dot.t-ok {
-  background: var(--green2);
-}
-.dh-sc {
-  padding: 8px 12px;
-}
-.dh-todo {
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }

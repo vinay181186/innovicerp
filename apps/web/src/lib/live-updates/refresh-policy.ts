@@ -73,6 +73,7 @@ export const REFRESH_POLICY: Readonly<Record<string, RefreshRule>> = {
   'jw-invoices': poll('not published'),
   'jw-returns': poll('not published'),
   'machine-loading': poll('derived from ops + machines'),
+  notifications: poll('bell on every page; own root so home refreshes skip it, poll + focus'),
   'osp-wip': poll('derived view'),
   'party-grn': poll('not published'),
   'party-material-issues': poll('not published'),
