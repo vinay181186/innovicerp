@@ -134,6 +134,10 @@ export const PAGE_ACCESS: Readonly<Record<string, PageRule>> = {
   ...crud('/plans', 'plan_create'),
   ...crud('/ml-plans', 'mlplan_create'),
   ...crud('/route-cards', 'routecard_create'),
+  // Drawing page (Item + Drawing Rev): opened from SO / JWSO / RC links; the
+  // server checks each read, view/download is checked by /drawing-files/url.
+  '/drawings/$itemRevisionId': OPEN,
+  '/drawing-rev-fix-list': v('routecard_create'),
   '/assemblies': v('assembly_create'),
   '/assemblies/$soId': v('assembly_create'),
 

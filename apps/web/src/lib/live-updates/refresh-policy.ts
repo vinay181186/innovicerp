@@ -103,6 +103,10 @@ export const REFRESH_POLICY: Readonly<Record<string, RefreshRule>> = {
   'global-search': onOpen(LOOKUP),
   instruments: onOpen(MASTER),
   'item-image': onOpen(LOOKUP),
+  // Item + Drawing Rev register: looked up when an SO / JWSO line or Route Card
+  // form names Item + Rev, read when the drawing page opens; a Replace drawing
+  // on this PC invalidates it. item_revisions is not in LIVE_TABLES.
+  'item-revisions': onOpen(LOOKUP),
   items: onOpen(MASTER),
   'jc-drawing': onOpen(LOOKUP),
   'jwso-documents': onOpen('JWSO documents tab, read on open'),

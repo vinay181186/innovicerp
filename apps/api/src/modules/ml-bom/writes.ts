@@ -10,6 +10,7 @@ import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { diffFields, softDeleteStamp } from '../../lib/audit-trail';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { ConflictError, NotFoundError } from '../../lib/errors';
+import { resolveBomChildRevs } from '../../lib/bom-child-rev';
 import { emitActivityLog } from '../activity-log/service';
 import { type BomAuditLine, bomLineAuditRows } from '../bom-master/audit';
 import { computeBomDiffNote } from '../bom-master/service';
@@ -20,6 +21,13 @@ import { ML_BOM_NOT_FOUND, loadMlBomDetail, nextMlBomCode } from './reads';
 import type { CreateMlBomInput, MlBomDetail, UpdateMlBomInput } from './schema';
 
 export const ENTITY = 'MlBom';
+
+/** D2 — how the child Drawing Rev rule applies to one save. The screen keeps
+ *  the default (Rev compulsory on a MAKE child); the Excel import passes
+ *  requireRev: false (a blank Rev is saved as null — lib/bom-child-rev.ts). */
+export interface ChildRevOpts {
+  requireRev?: boolean;
+}
 const yesNo = (v: unknown): string | null => (v == null ? null : v ? 'Yes' : 'No');
 export const HEADER_FIELDS = [
   { key: 'remarks', label: 'Remarks' },
@@ -88,6 +96,7 @@ export async function insertMlBomCore(
   input: CreateMlBomInput,
   user: AuthContext,
   initialNote = 'Initial creation',
+  revOpts: ChildRevOpts = {},
 ) {
   const lookup = await validateItemAndLines(tx, companyId, input.itemId, input.lines);
   const defaults = await resolveDefaultBoms(tx, companyId, [
@@ -129,7 +138,21 @@ export async function insertMlBomCore(
   const header = inserted[0]!;
 
   const rawMaterial = await loadRawMaterialNames(tx, input.lines, companyId);
-  const values = buildLineValues(input.lines, header.id, companyId, user.id, rawMaterial, defaults);
+  // D2 — the child part's Item + Drawing Rev (compulsory for a MAKE child).
+  const childRevIds = await resolveBomChildRevs(tx, user, companyId, input.lines, {
+    sourceType: 'ml_bom_line',
+    bomRef: code,
+    requireRev: revOpts.requireRev !== false,
+  });
+  const values = buildLineValues(
+    input.lines,
+    header.id,
+    companyId,
+    user.id,
+    rawMaterial,
+    defaults,
+    childRevIds,
+  );
   await tx.insert(mlBomLines).values(values);
 
   await tx.insert(mlBomRevisions).values({
@@ -159,12 +182,13 @@ export async function updateMlBomTx(
   id: string,
   input: UpdateMlBomInput,
   user: AuthContext,
+  revOpts: ChildRevOpts = {},
 ): Promise<MlBomDetail> {
   // The direct writer. Edit-approval (ADR-249 Step B2) diverts BEFORE this —
   // service.updateMlBomOrStage — and an approval replays through here
   // (ml-bom-edit-registry.ts applyEdit), so there is one writer either way.
   await lockMlBomTree(tx, companyId);
-  const revised = await reviseMlBomCore(tx, companyId, id, input, user);
+  const revised = await reviseMlBomCore(tx, companyId, id, input, user, revOpts);
   const { header } = revised;
 
   await guardAll(tx, companyId, [id]);
@@ -191,6 +215,7 @@ export async function reviseMlBomCore(
   id: string,
   input: UpdateMlBomInput,
   user: AuthContext,
+  revOpts: ChildRevOpts = {},
 ) {
   const header = await lockHeader(tx, companyId, id);
   // R5 (§20.4): refuse if someone else saved this BOM after the form opened it.
@@ -215,7 +240,22 @@ export async function reviseMlBomCore(
     input.lines.map((l) => l.childItemId),
   );
   const rawMaterial = await loadRawMaterialNames(tx, input.lines, companyId);
-  const values = buildLineValues(input.lines, id, companyId, user.id, rawMaterial, defaults);
+  // D2 — child Item + Drawing Rev; an old line kept without a Rev stays valid.
+  const childRevIds = await resolveBomChildRevs(tx, user, companyId, input.lines, {
+    sourceType: 'ml_bom_line',
+    bomRef: header.code,
+    stored: new Map(oldLines.map((l) => [l.childItemId, l.childItemRevisionId])),
+    requireRev: revOpts.requireRev !== false,
+  });
+  const values = buildLineValues(
+    input.lines,
+    id,
+    companyId,
+    user.id,
+    rawMaterial,
+    defaults,
+    childRevIds,
+  );
 
   // Replace the lines: the old live ones are SOFT-deleted (CLAUDE.md rule 8 —
   // no hard deletes) and the new set inserted. The one-live-line-per-item

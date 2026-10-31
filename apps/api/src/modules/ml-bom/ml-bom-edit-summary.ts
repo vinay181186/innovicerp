@@ -10,7 +10,7 @@
 // Remarks. The sub-assembly link is NOT: the server resolves it from the child
 // item's Default on every save, nobody types it.
 
-import { BOM_LINE_TYPE_LABEL, type BomLineType } from '@innovic/shared';
+import { BOM_LINE_TYPE_LABEL, type BomLineType, itemRevLabel } from '@innovic/shared';
 
 /** One line in canonical form — stored row or proposed input, same shape. */
 export interface MlBomCanonLine {
@@ -21,6 +21,8 @@ export interface MlBomCanonLine {
   rmGrade: string | null;
   rmSize: string | null;
   remarks: string | null;
+  /** D2 — the child part's Drawing Rev; shown as CODE/REV. Absent/null = none. */
+  drawingRev?: string | null;
 }
 
 const blank = (v: string | null | undefined): string | null => {
@@ -45,6 +47,7 @@ export function canonLine(l: MlBomCanonLine): MlBomCanonLine {
     rmGrade: rm ? blank(l.rmGrade) : null,
     rmSize: rm ? blank(l.rmSize) : null,
     remarks: blank(l.remarks),
+    drawingRev: blank(l.drawingRev),
   };
 }
 
@@ -61,7 +64,7 @@ export function summarizeMlBomLines(lines: readonly MlBomCanonLine[]): string {
       const rm =
         l.rmGrade || l.rmSize ? ` [RM ${[l.rmGrade ?? '—', l.rmSize ?? '—'].join(' / ')}]` : '';
       const note = l.remarks ? ` "${l.remarks}"` : '';
-      return `${i + 1}. ${l.childCode} × ${l.qtyPerSet} ${type}${rm}${note}`;
+      return `${i + 1}. ${itemRevLabel(l.childCode, l.drawingRev)} × ${l.qtyPerSet} ${type}${rm}${note}`;
     })
     .join('; ');
 }

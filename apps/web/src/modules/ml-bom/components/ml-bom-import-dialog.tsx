@@ -13,6 +13,7 @@
 
 import {
   BOM_LINE_TYPE_LABEL,
+  itemRevLabel,
   ML_BOM_IMPORT_HEADERS,
   type MlBomImportBom,
   type MlBomImportResult,
@@ -46,17 +47,35 @@ const strongCode = (code: string | null | undefined): React.ReactNode =>
 /** Quantities arrive as numeric strings; drop trailing zeros only. */
 const qty = (v: string | null): React.ReactNode => (v == null ? dash : String(Number(v)));
 
-const TREE_COLUMNS: DataTableColumn<MlBomImportTreeRow>[] = [
+/** Drawing Rev register: child code (upper-case) → the Drawing Rev the sheet
+ *  gave it. The server's tree does not echo the Rev, so the Preview reads it
+ *  from the sheet rows it sent. */
+function childRevMap(rows: MlBomImportRow[]): Map<string, string> {
+  const m = new Map<string, string>();
+  for (const r of rows) {
+    const rev = r.childDrawingRev?.trim();
+    const key = r.childItemCode.trim().toUpperCase();
+    if (rev && key && !m.has(key)) m.set(key, rev);
+  }
+  return m;
+}
+
+const treeColumns = (revOf: Map<string, string>): DataTableColumn<MlBomImportTreeRow>[] => [
   { header: 'Level', align: 'right', className: 'mono', render: (n) => n.depth },
   {
     header: 'Item Code',
     align: 'left',
     nowrap: true,
-    // Indented by depth, exactly as the detail page's Tree tab.
+    // Indented by depth, exactly as the detail page's Tree tab. A child the
+    // sheet gave a Drawing Rev shows as ABC/1.
     render: (n) => (
       <span style={{ paddingLeft: n.depth * 18 }}>
         {n.depth > 0 ? <span className="text3">└ </span> : null}
-        {strongCode(n.itemCode)}
+        {strongCode(
+          n.depth > 0
+            ? itemRevLabel(n.itemCode, revOf.get(n.itemCode.trim().toUpperCase()))
+            : n.itemCode,
+        )}
       </span>
     ),
   },
@@ -104,7 +123,15 @@ interface MessageRow {
 const MESSAGE_COLUMNS: DataTableColumn<MessageRow>[] = [
   { header: 'Sheet Row', align: 'right', className: 'mono', render: (m) => m.rowNum },
   { header: 'BOM Item Code', nowrap: true, render: (m) => strongCode(m.sheet?.bomItemCode) },
-  { header: 'Child Item Code', nowrap: true, render: (m) => strongCode(m.sheet?.childItemCode) },
+  {
+    header: 'Child Item Code',
+    nowrap: true,
+    // Drawing Rev register: the child shows as ABC/1 when the sheet gave a Rev.
+    render: (m) =>
+      m.sheet?.childItemCode
+        ? strongCode(itemRevLabel(m.sheet.childItemCode, m.sheet.childDrawingRev))
+        : dash,
+  },
   {
     header: 'Result',
     nowrap: true,
@@ -216,7 +243,7 @@ function messageRows(rows: MlBomImportRow[], result: MlBomImportResult | null): 
 async function downloadErrors(msgs: MessageRow[], fileErrors: string[]): Promise<void> {
   const XLSX = await import('xlsx');
   const aoa: (string | number)[][] = [['Sheet Row', ...ML_BOM_IMPORT_HEADERS, 'Reason']];
-  for (const e of fileErrors) aoa.push(['', '', '', '', '', '', '', '', e]);
+  for (const e of fileErrors) aoa.push(['', '', '', '', '', '', '', '', '', e]);
   for (const m of msgs) {
     const s = m.sheet;
     aoa.push([
@@ -228,11 +255,12 @@ async function downloadErrors(msgs: MessageRow[], fileErrors: string[]): Promise
       s?.rawMaterialGrade ?? '',
       s?.rawMaterialSize ?? '',
       s?.remarks ?? '',
+      s?.childDrawingRev ?? '',
       m.messages.join('; '),
     ]);
   }
   const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws['!cols'] = [10, 20, 20, 12, 14, 16, 16, 30, 80].map((wch) => ({ wch }));
+  ws['!cols'] = [10, 20, 20, 12, 14, 16, 16, 30, 12, 80].map((wch) => ({ wch }));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Errors');
   XLSX.writeFile(wb, ERRORS_FILE);
@@ -276,6 +304,7 @@ export function MlBomImportDialog({ onClose }: MlBomImportDialogProps): React.JS
     finalResult?.boms.filter((b) => b.outcome === 'not_sent').length ??
     0;
   const resultColumns = useMemo(() => bomColumns(onClose), [onClose]);
+  const treeCols = useMemo(() => treeColumns(childRevMap(rows)), [rows]);
 
   function back(): void {
     // A different file is a different save: the server replays a key's first
@@ -450,7 +479,7 @@ export function MlBomImportDialog({ onClose }: MlBomImportDialogProps): React.JS
             />
             {preview.tree.length > 0 ? (
               <DataTable
-                columns={TREE_COLUMNS}
+                columns={treeCols}
                 rows={preview.tree}
                 rowKey={(n, i) => `${n.topItemCode}-${i}`}
                 density="compact"

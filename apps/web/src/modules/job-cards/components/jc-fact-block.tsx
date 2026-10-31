@@ -25,7 +25,7 @@
 import type { DocumentEditChange, JobCardListItem, ProductionOrderListItem } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
+import { itemCodeWithRev, docDrawingRev } from '@/lib/item-code';
 import { soNoWithInternal } from '@/lib/so-number';
 import {
   PendingChangeChip,
@@ -88,7 +88,7 @@ export function JcFactBlock({
 }): React.JSX.Element {
   const src = jc.sourceLink;
   const childJobCards = jc.childJobCards ?? [];
-  const codeRev = itemCodeWithRev(jc.itemCode, jc.itemRevision);
+  const codeRev = itemCodeWithRev(jc.itemCode, docDrawingRev(jc));
 
   const pItem = pendingFor(pendingChanges, 'itemCode');
   const pDrawing = pendingFor(pendingChanges, 'drawingFilePath');

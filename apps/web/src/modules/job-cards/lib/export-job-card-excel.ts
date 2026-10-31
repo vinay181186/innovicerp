@@ -7,7 +7,7 @@ import type { JcOpEnriched, JobCardListItem, MachineSplit, OpLog } from '@innovi
 import { opSrNo, SHIFT_LABELS } from '@innovic/shared';
 import * as XLSX from 'xlsx';
 import { resolveActualMachine } from '@/components/shared/machine-split';
-import { itemCodeWithRev } from '@/lib/item-code';
+import { itemCodeWithRev, docDrawingRev } from '@/lib/item-code';
 import { JC_STATUS_LABEL } from '../components/jc-status-badge';
 import { OP_STATUS } from './jc-op-labels';
 
@@ -81,7 +81,7 @@ export function exportJobCardExcel(args: {
     // filterable. It stays blank for a JW-sourced or standalone card that has
     // no SO line behind it, and `itemCodeWithRev` then leaves the code bare
     // rather than printing a trailing slash.
-    ['Item Code', itemCodeWithRev(jc.itemCode, jc.itemRevision)],
+    ['Item Code', itemCodeWithRev(jc.itemCode, docDrawingRev(jc))],
     ['Item Name', jc.itemName || ''],
     ['SO / JWSO No.', jc.sourceLink?.code ?? ''],
     // ADR-207 — the SO's Internal SO No. in its own cell (blank on a JWSO card).

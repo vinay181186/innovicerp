@@ -48,6 +48,7 @@ function BomMasterEditPage(): React.JSX.Element {
       (detail?.lines ?? []).map((l) => ({
         childItemId: l.childItemId,
         childItemCodeText: l.childItemCode ?? '',
+        childDrawingRev: l.childDrawingRev ?? '',
         qtyPerSet: String(Number(l.qtyPerSet)),
         bomType: l.bomType,
         // Raw material is per LINE, so each row re-opens with its own grade and

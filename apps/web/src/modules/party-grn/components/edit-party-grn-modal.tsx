@@ -17,6 +17,7 @@ import { useSaveKey } from '@/lib/use-save-key';
 import { isStagedResult } from '@/modules/document-edits/api';
 import { useDiscardGuard } from '../../store-inventory/components/discard-guard';
 import { usePartyGrnDetail, useUpdatePartyGrn, type UpdatePartyGrnInput } from '../api';
+import { isQcUntouched } from '../lib/qc-state';
 
 /** What the user has typed for one editable (waiting-QC) line. */
 type LineEntry = { receivedQty: string; remarks: string };
@@ -50,19 +51,17 @@ export function EditPartyGrnModal({
     setRemarks(d.remarks ?? '');
     const seed: Record<string, LineEntry> = {};
     for (const l of d.lines) {
-      if (l.qcAt == null) {
+      if (isQcUntouched(l)) {
         seed[l.id] = { receivedQty: String(l.receivedQty), remarks: l.remarks ?? '' };
       }
     }
     setEntries(seed);
   }, [d]);
 
-  const lines = useMemo(
-    () => (d?.lines ?? []).slice().sort((a, b) => a.lineNo - b.lineNo),
-    [d],
-  );
-  // Only lines still waiting for Incoming QC are editable here.
-  const isWaiting = (l: PartyGrnLine): boolean => l.qcAt == null;
+  const lines = useMemo(() => (d?.lines ?? []).slice().sort((a, b) => a.lineNo - b.lineNo), [d]);
+  // Only lines nobody has inspected yet are editable here — a part-inspected
+  // line (Part QC, 0233) is read-only like a fully inspected one.
+  const isWaiting = (l: PartyGrnLine): boolean => isQcUntouched(l);
 
   const saveKey = useSaveKey();
   const update = useUpdatePartyGrn(row.id, saveKey);
@@ -135,8 +134,7 @@ export function EditPartyGrnModal({
         }
         onClose();
       },
-      onError: (e) =>
-        setErr(e instanceof Error ? e.message : 'Could not save changes. Try again.'),
+      onError: (e) => setErr(e instanceof Error ? e.message : 'Could not save changes. Try again.'),
     });
   };
 
@@ -301,8 +299,8 @@ export function EditPartyGrnModal({
             >
               Line Items
               <span className="text3" style={{ fontWeight: 400, marginLeft: 8 }}>
-                Only lines still waiting for Incoming QC can be changed. Lines already QC'd are
-                shown read-only.
+                Only lines not yet inspected can be changed. Lines already inspected (fully or
+                partly) are shown read-only.
               </span>
             </div>
 
@@ -355,9 +353,7 @@ export function EditPartyGrnModal({
                                 className="innovic-input"
                                 aria-label={`Received Qty, line ${l.lineNo}`}
                                 value={e?.receivedQty ?? ''}
-                                onChange={(ev) =>
-                                  setEntry(l.id, { receivedQty: ev.target.value })
-                                }
+                                onChange={(ev) => setEntry(l.id, { receivedQty: ev.target.value })}
                                 style={{ maxWidth: '12ch' }}
                               />
                             ) : (

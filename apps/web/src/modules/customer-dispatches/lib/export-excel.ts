@@ -6,7 +6,7 @@
 import type { CustomerDispatchRegisterRow, CustomerDispatchStatus } from '@innovic/shared';
 import * as XLSX from 'xlsx';
 import { todayIst } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
+import { docDrawingRev, itemCodeWithRev } from '@/lib/item-code';
 
 // Status code → the word the user reads (no shared label map exists yet).
 const DISPATCH_STATUS_LABEL: Record<CustomerDispatchStatus, string> = {
@@ -46,7 +46,7 @@ export function exportDispatchRegister(rows: CustomerDispatchRegisterRow[], soFi
     r.customer ?? '',
     r.jcNo ?? '',
     r.clientPoLineNo ?? '',
-    itemCodeWithRev(r.itemCode ?? r.itemCodeText, r.itemRevision, ''),
+    itemCodeWithRev(r.itemCode ?? r.itemCodeText, docDrawingRev(r), ''),
     r.itemName,
     r.qty,
     r.uom ?? 'NOS',

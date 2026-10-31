@@ -32,7 +32,11 @@ import {
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireAnyFormAccess, requireFormAccess, STORE_VIEW_FORMS } from '../../lib/access';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
-import { readStockPosition } from '../../lib/stock-reservation';
+import {
+  assertRevBelongsToItem,
+  readStockPosition,
+  revBucketLabel,
+} from '../../lib/stock-reservation';
 import { readAssemblyReservationRows } from './assembly-reservations';
 import { postStockMove } from '../../lib/stock-ledger';
 import { emitActivityLog } from '../activity-log/service';
@@ -45,6 +49,8 @@ function requireCompany(user: AuthContext): string {
 // GET /store-inventory lives in ./list.ts (ADR-201 paging + server summary);
 // re-exported so the route keeps calling service.listStoreInventory.
 export { listStoreInventory } from './list';
+// GET /store-inventory/:itemId/revs — stock per Item + Rev bucket (Phase C).
+export { listItemRevStock } from './rev-stock';
 
 export async function adjustStock(
   input: AdjustStockInput,
@@ -70,7 +76,7 @@ export async function adjustStock(
   const sourceNote = input.source ? `Source: ${MANUAL_RECEIPT_SOURCE_LABEL[input.source]} · ` : '';
   return withUserContext(user, async (tx) => {
     const itemRows = await tx
-      .select({ id: items.id, code: items.code })
+      .select({ id: items.id, code: items.code, procurementType: items.procurementType })
       .from(items)
       .where(
         and(eq(items.id, input.itemId), eq(items.companyId, companyId), isNull(items.deletedAt)),
@@ -79,6 +85,33 @@ export async function adjustStock(
     const itm = itemRows[0];
     if (!itm)
       throw new NotFoundError('Selected Item was not found. Please select the Item Code again.');
+
+    // Drawing Rev Phase C — which Item + Rev bucket moves. A MAKE item that has
+    // Revs and stock already sitting in a Rev bucket must name the bucket (null
+    // = the blank / old-stock bucket, said explicitly). Otherwise the blank
+    // bucket, as before.
+    let itemRevisionId: string | null = input.itemRevisionId ?? null;
+    if (itemRevisionId) {
+      if (itm.procurementType !== 'make') {
+        throw new ValidationError(`${itm.code} is not a Make item — it has no Drawing Rev stock.`);
+      }
+      await assertRevBelongsToItem(tx, companyId, itm.id, itemRevisionId);
+    } else if (input.itemRevisionId === undefined && itm.procurementType === 'make') {
+      const revStock = (await tx.execute(sql`
+        SELECT 1 FROM public.item_rev_stock_balances b
+         WHERE b.company_id = ${companyId}::uuid AND b.item_id = ${itm.id}::uuid
+           AND b.item_revision_id IS NOT NULL AND b.on_hand_qty <> 0
+           AND EXISTS (SELECT 1 FROM public.item_revisions ir
+                        WHERE ir.item_id = b.item_id AND ir.deleted_at IS NULL)
+         LIMIT 1
+      `)) as unknown as unknown[];
+      if (revStock.length > 0) {
+        throw new ValidationError(
+          `${itm.code} has stock per Drawing Rev — choose which Rev to adjust (or "no Rev" for old stock).`,
+        );
+      }
+      itemRevisionId = null;
+    }
 
     // ADR-193: via the single stock writer. A '−' may take only Available
     // stock — pieces booked for a customer SO must be released first.
@@ -94,6 +127,7 @@ export async function adjustStock(
       userId: user.id,
       itemCodeText: itm.code,
       guard: 'available',
+      itemRevisionId,
     });
 
     // ADR-189 — every manual stock change is on the activity log with its
@@ -104,7 +138,7 @@ export async function adjustStock(
       {
         action: 'STOCK_ADJUST',
         entity: 'Store Inventory',
-        detail: `${itm.code} ${input.direction === 'add' ? '+' : '−'}${input.qty} (stock ${stockBefore} → ${stockAfter}). ${sourceNote}Reason: ${input.remarks}`,
+        detail: `${await revBucketLabel(tx, itm.code, itemRevisionId)} ${input.direction === 'add' ? '+' : '−'}${input.qty} (stock ${stockBefore} → ${stockAfter}). ${sourceNote}Reason: ${input.remarks}`,
         refId: itm.code,
       },
       companyId,

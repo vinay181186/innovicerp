@@ -11,7 +11,7 @@
 
 import type { CustomerDispatchLineRow, DispatchableLine } from '@innovic/shared';
 import { MasterItemNameNote } from '@/components/shared/master-item-name-note';
-import { itemCodeWithRev } from '@/lib/item-code';
+import { docDrawingRev, itemCodeWithRev } from '@/lib/item-code';
 
 export interface EditLineCard {
   /** customer_dispatch_lines.id — the key the staged-edit diff uses. */
@@ -117,7 +117,7 @@ export function DispatchEditLineTable(props: {
                         readOnly
                         value={
                           saved
-                            ? itemCodeWithRev(saved.itemCode, saved.itemRevision, '') ||
+                            ? itemCodeWithRev(saved.itemCode, docDrawingRev(saved), '') ||
                               (saved.itemCodeText ?? '')
                             : ''
                         }

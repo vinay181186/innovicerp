@@ -45,13 +45,21 @@ async function readCostInputs(
   tx: DbTransaction,
   companyId: string,
   itemIds: string[],
+  /** Drawing Rev register — the child Revs the tree's lines name. */
+  itemRevisionIds: string[],
 ): Promise<{ routeCards: Map<string, RouteCardCost>; rates: Map<string, ItemRate> }> {
   const res = (await tx.execute(sql`
     WITH tree_items AS (
       SELECT DISTINCT unnest(${sql.param(itemIds)}::uuid[]) AS item_id
     ),
+    tree_revs AS (
+      SELECT DISTINCT unnest(${sql.param(itemRevisionIds)}::uuid[]) AS rev_id
+    ),
+    -- One card per item (an item may have one card per Drawing Rev, 0232), so a
+    -- cost is never counted twice: the card of a Rev the tree names, else the
+    -- old no-Rev card, else the newest.
     rc AS (
-      SELECT rc.item_id, rc.raw_material_item_id, rc.rm_qty_per_piece::text AS rm_qty,
+      SELECT DISTINCT ON (rc.item_id) rc.item_id, rc.raw_material_item_id, rc.rm_qty_per_piece::text AS rm_qty,
              ops.op_minute_rate, ops.op_rate_missing
       FROM public.route_cards rc
       CROSS JOIN LATERAL (
@@ -67,6 +75,10 @@ async function readCostInputs(
       ) ops
       WHERE rc.company_id = ${companyId}::uuid AND rc.deleted_at IS NULL
         AND rc.item_id IN (SELECT item_id FROM tree_items)
+      ORDER BY rc.item_id,
+        COALESCE(rc.item_revision_id IN (SELECT rev_id FROM tree_revs), false) DESC,
+        (rc.item_revision_id IS NULL) DESC,
+        rc.created_at DESC
     ),
     wanted AS (
       SELECT item_id FROM tree_items
@@ -125,7 +137,10 @@ export async function getMlBomCost(
   return withUserContext(user, async (tx) => {
     const tree = await loadMlBomTree(tx, companyId, id, query.qty);
     const itemIds = Array.from(new Set(tree.nodes.map((n) => n.itemId)));
-    const { routeCards, rates } = await readCostInputs(tx, companyId, itemIds);
+    const revIds = Array.from(
+      new Set(tree.nodes.flatMap((n) => (n.itemRevisionId ? [n.itemRevisionId] : []))),
+    );
+    const { routeCards, rates } = await readCostInputs(tx, companyId, itemIds, revIds);
     return computeMlBomCost({ qty: query.qty, nodes: tree.nodes, routeCards, rates });
   });
 }

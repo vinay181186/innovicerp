@@ -5,16 +5,16 @@
 //      codes / numbers / dates / badges / actions get their exact measured
 //      width — over ALL rows — and are never cut.
 //   R2 the table always fits its wrapper — no sideways scroll. When the
-//      minimum widths do not fit, the rightmost unpinned column moves into ▸.
-//   R3 ▸ on every row opens a detail row: full text of the visible text
-//      columns, the columns moved to ▸, and the columns the user hid. It is
-//      the row's ONE expand control — it also opens the caller's own
-//      renderExpanded content (onToggleExpanded).
+//      minimum widths do not fit, the rightmost unpinned column leaves the
+//      screen and the toolbar names it ("not on screen").
+//   R3 no ▸ on any row (owner 2026-10-31): a cut cell shows its full text on
+//      hover; the caller's renderExpanded content opens only by the caller's
+//      own trigger (row click, ⋯ item).
 //   R4/R5 the toolbar + Columns popover; R6 the layout and density are saved
 //      to the user's profile; R8 the Action column is always last and kept.
 // Measuring lives in use-fit-measure.ts, the body rows in FitRows.tsx.
 
-import { Children, cloneElement, isValidElement, useLayoutEffect, useMemo, useState } from 'react';
+import { Children, cloneElement, isValidElement, useLayoutEffect, useMemo } from 'react';
 import type { CSSProperties, ReactElement, ReactNode } from 'react';
 
 import { useTableLayout } from '@/lib/use-table-layout';
@@ -45,7 +45,6 @@ export function FitDataTable<T>(props: DataTableProps<T> & { tableKey: string })
     isRowClickable,
     rowClassName,
     renderExpanded,
-    onToggleExpanded,
     maxHeight,
     sortBy,
     sortDir,
@@ -140,13 +139,6 @@ export function FitDataTable<T>(props: DataTableProps<T> & { tableKey: string })
   const fit = fitInput ? fitColumns(fitInput) : null;
   const visible = fit?.visible ?? layout.order.filter((k) => !layout.hidden.includes(k));
   const dropped = fit?.dropped ?? [];
-  const textVisible = visible.filter((k) => k !== firstId && kinds[k] === 'text');
-  const userHidden = layout.order.filter((k) => layout.hidden.includes(k));
-  const detailIds = [...textVisible, ...dropped, ...userHidden];
-
-  // Which rows' ▸ detail is open — kept here, not in FitRows, so it outlives
-  // a loading / empty pass (e.g. searching to nothing and back).
-  const [openKeys, setOpenKeys] = useState<Set<string | number>>(() => new Set());
 
   // After every draw: if a never-cut cell (code / num / date / badge /
   // actions) overflows, its content changed since it was measured — ask for
@@ -285,22 +277,16 @@ export function FitDataTable<T>(props: DataTableProps<T> & { tableKey: string })
               <FitRows
                 rows={rows}
                 keyOf={keyOf}
-                ids={ids}
                 byId={byId}
                 kinds={kinds}
-                firstId={firstId}
                 visible={visible}
-                detailIds={detailIds}
                 nCols={nCols}
                 onRowClick={onRowClick}
                 isRowClickable={isRowClickable}
                 rowClassName={rowClassName}
                 groupRow={props.groupRow}
                 renderExpanded={renderExpanded}
-                onToggleExpanded={onToggleExpanded}
                 rowActions={rowActions}
-                openKeys={openKeys}
-                setOpenKeys={setOpenKeys}
                 selectable={selectable}
                 selection={selection}
                 spare={spare}

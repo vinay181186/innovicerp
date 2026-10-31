@@ -3,14 +3,17 @@
 // register-incoming.ts — the register pages these rows in the SAME SQL as the
 // company GRN lines and the job-card ops, so every half needs its keys here.
 //
-// Pending is the same rule as party-grn/service.ts isPendingQc / PENDING_QC_SQL:
-// qc_at NULL and nothing accepted or rejected. Lines booked before QC existed
-// (grandfathered by 0173: accepted = received, qc_at NULL) are neither pending
-// nor completed here — they never went through QC.
+// Partial Incoming QC (0233): Pending = party-grn QC_OPEN_SQL (QC Pending Qty
+// = received − accepted − rejected > 0), so a part-inspected line is in BOTH
+// halves — Pending with what is left, Completed (qc_at set at the first
+// inspection) with its running totals and the same remainder. Lines booked
+// before QC existed (grandfathered by 0173: accepted = received, qc_at NULL)
+// are neither pending nor completed here — they never went through QC.
 
 import { type SQL, sql } from 'drizzle-orm';
 import type { PartyGrnQcRow } from '@innovic/shared';
 import { likeEscape } from '../../lib/list-query';
+import { QC_OPEN_SQL, QC_PENDING_QTY_SQL } from '../party-grn/qc-state';
 import { PGRN_CLIENT_PO_NO } from './register-facts';
 
 function pgrnJoins(): SQL {
@@ -28,17 +31,16 @@ function pgrnJoins(): SQL {
     LEFT JOIN public.users u ON u.id = pgl.qc_by`;
 }
 
-/** Party GRN lines waiting for Incoming QC. */
+/** Party GRN lines with QC Pending Qty > 0 (untouched or part-inspected). */
 export function pgrnPendingFrom(companyId: string): SQL {
   return sql`${pgrnJoins()}
     WHERE pgl.company_id = ${companyId}::uuid
       AND pgl.deleted_at IS NULL
-      AND pgl.qc_at IS NULL
-      AND pgl.accepted_qty = 0
-      AND pgl.rejected_qty = 0`;
+      AND ${QC_OPEN_SQL}`;
 }
 
-/** Party GRN lines whose Incoming QC is booked. */
+/** Party GRN lines with at least one inspection booked — one row per line,
+ *  cumulative totals. */
 export function pgrnCompletedFrom(companyId: string): SQL {
   return sql`${pgrnJoins()}
     WHERE pgl.company_id = ${companyId}::uuid
@@ -53,8 +55,8 @@ export const PM_CODE = sql`COALESCE(pm.code, pgl.party_material_code_text)`;
 /** QC day in IST (qc_at is a UTC timestamp). */
 export const QC_DAY = sql`(pgl.qc_at AT TIME ZONE 'Asia/Kolkata')::date`;
 
-/** Pending qty of a pending Party GRN line — the whole received qty. */
-export const PGRN_PENDING_QTY = sql`pgl.received_qty`;
+/** QC Pending Qty of a Party GRN line — received − accepted − rejected. */
+export const PGRN_PENDING_QTY = QC_PENDING_QTY_SQL;
 
 /** When the line was inspected — the completed register's newest-first key. */
 export const PGRN_DONE_AT = sql`pgl.qc_at`;
@@ -78,7 +80,7 @@ export const PGRN_PENDING_SELECT = sql`${PGRN_COMMON},
   GREATEST(0, (CURRENT_DATE - pg.grn_date))::int AS "waitDays"`;
 
 export const PGRN_COMPLETED_SELECT = sql`${PGRN_COMMON},
-  0 AS "pendingQty", ${QC_DAY} AS "qcDate",
+  ${PGRN_PENDING_QTY} AS "pendingQty", ${QC_DAY} AS "qcDate",
   GREATEST(0, (${QC_DAY} - pg.grn_date))::int AS "waitDays"`;
 
 /** `AND (… ILIKE …)` over PGRN no., JWSO code, part code, RM code, customer,

@@ -38,7 +38,8 @@ import {
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate, fmtDateTime } from '@/lib/date';
 import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
-import { itemCodeWithRev } from '@/lib/item-code';
+import { ItemRevLink } from '@/modules/item-revisions/components/item-rev-link';
+import { itemCodeWithRev, docDrawingRev } from '@/lib/item-code';
 import { soNoWithInternal } from '@/lib/so-number';
 import { JC_STATUS_LABEL, JcStatusBadge } from '@/modules/job-cards/components/jc-status-badge';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -370,7 +371,13 @@ function ProductionOrderDetailPage(): React.JSX.Element {
           <IdentCode>{data.code}</IdentCode>
           <IdentSep />
           {/* CODE/REV (ADR-177); bare code when the line has no revision. */}
-          <IdentCode>{itemCodeWithRev(data.itemCodeText, data.itemRevision)}</IdentCode>
+          <IdentCode>
+            <ItemRevLink
+              itemRevisionId={data.itemRevisionId}
+              label={itemCodeWithRev(data.itemCodeText, docDrawingRev(data))}
+              className=""
+            />
+          </IdentCode>
           {data.itemNameText ? <span>{data.itemNameText}</span> : null}
           {data.soCodeText ? (
             <>

@@ -6,7 +6,7 @@
 import { PRODUCTION_ORDER_STATUS_LABEL, type ProductionOrderListItem } from '@innovic/shared';
 import * as XLSX from 'xlsx';
 import { fmtDate, todayIst } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
+import { itemCodeWithRev, docDrawingRev } from '@/lib/item-code';
 import { isProCancelled } from '../components/po-list-columns';
 
 export const PRO_REGISTER_COLUMNS = [
@@ -42,7 +42,7 @@ export function proRegisterRow(po: ProductionOrderListItem, srNo: number): (stri
     srNo,
     po.code,
     fmtDate(po.createdAt, ''),
-    itemCodeWithRev(po.itemCodeText, po.itemRevision, ''),
+    itemCodeWithRev(po.itemCodeText, docDrawingRev(po), ''),
     po.itemNameText ?? '',
     po.orderQty,
     po.jcFinishedQty,

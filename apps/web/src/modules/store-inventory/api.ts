@@ -1,5 +1,6 @@
 import type {
   AdjustStockInput,
+  ItemRevStockRow,
   DocumentEditStagedResult,
   ListStoreInventoryQuery,
   ListStoreInventoryResponse,
@@ -11,11 +12,25 @@ import type {
 } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { itemRevisionKeys } from '@/modules/item-revisions/api';
 
 export const storeInventoryKeys = {
   all: ['store-inventory'] as const,
   list: (q: ListStoreInventoryQuery) => [...storeInventoryKeys.all, 'list', q] as const,
+  /** Phase C — one item's stock per Item + Drawing Rev bucket. */
+  revs: (itemId: string) => [...storeInventoryKeys.all, 'revs', itemId] as const,
 };
+
+/** GET /store-inventory/:itemId/revs — one row per Drawing Rev bucket of one
+ *  item (the blank bucket = old stock with no Rev), with its bookings per SO
+ *  line. Read when the item's drill-down opens. */
+export function useItemRevStock(itemId: string | null | undefined) {
+  return useQuery<ItemRevStockRow[]>({
+    queryKey: storeInventoryKeys.revs(itemId ?? '__none__'),
+    queryFn: () => apiFetch<ItemRevStockRow[]>(`/store-inventory/${itemId}/revs`),
+    enabled: Boolean(itemId),
+  });
+}
 
 function buildSearch(q: ListStoreInventoryQuery): string {
   const params = new URLSearchParams();
@@ -50,6 +65,8 @@ export function useAdjustStock() {
       void qc.invalidateQueries({ queryKey: storeInventoryKeys.all });
       void qc.invalidateQueries({ queryKey: ['store-transactions'] });
       void qc.invalidateQueries({ queryKey: ['items'] });
+      // Phase C — the Drawing Rev Fix List counts old (no-Rev) stock.
+      void qc.invalidateQueries({ queryKey: itemRevisionKeys.all });
     },
   });
 }

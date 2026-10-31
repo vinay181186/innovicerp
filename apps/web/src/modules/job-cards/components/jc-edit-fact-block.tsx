@@ -28,7 +28,7 @@
 import type { DocumentEditChange, JobCardListItem, ProductionOrderListItem } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
+import { itemCodeWithRev, docDrawingRev } from '@/lib/item-code';
 import { soNoWithInternal } from '@/lib/so-number';
 import {
   PendingChangeChip,
@@ -282,7 +282,7 @@ export function JcEditFactBlock({
         imagePath={jc.itemImagePath}
         drawing={drawing}
         onOpenDrawing={onOpenDrawing}
-        itemLabel={`${itemCodeWithRev(jc.itemCode, jc.itemRevision)} ${jc.itemName}`}
+        itemLabel={`${itemCodeWithRev(jc.itemCode, docDrawingRev(jc))} ${jc.itemName}`}
       />
       <div className="jc-facts-main">
         <DocIdent>
@@ -294,7 +294,7 @@ export function JcEditFactBlock({
           <span className="jc-id-item">{fields.item}</span>
           {/* CODE/REV — the revision belongs to the SO line's drawing, so it
               stays beside whichever code is picked. */}
-          {jc.itemRevision ? <span className="jc-id-rev">/{jc.itemRevision}</span> : null}
+          {docDrawingRev(jc) ? <span className="jc-id-rev">/{docDrawingRev(jc)}</span> : null}
           {itemName ? (
             <span className="jc-ident-name" title={itemName}>
               {itemName}

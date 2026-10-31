@@ -27,6 +27,8 @@ const qty = z.number().nonnegative('Counted Qty cannot be negative').multipleOf(
 
 export const stockCountLineInputSchema = z.object({
   itemId: z.string().uuid(),
+  /** Item + Drawing Rev bucket counted (Phase C); null = blank bucket. */
+  itemRevisionId: z.string().uuid().nullable().optional(),
   countedQty: qty,
   reason: z.string().trim().max(255).optional(),
 });
@@ -36,7 +38,7 @@ const lines = z
   .array(stockCountLineInputSchema)
   .min(1, 'Add at least one item')
   .max(2000)
-  .refine((ls) => new Set(ls.map((l) => l.itemId)).size === ls.length, {
+  .refine((ls) => new Set(ls.map((l) => `${l.itemId}|${l.itemRevisionId ?? ''}`)).size === ls.length, {
     message: 'An item is listed twice — keep one line per item',
   });
 
@@ -94,6 +96,9 @@ export interface StockCountLine {
   id: string;
   lineNo: number;
   itemId: string;
+  /** Phase C: the Item + Drawing Rev bucket counted (null = blank / Buy). */
+  itemRevisionId?: string | null;
+  drawingRev?: string | null;
   itemCode: string;
   itemName: string | null;
   uom: string | null;

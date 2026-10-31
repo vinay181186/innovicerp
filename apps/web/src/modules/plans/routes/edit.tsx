@@ -135,6 +135,7 @@ function PlanEditPage(): React.JSX.Element {
         // replace-all never runs against them.
         hideOps={plan.opsSource === 'route_card'}
         soInternalNo={plan.soInternalNo ?? null}
+        itemRevisionId={plan.itemRevisionId}
         isSubmitting={update.isPending}
         submitLabel="Save Changes"
         submitError={update.error instanceof Error ? update.error.message : null}

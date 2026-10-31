@@ -26,7 +26,8 @@ import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useCanOpen } from '@/components/shared/action-link';
 import { fmtDate } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
+import { ItemRevLink } from '@/modules/item-revisions/components/item-rev-link';
+import { itemCodeWithRev, docDrawingRev } from '@/lib/item-code';
 import { soNoWithInternal } from '@/lib/so-number';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Panel } from '@/ui/data';
@@ -187,7 +188,7 @@ function PlanDetailPage(): React.JSX.Element {
                   helper drops the slash when the plan has no SO line behind it. */}
               {plan.itemName ??
                 plan.itemNameText ??
-                itemCodeWithRev(plan.itemCode ?? plan.itemCodeText, plan.itemRevision)}
+                itemCodeWithRev(plan.itemCode ?? plan.itemCodeText, docDrawingRev(plan))}
               {/* ADR-185 — a route-card plan states its DERIVED status, the
                   same word and colour the Plans list shows for it; only old
                   plans keep their stored status label. */}
@@ -338,7 +339,11 @@ function PlanDetailPage(): React.JSX.Element {
                 plan was raised against. The helper drops the slash when there is
                 no revision behind it. Item code is the main thing on the line. */}
             <IdentCode>
-              {itemCodeWithRev(plan.itemCode ?? plan.itemCodeText, plan.itemRevision)}
+              <ItemRevLink
+                itemRevisionId={plan.itemRevisionId}
+                label={itemCodeWithRev(plan.itemCode ?? plan.itemCodeText, docDrawingRev(plan))}
+                className=""
+              />
             </IdentCode>
             {(plan.itemName ?? plan.itemNameText) ? (
               <span>{plan.itemName ?? plan.itemNameText}</span>

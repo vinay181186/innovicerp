@@ -61,6 +61,7 @@ import { softDeleteStamp } from '../../lib/audit-trail';
 import { assertActiveParty } from '../../lib/active-party';
 import { decideOrderTax, orderTotals } from '../../lib/order-totals';
 import { emitActivityLog } from '../activity-log/service';
+import { type LineRevResult, resolveLineRevision } from '../item-revisions/line-rev';
 import { assertNoPendingCancel } from '../cancel-requests/pending-guard';
 import { rehearseInSavepoint } from '../document-edits/line-boxes';
 import {
@@ -1384,6 +1385,7 @@ function toSalesOrderLine(
     drawingNo: row.drawingNo,
     revision: row.revision,
     drawingFilePath: row.drawingFilePath,
+    itemRevisionId: row.itemRevisionId ?? null,
     itemImagePath,
     uom: row.uom,
     orderQty: row.orderQty,
@@ -1643,8 +1645,28 @@ function createSalesOrderOnce(
     // Insert lines
     let insertedLines: Array<typeof salesOrderLines.$inferSelect> = [];
     if (input.lines.length > 0) {
+      // Item + Drawing Rev register (0232): each line links to ABC/<rev>
+      // (created by the first line that names it) and, when it offered no
+      // file, takes the register's drawing. Same transaction as the SO.
+      const lineRevs: LineRevResult[] = [];
+      for (const [i, l] of input.lines.entries()) {
+        lineRevs.push(
+          await resolveLineRevision(tx, user, companyId, {
+            kind: 'so',
+            orderId: header.id,
+            docCode: code,
+            lineNo: lineNos[i]!,
+            itemId: resolveLineItemRefs(l, resolved).itemId,
+            rev: l.revision,
+            sentFile: l.drawingFilePath,
+            sentDrawingNo: l.drawingNo,
+            stored: null,
+          }),
+        );
+      }
       const lineValues = input.lines.map((l, i) => {
         const refs = resolveLineItemRefs(l, resolved);
+        const lr = lineRevs[i]!;
         return {
           companyId,
           salesOrderId: header.id,
@@ -1660,7 +1682,10 @@ function createSalesOrderOnce(
           // holding the Rev printed on the drawing, not at some number the
           // server made up.
           revision: normalizeRevision(l.revision),
-          drawingFilePath: l.drawingFilePath ?? null,
+          drawingFilePath:
+            lr.drawingFilePath !== undefined ? lr.drawingFilePath : (l.drawingFilePath ?? null),
+          itemRevisionId: lr.itemRevisionId,
+          ...(l.drawingNo ? {} : lr.registerDrawingNo ? { drawingNo: lr.registerDrawingNo } : {}),
           uom: l.uom,
           orderQty: l.orderQty,
           rate: rateToString(l),
@@ -2349,6 +2374,8 @@ async function mergeLines(
       drawingFilePath: salesOrderLines.drawingFilePath,
       drawingNo: salesOrderLines.drawingNo,
       revision: salesOrderLines.revision,
+      // Item + Drawing Rev register link (0232) — a change runs D1.
+      itemRevisionId: salesOrderLines.itemRevisionId,
       // ADR-184 — the stored item, so an item swap on a committed line is refused.
       itemId: salesOrderLines.itemId,
       // ADR-196 — a line closed short keeps its Order Qty and status.
@@ -2512,6 +2539,14 @@ async function mergeLines(
   const nextRevisionNo = makeRevisionNoAllocator(
     await loadLastRevisionNos(tx, salesOrderId, companyId),
   );
+  const docCode =
+    (
+      await tx
+        .select({ code: salesOrders.code })
+        .from(salesOrders)
+        .where(eq(salesOrders.id, salesOrderId))
+        .limit(1)
+    )[0]?.code ?? '';
 
   // Apply updates.
   for (const u of toUpdate) {
@@ -2541,14 +2576,39 @@ async function mergeLines(
       }
       lineUpdate['revision'] = nextRevision;
     }
-    if (u.data.drawingFilePath !== undefined) {
-      lineUpdate['drawingFilePath'] = u.data.drawingFilePath ?? null;
+    // Item + Drawing Rev register (0232) + D1: link the line to ABC/<rev>;
+    // a Rev change moves the line's OPEN Job Cards / plans / PROs and is
+    // refused when all its Job Cards are closed (item-revisions/line-rev.ts).
+    // The line's file copy follows the register; `finalFile` replaces the
+    // sent value below so the drawing history records what is really stored.
+    const itemTouched = u.data.itemId !== undefined || u.data.itemCodeText !== undefined;
+    const lr = await resolveLineRevision(tx, user, companyId, {
+      kind: 'so',
+      orderId: salesOrderId,
+      docCode,
+      lineNo: u.data.lineNo ?? stored.lineNo,
+      itemId: itemTouched ? refs.itemId : stored.itemId,
+      rev: nextRevision,
+      sentFile: u.data.drawingFilePath,
+      sentDrawingNo: u.data.drawingNo,
+      stored: { ...stored, id: u.id },
+    });
+    if (lr.touched) {
+      lineUpdate['itemRevisionId'] = lr.itemRevisionId;
+      if (lr.registerDrawingNo && !(u.data.drawingNo ?? stored.drawingNo)) {
+        lineUpdate['drawingNo'] = lr.registerDrawingNo;
+      }
+    }
+    const finalFile =
+      lr.drawingFilePath !== undefined ? lr.drawingFilePath : u.data.drawingFilePath;
+    if (finalFile !== undefined) {
+      lineUpdate['drawingFilePath'] = finalFile ?? null;
       // A history row is written only when the file genuinely differs from
       // what is stored. Clearing a drawing counts: the drawing record changed,
       // so it gets its own row — one that points at no file.
       const action = drawingTransition(
         normalizeDrawingPath(stored.drawingFilePath),
-        normalizeDrawingPath(u.data.drawingFilePath),
+        normalizeDrawingPath(finalFile),
       );
       if (action !== null) {
         pendingRevisions.push({
@@ -2562,11 +2622,13 @@ async function mergeLines(
             // the last one recorded. It says nothing about the customer's Rev.
             revisionNo: nextRevisionNo(u.id),
             action,
-            drawingFilePath: normalizeDrawingPath(u.data.drawingFilePath),
+            drawingFilePath: normalizeDrawingPath(finalFile),
             // Snapshot the drawing number as it stands after this save, not
             // as it was stored, so the row describes the drawing it records.
             drawingNo:
-              u.data.drawingNo !== undefined ? (u.data.drawingNo ?? null) : stored.drawingNo,
+              (lineUpdate['drawingNo'] as string | null | undefined) !== undefined
+                ? ((lineUpdate['drawingNo'] as string | null) ?? null)
+                : stored.drawingNo,
             // Same rule for the Rev: the value the line carries AFTER this
             // save, so the trail says which customer revision this drawing
             // belonged to. Falls back to the stored Rev when the payload does
@@ -2599,8 +2661,26 @@ async function mergeLines(
       .reduce((m, e) => Math.max(m, e.lineNo), 0);
     const startFrom = survivingMax + 1;
     const newLineNos = assignLineNos(toInsert, startFrom);
+    // Item + Drawing Rev register (0232) — same as the create path.
+    const newRevs: LineRevResult[] = [];
+    for (const [i, l] of toInsert.entries()) {
+      newRevs.push(
+        await resolveLineRevision(tx, user, companyId, {
+          kind: 'so',
+          orderId: salesOrderId,
+          docCode,
+          lineNo: newLineNos[i]!,
+          itemId: resolveLineItemRefs(l, resolved).itemId,
+          rev: l.revision,
+          sentFile: l.drawingFilePath,
+          sentDrawingNo: l.drawingNo,
+          stored: null,
+        }),
+      );
+    }
     const values = toInsert.map((l, i) => {
       const refs = resolveLineItemRefs(l, resolved);
+      const lr = newRevs[i]!;
       return {
         companyId,
         salesOrderId,
@@ -2613,7 +2693,10 @@ async function mergeLines(
         // Same as the create path: the Rev is whatever the user typed on the
         // new line (upper-cased, ADR-177), never a number the server chose.
         revision: normalizeRevision(l.revision),
-        drawingFilePath: l.drawingFilePath ?? null,
+        drawingFilePath:
+          lr.drawingFilePath !== undefined ? lr.drawingFilePath : (l.drawingFilePath ?? null),
+        itemRevisionId: lr.itemRevisionId,
+        ...(l.drawingNo ? {} : lr.registerDrawingNo ? { drawingNo: lr.registerDrawingNo } : {}),
         uom: l.uom,
         orderQty: l.orderQty,
         rate: rateToString(l),

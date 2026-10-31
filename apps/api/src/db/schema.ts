@@ -957,8 +957,11 @@ export const routeCards = pgTable(
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
+    // Drawing Rev register (0232): the Item + Drawing Rev (ABC/1); null = old row / Buy item.
+    itemRevisionId: uuid('item_revision_id').references((): AnyPgColumn => itemRevisions.id),
   },
   (t) => [
+    index('route_cards_item_revision_idx').on(t.itemRevisionId),
     check(
       'route_cards_approval_status_check',
       sql`${t.approvalStatus} IN ('pending', 'approved', 'rejected')`,
@@ -970,9 +973,14 @@ export const routeCards = pgTable(
     uniqueIndex('route_cards_company_code_uniq')
       .on(t.companyId, t.code)
       .where(sql`${t.deletedAt} is null`),
-    uniqueIndex('route_cards_company_item_uniq')
+    // 0232: one Route Card per Item + Drawing Rev; cards with no Rev (old
+    // cards / Buy items) keep one per item.
+    uniqueIndex('route_cards_company_itemrev_uniq')
+      .on(t.companyId, t.itemRevisionId)
+      .where(sql`${t.deletedAt} is null and ${t.itemRevisionId} is not null`),
+    uniqueIndex('route_cards_company_item_norev_uniq')
       .on(t.companyId, t.itemId)
-      .where(sql`${t.deletedAt} is null`),
+      .where(sql`${t.deletedAt} is null and ${t.itemRevisionId} is null`),
     index('route_cards_item_idx')
       .on(t.itemId)
       .where(sql`${t.deletedAt} is null`),
@@ -1191,8 +1199,11 @@ export const jobCards = pgTable(
     cancelReason: text('cancel_reason'),
     cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
     cancelledBy: uuid('cancelled_by').references((): AnyPgColumn => users.id),
+    // Drawing Rev register (0232): the Item + Drawing Rev (ABC/1); null = old row / Buy item.
+    itemRevisionId: uuid('item_revision_id').references((): AnyPgColumn => itemRevisions.id),
   },
   (t) => [
+    index('job_cards_item_revision_idx').on(t.itemRevisionId),
     check(
       'job_cards_rm_qty_per_piece_check',
       sql`${t.rmQtyPerPiece} IS NULL OR ${t.rmQtyPerPiece} > 0`,
@@ -1902,8 +1913,11 @@ export const salesOrderLines = pgTable(
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
+    // Drawing Rev register (0232): the Item + Drawing Rev (ABC/1); null = old row / Buy item.
+    itemRevisionId: uuid('item_revision_id').references((): AnyPgColumn => itemRevisions.id),
   },
   (t) => [
+    index('sales_order_lines_item_revision_idx').on(t.itemRevisionId),
     uniqueIndex('sales_order_lines_so_line_uniq')
       .on(t.salesOrderId, t.lineNo)
       .where(sql`${t.deletedAt} is null`),
@@ -2196,8 +2210,11 @@ export const jobWorkOrderLines = pgTable(
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
+    // Drawing Rev register (0232): the Item + Drawing Rev (ABC/1); null = old row / Buy item.
+    itemRevisionId: uuid('item_revision_id').references((): AnyPgColumn => itemRevisions.id),
   },
   (t) => [
+    index('job_work_order_lines_item_revision_idx').on(t.itemRevisionId),
     uniqueIndex('job_work_order_lines_jw_line_uniq')
       .on(t.jobWorkOrderId, t.lineNo)
       .where(sql`${t.deletedAt} is null`),
@@ -2776,8 +2793,11 @@ export const storeTransactions = pgTable(
     createdBy: uuid('created_by')
       .notNull()
       .references(() => users.id),
+    // Phase C (0233): the Item + Rev bucket this move hits; null = blank bucket (old stock / Buy item).
+    itemRevisionId: uuid('item_revision_id').references((): AnyPgColumn => itemRevisions.id),
   },
   (t) => [
+    index('store_transactions_item_revision_idx').on(t.itemRevisionId),
     index('store_transactions_company_item_date_idx').on(t.companyId, t.itemId, t.txnDate),
     index('store_transactions_company_source_idx').on(t.companyId, t.sourceType, t.sourceRef),
     index('store_transactions_company_date_idx').on(t.companyId, t.txnDate),
@@ -2853,8 +2873,11 @@ export const soStockReservations = pgTable(
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
+    // Phase C (0233): the Item + Rev bucket booked; null = blank bucket.
+    itemRevisionId: uuid('item_revision_id').references((): AnyPgColumn => itemRevisions.id),
   },
   (t) => [
+    index('so_stock_reservations_item_revision_idx').on(t.itemRevisionId),
     index('so_stock_reservations_company_line_idx').on(t.companyId, t.soLineId),
     index('so_stock_reservations_company_item_idx').on(t.companyId, t.itemId),
     check('so_stock_reservations_qty_positive', sql`${t.qty} > 0`),
@@ -3439,8 +3462,11 @@ export const bomMasterLines = pgTable(
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
+    // D2 (0232): the child part's Item + Drawing Rev (SHAFT/2); null = Buy part / old line.
+    childItemRevisionId: uuid('child_item_revision_id').references((): AnyPgColumn => itemRevisions.id),
   },
   (t) => [
+    index('bom_master_lines_child_item_revision_idx').on(t.childItemRevisionId),
     uniqueIndex('bom_master_lines_bom_item_uniq')
       .on(t.bomMasterId, t.childItemId)
       .where(sql`${t.deletedAt} is null`),
@@ -3594,8 +3620,11 @@ export const mlBomLines = pgTable(
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
+    // D2 (0232): the child part's Item + Drawing Rev (SHAFT/2); null = Buy part / old line.
+    childItemRevisionId: uuid('child_item_revision_id').references((): AnyPgColumn => itemRevisions.id),
   },
   (t) => [
+    index('ml_bom_lines_child_item_revision_idx').on(t.childItemRevisionId),
     foreignKey({
       name: 'ml_bom_lines_child_ml_bom_fk',
       columns: [t.childMlBomId, t.childItemId],
@@ -3784,8 +3813,11 @@ export const mlPlanNodes = pgTable(
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
+    // Drawing Rev register (0232): the Item + Drawing Rev (ABC/1); null = old row / Buy item.
+    itemRevisionId: uuid('item_revision_id').references((): AnyPgColumn => itemRevisions.id),
   },
   (t) => [
+    index('ml_plan_nodes_item_revision_idx').on(t.itemRevisionId),
     check('ml_plan_nodes_depth_nonneg', sql`${t.depth} >= 0`),
     check('ml_plan_nodes_seq_nonneg', sql`${t.seq} >= 0`),
     check('ml_plan_nodes_gross_nonneg', sql`${t.grossNeedQty} >= 0`),
@@ -4197,8 +4229,11 @@ export const plans = pgTable(
     cancelReason: text('cancel_reason'),
     cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
     cancelledBy: uuid('cancelled_by').references((): AnyPgColumn => users.id),
+    // Drawing Rev register (0232): the Item + Drawing Rev (ABC/1); null = old row / Buy item.
+    itemRevisionId: uuid('item_revision_id').references((): AnyPgColumn => itemRevisions.id),
   },
   (t) => [
+    index('plans_item_revision_idx').on(t.itemRevisionId),
     check(
       'plans_rm_qty_per_piece_check',
       sql`${t.rmQtyPerPiece} IS NULL OR ${t.rmQtyPerPiece} > 0`,
@@ -4875,11 +4910,19 @@ export const stockCountLines = pgTable(
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
+    // Phase C (0233): the Item + Rev bucket counted; null = blank bucket.
+    itemRevisionId: uuid('item_revision_id').references((): AnyPgColumn => itemRevisions.id),
   },
   (t) => [
+    index('stock_count_lines_item_revision_idx').on(t.itemRevisionId),
     check('stock_count_lines_counted_qty_check', sql`${t.countedQty} >= 0`),
-    uniqueIndex('stock_count_lines_count_item_uniq')
-      .on(t.stockCountId, t.itemId)
+    // 0233: one line per item PER Rev bucket in a count.
+    uniqueIndex('stock_count_lines_count_item_rev_uniq')
+      .on(
+        t.stockCountId,
+        t.itemId,
+        sql`COALESCE(${t.itemRevisionId}, '00000000-0000-0000-0000-000000000000'::uuid)`,
+      )
       .where(sql`${t.deletedAt} is null`),
     index('stock_count_lines_item_idx')
       .on(t.itemId)
@@ -5127,8 +5170,11 @@ export const assemblyPartReservations = pgTable(
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
+    // Phase C (0233): the Item + Rev bucket booked; null = blank bucket.
+    itemRevisionId: uuid('item_revision_id').references((): AnyPgColumn => itemRevisions.id),
   },
   (t) => [
+    index('assembly_part_reservations_item_revision_idx').on(t.itemRevisionId),
     check('assembly_part_reservations_qty_check', sql`${t.qty} > 0`),
     check('assembly_part_reservations_consumed_qty_check', sql`${t.consumedQty} >= 0`),
     check('assembly_part_reservations_released_qty_check', sql`${t.releasedQty} >= 0`),
@@ -6834,8 +6880,11 @@ export const customerDispatchLines = pgTable(
       .references(() => users.id),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
+    // Phase C (0233): the Item + Rev bucket shipped; null = blank bucket / Buy item / old row.
+    itemRevisionId: uuid('item_revision_id').references((): AnyPgColumn => itemRevisions.id),
   },
   (t) => [
+    index('customer_dispatch_lines_item_revision_idx').on(t.itemRevisionId),
     uniqueIndex('customer_dispatch_lines_line_uq')
       .on(t.customerDispatchId, t.lineNo)
       .where(sql`${t.deletedAt} is null`),
@@ -8563,8 +8612,11 @@ export const productionOrders = pgTable(
     cancelReason: text('cancel_reason'),
     cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
     cancelledBy: uuid('cancelled_by').references((): AnyPgColumn => users.id),
+    // Drawing Rev register (0232): the Item + Drawing Rev (ABC/1); null = old row / Buy item.
+    itemRevisionId: uuid('item_revision_id').references((): AnyPgColumn => itemRevisions.id),
   },
   (t) => [
+    index('production_orders_item_revision_idx').on(t.itemRevisionId),
     uniqueIndex('production_orders_company_code_uniq')
       .on(t.companyId, t.code)
       .where(sql`${t.deletedAt} is null`),
@@ -8694,3 +8746,202 @@ export const idempotencyKeys = pgTable(
 
 export type IdempotencyKeyRow = typeof idempotencyKeys.$inferSelect;
 export type NewIdempotencyKeyRow = typeof idempotencyKeys.$inferInsert;
+
+// ─── Item + Drawing Rev register (0232 / 0233) ────────────────────────────
+// "ABC/1" = Item ABC at customer Drawing Rev 1 = ONE record holding one
+// drawing. Contract: packages/shared/src/schemas/item-revision.ts — the DB
+// column `rev` is the contract's `drawingRev`. Created by whichever document
+// names it first (SO line, JWSO line, Route Card, BOM child line); 0232
+// backfilled 'legacy' rows from live SO / JWSO lines of MAKE items.
+export const itemRevisions = pgTable(
+  'item_revisions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => items.id),
+    /** Upper-case Drawing Rev, REVISION_PATTERN (CHECK). */
+    rev: text('rev').notNull(),
+    drawingFilePath: text('drawing_file_path'),
+    drawingNo: text('drawing_no'),
+    /** ITEM_REVISION_SOURCES (CHECK). */
+    sourceType: text('source_type').notNull(),
+    sourceRef: text('source_ref'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    // set_updated_at trigger (0232) — §20.4 guard for Replace drawing.
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
+  },
+  (t) => [
+    check('item_revisions_rev_check', sql`${t.rev} ~ '^[A-Z0-9][A-Z0-9./-]{0,31}$'`),
+    check(
+      'item_revisions_source_type_check',
+      sql`${t.sourceType} IN ('so_line', 'jw_line', 'route_card', 'bom_line', 'ml_bom_line', 'legacy')`,
+    ),
+    // One live ABC/1 per company — a second first-namer gets 23505.
+    uniqueIndex('item_revisions_company_item_rev_uniq')
+      .on(t.companyId, t.itemId, t.rev)
+      .where(sql`${t.deletedAt} is null`),
+    index('item_revisions_item_idx').on(t.itemId),
+    pgPolicy('item_revisions_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('item_revisions_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+/** Append-only drawing history of one Item + Rev (born / adopted / copied /
+ *  replaced / cleared). `reason` is compulsory for `replaced` (service rule). */
+export const itemRevisionDrawings = pgTable(
+  'item_revision_drawings',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    itemRevisionId: uuid('item_revision_id')
+      .notNull()
+      .references(() => itemRevisions.id),
+    /** ITEM_REVISION_DRAWING_ACTIONS (CHECK). */
+    action: text('action').notNull(),
+    drawingFilePath: text('drawing_file_path'),
+    drawingNo: text('drawing_no'),
+    reason: text('reason'),
+    sourceType: text('source_type'),
+    sourceRef: text('source_ref'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
+  },
+  (t) => [
+    check(
+      'item_revision_drawings_action_check',
+      sql`${t.action} IN ('born', 'adopted', 'copied', 'replaced', 'cleared')`,
+    ),
+    check(
+      'item_revision_drawings_source_type_check',
+      sql`${t.sourceType} IS NULL OR ${t.sourceType} IN ('so_line', 'jw_line', 'route_card', 'bom_line', 'ml_bom_line', 'legacy')`,
+    ),
+    index('item_revision_drawings_rev_created_idx').on(t.itemRevisionId, t.createdAt),
+    pgPolicy('item_revision_drawings_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('item_revision_drawings_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+/** D1 — one Rev change on an SO / JWSO line: which open docs moved, which
+ *  closed Job Cards kept the old Rev (document codes). */
+export const itemRevisionChanges = pgTable(
+  'item_revision_changes',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    soLineId: uuid('so_line_id').references(() => salesOrderLines.id),
+    jwLineId: uuid('jw_line_id').references(() => jobWorkOrderLines.id),
+    fromItemRevisionId: uuid('from_item_revision_id').references(() => itemRevisions.id),
+    toItemRevisionId: uuid('to_item_revision_id')
+      .notNull()
+      .references(() => itemRevisions.id),
+    movedDocs: text('moved_docs').array().notNull().default(sql`'{}'::text[]`),
+    keptDocs: text('kept_docs').array().notNull().default(sql`'{}'::text[]`),
+    reason: text('reason'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
+  },
+  (t) => [
+    index('item_revision_changes_so_line_idx').on(t.soLineId),
+    index('item_revision_changes_jw_line_idx').on(t.jwLineId),
+    pgPolicy('item_revision_changes_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    pgPolicy('item_revision_changes_manager_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+/** Phase C (0233) — the blank Rev bucket key (old stock / Buy items / RM). */
+export const REV_KEY_BLANK = '00000000-0000-0000-0000-000000000000';
+
+/** Phase C (0233) — on hand per (company, item, Rev bucket), maintained ONLY by
+ *  the apply_store_txn_to_balance trigger beside item_stock_balances (whose
+ *  item totals are unchanged). rev_key = item_revision_id or REV_KEY_BLANK.
+ *  Per item, SUM(on_hand_qty) = item_stock_balances.on_hand_qty. No >= 0
+ *  CHECK on purpose (see 0233 header). */
+export const itemRevStockBalances = pgTable(
+  'item_rev_stock_balances',
+  {
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => items.id, { onDelete: 'cascade' }),
+    itemRevisionId: uuid('item_revision_id').references(() => itemRevisions.id),
+    revKey: uuid('rev_key')
+      .notNull()
+      .generatedAlwaysAs(
+        sql`COALESCE(item_revision_id, '00000000-0000-0000-0000-000000000000'::uuid)`,
+      ),
+    onHandQty: stockQty('on_hand_qty').notNull().default(0),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.companyId, t.itemId, t.revKey] }),
+    index('item_rev_stock_balances_company_idx').on(t.companyId),
+    index('item_rev_stock_balances_item_revision_idx').on(t.itemRevisionId),
+    pgPolicy('item_rev_stock_balances_company_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+    }),
+    // No write policy — the SECURITY DEFINER trigger is the only writer.
+  ],
+).enableRLS();

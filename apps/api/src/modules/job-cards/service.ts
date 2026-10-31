@@ -83,6 +83,7 @@ import {
   ActivityAction,
   type ActivityChange,
   isGeneratedTerminalQcOp,
+  itemRevLabel,
   opSrNo,
   stripStaleGeneratedTerminalQc,
 } from '@innovic/shared';
@@ -115,6 +116,7 @@ import type {
 import { jcEffectiveQtySql } from '../../lib/jc-effective-qty';
 import { readSf, sfOrderBy } from '../../lib/list-query';
 import { polSql } from '../../lib/pol';
+import { displayRouteCardIdSql } from '../../lib/route-card-for-rev';
 import { assertSoAcceptsWork } from '../../lib/so-accepts-work';
 import { JC_SF_COLUMNS } from './sf-columns';
 import { JC_LIST_JOINS, jcListWhere, jcStatusCounts } from './list-filters';
@@ -245,7 +247,8 @@ export async function listJobCards(
         -- column is only text on a database that has had migration 0119; on one
         -- that has not, it is still the old integer and would arrive here as a
         -- number wearing a string type. The cast is a no-op once 0119 is in.
-        COALESCE(sol.revision::text, jwl.revision::text) AS "itemRevision",
+        COALESCE(jir.rev, sol.revision::text, jwl.revision::text) AS "itemRevision",
+        jc.item_revision_id AS "itemRevisionId", jir.rev AS "drawingRev",
         COALESCE(s.computed_status, 'no_ops') AS "computedStatus",
         -- ADR-235: a Cancelled card is not in v_jc_status; its op count is the
         -- ops cancelled with it (deleted_at equal to the card's).
@@ -409,7 +412,8 @@ export async function getJobCard(id: string, user: AuthContext): Promise<JobCard
         -- column is only text on a database that has had migration 0119; on one
         -- that has not, it is still the old integer and would arrive here as a
         -- number wearing a string type. The cast is a no-op once 0119 is in.
-        COALESCE(sol.revision::text, jwl.revision::text) AS "itemRevision",
+        COALESCE(jir.rev, sol.revision::text, jwl.revision::text) AS "itemRevision",
+        jc.item_revision_id AS "itemRevisionId", jir.rev AS "drawingRev",
         COALESCE(s.computed_status, 'no_ops') AS "computedStatus",
         -- ADR-235: a Cancelled card is not in v_jc_status; its op count is the
         -- ops cancelled with it (deleted_at equal to the card's).
@@ -501,10 +505,6 @@ export async function getJobCard(id: string, user: AuthContext): Promise<JobCard
         )::int AS "runningCount"
       FROM public.job_cards jc
       LEFT JOIN public.items i ON i.id = jc.item_id
-      -- The item's single active route card (route_cards is unique per item) —
-      -- surfaces the route-card reference (code + current revision) on the JC.
-      LEFT JOIN public.route_cards rc
-        ON rc.company_id = jc.company_id AND rc.item_id = jc.item_id AND rc.deleted_at IS NULL
       LEFT JOIN public.v_jc_status s ON s.job_card_id = jc.id
       LEFT JOIN public.job_cards pjc ON pjc.id = jc.parent_job_card_id
       LEFT JOIN public.nc_register pnc ON pnc.id = jc.parent_nc_id
@@ -514,6 +514,15 @@ export async function getJobCard(id: string, user: AuthContext): Promise<JobCard
       -- Customer Dispatch Date off the parent's plan (see the select above).
       LEFT JOIN public.production_orders pjc_po
         ON pjc_po.id = pjc.production_order_id AND pjc_po.deleted_at IS NULL
+      -- Drawing Rev register: an item may have one Route Card per Rev, so the
+      -- card is picked, never joined on item (that would duplicate the row):
+      -- the card the Production Order was built from, else the card for the
+      -- JC's own Item + Rev, else the item's old no-Rev card.
+      LEFT JOIN public.route_cards rc
+        ON rc.id = COALESCE(po.route_card_id, ${displayRouteCardIdSql(sql`jc.item_id`, sql`jc.item_revision_id`)})
+       AND rc.deleted_at IS NULL
+      -- The JC's own Item + Drawing Rev (ABC/1) — one row per card.
+      LEFT JOIN public.item_revisions jir ON jir.id = jc.item_revision_id
       LEFT JOIN public.sales_order_lines sol
         ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
       LEFT JOIN public.sales_orders so
@@ -626,6 +635,9 @@ function toListItem(r: Record<string, unknown>): JobCardListItem {
     // deleted), so it is passed through rather than coerced to a blank string —
     // the UI needs to tell "no revision" apart from an empty one.
     itemRevision: (r['itemRevision'] as string | null) ?? null,
+    // Drawing Rev register — the card's own Item + Rev (null = old card / Buy).
+    itemRevisionId: (r['itemRevisionId'] as string | null) ?? null,
+    drawingRev: (r['drawingRev'] as string | null) ?? null,
     itemName: (r['itemName'] as string | null) ?? '',
     orderQty: Number(r['orderQty']),
     priority: r['priority'] as JobCardListItem['priority'],
@@ -852,10 +864,19 @@ export async function getJobCardEditModel(
         -- that has not had migration 0119 the SO column is still an integer and
         -- would arrive as a number wearing a string type. No-op once 0119/0120
         -- are in, and it keeps the two sources the same shape.
+        --
         sol.drawing_file_path AS "soLineDrawingFilePath",
         sol.revision::text    AS "soLineRevision",
         jwl.drawing_file_path AS "jwLineDrawingFilePath",
         jwl.revision::text    AS "jwLineRevision",
+        -- Drawing Rev register (owner 2026-10-31): the card's OWN Item + Rev
+        -- (ABC/1) drawing, in its own field — a split line can have JC-1 at
+        -- ABC/1 and JC-2 at ABC/2. A finished card shows the file that was
+        -- current when it finished (latest history row at or before that time,
+        -- else the register's current file). The screen reads it before the
+        -- SO / JW line file; the line slots keep the line's true values.
+        jrev.file_path AS "revisionDrawingFilePath",
+        jir.rev        AS "revisionRev",
         -- Last fallback: the item master's own drawing. Covers a hand-raised
         -- card with no source line at all, and a JWSO line that predates
         -- migration 0120 and so never had a file to carry.
@@ -871,6 +892,27 @@ export async function getJobCardEditModel(
         ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
       LEFT JOIN public.job_work_order_lines jwl
         ON jwl.id = jc.source_jw_line_id AND jwl.deleted_at IS NULL
+      LEFT JOIN public.item_revisions jir
+        ON jir.id = jc.item_revision_id AND jir.deleted_at IS NULL
+      LEFT JOIN public.v_jc_status jst ON jst.job_card_id = jc.id
+      -- When the card finished: closed_at, else (complete, not yet closed) its
+      -- last op log. Null while the card is still running.
+      LEFT JOIN LATERAL (
+        SELECT COALESCE(jc.closed_at,
+          CASE WHEN jst.computed_status IN ('complete', 'closed') THEN (
+            SELECT MAX(ol.created_at) FROM public.op_log ol
+            JOIN public.jc_ops jo ON jo.id = ol.jc_op_id
+            WHERE jo.job_card_id = jc.id) END) AS finished_at
+      ) jfin ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT CASE WHEN jir.id IS NULL THEN NULL
+          WHEN jfin.finished_at IS NULL THEN jir.drawing_file_path
+          ELSE COALESCE((
+            SELECT d.drawing_file_path FROM public.item_revision_drawings d
+            WHERE d.item_revision_id = jir.id AND d.deleted_at IS NULL
+              AND d.created_at <= jfin.finished_at
+            ORDER BY d.created_at DESC LIMIT 1), jir.drawing_file_path) END AS file_path
+      ) jrev ON TRUE
       WHERE jc.id = ${id}::uuid AND jc.company_id = ${companyId}::uuid AND jc.deleted_at IS NULL
       LIMIT 1
     `)) as unknown as Array<Record<string, unknown>>;
@@ -954,6 +996,10 @@ export async function getJobCardEditModel(
       // At most one of the two line paths is ever set; the screen picks the
       // order it prefers and labels which file it is showing.
       soLineDrawingFilePath: (h['soLineDrawingFilePath'] as string | null) ?? null,
+      revisionDrawingFilePath: (h['revisionDrawingFilePath'] as string | null) ?? null,
+      revisionLabel: h['revisionRev']
+        ? itemRevLabel((h['itemCode'] as string | null) ?? '', h['revisionRev'] as string)
+        : null,
       jwLineDrawingFilePath: (h['jwLineDrawingFilePath'] as string | null) ?? null,
       itemDrawingFilePath: (h['itemDrawingFilePath'] as string | null) ?? null,
       itemImagePath: (h['itemImagePath'] as string | null) ?? null,
@@ -1961,6 +2007,30 @@ async function autoRaiseOspPrs(
   return raisedPrCodes;
 }
 
+/** Drawing Rev register (owner 2026-10-31): the Item + Rev of the SO / JWSO
+ *  line a card is raised against — only when the card is for the line's OWN
+ *  item (a different item has no Rev from this line). Null otherwise. */
+async function sourceLineItemRevisionId(
+  tx: DbTransaction,
+  companyId: string,
+  soLineId: string | null | undefined,
+  jwLineId: string | null | undefined,
+  itemId: string,
+): Promise<string | null> {
+  if (!soLineId && !jwLineId) return null;
+  const rows = (await tx.execute(sql`
+    SELECT COALESCE(
+      (SELECT sol.item_revision_id FROM public.sales_order_lines sol
+        WHERE sol.id = ${soLineId ?? null}::uuid AND sol.company_id = ${companyId}::uuid
+          AND sol.item_id = ${itemId}::uuid),
+      (SELECT jwl.item_revision_id FROM public.job_work_order_lines jwl
+        WHERE jwl.id = ${jwLineId ?? null}::uuid AND jwl.company_id = ${companyId}::uuid
+          AND jwl.item_id = ${itemId}::uuid)
+    ) AS "itemRevisionId"
+  `)) as unknown as Array<{ itemRevisionId: string | null }>;
+  return rows[0]?.itemRevisionId ?? null;
+}
+
 export async function createJobCard(
   input: JobCardWriteInput,
   user: AuthContext,
@@ -2016,6 +2086,14 @@ export async function createJobCard(
     // before the insert, so a bad grade/size id fails the whole create rather
     // than leaving a JC with a dangling reference.
     const rawMaterial = await resolveJcRawMaterial(tx, companyId, input);
+    // Drawing Rev register — the card is for the JWSO line's Item + Rev.
+    const itemRevisionId = await sourceLineItemRevisionId(
+      tx,
+      companyId,
+      input.sourceSoLineId,
+      input.sourceJwLineId,
+      item.id,
+    );
 
     const code = await nextJcCode(tx, companyId);
     const [jc] = await tx
@@ -2032,6 +2110,7 @@ export async function createJobCard(
         remarks: input.remarks ?? null,
         sourceSoLineId: input.sourceSoLineId ?? null,
         sourceJwLineId: input.sourceJwLineId ?? null,
+        itemRevisionId,
         ...rawMaterial,
         createdBy: user.id,
         updatedBy: user.id,
@@ -2075,6 +2154,8 @@ export async function createJobCard(
         user,
         code,
         rawMaterial,
+        // Drawing Rev register — write back to THIS Item + Rev's card.
+        itemRevisionId,
       );
     }
     await registerQcDocs(tx, input, { companyId, jobCardId, jcCode: code, userId: user.id });
@@ -2966,6 +3047,8 @@ export async function updateJobCardTx(
       // ADR-185 — what the card is for and how many, as stored, so the
       // freeze below can tell a real change from a re-save.
       itemId: jobCards.itemId,
+      // Drawing Rev register — kept while the item is unchanged.
+      itemRevisionId: jobCards.itemRevisionId,
       orderQty: jobCards.orderQty,
       productionOrderId: jobCards.productionOrderId,
       // ADR-193 phase 3a — kept when the edit payload leaves them out.
@@ -3449,6 +3532,18 @@ export async function updateJobCardTx(
     rawMaterialItemId: head.rawMaterialItemId,
     rmQtyPerPiece: head.rmQtyPerPiece,
   });
+  // Drawing Rev register — same item keeps its Rev; a re-picked item takes the
+  // source line's Rev when it is that line's item, else none.
+  const itemRevisionId =
+    item.id === head.itemId
+      ? (head.itemRevisionId ?? null)
+      : await sourceLineItemRevisionId(
+          tx,
+          companyId,
+          head.sourceSoLineId,
+          head.sourceJwLineId,
+          item.id,
+        );
   // §20.2's shape, used here for §20.4: the version test rides ON the UPDATE's
   // WHERE instead of on a row lock, because this path must NOT lock job_cards
   // (the ADR-220 deadlock against Op Entry, explained at the head read above).
@@ -3484,6 +3579,7 @@ export async function updateJobCardTx(
       // the link, and an edit must NOT re-point the JC at a different line).
       sourceSoLineId: head.sourceSoLineId,
       sourceJwLineId: head.sourceJwLineId,
+      itemRevisionId,
       // Raw material: same resolve-then-snapshot rule as create. The form
       // always sends both sides, so clearing a picker clears the JC.
       // Hoisted above rather than resolved inline because the route-card
@@ -3554,6 +3650,8 @@ export async function updateJobCardTx(
       rawMaterial.rmSent
         ? rawMaterial
         : { ...rawMaterial, rawMaterialItemId: null, rmQtyPerPiece: null },
+      // Drawing Rev register — write back to THIS Item + Rev's card.
+      itemRevisionId,
     );
   }
 

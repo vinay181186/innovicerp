@@ -61,6 +61,7 @@ import {
 } from '@/ui/forms';
 import { useSaveShortcut } from '@/ui/layout';
 import { useFetchRouteCard, useNextRouteCardCode, useRouteCardsList } from '../api';
+import { RcBlockingLink, RcDrawingRevFields, useRcItemRev } from './rc-form-drawing';
 import { RouteCardOpsEditor } from './rc-form-ops';
 import { RouteCardRmItemField } from './rc-form-rm-item';
 import './rc-form.css';
@@ -115,6 +116,11 @@ export interface RouteCardFormHeaderDraft {
   itemId: string;
   itemCodeText: string; // code snapshot, shown in the field once picked
   itemName: string; // name snapshot, shown under the picker (survives a search that pages past it)
+  // Item + Drawing Rev register (owner model 2026-10-31): the customer's
+  // Drawing Rev this card is for (make items only) and its drawing file. ''
+  // / null = none. Distinct from the card's own "Route Card Rev" counter.
+  drawingRev: string;
+  drawingFilePath: string | null;
   // Raw material — two INDEPENDENT master pickers, both optional. The id links
   // to the master; the *Text snapshot is what the detail page and the printout
   // still show after the master row is renamed, so both travel together and
@@ -327,21 +333,24 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
       itemId: it?.id ?? '',
       itemCodeText: it?.code ?? '',
       itemName: it?.name ?? '',
+      // A different item is a different Item + Rev: its Rev and drawing go too.
+      ...(it?.id !== header.itemId ? { drawingRev: '', drawingFilePath: null } : {}),
     });
   };
 
-  // "This item already has a route card" (user, 2026-09-22; hardened by the
-  // 2026-09-28 form audit). On create, the moment an item is picked we look up
-  // its route cards. The server ALWAYS refuses a second card for an item, so
-  // the form is blocked instead of warned: the operations table is hidden,
-  // Save is off, and the banner offers "Open RC-xxxx to add a revision" —
-  // nobody types ten ops only to lose them to a refusal on Save.
-  const { data: existingForItem } = useRouteCardsList(
-    { itemId: header.itemId, limit: 5, offset: 0 },
-    { enabled: mode === 'create' && Boolean(header.itemId) },
-  );
-  const existingCards = mode === 'create' && header.itemId ? (existingForItem?.items ?? []) : [];
-  const blockingCard = existingCards[0] ?? null;
+  // "This Item + Rev already has a route card" (user, 2026-09-22; hardened by
+  // the 2026-09-28 form audit; per Item + Drawing Rev since 2026-10-31). The
+  // moment item and Drawing Rev are both filled the register is asked; the
+  // server refuses a second card for the same ABC/1, so the form is blocked
+  // instead of warned: the operations table is hidden, Save is off, and the
+  // banner offers "Open IN-RC-xxxx to add a revision" — nobody types ten ops
+  // only to lose them to a refusal on Save. ABC/2 may have its own card.
+  const { isMake, revLocked, blockingCard, revError } = useRcItemRev({
+    itemId: header.itemId,
+    drawingRev: header.drawingRev,
+    mode,
+    routeCard,
+  });
 
   // "Copy ops from Route Card…" (round-2 "Next" item, 2026-09-26). On create,
   // pick any existing card and its operations are copied into this form as
@@ -516,8 +525,9 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
 
   const validationError = useMemo<string | null>(() => {
     if (!header.itemId) return 'Item Code is required.';
+    if (revError) return revError;
     if (blockingCard) {
-      return `Item ${header.itemCodeText} already has Route Card ${blockingCard.code} — open it to add a revision.`;
+      return `${blockingCard.code} already exists for ${blockingCard.label} — open it to add a revision.`;
     }
     if (ops.length === 0) return 'Add at least one operation.';
     for (let i = 0; i < ops.length; i++) {
@@ -557,7 +567,7 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
     );
     if (seqError) return seqError;
     return null;
-  }, [header, ops, blockingCard]);
+  }, [header, ops, blockingCard, revError]);
 
   const save = async (): Promise<void> => {
     if (validationError || submitting) return;
@@ -653,8 +663,8 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
           accent
           title={
             <>
-              Item <span className="mono">{header.itemCodeText}</span> already has Route Card{' '}
-              <span className="mono">{blockingCard.code}</span>
+              <RcBlockingLink card={blockingCard} /> already exists for{' '}
+              <span className="mono">{blockingCard.label}</span>
             </>
           }
         >
@@ -662,8 +672,8 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
             style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)', flexWrap: 'wrap' }}
           >
             <span style={{ flex: 1 }}>
-              An item has one Route Card. Changes to its operations are saved as a new revision of
-              that card, not as a second card.
+              An Item + Drawing Rev has one Route Card. Changes to its operations are saved as a new
+              revision of that card, not as a second card.
             </span>
             {/* ADR-234 — only for a Route Card Edit holder. */}
             <ActionLink
@@ -719,6 +729,18 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
             placeholder="🔍 Search item code or name…"
             valueLabel={header.itemCodeText || undefined}
             selectedLabel={(o) => o.code ?? o.name}
+          />
+          {/* Drawing Rev ★ → Drawing, make items only (rc-form-drawing.tsx). */}
+          <RcDrawingRevFields
+            itemId={header.itemId}
+            itemCode={header.itemCodeText}
+            drawingRev={header.drawingRev}
+            drawingFilePath={header.drawingFilePath}
+            isMake={isMake}
+            revLocked={revLocked}
+            mode={mode}
+            onRevChange={(drawingRev) => setHeader((prev) => ({ ...prev, drawingRev }))}
+            onFileChange={(drawingFilePath) => setHeader((prev) => ({ ...prev, drawingFilePath }))}
           />
           {/* Item Name — read-only, follows the picked item. */}
           <span className="rc-id-name" title={header.itemName || undefined}>
@@ -1007,6 +1029,18 @@ export function rawMaterialToInput(header: RouteCardFormHeaderDraft): {
     rawMaterialSizeText: header.rawMaterialSizeText,
     ...rmItemToInput(header),
   };
+}
+
+// Item + Drawing Rev for the create/update payload. A blank Rev is sent as null
+// (Buy item, or an old card left without one); the file path is always sent so
+// clearing it sticks. Drawing No. is not on this form and is never sent, so an
+// existing one is left untouched.
+export function drawingToInput(header: RouteCardFormHeaderDraft): {
+  drawingRev: string | null;
+  drawingFilePath: string | null;
+} {
+  const rev = header.drawingRev.trim().toUpperCase();
+  return { drawingRev: rev || null, drawingFilePath: header.drawingFilePath };
 }
 
 export function opsToInput(ops: RouteCardFormOpDraft[]): CreateRouteCardOpInput[] {

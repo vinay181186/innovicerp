@@ -11,11 +11,13 @@ import {
   BOM_LINE_TYPE_LABEL,
   BOM_LINE_TYPES,
   type BomLineType,
-  type MlBomImportRow,
+  normalizeRevision,
   qtyUomProblem,
+  REVISION_PATTERN,
 } from '@innovic/shared';
 import type { DbTransaction } from '../../db/with-user-context';
 import { tsLike } from './helpers';
+import type { MlBomImportRowWithRev } from './schema';
 
 export const norm = (s: string | null | undefined): string => (s ?? '').trim().toLowerCase();
 
@@ -24,6 +26,8 @@ export interface ImportItem {
   code: string;
   name: string;
   uom: string;
+  /** 'make' / 'buy' / … — only a MAKE child carries a Drawing Rev (D2). */
+  procurementType: string | null;
 }
 
 /** An item's live Default Multi-Level BOM, as the import reads it. */
@@ -51,6 +55,8 @@ export interface CheckedRow {
   gradeId: string | null;
   sizeId: string | null;
   remarks: string | null;
+  /** D2 — the typed Drawing Rev (normalised), null when blank or ignored. */
+  drawingRev: string | null;
   errors: string[];
   warnings: string[];
 }
@@ -99,7 +105,7 @@ export async function loadItemsByCode(
   const wanted = Array.from(new Set(codes.map(norm).filter((c) => c !== '')));
   if (wanted.length === 0) return out;
   const rows = (await tx.execute(sql`
-    SELECT id, code, name, uom
+    SELECT id, code, name, uom, procurement_type AS "procurementType"
     FROM public.items
     WHERE company_id = ${companyId}::uuid
       AND deleted_at IS NULL
@@ -175,7 +181,7 @@ const blank = (s: string | null | undefined): boolean => norm(s) === '';
  * Buy over a BOM, revise, loops) are added by the caller.
  */
 export function checkRow(
-  row: MlBomImportRow,
+  row: MlBomImportRowWithRev,
   itemsByCode: ReadonlyMap<string, ImportItem>,
   grades: ReadonlyMap<string, string>,
   sizes: ReadonlyMap<string, string>,
@@ -230,6 +236,21 @@ export function checkRow(
     }
   }
 
+  // D2 — optional Drawing Rev column. Imports are never refused for a
+  // MISSING Rev (the line saves with none; the Fix List covers it later); a
+  // badly written one is an error, so the save cannot fail on it half-way.
+  let drawingRev: string | null = null;
+  const revText = normalizeRevision(row.childDrawingRev ?? '');
+  if (childItem && childItem.procurementType === 'make') {
+    if (revText !== '' && !REVISION_PATTERN.test(revText)) {
+      errors.push(`Drawing Rev "${revText}": letters, digits, . - / only`);
+    } else if (revText !== '') {
+      drawingRev = revText;
+    }
+  } else if (childItem && revText !== '') {
+    warnings.push(`Drawing Rev ignored — ${childItem.code} is not a Make item`);
+  }
+
   return {
     rowNum: row.rowNum,
     bomKey: bomItem ? bomItem.id : `?${norm(bomCode)}`,
@@ -242,6 +263,7 @@ export function checkRow(
     gradeId,
     sizeId,
     remarks: row.remarks?.trim() || null,
+    drawingRev,
     errors,
     warnings,
   };

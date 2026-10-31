@@ -28,6 +28,7 @@
 import { sql, type SQL } from 'drizzle-orm';
 import { plans } from '../db/schema';
 import { routeCardUsableSql } from './route-card-usable';
+import { routeCardForItemRevSql } from './route-card-for-rev';
 import type { DbTransaction } from '../db/with-user-context';
 
 /** ADR-184 — the qty ONE Production Order (aliased `po`) contributes to its
@@ -107,12 +108,15 @@ export const PLAN_LATEST_ORDER_STATUS_SQL = latestOrderField<string | null>('sta
  *    true  → an APPROVED card         ('gen_production_order')
  *  Approval is read through routeCardUsableSql — never a hand-written check.
  *  Every module (plans, SO Planning, flow views, dashboard) uses this one
- *  fragment instead of keeping its own EXISTS copy. */
+ *  fragment instead of keeping its own EXISTS copy.
+ *  Drawing Rev register (owner 2026-10-31): the card is the one for the
+ *  plan's OWN Item + Rev (a plan with no Rev → the item's no-Rev card) — the
+ *  same STRICT rule Create Production Order enforces, so an ABC/1 plan whose
+ *  item only has an old no-Rev card reads 'route_card_pending'. */
 export const PLAN_ROUTE_CARD_USABLE_SQL = sql<boolean | null>`(
   SELECT bool_or(${routeCardUsableSql('rc')}) FROM public.route_cards rc
   WHERE rc.company_id = ${plans.companyId}
-    AND rc.item_id = ${plans.itemId}
-    AND rc.deleted_at IS NULL
+    AND ${routeCardForItemRevSql('rc', sql`${plans.itemId}`, sql`${plans.itemRevisionId}`)}
 )`;
 
 /** True when the plan's item has a live Route Card, approved or not (ADR-170).

@@ -6,6 +6,7 @@
 import { type MlBomLineInput, qtyUomProblem } from '@innovic/shared';
 import { Plus } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { cleanDrawingRev } from '@/modules/item-revisions/api';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
 import { Cluster, ClusterGrid, FormField, SearchableSelect } from '@/ui/forms';
@@ -77,13 +78,20 @@ export function MlBomForm(props: MlBomFormProps): React.JSX.Element {
   const onLinePick = (idx: number, id: string | null): void => {
     // A new item means the old sub-assembly link no longer applies.
     if (!id) {
-      updateLine(idx, { childItemId: '', childMlBomId: null, childMlBomCode: null });
+      updateLine(idx, {
+        childItemId: '',
+        childDrawingRev: '',
+        childMlBomId: null,
+        childMlBomCode: null,
+      });
       return;
     }
     const picked = itemById.get(id) ?? itemOptions.find((o) => o.id === id);
     updateLine(idx, {
       childItemId: id,
       childItemCodeText: picked?.code ?? '',
+      // A new part never keeps the previous part's Drawing Rev.
+      ...(lines[idx]?.childItemId === id ? {} : { childDrawingRev: '' }),
       childMlBomId: null,
       childMlBomCode: null,
     });
@@ -135,6 +143,12 @@ export function MlBomForm(props: MlBomFormProps): React.JSX.Element {
       }
       const unitProblem = qtyUomProblem(qty, itemById.get(l.childItemId)?.uom, 'Qty per Set');
       if (unitProblem) return `Row #${i + 1}: ${unitProblem}`;
+      // D2 — a MAKE part is named as Item + Drawing Rev (SHAFT/2).
+      if (itemById.get(l.childItemId)?.procurementType === 'make') {
+        if (!l.childDrawingRev.trim()) return `Row #${i + 1}: Drawing Rev is required.`;
+        if (!cleanDrawingRev(l.childDrawingRev))
+          return `Row #${i + 1}: Drawing Rev — letters, digits, . - / only.`;
+      }
     }
     return null;
   })();
@@ -351,6 +365,7 @@ export function MlBomForm(props: MlBomFormProps): React.JSX.Element {
 export function mlBomLinesToInput(lines: MlBomFormLineDraft[]): MlBomLineInput[] {
   return lines.map((l) => ({
     childItemId: l.childItemId,
+    childDrawingRev: l.childDrawingRev.trim() ? l.childDrawingRev.trim().toUpperCase() : null,
     qtyPerSet: Number(l.qtyPerSet),
     bomType: l.bomType,
     rawMaterialGradeId: l.rawMaterialGradeId,

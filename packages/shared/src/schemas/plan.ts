@@ -69,6 +69,11 @@ export const planSchema = z.object({
 
   soLineId: z.string().uuid().nullable(),
   jwLineId: z.string().uuid().nullable(),
+  /** Item + Drawing Rev this document is for (ABC/1), stored on the document
+   *  (Phase B). Taken from the SO/JWSO line (or BOM child line) at creation;
+   *  moved by a line Rev change only while the work is open. */
+  itemRevisionId: z.string().uuid().nullable().default(null),
+  drawingRev: z.string().nullable().default(null),
   soCodeText: z.string().nullable(),
   /** ADR-207 — the SO's Internal SO No., read live off sales_orders. */
   soInternalNo: z.string().nullable().optional(),
@@ -592,6 +597,8 @@ export type ExecutePlanResultShape = z.infer<typeof executePlanResultSchema>;
 
 export const defaultRouteOpsQuerySchema = z.object({
   itemId: z.string().uuid(),
+  /** Item + Drawing Rev — ops come from THAT Rev's Route Card. */
+  itemRevisionId: z.string().uuid().optional(),
 });
 export type DefaultRouteOpsQuery = z.infer<typeof defaultRouteOpsQuerySchema>;
 

@@ -55,6 +55,8 @@ beforeAll(async () => {
         revision: 'A',
         uom: 'NOS' as const,
         itemType: 'component' as const,
+        // Not a Drawing Rev test: a Buy child needs no Rev (D2).
+        procurementType: c === 'CHILD' ? 'buy' : 'make',
         createdBy: u.id,
         updatedBy: u.id,
       })),

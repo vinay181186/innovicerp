@@ -80,6 +80,7 @@ import { withUniqueRetry } from '../../lib/db-retry';
 import { requireAnyFormAccess, requireFormAccess } from '../../lib/access';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { polOf, polSql } from '../../lib/pol';
+import { drawingRevOf } from '../../lib/drawing-rev';
 import { productionOrderSfColumns } from './sf-columns';
 import {
   buildCloseHistory,
@@ -94,6 +95,7 @@ import {
 } from '../../lib/errors';
 import { assertNoQcDirectlyAfterOutsource } from '../../lib/jc-osp-qc-rule';
 import { assertRouteCardUsable } from '../../lib/route-card-usable';
+import { assertRouteCardMatchesPlanRev } from '../../lib/route-card-for-rev';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { diffFields, type DiffField } from '../../lib/audit-trail';
 import { fmtDate } from '../../lib/format-date';
@@ -357,12 +359,14 @@ const PARTY_NAME_SQL = sql<string | null>`COALESCE(
    WHERE p.id = ${productionOrders.planId} LIMIT 1)
 )`;
 
-/** ADR-177: the drawing revision of the SO line (or, for a JWSO plan, the JW
- *  line) this Production Order was raised for — read LIVE through the plan,
+/** Drawing Rev register: the order's OWN Item + Rev first (a split SO line can
+ *  have orders at different Revs); else ADR-177: the drawing revision of the SO
+ *  line (or, for a JWSO plan, the JW line) this Production Order was raised for — read LIVE through the plan,
  *  never snapshotted, so a reissued drawing shows on every open PO. Same
  *  one-branch-only shape as PARTY_NAME_SQL. ::text for the pre-0119 reason
  *  every other itemRevision read gives. Null when the plan has no line. */
 const ITEM_REVISION_SQL = sql<string | null>`COALESCE(
+  ${drawingRevOf(productionOrders.itemRevisionId)},
   (SELECT sol.revision::text FROM public.plans p
      JOIN public.sales_order_lines sol ON sol.id = p.so_line_id
    WHERE p.id = ${productionOrders.planId} LIMIT 1),
@@ -370,6 +374,9 @@ const ITEM_REVISION_SQL = sql<string | null>`COALESCE(
      JOIN public.job_work_order_lines jl ON jl.id = p.jw_line_id
    WHERE p.id = ${productionOrders.planId} LIMIT 1)
 )`;
+
+/** The order's stored Drawing Rev (production_orders.item_revision_id). */
+const PRO_DRAWING_REV_SQL = drawingRevOf(productionOrders.itemRevisionId);
 
 /** POL — the line number printed on the CUSTOMER's own purchase order, read
  *  live off the line this order's plan was raised from: the SO line, else
@@ -509,6 +516,8 @@ const poColumns = {
   rawMaterialGradeText: plans.rawMaterialGradeText,
   rawMaterialSizeText: plans.rawMaterialSizeText,
   itemRevision: ITEM_REVISION_SQL,
+  itemRevisionId: productionOrders.itemRevisionId,
+  drawingRev: PRO_DRAWING_REV_SQL,
   clientPoLineNo: CLIENT_PO_LINE_NO_SQL,
   soInternalNo: SO_INTERNAL_NO_SQL,
   createdByName: createdByUser.fullName,
@@ -534,6 +543,8 @@ function toListItem(r: PoRow): ProductionOrderListItem {
     itemCodeText: r.itemCodeText,
     itemNameText: r.itemNameText,
     itemRevision: r.itemRevision ?? null,
+    itemRevisionId: r.itemRevisionId ?? null,
+    drawingRev: r.drawingRev ?? null,
     clientPoLineNo: r.clientPoLineNo ?? null,
     routeCardId: r.routeCardId,
     routeCardCodeText: r.routeCardCodeText,
@@ -1286,6 +1297,7 @@ export async function createProductionOrder(
           currentRevision: routeCards.currentRevision,
           planType: routeCards.planType,
           approvalStatus: routeCards.approvalStatus,
+          itemRevisionId: routeCards.itemRevisionId,
         })
         .from(routeCards)
         .where(
@@ -1327,6 +1339,15 @@ export async function createProductionOrder(
       if (rc.itemId !== itemId) {
         throw new ValidationError(`Route Card ${rc.code} is not for item ${itemLabel}.`);
       }
+      // Drawing Rev register (owner 2026-10-31) — one card per Item + Rev: the
+      // card must be the one for the PLAN's Rev. Inside the plan lock, card
+      // read FOR SHARE above (§20.3).
+      await assertRouteCardMatchesPlanRev(tx, companyId, {
+        itemId,
+        itemLabel,
+        planItemRevisionId: plan.itemRevisionId ?? null,
+        card: rc,
+      });
       // ADR-253 — only an APPROVED Route Card may raise a Production Order. A
       // Pending Approval / Rejected card is refused with a 409 naming it.
       assertRouteCardUsable(rc);
@@ -1434,6 +1455,8 @@ export async function createProductionOrder(
           itemId,
           itemCodeText: plan.itemCodeText ?? itemLabel,
           itemNameText: plan.itemNameText,
+          // Drawing Rev register — the order is for the plan's Item + Rev.
+          itemRevisionId: plan.itemRevisionId ?? null,
           routeCardId: rc.id,
           routeCardCodeText: rc.code,
           routeCardRevision: rc.currentRevision,
@@ -1497,11 +1520,15 @@ async function writeCloseStockTxn(
     sourceRef: string;
     remarks: string;
     userId: string;
+    /** Drawing Rev Phase C — the bucket (JC's Rev, else the PRO's; a reversal
+     *  passes the Rev its close row actually credited). */
+    itemRevisionId: string | null;
   },
 ): Promise<string> {
   // Guard 'none': the close has already proved the pieces (finished − credited),
   // and a reverse-close proved them on hand before calling this.
   const moved = await postStockMove(tx, {
+    itemRevisionId: args.itemRevisionId,
     companyId: args.companyId,
     itemId: args.itemId,
     txnType: args.txnType,
@@ -1547,6 +1574,8 @@ async function autoReserveClosedStock(
     jobCardId: string;
     productionOrderCloseId: string;
     qty: number;
+    /** Drawing Rev Phase C — the bucket the close credited; the booking holds it. */
+    itemRevisionId: string | null;
   },
   user: AuthContext,
 ): Promise<{ qty: number; soCodeText: string; lineNo: number } | null> {
@@ -1584,7 +1613,11 @@ async function autoReserveClosedStock(
   // adjustment took stock the bookings were holding) a close must not be the
   // thing that fails — it books what it can and no more.
   const free = (await readStockPosition(tx, args.companyId, args.itemId)).availableQty;
-  const qty = Math.min(args.qty, need, free);
+  // …and by what is free in the Rev bucket the close just credited.
+  const bucketFree = (
+    await readStockPosition(tx, args.companyId, args.itemId, args.itemRevisionId)
+  ).availableQty;
+  const qty = Math.min(args.qty, need, free, bucketFree);
   if (qty <= 0) return null;
 
   const created = await createReservation(
@@ -1603,6 +1636,7 @@ async function autoReserveClosedStock(
       productionOrderCloseId: args.productionOrderCloseId,
       // The requirement cap was applied above, against the same figures.
       skipRequirementCap: true,
+      itemRevisionId: args.itemRevisionId,
     },
     user,
   );
@@ -1728,6 +1762,15 @@ export async function closeProductionOrder(
     const seq = priorCloses + 1;
 
     if (creditNow > 0) {
+      // Drawing Rev Phase C — the pieces are ABC/<rev> of the Job Card that
+      // made them (fallback: the order's own Rev; old rows: blank bucket).
+      const revRows = (await tx.execute(sql`
+        SELECT COALESCE(jc.item_revision_id, po.item_revision_id) AS rev
+          FROM public.production_orders po
+          LEFT JOIN public.job_cards jc ON jc.id = po.job_card_id
+         WHERE po.id = ${id}::uuid
+      `)) as unknown as Array<{ rev: string | null }>;
+      const closeRevId = revRows[0]?.rev ?? null;
       const storeTxnId = await writeCloseStockTxn(tx, {
         companyId,
         itemId: current.itemId,
@@ -1736,6 +1779,7 @@ export async function closeProductionOrder(
         sourceRef: `${current.code}#${seq}`,
         remarks: `Production Order ${current.code} close #${seq} — JC ${current.jcCodeText} closed ${creditNow} (${newCredited} of ${current.orderQty})`,
         userId: user.id,
+        itemRevisionId: closeRevId,
       });
       const closeRows = await tx
         .insert(productionOrderCloses)
@@ -1766,6 +1810,7 @@ export async function closeProductionOrder(
           jobCardId: current.jobCardId,
           productionOrderCloseId: closeRows[0]!.id,
           qty: creditNow,
+          itemRevisionId: closeRevId,
         },
         user,
       );
@@ -1936,6 +1981,7 @@ export async function reverseProductionOrderClose(
         id: productionOrderCloses.id,
         qty: productionOrderCloses.qty,
         isReversal: productionOrderCloses.isReversal,
+        storeTxnId: productionOrderCloses.storeTxnId,
       })
       .from(productionOrderCloses)
       .where(
@@ -2026,6 +2072,16 @@ export async function reverseProductionOrderClose(
           WHERE production_order_id = ${id}::uuid AND deleted_at IS NULL
         `)) as unknown as Array<{ n: number }>
       )[0]?.n ?? 0;
+    // Drawing Rev Phase C — take the pieces back out of the SAME bucket the
+    // close credited (its own ledger row; a pre-0233 close = blank bucket).
+    const creditRev = close.storeTxnId
+      ? (
+          (await tx.execute(sql`
+            SELECT item_revision_id AS rev FROM public.store_transactions
+             WHERE id = ${close.storeTxnId}::uuid
+          `)) as unknown as Array<{ rev: string | null }>
+        )[0]?.rev ?? null
+      : null;
     const storeTxnId = await writeCloseStockTxn(tx, {
       companyId,
       itemId: po.itemId,
@@ -2034,6 +2090,7 @@ export async function reverseProductionOrderClose(
       sourceRef: `${po.code}#rev${ledgerCount + 1}`,
       remarks: `Production Order ${po.code} — reversed close of ${close.qty}`,
       userId: user.id,
+      itemRevisionId: creditRev,
     });
     await tx.insert(productionOrderCloses).values({
       companyId,

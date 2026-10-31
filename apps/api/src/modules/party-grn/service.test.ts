@@ -5,7 +5,7 @@
 // items, each line pointing at its own party material (the line's customer RM).
 
 import { randomUUID } from 'node:crypto';
-import { and, asc, eq, inArray, isNull, like, notLike } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, like, notLike, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
 import {
@@ -14,6 +14,7 @@ import {
   items,
   jobWorkOrderLines,
   jobWorkOrders,
+  ncRegister,
   partyGrn,
   partyGrnLines,
   partyMaterials,
@@ -25,6 +26,7 @@ import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors'
 import { cancelPartyGrnInputSchema, listPartyGrnQuerySchema } from '@innovic/shared';
 import { requestCancel } from '../cancel-requests/service';
 import { qcPartyGrn } from './qc';
+import { registerPartialQcCases } from './qc-partial.cases';
 import * as service from './service';
 
 const TEST_PREFIX = 'TPG-';
@@ -35,6 +37,7 @@ let clientId: string;
 let jwId: string;
 let itemAId: string;
 let itemBId: string;
+let partialItemIds: [string, string];
 /** Party material for line 1's item. */
 let pmAId: string;
 /** Party material for line 2's item. */
@@ -57,7 +60,8 @@ beforeAll(async () => {
   };
   const companyId = u.companyId;
 
-  // Two DISTINCT seed items, one per JWSO line.
+  // Four DISTINCT seed items: A / B for the JWSO lines here, C / D for the
+  // partial-QC cases (a customer material is unique per company + item + client).
   const itemRows = await db
     .select({ id: items.id, code: items.code })
     .from(items)
@@ -65,10 +69,11 @@ beforeAll(async () => {
       and(eq(items.companyId, companyId), isNull(items.deletedAt), notLike(items.code, 'T%-%')),
     )
     .orderBy(asc(items.createdAt))
-    .limit(2);
-  if (itemRows.length < 2) throw new Error('Need 2 items in the seed company');
+    .limit(4);
+  if (itemRows.length < 4) throw new Error('Need 4 items in the seed company');
   itemAId = itemRows[0]!.id;
   itemBId = itemRows[1]!.id;
+  partialItemIds = [itemRows[2]!.id, itemRows[3]!.id];
 
   clientId = (
     await db
@@ -167,10 +172,26 @@ afterAll(async () => {
   const grnIds = (
     await db.select({ id: partyGrn.id }).from(partyGrn).where(eq(partyGrn.jobWorkOrderId, jwId))
   ).map((g) => g.id);
-  await db
-    .delete(partyStockLedger)
-    .where(inArray(partyStockLedger.partyMaterialId, [pmAId, pmBId]));
+  // Append-only ledger: the transaction-local maintenance switch survives the
+  // TEST pooler (the application_name exit does not).
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT set_config('innovic.ledger_maintenance', 'on', true)`);
+    await tx
+      .delete(partyStockLedger)
+      .where(inArray(partyStockLedger.partyMaterialId, [pmAId, pmBId]));
+  });
   if (grnIds.length > 0) {
+    // ADR-247 NCs raised on these lines (deviated pieces) go first — they
+    // reference the lines.
+    const lineIds = (
+      await db
+        .select({ id: partyGrnLines.id })
+        .from(partyGrnLines)
+        .where(inArray(partyGrnLines.partyGrnId, grnIds))
+    ).map((l) => l.id);
+    if (lineIds.length > 0) {
+      await db.delete(ncRegister).where(inArray(ncRegister.partyGrnLineId, lineIds));
+    }
     await db.delete(partyGrnLines).where(inArray(partyGrnLines.partyGrnId, grnIds));
     await db.delete(partyGrn).where(inArray(partyGrn.id, grnIds));
   }
@@ -254,13 +275,13 @@ describe('party-grn service — create (ADR-203)', () => {
 });
 
 describe('party-grn service — Incoming QC (ADR-203)', () => {
-  it('refuses a split that does not add up to received', async () => {
+  it('refuses more than the QC Pending Qty (partial QC, 0233)', async () => {
     const grn = await service.createPartyGrn(receipt(line2Id, 10), admin);
     const d = await service.getPartyGrnDetail(grn.id, admin);
     await expect(
       qcPartyGrn(
         grn.id,
-        { lines: [{ lineId: d.lines[0]!.id, acceptedQty: 5, rejectedQty: 0 }] },
+        { lines: [{ lineId: d.lines[0]!.id, acceptedQty: 9, rejectedQty: 2, rejectReason: 'x' }] },
         admin,
       ),
     ).rejects.toBeInstanceOf(ValidationError);
@@ -321,6 +342,14 @@ describe('party-grn service — Incoming QC (ADR-203)', () => {
     expect(lost.reason).toBeInstanceOf(ConflictError);
   });
 });
+registerPartialQcCases(() => ({
+  admin,
+  jwId,
+  clientId,
+  itemIds: partialItemIds,
+  prefix: TEST_PREFIX,
+}));
+
 describe('party-grn service — cancel (ADR-203, ADR-235)', () => {
   it('reverses the accepted qty and shows the GRN as Cancelled', async () => {
     const created = await receiveAndAccept(line1Id, 10);

@@ -82,6 +82,7 @@ import {
 } from '../lib/build-jc-write-input';
 import './jc-detail.css';
 import './jc-edit.css';
+import { docDrawingRev } from '@/lib/item-code';
 
 /** The server's own words when a second edit is sent while one waits
  *  (document-edits/service.ts) — Save's hover text while it is off for that. */
@@ -1088,7 +1089,7 @@ function JcStatusEditForm({
           opSeq={enrichedById.get(ops[balanceOpIdx]!.id!)?.opSeq ?? balanceOpIdx + 1}
           operation={ops[balanceOpIdx]!.operation}
           itemCode={itemCode}
-          itemRevision={jc.itemRevision}
+          itemRevision={docDrawingRev(jc)}
           available={ops[balanceOpIdx]!.available}
           defaultVendorCode={ops[balanceOpIdx]!.outsourceVendorCode}
           onClose={() => setBalanceOpIdx(null)}

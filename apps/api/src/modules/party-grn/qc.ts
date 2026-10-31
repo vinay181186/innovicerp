@@ -2,13 +2,19 @@
 // gate-in. Gated by the Incoming QC permission (qc_incoming · entry), not by
 // the Party screens' own key.
 //
-// Per line: accepted + rejected = received, a reason when anything is rejected.
-// The line is booked with a CONDITIONAL update (WHERE still pending — §20.2), so
-// two QC users on the same line cannot both book it. Only the accepted qty is
-// posted to the customer-material register (receive / in, carrying the JWSO
-// line) through lib/party-stock-ledger, and party_materials.received_qty is
-// raised by the same amount. ADR-247: deviated pieces raise a material NC on
-// the line (nc-register/cascades autoCreatePartyGrnMaterialNc), in the same
+// Partial QC (owner 2026-10-31, migration 0233): a line may be inspected in
+// parts, like the Direct Purchase GRN — received 60, inspect 6 now, 54 later.
+// Per inspection: 0 < accepted + rejected <= QC Pending Qty (received −
+// accepted − rejected so far), a reason when anything is rejected. The line's
+// accepted_qty / rejected_qty are running totals, ADDED to with a CONDITIONAL
+// update (WHERE the new totals still fit in received — §20.2/§20.3), under the
+// GRN header lock, then the JWSO line lock, then the line's own row lock, so
+// two QC users on one line cannot overshoot it. Only THIS inspection's accepted
+// qty is posted to the customer-material register (receive / in, carrying the
+// JWSO line) through lib/party-stock-ledger, and party_materials.received_qty
+// is raised by the same amount. ADR-247: this inspection's deviated pieces
+// raise a material NC on the line (nc-register/cascades
+// autoCreatePartyGrnMaterialNc), one NC per inspection, in the same
 // transaction. While that NC is pending the pieces stay committed to the JWSO
 // line; it is decided as Use As Is (./deviation.ts moves them into Accepted),
 // Return to Customer (a Customer Material Return sends them back) or Scrap.
@@ -21,7 +27,7 @@ import {
 } from '@innovic/shared';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { partyGrnLines } from '../../db/schema';
-import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
 import { lockJwLine } from '../../lib/jw-line-state';
@@ -30,7 +36,8 @@ import { assertNoPendingCancel } from '../cancel-requests/pending-guard';
 import { autoCreatePartyGrnMaterialNc } from '../nc-register/cascades';
 import { userDisplayName } from '../nc-register/recovery';
 import { bookPartyAccepted } from './deviation';
-import { isPendingQc, loadPartyGrnDetail, requireCompany } from './service';
+import { qcPendingQtyOf } from './qc-state';
+import { loadPartyGrnDetail, requireCompany } from './service';
 
 export async function qcPartyGrn(
   id: string,
@@ -73,7 +80,6 @@ export async function qcPartyGrn(
         receivedQty: partyGrnLines.receivedQty,
         acceptedQty: partyGrnLines.acceptedQty,
         rejectedQty: partyGrnLines.rejectedQty,
-        qcAt: partyGrnLines.qcAt,
       })
       .from(partyGrnLines)
       .where(
@@ -95,14 +101,9 @@ export async function qcPartyGrn(
         );
       }
       const at = `${head.code} Ln ${l.lineNo}`;
-      if (!isPendingQc(l)) {
-        throw new ConflictError(`${at} has already been through Incoming QC. Refresh the page.`);
-      }
-      if (q.acceptedQty + q.rejectedQty !== l.receivedQty) {
-        throw new ValidationError(
-          `${at}: Accepted (${q.acceptedQty}) + Deviated (${q.rejectedQty}) must equal Received (${l.receivedQty}).`,
-        );
-      }
+      // Checked again under the JWSO-line + line locks below; this pass only
+      // refuses early, before anything is written.
+      assertFitsQcPending(at, l, q);
       if (q.rejectedQty > 0 && !(q.rejectReason ?? '').trim()) {
         throw new ValidationError(
           `${at}: give a deviation reason for the ${q.rejectedQty} deviated.`,
@@ -164,18 +165,36 @@ export async function qcPartyGrn(
     const reportedBy = userDisplayName(user);
     for (const q of ordered) {
       const l = byId.get(q.lineId)!;
+      // §20.3 lock order: header (above) → JWSO line → the Party GRN line.
       const jwLine = await lockJwLine(tx, companyId, l.jwLineId!);
       const at = `${head.code} Ln ${l.lineNo}`;
+      const locked = (
+        await tx
+          .select({
+            receivedQty: partyGrnLines.receivedQty,
+            acceptedQty: partyGrnLines.acceptedQty,
+            rejectedQty: partyGrnLines.rejectedQty,
+          })
+          .from(partyGrnLines)
+          .where(and(eq(partyGrnLines.id, l.id), isNull(partyGrnLines.deletedAt)))
+          .for('update')
+      )[0];
+      if (!locked) throw new ConflictError(`${at} was removed a moment ago. Refresh the page.`);
+      assertFitsQcPending(at, locked, q);
       const rmItem = q.rejectedQty > 0 ? (ncItemByLine.get(l.id) ?? null) : null;
       const qcRemarks = q.qcRemarks?.trim() || null;
+      const rejectReason = (q.rejectReason ?? '').trim();
+      const inspected = q.acceptedQty + q.rejectedQty;
 
-      // §20.2: conditional — only a line still waiting for QC is booked.
+      // §20.2: conditional — the running totals may never pass received.
+      // Reason / remarks on the line are the LATEST inspection's (like qc_by /
+      // qc_at); each NC and activity row keeps its own inspection's text.
       const booked = await tx
         .update(partyGrnLines)
         .set({
-          acceptedQty: q.acceptedQty,
-          rejectedQty: q.rejectedQty,
-          rejectReason: q.rejectedQty > 0 ? (q.rejectReason ?? '').trim() : null,
+          acceptedQty: sql`${partyGrnLines.acceptedQty} + ${q.acceptedQty}`,
+          rejectedQty: sql`${partyGrnLines.rejectedQty} + ${q.rejectedQty}`,
+          rejectReason: q.rejectedQty > 0 ? rejectReason : null,
           qcRemarks,
           qcBy: userId,
           qcAt: now,
@@ -185,27 +204,22 @@ export async function qcPartyGrn(
         .where(
           and(
             eq(partyGrnLines.id, l.id),
-            isNull(partyGrnLines.qcAt),
-            eq(partyGrnLines.acceptedQty, 0),
-            eq(partyGrnLines.rejectedQty, 0),
             isNull(partyGrnLines.deletedAt),
+            sql`${partyGrnLines.acceptedQty} + ${partyGrnLines.rejectedQty} + ${inspected} <= ${partyGrnLines.receivedQty}`,
           ),
         )
-        .returning({ id: partyGrnLines.id });
-      if (booked.length === 0) {
-        const who = (await tx.execute(sql`
-          SELECT u.full_name AS name, pgl.qc_at AS "qcAt"
-            FROM public.party_grn_lines pgl
-            LEFT JOIN public.users u ON u.id = pgl.qc_by
-           WHERE pgl.id = ${l.id}::uuid
-        `)) as unknown as Array<{ name: string | null; qcAt: unknown }>;
-        const by = who[0]?.name ? ` by ${who[0].name}` : '';
-        throw new ConflictError(`${at} was QC'd${by} a moment ago. Refresh the page.`);
-      }
+        .returning({
+          receivedQty: partyGrnLines.receivedQty,
+          acceptedQty: partyGrnLines.acceptedQty,
+          rejectedQty: partyGrnLines.rejectedQty,
+        });
+      const after = booked[0];
+      if (!after) throw await bookedNowConflict(tx, at, l.id);
+      const pendingAfter = qcPendingQtyOf(after);
 
       // Re-check the order cap under the JWSO line lock (Σ accepted on the
-      // line, this booking included, ≤ order qty), then post the accepted
-      // pieces — the one writer (./deviation.ts bookPartyAccepted).
+      // line, this booking included, ≤ order qty), then post THIS inspection's
+      // accepted pieces — the one writer (./deviation.ts bookPartyAccepted).
       await bookPartyAccepted(tx, {
         companyId,
         jwLine,
@@ -219,7 +233,7 @@ export async function qcPartyGrn(
           `${accepted} accepted against an Order Qty of ${jwLine.orderQty}. Mark the extra pieces Deviated.`,
       });
 
-      // ADR-247: deviated pieces → a material NC on this Party GRN line.
+      // ADR-247: this inspection's deviated pieces → one material NC.
       let ncCode: string | null = null;
       if (q.rejectedQty > 0 && rmItem) {
         const nc = await autoCreatePartyGrnMaterialNc(
@@ -235,7 +249,7 @@ export async function qcPartyGrn(
             rejectedQty: q.rejectedQty,
             ncDate: qcDate,
             reportedByText: reportedBy,
-            reason: (q.rejectReason ?? '').trim(),
+            reason: rejectReason,
             qcRemarks,
           },
           user,
@@ -253,9 +267,10 @@ export async function qcPartyGrn(
           lineRef: `Line ${l.lineNo}`,
           qty: q.acceptedQty,
           detail:
-            `${l.partyMaterialCodeText} (${jwLine.jwCode} Ln ${jwLine.lineNo}) — received ${l.receivedQty}, ` +
-            `${q.acceptedQty} accepted, ${q.rejectedQty} deviated` +
-            (q.rejectedQty > 0 ? ` (${(q.rejectReason ?? '').trim()})` : '') +
+            `${l.partyMaterialCodeText} (${jwLine.jwCode} Ln ${jwLine.lineNo}) — received ${after.receivedQty}, ` +
+            `inspected ${inspected} (${q.acceptedQty} accepted, ${q.rejectedQty} deviated` +
+            (q.rejectedQty > 0 ? `: ${rejectReason}` : '') +
+            `), QC Pending ${pendingAfter}` +
             (ncCode ? ` — ${ncCode} raised` : '') +
             (qcRemarks ? ` — QC Remarks: ${qcRemarks}` : ''),
         },
@@ -271,4 +286,55 @@ export async function qcPartyGrn(
 
     return loadPartyGrnDetail(tx, companyId, head.id);
   });
+}
+
+/** 0 < accepted + deviated <= the line's QC Pending Qty (received − accepted −
+ *  rejected so far). Nothing pending → 409 (someone finished it); too many →
+ *  400. The schema already refuses accepted + deviated = 0. */
+function assertFitsQcPending(
+  at: string,
+  line: { receivedQty: number; acceptedQty: number; rejectedQty: number },
+  q: { acceptedQty: number; rejectedQty: number },
+): void {
+  const pending = qcPendingQtyOf(line);
+  const inspected = q.acceptedQty + q.rejectedQty;
+  if (pending <= 0) {
+    throw new ConflictError(`${at} is already fully inspected. Refresh the page.`);
+  }
+  if (inspected <= 0) {
+    throw new ValidationError(`${at}: enter the Accepted and/or Deviated qty.`);
+  }
+  if (inspected > pending) {
+    throw new ValidationError(
+      `${at}: Accepted + Deviated (${inspected}) cannot be more than QC Pending (${pending}).`,
+    );
+  }
+}
+
+/** The 409 when the conditional booking matched no row: what is booked now. */
+async function bookedNowConflict(
+  tx: DbTransaction,
+  at: string,
+  lineId: string,
+): Promise<ConflictError> {
+  const rows = (await tx.execute(sql`
+    SELECT pgl.received_qty::int AS received, pgl.accepted_qty::int AS accepted,
+           pgl.rejected_qty::int AS rejected, u.full_name AS name
+      FROM public.party_grn_lines pgl
+      LEFT JOIN public.users u ON u.id = pgl.qc_by
+     WHERE pgl.id = ${lineId}::uuid
+  `)) as unknown as Array<{
+    received: number;
+    accepted: number;
+    rejected: number;
+    name: string | null;
+  }>;
+  const c = rows[0];
+  if (!c) return new ConflictError(`${at} was changed a moment ago. Refresh the page.`);
+  const by = c.name ? ` (last by ${c.name})` : '';
+  const pending = Math.max(0, c.received - c.accepted - c.rejected);
+  return new ConflictError(
+    `${at} now has ${c.accepted} accepted + ${c.rejected} deviated of ${c.received} received${by} — ` +
+      `QC Pending ${pending}. Refresh the page.`,
+  );
 }

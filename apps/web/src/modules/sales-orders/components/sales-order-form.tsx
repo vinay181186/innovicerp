@@ -1625,6 +1625,23 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                                       // the code is still blank, so the row number is all
                                       // there is to say.
                                       refCode={`${watch('header.code') || 'new SO'} L${idx + 1}`}
+                                      // Item + Drawing Rev register: ABC/<rev> drawing
+                                      // fills in; saved Rev/file drive "Use as is".
+                                      itemId={ln?.itemId}
+                                      itemCode={ln?.itemCodeText}
+                                      rev={watch(`lines.${idx}.revision` as const)}
+                                      {...(() => {
+                                        const saved =
+                                          props.mode === 'edit' && ln?.id
+                                            ? props.detail.lines.find((d) => d.id === ln.id)
+                                            : undefined;
+                                        return saved
+                                          ? {
+                                              savedRev: saved.revision,
+                                              savedPath: saved.drawingFilePath,
+                                            }
+                                          : {};
+                                      })()}
                                     />
                                   </FormField>
                                 </FormGrid>

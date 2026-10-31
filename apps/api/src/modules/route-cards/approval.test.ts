@@ -68,6 +68,7 @@ async function newItem(): Promise<string> {
       revision: 'A',
       uom: 'NOS',
       itemType: 'component',
+      procurementType: 'buy', // not a Drawing Rev test — a MAKE card needs one (0232)
       createdBy: admin.id,
       updatedBy: admin.id,
     })
@@ -381,6 +382,7 @@ describe('Route Card approval (ADR-253)', () => {
         admin,
         `${TEST_PREFIX}JC1`,
         blankRm,
+        null,
       ),
     );
     expect(first?.created).toBe(true);
@@ -401,6 +403,7 @@ describe('Route Card approval (ADR-253)', () => {
         admin,
         `${TEST_PREFIX}JC2`,
         blankRm,
+        null,
       ),
     );
     expect(second?.created).toBe(false);
@@ -422,6 +425,7 @@ describe('Route Card approval (ADR-253)', () => {
         admin,
         `${TEST_PREFIX}JC3`,
         blankRm,
+        null,
       ),
     );
     expect(same).toBeNull();
@@ -439,6 +443,7 @@ describe('Route Card approval (ADR-253)', () => {
         editorOnly(),
         `${TEST_PREFIX}JC4`,
         withRm,
+        null,
       ),
     );
     expect(rmEditor?.notSentReason).toContain('waiting for approval');
@@ -451,6 +456,7 @@ describe('Route Card approval (ADR-253)', () => {
         viewerOnly(),
         `${TEST_PREFIX}JC5`,
         withRm,
+        null,
       ),
     );
     expect(rmViewer).toBeNull();

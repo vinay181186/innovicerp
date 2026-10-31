@@ -255,6 +255,8 @@ export async function createRecoveryJobCard(
       drawingFilePath: parent.drawingFilePath,
       sourceSoLineId: parent.sourceSoLineId,
       sourceJwLineId: parent.sourceJwLineId,
+      // Drawing Rev register — the same pieces, so the parent's Item + Rev.
+      itemRevisionId: parent.itemRevisionId ?? null,
       rawMaterialGradeId: parent.rawMaterialGradeId,
       rawMaterialGradeText: parent.rawMaterialGradeText,
       rawMaterialSizeId: parent.rawMaterialSizeId,

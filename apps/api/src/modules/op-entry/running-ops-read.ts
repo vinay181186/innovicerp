@@ -7,6 +7,7 @@ import { sql } from 'drizzle-orm';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError } from '../../lib/errors';
 import { polSql } from '../../lib/pol';
+import { drawingRevOf } from '../../lib/drawing-rev';
 import { readSf, sfOrderBy, sfWhere, type SfColumnMap } from '../../lib/list-query';
 
 export const RUNNING_OPS_SELECT = sql`
@@ -33,7 +34,7 @@ export const RUNNING_OPS_SELECT = sql`
         -- ::text on purpose: the contract types this as a string, but a database
         -- without migration 0119 still holds an integer here and would hand the
         -- board a number. The cast is a no-op once 0119 is applied.
-        COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
+        COALESCE(${drawingRevOf(sql`jc.item_revision_id`)}, sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
         -- POL = the line number printed on the CUSTOMER's own purchase order,
         -- off the same SO line as the revision above, else the Job Work SO
         -- line's POL for a JW-sourced card (ADR-236).
@@ -106,7 +107,7 @@ export const RUNNING_OPS_SF_COLUMNS: SfColumnMap = {
   opSeq: { sql: sql`o.op_seq`, type: 'num' },
   operation: { sql: sql`o.operation`, type: 'text' },
   itemCode: {
-    sql: sql`(i.code || COALESCE('/' || NULLIF(btrim(COALESCE(sol.revision::text, rev_jwl.revision::text)), ''), ''))`,
+    sql: sql`(i.code || COALESCE('/' || NULLIF(btrim(COALESCE(${drawingRevOf(sql`jc.item_revision_id`)}, sol.revision::text, rev_jwl.revision::text)), ''), ''))`,
     type: 'text',
   },
   itemName: { sql: sql`i.name`, type: 'text' },

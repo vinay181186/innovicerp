@@ -21,7 +21,7 @@
 //   - always fits its width, no sideways scroll: columns are measured, text
 //     columns share the spare room and are cut with "…" (hover shows it all),
 //     codes / numbers / dates / badges / actions are never cut;
-//   - moves the rightmost unpinned columns into a ▸ detail row when the
+//   - takes the rightmost unpinned columns off screen (named above it) when the
 //     screen is too narrow (column 0 and the Action column never move);
 //   - shows a toolbar: what moved, Comfortable | Compact (one user setting,
 //     `body.density-compact`), and Columns ▾ (order, show / hide, 📌 pin);

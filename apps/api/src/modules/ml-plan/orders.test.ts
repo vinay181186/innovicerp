@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
 import {
   items,
+  mlBomLines,
   mlBoms,
   mlPlanNodes,
   mlPlans,
@@ -69,7 +70,16 @@ async function cleanup(): Promise<void> {
       .from(items)
       .where(like(items.code, `${P}%`))
   ).map((r) => r.id);
-  if (ids.length > 0) await db.delete(mlBoms).where(inArray(mlBoms.itemId, ids));
+  if (ids.length > 0) {
+    // Lines first: the sub-assembly link FK (NO ACTION) is checked before the
+    // line cascade of a one-statement BOM delete has run, so a BOM another
+    // test BOM links could not be deleted (pre-existing cleanup fault).
+    const bomIds = (
+      await db.select({ id: mlBoms.id }).from(mlBoms).where(inArray(mlBoms.itemId, ids))
+    ).map((r) => r.id);
+    if (bomIds.length > 0) await db.delete(mlBomLines).where(inArray(mlBomLines.mlBomId, bomIds));
+    await db.delete(mlBoms).where(inArray(mlBoms.itemId, ids));
+  }
   await db.delete(items).where(like(items.code, `${P}%`));
   await db.delete(vendors).where(like(vendors.code, `${P}%`));
 }
@@ -169,6 +179,9 @@ beforeAll(async () => {
         revision: 'A',
         uom: 'NOS' as const,
         itemType: t,
+        // Not a Drawing Rev test: the BOM-line children are Buy parts, so the
+        // lines need no Drawing Rev (D2) and plan with the no-Rev Route Card.
+        procurementType: ['MA10', 'BLT', 'OSP'].includes(c) ? 'buy' : 'make',
         createdBy: u.id,
         updatedBy: u.id,
       })),

@@ -7,6 +7,7 @@ import { sfTodayIst } from '@innovic/shared';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { readSf, sfWhere } from '../../lib/list-query';
 import { polSql } from '../../lib/pol';
+import { displayRouteCardIdSql } from '../../lib/route-card-for-rev';
 import type { JcStatusCountsQuery, JcStatusCountsResponse, ListJobCardsQuery } from './schema';
 import { JC_SF_COLUMNS } from './sf-columns';
 
@@ -26,10 +27,6 @@ function escapeLikeTerm(raw: string): string {
  *  the search and the Sort & Filter map (sf-columns.ts) refer to. */
 export const JC_LIST_JOINS = sql`
       LEFT JOIN public.items i ON i.id = jc.item_id
-      -- The item's single active route card (route_cards is unique per item) —
-      -- surfaces the route-card reference (code + current revision) on the JC.
-      LEFT JOIN public.route_cards rc
-        ON rc.company_id = jc.company_id AND rc.item_id = jc.item_id AND rc.deleted_at IS NULL
       LEFT JOIN public.v_jc_status s ON s.job_card_id = jc.id
       LEFT JOIN public.job_cards pjc ON pjc.id = jc.parent_job_card_id
       LEFT JOIN public.nc_register pnc ON pnc.id = jc.parent_nc_id
@@ -39,6 +36,15 @@ export const JC_LIST_JOINS = sql`
       -- Customer Dispatch Date off the parent's plan (see the list select).
       LEFT JOIN public.production_orders pjc_po
         ON pjc_po.id = pjc.production_order_id AND pjc_po.deleted_at IS NULL
+      -- Drawing Rev register: an item may have one Route Card per Rev, so the
+      -- card is picked, never joined on item (that would duplicate the row):
+      -- the card the Production Order was built from, else the card for the
+      -- JC's own Item + Rev, else the item's old no-Rev card.
+      LEFT JOIN public.route_cards rc
+        ON rc.id = COALESCE(po.route_card_id, ${displayRouteCardIdSql(sql`jc.item_id`, sql`jc.item_revision_id`)})
+       AND rc.deleted_at IS NULL
+      -- The JC's own Item + Drawing Rev (ABC/1) — one row per card.
+      LEFT JOIN public.item_revisions jir ON jir.id = jc.item_revision_id
       LEFT JOIN public.sales_order_lines sol
         ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
       LEFT JOIN public.sales_orders so

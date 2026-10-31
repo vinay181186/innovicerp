@@ -13,6 +13,7 @@
 // Data, permissions, print and delete are unchanged from the stacked-panel page.
 
 import type { RouteCardDetail } from '@innovic/shared';
+import { itemRevLabel } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Download, Eye, Loader2, Pencil } from 'lucide-react';
 import { useState } from 'react';
@@ -21,6 +22,7 @@ import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-
 import { fmtDate } from '@/lib/date';
 import { runPrint } from '@/lib/print/preview-host';
 import { useDocumentHistory } from '@/modules/activity-log/api';
+import { DrawingStatusLink, ItemRevLink } from '@/modules/item-revisions/components/item-rev-link';
 import { usePendingEditForDoc } from '@/modules/document-edits/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Panel } from '@/ui/data';
@@ -199,8 +201,24 @@ function RouteCardDetailPage(): React.JSX.Element {
         <DocIdent>
           <IdentCode>{detail.code}</IdentCode>
           <IdentSep />
-          <IdentCode>{detail.itemCode ?? '—'}</IdentCode>
+          {/* Item + Drawing Rev as ABC/1 — links to its drawing page. */}
+          <IdentCode>
+            <ItemRevLink
+              itemRevisionId={detail.itemRevisionId}
+              label={itemRevLabel(detail.itemCode, detail.drawingRev)}
+              className=""
+            />
+          </IdentCode>
           <span>{detail.itemName ?? '— unknown item —'}</span>
+          <IdentSep />
+          <span className="text3">Drawing Rev</span>
+          <span className="mono fw-700">{detail.drawingRev ?? '—'}</span>
+          <IdentSep />
+          <span className="text3">Drawing</span>
+          <DrawingStatusLink
+            itemRevisionId={detail.itemRevisionId}
+            drawingFilePath={detail.drawingFilePath}
+          />
         </DocIdent>
 
         <ClusterGrid>

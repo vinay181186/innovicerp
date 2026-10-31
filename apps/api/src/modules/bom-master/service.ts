@@ -80,6 +80,8 @@ import type {
   ListBomMastersResponse,
   UpdateBomMasterInput,
 } from './schema';
+import { resolveBomChildRevs } from '../../lib/bom-child-rev';
+import { drawingRevOf } from '../../lib/drawing-rev';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -363,6 +365,7 @@ async function loadBomMasterDetail(
       line: bomMasterLines,
       itemCode: items.code,
       itemName: items.name,
+      childDrawingRev: drawingRevOf(bomMasterLines.childItemRevisionId),
     })
     .from(bomMasterLines)
     .leftJoin(items, eq(items.id, bomMasterLines.childItemId))
@@ -417,6 +420,8 @@ async function loadBomMasterDetail(
         bomMasterId: r.line.bomMasterId,
         lineNo: r.line.lineNo,
         childItemId: r.line.childItemId,
+        childItemRevisionId: r.line.childItemRevisionId ?? null,
+        childDrawingRev: r.childDrawingRev ?? null,
         qtyPerSet: r.line.qtyPerSet,
         bomType: r.line.bomType,
         rawMaterialGradeId: r.line.rawMaterialGradeId,
@@ -757,7 +762,19 @@ export async function createBomMaster(
     // before the insert so a bad grade/size id fails the save rather than
     // leaving a line with a dangling reference.
     const rawMaterial = await loadRawMaterialNames(tx, input.lines, companyId);
-    const lineValues = assignLineValues(input.lines, header.id, companyId, user.id, rawMaterial);
+    // D2 — the child part's Item + Drawing Rev (compulsory for a MAKE child).
+    const childRevIds = await resolveBomChildRevs(tx, user, companyId, input.lines, {
+      sourceType: 'bom_line',
+      bomRef: bomNo,
+    });
+    const lineValues = assignLineValues(
+      input.lines,
+      header.id,
+      companyId,
+      user.id,
+      rawMaterial,
+      childRevIds,
+    );
     await tx.insert(bomMasterLines).values(lineValues);
 
     // Initial revision row capturing the lines at creation.
@@ -1010,7 +1027,20 @@ export async function updateBomMasterTx(
     // Raw material (0107) — same resolve-then-snapshot rule as create. Lines
     // are replaced wholesale on every edit, so clearing a picker clears it.
     const rawMaterial = await loadRawMaterialNames(tx, input.lines, companyId);
-    const lineValues = assignLineValues(input.lines, id, companyId, user.id, rawMaterial);
+    // D2 — child Item + Drawing Rev; an old line kept without a Rev stays valid.
+    const childRevIds = await resolveBomChildRevs(tx, user, companyId, input.lines, {
+      sourceType: 'bom_line',
+      bomRef: input.bomNo,
+      stored: new Map(oldLineRows.map((r) => [r.line.childItemId, r.line.childItemRevisionId])),
+    });
+    const lineValues = assignLineValues(
+      input.lines,
+      id,
+      companyId,
+      user.id,
+      rawMaterial,
+      childRevIds,
+    );
     await tx.insert(bomMasterLines).values(lineValues);
 
     await tx.insert(bomMasterRevisions).values({
@@ -1288,12 +1318,15 @@ function assignLineValues(
   companyId: string,
   userId: string,
   rawMaterial: RawMaterialLookup,
+  /** D2 — child_item_revision_id per line, in line order (resolveBomChildRevs). */
+  childRevIds: ReadonlyArray<string | null>,
 ): Array<typeof bomMasterLines.$inferInsert> {
   return lines.map((l, i) => ({
     companyId,
     bomMasterId,
     lineNo: i + 1,
     childItemId: l.childItemId,
+    childItemRevisionId: childRevIds[i] ?? null,
     qtyPerSet: l.qtyPerSet.toFixed(3),
     bomType: l.bomType,
     ...lineRawMaterial(l, rawMaterial),
@@ -1412,6 +1445,9 @@ export async function buildBomImportTemplate(user: AuthContext): Promise<Buffer>
         options: BOM_LINE_TYPES.map((t) => BOM_LINE_TYPE_LABEL[t]),
         width: 16,
       },
+      // D2 — the child part's Drawing Rev (SHAFT/2). Optional in the sheet: a
+      // Manufacture sample carries one, a Buy part none (a Buy part has no Rev).
+      { label: 'Drawing Rev', samples: ['1', ''], width: 12 },
       ...(gradeNames.length > 0
         ? [{ label: 'RM Grade', samples: [gradeNames[0] ?? ''], options: gradeNames, width: 22 }]
         : [{ label: 'RM Grade', width: 22 }]),

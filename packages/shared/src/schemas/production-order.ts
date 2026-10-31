@@ -45,6 +45,11 @@ export const productionOrderSchema = z.object({
   lineNo: z.number().int().positive().nullable(),
 
   itemId: z.string().uuid(),
+  /** Item + Drawing Rev this document is for (ABC/1), stored on the document
+   *  (Phase B). Taken from the SO/JWSO line (or BOM child line) at creation;
+   *  moved by a line Rev change only while the work is open. */
+  itemRevisionId: z.string().uuid().nullable().default(null),
+  drawingRev: z.string().nullable().default(null),
   itemCodeText: z.string(),
   itemNameText: z.string().nullable(),
   /** ADR-178: the SO / JWSO line's drawing revision, read live through the

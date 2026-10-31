@@ -16,7 +16,7 @@ import type {
 } from '@innovic/shared';
 import { useMemo, useState } from 'react';
 import { fmtDate, fmtDateTime } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
+import { itemCodeWithRev, docDrawingRev } from '@/lib/item-code';
 import { RowMenu } from '@/ui/data';
 import { useReverseProductionOrderClose } from '../api';
 import { ReverseReasonDialog } from './reverse-reason-dialog';
@@ -97,7 +97,7 @@ export function PoCloseLedger({
       </span>
       <span>·</span>
       <span className="td-code" style={{ color: 'var(--text)' }}>
-        {itemCodeWithRev(po.itemCodeText, po.itemRevision)}
+        {itemCodeWithRev(po.itemCodeText, docDrawingRev(po))}
       </span>
     </div>
   );

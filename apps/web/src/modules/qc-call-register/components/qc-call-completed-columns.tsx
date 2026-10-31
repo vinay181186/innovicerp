@@ -40,11 +40,13 @@ export function completedVmAt(vm: CompletedVM): string {
     : (vm.row.qcAt ?? vm.row.qcDate ?? vm.row.grnDate ?? '');
 }
 
-type Verdict = 'ACCEPTED' | 'PARTIAL' | 'REJECTED';
+// QC_PARTIAL — a Party GRN line inspected in part (0233): pieces still pending.
+type Verdict = 'ACCEPTED' | 'PARTIAL' | 'REJECTED' | 'QC_PARTIAL';
 const VERDICT_LABEL: Record<Verdict, string> = {
   ACCEPTED: 'Accepted',
   PARTIAL: 'Partly Accepted',
   REJECTED: 'Deviated',
+  QC_PARTIAL: 'Part QC',
 };
 
 function itemCodeOf(vm: CompletedVM): string {
@@ -65,6 +67,7 @@ function rejectedOf(vm: CompletedVM): number {
   return vm.kind === 'op' ? vm.row.rejected : vm.row.rejectedQty;
 }
 function verdictOf(vm: CompletedVM): Verdict {
+  if (vm.kind === 'pgrn' && vm.row.pendingQty > 0) return 'QC_PARTIAL';
   if (vm.kind !== 'inc') {
     const acc = acceptedOf(vm);
     const rej = rejectedOf(vm);
@@ -134,7 +137,7 @@ function qtyCell(value: number, red?: boolean): React.JSX.Element {
 
 function verdictCell(vm: CompletedVM): React.JSX.Element {
   const v = verdictOf(vm);
-  const red = v !== 'ACCEPTED';
+  const red = v !== 'ACCEPTED' && v !== 'QC_PARTIAL';
   return (
     <span
       style={{
@@ -143,8 +146,8 @@ function verdictCell(vm: CompletedVM): React.JSX.Element {
         borderRadius: 4,
         fontSize: 11,
         fontWeight: 700,
-        border: `1px solid ${red ? 'var(--red)' : 'var(--border2)'}`,
-        color: red ? 'var(--red)' : 'var(--text2)',
+        border: `1px solid ${red ? 'var(--red)' : v === 'QC_PARTIAL' ? 'var(--amber)' : 'var(--border2)'}`,
+        color: red ? 'var(--red)' : v === 'QC_PARTIAL' ? 'var(--amber)' : 'var(--text2)',
       }}
     >
       {VERDICT_LABEL[v]}

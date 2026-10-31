@@ -31,6 +31,8 @@ export const DRAWING_SOURCES = [
   'item',
   'qc_document',
   'so_document',
+  // Item + Drawing Rev register (ABC/1) — the shared drawing.
+  'item_revision',
 ] as const;
 export type DrawingSource = (typeof DRAWING_SOURCES)[number];
 

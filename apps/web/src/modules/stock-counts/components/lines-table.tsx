@@ -3,7 +3,8 @@
 // editable only while the count is a draft.
 import type { StockCountLine, StockCountStatus } from '@innovic/shared';
 import { Trash2 } from 'lucide-react';
-import type { DraftLine } from '../lib/draft-line';
+import { type DraftLine, lineKey } from '../lib/draft-line';
+import { StockCountRevCell } from './rev-cell';
 
 export function StockCountLinesTable(props: {
   lines: DraftLine[];
@@ -20,6 +21,7 @@ export function StockCountLinesTable(props: {
           <tr>
             <th className="th-num">Sr No</th>
             <th>Item Code</th>
+            <th>Drawing Rev</th>
             <th>Item Name</th>
             <th>UOM</th>
             <th className="th-num">In Stock now</th>
@@ -32,7 +34,9 @@ export function StockCountLinesTable(props: {
         </thead>
         <tbody>
           {lines.map((l, i) => {
-            const saved = savedLines.find((x) => x.itemId === l.itemId);
+            const saved =
+              savedLines.find((x) => lineKey(x) === lineKey(l)) ??
+              savedLines.find((x) => x.itemId === l.itemId);
             const base = saved?.systemQtyAtCount ?? saved?.systemQtyNow ?? l.inStock;
             const counted = Number(l.countedQty);
             const diff =
@@ -40,10 +44,23 @@ export function StockCountLinesTable(props: {
                 ? Math.round((counted - base) * 1000) / 1000
                 : null;
             return (
-              <tr key={l.itemId}>
+              <tr key={`${lineKey(l)}-${i}`}>
                 <td className="td-num mono">{i + 1}</td>
                 <td className="mono fw-700" style={{ whiteSpace: 'nowrap' }}>
                   {l.itemCode}
+                </td>
+                <td>
+                  <StockCountRevCell
+                    line={l}
+                    editable={editable}
+                    onChange={(itemRevisionId) =>
+                      setLines((ls) =>
+                        ls.map((x, j) =>
+                          j === i ? { ...x, itemRevisionId, drawingRev: undefined } : x,
+                        ),
+                      )
+                    }
+                  />
                 </td>
                 <td>{l.itemName ?? '—'}</td>
                 <td>{l.uom ?? '—'}</td>
@@ -117,7 +134,7 @@ export function StockCountLinesTable(props: {
           })}
           {lines.length === 0 ? (
             <tr>
-              <td colSpan={10} className="empty-state">
+              <td colSpan={11} className="empty-state">
                 No items yet. Excel columns: Item Code · Counted Qty · Reason.
               </td>
             </tr>

@@ -32,7 +32,7 @@ import {
 import { ConfirmBelowBookedPanel, type ShortItem } from '../components/panels';
 import { StockCountAddBar } from '../components/add-bar';
 import { StockCountLinesTable } from '../components/lines-table';
-import { type DraftLine, fromServer } from '../lib/draft-line';
+import { type DraftLine, fromServer, lineKey } from '../lib/draft-line';
 import { mergeStockCountSheet } from '../lib/excel';
 import { STATUS_BADGE } from './list';
 
@@ -95,24 +95,35 @@ function StockCountPage(): React.JSX.Element {
   // duplicates against the latest lines, not the ones from that render.
   const linesRef = useRef(lines);
   linesRef.current = lines;
+  // Phase C — one line per Item + Drawing Rev: the same item may be added
+  // again once its earlier line has a Drawing Rev picked.
   const addLine = (line: DraftLine): void => {
-    if (linesRef.current.some((l) => l.itemId === line.itemId)) {
+    if (linesRef.current.some((l) => lineKey(l) === lineKey(line))) {
       setMsg({ ok: false, text: `${line.itemCode} is already on this count.` });
       return;
     }
-    setLines((ls) => (ls.some((l) => l.itemId === line.itemId) ? ls : [...ls, line]));
+    setLines((ls) => (ls.some((l) => lineKey(l) === lineKey(line)) ? ls : [...ls, line]));
   };
 
   const payloadLines = ():
-    | Array<{ itemId: string; countedQty: number; reason?: string }>
+    | Array<{ itemId: string; itemRevisionId?: string | null; countedQty: number; reason?: string }>
     | string => {
-    const out: Array<{ itemId: string; countedQty: number; reason?: string }> = [];
+    const out: Array<{
+      itemId: string;
+      itemRevisionId?: string | null;
+      countedQty: number;
+      reason?: string;
+    }> = [];
+    const seen = new Set<string>();
     for (const l of lines) {
       const q = Number(l.countedQty);
       if (l.countedQty.trim() === '' || !Number.isFinite(q) || q < 0)
         return `${l.itemCode}: enter the counted qty (0 or more).`;
+      if (seen.has(lineKey(l))) return `${l.itemCode} is listed twice with the same Drawing Rev.`;
+      seen.add(lineKey(l));
       out.push({
         itemId: l.itemId,
+        ...(l.itemRevisionId !== undefined ? { itemRevisionId: l.itemRevisionId } : {}),
         countedQty: q,
         ...(l.reason.trim() ? { reason: l.reason.trim() } : {}),
       });

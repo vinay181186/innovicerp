@@ -1,22 +1,24 @@
-// Compact drawing-file upload for a single SO line, sized to live inside an
-// ~11%-wide table cell. Mirrors items/DrawingUploadField's logic (upload via the
-// shared @/lib/storage helper, view in the shared file-preview modal) but trades
-// the full-width layout for tiny inline controls. Reads companyId from session.
+// Drawing control for one SO line. Since the Item + Drawing Rev register
+// (owner model 2026-10-31) it is the shared DrawingRevField driven by the
+// line's item and Drawing Rev: an existing ABC/1 drawing fills in by itself and
+// shows read-only (fixed only via "Replace drawing…"), a new Item + Rev takes an
+// upload, and a Rev change on a saved line offers "Use as is" / "Upload new".
 //
-// The preview is opened in `drawing` mode: the link comes from the server, the
-// look is logged against this SO line, and Download shows only for people who
-// hold the drawing-download tick.
+// The preview opens in `drawing` mode: the link comes from the server, the look
+// is logged, and Download shows only for people who hold the drawing-download
+// tick.
 
-import { Loader2 } from 'lucide-react';
-import { useState } from 'react';
-import { FilePreviewModal } from '@/components/shared/file-preview-modal';
-import { useSession } from '@/lib/session';
-import { uploadFile } from '@/lib/storage';
+import { DrawingRevField } from '@/modules/item-revisions/components/drawing-rev-field';
 
 export function SoLineDrawingCell({
   value,
   onChange,
   refCode,
+  itemId,
+  itemCode,
+  rev,
+  savedRev,
+  savedPath,
 }: {
   value: string | null | undefined;
   onChange: (path: string | undefined) => void;
@@ -24,85 +26,25 @@ export function SoLineDrawingCell({
    *  where the form knows them. Optional: on a brand-new SO there is no code
    *  yet, and the log falls back to the storage path. */
   refCode?: string;
+  itemId?: string | null | undefined;
+  itemCode?: string | null | undefined;
+  /** The line's Drawing Rev as typed. */
+  rev?: string | null | undefined;
+  /** Saved line only: the Rev / file it was loaded with. */
+  savedRev?: string | null | undefined;
+  savedPath?: string | null | undefined;
 }): React.JSX.Element {
-  const { data: me } = useSession();
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  // Viewing opens the in-app preview instead of handing the file to the
-  // browser: `window.open` on a signed URL let Chrome's "download PDFs" setting
-  // save the drawing to disk when the user only wanted to look at it.
-  const [previewOpen, setPreviewOpen] = useState(false);
-
-  async function onPick(file: File | null): Promise<void> {
-    if (!file) return;
-    if (!me?.companyId) {
-      setErr('No company on session');
-      return;
-    }
-    setErr(null);
-    setBusy(true);
-    try {
-      const path = await uploadFile(file, me.companyId, { folder: 'so-line-drawings' });
-      onChange(path);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Could not upload file. Try again.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  if (busy) {
-    return (
-      <span className="text3" style={{ whiteSpace: 'nowrap' }}>
-        <Loader2 size={12} className="inline animate-spin" /> …
-      </span>
-    );
-  }
-
-  if (value) {
-    return (
-      <div
-        style={{ display: 'flex', gap: 'var(--sp-1)', alignItems: 'center', whiteSpace: 'nowrap' }}
-      >
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm"
-          onClick={() => setPreviewOpen(true)}
-          title="Preview drawing"
-        >
-          📎 view
-        </button>
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm red"
-          onClick={() => onChange(undefined)}
-          title="Clear drawing"
-          aria-label="Clear drawing"
-        >
-          ✕
-        </button>
-        {previewOpen ? (
-          <FilePreviewModal
-            storagePath={value}
-            kind="drawing"
-            source="so_line"
-            {...(refCode ? { refCode } : {})}
-            onClose={() => setPreviewOpen(false)}
-          />
-        ) : null}
-      </div>
-    );
-  }
-
   return (
-    <div style={{ whiteSpace: 'nowrap' }}>
-      <input
-        type="file"
-        className="innovic-input"
-        accept="image/*,.pdf"
-        onChange={(e) => void onPick(e.target.files?.[0] ?? null)}
-      />
-      {err ? <div className="form-error">{err}</div> : null}
-    </div>
+    <DrawingRevField
+      itemId={itemId}
+      itemCode={itemCode}
+      rev={rev}
+      value={value}
+      onChange={(p) => onChange(p ?? undefined)}
+      source="so_line"
+      refCode={refCode}
+      savedRev={savedRev}
+      savedPath={savedPath}
+    />
   );
 }

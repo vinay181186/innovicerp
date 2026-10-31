@@ -13,7 +13,7 @@
 //
 // Runs in the SAME tx as the unit insert, so a rollback unwinds both.
 
-import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { bomMasters, storeTransactions } from '../../db/schema';
 import { postStockMove } from '../../lib/stock-ledger';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
@@ -63,6 +63,7 @@ async function outputNetByItem(
   const rows = await tx
     .select({
       itemId: storeTransactions.itemId,
+      itemRevisionId: storeTransactions.itemRevisionId,
       qty: storeTransactions.qty,
       txnType: storeTransactions.txnType,
       ref: storeTransactions.sourceRef,
@@ -78,13 +79,41 @@ async function outputNetByItem(
         ]),
       ),
     );
+  // Keyed "<itemId>|<revId or ''>" — Drawing Rev Phase C: the undo takes the
+  // finished good back out of the SAME Rev bucket it was credited to.
   const net = new Map<string, number>();
   for (const r of rows) {
     if (r.itemId === null) continue;
+    const key = `${r.itemId}|${r.itemRevisionId ?? ''}`;
     const sign = r.txnType === 'in' && r.ref === `${sourceRef} (output)` ? 1 : -1;
-    net.set(r.itemId, (net.get(r.itemId) ?? 0) + sign * r.qty);
+    net.set(key, (net.get(key) ?? 0) + sign * r.qty);
   }
   return net;
+}
+
+function splitKey(key: string): { itemId: string; itemRevisionId: string | null } {
+  const [itemId, rev] = key.split('|');
+  return { itemId: itemId!, itemRevisionId: rev ? rev : null };
+}
+
+/** Drawing Rev Phase C — the Rev of the finished good: the equipment SO line
+ *  that orders this parent item. One distinct Rev → that bucket; none or more
+ *  than one (ambiguous) → blank bucket. */
+async function loadOutputRevisionId(
+  tx: DbTransaction,
+  companyId: string,
+  soCode: string,
+  parentItemId: string,
+): Promise<string | null> {
+  const rows = (await tx.execute(sql`
+    SELECT DISTINCT sol.item_revision_id AS rev
+      FROM public.sales_order_lines sol
+      JOIN public.sales_orders so ON so.id = sol.sales_order_id
+     WHERE so.company_id = ${companyId}::uuid AND so.code = ${soCode}
+       AND so.deleted_at IS NULL AND sol.deleted_at IS NULL
+       AND sol.item_id = ${parentItemId}::uuid AND sol.item_revision_id IS NOT NULL
+  `)) as unknown as Array<{ rev: string }>;
+  return rows.length === 1 ? rows[0]!.rev : null;
 }
 
 /**
@@ -107,6 +136,7 @@ export async function postAssemblyOutput(
   if ([...net.values()].some((q) => q > 0)) return 0;
   const batchQty = Math.max(1, Math.round(ctx.qty));
   await postStockMove(tx, {
+    itemRevisionId: await loadOutputRevisionId(tx, ctx.companyId, ctx.soCode, parentItemId),
     companyId: ctx.companyId,
     itemId: parentItemId,
     txnType: 'in',
@@ -144,6 +174,7 @@ export async function reverseAssemblyStockCascade(
   const legacyRows = await tx
     .select({
       itemId: storeTransactions.itemId,
+      itemRevisionId: storeTransactions.itemRevisionId,
       qty: storeTransactions.qty,
       txnType: storeTransactions.txnType,
       ref: storeTransactions.sourceRef,
@@ -159,14 +190,17 @@ export async function reverseAssemblyStockCascade(
   const netByItem = new Map<string, number>();
   for (const r of legacyRows) {
     if (r.itemId === null) continue;
+    const key = `${r.itemId}|${r.itemRevisionId ?? ''}`;
     const sign = r.txnType === 'out' && r.ref === sourceRef ? 1 : r.txnType === 'in' ? -1 : 0;
-    netByItem.set(r.itemId, (netByItem.get(r.itemId) ?? 0) + sign * r.qty);
+    netByItem.set(key, (netByItem.get(key) ?? 0) + sign * r.qty);
   }
 
   const written: AssemblyStockLine[] = [];
-  for (const [itemId, qty] of [...netByItem].sort((a, b) => a[0].localeCompare(b[0]))) {
+  for (const [key, qty] of [...netByItem].sort((a, b) => a[0].localeCompare(b[0]))) {
     if (qty <= 0) continue;
+    const { itemId, itemRevisionId } = splitKey(key);
     const moved = await postStockMove(tx, {
+      itemRevisionId,
       companyId: ctx.companyId,
       itemId,
       txnType: 'in',
@@ -184,9 +218,11 @@ export async function reverseAssemblyStockCascade(
 
   // The unit is un-built, so its finished good leaves the shelf again.
   const outNet = await outputNetByItem(tx, ctx.companyId, sourceRef);
-  for (const [itemId, qty] of [...outNet].sort((a, b) => a[0].localeCompare(b[0]))) {
+  for (const [key, qty] of [...outNet].sort((a, b) => a[0].localeCompare(b[0]))) {
     if (qty <= 0) continue;
+    const { itemId, itemRevisionId } = splitKey(key);
     await postStockMove(tx, {
+      itemRevisionId,
       companyId: ctx.companyId,
       itemId,
       txnType: 'out',

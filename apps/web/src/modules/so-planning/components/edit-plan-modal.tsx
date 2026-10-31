@@ -383,7 +383,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
   // the server), so an inactive process must not remain pickable for new work.
   const qcProcesses = useQcProcessesList({ isActive: true, limit: 200, offset: 0 });
   const docPresets = useMemo(() => DOC_PRESETS_FALLBACK, []);
-  const defaultOpsQuery = useDefaultRouteOps(plan.itemId);
+  const defaultOpsQuery = useDefaultRouteOps(plan.itemId, plan.itemRevisionId);
 
   // How many ops this modal filled in from the route card, or null if it did
   // not fill any in (the plan already had its own ops). Only used for the

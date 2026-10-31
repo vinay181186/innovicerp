@@ -46,6 +46,8 @@ import {
   MaterialGradePicker,
   MaterialSizePicker,
 } from '@/modules/raw-material/components/raw-material-pickers';
+import { cleanDrawingRev } from '@/modules/item-revisions/api';
+import { ChildDrawingRevCell } from '@/modules/item-revisions/components/child-drawing-rev-cell';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
 import { Cluster, ClusterGrid, FormField, SearchableSelect } from '@/ui/forms';
@@ -79,6 +81,9 @@ const LOCKED_ROW: React.CSSProperties = { opacity: 0.45, pointerEvents: 'none' }
 export interface BomFormLineDraft {
   childItemId: string;
   childItemCodeText: string;
+  /** D2 — the child part's Drawing Rev (SHAFT/2). Compulsory for a MAKE part;
+   *  blank for a Buy part (saved as null). Cleared when the part changes. */
+  childDrawingRev: string;
   qtyPerSet: string;
   bomType: BomLineType;
   /** Raw material for THIS child part. A child is a different part from its
@@ -180,6 +185,10 @@ const TYPE_ALIASES = ['bom_type', 'BOM Type', 'Type'];
 // built from the older three-column template must still import.
 const GRADE_ALIASES = ['rm_grade', 'RM Grade', 'Grade'];
 const SIZE_ALIASES = ['rm_size', 'RM Size', 'Size'];
+// Drawing Rev register: the child part's Drawing Rev (the server template has
+// it after BOM Type). Optional for the same reason — an older sheet without it
+// still imports, its lines simply carry no Rev.
+const DRAWING_REV_ALIASES = ['drawing_rev', 'Drawing Rev'];
 const REQUIRED_COLUMNS: ReadonlyArray<{ label: string; aliases: string[] }> = [
   { label: 'Item Code', aliases: CODE_ALIASES },
   { label: 'Qty / Set', aliases: QTY_ALIASES },
@@ -195,6 +204,7 @@ function emptyLine(): BomFormLineDraft {
   return {
     childItemId: '',
     childItemCodeText: '',
+    childDrawingRev: '',
     qtyPerSet: '1',
     bomType: 'manufacture',
     rawMaterialGradeId: null,
@@ -363,11 +373,17 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
       // Keep whatever is typed — resolveLine below can still turn an exact
       // code into an id at save time. Clearing it here is what made a pasted
       // code fail with "pick a valid item code".
-      updateLine(idx, { childItemId: '' });
+      updateLine(idx, { childItemId: '', childDrawingRev: '' });
       return;
     }
     const picked = itemById.get(id) ?? (itemPage?.items ?? []).find((i) => i.id === id);
-    updateLine(idx, { childItemId: id, childItemCodeText: picked?.code ?? '' });
+    // A new part never keeps the previous part's Drawing Rev.
+    const same = lines[idx]?.childItemId === id;
+    updateLine(idx, {
+      childItemId: id,
+      childItemCodeText: picked?.code ?? '',
+      ...(same ? {} : { childDrawingRev: '' }),
+    });
   };
 
   // Remember what was typed per line. The dropdown reports the debounced term
@@ -737,12 +753,14 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
         if (gradeRaw || sizeRaw) sawRmValue = true;
         if (gradeRaw && !grade) noteUnmatchedRm('RM Grade', gradeRaw);
         if (sizeRaw && !size) noteUnmatchedRm('RM Size', sizeRaw);
+        const drawingRev = getCol(row, DRAWING_REV_ALIASES).trim();
 
         seenInFile.set(item.id, idx);
         added.push({
           ...emptyLine(),
           childItemId: item.id,
           childItemCodeText: item.code,
+          childDrawingRev: drawingRev,
           qtyPerSet: String(qty),
           bomType,
           rawMaterialGradeId: grade?.id ?? null,
@@ -901,6 +919,12 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
       // Decimals follow the child's unit (S9) — the server repeats this check.
       const unitProblem = qtyUomProblem(qty, itemById.get(l.childItemId)?.uom, 'Qty / Set');
       if (unitProblem) return `Row #${i + 1}: ${unitProblem}`;
+      // D2 — a MAKE part is named as Item + Drawing Rev (SHAFT/2).
+      if (itemById.get(l.childItemId)?.procurementType === 'make') {
+        if (!l.childDrawingRev.trim()) return `Row #${i + 1}: Drawing Rev is required.`;
+        if (!cleanDrawingRev(l.childDrawingRev))
+          return `Row #${i + 1}: Drawing Rev — letters, digits, . - / only.`;
+      }
     }
     return null;
   }, [header, resolvedLines, itemById, resolvedParentId, parentItem]);
@@ -944,7 +968,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
   // RM Grade · RM Size · (remove) = 8. Raw material used to be a second ROW
   // per part; it is two columns now, so this count moved 6 → 8 and the only
   // colSpan left is the empty-state cell.
-  const childCols = 8;
+  const childCols = 9;
 
   return (
     <form onSubmit={submit}>
@@ -1343,6 +1367,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
                 <th style={{ minWidth: 160 }}>
                   Item Code<span className="req">★</span>
                 </th>
+                <th style={{ width: 110 }}>Drawing Rev</th>
                 <th style={{ minWidth: 200 }}>Item Name</th>
                 <th className="th-num" style={{ width: 100 }}>
                   Qty / Set<span className="req">★</span>
@@ -1401,6 +1426,17 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
                           : line.childItemCodeText
                             ? { valueLabel: line.childItemCodeText }
                             : {})}
+                      />
+                    </td>
+                    <td>
+                      <ChildDrawingRevCell
+                        id={`bom-rev-${idx}`}
+                        itemId={line.childItemId || null}
+                        itemCode={item?.code ?? line.childItemCodeText}
+                        revRequired={item ? item.procurementType === 'make' : true}
+                        value={line.childDrawingRev}
+                        onChange={(rev) => updateLine(idx, { childDrawingRev: rev })}
+                        ariaLabel={`Drawing Rev, line ${idx + 1}`}
                       />
                     </td>
                     {/* Resolved from the code, never typed → plain text, with
@@ -1521,6 +1557,9 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
 export function linesToInput(lines: BomFormLineDraft[]): CreateBomMasterLineInput[] {
   return lines.map((l) => ({
     childItemId: l.childItemId,
+    // D2 — blank (Buy part) goes as an explicit null; the server finds or
+    // creates SHAFT/<rev> for a make part.
+    childDrawingRev: l.childDrawingRev.trim() ? l.childDrawingRev.trim().toUpperCase() : null,
     qtyPerSet: Number(l.qtyPerSet),
     bomType: l.bomType,
     // Always sent, never omitted — an edit replaces the lines wholesale on the

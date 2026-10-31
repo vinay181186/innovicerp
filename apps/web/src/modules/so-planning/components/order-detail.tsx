@@ -167,6 +167,8 @@ export function OrderDetail({
     canMlPlan,
     setModal,
     onExecutePlan: runExecutePlan,
+    partsOpen: expanded.has(line.soLineId),
+    onToggleParts: () => toggleExpanded(line.soLineId),
   });
 
   return (
@@ -397,7 +399,6 @@ export function OrderDetail({
               />
             ) : null
           }
-          onToggleExpanded={(l) => toggleExpanded(l.soLineId)}
           renderLink={renderRowMenuLink}
           rowMenuLabel={(l) => `Actions for line ${l.lineNo}`}
           rowMenu={(line) => planningLineMenu(menuArgs(line))}

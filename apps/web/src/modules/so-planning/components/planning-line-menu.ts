@@ -49,6 +49,10 @@ export interface PlanningLineMenuArgs {
    * promise is expected to settle rather than reject.
    */
   onExecutePlan: (plan: PlanningPlanSummary) => Promise<void>;
+  /** The line's BOM-part rows are open under it (line ⋯ "Show parts"). */
+  partsOpen?: boolean;
+  /** Open / close the line's BOM-part rows — there is no ▸ (owner 2026-10-31). */
+  onToggleParts?: () => void;
 }
 
 /** The per-plan entries — on the line's ⋯ (ordinary line) or on the plan's
@@ -166,11 +170,21 @@ function planItems(
 }
 
 export function planningLineMenu(args: PlanningLineMenuArgs): RowMenuItem[] {
-  const { so, line, perms, setModal, canMlPlan } = args;
+  const { so, line, perms, setModal, canMlPlan, partsOpen, onToggleParts } = args;
   const cap = line.itemId ? allocateCap(lineFacts(so.soCode, line, so.soInternalNo)) : 0;
   // The line's own six — every item opens its modal (each modal guards its own
   // save). Copied unchanged from the row this table replaced.
   const lineOwn: RowMenuItem[] = [
+    {
+      // The only way to the BOM-part rows (and their per-plan ⋯) — tables
+      // carry no ▸ any more.
+      key: 'toggle-parts',
+      label: partsOpen ? 'Hide parts' : `Show parts (${line.bomChildren.length})`,
+      icon: 'eye',
+      group: 'main',
+      hidden: !hasPartRows(line) || !onToggleParts,
+      onSelect: () => onToggleParts?.(),
+    },
     {
       key: 'create',
       label: `Plan ${line.remaining}`,

@@ -12,6 +12,7 @@ import { useRouteCard, useUpdateRouteCard } from '../api';
 import {
   RouteCardForm,
   type RouteCardFormHeaderDraft,
+  drawingToInput,
   type RouteCardFormOpDraft,
   detailOpsToDrafts,
   opsToInput,
@@ -58,6 +59,7 @@ function RouteCardEditPage(): React.JSX.Element {
       const updated = await update.mutateAsync({
         code: header.code.trim(),
         itemId: header.itemId,
+        ...drawingToInput(header),
         ...rawMaterialToInput(header),
         notes: header.notes.trim() || null,
         planType: header.planType,
@@ -124,6 +126,8 @@ function RouteCardEditPage(): React.JSX.Element {
           itemId: detail.itemId,
           itemCodeText: detail.itemCode ?? '',
           itemName: detail.itemName ?? '',
+          drawingRev: detail.drawingRev ?? '',
+          drawingFilePath: detail.drawingFilePath,
           rawMaterialGradeId: detail.rawMaterialGradeId,
           rawMaterialGradeText: detail.rawMaterialGradeText,
           rawMaterialSizeId: detail.rawMaterialSizeId,

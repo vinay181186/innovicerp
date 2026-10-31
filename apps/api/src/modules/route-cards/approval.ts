@@ -127,7 +127,9 @@ export async function approveRouteCard(
     // never a plan whose Job Card exists — the guards live in
     // backfillPlansFromRouteCard). Same calls createRouteCard used to make,
     // inside THIS transaction: a failed backfill rolls the approval back.
-    const rcRm = await readRouteCardRawMaterial(tx, companyId, card.itemId);
+    // The card's own Item + Drawing Rev — read exactly this card, not the
+    // item's newest card of any Rev (one card per Item + Rev, 0232).
+    const rcRm = await readRouteCardRawMaterial(tx, companyId, card.itemId, card.itemRevisionId);
     if (rcRm) await backfillPlansFromRouteCard(tx, companyId, card.itemId, rcRm, user);
 
     const remarks = input.remarks?.trim() || null;

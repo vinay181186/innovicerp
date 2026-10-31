@@ -1,113 +1,49 @@
-// Compact drawing-file upload for a single JWSO line, sized to live inside an
-// ~11%-wide table cell.
+// Drawing control for one JWSO line. Since the Item + Drawing Rev register
+// (owner model 2026-10-31) it is the shared DrawingRevField driven by the
+// line's item and Drawing Rev — the same control the SO line and the Route
+// Card use, so ABC/1 holds one drawing whichever document named it first. An
+// existing ABC/1 drawing fills in and shows read-only (fixed only via "Replace
+// drawing…"); a new Item + Rev takes an upload; a Rev change on a saved line
+// offers "Use as is" / "Upload new".
 //
-// A copy of sales-orders/components/so-line-drawing-cell.tsx rather than an
-// import of it: that component hard-codes its Storage folder ('so-line-drawings')
-// and takes no prop to change it, and the sales-orders module is owned by another
-// session, so it could not be generalised. The only difference here is the folder
-// — JWSO drawings land in 'jw-line-drawings', so a job-work drawing is never
-// filed among the sales-order ones. Everything else (upload via the shared
-// @/lib/storage helper, view in the shared file-preview modal, companyId off the
-// session) is identical, deliberately.
+// kind="drawing" previews: the link is minted by the server, which checks the
+// download permission and logs the access.
 
-import { Loader2 } from 'lucide-react';
-import { useState } from 'react';
-import { FilePreviewModal } from '@/components/shared/file-preview-modal';
-import { useSession } from '@/lib/session';
-import { uploadFile } from '@/lib/storage';
+import { DrawingRevField } from '@/modules/item-revisions/components/drawing-rev-field';
 
 export function JwLineDrawingCell({
   value,
   onChange,
+  itemId,
+  itemCode,
+  rev,
+  savedRev,
+  savedPath,
+  refCode,
 }: {
   value: string | null | undefined;
   onChange: (path: string | undefined) => void;
+  itemId?: string | null | undefined;
+  itemCode?: string | null | undefined;
+  /** The line's Drawing Rev as typed. */
+  rev?: string | null | undefined;
+  /** Saved line only: the Rev / file it was loaded with. */
+  savedRev?: string | null | undefined;
+  savedPath?: string | null | undefined;
+  /** Access-log reference ("IN-JWSO-… L2"). */
+  refCode?: string | undefined;
 }): React.JSX.Element {
-  const { data: me } = useSession();
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  // Viewing opens the in-app preview instead of handing the file to the
-  // browser: `window.open` on a signed URL let Chrome's "download PDFs" setting
-  // save the drawing to disk when the user only wanted to look at it.
-  const [previewOpen, setPreviewOpen] = useState(false);
-
-  async function onPick(file: File | null): Promise<void> {
-    if (!file) return;
-    if (!me?.companyId) {
-      setErr('No company on session');
-      return;
-    }
-    setErr(null);
-    setBusy(true);
-    try {
-      const path = await uploadFile(file, me.companyId, { folder: 'jw-line-drawings' });
-      onChange(path);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Could not upload file. Try again.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  if (busy) {
-    return (
-      <span className="text3" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
-        <Loader2 size={12} className="inline animate-spin" /> …
-      </span>
-    );
-  }
-
-  if (value) {
-    return (
-      <div style={{ display: 'flex', gap: 4, alignItems: 'center', justifyContent: 'center', whiteSpace: 'nowrap' }}>
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm"
-          style={{ padding: '2px 6px', fontSize: 11 }}
-          onClick={() => setPreviewOpen(true)}
-          title="Preview drawing"
-        >
-          📎 view
-        </button>
-        <button
-          type="button"
-          className="btn btn-sm"
-          style={{ padding: '2px 6px', fontSize: 11, background: 'transparent', color: 'var(--red2)', border: '1px solid var(--red)' }}
-          onClick={() => onChange(undefined)}
-          title="Clear drawing"
-          aria-label="Clear drawing"
-        >
-          ✕
-        </button>
-        {previewOpen ? (
-          /* kind="drawing" routes the link through the server, which checks
-             the download permission and logs the access. Without it the modal
-             would sign the link in the browser and show Download to everyone. */
-          <FilePreviewModal
-            storagePath={value}
-            kind="drawing"
-            source="jw_line"
-            onClose={() => setPreviewOpen(false)}
-          />
-        ) : null}
-      </div>
-    );
-  }
-
   return (
-    <div style={{ whiteSpace: 'nowrap' }}>
-      <input
-        type="file"
-        className="innovic-input"
-        style={{ fontSize: 11, padding: '2px' }}
-        accept="image/*,.pdf"
-        onChange={(e) => void onPick(e.target.files?.[0] ?? null)}
-      />
-      {err ? (
-        <div className="form-error" style={{ fontSize: 11 }}>
-          {err}
-        </div>
-      ) : null}
-    </div>
+    <DrawingRevField
+      itemId={itemId}
+      itemCode={itemCode}
+      rev={rev}
+      value={value}
+      onChange={(p) => onChange(p ?? undefined)}
+      source="jw_line"
+      refCode={refCode}
+      savedRev={savedRev}
+      savedPath={savedPath}
+    />
   );
 }

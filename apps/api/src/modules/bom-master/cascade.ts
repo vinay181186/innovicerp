@@ -227,6 +227,8 @@ export async function cascadeBomToSoLine(
           orderQty: childQty,
           priority: 'normal',
           sourceSoLineId: soLineId,
+          // Drawing Rev register — the child part's Item + Rev off the BOM line.
+          itemRevisionId: bl.childItemRevisionId ?? null,
           // Raw material (0107) from the BOM LINE, not from the parent. A child
           // is a different part and is generally cut from different stock, so
           // there is nothing to inherit — the BOM line is where the grade and
@@ -469,6 +471,8 @@ export async function cascadeBomToJwLine(
         orderQty: childQty,
         priority: 'normal',
         sourceJwLineId: jwLineId,
+        // Drawing Rev register — the child part's Item + Rev off the BOM line.
+        itemRevisionId: bl.childItemRevisionId ?? null,
         // Same as the SO-line cascade: the grade and size come from the BOM
         // LINE for this child part, copied across as id + text snapshot.
         rawMaterialGradeId: bl.rawMaterialGradeId,

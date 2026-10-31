@@ -1,6 +1,6 @@
 // Sort & Filter (ADR-200) — the Route Card list's sortable / filterable fields.
 // Each expression is the SAME one listRouteCards SELECTs for that column (same
-// aliases — rc, i, op_agg — used by both its list and its count query).
+// aliases — rc, i, ir, op_agg — used by both its list and its count query).
 
 import { sql } from 'drizzle-orm';
 
@@ -10,6 +10,8 @@ export const RC_SF_COLUMNS: SfColumnMap = {
   code: { sql: sql`rc.code`, type: 'text' },
   itemCode: { sql: sql`i.code`, type: 'text' },
   itemName: { sql: sql`i.name`, type: 'text' },
+  // Item + Drawing Rev register (0232) — the card's Drawing Rev; blank on old cards.
+  drawingRev: { sql: sql`ir.rev`, type: 'text' },
   // "RM Grade / RM Size" as the cell prints it.
   rawMaterial: {
     sql: sql`(COALESCE(rc.raw_material_grade_text, '—') || ' / ' || COALESCE(rc.raw_material_size_text, '—'))`,

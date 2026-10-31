@@ -87,6 +87,10 @@ export const salesOrderLineSchema = z.object({
   // Uploaded drawing document's storage path (qc-docs bucket, folder
   // `so-line-drawings`; view via a short-lived signed URL). Nullable.
   drawingFilePath: z.string().nullable().default(null),
+  /** Item + Drawing Rev register record this line points to (ABC/1). The
+   *  `revision` / `drawingFilePath` above are kept in step with it. Null for
+   *  Buy items and lines with no item. */
+  itemRevisionId: z.string().uuid().nullable().default(null),
   /** Item Master product image (items.image_path via itemId), for the thumbnail. */
   itemImagePath: z.string().nullable().default(null),
   uom: uomSchema,

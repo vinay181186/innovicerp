@@ -34,6 +34,11 @@ import {
   useNextDispatchCode,
 } from '../api';
 import { DispatchLineTable, type LineCard } from '../components/dispatch-line-table';
+import {
+  buildDispatchPayloadLines,
+  checkDispatchRows,
+  pendingLineCards,
+} from '../components/dispatch-rows';
 
 // Optional ?so=<salesOrderId> preselects the SO (e.g. arriving from the
 // Assembly Tracker's batch Dispatch button).
@@ -89,26 +94,10 @@ function CustomerDispatchNewPage(): React.JSX.Element {
     return lines.find((l) => l.salesOrderLineId === soLineId) ?? null;
   }
 
-  // FLOW HELPER (frontend only): one card per SO line that still has a
-  // pending qty and is not already on a card, pre-filled with the most the
-  // live check below allows (pending, capped at what can go now). Every card
-  // stays editable; a line that can send nothing right now is added blank so
-  // the user still sees it.
+  // FLOW HELPER (frontend only): one card per pending SO line not already on a
+  // card (one per Drawing Rev bucket) — see pendingLineCards.
   function addAllPendingLines(): void {
-    setCards((cs) => {
-      const onCards = new Set(cs.map((c) => c.soLineId));
-      const added: LineCard[] = lines
-        .filter((l) => l.pendingQty > 0 && !onCards.has(l.salesOrderLineId))
-        .map((l) => {
-          const cap = Math.min(l.availableQty, l.pendingQty);
-          return {
-            id: nextId.current++,
-            soLineId: l.salesOrderLineId,
-            qty: cap > 0 ? String(cap) : '',
-          };
-        });
-      return [...cs, ...added];
-    });
+    setCards((cs) => [...cs, ...pendingLineCards(lines, cs, () => nextId.current++)]);
   }
 
   // Arriving with ?so= (e.g. the Assembly Tracker's Dispatch button): add the
@@ -132,40 +121,9 @@ function CustomerDispatchNewPage(): React.JSX.Element {
     setCards((cs) => cs.map((c) => (c.id === id ? { ...c, ...patch } : c)));
   }
 
-  // Live per-line validation (no silent clamp): a qty over what the customer is
-  // still owed is a hard block — the line shows a friendly message and Save is
-  // disabled until every line is within its pending qty.
-  //
-  // ADR-180: the cap is PENDING (order − dispatched), not the old "ready +
-  // reserved" figure. A reservation no longer removes stock from the shelf, so
-  // a dispatch draws on this line's reservation first and then on free stock;
-  // the API is the one that checks there are enough pieces to draw on.
-  const lineErrors = new Map<number, string>();
-  let anyPositiveQty = false;
-  for (const c of cards) {
-    const line = resolveLine(c.soLineId);
-    if (!line) continue;
-    const raw = c.qty.trim() === '' ? 0 : Number(c.qty);
-    if (Number.isNaN(raw) || raw < 0) {
-      lineErrors.set(c.id, 'Enter a valid quantity.');
-      continue;
-    }
-    // Cap at the SAME number the server enforces (`availableQty`, itself
-    // already capped at pending). Capping only at "pending" let the user type
-    // a qty the stock cannot cover, kept Save enabled, and met the refusal at
-    // submit instead of while typing.
-    const cap = Math.min(line.availableQty, line.pendingQty);
-    if (raw > cap) {
-      lineErrors.set(
-        c.id,
-        cap === line.pendingQty
-          ? `Dispatch Qty cannot be more than Pending (${cap}).`
-          : `Dispatch Qty cannot be more than Dispatchable (${cap}).`,
-      );
-      continue;
-    }
-    if (raw > 0) anyPositiveQty = true;
-  }
+  // Live per-line validation (no silent clamp, ADR-180 pending cap) — see
+  // checkDispatchRows. Save stays off until every row is within its cap.
+  const { lineErrors, anyPositiveQty } = checkDispatchRows(cards, resolveLine);
   const canSave =
     Boolean(soId) &&
     cards.length > 0 &&
@@ -178,29 +136,11 @@ function CustomerDispatchNewPage(): React.JSX.Element {
     if (!soId) return setErr('SO No. is required.');
     if (cards.length === 0) return setErr('Add at least one line.');
 
-    // Resolve each card → SO line and VALIDATE (no silent clamp): an over-qty is
-    // a hard block so the user sees why, instead of us quietly reducing it.
-    const byLine = new Map<string, number>();
-    for (const c of cards) {
-      const line = resolveLine(c.soLineId);
-      if (!line) return setErr('Pick an item on every line (or remove the empty line).');
-      const raw = c.qty.trim() === '' ? 0 : Number(c.qty);
-      if (Number.isNaN(raw) || raw < 0) {
-        return setErr(`${line.itemName}: enter a valid Dispatch Qty.`);
-      }
-      const lineCap = Math.min(line.availableQty, line.pendingQty);
-      if (raw > lineCap) {
-        return setErr(
-          `${line.itemName}: Dispatch Qty (${raw}) cannot be more than Dispatchable (${lineCap}).`,
-        );
-      }
-      if (raw <= 0) continue;
-      byLine.set(line.salesOrderLineId, (byLine.get(line.salesOrderLineId) ?? 0) + raw);
-    }
-    const payloadLines = [...byLine.entries()].map(([salesOrderLineId, qty]) => ({
-      salesOrderLineId,
-      qty,
-    }));
+    // Resolve each card → SO line and VALIDATE (no silent clamp); one payload
+    // row per SO line + Drawing Rev bucket (Phase C).
+    const built = buildDispatchPayloadLines(cards, resolveLine);
+    if ('error' in built) return setErr(built.error);
+    const payloadLines = built.lines;
     if (payloadLines.length === 0) return setErr('Enter a Dispatch Qty on at least one line.');
 
     try {

@@ -17,7 +17,7 @@ import { useEffect, useState } from 'react';
 import { z } from 'zod';
 import { SearchableSelect } from '@/ui/forms';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { itemCodeWithRev } from '@/lib/item-code';
+import { itemCodeWithRev, docDrawingRev } from '@/lib/item-code';
 import { JcStatusBadge } from '@/modules/job-cards/components/jc-status-badge';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import {
@@ -97,7 +97,7 @@ function ProductionOrderClosePage(): React.JSX.Element {
     itemRevision: string | null;
     planCodeText: string;
   }): string =>
-    `${row.code} — ${row.clientPoLineNo ? `POL ${row.clientPoLineNo} · ` : ''}${itemCodeWithRev(row.itemCodeText, row.itemRevision)} · ${row.planCodeText}`;
+    `${row.code} — ${row.clientPoLineNo ? `POL ${row.clientPoLineNo} · ` : ''}${itemCodeWithRev(row.itemCodeText, docDrawingRev(row))} · ${row.planCodeText}`;
 
   /** Nothing identified yet. Clearing any one of the three lands here, because
    *  the three are one choice and a half-filled trio identifies no order. */
@@ -249,7 +249,7 @@ function ProductionOrderClosePage(): React.JSX.Element {
                   code: p.code,
                   // POL (the CUSTOMER's own PO line number) leads the label,
                   // ahead of the item code, and is searchable with it.
-                  name: `${p.clientPoLineNo ? `POL ${p.clientPoLineNo} · ` : ''}${itemCodeWithRev(p.itemCodeText, p.itemRevision)} · ${p.planCodeText} · Order Qty ${p.orderQty}`,
+                  name: `${p.clientPoLineNo ? `POL ${p.clientPoLineNo} · ` : ''}${itemCodeWithRev(p.itemCodeText, docDrawingRev(p))} · ${p.planCodeText} · Order Qty ${p.orderQty}`,
                   searchText: [
                     p.jcCodeText,
                     p.soCodeText,
@@ -282,7 +282,7 @@ function ProductionOrderClosePage(): React.JSX.Element {
                 options={jcOptions.map((row) => ({
                   id: row.jobCardId,
                   code: row.jcCodeText,
-                  name: `${row.clientPoLineNo ? `POL ${row.clientPoLineNo} · ` : ''}${itemCodeWithRev(row.itemCodeText, row.itemRevision)} · ${row.code}`,
+                  name: `${row.clientPoLineNo ? `POL ${row.clientPoLineNo} · ` : ''}${itemCodeWithRev(row.itemCodeText, docDrawingRev(row))} · ${row.code}`,
                   searchText: [
                     row.code,
                     row.planCodeText,
@@ -374,7 +374,7 @@ function ProductionOrderClosePage(): React.JSX.Element {
                 </span>
               ) : null}
               <span className="mono text3" style={{ fontSize: 11 }}>
-                · {itemCodeWithRev(po.itemCodeText, po.itemRevision)}
+                · {itemCodeWithRev(po.itemCodeText, docDrawingRev(po))}
               </span>
             </div>
           ) : null}

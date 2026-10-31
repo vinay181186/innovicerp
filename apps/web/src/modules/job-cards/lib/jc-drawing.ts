@@ -25,7 +25,7 @@ const IMAGE_RE = /\.(png|jpe?g|gif|webp|bmp|svg)$/i;
 export interface JcDrawing {
   path: string;
   label: string;
-  source: 'so_line' | 'jw_line' | 'job_card';
+  source: 'item_revision' | 'so_line' | 'jw_line' | 'job_card';
 }
 
 /** Resolve the drawing for a Job Card screen and its display ref. `jc` and
@@ -38,25 +38,34 @@ export function useJcDrawing(
   /** Caption suffix for the revision printed on that drawing, when there is
    *  one. Blank rather than "Rev —": an empty revision is not a fact. */
   const revSuffix = (rev: string | null | undefined): string => (rev ? ` · Rev ${rev}` : '');
-  const drawing: JcDrawing | null = model?.soLineDrawingFilePath
+  // The card's own Item + Drawing Rev (register) drawing comes FIRST — for a
+  // closed card it is the file that was current when it closed. Then the
+  // existing SO line → JW line → this card's own upload order.
+  const drawing: JcDrawing | null = model?.revisionDrawingFilePath
     ? {
-        path: model.soLineDrawingFilePath,
-        label: `Sales order drawing${revSuffix(model.soLineRevision)}`,
-        source: 'so_line',
+        path: model.revisionDrawingFilePath,
+        label: `Item drawing${model.revisionLabel ? ` · Drawing Rev ${model.revisionLabel}` : ''}`,
+        source: 'item_revision',
       }
-    : model?.jwLineDrawingFilePath
+    : model?.soLineDrawingFilePath
       ? {
-          path: model.jwLineDrawingFilePath,
-          label: `Job work order drawing${revSuffix(model.jwLineRevision)}`,
-          source: 'jw_line',
+          path: model.soLineDrawingFilePath,
+          label: `Sales order drawing${revSuffix(model.soLineRevision)}`,
+          source: 'so_line',
         }
-      : jc?.drawingFilePath
+      : model?.jwLineDrawingFilePath
         ? {
-            path: jc.drawingFilePath,
-            label: 'Attached to this Job Card',
-            source: 'job_card',
+            path: model.jwLineDrawingFilePath,
+            label: `Job work order drawing${revSuffix(model.jwLineRevision)}`,
+            source: 'jw_line',
           }
-        : null;
+        : jc?.drawingFilePath
+          ? {
+              path: jc.drawingFilePath,
+              label: 'Attached to this Job Card',
+              source: 'job_card',
+            }
+          : null;
 
   // Auto-loaded on open, and asked for as a VIEW. Only fetched for an image — a
   // PDF has no thumbnail to show.

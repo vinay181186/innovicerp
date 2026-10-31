@@ -10,6 +10,7 @@ import { useCreateRouteCard } from '../api';
 import {
   RouteCardForm,
   type RouteCardFormHeaderDraft,
+  drawingToInput,
   type RouteCardFormOpDraft,
   opsToInput,
   rawMaterialToInput,
@@ -56,6 +57,7 @@ function RouteCardNewPage(): React.JSX.Element {
       // next free number instead of being refused as a duplicate.
       const created = await create.mutateAsync({
         itemId: header.itemId,
+        ...drawingToInput(header),
         ...rawMaterialToInput(header),
         notes: header.notes.trim() || null,
         planType: header.planType,
@@ -87,6 +89,8 @@ function RouteCardNewPage(): React.JSX.Element {
           itemId: search.itemId ?? '',
           itemCodeText: search.itemCode ?? '',
           itemName: search.itemName ?? '',
+          drawingRev: '',
+          drawingFilePath: null,
           rawMaterialGradeId: null,
           rawMaterialGradeText: null,
           rawMaterialSizeId: null,

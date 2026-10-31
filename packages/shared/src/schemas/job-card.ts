@@ -67,6 +67,11 @@ export const jobCardListItemSchema = z.object({
   cancelledAt: z.string().nullable().default(null),
   jcDate: z.string(), // ISO date
   itemId: z.string().uuid(),
+  /** Item + Drawing Rev this document is for (ABC/1), stored on the document
+   *  (Phase B). Taken from the SO/JWSO line (or BOM child line) at creation;
+   *  moved by a line Rev change only while the work is open. */
+  itemRevisionId: z.string().uuid().nullable().default(null),
+  drawingRev: z.string().nullable().default(null),
   itemCode: z.string(),
   /** The customer's drawing revision, read from the SO line this card was
    *  raised against (job_cards.source_so_line_id → sales_order_lines.revision).
@@ -515,6 +520,10 @@ export const jobCardEditModelSchema = z.object({
    *  The shop floor reads them in order — SO line, JW line, this card's own,
    *  item master — and says on screen which one it is showing. */
   soLineDrawingFilePath: z.string().nullable().default(null),
+  /** The JC's own Item + Drawing Rev drawing (register). For a closed JC: the
+   *  file current when it closed. Shown before the SO / JW line file. */
+  revisionDrawingFilePath: z.string().nullable().default(null),
+  revisionLabel: z.string().nullable().default(null),
   jwLineDrawingFilePath: z.string().nullable().default(null),
   itemDrawingFilePath: z.string().nullable().default(null),
   /** Item Master product image (items.image_path), for the status-page header badge. */

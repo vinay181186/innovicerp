@@ -60,8 +60,19 @@ export async function walkFromBom(
   tx: DbTransaction,
   companyId: string,
   mlBomId: string,
+  /** The plan's SO line — the top row takes its Item + Drawing Rev. */
+  soLineId: string,
 ): Promise<{ nodes: WalkNode[]; revision: number }> {
   const tree = await loadMlBomTree(tx, companyId, mlBomId, 1);
+  const topItemId = tree.nodes[0]?.itemId ?? null;
+  const topRevRows = topItemId
+    ? ((await tx.execute(sql`
+        SELECT sol.item_revision_id AS "itemRevisionId" FROM public.sales_order_lines sol
+        WHERE sol.id = ${soLineId}::uuid AND sol.company_id = ${companyId}::uuid
+          AND sol.item_id = ${topItemId}::uuid
+      `)) as unknown as Array<{ itemRevisionId: string | null }>)
+    : [];
+  const topItemRevisionId = topRevRows[0]?.itemRevisionId ?? null;
   const bomIds = Array.from(
     new Set([mlBomId, ...tree.nodes.flatMap((n) => (n.mlBomId ? [n.mlBomId] : []))]),
   );
@@ -89,6 +100,7 @@ export async function walkFromBom(
         parentKey: null,
         depth: 0,
         itemId: n.itemId,
+        itemRevisionId: topItemRevisionId,
         uom: n.uom,
         bomType: null,
         isSubAssembly: true,
@@ -109,6 +121,7 @@ export async function walkFromBom(
       parentKey: slash < 0 ? '' : n.key.slice(0, slash),
       depth: Number(n.depth),
       itemId: n.itemId,
+      itemRevisionId: n.itemRevisionId ?? null,
       uom: n.uom,
       bomType: n.bomType as BomLineType,
       isSubAssembly: childRev !== undefined,
@@ -129,7 +142,7 @@ export async function walkFromStoredNodes(
   planId: string,
 ): Promise<WalkNode[]> {
   const rows = (await tx.execute(sql`
-    SELECT n.id, n.parent_node_id, n.depth, n.item_id, i.uom::text AS uom,
+    SELECT n.id, n.parent_node_id, n.depth, n.item_id, n.item_revision_id, i.uom::text AS uom,
            n.bom_type::text AS bom_type, n.is_sub_assembly, n.ml_bom_id,
            n.ml_bom_revision, n.qty_per_set::text AS qty_per_set,
            n.raw_material_grade_text, n.raw_material_size_text
@@ -144,6 +157,7 @@ export async function walkFromStoredNodes(
     parentKey: (r['parent_node_id'] as string | null) ?? null,
     depth: Number(r['depth']),
     itemId: String(r['item_id']),
+    itemRevisionId: (r['item_revision_id'] as string | null) ?? null,
     uom: (r['uom'] as string | null) ?? null,
     bomType: (r['bom_type'] as BomLineType | null) ?? null,
     isSubAssembly: Boolean(r['is_sub_assembly']),
@@ -281,6 +295,7 @@ export async function snapshotPlanNodes(
     depth: n.depth,
     seq: n.seq,
     itemId: n.itemId,
+    itemRevisionId: n.itemRevisionId ?? null,
     bomType: n.bomType,
     isSubAssembly: n.isSubAssembly,
     mlBomId: n.mlBomId,

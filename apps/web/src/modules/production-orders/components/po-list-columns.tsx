@@ -21,7 +21,8 @@ import {
 } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
+import { ItemRevLink } from '@/modules/item-revisions/components/item-rev-link';
+import { itemCodeWithRev, docDrawingRev } from '@/lib/item-code';
 import type { DataTableColumn } from '@/ui/data';
 import { ROW_TINT } from '@/ui/data';
 import { PoStatusBadge } from './po-status-badge';
@@ -128,7 +129,11 @@ export function poListColumns(
       render: (po) => (
         <span className="td-code" style={{ color: 'var(--text)', fontWeight: 700 }}>
           {/* CODE/REV (ADR-177); bare code when the line has no revision. */}
-          {itemCodeWithRev(po.itemCodeText, po.itemRevision)}
+          <ItemRevLink
+            itemRevisionId={po.itemRevisionId}
+            label={itemCodeWithRev(po.itemCodeText, docDrawingRev(po))}
+            className=""
+          />
         </span>
       ),
     },

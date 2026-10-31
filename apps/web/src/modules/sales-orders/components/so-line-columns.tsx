@@ -7,6 +7,7 @@ import type { DrawingSource, SalesOrderDetail, SalesOrderLine, SoStatus } from '
 import { ItemImageBox } from '@/components/shared/item-badge';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { ItemRevLink } from '@/modules/item-revisions/components/item-rev-link';
 import { inrFormat } from '@/lib/print/doc-print';
 import { Button, Icon, StatusBadge } from '@/ui/core';
 import type { DataTableColumn, RowMenuItem } from '@/ui/data';
@@ -88,7 +89,16 @@ export function lineColumns(opts: {
       header: 'Item Code',
       className: 'mono fw-700',
       nowrap: true,
-      render: (l) => itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.revision),
+      // ABC/1 links to its drawing page once the line is in the Item + Drawing
+      // Rev register (itemRevisionId); plain text otherwise.
+      render: (l) => (
+        <ItemRevLink
+          itemRevisionId={l.itemRevisionId}
+          label={itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.revision)}
+          className=""
+        />
+      ),
+      filterValue: (l) => itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.revision),
     },
     {
       id: 'item_name',

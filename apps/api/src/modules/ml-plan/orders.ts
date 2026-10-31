@@ -65,6 +65,8 @@ interface NodeRow {
   depth: number;
   bomType: string | null;
   itemId: string;
+  /** Drawing Rev register — the row's Item + Rev (null = Buy / old row). */
+  itemRevisionId: string | null;
   itemCode: string | null;
   itemName: string | null;
   netNeedQty: string;
@@ -82,7 +84,7 @@ async function readNodes(
   ids: readonly string[],
 ): Promise<Map<string, NodeRow>> {
   const rows = (await tx.execute(sql`
-    SELECT n.id, n.depth, n.bom_type::text AS bom_type, n.item_id,
+    SELECT n.id, n.depth, n.bom_type::text AS bom_type, n.item_id, n.item_revision_id,
            i.code AS item_code, i.name AS item_name,
            n.net_need_qty::text AS net_need_qty,
            n.raw_material_grade_text, n.raw_material_size_text
@@ -99,6 +101,7 @@ async function readNodes(
       depth: Number(r['depth']),
       bomType: (r['bom_type'] as string | null) ?? null,
       itemId: String(r['item_id']),
+      itemRevisionId: (r['item_revision_id'] as string | null) ?? null,
       itemCode: (r['item_code'] as string | null) ?? null,
       itemName: (r['item_name'] as string | null) ?? null,
       netNeedQty: String(r['net_need_qty']),
@@ -109,14 +112,19 @@ async function readNodes(
   return out;
 }
 
-/** Route Card facts per item: its code, plan type, how many live ops it has,
- *  and (ADR-253) its approval status — only an approved card may raise. */
+/** Route Card facts per Item + Rev: its code, plan type, how many live ops it
+ *  has, and (ADR-253) its approval status — only an approved card may raise. */
 interface RouteCardFacts {
   code: string;
   planType: string;
   opCount: number;
   approvalStatus: string;
 }
+
+/** Map key for one Item + Drawing Rev ('' = the item's no-Rev card). One card
+ *  per Item + Rev (0232), so the key never collides. */
+const cardKey = (itemId: string, itemRevisionId: string | null): string =>
+  `${itemId}|${itemRevisionId ?? ''}`;
 
 async function readRouteCards(
   tx: DbTransaction,
@@ -126,7 +134,7 @@ async function readRouteCards(
   const out = new Map<string, RouteCardFacts>();
   if (itemIds.length === 0) return out;
   const rows = (await tx.execute(sql`
-    SELECT rc.item_id, rc.code, rc.plan_type::text AS plan_type,
+    SELECT rc.item_id, rc.item_revision_id, rc.code, rc.plan_type::text AS plan_type,
            rc.approval_status::text AS approval_status,
            (SELECT COUNT(*)::int FROM public.route_card_ops o
             WHERE o.route_card_id = rc.id AND o.deleted_at IS NULL) AS op_count
@@ -135,13 +143,14 @@ async function readRouteCards(
       AND rc.item_id = ANY(${sql.param(Array.from(new Set(itemIds)))}::uuid[])
   `)) as unknown as Array<{
     item_id: string;
+    item_revision_id: string | null;
     code: string;
     plan_type: string;
     approval_status: string;
     op_count: number;
   }>;
   for (const r of rows) {
-    out.set(String(r.item_id), {
+    out.set(cardKey(String(r.item_id), r.item_revision_id ?? null), {
       code: String(r.code),
       planType: String(r.plan_type),
       opCount: Number(r.op_count),
@@ -309,10 +318,16 @@ export async function raiseMlPlanOrdersTx(
       blocked.push(`${item}: only ${qtyWord(left > 0n ? left : 0n)} left to raise.`);
     }
     if (kind === 'plan') {
-      const card = cards.get(node.itemId);
+      // Drawing Rev register — the card for THIS row's Item + Rev.
+      const card = cards.get(cardKey(node.itemId, node.itemRevisionId));
+      const oldCard = node.itemRevisionId ? cards.get(cardKey(node.itemId, null)) : undefined;
       // ADR-253 — a card waiting for approval (or rejected) may not raise.
       const unusable = card ? routeCardUnusableMessage(card) : null;
-      if (!card) blocked.push(`${item} has no Route Card — make one first.`);
+      if (!card && oldCard) {
+        blocked.push(
+          `${item}: ${oldCard.code} has no Drawing Rev — set it on the Route Card first.`,
+        );
+      } else if (!card) blocked.push(`${item} has no Route Card — make one first.`);
       else if (unusable) blocked.push(`${item}: ${unusable}`);
       else if (card.opCount === 0) {
         blocked.push(`${item}'s Route Card has no operations — add them first.`);

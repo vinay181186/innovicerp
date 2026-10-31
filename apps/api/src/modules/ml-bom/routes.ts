@@ -7,7 +7,7 @@ import {
   listMlBomsQuerySchema,
   makeDefaultMlBomInputSchema,
   mlBomCostQuerySchema,
-  mlBomImportInputSchema,
+  mlBomImportInputWithRevSchema,
   mlBomTreeQuerySchema,
   updateMlBomInputSchema,
 } from './schema';
@@ -64,7 +64,8 @@ export async function mlBomRoutes(app: FastifyInstance): Promise<void> {
   // whole file in one transaction. Same rules either way (import.ts).
   app.post('/ml-boms/import', async (req) => {
     if (!req.user) throw new AuthenticationError();
-    const input = mlBomImportInputSchema.parse(req.body);
+    // The shared import row + the optional Drawing Rev column (schema.ts, D2).
+    const input = mlBomImportInputWithRevSchema.parse(req.body);
     return importMlBoms(input, req.user);
   });
 

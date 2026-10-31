@@ -241,6 +241,9 @@ interface PlanFormProps {
   hideOps?: boolean;
   /** ADR-207 — the SO's Internal SO No. (live), shown beside the SO No. */
   soInternalNo?: string | null;
+  /** The saved plan's Item + Drawing Rev — route-card ops are looked up for
+   *  THAT Rev while the item is still the saved one. */
+  itemRevisionId?: string | null;
 }
 
 export function PlanForm({
@@ -252,6 +255,7 @@ export function PlanForm({
   isEdit,
   hideOps,
   soInternalNo,
+  itemRevisionId,
 }: PlanFormProps): React.JSX.Element {
   const [values, setValues] = useState<PlanFormValues>(initialValues);
   // The saved plan's id, for the "Create Production Order" link. The form is
@@ -267,7 +271,11 @@ export function PlanForm({
     isFetching: loadingOps,
     isLoading: routeCardLoading,
     isError: routeCardFailed,
-  } = useDefaultRouteOps(values.itemId);
+  } = useDefaultRouteOps(
+    values.itemId,
+    // The saved Rev belongs to the saved item only; a different item drops it.
+    values.itemId && values.itemId === initialValues.itemId ? (itemRevisionId ?? null) : null,
+  );
   // The item has an active route card only when the lookup came back with one.
   const hasRouteCard = !!defaultOps && defaultOps.ops.length > 0;
 

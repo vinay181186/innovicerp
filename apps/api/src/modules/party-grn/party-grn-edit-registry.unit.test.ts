@@ -11,8 +11,6 @@ vi.mock('./service', () => ({
     { key: 'grnDate', label: 'GRN Date' },
     { key: 'dcNo', label: 'Customer Challan No.' },
   ],
-  isPendingQc: (l: { qcAt: unknown; acceptedQty: number; rejectedQty: number }) =>
-    l.qcAt == null && l.acceptedQty === 0 && l.rejectedQty === 0,
   updatePartyGrnTx: vi.fn(() => Promise.resolve({})),
 }));
 

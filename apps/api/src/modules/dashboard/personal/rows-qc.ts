@@ -1,7 +1,9 @@
 // ADR-250 — QC inner queries for the per-person home (list-query.ts shape).
 //   grn_qc    — one row per GRN document still waiting for Incoming QC:
 //               purchase GRN lines qc_status pending / in_progress (AL-008's
-//               test) + party GRN lines by party-grn PENDING_QC_SQL.
+//               test) + party GRN lines by party-grn QC_OPEN_SQL (partial
+//               QC, 0233). qty = Σ QC Pending Qty (received − accepted −
+//               rejected) on both halves, owner D3 2026-10-31.
 //               x1 = first waiting line id (the Inspect deep link),
 //               x2/x3 = the PO / JWSO behind it (id, number).
 //               kind = 'party_grn', or the GRN's GRN Type (ADR-251, the
@@ -19,7 +21,7 @@
 //               x1 = the order id, x2 = the order line id, x3 = POL.
 
 import { type SQL, sql } from 'drizzle-orm';
-import { PENDING_QC_SQL } from '../../party-grn/service';
+import { QC_OPEN_SQL, QC_PENDING_QTY_SQL } from '../../party-grn/qc-state';
 import { polSql } from '../../../lib/pol';
 import { qcProcessReportJoin } from '../../../lib/qc-process-report';
 import { grnTypeSql } from '../../qc-history/register-incoming';
@@ -32,7 +34,7 @@ export function grnQcSql(cid: string, f: ListFilter): SQL {
            COALESCE(v.name, g.vendor_code_text)::text AS party,
            (ARRAY_AGG(COALESCE(i.code, gl.item_code_text) ORDER BY gl.line_no))[1]::text AS item_code,
            (ARRAY_AGG(COALESCE(gl.item_name, i.name) ORDER BY gl.line_no))[1]::text AS item_name,
-           COALESCE(SUM(gl.received_qty), 0)::numeric AS qty,
+           COALESCE(SUM(gl.received_qty - gl.qc_accepted_qty - gl.qc_rejected_qty), 0)::numeric AS qty,
            (ARRAY_AGG(i.uom ORDER BY gl.line_no))[1]::text AS uom,
            NULL::numeric AS amount, g.created_by::text AS created_by, 0::int AS is_late,
            (ARRAY_AGG(gl.id::text ORDER BY gl.line_no))[1] AS x1,
@@ -54,7 +56,7 @@ export function grnQcSql(cid: string, f: ListFilter): SQL {
            COALESCE(c.name, p.client_code_text)::text AS party,
            (ARRAY_AGG(pgl.party_material_code_text ORDER BY pgl.line_no))[1]::text AS item_code,
            (ARRAY_AGG(pgl.party_material_name ORDER BY pgl.line_no))[1]::text AS item_name,
-           COALESCE(SUM(pgl.received_qty), 0)::numeric AS qty,
+           COALESCE(SUM(${QC_PENDING_QTY_SQL}), 0)::numeric AS qty,
            NULL::text AS uom,
            NULL::numeric AS amount, p.created_by::text AS created_by, 0::int AS is_late,
            (ARRAY_AGG(pgl.id::text ORDER BY pgl.line_no))[1] AS x1,
@@ -62,7 +64,7 @@ export function grnQcSql(cid: string, f: ListFilter): SQL {
            COALESCE(jw.code, p.jw_code_text)::text AS x3
     FROM public.party_grn p
     JOIN public.party_grn_lines pgl
-      ON pgl.party_grn_id = p.id AND pgl.deleted_at IS NULL AND ${PENDING_QC_SQL}
+      ON pgl.party_grn_id = p.id AND pgl.deleted_at IS NULL AND ${QC_OPEN_SQL}
     LEFT JOIN public.clients c ON c.id = p.client_id
     LEFT JOIN public.job_work_orders jw ON jw.id = p.job_work_order_id AND jw.deleted_at IS NULL
     WHERE p.company_id = ${cid}::uuid AND p.deleted_at IS NULL

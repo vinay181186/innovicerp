@@ -71,8 +71,16 @@ function pgrnAsCompleted(r: PartyGrnQcRow): IncomingQcCompletedRow {
     receivedQty: r.receivedQty,
     acceptedQty: r.acceptedQty,
     rejectedQty: r.rejectedQty,
+    // Part QC (0233): pieces still pending read as a partial result. The
+    // shared disposition enum has no "Partial", so 'Partial Accept' carries it.
     disposition:
-      r.rejectedQty > 0 ? (r.acceptedQty > 0 ? 'Partial Accept' : 'Rejected') : 'Accepted',
+      r.pendingQty > 0
+        ? 'Partial Accept'
+        : r.rejectedQty > 0
+          ? r.acceptedQty > 0
+            ? 'Partial Accept'
+            : 'Rejected'
+          : 'Accepted',
     qcAt: r.qcDate,
     qcInspectedBy: r.qcByName,
     qcRemarks: r.qcRemarks,

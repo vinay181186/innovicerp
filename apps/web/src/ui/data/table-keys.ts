@@ -154,6 +154,20 @@ export const TABLE_KEYS = {
   globalSearch: 'global-search',
   scDashboard: 'sc-dashboard',
   stuckDashboard: 'stuck-dashboard',
+  /** Drawing page (Item + Drawing Rev register): the drawing's history. */
+  itemRevisionHistory: 'item-revision-history',
+  /** Drawing page: documents that name this Item + Drawing Rev. */
+  itemRevisionLinkedDocs: 'item-revision-linked-docs',
+  /** SO / JWSO detail: Rev changes on the order's lines. */
+  itemRevisionChanges: 'item-revision-changes',
+  /** Store Inventory drill-down: stock of one item per Drawing Rev. */
+  itemRevStock: 'item-rev-stock',
+  /** Drawing Rev Fix List: Route Cards without a Drawing Rev. */
+  drawingRevFixRouteCards: 'drawing-rev-fix-route-cards',
+  /** Drawing Rev Fix List: order lines with conflicting Revs / Rev "0". */
+  drawingRevFixLines: 'drawing-rev-fix-lines',
+  /** Drawing Rev Fix List: old stock without a Drawing Rev. */
+  drawingRevFixStock: 'drawing-rev-fix-stock',
 } as const;
 
 export type TableKey = (typeof TABLE_KEYS)[keyof typeof TABLE_KEYS];

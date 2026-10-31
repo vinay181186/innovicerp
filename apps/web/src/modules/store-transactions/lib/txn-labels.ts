@@ -26,5 +26,6 @@ export const STORE_TXN_SOURCE_LABELS: Record<StoreTxnSourceType, string> = {
   tool_return: 'Tool Return',
   stock_count: 'Stock Count',
   tool_writeoff: 'Tool Write-off',
+  rev_change: 'Drawing Rev Change',
   other: 'Other',
 };

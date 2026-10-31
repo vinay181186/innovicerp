@@ -29,7 +29,7 @@
 import type { Company, JcOpEnriched, JobCardListItem } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
 import { resolveActualMachine } from '@/components/shared/machine-split';
-import { itemCodeWithRev } from '@/lib/item-code';
+import { itemCodeWithRev, docDrawingRev } from '@/lib/item-code';
 import { fmtDate } from '@/lib/date';
 import { buildDocCompany } from '@/lib/print/company';
 import { esc } from '@/lib/print/doc-print';
@@ -197,7 +197,7 @@ export function printJobCard(args: {
     // written CODE/REV like every other document (ADR-177). Printed ONCE: a
     // second "CODE/REV" row used to repeat this exact value. Item Name sits
     // directly under it (owner 2026-10-22: code first, then name).
-    fact('Item Code', itemCodeWithRev(jc.itemCode, jc.itemRevision), { strong: true }),
+    fact('Item Code', itemCodeWithRev(jc.itemCode, docDrawingRev(jc)), { strong: true }),
     fact('Item Name', jc.itemName, { last: true }),
   ].join('');
 

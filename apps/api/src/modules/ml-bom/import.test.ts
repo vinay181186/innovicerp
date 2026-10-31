@@ -6,7 +6,7 @@ import { and, eq, inArray, isNotNull, like } from 'drizzle-orm';
 import type { MlBomImportRow } from '@innovic/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
-import { activityLog, items, mlBoms, users } from '../../db/schema';
+import { activityLog, items, mlBomLines, mlBoms, users } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
 import { importMlBoms } from './import';
 import * as service from './service';
@@ -47,7 +47,16 @@ async function cleanup(): Promise<void> {
       .from(items)
       .where(like(items.code, `${P}%`))
   ).map((r) => r.id);
-  if (ids.length > 0) await db.delete(mlBoms).where(inArray(mlBoms.itemId, ids));
+  if (ids.length > 0) {
+    // Lines first: the sub-assembly link FK (NO ACTION) is checked before the
+    // line cascade of a one-statement BOM delete has run, so a BOM another
+    // test BOM links could not be deleted (pre-existing cleanup fault).
+    const bomIds = (
+      await db.select({ id: mlBoms.id }).from(mlBoms).where(inArray(mlBoms.itemId, ids))
+    ).map((r) => r.id);
+    if (bomIds.length > 0) await db.delete(mlBomLines).where(inArray(mlBomLines.mlBomId, bomIds));
+    await db.delete(mlBoms).where(inArray(mlBoms.itemId, ids));
+  }
   await db.delete(items).where(like(items.code, `${P}%`));
 }
 
@@ -67,6 +76,10 @@ beforeAll(async () => {
         revision: 'A',
         uom: (c === 'KG' ? 'KGS' : 'NOS') as 'KGS' | 'NOS',
         itemType: 'component' as const,
+        // XB / NUT are children of BOMs made on the SCREEN (createMlBom), where a
+        // MAKE child needs a Drawing Rev (D2); not a Rev test, so Buy parts.
+        // The import itself never asks for a Rev (requireRev: false).
+        procurementType: c === 'XB' || c === 'NUT' ? 'buy' : 'make',
         createdBy: u.id,
         updatedBy: u.id,
       })),

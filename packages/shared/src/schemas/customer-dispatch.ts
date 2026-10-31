@@ -18,6 +18,12 @@ export const dispatchableLineSchema = z.object({
    *  column and substituting it would put a plausible-looking wrong revision on
    *  the dispatch. Null is correct and renders as the bare code. */
   itemRevision: z.string().nullable().default(null),
+  /** Phase C: stock ready for THIS SO line per Item + Drawing Rev — a line can
+   *  hold pieces of two Revs (closed JC ABC/1 + later JC ABC/2). The dispatch
+   *  picks one Rev per row. Empty for Buy items. */
+  revBuckets: z
+    .array(z.object({ itemRevisionId: z.string().uuid().nullable(), label: z.string(), readyQty: z.number() }))
+    .default([]),
   /** The customer's PO line number (`POL`) typed on this same SO line — shown
    *  beside the item code on the dispatch form, as on every other document
    *  (user rule, 2026-09-23). Null when the customer's PO gave no line. */
@@ -69,6 +75,9 @@ export const createCustomerDispatchInputSchema = z.object({
     .array(
       z.object({
         salesOrderLineId: z.string().uuid(),
+        /** Phase C: which Item + Rev bucket the pieces come from (null = blank
+         *  bucket / Buy item). The same SO line may appear once per Rev. */
+        itemRevisionId: z.string().uuid().nullable().optional(),
         qty: z.coerce.number().int().positive(),
       }),
     )
@@ -89,6 +98,11 @@ export const customerDispatchLineRowSchema = z.object({
    *  is genuinely no SO line behind the shipment — and null must render as the
    *  bare item code, with no slash and no placeholder. */
   itemRevision: z.string().nullable().default(null),
+  /** Phase C: the Item + Drawing Rev actually SHIPPED on this dispatch line
+   *  (customer_dispatch_lines.item_revision_id). Prefer it over itemRevision,
+   *  which is the SO line's current Rev; null on old rows. */
+  itemRevisionId: z.string().uuid().nullable().default(null),
+  drawingRev: z.string().nullable().default(null),
   itemCodeText: z.string().nullable(), // stored snapshot alias (fallback only)
   itemName: z.string(),
   /** The item master's name (items.name by item id) — shown as a grey
@@ -174,6 +188,9 @@ export type ListCustomerDispatchesResponse = z.infer<typeof listCustomerDispatch
 // Customer / Dispatched By / Remarks / Stock B→A). Flattened from dispatch docs.
 export const customerDispatchRegisterRowSchema = z.object({
   dispatchId: z.string().uuid(),
+  /** Item + Drawing Rev (ABC/1) — see item-revision.ts. */
+  itemRevisionId: z.string().uuid().nullable().default(null),
+  drawingRev: z.string().nullable().default(null),
   dispatchCode: z.string(),
   status: z.enum(CUSTOMER_DISPATCH_STATUSES),
   date: z.string(),
