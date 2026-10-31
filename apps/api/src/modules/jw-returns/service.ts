@@ -39,7 +39,8 @@ import {
 } from '../../lib/errors';
 import { lockDocSeries } from '../../lib/doc-series-lock';
 import { clientCopyValues, loadClientForCopy, readClientCopy } from '../../lib/party-copy';
-import { postStockMove } from '../../lib/stock-ledger';
+import { lockItemForStock, postStockMove } from '../../lib/stock-ledger';
+import { readRevBucketPosition } from '../../lib/stock-reservation';
 import { emitActivityLog } from '../activity-log/service';
 import { blockerRefusal } from '../cancel-requests/messages';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
@@ -264,7 +265,9 @@ async function returnedComponents(
   tx: DbTransaction,
   companyId: string,
   code: string,
-): Promise<Array<{ itemId: string; itemCode: string; qty: number; itemRevisionId: string | null }>> {
+): Promise<
+  Array<{ itemId: string; itemCode: string; qty: number; itemRevisionId: string | null }>
+> {
   const rows = (await tx.execute(sql`
     SELECT st.item_id, st.qty, i.code AS item_code, st.item_revision_id
     FROM public.store_transactions st
@@ -293,20 +296,22 @@ async function returnedComponents(
   );
 }
 
-/** Drawing Rev Phase C — the bucket a (non-assembly) return's 'out' row left,
- *  so the cancel puts the goods back where they came from. Old rows: blank. */
-async function returnedRevisionId(
+/** Drawing Rev Phase C — the 'out' row(s) a (non-assembly) return wrote, one
+ *  per bucket (0234: a return with no Job Card may take the line's Rev bucket
+ *  and the blank bucket), so the cancel puts each part back where it came
+ *  from. No rows (very old challans): the caller puts the qty in blank. */
+async function returnedBucketRows(
   tx: DbTransaction,
   companyId: string,
   code: string,
-): Promise<string | null> {
+): Promise<Array<{ qty: number; itemRevisionId: string | null }>> {
   const rows = (await tx.execute(sql`
-    SELECT item_revision_id FROM public.store_transactions
+    SELECT qty, item_revision_id FROM public.store_transactions
      WHERE company_id = ${companyId}::uuid AND source_type = 'jw_return'
        AND txn_type = 'out' AND source_ref = ${code}
-     ORDER BY created_at DESC LIMIT 1
-  `)) as unknown as Array<{ item_revision_id: string | null }>;
-  return rows[0]?.item_revision_id ?? null;
+     ORDER BY created_at, id
+  `)) as unknown as Array<{ qty: number | string; item_revision_id: string | null }>;
+  return rows.map((r) => ({ qty: Number(r.qty) || 0, itemRevisionId: r.item_revision_id ?? null }));
 }
 
 function rowToReturn(row: typeof jwReturnChallans.$inferSelect): JwReturnChallan {
@@ -495,6 +500,42 @@ export async function createJwReturnChallan(
           roundQty(input.qty * c.qtyPerSet), // S9: keep BOM decimals, never round to 0
           { code: c.childItemCode },
           c.childItemRevisionId,
+        );
+      }
+    } else if (!jobCardId && returnRevId && line.itemId) {
+      // 0234 fix — no Job Card picked: the JWSO line's Rev bucket first, then
+      // the blank bucket for the rest (stock credited before 0233 has no Rev).
+      // Two explicit moves, one ledger row per bucket; the cancel replays them.
+      await lockItemForStock(tx, companyId, line.itemId);
+      const rb = await readRevBucketPosition(tx, companyId, line.itemId, returnRevId);
+      const fromRev = roundQty(Math.min(input.qty, Math.max(0, rb.onHandQty)));
+      const fromBlank = roundQty(input.qty - fromRev);
+      if (fromRev > 0) {
+        await moveReturnStock(
+          tx,
+          companyId,
+          userId,
+          'out',
+          code,
+          input.returnDate,
+          line.itemId,
+          fromRev,
+          undefined,
+          returnRevId,
+        );
+      }
+      if (fromBlank > 0) {
+        await moveReturnStock(
+          tx,
+          companyId,
+          userId,
+          'out',
+          code,
+          input.returnDate,
+          line.itemId,
+          fromBlank,
+          undefined,
+          null,
         );
       }
     } else {
@@ -789,18 +830,22 @@ export async function cancelJwReturnChallanTx(
       );
     }
   } else {
-    await moveReturnStock(
-      tx,
-      companyId,
-      userId,
-      'in',
-      ret.code,
-      dateLike(ret.returnDate),
-      line.itemId,
-      ret.qty,
-      undefined,
-      await returnedRevisionId(tx, companyId, ret.code),
-    );
+    const outRows = await returnedBucketRows(tx, companyId, ret.code);
+    const parts = outRows.length > 0 ? outRows : [{ qty: ret.qty, itemRevisionId: null }];
+    for (const p of parts) {
+      await moveReturnStock(
+        tx,
+        companyId,
+        userId,
+        'in',
+        ret.code,
+        dateLike(ret.returnDate),
+        line.itemId,
+        p.qty,
+        undefined,
+        p.itemRevisionId,
+      );
+    }
   }
 
   // 1) Mark the return cancelled

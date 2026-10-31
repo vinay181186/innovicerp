@@ -40,7 +40,6 @@ import { lockDocSeries } from '../../lib/doc-series-lock';
 import { assertRowUpdated } from '../../lib/row-lock';
 import { postStockMove } from '../../lib/stock-ledger';
 import {
-  assertRevBelongsToItem,
   bucketLabel,
   consumeForLine,
   readReservedByLine,
@@ -265,10 +264,11 @@ async function dispatchLineOut(
     undefined,
     line.itemRevisionId,
   );
-  // Drawing Rev Phase C — bookings of the OTHER Rev on this line are not
-  // shipped by this row, so the line could end up holding more than it is
-  // still owed. Release that excess (oldest first) so no booking outlives the
-  // order; a no-op whenever every booking was in the shipped bucket.
+  // Drawing Rev Phase C — the line may now hold more than it is still owed.
+  // 0234 fix: release that excess ONLY from the bucket this row shipped;
+  // bookings in other buckets stay (the line close / short-close releases
+  // them). Tagged with this dispatch, so its cancel / edit holds them again
+  // (unconsumeForDispatch).
   if (line.salesOrderLineId) {
     const sol = await tx
       .select({ orderQty: salesOrderLines.orderQty, dispatchedQty: salesOrderLines.dispatchedQty })
@@ -283,7 +283,9 @@ async function dispatchLineOut(
           soLineId: line.salesOrderLineId,
           newOrderQty: Number(sol[0].orderQty),
           dispatchedQty: Number(sol[0].dispatchedQty),
-          reason: `${code}: line fully covered by dispatch from another Drawing Rev`,
+          reason: `${code}: booking above what the line is still owed`,
+          itemRevisionId: line.itemRevisionId,
+          customerDispatchId,
         },
         user,
       );
@@ -631,7 +633,11 @@ async function loadDispatchable(
           })
           .filter((b) => b.readyQty > 0)
           .sort((a, b) =>
-            a.itemRevisionId === null ? 1 : b.itemRevisionId === null ? -1 : a.label.localeCompare(b.label),
+            a.itemRevisionId === null
+              ? 1
+              : b.itemRevisionId === null
+                ? -1
+                : a.label.localeCompare(b.label),
           )
       : [];
     return {
@@ -694,7 +700,9 @@ async function loadDispatchedComponents(
   companyId: string,
   code: string,
   lineNo: number,
-): Promise<Array<{ itemId: string; itemCode: string; qty: number; itemRevisionId: string | null }>> {
+): Promise<
+  Array<{ itemId: string; itemCode: string; qty: number; itemRevisionId: string | null }>
+> {
   const prefix = `${code} / ln ${lineNo} / `;
   const rows = (await tx.execute(sql`
     SELECT st.item_id, st.qty, i.code AS item_code, st.item_revision_id
@@ -1064,7 +1072,11 @@ function assertBucketReady(d: DispatchableLineX, itemRevisionId: string | null, 
   const b = d.revBuckets.find((x) => x.itemRevisionId === itemRevisionId);
   const ready = b?.readyQty ?? 0;
   if (qty > ready) {
-    const name = b?.label ?? (itemRevisionId ? `${d.itemCode ?? d.itemName} (that Rev)` : bucketLabel(d.itemCode ?? d.itemName, null));
+    const name =
+      b?.label ??
+      (itemRevisionId
+        ? `${d.itemCode ?? d.itemName} (that Rev)`
+        : bucketLabel(d.itemCode ?? d.itemName, null));
     throw new ConflictError(
       `Ln ${d.lineNo} (${name}): Dispatch Qty (${qty}) cannot be more than Ready in ${name} (${ready}).` +
         (d.revBuckets.length > 0
@@ -1084,7 +1096,24 @@ async function resolveDispatchRevs(
   companyId: string,
   lines: CreateCustomerDispatchInput['lines'],
   byLine: Map<string, DispatchableLineX>,
+  itemIdByLine: Map<string, string | null>,
 ): Promise<Array<string | null>> {
+  // One lookup for every Rev the rows name (was one query per row).
+  const named = [...new Set(lines.map((l) => l.itemRevisionId).filter((v): v is string => !!v))];
+  const revItem = new Map<string, string>();
+  if (named.length > 0) {
+    const rs = await tx
+      .select({ id: itemRevisions.id, itemId: itemRevisions.itemId })
+      .from(itemRevisions)
+      .where(
+        and(
+          inArray(itemRevisions.id, named),
+          eq(itemRevisions.companyId, companyId),
+          isNull(itemRevisions.deletedAt),
+        ),
+      );
+    for (const r of rs) revItem.set(r.id, r.itemId);
+  }
   const out: Array<string | null> = [];
   const seen = new Set<string>();
   const qtyByBucket = new Map<string, number>();
@@ -1102,8 +1131,12 @@ async function resolveDispatchRevs(
           `Ln ${d.lineNo} (${d.itemCode ?? d.itemName}) is not a Make item — it has no Drawing Rev stock.`,
         );
       }
-      const itemId = d.makeItem ? await lineItemId(tx, l.salesOrderLineId) : null;
-      if (rev && itemId) await assertRevBelongsToItem(tx, companyId, itemId, rev);
+      const itemId = d.makeItem ? (itemIdByLine.get(l.salesOrderLineId) ?? null) : null;
+      if (rev && itemId && revItem.get(rev) !== itemId) {
+        throw new ValidationError(
+          'That Drawing Rev does not belong to this item. Pick the Item + Rev again.',
+        );
+      }
     } else if (!d.makeItem || d.revBuckets.length === 0) {
       rev = null;
     } else {
@@ -1130,15 +1163,6 @@ async function resolveDispatchRevs(
     out.push(rev);
   }
   return out;
-}
-
-async function lineItemId(tx: DbTransaction, soLineId: string): Promise<string | null> {
-  const rows = await tx
-    .select({ itemId: salesOrderLines.itemId })
-    .from(salesOrderLines)
-    .where(eq(salesOrderLines.id, soLineId))
-    .limit(1);
-  return rows[0]?.itemId ?? null;
 }
 
 export async function createDispatch(
@@ -1211,7 +1235,21 @@ export async function createDispatch(
     // Drawing Rev Phase C — each row ships ONE Item + Rev bucket; the same SO
     // line may appear once per Rev. Resolved + checked per bucket here, then
     // the line totals are checked against Dispatchable / Pending below.
-    const revByRow = await resolveDispatchRevs(tx, companyId, input.lines, byLine);
+    // Each SO line's item (stock movement + the Rev check) — read once.
+    const solRows = await tx
+      .select({ id: salesOrderLines.id, itemId: salesOrderLines.itemId })
+      .from(salesOrderLines)
+      .where(
+        and(
+          eq(salesOrderLines.companyId, companyId),
+          inArray(
+            salesOrderLines.id,
+            input.lines.map((l) => l.salesOrderLineId),
+          ),
+        ),
+      );
+    const itemIdByLine = new Map(solRows.map((r) => [r.id, r.itemId]));
+    const revByRow = await resolveDispatchRevs(tx, companyId, input.lines, byLine, itemIdByLine);
     const qtyByLine = new Map<string, number>();
     for (const l of input.lines) {
       qtyByLine.set(l.salesOrderLineId, (qtyByLine.get(l.salesOrderLineId) ?? 0) + l.qty);
@@ -1271,21 +1309,6 @@ export async function createDispatch(
       })
       .returning();
     const header = inserted[0]!;
-
-    // Resolve each SO line's item for stock movement.
-    const solRows = await tx
-      .select({ id: salesOrderLines.id, itemId: salesOrderLines.itemId })
-      .from(salesOrderLines)
-      .where(
-        and(
-          eq(salesOrderLines.companyId, companyId),
-          inArray(
-            salesOrderLines.id,
-            input.lines.map((l) => l.salesOrderLineId),
-          ),
-        ),
-      );
-    const itemIdByLine = new Map(solRows.map((r) => [r.id, r.itemId]));
 
     let lineNo = 0;
     for (const [rowIdx, l] of input.lines.entries()) {

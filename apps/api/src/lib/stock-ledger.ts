@@ -23,7 +23,8 @@
 //
 // Drawing Rev Phase C (0233): `itemRevisionId` names the Item + Rev bucket.
 // Whatever the guard, an 'out' may not take a bucket below zero; under
-// 'available' it may not take more than the bucket's free qty either.
+// 'available' it may not take more than the bucket's free qty either. An
+// 'out' that names no Rev (undefined) takes from any bucket (0234 fix).
 
 import {
   ITEM_TYPE_RULES,
@@ -40,6 +41,7 @@ import {
   assertRevBelongsToItem,
   bucketLabel,
   readRevBucketPosition,
+  readRevBuckets,
   readStockPosition,
   type StockPosition,
 } from './stock-reservation';
@@ -72,15 +74,25 @@ export interface StockMoveInput {
   qtyLabel?: string;
   /** Drawing Rev Phase C (0233) — the Item + Rev bucket this move lands in /
    *  leaves (store_transactions.item_revision_id; the trigger moves the
-   *  bucket). Omitted / null = the blank (old / no-Rev) bucket — Buy items,
-   *  RM, and every path that has no Rev. An 'out' is also refused when the
-   *  bucket would go below zero (and, under guard 'available', below its free
-   *  qty): the item total alone cannot see a wrong-Rev shipment. */
+   *  bucket).
+   *    • a uuid — that bucket only;
+   *    • null   — the blank (old / no-Rev) bucket only;
+   *    • omitted (undefined — the caller has no Rev: Item Issue, JW DC
+   *      Outward, Tool Issue …) — an 'in' lands in the blank bucket; an 'out'
+   *      takes from ANY bucket: blank first, then the Rev buckets largest on
+   *      hand first (tie: Rev id), free stock before booked stock — one ledger
+   *      row per bucket used, all under the one item lock (0234 fix).
+   *  A named bucket ('out') is also refused when it would go below zero (and,
+   *  under guard 'available', below its free qty): the item total alone cannot
+   *  see a wrong-Rev shipment. */
   itemRevisionId?: string | null;
 }
 
 export interface StockMoveResult {
+  /** The (first) ledger row. An un-named 'out' split over several Rev buckets
+   *  writes one row per bucket — all of them are in `rows`. */
   id: string;
+  rows: Array<{ id: string; itemRevisionId: string | null; qty: number }>;
   stockBefore: number;
   stockAfter: number;
   /** Position read before the move (inside the lock). */
@@ -191,26 +203,41 @@ export async function postStockMove(
     );
   }
   // Drawing Rev Phase C — the bucket guard, read under the same item lock.
-  const revId = input.itemRevisionId ?? null;
-  const revText = revId
-    ? await assertRevBelongsToItem(tx, input.companyId, input.itemId, revId)
-    : null;
-  if (input.txnType === 'out') {
-    const bucket = await readRevBucketPosition(tx, input.companyId, input.itemId, revId);
-    const bOnHand = roundQty(bucket.onHandQty);
-    const name = bucketLabel(item.code, revText);
-    if (qty > bOnHand) {
+  // `parts` = the bucket(s) this move touches and how much each.
+  let parts: Array<{ revId: string | null; qty: number }>;
+  if (input.txnType === 'out' && input.itemRevisionId === undefined) {
+    // 0234 fix — the caller has no Rev: take from any bucket (the item-level
+    // guard above is the check, exactly as before buckets existed).
+    parts = await splitOutAcrossBuckets(tx, input.companyId, input.itemId, qty);
+    const covered = roundQty(parts.reduce((a, p) => a + p.qty, 0));
+    if (covered < qty) {
       throw new ConflictError(
-        `${name}: ${label} (${qty}) cannot be more than In Stock of ${name} (${bOnHand}).` +
-          (revId ? '' : ' Stock with a Drawing Rev must be taken from its own Rev.'),
+        `Item ${item.code}: ${label} (${qty}) cannot be more than In Stock (${covered}) across its Drawing Rev buckets.`,
       );
     }
-    const allowance = roundQty(Math.max(0, input.allowance ?? 0));
-    if (guard === 'available' && qty > roundQty(bucket.freeQty + allowance)) {
-      throw new ConflictError(
-        `${name}: ${label} (${qty}) cannot be more than Available of ${name} (${roundQty(Math.max(0, bucket.freeQty))}) — In Stock ${bOnHand}, of which ${roundQty(bucket.reservedQty)} is reserved for orders.`,
-      );
+  } else {
+    const revId = input.itemRevisionId ?? null;
+    const revText = revId
+      ? await assertRevBelongsToItem(tx, input.companyId, input.itemId, revId)
+      : null;
+    if (input.txnType === 'out') {
+      const bucket = await readRevBucketPosition(tx, input.companyId, input.itemId, revId);
+      const bOnHand = roundQty(bucket.onHandQty);
+      const name = bucketLabel(item.code, revText);
+      if (qty > bOnHand) {
+        throw new ConflictError(
+          `${name}: ${label} (${qty}) cannot be more than In Stock of ${name} (${bOnHand}).` +
+            (revId ? '' : ' Stock with a Drawing Rev must be taken from its own Rev.'),
+        );
+      }
+      const allowance = roundQty(Math.max(0, input.allowance ?? 0));
+      if (guard === 'available' && qty > roundQty(bucket.freeQty + allowance)) {
+        throw new ConflictError(
+          `${name}: ${label} (${qty}) cannot be more than Available of ${name} (${roundQty(Math.max(0, bucket.freeQty))}) — In Stock ${bOnHand}, of which ${roundQty(bucket.reservedQty)} is reserved for orders.`,
+        );
+      }
     }
+    parts = [{ revId, qty }];
   }
   // Serial cover (P38): every move of a serial item — adjust, count, issue,
   // dispatch — must leave On Hand ≥ the pieces registered as on the shelf.
@@ -222,30 +249,83 @@ export async function postStockMove(
       );
     }
   }
-  const inserted = await tx
-    .insert(storeTransactions)
-    .values({
-      companyId: input.companyId,
-      txnDate: input.txnDate,
-      itemId: input.itemId,
-      itemCodeText: input.itemCodeText === undefined ? item.code : input.itemCodeText,
-      txnType: input.txnType,
-      qty,
-      sourceType: input.sourceType,
-      sourceRef: input.sourceRef,
-      stockBefore: before,
-      stockAfter: after,
-      remarks: input.remarks ?? null,
-      itemRevisionId: revId,
-      createdBy: input.userId,
-    })
-    .returning({ id: storeTransactions.id });
+  // One ledger row per bucket; stock before / after run on the ITEM total.
+  const rows: StockMoveResult['rows'] = [];
+  let running = before;
+  for (const part of parts) {
+    const rowAfter = roundQty(input.txnType === 'in' ? running + part.qty : running - part.qty);
+    const inserted = await tx
+      .insert(storeTransactions)
+      .values({
+        companyId: input.companyId,
+        txnDate: input.txnDate,
+        itemId: input.itemId,
+        itemCodeText: input.itemCodeText === undefined ? item.code : input.itemCodeText,
+        txnType: input.txnType,
+        qty: part.qty,
+        sourceType: input.sourceType,
+        sourceRef: input.sourceRef,
+        stockBefore: running,
+        stockAfter: rowAfter,
+        remarks: input.remarks ?? null,
+        itemRevisionId: part.revId,
+        createdBy: input.userId,
+      })
+      .returning({ id: storeTransactions.id });
+    rows.push({ id: inserted[0]!.id, itemRevisionId: part.revId, qty: part.qty });
+    running = rowAfter;
+  }
   return {
-    id: inserted[0]!.id,
+    id: rows[0]!.id,
+    rows,
     stockBefore: before,
     stockAfter: after,
     position,
     itemCode: item.code,
     uom: item.uom,
   };
+}
+
+/** An 'out' that names no Rev (0234 fix): which buckets give how much.
+ *  Order: blank bucket first, then the Rev buckets largest on hand first (tie:
+ *  Rev id). FREE stock of each bucket in that order first, then what is left
+ *  on hand (booked stock — reached only when the item-level guard already let
+ *  the move through, e.g. a slip's own assembly reservation, or guard
+ *  'on_hand' / 'none'). A bucket is never taken below zero. Caller holds the
+ *  item lock, so these figures are the real ones (§20.3). */
+async function splitOutAcrossBuckets(
+  tx: DbTransaction,
+  companyId: string,
+  itemId: string,
+  qty: number,
+): Promise<Array<{ revId: string | null; qty: number }>> {
+  const buckets = ((await readRevBuckets(tx, companyId, [itemId])).get(itemId) ?? [])
+    .map((b) => ({
+      revId: b.itemRevisionId,
+      onHand: roundQty(Math.max(0, b.onHandQty)),
+      free: roundQty(Math.max(0, Math.min(b.freeQty, b.onHandQty))),
+    }))
+    .filter((b) => b.onHand > 0)
+    .sort((a, b) => {
+      if (a.revId === null) return b.revId === null ? 0 : -1;
+      if (b.revId === null) return 1;
+      return b.onHand - a.onHand || a.revId.localeCompare(b.revId);
+    });
+  const take = new Map<string | null, number>();
+  let left = qty;
+  for (const pass of ['free', 'onHand'] as const) {
+    for (const b of buckets) {
+      if (left <= 0) break;
+      const already = take.get(b.revId) ?? 0;
+      const room = roundQty((pass === 'free' ? b.free : b.onHand) - already);
+      if (room <= 0) continue;
+      const t = roundQty(Math.min(room, left));
+      take.set(b.revId, roundQty(already + t));
+      left = roundQty(left - t);
+    }
+  }
+  // Rows in the bucket order above (blank first) — deterministic.
+  return buckets
+    .filter((b) => (take.get(b.revId) ?? 0) > 0)
+    .map((b) => ({ revId: b.revId, qty: take.get(b.revId)! }));
 }

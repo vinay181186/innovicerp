@@ -182,7 +182,12 @@ export async function readRevBucketPosition(
   `)) as unknown as Array<{ on_hand: number; reserved: number }>;
   const onHand = num(rows[0]?.on_hand);
   const reserved = num(rows[0]?.reserved);
-  return { itemRevisionId, onHandQty: onHand, reservedQty: reserved, freeQty: r3(onHand - reserved) };
+  return {
+    itemRevisionId,
+    onHandQty: onHand,
+    reservedQty: reserved,
+    freeQty: r3(onHand - reserved),
+  };
 }
 
 /** Every bucket of many items (rows in the balance table, plus any bucket that
@@ -550,24 +555,38 @@ export async function createReservation(
 
   // Drawing Rev Phase C — the booking also holds a Rev bucket, and may not
   // promise more than that bucket has free (read under the same item lock).
-  let bucketRevId: string | null;
+  // Omitted Rev (0234 fix): the line's Rev bucket first, then the blank bucket
+  // for the rest (old / pre-0233 stock) — one booking row per bucket. Each
+  // bucket position is read once, under the item lock above.
+  const parts: Array<{ revId: string | null; qty: number }> = [];
+  const refuse = async (revId: string | null, b: RevBucketPosition, asked: number) => {
+    const code = (await itemCodeFor(tx, args.itemId)) ?? 'item';
+    return new ConflictError(
+      `Only ${Math.max(0, b.freeQty)} of ${await revBucketLabel(tx, code, revId)} free to reserve ` +
+        `(on the shelf ${b.onHandQty}, already reserved ${b.reservedQty}) — you asked for ${asked}.`,
+    );
+  };
   if (args.itemRevisionId !== undefined) {
-    bucketRevId = args.itemRevisionId;
-    if (bucketRevId) await assertRevBelongsToItem(tx, args.companyId, args.itemId, bucketRevId);
+    const revId = args.itemRevisionId;
+    if (revId) await assertRevBelongsToItem(tx, args.companyId, args.itemId, revId);
+    const b = await readRevBucketPosition(tx, args.companyId, args.itemId, revId);
+    if (args.qty > b.freeQty) throw await refuse(revId, b, args.qty);
+    parts.push({ revId, qty: args.qty });
   } else {
     const lineRev = await lineRevisionFor(tx, args.companyId, args.soLineId, args.itemId);
-    const lineFree = lineRev
-      ? (await readRevBucketPosition(tx, args.companyId, args.itemId, lineRev)).freeQty
-      : 0;
-    bucketRevId = lineRev && args.qty <= lineFree ? lineRev : null;
-  }
-  const bucket = await readRevBucketPosition(tx, args.companyId, args.itemId, bucketRevId);
-  if (args.qty > bucket.freeQty) {
-    const code = (await itemCodeFor(tx, args.itemId)) ?? 'item';
-    throw new ConflictError(
-      `Only ${Math.max(0, bucket.freeQty)} of ${await revBucketLabel(tx, code, bucketRevId)} free to reserve ` +
-        `(on the shelf ${bucket.onHandQty}, already reserved ${bucket.reservedQty}) — you asked for ${args.qty}.`,
-    );
+    let left = args.qty;
+    if (lineRev) {
+      const rb = await readRevBucketPosition(tx, args.companyId, args.itemId, lineRev);
+      // Bookings are whole pieces (integer column).
+      const fromRev = Math.min(left, Math.max(0, Math.floor(rb.freeQty)));
+      if (fromRev > 0) parts.push({ revId: lineRev, qty: fromRev });
+      left -= fromRev;
+    }
+    if (left > 0) {
+      const bb = await readRevBucketPosition(tx, args.companyId, args.itemId, null);
+      if (left > bb.freeQty) throw await refuse(null, bb, left);
+      parts.push({ revId: null, qty: left });
+    }
   }
 
   // The booking must be for the item the line actually ordered. Without this
@@ -600,48 +619,53 @@ export async function createReservation(
     }
   }
 
-  const inserted = await tx
-    .insert(soStockReservations)
-    .values({
-      companyId: args.companyId,
-      soLineId: args.soLineId,
-      soCodeText: args.soCodeText,
-      lineNo: args.lineNo,
-      itemId: args.itemId,
-      itemCodeText: args.itemCodeText,
-      itemRevisionId: bucketRevId,
-      qty: args.qty,
-      consumedQty: 0,
-      releasedQty: 0,
-      reservationSource: args.source,
-      productionOrderId: args.productionOrderId ?? null,
-      jobCardId: args.jobCardId ?? null,
-      productionOrderCloseId: args.productionOrderCloseId ?? null,
-      status: 'active',
-      remarks: args.remarks ?? null,
-      createdBy: user.id,
-      updatedBy: user.id,
-    })
-    .returning({ id: soStockReservations.id });
-
-  const id = inserted[0]!.id;
-  await logReservationEvent(
-    tx,
-    {
-      companyId: args.companyId,
-      reservationId: id,
-      eventType: 'reserve',
-      qty: args.qty,
-      remainingBefore: 0,
-      remainingAfter: args.qty,
-      sourceRef: `${args.soCodeText} / ln ${args.lineNo}`,
-      reason: args.source === 'auto_production' ? 'Automatic booking after production close' : null,
-    },
-    user,
-  );
+  const ids: string[] = [];
+  for (const part of parts) {
+    const inserted = await tx
+      .insert(soStockReservations)
+      .values({
+        companyId: args.companyId,
+        soLineId: args.soLineId,
+        soCodeText: args.soCodeText,
+        lineNo: args.lineNo,
+        itemId: args.itemId,
+        itemCodeText: args.itemCodeText,
+        itemRevisionId: part.revId,
+        qty: part.qty,
+        consumedQty: 0,
+        releasedQty: 0,
+        reservationSource: args.source,
+        productionOrderId: args.productionOrderId ?? null,
+        jobCardId: args.jobCardId ?? null,
+        productionOrderCloseId: args.productionOrderCloseId ?? null,
+        status: 'active',
+        remarks: args.remarks ?? null,
+        createdBy: user.id,
+        updatedBy: user.id,
+      })
+      .returning({ id: soStockReservations.id });
+    const rid = inserted[0]!.id;
+    ids.push(rid);
+    await logReservationEvent(
+      tx,
+      {
+        companyId: args.companyId,
+        reservationId: rid,
+        eventType: 'reserve',
+        qty: part.qty,
+        remainingBefore: 0,
+        remainingAfter: part.qty,
+        sourceRef: `${args.soCodeText} / ln ${args.lineNo}`,
+        reason:
+          args.source === 'auto_production' ? 'Automatic booking after production close' : null,
+      },
+      user,
+    );
+  }
 
   return {
-    id,
+    // The first booking row (a split over two buckets writes two).
+    id: ids[0]!,
     qty: args.qty,
     // Physical is untouched by a booking; only the split between reserved and
     // available moves. Reported back so the screen can refresh without a
@@ -699,10 +723,15 @@ export async function releaseFromLine(
     qty?: number | null;
     reason: string;
     eventType?: 'release' | 'cancel' | 'amend_release';
+    /** Only the bookings of this bucket (null = blank); omitted = every bucket. */
+    itemRevisionId?: string | null | undefined;
+    /** Tag the trail rows with the dispatch that caused the release, so its
+     *  cancel can hold the pieces again (unconsumeForDispatch). */
+    customerDispatchId?: string | null;
   },
   user: AuthContext,
 ): Promise<{ released: number; touched: Array<typeof soStockReservations.$inferSelect> }> {
-  const rows = await holdingRowsForLine(tx, args.companyId, args.soLineId);
+  const rows = await holdingRowsForLine(tx, args.companyId, args.soLineId, args.itemRevisionId);
   const totalHeld = rows.reduce((s, r) => s + (r.qty - r.consumedQty - r.releasedQty), 0);
   if (totalHeld === 0) return { released: 0, touched: [] };
 
@@ -745,6 +774,7 @@ export async function releaseFromLine(
         remainingAfter: remaining - take,
         reason: args.reason,
         sourceRef: `${r.soCodeText} / ln ${r.lineNo}`,
+        customerDispatchId: args.customerDispatchId ?? null,
       },
       user,
     );
@@ -889,6 +919,58 @@ export async function unconsumeForDispatch(
     );
     restored += take;
   }
+
+  // 0234 fix — bookings this dispatch RELEASED as excess (amend_release tagged
+  // with its id) are held again; each restore is a 'reserve' row with the same
+  // id, netted here so a second cancel / replay restores nothing twice.
+  const relRows = (await tx.execute(sql`
+    SELECT reservation_id,
+           SUM(CASE WHEN event_type = 'amend_release' THEN qty ELSE -qty END)::int AS net
+    FROM public.stock_reservation_events
+    WHERE company_id = ${args.companyId}::uuid
+      AND customer_dispatch_id = ${args.customerDispatchId}::uuid
+      AND event_type IN ('amend_release', 'reserve')
+    GROUP BY reservation_id
+  `)) as unknown as Array<{ reservation_id: string; net: number }>;
+  for (const row of relRows) {
+    const net = num(row.net);
+    if (net <= 0) continue;
+    const found = await tx
+      .select()
+      .from(soStockReservations)
+      .where(eq(soStockReservations.id, row.reservation_id))
+      .limit(1);
+    const r = found[0];
+    if (!r || r.deletedAt) continue;
+    const take = Math.min(net, r.releasedQty);
+    if (take <= 0) continue;
+    const newReleased = r.releasedQty - take;
+    const remainingBefore = r.qty - r.consumedQty - r.releasedQty;
+    await tx
+      .update(soStockReservations)
+      .set({
+        releasedQty: newReleased,
+        status: settledStatus(r.qty, r.consumedQty, newReleased),
+        updatedBy: user.id,
+        updatedAt: new Date(),
+      })
+      .where(eq(soStockReservations.id, r.id));
+    await logReservationEvent(
+      tx,
+      {
+        companyId: args.companyId,
+        reservationId: r.id,
+        eventType: 'reserve',
+        qty: take,
+        remainingBefore,
+        remainingAfter: remainingBefore + take,
+        reason: 'dispatch cancelled — booking held again',
+        sourceRef: `${r.soCodeText} / ln ${r.lineNo}`,
+        customerDispatchId: args.customerDispatchId,
+      },
+      user,
+    );
+  }
   return restored;
 }
 
@@ -911,14 +993,27 @@ export async function reconcileLineReservations(
     newOrderQty: number;
     dispatchedQty: number;
     reason: string;
+    /** 0234 fix — a dispatch row passes the bucket it shipped: only excess
+     *  bookings in THAT bucket are released; other buckets keep theirs (the
+     *  line close / short-close releases them). Omitted = every bucket. */
+    itemRevisionId?: string | null | undefined;
+    /** The dispatch that caused the release (its cancel restores it). */
+    customerDispatchId?: string | null;
   },
   user: AuthContext,
 ): Promise<number> {
   const held = await readReservedForLine(tx, args.companyId, args.soLineId);
   if (held === 0) return 0;
   const allowed = Math.max(0, args.newOrderQty - args.dispatchedQty);
-  const excess = held - allowed;
+  let excess = held - allowed;
   if (excess <= 0) return 0;
+  if (args.itemRevisionId !== undefined) {
+    const inBucket = (
+      await holdingRowsForLine(tx, args.companyId, args.soLineId, args.itemRevisionId)
+    ).reduce((s, r) => s + (r.qty - r.consumedQty - r.releasedQty), 0);
+    excess = Math.min(excess, inBucket);
+    if (excess <= 0) return 0;
+  }
   const { released } = await releaseFromLine(
     tx,
     {
@@ -927,6 +1022,8 @@ export async function reconcileLineReservations(
       qty: excess,
       reason: args.reason,
       eventType: 'amend_release',
+      itemRevisionId: args.itemRevisionId,
+      customerDispatchId: args.customerDispatchId ?? null,
     },
     user,
   );

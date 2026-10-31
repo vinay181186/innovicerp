@@ -5,6 +5,12 @@
 //   • a dispatch of 12 from ABC/1 (10 there) → 409; 8 ships; the cancel puts the
 //     8 back into ABC/1, not the blank bucket;
 //   • after every step: SUM(buckets) = the item total.
+//   0234 fixes:
+//   • an 'out' that names no Rev (Item Issue / JW DC / Tool Issue) takes blank
+//     first, then Rev buckets — one ledger row per bucket; null = blank only;
+//   • a booking with no Rev named: the line's Rev bucket first, then blank;
+//   • a dispatch releases excess bookings only in the bucket it shipped, and
+//     its cancel holds them again exactly.
 // Runs on TEST only (the harness refuses any other database).
 
 import { and, eq, inArray, like, sql } from 'drizzle-orm';
@@ -21,12 +27,15 @@ import {
   items,
   salesOrderLines,
   salesOrders,
+  soStockReservations,
   storeTransactions,
   users,
 } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { ConflictError } from '../../lib/errors';
 import { resolveItemRevision } from '../../lib/item-revision';
+import { postStockMove } from '../../lib/stock-ledger';
+import { createReservation } from '../../lib/stock-reservation';
 import {
   cancelDispatchTx,
   createDispatch,
@@ -79,6 +88,10 @@ async function cleanup(): Promise<void> {
     });
     await db.delete(itemRevStockBalances).where(inArray(itemRevStockBalances.itemId, ids));
     await db.delete(itemStockBalances).where(inArray(itemStockBalances.itemId, ids));
+  }
+  if (ids.length > 0) {
+    // Booking trail rows go with their booking (ON DELETE CASCADE).
+    await db.delete(soStockReservations).where(inArray(soStockReservations.itemId, ids));
   }
   if (soIds.length > 0) {
     await db.delete(salesOrderLines).where(inArray(salesOrderLines.salesOrderId, soIds));
@@ -366,5 +379,163 @@ describe('Stock per Item + Drawing Rev', () => {
       .from(itemRevStockBalances)
       .where(eq(itemRevStockBalances.itemId, buy!.id));
     expect(bs.map((b) => [b.rev, Number(b.q)])).toEqual([[null, 2]]);
+  });
+});
+
+/** Pieces still held for the SO line, by Rev id ('' = blank). */
+async function heldByRev(lineId: string): Promise<Map<string, number>> {
+  const rs = await db
+    .select({
+      rev: soStockReservations.itemRevisionId,
+      qty: soStockReservations.qty,
+      c: soStockReservations.consumedQty,
+      r: soStockReservations.releasedQty,
+    })
+    .from(soStockReservations)
+    .where(eq(soStockReservations.soLineId, lineId));
+  const m = new Map<string, number>();
+  for (const x of rs) {
+    const k = x.rev ?? '';
+    m.set(k, (m.get(k) ?? 0) + (x.qty - x.c - x.r));
+  }
+  for (const [k, v] of [...m]) if (v === 0) m.delete(k);
+  return m;
+}
+
+describe('0234 fixes — un-named outs, split bookings, dispatch release', () => {
+  it('an out with no Rev takes blank first, then the largest Rev bucket; null = blank only', async () => {
+    let s = await stock();
+    expect([s.buckets.get(rev1), s.buckets.get(rev2), s.buckets.get('')]).toEqual([10, 9, 2]);
+    const mv = await withUserContext(admin, (tx) =>
+      postStockMove(tx, {
+        companyId,
+        itemId,
+        txnType: 'out',
+        qty: 5,
+        sourceType: 'store_issue',
+        sourceRef: `${P}ISS`,
+        txnDate: '2026-10-31',
+        userId: admin.id,
+        guard: 'available',
+        qtyLabel: 'Issue Qty',
+      }),
+    );
+    expect(mv.rows.map((r) => [r.itemRevisionId, r.qty])).toEqual([
+      [null, 2],
+      [rev1, 3],
+    ]);
+    expect(mv.id).toBe(mv.rows[0]!.id);
+    expect([mv.stockBefore, mv.stockAfter]).toEqual([21, 16]);
+    s = await stock();
+    expect([s.buckets.get(rev1), s.buckets.get(rev2), s.buckets.get('')]).toEqual([7, 9, 0]);
+    await expectBucketsSumToTotal();
+    // Explicit null = the blank bucket only → refused, nothing moves.
+    await expect(
+      withUserContext(admin, (tx) =>
+        postStockMove(tx, {
+          companyId,
+          itemId,
+          itemRevisionId: null,
+          txnType: 'out',
+          qty: 1,
+          sourceType: 'store_issue',
+          sourceRef: `${P}ISS2`,
+          txnDate: '2026-10-31',
+          userId: admin.id,
+        }),
+      ),
+    ).rejects.toThrow(ConflictError);
+    // Put the 5 back where they came from.
+    for (const [rev, qty] of [
+      [null, 2],
+      [rev1, 3],
+    ] as Array<[string | null, number]>) {
+      await withUserContext(admin, (tx) =>
+        postStockMove(tx, {
+          companyId,
+          itemId,
+          itemRevisionId: rev,
+          txnType: 'in',
+          qty,
+          sourceType: 'store_return',
+          sourceRef: `${P}ISS return`,
+          txnDate: '2026-10-31',
+          userId: admin.id,
+          guard: 'none',
+        }),
+      );
+    }
+    s = await stock();
+    expect([s.buckets.get(rev1), s.buckets.get(rev2), s.buckets.get(''), s.total]).toEqual([
+      10, 9, 2, 21,
+    ]);
+    await expectBucketsSumToTotal();
+  });
+
+  it("a booking with no Rev named: the line's Rev bucket first, then blank (one row each)", async () => {
+    await withUserContext(admin, (tx) =>
+      createReservation(
+        tx,
+        {
+          companyId,
+          soLineId,
+          soCodeText: `${P}SO-1`,
+          lineNo: 1,
+          itemId,
+          itemCodeText: `${P}ABC`,
+          qty: 12,
+          source: 'manual',
+        },
+        admin,
+      ),
+    );
+    const h = await heldByRev(soLineId);
+    expect([h.get(rev1), h.get(''), h.get(rev2)]).toEqual([10, 2, undefined]);
+  });
+
+  it('dispatch releases excess only in the shipped bucket; cancel restores the bookings exactly', async () => {
+    // 9 of ABC/2 (no bookings there): owed 11, held 12 — the ABC/1 + blank
+    // bookings are NOT released (before 0234 one ABC/1 piece was, for good).
+    const d1 = await createDispatch(
+      {
+        salesOrderId: soId,
+        dispatchDate: '2026-10-31',
+        lines: [{ salesOrderLineId: soLineId, itemRevisionId: rev2, qty: 9 }],
+      },
+      admin,
+    );
+    let h = await heldByRev(soLineId);
+    expect([h.get(rev1), h.get('')]).toEqual([10, 2]);
+    // 1 of ABC/1: consumes 1 ABC/1 booking; owed 10, held 11 → 1 released in ABC/1.
+    const d2 = await createDispatch(
+      {
+        salesOrderId: soId,
+        dispatchDate: '2026-10-31',
+        lines: [{ salesOrderLineId: soLineId, itemRevisionId: rev1, qty: 1 }],
+      },
+      admin,
+    );
+    h = await heldByRev(soLineId);
+    expect([h.get(rev1), h.get('')]).toEqual([8, 2]);
+    await expectBucketsSumToTotal();
+
+    await withUserContext(admin, (tx) => cancelDispatchTx(tx, companyId, d2.id, `${P}test`, admin));
+    h = await heldByRev(soLineId);
+    expect([h.get(rev1), h.get('')]).toEqual([10, 2]);
+    await withUserContext(admin, (tx) => cancelDispatchTx(tx, companyId, d1.id, `${P}test`, admin));
+    h = await heldByRev(soLineId);
+    expect([h.get(rev1), h.get('')]).toEqual([10, 2]);
+    const s = await stock();
+    expect([s.buckets.get(rev1), s.buckets.get(rev2), s.buckets.get(''), s.total]).toEqual([
+      10, 9, 2, 21,
+    ]);
+    await expectBucketsSumToTotal();
+    const line = (
+      await db
+        .select({ d: salesOrderLines.dispatchedQty })
+        .from(salesOrderLines)
+        .where(eq(salesOrderLines.id, soLineId))
+    )[0]!;
+    expect(Number(line.d)).toBe(0);
   });
 });

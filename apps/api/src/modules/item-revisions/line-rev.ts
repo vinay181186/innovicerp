@@ -149,6 +149,22 @@ export async function resolveLineRevision(
     sourceRef,
     copiedFromOtherRev: copied,
   });
+  if (!r && st.itemRevisionId) {
+    // 0234 fix — a Rev cannot be blanked under live work: the Job Cards carry
+    // it (D1 moves work between Revs; it never strips it).
+    const lineCol =
+      input.kind === 'so' ? sql.raw('source_so_line_id') : sql.raw('source_jw_line_id');
+    const live = (await tx.execute(sql`
+      SELECT 1 FROM public.job_cards
+       WHERE company_id = ${companyId}::uuid AND deleted_at IS NULL
+         AND ${lineCol} = ${st.id}::uuid
+       LIMIT 1`)) as unknown as unknown[];
+    if (live.length > 0) {
+      throw new ValidationError(
+        `Ln ${input.lineNo}: Drawing Rev cannot be cleared once a Job Card exists`,
+      );
+    }
+  }
   if (!r)
     return {
       touched: true,
@@ -263,19 +279,34 @@ export async function applyLineRevChange(
        AND item_revision_id IS DISTINCT FROM ${c.toId}::uuid
     RETURNING id, code`)) as unknown as Array<{ id: string; code: string }>;
   movedDocs.push(...plans.map((p) => p.code));
-  if (plans.length > 0) {
-    const pros = (await tx.execute(sql`
-      UPDATE public.production_orders SET item_revision_id = ${c.toId}::uuid
+  // 0234 fix — open PROs move by plan LINKAGE (every live plan of this line +
+  // item), not only plans changed by the statement above: a plan already on
+  // the new Rev may still have PROs on the old one. A PRO moving to the new
+  // Rev takes the APPROVED Route Card of the new Item + Rev when one exists
+  // (route card id / code / revision snapshot together); otherwise it keeps
+  // its old card (the screen then shows the card for the new Rev is missing).
+  const pros = (await tx.execute(sql`
+    WITH rc AS (
+      SELECT id, code, current_revision FROM public.route_cards
        WHERE company_id = ${companyId}::uuid AND deleted_at IS NULL
-         AND plan_id IN (${sql.join(
-           plans.map((p) => sql`${p.id}::uuid`),
-           sql`, `,
-         )})
-         AND status NOT IN ('closed', 'short_closed')
-         AND (job_card_id IS NULL OR NOT (job_card_id = ANY(${closedArr})))
-      RETURNING code`)) as unknown as Array<{ code: string }>;
-    movedDocs.push(...pros.map((p) => p.code));
-  }
+         AND item_revision_id = ${c.toId}::uuid AND approval_status = 'approved'
+       LIMIT 1
+    )
+    UPDATE public.production_orders po
+       SET item_revision_id = ${c.toId}::uuid,
+           route_card_id = COALESCE((SELECT id FROM rc), po.route_card_id),
+           route_card_code_text = COALESCE((SELECT code FROM rc), po.route_card_code_text),
+           route_card_revision = COALESCE((SELECT current_revision FROM rc), po.route_card_revision)
+     WHERE po.company_id = ${companyId}::uuid AND po.deleted_at IS NULL
+       AND po.plan_id IN (
+         SELECT p.id FROM public.plans p
+          WHERE p.company_id = ${companyId}::uuid AND p.deleted_at IS NULL
+            AND p.${planLineCol} = ${c.lineId}::uuid AND p.item_id = ${c.itemId}::uuid)
+       AND po.status NOT IN ('closed', 'short_closed')
+       AND (po.job_card_id IS NULL OR NOT (po.job_card_id = ANY(${closedArr})))
+       AND po.item_revision_id IS DISTINCT FROM ${c.toId}::uuid
+    RETURNING po.code`)) as unknown as Array<{ code: string }>;
+  movedDocs.push(...pros.map((p) => p.code));
   const keptDocs = closed.map((j) => j.code);
 
   await tx.insert(itemRevisionChanges).values({
