@@ -38,8 +38,8 @@ export function lineSearchColumns(): DataTableColumn<LineSearchRow>[] {
       soNo: ({ so }) => so.soCode,
       internalSoNo: ({ so }) => so.soInternalNo,
       pol: ({ line }) => line.clientPoLineNo,
-      // needs API — neither the SO list row nor the line carries a created date.
-      createdOn: () => null,
+      // The line's own created_at, else its order's (ADR-261).
+      createdOn: ({ so, line }) => line.createdAt ?? so.createdAt,
       itemCode: ({ line }) => line.itemCode,
       itemRev: ({ line }) => line.itemRevision,
       itemName: ({ line }) => line.itemName,

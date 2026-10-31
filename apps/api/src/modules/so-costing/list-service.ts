@@ -30,6 +30,8 @@ export type ListSoCostingQueryParsed = z.output<typeof listSoCostingQuerySchema>
 const SO_COSTING_SF_COLUMNS: SfColumnMap = {
   soNo: { sql: sql`b.so_no`, type: 'text' },
   soInternalNo: { sql: sql`b.so_internal_no`, type: 'text' },
+  // ADR-261 Created On — the SO's created_at as the India-time day.
+  createdOn: { sql: sql`(b.created_at AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
   customer: { sql: sql`b.customer`, type: 'text' },
   lines: { sql: sql`b.line_count`, type: 'num' },
   totalQty: { sql: sql`b.total_qty`, type: 'num' },
@@ -53,6 +55,7 @@ type ListRow = {
   so_id: string;
   so_no: string;
   so_internal_no: string | null;
+  created_iso: string | null;
   customer: string | null;
   cost_center: string | null;
   cc_name: string | null;
@@ -171,6 +174,8 @@ export async function listSoCosting(
         base AS (
         SELECT
           so.id AS so_id, so.code AS so_no, so.internal_so_no AS so_internal_no,
+          so.created_at AS created_at,
+          to_char(so.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS created_iso,
           COALESCE(cl.name, so.customer_name) AS customer,
           -- Cost Center is no longer captured on the SO; every SO is its own
           -- cost centre, so fall back to the SO No. when cost_center is empty.
@@ -220,6 +225,7 @@ export async function listSoCosting(
         soId: r.so_id,
         soNo: r.so_no,
         soInternalNo: r.so_internal_no,
+        createdAt: r.created_iso,
         customer: r.customer,
         lineCount: Number(r.line_count) || 0,
         totalQty: Number(r.total_qty) || 0,

@@ -22,7 +22,7 @@ import { OP_LOG_QC_REMARKS } from '../../lib/op-log-qc-remarks';
 import { polSql } from '../../lib/pol';
 import { AuthorizationError } from '../../lib/errors';
 import { likeEscape } from '../../lib/list-query';
-import { PEND_IS_LAST } from '../qc-history/sql';
+import { PEND_IS_LAST, tsOrNull } from '../qc-history/sql';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -93,7 +93,8 @@ const COMPLETED_SELECT = sql`
   CASE WHEN jo.qc_call_date IS NOT NULL THEN (ol.log_date - jo.qc_call_date)::int ELSE NULL END AS "respDays",
   ol.tpi_inspector AS "inspector", ol.tpi_organization AS "organization",
   ol.tpi_cert_no AS "certNo", ${OP_LOG_QC_REMARKS} AS "remarks",
-  ol.qc_report_path AS "qcReportPath", ol.qc_report_name AS "qcReportName"`;
+  ol.qc_report_path AS "qcReportPath", ol.qc_report_name AS "qcReportName",
+  ol.created_at AS "createdAt"`;
 const COMPLETED_ORDER = sql`ol.log_date DESC, ol.id DESC`;
 
 /** `AND (… ILIKE …)` over every text the two lists show. */
@@ -162,6 +163,7 @@ function toCompleted(r: Raw): TpiCompletedRow {
     remarks: s(r['remarks']),
     qcReportPath: s(r['qcReportPath']),
     qcReportName: s(r['qcReportName']),
+    createdAt: tsOrNull(r['createdAt']),
   };
 }
 

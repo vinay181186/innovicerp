@@ -21,6 +21,8 @@ export interface SoPhaseData {
   soNo: string;
   /** ADR-207 Internal SO No. (live from sales_orders); null on old SOs. */
   internalSoNo: string | null;
+  /** ADR-261 Created On — the SO's created_at (ISO timestamp). */
+  createdAt?: string | null;
   customer: string | null;
   type: string | null;
   status: string;
@@ -60,6 +62,7 @@ type PhaseRow = {
   so_id: string;
   so_no: string;
   internal_so_no: string | null;
+  created_at: string | null;
   customer: string | null;
   type: string | null;
   status: string;
@@ -102,6 +105,7 @@ export async function loadSoPhaseData(
         so.id AS so_id,
         so.code AS so_no,
         so.internal_so_no AS internal_so_no,
+        to_char(so.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS created_at,
         COALESCE(cl.name, so.customer_name) AS customer,
         so.type::text AS type,
         so.status::text AS status,
@@ -191,6 +195,7 @@ export async function loadSoPhaseData(
       soId: r.so_id,
       soNo: r.so_no,
       internalSoNo: r.internal_so_no,
+      createdAt: toStr(r.created_at),
       customer: r.customer,
       type: r.type,
       status: r.status,

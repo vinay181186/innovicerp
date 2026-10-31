@@ -8,7 +8,7 @@ import { sql } from 'drizzle-orm';
 import type { SfColumnMap } from '../../lib/list-query';
 import { OP_LOG_QC_REMARKS } from '../../lib/op-log-qc-remarks';
 import { polSql } from '../../lib/pol';
-import { ITEM_CODE_REV, PEND_SINCE } from './sql';
+import { ITEM_CODE_REV, PEND_SINCE, istDaySql } from './sql';
 
 const LEAD: SfColumnMap = {
   jcCode: { sql: sql`jc.code`, type: 'text' },
@@ -30,6 +30,8 @@ export const QC_PENDING_SF_COLUMNS: SfColumnMap = {
   qcRejected: { sql: sql`vos.qc_rejected_qty`, type: 'num' },
   qcPending: { sql: sql`vos.qc_pending`, type: 'num' },
   pendSince: { sql: PEND_SINCE, type: 'date' },
+  // ADR-261 lead Created On — the QC op's own created_at.
+  createdOn: { sql: istDaySql(sql`jo.created_at`), type: 'date' },
 };
 
 export const QC_LOGS_SF_COLUMNS: SfColumnMap = {
@@ -40,4 +42,6 @@ export const QC_LOGS_SF_COLUMNS: SfColumnMap = {
   shift: { sql: sql`ol.shift`, type: 'list' },
   inspector: { sql: sql`ol.operator_name`, type: 'text' },
   remarks: { sql: OP_LOG_QC_REMARKS, type: 'text' },
+  // ADR-261 lead Created On — the QC log row's own created_at.
+  createdOn: { sql: istDaySql(sql`ol.created_at`), type: 'date' },
 };

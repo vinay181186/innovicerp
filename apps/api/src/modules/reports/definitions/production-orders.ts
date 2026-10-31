@@ -14,7 +14,9 @@
 // productionOrderShortClosedQty rule — never stored.
 
 import { sql } from 'drizzle-orm';
+import { polSql } from '../../../lib/pol';
 import type { RegisteredReport } from '../registry';
+import { dateCell } from './report-helpers';
 import { proShortClosedQtyRaw } from '../../production-orders/short-closed-qty';
 
 // ADR-182 added 'short_closed' — an order stopped at any stage. Blank picks
@@ -40,12 +42,17 @@ export const productionOrdersReport: RegisteredReport = {
       },
     ],
     columns: [
-      { key: 'po_code', label: 'Production Order No', type: 'text' },
-      { key: 'plan_code', label: 'Plan No.', type: 'text' },
-      { key: 'so_code', label: 'SO / JWSO No.', type: 'text' },
+      // ADR-261 lead columns. SO No. = the SO or JWSO code the order has;
+      // POL and the drawing rev (in Item Code) come from the plan's order
+      // line; Created On = the Production Order's created_at.
+      { key: 'so_code', label: 'SO No.', type: 'text' },
       { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
+      { key: 'client_po_line_no', label: 'POL', type: 'text' },
+      { key: 'created_on', label: 'Created On', type: 'date' },
       { key: 'item_code', label: 'Item Code', type: 'text' },
       { key: 'item_name', label: 'Item Name', type: 'text' },
+      { key: 'po_code', label: 'Production Order No', type: 'text' },
+      { key: 'plan_code', label: 'Plan No.', type: 'text' },
       { key: 'order_qty', label: 'Order Qty', type: 'number' },
       { key: 'target_date', label: 'Target Date', type: 'date' },
       { key: 'jc_code', label: 'JC No.', type: 'text' },
@@ -78,7 +85,10 @@ export const productionOrdersReport: RegisteredReport = {
         po.plan_code_text AS plan_code,
         po.so_code_text AS so_code,
         so.internal_so_no AS so_internal_no,
-        po.item_code_text AS item_code,
+        ${polSql('sol', 'jwl')} AS client_po_line_no,
+        (po.created_at AT TIME ZONE 'Asia/Kolkata')::date::text AS created_on,
+        (po.item_code_text
+          || COALESCE('/' || NULLIF(btrim(COALESCE(sol.revision::text, jwl.revision::text)), ''), '')) AS item_code,
         po.item_name_text AS item_name,
         po.order_qty::int AS order_qty,
         po.target_date,
@@ -108,6 +118,7 @@ export const productionOrdersReport: RegisteredReport = {
       LEFT JOIN public.sales_order_lines sol ON sol.id = pl.so_line_id
       LEFT JOIN public.sales_orders so
         ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
+      LEFT JOIN public.job_work_order_lines jwl ON jwl.id = pl.jw_line_id
       WHERE po.company_id = ${companyId}::uuid
         AND po.deleted_at IS NULL
         ${statusFrag}
@@ -115,12 +126,14 @@ export const productionOrdersReport: RegisteredReport = {
     `);
 
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({
-      po_code: String(r['po_code'] ?? ''),
-      plan_code: String(r['plan_code'] ?? ''),
       so_code: (r['so_code'] as string | null) ?? null,
       so_internal_no: (r['so_internal_no'] as string | null) ?? null,
+      client_po_line_no: (r['client_po_line_no'] as string | null) ?? null,
+      created_on: dateCell(r['created_on']),
       item_code: String(r['item_code'] ?? ''),
       item_name: (r['item_name'] as string | null) ?? null,
+      po_code: String(r['po_code'] ?? ''),
+      plan_code: String(r['plan_code'] ?? ''),
       order_qty: Number(r['order_qty'] ?? 0),
       target_date:
         r['target_date'] instanceof Date

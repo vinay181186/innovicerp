@@ -289,3 +289,44 @@ export interface AssemblyVariancePart {
   needQty: number;
   stillOutQty: number;
 }
+
+// ─── ADR-261 — the register, one row per issue LINE ───────────────────────
+// GET /store-issues/lines — same query params and envelope as the slip list.
+// SO No. / Internal SO No. come from the slip's SO (assembly SO) or the Job
+// Card's source SO line; POL only when the Job Card's SO / JWSO line is known.
+
+export interface StoreIssueLineRow {
+  lineId: string;
+  docId: string;
+  docCode: string;
+  docDate: string;
+  issueAgainst: IssueAgainst;
+  jobCardCode: string | null;
+  salesOrderCode: string | null;
+  department: string | null;
+  legacyReference: string | null;
+  /** The order code the row traces to: SO code, else the JWSO code. */
+  soCode: string | null;
+  soInternalNo: string | null;
+  clientPoLineNo: string | null;
+  /** The line's own created_at (falls back to the slip's). */
+  createdAt: string;
+  itemCode: string;
+  /** Only when the issued item IS the order line's item (never an RM's rev). */
+  itemRevision: string | null;
+  itemName: string | null;
+  uom: string | null;
+  qty: number;
+  issuedTo: string;
+  purpose: string | null;
+  issuedByName: string | null;
+  reversedAt: string | null;
+  reversalReason: string | null;
+}
+
+export interface ListStoreIssueLinesResponse {
+  items: StoreIssueLineRow[];
+  total: number;
+  limit: number;
+  offset: number;
+}

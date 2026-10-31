@@ -4,7 +4,8 @@
 
 import { sql } from 'drizzle-orm';
 import type { RegisteredReport } from '../registry';
-import { REPORT_ROW_CAP } from './report-helpers';
+import { polSql } from '../../../lib/pol';
+import { dateCell, REPORT_ROW_CAP, textCell } from './report-helpers';
 
 export const jcAgeingReport: RegisteredReport = {
   definition: {
@@ -23,16 +24,18 @@ export const jcAgeingReport: RegisteredReport = {
       },
     ],
     columns: [
+      // ADR-261 lead columns. SO No. = the SO or JWSO the JC came from
+      // (blank for a standalone JC); Created On = the JC's created_at; the
+      // customer drawing rev rides in Item Code as CODE/REV.
+      { key: 'so_code', label: 'SO No.', type: 'text' },
+      { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
+      { key: 'client_po_line_no', label: 'POL', type: 'text' },
+      { key: 'created_on', label: 'Created On', type: 'date' },
+      { key: 'item_code', label: 'Item Code', type: 'text' },
+      { key: 'item_name', label: 'Item Name', type: 'text' },
       { key: 'jc_code', label: 'JC No.', type: 'text' },
       { key: 'jc_date', label: 'JC Date', type: 'date' },
       { key: 'days_open', label: 'Days Open', type: 'number' },
-      { key: 'item_code', label: 'Item Code', type: 'text' },
-      // Customer drawing revision of the SO line this JC came from. Kept out
-      // of item_code because the sheet is filtered and VLOOKUP'd on that
-      // column. Blank for a JW-sourced or standalone JC — no SO line, no
-      // customer revision.
-      { key: 'so_revision', label: 'Drawing Rev', type: 'text' },
-      { key: 'item_name', label: 'Item Name', type: 'text' },
       { key: 'qty', label: 'Order Qty', type: 'number' },
       { key: 'computed_status', label: 'JC Status', type: 'text' },
       { key: 'total_ops', label: 'Total Ops', type: 'number' },
@@ -56,9 +59,12 @@ export const jcAgeingReport: RegisteredReport = {
         jc.code                          AS jc_code,
         jc.jc_date                       AS jc_date,
         (CURRENT_DATE - jc.jc_date)::int AS days_open,
-        it.code                          AS item_code,
-        -- ::text because production is still pre-0119 and stores an integer.
-        sol.revision::text               AS so_revision,
+        COALESCE(so.code, jwo.code)      AS so_code,
+        so.internal_so_no                AS so_internal_no,
+        ${polSql('sol', 'jwl')}          AS client_po_line_no,
+        (jc.created_at AT TIME ZONE 'Asia/Kolkata')::date::text AS created_on,
+        -- CODE/REV: the customer's drawing rev (SO line, else JW line).
+        (it.code || COALESCE('/' || NULLIF(btrim(COALESCE(sol.revision::text, jwl.revision::text)), ''), '')) AS item_code,
         it.name                          AS item_name,
         jc.order_qty                     AS qty,
         v.computed_status                AS computed_status,
@@ -72,6 +78,9 @@ export const jcAgeingReport: RegisteredReport = {
       -- SO line, and this ageing list is how stuck production is spotted —
       -- silently dropping those rows would hide real work.
       LEFT JOIN public.sales_order_lines sol ON sol.id = jc.source_so_line_id
+      LEFT JOIN public.sales_orders so ON so.id = sol.sales_order_id
+      LEFT JOIN public.job_work_order_lines jwl ON jwl.id = jc.source_jw_line_id
+      LEFT JOIN public.job_work_orders jwo ON jwo.id = jwl.job_work_order_id
       WHERE jc.company_id = ${companyId}::uuid
         AND jc.deleted_at IS NULL
         ${statusFrag}
@@ -81,6 +90,10 @@ export const jcAgeingReport: RegisteredReport = {
 
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({
       jc_id: String(r['jc_id'] ?? ''),
+      so_code: textCell(r['so_code']),
+      so_internal_no: textCell(r['so_internal_no']),
+      client_po_line_no: textCell(r['client_po_line_no']),
+      created_on: dateCell(r['created_on']),
       jc_code: String(r['jc_code'] ?? ''),
       jc_date:
         r['jc_date'] instanceof Date
@@ -88,9 +101,6 @@ export const jcAgeingReport: RegisteredReport = {
           : String(r['jc_date'] ?? ''),
       days_open: r['days_open'] != null ? Number(r['days_open']) : 0,
       item_code: String(r['item_code'] ?? ''),
-      // '' not '—': a JC with no SO line must leave the cell blank so nobody
-      // ends up sorting a column of dashes.
-      so_revision: String(r['so_revision'] ?? ''),
       item_name: String(r['item_name'] ?? ''),
       qty: Number(r['qty'] ?? 0),
       computed_status: String(r['computed_status'] ?? ''),

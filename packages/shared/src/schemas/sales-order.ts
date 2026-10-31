@@ -470,3 +470,41 @@ export const clientPoCheckResponseSchema = z.object({
   code: z.string().nullable(),
 });
 export type ClientPoCheckResponse = z.infer<typeof clientPoCheckResponseSchema>;
+
+// ─── ADR-261 — SO Master, one row per SO LINE (GET /sales-orders/lines) ──────
+
+/** One SO Master row per live line of a live SO (a line-less SO: one row). Carries the whole order's
+ *  list item (so the row ⋯ menu, row click and dialogs act on the ORDER exactly
+ *  as before) plus the line's own facts for the lead columns and line qty. */
+export const salesOrderLineListItemSchema = salesOrderListItemSchema.extend({
+  /** Null on the ONE row of an SO with no live (non-deleted, non-cancelled)
+   *  line — the order still lists; its line fields are then null / 0. */
+  lineId: z.string().uuid().nullable(),
+  lineNo: z.number().int().positive().nullable(),
+  /** The line's own created_at (falls back to the SO's). The Created On column. */
+  lineCreatedAt: z.string(),
+  /** Live item code (items.code), else the line's stored code text. */
+  itemCode: z.string().nullable(),
+  /** The customer's drawing revision typed on the line (CODE/REV). */
+  itemRevision: z.string().nullable(),
+  /** The line's own Item Name (sales_order_lines.part_name). */
+  itemName: z.string(),
+  clientPoLineNo: z.string().nullable(),
+  lineOrderQty: z.number().int().nonnegative(),
+  /** Σ effective job-card qty raised against THIS line (no rework children). */
+  lineJcQty: z.number().int().nonnegative(),
+  lineDispatchedQty: z.number().int().nonnegative(),
+  lineDueDate: z.string().nullable(),
+  lineStatus: soStatusSchema.nullable(),
+  lineShortClosedAt: z.string().nullable(),
+});
+export type SalesOrderLineListItem = z.infer<typeof salesOrderLineListItemSchema>;
+
+/** GET /sales-orders/lines — same query params as GET /sales-orders; paged on LINES. */
+export interface ListSalesOrderLinesResponse {
+  items: SalesOrderLineListItem[];
+  /** Lines matching search + filters + sf (the pager's total). */
+  total: number;
+  limit: number;
+  offset: number;
+}

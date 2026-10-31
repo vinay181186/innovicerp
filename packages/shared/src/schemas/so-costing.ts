@@ -22,6 +22,9 @@ export const soCostingRowSchema = z.object({
   soNo: z.string(),
   // ADR-207 — the SO's Internal SO No. (read live from sales_orders).
   soInternalNo: z.string().nullable().optional(),
+  /** ADR-261 Created On — the SO's created_at (ISO); optional while web/API
+   *  deploy apart. */
+  createdAt: z.string().nullable().optional(),
   customer: z.string().nullable(),
   lineCount: z.number().int().nonnegative(),
   totalQty: z.number().int().nonnegative(),

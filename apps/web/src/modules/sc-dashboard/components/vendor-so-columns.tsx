@@ -6,7 +6,7 @@
 // are hidden.
 
 import type { ScSoRow, ScVendorRow } from '@innovic/shared';
-import type { DataTableColumn } from '@/ui/data';
+import { leadColumns, type DataTableColumn } from '@/ui/data';
 import { inr } from './sc-format';
 
 export function vendorColumns(priceHidden: boolean): DataTableColumn<ScVendorRow>[] {
@@ -105,24 +105,27 @@ export function vendorColumns(priceHidden: boolean): DataTableColumn<ScVendorRow
 
 export function soColumns(priceHidden: boolean): DataTableColumn<ScSoRow>[] {
   const cols: DataTableColumn<ScSoRow>[] = [
-    {
-      id: 'so_no',
-      sortFilterField: 'soCode',
-      kind: 'code',
-      header: 'SO / JWSO No.',
-      className: 'td-code',
-      render: (s) => s.soCode || <span className="text3">No SO / JWSO linked</span>,
-    },
-    {
-      // ADR-207 — the office's own Internal SO No., in its own column beside
-      // the system SO / JWSO No. so the two can be told apart.
-      id: 'so_internal_no',
-      sortFilterField: 'soInternalNo',
-      kind: 'code',
-      header: 'Internal SO No.',
-      className: 'mono fw-700',
-      render: (s) => <span style={{ color: 'var(--text)' }}>{s.soInternalNo?.trim() || '—'}</span>,
-    },
+    // ADR-261 — one row per SO (many lines): the lead columns that fit a whole
+    // order (SO No. · Internal SO No. · Created On), no POL / Item columns. The
+    // row with no SO behind its lines keeps saying so.
+    ...leadColumns<ScSoRow>({
+      soNo: (s) => s.soCode,
+      internalSoNo: (s) => s.soInternalNo,
+      createdOn: (s) => s.createdAt,
+      overrides: {
+        so_no: {
+          sortFilterField: 'soCode',
+          render: (s) =>
+            s.soCode ? (
+              <span style={{ color: 'var(--blue)' }}>{s.soCode}</span>
+            ) : (
+              <span className="text3">No SO linked</span>
+            ),
+        },
+        so_internal_no: { sortFilterField: 'soInternalNo' },
+        created_on: { sortFilterField: 'createdOn' },
+      },
+    }),
     {
       id: 'po_lines',
       sortFilterField: 'lines',

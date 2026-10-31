@@ -4,9 +4,13 @@
 //
 // Labels follow docs/NAMING.md: the movement date / direction / quantity are
 // `Movement Date` / `Movement Type` / `Movement Qty` (never bare Date/Type/Qty).
-// Columns, in order (the first — Movement Date — is pinned by the engine):
-//   Movement Date · Ref No. · Item Code · Item Name · Movement Type ·
-//   Movement Qty · Source · Stock Before · Stock After.
+// Columns, in order — the six ADR-261 lead columns first (SO No. · Internal SO
+// No. · POL · Created On · Item Code (CODE/REV) · Item Name), then Movement
+// Date · Ref No. · Movement Type · Movement Qty · Source · Stock Before ·
+// Stock After. SO No. / Internal SO No. / POL come from the movement's own
+// document where it traces to an order line (api store-transactions/so-link.ts),
+// else "—"; they are display-only (no server Sort & Filter). Created On is the
+// movement's created_at.
 
 import {
   STORE_TXN_SOURCE_TYPES,
@@ -15,13 +19,13 @@ import {
 } from '@innovic/shared';
 
 import { fmtDate } from '@/lib/date';
-import type { DataTableColumn } from '@/ui/data';
+import { leadColumns, type DataTableColumn } from '@/ui/data';
 
 import { STORE_TXN_SOURCE_LABELS, STORE_TXN_TYPE_LABELS } from '../lib/txn-labels';
 import { TxnTypeBadge } from './txn-type-badge';
 
 /** Columns off by default (DataTable `defaultHidden`); the Columns menu shows them. */
-export const STOCK_LEDGER_HIDDEN_COLUMNS = ['remarks', 'createdOn'] as const;
+export const STOCK_LEDGER_HIDDEN_COLUMNS = ['remarks'] as const;
 
 // Sort & Filter tick lists (ADR-200): the stored code + the label shown.
 const TXN_TYPE_OPTIONS = STORE_TXN_TYPES.map((value) => ({
@@ -37,6 +41,20 @@ const SOURCE_OPTIONS = STORE_TXN_SOURCE_TYPES.map((value) => ({
  *  (apps/api/src/modules/store-transactions/sf-columns.ts, ADR-200). */
 export function stockLedgerColumns(): DataTableColumn<StoreTransactionListItem>[] {
   return [
+    ...leadColumns<StoreTransactionListItem>({
+      soNo: (r) => r.soCode,
+      internalSoNo: (r) => r.soInternalNo,
+      pol: (r) => r.clientPoLineNo,
+      createdOn: (r) => r.createdAt,
+      itemCode: (r) => r.itemCode ?? r.itemCodeText,
+      itemRev: (r) => r.itemRevision,
+      itemName: (r) => r.itemName,
+      overrides: {
+        created_on: { sortFilterField: 'createdOn' },
+        item_code: { sortFilterField: 'itemCode' },
+        item_name: { sortFilterField: 'itemName' },
+      },
+    }),
     {
       header: 'Movement Date',
       id: 'txnDate',
@@ -53,27 +71,6 @@ export function stockLedgerColumns(): DataTableColumn<StoreTransactionListItem>[
       className: 'mono',
       nowrap: true,
       render: (r) => r.sourceRef,
-    },
-    {
-      header: 'Item Code',
-      id: 'itemCode',
-      kind: 'code',
-      sortFilterField: 'itemCode',
-      className: 'mono fw-700',
-      nowrap: true,
-      render: (r) => (
-        <span style={{ color: 'var(--text)' }}>{r.itemCode ?? r.itemCodeText ?? ''}</span>
-      ),
-    },
-    {
-      header: 'Item Name',
-      id: 'itemName',
-      kind: 'text',
-      sortFilterField: 'itemName',
-      align: 'left',
-      ellipsis: true,
-      render: (r) => r.itemName ?? '',
-      title: (r) => r.itemName ?? '',
     },
     {
       header: 'Movement Type',
@@ -154,16 +151,6 @@ export function stockLedgerColumns(): DataTableColumn<StoreTransactionListItem>[
       ellipsis: true,
       render: (r) => r.remarks ?? '',
       title: (r) => r.remarks ?? '',
-    },
-    {
-      // When the movement was recorded (IST day) — Sort & Filter can pick a
-      // range of it (ADR-200). Off by default; Columns ▾ shows it.
-      header: 'Created On',
-      id: 'createdOn',
-      sortFilterField: 'createdOn',
-      kind: 'date',
-      nowrap: true,
-      render: (r) => fmtDate(r.createdAt),
     },
   ];
 }

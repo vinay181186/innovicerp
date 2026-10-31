@@ -29,14 +29,17 @@ export const lateDeliveryReport: RegisteredReport = {
       { key: 'customer', label: 'Customer', kind: 'text', placeholder: 'Customer name' },
     ],
     columns: [
-      { key: 'dispatch_code', label: 'Dispatch No.', type: 'text' },
-      { key: 'dispatch_date', label: 'Dispatch Date', type: 'date' },
-      { key: 'client_name', label: 'Customer', type: 'text' },
+      // ADR-261 lead columns. Created On = the dispatch line's created_at;
+      // the SO line's drawing rev rides in Item Code as CODE/REV.
       { key: 'so_code', label: 'SO No.', type: 'text' },
       { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
       { key: 'client_po_line_no', label: 'POL', type: 'text' },
+      { key: 'created_on', label: 'Created On', type: 'date' },
       { key: 'item_code', label: 'Item Code', type: 'text' },
-      { key: 'item_revision', label: 'Drawing Rev', type: 'text' },
+      { key: 'item_name', label: 'Item Name', type: 'text' },
+      { key: 'dispatch_code', label: 'Dispatch No.', type: 'text' },
+      { key: 'dispatch_date', label: 'Dispatch Date', type: 'date' },
+      { key: 'client_name', label: 'Customer', type: 'text' },
       { key: 'qty', label: 'Dispatch Qty', type: 'number' },
       { key: 'due_date', label: 'Due Date', type: 'date' },
       { key: 'days_late', label: 'Days Late', type: 'number' },
@@ -62,8 +65,10 @@ export const lateDeliveryReport: RegisteredReport = {
         COALESCE(so.code, cd.so_code_text)                  AS so_code,
         so.internal_so_no                                   AS so_internal_no,
         sol.client_po_line_no                               AS client_po_line_no,
-        COALESCE(it.code, cdl.item_code_text, sol.item_code_text) AS item_code,
-        sol.revision::text                                  AS item_revision,
+        (COALESCE(it.code, cdl.item_code_text, sol.item_code_text)
+          || COALESCE('/' || NULLIF(btrim(sol.revision::text), ''), '')) AS item_code,
+        COALESCE(it.name, cdl.item_name, sol.part_name)     AS item_name,
+        (cdl.created_at AT TIME ZONE 'Asia/Kolkata')::date::text AS created_on,
         cdl.qty                                             AS qty,
         sol.due_date::text                                  AS due_date,
         CASE WHEN sol.due_date IS NULL THEN NULL
@@ -95,14 +100,15 @@ export const lateDeliveryReport: RegisteredReport = {
     `);
 
     const rows = (result as unknown as SqlRow[]).map((r) => ({
-      dispatch_code: String(r['dispatch_code'] ?? ''),
-      dispatch_date: dateCell(r['dispatch_date']),
-      client_name: String(r['client_name'] ?? ''),
       so_code: textCell(r['so_code']),
       so_internal_no: textCell(r['so_internal_no']),
       client_po_line_no: textCell(r['client_po_line_no']),
+      created_on: dateCell(r['created_on']),
       item_code: String(r['item_code'] ?? '—'),
-      item_revision: textCell(r['item_revision']),
+      item_name: textCell(r['item_name']),
+      dispatch_code: String(r['dispatch_code'] ?? ''),
+      dispatch_date: dateCell(r['dispatch_date']),
+      client_name: String(r['client_name'] ?? ''),
       qty: numCell(r['qty']),
       due_date: dateCell(r['due_date']),
       days_late: r['days_late'] == null ? null : numCell(r['days_late']),

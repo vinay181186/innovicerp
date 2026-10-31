@@ -13,6 +13,7 @@ import {
   updatePurchaseOrderInputSchema,
 } from './schema';
 import * as service from './service';
+import { listPurchaseOrderLines } from './list-lines';
 
 const idParamSchema = z.object({ id: z.string().uuid() });
 
@@ -21,6 +22,13 @@ export async function purchaseOrdersRoutes(app: FastifyInstance): Promise<void> 
     if (!req.user) throw new AuthenticationError();
     const query = listPurchaseOrdersQuerySchema.parse(req.query);
     return service.listPurchaseOrders(query, req.user);
+  });
+
+  // ADR-261 — the PO list screen, one row per PO line (list-lines.ts).
+  app.get('/purchase-orders/lines', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const query = listPurchaseOrdersQuerySchema.parse(req.query);
+    return listPurchaseOrderLines(query, req.user);
   });
 
   app.get('/purchase-orders/:id', async (req) => {

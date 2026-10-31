@@ -97,3 +97,47 @@ export const DC_SF_JOINS = sql`
         FROM public.delivery_challan_lines dcl
         WHERE dcl.delivery_challan_id = dc.id AND dcl.deleted_at IS NULL
       ) line_agg ON TRUE`;
+
+/** ADR-261 — a DC line's drawing revision: the SO line's, else the job-work
+ *  line's, and only when that order line is for the SAME item as the challan
+ *  line (the DC detail's rule — a raw-material bar never borrows the part's
+ *  revision). ::text for the pre-0119 integer column. */
+export const DC_LINE_REV_SQL = sql`COALESCE(
+  CASE WHEN sol.item_id = dcl.item_id THEN sol.revision::text END,
+  CASE WHEN jwl.item_id = dcl.item_id THEN jwl.revision::text END)`;
+
+/**
+ * ADR-261 — the OSP Outward DC LINE list (GET /delivery-challans/lines, one row
+ * per DC line). Same field names as DC_SF_COLUMNS where the column means the
+ * same thing; every alias is joined ONCE in list-lines.ts's DC_LINE_FROM, which
+ * the page, the count and the summary all read, so a filter is always valid.
+ */
+export const DC_LINE_SF_COLUMNS: SfColumnMap = {
+  dcCode: { sql: sql`dc.code`, type: 'text' },
+  dcDate: { sql: sql`dc.dc_date`, type: 'date' },
+  vendor: { sql: sql`COALESCE(v.name, dc.vendor_code_text)`, type: 'text' },
+  poCode: {
+    sql: sql`(CASE WHEN dc.nc_id IS NOT NULL
+                   THEN 'NC ' || COALESCE(nc.code, dc.po_code_text)
+                   ELSE COALESCE(po.code, dc.po_code_text) END)`,
+    type: 'text',
+  },
+  // The SO No. cell: the SO code, else the JWSO code, else the DC's SO ref.
+  soCode: { sql: sql`COALESCE(so.code, jw.code, dc.so_ref_text)`, type: 'text' },
+  soInternalNo: { sql: sql`COALESCE(so.internal_so_no, so_ref.internal_so_no)`, type: 'text' },
+  clientPoLineNo: { sql: sql`COALESCE(sol.client_po_line_no, jwl.client_po_line_no)`, type: 'text' },
+  createdOn: {
+    sql: sql`(COALESCE(dcl.created_at, dc.created_at) AT TIME ZONE 'Asia/Kolkata')::date`,
+    type: 'date',
+  },
+  // CODE/REV as the cell prints it (itemCodeWithRev).
+  itemCode: {
+    sql: sql`(btrim(COALESCE(i.code, dcl.item_code_text)) || COALESCE('/' || NULLIF(btrim(${DC_LINE_REV_SQL}), ''), ''))`,
+    type: 'text',
+  },
+  itemName: { sql: sql`COALESCE(i.name, dcl.item_name_text)`, type: 'text' },
+  qty: { sql: sql`dcl.qty`, type: 'num' },
+  status: { sql: sql`dc.status`, type: 'list' },
+  jobCardCode: { sql: sql`ljc.code`, type: 'text' },
+  transport: { sql: sql`dc.transport`, type: 'text' },
+};

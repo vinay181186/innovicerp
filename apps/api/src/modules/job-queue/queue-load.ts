@@ -65,6 +65,8 @@ export async function loadMachineQueues(
         i.name AS "itemName",
         COALESCE(so.code, jw.code) AS "soCode",
         so.internal_so_no AS "soInternalNo",
+        -- ADR-261 Created On — the job-card op's own created_at.
+        op.created_at AS "createdAt",
         COALESCE(cl_so.name, cl_jw.name, so.customer_name, jw.customer_name) AS "soCustomer",
         op.op_seq AS "opSeq",
         op.operation,
@@ -142,6 +144,10 @@ export async function loadMachineQueues(
       itemName: (r['itemName'] as string | null) ?? null,
       soCode: (r['soCode'] as string | null) ?? null,
       soInternalNo: (r['soInternalNo'] as string | null) ?? null,
+      createdAt:
+        r['createdAt'] instanceof Date
+          ? (r['createdAt'] as Date).toISOString()
+          : ((r['createdAt'] as string | null) ?? null),
       soCustomer: (r['soCustomer'] as string | null) ?? null,
       opSeq: num(r['opSeq']),
       operation: String(r['operation'] ?? ''),

@@ -4,6 +4,7 @@
 // (ADR-235): cancel-requests CancelDocDialog, docType 'store_issue'.
 import type {
   CreateStoreIssueInput,
+  ListStoreIssueLinesResponse,
   ListStoreIssuesQuery,
   ListStoreIssuesResponse,
   ReturnStoreIssueInput,
@@ -31,6 +32,8 @@ export const storeIssuesKeys = {
       q.offset,
     ] as const,
   detail: (id: string) => [...storeIssuesKeys.all, 'detail', id] as const,
+  /** ADR-261 — the register, one row per issue line. */
+  lines: (q: ListStoreIssuesQuery) => [...storeIssuesKeys.all, 'lines', buildSearch(q)] as const,
 };
 
 function buildSearch(q: ListStoreIssuesQuery): string {
@@ -52,6 +55,18 @@ export function useStoreIssuesList(query: ListStoreIssuesQuery, enabled = true) 
     enabled,
     queryKey: storeIssuesKeys.list(query),
     queryFn: () => apiFetch<ListStoreIssuesResponse>(`/store-issues?${buildSearch(query)}`),
+    refetchInterval: 60_000,
+    placeholderData: (prev) => prev,
+  });
+}
+
+/** ADR-261 — the Item Issue Register, one row per issue line. */
+export function useStoreIssueLines(query: ListStoreIssuesQuery, enabled = true) {
+  return useQuery<ListStoreIssueLinesResponse>({
+    enabled,
+    queryKey: storeIssuesKeys.lines(query),
+    queryFn: () =>
+      apiFetch<ListStoreIssueLinesResponse>(`/store-issues/lines?${buildSearch(query)}`),
     refetchInterval: 60_000,
     placeholderData: (prev) => prev,
   });

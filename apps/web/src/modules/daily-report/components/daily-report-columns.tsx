@@ -25,12 +25,12 @@ function sumQty(rows: DailyReportRow[]): number {
 
 export const dailyReportColumns: DataTableColumn<DailyReportRow>[] = [
   // Owner rule 2026-10-31 — the six lead columns first; JC No. after Item Name.
-  // The log row carries no SO No., Internal SO No. or created date yet (needs API).
+  // Created On = the log entry's own created_at.
   ...leadColumns<DailyReportRow>({
-    soNo: () => null,
-    internalSoNo: () => null,
+    soNo: (r) => r.soCode,
+    internalSoNo: (r) => r.soInternalNo,
     pol: (r) => r.clientPoLineNo,
-    createdOn: () => null,
+    createdOn: (r) => r.createdAt,
     itemCode: (r) => r.itemCode,
     itemRev: (r) => r.itemRevision,
     itemName: (r) => r.itemName,

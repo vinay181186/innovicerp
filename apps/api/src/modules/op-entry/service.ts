@@ -203,6 +203,7 @@ export async function listJcOpsEnriched(
         ${polSql('sol', 'jwl')} AS "clientPoLineNo",
         COALESCE(so.code, jw.code) AS "soCode",
         so.internal_so_no      AS "soInternalNo",
+        o.created_at           AS "createdAt",
         o.op_seq               AS "opSeq",
         -- The card's LAST live op (same test as qc-history PEND_IS_LAST and
         -- the stock credit): a Last Stage Only report (0235) is compulsory
@@ -384,6 +385,7 @@ export async function listJcOpsEnriched(
       itemRevision: (r['itemRevision'] as string | null) ?? null,
       clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
       itemName: (r['itemName'] as string | null) ?? null,
+      createdAt: asIso((r['createdAt'] as Date | string | null) ?? null),
       machines: ((r['machines'] as Array<{ machineCode: string; qty: unknown }> | null) ?? []).map(
         (v) => ({ machineCode: String(v.machineCode), qty: Number(v.qty ?? 0) }),
       ),
@@ -2034,6 +2036,9 @@ export const TIME_CHANGE_FROM: SQL = sql`
     LEFT JOIN public.items i ON i.id = jc.item_id
     LEFT JOIN public.sales_order_lines sol ON sol.id = jc.source_so_line_id
     LEFT JOIN public.job_work_order_lines rev_jwl ON rev_jwl.id = jc.source_jw_line_id
+    -- ADR-261 lead columns: the order behind the card (SO, else JWSO).
+    LEFT JOIN public.sales_orders tc_so ON tc_so.id = sol.sales_order_id AND tc_so.deleted_at IS NULL
+    LEFT JOIN public.job_work_orders tc_jw ON tc_jw.id = rev_jwl.job_work_order_id AND tc_jw.deleted_at IS NULL
     LEFT JOIN public.users ru ON ru.id = r.requested_by
     LEFT JOIN public.users du ON du.id = r.decided_by`;
 
@@ -2080,6 +2085,8 @@ export async function selectTimeChangeRequests(
       -- POL for a JW-sourced card (ADR-236).
       ${polSql('sol', 'rev_jwl')} AS "clientPoLineNo",
       i.name                            AS "itemName",
+      COALESCE(tc_so.code, tc_jw.code)  AS "soCode",
+      tc_so.internal_so_no              AS "soInternalNo",
       COALESCE(m.code, l.machine_code_text) AS "machineCode",
       l.qty                             AS "qty",
       l.reject_qty                      AS "rejectQty",
@@ -2118,6 +2125,8 @@ export async function selectTimeChangeRequests(
     itemRevision: (r['itemRevision'] as string | null) ?? null,
     clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
     itemName: (r['itemName'] as string | null) ?? null,
+    soCode: (r['soCode'] as string | null) ?? null,
+    soInternalNo: (r['soInternalNo'] as string | null) ?? null,
     qty: Number(r['qty'] ?? 0),
     rejectQty: Number(r['rejectQty'] ?? 0),
     prevStartTime: r['prevStartTime'] ? String(r['prevStartTime']).slice(0, 8) : null,

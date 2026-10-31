@@ -48,8 +48,7 @@ function identityColumns<T>(pick: (row: T) => JcOpEnriched): DataTableColumn<T>[
     soNo: (row) => pick(row).soCode,
     internalSoNo: (row) => pick(row).soInternalNo,
     pol: (row) => pick(row).clientPoLineNo,
-    // needs API — the enriched op row carries no created date yet.
-    createdOn: () => null,
+    createdOn: (row) => pick(row).createdAt,
     itemCode: (row) => pick(row).itemCode,
     itemRev: (row) => pick(row).itemRevision,
     itemName: (row) => pick(row).itemName,

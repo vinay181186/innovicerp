@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { and, asc, eq, isNull, like, ne, notLike } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { DocumentEditStagedResult } from '@innovic/shared';
@@ -23,6 +24,7 @@ import {
 import { AUDITOR, asAccess } from '../../lib/test-access';
 import { decideDocumentEdit } from '../document-edits/service';
 import * as service from './service';
+import { listJobWorkOrderLines } from './list-lines';
 
 const TEST_PREFIX = 'T031-';
 const ADMIN_EMAIL = 'innovic.technology@gmail.com';
@@ -305,6 +307,45 @@ describe('job-work-orders service', () => {
     expect(row?.customerRm?.status).toBe('awaited');
     expect(row?.customerRm?.grnPendingQty).toBe(10);
     expect(row?.jcQty).toBe(0);
+  });
+
+  it('listJobWorkOrderLines (ADR-261) returns ONE row per line, company-scoped', async () => {
+    const code = `${TEST_PREFIX}LLN`;
+    await service.createJobWorkOrder(
+      {
+        header: { code, jwDate: '2026-05-03', customerName: 'Lines', clientId: firstClientId },
+        lines: [
+          {
+            partName: 'L1',
+            clientPoLineNo: '10',
+            itemId: firstItemId,
+            uom: 'NOS',
+            orderQty: 3,
+            revision: 'B',
+            dueDate: '2026-06-01',
+          },
+          { partName: 'L2', clientPoLineNo: '20', itemId: firstItemId, uom: 'NOS', orderQty: 5 },
+        ],
+      },
+      admin,
+    );
+    const q = { search: 'T031-LLN', limit: 50, offset: 0 };
+    const res = await listJobWorkOrderLines(q, admin);
+    const rows = res.items.filter((r) => r.docCode === code);
+    expect(rows).toHaveLength(2);
+    expect(res.total).toBeGreaterThanOrEqual(2);
+    const l1 = rows.find((r) => r.clientPoLineNo === '10');
+    expect(l1?.jwCode).toBe(code);
+    expect(l1?.orderQty).toBe(3);
+    expect(l1?.itemCode).toBe(firstItemCode);
+    expect(l1?.itemRevision).toBe('B');
+    expect(l1?.itemName).toBe('L1');
+    expect(l1?.dueDate).toBe('2026-06-01');
+    expect(l1?.customerRm?.requiredQty).toBe(3);
+    expect(rows.find((r) => r.clientPoLineNo === '20')?.orderQty).toBe(5);
+    // Another company sees none of them.
+    const other = await listJobWorkOrderLines(q, { ...admin, companyId: randomUUID() });
+    expect(other.items.filter((r) => r.docCode === code)).toHaveLength(0);
   });
 
   it('updateJobWorkOrder header-only does NOT touch lines', async () => {

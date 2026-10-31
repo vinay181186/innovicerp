@@ -36,6 +36,8 @@ export const UNPLANNED_SF_COLUMNS: SfColumnMap = {
   remainingQty: { sql: sql`u.remaining_qty`, type: 'num' },
   dueDate: { sql: sql`u.due_date`, type: 'date' },
   customerName: { sql: sql`u.customer_name`, type: 'text' },
+  // ADR-261 Created On — the SO line's own created_at as the India-time day.
+  createdOn: { sql: sql`(u.created_at AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
 };
 
 type Row = {
@@ -43,6 +45,7 @@ type Row = {
   so_id: string;
   so_code: string;
   so_internal_no: string | null;
+  created_at: Date | string | null;
   line_no: number;
   item_code: string | null;
   item_revision: string | null;
@@ -91,6 +94,8 @@ export async function getUnplannedOrders(
           so.code           AS so_code,
           so.internal_so_no AS so_internal_no,
           sol.line_no       AS line_no,
+          -- ADR-261 Created On — the SO line's own created_at.
+          sol.created_at    AS created_at,
           sol.item_code_text AS item_code,
           -- The customer's drawing revision typed on this very SO line — every
           -- row here IS an SO line, so it is never items.revision. Cast to text:
@@ -128,7 +133,7 @@ export async function getUnplannedOrders(
         ${base}
         SELECT u.so_line_id, u.so_id, u.so_code, u.so_internal_no, u.line_no, u.item_code, u.item_revision,
                u.client_po_line_no, u.part_name, u.customer_name, u.due_date::text AS due_date,
-               u.order_qty, u.planned_qty, u.remaining_qty
+               u.order_qty, u.planned_qty, u.remaining_qty, u.created_at
         FROM u ${where}
         ORDER BY ${orderBy}
         ${paging}
@@ -146,6 +151,8 @@ export async function getUnplannedOrders(
         soId: r.so_id,
         soCode: r.so_code,
         soInternalNo: r.so_internal_no,
+        createdAt:
+          r.created_at instanceof Date ? r.created_at.toISOString() : (r.created_at ?? null),
         lineNo: Number(r.line_no),
         itemCode: r.item_code,
         // Null passed through rather than blanked: a line with no revision

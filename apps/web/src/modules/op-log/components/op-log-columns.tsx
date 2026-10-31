@@ -1,5 +1,5 @@
 // Operation Log list columns (ADR-199 fit table: one line per row). Moved out
-// of routes/list.tsx. Item Code and Item Name are two columns (the name used to
+// of routes/list.tsx. Opens with the six ADR-261 lead columns. Item Code and Item Name are two columns (the name used to
 // stack under the code), and the ADR-197 reversal badge + its reason left the
 // Log Type cell for two columns of their own at the right, so they are the
 // first to move into ▸ on a narrow screen.
@@ -7,9 +7,8 @@
 import { ActionLink } from '@/components/shared/action-link';
 import { opSrNo, SHIFT_LABELS, type Shift } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
 import { DocRefLink } from '@/modules/activity-log/components/doc-ref-link';
-import type { DataTableColumn } from '@/ui/data';
+import { leadColumns, type DataTableColumn } from '@/ui/data';
 import type { OpLogListItem } from '../api';
 
 const LOG_TYPE_LABEL: Record<'start' | 'complete' | 'qc', string> = {
@@ -53,10 +52,12 @@ function differs(a: string | null, b: string | null): boolean {
   return Boolean(a && b && a.trim().toLowerCase() !== b.trim().toLowerCase());
 }
 
-export const OP_LOG_DEFAULT_PINNED = ['item_code'];
+/** The lead block (ADR-261) is locked by the table itself — nothing else pinned. */
+export const OP_LOG_DEFAULT_PINNED: string[] = [];
 
-/** Columns off by default (DataTable `defaultHidden`); the Columns menu shows them. */
-export const OP_LOG_HIDDEN_COLUMNS = ['created_on'] as const;
+/** Columns off by default (DataTable `defaultHidden`). The lead columns —
+ *  Created On included — are always shown (ADR-261). */
+export const OP_LOG_HIDDEN_COLUMNS: string[] = [];
 
 // Sort & Filter tick lists (ADR-200): the stored code + the label shown.
 const LOG_TYPE_OPTIONS = (['start', 'complete', 'qc'] as const).map((value) => ({
@@ -70,6 +71,25 @@ const SHIFT_OPTIONS = Object.entries(SHIFT_LABELS).map(([value, label]) => ({ va
  *  column has none: its label is built per row. */
 export function opLogColumns(): DataTableColumn<OpLogListItem>[] {
   return [
+    // ADR-261 — the six lead columns first; Log No., JC No. and every other
+    // fact follow Item Name. Created On = the entry's own created_at.
+    ...leadColumns<OpLogListItem>({
+      soNo: (r) => r.soCode,
+      internalSoNo: (r) => r.soInternalNo,
+      pol: (r) => r.clientPoLineNo,
+      createdOn: (r) => r.createdAt,
+      itemCode: (r) => r.itemCode,
+      itemRev: (r) => r.itemRevision,
+      itemName: (r) => r.itemName,
+      overrides: {
+        so_no: { sortFilterField: 'soCode' },
+        so_internal_no: { sortFilterField: 'soInternalNo' },
+        client_po_line_no: { sortFilterField: 'clientPoLineNo' },
+        created_on: { sortFilterField: 'createdOn' },
+        item_code: { sortFilterField: 'itemCode' },
+        item_name: { sortFilterField: 'itemName' },
+      },
+    }),
     {
       id: 'log_no',
       sortFilterField: 'logNo',
@@ -84,42 +104,6 @@ export function opLogColumns(): DataTableColumn<OpLogListItem>[] {
       header: 'JC No.',
       className: 'td-code',
       render: (r) => jcLink(r, r.jcNo),
-    },
-    {
-      // POL — the line number printed on the CUSTOMER's own purchase order,
-      // immediately before the item. '—' when no sales order sits behind it.
-      id: 'client_po_line_no',
-      sortFilterField: 'clientPoLineNo',
-      kind: 'code',
-      header: 'POL',
-      headColor: 'var(--purple)',
-      className: 'mono fw-700',
-      render: (r) => <span style={{ color: 'var(--purple)' }}>{r.clientPoLineNo ?? '—'}</span>,
-    },
-    {
-      // The item the card makes — a JC number says WHICH JOB, only this says
-      // WHICH PART. The code is what anyone scans the log for: darkest token.
-      id: 'item_code',
-      sortFilterField: 'itemCode',
-      kind: 'code',
-      header: 'Item Code',
-      className: 'mono fw-700',
-      render: (r) => (
-        <span style={{ color: 'var(--text)' }}>
-          {itemCodeWithRev(r.itemCode, r.itemRevision, '')}
-        </span>
-      ),
-    },
-    {
-      id: 'item_name',
-      sortFilterField: 'itemName',
-      kind: 'text',
-      header: 'Item Name',
-      align: 'left',
-      ellipsis: true,
-      className: 'text3',
-      render: (r) => r.itemName ?? '',
-      title: (r) => r.itemName ?? '',
     },
     {
       id: 'log_date',
@@ -309,17 +293,6 @@ export function opLogColumns(): DataTableColumn<OpLogListItem>[] {
       className: 'text2',
       render: (r) => (isReversalRow(r) ? (r.reversalReason ?? '') : ''),
       title: (r) => r.reversalReason ?? '',
-    },
-    {
-      // When the entry was typed in (IST day) — Sort & Filter can pick a range
-      // of it (ADR-200). Off by default; Columns ▾ shows it.
-      id: 'created_on',
-      sortFilterField: 'createdOn',
-      kind: 'date',
-      header: 'Created On',
-      className: 'text2',
-      nowrap: true,
-      render: (r) => fmtDate(r.createdAt),
     },
   ];
 }

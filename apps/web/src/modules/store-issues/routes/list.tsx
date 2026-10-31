@@ -2,8 +2,8 @@
 // issued against a Job Card, an Assembly SO or for General use. Click a row to
 // see its lines and Return leftovers or Cancel it (the ONE standard Cancel,
 // ADR-235). On the shared FIT DataTable (ADR-199, table standard 2026-10-01):
-// one line per row, always fits the screen, the ▸ reveals Remarks and (when
-// cancelled) when and why.
+// one row per issue LINE (ADR-261, GET /store-issues/lines); row click and ⋯
+// act on the slip. Remarks and the cancel reason are in the slip view.
 
 import { ISSUE_AGAINST } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
@@ -11,7 +11,6 @@ import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { ToolIssueRegisterView } from '@/modules/tool-issues/components/tool-issue-register-view';
-import { fmtDate } from '@/lib/date';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
@@ -20,11 +19,8 @@ import { DataTable, Panel, ROW_TINT } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
-import { useStoreIssuesList } from '../api';
-import {
-  ISSUE_REGISTER_HIDDEN_COLUMNS,
-  issueRegisterColumns,
-} from '../components/issue-register-columns';
+import { useStoreIssueLines } from '../api';
+import { issueRegisterColumns } from '../components/issue-register-columns';
 import { IssueViewModal } from '../components/issue-view-modal';
 import { NewIssueModal, type NewIssueSeed } from '../components/new-issue-modal';
 import { useStoreIssuePrint } from '../components/use-store-issue-print';
@@ -88,7 +84,6 @@ function StoreIssuesListPage(): React.JSX.Element {
   const [viewId, setViewId] = useState<string | null>(null);
   // ADR-235 — the slip whose standard Cancel dialog is open (row ⋯ or the view).
   const [cancelTarget, setCancelTarget] = useState<{ id: string; code: string } | null>(null);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   // Tier-driven, per department (Store). Was `role === admin || manager`, which
   // let any manager in any department post a stock issue and locked out the
   // L2 storekeeper whose job this is. This gate covers the Item Issues tab
@@ -113,7 +108,7 @@ function StoreIssuesListPage(): React.JSX.Element {
   // page 1.
   const sf = useServerSortFilter(TABLE_KEYS.issueRegister, () => setPage(1));
 
-  const { data, isLoading, isError, error } = useStoreIssuesList(
+  const { data, isLoading, isError, error } = useStoreIssueLines(
     {
       search: term || undefined,
       sf: sf.param,
@@ -128,15 +123,6 @@ function StoreIssuesListPage(): React.JSX.Element {
   // Row ⋯ Preview / Download PDF — the Item Issue Slip (use-store-issue-print.ts).
   const issuePrint = useStoreIssuePrint();
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / LIST_PAGE_SIZE));
-
-  const toggleExpand = useCallback((id: string): void => {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
   // VIEW was removed for this page sees the no-access panel, not the page. `eff`
@@ -199,7 +185,7 @@ function StoreIssuesListPage(): React.JSX.Element {
             title="Item Issue Register"
             icon="📋"
             count={data?.total}
-            noun="issue"
+            noun="issue line"
             search={search}
             onSearch={setSearch}
             searchPlaceholder="Search issue, item, JC, SO, name…"
@@ -226,58 +212,39 @@ function StoreIssuesListPage(): React.JSX.Element {
               <DataTable
                 tableKey={TABLE_KEYS.issueRegister}
                 sortFilterServer={sf}
-                defaultHidden={[...ISSUE_REGISTER_HIDDEN_COLUMNS]}
                 columns={columns}
                 rows={data?.items ?? []}
-                rowKey={(iss) => iss.id}
+                rowKey={(ln) => ln.lineId}
                 loading={isLoading}
                 empty={term || sf.filtering ? 'No issues match.' : 'No issues yet.'}
-                onRowClick={(iss) => setViewId(iss.id)}
-                // A cancelled (reversed) slip washes the whole row and strikes its items.
-                rowClassName={(iss) => (iss.reversedAt ? ROW_TINT.cancelled : undefined)}
-                // The fit table's ▸ is the row's one expand control: Remarks and,
-                // when cancelled, when and why.
-                renderExpanded={(iss) =>
-                  expanded.has(iss.id) ? (
-                    <div
-                      className="text3"
-                      style={{ fontSize: 'var(--fs-xs)', padding: 'var(--sp-2) var(--sp-6)' }}
-                    >
-                      <b>Remarks:</b> {iss.remarks ?? '—'}
-                      {iss.reversedAt ? (
-                        <div style={{ color: 'var(--red2)', marginTop: 'var(--sp-1)' }}>
-                          <b>Cancelled:</b> {fmtDate(iss.reversedAt.slice(0, 10))}
-                          {iss.reversalReason ? ` — ${iss.reversalReason}` : ''}
-                        </div>
-                      ) : null}
-                    </div>
-                  ) : null
-                }
-                onToggleExpanded={(iss) => toggleExpand(iss.id)}
+                onRowClick={(ln) => setViewId(ln.docId)}
+                // A cancelled (reversed) slip washes the whole row and strikes its qty.
+                rowClassName={(ln) => (ln.reversedAt ? ROW_TINT.cancelled : undefined)}
                 rowActionsWidth="1%"
-                rowActions={(iss) => (
+                rowActions={(ln) => (
                   <RowActions
-                    onView={() => setViewId(iss.id)}
+                    onView={() => setViewId(ln.docId)}
                     items={[
                       {
                         key: 'preview',
                         label: 'Preview',
                         icon: 'eye',
-                        onSelect: () => void issuePrint('preview', iss),
+                        onSelect: () =>
+                          void issuePrint('preview', { id: ln.docId, code: ln.docCode }),
                       },
                       {
                         key: 'download',
                         label: 'Download PDF',
                         icon: 'download',
-                        onSelect: () => issuePrint('download', iss),
+                        onSelect: () => issuePrint('download', { id: ln.docId, code: ln.docCode }),
                       },
                       {
                         key: 'cancel',
                         label: 'Cancel Issue',
                         icon: 'x',
                         group: 'danger',
-                        hidden: !canCancel || Boolean(iss.reversedAt),
-                        onSelect: () => setCancelTarget({ id: iss.id, code: iss.code }),
+                        hidden: !canCancel || Boolean(ln.reversedAt),
+                        onSelect: () => setCancelTarget({ id: ln.docId, code: ln.docCode }),
                       },
                     ]}
                   />
@@ -289,7 +256,7 @@ function StoreIssuesListPage(): React.JSX.Element {
           {data ? (
             <ListFooter
               total={data.total}
-              noun="issue"
+              noun="issue line"
               page={page}
               pageSize={LIST_PAGE_SIZE}
               onPage={(p) => setPage(Math.min(totalPages, Math.max(1, p)))}

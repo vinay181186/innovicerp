@@ -20,6 +20,10 @@ export const JC_OPS_SF_COLUMNS: SfColumnMap = {
     type: 'text',
   },
   itemName: { sql: sql`i.name`, type: 'text' },
+  // ADR-261 lead columns (bso / bjw joined in the board's shared FROM).
+  soCode: { sql: sql`COALESCE(bso.code, bjw.code)`, type: 'text' },
+  soInternalNo: { sql: sql`bso.internal_so_no`, type: 'text' },
+  createdOn: { sql: sql`(op.created_at AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
   opSeq: { sql: sql`op.op_seq`, type: 'num' },
   // An outsource op shows no machine.
   plannedMachine: {

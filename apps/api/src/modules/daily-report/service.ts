@@ -52,6 +52,11 @@ export async function getDailyReport(
         -- line's POL for a JW-sourced card (ADR-236).
         ${polSql('sol', 'rev_jwl')} AS "clientPoLineNo",
         i.name AS "itemName",
+        -- ADR-261 lead columns: the order behind the card (SO, else JWSO), its
+        -- Internal SO No., and the log entry's own created_at.
+        COALESCE(so.code, jw.code) AS "soCode",
+        so.internal_so_no AS "soInternalNo",
+        l.created_at AS "createdAt",
         op.op_seq AS "opSeq",
         op.operation,
         l.shift::text AS shift,
@@ -67,6 +72,8 @@ export async function getDailyReport(
       LEFT JOIN public.items i ON i.id = jc.item_id AND i.deleted_at IS NULL
       LEFT JOIN public.sales_order_lines sol ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
       LEFT JOIN public.job_work_order_lines rev_jwl ON rev_jwl.id = jc.source_jw_line_id AND rev_jwl.deleted_at IS NULL
+      LEFT JOIN public.sales_orders so ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
+      LEFT JOIN public.job_work_orders jw ON jw.id = rev_jwl.job_work_order_id AND jw.deleted_at IS NULL
       LEFT JOIN public.machines m
         ON m.id = COALESCE(l.machine_id, op.machine_id) AND m.deleted_at IS NULL
       WHERE l.company_id = ${companyId}::uuid
@@ -97,6 +104,12 @@ export async function getDailyReport(
         itemRevision: (r['itemRevision'] as string | null) ?? null,
         clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
         itemName: (r['itemName'] as string | null) ?? null,
+        soCode: (r['soCode'] as string | null) ?? null,
+        soInternalNo: (r['soInternalNo'] as string | null) ?? null,
+        createdAt:
+          r['createdAt'] instanceof Date
+            ? (r['createdAt'] as Date).toISOString()
+            : ((r['createdAt'] as string | null) ?? null),
         opSeq: Number(r['opSeq'] ?? 0),
         operation: String(r['operation'] ?? ''),
         shift: String(r['shift'] ?? ''),

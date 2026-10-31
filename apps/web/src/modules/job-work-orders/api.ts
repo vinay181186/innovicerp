@@ -4,6 +4,7 @@ import type {
   EnsureJwRmItemInput,
   EnsureJwRmItemResponse,
   JobWorkOrderDetail,
+  ListJobWorkOrderLinesResponse,
   ListJobWorkOrdersQuery,
   ListJobWorkOrdersResponse,
   ShortCloseJobWorkOrderLineInput,
@@ -18,6 +19,9 @@ export const jobWorkOrdersKeys = {
   all: ['job-work-orders'] as const,
   lists: () => [...jobWorkOrdersKeys.all, 'list'] as const,
   list: (q: ListJobWorkOrdersQuery) => [...jobWorkOrdersKeys.lists(), q] as const,
+  // ADR-261 — the list page, one row per JWSO line. Under lists() so every
+  // existing lists() invalidation refreshes it too.
+  lineList: (q: ListJobWorkOrdersQuery) => [...jobWorkOrdersKeys.lists(), 'lines', q] as const,
   details: () => [...jobWorkOrdersKeys.all, 'detail'] as const,
   detail: (id: string) => [...jobWorkOrdersKeys.details(), id] as const,
 };
@@ -43,6 +47,20 @@ export function useJobWorkOrdersList(
   return useQuery<ListJobWorkOrdersResponse>({
     queryKey: jobWorkOrdersKeys.list(query),
     queryFn: () => apiFetch<ListJobWorkOrdersResponse>(`/job-work-orders?${toQueryString(query)}`),
+    placeholderData: (prev) => prev,
+    ...options,
+  });
+}
+
+/** ADR-261 — the JWSO Master list: one row per JWSO line (GET /job-work-orders/lines). */
+export function useJobWorkOrderLinesList(
+  query: ListJobWorkOrdersQuery,
+  options?: Omit<UseQueryOptions<ListJobWorkOrderLinesResponse>, 'queryKey' | 'queryFn'>,
+) {
+  return useQuery<ListJobWorkOrderLinesResponse>({
+    queryKey: jobWorkOrdersKeys.lineList(query),
+    queryFn: () =>
+      apiFetch<ListJobWorkOrderLinesResponse>(`/job-work-orders/lines?${toQueryString(query)}`),
     placeholderData: (prev) => prev,
     ...options,
   });

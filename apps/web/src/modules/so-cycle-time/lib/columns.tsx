@@ -4,7 +4,7 @@
 
 import { SO_STATUSES, type SoCycleTimeRow } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
-import type { DataTableColumn } from '@/ui/data';
+import { leadColumns, type DataTableColumn } from '@/ui/data';
 import { soStatusLabel } from '@/modules/sales-orders/lib/so-status-label';
 
 export const TYPE_LABEL: Record<string, string> = {
@@ -46,42 +46,30 @@ export function soCycleTimeColumns(avgTotal: number): DataTableColumn<SoCycleTim
   });
 
   return [
-    {
-      id: 'so_no',
-      kind: 'code',
-      header: 'SO No.',
-      nowrap: true,
-      sortFilterField: 'soNo',
-      render: (r) => (
-        <Link
-          to="/sales-orders/$id"
-          params={{ id: r.soId }}
-          className="td-code"
-          style={{ color: 'var(--cyan)', textDecoration: 'none' }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {/* The SYSTEM number only (ADR-207); the office's own number is the
-              next column, so each heading names one of the two. */}
-          {r.soNo}
-        </Link>
-      ),
-    },
-    {
-      // ADR-207 — the office's own typed number, beside the system SO No.
-      id: 'so_internal_no',
-      kind: 'code',
-      header: 'Internal SO No.',
-      sortFilterField: 'internalSoNo',
-      nowrap: true,
-      render: (r) =>
-        r.internalSoNo?.trim() ? (
-          <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-            {r.internalSoNo}
-          </span>
-        ) : (
-          <span className="text3">—</span>
-        ),
-    },
+    // ADR-261 lead columns — one row per ORDER, so no POL / Item columns.
+    ...leadColumns<SoCycleTimeRow>({
+      soNo: (r) => r.soNo,
+      internalSoNo: (r) => r.internalSoNo,
+      createdOn: (r) => r.createdAt,
+      overrides: {
+        so_no: {
+          sortFilterField: 'soNo',
+          render: (r) => (
+            <Link
+              to="/sales-orders/$id"
+              params={{ id: r.soId }}
+              className="td-code"
+              style={{ color: 'var(--cyan)', textDecoration: 'none' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {r.soNo}
+            </Link>
+          ),
+        },
+        so_internal_no: { sortFilterField: 'internalSoNo' },
+        created_on: { sortFilterField: 'createdOn' },
+      },
+    }),
     {
       id: 'customer',
       kind: 'text',

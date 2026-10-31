@@ -33,16 +33,15 @@ import { DataTable, Panel, ROW_TINT } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
-import { usePartyGrnList } from '../api';
+import { usePartyGrnLines } from '../api';
 import { NewPartyGrnModal } from '../components/new-party-grn-modal';
-import { PARTY_GRN_HIDDEN_COLUMNS, partyGrnColumns } from '../components/party-grn-columns';
 import { EditPartyGrnModal } from '../components/edit-party-grn-modal';
+import { isPartyGrnCancelled, partyGrnColumns } from '../components/party-grn-columns';
 import { PartyGrnExpand } from '../components/party-grn-expand';
 import { PartyGrnQcModal } from '../components/party-grn-qc-modal';
 import { usePartyGrnPrint } from '../components/use-party-grn-print';
 import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
 import { PartyMaterialIssueView } from '@/modules/party-material-issues/components/party-material-issue-view';
-import { isPartyGrnCancelled } from '../components/party-grn-columns';
 
 // Deep-link seed for Global Search (no detail page here): `?tab=issue&search=
 // IN-PMI-26-0001` opens the Issue tab with its box pre-filled. Read ONCE into
@@ -122,7 +121,9 @@ function PartyGrnListPage(): React.JSX.Element {
   // page 1.
   const sf = useServerSortFilter(TABLE_KEYS.partyGrn, () => setPage(1));
 
-  const { data, isLoading, isError, error } = usePartyGrnList({
+  // ADR-261 — ONE ROW PER GRN LINE (GET /party-grn/lines); the Today tile
+  // still counts GRNs (summary).
+  const { data, isLoading, isError, error } = usePartyGrnLines({
     search: term || undefined,
     sf: sf.param,
     // ADR-235 — Cancelled GRNs stay on the list, washed and marked Cancelled.
@@ -136,7 +137,7 @@ function PartyGrnListPage(): React.JSX.Element {
   const summary = data?.summary ?? { totalGrns: 0, totalReceived: 0, today: 0 };
   const rows = data?.items ?? [];
   const columns = useMemo(() => partyGrnColumns(), []);
-  const editRow = editId ? (rows.find((r) => r.id === editId) ?? null) : null;
+  const editRow = editId ? (rows.find((r) => r.header.id === editId)?.header ?? null) : null;
 
   // Row details (row click or ⋯ Show details) — the per-line QC split loads
   // lazily inside PartyGrnExpand.
@@ -212,7 +213,7 @@ function PartyGrnListPage(): React.JSX.Element {
             title="Party GRN"
             icon="📥"
             count={data?.total}
-            noun="GRN"
+            noun="line"
             search={search}
             onSearch={setSearch}
             searchPlaceholder="Search JWSO, customer, material…"
@@ -263,63 +264,70 @@ function PartyGrnListPage(): React.JSX.Element {
               <DataTable
                 tableKey={TABLE_KEYS.partyGrn}
                 sortFilterServer={sf}
-                defaultHidden={[...PARTY_GRN_HIDDEN_COLUMNS]}
                 columns={columns}
                 rows={rows}
-                rowKey={(g) => g.id}
+                rowKey={(r) => r.lineId}
                 loading={isLoading}
                 emptyText={term || sf.filtering ? 'No Party GRNs match.' : 'No Party GRNs yet.'}
-                rowClassName={(g) => (isPartyGrnCancelled(g) ? ROW_TINT.cancelled : undefined)}
-                renderExpanded={(g) => (expanded.has(g.id) ? <PartyGrnExpand g={g} /> : null)}
-                onRowClick={(g) => toggleExpand(g.id)}
-                rowMenu={(g) => [
-                  {
-                    key: 'toggle-details',
-                    label: expanded.has(g.id) ? 'Hide details' : 'Show details',
-                    icon: 'chevron-down',
-                    onSelect: () => toggleExpand(g.id),
-                  },
-                  {
-                    // The Edit right, a line still waiting for Incoming QC, not
-                    // Cancelled. The modal itself opens only lines nobody has
-                    // inspected (isQcUntouched); the header stays editable.
-                    key: 'edit',
-                    label: 'Edit',
-                    icon: 'pencil',
-                    hidden: !perms.edit || g.qcPendingLines <= 0 || isPartyGrnCancelled(g),
-                    onSelect: () => setEditId(g.id),
-                  },
-                  {
-                    key: 'preview',
-                    label: 'Preview',
-                    icon: 'eye',
-                    onSelect: () =>
-                      partyGrnPrint('preview', { ...g, cancelled: isPartyGrnCancelled(g) }),
-                  },
-                  {
-                    key: 'download',
-                    label: 'Download PDF',
-                    icon: 'download',
-                    onSelect: () =>
-                      partyGrnPrint('download', { ...g, cancelled: isPartyGrnCancelled(g) }),
-                  },
-                  {
-                    key: 'incoming-qc',
-                    label: 'Incoming QC',
-                    icon: 'check',
-                    group: 'workflow',
-                    hidden: !canQc || g.qcPendingLines <= 0 || isPartyGrnCancelled(g),
-                    onSelect: () => setQcRow(g),
-                  },
-                  {
-                    key: 'cancel',
-                    label: 'Cancel Party GRN',
-                    icon: 'x',
-                    group: 'danger',
-                    hidden: !canCancel || isPartyGrnCancelled(g),
-                    onSelect: () => setCancelRow(g),
-                  },
-                ]}
+                rowClassName={(r) => (r.docStatus === 'cancelled' ? ROW_TINT.cancelled : undefined)}
+                // No detail page: a row click (or ⋯ Show details) opens the whole
+                // GRN (Received By, Remarks, every line's QC split, History).
+                renderExpanded={(r) =>
+                  expanded.has(r.lineId) ? <PartyGrnExpand g={r.header} /> : null
+                }
+                onRowClick={(r) => toggleExpand(r.lineId)}
+                // Every action acts on the whole GRN (r.header), as before.
+                rowMenu={(r) => {
+                  const g = r.header;
+                  return [
+                    {
+                      key: 'toggle-details',
+                      label: expanded.has(r.lineId) ? 'Hide details' : 'Show details',
+                      icon: 'chevron-down',
+                      onSelect: () => toggleExpand(r.lineId),
+                    },
+                    {
+                      // The Edit right, a line still waiting for Incoming QC, not
+                      // Cancelled. The modal itself opens only lines nobody has
+                      // inspected (isQcUntouched); the header stays editable.
+                      key: 'edit',
+                      label: 'Edit',
+                      icon: 'pencil',
+                      hidden: !perms.edit || g.qcPendingLines <= 0 || isPartyGrnCancelled(g),
+                      onSelect: () => setEditId(g.id),
+                    },
+                    {
+                      key: 'preview',
+                      label: 'Preview',
+                      icon: 'eye',
+                      onSelect: () =>
+                        partyGrnPrint('preview', { ...g, cancelled: isPartyGrnCancelled(g) }),
+                    },
+                    {
+                      key: 'download',
+                      label: 'Download PDF',
+                      icon: 'download',
+                      onSelect: () =>
+                        partyGrnPrint('download', { ...g, cancelled: isPartyGrnCancelled(g) }),
+                    },
+                    {
+                      key: 'incoming-qc',
+                      label: 'Incoming QC',
+                      icon: 'check',
+                      group: 'workflow',
+                      hidden: !canQc || g.qcPendingLines <= 0 || isPartyGrnCancelled(g),
+                      onSelect: () => setQcRow(g),
+                    },
+                    {
+                      key: 'cancel',
+                      label: 'Cancel Party GRN',
+                      icon: 'x',
+                      group: 'danger',
+                      hidden: !canCancel || isPartyGrnCancelled(g),
+                      onSelect: () => setCancelRow(g),
+                    },
+                  ];
+                }}
               />
             </Panel>
           )}
@@ -327,7 +335,7 @@ function PartyGrnListPage(): React.JSX.Element {
           {data ? (
             <ListFooter
               total={data.total}
-              noun="GRN"
+              noun="line"
               page={page}
               pageSize={LIST_PAGE_SIZE}
               onPage={(p) => setPage(Math.min(totalPages, Math.max(1, p)))}

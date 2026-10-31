@@ -1,18 +1,16 @@
-// Purchase Order list columns (ADR-199 fit table: one line per PO). Moved out
-// of routes/list.tsx so that file stays under the 400-line ceiling. Centred by
-// the table standard; numbers right-aligned (align 'right' -> the num kind);
-// only the Vendor name is left-aligned and shares the spare width.
-//
-// Every column reads a field the retired card / sheet already showed — except
-// nothing new: PO No., PO Date, PO Type, Vendor, PR No., Qty, GRN Received,
-// Accepted, Pending, Value, PO Status. Value keeps its price gate: the API nulls
-// `totalAmount` when the viewer may not see prices, and that null renders "—".
+// Purchase Order list columns (ADR-199 fit table). ADR-261 (2026-10-31): ONE
+// ROW PER PO LINE (GET /purchase-orders/lines), opening with the six lead
+// columns — SO No. · Internal SO No. · POL · Created On · Item Code (CODE/REV)
+// · Item Name — then PO No. · PO Date · PO Type · Vendor · PR No. · Qty · GRN
+// Received · Accepted · Pending · Value · PO Status. Qty / Received / Accepted
+// / Pending / Value are the LINE's own. Value keeps its price gate: the API
+// nulls `amount` when the viewer may not see prices, and that null renders "—".
 
-import type { PurchaseOrderListItem } from '@innovic/shared';
+import type { PurchaseOrderLineListItem } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
 import { Badge } from '@/ui/core';
-import type { DataTableColumn } from '@/ui/data';
+import { leadColumns, type DataTableColumn } from '@/ui/data';
 import { PO_STATUS_CHOICES, PO_STATUS_LABELS, PO_TYPE_LABELS } from '../lib/po-labels';
 import { PoStatusBadge } from './po-status-badge';
 
@@ -42,10 +40,26 @@ export function purchaseOrderListColumns({
   canSeePrice: boolean;
   /** ADR-202 — PO ids with a pending edit; their status cell shows "Draft". */
   draftIds?: Set<string>;
-}): DataTableColumn<PurchaseOrderListItem>[] {
+}): DataTableColumn<PurchaseOrderLineListItem>[] {
   return [
+    ...leadColumns<PurchaseOrderLineListItem>({
+      soNo: (l) => l.soCode,
+      internalSoNo: (l) => l.soInternalNo,
+      pol: (l) => l.clientPoLineNo,
+      createdOn: (l) => l.createdAt,
+      itemCode: (l) => l.itemCode,
+      itemRev: (l) => l.itemRevision,
+      itemName: (l) => l.itemName,
+      overrides: {
+        so_no: { sortFilterField: 'soCode' },
+        so_internal_no: { sortFilterField: 'soInternalNo' },
+        client_po_line_no: { sortFilterField: 'clientPoLineNo' },
+        created_on: { sortFilterField: 'createdOn' },
+        item_code: { sortFilterField: 'itemCode' },
+        item_name: { sortFilterField: 'itemName' },
+      },
+    }),
     {
-      // First column — pinned by the table standard (ADR-199).
       id: 'po_code',
       sortFilterField: 'poCode',
       header: 'PO No.',
@@ -53,13 +67,13 @@ export function purchaseOrderListColumns({
       render: (po) => (
         <Link
           to="/purchase-orders/$id"
-          params={{ id: po.id }}
+          params={{ id: po.docId }}
           className="td-code"
           style={{ color: 'var(--blue)', fontWeight: 800 }}
           title="Open the PO detail page"
           onClick={(e) => e.stopPropagation()}
         >
-          {po.code}
+          {po.docCode}
         </Link>
       ),
     },
@@ -70,7 +84,7 @@ export function purchaseOrderListColumns({
       header: 'PO Date',
       className: 'mono',
       nowrap: true,
-      render: (po) => fmtDate(po.poDate),
+      render: (po) => fmtDate(po.docDate),
     },
     {
       id: 'po_type',
@@ -121,13 +135,12 @@ export function purchaseOrderListColumns({
       align: 'right',
       nowrap: true,
       className: 'mono fw-700',
-      render: (po) => po.totalQty,
+      render: (po) => po.qty,
     },
     {
       id: 'received_qty',
-      // No sortFilterField: the server registers `receivedQty` (the in-hand
-      // figure), not the `grnReceivedQty` this column now shows — sorting on
-      // one while reading the other is worse than not sorting. To follow.
+      sortFilterField: 'grnReceivedQty',
+      filterType: 'num',
       header: 'GRN Received',
       align: 'right',
       nowrap: true,
@@ -142,8 +155,8 @@ export function purchaseOrderListColumns({
     },
     {
       id: 'accepted_qty',
-      // No sortFilterField yet — the server does not register a qcAcceptedQty
-      // sort/filter column; naming one here would break sorting. To follow.
+      sortFilterField: 'qcAcceptedQty',
+      filterType: 'num',
       header: 'Accepted',
       align: 'right',
       nowrap: true,
@@ -181,10 +194,10 @@ export function purchaseOrderListColumns({
       nowrap: true,
       // null = prices hidden for this viewer (API-side gate) — keep the gate.
       render: (po) =>
-        po.totalAmount == null ? (
+        po.amount == null ? (
           <span className="text3">—</span>
         ) : (
-          <span className="mono">{inr(po.totalAmount)}</span>
+          <span className="mono">{inr(po.amount)}</span>
         ),
     },
     {
@@ -194,18 +207,7 @@ export function purchaseOrderListColumns({
       kind: 'badge',
       header: 'PO Status',
       nowrap: true,
-      render: (po) => <PoStatusBadge status={po.status} draft={draftIds?.has(po.id)} />,
-    },
-    {
-      // When the PO record was entered (IST day) — Sort & Filter can pick a
-      // range of it (ADR-200). Off by default; Columns ▾ shows it.
-      id: 'created_on',
-      sortFilterField: 'createdOn',
-      kind: 'date',
-      header: 'Created On',
-      className: 'mono',
-      nowrap: true,
-      render: (po) => fmtDate(po.createdAt),
+      render: (po) => <PoStatusBadge status={po.docStatus} draft={draftIds?.has(po.docId)} />,
     },
   ];
 }

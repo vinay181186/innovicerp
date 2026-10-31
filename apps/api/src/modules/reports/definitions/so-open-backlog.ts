@@ -7,7 +7,7 @@ import { SELECTABLE_SO_TYPES, SO_TYPES } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import { jcEffectiveQtySql } from '../../../lib/jc-effective-qty';
 import type { RegisteredReport } from '../registry';
-import { enumFilter, REPORT_ROW_CAP } from './report-helpers';
+import { dateCell, enumFilter, REPORT_ROW_CAP } from './report-helpers';
 
 export const soOpenBacklogReport: RegisteredReport = {
   definition: {
@@ -32,19 +32,19 @@ export const soOpenBacklogReport: RegisteredReport = {
       },
     ],
     columns: [
+      // ADR-261 lead columns. Created On = the SO line's created_at; the
+      // customer's drawing rev rides in Item Code as CODE/REV (owner
+      // 2026-10-31 — no separate Drawing Rev column).
       { key: 'so_code', label: 'SO No.', type: 'text' },
       { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
+      { key: 'client_po_line_no', label: 'POL', type: 'text' },
+      { key: 'created_on', label: 'Created On', type: 'date' },
+      { key: 'item_code', label: 'Item Code', type: 'text' },
+      { key: 'item_name', label: 'Item Name', type: 'text' },
       { key: 'so_date', label: 'SO Date', type: 'date' },
       { key: 'client_name', label: 'Customer', type: 'text' },
       { key: 'so_type', label: 'SO Type', type: 'text' },
       { key: 'line_no', label: 'Ln', type: 'number' },
-      { key: 'item_code', label: 'Item Code', type: 'text' },
-      // The customer's drawing revision, straight off the SO line. Its own
-      // column rather than an "/REV" suffix on item_code: this report is read
-      // in Excel, where item_code is filtered and VLOOKUP'd against Item
-      // Master, and a suffix would split one item into one per revision.
-      { key: 'so_revision', label: 'Drawing Rev', type: 'text' },
-      { key: 'item_name', label: 'Item Name', type: 'text' },
       { key: 'order_qty', label: 'Order Qty', type: 'number' },
       { key: 'completed_qty', label: 'Completed', type: 'number' },
       { key: 'pending_qty', label: 'Pending', type: 'number' },
@@ -74,11 +74,10 @@ export const soOpenBacklogReport: RegisteredReport = {
         COALESCE(cl.name, so.customer_name, '—') AS client_name,
         so.type::text                            AS so_type,
         sol.line_no                              AS line_no,
-        COALESCE(it.code, sol.item_code_text, '—') AS item_code,
-        -- sol is the driving table, so no join is needed at all. Cast to text
-        -- because production has not had migration 0119 applied and still
-        -- holds an integer in this column.
-        sol.revision::text                       AS so_revision,
+        (COALESCE(it.code, sol.item_code_text, '—')
+          || COALESCE('/' || NULLIF(btrim(sol.revision::text), ''), '')) AS item_code,
+        sol.client_po_line_no                    AS client_po_line_no,
+        (sol.created_at AT TIME ZONE 'Asia/Kolkata')::date::text AS created_on,
         COALESCE(it.name, sol.part_name)         AS item_name,
         sol.order_qty                            AS order_qty,
         COALESCE((
@@ -126,6 +125,10 @@ export const soOpenBacklogReport: RegisteredReport = {
       so_id: String(r['so_id'] ?? ''),
       so_code: String(r['so_code'] ?? ''),
       so_internal_no: (r['so_internal_no'] as string | null) ?? null,
+      client_po_line_no: (r['client_po_line_no'] as string | null) ?? null,
+      created_on: dateCell(r['created_on']),
+      item_code: String(r['item_code'] ?? ''),
+      item_name: String(r['item_name'] ?? ''),
       so_date:
         r['so_date'] instanceof Date
           ? r['so_date'].toISOString().slice(0, 10)
@@ -133,9 +136,6 @@ export const soOpenBacklogReport: RegisteredReport = {
       client_name: String(r['client_name'] ?? ''),
       so_type: String(r['so_type'] ?? ''),
       line_no: r['line_no'] != null ? Number(r['line_no']) : 0,
-      item_code: String(r['item_code'] ?? ''),
-      so_revision: String(r['so_revision'] ?? ''),
-      item_name: String(r['item_name'] ?? ''),
       order_qty: Number(r['order_qty'] ?? 0),
       completed_qty: Number(r['completed_qty'] ?? 0),
       pending_qty: Number(r['pending_qty'] ?? 0),

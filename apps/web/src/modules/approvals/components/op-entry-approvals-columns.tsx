@@ -50,18 +50,20 @@ export function opEntryRowTint(r: OpLogTimeChangeRequest): string | undefined {
 export function opEntryColumns(): DataTableColumn<OpLogTimeChangeRequest>[] {
   return [
     // Owner rule 2026-10-31 — the six lead columns first; JC No. after Item
-    // Name. Created On = when the correction was asked (requestedAt). The
-    // request row carries no SO No. / Internal SO No. yet (needs API).
+    // Name. Created On = when the correction was asked (requestedAt).
     ...leadColumns<OpLogTimeChangeRequest>({
-      soNo: () => null,
-      internalSoNo: () => null,
+      soNo: (r) => r.soCode,
+      internalSoNo: (r) => r.soInternalNo,
       pol: (r) => r.clientPoLineNo,
       createdOn: (r) => r.requestedAt,
       itemCode: (r) => r.itemCode,
       itemRev: (r) => r.itemRevision,
       itemName: (r) => r.itemName,
       overrides: {
+        so_no: { sortFilterField: 'soCode' },
+        so_internal_no: { sortFilterField: 'soInternalNo' },
         client_po_line_no: { sortFilterField: 'clientPoLineNo' },
+        created_on: { sortFilterField: 'createdOn' },
         item_code: { sortFilterField: 'itemCode' },
         item_name: { sortFilterField: 'itemName' },
       },

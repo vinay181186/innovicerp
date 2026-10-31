@@ -538,6 +538,8 @@ export const unplannedOrderRowSchema = z.object({
   soCode: z.string(),
   /** ADR-207 — the SO's Internal SO No. (live), null when it has none. */
   soInternalNo: z.string().nullable().optional(),
+  /** ADR-261 Created On — the SO line's own created_at (ISO). */
+  createdAt: z.string().nullable().optional(),
   lineNo: z.number().int().positive(),
   itemCode: z.string().nullable(),
   /** The customer's drawing revision typed on this very SO line

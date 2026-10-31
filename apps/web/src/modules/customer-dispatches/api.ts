@@ -1,6 +1,7 @@
 import type {
   CreateCustomerDispatchInput,
   CustomerDispatchDetail,
+  CustomerDispatchLinesResponse,
   CustomerDispatchRegisterQuery,
   CustomerDispatchRegisterResponse,
   DispatchableSoResponse,
@@ -51,6 +52,8 @@ export const dispatchKeys = {
     q
       ? ([...dispatchKeys.all, 'register', q] as const)
       : ([...dispatchKeys.all, 'register'] as const),
+  /** ADR-261 — the one-row-per-dispatch-line list (under `register()`). */
+  lineList: (q: CustomerDispatchRegisterQuery) => [...dispatchKeys.register(), 'lines', q] as const,
   detail: (id: string) => [...dispatchKeys.all, 'detail', id] as const,
   soOptions: () => [...dispatchKeys.all, 'so-options'] as const,
   dispatchable: (soId: string) => [...dispatchKeys.all, 'dispatchable', soId] as const,
@@ -107,6 +110,17 @@ export function useDispatchRegister(q: CustomerDispatchRegisterQuery) {
   return useQuery<CustomerDispatchRegisterResponse>({
     queryKey: dispatchKeys.register(q),
     queryFn: () => fetchDispatchRegister(q),
+    staleTime: 15_000,
+    placeholderData: (prev) => prev,
+  });
+}
+
+/** ADR-261 — one page of dispatch LINES (GET /customer-dispatches/lines). */
+export function useDispatchLines(q: CustomerDispatchRegisterQuery) {
+  return useQuery<CustomerDispatchLinesResponse>({
+    queryKey: dispatchKeys.lineList(q),
+    queryFn: () =>
+      apiFetch<CustomerDispatchLinesResponse>(`/customer-dispatches/lines?${registerQs(q)}`),
     staleTime: 15_000,
     placeholderData: (prev) => prev,
   });

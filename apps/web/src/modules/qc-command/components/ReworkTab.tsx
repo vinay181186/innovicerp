@@ -20,12 +20,12 @@ function attemptColor(attempts: number): string {
 
 const columns: DataTableColumn<QcReworkRow>[] = [
   // Owner rule 2026-10-31 — the six lead columns first; JC / Op after Item
-  // Name. The rework row carries no created date yet (needs API).
+  // Name. Created On = the reworked QC op's own created_at.
   ...leadColumns<QcReworkRow>({
     soNo: (g) => g.soCode,
     internalSoNo: (g) => g.soInternalNo,
     pol: (g) => g.clientPoLineNo,
-    createdOn: () => null,
+    createdOn: (g) => g.createdAt ?? null,
     itemCode: (g) => g.itemCode,
     itemRev: (g) => g.itemRevision,
     itemName: (g) => g.itemName,

@@ -7,6 +7,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
 import { requestCancel } from '../cancel-requests/service';
+import { listCustomerMaterialReturnLines } from './list-lines';
 import * as service from './service';
 
 const idParam = z.object({ id: z.string().uuid() });
@@ -18,6 +19,13 @@ export async function customerMaterialReturnsRoutes(app: FastifyInstance): Promi
     if (!req.user) throw new AuthenticationError();
     const query = listCustomerMaterialReturnsQuerySchema.parse(req.query);
     return service.listCustomerMaterialReturns(query, req.user);
+  });
+
+  // ADR-261 — the register as one row per return line. Before /:id.
+  app.get('/customer-material-returns/lines', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const query = listCustomerMaterialReturnsQuerySchema.parse(req.query);
+    return listCustomerMaterialReturnLines(query, req.user);
   });
 
   // Registered before /:id so "returnable" is never read as an id.

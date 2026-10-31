@@ -12,7 +12,7 @@
 import type { SoOverallStatus, SoOverviewRow } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate, todayIst } from '@/lib/date';
-import { ProgressBar, ROW_TINT, type DataTableColumn } from '@/ui/data';
+import { leadColumns, ProgressBar, ROW_TINT, type DataTableColumn } from '@/ui/data';
 
 /** Column ids shown inside the ▸ detail row by default (fit engine
  *  `defaultHidden`): Client PO No., Equipment, Lines, SO Date. */
@@ -159,41 +159,31 @@ function soTypeLabel(type: SoOverviewRow['type']): string {
 
 export function soOverviewColumns(): DataTableColumn<SoOverviewRow>[] {
   return [
-    {
-      id: 'so_code',
-      sortFilterField: 'code',
-      header: 'SO No.',
-      nowrap: true,
-      render: (row) => (
-        <Link
-          to="/sales-orders/$id"
-          params={{ id: row.id }}
-          className="td-code"
-          style={{ color: 'var(--cyan)', fontSize: 13, fontWeight: 800 }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {/* The SYSTEM number only (ADR-207); the office's own number is the
-              next column, so each heading names one of the two. */}
-          {row.code}
-        </Link>
-      ),
-    },
-    {
-      // ADR-207 — the office's own typed number, beside the system SO No.
-      id: 'so_internal_no',
-      header: 'Internal SO No.',
-      kind: 'code',
-      sortFilterField: 'internalSoNo',
-      nowrap: true,
-      render: (row) =>
-        row.internalSoNo?.trim() ? (
-          <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-            {row.internalSoNo}
-          </span>
-        ) : (
-          <span className="text3">—</span>
-        ),
-    },
+    // ADR-261 lead columns — one row per ORDER, so no POL / Item columns.
+    ...leadColumns<SoOverviewRow>({
+      soNo: (row) => row.code,
+      internalSoNo: (row) => row.internalSoNo,
+      createdOn: (row) => row.createdAt,
+      overrides: {
+        so_no: {
+          sortFilterField: 'code',
+          // The row itself opens the SO Status page; the SO No. opens the SO.
+          render: (row) => (
+            <Link
+              to="/sales-orders/$id"
+              params={{ id: row.id }}
+              className="td-code"
+              style={{ color: 'var(--cyan)', fontSize: 13, fontWeight: 800 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {row.code}
+            </Link>
+          ),
+        },
+        so_internal_no: { sortFilterField: 'internalSoNo' },
+        created_on: { sortFilterField: 'createdOn' },
+      },
+    }),
     {
       id: 'customer',
       sortFilterField: 'customerName',

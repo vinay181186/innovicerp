@@ -51,3 +51,37 @@ export const SO_SF_COLUMNS: SfColumnMap = {
   status: { sql: sql`so.status`, type: 'list' },
   createdOn: { sql: sql`(so.created_at AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
 };
+
+// ADR-261 — GET /sales-orders/lines (one row per SO LINE; aliases l = the
+// line, so = its order, it = the live item). Header fields as above; the qty
+// and date fields keep the SO list's names (a sort saved on the SO Master
+// stays valid) but are the LINE's own values, as the row shows them.
+export const SO_LINE_SF_COLUMNS: SfColumnMap = {
+  soCode: SO_SF_COLUMNS.soCode!,
+  internalSoNo: SO_SF_COLUMNS.internalSoNo!,
+  soDate: SO_SF_COLUMNS.soDate!,
+  type: SO_SF_COLUMNS.type!,
+  customerName: SO_SF_COLUMNS.customerName!,
+  clientPoNo: SO_SF_COLUMNS.clientPoNo!,
+  status: SO_SF_COLUMNS.status!,
+  clientPoLineNo: { sql: sql`l.client_po_line_no`, type: 'text' },
+  createdOn: {
+    sql: sql`(COALESCE(l.created_at, so.created_at) AT TIME ZONE 'Asia/Kolkata')::date`,
+    type: 'date',
+  },
+  itemCode: { sql: sql`COALESCE(it.code, l.item_code_text)`, type: 'text' },
+  itemName: { sql: sql`l.part_name`, type: 'text' },
+  totalQty: { sql: sql`l.order_qty`, type: 'num' },
+  dispatchedQty: { sql: sql`l.dispatched_qty`, type: 'num' },
+  jcQty: {
+    sql: sql`COALESCE((
+      SELECT SUM(${jcEffectiveQtySql('sjc')})
+      FROM public.job_cards sjc
+      WHERE sjc.source_so_line_id = l.id
+        AND sjc.deleted_at IS NULL
+        AND sjc.recovery_kind IS NULL
+    ), 0)::int`,
+    type: 'num',
+  },
+  earliestDueDate: { sql: sql`l.due_date`, type: 'date' },
+};

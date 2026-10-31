@@ -32,6 +32,7 @@ interface WipRawRow {
   item_name: string | null;
   so_code: string | null;
   so_internal_no: string | null;
+  created_at: Date | string | null;
   vendor_name: string | null;
   vendor_code: string | null;
   order_qty: number;
@@ -82,6 +83,8 @@ export async function listOspWip(
         ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
       LEFT JOIN public.job_work_order_lines rev_jwl
         ON rev_jwl.id = jc.source_jw_line_id AND rev_jwl.deleted_at IS NULL
+      -- ADR-261 Created On: the op's own jc_ops.created_at (the view lacks it).
+      LEFT JOIN public.jc_ops wo ON wo.id = w.jc_op_id
       WHERE w.company_id = ${companyId}::uuid
         ${searchFrag}
         ${sfFrag}`;
@@ -118,7 +121,8 @@ export async function listOspWip(
         -- off the same SO line the revision above is read from, else the JWSO
         -- line's (ADR-236). Never sol.line_no, which is OUR line number.
         ${polSql('sol', 'rev_jwl')} AS client_po_line_no,
-        so.internal_so_no AS so_internal_no
+        so.internal_so_no AS so_internal_no,
+        wo.created_at AS created_at
       ${fromFrag}
         ${bucketFrag}
       ORDER BY ${orderBy}
@@ -139,6 +143,7 @@ export async function listOspWip(
       itemName: r.item_name,
       soCode: r.so_code,
       soInternalNo: r.so_internal_no,
+      createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : (r.created_at ?? null),
       vendorName: r.vendor_name,
       vendorCode: r.vendor_code,
       orderQty: Number(r.order_qty),

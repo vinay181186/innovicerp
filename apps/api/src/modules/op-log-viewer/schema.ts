@@ -46,6 +46,10 @@ export const opLogListItemSchema = z.object({
    *  document (user rule, 2026-09-23). Null on a standalone card. NOT `sales_order_lines.line_no`, which is OUR line
    *  number and a different fact. Read-only: only the SO / JWSO types it. */
   clientPoLineNo: z.string().nullable().default(null),
+  /** ADR-261 lead columns — the order behind the card (SO code, else the JWSO
+   *  code) and the SO's Internal SO No. */
+  soCode: z.string().nullable().optional(),
+  soInternalNo: z.string().nullable().optional(),
   opSeq: z.number().int(),
   operation: z.string().nullable(),
   machineCode: z.string().nullable(),

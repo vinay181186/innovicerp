@@ -23,6 +23,11 @@ export const dailyReportRowSchema = z.object({
    *  Read-only: the Sales Order is the only place it is typed. */
   clientPoLineNo: z.string().nullable().default(null),
   itemName: z.string().nullable(),
+  /** ADR-261 lead columns — the order behind the card (SO code, else the JWSO
+   *  code), the SO's Internal SO No., and the log entry's created_at (ISO). */
+  soCode: z.string().nullable().optional(),
+  soInternalNo: z.string().nullable().optional(),
+  createdAt: z.string().nullable().optional(),
   opSeq: z.number().int().positive(),
   operation: z.string(),
   shift: z.string(),

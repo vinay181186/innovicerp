@@ -22,7 +22,13 @@ export const dispatchableLineSchema = z.object({
    *  hold pieces of two Revs (closed JC ABC/1 + later JC ABC/2). The dispatch
    *  picks one Rev per row. Empty for Buy items. */
   revBuckets: z
-    .array(z.object({ itemRevisionId: z.string().uuid().nullable(), label: z.string(), readyQty: z.number() }))
+    .array(
+      z.object({
+        itemRevisionId: z.string().uuid().nullable(),
+        label: z.string(),
+        readyQty: z.number(),
+      }),
+    )
     .default([]),
   /** The customer's PO line number (`POL`) typed on this same SO line — shown
    *  beside the item code on the dispatch form, as on every other document
@@ -273,3 +279,21 @@ export const financeSoOptionSchema = z.object({
   customer: z.string().nullable(),
 });
 export type FinanceSoOption = z.infer<typeof financeSoOptionSchema>;
+
+// ─── ADR-261 — Customer Dispatch, one row per DISPATCH LINE ─────────────────
+// GET /customer-dispatches/lines: same query + envelope as the register, but
+// paged on LINES (`total` counts lines). Row click / ⋯ act on the DISPATCH.
+
+export const customerDispatchLineListRowSchema = customerDispatchRegisterRowSchema.extend({
+  lineId: z.string().uuid(),
+  /** The line's created_at, else the dispatch's. The Created On column. */
+  createdAt: z.string(),
+});
+export type CustomerDispatchLineListRow = z.infer<typeof customerDispatchLineListRowSchema>;
+
+export const customerDispatchLinesResponseSchema = customerDispatchRegisterResponseSchema.extend({
+  rows: z.array(customerDispatchLineListRowSchema),
+  /** Lines matching search + SO + sf (the pager's total). */
+  total: z.number().int().nonnegative(),
+});
+export type CustomerDispatchLinesResponse = z.infer<typeof customerDispatchLinesResponseSchema>;

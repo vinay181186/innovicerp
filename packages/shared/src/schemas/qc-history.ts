@@ -50,6 +50,8 @@ export const qcHistoryPendingRowSchema = z.object({
    *  0040) — the same name and field QC Command's queue shows. Null =
    *  unassigned. ADR-190. */
   assignedTo: z.string().nullable().default(null),
+  /** ADR-261 lead Created On — the QC op's own record created_at (jc_ops). */
+  createdAt: z.string().nullable().default(null),
 });
 export type QcHistoryPendingRow = z.infer<typeof qcHistoryPendingRowSchema>;
 
@@ -102,6 +104,8 @@ export const qcHistoryLogRowSchema = z.object({
   // inspector attached a report (legacy L4216 📎 download link).
   qcReportPath: z.string().nullable(),
   qcReportName: z.string().nullable(),
+  /** ADR-261 lead Created On — the QC log row's own created_at (op_log). */
+  createdAt: z.string().nullable().default(null),
 });
 export type QcHistoryLogRow = z.infer<typeof qcHistoryLogRowSchema>;
 
@@ -263,6 +267,8 @@ export interface PartyGrnQcRow {
   qcDate: string | null;
   qcByName: string | null;
   waitDays: number;
+  /** ADR-261 lead Created On — the Party GRN line's created_at (else its GRN's). */
+  createdAt?: string | null;
 }
 
 /** One machine that logged output on the source step (NAMING.md "Actual Machine"). */
@@ -318,6 +324,9 @@ export type QcRegisterCompletedItem = QcRegisterFacts &
  *  Days, Stage, Result, Report) have no ▾ — their value is worked out per kind
  *  of call and cannot be sorted the same way across job-card, GRN and Party GRN. */
 export const QC_REGISTER_PENDING_SF_FIELDS = [
+  /** ADR-261 lead SO No. (the SO / JWSO code) and Created On. */
+  'soCode',
+  'createdOn',
   'docNo',
   'itemCode',
   'itemName',
@@ -334,6 +343,9 @@ export const QC_REGISTER_PENDING_SF_FIELDS = [
   'actualMachine',
 ] as const;
 export const QC_REGISTER_COMPLETED_SF_FIELDS = [
+  /** ADR-261 lead SO No. (the SO / JWSO code) and Created On. */
+  'soCode',
+  'createdOn',
   'docNo',
   'itemCode',
   'itemName',

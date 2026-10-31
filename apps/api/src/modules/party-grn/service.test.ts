@@ -25,6 +25,7 @@ import type { AuthContext } from '../../db/with-user-context';
 import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
 import { cancelPartyGrnInputSchema, listPartyGrnQuerySchema } from '@innovic/shared';
 import { requestCancel } from '../cancel-requests/service';
+import { listPartyGrnLines } from './list-lines';
 import { qcPartyGrn } from './qc';
 import { registerPartialQcCases } from './qc-partial.cases';
 import * as service from './service';
@@ -460,6 +461,39 @@ describe('party-grn service — edit (ADR-202 Phase 3)', () => {
         admin,
       ),
     ).rejects.toBeInstanceOf(ConflictError);
+
+    await cancelGrn(grn.id, 'cleanup');
+  });
+});
+
+describe('party-grn service — list one row per line (ADR-261)', () => {
+  it('lists each GRN line with its JWSO, POL, item and document fields', async () => {
+    const grn = await service.createPartyGrn(receipt(line2Id, 2), admin);
+    const d = await service.getPartyGrnDetail(grn.id, admin);
+    const q = listPartyGrnQuerySchema.parse({ search: grn.code, limit: 25, offset: 0 });
+    const res = await listPartyGrnLines(q, admin);
+    expect(res.total).toBe(1);
+    const row = res.items[0]!;
+    expect(row.lineId).toBe(d.lines[0]!.id);
+    expect(row.docId).toBe(grn.id);
+    expect(row.docCode).toBe(grn.code);
+    expect(row.docStatus).toBe('live');
+    expect(row.jwCode).toBe(`${TEST_PREFIX}JW`);
+    expect(row.itemCode).toBe(d.lines[0]!.partyMaterialCodeText);
+    expect(row.receivedQty).toBe(2);
+    expect(row.qcPendingQty).toBe(2);
+    expect(row.header.id).toBe(grn.id);
+    expect(res.summary.totalGrns).toBe(1);
+
+    await cancelGrn(grn.id, 'cleanup');
+  });
+
+  it('never lists another company’s lines', async () => {
+    const grn = await service.createPartyGrn(receipt(line2Id, 1), admin);
+    const q = listPartyGrnQuerySchema.parse({ search: grn.code, limit: 25, offset: 0 });
+    const res = await listPartyGrnLines(q, { ...admin, companyId: randomUUID() });
+    expect(res.total).toBe(0);
+    expect(res.items).toHaveLength(0);
 
     await cancelGrn(grn.id, 'cleanup');
   });

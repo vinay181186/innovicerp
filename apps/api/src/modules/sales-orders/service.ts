@@ -450,7 +450,7 @@ async function insertDrawingRevisions(
 // prices on Sales Orders, the line rate and the GST percentage are nulled
 // before they leave the server — list, detail, print and export all read from
 // these, so nulling here hides money everywhere at once.
-function hideSoHeaderMoney<T extends { gstPercent: string | null }>(h: T): T {
+export function hideSoHeaderMoney<T extends { gstPercent: string | null }>(h: T): T {
   // Also STATE it: the reader must not have to infer 'hidden' from the null.
   return { ...h, gstPercent: null, priceVisible: false };
 }
@@ -681,7 +681,7 @@ export async function listSalesOrders(
   });
 }
 
-function toListItem(r: Record<string, unknown>): SalesOrderListItem {
+export function toListItem(r: Record<string, unknown>): SalesOrderListItem {
   return {
     id: r['id'] as string,
     companyId: r['companyId'] as string,

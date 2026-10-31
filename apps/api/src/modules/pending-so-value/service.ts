@@ -164,6 +164,7 @@ export async function getPendingSoValue(
           so.code                            AS so_code,
           so.internal_so_no                  AS internal_so_no,
           so.customer_name                   AS customer_name,
+          so.created_at                      AS created_at,
           so.so_date                         AS so_date,
           sov.earliest_due_date              AS due_date,
           so.status::text                    AS status,
@@ -190,6 +191,7 @@ export async function getPendingSoValue(
         ${base}
         SELECT
           psv.so_id, psv.so_code, psv.internal_so_no, psv.customer_name,
+          to_char(psv.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS created_at,
           psv.so_date::text AS so_date, psv.due_date::text AS due_date, psv.status,
           psv.order_value::text AS order_value,
           psv.dispatched_value::text AS dispatched_value,
@@ -223,6 +225,7 @@ export async function getPendingSoValue(
       so_code: string;
       internal_so_no: string | null;
       customer_name: string | null;
+      created_at: string | null;
       so_date: string;
       due_date: string | null;
       status: string;
@@ -235,7 +238,14 @@ export async function getPendingSoValue(
     };
     type TotalsRow = Omit<
       Row,
-      'so_id' | 'so_code' | 'internal_so_no' | 'customer_name' | 'so_date' | 'due_date' | 'status'
+      | 'so_id'
+      | 'so_code'
+      | 'internal_so_no'
+      | 'customer_name'
+      | 'created_at'
+      | 'so_date'
+      | 'due_date'
+      | 'status'
     > & {
       so_count: number;
     };
@@ -245,6 +255,7 @@ export async function getPendingSoValue(
       soCode: r.so_code,
       soInternalNo: r.internal_so_no,
       customerName: r.customer_name,
+      createdAt: r.created_at,
       soDate: r.so_date,
       dueDate: r.due_date,
       status: r.status,

@@ -367,3 +367,58 @@ export interface ListGoodsReceiptNotesResponse {
    *  filter set. */
   summary: GrnSummary;
 }
+
+// ─── ADR-261 — GRN list, one row per GRN LINE (GET /goods-receipt-notes/lines)
+//
+// The GRN list screen shows one row per live line of a live GRN (plus, with
+// includeCancelled, the lines cancelled with a Cancelled GRN), opening with the
+// six lead columns. Same query params as GET /goods-receipt-notes; `qcStatus`
+// is read per LINE here (pending = still waiting; in_progress = waiting and part
+// inspected; completed = nothing waiting). `summary` stays DOCUMENT counts — the
+// GRNs that have at least one matching line. Row click / ⋯ act on `docId`.
+
+export const goodsReceiptNoteLineListItemSchema = z.object({
+  lineId: z.string().uuid(),
+  lineNo: z.number().int(),
+  docId: z.string().uuid(),
+  docCode: z.string(),
+  docDate: z.string(),
+  vendorId: z.string().uuid().nullable(),
+  vendorName: z.string().nullable(),
+  vendorCodeText: z.string().nullable(),
+  purchaseOrderId: z.string().uuid().nullable(),
+  deliveryChallanId: z.string().uuid().nullable(),
+  ncId: z.string().uuid().nullable(),
+  poCode: z.string().nullable(),
+  poCodeText: z.string().nullable(),
+  ncCode: z.string().nullable(),
+  dcNo: z.string().nullable(),
+  invoiceNo: z.string().nullable(),
+  cancelledAt: z.string().nullable(),
+  /** Lines of this GRN still waiting for QC (Assign Task gate). */
+  docQcPendingCount: z.number().int().nonnegative(),
+  /** SO code via the GRN line's PO line, else the JWSO code. */
+  soCode: z.string().nullable(),
+  soInternalNo: z.string().nullable(),
+  jwCode: z.string().nullable(),
+  clientPoLineNo: z.string().nullable(),
+  /** The line's own created_at (falls back to the GRN's). */
+  createdAt: z.string(),
+  itemCode: z.string().nullable(),
+  itemRevision: z.string().nullable(),
+  itemName: z.string().nullable(),
+  receivedQty: z.number(),
+  qcAcceptedQty: z.number(),
+  qcRejectedQty: z.number(),
+  /** This LINE's QC state (see the note above). */
+  lineQcStatus: grnQcStatusSchema,
+});
+export type GoodsReceiptNoteLineListItem = z.infer<typeof goodsReceiptNoteLineListItemSchema>;
+
+export interface ListGoodsReceiptNoteLinesResponse {
+  items: GoodsReceiptNoteLineListItem[];
+  total: number;
+  limit: number;
+  offset: number;
+  summary: GrnSummary;
+}

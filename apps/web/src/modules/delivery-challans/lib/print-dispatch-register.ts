@@ -5,18 +5,14 @@
 // Entries / Items Dispatched) + table of dispatch rows + 3-cell signature row
 // are reproduced here.
 //
-// DATA-MODEL DELTA vs legacy: legacy iterated `db.dispatchLog` — one row per
-// dispatched *item line* (date / soNo / clientPoLineNo / itemCode / qty /
-// customer / dispatchedBy / remarks). The new model has DC *headers* with
-// per-header aggregates (vendor, PO, SO, lineCount, totalQty). This print
-// renders the DC-header rows the list page already loaded for the CURRENT
-// filter/page (no new endpoint), and uses the page's dispatch `summary` for the
-// KPI tiles. Per-line columns (clientPoLineNo / dispatchedBy / per-item code)
-// are not available at the header grain, so the table shows the header-grain
-// columns the list exposes (DC no / date / vendor / PO / SO / lines / qty /
-// status). See `docs/...` if a per-line register is added later.
+// DATA-MODEL (ADR-261, 2026-10-31): the list is now ONE ROW PER DC LINE, so
+// the register prints the line rows the list page loaded for the CURRENT
+// filter/page (no extra fetch) — DC no / date / vendor / PO / SO (+ Internal SO
+// No. + POL) / item code (CODE/REV) / sent qty / status — and the page's
+// `summary` for the KPI tiles.
 
-import type { Company, DcStatus, DeliveryChallanListItem, DispatchSummary } from '@innovic/shared';
+import type { Company, DcStatus, DeliveryChallanListLine, DispatchSummary } from '@innovic/shared';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { esc, fmtDate } from '@/lib/print/doc-print';
 import { printWindow, printedMeta } from '@/lib/print/print-window';
 import { DC_STATUS_LABEL } from './dc-status-label';
@@ -36,7 +32,7 @@ function statusBadge(status: string): string {
 }
 
 export function printDispatchRegister(args: {
-  rows: DeliveryChallanListItem[];
+  rows: DeliveryChallanListLine[];
   summary: DispatchSummary;
   // Optional filter context shown under the title (search / status / dates).
   filterLabel?: string;
@@ -44,27 +40,22 @@ export function printDispatchRegister(args: {
 }): boolean {
   const { rows, summary, filterLabel, company } = args;
 
-  // The SO cell carries the customer's DRAWING revision on a second line under
-  // the SO number, said in words rather than as "IN-SO-0012/B": a slash after a
-  // sales-order number would read as a revision of the order itself. This is a
-  // HEADER-grain register, so there is no item code here to hang it off — the
-  // SO number is where the revision belongs. Nothing prints when there is none.
-  // ADR-207: the Internal SO No., when the order has one, is its own labelled
-  // line under the SO number, the same way.
-  // The SO No. column itself prints only when at least one row has an SO —
-  // an OSP DC usually has none, and a column of "—" on every row is noise.
-  const showSo = rows.some((d) => Boolean(d.soCode ?? d.soRefText));
+  // The SO No. column prints only when at least one row has an SO / JWSO —
+  // an OSP DC often has none, and a column of "—" on every row is noise.
+  // ADR-207: the Internal SO No. (and the POL) ride under the order number.
+  const soOf = (d: DeliveryChallanListLine): string | null => d.soCode ?? d.jwCode;
+  const showSo = rows.some((d) => Boolean(soOf(d)));
   const tableRows = rows
     .map(
       (d) => `<tr>
-      <td style="font-family:monospace;color:#0369a1;font-weight:700">${esc(d.code)}</td>
-      <td>${esc(fmtDate(d.dcDate))}</td>
+      <td style="font-family:monospace;color:#0369a1;font-weight:700">${esc(d.docCode)}</td>
+      <td>${esc(fmtDate(d.docDate))}</td>
       <td>${esc(d.vendorName ?? d.vendorCodeText ?? '—')}</td>
       <td style="font-family:monospace">${esc(d.poCode ?? d.poCodeText ?? '—')}</td>
-      ${showSo ? `<td style="font-family:monospace;font-size:10px">${esc(d.soCode ?? d.soRefText ?? '—')}${d.soInternalNo ? `<div style="font-family:inherit;color:#64748b">Internal SO No. ${esc(d.soInternalNo)}</div>` : ''}${d.soLineRevision ? `<div style="font-family:inherit;color:#64748b">Drawing Rev ${esc(d.soLineRevision)}</div>` : ''}</td>` : ''}
-      <td style="text-align:center;font-weight:700">${d.lineCount}</td>
-      <td style="text-align:right;font-weight:700">${Number(d.totalQty).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</td>
-      <td style="text-align:center">${statusBadge(d.status)}</td>
+      ${showSo ? `<td style="font-family:monospace;font-size:10px">${esc(soOf(d) ?? '—')}${d.soInternalNo ? `<div style="font-family:inherit;color:#64748b">Internal SO No. ${esc(d.soInternalNo)}</div>` : ''}${d.clientPoLineNo ? `<div style="font-family:inherit;color:#64748b">POL ${esc(d.clientPoLineNo)}</div>` : ''}</td>` : ''}
+      <td style="font-family:monospace;font-weight:700">${esc(itemCodeWithRev(d.itemCode, d.itemRevision))}</td>
+      <td style="text-align:right;font-weight:700">${Number(d.qty).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</td>
+      <td style="text-align:center">${statusBadge(d.docStatus)}</td>
     </tr>`,
     )
     .join('');
@@ -83,8 +74,8 @@ export function printDispatchRegister(args: {
       <div class="info-box"><div class="info-lbl">DC Entries</div><div class="info-val">${summary.entryCount}</div></div>
       <div class="info-box"><div class="info-lbl">Items Sent</div><div class="info-val">${summary.itemCount}</div></div>
     </div>
-    <table><thead><tr><th>DC No.</th><th>DC Date</th><th>Vendor</th><th>PO No.</th>${showSo ? '<th>SO No.</th>' : ''}<th>Lines</th><th>Sent Qty</th><th>DC Status</th></tr></thead>
-    <tbody>${tableRows || `<tr><td colspan="${showSo ? 8 : 7}" style="text-align:center;color:#aaa">No DCs</td></tr>`}</tbody></table>
+    <table><thead><tr><th>DC No.</th><th>DC Date</th><th>Vendor</th><th>PO No.</th>${showSo ? '<th>SO No.</th>' : ''}<th>Item Code</th><th>Sent Qty</th><th>DC Status</th></tr></thead>
+    <tbody>${tableRows || `<tr><td colspan="${showSo ? 8 : 7}" style="text-align:center;color:#aaa">No DC lines</td></tr>`}</tbody></table>
     <div class="sign-row">
       <div class="sign-box">Store In-Charge</div>
       <div class="sign-box">Purchase</div>

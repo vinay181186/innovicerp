@@ -16,6 +16,7 @@ import { productionDashboardPageQuerySchema } from '@innovic/shared';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError } from '../../lib/errors';
 import { readSf, sfOrderBy, sfWhere, type SfColumnMap } from '../../lib/list-query';
+import { polSql } from '../../lib/pol';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -33,7 +34,16 @@ const ITEM_JOINS = sql`
   LEFT JOIN public.sales_order_lines sol
     ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
   LEFT JOIN public.job_work_order_lines rev_jwl
-    ON rev_jwl.id = jc.source_jw_line_id AND rev_jwl.deleted_at IS NULL`;
+    ON rev_jwl.id = jc.source_jw_line_id AND rev_jwl.deleted_at IS NULL
+  -- ADR-261 lead columns: the order behind the card (SO, else JWSO).
+  LEFT JOIN public.sales_orders pd_so
+    ON pd_so.id = sol.sales_order_id AND pd_so.deleted_at IS NULL
+  LEFT JOIN public.job_work_orders pd_jw
+    ON pd_jw.id = rev_jwl.job_work_order_id AND pd_jw.deleted_at IS NULL`;
+
+/** ISO string for a timestamptz the driver hands back as a Date. */
+const iso = (v: unknown): string | null =>
+  v instanceof Date ? v.toISOString() : ((v as string | null) ?? null);
 
 type Raw = Record<string, unknown>;
 
@@ -53,6 +63,11 @@ export async function listOpenJobCards(
       SELECT
         jc.id AS "jobCardId", jc.code, i.code AS "itemCode", i.name AS "itemName",
         ${REV} AS "itemRevision",
+        ${polSql('sol', 'rev_jwl')} AS "clientPoLineNo",
+        COALESCE(pd_so.code, pd_jw.code) AS "soCode",
+        pd_so.internal_so_no AS "soInternalNo",
+        -- Created On = the job card's own created_at (the row IS the card).
+        jc.created_at AS "createdAt",
         jc.priority, jc.order_qty AS "orderQty", jc.due_date AS "dueDate",
         s.total_ops AS "totalOps", s.done_ops AS "doneOps"
       ${from}
@@ -68,6 +83,10 @@ export async function listOpenJobCards(
       itemCode: (r['itemCode'] as string | null) ?? null,
       itemRevision: (r['itemRevision'] as string | null) ?? null,
       itemName: (r['itemName'] as string | null) ?? null,
+      clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
+      soCode: (r['soCode'] as string | null) ?? null,
+      soInternalNo: (r['soInternalNo'] as string | null) ?? null,
+      createdAt: iso(r['createdAt']),
       priority: r['priority'] as ProductionDashboardJc['priority'],
       orderQty: Number(r['orderQty'] ?? 0),
       doneOps: Number(r['doneOps'] ?? 0),
@@ -91,6 +110,11 @@ export const PROD_READY_SF_COLUMNS: SfColumnMap = {
     type: 'text',
   },
   itemName: { sql: sql`i.name`, type: 'text' },
+  // ADR-261 lead columns.
+  soCode: { sql: sql`COALESCE(pd_so.code, pd_jw.code)`, type: 'text' },
+  soInternalNo: { sql: sql`pd_so.internal_so_no`, type: 'text' },
+  clientPoLineNo: { sql: polSql('sol', 'rev_jwl'), type: 'text' },
+  createdOn: { sql: sql`(jo.created_at AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
   machineCode: { sql: sql`m.code`, type: 'text' },
   orderQty: { sql: sql`jc.order_qty`, type: 'num' },
   completedQty: { sql: sql`vos.completed_qty`, type: 'num' },
@@ -124,6 +148,11 @@ export async function listReadyOps(
         jc.code AS "jobCardCode", jo.op_seq AS "opSeq",
         jo.operation, m.code AS "machineCode",
         i.code AS "itemCode", i.name AS "itemName", ${REV} AS "itemRevision",
+        ${polSql('sol', 'rev_jwl')} AS "clientPoLineNo",
+        COALESCE(pd_so.code, pd_jw.code) AS "soCode",
+        pd_so.internal_so_no AS "soInternalNo",
+        -- Created On = the job-card op's own created_at.
+        jo.created_at AS "createdAt",
         jc.order_qty AS "orderQty", vos.completed_qty AS "completedQty",
         vos.available, vos.computed_status AS "computedStatus",
         ROUND(vos.available * jo.cycle_time_min / 60.0, 2) AS "pendingHrs",
@@ -155,6 +184,10 @@ export async function listReadyOps(
       itemCode: (r['itemCode'] as string | null) ?? null,
       itemRevision: (r['itemRevision'] as string | null) ?? null,
       itemName: (r['itemName'] as string | null) ?? null,
+      clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
+      soCode: (r['soCode'] as string | null) ?? null,
+      soInternalNo: (r['soInternalNo'] as string | null) ?? null,
+      createdAt: iso(r['createdAt']),
       machineCode: (r['machineCode'] as string | null) ?? null,
       machines: ((r['machines'] as Array<{ machineCode: string; qty: unknown }> | null) ?? []).map(
         (v) => ({ machineCode: String(v.machineCode), qty: Number(v.qty ?? 0) }),

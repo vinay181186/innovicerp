@@ -11,8 +11,10 @@
 
 import { ISSUE_AGAINST, ISSUE_AGAINST_LABELS, type IssueAgainst } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
+import { polSql } from '../../../lib/pol';
 import type { RegisteredReport } from '../registry';
 import {
+  dateCell,
   enumFilter,
   isoDateFilter,
   likeFilter,
@@ -45,14 +47,20 @@ export const materialConsumptionReport: RegisteredReport = {
       },
     ],
     columns: [
-      { key: 'month', label: 'Month', type: 'text' },
+      // ADR-261 lead columns. SO No. = the Assembly SO, or the SO / JWSO the
+      // Job Card came from (blank for a General issue). This report sums
+      // lines per month, so Created On is the EARLIEST issue line's
+      // created_at in the row. The JC's drawing rev rides in Item Code.
+      { key: 'so_code', label: 'SO No.', type: 'text' },
+      { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
+      { key: 'client_po_line_no', label: 'POL', type: 'text' },
+      { key: 'created_on', label: 'Created On', type: 'date' },
       { key: 'item_code', label: 'Item Code', type: 'text' },
       { key: 'item_name', label: 'Item Name', type: 'text' },
+      { key: 'month', label: 'Month', type: 'text' },
       { key: 'uom', label: 'UOM', type: 'text' },
       { key: 'issue_against', label: 'Issue Against', type: 'text' },
       { key: 'reference', label: 'Reference', type: 'text' },
-      // ADR-207 — the Assembly SO's Internal SO No. (blank for JC / General).
-      { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
       { key: 'department', label: 'Department', type: 'text' },
       { key: 'issued_to', label: 'Issued To', type: 'text' },
       { key: 'issued_qty', label: 'Issued Qty', type: 'number' },
@@ -84,7 +92,10 @@ export const materialConsumptionReport: RegisteredReport = {
       )
       SELECT
         to_char(si.issue_date, 'YYYY-MM')                AS month,
-        COALESCE(it.code, sil.item_code_text)            AS item_code,
+        (COALESCE(it.code, sil.item_code_text)
+          || CASE WHEN si.issue_against = 'job_card'
+                  THEN COALESCE('/' || NULLIF(btrim(COALESCE(jsol.revision::text, jwl.revision::text)), ''), '')
+                  ELSE '' END)                           AS item_code,
         it.name                                          AS item_name,
         it.uom::text                                     AS uom,
         si.issue_against                                 AS issue_against,
@@ -95,7 +106,16 @@ export const materialConsumptionReport: RegisteredReport = {
         END                                              AS reference,
         si.department                                    AS department,
         si.issued_to                                     AS issued_to,
-        CASE WHEN si.issue_against = 'assembly_so' THEN so.internal_so_no END AS so_internal_no,
+        CASE si.issue_against
+          WHEN 'assembly_so' THEN so.internal_so_no
+          WHEN 'job_card'    THEN jso.internal_so_no
+        END                                              AS so_internal_no,
+        CASE si.issue_against
+          WHEN 'assembly_so' THEN so.code
+          WHEN 'job_card'    THEN COALESCE(jso.code, jwo.code)
+        END                                              AS so_code,
+        CASE WHEN si.issue_against = 'job_card' THEN ${polSql('jsol', 'jwl')} END AS client_po_line_no,
+        (MIN(sil.created_at) AT TIME ZONE 'Asia/Kolkata')::date::text AS created_on,
         SUM(sil.qty)::float8                             AS issued_qty,
         SUM(COALESCE(ret.qty, 0))::float8                AS returned_qty,
         (SUM(sil.qty) - SUM(COALESCE(ret.qty, 0)))::float8 AS net_consumed
@@ -103,6 +123,10 @@ export const materialConsumptionReport: RegisteredReport = {
       JOIN public.store_issues si ON si.id = sil.issue_id
       LEFT JOIN public.items it ON it.id = sil.item_id
       LEFT JOIN public.job_cards jc ON jc.id = si.job_card_id
+      LEFT JOIN public.sales_order_lines jsol ON jsol.id = jc.source_so_line_id
+      LEFT JOIN public.sales_orders jso ON jso.id = jsol.sales_order_id
+      LEFT JOIN public.job_work_order_lines jwl ON jwl.id = jc.source_jw_line_id
+      LEFT JOIN public.job_work_orders jwo ON jwo.id = jwl.job_work_order_id
       LEFT JOIN public.sales_orders so ON so.id = si.sales_order_id
       LEFT JOIN ret ON ret.issue_line_id = sil.id
       WHERE si.company_id = ${companyId}::uuid
@@ -115,7 +139,7 @@ export const materialConsumptionReport: RegisteredReport = {
         ${itemFrag}
         ${deptFrag}
         ${againstFrag}
-      GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9
+      GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11
       ORDER BY 1 DESC, 2, 5, 6, 8
       LIMIT ${ROW_CAP + 1}
     `);
@@ -126,13 +150,16 @@ export const materialConsumptionReport: RegisteredReport = {
     const rows = raw.slice(0, ROW_CAP).map((r) => {
       const ia = String(r['issue_against'] ?? '');
       return {
-        month: String(r['month'] ?? ''),
+        so_code: textCell(r['so_code']),
+        so_internal_no: textCell(r['so_internal_no']),
+        client_po_line_no: textCell(r['client_po_line_no']),
+        created_on: dateCell(r['created_on']),
         item_code: String(r['item_code'] ?? ''),
         item_name: textCell(r['item_name']),
+        month: String(r['month'] ?? ''),
         uom: textCell(r['uom']),
         issue_against: ISSUE_AGAINST_LABELS[ia as IssueAgainst] ?? ia,
         reference: textCell(r['reference']),
-        so_internal_no: textCell(r['so_internal_no']),
         department: textCell(r['department']),
         issued_to: textCell(r['issued_to']),
         issued_qty: numCell(r['issued_qty']),

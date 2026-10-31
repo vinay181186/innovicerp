@@ -2,15 +2,28 @@
 // Dashboard. Keyless classic DataTables (own column shapes, different from the
 // headline Pending PO Tracker — ADR-199). Numbers right-align; names left +
 // ellipsis; the money columns drop out when the server hides prices.
+// ADR-261: the Purchase Summary is one row per PO (many lines), so it opens with
+// the lead columns that fit a whole order — SO No. · Internal SO No. · Created
+// On (the PO's) — and no POL / Item columns.
 
 import type { ScPoSummaryRow, ScRecentGrn } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
-import type { DataTableColumn } from '@/ui/data';
+import { leadColumns, type DataTableColumn } from '@/ui/data';
 import { inr, PO_STATUS_OPTIONS, statusBadge } from './sc-format';
 
 export function poSummaryColumns(priceHidden: boolean): DataTableColumn<ScPoSummaryRow>[] {
   const cols: DataTableColumn<ScPoSummaryRow>[] = [
+    ...leadColumns<ScPoSummaryRow>({
+      soNo: (g) => g.soCode,
+      internalSoNo: (g) => g.soInternalNo,
+      createdOn: (g) => g.createdAt,
+      overrides: {
+        so_no: { sortFilterField: 'soCode' },
+        so_internal_no: { sortFilterField: 'soInternalNo' },
+        created_on: { sortFilterField: 'createdOn' },
+      },
+    }),
     {
       id: 'po_no',
       sortFilterField: 'poNo',
@@ -46,24 +59,6 @@ export function poSummaryColumns(priceHidden: boolean): DataTableColumn<ScPoSumm
       className: 'fw-700',
       render: (g) => g.vendorName ?? g.vendorCode ?? '—',
       title: (g) => g.vendorName ?? g.vendorCode ?? '',
-    },
-    {
-      id: 'so_no',
-      sortFilterField: 'soCode',
-      kind: 'code',
-      header: 'SO / JWSO No.',
-      className: 'text2',
-      render: (g) => g.soCode || '—',
-    },
-    {
-      // ADR-207 — the office's own Internal SO No., in its own column beside
-      // the system SO / JWSO No. so the two can be told apart.
-      id: 'so_internal_no',
-      sortFilterField: 'soInternalNo',
-      kind: 'code',
-      header: 'Internal SO No.',
-      className: 'mono fw-700',
-      render: (g) => <span style={{ color: 'var(--text)' }}>{g.soInternalNo?.trim() || '—'}</span>,
     },
     {
       id: 'lines',

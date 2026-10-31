@@ -16,6 +16,17 @@ export function dateLike(v: unknown): string {
   return v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 10);
 }
 
+/** A timestamptz as an ISO string (the web prints it as the India-time day). */
+export function tsOrNull(v: unknown): string | null {
+  if (v == null) return null;
+  return v instanceof Date ? v.toISOString() : String(v);
+}
+
+/** ADR-261 lead Created On as a filterable India-time day. */
+export function istDaySql(ts: SQL): SQL {
+  return sql`((${ts}) AT TIME ZONE 'Asia/Kolkata')::date`;
+}
+
 /** Last 'complete' log date of the op — the Pending Since column. */
 export const PEND_SINCE = sql`(SELECT MAX(ol.log_date) FROM public.op_log ol
   WHERE ol.jc_op_id = vos.jc_op_id AND ol.log_type = 'complete')`;
@@ -73,7 +84,8 @@ export const PENDING_SELECT = sql`
   vos.completed_qty AS "completed", vos.qc_accepted_qty AS "qcAccepted",
   vos.qc_rejected_qty AS "qcRejected", vos.qc_pending AS "qcPending",
   ${polSql('sol', 'rev_jwl')} AS "clientPoLineNo", jo.qc_call_date AS "qcCallDate",
-  ${PEND_SINCE} AS "pendSince", qa.inspector_name AS "assignedTo"`;
+  ${PEND_SINCE} AS "pendSince", qa.inspector_name AS "assignedTo",
+  jo.created_at AS "createdAt"`;
 
 /** Paging order: latest QC call first, then card + op, then the op id. */
 export const PENDING_ORDER = sql`jo.qc_call_date DESC NULLS LAST, jc.code, vos.op_seq, vos.jc_op_id`;
@@ -105,7 +117,8 @@ export const LOGS_SELECT = sql`
   ol.log_date AS "logDate", ol.created_at AS "loggedAt", ol.shift,
   ol.operator_name AS "inspector", ${OP_LOG_QC_REMARKS} AS "remarks",
   ol.log_no AS "logNo", jo.qc_call_date AS "qcCallDate",
-  ol.qc_report_path AS "qcReportPath", ol.qc_report_name AS "qcReportName"`;
+  ol.qc_report_path AS "qcReportPath", ol.qc_report_name AS "qcReportName",
+  ol.created_at AS "createdAt"`;
 
 export const LOGS_ORDER = sql`ol.log_date DESC, ol.id DESC`;
 
@@ -165,6 +178,7 @@ export function toPendingRow(r: Raw, today: string): QcHistoryPendingRow {
     clientPoLineNo: s(r['clientPoLineNo']),
     qcCallDate: r['qcCallDate'] != null ? dateLike(r['qcCallDate']) : null,
     assignedTo: s(r['assignedTo']),
+    createdAt: tsOrNull(r['createdAt']),
   };
 }
 
@@ -193,6 +207,7 @@ export function toLogRow(r: Raw): QcHistoryLogRow {
     qcCallDate: r['qcCallDate'] != null ? dateLike(r['qcCallDate']) : null,
     qcReportPath: s(r['qcReportPath']),
     qcReportName: s(r['qcReportName']),
+    createdAt: tsOrNull(r['createdAt']),
   };
 }
 

@@ -33,15 +33,22 @@ export function capaRowTint(c: CapaRecord): string | undefined {
 export function capaListColumns(): DataTableColumn<CapaRecord>[] {
   return [
     // Owner rule 2026-10-31 — the six lead columns first; CAPA No. after Item
-    // Name. Internal SO No. and Item Name are not on the CAPA row yet (needs API).
+    // Name. Internal SO No. / Item Name come off the CAPA's SO / item codes.
     ...leadColumns<CapaRecord>({
       soNo: (c) => c.soNo,
-      internalSoNo: () => null,
+      internalSoNo: (c) => c.soInternalNo,
       pol: (c) => c.clientPoLineNo,
       createdOn: (c) => c.createdAt,
       itemCode: (c) => c.itemCode,
       itemRev: (c) => c.itemRevision,
-      itemName: () => null,
+      itemName: (c) => c.itemName,
+      overrides: {
+        so_no: { sortFilterField: 'soNo', filterType: 'text' },
+        so_internal_no: { sortFilterField: 'soInternalNo', filterType: 'text' },
+        created_on: { sortFilterField: 'createdOn' },
+        item_code: { sortFilterField: 'itemCode', filterType: 'text' },
+        item_name: { sortFilterField: 'itemName', filterType: 'text' },
+      },
     }),
     {
       id: 'capa_no',

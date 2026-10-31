@@ -42,11 +42,13 @@ export interface LeadColumnSpec<T> {
   soNo: (row: T) => Text;
   /** Leave out on a JWSO-only list — that column is then not drawn. */
   internalSoNo?: ((row: T) => Text) | undefined;
-  pol: (row: T) => Text;
+  /** Leave out ONLY on a one-row-per-order summary (SO Overview, SO Costing…):
+   *  an order has many POLs/items, so those columns are then not drawn. */
+  pol?: ((row: T) => Text) | undefined;
   createdOn: (row: T) => Text;
-  itemCode: (row: T) => Text;
+  itemCode?: ((row: T) => Text) | undefined;
   itemRev?: ((row: T) => Text) | undefined;
-  itemName: (row: T) => Text;
+  itemName?: ((row: T) => Text) | undefined;
   /** Per-column extras (sortFilterField, sortField, filterValue, title, render…). */
   overrides?: Partial<Record<LeadColumnId, Partial<DataTableColumn<T>>>>;
 }
@@ -98,22 +100,25 @@ export function leadColumns<T>(spec: LeadColumnSpec<T>): DataTableColumn<T>[] {
       ),
     );
   }
+  const { pol, itemCode, itemName } = spec;
+  if (pol) {
+    out.push(
+      col<T>(
+        {
+          id: 'client_po_line_no',
+          kind: 'code',
+          header: 'POL',
+          headColor: 'var(--purple)',
+          className: 'mono fw-700',
+          nowrap: true,
+          render: (r): ReactNode => <span style={{ color: 'var(--purple)' }}>{dash(pol(r))}</span>,
+          filterValue: (r) => pol(r) ?? '',
+        },
+        o.client_po_line_no,
+      ),
+    );
+  }
   out.push(
-    col<T>(
-      {
-        id: 'client_po_line_no',
-        kind: 'code',
-        header: 'POL',
-        headColor: 'var(--purple)',
-        className: 'mono fw-700',
-        nowrap: true,
-        render: (r): ReactNode => (
-          <span style={{ color: 'var(--purple)' }}>{dash(spec.pol(r))}</span>
-        ),
-        filterValue: (r) => spec.pol(r) ?? '',
-      },
-      o.client_po_line_no,
-    ),
     col<T>(
       {
         id: 'created_on',
@@ -126,37 +131,45 @@ export function leadColumns<T>(spec: LeadColumnSpec<T>): DataTableColumn<T>[] {
       },
       o.created_on,
     ),
-    col<T>(
-      {
-        id: 'item_code',
-        kind: 'code',
-        header: 'Item Code',
-        className: 'td-code',
-        nowrap: true,
-        render: (r): ReactNode => (
-          <span style={{ color: 'var(--text)', fontWeight: 700 }}>
-            {itemCodeWithRev(spec.itemCode(r) ?? null, spec.itemRev?.(r) ?? null) || '—'}
-          </span>
-        ),
-        filterValue: (r) => spec.itemCode(r) ?? '',
-      },
-      o.item_code,
-    ),
-    col<T>(
-      {
-        id: 'item_name',
-        kind: 'text',
-        header: 'Item Name',
-        align: 'left',
-        ellipsis: true,
-        className: 'fw-700',
-        render: (r) => spec.itemName(r) ?? '',
-        title: (r) => spec.itemName(r) ?? '',
-        filterValue: (r) => spec.itemName(r) ?? '',
-      },
-      o.item_name,
-    ),
   );
+  if (itemCode) {
+    out.push(
+      col<T>(
+        {
+          id: 'item_code',
+          kind: 'code',
+          header: 'Item Code',
+          className: 'td-code',
+          nowrap: true,
+          render: (r): ReactNode => (
+            <span style={{ color: 'var(--text)', fontWeight: 700 }}>
+              {itemCodeWithRev(itemCode(r) ?? null, spec.itemRev?.(r) ?? null) || '—'}
+            </span>
+          ),
+          filterValue: (r) => itemCode(r) ?? '',
+        },
+        o.item_code,
+      ),
+    );
+  }
+  if (itemName) {
+    out.push(
+      col<T>(
+        {
+          id: 'item_name',
+          kind: 'text',
+          header: 'Item Name',
+          align: 'left',
+          ellipsis: true,
+          className: 'fw-700',
+          render: (r) => itemName(r) ?? '',
+          title: (r) => itemName(r) ?? '',
+          filterValue: (r) => itemName(r) ?? '',
+        },
+        o.item_name,
+      ),
+    );
+  }
   return out;
 }
 

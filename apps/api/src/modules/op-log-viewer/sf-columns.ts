@@ -12,9 +12,11 @@ import {
   jcOps,
   jobCards,
   jobWorkOrderLines,
+  jobWorkOrders,
   machines,
   opLog,
   salesOrderLines,
+  salesOrders,
   users,
 } from '../../db/schema';
 import type { SfColumnMap } from '../../lib/list-query';
@@ -38,6 +40,9 @@ export const OP_LOG_SF_COLUMNS: SfColumnMap = {
     type: 'text',
   },
   itemName: { sql: sql`${items.name}`, type: 'text' },
+  // ADR-261 lead columns: the order behind the card (SO, else JWSO).
+  soCode: { sql: sql`COALESCE(${salesOrders.code}, ${jobWorkOrders.code})`, type: 'text' },
+  soInternalNo: { sql: sql`${salesOrders.internalSoNo}`, type: 'text' },
   logDate: { sql: sql`${opLog.logDate}`, type: 'date' },
   opSeq: { sql: sql`${jcOps.opSeq}`, type: 'num' },
   logType: { sql: sql`${opLog.logType}`, type: 'list' },

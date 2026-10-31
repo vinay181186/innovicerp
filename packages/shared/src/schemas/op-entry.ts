@@ -99,6 +99,8 @@ export const jcOpEnrichedSchema = z.object({
   soCode: z.string().nullable().optional(), // source SO/JW order code (T27)
   /** ADR-207 — the source SO's Internal SO No. (null on a JW-sourced card). */
   soInternalNo: z.string().nullable().optional(),
+  /** ADR-261 Created On — the job-card op's own jc_ops.created_at (ISO). */
+  createdAt: z.string().nullable().optional(),
   opSeq: z.number().int().positive(),
   /** The PLANNED machine: jc_ops.machine_id, where the REMAINING qty is routed.
    *  Carried as an id (not only a code) so the Start popup can default its
@@ -316,6 +318,10 @@ export const opLogTimeChangeRequestSchema = z.object({
    *  Read-only: the Sales Order is the only place it is typed. */
   clientPoLineNo: z.string().nullable().default(null),
   itemName: z.string().nullable().default(null),
+  /** ADR-261 lead columns — the order behind the card (SO code, else the JWSO
+   *  code) and the SO's Internal SO No. */
+  soCode: z.string().nullable().optional(),
+  soInternalNo: z.string().nullable().optional(),
   machineCode: z.string().nullable(),
   /** The entry's qty, shown so the approver can see it is NOT part of the ask. */
   qty: z.number().int().nonnegative(),
@@ -449,6 +455,11 @@ export const runningOpSchema = z.object({
    *  Read-only: the Sales Order is the only place it is typed. */
   clientPoLineNo: z.string().nullable().default(null),
   itemName: z.string().nullable().default(null),
+  /** ADR-261 lead columns — the order behind the card (SO code, else the JWSO
+   *  code), the SO's Internal SO No., and the job-card op's created_at (ISO). */
+  soCode: z.string().nullable().optional(),
+  soInternalNo: z.string().nullable().optional(),
+  createdAt: z.string().nullable().optional(),
   opSeq: z.number().int().positive(), // joined
   operation: z.string(), // joined
   machineId: z.string().uuid().nullable(),

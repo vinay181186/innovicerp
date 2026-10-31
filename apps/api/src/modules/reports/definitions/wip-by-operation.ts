@@ -8,6 +8,7 @@ import { sql } from 'drizzle-orm';
 import type { RegisteredReport } from '../registry';
 import { polSql } from '../../../lib/pol';
 import {
+  dateCell,
   enumFilter,
   likeFilter,
   numCell,
@@ -35,12 +36,16 @@ export const wipByOperationReport: RegisteredReport = {
       { key: 'opType', label: 'Op Type', kind: 'enum', options: [...OP_TYPES] },
     ],
     columns: [
-      { key: 'jc_code', label: 'JC No.', type: 'text' },
-      { key: 'client_po_line_no', label: 'POL', type: 'text' },
-      { key: 'item_code', label: 'Item Code', type: 'text' },
-      { key: 'item_revision', label: 'Drawing Rev', type: 'text' },
-      { key: 'order_code', label: 'SO / JWSO', type: 'text' },
+      // ADR-261 lead columns. SO No. = the SO or JWSO the JC came from;
+      // Created On = the JC op's created_at; the order line's drawing rev
+      // rides in Item Code as CODE/REV.
+      { key: 'so_code', label: 'SO No.', type: 'text' },
       { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
+      { key: 'client_po_line_no', label: 'POL', type: 'text' },
+      { key: 'created_on', label: 'Created On', type: 'date' },
+      { key: 'item_code', label: 'Item Code', type: 'text' },
+      { key: 'item_name', label: 'Item Name', type: 'text' },
+      { key: 'jc_code', label: 'JC No.', type: 'text' },
       { key: 'op_seq', label: 'Op', type: 'number' },
       { key: 'operation', label: 'Operation', type: 'text' },
       { key: 'machine_code', label: 'Planned Machine', type: 'text' },
@@ -72,10 +77,13 @@ export const wipByOperationReport: RegisteredReport = {
     const result = await tx.execute(sql`
       SELECT
         jc.code                                      AS jc_code,
-        it.code                                 AS item_code,
+        (it.code
+          || COALESCE('/' || NULLIF(btrim(COALESCE(sol.revision::text, jwl.revision::text)), ''), ''))
+                                                     AS item_code,
+        it.name                                      AS item_name,
         ${polSql('sol', 'jwl')} AS client_po_line_no, -- ADR-236
-        COALESCE(sol.revision::text, jwl.revision::text) AS item_revision,
-        COALESCE(so.code, jwo.code)                  AS order_code,
+        (o.created_at AT TIME ZONE 'Asia/Kolkata')::date::text AS created_on,
+        COALESCE(so.code, jwo.code)                  AS so_code,
         so.internal_so_no                            AS so_internal_no,
         o.op_seq                                     AS op_seq,
         o.operation                                  AS operation,
@@ -122,12 +130,13 @@ export const wipByOperationReport: RegisteredReport = {
     `);
 
     const rows = (result as unknown as SqlRow[]).map((r) => ({
-      jc_code: String(r['jc_code'] ?? ''),
-      item_code: String(r['item_code'] ?? '—'),
-      item_revision: textCell(r['item_revision']),
-      client_po_line_no: textCell(r['client_po_line_no']),
-      order_code: textCell(r['order_code']),
+      so_code: textCell(r['so_code']),
       so_internal_no: textCell(r['so_internal_no']),
+      client_po_line_no: textCell(r['client_po_line_no']),
+      created_on: dateCell(r['created_on']),
+      item_code: String(r['item_code'] ?? '—'),
+      item_name: textCell(r['item_name']),
+      jc_code: String(r['jc_code'] ?? ''),
       op_seq: numCell(r['op_seq']),
       operation: textCell(r['operation']),
       machine_code: textCell(r['machine_code']),

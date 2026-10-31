@@ -7,6 +7,7 @@
 import { sql } from 'drizzle-orm';
 
 import type { SfColumnMap } from '../../lib/list-query';
+import { polSql } from '../../lib/pol';
 import { poLinePendingRaw } from '../../lib/po-pending';
 
 /** Pending Qty of a PO line — the ONE definition (lib/po-pending.ts, qty −
@@ -33,7 +34,10 @@ export const SC_PENDING_SF_COLUMNS: SfColumnMap = {
   lineNo: { sql: sql`pol.line_no`, type: 'num' },
   poDate: { sql: sql`po.po_date`, type: 'date' },
   vendor: { sql: PENDING_VENDOR_SQL, type: 'text' },
-  soCode: { sql: sql`so.code`, type: 'text' },
+  // ADR-261 — the SO No. slot shows the SO, else the JWSO (rev_jwo).
+  soCode: { sql: sql`COALESCE(so.code, rev_jwo.code)`, type: 'text' },
+  clientPoLineNo: { sql: polSql('sol', 'rev_jwl'), type: 'text' },
+  createdOn: { sql: sql`(pol.created_at AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
   // ADR-207 — the Internal SO No., off the `so` join pendingFrom makes (shared
   // by the page, the count and the picklists).
   soInternalNo: { sql: sql`so.internal_so_no`, type: 'text' },
@@ -67,6 +71,7 @@ export const SC_SO_SF_COLUMNS: SfColumnMap = {
   // ADR-207 — the Internal SO No., a grouped column of the same subquery
   // (listScSos GROUPs BY it, so one value per row).
   soInternalNo: { sql: sql`t.so_internal_no`, type: 'text' },
+  createdOn: { sql: sql`(t.so_created_at AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
   lines: { sql: sql`t.lines`, type: 'num' },
   uniqueVendors: { sql: sql`t.unique_vendors`, type: 'num' },
   totalQty: { sql: sql`t.total_qty`, type: 'num' },
@@ -86,6 +91,7 @@ export const SC_PO_SUMMARY_SF_COLUMNS: SfColumnMap = {
   soCode: { sql: sql`t.so_code`, type: 'text' },
   // ADR-207 — the Internal SO No., the same subquery column the row shows.
   soInternalNo: { sql: sql`t.so_internal_no`, type: 'text' },
+  createdOn: { sql: sql`(t.po_created_at AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
   lines: { sql: sql`t.lines`, type: 'num' },
   totalQty: { sql: sql`t.total_qty`, type: 'num' },
   receivedQty: { sql: sql`t.received_qty`, type: 'num' },

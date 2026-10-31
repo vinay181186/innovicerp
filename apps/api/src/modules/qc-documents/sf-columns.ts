@@ -39,4 +39,9 @@ export const QC_DOC_SF_COLUMNS: SfColumnMap = {
     sql: sql`(${qcDocuments.createdAt} AT TIME ZONE 'Asia/Kolkata')::date`,
     type: 'date',
   },
+  // ADR-261 lead Created On — the same day as Upload Date (the file's created_at).
+  createdOn: {
+    sql: sql`(${qcDocuments.createdAt} AT TIME ZONE 'Asia/Kolkata')::date`,
+    type: 'date',
+  },
 };

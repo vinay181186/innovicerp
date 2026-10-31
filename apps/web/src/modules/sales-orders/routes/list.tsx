@@ -1,14 +1,15 @@
 // SO Master list (UI-003-05). THE Innovic fit table (ADR-199, table standard
-// 2026-10-01): one ruled sheet, no card / list toggle. Every order is one row
-// of the 12 standard columns; the row's ▸ opens its line items (component) or
-// its BOM-status strip + exploded BOM (equipment), with Raised By and Remarks.
-// Row click opens the SO detail; Edit / Assign / Delete live in the row's ⋯.
+// 2026-10-01): one ruled sheet, no card / list toggle. ADR-261 (owner
+// 2026-10-31): ONE ROW PER SO LINE (GET /sales-orders/lines), opening with the
+// six lead columns; no ▸ (the lines are the rows now). Row click opens the SO
+// detail; Preview / Edit / Assign / Cancel / Delete live in the row's ⋯ and act
+// on the ORDER, as before.
 //
-// Column defs live in components/so-list-columns.tsx, the ▸ panels in
-// components/so-expanded-panel.tsx (+ so-component / so-equipment expand).
+// Column defs live in components/so-list-columns.tsx.
 
 import {
   type ListSalesOrdersQuery,
+  type SalesOrderLineListItem,
   type SalesOrderListItem,
   SELECTABLE_SO_TYPES,
   SO_STATUSES,
@@ -34,24 +35,22 @@ import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ConfirmDialog } from '@/ui/feedback';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { REASON_REQUIRED_MESSAGE, ReasonField } from '../components/reason-field';
-import {
-  SO_LIST_HIDDEN_COLUMNS,
-  soListColumns,
-  soRowMenu,
-  soRowTint,
-} from '../components/so-list-columns';
+import { soLineRowTint, soListColumns, soRowMenu } from '../components/so-list-columns';
 import { useOrderPrint } from '../components/use-order-print';
-import { SoExpandedPanel } from '../components/so-expanded-panel';
 import { SoPreviewModal } from '../components/so-preview-modal';
 import { SO_STATUS_LABEL, SO_TYPE_LABEL } from '../lib/so-status-label';
 import { exportSoListExcel } from '../lib/import-export';
 import { todayIst } from '@/lib/date';
 import { soNoWithInternal } from '@/lib/so-number';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
-import { fetchSalesOrdersForExport, useSalesOrdersList, useSoftDeleteSalesOrder } from '../api';
+import {
+  fetchSalesOrderLinesForExport,
+  useSalesOrderLinesList,
+  useSoftDeleteSalesOrder,
+} from '../api';
 
-// ADR-201: 25 orders per page from the SERVER (was one 1000-row fetch); search /
-// filters / Sort & Filter run there over ALL orders and reset to page 1.
+// ADR-201: 25 rows per page from the SERVER — ADR-261: 25 LINES; search /
+// filters / Sort & Filter run there over ALL lines and reset to page 1.
 
 const listSearchSchema = z.object({
   search: z.string().optional(),
@@ -110,7 +109,7 @@ function SalesOrdersListPage(): React.JSX.Element {
     [sf.param, search.search, search.status, search.type, offset],
   );
 
-  const { data, isLoading, isFetching, isError, error } = useSalesOrdersList(query, {
+  const { data, isLoading, isFetching, isError, error } = useSalesOrderLinesList(query, {
     refetchInterval: LIVE_FALLBACK_POLL_MS,
   });
   const gotoPage = useCallback(
@@ -130,16 +129,6 @@ function SalesOrdersListPage(): React.JSX.Element {
   const canDelete = canDeleteRecords(eff); // ADR-232: delete = L6 Super Admin only
   const canPlan = effectiveFormPerms(eff, 'plan_create').entry;
   const canAssign = perms.advance; // ADR-232: Assign Task = the page's Advance right
-
-  // Rows whose ▸ is open (none on load, so no per-order fetches on arrival).
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
-  const toggleExpand = (id: string): void =>
-    setExpandedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
 
   const softDelete = useSoftDeleteSalesOrder();
   // Delete asks through the ONE confirm dialog; a failure shows inside it.
@@ -162,14 +151,15 @@ function SalesOrdersListPage(): React.JSX.Element {
   // Export status banner — an export that finds nothing, or fails, says so here.
   const [importMsg, setImportMsg] = useState<string | null>(null);
 
-  // Excel export: EVERY row matching search / status / type / Sort & Filter.
+  // Excel export: EVERY line row matching search / status / type / Sort &
+  // Filter (ADR-261 — one row per line, as the screen).
   const [exporting, setExporting] = useState(false);
   // Client-PO document being previewed in-app (ADR-142).
   const [previewPath, setPreviewPath] = useState<string | null>(null);
   async function onExport(): Promise<void> {
     setExporting(true);
     try {
-      const res = await fetchSalesOrdersForExport({
+      const res = await fetchSalesOrderLinesForExport({
         search: search.search,
         status: search.status,
         type: search.type,
@@ -217,7 +207,7 @@ function SalesOrdersListPage(): React.JSX.Element {
         title="SO Master"
         icon="📋"
         count={total}
-        noun="order"
+        noun="line"
         filterNote={search.status ? SO_STATUS_LABEL[search.status] : undefined}
         search={searchInput}
         onSearch={setSearchInput}
@@ -339,25 +329,21 @@ function SalesOrdersListPage(): React.JSX.Element {
         />
       ) : (
         <Panel fill bodyPadding="none">
-          <DataTable<SalesOrderListItem>
+          <DataTable<SalesOrderLineListItem>
             tableKey={TABLE_KEYS.soMaster}
             sortFilterServer={sf}
             columns={columns}
-            defaultHidden={SO_LIST_HIDDEN_COLUMNS}
             rows={rows}
+            // A line-less SO's one row has no line id — its SO id is the key.
+            rowKey={(r) => r.lineId ?? r.id}
             loading={isLoading}
             empty={
               sf.filtering || search.search || search.status || search.type
                 ? 'No SOs match.'
                 : 'No SOs yet.'
             }
-            rowClassName={(so) => soRowTint(so, today)}
+            rowClassName={(r) => soLineRowTint(r, today)}
             onRowClick={(so) => void navigate({ to: '/sales-orders/$id', params: { id: so.id } })}
-            // ▸ opens the SO's detail panel; a closed row renders null (no fetch).
-            renderExpanded={(so) =>
-              expandedIds.has(so.id) ? <SoExpandedPanel so={so} canEdit={canEdit} /> : null
-            }
-            onToggleExpanded={(so) => toggleExpand(so.id)}
             rowMenu={(so) =>
               soRowMenu(so, {
                 canEdit,
@@ -389,7 +375,7 @@ function SalesOrdersListPage(): React.JSX.Element {
 
       <ListFooter
         total={total}
-        noun="sales order"
+        noun="line"
         page={search.page}
         pageSize={LIST_PAGE_SIZE}
         onPage={gotoPage}

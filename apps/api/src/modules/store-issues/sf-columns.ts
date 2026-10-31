@@ -11,6 +11,7 @@
 import { sql } from 'drizzle-orm';
 
 import type { SfColumnMap } from '../../lib/list-query';
+import { polSql } from '../../lib/pol';
 
 export const STORE_ISSUE_SF_COLUMNS: SfColumnMap = {
   code: { sql: sql`si.code`, type: 'text' },
@@ -46,4 +47,20 @@ export const STORE_ISSUE_SF_COLUMNS: SfColumnMap = {
   purpose: { sql: sql`si.purpose`, type: 'text' },
   issuedBy: { sql: sql`u.full_name`, type: 'text' },
   createdOn: { sql: sql`(si.created_at AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
+};
+
+// ADR-261 — the line register (lines.ts, GET /store-issues/lines). Same fields
+// as the slip list plus the lead columns and the line's own qty; every
+// expression reads the aliases LINE_FROM joins (page AND count).
+export const STORE_ISSUE_LINE_SF_COLUMNS: SfColumnMap = {
+  ...STORE_ISSUE_SF_COLUMNS,
+  soCode: { sql: sql`COALESCE(so.code, jw.code)`, type: 'text' },
+  clientPoLineNo: { sql: polSql('sol', 'jwl'), type: 'text' },
+  createdOn: {
+    sql: sql`(COALESCE(l.created_at, si.created_at) AT TIME ZONE 'Asia/Kolkata')::date`,
+    type: 'date',
+  },
+  itemCode: { sql: sql`COALESCE(i.code, l.item_code_text)`, type: 'text' },
+  itemName: { sql: sql`i.name`, type: 'text' },
+  qty: { sql: sql`l.qty`, type: 'num' },
 };

@@ -39,6 +39,8 @@ export const ospWipRowSchema = z.object({
   itemName: z.string().nullable(),
   soCode: z.string().nullable(),
   soInternalNo: z.string().nullable().optional(), // ADR-207 Internal SO No., live
+  /** ADR-261 Created On — the outsource op's own jc_ops.created_at (ISO). */
+  createdAt: z.string().nullable().optional(),
   vendorName: z.string().nullable(),
   vendorCode: z.string().nullable(),
   /** Ordered qty on the job card. */

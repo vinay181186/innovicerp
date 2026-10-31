@@ -127,6 +127,11 @@ export const assemblyListItemSchema = z.object({
   bomRevision: z.number().int().nullable(),
   partNoText: z.string().nullable(),
   partName: z.string().nullable(),
+  /** ADR-261 — the equipment line's drawing revision (rides in the Item Code
+   *  cell as CODE/REV) and the SO's created_at (Created On, ISO). Optional
+   *  while web/API deploy apart. */
+  itemRevision: z.string().nullable().optional(),
+  createdAt: z.string().nullable().optional(),
   orderQty: z.number().int().nonnegative(),
   assembledQty: z.number().int().nonnegative(),
   dispatchedQty: z.number().int().nonnegative(),

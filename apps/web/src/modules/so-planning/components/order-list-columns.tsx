@@ -1,5 +1,5 @@
 // Columns for the Planning SO/JWSO list (ADR-199 shared FIT table). One row per
-// open order: SO/JWSO No. (pinned) · Internal SO No. · Customer · Type · Due ·
+// open order: SO No. · Internal SO No. · Created On (ADR-261 lead) · Customer · Type · Due ·
 // Lines · Order Qty · Plan Qty · % Planned · Plan Status.
 // Split out of routes/workflow.tsx so that
 // file stays under the 400-line rule and matches the reference list shape
@@ -11,7 +11,7 @@
 import type { PlanningSoListItem } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
 import { soTypeLabel } from '@/modules/sales-orders/lib/so-status-label';
-import { ROW_TINT, type DataTableColumn } from '@/ui/data';
+import { ROW_TINT, leadColumns, type DataTableColumn } from '@/ui/data';
 import {
   JwChip,
   ORDER_STATUS_BADGE,
@@ -47,41 +47,32 @@ const TYPE_OPTIONS = ['component_manufacturing', 'equipment', 'with_material', '
 
 export function orderListColumns(src: SourceFilter): DataTableColumn<PlanningSoListItem>[] {
   return [
-    {
-      id: 'so_code',
-      header: src === 'jw' ? 'JWSO No.' : src === 'so' ? 'SO No.' : 'SO / JWSO No.',
-      kind: 'code',
-      sortFilterField: 'soCode',
-      nowrap: true,
-      render: (so) => (
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-          {so.source === 'jw' ? <JwChip /> : null}
-          {/* The SYSTEM number only (ADR-207); the office's own number is the
-              next column, so each heading names one of the two. */}
-          <span className="mono fw-700" style={{ color: 'var(--text)', fontSize: 13 }}>
-            {so.soCode}
-          </span>
-        </span>
-      ),
-    },
-    {
-      // ADR-207 — the office's own typed number, beside the system number. The
-      // heading is the same on all three source filters: only the first column
-      // switches between SO / JWSO.
-      id: 'so_internal_no',
-      header: 'Internal SO No.',
-      kind: 'code',
-      sortFilterField: 'soInternalNo',
-      nowrap: true,
-      render: (so) =>
-        so.soInternalNo?.trim() ? (
-          <span className="mono fw-700" style={{ color: 'var(--text)', fontSize: 13 }}>
-            {so.soInternalNo}
-          </span>
-        ) : (
-          <span className="text3">—</span>
-        ),
-    },
+    // ADR-261 lead columns — a one-row-per-ORDER summary, so only SO No.,
+    // Internal SO No. (not on the JWSO-only view) and Created On are drawn; an
+    // order has many POLs / items. Customer and every other fact follow.
+    ...leadColumns<PlanningSoListItem>({
+      so: src === 'jw' ? 'jwso' : 'so',
+      soNo: (so) => so.soCode,
+      internalSoNo: src === 'jw' ? undefined : (so) => so.soInternalNo,
+      createdOn: (so) => so.createdAt,
+      overrides: {
+        so_no: {
+          sortFilterField: 'soCode',
+          render: (so) => (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+              {so.source === 'jw' ? <JwChip /> : null}
+              {/* The SYSTEM number only (ADR-207); the office's own number is
+                  the next column, so each heading names one of the two. */}
+              <span className="mono fw-700" style={{ color: 'var(--blue)' }}>
+                {so.soCode}
+              </span>
+            </span>
+          ),
+        },
+        so_internal_no: { sortFilterField: 'soInternalNo' },
+        created_on: { sortFilterField: 'createdOn' },
+      },
+    }),
     {
       id: 'customer',
       header: 'Customer',

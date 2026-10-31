@@ -4,6 +4,7 @@
 // first. Modelled on ERPNext's "Requested Items To Be Ordered" report.
 
 import { sql } from 'drizzle-orm';
+import { polSql } from '../../../lib/pol';
 import type { RegisteredReport } from '../registry';
 import {
   dateCell as dateOrNull,
@@ -30,18 +31,23 @@ export const prPendingToOrderReport: RegisteredReport = {
       { key: 'item', label: 'Item', kind: 'text', placeholder: 'Item code or name' },
     ],
     columns: [
+      // ADR-261 lead columns — same sources as the PR list: SO line, else
+      // the JW line of the JC op the PR came from. Created On = the PR's
+      // created_at; the drawing rev rides in Item Code as CODE/REV.
+      { key: 'so_code', label: 'SO No.', type: 'text' },
+      { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
+      { key: 'client_po_line_no', label: 'POL', type: 'text' },
+      { key: 'created_on', label: 'Created On', type: 'date' },
+      { key: 'item_code', label: 'Item Code', type: 'text' },
+      { key: 'item_name', label: 'Item Name', type: 'text' },
       { key: 'pr_code', label: 'PR No.', type: 'text' },
       { key: 'pr_date', label: 'PR Date', type: 'date' },
       { key: 'pr_type', label: 'PR Type', type: 'text' },
-      { key: 'item_code', label: 'Item Code', type: 'text' },
-      { key: 'item_name', label: 'Item Name', type: 'text' },
       { key: 'pr_qty', label: 'PR Qty', type: 'number' },
       { key: 'ordered_qty', label: 'Ordered', type: 'number' },
       { key: 'pending_qty', label: 'Pending', type: 'number' },
       { key: 'due_date', label: 'Due Date', type: 'date' },
       { key: 'days_pending', label: 'Days Pending', type: 'number' },
-      { key: 'so_code', label: 'SO No.', type: 'text' },
-      { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
       { key: 'jc_code', label: 'JC No.', type: 'text' },
     ],
   },
@@ -67,13 +73,16 @@ export const prPendingToOrderReport: RegisteredReport = {
       SELECT
         x.pr_code, x.pr_date, x.pr_type, x.item_code, x.item_name, x.pr_qty,
         x.ordered_qty, x.due_date, x.days_pending, x.so_code, x.so_internal_no, x.jc_code,
+        x.client_po_line_no, x.created_on,
         (x.pr_qty - x.ordered_qty)::numeric AS pending_qty
       FROM (
         SELECT
           pr.code                                        AS pr_code,
           pr.pr_date                                     AS pr_date,
           pr.pr_type::text                               AS pr_type,
-          COALESCE(it.code, pr.item_code_text, '—')      AS item_code,
+          (COALESCE(it.code, pr.item_code_text, '—')
+            || COALESCE('/' || NULLIF(btrim(COALESCE(sol.revision::text, rev_jwl.revision::text)), ''), ''))
+                                                         AS item_code,
           COALESCE(it.name, pr.item_name)                AS item_name,
           pr.qty                                         AS pr_qty,
           (CASE
@@ -94,8 +103,10 @@ export const prPendingToOrderReport: RegisteredReport = {
           END)::numeric                                  AS ordered_qty,
           pr.required_date                               AS due_date,
           (CURRENT_DATE - pr.pr_date)::int               AS days_pending,
-          so.code                                        AS so_code,
+          COALESCE(so.code, jwo.code)                    AS so_code,
           so.internal_so_no                              AS so_internal_no,
+          ${polSql('sol', 'rev_jwl')}                    AS client_po_line_no,
+          (pr.created_at AT TIME ZONE 'Asia/Kolkata')::date::text AS created_on,
           jc.code                                        AS jc_code
         FROM public.purchase_requests pr
         LEFT JOIN public.items it ON it.id = pr.item_id AND it.deleted_at IS NULL
@@ -107,6 +118,10 @@ export const prPendingToOrderReport: RegisteredReport = {
           ON jo.id = pr.source_jc_op_id AND jo.deleted_at IS NULL
         LEFT JOIN public.job_cards jc
           ON jc.id = jo.job_card_id AND jc.deleted_at IS NULL
+        LEFT JOIN public.job_work_order_lines rev_jwl
+          ON rev_jwl.id = jc.source_jw_line_id AND rev_jwl.deleted_at IS NULL
+        LEFT JOIN public.job_work_orders jwo
+          ON jwo.id = rev_jwl.job_work_order_id AND jwo.deleted_at IS NULL
         WHERE pr.company_id = ${companyId}::uuid
           AND pr.deleted_at IS NULL
           AND pr.balance_closed_at IS NULL
@@ -122,18 +137,20 @@ export const prPendingToOrderReport: RegisteredReport = {
     `);
 
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({
+      so_code: (r['so_code'] as string | null) ?? null,
+      so_internal_no: (r['so_internal_no'] as string | null) ?? null,
+      client_po_line_no: (r['client_po_line_no'] as string | null) ?? null,
+      created_on: dateOrNull(r['created_on']),
+      item_code: String(r['item_code'] ?? ''),
+      item_name: (r['item_name'] as string | null) ?? null,
       pr_code: String(r['pr_code'] ?? ''),
       pr_date: dateOrNull(r['pr_date']),
       pr_type: String(r['pr_type'] ?? ''),
-      item_code: String(r['item_code'] ?? ''),
-      item_name: (r['item_name'] as string | null) ?? null,
       pr_qty: Number(r['pr_qty'] ?? 0),
       ordered_qty: Number(r['ordered_qty'] ?? 0),
       pending_qty: Number(r['pending_qty'] ?? 0),
       due_date: dateOrNull(r['due_date']),
       days_pending: Number(r['days_pending'] ?? 0),
-      so_code: (r['so_code'] as string | null) ?? null,
-      so_internal_no: (r['so_internal_no'] as string | null) ?? null,
       jc_code: (r['jc_code'] as string | null) ?? null,
     }));
 

@@ -79,6 +79,8 @@ export const tpiCompletedRowSchema = z.object({
   // TPI report (legacy _tpiAttachReport, HTML L21492).
   qcReportPath: z.string().nullable(),
   qcReportName: z.string().nullable(),
+  /** ADR-261 lead Created On — the TPI log row's own created_at (op_log). */
+  createdAt: z.string().nullable().default(null),
 });
 export type TpiCompletedRow = z.infer<typeof tpiCompletedRowSchema>;
 

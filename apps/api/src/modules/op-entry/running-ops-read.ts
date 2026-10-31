@@ -39,6 +39,11 @@ export const RUNNING_OPS_SELECT = sql`
         -- off the same SO line as the revision above, else the Job Work SO
         -- line's POL for a JW-sourced card (ADR-236).
         ${polSql('sol', 'rev_jwl')} AS "clientPoLineNo",
+        -- ADR-261 lead columns: the order behind the card (SO, else JWSO), its
+        -- Internal SO No. and the job-card op's own created_at.
+        COALESCE(ro_so.code, ro_jw.code) AS "soCode",
+        ro_so.internal_so_no AS "soInternalNo",
+        o.created_at        AS "createdAt",
         o.op_seq            AS "opSeq",
         o.operation,
         r.machine_id        AS "machineId",
@@ -70,6 +75,10 @@ export const RUNNING_OPS_SELECT = sql`
         ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
       LEFT JOIN public.job_work_order_lines rev_jwl
         ON rev_jwl.id = jc.source_jw_line_id AND rev_jwl.deleted_at IS NULL
+      LEFT JOIN public.sales_orders ro_so
+        ON ro_so.id = sol.sales_order_id AND ro_so.deleted_at IS NULL
+      LEFT JOIN public.job_work_orders ro_jw
+        ON ro_jw.id = rev_jwl.job_work_order_id AND ro_jw.deleted_at IS NULL
       LEFT JOIN public.machines m ON m.id = r.machine_id
       LEFT JOIN public.machines pm ON pm.id = o.machine_id
       LEFT JOIN public.users su ON su.id = r.created_by
@@ -88,6 +97,12 @@ export function toRunningOp(r: Record<string, unknown>): RunningOp {
     itemRevision: (r['itemRevision'] as string | null) ?? null,
     clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
     itemName: (r['itemName'] as string | null) ?? null,
+    soCode: (r['soCode'] as string | null) ?? null,
+    soInternalNo: (r['soInternalNo'] as string | null) ?? null,
+    createdAt:
+      r['createdAt'] instanceof Date
+        ? (r['createdAt'] as Date).toISOString()
+        : ((r['createdAt'] as string | null) ?? null),
     plannedMachineCode: (r['plannedMachineCode'] as string | null) ?? null,
     startedByName: (r['startedByName'] as string | null) ?? null,
     startDate:
@@ -112,6 +127,9 @@ export const RUNNING_OPS_SF_COLUMNS: SfColumnMap = {
   },
   itemName: { sql: sql`i.name`, type: 'text' },
   clientPoLineNo: { sql: polSql('sol', 'rev_jwl'), type: 'text' },
+  soCode: { sql: sql`COALESCE(ro_so.code, ro_jw.code)`, type: 'text' },
+  soInternalNo: { sql: sql`ro_so.internal_so_no`, type: 'text' },
+  createdOn: { sql: sql`(o.created_at AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
   machineCode: { sql: sql`m.code`, type: 'text' },
   plannedMachineCode: {
     sql: sql`COALESCE(pm.code, NULLIF(o.machine_code_text, 'QC'))`,

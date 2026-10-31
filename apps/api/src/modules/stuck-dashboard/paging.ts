@@ -17,6 +17,11 @@ export const STUCK_SF_COLUMNS: SfColumnMap = {
   soNo: { sql: sql`t.so_no`, type: 'text' },
   // ADR-207 — a column of the same record set the search box already reads.
   soInternalNo: { sql: sql`t.so_internal_no`, type: 'text' },
+  // ADR-261 Created On — the SO's created_at as the India-time day.
+  createdOn: {
+    sql: sql`(NULLIF(t.created_at, '')::timestamptz AT TIME ZONE 'Asia/Kolkata')::date`,
+    type: 'date',
+  },
   stage: { sql: sql`t.stage`, type: 'text' },
   customer: { sql: sql`t.customer`, type: 'text' },
   days: { sql: sql`t.days`, type: 'num' },
@@ -26,7 +31,8 @@ export const STUCK_SF_COLUMNS: SfColumnMap = {
   detail: { sql: sql`t.detail`, type: 'text' },
 };
 
-const REC = sql`t(so_id text, so_no text, so_internal_no text, customer text, stage text, days int,
+const REC = sql`t(so_id text, so_no text, so_internal_no text, created_at text,
+  customer text, stage text, days int,
   threshold int, detail text, since text, color text, ord int)`;
 
 /** `items` must already be in most-over-threshold order (that order is `ord`). */
@@ -41,6 +47,7 @@ export async function pageStuckItems(
       so_id: it.soId,
       so_no: it.soNo,
       so_internal_no: it.soInternalNo ?? null,
+      created_at: it.createdAt ?? null,
       customer: it.customer,
       stage: it.stage,
       days: it.days,

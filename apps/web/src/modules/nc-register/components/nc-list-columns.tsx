@@ -103,6 +103,7 @@ export function ncListColumns(
       itemRev: (nc) => (nc.itemCode ? nc.itemRevision : null),
       itemName: (nc) => ncItemName(nc),
       overrides: {
+        so_no: { sortFilterField: 'soCode' },
         so_internal_no: { sortFilterField: 'soInternalNo' },
         created_on: { sortFilterField: 'createdOn' },
         item_code: { sortFilterField: 'itemCode', filterValue: (nc) => ncItemCode(nc) },

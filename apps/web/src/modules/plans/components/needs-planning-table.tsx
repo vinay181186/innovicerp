@@ -67,8 +67,7 @@ export function NeedsPlanningTable(): React.JSX.Element {
         soNo: (r) => r.soCode,
         internalSoNo: (r) => r.soInternalNo,
         pol: (r) => r.clientPoLineNo,
-        // needs API — the unplanned-line row carries no created date yet.
-        createdOn: () => null,
+        createdOn: (r) => r.createdAt,
         itemCode: (r) => r.itemCode,
         itemRev: (r) => r.itemRevision,
         itemName: (r) => r.partName,
@@ -89,7 +88,7 @@ export function NeedsPlanningTable(): React.JSX.Element {
             filterType: 'text',
             width: '5%',
           },
-          created_on: { width: '7%' },
+          created_on: { sortFilterField: 'createdOn', width: '7%' },
           item_code: { sortFilterField: 'itemCode', filterType: 'text', width: '12%' },
           item_name: { sortFilterField: 'partName', filterType: 'text', width: '12%' },
         },

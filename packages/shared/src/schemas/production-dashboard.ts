@@ -34,6 +34,13 @@ export const productionDashboardJcSchema = z.object({
    *  card then shows the bare code. */
   itemRevision: z.string().nullable().default(null),
   itemName: z.string().nullable(),
+  /** ADR-261 lead columns — the customer's PO line (SO line, else JWSO line),
+   *  the order behind the card (SO code, else JWSO code), the SO's Internal SO
+   *  No., and the row's own created_at (ISO). */
+  clientPoLineNo: z.string().nullable().optional(),
+  soCode: z.string().nullable().optional(),
+  soInternalNo: z.string().nullable().optional(),
+  createdAt: z.string().nullable().optional(),
   priority: z.enum(JC_PRIORITIES),
   orderQty: z.number().int(),
   doneOps: z.number().int().nonnegative(),
@@ -63,6 +70,13 @@ export const productionDashboardReadyOpSchema = z.object({
    *  then shows the bare code. */
   itemRevision: z.string().nullable().default(null),
   itemName: z.string().nullable().default(null),
+  /** ADR-261 lead columns — the customer's PO line (SO line, else JWSO line),
+   *  the order behind the card (SO code, else JWSO code), the SO's Internal SO
+   *  No., and the row's own created_at (ISO). */
+  clientPoLineNo: z.string().nullable().optional(),
+  soCode: z.string().nullable().optional(),
+  soInternalNo: z.string().nullable().optional(),
+  createdAt: z.string().nullable().optional(),
   /** The machine the REMAINING qty runs on — forward-looking. Not who made
    *  `completedQty`: an op re-routed mid-flight made pieces elsewhere (ADR-126). */
   machineCode: z.string().nullable(),

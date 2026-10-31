@@ -484,3 +484,59 @@ export const dcSendablePreviewSchema = z.object({
   lines: z.array(dcSendableLineSchema),
 });
 export type DcSendablePreview = z.infer<typeof dcSendablePreviewSchema>;
+
+// ─── ADR-261 — OSP Outward DC list, ONE ROW PER DC LINE ────────────────────
+// GET /delivery-challans/lines — same query params as GET /delivery-challans
+// (listDeliveryChallansQuerySchema), one row per live line of a live DC. The
+// row carries the six lead facts (SO / JWSO, Internal SO No., POL, Created On,
+// Item Code + Rev, Item Name) and the header facts the old list showed. The
+// row click and ⋯ menu act on the DC (docId). The SO behind a line is its PO
+// line's SO line, else the DC's own SO line, else the job card's; the JWSO is
+// the job card's job-work line; no link → nulls ("—").
+
+export const deliveryChallanListLineSchema = z.object({
+  lineId: z.string().uuid(),
+  docId: z.string().uuid(),
+  docCode: z.string(),
+  docDate: z.string(),
+  docStatus: dcStatusSchema,
+  lineNo: z.number().int(),
+  vendorId: z.string().uuid(),
+  vendorName: z.string().nullable(),
+  vendorCodeText: z.string(),
+  purchaseOrderId: z.string().uuid().nullable(),
+  poCode: z.string().nullable(),
+  poCodeText: z.string(),
+  /** Return-to-vendor challan raised from an NC — the PO cell reads "NC <code>". */
+  ncId: z.string().uuid().nullable(),
+  ncCode: z.string().nullable(),
+  /** The job card this line's work belongs to (PO line → JC op → JC), else the
+   *  DC's own job card (NC return). */
+  jobCardCode: z.string().nullable(),
+  transport: z.string().nullable(),
+  /** SO code (or the DC's free-text SO ref when no SO line is linked). */
+  soCode: z.string().nullable(),
+  soInternalNo: z.string().nullable(),
+  jwCode: z.string().nullable(),
+  clientPoLineNo: z.string().nullable(),
+  /** The line's own created_at (falls back to the DC's). */
+  createdAt: z.string(),
+  itemCode: z.string().nullable(),
+  /** The customer's drawing revision — only when the order line is for the
+   *  same item as the challan line (same rule as the DC detail). */
+  itemRevision: z.string().nullable(),
+  itemName: z.string().nullable(),
+  qty: z.string(),
+  uom: uomSchema,
+});
+export type DeliveryChallanListLine = z.infer<typeof deliveryChallanListLineSchema>;
+
+export interface ListDeliveryChallanLinesResponse {
+  items: DeliveryChallanListLine[];
+  /** Number of LINES matching the filter (the pager counts lines). */
+  total: number;
+  limit: number;
+  offset: number;
+  /** Same three totals as the DC list, over the matching lines. */
+  summary: DispatchSummary;
+}

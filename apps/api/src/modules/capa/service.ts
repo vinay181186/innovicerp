@@ -47,6 +47,13 @@ interface LineFacts {
 
 const NO_LINE_FACTS: LineFacts = { itemRevision: null, clientPoLineNo: null };
 
+/** ADR-261 lead facts off the CAPA's own SO / item codes. */
+interface CodeFacts {
+  soInternalNo: string | null;
+  itemName: string | null;
+}
+const NO_CODE_FACTS: CodeFacts = { soInternalNo: null, itemName: null };
+
 type Tx = Parameters<Parameters<typeof withUserContext>[1]>[0];
 
 /**
@@ -98,7 +105,50 @@ async function lineFactsByJcNo(
   return out;
 }
 
-function toRecord(r: Row, facts: LineFacts = NO_LINE_FACTS): CapaRecord {
+/**
+ * ADR-261 — Internal SO No. (by the CAPA's so_no) and Item Name (by its
+ * item_code) for a set of CAPAs: one query per request, never one per record.
+ */
+async function codeFactsOf(tx: Tx, companyId: string, rows: Row[]): Promise<(r: Row) => CodeFacts> {
+  const soNos = [...new Set(rows.map((r) => r.soNo).filter((c): c is string => !!c))];
+  const itemCodes = [...new Set(rows.map((r) => r.itemCode).filter((c): c is string => !!c))];
+  const soMap = new Map<string, string | null>();
+  const itemMap = new Map<string, string | null>();
+  if (soNos.length > 0 || itemCodes.length > 0) {
+    const list = (xs: string[]) =>
+      xs.length > 0
+        ? sql.join(
+            xs.map((x) => sql`${x}`),
+            sql`, `,
+          )
+        : sql`NULL`;
+    const result = await tx.execute(sql`
+      SELECT 'so' AS k, so.code AS code, NULLIF(btrim(so.internal_so_no), '') AS v
+        FROM public.sales_orders so
+       WHERE so.company_id = ${companyId} AND so.deleted_at IS NULL
+         AND so.code IN (${list(soNos)})
+      UNION ALL
+      SELECT 'item' AS k, i.code AS code, i.name AS v
+        FROM public.items i
+       WHERE i.company_id = ${companyId} AND i.deleted_at IS NULL
+         AND i.code IN (${list(itemCodes)})
+    `);
+    for (const x of result as unknown as Array<Record<string, unknown>>) {
+      const v = x['v'] == null ? null : String(x['v']);
+      (x['k'] === 'so' ? soMap : itemMap).set(String(x['code']), v);
+    }
+  }
+  return (r) => ({
+    soInternalNo: (r.soNo && soMap.get(r.soNo)) || null,
+    itemName: (r.itemCode && itemMap.get(r.itemCode)) || null,
+  });
+}
+
+function toRecord(
+  r: Row,
+  facts: LineFacts = NO_LINE_FACTS,
+  codes: CodeFacts = NO_CODE_FACTS,
+): CapaRecord {
   const today = todayIso();
   const targetDate = dateLike(r.targetDate);
   const overdue =
@@ -115,6 +165,8 @@ function toRecord(r: Row, facts: LineFacts = NO_LINE_FACTS): CapaRecord {
     itemCode: r.itemCode ?? null,
     itemRevision: facts.itemRevision,
     clientPoLineNo: facts.clientPoLineNo,
+    soInternalNo: codes.soInternalNo,
+    itemName: codes.itemName,
     operation: r.operation ?? null,
     problem: r.problem,
     rootCauseMethod: r.rootCauseMethod ?? null,
@@ -206,7 +258,10 @@ export async function listCapa(
     const facts = await lineFactsByJcNo(tx, companyId, [
       ...new Set(rows.map((r) => r.jcNo).filter((c): c is string => !!c)),
     ]);
-    const items = rows.map((r) => toRecord(r, (r.jcNo && facts.get(r.jcNo)) || NO_LINE_FACTS));
+    const codesOf = await codeFactsOf(tx, companyId, rows);
+    const items = rows.map((r) =>
+      toRecord(r, (r.jcNo && facts.get(r.jcNo)) || NO_LINE_FACTS, codesOf(r)),
+    );
     const closed = Number(sum?.closed ?? 0);
     const counters: CapaCounters = {
       total: Number(sum?.total ?? 0),
@@ -280,7 +335,12 @@ export async function createCapa(input: CreateCapaInput, user: AuthContext): Pro
       .returning();
     const created = inserted[0] as Row;
     const facts = await lineFactsByJcNo(tx, companyId, created.jcNo ? [created.jcNo] : []);
-    return toRecord(created, (created.jcNo && facts.get(created.jcNo)) || NO_LINE_FACTS);
+    const codesOf = await codeFactsOf(tx, companyId, [created]);
+    return toRecord(
+      created,
+      (created.jcNo && facts.get(created.jcNo)) || NO_LINE_FACTS,
+      codesOf(created),
+    );
   });
 }
 
@@ -340,6 +400,7 @@ export async function updateCapa(
       .returning();
     const row = updated[0] as Row;
     const facts = await lineFactsByJcNo(tx, companyId, row.jcNo ? [row.jcNo] : []);
-    return toRecord(row, (row.jcNo && facts.get(row.jcNo)) || NO_LINE_FACTS);
+    const codesOf = await codeFactsOf(tx, companyId, [row]);
+    return toRecord(row, (row.jcNo && facts.get(row.jcNo)) || NO_LINE_FACTS, codesOf(row));
   });
 }

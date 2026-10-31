@@ -34,6 +34,11 @@ export const capaRecordSchema = z.object({
    *  row is job-work sourced or has no sales order behind it. Read-only — the
    *  Sales Order is the only place it is typed (user rule, 2026-09-23). */
   clientPoLineNo: z.string().nullable().default(null),
+  /** ADR-261 lead Internal SO No. — the CAPA's SO (so_no → sales_orders, same
+   *  company); null when none / blank. */
+  soInternalNo: z.string().nullable().default(null),
+  /** ADR-261 lead Item Name — the CAPA's item (item_code → items, same company). */
+  itemName: z.string().nullable().default(null),
   operation: z.string().nullable(),
   problem: z.string(),
   rootCauseMethod: z.string().nullable(),

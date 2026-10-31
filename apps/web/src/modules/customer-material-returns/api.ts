@@ -9,6 +9,7 @@ import type {
   CustomerMaterialReturn,
   CustomerMaterialReturnDetail,
   CustomerMaterialReturnableRow,
+  ListCustomerMaterialReturnLinesResponse,
   ListCustomerMaterialReturnsQuery,
   ListCustomerMaterialReturnsResponse,
 } from '@innovic/shared';
@@ -24,6 +25,17 @@ export const customerMaterialReturnKeys = {
     [
       ...customerMaterialReturnKeys.all,
       'list',
+      q.search ?? null,
+      q.jobWorkOrderId ?? null,
+      q.sf ?? null,
+      q.limit,
+      q.offset,
+    ] as const,
+  /** ADR-261 — the register as one row per return line. */
+  lines: (q: ListCustomerMaterialReturnsQuery) =>
+    [
+      ...customerMaterialReturnKeys.all,
+      'lines',
       q.search ?? null,
       q.jobWorkOrderId ?? null,
       q.sf ?? null,
@@ -51,6 +63,20 @@ export function useCustomerMaterialReturnsList(query: ListCustomerMaterialReturn
     queryFn: () =>
       apiFetch<ListCustomerMaterialReturnsResponse>(
         `/customer-material-returns?${buildSearch(query)}`,
+      ),
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
+    placeholderData: (prev) => prev,
+  });
+}
+
+/** ADR-261 — GET /customer-material-returns/lines: one row per return line. */
+export function useCustomerMaterialReturnLines(query: ListCustomerMaterialReturnsQuery) {
+  return useQuery<ListCustomerMaterialReturnLinesResponse>({
+    queryKey: customerMaterialReturnKeys.lines(query),
+    queryFn: () =>
+      apiFetch<ListCustomerMaterialReturnLinesResponse>(
+        `/customer-material-returns/lines?${buildSearch(query)}`,
       ),
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,

@@ -53,14 +53,20 @@ export function opsColumns(): DataTableColumn<MachineLoadOp>[] {
       soNo: (op) => op.soCode,
       internalSoNo: (op) => op.soInternalNo,
       pol: (op) => op.clientPoLineNo,
-      // needs API — the machine-loading op row carries no created date yet.
-      createdOn: () => null,
+      createdOn: (op) => op.createdAt,
       // `CODE/REV` — the customer's drawing revision from the SO line this card
       // was raised against; a JW-sourced / standalone card keeps the bare code.
       itemCode: (op) => op.itemCode,
       itemRev: (op) => op.itemRevision,
       itemName: (op) => op.itemName,
-      overrides: { item_code: { sortFilterField: 'itemCode' } },
+      overrides: {
+        so_no: { sortFilterField: 'soCode' },
+        so_internal_no: { sortFilterField: 'soInternalNo' },
+        client_po_line_no: { sortFilterField: 'clientPoLineNo' },
+        created_on: { sortFilterField: 'createdOn' },
+        item_code: { sortFilterField: 'itemCode' },
+        item_name: { sortFilterField: 'itemName' },
+      },
     }),
     {
       id: 'jc_code',

@@ -15,6 +15,7 @@ import type { PartyGrnQcRow } from '@innovic/shared';
 import { likeEscape } from '../../lib/list-query';
 import { QC_OPEN_SQL, QC_PENDING_QTY_SQL } from '../party-grn/qc-state';
 import { PGRN_CLIENT_PO_NO } from './register-facts';
+import { tsOrNull } from './sql';
 
 function pgrnJoins(): SQL {
   return sql`
@@ -61,6 +62,9 @@ export const PGRN_PENDING_QTY = QC_PENDING_QTY_SQL;
 /** When the line was inspected — the completed register's newest-first key. */
 export const PGRN_DONE_AT = sql`pgl.qc_at`;
 
+/** ADR-261 lead Created On — the Party GRN line's created_at, else its GRN's. */
+export const PGRN_CREATED_AT = sql`COALESCE(pgl.created_at, pg.created_at)`;
+
 const PGRN_COMMON = sql`
   pgl.id AS "partyGrnLineId", pg.id AS "partyGrnId", pg.code AS "partyGrnNo",
   pg.grn_date AS "grnDate", ${CUSTOMER} AS "customerName", ${JW_CODE} AS "jwCode",
@@ -73,7 +77,7 @@ const PGRN_COMMON = sql`
   pgl.received_qty AS "receivedQty", pgl.accepted_qty AS "acceptedQty",
   pgl.rejected_qty AS "rejectedQty", pgl.reject_reason AS "rejectReason",
   pgl.qc_remarks AS "qcRemarks",
-  COALESCE(u.full_name, u.email) AS "qcByName"`;
+  COALESCE(u.full_name, u.email) AS "qcByName", ${PGRN_CREATED_AT} AS "createdAt"`;
 
 export const PGRN_PENDING_SELECT = sql`${PGRN_COMMON},
   ${PGRN_PENDING_QTY} AS "pendingQty", NULL::date AS "qcDate",
@@ -139,5 +143,6 @@ export function toPgrnRow(r: Raw): PartyGrnQcRow {
     qcDate: dateOnly(r['qcDate']),
     qcByName: s(r['qcByName']),
     waitDays: Number(r['waitDays'] ?? 0),
+    createdAt: tsOrNull(r['createdAt']),
   };
 }

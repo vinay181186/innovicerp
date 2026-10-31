@@ -100,19 +100,25 @@ export async function getStuckDashboard(
 
     // ADR-207 — the Internal SO No. beside every SO No., read live from
     // sales_orders in one query (phase rows come from the shared phase engine).
+    // ADR-261 — the SO's created_at (Created On) rides the same query.
     const soIds = [...new Set(items.map((i) => i.soId))];
     if (soIds.length > 0) {
       const intRows = (await tx.execute(sql`
-        SELECT so.id::text AS id, so.internal_so_no AS internal
+        SELECT so.id::text AS id, so.internal_so_no AS internal,
+               to_char(so.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS created
         FROM sales_orders so
         WHERE so.company_id = ${companyId}::uuid
           AND so.id IN (${sql.join(
             soIds.map((id) => sql`${id}::uuid`),
             sql`, `,
           )})
-      `)) as unknown as Array<{ id: string; internal: string | null }>;
-      const internalById = new Map(intRows.map((r) => [r.id, r.internal]));
-      for (const it of items) it.soInternalNo = internalById.get(it.soId) ?? null;
+      `)) as unknown as Array<{ id: string; internal: string | null; created: string | null }>;
+      const byId = new Map(intRows.map((r) => [r.id, r]));
+      for (const it of items) {
+        const so = byId.get(it.soId);
+        it.soInternalNo = so?.internal ?? null;
+        it.createdAt = so?.created ?? null;
+      }
     }
 
     // Sort by most-over-threshold (legacy L18107).

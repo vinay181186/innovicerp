@@ -4,6 +4,7 @@ import type {
   DcSendablePreview,
   DeliveryChallanWithLines,
   DocumentEditStagedResult,
+  ListDeliveryChallanLinesResponse,
   ListDeliveryChallansQuery,
   ListDeliveryChallansResponse,
   ListNcRegisterQuery,
@@ -23,6 +24,10 @@ export const deliveryChallansKeys = {
   all: ['delivery-challans'] as const,
   lists: () => [...deliveryChallansKeys.all, 'list'] as const,
   list: (q: ListDeliveryChallansQuery) => [...deliveryChallansKeys.lists(), q] as const,
+  /** ADR-261 — the OSP Outward DC list, one row per DC line. Under `lists()`
+   *  (so under `all`): every save's lists() invalidation and live updates
+   *  refresh it too. */
+  lines: (q: ListDeliveryChallansQuery) => [...deliveryChallansKeys.lists(), 'lines', q] as const,
   details: () => [...deliveryChallansKeys.all, 'detail'] as const,
   detail: (id: string) => [...deliveryChallansKeys.details(), id] as const,
   sendable: (poId: string) => [...deliveryChallansKeys.all, 'sendable', poId] as const,
@@ -56,6 +61,23 @@ export function useDeliveryChallansList(
     queryKey: deliveryChallansKeys.list(query),
     queryFn: () =>
       apiFetch<ListDeliveryChallansResponse>(`/delivery-challans?${toQueryString(query)}`),
+    placeholderData: (prev) => prev,
+    ...options,
+  });
+}
+
+/** ADR-261 — GET /delivery-challans/lines: the OSP Outward DC list, one row per
+ *  DC line. Same params as the DC list. */
+export function useDeliveryChallanLinesList(
+  query: ListDeliveryChallansQuery,
+  options?: Omit<UseQueryOptions<ListDeliveryChallanLinesResponse>, 'queryKey' | 'queryFn'>,
+) {
+  return useQuery<ListDeliveryChallanLinesResponse>({
+    queryKey: deliveryChallansKeys.lines(query),
+    queryFn: () =>
+      apiFetch<ListDeliveryChallanLinesResponse>(
+        `/delivery-challans/lines?${toQueryString(query)}`,
+      ),
     placeholderData: (prev) => prev,
     ...options,
   });

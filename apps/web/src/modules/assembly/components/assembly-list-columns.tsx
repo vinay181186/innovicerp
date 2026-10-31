@@ -7,7 +7,7 @@
 import type { AssemblyListItem } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
-import { ROW_TINT, type DataTableColumn } from '@/ui/data';
+import { leadColumns, ROW_TINT, type DataTableColumn } from '@/ui/data';
 
 type StatusKey = AssemblyListItem['status'];
 
@@ -50,53 +50,38 @@ export function statusBadgeLabel(row: AssemblyListItem): string {
 
 export function assemblyListColumns(today: string): DataTableColumn<AssemblyListItem>[] {
   return [
-    {
-      id: 'so_no',
-      sortFilterField: 'soCode',
-      header: 'SO No.',
-      kind: 'code',
-      nowrap: true,
-      // The per-SO tracker opens from the row; the link is the same target —
-      // no chevron of its own (the fit ▸ owns expand, ADR-199).
-      render: (row) => (
-        <Link
-          to="/assemblies/$soId"
-          params={{ soId: row.soId }}
-          className="td-code"
-          style={{ color: 'var(--cyan)', fontWeight: 600 }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {row.soCode}
-        </Link>
-      ),
-    },
-    {
-      // ADR-207 — the office's own number, its OWN column beside the system
-      // SO No. (owner decision 2026-10-05). Many older orders have none.
-      id: 'so_internal_no',
-      header: 'Internal SO No.',
-      kind: 'code',
-      sortFilterField: 'soInternalNo',
-      nowrap: true,
-      render: (row) =>
-        row.soInternalNo?.trim() ? (
-          <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-            {row.soInternalNo}
-          </span>
-        ) : (
-          <span className="text3">—</span>
-        ),
-    },
-    {
-      id: 'customer',
-      sortFilterField: 'customerName',
-      header: 'Customer',
-      kind: 'text',
-      align: 'left',
-      ellipsis: true,
-      render: (row) => row.customerName ?? '—',
-      title: (row) => row.customerName ?? '',
-    },
+    // ADR-261 lead columns. One row = one assembly for the SO's equipment item
+    // (its first SO line), so Item Code / Item Name are drawn; an order-level
+    // row has no single POL, so that column is left out.
+    ...leadColumns<AssemblyListItem>({
+      soNo: (row) => row.soCode,
+      internalSoNo: (row) => row.soInternalNo,
+      createdOn: (row) => row.createdAt,
+      itemCode: (row) => row.partNoText,
+      itemRev: (row) => row.itemRevision,
+      itemName: (row) => row.partName,
+      overrides: {
+        so_no: {
+          sortFilterField: 'soCode',
+          // The per-SO tracker opens from the row; the link is the same target.
+          render: (row) => (
+            <Link
+              to="/assemblies/$soId"
+              params={{ soId: row.soId }}
+              className="td-code"
+              style={{ color: 'var(--cyan)', fontWeight: 600 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {row.soCode}
+            </Link>
+          ),
+        },
+        so_internal_no: { sortFilterField: 'soInternalNo' },
+        created_on: { sortFilterField: 'createdOn' },
+        item_code: { sortFilterField: 'itemCode' },
+        item_name: { sortFilterField: 'itemName' },
+      },
+    }),
     {
       id: 'bom_no',
       sortFilterField: 'bomCode',
@@ -111,6 +96,16 @@ export function assemblyListColumns(today: string): DataTableColumn<AssemblyList
           {row.bomRevision != null ? ` BOM Rev ${row.bomRevision}` : ''}
         </span>
       ),
+    },
+    {
+      id: 'customer',
+      sortFilterField: 'customerName',
+      header: 'Customer',
+      kind: 'text',
+      align: 'left',
+      ellipsis: true,
+      render: (row) => row.customerName ?? '—',
+      title: (row) => row.customerName ?? '',
     },
     {
       id: 'due',

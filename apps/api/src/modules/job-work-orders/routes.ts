@@ -10,6 +10,7 @@ import {
   updateJobWorkOrderInputSchema,
 } from './schema';
 import * as service from './service';
+import { listJobWorkOrderLines } from './list-lines';
 
 const idParamSchema = z.object({ id: z.string().uuid() });
 const lineIdParamSchema = z.object({ lineId: z.string().uuid() });
@@ -21,6 +22,13 @@ export async function jobWorkOrdersRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) throw new AuthenticationError();
     const query = listJobWorkOrdersQuerySchema.parse(req.query);
     return service.listJobWorkOrders(query, req.user);
+  });
+
+  // ADR-261 — the JWSO list, one row per JWSO line (same params as the list).
+  app.get('/job-work-orders/lines', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const query = listJobWorkOrdersQuerySchema.parse(req.query);
+    return listJobWorkOrderLines(query, req.user);
   });
 
   // ADR-245 — live Client PO No. check (per customer) while the form is typed.

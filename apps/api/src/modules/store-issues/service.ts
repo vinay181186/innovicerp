@@ -39,6 +39,7 @@ import { lockSlip, nextStoreIssueCode, readSlipLines, resolveIssuedTo, today } f
 import { readStoreIssueDetail, requireCompany } from './read';
 
 export { getStoreIssue, listStoreIssues } from './read';
+export { listStoreIssueLines } from './lines';
 
 const isReturnableType = (t: string): boolean =>
   (ITEM_TYPE_RULES as Record<string, { returnable: boolean } | undefined>)[t]?.returnable === true;

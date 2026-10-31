@@ -106,13 +106,13 @@ function vendorOf(vm: CompletedVM): string {
 /** Lead SO No.: the SO (job-card / GRN call), the JWSO (Party GRN call). */
 function soNoOf(vm: CompletedVM): string | null {
   if (vm.kind === 'pgrn') return vm.row.jwCode;
-  // The completed incoming feed carries no SO (needs API).
-  return vm.kind === 'op' ? vm.row.soCode : null;
+  // A GRN line: its job card's SO, else the PO line's source SO (ADR-261).
+  return vm.row.soCode ?? null;
 }
 /** ADR-207 — the office's own Internal SO No. A Party GRN line stands against
  *  a JWSO, which has none. */
 function soInternalNoOf(vm: CompletedVM): string | null {
-  return vm.kind === 'op' ? vm.row.soInternalNo : null;
+  return vm.kind === 'pgrn' ? null : (vm.row.soInternalNo ?? null);
 }
 function operationOf(vm: CompletedVM): string {
   if (vm.kind === 'pgrn') return `Party GRN · ${pgrnOrderOf(vm.row)}`;
@@ -183,20 +183,22 @@ export const COMPLETED_HIDDEN = [
 export function completedColumns(): DataTableColumn<CompletedVM>[] {
   return [
     // Owner rule 2026-10-31 — the six lead columns first; Doc No. and the
-    // rest after Item Name. No created date on these feeds yet (needs API).
+    // rest after Item Name. Created On = each call's own record created_at.
     ...leadColumns<CompletedVM>({
       soNo: soNoOf,
       internalSoNo: soInternalNoOf,
       pol: polOf,
-      createdOn: () => null,
+      createdOn: (vm) => vm.row.createdAt ?? null,
       itemCode: itemCodeOf,
       itemRev: itemRevOf,
       itemName: itemNameOf,
       overrides: {
+        so_no: { sortFilterField: 'soCode' },
         so_internal_no: { sortFilterField: 'soInternalNo' },
         client_po_line_no: { sortFilterField: 'pol' },
         item_code: { sortFilterField: 'itemCode' },
         item_name: { sortFilterField: 'itemName' },
+        created_on: { sortFilterField: 'createdOn' },
       },
     }),
     {
@@ -313,8 +315,8 @@ export function completedColumns(): DataTableColumn<CompletedVM>[] {
     {
       // The party the call stands against when it is not a sales order: the
       // vendor of a GRN line, the customer of a Party GRN line. The order
-      // number itself is the lead SO No. column. Server field `soVendor` still
-      // reads the SO code on a job-card row (needs API to split it).
+      // number itself is the lead SO No. column (server field `soCode`);
+      // `soVendor` filters the vendor / customer only (blank on a job-card row).
       id: 'vendor',
       sortFilterField: 'soVendor',
       header: 'Vendor / Customer',

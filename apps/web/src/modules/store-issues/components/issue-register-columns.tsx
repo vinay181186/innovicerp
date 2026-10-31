@@ -1,32 +1,46 @@
-// Item Issue Register columns (ADR-199 fit table: one line per row, always fits
-// the screen). The first column (Issue No.) is pinned by the stylesheet. Text
-// centres, long free text (Purpose) ellipsises. A reversed slip washes the whole
-// row (ROW_TINT.cancelled, set in the view) and strikes its items through.
-// Sort & Filter runs on the SERVER (ADR-200): `sortFilterField` names the
-// field in the endpoint's column map (api store-issues/sf-columns.ts).
+// Item Issue Register columns (ADR-199 fit table), one row per issue LINE
+// (ADR-261, GET /store-issues/lines). The six lead columns come first (SO No. ·
+// Internal SO No. · POL · Created On · Item Code · Item Name), then the slip's
+// own Issue No., Issue Date, Issue Against, Reference, Issued To, the line's
+// Issue Qty, Purpose and Issued By. A cancelled slip washes the row
+// (ROW_TINT.cancelled, set in the view). Sort & Filter runs on the SERVER
+// (ADR-200): `sortFilterField` names the field in the endpoint's column map
+// (api store-issues/sf-columns.ts STORE_ISSUE_LINE_SF_COLUMNS).
 
-import { ISSUE_AGAINST_LABELS, type StoreIssueListItem } from '@innovic/shared';
+import { ISSUE_AGAINST_LABELS, type StoreIssueLineRow } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
-import type { DataTableColumn } from '@/ui/data';
+import { leadColumns, type DataTableColumn } from '@/ui/data';
 
 const ISSUE_AGAINST_OPTIONS = Object.entries(ISSUE_AGAINST_LABELS).map(([value, label]) => ({
   value,
   label,
 }));
 
-/** Columns off by default (DataTable `defaultHidden`); Columns ▾ shows them. */
-export const ISSUE_REGISTER_HIDDEN_COLUMNS = ['created_on'] as const;
-
-function reference(iss: StoreIssueListItem): string {
-  if (iss.issueAgainst === 'job_card') return iss.jobCardCode ?? '—';
-  // ADR-207 — the system SO No. alone; the Internal SO No. has its own column
-  // (owner decision 2026-10-05).
-  if (iss.issueAgainst === 'assembly_so') return iss.salesOrderCode ?? '—';
-  return iss.department ?? iss.legacyReference ?? '—';
+function reference(r: StoreIssueLineRow): string {
+  if (r.issueAgainst === 'job_card') return r.jobCardCode ?? '—';
+  if (r.issueAgainst === 'assembly_so') return r.salesOrderCode ?? '—';
+  return r.department ?? r.legacyReference ?? '—';
 }
 
-export function issueRegisterColumns(): DataTableColumn<StoreIssueListItem>[] {
+export function issueRegisterColumns(): DataTableColumn<StoreIssueLineRow>[] {
   return [
+    ...leadColumns<StoreIssueLineRow>({
+      soNo: (r) => r.soCode,
+      internalSoNo: (r) => r.soInternalNo,
+      pol: (r) => r.clientPoLineNo,
+      createdOn: (r) => r.createdAt,
+      itemCode: (r) => r.itemCode,
+      itemRev: (r) => r.itemRevision,
+      itemName: (r) => r.itemName,
+      overrides: {
+        so_no: { sortFilterField: 'soCode' },
+        so_internal_no: { sortFilterField: 'soInternalNo' },
+        client_po_line_no: { sortFilterField: 'clientPoLineNo' },
+        created_on: { sortFilterField: 'createdOn' },
+        item_code: { sortFilterField: 'itemCode' },
+        item_name: { sortFilterField: 'itemName' },
+      },
+    }),
     {
       id: 'issue_no',
       sortFilterField: 'code',
@@ -34,13 +48,13 @@ export function issueRegisterColumns(): DataTableColumn<StoreIssueListItem>[] {
       header: 'Issue No.',
       className: 'td-code',
       nowrap: true,
-      render: (iss) => (
+      render: (r) => (
         <>
-          <span style={{ color: 'var(--cyan)' }}>{iss.code}</span>
-          {iss.reversedAt ? (
+          <span style={{ color: 'var(--cyan)' }}>{r.docCode}</span>
+          {r.reversedAt ? (
             <div
               style={{ fontSize: 10, fontWeight: 700, color: 'var(--red)' }}
-              title={`Cancelled ${fmtDate(iss.reversedAt.slice(0, 10))} — ${iss.reversalReason ?? ''}`}
+              title={`Cancelled ${fmtDate(r.reversedAt.slice(0, 10))} — ${r.reversalReason ?? ''}`}
             >
               Cancelled
             </div>
@@ -55,7 +69,7 @@ export function issueRegisterColumns(): DataTableColumn<StoreIssueListItem>[] {
       header: 'Issue Date',
       className: 'mono text2',
       nowrap: true,
-      render: (iss) => fmtDate(iss.issueDate),
+      render: (r) => fmtDate(r.docDate),
     },
     {
       id: 'issue_against',
@@ -64,7 +78,7 @@ export function issueRegisterColumns(): DataTableColumn<StoreIssueListItem>[] {
       filterOptions: ISSUE_AGAINST_OPTIONS,
       kind: 'text',
       header: 'Issue Against',
-      render: (iss) => ISSUE_AGAINST_LABELS[iss.issueAgainst],
+      render: (r) => ISSUE_AGAINST_LABELS[r.issueAgainst],
     },
     {
       id: 'reference',
@@ -74,53 +88,28 @@ export function issueRegisterColumns(): DataTableColumn<StoreIssueListItem>[] {
       header: 'Reference',
       className: 'mono',
       nowrap: true,
-      render: (iss) => <span style={{ color: 'var(--purple)' }}>{reference(iss)}</span>,
-    },
-    {
-      // ADR-207 — the office's own SO number, its OWN column beside the
-      // Reference (owner decision 2026-10-05). Only a slip issued against an
-      // assembly SO has one, and many older orders have none.
-      id: 'so_internal_no',
-      sortFilterField: 'soInternalNo',
-      filterType: 'text',
-      kind: 'code',
-      header: 'Internal SO No.',
-      className: 'mono',
-      nowrap: true,
-      render: (iss) =>
-        iss.issueAgainst === 'assembly_so' && iss.salesOrderInternalNo?.trim() ? (
-          <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-            {iss.salesOrderInternalNo}
-          </span>
-        ) : (
-          <span className="text3">—</span>
-        ),
-    },
-    {
-      // Filters match an item on ANY line of the slip.
-      id: 'items',
-      sortFilterField: 'items',
-      filterType: 'text',
-      kind: 'code',
-      header: 'Items',
-      className: 'mono fw-700',
-      render: (iss) => (
-        <span
-          style={{
-            color: 'var(--text)',
-            textDecoration: iss.reversedAt ? 'line-through' : undefined,
-          }}
-        >
-          {iss.itemsSummary || '—'}
-        </span>
-      ),
+      render: (r) => <span style={{ color: 'var(--purple)' }}>{reference(r)}</span>,
     },
     {
       id: 'issued_to',
       sortFilterField: 'issuedTo',
       kind: 'text',
       header: 'Issued To',
-      render: (iss) => iss.issuedTo || '—',
+      render: (r) => r.issuedTo || '—',
+    },
+    {
+      id: 'issue_qty',
+      sortFilterField: 'qty',
+      kind: 'num',
+      header: 'Issue Qty',
+      className: 'mono fw-700',
+      nowrap: true,
+      render: (r) => (
+        <span style={{ textDecoration: r.reversedAt ? 'line-through' : undefined }}>
+          {r.qty}
+          {r.uom ? <span className="text3"> {r.uom}</span> : null}
+        </span>
+      ),
     },
     {
       id: 'purpose',
@@ -130,25 +119,15 @@ export function issueRegisterColumns(): DataTableColumn<StoreIssueListItem>[] {
       align: 'left',
       ellipsis: true,
       className: 'text3',
-      render: (iss) => iss.purpose || '—',
-      title: (iss) => iss.purpose ?? '',
+      render: (r) => r.purpose || '—',
+      title: (r) => r.purpose ?? '',
     },
     {
       id: 'issued_by',
       sortFilterField: 'issuedBy',
       kind: 'text',
       header: 'Issued By',
-      render: (iss) => iss.issuedByName || '—',
-    },
-    {
-      // When the slip was entered (IST day). Off by default; Columns ▾ shows it.
-      id: 'created_on',
-      sortFilterField: 'createdOn',
-      kind: 'date',
-      header: 'Created On',
-      className: 'mono text2',
-      nowrap: true,
-      render: (iss) => fmtDate(iss.createdAt),
+      render: (r) => r.issuedByName || '—',
     },
   ];
 }

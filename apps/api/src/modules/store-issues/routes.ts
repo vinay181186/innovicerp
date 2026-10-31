@@ -19,6 +19,13 @@ export async function storeIssuesRoutes(app: FastifyInstance): Promise<void> {
     return service.listStoreIssues(query, req.user);
   });
 
+  // ADR-261 — the register, one row per issue line (same params as the list).
+  app.get('/store-issues/lines', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const query = listStoreIssuesQuerySchema.parse(req.query);
+    return service.listStoreIssueLines(query, req.user);
+  });
+
   app.get('/store-issues/next-code', async (req) => {
     if (!req.user) throw new AuthenticationError();
     return service.getNextStoreIssueCode(req.user);

@@ -50,6 +50,12 @@ function dateOnly(v: unknown): string | null {
   return v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 10);
 }
 
+/** A timestamptz as an ISO string (ADR-261 lead Created On). */
+function tsOrNull(v: unknown): string | null {
+  if (v == null) return null;
+  return v instanceof Date ? v.toISOString() : String(v);
+}
+
 function daysBetween(fromIso: string | null, toIso: string): number {
   if (!fromIso) return 0;
   const a = Date.parse(fromIso);
@@ -74,6 +80,7 @@ interface PendingDbRow {
   qcPending: number;
   lastComplete: unknown;
   jcCreatedAt: unknown;
+  opCreatedAt: unknown;
 }
 
 interface QcLogDbRow {
@@ -91,6 +98,7 @@ interface QcLogDbRow {
   rejectQty: number;
   logDate: unknown;
   inspector: string;
+  opCreatedAt: unknown;
 }
 
 interface OpGroup {
@@ -104,6 +112,7 @@ interface OpGroup {
   itemName: string | null;
   soCode: string | null;
   soInternalNo: string | null;
+  opCreatedAt: string | null;
   entries: QcLogDbRow[];
 }
 
@@ -152,7 +161,7 @@ export async function getQcCommand(
           vos.qc_pending AS "qcPending",
           (SELECT MAX(ol.log_date) FROM public.op_log ol
             WHERE ol.jc_op_id = vos.jc_op_id AND ol.log_type = 'complete') AS "lastComplete",
-          jc.created_at AS "jcCreatedAt"
+          jc.created_at AS "jcCreatedAt", jo.created_at AS "opCreatedAt"
         FROM public.v_jc_op_status vos
         JOIN public.jc_ops jo ON jo.id = vos.jc_op_id AND jo.deleted_at IS NULL
         JOIN public.job_cards jc ON jc.id = vos.job_card_id AND jc.deleted_at IS NULL
@@ -187,7 +196,8 @@ export async function getQcCommand(
           ${polSql('sol', 'rev_jwl')} AS "clientPoLineNo",
           i.name AS "itemName", so.code AS "soCode", so.internal_so_no AS "soInternalNo",
           l.qty AS "qty", l.reject_qty AS "rejectQty", l.log_date AS "logDate",
-          COALESCE(NULLIF(l.operator_name, ''), '(unknown)') AS "inspector"
+          COALESCE(NULLIF(l.operator_name, ''), '(unknown)') AS "inspector",
+          jo.created_at AS "opCreatedAt"
         FROM public.op_log l
         JOIN public.jc_ops jo ON jo.id = l.jc_op_id AND jo.deleted_at IS NULL
         JOIN public.job_cards jc ON jc.id = jo.job_card_id AND jc.deleted_at IS NULL
@@ -248,6 +258,7 @@ export async function getQcCommand(
           itemName: r.itemName ?? null,
           soCode: r.soCode ?? null,
           soInternalNo: r.soInternalNo ?? null,
+          opCreatedAt: tsOrNull(r.opCreatedAt),
           entries: [],
         };
         groups.set(r.jcOpId, g);
@@ -272,6 +283,7 @@ export async function getQcCommand(
         itemName: r.itemName ?? null,
         soCode: r.soCode ?? null,
         soInternalNo: r.soInternalNo ?? null,
+        createdAt: tsOrNull(r.opCreatedAt),
         customer: r.customer ?? null,
         pendingQty: Number(r.qcPending ?? 0),
         ageDays: daysBetween(since, today),
@@ -350,6 +362,7 @@ export async function getQcCommand(
           itemName: g.itemName,
           soCode: g.soCode,
           soInternalNo: g.soInternalNo,
+          createdAt: g.opCreatedAt,
           attempts: g.entries.length,
           totalRejected: g.entries.reduce((s, e) => s + Number(e.rejectQty), 0),
           firstEntry: first,

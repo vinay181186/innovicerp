@@ -38,8 +38,7 @@ export function ospAtVendorColumns(): DataTableColumn<OspWipRow>[] {
       soNo: (r) => r.soCode,
       internalSoNo: (r) => r.soInternalNo,
       pol: (r) => r.clientPoLineNo,
-      // needs API — the OSP WIP row carries no created date yet.
-      createdOn: () => null,
+      createdOn: (r) => r.createdAt,
       itemCode: (r) => r.itemCode,
       itemRev: (r) => r.itemRevision,
       itemName: (r) => r.itemName,
@@ -47,6 +46,7 @@ export function ospAtVendorColumns(): DataTableColumn<OspWipRow>[] {
         so_no: { sortFilterField: 'soCode' },
         so_internal_no: { sortFilterField: 'soInternalNo' },
         client_po_line_no: { sortFilterField: 'clientPoLineNo' },
+        created_on: { sortFilterField: 'createdOn' },
         item_code: { sortFilterField: 'itemCode' },
         item_name: { sortFilterField: 'itemName' },
       },

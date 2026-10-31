@@ -10,6 +10,8 @@ import type { SfColumnMap } from '../../lib/list-query';
 
 export const NC_SF_COLUMNS: SfColumnMap = {
   ncCode: { sql: sql`nc.code`, type: 'text' },
+  // ADR-261 lead SO No. — the SO code the cell prints (nc.so_code_text).
+  soCode: { sql: sql`nc.so_code_text`, type: 'text' },
   status: { sql: sql`nc.status`, type: 'list' },
   disposition: { sql: sql`nc.disposition`, type: 'list' },
   // CODE/REV as the cell prints it: the master code with the customer's drawing

@@ -29,19 +29,20 @@ interface QcRowBase {
   itemRevision: string | null;
   itemName: string | null;
   operation: string;
+  createdAt: string | null;
 }
 
 /** The columns both tables lead with: the six shared lead columns (owner rule
  *  2026-10-31: SO No. · Internal SO No. · POL · Created On · Item Code · Item
- *  Name), then JC No. · Op · Operation. The rows carry no created date yet, so
- *  Created On prints a dash (needs API). */
+ *  Name), then JC No. · Op · Operation. Created On = the QC op's created_at
+ *  (pending) / the QC log row's created_at (entries). */
 function qcLeadColumns<T extends QcRowBase>(): DataTableColumn<T>[] {
   return [
     ...leadColumns<T>({
       soNo: (o) => o.soCode,
       internalSoNo: (o) => o.soInternalNo,
       pol: (o) => o.clientPoLineNo,
-      createdOn: () => null,
+      createdOn: (o) => o.createdAt,
       itemCode: (o) => o.itemCode,
       itemRev: (o) => o.itemRevision,
       itemName: (o) => o.itemName,
@@ -51,6 +52,7 @@ function qcLeadColumns<T extends QcRowBase>(): DataTableColumn<T>[] {
         client_po_line_no: { sortFilterField: 'clientPoLineNo' },
         item_code: { sortFilterField: 'itemCode' },
         item_name: { sortFilterField: 'itemName' },
+        created_on: { sortFilterField: 'createdOn' },
       },
     }),
     {

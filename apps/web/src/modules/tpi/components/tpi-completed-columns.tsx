@@ -5,10 +5,7 @@
 import { opSrNo, type TpiCompletedRow } from '@innovic/shared';
 import { QcReportLink } from '@/components/shared/qc-report-attach';
 import { fmtDate } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
-import type { DataTableColumn } from '@/ui/data';
-
-export const TPI_COMPLETED_DEFAULT_PINNED = ['item_code'];
+import { leadColumns, type DataTableColumn } from '@/ui/data';
 
 function respLabel(d: number | null): string {
   if (d === null) return '—';
@@ -17,6 +14,17 @@ function respLabel(d: number | null): string {
 
 export function tpiCompletedColumns(): DataTableColumn<TpiCompletedRow>[] {
   return [
+    // ADR-261 — the six lead columns first; JC No. / Op after Item Name. No
+    // server Sort & Filter map in this module, so no sortFilterField.
+    ...leadColumns<TpiCompletedRow>({
+      soNo: (l) => l.soCode,
+      internalSoNo: (l) => l.soInternalNo,
+      pol: (l) => l.clientPoLineNo,
+      createdOn: (l) => l.createdAt,
+      itemCode: (l) => l.itemCode,
+      itemRev: (l) => l.itemRevision,
+      itemName: (l) => l.itemName,
+    }),
     {
       id: 'jc_no',
       kind: 'code',
@@ -25,52 +33,6 @@ export function tpiCompletedColumns(): DataTableColumn<TpiCompletedRow>[] {
       render: (l) => l.jcCode,
     },
     { id: 'op_seq', kind: 'code', header: 'Op', render: (l) => `Op ${opSrNo(l.opSeq)}` },
-    {
-      id: 'so_no',
-      kind: 'code',
-      header: 'SO No.',
-      render: (l) => <span style={{ color: 'var(--cyan)' }}>{l.soCode || '—'}</span>,
-    },
-    {
-      // ADR-207 — the office's own Internal SO No., in its own column beside
-      // the system SO No. so the two can be told apart. No `sortFilterField`:
-      // this module has no server-side sort / filter map.
-      id: 'so_internal_no',
-      kind: 'code',
-      header: 'Internal SO No.',
-      className: 'mono fw-700',
-      render: (l) => <span style={{ color: 'var(--text)' }}>{l.soInternalNo?.trim() || '—'}</span>,
-    },
-    {
-      // POL — the CUSTOMER's own purchase-order line number, before the item code.
-      id: 'client_po_line_no',
-      kind: 'code',
-      header: 'POL',
-      headColor: 'var(--purple)',
-      className: 'mono fw-700',
-      render: (l) => <span style={{ color: 'var(--purple)' }}>{l.clientPoLineNo ?? '—'}</span>,
-    },
-    {
-      id: 'item_code',
-      kind: 'code',
-      header: 'Item Code',
-      className: 'mono fw-700',
-      render: (l) => (
-        <span style={{ color: 'var(--text)' }}>{itemCodeWithRev(l.itemCode, l.itemRevision)}</span>
-      ),
-    },
-    {
-      // An item the join could not resolve prints nothing — a dash would read
-      // as a part deliberately left unnamed.
-      id: 'item_name',
-      kind: 'text',
-      header: 'Item Name',
-      align: 'left',
-      ellipsis: true,
-      className: 'fw-700',
-      render: (l) => l.itemName ?? '',
-      title: (l) => l.itemName ?? '',
-    },
     {
       id: 'operation',
       kind: 'text',

@@ -2,6 +2,7 @@ import type {
   CreatePurchaseOrderFromPrInput,
   CreatePurchaseOrderInput,
   DocumentEditStagedResult,
+  ListPurchaseOrderLinesResponse,
   ListPurchaseOrdersQuery,
   ListPurchaseOrdersResponse,
   PurchaseOrderDetail,
@@ -17,6 +18,9 @@ export const purchaseOrdersKeys = {
   all: ['purchase-orders'] as const,
   lists: () => [...purchaseOrdersKeys.all, 'list'] as const,
   list: (q: ListPurchaseOrdersQuery) => [...purchaseOrdersKeys.lists(), q] as const,
+  /** ADR-261 — the list screen's one-row-per-line read; under lists() so every
+   *  PO write that refreshes the lists refreshes it too. */
+  lineList: (q: ListPurchaseOrdersQuery) => [...purchaseOrdersKeys.lists(), 'lines', q] as const,
   details: () => [...purchaseOrdersKeys.all, 'detail'] as const,
   detail: (id: string) => [...purchaseOrdersKeys.details(), id] as const,
 };
@@ -43,6 +47,21 @@ export function usePurchaseOrdersList(
   return useQuery<ListPurchaseOrdersResponse>({
     queryKey: purchaseOrdersKeys.list(query),
     queryFn: () => apiFetch<ListPurchaseOrdersResponse>(`/purchase-orders?${toQueryString(query)}`),
+    placeholderData: (prev) => prev,
+    ...options,
+  });
+}
+
+/** ADR-261 — the PO list screen: one row per PO line (GET /purchase-orders/lines),
+ *  same query params as usePurchaseOrdersList. */
+export function usePurchaseOrderLinesList(
+  query: ListPurchaseOrdersQuery,
+  options?: Omit<UseQueryOptions<ListPurchaseOrderLinesResponse>, 'queryKey' | 'queryFn'>,
+) {
+  return useQuery<ListPurchaseOrderLinesResponse>({
+    queryKey: purchaseOrdersKeys.lineList(query),
+    queryFn: () =>
+      apiFetch<ListPurchaseOrderLinesResponse>(`/purchase-orders/lines?${toQueryString(query)}`),
     placeholderData: (prev) => prev,
     ...options,
   });

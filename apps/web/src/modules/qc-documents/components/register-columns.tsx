@@ -1,14 +1,13 @@
 // File Register columns (ADR-199 fit table, tableKey qcDocsRegister). The flat
-// register of every uploaded QC file. Default-visible set per the brief:
-// Document Type · File Name · JC No. · Item Code · Upload Date; the rest
-// (Category, POL, Item Name, SO No., Uploaded By) ride in the ▸ expand by
-// default but stay in the Columns menu. Upload Date keeps its qualifier (a bare
-// "Date" is banned, NAMING §127). Moved out of routes/list.tsx.
+// register of every uploaded QC file. ADR-261 (owner rule 2026-10-31): the six
+// lead columns first — SO No. · Internal SO No. · POL · Created On · Item Code
+// (CODE/REV) · Item Name — then Document Type · File Name · JC No.; Category
+// and Uploaded By ride in the ▸ expand by default but stay in the Columns menu.
+// Created On is the file's upload day (qc_documents.created_at), so the old
+// separate "Upload Date" column is gone. Moved out of routes/list.tsx.
 
 import type { QcDocument } from '@innovic/shared';
-import { fmtDate } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
-import type { DataTableColumn } from '@/ui/data';
+import { leadColumns, type DataTableColumn } from '@/ui/data';
 import { CATEGORY_LABEL } from './qc-doc-shared';
 
 // Server Sort & Filter (ADR-200): the Category tick list (stored code + label).
@@ -17,20 +16,31 @@ const CATEGORY_OPTIONS = Object.entries(CATEGORY_LABEL).map(([value, label]) => 
   label,
 }));
 
-/** Ids hidden into the ▸ detail by default. */
-export const REGISTER_DETAIL_IDS = [
-  'category',
-  'pol',
-  'item_name',
-  'so_code',
-  'so_internal_no',
-  'uploaded_by',
-];
+/** Ids hidden into the ▸ detail by default (never a lead column). */
+export const REGISTER_DETAIL_IDS = ['category', 'uploaded_by'];
 
 export function buildRegisterColumns(): DataTableColumn<QcDocument>[] {
   return [
+    ...leadColumns<QcDocument>({
+      soNo: (d) => d.soCodeText,
+      internalSoNo: (d) => d.soInternalNo,
+      pol: (d) => d.clientPoLineNo,
+      createdOn: (d) => d.createdAt,
+      itemCode: (d) => d.itemCode,
+      // The customer's drawing revision off the SO line behind the card, never
+      // items.revision.
+      itemRev: (d) => d.itemRevision,
+      itemName: (d) => d.itemName,
+      overrides: {
+        so_no: { sortFilterField: 'soCode' },
+        so_internal_no: { sortFilterField: 'soInternalNo' },
+        client_po_line_no: { sortFilterField: 'clientPoLineNo' },
+        created_on: { sortFilterField: 'createdOn' },
+        item_code: { sortFilterField: 'itemCode' },
+        item_name: { sortFilterField: 'itemName' },
+      },
+    }),
     {
-      // First column — pinned by the table standard (ADR-199).
       id: 'doc_type',
       sortFilterField: 'docType',
       header: 'Document Type',
@@ -48,15 +58,6 @@ export function buildRegisterColumns(): DataTableColumn<QcDocument>[] {
       title: (d) => d.fileName,
     },
     {
-      id: 'category',
-      sortFilterField: 'category',
-      filterType: 'list',
-      filterOptions: CATEGORY_OPTIONS,
-      header: 'Category',
-      nowrap: true,
-      render: (d) => (CATEGORY_LABEL as Record<string, string>)[d.category] ?? d.category,
-    },
-    {
       id: 'jc_code',
       sortFilterField: 'jcCode',
       header: 'JC No.',
@@ -68,58 +69,13 @@ export function buildRegisterColumns(): DataTableColumn<QcDocument>[] {
       ),
     },
     {
-      id: 'pol',
-      sortFilterField: 'clientPoLineNo',
-      header: 'POL',
+      id: 'category',
+      sortFilterField: 'category',
+      filterType: 'list',
+      filterOptions: CATEGORY_OPTIONS,
+      header: 'Category',
       nowrap: true,
-      headColor: 'var(--purple)',
-      render: (d) => (
-        <span className="mono fw-700" style={{ color: 'var(--purple)' }}>
-          {d.clientPoLineNo ?? '—'}
-        </span>
-      ),
-    },
-    {
-      id: 'item_code',
-      sortFilterField: 'itemCode',
-      kind: 'code',
-      header: 'Item Code',
-      nowrap: true,
-      className: 'td-code mono fw-700',
-      // `CODE/REV` via the one helper — the revision is the customer's drawing
-      // revision off the SO line behind the card, never items.revision.
-      render: (d) => itemCodeWithRev(d.itemCode, d.itemRevision),
-    },
-    {
-      id: 'item_name',
-      sortFilterField: 'itemName',
-      header: 'Item Name',
-      align: 'left',
-      ellipsis: true,
-      render: (d) => d.itemName ?? '',
-      title: (d) => d.itemName ?? '',
-    },
-    {
-      id: 'so_code',
-      sortFilterField: 'soCode',
-      header: 'SO No.',
-      nowrap: true,
-      render: (d) => (
-        <span className="mono" style={{ fontSize: 11, color: 'var(--cyan)' }}>
-          {d.soCodeText || '—'}
-        </span>
-      ),
-    },
-    {
-      // ADR-207 — the office's own Internal SO No., in its own column beside
-      // the system SO No. so the two can be told apart. Older orders have none.
-      id: 'so_internal_no',
-      sortFilterField: 'soInternalNo',
-      kind: 'code',
-      header: 'Internal SO No.',
-      className: 'mono fw-700',
-      nowrap: true,
-      render: (d) => <span style={{ color: 'var(--text)' }}>{d.soInternalNo?.trim() || '—'}</span>,
+      render: (d) => (CATEGORY_LABEL as Record<string, string>)[d.category] ?? d.category,
     },
     {
       id: 'uploaded_by',
@@ -129,15 +85,6 @@ export function buildRegisterColumns(): DataTableColumn<QcDocument>[] {
       ellipsis: true,
       render: (d) => d.uploadedByText ?? '—',
       title: (d) => d.uploadedByText ?? '',
-    },
-    {
-      id: 'upload_date',
-      sortFilterField: 'uploadDate',
-      kind: 'date',
-      header: 'Upload Date',
-      className: 'mono',
-      nowrap: true,
-      render: (d) => fmtDate(d.createdAt),
     },
   ];
 }

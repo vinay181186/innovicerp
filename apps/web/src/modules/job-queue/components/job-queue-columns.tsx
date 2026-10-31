@@ -132,8 +132,7 @@ export function jobQueueColumns(opts: { today: string }): DataTableColumn<JobQue
       soNo: (r) => r.soCode,
       internalSoNo: (r) => r.soInternalNo,
       pol: (r) => r.clientPoLineNo,
-      // needs API — the queue row carries no created date yet.
-      createdOn: () => null,
+      createdOn: (r) => r.createdAt,
       itemCode: (r) => r.itemCode,
       itemRev: (r) => r.itemRevision,
       itemName: (r) => r.itemName,

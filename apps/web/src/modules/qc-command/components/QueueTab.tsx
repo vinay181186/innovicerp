@@ -68,12 +68,12 @@ export function QueueTab({
 
   const columns: DataTableColumn<QcCommandQueueRow>[] = [
     // Owner rule 2026-10-31 — the six lead columns first; JC No. after Item
-    // Name. The queue row carries no created date yet (needs API).
+    // Name. Created On = the QC op's own created_at.
     ...leadColumns<QcCommandQueueRow>({
       soNo: (it) => it.soCode,
       internalSoNo: (it) => it.soInternalNo,
       pol: (it) => it.clientPoLineNo,
-      createdOn: () => null,
+      createdOn: (it) => it.createdAt ?? null,
       itemCode: (it) => it.itemCode,
       itemRev: (it) => it.itemRevision,
       itemName: (it) => it.itemName,

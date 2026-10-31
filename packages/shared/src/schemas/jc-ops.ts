@@ -33,6 +33,11 @@ export const jcOpsBoardRowSchema = z.object({
    *  Read-only: the Sales Order is the only place it is typed. */
   clientPoLineNo: z.string().nullable().default(null),
   jcItemName: z.string().nullable(),
+  /** ADR-261 lead columns — the order behind the card (SO code, else the JWSO
+   *  code), the SO's Internal SO No., and the op's jc_ops.created_at (ISO). */
+  soCode: z.string().nullable().optional(),
+  soInternalNo: z.string().nullable().optional(),
+  createdAt: z.string().nullable().optional(),
   jcOrderQty: z.number().int().nonnegative(),
   opSeq: z.number().int().positive(),
   operation: z.string(),

@@ -130,3 +130,45 @@ export interface ListCustomerMaterialReturnsResponse {
   limit: number;
   offset: number;
 }
+
+// ─── ADR-261 — the register as ONE ROW PER RETURN LINE ─────────────────────
+// GET /customer-material-returns/lines (same query params as the list). The
+// lead block is the JWSO line the material belongs to (JWSO-only list: no
+// Internal SO No.). Row click / ⋯ act on the RETURN (docId).
+
+export const customerMaterialReturnLineRowSchema = z.object({
+  lineId: z.string().uuid(),
+  docId: z.string().uuid(),
+  docCode: z.string(),
+  docDate: z.string(),
+  docStatus: z.enum(['issued', 'cancelled']),
+  cancelReason: z.string().nullable(),
+  remarks: z.string().nullable(),
+  clientId: z.string().uuid().nullable(),
+  clientName: z.string().nullable(),
+  vehicleNo: z.string().nullable(),
+  jobWorkOrderId: z.string().uuid(),
+  jwCode: z.string().nullable(),
+  /** POL — the JWSO line's customer PO line number (ADR-236). */
+  clientPoLineNo: z.string().nullable(),
+  /** The return LINE's created_at, else its return's. ISO timestamp. */
+  createdAt: z.string(),
+  /** The JWSO line's finished part (live master code, else the line's text). */
+  itemCode: z.string().nullable(),
+  /** The JWSO line's drawing revision. */
+  itemRevision: z.string().nullable(),
+  itemName: z.string().nullable(),
+  kind: customerMaterialReturnKindSchema,
+  /** The customer RM sent back (item code, else the party material code). */
+  rmItemCode: z.string().nullable(),
+  partyGrnCode: z.string().nullable(),
+  qty: z.number().int().positive(),
+});
+export type CustomerMaterialReturnLineRow = z.infer<typeof customerMaterialReturnLineRowSchema>;
+
+export interface ListCustomerMaterialReturnLinesResponse {
+  items: CustomerMaterialReturnLineRow[];
+  total: number;
+  limit: number;
+  offset: number;
+}

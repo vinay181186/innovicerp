@@ -53,6 +53,8 @@ export const machineLoadOpSchema = z.object({
   soCode: z.string().nullable(),
   /** ADR-207 — the SO's Internal SO No., read live from sales_orders. */
   soInternalNo: z.string().nullable().default(null),
+  /** ADR-261 Created On — the job-card op's own jc_ops.created_at (ISO). */
+  createdAt: z.string().nullable().optional(),
   priority: z.enum(JC_PRIORITIES),
   dueDate: z.string().nullable(),
   orderQty: z.number().int(),

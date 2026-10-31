@@ -2,6 +2,7 @@ import type {
   CreateGoodsReceiptNoteInput,
   DocumentEditStagedResult,
   GoodsReceiptNoteDetail,
+  ListGoodsReceiptNoteLinesResponse,
   ListGoodsReceiptNotesQuery,
   ListGoodsReceiptNotesResponse,
   UpdateGoodsReceiptNoteInput,
@@ -17,6 +18,10 @@ export const goodsReceiptNotesKeys = {
   all: ['goods-receipt-notes'] as const,
   lists: () => [...goodsReceiptNotesKeys.all, 'list'] as const,
   list: (q: ListGoodsReceiptNotesQuery) => [...goodsReceiptNotesKeys.lists(), q] as const,
+  /** ADR-261 — the list screen's one-row-per-line read; under lists() so every
+   *  GRN write that refreshes the lists refreshes it too. */
+  lineList: (q: ListGoodsReceiptNotesQuery) =>
+    [...goodsReceiptNotesKeys.lists(), 'lines', q] as const,
   details: () => [...goodsReceiptNotesKeys.all, 'detail'] as const,
   detail: (id: string) => [...goodsReceiptNotesKeys.details(), id] as const,
 };
@@ -46,6 +51,23 @@ export function useGoodsReceiptNotesList(
     queryKey: goodsReceiptNotesKeys.list(query),
     queryFn: () =>
       apiFetch<ListGoodsReceiptNotesResponse>(`/goods-receipt-notes?${toQueryString(query)}`),
+    placeholderData: (prev) => prev,
+    ...options,
+  });
+}
+
+/** ADR-261 — the GRN list screen: one row per GRN line (GET
+ *  /goods-receipt-notes/lines), same query params as useGoodsReceiptNotesList. */
+export function useGoodsReceiptNoteLinesList(
+  query: ListGoodsReceiptNotesQuery,
+  options?: Omit<UseQueryOptions<ListGoodsReceiptNoteLinesResponse>, 'queryKey' | 'queryFn'>,
+) {
+  return useQuery<ListGoodsReceiptNoteLinesResponse>({
+    queryKey: goodsReceiptNotesKeys.lineList(query),
+    queryFn: () =>
+      apiFetch<ListGoodsReceiptNoteLinesResponse>(
+        `/goods-receipt-notes/lines?${toQueryString(query)}`,
+      ),
     placeholderData: (prev) => prev,
     ...options,
   });

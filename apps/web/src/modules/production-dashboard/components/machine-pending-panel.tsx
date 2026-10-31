@@ -3,7 +3,8 @@
 // table — a blue group heading per machine ("VMC-1 · Name · 3 ops · Running")
 // over that machine's pending ops. The rows are the machine-loading `ops` list
 // (already server-sorted priority → due → op_seq, kept within each machine),
-// grouped in the machines' own order. Same six columns the mini-tables had.
+// grouped in the machines' own order. The six ADR-261 lead columns open each
+// row, then the columns the mini-tables had.
 // Machines with nothing pending (the old "Idle" cards) are named on one line
 // above the table, so no machine drops out of sight.
 
@@ -12,8 +13,7 @@ import { TABLE_KEYS } from '@/ui/data/table-keys';
 import type { MachineLoadOp } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { addDaysLocal, fmtDate, todayIst } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
-import { DataTable, Panel } from '@/ui/data';
+import { DataTable, leadColumns, Panel } from '@/ui/data';
 import type { DataTableColumn } from '@/ui/data';
 import { OpStatusBadge } from './op-status-badge';
 
@@ -67,6 +67,17 @@ export function groupPendingOps(machines: PendingMachine[], ops: MachineLoadOp[]
 }
 
 const COLUMNS: DataTableColumn<PendingRow>[] = [
+  // ADR-261 — the six lead columns first; JC No. and every other fact follow
+  // Item Name. Created On = the job-card op's own created_at.
+  ...leadColumns<PendingRow>({
+    soNo: ({ op }) => op.soCode,
+    internalSoNo: ({ op }) => op.soInternalNo,
+    pol: ({ op }) => op.clientPoLineNo,
+    createdOn: ({ op }) => op.createdAt,
+    itemCode: ({ op }) => op.itemCode,
+    itemRev: ({ op }) => op.itemRevision,
+    itemName: ({ op }) => op.itemName,
+  }),
   {
     id: 'jc_no',
     header: 'JC No.',
@@ -83,20 +94,6 @@ const COLUMNS: DataTableColumn<PendingRow>[] = [
       >
         {op.jobCardCode}
       </ActionLink>
-    ),
-  },
-  {
-    // The code carries the drawing revision; the name is only the fallback for
-    // a card with no code.
-    id: 'item_code',
-    header: 'Item Code',
-    kind: 'code',
-    className: 'mono fw-700',
-    nowrap: true,
-    render: ({ op }) => (
-      <span style={{ color: 'var(--text)' }}>
-        {itemCodeWithRev(op.itemCode, op.itemRevision, op.itemName ?? '')}
-      </span>
     ),
   },
   {

@@ -15,6 +15,7 @@ import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice } from '../../lib/access';
 import { AuthorizationError } from '../../lib/errors';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { polSql } from '../../lib/pol';
 import {
   PENDING_ITEM_SQL,
   PENDING_QTY_SQL,
@@ -56,6 +57,7 @@ export function pendingFrom(companyId: string): SQL {
     LEFT JOIN jc_ops rev_op ON rev_op.id = pol.source_jc_op_id AND rev_op.deleted_at IS NULL
     LEFT JOIN job_cards rev_jc ON rev_jc.id = rev_op.job_card_id AND rev_jc.deleted_at IS NULL
     LEFT JOIN job_work_order_lines rev_jwl ON rev_jwl.id = rev_jc.source_jw_line_id AND rev_jwl.deleted_at IS NULL
+    LEFT JOIN job_work_orders rev_jwo ON rev_jwo.id = rev_jwl.job_work_order_id AND rev_jwo.deleted_at IS NULL
     WHERE po.company_id = ${companyId}::uuid
       AND po.deleted_at IS NULL
       AND po.status IN ('open', 'partial', 'qc_pending')`;
@@ -70,6 +72,8 @@ type PendRow = {
   vendor_name: string | null;
   so_code: string | null;
   so_internal_no: string | null;
+  client_po_line_no: string | null;
+  created_at: string | Date | null;
   item_code: string | null;
   item_revision: string | null;
   item_name: string | null;
@@ -108,7 +112,10 @@ export async function listScPending(
         po.id AS po_id, po.code AS po_no, pol.line_no, po.po_date,
         COALESCE(v.code, vt.code, po.vendor_code_text) AS vendor_code,
         COALESCE(v.name, vt.name, po.vendor_code_text) AS vendor_name,
-        so.code AS so_code, so.internal_so_no AS so_internal_no,
+        -- SO No. slot (ADR-261): the SO, else the JWSO the line traces to.
+        COALESCE(so.code, rev_jwo.code) AS so_code, so.internal_so_no AS so_internal_no,
+        ${polSql('sol', 'rev_jwl')} AS client_po_line_no,
+        pol.created_at,
         i.code AS item_code, COALESCE(i.name, pol.item_name) AS item_name,
         -- The customer's drawing revision off the SO line (else the JWSO line),
         -- never items.revision. Cast to text: the column is text only after 0119.
@@ -141,6 +148,8 @@ export async function listScPending(
       vendorName: r.vendor_name,
       soCode: r.so_code,
       soInternalNo: r.so_internal_no,
+      clientPoLineNo: r.client_po_line_no,
+      createdAt: r.created_at == null ? null : new Date(r.created_at).toISOString(),
       itemCode: r.item_code,
       itemRevision: r.item_revision,
       itemName: r.item_name,

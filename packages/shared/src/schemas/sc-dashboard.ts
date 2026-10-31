@@ -27,6 +27,8 @@ export const scSoRowSchema = z.object({
   soCode: z.string().nullable(),
   /** ADR-207 — the SO's Internal SO No. (live from sales_orders), null when none. */
   soInternalNo: z.string().nullable().optional(),
+  /** ADR-261 — the SO's own created_at (Created On); null on the no-SO row. */
+  createdAt: z.string().nullable().optional(),
   lines: z.number().int().nonnegative(),
   uniqueVendors: z.number().int().nonnegative(),
   totalQty: z.number().nonnegative(),
@@ -47,6 +49,8 @@ export const scPoSummaryRowSchema = z.object({
   soCode: z.string().nullable(),
   /** ADR-207 — the SO's Internal SO No. (live from sales_orders), null when none. */
   soInternalNo: z.string().nullable().optional(),
+  /** ADR-261 — the PO's created_at (Created On). */
+  createdAt: z.string().nullable().optional(),
   lines: z.number().int().nonnegative(),
   totalQty: z.number().nonnegative(),
   receivedQty: z.number().nonnegative(),
@@ -70,6 +74,10 @@ export const scPendingLineSchema = z.object({
   soCode: z.string().nullable(),
   /** ADR-207 — the SO's Internal SO No. (live from sales_orders), null when none. */
   soInternalNo: z.string().nullable().optional(),
+  /** ADR-236 — POL: the SO line's, else the JWSO line's. */
+  clientPoLineNo: z.string().nullable().optional(),
+  /** ADR-261 — the PO line's created_at (Created On). */
+  createdAt: z.string().nullable().optional(),
   itemCode: z.string().nullable(),
   /** The customer's drawing revision for this line, read off the SO line the
    *  purchase order line was raised against

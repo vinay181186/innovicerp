@@ -20,6 +20,12 @@ export const MACHINE_LOAD_SF_COLUMNS: SfColumnMap = {
   opSeq: { sql: sql`jo.op_seq`, type: 'num' },
   operation: { sql: sql`jo.operation`, type: 'text' },
   itemCode: { sql: CODE_REV, type: 'text' },
+  // ADR-261 lead columns.
+  itemName: { sql: sql`i.name`, type: 'text' },
+  soCode: { sql: sql`so.code`, type: 'text' },
+  soInternalNo: { sql: sql`so.internal_so_no`, type: 'text' },
+  clientPoLineNo: { sql: polSql('sol', 'rev_jwl'), type: 'text' },
+  createdOn: { sql: sql`(jo.created_at AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
   available: { sql: sql`vos.available`, type: 'num' },
   pendingHrs: { sql: sql`ROUND(vos.available * jo.cycle_time_min / 60.0, 2)`, type: 'num' },
   opStatus: { sql: sql`vos.computed_status`, type: 'list' },
@@ -30,7 +36,10 @@ export const MACHINE_LOAD_SF_COLUMNS: SfColumnMap = {
 // repeats or skips a row).
 const DEFAULT_ORDER = sql`(jc.priority = 'high') DESC, jc.due_date ASC NULLS LAST, jo.op_seq ASC, jo.id ASC`;
 
-const SELECT_LIST = sql.raw(`
+// A sql`` template, not sql.raw(`…`): the POL expression below is an SQL
+// object, and inside a plain JS template string it stringified to
+// "[object Object]" (ADR-236 regression) — the query could not run.
+const SELECT_LIST = sql`
       SELECT
         jo.id AS "jcOpId", jo.job_card_id AS "jobCardId", jc.code AS "jobCardCode",
         jo.op_seq AS "opSeq", jo.operation, jo.machine_id AS "machineId",
@@ -51,6 +60,8 @@ const SELECT_LIST = sql.raw(`
         ${polSql('sol', 'rev_jwl')} AS "clientPoLineNo",
         so.code AS "soCode",
         so.internal_so_no AS "soInternalNo",
+        -- ADR-261 Created On — the job-card op's own created_at.
+        jo.created_at AS "createdAt",
         jc.priority, jc.due_date AS "dueDate", jc.order_qty AS "orderQty",
         vos.completed_qty AS "completedQty", vos.available,
         vos.computed_status AS "computedStatus",
@@ -60,7 +71,7 @@ const SELECT_LIST = sql.raw(`
         -- REMAINING qty runs — so on a re-routed op they name a machine that may
         -- have produced nothing. This is the honest breakdown.
         COALESCE(mo.machines, '[]'::json) AS "machines"
-`);
+`;
 
 const FROM_WHERE = (companyId: string): SQL => sql`
       FROM public.jc_ops jo
@@ -106,6 +117,10 @@ function toOp(r: Record<string, unknown>): MachineLoadOp {
     itemName: (r['itemName'] as string | null) ?? null,
     soCode: (r['soCode'] as string | null) ?? null,
     soInternalNo: (r['soInternalNo'] as string | null) ?? null,
+    createdAt:
+      r['createdAt'] instanceof Date
+        ? (r['createdAt'] as Date).toISOString()
+        : ((r['createdAt'] as string | null) ?? null),
     priority: r['priority'] as MachineLoadOp['priority'],
     dueDate: r['dueDate'] != null ? String(r['dueDate']).slice(0, 10) : null,
     orderQty: Number(r['orderQty'] ?? 0),

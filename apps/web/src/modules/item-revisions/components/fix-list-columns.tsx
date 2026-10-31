@@ -11,7 +11,7 @@ import type {
 import { ROUTE_CARD_APPROVAL_LABEL } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { RcApprovalBadge } from '@/modules/route-cards/components/rc-approval-badge';
-import type { DataTableColumn } from '@/ui/data';
+import { leadColumns, type DataTableColumn } from '@/ui/data';
 
 const dash = <span className="text3">—</span>;
 
@@ -99,41 +99,42 @@ const REASON_LABEL: Record<FixListLine['reason'], string> = {
 
 export function lineColumns(): DataTableColumn<FixListLine>[] {
   return [
-    { id: 'item_code', header: 'Item Code', nowrap: true, render: (r) => strong(r.itemCode) },
-    {
-      id: 'item_name',
-      header: 'Item Name',
-      align: 'left',
-      ellipsis: true,
-      render: (r) => r.itemName ?? dash,
-      title: (r) => r.itemName ?? '',
-    },
-    {
-      id: 'order_no',
-      header: 'SO / JWSO No.',
-      kind: 'code',
-      nowrap: true,
-      render: (r) =>
-        r.source === 'SO' ? (
-          <Link
-            to="/sales-orders/$id"
-            params={{ id: r.docId }}
-            className="mono fw-700"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {r.docCode}
-          </Link>
-        ) : (
-          <Link
-            to="/job-work-orders/$id"
-            params={{ id: r.docId }}
-            className="mono fw-700"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {r.docCode}
-          </Link>
-        ),
-    },
+    // ADR-261 lead columns. Mixed SO + JWSO list: "SO No." shows whichever
+    // order the line is on; a JWSO line has no Internal SO No. ("—"). The
+    // line's Drawing Rev rides in the Item Code cell (CODE/REV).
+    ...leadColumns<FixListLine>({
+      soNo: (r) => r.docCode,
+      internalSoNo: (r) => r.soInternalNo,
+      pol: (r) => r.clientPoLineNo,
+      createdOn: (r) => r.createdAt,
+      itemCode: (r) => r.itemCode,
+      itemRev: (r) => r.drawingRev,
+      itemName: (r) => r.itemName,
+      overrides: {
+        so_no: {
+          render: (r) =>
+            r.source === 'SO' ? (
+              <Link
+                to="/sales-orders/$id"
+                params={{ id: r.docId }}
+                className="mono fw-700"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {r.docCode}
+              </Link>
+            ) : (
+              <Link
+                to="/job-work-orders/$id"
+                params={{ id: r.docId }}
+                className="mono fw-700"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {r.docCode}
+              </Link>
+            ),
+        },
+      },
+    }),
     {
       id: 'ln',
       header: 'Ln',
@@ -143,13 +144,6 @@ export function lineColumns(): DataTableColumn<FixListLine>[] {
       render: (r) => r.lineNo,
     },
     { id: 'line_status', header: 'Order Status', nowrap: true, render: (r) => r.status },
-    {
-      id: 'drawing_rev',
-      header: 'Drawing Rev',
-      nowrap: true,
-      className: 'mono fw-700',
-      render: (r) => r.drawingRev,
-    },
     {
       id: 'drawing',
       header: 'Drawing',

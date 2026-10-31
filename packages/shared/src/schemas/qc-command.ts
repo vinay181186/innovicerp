@@ -38,6 +38,8 @@ export interface QcCommandQueueRow {
   soCode: string | null;
   /** ADR-207: that SO's Internal SO No. (live off sales_orders); null when none. */
   soInternalNo?: string | null;
+  /** ADR-261 lead Created On — the QC op's own created_at (jc_ops). */
+  createdAt?: string | null;
   customer: string | null;
   pendingQty: number;
   ageDays: number;
@@ -92,6 +94,8 @@ export interface QcReworkRow {
   soCode: string | null;
   /** ADR-207: that SO's Internal SO No. (live off sales_orders); null when none. */
   soInternalNo?: string | null;
+  /** ADR-261 lead Created On — the reworked QC op's own created_at (jc_ops). */
+  createdAt?: string | null;
   attempts: number;
   totalRejected: number;
   firstEntry: string | null;

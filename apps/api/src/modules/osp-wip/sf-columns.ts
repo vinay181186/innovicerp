@@ -20,6 +20,8 @@ export const OSP_WIP_SF_COLUMNS: SfColumnMap = {
   // ADR-207 — the Internal SO No. of that same SO, off the `so` join the
   // register's shared FROM makes (page and summary alike).
   soInternalNo: { sql: sql`so.internal_so_no`, type: 'text' },
+  // ADR-261 Created On — the op's own created_at (jc_ops wo join).
+  createdOn: { sql: sql`(wo.created_at AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
   vendorName: { sql: sql`w.vendor_name`, type: 'text' },
   operation: { sql: sql`w.operation`, type: 'text' },
   orderQty: { sql: sql`w.order_qty`, type: 'num' },

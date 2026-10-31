@@ -18,6 +18,7 @@ import type {
   StoreTransactionListItem,
 } from './schema';
 import { STOCK_LEDGER_SF_COLUMNS } from './sf-columns';
+import { STOCK_LEDGER_SO_JOINS, STOCK_LEDGER_SO_SELECT } from './so-link';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -104,9 +105,11 @@ export async function listStoreTransactions(
         st.remarks,
         st.created_at AS "createdAt", st.created_by AS "createdBy",
         i.code AS "itemCode",
-        i.name AS "itemName"
+        i.name AS "itemName",
+        ${STOCK_LEDGER_SO_SELECT}
       FROM public.store_transactions st
       LEFT JOIN public.items i ON i.id = st.item_id AND i.deleted_at IS NULL
+      ${STOCK_LEDGER_SO_JOINS}
       WHERE ${whereClause}
       ORDER BY ${orderBy}
       LIMIT ${input.limit} OFFSET ${input.offset}
@@ -167,6 +170,10 @@ function toListItem(r: Record<string, unknown>): StoreTransactionListItem {
     createdBy: r['createdBy'] as string,
     itemCode: (r['itemCode'] as string | null) ?? null,
     itemName: (r['itemName'] as string | null) ?? null,
+    soCode: (r['soCode'] as string | null) ?? null,
+    soInternalNo: (r['soInternalNo'] as string | null) ?? null,
+    clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
+    itemRevision: (r['itemRevision'] as string | null) ?? null,
   };
 }
 

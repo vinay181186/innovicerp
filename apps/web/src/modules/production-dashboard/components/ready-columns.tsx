@@ -9,8 +9,7 @@ import { ActionLink } from '@/components/shared/action-link';
 import type { ProductionDashboardReadyOp } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
 import { ActualMachineCell, PlannedMachineCell } from '@/components/shared/machine-split';
-import { itemCodeWithRev } from '@/lib/item-code';
-import { ROW_TINT } from '@/ui/data';
+import { leadColumns, ROW_TINT } from '@/ui/data';
 import type { DataTableColumn, RowMenuItem } from '@/ui/data';
 import { OP_STATUS_BADGES, OpStatusBadge } from './op-status-badge';
 
@@ -20,13 +19,11 @@ const OP_STATUS_OPTIONS = Object.entries(OP_STATUS_BADGES).map(([value, b]) => (
   label: b.label,
 }));
 
-// JC No. is column 0 (always pinned). The six visible columns match the brief:
+// The six ADR-261 lead columns open the row (locked, always shown), then
 // JC No. · Op · Operation · Actual Machine · Available · Op Status. The rest of
 // the op detail is hidden by default and shows in the ▸ expander.
-export const PROD_READY_DEFAULT_PINNED = ['jc_no'];
+export const PROD_READY_DEFAULT_PINNED: string[] = [];
 export const PROD_READY_DEFAULT_HIDDEN = [
-  'item_code',
-  'item_name',
   'planned_machine',
   'order_qty',
   'completed',
@@ -48,6 +45,25 @@ export function prodReadyRowTint(op: ProductionDashboardReadyOp): string | undef
 
 export function prodReadyColumns(): DataTableColumn<ProductionDashboardReadyOp>[] {
   return [
+    // ADR-261 — the six lead columns first (always shown); JC No. and every
+    // other fact follow Item Name. `sortFilterField` = PROD_READY_SF_COLUMNS.
+    ...leadColumns<ProductionDashboardReadyOp>({
+      soNo: (op) => op.soCode,
+      internalSoNo: (op) => op.soInternalNo,
+      pol: (op) => op.clientPoLineNo,
+      createdOn: (op) => op.createdAt,
+      itemCode: (op) => op.itemCode,
+      itemRev: (op) => op.itemRevision,
+      itemName: (op) => op.itemName,
+      overrides: {
+        so_no: { sortFilterField: 'soCode' },
+        so_internal_no: { sortFilterField: 'soInternalNo' },
+        client_po_line_no: { sortFilterField: 'clientPoLineNo' },
+        created_on: { sortFilterField: 'createdOn' },
+        item_code: { sortFilterField: 'itemCode' },
+        item_name: { sortFilterField: 'itemName' },
+      },
+    }),
     {
       // DESTINATION (user request, 2026-09-11): a JC number goes to the job card
       // itself, everywhere in the app. Op Entry is reachable from the ⋯ menu.
@@ -118,31 +134,6 @@ export function prodReadyColumns(): DataTableColumn<ProductionDashboardReadyOp>[
       render: (op) => <OpStatusBadge status={op.computedStatus} />,
     },
     // ── ▸ detail (hidden by default) ──────────────────────────────────────────
-    {
-      // The item the card is for. The code leads because it carries the drawing
-      // revision (CODE/REV) the operator works to.
-      id: 'item_code',
-      sortFilterField: 'itemCode',
-      kind: 'code',
-      header: 'Item Code',
-      className: 'td-code',
-      render: (op) => (
-        <span style={{ color: 'var(--text)' }}>
-          {itemCodeWithRev(op.itemCode, op.itemRevision, '')}
-        </span>
-      ),
-    },
-    {
-      id: 'item_name',
-      sortFilterField: 'itemName',
-      kind: 'text',
-      header: 'Item Name',
-      align: 'left',
-      ellipsis: true,
-      className: 'text3',
-      render: (op) => op.itemName ?? '',
-      title: (op) => op.itemName ?? '',
-    },
     {
       // ADR-164 — where the REMAINING qty runs.
       id: 'planned_machine',

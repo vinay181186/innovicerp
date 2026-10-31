@@ -1,18 +1,16 @@
-// Goods Receipt Note list columns (ADR-199 fit table: one line per GRN). Moved
-// out of routes/list.tsx so that file stays under the 400-line ceiling. Centred
-// by the table standard; numbers right-aligned (align 'right' -> the num kind);
-// only the Vendor name is left-aligned and shares the spare width.
-//
-// Columns, first pinned: GRN No. · GRN Date · Vendor · GRN Type · PO/NC No. ·
-// Received · QC Status · Accepted · Deviated. Every field was already shown by
-// the retired card layout — Received / Accepted / Deviated came off the metric
-// strip, GRN Type off the "Against NC / DC / PO" badge, PO/NC No. off the meta
-// line. Nothing new.
+// Goods Receipt Note list columns (ADR-199 fit table). ADR-261 (2026-10-31):
+// ONE ROW PER GRN LINE (GET /goods-receipt-notes/lines), opening with the six
+// lead columns — SO No. · Internal SO No. · POL · Created On · Item Code
+// (CODE/REV) · Item Name — then GRN No. · GRN Date · Vendor · GRN Type · PO/NC
+// No. · Received · QC Status · Accepted · Deviated · Vendor Challan No. ·
+// Vendor Invoice No. (NAMING.md).
+// Received / QC Status / Accepted / Deviated are the LINE's own. The two vendor
+// paper numbers came out of the retired ▸ expand.
 
-import type { GoodsReceiptNoteListItem, GrnQcStatus } from '@innovic/shared';
+import type { GoodsReceiptNoteLineListItem } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
-import type { DataTableColumn } from '@/ui/data';
+import { leadColumns, type DataTableColumn } from '@/ui/data';
 import { QcStatusBadge } from './qc-status-badge';
 
 /** `GRN Type` — which paper the receipt is against (NAMING.md §A). The three
@@ -43,21 +41,33 @@ export function grnTypeLabel(grn: {
 /** ADR-235 — a Cancelled GRN (listed with includeCancelled): cancelledAt is
  *  the standard Cancel's stamp. A plain Delete (Trash) leaves it null, and a
  *  trashed GRN is never listed, so this test cannot mistake one for the other. */
-export function isGrnCancelled(grn: Pick<GoodsReceiptNoteListItem, 'cancelledAt'>): boolean {
+export function isGrnCancelled(grn: { cancelledAt: string | null }): boolean {
   return Boolean(grn.cancelledAt);
 }
 
-/** `qcStatusFor` is owned by the page (it reads the in-progress set + the active
- *  filter), so the QC Status column and the row tint stay in agreement with the
- *  card rule that preceded them. */
 export function goodsReceiptNoteListColumns(
-  qcStatusFor: (grn: GoodsReceiptNoteListItem) => GrnQcStatus,
   /** ADR-202 — GRN ids with a pending edit; their status cell shows "Draft". */
   draftIds?: Set<string>,
-): DataTableColumn<GoodsReceiptNoteListItem>[] {
+): DataTableColumn<GoodsReceiptNoteLineListItem>[] {
   return [
+    ...leadColumns<GoodsReceiptNoteLineListItem>({
+      soNo: (l) => l.soCode,
+      internalSoNo: (l) => l.soInternalNo,
+      pol: (l) => l.clientPoLineNo,
+      createdOn: (l) => l.createdAt,
+      itemCode: (l) => l.itemCode,
+      itemRev: (l) => l.itemRevision,
+      itemName: (l) => l.itemName,
+      overrides: {
+        so_no: { sortFilterField: 'soCode' },
+        so_internal_no: { sortFilterField: 'soInternalNo' },
+        client_po_line_no: { sortFilterField: 'clientPoLineNo' },
+        created_on: { sortFilterField: 'createdOn' },
+        item_code: { sortFilterField: 'itemCode' },
+        item_name: { sortFilterField: 'itemName' },
+      },
+    }),
     {
-      // First column — pinned by the table standard (ADR-199).
       id: 'grn_code',
       sortFilterField: 'grnCode',
       header: 'GRN No.',
@@ -65,13 +75,13 @@ export function goodsReceiptNoteListColumns(
       render: (grn) => (
         <Link
           to="/goods-receipt-notes/$id"
-          params={{ id: grn.id }}
+          params={{ id: grn.docId }}
           className="td-code"
           style={{ color: 'var(--blue)', fontWeight: 800 }}
           title="Open the GRN detail page"
           onClick={(e) => e.stopPropagation()}
         >
-          {grn.code}
+          {grn.docCode}
         </Link>
       ),
     },
@@ -82,7 +92,7 @@ export function goodsReceiptNoteListColumns(
       header: 'GRN Date',
       className: 'mono',
       nowrap: true,
-      render: (grn) => fmtDate(grn.grnDate),
+      render: (grn) => fmtDate(grn.docDate),
     },
     {
       id: 'vendor',
@@ -95,18 +105,12 @@ export function goodsReceiptNoteListColumns(
       title: (grn) => grn.vendorName ?? grn.vendorCodeText ?? '',
     },
     {
+      // Column id stays `source` so a saved layout keeps working (CLAUDE.md §18:
+      // the field is `GRN Type`, the words the create screen offers).
       id: 'source',
       kind: 'badge',
-      // Was `Source`. One fact, one name (CLAUDE.md §18): the create and edit
-      // screens have always called this field `GRN Type`, and `Source` is one
-      // of the bare words §18 bans — the GRN also has a source PO, a source DC
-      // and a source NC. The column id stays `source` so a saved column layout
-      // (ADR-199 Columns ▾) keeps working.
       header: 'GRN Type',
       nowrap: true,
-      // `Against DC` here was a fourth spelling of the type the form calls
-      // `Against JW PO / DC`; the registered words win (never shorten a
-      // registered label to make a cell fit).
       render: (grn) => {
         const type = grnTypeLabel(grn);
         if (!type) return <span className="text3">—</span>;
@@ -119,12 +123,8 @@ export function goodsReceiptNoteListColumns(
       sortFilterField: 'poNcCode',
       header: 'PO/NC No.',
       nowrap: true,
-      // ADR-217 — an NC-return GRN states its NC code, resolved from `ncId`.
-      // It used to read `poCodeText`, which held the NC code only while a return
-      // had no purchase order behind it; a return raised after ADR-217 has one,
-      // so that column is a PO code and this cell would have shown the order
-      // where the NC number belongs. The snapshot stays as the fallback for an
-      // NC row since deleted.
+      // ADR-217 — an NC-return GRN states its NC code; the snapshot is the
+      // fallback for an NC row since deleted.
       render: (grn) => {
         const ref = grn.ncId ? (grn.ncCode ?? grn.poCodeText) : (grn.poCode ?? grn.poCodeText);
         return ref ? (
@@ -137,36 +137,6 @@ export function goodsReceiptNoteListColumns(
       },
     },
     {
-      id: 'item_code',
-      header: 'Item Code',
-      nowrap: true,
-      // First line's item; "+N more" when the GRN has further lines.
-      render: (grn) =>
-        grn.firstItemCode ? (
-          <>
-            <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-              {grn.firstItemCode}
-            </span>
-            {grn.lineCount > 1 && (
-              <span className="text3" style={{ fontSize: 11 }}>
-                {' '}
-                +{grn.lineCount - 1} more
-              </span>
-            )}
-          </>
-        ) : (
-          <span className="text3">—</span>
-        ),
-    },
-    {
-      id: 'item_name',
-      header: 'Item Name',
-      align: 'left',
-      ellipsis: true,
-      render: (grn) => grn.firstItemName ?? '—',
-      title: (grn) => grn.firstItemName ?? '',
-    },
-    {
       id: 'received',
       sortFilterField: 'totalReceivedQty',
       filterType: 'num',
@@ -174,13 +144,11 @@ export function goodsReceiptNoteListColumns(
       align: 'right',
       nowrap: true,
       className: 'mono fw-700',
-      render: (grn) => grn.totalReceivedQty,
+      render: (grn) => grn.receivedQty,
     },
     {
-      // The verdict, THEN the split it breaks into. Moved ahead of
-      // Accepted / Deviated on 2026-10-06 so that all four GRN surfaces — this
-      // list, its expanded row, the detail page and the print — read in one
-      // order. This list was the last one disagreeing.
+      // The verdict, THEN the split it breaks into (same order as the detail
+      // page and the print). This LINE's QC state, from the server.
       id: 'qc_status',
       kind: 'badge',
       header: 'QC Status',
@@ -190,7 +158,7 @@ export function goodsReceiptNoteListColumns(
         isGrnCancelled(grn) ? (
           <span className="badge b-red">Cancelled</span>
         ) : (
-          <QcStatusBadge status={qcStatusFor(grn)} draft={draftIds?.has(grn.id)} />
+          <QcStatusBadge status={grn.lineQcStatus} draft={draftIds?.has(grn.docId)} />
         ),
     },
     {
@@ -204,9 +172,9 @@ export function goodsReceiptNoteListColumns(
       render: (grn) => (
         <span
           className="mono fw-700"
-          style={{ color: grn.totalQcAcceptedQty > 0 ? 'var(--green)' : 'var(--text3)' }}
+          style={{ color: grn.qcAcceptedQty > 0 ? 'var(--green)' : 'var(--text3)' }}
         >
-          {grn.totalQcAcceptedQty}
+          {grn.qcAcceptedQty}
         </span>
       ),
     },
@@ -221,22 +189,25 @@ export function goodsReceiptNoteListColumns(
       render: (grn) => (
         <span
           className="mono fw-700"
-          style={{ color: grn.totalQcRejectedQty > 0 ? 'var(--red)' : 'var(--text3)' }}
+          style={{ color: grn.qcRejectedQty > 0 ? 'var(--red)' : 'var(--text3)' }}
         >
-          {grn.totalQcRejectedQty}
+          {grn.qcRejectedQty}
         </span>
       ),
     },
     {
-      // When the GRN record was entered (IST day) — Sort & Filter can pick a
-      // range of it (ADR-200). Off by default; Columns ▾ shows it.
-      id: 'created_on',
-      sortFilterField: 'createdOn',
-      kind: 'date',
-      header: 'Created On',
+      id: 'vendor_challan_no',
+      header: 'Vendor Challan No.',
       className: 'mono',
       nowrap: true,
-      render: (grn) => fmtDate(grn.createdAt),
+      render: (grn) => grn.dcNo ?? '—',
+    },
+    {
+      id: 'vendor_invoice_no',
+      header: 'Vendor Invoice No.',
+      className: 'mono',
+      nowrap: true,
+      render: (grn) => grn.invoiceNo ?? '—',
     },
   ];
 }

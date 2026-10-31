@@ -44,14 +44,17 @@ export const unplannedSoLinesReport: RegisteredReport = {
     dept: 'planning',
     filters: [{ key: 'customer', label: 'Customer', kind: 'text', placeholder: 'Customer name' }],
     columns: [
-      { key: 'source', label: 'Source', type: 'text' },
-      { key: 'order_code', label: 'SO / JWSO', type: 'text' },
+      // ADR-261 lead columns: SO No. is the SO or JWSO code the line has;
+      // Created On is the order line's created_at; rev rides in Item Code.
+      { key: 'so_code', label: 'SO No.', type: 'text' },
       { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
+      { key: 'client_po_line_no', label: 'POL', type: 'text' },
+      { key: 'created_on', label: 'Created On', type: 'date' },
+      { key: 'item_code', label: 'Item Code', type: 'text' },
+      { key: 'item_name', label: 'Item Name', type: 'text' },
+      { key: 'source', label: 'Source', type: 'text' },
       { key: 'order_date', label: 'Order Date', type: 'date' },
       { key: 'client_name', label: 'Customer', type: 'text' },
-      { key: 'client_po_line_no', label: 'POL', type: 'text' },
-      { key: 'item_code', label: 'Item Code', type: 'text' },
-      { key: 'item_revision', label: 'Drawing Rev', type: 'text' },
       { key: 'order_qty', label: 'Order Qty', type: 'number' },
       { key: 'covered_qty', label: 'Covered', type: 'number' },
       { key: 'to_plan_qty', label: 'To Plan', type: 'number' },
@@ -70,19 +73,21 @@ export const unplannedSoLinesReport: RegisteredReport = {
 
     const result = await tx.execute(sql`
       SELECT
-        u.source, u.order_code, u.so_internal_no, u.order_date, u.client_name, u.client_po_line_no,
-        u.item_code, u.item_revision, u.order_qty, u.covered_qty, u.to_plan_qty,
+        u.source, u.so_code, u.so_internal_no, u.order_date, u.client_name, u.client_po_line_no,
+        u.item_code, u.item_name, u.created_on, u.order_qty, u.covered_qty, u.to_plan_qty,
         u.due_date, u.days_since_order
       FROM (
         SELECT
           'SO'                                        AS source,
-          so.code                                     AS order_code,
+          so.code                                     AS so_code,
           so.internal_so_no                           AS so_internal_no,
           so.so_date::text                                  AS order_date,
           COALESCE(cl.name, so.customer_name, '—')    AS client_name,
           sol.client_po_line_no                       AS client_po_line_no,
-          COALESCE(it.code, sol.item_code_text)  AS item_code,
-          sol.revision::text                          AS item_revision,
+          (COALESCE(it.code, sol.item_code_text)
+            || COALESCE('/' || NULLIF(btrim(sol.revision::text), ''), '')) AS item_code,
+          COALESCE(it.name, sol.part_name)            AS item_name,
+          (sol.created_at AT TIME ZONE 'Asia/Kolkata')::date::text AS created_on,
           sol.order_qty                               AS order_qty,
           cov.covered                                 AS covered_qty,
           GREATEST(sol.order_qty - cov.covered, 0)    AS to_plan_qty,
@@ -108,13 +113,15 @@ export const unplannedSoLinesReport: RegisteredReport = {
 
         SELECT
           'JWSO'                                      AS source,
-          jwo.code                                    AS order_code,
+          jwo.code                                    AS so_code,
           NULL::text                                  AS so_internal_no,
           jwo.jw_date::text                                 AS order_date,
           COALESCE(cl.name, jwo.customer_name, '—')   AS client_name,
           jwl.client_po_line_no                       AS client_po_line_no, -- ADR-236
-          COALESCE(it.code, jwl.item_code_text)  AS item_code,
-          jwl.revision::text                          AS item_revision,
+          (COALESCE(it.code, jwl.item_code_text)
+            || COALESCE('/' || NULLIF(btrim(jwl.revision::text), ''), '')) AS item_code,
+          COALESCE(it.name, jwl.part_name)            AS item_name,
+          (jwl.created_at AT TIME ZONE 'Asia/Kolkata')::date::text AS created_on,
           jwl.order_qty                               AS order_qty,
           cov.covered                                 AS covered_qty,
           GREATEST(jwl.order_qty - cov.covered, 0)    AS to_plan_qty,
@@ -136,19 +143,20 @@ export const unplannedSoLinesReport: RegisteredReport = {
           AND jwl.order_qty > cov.covered
           ${jwCustomerFrag}
       ) u
-      ORDER BY u.due_date ASC NULLS LAST, u.order_code, u.line_no
+      ORDER BY u.due_date ASC NULLS LAST, u.so_code, u.line_no
       LIMIT ${REPORT_ROW_CAP}
     `);
 
     const rows = (result as unknown as SqlRow[]).map((r) => ({
-      source: String(r['source'] ?? ''),
-      order_code: String(r['order_code'] ?? ''),
+      so_code: String(r['so_code'] ?? ''),
       so_internal_no: textCell(r['so_internal_no']),
+      client_po_line_no: textCell(r['client_po_line_no']),
+      created_on: dateCell(r['created_on']),
+      item_code: String(r['item_code'] ?? '—'),
+      item_name: textCell(r['item_name']),
+      source: String(r['source'] ?? ''),
       order_date: dateCell(r['order_date']),
       client_name: String(r['client_name'] ?? ''),
-      client_po_line_no: textCell(r['client_po_line_no']),
-      item_code: String(r['item_code'] ?? '—'),
-      item_revision: textCell(r['item_revision']),
       order_qty: numCell(r['order_qty']),
       covered_qty: numCell(r['covered_qty']),
       to_plan_qty: numCell(r['to_plan_qty']),

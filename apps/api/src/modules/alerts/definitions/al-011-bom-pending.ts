@@ -16,7 +16,10 @@ export const al011BomPending: RegisteredAlert = {
     name: 'BOM Not Prepared',
     description: 'Equipment SOs whose BOM Status shows the BOM is not ready yet.',
     columns: [
+      // ADR-261 lead columns an SO header has (no line: no POL / item).
       { key: 'so_code', label: 'SO No.', type: 'text' },
+      { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
+      { key: 'created_on', label: 'Created On', type: 'date' },
       { key: 'customer', label: 'Customer', type: 'text' },
       { key: 'bom_status', label: 'BOM Status', type: 'text' },
       { key: 'so_date', label: 'SO Date', type: 'date' },
@@ -26,8 +29,8 @@ export const al011BomPending: RegisteredAlert = {
   async run({ tx, companyId }) {
     const result = await tx.execute(sql`
       SELECT so.id AS nav_id,
-             -- ADR-207: SO No. · Internal SO No. (live from sales_orders)
-             so.code || COALESCE(' · ' || NULLIF(btrim(so.internal_so_no), ''), '') AS so_code,
+             so.code AS so_code, so.internal_so_no AS so_internal_no,
+             (so.created_at AT TIME ZONE 'Asia/Kolkata')::date::text AS created_on,
              COALESCE(c.name, so.customer_name, '') AS customer,
              COALESCE(so.bom_status, '') AS bom_status, so.so_date
       FROM public.sales_orders so
@@ -42,6 +45,8 @@ export const al011BomPending: RegisteredAlert = {
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({
       navPage: docNavPage('sales-order', String(r['nav_id'])),
       so_code: (r['so_code'] as string) ?? '',
+      so_internal_no: (r['so_internal_no'] as string | null) ?? '',
+      created_on: String(r['created_on'] ?? ''),
       customer: (r['customer'] as string) ?? '',
       bom_status: (r['bom_status'] as string) ?? '',
       so_date:
