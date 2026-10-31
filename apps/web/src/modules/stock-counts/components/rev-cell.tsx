@@ -9,6 +9,7 @@ import {
   pickedRevisionId,
   useItemRevOptions,
 } from '@/modules/item-revisions/components/drawing-rev-picker';
+import { ItemRevLink } from '@/modules/item-revisions/components/item-rev-link';
 import type { DraftLine } from '../lib/draft-line';
 
 export function StockCountRevCell({
@@ -21,6 +22,16 @@ export function StockCountRevCell({
   onChange: (itemRevisionId: string | null | undefined) => void;
 }): React.JSX.Element {
   const { required, options } = useItemRevOptions(line.itemId);
+  // A saved line names its Rev itself (drawingRev) — shown as ABC/1 when the
+  // count is no longer editable, even before the picker's options load.
+  if (!editable && line.itemRevisionId && line.drawingRev) {
+    return (
+      <ItemRevLink
+        itemRevisionId={line.itemRevisionId}
+        label={itemRevLabel(line.itemCode, line.drawingRev)}
+      />
+    );
+  }
   if (!required) return <span className="text3">—</span>;
   const value =
     line.itemRevisionId === undefined

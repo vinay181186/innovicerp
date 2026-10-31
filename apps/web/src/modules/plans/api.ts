@@ -45,7 +45,8 @@ export const plansKeys = {
     ] as const,
   detail: (id: string) => [...plansKeys.all, 'detail', id] as const,
   dashboard: () => [...plansKeys.all, 'dashboard'] as const,
-  defaultOps: (itemId: string | null) => [...plansKeys.all, 'default-ops', itemId] as const,
+  defaultOps: (itemId: string | null, itemRevisionId: string | null = null) =>
+    [...plansKeys.all, 'default-ops', itemId, itemRevisionId] as const,
 };
 
 function buildPlansSearch(q: ListPlansQuery): string {
@@ -314,11 +315,16 @@ export function useNextPlanCode() {
  *  active route card (the same case in which `ops` comes back empty). They are
  *  for display only — the screens show which card filled the operations in, and
  *  never put the code or revision into a plan payload. */
-export function useDefaultRouteOps(itemId: string | null) {
+export function useDefaultRouteOps(itemId: string | null, itemRevisionId?: string | null) {
+  const revId = itemRevisionId ?? null;
   return useQuery<DefaultRouteOpsResponse>({
-    queryKey: plansKeys.defaultOps(itemId),
-    queryFn: () =>
-      apiFetch<DefaultRouteOpsResponse>(`/plans/default-ops?itemId=${encodeURIComponent(itemId!)}`),
+    queryKey: plansKeys.defaultOps(itemId, revId),
+    queryFn: () => {
+      // Item + Drawing Rev — when known, ops come from THAT Rev's Route Card.
+      const p = new URLSearchParams({ itemId: itemId! });
+      if (revId) p.set('itemRevisionId', revId);
+      return apiFetch<DefaultRouteOpsResponse>(`/plans/default-ops?${p.toString()}`);
+    },
     enabled: !!itemId,
   });
 }

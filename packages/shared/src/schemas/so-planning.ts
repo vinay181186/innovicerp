@@ -141,6 +141,9 @@ export type PlanningPlanSummary = z.infer<typeof planningPlanSummarySchema>;
 
 export const planningLineSchema = z.object({
   soLineId: z.string().uuid(),
+  /** Item + Drawing Rev (ABC/1) — see item-revision.ts. */
+  itemRevisionId: z.string().uuid().nullable().default(null),
+  drawingRev: z.string().nullable().default(null),
   lineNo: z.number().int().positive(),
   clientPoLineNo: z.string().nullable(),
   itemId: z.string().uuid().nullable(),

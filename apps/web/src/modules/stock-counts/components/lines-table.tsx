@@ -54,7 +54,11 @@ export function StockCountLinesTable(props: {
                     line={l}
                     editable={editable}
                     onChange={(itemRevisionId) =>
-                      setLines((ls) => ls.map((x, j) => (j === i ? { ...x, itemRevisionId } : x)))
+                      setLines((ls) =>
+                        ls.map((x, j) =>
+                          j === i ? { ...x, itemRevisionId, drawingRev: undefined } : x,
+                        ),
+                      )
                     }
                   />
                 </td>

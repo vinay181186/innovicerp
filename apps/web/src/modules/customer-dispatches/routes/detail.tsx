@@ -6,6 +6,7 @@
 // The page body IS the challan: the same Innovic Sheet markup the print window
 // emits, previewed in an iframe (screen = print, as on the invoice detail).
 
+import { itemRevLabel } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
@@ -20,10 +21,12 @@ import {
 } from '@/modules/document-edits/components/pending-change-chip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate, fmtDateTime } from '@/lib/date';
+import { docDrawingRev } from '@/lib/item-code';
 import { soNoWithInternal } from '@/lib/so-number';
 import { runPrint } from '@/lib/print/preview-host';
 import { SHEET_STYLE } from '@/lib/print/sheet-print';
 import { useClient } from '@/modules/clients/api';
+import { ItemRevLink } from '@/modules/item-revisions/components/item-rev-link';
 import { useMyCompany } from '@/modules/settings/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Panel } from '@/ui/data';
@@ -246,6 +249,27 @@ function CustomerDispatchDetailPage(): React.JSX.Element {
               ) : null}
             </div>
           ))}
+        </div>
+      ) : null}
+
+      {/* The Item + Drawing Rev each line SHIPPED (ABC/1), linked to its drawing
+          page — the challan below is a print preview and cannot carry links.
+          Only lines saved with a register Rev are listed. */}
+      {d.lines.some((l) => l.itemRevisionId) ? (
+        <div style={{ maxWidth: 860, margin: '0 auto 10px', fontSize: 12 }}>
+          <span className="text3">Drawing Rev shipped:</span>{' '}
+          {d.lines
+            .filter((l) => l.itemRevisionId)
+            .map((l, i) => (
+              <span key={l.id}>
+                {i > 0 ? ' · ' : null}
+                <span className="text3">Ln {l.lineNo}</span>{' '}
+                <ItemRevLink
+                  itemRevisionId={l.itemRevisionId}
+                  label={itemRevLabel(l.itemCode ?? l.itemCodeText, docDrawingRev(l))}
+                />
+              </span>
+            ))}
         </div>
       ) : null}
 

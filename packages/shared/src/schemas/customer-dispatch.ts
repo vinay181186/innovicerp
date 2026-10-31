@@ -188,6 +188,9 @@ export type ListCustomerDispatchesResponse = z.infer<typeof listCustomerDispatch
 // Customer / Dispatched By / Remarks / Stock B→A). Flattened from dispatch docs.
 export const customerDispatchRegisterRowSchema = z.object({
   dispatchId: z.string().uuid(),
+  /** Item + Drawing Rev (ABC/1) — see item-revision.ts. */
+  itemRevisionId: z.string().uuid().nullable().default(null),
+  drawingRev: z.string().nullable().default(null),
   dispatchCode: z.string(),
   status: z.enum(CUSTOMER_DISPATCH_STATUSES),
   date: z.string(),

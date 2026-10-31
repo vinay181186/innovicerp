@@ -10,7 +10,7 @@
 // does.
 
 import type { Client, Company, CustomerDispatchDetail } from '@innovic/shared';
-import { itemCodeWithRev } from '@/lib/item-code';
+import { docDrawingRev, itemCodeWithRev } from '@/lib/item-code';
 import { buildDocCompany } from '@/lib/print/company';
 import { partyForPrint } from '@/lib/print/party-copy';
 import {
@@ -71,8 +71,9 @@ function dispatchSheetModel(
     recipient: { label: 'Customer', fields: recipientFields },
     document: { label: 'Challan', fields: documentFields },
     lines: d.lines.map((l) => ({
-      // CODE/REV — the customer's drawing revision rides on the code.
-      itemCode: itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.itemRevision, ''),
+      // CODE/REV — the Drawing Rev actually SHIPPED (drawingRev), falling back
+      // to the SO line's Rev (itemRevision) for rows saved before Phase C.
+      itemCode: itemCodeWithRev(l.itemCode ?? l.itemCodeText, docDrawingRev(l), ''),
       pol: l.clientPoLineNo,
       itemName: l.itemName,
       uom: uomOf(l.uom),
