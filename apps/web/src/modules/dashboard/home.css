@@ -171,26 +171,6 @@ span.dh-link {
   gap: var(--sp-2);
   font-size: var(--fs-sm);
 }
-.dh-seg {
-  display: inline-flex;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  overflow: hidden;
-}
-.dh-seg button {
-  font: inherit;
-  font-size: var(--fs-sm);
-  border: 0;
-  background: var(--bg2);
-  color: var(--text3);
-  padding: 3px 10px;
-  cursor: pointer;
-}
-.dh-seg button[aria-pressed='true'] {
-  background: var(--blue3);
-  color: var(--blue);
-  font-weight: 700;
-}
 .dh-body {
   padding: var(--sp-3) var(--sp-4);
   display: flex;
@@ -201,7 +181,7 @@ span.dh-link {
 
 /* ── department checks ── */
 .dh-check {
-  border-bottom: 1px solid var(--bg3);
+  border-bottom: 1px solid var(--border);
 }
 .dh-check-line {
   display: flex;

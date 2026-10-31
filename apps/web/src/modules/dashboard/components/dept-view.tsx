@@ -1,8 +1,9 @@
 // ADR-264 — one department's numbered checks: "1. Plans available for
 // production (2)" with a Show / Hide text button (owner rule: no ▸ arrow on a
 // list row). An open check shows its documents (CheckTable). Header controls:
-// "Lists open as" Collapsed | Expanded, then Expand all / Collapse all for
-// this department's checks.
+// Expand all / Collapse all for this department's checks (each check's state is
+// saved per user). The "Lists open as" switch and the hint were removed (owner
+// 31-Oct: unnecessary words); new users start Collapsed.
 
 import type { DashCheckDeptBlock } from '@innovic/shared';
 import { useCheckOpen } from '../use-check-open';
@@ -20,25 +21,8 @@ export function DeptView({
   const checks = block.checks;
   return (
     <>
-      <ViewHead title={label} hint="Show a line to see its documents">
+      <ViewHead title={label}>
         <div className="dh-ctl">
-          <span id="dh-listopen">Lists open as</span>
-          <span className="dh-seg" role="group" aria-labelledby="dh-listopen">
-            <button
-              type="button"
-              aria-pressed={open.listOpen === 'collapsed'}
-              onClick={() => open.setDefault('collapsed')}
-            >
-              Collapsed
-            </button>
-            <button
-              type="button"
-              aria-pressed={open.listOpen === 'expanded'}
-              onClick={() => open.setDefault('expanded')}
-            >
-              Expanded
-            </button>
-          </span>
           <button
             type="button"
             className="btn btn-ghost btn-sm"
