@@ -1,9 +1,10 @@
 // ADR-264 — which department check lines are open, per user.
 //
 // Open = dashboardCheckOpen[key] when the user has set it by hand, else
-// dashboardListOpen === 'expanded'. Every change is saved at once through the
-// one ui-settings cache (lib/use-ui-settings.ts): the screen flips first, the
-// PUT follows. A new default clears the overrides — on the server and in the
+// dashboardListOpen === 'expanded'. Every change goes through the one
+// ui-settings cache (lib/use-ui-settings.ts): the screen flips at once, and the
+// PUTs are sent one at a time in click order, so the server ends up matching
+// the screen. A new default clears the overrides — on the server and in the
 // cache alike (applySave).
 
 import type { DashCheck, DashboardListOpen } from '@innovic/shared';

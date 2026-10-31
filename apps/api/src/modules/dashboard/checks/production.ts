@@ -4,8 +4,10 @@
 //                          Pending > 0, no open Production Order).
 //   prod_plans_overdue   — the same rows, Plan Start Date before today.
 //   prod_due_week        — Production Orders open / partially closed whose
-//                          PRO Target Date falls today .. Sunday (IST). Qty =
-//                          what is still to come (Order Qty − credited).
+//                          PRO Target Date is on or before Sunday of this
+//                          week (IST) — overdue ones included, red, "N days
+//                          late". Qty = what is still to come (Order Qty −
+//                          credited).
 //   prod_rc_pending      — plans whose derived status (lib/plan-order-coverage
 //                          planDerivedStatusSql) reads "no Route Card" or
 //                          "Route Card waiting approval". Cancelled plans read
@@ -65,7 +67,7 @@ export function proDueWeekSql(c: CheckCtx): SQL {
            COALESCE(pro.item_name_text, i.name)::text AS item_name,
            GREATEST(pro.order_qty - COALESCE(pro.credited_qty, 0), 0)::numeric AS qty,
            i.uom::text AS uom, NULL::numeric AS amount, pro.created_by::text AS created_by,
-           0::int AS is_late,
+           (CASE WHEN pro.target_date < ${c.today}::date THEN 1 ELSE 0 END)::int AS is_late,
            plans.id::text AS x1, COALESCE(plans.code, pro.plan_code_text)::text AS x2,
            NULL::text AS x3
     FROM public.production_orders pro
@@ -77,7 +79,7 @@ export function proDueWeekSql(c: CheckCtx): SQL {
     LEFT JOIN public.job_work_orders jw ON jw.id = jwl.job_work_order_id AND jw.deleted_at IS NULL
     WHERE pro.company_id = ${c.cid}::uuid AND pro.deleted_at IS NULL
       AND pro.status IN ('open', 'partially_closed')
-      AND pro.target_date BETWEEN ${c.today}::date AND ${weekEnd(c.today)}::date`;
+      AND pro.target_date <= ${weekEnd(c.today)}::date`;
 }
 
 const planBase = {

@@ -11,6 +11,11 @@ vi.mock('../../../db/client', () => ({ db: {} }));
 vi.mock('../../access-control/service', () => ({ getMyAccess: vi.fn() }));
 vi.mock('../../purchase-requests/service', () => ({ orderedQtySql: () => sql`0` }));
 vi.mock('../../party-grn/service', () => ({ partyCommittedQtySql: () => sql`0` }));
+// service.ts logs a failing check; the real logger reads env.ts, which exits
+// without a database env — the unit config runs with none.
+vi.mock('../../../lib/logger', () => ({
+  logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
+}));
 
 const svc = await import('./service');
 const t = await import('./types');
@@ -34,11 +39,13 @@ describe('check access', () => {
     expect(k.some((x) => x.startsWith('pur_'))).toBe(false);
   });
 
-  it('a check is hidden when its View-all page does not open', () => {
-    // Production tier alone: Production Orders opens, Plans (a Planning
-    // page) does not — the plan checks stay hidden.
-    expect(keys(dash({ departments: { production: 'L3' } }))).toEqual(['prod_due_week']);
-    // A per-page Hide on Production Orders removes that check too.
+  it('the department tier decides, not the View-all page', () => {
+    // Production tier alone: every Production check shows, including the
+    // plan checks whose View-all page (Plans) is a Planning page — the web
+    // renders that link as plain text.
+    const prodKeys = svc.CHECK_DEFS.filter((d) => d.dept === 'production').map((d) => d.key);
+    expect(keys(dash({ departments: { production: 'L3' } }))).toEqual(prodKeys);
+    // A per-page Hide on Production Orders does not remove its check either.
     expect(
       keys(
         dash({
@@ -46,7 +53,14 @@ describe('check access', () => {
           forms: { prodorder_create: perms({ viewOff: true }) },
         }),
       ),
-    ).toEqual([]);
+    ).toEqual(prodKeys);
+  });
+
+  it('no tier in a department: none of its checks', () => {
+    const k = keys(dash({ departments: { store: 'L1' } }));
+    expect(k.length).toBeGreaterThan(0);
+    expect(k.every((x) => x.startsWith('store_'))).toBe(true);
+    expect(keys(dash({ departments: {} }))).toEqual([]);
   });
 
   it('planning + production tiers show the plan checks', () => {

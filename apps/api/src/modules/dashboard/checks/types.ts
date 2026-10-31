@@ -32,7 +32,8 @@ export interface CheckDef {
   label: string;
   /** [document, reference, date] — names per docs/NAMING.md. */
   head: DashCheck['head'];
-  /** "View all" page; the check is shown only if it opens for the caller. */
+  /** "View all" page. Visibility is the department tier (checks/service.ts);
+   *  the web shows this as plain text when the page does not open. */
   href: string;
   query: (c: CheckCtx) => SQL;
   docHref: (r: RawRow) => string;

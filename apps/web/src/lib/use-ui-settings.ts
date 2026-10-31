@@ -9,7 +9,7 @@
 // PUT /me/ui-settings. A failed save keeps the choice for this session.
 
 import { useCallback, useEffect } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   DEFAULT_DASHBOARD_LIST_OPEN,
   DEFAULT_TABLE_DENSITY,
@@ -68,6 +68,20 @@ export function applyDensity(density: TableDensity): void {
   document.body.classList.toggle(DENSITY_BODY_CLASS, density === 'compact');
 }
 
+// ADR-264 — every PUT waits for the one before it. Without this, two quick
+// clicks (Show then Hide on one check, or a per-check toggle then a new
+// "Lists open as" default, which clears the overrides) could commit out of
+// order and leave the server different from the screen. One chain for the
+// whole app, because every hook instance shares the one settings row. A failed
+// save is swallowed (the choice stays for this session) and never blocks the
+// next one.
+let saveChain: Promise<unknown> = Promise.resolve();
+function enqueueSave(next: SaveUiSettingsInput): void {
+  saveChain = saveChain
+    .then(() => apiFetch<UiSettings>('/me/ui-settings', { method: 'PUT', json: next }))
+    .catch(() => undefined);
+}
+
 export function useUiSettings(): {
   settings: UiSettings;
   save: (next: SaveUiSettingsInput) => void;
@@ -98,24 +112,19 @@ export function useUiSettings(): {
     applyDensity(settings.tableDensity);
   }, [settings.tableDensity]);
 
-  const mutation = useMutation({
-    mutationFn: (next: SaveUiSettingsInput) =>
-      apiFetch<UiSettings>('/me/ui-settings', { method: 'PUT', json: next }),
-  });
-  const { mutate } = mutation;
-
   const save = useCallback(
     (next: SaveUiSettingsInput) => {
       // Instant: the class and the cache flip now; the save follows.
-      // Only ever on the user's own click — never on mount. Each save sends
-      // only what changed, so two quick clicks never overwrite each other.
+      // Only ever on the user's own click — never on mount. The PUTs go one at
+      // a time, in click order (enqueueSave), so the server ends where the
+      // screen does even when two clicks land close together.
       qc.setQueryData<UiSettings>(uiSettingsQueryKey(userId ?? ''), (prev) =>
         applySave(prev ?? FALLBACK, next),
       );
       if (next.tableDensity) applyDensity(next.tableDensity);
-      mutate(next);
+      enqueueSave(next);
     },
-    [qc, mutate, userId],
+    [qc, userId],
   );
 
   return { settings, save };

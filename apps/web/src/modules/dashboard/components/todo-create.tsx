@@ -63,7 +63,12 @@ export function TodoCreate({ onClose }: { onClose: () => void }): React.JSX.Elem
   const [assignTo, setAssignTo] = useState<string>(ME);
   const [userTerm, setUserTerm] = useState('');
   const [docId, setDocId] = useState<string | null>(null);
-  const [docLabel, setDocLabel] = useState('');
+  // The picked document, kept at pick time: Save builds the link from this,
+  // never from the latest search results (which may no longer hold it).
+  const [docPick, setDocPick] = useState<{
+    type: TaskRelatedType;
+    opt: TaskRelatedOption;
+  } | null>(null);
   const [docTerm, setDocTerm] = useState('');
   const [docSearched, setDocSearched] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -103,16 +108,13 @@ export function TodoCreate({ onClose }: { onClose: () => void }): React.JSX.Elem
     if (!t) return setErr('Write what needs doing.');
     if (assignTo !== ME && !dueDate) return setErr('Due Date is required.');
     let linkedRef: TaskLinkedRef | undefined;
-    if (docId) {
-      const hit = docs.byId.get(docId);
-      if (hit) {
-        linkedRef = {
-          type: hit.type,
-          id: hit.opt.id,
-          display: hit.opt.code,
-          navPage: relatedNavPage(hit.type, hit.opt.id),
-        };
-      }
+    if (docId && docPick) {
+      linkedRef = {
+        type: docPick.type,
+        id: docPick.opt.id,
+        display: docPick.opt.code,
+        navPage: relatedNavPage(docPick.type, docPick.opt.id),
+      };
     }
     const done = { onSuccess: onClose, onError: (e: Error) => setErr(e.message) };
     if (assignTo === ME) {
@@ -191,7 +193,7 @@ export function TodoCreate({ onClose }: { onClose: () => void }): React.JSX.Elem
         <FormField label="Linked document" size="lg">
           <SearchableSelect
             value={docId}
-            valueLabel={docLabel || undefined}
+            valueLabel={docPick?.opt.code || undefined}
             options={docOptions}
             onSearch={onDocSearch}
             loading={docs.loading}
@@ -201,8 +203,9 @@ export function TodoCreate({ onClose }: { onClose: () => void }): React.JSX.Elem
             ariaLabel="Linked document"
             selectedLabel={(o) => o.code ?? o.name}
             onChange={(id) => {
-              setDocId(id);
-              setDocLabel(id ? (docs.byId.get(id)?.opt.code ?? '') : '');
+              const hit = id ? docs.byId.get(id) : undefined;
+              setDocId(hit ? id : null);
+              setDocPick(hit ?? null);
             }}
           />
         </FormField>

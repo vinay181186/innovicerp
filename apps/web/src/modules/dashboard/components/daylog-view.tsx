@@ -85,7 +85,6 @@ export function DayLogView(): React.JSX.Element {
           columns={COLUMNS}
           rows={d.entries}
           rowKey={(e) => e.id}
-          sortFilter={false}
           emptyText="No entries yet today."
         />
       </>

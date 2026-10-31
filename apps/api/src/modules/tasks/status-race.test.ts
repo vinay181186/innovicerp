@@ -52,6 +52,23 @@ describe('task status changes are conditional (§20.2)', () => {
     );
   });
 
+  it('start and complete at once: the complete always succeeds', async () => {
+    const todo = await service.createPersonalTodo(
+      { title: 'adr264 race — start vs complete', priority: 'medium' },
+      admin,
+    );
+    const [start, complete] = await Promise.allSettled([
+      service.updateTaskStatus(todo.id, { status: 'in_progress' }, admin),
+      service.completeTask(todo.id, {}, admin),
+    ]);
+    // Complete ends the task from any open status, so the move to In
+    // Progress cannot make it fail. The start may win first or be told the
+    // task is already completed — never anything else.
+    expect(complete.status).toBe('fulfilled');
+    if (start.status === 'rejected') expect(start.reason).toBeInstanceOf(ConflictError);
+    expect((await service.getTask(todo.id, admin)).status).toBe('completed');
+  });
+
   it('a personal to-do stores its linked document and stays private', async () => {
     const todo = await service.createPersonalTodo(
       {

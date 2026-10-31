@@ -59,6 +59,7 @@ import {
   isOpenStatus,
   istToday,
   loadTaskHistory,
+  OPEN_STATUSES,
   loadUserNames,
   nameOf,
   permsFor,
@@ -667,12 +668,19 @@ async function transitionStatus(
     updates.completedDate = today; // legacy column kept in sync
     updates.completionRemark = opts.remark ?? null;
   }
-  // CLAUDE.md §20.2 — conditional on the status we read: a second click / a
-  // second user finds 0 rows and is told who got there first.
+  // CLAUDE.md §20.2 — conditional UPDATE: a second click / a second user finds
+  // 0 rows and is told who got there first. Complete / Cancel end the task
+  // from ANY open status (ADR-264): someone moving it To Do → In Progress at
+  // the same moment must not make the Complete fail. A move between open
+  // statuses stays conditional on the exact status we read.
+  const fromCond =
+    target === 'completed' || target === 'cancelled'
+      ? inArray(tasks.status, [...OPEN_STATUSES])
+      : eq(tasks.status, t.status);
   const changed = await tx
     .update(tasks)
     .set(updates)
-    .where(and(eq(tasks.id, t.id), eq(tasks.companyId, companyId), eq(tasks.status, t.status)))
+    .where(and(eq(tasks.id, t.id), eq(tasks.companyId, companyId), fromCond))
     .returning({ id: tasks.id });
   if (changed.length === 0) throw await statusConflict(tx, t.id, t.code, companyId);
 

@@ -76,7 +76,9 @@ export function useOtherApprovals(): OtherApproval[] {
 
 export function inboxTotal(a: HomeResponse['approvals']): number {
   if (!a) return 0;
-  return a.counts.pr + a.counts.po + (a.counts.rc ?? 0) + a.counts.logEntry;
+  // PRs need no approval (owner rule 2026-10-31) — counts.pr is not counted,
+  // the same total the inbox heading shows (approval-inbox.tsx).
+  return a.counts.po + (a.counts.rc ?? 0) + a.counts.logEntry;
 }
 
 export function ApprovalsView({

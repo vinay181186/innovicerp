@@ -1,8 +1,10 @@
 // ADR-264 — the documents of one opened check, in THE table (DataTable, owner
 // rule: no hand-built tables). Columns: Sr · head[0] · head[1] · Item · Qty ·
-// head[2] · Status. No per-row expand and no row actions (owner). Document and
-// reference codes render through <ActionLink fallback="text">: a link when the
-// caller may open that page, plain text when not.
+// head[2] · Status. No per-row expand and no row actions (owner). Checks are
+// shown by department tier, so the caller may not be able to open every page:
+// document / reference codes and "View all N" render through
+// <ActionLink fallback="text"> — a link when the caller may open that page,
+// plain text when not.
 
 import type { DashCheck, DashCheckRow } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
@@ -103,7 +105,9 @@ export function CheckTable({ check }: { check: DashCheck }): React.JSX.Element {
         columns={columns(check)}
         rows={check.rows}
         rowKey={(r) => r.key}
-        sortFilter={false}
+        // ▾ sort/filter in the browser (ADR-200) only when these rows are the
+        // whole list; on a "Showing N of M" sample it would filter a part.
+        sortFilter={!more}
         emptyText="Nothing waiting."
       />
       {more ? (
@@ -111,7 +115,12 @@ export function CheckTable({ check }: { check: DashCheck }): React.JSX.Element {
           <span>
             Showing {check.rows.length} of {check.count}
           </span>
-          <ActionLink {...linkProps(check.href)} check={check.href} className="dh-link">
+          <ActionLink
+            {...linkProps(check.href)}
+            check={check.href}
+            fallback="text"
+            className="dh-link"
+          >
             View all {check.count}
           </ActionLink>
         </div>

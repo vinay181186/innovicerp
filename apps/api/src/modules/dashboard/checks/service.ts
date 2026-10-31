@@ -1,8 +1,10 @@
 // ADR-264 — GET /dashboard/checks: the department pages of the new home.
 // Read-only. Access is read ONCE for the request (ADR-229, as home-service):
-// a department is shown only with a tier in it (hasDept), a check only if its
-// "View all" page opens for the caller (canSeeLink — a per-page Hide or a
-// missing View tick drops it). Admin / Full Access see every check. Each
+// the department access tier decides (owner decision 2026-10-31): a check is
+// shown to anyone with a tier in its department (hasDept), whether or not its
+// "View all" page opens for them. The web renders the document, reference and
+// View-all links through <ActionLink fallback="text">, so a page the caller
+// cannot open reads as plain text. Admin / Full Access see every check. Each
 // check runs in its own short transaction, guarded: one failing query drops
 // only that check (logged), never the page. Empty departments are omitted.
 
@@ -10,7 +12,7 @@ import { DASH_CHECK_DEPTS, type DashCheck, type DashChecksResponse } from '@inno
 import { type AuthContext, withUserContext } from '../../../db/with-user-context';
 import { AuthorizationError } from '../../../lib/errors';
 import { logger } from '../../../lib/logger';
-import { canSeeLink, type DashAccess, hasDept, loadAccess } from '../access';
+import { type DashAccess, hasDept, loadAccess } from '../access';
 import { istToday } from '../personal/util';
 import { PLANNING_CHECKS } from './planning';
 import { PRODUCTION_CHECKS } from './production';
@@ -31,9 +33,10 @@ export const CHECK_DEFS: readonly CheckDef[] = [
 /** How many checks read at once — each holds one pool connection. */
 const CHECKS_PARALLEL = 4;
 
-/** The checks this caller may see. */
+/** The checks this caller may see: every check of a department they hold a
+ *  tier in (hasDept is true for admin / Full Access). */
 export function visibleChecks(a: DashAccess): CheckDef[] {
-  return CHECK_DEFS.filter((d) => hasDept(a, d.dept) && canSeeLink(a, d.dept, d.href));
+  return CHECK_DEFS.filter((d) => hasDept(a, d.dept));
 }
 
 /** Group built checks into department blocks; departments with no check are

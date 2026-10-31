@@ -1,6 +1,8 @@
 // ADR-264 — Purchase checks, each the ADR-250 home rule imported as is:
-//   pur_pr_pending  — personal/rows-purchase.ts prToPoSql (pr_to_po: approved
-//                     PR with balance still to order).
+//   pur_pr_pending  — personal/rows-purchase.ts prToPoSql (pr_to_po: every live
+//                     PR with balance still to order — PRs have no approval,
+//                     owner rule 2026-10-31; the same three conditions as
+//                     purchase-requests prWaitingForPoSql).
 //   pur_po_overdue  — poOverdueSql (issued PO past its Due Date), narrowed to
 //                     POs whose Pending (lib/po-pending, qty − accepted) > 0.
 //   pur_po_approval — poDraftSql (PO in draft, waiting approval); the status

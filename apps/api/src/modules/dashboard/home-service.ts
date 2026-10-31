@@ -10,7 +10,6 @@ import {
   type DashList,
   type DashRow,
   type HomeResponse,
-  type HomeQuery,
   homeQuerySchema,
   type MarkNotificationsSeenInput,
 } from '@innovic/shared';
@@ -110,12 +109,28 @@ function own<T>(
 
 const MONEY_FORMS: readonly AccessFormKey[] = ['pr_create', 'po_create'];
 
-export async function getHome(user: AuthContext, query: HomeQuery = {}): Promise<HomeResponse> {
+/** The PARSED query (routes.ts runs homeQuerySchema once): lite is a boolean. */
+export type HomeQueryParsed = ReturnType<typeof homeQuerySchema.parse>;
+
+const EMPTY_TODO: HomeResponse['todo'] = { late: [], today: [], planned: [] };
+const EMPTY_DONE: HomeResponse['done'] = {
+  today: [],
+  yesterday: [],
+  todayTotal: 0,
+  yesterdayTotal: 0,
+};
+
+export async function getHome(
+  user: AuthContext,
+  query: HomeQueryParsed = homeQuerySchema.parse({}),
+): Promise<HomeResponse> {
   const cid = requireCompany(user);
   // My department (every row) or Mine (rows the caller raised / received):
   // applied INSIDE each list query, so a list's total and its cue are the
   // mine set too.
-  const { scope } = homeQuerySchema.parse(query);
+  // ADR-264 — lite: the new home shows only todo, done and approvals. Every
+  // other block is returned empty and its queries never run.
+  const { scope, lite } = query;
   // The access read is remembered for the request (ADR-229), so it goes first
   // and every check below reuses it. Everything after it is independent and
   // reads at the same time: the home takes as long as its slowest block, not
@@ -123,9 +138,9 @@ export async function getHome(user: AuthContext, query: HomeQuery = {}): Promise
   const a = await loadAccess(user);
   const today = istToday();
   const [cfg, money, canRemind, approvals, me] = await Promise.all([
-    getConfig(user),
-    Promise.all(MONEY_FORMS.map((f) => canSeeFormPrice(user, f))),
-    canWrite(user),
+    lite ? null : getConfig(user),
+    lite ? [] : Promise.all(MONEY_FORMS.map((f) => canSeeFormPrice(user, f))),
+    lite ? false : canWrite(user),
     // A failure empties only the approvals block.
     holdsAnyApprove(a) ? guarded('approvals', null, () => getApprovalInbox(user)) : null,
     withUserContext(
@@ -147,6 +162,40 @@ export async function getHome(user: AuthContext, query: HomeQuery = {}): Promise
   const c: ListCtx = { cid, today, myName };
   const rc: RowCtx = { a, today, userId: user.id, showMoney };
 
+  const todoTask = own<HomeResponse['todo']>(user, 'todo', EMPTY_TODO, async (tx) =>
+    // ADR-257: no tasks on Home for someone whose Task Board is hidden.
+    hasTick(a, 'taskboard_view', 'view') ? todo(tx, cid, user.id, today) : EMPTY_TODO,
+  );
+  const doneTask = own<HomeResponse['done']>(user, 'done', EMPTY_DONE, (tx) =>
+    done(tx, cid, user.id, today),
+  );
+  const head = {
+    userName: myName || user.email,
+    role: user.role,
+    dateLabel: dateLabel(),
+    greetingPart: greetingPart(),
+    isAdmin: a.isAdmin,
+    mainDept,
+  };
+
+  if (lite) {
+    const [todoBlock, doneBlock] = await Promise.all([todoTask(), doneTask()]);
+    return {
+      ...head,
+      headline: [],
+      cues: [],
+      approvals,
+      sentForApproval: [],
+      lists: [],
+      waiting: [],
+      waitingTotal: 0,
+      todo: todoBlock,
+      done: doneBlock,
+      notifications: { items: [], unseen: 0, seenAt: null },
+      quickLinks: [],
+    };
+  }
+
   const defs = visibleListDefs(a);
   const listTasks = defs.map((d) =>
     own<ListResult | null>(user, d.key, null, (tx) =>
@@ -165,18 +214,8 @@ export async function getHome(user: AuthContext, query: HomeQuery = {}): Promise
       const wait = await waiting(tx, c, rc, holders, canRemind);
       return { sent, wait };
     }),
-    // ADR-257: no tasks on Home for someone whose Task Board is hidden.
-    own<HomeResponse['todo']>(user, 'todo', { late: [], today: [], planned: [] }, async (tx) =>
-      hasTick(a, 'taskboard_view', 'view')
-        ? todo(tx, cid, user.id, today)
-        : { late: [], today: [], planned: [] },
-    ),
-    own<HomeResponse['done']>(
-      user,
-      'done',
-      { today: [], yesterday: [], todayTotal: 0, yesterdayTotal: 0 },
-      (tx) => done(tx, cid, user.id, today),
-    ),
+    todoTask,
+    doneTask,
     own<HomeResponse['notifications']>(
       user,
       'notifications',
@@ -212,12 +251,7 @@ export async function getHome(user: AuthContext, query: HomeQuery = {}): Promise
   const ordered = orderByDept(built, mainDept);
 
   return {
-    userName: myName || user.email,
-    role: user.role,
-    dateLabel: dateLabel(),
-    greetingPart: greetingPart(),
-    isAdmin: a.isAdmin,
-    mainDept,
+    ...head,
     headline: buildHeadline(ordered, approvals),
     cues: buildCues(ordered, approvals, wait.total, doneBlock.todayTotal),
     approvals,
@@ -228,7 +262,7 @@ export async function getHome(user: AuthContext, query: HomeQuery = {}): Promise
     todo: todoBlock,
     done: doneBlock,
     notifications,
-    quickLinks: visibleQuickLinks(a, cfg.quickLinks),
+    quickLinks: visibleQuickLinks(a, cfg?.quickLinks ?? null),
   };
 }
 

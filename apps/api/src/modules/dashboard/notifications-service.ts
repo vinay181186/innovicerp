@@ -3,6 +3,10 @@
 // called with the bell's options: the last NOTIFICATION_DAYS IST days, no
 // "document still open" filter (it is a history). The caller's own events are
 // never notes; admins / Full Access get none (Day Log replies still come).
+// Wording: a note whose next step is still open keeps its call to action
+// ("— waiting for your approval"); one already done reads as the past fact
+// ("Jinal raised IN-PO-0421"). Only the notes returned are worded, with one
+// "still open?" read per kind of next step (no per-note query).
 //
 // Read state, per item: an explicit notification_reads row (is_read) wins;
 // otherwise read = event time on or before the caller's notifications_seen_at.
@@ -22,7 +26,15 @@ import { notificationReads } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError } from '../../lib/errors';
 import { loadAccess } from './access';
-import { buildNotifications, markSeenSql, type NoteWithActor } from './personal/notifications';
+import {
+  bellCandidates,
+  isStillOpen,
+  markSeenSql,
+  noteText,
+  type NoteWithActor,
+  openSets,
+  readNoteCandidates,
+} from './personal/notifications';
 import { istToday } from './personal/util';
 
 /** Bell window reads: every note in the window, so unread / total are exact. */
@@ -75,15 +87,26 @@ export async function getNotifications(
 ): Promise<NotificationsResponse> {
   const cid = requireCompany(user);
   const a = await loadAccess(user);
+  const c = { cid, today: istToday(), myName: '' };
   return withUserContext(user, async (tx) => {
-    const { items: notes, seenAt } = await buildNotifications(
-      tx,
-      a,
-      { cid, today: istToday(), myName: '' },
-      user.id,
-      null, // approvals answer "still open?" only — the bell does not ask it
-      { days: NOTIFICATION_DAYS, openOnly: false, max: BELL_MAX_NOTES, scan: BELL_SCAN_EVENTS },
-    );
+    const { replyNotes, cands, seenAt } = await readNoteCandidates(tx, a, c, user.id, {
+      days: NOTIFICATION_DAYS,
+      scan: BELL_SCAN_EVENTS,
+    });
+    const kept = bellCandidates(cands, BELL_MAX_NOTES - replyNotes.length);
+    // Read state needs every note (unread / total are over the window); the
+    // words are built below for the returned notes only.
+    const notes: NoteWithActor[] = [
+      ...replyNotes,
+      ...kept.map(({ ev, rule, key }) => ({
+        key,
+        ts: ev.ts.toISOString(),
+        tone: rule.tone,
+        actorName: ev.actor,
+        text: [],
+        unseen: false,
+      })),
+    ];
     const keys = notes.map((n) => n.key);
     const rows = keys.length
       ? await tx
@@ -99,7 +122,22 @@ export async function getNotifications(
           )
       : [];
     const explicit = new Map(rows.map((r) => [r.key, r.isRead]));
-    return toNotificationsResponse(applyReadState(notes, explicit, seenAt), query);
+    const res = toNotificationsResponse(applyReadState(notes, explicit, seenAt), query);
+
+    // Word the returned notes: Day Log replies carry their own text; events
+    // read "still open?" once per kind of next step (approvals inbox not
+    // loaded — openSets asks the approval lists' own queries).
+    const shown = new Set(res.items.map((n) => n.key));
+    const shownCands = kept.filter((k) => shown.has(k.key));
+    const open = shownCands.length ? await openSets(tx, shownCands, c, user.id, null) : new Map();
+    const textByKey = new Map<string, NoteWithActor['text']>([
+      ...replyNotes.map((n) => [n.key, n.text] as const),
+      ...shownCands.map((k) => [k.key, noteText(k.ev, k.rule, isStillOpen(open, k))] as const),
+    ]);
+    return {
+      ...res,
+      items: res.items.map((n) => ({ ...n, text: textByKey.get(n.key) ?? n.text })),
+    };
   });
 }
 
