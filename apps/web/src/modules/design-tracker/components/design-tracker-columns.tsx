@@ -10,9 +10,8 @@
 
 import { DESIGN_TRACKER_STATUSES, type DesignTrackerListItem } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
 import type { DataTableColumn, RowMenuItem } from '@/ui/data';
-import { ROW_TINT } from '@/ui/data';
+import { ROW_TINT, leadColumns } from '@/ui/data';
 
 /** True when the design's Due Date is past and it is not yet Approved. */
 export function isDesignOverdue(row: DesignTrackerListItem, today: string): boolean {
@@ -49,6 +48,24 @@ export function designTrackerColumns(opts: {
 }): DataTableColumn<DesignTrackerListItem>[] {
   const { today } = opts;
   return [
+    // Owner rule 2026-10-31 — the six lead columns first; Design No. and every
+    // other fact follow Item Name.
+    ...leadColumns<DesignTrackerListItem>({
+      soNo: (d) => d.soCodeText,
+      internalSoNo: (d) => d.soInternalNo,
+      pol: (d) => d.clientPoLineNo,
+      createdOn: (d) => d.createdAt,
+      itemCode: (d) => d.itemCodeText,
+      itemRev: (d) => d.itemRevision,
+      itemName: (d) => d.itemNameText,
+      overrides: {
+        so_no: { sortFilterField: 'soCode' },
+        so_internal_no: { sortFilterField: 'soInternalNo' },
+        client_po_line_no: { sortFilterField: 'clientPoLineNo' },
+        item_code: { sortFilterField: 'itemCode' },
+        item_name: { sortFilterField: 'itemName' },
+      },
+    }),
     {
       id: 'design_no',
       header: 'Design No.',
@@ -59,64 +76,6 @@ export function designTrackerColumns(opts: {
         </span>
       ),
       sortFilterField: 'code',
-    },
-    {
-      id: 'so_no',
-      header: 'SO No.',
-      nowrap: true,
-      render: (d) => (
-        <span className="td-code" style={{ color: 'var(--cyan)' }}>
-          {d.soCodeText || '—'}
-        </span>
-      ),
-      sortFilterField: 'soCode',
-    },
-    {
-      // ADR-207 — the office's own Internal SO No., in its own column beside
-      // the system SO No. so the two can be told apart. Older orders have none.
-      id: 'so_internal_no',
-      kind: 'code',
-      header: 'Internal SO No.',
-      className: 'mono fw-700',
-      nowrap: true,
-      render: (d) => <span style={{ color: 'var(--text)' }}>{d.soInternalNo?.trim() || '—'}</span>,
-      sortFilterField: 'soInternalNo',
-    },
-    {
-      // POL — the CUSTOMER's own purchase-order line number off the SO line
-      // behind this design. Nothing to do with Design Rev, which counts OUR
-      // design revisions.
-      id: 'pol',
-      header: 'POL',
-      headColor: 'var(--purple)',
-      nowrap: true,
-      render: (d) => (
-        <span className="mono fw-700" style={{ color: 'var(--purple)' }}>
-          {d.clientPoLineNo ?? '—'}
-        </span>
-      ),
-      sortFilterField: 'clientPoLineNo',
-    },
-    {
-      id: 'item_code',
-      header: 'Item Code',
-      nowrap: true,
-      render: (d) => (
-        <span className="mono fw-700" style={{ color: 'var(--purple)' }}>
-          {itemCodeWithRev(d.itemCodeText, d.itemRevision, '') || '—'}
-        </span>
-      ),
-      sortFilterField: 'itemCode',
-    },
-    {
-      id: 'item_name',
-      header: 'Item Name',
-      kind: 'text',
-      align: 'left',
-      ellipsis: true,
-      render: (d) => d.itemNameText ?? '—',
-      title: (d) => d.itemNameText ?? '',
-      sortFilterField: 'itemName',
     },
     {
       id: 'designer',

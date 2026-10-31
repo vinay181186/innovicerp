@@ -18,7 +18,7 @@ import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useOspWip } from '../api';
-import { OSP_AT_VENDOR_DEFAULT_PINNED, ospAtVendorColumns } from './osp-at-vendor-columns';
+import { ospAtVendorColumns } from './osp-at-vendor-columns';
 
 type FilterKey = 'all' | 'at_vendor' | 'not_sent' | 'ready_to_send';
 const FILTER_LABELS: Record<FilterKey, string | undefined> = {
@@ -138,7 +138,6 @@ export function OspAtVendorRegister(): React.JSX.Element {
                   ? 'No outsourced operations match.'
                   : 'No outsourced operations yet.'
               }
-              defaultPinned={OSP_AT_VENDOR_DEFAULT_PINNED}
             />
           </Panel>
 

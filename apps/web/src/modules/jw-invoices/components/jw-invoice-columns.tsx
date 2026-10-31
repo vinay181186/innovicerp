@@ -11,8 +11,7 @@
 import type { JwInvoiceListItem } from '@innovic/shared';
 import { PLACE_OF_SUPPLY_UNKNOWN_NOTE } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
-import type { DataTableColumn } from '@/ui/data';
+import { leadColumns, type DataTableColumn } from '@/ui/data';
 
 const STATUS_OPTIONS = [
   { value: 'issued', label: 'Issued' },
@@ -27,6 +26,21 @@ function money(n: number): string {
  *  exactly as the old table did. */
 export function jwInvoiceColumns(priceHidden: boolean): DataTableColumn<JwInvoiceListItem>[] {
   const cols: DataTableColumn<JwInvoiceListItem>[] = [
+    // Owner rule 2026-10-31 — the lead columns first (JWSO-only list: JWSO No.,
+    // no Internal SO No.); Invoice No. and Customer after Item Name.
+    ...leadColumns<JwInvoiceListItem>({
+      so: 'jwso',
+      soNo: (r) => r.jwCodeText,
+      pol: (r) => r.clientPoLineNo,
+      createdOn: (r) => r.createdAt,
+      itemCode: (r) => r.itemCode,
+      itemRev: (r) => r.itemRevision,
+      itemName: (r) => r.partName,
+      overrides: {
+        so_no: { sortFilterField: 'jwsoCode' },
+        item_code: { sortFilterField: 'itemCode' },
+      },
+    }),
     {
       id: 'invoice_code',
       header: 'Invoice No.',
@@ -63,18 +77,6 @@ export function jwInvoiceColumns(priceHidden: boolean): DataTableColumn<JwInvoic
       sortFilterField: 'invoiceDate',
     },
     {
-      id: 'jwso_code',
-      header: 'JWSO No.',
-      kind: 'code',
-      nowrap: true,
-      sortFilterField: 'jwsoCode',
-      render: (r) => (
-        <span className="mono fw-700" style={{ color: 'var(--purple)' }}>
-          {r.jwCodeText ?? '—'}
-        </span>
-      ),
-    },
-    {
       id: 'customer',
       header: 'Customer',
       align: 'left',
@@ -83,28 +85,6 @@ export function jwInvoiceColumns(priceHidden: boolean): DataTableColumn<JwInvoic
       render: (r) => r.clientName ?? '—',
       title: (r) => r.clientName ?? '',
       sortFilterField: 'customer',
-    },
-    {
-      // POL — the customer's PO line number on the JWSO line (ADR-236).
-      id: 'client_po_line_no',
-      header: 'POL',
-      kind: 'code',
-      headColor: 'var(--purple)',
-      className: 'mono fw-700',
-      nowrap: true,
-      render: (r) => <span style={{ color: 'var(--purple)' }}>{r.clientPoLineNo ?? '—'}</span>,
-    },
-    {
-      id: 'item_code',
-      header: 'Item Code',
-      kind: 'code',
-      nowrap: true,
-      sortFilterField: 'itemCode',
-      render: (r) => (
-        <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-          {itemCodeWithRev(r.itemCode, r.itemRevision)}
-        </span>
-      ),
     },
     {
       id: 'qty',

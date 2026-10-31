@@ -33,6 +33,8 @@ export interface FitInput extends LayoutState {
   actionsW: number;
   /** Width the leading selection tick-box column takes, px. 0 when none. */
   selW: number;
+  /** The locked lead block (ui/data/lead-columns.tsx) — never dropped. */
+  locked?: readonly string[] | undefined;
 }
 
 export interface FitResult {
@@ -70,7 +72,11 @@ export function columnWidth(
 /** Columns that must never leave the screen: user-pinned, and `control`
  *  columns (an in-cell input / picker is force-pinned by its kind). */
 function undroppable(input: FitInput, id: string): boolean {
-  return input.pins.includes(id) || input.kinds[id] === 'control';
+  return (
+    input.pins.includes(id) ||
+    input.kinds[id] === 'control' ||
+    (input.locked?.includes(id) ?? false)
+  );
 }
 
 function minOf(input: FitInput, id: string): number {
@@ -147,7 +153,11 @@ export function fitColumns(input: FitInput): FitResult {
 export function canPin(input: FitInput, id: string): boolean {
   if (id === input.firstId || input.pins.includes(id)) return true;
   const keep = visibleIds(input).filter(
-    (k) => k === input.firstId || k === id || input.pins.includes(k),
+    (k) =>
+      k === input.firstId ||
+      k === id ||
+      input.pins.includes(k) ||
+      (input.locked?.includes(k) ?? false),
   );
   const total = keep.reduce((s, k) => s + minOf(input, k) + (k === id ? PIN_W : 0), 0);
   return total <= Math.max(0, input.avail - input.actionsW - input.selW);

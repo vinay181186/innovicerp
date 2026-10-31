@@ -6,14 +6,41 @@
 import { ML_PLAN_STATUSES, ML_PLAN_STATUS_LABEL, type MlPlanListItem } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { StatusBadge } from '@/ui/core';
-import type { DataTableColumn } from '@/ui/data';
-
-const dash = <span className="text3">—</span>;
+import { leadColumns, type DataTableColumn } from '@/ui/data';
 
 const STATUS_OPTIONS = ML_PLAN_STATUSES.map((v) => ({ value: v, label: ML_PLAN_STATUS_LABEL[v] }));
 
 export function mlPlanListColumns(offset = 0): DataTableColumn<MlPlanListItem>[] {
   return [
+    // Owner rule 2026-10-31 — the six lead columns first; Sr No, MLP No. and
+    // every other fact follow Item Name.
+    ...leadColumns<MlPlanListItem>({
+      soNo: (p) => p.soCode,
+      internalSoNo: (p) => p.soInternalNo,
+      pol: (p) => p.clientPoLineNo,
+      createdOn: (p) => p.createdAt,
+      itemCode: (p) => p.itemCode,
+      itemRev: (p) => p.itemRevision,
+      itemName: (p) => p.itemName,
+      overrides: {
+        so_no: {
+          sortFilterField: 'soCode',
+          render: (p) => (
+            <Link
+              to="/sales-orders/$id"
+              params={{ id: p.salesOrderId }}
+              className="mono"
+              style={{ color: 'var(--blue)', textDecoration: 'none' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {p.soCode}
+            </Link>
+          ),
+        },
+        item_code: { sortFilterField: 'itemCode' },
+        item_name: { sortFilterField: 'itemName' },
+      },
+    }),
     {
       id: 'sr_no',
       header: 'Sr No',
@@ -37,73 +64,6 @@ export function mlPlanListColumns(offset = 0): DataTableColumn<MlPlanListItem>[]
           {p.code}
         </Link>
       ),
-    },
-    {
-      id: 'so_code',
-      sortFilterField: 'soCode',
-      header: 'SO No.',
-      nowrap: true,
-      render: (p) => (
-        <Link
-          to="/sales-orders/$id"
-          params={{ id: p.salesOrderId }}
-          className="mono"
-          style={{ fontSize: 'var(--fs-xs)', color: 'var(--blue)', textDecoration: 'none' }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {p.soCode}
-        </Link>
-      ),
-    },
-    {
-      // ADR-207 — the office's own number, its own column beside the SO No.
-      id: 'so_internal_no',
-      header: 'Internal SO No.',
-      nowrap: true,
-      render: (p) =>
-        p.soInternalNo?.trim() ? (
-          <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-            {p.soInternalNo}
-          </span>
-        ) : (
-          dash
-        ),
-    },
-    {
-      // The CUSTOMER's PO line no. (never our SO line no.).
-      id: 'client_po_line_no',
-      header: 'POL',
-      width: '4%',
-      nowrap: true,
-      render: (p) =>
-        p.clientPoLineNo ? (
-          <span className="mono fw-700" style={{ color: 'var(--purple)' }}>
-            {p.clientPoLineNo}
-          </span>
-        ) : (
-          dash
-        ),
-    },
-    {
-      id: 'item_code',
-      sortFilterField: 'itemCode',
-      header: 'Item Code',
-      nowrap: true,
-      // The item code is THE main thing on the row — strong, never --text3.
-      render: (p) => (
-        <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-          {p.itemCode ?? '—'}
-        </span>
-      ),
-    },
-    {
-      id: 'item_name',
-      sortFilterField: 'itemName',
-      header: 'Item Name',
-      align: 'left',
-      ellipsis: true,
-      render: (p) => p.itemName ?? '—',
-      title: (p) => p.itemName ?? '',
     },
     {
       id: 'plan_qty',

@@ -1,20 +1,20 @@
 // Op Entry approvals — columns + row actions for the ADR-199 fit table (one
 // line per correction request, always fits the screen). Replaces the old card
 // grid in log-entry-approvals.tsx. What stacked inside a card is now columns:
-//   JC No. · Op · Item Code · Operation · Log Type · Machine ·
-//   Prev → Requested · Entry Qty · Asked By · Status
+//   SO No. · Internal SO No. · POL · Created On · Item Code · Item Name (the
+//   lead columns, owner rule 2026-10-31) · JC No. · Op · Operation · Log Type ·
+//   Machine · Prev → Requested · Entry Qty · Asked By · Status
 // and the context that used to sit lower on the card drops into the ▸ detail:
-//   POL · Item Name · Reason · Decided By (all hidden by default).
+//   Reason · Decided By (hidden by default).
 // Rows tint by status (approved = done, rejected = cancelled) via ROW_TINT.
 
 import { type OpLogChangeStatus, type OpLogTimeChangeRequest, opSrNo } from '@innovic/shared';
 import { fmtDateAndTime, fmtDateTime } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
-import { ROW_TINT, type DataTableColumn } from '@/ui/data';
+import { leadColumns, ROW_TINT, type DataTableColumn } from '@/ui/data';
 import { RowActions } from '@/ui/layout';
 
-// Four context columns revealed under ▸ — never on the main line (brief).
-export const OP_ENTRY_DEFAULT_HIDDEN = ['client_po_line_no', 'item_name', 'reason', 'decided_by'];
+// Context columns revealed under ▸. The lead columns are always shown.
+export const OP_ENTRY_DEFAULT_HIDDEN = ['reason', 'decided_by'];
 
 const LOG_TYPE_LABEL: Record<string, string> = {
   start: 'Start',
@@ -49,6 +49,23 @@ export function opEntryRowTint(r: OpLogTimeChangeRequest): string | undefined {
 
 export function opEntryColumns(): DataTableColumn<OpLogTimeChangeRequest>[] {
   return [
+    // Owner rule 2026-10-31 — the six lead columns first; JC No. after Item
+    // Name. Created On = when the correction was asked (requestedAt). The
+    // request row carries no SO No. / Internal SO No. yet (needs API).
+    ...leadColumns<OpLogTimeChangeRequest>({
+      soNo: () => null,
+      internalSoNo: () => null,
+      pol: (r) => r.clientPoLineNo,
+      createdOn: (r) => r.requestedAt,
+      itemCode: (r) => r.itemCode,
+      itemRev: (r) => r.itemRevision,
+      itemName: (r) => r.itemName,
+      overrides: {
+        client_po_line_no: { sortFilterField: 'clientPoLineNo' },
+        item_code: { sortFilterField: 'itemCode' },
+        item_name: { sortFilterField: 'itemName' },
+      },
+    }),
     {
       id: 'jc_no',
       sortFilterField: 'jcCode',
@@ -65,21 +82,6 @@ export function opEntryColumns(): DataTableColumn<OpLogTimeChangeRequest>[] {
       header: 'Op',
       className: 'mono fw-700',
       render: (r) => opSrNo(r.opSeq),
-    },
-    {
-      id: 'item_code',
-      sortFilterField: 'itemCode',
-      kind: 'code',
-      header: 'Item Code',
-      className: 'mono fw-700',
-      render: (r) =>
-        r.itemCode ? (
-          <span style={{ color: 'var(--text)' }}>
-            {itemCodeWithRev(r.itemCode, r.itemRevision, '')}
-          </span>
-        ) : (
-          '—'
-        ),
     },
     {
       id: 'operation',
@@ -166,25 +168,6 @@ export function opEntryColumns(): DataTableColumn<OpLogTimeChangeRequest>[] {
       },
     },
     // ─── ▸ detail (hidden by default) ────────────────────────────────────────
-    {
-      id: 'client_po_line_no',
-      sortFilterField: 'clientPoLineNo',
-      kind: 'code',
-      header: 'POL',
-      className: 'mono fw-700',
-      render: (r) =>
-        r.clientPoLineNo ? <span style={{ color: 'var(--purple)' }}>{r.clientPoLineNo}</span> : '—',
-    },
-    {
-      id: 'item_name',
-      sortFilterField: 'itemName',
-      kind: 'text',
-      header: 'Item Name',
-      align: 'left',
-      className: 'text3',
-      render: (r) => r.itemName ?? '—',
-      title: (r) => r.itemName ?? '',
-    },
     {
       id: 'reason',
       sortFilterField: 'reason',

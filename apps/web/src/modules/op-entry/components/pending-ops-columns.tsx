@@ -10,8 +10,7 @@
 import { ActionLink } from '@/components/shared/action-link';
 import type { JcOpEnriched } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
-import { itemCodeWithRev } from '@/lib/item-code';
-import type { DataTableColumn } from '@/ui/data';
+import { leadColumns, type DataTableColumn } from '@/ui/data';
 
 /** One op this machine actually produced on, with THAT machine's share of the
  *  completed qty pulled out of the op's per-machine breakdown. */
@@ -20,9 +19,9 @@ export interface MadeHereRow {
   qty: number;
 }
 
-/** POL and Item Name open in the ▸ detail by default; the JC No. (first column)
- *  is always pinned. */
-export const PENDING_OPS_DEFAULT_HIDDEN = ['client_po_line_no', 'item_name'];
+/** Nothing hidden by default — the six lead columns are always shown (owner
+ *  rule 2026-10-31). Kept as the section's defaultHidden hook. */
+export const PENDING_OPS_DEFAULT_HIDDEN: string[] = [];
 
 /** The JC number is a LINK to the card: naming a job an operator cannot open
  *  from here made them re-find it by hand, which on this screen is one more
@@ -41,49 +40,20 @@ function jcLink(op: JcOpEnriched): React.JSX.Element {
   );
 }
 
-/** POL · Item Code · Item Name, read off a JcOpEnriched. `pick` lets the
- *  Made-here table reuse them against its { op, qty } row shape. */
+/** The six lead columns (owner rule 2026-10-31), read off a JcOpEnriched.
+ *  `pick` lets the Made-here table reuse them against its { op, qty } row
+ *  shape. Spread FIRST — JC No., Op and the rest follow Item Name. */
 function identityColumns<T>(pick: (row: T) => JcOpEnriched): DataTableColumn<T>[] {
-  return [
-    {
-      // POL — the CUSTOMER's own PO line number, before the item code.
-      id: 'client_po_line_no',
-      kind: 'code',
-      header: 'POL',
-      headColor: 'var(--purple)',
-      className: 'mono fw-700',
-      render: (row) => (
-        <span style={{ color: 'var(--purple)' }}>{pick(row).clientPoLineNo ?? '—'}</span>
-      ),
-    },
-    {
-      // Purple mono is how CODE/REV is written wherever an item code sits beside
-      // a document number on this screen. Blank (not '—') when the join brought
-      // nothing back: a dash reads as "this part has no code", never true here.
-      id: 'item_code',
-      kind: 'code',
-      header: 'Item Code',
-      className: 'mono fw-700',
-      render: (row) => {
-        const op = pick(row);
-        return (
-          <span style={{ color: 'var(--purple)' }}>
-            {itemCodeWithRev(op.itemCode, op.itemRevision, '')}
-          </span>
-        );
-      },
-    },
-    {
-      id: 'item_name',
-      kind: 'text',
-      header: 'Item Name',
-      align: 'left',
-      ellipsis: true,
-      className: 'text2',
-      render: (row) => pick(row).itemName ?? '',
-      title: (row) => pick(row).itemName ?? '',
-    },
-  ];
+  return leadColumns<T>({
+    soNo: (row) => pick(row).soCode,
+    internalSoNo: (row) => pick(row).soInternalNo,
+    pol: (row) => pick(row).clientPoLineNo,
+    // needs API — the enriched op row carries no created date yet.
+    createdOn: () => null,
+    itemCode: (row) => pick(row).itemCode,
+    itemRev: (row) => pick(row).itemRevision,
+    itemName: (row) => pick(row).itemName,
+  });
 }
 
 /** "Pending Jobs for this Machine" — the ready-to-process list. The ▶ Start
@@ -91,6 +61,7 @@ function identityColumns<T>(pick: (row: T) => JcOpEnriched): DataTableColumn<T>[
 export function pendingOpsColumns(): DataTableColumn<JcOpEnriched>[] {
   const self = (op: JcOpEnriched): JcOpEnriched => op;
   return [
+    ...identityColumns<JcOpEnriched>(self),
     {
       id: 'jc_no',
       kind: 'code',
@@ -123,7 +94,6 @@ export function pendingOpsColumns(): DataTableColumn<JcOpEnriched>[] {
       className: 'mono fw-700 amber',
       render: (op) => op.available,
     },
-    ...identityColumns<JcOpEnriched>(self),
   ];
 }
 
@@ -131,6 +101,7 @@ export function pendingOpsColumns(): DataTableColumn<JcOpEnriched>[] {
 export function madeHereColumns(): DataTableColumn<MadeHereRow>[] {
   const pick = (row: MadeHereRow): JcOpEnriched => row.op;
   return [
+    ...identityColumns<MadeHereRow>(pick),
     {
       id: 'jc_no',
       kind: 'code',
@@ -162,6 +133,5 @@ export function madeHereColumns(): DataTableColumn<MadeHereRow>[] {
       className: 'mono fw-700 green',
       render: (row) => row.qty,
     },
-    ...identityColumns<MadeHereRow>(pick),
   ];
 }

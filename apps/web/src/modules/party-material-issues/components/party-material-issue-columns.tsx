@@ -14,8 +14,7 @@
 
 import type { PartyMaterialIssueListItem } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
-import type { DataTableColumn } from '@/ui/data';
+import { leadColumns, type DataTableColumn } from '@/ui/data';
 
 /** ADR-235 — a Cancelled issue (listed with includeCancelled). cancelledAt is
  *  the standard Cancel's stamp; deletedAt alone is an issue cancelled before it. */
@@ -27,6 +26,23 @@ export function isIssueCancelled(
 
 export function partyMaterialIssueColumns(): DataTableColumn<PartyMaterialIssueListItem>[] {
   return [
+    // Owner rule 2026-10-31 — the lead columns first (JWSO-only list: JWSO No.,
+    // no Internal SO No.); Issue No. after Item Name. Item Code / Item Name =
+    // OUR produced part. The row carries no POL yet (needs API).
+    ...leadColumns<PartyMaterialIssueListItem>({
+      so: 'jwso',
+      soNo: (it) => it.jwCodeText,
+      pol: () => null,
+      createdOn: (it) => it.createdAt,
+      itemCode: (it) => it.jcItemCode,
+      itemRev: (it) => it.jcItemRevision,
+      itemName: (it) => it.jcItemName,
+      overrides: {
+        so_no: { sortFilterField: 'jwsoCode' },
+        item_code: { sortFilterField: 'itemCode' },
+        item_name: { sortFilterField: 'itemName' },
+      },
+    }),
     {
       id: 'issue_code',
       sortFilterField: 'issueCode',
@@ -59,18 +75,6 @@ export function partyMaterialIssueColumns(): DataTableColumn<PartyMaterialIssueL
       render: (it) => fmtDate(it.issueDate),
     },
     {
-      id: 'jwso_code',
-      sortFilterField: 'jwsoCode',
-      header: 'JWSO No.',
-      kind: 'code',
-      nowrap: true,
-      render: (it) => (
-        <span className="mono fw-700" style={{ color: 'var(--purple)' }}>
-          {it.jwCodeText ?? '—'}
-        </span>
-      ),
-    },
-    {
       id: 'jc_code',
       sortFilterField: 'jcCode',
       header: 'JC No.',
@@ -78,29 +82,6 @@ export function partyMaterialIssueColumns(): DataTableColumn<PartyMaterialIssueL
       className: 'mono text2',
       nowrap: true,
       render: (it) => it.jcCodeText ?? '—',
-    },
-    {
-      // OUR produced part (CODE/REV). Null renders an em dash.
-      id: 'item_code',
-      sortFilterField: 'itemCode',
-      header: 'Item Code',
-      kind: 'code',
-      nowrap: true,
-      render: (it) => (
-        <span className="mono fw-700">
-          {itemCodeWithRev(it.jcItemCode, it.jcItemRevision, '—')}
-        </span>
-      ),
-    },
-    {
-      id: 'item_name',
-      sortFilterField: 'itemName',
-      header: 'Item Name',
-      align: 'left',
-      ellipsis: true,
-      className: 'text2',
-      render: (it) => it.jcItemName ?? '—',
-      title: (it) => it.jcItemName ?? '',
     },
     {
       // The CLIENT'S supplied material this issue debits — NOT the produced part.

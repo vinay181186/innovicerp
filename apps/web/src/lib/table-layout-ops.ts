@@ -17,22 +17,32 @@ export type LayoutOp =
   | { type: 'unpin'; id: string }
   | { type: 'reset' };
 
-/** Apply one operation. `first` (column 0) can never move, hide or unpin. */
+/** The locked block at the front: column 0 alone, or the six lead columns
+ *  (ui/data/lead-columns.tsx). A string is the old "column 0 only" form. */
+export function lockedList(locked: string | readonly string[] | undefined): readonly string[] {
+  if (locked === undefined) return [];
+  return typeof locked === 'string' ? [locked] : locked;
+}
+
+/** Apply one operation. A locked column (column 0, or the lead block) can
+ *  never move, hide or unpin, and no other column can move into the block. */
 export function applyLayoutOp(
   state: LayoutShape,
   op: LayoutOp,
-  first: string | undefined,
+  first: string | readonly string[] | undefined,
   defaults: LayoutShape,
 ): LayoutShape {
   if (op.type === 'reset') return defaults;
-  if (op.id === first) return state;
+  const locked = lockedList(first);
+  if (locked.includes(op.id)) return state;
+  const floor = Math.max(1, locked.length);
   const shown = state.order.filter((k) => !state.hidden.includes(k));
   const hidden = state.order.filter((k) => state.hidden.includes(k));
   switch (op.type) {
     case 'move': {
       const i = shown.indexOf(op.id);
       const j = i + op.dir;
-      if (i < 1 || j < 1 || j >= shown.length) return state;
+      if (i < floor || j < floor || j >= shown.length) return state;
       const list = [...shown];
       const a = list[i];
       const b = list[j];
@@ -48,13 +58,24 @@ export function applyLayoutOp(
         hidden: [...state.hidden, op.id],
         pins: state.pins.filter((k) => k !== op.id),
       };
-    case 'show':
+    case 'show': {
       if (!state.hidden.includes(op.id)) return state;
+      // Back into its own slot (code order), never tacked on at the end.
+      const rank = (k: string) => defaults.order.indexOf(k);
+      const mine = rank(op.id);
+      let at = mine < 0 ? -1 : shown.findIndex((k, idx) => idx >= floor && rank(k) > mine);
+      if (at < 0) at = shown.length;
       return {
         ...state,
         hidden: state.hidden.filter((k) => k !== op.id),
-        order: [...shown, op.id, ...hidden.filter((k) => k !== op.id)],
+        order: [
+          ...shown.slice(0, at),
+          op.id,
+          ...shown.slice(at),
+          ...hidden.filter((k) => k !== op.id),
+        ],
       };
+    }
     case 'pin':
       return state.pins.includes(op.id) || state.hidden.includes(op.id)
         ? state

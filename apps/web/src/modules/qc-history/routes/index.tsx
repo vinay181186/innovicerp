@@ -36,11 +36,7 @@ import {
   useQcLogsList,
   useQcPendingList,
 } from '../api';
-import {
-  QC_HISTORY_DEFAULT_PINNED,
-  qcEntryColumns,
-  qcPendingColumns,
-} from '../components/qc-history-columns';
+import { qcEntryColumns, qcPendingColumns } from '../components/qc-history-columns';
 import { exportCompletedQc, exportPendingQc } from '../lib/export';
 
 export const qcHistoryRoute = createRoute({
@@ -278,7 +274,6 @@ function QcHistoryPage(): React.JSX.Element {
               emptyText={
                 q || sfPend.filtering ? 'Nothing QC Pending matches.' : 'Nothing QC Pending.'
               }
-              defaultPinned={QC_HISTORY_DEFAULT_PINNED}
               rowMenu={(o) => [
                 {
                   key: 'open-qc',
@@ -316,7 +311,6 @@ function QcHistoryPage(): React.JSX.Element {
                   ? 'No QC entries match.'
                   : 'No QC entries yet.'
               }
-              defaultPinned={QC_HISTORY_DEFAULT_PINNED}
             />
           </Panel>
           <ListFooter

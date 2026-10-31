@@ -1,15 +1,15 @@
 // JW Return register columns (ADR-199 fit table: one line per row, always fits
 // the screen — no sideways scroll; the rightmost columns drop into the ▸ detail
-// row when narrow). The first column (Return No.) is pinned by the stylesheet.
+// row when narrow). The lead columns (JWSO No. · POL · Created On · Item Code ·
+// Item Name, owner rule 2026-10-31) come first, then Return No.
 // Numbers right-align, codes/dates never wrap, Customer and Item Name left-align
 // and ellipsise. Transporter and Vehicle No. live in the ▸ detail row (see
 // jw-dispatch-view).
 
 import { type JwReturnChallanListItem } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
 import { statusText } from '@/lib/status-text';
-import type { DataTableColumn } from '@/ui/data';
+import { leadColumns, type DataTableColumn } from '@/ui/data';
 
 const STATUS_OPTIONS = [
   { value: 'issued', label: statusText('issued') },
@@ -18,6 +18,22 @@ const STATUS_OPTIONS = [
 
 export function jwReturnColumns(): DataTableColumn<JwReturnChallanListItem>[] {
   return [
+    // Owner rule 2026-10-31 — the lead columns first (JWSO-only list: JWSO No.,
+    // no Internal SO No.); Return No. and Customer after Item Name.
+    ...leadColumns<JwReturnChallanListItem>({
+      so: 'jwso',
+      soNo: (r) => r.jwCodeText,
+      pol: (r) => r.clientPoLineNo,
+      createdOn: (r) => r.createdAt,
+      itemCode: (r) => r.itemCode,
+      itemRev: (r) => r.itemRevision,
+      itemName: (r) => r.partName,
+      overrides: {
+        so_no: { sortFilterField: 'jwsoCode' },
+        item_code: { sortFilterField: 'itemCode' },
+        item_name: { sortFilterField: 'itemName' },
+      },
+    }),
     {
       id: 'return_no',
       sortFilterField: 'returnCode',
@@ -37,15 +53,6 @@ export function jwReturnColumns(): DataTableColumn<JwReturnChallanListItem>[] {
       render: (r) => fmtDate(r.returnDate),
     },
     {
-      id: 'jwso',
-      sortFilterField: 'jwsoCode',
-      kind: 'code',
-      header: 'JWSO',
-      className: 'mono fw-700',
-      nowrap: true,
-      render: (r) => <span style={{ color: 'var(--purple)' }}>{r.jwCodeText ?? '—'}</span>,
-    },
-    {
       id: 'customer',
       sortFilterField: 'customer',
       kind: 'text',
@@ -55,36 +62,6 @@ export function jwReturnColumns(): DataTableColumn<JwReturnChallanListItem>[] {
       className: 'fw-700',
       render: (r) => r.clientName ?? '—',
       title: (r) => r.clientName ?? '',
-    },
-    {
-      // POL — the customer's PO line number on the JWSO line (ADR-236).
-      id: 'client_po_line_no',
-      header: 'POL',
-      kind: 'code',
-      headColor: 'var(--purple)',
-      className: 'mono fw-700',
-      nowrap: true,
-      render: (r) => <span style={{ color: 'var(--purple)' }}>{r.clientPoLineNo ?? '—'}</span>,
-    },
-    {
-      id: 'item_code',
-      sortFilterField: 'itemCode',
-      kind: 'code',
-      header: 'Item Code',
-      className: 'td-code',
-      nowrap: true,
-      render: (r) => itemCodeWithRev(r.itemCode, r.itemRevision),
-    },
-    {
-      id: 'item_name',
-      sortFilterField: 'itemName',
-      kind: 'text',
-      header: 'Item Name',
-      align: 'left',
-      ellipsis: true,
-      className: 'text2',
-      render: (r) => r.partName ?? '—',
-      title: (r) => r.partName ?? '',
     },
     {
       id: 'return_qty',

@@ -385,7 +385,7 @@ export function OrderDetail({
       <div className="panel">
         <DataTable<PlanningLine>
           tableKey={TABLE_KEYS.planningLines}
-          columns={planningLineColumns(so.source)}
+          columns={planningLineColumns(so)}
           rows={so.lines}
           rowKey={(l) => l.soLineId}
           // The plan code must stay on screen however narrow the sheet is.

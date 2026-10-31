@@ -19,6 +19,8 @@ export interface TableToolbarProps {
   columns: PickerColumn[];
   layout: LayoutState;
   firstId: string;
+  /** Size of the locked block at the front (1 = column 0 only). */
+  lockedCount?: number | undefined;
   dropped: string[];
   warn: boolean;
   canPin: (id: string) => boolean;
@@ -200,6 +202,7 @@ export function TableToolbar(props: TableToolbarProps): ReactElement {
                 columns={columns}
                 layout={props.layout}
                 firstId={props.firstId}
+                lockedCount={props.lockedCount}
                 dropped={dropped}
                 flash={flash}
                 canPin={props.canPin}

@@ -27,3 +27,5 @@ export * from './RowMenu';
 export * from './HoverCard';
 // Shared ⋯ link renderer that splits `to?query` into path + search.
 export * from './row-menu-link';
+// Locked lead columns: SO No. · Internal SO No. · POL · Created On · Item Code · Item Name.
+export * from './lead-columns';

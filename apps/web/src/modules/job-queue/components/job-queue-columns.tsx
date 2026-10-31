@@ -19,10 +19,9 @@ import type { JobQueueMachine, JobQueueRow } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
 import { ActualMachineLine } from '@/components/shared/machine-split';
 import { fmtDate } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
 import { OP_STATUS } from '@/modules/job-cards/lib/jc-op-labels';
 import { renderJcOpsLink } from '@/modules/jc-ops/components/jc-ops-columns';
-import { ROW_TINT, RowMenu } from '@/ui/data';
+import { ROW_TINT, RowMenu, leadColumns } from '@/ui/data';
 import type { DataTableColumn } from '@/ui/data';
 
 /** Legacy L10406/L10407 — the ▲/▼ queue-move buttons are inline-styled. */
@@ -112,10 +111,6 @@ export function MachineGroupHeading({ m }: { m: JobQueueMachine }): React.JSX.El
 
 /** Columns moved off the sheet into the row's ▸ detail (defaultHidden). */
 export const JOB_QUEUE_HIDDEN_IDS: string[] = [
-  'pol',
-  'item_name',
-  'so_no',
-  'so_internal_no',
   'customer',
   'priority',
   'order_qty',
@@ -131,6 +126,18 @@ export const JOB_QUEUE_HIDDEN_IDS: string[] = [
 export function jobQueueColumns(opts: { today: string }): DataTableColumn<JobQueueSheetRow>[] {
   const { today } = opts;
   return [
+    // Owner rule 2026-10-31 — the six lead columns first (always shown); JC
+    // No., Sr No and every other fact follow Item Name.
+    ...leadColumns<JobQueueSheetRow>({
+      soNo: (r) => r.soCode,
+      internalSoNo: (r) => r.soInternalNo,
+      pol: (r) => r.clientPoLineNo,
+      // needs API — the queue row carries no created date yet.
+      createdOn: () => null,
+      itemCode: (r) => r.itemCode,
+      itemRev: (r) => r.itemRevision,
+      itemName: (r) => r.itemName,
+    }),
     {
       id: 'jc_no',
       header: 'JC No.',
@@ -177,18 +184,6 @@ export function jobQueueColumns(opts: { today: string }): DataTableColumn<JobQue
       title: (r) => r.operation,
     },
     {
-      id: 'item_code',
-      header: 'Item Code',
-      kind: 'code',
-      className: 'mono fw-700',
-      nowrap: true,
-      render: (r) => (
-        <span style={{ color: 'var(--text)' }}>
-          {itemCodeWithRev(r.itemCode, r.itemRevision, '—')}
-        </span>
-      ),
-    },
-    {
       id: 'available',
       header: 'Available',
       align: 'right',
@@ -231,51 +226,6 @@ export function jobQueueColumns(opts: { today: string }): DataTableColumn<JobQue
       },
     },
     // ── ▸ detail (defaultHidden) ─────────────────────────────────────────────
-    {
-      id: 'pol',
-      header: 'POL',
-      headColor: 'var(--purple)',
-      nowrap: true,
-      render: (r) => (
-        <span className="mono fw-700" style={{ color: 'var(--purple)' }}>
-          {r.clientPoLineNo ?? '—'}
-        </span>
-      ),
-    },
-    {
-      id: 'item_name',
-      header: 'Item Name',
-      kind: 'text',
-      align: 'left',
-      ellipsis: true,
-      render: (r) => r.itemName ?? '—',
-      title: (r) => r.itemName ?? '',
-    },
-    {
-      id: 'so_no',
-      header: 'SO No.',
-      kind: 'code',
-      className: 'mono',
-      nowrap: true,
-      render: (r) => r.soCode ?? '—',
-    },
-    {
-      // ADR-207 — the office's own number, its OWN column beside the system
-      // SO No. (owner decision 2026-10-05). Many older orders have none.
-      id: 'so_internal_no',
-      header: 'Internal SO No.',
-      kind: 'code',
-      className: 'mono',
-      nowrap: true,
-      render: (r) =>
-        r.soInternalNo?.trim() ? (
-          <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-            {r.soInternalNo}
-          </span>
-        ) : (
-          <span className="text3">—</span>
-        ),
-    },
     {
       id: 'customer',
       header: 'Customer',
