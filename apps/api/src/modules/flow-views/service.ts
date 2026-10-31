@@ -766,7 +766,7 @@ export async function getLevelMatrix(
     // a qty the SO detail shows without an Invoices right, so it stays.
     const lineRows = await rows(
       tx,
-      sql`SELECT sol.id, sol.line_no, sol.item_id, COALESCE(i.code, sol.item_code_text) AS item_code, sol.part_name,
+      sql`SELECT sol.id, sol.line_no, sol.item_id, sol.item_revision_id, COALESCE(i.code, sol.item_code_text) AS item_code, sol.part_name,
             sol.client_po_line_no, sol.order_qty, sol.dispatched_qty, sol.status, sol.short_closed_at,
             (SELECT COALESCE(SUM(il.qty), 0) FROM public.invoice_lines il
               JOIN public.invoices inv ON inv.id = il.invoice_id AND inv.deleted_at IS NULL
@@ -787,6 +787,7 @@ export async function getLevelMatrix(
         code: plans.code,
         soLineId: plans.soLineId,
         itemId: plans.itemId,
+        itemRevisionId: plans.itemRevisionId,
         planQty: plans.planQty,
         planStatus: plans.planStatus,
         covered: PLAN_COVERED_QTY_SQL,
@@ -833,8 +834,9 @@ export async function getLevelMatrix(
 
     // Live Route Cards that drive each line: the line ITEM's card plus the card
     // of every item planned on the line (BOM children / equipment parts). One
-    // query for all lines; one live card per item (route_cards_company_item_uniq),
-    // DISTINCT ON is only a guard.
+    // query for all lines. Drawing Rev register (0232): one card per Item +
+    // Rev, so cards are keyed item|rev and each line / plan picks the card of
+    // ITS Rev, else the item's old no-Rev card (rcFor below).
     const rcItemIds = [
       ...new Set(
         [
@@ -847,7 +849,7 @@ export async function getLevelMatrix(
       rcItemIds.length > 0
         ? await rows(
             tx,
-            sql`SELECT DISTINCT ON (rc.item_id) rc.item_id, rc.id, rc.code, rc.current_revision,
+            sql`SELECT rc.item_id, rc.item_revision_id, rc.id, rc.code, rc.current_revision,
                   rc.approval_status
                 FROM public.route_cards rc
                 WHERE rc.company_id = ${companyId}::uuid AND rc.deleted_at IS NULL
@@ -855,9 +857,10 @@ export async function getLevelMatrix(
                 ORDER BY rc.item_id, rc.created_at DESC`,
           )
         : [];
-    const rcByItem = new Map<string, LevelRouteCard>(
+    const rcKey = (itemId: string, revId: string | null): string => `${itemId}|${revId ?? ''}`;
+    const rcByItemRev = new Map<string, LevelRouteCard>(
       rcRows.map((r) => [
-        String(r['item_id']),
+        rcKey(String(r['item_id']), str(r['item_revision_id'])),
         {
           id: String(r['id']),
           code: String(r['code']),
@@ -866,6 +869,10 @@ export async function getLevelMatrix(
         },
       ]),
     );
+    const rcFor = (itemId: string | null, revId: string | null): LevelRouteCard | undefined =>
+      itemId
+        ? (rcByItemRev.get(rcKey(itemId, revId)) ?? rcByItemRev.get(rcKey(itemId, null)))
+        : undefined;
 
     // Customer dispatches and tax invoices that carry each line — live only
     // (not deleted, not cancelled; the same test the dispatch and invoice
@@ -1070,11 +1077,13 @@ export async function getLevelMatrix(
       // Line item's card first, then each planned item's card (plan-code
       // order — planRows is ordered by code), de-duplicated by card id.
       const routeCards: LevelRouteCard[] = [];
-      for (const itemId of [
-        str(l['item_id']),
-        ...planRows.filter((p) => p.soLineId === id).map((p) => p.itemId ?? null),
+      for (const [itemId, revId] of [
+        [str(l['item_id']), str(l['item_revision_id'])] as const,
+        ...planRows
+          .filter((p) => p.soLineId === id)
+          .map((p) => [p.itemId ?? null, p.itemRevisionId ?? null] as const),
       ]) {
-        const rc = itemId ? rcByItem.get(itemId) : undefined;
+        const rc = rcFor(itemId, revId);
         if (rc && !routeCards.some((r) => r.id === rc.id)) routeCards.push(rc);
       }
       const lineOrders: LevelProductionOrder[] = poRows

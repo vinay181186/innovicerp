@@ -10,6 +10,7 @@ import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { diffFields, softDeleteStamp } from '../../lib/audit-trail';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { ConflictError, NotFoundError } from '../../lib/errors';
+import { resolveBomChildRevs } from '../../lib/bom-child-rev';
 import { emitActivityLog } from '../activity-log/service';
 import { type BomAuditLine, bomLineAuditRows } from '../bom-master/audit';
 import { computeBomDiffNote } from '../bom-master/service';
@@ -129,7 +130,20 @@ export async function insertMlBomCore(
   const header = inserted[0]!;
 
   const rawMaterial = await loadRawMaterialNames(tx, input.lines, companyId);
-  const values = buildLineValues(input.lines, header.id, companyId, user.id, rawMaterial, defaults);
+  // D2 — the child part's Item + Drawing Rev (compulsory for a MAKE child).
+  const childRevIds = await resolveBomChildRevs(tx, user, companyId, input.lines, {
+    sourceType: 'ml_bom_line',
+    bomRef: code,
+  });
+  const values = buildLineValues(
+    input.lines,
+    header.id,
+    companyId,
+    user.id,
+    rawMaterial,
+    defaults,
+    childRevIds,
+  );
   await tx.insert(mlBomLines).values(values);
 
   await tx.insert(mlBomRevisions).values({
@@ -215,7 +229,21 @@ export async function reviseMlBomCore(
     input.lines.map((l) => l.childItemId),
   );
   const rawMaterial = await loadRawMaterialNames(tx, input.lines, companyId);
-  const values = buildLineValues(input.lines, id, companyId, user.id, rawMaterial, defaults);
+  // D2 — child Item + Drawing Rev; an old line kept without a Rev stays valid.
+  const childRevIds = await resolveBomChildRevs(tx, user, companyId, input.lines, {
+    sourceType: 'ml_bom_line',
+    bomRef: header.code,
+    stored: new Map(oldLines.map((l) => [l.childItemId, l.childItemRevisionId])),
+  });
+  const values = buildLineValues(
+    input.lines,
+    id,
+    companyId,
+    user.id,
+    rawMaterial,
+    defaults,
+    childRevIds,
+  );
 
   // Replace the lines: the old live ones are SOFT-deleted (CLAUDE.md rule 8 —
   // no hard deletes) and the new set inserted. The one-live-line-per-item

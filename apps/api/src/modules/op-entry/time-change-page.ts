@@ -12,6 +12,7 @@ import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { hasFormAccess } from '../../lib/access';
 import { AuthorizationError } from '../../lib/errors';
 import { polSql } from '../../lib/pol';
+import { drawingRevOf } from '../../lib/drawing-rev';
 import { likeEscape, readSf, sfOrderBy, sfWhere, type SfColumnMap } from '../../lib/list-query';
 import { selectTimeChangeRequests, TIME_CHANGE_FROM } from './service';
 
@@ -20,7 +21,7 @@ export const TIME_CHANGE_SF_COLUMNS: SfColumnMap = {
   jcCode: { sql: sql`jc.code`, type: 'text' },
   opSeq: { sql: sql`o.op_seq`, type: 'num' },
   itemCode: {
-    sql: sql`(i.code || COALESCE('/' || NULLIF(btrim(COALESCE(sol.revision::text, rev_jwl.revision::text)), ''), ''))`,
+    sql: sql`(i.code || COALESCE('/' || NULLIF(btrim(COALESCE(${drawingRevOf(sql`jc.item_revision_id`)}, sol.revision::text, rev_jwl.revision::text)), ''), ''))`,
     type: 'text',
   },
   operation: { sql: sql`o.operation`, type: 'text' },
@@ -65,7 +66,7 @@ export async function listOpLogTimeChangePage(
     ? sql`AND (
         jc.code ILIKE ${pat} ESCAPE '\\'
         OR i.code ILIKE ${pat} ESCAPE '\\'
-        OR COALESCE(sol.revision::text, rev_jwl.revision::text) ILIKE ${pat} ESCAPE '\\'
+        OR COALESCE(${drawingRevOf(sql`jc.item_revision_id`)}, sol.revision::text, rev_jwl.revision::text) ILIKE ${pat} ESCAPE '\\'
         OR i.name ILIKE ${pat} ESCAPE '\\'
         OR ${polSql('sol', 'rev_jwl')} ILIKE ${pat} ESCAPE '\\'
         OR o.operation ILIKE ${pat} ESCAPE '\\'

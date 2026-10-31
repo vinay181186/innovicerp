@@ -158,6 +158,7 @@ export async function loadMlBomDetail(
     SELECT l.id, l.ml_bom_id AS "mlBomId", l.line_no AS "lineNo",
       l.child_item_id AS "childItemId", ci.code AS "childItemCode",
       ci.name AS "childItemName", ci.uom AS "childUom",
+      l.child_item_revision_id AS "childItemRevisionId", cir.rev AS "childDrawingRev",
       l.qty_per_set::text AS "qtyPerSet", l.bom_type AS "bomType",
       l.child_ml_bom_id AS "childMlBomId", cb.code AS "childMlBomCode",
       l.raw_material_grade_id AS "rawMaterialGradeId",
@@ -167,6 +168,7 @@ export async function loadMlBomDetail(
       l.remarks, l.updated_at AS "updatedAt"
     FROM public.ml_bom_lines l
     LEFT JOIN public.items ci ON ci.id = l.child_item_id
+    LEFT JOIN public.item_revisions cir ON cir.id = l.child_item_revision_id
     LEFT JOIN public.ml_boms cb ON cb.id = l.child_ml_bom_id AND cb.deleted_at IS NULL
     WHERE l.ml_bom_id = ${id}::uuid AND l.company_id = ${companyId}::uuid
       AND l.deleted_at IS NULL
@@ -205,6 +207,8 @@ export async function loadMlBomDetail(
         childItemId: r['childItemId'] as string,
         childItemCode: (r['childItemCode'] as string | null) ?? null,
         childItemName: (r['childItemName'] as string | null) ?? null,
+        childItemRevisionId: (r['childItemRevisionId'] as string | null) ?? null,
+        childDrawingRev: (r['childDrawingRev'] as string | null) ?? null,
         childUom: (r['childUom'] as string | null) ?? null,
         qtyPerSet: r['qtyPerSet'] as string,
         bomType: r['bomType'] as MlBomLine['bomType'],

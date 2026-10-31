@@ -27,12 +27,16 @@ interface HeaderRow {
  *  ("1e-7"), which Postgres numeric reads exactly — no rounding in JS. */
 const qtyText = (qty: number): string => String(qty);
 
+/** A tree row plus the line's child Item + Drawing Rev (D2) — server-side
+ *  only (ML plan snapshot, cost); the shared tree node does not name it. */
+export type MlBomWalkNode = MlBomTreeNode & { itemRevisionId: string | null };
+
 export async function loadMlBomTree(
   tx: DbTransaction,
   companyId: string,
   id: string,
   qty: number,
-): Promise<MlBomTreeResponse> {
+): Promise<Omit<MlBomTreeResponse, 'nodes'> & { nodes: MlBomWalkNode[] }> {
   const headers = (await tx.execute(sql`
     SELECT b.id, b.code, b.item_id, i.code AS item_code, i.name AS item_name, i.uom
     FROM public.ml_boms b
@@ -46,7 +50,7 @@ export async function loadMlBomTree(
   const q = qtyText(qty);
   const rows = (await tx.execute(sql`
     WITH RECURSIVE t AS (
-      SELECT l.id, l.child_item_id, l.qty_per_set, l.bom_type, l.child_ml_bom_id,
+      SELECT l.id, l.child_item_id, l.child_item_revision_id, l.qty_per_set, l.bom_type, l.child_ml_bom_id,
              l.raw_material_grade_text, l.raw_material_size_text,
              1 AS depth,
              (l.qty_per_set * ${q}::numeric)::numeric AS qty_exact,
@@ -60,7 +64,7 @@ export async function loadMlBomTree(
         AND l.company_id = ${companyId}::uuid
         AND l.deleted_at IS NULL
       UNION ALL
-      SELECT c.id, c.child_item_id, c.qty_per_set, c.bom_type, c.child_ml_bom_id,
+      SELECT c.id, c.child_item_id, c.child_item_revision_id, c.qty_per_set, c.bom_type, c.child_ml_bom_id,
              c.raw_material_grade_text, c.raw_material_size_text,
              t.depth + 1,
              (t.qty_exact * c.qty_per_set)::numeric,
@@ -83,6 +87,7 @@ export async function loadMlBomTree(
           'key', t.node_key,
           'depth', t.depth,
           'itemId', t.child_item_id,
+          'itemRevisionId', t.child_item_revision_id,
           'itemCode', i.code,
           'itemName', i.name,
           'uom', i.uom,
@@ -118,16 +123,18 @@ export async function loadMlBomTree(
       ) AS exploded
   `)) as unknown as Array<{
     top_qty: string;
-    nodes: MlBomTreeNode[];
+    nodes: MlBomWalkNode[];
     exploded: MlBomExplodedItem[];
   }>;
 
   const lineNodes = rows[0]?.nodes ?? [];
   const exploded = rows[0]?.exploded ?? [];
-  const top: MlBomTreeNode = {
+  const top: MlBomWalkNode = {
     key: '',
     depth: 0,
     itemId: h.item_id,
+    // The BOM header names no Rev; the plan takes the top row's Rev off its SO line.
+    itemRevisionId: null,
     itemCode: h.item_code,
     itemName: h.item_name,
     uom: h.uom,

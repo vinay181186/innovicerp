@@ -17,6 +17,9 @@ import * as service from './service';
 const idParamsSchema = z.object({ id: z.string().uuid() });
 // ADR-197 — a delete carries its reason (module-local: the shared contract is frozen).
 const deletePlanBodySchema = z.object({ reason: activityReasonSchema });
+// Drawing Rev register — optional Rev for "Load default ops" (module-local: the
+// shared defaultRouteOpsQuerySchema is frozen; absent = old behaviour).
+const defaultOpsRevQuerySchema = z.object({ itemRevisionId: z.string().uuid().optional() });
 
 export async function plansRoutes(app: FastifyInstance): Promise<void> {
   app.get('/plans', async (req) => {
@@ -90,7 +93,8 @@ export async function plansRoutes(app: FastifyInstance): Promise<void> {
     const { itemId } = defaultRouteOpsQuerySchema.parse(req.query);
     // Service already answers in the defaultRouteOpsResponseSchema shape
     // ({ ops, routeCardCode, routeCardRevision }) — no wrapping here.
-    return service.getDefaultRouteOpsForItem(itemId, req.user);
+    const { itemRevisionId } = defaultOpsRevQuerySchema.parse(req.query);
+    return service.getDefaultRouteOpsForItem(itemId, req.user, itemRevisionId);
   });
 
   app.get('/planning-dashboard', async (req) => {

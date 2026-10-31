@@ -82,6 +82,8 @@ export function buildLineValues(
   userId: string,
   rawMaterial: RawMaterialLookup,
   defaults: ReadonlyMap<string, string>,
+  /** D2 — child_item_revision_id per line, in line order (resolveBomChildRevs). */
+  childRevIds: ReadonlyArray<string | null>,
 ): Array<typeof mlBomLines.$inferInsert> {
   return lines.map((l, i) => {
     const rm = keepsRawMaterial(l);
@@ -92,6 +94,7 @@ export function buildLineValues(
       mlBomId,
       lineNo: i + 1,
       childItemId: l.childItemId,
+      childItemRevisionId: childRevIds[i] ?? null,
       qtyPerSet: l.qtyPerSet.toFixed(3),
       bomType: l.bomType,
       childMlBomId: l.bomType === 'manufacture' ? (defaults.get(l.childItemId) ?? null) : null,

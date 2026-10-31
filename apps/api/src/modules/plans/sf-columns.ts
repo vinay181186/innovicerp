@@ -10,6 +10,7 @@ import { type SQL, sql } from 'drizzle-orm';
 import { items, jobWorkOrderLines, plans, salesOrderLines } from '../../db/schema';
 import { PLAN_PENDING_QTY_SQL } from '../../lib/plan-order-coverage';
 import type { SfColumnMap } from '../../lib/list-query';
+import { drawingRevOf } from '../../lib/drawing-rev';
 
 export function planSfColumns(effectiveStatus: SQL): SfColumnMap {
   return {
@@ -35,9 +36,10 @@ export function planSfColumns(effectiveStatus: SQL): SfColumnMap {
       type: 'text',
     },
     // CODE/REV as the cell prints it: the live item code (else the text the
-    // plan stored), then the SO / JWSO line's drawing revision after a slash.
+    // plan stored), then the plan's own Drawing Rev (else the SO / JWSO line's
+    // revision) after a slash — the same order SO_LINE_REVISION uses.
     itemCode: {
-      sql: sql`(COALESCE(${items.code}, ${plans.itemCodeText}) || COALESCE('/' || NULLIF(btrim(COALESCE(${salesOrderLines.revision}::text, ${jobWorkOrderLines.revision}::text)), ''), ''))`,
+      sql: sql`(COALESCE(${items.code}, ${plans.itemCodeText}) || COALESCE('/' || NULLIF(btrim(COALESCE(${drawingRevOf(plans.itemRevisionId)}, ${salesOrderLines.revision}::text, ${jobWorkOrderLines.revision}::text)), ''), ''))`,
       type: 'text',
     },
     itemName: { sql: sql`COALESCE(${items.name}, ${plans.itemNameText})`, type: 'text' },

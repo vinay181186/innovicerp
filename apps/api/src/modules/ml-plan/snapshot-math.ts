@@ -30,6 +30,9 @@ export interface WalkNode {
   parentKey: string | null;
   depth: number;
   itemId: string;
+  /** Drawing Rev register — the row's Item + Rev (BOM line's child Rev; the
+   *  top row's from the SO line). Optional: absent = null. */
+  itemRevisionId?: string | null;
   uom: string | null;
   bomType: BomLineType | null;
   isSubAssembly: boolean;

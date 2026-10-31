@@ -68,6 +68,7 @@ import {
 import { ownDraftPlanRefusal } from './own-draft';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { polOf } from '../../lib/pol';
+import { drawingRevOf } from '../../lib/drawing-rev';
 import { planSfColumns } from './sf-columns';
 import { resolveRmItem } from '../../lib/rm-item';
 import {
@@ -108,6 +109,7 @@ import {
   readPlanOrderCoverage,
 } from '../../lib/plan-order-coverage';
 import { isRouteCardUsable } from '../../lib/route-card-usable';
+import { readRouteCardForItemRev } from '../../lib/route-card-for-rev';
 import { planQtyBelowCoveredError } from '../../lib/production-order-cap';
 import { assertNoQcDirectlyAfterOutsource } from '../../lib/jc-osp-qc-rule';
 import { labelOf, PLAN_STATUS_LABEL, PLAN_TYPE_LABEL } from '../../lib/status-labels';
@@ -348,7 +350,13 @@ async function logPlanExecuted(
  *  items.revision, which describes the item master and means something else. */
 const SO_LINE_REVISION = sql<
   string | null
->`COALESCE(${salesOrderLines.revision}::text, ${jobWorkOrderLines.revision}::text)`;
+>`COALESCE(${drawingRevOf(plans.itemRevisionId)}, ${salesOrderLines.revision}::text, ${jobWorkOrderLines.revision}::text)`;
+
+/** Drawing Rev the plan itself stores (plans.item_revision_id → item_revisions.rev).
+ *  SO_LINE_REVISION above prefers it, so a split SO line whose plans sit at
+ *  different revs shows each plan's own Rev; the line text is only the
+ *  fallback for plans made before the register. */
+const PLAN_DRAWING_REV_SQL = drawingRevOf(plans.itemRevisionId);
 
 /** POL — the line number printed on the CUSTOMER's own purchase order, read off
  *  the same already-joined SO line as SO_LINE_REVISION above, else the JWSO
@@ -474,6 +482,7 @@ export async function listPlans(
         itemCode: items.code,
         itemName: items.name,
         itemRevision: SO_LINE_REVISION,
+        drawingRev: PLAN_DRAWING_REV_SQL,
         clientPoLineNo: SO_LINE_CLIENT_PO_LINE_NO,
         // The customer's wanted date: the SO line's Due Date, else the JWSO line's.
         lineDueDate: sql<
@@ -559,7 +568,7 @@ export async function listPlans(
       items: rows.map((r) => {
         const hasRouteCard = Boolean(r.hasRouteCard);
         return {
-          ...toPlan(r.plan, r.rmItemCode, r.mlIsAssembly),
+          ...toPlan(r.plan, r.rmItemCode, r.mlIsAssembly, r.drawingRev),
           soInternalNo: r.soInternalNo ?? null,
           itemCode: r.itemCode ?? null,
           // Null passed through, not coerced to a blank string: the UI has to be
@@ -621,6 +630,7 @@ export async function getPlan(id: string, user: AuthContext): Promise<PlanDetail
         itemCode: items.code,
         itemName: items.name,
         itemRevision: SO_LINE_REVISION,
+        drawingRev: PLAN_DRAWING_REV_SQL,
         clientPoLineNo: SO_LINE_CLIENT_PO_LINE_NO,
         // ADR-185 — the same Covered / Pending / derived-status facts the
         // Plans list states, from the same SQL, so the list and the detail can
@@ -659,7 +669,7 @@ export async function getPlan(id: string, user: AuthContext): Promise<PlanDetail
       .orderBy(asc(planOps.opSeq));
 
     const detail: PlanDetail = {
-      ...toPlan(row.plan, row.rmItemCode, row.mlIsAssembly),
+      ...toPlan(row.plan, row.rmItemCode, row.mlIsAssembly, row.drawingRev),
       soInternalNo: row.soInternalNo ?? null,
       itemCode: row.itemCode ?? null,
       // Null passed through, not coerced to a blank string: the UI has to be
@@ -955,6 +965,57 @@ export async function createPlansBatch(
   });
 }
 
+/**
+ * The Item + Drawing Rev a new plan is for (owner 2026-10-31). First match wins,
+ * and only for the SAME item as the plan:
+ *   1. the Multi-Level Plan node that raises it (ml_plan_nodes.item_revision_id);
+ *   2. the SO line / JWSO line it hangs on (the line's own item);
+ *   3. a BOM child plan (bom-planning sends the PARENT line + the child item):
+ *      the BOM line's child_item_revision_id.
+ * Ad-hoc plans and Buy items: null. One query.
+ */
+async function planItemRevisionId(
+  tx: DbTransaction,
+  companyId: string,
+  input: Pick<CreatePlanInput, 'itemId' | 'soLineId' | 'jwLineId' | 'bomMasterId'>,
+  mlPlanNodeId: string | undefined,
+): Promise<string | null> {
+  if (!input.itemId) return null;
+  const item = sql`${input.itemId}::uuid`;
+  const rows = (await tx.execute(sql`
+    SELECT COALESCE(
+      ${
+        mlPlanNodeId
+          ? sql`(SELECT n.item_revision_id FROM public.ml_plan_nodes n
+         WHERE n.id = ${mlPlanNodeId}::uuid AND n.company_id = ${companyId}::uuid AND n.item_id = ${item})`
+          : sql`NULL::uuid`
+      },
+      ${
+        input.soLineId
+          ? sql`(SELECT sol.item_revision_id FROM public.sales_order_lines sol
+         WHERE sol.id = ${input.soLineId}::uuid AND sol.company_id = ${companyId}::uuid AND sol.item_id = ${item})`
+          : sql`NULL::uuid`
+      },
+      ${
+        input.jwLineId
+          ? sql`(SELECT jwl.item_revision_id FROM public.job_work_order_lines jwl
+         WHERE jwl.id = ${input.jwLineId}::uuid AND jwl.company_id = ${companyId}::uuid AND jwl.item_id = ${item})`
+          : sql`NULL::uuid`
+      },
+      ${
+        input.bomMasterId
+          ? sql`(SELECT bml.child_item_revision_id FROM public.bom_master_lines bml
+         JOIN public.bom_masters bm ON bm.id = bml.bom_master_id AND bm.deleted_at IS NULL
+         WHERE bml.bom_master_id = ${input.bomMasterId}::uuid AND bml.company_id = ${companyId}::uuid
+           AND bml.child_item_id = ${item} AND bml.deleted_at IS NULL
+         ORDER BY bml.line_no LIMIT 1)`
+          : sql`NULL::uuid`
+      }
+    ) AS "itemRevisionId"
+  `)) as unknown as Array<{ itemRevisionId: string | null }>;
+  return rows[0]?.itemRevisionId ?? null;
+}
+
 export async function createPlanInTx(
   tx: DbTransaction,
   companyId: string,
@@ -1015,6 +1076,10 @@ export async function createPlanInTx(
   // 'manufacture'. The Production Order re-reads the card when it is
   // created and re-stamps the plan, so a card changed in between still wins.
   const isRouteCardPlan = input.opsSource === 'route_card';
+  // Drawing Rev register (owner 2026-10-31) — the plan stores the Item + Rev it
+  // is for: the SO/JWSO line's (same item), a BOM child plan's BOM line, or the
+  // Multi-Level Plan node's. Ad-hoc plans: null.
+  const itemRevisionId = await planItemRevisionId(tx, companyId, input, opts.mlPlanNodeId);
   let planType = input.planType;
   if (isRouteCardPlan) {
     if (!input.itemId) {
@@ -1022,18 +1087,10 @@ export async function createPlanInTx(
         'Pick the item from Item Master — a Production Order needs the item to find its Route Card',
       );
     }
-    const rc = await tx
-      .select({ planType: routeCards.planType })
-      .from(routeCards)
-      .where(
-        and(
-          eq(routeCards.companyId, companyId),
-          eq(routeCards.itemId, input.itemId),
-          isNull(routeCards.deletedAt),
-        ),
-      )
-      .limit(1);
-    planType = rc[0]?.planType ?? 'manufacture';
+    // The card for THIS Item + Rev (an item may now have one card per Rev);
+    // no such card yet → the default type.
+    const rc = await readRouteCardForItemRev(tx, companyId, input.itemId, itemRevisionId);
+    planType = rc?.planType ?? 'manufacture';
     // ADR-171: bought items are flagged on the Item Master (Source = Buy) and
     // raise a PR from the Planning line — a card still marked with the
     // retired "Direct Purchase" tile must not silently become an
@@ -1112,7 +1169,7 @@ export async function createPlanInTx(
     (wantsGradeDefault && !gradeFromLine) || (wantsSizeDefault && !sizeFromLine);
   const rcRm =
     input.itemId && (needsCardForGradeSize || wantsRmItemDefault)
-      ? await readRouteCardRawMaterial(tx, companyId, input.itemId)
+      ? await readRouteCardRawMaterial(tx, companyId, input.itemId, itemRevisionId)
       : null;
   /** The grade pair comes from the BOM line when the line states a grade, else
    *  from the card; the size pair is decided on its own the same way. Each
@@ -1170,6 +1227,7 @@ export async function createPlanInTx(
       opsSource: isRouteCardPlan ? 'route_card' : 'plan',
       soLineId: input.soLineId ?? null,
       jwLineId: input.jwLineId ?? null,
+      itemRevisionId,
       // ADR-225 phase 4 — the Multi-Level Plan row that raised it (internal).
       mlPlanNodeId: opts.mlPlanNodeId ?? null,
       soCodeText: input.soCodeText ?? null,
@@ -1563,7 +1621,12 @@ export async function updatePlanTx(
   const cardDefaultGrade = defaultGrade && !gradeFromLine;
   const cardDefaultSize = defaultSize && !sizeFromLine;
   if (row.itemId && (cardDefaultGrade || cardDefaultSize || defaultRmItem)) {
-    const rcRm = await readRouteCardRawMaterial(tx, companyId, row.itemId);
+    const rcRm = await readRouteCardRawMaterial(
+      tx,
+      companyId,
+      row.itemId,
+      row.itemRevisionId ?? null,
+    );
     if (rcRm) {
       // id AND text together — text without the id displays a grade that is
       // not linked to the master.
@@ -1928,6 +1991,9 @@ export async function softDeletePlan(
 export async function getDefaultRouteOpsForItem(
   itemId: string,
   user: AuthContext,
+  /** Drawing Rev register: the Rev the form is for. Given → that Rev's card,
+   *  else the item's no-Rev card. Omitted → the no-Rev card, else the newest. */
+  itemRevisionId?: string | null,
 ): Promise<DefaultRouteOpsResponse> {
   const companyId = requireCompany(user);
 
@@ -1955,7 +2021,18 @@ export async function getDefaultRouteOpsForItem(
           eq(routeCards.companyId, companyId),
           eq(routeCards.itemId, itemId),
           isNull(routeCards.deletedAt),
+          itemRevisionId
+            ? sql`(${routeCards.itemRevisionId} = ${itemRevisionId}::uuid OR ${routeCards.itemRevisionId} IS NULL)`
+            : undefined,
         ),
+      )
+      // One card per Item + Rev now — pick ONE deterministically: the Rev's own
+      // card first, then the old no-Rev card, then the newest.
+      .orderBy(
+        itemRevisionId
+          ? sql`(${routeCards.itemRevisionId} IS NULL) ASC`
+          : sql`(${routeCards.itemRevisionId} IS NULL) DESC`,
+        desc(routeCards.createdAt),
       )
       .limit(1);
     const rc = rcRows[0];
@@ -2127,6 +2204,8 @@ export interface JcBuildPlan {
   planQty: number;
   soLineId: string | null;
   jwLineId: string | null;
+  /** Drawing Rev register — the plan's Item + Rev, copied onto the JC. */
+  itemRevisionId: string | null;
   rawMaterialGradeId: string | null;
   rawMaterialGradeText: string | null;
   rawMaterialSizeId: string | null;
@@ -2218,6 +2297,8 @@ export async function buildJobCardFromOps(
       // pass whichever is set so the JC links back to the right order.
       sourceSoLineId: plan.soLineId ?? null,
       sourceJwLineId: plan.jwLineId ?? null,
+      // Drawing Rev register — the JC is for the plan's Item + Rev.
+      itemRevisionId: plan.itemRevisionId ?? null,
       // Raw material carried down from the plan (0106) so the JC header and the
       // printed JC show what the part is cut from without anyone re-typing it.
       // The TEXT is copied from the plan's own snapshot, never re-read from the
@@ -2447,6 +2528,8 @@ async function executeManufacture(
           rawMaterialItemId: plan.rawMaterialItemId,
           rmQtyPerPiece: plan.rmQtyPerPiece,
         },
+        // Drawing Rev register — write back to THIS Item + Rev's card.
+        plan.itemRevisionId ?? null,
       );
       routeCardSentForApproval = writeBack?.sentForApproval === true;
       routeCardNotSentReason = writeBack?.notSentReason;
@@ -2582,6 +2665,7 @@ async function executeFullOutsource(
         priority: 'normal',
         sourceSoLineId: plan.soLineId ?? null,
         sourceJwLineId: plan.jwLineId ?? null,
+        itemRevisionId: plan.itemRevisionId ?? null,
         // Same raw-material carry-down as the manufacture path: FK plus the
         // plan's own text snapshot (not a fresh read of the master).
         rawMaterialGradeId: plan.rawMaterialGradeId,
@@ -2722,6 +2806,7 @@ export async function getPlanningDashboard(user: AuthContext): Promise<PlanningD
           itemCode: items.code,
           itemName: items.name,
           itemRevision: SO_LINE_REVISION,
+          drawingRev: PLAN_DRAWING_REV_SQL,
           clientPoLineNo: SO_LINE_CLIENT_PO_LINE_NO,
           rmItemCode: PLAN_RM_ITEM_CODE_SQL,
           mlIsAssembly: PLAN_ML_IS_ASSEMBLY_SQL,
@@ -2791,7 +2876,7 @@ export async function getPlanningDashboard(user: AuthContext): Promise<PlanningD
         complete: byStatus.get('complete') ?? 0,
       },
       recentPlans: recentRows.map((r) => ({
-        ...toPlan(r.plan, r.rmItemCode, r.mlIsAssembly),
+        ...toPlan(r.plan, r.rmItemCode, r.mlIsAssembly, r.drawingRev),
         soInternalNo: r.soInternalNo ?? null,
         itemCode: r.itemCode ?? null,
         // Null passed through, not coerced to a blank string: the UI has to be
@@ -2863,6 +2948,7 @@ async function getPlanInTx(tx: DbTransaction, id: string, companyId: string): Pr
       itemCode: items.code,
       itemName: items.name,
       itemRevision: SO_LINE_REVISION,
+      drawingRev: PLAN_DRAWING_REV_SQL,
       clientPoLineNo: SO_LINE_CLIENT_PO_LINE_NO,
       // ADR-185 — same facts, same SQL as getPlan and the Plans list.
       coveredQty: PLAN_COVERED_QTY_SQL,
@@ -2897,7 +2983,7 @@ async function getPlanInTx(tx: DbTransaction, id: string, companyId: string): Pr
     .where(and(eq(planOps.planId, id), isNull(planOps.deletedAt)))
     .orderBy(asc(planOps.opSeq));
   return {
-    ...toPlan(row.plan, row.rmItemCode, row.mlIsAssembly),
+    ...toPlan(row.plan, row.rmItemCode, row.mlIsAssembly, row.drawingRev),
     soInternalNo: row.soInternalNo ?? null,
     itemCode: row.itemCode ?? null,
     // Null passed through, not coerced to a blank string: the UI has to be able
@@ -2929,6 +3015,8 @@ function toPlan(
   rmItemCode: string | null,
   /** PLAN_ML_IS_ASSEMBLY_SQL from the same select. */
   mlIsAssembly: boolean | null = false,
+  /** PLAN_DRAWING_REV_SQL from the same select. */
+  drawingRev: string | null = null,
 ): Plan {
   return {
     id: row.id,
@@ -2941,6 +3029,8 @@ function toPlan(
     opsSource: row.opsSource as PlanOpsSource,
     soLineId: row.soLineId,
     jwLineId: row.jwLineId,
+    itemRevisionId: row.itemRevisionId ?? null,
+    drawingRev: drawingRev ?? null,
     soCodeText: row.soCodeText,
     lineNo: row.lineNo,
     itemId: row.itemId,

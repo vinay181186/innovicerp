@@ -65,6 +65,7 @@ import {
   PLAN_OPEN_ORDER_COUNT_SQL,
   PLAN_PENDING_QTY_SQL,
 } from '../../lib/plan-order-coverage';
+import { displayRouteCardIdSql } from '../../lib/route-card-for-rev';
 import { readReservedByLine, readStockPositions } from '../../lib/stock-reservation';
 import {
   prCoverQtyRaw,
@@ -179,15 +180,15 @@ function planItemFields(r: {
  *  resurrect its name here. */
 const PLAN_ITEM_JOIN_ON = sql`plan_item.id = ${plans.itemId} and plan_item.deleted_at is null`;
 
-/** The `plan_rc` join: the plan item's live Route Card (code + ADR-253
- *  approval state for the Planning "RC No." column). One LEFT JOIN instead of
- *  a correlated sub-select per field per plan. It cannot multiply plan rows:
- *  the partial unique index route_cards_company_item_uniq (company_id,
- *  item_id) WHERE deleted_at IS NULL allows at most ONE live card per item, so
- *  the join is 1:1. Same company / item / not-deleted test as
- *  PLAN_ROUTE_CARD_USABLE_SQL. No card → plan_rc.* null → "Pending". */
-const PLAN_RC_JOIN_ON = sql`plan_rc.company_id = ${plans.companyId}
-  and plan_rc.item_id = ${plans.itemId} and plan_rc.deleted_at is null`;
+/** The `plan_rc` join: the plan's live Route Card (code + ADR-253 approval
+ *  state for the Planning "RC No." column). One LEFT JOIN instead of a
+ *  correlated sub-select per field per plan. Drawing Rev register (0232): an
+ *  item may now have one card per Rev, so the card is PICKED, never joined on
+ *  item — the card for the plan's own Item + Rev, else the item's old no-Rev
+ *  card (shown so the planner can find the card that still needs a Rev; the
+ *  plan's status stays STRICT via PLAN_ROUTE_CARD_USABLE_SQL). At most one
+ *  row, so plan rows are never multiplied. No card → plan_rc.* null → "Pending". */
+const PLAN_RC_JOIN_ON = sql`plan_rc.id = ${displayRouteCardIdSql(sql`${plans.itemId}`, sql`${plans.itemRevisionId}`)}`;
 
 const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 

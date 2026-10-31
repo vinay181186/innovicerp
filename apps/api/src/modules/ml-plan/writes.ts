@@ -146,7 +146,7 @@ export async function createMlPlanTx(
 
   // One committed state of the BOM tree for the walk + the BOM Rev it pins.
   await lockMlBomTree(tx, companyId);
-  const walked = await walkFromBom(tx, companyId, facts.mlBomId!);
+  const walked = await walkFromBom(tx, companyId, facts.mlBomId!, input.soLineId);
 
   const code = await nextMlPlanCode(tx, companyId);
   const inserted = await tx
@@ -283,7 +283,7 @@ export async function refreshMlPlanTx(
     WHERE id = ${row.mlBomId}::uuid AND company_id = ${companyId}::uuid
     LIMIT 1
   `)) as unknown as Array<{ code: string }>;
-  const walked = await walkFromBom(tx, companyId, target.id);
+  const walked = await walkFromBom(tx, companyId, target.id, soLineId);
 
   const updated = await tx
     .update(mlPlans)

@@ -60,6 +60,9 @@ import { emitActivityLog } from '../activity-log/service';
 export interface RouteCardRawMaterial {
   routeCardId: string;
   routeCardCode: string;
+  /** The card's Item + Drawing Rev (null = an old card with no Rev). The T2
+   *  backfill only fills plans of this SAME Rev. */
+  itemRevisionId: string | null;
   rawMaterialGradeId: string | null;
   rawMaterialGradeText: string | null;
   rawMaterialSizeId: string | null;
@@ -83,11 +86,17 @@ export async function readRouteCardRawMaterial(
   tx: DbTransaction,
   companyId: string,
   itemId: string,
+  /** Drawing Rev register (owner 2026-10-31): one card per Item + Rev. Pass the
+   *  document's Rev (null = the item's no-Rev card) to read exactly that card.
+   *  Omitted (undefined) = old behaviour, the item's newest approved card of
+   *  any Rev — kept only for callers that start from a card's item. */
+  itemRevisionId?: string | null,
 ): Promise<RouteCardRawMaterial | null> {
   const rows = await tx
     .select({
       id: routeCards.id,
       code: routeCards.code,
+      itemRevisionId: routeCards.itemRevisionId,
       rawMaterialGradeId: routeCards.rawMaterialGradeId,
       rawMaterialGradeText: routeCards.rawMaterialGradeText,
       rawMaterialSizeId: routeCards.rawMaterialSizeId,
@@ -109,6 +118,11 @@ export async function readRouteCardRawMaterial(
         eq(routeCards.companyId, companyId),
         eq(routeCards.itemId, itemId),
         isNull(routeCards.deletedAt),
+        itemRevisionId === undefined
+          ? undefined
+          : itemRevisionId === null
+            ? isNull(routeCards.itemRevisionId)
+            : eq(routeCards.itemRevisionId, itemRevisionId),
         // ADR-253 — only an APPROVED card may feed raw material to a plan. A
         // card awaiting approval reads as "no card yet"; the plan picks the RM
         // up on the next save / backfill after the card is approved.
@@ -130,6 +144,7 @@ export async function readRouteCardRawMaterial(
   return {
     routeCardId: rc.id,
     routeCardCode: rc.code,
+    itemRevisionId: rc.itemRevisionId ?? null,
     rawMaterialGradeId: rc.rawMaterialGradeId,
     rawMaterialGradeText: rc.rawMaterialGradeText,
     rawMaterialSizeId: rc.rawMaterialSizeId,
@@ -279,10 +294,22 @@ export function routeCardHasRmItem(rc: RouteCardRawMaterial): boolean {
  * write below always sets the id AND the text of a half together, so such a
  * plan gets a consistent pair instead of a new text beside a stale id.
  */
-function backfillCandidateGuard(companyId: string, itemId: string): SQL | undefined {
+function backfillCandidateGuard(
+  companyId: string,
+  itemId: string,
+  /** The card's Rev — set by the backfill so a card for ABC/2 never fills an
+   *  ABC/1 plan. Omitted by lockBackfillCandidates, which locks the item's
+   *  whole candidate set (a superset of any one Rev's — locking more is safe). */
+  cardItemRevisionId?: string | null,
+): SQL | undefined {
   return and(
     eq(plans.companyId, companyId),
     eq(plans.itemId, itemId),
+    cardItemRevisionId === undefined
+      ? undefined
+      : cardItemRevisionId === null
+        ? isNull(plans.itemRevisionId)
+        : eq(plans.itemRevisionId, cardItemRevisionId),
     isNull(plans.deletedAt),
     isNull(plans.jcId),
     or(isNull(plans.rawMaterialGradeText), isNull(plans.rawMaterialSizeText)),
@@ -368,7 +395,7 @@ export async function backfillPlansFromRouteCard(
   // The ONE candidate predicate (see backfillCandidateGuard above), held as a
   // value so the SELECT, every UPDATE and lockBackfillCandidates() cannot drift
   // apart.
-  const guard = backfillCandidateGuard(companyId, itemId);
+  const guard = backfillCandidateGuard(companyId, itemId, rc.itemRevisionId);
 
   // Locked read first: which HALF of each plan is still blank, which plans
   // already carry an RM item pair (that pair is the planner's and is left

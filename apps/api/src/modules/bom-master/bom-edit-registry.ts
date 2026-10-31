@@ -31,6 +31,7 @@ import { bomMasterLines, bomMasters, items, materialGrades, materialSizes } from
 import type { DbTransaction } from '../../db/with-user-context';
 import type { DiffField } from '../../lib/audit-trail';
 import { NotFoundError } from '../../lib/errors';
+import { drawingRevOf } from '../../lib/drawing-rev';
 import { BOM_TYPE_WORD } from './audit';
 import type { DocEditRegistryEntry, DocEditTarget } from '../document-edits/registry';
 import { updateBomMasterTx } from './service';
@@ -51,8 +52,10 @@ const BOM_HEADER_DIFF_FIELDS: readonly DiffField[] = [
 // The editable attrs of an existing line. The component item is the line identity
 // (see header note) so it is NOT editable here. Labels use the BOM screen's own
 // names (docs/NAMING.md): Qty per Set, BOM Type, RM Grade, RM Size.
-type LineAttr = 'qty' | 'bomType' | 'rmGrade' | 'rmSize';
+type LineAttr = 'qty' | 'bomType' | 'rmGrade' | 'rmSize' | 'drawingRev';
 const LINE_ATTR_LABEL: Record<LineAttr, string> = {
+  // D2 — the child part's Drawing Rev (SHAFT/2), compared as the Rev text.
+  drawingRev: 'Drawing Rev',
   qty: 'Qty per Set',
   bomType: 'BOM Type',
   rmGrade: 'RM Grade',
@@ -73,6 +76,8 @@ interface BomEditLine {
   bomType: string;
   rawMaterialGradeText: string | null;
   rawMaterialSizeText: string | null;
+  /** D2 — the stored child Drawing Rev text (null = none). */
+  childDrawingRev: string | null;
 }
 
 /** Master item codes for a set of ids (id → code), company-scoped. */
@@ -158,6 +163,10 @@ export const bomEditRegistryEntry: DocEditRegistryEntry = {
         key: lineFieldKey(l.childItemId, 'rmSize'),
         label: `Line ${l.lineNo} · ${LINE_ATTR_LABEL.rmSize}`,
       });
+      lineFields.push({
+        key: lineFieldKey(l.childItemId, 'drawingRev'),
+        label: `Line ${l.lineNo} · ${LINE_ATTR_LABEL.drawingRev}`,
+      });
     }
     return [...BOM_HEADER_DIFF_FIELDS, ...lineFields];
   },
@@ -189,6 +198,8 @@ export const bomEditRegistryEntry: DocEditRegistryEntry = {
         bomType: bomMasterLines.bomType,
         rawMaterialGradeText: bomMasterLines.rawMaterialGradeText,
         rawMaterialSizeText: bomMasterLines.rawMaterialSizeText,
+        // D2 — scalar sub-select (no outer join under FOR UPDATE).
+        childDrawingRev: drawingRevOf(bomMasterLines.childItemRevisionId),
       })
       .from(bomMasterLines)
       .where(
@@ -214,6 +225,7 @@ export const bomEditRegistryEntry: DocEditRegistryEntry = {
       bomType: l.bomType,
       rawMaterialGradeText: l.rawMaterialGradeText,
       rawMaterialSizeText: l.rawMaterialSizeText,
+      childDrawingRev: l.childDrawingRev ?? null,
     }));
 
     return {
@@ -240,6 +252,7 @@ export const bomEditRegistryEntry: DocEditRegistryEntry = {
       out[lineFieldKey(l.childItemId, 'bomType')] = l.bomType;
       out[lineFieldKey(l.childItemId, 'rmGrade')] = l.rawMaterialGradeText;
       out[lineFieldKey(l.childItemId, 'rmSize')] = l.rawMaterialSizeText;
+      out[lineFieldKey(l.childItemId, 'drawingRev')] = l.childDrawingRev;
     }
     return out;
   },
@@ -264,6 +277,10 @@ export const bomEditRegistryEntry: DocEditRegistryEntry = {
       out[lineFieldKey(l.childItemId, 'bomType')] = l.bomType;
       out[lineFieldKey(l.childItemId, 'rmGrade')] = gradeDisplay(l, grades);
       out[lineFieldKey(l.childItemId, 'rmSize')] = sizeDisplay(l, sizes);
+      // Not sent = unchanged (diffFields skips an undefined after-value).
+      if (l.childDrawingRev !== undefined) {
+        out[lineFieldKey(l.childItemId, 'drawingRev')] = l.childDrawingRev?.trim() || null;
+      }
     }
     return out;
   },
@@ -366,6 +383,11 @@ export const bomEditRegistryEntry: DocEditRegistryEntry = {
         if (approvedLineFields.has(lineFieldKey(c.childItemId, 'rmSize'))) {
           line.rawMaterialSizeId = proposed.rawMaterialSizeId ?? null;
           line.rawMaterialSizeText = proposed.rawMaterialSizeText ?? null;
+        }
+        // D2 — an approved Drawing Rev is re-resolved by updateBomMasterTx; an
+        // unapproved one is left unsent, so the stored Rev is kept.
+        if (approvedLineFields.has(lineFieldKey(c.childItemId, 'drawingRev'))) {
+          line.childDrawingRev = proposed.childDrawingRev ?? null;
         }
       }
       return line;

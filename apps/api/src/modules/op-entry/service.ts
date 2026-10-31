@@ -43,6 +43,7 @@ import {
 } from '../../lib/access';
 import { diffFields } from '../../lib/audit-trail';
 import { polOf, polSql } from '../../lib/pol';
+import { drawingRevOf } from '../../lib/drawing-rev';
 import { loadQcProcessReport } from '../../lib/qc-process-report';
 import { assertCompanyStoragePath } from '../../lib/storage-path';
 import {
@@ -194,7 +195,7 @@ export async function listJcOpsEnriched(
         -- ::text on purpose: the contract types this as a string, but a database
         -- without migration 0119 still holds an integer here and would hand the
         -- screen a number. The cast is a no-op once 0119 is applied.
-        COALESCE(sol.revision::text, jwl.revision::text) AS "itemRevision",
+        COALESCE(${drawingRevOf(sql`jc.item_revision_id`)}, sol.revision::text, jwl.revision::text) AS "itemRevision",
         -- POL = the line number printed on the CUSTOMER's own purchase order,
         -- off the same SO line as the revision above, else the Job Work SO
         -- line's POL for a JW-sourced card (ADR-236).
@@ -2045,7 +2046,7 @@ export async function selectTimeChangeRequests(
       -- raised against. Null on a JW-sourced or standalone card, which then
       -- shows the bare code. NEVER items.revision — that column is about the
       -- item master and would print a plausible-looking lie in its place.
-      COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
+      COALESCE(${drawingRevOf(sql`jc.item_revision_id`)}, sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
       -- POL = the line number printed on the CUSTOMER's own purchase order, off
       -- the same SO line as the revision above, else the Job Work SO line's
       -- POL for a JW-sourced card (ADR-236).
@@ -2414,7 +2415,7 @@ export async function startOp(input: StartOpInput, user: AuthContext): Promise<R
         // an integer in this column.
         itemRevision: sql<
           string | null
-        >`COALESCE(${salesOrderLines.revision}::text, ${jobWorkOrderLines.revision}::text)`,
+        >`COALESCE(${drawingRevOf(jobCards.itemRevisionId)}, ${salesOrderLines.revision}::text, ${jobWorkOrderLines.revision}::text)`,
         // POL — the line number printed on the CUSTOMER's own purchase order,
         // off the same already-joined SO line, else the JW line (ADR-236).
         clientPoLineNo: polOf(salesOrderLines.clientPoLineNo, jobWorkOrderLines.clientPoLineNo),
@@ -2646,7 +2647,7 @@ export async function stopOp(
         // migration 0119. Never items.revision.
         itemRevision: sql<
           string | null
-        >`COALESCE(${salesOrderLines.revision}::text, ${jobWorkOrderLines.revision}::text)`,
+        >`COALESCE(${drawingRevOf(jobCards.itemRevisionId)}, ${salesOrderLines.revision}::text, ${jobWorkOrderLines.revision}::text)`,
         // POL — the line number printed on the CUSTOMER's own purchase order,
         // off the same already-joined SO line, else the JW line (ADR-236).
         clientPoLineNo: polOf(salesOrderLines.clientPoLineNo, jobWorkOrderLines.clientPoLineNo),

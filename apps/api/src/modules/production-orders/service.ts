@@ -80,6 +80,7 @@ import { withUniqueRetry } from '../../lib/db-retry';
 import { requireAnyFormAccess, requireFormAccess } from '../../lib/access';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { polOf, polSql } from '../../lib/pol';
+import { drawingRevOf } from '../../lib/drawing-rev';
 import { productionOrderSfColumns } from './sf-columns';
 import {
   buildCloseHistory,
@@ -94,6 +95,7 @@ import {
 } from '../../lib/errors';
 import { assertNoQcDirectlyAfterOutsource } from '../../lib/jc-osp-qc-rule';
 import { assertRouteCardUsable } from '../../lib/route-card-usable';
+import { assertRouteCardMatchesPlanRev } from '../../lib/route-card-for-rev';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { diffFields, type DiffField } from '../../lib/audit-trail';
 import { fmtDate } from '../../lib/format-date';
@@ -357,12 +359,14 @@ const PARTY_NAME_SQL = sql<string | null>`COALESCE(
    WHERE p.id = ${productionOrders.planId} LIMIT 1)
 )`;
 
-/** ADR-177: the drawing revision of the SO line (or, for a JWSO plan, the JW
- *  line) this Production Order was raised for — read LIVE through the plan,
+/** Drawing Rev register: the order's OWN Item + Rev first (a split SO line can
+ *  have orders at different Revs); else ADR-177: the drawing revision of the SO
+ *  line (or, for a JWSO plan, the JW line) this Production Order was raised for — read LIVE through the plan,
  *  never snapshotted, so a reissued drawing shows on every open PO. Same
  *  one-branch-only shape as PARTY_NAME_SQL. ::text for the pre-0119 reason
  *  every other itemRevision read gives. Null when the plan has no line. */
 const ITEM_REVISION_SQL = sql<string | null>`COALESCE(
+  ${drawingRevOf(productionOrders.itemRevisionId)},
   (SELECT sol.revision::text FROM public.plans p
      JOIN public.sales_order_lines sol ON sol.id = p.so_line_id
    WHERE p.id = ${productionOrders.planId} LIMIT 1),
@@ -370,6 +374,9 @@ const ITEM_REVISION_SQL = sql<string | null>`COALESCE(
      JOIN public.job_work_order_lines jl ON jl.id = p.jw_line_id
    WHERE p.id = ${productionOrders.planId} LIMIT 1)
 )`;
+
+/** The order's stored Drawing Rev (production_orders.item_revision_id). */
+const PRO_DRAWING_REV_SQL = drawingRevOf(productionOrders.itemRevisionId);
 
 /** POL — the line number printed on the CUSTOMER's own purchase order, read
  *  live off the line this order's plan was raised from: the SO line, else
@@ -509,6 +516,8 @@ const poColumns = {
   rawMaterialGradeText: plans.rawMaterialGradeText,
   rawMaterialSizeText: plans.rawMaterialSizeText,
   itemRevision: ITEM_REVISION_SQL,
+  itemRevisionId: productionOrders.itemRevisionId,
+  drawingRev: PRO_DRAWING_REV_SQL,
   clientPoLineNo: CLIENT_PO_LINE_NO_SQL,
   soInternalNo: SO_INTERNAL_NO_SQL,
   createdByName: createdByUser.fullName,
@@ -534,6 +543,8 @@ function toListItem(r: PoRow): ProductionOrderListItem {
     itemCodeText: r.itemCodeText,
     itemNameText: r.itemNameText,
     itemRevision: r.itemRevision ?? null,
+    itemRevisionId: r.itemRevisionId ?? null,
+    drawingRev: r.drawingRev ?? null,
     clientPoLineNo: r.clientPoLineNo ?? null,
     routeCardId: r.routeCardId,
     routeCardCodeText: r.routeCardCodeText,
@@ -1286,6 +1297,7 @@ export async function createProductionOrder(
           currentRevision: routeCards.currentRevision,
           planType: routeCards.planType,
           approvalStatus: routeCards.approvalStatus,
+          itemRevisionId: routeCards.itemRevisionId,
         })
         .from(routeCards)
         .where(
@@ -1327,6 +1339,15 @@ export async function createProductionOrder(
       if (rc.itemId !== itemId) {
         throw new ValidationError(`Route Card ${rc.code} is not for item ${itemLabel}.`);
       }
+      // Drawing Rev register (owner 2026-10-31) — one card per Item + Rev: the
+      // card must be the one for the PLAN's Rev. Inside the plan lock, card
+      // read FOR SHARE above (§20.3).
+      await assertRouteCardMatchesPlanRev(tx, companyId, {
+        itemId,
+        itemLabel,
+        planItemRevisionId: plan.itemRevisionId ?? null,
+        card: rc,
+      });
       // ADR-253 — only an APPROVED Route Card may raise a Production Order. A
       // Pending Approval / Rejected card is refused with a 409 naming it.
       assertRouteCardUsable(rc);
@@ -1434,6 +1455,8 @@ export async function createProductionOrder(
           itemId,
           itemCodeText: plan.itemCodeText ?? itemLabel,
           itemNameText: plan.itemNameText,
+          // Drawing Rev register — the order is for the plan's Item + Rev.
+          itemRevisionId: plan.itemRevisionId ?? null,
           routeCardId: rc.id,
           routeCardCodeText: rc.code,
           routeCardRevision: rc.currentRevision,

@@ -30,6 +30,7 @@ import { items, materialGrades, materialSizes, mlBomLines, mlBoms } from '../../
 import type { DbTransaction } from '../../db/with-user-context';
 import type { DiffField } from '../../lib/audit-trail';
 import { NotFoundError } from '../../lib/errors';
+import { drawingRevOf } from '../../lib/drawing-rev';
 import type { DocEditRegistryEntry, DocEditTarget } from '../document-edits/registry';
 import { makeDefaultMlBomTx } from './default-delete';
 import { lockMlBomTree } from './guards';
@@ -62,6 +63,8 @@ async function loadStoredLines(tx: DbTransaction, companyId: string, id: string)
       rawMaterialSizeId: mlBomLines.rawMaterialSizeId,
       rawMaterialSizeText: mlBomLines.rawMaterialSizeText,
       remarks: mlBomLines.remarks,
+      // D2 — the child Drawing Rev text (scalar lookup, one row per line).
+      drawingRev: drawingRevOf(mlBomLines.childItemRevisionId),
     })
     .from(mlBomLines)
     .leftJoin(items, eq(items.id, mlBomLines.childItemId))
@@ -82,6 +85,8 @@ async function canonProposedLines(
   tx: DbTransaction,
   companyId: string,
   lines: readonly MlBomLineInput[],
+  /** D2 — stored Rev per child item: a line that does not send a Rev keeps it. */
+  storedRevs: Readonly<Record<string, string | null>> = {},
 ): Promise<MlBomCanonLine[]> {
   const ids = (pick: (l: MlBomLineInput) => string | null | undefined) => [
     ...new Set(lines.map(pick).filter((v): v is string => !!v)),
@@ -124,6 +129,10 @@ async function canonProposedLines(
       ? (sizes.get(l.rawMaterialSizeId) ?? null)
       : (l.rawMaterialSizeText ?? null),
     remarks: l.remarks ?? null,
+    drawingRev:
+      l.childDrawingRev === undefined
+        ? (storedRevs[l.childItemId] ?? null)
+        : l.childDrawingRev?.trim() || null,
   }));
 }
 
@@ -170,10 +179,13 @@ export const mlBomEditRegistryEntry: DocEditRegistryEntry = {
       rmGrade: l.rawMaterialGradeText,
       rmSize: l.rawMaterialSizeText,
       remarks: l.remarks,
+      drawingRev: l.drawingRev ?? null,
     }));
+    const storedRevs: Record<string, string | null> = {};
+    for (const l of stored) storedRevs[l.childItemId] = l.drawingRev ?? null;
 
     return {
-      doc: { ...header, lines, otherDefaultCode: others[0]?.code ?? null },
+      doc: { ...header, lines, storedRevs, otherDefaultCode: others[0]?.code ?? null },
       updatedAt: header.updatedAt,
       docCode: header.code,
       // Any existing (not-deleted) ML-BOM is live; loadForDiff is null otherwise.
@@ -193,11 +205,15 @@ export const mlBomEditRegistryEntry: DocEditRegistryEntry = {
     };
   },
 
-  async afterSnapshot(tx, companyId, payload) {
+  async afterSnapshot(tx, companyId, payload, _user, target) {
     const p = payload as MlBomEditPayload;
     if (p.op === 'makeDefault') return { isDefault: describeDefault(true, null) };
+    const storedRevs =
+      (target?.doc['storedRevs'] as Record<string, string | null> | undefined) ?? {};
     const out: Record<string, unknown> = {
-      lines: summarizeMlBomLines(await canonProposedLines(tx, companyId, p.input.lines)),
+      lines: summarizeMlBomLines(
+        await canonProposedLines(tx, companyId, p.input.lines, storedRevs),
+      ),
     };
     // Omitted remarks = not touched (reviseMlBomCore keeps the stored ones).
     if (p.input.remarks !== undefined) out['remarks'] = p.input.remarks?.trim() || null;
