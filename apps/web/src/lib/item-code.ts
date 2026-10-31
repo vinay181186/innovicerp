@@ -23,3 +23,15 @@ export function itemCodeWithRev(
   const r = revision?.trim();
   return r ? `${c}/${r}` : c;
 }
+
+/** The Drawing Rev a Plan / Production Order / Job Card is FOR (owner model
+ *  2026-10-31): the document's own stored `drawingRev` first, falling back to
+ *  the live SO/JWSO line revision (`itemRevision`) for rows saved before the
+ *  document carried its own. A split SO line can have JC-1 at ABC/1 and JC-2
+ *  at ABC/2 — only the document's own value tells them apart. */
+export function docDrawingRev(doc: {
+  drawingRev?: string | null | undefined;
+  itemRevision?: string | null | undefined;
+}): string | null {
+  return doc.drawingRev?.trim() || doc.itemRevision?.trim() || null;
+}

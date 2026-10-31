@@ -11,7 +11,8 @@
 import { type ListPlansResponse, type PlanStatus, type PlanType } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
+import { ItemRevLink } from '@/modules/item-revisions/components/item-rev-link';
+import { itemCodeWithRev, docDrawingRev } from '@/lib/item-code';
 import { ROW_TINT } from '@/ui/data';
 import type { DataTableColumn, RowMenuItem } from '@/ui/data';
 import type { RenderLink } from '@/ui/layout';
@@ -164,8 +165,16 @@ export function plansListColumns(
       nowrap: true,
       // `CODE/REV` — the customer's drawing revision from the SO line this plan
       // was raised against; a JW-sourced or ad-hoc plan keeps the bare code.
-      render: (row) =>
-        itemCodeWithRev((row.itemCode ?? row.itemCodeText) as string | null, row.itemRevision),
+      render: (row) => (
+        <ItemRevLink
+          itemRevisionId={row.itemRevisionId}
+          label={itemCodeWithRev(
+            (row.itemCode ?? row.itemCodeText) as string | null,
+            docDrawingRev(row),
+          )}
+          className=""
+        />
+      ),
     },
     {
       id: 'item_name',

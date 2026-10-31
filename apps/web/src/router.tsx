@@ -20,6 +20,7 @@ import { routeCardDetailRoute } from './modules/route-cards/routes/detail';
 import { routeCardNewRoute } from './modules/route-cards/routes/new';
 import { routeCardEditRoute } from './modules/route-cards/routes/edit';
 import { itemRevisionPreviewRoute } from './modules/item-revisions/routes/preview';
+import { drawingRevFixListRoute } from './modules/item-revisions/routes/fix-list';
 import { qcProcessesListRoute } from './modules/qc-processes/routes/list';
 import { qcProcessDetailRoute } from './modules/qc-processes/routes/detail';
 import { qcProcessNewRoute } from './modules/qc-processes/routes/new';
@@ -329,6 +330,8 @@ const routeTree = rootRoute.addChildren([
     routeCardEditRoute,
     // Drawing page — one Item + Drawing Rev (ABC/1).
     itemRevisionPreviewRoute,
+    // Drawing Rev Fix List (Phase D hand-fix lists).
+    drawingRevFixListRoute,
     qcProcessesListRoute,
     qcProcessNewRoute,
     qcProcessDetailRoute,

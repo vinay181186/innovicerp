@@ -24,6 +24,7 @@ import { ItemBadge } from '@/components/shared/item-badge';
 import { resolveActualMachine } from '@/components/shared/machine-split';
 import { JcStatusBadge } from './jc-status-badge';
 import { OUTSOURCE_STATUS_LABEL } from '../lib/jc-op-labels';
+import { docDrawingRev } from '@/lib/item-code';
 
 const lblStyle: React.CSSProperties = {
   fontSize: 11,
@@ -124,7 +125,7 @@ export function JcStatTiles({
             size="card"
             code={jc.itemCode}
             name={jc.itemName}
-            revision={jc.itemRevision}
+            revision={docDrawingRev(jc)}
             imagePath={jc.itemImagePath}
             nameMaxWidth="none"
           />

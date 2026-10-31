@@ -14,6 +14,7 @@ import {
 } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { Trash2 } from 'lucide-react';
+import { ChildDrawingRevCell } from '@/modules/item-revisions/components/child-drawing-rev-cell';
 import { SearchableSelect } from '@/ui/forms';
 import {
   MaterialGradePicker,
@@ -26,6 +27,9 @@ export interface MlBomFormLineDraft {
   rowKey: string;
   childItemId: string;
   childItemCodeText: string;
+  /** D2 — the child part's Drawing Rev (SHAFT/2); compulsory for a MAKE part,
+   *  blank for a Buy part. Cleared when the part changes. */
+  childDrawingRev: string;
   qtyPerSet: string;
   bomType: BomLineType;
   rawMaterialGradeId: string | null;
@@ -50,6 +54,7 @@ export function emptyMlBomLine(): MlBomFormLineDraft {
     rowKey: newMlBomRowKey(),
     childItemId: '',
     childItemCodeText: '',
+    childDrawingRev: '',
     qtyPerSet: '1',
     bomType: 'manufacture',
     rawMaterialGradeId: null,
@@ -63,7 +68,7 @@ export function emptyMlBomLine(): MlBomFormLineDraft {
 }
 
 const LINE_TYPES = BOM_LINE_TYPES.map((value) => ({ value, label: BOM_LINE_TYPE_LABEL[value] }));
-const COLS = 10;
+const COLS = 11;
 
 interface Props {
   mode: 'create' | 'edit';
@@ -90,6 +95,7 @@ export function MlBomLinesTable(props: Props): React.JSX.Element {
             <th style={{ minWidth: 160 }}>
               Item Code<span className="req">★</span>
             </th>
+            <th style={{ width: 110 }}>Drawing Rev</th>
             <th style={{ minWidth: 180 }}>Item Name</th>
             <th style={{ width: 60 }}>UOM</th>
             <th className="th-num" style={{ width: 100 }}>
@@ -146,6 +152,17 @@ export function MlBomLinesTable(props: Props): React.JSX.Element {
                       </Link>
                     </div>
                   ) : null}
+                </td>
+                <td>
+                  <ChildDrawingRevCell
+                    id={`mlbom-rev-${idx}`}
+                    itemId={line.childItemId || null}
+                    itemCode={item?.code ?? line.childItemCodeText}
+                    revRequired={item ? item.procurementType === 'make' : true}
+                    value={line.childDrawingRev}
+                    onChange={(rev) => onChange(idx, { childDrawingRev: rev })}
+                    ariaLabel={`Drawing Rev, line ${idx + 1}`}
+                  />
                 </td>
                 <td
                   className="text2"

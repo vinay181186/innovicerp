@@ -98,6 +98,11 @@ export const customerDispatchLineRowSchema = z.object({
    *  is genuinely no SO line behind the shipment — and null must render as the
    *  bare item code, with no slash and no placeholder. */
   itemRevision: z.string().nullable().default(null),
+  /** Phase C: the Item + Drawing Rev actually SHIPPED on this dispatch line
+   *  (customer_dispatch_lines.item_revision_id). Prefer it over itemRevision,
+   *  which is the SO line's current Rev; null on old rows. */
+  itemRevisionId: z.string().uuid().nullable().default(null),
+  drawingRev: z.string().nullable().default(null),
   itemCodeText: z.string().nullable(), // stored snapshot alias (fallback only)
   itemName: z.string(),
   /** The item master's name (items.name by item id) — shown as a grey

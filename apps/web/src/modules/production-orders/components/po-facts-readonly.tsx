@@ -11,7 +11,7 @@
 import type { ProductionOrderDetail } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
+import { itemCodeWithRev, docDrawingRev } from '@/lib/item-code';
 import { soNoWithInternal } from '@/lib/so-number';
 import { JC_STATUS_LABEL, JcStatusBadge } from '@/modules/job-cards/components/jc-status-badge';
 import { ProgressBar } from '@/ui/data';
@@ -26,7 +26,7 @@ export function PoIdentLine({ po }: { po: Po }): React.JSX.Element {
       <IdentCode>{po.code}</IdentCode>
       <IdentSep />
       {/* CODE/REV (ADR-177); bare code when the line has no revision. */}
-      <IdentCode>{itemCodeWithRev(po.itemCodeText, po.itemRevision)}</IdentCode>
+      <IdentCode>{itemCodeWithRev(po.itemCodeText, docDrawingRev(po))}</IdentCode>
       {po.itemNameText ? <span>{po.itemNameText}</span> : null}
       {po.soCodeText ? (
         <>

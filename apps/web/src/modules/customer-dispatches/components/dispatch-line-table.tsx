@@ -15,10 +15,14 @@ import { MasterItemNameNote } from '@/components/shared/master-item-name-note';
 import { SearchableSelect } from '@/ui/forms';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { parseRowOptionKey, rowBucket, rowCap, rowOptionKey } from './dispatch-rev-buckets';
 
 export interface LineCard {
   id: number;
   soLineId: string | null;
+  /** Phase C — the Item + Rev bucket this row ships from (null = the no-Rev
+   *  bucket). `undefined` = the line has no buckets: one row per line. */
+  itemRevisionId?: string | null | undefined;
   qty: string;
 }
 
@@ -114,23 +118,37 @@ export function DispatchLineTable(props: {
             ) : (
               cards.map((card, idx) => {
                 const line = resolveLine(card.soLineId);
-                // Options = this SO's dispatchable lines, minus ones already
-                // picked on other rows (can't dispatch the same line twice).
+                const bucket = rowBucket(line, card.itemRevisionId);
+                const cap = line ? rowCap(line, bucket) : 0;
+                // Options = this SO's dispatchable lines — one per Drawing Rev
+                // bucket when the line holds pieces of more than one Rev
+                // (ABC/1 and ABC/2) — minus ones already picked on other rows.
                 const usedElsewhere = new Set(
-                  cards.filter((c) => c.id !== card.id && c.soLineId).map((c) => c.soLineId),
+                  cards
+                    .filter((c) => c.id !== card.id && c.soLineId)
+                    .map((c) => rowOptionKey(c.soLineId as string, c.itemRevisionId)),
                 );
                 const opts = lines
-                  .filter((l) => !usedElsewhere.has(l.salesOrderLineId))
-                  // The dropdown labels each option with the drawing revision —
-                  // "IN-IT-0007/B" — because two SO lines for the same part at
-                  // different revisions are otherwise indistinguishable here.
-                  // What the picker SUBMITS is still the SO line id, so this is
-                  // a label only; a line with no revision keeps the bare code.
-                  .map((l) => ({
-                    id: l.salesOrderLineId,
-                    code: itemCodeWithRev(l.itemCode, l.itemRevision, '') || null,
-                    name: l.itemName,
-                  }));
+                  .flatMap((l) =>
+                    l.revBuckets.length > 0
+                      ? l.revBuckets.map((b) => ({
+                          id: rowOptionKey(l.salesOrderLineId, b.itemRevisionId ?? null),
+                          code: b.label,
+                          name: `${l.itemName} · Ready ${b.readyQty}`,
+                        }))
+                      : // The dropdown labels each option with the drawing
+                        // revision — "IN-IT-0007/B" — because two SO lines for
+                        // the same part at different revisions are otherwise
+                        // indistinguishable here. A label only.
+                        [
+                          {
+                            id: l.salesOrderLineId,
+                            code: itemCodeWithRev(l.itemCode, l.itemRevision, '') || null,
+                            name: l.itemName,
+                          },
+                        ],
+                  )
+                  .filter((o) => !usedElsewhere.has(o.id));
                 const err = lineErrors.get(card.id);
                 return (
                   <tr key={card.id}>
@@ -146,8 +164,17 @@ export function DispatchLineTable(props: {
                         // generated id, but a stable, meaningful one keeps the
                         // label/listbox wiring readable and gives tests a handle.
                         id={`dispatch-line-${card.id}`}
-                        value={card.soLineId}
-                        onChange={(id) => props.onPatch(card.id, { soLineId: id })}
+                        value={
+                          card.soLineId ? rowOptionKey(card.soLineId, card.itemRevisionId) : null
+                        }
+                        onChange={(key) => {
+                          if (!key) {
+                            props.onPatch(card.id, { soLineId: null, itemRevisionId: undefined });
+                            return;
+                          }
+                          const { soLineId, itemRevisionId } = parseRowOptionKey(key);
+                          props.onPatch(card.id, { soLineId, itemRevisionId });
+                        }}
                         onSearch={() => {}}
                         options={opts}
                         placeholder="🔍 code or name…"
@@ -157,9 +184,11 @@ export function DispatchLineTable(props: {
                         // renders "CODE — Name" so you can search by either.
                         selectedLabel={(o) => o.code ?? o.name}
                         valueLabel={
-                          line
-                            ? itemCodeWithRev(line.itemCode, line.itemRevision, line.itemName)
-                            : undefined
+                          bucket
+                            ? bucket.label
+                            : line
+                              ? itemCodeWithRev(line.itemCode, line.itemRevision, line.itemName)
+                              : undefined
                         }
                       />
                     </td>
@@ -185,11 +214,11 @@ export function DispatchLineTable(props: {
                       style={{ cursor: line ? 'help' : undefined }}
                       title={
                         line
-                          ? `Ready ${line.readyQty} · Dispatched ${line.dispatchedQty} · Reserved (this line) ${line.reservedQty} · Available ${line.itemAvailableQty} (Physical ${line.physicalQty} − Reserved)`
+                          ? `${bucket ? `${bucket.label}: Ready ${bucket.readyQty} · ` : ''}Ready ${line.readyQty} · Dispatched ${line.dispatchedQty} · Reserved (this line) ${line.reservedQty} · Available ${line.itemAvailableQty} (Physical ${line.physicalQty} − Reserved)`
                           : undefined
                       }
                     >
-                      {line ? line.availableQty : '—'}
+                      {line ? (bucket ? cap : line.availableQty) : '—'}
                     </td>
                     <td className="td-ctr mono" style={{ whiteSpace: 'nowrap' }}>
                       {fmtDate(line?.customerDispatchDate)}
@@ -199,9 +228,9 @@ export function DispatchLineTable(props: {
                         type="number"
                         className="innovic-input"
                         min={0}
-                        max={line ? Math.min(line.availableQty, line.pendingQty) : undefined}
+                        max={line ? cap : undefined}
                         value={card.qty}
-                        disabled={!line || Math.min(line.availableQty, line.pendingQty) <= 0}
+                        disabled={!line || cap <= 0}
                         onChange={(e) => props.onPatch(card.id, { qty: e.target.value })}
                         style={{
                           fontSize: 12,

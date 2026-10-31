@@ -10,9 +10,22 @@ export interface DraftLine {
   inStock: number | null;
   countedQty: string;
   reason: string;
+  /** Phase C — the Item + Drawing Rev bucket counted: an id, null = the
+   *  no-Rev (old stock) bucket, undefined = not chosen / item has no Revs. */
+  itemRevisionId?: string | null | undefined;
 }
 
-export const fromServer = (l: StockCountLine): DraftLine => ({
+/** The read line may carry the counted Rev bucket once the API returns it
+ *  (Phase C); older responses do not. */
+type ServerLine = StockCountLine & { itemRevisionId?: string | null };
+
+/** One line per Item + Drawing Rev bucket. */
+export const lineKey = (l: {
+  itemId: string;
+  itemRevisionId?: string | null | undefined;
+}): string => `${l.itemId}|${l.itemRevisionId ?? ''}`;
+
+export const fromServer = (l: ServerLine): DraftLine => ({
   itemId: l.itemId,
   itemCode: l.itemCode,
   itemName: l.itemName,
@@ -20,4 +33,5 @@ export const fromServer = (l: StockCountLine): DraftLine => ({
   inStock: l.systemQtyNow,
   countedQty: String(l.countedQty),
   reason: l.reason ?? '',
+  ...(l.itemRevisionId !== undefined ? { itemRevisionId: l.itemRevisionId } : {}),
 });

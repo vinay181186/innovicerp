@@ -6,7 +6,8 @@ import type { JobCardListItem } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { ItemImageBox, THUMBNAIL_COL_WIDTH } from '@/components/shared/item-badge';
 import { fmtDate } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
+import { ItemRevLink } from '@/modules/item-revisions/components/item-rev-link';
+import { itemCodeWithRev, docDrawingRev } from '@/lib/item-code';
 import { Badge, StatusBadge } from '@/ui/core';
 import { ProgressBar, type DataTableColumn } from '@/ui/data';
 import { JC_STATUS_LABEL } from './jc-status-badge';
@@ -122,7 +123,7 @@ export function jobCardListColumns(
           <ItemImageBox
             imagePath={jc.itemImagePath}
             size="row"
-            alt={jc.itemName || itemCodeWithRev(jc.itemCode, jc.itemRevision)}
+            alt={jc.itemName || itemCodeWithRev(jc.itemCode, docDrawingRev(jc))}
             fill
           />
         </div>
@@ -155,7 +156,12 @@ export function jobCardListColumns(
       nowrap: true,
       render: (jc) => (
         <span className="mono fw-700" style={{ color: 'var(--purple)' }}>
-          {itemCodeWithRev(jc.itemCode, jc.itemRevision)}
+          {/* The card's OWN Drawing Rev (ABC/1), linked to its drawing page. */}
+          <ItemRevLink
+            itemRevisionId={jc.itemRevisionId}
+            label={itemCodeWithRev(jc.itemCode, docDrawingRev(jc))}
+            className=""
+          />
         </span>
       ),
     },

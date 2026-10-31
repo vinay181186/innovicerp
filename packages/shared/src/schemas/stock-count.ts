@@ -96,6 +96,9 @@ export interface StockCountLine {
   id: string;
   lineNo: number;
   itemId: string;
+  /** Phase C: the Item + Drawing Rev bucket counted (null = blank / Buy). */
+  itemRevisionId?: string | null;
+  drawingRev?: string | null;
   itemCode: string;
   itemName: string | null;
   uom: string | null;

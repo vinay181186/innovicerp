@@ -28,7 +28,7 @@ import type {
 } from '@innovic/shared';
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
-import { itemCodeWithRev } from '@/lib/item-code';
+import { itemCodeWithRev, docDrawingRev } from '@/lib/item-code';
 import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 import { activityLogKeys } from '@/modules/activity-log/api';
 import { jobCardsKeys } from '@/modules/job-cards/api';
@@ -421,7 +421,7 @@ export function usePreselectedPlan(
  */
 export function planPickerLabel(p: PlanPickerItem, mode: 'create' | 'close' = 'close'): string {
   // CODE/REV so the picker agrees with the PlanSummary under it (ADR-177).
-  const item = itemCodeWithRev(p.itemCode ?? p.itemCodeText, p.itemRevision);
+  const item = itemCodeWithRev(p.itemCode ?? p.itemCodeText, docDrawingRev(p));
   const name = p.itemName ?? p.itemNameText ?? '';
   const so = p.soCodeText
     ? `${p.soCodeText}${p.lineNo ? `/${p.lineNo}` : ''}${p.soInternalNo ? ` · ${p.soInternalNo}` : ''}`

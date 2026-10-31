@@ -5,6 +5,11 @@
 import type { AdjustStockInput, StoreInventoryRow } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import {
+  DrawingRevPicker,
+  pickedRevisionId,
+  useItemRevOptions,
+} from '@/modules/item-revisions/components/drawing-rev-picker';
 import { useAdjustStock } from '../api';
 import { ModalShell } from './modal-shell';
 
@@ -19,6 +24,9 @@ export function AdjustStockModal({
   const [qty, setQty] = useState('');
   const [remarks, setRemarks] = useState('');
   const [err, setErr] = useState<string | null>(null);
+  // Phase C — a MAKE item with Revs is adjusted per Item + Drawing Rev bucket.
+  const [revValue, setRevValue] = useState<string | null>(null);
+  const revOpts = useItemRevOptions(row.itemId);
   const mut = useAdjustStock();
 
   const onSave = (): void => {
@@ -36,8 +44,13 @@ export function AdjustStockModal({
       setErr('Reason / Remarks is required.');
       return;
     }
+    if (revOpts.required && !revValue) {
+      setErr('Drawing Rev is required.');
+      return;
+    }
     const input: AdjustStockInput = {
       itemId: row.itemId,
+      ...(revOpts.required ? { itemRevisionId: pickedRevisionId(revValue) } : {}),
       direction,
       qty: q,
       remarks: remarks.trim(),
@@ -104,6 +117,19 @@ export function AdjustStockModal({
             style={{ fontSize: 16, fontWeight: 700 }}
           />
         </div>
+        {revOpts.required ? (
+          <div className="form-grp">
+            <label className="form-label" htmlFor="adjust-drawing-rev">
+              Drawing Rev <span className="req">★</span>
+            </label>
+            <DrawingRevPicker
+              id="adjust-drawing-rev"
+              itemId={row.itemId}
+              value={revValue}
+              onChange={setRevValue}
+            />
+          </div>
+        ) : null}
         <div className="form-grp form-full">
           <label className="form-label">
             Reason / Remarks <span className="req">★</span>

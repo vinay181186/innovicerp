@@ -13,7 +13,7 @@
 import type { JobCardListItem } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { useState } from 'react';
-import { itemCodeWithRev } from '@/lib/item-code';
+import { itemCodeWithRev, docDrawingRev } from '@/lib/item-code';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { AssignTaskModal } from '@/modules/tasks/components/assign-task-modal';
 import { RowActions } from '@/ui/layout';
@@ -92,7 +92,7 @@ export function JcRowMenu({
         deleteDisabled={deleteDisabled}
         deleteConfirm={{
           title: `Move Job Card ${jc.code} to Trash?`,
-          message: `${itemCodeWithRev(jc.itemCode, jc.itemRevision)} stops appearing in Job Cards, on the shop floor and in Op Entry. You can restore it from Trash.`,
+          message: `${itemCodeWithRev(jc.itemCode, docDrawingRev(jc))} stops appearing in Job Cards, on the shop floor and in Op Entry. You can restore it from Trash.`,
           confirmLabel: 'Move to Trash',
           pendingLabel: 'Moving to Trash…',
         }}

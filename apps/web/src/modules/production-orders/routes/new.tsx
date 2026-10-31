@@ -36,6 +36,7 @@
 // Order) and its own permission (edit).
 
 import type { CreateProductionOrderInput, RouteCardListItem } from '@innovic/shared';
+import { itemRevLabel } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -43,7 +44,7 @@ import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate, todayLocal } from '@/lib/date';
 import { useExitConfirm } from '@/lib/exit-guard';
-import { itemCodeWithRev } from '@/lib/item-code';
+import { itemCodeWithRev, docDrawingRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
 import { soNoWithInternal } from '@/lib/so-number';
 import { useSaveKey } from '@/lib/use-save-key';
@@ -104,6 +105,7 @@ function ProductionOrderNewPage(): React.JSX.Element {
   const { data: eff, isLoading: accessLoading } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'prodorder_create');
   const canCreateRouteCard = effectiveFormPerms(eff, 'routecard_create').entry;
+  const canEditRouteCard = effectiveFormPerms(eff, 'routecard_create').edit;
   // Created By — the signed-in user, who the server records as the creator.
   const { data: me } = useSession();
 
@@ -131,16 +133,35 @@ function ProductionOrderNewPage(): React.JSX.Element {
     () => (planItemId ? (routeCards.data?.items ?? []) : []),
     [planItemId, routeCards.data],
   );
+  // Drawing Rev (owner model 2026-10-31): one Route Card per Item + Drawing
+  // Rev. The plan stores the Item + Rev it is for (ABC/1), so only the card
+  // for THAT Item + Rev may build its Job Card — or, for a plan with no Rev
+  // (Buy-less old plan, JW line without one), the card with no Rev.
+  const planRevId = plan?.itemRevisionId ?? null;
+  const planRevLabel = plan
+    ? itemRevLabel(plan.itemCode ?? plan.itemCodeText, docDrawingRev(plan))
+    : '';
+  const revRcItems = useMemo(
+    () => allRcItems.filter((rc) => (rc.itemRevisionId ?? null) === planRevId),
+    [allRcItems, planRevId],
+  );
   // ADR-253 — only an APPROVED card may raise a Production Order, so the
   // picker lists (and auto-picks) approved cards only.
   const rcItems = useMemo(
-    () => allRcItems.filter((rc) => rc.approvalStatus === 'approved'),
-    [allRcItems],
+    () => revRcItems.filter((rc) => rc.approvalStatus === 'approved'),
+    [revRcItems],
   );
   const rcLoaded = Boolean(planItemId) && routeCards.isSuccess;
-  const noRouteCard = rcLoaded && allRcItems.length === 0;
+  // The plan has a Rev but the item only has an OLD card made before the
+  // register (no Drawing Rev): the card must be given its Rev first.
+  const legacyRc =
+    rcLoaded && planRevId && revRcItems.length === 0
+      ? (allRcItems.find((rc) => !rc.itemRevisionId) ?? null)
+      : null;
+  const noRouteCard = rcLoaded && revRcItems.length === 0 && !legacyRc;
   // The item has a card, but none approved yet: name it instead of picking it.
-  const unapprovedRc = rcLoaded && rcItems.length === 0 ? (allRcItems[0] ?? null) : null;
+  const unapprovedRc =
+    rcLoaded && revRcItems.length > 0 && rcItems.length === 0 ? (revRcItems[0] ?? null) : null;
   const unapprovedRcText = unapprovedRc
     ? `Route Card ${unapprovedRc.code} ${
         unapprovedRc.approvalStatus === 'rejected' ? 'was rejected' : 'is waiting for approval'
@@ -236,6 +257,7 @@ function ProductionOrderNewPage(): React.JSX.Element {
     rawMaterialAvailable &&
     !planHasNoRawMaterial &&
     !noRouteCard &&
+    !legacyRc &&
     !unapprovedRc &&
     !directPurchase;
 
@@ -273,22 +295,24 @@ function ProductionOrderNewPage(): React.JSX.Element {
   const saveBlockedReason = !plan
     ? 'Plan is required.'
     : noRouteCard
-      ? 'No Route Card for this item.'
-      : unapprovedRcText
-        ? `${unapprovedRcText}.`
-        : !routeCardId
-          ? 'Route Card is required.'
-          : directPurchase
-            ? 'Buy item — no Production Order.'
-            : !targetDate
-              ? 'PRO Target Date is required.'
-              : orderQtyError
-                ? orderQtyError
-                : planHasNoRawMaterial
-                  ? NO_PLAN_RAW_MATERIAL
-                  : !rawMaterialAvailable
-                    ? NO_RAW_MATERIAL
-                    : undefined;
+      ? `No Route Card for ${planRevLabel}.`
+      : legacyRc
+        ? `${legacyRc.code} has no Drawing Rev — set it on the Route Card first.`
+        : unapprovedRcText
+          ? `${unapprovedRcText}.`
+          : !routeCardId
+            ? 'Route Card is required.'
+            : directPurchase
+              ? 'Buy item — no Production Order.'
+              : !targetDate
+                ? 'PRO Target Date is required.'
+                : orderQtyError
+                  ? orderQtyError
+                  : planHasNoRawMaterial
+                    ? NO_PLAN_RAW_MATERIAL
+                    : !rawMaterialAvailable
+                      ? NO_RAW_MATERIAL
+                      : undefined;
 
   // FLOW FIX: "create it" opens the Route Card form already on this plan's
   // item (route-cards/new reads ?itemId=&itemCode=&itemName=), so the planner
@@ -389,7 +413,7 @@ function ProductionOrderNewPage(): React.JSX.Element {
         {/* What stops Save, under the header where the Save button is. */}
         {noRouteCard ? (
           <Banner tone="warn" role="alert">
-            ⚠ No Route Card for this item —{' '}
+            ⚠ No Route Card for {planRevLabel} —{' '}
             {/* ADR-234 — the link only for a Route Card Entry holder. */}
             {canCreateRouteCard ? (
               <>
@@ -400,6 +424,18 @@ function ProductionOrderNewPage(): React.JSX.Element {
               </>
             ) : (
               'a Route Card user must create it first.'
+            )}
+          </Banner>
+        ) : null}
+        {legacyRc ? (
+          <Banner tone="warn" role="alert">
+            ⚠ {legacyRc.code} has no Drawing Rev — set it on the Route Card first.{' '}
+            {canEditRouteCard ? (
+              <Link to="/route-cards/$id/edit" params={{ id: legacyRc.id }} className="fw-700">
+                Set Drawing Rev
+              </Link>
+            ) : (
+              'A Route Card user must set it.'
             )}
           </Banner>
         ) : null}
@@ -433,7 +469,7 @@ function ProductionOrderNewPage(): React.JSX.Element {
           {plan ? (
             <>
               {/* CODE/REV (ADR-177); bare code when the line has no revision. */}
-              <IdentCode>{itemCodeWithRev(planItemCode, plan.itemRevision)}</IdentCode>
+              <IdentCode>{itemCodeWithRev(planItemCode, docDrawingRev(plan))}</IdentCode>
               {planItemName ? <span>{planItemName}</span> : null}
               {plan.soCodeText ? (
                 <>
@@ -489,7 +525,13 @@ function ProductionOrderNewPage(): React.JSX.Element {
                 id="po-route-card"
                 className="innovic-select"
                 value={routeCardId ?? ''}
-                disabled={!plan || noRouteCard || Boolean(unapprovedRc) || routeCards.isLoading}
+                disabled={
+                  !plan ||
+                  noRouteCard ||
+                  Boolean(legacyRc) ||
+                  Boolean(unapprovedRc) ||
+                  routeCards.isLoading
+                }
                 title={
                   routeCard
                     ? `${routeCard.code} · Route Card Rev ${routeCard.currentRevision}`
@@ -503,10 +545,12 @@ function ProductionOrderNewPage(): React.JSX.Element {
                     : routeCards.isLoading
                       ? 'Loading Route Cards…'
                       : noRouteCard
-                        ? 'No Route Card for this item'
-                        : unapprovedRc
-                          ? 'Route Card not approved yet'
-                          : 'Select Route Card…'}
+                        ? `No Route Card for ${planRevLabel}`
+                        : legacyRc
+                          ? 'Route Card has no Drawing Rev'
+                          : unapprovedRc
+                            ? 'Route Card not approved yet'
+                            : 'Select Route Card…'}
                 </option>
                 {/* The box holds the code only. "IN-RC-00012 · Route Card Rev 2"
                     needs ~175px and the quarter cell gives the box 167px at

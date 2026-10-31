@@ -23,6 +23,7 @@ import { useStockReservations } from '@/modules/plans/api';
 import { DataTable, type DataTableColumn } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ModalShell } from './modal-shell';
+import { RevStockTable } from './rev-stock-table';
 
 /** A code with no page of its own — plain reference text, never a dead link. */
 function PlainRef({ code }: { code: string | null }): React.JSX.Element {
@@ -253,6 +254,8 @@ export function ReservationDrilldown({
         </div>
       ) : (
         <>
+          {/* Phase C — the same item split per Item + Drawing Rev bucket. */}
+          <RevStockTable itemId={itemId} itemCode={itemCode} />
           <div style={{ fontSize: 12, marginBottom: 10 }}>
             <span className="text3">Total reserved for this item: </span>
             <b className="mono" style={{ color: 'var(--purple)', fontSize: 16 }}>

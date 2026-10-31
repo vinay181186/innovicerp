@@ -46,6 +46,7 @@ function MlBomEditPage(): React.JSX.Element {
         rowKey: l.id,
         childItemId: l.childItemId,
         childItemCodeText: l.childItemCode ?? '',
+        childDrawingRev: l.childDrawingRev ?? '',
         qtyPerSet: String(Number(l.qtyPerSet)),
         bomType: l.bomType,
         rawMaterialGradeId: l.rawMaterialGradeId,

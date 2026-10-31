@@ -234,6 +234,14 @@ function StoreInventoryPage(): React.JSX.Element {
                 renderLink={(p) => <Link {...p} />}
                 rowMenu={(row) => [
                   {
+                    // Phase C — On Hand / Reserved / Free per Item + Drawing
+                    // Rev, with the SO lines holding each (read-only).
+                    key: 'revs',
+                    label: 'Stock per Drawing Rev',
+                    icon: 'eye',
+                    onSelect: () => setReservedRow(row),
+                  },
+                  {
                     key: 'adjust',
                     label: '± Adjust',
                     icon: 'pencil',

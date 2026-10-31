@@ -34,6 +34,7 @@ import {
   useNextDispatchCode,
 } from '../api';
 import { DispatchLineTable, type LineCard } from '../components/dispatch-line-table';
+import { rowBucket, rowOptionKey } from '../components/dispatch-rev-buckets';
 
 // Optional ?so=<salesOrderId> preselects the SO (e.g. arriving from the
 // Assembly Tracker's batch Dispatch button).
@@ -99,13 +100,30 @@ function CustomerDispatchNewPage(): React.JSX.Element {
       const onCards = new Set(cs.map((c) => c.soLineId));
       const added: LineCard[] = lines
         .filter((l) => l.pendingQty > 0 && !onCards.has(l.salesOrderLineId))
-        .map((l) => {
+        .flatMap((l): LineCard[] => {
           const cap = Math.min(l.availableQty, l.pendingQty);
-          return {
-            id: nextId.current++,
-            soLineId: l.salesOrderLineId,
-            qty: cap > 0 ? String(cap) : '',
-          };
+          if (l.revBuckets.length === 0) {
+            return [
+              {
+                id: nextId.current++,
+                soLineId: l.salesOrderLineId,
+                qty: cap > 0 ? String(cap) : '',
+              },
+            ];
+          }
+          // Phase C — one row per Drawing Rev bucket, filled in order until the
+          // line's cap is used up; the user moves pieces between Revs by hand.
+          let left = cap;
+          return l.revBuckets.map((b) => {
+            const take = Math.max(0, Math.min(left, b.readyQty));
+            left -= take;
+            return {
+              id: nextId.current++,
+              soLineId: l.salesOrderLineId,
+              itemRevisionId: b.itemRevisionId ?? null,
+              qty: take > 0 ? String(take) : '',
+            };
+          });
         });
       return [...cs, ...added];
     });
@@ -142,6 +160,8 @@ function CustomerDispatchNewPage(): React.JSX.Element {
   // the API is the one that checks there are enough pieces to draw on.
   const lineErrors = new Map<number, string>();
   let anyPositiveQty = false;
+  // Phase C — rows of one SO line (one per Drawing Rev) share the line's cap.
+  const lineTotals = new Map<string, number>();
   for (const c of cards) {
     const line = resolveLine(c.soLineId);
     if (!line) continue;
@@ -150,12 +170,22 @@ function CustomerDispatchNewPage(): React.JSX.Element {
       lineErrors.set(c.id, 'Enter a valid quantity.');
       continue;
     }
+    const bucket = rowBucket(line, c.itemRevisionId);
+    if (bucket && raw > bucket.readyQty) {
+      lineErrors.set(
+        c.id,
+        `Dispatch Qty cannot be more than Ready for ${bucket.label} (${bucket.readyQty}).`,
+      );
+      continue;
+    }
+    const lineSum = (lineTotals.get(line.salesOrderLineId) ?? 0) + raw;
+    lineTotals.set(line.salesOrderLineId, lineSum);
     // Cap at the SAME number the server enforces (`availableQty`, itself
     // already capped at pending). Capping only at "pending" let the user type
     // a qty the stock cannot cover, kept Save enabled, and met the refusal at
     // submit instead of while typing.
     const cap = Math.min(line.availableQty, line.pendingQty);
-    if (raw > cap) {
+    if (lineSum > cap) {
       lineErrors.set(
         c.id,
         cap === line.pendingQty
@@ -180,7 +210,12 @@ function CustomerDispatchNewPage(): React.JSX.Element {
 
     // Resolve each card → SO line and VALIDATE (no silent clamp): an over-qty is
     // a hard block so the user sees why, instead of us quietly reducing it.
-    const byLine = new Map<string, number>();
+    // One payload row per SO line + Drawing Rev bucket (Phase C).
+    const byRow = new Map<
+      string,
+      { salesOrderLineId: string; itemRevisionId?: string | null; qty: number }
+    >();
+    const sentPerLine = new Map<string, number>();
     for (const c of cards) {
       const line = resolveLine(c.soLineId);
       if (!line) return setErr('Pick an item on every line (or remove the empty line).');
@@ -189,18 +224,31 @@ function CustomerDispatchNewPage(): React.JSX.Element {
         return setErr(`${line.itemName}: enter a valid Dispatch Qty.`);
       }
       const lineCap = Math.min(line.availableQty, line.pendingQty);
-      if (raw > lineCap) {
+      const lineSum = (sentPerLine.get(line.salesOrderLineId) ?? 0) + raw;
+      sentPerLine.set(line.salesOrderLineId, lineSum);
+      if (lineSum > lineCap) {
         return setErr(
-          `${line.itemName}: Dispatch Qty (${raw}) cannot be more than Dispatchable (${lineCap}).`,
+          `${line.itemName}: Dispatch Qty (${lineSum}) cannot be more than Dispatchable (${lineCap}).`,
+        );
+      }
+      const bucket = rowBucket(line, c.itemRevisionId);
+      if (bucket && raw > bucket.readyQty) {
+        return setErr(
+          `${bucket.label}: Dispatch Qty (${raw}) cannot be more than Ready (${bucket.readyQty}).`,
         );
       }
       if (raw <= 0) continue;
-      byLine.set(line.salesOrderLineId, (byLine.get(line.salesOrderLineId) ?? 0) + raw);
+      const key = rowOptionKey(line.salesOrderLineId, bucket ? c.itemRevisionId : undefined);
+      const prev = byRow.get(key);
+      if (prev) prev.qty += raw;
+      else
+        byRow.set(key, {
+          salesOrderLineId: line.salesOrderLineId,
+          ...(bucket ? { itemRevisionId: bucket.itemRevisionId ?? null } : {}),
+          qty: raw,
+        });
     }
-    const payloadLines = [...byLine.entries()].map(([salesOrderLineId, qty]) => ({
-      salesOrderLineId,
-      qty,
-    }));
+    const payloadLines = [...byRow.values()];
     if (payloadLines.length === 0) return setErr('Enter a Dispatch Qty on at least one line.');
 
     try {

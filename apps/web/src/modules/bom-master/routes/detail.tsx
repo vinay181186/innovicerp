@@ -18,6 +18,7 @@ import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { soNoWithInternal } from '@/lib/so-number';
+import { ItemRevLink } from '@/modules/item-revisions/components/item-rev-link';
 import { undecidedChangesOf, usePendingEditForDoc } from '@/modules/document-edits/api';
 import {
   PendingChangeChip,
@@ -328,7 +329,12 @@ function BomMasterDetailPage(): React.JSX.Element {
                     <tr key={line.id}>
                       <td className="td-num mono fw-700">{idx + 1}</td>
                       <td className="mono fw-700" style={{ color: 'var(--text)' }}>
-                        {line.childItemCode ?? '—'}
+                        {/* D2 — the child part as Item + Drawing Rev (SHAFT/2). */}
+                        <ItemRevLink
+                          itemRevisionId={line.childItemRevisionId}
+                          label={itemCodeWithRev(line.childItemCode, line.childDrawingRev)}
+                          className=""
+                        />
                       </td>
                       <td>{line.childItemName ?? '—'}</td>
                       <td className="td-num mono fw-700" style={{ fontSize: 14 }}>

@@ -37,6 +37,7 @@ import {
 } from '@/modules/document-edits/components/pending-change-chip';
 import { JcOpFlowCards } from './jc-stat-tiles';
 import { fmtJcDate } from '../lib/fmt-jc-date';
+import { docDrawingRev } from '@/lib/item-code';
 
 /** ADR-202 — the amber "→ after" chip for a header field with a staged edit,
  *  rendered inline next to the field's current value. Null when nothing for this
@@ -324,7 +325,7 @@ export function JcViewSummary({
             size="tile"
             code={jc.itemCode}
             name={jc.itemName}
-            revision={jc.itemRevision}
+            revision={docDrawingRev(jc)}
             imagePath={jc.itemImagePath}
             codeColor="var(--text)"
             nameMaxWidth="none"

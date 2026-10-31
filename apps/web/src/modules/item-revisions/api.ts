@@ -13,19 +13,24 @@ import type {
   ItemRevision,
   ItemRevisionChange,
   ItemRevisionDetail,
+  ItemRevisionFixListResponse,
   ListItemRevisionsQuery,
   ListItemRevisionsResponse,
   LookupItemRevisionResponse,
   ReplaceItemRevisionDrawingInput,
+  SetStockRevInput,
 } from '@innovic/shared';
 import { REVISION_PATTERN, normalizeRevision } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { apiFetch } from '@/lib/api';
+import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 import { activityLogKeys } from '@/modules/activity-log/api';
 import { jobWorkOrdersKeys } from '@/modules/job-work-orders/api';
 import { routeCardsKeys } from '@/modules/route-cards/api';
 import { salesOrdersKeys } from '@/modules/sales-orders/api';
+import { storeInventoryKeys } from '@/modules/store-inventory/api';
+import { storeTransactionsKeys } from '@/modules/store-transactions/api';
 
 export interface ItemRevisionChangesQuery {
   soLineId?: string;
@@ -43,6 +48,8 @@ export const itemRevisionKeys = {
   details: () => [...itemRevisionKeys.all, 'detail'] as const,
   detail: (id: string) => [...itemRevisionKeys.details(), id] as const,
   changes: (q: ItemRevisionChangesQuery) => [...itemRevisionKeys.all, 'changes', q] as const,
+  /** Phase D — the Drawing Rev Fix List (three hand-fix lists in one read). */
+  fixList: () => [...itemRevisionKeys.all, 'fix-list'] as const,
 };
 
 /** The Rev as the server will store it ("b " → "B"), or '' when it is not a
@@ -145,6 +152,39 @@ export function useReplaceItemRevisionDrawing(id: string) {
       void qc.invalidateQueries({ queryKey: routeCardsKeys.all });
       void qc.invalidateQueries({ queryKey: salesOrdersKeys.all });
       void qc.invalidateQueries({ queryKey: jobWorkOrdersKeys.all });
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
+    },
+  });
+}
+
+/** GET /item-revisions/fix-list — Phase D hand-fix lists: Route Cards without
+ *  a Drawing Rev, order lines with conflicting Revs / Rev "0", and old stock
+ *  of make items with no Rev. */
+export function useItemRevisionFixList() {
+  return useQuery<ItemRevisionFixListResponse>({
+    queryKey: itemRevisionKeys.fixList(),
+    queryFn: () => apiFetch<ItemRevisionFixListResponse>('/item-revisions/fix-list'),
+  });
+}
+
+/** POST /item-revisions/stock-set-rev — moves old (no-Rev) stock of a make
+ *  item onto an Item + Rev (an out + in pair in the stock ledger, source
+ *  'rev_change'). */
+export function useSetStockRev(saveKey?: SaveKey) {
+  const qc = useQueryClient();
+  return useMutation<unknown, Error, SetStockRevInput>({
+    mutationFn: (input) =>
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<unknown>('/item-revisions/stock-set-rev', {
+          method: 'POST',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: itemRevisionKeys.all });
+      void qc.invalidateQueries({ queryKey: storeInventoryKeys.all });
+      void qc.invalidateQueries({ queryKey: storeTransactionsKeys.all });
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
     },
   });

@@ -8,8 +8,10 @@ import {
   type MlBomLine,
   type MlBomTreeNode,
   type MlBomTreeResponse,
+  itemRevLabel,
 } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
+import { ItemRevLink } from '@/modules/item-revisions/components/item-rev-link';
 import { DataTable, type DataTableColumn } from '@/ui/data';
 import { PageState } from '@/ui/layout';
 
@@ -44,7 +46,23 @@ const qty = (v: string | null): React.ReactNode => (v == null ? dash : String(Nu
 
 const LINE_COLUMNS: DataTableColumn<MlBomLine>[] = [
   { header: 'Sr No', align: 'right', className: 'mono fw-700', render: (l) => l.lineNo },
-  { header: 'Item Code', nowrap: true, render: (l) => strongCode(l.childItemCode) },
+  {
+    header: 'Item Code',
+    nowrap: true,
+    // D2 — the child part as Item + Drawing Rev (SHAFT/2), linked to its drawing.
+    render: (l) =>
+      l.childItemCode ? (
+        <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+          <ItemRevLink
+            itemRevisionId={l.childItemRevisionId}
+            label={itemRevLabel(l.childItemCode, l.childDrawingRev)}
+            className=""
+          />
+        </span>
+      ) : (
+        dash
+      ),
+  },
   {
     header: 'Item Name',
     align: 'left',
