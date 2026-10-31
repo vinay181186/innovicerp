@@ -26,6 +26,11 @@ import { taxTypeLabel } from '@/modules/sales-orders/lib/gst-rows';
 import { useHistoryTab } from '@/components/shared/document-history';
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { ItemBadge } from '@/components/shared/item-badge';
+import { ItemRevLink } from '@/modules/item-revisions/components/item-rev-link';
+import {
+  RevChangesSection,
+  useRevChangeCount,
+} from '@/modules/item-revisions/components/rev-changes-table';
 import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
 import { useSession } from '@/lib/session';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -79,6 +84,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
   const [confirmDelete, setConfirmDelete] = useState(false);
   // ADR-197: the JWSO's own History tab (hooks run before any early return).
   const historyTab = useHistoryTab({ entity: 'JobWorkOrder', entityId: id, refId: detail?.code });
+  const revChangeCount = useRevChangeCount({ jobWorkOrderId: id });
   // R6 (ADR-194): the line the Short-close dialog is asking about, or null.
   const [shortCloseLine, setShortCloseLine] = useState<JobWorkOrderLine | null>(null);
   // The line drawing the user asked to look at, or null when nothing is open.
@@ -429,7 +435,24 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
         canDelete={canDeleteRecords(eff)}
       />
 
-      <RelatedDocsTabs module="job-work-orders" id={detail.id} extraTabs={[historyTab]} />
+      <RelatedDocsTabs
+        module="job-work-orders"
+        id={detail.id}
+        extraTabs={[
+          {
+            ...historyTab,
+            // Item + Drawing Rev register: Drawing Rev changes on this JWSO's
+            // lines sit under the document history.
+            count: historyTab.count + revChangeCount,
+            render: () => (
+              <>
+                {historyTab.render()}
+                <RevChangesSection query={{ jobWorkOrderId: detail.id }} />
+              </>
+            ),
+          },
+        ]}
+      />
 
       {linePreview ? (
         <FilePreviewModal
@@ -710,6 +733,10 @@ function LineRow(props: {
           name={l.partName}
           revision={l.itemCodeText ? l.revision : null}
           imagePath={l.itemImagePath}
+          // ABC/1 links to its drawing page once in the Item + Drawing Rev register.
+          renderCode={(codeText) => (
+            <ItemRevLink itemRevisionId={l.itemRevisionId} label={codeText} className="" />
+          )}
         />
       </td>
       <td>

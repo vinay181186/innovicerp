@@ -53,6 +53,10 @@ import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Banner, ConfirmDialog } from '@/ui/feedback';
 import { ActionMenu, DetailHeader, PageState, ReadField, ReadGrid } from '@/ui/layout';
 import { SoDrawingHistory, useSoDrawingHistory } from '../components/so-drawing-history';
+import {
+  RevChangesSection,
+  useRevChangeCount,
+} from '@/modules/item-revisions/components/rev-changes-table';
 import { SoCloseModal, closableQty } from '../components/so-close-modal';
 import { REASON_REQUIRED_MESSAGE, ReasonField } from '../components/reason-field';
 import { SoBomPartsPanel } from '../components/so-equipment-expand';
@@ -140,6 +144,9 @@ function SalesOrderDetailPage(): React.JSX.Element {
   // the same hook, and the shared query key means TanStack Query serves it from
   // cache rather than firing a second request.
   const { data: drawingHistory } = useSoDrawingHistory(id);
+  // Item + Drawing Rev register: Drawing Rev changes on this SO's lines, shown
+  // inside the Drawing History tab (and counted, so the tab shows for them too).
+  const revChangeCount = useRevChangeCount({ salesOrderId: id });
   // ADR-197 — who did what to this SO (before → after, reasons). Called before
   // the early returns (hooks rule); the code joins once the detail is loaded.
   const historyTab = useHistoryTab({ entity: 'SalesOrder', entityId: id, refId: detail?.code });
@@ -419,8 +426,13 @@ function SalesOrderDetailPage(): React.JSX.Element {
             icon: '📐',
             // Zero hides the tab, so an SO whose lines never carried a drawing
             // looks exactly as it did before.
-            count: drawingHistory?.lines.length ?? 0,
-            render: () => <SoDrawingHistory salesOrderId={detail.id} soCode={detail.code} />,
+            count: (drawingHistory?.lines.length ?? 0) + revChangeCount,
+            render: () => (
+              <>
+                <SoDrawingHistory salesOrderId={detail.id} soCode={detail.code} />
+                <RevChangesSection query={{ salesOrderId: detail.id }} />
+              </>
+            ),
           },
           historyTab,
         ]}

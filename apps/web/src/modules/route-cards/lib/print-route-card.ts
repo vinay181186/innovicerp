@@ -4,7 +4,7 @@
 // the loaded route-card detail + its item (drawing/rev/material) + company.
 
 import type { Company, Item, RouteCardDetail, RouteCardOp } from '@innovic/shared';
-import { opSrNo } from '@innovic/shared';
+import { itemRevLabel, opSrNo } from '@innovic/shared';
 import { esc } from '@/lib/print/doc-print';
 import { printWindow, printedMeta } from '@/lib/print/print-window';
 
@@ -46,7 +46,13 @@ export function printRouteCard(args: {
   // it, so there is no customer revision to show here at all. The route card's
   // own revision keeps its own box below, labelled so it cannot be mistaken
   // for the drawing's.
-  const drawing = item?.drawingNo ?? '—';
+  //
+  // Since the Item + Drawing Rev register (2026-10-31) a card IS for one
+  // customer Drawing Rev, so it prints in its own box as "ABC/1" — labelled
+  // Drawing Rev, never bare "Rev", and beside (not instead of) Route Card Rev.
+  // The card's own Drawing No. wins over the item master's.
+  const drawing = rc.drawingNo ?? item?.drawingNo ?? '—';
+  const drawingRev = rc.drawingRev ? itemRevLabel(itemCode, rc.drawingRev) : '—';
 
   const body = `
     <div class="doc-title"><h1>Route Card — ${esc(rc.code || itemCode)}</h1><span class="print-meta">${printedMeta()}</span></div>
@@ -56,6 +62,8 @@ export function printRouteCard(args: {
       <div class="info-box"><div class="info-lbl">RM Grade</div><div class="info-val">${esc(rc.rawMaterialGradeText ?? '—')}</div></div>
       <div class="info-box"><div class="info-lbl">RM Size</div><div class="info-val">${esc(rc.rawMaterialSizeText ?? '—')}</div></div>
       <div class="info-box"><div class="info-lbl">Drawing No.</div><div class="info-val" style="font-family:monospace">${esc(drawing)}</div></div>
+      <div class="info-box"><div class="info-lbl">Drawing Rev</div><div class="info-val" style="font-family:monospace">${esc(drawingRev)}</div></div>
+      <div class="info-box"><div class="info-lbl">Drawing</div><div class="info-val">${rc.drawingFilePath ? 'On file' : 'Not uploaded'}</div></div>
       <div class="info-box"><div class="info-lbl">Route Card Rev</div><div class="info-val">${rc.currentRevision}</div></div>
     </div>
     <h2>Operation Sequence</h2>

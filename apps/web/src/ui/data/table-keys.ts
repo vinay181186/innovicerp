@@ -154,6 +154,12 @@ export const TABLE_KEYS = {
   globalSearch: 'global-search',
   scDashboard: 'sc-dashboard',
   stuckDashboard: 'stuck-dashboard',
+  /** Drawing page (Item + Drawing Rev register): the drawing's history. */
+  itemRevisionHistory: 'item-revision-history',
+  /** Drawing page: documents that name this Item + Drawing Rev. */
+  itemRevisionLinkedDocs: 'item-revision-linked-docs',
+  /** SO / JWSO detail: Rev changes on the order's lines. */
+  itemRevisionChanges: 'item-revision-changes',
 } as const;
 
 export type TableKey = (typeof TABLE_KEYS)[keyof typeof TABLE_KEYS];

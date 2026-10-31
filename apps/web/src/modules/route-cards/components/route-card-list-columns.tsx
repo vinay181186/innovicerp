@@ -6,10 +6,12 @@ import {
   ROUTE_CARD_APPROVAL_LABEL,
   ROUTE_CARD_APPROVAL_STATUSES,
   type RouteCardListItem,
+  itemRevLabel,
 } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
 import type { DataTableColumn } from '@/ui/data';
+import { ItemRevLink } from '@/modules/item-revisions/components/item-rev-link';
 import { RcApprovalBadge } from './rc-approval-badge';
 
 // RC Status ▾ list values: the stored value, the shared label.
@@ -62,6 +64,25 @@ export function routeCardListColumns(offset = 0): DataTableColumn<RouteCardListI
       className: 'mono fw-700',
       nowrap: true,
       render: (rc) => rc.itemCode ?? '—',
+    },
+    {
+      // Item + Drawing Rev register (2026-10-31): the customer Drawing Rev this
+      // card is for, written ABC/1 and linked to its drawing page. Blank on an
+      // old card made before the register, and on a Buy item. No ▾ until the
+      // endpoint's Sort & Filter map carries the column.
+      id: 'drawing_rev',
+      header: 'Drawing Rev',
+      nowrap: true,
+      filterable: false,
+      render: (rc) =>
+        rc.drawingRev ? (
+          <ItemRevLink
+            itemRevisionId={rc.itemRevisionId}
+            label={itemRevLabel(rc.itemCode, rc.drawingRev)}
+          />
+        ) : (
+          <span className="text3">—</span>
+        ),
     },
     {
       id: 'item_name',

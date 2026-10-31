@@ -1587,6 +1587,20 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                                     shouldDirty: true,
                                   })
                                 }
+                                // Item + Drawing Rev register: ABC/<rev> drawing fills
+                                // in; saved Rev/file drive "Use as is".
+                                itemId={wl?.itemId}
+                                itemCode={wl?.itemCodeText}
+                                rev={watch(`lines.${idx}.revision` as const)}
+                                {...(() => {
+                                  const saved =
+                                    props.mode === 'edit' && wl?.id
+                                      ? props.detail.lines.find((d) => d.id === wl.id)
+                                      : undefined;
+                                  return saved
+                                    ? { savedRev: saved.revision, savedPath: saved.drawingFilePath }
+                                    : {};
+                                })()}
                               />
                             </div>
                             <div className="form-grp f-lg" title={inUse ? IN_USE_TITLE : undefined}>
