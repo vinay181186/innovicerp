@@ -14,9 +14,11 @@ export const DC_SF_COLUMNS: SfColumnMap = {
   dcCode: { sql: sql`dc.code`, type: 'text' },
   dcDate: { sql: sql`dc.dc_date`, type: 'date' },
   vendor: { sql: sql`COALESCE(v.name, dc.vendor_code_text)`, type: 'text' },
+  // 0237 — a return challan may carry several NCs: the cell lists every one
+  // (dc_ncs, line order), the header NC as the old-row fallback.
   poCode: {
     sql: sql`(CASE WHEN dc.nc_id IS NOT NULL
-                   THEN 'NC ' || COALESCE(nc.code, dc.po_code_text)
+                   THEN 'NC ' || COALESCE(dc_ncs.nc_codes, nc.code, dc.po_code_text)
                    ELSE COALESCE(po.code, dc.po_code_text) END)`,
     type: 'text',
   },
@@ -63,6 +65,23 @@ export const DC_SF_JOINS = sql`
       LEFT JOIN public.purchase_orders po
         ON po.id = dc.purchase_order_id AND po.deleted_at IS NULL
       LEFT JOIN public.nc_register nc ON nc.id = dc.nc_id AND nc.deleted_at IS NULL
+      -- 0237 — every NC a return challan's lines carry, in line order: the
+      -- PO-No. cell's codes and the list item's ncs. One row per DC; nothing
+      -- read for an ordinary DC (no header nc_id).
+      LEFT JOIN LATERAL (
+        SELECT string_agg(x.code, ', ' ORDER BY x.first_line, x.code) AS nc_codes,
+          json_agg(json_build_object('id', x.id, 'code', x.code)
+                   ORDER BY x.first_line, x.code) AS ncs
+        FROM (
+          SELECT lnc.id, lnc.code, MIN(ldcl.line_no) AS first_line
+          FROM public.delivery_challan_lines ldcl
+          JOIN public.nc_register lnc
+            ON lnc.id = COALESCE(ldcl.nc_id, dc.nc_id) AND lnc.deleted_at IS NULL
+          WHERE ldcl.delivery_challan_id = dc.id AND ldcl.deleted_at IS NULL
+            AND dc.nc_id IS NOT NULL
+          GROUP BY lnc.id, lnc.code
+        ) x
+      ) dc_ncs ON TRUE
       LEFT JOIN public.job_cards njc ON njc.id = dc.job_card_id AND njc.deleted_at IS NULL
       LEFT JOIN public.job_work_order_lines njc_jwl
         ON njc_jwl.id = njc.source_jw_line_id AND njc_jwl.deleted_at IS NULL
@@ -116,6 +135,8 @@ export const DC_LINE_SF_COLUMNS: SfColumnMap = {
   dcCode: { sql: sql`dc.code`, type: 'text' },
   dcDate: { sql: sql`dc.dc_date`, type: 'date' },
   vendor: { sql: sql`COALESCE(v.name, dc.vendor_code_text)`, type: 'text' },
+  // `nc` here is the LINE's NC (list-lines.ts joins COALESCE(dcl.nc_id,
+  // dc.nc_id)) — 0237, one return DC may carry several NCs.
   poCode: {
     sql: sql`(CASE WHEN dc.nc_id IS NOT NULL
                    THEN 'NC ' || COALESCE(nc.code, dc.po_code_text)
@@ -125,7 +146,10 @@ export const DC_LINE_SF_COLUMNS: SfColumnMap = {
   // The SO No. cell: the SO code, else the JWSO code, else the DC's SO ref.
   soCode: { sql: sql`COALESCE(so.code, jw.code, dc.so_ref_text)`, type: 'text' },
   soInternalNo: { sql: sql`COALESCE(so.internal_so_no, so_ref.internal_so_no)`, type: 'text' },
-  clientPoLineNo: { sql: sql`COALESCE(sol.client_po_line_no, jwl.client_po_line_no)`, type: 'text' },
+  clientPoLineNo: {
+    sql: sql`COALESCE(sol.client_po_line_no, jwl.client_po_line_no)`,
+    type: 'text',
+  },
   createdOn: {
     sql: sql`(COALESCE(dcl.created_at, dc.created_at) AT TIME ZONE 'Asia/Kolkata')::date`,
     type: 'date',

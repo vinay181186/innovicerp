@@ -52,6 +52,11 @@ export const deliveryChallanSchema = z.object({
    *  comment used to say, and it is now wrong for every new return. */
   ncId: z.string().uuid().nullable().default(null),
   ncCode: z.string().nullable().default(null),
+  /** EVERY NC this return challan carries, in line order (0237 — one DC may
+   *  hold several NCs of one SO). `ncId` above stays the FIRST of them and
+   *  marks the challan as a return-to-vendor DC; per-NC work reads the line's
+   *  own `ncId`. Empty on an ordinary OSP DC. */
+  ncs: z.array(z.object({ id: z.string().uuid(), code: z.string() })).default([]),
   jobCardId: z.string().uuid().nullable().default(null),
   jobCardCode: z.string().nullable().default(null),
   reason: z.string().nullable().default(null),
@@ -108,6 +113,13 @@ export const deliveryChallanLineSchema = z.object({
   materialText: z.string().nullable(),
   dcRemarks: z.string().nullable(),
   purchaseOrderLineId: z.string().uuid().nullable(),
+  /** The code of the PO this line's PO line belongs to ("JW PO No."). On a
+   *  return DC carrying NCs from different JW POs the header PO is blank and
+   *  each line names its own here. Null when the line has no PO line. */
+  poCode: z.string().nullable().default(null),
+  /** The NC this line returns to the vendor (0237); null on an ordinary line. */
+  ncId: z.string().uuid().nullable().default(null),
+  ncCode: z.string().nullable().default(null),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
   updatedAt: z.string(),
@@ -305,6 +317,11 @@ export const rtvCandidateSchema = z.object({
    *  Null for an NC logged at the op with no GRN. */
   sourceDeliveryChallanId: z.string().uuid().nullable(),
   sourceDeliveryChallanCode: z.string().nullable(),
+  /** The NC's Sales Order — the SAME key the return-DC save groups by
+   *  (nc-register/so-key.ts): the NC's own SO, else its job card's SO. Null =
+   *  no SO, so the NC can only go on a DC by itself. */
+  soId: z.string().uuid().nullable().default(null),
+  soCodeText: z.string().nullable().default(null),
   /** Default return vendor — the NC's source vendor (createNcDc's default). */
   vendorId: z.string().uuid().nullable(),
   vendorCode: z.string().nullable(),

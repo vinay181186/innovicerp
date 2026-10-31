@@ -33,6 +33,7 @@ import { requireFormAccess } from '../../lib/access';
 import { polSql } from '../../lib/pol';
 import { AuthorizationError, ConflictError } from '../../lib/errors';
 import { rtvReadyForChallanSql } from '../../lib/rtv-predicates';
+import { ncSoKeySql } from '../nc-register/so-key';
 
 const RTV_CANDIDATES_LIMIT = 500;
 
@@ -77,6 +78,8 @@ function toCandidate(r: Record<string, unknown>): RtvCandidate {
     purchaseOrderLineId: str('purchaseOrderLineId'),
     sourceDeliveryChallanId: str('sourceDeliveryChallanId'),
     sourceDeliveryChallanCode: str('sourceDeliveryChallanCode'),
+    soId: str('soId'),
+    soCodeText: str('soCodeText'),
     vendorId: str('vendorId'),
     vendorCode: str('vendorCode'),
     vendorName: str('vendorName'),
@@ -129,6 +132,8 @@ export async function queryRtvCandidates(
       ${polSql('sol', 'rev_jwl')} AS "clientPoLineNo",
       nc.job_card_id AS "jobCardId",
       jc.code AS "jcCode",
+      ${ncSoKeySql('nc')} AS "soId",
+      COALESCE(so_k.code, nc.so_code_text) AS "soCodeText",
       nc.op_seq AS "opSeq",
       po.id AS "purchaseOrderId",
       po.code AS "poCode",
@@ -139,6 +144,8 @@ export async function queryRtvCandidates(
       v.code AS "vendorCode",
       v.name AS "vendorName"
     FROM public.nc_register nc
+    LEFT JOIN public.sales_orders so_k
+      ON so_k.id = ${ncSoKeySql('nc')} AND so_k.deleted_at IS NULL
     LEFT JOIN public.job_cards jc
       ON jc.id = nc.job_card_id AND jc.deleted_at IS NULL
     LEFT JOIN public.items i

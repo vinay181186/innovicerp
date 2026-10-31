@@ -12,6 +12,19 @@ import { sql } from 'drizzle-orm';
 
 import type { SfColumnMap } from '../../lib/list-query';
 
+/** 0237 — every NC a replacement GRN's lines settle (line NC, header as
+ *  old-row fallback), in line order, as one "IN-NC-1, IN-NC-2" string; NULL on
+ *  an ordinary GRN. The ONE copy: the list's ncCode and its PO/NC filter. */
+export const GRN_NC_CODES_SQL = sql`(SELECT string_agg(x.code, ', ' ORDER BY x.first_line, x.code)
+  FROM (SELECT n.code, MIN(nl.line_no) AS first_line
+          FROM public.goods_receipt_note_lines nl
+          JOIN public.nc_register n
+            ON n.id = COALESCE(nl.nc_id, grn.nc_id) AND n.deleted_at IS NULL
+         WHERE nl.goods_receipt_note_id = grn.id
+           AND (nl.deleted_at IS NULL OR nl.deleted_at = grn.deleted_at)
+           AND grn.nc_id IS NOT NULL
+         GROUP BY n.id, n.code) x)`;
+
 export const GRN_SF_COLUMNS: SfColumnMap = {
   grnCode: { sql: sql`grn.code`, type: 'text' },
   grnDate: { sql: sql`grn.grn_date`, type: 'date' },
@@ -24,7 +37,8 @@ export const GRN_SF_COLUMNS: SfColumnMap = {
   // same, or the column's filter and sort disagree with what is on screen.
   poNcCode: {
     sql: sql`(CASE WHEN grn.nc_id IS NOT NULL
-              THEN COALESCE((SELECT n.code FROM public.nc_register n
+              THEN COALESCE(${GRN_NC_CODES_SQL},
+                            (SELECT n.code FROM public.nc_register n
                              WHERE n.id = grn.nc_id AND n.deleted_at IS NULL),
                             grn.po_code_text)
               ELSE COALESCE(po.code, grn.po_code_text) END)`,

@@ -52,6 +52,10 @@ export const goodsReceiptNoteLineSchema = z.object({
   itemName: z.string(),
   /** Decimal (KGS / MTR, 3 places) — 0172. */
   receivedQty: z.number().nonnegative(),
+  /** The NC this replacement line settles (0237), copied from the return DC
+   *  line at receipt; null on every other GRN line. Incoming QC reads this,
+   *  falling back to the header `ncId` for GRNs made before 0237. */
+  ncId: z.string().uuid().nullable().default(null),
   dcRefNo: z.string().nullable(),
   qcStatus: grnQcStatusSchema,
   qcAcceptedQty: z.number().nonnegative(),

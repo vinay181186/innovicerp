@@ -150,11 +150,34 @@ export function printOspDc(args: {
       // so the column prints blank. Only 3 of 46 items have one today anyway.
       hsn: null,
       qty: String(roundQty(Number(l.qty))),
-      remarks: l.dcRemarks,
+      // A return DC line names its NC (one DC may carry several NCs of one SO).
+      // createNcDc writes the NC code into dcRemarks; it is added here only
+      // when a line's remarks do not already carry it.
+      // When the lines span several JW POs the header PO is blank, so each
+      // line names its own JW PO too.
+      remarks: lineRemarks(l.ncCode, l.dcRemarks, dc.ncId && !dc.purchaseOrderId ? l.poCode : null),
     })),
     totalQty: String(roundQty(totalQty)),
     totalUom: uoms.length === 1 ? (uoms[0] ?? '') : '',
   };
 
   return openSheetPrintWindow(model);
+}
+
+/** The line's DC Remarks, led by its NC code when the line returns an NC and
+ *  the remarks do not already name it. Read defensively: an API that predates
+ *  the line's `ncCode` sends nothing (bodies are not parsed). */
+function lineRemarks(
+  ncCode: string | null | undefined,
+  remarks: string | null,
+  poCode: string | null | undefined,
+): string | null {
+  const withNc =
+    !ncCode || (remarks ?? '').includes(ncCode)
+      ? remarks
+      : remarks
+        ? `${ncCode} — ${remarks}`
+        : ncCode;
+  if (!poCode) return withNc;
+  return withNc ? `${withNc} · JW PO ${poCode}` : `JW PO ${poCode}`;
 }

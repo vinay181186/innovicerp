@@ -174,6 +174,11 @@ export const TABLE_KEYS = {
   dashDayLog: 'dash-day-log',
   /** Home (ADR-264) Approvals view: documents waiting for my tick. */
   dashApproval: 'dash-approval',
+  /** +New DC (owner 2026-11-01, several NCs on one return DC): the Against NC
+   *  tick list, the Against JW PO / DC tick list, and the chosen NCs' lines. */
+  dcRtvNcPick: 'dc-rtv-nc-pick',
+  dcRtvJwpoPick: 'dc-rtv-jwpo-pick',
+  dcRtvNcLines: 'dc-rtv-nc-lines',
 } as const;
 
 export type TableKey = (typeof TABLE_KEYS)[keyof typeof TABLE_KEYS];

@@ -8,7 +8,7 @@
 // 'pending' until the dispose action flips it. SoftDelete blocks once status
 // leaves 'pending' — disposed/closed NCs are permanent records.
 
-import { and, asc, desc, eq, inArray, isNull, like, ne, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
 import {
   ActivityAction,
   type DocumentEditStagedResult,
@@ -17,34 +17,24 @@ import {
   NC_DISPOSITION_LABELS,
   NC_REASON_CATEGORY_LABELS,
   NC_STATUS_LABELS,
-  NC_STATUS_MOVES,
   opSrNo,
   qtyUomProblem,
-  roundQty,
-  statusesThatMayMoveTo,
-  withDocRevision,
 } from '@innovic/shared';
 import {
   capaRecords,
-  deliveryChallanLines,
   deliveryChallans,
-  goodsReceiptNoteLines,
   items,
   jcOps,
   jobCards,
   jobWorkOrderLines,
   ncRegister,
-  purchaseOrderLines,
-  purchaseOrders,
   salesOrderLines,
   salesOrders,
   users,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { lockPoLinesForSend } from '../../lib/po-line-sent';
 import { canSeeFormPrice, requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
-import { assertActiveParty } from '../../lib/active-party';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import {
   AuthorizationError,
@@ -52,7 +42,6 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
-import { lockDocSeries } from '../../lib/doc-series-lock';
 import { polOf, polSql } from '../../lib/pol';
 import { assertProductionOrderNotShortClosed } from '../../lib/production-order-stop';
 import { assertRowUpdated } from '../../lib/row-lock';
@@ -63,14 +52,12 @@ import { labelOf } from '../../lib/status-labels';
 import { type DiffField, diffFields, softDeleteStamp } from '../../lib/audit-trail';
 import { emitActivityLog } from '../activity-log/service';
 import { autoCloseLinkedTasks } from '../tasks/service';
-import { recalcPoHeaderStatus, recalcPoLineReceivedQty } from '../goods-receipt-notes/cascades';
 import { type DisposeNcContext, disposeNcCascade, nextNcCode, resolveNcSource } from './cascades';
 import { markNcClosed, ncCloseBlockedReason, ncOpenQty } from './recovery';
 import { NC_SF_COLUMNS } from './sf-columns';
+import { ncSoKeySql } from './so-key';
 import type {
   CloseNcReworkInput,
-  CreateNcDcInput,
-  CreateNcDcResult,
   CreateNcRegisterInput,
   DisposeNcInput,
   DisposeNcResult,
@@ -204,6 +191,8 @@ interface NcJoins {
   clientPoLineNo?: string | null;
   // ADR-207: the SO's Internal SO No., read live off sales_orders (nc.so_id).
   soInternalNo?: string | null;
+  // 0237: the NC's SO key (so-key.ts); falls back to the stored so_id.
+  soId?: string | null;
   childJobCardCode?: string | null;
   deliveryChallanCode?: string | null;
   // G8: the NC this row continues (Incoming-QC reject on a GRN that came back
@@ -294,7 +283,7 @@ function toNcRegister(row: typeof ncRegister.$inferSelect, joins: NcJoins = {}):
     // or standalone card has no customer PO line, so it stays null, and the
     // write paths that pass nothing return null exactly as they do for itemCode.
     clientPoLineNo,
-    soId: row.soId ?? null,
+    soId: joins.soId ?? row.soId ?? null,
     soCodeText: row.soCodeText,
     soInternalNo: joins.soInternalNo ?? null,
     machineCodeText: row.machineCodeText,
@@ -530,10 +519,13 @@ export async function listNcRegister(
         nc.operation_text AS "operationText", nc.qc_operation_text AS "qcOperationText",
         nc.item_id AS "itemId", nc.item_code_text AS "itemCodeText",
         nc.item_name_text AS "itemNameText",
-        nc.so_id AS "soId", nc.so_code_text AS "soCodeText",
+        -- 0237: the NC's SO key (so-key.ts) — nc.so_id, else the card's source
+        -- SO line's SO — the same SQL the multi-NC DC save groups by, so the
+        -- +New DC → Against NC picker can filter on it.
+        ${ncSoKeySql('nc')} AS "soId", nc.so_code_text AS "soCodeText",
         -- ADR-207: Internal SO No., live off the NC's SO (one row per NC).
         (SELECT nso.internal_so_no FROM public.sales_orders nso
-          WHERE nso.id = nc.so_id) AS "soInternalNo",
+          WHERE nso.id = ${ncSoKeySql('nc')}) AS "soInternalNo",
         nc.machine_code_text AS "machineCodeText",
         nc.operator_text AS "operatorText",
         nc.rejected_qty::text AS "rejectedQty",
@@ -925,7 +917,11 @@ async function lockNcRow(tx: DbTransaction, id: string, companyId: string): Prom
 /** One NC with every join the contract carries. Used by the detail read AND
  *  by every write path's return value, so the row a screen gets back after a
  *  disposition already names the child card / challan it just raised. */
-async function readNc(tx: DbTransaction, id: string, companyId: string): Promise<NcRegister> {
+export async function readNc(
+  tx: DbTransaction,
+  id: string,
+  companyId: string,
+): Promise<NcRegister> {
   const rows = await tx
     .select({
       nc: ncRegister,
@@ -967,8 +963,10 @@ async function readNc(tx: DbTransaction, id: string, companyId: string): Promise
       // ADR-207: Internal SO No., live off the NC's SO.
       soInternalNo: sql<string | null>`(
         SELECT nso.internal_so_no FROM public.sales_orders nso
-        WHERE nso.id = ${ncRegister.soId}
+        WHERE nso.id = ${ncSoKeySql('nc_register')}
       )`,
+      // 0237: nc.so_id, else the card's source SO line's SO (so-key.ts).
+      soKey: ncSoKeySql('nc_register'),
       // The ORIGINAL job-work order behind the deviation, through the shared
       // NC_ORIGIN_PO_LINE_SQL derivation. Two scalar subqueries over the same
       // fragment rather than a join, so the one-row-per-NC guarantee of this
@@ -1042,6 +1040,7 @@ async function readNc(tx: DbTransaction, id: string, companyId: string): Promise
     parentNcCode: found.parentNcCode,
     dispositionByName: found.dispositionByName,
     soInternalNo: found.soInternalNo,
+    soId: found.soKey,
     sourceVendorId: source.sourceVendorId,
     sourceVendorCode: source.sourceVendorCode,
     sourceVendorName: source.sourceVendorName,
@@ -2046,428 +2045,6 @@ export async function closeNcReturnToVendor(id: string, user: AuthContext): Prom
 }
 
 // ─── Create the return-to-vendor challan (design §5) ──────────────────────
-
-/** The PO line's received figure, for the before/after audit around a recalc. */
-async function readPoLineReceived(
-  tx: DbTransaction,
-  poLineId: string,
-): Promise<{ receivedQty: number; lineNo: number } | undefined> {
-  const rows = await tx
-    .select({ receivedQty: purchaseOrderLines.receivedQty, lineNo: purchaseOrderLines.lineNo })
-    .from(purchaseOrderLines)
-    .where(eq(purchaseOrderLines.id, poLineId))
-    .limit(1);
-  return rows[0];
-}
-
-/** Next IN-DC-NNNNN/R1 for the company. A local copy of
- *  delivery-challans/service.ts nextDcCode, which is not exported: highest
- *  numeric suffix + 1, five digits, tolerating and ignoring a `/R<n>` tail so
- *  a revised challan keeps its running number. Kept identical on purpose —
- *  an NC challan and a PO challan share one number series. */
-async function nextNcDcCode(tx: DbTransaction, companyId: string): Promise<string> {
-  // S2: same series — and same lock — as the OSP challan (lib/doc-series-lock).
-  await lockDocSeries(tx, companyId, 'delivery_challans');
-  const prefix = 'IN-DC-';
-  const rows = await tx
-    .select({ code: deliveryChallans.code })
-    .from(deliveryChallans)
-    .where(
-      and(
-        eq(deliveryChallans.companyId, companyId),
-        isNull(deliveryChallans.deletedAt),
-        like(deliveryChallans.code, `${prefix}%`),
-      ),
-    );
-  let max = 0;
-  for (const r of rows) {
-    const m = r.code
-      .trim()
-      .slice(prefix.length)
-      .match(/^(\d+)(?:\/R\d+)?$/i);
-    if (m) max = Math.max(max, parseInt(m[1]!, 10));
-  }
-  return withDocRevision(`${prefix}${String(max + 1).padStart(5, '0')}`, 1);
-}
-
-/**
- * Issue the challan that sends a return-to-vendor NC's pieces back. One
- * transaction: DC header + one line, the NC's rtv ledger, and — when the
- * origin op was an outsource op with a PO line — the §12.2 PO received-qty
- * adjustment, so the PO no longer counts pieces that have left the shop.
- *
- * ADR-217 — the challan hangs off the NC's REPLACEMENT ORDER: the zero-value
- * job-work PO raised with the disposition (nc.replacement_po_id). Its id goes in
- * `purchase_order_id` and its code in `po_code_text`, so a column named "PO
- * code" holds a PO code again and every report that totals by purchase order
- * can see the return.
- *
- * On an NC with no replacement order — one disposed before ADR-217, or one whose
- * source vendor could not be resolved — this behaves exactly as it always did:
- * `purchase_order_id` stays null and `po_code_text` carries the NC code. That is
- * the backward-compatible path and it is deliberately unchanged.
- *
- * Either way the PO-line cumulative-sent guard is not applied, and the PO LINE
- * the challan line points at is still the ORIGIN order's line (the one the
- * pieces were received on), because that is the line §12.2 recomputes.
- */
-export async function createNcDc(
-  id: string,
-  input: CreateNcDcInput,
-  user: AuthContext,
-): Promise<CreateNcDcResult> {
-  // ADR-211: OSP Outward DC entry alone raises the return challan; disposing
-  // stays with QC (the NC was already disposed Return to Vendor by QC — this
-  // only books the challan and the NC's rtv ledger that follows from it).
-  await requireFormAccess(user, 'ospdc_create', 'entry');
-  const companyId = requireCompany(user);
-
-  return withUserContext(user, async (tx) => {
-    // S3 — locked: two users pressing "Issue DC" on one NC serialize here, and
-    // the second one sees the first one's challan (deliveryChallanId below).
-    // Migration 0181's delivery_challans_nc_active_uq is the database backstop.
-    const ncRows = await tx
-      .select()
-      .from(ncRegister)
-      .where(
-        and(
-          eq(ncRegister.id, id),
-          eq(ncRegister.companyId, companyId),
-          isNull(ncRegister.deletedAt),
-        ),
-      )
-      .limit(1)
-      .for('update');
-    const nc = ncRows[0];
-    if (!nc) throw new NotFoundError('NC not found. It may have been moved to Trash.');
-    if (nc.disposition !== 'return_to_vendor') {
-      throw new ConflictError(
-        `NC ${nc.code} is not set to Return to Vendor. Change its disposition first.`,
-      );
-    }
-    if (nc.status !== 'disposed') {
-      throw new ConflictError(
-        `NC ${nc.code} is ${labelOf(NC_STATUS_LABELS, nc.status)}. A DC can only be raised while it is Disposed.`,
-      );
-    }
-    if (nc.deliveryChallanId) {
-      throw new ConflictError(`NC ${nc.code} already has a return-to-vendor DC.`);
-    }
-    // One ACTIVE return-to-vendor DC per NC, checked on the challans too — not
-    // only on the NC's pointer (same rule as the 0181 partial unique index).
-    const activeDc = await tx
-      .select({ code: deliveryChallans.code })
-      .from(deliveryChallans)
-      .where(
-        and(
-          eq(deliveryChallans.ncId, nc.id),
-          isNull(deliveryChallans.deletedAt),
-          ne(deliveryChallans.status, 'cancelled'),
-        ),
-      )
-      .limit(1);
-    if (activeDc[0]) {
-      throw new ConflictError(
-        `NC ${nc.code} already has return-to-vendor DC ${activeDc[0].code}. Reload the page.`,
-      );
-    }
-
-    // WI4: default the return vendor FK from the NC's ACTUAL source (GRN vendor,
-    // or the origin op's outsource PO vendor) when the caller did not pass one.
-    // input.vendorId still wins when supplied; vendorCodeText (required on the
-    // input) stays what the caller displayed. This only makes "same supplier"
-    // the default, it does not force it.
-    const source = await resolveNcSource(tx, companyId, {
-      grnLineId: nc.grnLineId,
-      jcOpId: nc.jcOpId,
-      // Passed so the resolve still reads the same way everywhere. Its
-      // `replacementPoId` result is no longer used for the challan header —
-      // that now names the ORIGINAL job-work order (see originPo below) — but
-      // the three deviations that already hold one still read it on screen.
-      replacementPoId: nc.replacementPoId,
-      sourceDeliveryChallanId: nc.sourceDeliveryChallanId,
-    });
-    const effectiveVendorId = input.vendorId ?? source.sourceVendorId;
-    // The return challan is a NEW link to the vendor: it must exist and be
-    // active (A10 inactive-master rule — 409 "Vendor X is disabled").
-    if (effectiveVendorId) {
-      await assertActiveParty(tx, 'vendor', effectiveVendorId, companyId);
-    }
-
-    // The parent card supplies the SO line; the item master the uom the line
-    // needs; the origin op tells us whether a PO line is involved.
-    // ADR-189 — a bought-material NC has no card, hence no SO line.
-    const jcRows = nc.jobCardId
-      ? await tx
-          .select({ sourceSoLineId: jobCards.sourceSoLineId })
-          .from(jobCards)
-          .where(and(eq(jobCards.id, nc.jobCardId), eq(jobCards.companyId, companyId)))
-          .limit(1)
-      : [];
-    const itemRows = await tx
-      .select({ code: items.code, name: items.name, uom: items.uom })
-      .from(items)
-      .where(and(eq(items.id, nc.itemId), eq(items.companyId, companyId)))
-      .limit(1);
-    const item = itemRows[0];
-    const originRows = nc.jcOpId
-      ? await tx
-          .select({ opType: jcOps.opType, outsourcePoLineId: jcOps.outsourcePoLineId })
-          .from(jcOps)
-          .where(and(eq(jcOps.id, nc.jcOpId), eq(jcOps.companyId, companyId)))
-          .limit(1)
-      : [];
-    const origin = originRows[0];
-    let poLineId =
-      origin && (origin.opType === 'outsource' || origin.outsourcePoLineId)
-        ? (origin.outsourcePoLineId ?? null)
-        : null;
-    // ADR-189 — a bought-material NC has no op; its PO line is the one the
-    // rejected GRN line was received against.
-    if (!poLineId && !nc.jobCardId && nc.grnLineId) {
-      const gl = await tx
-        .select({ poLineId: goodsReceiptNoteLines.purchaseOrderLineId })
-        .from(goodsReceiptNoteLines)
-        .where(eq(goodsReceiptNoteLines.id, nc.grnLineId))
-        .limit(1);
-      poLineId = gl[0]?.poLineId ?? null;
-    }
-
-    const qty = roundQty(Number(nc.rejectedQty));
-
-    // The ORIGINAL job-work order these pieces went out on — the order that owns
-    // the origin PO line resolved just above. This is the order the return
-    // challan and the vendor's replacement receipt name on their headers.
-    //
-    // No separate zero-value order is raised for a return any more (ADR-217's
-    // replacement order is withdrawn), so there is nothing else to point at: the
-    // movement belongs to the order it came from. Read HERE, before the insert,
-    // and reused for the header recalc further down so the challan and the
-    // recalc can never name two different orders.
-    // ADR-235 — lock the PO line first (the PO cancel locks header → lines and
-    // flips the status before letting go), then read the status: a PO
-    // cancelled, or with a cancel pending, while we waited is refused.
-    if (poLineId) await lockPoLinesForSend(tx, [poLineId], companyId);
-    const originPo = poLineId
-      ? ((
-          await tx
-            .select({
-              id: purchaseOrders.id,
-              code: purchaseOrders.code,
-              status: purchaseOrders.status,
-            })
-            .from(purchaseOrderLines)
-            .innerJoin(purchaseOrders, eq(purchaseOrders.id, purchaseOrderLines.purchaseOrderId))
-            .where(
-              and(
-                eq(purchaseOrderLines.id, poLineId),
-                eq(purchaseOrders.companyId, companyId),
-                isNull(purchaseOrders.deletedAt),
-              ),
-            )
-            .limit(1)
-        )[0] ?? null)
-      : null;
-
-    // The PO line is known, so the order behind it must be findable. The lookup
-    // above filters deleted_at, so no row means that order has been moved to
-    // Trash. Refuse: writing the legacy "no order" shape instead (challan
-    // purchase_order_id null, the NC code in po_code_text) would produce a
-    // challan naming no order while the line recalc further down still adjusts
-    // that very order's line — and the header recalc would be skipped, leaving
-    // its status stale for ever. Better to say so and let someone restore it.
-    if (poLineId && !originPo) {
-      throw new ConflictError(
-        `The job work order behind ${nc.code} is in Trash, so nothing can be sent against it. ` +
-          `Restore that order first, then raise the return challan.`,
-      );
-    }
-
-    // Never send against an order that has been CANCELLED: a cancelled order is
-    // a decision someone made, and material must not go out naming it.
-    //
-    // A CLOSED or short-closed original order is ALLOWED, deliberately. The
-    // pieces were received against it and are now going back — refusing would
-    // leave QC with a rejection it cannot act on, and nothing is being newly
-    // procured. recalcPoHeaderStatus already leaves a by-hand stop where it is
-    // ("a PO stopped by hand stays stopped"), so sending against a closed order
-    // does not walk its status back.
-    if (originPo?.status === 'cancelled') {
-      throw new ConflictError(
-        `Job Work PO ${originPo.code} is Cancelled, so nothing can be sent against it. ` +
-          `NC ${nc.code} cannot be returned to the vendor on this order.`,
-      );
-    }
-
-    const code = await nextNcDcCode(tx, companyId);
-    const reason = `Return to vendor — ${nc.dispositionRemarks ?? 'rework'}`;
-
-    const insertedDc = await tx
-      .insert(deliveryChallans)
-      .values({
-        companyId,
-        code,
-        dcDate: input.dcDate,
-        // The ORIGINAL job-work order the pieces went out on. Null, with the NC
-        // code in po_code_text, only when the rejection has no order behind it
-        // at all (an outsource operation never linked to a PO line, or a receipt
-        // booked without one). `nc_id` stays set either way, so the challan is
-        // still findable from the rejection.
-        purchaseOrderId: originPo?.id ?? null,
-        poCodeText: originPo?.code ?? nc.code,
-        // WI4: caller's vendorId, else the NC's source vendor.
-        vendorId: effectiveVendorId ?? null,
-        vendorCodeText: input.vendorCodeText,
-        salesOrderLineId: jcRows[0]?.sourceSoLineId ?? null,
-        soRefText: nc.soCodeText,
-        transport: input.transport ?? null,
-        vehicleNo: input.vehicleNo ?? null,
-        status: 'issued',
-        // ADR-197 (0178) — who issued the challan, and when.
-        issuedBy: user.id,
-        issuedAt: new Date(),
-        ncId: nc.id,
-        jobCardId: nc.jobCardId,
-        reason,
-        createdBy: user.id,
-        updatedBy: user.id,
-      })
-      .returning({ id: deliveryChallans.id, code: deliveryChallans.code });
-    const dc = insertedDc[0];
-    if (!dc) throw new ValidationError('Could not create the return-to-vendor DC. Try again.');
-
-    await tx.insert(deliveryChallanLines).values({
-      companyId,
-      deliveryChallanId: dc.id,
-      lineNo: 1,
-      itemId: nc.itemId,
-      itemCodeText: item?.code ?? nc.itemCodeText,
-      itemNameText: item?.name ?? nc.itemNameText,
-      qty: qty.toFixed(3),
-      uom: item?.uom ?? 'NOS',
-      materialText: null,
-      // The NC code is always the line remark so the challan print names the
-      // rejection it serves; a note typed on the form is appended, not substituted.
-      dcRemarks: input.remarks ? `${nc.code} — ${input.remarks}` : nc.code,
-      purchaseOrderLineId: poLineId,
-      createdBy: user.id,
-      updatedBy: user.id,
-    });
-
-    const sentRows = await tx
-      .update(ncRegister)
-      .set({
-        rtvSentQty: qty.toFixed(3),
-        deliveryChallanId: dc.id,
-        status: 'sent_to_vendor',
-        updatedBy: user.id,
-      })
-      .where(
-        and(
-          eq(ncRegister.id, nc.id),
-          inArray(ncRegister.status, statusesThatMayMoveTo(NC_STATUS_MOVES, 'sent_to_vendor')),
-        ),
-      )
-      .returning({ id: ncRegister.id });
-    assertRowUpdated(sentRows, `NC ${nc.code}`);
-
-    // The pieces are at the vendor again, so an origin op that read 'received'
-    // goes back to 'sent' (OSP chain gap G5, 2026-09-16). Only that one
-    // transition: an op still at 'sent' (ordinary pieces also out) stays as it
-    // is, and nothing earlier in the ladder is touched. The receipt of this
-    // challan flips it back through onNcChallanReceived once every returned
-    // piece is in and the ordinary receipts cover outsource_sent_qty.
-    if (nc.jcOpId) {
-      await tx
-        .update(jcOps)
-        .set({ outsourceStatus: 'sent', updatedBy: user.id })
-        .where(
-          and(
-            eq(jcOps.id, nc.jcOpId),
-            eq(jcOps.companyId, companyId),
-            eq(jcOps.outsourceStatus, 'received'),
-          ),
-        );
-    }
-
-    // §12.2 — the pieces are leaving, so the PO line no longer counts them as
-    // received. NOT an in-place "-= qty": purchase_order_lines.received_qty is
-    // recomputed from scratch by recalcPoLineReceivedQty every time any GRN on
-    // the line moves, so an adjustment written here would be overwritten by
-    // the very next receipt. The return-to-vendor term lives inside that
-    // formula instead (goods-receipt-notes/cascades.ts) and reads this NC's
-    // delivery_challan_id, which was set just above -- so recomputing now is
-    // what applies the subtraction. The audit row records the before/after.
-    if (poLineId) {
-      const before = await readPoLineReceived(tx, poLineId);
-      await recalcPoLineReceivedQty(tx, poLineId, user.id);
-      const after = await readPoLineReceived(tx, poLineId);
-      if (before && after) {
-        await emitActivityLog(
-          tx,
-          {
-            action: 'PO_RECEIVED_ADJUST',
-            entity: 'PurchaseOrderLine',
-            detail:
-              `PO Ln ${before.lineNo} Received ${before.receivedQty} → ${after.receivedQty} ` +
-              `(${qty} returned to vendor on ${dc.code} for ${nc.code})`,
-            refId: nc.code,
-          },
-          companyId,
-          user,
-        );
-      }
-      // The line's RECEIVED just dropped below its ordered qty, so the
-      // header's open/partial/qc_pending/closed ladder must be recomputed:
-      // "everything has physically arrived" is no longer true while the pieces
-      // sit at the vendor, so an order reading qc_pending (or closed) goes back
-      // to partial -- otherwise a JWPO reads "closed" while its line shows 7 of
-      // 10 at the vendor. ACCEPTED is untouched by a return (lib/po-accepted.ts
-      // counts QC-passed pieces and non-return recoveries only), so it is the
-      // arrival leg of the ladder, not the accepted leg, that this moves.
-      // Same order the challan header names (resolved before the insert), so
-      // the two can never disagree.
-      if (originPo) {
-        await recalcPoHeaderStatus(tx, originPo.id, user.id);
-      }
-    }
-
-    await emitActivityLog(
-      tx,
-      {
-        action: ActivityAction.Send,
-        entity: 'NonConformance',
-        entityId: nc.id,
-        refId: nc.code,
-        qty,
-        detail: `${nc.code} — ${dc.code} issued to ${input.vendorCodeText}, ${qty} pcs`,
-      },
-      companyId,
-      user,
-    );
-    // One row per document touched: the challan's own SEND.
-    await emitActivityLog(
-      tx,
-      {
-        action: ActivityAction.Send,
-        entity: 'DeliveryChallan',
-        entityId: dc.id,
-        refId: dc.code,
-        lineRef: 'Line 1',
-        qty,
-        detail: `${dc.code} — return to vendor ${input.vendorCodeText} for ${nc.code}, ${qty} pcs`,
-      },
-      companyId,
-      user,
-    );
-
-    return {
-      nc: await readNc(tx, nc.id, companyId),
-      deliveryChallanId: dc.id,
-      deliveryChallanCode: dc.code,
-    };
-  });
-}
 
 export async function softDeleteNcRegister(
   id: string,

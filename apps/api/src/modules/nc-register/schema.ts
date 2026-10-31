@@ -1,6 +1,8 @@
 // Re-export shared Zod schemas (CLAUDE.md §8 — shared is the source of truth).
 export {
   closeNcReworkInputSchema,
+  createNcDcBatchInputSchema,
+  createNcDcBatchResultSchema,
   createNcDcInputSchema,
   createNcDcResultSchema,
   createNcRegisterInputSchema,
@@ -14,6 +16,8 @@ export {
 } from '@innovic/shared';
 export type {
   CloseNcReworkInput,
+  CreateNcDcBatchInput,
+  CreateNcDcBatchResult,
   CreateNcDcInput,
   CreateNcDcResult,
   CreateNcRegisterInput,

@@ -46,17 +46,30 @@ export const deliveryChallanCancelHandler: CancelHandler = {
     const out: CancelEffect[] = [];
 
     if (h.ncId) {
-      const nc = (await tx.execute(sql`
-        SELECT code FROM public.nc_register
-        WHERE id = ${h.ncId}::uuid AND company_id = ${companyId}::uuid
+      // 0237 — one note per NC the challan's lines carry (line NC, header as
+      // fallback), in line order; the same set the cancel sends back.
+      const ncs = (await tx.execute(sql`
+        SELECT nc.code
+        FROM (
+          SELECT COALESCE(l.nc_id, ${h.ncId}::uuid) AS nc_id, l.line_no
+          FROM public.delivery_challan_lines l
+          WHERE l.delivery_challan_id = ${docId}::uuid AND l.deleted_at IS NULL
+          -- the header NC (the first) always counts, as the cancel sends it back
+          UNION ALL SELECT ${h.ncId}::uuid, 0
+        ) x
+        JOIN public.nc_register nc ON nc.id = x.nc_id AND nc.company_id = ${companyId}::uuid
+        GROUP BY nc.id, nc.code
+        ORDER BY MIN(x.line_no), nc.code
       `)) as unknown as Array<{ code: string }>;
-      out.push({
-        kind: 'note',
-        text:
-          `${nc[0]?.code ?? 'The NC'} goes back to Disposed — its pieces are no longer out ` +
-          `with the vendor and a return-to-vendor challan can be raised again.`,
-        qty: null,
-      });
+      for (const nc of ncs.length > 0 ? ncs : [{ code: 'The NC' }]) {
+        out.push({
+          kind: 'note',
+          text:
+            `${nc.code} goes back to Disposed — its pieces are no longer out ` +
+            `with the vendor and a return-to-vendor challan can be raised again.`,
+          qty: null,
+        });
+      }
       return out;
     }
 

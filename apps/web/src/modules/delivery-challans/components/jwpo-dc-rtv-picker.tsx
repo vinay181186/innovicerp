@@ -1,41 +1,95 @@
-// Against JW PO / DC picker (ADR-211) — the pure candidate table + search for
-// the "Against JW PO / DC" source on +New DC. It only FINDS a return-to-vendor
-// NC; picking one hands its id back to JwpoDcRtvSection (routes/create.tsx),
-// which opens the existing Against-NC form, so the save is still useCreateNcDc
-// (one writer for the RTV qty, one-challan-per-NC lock).
+// Against JW PO / DC picker (ADR-211) — the candidate tick list + search for
+// the "Against JW PO / DC" source on +New DC. It only FINDS return-to-vendor
+// NCs; the ticked ones go to the shared return-DC form (nc-dc-form.tsx), so the
+// save is still the NC endpoint (one writer for the RTV qty, one-challan-per-NC
+// lock). Owner 2026-11-01: several NCs of the same SO going to the same vendor
+// may be ticked for ONE DC — see lib/nc-dc-pick.ts.
 
+import type { NcRegister } from '@innovic/shared';
 import { RTV_CANDIDATE_STATE_LABELS } from '@innovic/shared';
-import { Loader2 } from 'lucide-react';
 import { useMemo } from 'react';
 import { matchesSearchTerm } from '@/components/shared/search-match';
-import { itemCodeWithRev } from '@/lib/item-code';
-import { useRtvCandidates } from '../api';
+import type { DataTableColumn } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
+import { useEligibleRtvNcs, useRtvCandidates } from '../api';
+import { type PickNc, pickFromCandidate } from '../lib/nc-dc-pick';
+import { NcDcPickTable } from './nc-dc-pick-table';
+
+const LEAD: DataTableColumn<PickNc>[] = [
+  {
+    id: 'poNo',
+    header: 'PO No.',
+    kind: 'code',
+    className: 'mono fw-700',
+    render: (r) => r.poCode ?? '—',
+    filterValue: (r) => r.poCode,
+  },
+  {
+    id: 'sentOnDcNo',
+    header: 'Sent on DC No.',
+    kind: 'code',
+    className: 'mono fw-700',
+    render: (r) => r.sourceDcCode ?? '—',
+    filterValue: (r) => r.sourceDcCode,
+  },
+];
+const TAIL: DataTableColumn<PickNc>[] = [
+  {
+    id: 'returnChallanStatus',
+    header: 'Return Challan Status',
+    kind: 'badge',
+    render: (r) => (r.ready ? RTV_CANDIDATE_STATE_LABELS.ready : (r.notReadyReason ?? '—')),
+  },
+];
 
 // The whole candidate set loads in one fetch (capped server-side) and scrolls;
-// the search filters it client-side with the shared matchesSearchTerm across PO
-// No., Sent on DC No., NC No. and the item code. Ready rows can be selected;
-// rows still waiting for QC's decision show greyed with no button.
+// the search filters it client-side with the shared matchesSearchTerm across
+// every column shown. Ready rows can be ticked; rows still waiting for QC's
+// decision show greyed with a disabled tick.
 export function JwpoDcPickerBody({
   search,
   onSearchChange,
-  onSelect,
+  ticked,
+  onTickedChange,
+  onNext,
 }: {
   search: string;
   onSearchChange: (s: string) => void;
-  onSelect: (ncId: string) => void;
+  ticked: string[];
+  onTickedChange: (ids: string[]) => void;
+  onNext: (picked: PickNc[]) => void;
 }): React.JSX.Element {
-  const { data, isLoading, isError } = useRtvCandidates();
+  const cand = useRtvCandidates();
+  // The candidate carries no SO; the same NC's eligible row does (same cache
+  // as the Against NC picker).
+  const eligible = useEligibleRtvNcs();
+
+  const allRows = useMemo(() => {
+    const ncById = new Map<string, NcRegister>((eligible.data?.items ?? []).map((n) => [n.id, n]));
+    return (cand.data?.items ?? []).map((c) => pickFromCandidate(c, ncById.get(c.ncId)));
+  }, [cand.data, eligible.data]);
 
   const rows = useMemo(() => {
-    const items = data?.items ?? [];
-    if (search.trim() === '') return items;
-    return items.filter((c) =>
+    if (search.trim() === '') return allRows;
+    return allRows.filter((r) =>
       matchesSearchTerm(
-        [c.poCode, c.sourceDeliveryChallanCode, c.ncCode, c.itemCode, c.itemCodeText],
+        [
+          r.poCode,
+          r.sourceDcCode,
+          r.ncCode,
+          r.soLabel,
+          r.clientPoLineNo,
+          r.itemCodeLabel,
+          r.itemName,
+          r.vendorCode,
+          r.vendorName,
+        ],
         search,
       ),
     );
-  }, [data, search]);
+  }, [allRows, search]);
+
+  const loading = cand.isLoading || eligible.isLoading;
 
   return (
     <>
@@ -48,94 +102,22 @@ export function JwpoDcPickerBody({
           className="innovic-input"
           value={search}
           onChange={(e) => onSearchChange(e.target.value)}
-          placeholder="Type the JW PO No. or DC No.…"
+          placeholder="Type the JW PO No., DC No., NC No., SO No. or item…"
         />
       </div>
-
-      {isLoading ? (
-        <div className="empty-state">
-          <Loader2 className="inline h-4 w-4 animate-spin" /> Loading NCs…
-        </div>
-      ) : isError ? (
-        <div className="empty-state" style={{ color: 'var(--red2)' }}>
-          Could not load NCs. Try again.
-        </div>
-      ) : rows.length === 0 ? (
-        <div className="empty-state" style={{ color: 'var(--amber2)' }}>
-          Nothing is waiting to go back to a vendor for this search.
-        </div>
-      ) : (
-        <div className="tbl-wrap">
-          <table className="innovic-table" style={{ width: '100%' }}>
-            <thead>
-              <tr>
-                <th>PO No.</th>
-                <th>Sent on DC No.</th>
-                <th>NC No.</th>
-                {/* POL = the CUSTOMER's own PO line number. */}
-                <th style={{ color: 'var(--purple)' }}>POL</th>
-                <th>Item Code · Name</th>
-                <th className="th-num">Qty to Return</th>
-                <th>Return Challan Status</th>
-                <th style={{ width: 110 }} />
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((c) => {
-                const ready = c.state === 'ready';
-                // Greyed while QC has not decided — shown so the store knows the
-                // pieces exist, never selectable.
-                const codeColor = ready ? 'var(--blue)' : 'var(--text2)';
-                return (
-                  <tr key={c.ncId} style={ready ? undefined : { color: 'var(--text2)' }}>
-                    <td className="mono fw-700" style={{ color: codeColor }}>
-                      {c.poCode ?? '—'}
-                    </td>
-                    <td className="mono fw-700" style={{ color: codeColor }}>
-                      {c.sourceDeliveryChallanCode ?? '—'}
-                    </td>
-                    <td className="mono fw-700" style={{ color: codeColor }}>
-                      {c.ncCode}
-                    </td>
-                    <td
-                      className="mono fw-700"
-                      style={{ color: ready ? 'var(--purple)' : 'var(--text2)' }}
-                    >
-                      {c.clientPoLineNo ?? '—'}
-                    </td>
-                    <td>
-                      <b className="mono fw-700" style={{ color: 'var(--text)' }}>
-                        {itemCodeWithRev(c.itemCode ?? c.itemCodeText, c.itemRevision)}
-                      </b>
-                      <div className="text2" style={{ fontSize: 11 }}>
-                        {c.itemName ?? c.itemNameText ?? '—'}
-                      </div>
-                    </td>
-                    <td
-                      className="mono td-num"
-                      style={{ color: ready ? 'var(--red2)' : 'var(--text2)' }}
-                    >
-                      {Number(c.rejectedQty)}
-                    </td>
-                    <td>{RTV_CANDIDATE_STATE_LABELS[c.state]}</td>
-                    <td>
-                      {ready ? (
-                        <button
-                          type="button"
-                          className="btn btn-primary btn-sm"
-                          onClick={() => onSelect(c.ncId)}
-                        >
-                          Select
-                        </button>
-                      ) : null}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <NcDcPickTable
+        tableKey={TABLE_KEYS.dcRtvJwpoPick}
+        rows={rows}
+        allRows={allRows}
+        ticked={ticked}
+        onTickedChange={onTickedChange}
+        onNext={onNext}
+        extra={{ lead: LEAD, tail: TAIL }}
+        showPoColumn={false}
+        loading={loading}
+        error={cand.isError}
+        emptyText="Nothing is waiting to go back to a vendor for this search."
+      />
     </>
   );
 }

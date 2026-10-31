@@ -32,6 +32,7 @@ import {
   useFetchDeliveryChallan,
   useUpdateDeliveryChallan,
 } from '../api';
+import { dcNcs } from '../lib/dc-ncs';
 import {
   DcEditLineTable,
   dcEditLineCap,
@@ -445,7 +446,14 @@ function DeliveryChallanEditPage(): React.JSX.Element {
               id="dcPo"
               className="innovic-input"
               readOnly
-              value={dc.poCode ?? dc.poCodeText ?? '—'}
+              value={
+                dc.ncId
+                  ? // Every NC on this return DC (0237 — several NCs of one SO).
+                    dcNcs(dc)
+                      .map((n) => n.code)
+                      .join(', ')
+                  : (dc.poCode ?? dc.poCodeText ?? '—')
+              }
             />
           </FormField>
           <FormField label="DC No." size="sm" htmlFor="dcNo">

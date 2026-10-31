@@ -10,7 +10,8 @@
 // multiply the lines):
 //   SO line  = the line's PO line's source_so_line_id, else the DC's own
 //              sales_order_line_id, else the job card's source_so_line_id;
-//   job card = PO line → JC op → job card, else the DC's own job card (NC return);
+//   job card = PO line → JC op → job card, else the line's NC's job card, else
+//              the DC's own job card (NC return);
 //   JWSO line = that job card's source_jw_line_id;
 //   no link  → the DC's free-text SO ref (so_ref_text) is shown as the SO No.
 // POL is polSql (SO line first, else JWSO line). The drawing revision follows
@@ -39,12 +40,14 @@ const DC_LINE_FROM = sql`
   LEFT JOIN public.items i ON i.id = dcl.item_id AND i.deleted_at IS NULL
   LEFT JOIN public.purchase_orders po
     ON po.id = dc.purchase_order_id AND po.deleted_at IS NULL
-  LEFT JOIN public.nc_register nc ON nc.id = dc.nc_id AND nc.deleted_at IS NULL
+  -- 0237 — the LINE's NC (one return DC may carry several), header as fallback.
+  LEFT JOIN public.nc_register nc
+    ON nc.id = COALESCE(dcl.nc_id, dc.nc_id) AND nc.deleted_at IS NULL
   LEFT JOIN public.purchase_order_lines pol
     ON pol.id = dcl.purchase_order_line_id AND pol.deleted_at IS NULL
   LEFT JOIN public.jc_ops ljo ON ljo.id = pol.source_jc_op_id AND ljo.deleted_at IS NULL
   LEFT JOIN public.job_cards ljc
-    ON ljc.id = COALESCE(ljo.job_card_id, dc.job_card_id) AND ljc.deleted_at IS NULL
+    ON ljc.id = COALESCE(ljo.job_card_id, nc.job_card_id, dc.job_card_id) AND ljc.deleted_at IS NULL
   LEFT JOIN public.sales_order_lines sol
     ON sol.id = COALESCE(pol.source_so_line_id, dc.sales_order_line_id, ljc.source_so_line_id)
    AND sol.deleted_at IS NULL
@@ -125,7 +128,7 @@ export async function listDeliveryChallanLines(
         dc.vendor_code_text AS "vendorCodeText",
         dc.purchase_order_id AS "purchaseOrderId", po.code AS "poCode",
         dc.po_code_text AS "poCodeText",
-        dc.nc_id AS "ncId", nc.code AS "ncCode",
+        COALESCE(dcl.nc_id, dc.nc_id) AS "ncId", nc.code AS "ncCode",
         ljc.code AS "jobCardCode", dc.transport,
         COALESCE(so.code, CASE WHEN jw.id IS NULL THEN dc.so_ref_text END) AS "soCode",
         COALESCE(so.internal_so_no, so_ref.internal_so_no) AS "soInternalNo",
