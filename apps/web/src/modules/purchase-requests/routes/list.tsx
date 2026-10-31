@@ -292,7 +292,7 @@ function PurchaseRequestsListPage(): React.JSX.Element {
                 columns={columns}
                 rows={rows}
                 loading={isLoading}
-                defaultHidden={['sr_no', 'created_on']}
+                defaultHidden={['sr_no']}
                 sortFilterServer={sf}
                 emptyText={
                   sf.filtering || search.search || search.status ? 'No PRs match.' : 'No PRs yet.'
