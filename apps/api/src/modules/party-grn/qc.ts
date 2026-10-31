@@ -167,6 +167,7 @@ export async function qcPartyGrn(
       const jwLine = await lockJwLine(tx, companyId, l.jwLineId!);
       const at = `${head.code} Ln ${l.lineNo}`;
       const rmItem = q.rejectedQty > 0 ? (ncItemByLine.get(l.id) ?? null) : null;
+      const qcRemarks = q.qcRemarks?.trim() || null;
 
       // §20.2: conditional — only a line still waiting for QC is booked.
       const booked = await tx
@@ -175,6 +176,7 @@ export async function qcPartyGrn(
           acceptedQty: q.acceptedQty,
           rejectedQty: q.rejectedQty,
           rejectReason: q.rejectedQty > 0 ? (q.rejectReason ?? '').trim() : null,
+          qcRemarks,
           qcBy: userId,
           qcAt: now,
           updatedAt: now,
@@ -234,6 +236,7 @@ export async function qcPartyGrn(
             ncDate: qcDate,
             reportedByText: reportedBy,
             reason: (q.rejectReason ?? '').trim(),
+            qcRemarks,
           },
           user,
         );
@@ -253,7 +256,8 @@ export async function qcPartyGrn(
             `${l.partyMaterialCodeText} (${jwLine.jwCode} Ln ${jwLine.lineNo}) — received ${l.receivedQty}, ` +
             `${q.acceptedQty} accepted, ${q.rejectedQty} deviated` +
             (q.rejectedQty > 0 ? ` (${(q.rejectReason ?? '').trim()})` : '') +
-            (ncCode ? ` — ${ncCode} raised` : ''),
+            (ncCode ? ` — ${ncCode} raised` : '') +
+            (qcRemarks ? ` — QC Remarks: ${qcRemarks}` : ''),
         },
         companyId,
         user,

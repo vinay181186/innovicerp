@@ -70,6 +70,7 @@ const PGRN_COMMON = sql`
   ${PM_CODE} AS "partyMaterialCode",
   pgl.received_qty AS "receivedQty", pgl.accepted_qty AS "acceptedQty",
   pgl.rejected_qty AS "rejectedQty", pgl.reject_reason AS "rejectReason",
+  pgl.qc_remarks AS "qcRemarks",
   COALESCE(u.full_name, u.email) AS "qcByName"`;
 
 export const PGRN_PENDING_SELECT = sql`${PGRN_COMMON},
@@ -132,6 +133,7 @@ export function toPgrnRow(r: Raw): PartyGrnQcRow {
     acceptedQty: Number(r['acceptedQty'] ?? 0),
     rejectedQty: Number(r['rejectedQty'] ?? 0),
     rejectReason: s(r['rejectReason']),
+    qcRemarks: s(r['qcRemarks']),
     qcDate: dateOnly(r['qcDate']),
     qcByName: s(r['qcByName']),
     waitDays: Number(r['waitDays'] ?? 0),

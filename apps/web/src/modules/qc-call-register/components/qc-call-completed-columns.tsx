@@ -2,12 +2,11 @@
 // completed inspection: a job-card QC log entry, an inspected GRN line, or
 // (ADR-203) a Party GRN line — CompletedVM maps them onto one set of accessors.
 // Party GRN reads as on Pending: Item Code = the finished part, Item Name = the
-// customer RM, SO / Vendor = the customer, Remarks = the reject reason.
-//
+// customer RM, SO / Vendor = the customer; QC Remarks = its qcRemarks and the
+// Deviation Reason (rejectReason, Party GRN only) has its own column.
 // Visible (Doc No. pinned): Doc No. · Item Code · Accepted · Deviated · QC
-// Result · Attended · Inspected By · Planned Machine · Actual Machine · Client
-// PO No. The rest starts hidden (COMPLETED_HIDDEN) in the ▸ detail row. Row
-// click opens the document (the page owns navigation).
+// Result · Attended · Inspected By · QC Remarks · Planned / Actual Machine ·
+// Client PO No. The rest starts hidden (COMPLETED_HIDDEN) in the ▸ detail row.
 
 import type { QcRegisterCompletedItem } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
@@ -17,6 +16,7 @@ import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import type { DataTableColumn } from '@/ui/data';
 import { factColumns } from './qc-call-fact-columns';
+import { remarkColumns } from './qc-call-remark-columns';
 import { incomingStageLabel, pgrnMaterialOf, pgrnOrderOf } from './qc-call-pending-columns';
 import { QC_STAGES, dayDiff, processStage } from './qc-sheet';
 
@@ -118,10 +118,6 @@ function stageLabelOf(vm: CompletedVM): string {
   }
   return incomingStageLabel(vm.kind === 'pgrn' ? 'party_grn' : vm.grnType);
 }
-function remarksOf(vm: CompletedVM): string | null {
-  if (vm.kind === 'pgrn') return vm.row.rejectReason;
-  return vm.kind === 'op' ? vm.row.remarks : vm.row.qcRemarks;
-}
 
 function qtyCell(value: number, red?: boolean): React.JSX.Element {
   return (
@@ -172,7 +168,7 @@ export const COMPLETED_HIDDEN = [
   'called_date',
   'response_days',
   'log_no',
-  'remarks',
+  'deviation_reason',
   'report',
 ];
 
@@ -373,15 +369,7 @@ export function completedColumns(): DataTableColumn<CompletedVM>[] {
       className: 'mono',
       render: (vm) => (vm.kind === 'op' ? vm.row.logNo : '—'),
     },
-    {
-      id: 'remarks',
-      sortFilterField: 'remarks',
-      header: 'Remarks',
-      align: 'left',
-      ellipsis: true,
-      render: (vm) => remarksOf(vm) ?? '—',
-      title: (vm) => remarksOf(vm) ?? '',
-    },
+    ...remarkColumns(),
     {
       id: 'report',
       header: 'Report',

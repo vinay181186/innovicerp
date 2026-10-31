@@ -1658,7 +1658,8 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
             `${jcCode} ${jcOpRef(op.opSeq, op.operation)} — ${kind}: ${input.qty} accepted, ` +
             `${input.rejectQty} deviated (${row.logNo}, ${logWhen(input.logDate, input.logTime)})` +
             (tpiPart === ' — ' ? '' : tpiPart) +
-            (raisedNc ? `; ${raisedNc.ncCode} raised` : ''),
+            (raisedNc ? `; ${raisedNc.ncCode} raised` : '') +
+            (input.remarks?.trim() ? ` — QC Remarks: ${input.remarks.trim()}` : ''),
         },
         companyId,
         user,

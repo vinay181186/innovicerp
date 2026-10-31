@@ -50,6 +50,7 @@ import { itemCodeWithRev } from '@/lib/item-code';
 import { buildDocCompany, companyAddressLines, partyAddressLines } from '@/lib/print/company';
 import { todayIst } from '@/lib/date';
 import { fmtDate, templatesToBlocks } from '@/lib/print/doc-print';
+import { sheetLineNotes } from '@/lib/print/sheet-line-notes';
 import {
   type SheetField,
   type SheetPrintModel,
@@ -85,6 +86,9 @@ export interface GrnPrintLine {
   qcRejectedQty: number;
   qcStatus: GrnQcStatus;
   dcRefNo: string | null;
+  /** What the QC inspector wrote about this line (NAMING.md "QC Remarks").
+   *  Optional so the Print Templates sample lines need not carry one. */
+  qcRemarks?: string | null;
 }
 
 export interface GrnPrintModel {
@@ -188,10 +192,15 @@ export function printGrnDoc(args: {
       qcStatus: qcLabel(l.qcStatus),
       // The per-line DC reference has no column of its own -- it would be a
       // column of dashes on most GRNs -- so it rides under the item, labelled,
-      // and only on the lines whose reference differs from the header's.
-      ...(l.dcRefNo && l.dcRefNo !== model.dcNo
-        ? { description: l.dcRefNo, descLabel: 'Vendor Challan No.' }
-        : {}),
+      // and only on the lines whose reference differs from the header's. The
+      // line's QC Remarks ride the same way, in full.
+      ...sheetLineNotes([
+        {
+          label: 'Vendor Challan No.',
+          text: l.dcRefNo && l.dcRefNo !== model.dcNo ? l.dcRefNo : null,
+        },
+        { label: 'QC Remarks', text: l.qcRemarks },
+      ]),
     })),
     totalQty: String(totalReceived),
     totalAccepted: String(totalAccepted),
@@ -243,6 +252,7 @@ export function printGrn(args: {
       qcRejectedQty: l.qcRejectedQty,
       qcStatus: l.qcStatus,
       dcRefNo: l.dcRefNo,
+      qcRemarks: l.qcRemarks,
     })),
   };
 

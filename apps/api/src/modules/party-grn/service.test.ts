@@ -285,6 +285,29 @@ describe('party-grn service — Incoming QC (ADR-203)', () => {
     expect(s.receivedQty).toBe(before.receivedQty + 7);
   });
 
+  it('stores QC Remarks on an accepted-only line and returns them on the line read (0232)', async () => {
+    const grn = await service.createPartyGrn(receipt(line2Id, 3), admin);
+    const d = await service.getPartyGrnDetail(grn.id, admin);
+    const lineId = d.lines[0]!.id;
+    expect(d.lines[0]!.qcRemarks).toBeNull();
+    const after = await qcPartyGrn(
+      grn.id,
+      {
+        lines: [{ lineId, acceptedQty: 3, rejectedQty: 0, qcRemarks: '  surface ok, light oil  ' }],
+      },
+      admin,
+    );
+    expect(after.lines[0]!.qcRemarks).toBe('surface ok, light oil');
+    expect(after.lines[0]!.rejectReason).toBeNull();
+    const stored = await db
+      .select({ qcRemarks: partyGrnLines.qcRemarks })
+      .from(partyGrnLines)
+      .where(eq(partyGrnLines.id, lineId));
+    expect(stored[0]!.qcRemarks).toBe('surface ok, light oil');
+    const reread = await service.getPartyGrnDetail(grn.id, admin);
+    expect(reread.lines[0]!.qcRemarks).toBe('surface ok, light oil');
+  });
+
   it('lets exactly one of two simultaneous QCs of one line through', async () => {
     const grn = await service.createPartyGrn(receipt(line2Id, 4), admin);
     const d = await service.getPartyGrnDetail(grn.id, admin);
