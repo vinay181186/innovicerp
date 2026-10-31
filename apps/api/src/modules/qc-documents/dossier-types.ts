@@ -26,6 +26,10 @@ export interface DossierStepRow {
   reportTypeId: string | null;
   reportName: string | null;
   mandatory: boolean;
+  /** The report type is Mandatory only on the card's last op (0235). */
+  lastStageOnly: boolean;
+  /** This op has the card's highest live op_seq (the stock-credit rule). */
+  isLastOp: boolean;
   /** The QC op is complete (v_jc_op_status) — nothing left to inspect. A line
    *  is never 'complete' while a step still has pieces to inspect. */
   opDone: boolean;

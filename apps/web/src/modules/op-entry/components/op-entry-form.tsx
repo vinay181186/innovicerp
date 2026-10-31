@@ -38,6 +38,7 @@ import {
   useSubmitOpLog,
   useSubmitQcLog,
 } from '../api';
+import { QcReportLaterNote } from './qc-report-later-note';
 
 // One fixed field grid for both the production and the QC form: four equal
 // columns, so a box never jumps when a neighbour's content changes.
@@ -191,6 +192,10 @@ export function OpEntryForm({
   // QC report attachment (migration 0043) — only used on the QC sub-form.
   const [qcReportPath, setQcReportPath] = useState<string | null>(null);
   const [qcReportName, setQcReportName] = useState<string | null>(null);
+  // D4a (owner rule 2026-10-31): a middle-stage entry saved WITHOUT its
+  // optional (Last Stage Only) report — holds the box open on a note with the
+  // upload-later link instead of closing straight away.
+  const [reportLater, setReportLater] = useState<string | null>(null);
   // OSP auto-PR result/error message (ADR-039) — only used on the outsource panel.
   const [ospMsg, setOspMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
   // NC(s) the last completion raised from its rejects (ADR-183), shown as the
@@ -349,6 +354,7 @@ export function OpEntryForm({
     setErrorMessage(null);
     setQcReportPath(null);
     setQcReportName(null);
+    setReportLater(null);
     setOspMsg(null);
     setNcNotice(null);
   }, [op.id]);
@@ -418,7 +424,7 @@ export function OpEntryForm({
   // ADR-252 — the op's QC process may make its report compulsory. Only a
   // dedicated QC op has a QC process behind it; the server applies the rule
   // only when opType === 'qc' (a process op with qc_required expects none).
-  const qcReportRule = useQcReportRule(op.operation, Number(qty || '0'), isQcOp);
+  const qcReportRule = useQcReportRule(op.operation, Number(qty || '0'), op.isLastOp, isQcOp);
   const qcReportMissing = reportMissingReason(qcReportRule, qcReportPath !== null);
   const noQcPending = isQcBearing && op.qcPending <= 0;
   const isQcPending = op.computedStatus === 'qc_pending';
@@ -533,8 +539,10 @@ export function OpEntryForm({
     };
     try {
       await submitQc.mutateAsync(input);
+      const skippedOptionalReport = qtyNum > 0 && !qcReportPath && qcReportRule.optionalHere;
       setQty('');
-      onSubmitted?.();
+      if (skippedOptionalReport) setReportLater(qcReportRule.reportName ?? 'QC');
+      else onSubmitted?.();
       setRejectQty('');
       setRemarks('');
       setQcReportPath(null);
@@ -823,6 +831,19 @@ export function OpEntryForm({
   }
 
   // T-040d: render the QC sub-form when the selected op is qc-bearing.
+  if (isQcBearing && reportLater) {
+    return (
+      <QcReportLaterNote
+        jobCardId={op.jobCardId}
+        reportName={reportLater}
+        onDone={() => {
+          setReportLater(null);
+          onSubmitted?.();
+        }}
+      />
+    );
+  }
+
   if (isQcBearing) {
     return (
       <form onSubmit={handleSubmitQc}>

@@ -71,6 +71,10 @@ export const jcOpEnrichedSchema = z.object({
   // From jc_ops
   id: z.string().uuid(),
   jobCardId: z.string().uuid(),
+  /** This op has the card's highest live op_seq — the "last stage" a Last Stage
+   *  Only report (report_types.last_stage_only) is compulsory on. A hint only;
+   *  the server re-decides inside the QC transaction. */
+  isLastOp: z.boolean(),
   jobCardCode: z.string(), // joined from job_cards.code
   /** WHAT is being made. A job-card number says WHICH JOB; it does not say
    *  which part, and every screen built on this shape printed the number alone

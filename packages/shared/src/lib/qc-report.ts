@@ -21,6 +21,9 @@ export interface QcProcessReport {
   reportTypeId: string | null;
   reportTypeName: string | null;
   reportMandatory: boolean;
+  /** Mandatory only on the card's LAST op (report_types.last_stage_only, owner
+   *  rule 2026-10-31: a middle DIR is optional, the last stage is compulsory). */
+  reportLastStageOnly: boolean;
 }
 
 /** The QC process behind a job-card op name, or null when none matches. */
@@ -34,15 +37,20 @@ export function qcProcessForOperation<T extends QcProcessReport>(
 }
 
 /** True when a QC entry on this op must carry its report before it saves:
- *  the op's process produces a mandatory report AND the entry accepts qty. */
+ *  the op's process produces a mandatory report, the entry accepts qty, and —
+ *  for a "Last Stage Only" report — the op is the card's last op (highest live
+ *  op_seq, the same "last op" stock credit uses). `isLastOp` is required so no
+ *  caller can forget it; the server works it out inside the QC transaction. */
 export function qcReportMandatory(
   operation: string | null | undefined,
   acceptedQty: number,
   processes: readonly QcProcessReport[],
+  isLastOp: boolean,
 ): boolean {
   if (acceptedQty <= 0) return false;
   const p = qcProcessForOperation(operation, processes);
-  return Boolean(p?.reportTypeId && p.reportMandatory);
+  if (!p?.reportTypeId || !p.reportMandatory) return false;
+  return !p.reportLastStageOnly || isLastOp;
 }
 
 /** Folder for files that name no report type the master knows. */

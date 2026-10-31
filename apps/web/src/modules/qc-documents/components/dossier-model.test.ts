@@ -110,6 +110,7 @@ describe('lineRows', () => {
               rejectedQty: 0,
               remarks: null,
               reportRequired: true,
+              reportMandatory: true,
               state: 'report_missing',
               files: [],
             },

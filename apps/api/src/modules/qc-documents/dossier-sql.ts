@@ -13,6 +13,7 @@ import type { QcDossierOrderKind } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import type { DbTransaction } from '../../db/with-user-context';
 import { OP_LOG_QC_REMARKS } from '../../lib/op-log-qc-remarks';
+import { isLastLiveOpSql } from '../../lib/jc-last-op-sql';
 import { qcProcessReportJoin } from '../../lib/qc-process-report';
 import type {
   DossierDocRow,
@@ -150,7 +151,8 @@ export async function loadDossierRaw(
       : rowsOf(
           await tx.execute(sql`
             SELECT jo.id, jo.job_card_id, jo.op_seq, jo.operation,
-                   pr.report_type_id, pr.report_name, pr.mandatory,
+                   pr.report_type_id, pr.report_name, pr.mandatory, pr.last_stage_only,
+                   ${isLastLiveOpSql('jo')} AS is_last_op,
                    (vs.computed_status = 'complete') AS op_done
             FROM public.jc_ops jo
             LEFT JOIN public.v_jc_op_status vs ON vs.jc_op_id = jo.id
@@ -166,6 +168,8 @@ export async function loadDossierRaw(
           reportTypeId: s(r['report_type_id']),
           reportName: s(r['report_name']),
           mandatory: r['mandatory'] === true,
+          lastStageOnly: r['last_stage_only'] === true,
+          isLastOp: r['is_last_op'] === true,
           opDone: r['op_done'] === true,
         }));
   const opIds = steps.map((st) => st.jcOpId);

@@ -7,7 +7,7 @@ import { useState } from 'react';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { soNoWithInternal } from '@/lib/so-number';
 import { Badge } from '@/ui/core';
-import { folderChip, folderFiles, lineChip } from './dossier-model';
+import { folderChip, folderFiles, lineChip, onlyOptionalMissing } from './dossier-model';
 
 /** lineId for the "files on no line" node. */
 export const UNLINKED_ID = 'unlinked';
@@ -154,7 +154,10 @@ function FolderList({
               <span className="qd-tw">{n > 0 ? '📁' : '📂'}</span>
               <span className="qd-lbl" title={f.reportName}>
                 {f.reportName}
-                {!f.mandatory ? <span className="text3"> (optional)</span> : null}
+                {/* Optional by type, or only middle-stage (Last Stage Only) gaps. */}
+                {!f.mandatory || onlyOptionalMissing([f]) ? (
+                  <span className="text3"> (optional)</span>
+                ) : null}
               </span>
               {f.state === 'report_missing' || f.state === 'qc_not_done' ? (
                 <Badge tone={chip.tone} title={chip.title} className="qd-chip">

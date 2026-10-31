@@ -35,6 +35,7 @@ import { todayIst } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { useSaveKey } from '@/lib/use-save-key';
 import { useSubmitQcLog } from '@/modules/op-entry/api';
+import { QcReportLaterNote } from '@/modules/op-entry/components/qc-report-later-note';
 import {
   QcReportRequiredNote,
   reportMissingReason,
@@ -257,12 +258,34 @@ export function QcCallInspectForm(props: {
   onDirtyChange?: (dirty: boolean) => void;
 }): React.JSX.Element | null {
   const { o, onCancel, onDone, onDirtyChange } = props;
-  const form = useQcCallInspect({ o, onDone });
-  const { dirty } = form;
+  // D4a (owner rule 2026-10-31): a middle-stage entry saved without its
+  // optional (Last Stage Only) report holds the popup on a note with the
+  // upload-later link; Close then finishes as before.
+  const rule = useQcReportRule(o.operation, 1, o.isLastOp);
+  const [later, setLater] = useState<{ nc: RaisedNc | undefined } | null>(null);
+  const form = useQcCallInspect({
+    o,
+    onDone: (nc) => {
+      // `form` is this render's state — the values the user submitted.
+      if (rule.optionalHere && Number(form.accept || '0') > 0 && form.qcReportName === null)
+        setLater({ nc });
+      else onDone(nc);
+    },
+  });
+  // Saved: nothing left to lose while the note shows.
+  const dirty = form.dirty && !later;
   useEffect(() => {
     onDirtyChange?.(dirty);
   }, [dirty, onDirtyChange]);
   if (!form.canEntry) return null;
+  if (later)
+    return (
+      <QcReportLaterNote
+        jobCardId={o.jobCardId}
+        reportName={rule.reportName ?? 'QC'}
+        onDone={() => onDone(later.nc)}
+      />
+    );
   return <QcCallInspectFormView form={form} onCancel={onCancel} />;
 }
 
@@ -275,7 +298,7 @@ export function QcCallInspectFormView(props: {
   const { form, onCancel } = props;
   const { o } = form;
   // ADR-252 — this QC step's report may be compulsory.
-  const qcReportRule = useQcReportRule(o.operation, Number(form.accept || '0'));
+  const qcReportRule = useQcReportRule(o.operation, Number(form.accept || '0'), o.isLastOp);
   const hasReport = form.qcReportName !== null;
   const qcReportMissing = reportMissingReason(qcReportRule, hasReport);
 

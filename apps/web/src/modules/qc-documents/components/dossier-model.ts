@@ -20,8 +20,29 @@ export interface Chip {
   title: string;
 }
 
+/** True when every QC entry missing its report was NOT compulsory for it —
+ *  e.g. a middle-stage DIR whose report type is Last Stage Only (owner rule
+ *  2026-10-31, D4c). Such a gap reads "not uploaded (optional)" in orange,
+ *  never red "missing". */
+export function onlyOptionalMissing(
+  folders: ReadonlyArray<Partial<Pick<QcDossierFolder, 'entries'>>> | undefined,
+): boolean {
+  const missing = (folders ?? [])
+    .flatMap((f) => f.entries ?? [])
+    .filter((e) => e.state === 'report_missing');
+  return missing.length > 0 && missing.every((e) => !e.reportMandatory);
+}
+
+/** The text of a QC entry that has no report yet. */
+export function missingEntryText(e: Pick<QcDossierEntry, 'reportMandatory'>): string {
+  return e.reportMandatory ? 'no report' : 'not uploaded (optional)';
+}
+
 /** The POL row's chip in the folder tree (owner decision, ADR-252 D2). */
-export function lineChip(line: Pick<QcDossierLine, 'state' | 'missingCount' | 'fileCount'>): Chip {
+export function lineChip(
+  line: Pick<QcDossierLine, 'state' | 'missingCount' | 'fileCount'> &
+    Partial<Pick<QcDossierLine, 'folders'>>,
+): Chip {
   switch (line.state) {
     case 'no_jc':
       return { tone: 'grey', text: 'No JC yet', title: 'No job card on this line yet' };
@@ -34,6 +55,13 @@ export function lineChip(line: Pick<QcDossierLine, 'state' | 'missingCount' | 'f
     case 'qc_pending':
       return { tone: 'grey', text: 'QC not done', title: 'QC has not been entered yet' };
     case 'report_missing':
+      if (onlyOptionalMissing(line.folders)) {
+        return {
+          tone: 'orange',
+          text: `${line.missingCount} optional`,
+          title: `${line.missingCount} QC entries saved without their optional report — not uploaded (optional)`,
+        };
+      }
       return {
         // Some reports in → orange; none in yet → red.
         tone: line.fileCount > 0 ? 'orange' : 'red',
@@ -46,7 +74,13 @@ export function lineChip(line: Pick<QcDossierLine, 'state' | 'missingCount' | 'f
 }
 
 /** The report folder's marker in the tree. */
-export function folderChip(folder: Pick<QcDossierFolder, 'state'>, fileCount: number): Chip {
+export function folderChip(
+  folder: Pick<QcDossierFolder, 'state'> & Partial<Pick<QcDossierFolder, 'entries'>>,
+  fileCount: number,
+): Chip {
+  if (folder.state === 'report_missing' && onlyOptionalMissing([folder])) {
+    return { tone: 'orange', text: 'optional', title: 'Report not uploaded (optional)' };
+  }
   const states: Record<QcFolderState, Chip> = {
     qc_not_done: { tone: 'grey', text: '⏳', title: 'QC not done yet' },
     report_missing: { tone: 'red', text: 'missing', title: 'Report missing' },
@@ -103,7 +137,8 @@ export interface DossierMissingRow {
 export type DossierRow = DossierFileRow | DossierMissingRow;
 
 /** The file sheet for one POL (or one folder of it). A QC entry with no report
- *  becomes one red "no report" row so the gap sits where the file would. */
+ *  becomes one "no report" row (red; orange "not uploaded (optional)" when the
+ *  report was not compulsory for it) so the gap sits where the file would. */
 export function lineRows(line: QcDossierLine, folderName?: string): DossierRow[] {
   const rows: DossierRow[] = [];
   for (const folder of line.folders) {
@@ -161,7 +196,8 @@ export function unlinkedRows(files: QcDossierFile[]): DossierRow[] {
 /** The text a row is searched by — every column the sheet shows. */
 export function rowSearchFields(r: DossierRow): Array<string | number | null> {
   const qcEntry = r.entry ? entryLabel(r.entry) : null;
-  if (r.kind === 'missing') return [r.reportName, r.entry.jcCode, qcEntry, 'no report'];
+  if (r.kind === 'missing')
+    return [r.reportName, r.entry.jcCode, qcEntry, missingEntryText(r.entry)];
   return [
     r.reportName,
     r.file.fileName,

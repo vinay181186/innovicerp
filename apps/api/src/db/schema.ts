@@ -7802,6 +7802,9 @@ export const reportTypes = pgTable(
     name: text('name').notNull(),
     description: text('description'),
     defaultMandatory: boolean('default_mandatory').notNull().default(false),
+    // 0235 — owner rule 2026-10-31: a Mandatory report with this flag is
+    // compulsory only on the job card's last op (highest live op_seq).
+    lastStageOnly: boolean('last_stage_only').notNull().default(false),
     status: text('status').notNull().default('Active'), // Active | Inactive
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')

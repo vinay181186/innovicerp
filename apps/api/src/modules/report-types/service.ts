@@ -41,6 +41,7 @@ function toItem(r: Row): ReportType {
     name: r.name,
     description: r.description ?? null,
     defaultMandatory: r.defaultMandatory,
+    lastStageOnly: r.lastStageOnly,
     status: r.status as ReportType['status'],
     createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt),
     updatedAt: r.updatedAt instanceof Date ? r.updatedAt.toISOString() : String(r.updatedAt),
@@ -96,6 +97,9 @@ export async function createReportType(
         name: input.name,
         description: input.description ?? null,
         defaultMandatory: input.defaultMandatory,
+        // Last Stage Only narrows a Mandatory report; it means nothing on an
+        // Optional one, so it is never stored there (0235).
+        lastStageOnly: input.defaultMandatory && input.lastStageOnly,
         status: input.status,
         createdBy: user.id,
         updatedBy: user.id,
@@ -133,6 +137,11 @@ export async function updateReportType(
     if (input.name !== undefined) patch.name = input.name;
     if (input.description !== undefined) patch.description = input.description;
     if (input.defaultMandatory !== undefined) patch.defaultMandatory = input.defaultMandatory;
+    if (input.lastStageOnly !== undefined) patch.lastStageOnly = input.lastStageOnly;
+    // Last Stage Only exists only on a Mandatory report (0235): an Optional
+    // result clears it, whichever field this PATCH sent.
+    const row = existing[0] as Row;
+    if (!(patch.defaultMandatory ?? row.defaultMandatory)) patch.lastStageOnly = false;
     if (input.status !== undefined) patch.status = input.status;
 
     const updated = await tx

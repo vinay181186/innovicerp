@@ -29,6 +29,8 @@ export const qcProcessSchema = z.object({
   reportTypeId: z.string().uuid().nullable(),
   reportTypeName: z.string().nullable(),
   reportMandatory: z.boolean(),
+  /** report_types.last_stage_only — mandatory only on the card's last op. */
+  reportLastStageOnly: z.boolean(),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
   updatedAt: z.string(),

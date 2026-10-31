@@ -37,6 +37,8 @@ export const tpiPendingRowSchema = z.object({
   qcPending: z.number().int().nonnegative(),
   callDate: z.string().nullable(),
   waitDays: z.number().int().nonnegative(),
+  /** The op is the card's last live op (Last Stage Only reports, 0235). */
+  isLastOp: z.boolean(),
 });
 export type TpiPendingRow = z.infer<typeof tpiPendingRowSchema>;
 

@@ -6,6 +6,7 @@
 
 import { type SQL, sql } from 'drizzle-orm';
 import type { QcHistoryLogRow, QcHistoryPendingRow } from '@innovic/shared';
+import { isLastLiveOpSql } from '../../lib/jc-last-op-sql';
 import { likeEscape } from '../../lib/list-query';
 import { OP_LOG_QC_REMARKS } from '../../lib/op-log-qc-remarks';
 import { polSql } from '../../lib/pol';
@@ -23,8 +24,7 @@ export const PEND_SINCE = sql`(SELECT MAX(ol.log_date) FROM public.op_log ol
 // criterion as op-entry/qc-stock-cascade.ts tryApplyQcStockCascade.
 export const PEND_IS_LAST = sql`(vos.op_seq = (SELECT MAX(lo.op_seq) FROM public.jc_ops lo
   WHERE lo.job_card_id = jc.id AND lo.deleted_at IS NULL))`;
-export const LOG_IS_LAST = sql`(jo.op_seq = (SELECT MAX(lo.op_seq) FROM public.jc_ops lo
-  WHERE lo.job_card_id = jc.id AND lo.deleted_at IS NULL))`;
+export const LOG_IS_LAST = isLastLiveOpSql('jo');
 
 /** CODE/REV exactly as the Item Code cell prints it (itemCodeWithRev): the
  *  code, then '/' + the drawing revision when there is one; no code → null.

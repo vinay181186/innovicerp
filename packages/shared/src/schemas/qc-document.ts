@@ -285,6 +285,10 @@ export interface QcDossierEntry {
   /** op_log.report_required as stamped at Submit QC; null = saved before
    *  ADR-252 (shown red here, never on the dashboard — D8). */
   reportRequired: boolean | null;
+  /** The report was COMPULSORY for this entry under today's rule (Mandatory,
+   *  and — for a Last Stage Only report — the op is the card's last op). A
+   *  report_missing entry with false shows "not uploaded (optional)", not red. */
+  reportMandatory: boolean;
   state: QcEntryReportState;
   /** Newest first. */
   files: QcDossierFile[];

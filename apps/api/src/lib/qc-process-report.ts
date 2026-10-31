@@ -13,15 +13,17 @@ import type { DbTransaction } from '../db/with-user-context';
 const ALIAS = /^[a-z_][a-z0-9_]*(\.[a-z_][a-z0-9_]*)?$/;
 
 /** `LEFT JOIN LATERAL (...) <as> ON TRUE` giving `<as>.report_type_id`,
- *  `<as>.report_name`, `<as>.mandatory` for the op name held in `operationCol`
- *  (an SQL column reference written in this codebase, never user input). */
+ *  `<as>.report_name`, `<as>.mandatory`, `<as>.last_stage_only` (0235) for
+ *  the op name held in `operationCol` (an SQL column reference written in
+ *  this codebase, never user input). */
 export function qcProcessReportJoin(cid: string, operationCol: string, as: string): SQL {
   if (!ALIAS.test(operationCol) || !ALIAS.test(as)) {
     throw new Error(`qcProcessReportJoin: bad alias "${operationCol}" / "${as}"`);
   }
   return sql`LEFT JOIN LATERAL (
       SELECT r.id AS report_type_id, r.name AS report_name,
-             COALESCE(r.default_mandatory, false) AS mandatory
+             COALESCE(r.default_mandatory, false) AS mandatory,
+             COALESCE(r.last_stage_only, false) AS last_stage_only
       FROM public.qc_processes qp
       JOIN public.report_types r
         ON r.id = qp.report_type_id AND r.deleted_at IS NULL AND r.status = 'Active'
@@ -43,7 +45,8 @@ export async function loadQcProcessReport(
   if (!operation?.trim()) return null;
   const rows = (await tx.execute(sql`
     SELECT x.op AS code, pr.report_type_id::text AS "reportTypeId",
-           pr.report_name AS "reportTypeName", pr.mandatory AS "reportMandatory"
+           pr.report_name AS "reportTypeName", pr.mandatory AS "reportMandatory",
+           pr.last_stage_only AS "reportLastStageOnly"
     FROM (SELECT ${operation}::text AS op) x
     ${qcProcessReportJoin(cid, 'x.op', 'pr')}
   `)) as unknown as Array<{
@@ -51,6 +54,7 @@ export async function loadQcProcessReport(
     reportTypeId: string | null;
     reportTypeName: string | null;
     reportMandatory: boolean | null;
+    reportLastStageOnly: boolean | null;
   }>;
   const r = rows[0];
   if (!r?.reportTypeId) return null;
@@ -59,5 +63,6 @@ export async function loadQcProcessReport(
     reportTypeId: r.reportTypeId,
     reportTypeName: r.reportTypeName,
     reportMandatory: r.reportMandatory === true,
+    reportLastStageOnly: r.reportLastStageOnly === true,
   };
 }
