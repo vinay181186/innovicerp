@@ -14952,6 +14952,11 @@ at the END of every saved layout, and re-showed a hidden column at the end.
   order. Masters (Client, Vendor, Item, Operator) are unchanged.
 - Guard: `lead-columns.guard.test.ts` fails when a lead list leaves out `doc:` and is not on
   the row-is-the-order list.
+- Own date next to the own number (owner, same day): `leadColumns({ doc, docDate })` →
+  Plan No. · Plan Date · SO No. … (GRN No. · GRN Date, JC No. · JC Date …), both locked.
+  JC-led op/queue/QC lists get `jcDate` (job_cards.jc_date) from the server; QC Call Register
+  rows get `docDate` (GRN / Party GRN grn_date or JC jc_date). Documents with no date of their
+  own (Production Order, ML Plan, ML BOM, Route Card) keep only Created On.
 
 ## ADR-262: Purchase Requests have no approval
 
