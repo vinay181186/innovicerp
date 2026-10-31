@@ -20,6 +20,7 @@ export const PROCESS_COLUMNS = {
   ...getTableColumns(qcProcesses),
   reportTypeName: sql<string | null>`${reportTypes.name}`,
   reportMandatory: sql<boolean>`COALESCE(${reportTypes.defaultMandatory}, false)`,
+  reportLastStageOnly: sql<boolean>`COALESCE(${reportTypes.lastStageOnly}, false)`,
 };
 
 export async function readProcess(tx: DbTransaction, id: string): Promise<QcProcess> {

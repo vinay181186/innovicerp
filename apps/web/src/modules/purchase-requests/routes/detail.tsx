@@ -58,7 +58,7 @@ import { CloseBalanceModal } from '../components/close-balance-modal';
 import { PrStatusBadge } from '../components/pr-status-badge';
 import { usePrPrint } from '../components/use-pr-print';
 import { prBalanceClosedText, prBalanceColor, prOrderBalance } from '../lib/pr-balance';
-import { prConvertible, usePrApprovalOn } from '../lib/pr-convertible';
+import { prConvertible } from '../lib/pr-convertible';
 import { PR_TYPE_LABELS } from '../lib/pr-labels';
 
 export const purchaseRequestDetailRoute = createRoute({
@@ -92,16 +92,13 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
   // click" pattern this whole pass exists to remove.
   const canCreatePo = effectiveFormPerms(eff, 'po_create').entry;
   const canOpen = useCanOpen();
-  const prApprovalOn = usePrApprovalOn();
   const softDelete = useSoftDeletePurchaseRequest();
   const [confirmDelete, setConfirmDelete] = useState(false);
   // ADR-197 — why the PR goes to Trash (required; lands on its History).
   const [deleteReason, setDeleteReason] = useState('');
-  // Short-closing the remainder is a SIGN-OFF, not data entry, so it rides the
-  // same `pr_create` + approve right the Approve / Reject pair on the PR list
-  // uses — and the same right the API gate (`requireFormAccess(user,
-  // 'pr_create', 'approve')`) checks, so the button cannot appear to someone
-  // the server then refuses.
+  // Short-closing the remainder needs the `pr_create` Edit right (owner rule
+  // 2026-10-31 — PRs have no approval) — the same right the API gate checks,
+  // so the button cannot appear to someone the server then refuses.
   const closeBalanceMut = useClosePurchaseRequestBalance();
   const [closeOpen, setCloseOpen] = useState(false);
   const [closeError, setCloseError] = useState<string | null>(null);
@@ -166,25 +163,26 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
   // What is still to order. A PR for 100 with a PO for 10 has 90 left, so
   // "has a PO" is no longer the test for whether another PO may be raised.
   const bal = prOrderBalance(detail);
-  // ADR-189: while PR approval is on, the PR must be Approved before a PO.
+  // A PR is ready for a PO as soon as it is raised (no approval, 2026-10-31).
   // ADR-234 — "View linked PO" opens the PO; only for someone who may open it.
   const canOpenPo = canOpen('/purchase-orders/$id');
-  const canOrder = prConvertible(detail, prApprovalOn) && bal.balance > 0 && canCreatePo;
+  const canOrder = prConvertible(detail) && bal.balance > 0 && canCreatePo;
   // Offered only when there is something to close: part of it bought, part of
   // it still outstanding, nothing closed yet, request not cancelled. A PR with
-  // NOTHING ordered is a Reject, not a close — the API refuses it by name, so
+  // NOTHING ordered is a Cancel, not a close — the API refuses it by name, so
   // the button must not be there to press.
   const canCloseBalance =
-    perms.approve &&
+    perms.edit &&
     detail.status !== 'cancelled' &&
     !bal.closed &&
     bal.ordered > 0 &&
     bal.balance > 0;
-  // ADR-235 — Cancel PR: the Edit tick raises the request, the Approve tick
-  // decides it. Not on a cancelled or short-closed PR; a PR on a live PO is
+  // ADR-235 — Cancel PR: one step for the Edit tick (no approval, 2026-10-31);
+  // an old pending request is decided with the Edit tick too. Not on a
+  // cancelled or short-closed PR; a PR on a live PO is
   // refused by the server's preview (cancel the PO first).
   const cancelled = detail.status === 'cancelled';
-  const canCancel = (perms.edit || perms.approve) && !cancelled && !bal.closed;
+  const canCancel = perms.edit && !cancelled && !bal.closed;
 
   const onCloseBalance = (reason: string): void => {
     setCloseError(null);
@@ -590,12 +588,10 @@ function PrFacts(props: {
             value={fmtDate(detail.prDate)}
             after={<Chip changes={pendingChanges} field="prDate" />}
           />
-          <ClusterFact
-            label="Approved At"
-            num
-            empty={!detail.approvedAt}
-            value={fmtDateTime(detail.approvedAt)}
-          />
+          {/* History only — PRs need no approval since 2026-10-31. */}
+          {detail.approvedAt ? (
+            <ClusterFact label="Approved At" num value={fmtDateTime(detail.approvedAt)} />
+          ) : null}
           <ClusterFact
             label="PO Created At"
             num

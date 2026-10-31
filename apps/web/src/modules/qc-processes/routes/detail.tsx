@@ -226,7 +226,7 @@ function QcProcessFacts(props: {
               {qcProcess.reportTypeName}
               {qcProcess.reportMandatory ? (
                 <Badge tone="red" style={{ marginLeft: 6 }}>
-                  Mandatory
+                  {qcProcess.reportLastStageOnly ? 'Mandatory (last stage only)' : 'Mandatory'}
                 </Badge>
               ) : null}
             </>

@@ -1,6 +1,5 @@
 import type {
   CreatePurchaseRequestInput,
-  DocumentEditStagedResult,
   ListPurchaseRequestsQuery,
   ListPurchaseRequestsResponse,
   PurchaseRequest,
@@ -92,70 +91,29 @@ export function useCreatePurchaseRequest(saveKey?: SaveKey) {
 
 export function useUpdatePurchaseRequest(id: string, saveKey?: SaveKey) {
   const qc = useQueryClient();
-  // ADR-202 — when the edit-approval gate is on and the PR is live, the PATCH
-  // returns a DocumentEditStagedResult (the edit was staged for approval)
-  // instead of the updated PR. The edit page reads the union to tell them apart.
-  return useMutation<PurchaseRequest | DocumentEditStagedResult, Error, UpdatePurchaseRequestInput>(
-    {
-      mutationFn: (input) =>
-        withSaveKey(saveKey, (headers) =>
-          apiFetch<PurchaseRequest | DocumentEditStagedResult>(`/purchase-requests/${id}`, {
-            method: 'PATCH',
-            json: input,
-            ...(headers ? { headers } : {}),
-          }),
-        ),
-      onSuccess: (updated) => {
-        void qc.invalidateQueries({ queryKey: purchaseRequestsKeys.lists() });
-        // ADR-197 — the PR's History tab reads the activity log.
-        void qc.invalidateQueries({ queryKey: activityLogKeys.all });
-        if ('staged' in updated) {
-          // Nothing changed on the PR itself — just refresh so the detail page
-          // shows the new pending-change chips.
-          void qc.invalidateQueries({ queryKey: purchaseRequestsKeys.detail(id) });
-          void qc.invalidateQueries({ queryKey: ['document-edits'] });
-          return;
-        }
-        qc.setQueryData(purchaseRequestsKeys.detail(id), updated);
-      },
-    },
-  );
-}
-
-export function useApprovePr() {
-  const qc = useQueryClient();
-  return useMutation<PurchaseRequest, Error, string>({
-    mutationFn: (id) =>
-      apiFetch<PurchaseRequest>(`/purchase-requests/${id}/approve`, { method: 'POST' }),
-    onSuccess: (pr) => {
+  // PRs have no approval (owner rule 2026-10-31): the PATCH always saves
+  // directly and answers with the updated PR — never a staged edit.
+  return useMutation<PurchaseRequest, Error, UpdatePurchaseRequestInput>({
+    mutationFn: (input) =>
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<PurchaseRequest>(`/purchase-requests/${id}`, {
+          method: 'PATCH',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
+    onSuccess: (updated) => {
       void qc.invalidateQueries({ queryKey: purchaseRequestsKeys.lists() });
       // ADR-197 — the PR's History tab reads the activity log.
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
-      qc.setQueryData(purchaseRequestsKeys.detail(pr.id), pr);
-    },
-  });
-}
-
-export function useRejectPr() {
-  const qc = useQueryClient();
-  return useMutation<PurchaseRequest, Error, { id: string; reason: string }>({
-    mutationFn: ({ id, reason }) =>
-      apiFetch<PurchaseRequest>(`/purchase-requests/${id}/reject`, {
-        method: 'POST',
-        json: { reason },
-      }),
-    onSuccess: (pr) => {
-      void qc.invalidateQueries({ queryKey: purchaseRequestsKeys.lists() });
-      // ADR-197 — the PR's History tab reads the activity log.
-      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
-      qc.setQueryData(purchaseRequestsKeys.detail(pr.id), pr);
+      qc.setQueryData(purchaseRequestsKeys.detail(id), updated);
     },
   });
 }
 
 /** Short-close the unordered remainder (ADR-152 phase 2). The PR keeps its
  *  quantity and everything already ordered; only the balance is abandoned, with
- *  a reason that is required. Same invalidation as approve / reject — the list
+ *  a reason that is required. Same invalidation as an edit — the list
  *  rows carry the balance too, so both caches have to move together. */
 export function useClosePurchaseRequestBalance() {
   const qc = useQueryClient();

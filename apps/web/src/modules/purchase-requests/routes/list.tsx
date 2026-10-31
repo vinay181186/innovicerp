@@ -7,8 +7,9 @@
 // PO details. Data, filters, mutations and the API are unchanged. Columns, expand,
 // row actions and the selection hook live in sibling files to keep this < 400.
 // Unchanged: status counts ride in the status dropdown labels (owner 2026-09-26);
-// Approve/Reject call /approve + /reject (no raw status PATCH); tick-boxes build
-// one PO of ONE vendor (vendor lock via sel.isRowSelectable); Outsource Jobs tab.
+// tick-boxes build one PO of ONE vendor (vendor lock via sel.isRowSelectable);
+// Outsource Jobs tab. PRs have no approval (owner rule 2026-10-31): no
+// Approve / Reject; old 'approved' PRs keep their status as history.
 
 import {
   type ListPurchaseRequestsQuery,
@@ -33,14 +34,13 @@ import { DataTable, Panel, ROW_TINT } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
-import { useApprovePr, usePurchaseRequestsList, useRejectPr } from '../api';
+import { usePurchaseRequestsList } from '../api';
 import { prListColumns } from '../components/pr-list-columns';
 import { PrListExpand } from '../components/pr-list-expand';
 import { PrListRowActions } from '../components/pr-list-row-actions';
 import { PrListTabs, type PrListTab } from '../components/pr-list-tabs';
 import { usePrPrint } from '../components/use-pr-print';
 import { prOrderBalance } from '../lib/pr-balance';
-import { usePrApprovalOn } from '../lib/pr-convertible';
 import { PR_STATUS_LABELS } from '../lib/pr-labels';
 import { usePrSelection } from '../lib/use-pr-selection';
 
@@ -69,12 +69,11 @@ export const purchaseRequestsListRoute = createRoute({
 function PurchaseRequestsListPage(): React.JSX.Element {
   const search = purchaseRequestsListRoute.useSearch();
   const navigate = purchaseRequestsListRoute.useNavigate();
-  // Tier-driven, per department (Purchase). Entry raises a PR; approve signs one
-  // off; the card's 📝 PO raises a PURCHASE ORDER, so it follows po_create.entry.
+  // Tier-driven, per department (Purchase). Entry raises a PR; the row's
+  // Create PO raises a PURCHASE ORDER, so it follows po_create.entry.
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'pr_create');
   const canCreatePo = effectiveFormPerms(eff, 'po_create').entry;
-  const prApprovalOn = usePrApprovalOn();
 
   const [tab, setTab] = useState<PrListTab>('pr');
 
@@ -115,45 +114,6 @@ function PurchaseRequestsListPage(): React.JSX.Element {
   const { data, isLoading, isFetching, isError, error } = usePurchaseRequestsList(query, {
     refetchInterval: LIVE_FALLBACK_POLL_MS,
   });
-
-  // Approve / Reject — the only paths that advance an open PR.
-  const approveMut = useApprovePr();
-  const rejectMut = useRejectPr();
-  const [actionError, setActionError] = useState<string | null>(null);
-
-  // Both return the mutation's Promise (undefined when the confirm / prompt is
-  // cancelled) so the row's ⋯ shows busy; a failure still lands in the red
-  // banner, because the ⋯ menu only logs a rejected Promise.
-  const handleApprove = useCallback(
-    (pr: PurchaseRequestListItem): Promise<void> | undefined => {
-      setActionError(null);
-      if (!window.confirm(`Approve PR ${pr.code}?`)) return undefined;
-      return approveMut.mutateAsync(pr.id).then(
-        () => undefined,
-        (e: unknown) =>
-          setActionError(e instanceof Error ? e.message : 'Could not approve PR. Try again.'),
-      );
-    },
-    [approveMut],
-  );
-
-  const handleReject = useCallback(
-    (pr: PurchaseRequestListItem): Promise<void> | undefined => {
-      setActionError(null);
-      const reason = window.prompt(`Reject ${pr.code} — reason:`);
-      if (reason === null) return undefined;
-      if (!reason.trim()) {
-        setActionError('Rejection reason is required.');
-        return undefined;
-      }
-      return rejectMut.mutateAsync({ id: pr.id, reason: reason.trim() }).then(
-        () => undefined,
-        (e: unknown) =>
-          setActionError(e instanceof Error ? e.message : 'Could not reject PR. Try again.'),
-      );
-    },
-    [rejectMut],
-  );
 
   // Status counts (whole set per filter), shown in the dropdown option labels.
   const allCount = usePurchaseRequestsList(COUNT_ALL).data?.total ?? 0;
@@ -214,8 +174,8 @@ function PurchaseRequestsListPage(): React.JSX.Element {
   }, []);
 
   // Row tint from the REAL PR status enum + order balance (ADR-199): cancelled →
-  // cancelled, overdue-and-still-owing → late, approved/po_created/closed → done,
-  // open → pending.
+  // cancelled, overdue-and-still-owing → late, po_created/closed → done,
+  // open/approved (both = ready for PO, owner rule 2026-10-31) → pending.
   const tintFor = useCallback(
     (pr: PurchaseRequestListItem): string | undefined => {
       if (pr.status === 'cancelled') return ROW_TINT.cancelled;
@@ -226,9 +186,8 @@ function PurchaseRequestsListPage(): React.JSX.Element {
         (pr.status === 'open' || pr.status === 'approved') &&
         bal.balance > 0;
       if (overdue) return ROW_TINT.late;
-      if (pr.status === 'po_created' || pr.status === 'approved' || bal.closed)
-        return ROW_TINT.done;
-      if (pr.status === 'open') return ROW_TINT.pending;
+      if (pr.status === 'po_created' || bal.closed) return ROW_TINT.done;
+      if (pr.status === 'open' || pr.status === 'approved') return ROW_TINT.pending;
       return undefined;
     },
     [today],
@@ -238,9 +197,10 @@ function PurchaseRequestsListPage(): React.JSX.Element {
   // only to a user holding this page's Advance right.
   const canAssign = perms.advance;
   const [assignPr, setAssignPr] = useState<PurchaseRequestListItem | null>(null);
-  // ADR-235 — Cancel PR: the Edit tick raises the request, the Approve tick
-  // decides it. The row whose standard Cancel dialog is open.
-  const canCancel = perms.edit || perms.approve;
+  // ADR-235 — Cancel PR: one step for the Edit tick (no approval, 2026-10-31);
+  // an old pending request is decided with the Edit tick too. The row whose
+  // standard Cancel dialog is open.
+  const canCancel = perms.edit;
   const [cancelPr, setCancelPr] = useState<PurchaseRequestListItem | null>(null);
 
   // Preview / Download PDF in the row ⋯ — the same sheet as the detail ⋯.
@@ -251,32 +211,15 @@ function PurchaseRequestsListPage(): React.JSX.Element {
     (pr: PurchaseRequestListItem): React.ReactNode => (
       <PrListRowActions
         pr={pr}
-        canApprove={perms.approve}
         canCreatePo={canCreatePo}
         canAssign={canAssign}
         canCancel={canCancel}
-        prApprovalOn={prApprovalOn}
-        approving={approveMut.isPending}
-        rejecting={rejectMut.isPending}
-        onApprove={handleApprove}
-        onReject={handleReject}
         onAssign={setAssignPr}
         onCancel={setCancelPr}
         onPrint={prPrint}
       />
     ),
-    [
-      prPrint,
-      perms.approve,
-      canCreatePo,
-      canAssign,
-      canCancel,
-      prApprovalOn,
-      approveMut.isPending,
-      rejectMut.isPending,
-      handleApprove,
-      handleReject,
-    ],
+    [prPrint, canCreatePo, canAssign, canCancel],
   );
 
   // Hide-page: a user whose VIEW was removed sees the no-access panel.
@@ -336,22 +279,6 @@ function PurchaseRequestsListPage(): React.JSX.Element {
               ) : null
             }
           />
-
-          {actionError ? (
-            <div
-              style={{
-                color: 'var(--red2)',
-                background: 'var(--red3)',
-                border: '1px solid var(--red)',
-                borderRadius: 6,
-                padding: '6px 10px',
-                fontSize: 12,
-                marginBottom: 10,
-              }}
-            >
-              {actionError}
-            </div>
-          ) : null}
 
           {isError ? (
             <PageState
@@ -434,11 +361,7 @@ function PurchaseRequestsListPage(): React.JSX.Element {
             display: `PR ${assignPr.code}`,
             navPage: `/purchase-requests/${assignPr.id}`,
           }}
-          suggestedTitle={
-            assignPr.status === 'open'
-              ? `Review & approve ${assignPr.code}`
-              : `Convert ${assignPr.code} to PO`
-          }
+          suggestedTitle={`Convert ${assignPr.code} to PO`}
           onClose={() => setAssignPr(null)}
         />
       ) : null}

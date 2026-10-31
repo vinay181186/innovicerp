@@ -19,6 +19,8 @@ import {
   entryLabel,
   entryRemarks,
   folderFiles,
+  missingEntryText,
+  onlyOptionalMissing,
   SOURCE_LABEL,
   type DossierRow,
 } from './dossier-model';
@@ -129,13 +131,21 @@ export function DossierLineHead({
           </Badge>
         ) : (
           steps.map((s) => {
+            // A gap whose report was not compulsory (Last Stage Only on a
+            // middle stage) is orange, not red (owner rule 2026-10-31).
             const tone =
-              s.state === 'report_missing' ? 'red' : s.state === 'qc_not_done' ? 'grey' : 'green';
-            const mark = tone === 'red' ? '✕' : tone === 'grey' ? '⏳' : '✓';
+              s.state === 'report_missing'
+                ? onlyOptionalMissing([s])
+                  ? 'orange'
+                  : 'red'
+                : s.state === 'qc_not_done'
+                  ? 'grey'
+                  : 'green';
+            const mark = tone === 'red' || tone === 'orange' ? '✕' : tone === 'grey' ? '⏳' : '✓';
             return (
               <Badge key={s.reportName} tone={tone} className="qd-chip">
                 {mark} {s.reportName}
-                {!s.mandatory ? ' (optional)' : ''}
+                {!s.mandatory || onlyOptionalMissing([s]) ? ' (optional)' : ''}
               </Badge>
             );
           })
@@ -143,6 +153,11 @@ export function DossierLineHead({
       </div>
     </>
   );
+}
+
+/** Red for a missing compulsory report; orange for one that was optional. */
+function missingColor(e: { reportMandatory: boolean }): string {
+  return e.reportMandatory ? 'var(--red2)' : 'var(--orange2)';
 }
 
 export function DossierFileSheet({
@@ -181,7 +196,7 @@ export function DossierFileSheet({
         ellipsis: true,
         render: (r) =>
           r.kind === 'missing' ? (
-            <span style={{ color: 'var(--red2)' }}>no report</span>
+            <span style={{ color: missingColor(r.entry) }}>{missingEntryText(r.entry)}</span>
           ) : (
             <>
               {r.file.fileName}
@@ -192,7 +207,7 @@ export function DossierFileSheet({
               ) : null}
             </>
           ),
-        title: (r) => (r.kind === 'file' ? r.file.fileName : 'No report'),
+        title: (r) => (r.kind === 'file' ? r.file.fileName : missingEntryText(r.entry)),
       },
       {
         id: 'jc_code',
@@ -210,11 +225,11 @@ export function DossierFileSheet({
         render: (r) =>
           r.entry ? (
             <span
-              style={r.kind === 'missing' ? { color: 'var(--red2)' } : undefined}
+              style={r.kind === 'missing' ? { color: missingColor(r.entry) } : undefined}
               title={entryRemarks(r.entry) ?? undefined}
             >
               {entryLabel(r.entry)}
-              {r.kind === 'missing' ? ' · no report' : ''}
+              {r.kind === 'missing' ? ` · ${missingEntryText(r.entry)}` : ''}
               {entryRemarks(r.entry) ? (
                 <>
                   {' · '}

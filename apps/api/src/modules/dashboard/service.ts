@@ -21,6 +21,7 @@ import { sql } from 'drizzle-orm';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError } from '../../lib/errors';
 import { getMyAccess } from '../access-control/service';
+import { prWaitingForPoSql } from '../purchase-requests/service';
 import type {
   DashboardKpisResponse,
   DashboardTile,
@@ -116,14 +117,14 @@ export async function getDashboardKpis(user: AuthContext): Promise<DashboardKpis
           AND deleted_at IS NULL
           AND qc_status IN ('pending', 'in_progress')
       `),
-        // PRs approved but not yet converted to a PO — procurement-relevant
+        // PRs waiting for a PO — procurement-relevant. One rule
+        // (prWaitingForPoSql), shared with alerts AL-002 / AL-006.
         tx.execute(sql`
         SELECT COUNT(*)::int AS count
-        FROM public.purchase_requests
-        WHERE company_id = ${companyId}::uuid
-          AND deleted_at IS NULL
-          AND status = 'approved'
-          AND po_id IS NULL
+        FROM public.purchase_requests pr
+        WHERE pr.company_id = ${companyId}::uuid
+          AND pr.deleted_at IS NULL
+          AND ${prWaitingForPoSql('pr')}
       `),
         // Op sessions currently running — operator/qc-relevant. running_ops
         // has no soft-delete column (append-only state per ADR-011).
@@ -203,7 +204,7 @@ export async function getDashboardKpis(user: AuthContext): Promise<DashboardKpis
         secondary: null,
         severity: severityForCount(prsPendingCount, 3, 10),
         route: '/purchase-requests',
-        hint: 'approved PRs without a PO yet',
+        hint: 'PRs with quantity still to order',
       },
       {
         kind: 'ops_in_progress',

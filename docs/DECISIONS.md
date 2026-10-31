@@ -14939,3 +14939,30 @@ at the END of every saved layout, and re-showed a hidden column at the end.
 - Negative: users' saved layouts on the changed tables re-order to the lead block.
 - Risks: until the server sends `createdAt`, Created On shows — on op, queue and QC rows
   (phase 3).
+
+## ADR-262: Purchase Requests have no approval
+
+**Date:** 2026-10-31
+**Status:** Accepted (owner)
+
+### Context
+One session kept approving generated PRs; the approval step added nothing. Owner: "remove approval from PR — from now onwards PR generated" (D3: no approval for edit or cancel either).
+
+### Decision
+- A PR is ready for a PO the moment it is raised, on every creation path. `assertPrConvertible` refuses only a Cancelled PR. Old `approved` PRs keep the status as history; `open` and `approved` both mean ready.
+- Approve / Reject routes answer 409 ("PRs no longer need approval…"); PRs are out of the Approvals page, Home "to approve", notifications (PR raised → PO creators, "ready for a PO").
+- Edits save directly (never staged). A PR edit staged before this rule must be decided first (409).
+- Cancel is one step on the PR page's Edit tick (`ONE_STEP_CANCEL_DOC_TYPES`, `cancelDeciderRight` in shared — read by server, Cancel dialog and Approvals tab). Short close moves Approve → Edit.
+- One "PR waiting for a PO" rule `prWaitingForPoSql` (not cancelled, not short-closed, qty > ordered) for the KPI tile and AL-002 / AL-006 (renamed "PRs Waiting for PO…").
+- `approval_config.pr_approval` is no longer read; column kept. Supersedes ADR-198 for PRs (PO self-approval unchanged).
+
+## ADR-263: Report Type "Last Stage Only" — middle DIR optional, last QC stage compulsory
+
+**Date:** 2026-10-31
+**Status:** Accepted (owner D1=c, D4)
+
+### Decision
+- `report_types.last_stage_only` (0235). A Mandatory report with it set is compulsory only when the QC op is the card's last live op (highest op_seq — `lib/jc-last-op-sql.ts isLastLiveOpSql`, the stock-credit rule). DIR and Final Inspection set to Mandatory + Last Stage Only; TPI / MIR / MCR stay compulsory everywhere.
+- Shared rule `qcReportMandatory(operation, qty, processes, isLastOp)`; the server decides `isLastOp` inside submitQcLog after the jc_ops row lock (routing edits rewrite every kept op row, so they serialise). A DIR before a terminal OSP is not last → optional; a rework child's last QC is last → compulsory.
+- A middle DIR saved without its report: note on Op Entry / QC Call ("report not uploaded" + Upload report), Home "Reports to upload" (report_required still stamped), Dossier "not uploaded (optional)" in orange.
+- Known gap: deleting the op after a middle DIR makes that DIR the last stage with no report; it still shows as owed (Home, Dossier) — the routing edit is not blocked.

@@ -20,6 +20,7 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { AUDITOR, asAccess } from '../../lib/test-access';
+import { requestCancel } from '../cancel-requests/service';
 import * as service from './service';
 
 const TEST_PREFIX = 'T036A-';
@@ -201,7 +202,7 @@ describe('purchase-requests service', () => {
   // ADR-101 — cancelling a jw_osp PR must UN-stamp its source op. Leaving the
   // stamp behind froze the op in the JC-edit lock guard forever: the error said
   // "cancel the PR/PO first", which the user had already done.
-  it('rejectPurchaseRequest releases the source JC op (ADR-101)', async () => {
+  it('one-step Cancel releases the source JC op (ADR-101)', async () => {
     const op = (
       await db
         .insert(jcOps)
@@ -241,11 +242,46 @@ describe('purchase-requests service', () => {
     expect(stamped.outsourcePrId).toBe(pr.id);
     expect(stamped.outsourceStatus).toBe('pr_raised');
 
-    await service.rejectPurchaseRequest(pr.id, 'raised by mistake', admin);
+    // Owner rule 2026-10-31 — PR cancel is one step: no approveNow needed.
+    const res = await requestCancel(
+      'purchase_request',
+      pr.id,
+      { reason: 'raised by mistake', approveNow: false },
+      admin,
+    );
+    expect(res.cancelled).toBe(true);
+    expect(res.request.status).toBe('approved');
 
     const released = (await db.select().from(jcOps).where(eq(jcOps.id, op.id)))[0]!;
     expect(released.outsourcePrId).toBeNull();
     expect(released.outsourceStatus).toBeNull();
+  });
+
+  // Owner rule 2026-10-31 — PRs have no approval. The routes stay and answer
+  // clearly; nothing in the DB moves.
+  it('approve / reject are retired: 409 with a plain answer, PR unchanged', async () => {
+    const pr = await service.createPurchaseRequest(
+      {
+        code: `${TEST_PREFIX}NOAPPROVE`,
+        prDate: '2026-05-02',
+        vendorId: firstVendorId,
+        itemId: firstItemId,
+        qty: 3,
+        estCost: 0,
+        status: 'open',
+      },
+      admin,
+    );
+    await expect(service.approvePurchaseRequest(pr.id, admin)).rejects.toBeInstanceOf(
+      ConflictError,
+    );
+    await expect(service.approvePurchaseRequest(pr.id, admin)).rejects.toThrow(/ready for a PO/);
+    await expect(service.rejectPurchaseRequest(pr.id, 'x', admin)).rejects.toThrow(/use Cancel/);
+    const after = (
+      await db.select().from(purchaseRequests).where(eq(purchaseRequests.id, pr.id))
+    )[0]!;
+    expect(after.status).toBe('open');
+    expect(after.approvedAt).toBeNull();
   });
 
   it('createPurchaseRequest NOT from an op leaves ops untouched', async () => {
@@ -543,7 +579,7 @@ describe('purchase-requests service', () => {
     });
   }
 
-  it('closePurchaseRequestBalance sends an un-ordered PR to Reject instead', async () => {
+  it('closePurchaseRequestBalance sends an un-ordered PR to Cancel instead', async () => {
     const pr = await service.createPurchaseRequest(
       {
         code: `${TEST_PREFIX}CLOSE-NONE`,
@@ -556,11 +592,11 @@ describe('purchase-requests service', () => {
       },
       admin,
     );
-    // Nothing is on order, so this is a rejection, not a short-close — and the
+    // Nothing is on order, so this is a cancel, not a short-close — and the
     // refusal must send the user to that button by name, not just say no.
     await expect(
       service.closePurchaseRequestBalance(pr.id, { reason: 'customer cut the order' }, admin),
-    ).rejects.toThrow(/Use Reject/);
+    ).rejects.toThrow(/Use Cancel/);
     await expect(
       service.closePurchaseRequestBalance(pr.id, { reason: 'customer cut the order' }, admin),
     ).rejects.toBeInstanceOf(ValidationError);
@@ -643,7 +679,12 @@ describe('purchase-requests service', () => {
       },
       admin,
     );
-    await service.rejectPurchaseRequest(pr.id, 'not needed', admin);
+    await requestCancel(
+      'purchase_request',
+      pr.id,
+      { reason: 'not needed', approveNow: false },
+      admin,
+    );
     await expect(
       service.closePurchaseRequestBalance(pr.id, { reason: 'too late' }, admin),
     ).rejects.toBeInstanceOf(ValidationError);

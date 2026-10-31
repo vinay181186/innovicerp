@@ -2,14 +2,14 @@
 // shape). Each reuses the rule its owning module already has:
 //   pr_to_po   — purchase-requests orderedQtySql (legacy header po_id rule,
 //                short-closed PR = nothing left) + purchase-orders'
-//                assertPrConvertible (approved, or machine-raised, or PR
-//                approval switched off).
+//                assertPrConvertible (any live PR — owner rule 2026-10-31:
+//                PRs have no approval; 'open' and 'approved' both ready).
 //   po_to_dc   — approved PO (open / partial — delivery-challans refuses a
 //                draft) of a type that sends material out (poSendsMaterialOut),
 //                with qty still to send by lib/po-line-sent.ts.
 //   po_overdue — issued PO (lib/po-pending PO_OPEN_STATUSES) past its due date
 //                (IST); qty = lib/po-pending's Pending (qty − accepted).
-//   pr_pending / po_draft — waiting for approval (Sent for approval block).
+//   po_draft   — waiting for approval (Sent for approval block).
 
 import { PO_TYPES, poSendsMaterialOut } from '@innovic/shared';
 import { type SQL, sql } from 'drizzle-orm';
@@ -46,34 +46,15 @@ function prSelect(cid: string, today: string, where: SQL, f: ListFilter): SQL {
       ${filterFrag(f, 'pr.id', 'pr.created_by')}`;
 }
 
-/** ONE rule for "this PR no longer waits for approval" — the SQL twin of
- *  purchase-orders assertPrConvertible: approved (any status past open), or
- *  raised by the system from a job-card op (jw_osp / source_jc_op_id), or PR
- *  approval switched off for the company. pr_to_po needs it TRUE; the
- *  Sent-for-approval block (pr_pending) needs it FALSE. */
-export function prPastApprovalSql(cid: string): SQL {
-  return sql`(pr.status <> 'open' OR pr.pr_type = 'jw_osp' OR pr.source_jc_op_id IS NOT NULL
-           OR NOT COALESCE((SELECT ac.pr_approval FROM public.approval_config ac
-                            WHERE ac.company_id = ${cid}::uuid AND ac.deleted_at IS NULL
-                            LIMIT 1), true))`;
-}
-
 export function prToPoSql(cid: string, today: string, f: ListFilter): SQL {
   return prSelect(
     cid,
     today,
     sql`AND pr.status <> 'cancelled'
       AND pr.balance_closed_at IS NULL
-      AND ${prPastApprovalSql(cid)}
       AND pr.qty > b.ordered`,
     f,
   );
-}
-
-/** PRs that really wait for an approver: open, and not past approval by
- *  the rule above (a system-raised PR or approval switched off never waits). */
-export function prPendingSql(cid: string, today: string, f: ListFilter): SQL {
-  return prSelect(cid, today, sql`AND pr.status = 'open' AND NOT ${prPastApprovalSql(cid)}`, f);
 }
 
 /** One PO row: first line's item, Σ of `qtyExpr` over live lines, PO value

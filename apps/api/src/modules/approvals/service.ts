@@ -5,7 +5,8 @@
 // applying that approve endpoint's own eligibility checks, so a row here is
 // always one the caller's Approve button would accept.
 //
-//   pr       — purchase-requests/approval-inbox.ts (approvePurchaseRequest's rules)
+//   pr       — always empty: PRs have no approval (owner rule 2026-10-31). The
+//              key stays because the shared response shape carries it.
 //   po       — purchase-orders/approval-inbox.ts   (approvePurchaseOrder's rules)
 //   rc       — route-cards/approval-inbox.ts       (approveRouteCard's rules, ADR-253)
 //   logEntry — op-entry's pending date/time corrections (ADR-130), shown to
@@ -20,7 +21,6 @@ import { AuthorizationError } from '../../lib/errors';
 import { selectTimeChangeRequests } from '../op-entry/service';
 import { decidableTimeChangeScope } from '../op-entry/time-change-page';
 import { listPoApprovalInbox, loadPoInboxAccess } from '../purchase-orders/approval-inbox';
-import { listPrApprovalInbox, loadPrInboxAccess } from '../purchase-requests/approval-inbox';
 import { listRcApprovalInbox, loadRcInboxAccess } from '../route-cards/approval-inbox';
 
 /** The most log-entry requests the list endpoint will return in one read. */
@@ -34,8 +34,7 @@ export async function getApprovalInbox(user: AuthContext): Promise<ApprovalInbox
   // inside the inbox transaction below (see clients/related.ts).
   // Independent reads, so they run together (the access row is remembered for
   // the request, ADR-229).
-  const [prAccess, poAccess, rcAccess, opApprove, qcApprove] = await Promise.all([
-    loadPrInboxAccess(user),
+  const [poAccess, rcAccess, opApprove, qcApprove] = await Promise.all([
     loadPoInboxAccess(user),
     loadRcInboxAccess(user),
     hasFormAccess(user, 'op_entry', 'approve'),
@@ -47,7 +46,6 @@ export async function getApprovalInbox(user: AuthContext): Promise<ApprovalInbox
   const logScope = canDecideLogEntry ? await decidableTimeChangeScope(user) : sql`AND false`;
   // Started now, awaited after the log-entry reads, so they run together.
   const prPo = withUserContext(user, async (tx) => ({
-    pr: await listPrApprovalInbox(tx, companyId, user, prAccess),
     po: await listPoApprovalInbox(tx, companyId, user, poAccess),
     rc: await listRcApprovalInbox(tx, companyId, rcAccess),
   }));
@@ -99,10 +97,10 @@ export async function getApprovalInbox(user: AuthContext): Promise<ApprovalInbox
     }));
   }
 
-  const { pr, po, rc } = await prPo;
+  const { po, rc } = await prPo;
   return {
-    counts: { pr: pr.length, po: po.length, logEntry: logEntryCount, rc: rc.length },
-    pr,
+    counts: { pr: 0, po: po.length, logEntry: logEntryCount, rc: rc.length },
+    pr: [],
     po,
     logEntry,
     rc,

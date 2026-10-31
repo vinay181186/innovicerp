@@ -1,12 +1,13 @@
-// GET /approvals/inbox/list — ONE section (PR or PO) of the Approvals inbox, a
+// GET /approvals/inbox/list — ONE section (PO or RC) of the Approvals inbox, a
 // page at a time (ADR-201). Search and Sort & Filter run here over every
 // waiting document; `total` is counted with the same WHERE as the page.
 //
 // The eligibility rules are the SAME as the inbox's own lists (and so the
-// approve endpoints'): purchase-requests/approval-inbox.ts and
-// purchase-orders/approval-inbox.ts. They are restated in SQL here so the PO
+// approve endpoints'): purchase-orders/approval-inbox.ts and
+// route-cards/approval-inbox.ts. They are restated in SQL here so the PO
 // approval-ceiling test (done in JS there) can sit under LIMIT / OFFSET:
-//   PR — Approve on Purchase Requests, PR Status Open (own PRs included).
+//   PR — always empty: PRs have no approval (owner rule 2026-10-31). The
+//        section value stays in the shared query schema for old screens.
 //   PO — Approve on Purchase Orders + write role, on po_approvers (admins
 //        always), PO Status Draft, PO value within the ceiling unless it is
 //        the caller's own PO (self-approval skips the limit).
@@ -27,7 +28,6 @@ import { AuthorizationError } from '../../lib/errors';
 import { likeEscape, readSf, sfOrderBy, sfWhere, type SfColumnMap } from '../../lib/list-query';
 import { loadPoInboxAccess } from '../purchase-orders/approval-inbox';
 import { loadApprovalContext } from '../purchase-orders/service';
-import { loadPrInboxAccess } from '../purchase-requests/approval-inbox';
 import { loadRcInboxAccess, rcInboxRowsSql, rcNavPage } from '../route-cards/approval-inbox';
 
 /** Sort & Filter fields — columns of the `t` row set both sections build. */
@@ -41,26 +41,6 @@ export const APPROVALS_SF_COLUMNS: SfColumnMap = {
   createdByName: { sql: sql`t.created_by_name`, type: 'text' },
   createdAt: { sql: sql`(t.created_at AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
 };
-
-function prRows(companyId: string): SQL {
-  return sql`
-    SELECT pr.id, pr.code AS doc_code,
-      COALESCE(v.name, pr.vendor_code_text) AS vendor_name,
-      COALESCE(i.code, pr.item_code_text) AS item_code,
-      pr.item_name AS item_name,
-      pr.qty::float AS doc_qty,
-      -- Est. Rate is per piece (the form labels it ₹/pc).
-      (pr.qty * COALESCE(pr.est_cost, 0))::float AS doc_amount,
-      u.full_name AS created_by_name,
-      pr.created_at
-    FROM public.purchase_requests pr
-    LEFT JOIN public.vendors v ON v.id = pr.vendor_id
-    LEFT JOIN public.items i ON i.id = pr.item_id
-    LEFT JOIN public.users u ON u.id = pr.created_by
-    WHERE pr.company_id = ${companyId}::uuid
-      AND pr.deleted_at IS NULL
-      AND pr.status = 'open'`;
-}
 
 function poRows(companyId: string, userId: string, isAdmin: boolean, ceiling: number): SQL {
   return sql`
@@ -97,20 +77,15 @@ export async function listApprovalInboxSection(
   const q = approvalInboxListQuerySchema.parse(rawQuery);
   const sf = readSf(q.sf);
 
-  const access =
-    q.section === 'pr'
-      ? await loadPrInboxAccess(user)
-      : q.section === 'rc'
-        ? await loadRcInboxAccess(user)
-        : await loadPoInboxAccess(user);
+  // PRs have no approval (owner rule 2026-10-31) — nothing ever waits there.
+  if (q.section === 'pr') return { items: [], total: 0 };
+  const access = q.section === 'rc' ? await loadRcInboxAccess(user) : await loadPoInboxAccess(user);
   if (!access.canApprove) return { items: [], total: 0 };
   const opts = { canSeePrice: access.showMoney };
 
   return withUserContext(user, async (tx) => {
     let rowsSql: SQL;
-    if (q.section === 'pr') {
-      rowsSql = prRows(companyId);
-    } else if (q.section === 'rc') {
+    if (q.section === 'rc') {
       // Search runs over RC No. (doc_code), item code / name and raiser below.
       rowsSql = rcInboxRowsSql(companyId);
     } else {
@@ -169,9 +144,7 @@ export async function listApprovalInboxSection(
             ? createdAt.toISOString()
             : new Date(String(createdAt)).toISOString(),
         navPage:
-          section === 'rc'
-            ? rcNavPage(String(r['id']))
-            : `/${section === 'pr' ? 'purchase-requests' : 'purchase-orders'}/${String(r['id'])}`,
+          section === 'rc' ? rcNavPage(String(r['id'])) : `/purchase-orders/${String(r['id'])}`,
       };
     });
     return { items, total };

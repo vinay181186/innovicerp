@@ -31,7 +31,6 @@ const NOTE_DAYS = 3;
 const NOTE_MAX = 50;
 
 type Open =
-  | 'approval_pr'
   | 'approval_po'
   | 'approval_rc'
   | 'raiser_pr'
@@ -85,20 +84,14 @@ const ONE_NOTE_PER_DOC: ReadonlySet<Open> = new Set<Open>([
 // Entity / action strings as each writer emits them (activity_log).
 export const NOTE_RULES: readonly NoteRule[] = [
   {
+    // PRs have no approval (owner rule 2026-10-31): a new PR is ready for a
+    // PO at once, so the PO creators hear of it — kept while it is still on
+    // the "PRs to order" list (pr_to_po).
     entity: 'PurchaseRequest',
     action: 'CREATE',
-    right: ['pr_create', 'approve'],
-    open: 'approval_pr',
-    verb: 'raised',
-    tail: ' — waiting for your approval',
-    tone: 'due',
-  },
-  {
-    entity: 'PurchaseRequest',
-    action: 'APPROVE',
     right: ['po_create', 'entry'],
     open: 'pr_to_po',
-    verb: 'approved',
+    verb: 'raised',
     tail: ' — ready for a PO',
     tone: 'due',
   },
@@ -330,7 +323,6 @@ async function openIds(
   me: string,
   approvals: ApprovalInboxResponse | null,
 ): Promise<Set<string>> {
-  if (open === 'approval_pr') return new Set((approvals?.pr ?? []).map((r) => r.id));
   if (open === 'approval_po') return new Set((approvals?.po ?? []).map((r) => r.id));
   if (open === 'approval_rc') return new Set((approvals?.rc ?? []).map((r) => r.id));
   if (open === 'raiser_pr' || open === 'raiser_po') {

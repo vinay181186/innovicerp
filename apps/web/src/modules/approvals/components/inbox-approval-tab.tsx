@@ -1,4 +1,5 @@
-// PR / PO tab of Settings → Approvals (ADR-190), on the uniform approval shell.
+// PO / Route Card (New) tab of Settings → Approvals (ADR-190). No PR tab: PRs
+// need no approval (owner rule 2026-10-31), on the uniform approval shell.
 //
 // One line per document waiting for the signed-in user to approve, 25 a page,
 // with search + Sort & Filter on the server over every waiting document
@@ -8,7 +9,7 @@
 // inbox row.
 //
 // GAP: the inbox only lists what is WAITING, so there is no Approved / Rejected
-// history list for PR / PO. Those two views render an informational empty state
+// history list for PO. Those two views render an informational empty state
 // (the trail lives on each document's History tab) rather than inventing a
 // backend call — reported to the owner.
 
@@ -20,7 +21,6 @@ import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { fmtDate } from '@/lib/date';
 import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
 import { useApprovePurchaseOrder, useRejectPurchaseOrder } from '@/modules/purchase-orders/api';
-import { useApprovePr, useRejectPr } from '@/modules/purchase-requests/api';
 import { useApproveRouteCard, useRejectRouteCard } from '@/modules/route-cards/api';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
@@ -29,26 +29,22 @@ import { approvalsKeys, useApprovalInboxList } from '../api';
 import { ApprovalTab, type ApprovalView } from './approval-tab';
 import { prPoColumns } from './pr-po-columns';
 
-type Section = 'pr' | 'po' | 'rc';
+type Section = 'po' | 'rc';
 
 const TITLE: Record<Section, string> = {
-  pr: 'PR Approvals',
   po: 'PO Approvals',
   rc: 'Route Card Approvals',
 };
-const NOUN: Record<Section, string> = { pr: 'request', po: 'order', rc: 'card' };
+const NOUN: Record<Section, string> = { po: 'order', rc: 'card' };
 const DOC_PLURAL: Record<Section, string> = {
-  pr: 'Purchase Requests',
   po: 'Purchase Orders',
   rc: 'Route Cards',
 };
 const EMPTY_PENDING: Record<Section, string> = {
-  pr: 'No Purchase Requests waiting for your approval.',
   po: 'No Purchase Orders waiting for your approval.',
   rc: 'No new Route Cards waiting for your approval.',
 };
 const NO_MATCH: Record<Section, string> = {
-  pr: 'No Purchase Requests match.',
   po: 'No Purchase Orders match.',
   rc: 'No Route Cards match.',
 };
@@ -79,14 +75,8 @@ function InboxSummary({
           ['Vendor', r.vendorName ?? '—'],
           ['Item Code', r.itemCode ?? '—'],
           ['Item Name', r.itemName ?? '—'],
-          [
-            section === 'pr' ? 'PR Qty' : 'PO Qty',
-            r.docQty == null ? '—' : r.docQty.toLocaleString('en-IN'),
-          ],
-          [
-            section === 'pr' ? 'Est. Amount' : 'Subtotal',
-            r.docAmount == null ? '—' : fmtAmount(r.docAmount),
-          ],
+          ['PO Qty', r.docQty == null ? '—' : r.docQty.toLocaleString('en-IN')],
+          ['Subtotal', r.docAmount == null ? '—' : fmtAmount(r.docAmount)],
           ['Raised By', r.createdByName ?? '—'],
           ['Raised On', fmtDate(r.createdAt)],
         ];
@@ -160,10 +150,8 @@ export function InboxApprovalTab({
   const showAmount = rows.some((r) => r.docAmount != null);
   const columns = useMemo(() => prPoColumns(section, showAmount), [section, showAmount]);
 
-  // PR has no approve-remarks; PO's approve takes none here (business rules stay
-  // on the server). Both rejects need a reason.
-  const approvePr = useApprovePr();
-  const rejectPr = useRejectPr();
+  // PO's approve takes no remarks here (business rules stay on the server).
+  // Every reject needs a reason.
   const approvePo = useApprovePurchaseOrder();
   const rejectPo = useRejectPurchaseOrder();
   const approveRc = useApproveRouteCard();
@@ -230,14 +218,12 @@ export function InboxApprovalTab({
         ) : null
       }
       approveRow={async (r) => {
-        if (section === 'pr') await approvePr.mutateAsync(r.id);
-        else if (section === 'rc') await approveRc.mutateAsync({ id: r.id });
+        if (section === 'rc') await approveRc.mutateAsync({ id: r.id });
         else await approvePo.mutateAsync({ id: r.id });
         refreshInbox();
       }}
       rejectRow={async (r, reason) => {
-        if (section === 'pr') await rejectPr.mutateAsync({ id: r.id, reason });
-        else if (section === 'rc') await rejectRc.mutateAsync({ id: r.id, reason });
+        if (section === 'rc') await rejectRc.mutateAsync({ id: r.id, reason });
         else await rejectPo.mutateAsync({ id: r.id, reason });
         refreshInbox();
       }}

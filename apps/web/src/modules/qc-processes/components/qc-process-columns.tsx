@@ -80,7 +80,7 @@ export function buildQcProcessColumns(
             {p.reportTypeName}
             {p.reportMandatory ? (
               <Badge tone="red" style={{ marginLeft: 6 }}>
-                Mandatory
+                {p.reportLastStageOnly ? 'Mandatory (last stage only)' : 'Mandatory'}
               </Badge>
             ) : null}
           </span>

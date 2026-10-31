@@ -42,6 +42,7 @@ import {
   requireFormAccess,
 } from '../../lib/access';
 import { diffFields } from '../../lib/audit-trail';
+import { isLastLiveOpSql } from '../../lib/jc-last-op-sql';
 import { polOf, polSql } from '../../lib/pol';
 import { drawingRevOf } from '../../lib/drawing-rev';
 import { loadQcProcessReport } from '../../lib/qc-process-report';
@@ -203,6 +204,10 @@ export async function listJcOpsEnriched(
         COALESCE(so.code, jw.code) AS "soCode",
         so.internal_so_no      AS "soInternalNo",
         o.op_seq               AS "opSeq",
+        -- The card's LAST live op (same test as qc-history PEND_IS_LAST and
+        -- the stock credit): a Last Stage Only report (0235) is compulsory
+        -- only here. A hint — submitQcLog re-decides under the op lock.
+        ${isLastLiveOpSql('o')} AS "isLastOp",
         -- The PLANNED machine as an id + its group, so the Start popup can
         -- default the Actual Machine picker to it and open the Group list on
         -- the right group. jc_ops stores no group; it is read off the master.
@@ -350,6 +355,7 @@ export async function listJcOpsEnriched(
       ...r,
       reworkQty: Number(r['reworkQty']),
       opSeq: Number(r['opSeq']),
+      isLastOp: r['isLastOp'] === true,
       completedQty: Number(r['completedQty'] ?? 0),
       qcAcceptedQty: Number(r['qcAcceptedQty'] ?? 0),
       qcRejectedQty: Number(r['qcRejectedQty'] ?? 0),
@@ -1317,27 +1323,48 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
       throw new ValidationError('This operation has no QC step. Use Complete on Op Entry instead.');
     }
 
+    // Serialize concurrent QC logs on the SAME op (over-inspection race).
+    // The same row lock also orders this entry against a Job Card routing
+    // edit: updateJobCardTx rewrites every kept op row (the op_seq park step)
+    // and the approval replay locks every op FOR UPDATE first, so once this
+    // returns no routing change on this card is half-done, and the "last op"
+    // read below sees the committed routing (§20.3). No job_cards lock on
+    // purpose: two QC entries on one card would both hold it shared and then
+    // both try to update it (finishJc / cascade) — a deadlock (ADR-220).
+    await lockLiveJcOp(tx, input.jcOpId);
+    await assertJobCardNotPendingCancel(tx, op.jobCardId); // ADR-235
+
     // ADR-252 — the report this QC step produces (QC Process Master -> Report
     // Type). A mandatory report must be attached before an entry that accepts
     // pieces can save; an optional one saves and shows as missing in the QC
     // Dossier. report_required is stamped on the entry either way. A process
     // op with qc_required has no QC process behind it, so it expects none.
+    // 0235 (owner rule 2026-10-31) — a Last Stage Only report (DIR, Final
+    // Inspection) is compulsory only on the card's last live op (highest
+    // op_seq, the stock-credit rule); a middle stage may save without it.
     const qcReport =
       op.opType === 'qc' ? await loadQcProcessReport(tx, companyId, op.operation) : null;
-    if (
-      qcReport &&
-      qcReportMandatory(op.operation, input.qty, [qcReport]) &&
-      !input.qcReportPath?.trim()
-    ) {
-      const name = qcReport.reportTypeName ?? 'QC';
-      throw new ValidationError(
-        `Attach the ${name} report before submitting — ${name} is a mandatory report.`,
-      );
+    if (qcReport?.reportMandatory && !input.qcReportPath?.trim()) {
+      // Read AFTER the lock, both sides fresh: a routing edit that committed
+      // while we waited may have renumbered this op too (op.opSeq is stale).
+      // Only a Last Stage Only report needs the position; skip the read otherwise.
+      const lastRows = !qcReport.reportLastStageOnly
+        ? []
+        : ((await tx.execute(sql`
+        SELECT ${isLastLiveOpSql('o')} AS "isLastOp"
+        FROM public.jc_ops o
+        WHERE o.id = ${input.jcOpId}::uuid
+      `)) as unknown as Array<{ isLastOp: boolean | null }>);
+      const isLastOp = !qcReport.reportLastStageOnly || lastRows[0]?.isLastOp === true;
+      if (qcReportMandatory(op.operation, input.qty, [qcReport], isLastOp)) {
+        const name = qcReport.reportTypeName ?? 'QC';
+        throw new ValidationError(
+          qcReport.reportLastStageOnly
+            ? `Attach the ${name} report before submitting — ${name} is mandatory on the last QC stage.`
+            : `Attach the ${name} report before submitting — ${name} is a mandatory report.`,
+        );
+      }
     }
-
-    // Serialize concurrent QC logs on the SAME op (over-inspection race).
-    await lockLiveJcOp(tx, input.jcOpId);
-    await assertJobCardNotPendingCancel(tx, op.jobCardId); // ADR-235
 
     // qc_pending lives in v_jc_op_status — same view that drives the UI.
     const pendingRows = await tx.execute(sql`

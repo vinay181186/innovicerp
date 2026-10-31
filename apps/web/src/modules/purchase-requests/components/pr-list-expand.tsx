@@ -92,13 +92,12 @@ export function PrListExpand({
           </span>
         </Fact>
       )}
-      <Fact label="Approved On">
-        {pr.approvedAt ? (
+      {/* History only — PRs need no approval since 2026-10-31. */}
+      {pr.approvedAt ? (
+        <Fact label="Approved On">
           <span style={{ color: 'var(--blue)' }}>{fmtDate(pr.approvedAt)}</span>
-        ) : (
-          <span className="text3">—</span>
-        )}
-      </Fact>
+        </Fact>
+      ) : null}
       <Fact label="PO No. / Date">
         {pr.poCode ? (
           <span>

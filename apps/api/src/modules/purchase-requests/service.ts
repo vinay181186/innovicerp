@@ -51,7 +51,8 @@ import { assertMlNodeCapOnEdit, assertMlNodeItemUnchanged } from '../ml-plan/edi
 import { nextSeriesCode } from '../op-entry/osp-cascade';
 import { lockDocSeries } from '../../lib/doc-series-lock';
 import { assertNoPendingCancel } from '../cancel-requests/pending-guard';
-import { markPrCancelledTx, releaseSourceJcOps } from './pr-cancel-writer';
+import { stagedEditMessage } from '../cancel-requests/messages';
+import { releaseSourceJcOps } from './pr-cancel-writer';
 import { prSfColumns } from './sf-columns';
 import type {
   ClosePurchaseRequestBalanceInput,
@@ -68,17 +69,6 @@ const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
   return user.companyId;
 };
-
-// Screen words for PR status codes, for error text only (matches the web's
-// pr-labels.ts). Unknown codes fall back to Title Case.
-const PR_STATUS_LABEL: Record<string, string> = {
-  open: 'Open',
-  approved: 'Approved',
-  po_created: 'PO Created',
-  cancelled: 'Cancelled',
-};
-const prStatusLabel = (status: string): string =>
-  PR_STATUS_LABEL[status] ?? status.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
 function prDetail(
   code: string,
@@ -427,6 +417,20 @@ export function orderedQtySql(prRef: {
     WHEN ${prRef.poId} IS NOT NULL AND ${linkedLineCountSql(prRef.id)} = 0 THEN ${prRef.qty}
     ELSE ${liveOrderedQtySql(prRef.id)}
   END)`;
+}
+
+/** THE "PR waiting for a PO" rule (owner rule 2026-10-31: PRs have no
+ *  approval, so every live PR with quantity still to order is waiting). One
+ *  predicate for the KPI tile and alerts AL-002 / AL-006; the home "PRs to
+ *  order" list (dashboard/personal/rows-purchase.ts prToPoSql) states the same
+ *  three conditions over its own ordered-qty lateral. `pr` = the alias given
+ *  to purchase_requests. */
+export function prWaitingForPoSql(pr = 'pr'): SQL {
+  const a = sql.raw(pr);
+  const ordered = orderedQtySql({ id: sql`${a}.id`, poId: sql`${a}.po_id`, qty: sql`${a}.qty` });
+  return sql`${a}.status <> 'cancelled'
+    AND ${a}.balance_closed_at IS NULL
+    AND ${a}.qty > ${ordered}`;
 }
 
 /**
@@ -1204,7 +1208,23 @@ export async function updatePurchaseRequest(
   // HERE, not in the tx body, so the edit-approval engine's applyEdit can replay
   // an approved edit for an approver who holds `approve` but not `edit`.
   await requireFormAccess(user, 'pr_create', 'edit');
-  return withUserContext(user, (tx) => updatePurchaseRequestTx(tx, id, input, user));
+  return withUserContext(user, async (tx) => {
+    // PRs are no longer staged (owner rule 2026-10-31), but an edit staged
+    // BEFORE the rule may still wait on Approvals. A direct save now would be
+    // overwritten when it is approved, so refuse until it is decided. Here, not
+    // in the Tx body: the engine replays that very edit through the Tx body.
+    // If the approval commits while this save waits on the row lock, the
+    // expectedUpdatedAt check inside the Tx answers 409.
+    const staged = (await tx.execute(sql`
+      SELECT pr.code FROM public.document_edit_requests d
+      JOIN public.purchase_requests pr ON pr.id = d.entity_id
+      WHERE d.entity = 'PurchaseRequest' AND d.entity_id = ${id}::uuid
+        AND d.status = 'pending' AND d.deleted_at IS NULL
+      LIMIT 1
+    `)) as unknown as Array<{ code: string }>;
+    if (staged[0]) throw new ConflictError(stagedEditMessage(staged[0].code));
+    return updatePurchaseRequestTx(tx, id, input, user);
+  });
 }
 
 /**
@@ -1397,199 +1417,41 @@ export async function updatePurchaseRequestTx(
 }
 
 /**
- * The PR edit entry point the HTTP route calls. Edit-approval (ADR-202): when
- * the company gate is on and the PR is still editable (nothing on a live PO),
- * the edit is STAGED for approval and a {staged:true, request} result is
- * returned; otherwise it falls through to updatePurchaseRequest (today's
- * behaviour). A PR carries a single item on its own record — no child lines —
- * so there is no line guard.
+ * The PR edit entry point the HTTP route calls. Owner rule 2026-10-31: PRs have
+ * no approval, so an edit is never staged — it saves directly through
+ * updatePurchaseRequest (Edit tick, row lock, expectedUpdatedAt check and the
+ * ADR-235 pending-cancel guard all live in updatePurchaseRequestTx). The
+ * pr-edit-registry stays so a PR edit staged before the rule can still be
+ * decided on the Approvals page. The return type keeps the staged branch for
+ * the shared route contract.
  */
 export async function updatePurchaseRequestOrStage(
   id: string,
   input: UpdatePurchaseRequestInput,
   user: AuthContext,
 ): Promise<PurchaseRequest | DocumentEditStagedResult> {
-  await requireFormAccess(user, 'pr_create', 'edit');
-
-  // Imported dynamically to avoid a static import cycle with pr-edit-registry
-  // (which imports updatePurchaseRequestTx from this file).
-  const { requestDocumentEdit } = await import('../document-edits/service');
-  // "Live" is prEditRegistryEntry's own rule (a PR with nothing on a live PO),
-  // read through the registry so the two can never drift.
-  const request = await requestDocumentEdit(
-    'PurchaseRequest',
-    id,
-    input,
-    input.expectedUpdatedAt,
-    user,
-    // ADR-235 — no edit staged while a cancel request waits on this PR (runs
-    // under the engine's PR row lock).
-    (tx) => assertNoPendingCancel(tx, 'purchase_request', id),
-  );
-  if (request) return { staged: true, request };
-
   return updatePurchaseRequest(id, input, user);
 }
 
-// ─── Approval actions (mirror approvePurchaseOrder / rejectPurchaseOrder) ────
+// ─── Approve / Reject — retired (owner rule 2026-10-31) ──────────────────────
 //
-// The ONLY path that advances a PR out of its pre-approval state. Stamps the
-// approvedBy/approvedAt columns the generic update path deliberately never
-// writes (status is immutable there). Legacy `approvePR` (HTML) set
-// op.approvedBy/approvedDate on the same click.
+// A PR is ready for a PO the moment it is raised. The two routes stay so a
+// stale screen gets a clear answer instead of a 404; neither touches the DB.
+// Cancelling a PR is the standard one-step Cancel (cancel-handler.ts).
 
 export async function approvePurchaseRequest(
-  id: string,
-  user: AuthContext,
+  _id: string,
+  _user: AuthContext,
 ): Promise<PurchaseRequest> {
-  // Approving a PR is now a distinct permission, not a side effect of being
-  // a manager (0100). An L3 Editor raises PRs; an L4/L5 signs them off.
-  await requireFormAccess(user, 'pr_create', 'approve');
-  const companyId = requireCompany(user);
-
-  return withUserContext(user, async (tx) => {
-    // S5 — locked: approve / reject / short close / Create PO on one PR
-    // serialize, and each re-reads what the one before it committed.
-    const existing = await tx
-      .select()
-      .from(purchaseRequests)
-      .where(
-        and(
-          eq(purchaseRequests.id, id),
-          eq(purchaseRequests.companyId, companyId),
-          isNull(purchaseRequests.deletedAt),
-        ),
-      )
-      .limit(1)
-      .for('update');
-    const pr = existing[0];
-    if (!pr) throw new NotFoundError('PR not found. It may have been moved to Trash.');
-    // ADR-235 — no approve / reject / short close while a cancel request waits.
-    await assertNoPendingCancel(tx, 'purchase_request', id);
-    // Only a pre-approval PR ('open') can be approved.
-    if (pr.status !== 'open') {
-      throw new ConflictError(
-        `Cannot approve PR ${pr.code}: it is ${prStatusLabel(pr.status)}. Only Open PRs can be approved.`,
-      );
-    }
-
-    // Self-approval allowed (owner decision 2026-10-01): the raiser MAY approve
-    // their own PR when they hold PR approve rights (requireFormAccess above).
-
-    const now = new Date();
-    const approvedRows = await tx
-      .update(purchaseRequests)
-      .set({
-        status: 'approved',
-        approvedBy: user.id,
-        approvedAt: now,
-        updatedBy: user.id,
-        updatedAt: now,
-      })
-      .where(and(eq(purchaseRequests.id, id), eq(purchaseRequests.status, 'open')))
-      .returning({ id: purchaseRequests.id });
-    assertRowUpdated(approvedRows, `PR ${pr.code}`);
-
-    const reread = await tx
-      .select()
-      .from(purchaseRequests)
-      .where(eq(purchaseRequests.id, id))
-      .limit(1);
-    const row = reread[0]!;
-    await emitActivityLog(
-      tx,
-      {
-        action: ActivityAction.Approve,
-        entity: 'PurchaseRequest',
-        entityId: row.id,
-        refId: row.code,
-        qty: row.qty,
-        detail: `${row.code} approved by ${user.fullName || user.email}`,
-      },
-      companyId,
-      user,
-    );
-    return toPurchaseRequest(row, await loadOrderedQty(tx, row));
-  });
+  throw new ConflictError('PRs no longer need approval — this PR is ready for a PO.');
 }
 
 export async function rejectPurchaseRequest(
-  id: string,
-  reason: string,
-  user: AuthContext,
+  _id: string,
+  _reason: string,
+  _user: AuthContext,
 ): Promise<PurchaseRequest> {
-  // Rejecting is the other half of approving — same permission (0100).
-  await requireFormAccess(user, 'pr_create', 'approve');
-  const companyId = requireCompany(user);
-
-  if (!reason || !reason.trim()) {
-    throw new ValidationError('Reason is required to Reject.');
-  }
-  const trimmedReason = reason.trim();
-
-  return withUserContext(user, async (tx) => {
-    // S5 — locked: approve / reject / short close / Create PO on one PR
-    // serialize, and each re-reads what the one before it committed.
-    const existing = await tx
-      .select()
-      .from(purchaseRequests)
-      .where(
-        and(
-          eq(purchaseRequests.id, id),
-          eq(purchaseRequests.companyId, companyId),
-          isNull(purchaseRequests.deletedAt),
-        ),
-      )
-      .limit(1)
-      .for('update');
-    const pr = existing[0];
-    if (!pr) throw new NotFoundError('PR not found. It may have been moved to Trash.');
-    // ADR-235 — no approve / reject / short close while a cancel request waits.
-    await assertNoPendingCancel(tx, 'purchase_request', id);
-    // Quantity already on a LIVE purchase order carries the procurement
-    // obligation on that PO; a cancelled PR is terminal. Same change as the edit
-    // guard: this asks how much is actually on order instead of reading the
-    // boolean po_id / 'po_created' flag, so a PR whose only PO was cancelled can
-    // be rejected (and edited) again rather than being stuck forever.
-    const orderedQty = await loadOrderedQty(tx, pr);
-    if (orderedQty > 0 || pr.status === 'cancelled') {
-      throw new ConflictError(
-        orderedQty > 0
-          ? `Cannot reject PR ${pr.code}: a PO has already been placed against it.`
-          : `Cannot reject PR ${pr.code}: it is ${prStatusLabel(pr.status)}. Only Open or Approved PRs can be rejected.`,
-      );
-    }
-
-    // ADR-197 (0178): who / when / why are stamped on the dedicated columns;
-    // the reason is ALSO appended to remarks (the PR screens read it there).
-    // The ONE "PR is dead" writer, shared with the standard Cancel (ADR-235).
-    const released = await markPrCancelledTx(tx, pr, 'rejected', trimmedReason, user);
-
-    const reread = await tx
-      .select()
-      .from(purchaseRequests)
-      .where(eq(purchaseRequests.id, id))
-      .limit(1);
-    const row = reread[0]!;
-    await emitActivityLog(
-      tx,
-      {
-        action: ActivityAction.Reject,
-        entity: 'PurchaseRequest',
-        entityId: row.id,
-        refId: row.code,
-        qty: row.qty,
-        reason: trimmedReason,
-        detail:
-          `${row.code} rejected: ${trimmedReason}` +
-          (released > 0 ? ` — JC operation freed; it can now be changed or removed` : ''),
-      },
-      companyId,
-      user,
-    );
-    // The guard above proved nothing is on a live PO for this PR.
-    return toPurchaseRequest(row, orderedQty);
-  });
+  throw new ConflictError('PRs no longer need approval — use Cancel to cancel this PR.');
 }
 
 // ─── Short-close the balance (0117, ADR-152 gap 6) ────────────────────────
@@ -1611,10 +1473,10 @@ export async function closePurchaseRequestBalance(
   input: ClosePurchaseRequestBalanceInput,
   user: AuthContext,
 ): Promise<PurchaseRequest> {
-  // Same gate as approve / reject (`pr_create` + `approve`): abandoning
-  // quantity that was formally requested is a sign-off decision, not data
-  // entry. An L3 Editor raises PRs; an L4/L5 decides the rest is not coming.
-  await requireFormAccess(user, 'pr_create', 'approve');
+  // The Edit tick on Purchase Request (owner rule 2026-10-31 — PRs have no
+  // approval, so the old Approve gate moved here). An L2 Data Entry raises
+  // PRs but cannot change one after saving; Edit decides the rest is not coming.
+  await requireFormAccess(user, 'pr_create', 'edit');
   const companyId = requireCompany(user);
 
   const trimmedReason = input.reason.trim();
@@ -1626,7 +1488,7 @@ export async function closePurchaseRequestBalance(
     // Loaded WITHOUT the soft-delete filter on purpose: a deleted PR should be
     // told apart from one that never existed, so the user gets "it was deleted"
     // instead of a bare not-found.
-    // S5 — locked, like approve / reject: a Short Close racing a Create PO on
+    // S5 — locked: a Short Close racing a Create PO on
     // the same PR serializes, and the balance below is read after it.
     const existing = await tx
       .select()
@@ -1636,7 +1498,7 @@ export async function closePurchaseRequestBalance(
       .for('update');
     const pr = existing[0];
     if (!pr) throw new NotFoundError('PR not found. It may have been moved to Trash.');
-    // ADR-235 — no approve / reject / short close while a cancel request waits.
+    // ADR-235 — no short close while a cancel request waits.
     await assertNoPendingCancel(tx, 'purchase_request', id);
     if (pr.deletedAt !== null) {
       throw new ValidationError(`PR ${pr.code} is in Trash. It cannot be Short Closed.`);
@@ -1652,13 +1514,13 @@ export async function closePurchaseRequestBalance(
     const balanceQty = deriveBalanceQty({ qty: pr.qty, orderedQty, balanceClosed: false });
     // Two different mistakes, two different answers — and neither is "no".
     //
-    // Nothing bought at all is not a short-close, it is a rejection: there is
+    // Nothing bought at all is not a short-close, it is a cancel: there is
     // no partial order to preserve, so the PR should be killed outright and the
-    // JC op it was raised against released (which Reject does and this does
+    // JC op it was raised against released (which Cancel does and this does
     // not). The user is sent to that button by name.
     if (orderedQty <= 0) {
       throw new ValidationError(
-        `Nothing is ordered on PR ${pr.code} yet. Use Reject to cancel the whole PR.`,
+        `Nothing is ordered on PR ${pr.code} yet. Use Cancel to cancel the whole PR.`,
       );
     }
     // Fully ordered (or over-ordered): closing would change nothing.

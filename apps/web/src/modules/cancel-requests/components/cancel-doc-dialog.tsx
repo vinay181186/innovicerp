@@ -9,11 +9,21 @@
 //   READY (effects + reason + Keep / Request cancel / Cancel now) →
 //   SENT (request waiting for approval).
 //
+// ONE-STEP documents (owner rule 2026-10-31): a Purchase Request needs no
+// approval, so its READY state offers a single "Cancel PR" (reason → Cancelled
+// at once, sent with approveNow). An old request still pending on a PR keeps
+// the pending state below. Every other document keeps request + approve.
+//
 // Double-click (CLAUDE.md §20.1 / §20.2): a ref flips the INSTANT a button is
 // pressed, before React re-renders, and every button is disabled while a call
 // is in flight. The server's conditional status update is the real guard.
 
-import type { CancelDocType, CancelRequestResult } from '@innovic/shared';
+import {
+  CANCEL_DOC_LABELS,
+  type CancelDocType,
+  type CancelRequestResult,
+  ONE_STEP_CANCEL_DOC_TYPES,
+} from '@innovic/shared';
 import { useRef, useState } from 'react';
 import { fmtDateTime } from '@/lib/date';
 import { useSession } from '@/lib/session';
@@ -45,6 +55,11 @@ export function CancelDocDialog({
   const [sent, setSent] = useState<CancelRequestResult | null>(null);
   const [err, setErr] = useState<unknown>(null);
   const inFlight = useRef(false);
+  // One-step type (shared ONE_STEP_CANCEL_DOC_TYPES, the server's own list):
+  // the Edit tick cancels at once — no request / approval wording.
+  const oneStepLabel = ONE_STEP_CANCEL_DOC_TYPES.includes(docType)
+    ? `Cancel ${CANCEL_DOC_LABELS[docType]}`
+    : null;
   const busy = requestMut.isPending || decideMut.isPending || withdrawMut.isPending;
 
   /** One call at a time; close when the document is now Cancelled or the
@@ -170,7 +185,9 @@ export function CancelDocDialog({
     // holder decides requests others raise (the pending state above).
     body = (
       <div style={TEXT}>
-        You need the Edit tick on this page to ask for a cancel. Ask an admin for the right.
+        {oneStepLabel
+          ? 'You need the Edit tick on this page to cancel it. Ask an admin for the right.'
+          : 'You need the Edit tick on this page to ask for a cancel. Ask an admin for the right.'}
       </div>
     );
   } else {
@@ -198,7 +215,7 @@ export function CancelDocDialog({
             placeholder={`Why is ${docCode} being cancelled?`}
           />
         </div>
-        {!p.canApprove ? (
+        {!p.canApprove && !oneStepLabel ? (
           <div className="text3" style={{ fontSize: 11 }}>
             A holder of the Approve tick on this page approves it before {docCode} is cancelled.
           </div>
@@ -211,7 +228,20 @@ export function CancelDocDialog({
         () => requestMut.mutateAsync({ docType, docId, reason: trimmed, approveNow }),
         'sent',
       );
-    footer = (
+    footer = oneStepLabel ? (
+      <>
+        {btnClose('Keep')}
+        <button
+          type="button"
+          className="btn btn-danger"
+          disabled={!trimmed || busy}
+          title={!trimmed ? 'Type the reason first' : undefined}
+          onClick={() => send(true)}
+        >
+          {requestMut.isPending ? 'Cancelling…' : oneStepLabel}
+        </button>
+      </>
+    ) : (
       <>
         {btnClose('Keep')}
         {p.canRequest ? (

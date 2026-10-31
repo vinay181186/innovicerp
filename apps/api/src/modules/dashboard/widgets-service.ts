@@ -154,16 +154,16 @@ async function computeWidget(
       const r = (
         await q(
           tx,
+          // PRs have no approval (owner rule 2026-10-31): 'open' and the
+          // older 'approved' both mean ready for a PO.
           `SELECT
-          COUNT(*) FILTER (WHERE status='open')::int AS pending,
-          COUNT(*) FILTER (WHERE status='approved')::int AS approved,
+          COUNT(*) FILTER (WHERE status IN ('open','approved'))::int AS ready,
           COUNT(*) FILTER (WHERE status='po_created')::int AS pocreated
           FROM purchase_requests WHERE company_id='${cid}'::uuid AND deleted_at IS NULL`,
         )
       )[0];
       w.stats = [
-        { label: 'Pending', value: num(r?.['pending']), tone: 'amber' },
-        { label: 'Approved', value: num(r?.['approved']), tone: 'blue' },
+        { label: 'Ready for PO', value: num(r?.['ready']), tone: 'amber' },
         { label: 'PO Created', value: num(r?.['pocreated']), tone: 'green' },
       ];
       break;

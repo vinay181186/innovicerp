@@ -16,7 +16,8 @@ import { prCancelNote, prJcOpReleaseText } from './cancel-text';
 
 export const purchaseRequestCancelHandler: CancelHandler = {
   docType: 'purchase_request',
-  // PR edits are staged for approval (ADR-202) under this entity.
+  // PR edits now save directly (owner rule 2026-10-31); kept so a PR edit
+  // staged before that rule (ADR-202) still blocks a cancel until decided.
   editEntity: 'PurchaseRequest',
 
   async lock(tx, companyId, docId, forUpdate) {

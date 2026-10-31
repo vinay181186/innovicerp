@@ -22,6 +22,7 @@ import { OP_LOG_QC_REMARKS } from '../../lib/op-log-qc-remarks';
 import { polSql } from '../../lib/pol';
 import { AuthorizationError } from '../../lib/errors';
 import { likeEscape } from '../../lib/list-query';
+import { PEND_IS_LAST } from '../qc-history/sql';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -78,7 +79,8 @@ const PENDING_SELECT = sql`
   ${polSql('sol', 'rev_jwl')} AS "clientPoLineNo", i.name AS "itemName",
   jo.operation, jc.order_qty AS "orderQty", vos.qc_pending AS "qcPending",
   jo.qc_call_date AS "callDate",
-  GREATEST(0, (CURRENT_DATE - COALESCE(jo.qc_call_date, jc.jc_date)))::int AS "waitDays"`;
+  GREATEST(0, (CURRENT_DATE - COALESCE(jo.qc_call_date, jc.jc_date)))::int AS "waitDays",
+  ${PEND_IS_LAST} AS "isLastOp"`;
 const PENDING_ORDER = sql`jc.code, vos.op_seq, vos.jc_op_id`;
 
 const COMPLETED_SELECT = sql`
@@ -133,6 +135,7 @@ function toPending(r: Raw): TpiPendingRow {
     qcPending: Number(r['qcPending'] ?? 0),
     callDate: dateLike(r['callDate']),
     waitDays: Number(r['waitDays'] ?? 0),
+    isLastOp: r['isLastOp'] === true,
   };
 }
 

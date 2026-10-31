@@ -13,13 +13,18 @@ import { sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { hasFormAccess } from '../../lib/access';
+import { cancelDeciderRight } from './registry';
 import { formKeyOf, requireCompany, selectRows } from './rows';
 
 /** Doc types whose page grants the caller `action` — the list never shows a
- *  request on a page the caller cannot open. */
-async function typesWith(user: AuthContext, action: 'view' | 'approve'): Promise<CancelDocType[]> {
+ *  request on a page the caller cannot open. 'decide' = the tick that decides
+ *  that type's cancel: Approve, or Edit for a one-step type (Purchase Request,
+ *  owner rule 2026-10-31 — so a request left pending from before still shows). */
+async function typesWith(user: AuthContext, action: 'view' | 'decide'): Promise<CancelDocType[]> {
   const ok = await Promise.all(
-    CANCEL_DOC_TYPES.map((t) => hasFormAccess(user, formKeyOf(t), action)),
+    CANCEL_DOC_TYPES.map((t) =>
+      hasFormAccess(user, formKeyOf(t), action === 'view' ? 'view' : cancelDeciderRight(t)),
+    ),
   );
   return CANCEL_DOC_TYPES.filter((_, i) => ok[i]);
 }
@@ -29,7 +34,7 @@ export async function listCancelRequests(
   user: AuthContext,
 ): Promise<ListCancelRequestsResponse> {
   const companyId = requireCompany(user);
-  const types = await typesWith(user, q.toDecide ? 'approve' : 'view');
+  const types = await typesWith(user, q.toDecide ? 'decide' : 'view');
   if (types.length === 0) return { items: [], total: 0 };
 
   const where = sql`

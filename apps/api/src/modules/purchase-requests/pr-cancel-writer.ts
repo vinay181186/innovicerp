@@ -1,9 +1,9 @@
 // The ONE writer that turns a live Purchase Request into 'cancelled' (§20.1).
 //
-// Two callers, one set of writes:
-//   - rejectPurchaseRequest (service.ts) — the approver turns a PR down;
-//   - cancelPurchaseRequestTx (cancel.ts) — an approved Cancel Request (ADR-235).
-// Both flip the status conditionally on the status read under the caller's
+// One caller today: cancelPurchaseRequestTx (cancel.ts) — the one-step Cancel
+// (ADR-235; owner rule 2026-10-31). The old Reject caller is retired (PRs have
+// no approval); the 'rejected' kind stays only so the type reads as before.
+// It flips the status conditionally on the status read under the caller's
 // lock (§20.2), stamp who / when / why, append the reason to remarks (the PR
 // screens still read it from there), and hand the JC op(s) the PR was raised
 // against back (ADR-101). Each caller writes its own activity row (REJECT vs

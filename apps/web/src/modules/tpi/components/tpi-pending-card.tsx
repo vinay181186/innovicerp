@@ -66,7 +66,7 @@ export function PendingTpi(props: {
   const [qcReportName, setQcReportName] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   // ADR-252 — the TPI step's report may be compulsory.
-  const qcReportRule = useQcReportRule(o.operation, Number(accept || '0'));
+  const qcReportRule = useQcReportRule(o.operation, Number(accept || '0'), o.isLastOp);
   const qcReportMissing = reportMissingReason(qcReportRule, qcReportPath !== null);
 
   async function send(): Promise<void> {

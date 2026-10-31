@@ -1,16 +1,21 @@
-// AL-006 — Pending PRs (purchase). Legacy line 22267-22268.
-// Filter: status = 'open'. Same shape as AL-002 but no age threshold.
+// AL-006 — PRs waiting for a PO (purchase). Legacy line 22267-22268.
+// PRs have no approval (owner rule 2026-10-31): 'open' and the older
+// 'approved' both mean ready for a PO. Filter = purchase-requests
+// prWaitingForPoSql (not cancelled, not short-closed, qty still to order —
+// part-ordered PRs included; the same rule as the home "PRs to order" list). AL-002 = this + age > 2 days.
+// AL-015 is the OSP-only (raised from a JC op) subset. Code AL-006 kept.
 
 import { docNavPage } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
+import { prWaitingForPoSql } from '../../purchase-requests/service';
 import type { RegisteredAlert } from '../registry';
 
 export const al006PrsPending: RegisteredAlert = {
   definition: {
     code: 'AL-006',
     dept: 'purchase',
-    name: 'Pending PRs',
-    description: 'PRs with PR Status Open, waiting for approval.',
+    name: 'PRs Waiting for PO',
+    description: 'PRs with qty still to order on a PO.',
     columns: [
       { key: 'pr_code', label: 'PR No.', type: 'text' },
       { key: 'pr_date', label: 'PR Date', type: 'date' },
@@ -30,7 +35,7 @@ export const al006PrsPending: RegisteredAlert = {
       LEFT JOIN public.items i ON i.id = pr.item_id
       WHERE pr.company_id = ${companyId}::uuid
         AND pr.deleted_at IS NULL
-        AND pr.status = 'open'
+        AND ${prWaitingForPoSql('pr')}
       ORDER BY pr.pr_date, pr.code
     `);
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({

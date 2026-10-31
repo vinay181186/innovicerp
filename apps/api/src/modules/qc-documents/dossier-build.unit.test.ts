@@ -27,6 +27,8 @@ const step = (over: Partial<DossierStepRow>): DossierStepRow => ({
   reportTypeId: DIR.id,
   reportName: DIR.name,
   mandatory: true,
+  lastStageOnly: false,
+  isLastOp: true,
   opDone: true,
   ...over,
 });
@@ -254,20 +256,58 @@ describe('QC Dossier line / folder state', () => {
 });
 
 describe('Submit QC rule (shared qcReportMandatory)', () => {
-  const dir = { code: 'DIR', reportTypeId: DIR.id, reportTypeName: 'DIR', reportMandatory: true };
+  const dir = {
+    code: 'DIR',
+    reportTypeId: DIR.id,
+    reportTypeName: 'DIR',
+    reportMandatory: true,
+    reportLastStageOnly: false,
+  };
   const fi = {
     code: 'Final Inspection',
     reportTypeId: FI.id,
     reportTypeName: 'Final Inspection',
     reportMandatory: false,
+    reportLastStageOnly: false,
   };
+  const dirLast = { ...dir, reportLastStageOnly: true };
   it('mandatory report + accepted qty → must attach; matching is trimmed and case-insensitive', () => {
-    expect(qcReportMandatory(' dir ', 3, [dir])).toBe(true);
+    expect(qcReportMandatory(' dir ', 3, [dir], false)).toBe(true);
   });
   it('accepted 0, optional report, or no process → saves without a report', () => {
-    expect(qcReportMandatory('DIR', 0, [dir])).toBe(false);
-    expect(qcReportMandatory('Final Inspection', 3, [fi])).toBe(false);
-    expect(qcReportMandatory('Turning', 3, [dir])).toBe(false);
+    expect(qcReportMandatory('DIR', 0, [dir], true)).toBe(false);
+    expect(qcReportMandatory('Final Inspection', 3, [fi], true)).toBe(false);
+    expect(qcReportMandatory('Turning', 3, [dir], true)).toBe(false);
+  });
+  it('Last Stage Only (0235): compulsory on the last op, optional on a middle op', () => {
+    expect(qcReportMandatory('DIR', 3, [dirLast], true)).toBe(true);
+    expect(qcReportMandatory('DIR', 3, [dirLast], false)).toBe(false);
+  });
+});
+
+describe('0235 entry reportMandatory (Last Stage Only)', () => {
+  it('middle DIR without a report → still report_missing, but not compulsory', () => {
+    const b = buildDossier(
+      raw({ steps: [step({ lastStageOnly: true, isLastOp: false })], entries: [entry({})] }),
+    );
+    const e = b.lines[0]!.folders[0]!.entries[0]!;
+    expect(e.state).toBe('report_missing');
+    expect(e.reportMandatory).toBe(false);
+    expect(b.lines[0]!.state).toBe('report_missing');
+  });
+  it('last-stage DIR → compulsory', () => {
+    const b = buildDossier(
+      raw({ steps: [step({ lastStageOnly: true, isLastOp: true })], entries: [entry({})] }),
+    );
+    expect(b.lines[0]!.folders[0]!.entries[0]!.reportMandatory).toBe(true);
+  });
+  it('mandatory on every stage (TPI style) → compulsory on a middle op too', () => {
+    const b = buildDossier(raw({ steps: [step({ isLastOp: false })], entries: [entry({})] }));
+    expect(b.lines[0]!.folders[0]!.entries[0]!.reportMandatory).toBe(true);
+  });
+  it('optional report type → never compulsory', () => {
+    const b = buildDossier(raw({ steps: [step({ mandatory: false })], entries: [entry({})] }));
+    expect(b.lines[0]!.folders[0]!.entries[0]!.reportMandatory).toBe(false);
   });
 });
 

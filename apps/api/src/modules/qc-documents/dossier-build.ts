@@ -71,6 +71,16 @@ export function entryReportMissing(
   return !!step.reportTypeId && e.qty > 0 && !hasFile && e.reportRequired !== false;
 }
 
+/** 0235 (owner rule 2026-10-31) — the step's report was COMPULSORY: Mandatory,
+ *  and for a Last Stage Only report (DIR, Final Inspection) the op is the
+ *  card's last live op. A missing report that was not compulsory reads
+ *  "not uploaded (optional)"; it still counts as missing (ADR-252 D2). */
+export function stepReportMandatory(
+  step: Pick<DossierStepRow, 'reportTypeId' | 'mandatory' | 'lastStageOnly' | 'isLastOp'>,
+): boolean {
+  return !!step.reportTypeId && step.mandatory && (!step.lastStageOnly || step.isLastOp);
+}
+
 const OTHER = '__other';
 const newestFirst = (a: QcDossierFile, b: QcDossierFile) =>
   b.uploadedAt.localeCompare(a.uploadedAt) || a.key.localeCompare(b.key);
@@ -223,6 +233,7 @@ export function buildDossier(raw: DossierRaw): DossierBuilt {
       rejectedQty: e.rejectQty,
       remarks: e.remarks,
       reportRequired: e.reportRequired,
+      reportMandatory: stepReportMandatory(s),
       state: entryReportMissing(e, s, files.length > 0) ? 'report_missing' : 'report_in',
       files,
     };

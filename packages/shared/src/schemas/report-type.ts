@@ -13,6 +13,8 @@ export const reportTypeSchema = z.object({
   name: z.string(),
   description: z.string().nullable(),
   defaultMandatory: z.boolean(),
+  /** Mandatory only on a job card's last op (0235). Ignored when not Mandatory. */
+  lastStageOnly: z.boolean(),
   status: reportTypeStatusSchema,
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -38,6 +40,7 @@ export const createReportTypeInputSchema = z.object({
   name: z.string().min(1, 'Name is required'),
   description: z.string().max(500).optional(),
   defaultMandatory: z.boolean().default(false),
+  lastStageOnly: z.boolean().default(false),
   status: reportTypeStatusSchema.default('Active'),
 });
 export type CreateReportTypeInput = z.infer<typeof createReportTypeInputSchema>;

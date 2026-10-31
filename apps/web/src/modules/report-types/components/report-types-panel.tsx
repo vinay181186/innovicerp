@@ -89,7 +89,11 @@ export function ReportTypesPanel(): React.JSX.Element {
         nowrap: true,
         render: (row) => (
           <span className={`badge ${row.defaultMandatory ? 'b-red' : 'b-blue'}`}>
-            {row.defaultMandatory ? '★ Mandatory' : 'Optional'}
+            {row.defaultMandatory
+              ? row.lastStageOnly
+                ? '★ Mandatory (last stage only)'
+                : '★ Mandatory'
+              : 'Optional'}
           </span>
         ),
       },
@@ -214,6 +218,8 @@ function ReportTypeModal(props: { row?: ReportType; onClose: () => void }): Reac
   const [name, setName] = useState(row?.name ?? '');
   const [description, setDescription] = useState(row?.description ?? '');
   const [defaultMandatory, setDefaultMandatory] = useState(row?.defaultMandatory ?? false);
+  // Owner rule 2026-10-31: compulsory only on a job card's last QC stage.
+  const [lastStageOnly, setLastStageOnly] = useState(row?.lastStageOnly ?? false);
   const [status, setStatus] = useState<(typeof REPORT_TYPE_STATUSES)[number]>(
     row?.status ?? 'Active',
   );
@@ -228,6 +234,8 @@ function ReportTypeModal(props: { row?: ReportType; onClose: () => void }): Reac
     const input: CreateReportTypeInput = {
       name: name.trim(),
       defaultMandatory,
+      // Means nothing without Mandatory — never saved on an optional type.
+      lastStageOnly: defaultMandatory && lastStageOnly,
       status,
       ...(description.trim() ? { description: description.trim() } : {}),
     };
@@ -300,6 +308,26 @@ function ReportTypeModal(props: { row?: ReportType; onClose: () => void }): Reac
               >
                 <option value="mandatory">★ Mandatory</option>
                 <option value="optional">Optional</option>
+              </select>
+            </div>
+            <div className="form-grp">
+              <label className="form-label" htmlFor="rt-last-stage">
+                Last Stage Only
+              </label>
+              <select
+                id="rt-last-stage"
+                className="innovic-select"
+                value={defaultMandatory && lastStageOnly ? 'yes' : 'no'}
+                onChange={(e) => setLastStageOnly(e.target.value === 'yes')}
+                disabled={!defaultMandatory}
+                title={
+                  defaultMandatory
+                    ? 'Yes = mandatory only on the job card’s last QC stage; optional on middle stages'
+                    : 'Set Default Requirement to Mandatory first'
+                }
+              >
+                <option value="no">No</option>
+                <option value="yes">Yes</option>
               </select>
             </div>
             <div className="form-grp">

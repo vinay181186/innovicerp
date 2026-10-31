@@ -9,7 +9,7 @@ import { soNoWithInternal } from '@/lib/so-number';
 import { Badge } from '@/ui/core';
 import { DataTable, dynamicColumns, type DataTableColumn } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
-import { folderFiles } from './dossier-model';
+import { folderFiles, onlyOptionalMissing } from './dossier-model';
 import { polLabel } from './dossier-tree';
 
 /** Report names in the order they first appear on the order's lines. */
@@ -29,6 +29,13 @@ function ReportCell({ folder }: { folder: QcDossierFolder | undefined }): React.
   const n = folder ? folderFiles(folder).length : 0;
   if (!folder || (!folder.isStep && n === 0)) {
     return <span className="text3">— not a step</span>;
+  }
+  if (folder.state === 'report_missing' && onlyOptionalMissing([folder])) {
+    return (
+      <Badge tone="orange" className="qd-chip" title="Report not uploaded (optional)">
+        {n > 0 ? `${n} · optional` : 'optional'}
+      </Badge>
+    );
   }
   if (folder.state === 'report_missing') {
     return (
