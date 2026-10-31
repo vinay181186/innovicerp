@@ -38,7 +38,7 @@ export const STORE_TXN_SOURCE_TYPES = [
   'stock_count',
   // ADR-193 phase 4 (0159): an in-store instrument scrapped on an approved write-off.
   'tool_writeoff',
-  // Drawing Rev register Phase C/D (0235): stock moved between Item + Rev
+  // Drawing Rev register Phase C/D (0233): stock moved between Item + Rev
   // buckets of the same item (old blank-Rev stock set to ABC/1 by hand).
   'rev_change',
   'other',
