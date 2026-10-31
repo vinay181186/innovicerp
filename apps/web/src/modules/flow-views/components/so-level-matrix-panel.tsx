@@ -431,27 +431,8 @@ function LineLevels({ line }: { line: LevelSoLine }): React.JSX.Element {
 
 // ─── The SO-line sheet ───────────────────────────────────────────────────────
 
-function lineColumns(
-  expanded: Set<string>,
-  toggle: (id: string) => void,
-): DataTableColumn<LevelSoLine>[] {
+function lineColumns(): DataTableColumn<LevelSoLine>[] {
   return [
-    {
-      header: '',
-      nowrap: true,
-      stopRowClick: true,
-      render: (l) => (
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm"
-          aria-expanded={expanded.has(l.id)}
-          title={expanded.has(l.id) ? 'Hide levels' : 'Show every level of this line'}
-          onClick={() => toggle(l.id)}
-        >
-          {expanded.has(l.id) ? '▾' : '▸'}
-        </button>
-      ),
-    },
     {
       header: 'Ln',
       nowrap: true,
@@ -509,13 +490,6 @@ function lineColumns(
 export function SoLevelMatrixPanel({ salesOrderId }: { salesOrderId: string }): React.JSX.Element {
   const { data, isLoading, isError, error } = useLevelMatrix(salesOrderId);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const toggle = (id: string): void =>
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
   const lines = data?.lines ?? [];
   const allOpen = lines.length > 0 && lines.every((l) => expanded.has(l.id));
   return (
@@ -540,7 +514,7 @@ export function SoLevelMatrixPanel({ salesOrderId }: { salesOrderId: string }): 
         </div>
       ) : (
         <DataTable<LevelSoLine>
-          columns={lineColumns(expanded, toggle)}
+          columns={lineColumns()}
           rows={lines}
           loading={isLoading}
           autoWidth

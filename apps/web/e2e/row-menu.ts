@@ -82,28 +82,23 @@ export const EXECUTE_PLAN_ITEM = /·\s*(Create JC|Raise PR)$/;
 /** The ⋯ item that reopens a plan for editing (the old ✏ button). */
 export const EDIT_PLAN_ITEM = /·\s*Edit plan$/;
 
-/** Open every collapsed ▸ on the page, so the detail panels can be read.
- *  The fit table puts a row's extra columns and its plan chips in there. */
+/** Open the BOM-part rows of every Planning line that has them, so each
+ *  part's own ⋯ can be used. There is no ▸ on rows any more (owner
+ *  2026-10-31): the line's ⋯ offers "Show parts (N)", which flips to "Hide
+ *  parts" once open — so take the first line still offering it until none
+ *  is left rather than indexing. */
 export async function expandPlanningRows(page: Page): Promise<void> {
-  // By ROLE and NAME, never `button.dt-exp`. The fit table keeps a hidden
-  // measuring copy of itself mounted at all times (ColumnMeasurer), and every
-  // sampled row in it carries the same `.dt-exp` class with no aria-label and
-  // no aria-expanded. A CSS locator therefore finds twice as many carets as
-  // there are rows and tries to click one inside `visibility: hidden`, which
-  // waits for the test timeout instead of failing. getByRole skips anything
-  // hidden from the accessibility tree.
-  const carets = page.getByRole('button', { name: 'Show row details' });
-  // Each click removes one caret from this set (its name flips to "Hide row
-  // details"), so take the first one until none is left rather than indexing.
+  const showParts = /^Show parts/;
   for (let guard = 0; guard < 200; guard += 1) {
-    if ((await carets.count()) === 0) return;
-    await carets.first().click();
+    const row = await findRowWithMenuItem(page, planningLineRows(page), showParts);
+    if (!row) return;
+    await clickRowMenuItem(page, row, showParts);
     await page.waitForTimeout(120);
   }
 }
 
 /** Every row whose ⋯ may carry a plan's items: the order lines, and — on a
- *  line with BOM parts — each part's own row in the ▸ detail table, whose ⋯ is
+ *  line with BOM parts — each part's own row in the line's parts table, whose ⋯ is
  *  named "Actions for PLN-xxxx" (planChildMenu, 2026-10-07). */
 export function planningPlanRows(page: Page): Locator {
   return page
@@ -112,7 +107,7 @@ export function planningPlanRows(page: Page): Locator {
 }
 
 /** The row carrying THIS plan's ⋯ items: its own child row when the plan is
- *  for a BOM part (opening the ▸ details first if they are shut), else the
+ *  for a BOM part (opening the line's parts first if they are shut), else the
  *  order line that lists it. */
 async function planRow(page: Page, planCode: string): Promise<Locator> {
   const own = page
@@ -131,7 +126,7 @@ export async function executePlanFromMenu(page: Page, timeout = 60_000): Promise
   const rows = planningPlanRows(page);
   const deadline = Date.now() + timeout;
   for (;;) {
-    // A BOM part's plan offers its items on its own row inside the ▸ details.
+    // A BOM part's plan offers its items on its own row in the line's parts.
     await expandPlanningRows(page);
     const row = await findRowWithMenuItem(page, rows, EXECUTE_PLAN_ITEM);
     if (row) {

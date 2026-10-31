@@ -1,4 +1,4 @@
-// The fit engine's strip above the table (ADR-199): what moved into ▸, the
+// The fit engine's strip above the table (ADR-199): the columns not on screen, the
 // pins-too-wide warning, the save-failed note, Comfortable | Compact, and the
 // Columns ▾ popover. Right-aligned and compact.
 
@@ -129,7 +129,7 @@ export function TableToolbar(props: TableToolbarProps): ReactElement {
     <div className="dt-toolbar" ref={rootRef}>
       {dropped.length > 0 ? (
         <span className="dt-chip" role="status">
-          {dropped.length} column{dropped.length > 1 ? 's' : ''} moved to ▸ to fit:{' '}
+          {dropped.length} column{dropped.length > 1 ? 's' : ''} not on screen (no room):{' '}
           <b>{dropped.map(labelOf).join(', ')}</b> ·{' '}
           <button
             type="button"
@@ -145,7 +145,8 @@ export function TableToolbar(props: TableToolbarProps): ReactElement {
       ) : null}
       {warn ? (
         <span className="dt-chip dt-chip-warn" role="alert">
-          Your pinned columns are wider than this screen — the rightmost pin moved to ▸. Unpin one.
+          Your pinned columns are wider than this screen — the rightmost pin is not on screen. Unpin
+          one.
         </span>
       ) : null}
       {loadFailed ? (
