@@ -1,9 +1,11 @@
-// Day Log — Teams Config (owner 2026-10-30, 0230), TEST database. A Super
-// Admin pairs two people; each sees the other's saved day read-only (no Entry
-// Rev, no replies, no manage / approve). Registered by service.test.ts
-// (teamCases()) so it shares that file's fixture. Pair under test: the owner
-// and the seed admin's id (viewing with a plain, non-L5 matrix). Pairs among
-// the fixture's users are hard-deleted before and after every case.
+// Day Log — Teams Config (0230; ONE-WAY since 0231, owner 2026-10-31), TEST
+// database. A Super Admin gives a User a team mate; the User sees the mate's
+// saved day read-only (no Entry Rev, no replies, no manage / approve) and the
+// mate does NOT see the User unless that row is set too. Registered by
+// service.test.ts (teamCases()) so it shares that file's fixture. Main row:
+// User = the seed admin's id (viewing with a plain, non-L5 matrix), mate = the
+// owner. Rows among the fixture's users are soft-deleted before and after
+// every case.
 import { addDayLogTeamMateInputSchema } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -41,7 +43,7 @@ async function wipePairs(): Promise<void> {
     SET deleted_at = now(), deleted_by = ${fx.admin.id}::uuid,
         updated_at = now(), updated_by = ${fx.admin.id}::uuid
     WHERE deleted_at IS NULL
-      AND user_low_id = ANY(${sql.param(ids)}::uuid[]) AND user_high_id = ANY(${sql.param(ids)}::uuid[])
+      AND user_id = ANY(${sql.param(ids)}::uuid[]) AND mate_id = ANY(${sql.param(ids)}::uuid[])
   `);
 }
 
@@ -54,12 +56,17 @@ async function livePairs(): Promise<number> {
   const [r] = (await db.execute(sql`
     SELECT count(*)::int AS n FROM public.day_log_team_mates
     WHERE deleted_at IS NULL
-      AND user_low_id = ANY(${sql.param(ids)}::uuid[]) AND user_high_id = ANY(${sql.param(ids)}::uuid[])
+      AND user_id = ANY(${sql.param(ids)}::uuid[]) AND mate_id = ANY(${sql.param(ids)}::uuid[])
   `)) as unknown as Array<{ n: number }>;
   return Number(r?.n ?? 0);
 }
 
+/** User = the seed admin, team mate = the owner: the admin SEES the owner's
+ *  day (one-way, 0231) — the owner does not see the admin's. */
 const pair = () =>
+  service.addTeamMate({ userId: fx.admin.id, mateId: fx.ownerBase.id }, superAdmin());
+/** The other direction: the owner sees the admin. */
+const reversePair = () =>
   service.addTeamMate({ userId: fx.ownerBase.id, mateId: fx.admin.id }, superAdmin());
 const dayOf = (userId: string, as: AuthContext) =>
   service.getPersonDay({ userId, date: MON }, as, C);
@@ -67,11 +74,11 @@ const teamIds = async (as: AuthContext) =>
   (await service.getTeam({ date: MON }, as, C)).rows.map((r) => r.userId);
 
 export function teamCases(): void {
-  describe('Day Log — Teams Config (two-way mates)', () => {
+  describe('Day Log — Teams Config (one-way: the User sees the team mate)', () => {
     beforeEach(wipePairs);
     afterEach(wipePairs);
 
-    it('before a pair: no sight of each other, no team tab', async () => {
+    it('before a row: no sight, no team tab', async () => {
       await add(MON, C);
       await expect(dayOf(fx.ownerBase.id, plainAdmin())).rejects.toBeInstanceOf(NotFoundError);
       expect((await service.getAccess(owner())).canSeeTeam).toBe(false);
@@ -80,70 +87,72 @@ export function teamCases(): void {
       );
     });
 
-    it('a pair: both see each other read-only, team = just the mate', async () => {
+    it('User → mate: the User sees the mate read-only; the mate does NOT see the User', async () => {
       await add(MON, C, { description: 'mate-visible work' });
       const row = await pair();
-      expect(row.mateId).toBe(fx.admin.id);
+      expect(row.mateId).toBe(fx.ownerBase.id);
 
-      // Listed from both sides.
-      const a = await service.listTeamMates({ userId: fx.ownerBase.id }, superAdmin());
-      expect(a.rows.map((x) => [x.id, x.mateId])).toEqual([[row.id, fx.admin.id]]);
-      const b = await service.listTeamMates({ userId: fx.admin.id }, superAdmin());
-      expect(b.rows.map((x) => [x.id, x.mateId])).toEqual([[row.id, fx.ownerBase.id]]);
+      // Listed under the User only.
+      const a = await service.listTeamMates({ userId: fx.admin.id }, superAdmin());
+      expect(a.rows.map((x) => [x.id, x.mateId])).toEqual([[row.id, fx.ownerBase.id]]);
+      const b = await service.listTeamMates({ userId: fx.ownerBase.id }, superAdmin());
+      expect(b.rows).toEqual([]);
 
-      // The mate sees the owner's day: entries, no revisions, no replies.
+      // The User sees the mate's day: entries, no revisions, no replies.
       const d = await dayOf(fx.ownerBase.id, plainAdmin());
       expect([d.isSuperAdmin, d.canReply]).toEqual([false, false]);
       expect(d.entries.map((e) => e.description)).toEqual(['mate-visible work']);
       expect(d.entries.map((e) => [e.entryRevNo, e.revisions, e.replies])).toEqual([
         [null, [], []],
       ]);
-      // … and the owner sees the mate's day (the other direction).
-      const back = await dayOf(fx.admin.id, owner());
-      expect([back.userId, back.isSuperAdmin, back.canReply]).toEqual([fx.admin.id, false, false]);
-      // The day screen too — never manageable by a mate.
       const day = await service.getDay({ userId: fx.ownerBase.id, date: MON }, plainAdmin(), C);
       expect([day.canWrite, day.canManage]).toEqual([false, false]);
-
-      // Both get the team tab, no approve / manage rights.
-      for (const as of [owner(), plainAdmin()]) {
-        expect(await service.getAccess(as)).toEqual({
-          canSeeTeam: true,
-          canApprove: false,
-          canManageHolidays: false,
-          canManageTeams: false,
-        });
-      }
-      expect(await teamIds(owner())).toEqual([fx.admin.id]);
+      expect(await service.getAccess(plainAdmin())).toEqual({
+        canSeeTeam: true,
+        canApprove: false,
+        canManageHolidays: false,
+        canManageTeams: false,
+      });
       expect(await teamIds(plainAdmin())).toEqual([fx.ownerBase.id]);
+
+      // The mate sees nothing of the User: no tab, the day is "not found".
+      await expect(dayOf(fx.admin.id, owner())).rejects.toBeInstanceOf(NotFoundError);
+      expect((await service.getAccess(owner())).canSeeTeam).toBe(false);
+    });
+
+    it('both directions set: each sees the other; removing one keeps the other', async () => {
+      const ab = await pair();
+      const ba = await reversePair();
+      expect(await livePairs()).toBe(2);
+      expect(await teamIds(plainAdmin())).toEqual([fx.ownerBase.id]);
+      expect(await teamIds(owner())).toEqual([fx.admin.id]);
+      await service.removeTeamMate(ba.id, superAdmin());
+      expect((await service.getAccess(owner())).canSeeTeam).toBe(false);
+      expect(await teamIds(plainAdmin())).toEqual([fx.ownerBase.id]);
+      await service.removeTeamMate(ab.id, superAdmin());
+      expect(await livePairs()).toBe(0);
     });
 
     it('a third person sees neither', async () => {
       const third = plainThird();
       if (!third) return; // TEST has no third user
       await pair();
+      await reversePair();
       await expect(dayOf(fx.ownerBase.id, third)).rejects.toBeInstanceOf(NotFoundError);
       await expect(dayOf(fx.admin.id, third)).rejects.toBeInstanceOf(NotFoundError);
       expect((await service.getAccess(third)).canSeeTeam).toBe(false);
     });
 
-    it('a duplicate add (either order) is a 409; one row stays', async () => {
+    it('the same User → mate again is a 409; one row stays', async () => {
       await pair();
       const again = await pair().catch((e: unknown) => e);
       expect(again).toBeInstanceOf(ConflictError);
-      const rev = await service
-        .addTeamMate({ userId: fx.admin.id, mateId: fx.ownerBase.id }, superAdmin())
-        .catch((e: unknown) => e);
-      expect(rev).toBeInstanceOf(ConflictError);
-      expect((rev as Error).message).toMatch(/is already a team mate of/);
+      expect((again as Error).message).toMatch(/is already a team mate of/);
       expect(await livePairs()).toBe(1);
     });
 
-    it('two adds of one pair at once — exactly one wins', async () => {
-      const res = await Promise.allSettled([
-        pair(),
-        service.addTeamMate({ userId: fx.admin.id, mateId: fx.ownerBase.id }, superAdmin()),
-      ]);
+    it('two adds of one User → mate at once — exactly one wins', async () => {
+      const res = await Promise.allSettled([pair(), pair()]);
       expect(res.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
       const lost = res.find((r) => r.status === 'rejected') as PromiseRejectedResult;
       expect(lost.reason).toBeInstanceOf(ConflictError);
@@ -156,7 +165,7 @@ export function teamCases(): void {
       expect((await dayOf(fx.ownerBase.id, plainAdmin())).entries).toHaveLength(1);
       expect(await service.removeTeamMate(row.id, superAdmin())).toEqual({ ok: true });
       await expect(dayOf(fx.ownerBase.id, plainAdmin())).rejects.toBeInstanceOf(NotFoundError);
-      expect((await service.getAccess(owner())).canSeeTeam).toBe(false);
+      expect((await service.getAccess(plainAdmin())).canSeeTeam).toBe(false);
       const twice = await service.removeTeamMate(row.id, superAdmin()).catch((e: unknown) => e);
       expect(twice).toBeInstanceOf(ConflictError);
       expect((twice as Error).message).toBe('This team mate was already removed.');

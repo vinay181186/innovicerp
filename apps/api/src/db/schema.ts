@@ -7368,7 +7368,7 @@ export const companyHolidays = pgTable(
   ],
 ).enableRLS();
 
-// Day Log Teams Config (0230): ONE row per two-way pair, ids stored sorted.
+// Day Log Teams Config (0230, one-way since 0231): user_id SEES mate_id's day.
 // No client write policy — the API (BYPASSRLS) checks Super Admin.
 export const dayLogTeamMates = pgTable(
   'day_log_team_mates',
@@ -7377,10 +7377,10 @@ export const dayLogTeamMates = pgTable(
     companyId: uuid('company_id')
       .notNull()
       .references(() => companies.id),
-    userLowId: uuid('user_low_id')
+    userId: uuid('user_id')
       .notNull()
       .references(() => users.id),
-    userHighId: uuid('user_high_id')
+    mateId: uuid('mate_id')
       .notNull()
       .references(() => users.id),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -7395,18 +7395,18 @@ export const dayLogTeamMates = pgTable(
     deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
   },
   (t) => [
-    check('day_log_team_mates_sorted_chk', sql`${t.userLowId} < ${t.userHighId}`),
-    uniqueIndex('day_log_team_mates_pair_uq')
-      .on(t.companyId, t.userLowId, t.userHighId)
+    check('day_log_team_mates_not_self_chk', sql`${t.userId} <> ${t.mateId}`),
+    uniqueIndex('day_log_team_mates_user_mate_uq')
+      .on(t.companyId, t.userId, t.mateId)
       .where(sql`${t.deletedAt} is null`),
-    index('day_log_team_mates_high_idx')
-      .on(t.companyId, t.userHighId)
+    index('day_log_team_mates_mate_idx')
+      .on(t.mateId)
       .where(sql`${t.deletedAt} is null`),
-    // Own pairs only — who-sees-whom is not company-wide data.
-    pgPolicy('day_log_team_mates_own_read', {
+    // A client reads only the rows where it is the User.
+    pgPolicy('day_log_team_mates_user_read', {
       for: 'select',
       to: 'authenticated',
-      using: sql`company_id = current_company_id() AND (user_low_id = current_user_id() OR user_high_id = current_user_id())`,
+      using: sql`company_id = current_company_id() AND user_id = current_user_id()`,
     }),
   ],
 ).enableRLS();

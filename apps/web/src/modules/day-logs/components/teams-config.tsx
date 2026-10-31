@@ -1,7 +1,7 @@
 // "Teams Config" tab (owner 2026-10-30) — a Super Admin decides who sees whose
-// Day Log. Pick a User, pick a team mate, + Add: the pair is TWO-WAY, each
-// sees the other's saved entries on Team Day Logs, read-only (one row per pair,
-// day_log_team_mates, 0230). The people are the company's active users whose
+// Day Log. Pick a User, pick a team mate, + Add: the USER sees the team mate's
+// saved entries on Team Day Logs, read-only — ONE-WAY (owner 2026-10-31, 0231);
+// the mate sees the User only if that row is set too (day_log_team_mates). The people are the company's active users whose
 // Day Log is not hidden (GET /day-logs/team-mates/people, same Super Admin
 // check as the tab), shown "Name — Dept". Below, the chosen user's team
 // mates on the FIT table (ADR-199): Sr No · Team Mate · Dept · Added On; the
@@ -120,7 +120,7 @@ export function TeamsConfig(): React.JSX.Element {
           setMateId(null);
           setMsg({
             tone: 'ok',
-            text: `${mateName} added. ${userName} and ${mateName} now see each other's Day Log.`,
+            text: `${mateName} added. ${userName} can now see ${mateName}'s Day Log.`,
           });
         },
         onError: (e) => setMsg({ tone: 'err', text: errText(e) }),
@@ -202,9 +202,11 @@ export function TeamsConfig(): React.JSX.Element {
             <span className="fw-700">
               Team mates of {userName} · {rows.length}
             </span>
-            <span className="text3 dl-small">
-              Each pair sees each other&apos;s saved Day Log entries, read-only.
-            </span>
+            {rows.length > 0 ? (
+              <span className="text3 dl-small">
+                {userName} sees these people&apos;s saved Day Log entries, read-only.
+              </span>
+            ) : null}
           </div>
           <DataTable<DayLogTeamMate>
             tableKey={TABLE_KEYS.dayLogTeamMates}
@@ -232,7 +234,7 @@ export function TeamsConfig(): React.JSX.Element {
         title="Remove team mate?"
         message={
           removing
-            ? `${userName} and ${removing.mateName} will no longer see each other's Day Log. Their own entries are not touched.`
+            ? `${userName} will no longer see ${removing.mateName}'s Day Log. Their entries are not touched.`
             : ''
         }
         cancelLabel="Keep"

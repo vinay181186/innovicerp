@@ -13,9 +13,10 @@
 //     refuses the caller — checked in resolveAccess, the one door they share.
 //     People whose Day Log is hidden are left out of Team Day Logs (their
 //     waiting edits stay in Approvals so they can still be decided).
-//   - Teams Config (owner 2026-10-30, 0230): a Super Admin pairs two people;
-//     each SEES the other's day (read-only, like any non-Super viewer). A
-//     mate never manages or approves. `mates` rides in the same statement as
+//   - Teams Config (0230; ONE-WAY since 0231, owner 2026-10-31): a Super
+//     Admin gives a User a team mate; the User SEES the mate's day (read-only,
+//     like any non-Super viewer) — the mate does not see the User unless that
+//     row is set too. A mate never manages or approves. `mates` rides in the same statement as
 //     the access (matesJson); a caller that does not read it gets none —
 //     mates only ever widen what is seen, so a missing read refuses, never leaks.
 
@@ -69,12 +70,12 @@ export const matesJson = (userId: string, companyId: string): SQL => sql`(
            'departments', COALESCE(ua.departments, '{}'::jsonb), ${personAccessJson})), '[]'::json)
   FROM public.day_log_team_mates m
   JOIN public.users u
-    ON u.id = CASE WHEN m.user_low_id = ${userId}::uuid THEN m.user_high_id ELSE m.user_low_id END
+    ON u.id = m.mate_id
    AND u.company_id = m.company_id AND u.deleted_at IS NULL AND u.is_active
   LEFT JOIN public.user_access ua
     ON ua.user_id = u.id AND ua.company_id = m.company_id AND ua.deleted_at IS NULL
   WHERE m.company_id = ${companyId}::uuid AND m.deleted_at IS NULL
-    AND (m.user_low_id = ${userId}::uuid OR m.user_high_id = ${userId}::uuid))`;
+    AND m.user_id = ${userId}::uuid)`;
 
 /** The mates whose Day Log is not hidden (a hidden one opens nothing). */
 const toMates = (json: unknown): ReadonlySet<string> =>

@@ -541,10 +541,11 @@ export const dayLogAccessSchema = z.object({
 });
 export type DayLogAccess = z.infer<typeof dayLogAccessSchema>;
 
-// Teams Config (owner 2026-10-30): a Super Admin pairs two people; the pair is
-// TWO-WAY — each sees the other's saved Day Log entries, read-only, the way
-// that person sees their own My Day Log (no Entry Rev, no replies, no edit).
-// One row per pair (day_log_team_mates, 0230).
+// Teams Config (owner 2026-10-30; ONE-WAY since 0231, owner 2026-10-31): a
+// Super Admin gives a User a team mate; the User sees the mate's saved Day Log
+// entries, read-only, the way the mate sees their own My Day Log (no Entry Rev,
+// no replies, no edit). The mate sees the User only if that row is set too.
+// One row per User → mate (day_log_team_mates).
 
 export const dayLogTeamMatesQuerySchema = z.object({ userId: z.string().uuid() });
 export type DayLogTeamMatesQuery = z.infer<typeof dayLogTeamMatesQuerySchema>;

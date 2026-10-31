@@ -10,7 +10,7 @@
 //   text.ts    — Working On edited directly + revisions, replies seen (ADR-255)
 //   replies.ts — Super Admin replies
 //   holidays.ts — holidays, tab access            access.ts — who sees and manages whose day
-//   team-mates.ts — Teams Config (who sees whose Day Log, two-way pairs)
+//   team-mates.ts — Teams Config (who sees whose Day Log, one-way: User → mate)
 // Rules of the day itself live in packages/shared day-log.ts (summarizeDay…).
 
 export { addEntry, updateEntry } from './entries';

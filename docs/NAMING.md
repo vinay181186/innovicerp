@@ -379,7 +379,7 @@ with no live `xxx` to fall back from is a defect (C-13).
 | Earliest Start / latest Stop of a Day Log day | `First start` / `Last stop` | `firstStart` / `lastStop` | the day's entries | `In time`, `Out time` |
 | A Day Log entry saved more than 60 min after its Stop time | `LATE` tag; count `Late entries` / `Late` | `late` / `lateCount` | derived: `created_at` vs report date + `to_time` (IST) | `Delayed`, `Backdated` |
 | What a person is doing now (Team Day Logs) | `Now` (`Working` / `On break` / `Idle` / `Not started` / `Submitted` / `Leave`) | `currentStatus` | derived from today's entries + day status | `Current Status`, `Activity` |
-| Two people who see each other's saved Day Log entries, read-only (two-way pair, set by a Super Admin; ADR-258, 0230) | `Team Mate`; the setup tab `Teams Config` | `mateId` / `DayLogTeamMate` | `day_log_team_mates` (one row per pair: `user_low_id` < `user_high_id`) | `Approval Day Log` (the tab it replaced), `Team Member`, `Buddy`, `Sees Each Other` |
+| A person whose saved Day Log entries a User sees, read-only (ONE-WAY: User → Team Mate, set by a Super Admin; ADR-258, 0230/0231) | `Team Mate`; the setup tab `Teams Config` | `mateId` / `DayLogTeamMate` | `day_log_team_mates.mate_id` (row = `user_id` sees `mate_id`) | `Approval Day Log` (the tab it replaced), `Team Member`, `Buddy`, `Sees Each Other` |
 | A company non-working date (Day Log owes no time) | `Holidays` | `holidayDate` | `company_holidays.holiday_date` | `Leave` (that is one person's day) |
 
 ---
