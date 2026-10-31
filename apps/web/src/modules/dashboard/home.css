@@ -349,11 +349,3 @@ span.dh-link {
   text-align: center;
   color: var(--text3);
 }
-
-/* ── approvals links ── */
-.dh-otherap {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--sp-2) var(--sp-4);
-  font-size: var(--fs-sm);
-}

@@ -26,7 +26,7 @@ const LOOKUP = 'look-up for one form, re-read when the form opens';
 
 export const REFRESH_POLICY: Readonly<Record<string, RefreshRule>> = {
   // ── Live (LIVE_TABLE_KEYS) ──
-  approvals: live('PR / PO / edit / cancel requests'),
+  approvals: live('ADR-265 waiting list: PO / Route Card / op_log / edit / cancel / Day Log'),
   'cancel-requests': live('cancel_requests'),
   'customer-dispatches': live('customer_dispatches (0227)'),
   dashboard: live('home rows follow every document table'),

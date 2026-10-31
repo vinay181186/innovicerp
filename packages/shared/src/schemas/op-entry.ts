@@ -330,6 +330,8 @@ export const opLogTimeChangeRequestSchema = z.object({
   /** The entry's qty, shown so the approver can see it is NOT part of the ask. */
   qty: z.number().int().nonnegative(),
   rejectQty: z.number().int().nonnegative(),
+  /** ADR-265 — the Job Card the op belongs to (the Approvals row links to it). */
+  jobCardId: z.string().uuid().optional(),
   prevLogDate: z.string(),
   prevStartTime: z.string().nullable(),
   requestedLogDate: z.string(),

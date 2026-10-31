@@ -166,6 +166,7 @@ export * from './enums/plan-derived-status';
 export * from './enums/route-card-approval';
 export * from './schemas/access-control';
 export * from './schemas/approval-config';
+export * from './schemas/approvals-waiting';
 export * from './schemas/document-edit';
 export * from './schemas/cancel-request';
 export * from './schemas/osp-process';

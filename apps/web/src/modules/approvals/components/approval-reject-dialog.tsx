@@ -1,6 +1,6 @@
-// Approvals — the shared Reject reason popup used by the uniform approval shell
-// (approval-tab.tsx) for a ROW-level reject on any tab (PR, PO, SO, GRN, … Op
-// Entry). Modelled on op-entry-reject-dialog.tsx and edit-reject-dialog.tsx: a
+// Approvals — the shared Reject reason popup: a row reject in the Approvals
+// list (approvals-list.tsx), a field / Reject all in the Review panel, and the
+// Cancel Request dialog. Modelled on op-entry-reject-dialog.tsx: a
 // reject reason is captured in a small dialog, not an inline cell. Built on the
 // shared Modal so it sits on the app's z-index ladder and traps focus. Reject
 // stays disabled until a reason is typed.

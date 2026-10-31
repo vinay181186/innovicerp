@@ -40,7 +40,10 @@ export async function listDocumentEdits(
 
     const [rows, totals] = await Promise.all([
       selectDocumentEditRows(tx, companyId, filter, { limit, offset }),
-      tx.select({ value: count() }).from(documentEditRequests).where(and(...where)),
+      tx
+        .select({ value: count() })
+        .from(documentEditRequests)
+        .where(and(...where)),
     ]);
 
     await markStale(tx, companyId, rows);
@@ -94,8 +97,8 @@ export async function documentEditCounts(user: AuthContext): Promise<DocumentEdi
  *  the token captured when the edit was requested. Conservative: a change to an
  *  unrelated field also marks the request stale (the decide path then resolves
  *  each change precisely as approved / superseded). One query per entity type —
- *  no per-row lookup (§6). */
-async function markStale(
+ *  no per-row lookup (§6). Also used by GET /approvals/waiting (ADR-265). */
+export async function markStale(
   tx: DbTransaction,
   companyId: string,
   rows: DocumentEditRow[],

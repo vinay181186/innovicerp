@@ -180,7 +180,7 @@ function useRouteCardDecision<TVars extends { id: string }>(
       qc.setQueryData(routeCardsKeys.detail(updated.id), updated);
       void qc.invalidateQueries({ queryKey: routeCardsKeys.lists() });
       void qc.invalidateQueries({ queryKey: routeCardsKeys.detail(updated.id) });
-      void qc.invalidateQueries({ queryKey: approvalsKeys.inbox() });
+      void qc.invalidateQueries({ queryKey: approvalsKeys.all });
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
     },
   });

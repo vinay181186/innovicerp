@@ -141,8 +141,9 @@ export async function getHome(
     lite ? null : getConfig(user),
     lite ? [] : Promise.all(MONEY_FORMS.map((f) => canSeeFormPrice(user, f))),
     lite ? false : canWrite(user),
-    // A failure empties only the approvals block.
-    holdsAnyApprove(a) ? guarded('approvals', null, () => getApprovalInbox(user)) : null,
+    // A failure empties only the approvals block. ADR-265: the lite (new) home
+    // never reads it — its Approvals view reads GET /approvals/waiting.
+    !lite && holdsAnyApprove(a) ? guarded('approvals', null, () => getApprovalInbox(user)) : null,
     withUserContext(
       user,
       async (tx) =>

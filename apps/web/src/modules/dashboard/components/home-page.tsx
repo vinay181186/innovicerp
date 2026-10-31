@@ -7,13 +7,14 @@
 import { useEffect } from 'react';
 import { useCanOpen } from '@/components/shared/action-link';
 import { useMyAccess } from '@/lib/access-control';
+import { useWaitingApprovals } from '@/modules/approvals/api';
 import { PageState } from '@/ui/layout';
 import { useDashChecks, useHome } from '../api';
 import '../home-rows.css';
 import '../home.css';
 import { DAY_LOG_HREF, type HomeView, isDeptView } from '../home-views';
 import '../notifications.css';
-import { ApprovalsView, inboxTotal, useOtherApprovals } from './approvals-view';
+import { ApprovalsView } from './approvals-view';
 import { DayLogView } from './daylog-view';
 import { DeptView } from './dept-view';
 import { deptLabel, HomeMenu, type MenuItem } from './home-menu';
@@ -39,7 +40,8 @@ export function HomePage({
   const checks = useDashChecks();
   const access = useMyAccess();
   const canOpen = useCanOpen();
-  const others = useOtherApprovals();
+  // ADR-265 — the same query as the Approvals page and the top-menu badge.
+  const waiting = useWaitingApprovals();
 
   const accessKnown = access.data !== undefined || access.isError;
   // A failed access read: show it rather than hide it — the server still judges.
@@ -56,7 +58,7 @@ export function HomePage({
     if (hiddenDayLog || hiddenDept) onView('todo', true);
   }, [hiddenDayLog, hiddenDept, onView]);
 
-  const showApprovals = (h?.approvals ?? null) !== null || others.length > 0;
+  const showApprovals = waiting.data?.canApprove === true;
   const top: MenuItem[] = [
     {
       view: 'todo',
@@ -69,7 +71,7 @@ export function HomePage({
           {
             view: 'approvals' as const,
             label: 'Approvals',
-            badge: inboxTotal(h?.approvals ?? null) + others.reduce((s, o) => s + o.count, 0),
+            badge: waiting.data?.total,
           },
         ]
       : []),
@@ -86,10 +88,10 @@ export function HomePage({
     ) : (
       <LoadState error={checks.isError} />
     );
+  } else if (view === 'approvals') {
+    content = <ApprovalsView />;
   } else if (!h) {
     content = <LoadState error={home.isError} />;
-  } else if (view === 'approvals') {
-    content = <ApprovalsView home={h} others={others} />;
   } else {
     content = <TodoView home={h} />;
   }
