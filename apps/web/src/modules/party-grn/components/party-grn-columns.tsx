@@ -121,8 +121,8 @@ export function partyGrnColumns(): DataTableColumn<PartyGrnListItem>[] {
     },
     {
       // ADR-203 (owner D4): Incoming QC is a separate step after the receipt.
-      // ADR-235: a Cancelled GRN reads "Cancelled" here instead. Partial QC
-      // (0233): Waiting QC · Partial · n pending · QC done (lib/qc-state.ts).
+      // ADR-235: a Cancelled GRN reads "Cancelled" here instead. Part QC
+      // (0233): Waiting QC · Part QC · n pending · QC done (lib/qc-state.ts).
       id: 'qc_status',
       header: 'QC Status',
       nowrap: true,

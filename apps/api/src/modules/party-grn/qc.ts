@@ -187,15 +187,15 @@ export async function qcPartyGrn(
       const inspected = q.acceptedQty + q.rejectedQty;
 
       // §20.2: conditional — the running totals may never pass received.
-      // Reason / remarks: this inspection's when given, else the line keeps
-      // what an earlier inspection wrote.
+      // Reason / remarks on the line are the LATEST inspection's (like qc_by /
+      // qc_at); each NC and activity row keeps its own inspection's text.
       const booked = await tx
         .update(partyGrnLines)
         .set({
           acceptedQty: sql`${partyGrnLines.acceptedQty} + ${q.acceptedQty}`,
           rejectedQty: sql`${partyGrnLines.rejectedQty} + ${q.rejectedQty}`,
-          ...(q.rejectedQty > 0 ? { rejectReason } : {}),
-          ...(qcRemarks ? { qcRemarks } : {}),
+          rejectReason: q.rejectedQty > 0 ? rejectReason : null,
+          qcRemarks,
           qcBy: userId,
           qcAt: now,
           updatedAt: now,

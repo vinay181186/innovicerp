@@ -9,7 +9,6 @@ import { dash, ev, perms, raw, rowCtx } from './test-fixtures';
 vi.mock('../../../db/client', () => ({ db: {} }));
 vi.mock('../../access-control/service', () => ({ getMyAccess: vi.fn() }));
 vi.mock('../../purchase-requests/service', () => ({ orderedQtySql: () => sql`0` }));
-vi.mock('../../party-grn/service', () => ({ PENDING_QC_SQL: sql.raw('true') }));
 vi.mock('../../purchase-orders/service', () => ({ loadApprovalContext: vi.fn() }));
 vi.mock('../../access-control/users-with-right', () => ({ listUsersWithRight: vi.fn() }));
 

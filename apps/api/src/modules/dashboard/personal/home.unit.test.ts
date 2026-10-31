@@ -9,7 +9,6 @@ import { type Dash, dash, ev, perms, raw, rowCtx } from './test-fixtures';
 vi.mock('../../../db/client', () => ({ db: {} }));
 vi.mock('../../access-control/service', () => ({ getMyAccess: vi.fn() }));
 vi.mock('../../purchase-requests/service', () => ({ orderedQtySql: () => sql`0` }));
-vi.mock('../../party-grn/service', () => ({ PENDING_QC_SQL: sql.raw('true') }));
 // PO approver eligibility: u-a may approve up to 10 000, u-b up to 1 000 000,
 // u-c holds the tick but is not on the PO approvers list.
 const CEILING: Record<string, { isApprover: boolean; approvalCeiling: number }> = {

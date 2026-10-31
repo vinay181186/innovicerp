@@ -163,7 +163,7 @@ export function useUpdatePartyGrn(id: string, saveKey?: SaveKey) {
 // hook is gone; the dialog uses the generic /cancel routes.
 
 /** ADR-203 (owner D4): Incoming QC on a Party GRN — a separate step after the
- *  receipt, gated by qc_incoming · entry. Partial (0233): each save books part
+ *  receipt, gated by qc_incoming · entry. Part QC (0233): each save books part
  *  of a line's QC Pending. Only the accepted qty enters the customer-material
  *  register. */
 export function useQcPartyGrn(saveKey?: SaveKey) {

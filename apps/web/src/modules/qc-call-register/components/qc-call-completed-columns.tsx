@@ -46,7 +46,7 @@ const VERDICT_LABEL: Record<Verdict, string> = {
   ACCEPTED: 'Accepted',
   PARTIAL: 'Partly Accepted',
   REJECTED: 'Deviated',
-  QC_PARTIAL: 'Partial',
+  QC_PARTIAL: 'Part QC',
 };
 
 function itemCodeOf(vm: CompletedVM): string {

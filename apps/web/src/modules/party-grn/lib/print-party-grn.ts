@@ -51,7 +51,7 @@ export function printPartyGrn(args: {
   ];
 
   // GRN No. first — the PDF is named from it.
-  // Partial QC (0233): Waiting QC · Partial · QC done (lib/qc-state.ts).
+  // Part QC (0233): Waiting QC · Part QC · QC done (lib/qc-state.ts).
   const grnState = pgrnQcStateOfGrn(grn);
   const documentFields: SheetField[] = [
     { label: 'GRN No.', value: grn.code, variant: 'mono', strong: true },
@@ -64,7 +64,7 @@ export function printPartyGrn(args: {
     documentFields.push({ label: 'Customer Challan No.', value: grn.dcNo, variant: 'mono' });
   documentFields.push({
     label: 'QC Status',
-    value: grnState === 'waiting' ? 'Waiting QC' : grnState === 'partial' ? 'Partial' : 'QC done',
+    value: grnState === 'waiting' ? 'Waiting QC' : grnState === 'partial' ? 'Part QC' : 'QC done',
   });
   if (grn.receivedByText) documentFields.push({ label: 'Received By', value: grn.receivedByText });
   if (grn.remarks) documentFields.push({ label: 'Remarks', value: grn.remarks });
@@ -92,7 +92,7 @@ export function printPartyGrn(args: {
       qcStatus: waiting
         ? 'Waiting QC'
         : st === 'partial'
-          ? `Partial (${qcPendingQtyOf(l)} pending)`
+          ? `Part QC (${qcPendingQtyOf(l)} pending)`
           : 'QC done',
       ...sheetLineNotes([
         { label: 'Deviation Reason', text: l.rejectReason },

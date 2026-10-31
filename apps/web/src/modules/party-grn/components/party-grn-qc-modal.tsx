@@ -1,8 +1,9 @@
 // Incoming QC on a Party GRN (ADR-203, owner D4) — the separate step after the
-// receipt. PARTIAL (0233, owner 2026-10-31): one row per line with QC Pending
-// > 0 — received 60, inspect 6 now and 54 later. Received, Inspected So Far and
-// QC Pending are read-only; Accepted prefills to the QC Pending and Deviated
-// follows it (owner D2). A line left at 0 / 0 is skipped (inspect it later);
+// receipt. PART QC (0233, owner 2026-10-31): one row per line with QC Pending
+// > 0 (the server's qcPendingQty) — received 60, inspect 6 now and 54 later.
+// Received, Inspected So Far and QC Pending are read-only; Accepted prefills to
+// the QC Pending (owner D2) and Deviated keeps what the user typed (default 0)
+// — typing Accepted 6 sends 6 + 0 and leaves 54 pending. A line left at 0 / 0 is skipped (inspect it later);
 // at least one line must carry a qty. Accepted + Deviated <= QC Pending, and a
 // reason is required when anything is deviated — the shared refine
 // (partyGrnQcLineInputSchema) plus the server's limit, shown before Save. Only
@@ -56,8 +57,7 @@ export function PartyGrnQcModal({
   const pending = useMemo(
     () =>
       (detailQ.data?.lines ?? [])
-        // Partial QC (0233): every live line with something still to inspect.
-        // Pre-QC (0173-grandfathered) lines carry accepted = received → 0 pending.
+        // Part QC (0233): every live line the server says has QC Pending.
         .filter((l) => qcPendingQtyOf(l) > 0 && !l.deletedAt)
         .filter((l) => !onlyLineId || l.id === onlyLineId)
         .sort((a, b) => a.lineNo - b.lineNo),
@@ -108,7 +108,7 @@ export function PartyGrnQcModal({
       const e = entries[l.id];
       const accRaw = e?.accepted.trim() ?? '';
       const rejRaw = e?.rejected.trim() ?? '';
-      // Partial QC: a line left at 0 / 0 (or cleared) is skipped — inspect
+      // Part QC: a line left at 0 / 0 (or cleared) is skipped — inspect
       // line 1 now and line 2 later. Only an all-skipped save is refused.
       const zeroOrBlank = (v: string): boolean => v === '' || Number(v) === 0;
       if (zeroOrBlank(accRaw) && zeroOrBlank(rejRaw)) continue;
@@ -273,17 +273,9 @@ export function PartyGrnQcModal({
                           className="innovic-input"
                           aria-label={`Accepted Qty, line ${l.lineNo}`}
                           value={e?.accepted ?? ''}
-                          onChange={(ev) => {
-                            // Keep the pair adding up to QC Pending: Deviated follows Accepted.
-                            const a = ev.target.value;
-                            const n = Number(a);
-                            setEntry(l.id, {
-                              accepted: a,
-                              ...(a.trim() !== '' && Number.isInteger(n) && n >= 0 && n <= qcPending
-                                ? { rejected: String(qcPending - n) }
-                                : {}),
-                            });
-                          }}
+                          // Deviated is never auto-filled: Accepted 6 on a 60 line
+                          // sends 6 + 0 and leaves 54 pending.
+                          onChange={(ev) => setEntry(l.id, { accepted: ev.target.value })}
                           style={{ maxWidth: '12ch' }}
                         />
                       </td>

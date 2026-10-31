@@ -12,20 +12,16 @@
 // Lines booked before QC existed (migration 0173: accepted = received, qc_at
 // NULL) are neither untouched nor open.
 //
-// Kept apart from ./service.ts (which re-exports them) so light readers — the
+// Kept apart from ./service.ts so light readers — the
 // register, the home rows, the JWSO Customer RM read — take only the SQL.
-// Every SQL form uses the alias `pgl` for party_grn_lines.
+// Every SQL form uses the alias `pgl` for party_grn_lines; the untouched
+// rule has no SQL form (no reader needs one), only qcUntouchedCond().
 
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { partyGrnLines } from '../../db/schema';
 
-/** Nothing inspected yet (alias pgl). */
-export const QC_UNTOUCHED_SQL = sql.raw(
-  '(pgl.qc_at IS NULL AND pgl.accepted_qty = 0 AND pgl.rejected_qty = 0)',
-);
-
-/** The same rule over the drizzle columns, for a conditional UPDATE of
- *  party_grn_lines (CLAUDE.md §20.2). */
+/** Nothing inspected yet, over the drizzle columns — for a conditional UPDATE
+ *  of party_grn_lines (CLAUDE.md §20.2). */
 export function qcUntouchedCond() {
   return and(
     isNull(partyGrnLines.qcAt),
@@ -48,7 +44,7 @@ export const QC_PENDING_QTY_SQL = sql.raw(
 );
 
 /** QC Pending Qty > 0 (alias pgl). */
-export const QC_OPEN_SQL = sql.raw('(pgl.received_qty - pgl.accepted_qty - pgl.rejected_qty > 0)');
+export const QC_OPEN_SQL = sql`(${QC_PENDING_QTY_SQL} > 0)`;
 
 export function qcPendingQtyOf(l: {
   receivedQty: number;

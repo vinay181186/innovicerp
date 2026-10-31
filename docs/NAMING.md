@@ -385,6 +385,8 @@ with no live `xxx` to fall back from is a defect (C-13).
 | A company non-working date (Day Log owes no time) | `Holidays` | `holidayDate` | `company_holidays.holiday_date` | `Leave` (that is one person's day) |
 | What the QC inspector wrote at Inspect about one inspection (job-card op QC: `op_log.remarks`; Direct Purchase GRN: `goods_receipt_note_lines.qc_remarks`; Party GRN: `party_grn_lines.qc_remarks`, 0232) | `QC Remarks` | `remarks` (op QC) / `qcRemarks` (GRN, Party GRN) | as named | `Remarks` alone where a gate-in remark is also shown, `Notes`, `Observation` |
 | Why a Party GRN line's deviated qty was deviated (required when Deviated > 0) | `Deviation Reason` | `rejectReason` | `party_grn_lines.reject_reason` | `QC Remarks`, `Reason` |
+| Party GRN line / receipt with some pieces inspected and some still waiting for Incoming QC (ADR-260) | `Part QC` (badge `Part QC · n pending`) | derived: qcPendingQty > 0 after the first inspection | `party_grn_lines` accepted/rejected running totals | `Partial` (that is a Customer RM Status), `In Progress` |
+| A Party GRN line's running accepted / deviated totals shown in the Incoming QC popup | `Inspected So Far` | `acceptedQty` / `rejectedQty` | `party_grn_lines.accepted_qty` / `rejected_qty` | `Done`, `Already QC'd` |
 
 ---
 

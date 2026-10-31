@@ -21,7 +21,13 @@ import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
 import { usePartyGrnDetail } from '../api';
 import { EditPartyGrnModal } from './edit-party-grn-modal';
 import { isPartyGrnCancelled } from './party-grn-columns';
-import { PGRN_QC_BADGE, pgrnQcLabel, pgrnQcState, qcPendingQtyOf } from '../lib/qc-state';
+import {
+  PGRN_QC_BADGE,
+  isQcUntouched,
+  pgrnQcLabel,
+  pgrnQcState,
+  qcPendingQtyOf,
+} from '../lib/qc-state';
 
 function lineColumns(): DataTableColumn<PartyGrnLine>[] {
   return [
@@ -94,7 +100,7 @@ function lineColumns(): DataTableColumn<PartyGrnLine>[] {
       headColor: 'var(--green)',
       className: 'mono fw-700',
       nowrap: true,
-      // Partial QC (0233): the real figure once anything is accepted; a dash
+      // Part QC (0233): the real figure once anything is accepted; a dash
       // only while nothing has been (an untouched line, or all deviated).
       render: (l) =>
         l.acceptedQty > 0 ? (
@@ -128,7 +134,7 @@ function lineColumns(): DataTableColumn<PartyGrnLine>[] {
       render: (l) => (l.rejectedQty > 0 ? l.rejectedReturnedQty : '—'),
     },
     {
-      // Partial QC (0233): received − accepted − deviated, still to inspect.
+      // Part QC (0233): the server's qcPendingQty, still to inspect.
       id: 'qc_pending_qty',
       header: 'QC Pending',
       kind: 'num',
@@ -162,7 +168,7 @@ function lineColumns(): DataTableColumn<PartyGrnLine>[] {
     },
     {
       // ADR-203: Incoming QC is a separate step. Who did it is in History below.
-      // Partial QC (0233): "Partial · n pending" + the last QC date.
+      // Part QC (0233): "Part QC · n pending" + the last QC date.
       id: 'qc_at',
       header: 'QC At',
       kind: 'date',
@@ -190,12 +196,13 @@ export function PartyGrnExpand({ g }: { g: PartyGrnListItem }): React.JSX.Elemen
 
   const { data: eff } = useMyAccess();
   // Edit is gated by the party_create form's edit action AND the receipt still
-  // having a line waiting for Incoming QC (a fully-QC'd receipt is settled —
-  // nothing here is editable, so no Edit button). Cancel stays the way to undo.
+  // having a line nobody has inspected (isQcUntouched — the edit modal's own
+  // rule). Once every line is inspected, even in part, nothing here is
+  // editable, so no Edit button. Cancel stays the way to undo.
   const canEdit = effectiveFormPerms(eff, 'party_create').edit;
   // ADR-235: a Cancelled GRN is read-only — no Edit, its reason shown instead.
   const cancelled = isPartyGrnCancelled(g);
-  const isLive = g.qcPendingLines > 0 && !cancelled;
+  const isLive = !cancelled && lines.some((l) => !l.deletedAt && isQcUntouched(l));
   const [editing, setEditing] = useState(false);
 
   // ADR-202 — edits staged against this receipt and awaiting a decision. Their

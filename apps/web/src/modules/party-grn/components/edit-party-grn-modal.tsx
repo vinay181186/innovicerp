@@ -60,7 +60,7 @@ export function EditPartyGrnModal({
 
   const lines = useMemo(() => (d?.lines ?? []).slice().sort((a, b) => a.lineNo - b.lineNo), [d]);
   // Only lines nobody has inspected yet are editable here — a part-inspected
-  // line (Partial QC, 0233) is read-only like a fully inspected one.
+  // line (Part QC, 0233) is read-only like a fully inspected one.
   const isWaiting = (l: PartyGrnLine): boolean => isQcUntouched(l);
 
   const saveKey = useSaveKey();

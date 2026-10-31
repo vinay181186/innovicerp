@@ -74,21 +74,11 @@ export async function requirePartyGrnRead(user: AuthContext): Promise<void> {
 import {
   QC_OPEN_SQL,
   QC_PENDING_QTY_SQL,
-  QC_UNTOUCHED_SQL,
   isQcOpen,
   isQcUntouched,
   qcPendingQtyOf,
   qcUntouchedCond,
 } from './qc-state';
-export {
-  QC_OPEN_SQL,
-  QC_PENDING_QTY_SQL,
-  QC_UNTOUCHED_SQL,
-  isQcOpen,
-  isQcUntouched,
-  qcPendingQtyOf,
-  qcUntouchedCond,
-};
 
 function dateLike(v: unknown): string {
   if (v instanceof Date) return v.toISOString().slice(0, 10);
@@ -365,6 +355,7 @@ export async function loadPartyGrnDetail(
     )
     .orderBy(partyGrnLines.lineNo);
   // A cancelled GRN waits for nothing: its lines show no QC Pending Qty.
+  const open = joined.filter((r) => !isCancelled && isQcOpen(r.line)).length;
   const lines: PartyGrnLine[] = joined.map((r) => {
     const l = rowToLine(r.line, r.clientPoLineNo ?? null);
     return isCancelled ? { ...l, qcPendingQty: 0 } : l;
@@ -373,7 +364,7 @@ export async function loadPartyGrnDetail(
     ...toListItem(hRow),
     totalReceivedQty: lines.reduce((s, l) => s + l.receivedQty, 0),
     totalAcceptedQty: lines.reduce((s, l) => s + l.acceptedQty, 0),
-    qcPendingLines: lines.filter(isQcOpenLine).length,
+    qcPendingLines: open,
     totalQcPendingQty: lines.reduce((s, l) => s + l.qcPendingQty, 0),
     linesCount: lines.length,
     lines,
@@ -387,8 +378,6 @@ export async function getPartyGrnDetail(id: string, user: AuthContext): Promise<
     loadPartyGrnDetail(tx, companyId, id, { includeCancelled: true }),
   );
 }
-
-const isQcOpenLine = (l: PartyGrnLine): boolean => l.qcPendingQty > 0;
 
 function rowToLine(
   row: typeof partyGrnLines.$inferSelect,
