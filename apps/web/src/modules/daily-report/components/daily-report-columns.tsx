@@ -3,20 +3,19 @@
 // ceiling and the sheet is defined in one place. Mirrors legacy renderDailyReport
 // (HTML L10823).
 //
-// One row per log entry. The first column (JC No.) is always pinned and carries
-// the row's ▸. The Completed column carries the engine's column-following `total`
+// One row per log entry. The six lead columns (SO No. … Item Name, owner rule
+// 2026-10-31) come first, then JC No. The Completed column carries the engine's column-following `total`
 // (sum), so the per-machine total sits under its own column and moves with it
-// into ▸ (replacing the old hand-written <tfoot>). POL, Item Name and Remarks are
-// default-hidden, so they live in the row's ▸ detail. Labels per docs/NAMING.md
+// into ▸ (replacing the old hand-written <tfoot>). Remarks is default-hidden, so
+// it lives in the row's ▸ detail. Labels per docs/NAMING.md
 // (POL = the customer's PO line number).
 
 import type { DailyReportRow } from '@innovic/shared';
 import { opSrNo, SHIFT_LABELS, type Shift } from '@innovic/shared';
-import { itemCodeWithRev } from '@/lib/item-code';
-import type { DataTableColumn } from '@/ui/data';
+import { leadColumns, type DataTableColumn } from '@/ui/data';
 
 /** Columns that live in the row's ▸ detail by default. */
-export const DAILY_REPORT_HIDDEN = ['pol', 'item_name', 'remarks'];
+export const DAILY_REPORT_HIDDEN = ['remarks'];
 
 /** Sum the Completed quantity across the rows the totals row is given (this
  *  machine group's rows), so the engine's total matches the server figure. */
@@ -25,6 +24,17 @@ function sumQty(rows: DailyReportRow[]): number {
 }
 
 export const dailyReportColumns: DataTableColumn<DailyReportRow>[] = [
+  // Owner rule 2026-10-31 — the six lead columns first; JC No. after Item Name.
+  // The log row carries no SO No., Internal SO No. or created date yet (needs API).
+  ...leadColumns<DailyReportRow>({
+    soNo: () => null,
+    internalSoNo: () => null,
+    pol: (r) => r.clientPoLineNo,
+    createdOn: () => null,
+    itemCode: (r) => r.itemCode,
+    itemRev: (r) => r.itemRevision,
+    itemName: (r) => r.itemName,
+  }),
   {
     id: 'jc_no',
     kind: 'code',
@@ -32,16 +42,6 @@ export const dailyReportColumns: DataTableColumn<DailyReportRow>[] = [
     className: 'mono fw-700',
     nowrap: true,
     render: (r) => <span style={{ color: 'var(--cyan)' }}>{r.jcCode}</span>,
-  },
-  {
-    id: 'item_code',
-    kind: 'code',
-    header: 'Item Code',
-    className: 'mono fw-700',
-    nowrap: true,
-    render: (r) => (
-      <span style={{ color: 'var(--text)' }}>{itemCodeWithRev(r.itemCode, r.itemRevision)}</span>
-    ),
   },
   {
     id: 'op',
@@ -86,26 +86,6 @@ export const dailyReportColumns: DataTableColumn<DailyReportRow>[] = [
     ellipsis: true,
     render: (r) => r.operator ?? '—',
     title: (r) => r.operator ?? '',
-  },
-  // Default-hidden → the row's ▸ detail: POL, Item Name, Remarks.
-  {
-    id: 'pol',
-    kind: 'code',
-    // POL — the line number printed on the CUSTOMER's own purchase order.
-    header: 'POL',
-    headColor: 'var(--purple)',
-    className: 'mono fw-700',
-    nowrap: true,
-    render: (r) => <span style={{ color: 'var(--purple)' }}>{r.clientPoLineNo ?? '—'}</span>,
-  },
-  {
-    id: 'item_name',
-    kind: 'text',
-    header: 'Item Name',
-    align: 'left',
-    ellipsis: true,
-    render: (r) => r.itemName ?? '—',
-    title: (r) => r.itemName ?? '',
   },
   {
     id: 'remarks',

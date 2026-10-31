@@ -9,7 +9,7 @@ import { fmtDate } from '@/lib/date';
 import { ItemRevLink } from '@/modules/item-revisions/components/item-rev-link';
 import { itemCodeWithRev, docDrawingRev } from '@/lib/item-code';
 import { Badge, StatusBadge } from '@/ui/core';
-import { ProgressBar, type DataTableColumn } from '@/ui/data';
+import { ProgressBar, leadColumns, type DataTableColumn } from '@/ui/data';
 import { JC_STATUS_LABEL } from './jc-status-badge';
 
 /** Sort & Filter tick lists (server mode): stored value → the label shown. */
@@ -74,6 +74,56 @@ export function jobCardListColumns(
   draftIds?: Set<string>,
 ): DataTableColumn<JobCardListItem>[] {
   return [
+    // Owner rule 2026-10-31 — the six lead columns first; Sr No, JC No., the
+    // picture and every other fact follow Item Name.
+    ...leadColumns<JobCardListItem>({
+      soNo: (jc) => jc.sourceLink?.code,
+      internalSoNo: (jc) => (jc.sourceLink?.type === 'so' ? jc.sourceLink.internalSoNo : null),
+      pol: (jc) => jc.clientPoLineNo,
+      createdOn: (jc) => jc.createdAt,
+      itemCode: (jc) => jc.itemCode,
+      itemRev: (jc) => docDrawingRev(jc),
+      itemName: (jc) => jc.itemName,
+      overrides: {
+        so_no: {
+          sortFilterField: 'sourceCode',
+          render: (jc) => {
+            const s = jc.sourceLink;
+            if (!s) return <span className="text3">—</span>;
+            const route = sourceRoute(s);
+            return (
+              <Link
+                to={route.to}
+                params={{ id: route.id }}
+                className="mono"
+                style={{ color: 'var(--blue)', textDecoration: 'none' }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {s.code}
+                {s.lineNo !== 1 ? <span>/{s.lineNo}</span> : null}
+              </Link>
+            );
+          },
+        },
+        so_internal_no: { sortFilterField: 'soInternalNo' },
+        client_po_line_no: { sortFilterField: 'clientPoLineNo' },
+        created_on: { sortFilterField: 'createdOn' },
+        item_code: {
+          sortFilterField: 'itemCode',
+          render: (jc) => (
+            <span className="mono fw-700" style={{ color: 'var(--purple)' }}>
+              {/* The card's OWN Drawing Rev (ABC/1), linked to its drawing page. */}
+              <ItemRevLink
+                itemRevisionId={jc.itemRevisionId}
+                label={itemCodeWithRev(jc.itemCode, docDrawingRev(jc))}
+                className=""
+              />
+            </span>
+          ),
+        },
+        item_name: { sortFilterField: 'itemName' },
+      },
+    }),
     {
       id: 'sr_no',
       header: 'Sr No',
@@ -128,99 +178,6 @@ export function jobCardListColumns(
           />
         </div>
       ),
-    },
-    {
-      // The CUSTOMER's PO line no. (never our SO line no.), beside CODE/REV.
-      id: 'client_po_line_no',
-      sortFilterField: 'clientPoLineNo',
-      header: 'POL',
-      width: '4%',
-      nowrap: true,
-      render: (jc) =>
-        jc.clientPoLineNo ? (
-          <span className="mono fw-700" style={{ color: 'var(--purple)' }}>
-            {jc.clientPoLineNo}
-          </span>
-        ) : (
-          <span className="text3">—</span>
-        ),
-    },
-    // Item Code and Item Name are two one-line columns (ADR-199 table
-    // standard: every row one line) — the code no longer stacks over the
-    // name. CODE/REV: the revision is the customer's drawing revision off the
-    // SO line (null -> the bare code, never a trailing slash).
-    {
-      id: 'item_code',
-      sortFilterField: 'itemCode',
-      header: 'Item Code',
-      nowrap: true,
-      render: (jc) => (
-        <span className="mono fw-700" style={{ color: 'var(--purple)' }}>
-          {/* The card's OWN Drawing Rev (ABC/1), linked to its drawing page. */}
-          <ItemRevLink
-            itemRevisionId={jc.itemRevisionId}
-            label={itemCodeWithRev(jc.itemCode, docDrawingRev(jc))}
-            className=""
-          />
-        </span>
-      ),
-    },
-    {
-      id: 'item_name',
-      sortFilterField: 'itemName',
-      header: 'Item Name',
-      align: 'left',
-      ellipsis: true,
-      className: 'text2',
-      render: (jc) => jc.itemName?.trim() || '—',
-      title: (jc) => jc.itemName ?? '',
-    },
-    {
-      id: 'source_code',
-      sortFilterField: 'sourceCode',
-      header: 'SO / JWSO No.',
-      nowrap: true,
-      render: (jc) => {
-        const s = jc.sourceLink;
-        if (!s) return <span className="text3">—</span>;
-        const route = sourceRoute(s);
-        return (
-          <Link
-            to={route.to}
-            params={{ id: route.id }}
-            className="mono"
-            style={{
-              fontSize: 'var(--fs-xs)',
-              color: 'var(--blue)',
-              textDecoration: 'none',
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {s.code}
-            {s.lineNo !== 1 ? <span>/{s.lineNo}</span> : null}
-          </Link>
-        );
-      },
-    },
-    {
-      // ADR-207 — the office's own number, its OWN column beside the system
-      // SO / JWSO No. (owner decision 2026-10-05). Empty for a JWSO-sourced
-      // card and for the older orders that never had one.
-      id: 'so_internal_no',
-      sortFilterField: 'soInternalNo',
-      header: 'Internal SO No.',
-      nowrap: true,
-      render: (jc) => {
-        const s = jc.sourceLink;
-        const internal = s?.type === 'so' ? s.internalSoNo?.trim() : null;
-        return internal ? (
-          <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-            {internal}
-          </span>
-        ) : (
-          <span className="text3">—</span>
-        );
-      },
     },
     {
       id: 'order_qty',
@@ -416,17 +373,6 @@ export function jobCardListColumns(
         ),
     },
     {
-      // When the Job Card record was entered (IST day) — Sort & Filter can
-      // pick a range of it (ADR-200). Off by default; Columns ▾ shows it.
-      id: 'created_on',
-      sortFilterField: 'createdOn',
-      kind: 'date',
-      header: 'Created On',
-      className: 'mono',
-      nowrap: true,
-      render: (jc) => fmtDate(jc.createdAt),
-    },
-    {
       id: 'remarks',
       sortFilterField: 'remarks',
       header: 'Remarks',
@@ -447,6 +393,5 @@ export const JC_LIST_HIDDEN_COLUMNS = [
   'pending',
   'ops',
   'running',
-  'created_on',
   'remarks',
 ] as const;

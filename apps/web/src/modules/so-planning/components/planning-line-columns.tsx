@@ -27,7 +27,7 @@ import {
 } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
-import type { DataTableColumn } from '@/ui/data';
+import { leadColumns, type DataTableColumn } from '@/ui/data';
 import { planChildItemOf, planStatusOf, prStatusOf } from './plan-chip';
 import {
   DocCodes,
@@ -78,11 +78,72 @@ export function plansCellText(line: PlanningLine): string {
 }
 
 export function planningLineColumns(
-  source: PlanningDetailResponse['source'],
+  /** The order on screen — its SO No. / Internal SO No. head every line (the
+   *  lines themselves do not carry them). */
+  order: Pick<PlanningDetailResponse, 'source' | 'soCode' | 'soInternalNo'>,
 ): DataTableColumn<PlanningLine>[] {
+  const { source } = order;
   return [
+    // Owner rule 2026-10-31 — the six lead columns first; Ln and every other
+    // fact follow Item Name. Mixed SO + JWSO screen: the header stays "SO No."
+    // and shows whichever order number this is.
+    ...leadColumns<PlanningLine>({
+      soNo: () => order.soCode,
+      internalSoNo: () => order.soInternalNo,
+      pol: (l) => l.clientPoLineNo,
+      // needs API — the planning line carries no created date yet.
+      createdOn: () => null,
+      // `CODE/REV` — the customer's drawing revision from this line; a JW line
+      // has none and keeps the bare code.
+      itemCode: (l) => l.itemCode,
+      itemRev: (l) => l.itemRevision,
+      itemName: (l) => l.itemName,
+      overrides: {
+        item_code: {
+          title: (l) => itemCodeWithRev(l.itemCode, l.itemRevision, ''),
+          filterValue: (l) => itemCodeWithRev(l.itemCode, l.itemRevision, ''),
+        },
+        item_name: {
+          render: (l) => (
+            <>
+              {l.itemName ?? '—'}
+              {/* ADR-171: Item Master "Source" — why the ⋯ offers Plan (make) or
+                  Raise PR (buy). */}
+              <span
+                className={`badge ${l.itemProcurementType === 'buy' ? 'b-amber' : 'b-grey'}`}
+                style={{ fontSize: 11, padding: '0 6px', marginLeft: 6 }}
+                title={
+                  l.itemProcurementType === 'buy'
+                    ? 'Bought-in item — raise a purchase request'
+                    : 'Made in-house — plan it'
+                }
+              >
+                {l.itemProcurementType === 'buy' ? 'Buy' : 'Make'}
+              </span>
+              {l.itemProcurementType === 'buy' && source === 'jw' ? (
+                <span className="text3" style={{ fontSize: 11, marginLeft: 4 }}>
+                  Customer material
+                </span>
+              ) : null}
+            </>
+          ),
+          // The badge explains why the ⋯ offers Plan (make) or Raise PR (buy), and
+          // this column clips — so the tooltip has to carry it, or a long item name
+          // hides the one word that explains the row.
+          title: (l) =>
+            [
+              l.itemName ?? '',
+              l.itemProcurementType === 'buy' ? 'Buy' : 'Make',
+              l.itemProcurementType === 'buy' && source === 'jw' ? 'Customer material' : '',
+            ]
+              .filter(Boolean)
+              .join(' · '),
+          filterValue: (l) =>
+            `${l.itemName ?? ''} ${l.itemProcurementType === 'buy' ? 'Buy' : 'Make'}`.trim(),
+        },
+      },
+    }),
     {
-      // Column 0 — always pinned, never dropped into ▸.
       id: 'line_no',
       header: 'Ln',
       kind: 'num',
@@ -91,66 +152,6 @@ export function planningLineColumns(
       nowrap: true,
       render: (l) => l.lineNo,
       filterValue: (l) => l.lineNo,
-    },
-    {
-      // `CODE/REV` — the customer's drawing revision from this line; a JW line
-      // has none and keeps the bare code. The code is the main thing: strong
-      // mono, darkest text.
-      id: 'item_code',
-      header: 'Item Code',
-      kind: 'code',
-      align: 'left',
-      nowrap: true,
-      render: (l) => (
-        <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-          {itemCodeWithRev(l.itemCode, l.itemRevision, '')}
-        </span>
-      ),
-      title: (l) => itemCodeWithRev(l.itemCode, l.itemRevision, ''),
-      filterValue: (l) => itemCodeWithRev(l.itemCode, l.itemRevision, ''),
-    },
-    {
-      id: 'item_name',
-      header: 'Item Name',
-      kind: 'text',
-      align: 'left',
-      ellipsis: true,
-      render: (l) => (
-        <>
-          {l.itemName ?? '—'}
-          {/* ADR-171: Item Master "Source" — why the ⋯ offers Plan (make) or
-              Raise PR (buy). */}
-          <span
-            className={`badge ${l.itemProcurementType === 'buy' ? 'b-amber' : 'b-grey'}`}
-            style={{ fontSize: 11, padding: '0 6px', marginLeft: 6 }}
-            title={
-              l.itemProcurementType === 'buy'
-                ? 'Bought-in item — raise a purchase request'
-                : 'Made in-house — plan it'
-            }
-          >
-            {l.itemProcurementType === 'buy' ? 'Buy' : 'Make'}
-          </span>
-          {l.itemProcurementType === 'buy' && source === 'jw' ? (
-            <span className="text3" style={{ fontSize: 11, marginLeft: 4 }}>
-              Customer material
-            </span>
-          ) : null}
-        </>
-      ),
-      // The badge explains why the ⋯ offers Plan (make) or Raise PR (buy), and
-      // this column clips — so the tooltip has to carry it, or a long item name
-      // hides the one word that explains the row.
-      title: (l) =>
-        [
-          l.itemName ?? '',
-          l.itemProcurementType === 'buy' ? 'Buy' : 'Make',
-          l.itemProcurementType === 'buy' && source === 'jw' ? 'Customer material' : '',
-        ]
-          .filter(Boolean)
-          .join(' · '),
-      filterValue: (l) =>
-        `${l.itemName ?? ''} ${l.itemProcurementType === 'buy' ? 'Buy' : 'Make'}`.trim(),
     },
     {
       id: 'order_qty',

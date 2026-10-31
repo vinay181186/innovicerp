@@ -55,6 +55,12 @@ export interface DataTableColumn<T> {
   /** Column kind for the fit engine — see DataTableColumnKind. */
   kind?: DataTableColumnKind | undefined;
   /**
+   * One of the six locked lead columns (ui/data/lead-columns.tsx — build them
+   * with `leadColumns`, never by hand). The leading run of `lead` columns is
+   * fixed: it cannot be moved, hidden or crossed, and never drops off screen.
+   */
+  lead?: boolean | undefined;
+  /**
    * Floor in px for the measured width (fit engine only). For cells whose
    * content has no width of its own, e.g. a thumbnail that fills its cell.
    */

@@ -10,9 +10,8 @@ import { opSrNo } from '@innovic/shared';
 import { ActualMachineLine } from '@/components/shared/machine-split';
 import { SoNo } from '@/components/shared/so-no';
 import { fmtDate } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
 import { OP_STATUS } from '@/modules/job-cards/lib/jc-op-labels';
-import { ROW_TINT } from '@/ui/data';
+import { ROW_TINT, leadColumns } from '@/ui/data';
 
 // Op Status tick list for the server Sort & Filter (non-complete states only:
 // the table never holds a complete op).
@@ -48,6 +47,21 @@ export function opRowTint(op: MachineLoadOp): string | undefined {
 // the Operation name is the one free-text column (left + ellipsis).
 export function opsColumns(): DataTableColumn<MachineLoadOp>[] {
   return [
+    // Owner rule 2026-10-31 — the six lead columns first; JC No. and every
+    // other fact follow Item Name.
+    ...leadColumns<MachineLoadOp>({
+      soNo: (op) => op.soCode,
+      internalSoNo: (op) => op.soInternalNo,
+      pol: (op) => op.clientPoLineNo,
+      // needs API — the machine-loading op row carries no created date yet.
+      createdOn: () => null,
+      // `CODE/REV` — the customer's drawing revision from the SO line this card
+      // was raised against; a JW-sourced / standalone card keeps the bare code.
+      itemCode: (op) => op.itemCode,
+      itemRev: (op) => op.itemRevision,
+      itemName: (op) => op.itemName,
+      overrides: { item_code: { sortFilterField: 'itemCode' } },
+    }),
     {
       id: 'jc_code',
       header: 'JC No.',
@@ -89,16 +103,6 @@ export function opsColumns(): DataTableColumn<MachineLoadOp>[] {
       ellipsis: true,
       render: (op) => op.operation,
       title: (op) => op.operation,
-    },
-    {
-      id: 'item_code',
-      header: 'Item Code',
-      sortFilterField: 'itemCode',
-      className: 'mono fw-700',
-      nowrap: true,
-      // `CODE/REV` — the customer's drawing revision from the SO line this card
-      // was raised against; a JW-sourced / standalone card keeps the bare code.
-      render: (op) => itemCodeWithRev(op.itemCode, op.itemRevision),
     },
     {
       id: 'available',

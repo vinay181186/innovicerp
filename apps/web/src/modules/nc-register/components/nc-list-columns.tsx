@@ -2,8 +2,9 @@
 // menu for the shared FIT table (ADR-199: <DataTable tableKey=…>). Split out of
 // routes/list.tsx so that file stays under the 400-line ceiling.
 //
-// Columns (first pinned): NC No. · NC Status · Disposition · Item Code ·
-// Item Name · Rejected · Reason · NC Date. Centred by the table standard;
+// Columns: the six lead columns (SO No. · Internal SO No. · POL · Created On ·
+// Item Code · Item Name, owner rule 2026-10-31) then NC No. · NC Status ·
+// Disposition · Rejected · Reason · NC Date. Centred by the table standard;
 // Rejected is the one number column (align 'right' -> the num kind); Item Name
 // is the one left-aligned text column that shares the spare width.
 //
@@ -27,7 +28,7 @@ import {
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { ROW_TINT, type DataTableColumn } from '@/ui/data';
+import { leadColumns, ROW_TINT, type DataTableColumn } from '@/ui/data';
 import type { RowMenuItem } from '@/ui/data/row-menu-logic';
 import { NcDispositionBadge } from './nc-disposition-badge';
 import { NcStatusBadge } from './nc-status-badge';
@@ -45,7 +46,7 @@ const NC_REASON_OPTIONS = NC_REASON_CATEGORIES.map((value) => ({
 
 /** Columns off by default on the NC Register sheet — passed to the DataTable's
  *  `defaultHidden`. They stay reachable in ▸ / the Columns menu. */
-export const NC_LIST_HIDDEN_COLUMNS = ['created_on'];
+export const NC_LIST_HIDDEN_COLUMNS: string[] = [];
 
 /** NC status → row tint (ADR-199 ROW_TINT), kept in step with NcStatusBadge:
  *  recovery under way (rework / repair / at vendor / QC pending) reads amber
@@ -92,8 +93,23 @@ export function ncListColumns(
   draftIds?: Set<string>,
 ): DataTableColumn<NcRegisterListItem>[] {
   return [
+    // Owner rule 2026-10-31 — the six lead columns first; NC No. after Item Name.
+    ...leadColumns<NcRegisterListItem>({
+      soNo: (nc) => nc.soCodeText,
+      internalSoNo: (nc) => nc.soInternalNo,
+      pol: (nc) => nc.clientPoLineNo,
+      createdOn: (nc) => nc.createdAt,
+      itemCode: (nc) => nc.itemCode ?? nc.itemCodeText,
+      itemRev: (nc) => (nc.itemCode ? nc.itemRevision : null),
+      itemName: (nc) => ncItemName(nc),
+      overrides: {
+        so_internal_no: { sortFilterField: 'soInternalNo' },
+        created_on: { sortFilterField: 'createdOn' },
+        item_code: { sortFilterField: 'itemCode', filterValue: (nc) => ncItemCode(nc) },
+        item_name: { sortFilterField: 'itemName' },
+      },
+    }),
     {
-      // First column — pinned by the table standard (ADR-199).
       id: 'nc_code',
       sortFilterField: 'ncCode',
       header: 'NC No.',
@@ -130,29 +146,6 @@ export function ncListColumns(
       render: (nc) => <NcDispositionBadge disposition={nc.disposition} />,
     },
     {
-      id: 'item_code',
-      sortFilterField: 'itemCode',
-      header: 'Item Code',
-      className: 'td-code',
-      nowrap: true,
-      render: (nc) => (
-        <span className="td-code" style={{ color: 'var(--text)' }}>
-          {ncItemCode(nc) || '—'}
-        </span>
-      ),
-      filterValue: (nc) => ncItemCode(nc),
-    },
-    {
-      id: 'item_name',
-      sortFilterField: 'itemName',
-      header: 'Item Name',
-      align: 'left',
-      ellipsis: true,
-      className: 'text2',
-      render: (nc) => ncItemName(nc) || '—',
-      title: (nc) => ncItemName(nc),
-    },
-    {
       id: 'rejected_qty',
       sortFilterField: 'rejectedQty',
       filterType: 'num',
@@ -185,17 +178,6 @@ export function ncListColumns(
       className: 'mono',
       nowrap: true,
       render: (nc) => fmtDate(nc.ncDate),
-    },
-    {
-      // When the NC record was entered (IST day) — Sort & Filter can pick a
-      // range of it (ADR-200). Off by default; Columns ▾ shows it.
-      id: 'created_on',
-      sortFilterField: 'createdOn',
-      kind: 'date',
-      header: 'Created On',
-      className: 'mono',
-      nowrap: true,
-      render: (nc) => fmtDate(nc.createdAt),
     },
   ];
 }

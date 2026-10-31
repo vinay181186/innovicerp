@@ -2,9 +2,10 @@
 // completed inspection: a job-card QC log entry, an inspected GRN line, or
 // (ADR-203) a Party GRN line — CompletedVM maps them onto one set of accessors.
 // Party GRN reads as on Pending: Item Code = the finished part, Item Name = the
-// customer RM, SO / Vendor = the customer; QC Remarks = its qcRemarks and the
+// customer RM, SO No. = the JWSO, Vendor / Customer = the customer; QC Remarks = its qcRemarks and the
 // Deviation Reason (rejectReason, Party GRN only) has its own column.
-// Visible (Doc No. pinned): Doc No. · Item Code · Accepted · Deviated · QC
+// Visible: the six lead columns (owner rule 2026-10-31), then Doc No. ·
+// Accepted · Deviated · QC
 // Result · Attended · Inspected By · QC Remarks · Planned / Actual Machine ·
 // Client PO No. The rest starts hidden (COMPLETED_HIDDEN) in the ▸ detail row.
 
@@ -13,8 +14,7 @@ import { opSrNo } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { QcReportLink } from '@/components/shared/qc-report-attach';
 import { fmtDate } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
-import type { DataTableColumn } from '@/ui/data';
+import { leadColumns, type DataTableColumn } from '@/ui/data';
 import { factColumns } from './qc-call-fact-columns';
 import { remarkColumns } from './qc-call-remark-columns';
 import { incomingStageLabel, pgrnMaterialOf, pgrnOrderOf } from './qc-call-pending-columns';
@@ -49,9 +49,11 @@ const VERDICT_LABEL: Record<Verdict, string> = {
   QC_PARTIAL: 'Part QC',
 };
 
-function itemCodeOf(vm: CompletedVM): string {
-  if (vm.kind === 'pgrn') return itemCodeWithRev(vm.row.partCode, vm.row.partRevision);
-  return itemCodeWithRev(vm.row.itemCode, vm.row.itemRevision);
+function itemCodeOf(vm: CompletedVM): string | null {
+  return vm.kind === 'pgrn' ? vm.row.partCode : vm.row.itemCode;
+}
+function itemRevOf(vm: CompletedVM): string | null {
+  return vm.kind === 'pgrn' ? vm.row.partRevision : vm.row.itemRevision;
 }
 function itemNameOf(vm: CompletedVM): string {
   if (vm.kind === 'pgrn') return `Customer RM ${pgrnMaterialOf(vm.row)}`;
@@ -94,17 +96,23 @@ function respDaysOf(vm: CompletedVM): number | null {
   if (vm.kind === 'pgrn') return vm.row.qcDate ? dayDiff(vm.row.grnDate, vm.row.qcDate) : null;
   return vm.row.qcCallDate ? dayDiff(vm.row.qcCallDate, vm.row.logDate) : null;
 }
-function soVendorOf(vm: CompletedVM): string {
+/** The vendor (GRN line) or customer (Party GRN line) the call stands against;
+ *  a job-card call has neither. */
+function vendorOf(vm: CompletedVM): string {
   if (vm.kind === 'pgrn') return vm.row.customerName ?? '—';
-  if (vm.kind === 'op') return vm.row.soCode || '—';
+  if (vm.kind === 'op') return '—';
   return vm.row.vendorName ?? '—';
 }
-/** ADR-207 — the office's own Internal SO No. Only a job-card QC log stands
- *  against a sales order; an inspected GRN line stands against a vendor (the
- *  completed incoming feed carries no SO at all) and a Party GRN line against
- *  a customer, so neither has one. */
-function soInternalNoOf(vm: CompletedVM): string {
-  return vm.kind === 'op' ? vm.row.soInternalNo?.trim() || '—' : '—';
+/** Lead SO No.: the SO (job-card / GRN call), the JWSO (Party GRN call). */
+function soNoOf(vm: CompletedVM): string | null {
+  if (vm.kind === 'pgrn') return vm.row.jwCode;
+  // The completed incoming feed carries no SO (needs API).
+  return vm.kind === 'op' ? vm.row.soCode : null;
+}
+/** ADR-207 — the office's own Internal SO No. A Party GRN line stands against
+ *  a JWSO, which has none. */
+function soInternalNoOf(vm: CompletedVM): string | null {
+  return vm.kind === 'op' ? vm.row.soInternalNo : null;
 }
 function operationOf(vm: CompletedVM): string {
   if (vm.kind === 'pgrn') return `Party GRN · ${pgrnOrderOf(vm.row)}`;
@@ -163,10 +171,7 @@ function respDisplay(vm: CompletedVM): string {
 /** Columns that start hidden — the fit engine shows them in the ▸ detail row. */
 export const COMPLETED_HIDDEN = [
   'stage',
-  'item_name',
-  'pol',
-  'so_vendor',
-  'so_internal_no',
+  'vendor',
   'operation',
   'called_date',
   'response_days',
@@ -177,8 +182,24 @@ export const COMPLETED_HIDDEN = [
 
 export function completedColumns(): DataTableColumn<CompletedVM>[] {
   return [
+    // Owner rule 2026-10-31 — the six lead columns first; Doc No. and the
+    // rest after Item Name. No created date on these feeds yet (needs API).
+    ...leadColumns<CompletedVM>({
+      soNo: soNoOf,
+      internalSoNo: soInternalNoOf,
+      pol: polOf,
+      createdOn: () => null,
+      itemCode: itemCodeOf,
+      itemRev: itemRevOf,
+      itemName: itemNameOf,
+      overrides: {
+        so_internal_no: { sortFilterField: 'soInternalNo' },
+        client_po_line_no: { sortFilterField: 'pol' },
+        item_code: { sortFilterField: 'itemCode' },
+        item_name: { sortFilterField: 'itemName' },
+      },
+    }),
     {
-      // First column — pinned by the table standard (ADR-199).
       id: 'doc_no',
       sortFilterField: 'docNo',
       header: 'Doc No.',
@@ -229,15 +250,6 @@ export function completedColumns(): DataTableColumn<CompletedVM>[] {
             {vm.row.jcCode}
           </Link>
         ),
-    },
-    {
-      id: 'item_code',
-      sortFilterField: 'itemCode',
-      header: 'Item Code',
-      nowrap: true,
-      className: 'mono fw-700',
-      render: (vm) => itemCodeOf(vm),
-      title: (vm) => itemCodeOf(vm),
     },
     {
       id: 'accepted',
@@ -299,44 +311,17 @@ export function completedColumns(): DataTableColumn<CompletedVM>[] {
       filterValue: (vm) => stageLabelOf(vm),
     },
     {
-      id: 'item_name',
-      sortFilterField: 'itemName',
-      header: 'Item Name',
-      align: 'left',
-      ellipsis: true,
-      render: (vm) => itemNameOf(vm),
-      title: (vm) => itemNameOf(vm),
-    },
-    {
-      id: 'pol',
-      sortFilterField: 'pol',
-      header: 'POL',
-      nowrap: true,
-      render: (vm) => (
-        <span className="mono fw-700" style={{ color: 'var(--purple)' }}>
-          {polOf(vm) ?? '—'}
-        </span>
-      ),
-    },
-    {
-      id: 'so_vendor',
+      // The party the call stands against when it is not a sales order: the
+      // vendor of a GRN line, the customer of a Party GRN line. The order
+      // number itself is the lead SO No. column. Server field `soVendor` still
+      // reads the SO code on a job-card row (needs API to split it).
+      id: 'vendor',
       sortFilterField: 'soVendor',
-      header: 'SO / Vendor',
+      header: 'Vendor / Customer',
       align: 'left',
       ellipsis: true,
-      render: (vm) => soVendorOf(vm),
-      title: (vm) => soVendorOf(vm),
-    },
-    {
-      // ADR-207 — the office's own Internal SO No., its own column beside the
-      // SO / Vendor one so the two SO numbers can be told apart.
-      id: 'so_internal_no',
-      sortFilterField: 'soInternalNo',
-      kind: 'code',
-      header: 'Internal SO No.',
-      className: 'mono fw-700',
-      nowrap: true,
-      render: (vm) => <span style={{ color: 'var(--text)' }}>{soInternalNoOf(vm)}</span>,
+      render: (vm) => vendorOf(vm),
+      title: (vm) => vendorOf(vm),
     },
     {
       id: 'operation',

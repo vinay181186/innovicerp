@@ -24,7 +24,7 @@ import { fmtDate } from '@/lib/date';
 import { ItemRevLink } from '@/modules/item-revisions/components/item-rev-link';
 import { itemCodeWithRev, docDrawingRev } from '@/lib/item-code';
 import type { DataTableColumn } from '@/ui/data';
-import { ROW_TINT } from '@/ui/data';
+import { ROW_TINT, leadColumns } from '@/ui/data';
 import { PoStatusBadge } from './po-status-badge';
 
 // Sort & Filter (server mode): the status tick list — stored code + label.
@@ -78,6 +78,39 @@ export function poListColumns(
   offset = 0,
 ): DataTableColumn<ProductionOrderListItem>[] {
   return [
+    // Owner rule 2026-10-31 — the six lead columns first; Sr No, Production
+    // Order No. and every other fact follow Item Name. Created On is the
+    // order's own createdAt (the old "Production Order Date" column showed the
+    // same value, so it is folded into the lead column).
+    ...leadColumns<ProductionOrderListItem>({
+      soNo: (po) => po.soCodeText,
+      internalSoNo: (po) => po.soInternalNo,
+      pol: (po) => po.clientPoLineNo,
+      createdOn: (po) => po.createdAt,
+      itemCode: (po) => po.itemCodeText,
+      itemRev: (po) => docDrawingRev(po),
+      itemName: (po) => po.itemNameText,
+      overrides: {
+        so_no: { sortFilterField: 'sourceCode' },
+        so_internal_no: { sortFilterField: 'soInternalNo' },
+        client_po_line_no: { sortFilterField: 'clientPoLineNo' },
+        created_on: { sortFilterField: 'createdOn' },
+        item_code: {
+          sortFilterField: 'itemCode',
+          render: (po) => (
+            <span className="td-code" style={{ color: 'var(--text)', fontWeight: 700 }}>
+              {/* CODE/REV (ADR-177); bare code when the line has no revision. */}
+              <ItemRevLink
+                itemRevisionId={po.itemRevisionId}
+                label={itemCodeWithRev(po.itemCodeText, docDrawingRev(po))}
+                className=""
+              />
+            </span>
+          ),
+        },
+        item_name: { sortFilterField: 'itemName' },
+      },
+    }),
     {
       // Owner request 2026-10-26 — the client-list Sr No column. Column 0 of a
       // fit table carries the row's ▸; the Production Order No. stays pinned
@@ -109,44 +142,6 @@ export function poListColumns(
           {po.code}
         </Link>
       ),
-    },
-    {
-      id: 'pro_date',
-      header: 'Production Order Date',
-      kind: 'date',
-      sortFilterField: 'createdOn',
-      className: 'mono',
-      nowrap: true,
-      render: (po) => fmtDate(po.createdAt),
-    },
-    {
-      id: 'item_code',
-      header: 'Item Code',
-      kind: 'code',
-      sortFilterField: 'itemCode',
-      className: 'td-code',
-      nowrap: true,
-      render: (po) => (
-        <span className="td-code" style={{ color: 'var(--text)', fontWeight: 700 }}>
-          {/* CODE/REV (ADR-177); bare code when the line has no revision. */}
-          <ItemRevLink
-            itemRevisionId={po.itemRevisionId}
-            label={itemCodeWithRev(po.itemCodeText, docDrawingRev(po))}
-            className=""
-          />
-        </span>
-      ),
-    },
-    {
-      id: 'item_name',
-      header: 'Item Name',
-      kind: 'text',
-      sortFilterField: 'itemName',
-      align: 'left',
-      className: 'text2',
-      ellipsis: true,
-      render: (po) => po.itemNameText ?? '—',
-      title: (po) => po.itemNameText ?? '',
     },
     {
       id: 'order_qty',
@@ -249,55 +244,6 @@ export function poListColumns(
       ),
     },
     {
-      id: 'so_jwso',
-      header: 'SO / JWSO No.',
-      kind: 'code',
-      sortFilterField: 'sourceCode',
-      className: 'mono',
-      nowrap: true,
-      render: (po) =>
-        po.soCodeText ? (
-          <span>
-            {po.soCodeText}
-            {po.lineNo ? <span className="text3">/{po.lineNo}</span> : null}
-          </span>
-        ) : (
-          '—'
-        ),
-    },
-    {
-      // ADR-207 — the office's own number, its OWN column beside the system
-      // SO / JWSO No. (owner decision 2026-10-05). Many older orders have none,
-      // and a JWSO-sourced order never has one.
-      id: 'so_internal_no',
-      header: 'Internal SO No.',
-      kind: 'code',
-      sortFilterField: 'soInternalNo',
-      className: 'mono',
-      nowrap: true,
-      render: (po) =>
-        po.soInternalNo?.trim() ? (
-          <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-            {po.soInternalNo}
-          </span>
-        ) : (
-          <span className="text3">—</span>
-        ),
-    },
-    {
-      // POL — the line number printed on the CUSTOMER's own purchase order, off
-      // the SO line behind this Production Order. NOT our SO line number (that is
-      // the "/n" in the SO / JWSO column).
-      id: 'pol',
-      header: 'POL',
-      kind: 'code',
-      headColor: 'var(--purple)',
-      sortFilterField: 'clientPoLineNo',
-      className: 'mono fw-700',
-      nowrap: true,
-      render: (po) => <span style={{ color: 'var(--purple)' }}>{po.clientPoLineNo ?? '—'}</span>,
-    },
-    {
       id: 'jc_no',
       header: 'JC No.',
       kind: 'code',
@@ -323,7 +269,6 @@ export function poListColumns(
  *  Production Order No. is never dropped into ▸ on a narrow screen. */
 export const PO_LIST_PINNED_IDS = ['pro_no'];
 
-/** Column ids shipped in the ▸ detail by default (Plan No., SO / JWSO,
- *  Internal SO No., POL, JC No.), so the eight primary facts stay on the main
- *  line. */
-export const PO_LIST_DETAIL_IDS = ['plan_no', 'so_jwso', 'so_internal_no', 'pol', 'jc_no'];
+/** Column ids shipped in the ▸ detail by default (Plan No., JC No.). The SO
+ *  No., Internal SO No. and POL are lead columns now — always shown. */
+export const PO_LIST_DETAIL_IDS = ['plan_no', 'jc_no'];

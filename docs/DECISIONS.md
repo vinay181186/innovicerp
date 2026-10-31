@@ -14905,3 +14905,37 @@ inspections.
   NC and the activity log keep every inspection's own text.
 - Risks: the over-receipt cap — covered by received − deviated and a test.
 
+
+## ADR-261: Fixed lead columns on every SO-linked list
+
+**Date:** 2026-10-31
+**Status:** Accepted (owner)
+
+### Context
+
+The 2026-10-31 audit (about 150 tables) found that no SO-linked list opened with the same
+columns. SO No., POL, Created On or Item Code were missing on many pages, and SO No. often
+came after Item Name. The Columns ▾ engine locked only column 0, put a newly added column
+at the END of every saved layout, and re-showed a hidden column at the end.
+
+### Decision
+
+- Every SO-linked list opens with six columns, in this order: **SO No. · Internal SO No. ·
+  POL · Created On · Item Code (CODE/REV in the cell) · Item Name**. Every other column,
+  including the page's own number (JC No., PO No. …) and Sr No, comes after Item Name.
+- They are built only by `leadColumns()` (`apps/web/src/ui/data/lead-columns.tsx`, flag
+  `lead: true`). The table engine locks the block: it cannot be moved, hidden, pinned or
+  crossed, and it never drops off screen. A new column lands in its code position after
+  Item Name. A re-shown column returns to its own slot.
+- There is no separate Drawing Rev column. JWSO-only lists show JWSO No. and no Internal
+  SO No. column.
+- Owner decisions for the next phases: header-level lists (PO, Invoice, Dispatch, DC, SO,
+  GRN, Store Issue) change to one row per line, and reports and exports follow the same
+  order.
+
+### Consequences
+
+- Positive: one builder and one lock. A page can no longer drift.
+- Negative: users' saved layouts on the changed tables re-order to the lead block.
+- Risks: until the server sends `createdAt`, Created On shows — on op, queue and QC rows
+  (phase 3).

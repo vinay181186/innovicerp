@@ -37,6 +37,8 @@ export interface TableLayoutState {
 export interface TableLayoutDefaults {
   pins?: string[] | undefined;
   hidden?: string[] | undefined;
+  /** The locked lead block (ui/data/lead-columns.tsx), in code order. */
+  locked?: string[] | undefined;
 }
 
 export interface UseTableLayoutResult extends TableLayoutState {
@@ -64,26 +66,48 @@ function isStatus(e: unknown, status: number): boolean {
   return e instanceof ApiError && e.status === status;
 }
 
-/** Fit any layout onto the columns the code has today. */
+/** Fit any layout onto the columns the code has today. The locked block
+ *  (column 0, or the six lead columns) always comes first in code order and is
+ *  never hidden. A column the code added since the user saved lands at its
+ *  CODE position (just after the column it follows), never at the end. */
 function normalize(
   state: TableLayoutState,
   ids: string[],
   defaults: TableLayoutDefaults,
 ): TableLayoutState {
-  const first = ids[0];
-  const known = state.order.filter((k) => ids.includes(k));
-  const added = ids.filter((k) => !known.includes(k));
-  let order = [...known, ...added];
-  if (first !== undefined) order = [first, ...order.filter((k) => k !== first)];
+  const locked = lockedOf(ids, defaults);
+  const order = state.order.filter((k) => ids.includes(k) && !locked.includes(k));
+  const added = ids.filter((k) => !locked.includes(k) && !order.includes(k));
+  for (const k of added) {
+    const at = ids.indexOf(k);
+    let insert = 0;
+    for (let p = at - 1; p >= 0; p--) {
+      const prev = ids[p];
+      if (prev === undefined || locked.includes(prev)) break;
+      const pos = order.indexOf(prev);
+      if (pos >= 0) {
+        insert = pos + 1;
+        break;
+      }
+    }
+    order.splice(insert, 0, k);
+  }
   const hidden = [
     ...state.hidden.filter((k) => ids.includes(k)),
     ...added.filter((k) => defaults.hidden?.includes(k) ?? false),
-  ].filter((k) => k !== first);
+  ].filter((k) => !locked.includes(k));
   const pins = [
     ...state.pins.filter((k) => ids.includes(k)),
     ...added.filter((k) => defaults.pins?.includes(k) ?? false),
-  ].filter((k) => k !== first && !hidden.includes(k));
-  return { order, pins: [...new Set(pins)], hidden: [...new Set(hidden)] };
+  ].filter((k) => !locked.includes(k) && !hidden.includes(k));
+  return { order: [...locked, ...order], pins: [...new Set(pins)], hidden: [...new Set(hidden)] };
+}
+
+/** The locked block: the lead columns the table names, else column 0. */
+function lockedOf(ids: string[], defaults: TableLayoutDefaults): string[] {
+  const lead = (defaults.locked ?? []).filter((k) => ids.includes(k));
+  if (lead.length > 0) return lead;
+  return ids[0] === undefined ? [] : [ids[0]];
 }
 
 function fromSaved(columns: TableLayoutColumn[]): TableLayoutState {
@@ -184,6 +208,10 @@ export function useTableLayout(
   }, [local, saved, defaultState, idsKey]);
 
   const first = columnIds[0];
+  const lockedIds = useMemo(
+    () => lockedOf(columnIds, defaults),
+    [idsKey, (defaults.locked ?? []).join('|')],
+  );
   const stateRef = useRef(state);
   stateRef.current = state;
   const loaded = query.isSuccess;
@@ -239,7 +267,7 @@ export function useTableLayout(
     queued.current = [];
     const base = saved !== undefined && saved.length > 0 ? fromSaved(saved) : defaultState;
     const replayed = normalize(
-      ops.reduce((st, op) => applyLayoutOp(st, op, first, defaultState), base),
+      ops.reduce((st, op) => applyLayoutOp(st, op, lockedIds, defaultState), base),
       columnIds,
       defaults,
     );
@@ -248,7 +276,7 @@ export function useTableLayout(
     setLocal(replayed);
     pending.current = resetLast ? { kind: 'delete' } : { kind: 'put', state: replayed };
     flush();
-  }, [loaded, saved, defaultState, first, idsKey, flush]);
+  }, [loaded, saved, defaultState, lockedIds, idsKey, flush]);
 
   useEffect(() => {
     if (canSave && pending.current && queued.current.length === 0) flush();
@@ -262,7 +290,7 @@ export function useTableLayout(
       seq.current += 1;
       if (!loadedRef.current) queued.current.push(op);
       const next = normalize(
-        applyLayoutOp(stateRef.current, op, first, defaultState),
+        applyLayoutOp(stateRef.current, op, lockedIds, defaultState),
         columnIds,
         defaults,
       );
@@ -278,7 +306,7 @@ export function useTableLayout(
       pending.current = { kind: 'put', state: next };
       timer.current = window.setTimeout(flush, SAVE_DELAY_MS);
     },
-    [first, defaultState, idsKey, flush],
+    [lockedIds, defaultState, idsKey, flush],
   );
 
   const retrySave = useCallback(() => {

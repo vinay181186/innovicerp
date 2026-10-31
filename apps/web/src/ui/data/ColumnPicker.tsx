@@ -17,12 +17,16 @@ export interface PickerColumn {
   /** A `control` column — force-pinned by its kind: cannot be hidden or
    *  unpinned (treated like the always-first column). */
   control?: boolean | undefined;
+  /** One of the locked lead columns — cannot move, hide or unpin. */
+  lead?: boolean | undefined;
 }
 
 export interface ColumnPickerProps {
   columns: PickerColumn[];
   layout: LayoutState;
   firstId: string;
+  /** Size of the locked block at the front (1 = column 0 only). */
+  lockedCount?: number | undefined;
   dropped: string[];
   flash: string[];
   canPin: (id: string) => boolean;
@@ -39,6 +43,7 @@ export function ColumnPicker({
   columns,
   layout,
   firstId,
+  lockedCount = 1,
   dropped,
   flash,
   canPin,
@@ -101,8 +106,10 @@ export function ColumnPicker({
   const line = (id: string, i: number, isHidden: boolean) => {
     const first = id === firstId;
     const control = columns.find((c) => c.id === id)?.control ?? false;
+    const lead = !first && (columns.find((c) => c.id === id)?.lead ?? false);
     // A control column is locked like the first one: never hidden, always pinned.
-    const locked = first || control;
+    // A lead column (SO No. … Item Name) is fixed in place and always shown.
+    const locked = first || control || lead;
     const pinned = locked || layout.pins.includes(id);
     const drop = dropped.includes(id);
     const label = labelOf(id);
@@ -124,7 +131,7 @@ export function ColumnPicker({
           type="button"
           className="dt-pick-btn"
           data-f={`up:${id}`}
-          disabled={first || isHidden || i <= 1}
+          disabled={first || lead || isHidden || i <= lockedCount}
           onClick={() => move(id, -1)}
           aria-label={`Move ${label} left`}
           title="Move left"
@@ -135,7 +142,7 @@ export function ColumnPicker({
           type="button"
           className="dt-pick-btn"
           data-f={`dn:${id}`}
-          disabled={first || isHidden || i === shown.length - 1}
+          disabled={first || lead || isHidden || i === shown.length - 1}
           onClick={() => move(id, 1)}
           aria-label={`Move ${label} right`}
           title="Move right"
@@ -154,6 +161,7 @@ export function ColumnPicker({
             {label}
             {first ? <span className="dt-pick-tag"> (always first)</span> : null}
             {control ? <span className="dt-pick-tag"> (locked)</span> : null}
+            {lead ? <span className="dt-pick-tag"> (fixed)</span> : null}
             {drop ? <span className="dt-pick-tag"> · not on screen (no room)</span> : null}
           </span>
         </label>

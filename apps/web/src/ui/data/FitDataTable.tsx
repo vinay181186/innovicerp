@@ -29,6 +29,7 @@ import type { DataTableColumnKind, DataTableProps } from './data-table-types';
 import { canPin as canPinFn, fitColumns, type FitInput } from './fit-layout';
 import { FitRows } from './FitRows';
 import { SelectAllCheckbox, SelectionBar, useRowSelection } from './FitSelection';
+import { lockedLeadIds } from './lead-columns';
 import { TableToolbar } from './TableToolbar';
 import { useFitMeasure } from './use-fit-measure';
 import './data-table-fit.css';
@@ -87,7 +88,16 @@ export function FitDataTable<T>(props: DataTableProps<T> & { tableKey: string })
     return out;
   }, [columns, ids]);
 
-  const layout = useTableLayout(tableKey, ids, { pins: defaultPinned, hidden: defaultHidden });
+  // The six lead columns (ui/data/lead-columns.tsx) are one locked block.
+  const leadIds = useMemo(
+    () => (columns[0]?.lead ? lockedLeadIds(columns, ids) : []),
+    [columns, ids],
+  );
+  const layout = useTableLayout(tableKey, ids, {
+    pins: defaultPinned,
+    hidden: defaultHidden,
+    locked: leadIds,
+  });
   const { density, setDensity } = useTableDensity();
 
   const keyOf = rowKey ?? defaultRowKey;
@@ -133,6 +143,7 @@ export function FitDataTable<T>(props: DataTableProps<T> & { tableKey: string })
           avail,
           actionsW,
           selW,
+          locked: leadIds,
         }
       : null;
   // Cheap (one pass over at most 80 columns) — no memo needed.
@@ -176,6 +187,7 @@ export function FitDataTable<T>(props: DataTableProps<T> & { tableKey: string })
     // A `control` column is force-pinned by its kind: not hide-able, not
     // unpinnable — the Columns menu treats it like the always-first column.
     control: kinds[id] === 'control',
+    lead: leadIds.includes(id),
   }));
   const canPin = (id: string) => (fitInput ? canPinFn(fitInput, id) : true);
   // Pins the data first column just after the tick-box column (see the sticky
@@ -197,6 +209,7 @@ export function FitDataTable<T>(props: DataTableProps<T> & { tableKey: string })
         columns={pickerCols}
         layout={layout}
         firstId={firstId}
+        lockedCount={Math.max(1, leadIds.length)}
         dropped={dropped}
         warn={fit?.warn ?? false}
         canPin={canPin}

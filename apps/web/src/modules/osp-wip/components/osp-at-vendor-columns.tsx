@@ -6,10 +6,7 @@
 // no bucket already speaks for. A zero reads "—" in the muted token.
 
 import { opSrNo, type OspWipRow } from '@innovic/shared';
-import { itemCodeWithRev } from '@/lib/item-code';
-import type { DataTableColumn } from '@/ui/data';
-
-export const OSP_AT_VENDOR_DEFAULT_PINNED = ['item_code'];
+import { leadColumns, type DataTableColumn } from '@/ui/data';
 
 function qty(
   id: string,
@@ -36,6 +33,24 @@ function qty(
 
 export function ospAtVendorColumns(): DataTableColumn<OspWipRow>[] {
   return [
+    // Owner rule 2026-10-31 — the six lead columns first; JC No. follows Item Name.
+    ...leadColumns<OspWipRow>({
+      soNo: (r) => r.soCode,
+      internalSoNo: (r) => r.soInternalNo,
+      pol: (r) => r.clientPoLineNo,
+      // needs API — the OSP WIP row carries no created date yet.
+      createdOn: () => null,
+      itemCode: (r) => r.itemCode,
+      itemRev: (r) => r.itemRevision,
+      itemName: (r) => r.itemName,
+      overrides: {
+        so_no: { sortFilterField: 'soCode' },
+        so_internal_no: { sortFilterField: 'soInternalNo' },
+        client_po_line_no: { sortFilterField: 'clientPoLineNo' },
+        item_code: { sortFilterField: 'itemCode' },
+        item_name: { sortFilterField: 'itemName' },
+      },
+    }),
     {
       id: 'jc_no',
       sortFilterField: 'jcCode',
@@ -43,63 +58,6 @@ export function ospAtVendorColumns(): DataTableColumn<OspWipRow>[] {
       header: 'JC No.',
       className: 'td-code',
       render: (r) => <span style={{ color: 'var(--cyan)' }}>{r.jcCode}</span>,
-    },
-    {
-      // POL — the line number printed on the CUSTOMER's own purchase order,
-      // immediately before the item code. '—' when no sales order is behind it.
-      id: 'client_po_line_no',
-      sortFilterField: 'clientPoLineNo',
-      kind: 'code',
-      header: 'POL',
-      headColor: 'var(--purple)',
-      className: 'mono fw-700',
-      render: (r) => <span style={{ color: 'var(--purple)' }}>{r.clientPoLineNo ?? '—'}</span>,
-    },
-    {
-      id: 'item_code',
-      sortFilterField: 'itemCode',
-      kind: 'code',
-      header: 'Item Code',
-      className: 'mono fw-700',
-      render: (r) => (
-        <span style={{ color: 'var(--text)' }}>{itemCodeWithRev(r.itemCode, r.itemRevision)}</span>
-      ),
-    },
-    {
-      id: 'item_name',
-      sortFilterField: 'itemName',
-      kind: 'text',
-      header: 'Item Name',
-      align: 'left',
-      ellipsis: true,
-      className: 'fw-700',
-      render: (r) => r.itemName ?? '—',
-      title: (r) => r.itemName ?? '',
-    },
-    {
-      id: 'so_no',
-      sortFilterField: 'soCode',
-      kind: 'code',
-      header: 'SO No.',
-      className: 'mono text2',
-      render: (r) => r.soCode ?? '—',
-    },
-    {
-      // ADR-207 — the office's own number, its OWN column beside the system
-      // SO No. (owner decision 2026-10-05). Many older orders have none.
-      id: 'so_internal_no',
-      sortFilterField: 'soInternalNo',
-      kind: 'code',
-      header: 'Internal SO No.',
-      className: 'mono',
-      render: (r) =>
-        r.soInternalNo?.trim() ? (
-          <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-            {r.soInternalNo}
-          </span>
-        ) : (
-          <span className="text3">—</span>
-        ),
     },
     {
       id: 'vendor',

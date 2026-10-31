@@ -1,6 +1,7 @@
 // Columns for the Planning cross-order line-search results (ADR-199 shared FIT
-// table). One row per matching SO LINE: SO/JWSO No. (pinned) · Internal SO No. ·
-// Ln · POL · Item Code · Item Name · Order Qty · Due · Plan Status. Split out of
+// table). One row per matching SO LINE: SO No. · Internal SO No. · POL ·
+// Created On · Item Code · Item Name (the lead block) · Ln · Order Qty · Due ·
+// Plan Status. Split out of
 // routes/workflow.tsx so that file stays under the 400-line rule. The old
 // fixed-layout table wrapped long cells over several lines; the fit engine keeps
 // every row to one line and folds the rightmost columns into the ▸ detail row
@@ -9,7 +10,7 @@
 import type { PlanningLine, PlanningSoListItem } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { ROW_TINT, type DataTableColumn } from '@/ui/data';
+import { ROW_TINT, leadColumns, type DataTableColumn } from '@/ui/data';
 import { JwChip, lineStatusOf } from './planning-shared';
 
 /** One result row: the SO it belongs to + the matching line. */
@@ -30,41 +31,36 @@ export function lineRowTint(line: PlanningLine): string | undefined {
 
 export function lineSearchColumns(): DataTableColumn<LineSearchRow>[] {
   return [
-    {
-      id: 'so_code',
-      header: 'SO / JWSO No.',
-      kind: 'code',
-      nowrap: true,
-      render: ({ so }) => (
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-          {so.source === 'jw' ? <JwChip /> : null}
-          {/* The SYSTEM number only (ADR-207); the office's own number is the
-              next column, so each heading names one of the two. */}
-          <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-            {so.soCode}
-          </span>
-        </span>
-      ),
-      filterValue: ({ so }) => so.soCode,
-    },
-    {
-      // ADR-207 — the office's own typed number, beside the system number. This
-      // sheet's ▾ runs in the browser over the rows already loaded, so the
-      // column filters through `filterValue`, not a server field.
-      id: 'so_internal_no',
-      header: 'Internal SO No.',
-      kind: 'code',
-      nowrap: true,
-      render: ({ so }) =>
-        so.soInternalNo?.trim() ? (
-          <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-            {so.soInternalNo}
-          </span>
-        ) : (
-          <span className="text3">—</span>
-        ),
-      filterValue: ({ so }) => so.soInternalNo,
-    },
+    // Owner rule 2026-10-31 — the six lead columns first; Ln and every other
+    // fact follow Item Name. This sheet's ▾ runs in the browser over the rows
+    // already loaded, so the lead columns filter through `filterValue`.
+    ...leadColumns<LineSearchRow>({
+      soNo: ({ so }) => so.soCode,
+      internalSoNo: ({ so }) => so.soInternalNo,
+      pol: ({ line }) => line.clientPoLineNo,
+      // needs API — neither the SO list row nor the line carries a created date.
+      createdOn: () => null,
+      itemCode: ({ line }) => line.itemCode,
+      itemRev: ({ line }) => line.itemRevision,
+      itemName: ({ line }) => line.itemName,
+      overrides: {
+        so_no: {
+          render: ({ so }) => (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+              {so.source === 'jw' ? <JwChip /> : null}
+              {/* The SYSTEM number only (ADR-207); the office's own number is the
+                  next column, so each heading names one of the two. */}
+              <span className="mono" style={{ color: 'var(--blue)' }}>
+                {so.soCode}
+              </span>
+            </span>
+          ),
+        },
+        item_code: {
+          filterValue: ({ line }) => itemCodeWithRev(line.itemCode, line.itemRevision, ''),
+        },
+      },
+    }),
     {
       id: 'ln',
       header: 'Ln',
@@ -74,43 +70,6 @@ export function lineSearchColumns(): DataTableColumn<LineSearchRow>[] {
       nowrap: true,
       render: ({ line }) => line.lineNo,
       filterValue: ({ line }) => line.lineNo,
-    },
-    {
-      // POL is the CUSTOMER's own line number — an extra value beside our "Ln",
-      // never a substitute for it.
-      id: 'pol',
-      header: 'POL',
-      kind: 'code',
-      headColor: 'var(--purple)',
-      nowrap: true,
-      render: ({ line }) => (
-        <span className="mono fw-700" style={{ color: 'var(--purple)' }}>
-          {line.clientPoLineNo ?? '—'}
-        </span>
-      ),
-      filterValue: ({ line }) => line.clientPoLineNo,
-    },
-    {
-      // Item code is the thing the planner searched for — strong, never muted.
-      id: 'item_code',
-      header: 'Item Code',
-      kind: 'code',
-      nowrap: true,
-      render: ({ line }) => (
-        <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-          {itemCodeWithRev(line.itemCode, line.itemRevision, '')}
-        </span>
-      ),
-      filterValue: ({ line }) => itemCodeWithRev(line.itemCode, line.itemRevision, ''),
-    },
-    {
-      id: 'item_name',
-      header: 'Item Name',
-      kind: 'text',
-      align: 'left',
-      ellipsis: true,
-      render: ({ line }) => line.itemName ?? '—',
-      title: ({ line }) => line.itemName ?? '',
     },
     {
       id: 'order_qty',

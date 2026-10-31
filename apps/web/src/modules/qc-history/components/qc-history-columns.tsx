@@ -12,10 +12,7 @@ import {
 } from '@innovic/shared';
 import { QcReportLink } from '@/components/shared/qc-report-attach';
 import { fmtDate } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
-import type { DataTableColumn } from '@/ui/data';
-
-export const QC_HISTORY_DEFAULT_PINNED = ['item_code'];
+import { leadColumns, type DataTableColumn } from '@/ui/data';
 
 // Sort & Filter (server mode, ADR-200): the Shift tick list — stored code + label.
 const SHIFT_OPTIONS = Object.entries(SHIFT_LABELS as Record<string, string>).map(
@@ -34,9 +31,28 @@ interface QcRowBase {
   operation: string;
 }
 
-/** The eight leading columns both tables share: JC No. … Operation. */
-function leadColumns<T extends QcRowBase>(): DataTableColumn<T>[] {
+/** The columns both tables lead with: the six shared lead columns (owner rule
+ *  2026-10-31: SO No. · Internal SO No. · POL · Created On · Item Code · Item
+ *  Name), then JC No. · Op · Operation. The rows carry no created date yet, so
+ *  Created On prints a dash (needs API). */
+function qcLeadColumns<T extends QcRowBase>(): DataTableColumn<T>[] {
   return [
+    ...leadColumns<T>({
+      soNo: (o) => o.soCode,
+      internalSoNo: (o) => o.soInternalNo,
+      pol: (o) => o.clientPoLineNo,
+      createdOn: () => null,
+      itemCode: (o) => o.itemCode,
+      itemRev: (o) => o.itemRevision,
+      itemName: (o) => o.itemName,
+      overrides: {
+        so_no: { sortFilterField: 'soCode' },
+        so_internal_no: { sortFilterField: 'soInternalNo' },
+        client_po_line_no: { sortFilterField: 'clientPoLineNo' },
+        item_code: { sortFilterField: 'itemCode' },
+        item_name: { sortFilterField: 'itemName' },
+      },
+    }),
     {
       id: 'jc_no',
       sortFilterField: 'jcCode',
@@ -51,58 +67,6 @@ function leadColumns<T extends QcRowBase>(): DataTableColumn<T>[] {
       header: 'Op',
       className: 'mono',
       render: (o) => `Op ${opSrNo(o.opSeq)}`,
-    },
-    {
-      id: 'so_no',
-      sortFilterField: 'soCode',
-      kind: 'code',
-      header: 'SO No.',
-      className: 'mono',
-      render: (o) => <span style={{ color: 'var(--blue)' }}>{o.soCode || '—'}</span>,
-    },
-    {
-      // ADR-207 — the office's own Internal SO No., in its own column beside
-      // the system SO No. so the two can be told apart. Older orders have none.
-      // Both tables read the same `so` join, so either can sort / filter on it.
-      id: 'so_internal_no',
-      sortFilterField: 'soInternalNo',
-      kind: 'code',
-      header: 'Internal SO No.',
-      className: 'mono fw-700',
-      render: (o) => <span style={{ color: 'var(--text)' }}>{o.soInternalNo?.trim() || '—'}</span>,
-    },
-    {
-      // POL — the CUSTOMER's own purchase-order line number, before the item code.
-      id: 'client_po_line_no',
-      sortFilterField: 'clientPoLineNo',
-      kind: 'code',
-      header: 'POL',
-      headColor: 'var(--purple)',
-      className: 'mono fw-700',
-      render: (o) => <span style={{ color: 'var(--purple)' }}>{o.clientPoLineNo ?? '—'}</span>,
-    },
-    {
-      id: 'item_code',
-      sortFilterField: 'itemCode',
-      kind: 'code',
-      header: 'Item Code',
-      className: 'td-code',
-      render: (o) => (
-        <span style={{ color: 'var(--text)' }}>{itemCodeWithRev(o.itemCode, o.itemRevision)}</span>
-      ),
-    },
-    {
-      // An unresolved item prints nothing — a dash would read as a part that
-      // was deliberately left unnamed.
-      id: 'item_name',
-      sortFilterField: 'itemName',
-      kind: 'text',
-      header: 'Item Name',
-      align: 'left',
-      ellipsis: true,
-      className: 'fw-700',
-      render: (o) => o.itemName ?? '',
-      title: (o) => o.itemName ?? '',
     },
     {
       id: 'operation',
@@ -137,7 +101,7 @@ function numCol<T>(
 
 export function qcPendingColumns(): DataTableColumn<QcHistoryPendingRow>[] {
   return [
-    ...leadColumns<QcHistoryPendingRow>(),
+    ...qcLeadColumns<QcHistoryPendingRow>(),
     numCol<QcHistoryPendingRow>('order_qty', 'Order Qty', (o) => o.orderQty, undefined, 'orderQty'),
     numCol<QcHistoryPendingRow>(
       'completed',
@@ -185,7 +149,7 @@ export function qcPendingColumns(): DataTableColumn<QcHistoryPendingRow>[] {
 
 export function qcEntryColumns(): DataTableColumn<QcHistoryLogRow>[] {
   return [
-    ...leadColumns<QcHistoryLogRow>(),
+    ...qcLeadColumns<QcHistoryLogRow>(),
     numCol<QcHistoryLogRow>('accepted', 'Accepted', (l) => l.accepted, 'var(--green2)', 'accepted'),
     numCol<QcHistoryLogRow>('rejected', 'Deviated', (l) => l.rejected, 'var(--red2)', 'rejected'),
     {

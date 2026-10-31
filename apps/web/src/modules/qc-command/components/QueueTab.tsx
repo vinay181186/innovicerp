@@ -4,15 +4,14 @@
 // whole queue and the table shows one 25-row page (ADR-201).
 //
 // ADR-199 table standard: the data table is the shared fit table
-// (<DataTable tableKey={TABLE_KEYS.qcCommandQueue}>). First pinned column is
-// JC No.; Item Name, SO No., Customer and Due Date ride in the ▸ detail row
-// (defaultHidden). Overdue rows carry the shared late tint (ROW_TINT.late). The
+// (<DataTable tableKey={TABLE_KEYS.qcCommandQueue}>). The six lead columns
+// (SO No. … Item Name, owner rule 2026-10-31) come first, then JC No.;
+// Customer and Due Date ride in the ▸ detail row (defaultHidden). Overdue rows carry the shared late tint (ROW_TINT.late). The
 // Sort-by bar, the Pick Up / Assign actions and the permission gates are kept.
 
 import { type QcCommandQueueRow, type QcQueueSort, opSrNo } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
-import { DataTable, Panel, ROW_TINT, type DataTableColumn } from '@/ui/data';
+import { DataTable, leadColumns, Panel, ROW_TINT, type DataTableColumn } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { type QcPager, TablePager } from './TablePager';
 
@@ -37,15 +36,9 @@ function ageColor(n: number): string {
   return 'var(--green)';
 }
 
-/** Item Name, SO No., Internal SO No., Customer and Due Date ride in the ▸
- *  detail row. */
-const QUEUE_HIDDEN_COLUMNS = [
-  'item_name',
-  'so_code',
-  'so_internal_no',
-  'customer',
-  'due_date',
-] as const;
+/** Customer and Due Date ride in the ▸ detail row. The lead columns (SO No.
+ *  … Item Name) are always shown. */
+const QUEUE_HIDDEN_COLUMNS = ['customer', 'due_date'] as const;
 
 export function QueueTab({
   rows,
@@ -74,6 +67,17 @@ export function QueueTab({
   const showActions = canPickUp || canAssign;
 
   const columns: DataTableColumn<QcCommandQueueRow>[] = [
+    // Owner rule 2026-10-31 — the six lead columns first; JC No. after Item
+    // Name. The queue row carries no created date yet (needs API).
+    ...leadColumns<QcCommandQueueRow>({
+      soNo: (it) => it.soCode,
+      internalSoNo: (it) => it.soInternalNo,
+      pol: (it) => it.clientPoLineNo,
+      createdOn: () => null,
+      itemCode: (it) => it.itemCode,
+      itemRev: (it) => it.itemRevision,
+      itemName: (it) => it.itemName,
+    }),
     {
       id: 'jc_code',
       header: 'JC No.',
@@ -101,18 +105,6 @@ export function QueueTab({
       ellipsis: true,
       render: (it) => <span style={{ fontWeight: 600, color: 'var(--red2)' }}>{it.operation}</span>,
       title: (it) => it.operation,
-    },
-    {
-      id: 'item_code',
-      header: 'Item Code',
-      nowrap: true,
-      // An inspector reads the code to find the drawing, so it carries weight
-      // rather than sitting in the faintest token on the page (item-code rule).
-      render: (it) => (
-        <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-          {itemCodeWithRev(it.itemCode, it.itemRevision)}
-        </span>
-      ),
     },
     {
       id: 'days_waiting',
@@ -170,34 +162,6 @@ export function QueueTab({
         ),
     },
     // ── ▸ detail row (defaultHidden) — reachable from the Columns menu. ──
-    {
-      id: 'item_name',
-      header: 'Item Name',
-      align: 'left',
-      ellipsis: true,
-      className: 'fw-700',
-      render: (it) => it.itemName?.trim() || '—',
-      title: (it) => it.itemName ?? '',
-    },
-    {
-      id: 'so_code',
-      header: 'SO No.',
-      nowrap: true,
-      render: (it) => <span style={{ color: 'var(--cyan)' }}>{it.soCode || '—'}</span>,
-    },
-    {
-      // ADR-207 — the office's own Internal SO No., in its own column beside
-      // the system SO No. so the two can be told apart. No `sortFilterField`:
-      // this module has no server-side sort / filter map.
-      id: 'so_internal_no',
-      kind: 'code',
-      header: 'Internal SO No.',
-      className: 'mono fw-700',
-      nowrap: true,
-      render: (it) => (
-        <span style={{ color: 'var(--text)' }}>{it.soInternalNo?.trim() || '—'}</span>
-      ),
-    },
     {
       id: 'customer',
       header: 'Customer',

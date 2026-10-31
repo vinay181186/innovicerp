@@ -3,16 +3,16 @@
 // is defined in one place.
 //
 // One row per CAPA, every fact its own one-line column (the retired 10-column
-// hand-rolled sheet is gone). The first column (CAPA No.) is always pinned and
-// carries the fit table's ▸ — the row's one expand control, which reveals CAPA
-// Date and Root Cause — so no chevron is drawn here. CAPA has no per-record
+// hand-rolled sheet is gone). The six lead columns come first (owner rule
+// 2026-10-31), then CAPA No. The fit table's ▸ reveals CAPA Date and Root
+// Cause — so no chevron is drawn here. CAPA has no per-record
 // route, so the CAPA No. is plain text, not a link; the row click opens the
 // 5-step modal (read-only).
 
 import { CAPA_STATUSES, type CapaRecord } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
 import type { DataTableColumn, RowMenuItem } from '@/ui/data';
-import { ROW_TINT } from '@/ui/data';
+import { leadColumns, ROW_TINT } from '@/ui/data';
 
 // App status colours: Open / Verified (waiting for the next step) = blue,
 // In Progress = amber, Closed = green.
@@ -32,6 +32,17 @@ export function capaRowTint(c: CapaRecord): string | undefined {
 
 export function capaListColumns(): DataTableColumn<CapaRecord>[] {
   return [
+    // Owner rule 2026-10-31 — the six lead columns first; CAPA No. after Item
+    // Name. Internal SO No. and Item Name are not on the CAPA row yet (needs API).
+    ...leadColumns<CapaRecord>({
+      soNo: (c) => c.soNo,
+      internalSoNo: () => null,
+      pol: (c) => c.clientPoLineNo,
+      createdOn: (c) => c.createdAt,
+      itemCode: (c) => c.itemCode,
+      itemRev: (c) => c.itemRevision,
+      itemName: () => null,
+    }),
     {
       id: 'capa_no',
       sortFilterField: 'code',

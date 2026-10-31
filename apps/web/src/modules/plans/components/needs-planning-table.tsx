@@ -19,9 +19,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
 import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
-import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import { DataTable, Panel, leadColumns, type DataTableColumn } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { SearchInput } from '@/ui/forms';
@@ -58,41 +57,43 @@ export function NeedsPlanningTable(): React.JSX.Element {
   const { data: eff } = useMyAccess();
   const canPlan = effectiveFormPerms(eff, 'plan_create').entry;
 
-  // Widths are `%` (10+7+4+5+12+12+6+6+6+8+9 = 85); the fit engine sizes the
+  // Widths are `%` (10+7+5+7+12+12+4+6+6+6+8+9 = 92); the fit engine sizes the
   // ⋯ column itself. The 7% for Internal SO No. came out of the two widest
   // text columns (Item Name 16→12, Customer 12→9), never off a code/date/qty.
   const columns = useMemo<DataTableColumn<UnplannedOrderRow>[]>(
     () => [
-      {
-        id: 'so_code',
-        sortFilterField: 'soCode',
-        filterType: 'text',
-        header: 'SO / JWSO No.',
-        width: '10%',
-        nowrap: true,
-        render: (r) => (
-          <Link to="/sales-orders/$id" params={{ id: r.soId }} className="td-code">
-            {r.soCode}
-          </Link>
-        ),
-      },
-      {
-        // ADR-207 — the office's own number, its OWN column beside the system
-        // SO No. (owner decision 2026-10-05). Many older orders have none.
-        id: 'so_internal_no',
-        header: 'Internal SO No.',
-        sortFilterField: 'soInternalNo',
-        width: '7%',
-        nowrap: true,
-        render: (r) =>
-          r.soInternalNo?.trim() ? (
-            <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-              {r.soInternalNo}
-            </span>
-          ) : (
-            <span className="text3">—</span>
-          ),
-      },
+      // Owner rule 2026-10-31 — the six lead columns first; Ln comes after Item Name.
+      ...leadColumns<UnplannedOrderRow>({
+        soNo: (r) => r.soCode,
+        internalSoNo: (r) => r.soInternalNo,
+        pol: (r) => r.clientPoLineNo,
+        // needs API — the unplanned-line row carries no created date yet.
+        createdOn: () => null,
+        itemCode: (r) => r.itemCode,
+        itemRev: (r) => r.itemRevision,
+        itemName: (r) => r.partName,
+        overrides: {
+          so_no: {
+            sortFilterField: 'soCode',
+            filterType: 'text',
+            width: '10%',
+            render: (r) => (
+              <Link to="/sales-orders/$id" params={{ id: r.soId }} className="td-code">
+                {r.soCode}
+              </Link>
+            ),
+          },
+          so_internal_no: { sortFilterField: 'soInternalNo', width: '7%' },
+          client_po_line_no: {
+            sortFilterField: 'clientPoLineNo',
+            filterType: 'text',
+            width: '5%',
+          },
+          created_on: { width: '7%' },
+          item_code: { sortFilterField: 'itemCode', filterType: 'text', width: '12%' },
+          item_name: { sortFilterField: 'partName', filterType: 'text', width: '12%' },
+        },
+      }),
       {
         header: 'Ln',
         width: '4%',
@@ -100,43 +101,6 @@ export function NeedsPlanningTable(): React.JSX.Element {
         key: 'lineNo',
         sortFilterField: 'lineNo',
         filterType: 'num',
-      },
-      {
-        // POL — the CUSTOMER's own PO line number. Not the "Ln" column to its
-        // left, which is OUR SO line number.
-        id: 'client_po_line_no',
-        sortFilterField: 'clientPoLineNo',
-        filterType: 'text',
-        header: 'POL',
-        width: '5%',
-        className: 'mono fw-700',
-        headColor: 'var(--purple)',
-        nowrap: true,
-        render: (r) => <span style={{ color: 'var(--purple)' }}>{r.clientPoLineNo ?? '—'}</span>,
-      },
-      {
-        // `CODE/REV` — the customer's drawing revision typed on this very SO
-        // line. nowrap because a short code must never break across two lines.
-        // The item code is the main thing on the row: mono, bold, full --text.
-        id: 'item_code',
-        sortFilterField: 'itemCode',
-        filterType: 'text',
-        header: 'Item Code',
-        width: '12%',
-        className: 'mono fw-700',
-        nowrap: true,
-        render: (r) => itemCodeWithRev(r.itemCode, r.itemRevision),
-      },
-      {
-        id: 'part_name',
-        sortFilterField: 'partName',
-        filterType: 'text',
-        header: 'Item Name',
-        width: '12%',
-        align: 'left',
-        ellipsis: true,
-        render: (r) => r.partName ?? '—',
-        title: (r) => r.partName ?? '',
       },
       {
         header: 'Order Qty',

@@ -13,7 +13,7 @@ import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
 import { ItemRevLink } from '@/modules/item-revisions/components/item-rev-link';
 import { itemCodeWithRev, docDrawingRev } from '@/lib/item-code';
-import { ROW_TINT } from '@/ui/data';
+import { ROW_TINT, leadColumns } from '@/ui/data';
 import type { DataTableColumn, RowMenuItem } from '@/ui/data';
 import type { RenderLink } from '@/ui/layout';
 import { DERIVED_BADGE, DERIVED_LABEL, STORED_BADGE } from '../lib/derived-status';
@@ -104,6 +104,35 @@ export function plansListColumns(
   draftIds?: Set<string>,
 ): DataTableColumn<PlanRow>[] {
   return [
+    ...leadColumns<PlanRow>({
+      soNo: (row) => row.soCodeText,
+      internalSoNo: (row) => row.soInternalNo,
+      pol: (row) => row.clientPoLineNo,
+      createdOn: (row) => row.createdAt,
+      itemCode: (row) => (row.itemCode ?? row.itemCodeText) as string | null,
+      itemRev: (row) => docDrawingRev(row),
+      itemName: (row) => row.itemName ?? row.itemNameText,
+      overrides: {
+        so_no: { sortFilterField: 'soCodeText' },
+        so_internal_no: { sortFilterField: 'soInternalNo' },
+        item_code: {
+          sortFilterField: 'itemCode',
+          // `CODE/REV` — the customer's drawing revision from the SO line this plan
+          // was raised against; a JW-sourced or ad-hoc plan keeps the bare code.
+          render: (row) => (
+            <ItemRevLink
+              itemRevisionId={row.itemRevisionId}
+              label={itemCodeWithRev(
+                (row.itemCode ?? row.itemCodeText) as string | null,
+                docDrawingRev(row),
+              )}
+              className=""
+            />
+          ),
+        },
+        item_name: { sortFilterField: 'itemName' },
+      },
+    }),
     {
       id: 'plan_no',
       sortFilterField: 'code',
@@ -156,64 +185,6 @@ export function plansListColumns(
           {TYPE_ICON[row.planType]} {TYPE_LABEL[row.planType]}
         </span>
       ),
-    },
-    {
-      id: 'item_code',
-      sortFilterField: 'itemCode',
-      header: 'Item Code',
-      className: 'mono fw-700',
-      nowrap: true,
-      // `CODE/REV` — the customer's drawing revision from the SO line this plan
-      // was raised against; a JW-sourced or ad-hoc plan keeps the bare code.
-      render: (row) => (
-        <ItemRevLink
-          itemRevisionId={row.itemRevisionId}
-          label={itemCodeWithRev(
-            (row.itemCode ?? row.itemCodeText) as string | null,
-            docDrawingRev(row),
-          )}
-          className=""
-        />
-      ),
-    },
-    {
-      id: 'item_name',
-      sortFilterField: 'itemName',
-      kind: 'text',
-      header: 'Item Name',
-      align: 'left',
-      ellipsis: true,
-      render: (row) => row.itemName ?? row.itemNameText ?? '—',
-      title: (row) => row.itemName ?? row.itemNameText ?? '',
-    },
-    {
-      // The system SO / JWSO number the plan was raised against (the ▸ reveal
-      // still shows it with the Internal SO No. beside it).
-      id: 'so_jwso',
-      sortFilterField: 'soCodeText',
-      header: 'SO / JWSO No.',
-      kind: 'code',
-      className: 'mono',
-      nowrap: true,
-      render: (row) => (row.soCodeText ? row.soCodeText : <span className="text3">—</span>),
-    },
-    {
-      // ADR-207 — the office's own number, its OWN column beside the system
-      // SO / JWSO No. A JWSO-sourced or ad-hoc plan never has one.
-      id: 'so_internal_no',
-      sortFilterField: 'soInternalNo',
-      header: 'Internal SO No.',
-      kind: 'code',
-      className: 'mono',
-      nowrap: true,
-      render: (row) =>
-        row.soInternalNo?.trim() ? (
-          <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-            {row.soInternalNo}
-          </span>
-        ) : (
-          <span className="text3">—</span>
-        ),
     },
     {
       id: 'plan_qty',

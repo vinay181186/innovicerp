@@ -5,7 +5,6 @@
 //
 // What used to stack inside one cell is now a column of its own:
 //   JC No. · Op              (the JC code carried "· Op N" after it)
-//   Item Code · Item Name    (the name sat in grey after the code)
 //   PR Qty · Pending         (the "N of M pending" line lived in the Status cell)
 // and PO No. / Vendor Code / the short-close note moved into the ▸ detail row.
 //
@@ -16,10 +15,9 @@
 import { opSrNo, type PurchaseRequestListItem } from '@innovic/shared';
 
 import { fmtDate } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
 import { prBalanceClosedText, prOrderBalance } from '@/modules/purchase-requests/lib/pr-balance';
 import { PR_STATUS_LABELS } from '@/modules/purchase-requests/lib/pr-labels';
-import { ROW_TINT, renderRowMenuLink, type DataTableColumn } from '@/ui/data';
+import { ROW_TINT, leadColumns, renderRowMenuLink, type DataTableColumn } from '@/ui/data';
 import { RowActions } from '@/ui/layout';
 
 import { ospCanOrder } from '../lib/osp-band';
@@ -53,8 +51,27 @@ export function ospRowTint(pr: PurchaseRequestListItem): string | undefined {
 
 export function outsourceJobsColumns(): DataTableColumn<PurchaseRequestListItem>[] {
   return [
+    // Owner rule 2026-10-31 — the six lead columns first; PR No., JC No., Op and
+    // every other fact follow Item Name.
+    ...leadColumns<PurchaseRequestListItem>({
+      soNo: (pr) => pr.soCode,
+      internalSoNo: (pr) => pr.soInternalNo,
+      pol: (pr) => pr.clientPoLineNo,
+      createdOn: (pr) => pr.createdAt,
+      // CODE/REV — the drawing revision off the SO line behind this request;
+      // the bare code when the request has no SO behind it.
+      itemCode: (pr) => pr.itemCode ?? pr.itemCodeText,
+      itemRev: (pr) => pr.itemRevision,
+      itemName: (pr) => pr.itemName,
+      overrides: {
+        so_internal_no: { sortFilterField: 'soInternalNo' },
+        created_on: { sortFilterField: 'createdOn' },
+        item_code: { sortFilterField: 'itemCode' },
+        item_name: { sortFilterField: 'itemName' },
+      },
+    }),
     {
-      // First column — the fit engine pins it. The OSP PR number (IN-JWPR-…).
+      // The OSP PR number (IN-JWPR-…).
       id: 'pr_no',
       sortFilterField: 'prCode',
       kind: 'code',
@@ -76,31 +93,6 @@ export function outsourceJobsColumns(): DataTableColumn<PurchaseRequestListItem>
       header: 'Op',
       className: 'mono',
       render: (pr) => (pr.sourceJcOpSeq ? opSrNo(pr.sourceJcOpSeq) : '—'),
-    },
-    {
-      id: 'item_code',
-      sortFilterField: 'itemCode',
-      kind: 'code',
-      header: 'Item Code',
-      className: 'mono fw-700',
-      // CODE/REV — the drawing revision off the SO line behind this request;
-      // the bare code when the request has no SO behind it.
-      render: (pr) => (
-        <span style={{ color: 'var(--text)' }}>
-          {itemCodeWithRev(pr.itemCode ?? pr.itemCodeText, pr.itemRevision)}
-        </span>
-      ),
-    },
-    {
-      id: 'item_name',
-      sortFilterField: 'itemName',
-      kind: 'text',
-      header: 'Item Name',
-      align: 'left',
-      ellipsis: true,
-      className: 'text3',
-      render: (pr) => pr.itemName ?? '',
-      title: (pr) => pr.itemName ?? '',
     },
     {
       id: 'process',

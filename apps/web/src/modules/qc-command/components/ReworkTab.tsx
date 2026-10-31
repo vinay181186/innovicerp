@@ -8,8 +8,7 @@
 
 import { type QcReworkRow, opSrNo } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
-import { DataTable, type DataTableColumn } from '@/ui/data';
+import { DataTable, leadColumns, type DataTableColumn } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { type QcPager, TablePager } from './TablePager';
 
@@ -20,6 +19,17 @@ function attemptColor(attempts: number): string {
 }
 
 const columns: DataTableColumn<QcReworkRow>[] = [
+  // Owner rule 2026-10-31 — the six lead columns first; JC / Op after Item
+  // Name. The rework row carries no created date yet (needs API).
+  ...leadColumns<QcReworkRow>({
+    soNo: (g) => g.soCode,
+    internalSoNo: (g) => g.soInternalNo,
+    pol: (g) => g.clientPoLineNo,
+    createdOn: () => null,
+    itemCode: (g) => g.itemCode,
+    itemRev: (g) => g.itemRevision,
+    itemName: (g) => g.itemName,
+  }),
   {
     id: 'jc_op',
     header: 'JC / Op',
@@ -33,35 +43,6 @@ const columns: DataTableColumn<QcReworkRow>[] = [
     ),
   },
   {
-    // POL — the CUSTOMER's own purchase-order line number, its own column.
-    id: 'pol',
-    header: 'POL',
-    headColor: 'var(--purple)',
-    nowrap: true,
-    className: 'mono fw-700',
-    render: (g) => <span style={{ color: 'var(--purple)' }}>{g.clientPoLineNo ?? '—'}</span>,
-  },
-  {
-    id: 'item_code',
-    header: 'Item Code',
-    nowrap: true,
-    // Item code strong in the body colour (item-code rule).
-    render: (g) => (
-      <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-        {itemCodeWithRev(g.itemCode, g.itemRevision)}
-      </span>
-    ),
-  },
-  {
-    id: 'item_name',
-    header: 'Item Name',
-    align: 'left',
-    ellipsis: true,
-    className: 'fw-700',
-    render: (g) => g.itemName?.trim() || '—',
-    title: (g) => g.itemName ?? '',
-  },
-  {
     id: 'operation',
     header: 'Operation',
     align: 'left',
@@ -69,23 +50,6 @@ const columns: DataTableColumn<QcReworkRow>[] = [
     className: 'text3',
     render: (g) => g.operation,
     title: (g) => g.operation,
-  },
-  {
-    id: 'so_code',
-    header: 'SO No.',
-    nowrap: true,
-    render: (g) => <span style={{ color: 'var(--cyan)' }}>{g.soCode || '—'}</span>,
-  },
-  {
-    // ADR-207 — the office's own Internal SO No., in its own column beside the
-    // system SO No. so the two can be told apart. No `sortFilterField`: this
-    // module has no server-side sort / filter map.
-    id: 'so_internal_no',
-    kind: 'code',
-    header: 'Internal SO No.',
-    className: 'mono fw-700',
-    nowrap: true,
-    render: (g) => <span style={{ color: 'var(--text)' }}>{g.soInternalNo?.trim() || '—'}</span>,
   },
   {
     id: 'attempts',
