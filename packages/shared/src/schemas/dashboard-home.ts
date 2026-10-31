@@ -241,7 +241,15 @@ export type HomeResponse = z.infer<typeof homeResponseSchema>;
 // applies it to every list and to the totals, so a count always equals its list.
 export const homeScopeSchema = z.enum(['dept', 'mine']);
 export type HomeScope = z.infer<typeof homeScopeSchema>;
-export const homeQuerySchema = z.object({ scope: homeScopeSchema.default('dept') });
+export const homeQuerySchema = z.object({
+  scope: homeScopeSchema.default('dept'),
+  /** ADR-264 home: only todo, done and approvals are built; lists, waiting,
+   *  sentForApproval, cues, headline, notifications and quickLinks come back empty. */
+  lite: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+});
 export type HomeQuery = z.input<typeof homeQuerySchema>;
 
 // POST /dashboard/notifications/seen — moves the caller's "seen" time forward

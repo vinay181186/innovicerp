@@ -1,7 +1,7 @@
 // ADR-250 — Approval inbox on the home. Rendered only when the server sends
 // `approvals` (the caller holds an Approve tick). Same rows as GET
 // /approvals/inbox; ✓ / ✕ call the Approvals page's own mutations
-// (use-approval-actions.ts). ADR-262: shown inside the home's Approvals view;
+// (use-approval-actions.ts). ADR-264: shown inside the home's Approvals view;
 // the "Sent by me" tab is gone (owner decision).
 
 import type { ApprovalInboxResponse } from '@innovic/shared';

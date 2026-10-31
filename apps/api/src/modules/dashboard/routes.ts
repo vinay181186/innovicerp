@@ -40,14 +40,14 @@ export async function dashboardRoutes(app: FastifyInstance): Promise<void> {
     return homeService.markNotificationsSeen(body, req.user);
   });
 
-  // ADR-262 — the department checks of the new home, checked against the
+  // ADR-264 — the department checks of the new home, checked against the
   // shared contract before they leave.
   app.get('/dashboard/checks', async (req) => {
     if (!req.user) throw new AuthenticationError();
     return dashChecksResponseSchema.parse(await checksService.getChecks(req.user));
   });
 
-  // ADR-262 — the bell: last 30 IST days, per-item read state.
+  // ADR-264 — the bell: last 30 IST days, per-item read state.
   app.get('/dashboard/notifications', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const query = notificationsQuerySchema.parse(req.query);

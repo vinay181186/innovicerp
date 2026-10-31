@@ -408,7 +408,7 @@ export async function createPersonalTodo(
   return withUserContext(user, async (tx) => {
     await lockDocSeries(tx, companyId, 'tasks'); // ADR-227
     const code = await nextCode(tx, companyId, 'personal');
-    // ADR-262: the home "Create to-do" may link a document — same columns as
+    // ADR-264: the home "Create to-do" may link a document — same columns as
     // createTask. Still private: assigned_to = created_by = the caller.
     const lr = input.linkedRef ?? null;
     const inserted = await tx

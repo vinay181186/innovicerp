@@ -1,4 +1,4 @@
-// ADR-262 — department checks without a database: who sees which check, the
+// ADR-264 — department checks without a database: who sees which check, the
 // IST week / month windows, row and check colours. Run via
 // `pnpm --filter @innovic/api test:unit`.
 

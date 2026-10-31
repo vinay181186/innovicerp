@@ -1,4 +1,4 @@
-// ADR-262 — the new home (owner design 2026-10-31): department checks, the bell
+// ADR-264 — the new home (owner design 2026-10-31): department checks, the bell
 // (per-item read / unread notifications) and the per-user "Lists open as"
 // choice. The server computes every figure; the web only lays it out.
 //
@@ -98,7 +98,7 @@ export const dashChecksResponseSchema = z.object({
 });
 export type DashChecksResponse = z.infer<typeof dashChecksResponseSchema>;
 
-// ── Notifications: the bell (ADR-262) ──
+// ── Notifications: the bell (ADR-264) ──
 // Same events and rights as ADR-250, over the last NOTIFICATION_DAYS IST days and
 // without the "document still open" filter (it is a history). Read state:
 //   an explicit notification_reads row wins; otherwise read = event time is on
@@ -113,7 +113,12 @@ export type NotificationFilter = z.infer<typeof notificationFilterSchema>;
 
 export const notificationsQuerySchema = z.object({
   filter: notificationFilterSchema.default('all'),
-  limit: z.coerce.number().int().min(1).max(NOTIFICATION_PAGE_LIMIT).default(NOTIFICATION_POPOVER_LIMIT),
+  limit: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(NOTIFICATION_PAGE_LIMIT)
+    .default(NOTIFICATION_POPOVER_LIMIT),
 });
 export type NotificationsQuery = z.input<typeof notificationsQuerySchema>;
 

@@ -168,9 +168,9 @@ export const TABLE_KEYS = {
   drawingRevFixLines: 'drawing-rev-fix-lines',
   /** Drawing Rev Fix List: old stock without a Drawing Rev. */
   drawingRevFixStock: 'drawing-rev-fix-stock',
-  /** Home (ADR-262): the documents under one opened department check. */
+  /** Home (ADR-264): the documents under one opened department check. */
   dashCheck: 'dash-check',
-  /** Home (ADR-262) Day Log view: today's entries. */
+  /** Home (ADR-264) Day Log view: today's entries. */
   dashDayLog: 'dash-day-log',
 } as const;
 

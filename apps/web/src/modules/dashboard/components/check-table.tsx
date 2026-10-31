@@ -1,4 +1,4 @@
-// ADR-262 — the documents of one opened check, in THE table (DataTable, owner
+// ADR-264 — the documents of one opened check, in THE table (DataTable, owner
 // rule: no hand-built tables). Columns: Sr · head[0] · head[1] · Item · Qty ·
 // head[2] · Status. No per-row expand and no row actions (owner). Document and
 // reference codes render through <ActionLink fallback="text">: a link when the

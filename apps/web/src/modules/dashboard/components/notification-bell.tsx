@@ -1,4 +1,4 @@
-// ADR-262 — the bell in the top bar, on every page. Red badge = unread events
+// ADR-264 — the bell in the top bar, on every page. Red badge = unread events
 // (the server's `unread`, whatever the filter). Click → popover: Notifications,
 // Mark all as read, All | Unread (n), the newest NOTIFICATION_POPOVER_LIMIT
 // items, View all notifications (→ /?view=notifications).

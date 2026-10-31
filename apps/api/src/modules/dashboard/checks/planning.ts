@@ -1,4 +1,4 @@
-// ADR-262 — Planning checks, each the ADR-250 home rule imported as is:
+// ADR-264 — Planning checks, each the ADR-250 home rule imported as is:
 //   plan_so_unplanned — personal/rows-planning.ts soToPlanSql (so_to_plan:
 //                       open SO / JWSO with qty still To Plan; one row per
 //                       order, Due Date = earliest line still to plan).

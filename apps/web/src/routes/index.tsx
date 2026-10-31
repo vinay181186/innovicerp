@@ -1,4 +1,4 @@
-// Dashboard / home landing — ADR-262: one board with a left menu (My to-do ·
+// Dashboard / home landing — ADR-264: one board with a left menu (My to-do ·
 // Day Log · Approvals · the caller's departments) and a content area
 // (modules/dashboard/components/home-page.tsx). The chosen view lives in the
 // URL (`?view=`), so Back and a refresh keep it. Replaces the ADR-250 layout

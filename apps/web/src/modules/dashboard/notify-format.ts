@@ -1,4 +1,4 @@
-// ADR-262 — small display helpers for the bell and All notifications.
+// ADR-264 — small display helpers for the bell and All notifications.
 
 import { addDaysLocal, fmtDateTime, fmtTime, todayIst } from '@/lib/date';
 

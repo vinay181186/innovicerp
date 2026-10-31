@@ -1,4 +1,4 @@
-// ADR-262 — "Create to-do" on the home (inline panel). Fields per NAMING.md:
+// ADR-264 — "Create to-do" on the home (inline panel). Fields per NAMING.md:
 // To-do · Due Date · Assign to · Linked document. "Me" → POST /tasks/personal;
 // someone else → POST /tasks (Due Date required, ADR-176). One Idempotency-Key
 // per open form; Save is disabled while saving, so a double click makes one.

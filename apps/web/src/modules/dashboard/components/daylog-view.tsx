@@ -1,4 +1,4 @@
-// ADR-262 — Day Log on the home: today's figures (server summary) and today's
+// ADR-264 — Day Log on the home: today's figures (server summary) and today's
 // entries, read-only. Editing stays on the Day Log page ("Open Day Log").
 // Names per NAMING.md: Working On, SO / JWSO, Status Open / Closed, Working hours.
 

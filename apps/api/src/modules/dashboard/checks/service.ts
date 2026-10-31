@@ -1,4 +1,4 @@
-// ADR-262 — GET /dashboard/checks: the department pages of the new home.
+// ADR-264 — GET /dashboard/checks: the department pages of the new home.
 // Read-only. Access is read ONCE for the request (ADR-229, as home-service):
 // a department is shown only with a tier in it (hasDept), a check only if its
 // "View all" page opens for the caller (canSeeLink — a per-page Hide or a

@@ -1,4 +1,4 @@
-// ADR-262 — My to-do: tabs Late · Today · Planned · Done. Tick a box →
+// ADR-264 — My to-do: tabs Late · Today · Planned · Done. Tick a box →
 // POST /tasks/:id/complete; the row is locked while it saves, and a refusal
 // (409 already done) shows the server's words and refetches. Done = today's
 // done list, yesterday's under it. "Create to-do" opens the inline form.

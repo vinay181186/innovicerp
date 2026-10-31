@@ -1,4 +1,4 @@
-// ADR-262 — department checks on the new home: the shape every check
+// ADR-264 — department checks on the new home: the shape every check
 // declares, the runner, and the pure helpers (IST windows, row status).
 //
 // A check's query is a list-query.ts INNER query (same columns as the

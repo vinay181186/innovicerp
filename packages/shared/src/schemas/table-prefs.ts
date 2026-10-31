@@ -14,7 +14,7 @@ export const tableDensitySchema = z.enum(TABLE_DENSITIES);
 export type TableDensity = z.infer<typeof tableDensitySchema>;
 export const DEFAULT_TABLE_DENSITY: TableDensity = 'comfortable';
 
-/** ADR-262 home: how department check lists open — each user picks. */
+/** ADR-264 home: how department check lists open — each user picks. */
 export const DASHBOARD_LIST_OPEN = ['collapsed', 'expanded'] as const;
 export const dashboardListOpenSchema = z.enum(DASHBOARD_LIST_OPEN);
 export type DashboardListOpen = z.infer<typeof dashboardListOpenSchema>;

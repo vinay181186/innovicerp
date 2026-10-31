@@ -1,4 +1,4 @@
-// ADR-262 — All notifications (behind the bell's "View all notifications"):
+// ADR-264 — All notifications (behind the bell's "View all notifications"):
 // All | Unread | Read with counts, Mark all as read, items grouped Today /
 // Yesterday / Earlier (IST), each with Mark as read / Mark as unread.
 

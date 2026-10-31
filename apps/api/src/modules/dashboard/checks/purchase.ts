@@ -1,4 +1,4 @@
-// ADR-262 — Purchase checks, each the ADR-250 home rule imported as is:
+// ADR-264 — Purchase checks, each the ADR-250 home rule imported as is:
 //   pur_pr_pending  — personal/rows-purchase.ts prToPoSql (pr_to_po: approved
 //                     PR with balance still to order).
 //   pur_po_overdue  — poOverdueSql (issued PO past its Due Date), narrowed to

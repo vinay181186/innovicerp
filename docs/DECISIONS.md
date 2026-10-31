@@ -14966,7 +14966,7 @@ One session kept approving generated PRs; the approval step added nothing. Owner
 - Shared rule `qcReportMandatory(operation, qty, processes, isLastOp)`; the server decides `isLastOp` inside submitQcLog after the jc_ops row lock (routing edits rewrite every kept op row, so they serialise). A DIR before a terminal OSP is not last → optional; a rework child's last QC is last → compulsory.
 - A middle DIR saved without its report: note on Op Entry / QC Call ("report not uploaded" + Upload report), Home "Reports to upload" (report_required still stamped), Dossier "not uploaded (optional)" in orange.
 - Known gap: deleting the op after a middle DIR makes that DIR the last stage with no report; it still shows as owed (Home, Dossier) — the routing edit is not blocked.
-## ADR-262: New home dashboard — department checks, bell, My to-do (owner design 2026-10-31)
+## ADR-264: New home dashboard — department checks, bell, My to-do (owner design 2026-10-31)
 
 **Date:** 2026-10-31
 **Status:** Accepted (owner approved the Design-canvas mockup "Option C v2" and the 6-point plan with "go")

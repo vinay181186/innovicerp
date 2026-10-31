@@ -1,6 +1,6 @@
 -- ============================================================
 -- 0236_notification_reads
--- ADR-262 (new home dashboard) — the bell's per-item read state.
+-- ADR-264 (new home dashboard) — the bell's per-item read state.
 --   notification_reads — one row per user per notification key: the user
 --   marked that one event read (is_read = true) or unread again (false).
 --   No row = the old rule: read when the event time is on or before the

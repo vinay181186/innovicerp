@@ -1,4 +1,4 @@
-// ADR-262 — the home's left menu: My to-do · Day Log · Approvals, then
+// ADR-264 — the home's left menu: My to-do · Day Log · Approvals, then
 // "Departments" and one item per department the server sent (badge = the
 // department's total). Stacks above the content on a phone (home.css).
 

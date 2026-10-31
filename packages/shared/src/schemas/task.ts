@@ -62,7 +62,7 @@ export const createPersonalTodoInputSchema = z.object({
   priority: z.enum(TASK_PRIORITIES).default('medium'),
   dueDate: dateStr.optional(),
   reminderAt: z.string().datetime({ offset: true }).optional(),
-  /** ADR-262: the home "Create to-do" form may link a document (JC, PRO, PO, SO…). */
+  /** ADR-264: the home "Create to-do" form may link a document (JC, PRO, PO, SO…). */
   linkedRef: taskLinkedRefSchema.nullish(),
 });
 export type CreatePersonalTodoInput = z.infer<typeof createPersonalTodoInputSchema>;

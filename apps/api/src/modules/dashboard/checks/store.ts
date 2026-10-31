@@ -1,4 +1,4 @@
-// ADR-262 — Store checks.
+// ADR-264 — Store checks.
 //   store_jwso_grn — JWSO lines whose customer material is not yet all
 //                    received on a Party GRN: line open, not closed short,
 //                    party material set, Order Qty > committed. "Committed"

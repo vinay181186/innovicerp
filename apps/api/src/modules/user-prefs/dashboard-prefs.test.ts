@@ -1,4 +1,4 @@
-// ADR-262 — the home's "Lists open as" + per-check open state, stored in
+// ADR-264 — the home's "Lists open as" + per-check open state, stored in
 // user_ui_settings (dashboard_list_open, one dash_open_<checkKey> row per
 // check). Pure reader first, then a round trip on the TEST database only.
 

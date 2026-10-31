@@ -1,5 +1,5 @@
 // The logged-in user's UI settings (ADR-199): the table density, Comfortable /
-// Compact, one choice for EVERY table — and (ADR-262) how the home's department
+// Compact, one choice for EVERY table — and (ADR-264) how the home's department
 // check lines open: `dashboardListOpen` plus the per-check overrides
 // `dashboardCheckOpen`.
 //

@@ -7606,7 +7606,7 @@ export const userTableColumns = pgTable(
   ],
 ).enableRLS();
 
-// notification_reads (0236, ADR-262): the bell's per-item read state. One row
+// notification_reads (0236, ADR-264): the bell's per-item read state. One row
 // per user per notification key; no row = read when the event is on or before
 // the user's notifications_seen_at. Private to the user (self-only RLS, not live).
 export const notificationReads = pgTable(

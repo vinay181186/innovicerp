@@ -1,4 +1,4 @@
-// ADR-262 — one notification: initials circle · text (document codes through
+// ADR-264 — one notification: initials circle · text (document codes through
 // DashTextView → ActionLink fallback="text") · relative time · blue dot while
 // unread. Clicking the row marks it read and opens its document; the bell and
 // All notifications share this row and the click rule (useOpenNotification).

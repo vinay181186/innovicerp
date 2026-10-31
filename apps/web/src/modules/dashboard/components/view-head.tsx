@@ -1,4 +1,4 @@
-// ADR-262 — the header row of every home view: title · hint · the view's own
+// ADR-264 — the header row of every home view: title · hint · the view's own
 // controls on the right.
 
 export function ViewHead({

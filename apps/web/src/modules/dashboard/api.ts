@@ -11,7 +11,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { apiFetch } from '@/lib/api';
 import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
 
-// ADR-262 — `checks` and `notifications` are nested UNDER `home()`, so every
+// ADR-264 — `checks` and `notifications` are nested UNDER `home()`, so every
 // live mapping and every mutation that refreshes the home (lib/live-updates/
 // table-keys.ts, tasks, day-logs, party-grn, qc-documents, cancel-requests)
 // refreshes the department checks and the bell too, with no second list.
@@ -21,9 +21,9 @@ export const dashboardKeys = {
   /** Home, checks and notifications — what live updates and saves refetch. */
   home: () => [...dashboardKeys.all, 'home'] as const,
   homeScope: (scope: HomeScope) => [...dashboardKeys.home(), scope] as const,
-  /** ADR-262 department checks (GET /dashboard/checks). */
+  /** ADR-264 department checks (GET /dashboard/checks). */
   checks: () => [...dashboardKeys.home(), 'checks'] as const,
-  /** ADR-262 every notifications read (bell + All notifications). */
+  /** ADR-264 every notifications read (bell + All notifications). */
   notificationsAll: () => [...dashboardKeys.home(), 'notifications'] as const,
   notifications: (filter: NotificationFilter, limit: number) =>
     [...dashboardKeys.notificationsAll(), filter, limit] as const,
@@ -42,7 +42,7 @@ export function useHome(scope: HomeScope = 'dept') {
   });
 }
 
-/** ADR-262 — the caller's departments and their checks. The server already
+/** ADR-264 — the caller's departments and their checks. The server already
  *  leaves out departments and checks the caller may not see. */
 export function useDashChecks() {
   return useQuery<DashChecksResponse>({
@@ -53,7 +53,7 @@ export function useDashChecks() {
   });
 }
 
-/** ADR-262 — notifications for the bell (limit 6) and the full page (200). */
+/** ADR-264 — notifications for the bell (limit 6) and the full page (200). */
 export function useNotifications(filter: NotificationFilter, limit: number, enabled = true) {
   return useQuery<NotificationsResponse>({
     queryKey: dashboardKeys.notifications(filter, limit),

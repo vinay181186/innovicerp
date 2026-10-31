@@ -1,4 +1,4 @@
-// ADR-262 — Production checks.
+// ADR-264 — Production checks.
 //   prod_plans_available — personal/rows-planning.ts planToProSql as is (the
 //                          plan_to_pro rule: route-card plan, approved card,
 //                          Pending > 0, no open Production Order).

@@ -1,4 +1,4 @@
-// ADR-262 — which department check lines are open, per user.
+// ADR-264 — which department check lines are open, per user.
 //
 // Open = dashboardCheckOpen[key] when the user has set it by hand, else
 // dashboardListOpen === 'expanded'. Every change is saved at once through the

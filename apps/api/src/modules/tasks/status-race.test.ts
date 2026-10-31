@@ -1,7 +1,7 @@
-// ADR-262 / CLAUDE.md §20.2 — a task status change is a conditional UPDATE.
+// ADR-264 / CLAUDE.md §20.2 — a task status change is a conditional UPDATE.
 // Two "Complete" clicks (or two people) at the same moment: exactly one
 // succeeds, the other gets 409 "Already completed by <name> at <time>".
-// Also: a personal to-do keeps its linked document (ADR-262 Create to-do).
+// Also: a personal to-do keeps its linked document (ADR-264 Create to-do).
 // Runs against the TEST database only (the main vitest config refuses PROD).
 import { eq } from 'drizzle-orm';
 import { beforeAll, describe, expect, it } from 'vitest';

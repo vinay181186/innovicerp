@@ -354,7 +354,7 @@ async function openIds(
   return new Set(rows.map((r) => r.id));
 }
 
-/** ADR-262 — the bell reads the same notes over a longer window, as a history
+/** ADR-264 — the bell reads the same notes over a longer window, as a history
  *  (no "still open" filter). Defaults = the ADR-250 home block, unchanged. */
 export interface NoteOptions {
   days?: number;

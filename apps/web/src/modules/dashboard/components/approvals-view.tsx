@@ -1,4 +1,4 @@
-// ADR-262 — Approvals on the home: the Approval inbox (PR / PO / Route Card
+// ADR-264 — Approvals on the home: the Approval inbox (PR / PO / Route Card
 // (New) / Op Entry, Approve / Reject already guarded), plus links with counts
 // to the other places something waits for the caller today — staged edits,
 // Cancel Requests and Day Log edits — only those the caller can open.

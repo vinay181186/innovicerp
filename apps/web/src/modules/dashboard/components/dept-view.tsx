@@ -1,4 +1,4 @@
-// ADR-262 — one department's numbered checks: "1. Plans available for
+// ADR-264 — one department's numbered checks: "1. Plans available for
 // production (2)" with a Show / Hide text button (owner rule: no ▸ arrow on a
 // list row). An open check shows its documents (CheckTable). Header controls:
 // "Lists open as" Collapsed | Expanded, then Expand all / Collapse all for

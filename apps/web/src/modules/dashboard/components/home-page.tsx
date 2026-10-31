@@ -1,4 +1,4 @@
-// ADR-262 — the home: ONE board, a left menu and a content area (owner design
+// ADR-264 — the home: ONE board, a left menu and a content area (owner design
 // 2026-10-31). The server sends only what the caller may see (departments,
 // checks, approvals); this file lays it out and keeps the chosen view in the
 // URL. Replaces the ADR-250 layout (Widgets / Customize modes, headline + cue

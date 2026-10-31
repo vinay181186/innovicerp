@@ -36,9 +36,9 @@ const requireCompany = (user: AuthContext): string => {
 
 /** setting_key for the table density (DB check: ^[a-z_]{1,64}$). */
 export const TABLE_DENSITY_KEY = 'table_density';
-/** ADR-262 home: how check lines open (collapsed / expanded). */
+/** ADR-264 home: how check lines open (collapsed / expanded). */
 export const DASHBOARD_LIST_OPEN_KEY = 'dashboard_list_open';
-/** ADR-262 home: one row per check the user opened / closed by hand,
+/** ADR-264 home: one row per check the user opened / closed by hand,
  *  `dash_open_<checkKey>` = 'open' | 'closed'. */
 export const DASH_OPEN_PREFIX = 'dash_open_';
 
@@ -128,7 +128,7 @@ export async function saveUiSettings(
   user: AuthContext,
 ): Promise<UiSettings> {
   const companyId = requireCompany(user);
-  // Partial save (ADR-262): only the fields sent change, in one transaction.
+  // Partial save (ADR-264): only the fields sent change, in one transaction.
   return withUserContext(user, async (tx) => {
     if (input.tableDensity) {
       await upsertSetting(tx, companyId, user, TABLE_DENSITY_KEY, input.tableDensity);

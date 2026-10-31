@@ -1,4 +1,4 @@
-// ADR-262 — Sales checks: SO + JWSO lines not fully delivered, by Due Date.
+// ADR-264 — Sales checks: SO + JWSO lines not fully delivered, by Due Date.
 //   SO line pending   = order_qty − dispatched_qty (customer-dispatches keeps it)
 //   JWSO line pending = order_qty − returned_qty   (job-work returns keep it)
 // A line cancelled, closed short, deleted, or on a header that is not open

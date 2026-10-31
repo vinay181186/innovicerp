@@ -1,4 +1,4 @@
-// ADR-262 — the home's `?view=` values: the three personal views, the bell's
+// ADR-264 — the home's `?view=` values: the three personal views, the bell's
 // All notifications page, and one view per department that carries checks.
 
 import { DASH_CHECK_DEPTS, type DashCheckDept } from '@innovic/shared';

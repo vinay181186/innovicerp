@@ -1,4 +1,4 @@
-// ADR-262 — the bell: notifications with a per-item read state.
+// ADR-264 — the bell: notifications with a per-item read state.
 // The events, rights and wording are personal/notifications.ts (ADR-250) —
 // called with the bell's options: the last NOTIFICATION_DAYS IST days, no
 // "document still open" filter (it is a history). The caller's own events are

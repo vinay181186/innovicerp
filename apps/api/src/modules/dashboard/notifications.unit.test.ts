@@ -1,4 +1,4 @@
-// ADR-262 — the bell's read state without a database. Run via
+// ADR-264 — the bell's read state without a database. Run via
 // `pnpm --filter @innovic/api test:unit`.
 
 import { sql } from 'drizzle-orm';

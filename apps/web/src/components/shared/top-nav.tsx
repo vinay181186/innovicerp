@@ -227,7 +227,7 @@ export function TopNav(): React.JSX.Element {
       <div className="tn-right">
         <LiveStatusMarker />
         <GlobalSearch />
-        {/* ADR-262 — the bell, on every page. */}
+        {/* ADR-264 — the bell, on every page. */}
         {me ? <NotificationBell /> : null}
         <Link
           to="/change-password"
