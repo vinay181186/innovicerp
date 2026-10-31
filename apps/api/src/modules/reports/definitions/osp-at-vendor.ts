@@ -22,6 +22,7 @@ export const ospAtVendorReport: RegisteredReport = {
       // ADR-261 lead columns. SO No. = the SO or JWSO behind the op's JC;
       // Created On = the JC op's created_at; the order line's drawing rev
       // rides in Item Code.
+      { key: 'jc_code', label: 'JC No.', type: 'text' },
       { key: 'so_code', label: 'SO No.', type: 'text' },
       { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
       { key: 'client_po_line_no', label: 'POL', type: 'text' },
@@ -31,7 +32,6 @@ export const ospAtVendorReport: RegisteredReport = {
       { key: 'vendor_name', label: 'Vendor', type: 'text' },
       { key: 'dc_code', label: 'DC No.', type: 'text' },
       { key: 'dc_date', label: 'DC Date', type: 'date' },
-      { key: 'jc_code', label: 'JC No.', type: 'text' },
       { key: 'op_seq', label: 'Op', type: 'number' },
       { key: 'operation', label: 'Operation', type: 'text' },
       { key: 'sent_qty', label: 'Sent', type: 'number' },

@@ -74,9 +74,27 @@ export function jobCardListColumns(
   draftIds?: Set<string>,
 ): DataTableColumn<JobCardListItem>[] {
   return [
-    // Owner rule 2026-10-31 — the six lead columns first; Sr No, JC No., the
-    // picture and every other fact follow Item Name.
+    // Owner rule 2026-10-31 (ADR-261 amendment) — JC No. first, then the six
+    // lead columns, all locked; Sr No, the picture and every other fact follow
+    // Item Name.
     ...leadColumns<JobCardListItem>({
+      doc: {
+        id: 'jc_code',
+        sortFilterField: 'jcCode',
+        header: 'JC No.',
+        nowrap: true,
+        render: (jc) => (
+          <Link
+            to="/job-cards/$id"
+            params={{ id: jc.id }}
+            className="td-code"
+            style={{ color: 'var(--blue)', fontWeight: 800 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {jc.code}
+          </Link>
+        ),
+      },
       soNo: (jc) => jc.sourceLink?.code,
       internalSoNo: (jc) => (jc.sourceLink?.type === 'so' ? jc.sourceLink.internalSoNo : null),
       pol: (jc) => jc.clientPoLineNo,
@@ -130,23 +148,6 @@ export function jobCardListColumns(
       width: '4%',
       className: 'text3',
       render: (_jc, i) => firstRowNo + i,
-    },
-    {
-      id: 'jc_code',
-      sortFilterField: 'jcCode',
-      header: 'JC No.',
-      nowrap: true,
-      render: (jc) => (
-        <Link
-          to="/job-cards/$id"
-          params={{ id: jc.id }}
-          className="td-code"
-          style={{ color: 'var(--blue)', fontWeight: 800 }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {jc.code}
-        </Link>
-      ),
     },
     {
       id: 'image',

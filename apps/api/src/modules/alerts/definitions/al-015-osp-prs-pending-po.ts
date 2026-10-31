@@ -22,13 +22,13 @@ export const al015OspPrsPendingPo: RegisteredAlert = {
     columns: [
       // ADR-261 lead columns: SO No. · Internal SO No. · POL · Created On ·
       // Item Code (CODE/REV) · Item Name, then the rest.
+      { key: 'pr_code', label: 'PR No.', type: 'text' },
       { key: 'so_code', label: 'SO No.', type: 'text' },
       { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
       { key: 'client_po_line_no', label: 'POL', type: 'text' },
       { key: 'created_on', label: 'Created On', type: 'date' },
       { key: 'item_code', label: 'Item Code', type: 'text' },
       { key: 'item_name', label: 'Item Name', type: 'text' },
-      { key: 'pr_code', label: 'PR No.', type: 'text' },
       { key: 'pr_date', label: 'PR Date', type: 'date' },
       { key: 'jc_code', label: 'JC No.', type: 'text' },
       { key: 'op_seq', label: 'Op', type: 'number' },

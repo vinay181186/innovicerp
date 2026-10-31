@@ -32,9 +32,21 @@ export function capaRowTint(c: CapaRecord): string | undefined {
 
 export function capaListColumns(): DataTableColumn<CapaRecord>[] {
   return [
-    // Owner rule 2026-10-31 — the six lead columns first; CAPA No. after Item
-    // Name. Internal SO No. / Item Name come off the CAPA's SO / item codes.
+    // Owner rule 2026-10-31 — own number (CAPA No.) first, then the six lead
+    // columns. Internal SO No. / Item Name come off the CAPA's SO / item codes.
     ...leadColumns<CapaRecord>({
+      doc: {
+        id: 'capa_no',
+        sortFilterField: 'code',
+        filterType: 'text',
+        header: 'CAPA No.',
+        nowrap: true,
+        render: (c) => (
+          <span className="mono fw-700" style={{ color: 'var(--purple)' }}>
+            {c.code}
+          </span>
+        ),
+      },
       soNo: (c) => c.soNo,
       internalSoNo: (c) => c.soInternalNo,
       pol: (c) => c.clientPoLineNo,
@@ -50,18 +62,6 @@ export function capaListColumns(): DataTableColumn<CapaRecord>[] {
         item_name: { sortFilterField: 'itemName', filterType: 'text' },
       },
     }),
-    {
-      id: 'capa_no',
-      sortFilterField: 'code',
-      filterType: 'text',
-      header: 'CAPA No.',
-      nowrap: true,
-      render: (c) => (
-        <span className="mono fw-700" style={{ color: 'var(--purple)' }}>
-          {c.code}
-        </span>
-      ),
-    },
     {
       id: 'type',
       sortFilterField: 'type',

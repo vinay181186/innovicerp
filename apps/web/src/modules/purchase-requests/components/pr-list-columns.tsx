@@ -1,8 +1,8 @@
 // Purchase Request list columns (ADR-199 fit table). Moved out of
 // routes/list.tsx so that file stays under 400 lines.
 //
-// Visible order (ADR-261 lead columns first): SO No. · Internal SO No. · POL ·
-// Created On · Item Code · Item Name · PR No. · PR Date · Vendor · PR Qty ·
+// Visible order (ADR-261 lead columns first): PR No. · SO No. · Internal SO No. ·
+// POL · Created On · Item Code · Item Name · Sr No · PR Date · Vendor · PR Qty ·
 // On PO · Pending · Due · PR Status. A Sr No column ships hidden
 // (defaultHidden in the route). Qty / On PO / Pending are `num`
 // (right-aligned, tabular). Everything the old card showed in its title + metric
@@ -32,6 +32,27 @@ export function prListColumns(
 ): DataTableColumn<PurchaseRequestListItem>[] {
   return [
     ...leadColumns<PurchaseRequestListItem>({
+      doc: {
+        id: 'pr_no',
+        sortFilterField: 'prCode',
+        header: 'PR No.',
+        kind: 'code',
+        nowrap: true,
+        // A real link so the code can be ctrl / middle-clicked into a new tab;
+        // stopPropagation sits on the link so clicking the rest of the cell still
+        // opens the row (same pattern as the vendor list).
+        render: (pr) => (
+          <Link
+            to="/purchase-requests/$id"
+            params={{ id: pr.id }}
+            className="td-code"
+            style={{ color: 'var(--blue)', textDecoration: 'none' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {pr.code}
+          </Link>
+        ),
+      },
       soNo: (pr) => pr.soCode,
       internalSoNo: (pr) => pr.soInternalNo,
       pol: (pr) => pr.clientPoLineNo,
@@ -46,27 +67,6 @@ export function prListColumns(
         item_name: { sortFilterField: 'itemName' },
       },
     }),
-    {
-      id: 'pr_no',
-      sortFilterField: 'prCode',
-      header: 'PR No.',
-      kind: 'code',
-      nowrap: true,
-      // A real link so the code can be ctrl / middle-clicked into a new tab;
-      // stopPropagation sits on the link so clicking the rest of the cell still
-      // opens the row (same pattern as the vendor list).
-      render: (pr) => (
-        <Link
-          to="/purchase-requests/$id"
-          params={{ id: pr.id }}
-          className="td-code"
-          style={{ color: 'var(--blue)', textDecoration: 'none' }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {pr.code}
-        </Link>
-      ),
-    },
     {
       id: 'sr_no',
       header: 'Sr No',

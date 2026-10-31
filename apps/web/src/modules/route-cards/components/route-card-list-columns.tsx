@@ -28,13 +28,6 @@ const APPROVAL_STATUS_OPTIONS = ROUTE_CARD_APPROVAL_STATUSES.map((v) => ({
 export function routeCardListColumns(offset = 0): DataTableColumn<RouteCardListItem>[] {
   return [
     {
-      id: 'sr_no',
-      header: 'Sr No',
-      width: '4%',
-      className: 'text3',
-      render: (_rc, i) => offset + i + 1,
-    },
-    {
       id: 'code',
       sortFilterField: 'code',
       header: 'RC No.',
@@ -55,6 +48,13 @@ export function routeCardListColumns(offset = 0): DataTableColumn<RouteCardListI
           {rc.code}
         </Link>
       ),
+    },
+    {
+      id: 'sr_no',
+      header: 'Sr No',
+      width: '4%',
+      className: 'text3',
+      render: (_rc, i) => offset + i + 1,
     },
     {
       // Item + Drawing Rev register (2026-10-31): the customer Drawing Rev this

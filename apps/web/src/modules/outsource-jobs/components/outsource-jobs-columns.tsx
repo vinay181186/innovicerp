@@ -51,9 +51,18 @@ export function ospRowTint(pr: PurchaseRequestListItem): string | undefined {
 
 export function outsourceJobsColumns(): DataTableColumn<PurchaseRequestListItem>[] {
   return [
-    // Owner rule 2026-10-31 — the six lead columns first; PR No., JC No., Op and
-    // every other fact follow Item Name.
+    // Owner rule 2026-10-31 (ADR-261 amendment) — PR No. first, then the six
+    // lead columns, all locked; JC No., Op and every other fact follow Item Name.
     ...leadColumns<PurchaseRequestListItem>({
+      doc: {
+        // The OSP PR number (IN-JWPR-…).
+        id: 'pr_no',
+        sortFilterField: 'prCode',
+        kind: 'code',
+        header: 'PR No.',
+        className: 'mono fw-700',
+        render: (pr) => <span style={{ color: 'var(--purple)' }}>{pr.code}</span>,
+      },
       soNo: (pr) => pr.soCode,
       internalSoNo: (pr) => pr.soInternalNo,
       pol: (pr) => pr.clientPoLineNo,
@@ -70,15 +79,6 @@ export function outsourceJobsColumns(): DataTableColumn<PurchaseRequestListItem>
         item_name: { sortFilterField: 'itemName' },
       },
     }),
-    {
-      // The OSP PR number (IN-JWPR-…).
-      id: 'pr_no',
-      sortFilterField: 'prCode',
-      kind: 'code',
-      header: 'PR No.',
-      className: 'mono fw-700',
-      render: (pr) => <span style={{ color: 'var(--purple)' }}>{pr.code}</span>,
-    },
     {
       id: 'jc_no',
       kind: 'code',

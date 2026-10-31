@@ -3,8 +3,8 @@
 // headline Pending PO Tracker — ADR-199). Numbers right-align; names left +
 // ellipsis; the money columns drop out when the server hides prices.
 // ADR-261: the Purchase Summary is one row per PO (many lines), so it opens with
-// the lead columns that fit a whole order — SO No. · Internal SO No. · Created
-// On (the PO's) — and no POL / Item columns.
+// PO No. and the lead columns that fit a whole order — SO No. · Internal SO
+// No. · Created On (the PO's) — and no POL / Item columns.
 
 import type { ScPoSummaryRow, ScRecentGrn } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
@@ -15,6 +15,24 @@ import { inr, PO_STATUS_OPTIONS, statusBadge } from './sc-format';
 export function poSummaryColumns(priceHidden: boolean): DataTableColumn<ScPoSummaryRow>[] {
   const cols: DataTableColumn<ScPoSummaryRow>[] = [
     ...leadColumns<ScPoSummaryRow>({
+      doc: {
+        id: 'po_no',
+        sortFilterField: 'poNo',
+        kind: 'code',
+        header: 'PO No.',
+        className: 'td-code',
+        render: (g) => (
+          <Link
+            to="/purchase-orders/$id"
+            params={{ id: g.poId }}
+            className="cyan"
+            style={{ textDecoration: 'none' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {g.poNo}
+          </Link>
+        ),
+      },
       soNo: (g) => g.soCode,
       internalSoNo: (g) => g.soInternalNo,
       createdOn: (g) => g.createdAt,
@@ -24,24 +42,6 @@ export function poSummaryColumns(priceHidden: boolean): DataTableColumn<ScPoSumm
         created_on: { sortFilterField: 'createdOn' },
       },
     }),
-    {
-      id: 'po_no',
-      sortFilterField: 'poNo',
-      kind: 'code',
-      header: 'PO No.',
-      className: 'td-code',
-      render: (g) => (
-        <Link
-          to="/purchase-orders/$id"
-          params={{ id: g.poId }}
-          className="cyan"
-          style={{ textDecoration: 'none' }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {g.poNo}
-        </Link>
-      ),
-    },
     {
       id: 'po_date',
       sortFilterField: 'poDate',

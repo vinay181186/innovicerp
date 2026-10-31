@@ -42,9 +42,14 @@ function jcLink(op: JcOpEnriched): React.JSX.Element {
 
 /** The six lead columns (owner rule 2026-10-31), read off a JcOpEnriched.
  *  `pick` lets the Made-here table reuse them against its { op, qty } row
- *  shape. Spread FIRST — JC No., Op and the rest follow Item Name. */
-function identityColumns<T>(pick: (row: T) => JcOpEnriched): DataTableColumn<T>[] {
+ *  shape. Spread FIRST — `doc` (the JC No.) is drawn first and locked with
+ *  the block; Op and the rest follow Item Name (ADR-261 amendment 31-Oct). */
+function identityColumns<T>(
+  pick: (row: T) => JcOpEnriched,
+  doc: DataTableColumn<T>,
+): DataTableColumn<T>[] {
   return leadColumns<T>({
+    doc,
     soNo: (row) => pick(row).soCode,
     internalSoNo: (row) => pick(row).soInternalNo,
     pol: (row) => pick(row).clientPoLineNo,
@@ -60,14 +65,13 @@ function identityColumns<T>(pick: (row: T) => JcOpEnriched): DataTableColumn<T>[
 export function pendingOpsColumns(): DataTableColumn<JcOpEnriched>[] {
   const self = (op: JcOpEnriched): JcOpEnriched => op;
   return [
-    ...identityColumns<JcOpEnriched>(self),
-    {
+    ...identityColumns<JcOpEnriched>(self, {
       id: 'jc_no',
       kind: 'code',
       header: 'JC No.',
       className: 'mono fw-700 cyan',
       render: (op) => jcLink(op),
-    },
+    }),
     {
       id: 'op_seq',
       kind: 'code',
@@ -100,14 +104,13 @@ export function pendingOpsColumns(): DataTableColumn<JcOpEnriched>[] {
 export function madeHereColumns(): DataTableColumn<MadeHereRow>[] {
   const pick = (row: MadeHereRow): JcOpEnriched => row.op;
   return [
-    ...identityColumns<MadeHereRow>(pick),
-    {
+    ...identityColumns<MadeHereRow>(pick, {
       id: 'jc_no',
       kind: 'code',
       header: 'JC No.',
       className: 'mono fw-700 cyan',
       render: (row) => jcLink(row.op),
-    },
+    }),
     {
       id: 'op_seq',
       kind: 'code',

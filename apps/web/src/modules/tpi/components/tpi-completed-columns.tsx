@@ -14,9 +14,16 @@ function respLabel(d: number | null): string {
 
 export function tpiCompletedColumns(): DataTableColumn<TpiCompletedRow>[] {
   return [
-    // ADR-261 — the six lead columns first; JC No. / Op after Item Name. No
+    // ADR-261 — JC No. (own number) first, the six lead columns, then Op. No
     // server Sort & Filter map in this module, so no sortFilterField.
     ...leadColumns<TpiCompletedRow>({
+      doc: {
+        id: 'jc_no',
+        kind: 'code',
+        header: 'JC No.',
+        className: 'fw-700 cyan',
+        render: (l) => l.jcCode,
+      },
       soNo: (l) => l.soCode,
       internalSoNo: (l) => l.soInternalNo,
       pol: (l) => l.clientPoLineNo,
@@ -25,13 +32,6 @@ export function tpiCompletedColumns(): DataTableColumn<TpiCompletedRow>[] {
       itemRev: (l) => l.itemRevision,
       itemName: (l) => l.itemName,
     }),
-    {
-      id: 'jc_no',
-      kind: 'code',
-      header: 'JC No.',
-      className: 'fw-700 cyan',
-      render: (l) => l.jcCode,
-    },
     { id: 'op_seq', kind: 'code', header: 'Op', render: (l) => `Op ${opSrNo(l.opSeq)}` },
     {
       id: 'operation',

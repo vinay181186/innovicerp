@@ -19,8 +19,8 @@ const OP_STATUS_OPTIONS = Object.entries(OP_STATUS_BADGES).map(([value, b]) => (
   label: b.label,
 }));
 
-// The six ADR-261 lead columns open the row (locked, always shown), then
-// JC No. · Op · Operation · Actual Machine · Available · Op Status. The rest of
+// JC No. and the six ADR-261 lead columns open the row (locked, always shown),
+// then Op · Operation · Actual Machine · Available · Op Status. The rest of
 // the op detail is hidden by default and shows in the ▸ expander.
 export const PROD_READY_DEFAULT_PINNED: string[] = [];
 export const PROD_READY_DEFAULT_HIDDEN = [
@@ -45,9 +45,29 @@ export function prodReadyRowTint(op: ProductionDashboardReadyOp): string | undef
 
 export function prodReadyColumns(): DataTableColumn<ProductionDashboardReadyOp>[] {
   return [
-    // ADR-261 — the six lead columns first (always shown); JC No. and every
-    // other fact follow Item Name. `sortFilterField` = PROD_READY_SF_COLUMNS.
+    // ADR-261 — JC No. first, then the six lead columns, all locked (always
+    // shown); every other fact follows Item Name. `sortFilterField` = PROD_READY_SF_COLUMNS.
     ...leadColumns<ProductionDashboardReadyOp>({
+      doc: {
+        // DESTINATION (user request, 2026-09-11): a JC number goes to the job card
+        // itself, everywhere in the app. Op Entry is reachable from the ⋯ menu.
+        id: 'jc_no',
+        sortFilterField: 'jobCardCode',
+        kind: 'code',
+        header: 'JC No.',
+        className: 'td-code',
+        render: (op) => (
+          <ActionLink
+            fallback="text"
+            to="/job-cards/$id"
+            params={{ id: op.jobCardId }}
+            style={{ color: 'var(--cyan)', textDecoration: 'none' }}
+            title="View job card status"
+          >
+            {op.jobCardCode}
+          </ActionLink>
+        ),
+      },
       soNo: (op) => op.soCode,
       internalSoNo: (op) => op.soInternalNo,
       pol: (op) => op.clientPoLineNo,
@@ -64,26 +84,6 @@ export function prodReadyColumns(): DataTableColumn<ProductionDashboardReadyOp>[
         item_name: { sortFilterField: 'itemName' },
       },
     }),
-    {
-      // DESTINATION (user request, 2026-09-11): a JC number goes to the job card
-      // itself, everywhere in the app. Op Entry is reachable from the ⋯ menu.
-      id: 'jc_no',
-      sortFilterField: 'jobCardCode',
-      kind: 'code',
-      header: 'JC No.',
-      className: 'td-code',
-      render: (op) => (
-        <ActionLink
-          fallback="text"
-          to="/job-cards/$id"
-          params={{ id: op.jobCardId }}
-          style={{ color: 'var(--cyan)', textDecoration: 'none' }}
-          title="View job card status"
-        >
-          {op.jobCardCode}
-        </ActionLink>
-      ),
-    },
     {
       id: 'op_seq',
       sortFilterField: 'opSeq',

@@ -4,9 +4,9 @@
 //
 // Labels follow docs/NAMING.md: the movement date / direction / quantity are
 // `Movement Date` / `Movement Type` / `Movement Qty` (never bare Date/Type/Qty).
-// Columns, in order — the six ADR-261 lead columns first (SO No. · Internal SO
-// No. · POL · Created On · Item Code (CODE/REV) · Item Name), then Movement
-// Date · Ref No. · Movement Type · Movement Qty · Source · Stock Before ·
+// Columns, in order — Ref No. and the six ADR-261 lead columns first (SO No. ·
+// Internal SO No. · POL · Created On · Item Code (CODE/REV) · Item Name), then
+// Movement Date · Movement Type · Movement Qty · Source · Stock Before ·
 // Stock After. SO No. / Internal SO No. / POL come from the movement's own
 // document where it traces to an order line (api store-transactions/so-link.ts),
 // else "—"; they are display-only (no server Sort & Filter). Created On is the
@@ -42,6 +42,15 @@ const SOURCE_OPTIONS = STORE_TXN_SOURCE_TYPES.map((value) => ({
 export function stockLedgerColumns(): DataTableColumn<StoreTransactionListItem>[] {
   return [
     ...leadColumns<StoreTransactionListItem>({
+      doc: {
+        header: 'Ref No.',
+        id: 'sourceRef',
+        kind: 'code',
+        sortFilterField: 'sourceRef',
+        className: 'mono',
+        nowrap: true,
+        render: (r) => r.sourceRef,
+      },
       soNo: (r) => r.soCode,
       internalSoNo: (r) => r.soInternalNo,
       pol: (r) => r.clientPoLineNo,
@@ -62,15 +71,6 @@ export function stockLedgerColumns(): DataTableColumn<StoreTransactionListItem>[
       sortFilterField: 'txnDate',
       nowrap: true,
       render: (r) => fmtDate(r.txnDate),
-    },
-    {
-      header: 'Ref No.',
-      id: 'sourceRef',
-      kind: 'code',
-      sortFilterField: 'sourceRef',
-      className: 'mono',
-      nowrap: true,
-      render: (r) => r.sourceRef,
     },
     {
       header: 'Movement Type',

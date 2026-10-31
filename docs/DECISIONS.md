@@ -14940,6 +14940,19 @@ at the END of every saved layout, and re-showed a hidden column at the end.
 - Risks: until the server sends `createdAt`, Created On shows — on op, queue and QC rows
   (phase 3).
 
+### Amendment (owner, 2026-10-31): own document number first
+
+- The page's own number now comes FIRST, before SO No.: **Own No. · SO No. · Internal SO
+  No. · POL · Created On · Item Code · Item Name · rest** (e.g. Plan No. on Plans, JC No. on
+  Op Entry, GRN No. on GRN). It is passed as `leadColumns({ doc })` and locked with the block.
+- Where the row is the SO / JWSO itself (SO list, SO Overview, SO Planning …) SO No. is the
+  own number and nothing goes in front. Only one number is locked; a second number on the
+  row (JC No. on Op Log / Outsource Jobs) stays after Item Name.
+- BOM, ML BOM and Route Card lists put their number before Sr No. Reports follow the same
+  order. Masters (Client, Vendor, Item, Operator) are unchanged.
+- Guard: `lead-columns.guard.test.ts` fails when a lead list leaves out `doc:` and is not on
+  the row-is-the-order list.
+
 ## ADR-262: Purchase Requests have no approval
 
 **Date:** 2026-10-31

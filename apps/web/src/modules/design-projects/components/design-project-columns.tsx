@@ -70,9 +70,29 @@ export function designProjectColumns(opts: {
 }): DataTableColumn<DesignProjectListItem>[] {
   const { today } = opts;
   return [
-    // ADR-261 lead columns. A project is header-level (one SO, no SO line and
+    // ADR-261 lead columns, own number (Project No.) first. A project is header-level (one SO, no SO line and
     // no item), so POL, Item Code and Item Name read "—".
     ...leadColumns<DesignProjectListItem>({
+      doc: {
+        id: 'project_no',
+        header: 'Project No.',
+        nowrap: true,
+        // The row's ▸ (fit engine) opens the detail panel; the Project No. link
+        // opens the full project page. stopPropagation on the link only, so the
+        // rest of the cell still opens the row.
+        render: (p) => (
+          <Link
+            to="/design-projects/$id"
+            params={{ id: p.id }}
+            className="td-code"
+            title="Open the Design Project"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {p.code}
+          </Link>
+        ),
+        sortFilterField: 'code',
+      },
       soNo: (p) => p.soCodeText,
       internalSoNo: (p) => p.soInternalNo,
       pol: () => null,
@@ -88,26 +108,6 @@ export function designProjectColumns(opts: {
         item_name: { filterable: false, render: () => '—', title: () => '' },
       },
     }),
-    {
-      id: 'project_no',
-      header: 'Project No.',
-      nowrap: true,
-      // The row's ▸ (fit engine) opens the detail panel; the Project No. link
-      // opens the full project page. stopPropagation on the link only, so the
-      // rest of the cell still opens the row.
-      render: (p) => (
-        <Link
-          to="/design-projects/$id"
-          params={{ id: p.id }}
-          className="td-code"
-          title="Open the Design Project"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {p.code}
-        </Link>
-      ),
-      sortFilterField: 'code',
-    },
     {
       id: 'name',
       kind: 'text',

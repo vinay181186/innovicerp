@@ -32,13 +32,21 @@ interface QcRowBase {
   createdAt: string | null;
 }
 
-/** The columns both tables lead with: the six shared lead columns (owner rule
- *  2026-10-31: SO No. · Internal SO No. · POL · Created On · Item Code · Item
- *  Name), then JC No. · Op · Operation. Created On = the QC op's created_at
+/** The columns both tables lead with (owner rule 2026-10-31): JC No. (own
+ *  number, first) · SO No. · Internal SO No. · POL · Created On · Item Code ·
+ *  Item Name, then Op · Operation. Created On = the QC op's created_at
  *  (pending) / the QC log row's created_at (entries). */
 function qcLeadColumns<T extends QcRowBase>(): DataTableColumn<T>[] {
   return [
     ...leadColumns<T>({
+      doc: {
+        id: 'jc_no',
+        sortFilterField: 'jcCode',
+        kind: 'code',
+        header: 'JC No.',
+        className: 'td-code cyan',
+        render: (o) => o.jcCode,
+      },
       soNo: (o) => o.soCode,
       internalSoNo: (o) => o.soInternalNo,
       pol: (o) => o.clientPoLineNo,
@@ -55,14 +63,6 @@ function qcLeadColumns<T extends QcRowBase>(): DataTableColumn<T>[] {
         created_on: { sortFilterField: 'createdOn' },
       },
     }),
-    {
-      id: 'jc_no',
-      sortFilterField: 'jcCode',
-      kind: 'code',
-      header: 'JC No.',
-      className: 'td-code cyan',
-      render: (o) => o.jcCode,
-    },
     {
       id: 'op_seq',
       kind: 'code',

@@ -155,9 +155,50 @@ export const PENDING_HIDDEN = ['vendor', 'operation', 'assigned_to', 'received_q
 
 export function pendingColumns(): DataTableColumn<PendingVM>[] {
   return [
-    // Owner rule 2026-10-31 — the six lead columns first; Doc No. and the
-    // rest after Item Name. Created On = each call's own record created_at.
+    // Owner rule 2026-10-31 — own number (Doc No.) first, the six lead
+    // columns, the rest after Item Name. Created On = each call's own record created_at.
     ...leadColumns<PendingVM>({
+      doc: {
+        id: 'doc_no',
+        sortFilterField: 'docNo',
+        header: 'Doc No.',
+        nowrap: true,
+        render: (vm) =>
+          vm.kind === 'pgrn' ? (
+            <Link
+              to="/party-grn"
+              search={{ search: vm.row.partyGrnNo, page: 1 }}
+              className="td-code"
+              style={{ color: 'var(--blue)', fontWeight: 800 }}
+              title="Open this Party GRN"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {vm.row.partyGrnNo}
+            </Link>
+          ) : vm.kind === 'op' ? (
+            <Link
+              to="/job-cards/$id"
+              params={{ id: vm.row.jobCardId }}
+              className="td-code"
+              style={{ color: 'var(--blue)', fontWeight: 800 }}
+              title="Open this job card"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {vm.row.jcCode}
+            </Link>
+          ) : (
+            <Link
+              to="/goods-receipt-notes/$id"
+              params={{ id: vm.row.grnId }}
+              className="td-code"
+              style={{ color: 'var(--blue)', fontWeight: 800 }}
+              title="Open this GRN"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {vm.row.grnNo}
+            </Link>
+          ),
+      },
       soNo: soNoOf,
       internalSoNo: soInternalNoOf,
       pol: polOf,
@@ -174,47 +215,6 @@ export function pendingColumns(): DataTableColumn<PendingVM>[] {
         created_on: { sortFilterField: 'createdOn' },
       },
     }),
-    {
-      id: 'doc_no',
-      sortFilterField: 'docNo',
-      header: 'Doc No.',
-      nowrap: true,
-      render: (vm) =>
-        vm.kind === 'pgrn' ? (
-          <Link
-            to="/party-grn"
-            search={{ search: vm.row.partyGrnNo, page: 1 }}
-            className="td-code"
-            style={{ color: 'var(--blue)', fontWeight: 800 }}
-            title="Open this Party GRN"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {vm.row.partyGrnNo}
-          </Link>
-        ) : vm.kind === 'op' ? (
-          <Link
-            to="/job-cards/$id"
-            params={{ id: vm.row.jobCardId }}
-            className="td-code"
-            style={{ color: 'var(--blue)', fontWeight: 800 }}
-            title="Open this job card"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {vm.row.jcCode}
-          </Link>
-        ) : (
-          <Link
-            to="/goods-receipt-notes/$id"
-            params={{ id: vm.row.grnId }}
-            className="td-code"
-            style={{ color: 'var(--blue)', fontWeight: 800 }}
-            title="Open this GRN"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {vm.row.grnNo}
-          </Link>
-        ),
-    },
     {
       id: 'qc_pending',
       sortFilterField: 'qcPending',

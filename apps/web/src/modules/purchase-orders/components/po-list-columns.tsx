@@ -1,7 +1,7 @@
 // Purchase Order list columns (ADR-199 fit table). ADR-261 (2026-10-31): ONE
-// ROW PER PO LINE (GET /purchase-orders/lines), opening with the six lead
-// columns — SO No. · Internal SO No. · POL · Created On · Item Code (CODE/REV)
-// · Item Name — then PO No. · PO Date · PO Type · Vendor · PR No. · Qty · GRN
+// ROW PER PO LINE (GET /purchase-orders/lines), opening with PO No. and the
+// six lead columns — SO No. · Internal SO No. · POL · Created On · Item Code
+// (CODE/REV) · Item Name — then PO Date · PO Type · Vendor · PR No. · Qty · GRN
 // Received · Accepted · Pending · Value · PO Status. Qty / Received / Accepted
 // / Pending / Value are the LINE's own. Value keeps its price gate: the API
 // nulls `amount` when the viewer may not see prices, and that null renders "—".
@@ -43,6 +43,24 @@ export function purchaseOrderListColumns({
 }): DataTableColumn<PurchaseOrderLineListItem>[] {
   return [
     ...leadColumns<PurchaseOrderLineListItem>({
+      doc: {
+        id: 'po_code',
+        sortFilterField: 'poCode',
+        header: 'PO No.',
+        nowrap: true,
+        render: (po) => (
+          <Link
+            to="/purchase-orders/$id"
+            params={{ id: po.docId }}
+            className="td-code"
+            style={{ color: 'var(--blue)', fontWeight: 800 }}
+            title="Open the PO detail page"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {po.docCode}
+          </Link>
+        ),
+      },
       soNo: (l) => l.soCode,
       internalSoNo: (l) => l.soInternalNo,
       pol: (l) => l.clientPoLineNo,
@@ -59,24 +77,6 @@ export function purchaseOrderListColumns({
         item_name: { sortFilterField: 'itemName' },
       },
     }),
-    {
-      id: 'po_code',
-      sortFilterField: 'poCode',
-      header: 'PO No.',
-      nowrap: true,
-      render: (po) => (
-        <Link
-          to="/purchase-orders/$id"
-          params={{ id: po.docId }}
-          className="td-code"
-          style={{ color: 'var(--blue)', fontWeight: 800 }}
-          title="Open the PO detail page"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {po.docCode}
-        </Link>
-      ),
-    },
     {
       id: 'po_date',
       sortFilterField: 'poDate',

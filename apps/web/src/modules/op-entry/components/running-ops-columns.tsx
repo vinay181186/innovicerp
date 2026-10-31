@@ -52,9 +52,15 @@ function startedByDiffers(r: RunningOpRow): string | null {
 /** The six lead columns (ADR-261), shared by both tables so the look cannot
  *  drift. `server` = the paged board's server Sort & Filter field names
  *  (running-ops-read.ts RUNNING_OPS_SF_COLUMNS); the keyless Recent table
- *  filters its page locally. Spread FIRST — JC No., Op and the rest follow. */
-function identityColumns(server: boolean): DataTableColumn<RunningOpRow>[] {
+ *  filters its page locally. Spread FIRST — `doc` (the JC No.) is drawn first
+ *  and locked with the block; Op and the rest follow Item Name (ADR-261
+ *  amendment 31-Oct). */
+function identityColumns(
+  server: boolean,
+  doc: DataTableColumn<RunningOpRow>,
+): DataTableColumn<RunningOpRow>[] {
   return leadColumns<RunningOpRow>({
+    doc,
     soNo: (r) => r.soCode,
     internalSoNo: (r) => r.soInternalNo,
     pol: (r) => r.clientPoLineNo,
@@ -155,15 +161,14 @@ const operatorColumn: DataTableColumn<RunningOpRow> = {
  *  the Stop action is added by the board as the trailing ⋯ menu. */
 export function runningNowColumns(): DataTableColumn<RunningOpRow>[] {
   return [
-    ...identityColumns(true),
-    {
+    ...identityColumns(true, {
       id: 'jc_no',
       sortFilterField: 'jobCardCode',
       kind: 'code',
       header: 'JC No.',
       className: 'td-code cyan',
       render: (r) => <JcLink id={r.jobCardId} code={r.jobCardCode} />,
-    },
+    }),
     opColumn,
     operationColumn,
     actualMachineColumn,
@@ -184,14 +189,13 @@ export function runningNowColumns(): DataTableColumn<RunningOpRow>[] {
  *  but Ended + Op Status replace Started + the Stop action. */
 export function recentOpsColumns(): DataTableColumn<RunningOpRow>[] {
   return [
-    ...identityColumns(false),
-    {
+    ...identityColumns(false, {
       id: 'jc_no',
       kind: 'code',
       header: 'JC No.',
       className: 'td-code',
       render: (r) => <JcLink id={r.jobCardId} code={r.jobCardCode} />,
-    },
+    }),
     opColumn,
     operationColumn,
     actualMachineColumn,

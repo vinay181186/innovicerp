@@ -1,10 +1,11 @@
 // LEAD COLUMNS — the owner's fixed standard (2026-10-31). Every list that
 // carries an SO / JWSO line starts with these six columns, in this order:
 //
-//   SO No. · Internal SO No. · POL · Created On · Item Code (CODE/REV) · Item Name
+//   [own doc no.] · SO No. · Internal SO No. · POL · Created On · Item Code (CODE/REV) · Item Name
 //
-// and every other column — the page's own number (JC No., PO No. …) included —
-// comes AFTER Item Name. The table engine locks the block (`lead: true`): a
+// The page's own number (Plan No., JC No., PO No. …) comes FIRST, before SO No.
+// (owner, 31-Oct, amending the earlier "after Item Name" decision); every other
+// column comes AFTER Item Name. The table engine locks the block (`lead: true`): a
 // user cannot move, hide or slip a column between them, a new column a
 // developer adds lands after Item Name, and they never drop off the screen.
 // The Drawing Rev is never its own column — it rides in the Item Code cell.
@@ -37,6 +38,11 @@ export const LEAD_COLUMN_IDS = [
 export type LeadColumnId = (typeof LEAD_COLUMN_IDS)[number];
 
 export interface LeadColumnSpec<T> {
+  /** The page's OWN document number column (Plan No., JC No., GRN No. …).
+   *  Drawn FIRST, before SO No., and locked with the block (owner 2026-10-31).
+   *  Must carry an `id`. Leave out only where the row IS the SO / JWSO (SO list,
+   *  SO Overview …) — there SO No. is the own number. */
+  doc?: DataTableColumn<T> | undefined;
   /** 'so' (default) → header "SO No."; 'jwso' → "JWSO No." (JWSO-only lists). */
   so?: 'so' | 'jwso';
   soNo: (row: T) => Text;
@@ -65,7 +71,9 @@ function col<T>(
 /** The six (five on a JWSO-only list) locked lead columns. Spread them FIRST. */
 export function leadColumns<T>(spec: LeadColumnSpec<T>): DataTableColumn<T>[] {
   const o = spec.overrides ?? {};
-  const out: DataTableColumn<T>[] = [
+  const out: DataTableColumn<T>[] = [];
+  if (spec.doc) out.push({ ...spec.doc, lead: true });
+  out.push(
     col<T>(
       {
         id: 'so_no',
@@ -80,7 +88,7 @@ export function leadColumns<T>(spec: LeadColumnSpec<T>): DataTableColumn<T>[] {
       },
       o.so_no,
     ),
-  ];
+  );
   const internal = spec.internalSoNo;
   if (internal) {
     out.push(

@@ -5,7 +5,7 @@
 //
 // ADR-199 table standard: the data table is the shared fit table
 // (<DataTable tableKey={TABLE_KEYS.qcCommandQueue}>). The six lead columns
-// (SO No. … Item Name, owner rule 2026-10-31) come first, then JC No.;
+// (JC No. · SO No. … Item Name, owner rule 2026-10-31, own number first) lead;
 // Customer and Due Date ride in the ▸ detail row (defaultHidden). Overdue rows carry the shared late tint (ROW_TINT.late). The
 // Sort-by bar, the Pick Up / Assign actions and the permission gates are kept.
 
@@ -67,9 +67,19 @@ export function QueueTab({
   const showActions = canPickUp || canAssign;
 
   const columns: DataTableColumn<QcCommandQueueRow>[] = [
-    // Owner rule 2026-10-31 — the six lead columns first; JC No. after Item
-    // Name. Created On = the QC op's own created_at.
+    // Owner rule 2026-10-31 — own number (JC No.) first, then the six lead
+    // columns. Created On = the QC op's own created_at.
     ...leadColumns<QcCommandQueueRow>({
+      doc: {
+        id: 'jc_code',
+        header: 'JC No.',
+        nowrap: true,
+        render: (it) => (
+          <span className="td-code" style={{ color: 'var(--cyan)' }}>
+            {it.jcCode}
+          </span>
+        ),
+      },
       soNo: (it) => it.soCode,
       internalSoNo: (it) => it.soInternalNo,
       pol: (it) => it.clientPoLineNo,
@@ -78,16 +88,6 @@ export function QueueTab({
       itemRev: (it) => it.itemRevision,
       itemName: (it) => it.itemName,
     }),
-    {
-      id: 'jc_code',
-      header: 'JC No.',
-      nowrap: true,
-      render: (it) => (
-        <span className="td-code" style={{ color: 'var(--cyan)' }}>
-          {it.jcCode}
-        </span>
-      ),
-    },
     {
       id: 'op',
       header: 'Op',

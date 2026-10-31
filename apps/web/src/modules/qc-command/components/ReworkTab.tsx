@@ -19,9 +19,21 @@ function attemptColor(attempts: number): string {
 }
 
 const columns: DataTableColumn<QcReworkRow>[] = [
-  // Owner rule 2026-10-31 — the six lead columns first; JC / Op after Item
-  // Name. Created On = the reworked QC op's own created_at.
+  // Owner rule 2026-10-31 — own number (JC / Op) first, then the six lead
+  // columns. Created On = the reworked QC op's own created_at.
   ...leadColumns<QcReworkRow>({
+    doc: {
+      id: 'jc_op',
+      header: 'JC / Op',
+      nowrap: true,
+      className: 'td-code',
+      render: (g) => (
+        <>
+          <span style={{ color: 'var(--cyan)' }}>{g.jcCode}</span>{' '}
+          <span style={{ color: 'var(--red2)', fontWeight: 700 }}>Op {opSrNo(g.opSeq)}</span>
+        </>
+      ),
+    },
     soNo: (g) => g.soCode,
     internalSoNo: (g) => g.soInternalNo,
     pol: (g) => g.clientPoLineNo,
@@ -30,18 +42,6 @@ const columns: DataTableColumn<QcReworkRow>[] = [
     itemRev: (g) => g.itemRevision,
     itemName: (g) => g.itemName,
   }),
-  {
-    id: 'jc_op',
-    header: 'JC / Op',
-    nowrap: true,
-    className: 'td-code',
-    render: (g) => (
-      <>
-        <span style={{ color: 'var(--cyan)' }}>{g.jcCode}</span>{' '}
-        <span style={{ color: 'var(--red2)', fontWeight: 700 }}>Op {opSrNo(g.opSeq)}</span>
-      </>
-    ),
-  },
   {
     id: 'operation',
     header: 'Operation',

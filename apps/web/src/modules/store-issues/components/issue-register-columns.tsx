@@ -1,7 +1,7 @@
 // Item Issue Register columns (ADR-199 fit table), one row per issue LINE
-// (ADR-261, GET /store-issues/lines). The six lead columns come first (SO No. ·
-// Internal SO No. · POL · Created On · Item Code · Item Name), then the slip's
-// own Issue No., Issue Date, Issue Against, Reference, Issued To, the line's
+// (ADR-261, GET /store-issues/lines). The slip's own Issue No. and the six
+// lead columns come first (SO No. · Internal SO No. · POL · Created On · Item
+// Code · Item Name), then Issue Date, Issue Against, Reference, Issued To, the line's
 // Issue Qty, Purpose and Issued By. A cancelled slip washes the row
 // (ROW_TINT.cancelled, set in the view). Sort & Filter runs on the SERVER
 // (ADR-200): `sortFilterField` names the field in the endpoint's column map
@@ -25,6 +25,27 @@ function reference(r: StoreIssueLineRow): string {
 export function issueRegisterColumns(): DataTableColumn<StoreIssueLineRow>[] {
   return [
     ...leadColumns<StoreIssueLineRow>({
+      doc: {
+        id: 'issue_no',
+        sortFilterField: 'code',
+        kind: 'code',
+        header: 'Issue No.',
+        className: 'td-code',
+        nowrap: true,
+        render: (r) => (
+          <>
+            <span style={{ color: 'var(--cyan)' }}>{r.docCode}</span>
+            {r.reversedAt ? (
+              <div
+                style={{ fontSize: 10, fontWeight: 700, color: 'var(--red)' }}
+                title={`Cancelled ${fmtDate(r.reversedAt.slice(0, 10))} — ${r.reversalReason ?? ''}`}
+              >
+                Cancelled
+              </div>
+            ) : null}
+          </>
+        ),
+      },
       soNo: (r) => r.soCode,
       internalSoNo: (r) => r.soInternalNo,
       pol: (r) => r.clientPoLineNo,
@@ -41,27 +62,6 @@ export function issueRegisterColumns(): DataTableColumn<StoreIssueLineRow>[] {
         item_name: { sortFilterField: 'itemName' },
       },
     }),
-    {
-      id: 'issue_no',
-      sortFilterField: 'code',
-      kind: 'code',
-      header: 'Issue No.',
-      className: 'td-code',
-      nowrap: true,
-      render: (r) => (
-        <>
-          <span style={{ color: 'var(--cyan)' }}>{r.docCode}</span>
-          {r.reversedAt ? (
-            <div
-              style={{ fontSize: 10, fontWeight: 700, color: 'var(--red)' }}
-              title={`Cancelled ${fmtDate(r.reversedAt.slice(0, 10))} — ${r.reversalReason ?? ''}`}
-            >
-              Cancelled
-            </div>
-          ) : null}
-        </>
-      ),
-    },
     {
       id: 'issue_date',
       sortFilterField: 'issueDate',

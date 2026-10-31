@@ -45,13 +45,13 @@ export const productionOrdersReport: RegisteredReport = {
       // ADR-261 lead columns. SO No. = the SO or JWSO code the order has;
       // POL and the drawing rev (in Item Code) come from the plan's order
       // line; Created On = the Production Order's created_at.
+      { key: 'po_code', label: 'Production Order No', type: 'text' },
       { key: 'so_code', label: 'SO No.', type: 'text' },
       { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
       { key: 'client_po_line_no', label: 'POL', type: 'text' },
       { key: 'created_on', label: 'Created On', type: 'date' },
       { key: 'item_code', label: 'Item Code', type: 'text' },
       { key: 'item_name', label: 'Item Name', type: 'text' },
-      { key: 'po_code', label: 'Production Order No', type: 'text' },
       { key: 'plan_code', label: 'Plan No.', type: 'text' },
       { key: 'order_qty', label: 'Order Qty', type: 'number' },
       { key: 'target_date', label: 'Target Date', type: 'date' },

@@ -13,17 +13,24 @@ import { raisedByNodeSql } from '../../ml-plan/order-reads';
 import { milliToText, toMilli } from '../../ml-plan/snapshot-math';
 import type { RegisteredReport } from '../registry';
 import type { ReportColumn } from '../schema';
-import { dateCell, likeFilter, numCell, REPORT_ROW_CAP, textCell, type SqlRow } from './report-helpers';
+import {
+  dateCell,
+  likeFilter,
+  numCell,
+  REPORT_ROW_CAP,
+  textCell,
+  type SqlRow,
+} from './report-helpers';
 
 const columns: ReportColumn[] = [
   // ADR-261 lead columns. Created On = the plan row's (node's) created_at.
+  { key: 'mlp_code', label: 'MLP No.', type: 'text' },
   { key: 'so_code', label: 'SO No.', type: 'text' },
   { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
   { key: 'client_po_line_no', label: 'POL', type: 'text' },
   { key: 'created_on', label: 'Created On', type: 'date' },
   { key: 'item_code', label: 'Item Code', type: 'text' },
   { key: 'item_name', label: 'Item Name', type: 'text' },
-  { key: 'mlp_code', label: 'MLP No.', type: 'text' },
   { key: 'line_type', label: 'Line Type', type: 'text' },
   { key: 'level', label: 'Level', type: 'number' },
   { key: 'net_need_qty', label: 'Net Need', type: 'number' },

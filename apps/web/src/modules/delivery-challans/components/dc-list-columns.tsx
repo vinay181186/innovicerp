@@ -2,10 +2,10 @@
 // (ADR-261, GET /delivery-challans/lines). Split out of routes/list.tsx to keep
 // that file under the 400-line rule.
 //
-// The six lead columns come first and are locked (leadColumns): SO No. (the SO
+// DC No. and the six lead columns come first and are locked (leadColumns): SO No. (the SO
 // code, else the JWSO code, else the DC's SO ref) · Internal SO No. · POL ·
 // Created On (the line's) · Item Code (CODE/REV — no separate Drawing Rev
-// column any more) · Item Name. Then DC No. · DC Date · Vendor · PO No. ·
+// column any more) · Item Name. Then DC Date · Vendor · PO No. ·
 // Sent Qty (the line's) · DC Status · JC No. · Transport. The PO chip keeps its
 // green (linked PO) / amber* (snapshot text) / red (NC return) meaning.
 
@@ -61,6 +61,23 @@ export function dcListColumns(
 ): DataTableColumn<DeliveryChallanListLine>[] {
   return [
     ...leadColumns<DeliveryChallanListLine>({
+      doc: {
+        id: 'dc_code',
+        sortFilterField: 'dcCode',
+        header: 'DC No.',
+        nowrap: true,
+        render: (dc) => (
+          <Link
+            to="/delivery-challans/$id"
+            params={{ id: dc.docId }}
+            className="td-code"
+            style={{ color: 'var(--blue)', fontWeight: 800 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {dc.docCode}
+          </Link>
+        ),
+      },
       soNo: (r) => r.soCode ?? r.jwCode,
       internalSoNo: (r) => r.soInternalNo,
       pol: (r) => r.clientPoLineNo,
@@ -77,23 +94,6 @@ export function dcListColumns(
         item_name: { sortFilterField: 'itemName' },
       },
     }),
-    {
-      id: 'dc_code',
-      sortFilterField: 'dcCode',
-      header: 'DC No.',
-      nowrap: true,
-      render: (dc) => (
-        <Link
-          to="/delivery-challans/$id"
-          params={{ id: dc.docId }}
-          className="td-code"
-          style={{ color: 'var(--blue)', fontWeight: 800 }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {dc.docCode}
-        </Link>
-      ),
-    },
     {
       id: 'dc_date',
       sortFilterField: 'dcDate',

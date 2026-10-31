@@ -8,14 +8,6 @@ import type { DataTableColumn } from '@/ui/data';
 export function mlBomListColumns(offset = 0): DataTableColumn<MlBomListItem>[] {
   return [
     {
-      id: 'sr_no',
-      header: 'Sr No',
-      width: '4%',
-      className: 'text3',
-      align: 'right',
-      render: (_b, i) => offset + i + 1,
-    },
-    {
       id: 'code',
       sortFilterField: 'code',
       header: 'BOM No.',
@@ -30,6 +22,14 @@ export function mlBomListColumns(offset = 0): DataTableColumn<MlBomListItem>[] {
           {b.code}
         </Link>
       ),
+    },
+    {
+      id: 'sr_no',
+      header: 'Sr No',
+      width: '4%',
+      className: 'text3',
+      align: 'right',
+      render: (_b, i) => offset + i + 1,
     },
     {
       id: 'item_code',

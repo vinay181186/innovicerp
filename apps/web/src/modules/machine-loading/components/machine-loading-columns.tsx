@@ -47,9 +47,31 @@ export function opRowTint(op: MachineLoadOp): string | undefined {
 // the Operation name is the one free-text column (left + ellipsis).
 export function opsColumns(): DataTableColumn<MachineLoadOp>[] {
   return [
-    // Owner rule 2026-10-31 — the six lead columns first; JC No. and every
-    // other fact follow Item Name.
+    // Owner rule 2026-10-31 (ADR-261 amendment) — JC No. first, then the six
+    // lead columns, all locked; every other fact follows Item Name.
     ...leadColumns<MachineLoadOp>({
+      doc: {
+        id: 'jc_code',
+        header: 'JC No.',
+        nowrap: true,
+        sortFilterField: 'jcCode',
+        // The row's ▸ (fit engine) opens the detail reveal; the JC No. link opens
+        // the job card. stopPropagation on the link, not the cell, so clicking
+        // the rest of the cell still opens the row.
+        render: (op) => (
+          <ActionLink
+            fallback="text"
+            to="/job-cards/$id"
+            params={{ id: op.jobCardId }}
+            className="td-code cyan"
+            title="View job card status"
+            style={{ color: 'inherit', textDecoration: 'none' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {op.jobCardCode}
+          </ActionLink>
+        ),
+      },
       soNo: (op) => op.soCode,
       internalSoNo: (op) => op.soInternalNo,
       pol: (op) => op.clientPoLineNo,
@@ -68,28 +90,6 @@ export function opsColumns(): DataTableColumn<MachineLoadOp>[] {
         item_name: { sortFilterField: 'itemName' },
       },
     }),
-    {
-      id: 'jc_code',
-      header: 'JC No.',
-      nowrap: true,
-      sortFilterField: 'jcCode',
-      // The row's ▸ (fit engine) opens the detail reveal; the JC No. link opens
-      // the job card. stopPropagation on the link, not the cell, so clicking
-      // the rest of the cell still opens the row.
-      render: (op) => (
-        <ActionLink
-          fallback="text"
-          to="/job-cards/$id"
-          params={{ id: op.jobCardId }}
-          className="td-code cyan"
-          title="View job card status"
-          style={{ color: 'inherit', textDecoration: 'none' }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {op.jobCardCode}
-        </ActionLink>
-      ),
-    },
     {
       id: 'op_seq',
       header: 'Op',

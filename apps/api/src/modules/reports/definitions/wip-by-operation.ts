@@ -39,13 +39,13 @@ export const wipByOperationReport: RegisteredReport = {
       // ADR-261 lead columns. SO No. = the SO or JWSO the JC came from;
       // Created On = the JC op's created_at; the order line's drawing rev
       // rides in Item Code as CODE/REV.
+      { key: 'jc_code', label: 'JC No.', type: 'text' },
       { key: 'so_code', label: 'SO No.', type: 'text' },
       { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
       { key: 'client_po_line_no', label: 'POL', type: 'text' },
       { key: 'created_on', label: 'Created On', type: 'date' },
       { key: 'item_code', label: 'Item Code', type: 'text' },
       { key: 'item_name', label: 'Item Name', type: 'text' },
-      { key: 'jc_code', label: 'JC No.', type: 'text' },
       { key: 'op_seq', label: 'Op', type: 'number' },
       { key: 'operation', label: 'Operation', type: 'text' },
       { key: 'machine_code', label: 'Planned Machine', type: 'text' },

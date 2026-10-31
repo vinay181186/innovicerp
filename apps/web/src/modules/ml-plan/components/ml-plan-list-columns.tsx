@@ -12,9 +12,25 @@ const STATUS_OPTIONS = ML_PLAN_STATUSES.map((v) => ({ value: v, label: ML_PLAN_S
 
 export function mlPlanListColumns(offset = 0): DataTableColumn<MlPlanListItem>[] {
   return [
-    // Owner rule 2026-10-31 — the six lead columns first; Sr No, MLP No. and
-    // every other fact follow Item Name.
+    // Owner rule 2026-10-31 (ADR-261 amendment) — MLP No. first, then the six
+    // lead columns, all locked; Sr No and every other fact follow Item Name.
     ...leadColumns<MlPlanListItem>({
+      doc: {
+        id: 'code',
+        sortFilterField: 'code',
+        header: 'MLP No.',
+        nowrap: true,
+        render: (p) => (
+          <Link
+            to="/ml-plans/$id"
+            params={{ id: p.id }}
+            className="td-code"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {p.code}
+          </Link>
+        ),
+      },
       soNo: (p) => p.soCode,
       internalSoNo: (p) => p.soInternalNo,
       pol: (p) => p.clientPoLineNo,
@@ -48,22 +64,6 @@ export function mlPlanListColumns(offset = 0): DataTableColumn<MlPlanListItem>[]
       className: 'text3',
       align: 'right',
       render: (_p, i) => offset + i + 1,
-    },
-    {
-      id: 'code',
-      sortFilterField: 'code',
-      header: 'MLP No.',
-      nowrap: true,
-      render: (p) => (
-        <Link
-          to="/ml-plans/$id"
-          params={{ id: p.id }}
-          className="td-code"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {p.code}
-        </Link>
-      ),
     },
     {
       id: 'plan_qty',

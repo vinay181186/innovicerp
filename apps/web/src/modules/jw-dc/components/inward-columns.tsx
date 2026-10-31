@@ -1,6 +1,6 @@
 // Inward Register columns (ADR-199 fit table) — ONE ROW PER RECEIPT LINE
-// (ADR-261). The six locked lead columns first (SO No. = the SO code, else the
-// JWSO code; Internal SO No. only for an SO), then Inward No. · Inward Date ·
+// (ADR-261). Inward No. and the six locked lead columns first (SO No. = the SO
+// code, else the JWSO code; Internal SO No. only for an SO), then Inward Date ·
 // DC No. · PO No. · Vendor · Received · Accepted · Deviated for THIS line.
 // Received / Accepted / Deviated are the line's qty and its incoming-QC outcome
 // (0172). Vendor Challan No. and the GRN link sit in the ▸ detail row.
@@ -18,6 +18,27 @@ export function isJwDcInwardCancelled(inv: { cancelledAt: string | null }): bool
 export function inwardColumns(): DataTableColumn<JwDcInwardLineRow>[] {
   return [
     ...leadColumns<JwDcInwardLineRow>({
+      doc: {
+        id: 'inward_no',
+        sortFilterField: 'code',
+        filterType: 'text',
+        kind: 'code',
+        header: 'Inward No.',
+        className: 'mono fw-700',
+        nowrap: true,
+        // ADR-235: a Cancelled receipt carries a "Cancelled" mark beside its number.
+        render: (inv) =>
+          isJwDcInwardCancelled(inv) ? (
+            <>
+              <span style={{ color: 'var(--green2)' }}>{inv.docCode}</span>{' '}
+              <span className="badge b-red" title={inv.cancelReason ?? undefined}>
+                Cancelled
+              </span>
+            </>
+          ) : (
+            <span style={{ color: 'var(--green2)' }}>{inv.docCode}</span>
+          ),
+      },
       soNo: (r) => r.soCode ?? r.jwCode,
       internalSoNo: (r) => r.soInternalNo,
       pol: (r) => r.clientPoLineNo,
@@ -34,27 +55,6 @@ export function inwardColumns(): DataTableColumn<JwDcInwardLineRow>[] {
         item_name: { sortFilterField: 'itemName', filterType: 'text' },
       },
     }),
-    {
-      id: 'inward_no',
-      sortFilterField: 'code',
-      filterType: 'text',
-      kind: 'code',
-      header: 'Inward No.',
-      className: 'mono fw-700',
-      nowrap: true,
-      // ADR-235: a Cancelled receipt carries a "Cancelled" mark beside its number.
-      render: (inv) =>
-        isJwDcInwardCancelled(inv) ? (
-          <>
-            <span style={{ color: 'var(--green2)' }}>{inv.docCode}</span>{' '}
-            <span className="badge b-red" title={inv.cancelReason ?? undefined}>
-              Cancelled
-            </span>
-          </>
-        ) : (
-          <span style={{ color: 'var(--green2)' }}>{inv.docCode}</span>
-        ),
-    },
     {
       id: 'inward_date',
       sortFilterField: 'inwardDate',

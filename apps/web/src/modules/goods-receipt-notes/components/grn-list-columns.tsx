@@ -1,7 +1,7 @@
 // Goods Receipt Note list columns (ADR-199 fit table). ADR-261 (2026-10-31):
-// ONE ROW PER GRN LINE (GET /goods-receipt-notes/lines), opening with the six
-// lead columns — SO No. · Internal SO No. · POL · Created On · Item Code
-// (CODE/REV) · Item Name — then GRN No. · GRN Date · Vendor · GRN Type · PO/NC
+// ONE ROW PER GRN LINE (GET /goods-receipt-notes/lines), opening with GRN No.
+// and the six lead columns — SO No. · Internal SO No. · POL · Created On ·
+// Item Code (CODE/REV) · Item Name — then GRN Date · Vendor · GRN Type · PO/NC
 // No. · Received · QC Status · Accepted · Deviated · Vendor Challan No. ·
 // Vendor Invoice No. (NAMING.md).
 // Received / QC Status / Accepted / Deviated are the LINE's own. The two vendor
@@ -51,6 +51,24 @@ export function goodsReceiptNoteListColumns(
 ): DataTableColumn<GoodsReceiptNoteLineListItem>[] {
   return [
     ...leadColumns<GoodsReceiptNoteLineListItem>({
+      doc: {
+        id: 'grn_code',
+        sortFilterField: 'grnCode',
+        header: 'GRN No.',
+        nowrap: true,
+        render: (grn) => (
+          <Link
+            to="/goods-receipt-notes/$id"
+            params={{ id: grn.docId }}
+            className="td-code"
+            style={{ color: 'var(--blue)', fontWeight: 800 }}
+            title="Open the GRN detail page"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {grn.docCode}
+          </Link>
+        ),
+      },
       soNo: (l) => l.soCode,
       internalSoNo: (l) => l.soInternalNo,
       pol: (l) => l.clientPoLineNo,
@@ -67,24 +85,6 @@ export function goodsReceiptNoteListColumns(
         item_name: { sortFilterField: 'itemName' },
       },
     }),
-    {
-      id: 'grn_code',
-      sortFilterField: 'grnCode',
-      header: 'GRN No.',
-      nowrap: true,
-      render: (grn) => (
-        <Link
-          to="/goods-receipt-notes/$id"
-          params={{ id: grn.docId }}
-          className="td-code"
-          style={{ color: 'var(--blue)', fontWeight: 800 }}
-          title="Open the GRN detail page"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {grn.docCode}
-        </Link>
-      ),
-    },
     {
       id: 'grn_date',
       sortFilterField: 'grnDate',

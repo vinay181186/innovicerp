@@ -47,13 +47,13 @@ export const ncRegisterAllReport: RegisteredReport = {
       // ADR-261 lead columns. SO No. = the NC's SO (live, else snapshot),
       // else the JWSO of its Job Card; POL and the drawing rev (in Item Code)
       // come from the JC's order line. Created On = the NC's created_at.
+      { key: 'nc_no', label: 'NC No.', type: 'text' },
       { key: 'so_code', label: 'SO No.', type: 'text' },
       { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
       { key: 'client_po_line_no', label: 'POL', type: 'text' },
       { key: 'created_on', label: 'Created On', type: 'date' },
       { key: 'item_code', label: 'Item Code', type: 'text' },
       { key: 'item_name', label: 'Item Name', type: 'text' },
-      { key: 'nc_no', label: 'NC No.', type: 'text' },
       { key: 'nc_date', label: 'NC Date', type: 'date' },
       { key: 'jc_code', label: 'JC No.', type: 'text' },
       { key: 'operation', label: 'Operation', type: 'text' },

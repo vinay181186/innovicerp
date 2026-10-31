@@ -54,6 +54,21 @@ export function assemblyListColumns(today: string): DataTableColumn<AssemblyList
     // (its first SO line), so Item Code / Item Name are drawn; an order-level
     // row has no single POL, so that column is left out.
     ...leadColumns<AssemblyListItem>({
+      doc: {
+        id: 'bom_no',
+        sortFilterField: 'bomCode',
+        header: 'BOM No.',
+        nowrap: true,
+        render: (row) => (
+          <span className="text3" style={{ fontSize: 12 }}>
+            {row.bomCode ?? '—'}
+            {/* Loose != null on purpose: web and API deploy independently, so for
+                  a few minutes the old API returns no bomRevision. Strict !== null
+                  would print "Rev undefined". */}
+            {row.bomRevision != null ? ` BOM Rev ${row.bomRevision}` : ''}
+          </span>
+        ),
+      },
       soNo: (row) => row.soCode,
       internalSoNo: (row) => row.soInternalNo,
       createdOn: (row) => row.createdAt,
@@ -82,21 +97,6 @@ export function assemblyListColumns(today: string): DataTableColumn<AssemblyList
         item_name: { sortFilterField: 'itemName' },
       },
     }),
-    {
-      id: 'bom_no',
-      sortFilterField: 'bomCode',
-      header: 'BOM No.',
-      nowrap: true,
-      render: (row) => (
-        <span className="text3" style={{ fontSize: 12 }}>
-          {row.bomCode ?? '—'}
-          {/* Loose != null on purpose: web and API deploy independently, so for
-                a few minutes the old API returns no bomRevision. Strict !== null
-                would print "Rev undefined". */}
-          {row.bomRevision != null ? ` BOM Rev ${row.bomRevision}` : ''}
-        </span>
-      ),
-    },
     {
       id: 'customer',
       sortFilterField: 'customerName',

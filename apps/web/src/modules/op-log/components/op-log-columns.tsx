@@ -1,5 +1,5 @@
 // Operation Log list columns (ADR-199 fit table: one line per row). Moved out
-// of routes/list.tsx. Opens with the six ADR-261 lead columns. Item Code and Item Name are two columns (the name used to
+// of routes/list.tsx. Opens with Log No. and the six ADR-261 lead columns. Item Code and Item Name are two columns (the name used to
 // stack under the code), and the ADR-197 reversal badge + its reason left the
 // Log Type cell for two columns of their own at the right, so they are the
 // first to move into ▸ on a narrow screen.
@@ -71,9 +71,16 @@ const SHIFT_OPTIONS = Object.entries(SHIFT_LABELS).map(([value, label]) => ({ va
  *  column has none: its label is built per row. */
 export function opLogColumns(): DataTableColumn<OpLogListItem>[] {
   return [
-    // ADR-261 — the six lead columns first; Log No., JC No. and every other
-    // fact follow Item Name. Created On = the entry's own created_at.
+    // ADR-261 — Log No. first, then the six lead columns, all locked; JC No.
+    // and every other fact follow Item Name. Created On = the entry's own created_at.
     ...leadColumns<OpLogListItem>({
+      doc: {
+        id: 'log_no',
+        sortFilterField: 'logNo',
+        kind: 'code',
+        header: 'Log No.',
+        render: (r) => jcLink(r, r.logNo),
+      },
       soNo: (r) => r.soCode,
       internalSoNo: (r) => r.soInternalNo,
       pol: (r) => r.clientPoLineNo,
@@ -90,13 +97,6 @@ export function opLogColumns(): DataTableColumn<OpLogListItem>[] {
         item_name: { sortFilterField: 'itemName' },
       },
     }),
-    {
-      id: 'log_no',
-      sortFilterField: 'logNo',
-      kind: 'code',
-      header: 'Log No.',
-      render: (r) => jcLink(r, r.logNo),
-    },
     {
       id: 'jc_no',
       sortFilterField: 'jcNo',

@@ -32,10 +32,10 @@ export const receivableAgeingReport: RegisteredReport = {
     columns: [
       // ADR-261 lead columns that exist on an invoice header (no line, so no
       // POL / item). Created On = the invoice's created_at.
+      { key: 'invoice_code', label: 'Invoice No.', type: 'text' },
       { key: 'so_code', label: 'SO No.', type: 'text' },
       { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
       { key: 'created_on', label: 'Created On', type: 'date' },
-      { key: 'invoice_code', label: 'Invoice No.', type: 'text' },
       { key: 'invoice_date', label: 'Invoice Date', type: 'date' },
       { key: 'client_name', label: 'Customer', type: 'text' },
       { key: 'grand_total', label: 'Grand Total', type: 'number' },

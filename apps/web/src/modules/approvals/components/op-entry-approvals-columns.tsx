@@ -1,8 +1,8 @@
 // Op Entry approvals — columns + row actions for the ADR-199 fit table (one
 // line per correction request, always fits the screen). Replaces the old card
 // grid in log-entry-approvals.tsx. What stacked inside a card is now columns:
-//   SO No. · Internal SO No. · POL · Created On · Item Code · Item Name (the
-//   lead columns, owner rule 2026-10-31) · JC No. · Op · Operation · Log Type ·
+//   JC No. · SO No. · Internal SO No. · POL · Created On · Item Code · Item Name
+//   (the lead columns, owner rule 2026-10-31) · Op · Operation · Log Type ·
 //   Machine · Prev → Requested · Entry Qty · Asked By · Status
 // and the context that used to sit lower on the card drops into the ▸ detail:
 //   Reason · Decided By (hidden by default).
@@ -49,9 +49,17 @@ export function opEntryRowTint(r: OpLogTimeChangeRequest): string | undefined {
 
 export function opEntryColumns(): DataTableColumn<OpLogTimeChangeRequest>[] {
   return [
-    // Owner rule 2026-10-31 — the six lead columns first; JC No. after Item
-    // Name. Created On = when the correction was asked (requestedAt).
+    // Owner rule 2026-10-31 (ADR-261 amendment) — JC No. first, then the six
+    // lead columns, all locked. Created On = when the correction was asked (requestedAt).
     ...leadColumns<OpLogTimeChangeRequest>({
+      doc: {
+        id: 'jc_no',
+        sortFilterField: 'jcCode',
+        kind: 'code',
+        header: 'JC No.',
+        className: 'mono fw-700',
+        render: (r) => <span style={{ color: 'var(--cyan)' }}>{r.jobCardCode}</span>,
+      },
       soNo: (r) => r.soCode,
       internalSoNo: (r) => r.soInternalNo,
       pol: (r) => r.clientPoLineNo,
@@ -68,14 +76,6 @@ export function opEntryColumns(): DataTableColumn<OpLogTimeChangeRequest>[] {
         item_name: { sortFilterField: 'itemName' },
       },
     }),
-    {
-      id: 'jc_no',
-      sortFilterField: 'jcCode',
-      kind: 'code',
-      header: 'JC No.',
-      className: 'mono fw-700',
-      render: (r) => <span style={{ color: 'var(--cyan)' }}>{r.jobCardCode}</span>,
-    },
     {
       id: 'op_seq',
       sortFilterField: 'opSeq',

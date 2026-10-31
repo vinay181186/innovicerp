@@ -3,7 +3,7 @@
 // table — a blue group heading per machine ("VMC-1 · Name · 3 ops · Running")
 // over that machine's pending ops. The rows are the machine-loading `ops` list
 // (already server-sorted priority → due → op_seq, kept within each machine),
-// grouped in the machines' own order. The six ADR-261 lead columns open each
+// grouped in the machines' own order. JC No. and the six ADR-261 lead columns open each
 // row, then the columns the mini-tables had.
 // Machines with nothing pending (the old "Idle" cards) are named on one line
 // above the table, so no machine drops out of sight.
@@ -67,9 +67,27 @@ export function groupPendingOps(machines: PendingMachine[], ops: MachineLoadOp[]
 }
 
 const COLUMNS: DataTableColumn<PendingRow>[] = [
-  // ADR-261 — the six lead columns first; JC No. and every other fact follow
-  // Item Name. Created On = the job-card op's own created_at.
+  // ADR-261 — JC No. first, then the six lead columns, all locked; every
+  // other fact follows Item Name. Created On = the job-card op's own created_at.
   ...leadColumns<PendingRow>({
+    doc: {
+      id: 'jc_no',
+      header: 'JC No.',
+      kind: 'code',
+      nowrap: true,
+      render: ({ op }) => (
+        <ActionLink
+          fallback="text"
+          to="/job-cards/$id"
+          params={{ id: op.jobCardId }}
+          title="View job card status"
+          className="mono cyan"
+          style={{ textDecoration: 'none' }}
+        >
+          {op.jobCardCode}
+        </ActionLink>
+      ),
+    },
     soNo: ({ op }) => op.soCode,
     internalSoNo: ({ op }) => op.soInternalNo,
     pol: ({ op }) => op.clientPoLineNo,
@@ -78,24 +96,6 @@ const COLUMNS: DataTableColumn<PendingRow>[] = [
     itemRev: ({ op }) => op.itemRevision,
     itemName: ({ op }) => op.itemName,
   }),
-  {
-    id: 'jc_no',
-    header: 'JC No.',
-    kind: 'code',
-    nowrap: true,
-    render: ({ op }) => (
-      <ActionLink
-        fallback="text"
-        to="/job-cards/$id"
-        params={{ id: op.jobCardId }}
-        title="View job card status"
-        className="mono cyan"
-        style={{ textDecoration: 'none' }}
-      >
-        {op.jobCardCode}
-      </ActionLink>
-    ),
-  },
   {
     id: 'operation',
     header: 'Operation',

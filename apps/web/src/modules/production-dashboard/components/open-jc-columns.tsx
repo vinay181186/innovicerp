@@ -1,6 +1,6 @@
 // Open Job Cards tab (legacy L3719-3799) — the card grid turned into ONE table
 // (ADR-203 frozen header): one row per open job card with every fact the card
-// showed — the six ADR-261 lead columns, JC No., Order Qty, the progress
+// showed — JC No., the six ADR-261 lead columns, Order Qty, the progress
 // bar + %, Due Date and the Priority badge. The card's own click (open Op
 // Entry for this card) is now the row's ⋯ menu item; the JC No. still opens
 // the job card itself. Same endpoint and 25-row paging the cards used.
@@ -19,9 +19,28 @@ export function jcProgressPct(jc: ProductionDashboardJc): number {
 
 export function openJcColumns(): DataTableColumn<ProductionDashboardJc>[] {
   return [
-    // ADR-261 — the six lead columns first; JC No. and every other fact follow
-    // Item Name. Created On = the job card's own created_at.
+    // ADR-261 — JC No. first, then the six lead columns, all locked; every
+    // other fact follows Item Name. Created On = the job card's own created_at.
     ...leadColumns<ProductionDashboardJc>({
+      doc: {
+        id: 'jc_no',
+        header: 'JC No.',
+        kind: 'code',
+        nowrap: true,
+        render: (jc) => (
+          <ActionLink
+            fallback="text"
+            to="/job-cards/$id"
+            params={{ id: jc.jobCardId }}
+            title="View job card status"
+            className="mono fw-700 cyan"
+            style={{ textDecoration: 'none' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {jc.code}
+          </ActionLink>
+        ),
+      },
       soNo: (jc) => jc.soCode,
       internalSoNo: (jc) => jc.soInternalNo,
       pol: (jc) => jc.clientPoLineNo,
@@ -30,25 +49,6 @@ export function openJcColumns(): DataTableColumn<ProductionDashboardJc>[] {
       itemRev: (jc) => jc.itemRevision,
       itemName: (jc) => jc.itemName,
     }),
-    {
-      id: 'jc_no',
-      header: 'JC No.',
-      kind: 'code',
-      nowrap: true,
-      render: (jc) => (
-        <ActionLink
-          fallback="text"
-          to="/job-cards/$id"
-          params={{ id: jc.jobCardId }}
-          title="View job card status"
-          className="mono fw-700 cyan"
-          style={{ textDecoration: 'none' }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {jc.code}
-        </ActionLink>
-      ),
-    },
     {
       id: 'order_qty',
       header: 'Order Qty',

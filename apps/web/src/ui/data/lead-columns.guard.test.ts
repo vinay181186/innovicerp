@@ -23,6 +23,51 @@ function columnFiles(dir: string): string[] {
   return out;
 }
 
+/** Lists whose row IS the SO / JWSO (or that have no own number): SO No. is
+ *  the own number, so no `doc:` column goes in front of it. */
+const ROW_IS_ORDER = new Set([
+  'sales-orders/components/so-list-columns.tsx',
+  'sales-orders/components/so-line-columns.tsx',
+  'job-work-orders/components/jwso-list-columns.tsx',
+  'so-overview/components/so-overview-columns.tsx',
+  'so-costing/routes/list.tsx',
+  'so-cycle-time/lib/columns.tsx',
+  'pending-so-value/components/psv-columns.tsx',
+  'so-planning/components/order-list-columns.tsx',
+  'so-planning/components/planning-line-columns.tsx',
+  'so-planning/components/line-search-columns.tsx',
+  'plans/components/needs-planning-table.tsx',
+  'stuck-dashboard/routes/page.tsx',
+  'store-inventory/components/reservation-drilldown.tsx',
+  'qc-documents/components/so-status-columns.tsx',
+  'qc-documents/components/register-columns.tsx',
+  'item-revisions/components/fix-list-columns.tsx',
+  'sc-dashboard/components/vendor-so-columns.tsx',
+]);
+
+function allFiles(dir: string): string[] {
+  const out: string[] = [];
+  for (const name of readdirSync(dir)) {
+    const p = join(dir, name);
+    if (statSync(p).isDirectory()) out.push(...allFiles(p));
+    else if (/\.tsx$/.test(name) && !/\.test\./.test(name)) out.push(p);
+  }
+  return out;
+}
+
+describe('own document number first (ADR-261, owner 31-Oct)', () => {
+  it('every leadColumns list passes its own number as `doc:` unless the row is the order', () => {
+    const missing = allFiles(MODULES)
+      .filter((f) => {
+        const src = readFileSync(f, 'utf8');
+        return /leadColumns</.test(src) && !/\bdoc:/.test(src);
+      })
+      .map((f) => relative(MODULES, f).replace(/\\/g, '/'))
+      .filter((f) => !ROW_IS_ORDER.has(f));
+    expect(missing).toEqual([]);
+  });
+});
+
 describe('lead columns guard (ADR-261)', () => {
   it('no list column file hand-writes SO No. / Internal SO No. / POL / JWSO No. / Drawing Rev', () => {
     const offenders = columnFiles(MODULES)

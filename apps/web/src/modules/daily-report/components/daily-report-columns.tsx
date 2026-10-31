@@ -3,8 +3,8 @@
 // ceiling and the sheet is defined in one place. Mirrors legacy renderDailyReport
 // (HTML L10823).
 //
-// One row per log entry. The six lead columns (SO No. … Item Name, owner rule
-// 2026-10-31) come first, then JC No. The Completed column carries the engine's column-following `total`
+// One row per log entry. JC No. comes first, then the six lead columns (SO No.
+// … Item Name, owner rule 2026-10-31), all locked. The Completed column carries the engine's column-following `total`
 // (sum), so the per-machine total sits under its own column and moves with it
 // into ▸ (replacing the old hand-written <tfoot>). Remarks is default-hidden, so
 // it lives in the row's ▸ detail. Labels per docs/NAMING.md
@@ -24,9 +24,18 @@ function sumQty(rows: DailyReportRow[]): number {
 }
 
 export const dailyReportColumns: DataTableColumn<DailyReportRow>[] = [
-  // Owner rule 2026-10-31 — the six lead columns first; JC No. after Item Name.
+  // Owner rule 2026-10-31 (ADR-261 amendment) — JC No. first, then the six
+  // lead columns, all locked.
   // Created On = the log entry's own created_at.
   ...leadColumns<DailyReportRow>({
+    doc: {
+      id: 'jc_no',
+      kind: 'code',
+      header: 'JC No.',
+      className: 'mono fw-700',
+      nowrap: true,
+      render: (r) => <span style={{ color: 'var(--cyan)' }}>{r.jcCode}</span>,
+    },
     soNo: (r) => r.soCode,
     internalSoNo: (r) => r.soInternalNo,
     pol: (r) => r.clientPoLineNo,
@@ -35,14 +44,6 @@ export const dailyReportColumns: DataTableColumn<DailyReportRow>[] = [
     itemRev: (r) => r.itemRevision,
     itemName: (r) => r.itemName,
   }),
-  {
-    id: 'jc_no',
-    kind: 'code',
-    header: 'JC No.',
-    className: 'mono fw-700',
-    nowrap: true,
-    render: (r) => <span style={{ color: 'var(--cyan)' }}>{r.jcCode}</span>,
-  },
   {
     id: 'op',
     kind: 'code',

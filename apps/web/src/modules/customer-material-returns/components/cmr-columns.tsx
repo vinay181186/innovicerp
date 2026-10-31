@@ -3,8 +3,8 @@
 // Sort & Filter.
 //
 // The lead block comes first and is locked (leadColumns, JWSO-only list: no
-// Internal SO No.): JWSO No. · POL · Created On · Item Code/Rev · Item Name —
-// the JWSO line the material belongs to. Then Return No. · Return Date ·
+// Internal SO No.): Return No. · JWSO No. · POL · Created On · Item Code/Rev ·
+// Item Name — the JWSO line the material belongs to. Then Return Date ·
 // Customer · Return Qty · Return Kind · Customer RM · Return Status ·
 // Vehicle No. Remarks, the cancel reason and History live in the ▸ row.
 //
@@ -37,6 +37,18 @@ type Row = CustomerMaterialReturnLineRow;
 export function cmrColumns(): DataTableColumn<Row>[] {
   return [
     ...leadColumns<Row>({
+      doc: {
+        id: 'return_no',
+        sortFilterField: 'code',
+        kind: 'code',
+        header: 'Return No.',
+        nowrap: true,
+        render: (r) => (
+          <span className="td-code" style={{ color: 'var(--text)', fontWeight: 800 }}>
+            {r.docCode}
+          </span>
+        ),
+      },
       so: 'jwso',
       soNo: (r) => r.jwCode,
       pol: (r) => r.clientPoLineNo,
@@ -52,18 +64,6 @@ export function cmrColumns(): DataTableColumn<Row>[] {
         item_name: { sortFilterField: 'itemName' },
       },
     }),
-    {
-      id: 'return_no',
-      sortFilterField: 'code',
-      kind: 'code',
-      header: 'Return No.',
-      nowrap: true,
-      render: (r) => (
-        <span className="td-code" style={{ color: 'var(--text)', fontWeight: 800 }}>
-          {r.docCode}
-        </span>
-      ),
-    },
     {
       id: 'return_date',
       sortFilterField: 'returnDate',

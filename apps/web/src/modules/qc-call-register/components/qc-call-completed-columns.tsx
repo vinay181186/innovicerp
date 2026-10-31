@@ -182,9 +182,61 @@ export const COMPLETED_HIDDEN = [
 
 export function completedColumns(): DataTableColumn<CompletedVM>[] {
   return [
-    // Owner rule 2026-10-31 — the six lead columns first; Doc No. and the
-    // rest after Item Name. Created On = each call's own record created_at.
+    // Owner rule 2026-10-31 — own number (Doc No.) first, the six lead
+    // columns, the rest after Item Name. Created On = each call's own record created_at.
     ...leadColumns<CompletedVM>({
+      doc: {
+        id: 'doc_no',
+        sortFilterField: 'docNo',
+        header: 'Doc No.',
+        nowrap: true,
+        render: (vm) =>
+          vm.kind === 'pgrn' ? (
+            <Link
+              to="/party-grn"
+              search={{ search: vm.row.partyGrnNo, page: 1 }}
+              className="td-code"
+              style={{ color: 'var(--blue)', fontWeight: 800 }}
+              title="Open this Party GRN"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {vm.row.partyGrnNo}
+            </Link>
+          ) : vm.kind === 'inc' ? (
+            <Link
+              to="/goods-receipt-notes/$id"
+              params={{ id: vm.row.grnId }}
+              className="td-code"
+              style={{ color: 'var(--blue)', fontWeight: 800 }}
+              title="Open this GRN"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {vm.row.grnNo}
+            </Link>
+          ) : vm.row.jobCardId ? (
+            <Link
+              to="/job-cards/$id"
+              params={{ id: vm.row.jobCardId }}
+              className="td-code"
+              style={{ color: 'var(--blue)', fontWeight: 800 }}
+              title="Open this job card"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {vm.row.jcCode}
+            </Link>
+          ) : (
+            <Link
+              to="/job-cards"
+              search={{ search: vm.row.jcCode, page: 1 }}
+              className="td-code"
+              style={{ color: 'var(--blue)', fontWeight: 800 }}
+              title="Find this job card"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {vm.row.jcCode}
+            </Link>
+          ),
+      },
       soNo: soNoOf,
       internalSoNo: soInternalNoOf,
       pol: polOf,
@@ -201,58 +253,6 @@ export function completedColumns(): DataTableColumn<CompletedVM>[] {
         created_on: { sortFilterField: 'createdOn' },
       },
     }),
-    {
-      id: 'doc_no',
-      sortFilterField: 'docNo',
-      header: 'Doc No.',
-      nowrap: true,
-      render: (vm) =>
-        vm.kind === 'pgrn' ? (
-          <Link
-            to="/party-grn"
-            search={{ search: vm.row.partyGrnNo, page: 1 }}
-            className="td-code"
-            style={{ color: 'var(--blue)', fontWeight: 800 }}
-            title="Open this Party GRN"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {vm.row.partyGrnNo}
-          </Link>
-        ) : vm.kind === 'inc' ? (
-          <Link
-            to="/goods-receipt-notes/$id"
-            params={{ id: vm.row.grnId }}
-            className="td-code"
-            style={{ color: 'var(--blue)', fontWeight: 800 }}
-            title="Open this GRN"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {vm.row.grnNo}
-          </Link>
-        ) : vm.row.jobCardId ? (
-          <Link
-            to="/job-cards/$id"
-            params={{ id: vm.row.jobCardId }}
-            className="td-code"
-            style={{ color: 'var(--blue)', fontWeight: 800 }}
-            title="Open this job card"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {vm.row.jcCode}
-          </Link>
-        ) : (
-          <Link
-            to="/job-cards"
-            search={{ search: vm.row.jcCode, page: 1 }}
-            className="td-code"
-            style={{ color: 'var(--blue)', fontWeight: 800 }}
-            title="Find this job card"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {vm.row.jcCode}
-          </Link>
-        ),
-    },
     {
       id: 'accepted',
       sortFilterField: 'accepted',

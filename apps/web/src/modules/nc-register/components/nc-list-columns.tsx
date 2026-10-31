@@ -93,8 +93,26 @@ export function ncListColumns(
   draftIds?: Set<string>,
 ): DataTableColumn<NcRegisterListItem>[] {
   return [
-    // Owner rule 2026-10-31 — the six lead columns first; NC No. after Item Name.
+    // Owner rule 2026-10-31 — own number (NC No.) first, then the lead columns.
     ...leadColumns<NcRegisterListItem>({
+      doc: {
+        id: 'nc_code',
+        sortFilterField: 'ncCode',
+        header: 'NC No.',
+        nowrap: true,
+        render: (nc) => (
+          <Link
+            to="/nc-register/$id"
+            params={{ id: nc.id }}
+            className="td-code"
+            style={{ color: 'var(--red2)', fontWeight: 800 }}
+            title="Open the NC detail page"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {nc.code}
+          </Link>
+        ),
+      },
       soNo: (nc) => nc.soCodeText,
       internalSoNo: (nc) => nc.soInternalNo,
       pol: (nc) => nc.clientPoLineNo,
@@ -110,24 +128,6 @@ export function ncListColumns(
         item_name: { sortFilterField: 'itemName' },
       },
     }),
-    {
-      id: 'nc_code',
-      sortFilterField: 'ncCode',
-      header: 'NC No.',
-      nowrap: true,
-      render: (nc) => (
-        <Link
-          to="/nc-register/$id"
-          params={{ id: nc.id }}
-          className="td-code"
-          style={{ color: 'var(--red2)', fontWeight: 800 }}
-          title="Open the NC detail page"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {nc.code}
-        </Link>
-      ),
-    },
     {
       id: 'nc_status',
       sortFilterField: 'status',

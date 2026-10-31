@@ -1,7 +1,7 @@
 // Outward Register columns (ADR-199 fit table) — ONE ROW PER DC LINE (ADR-261).
-// The six lead columns come first and are locked (SO No. · Internal SO No. ·
+// DC No. and the six lead columns come first and are locked (SO No. · Internal SO No. ·
 // POL · Created On · Item Code · Item Name); SO No. shows the SO code, else the
-// JWSO code, and Internal SO No. only for an SO. Then DC No. · DC Date · PO No.
+// JWSO code, and Internal SO No. only for an SO. Then DC Date · PO No.
 // · Vendor · Sent · Received · Pending · DC Status — all for THIS line, except
 // DC No. / Date / PO / Vendor which are the challan's. Vehicle / Remarks sit in
 // the ▸ detail row (see outward-register).
@@ -31,6 +31,25 @@ export function isJwDcCancelled(dc: { cancelledAt: string | null }): boolean {
 export function outwardColumns(): DataTableColumn<JwDcOutwardLineRow>[] {
   return [
     ...leadColumns<JwDcOutwardLineRow>({
+      doc: {
+        id: 'dc_no',
+        sortFilterField: 'code',
+        filterType: 'text',
+        kind: 'code',
+        header: 'DC No.',
+        className: 'td-code',
+        nowrap: true,
+        render: (dc) => (
+          <Link
+            onClick={(e) => e.stopPropagation()}
+            to="/jw-dc/$id"
+            params={{ id: dc.docId }}
+            style={{ color: 'var(--purple)', textDecoration: 'underline dotted' }}
+          >
+            {dc.docCode}
+          </Link>
+        ),
+      },
       soNo: (r) => r.soCode ?? r.jwCode,
       internalSoNo: (r) => r.soInternalNo,
       pol: (r) => r.clientPoLineNo,
@@ -47,25 +66,6 @@ export function outwardColumns(): DataTableColumn<JwDcOutwardLineRow>[] {
         item_name: { sortFilterField: 'itemName', filterType: 'text' },
       },
     }),
-    {
-      id: 'dc_no',
-      sortFilterField: 'code',
-      filterType: 'text',
-      kind: 'code',
-      header: 'DC No.',
-      className: 'td-code',
-      nowrap: true,
-      render: (dc) => (
-        <Link
-          onClick={(e) => e.stopPropagation()}
-          to="/jw-dc/$id"
-          params={{ id: dc.docId }}
-          style={{ color: 'var(--purple)', textDecoration: 'underline dotted' }}
-        >
-          {dc.docCode}
-        </Link>
-      ),
-    },
     {
       id: 'dc_date',
       sortFilterField: 'dcDate',

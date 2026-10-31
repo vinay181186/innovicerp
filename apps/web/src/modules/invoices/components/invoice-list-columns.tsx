@@ -1,8 +1,8 @@
 // SO Invoices list columns (moved out of routes/list.tsx to keep it < 400).
 // ADR-201: sortFilterField = the server column map (api invoices/sf-columns.ts).
 // ADR-261 (owner 2026-10-31): ONE ROW PER INVOICE LINE (GET /invoices/lines).
-// The six lead columns come first (SO No. · Internal SO No. · POL · Created
-// On · Item Code (CODE/REV) · Item Name), then Invoice No., Invoice Date,
+// Invoice No. and the six lead columns come first (SO No. · Internal SO No. ·
+// POL · Created On · Item Code (CODE/REV) · Item Name), then Invoice Date,
 // Customer, the line's Invoice Qty and Amount (price-gated), Invoice Status, Due
 // Date. Row click and ⋯ act on the INVOICE.
 
@@ -47,6 +47,25 @@ export function invoiceListColumns(priceHidden: boolean): DataTableColumn<Invoic
 
   return [
     ...leadColumns<InvoiceListRow>({
+      doc: {
+        id: 'code',
+        header: 'Invoice No.',
+        sortFilterField: 'code',
+        className: 'td-code',
+        nowrap: true,
+        // Kept a real <Link> (not plain text): the code is how this list is
+        // ctrl-clicked / middle-clicked open in a new tab today.
+        render: (r) => (
+          <Link
+            to="/invoices/$id"
+            params={{ id: r.invoiceId }}
+            style={{ color: 'inherit', textDecoration: 'none' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {r.invoiceCode}
+          </Link>
+        ),
+      },
       soNo: (r) => r.soCode,
       internalSoNo: (r) => r.soInternalNo,
       pol: (r) => r.clientPoLineNo,
@@ -63,25 +82,6 @@ export function invoiceListColumns(priceHidden: boolean): DataTableColumn<Invoic
         item_name: { sortFilterField: 'itemName' },
       },
     }),
-    {
-      id: 'code',
-      header: 'Invoice No.',
-      sortFilterField: 'code',
-      className: 'td-code',
-      nowrap: true,
-      // Kept a real <Link> (not plain text): the code is how this list is
-      // ctrl-clicked / middle-clicked open in a new tab today.
-      render: (r) => (
-        <Link
-          to="/invoices/$id"
-          params={{ id: r.invoiceId }}
-          style={{ color: 'inherit', textDecoration: 'none' }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {r.invoiceCode}
-        </Link>
-      ),
-    },
     {
       id: 'invoice_date',
       kind: 'date',

@@ -1,8 +1,8 @@
 // Customer Dispatch list columns (ADR-199 FIT table).
 // ADR-261 (owner 2026-10-31): ONE ROW PER DISPATCH LINE
-// (GET /customer-dispatches/lines). The six lead columns come first (SO No. ·
-// Internal SO No. · POL · Created On · Item Code (CODE/REV) · Item Name), then
-// Dispatch No., Dispatch Date, Customer, the line's Dispatch Qty, Billed
+// (GET /customer-dispatches/lines). Dispatch No. and the six lead columns come
+// first (SO No. · Internal SO No. · POL · Created On · Item Code (CODE/REV) ·
+// Item Name), then Dispatch Date, Customer, the line's Dispatch Qty, Billed
 // Status, Dispatched By — and the facts the retired ▸ showed (JC No., UOM,
 // Stock Before → After, Remarks). Row click and ⋯ act on the DISPATCH.
 // `sortFilterField` = the server column map (sf-columns.ts).
@@ -37,6 +37,23 @@ export function dispatchListColumns(
 ): DataTableColumn<Row>[] {
   return [
     ...leadColumns<Row>({
+      doc: {
+        id: 'dispatch_code',
+        sortFilterField: 'dispatchCode',
+        header: 'Dispatch No.',
+        nowrap: true,
+        render: (r) => (
+          <Link
+            to="/customer-dispatches/$id"
+            params={{ id: r.dispatchId }}
+            className="td-code"
+            style={{ color: 'var(--cyan)', fontWeight: 800 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {r.dispatchCode}
+          </Link>
+        ),
+      },
       soNo: (r) => r.soNo,
       internalSoNo: (r) => r.soInternalNo,
       pol: (r) => r.clientPoLineNo,
@@ -54,23 +71,6 @@ export function dispatchListColumns(
         item_name: { sortFilterField: 'itemName' },
       },
     }),
-    {
-      id: 'dispatch_code',
-      sortFilterField: 'dispatchCode',
-      header: 'Dispatch No.',
-      nowrap: true,
-      render: (r) => (
-        <Link
-          to="/customer-dispatches/$id"
-          params={{ id: r.dispatchId }}
-          className="td-code"
-          style={{ color: 'var(--cyan)', fontWeight: 800 }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {r.dispatchCode}
-        </Link>
-      ),
-    },
     {
       id: 'dispatch_date',
       sortFilterField: 'dispatchDate',

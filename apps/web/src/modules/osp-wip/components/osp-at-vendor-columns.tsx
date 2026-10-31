@@ -33,8 +33,17 @@ function qty(
 
 export function ospAtVendorColumns(): DataTableColumn<OspWipRow>[] {
   return [
-    // Owner rule 2026-10-31 — the six lead columns first; JC No. follows Item Name.
+    // Owner rule 2026-10-31 (ADR-261 amendment) — JC No. first, then the six
+    // lead columns, all locked.
     ...leadColumns<OspWipRow>({
+      doc: {
+        id: 'jc_no',
+        sortFilterField: 'jcCode',
+        kind: 'code',
+        header: 'JC No.',
+        className: 'td-code',
+        render: (r) => <span style={{ color: 'var(--cyan)' }}>{r.jcCode}</span>,
+      },
       soNo: (r) => r.soCode,
       internalSoNo: (r) => r.soInternalNo,
       pol: (r) => r.clientPoLineNo,
@@ -51,14 +60,6 @@ export function ospAtVendorColumns(): DataTableColumn<OspWipRow>[] {
         item_name: { sortFilterField: 'itemName' },
       },
     }),
-    {
-      id: 'jc_no',
-      sortFilterField: 'jcCode',
-      kind: 'code',
-      header: 'JC No.',
-      className: 'td-code',
-      render: (r) => <span style={{ color: 'var(--cyan)' }}>{r.jcCode}</span>,
-    },
     {
       id: 'vendor',
       sortFilterField: 'vendorName',

@@ -26,10 +26,32 @@ export function isIssueCancelled(
 
 export function partyMaterialIssueColumns(): DataTableColumn<PartyMaterialIssueListItem>[] {
   return [
-    // Owner rule 2026-10-31 — the lead columns first (JWSO-only list: JWSO No.,
-    // no Internal SO No.); Issue No. after Item Name. Item Code / Item Name =
+    // Owner rule 2026-10-31 — Issue No. then the lead columns first (JWSO-only
+    // list: JWSO No., no Internal SO No.). Item Code / Item Name =
     // OUR produced part. The row carries no POL yet (needs API).
     ...leadColumns<PartyMaterialIssueListItem>({
+      doc: {
+        id: 'issue_code',
+        sortFilterField: 'issueCode',
+        header: 'Issue No.',
+        kind: 'code',
+        nowrap: true,
+        render: (it) => (
+          <>
+            <span className="td-code" style={{ color: 'var(--cyan)' }}>
+              {it.code}
+            </span>
+            {/* ADR-235: the register has no status column — a Cancelled issue
+                says so beside its number. */}
+            {isIssueCancelled(it) ? (
+              <>
+                {' '}
+                <span className="badge b-red">Cancelled</span>
+              </>
+            ) : null}
+          </>
+        ),
+      },
       so: 'jwso',
       soNo: (it) => it.jwCodeText,
       pol: () => null,
@@ -43,28 +65,6 @@ export function partyMaterialIssueColumns(): DataTableColumn<PartyMaterialIssueL
         item_name: { sortFilterField: 'itemName' },
       },
     }),
-    {
-      id: 'issue_code',
-      sortFilterField: 'issueCode',
-      header: 'Issue No.',
-      kind: 'code',
-      nowrap: true,
-      render: (it) => (
-        <>
-          <span className="td-code" style={{ color: 'var(--cyan)' }}>
-            {it.code}
-          </span>
-          {/* ADR-235: the register has no status column — a Cancelled issue
-              says so beside its number. */}
-          {isIssueCancelled(it) ? (
-            <>
-              {' '}
-              <span className="badge b-red">Cancelled</span>
-            </>
-          ) : null}
-        </>
-      ),
-    },
     {
       id: 'issue_date',
       sortFilterField: 'issueDate',

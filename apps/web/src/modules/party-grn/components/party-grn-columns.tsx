@@ -2,8 +2,8 @@
 // GRN LINE, GET /party-grn/lines). Split out of routes/list.tsx to keep that
 // file under the 400-line rule.
 //
-// Visible order: the lead block (JWSO No. · POL · Created On · Item Code/Rev ·
-// Item Name — a JWSO-only list, so no Internal SO No.), then GRN No. · GRN
+// Visible order: the lead block (GRN No. · JWSO No. · POL · Created On · Item
+// Code/Rev · Item Name — a JWSO-only list, so no Internal SO No.), then GRN
 // Date · Customer · Client PO No. · Customer Challan No. · Received Qty ·
 // Accepted Qty · QC Status. The item is what the line RECEIVED (the JWSO
 // line's customer RM) with the JWSO line's drawing revision. The GRN No. keeps
@@ -30,6 +30,18 @@ export function isPartyGrnCancelled(
 export function partyGrnColumns(): DataTableColumn<PartyGrnLineListRow>[] {
   return [
     ...leadColumns<PartyGrnLineListRow>({
+      doc: {
+        id: 'grn_code',
+        sortFilterField: 'code',
+        header: 'GRN No.',
+        kind: 'code',
+        nowrap: true,
+        render: (r) => (
+          <span className="td-code" style={{ color: 'var(--cyan)', fontWeight: 800 }}>
+            {r.docCode}
+          </span>
+        ),
+      },
       so: 'jwso',
       soNo: (r) => r.jwCode,
       pol: (r) => r.clientPoLineNo,
@@ -45,18 +57,6 @@ export function partyGrnColumns(): DataTableColumn<PartyGrnLineListRow>[] {
         item_name: { sortFilterField: 'itemName' },
       },
     }),
-    {
-      id: 'grn_code',
-      sortFilterField: 'code',
-      header: 'GRN No.',
-      kind: 'code',
-      nowrap: true,
-      render: (r) => (
-        <span className="td-code" style={{ color: 'var(--cyan)', fontWeight: 800 }}>
-          {r.docCode}
-        </span>
-      ),
-    },
     {
       id: 'grn_date',
       sortFilterField: 'grnDate',

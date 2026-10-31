@@ -105,6 +105,26 @@ export function plansListColumns(
 ): DataTableColumn<PlanRow>[] {
   return [
     ...leadColumns<PlanRow>({
+      doc: {
+        id: 'plan_no',
+        sortFilterField: 'code',
+        header: 'Plan No.',
+        nowrap: true,
+        // The row's ▸ (fit engine) opens the detail reveal; the Plan No. link
+        // opens the plan page. stopPropagation on the link, not the cell, so
+        // clicking the rest of the cell still opens the row.
+        render: (row) => (
+          <Link
+            to="/plans/$id"
+            params={{ id: row.id }}
+            className="td-code"
+            title="Open the plan"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {row.code}
+          </Link>
+        ),
+      },
       soNo: (row) => row.soCodeText,
       internalSoNo: (row) => row.soInternalNo,
       pol: (row) => row.clientPoLineNo,
@@ -133,26 +153,6 @@ export function plansListColumns(
         item_name: { sortFilterField: 'itemName' },
       },
     }),
-    {
-      id: 'plan_no',
-      sortFilterField: 'code',
-      header: 'Plan No.',
-      nowrap: true,
-      // The row's ▸ (fit engine) opens the detail reveal; the Plan No. link
-      // opens the plan page. stopPropagation on the link, not the cell, so
-      // clicking the rest of the cell still opens the row.
-      render: (row) => (
-        <Link
-          to="/plans/$id"
-          params={{ id: row.id }}
-          className="td-code"
-          title="Open the plan"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {row.code}
-        </Link>
-      ),
-    },
     {
       id: 'plan_date',
       sortFilterField: 'planDate',

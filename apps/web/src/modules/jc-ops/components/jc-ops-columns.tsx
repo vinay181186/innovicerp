@@ -1,7 +1,7 @@
 // JC Operations board — columns + the ⋯ row menu (ADR-199 fit table: one line
 // per row, always fits the screen). Moved out of routes/list.tsx, where they
 // were a hand-built <Row>. What used to stack inside one cell is now a column
-// of its own (the six ADR-261 lead columns open the row):
+// of its own (JC No. then the six ADR-261 lead columns open the row):
 //   Item Code | Item Name                (the name sat under the code)
 //   Completed | QC Pending               (the "⏳N QC" line under Completed)
 //   Operation | Outsource Status | Vendor (the OSP tag, status and vendor)
@@ -98,9 +98,31 @@ function OutsourceRef({ o, st }: { o: JcOpsBoardRow; st: string }): React.JSX.El
 
 export function jcOpsColumns(): DataTableColumn<JcOpsBoardRow>[] {
   return [
-    // ADR-261 — the six lead columns first; JC No., Op and every other fact
-    // follow Item Name. `sortFilterField` = JC_OPS_SF_COLUMNS (paged board).
+    // ADR-261 — JC No. first, then the six lead columns, all locked; Op and
+    // every other fact follow Item Name. `sortFilterField` = JC_OPS_SF_COLUMNS (paged board).
     ...leadColumns<JcOpsBoardRow>({
+      doc: {
+        // The JC number opens that card — only when `jcId` resolves; otherwise
+        // it renders exactly as it always has (no dead link).
+        id: 'jc_no',
+        sortFilterField: 'jcCode',
+        kind: 'code',
+        header: 'JC No.',
+        className: 'mono fw-700',
+        render: (o) =>
+          o.jcId ? (
+            <Link
+              to="/job-cards/$id"
+              params={{ id: o.jcId }}
+              title="View job card status"
+              style={{ color: 'var(--cyan)', textDecoration: 'none' }}
+            >
+              {o.jcCode}
+            </Link>
+          ) : (
+            <span style={{ color: 'var(--cyan)' }}>{o.jcCode}</span>
+          ),
+      },
       soNo: (o) => o.soCode,
       internalSoNo: (o) => o.soInternalNo,
       pol: (o) => o.clientPoLineNo,
@@ -117,28 +139,6 @@ export function jcOpsColumns(): DataTableColumn<JcOpsBoardRow>[] {
         item_name: { sortFilterField: 'itemName' },
       },
     }),
-    {
-      // The JC number opens that card — only when `jcId` resolves; otherwise
-      // it renders exactly as it always has (no dead link).
-      id: 'jc_no',
-      sortFilterField: 'jcCode',
-      kind: 'code',
-      header: 'JC No.',
-      className: 'mono fw-700',
-      render: (o) =>
-        o.jcId ? (
-          <Link
-            to="/job-cards/$id"
-            params={{ id: o.jcId }}
-            title="View job card status"
-            style={{ color: 'var(--cyan)', textDecoration: 'none' }}
-          >
-            {o.jcCode}
-          </Link>
-        ) : (
-          <span style={{ color: 'var(--cyan)' }}>{o.jcCode}</span>
-        ),
-    },
     {
       id: 'op_seq',
       sortFilterField: 'opSeq',
