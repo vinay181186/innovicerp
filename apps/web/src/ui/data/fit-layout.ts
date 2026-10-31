@@ -44,8 +44,9 @@ export interface FitResult {
   warn: boolean;
   /** Width available to the data columns, px. */
   budget: number;
-  /** Spare px left once every column shows its full content — drawn as an
-   *  empty column after the Action column, never added to a data column. */
+  /** Spare px left once every column shows its full content — given to the
+   *  Action column (⋯ held left), or an empty trailing cell when there is no
+   *  Action column; never added to a data column. */
   fill: number;
 }
 
