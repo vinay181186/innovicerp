@@ -354,17 +354,41 @@ async function openIds(
   return new Set(rows.map((r) => r.id));
 }
 
+/** ADR-262 — the bell reads the same notes over a longer window, as a history
+ *  (no "still open" filter). Defaults = the ADR-250 home block, unchanged. */
+export interface NoteOptions {
+  days?: number;
+  /** Keep a note only while its next step is still open (home: true). */
+  openOnly?: boolean;
+  /** Most notes returned (home: NOTE_MAX). */
+  max?: number;
+  /** Most activity rows read (home: 300). */
+  scan?: number;
+}
+
+/** A note plus who did it (the bell's initials circle). The home response
+ *  schema strips actorName. */
+export type NoteWithActor = DashNote & { actorName: string | null };
+
 export async function buildNotifications(
   tx: DbTransaction,
   a: DashAccess,
   c: ListCtx,
   me: string,
   approvals: ApprovalInboxResponse | null,
-): Promise<{ items: DashNote[]; unseen: number; seenAt: string | null }> {
+  opts: NoteOptions = {},
+): Promise<{ items: NoteWithActor[]; unseen: number; seenAt: string | null }> {
+  const days = opts.days ?? NOTE_DAYS;
+  const openOnly = opts.openOnly ?? true;
+  const noteMax = opts.max ?? NOTE_MAX;
+  const scan = opts.scan ?? 300;
   const seenAt = await readSeenAt(tx, c.cid, me);
   // Owner 2026-10-30: Day Log hidden ("Hide page") → no Day Log reply notes.
-  const replyNotes = hasTick(a, 'daylog_view', 'view')
-    ? (await readDayLogReplies(tx, c.cid, me)).map(dayLogReplyNote)
+  const replyNotes: NoteWithActor[] = hasTick(a, 'daylog_view', 'view')
+    ? (await readDayLogReplies(tx, c.cid, me)).map((r) => ({
+        ...dayLogReplyNote(r),
+        actorName: r.author,
+      }))
     : [];
   const rules = rulesFor(a);
   if (rules.length === 0) return { items: replyNotes, unseen: replyNotes.length, seenAt };
@@ -385,10 +409,10 @@ export async function buildNotifications(
     WHERE a.company_id = ${c.cid}::uuid
       AND a.user_id IS NOT NULL AND a.user_id <> ${me}::uuid
       AND a.entity_id IS NOT NULL AND a.ref_id IS NOT NULL
-      AND a.ts >= ((${addDays(c.today, -(NOTE_DAYS - 1))}::date)::timestamp AT TIME ZONE 'Asia/Kolkata')
+      AND a.ts >= ((${addDays(c.today, -(days - 1))}::date)::timestamp AT TIME ZONE 'Asia/Kolkata')
       AND (${sql.join(pairs, sql` OR `)})
     ORDER BY a.ts DESC
-    LIMIT 300
+    LIMIT ${scan}
   `)) as unknown as Array<Record<string, unknown>>;
   const events: ActivityEvent[] = res.map((r) => ({
     id: String(r['id']),
@@ -414,14 +438,15 @@ export async function buildNotifications(
     byOpen.set(rule.open, s);
   }
   const stillOpen = new Map<Open, Set<string>>();
-  for (const [open, ids] of byOpen)
-    stillOpen.set(open, await openIds(tx, open, [...ids], c, me, approvals));
+  if (openOnly)
+    for (const [open, ids] of byOpen)
+      stillOpen.set(open, await openIds(tx, open, [...ids], c, me, approvals));
 
   const seenMs = seenAt ? Date.parse(seenAt) : NaN;
   // Events arrive newest first, so the first note kept per document is the newest.
   const oneDoc = new Set<string>();
-  const items: DashNote[] = cands
-    .filter(({ ev, rule }) => stillOpen.get(rule.open)?.has(ev.entityId))
+  const items: NoteWithActor[] = cands
+    .filter(({ ev, rule }) => !openOnly || stillOpen.get(rule.open)?.has(ev.entityId))
     .filter(({ ev, rule }) => {
       if (!ONE_NOTE_PER_DOC.has(rule.open)) return true;
       const k = `${rule.open}:${ev.entityId}`;
@@ -429,11 +454,12 @@ export async function buildNotifications(
       oneDoc.add(k);
       return true;
     })
-    .slice(0, Math.max(0, NOTE_MAX - replyNotes.length))
+    .slice(0, Math.max(0, noteMax - replyNotes.length))
     .map(({ ev, rule, key }) => ({
       key,
       ts: ev.ts.toISOString(),
       tone: rule.tone,
+      actorName: ev.actor,
       text: [
         { text: noteLead(ev, rule) },
         codePart(ev.refId, entityHref(ev.entity, ev.entityId, ev.refId)),

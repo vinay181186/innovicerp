@@ -1,20 +1,8 @@
-// ADR-250 — one document row on the home (lists, Sent by me, Waiting on others):
-// document (number + sub line) · item · qty · status pill · action symbols.
-// Presentational: every figure and every action comes from the server.
+// ADR-250/262 — the home's row parts: number formats, the status pill, the
+// item cell and the header row of the Approval inbox rows.
+// Presentational: every figure comes from the server.
 
-import type { DashAction, DashRow, DashTone } from '@innovic/shared';
-import { ActionLink, useCanWrite } from '@/components/shared/action-link';
-import { DashTextView, DocRef, linkProps } from './dash-text';
-import { useRemind } from '../use-remind';
-
-/** The symbol each action kind shows. Approve / reject live on the inbox row. */
-const SYMBOL: Record<DashAction['kind'], string> = {
-  create: '＋',
-  open: '↗',
-  inspect: '▶',
-  start: '▶',
-  remind: '⏰',
-};
+import type { DashTone } from '@innovic/shared';
 
 export const fmtQty = (n: number): string => n.toLocaleString('en-IN');
 export const fmtAmount = (n: number): string =>
@@ -60,76 +48,6 @@ export function RowHead({
       <span className="dh-q">{head[2]}</span>
       <span>{head[3]}</span>
       <span />
-    </div>
-  );
-}
-
-function RemindIcon({ action }: { action: DashAction }): React.JSX.Element | null {
-  // Creating a task is a write: none for an Auditor (same gate as AssignTaskButton).
-  const canWrite = useCanWrite();
-  const remind = useRemind();
-  if (!canWrite || !action.taskFor) return null;
-  const taskFor = action.taskFor;
-  return (
-    <button
-      type="button"
-      className="dh-ic k-remind"
-      title={action.label}
-      aria-label={action.label}
-      aria-busy={remind.busy}
-      onClick={() => remind.send(taskFor, action.label)}
-    >
-      {SYMBOL.remind}
-    </button>
-  );
-}
-
-/** One action symbol. A page action is an ActionLink — hidden when the caller
- *  cannot open the target page; remind creates a linked task. */
-export function ActionIcon({ action }: { action: DashAction }): React.JSX.Element | null {
-  if (action.kind === 'remind') return <RemindIcon action={action} />;
-  if (!action.href) return null;
-  return (
-    <ActionLink
-      {...linkProps(action.href)}
-      check={action.href}
-      className={`dh-ic k-${action.kind}`}
-      title={action.label}
-      aria-label={action.label}
-    >
-      {SYMBOL[action.kind]}
-    </ActionLink>
-  );
-}
-
-export function DashRowView({ row }: { row: DashRow }): React.JSX.Element {
-  const qty = row.qty == null ? '—' : `${fmtQty(row.qty)}${row.uom ? ` ${row.uom}` : ''}`;
-  return (
-    <div className="dh-row">
-      <div className="dh-d">
-        <span className="dh-code">
-          <DocRef code={row.docCode} href={row.docHref} />
-        </span>
-        {row.sub.length > 0 ? (
-          <div className="dh-sub">
-            <DashTextView text={row.sub} />
-          </div>
-        ) : null}
-      </div>
-      <ItemCell
-        code={row.itemCode}
-        name={row.itemName}
-        extra={row.amount == null ? undefined : fmtAmount(row.amount)}
-      />
-      <div className="dh-q">{qty}</div>
-      <div className="dh-p">
-        <StatusPill label={row.statusLabel} tone={row.tone} />
-      </div>
-      <div className="dh-a">
-        {row.actions.map((a, i) => (
-          <ActionIcon key={`${a.kind}-${i}`} action={a} />
-        ))}
-      </div>
     </div>
   );
 }

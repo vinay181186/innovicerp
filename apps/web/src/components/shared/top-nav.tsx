@@ -40,6 +40,7 @@ import { LiveStatusMarker } from '@/lib/live-updates/live-status-marker';
 import { signOut, useSession } from '@/lib/session';
 import { useApprovalInboxTotal } from '@/modules/approvals/api';
 import { useDocumentEditPendingTotal } from '@/modules/document-edits/api';
+import { NotificationBell } from '@/modules/dashboard/components/notification-bell';
 import { Icon } from '@/ui/core';
 import {
   initials,
@@ -226,6 +227,8 @@ export function TopNav(): React.JSX.Element {
       <div className="tn-right">
         <LiveStatusMarker />
         <GlobalSearch />
+        {/* ADR-262 — the bell, on every page. */}
+        {me ? <NotificationBell /> : null}
         <Link
           to="/change-password"
           className="btn btn-ghost btn-sm tn-iconbtn"

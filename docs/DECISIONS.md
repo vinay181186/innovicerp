@@ -14966,3 +14966,49 @@ One session kept approving generated PRs; the approval step added nothing. Owner
 - Shared rule `qcReportMandatory(operation, qty, processes, isLastOp)`; the server decides `isLastOp` inside submitQcLog after the jc_ops row lock (routing edits rewrite every kept op row, so they serialise). A DIR before a terminal OSP is not last → optional; a rework child's last QC is last → compulsory.
 - A middle DIR saved without its report: note on Op Entry / QC Call ("report not uploaded" + Upload report), Home "Reports to upload" (report_required still stamped), Dossier "not uploaded (optional)" in orange.
 - Known gap: deleting the op after a middle DIR makes that DIR the last stage with no report; it still shows as owed (Home, Dossier) — the routing edit is not blocked.
+## ADR-262: New home dashboard — department checks, bell, My to-do (owner design 2026-10-31)
+
+**Date:** 2026-10-31
+**Status:** Accepted (owner approved the Design-canvas mockup "Option C v2" and the 6-point plan with "go")
+
+### Context
+
+The owner drew the home they want (two notebook sketches): a left menu with My to-do, Day Log
+and Approvals, then the departments the user has access to; each department shows numbered
+checks with counts ("Plans available for production (2)") that open the documents behind
+them; a Facebook-style bell. ADR-250's home (cues, 12 lists, waiting, widgets, customize)
+did not match how they read the factory.
+
+### Decision
+
+- `/` becomes a left-menu board; view in the URL (`?view=`). Widgets, Customize, cues,
+  Waiting on others, Sent by me and Shortcuts are removed from the home.
+- GET /dashboard/checks: 15 checks over 5 departments (`DASH_CHECK_KEYS`), reusing the
+  ADR-250 list SQL where one exists; a department shows only with a tier in it, a check only
+  if the caller can open its View-all page. Count = rows on the View-all filter.
+- Rules decided by the owner (plan D1–D6): Plans available = approved RC + Pending > 0 + no
+  PRO (RM issue not required); overdue plans by plan start date; Production due this week =
+  PROs by target date; Sales checks include JWSO lines, week/month exclude overdue; Store
+  "GRN pending" = all pending PO lines, Purchase "Overdue POs" = late only; "Plans with RM
+  short" dropped (nothing computes it).
+- Check lines start collapsed; each user sets `Lists open as` and per-check open state
+  (user_ui_settings, one row per check — no JSON array).
+- Bell on every page: latest 6, All/Unread, mark read/unread per item, View all (30 days).
+  New table `notification_reads` (self-only RLS, not live); "Mark all as read" moves
+  `notifications_seen_at` to the newest shown event, so later events stay unread.
+- My to-do: Create to-do form (Me → POST /tasks/personal with optional linked document;
+  someone else → POST /tasks); empty state with Create to-do. Task complete/cancel made a
+  conditional UPDATE (CLAUDE.md §20.2), answering 409 to the second click/user.
+
+### Alternatives Considered
+
+- Keep notifications as one "seen" timestamp — rejected: the owner wants per-item read/unread.
+- Store open checks as one JSON value — rejected: CLAUDE.md §12 anti-pattern #1.
+- Per-document Show/Hide and action buttons inside checks — mocked up, rejected by the owner.
+
+### Consequences
+
+- Positive: one board, rights-filtered, counts equal their list pages.
+- Negative: users lose Widgets/Customize/Shortcuts on the home.
+- Risks: check SQL cost on large tables (each check guarded; one slow check never blanks the page).
+

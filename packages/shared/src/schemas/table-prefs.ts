@@ -14,14 +14,37 @@ export const tableDensitySchema = z.enum(TABLE_DENSITIES);
 export type TableDensity = z.infer<typeof tableDensitySchema>;
 export const DEFAULT_TABLE_DENSITY: TableDensity = 'comfortable';
 
+/** ADR-262 home: how department check lists open — each user picks. */
+export const DASHBOARD_LIST_OPEN = ['collapsed', 'expanded'] as const;
+export const dashboardListOpenSchema = z.enum(DASHBOARD_LIST_OPEN);
+export type DashboardListOpen = z.infer<typeof dashboardListOpenSchema>;
+export const DEFAULT_DASHBOARD_LIST_OPEN: DashboardListOpen = 'collapsed';
+
 export const uiSettingsSchema = z.object({
   tableDensity: tableDensitySchema,
+  dashboardListOpen: dashboardListOpenSchema,
+  /** Checks the user opened / closed by hand, overriding dashboardListOpen.
+   *  Stored one user_ui_settings row per check (`dash_open_<checkKey>`). */
+  dashboardCheckOpen: z.record(z.string(), z.boolean()),
 });
 export type UiSettings = z.infer<typeof uiSettingsSchema>;
 
-export const saveUiSettingsInputSchema = z.object({
-  tableDensity: tableDensitySchema,
-});
+/** PUT /me/ui-settings — send only what changed (at least one field).
+ *  Changing dashboardListOpen clears every per-check override. */
+export const saveUiSettingsInputSchema = z
+  .object({
+    tableDensity: tableDensitySchema.optional(),
+    dashboardListOpen: dashboardListOpenSchema.optional(),
+    /** Per-check open state; checkKey letters + underscore (DASH_CHECK_KEYS). */
+    dashboardCheckOpen: z
+      .array(z.object({ checkKey: z.string().regex(/^[a-z_]{1,48}$/), open: z.boolean() }))
+      .min(1)
+      .max(32)
+      .optional(),
+  })
+  .refine((v) => Object.values(v).some((x) => x !== undefined), {
+    message: 'Nothing to save',
+  });
 export type SaveUiSettingsInput = z.infer<typeof saveUiSettingsInputSchema>;
 
 /** Stable table identity, e.g. `so-master`, `report-so-open-backlog`. */

@@ -1,5 +1,7 @@
-// The logged-in user's UI settings (ADR-199): today only the table density,
-// Comfortable / Compact, one choice for EVERY table.
+// The logged-in user's UI settings (ADR-199): the table density, Comfortable /
+// Compact, one choice for EVERY table — and (ADR-262) how the home's department
+// check lines open: `dashboardListOpen` plus the per-check overrides
+// `dashboardCheckOpen`.
 //
 // GET /me/ui-settings on first use; any failure (including a 404 before the
 // API side is deployed) falls back to Comfortable silently. A change applies
@@ -9,6 +11,7 @@
 import { useCallback, useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  DEFAULT_DASHBOARD_LIST_OPEN,
   DEFAULT_TABLE_DENSITY,
   type SaveUiSettingsInput,
   type TableDensity,
@@ -24,7 +27,41 @@ import { useSession } from './session';
 export const uiSettingsQueryKey = (userId: string) => ['me', 'ui-settings', userId] as const;
 export const DENSITY_BODY_CLASS = 'density-compact';
 
-const FALLBACK: UiSettings = { tableDensity: DEFAULT_TABLE_DENSITY };
+const FALLBACK: UiSettings = {
+  tableDensity: DEFAULT_TABLE_DENSITY,
+  dashboardListOpen: DEFAULT_DASHBOARD_LIST_OPEN,
+  dashboardCheckOpen: {},
+};
+
+/** Field by field, so an older API that answers only `tableDensity` still
+ *  keeps the user's density (the missing fields take their defaults). */
+function readSettings(raw: unknown): UiSettings {
+  const parsed = uiSettingsSchema.partial().safeParse(raw);
+  if (!parsed.success) return FALLBACK;
+  const d = parsed.data;
+  return {
+    tableDensity: d.tableDensity ?? FALLBACK.tableDensity,
+    dashboardListOpen: d.dashboardListOpen ?? FALLBACK.dashboardListOpen,
+    dashboardCheckOpen: d.dashboardCheckOpen ?? {},
+  };
+}
+
+/** The cache after a save — the same rules the server applies: a new
+ *  `dashboardListOpen` clears every per-check override; per-check entries
+ *  merge into the record. */
+export function applySave(prev: UiSettings, next: SaveUiSettingsInput): UiSettings {
+  const out: UiSettings = { ...prev };
+  if (next.tableDensity) out.tableDensity = next.tableDensity;
+  if (next.dashboardListOpen) {
+    out.dashboardListOpen = next.dashboardListOpen;
+    out.dashboardCheckOpen = {};
+  }
+  if (next.dashboardCheckOpen) {
+    out.dashboardCheckOpen = { ...out.dashboardCheckOpen };
+    for (const c of next.dashboardCheckOpen) out.dashboardCheckOpen[c.checkKey] = c.open;
+  }
+  return out;
+}
 
 export function applyDensity(density: TableDensity): void {
   if (typeof document === 'undefined') return;
@@ -43,8 +80,7 @@ export function useUiSettings(): {
     enabled: userId !== undefined,
     queryFn: async () => {
       try {
-        const parsed = uiSettingsSchema.safeParse(await apiFetch<unknown>('/me/ui-settings'));
-        const out = parsed.success ? parsed.data : FALLBACK;
+        const out = readSettings(await apiFetch<unknown>('/me/ui-settings'));
         // Applied here, before the data reaches any screen, so a table that
         // measures its columns on that render already sees the right density.
         applyDensity(out.tableDensity);
@@ -71,13 +107,12 @@ export function useUiSettings(): {
   const save = useCallback(
     (next: SaveUiSettingsInput) => {
       // Instant: the class and the cache flip now; the save follows.
-      // Only ever on the user's own click — never on mount — and density is
-      // one value, so the last write is the right one.
-      qc.setQueryData<UiSettings>(uiSettingsQueryKey(userId ?? ''), (prev) => ({
-        ...(prev ?? FALLBACK),
-        ...next,
-      }));
-      applyDensity(next.tableDensity);
+      // Only ever on the user's own click — never on mount. Each save sends
+      // only what changed, so two quick clicks never overwrite each other.
+      qc.setQueryData<UiSettings>(uiSettingsQueryKey(userId ?? ''), (prev) =>
+        applySave(prev ?? FALLBACK, next),
+      );
+      if (next.tableDensity) applyDensity(next.tableDensity);
       mutate(next);
     },
     [qc, mutate, userId],
