@@ -1445,6 +1445,9 @@ export async function buildBomImportTemplate(user: AuthContext): Promise<Buffer>
         options: BOM_LINE_TYPES.map((t) => BOM_LINE_TYPE_LABEL[t]),
         width: 16,
       },
+      // D2 — the child part's Drawing Rev (SHAFT/2). Optional in the sheet: a
+      // Manufacture sample carries one, a Buy part none (a Buy part has no Rev).
+      { label: 'Drawing Rev', samples: ['1', ''], width: 12 },
       ...(gradeNames.length > 0
         ? [{ label: 'RM Grade', samples: [gradeNames[0] ?? ''], options: gradeNames, width: 22 }]
         : [{ label: 'RM Grade', width: 22 }]),

@@ -6,7 +6,6 @@
 import {
   BOM_LINE_TYPE_LABEL,
   type MlBomImportBom,
-  type MlBomImportInput,
   type MlBomImportResult,
   type MlBomImportRowResult,
   type MlBomLineInput,
@@ -24,6 +23,7 @@ import {
   norm,
 } from './import-rows';
 import { type TreeLine, buildImportTree } from './import-tree';
+import type { MlBomImportInputWithRev as MlBomImportInput } from './schema';
 
 /** One BOM the save will write — only built when the whole file is ok. */
 export interface BomPlan {
@@ -184,6 +184,9 @@ export async function validateImport(
             rawMaterialGradeId: c.gradeId,
             rawMaterialSizeId: c.sizeId,
             remarks: c.remarks,
+            // D2: blank → not sent (a revise keeps the stored Rev of the same
+            // child; a new MAKE child is saved with no Rev — requireRev: false).
+            ...(c.drawingRev ? { childDrawingRev: c.drawingRev } : {}),
           })),
       });
     }

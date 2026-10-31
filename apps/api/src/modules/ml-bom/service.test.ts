@@ -5,7 +5,7 @@
 import { eq, inArray, like } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
-import { items, mlBoms, users } from '../../db/schema';
+import { items, mlBomLines, mlBoms, users } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
 import { AppError, AuthorizationError, ConflictError, ValidationError } from '../../lib/errors';
 import { AUDITOR, asAccess } from '../../lib/test-access';
@@ -35,8 +35,13 @@ async function cleanup(): Promise<void> {
       .where(like(items.code, `${TEST_PREFIX}%`))
   ).map((r) => r.id);
   if (ids.length > 0) {
-    // One statement: the composite sub-assembly FK is checked at its end, so
-    // BOMs linking each other go together. Lines + revisions cascade.
+    // Lines first: the sub-assembly link FK (NO ACTION) is checked before the
+    // line cascade of a one-statement BOM delete has run, so a BOM another
+    // test BOM links could not be deleted (pre-existing cleanup fault).
+    const bomIds = (
+      await db.select({ id: mlBoms.id }).from(mlBoms).where(inArray(mlBoms.itemId, ids))
+    ).map((r) => r.id);
+    if (bomIds.length > 0) await db.delete(mlBomLines).where(inArray(mlBomLines.mlBomId, bomIds));
     await db.delete(mlBoms).where(inArray(mlBoms.itemId, ids));
   }
   await db.delete(items).where(like(items.code, `${TEST_PREFIX}%`));
@@ -59,6 +64,8 @@ beforeAll(async () => {
         revision: 'A',
         uom: (c === 'KG' ? 'KGS' : 'NOS') as 'KGS' | 'NOS',
         itemType: 'component' as const,
+        // Not a Drawing Rev test: Buy parts need no Rev on a BOM line (D2).
+        procurementType: 'buy',
         createdBy: u.id,
         updatedBy: u.id,
       })),

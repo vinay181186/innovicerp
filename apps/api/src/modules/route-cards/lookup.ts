@@ -1,40 +1,13 @@
-// The ONE Route Card for an Item + Drawing Rev (0232: one card per Item + Rev;
-// old cards with no Rev keep one per item). Shared by the Route Card writers
-// and the plan / PRO lookups.
+// The Route Card's Item + Drawing Rev drawing (0232). The "which card is
+// the card for this Item + Rev" lookup lives in ONE place —
+// lib/route-card-for-rev.ts readRouteCardForItemRev (§21) — re-exported here
+// for the Route Card writers.
 
-import { and, eq, isNull } from 'drizzle-orm';
-import { itemRevisions, routeCards } from '../../db/schema';
+import { eq } from 'drizzle-orm';
+import { itemRevisions } from '../../db/schema';
 import type { DbTransaction } from '../../db/with-user-context';
 
-export interface RouteCardForItemRevision {
-  id: string;
-  code: string;
-  approvalStatus: string;
-}
-
-/** Rev given → the card holding that item_revision_id; null → the card of
- *  that item with NO Rev (an old card). Live cards only. */
-export async function findRouteCardForItemRevision(
-  tx: DbTransaction,
-  companyId: string,
-  itemId: string,
-  itemRevisionId: string | null,
-): Promise<RouteCardForItemRevision | null> {
-  const [row] = await tx
-    .select({ id: routeCards.id, code: routeCards.code, approvalStatus: routeCards.approvalStatus })
-    .from(routeCards)
-    .where(
-      and(
-        eq(routeCards.companyId, companyId),
-        isNull(routeCards.deletedAt),
-        itemRevisionId
-          ? eq(routeCards.itemRevisionId, itemRevisionId)
-          : and(eq(routeCards.itemId, itemId), isNull(routeCards.itemRevisionId)),
-      ),
-    )
-    .limit(1);
-  return row ?? null;
-}
+export { readRouteCardForItemRev } from '../../lib/route-card-for-rev';
 
 export interface CardDrawing {
   itemRevisionId: string | null;

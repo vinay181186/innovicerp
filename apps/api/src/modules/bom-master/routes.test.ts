@@ -47,6 +47,8 @@ beforeAll(async () => {
         revision: 'A',
         uom: 'NOS',
         itemType: 'component',
+        // Not a Drawing Rev test: a Buy child needs no Rev (D2).
+        procurementType: 'buy',
         createdBy: admin.id,
         updatedBy: admin.id,
       },

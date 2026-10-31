@@ -27,6 +27,8 @@ export const ML_BOM_IMPORT_HEADERS = [
   'RM Grade',
   'RM Size',
   'Line Remarks',
+  // Optional (Drawing Rev register D2): an old sheet without it still imports.
+  'Drawing Rev',
 ] as const;
 
 /** One sheet row exactly as typed (strings), plus its sheet row number. */
@@ -41,6 +43,8 @@ export const mlBomImportRowSchema = z.object({
   rawMaterialGrade: z.string().max(120).nullable().optional(),
   rawMaterialSize: z.string().max(160).nullable().optional(),
   remarks: z.string().max(500).nullable().optional(),
+  /** D2: the child part's Drawing Rev (optional on import; blank = none). */
+  childDrawingRev: z.string().max(40).nullable().optional(),
 });
 export type MlBomImportRow = z.infer<typeof mlBomImportRowSchema>;
 

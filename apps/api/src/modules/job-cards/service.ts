@@ -83,6 +83,7 @@ import {
   ActivityAction,
   type ActivityChange,
   isGeneratedTerminalQcOp,
+  itemRevLabel,
   opSrNo,
   stripStaleGeneratedTerminalQc,
 } from '@innovic/shared';
@@ -864,19 +865,18 @@ export async function getJobCardEditModel(
         -- would arrive as a number wearing a string type. No-op once 0119/0120
         -- are in, and it keeps the two sources the same shape.
         --
-        -- Drawing Rev register (owner 2026-10-31): a card that names its Item +
-        -- Rev (ABC/1) shows THAT register's file first — a split line can have
-        -- JC-1 at ABC/1 and JC-2 at ABC/2. A finished card shows the file that
-        -- was current when it finished (latest history row at or before that
-        -- time, else the register's current file). The line's own file is the
-        -- fallback for cards made before the register. Carried in the source
-        -- line's slot so the screen's SO → JW → card order is unchanged.
-        CASE WHEN jc.source_so_line_id IS NOT NULL
-             THEN COALESCE(jrev.file_path, sol.drawing_file_path) END AS "soLineDrawingFilePath",
-        COALESCE(jir.rev, sol.revision::text) AS "soLineRevision",
-        CASE WHEN jc.source_jw_line_id IS NOT NULL
-             THEN COALESCE(jrev.file_path, jwl.drawing_file_path) END AS "jwLineDrawingFilePath",
-        COALESCE(jir.rev, jwl.revision::text) AS "jwLineRevision",
+        sol.drawing_file_path AS "soLineDrawingFilePath",
+        sol.revision::text    AS "soLineRevision",
+        jwl.drawing_file_path AS "jwLineDrawingFilePath",
+        jwl.revision::text    AS "jwLineRevision",
+        -- Drawing Rev register (owner 2026-10-31): the card's OWN Item + Rev
+        -- (ABC/1) drawing, in its own field — a split line can have JC-1 at
+        -- ABC/1 and JC-2 at ABC/2. A finished card shows the file that was
+        -- current when it finished (latest history row at or before that time,
+        -- else the register's current file). The screen reads it before the
+        -- SO / JW line file; the line slots keep the line's true values.
+        jrev.file_path AS "revisionDrawingFilePath",
+        jir.rev        AS "revisionRev",
         -- Last fallback: the item master's own drawing. Covers a hand-raised
         -- card with no source line at all, and a JWSO line that predates
         -- migration 0120 and so never had a file to carry.
@@ -996,6 +996,10 @@ export async function getJobCardEditModel(
       // At most one of the two line paths is ever set; the screen picks the
       // order it prefers and labels which file it is showing.
       soLineDrawingFilePath: (h['soLineDrawingFilePath'] as string | null) ?? null,
+      revisionDrawingFilePath: (h['revisionDrawingFilePath'] as string | null) ?? null,
+      revisionLabel: h['revisionRev']
+        ? itemRevLabel((h['itemCode'] as string | null) ?? '', h['revisionRev'] as string)
+        : null,
       jwLineDrawingFilePath: (h['jwLineDrawingFilePath'] as string | null) ?? null,
       itemDrawingFilePath: (h['itemDrawingFilePath'] as string | null) ?? null,
       itemImagePath: (h['itemImagePath'] as string | null) ?? null,

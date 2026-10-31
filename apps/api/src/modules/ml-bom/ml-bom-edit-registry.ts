@@ -41,7 +41,12 @@ import { updateMlBomTx } from './writes';
 
 const FORM_KEY: AccessFormKey = 'mlbom_create';
 
-export type MlBomEditPayload = { op: 'revise'; input: UpdateMlBomInput } | { op: 'makeDefault' };
+/** `requireRev: false` = staged by the Excel import (D2): the approval replay
+ *  saves a MAKE child with no Drawing Rev as null, exactly as the direct
+ *  import would. Absent (PUT from the screen) = the Rev stays compulsory. */
+export type MlBomEditPayload =
+  | { op: 'revise'; input: UpdateMlBomInput; requireRev?: false }
+  | { op: 'makeDefault' };
 
 const FIELDS: readonly DiffField[] = [
   { key: 'remarks', label: 'Remarks' },
@@ -231,6 +236,7 @@ export const mlBomEditRegistryEntry: DocEditRegistryEntry = {
       remarks,
       lines,
       input: p.input,
+      ...(p.requireRev === false ? { requireRev: false } : {}),
       // The requester's note rides with the FIRST applying decide only.
       revisionNote: ctx?.firstApply === false ? null : (p.input.revisionNote ?? null),
     };
@@ -245,6 +251,7 @@ export const mlBomEditRegistryEntry: DocEditRegistryEntry = {
           lines: boolean;
           input: UpdateMlBomInput;
           revisionNote: string | null;
+          requireRev?: false;
         };
     // The engine resolved freshness under the locks loadForDiff took, so the
     // writer's own updated_at check must see the CURRENT token (a no-op match).
@@ -284,7 +291,9 @@ export const mlBomEditRegistryEntry: DocEditRegistryEntry = {
       expectedUpdatedAt: token,
     };
     if (f.remarks) input.remarks = f.input.remarks ?? null;
-    await updateMlBomTx(tx, companyId, id, input, user);
+    await updateMlBomTx(tx, companyId, id, input, user, {
+      requireRev: f.requireRev !== false,
+    });
   },
 
   async loadUpdatedAts(tx, companyId, ids) {

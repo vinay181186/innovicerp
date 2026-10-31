@@ -35,6 +35,7 @@ import type {
 import {
   bomMasterLines,
   bomMasters,
+  itemRevisions,
   items,
   itemStockBalances,
   jcOps,
@@ -670,9 +671,18 @@ export async function getPlanningSoDetail(
         // in. It is never items.revision, a different column about the item
         // master.
         itemRevision: sql<string | null>`${salesOrderLines.revision}::text`,
+        // Item + Drawing Rev register (ABC/1) — the line's own Rev.
+        drawingRev: itemRevisions.rev,
       })
       .from(salesOrderLines)
       .leftJoin(items, and(eq(items.id, salesOrderLines.itemId), isNull(items.deletedAt)))
+      .leftJoin(
+        itemRevisions,
+        and(
+          eq(itemRevisions.id, salesOrderLines.itemRevisionId),
+          isNull(itemRevisions.deletedAt),
+        ),
+      )
       .where(
         and(
           eq(salesOrderLines.salesOrderId, soId),
@@ -1104,6 +1114,8 @@ export async function getPlanningSoDetail(
 
       return {
         soLineId: r.line.id,
+        itemRevisionId: r.drawingRev ? r.line.itemRevisionId : null,
+        drawingRev: r.drawingRev ?? null,
         lineNo: r.line.lineNo,
         clientPoLineNo: r.line.clientPoLineNo,
         itemId: r.line.itemId,
@@ -1212,9 +1224,18 @@ async function getJwPlanningDetail(
       itemCode: items.code,
       itemName: items.name,
       itemProcurementType: items.procurementType,
+      // Item + Drawing Rev register (ABC/1) — the line's own Rev.
+      drawingRev: itemRevisions.rev,
     })
     .from(jobWorkOrderLines)
     .leftJoin(items, and(eq(items.id, jobWorkOrderLines.itemId), isNull(items.deletedAt)))
+    .leftJoin(
+      itemRevisions,
+      and(
+        eq(itemRevisions.id, jobWorkOrderLines.itemRevisionId),
+        isNull(itemRevisions.deletedAt),
+      ),
+    )
     .where(
       and(
         eq(jobWorkOrderLines.jobWorkOrderId, jwId),
@@ -1412,6 +1433,8 @@ async function getJwPlanningDetail(
 
     return {
       soLineId: r.line.id,
+      itemRevisionId: r.drawingRev ? r.line.itemRevisionId : null,
+      drawingRev: r.drawingRev ?? null,
       lineNo: r.line.lineNo,
       // ADR-236: the JW line carries the customer's PO line no. too.
       clientPoLineNo: r.line.clientPoLineNo ?? null,

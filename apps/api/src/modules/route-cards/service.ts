@@ -93,7 +93,7 @@ import { isRouteCardUsable } from '../../lib/route-card-usable';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { isUniqueViolation } from '../../lib/db-retry';
 import { findItemRevision, itemNeedsRev, resolveItemRevision } from '../../lib/item-revision';
-import { findRouteCardForItemRevision, readCardDrawing } from './lookup';
+import { readCardDrawing, readRouteCardForItemRev } from './lookup';
 import { logger } from '../../lib/logger';
 import { emitActivityLog } from '../activity-log/service';
 import {
@@ -1081,7 +1081,7 @@ export async function createRouteCard(
         : null;
 
       // One live card per Item + Rev (old / Buy cards: one per item with no Rev).
-      const existing = await findRouteCardForItemRevision(
+      const existing = await readRouteCardForItemRev(
         tx,
         companyId,
         input.itemId,
@@ -1194,7 +1194,7 @@ async function assertDrawingRevEdit(
   const reg = await findItemRevision(tx, companyId, input.itemId, input.drawingRev);
   if (!reg) return;
   const label = itemRevLabel(itemCode, normalizeRevision(input.drawingRev));
-  const other = await findRouteCardForItemRevision(tx, companyId, input.itemId, reg.id);
+  const other = await readRouteCardForItemRev(tx, companyId, input.itemId, reg.id);
   if (other && other.id !== id)
     throw new ConflictError(`${other.code} already exists for ${label}`);
   const offered = input.drawingFilePath?.trim() || null;
@@ -1658,7 +1658,8 @@ export async function updateRouteCardTx(
   // usable, so its raw material waits; approveRouteCard runs this same
   // backfill at approval time.
   if (input.itemId === header.itemId && isRouteCardUsable(header.approvalStatus)) {
-    const rcRm = await readRouteCardRawMaterial(tx, companyId, input.itemId);
+    // The card's own Item + Drawing Rev (after this edit) — exactly this card.
+    const rcRm = await readRouteCardRawMaterial(tx, companyId, input.itemId, itemRevisionId);
     if (rcRm) await backfillPlansFromRouteCard(tx, companyId, input.itemId, rcRm, user);
   }
 
@@ -2573,7 +2574,7 @@ export async function saveRouteCardForItem(
         eq(routeCards.companyId, companyId),
         isNull(routeCards.deletedAt),
         // One card per Item + Rev; a no-Rev source finds the old no-Rev card
-        // (same rule as findRouteCardForItemRevision, ./lookup.ts).
+        // (same rule as readRouteCardForItemRev, lib/route-card-for-rev.ts).
         itemRevisionId
           ? eq(routeCards.itemRevisionId, itemRevisionId)
           : and(eq(routeCards.itemId, itemId), isNull(routeCards.itemRevisionId)),

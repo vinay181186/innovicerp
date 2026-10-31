@@ -24,6 +24,10 @@ export interface BomChildRevLine {
  *     BOM lines with no Rev stay valid; no forced backfill).
  *   • Rev not sent at all on an edit → the stored Rev of the same child is kept.
  *   • BUY child / raw material: always null (a typed Rev is ignored).
+ *   • requireRev: false (Excel IMPORTS only): a MAKE child with no Rev is saved
+ *     with a null Rev instead of refused — an import is never stopped for a
+ *     missing Rev; the Fix List picks the line up later. The on-screen
+ *     create / edit keeps the default (true): the Rev stays compulsory.
  */
 export async function resolveBomChildRevs(
   tx: DbTransaction,
@@ -36,6 +40,8 @@ export async function resolveBomChildRevs(
     bomRef: string;
     /** On an edit: the lines stored before it, child item → stored Rev id. */
     stored?: ReadonlyMap<string, string | null>;
+    /** Default true. false = imports: a blank Rev on a MAKE child → null. */
+    requireRev?: boolean;
   },
 ): Promise<Array<string | null>> {
   const ids = Array.from(new Set(lines.map((l) => l.childItemId)));
@@ -64,6 +70,10 @@ export async function resolveBomChildRevs(
       }
       if (has && storedRev === null) {
         out.push(null); // an old line with no Rev stays valid
+        continue;
+      }
+      if (opts.requireRev === false) {
+        out.push(null); // import: allowed with no Rev (Fix List covers it)
         continue;
       }
       throw new ValidationError(`Ln ${i + 1}: Drawing Rev is required for ${it.code}`);

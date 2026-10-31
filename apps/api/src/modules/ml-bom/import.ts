@@ -24,7 +24,6 @@ import { and, eq, isNull } from 'drizzle-orm';
 import {
   ActivityAction,
   type MlBomImportBom,
-  type MlBomImportInput,
   type MlBomImportResult,
 } from '@innovic/shared';
 import { primeAccess, requireFormAccess } from '../../lib/access';
@@ -37,6 +36,7 @@ import { lockMlBomTree } from './guards';
 import { requireCompany } from './helpers';
 import { type BomPlan, type ImportValidation, validateImport } from './import-validate';
 import type { MlBomEditPayload } from './ml-bom-edit-registry';
+import type { MlBomImportInputWithRev as MlBomImportInput } from './schema';
 import { precheckMlBomRevise } from './service';
 import {
   ENTITY,
@@ -216,6 +216,8 @@ async function saveImport(
           expectedUpdatedAt: p.existing.updatedAt,
         },
         user,
+        // D2: an import is never refused for a missing Drawing Rev.
+        { requireRev: false },
       );
       touched.push(r.header.id);
       saved.set(p.item.id, {
@@ -235,6 +237,7 @@ async function saveImport(
         { itemId: p.item.id, lines: p.lines },
         user,
         note,
+        { requireRev: false },
       );
       touched.push(r.header.id, ...r.relinked);
       saved.set(p.item.id, {
@@ -317,7 +320,7 @@ async function stageRevise(
 ): Promise<SavedBom | null> {
   const existing = p.existing!;
   const input = { itemId: p.item.id, lines: p.lines, revisionNote: note };
-  const payload: MlBomEditPayload = { op: 'revise', input };
+  const payload: MlBomEditPayload = { op: 'revise', input, requireRev: false };
   const base = { id: existing.id, code: existing.code, revision: existing.revision, revised: null };
   try {
     const requestId = await requestDocumentEditIdInTx(
