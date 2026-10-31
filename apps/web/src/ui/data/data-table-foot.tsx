@@ -24,6 +24,8 @@ export interface FitFootProps<T> {
   selectable: boolean;
   /** A trailing Action column is present — emit its spacer cell. */
   hasActions: boolean;
+  /** An empty trailing cell takes the spare width — emit it too. */
+  spare: boolean;
 }
 
 export function FitFoot<T>(p: FitFootProps<T>): ReactElement {
@@ -48,6 +50,7 @@ export function FitFoot<T>(p: FitFootProps<T>): ReactElement {
           );
         })}
         {p.hasActions ? <td aria-hidden="true" /> : null}
+        {p.spare ? <td className="dt-spare" aria-hidden="true" /> : null}
       </tr>
     </tfoot>
   );

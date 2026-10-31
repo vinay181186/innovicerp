@@ -14,8 +14,8 @@
 //      to the user's profile; R8 the Action column is always last and kept.
 // Measuring lives in use-fit-measure.ts, the body rows in FitRows.tsx.
 
-import { useLayoutEffect, useMemo, useState } from 'react';
-import type { CSSProperties, ReactElement } from 'react';
+import { Children, cloneElement, isValidElement, useLayoutEffect, useMemo, useState } from 'react';
+import type { CSSProperties, ReactElement, ReactNode } from 'react';
 
 import { useTableLayout } from '@/lib/use-table-layout';
 import { useTableDensity } from '@/lib/use-ui-settings';
@@ -169,9 +169,12 @@ export function FitDataTable<T>(props: DataTableProps<T> & { tableKey: string })
   // Spare width once every column shows its full content (fit-layout `fill`).
   // No data column takes it: the Action column does, with ⋯ kept at its left
   // edge — so ⋯ sits next to the last data column and the empty space trails
-  // after it. A table with no Action column simply ends at its last column.
+  // after it. A table with no Action column gets an empty trailing cell of
+  // that width instead, so the sheet (header line, row lines, row colour)
+  // still runs edge to edge while every data column stays tight.
   const fill = fit?.fill ?? 0;
-  const nCols = visible.length + (rowActions ? 1 : 0) + (selectable ? 1 : 0);
+  const spare = fill > 0 && !rowActions;
+  const nCols = visible.length + (rowActions ? 1 : 0) + (selectable ? 1 : 0) + (spare ? 1 : 0);
   const hasRows = !loading && rows.length > 0;
   const wrapStyle: CSSProperties | undefined = maxHeight !== undefined ? { maxHeight } : undefined;
   const sort = { sortBy, sortDir, onSort };
@@ -187,7 +190,6 @@ export function FitDataTable<T>(props: DataTableProps<T> & { tableKey: string })
   // re-scope in innovic-theme.css for `.dt-has-sel`).
   const tableStyle: CSSProperties = {
     ...(selectable ? ({ '--dt-sel-w': `${selW}px` } as CSSProperties) : {}),
-    ...(fit && fill > 0 && !rowActions ? { width: fit.budget - fill + selW } : {}),
   };
 
   return (
@@ -235,6 +237,7 @@ export function FitDataTable<T>(props: DataTableProps<T> & { tableKey: string })
                 <col key={k} style={{ width: fit.w[k] }} />
               ))}
               {rowActions ? <col style={{ width: actionsW + fill }} /> : null}
+              {spare ? <col style={{ width: fill }} /> : null}
             </colgroup>
           ) : null}
           <thead>
@@ -270,6 +273,7 @@ export function FitDataTable<T>(props: DataTableProps<T> & { tableKey: string })
                 );
               })}
               {rowActions ? <th scope="col">{rowActionsHeader}</th> : null}
+              {spare ? <th className="dt-spare" aria-hidden="true" /> : null}
             </tr>
           </thead>
           <tbody>
@@ -299,6 +303,7 @@ export function FitDataTable<T>(props: DataTableProps<T> & { tableKey: string })
                 setOpenKeys={setOpenKeys}
                 selectable={selectable}
                 selection={selection}
+                spare={spare}
               />
             )}
           </tbody>
@@ -312,9 +317,10 @@ export function FitDataTable<T>(props: DataTableProps<T> & { tableKey: string })
               totalsLabel={totalsLabel}
               selectable={selectable}
               hasActions={rowActions !== undefined}
+              spare={spare}
             />
           ) : footer && hasRows ? (
-            <tfoot>{footer}</tfoot>
+            <tfoot>{spare ? withSpareCell(footer) : footer}</tfoot>
           ) : null}
         </table>
       </div>
@@ -332,5 +338,21 @@ export function FitDataTable<T>(props: DataTableProps<T> & { tableKey: string })
         onSort={onSort}
       />
     </div>
+  );
+}
+
+/** The caller's raw footer rows, each given the empty trailing cell so a
+ *  total row runs to the edge like the rows above it. Only top-level <tr>
+ *  elements are reached (the one caller, the report grid, passes one). */
+function withSpareCell(footer: ReactNode): ReactNode {
+  return Children.map(footer, (tr) =>
+    isValidElement<{ children?: ReactNode }>(tr) && tr.type === 'tr'
+      ? cloneElement(
+          tr,
+          undefined,
+          tr.props.children,
+          <td key="dt-spare" className="dt-spare" aria-hidden="true" />,
+        )
+      : tr,
   );
 }

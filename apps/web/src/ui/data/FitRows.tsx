@@ -38,6 +38,8 @@ export interface FitRowsProps<T> {
   selectable: boolean;
   /** The derived selection state (caller-owned set). */
   selection: RowSelectionModel<T>;
+  /** An empty trailing cell takes the spare width (table with no ⋯). */
+  spare: boolean;
 }
 
 export function FitRows<T>(p: FitRowsProps<T>): ReactElement {
@@ -129,6 +131,7 @@ export function FitRows<T>(p: FitRowsProps<T>): ReactElement {
                   {p.rowActions(row, ri)}
                 </td>
               ) : null}
+              {p.spare ? <td className="dt-spare" aria-hidden="true" /> : null}
             </tr>
             {engineOpen && (p.detailIds.length > 0 || !extra) ? (
               <tr className="dt-detail-row">
