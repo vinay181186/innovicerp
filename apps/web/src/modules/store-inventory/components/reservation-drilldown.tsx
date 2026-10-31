@@ -18,9 +18,8 @@ import {
 import { Link } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { fmtDate } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
 import { useStockReservations } from '@/modules/plans/api';
-import { DataTable, type DataTableColumn } from '@/ui/data';
+import { DataTable, leadColumns, type DataTableColumn } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ModalShell } from './modal-shell';
 import { RevStockTable } from './rev-stock-table';
@@ -56,37 +55,40 @@ function StatusBadge({ row }: { row: ReservationDetail }): React.JSX.Element {
   );
 }
 
-function reservationColumns(itemCode: string): DataTableColumn<ReservationDetail>[] {
+function reservationColumns(
+  itemCode: string,
+  itemName: string,
+): DataTableColumn<ReservationDetail>[] {
   return [
-    {
-      id: 'so_no',
-      header: 'SO No.',
-      kind: 'code',
-      nowrap: true,
-      className: 'td-code',
-      render: (row) =>
-        row.salesOrderId ? (
-          <Link
-            to="/sales-orders/$id"
-            params={{ id: row.salesOrderId }}
-            className="mono fw-700"
-            style={linkStyle}
-          >
-            {row.soCodeText}
-          </Link>
-        ) : (
-          <PlainRef code={row.soCodeText} />
-        ),
-    },
-    {
-      // ADR-207 — the office's own number, its OWN column beside the system
-      // SO No. (owner decision 2026-10-05). Many older orders have none.
-      id: 'so_internal_no',
-      header: 'Internal SO No.',
-      kind: 'code',
-      nowrap: true,
-      render: (row) => <PlainRef code={row.soInternalNo?.trim() || null} />,
-    },
+    // ADR-261 — the six lead columns. Created On = the booking's created_at
+    // (the same instant as Reserved On, which stays further right). Item Code
+    // carries the SO line's drawing rev (CODE/REV); Item Name is the item's.
+    ...leadColumns<ReservationDetail>({
+      soNo: (row) => row.soCodeText,
+      internalSoNo: (row) => row.soInternalNo,
+      pol: (row) => row.clientPoLineNo,
+      createdOn: (row) => row.reservedAt,
+      itemCode: (row) => row.itemCode ?? itemCode,
+      itemRev: (row) => row.itemRevision,
+      itemName: () => itemName,
+      overrides: {
+        so_no: {
+          render: (row) =>
+            row.salesOrderId ? (
+              <Link
+                to="/sales-orders/$id"
+                params={{ id: row.salesOrderId }}
+                className="mono fw-700"
+                style={linkStyle}
+              >
+                {row.soCodeText}
+              </Link>
+            ) : (
+              <PlainRef code={row.soCodeText} />
+            ),
+        },
+      },
+    }),
     {
       id: 'line_no',
       header: 'Ln',
@@ -94,26 +96,6 @@ function reservationColumns(itemCode: string): DataTableColumn<ReservationDetail
       nowrap: true,
       className: 'mono text3',
       render: (row) => row.lineNo ?? '—',
-    },
-    {
-      // POL — the CUSTOMER's own purchase-order line number, beside our SO line.
-      id: 'pol',
-      header: 'POL',
-      kind: 'code',
-      nowrap: true,
-      headColor: 'var(--purple)',
-      className: 'mono fw-700',
-      render: (row) => <span style={{ color: 'var(--purple)' }}>{row.clientPoLineNo ?? '—'}</span>,
-    },
-    {
-      // CODE/REV — the item code with the customer's drawing revision on that SO
-      // line; the revision is never shown alone (NAMING section A).
-      id: 'code_rev',
-      header: 'CODE/REV',
-      kind: 'code',
-      nowrap: true,
-      className: 'mono fw-700',
-      render: (row) => itemCodeWithRev(itemCode, row.itemRevision),
     },
     {
       id: 'customer',
@@ -239,7 +221,7 @@ export function ReservationDrilldown({
   // Closed rows (released / cancelled / fully dispatched) are left out: the
   // question this box answers is "who is holding my stock right now".
   const { data, isLoading, isError, error } = useStockReservations({ itemId });
-  const columns = reservationColumns(itemCode);
+  const columns = reservationColumns(itemCode, itemName);
 
   return (
     // The item is named once, in the title — every row is the same item.

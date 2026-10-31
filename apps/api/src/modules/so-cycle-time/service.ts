@@ -44,12 +44,18 @@ function average(rows: SoCycleTimeRow[], key: AvgKey): number {
   return count ? Math.round(sum / count) : 0;
 }
 
+/** ISO timestamp → its India-time day (YYYY-MM-DD) — the Created On column. */
+const istDay = (iso: string | null | undefined): string | null =>
+  iso ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date(iso)) : null;
+
 /** Sort & Filter fields — each the value the screen's column shows. The SO
  *  Status column shows "Completed" once dispatched, so it filters on that. */
 const SCT_SF_COLUMNS: MemSfColumnMap<SoCycleTimeRow> = {
   // Each number has its OWN column now, so each field reads one number only.
   soNo: { type: 'text', get: (r) => r.soNo },
   internalSoNo: { type: 'text', get: (r) => r.internalSoNo ?? null },
+  // ADR-261 Created On — the SO's created_at as the India-time day.
+  createdOn: { type: 'date', get: (r) => istDay(r.createdAt) },
   customer: { type: 'text', get: (r) => r.customer },
   soType: { type: 'list', get: (r) => r.type },
   soStatus: { type: 'list', get: (r) => (r.phases.dispatched ? 'completed' : r.status) },
@@ -81,6 +87,7 @@ export async function getSoCycleTime(
       soId: d.soId,
       soNo: d.soNo,
       internalSoNo: d.internalSoNo,
+      createdAt: d.createdAt ?? null,
       customer: d.customer,
       type: d.type,
       status: d.status,

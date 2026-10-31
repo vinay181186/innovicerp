@@ -2,6 +2,7 @@ import type {
   CloseSalesOrderInput,
   CreateSalesOrderInput,
   DocumentEditStagedResult,
+  ListSalesOrderLinesResponse,
   ListSalesOrdersQuery,
   ListSalesOrdersResponse,
   SalesOrderDetail,
@@ -17,6 +18,9 @@ export const salesOrdersKeys = {
   all: ['sales-orders'] as const,
   lists: () => [...salesOrdersKeys.all, 'list'] as const,
   list: (q: ListSalesOrdersQuery) => [...salesOrdersKeys.lists(), q] as const,
+  /** ADR-261 — the SO Master's one-row-per-line list. Under `lists()` so every
+   *  existing list invalidation refreshes it too. */
+  lineList: (q: ListSalesOrdersQuery) => [...salesOrdersKeys.lists(), 'lines', q] as const,
   details: () => [...salesOrdersKeys.all, 'detail'] as const,
   detail: (id: string) => [...salesOrdersKeys.details(), id] as const,
 };
@@ -47,20 +51,35 @@ export function useSalesOrdersList(
   });
 }
 
-/** Fetch every SO row matching the current filters, for export. The list API
- *  caps `limit` at 200, so we page through in 200-row requests until we've
- *  pulled all `total` rows (instead of one oversized request the API rejects). */
-export async function fetchSalesOrdersForExport(
+/** ADR-261 — SO Master: one row per SO line (GET /sales-orders/lines). */
+export function useSalesOrderLinesList(
   query: ListSalesOrdersQuery,
-): Promise<ListSalesOrdersResponse> {
+  options?: Omit<UseQueryOptions<ListSalesOrderLinesResponse>, 'queryKey' | 'queryFn'>,
+) {
+  return useQuery<ListSalesOrderLinesResponse>({
+    queryKey: salesOrdersKeys.lineList(query),
+    queryFn: () =>
+      apiFetch<ListSalesOrderLinesResponse>(`/sales-orders/lines?${toQueryString(query)}`),
+    placeholderData: (prev) => prev,
+    ...options,
+  });
+}
+
+/** ADR-261 — fetch every SO Master LINE row matching the current filters, for
+ *  export (GET /sales-orders/lines, the screen's own query). The list API caps
+ *  `limit` at 200, so we page through in 200-row requests until we've pulled
+ *  all `total` rows (instead of one oversized request the API rejects). */
+export async function fetchSalesOrderLinesForExport(
+  query: ListSalesOrdersQuery,
+): Promise<ListSalesOrderLinesResponse> {
   const PAGE = 200;
-  const items: ListSalesOrdersResponse['items'] = [];
+  const items: ListSalesOrderLinesResponse['items'] = [];
   let offset = 0;
   let total = 0;
-  // Hard ceiling so a bad `total` can never loop forever (10k SOs max export).
+  // Hard ceiling so a bad `total` can never loop forever (10k lines max export).
   for (let guard = 0; guard < 50; guard += 1) {
-    const res = await apiFetch<ListSalesOrdersResponse>(
-      `/sales-orders?${toQueryString({ ...query, limit: PAGE, offset })}`,
+    const res = await apiFetch<ListSalesOrderLinesResponse>(
+      `/sales-orders/lines?${toQueryString({ ...query, limit: PAGE, offset })}`,
     );
     items.push(...res.items);
     total = res.total;

@@ -12,6 +12,8 @@ export const qcHistoryPendingRowSchema = z.object({
   jcOpId: z.string().uuid(),
   jobCardId: z.string().uuid(),
   jcCode: z.string(),
+  /** ADR-261 lead JC Date — job_cards.jc_date as 'YYYY-MM-DD'. */
+  jcDate: z.string().nullable(),
   opSeq: z.number().int(),
   soCode: z.string().nullable(),
   /** ADR-207: that SO's Internal SO No. (live off sales_orders); null when none. */
@@ -50,6 +52,8 @@ export const qcHistoryPendingRowSchema = z.object({
    *  0040) — the same name and field QC Command's queue shows. Null =
    *  unassigned. ADR-190. */
   assignedTo: z.string().nullable().default(null),
+  /** ADR-261 lead Created On — the QC op's own record created_at (jc_ops). */
+  createdAt: z.string().nullable().default(null),
 });
 export type QcHistoryPendingRow = z.infer<typeof qcHistoryPendingRowSchema>;
 
@@ -59,6 +63,8 @@ export const qcHistoryLogRowSchema = z.object({
    *  page directly (ADR-169). Nullable + defaulted so older API builds parse. */
   jobCardId: z.string().uuid().nullable().default(null),
   jcCode: z.string(),
+  /** ADR-261 lead JC Date — job_cards.jc_date as 'YYYY-MM-DD'. */
+  jcDate: z.string().nullable(),
   opSeq: z.number().int(),
   /** True when this QC op is the job card's LAST live op — the terminal QC
    *  gate that credits finished stock (ADR-069). The QC Call Register's stage
@@ -102,6 +108,8 @@ export const qcHistoryLogRowSchema = z.object({
   // inspector attached a report (legacy L4216 📎 download link).
   qcReportPath: z.string().nullable(),
   qcReportName: z.string().nullable(),
+  /** ADR-261 lead Created On — the QC log row's own created_at (op_log). */
+  createdAt: z.string().nullable().default(null),
 });
 export type QcHistoryLogRow = z.infer<typeof qcHistoryLogRowSchema>;
 
@@ -263,6 +271,8 @@ export interface PartyGrnQcRow {
   qcDate: string | null;
   qcByName: string | null;
   waitDays: number;
+  /** ADR-261 lead Created On — the Party GRN line's created_at (else its GRN's). */
+  createdAt?: string | null;
 }
 
 /** One machine that logged output on the source step (NAMING.md "Actual Machine"). */
@@ -295,6 +305,10 @@ export interface QcRegisterFacts {
   /** NAMING.md "Client PO No.": the SO's client_po_no, else the JWSO's
    *  (job_work_orders.client_po_no). Null on a purchase GRN call / when blank. */
   clientPoNo: string | null;
+  /** ADR-261 lead Doc Date — the date of the Doc No.'s own document, 'YYYY-MM-DD':
+   *  GRN calls goods_receipt_notes.grn_date, Party GRN calls party_grns.grn_date,
+   *  job-card calls job_cards.jc_date. */
+  docDate: string | null;
   /** Job-card calls only; null for GRN / Party GRN calls. */
   sourceStep: QcSourceStep | null;
 }
@@ -318,7 +332,12 @@ export type QcRegisterCompletedItem = QcRegisterFacts &
  *  Days, Stage, Result, Report) have no ▾ — their value is worked out per kind
  *  of call and cannot be sorted the same way across job-card, GRN and Party GRN. */
 export const QC_REGISTER_PENDING_SF_FIELDS = [
+  /** ADR-261 lead SO No. (the SO / JWSO code) and Created On. */
+  'soCode',
+  'createdOn',
   'docNo',
+  /** ADR-261 lead Doc Date (GRN / Party GRN grn_date, JC jc_date). */
+  'docDate',
   'itemCode',
   'itemName',
   'qcPending',
@@ -334,7 +353,12 @@ export const QC_REGISTER_PENDING_SF_FIELDS = [
   'actualMachine',
 ] as const;
 export const QC_REGISTER_COMPLETED_SF_FIELDS = [
+  /** ADR-261 lead SO No. (the SO / JWSO code) and Created On. */
+  'soCode',
+  'createdOn',
   'docNo',
+  /** ADR-261 lead Doc Date (GRN / Party GRN grn_date, JC jc_date). */
+  'docDate',
   'itemCode',
   'itemName',
   'accepted',

@@ -13,13 +13,22 @@ import { raisedByNodeSql } from '../../ml-plan/order-reads';
 import { milliToText, toMilli } from '../../ml-plan/snapshot-math';
 import type { RegisteredReport } from '../registry';
 import type { ReportColumn } from '../schema';
-import { likeFilter, numCell, REPORT_ROW_CAP, textCell, type SqlRow } from './report-helpers';
+import {
+  dateCell,
+  likeFilter,
+  numCell,
+  REPORT_ROW_CAP,
+  textCell,
+  type SqlRow,
+} from './report-helpers';
 
 const columns: ReportColumn[] = [
+  // ADR-261 lead columns. Created On = the plan row's (node's) created_at.
   { key: 'mlp_code', label: 'MLP No.', type: 'text' },
   { key: 'so_code', label: 'SO No.', type: 'text' },
   { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
   { key: 'client_po_line_no', label: 'POL', type: 'text' },
+  { key: 'created_on', label: 'Created On', type: 'date' },
   { key: 'item_code', label: 'Item Code', type: 'text' },
   { key: 'item_name', label: 'Item Name', type: 'text' },
   { key: 'line_type', label: 'Line Type', type: 'text' },
@@ -70,7 +79,8 @@ export const mlPlanToRaiseReport: RegisteredReport = {
         SELECT mp.id AS mlp_id, mp.code AS mlp_code, so.code AS so_code,
                so.internal_so_no AS so_internal_no, sol.client_po_line_no,
                n.id AS node_id, n.seq, n.depth, n.bom_type::text AS bom_type,
-               n.net_need_qty, n.item_id
+               n.net_need_qty, n.item_id,
+               (n.created_at AT TIME ZONE 'Asia/Kolkata')::date::text AS created_on
         FROM public.ml_plans mp
         JOIN public.sales_orders so ON so.id = mp.sales_order_id AND so.deleted_at IS NULL
         LEFT JOIN public.sales_order_lines sol
@@ -86,7 +96,7 @@ export const mlPlanToRaiseReport: RegisteredReport = {
           ${lineType ? sql`AND n.bom_type = ${lineType}` : sql``}
       ),
       raised AS (${raisedByNodeSql(companyId, sql`SELECT node_id FROM pick`)})
-      SELECT k.mlp_id, k.mlp_code, k.so_code, k.so_internal_no, k.client_po_line_no,
+      SELECT k.mlp_id, k.mlp_code, k.so_code, k.so_internal_no, k.client_po_line_no, k.created_on,
              k.node_id, k.depth, k.bom_type, k.net_need_qty::text AS net_need_qty,
              r.raised, i.code AS item_code, i.name AS item_name, i.uom::text AS uom
       FROM pick k
@@ -106,12 +116,13 @@ export const mlPlanToRaiseReport: RegisteredReport = {
       const bomType = (r['bom_type'] as BomLineType | null) ?? null;
       rows.push({
         mlp_id: String(r['mlp_id']),
-        mlp_code: String(r['mlp_code']),
         so_code: textCell(r['so_code']),
         so_internal_no: textCell(r['so_internal_no']),
         client_po_line_no: textCell(r['client_po_line_no']),
+        created_on: dateCell(r['created_on']),
         item_code: String(r['item_code'] ?? '—'),
         item_name: textCell(r['item_name']),
+        mlp_code: String(r['mlp_code']),
         line_type: bomType ? BOM_LINE_TYPE_LABEL[bomType] : null,
         level: numCell(r['depth']),
         net_need_qty: numCell(milliToText(net)),

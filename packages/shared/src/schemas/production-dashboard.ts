@@ -25,6 +25,7 @@ export type ProductionDashboardCounters = z.infer<typeof productionDashboardCoun
 export const productionDashboardJcSchema = z.object({
   jobCardId: z.string().uuid(),
   code: z.string(),
+  jcDate: z.string().nullable(),
   itemCode: z.string().nullable(),
   /** The customer's drawing revision behind this card, read live off the SO
    *  line it was raised against (job_cards.source_so_line_id →
@@ -34,6 +35,13 @@ export const productionDashboardJcSchema = z.object({
    *  card then shows the bare code. */
   itemRevision: z.string().nullable().default(null),
   itemName: z.string().nullable(),
+  /** ADR-261 lead columns — the customer's PO line (SO line, else JWSO line),
+   *  the order behind the card (SO code, else JWSO code), the SO's Internal SO
+   *  No., and the row's own created_at (ISO). */
+  clientPoLineNo: z.string().nullable().optional(),
+  soCode: z.string().nullable().optional(),
+  soInternalNo: z.string().nullable().optional(),
+  createdAt: z.string().nullable().optional(),
   priority: z.enum(JC_PRIORITIES),
   orderQty: z.number().int(),
   doneOps: z.number().int().nonnegative(),
@@ -49,6 +57,7 @@ export const productionDashboardReadyOpSchema = z.object({
    *  to open. */
   jobCardId: z.string().uuid(),
   jobCardCode: z.string(),
+  jcDate: z.string().nullable(),
   opSeq: z.number().int(),
   operation: z.string(),
   /** WHAT is being made. A job-card number says WHICH JOB, not which part, so
@@ -63,6 +72,13 @@ export const productionDashboardReadyOpSchema = z.object({
    *  then shows the bare code. */
   itemRevision: z.string().nullable().default(null),
   itemName: z.string().nullable().default(null),
+  /** ADR-261 lead columns — the customer's PO line (SO line, else JWSO line),
+   *  the order behind the card (SO code, else JWSO code), the SO's Internal SO
+   *  No., and the row's own created_at (ISO). */
+  clientPoLineNo: z.string().nullable().optional(),
+  soCode: z.string().nullable().optional(),
+  soInternalNo: z.string().nullable().optional(),
+  createdAt: z.string().nullable().optional(),
   /** The machine the REMAINING qty runs on — forward-looking. Not who made
    *  `completedQty`: an op re-routed mid-flight made pieces elsewhere (ADR-126). */
   machineCode: z.string().nullable(),

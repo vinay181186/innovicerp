@@ -1,35 +1,60 @@
 // Pending PO Tracker columns for the ADR-199 fit sheet (the headline table on
-// the Supply Chain Dashboard, carrying TABLE_KEYS.scDashboard). PO No. is the
-// pinned first column; numbers right-align; names left + ellipsis; the money
-// columns drop out when the server hides prices.
+// the Supply Chain Dashboard, carrying TABLE_KEYS.scDashboard). One row per PO
+// line. ADR-261: opens with PO No. and the six lead columns (SO No. — the SO,
+// else the JWSO — · Internal SO No. · POL · Created On · Item Code · Item
+// Name), then Ln · PO Date · Vendor · quantities; the money columns drop out when
+// the server hides prices.
 
 import type { ScPendingLine } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
-import type { DataTableColumn } from '@/ui/data';
+import { leadColumns, type DataTableColumn } from '@/ui/data';
 import { inr, PO_STATUS_OPTIONS, statusBadge } from './sc-format';
 
 export function pendingColumns(priceHidden: boolean): DataTableColumn<ScPendingLine>[] {
   const cols: DataTableColumn<ScPendingLine>[] = [
-    {
-      id: 'po_no',
-      sortFilterField: 'poNo',
-      kind: 'code',
-      header: 'PO No.',
-      className: 'td-code',
-      render: (p) => (
-        <Link
-          to="/purchase-orders/$id"
-          params={{ id: p.poId }}
-          className="cyan"
-          style={{ textDecoration: 'underline dotted' }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {p.poNo}
-        </Link>
-      ),
-    },
+    ...leadColumns<ScPendingLine>({
+      doc: {
+        id: 'po_no',
+        sortFilterField: 'poNo',
+        kind: 'code',
+        header: 'PO No.',
+        className: 'td-code',
+        render: (p) => (
+          <Link
+            to="/purchase-orders/$id"
+            params={{ id: p.poId }}
+            className="cyan"
+            style={{ textDecoration: 'underline dotted' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {p.poNo}
+          </Link>
+        ),
+      },
+      docDate: {
+        id: 'po_date',
+        sortFilterField: 'poDate',
+        kind: 'date',
+        header: 'PO Date',
+        render: (p) => fmtDate(p.poDate),
+      },
+      soNo: (p) => p.soCode,
+      internalSoNo: (p) => p.soInternalNo,
+      pol: (p) => p.clientPoLineNo,
+      createdOn: (p) => p.createdAt,
+      itemCode: (p) => p.itemCode,
+      itemRev: (p) => p.itemRevision,
+      itemName: (p) => p.itemName,
+      overrides: {
+        so_no: { sortFilterField: 'soCode' },
+        so_internal_no: { sortFilterField: 'soInternalNo' },
+        client_po_line_no: { sortFilterField: 'clientPoLineNo' },
+        created_on: { sortFilterField: 'createdOn' },
+        item_code: { sortFilterField: 'itemCode' },
+        item_name: { sortFilterField: 'itemName' },
+      },
+    }),
     {
       id: 'ln',
       sortFilterField: 'lineNo',
@@ -38,13 +63,6 @@ export function pendingColumns(priceHidden: boolean): DataTableColumn<ScPendingL
       header: 'Ln',
       className: 'mono',
       render: (p) => p.lineNo,
-    },
-    {
-      id: 'po_date',
-      sortFilterField: 'poDate',
-      kind: 'date',
-      header: 'PO Date',
-      render: (p) => fmtDate(p.poDate),
     },
     {
       id: 'vendor',
@@ -56,44 +74,6 @@ export function pendingColumns(priceHidden: boolean): DataTableColumn<ScPendingL
       className: 'fw-700',
       render: (p) => p.vendorName ?? p.vendorCode ?? '—',
       title: (p) => p.vendorName ?? p.vendorCode ?? '',
-    },
-    {
-      id: 'so_no',
-      sortFilterField: 'soCode',
-      kind: 'code',
-      header: 'SO / JWSO No.',
-      className: 'text2',
-      render: (p) => p.soCode || '—',
-    },
-    {
-      // ADR-207 — the office's own Internal SO No., in its own column beside
-      // the system SO / JWSO No. so the two can be told apart.
-      id: 'so_internal_no',
-      sortFilterField: 'soInternalNo',
-      kind: 'code',
-      header: 'Internal SO No.',
-      className: 'mono fw-700',
-      render: (p) => <span style={{ color: 'var(--text)' }}>{p.soInternalNo?.trim() || '—'}</span>,
-    },
-    {
-      id: 'item_code',
-      sortFilterField: 'itemCode',
-      kind: 'code',
-      header: 'Item Code',
-      className: 'td-code fw-700',
-      render: (p) => (
-        <span style={{ color: 'var(--text)' }}>{itemCodeWithRev(p.itemCode, p.itemRevision)}</span>
-      ),
-    },
-    {
-      id: 'item_name',
-      sortFilterField: 'itemName',
-      kind: 'text',
-      header: 'Item Name',
-      align: 'left',
-      ellipsis: true,
-      render: (p) => p.itemName ?? '—',
-      title: (p) => p.itemName ?? '',
     },
     {
       id: 'order_qty',

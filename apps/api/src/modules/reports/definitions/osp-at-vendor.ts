@@ -5,6 +5,7 @@
 // / stock-ageing reports.
 
 import { sql } from 'drizzle-orm';
+import { polSql } from '../../../lib/pol';
 import type { RegisteredReport } from '../registry';
 import { dateCell as dateOrNull, likeFilter, REPORT_ROW_CAP } from './report-helpers';
 
@@ -18,15 +19,21 @@ export const ospAtVendorReport: RegisteredReport = {
     dept: 'purchase',
     filters: [{ key: 'vendor', label: 'Vendor', kind: 'text', placeholder: 'Vendor name or code' }],
     columns: [
+      // ADR-261 lead columns. SO No. = the SO or JWSO behind the op's JC;
+      // Created On = the JC op's created_at; the order line's drawing rev
+      // rides in Item Code.
+      { key: 'jc_code', label: 'JC No.', type: 'text' },
+      { key: 'so_code', label: 'SO No.', type: 'text' },
+      { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
+      { key: 'client_po_line_no', label: 'POL', type: 'text' },
+      { key: 'created_on', label: 'Created On', type: 'date' },
+      { key: 'item_code', label: 'Item Code', type: 'text' },
+      { key: 'item_name', label: 'Item Name', type: 'text' },
       { key: 'vendor_name', label: 'Vendor', type: 'text' },
       { key: 'dc_code', label: 'DC No.', type: 'text' },
       { key: 'dc_date', label: 'DC Date', type: 'date' },
-      { key: 'jc_code', label: 'JC No.', type: 'text' },
-      { key: 'item_code', label: 'Item Code', type: 'text' },
       { key: 'op_seq', label: 'Op', type: 'number' },
       { key: 'operation', label: 'Operation', type: 'text' },
-      { key: 'so_code', label: 'SO No.', type: 'text' },
-      { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
       { key: 'sent_qty', label: 'Sent', type: 'number' },
       { key: 'returned_qty', label: 'Returned', type: 'number' },
       { key: 'at_vendor_qty', label: 'At Vendor', type: 'number' },
@@ -50,8 +57,8 @@ export const ospAtVendorReport: RegisteredReport = {
     // flipped), the earliest DC of any status, then the op's own sent date.
     const result = await tx.execute(sql`
       SELECT
-        x.vendor_name, x.dc_code, x.dc_date, x.jc_code, x.item_code, x.op_seq,
-        x.operation, x.so_code, x.so_internal_no, x.sent_qty, x.returned_qty, x.at_vendor_qty,
+        x.so_code, x.so_internal_no, x.client_po_line_no, x.created_on, x.item_code, x.item_name,
+        x.vendor_name, x.dc_code, x.dc_date, x.jc_code, x.op_seq, x.operation, x.sent_qty, x.returned_qty, x.at_vendor_qty,
         x.days_at_vendor,
         CASE WHEN x.days_at_vendor BETWEEN 0 AND 7   THEN x.at_vendor_qty ELSE 0 END AS bucket_0_7,
         CASE WHEN x.days_at_vendor BETWEEN 8 AND 15  THEN x.at_vendor_qty ELSE 0 END AS bucket_8_15,
@@ -63,11 +70,16 @@ export const ospAtVendorReport: RegisteredReport = {
           d.dc_code,
           COALESCE(d.dc_date, jo.outsource_sent_date)            AS dc_date,
           w.jc_code,
-          w.item_code,
+          (w.item_code
+            || COALESCE('/' || NULLIF(btrim(COALESCE(sol.revision::text, jwl.revision::text)), ''), ''))
+                                                                 AS item_code,
+          it.name                                                AS item_name,
           w.op_seq,
           w.operation,
-          w.so_code,
+          COALESCE(w.so_code, jwo.code)                          AS so_code,
           so.internal_so_no                                      AS so_internal_no,
+          ${polSql('sol', 'jwl')}                                AS client_po_line_no,
+          (jo.created_at AT TIME ZONE 'Asia/Kolkata')::date::text AS created_on,
           w.sent_qty,
           w.returned_qty,
           w.at_vendor_qty,
@@ -82,6 +94,11 @@ export const ospAtVendorReport: RegisteredReport = {
           ON sol.id = jcs.source_so_line_id AND sol.deleted_at IS NULL
         LEFT JOIN public.sales_orders so
           ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
+        LEFT JOIN public.job_work_order_lines jwl
+          ON jwl.id = jcs.source_jw_line_id AND jwl.deleted_at IS NULL
+        LEFT JOIN public.job_work_orders jwo
+          ON jwo.id = jwl.job_work_order_id AND jwo.deleted_at IS NULL
+        LEFT JOIN public.items it ON it.id = jcs.item_id
         LEFT JOIN LATERAL (
           SELECT dc.code AS dc_code, dc.dc_date
           FROM public.delivery_challans dc
@@ -107,15 +124,18 @@ export const ospAtVendorReport: RegisteredReport = {
     `);
 
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({
+      so_code: (r['so_code'] as string | null) ?? null,
+      so_internal_no: (r['so_internal_no'] as string | null) ?? null,
+      client_po_line_no: (r['client_po_line_no'] as string | null) ?? null,
+      created_on: dateOrNull(r['created_on']),
+      item_code: String(r['item_code'] ?? ''),
+      item_name: (r['item_name'] as string | null) ?? null,
       vendor_name: (r['vendor_name'] as string | null) ?? null,
       dc_code: (r['dc_code'] as string | null) ?? null,
       dc_date: dateOrNull(r['dc_date']),
       jc_code: String(r['jc_code'] ?? ''),
-      item_code: String(r['item_code'] ?? ''),
       op_seq: Number(r['op_seq'] ?? 0),
       operation: String(r['operation'] ?? ''),
-      so_code: (r['so_code'] as string | null) ?? null,
-      so_internal_no: (r['so_internal_no'] as string | null) ?? null,
       sent_qty: Number(r['sent_qty'] ?? 0),
       returned_qty: Number(r['returned_qty'] ?? 0),
       at_vendor_qty: Number(r['at_vendor_qty'] ?? 0),

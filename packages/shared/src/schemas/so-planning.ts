@@ -24,6 +24,8 @@ export const planningSoListItemSchema = z.object({
   soCode: z.string(),
   /** ADR-207 — the SO's Internal SO No. (live); null for a JWSO or an old SO. */
   soInternalNo: z.string().nullable().optional(),
+  /** ADR-261 Created On — the order's own created_at (ISO). */
+  createdAt: z.string().nullable().optional(),
   /** 'so' = sales_orders row, 'jw' = job_work_orders row. Drives which
    *  table the detail endpoint reads and which line link a new plan uses. */
   source: z.enum(['so', 'jw']),
@@ -146,6 +148,8 @@ export const planningLineSchema = z.object({
   drawingRev: z.string().nullable().default(null),
   lineNo: z.number().int().positive(),
   clientPoLineNo: z.string().nullable(),
+  /** ADR-261 Created On — the SO / JWSO line's own created_at (ISO). */
+  createdAt: z.string().nullable().optional(),
   itemId: z.string().uuid().nullable(),
   itemCode: z.string().nullable(),
   /** The customer's drawing revision for this line, read off

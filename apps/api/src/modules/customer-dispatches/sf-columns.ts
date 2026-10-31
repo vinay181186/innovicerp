@@ -24,3 +24,18 @@ export const DISPATCH_SF_COLUMNS: SfColumnMap = {
   dispatchedBy: { sql: sql`u.full_name`, type: 'text' },
   status: { sql: sql`h.status`, type: 'list' },
 };
+
+// ADR-261 — GET /customer-dispatches/lines (one row per DISPATCH LINE). Every
+// dispatch field above stays valid; the line fields use register.ts's line
+// aliases (l = dispatch line, i = item, sol = its SO line).
+export const DISPATCH_LINE_SF_COLUMNS: SfColumnMap = {
+  ...DISPATCH_SF_COLUMNS,
+  clientPoLineNo: { sql: sql`sol.client_po_line_no`, type: 'text' },
+  createdOn: {
+    sql: sql`(COALESCE(l.created_at, h.created_at) AT TIME ZONE 'Asia/Kolkata')::date`,
+    type: 'date',
+  },
+  itemCode: { sql: sql`COALESCE(i.code, l.item_code_text)`, type: 'text' },
+  itemName: { sql: sql`l.item_name`, type: 'text' },
+  qty: { sql: sql`l.qty`, type: 'num' },
+};

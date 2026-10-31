@@ -1,15 +1,15 @@
 // SO QC Status columns (ADR-199 fit table, tableKey qcDocsStatus). Ported from
-// the so-qc-status module. Default-visible set per the brief: Ln · Item Code ·
-// QC Stages · Incoming QC · Docs · Overall; POL / Item Name / Order Qty ride in
-// the ▸ expand by default. The per-column totals feed the engine's showTotals
-// footer (replacing the hand-written TotalRow).
+// the so-qc-status module. ADR-261: the six lead columns (SO No. · Internal SO
+// No. · POL · Created On · Item Code · Item Name), then Ln · QC Stages ·
+// Incoming QC · Docs · Overall; Order Qty rides in the ▸ expand by default.
+// The per-column totals feed the engine's showTotals footer (replacing the
+// hand-written TotalRow).
 
 import type { SoQcLine, SoQcStageOp } from '@innovic/shared';
-import { itemCodeWithRev } from '@/lib/item-code';
-import type { DataTableColumn } from '@/ui/data';
+import { leadColumns, type DataTableColumn } from '@/ui/data';
 
-/** Ids hidden into the ▸ detail by default. */
-export const SO_STATUS_DETAIL_IDS = ['pol', 'item_name', 'order_qty'];
+/** Ids hidden into the ▸ detail by default (never a lead column). */
+export const SO_STATUS_DETAIL_IDS = ['order_qty'];
 
 function pctColor(pct: number): string {
   if (pct >= 100) return 'var(--green)';
@@ -138,43 +138,31 @@ function StagesCell({ l }: { l: SoQcLine }): React.JSX.Element {
 const totColor = (done: number, total: number): string =>
   total > 0 && done >= total ? 'var(--green)' : 'var(--amber)';
 
-export function buildSoStatusColumns(): DataTableColumn<SoQcLine>[] {
+/** The screen's one SO — every line row reads its SO No. / Internal SO No. */
+export interface SoStatusOrder {
+  code: string;
+  internalSoNo?: string | null | undefined;
+}
+
+export function buildSoStatusColumns(order: SoStatusOrder | null): DataTableColumn<SoQcLine>[] {
   return [
+    // ADR-261 — the six lead columns first (SO No. / Internal SO No. are the
+    // screen's order; POL, item and Created On are the line's), then Ln.
+    ...leadColumns<SoQcLine>({
+      soNo: () => order?.code ?? null,
+      internalSoNo: () => order?.internalSoNo ?? null,
+      pol: (l) => l.clientPoLineNo,
+      createdOn: (l) => l.createdAt,
+      itemCode: (l) => l.itemCode,
+      itemRev: (l) => l.itemRevision,
+      itemName: (l) => l.partName,
+    }),
     {
       id: 'ln',
       header: 'Ln',
       nowrap: true,
       className: 'fw-700',
       render: (l) => l.lineNo,
-    },
-    {
-      id: 'pol',
-      header: 'POL',
-      label: 'POL',
-      nowrap: true,
-      headColor: 'var(--purple)',
-      render: (l) => (
-        <span className="mono fw-700" style={{ color: 'var(--purple)' }}>
-          {l.clientPoLineNo ?? '—'}
-        </span>
-      ),
-    },
-    {
-      id: 'item_code',
-      kind: 'code',
-      header: 'Item Code',
-      nowrap: true,
-      className: 'td-code mono fw-700',
-      render: (l) => itemCodeWithRev(l.itemCode, l.itemRevision),
-    },
-    {
-      id: 'item_name',
-      header: 'Item Name',
-      label: 'Item Name',
-      align: 'left',
-      ellipsis: true,
-      render: (l) => l.partName ?? '—',
-      title: (l) => l.partName ?? '',
     },
     {
       id: 'order_qty',

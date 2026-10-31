@@ -14721,7 +14721,6 @@ entry, with the user told through the Home dashboard.
 - Risks: the history is only as private as the API checks — every revision read is gated
   by `isSuper` in one place.
 
-
 ## ADR-256: Day Log — Start / Stop / SO-JWSO edits saved directly; ONE Entry Rev history for every save
 
 **Date:** 2026-10-30
@@ -14787,7 +14786,7 @@ company's log, menu or not.
 - PAGE_ACCESS uses them; Task Board and Day Log share `/task-board` and `canOpenPage`
   tells them apart by `?view=` (`DAY_LOG_VIEWS`). The route itself opens on either.
 - The server refuses each page's own data when hidden (task list/detail and task actions,
-  every /day-logs route, /alerts*, GET /activity-log, alert e-mail digests).
+  every /day-logs route, /alerts\*, GET /activity-log, alert e-mail digests).
 - Kept open: assigning a task from other pages and Home "Remind" (POST /tasks), and the
   document History tab (/activity-log/history follows the document's rights).
 - Owner decision: a person whose Task Board is hidden cannot be given a task — left out of
@@ -14813,11 +14812,13 @@ company's log, menu or not.
 **Status:** Accepted (owner approved mockup https://claude.ai/artifact/VuccP2bNkf4cPyfV7sGAbA)
 
 ### Context
+
 Only Super Admin, Auditor and L5 Department Admins could see another person's Day Log. The owner wants
 ordinary colleagues to see each other's day ("if i put jaypal under hansraj, hansraj under jaypal, then
 both can view each other save entry"), set up from the Task menu tab that was "Approvals · Day Log".
 
 ### Decision
+
 - New `day_log_team_mates` (0230): one row per pair, ids stored sorted, so a pair is always two-way.
 - Teams Config tab on the Task Board (view `teams`, in `DAY_LOG_VIEWS`), Super Admin only: User picker,
   Add team mate, table Sr No / Team Mate / Dept / Added On / ⋯ Remove (no Added By, no Sees Each Other).
@@ -14830,21 +14831,23 @@ both can view each other save entry"), set up from the Task menu tab that was "A
 - "Approvals · Day Log" stays only while an old edit is waiting (none are created since ADR-256).
 
 ### Alternatives Considered
+
 - One-way "team mates of X" (the 29-10 mockup) — rejected by the owner: pairs are two-way.
 - Department Admins also set up Teams Config — owner: Super Admin only.
 
 ### Consequences
+
 - Positive: one table, one gate; Team Day Logs opens for a person as soon as a pair exists (live).
 - Risks: a wrong visibility rule would show a day to the wrong person — covered by team-cases tests.
 
 ### ADR-258 correction (2026-10-31): Teams Config is ONE-WAY
+
 Owner: "user select aashvi, teammate parth → aashvi can see day log of parth. parth cannot see day log of
 aashvi unless parth → aashvi is set." The 30-Oct build read "both can view each other" as every pair being
 two-way — wrong. 0231 makes each row User → Team Mate (`user_id` sees `mate_id`); rows saved under 0230 take
 their direction from the CREATE activity; a row whose direction cannot be told is removed (never doubled) and
 re-added by the Super Admin. 0231 is additive (old columns dropped later) so the running API never breaks. Texts: "Aashvi can now see Parth's
 Day Log" / "Aashvi will no longer see Parth's Day Log".
-
 
 ## ADR-259: A cancelled SO / JWSO frees its Client PO No.
 
@@ -14905,7 +14908,6 @@ inspections.
   NC and the activity log keep every inspection's own text.
 - Risks: the over-receipt cap — covered by received − deviated and a test.
 
-
 ## ADR-261: Fixed lead columns on every SO-linked list
 
 **Date:** 2026-10-31
@@ -14940,15 +14942,35 @@ at the END of every saved layout, and re-showed a hidden column at the end.
 - Risks: until the server sends `createdAt`, Created On shows — on op, queue and QC rows
   (phase 3).
 
+### Amendment (owner, 2026-10-31): own document number first
+
+- The page's own number now comes FIRST, before SO No.: **Own No. · SO No. · Internal SO
+  No. · POL · Created On · Item Code · Item Name · rest** (e.g. Plan No. on Plans, JC No. on
+  Op Entry, GRN No. on GRN). It is passed as `leadColumns({ doc })` and locked with the block.
+- Where the row is the SO / JWSO itself (SO list, SO Overview, SO Planning …) SO No. is the
+  own number and nothing goes in front. Only one number is locked; a second number on the
+  row (JC No. on Op Log / Outsource Jobs) stays after Item Name.
+- BOM, ML BOM and Route Card lists put their number before Sr No. Reports follow the same
+  order. Masters (Client, Vendor, Item, Operator) are unchanged.
+- Guard: `lead-columns.guard.test.ts` fails when a lead list leaves out `doc:` and is not on
+  the row-is-the-order list.
+- Own date next to the own number (owner, same day): `leadColumns({ doc, docDate })` →
+  Plan No. · Plan Date · SO No. … (GRN No. · GRN Date, JC No. · JC Date …), both locked.
+  JC-led op/queue/QC lists get `jcDate` (job_cards.jc_date) from the server; QC Call Register
+  rows get `docDate` (GRN / Party GRN grn_date or JC jc_date). Documents with no date of their
+  own (Production Order, ML Plan, ML BOM, Route Card) keep only Created On.
+
 ## ADR-262: Purchase Requests have no approval
 
 **Date:** 2026-10-31
 **Status:** Accepted (owner)
 
 ### Context
+
 One session kept approving generated PRs; the approval step added nothing. Owner: "remove approval from PR — from now onwards PR generated" (D3: no approval for edit or cancel either).
 
 ### Decision
+
 - A PR is ready for a PO the moment it is raised, on every creation path. `assertPrConvertible` refuses only a Cancelled PR. Old `approved` PRs keep the status as history; `open` and `approved` both mean ready.
 - Approve / Reject routes answer 409 ("PRs no longer need approval…"); PRs are out of the Approvals page, Home "to approve", notifications (PR raised → PO creators, "ready for a PO").
 - Edits save directly (never staged). A PR edit staged before this rule must be decided first (409).
@@ -14962,10 +14984,12 @@ One session kept approving generated PRs; the approval step added nothing. Owner
 **Status:** Accepted (owner D1=c, D4)
 
 ### Decision
+
 - `report_types.last_stage_only` (0235). A Mandatory report with it set is compulsory only when the QC op is the card's last live op (highest op_seq — `lib/jc-last-op-sql.ts isLastLiveOpSql`, the stock-credit rule). DIR and Final Inspection set to Mandatory + Last Stage Only; TPI / MIR / MCR stay compulsory everywhere.
 - Shared rule `qcReportMandatory(operation, qty, processes, isLastOp)`; the server decides `isLastOp` inside submitQcLog after the jc_ops row lock (routing edits rewrite every kept op row, so they serialise). A DIR before a terminal OSP is not last → optional; a rework child's last QC is last → compulsory.
 - A middle DIR saved without its report: note on Op Entry / QC Call ("report not uploaded" + Upload report), Home "Reports to upload" (report_required still stamped), Dossier "not uploaded (optional)" in orange.
 - Known gap: deleting the op after a middle DIR makes that DIR the last stage with no report; it still shows as owed (Home, Dossier) — the routing edit is not blocked.
+
 ## ADR-264: New home dashboard — department checks, bell, My to-do (owner design 2026-10-31)
 
 **Date:** 2026-10-31
@@ -15012,3 +15036,47 @@ did not match how they read the factory.
 - Negative: users lose Widgets/Customize/Shortcuts on the home.
 - Risks: check SQL cost on large tables (each check guarded; one slow check never blanks the page).
 
+## ADR-265: One Approvals list — waiting for me, decided in place (owner 2026-10-31)
+
+**Date:** 2026-10-31
+**Status:** Accepted (owner approved mockup ApprovalsV3 and the 6-point plan with "go")
+
+### Context
+
+Approvals lived in six queues (PO release, new Route Card, Op Entry time change,
+change requests on 27 document types, Cancel Requests, Day Log edits). The home showed
+some rows and jump-links to Settings → Approvals, whose fixed row of 30+ tabs showed
+types with nothing pending. Change-request counts were company-wide (people saw counts
+they could not decide) and the top-menu badge added PRs and missed Cancel / Day Log.
+Owner: "it's not professional." ERPNext (Frappe Workflow Action) keeps ONE list of open
+actions for the user only; decided items leave it.
+
+### Decision
+
+- `GET /approvals/waiting` — one caller-scoped list of every waiting row with counts per
+  Approval Type (only types with rows) and `canApprove`. Each source keeps its existing
+  eligibility rule; change requests are now filtered to the forms the caller may approve.
+- `GET /approvals/history` — Approved / Rejected decisions on the types the caller may
+  approve (activity_log for PO / Route Card; decided requests for the rest). Day Log edits
+  have no history store and are not listed there.
+- Deciding stays on every existing approve / reject endpoint (conditional UPDATE + 409,
+  §20.2). No new write path, no migration.
+- Web: ONE `ApprovalsList` (DataTable) used by the home Approvals view and the Approvals
+  page; `Review (n)` side panel for per-field change requests; the page adds
+  `Show: Waiting / Approved / Rejected`. Top-menu badge = the same list's total.
+- Removed: the fixed tab row and Masters picker (reverses the earlier "fixed tab row
+  always shown" decision), the per-type tab screens, the home jump-links. Home `approvals`
+  field is always null (kept for old browsers).
+
+### Alternatives Considered
+
+- Keep the tabs, hide empty ones — rejected: still two places and two counts.
+- Client-side merge of the six existing reads — rejected: six round trips and the counts
+  could still disagree with the badge.
+
+### Consequences
+
+- Positive: home, page and badge show the same rows and numbers; nothing shown that the
+  caller cannot decide; every decision in place.
+- Negative: per-type column sets are gone (one common column set).
+- Risks: list over 500 rows shows the first 500 (total still exact).

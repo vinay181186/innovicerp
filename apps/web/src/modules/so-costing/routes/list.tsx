@@ -30,7 +30,7 @@ import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib
 import { inrFormat } from '@/lib/print/doc-print';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import { DataTable, leadColumns, Panel, type DataTableColumn } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
@@ -51,42 +51,31 @@ function moneyCell(v: number | null, color: string, bold = false): React.JSX.Ele
 
 function soCostingColumns(priceHidden: boolean): DataTableColumn<SoCostingRow>[] {
   const cols: DataTableColumn<SoCostingRow>[] = [
-    {
-      id: 'so_no',
-      kind: 'code',
-      header: 'SO No.',
-      nowrap: true,
-      sortFilterField: 'soNo',
-      render: (r) => (
-        <Link
-          to="/so-costing/$id"
-          params={{ id: r.soId }}
-          className="td-code"
-          style={{ color: 'var(--cyan)', textDecoration: 'none' }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {/* The SYSTEM number only (ADR-207); the office's own number is the
-              next column, so each heading names one of the two. */}
-          {r.soNo}
-        </Link>
-      ),
-    },
-    {
-      // ADR-207 — the office's own typed number, beside the system SO No.
-      id: 'so_internal_no',
-      kind: 'code',
-      header: 'Internal SO No.',
-      sortFilterField: 'soInternalNo',
-      nowrap: true,
-      render: (r) =>
-        r.soInternalNo?.trim() ? (
-          <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-            {r.soInternalNo}
-          </span>
-        ) : (
-          <span className="text3">—</span>
-        ),
-    },
+    // ADR-261 lead columns — one row per ORDER, so no POL / Item columns.
+    ...leadColumns<SoCostingRow>({
+      soNo: (r) => r.soNo,
+      internalSoNo: (r) => r.soInternalNo,
+      createdOn: (r) => r.createdAt,
+      overrides: {
+        so_no: {
+          sortFilterField: 'soNo',
+          // A real link (middle-click / new tab); the row opens the same detail.
+          render: (r) => (
+            <Link
+              to="/so-costing/$id"
+              params={{ id: r.soId }}
+              className="td-code"
+              style={{ color: 'var(--cyan)', textDecoration: 'none' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {r.soNo}
+            </Link>
+          ),
+        },
+        so_internal_no: { sortFilterField: 'soInternalNo' },
+        created_on: { sortFilterField: 'createdOn' },
+      },
+    }),
     {
       id: 'customer',
       kind: 'text',

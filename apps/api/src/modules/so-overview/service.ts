@@ -333,6 +333,7 @@ export async function getSoOverview(
         id: header.id,
         code: header.code,
         internalSoNo: header.internalSoNo,
+        createdAt: header.createdAt.toISOString(),
         soDate: header.soDate,
         customerName: header.customerName,
         clientPoNo: header.clientPoNo,

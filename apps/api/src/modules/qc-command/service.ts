@@ -50,6 +50,12 @@ function dateOnly(v: unknown): string | null {
   return v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 10);
 }
 
+/** A timestamptz as an ISO string (ADR-261 lead Created On). */
+function tsOrNull(v: unknown): string | null {
+  if (v == null) return null;
+  return v instanceof Date ? v.toISOString() : String(v);
+}
+
 function daysBetween(fromIso: string | null, toIso: string): number {
   if (!fromIso) return 0;
   const a = Date.parse(fromIso);
@@ -61,6 +67,7 @@ function daysBetween(fromIso: string | null, toIso: string): number {
 interface PendingDbRow {
   jcOpId: string;
   jcCode: string;
+  jcDate: string | null;
   opSeq: number;
   operation: string | null;
   itemCode: string | null;
@@ -74,11 +81,13 @@ interface PendingDbRow {
   qcPending: number;
   lastComplete: unknown;
   jcCreatedAt: unknown;
+  opCreatedAt: unknown;
 }
 
 interface QcLogDbRow {
   jcOpId: string;
   jcCode: string;
+  jcDate: string | null;
   opSeq: number;
   operation: string | null;
   itemCode: string | null;
@@ -91,11 +100,13 @@ interface QcLogDbRow {
   rejectQty: number;
   logDate: unknown;
   inspector: string;
+  opCreatedAt: unknown;
 }
 
 interface OpGroup {
   jcOpId: string;
   jcCode: string;
+  jcDate: string | null;
   opSeq: number;
   operation: string;
   itemCode: string | null;
@@ -104,6 +115,7 @@ interface OpGroup {
   itemName: string | null;
   soCode: string | null;
   soInternalNo: string | null;
+  opCreatedAt: string | null;
   entries: QcLogDbRow[];
 }
 
@@ -123,7 +135,8 @@ export async function getQcCommand(
       // 1. Pending QC ops (the queue base).
       tx.execute(sql`
         SELECT
-          vos.jc_op_id AS "jcOpId", jc.code AS "jcCode", vos.op_seq AS "opSeq",
+          vos.jc_op_id AS "jcOpId", jc.code AS "jcCode",
+          to_char(jc.jc_date, 'YYYY-MM-DD') AS "jcDate", vos.op_seq AS "opSeq",
           jo.operation, i.code AS "itemCode",
           -- The customer's drawing revision, read live off the SO line the card
           -- was raised against. It rides the sol LEFT JOIN that already produces
@@ -152,7 +165,7 @@ export async function getQcCommand(
           vos.qc_pending AS "qcPending",
           (SELECT MAX(ol.log_date) FROM public.op_log ol
             WHERE ol.jc_op_id = vos.jc_op_id AND ol.log_type = 'complete') AS "lastComplete",
-          jc.created_at AS "jcCreatedAt"
+          jc.created_at AS "jcCreatedAt", jo.created_at AS "opCreatedAt"
         FROM public.v_jc_op_status vos
         JOIN public.jc_ops jo ON jo.id = vos.jc_op_id AND jo.deleted_at IS NULL
         JOIN public.job_cards jc ON jc.id = vos.job_card_id AND jc.deleted_at IS NULL
@@ -173,7 +186,8 @@ export async function getQcCommand(
       // each op's entries arrive oldest-first — entry[0] is the first attempt.
       tx.execute(sql`
         SELECT
-          l.jc_op_id AS "jcOpId", jc.code AS "jcCode", jo.op_seq AS "opSeq",
+          l.jc_op_id AS "jcOpId", jc.code AS "jcCode",
+          to_char(jc.jc_date, 'YYYY-MM-DD') AS "jcDate", jo.op_seq AS "opSeq",
           jo.operation, i.code AS "itemCode",
           -- Same live SO-line read as the queue query above: cast to text so a
           -- pre-0119 database cannot hand the UI a number, null for cards with no
@@ -187,7 +201,8 @@ export async function getQcCommand(
           ${polSql('sol', 'rev_jwl')} AS "clientPoLineNo",
           i.name AS "itemName", so.code AS "soCode", so.internal_so_no AS "soInternalNo",
           l.qty AS "qty", l.reject_qty AS "rejectQty", l.log_date AS "logDate",
-          COALESCE(NULLIF(l.operator_name, ''), '(unknown)') AS "inspector"
+          COALESCE(NULLIF(l.operator_name, ''), '(unknown)') AS "inspector",
+          jo.created_at AS "opCreatedAt"
         FROM public.op_log l
         JOIN public.jc_ops jo ON jo.id = l.jc_op_id AND jo.deleted_at IS NULL
         JOIN public.job_cards jc ON jc.id = jo.job_card_id AND jc.deleted_at IS NULL
@@ -239,6 +254,7 @@ export async function getQcCommand(
         g = {
           jcOpId: r.jcOpId,
           jcCode: r.jcCode,
+          jcDate: r.jcDate ?? null,
           opSeq: Number(r.opSeq),
           // display rule — see opSrNo in @innovic/shared
           operation: r.operation ?? `Op ${opSrNo(Number(r.opSeq))}`,
@@ -248,6 +264,7 @@ export async function getQcCommand(
           itemName: r.itemName ?? null,
           soCode: r.soCode ?? null,
           soInternalNo: r.soInternalNo ?? null,
+          opCreatedAt: tsOrNull(r.opCreatedAt),
           entries: [],
         };
         groups.set(r.jcOpId, g);
@@ -264,6 +281,7 @@ export async function getQcCommand(
       return {
         jcOpId: r.jcOpId,
         jcCode: r.jcCode,
+        jcDate: r.jcDate ?? null,
         opSeq: Number(r.opSeq),
         operation: r.operation ?? '',
         itemCode: r.itemCode ?? null,
@@ -272,6 +290,7 @@ export async function getQcCommand(
         itemName: r.itemName ?? null,
         soCode: r.soCode ?? null,
         soInternalNo: r.soInternalNo ?? null,
+        createdAt: tsOrNull(r.opCreatedAt),
         customer: r.customer ?? null,
         pendingQty: Number(r.qcPending ?? 0),
         ageDays: daysBetween(since, today),
@@ -340,6 +359,7 @@ export async function getQcCommand(
         return {
           jcOpId: g.jcOpId,
           jcCode: g.jcCode,
+          jcDate: g.jcDate,
           opSeq: g.opSeq,
           operation: g.operation,
           itemCode: g.itemCode,
@@ -350,6 +370,7 @@ export async function getQcCommand(
           itemName: g.itemName,
           soCode: g.soCode,
           soInternalNo: g.soInternalNo,
+          createdAt: g.opCreatedAt,
           attempts: g.entries.length,
           totalRejected: g.entries.reduce((s, e) => s + Number(e.rejectQty), 0),
           firstEntry: first,

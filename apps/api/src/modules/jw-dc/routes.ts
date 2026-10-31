@@ -8,6 +8,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
 import * as service from './service';
+import { listJwDcInwardLines, listJwDcOutwardLines } from './list-lines';
 
 const idParam = z.object({ id: z.string().uuid() });
 const poIdParam = z.object({ poId: z.string().uuid() });
@@ -31,6 +32,20 @@ export async function jwDcRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) throw new AuthenticationError();
     const query = listJwDcOutwardQuerySchema.parse(req.query);
     return service.listJwDcOutward(query, req.user);
+  });
+
+  // ADR-261 — the Outward Register, one row per DC line (same query as above).
+  app.get('/jw-dc/outward/lines', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const query = listJwDcOutwardQuerySchema.parse(req.query);
+    return listJwDcOutwardLines(query, req.user);
+  });
+
+  // ADR-261 — the Inward Register, one row per receipt line.
+  app.get('/jw-dc/inward/lines', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const query = listJwDcInwardQuerySchema.parse(req.query);
+    return listJwDcInwardLines(query, req.user);
   });
 
   app.get('/jw-dc/outward/next-code', async (req) => {

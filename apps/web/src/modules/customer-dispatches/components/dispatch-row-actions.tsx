@@ -11,11 +11,11 @@ import { Link } from '@tanstack/react-router';
 import { RowActions } from '@/ui/layout';
 import type { RowMenuItem } from '@/ui/data';
 import type { CustomerDispatchRow } from '@innovic/shared';
-import type { DispatchGroup } from './dispatch-group';
 import { usePrintDc } from './use-print-dc';
 
 export function DispatchRowActions(props: {
-  g: DispatchGroup;
+  /** The dispatch the row belongs to (ADR-261: one row per dispatch line). */
+  g: { dispatchId: string; code: string; status: CustomerDispatchRow['status'] };
   /** Undefined while the dispatch list loads — Invoice stays shown. */
   billedStatus?: CustomerDispatchRow['billedStatus'];
   canCancel: boolean;

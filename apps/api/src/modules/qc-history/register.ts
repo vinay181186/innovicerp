@@ -83,6 +83,7 @@ import {
   LOG_IS_LAST,
   PENDING_SELECT,
   PEND_IS_LAST,
+  dateLike,
   logsFrom,
   opSearchWhere,
   overdueToday,
@@ -273,6 +274,7 @@ async function hydrate(
           row: toIncPendingRow(x),
           grnType: toIncGrnType(x['grnType']),
           clientPoNo: clientPoOf(x),
+          docDate: x['grnDate'] != null ? dateLike(x['grnDate']) : null,
           sourceStep: null,
         });
     }
@@ -286,6 +288,7 @@ async function hydrate(
           kind: 'pgrn',
           row: toPgrnRow(x),
           clientPoNo: clientPoOf(x),
+          docDate: x['grnDate'] != null ? dateLike(x['grnDate']) : null,
           sourceStep: null,
         });
     }
@@ -301,6 +304,7 @@ async function hydrate(
           kind: 'op',
           row: toPendingRow(x, today),
           clientPoNo: clientPoOf(x),
+          docDate: (x['jcDate'] as string | null) ?? null,
           sourceStep: stepOf(id),
         });
       }
@@ -317,6 +321,7 @@ async function hydrate(
           row: toIncCompletedRow(x),
           grnType: toIncGrnType(x['grnType']),
           clientPoNo: clientPoOf(x),
+          docDate: x['grnDate'] != null ? dateLike(x['grnDate']) : null,
           sourceStep: null,
         });
     }
@@ -330,6 +335,7 @@ async function hydrate(
           kind: 'pgrn',
           row: toPgrnRow(x),
           clientPoNo: clientPoOf(x),
+          docDate: x['grnDate'] != null ? dateLike(x['grnDate']) : null,
           sourceStep: null,
         });
     }
@@ -344,6 +350,7 @@ async function hydrate(
           kind: 'op',
           row: toLogRow(x),
           clientPoNo: clientPoOf(x),
+          docDate: (x['jcDate'] as string | null) ?? null,
           sourceStep: stepOf(id),
         });
       }

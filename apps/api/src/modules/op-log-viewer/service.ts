@@ -12,15 +12,17 @@
 // corrective log entry, not deletion. If a soft-delete column is added
 // later, restore the action behind admin-only RLS.
 
-import { and, count, eq, gte, ilike, lte, type SQL, sql } from 'drizzle-orm';
+import { and, count, eq, gte, ilike, isNull, lte, type SQL, sql } from 'drizzle-orm';
 import {
   items,
   jcOps,
   jobCards,
   jobWorkOrderLines,
+  jobWorkOrders,
   machines,
   opLog,
   salesOrderLines,
+  salesOrders,
   users,
 } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
@@ -79,6 +81,15 @@ export async function listOpLog(
     );
 
     const where = and(...conditions);
+    // ADR-261 lead columns — the order behind the card's SO / JWSO line.
+    const soJoin = and(
+      eq(salesOrders.id, salesOrderLines.salesOrderId),
+      isNull(salesOrders.deletedAt),
+    );
+    const jwJoin = and(
+      eq(jobWorkOrders.id, jobWorkOrderLines.jobWorkOrderId),
+      isNull(jobWorkOrders.deletedAt),
+    );
 
     // The count carries exactly the page's row-shaping joins (the INNER ones —
     // a card whose item is gone is in neither). The LEFT joins on unique keys
@@ -95,6 +106,8 @@ export async function listOpLog(
       countQuery = countQuery
         .leftJoin(salesOrderLines, eq(salesOrderLines.id, jobCards.sourceSoLineId))
         .leftJoin(jobWorkOrderLines, eq(jobWorkOrderLines.id, jobCards.sourceJwLineId))
+        .leftJoin(salesOrders, soJoin)
+        .leftJoin(jobWorkOrders, jwJoin)
         .leftJoin(machines, sql`${machines.id} = ${logMachine}`)
         .leftJoin(plannedMachine, eq(plannedMachine.id, jcOps.machineId))
         .leftJoin(users, eq(users.id, opLog.createdBy));
@@ -130,6 +143,8 @@ export async function listOpLog(
           // off the same already-joined SO line as the revision above, else
           // the JW line (ADR-236); a standalone card is null.
           clientPoLineNo: polOf(salesOrderLines.clientPoLineNo, jobWorkOrderLines.clientPoLineNo),
+          soCode: sql<string | null>`COALESCE(${salesOrders.code}, ${jobWorkOrders.code})`,
+          soInternalNo: salesOrders.internalSoNo,
           opSeq: jcOps.opSeq,
           operation: jcOps.operation,
           machineCode: machines.code,
@@ -171,6 +186,8 @@ export async function listOpLog(
         .innerJoin(items, eq(items.id, jobCards.itemId))
         .leftJoin(salesOrderLines, eq(salesOrderLines.id, jobCards.sourceSoLineId))
         .leftJoin(jobWorkOrderLines, eq(jobWorkOrderLines.id, jobCards.sourceJwLineId))
+        .leftJoin(salesOrders, soJoin)
+        .leftJoin(jobWorkOrders, jwJoin)
         .leftJoin(machines, sql`${machines.id} = ${logMachine}`)
         .leftJoin(plannedMachine, eq(plannedMachine.id, jcOps.machineId))
         .leftJoin(users, eq(users.id, opLog.createdBy))
@@ -192,6 +209,8 @@ export async function listOpLog(
       itemName: r.itemName ?? null,
       itemRevision: r.itemRevision ?? null,
       clientPoLineNo: r.clientPoLineNo ?? null,
+      soCode: r.soCode ?? null,
+      soInternalNo: r.soInternalNo ?? null,
       opSeq: r.opSeq,
       operation: r.operation,
       // Live master code first, then the LOG's snapshot, then the OP's snapshot.

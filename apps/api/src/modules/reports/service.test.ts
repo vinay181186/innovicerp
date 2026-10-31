@@ -89,8 +89,20 @@ describe('reports service', () => {
   it('runReport "daily-op-log" returns rows with the expected columns', async () => {
     const result = await service.runReport('daily-op-log', {}, admin);
     expect(result.slug).toBe('daily-op-log');
-    // 11 since the SO line's Drawing Rev column was added after JC.
-    expect(result.columns.length).toBe(11);
+    // ADR-261: the row's own number (Log No.) and own date (Log Date)
+    // first, then the six lead columns (SO No. … Item Name; Drawing Rev now
+    // rides in Item Code) + Log Type … QC Remarks (9).
+    expect(result.columns.length).toBe(17);
+    expect(result.columns.slice(0, 8).map((c) => c.label)).toEqual([
+      'Log No.',
+      'Log Date',
+      'SO No.',
+      'Internal SO No.',
+      'POL',
+      'Created On',
+      'Item Code',
+      'Item Name',
+    ]);
     expect(result.rowCount).toBe(result.rows.length);
     // op_log has 24 migrated rows; expect a non-zero count without filters.
     expect(result.rowCount).toBeGreaterThan(0);

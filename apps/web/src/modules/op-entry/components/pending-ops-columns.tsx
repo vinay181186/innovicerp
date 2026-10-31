@@ -10,6 +10,7 @@
 import { ActionLink } from '@/components/shared/action-link';
 import type { JcOpEnriched } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
+import { fmtDate } from '@/lib/date';
 import { leadColumns, type DataTableColumn } from '@/ui/data';
 
 /** One op this machine actually produced on, with THAT machine's share of the
@@ -42,14 +43,27 @@ function jcLink(op: JcOpEnriched): React.JSX.Element {
 
 /** The six lead columns (owner rule 2026-10-31), read off a JcOpEnriched.
  *  `pick` lets the Made-here table reuse them against its { op, qty } row
- *  shape. Spread FIRST — JC No., Op and the rest follow Item Name. */
-function identityColumns<T>(pick: (row: T) => JcOpEnriched): DataTableColumn<T>[] {
+ *  shape. Spread FIRST — `doc` (the JC No.) is drawn first and locked with
+ *  the block; Op and the rest follow Item Name (ADR-261 amendment 31-Oct). */
+function identityColumns<T>(
+  pick: (row: T) => JcOpEnriched,
+  doc: DataTableColumn<T>,
+): DataTableColumn<T>[] {
   return leadColumns<T>({
+    doc,
+    docDate: {
+      id: 'jc_date',
+      kind: 'date',
+      header: 'JC Date',
+      className: 'mono',
+      nowrap: true,
+      render: (row) => fmtDate(pick(row).jcDate ?? null),
+      filterValue: (row) => pick(row).jcDate ?? '',
+    },
     soNo: (row) => pick(row).soCode,
     internalSoNo: (row) => pick(row).soInternalNo,
     pol: (row) => pick(row).clientPoLineNo,
-    // needs API — the enriched op row carries no created date yet.
-    createdOn: () => null,
+    createdOn: (row) => pick(row).createdAt,
     itemCode: (row) => pick(row).itemCode,
     itemRev: (row) => pick(row).itemRevision,
     itemName: (row) => pick(row).itemName,
@@ -61,14 +75,13 @@ function identityColumns<T>(pick: (row: T) => JcOpEnriched): DataTableColumn<T>[
 export function pendingOpsColumns(): DataTableColumn<JcOpEnriched>[] {
   const self = (op: JcOpEnriched): JcOpEnriched => op;
   return [
-    ...identityColumns<JcOpEnriched>(self),
-    {
+    ...identityColumns<JcOpEnriched>(self, {
       id: 'jc_no',
       kind: 'code',
       header: 'JC No.',
       className: 'mono fw-700 cyan',
       render: (op) => jcLink(op),
-    },
+    }),
     {
       id: 'op_seq',
       kind: 'code',
@@ -101,14 +114,13 @@ export function pendingOpsColumns(): DataTableColumn<JcOpEnriched>[] {
 export function madeHereColumns(): DataTableColumn<MadeHereRow>[] {
   const pick = (row: MadeHereRow): JcOpEnriched => row.op;
   return [
-    ...identityColumns<MadeHereRow>(pick),
-    {
+    ...identityColumns<MadeHereRow>(pick, {
       id: 'jc_no',
       kind: 'code',
       header: 'JC No.',
       className: 'mono fw-700 cyan',
       render: (row) => jcLink(row.op),
-    },
+    }),
     {
       id: 'op_seq',
       kind: 'code',

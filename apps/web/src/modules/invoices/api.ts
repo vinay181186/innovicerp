@@ -4,6 +4,7 @@ import type {
   FinanceSoOption,
   InvoiceDetail,
   InvoiceableSoResponse,
+  ListInvoiceLinesResponse,
   ListInvoicesQuery,
   ListInvoicesResponse,
 } from '@innovic/shared';
@@ -17,6 +18,9 @@ export const invoiceKeys = {
   all: ['invoices'] as const,
   list: (q?: ListInvoicesQuery) =>
     q ? ([...invoiceKeys.all, 'list', q] as const) : ([...invoiceKeys.all, 'list'] as const),
+  /** ADR-261 — SO Invoices one-row-per-line list; under `list()` so every
+   *  list invalidation refreshes it too. */
+  lineList: (q: ListInvoicesQuery) => [...invoiceKeys.list(), 'lines', q] as const,
   detail: (id: string) => [...invoiceKeys.all, 'detail', id] as const,
   soOptions: () => [...invoiceKeys.all, 'so-options'] as const,
   invoiceable: (soId: string) => [...invoiceKeys.all, 'invoiceable', soId] as const,
@@ -51,6 +55,18 @@ export function useInvoiceList(q: ListInvoicesQuery) {
     // Not a live table (CLAUDE.md §22): the safety refresh keeps the list current.
     refetchInterval: LIVE_FALLBACK_POLL_MS,
     queryFn: () => fetchInvoiceList(q),
+    staleTime: 15_000,
+    placeholderData: (prev) => prev,
+  });
+}
+
+/** ADR-261 — one page of SO invoice LINES (GET /invoices/lines). */
+export function useInvoiceLineList(q: ListInvoicesQuery) {
+  return useQuery<ListInvoiceLinesResponse>({
+    queryKey: invoiceKeys.lineList(q),
+    // Not a live table (CLAUDE.md §22): the safety refresh keeps the list current.
+    refetchInterval: LIVE_FALLBACK_POLL_MS,
+    queryFn: () => apiFetch<ListInvoiceLinesResponse>(`/invoices/lines?${invoiceListQs(q)}`),
     staleTime: 15_000,
     placeholderData: (prev) => prev,
   });

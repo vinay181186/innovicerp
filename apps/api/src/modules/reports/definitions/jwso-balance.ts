@@ -32,14 +32,16 @@ export const jwsoBalanceReport: RegisteredReport = {
       { key: 'status', label: 'JWSO Line Status', kind: 'enum', options: [...STATUSES] },
     ],
     columns: [
+      // ADR-261 lead columns (JWSO-only list: no Internal SO No.). Created On
+      // = the JWSO line's created_at; the drawing rev rides in Item Code.
       { key: 'jw_code', label: 'JWSO No.', type: 'text' },
+      { key: 'client_po_line_no', label: 'POL', type: 'text' },
+      { key: 'created_on', label: 'Created On', type: 'date' },
+      { key: 'item_code', label: 'Item Code', type: 'text' },
+      { key: 'item_name', label: 'Item Name', type: 'text' },
       { key: 'jw_date', label: 'JWSO Date', type: 'date' },
       { key: 'client_name', label: 'Customer', type: 'text' },
-      { key: 'client_po_line_no', label: 'POL', type: 'text' },
       { key: 'line_no', label: 'Ln', type: 'number' },
-      { key: 'item_code', label: 'Item Code', type: 'text' },
-      { key: 'item_revision', label: 'Drawing Rev', type: 'text' },
-      { key: 'item_name', label: 'Item Name', type: 'text' },
       { key: 'order_qty', label: 'Order Qty', type: 'number' },
       { key: 'material_received_qty', label: 'Customer RM Accepted', type: 'number' },
       { key: 'returned_qty', label: 'Returned', type: 'number' },
@@ -68,8 +70,9 @@ export const jwsoBalanceReport: RegisteredReport = {
         COALESCE(cl.name, jwo.customer_name, '—')   AS client_name,
         jwl.client_po_line_no                       AS client_po_line_no, -- ADR-236
         jwl.line_no                                 AS line_no,
-        COALESCE(it.code, jwl.item_code_text)  AS item_code,
-        jwl.revision::text                          AS item_revision,
+        (COALESCE(it.code, jwl.item_code_text)
+          || COALESCE('/' || NULLIF(btrim(jwl.revision::text), ''), '')) AS item_code,
+        (jwl.created_at AT TIME ZONE 'Asia/Kolkata')::date::text AS created_on,
         COALESCE(it.name, jwl.part_name)            AS item_name,
         jwl.order_qty                               AS order_qty,
         COALESCE((
@@ -109,13 +112,13 @@ export const jwsoBalanceReport: RegisteredReport = {
 
     const rows = (result as unknown as SqlRow[]).map((r) => ({
       jw_code: String(r['jw_code'] ?? ''),
+      client_po_line_no: textCell(r['client_po_line_no']),
+      created_on: dateCell(r['created_on']),
+      item_code: String(r['item_code'] ?? '—'),
+      item_name: textCell(r['item_name']),
       jw_date: dateCell(r['jw_date']),
       client_name: String(r['client_name'] ?? ''),
-      client_po_line_no: textCell(r['client_po_line_no']),
       line_no: numCell(r['line_no']),
-      item_code: String(r['item_code'] ?? '—'),
-      item_revision: textCell(r['item_revision']),
-      item_name: textCell(r['item_name']),
       order_qty: numCell(r['order_qty']),
       material_received_qty: numCell(r['material_received_qty']),
       returned_qty: numCell(r['returned_qty']),

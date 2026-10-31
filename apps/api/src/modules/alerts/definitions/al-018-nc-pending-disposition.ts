@@ -3,6 +3,7 @@
 
 import { docNavPage } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
+import { polSql } from '../../../lib/pol';
 import type { RegisteredAlert } from '../registry';
 
 export const al018NcPendingDisposition: RegisteredAlert = {
@@ -12,10 +13,17 @@ export const al018NcPendingDisposition: RegisteredAlert = {
     name: 'NC Disposition Pending',
     description: 'NCs still waiting for a disposition decision.',
     columns: [
+      // ADR-261 lead columns: SO No. · Internal SO No. · POL · Created On ·
+      // Item Code (CODE/REV) · Item Name, then the rest.
       { key: 'nc_code', label: 'NC No.', type: 'text' },
       { key: 'nc_date', label: 'NC Date', type: 'date' },
+      { key: 'so_code', label: 'SO No.', type: 'text' },
+      { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
+      { key: 'client_po_line_no', label: 'POL', type: 'text' },
+      { key: 'created_on', label: 'Created On', type: 'date' },
+      { key: 'item_code', label: 'Item Code', type: 'text' },
+      { key: 'item_name', label: 'Item Name', type: 'text' },
       { key: 'jc_code', label: 'JC No.', type: 'text' },
-      { key: 'item', label: 'Item Code', type: 'text' },
       { key: 'rejected_qty', label: 'Deviated', type: 'number' },
       { key: 'reason_category', label: 'Reason', type: 'text' },
     ],
@@ -23,11 +31,23 @@ export const al018NcPendingDisposition: RegisteredAlert = {
   },
   async run({ tx, companyId }) {
     const result = await tx.execute(sql`
-      SELECT nc.id AS nav_id, nc.code AS nc_code, nc.nc_date, jc.code AS jc_code,
-             COALESCE(nc.item_code_text, '') AS item,
+      SELECT nc.id AS nav_id,
+             COALESCE(so.code, nc.so_code_text, jwo.code) AS so_code,
+             so.internal_so_no AS so_internal_no,
+             ${polSql('sol', 'jwl')} AS client_po_line_no,
+             (nc.created_at AT TIME ZONE 'Asia/Kolkata')::date::text AS created_on,
+             (COALESCE(nc.item_code_text, '')
+               || COALESCE('/' || NULLIF(btrim(COALESCE(sol.revision::text, jwl.revision::text)), ''), '')) AS item_code,
+             COALESCE(i.name, nc.item_name_text) AS item_name,
+             nc.code AS nc_code, nc.nc_date, jc.code AS jc_code,
              nc.rejected_qty, nc.reason_category
       FROM public.nc_register nc
       LEFT JOIN public.job_cards jc ON jc.id = nc.job_card_id
+      LEFT JOIN public.sales_orders so ON so.id = nc.so_id
+      LEFT JOIN public.sales_order_lines sol ON sol.id = jc.source_so_line_id
+      LEFT JOIN public.job_work_order_lines jwl ON jwl.id = jc.source_jw_line_id
+      LEFT JOIN public.job_work_orders jwo ON jwo.id = jwl.job_work_order_id
+      LEFT JOIN public.items i ON i.id = nc.item_id
       WHERE nc.company_id = ${companyId}::uuid
         AND nc.deleted_at IS NULL
         AND nc.status = 'pending'
@@ -35,13 +55,18 @@ export const al018NcPendingDisposition: RegisteredAlert = {
     `);
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({
       navPage: docNavPage('nc', String(r['nav_id'])),
+      so_code: (r['so_code'] as string | null) ?? '',
+      so_internal_no: (r['so_internal_no'] as string | null) ?? '',
+      client_po_line_no: (r['client_po_line_no'] as string | null) ?? '',
+      created_on: String(r['created_on'] ?? ''),
+      item_code: (r['item_code'] as string | null) ?? '',
+      item_name: (r['item_name'] as string | null) ?? '',
       nc_code: (r['nc_code'] as string) ?? '',
       nc_date:
         r['nc_date'] instanceof Date
           ? r['nc_date'].toISOString().slice(0, 10)
           : String(r['nc_date'] ?? ''),
       jc_code: (r['jc_code'] as string) ?? '',
-      item: (r['item'] as string) ?? '',
       rejected_qty: r['rejected_qty'] != null ? Number(r['rejected_qty']) : 0,
       reason_category: (r['reason_category'] as string) ?? '',
     }));

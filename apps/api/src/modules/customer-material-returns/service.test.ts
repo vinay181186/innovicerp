@@ -36,3 +36,13 @@ describe('customer-material-returns — reads', () => {
   it.todo('list: 25 per page, search on return code / JWSO code / customer / vehicle no.');
   it.todo('returnable: good rows with balance > 0, rejected rows with held > 0');
 });
+
+describe('customer-material-returns — lines register (ADR-261, list-lines.ts)', () => {
+  it.todo(
+    'one row per live line of a live return; lead = JWSO No. / POL / Created On / Item Code-Rev / Item Name',
+  );
+  it.todo(
+    'company scoping: a line of another company never appears, total counts lines not returns',
+  );
+  it.todo('needs party_create view; search + sf (jwCode, createdOn, itemCode, qty) filter lines');
+});

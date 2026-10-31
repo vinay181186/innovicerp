@@ -194,3 +194,58 @@ export interface ListPartyGrnResponse {
     today: number;
   };
 }
+
+// ─── ADR-261: one row per Party GRN LINE (GET /party-grn/lines) ──────────────
+
+/** The Party GRN list row (ADR-261) — ONE row per line of a Party GRN. The row
+ *  opens with the lead block (JWSO No. · POL · Created On · Item Code/Rev ·
+ *  Item Name); the item is what this line RECEIVED — the JWSO line's customer
+ *  RM (`<item>-RM`), with the JWSO line's drawing revision. `header` is the
+ *  document's own list row (GET /party-grn shape) so every row action (Preview,
+ *  Incoming QC, Cancel, ▸ expand) acts on the whole GRN exactly as before. */
+export const partyGrnLineListRowSchema = z.object({
+  lineId: z.string().uuid(),
+  docId: z.string().uuid(),
+  docCode: z.string(),
+  docDate: z.string(),
+  /** 'cancelled' (ADR-235, listed with includeCancelled) or 'live'. */
+  docStatus: z.enum(['live', 'cancelled']),
+  lineNo: z.number().int().positive(),
+  /** JWSO code the GRN was received against. */
+  jwCode: z.string().nullable(),
+  /** POL — the JWSO line's customer PO line number (ADR-236). */
+  clientPoLineNo: z.string().nullable(),
+  /** The line's own created_at (falls back to the GRN's). */
+  createdAt: z.string(),
+  /** Customer RM code received on this line. */
+  itemCode: z.string().nullable(),
+  /** The JWSO line's drawing revision (null when blank). */
+  itemRevision: z.string().nullable(),
+  itemName: z.string().nullable(),
+  customerName: z.string().nullable(),
+  clientPoNo: z.string().nullable(),
+  /** Customer Challan No. */
+  dcNo: z.string().nullable(),
+  receivedQty: z.number().int().nonnegative(),
+  acceptedQty: z.number().int().nonnegative(),
+  rejectedQty: z.number().int().nonnegative(),
+  /** Server QC Pending Qty of this line (0 on a cancelled GRN). */
+  qcPendingQty: z.number().int().nonnegative(),
+  qcAt: z.string().nullable(),
+  header: partyGrnListItemSchema,
+});
+export type PartyGrnLineListRow = z.infer<typeof partyGrnLineListRowSchema>;
+
+/** Same envelope as ListPartyGrnResponse; `total` counts LINES, the summary
+ *  still counts GRNs. Same query params (listPartyGrnQuerySchema). */
+export interface ListPartyGrnLinesResponse {
+  items: PartyGrnLineListRow[];
+  total: number;
+  limit: number;
+  offset: number;
+  summary: {
+    totalGrns: number;
+    totalReceived: number;
+    today: number;
+  };
+}

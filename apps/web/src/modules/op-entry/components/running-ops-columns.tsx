@@ -10,9 +10,8 @@ import { ActionLink } from '@/components/shared/action-link';
 import type { RunningOp } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
 import { ActualMachineCell, PlannedMachineCell } from '@/components/shared/machine-split';
-import { fmtDateAndTime, fmtDateTime } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
-import type { DataTableColumn } from '@/ui/data';
+import { fmtDate, fmtDateAndTime, fmtDateTime } from '@/lib/date';
+import { leadColumns, type DataTableColumn } from '@/ui/data';
 import { RunningOpStatusBadge } from './status-badge';
 
 /** GET /op-entry/running-ops rows carry `startedByName` — the logged-in user
@@ -38,10 +37,9 @@ function JcLink({ id, code }: { id: string; code: string }): React.JSX.Element {
   );
 }
 
-/** Columns moved into the ▸ detail row by default: the CUSTOMER's PO line, the
- *  free-text item name and the planned machine. The user can bring any of them
- *  back from the Columns menu. The JC number (first column) is always pinned. */
-export const RUNNING_OPS_DEFAULT_HIDDEN = ['client_po_line_no', 'item_name', 'planned_machine'];
+/** Nothing hidden by default — the six lead columns are always shown (owner
+ *  rule 2026-10-31, ADR-261). Kept as the board's defaultHidden hook. */
+export const RUNNING_OPS_DEFAULT_HIDDEN: string[] = [];
 
 /** True when a different person pressed Start than the operator on the floor. */
 function startedByDiffers(r: RunningOpRow): string | null {
@@ -51,45 +49,49 @@ function startedByDiffers(r: RunningOpRow): string | null {
   return differs ? startedBy : null;
 }
 
-/** POL · Item Code · Item Name — the three cells that identify the part. Shared
- *  by both tables so the look cannot drift between them. */
-const polColumn: DataTableColumn<RunningOpRow> = {
-  // POL — the line number printed on the CUSTOMER's own purchase order,
-  // immediately before the item. '—' when there is no sales order behind it.
-  id: 'client_po_line_no',
-  sortFilterField: 'clientPoLineNo',
-  kind: 'code',
-  header: 'POL',
-  headColor: 'var(--purple)',
-  className: 'mono fw-700',
-  render: (r) => <span style={{ color: 'var(--purple)' }}>{r.clientPoLineNo ?? '—'}</span>,
-};
-
-const itemCodeColumn: DataTableColumn<RunningOpRow> = {
-  // A JC number says WHICH JOB; only this says WHICH PART. The code carries
-  // the customer's drawing revision as CODE/REV through the one shared helper.
-  id: 'item_code',
-  sortFilterField: 'itemCode',
-  kind: 'code',
-  header: 'Item Code',
-  className: 'mono fw-700',
-  render: (r) => (
-    <span style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}>
-      {itemCodeWithRev(r.itemCode, r.itemRevision)}
-    </span>
-  ),
-};
-
-const itemNameColumn: DataTableColumn<RunningOpRow> = {
-  id: 'item_name',
-  sortFilterField: 'itemName',
-  kind: 'text',
-  header: 'Item Name',
-  align: 'left',
-  ellipsis: true,
-  render: (r) => r.itemName ?? '—',
-  title: (r) => r.itemName ?? '',
-};
+/** The six lead columns (ADR-261), shared by both tables so the look cannot
+ *  drift. `server` = the paged board's server Sort & Filter field names
+ *  (running-ops-read.ts RUNNING_OPS_SF_COLUMNS); the keyless Recent table
+ *  filters its page locally. Spread FIRST — `doc` (the JC No.) is drawn first
+ *  and locked with the block; Op and the rest follow Item Name (ADR-261
+ *  amendment 31-Oct). */
+function identityColumns(
+  server: boolean,
+  doc: DataTableColumn<RunningOpRow>,
+): DataTableColumn<RunningOpRow>[] {
+  return leadColumns<RunningOpRow>({
+    doc,
+    docDate: {
+      id: 'jc_date',
+      kind: 'date',
+      header: 'JC Date',
+      className: 'mono',
+      nowrap: true,
+      render: (r) => fmtDate(r.jcDate ?? null),
+      filterValue: (r) => r.jcDate ?? '',
+      ...(server ? { sortFilterField: 'jcDate' } : {}),
+    },
+    soNo: (r) => r.soCode,
+    internalSoNo: (r) => r.soInternalNo,
+    pol: (r) => r.clientPoLineNo,
+    createdOn: (r) => r.createdAt,
+    itemCode: (r) => r.itemCode,
+    itemRev: (r) => r.itemRevision,
+    itemName: (r) => r.itemName,
+    ...(server
+      ? {
+          overrides: {
+            so_no: { sortFilterField: 'soCode' },
+            so_internal_no: { sortFilterField: 'soInternalNo' },
+            client_po_line_no: { sortFilterField: 'clientPoLineNo' },
+            created_on: { sortFilterField: 'createdOn' },
+            item_code: { sortFilterField: 'itemCode' },
+            item_name: { sortFilterField: 'itemName' },
+          },
+        }
+      : {}),
+  });
+}
 
 const opColumn: DataTableColumn<RunningOpRow> = {
   id: 'op_seq',
@@ -165,21 +167,20 @@ const operatorColumn: DataTableColumn<RunningOpRow> = {
 
 /** "Running now": the live sessions. `sortFilterField` = the field in the
  *  server's column map (running-ops-read.ts) — the board's Sort & Filter runs
- *  on the server because it is paged (ADR-201). First column (JC No.) is always pinned;
+ *  on the server because it is paged (ADR-201). The lead block is locked;
  *  the Stop action is added by the board as the trailing ⋯ menu. */
 export function runningNowColumns(): DataTableColumn<RunningOpRow>[] {
   return [
-    {
+    ...identityColumns(true, {
       id: 'jc_no',
       sortFilterField: 'jobCardCode',
       kind: 'code',
       header: 'JC No.',
       className: 'td-code cyan',
       render: (r) => <JcLink id={r.jobCardId} code={r.jobCardCode} />,
-    },
+    }),
     opColumn,
     operationColumn,
-    itemCodeColumn,
     actualMachineColumn,
     operatorColumn,
     {
@@ -190,8 +191,6 @@ export function runningNowColumns(): DataTableColumn<RunningOpRow>[] {
       className: 'mono',
       render: (r) => fmtDateAndTime(r.startDate, r.startTime),
     },
-    polColumn,
-    itemNameColumn,
     plannedMachineColumn,
   ];
 }
@@ -200,16 +199,15 @@ export function runningNowColumns(): DataTableColumn<RunningOpRow>[] {
  *  but Ended + Op Status replace Started + the Stop action. */
 export function recentOpsColumns(): DataTableColumn<RunningOpRow>[] {
   return [
-    {
+    ...identityColumns(false, {
       id: 'jc_no',
       kind: 'code',
       header: 'JC No.',
       className: 'td-code',
       render: (r) => <JcLink id={r.jobCardId} code={r.jobCardCode} />,
-    },
+    }),
     opColumn,
     operationColumn,
-    itemCodeColumn,
     actualMachineColumn,
     operatorColumn,
     {
@@ -225,8 +223,6 @@ export function recentOpsColumns(): DataTableColumn<RunningOpRow>[] {
       header: 'Op Status',
       render: (r) => <RunningOpStatusBadge status={r.status} />,
     },
-    polColumn,
-    itemNameColumn,
     plannedMachineColumn,
   ];
 }

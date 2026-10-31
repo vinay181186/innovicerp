@@ -4,6 +4,7 @@
 // Modelled on ERPNext's "Procurement Tracker" report.
 
 import { sql } from 'drizzle-orm';
+import { polSql } from '../../../lib/pol';
 import type { RegisteredReport } from '../registry';
 import {
   dateCell as dateOrNull,
@@ -32,11 +33,18 @@ export const procurementTrackerReport: RegisteredReport = {
       { key: 'status', label: 'PR Status', kind: 'enum', options: PR_STATUSES },
     ],
     columns: [
+      // ADR-261 lead columns — same sources as the PR list: SO line, else
+      // the JW line of the JC op the PR came from (blank for a stock PR).
+      // Created On = the PR's created_at; the drawing rev rides in Item Code.
       { key: 'pr_code', label: 'PR No.', type: 'text' },
       { key: 'pr_date', label: 'PR Date', type: 'date' },
-      { key: 'pr_type', label: 'PR Type', type: 'text' },
+      { key: 'so_code', label: 'SO No.', type: 'text' },
+      { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
+      { key: 'client_po_line_no', label: 'POL', type: 'text' },
+      { key: 'created_on', label: 'Created On', type: 'date' },
       { key: 'item_code', label: 'Item Code', type: 'text' },
       { key: 'item_name', label: 'Item Name', type: 'text' },
+      { key: 'pr_type', label: 'PR Type', type: 'text' },
       { key: 'pr_qty', label: 'PR Qty', type: 'number' },
       { key: 'due_date', label: 'Due Date', type: 'date' },
       { key: 'approved_on', label: 'Approved On', type: 'date' },
@@ -71,7 +79,13 @@ export const procurementTrackerReport: RegisteredReport = {
         pr.code                                        AS pr_code,
         pr.pr_date                                     AS pr_date,
         pr.pr_type::text                               AS pr_type,
-        COALESCE(it.code, pr.item_code_text, '—')      AS item_code,
+        COALESCE(so.code, jwo.code)                    AS so_code,
+        so.internal_so_no                              AS so_internal_no,
+        ${polSql('sol', 'rev_jwl')}                    AS client_po_line_no,
+        (pr.created_at AT TIME ZONE 'Asia/Kolkata')::date::text AS created_on,
+        (COALESCE(it.code, pr.item_code_text, '—')
+          || COALESCE('/' || NULLIF(btrim(COALESCE(sol.revision::text, rev_jwl.revision::text)), ''), ''))
+                                                       AS item_code,
         COALESCE(it.name, pr.item_name)                AS item_name,
         pr.qty                                         AS pr_qty,
         pr.required_date                               AS due_date,
@@ -87,6 +101,18 @@ export const procurementTrackerReport: RegisteredReport = {
         pr.status::text                                AS pr_status
       FROM public.purchase_requests pr
       LEFT JOIN public.items it ON it.id = pr.item_id AND it.deleted_at IS NULL
+      LEFT JOIN public.sales_order_lines sol
+        ON sol.id = pr.source_so_line_id AND sol.deleted_at IS NULL
+      LEFT JOIN public.sales_orders so
+        ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
+      LEFT JOIN public.jc_ops jo
+        ON jo.id = pr.source_jc_op_id AND jo.deleted_at IS NULL
+      LEFT JOIN public.job_cards jc
+        ON jc.id = jo.job_card_id AND jc.deleted_at IS NULL
+      LEFT JOIN public.job_work_order_lines rev_jwl
+        ON rev_jwl.id = jc.source_jw_line_id AND rev_jwl.deleted_at IS NULL
+      LEFT JOIN public.job_work_orders jwo
+        ON jwo.id = rev_jwl.job_work_order_id AND jwo.deleted_at IS NULL
       -- First live PO line raised from this PR.
       LEFT JOIN LATERAL (
         SELECT pol.id AS pol_id, po.code AS po_code, po.po_date
@@ -151,11 +177,15 @@ export const procurementTrackerReport: RegisteredReport = {
     `);
 
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({
+      so_code: (r['so_code'] as string | null) ?? null,
+      so_internal_no: (r['so_internal_no'] as string | null) ?? null,
+      client_po_line_no: (r['client_po_line_no'] as string | null) ?? null,
+      created_on: dateOrNull(r['created_on']),
+      item_code: String(r['item_code'] ?? ''),
+      item_name: (r['item_name'] as string | null) ?? null,
       pr_code: String(r['pr_code'] ?? ''),
       pr_date: dateOrNull(r['pr_date']),
       pr_type: String(r['pr_type'] ?? ''),
-      item_code: String(r['item_code'] ?? ''),
-      item_name: (r['item_name'] as string | null) ?? null,
       pr_qty: Number(r['pr_qty'] ?? 0),
       due_date: dateOrNull(r['due_date']),
       approved_on: dateOrNull(r['approved_on']),

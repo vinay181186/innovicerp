@@ -330,7 +330,7 @@ function escapeLikeTerm(raw: string): string {
  *  a JWSO with a silent empty dropdown (Party GRN, Party Material Issue,
  *  Customer Material Return, JW Invoice, JW DC outward). JWSO Master stays
  *  first so a refusal names it. Money is still hidden — see jwShowMoney. */
-const JW_READ_PAIRS = [
+export const JW_READ_PAIRS = [
   ['jw_create', 'view'],
   ['party_create', 'view'],
   ['invoice_create', 'view'],

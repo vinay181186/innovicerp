@@ -8,6 +8,7 @@ import {
   updateGoodsReceiptNoteInputSchema,
 } from './schema';
 import * as service from './service';
+import { listGoodsReceiptNoteLines } from './list-lines';
 
 const idParamSchema = z.object({ id: z.string().uuid() });
 // ADR-197 — a delete says why (REASON_REQUIRED_ACTIONS). Module-local, so the
@@ -19,6 +20,13 @@ export async function goodsReceiptNotesRoutes(app: FastifyInstance): Promise<voi
     if (!req.user) throw new AuthenticationError();
     const query = listGoodsReceiptNotesQuerySchema.parse(req.query);
     return service.listGoodsReceiptNotes(query, req.user);
+  });
+
+  // ADR-261 — the GRN list screen, one row per GRN line (list-lines.ts).
+  app.get('/goods-receipt-notes/lines', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const query = listGoodsReceiptNotesQuerySchema.parse(req.query);
+    return listGoodsReceiptNoteLines(query, req.user);
   });
 
   app.get('/goods-receipt-notes/:id', async (req) => {

@@ -1,13 +1,18 @@
 // SO Invoices list columns (moved out of routes/list.tsx to keep it < 400).
 // ADR-201: sortFilterField = the server column map (api invoices/sf-columns.ts).
+// ADR-261 (owner 2026-10-31): ONE ROW PER INVOICE LINE (GET /invoices/lines).
+// Invoice No. and the six lead columns come first (SO No. · Internal SO No. ·
+// POL · Created On · Item Code (CODE/REV) · Item Name), then Invoice Date,
+// Customer, the line's Invoice Qty and Amount (price-gated), Invoice Status, Due
+// Date. Row click and ⋯ act on the INVOICE.
 
-import type { ListInvoicesResponse } from '@innovic/shared';
+import type { InvoiceListLineRow } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
 import { StatusBadge } from '@/ui/core';
-import type { DataTableColumn } from '@/ui/data';
+import { leadColumns, type DataTableColumn } from '@/ui/data';
 
-export type InvoiceListRow = ListInvoicesResponse['invoices'][number];
+export type InvoiceListRow = InvoiceListLineRow;
 
 const inr = (v: number): string => `₹${Math.round(v).toLocaleString('en-IN')}`;
 
@@ -25,112 +30,85 @@ const INVOICE_STATUS_OPTIONS = Object.entries(INVOICE_STATUS_LABEL).map(([value,
 }));
 
 export function invoiceListColumns(priceHidden: boolean): DataTableColumn<InvoiceListRow>[] {
-  // Widths sum to 90 — DataTable's Action column takes the remaining 10.
   const moneyColumns: DataTableColumn<InvoiceListRow>[] = priceHidden
     ? []
     : [
         {
-          id: 'grand_total',
-          header: 'Grand Total',
+          id: 'line_amount',
+          header: 'Amount',
           kind: 'num',
-          sortFilterField: 'grandTotal',
-          width: '9%',
+          sortFilterField: 'lineAmount',
           align: 'right',
           className: 'mono fw-700',
           nowrap: true,
-          render: (inv) => (
-            <span style={{ color: 'var(--green2)' }}>{inr(inv.grandTotal ?? 0)}</span>
-          ),
-        },
-        {
-          id: 'paid_amount',
-          header: 'Paid',
-          kind: 'num',
-          sortFilterField: 'totalPaid',
-          width: '8%',
-          align: 'right',
-          className: 'mono fw-700',
-          nowrap: true,
-          render: (inv) => <span style={{ color: 'var(--cyan)' }}>{inr(inv.totalPaid ?? 0)}</span>,
-        },
-        {
-          id: 'outstanding_amount',
-          header: 'Outstanding Amount',
-          kind: 'num',
-          sortFilterField: 'balance',
-          width: '9%',
-          align: 'right',
-          className: 'mono fw-700',
-          nowrap: true,
-          render: (inv) => (
-            <span style={{ color: (inv.balance ?? 0) > 0 ? 'var(--red)' : 'var(--green)' }}>
-              {inr(inv.balance ?? 0)}
-            </span>
-          ),
+          render: (r) => <span style={{ color: 'var(--green2)' }}>{inr(r.lineAmount ?? 0)}</span>,
         },
       ];
 
-  const columns: DataTableColumn<InvoiceListRow>[] = [
-    {
-      id: 'code',
-      header: 'Invoice No.',
-      sortFilterField: 'code',
-      width: priceHidden ? '15%' : '12%',
-      className: 'td-code',
-      nowrap: true,
-      // Kept a real <Link> (not plain text): the code is how this list is
-      // ctrl-clicked / middle-clicked open in a new tab today.
-      render: (inv) => (
-        <Link
-          to="/invoices/$id"
-          params={{ id: inv.id }}
-          style={{ color: 'inherit', textDecoration: 'none' }}
-        >
-          {inv.code}
-        </Link>
-      ),
-    },
-    {
-      id: 'invoice_date',
-      kind: 'date',
-      sortFilterField: 'invoiceDate',
-      header: 'Invoice Date',
-      width: priceHidden ? '11%' : '8%',
-      nowrap: true,
-      render: (inv) => fmtDate(inv.invoiceDate),
-    },
-    {
-      id: 'so_code',
-      header: 'SO No.',
-      sortFilterField: 'soCode',
-      width: priceHidden ? '12%' : '9%',
-      className: 'td-code',
-      nowrap: true,
-      render: (inv) => inv.soCode || '—',
-    },
-    {
-      // ADR-207 — the office's own Internal SO No., in its own column beside
-      // the system SO No. so the two can be told apart. Older orders have none.
-      // No `sortFilterField`: the Internal SO No. reaches this row from a
-      // second query stitched on in JS, so the list query cannot sort by it.
-      id: 'so_internal_no',
-      header: 'Internal SO No.',
-      width: priceHidden ? '9%' : '7%',
-      className: 'mono fw-700',
-      nowrap: true,
-      render: (inv) => (
-        <span style={{ color: 'var(--text)' }}>{inv.soInternalNo?.trim() || '—'}</span>
-      ),
-    },
+  return [
+    ...leadColumns<InvoiceListRow>({
+      doc: {
+        id: 'code',
+        header: 'Invoice No.',
+        sortFilterField: 'code',
+        className: 'td-code',
+        nowrap: true,
+        // Kept a real <Link> (not plain text): the code is how this list is
+        // ctrl-clicked / middle-clicked open in a new tab today.
+        render: (r) => (
+          <Link
+            to="/invoices/$id"
+            params={{ id: r.invoiceId }}
+            style={{ color: 'inherit', textDecoration: 'none' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {r.invoiceCode}
+          </Link>
+        ),
+      },
+      docDate: {
+        id: 'invoice_date',
+        kind: 'date',
+        sortFilterField: 'invoiceDate',
+        header: 'Invoice Date',
+        nowrap: true,
+        render: (r) => fmtDate(r.invoiceDate),
+      },
+      soNo: (r) => r.soCode,
+      internalSoNo: (r) => r.soInternalNo,
+      pol: (r) => r.clientPoLineNo,
+      createdOn: (r) => r.createdAt,
+      itemCode: (r) => r.itemCode,
+      itemRev: (r) => r.itemRevision,
+      itemName: (r) => r.itemName,
+      overrides: {
+        so_no: { sortFilterField: 'soCode' },
+        so_internal_no: { sortFilterField: 'soInternalNo' },
+        client_po_line_no: { sortFilterField: 'clientPoLineNo' },
+        created_on: { sortFilterField: 'createdOn' },
+        item_code: { sortFilterField: 'itemCode' },
+        item_name: { sortFilterField: 'itemName' },
+      },
+    }),
     {
       id: 'customer',
       header: 'Customer',
       sortFilterField: 'clientName',
-      width: priceHidden ? '22%' : '10%',
       align: 'left',
       className: 'fw-700',
       ellipsis: true,
-      key: 'clientName',
+      render: (r) => r.clientName ?? '—',
+      title: (r) => r.clientName ?? '',
+    },
+    {
+      id: 'qty',
+      header: 'Invoice Qty',
+      kind: 'num',
+      sortFilterField: 'qty',
+      align: 'right',
+      className: 'mono fw-700',
+      nowrap: true,
+      render: (r) => r.qty,
     },
     ...moneyColumns,
     {
@@ -139,9 +117,8 @@ export function invoiceListColumns(priceHidden: boolean): DataTableColumn<Invoic
       sortFilterField: 'status',
       filterOptions: INVOICE_STATUS_OPTIONS,
       header: 'Invoice Status',
-      width: priceHidden ? '13%' : '11%',
       nowrap: true,
-      render: (inv) => (
+      render: (r) => (
         <span
           style={{
             display: 'inline-flex',
@@ -155,10 +132,10 @@ export function invoiceListColumns(priceHidden: boolean): DataTableColumn<Invoic
             for the SAME invoice. One status, one colour, both screens. */}
           <StatusBadge
             kind="invoice"
-            status={inv.status}
-            label={INVOICE_STATUS_LABEL[inv.status] ?? inv.status}
+            status={r.invoiceStatus}
+            label={INVOICE_STATUS_LABEL[r.invoiceStatus] ?? r.invoiceStatus}
           />
-          {inv.overdue ? <span className="badge b-red">Overdue</span> : null}
+          {r.overdue ? <span className="badge b-red">Overdue</span> : null}
         </span>
       ),
     },
@@ -167,14 +144,12 @@ export function invoiceListColumns(priceHidden: boolean): DataTableColumn<Invoic
       kind: 'date',
       sortFilterField: 'dueDate',
       header: 'Due Date',
-      width: priceHidden ? '8%' : '7%',
       nowrap: true,
-      render: (inv) => (
-        <span style={{ color: inv.overdue ? 'var(--red)' : 'var(--text3)' }}>
-          {fmtDate(inv.dueDate)}
+      render: (r) => (
+        <span style={{ color: r.overdue ? 'var(--red)' : 'var(--text3)' }}>
+          {fmtDate(r.dueDate)}
         </span>
       ),
     },
   ];
-  return columns;
 }

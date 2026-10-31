@@ -1,6 +1,7 @@
 import type {
   CreatePartyGrnInput,
   DocumentEditStagedResult,
+  ListPartyGrnLinesResponse,
   ListPartyGrnQuery,
   ListPartyGrnResponse,
   PartyGrn,
@@ -22,6 +23,21 @@ export const partyGrnKeys = {
     [
       ...partyGrnKeys.all,
       'list',
+      q.search ?? null,
+      q.jobWorkOrderId ?? null,
+      q.clientId ?? null,
+      q.fromDate ?? null,
+      q.toDate ?? null,
+      q.sf ?? null,
+      q.includeCancelled ?? false,
+      q.limit,
+      q.offset,
+    ] as const,
+  /** ADR-261 — the list screen's one-row-per-line read (GET /party-grn/lines). */
+  lines: (q: ListPartyGrnQuery) =>
+    [
+      ...partyGrnKeys.all,
+      'lines',
       q.search ?? null,
       q.jobWorkOrderId ?? null,
       q.clientId ?? null,
@@ -57,6 +73,17 @@ export function usePartyGrnList(query: ListPartyGrnQuery) {
   return useQuery<ListPartyGrnResponse>({
     queryKey: partyGrnKeys.list(query),
     queryFn: () => apiFetch<ListPartyGrnResponse>(`/party-grn?${buildSearch(query)}`),
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
+    placeholderData: (prev) => prev,
+  });
+}
+
+/** ADR-261 — the Party GRN list: one row per GRN line, same params as the list. */
+export function usePartyGrnLines(query: ListPartyGrnQuery) {
+  return useQuery<ListPartyGrnLinesResponse>({
+    queryKey: partyGrnKeys.lines(query),
+    queryFn: () => apiFetch<ListPartyGrnLinesResponse>(`/party-grn/lines?${buildSearch(query)}`),
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
     placeholderData: (prev) => prev,

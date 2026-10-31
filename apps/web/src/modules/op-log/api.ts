@@ -20,6 +20,10 @@ export interface OpLogListItem {
    *  off the SO line behind the job card. NOT our SO line number. Null when the
    *  card has no sales order behind it (job-work sourced, hand-raised). */
   clientPoLineNo: string | null;
+  /** ADR-261 — the order behind the card (SO code, else the JWSO code) and the
+   *  SO's Internal SO No. */
+  soCode?: string | null | undefined;
+  soInternalNo?: string | null | undefined;
   opSeq: number;
   operation: string | null;
   /** The machine this entry's qty was STAMPED with — the ACTUAL machine. */

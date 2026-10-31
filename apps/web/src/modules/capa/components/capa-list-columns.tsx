@@ -32,29 +32,46 @@ export function capaRowTint(c: CapaRecord): string | undefined {
 
 export function capaListColumns(): DataTableColumn<CapaRecord>[] {
   return [
-    // Owner rule 2026-10-31 — the six lead columns first; CAPA No. after Item
-    // Name. Internal SO No. and Item Name are not on the CAPA row yet (needs API).
+    // Owner rule 2026-10-31 — own number (CAPA No.) first, then the six lead
+    // columns. Internal SO No. / Item Name come off the CAPA's SO / item codes.
     ...leadColumns<CapaRecord>({
+      doc: {
+        id: 'capa_no',
+        sortFilterField: 'code',
+        filterType: 'text',
+        header: 'CAPA No.',
+        nowrap: true,
+        render: (c) => (
+          <span className="mono fw-700" style={{ color: 'var(--purple)' }}>
+            {c.code}
+          </span>
+        ),
+      },
+      docDate: {
+        id: 'capa_date',
+        sortFilterField: 'capaDate',
+        kind: 'date',
+        header: 'CAPA Date',
+        className: 'mono',
+        nowrap: true,
+        render: (c) => fmtDate(c.capaDate ?? null),
+        filterValue: (c) => c.capaDate ?? '',
+      },
       soNo: (c) => c.soNo,
-      internalSoNo: () => null,
+      internalSoNo: (c) => c.soInternalNo,
       pol: (c) => c.clientPoLineNo,
       createdOn: (c) => c.createdAt,
       itemCode: (c) => c.itemCode,
       itemRev: (c) => c.itemRevision,
-      itemName: () => null,
+      itemName: (c) => c.itemName,
+      overrides: {
+        so_no: { sortFilterField: 'soNo', filterType: 'text' },
+        so_internal_no: { sortFilterField: 'soInternalNo', filterType: 'text' },
+        created_on: { sortFilterField: 'createdOn' },
+        item_code: { sortFilterField: 'itemCode', filterType: 'text' },
+        item_name: { sortFilterField: 'itemName', filterType: 'text' },
+      },
     }),
-    {
-      id: 'capa_no',
-      sortFilterField: 'code',
-      filterType: 'text',
-      header: 'CAPA No.',
-      nowrap: true,
-      render: (c) => (
-        <span className="mono fw-700" style={{ color: 'var(--purple)' }}>
-          {c.code}
-        </span>
-      ),
-    },
     {
       id: 'type',
       sortFilterField: 'type',

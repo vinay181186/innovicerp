@@ -1,10 +1,11 @@
 // LEAD COLUMNS — the owner's fixed standard (2026-10-31). Every list that
 // carries an SO / JWSO line starts with these six columns, in this order:
 //
-//   SO No. · Internal SO No. · POL · Created On · Item Code (CODE/REV) · Item Name
+//   [own doc no. · own doc date] · SO No. · Internal SO No. · POL · Created On · Item Code (CODE/REV) · Item Name
 //
-// and every other column — the page's own number (JC No., PO No. …) included —
-// comes AFTER Item Name. The table engine locks the block (`lead: true`): a
+// The page's own number (Plan No., JC No., PO No. …) comes FIRST, before SO No.
+// (owner, 31-Oct, amending the earlier "after Item Name" decision); every other
+// column comes AFTER Item Name. The table engine locks the block (`lead: true`): a
 // user cannot move, hide or slip a column between them, a new column a
 // developer adds lands after Item Name, and they never drop off the screen.
 // The Drawing Rev is never its own column — it rides in the Item Code cell.
@@ -37,16 +38,26 @@ export const LEAD_COLUMN_IDS = [
 export type LeadColumnId = (typeof LEAD_COLUMN_IDS)[number];
 
 export interface LeadColumnSpec<T> {
+  /** The page's OWN document number column (Plan No., JC No., GRN No. …).
+   *  Drawn FIRST, before SO No., and locked with the block (owner 2026-10-31).
+   *  Must carry an `id`. Leave out only where the row IS the SO / JWSO (SO list,
+   *  SO Overview …) — there SO No. is the own number. */
+  doc?: DataTableColumn<T> | undefined;
+  /** The own document's DATE (Plan Date, GRN Date, JC Date …), drawn right after
+   *  `doc` and locked with it (owner 2026-10-31). Needs `doc`; must carry an `id`. */
+  docDate?: DataTableColumn<T> | undefined;
   /** 'so' (default) → header "SO No."; 'jwso' → "JWSO No." (JWSO-only lists). */
   so?: 'so' | 'jwso';
   soNo: (row: T) => Text;
   /** Leave out on a JWSO-only list — that column is then not drawn. */
   internalSoNo?: ((row: T) => Text) | undefined;
-  pol: (row: T) => Text;
+  /** Leave out ONLY on a one-row-per-order summary (SO Overview, SO Costing…):
+   *  an order has many POLs/items, so those columns are then not drawn. */
+  pol?: ((row: T) => Text) | undefined;
   createdOn: (row: T) => Text;
-  itemCode: (row: T) => Text;
+  itemCode?: ((row: T) => Text) | undefined;
   itemRev?: ((row: T) => Text) | undefined;
-  itemName: (row: T) => Text;
+  itemName?: ((row: T) => Text) | undefined;
   /** Per-column extras (sortFilterField, sortField, filterValue, title, render…). */
   overrides?: Partial<Record<LeadColumnId, Partial<DataTableColumn<T>>>>;
 }
@@ -63,7 +74,10 @@ function col<T>(
 /** The six (five on a JWSO-only list) locked lead columns. Spread them FIRST. */
 export function leadColumns<T>(spec: LeadColumnSpec<T>): DataTableColumn<T>[] {
   const o = spec.overrides ?? {};
-  const out: DataTableColumn<T>[] = [
+  const out: DataTableColumn<T>[] = [];
+  if (spec.doc) out.push({ ...spec.doc, lead: true });
+  if (spec.doc && spec.docDate) out.push({ ...spec.docDate, lead: true });
+  out.push(
     col<T>(
       {
         id: 'so_no',
@@ -78,7 +92,7 @@ export function leadColumns<T>(spec: LeadColumnSpec<T>): DataTableColumn<T>[] {
       },
       o.so_no,
     ),
-  ];
+  );
   const internal = spec.internalSoNo;
   if (internal) {
     out.push(
@@ -98,22 +112,25 @@ export function leadColumns<T>(spec: LeadColumnSpec<T>): DataTableColumn<T>[] {
       ),
     );
   }
+  const { pol, itemCode, itemName } = spec;
+  if (pol) {
+    out.push(
+      col<T>(
+        {
+          id: 'client_po_line_no',
+          kind: 'code',
+          header: 'POL',
+          headColor: 'var(--purple)',
+          className: 'mono fw-700',
+          nowrap: true,
+          render: (r): ReactNode => <span style={{ color: 'var(--purple)' }}>{dash(pol(r))}</span>,
+          filterValue: (r) => pol(r) ?? '',
+        },
+        o.client_po_line_no,
+      ),
+    );
+  }
   out.push(
-    col<T>(
-      {
-        id: 'client_po_line_no',
-        kind: 'code',
-        header: 'POL',
-        headColor: 'var(--purple)',
-        className: 'mono fw-700',
-        nowrap: true,
-        render: (r): ReactNode => (
-          <span style={{ color: 'var(--purple)' }}>{dash(spec.pol(r))}</span>
-        ),
-        filterValue: (r) => spec.pol(r) ?? '',
-      },
-      o.client_po_line_no,
-    ),
     col<T>(
       {
         id: 'created_on',
@@ -126,37 +143,45 @@ export function leadColumns<T>(spec: LeadColumnSpec<T>): DataTableColumn<T>[] {
       },
       o.created_on,
     ),
-    col<T>(
-      {
-        id: 'item_code',
-        kind: 'code',
-        header: 'Item Code',
-        className: 'td-code',
-        nowrap: true,
-        render: (r): ReactNode => (
-          <span style={{ color: 'var(--text)', fontWeight: 700 }}>
-            {itemCodeWithRev(spec.itemCode(r) ?? null, spec.itemRev?.(r) ?? null) || '—'}
-          </span>
-        ),
-        filterValue: (r) => spec.itemCode(r) ?? '',
-      },
-      o.item_code,
-    ),
-    col<T>(
-      {
-        id: 'item_name',
-        kind: 'text',
-        header: 'Item Name',
-        align: 'left',
-        ellipsis: true,
-        className: 'fw-700',
-        render: (r) => spec.itemName(r) ?? '',
-        title: (r) => spec.itemName(r) ?? '',
-        filterValue: (r) => spec.itemName(r) ?? '',
-      },
-      o.item_name,
-    ),
   );
+  if (itemCode) {
+    out.push(
+      col<T>(
+        {
+          id: 'item_code',
+          kind: 'code',
+          header: 'Item Code',
+          className: 'td-code',
+          nowrap: true,
+          render: (r): ReactNode => (
+            <span style={{ color: 'var(--text)', fontWeight: 700 }}>
+              {itemCodeWithRev(itemCode(r) ?? null, spec.itemRev?.(r) ?? null) || '—'}
+            </span>
+          ),
+          filterValue: (r) => itemCode(r) ?? '',
+        },
+        o.item_code,
+      ),
+    );
+  }
+  if (itemName) {
+    out.push(
+      col<T>(
+        {
+          id: 'item_name',
+          kind: 'text',
+          header: 'Item Name',
+          align: 'left',
+          ellipsis: true,
+          className: 'fw-700',
+          render: (r) => itemName(r) ?? '',
+          title: (r) => itemName(r) ?? '',
+          filterValue: (r) => itemName(r) ?? '',
+        },
+        o.item_name,
+      ),
+    );
+  }
   return out;
 }
 

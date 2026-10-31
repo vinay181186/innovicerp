@@ -3,7 +3,8 @@
 // department's total). Stacks above the content on a phone (home.css).
 
 import { ACCESS_DEPTS, type DashCheckDeptBlock } from '@innovic/shared';
-import type { HomeView } from '../home-views';
+import { SECTIONS } from '@/components/shared/nav-sections';
+import { DAY_LOG_HREF, type HomeView, isDeptView } from '../home-views';
 
 export interface MenuItem {
   view: HomeView;
@@ -13,6 +14,19 @@ export interface MenuItem {
 
 export function deptLabel(dept: string): string {
   return ACCESS_DEPTS.find((d) => d.key === dept)?.label ?? dept;
+}
+
+const NAV_ITEMS = SECTIONS.flatMap((s) => s.groups.flatMap((g) => g.items));
+
+/** The icon the top menu already shows for the same place (nav-sections.ts —
+ *  one list, so the home menu and the header never disagree). */
+function viewIcon(view: HomeView): string | undefined {
+  if (isDeptView(view)) return SECTIONS.find((s) => s.key === view)?.icon;
+  if (view === 'todo') return SECTIONS.find((s) => s.key === 'tasks')?.icon;
+  if (view === 'daylog')
+    return NAV_ITEMS.find((i) => `${i.to}?view=${i.search?.view ?? ''}` === DAY_LOG_HREF)?.icon;
+  if (view === 'approvals') return NAV_ITEMS.find((i) => i.to === '/approvals')?.icon;
+  return undefined;
 }
 
 function Item({
@@ -31,7 +45,10 @@ function Item({
       aria-current={current === item.view ? 'page' : undefined}
       onClick={() => onView(item.view)}
     >
-      <span>{item.label}</span>
+      <span className="dh-mi-icon" aria-hidden>
+        {viewIcon(item.view)}
+      </span>
+      <span className="dh-mi-label">{item.label}</span>
       {item.badge != null && item.badge > 0 ? (
         <span className="dh-mbadge">{item.badge}</span>
       ) : null}

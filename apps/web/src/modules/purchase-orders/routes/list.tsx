@@ -1,15 +1,14 @@
 // Purchase Orders list (UI-003-04).
 //
-// ADR-199 table standard: ONE shared FIT table (<DataTable tableKey=…>), one
-// line per PO, the fit engine sizing columns to the screen and dropping the
-// rightmost unpinned ones into a ▸ detail row when it is too narrow. The old
-// List View / Card View toggle is gone — the hand-built card layout and the
-// hand-rolled PoSheetTable it toggled with are both retired. Row click opens
-// the PO; the ▸ reveals the PO's line items (own fetch, PoExpandedLines).
+// ADR-199 table standard: ONE shared FIT table (<DataTable tableKey=…>).
+// ADR-261 (2026-10-31): ONE ROW PER PO LINE, read from GET /purchase-orders/lines;
+// the old ▸ (which only listed the lines) is gone. Row click and the ⋯ menu act
+// on the line's PO (docId), exactly as before.
 //
-// Columns (first pinned): PO No. · PO Date · PO Type · Vendor · PR No. · Qty ·
-// Received · Pending · Value · PO Status — see components/po-list-columns.tsx.
-// Value keeps its price gate (API nulls totalAmount for viewers without price).
+// Columns: the six lead columns (SO No. · Internal SO No. · POL · Created On ·
+// Item Code · Item Name), then PO No. · PO Date · PO Type · Vendor · PR No. ·
+// Qty · GRN Received · Accepted · Pending · Value · PO Status — see
+// components/po-list-columns.tsx. Value keeps its price gate (API nulls it).
 //
 // Row ⋯ menu (RowActions items): Edit (edit tier, not closed) · Create DC
 // (Job Work / Service; DC entry rights, the server's rule; greyed with the
@@ -32,7 +31,7 @@ import {
   poSendsMaterialOut,
   type PoStatus,
   type PoType,
-  type PurchaseOrderListItem,
+  type PurchaseOrderLineListItem,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { Plus } from 'lucide-react';
@@ -50,8 +49,7 @@ import { DataTable, Panel, ROW_TINT, renderRowMenuLink } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
-import { usePurchaseOrdersList } from '../api';
-import { PoExpandedLines } from '../components/po-expanded-lines';
+import { usePurchaseOrderLinesList } from '../api';
 import { purchaseOrderListColumns } from '../components/po-list-columns';
 import { usePoPrint } from '../components/use-po-print';
 import { PO_STATUS_CHOICES, PO_STATUS_LABELS, PO_TYPE_LABELS } from '../lib/po-labels';
@@ -132,7 +130,7 @@ function PurchaseOrdersListPage(): React.JSX.Element {
     [sf.param, search.search, search.status, search.poType, offset],
   );
 
-  const { data, isLoading, isFetching, isError, error } = usePurchaseOrdersList(query, {
+  const { data, isLoading, isFetching, isError, error } = usePurchaseOrderLinesList(query, {
     refetchInterval: LIVE_FALLBACK_POLL_MS,
   });
   const gotoPage = useCallback(
@@ -156,27 +154,14 @@ function PurchaseOrdersListPage(): React.JSX.Element {
   const canCreateDc = effectiveFormPerms(eff, 'ospdc_create').entry;
   // ADR-232: Assign Task = this page's Advance right.
   const canAssign = perms.advance;
-  const [assignPo, setAssignPo] = useState<PurchaseOrderListItem | null>(null);
+  const [assignPo, setAssignPo] = useState<PurchaseOrderLineListItem | null>(null);
   // ADR-235 — Cancel PO: the Edit tick raises the request, the Approve tick
   // decides it. The row whose standard Cancel dialog is open.
   const canCancel = perms.edit || perms.approve;
-  const [cancelPo, setCancelPo] = useState<PurchaseOrderListItem | null>(null);
+  const [cancelPo, setCancelPo] = useState<PurchaseOrderLineListItem | null>(null);
 
   const total = data?.total ?? 0;
   const rows = data?.items ?? [];
-
-  // ▸ expand: the caller owns the open set; the fit table's ▸ is the row's one
-  // expand control (onToggleExpanded), and renderExpanded returns null for a
-  // collapsed row so a closed PO never fetches its lines.
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
-  const toggleExpand = useCallback((id: string): void => {
-    setExpandedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
 
   // ADR-202 — PO ids with a pending edit; their status cell reads "Draft".
   const draftIds = usePendingEditIds('PurchaseOrder');
@@ -189,61 +174,66 @@ function PurchaseOrdersListPage(): React.JSX.Element {
   // View: the row click opens the PO. Preview / Download print the same sheet
   // the detail page does (use-po-print.ts).
   const poPrint = usePoPrint();
-  const rowActions = (po: PurchaseOrderListItem): React.JSX.Element => (
-    <RowActions
-      editTo={canEdit && po.status !== 'closed' ? `/purchase-orders/${po.id}/edit` : undefined}
-      renderLink={renderRowMenuLink}
-      items={[
-        {
-          key: 'preview',
-          label: 'Preview',
-          icon: 'eye',
-          onSelect: () => void poPrint('preview', po, draftIds.has(po.id)),
-        },
-        {
-          key: 'download',
-          label: 'Download PDF',
-          icon: 'download',
-          onSelect: () => poPrint('download', po, draftIds.has(po.id)),
-        },
-        {
-          // Job Work AND Service both send material out — same DC lane. The
-          // server (createDeliveryChallan) refuses a draft, closed or
-          // cancelled PO, so those grey out with the reason.
-          key: 'create-dc',
-          label: 'Create DC',
-          icon: 'truck',
-          group: 'workflow',
-          to: `/delivery-challans/new?poId=${encodeURIComponent(po.id)}`,
-          hidden: !canCreateDc || !poSendsMaterialOut(po.poType),
-          disabledReason:
-            po.status === 'draft'
-              ? 'Not approved yet'
-              : po.status === 'closed'
-                ? 'PO closed'
-                : po.status === 'cancelled'
-                  ? 'PO cancelled'
-                  : undefined,
-        },
-        {
-          key: 'assign',
-          label: 'Assign Task',
-          icon: 'user-round',
-          group: 'assign',
-          hidden: !canAssign || po.status === 'closed' || po.status === 'cancelled',
-          onSelect: () => setAssignPo(po),
-        },
-        {
-          key: 'cancel',
-          label: 'Cancel PO',
-          icon: 'x',
-          group: 'danger',
-          hidden: !canCancel || po.status === 'closed' || po.status === 'cancelled',
-          onSelect: () => setCancelPo(po),
-        },
-      ]}
-    />
-  );
+  // Every action is on the line's PO (docId) — print target, Edit, DC, Cancel.
+  const rowActions = (line: PurchaseOrderLineListItem): React.JSX.Element => {
+    const po = { id: line.docId, code: line.docCode, vendorId: line.vendorId };
+    const status = line.docStatus;
+    return (
+      <RowActions
+        editTo={canEdit && status !== 'closed' ? `/purchase-orders/${po.id}/edit` : undefined}
+        renderLink={renderRowMenuLink}
+        items={[
+          {
+            key: 'preview',
+            label: 'Preview',
+            icon: 'eye',
+            onSelect: () => void poPrint('preview', po, draftIds.has(po.id)),
+          },
+          {
+            key: 'download',
+            label: 'Download PDF',
+            icon: 'download',
+            onSelect: () => poPrint('download', po, draftIds.has(po.id)),
+          },
+          {
+            // Job Work AND Service both send material out — same DC lane. The
+            // server (createDeliveryChallan) refuses a draft, closed or
+            // cancelled PO, so those grey out with the reason.
+            key: 'create-dc',
+            label: 'Create DC',
+            icon: 'truck',
+            group: 'workflow',
+            to: `/delivery-challans/new?poId=${encodeURIComponent(po.id)}`,
+            hidden: !canCreateDc || !poSendsMaterialOut(line.poType),
+            disabledReason:
+              status === 'draft'
+                ? 'Not approved yet'
+                : status === 'closed'
+                  ? 'PO closed'
+                  : status === 'cancelled'
+                    ? 'PO cancelled'
+                    : undefined,
+          },
+          {
+            key: 'assign',
+            label: 'Assign Task',
+            icon: 'user-round',
+            group: 'assign',
+            hidden: !canAssign || status === 'closed' || status === 'cancelled',
+            onSelect: () => setAssignPo(line),
+          },
+          {
+            key: 'cancel',
+            label: 'Cancel PO',
+            icon: 'x',
+            group: 'danger',
+            hidden: !canCancel || status === 'closed' || status === 'cancelled',
+            onSelect: () => setCancelPo(line),
+          },
+        ]}
+      />
+    );
+  };
 
   // "Hide page" (Access Control → Config): once access has loaded, a user
   // whose VIEW was removed for this page sees the no-access panel, not the
@@ -272,7 +262,7 @@ function PurchaseOrdersListPage(): React.JSX.Element {
         title="Purchase Orders"
         icon="📋"
         count={total}
-        noun="purchase order"
+        noun="PO line"
         filterNote={
           [
             search.status ? PO_STATUS_LABELS[search.status] : null,
@@ -283,7 +273,7 @@ function PurchaseOrdersListPage(): React.JSX.Element {
         }
         search={searchInput}
         onSearch={setSearchInput}
-        searchPlaceholder="Search PO no, vendor, PR, item, status, type, date…"
+        searchPlaceholder="Search PO no, vendor, PR, item, SO, status, type, date…"
         updating={isFetching && !isLoading}
         filters={
           <>
@@ -375,29 +365,20 @@ function PurchaseOrdersListPage(): React.JSX.Element {
             rows={rows}
             loading={isLoading}
             emptyText={emptyText}
-            defaultHidden={['created_on']}
+            rowKey={(l) => l.lineId}
             sortFilterServer={sf}
-            onRowClick={(po) =>
-              void navigate({ to: '/purchase-orders/$id', params: { id: po.id } })
+            onRowClick={(l) =>
+              void navigate({ to: '/purchase-orders/$id', params: { id: l.docId } })
             }
-            rowClassName={(po) => ROW_TINT_BY_STATUS[po.status]}
-            rowActions={(po) => rowActions(po)}
-            // The part list is fetched only for a row that is actually open —
-            // returning null for a collapsed row means PoExpandedLines (and its
-            // detail query) never mounts for it.
-            renderExpanded={(po) =>
-              expandedIds.has(po.id) ? <PoExpandedLines poId={po.id} /> : null
-            }
-            // The fit table's ▸ is the row's one expand control: it opens the
-            // line items too.
-            onToggleExpanded={(po) => toggleExpand(po.id)}
+            rowClassName={(l) => ROW_TINT_BY_STATUS[l.docStatus]}
+            rowActions={(l) => rowActions(l)}
           />
         </Panel>
       )}
 
       <ListFooter
         total={total}
-        noun="purchase order"
+        noun="PO line"
         page={search.page}
         pageSize={LIST_PAGE_SIZE}
         onPage={gotoPage}
@@ -406,19 +387,19 @@ function PurchaseOrdersListPage(): React.JSX.Element {
         <AssignTaskModal
           linkedRef={{
             type: 'purchase_order',
-            id: assignPo.id,
-            display: `PO ${assignPo.code}`,
-            navPage: `/purchase-orders/${assignPo.id}`,
+            id: assignPo.docId,
+            display: `PO ${assignPo.docCode}`,
+            navPage: `/purchase-orders/${assignPo.docId}`,
           }}
-          suggestedTitle={`Follow up ${assignPo.code}`}
+          suggestedTitle={`Follow up ${assignPo.docCode}`}
           onClose={() => setAssignPo(null)}
         />
       ) : null}
       {cancelPo ? (
         <CancelDocDialog
           docType="purchase_order"
-          docId={cancelPo.id}
-          docCode={cancelPo.code}
+          docId={cancelPo.docId}
+          docCode={cancelPo.docCode}
           onClose={() => setCancelPo(null)}
         />
       ) : null}

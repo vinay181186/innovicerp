@@ -1,7 +1,7 @@
 // JC Operations board — columns + the ⋯ row menu (ADR-199 fit table: one line
 // per row, always fits the screen). Moved out of routes/list.tsx, where they
 // were a hand-built <Row>. What used to stack inside one cell is now a column
-// of its own:
+// of its own (JC No. then the six ADR-261 lead columns open the row):
 //   Item Code | Item Name                (the name sat under the code)
 //   Completed | QC Pending               (the "⏳N QC" line under Completed)
 //   Operation | Outsource Status | Vendor (the OSP tag, status and vendor)
@@ -16,11 +16,12 @@ import {
   machineSplitTitle,
   resolveActualMachine,
 } from '@/components/shared/machine-split';
-import { itemCodeWithRev } from '@/lib/item-code';
-import type { DataTableColumn } from '@/ui/data';
+import { fmtDate } from '@/lib/date';
+import { leadColumns, type DataTableColumn } from '@/ui/data';
 import { OP_STATUS } from '../../job-cards/lib/jc-op-labels';
 
-export const JC_OPS_DEFAULT_PINNED = ['item_code'];
+/** The lead block (ADR-261) is locked by the table itself — nothing else pinned. */
+export const JC_OPS_DEFAULT_PINNED: string[] = [];
 export const JC_OPS_DEFAULT_HIDDEN = ['qty_per_machine'];
 
 // Sort & Filter (server mode, ADR-200/201) — the board is paged, so every ▾
@@ -98,61 +99,57 @@ function OutsourceRef({ o, st }: { o: JcOpsBoardRow; st: string }): React.JSX.El
 
 export function jcOpsColumns(): DataTableColumn<JcOpsBoardRow>[] {
   return [
-    {
-      // The JC number opens that card — only when `jcId` resolves; otherwise
-      // it renders exactly as it always has (no dead link).
-      id: 'jc_no',
-      sortFilterField: 'jcCode',
-      kind: 'code',
-      header: 'JC No.',
-      className: 'mono fw-700',
-      render: (o) =>
-        o.jcId ? (
-          <Link
-            to="/job-cards/$id"
-            params={{ id: o.jcId }}
-            title="View job card status"
-            style={{ color: 'var(--cyan)', textDecoration: 'none' }}
-          >
-            {o.jcCode}
-          </Link>
-        ) : (
-          <span style={{ color: 'var(--cyan)' }}>{o.jcCode}</span>
-        ),
-    },
-    {
-      // POL — the customer's own PO line number, before the item code.
-      id: 'client_po_line_no',
-      sortFilterField: 'clientPoLineNo',
-      kind: 'code',
-      header: 'POL',
-      headColor: 'var(--purple)',
-      className: 'mono fw-700',
-      render: (o) => <span style={{ color: 'var(--purple)' }}>{o.clientPoLineNo ?? '—'}</span>,
-    },
-    {
-      id: 'item_code',
-      sortFilterField: 'itemCode',
-      kind: 'code',
-      header: 'Item Code',
-      className: 'mono fw-700',
-      render: (o) => (
-        <span style={{ color: 'var(--text)' }}>
-          {itemCodeWithRev(o.jcItemCode, o.itemRevision, '')}
-        </span>
-      ),
-    },
-    {
-      id: 'item_name',
-      sortFilterField: 'itemName',
-      kind: 'text',
-      header: 'Item Name',
-      align: 'left',
-      ellipsis: true,
-      className: 'text3',
-      render: (o) => o.jcItemName ?? '',
-      title: (o) => o.jcItemName ?? '',
-    },
+    // ADR-261 — JC No. first, then the six lead columns, all locked; Op and
+    // every other fact follow Item Name. `sortFilterField` = JC_OPS_SF_COLUMNS (paged board).
+    ...leadColumns<JcOpsBoardRow>({
+      doc: {
+        // The JC number opens that card — only when `jcId` resolves; otherwise
+        // it renders exactly as it always has (no dead link).
+        id: 'jc_no',
+        sortFilterField: 'jcCode',
+        kind: 'code',
+        header: 'JC No.',
+        className: 'mono fw-700',
+        render: (o) =>
+          o.jcId ? (
+            <Link
+              to="/job-cards/$id"
+              params={{ id: o.jcId }}
+              title="View job card status"
+              style={{ color: 'var(--cyan)', textDecoration: 'none' }}
+            >
+              {o.jcCode}
+            </Link>
+          ) : (
+            <span style={{ color: 'var(--cyan)' }}>{o.jcCode}</span>
+          ),
+      },
+      docDate: {
+        id: 'jc_date',
+        kind: 'date',
+        header: 'JC Date',
+        className: 'mono',
+        nowrap: true,
+        render: (o) => fmtDate(o.jcDate ?? null),
+        filterValue: (o) => o.jcDate ?? '',
+        sortFilterField: 'jcDate',
+      },
+      soNo: (o) => o.soCode,
+      internalSoNo: (o) => o.soInternalNo,
+      pol: (o) => o.clientPoLineNo,
+      createdOn: (o) => o.createdAt,
+      itemCode: (o) => o.jcItemCode,
+      itemRev: (o) => o.itemRevision,
+      itemName: (o) => o.jcItemName,
+      overrides: {
+        so_no: { sortFilterField: 'soCode' },
+        so_internal_no: { sortFilterField: 'soInternalNo' },
+        client_po_line_no: { sortFilterField: 'clientPoLineNo' },
+        created_on: { sortFilterField: 'createdOn' },
+        item_code: { sortFilterField: 'itemCode' },
+        item_name: { sortFilterField: 'itemName' },
+      },
+    }),
     {
       id: 'op_seq',
       sortFilterField: 'opSeq',

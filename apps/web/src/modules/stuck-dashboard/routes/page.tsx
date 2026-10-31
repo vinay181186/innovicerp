@@ -26,6 +26,7 @@ import { AssignTaskModal } from '@/modules/tasks/components/task-modals';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import {
   DataTable,
+  leadColumns,
   Panel,
   ROW_TINT,
   StatStrip,
@@ -61,40 +62,30 @@ const over = (it: StuckItem): number => it.days - it.threshold;
 
 function stuckColumns(): DataTableColumn<StuckItem>[] {
   return [
-    {
-      id: 'so_no',
-      sortFilterField: 'soNo',
-      kind: 'code',
-      header: 'SO No.',
-      className: 'td-code',
-      render: (it) => (
-        <Link
-          to="/sales-orders/$id"
-          params={{ id: it.soId }}
-          style={{ color: 'var(--cyan)', textDecoration: 'none' }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {it.soNo}
-        </Link>
-      ),
-    },
-    {
-      // ADR-207 — the office's own number, its OWN column beside the system
-      // SO No. (owner decision 2026-10-05). Many older orders have none.
-      id: 'so_internal_no',
-      kind: 'code',
-      header: 'Internal SO No.',
-      sortFilterField: 'soInternalNo',
-      className: 'mono',
-      render: (it) =>
-        it.soInternalNo?.trim() ? (
-          <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-            {it.soInternalNo}
-          </span>
-        ) : (
-          <span className="text3">—</span>
-        ),
-    },
+    // ADR-261 lead columns — an SO-level activity, so no POL / Item columns.
+    ...leadColumns<StuckItem>({
+      soNo: (it) => it.soNo,
+      internalSoNo: (it) => it.soInternalNo,
+      createdOn: (it) => it.createdAt,
+      overrides: {
+        so_no: {
+          sortFilterField: 'soNo',
+          className: 'td-code',
+          render: (it) => (
+            <Link
+              to="/sales-orders/$id"
+              params={{ id: it.soId }}
+              style={{ color: 'var(--cyan)', textDecoration: 'none' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {it.soNo}
+            </Link>
+          ),
+        },
+        so_internal_no: { sortFilterField: 'soInternalNo' },
+        created_on: { sortFilterField: 'createdOn' },
+      },
+    }),
     {
       id: 'stage',
       sortFilterField: 'stage',

@@ -10,6 +10,7 @@ import type { IncomingQcCompletedRow, IncomingQcPendingRow, QcGrnType } from '@i
 import { likeEscape } from '../../lib/list-query';
 import { polSql } from '../../lib/pol';
 import { CLIENT_PO_NO_SQL } from './register-facts';
+import { tsOrNull } from './sql';
 
 /** A GRN's own GRN Type (no Party GRN — that is a different table). */
 export type IncGrnType = Exclude<QcGrnType, 'party_grn'>;
@@ -54,6 +55,10 @@ function incJoins(): SQL {
     LEFT JOIN public.sales_order_lines sol ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
     LEFT JOIN public.job_work_order_lines rev_jwl ON rev_jwl.id = jc.source_jw_line_id AND rev_jwl.deleted_at IS NULL
     LEFT JOIN public.sales_orders so ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
+    -- ADR-261: a GRN line with no job card behind it still names its SO when
+    -- the PO line was raised against one (purchase_order_lines.source_so_line_id).
+    LEFT JOIN public.sales_order_lines po_sol ON po_sol.id = pol.source_so_line_id AND po_sol.deleted_at IS NULL
+    LEFT JOIN public.sales_orders po_so ON po_so.id = po_sol.sales_order_id AND po_so.deleted_at IS NULL
     LEFT JOIN public.vendors v ON v.id = h.vendor_id AND v.deleted_at IS NULL
     LEFT JOIN public.items i ON i.id = l.item_id`;
 }
@@ -78,11 +83,16 @@ export function incCompletedFrom(companyId: string): SQL {
 export const ITEM_CODE = sql`COALESCE(i.code, l.item_code_text)`;
 export const ITEM_REV = sql`COALESCE(sol.revision::text, rev_jwl.revision::text)`;
 export const VENDOR = sql`COALESCE(v.name, h.vendor_code_text)`;
+/** ADR-261 lead SO No. / Internal SO No.: the job card's SO, else the PO line's source SO. */
+export const INC_SO_CODE = sql`COALESCE(so.code, po_so.code)`;
+export const INC_SO_INTERNAL = sql`NULLIF(btrim(CASE WHEN so.id IS NOT NULL THEN so.internal_so_no ELSE po_so.internal_so_no END), '')`;
+/** ADR-261 lead Created On — the GRN line's created_at, else its GRN's. */
+export const INC_CREATED_AT = sql`COALESCE(l.created_at, h.created_at)`;
 
 export const INC_PENDING_SELECT = sql`
   l.id AS "grnLineId", h.id AS "grnId", h.code AS "grnNo", h.grn_date AS "grnDate",
-  h.po_code_text AS "poCode", ${VENDOR} AS "vendorName", so.code AS "soCode",
-  so.internal_so_no AS "soInternalNo",
+  h.po_code_text AS "poCode", ${VENDOR} AS "vendorName", ${INC_SO_CODE} AS "soCode",
+  ${INC_SO_INTERNAL} AS "soInternalNo", ${INC_CREATED_AT} AS "createdAt",
   jc.code AS "jcCode", jco.op_seq AS "opSeq", jco.operation AS "opName",
   ${ITEM_CODE} AS "itemCode", ${ITEM_REV} AS "itemRevision",
   ${polSql('sol', 'rev_jwl')} AS "clientPoLineNo", COALESCE(i.name, l.item_name) AS "itemName",
@@ -100,7 +110,8 @@ export const INC_COMPLETED_SELECT = sql`
   l.qc_remarks AS "qcRemarks", l.updated_at AS "qcAt",
   COALESCE(l.qc_inspected_by_text, u.full_name, u.email) AS "qcInspectedBy",
   l.qc_report_path AS "qcReportPath", l.qc_report_name AS "qcReportName",
-  ${GRN_TYPE_SQL} AS "grnType"`;
+  ${GRN_TYPE_SQL} AS "grnType", ${INC_SO_CODE} AS "soCode",
+  ${INC_SO_INTERNAL} AS "soInternalNo", ${INC_CREATED_AT} AS "createdAt"`;
 
 /** When the line was inspected — the completed register's newest-first key. */
 export const INC_DONE_AT = sql`COALESCE(l.updated_at, l.qc_date::timestamptz, h.grn_date::timestamptz)`;
@@ -150,6 +161,7 @@ export function toIncPendingRow(r: Raw): IncomingQcPendingRow {
     receivedQty: Number(r['receivedQty'] ?? 0),
     pendingQty: Number(r['pendingQty'] ?? 0),
     waitDays: Number(r['waitDays'] ?? 0),
+    createdAt: tsOrNull(r['createdAt']),
   };
 }
 
@@ -189,5 +201,8 @@ export function toIncCompletedRow(r: Raw): IncomingQcCompletedRow {
     qcRemarks: s(r['qcRemarks']),
     qcReportPath: s(r['qcReportPath']),
     qcReportName: s(r['qcReportName']),
+    soCode: s(r['soCode']),
+    soInternalNo: s(r['soInternalNo']),
+    createdAt: tsOrNull(r['createdAt']),
   };
 }

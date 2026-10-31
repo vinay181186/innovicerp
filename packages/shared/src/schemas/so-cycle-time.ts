@@ -70,6 +70,9 @@ export const soCycleTimeRowSchema = z.object({
   soNo: z.string(),
   /** ADR-207 Internal SO No. (live from sales_orders); null on old SOs. */
   internalSoNo: z.string().nullable().optional(),
+  /** ADR-261 Created On — the SO's created_at (ISO). NOT phases.soCreated,
+   *  which is the typed SO Date. Optional while web/API deploy apart. */
+  createdAt: z.string().nullable().optional(),
   customer: z.string().nullable(),
   type: z.string().nullable(),
   status: z.string(),

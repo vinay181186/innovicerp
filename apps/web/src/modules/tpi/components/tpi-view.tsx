@@ -21,7 +21,7 @@ import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader } from '@/ui/layout';
 import { fetchTpiCompleted, useTpiCompletedList, useTpiPendingList } from '../api';
 import { exportTpiRecords } from '../lib/export';
-import { TPI_COMPLETED_DEFAULT_PINNED, tpiCompletedColumns } from './tpi-completed-columns';
+import { tpiCompletedColumns } from './tpi-completed-columns';
 import { PendingTpi } from './tpi-pending-card';
 
 // Legacy L21472 / L21477 hand-roll the two panel strips rather than using
@@ -167,7 +167,6 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
               sortFilter={false}
               rowKey={(l) => l.logId}
               emptyText={q ? 'No TPI records match.' : 'No TPI records yet.'}
-              defaultPinned={TPI_COMPLETED_DEFAULT_PINNED}
             />
             <ListFooter
               total={compTotal}

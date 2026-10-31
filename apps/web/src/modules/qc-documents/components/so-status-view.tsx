@@ -8,7 +8,7 @@
 // module's existing `useSoQcStatus` hook and the shared SoQc* types unchanged.
 
 import type { SoQcLine, SoStatus } from '@innovic/shared';
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { SearchableSelect } from '@/ui/forms';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { fmtDate } from '@/lib/date';
@@ -48,8 +48,13 @@ export function SoStatusView({ toggle }: { toggle: React.ReactNode }): React.JSX
     });
   }, []);
 
-  const columns = buildSoStatusColumns();
   const lines = detail.data?.lines ?? [];
+  const order = detail.data?.so ?? null;
+  const columns = useMemo(
+    () =>
+      buildSoStatusColumns(order ? { code: order.code, internalSoNo: order.internalSoNo } : null),
+    [order],
+  );
 
   return (
     // `page-fill` (ADR-202/203): the title, SO picker, SO card and totals strip

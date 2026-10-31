@@ -63,6 +63,9 @@ export const soOverviewRowSchema = z.object({
   code: z.string(),
   /** ADR-207 Internal SO No. (live from sales_orders); null on old SOs. */
   internalSoNo: z.string().nullable().optional(),
+  /** ADR-261 Created On — the SO's created_at (ISO); optional while web/API
+   *  deploy apart. */
+  createdAt: z.string().nullable().optional(),
   soDate: z.string(),
   customerName: z.string().nullable(),
   clientPoNo: z.string().nullable(),

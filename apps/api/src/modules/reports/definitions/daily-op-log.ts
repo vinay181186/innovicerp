@@ -6,7 +6,8 @@ import { opSrNo } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import { OP_LOG_QC_REMARKS } from '../../../lib/op-log-qc-remarks';
 import type { RegisteredReport } from '../registry';
-import { REPORT_ROW_CAP } from './report-helpers';
+import { polSql } from '../../../lib/pol';
+import { dateCell, REPORT_ROW_CAP, textCell } from './report-helpers';
 
 export const dailyOpLogReport: RegisteredReport = {
   definition: {
@@ -21,15 +22,19 @@ export const dailyOpLogReport: RegisteredReport = {
       { key: 'toDate', label: 'Log Date To', kind: 'date' },
     ],
     columns: [
-      { key: 'log_date', label: 'Log Date', type: 'date' },
+      // ADR-261 — the six lead columns first. SO No. is whichever order the
+      // JC came from (SO line, else JWSO line); Created On is the log row's
+      // own created_at (India day); the drawing rev rides in Item Code.
       { key: 'log_no', label: 'Log No.', type: 'text' },
+      { key: 'log_date', label: 'Log Date', type: 'date' },
+      { key: 'so_code', label: 'SO No.', type: 'text' },
+      { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
+      { key: 'client_po_line_no', label: 'POL', type: 'text' },
+      { key: 'created_on', label: 'Created On', type: 'date' },
+      { key: 'item_code', label: 'Item Code', type: 'text' },
+      { key: 'item_name', label: 'Item Name', type: 'text' },
       { key: 'log_type', label: 'Log Type', type: 'text' },
       { key: 'jc_code', label: 'JC No.', type: 'text' },
-      // This report has no item-code column, so the revision sits immediately
-      // after the JC — the column that identifies what was worked on. It is
-      // the customer drawing revision of the SO line behind that JC, and is
-      // blank for a JW-sourced or standalone JC.
-      { key: 'so_revision', label: 'Drawing Rev', type: 'text' },
       { key: 'op_seq', label: 'Op', type: 'number' },
       { key: 'operation', label: 'Operation', type: 'text' },
       { key: 'operator_name', label: 'Operator', type: 'text' },
@@ -52,12 +57,17 @@ export const dailyOpLogReport: RegisteredReport = {
     const result = await tx.execute(sql`
       SELECT
         jc.id AS jc_id,
+        COALESCE(so.code, jwo.code) AS so_code,
+        so.internal_so_no AS so_internal_no,
+        ${polSql('sol', 'jwl')} AS client_po_line_no,
+        (ol.created_at AT TIME ZONE 'Asia/Kolkata')::date::text AS created_on,
+        -- CODE/REV: the customer's drawing rev (SO line, else JW line).
+        (it.code || COALESCE('/' || NULLIF(btrim(COALESCE(sol.revision::text, jwl.revision::text)), ''), '')) AS item_code,
+        it.name AS item_name,
         ol.log_date,
         ol.log_no,
         ol.log_type,
         jc.code AS jc_code,
-        -- ::text because production is still pre-0119 and holds an integer.
-        sol.revision::text AS so_revision,
         jo.op_seq,
         jo.operation,
         ol.operator_name,
@@ -72,6 +82,10 @@ export const dailyOpLogReport: RegisteredReport = {
       -- has no SO line behind it, and this is the shop-floor audit trail —
       -- every logged op has to stay visible.
       LEFT JOIN public.sales_order_lines sol ON sol.id = jc.source_so_line_id
+      LEFT JOIN public.sales_orders so ON so.id = sol.sales_order_id
+      LEFT JOIN public.job_work_order_lines jwl ON jwl.id = jc.source_jw_line_id
+      LEFT JOIN public.job_work_orders jwo ON jwo.id = jwl.job_work_order_id
+      LEFT JOIN public.items it ON it.id = jc.item_id
       WHERE ol.company_id = ${companyId}::uuid
         ${fromFrag}
         ${toFrag}
@@ -81,6 +95,12 @@ export const dailyOpLogReport: RegisteredReport = {
 
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({
       jc_id: String(r['jc_id'] ?? ''),
+      so_code: textCell(r['so_code']),
+      so_internal_no: textCell(r['so_internal_no']),
+      client_po_line_no: textCell(r['client_po_line_no']),
+      created_on: dateCell(r['created_on']),
+      item_code: String(r['item_code'] ?? ''),
+      item_name: textCell(r['item_name']),
       log_date:
         r['log_date'] instanceof Date
           ? r['log_date'].toISOString().slice(0, 10)
@@ -88,7 +108,6 @@ export const dailyOpLogReport: RegisteredReport = {
       log_no: (r['log_no'] as string) ?? '',
       log_type: (r['log_type'] as string) ?? '',
       jc_code: (r['jc_code'] as string) ?? '',
-      so_revision: (r['so_revision'] as string | null) ?? '',
       // display rule — see opSrNo in @innovic/shared
       op_seq: r['op_seq'] != null ? opSrNo(Number(r['op_seq'])) : 0,
       operation: (r['operation'] as string) ?? '',

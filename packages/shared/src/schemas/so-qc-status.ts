@@ -127,6 +127,8 @@ export const soQcLineSchema = z.object({
    *  Sales Order is the only place it is typed. */
   clientPoLineNo: z.string().nullable().default(null),
   partName: z.string().nullable(),
+  /** ADR-261 lead Created On — the SO line's own created_at. */
+  createdAt: z.string().nullable().default(null),
   orderQty: z.number().int(),
   jcCount: z.number().int().nonnegative(),
   // True when the line has at least one QC stage of any kind (legacy hasAnyQC).

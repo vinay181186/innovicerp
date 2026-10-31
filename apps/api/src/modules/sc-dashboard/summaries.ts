@@ -22,6 +22,8 @@ import { SC_PO_SUMMARY_SF_COLUMNS, SC_SO_SF_COLUMNS, SC_VENDOR_SF_COLUMNS } from
 
 type Num = string | number;
 const n = (v: Num | null | undefined): number => Number(v) || 0;
+const isoOrNull = (v: string | Date | null | undefined): string | null =>
+  v == null ? null : new Date(v).toISOString();
 
 /** One page + the count of a grouped query `inner` (aliased `t`). */
 async function pageOf<R>(
@@ -129,6 +131,7 @@ export async function listScSos(user: AuthContext, raw: ScTableQuery): Promise<S
   const inner = sql`
     SELECT
       so.id AS so_ref_id, so.code AS so_code, so.internal_so_no AS so_internal_no,
+      so.created_at AS so_created_at,
       COUNT(pol.id)::int AS lines,
       COUNT(DISTINCT po.vendor_id)::int AS unique_vendors,
       COALESCE(SUM(pol.qty), 0) AS total_qty,
@@ -141,11 +144,12 @@ export async function listScSos(user: AuthContext, raw: ScTableQuery): Promise<S
     LEFT JOIN sales_order_lines sol ON sol.id = pol.source_so_line_id
     LEFT JOIN sales_orders so ON so.id = sol.sales_order_id
     WHERE po.company_id = ${companyId}::uuid AND po.deleted_at IS NULL AND ${OPEN_PO}
-    GROUP BY so.id, so.code, so.internal_so_no`;
+    GROUP BY so.id, so.code, so.internal_so_no, so.created_at`;
   type SRow = GroupRow & {
     so_ref_id: string | null;
     so_code: string | null;
     so_internal_no: string | null;
+    so_created_at: string | Date | null;
     unique_vendors: number;
   };
   const { rows, total } = await pageOf<SRow>(
@@ -161,6 +165,7 @@ export async function listScSos(user: AuthContext, raw: ScTableQuery): Promise<S
       soRefId: r.so_ref_id,
       soCode: r.so_code,
       soInternalNo: r.so_internal_no,
+      createdAt: isoOrNull(r.so_created_at),
       lines: n(r.lines),
       uniqueVendors: n(r.unique_vendors),
       totalQty: n(r.total_qty),
@@ -186,7 +191,7 @@ export async function listScPoSummary(
   const inner = sql`
     WITH po_agg AS (
       SELECT
-        po.id, po.code, po.po_date, po.status, po.vendor_id, po.vendor_code_text,
+        po.id, po.code, po.po_date, po.status, po.vendor_id, po.vendor_code_text, po.created_at,
         po.sgst_pct, po.cgst_pct, po.igst_pct, po.tax_type,
         COUNT(pol.id)::int AS lines,
         COALESCE(SUM(pol.qty), 0) AS total_qty,
@@ -213,7 +218,7 @@ export async function listScPoSummary(
       FROM po_agg p
     )
     SELECT
-      p.id AS po_id, p.code AS po_no, p.po_date,
+      p.id AS po_id, p.code AS po_no, p.po_date, p.created_at AS po_created_at,
       COALESCE(v.name, vt.name, p.vendor_code_text) AS vendor_name,
       COALESCE(v.code, vt.code, p.vendor_code_text) AS vendor_code,
       so.code AS so_code, so.internal_so_no AS so_internal_no,
@@ -236,6 +241,7 @@ export async function listScPoSummary(
     vendor_code: string | null;
     so_code: string | null;
     so_internal_no: string | null;
+    po_created_at: string | Date | null;
     lines: number;
     total_qty: Num;
     received_qty: Num;
@@ -264,6 +270,7 @@ export async function listScPoSummary(
     vendorCode: r.vendor_code,
     soCode: r.so_code,
     soInternalNo: r.so_internal_no,
+    createdAt: isoOrNull(r.po_created_at),
     lines: n(r.lines),
     totalQty: n(r.total_qty),
     receivedQty: n(r.received_qty),

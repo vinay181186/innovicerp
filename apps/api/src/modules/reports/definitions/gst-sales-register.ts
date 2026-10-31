@@ -49,9 +49,15 @@ export const gstSalesRegisterReport: RegisteredReport = {
       { key: 'customer', label: 'Customer', kind: 'text', placeholder: 'Customer name' },
     ],
     columns: [
-      { key: 'source', label: 'Source', type: 'text' },
+      // ADR-261 lead columns that exist on an invoice header (no line, so no
+      // POL / item): SO No. = the SO of a Sales Invoice or the JWSO of a JW
+      // Invoice; Created On = the invoice's created_at.
       { key: 'invoice_code', label: 'Invoice No.', type: 'text' },
       { key: 'invoice_date', label: 'Invoice Date', type: 'date' },
+      { key: 'so_code', label: 'SO No.', type: 'text' },
+      { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
+      { key: 'created_on', label: 'Created On', type: 'date' },
+      { key: 'source', label: 'Source', type: 'text' },
       { key: 'client_name', label: 'Customer', type: 'text' },
       { key: 'client_gstin', label: 'Customer GSTIN', type: 'text' },
       { key: 'client_state', label: 'Customer State', type: 'text' },
@@ -101,6 +107,9 @@ export const gstSalesRegisterReport: RegisteredReport = {
       reg AS (
         SELECT
           'Sales Invoice'                                            AS source,
+          COALESCE(so.code, inv.so_code_text)                        AS so_code,
+          so.internal_so_no                                          AS so_internal_no,
+          (inv.created_at AT TIME ZONE 'Asia/Kolkata')::date::text   AS created_on,
           inv.code                                                   AS invoice_code,
           inv.invoice_date                                           AS invoice_date,
           COALESCE(inv.client_name_text, cl.name, '—')               AS client_name,
@@ -126,6 +135,8 @@ export const gstSalesRegisterReport: RegisteredReport = {
         CROSS JOIN co
         LEFT JOIN public.clients cl
           ON cl.id = inv.client_id AND cl.deleted_at IS NULL
+        LEFT JOIN public.sales_orders so
+          ON so.id = inv.sales_order_id AND so.deleted_at IS NULL
         WHERE inv.company_id = ${companyId}::uuid
           AND inv.deleted_at IS NULL
           ${invFrom}
@@ -136,6 +147,9 @@ export const gstSalesRegisterReport: RegisteredReport = {
 
         SELECT
           'JW Invoice'                                               AS source,
+          jwo.code                                                   AS so_code,
+          NULL::text                                                 AS so_internal_no,
+          (ji.created_at AT TIME ZONE 'Asia/Kolkata')::date::text    AS created_on,
           ji.code                                                    AS invoice_code,
           ji.invoice_date                                            AS invoice_date,
           COALESCE(ji.client_name_text, cl.name, jwo.customer_name, '—') AS client_name,
@@ -168,6 +182,9 @@ export const gstSalesRegisterReport: RegisteredReport = {
           ${jwCustomer}
       )
       SELECT
+        so_code,
+        so_internal_no,
+        created_on,
         source,
         invoice_code,
         invoice_date::text                                         AS invoice_date,
@@ -192,6 +209,9 @@ export const gstSalesRegisterReport: RegisteredReport = {
     `);
 
     const rows = (result as unknown as SqlRow[]).map((r) => ({
+      so_code: textCell(r['so_code']),
+      so_internal_no: textCell(r['so_internal_no']),
+      created_on: dateCell(r['created_on']),
       source: String(r['source'] ?? ''),
       invoice_code: String(r['invoice_code'] ?? ''),
       invoice_date: dateCell(r['invoice_date']),

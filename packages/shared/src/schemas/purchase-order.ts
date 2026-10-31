@@ -502,3 +502,58 @@ export const shortClosePurchaseOrderInputSchema = z.object({
     .max(500),
 });
 export type ShortClosePurchaseOrderInput = z.infer<typeof shortClosePurchaseOrderInputSchema>;
+
+// ─── ADR-261 — PO list, one row per PO LINE (GET /purchase-orders/lines) ────
+//
+// The PO list screen shows one row per live line of a live PO, opening with the
+// six lead columns (SO No. · Internal SO No. · POL · Created On · Item Code ·
+// Item Name). Same query params as GET /purchase-orders; the old document list
+// is unchanged (pickers and dashboards read it). Row click / ⋯ act on `docId`.
+
+export const purchaseOrderLineListItemSchema = z.object({
+  lineId: z.string().uuid(),
+  lineNo: z.number().int(),
+  docId: z.string().uuid(),
+  docCode: z.string(),
+  docDate: z.string(),
+  docStatus: poStatusSchema,
+  poType: poTypeSchema,
+  vendorId: z.string().uuid().nullable(),
+  vendorName: z.string().nullable(),
+  vendorCodeText: z.string().nullable(),
+  /** The line's own source PR code, else the header's PR reference text. */
+  prCodeText: z.string().nullable(),
+  /** SO code behind the line, else the JWSO code (mixed list: one SO No. slot). */
+  soCode: z.string().nullable(),
+  /** ADR-207 — Internal SO No. of the SO (null for a JWSO / stock line). */
+  soInternalNo: z.string().nullable(),
+  /** The JWSO code when the line traces to a job-work order. */
+  jwCode: z.string().nullable(),
+  /** ADR-236 — POL: SO line's, else the JWSO line's. */
+  clientPoLineNo: z.string().nullable(),
+  /** The line's own created_at (falls back to the PO's). */
+  createdAt: z.string(),
+  itemCode: z.string().nullable(),
+  /** Customer drawing revision (SO line, else JWSO line) — rides in the Item Code cell. */
+  itemRevision: z.string().nullable(),
+  itemName: z.string().nullable(),
+  qty: z.number(),
+  /** ADR-222 — what GRNs booked in on this line (lib/po-grn-received.ts). */
+  grnReceivedQty: z.number(),
+  /** Pieces that passed QC on this line (lib/po-accepted.ts). */
+  qcAcceptedQty: z.number(),
+  /** ADR-189 — qty − accepted, 0 once the PO is closed / cancelled. */
+  pendingQty: z.number(),
+  /** Null when the viewer may not see PO prices. */
+  rate: z.number().nullable(),
+  /** qty × rate (before tax). Null when prices are hidden. */
+  amount: z.number().nullable(),
+});
+export type PurchaseOrderLineListItem = z.infer<typeof purchaseOrderLineListItemSchema>;
+
+export interface ListPurchaseOrderLinesResponse {
+  items: PurchaseOrderLineListItem[];
+  total: number;
+  limit: number;
+  offset: number;
+}

@@ -124,13 +124,13 @@ export async function getNextPartyGrnCode(user: AuthContext): Promise<{ code: st
  *  lines with one deleted_at — a line removed earlier keeps its own, older
  *  stamp and does not come back). For a live header this is exactly
  *  `pgl.deleted_at IS NULL`. */
-const PGL_OF_HEADER_SQL = sql.raw(
+export const PGL_OF_HEADER_SQL = sql.raw(
   '(pgl.deleted_at IS NULL OR (pg.deleted_at IS NOT NULL AND pgl.deleted_at = pg.deleted_at))',
 );
 
 /** Per-GRN line roll-up, shared by the list rows and the summary. A cancelled
  *  GRN waits for nothing, so its lines never count as waiting for QC. */
-const LINE_AGG_SQL = sql`
+export const LINE_AGG_SQL = sql`
   LEFT JOIN LATERAL (
     SELECT SUM(pgl.received_qty)::int AS total_received,
            SUM(pgl.accepted_qty)::int AS total_accepted,
@@ -144,7 +144,7 @@ const LINE_AGG_SQL = sql`
   ) agg ON true`;
 
 /** ADR-235: live GRNs, plus — when the list / detail asks — the Cancelled ones. */
-function headerScopeSql(includeCancelled: boolean): SQL {
+export function headerScopeSql(includeCancelled: boolean): SQL {
   return includeCancelled
     ? sql`(pg.deleted_at IS NULL OR pg.cancelled_at IS NOT NULL)`
     : sql`pg.deleted_at IS NULL`;
@@ -265,7 +265,7 @@ export async function listPartyGrn(
   });
 }
 
-function toListItem(r: Record<string, unknown>): PartyGrnListItem {
+export function toListItem(r: Record<string, unknown>): PartyGrnListItem {
   return {
     id: r['id'] as string,
     companyId: r['companyId'] as string,

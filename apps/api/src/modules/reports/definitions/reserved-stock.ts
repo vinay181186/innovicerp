@@ -38,6 +38,10 @@ export const reservedStockReport: RegisteredReport = {
       { key: 'so_code', label: 'SO No.', type: 'text' },
       { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
       { key: 'client_po_line_no', label: 'POL', type: 'text' },
+      // ADR-261 — Created On is the reservation's created_at (it replaces the
+      // old Reserved On column: one fact, one name). The SO line's drawing rev
+      // rides in Item Code as CODE/REV.
+      { key: 'created_on', label: 'Created On', type: 'date' },
       { key: 'item_code', label: 'Item Code', type: 'text' },
       { key: 'item_name', label: 'Item Name', type: 'text' },
       { key: 'reserved_qty', label: 'Reserved', type: 'number' },
@@ -47,7 +51,6 @@ export const reservedStockReport: RegisteredReport = {
       { key: 'status', label: 'Reservation Status', type: 'text' },
       { key: 'reservation_source', label: 'Reservation Source', type: 'text' },
       { key: 'production_order_code', label: 'Production Order No.', type: 'text' },
-      { key: 'reserved_on', label: 'Reserved On', type: 'date' },
     ],
   },
   async run({ tx, companyId, filters }) {
@@ -68,7 +71,8 @@ export const reservedStockReport: RegisteredReport = {
           COALESCE(so.code, r.so_code_text)                   AS so_code,
           so.internal_so_no                                   AS so_internal_no,
           sol.client_po_line_no                               AS client_po_line_no,
-          COALESCE(it.code, r.item_code_text, '—')            AS item_code,
+          (COALESCE(it.code, r.item_code_text, '—')
+            || COALESCE('/' || NULLIF(btrim(sol.revision::text), ''), '')) AS item_code,
           it.name                                             AS item_name,
           r.item_code_text                                    AS item_code_text,
           r.qty::numeric                                      AS reserved_qty,
@@ -78,7 +82,7 @@ export const reservedStockReport: RegisteredReport = {
           r.status::text                                      AS status,
           r.reservation_source::text                          AS reservation_source,
           pro.code                                            AS production_order_code,
-          to_char(r.created_at AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD') AS reserved_on,
+          to_char(r.created_at AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD') AS created_on,
           r.created_at                                        AS created_at
         FROM public.so_stock_reservations r
         LEFT JOIN public.sales_order_lines sol
@@ -125,6 +129,7 @@ export const reservedStockReport: RegisteredReport = {
       so_code: (r['so_code'] as string | null) ?? null,
       so_internal_no: (r['so_internal_no'] as string | null) ?? null,
       client_po_line_no: (r['client_po_line_no'] as string | null) ?? null,
+      created_on: dateOrNull(r['created_on']),
       item_code: String(r['item_code'] ?? ''),
       item_name: (r['item_name'] as string | null) ?? null,
       reserved_qty: Number(r['reserved_qty'] ?? 0),
@@ -134,7 +139,6 @@ export const reservedStockReport: RegisteredReport = {
       status: String(r['status'] ?? ''),
       reservation_source: String(r['reservation_source'] ?? ''),
       production_order_code: (r['production_order_code'] as string | null) ?? null,
-      reserved_on: dateOrNull(r['reserved_on']),
     }));
 
     return { columns: reservedStockReport.definition.columns, rows };

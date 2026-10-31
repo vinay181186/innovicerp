@@ -1,23 +1,20 @@
-// OSP Outward DC list columns (ADR-199 fit table). One line per row; the fit
-// engine sizes the columns to the screen and drops the rightmost unpinned ones
-// — and the default-hidden JC No. / Drawing Rev / Transport — into the ▸ detail
-// row. Split out of routes/list.tsx to keep that file under the 400-line rule.
+// OSP Outward DC list columns (ADR-199 fit table) — ONE ROW PER DC LINE
+// (ADR-261, GET /delivery-challans/lines). Split out of routes/list.tsx to keep
+// that file under the 400-line rule.
 //
-// Every field the old card showed is still here: the PO chip keeps its
-// green (linked PO) / amber* (snapshot text) / red (NC return) meaning and its
-// tooltips, the Sent total keeps its whole-vs-fraction formatting, and the JC /
-// Drawing Rev / Transport facts move into ▸ (defaultHidden below).
+// DC No. and the six lead columns come first and are locked (leadColumns): SO No. (the SO
+// code, else the JWSO code, else the DC's SO ref) · Internal SO No. · POL ·
+// Created On (the line's) · Item Code (CODE/REV — no separate Drawing Rev
+// column any more) · Item Name. Then DC Date · Vendor · PO No. ·
+// Sent Qty (the line's) · DC Status · JC No. · Transport. The PO chip keeps its
+// green (linked PO) / amber* (snapshot text) / red (NC return) meaning.
 
-import { DC_STATUSES, type DeliveryChallanListItem } from '@innovic/shared';
+import { DC_STATUSES, type DeliveryChallanListLine } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
-import type { DataTableColumn } from '@/ui/data';
+import { leadColumns, type DataTableColumn } from '@/ui/data';
 import { DC_STATUS_LABEL } from '../lib/dc-status-label';
 import { DcStatusBadge } from './dc-status-badge';
-
-/** Column ids shown inside the ▸ detail row by default (fit engine
- *  `defaultHidden`): JC No., Drawing Rev, Transport, Created On. */
-export const DC_LIST_DEFAULT_HIDDEN = ['jc_code', 'drawing_rev', 'transport', 'created_on'];
 
 /** Sort & Filter (ADR-200, server mode) DC Status tick list: code + label shown. */
 const DC_STATUS_OPTIONS = DC_STATUSES.map((value) => ({ value, label: DC_STATUS_LABEL[value] }));
@@ -25,7 +22,7 @@ const DC_STATUS_OPTIONS = DC_STATUSES.map((value) => ({ value, label: DC_STATUS_
 /** The PO this DC was issued against — same three-way chip the card drew:
  *  green = a real linked PO, amber + `*` = the issue-time text snapshot only,
  *  red (NC …) = a return-to-vendor challan raised from an NC (no PO). */
-function PoCell({ dc }: { dc: DeliveryChallanListItem }): React.JSX.Element {
+function PoCell({ dc }: { dc: DeliveryChallanListLine }): React.JSX.Element {
   if (dc.ncId) {
     return (
       <span
@@ -61,34 +58,51 @@ function PoCell({ dc }: { dc: DeliveryChallanListItem }): React.JSX.Element {
 export function dcListColumns(
   /** ADR-202 — DC ids with a pending edit; their status cell shows "Draft". */
   draftIds?: Set<string>,
-): DataTableColumn<DeliveryChallanListItem>[] {
+): DataTableColumn<DeliveryChallanListLine>[] {
   return [
-    {
-      id: 'dc_code',
-      sortFilterField: 'dcCode',
-      header: 'DC No.',
-      nowrap: true,
-      render: (dc) => (
-        <Link
-          to="/delivery-challans/$id"
-          params={{ id: dc.id }}
-          className="td-code"
-          style={{ color: 'var(--blue)', fontWeight: 800 }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {dc.code}
-        </Link>
-      ),
-    },
-    {
-      id: 'dc_date',
-      sortFilterField: 'dcDate',
-      kind: 'date',
-      header: 'DC Date',
-      className: 'mono',
-      nowrap: true,
-      render: (dc) => fmtDate(dc.dcDate),
-    },
+    ...leadColumns<DeliveryChallanListLine>({
+      doc: {
+        id: 'dc_code',
+        sortFilterField: 'dcCode',
+        header: 'DC No.',
+        nowrap: true,
+        render: (dc) => (
+          <Link
+            to="/delivery-challans/$id"
+            params={{ id: dc.docId }}
+            className="td-code"
+            style={{ color: 'var(--blue)', fontWeight: 800 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {dc.docCode}
+          </Link>
+        ),
+      },
+      docDate: {
+        id: 'dc_date',
+        sortFilterField: 'dcDate',
+        kind: 'date',
+        header: 'DC Date',
+        className: 'mono',
+        nowrap: true,
+        render: (dc) => fmtDate(dc.docDate),
+      },
+      soNo: (r) => r.soCode ?? r.jwCode,
+      internalSoNo: (r) => r.soInternalNo,
+      pol: (r) => r.clientPoLineNo,
+      createdOn: (r) => r.createdAt,
+      itemCode: (r) => r.itemCode,
+      itemRev: (r) => r.itemRevision,
+      itemName: (r) => r.itemName,
+      overrides: {
+        so_no: { sortFilterField: 'soCode' },
+        so_internal_no: { sortFilterField: 'soInternalNo' },
+        client_po_line_no: { sortFilterField: 'clientPoLineNo' },
+        created_on: { sortFilterField: 'createdOn' },
+        item_code: { sortFilterField: 'itemCode' },
+        item_name: { sortFilterField: 'itemName' },
+      },
+    }),
     {
       id: 'vendor',
       sortFilterField: 'vendor',
@@ -108,33 +122,8 @@ export function dcListColumns(
       render: (dc) => <PoCell dc={dc} />,
     },
     {
-      id: 'so_code',
-      sortFilterField: 'soCode',
-      kind: 'code',
-      header: 'SO No.',
-      nowrap: true,
-      render: (dc) => (
-        <span className="mono text2" style={{ fontSize: 'var(--fs-xs)' }}>
-          {dc.soCode || dc.soRefText || '—'}
-        </span>
-      ),
-    },
-    {
-      // ADR-207 — the office's own Internal SO No., in its own column beside
-      // the system SO No. so the two can be told apart. Older orders have none.
-      id: 'so_internal_no',
-      sortFilterField: 'soInternalNo',
-      kind: 'code',
-      header: 'Internal SO No.',
-      className: 'mono fw-700',
-      nowrap: true,
-      render: (dc) => (
-        <span style={{ color: 'var(--text)' }}>{dc.soInternalNo?.trim() || '—'}</span>
-      ),
-    },
-    {
       id: 'sent_qty',
-      sortFilterField: 'totalQty',
+      sortFilterField: 'qty',
       filterType: 'num',
       header: 'Sent Qty',
       align: 'right',
@@ -142,18 +131,9 @@ export function dcListColumns(
       // Whole pieces print whole (12, not 12.00); a real fraction keeps ≤2dp.
       render: (dc) => (
         <span className="mono fw-700">
-          {Number(dc.totalQty).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+          {Number(dc.qty).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
         </span>
       ),
-    },
-    {
-      id: 'lines',
-      sortFilterField: 'lineCount',
-      filterType: 'num',
-      header: 'Lines',
-      align: 'right',
-      nowrap: true,
-      render: (dc) => <span className="mono">{dc.lineCount}</span>,
     },
     {
       id: 'dc_status',
@@ -162,9 +142,8 @@ export function dcListColumns(
       kind: 'badge',
       header: 'DC Status',
       nowrap: true,
-      render: (dc) => <DcStatusBadge status={dc.status} draft={draftIds?.has(dc.id)} />,
+      render: (dc) => <DcStatusBadge status={dc.docStatus} draft={draftIds?.has(dc.docId)} />,
     },
-    // ── ▸ detail row (defaultHidden) ──────────────────────────────────────
     {
       id: 'jc_code',
       sortFilterField: 'jobCardCode',
@@ -179,19 +158,6 @@ export function dcListColumns(
         ),
     },
     {
-      id: 'drawing_rev',
-      sortFilterField: 'drawingRev',
-      kind: 'code',
-      header: 'Drawing Rev',
-      nowrap: true,
-      render: (dc) =>
-        dc.soLineRevision ? (
-          <span className="mono text2">{dc.soLineRevision}</span>
-        ) : (
-          <span className="text3">—</span>
-        ),
-    },
-    {
       id: 'transport',
       sortFilterField: 'transport',
       header: 'Transport',
@@ -200,17 +166,6 @@ export function dcListColumns(
       className: 'text2',
       render: (dc) => dc.transport?.trim() || '—',
       title: (dc) => dc.transport ?? '',
-    },
-    {
-      // When the DC record was entered (IST day) — Sort & Filter can pick a
-      // range of it (ADR-200). Off by default; Columns ▾ shows it.
-      id: 'created_on',
-      sortFilterField: 'createdOn',
-      kind: 'date',
-      header: 'Created On',
-      className: 'mono',
-      nowrap: true,
-      render: (dc) => fmtDate(dc.createdAt),
     },
   ];
 }

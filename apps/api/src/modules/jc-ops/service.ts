@@ -51,6 +51,8 @@ export async function listJcOpsBoard(
           -- sol / rev_jwl are the line joins the SELECT below already makes
           -- (ADR-236: SO line's POL, else the Job Work SO line's).
           OR ${polSql('sol', 'rev_jwl')} ILIKE ${term}
+          OR COALESCE(bso.code, bjw.code) ILIKE ${term}
+          OR bso.internal_so_no ILIKE ${term}
         )`
       : sql``;
     // Sort & Filter (ADR-200/201): the screen's column filters + sort, through
@@ -70,6 +72,9 @@ export async function listJcOpsBoard(
         ON sol.id = jc.source_so_line_id AND sol.deleted_at IS NULL
       LEFT JOIN public.job_work_order_lines rev_jwl
         ON rev_jwl.id = jc.source_jw_line_id AND rev_jwl.deleted_at IS NULL
+      -- ADR-261 lead columns: the order behind the card (SO, else JWSO).
+      LEFT JOIN public.sales_orders bso ON bso.id = sol.sales_order_id AND bso.deleted_at IS NULL
+      LEFT JOIN public.job_work_orders bjw ON bjw.id = rev_jwl.job_work_order_id AND bjw.deleted_at IS NULL
       LEFT JOIN public.machines m ON m.id = op.machine_id AND m.deleted_at IS NULL
       LEFT JOIN public.vendors ven ON ven.id = op.outsource_vendor_id AND ven.deleted_at IS NULL
       LEFT JOIN public.v_jc_op_status s ON s.jc_op_id = op.id`;
@@ -87,6 +92,7 @@ export async function listJcOpsBoard(
         op.id AS "jcOpId",
         jc.id AS "jcId",
         jc.code AS "jcCode",
+        to_char(jc.jc_date, 'YYYY-MM-DD') AS "jcDate",
         i.code AS "jcItemCode",
         -- The customer's drawing revision for the JC's item, read live off the
         -- SO line the card was raised against — never items.revision, which
@@ -102,6 +108,10 @@ export async function listJcOpsBoard(
         -- line's POL for a JW-sourced op (ADR-236).
         ${polSql('sol', 'rev_jwl')} AS "clientPoLineNo",
         i.name AS "jcItemName",
+        COALESCE(bso.code, bjw.code) AS "soCode",
+        bso.internal_so_no AS "soInternalNo",
+        -- ADR-261 Created On — the job-card op's own created_at.
+        op.created_at AS "createdAt",
         jc.order_qty AS "jcOrderQty",
         op.op_seq AS "opSeq",
         op.operation,
@@ -180,10 +190,17 @@ export async function listJcOpsBoard(
         jcOpId: r['jcOpId'] as string,
         jcId: (r['jcId'] as string | null) ?? null,
         jcCode: String(r['jcCode'] ?? ''),
+        jcDate: (r['jcDate'] as string | null) ?? null,
         jcItemCode: (r['jcItemCode'] as string | null) ?? null,
         itemRevision: (r['itemRevision'] as string | null) ?? null,
         clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
         jcItemName: (r['jcItemName'] as string | null) ?? null,
+        soCode: (r['soCode'] as string | null) ?? null,
+        soInternalNo: (r['soInternalNo'] as string | null) ?? null,
+        createdAt:
+          r['createdAt'] instanceof Date
+            ? (r['createdAt'] as Date).toISOString()
+            : ((r['createdAt'] as string | null) ?? null),
         jcOrderQty: num(r['jcOrderQty']),
         opSeq: num(r['opSeq']),
         operation: String(r['operation'] ?? ''),

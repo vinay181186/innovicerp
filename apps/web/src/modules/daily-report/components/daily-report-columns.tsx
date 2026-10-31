@@ -3,8 +3,8 @@
 // ceiling and the sheet is defined in one place. Mirrors legacy renderDailyReport
 // (HTML L10823).
 //
-// One row per log entry. The six lead columns (SO No. … Item Name, owner rule
-// 2026-10-31) come first, then JC No. The Completed column carries the engine's column-following `total`
+// One row per log entry. JC No. comes first, then the six lead columns (SO No.
+// … Item Name, owner rule 2026-10-31), all locked. The Completed column carries the engine's column-following `total`
 // (sum), so the per-machine total sits under its own column and moves with it
 // into ▸ (replacing the old hand-written <tfoot>). Remarks is default-hidden, so
 // it lives in the row's ▸ detail. Labels per docs/NAMING.md
@@ -12,6 +12,7 @@
 
 import type { DailyReportRow } from '@innovic/shared';
 import { opSrNo, SHIFT_LABELS, type Shift } from '@innovic/shared';
+import { fmtDate } from '@/lib/date';
 import { leadColumns, type DataTableColumn } from '@/ui/data';
 
 /** Columns that live in the row's ▸ detail by default. */
@@ -24,25 +25,35 @@ function sumQty(rows: DailyReportRow[]): number {
 }
 
 export const dailyReportColumns: DataTableColumn<DailyReportRow>[] = [
-  // Owner rule 2026-10-31 — the six lead columns first; JC No. after Item Name.
-  // The log row carries no SO No., Internal SO No. or created date yet (needs API).
+  // Owner rule 2026-10-31 (ADR-261 amendment) — JC No. first, then the six
+  // lead columns, all locked.
+  // Created On = the log entry's own created_at.
   ...leadColumns<DailyReportRow>({
-    soNo: () => null,
-    internalSoNo: () => null,
+    doc: {
+      id: 'jc_no',
+      kind: 'code',
+      header: 'JC No.',
+      className: 'mono fw-700',
+      nowrap: true,
+      render: (r) => <span style={{ color: 'var(--cyan)' }}>{r.jcCode}</span>,
+    },
+    docDate: {
+      id: 'jc_date',
+      kind: 'date',
+      header: 'JC Date',
+      className: 'mono',
+      nowrap: true,
+      render: (r) => fmtDate(r.jcDate ?? null),
+      filterValue: (r) => r.jcDate ?? '',
+    },
+    soNo: (r) => r.soCode,
+    internalSoNo: (r) => r.soInternalNo,
     pol: (r) => r.clientPoLineNo,
-    createdOn: () => null,
+    createdOn: (r) => r.createdAt,
     itemCode: (r) => r.itemCode,
     itemRev: (r) => r.itemRevision,
     itemName: (r) => r.itemName,
   }),
-  {
-    id: 'jc_no',
-    kind: 'code',
-    header: 'JC No.',
-    className: 'mono fw-700',
-    nowrap: true,
-    render: (r) => <span style={{ color: 'var(--cyan)' }}>{r.jcCode}</span>,
-  },
   {
     id: 'op',
     kind: 'code',

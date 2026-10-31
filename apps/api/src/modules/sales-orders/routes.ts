@@ -10,6 +10,7 @@ import {
   updateSalesOrderInputSchema,
 } from './schema';
 import * as service from './service';
+import { listSalesOrderLines } from './list-lines';
 import * as shortClose from './short-close';
 
 const idParamSchema = z.object({ id: z.string().uuid() });
@@ -25,6 +26,13 @@ export async function salesOrdersRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) throw new AuthenticationError();
     const query = listSalesOrdersQuerySchema.parse(req.query);
     return service.listSalesOrders(query, req.user);
+  });
+
+  // ADR-261 — SO Master, one row per SO line (same params as GET /sales-orders).
+  app.get('/sales-orders/lines', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const query = listSalesOrdersQuerySchema.parse(req.query);
+    return listSalesOrderLines(query, req.user);
   });
 
   // ADR-245 — live Client PO No. check (per customer) while the form is typed.

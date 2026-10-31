@@ -8,70 +8,70 @@
 import {
   normalizeRevision,
   polError,
-  type SalesOrderListItem,
+  SO_FULFILMENT_STATUS_LABEL,
+  type SalesOrderLineListItem,
 } from '@innovic/shared';
 import * as XLSX from 'xlsx';
-import { todayIst } from '@/lib/date';
+import { fmtDate, todayIst } from '@/lib/date';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { coerceDate } from '@/lib/xlsx-import';
-import { soStatusLabel } from './so-status-label';
-
-/** 'component_manufacturing' → 'Component Manufacturing' (no SO-type label map exists). */
-function titleCase(code: string): string {
-  return code
-    .split('_')
-    .map((w) => (w ? w[0]!.toUpperCase() + w.slice(1) : w))
-    .join(' ');
-}
-
-/** Format a stored UTC timestamp as IST date + time for export/display. */
-function fmtIst(iso: string | null | undefined): string {
-  if (!iso) return '';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  return d.toLocaleString('en-IN', {
-    timeZone: 'Asia/Kolkata',
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true,
-  });
-}
+import { soLinePendingQty } from '../components/so-list-columns';
+import { SO_STATUS_LABEL, SO_TYPE_LABEL } from './so-status-label';
 
 // Minimal type for the File System Access API (Chromium-only), used to pop a
 // real "Save As" file-explorer dialog. Absent in Firefox/Safari → we fall back.
 type SaveFilePicker = (opts: {
   suggestedName?: string;
   types?: { description?: string; accept: Record<string, string[]> }[];
-}) => Promise<{ createWritable: () => Promise<{ write: (d: Blob) => Promise<void>; close: () => Promise<void> }> }>;
+}) => Promise<{
+  createWritable: () => Promise<{ write: (d: Blob) => Promise<void>; close: () => Promise<void> }>;
+}>;
 
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
 // Export the SO Master list (already filtered/searched by the caller) to an
-// .xlsx — one row per SO, the same columns shown in the on-screen table. Opens
-// a Save-As dialog where the browser supports it, else downloads to Downloads.
-export async function exportSoListExcel(rows: SalesOrderListItem[]): Promise<void> {
+// .xlsx — ADR-261: ONE ROW PER SO LINE, the same columns in the same order as
+// the on-screen table (the six lead columns first). A line-less SO is one row
+// with its line cells blank. Opens a Save-As dialog where the browser supports
+// it, else downloads to Downloads.
+export async function exportSoListExcel(rows: SalesOrderLineListItem[]): Promise<void> {
   const header = [
-    'SO No.', 'Internal SO No.', 'SO Date', 'Customer', 'Client PO No.', 'SO Type', 'Lines', 'Total Qty',
-    'JC Qty', 'Earliest Due Date', 'SO Status', 'BOM Status', 'Raised By', 'Raised On (IST)', 'SO Remarks',
+    'SO No.',
+    'Internal SO No.',
+    'POL',
+    'Created On',
+    'Item Code',
+    'Item Name',
+    'SO Date',
+    'SO Type',
+    'Customer',
+    'Client PO No.',
+    'Order Qty',
+    'JC Qty',
+    'Dispatched',
+    'Pending',
+    'Due Date',
+    'SO Status',
+    'Fulfilment',
   ];
   const body = rows.map((r) => [
     r.code,
     r.internalSoNo ?? '',
-    r.soDate,
+    r.clientPoLineNo ?? '',
+    fmtDate(r.lineCreatedAt, ''),
+    itemCodeWithRev(r.itemCode, r.itemRevision, ''),
+    r.itemName,
+    fmtDate(r.soDate, ''),
+    SO_TYPE_LABEL[r.type],
     r.customerName ?? '',
     r.clientPoNo ?? '',
-    titleCase(r.type),
-    r.lineCount,
-    r.totalQty,
-    r.jcQty,
-    r.earliestDueDate ?? '',
-    soStatusLabel(r.status),
-    r.bomStatus ?? '',
-    r.createdByName ?? '',
-    fmtIst(r.createdAt),
-    r.remarks ?? '',
+    r.lineOrderQty,
+    r.lineJcQty,
+    r.lineDispatchedQty,
+    soLinePendingQty(r),
+    fmtDate(r.lineDueDate, ''),
+    SO_STATUS_LABEL[r.status],
+    r.fulfilmentStatus ? SO_FULFILMENT_STATUS_LABEL[r.fulfilmentStatus] : '',
   ]);
   const ws = XLSX.utils.aoa_to_sheet([header, ...body]);
   const wb = XLSX.utils.book_new();
@@ -141,7 +141,9 @@ export interface SoLineImportRow {
   dueDate?: string | undefined;
 }
 
-export async function parseSoLineFile(file: File): Promise<{ rows: SoLineImportRow[]; errors: string[] }> {
+export async function parseSoLineFile(
+  file: File,
+): Promise<{ rows: SoLineImportRow[]; errors: string[] }> {
   const buf = await file.arrayBuffer();
   const wb = XLSX.read(buf, { cellDates: true });
   const ws = wb.Sheets[wb.SheetNames[0]!];

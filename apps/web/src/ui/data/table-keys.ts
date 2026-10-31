@@ -46,11 +46,12 @@ export const TABLE_KEYS = {
   ospOutwardDc: 'osp-outward-dc',
   jwDcOutward: 'jw-dc-outward',
   jwDcInward: 'jw-dc-inward',
-  approvalsPrPo: 'approvals-pr-po',
-  approvalsOpEntry: 'approvals-op-entry',
-  editApprovalsInbox: 'edit-approvals-inbox',
-  /** Settings → Approvals → Cancel Requests (ADR-235). */
-  approvalsCancel: 'approvals-cancel',
+  /** ADR-265 — THE list of approvals waiting for me (home + Settings → Approvals). */
+  approvalsWaiting: 'approvals-waiting',
+  /** ADR-265 — Settings → Approvals, Show: Approved / Rejected. */
+  approvalsHistory: 'approvals-history',
+  /** ADR-265 — the Review side panel's Field · Now · Requested table. */
+  approvalsReview: 'approvals-review',
 
   // ADR-199 conversions — Store (batch S)
   grnList: 'grn-list',

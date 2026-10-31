@@ -48,9 +48,20 @@ export function designTrackerColumns(opts: {
 }): DataTableColumn<DesignTrackerListItem>[] {
   const { today } = opts;
   return [
-    // Owner rule 2026-10-31 — the six lead columns first; Design No. and every
-    // other fact follow Item Name.
+    // Owner rule 2026-10-31 — own number (Design No.) first, then the six lead
+    // columns; every other fact follows Item Name.
     ...leadColumns<DesignTrackerListItem>({
+      doc: {
+        id: 'design_no',
+        header: 'Design No.',
+        nowrap: true,
+        render: (d) => (
+          <span className="td-code" style={{ color: 'var(--purple)' }}>
+            {d.code}
+          </span>
+        ),
+        sortFilterField: 'code',
+      },
       soNo: (d) => d.soCodeText,
       internalSoNo: (d) => d.soInternalNo,
       pol: (d) => d.clientPoLineNo,
@@ -66,17 +77,6 @@ export function designTrackerColumns(opts: {
         item_name: { sortFilterField: 'itemName' },
       },
     }),
-    {
-      id: 'design_no',
-      header: 'Design No.',
-      nowrap: true,
-      render: (d) => (
-        <span className="td-code" style={{ color: 'var(--purple)' }}>
-          {d.code}
-        </span>
-      ),
-      sortFilterField: 'code',
-    },
     {
       id: 'designer',
       header: 'Design Engineer',

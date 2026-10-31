@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
 import { requestCancel } from '../cancel-requests/service';
 import * as service from './service';
+import { listInvoiceLines } from './list-lines';
 
 const idParamSchema = z.object({ id: z.string().uuid() });
 
@@ -15,6 +16,12 @@ export async function invoicesRoutes(app: FastifyInstance): Promise<void> {
   app.get('/invoices', async (req) => {
     if (!req.user) throw new AuthenticationError();
     return service.listInvoices(listInvoicesQuerySchema.parse(req.query), req.user);
+  });
+
+  // ADR-261 — SO Invoices, one row per invoice line (same query as GET /invoices).
+  app.get('/invoices/lines', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    return listInvoiceLines(listInvoicesQuerySchema.parse(req.query), req.user);
   });
 
   app.get('/invoices/next-code', async (req) => {

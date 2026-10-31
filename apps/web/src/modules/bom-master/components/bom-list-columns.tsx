@@ -20,14 +20,6 @@ const BOM_STATUS_OPTIONS = (['draft', 'active', 'obsolete'] as const).map((v) =>
 export function bomListColumns(offset = 0): DataTableColumn<BomMasterListItem>[] {
   return [
     {
-      id: 'sr_no',
-      header: 'Sr No',
-      width: '4%',
-      className: 'text3',
-      align: 'right',
-      render: (_b, i) => offset + i + 1,
-    },
-    {
       id: 'bom_no',
       sortFilterField: 'bomNo',
       header: 'BOM No.',
@@ -48,6 +40,14 @@ export function bomListColumns(offset = 0): DataTableColumn<BomMasterListItem>[]
           {b.bomNo}
         </Link>
       ),
+    },
+    {
+      id: 'sr_no',
+      header: 'Sr No',
+      width: '4%',
+      className: 'text3',
+      align: 'right',
+      render: (_b, i) => offset + i + 1,
     },
     {
       id: 'bom_name',

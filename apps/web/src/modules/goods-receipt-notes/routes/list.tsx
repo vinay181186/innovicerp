@@ -1,12 +1,12 @@
 // GRN list (UI-003-05). Ports legacy renderGRN L26444.
 //
-// ADR-199 table standard: ONE shared FIT table (<DataTable tableKey=…>), one
-// line per GRN, the fit engine sizing columns to the screen and dropping the
-// rightmost unpinned ones into a ▸ detail row when it is too narrow. Replaced
-// the per-GRN card layout (frozen band, accent bar, metric strip, meta line);
-// no field was dropped in the move — Received / Accepted / Rejected are now
-// columns, Source and PO/NC No. are columns, and the card's DC / invoice /
-// remarks meta line moved into the ▸ expand beside the GRN's line items.
+// ADR-199 table standard: ONE shared FIT table (<DataTable tableKey=…>).
+// ADR-261 (2026-10-31): ONE ROW PER GRN LINE, read from GET
+// /goods-receipt-notes/lines, opening with the six lead columns. The old ▸
+// (the GRN's lines + its vendor challan / invoice / remarks) is gone: the lines
+// are now the rows and the two vendor paper numbers are columns. Row click and
+// the ⋯ menu act on the line's GRN (docId). The QC-status dropdown counts stay
+// GRN (document) counts; the QC Status filter and cell read each LINE.
 //
 // Pagination is KEPT (unlike SO/WO masters): the GRN API is paginated and the
 // receipt book grows every day, so the list stays a pager register (ListFooter
@@ -14,13 +14,13 @@
 
 import {
   GRN_QC_STATUSES,
-  type GoodsReceiptNoteListItem,
+  type GoodsReceiptNoteLineListItem,
   type GrnQcStatus,
   type ListGoodsReceiptNotesQuery,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { Plus } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
@@ -34,8 +34,7 @@ import { DataTable, Panel, ROW_TINT } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
-import { useGoodsReceiptNotesList } from '../api';
-import { GrnExpandedLines } from '../components/grn-expanded-lines';
+import { useGoodsReceiptNoteLinesList } from '../api';
 import {
   goodsReceiptNoteListColumns,
   grnTypeLabel,
@@ -119,114 +118,84 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
     [sf.param, search.search, search.qcStatus, search.page],
   );
 
-  const { data, isLoading, isFetching, isError, error } = useGoodsReceiptNotesList(query, {
+  const { data, isLoading, isFetching, isError, error } = useGoodsReceiptNoteLinesList(query, {
     refetchInterval: LIVE_FALLBACK_POLL_MS,
   });
   // The KPI summary has no "QC In Progress" count, so the QC-status dropdown's
-  // In Progress count reads the pager total of the same list filtered to it
-  // (same endpoint). The rows also tell each line whether it is in QC right now
-  // — the same rule (a line with QC status 'in_progress'), so row and count
-  // always agree.
-  const { data: inProgressData } = useGoodsReceiptNotesList({
+  // In Progress count is the GRN count (summary.total) of the same list
+  // filtered to in-progress lines. limit 1: only the summary is read.
+  const { data: inProgressData } = useGoodsReceiptNoteLinesList({
     search: search.search,
     qcStatus: 'in_progress',
     // Same column filters, so this count agrees with the others in the dropdown.
     sf: sf.param,
     // A Cancelled GRN is never "in progress" — live rows only here.
     includeCancelled: false,
-    limit: 200,
+    limit: 1,
     offset: 0,
   });
-  const inProgressIds = useMemo(
-    () => new Set((inProgressData?.items ?? []).map((g) => g.id)),
-    [inProgressData],
-  );
   const filtered = sf.filtering || Boolean(search.search) || search.qcStatus !== undefined;
-
-  // ▸ expand: the caller owns the open set; the fit table's ▸ is the row's one
-  // expand control (onToggleExpanded), and renderExpanded returns null for a
-  // collapsed row so a closed GRN never fetches its lines.
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
-  const toggleExpand = useCallback((id: string): void => {
-    setExpandedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
 
   const rows = data?.items ?? [];
 
-  /** Card QC status: cleared once every line is inspected; "In Progress" only
-   *  when a line's QC status is 'in_progress' (the tile's rule); else pending. */
-  const qcStatusFor = useCallback(
-    (grn: GoodsReceiptNoteListItem): GrnQcStatus =>
-      grn.grnStatus === 'close'
-        ? 'completed'
-        : search.qcStatus === 'in_progress' || inProgressIds.has(grn.id)
-          ? 'in_progress'
-          : 'pending',
-    [search.qcStatus, inProgressIds],
-  );
-
   // ADR-202 — GRN ids with a pending edit; their status cell reads "Draft".
   const draftIds = usePendingEditIds('GoodsReceiptNote');
-  const columns = useMemo(
-    () => goodsReceiptNoteListColumns(qcStatusFor, draftIds),
-    [qcStatusFor, draftIds],
-  );
+  const columns = useMemo(() => goodsReceiptNoteListColumns(draftIds), [draftIds]);
 
   // ⋯ row menu — Assign Task (link a task to this GRN), the same gate the
   // retired card used: shown only while a line still awaits QC
   // (qcPendingCount > 0). ADR-232: shown only to a user holding this page's
   // Advance right.
   const canAssign = perms.advance;
-  const [assignGrn, setAssignGrn] = useState<GoodsReceiptNoteListItem | null>(null);
+  const [assignGrn, setAssignGrn] = useState<GoodsReceiptNoteLineListItem | null>(null);
   // Cancel GRN -> Edit OR Approve (ADR-235, the ONE standard Cancel): Edit
   // sends a Cancel Request, Approve decides it. The dialog reads the server's
   // preview, which says which of the two this user may press. A Cancelled
   // GRN's ⋯ offers only Preview / Download PDF.
   const canCancel = perms.edit || perms.approve;
-  const [cancelGrn, setCancelGrn] = useState<GoodsReceiptNoteListItem | null>(null);
+  const [cancelGrn, setCancelGrn] = useState<GoodsReceiptNoteLineListItem | null>(null);
   // Preview / Download PDF print the same sheet the detail page does
   // (use-grn-print.ts) — on every row, since printing follows View.
   const grnPrint = useGrnPrint();
-  const rowActions = (grn: GoodsReceiptNoteListItem): React.JSX.Element => (
-    <RowActions
-      renderLink={(p) => <Link {...p} />}
-      items={[
-        {
-          key: 'preview',
-          label: 'Preview',
-          icon: 'eye',
-          onSelect: () => void grnPrint('preview', grn, draftIds.has(grn.id)),
-        },
-        {
-          key: 'download',
-          label: 'Download PDF',
-          icon: 'download',
-          onSelect: () => grnPrint('download', grn, draftIds.has(grn.id)),
-        },
-        {
-          key: 'assign',
-          label: 'Assign Task',
-          icon: 'user-round',
-          group: 'assign',
-          hidden: !(grn.qcPendingCount > 0 && canAssign) || isGrnCancelled(grn),
-          onSelect: () => setAssignGrn(grn),
-        },
-        {
-          key: 'cancel',
-          label: 'Cancel GRN',
-          icon: 'x',
-          group: 'danger',
-          hidden: !canCancel || isGrnCancelled(grn),
-          onSelect: () => setCancelGrn(grn),
-        },
-      ]}
-    />
-  );
+  // Every action is on the line's GRN (docId).
+  const rowActions = (grn: GoodsReceiptNoteLineListItem): React.JSX.Element => {
+    const doc = { id: grn.docId, code: grn.docCode, vendorId: grn.vendorId };
+    return (
+      <RowActions
+        renderLink={(p) => <Link {...p} />}
+        items={[
+          {
+            key: 'preview',
+            label: 'Preview',
+            icon: 'eye',
+            onSelect: () => void grnPrint('preview', doc, draftIds.has(doc.id)),
+          },
+          {
+            key: 'download',
+            label: 'Download PDF',
+            icon: 'download',
+            onSelect: () => grnPrint('download', doc, draftIds.has(doc.id)),
+          },
+          {
+            key: 'assign',
+            label: 'Assign Task',
+            icon: 'user-round',
+            group: 'assign',
+            hidden: !(grn.docQcPendingCount > 0 && canAssign) || isGrnCancelled(grn),
+            onSelect: () => setAssignGrn(grn),
+          },
+          {
+            key: 'cancel',
+            label: 'Cancel GRN',
+            icon: 'x',
+            group: 'danger',
+            hidden: !canCancel || isGrnCancelled(grn),
+            onSelect: () => setCancelGrn(grn),
+          },
+        ]}
+      />
+    );
+  };
 
   const total = data?.total ?? 0;
 
@@ -253,11 +222,11 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
         title="GRN"
         icon="📥"
         count={total}
-        noun="GRN"
+        noun="GRN line"
         filterNote={search.qcStatus ? GRN_QC_STATUS_LABELS[search.qcStatus] : undefined}
         search={searchInput}
         onSearch={setSearchInput}
-        searchPlaceholder="Search GRN no., PO, vendor, DC, invoice…"
+        searchPlaceholder="Search GRN no., PO, vendor, item, SO, DC, invoice…"
         updating={isFetching && !isLoading}
         filters={
           // QC status, every GRN_QC_STATUSES value, with the summary counts
@@ -281,7 +250,7 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
               <option key={s} value={s}>
                 {withCount(
                   GRN_QC_STATUS_LABELS[s],
-                  qcCountFor(s, data?.summary, inProgressData?.total),
+                  qcCountFor(s, data?.summary, inProgressData?.summary.total),
                 )}
               </option>
             ))}
@@ -323,24 +292,15 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
             rows={rows}
             loading={isLoading}
             emptyText={filtered ? 'No GRNs match.' : 'No GRNs yet.'}
-            defaultHidden={['created_on']}
+            rowKey={(l) => l.lineId}
             sortFilterServer={sf}
-            onRowClick={(grn) =>
-              void navigate({ to: '/goods-receipt-notes/$id', params: { id: grn.id } })
+            onRowClick={(l) =>
+              void navigate({ to: '/goods-receipt-notes/$id', params: { id: l.docId } })
             }
-            rowClassName={(grn) =>
-              isGrnCancelled(grn) ? ROW_TINT.cancelled : ROW_TINT_BY_QC[qcStatusFor(grn)]
+            rowClassName={(l) =>
+              isGrnCancelled(l) ? ROW_TINT.cancelled : ROW_TINT_BY_QC[l.lineQcStatus]
             }
-            rowActions={(grn) => rowActions(grn)}
-            // The lines are fetched only for a row actually open — returning null
-            // for a collapsed row means GrnExpandedLines (and its detail query)
-            // never mounts for it.
-            renderExpanded={(grn) =>
-              expandedIds.has(grn.id) ? <GrnExpandedLines grnId={grn.id} /> : null
-            }
-            // The fit table's ▸ is the row's one expand control: it opens the
-            // line items too.
-            onToggleExpanded={(grn) => toggleExpand(grn.id)}
+            rowActions={(l) => rowActions(l)}
           />
         </Panel>
       )}
@@ -349,7 +309,7 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
           Prev/Next pager (ListFooter pager mode) — an unbounded register. */}
       <ListFooter
         total={total}
-        noun="goods receipt note"
+        noun="GRN line"
         page={search.page}
         pageSize={PAGE_SIZE}
         onPage={(p) =>
@@ -368,23 +328,23 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
         <AssignTaskModal
           linkedRef={{
             type: 'GRN',
-            id: assignGrn.id,
-            display: assignGrn.code,
+            id: assignGrn.docId,
+            display: assignGrn.docCode,
             // ADR-251: Incoming QC lists only GRNs Against PO; an OSP / NC
             // return is inspected on the QC Call Register.
             navPage: ['Against NC', 'Against JW PO / DC'].includes(grnTypeLabel(assignGrn) ?? '')
               ? '/qc-call-register'
               : '/incoming-qc',
           }}
-          suggestedTitle={`Inspect ${assignGrn.code}`}
+          suggestedTitle={`Inspect ${assignGrn.docCode}`}
           onClose={() => setAssignGrn(null)}
         />
       ) : null}
       {cancelGrn ? (
         <CancelDocDialog
           docType="grn"
-          docId={cancelGrn.id}
-          docCode={cancelGrn.code}
+          docId={cancelGrn.docId}
+          docCode={cancelGrn.docCode}
           onClose={() => setCancelGrn(null)}
         />
       ) : null}

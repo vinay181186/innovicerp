@@ -1,7 +1,8 @@
 // SO detail's two fit tables (ADR-199): the line items and the delivery
 // schedule. Moved out of routes/detail.tsx to keep that file from growing.
-// Every row is one line: Image · Item Code (CODE/REV) · Item Name are three
-// columns, Drawing and SO Status draw their parts side by side.
+// ADR-261: the line table opens with the six lead columns (SO No. · Internal
+// SO No. — the page's order — · POL · Created On · Item Code (CODE/REV) · Item
+// Name), then Ln and Image; Drawing and SO Status draw their parts side by side.
 
 import type { DrawingSource, SalesOrderDetail, SalesOrderLine, SoStatus } from '@innovic/shared';
 import { ItemImageBox } from '@/components/shared/item-badge';
@@ -10,7 +11,7 @@ import { itemCodeWithRev } from '@/lib/item-code';
 import { ItemRevLink } from '@/modules/item-revisions/components/item-rev-link';
 import { inrFormat } from '@/lib/print/doc-print';
 import { Button, Icon, StatusBadge } from '@/ui/core';
-import type { DataTableColumn, RowMenuItem } from '@/ui/data';
+import { leadColumns, type DataTableColumn, type RowMenuItem } from '@/ui/data';
 import { SO_STATUS_LABEL } from '../lib/so-status-label';
 import { closableQty } from './so-close-modal';
 import { SoLineShortClosedBadge } from './so-fulfilment-badge';
@@ -34,10 +35,52 @@ export function lineColumns(opts: {
   /** Carried down only so the drawing access log reads "IN-SO-26-00521 L3"
    *  instead of a storage path nobody recognises. */
   soCode: string;
+  /** ADR-207 — the order's Internal SO No. (lead column 2). */
+  internalSoNo: string | null;
   onPreview: (file: DrawingPreview) => void;
 }): DataTableColumn<SalesOrderLine>[] {
-  const { priceHidden, soCode, onPreview } = opts;
+  const { priceHidden, soCode, internalSoNo, onPreview } = opts;
   return [
+    ...leadColumns<SalesOrderLine>({
+      soNo: () => soCode,
+      internalSoNo: () => internalSoNo,
+      pol: (l) => l.clientPoLineNo,
+      createdOn: (l) => l.createdAt,
+      itemCode: (l) => l.itemCode ?? l.itemCodeText,
+      itemRev: (l) => l.revision,
+      itemName: (l) => l.partName,
+      overrides: {
+        // ABC/1 links to its drawing page once the line is in the Item +
+        // Drawing Rev register (itemRevisionId); plain text otherwise.
+        item_code: {
+          render: (l) => (
+            <ItemRevLink
+              itemRevisionId={l.itemRevisionId}
+              label={itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.revision)}
+              className=""
+            />
+          ),
+          filterValue: (l) => itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.revision),
+        },
+        item_name: {
+          title: (l) =>
+            masterNote(l.partName, l.masterItemName)
+              ? `${l.partName ?? ''} — Master: ${l.masterItemName ?? ''}`
+              : (l.partName ?? ''),
+          render: (l) => {
+            const master = masterNote(l.partName, l.masterItemName);
+            return (
+              <>
+                {l.partName ?? '—'}
+                {/* The Item Master's own name, as a grey note BESIDE the
+                    line's Item Name (NAMING.md) — only when the two differ. */}
+                {master ? <span className="text3"> · Master: {master}</span> : null}
+              </>
+            );
+          },
+        },
+      },
+    }),
     {
       id: 'line_no',
       header: 'Ln',
@@ -46,23 +89,8 @@ export function lineColumns(opts: {
       nowrap: true,
       render: (l) => <span style={{ color: 'var(--blue)' }}>{l.lineNo}</span>,
     },
-    {
-      // The customer's PO line number. It is typed on this line and every
-      // downstream document repeats it, so it belongs next to the line number
-      // here, where it is authored. Purple, mono, 700 — unchanged.
-      id: 'client_po_line_no',
-      header: 'POL',
-      width: '5%',
-      headColor: 'var(--purple)',
-      className: 'mono fw-700',
-      nowrap: true,
-      render: (l) => <span style={{ color: 'var(--purple)' }}>{l.clientPoLineNo ?? '—'}</span>,
-    },
-    // Image · Item Code (CODE/REV) · Item Name as three one-line columns
-    // (ADR-199 table standard: every row one line; this replaced the stacked
-    // badge cell of 2026-09-21). The Rev is the customer's drawing revision,
-    // typed on this line, and it travels with the item code wherever an SO
-    // line is shown (itemCodeWithRev).
+    // Image after the lead block (ADR-261). The Rev is the customer's drawing
+    // revision, typed on this line; it rides in the Item Code cell (CODE/REV).
     {
       id: 'image',
       header: 'Image',
@@ -83,43 +111,6 @@ export function lineColumns(opts: {
           />
         </div>
       ),
-    },
-    {
-      id: 'item_code',
-      header: 'Item Code',
-      className: 'mono fw-700',
-      nowrap: true,
-      // ABC/1 links to its drawing page once the line is in the Item + Drawing
-      // Rev register (itemRevisionId); plain text otherwise.
-      render: (l) => (
-        <ItemRevLink
-          itemRevisionId={l.itemRevisionId}
-          label={itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.revision)}
-          className=""
-        />
-      ),
-      filterValue: (l) => itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.revision),
-    },
-    {
-      id: 'item_name',
-      header: 'Item Name',
-      align: 'left',
-      ellipsis: true,
-      title: (l) =>
-        masterNote(l.partName, l.masterItemName)
-          ? `${l.partName ?? ''} — Master: ${l.masterItemName ?? ''}`
-          : (l.partName ?? ''),
-      render: (l) => {
-        const master = masterNote(l.partName, l.masterItemName);
-        return (
-          <>
-            {l.partName ?? '—'}
-            {/* The Item Master's own name, as a grey note BESIDE the line's
-                Item Name (NAMING.md) — only when the two differ. */}
-            {master ? <span className="text3"> · Master: {master}</span> : null}
-          </>
-        );
-      },
     },
     {
       id: 'material',

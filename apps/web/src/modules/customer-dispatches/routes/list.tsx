@@ -14,6 +14,11 @@
 // item-wise summary and the SO options come from the server too. Lines are
 // still grouped by dispatch here, inside the page. Excel + Print fetch every
 // filtered row (fetchAllPages).
+//
+// 2026-10-31 (ADR-261): ONE ROW PER DISPATCH LINE, 25 LINES a page from
+// GET /customer-dispatches/lines, six lead columns first; the ▸ is gone (its
+// JC No. / UOM / Stock / Remarks are columns now). Row click and ⋯ act on the
+// dispatch. The KPI strip and item-wise summary still count dispatches.
 
 import type { CustomerDispatchRegisterQuery, CustomerDispatchRegisterRow } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
@@ -38,10 +43,9 @@ import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ActionMenu, ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useMyCompany } from '@/modules/settings/api';
-import { fetchDispatchRegister, useDispatchRegister } from '../api';
+import { fetchDispatchRegister, useDispatchLines } from '../api';
 import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
-import { type DispatchGroup, groupByDispatch } from '../components/dispatch-group';
-import { DispatchExpanded } from '../components/dispatch-expanded';
+import { groupByDispatch } from '../components/dispatch-group';
 import { DispatchItemSummary } from '../components/dispatch-item-summary';
 import { dispatchListColumns } from '../components/dispatch-list-columns';
 import { DispatchRowActions } from '../components/dispatch-row-actions';
@@ -98,8 +102,7 @@ function CustomerDispatchListPage(): React.JSX.Element {
   );
   const [term, setTerm] = useState(() => normalizeSearchTerm(search));
   const [soFilter, setSoFilter] = useState('');
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [cancelling, setCancelling] = useState<DispatchGroup | null>(null);
+  const [cancelling, setCancelling] = useState<{ dispatchId: string; code: string } | null>(null);
   const [exporting, setExporting] = useState(false);
 
   // Page in the URL; every search / SO / ▾ change goes back to page 1.
@@ -119,15 +122,14 @@ function CustomerDispatchListPage(): React.JSX.Element {
   }, [search, term, gotoPage]);
   const sf = useServerSortFilter(TABLE_KEYS.customerDispatches, () => gotoPage(1));
 
-  // Search covers every column the register puts on screen — the table row
-  // (dispatch no, date, SO, customer, dispatched by) AND the ▸ expanded line
-  // columns (JC no, POL, item code, item name, UOM) plus Remarks — matched on
-  // the server (register.ts). Not the qty / stock numbers.
+  // Search covers every column on screen — dispatch no, date, SO, customer,
+  // dispatched by, JC no, POL, item code, item name, UOM, Remarks — matched on
+  // the server (register.ts lineMatch). Not the qty / stock numbers.
   const filters = useMemo(
     () => ({ search: term || undefined, soNo: soFilter || undefined, sf: sf.param }),
     [term, soFilter, sf.param],
   );
-  const { data, isLoading, isFetching, isError, error } = useDispatchRegister({
+  const { data, isLoading, isFetching, isError, error } = useDispatchLines({
     ...filters,
     limit: LIST_PAGE_SIZE,
     offset: pageOffset(page),
@@ -136,19 +138,9 @@ function CustomerDispatchListPage(): React.JSX.Element {
   const total = data?.total ?? 0;
   const rows = useMemo(() => data?.rows ?? [], [data]);
   const soOptions = data?.soOptions ?? [];
-  // ADR-190 — how far each dispatch is invoiced, sent on its register rows.
-  const billedById = useMemo(
-    () => new Map(rows.map((r) => [r.dispatchId, r.billedStatus])),
-    [rows],
-  );
-
-  const groups = useMemo(() => groupByDispatch(rows), [rows]);
   // ADR-202 — dispatch ids with a pending edit; their status cell reads "Draft".
   const draftIds = usePendingEditIds('Dispatch');
-  const columns = useMemo(
-    () => dispatchListColumns((id) => billedById.get(id), draftIds),
-    [billedById, draftIds],
-  );
+  const columns = useMemo(() => dispatchListColumns(draftIds), [draftIds]);
 
   // KPIs over ACTIVE rows only (cancelled were reversed) — from the server,
   // over every matching row, never just this page.
@@ -176,17 +168,6 @@ function CustomerDispatchListPage(): React.JSX.Element {
       setExporting(false);
     }
   }
-
-  function toggle(id: string): void {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
-  const allExpanded = groups.length > 0 && groups.every((g) => expanded.has(g.dispatchId));
 
   const tabBar = (
     <div
@@ -242,8 +223,7 @@ function CustomerDispatchListPage(): React.JSX.Element {
         title="Customer Dispatch"
         icon="🚚"
         count={total}
-        noun="dispatch"
-        nounPlural="dispatches"
+        noun="line"
         filterNote={soFilter || undefined}
         search={search}
         onSearch={setSearch}
@@ -277,17 +257,6 @@ function CustomerDispatchListPage(): React.JSX.Element {
         filtersActive={sf.filtering || search !== '' || soFilter !== ''}
         tools={
           <>
-            <button
-              type="button"
-              className="btn btn-ghost"
-              disabled={groups.length === 0}
-              title={allExpanded ? 'Hide every row’s items' : 'Show every row’s items'}
-              onClick={() =>
-                setExpanded(allExpanded ? new Set() : new Set(groups.map((g) => g.dispatchId)))
-              }
-            >
-              {allExpanded ? 'Collapse all' : 'Expand all'}
-            </button>
             <ActionMenu
               label="Export"
               items={[
@@ -357,47 +326,42 @@ function CustomerDispatchListPage(): React.JSX.Element {
             Dispatch Log
           </div>
 
-          {/* THE shared FIT table (ADR-199). First column (Dispatch No.) is
-              pinned; the row click opens the dispatch; the ▸ opens the item
-              lines + Remarks; rows tint by status (cancelled → grey). */}
+          {/* THE shared FIT table (ADR-199), one row per dispatch line
+              (ADR-261); the row click opens the dispatch; rows tint by status
+              (cancelled → grey). */}
           <Panel fill bodyPadding="none">
             <DataTable
               tableKey={TABLE_KEYS.customerDispatches}
               columns={columns}
-              rows={groups}
-              rowKey={(g) => g.dispatchId}
+              rows={rows}
+              rowKey={(r) => r.lineId}
               loading={isLoading}
               sortFilterServer={sf}
               emptyText={
                 term || soFilter || sf.filtering ? 'No Dispatches match.' : 'No Dispatches yet.'
               }
-              onRowClick={(g) =>
-                void navigate({ to: '/customer-dispatches/$id', params: { id: g.dispatchId } })
+              onRowClick={(r) =>
+                void navigate({ to: '/customer-dispatches/$id', params: { id: r.dispatchId } })
               }
-              rowClassName={(g) => (g.status === 'cancelled' ? ROW_TINT.cancelled : ROW_TINT.done)}
-              renderExpanded={(g) =>
-                expanded.has(g.dispatchId) ? <DispatchExpanded g={g} /> : null
-              }
-              onToggleExpanded={(g) => toggle(g.dispatchId)}
-              rowActions={(g) => (
+              rowClassName={(r) => (r.status === 'cancelled' ? ROW_TINT.cancelled : ROW_TINT.done)}
+              rowActions={(r) => (
                 <DispatchRowActions
-                  g={g}
-                  billedStatus={billedById.get(g.dispatchId)}
+                  g={{ dispatchId: r.dispatchId, code: r.dispatchCode, status: r.status }}
+                  billedStatus={r.billedStatus}
                   canCancel={canCancel}
                   canInvoice={canInvoice}
                   cancelPending={cancelling !== null}
                   onInvoice={() =>
-                    void navigate({ to: '/invoices/new', search: { dispatchId: g.dispatchId } })
+                    void navigate({ to: '/invoices/new', search: { dispatchId: r.dispatchId } })
                   }
-                  onCancel={() => setCancelling(g)}
+                  onCancel={() => setCancelling({ dispatchId: r.dispatchId, code: r.dispatchCode })}
                 />
               )}
             />
           </Panel>
           <ListFooter
             total={total}
-            noun="dispatch"
-            nounPlural="dispatches"
+            noun="line"
             page={page}
             pageSize={LIST_PAGE_SIZE}
             onPage={gotoPage}

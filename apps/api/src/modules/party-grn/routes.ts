@@ -8,6 +8,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
 import { requestCancel } from '../cancel-requests/service';
+import { listPartyGrnLines } from './list-lines';
 import { qcPartyGrn } from './qc';
 import { updatePartyGrnInputSchema } from './schema';
 import * as service from './service';
@@ -19,6 +20,13 @@ export async function partyGrnRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) throw new AuthenticationError();
     const query = listPartyGrnQuerySchema.parse(req.query);
     return service.listPartyGrn(query, req.user);
+  });
+
+  // ADR-261 — the list screen: one row per Party GRN LINE, same params.
+  app.get('/party-grn/lines', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const query = listPartyGrnQuerySchema.parse(req.query);
+    return listPartyGrnLines(query, req.user);
   });
 
   app.get('/party-grn/next-code', async (req) => {

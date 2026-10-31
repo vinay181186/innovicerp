@@ -389,3 +389,52 @@ export interface ListJobWorkOrdersResponse {
   limit: number;
   offset: number;
 }
+
+// ─── ADR-261 — JWSO list, ONE ROW PER LINE ─────────────────────────────────
+
+/** GET /job-work-orders/lines — one row per live line of a live JWSO. The
+ *  lead block (JWSO No. · POL · Created On · Item Code/Rev · Item Name) comes
+ *  first; the JWSO's own header fields follow. Row click / ⋯ act on the JWSO
+ *  (`docId`). The line carries no money on this list. */
+export const jobWorkOrderLineListRowSchema = z.object({
+  lineId: z.string().uuid(),
+  docId: z.string().uuid(),
+  /** JWSO No. (IN-JW-…) — also the lead "JWSO No." cell. */
+  docCode: z.string(),
+  jwCode: z.string(),
+  docDate: z.string(),
+  docStatus: jwStatusSchema,
+  /** ADR-235 — the JWSO's cancel reason (null while live). */
+  cancelReason: z.string().nullable(),
+  clientId: z.string().uuid().nullable(),
+  customerName: z.string().nullable(),
+  clientPoNo: z.string().nullable(),
+  lineNo: z.number().int(),
+  clientPoLineNo: z.string().nullable(),
+  /** The line's created_at (falls back to the JWSO's). */
+  createdAt: z.string(),
+  itemCode: z.string().nullable(),
+  /** The JWSO line's drawing revision (rides in the Item Code cell). */
+  itemRevision: z.string().nullable(),
+  itemName: z.string().nullable(),
+  orderQty: z.number().int().nonnegative(),
+  /** Σ effective JC qty of this line's Job Cards (lib/jc-effective-qty). */
+  jcQty: z.number().int().nonnegative(),
+  /** Finished parts returned to the customer on this line (returned_qty). */
+  dispatchedQty: z.number().int().nonnegative(),
+  dueDate: z.string().nullable(),
+  lineStatus: jwStatusSchema,
+  /** OW-143 — this line's customer RM figures + word. */
+  customerRm: customerRmSchema.optional(),
+  /** ADR-196 — when the line was closed short (null while not). Pending is 0
+   *  once the line is closed short or cancelled (same rule as the SO line). */
+  lineShortClosedAt: z.string().nullable(),
+});
+export type JobWorkOrderLineListRow = z.infer<typeof jobWorkOrderLineListRowSchema>;
+
+export interface ListJobWorkOrderLinesResponse {
+  items: JobWorkOrderLineListRow[];
+  total: number;
+  limit: number;
+  offset: number;
+}

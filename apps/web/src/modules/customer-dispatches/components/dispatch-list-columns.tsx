@@ -1,17 +1,17 @@
-// Customer Dispatch list columns (ADR-199 FIT table). One row per dispatch; the
-// fit engine sizes columns to the screen and drops the rightmost unpinned ones
-// into the ▸ detail row. First column (Dispatch No.) is pinned. Replaced the
-// per-dispatch card (accent bar + metric strip + meta line); every field it
-// showed is still here — Total Qty / Lines are columns, SO / Dispatched By are
-// columns, and the item lines + Remarks moved into the ▸ expand.
-// ADR-201: `sortFilterField` = the register's server column map (sf-columns.ts);
-// Total Qty sorts / filters on ALL the dispatch's lines.
+// Customer Dispatch list columns (ADR-199 FIT table).
+// ADR-261 (owner 2026-10-31): ONE ROW PER DISPATCH LINE
+// (GET /customer-dispatches/lines). Dispatch No. and the six lead columns come
+// first (SO No. · Internal SO No. · POL · Created On · Item Code (CODE/REV) ·
+// Item Name), then Dispatch Date, Customer, the line's Dispatch Qty, Billed
+// Status, Dispatched By — and the facts the retired ▸ showed (JC No., UOM,
+// Stock Before → After, Remarks). Row click and ⋯ act on the DISPATCH.
+// `sortFilterField` = the server column map (sf-columns.ts).
 
 import { Link } from '@tanstack/react-router';
+import { docDrawingRev } from '@/lib/item-code';
 import { fmtDate } from '@/lib/date';
-import type { DataTableColumn } from '@/ui/data';
-import type { CustomerDispatchRow } from '@innovic/shared';
-import type { DispatchGroup } from './dispatch-group';
+import { leadColumns, type DataTableColumn } from '@/ui/data';
+import type { CustomerDispatchLineListRow, CustomerDispatchRow } from '@innovic/shared';
 
 /** ADR-190 — how far the dispatch is invoiced. Labels per docs/NAMING.md. */
 const BILLED_BADGE: Record<
@@ -29,38 +29,57 @@ const DISPATCH_STATUS_OPTIONS = [
   { value: 'cancelled', label: 'Cancelled' },
 ];
 
+type Row = CustomerDispatchLineListRow;
+
 export function dispatchListColumns(
-  billedOf: (dispatchId: string) => CustomerDispatchRow['billedStatus'],
   /** ADR-202 — dispatch ids with a pending edit; their status cell shows "Draft". */
   draftIds?: Set<string>,
-): DataTableColumn<DispatchGroup>[] {
+): DataTableColumn<Row>[] {
   return [
-    {
-      id: 'dispatch_code',
-      sortFilterField: 'dispatchCode',
-      header: 'Dispatch No.',
-      nowrap: true,
-      render: (g) => (
-        <Link
-          to="/customer-dispatches/$id"
-          params={{ id: g.dispatchId }}
-          className="td-code"
-          style={{ color: 'var(--cyan)', fontWeight: 800 }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {g.code}
-        </Link>
-      ),
-    },
-    {
-      id: 'dispatch_date',
-      sortFilterField: 'dispatchDate',
-      kind: 'date',
-      header: 'Dispatch Date',
-      className: 'mono',
-      nowrap: true,
-      render: (g) => fmtDate(g.date),
-    },
+    ...leadColumns<Row>({
+      doc: {
+        id: 'dispatch_code',
+        sortFilterField: 'dispatchCode',
+        header: 'Dispatch No.',
+        nowrap: true,
+        render: (r) => (
+          <Link
+            to="/customer-dispatches/$id"
+            params={{ id: r.dispatchId }}
+            className="td-code"
+            style={{ color: 'var(--cyan)', fontWeight: 800 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {r.dispatchCode}
+          </Link>
+        ),
+      },
+      docDate: {
+        id: 'dispatch_date',
+        sortFilterField: 'dispatchDate',
+        kind: 'date',
+        header: 'Dispatch Date',
+        className: 'mono',
+        nowrap: true,
+        render: (r) => fmtDate(r.date),
+      },
+      soNo: (r) => r.soNo,
+      internalSoNo: (r) => r.soInternalNo,
+      pol: (r) => r.clientPoLineNo,
+      createdOn: (r) => r.createdAt,
+      itemCode: (r) => r.itemCode ?? r.itemCodeText,
+      // The Rev actually shipped (Drawing Rev Phase C), else the SO line's.
+      itemRev: (r) => docDrawingRev(r),
+      itemName: (r) => r.itemName,
+      overrides: {
+        so_no: { sortFilterField: 'soCode' },
+        so_internal_no: { sortFilterField: 'soInternalNo' },
+        client_po_line_no: { sortFilterField: 'clientPoLineNo' },
+        created_on: { sortFilterField: 'createdOn' },
+        item_code: { sortFilterField: 'itemCode' },
+        item_name: { sortFilterField: 'itemName' },
+      },
+    }),
     {
       id: 'customer',
       sortFilterField: 'customer',
@@ -68,52 +87,21 @@ export function dispatchListColumns(
       align: 'left',
       ellipsis: true,
       className: 'fw-700',
-      render: (g) => g.customer ?? '—',
-      title: (g) => g.customer ?? '',
+      render: (r) => r.customer ?? '—',
+      title: (r) => r.customer ?? '',
     },
     {
-      id: 'so_code',
-      sortFilterField: 'soCode',
-      kind: 'code',
-      header: 'SO No.',
-      nowrap: true,
-      render: (g) => (
-        <span className="mono" style={{ color: 'var(--purple)', fontWeight: 700 }}>
-          {g.soNo || '—'}
-        </span>
-      ),
-    },
-    {
-      // ADR-207 — the office's own Internal SO No., in its own column beside
-      // the system SO No. so the two can be told apart. Older orders have none.
-      id: 'so_internal_no',
-      sortFilterField: 'soInternalNo',
-      kind: 'code',
-      header: 'Internal SO No.',
-      className: 'mono fw-700',
-      nowrap: true,
-      render: (g) => <span style={{ color: 'var(--text)' }}>{g.soInternalNo?.trim() || '—'}</span>,
-    },
-    {
-      id: 'total_qty',
-      sortFilterField: 'totalQty',
+      id: 'dispatch_qty',
+      sortFilterField: 'qty',
       kind: 'num',
-      header: 'Total Qty',
+      header: 'Dispatch Qty',
       align: 'right',
       nowrap: true,
-      render: (g) => (
+      render: (r) => (
         <span className="mono fw-700" style={{ color: 'var(--green2)' }}>
-          {g.totalQty}
+          {r.qty}
         </span>
       ),
-    },
-    {
-      id: 'lines',
-      kind: 'num',
-      header: 'Lines',
-      align: 'right',
-      nowrap: true,
-      render: (g) => <span className="mono">{g.lines.length}</span>,
     },
     {
       id: 'billed_status',
@@ -125,16 +113,16 @@ export function dispatchListColumns(
       sortFilterField: 'status',
       filterType: 'list',
       filterOptions: DISPATCH_STATUS_OPTIONS,
-      render: (g) => {
+      render: (r) => {
         // ADR-202 — a pending edit overlays grey "Draft" in place of the status.
-        if (draftIds?.has(g.dispatchId))
+        if (draftIds?.has(r.dispatchId))
           return (
             <span className="badge b-grey" title="An edit to this document is waiting for approval">
               Draft
             </span>
           );
-        if (g.status === 'cancelled') return <span className="badge b-red">Cancelled</span>;
-        const billed = billedOf(g.dispatchId);
+        if (r.status === 'cancelled') return <span className="badge b-red">Cancelled</span>;
+        const billed = r.billedStatus;
         return billed ? (
           <span className={BILLED_BADGE[billed].className}>{BILLED_BADGE[billed].label}</span>
         ) : (
@@ -149,8 +137,38 @@ export function dispatchListColumns(
       align: 'left',
       ellipsis: true,
       className: 'text2',
-      render: (g) => g.dispatchedBy ?? '—',
-      title: (g) => g.dispatchedBy ?? '',
+      render: (r) => r.dispatchedBy ?? '—',
+      title: (r) => r.dispatchedBy ?? '',
+    },
+    {
+      id: 'jc_no',
+      header: 'JC No.',
+      className: 'td-code',
+      nowrap: true,
+      render: (r) => r.jcNo ?? <span className="text3">—</span>,
+    },
+    {
+      id: 'uom',
+      header: 'UOM',
+      nowrap: true,
+      render: (r) => <span className="badge b-grey">{r.uom ?? 'NOS'}</span>,
+    },
+    {
+      id: 'stock_before_after',
+      header: 'Stock Before → After',
+      align: 'right',
+      className: 'mono text3',
+      nowrap: true,
+      render: (r) => `${r.stockBefore ?? '—'}→${r.stockAfter ?? '—'}`,
+    },
+    {
+      id: 'remarks',
+      header: 'Remarks',
+      align: 'left',
+      ellipsis: true,
+      className: 'text2',
+      render: (r) => r.remarks?.trim() || '—',
+      title: (r) => r.remarks ?? '',
     },
   ];
 }

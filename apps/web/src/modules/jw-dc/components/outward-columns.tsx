@@ -1,14 +1,17 @@
-// Outward Register columns (ADR-199 fit table: one line per row, always fits
-// the screen). The first column (DC No.) is pinned by the stylesheet. Numbers
-// right-align, text centres, Vendor name left-aligns and ellipsises. The Items
-// count, Vehicle and Remarks moved into the ▸ detail row (see outward-register).
+// Outward Register columns (ADR-199 fit table) — ONE ROW PER DC LINE (ADR-261).
+// DC No. and the six lead columns come first and are locked (SO No. · Internal SO No. ·
+// POL · Created On · Item Code · Item Name); SO No. shows the SO code, else the
+// JWSO code, and Internal SO No. only for an SO. Then DC Date · PO No.
+// · Vendor · Sent · Received · Pending · DC Status — all for THIS line, except
+// DC No. / Date / PO / Vendor which are the challan's. Vehicle / Remarks sit in
+// the ▸ detail row (see outward-register).
 
-import { type JwDcOutwardListItem } from '@innovic/shared';
+import { type JwDcOutwardLineRow } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
-import type { DataTableColumn } from '@/ui/data';
+import { type DataTableColumn, leadColumns } from '@/ui/data';
 
-function statusLabel(s: JwDcOutwardListItem['returnStatus']): string {
+function statusLabel(s: JwDcOutwardLineRow['returnStatus']): string {
   // Returned = done; Partly Returned / At Vendor = still under way.
   return s === 'fully_returned' ? 'Returned' : s === 'partial' ? 'Partly Returned' : 'At Vendor';
 }
@@ -21,40 +24,57 @@ const STATUS_OPTIONS = (['out', 'partial', 'fully_returned'] as const).map((s) =
 
 /** ADR-235 — a Cancelled outward DC (listed with includeCancelled):
  *  cancelledAt is the standard Cancel's stamp. */
-export function isJwDcCancelled(dc: Pick<JwDcOutwardListItem, 'cancelledAt'>): boolean {
+export function isJwDcCancelled(dc: { cancelledAt: string | null }): boolean {
   return Boolean(dc.cancelledAt);
 }
 
-export function outwardColumns(): DataTableColumn<JwDcOutwardListItem>[] {
+export function outwardColumns(): DataTableColumn<JwDcOutwardLineRow>[] {
   return [
-    {
-      id: 'dc_no',
-      sortFilterField: 'code',
-      filterType: 'text',
-      kind: 'code',
-      header: 'DC No.',
-      className: 'td-code',
-      nowrap: true,
-      render: (dc) => (
-        <Link
-          onClick={(e) => e.stopPropagation()}
-          to="/jw-dc/$id"
-          params={{ id: dc.id }}
-          style={{ color: 'var(--purple)', textDecoration: 'underline dotted' }}
-        >
-          {dc.code}
-        </Link>
-      ),
-    },
-    {
-      id: 'dc_date',
-      sortFilterField: 'dcDate',
-      kind: 'date',
-      header: 'DC Date',
-      className: 'mono text2',
-      nowrap: true,
-      render: (dc) => fmtDate(dc.dcDate),
-    },
+    ...leadColumns<JwDcOutwardLineRow>({
+      doc: {
+        id: 'dc_no',
+        sortFilterField: 'code',
+        filterType: 'text',
+        kind: 'code',
+        header: 'DC No.',
+        className: 'td-code',
+        nowrap: true,
+        render: (dc) => (
+          <Link
+            onClick={(e) => e.stopPropagation()}
+            to="/jw-dc/$id"
+            params={{ id: dc.docId }}
+            style={{ color: 'var(--purple)', textDecoration: 'underline dotted' }}
+          >
+            {dc.docCode}
+          </Link>
+        ),
+      },
+      docDate: {
+        id: 'dc_date',
+        sortFilterField: 'dcDate',
+        kind: 'date',
+        header: 'DC Date',
+        className: 'mono text2',
+        nowrap: true,
+        render: (dc) => fmtDate(dc.docDate),
+      },
+      soNo: (r) => r.soCode ?? r.jwCode,
+      internalSoNo: (r) => r.soInternalNo,
+      pol: (r) => r.clientPoLineNo,
+      createdOn: (r) => r.createdAt,
+      itemCode: (r) => r.itemCode,
+      itemRev: (r) => r.itemRevision,
+      itemName: (r) => r.itemName,
+      overrides: {
+        so_no: { sortFilterField: 'soCode', filterType: 'text' },
+        so_internal_no: { sortFilterField: 'soInternalNo', filterType: 'text' },
+        client_po_line_no: { sortFilterField: 'clientPoLineNo', filterType: 'text' },
+        created_on: { sortFilterField: 'createdOn' },
+        item_code: { sortFilterField: 'itemCode', filterType: 'text' },
+        item_name: { sortFilterField: 'itemName', filterType: 'text' },
+      },
+    }),
     {
       id: 'po_no',
       sortFilterField: 'poNo',
@@ -66,16 +86,6 @@ export function outwardColumns(): DataTableColumn<JwDcOutwardListItem>[] {
       render: (dc) => <span style={{ color: 'var(--cyan)' }}>{dc.jwpoCodeText ?? '—'}</span>,
     },
     {
-      id: 'so_no',
-      sortFilterField: 'soNo',
-      filterType: 'text',
-      kind: 'code',
-      header: 'SO No.',
-      className: 'mono',
-      nowrap: true,
-      render: (dc) => <span style={{ color: 'var(--cyan)' }}>{dc.soCode ?? '—'}</span>,
-    },
-    {
       id: 'vendor',
       sortFilterField: 'vendor',
       filterType: 'text',
@@ -84,8 +94,8 @@ export function outwardColumns(): DataTableColumn<JwDcOutwardListItem>[] {
       align: 'left',
       ellipsis: true,
       className: 'fw-700',
-      render: (dc) => dc.vendorName ?? dc.vendorNameText ?? dc.vendorCodeText ?? '—',
-      title: (dc) => dc.vendorName ?? dc.vendorNameText ?? dc.vendorCodeText ?? '',
+      render: (dc) => dc.vendorName ?? '—',
+      title: (dc) => dc.vendorName ?? '',
     },
     {
       id: 'sent',
@@ -95,7 +105,7 @@ export function outwardColumns(): DataTableColumn<JwDcOutwardListItem>[] {
       align: 'right',
       headColor: 'var(--purple)',
       className: 'mono fw-700',
-      render: (dc) => <span style={{ color: 'var(--purple)' }}>{dc.totalSentQty}</span>,
+      render: (dc) => <span style={{ color: 'var(--purple)' }}>{dc.sentQty}</span>,
     },
     {
       id: 'received',
@@ -105,7 +115,7 @@ export function outwardColumns(): DataTableColumn<JwDcOutwardListItem>[] {
       align: 'right',
       headColor: 'var(--green2)',
       className: 'mono',
-      render: (dc) => <span style={{ color: 'var(--green2)' }}>{dc.totalReturnedQty}</span>,
+      render: (dc) => <span style={{ color: 'var(--green2)' }}>{dc.receivedQty}</span>,
     },
     {
       id: 'pending',

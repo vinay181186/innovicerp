@@ -17,8 +17,7 @@
 import type { PendingSoValueResponse, PendingSoValueRow } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
-import type { DataTableColumn } from '@/ui/data';
-import { ROW_TINT } from '@/ui/data';
+import { leadColumns, ROW_TINT, type DataTableColumn } from '@/ui/data';
 import { soStatusLabel } from '@/modules/sales-orders/lib/so-status-label';
 
 // Legacy colours the Invoiced figures `var(--teal,#0d9488)` (L19338). `--teal`
@@ -79,45 +78,33 @@ export function psvColumns(
 ): DataTableColumn<PendingSoValueRow>[] {
   const sum = (k: keyof Omit<PsvTotals, 'soCount'>): number => Number(totals?.[k] ?? 0);
   const cols: DataTableColumn<PendingSoValueRow>[] = [
-    {
-      id: 'so_no',
-      sortFilterField: 'soCode',
-      filterType: 'text',
-      header: 'SO No.',
-      nowrap: true,
-      // The row's ▸ opens the detail; the SO No. link opens the SO. The row
-      // click also opens the SO, so the link stops the click to avoid a
-      // double-navigate.
-      render: (r) => (
-        <Link
-          to="/sales-orders/$id"
-          params={{ id: r.soId }}
-          className="td-code"
-          title="Open the Sales Order"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {/* The SYSTEM number only (ADR-207); the office's own number is the
-              next column, so each heading names one of the two. */}
-          {r.soCode}
-        </Link>
-      ),
-    },
-    {
-      // ADR-207 — the office's own typed number, beside the system SO No.
-      id: 'so_internal_no',
-      sortFilterField: 'soInternalNo',
-      filterType: 'text',
-      header: 'Internal SO No.',
-      nowrap: true,
-      render: (r) =>
-        r.soInternalNo?.trim() ? (
-          <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-            {r.soInternalNo}
-          </span>
-        ) : (
-          <span className="text3">—</span>
-        ),
-    },
+    // ADR-261 lead columns — one row per ORDER, so no POL / Item columns.
+    ...leadColumns<PendingSoValueRow>({
+      soNo: (r) => r.soCode,
+      internalSoNo: (r) => r.soInternalNo,
+      createdOn: (r) => r.createdAt,
+      overrides: {
+        so_no: {
+          sortFilterField: 'soCode',
+          filterType: 'text',
+          // The row click also opens the SO, so the link stops the click to
+          // avoid a double-navigate.
+          render: (r) => (
+            <Link
+              to="/sales-orders/$id"
+              params={{ id: r.soId }}
+              className="td-code"
+              title="Open the Sales Order"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {r.soCode}
+            </Link>
+          ),
+        },
+        so_internal_no: { sortFilterField: 'soInternalNo', filterType: 'text' },
+        created_on: { sortFilterField: 'createdOn' },
+      },
+    }),
     {
       id: 'customer',
       sortFilterField: 'customerName',

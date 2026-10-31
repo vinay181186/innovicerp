@@ -10,6 +10,7 @@ import {
 } from './schema';
 import { listRtvCandidatesQuerySchema } from '@innovic/shared';
 import { requestCancel } from '../cancel-requests/service';
+import { listDeliveryChallanLines } from './list-lines';
 import { listRtvCandidates } from './rtv-candidates';
 import * as service from './service';
 
@@ -21,6 +22,14 @@ export async function deliveryChallansRoutes(app: FastifyInstance): Promise<void
     if (!req.user) throw new AuthenticationError();
     const query = listDeliveryChallansQuerySchema.parse(req.query);
     return service.listDeliveryChallans(query, req.user);
+  });
+
+  // ADR-261 — the OSP Outward DC list, one row per DC LINE. Same params as the
+  // list above (which stays for the GRN pickers). Static path, before '/:id'.
+  app.get('/delivery-challans/lines', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const query = listDeliveryChallansQuerySchema.parse(req.query);
+    return listDeliveryChallanLines(query, req.user);
   });
 
   // ADR-211 — return-to-vendor NCs by JW PO / DC No. (+New DC → Against JW PO

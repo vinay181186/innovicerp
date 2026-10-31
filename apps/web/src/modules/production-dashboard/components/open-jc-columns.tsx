@@ -1,6 +1,6 @@
 // Open Job Cards tab (legacy L3719-3799) — the card grid turned into ONE table
 // (ADR-203 frozen header): one row per open job card with every fact the card
-// showed — JC No., Item Code (CODE/REV), Item Name, Order Qty, the progress
+// showed — JC No., the six ADR-261 lead columns, Order Qty, the progress
 // bar + %, Due Date and the Priority badge. The card's own click (open Op
 // Entry for this card) is now the row's ⋯ menu item; the JC No. still opens
 // the job card itself. Same endpoint and 25-row paging the cards used.
@@ -8,9 +8,8 @@
 import { ActionLink } from '@/components/shared/action-link';
 import type { ProductionDashboardJc } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
 import { renderJcOpsLink } from '@/modules/jc-ops/components/jc-ops-columns';
-import { ProgressBar, RowMenu } from '@/ui/data';
+import { leadColumns, ProgressBar, RowMenu } from '@/ui/data';
 import type { DataTableColumn } from '@/ui/data';
 
 /** done / total ops as a whole %, exactly as the card worked it out. */
@@ -20,46 +19,45 @@ export function jcProgressPct(jc: ProductionDashboardJc): number {
 
 export function openJcColumns(): DataTableColumn<ProductionDashboardJc>[] {
   return [
-    {
-      id: 'jc_no',
-      header: 'JC No.',
-      kind: 'code',
-      nowrap: true,
-      render: (jc) => (
-        <ActionLink
-          fallback="text"
-          to="/job-cards/$id"
-          params={{ id: jc.jobCardId }}
-          title="View job card status"
-          className="mono fw-700 cyan"
-          style={{ textDecoration: 'none' }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {jc.code}
-        </ActionLink>
-      ),
-    },
-    {
-      id: 'item_code',
-      header: 'Item Code',
-      kind: 'code',
-      className: 'mono fw-700',
-      nowrap: true,
-      render: (jc) => (
-        <span style={{ color: 'var(--text)' }}>
-          {itemCodeWithRev(jc.itemCode, jc.itemRevision, '—')}
-        </span>
-      ),
-    },
-    {
-      id: 'item_name',
-      header: 'Item Name',
-      kind: 'text',
-      align: 'left',
-      ellipsis: true,
-      render: (jc) => jc.itemName ?? '—',
-      title: (jc) => jc.itemName ?? '',
-    },
+    // ADR-261 — JC No. first, then the six lead columns, all locked; every
+    // other fact follows Item Name. Created On = the job card's own created_at.
+    ...leadColumns<ProductionDashboardJc>({
+      doc: {
+        id: 'jc_no',
+        header: 'JC No.',
+        kind: 'code',
+        nowrap: true,
+        render: (jc) => (
+          <ActionLink
+            fallback="text"
+            to="/job-cards/$id"
+            params={{ id: jc.jobCardId }}
+            title="View job card status"
+            className="mono fw-700 cyan"
+            style={{ textDecoration: 'none' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {jc.code}
+          </ActionLink>
+        ),
+      },
+      docDate: {
+        id: 'jc_date',
+        kind: 'date',
+        header: 'JC Date',
+        className: 'mono',
+        nowrap: true,
+        render: (jc) => fmtDate(jc.jcDate ?? null),
+        filterValue: (jc) => jc.jcDate ?? '',
+      },
+      soNo: (jc) => jc.soCode,
+      internalSoNo: (jc) => jc.soInternalNo,
+      pol: (jc) => jc.clientPoLineNo,
+      createdOn: (jc) => jc.createdAt,
+      itemCode: (jc) => jc.itemCode,
+      itemRev: (jc) => jc.itemRevision,
+      itemName: (jc) => jc.itemName,
+    }),
     {
       id: 'order_qty',
       header: 'Order Qty',

@@ -602,8 +602,11 @@ export async function listAssemblies(
         bomCode: bom?.bomNo ?? null,
         bomName: bom?.bomName ?? null,
         bomRevision: bom?.revision ?? null,
-        partNoText: null,
-        partName: null,
+        // ADR-261 — the equipment item (first live SO line) + SO created_at.
+        partNoText: r.itemCode,
+        partName: r.itemName,
+        itemRevision: r.itemRevision,
+        createdAt: r.createdAt,
         orderQty,
         assembledQty,
         dispatchedQty,

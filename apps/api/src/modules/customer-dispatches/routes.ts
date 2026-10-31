@@ -7,6 +7,7 @@ import {
 } from '@innovic/shared';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
+import { listDispatchLines } from './list-lines';
 import { listDispatchRegister } from './register';
 import { updateCustomerDispatchInputSchema } from './schema';
 import { requestCancel } from '../cancel-requests/service';
@@ -25,6 +26,12 @@ export async function customerDispatchesRoutes(app: FastifyInstance): Promise<vo
   app.get('/customer-dispatches/register', async (req) => {
     if (!req.user) throw new AuthenticationError();
     return listDispatchRegister(customerDispatchRegisterQuerySchema.parse(req.query), req.user);
+  });
+
+  // ADR-261 — one row per dispatch LINE, paged on lines (register's query).
+  app.get('/customer-dispatches/lines', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    return listDispatchLines(customerDispatchRegisterQuerySchema.parse(req.query), req.user);
   });
 
   app.get('/customer-dispatches/so-options', async (req) => {

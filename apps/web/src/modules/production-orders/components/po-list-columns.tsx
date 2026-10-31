@@ -78,11 +78,34 @@ export function poListColumns(
   offset = 0,
 ): DataTableColumn<ProductionOrderListItem>[] {
   return [
-    // Owner rule 2026-10-31 — the six lead columns first; Sr No, Production
-    // Order No. and every other fact follow Item Name. Created On is the
+    // Owner rule 2026-10-31 (ADR-261 amendment) — Production Order No. first,
+    // then the six lead columns, all locked; Sr No and every other fact follow
+    // Item Name. Created On is the
     // order's own createdAt (the old "Production Order Date" column showed the
     // same value, so it is folded into the lead column).
     ...leadColumns<ProductionOrderListItem>({
+      doc: {
+        id: 'pro_no',
+        header: 'Production Order No.',
+        kind: 'code',
+        sortFilterField: 'code',
+        nowrap: true,
+        // The row's ▸ (fit engine) opens the detail strip; the link opens the PRO
+        // detail page. stopPropagation on the link only, so clicking the rest of
+        // the cell still opens the row.
+        render: (po) => (
+          <Link
+            to="/production-orders/$id"
+            params={{ id: po.id }}
+            className="td-code"
+            title="Open the Production Order detail page"
+            style={{ color: 'var(--text)', fontWeight: 700, textDecoration: 'none' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {po.code}
+          </Link>
+        ),
+      },
       soNo: (po) => po.soCodeText,
       internalSoNo: (po) => po.soInternalNo,
       pol: (po) => po.clientPoLineNo,
@@ -120,28 +143,6 @@ export function poListColumns(
       width: '4%',
       className: 'text3',
       render: (_po, i) => offset + i + 1,
-    },
-    {
-      id: 'pro_no',
-      header: 'Production Order No.',
-      kind: 'code',
-      sortFilterField: 'code',
-      nowrap: true,
-      // The row's ▸ (fit engine) opens the detail strip; the link opens the PRO
-      // detail page. stopPropagation on the link only, so clicking the rest of
-      // the cell still opens the row.
-      render: (po) => (
-        <Link
-          to="/production-orders/$id"
-          params={{ id: po.id }}
-          className="td-code"
-          title="Open the Production Order detail page"
-          style={{ color: 'var(--text)', fontWeight: 700, textDecoration: 'none' }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {po.code}
-        </Link>
-      ),
     },
     {
       id: 'order_qty',

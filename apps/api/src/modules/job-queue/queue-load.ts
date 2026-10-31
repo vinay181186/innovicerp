@@ -45,6 +45,7 @@ export async function loadMachineQueues(
         op.id AS "jcOpId",
         jc.id AS "jcId",
         jc.code AS "jcCode",
+        to_char(jc.jc_date, 'YYYY-MM-DD') AS "jcDate",
         op.machine_id AS "machineId",
         op.machine_code_text AS "machineCodeText",
         op.op_type AS "opType",
@@ -65,6 +66,8 @@ export async function loadMachineQueues(
         i.name AS "itemName",
         COALESCE(so.code, jw.code) AS "soCode",
         so.internal_so_no AS "soInternalNo",
+        -- ADR-261 Created On — the job-card op's own created_at.
+        op.created_at AS "createdAt",
         COALESCE(cl_so.name, cl_jw.name, so.customer_name, jw.customer_name) AS "soCustomer",
         op.op_seq AS "opSeq",
         op.operation,
@@ -136,12 +139,17 @@ export async function loadMachineQueues(
       jcOpId: r['jcOpId'] as string,
       jcId: r['jcId'] as string,
       jcCode: String(r['jcCode'] ?? ''),
+      jcDate: (r['jcDate'] as string | null) ?? null,
       itemCode: (r['itemCode'] as string | null) ?? null,
       itemRevision: (r['itemRevision'] as string | null) ?? null,
       clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
       itemName: (r['itemName'] as string | null) ?? null,
       soCode: (r['soCode'] as string | null) ?? null,
       soInternalNo: (r['soInternalNo'] as string | null) ?? null,
+      createdAt:
+        r['createdAt'] instanceof Date
+          ? (r['createdAt'] as Date).toISOString()
+          : ((r['createdAt'] as string | null) ?? null),
       soCustomer: (r['soCustomer'] as string | null) ?? null,
       opSeq: num(r['opSeq']),
       operation: String(r['operation'] ?? ''),

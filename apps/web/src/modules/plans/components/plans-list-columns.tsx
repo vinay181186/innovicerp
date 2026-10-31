@@ -105,6 +105,35 @@ export function plansListColumns(
 ): DataTableColumn<PlanRow>[] {
   return [
     ...leadColumns<PlanRow>({
+      doc: {
+        id: 'plan_no',
+        sortFilterField: 'code',
+        header: 'Plan No.',
+        nowrap: true,
+        // The row's ▸ (fit engine) opens the detail reveal; the Plan No. link
+        // opens the plan page. stopPropagation on the link, not the cell, so
+        // clicking the rest of the cell still opens the row.
+        render: (row) => (
+          <Link
+            to="/plans/$id"
+            params={{ id: row.id }}
+            className="td-code"
+            title="Open the plan"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {row.code}
+          </Link>
+        ),
+      },
+      docDate: {
+        id: 'plan_date',
+        sortFilterField: 'planDate',
+        kind: 'date',
+        header: 'Plan Date',
+        className: 'mono text2',
+        nowrap: true,
+        render: (row) => fmtDate(row.planDate),
+      },
       soNo: (row) => row.soCodeText,
       internalSoNo: (row) => row.soInternalNo,
       pol: (row) => row.clientPoLineNo,
@@ -133,35 +162,6 @@ export function plansListColumns(
         item_name: { sortFilterField: 'itemName' },
       },
     }),
-    {
-      id: 'plan_no',
-      sortFilterField: 'code',
-      header: 'Plan No.',
-      nowrap: true,
-      // The row's ▸ (fit engine) opens the detail reveal; the Plan No. link
-      // opens the plan page. stopPropagation on the link, not the cell, so
-      // clicking the rest of the cell still opens the row.
-      render: (row) => (
-        <Link
-          to="/plans/$id"
-          params={{ id: row.id }}
-          className="td-code"
-          title="Open the plan"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {row.code}
-        </Link>
-      ),
-    },
-    {
-      id: 'plan_date',
-      sortFilterField: 'planDate',
-      kind: 'date',
-      header: 'Plan Date',
-      className: 'mono text2',
-      nowrap: true,
-      render: (row) => fmtDate(row.planDate),
-    },
     {
       // NAMING.md "Plan End Date" — plans.planned_end_date; blank on a plan
       // saved without a schedule.

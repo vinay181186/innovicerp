@@ -409,6 +409,8 @@ export async function getPlanningSoList(
         soId: salesOrders.id,
         soCode: salesOrders.code,
         soInternalNo: salesOrders.internalSoNo,
+        // ADR-261 Created On — the order's own created_at.
+        createdAt: salesOrders.createdAt,
         customerName: liveSoCustomerName().as('customer_name'),
         soType: salesOrders.type,
         totalLines: sql<number>`count(${salesOrderLines.id})::int`.as('total_lines'),
@@ -462,6 +464,7 @@ export async function getPlanningSoList(
         salesOrders.id,
         salesOrders.code,
         salesOrders.internalSoNo,
+        salesOrders.createdAt,
         salesOrders.customerName,
         salesOrders.type,
       )
@@ -477,6 +480,7 @@ export async function getPlanningSoList(
       .select({
         soId: jobWorkOrders.id,
         soCode: jobWorkOrders.code,
+        createdAt: jobWorkOrders.createdAt,
         customerName: liveJwCustomerName().as('customer_name'),
         totalLines: sql<number>`count(${jobWorkOrderLines.id})::int`.as('total_lines'),
         totalQty: sql<number>`coalesce(sum(${jobWorkOrderLines.orderQty}), 0)::int`.as('total_qty'),
@@ -503,7 +507,12 @@ export async function getPlanningSoList(
           eq(jobWorkOrders.status, 'open'),
         ),
       )
-      .groupBy(jobWorkOrders.id, jobWorkOrders.code, jobWorkOrders.customerName)
+      .groupBy(
+        jobWorkOrders.id,
+        jobWorkOrders.code,
+        jobWorkOrders.createdAt,
+        jobWorkOrders.customerName,
+      )
       .orderBy(desc(jobWorkOrders.code));
 
     const jwIds = jwRows.map((r) => r.soId);
@@ -572,6 +581,7 @@ export async function getPlanningSoList(
         soId: string;
         soCode: string;
         soInternalNo?: string | null;
+        createdAt: Date | string | null;
         customerName: string | null;
         totalLines: number;
         totalQty: number;
@@ -593,6 +603,7 @@ export async function getPlanningSoList(
         soId: r.soId,
         soCode: r.soCode,
         soInternalNo: r.soInternalNo ?? null,
+        createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : (r.createdAt ?? null),
         source,
         customerName: r.customerName ?? null,
         soType,
@@ -678,10 +689,7 @@ export async function getPlanningSoDetail(
       .leftJoin(items, and(eq(items.id, salesOrderLines.itemId), isNull(items.deletedAt)))
       .leftJoin(
         itemRevisions,
-        and(
-          eq(itemRevisions.id, salesOrderLines.itemRevisionId),
-          isNull(itemRevisions.deletedAt),
-        ),
+        and(eq(itemRevisions.id, salesOrderLines.itemRevisionId), isNull(itemRevisions.deletedAt)),
       )
       .where(
         and(
@@ -1118,6 +1126,8 @@ export async function getPlanningSoDetail(
         drawingRev: r.drawingRev ?? null,
         lineNo: r.line.lineNo,
         clientPoLineNo: r.line.clientPoLineNo,
+        // ADR-261 Created On — the SO line's own created_at.
+        createdAt: r.line.createdAt.toISOString(),
         itemId: r.line.itemId,
         itemCode: r.itemCode ?? r.line.itemCodeText,
         // Null passed through, not blanked: on a database that predates
@@ -1231,10 +1241,7 @@ async function getJwPlanningDetail(
     .leftJoin(items, and(eq(items.id, jobWorkOrderLines.itemId), isNull(items.deletedAt)))
     .leftJoin(
       itemRevisions,
-      and(
-        eq(itemRevisions.id, jobWorkOrderLines.itemRevisionId),
-        isNull(itemRevisions.deletedAt),
-      ),
+      and(eq(itemRevisions.id, jobWorkOrderLines.itemRevisionId), isNull(itemRevisions.deletedAt)),
     )
     .where(
       and(
@@ -1438,6 +1445,8 @@ async function getJwPlanningDetail(
       lineNo: r.line.lineNo,
       // ADR-236: the JW line carries the customer's PO line no. too.
       clientPoLineNo: r.line.clientPoLineNo ?? null,
+      // ADR-261 Created On — the JWSO line's own created_at.
+      createdAt: r.line.createdAt.toISOString(),
       itemId: r.line.itemId,
       itemCode: r.itemCode ?? r.line.itemCodeText,
       // ADR-177: the JW line carries its own drawing revision (the customer's

@@ -30,11 +30,14 @@ export const receivableAgeingReport: RegisteredReport = {
       { key: 'asOn', label: 'As On Date', kind: 'date' },
     ],
     columns: [
+      // ADR-261 lead columns that exist on an invoice header (no line, so no
+      // POL / item). Created On = the invoice's created_at.
       { key: 'invoice_code', label: 'Invoice No.', type: 'text' },
       { key: 'invoice_date', label: 'Invoice Date', type: 'date' },
-      { key: 'client_name', label: 'Customer', type: 'text' },
       { key: 'so_code', label: 'SO No.', type: 'text' },
       { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
+      { key: 'created_on', label: 'Created On', type: 'date' },
+      { key: 'client_name', label: 'Customer', type: 'text' },
       { key: 'grand_total', label: 'Grand Total', type: 'number' },
       { key: 'paid', label: 'Paid', type: 'number' },
       { key: 'tds', label: 'TDS', type: 'number' },
@@ -64,6 +67,7 @@ export const receivableAgeingReport: RegisteredReport = {
           COALESCE(cl.name, inv.client_name_text, '—')        AS client_name,
           COALESCE(so.code, inv.so_code_text)                 AS so_code,
           so.internal_so_no                                   AS so_internal_no,
+          (inv.created_at AT TIME ZONE 'Asia/Kolkata')::date::text AS created_on,
           inv.grand_total                                     AS grand_total,
           COALESCE((
             SELECT SUM(ip.amount)
@@ -101,6 +105,7 @@ export const receivableAgeingReport: RegisteredReport = {
         client_name,
         so_code,
         so_internal_no,
+        created_on,
         grand_total::float                                   AS grand_total,
         paid::float                                          AS paid,
         tds::float                                           AS tds,
@@ -119,11 +124,12 @@ export const receivableAgeingReport: RegisteredReport = {
     `);
 
     const rows = (result as unknown as SqlRow[]).map((r) => ({
+      so_code: textCell(r['so_code']),
+      so_internal_no: textCell(r['so_internal_no']),
+      created_on: dateCell(r['created_on']),
       invoice_code: String(r['invoice_code'] ?? ''),
       invoice_date: dateCell(r['invoice_date']),
       client_name: String(r['client_name'] ?? ''),
-      so_code: textCell(r['so_code']),
-      so_internal_no: textCell(r['so_internal_no']),
       grand_total: numCell(r['grand_total']),
       paid: numCell(r['paid']),
       tds: numCell(r['tds']),

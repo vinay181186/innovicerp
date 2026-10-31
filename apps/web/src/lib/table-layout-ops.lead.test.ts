@@ -72,6 +72,22 @@ describe('leadColumns builder', () => {
     expect(lockedLeadIds(cols, LEAD)).toEqual(LEAD);
   });
 
+  it('own doc no. comes FIRST and is locked with the block', () => {
+    const cols = leadColumns<Row>({
+      ...spec,
+      doc: { id: 'plan_no', header: 'Plan No.' },
+      docDate: { id: 'plan_date', header: 'Plan Date' },
+    });
+    const ids = cols.map((c) => c.id ?? '');
+    expect(ids).toEqual(['plan_no', 'plan_date', ...LEAD]);
+    expect(lockedLeadIds(cols, ids)).toEqual(['plan_no', 'plan_date', ...LEAD]);
+    const order = [...ids, 'qty'];
+    const st = { order, pins: [], hidden: [] };
+    const d = { order, pins: [], hidden: [] };
+    expect(applyLayoutOp(st, { type: 'hide', id: 'plan_no' }, ids, d)).toBe(st);
+    expect(applyLayoutOp(st, { type: 'move', id: 'qty', dir: -1 }, ids, d)).toBe(st);
+  });
+
   it('JWSO list: JWSO No. and no Internal SO No. column', () => {
     const jw = { ...spec, so: 'jwso' as const, internalSoNo: undefined };
     const cols = leadColumns<Row>(jw);

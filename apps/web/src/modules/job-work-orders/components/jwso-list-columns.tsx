@@ -1,16 +1,13 @@
-// JWSO Master list columns (ADR-199 fit table: one line per JWSO). Split out of
-// routes/list.tsx so that file stays under the 400-line ceiling. Centred by the
-// table standard; numbers right-aligned (align 'right' -> the num kind); only
-// the Customer name is left-aligned and shares the spare width.
-//
-// Columns (first pinned): JWSO No. · JWSO Date · Customer · Client PO No. ·
-// Order Qty · JC Qty · Dispatched · Pending · Customer Material · Due ·
-// JWSO Status. Every field was already shown by the retired card — nothing new.
+// JWSO Master list columns (ADR-199 fit table). ADR-261 (owner 2026-10-31):
+// ONE ROW PER JWSO LINE, opening with the locked lead block (leadColumns,
+// so:'jwso' — JWSO No. · POL · Created On · Item Code/Rev · Item Name; no
+// Internal SO No. on a JWSO-only list). Then: JWSO Date · Customer · Client PO
+// No. · Order Qty · JC Qty · Dispatched · Pending · Customer Material · Due ·
+// JWSO Status — the line's own figures, the JWSO's header facts.
 
-import type { JobWorkOrderListItem } from '@innovic/shared';
-import { Link } from '@tanstack/react-router';
+import type { JobWorkOrderLineListRow } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
-import type { DataTableColumn } from '@/ui/data';
+import { type DataTableColumn, leadColumns } from '@/ui/data';
 import { SoStatusBadge } from '@/modules/sales-orders/components/so-status-badge';
 import { SO_STATUS_LABEL } from '@/modules/sales-orders/lib/so-status-label';
 import { CustomerRmStatus } from './customer-rm-status';
@@ -21,33 +18,45 @@ const STATUS_OPTIONS = Object.entries(SO_STATUS_LABEL).map(([value, label]) => (
   label,
 }));
 
-/** `today` (IST) drives the overdue colour on the Due column — a JWSO still open
- *  past its earliest due date is late. */
+/** A line still open (on an open JWSO) past its own due date is late. */
+export function jwLineOverdue(jw: JobWorkOrderLineListRow, today: string): boolean {
+  return (
+    jw.dueDate != null && jw.dueDate < today && jw.lineStatus === 'open' && jw.docStatus === 'open'
+  );
+}
+
+/** Pieces still owed on the LINE (NAMING.md "Pending"): ordered − dispatched;
+ *  nothing once the line is closed short (ADR-196) or cancelled — the same rule
+ *  as soLinePendingQty and the server's pendingQty Sort & Filter column. */
+export function jwLinePendingQty(jw: JobWorkOrderLineListRow): number {
+  if (jw.lineShortClosedAt || jw.lineStatus === 'cancelled') return 0;
+  return Math.max(0, jw.orderQty - jw.dispatchedQty);
+}
+
+/** `today` (IST) drives the overdue colour on the Due column — a JWSO line still open
+ *  past its own due date is late. */
 export function jwsoListColumns(
   today: string,
   /** ADR-202 — JWSO ids with a pending edit; their status cell shows "Draft". */
   draftIds?: Set<string>,
-): DataTableColumn<JobWorkOrderListItem>[] {
+): DataTableColumn<JobWorkOrderLineListRow>[] {
   return [
-    {
-      // First column — pinned by the table standard (ADR-199).
-      id: 'jwso_code',
-      sortFilterField: 'code',
-      header: 'JWSO No.',
-      nowrap: true,
-      render: (jw) => (
-        <Link
-          to="/job-work-orders/$id"
-          params={{ id: jw.jwId }}
-          className="td-code"
-          style={{ color: 'var(--blue)', fontWeight: 800 }}
-          title="Open the JWSO detail page"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {jw.code}
-        </Link>
-      ),
-    },
+    ...leadColumns<JobWorkOrderLineListRow>({
+      so: 'jwso',
+      soNo: (r) => r.docCode,
+      pol: (r) => r.clientPoLineNo,
+      createdOn: (r) => r.createdAt,
+      itemCode: (r) => r.itemCode,
+      itemRev: (r) => r.itemRevision,
+      itemName: (r) => r.itemName,
+      overrides: {
+        so_no: { sortFilterField: 'code' },
+        client_po_line_no: { sortFilterField: 'clientPoLineNo' },
+        created_on: { sortFilterField: 'createdOn' },
+        item_code: { sortFilterField: 'itemCode' },
+        item_name: { sortFilterField: 'itemName' },
+      },
+    }),
     {
       id: 'jwso_date',
       sortFilterField: 'jwDate',
@@ -55,7 +64,7 @@ export function jwsoListColumns(
       header: 'JWSO Date',
       className: 'mono',
       nowrap: true,
-      render: (jw) => fmtDate(jw.jwDate),
+      render: (jw) => fmtDate(jw.docDate),
     },
     {
       id: 'customer',
@@ -90,7 +99,7 @@ export function jwsoListColumns(
       align: 'right',
       nowrap: true,
       className: 'mono fw-700',
-      render: (jw) => jw.totalQty,
+      render: (jw) => jw.orderQty,
     },
     {
       id: 'jc_qty',
@@ -104,7 +113,7 @@ export function jwsoListColumns(
           className="mono fw-700"
           style={{
             color:
-              jw.jcQty >= jw.totalQty && jw.totalQty > 0
+              jw.jcQty >= jw.orderQty && jw.orderQty > 0
                 ? 'var(--green)'
                 : jw.jcQty > 0
                   ? 'var(--amber)'
@@ -141,7 +150,7 @@ export function jwsoListColumns(
       align: 'right',
       nowrap: true,
       render: (jw) => {
-        const pending = Math.max(0, jw.totalQty - jw.dispatchedQty);
+        const pending = jwLinePendingQty(jw);
         return (
           <span
             className="mono fw-700"
@@ -165,9 +174,8 @@ export function jwsoListColumns(
       header: 'Due',
       nowrap: true,
       render: (jw) => {
-        const overdue =
-          jw.earliestDueDate != null && jw.earliestDueDate < today && jw.status === 'open';
-        if (!jw.earliestDueDate) return <span className="text3">—</span>;
+        const overdue = jwLineOverdue(jw, today);
+        if (!jw.dueDate) return <span className="text3">—</span>;
         return (
           <span
             className="mono"
@@ -176,7 +184,7 @@ export function jwsoListColumns(
               fontWeight: overdue ? 700 : undefined,
             }}
           >
-            {fmtDate(jw.earliestDueDate)}
+            {fmtDate(jw.dueDate)}
             {overdue ? ' ⚠' : ''}
           </span>
         );
@@ -193,12 +201,12 @@ export function jwsoListColumns(
       render: (jw) => (
         <span
           title={
-            jw.status === 'cancelled' && jw.cancelReason
+            jw.docStatus === 'cancelled' && jw.cancelReason
               ? `Cancelled: ${jw.cancelReason}`
               : undefined
           }
         >
-          <SoStatusBadge status={jw.status} draft={draftIds?.has(jw.jwId)} />
+          <SoStatusBadge status={jw.docStatus} draft={draftIds?.has(jw.docId)} />
         </span>
       ),
     },

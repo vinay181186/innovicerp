@@ -26,13 +26,16 @@ export const dispatchedNotInvoicedReport: RegisteredReport = {
     priceForm: 'invoice_create',
     filters: [{ key: 'customer', label: 'Customer', kind: 'text', placeholder: 'Customer name' }],
     columns: [
-      { key: 'source', label: 'Source', type: 'text' },
-      { key: 'order_code', label: 'SO / JWSO', type: 'text' },
+      // ADR-261 lead columns: SO No. is the SO or JWSO code the line has;
+      // Created On is the order line's created_at; rev rides in Item Code.
+      { key: 'so_code', label: 'SO No.', type: 'text' },
       { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
-      { key: 'client_name', label: 'Customer', type: 'text' },
       { key: 'client_po_line_no', label: 'POL', type: 'text' },
+      { key: 'created_on', label: 'Created On', type: 'date' },
       { key: 'item_code', label: 'Item Code', type: 'text' },
-      { key: 'item_revision', label: 'Drawing Rev', type: 'text' },
+      { key: 'item_name', label: 'Item Name', type: 'text' },
+      { key: 'source', label: 'Source', type: 'text' },
+      { key: 'client_name', label: 'Customer', type: 'text' },
       { key: 'dispatched_qty', label: 'Dispatched', type: 'number' },
       { key: 'invoiced_qty', label: 'Invoiced', type: 'number' },
       { key: 'to_invoice_qty', label: 'To Invoice', type: 'number' },
@@ -53,20 +56,22 @@ export const dispatchedNotInvoicedReport: RegisteredReport = {
 
     const result = await tx.execute(sql`
       SELECT
-        u.source, u.order_code, u.so_internal_no, u.client_name, u.client_po_line_no, u.item_code,
-        u.item_revision, u.dispatched_qty, u.invoiced_qty, u.to_invoice_qty, u.rate,
+        u.source, u.so_code, u.so_internal_no, u.client_name, u.client_po_line_no, u.item_code,
+        u.item_name, u.created_on, u.dispatched_qty, u.invoiced_qty, u.to_invoice_qty, u.rate,
         u.to_invoice_value,
         u.last_dispatch_date::text               AS last_dispatch_text,
         (CURRENT_DATE - u.last_dispatch_date)    AS days_since_dispatch
       FROM (
         SELECT
           'SO'                                         AS source,
-          so.code                                      AS order_code,
+          so.code                                      AS so_code,
           so.internal_so_no                            AS so_internal_no,
           COALESCE(cl.name, so.customer_name, '—')     AS client_name,
           sol.client_po_line_no                        AS client_po_line_no,
-          COALESCE(it.code, sol.item_code_text)   AS item_code,
-          sol.revision::text                           AS item_revision,
+          (COALESCE(it.code, sol.item_code_text)
+            || COALESCE('/' || NULLIF(btrim(sol.revision::text), ''), '')) AS item_code,
+          COALESCE(it.name, sol.part_name)             AS item_name,
+          (sol.created_at AT TIME ZONE 'Asia/Kolkata')::date::text AS created_on,
           d.qty                                        AS dispatched_qty,
           i.qty                                        AS invoiced_qty,
           (d.qty - i.qty)                              AS to_invoice_qty,
@@ -109,12 +114,14 @@ export const dispatchedNotInvoicedReport: RegisteredReport = {
 
         SELECT
           'JWSO'                                       AS source,
-          jwo.code                                     AS order_code,
+          jwo.code                                     AS so_code,
           NULL::text                                   AS so_internal_no,
           COALESCE(cl.name, jwo.customer_name, '—')    AS client_name,
           jwl.client_po_line_no                        AS client_po_line_no, -- ADR-236
-          COALESCE(it.code, jwl.item_code_text)   AS item_code,
-          jwl.revision::text                           AS item_revision,
+          (COALESCE(it.code, jwl.item_code_text)
+            || COALESCE('/' || NULLIF(btrim(jwl.revision::text), ''), '')) AS item_code,
+          COALESCE(it.name, jwl.part_name)             AS item_name,
+          (jwl.created_at AT TIME ZONE 'Asia/Kolkata')::date::text AS created_on,
           jwl.returned_qty                             AS dispatched_qty,
           jwl.invoiced_qty                             AS invoiced_qty,
           (jwl.returned_qty - jwl.invoiced_qty)        AS to_invoice_qty,
@@ -139,20 +146,21 @@ export const dispatchedNotInvoicedReport: RegisteredReport = {
           AND jwl.returned_qty > jwl.invoiced_qty
           ${jwCustomerFrag}
       ) u
-      ORDER BY u.last_dispatch_date ASC NULLS LAST, u.order_code, u.line_no
+      ORDER BY u.last_dispatch_date ASC NULLS LAST, u.so_code, u.line_no
       LIMIT ${REPORT_ROW_CAP}
     `);
 
     const rows = (result as unknown as SqlRow[]).map((r) => {
       const last = dateCell(r['last_dispatch_text']);
       return {
-        source: String(r['source'] ?? ''),
-        order_code: String(r['order_code'] ?? ''),
+        so_code: String(r['so_code'] ?? ''),
         so_internal_no: textCell(r['so_internal_no']),
-        client_name: String(r['client_name'] ?? ''),
         client_po_line_no: textCell(r['client_po_line_no']),
+        created_on: dateCell(r['created_on']),
         item_code: String(r['item_code'] ?? '—'),
-        item_revision: textCell(r['item_revision']),
+        item_name: textCell(r['item_name']),
+        source: String(r['source'] ?? ''),
+        client_name: String(r['client_name'] ?? ''),
         dispatched_qty: numCell(r['dispatched_qty']),
         invoiced_qty: numCell(r['invoiced_qty']),
         to_invoice_qty: numCell(r['to_invoice_qty']),

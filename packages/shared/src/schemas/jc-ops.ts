@@ -16,6 +16,8 @@ export const jcOpsBoardRowSchema = z.object({
   jcOpId: z.string().uuid(),
   jcId: z.string().uuid().nullable(),
   jcCode: z.string(),
+  /** ADR-261 JC Date — job_cards.jc_date as 'YYYY-MM-DD'. */
+  jcDate: z.string().nullable(),
   jcItemCode: z.string().nullable(),
   /** The customer's drawing revision for the JC's item, taken from the SO line
    *  the card was raised against (job_cards.source_so_line_id →
@@ -33,6 +35,11 @@ export const jcOpsBoardRowSchema = z.object({
    *  Read-only: the Sales Order is the only place it is typed. */
   clientPoLineNo: z.string().nullable().default(null),
   jcItemName: z.string().nullable(),
+  /** ADR-261 lead columns — the order behind the card (SO code, else the JWSO
+   *  code), the SO's Internal SO No., and the op's jc_ops.created_at (ISO). */
+  soCode: z.string().nullable().optional(),
+  soInternalNo: z.string().nullable().optional(),
+  createdAt: z.string().nullable().optional(),
   jcOrderQty: z.number().int().nonnegative(),
   opSeq: z.number().int().positive(),
   operation: z.string(),

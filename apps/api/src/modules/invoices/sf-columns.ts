@@ -23,3 +23,20 @@ export const INVOICE_SF_COLUMNS: SfColumnMap = {
   status: { sql: sql`${invoices.status}`, type: 'list' },
   dueDate: { sql: sql`${invoices.dueDate}`, type: 'date' },
 };
+
+// ADR-261 — GET /invoices/lines (one row per INVOICE LINE). Every invoice
+// field above stays valid (the query reads `public.invoices` unaliased); the
+// line fields use il = invoice line, sol = its SO line, iso = the SO.
+export const INVOICE_LINE_SF_COLUMNS: SfColumnMap = {
+  ...INVOICE_SF_COLUMNS,
+  soInternalNo: { sql: sql`iso.internal_so_no`, type: 'text' },
+  clientPoLineNo: { sql: sql`sol.client_po_line_no`, type: 'text' },
+  createdOn: {
+    sql: sql`(COALESCE(il.created_at, ${invoices.createdAt}) AT TIME ZONE 'Asia/Kolkata')::date`,
+    type: 'date',
+  },
+  itemCode: { sql: sql`il.item_code_text`, type: 'text' },
+  itemName: { sql: sql`il.item_name`, type: 'text' },
+  qty: { sql: sql`il.qty`, type: 'num' },
+  lineAmount: { sql: sql`COALESCE(il.line_amount, 0)`, type: 'num', price: true },
+};

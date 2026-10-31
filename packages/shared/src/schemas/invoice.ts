@@ -261,3 +261,44 @@ export const listInvoicesResponseSchema = z.object({
   }),
 });
 export type ListInvoicesResponse = z.infer<typeof listInvoicesResponseSchema>;
+
+// ─── ADR-261 — SO Invoices, one row per INVOICE LINE (GET /invoices/lines) ───
+
+/** One SO Invoices row per live line of a live invoice. Row click and ⋯ act
+ *  on the INVOICE (`invoiceId`). Money is NULL when the viewer may not see
+ *  prices (the same so_create / invoice_create price rule as GET /invoices). */
+export const invoiceListLineRowSchema = z.object({
+  lineId: z.string().uuid(),
+  invoiceId: z.string().uuid(),
+  invoiceCode: z.string(),
+  invoiceDate: z.string(),
+  invoiceStatus: z.enum(INVOICE_STATUSES),
+  dueDate: z.string().nullable(),
+  overdue: z.boolean(),
+  clientName: z.string().nullable(),
+  soCode: z.string().nullable(),
+  soInternalNo: z.string().nullable(),
+  clientPoLineNo: z.string().nullable(),
+  /** The line's created_at, else the invoice's. The Created On column. */
+  createdAt: z.string(),
+  /** Frozen invoice-time code (invoice_lines.item_code_text). */
+  itemCode: z.string().nullable(),
+  /** The SO line's drawing revision (CODE/REV); null with no SO line. */
+  itemRevision: z.string().nullable(),
+  itemName: z.string(),
+  qty: z.number().int(),
+  rate: z.number().nonnegative().nullable(),
+  lineAmount: z.number().nonnegative().nullable(),
+});
+export type InvoiceListLineRow = z.infer<typeof invoiceListLineRowSchema>;
+
+/** GET /invoices/lines — same query as GET /invoices; paged on LINES. The
+ *  summary counts INVOICES (those with a listed line), never lines. */
+export const listInvoiceLinesResponseSchema = listInvoicesResponseSchema
+  .omit({ invoices: true })
+  .extend({
+    rows: z.array(invoiceListLineRowSchema),
+    /** Lines matching search + sf (the pager's total). */
+    total: z.number().int().nonnegative(),
+  });
+export type ListInvoiceLinesResponse = z.infer<typeof listInvoiceLinesResponseSchema>;

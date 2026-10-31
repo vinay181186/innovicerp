@@ -49,6 +49,9 @@ export const incomingQcPendingRowSchema = z.object({
   receivedQty: z.number(),
   pendingQty: z.number(),
   waitDays: z.number().int().nonnegative(),
+  /** ADR-261 lead Created On — the GRN line's created_at (else its GRN's).
+   *  Filled by the QC Call Register; optional so other feeds need not send it. */
+  createdAt: z.string().nullable().optional(),
 });
 export type IncomingQcPendingRow = z.infer<typeof incomingQcPendingRowSchema>;
 
@@ -91,6 +94,13 @@ export const incomingQcCompletedRowSchema = z.object({
   // inspection report on this GRN line (legacy _viewQCReport, HTML L23860).
   qcReportPath: z.string().nullable(),
   qcReportName: z.string().nullable(),
+  /** ADR-261 lead columns, filled by the QC Call Register (optional so other
+   *  feeds need not send them): the SO this line traces back to (job card's SO
+   *  line, else the PO line's source SO line), its Internal SO No., and the
+   *  GRN line's created_at (else its GRN's). */
+  soCode: z.string().nullable().optional(),
+  soInternalNo: z.string().nullable().optional(),
+  createdAt: z.string().nullable().optional(),
 });
 export type IncomingQcCompletedRow = z.infer<typeof incomingQcCompletedRowSchema>;
 

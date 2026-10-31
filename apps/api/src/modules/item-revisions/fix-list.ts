@@ -22,7 +22,8 @@ const LIVE_LINES = (companyId: string) => sql`
   SELECT 'SO' AS source, h.id AS doc_id, h.code AS doc_code, l.id AS line_id, l.line_no,
          l.status::text AS status, l.item_id, UPPER(TRIM(l.revision)) AS rev,
          (NULLIF(TRIM(l.drawing_file_path), '') IS NOT NULL) AS has_drawing,
-         l.item_revision_id, l.created_at
+         l.item_revision_id, l.created_at,
+         h.internal_so_no AS so_internal_no, l.client_po_line_no
     FROM public.sales_order_lines l
     JOIN public.sales_orders h ON h.id = l.sales_order_id
     JOIN public.items i ON i.id = l.item_id AND i.procurement_type = 'make'
@@ -30,7 +31,8 @@ const LIVE_LINES = (companyId: string) => sql`
      AND h.status <> 'cancelled' AND l.status <> 'cancelled' AND l.revision IS NOT NULL
   UNION ALL
   SELECT 'JWSO', h.id, h.code, l.id, l.line_no, l.status::text, l.item_id, UPPER(TRIM(l.revision)),
-         (NULLIF(TRIM(l.drawing_file_path), '') IS NOT NULL), l.item_revision_id, l.created_at
+         (NULLIF(TRIM(l.drawing_file_path), '') IS NOT NULL), l.item_revision_id, l.created_at,
+         NULL::text, l.client_po_line_no
     FROM public.job_work_order_lines l
     JOIN public.job_work_orders h ON h.id = l.job_work_order_id
     JOIN public.items i ON i.id = l.item_id AND i.procurement_type = 'make'
@@ -99,6 +101,8 @@ export async function getItemRevisionFixList(
       createdAt:
         r['created_at'] instanceof Date ? r['created_at'].toISOString() : String(r['created_at']),
       reason: r['conflict'] ? 'conflict' : 'rev_zero',
+      soInternalNo: (r['so_internal_no'] as string | null) ?? null,
+      clientPoLineNo: (r['client_po_line_no'] as string | null) ?? null,
     }));
 
     const st = (await tx.execute(sql`

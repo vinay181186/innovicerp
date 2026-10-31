@@ -14,6 +14,11 @@ export const ASSEMBLY_SF_COLUMNS: SfColumnMap = {
   soCode: { sql: sql`so.code`, type: 'text' },
   // ADR-207 — already SELECTed below as "soInternalNo"; the same join.
   soInternalNo: { sql: sql`so.internal_so_no`, type: 'text' },
+  // ADR-261 lead columns — Created On (the SO's created_at, India day) and the
+  // equipment item (the order's first live line, the same `eq` join below).
+  createdOn: { sql: sql`(so.created_at AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
+  itemCode: { sql: sql`eq.item_code`, type: 'text' },
+  itemName: { sql: sql`eq.part_name`, type: 'text' },
   customerName: { sql: sql`so.customer_name`, type: 'text' },
   bomCode: { sql: sql`bm.bom_no`, type: 'text' },
   dueDate: { sql: sql`agg.due_date`, type: 'date' },
@@ -25,8 +30,14 @@ export interface AssemblySoRow {
   soCode: string;
   /** ADR-207 — the SO's Internal SO No. (live). */
   soInternalNo: string | null;
+  /** ADR-261 — the SO's created_at (ISO). */
+  createdAt: string | null;
   customerName: string | null;
   bomMasterId: string | null;
+  /** ADR-261 — the equipment item: the order's first live SO line. */
+  itemCode: string | null;
+  itemRevision: string | null;
+  itemName: string | null;
 }
 
 export async function loadAssemblySoRows(
@@ -39,6 +50,7 @@ export async function loadAssemblySoRows(
   const searchFrag = term
     ? sql`AND (so.code ILIKE ${term} ESCAPE '\\' OR so.internal_so_no ILIKE ${term} ESCAPE '\\'
         OR so.customer_name ILIKE ${term} ESCAPE '\\'
+        OR eq.item_code ILIKE ${term} ESCAPE '\\' OR eq.part_name ILIKE ${term} ESCAPE '\\'
         OR bm.bom_no ILIKE ${term} ESCAPE '\\' OR bm.bom_name ILIKE ${term} ESCAPE '\\')`
     : sql``;
   const sf = readSf(input.sf);
@@ -47,7 +59,9 @@ export async function loadAssemblySoRows(
   const rows = await tx.execute(sql`
     SELECT so.id AS "soId", so.code AS "soCode", so.internal_so_no AS "soInternalNo",
            so.customer_name AS "customerName",
-           so.bom_master_id AS "bomMasterId"
+           so.bom_master_id AS "bomMasterId",
+           to_char(so.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "createdAt",
+           eq.item_code AS "itemCode", eq.revision AS "itemRevision", eq.part_name AS "itemName"
     FROM public.sales_orders so
     LEFT JOIN public.bom_masters bm ON bm.id = so.bom_master_id AND bm.deleted_at IS NULL
     LEFT JOIN LATERAL (
@@ -55,6 +69,15 @@ export async function loadAssemblySoRows(
       FROM public.sales_order_lines l
       WHERE l.sales_order_id = so.id AND l.deleted_at IS NULL
     ) agg ON TRUE
+    -- ADR-261 — the equipment item the order builds: its first live line.
+    LEFT JOIN LATERAL (
+      SELECT COALESCE(it.code, l.item_code_text) AS item_code, l.revision, l.part_name
+      FROM public.sales_order_lines l
+      LEFT JOIN public.items it ON it.id = l.item_id AND it.deleted_at IS NULL
+      WHERE l.sales_order_id = so.id AND l.deleted_at IS NULL
+      ORDER BY l.line_no ASC NULLS LAST, l.created_at ASC, l.id ASC
+      LIMIT 1
+    ) eq ON TRUE
     WHERE so.company_id = ${companyId}::uuid
       AND so.deleted_at IS NULL
       AND so.type = 'equipment'
@@ -69,7 +92,11 @@ export async function loadAssemblySoRows(
     soId: r['soId'] as string,
     soCode: r['soCode'] as string,
     soInternalNo: (r['soInternalNo'] as string | null) ?? null,
+    createdAt: (r['createdAt'] as string | null) ?? null,
     customerName: (r['customerName'] as string | null) ?? null,
     bomMasterId: (r['bomMasterId'] as string | null) ?? null,
+    itemCode: (r['itemCode'] as string | null) ?? null,
+    itemRevision: (r['itemRevision'] as string | null) ?? null,
+    itemName: (r['itemName'] as string | null) ?? null,
   }));
 }

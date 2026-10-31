@@ -91,8 +91,8 @@ export function planningLineColumns(
       soNo: () => order.soCode,
       internalSoNo: () => order.soInternalNo,
       pol: (l) => l.clientPoLineNo,
-      // needs API — the planning line carries no created date yet.
-      createdOn: () => null,
+      // The line's own created_at (ADR-261).
+      createdOn: (l) => l.createdAt,
       // `CODE/REV` — the customer's drawing revision from this line; a JW line
       // has none and keeps the bare code.
       itemCode: (l) => l.itemCode,

@@ -13,6 +13,7 @@ const isOsp = sql`op.op_type = 'outsource'`;
 
 export const JC_OPS_SF_COLUMNS: SfColumnMap = {
   jcCode: { sql: sql`jc.code`, type: 'text' },
+  jcDate: { sql: sql`jc.jc_date`, type: 'date' },
   clientPoLineNo: { sql: polSql('sol', 'rev_jwl'), type: 'text' },
   // CODE/REV as the cell prints it (itemCodeWithRev).
   itemCode: {
@@ -20,6 +21,10 @@ export const JC_OPS_SF_COLUMNS: SfColumnMap = {
     type: 'text',
   },
   itemName: { sql: sql`i.name`, type: 'text' },
+  // ADR-261 lead columns (bso / bjw joined in the board's shared FROM).
+  soCode: { sql: sql`COALESCE(bso.code, bjw.code)`, type: 'text' },
+  soInternalNo: { sql: sql`bso.internal_so_no`, type: 'text' },
+  createdOn: { sql: sql`(op.created_at AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
   opSeq: { sql: sql`op.op_seq`, type: 'num' },
   // An outsource op shows no machine.
   plannedMachine: {

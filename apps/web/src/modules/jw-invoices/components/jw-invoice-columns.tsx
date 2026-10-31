@@ -26,9 +26,44 @@ function money(n: number): string {
  *  exactly as the old table did. */
 export function jwInvoiceColumns(priceHidden: boolean): DataTableColumn<JwInvoiceListItem>[] {
   const cols: DataTableColumn<JwInvoiceListItem>[] = [
-    // Owner rule 2026-10-31 — the lead columns first (JWSO-only list: JWSO No.,
-    // no Internal SO No.); Invoice No. and Customer after Item Name.
+    // Owner rule 2026-10-31 — Invoice No. then the lead columns first (JWSO-only
+    // list: JWSO No., no Internal SO No.); Customer after Item Name.
     ...leadColumns<JwInvoiceListItem>({
+      doc: {
+        id: 'invoice_code',
+        header: 'Invoice No.',
+        kind: 'code',
+        nowrap: true,
+        sortFilterField: 'invoiceCode',
+        render: (r) => (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            <span className="td-code" style={{ color: 'var(--cyan)' }}>
+              {r.code}
+            </span>
+            {/* Screen-only note (plan D2, 0186), never printed: a live invoice
+                missing its Place of Supply. Full text on hover; the detail sits
+                in the ▸ expand. Kept to one glyph so it does not widen the
+                fit-engine column. */}
+            {r.status !== 'cancelled' && !r.placeOfSupply ? (
+              <span
+                title={PLACE_OF_SUPPLY_UNKNOWN_NOTE}
+                style={{ color: 'var(--amber2)', fontSize: 11 }}
+              >
+                ⚠
+              </span>
+            ) : null}
+          </span>
+        ),
+      },
+      docDate: {
+        id: 'invoice_date',
+        header: 'Invoice Date',
+        kind: 'date',
+        className: 'mono text2',
+        nowrap: true,
+        render: (r) => fmtDate(r.invoiceDate),
+        sortFilterField: 'invoiceDate',
+      },
       so: 'jwso',
       soNo: (r) => r.jwCodeText,
       pol: (r) => r.clientPoLineNo,
@@ -41,41 +76,6 @@ export function jwInvoiceColumns(priceHidden: boolean): DataTableColumn<JwInvoic
         item_code: { sortFilterField: 'itemCode' },
       },
     }),
-    {
-      id: 'invoice_code',
-      header: 'Invoice No.',
-      kind: 'code',
-      nowrap: true,
-      sortFilterField: 'invoiceCode',
-      render: (r) => (
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-          <span className="td-code" style={{ color: 'var(--cyan)' }}>
-            {r.code}
-          </span>
-          {/* Screen-only note (plan D2, 0186), never printed: a live invoice
-              missing its Place of Supply. Full text on hover; the detail sits
-              in the ▸ expand. Kept to one glyph so it does not widen the
-              fit-engine column. */}
-          {r.status !== 'cancelled' && !r.placeOfSupply ? (
-            <span
-              title={PLACE_OF_SUPPLY_UNKNOWN_NOTE}
-              style={{ color: 'var(--amber2)', fontSize: 11 }}
-            >
-              ⚠
-            </span>
-          ) : null}
-        </span>
-      ),
-    },
-    {
-      id: 'invoice_date',
-      header: 'Invoice Date',
-      kind: 'date',
-      className: 'mono text2',
-      nowrap: true,
-      render: (r) => fmtDate(r.invoiceDate),
-      sortFilterField: 'invoiceDate',
-    },
     {
       id: 'customer',
       header: 'Customer',

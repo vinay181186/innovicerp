@@ -19,6 +19,7 @@ import { selectTimeChangeRequests, TIME_CHANGE_FROM } from './service';
 /** Each expression is the one the list SELECT shows for that column. */
 export const TIME_CHANGE_SF_COLUMNS: SfColumnMap = {
   jcCode: { sql: sql`jc.code`, type: 'text' },
+  jcDate: { sql: sql`jc.jc_date`, type: 'date' },
   opSeq: { sql: sql`o.op_seq`, type: 'num' },
   itemCode: {
     sql: sql`(i.code || COALESCE('/' || NULLIF(btrim(COALESCE(${drawingRevOf(sql`jc.item_revision_id`)}, sol.revision::text, rev_jwl.revision::text)), ''), ''))`,
@@ -34,6 +35,10 @@ export const TIME_CHANGE_SF_COLUMNS: SfColumnMap = {
   status: { sql: sql`r.status`, type: 'list' },
   clientPoLineNo: { sql: polSql('sol', 'rev_jwl'), type: 'text' },
   itemName: { sql: sql`i.name`, type: 'text' },
+  // ADR-261 lead columns (tc_so / tc_jw are joined in TIME_CHANGE_FROM).
+  soCode: { sql: sql`COALESCE(tc_so.code, tc_jw.code)`, type: 'text' },
+  soInternalNo: { sql: sql`tc_so.internal_so_no`, type: 'text' },
+  createdOn: { sql: sql`(r.requested_at AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
   reason: { sql: sql`r.reason`, type: 'text' },
   decidedBy: { sql: sql`COALESCE(du.full_name, du.email)`, type: 'text' },
 };
@@ -69,6 +74,8 @@ export async function listOpLogTimeChangePage(
         OR COALESCE(${drawingRevOf(sql`jc.item_revision_id`)}, sol.revision::text, rev_jwl.revision::text) ILIKE ${pat} ESCAPE '\\'
         OR i.name ILIKE ${pat} ESCAPE '\\'
         OR ${polSql('sol', 'rev_jwl')} ILIKE ${pat} ESCAPE '\\'
+        OR COALESCE(tc_so.code, tc_jw.code) ILIKE ${pat} ESCAPE '\\'
+        OR tc_so.internal_so_no ILIKE ${pat} ESCAPE '\\'
         OR o.operation ILIKE ${pat} ESCAPE '\\'
         OR COALESCE(m.code, l.machine_code_text) ILIKE ${pat} ESCAPE '\\'
         OR r.reason ILIKE ${pat} ESCAPE '\\'

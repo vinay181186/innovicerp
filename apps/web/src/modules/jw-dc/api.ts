@@ -6,8 +6,10 @@ import type {
   JwDcOutwardDetail,
   JwDcPoLinesResponse,
   ListJwDcInwardQuery,
+  ListJwDcInwardLinesResponse,
   ListJwDcInwardResponse,
   ListJwDcOutwardQuery,
+  ListJwDcOutwardLinesResponse,
   ListJwDcOutwardResponse,
 } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -30,6 +32,12 @@ export const jwDcKeys = {
       q.limit,
       q.offset,
     ] as const,
+  /** ADR-261 — the Outward Register, one row per DC line (GET /jw-dc/outward/lines). */
+  outwardLines: (q: ListJwDcOutwardQuery) =>
+    [...jwDcKeys.all, 'outward', 'lines', buildOutwardSearch(q)] as const,
+  /** ADR-261 — the Inward Register, one row per receipt line. */
+  inwardLines: (q: ListJwDcInwardQuery) =>
+    [...jwDcKeys.all, 'inward', 'lines', buildInwardSearch(q)] as const,
   outwardDetail: (id: string) => [...jwDcKeys.all, 'outward', 'detail', id] as const,
   outwardNextCode: () => [...jwDcKeys.all, 'outward', 'next-code'] as const,
   inwardNextCode: () => [...jwDcKeys.all, 'inward', 'next-code'] as const,
@@ -79,6 +87,30 @@ export function useJwDcOutwardList(query: ListJwDcOutwardQuery) {
   return useQuery<ListJwDcOutwardResponse>({
     queryKey: jwDcKeys.outwardList(query),
     queryFn: () => apiFetch<ListJwDcOutwardResponse>(`/jw-dc/outward?${buildOutwardSearch(query)}`),
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
+    placeholderData: (prev) => prev,
+  });
+}
+
+/** ADR-261 — Outward Register rows, one per DC line. */
+export function useJwDcOutwardLines(query: ListJwDcOutwardQuery) {
+  return useQuery<ListJwDcOutwardLinesResponse>({
+    queryKey: jwDcKeys.outwardLines(query),
+    queryFn: () =>
+      apiFetch<ListJwDcOutwardLinesResponse>(`/jw-dc/outward/lines?${buildOutwardSearch(query)}`),
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
+    placeholderData: (prev) => prev,
+  });
+}
+
+/** ADR-261 — Inward Register rows, one per receipt line. */
+export function useJwDcInwardLines(query: ListJwDcInwardQuery) {
+  return useQuery<ListJwDcInwardLinesResponse>({
+    queryKey: jwDcKeys.inwardLines(query),
+    queryFn: () =>
+      apiFetch<ListJwDcInwardLinesResponse>(`/jw-dc/inward/lines?${buildInwardSearch(query)}`),
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
     placeholderData: (prev) => prev,

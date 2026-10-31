@@ -6,10 +6,16 @@ import type { SoOverviewRow } from '@innovic/shared';
 
 import type { MemFieldMap } from './sf-memory';
 
+/** ISO timestamp → its India-time day (YYYY-MM-DD) — the Created On column. */
+const istDay = (iso: string | null | undefined): string | null =>
+  iso ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date(iso)) : null;
+
 export const SO_OVERVIEW_SF_FIELDS: MemFieldMap<SoOverviewRow> = {
   // Each number has its OWN column now, so each field reads one number only.
   code: { type: 'text', get: (r) => r.code },
   internalSoNo: { type: 'text', get: (r) => r.internalSoNo },
+  // ADR-261 Created On — the SO's created_at as the India-time day.
+  createdOn: { type: 'date', get: (r) => istDay(r.createdAt) },
   customerName: { type: 'text', get: (r) => r.customerName },
   type: { type: 'list', get: (r) => r.type },
   overallStatus: { type: 'list', get: (r) => r.overallStatus },

@@ -22,6 +22,8 @@ const STATUS_LABEL: Record<PlanningSoListItem['planningStatus'], string> = {
 export const PLANNING_LIST_SF_FIELDS: MemFieldMap<PlanningSoListItem> = {
   soCode: { type: 'text', get: (r) => r.soCode },
   soInternalNo: { type: 'text', get: (r) => r.soInternalNo },
+  // ADR-261 Created On — the order's created_at as the India-time day.
+  createdOn: { type: 'date', get: (r) => istDay(r.createdAt) },
   customerName: { type: 'text', get: (r) => r.customerName },
   soType: { type: 'list', get: (r) => r.soType },
   dueDate: { type: 'date', get: (r) => r.dueDate },
@@ -31,6 +33,14 @@ export const PLANNING_LIST_SF_FIELDS: MemFieldMap<PlanningSoListItem> = {
   planningPct: { type: 'num', get: (r) => r.planningPct },
   planningStatus: { type: 'list', get: (r) => r.planningStatus },
 };
+
+/** ISO timestamp → its India-time calendar day (YYYY-MM-DD), as Created On shows it. */
+function istDay(v: string | null | undefined): string | null {
+  if (!v) return null;
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return null;
+  return new Date(d.getTime() + 330 * 60_000).toISOString().slice(0, 10);
+}
 
 function matchesTerm(r: PlanningSoListItem, needle: string): boolean {
   return [

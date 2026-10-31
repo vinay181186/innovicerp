@@ -3,7 +3,7 @@
 // DocumentEditRow (used by both the writers in ./service.ts and the reads in
 // ./list.ts). Kept here so neither of those imports the other.
 
-import { type SQL, and, desc, eq, isNull, sql } from 'drizzle-orm';
+import { type SQL, and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import type {
   DocumentEditChange,
@@ -66,7 +66,14 @@ export function getEntry(entity: string): DocEditRegistryEntry {
 export async function selectDocumentEditRows(
   tx: DbTransaction,
   companyId: string,
-  filter: { id?: string; entity?: string; entityId?: string; status?: DocumentEditStatus },
+  filter: {
+    id?: string;
+    entity?: string;
+    /** ADR-265 — any of these entities (the types the caller may approve). */
+    entities?: readonly string[];
+    entityId?: string;
+    status?: DocumentEditStatus;
+  },
   page?: { limit: number; offset: number },
 ): Promise<DocumentEditRow[]> {
   const ru = alias(users, 'ru');
@@ -77,6 +84,7 @@ export async function selectDocumentEditRows(
   ];
   if (filter.id) where.push(eq(documentEditRequests.id, filter.id));
   if (filter.entity) where.push(eq(documentEditRequests.entity, filter.entity));
+  if (filter.entities) where.push(inArray(documentEditRequests.entity, [...filter.entities]));
   if (filter.entityId) where.push(eq(documentEditRequests.entityId, filter.entityId));
   if (filter.status) where.push(eq(documentEditRequests.status, filter.status));
 

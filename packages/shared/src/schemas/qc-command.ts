@@ -18,6 +18,8 @@ export interface QcCommandStats {
 export interface QcCommandQueueRow {
   jcOpId: string;
   jcCode: string;
+  /** ADR-261 lead JC Date — job_cards.jc_date as 'YYYY-MM-DD'. */
+  jcDate: string | null;
   opSeq: number;
   operation: string;
   itemCode: string | null;
@@ -38,6 +40,8 @@ export interface QcCommandQueueRow {
   soCode: string | null;
   /** ADR-207: that SO's Internal SO No. (live off sales_orders); null when none. */
   soInternalNo?: string | null;
+  /** ADR-261 lead Created On — the QC op's own created_at (jc_ops). */
+  createdAt?: string | null;
   customer: string | null;
   pendingQty: number;
   ageDays: number;
@@ -74,6 +78,8 @@ export interface QcCommandFpy {
 export interface QcReworkRow {
   jcOpId: string;
   jcCode: string;
+  /** ADR-261 lead JC Date — job_cards.jc_date as 'YYYY-MM-DD'. */
+  jcDate: string | null;
   opSeq: number;
   operation: string;
   itemCode: string | null;
@@ -92,6 +98,8 @@ export interface QcReworkRow {
   soCode: string | null;
   /** ADR-207: that SO's Internal SO No. (live off sales_orders); null when none. */
   soInternalNo?: string | null;
+  /** ADR-261 lead Created On — the reworked QC op's own created_at (jc_ops). */
+  createdAt?: string | null;
   attempts: number;
   totalRejected: number;
   firstEntry: string | null;

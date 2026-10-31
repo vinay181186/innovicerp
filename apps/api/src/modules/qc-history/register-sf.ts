@@ -21,9 +21,25 @@ import {
   actualMachineSql,
   plannedMachineSql,
 } from './register-facts';
-import { INC_PENDING_QTY, ITEM_CODE, ITEM_REV, VENDOR } from './register-incoming';
-import { CUSTOMER, JW_CODE, PART_CODE, PGRN_PENDING_QTY, PM_CODE, QC_DAY } from './register-party';
-import { ITEM_CODE_REV, PEND_SINCE, codeRevSql } from './sql';
+import {
+  INC_CREATED_AT,
+  INC_PENDING_QTY,
+  INC_SO_CODE,
+  INC_SO_INTERNAL,
+  ITEM_CODE,
+  ITEM_REV,
+  VENDOR,
+} from './register-incoming';
+import {
+  CUSTOMER,
+  JW_CODE,
+  PART_CODE,
+  PGRN_CREATED_AT,
+  PGRN_PENDING_QTY,
+  PM_CODE,
+  QC_DAY,
+} from './register-party';
+import { ITEM_CODE_REV, PEND_SINCE, codeRevSql, istDaySql } from './sql';
 
 export type QcPendingSfField = (typeof QC_REGISTER_PENDING_SF_FIELDS)[number];
 export type QcCompletedSfField = (typeof QC_REGISTER_COMPLETED_SF_FIELDS)[number];
@@ -31,7 +47,10 @@ type Field = QcPendingSfField | QcCompletedSfField;
 
 /** Each field's column alias in the union and its type. */
 const COLS: Record<Field, { alias: string; type: Exclude<SfColumnType, 'list'> }> = {
+  soCode: { alias: 'sf_so_code', type: 'text' },
+  createdOn: { alias: 'sf_created_on', type: 'date' },
   docNo: { alias: 'sf_doc_no', type: 'text' },
+  docDate: { alias: 'sf_doc_date', type: 'date' },
   itemCode: { alias: 'sf_item_code', type: 'text' },
   itemName: { alias: 'sf_item_name', type: 'text' },
   qcPending: { alias: 'sf_qc_pending', type: 'num' },
@@ -125,13 +144,17 @@ const POL = polSql('sol', 'rev_jwl');
 const P = QC_REGISTER_PENDING_SF_FIELDS;
 
 export const OP_PENDING_SF = sfSelect(P, {
+  // ADR-261: SO No. filters the order code; Vendor / Customer the party only.
+  soCode: sql`so.code`,
+  createdOn: istDaySql(sql`jo.created_at`),
   docNo: sql`jc.code`,
+  docDate: sql`jc.jc_date`,
   itemCode: ITEM_CODE_REV,
   itemName: sql`i.name`,
   qcPending: sql`vos.qc_pending`,
   calledDate: sql`COALESCE(jo.qc_call_date, ${PEND_SINCE})`,
   pol: POL,
-  soVendor: sql`so.code`,
+  soVendor: null,
   soInternalNo: OP_SO_INTERNAL,
   clientPoNo: CLIENT_PO_NO_SQL,
   operation: OP_OPERATION,
@@ -142,14 +165,18 @@ export const OP_PENDING_SF = sfSelect(P, {
 });
 
 export const INC_PENDING_SF = sfSelect(P, {
+  // ADR-261: SO No. filters the order code; Vendor / Customer the party only.
+  soCode: INC_SO_CODE,
+  createdOn: istDaySql(INC_CREATED_AT),
   docNo: sql`h.code`,
+  docDate: sql`h.grn_date`,
   itemCode: INC_ITEM_CODE,
   itemName: INC_ITEM_NAME,
   qcPending: INC_PENDING_QTY,
   calledDate: sql`h.grn_date`,
   pol: POL,
   soVendor: VENDOR,
-  soInternalNo: null,
+  soInternalNo: INC_SO_INTERNAL,
   clientPoNo: CLIENT_PO_NO_SQL,
   operation: INC_PENDING_OPERATION,
   receivedQty: sql`l.received_qty`,
@@ -159,7 +186,11 @@ export const INC_PENDING_SF = sfSelect(P, {
 });
 
 export const PGRN_PENDING_SF = sfSelect(P, {
+  // ADR-261: SO No. filters the order code; Vendor / Customer the party only.
+  soCode: JW_CODE,
+  createdOn: istDaySql(PGRN_CREATED_AT),
   docNo: sql`pg.code`,
+  docDate: sql`pg.grn_date`,
   itemCode: PGRN_ITEM_CODE,
   itemName: PGRN_ITEM_NAME,
   qcPending: PGRN_PENDING_QTY,
@@ -180,7 +211,11 @@ export const PGRN_PENDING_SF = sfSelect(P, {
 const C = QC_REGISTER_COMPLETED_SF_FIELDS;
 
 export const OP_COMPLETED_SF = sfSelect(C, {
+  // ADR-261: SO No. filters the order code; Vendor / Customer the party only.
+  soCode: sql`so.code`,
+  createdOn: istDaySql(sql`ol.created_at`),
   docNo: sql`jc.code`,
+  docDate: sql`jc.jc_date`,
   itemCode: ITEM_CODE_REV,
   itemName: sql`i.name`,
   accepted: sql`ol.qty`,
@@ -188,7 +223,7 @@ export const OP_COMPLETED_SF = sfSelect(C, {
   attended: sql`ol.log_date`,
   inspectedBy: sql`ol.operator_name`,
   pol: POL,
-  soVendor: sql`so.code`,
+  soVendor: null,
   soInternalNo: OP_SO_INTERNAL,
   clientPoNo: CLIENT_PO_NO_SQL,
   operation: OP_OPERATION,
@@ -201,7 +236,11 @@ export const OP_COMPLETED_SF = sfSelect(C, {
 });
 
 export const INC_COMPLETED_SF = sfSelect(C, {
+  // ADR-261: SO No. filters the order code; Vendor / Customer the party only.
+  soCode: INC_SO_CODE,
+  createdOn: istDaySql(INC_CREATED_AT),
   docNo: sql`h.code`,
+  docDate: sql`h.grn_date`,
   itemCode: INC_ITEM_CODE,
   itemName: INC_ITEM_NAME,
   accepted: sql`l.qc_accepted_qty`,
@@ -210,7 +249,7 @@ export const INC_COMPLETED_SF = sfSelect(C, {
   inspectedBy: sql`COALESCE(l.qc_inspected_by_text, u.full_name, u.email)`,
   pol: POL,
   soVendor: VENDOR,
-  soInternalNo: null,
+  soInternalNo: INC_SO_INTERNAL,
   clientPoNo: CLIENT_PO_NO_SQL,
   operation: sql`('GRN ' || h.code)`,
   calledDate: sql`h.grn_date`,
@@ -222,7 +261,11 @@ export const INC_COMPLETED_SF = sfSelect(C, {
 });
 
 export const PGRN_COMPLETED_SF = sfSelect(C, {
+  // ADR-261: SO No. filters the order code; Vendor / Customer the party only.
+  soCode: JW_CODE,
+  createdOn: istDaySql(PGRN_CREATED_AT),
   docNo: sql`pg.code`,
+  docDate: sql`pg.grn_date`,
   itemCode: PGRN_ITEM_CODE,
   itemName: PGRN_ITEM_NAME,
   accepted: sql`pgl.accepted_qty`,

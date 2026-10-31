@@ -115,6 +115,8 @@ const ROUTE_CARD_VIEWS: readonly QueryKey[] = [
   mlBomsKeys.all,
   mlPlansKeys.all,
   dashboardKeys.home(),
+  // ADR-265 — a NEW card waits in the Approvals list until approved.
+  approvalsKeys.all,
 ];
 
 /** 0227 — a delivery challan (OSP / RTV / returnable) moves op progress, the
@@ -144,6 +146,10 @@ const NC_VIEWS: readonly QueryKey[] = [
 export const LIVE_TABLE_KEYS: Readonly<Record<LiveTable, readonly QueryKey[]>> = {
   job_cards: PRODUCTION_VIEWS,
   jc_ops: OP_VIEWS,
+  // ADR-265 — an Op Entry time change waits in the Approvals list.
+  // Not approvalsKeys: queueing a time change writes only
+  // op_log_time_change_requests (not live), and every op entry save would
+  // re-read every user's Approvals badge — the 60 s poll covers it (ADR-265).
   op_log: OP_VIEWS,
   sales_orders: SALES_ORDER_VIEWS,
   sales_order_lines: SALES_ORDER_VIEWS,
@@ -176,6 +182,9 @@ export const LIVE_TABLE_KEYS: Readonly<Record<LiveTable, readonly QueryKey[]>> =
   // dashboardKeys.home() — daily_reports is company-wide readable, so that
   // would refetch every user's Home on every save; a reply reaches the owner's
   // Home 🔔 on its 60 s poll / focus refetch instead.
+  // Not approvalsKeys: every Day Log save touches this company-wide row, so it
+  // would re-read every user's Approvals badge; the rare (pre-ADR-256) Day Log
+  // edit reaches the Approvals list on its 60 s poll / focus refetch (ADR-265).
   daily_reports: [dayLogKeys.all, dashboardKeys.widgets()],
   // Teams Config (0230; one-way since 0231): a User → mate row added / removed.
   // Realtime reaches only that User (read rule user_id = me) — their Team tab,

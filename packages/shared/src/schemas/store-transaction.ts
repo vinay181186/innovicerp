@@ -44,6 +44,14 @@ export type StoreTransaction = z.infer<typeof storeTransactionSchema>;
 export const storeTransactionListItemSchema = storeTransactionSchema.extend({
   itemCode: z.string().nullable(),
   itemName: z.string().nullable(),
+  // ADR-261 — the lead columns, resolved from the movement's own document
+  // where it traces to an SO / JWSO line (issue line, JC QC accept, PRO close,
+  // dispatch line, reservation, GRN line → PO line). Null when it cannot.
+  soCode: z.string().nullable().optional(),
+  soInternalNo: z.string().nullable().optional(),
+  clientPoLineNo: z.string().nullable().optional(),
+  /** The Drawing Rev of the stock bucket the movement hit (item_revisions.rev). */
+  itemRevision: z.string().nullable().optional(),
 });
 export type StoreTransactionListItem = z.infer<typeof storeTransactionListItemSchema>;
 

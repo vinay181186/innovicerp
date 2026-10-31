@@ -93,8 +93,35 @@ export function ncListColumns(
   draftIds?: Set<string>,
 ): DataTableColumn<NcRegisterListItem>[] {
   return [
-    // Owner rule 2026-10-31 — the six lead columns first; NC No. after Item Name.
+    // Owner rule 2026-10-31 — own number (NC No.) first, then the lead columns.
     ...leadColumns<NcRegisterListItem>({
+      doc: {
+        id: 'nc_code',
+        sortFilterField: 'ncCode',
+        header: 'NC No.',
+        nowrap: true,
+        render: (nc) => (
+          <Link
+            to="/nc-register/$id"
+            params={{ id: nc.id }}
+            className="td-code"
+            style={{ color: 'var(--red2)', fontWeight: 800 }}
+            title="Open the NC detail page"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {nc.code}
+          </Link>
+        ),
+      },
+      docDate: {
+        id: 'nc_date',
+        sortFilterField: 'ncDate',
+        kind: 'date',
+        header: 'NC Date',
+        className: 'mono',
+        nowrap: true,
+        render: (nc) => fmtDate(nc.ncDate),
+      },
       soNo: (nc) => nc.soCodeText,
       internalSoNo: (nc) => nc.soInternalNo,
       pol: (nc) => nc.clientPoLineNo,
@@ -103,30 +130,13 @@ export function ncListColumns(
       itemRev: (nc) => (nc.itemCode ? nc.itemRevision : null),
       itemName: (nc) => ncItemName(nc),
       overrides: {
+        so_no: { sortFilterField: 'soCode' },
         so_internal_no: { sortFilterField: 'soInternalNo' },
         created_on: { sortFilterField: 'createdOn' },
         item_code: { sortFilterField: 'itemCode', filterValue: (nc) => ncItemCode(nc) },
         item_name: { sortFilterField: 'itemName' },
       },
     }),
-    {
-      id: 'nc_code',
-      sortFilterField: 'ncCode',
-      header: 'NC No.',
-      nowrap: true,
-      render: (nc) => (
-        <Link
-          to="/nc-register/$id"
-          params={{ id: nc.id }}
-          className="td-code"
-          style={{ color: 'var(--red2)', fontWeight: 800 }}
-          title="Open the NC detail page"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {nc.code}
-        </Link>
-      ),
-    },
     {
       id: 'nc_status',
       sortFilterField: 'status',
@@ -169,15 +179,6 @@ export function ncListColumns(
       className: 'text2',
       render: (nc) => NC_REASON_CATEGORY_LABELS[nc.reasonCategory],
       filterValue: (nc) => NC_REASON_CATEGORY_LABELS[nc.reasonCategory],
-    },
-    {
-      id: 'nc_date',
-      sortFilterField: 'ncDate',
-      kind: 'date',
-      header: 'NC Date',
-      className: 'mono',
-      nowrap: true,
-      render: (nc) => fmtDate(nc.ncDate),
     },
   ];
 }

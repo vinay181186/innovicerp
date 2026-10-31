@@ -384,6 +384,7 @@ function SalesOrderDetailPage(): React.JSX.Element {
           columns={lineColumns({
             priceHidden,
             soCode: detail.code,
+            internalSoNo: detail.internalSoNo ?? null,
             onPreview: setPreview,
           })}
           rows={detail.lines}

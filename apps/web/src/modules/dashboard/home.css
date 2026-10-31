@@ -7,6 +7,10 @@
   flex-direction: column;
   gap: var(--sp-2);
   min-width: 0;
+  /* Compact, centred board — not edge to edge on wide monitors (owner 31-Oct). */
+  width: 100%;
+  max-width: 960px;
+  margin-inline: auto;
 }
 .dh-code {
   font-family: var(--mono);
@@ -60,14 +64,16 @@ span.dh-link {
   min-height: 560px;
 }
 .dh-menu {
-  flex: 1 1 210px;
-  max-width: 250px;
+  flex: 1 1 200px;
+  max-width: 230px;
   border-right: 1px solid var(--border);
-  background: var(--bg4);
-  padding: var(--sp-1) 0;
+  background: var(--bg2);
+  padding: var(--sp-2);
   display: flex;
   flex-direction: column;
+  gap: 2px;
 }
+/* Same look as the top menu's drop-down links (.tn-link, innovic-theme.css). */
 .dh-mi {
   font: inherit;
   display: flex;
@@ -75,24 +81,32 @@ span.dh-link {
   gap: var(--sp-2);
   text-align: left;
   border: 0;
-  border-left: 3px solid transparent;
+  border-radius: var(--radius);
   background: transparent;
   color: var(--text);
-  padding: 10px 14px;
-  font-weight: 700;
+  padding: var(--sp-1) var(--sp-2);
+  min-height: var(--control-h);
   cursor: pointer;
 }
 .dh-mi:hover {
   background: var(--bg3);
 }
 .dh-mi[aria-current='page'] {
-  background: var(--bg2);
-  border-left-color: var(--blue);
+  background: var(--blue3);
   color: var(--blue);
+  font-weight: 600;
 }
-.dh-mi > span:first-child {
+.dh-mi-icon {
+  width: 18px;
+  text-align: center;
+  flex-shrink: 0;
+}
+.dh-mi-label {
   flex: 1;
   min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .dh-mbadge {
   font-size: var(--fs-xs);
@@ -103,14 +117,14 @@ span.dh-link {
   color: var(--text2);
 }
 .dh-mi[aria-current='page'] .dh-mbadge {
-  background: var(--blue3);
+  background: var(--bg2);
   color: var(--blue);
 }
 .dh-mhead {
-  padding: var(--sp-3) 14px var(--sp-1);
+  padding: var(--sp-3) var(--sp-2) var(--sp-1);
   font-size: var(--fs-xs);
   font-weight: 700;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--text3);
 }
@@ -157,26 +171,6 @@ span.dh-link {
   gap: var(--sp-2);
   font-size: var(--fs-sm);
 }
-.dh-seg {
-  display: inline-flex;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  overflow: hidden;
-}
-.dh-seg button {
-  font: inherit;
-  font-size: var(--fs-sm);
-  border: 0;
-  background: var(--bg2);
-  color: var(--text3);
-  padding: 3px 10px;
-  cursor: pointer;
-}
-.dh-seg button[aria-pressed='true'] {
-  background: var(--blue3);
-  color: var(--blue);
-  font-weight: 700;
-}
 .dh-body {
   padding: var(--sp-3) var(--sp-4);
   display: flex;
@@ -187,7 +181,7 @@ span.dh-link {
 
 /* ── department checks ── */
 .dh-check {
-  border-bottom: 1px solid var(--bg3);
+  border-bottom: 1px solid var(--border);
 }
 .dh-check-line {
   display: flex;
@@ -354,12 +348,4 @@ span.dh-link {
   padding: var(--sp-4);
   text-align: center;
   color: var(--text3);
-}
-
-/* ── approvals links ── */
-.dh-otherap {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--sp-2) var(--sp-4);
-  font-size: var(--fs-sm);
 }

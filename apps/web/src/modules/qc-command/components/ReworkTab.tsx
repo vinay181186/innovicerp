@@ -19,29 +19,38 @@ function attemptColor(attempts: number): string {
 }
 
 const columns: DataTableColumn<QcReworkRow>[] = [
-  // Owner rule 2026-10-31 — the six lead columns first; JC / Op after Item
-  // Name. The rework row carries no created date yet (needs API).
+  // Owner rule 2026-10-31 — own number (JC / Op) first, then the six lead
+  // columns. Created On = the reworked QC op's own created_at.
   ...leadColumns<QcReworkRow>({
+    doc: {
+      id: 'jc_op',
+      header: 'JC / Op',
+      nowrap: true,
+      className: 'td-code',
+      render: (g) => (
+        <>
+          <span style={{ color: 'var(--cyan)' }}>{g.jcCode}</span>{' '}
+          <span style={{ color: 'var(--red2)', fontWeight: 700 }}>Op {opSrNo(g.opSeq)}</span>
+        </>
+      ),
+    },
+    docDate: {
+      id: 'jc_date',
+      kind: 'date',
+      header: 'JC Date',
+      className: 'mono',
+      nowrap: true,
+      render: (g) => fmtDate(g.jcDate ?? null),
+      filterValue: (g) => g.jcDate ?? '',
+    },
     soNo: (g) => g.soCode,
     internalSoNo: (g) => g.soInternalNo,
     pol: (g) => g.clientPoLineNo,
-    createdOn: () => null,
+    createdOn: (g) => g.createdAt ?? null,
     itemCode: (g) => g.itemCode,
     itemRev: (g) => g.itemRevision,
     itemName: (g) => g.itemName,
   }),
-  {
-    id: 'jc_op',
-    header: 'JC / Op',
-    nowrap: true,
-    className: 'td-code',
-    render: (g) => (
-      <>
-        <span style={{ color: 'var(--cyan)' }}>{g.jcCode}</span>{' '}
-        <span style={{ color: 'var(--red2)', fontWeight: 700 }}>Op {opSrNo(g.opSeq)}</span>
-      </>
-    ),
-  },
   {
     id: 'operation',
     header: 'Operation',

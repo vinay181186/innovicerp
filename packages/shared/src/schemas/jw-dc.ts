@@ -298,3 +298,82 @@ export interface JwDcPoLinesResponse {
   vendorNameText: string | null;
   lines: JwDcPoLine[];
 }
+
+// ─── ADR-261 — one row per DC LINE (Outward / Inward Registers) ─────────────
+// GET /jw-dc/outward/lines and GET /jw-dc/inward/lines take the SAME query as
+// the document lists above and answer the same envelope. Each row is one live
+// line of a live challan / receipt (plus, with includeCancelled, the lines
+// cancelled with a Cancelled document). The order behind the line is traced
+// DC line → PO line → SO line (or Job Card → SO / JWSO line): soCode +
+// soInternalNo when it is a Sales Order, jwCode when it is a JWSO, all null
+// when no order sits behind it. The document lists themselves are unchanged
+// (pickers use them).
+
+const jwDcLeadFields = {
+  lineId: z.string().uuid(),
+  docId: z.string().uuid(),
+  docCode: z.string(),
+  docDate: z.string(),
+  /** ADR-235 — set on a Cancelled document (its lines are listed with it). */
+  cancelReason: z.string().nullable(),
+  cancelledAt: z.string().nullable(),
+  jwpoCodeText: z.string().nullable(),
+  /** Live master name, else the challan's saved name / code. */
+  vendorName: z.string().nullable(),
+  vehicleNo: z.string().nullable(),
+  remarks: z.string().nullable(),
+  soCode: z.string().nullable(),
+  soInternalNo: z.string().nullable(),
+  jwCode: z.string().nullable(),
+  clientPoLineNo: z.string().nullable(),
+  /** The line's own created_at (ISO timestamp). */
+  createdAt: z.string(),
+  itemCode: z.string().nullable(),
+  /** The customer's drawing revision off the SO / JWSO line behind the row. */
+  itemRevision: z.string().nullable(),
+  itemName: z.string().nullable(),
+  processText: z.string().nullable(),
+};
+
+export const jwDcOutwardLineRowSchema = z.object({
+  ...jwDcLeadFields,
+  vendorId: z.string().uuid().nullable(),
+  sentQty: z.number().nonnegative(),
+  /** Σ received back on live inward lines against this outward line. */
+  receivedQty: z.number().nonnegative(),
+  /** Sent − received, never below 0; 0 on a Cancelled challan. */
+  pendingQty: z.number().nonnegative(),
+  /** This LINE's return state (a Cancelled challan reads 'fully_returned'; the
+   *  screen shows Cancelled from cancelledAt). */
+  returnStatus: z.enum(['out', 'partial', 'fully_returned']),
+});
+export type JwDcOutwardLineRow = z.infer<typeof jwDcOutwardLineRowSchema>;
+
+export interface ListJwDcOutwardLinesResponse {
+  items: JwDcOutwardLineRow[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export const jwDcInwardLineRowSchema = z.object({
+  ...jwDcLeadFields,
+  jwDcOutwardId: z.string().uuid(),
+  /** Our outward DC No. the pieces came back against. */
+  dcCodeText: z.string().nullable(),
+  vendorChallanNo: z.string().nullable(),
+  goodsReceiptNoteId: z.string().uuid().nullable(),
+  grnCode: z.string().nullable(),
+  receivedQty: z.number().nonnegative(),
+  /** Incoming QC on the receipt's GRN line (0172); older receipts their own OK. */
+  okQty: z.number().nonnegative(),
+  rejectedQty: z.number().nonnegative(),
+});
+export type JwDcInwardLineRow = z.infer<typeof jwDcInwardLineRowSchema>;
+
+export interface ListJwDcInwardLinesResponse {
+  items: JwDcInwardLineRow[];
+  total: number;
+  limit: number;
+  offset: number;
+}

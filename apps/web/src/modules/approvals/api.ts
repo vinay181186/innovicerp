@@ -1,83 +1,52 @@
-// Approvals inbox (ADR-190) — GET /approvals/inbox: what is waiting for the
-// signed-in user to approve, as three lists (PR, PO, Log Entry) with counts.
-// The server applies each approve endpoint's own rules, so every row listed is
-// one the caller may actually approve.
+// Approvals (ADR-265) — ONE list of everything waiting for the signed-in
+// user's decision (GET /approvals/waiting) and the history of past decisions
+// (GET /approvals/history). The home Approvals view, Settings → Approvals and
+// the top-menu badge all read the SAME `waiting()` query, so they always show
+// the same number. The server applies each decide endpoint's own rules, so
+// every row listed is one the caller may actually decide.
 
 import type {
-  ApprovalInboxListQuery,
-  ApprovalInboxListResponse,
-  ApprovalInboxResponse,
-  ListOpLogTimeChangePageQuery,
-  ListOpLogTimeChangePageResponse,
+  ApprovalHistoryListQuery,
+  ApprovalHistoryListResponse,
+  WaitingApprovalsResponse,
 } from '@innovic/shared';
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
-import { opEntryKeys } from '@/modules/op-entry/api';
 
 export const approvalsKeys = {
   all: ['approvals'] as const,
-  inbox: () => [...approvalsKeys.all, 'inbox'] as const,
-  // Under inbox(), so every invalidation of the inbox refreshes the pages too.
-  inboxList: (q: ApprovalInboxListQuery) => [...approvalsKeys.inbox(), 'list', q] as const,
+  /** ADR-265 — everything waiting for the caller (one query app-wide). */
+  waiting: () => [...approvalsKeys.all, 'waiting'] as const,
+  /** ADR-265 — past decisions, one page per query. */
+  history: (q: ApprovalHistoryListQuery) => [...approvalsKeys.all, 'history', q] as const,
 };
 
-export function useApprovalInbox(opts: { enabled?: boolean; refetchOnMount?: 'always' } = {}) {
-  return useQuery<ApprovalInboxResponse>({
-    queryKey: approvalsKeys.inbox(),
-    queryFn: () => apiFetch<ApprovalInboxResponse>('/approvals/inbox'),
+/** Everything waiting for the caller — the home Approvals view, the Approvals
+ *  page and the top-menu badge (one query, so one number). */
+export function useWaitingApprovals(opts: { enabled?: boolean } = {}) {
+  return useQuery<WaitingApprovalsResponse>({
+    queryKey: approvalsKeys.waiting(),
+    queryFn: () => apiFetch<WaitingApprovalsResponse>('/approvals/waiting'),
     enabled: opts.enabled ?? true,
-    staleTime: 60_000,
-    // ADR-230 safety refresh — the Approvals page and the top-nav badge.
-    refetchInterval: LIVE_FALLBACK_POLL_MS,
-    ...(opts.refetchOnMount ? { refetchOnMount: opts.refetchOnMount } : {}),
-  });
-}
-
-/** Everything waiting for the caller (PR + PO + Log Entry + new Route Cards,
- *  ADR-253) — the nav badge. */
-export function useApprovalInboxTotal(enabled: boolean): number {
-  const q = useApprovalInbox({ enabled });
-  const c = q.data?.counts;
-  return c ? c.pr + c.po + c.logEntry + (c.rc ?? 0) : 0;
-}
-
-/** Op Entry approvals, one 25-row page (ADR-201). Keyed under op-entry's
- *  'time-changes' so an Approve / Reject refreshes it with the other lists. */
-export function useOpLogTimeChangePage(q: ListOpLogTimeChangePageQuery) {
-  return useQuery<ListOpLogTimeChangePageResponse>({
-    queryKey: [...opEntryKeys.all, 'time-changes', 'page', q] as const,
-    queryFn: () => {
-      const p = new URLSearchParams();
-      if (q.status) p.set('status', q.status);
-      if (q.search) p.set('search', q.search);
-      if (q.sf) p.set('sf', q.sf);
-      p.set('limit', String(q.limit));
-      p.set('offset', String(q.offset));
-      return apiFetch<ListOpLogTimeChangePageResponse>(
-        `/op-entry/time-changes/page?${p.toString()}`,
-      );
-    },
-    placeholderData: (prev) => prev,
+    staleTime: 30_000,
+    // ADR-230 safety refresh behind the live updates.
     refetchInterval: LIVE_FALLBACK_POLL_MS,
   });
 }
 
-/** One PR / PO section, a page at a time — search + Sort & Filter on the
- *  server over every waiting document (ADR-201). */
-export function useApprovalInboxList(query: ApprovalInboxListQuery) {
-  return useQuery<ApprovalInboxListResponse>({
-    queryKey: approvalsKeys.inboxList(query),
+/** Past decisions (Approved / Rejected), one 25-row page from the server. */
+export function useApprovalHistory(q: ApprovalHistoryListQuery) {
+  return useQuery<ApprovalHistoryListResponse>({
+    queryKey: approvalsKeys.history(q),
     queryFn: () => {
       const p = new URLSearchParams();
-      for (const [k, v] of Object.entries(query)) {
+      for (const [k, v] of Object.entries(q)) {
         if (v !== undefined && v !== '') p.set(k, String(v));
       }
-      return apiFetch<ApprovalInboxListResponse>(`/approvals/inbox/list?${p.toString()}`);
+      return apiFetch<ApprovalHistoryListResponse>(`/approvals/history?${p.toString()}`);
     },
     placeholderData: (prev) => prev,
-    staleTime: 60_000,
-    refetchOnMount: 'always',
     refetchInterval: LIVE_FALLBACK_POLL_MS,
   });
 }

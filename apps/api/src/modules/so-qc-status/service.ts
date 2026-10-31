@@ -164,7 +164,7 @@ export async function getSoQcStatus(soId: string, user: AuthContext): Promise<So
         -- POL — the line number printed on the CUSTOMER's own purchase order
         -- for this SO line. Never sol.line_no, which is OUR line number.
         sol.client_po_line_no AS "clientPoLineNo",
-        sol.order_qty AS "orderQty",
+        sol.order_qty AS "orderQty", sol.created_at AS "createdAt",
         COUNT(DISTINCT jc.id)::int AS "jcCount",
         COUNT(vos.jc_op_id) FILTER (WHERE vos.qc_required OR vos.op_type = 'qc')::int AS "qcOpsTotal",
         COUNT(vos.jc_op_id) FILTER (
@@ -444,6 +444,12 @@ export async function getSoQcStatus(soId: string, user: AuthContext): Promise<So
         itemRevision: (r['itemRevision'] as string | null) ?? null,
         clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
         partName: (r['partName'] as string | null) ?? null,
+        createdAt:
+          r['createdAt'] == null
+            ? null
+            : r['createdAt'] instanceof Date
+              ? r['createdAt'].toISOString()
+              : String(r['createdAt']),
         orderQty: num(r['orderQty']),
         jcCount: num(r['jcCount']),
         hasAnyQc,

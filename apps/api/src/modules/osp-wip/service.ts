@@ -22,6 +22,7 @@ interface WipRawRow {
   jc_op_id: string;
   job_card_id: string;
   jc_code: string;
+  jc_date: string | null;
   op_seq: number;
   operation: string | null;
   outsource_status: string | null;
@@ -32,6 +33,7 @@ interface WipRawRow {
   item_name: string | null;
   so_code: string | null;
   so_internal_no: string | null;
+  created_at: Date | string | null;
   vendor_name: string | null;
   vendor_code: string | null;
   order_qty: number;
@@ -82,6 +84,8 @@ export async function listOspWip(
         ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
       LEFT JOIN public.job_work_order_lines rev_jwl
         ON rev_jwl.id = jc.source_jw_line_id AND rev_jwl.deleted_at IS NULL
+      -- ADR-261 Created On: the op's own jc_ops.created_at (the view lacks it).
+      LEFT JOIN public.jc_ops wo ON wo.id = w.jc_op_id
       WHERE w.company_id = ${companyId}::uuid
         ${searchFrag}
         ${sfFrag}`;
@@ -96,7 +100,8 @@ export async function listOspWip(
 
     const result = (await tx.execute(sql`
       SELECT
-        w.jc_op_id, w.job_card_id, w.jc_code, w.op_seq, w.operation, w.outsource_status,
+        w.jc_op_id, w.job_card_id, w.jc_code, to_char(jc.jc_date, 'YYYY-MM-DD') AS jc_date,
+        w.op_seq, w.operation, w.outsource_status,
         w.item_id, w.item_code, w.item_name, w.so_code, w.vendor_name, w.vendor_code,
         w.order_qty, w.sent_qty, w.returned_qty, w.rejected_qty,
         w.accepted_qty, w.at_vendor_qty, w.not_sent_qty, w.in_qc_qty,
@@ -118,7 +123,8 @@ export async function listOspWip(
         -- off the same SO line the revision above is read from, else the JWSO
         -- line's (ADR-236). Never sol.line_no, which is OUR line number.
         ${polSql('sol', 'rev_jwl')} AS client_po_line_no,
-        so.internal_so_no AS so_internal_no
+        so.internal_so_no AS so_internal_no,
+        wo.created_at AS created_at
       ${fromFrag}
         ${bucketFrag}
       ORDER BY ${orderBy}
@@ -129,6 +135,7 @@ export async function listOspWip(
       jcOpId: r.jc_op_id,
       jobCardId: r.job_card_id,
       jcCode: r.jc_code,
+      jcDate: r.jc_date ?? null,
       opSeq: Number(r.op_seq),
       operation: r.operation,
       outsourceStatus: r.outsource_status,
@@ -139,6 +146,7 @@ export async function listOspWip(
       itemName: r.item_name,
       soCode: r.so_code,
       soInternalNo: r.so_internal_no,
+      createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : (r.created_at ?? null),
       vendorName: r.vendor_name,
       vendorCode: r.vendor_code,
       orderQty: Number(r.order_qty),

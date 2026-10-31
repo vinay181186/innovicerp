@@ -76,6 +76,8 @@ export const jcOpEnrichedSchema = z.object({
    *  the server re-decides inside the QC transaction. */
   isLastOp: z.boolean(),
   jobCardCode: z.string(), // joined from job_cards.code
+  /** ADR-261 JC Date — job_cards.jc_date as 'YYYY-MM-DD'. */
+  jcDate: z.string().nullable().default(null),
   /** WHAT is being made. A job-card number says WHICH JOB; it does not say
    *  which part, and every screen built on this shape printed the number alone
    *  and left the reader to look the part up elsewhere. Joined from the card's
@@ -99,6 +101,8 @@ export const jcOpEnrichedSchema = z.object({
   soCode: z.string().nullable().optional(), // source SO/JW order code (T27)
   /** ADR-207 — the source SO's Internal SO No. (null on a JW-sourced card). */
   soInternalNo: z.string().nullable().optional(),
+  /** ADR-261 Created On — the job-card op's own jc_ops.created_at (ISO). */
+  createdAt: z.string().nullable().optional(),
   opSeq: z.number().int().positive(),
   /** The PLANNED machine: jc_ops.machine_id, where the REMAINING qty is routed.
    *  Carried as an id (not only a code) so the Start popup can default its
@@ -295,6 +299,8 @@ export const opLogTimeChangeRequestSchema = z.object({
   /** Context for the approver, joined from the entry and its operation — none
    *  of it is stored on the request row. */
   jobCardCode: z.string(),
+  /** ADR-261 JC Date — job_cards.jc_date as 'YYYY-MM-DD'. */
+  jcDate: z.string().nullable().default(null),
   opSeq: z.number().int().positive(),
   operation: z.string(),
   logType: opLogTypeSchema,
@@ -316,10 +322,16 @@ export const opLogTimeChangeRequestSchema = z.object({
    *  Read-only: the Sales Order is the only place it is typed. */
   clientPoLineNo: z.string().nullable().default(null),
   itemName: z.string().nullable().default(null),
+  /** ADR-261 lead columns — the order behind the card (SO code, else the JWSO
+   *  code) and the SO's Internal SO No. */
+  soCode: z.string().nullable().optional(),
+  soInternalNo: z.string().nullable().optional(),
   machineCode: z.string().nullable(),
   /** The entry's qty, shown so the approver can see it is NOT part of the ask. */
   qty: z.number().int().nonnegative(),
   rejectQty: z.number().int().nonnegative(),
+  /** ADR-265 — the Job Card the op belongs to (the Approvals row links to it). */
+  jobCardId: z.string().uuid().optional(),
   prevLogDate: z.string(),
   prevStartTime: z.string().nullable(),
   requestedLogDate: z.string(),
@@ -432,6 +444,9 @@ export const runningOpSchema = z.object({
    *  named a job card it could not open. */
   jobCardId: z.string().uuid(),
   jobCardCode: z.string(), // joined
+  /** ADR-261 JC Date — job_cards.jc_date as 'YYYY-MM-DD'. Optional: the
+   *  start/stop write replies do not carry it. */
+  jcDate: z.string().nullable().optional(),
   /** What is being made, joined from the job card's item. A running-ops board
    *  that names only a JC code makes the reader look the part up elsewhere. */
   itemCode: z.string().nullable().default(null),
@@ -449,6 +464,11 @@ export const runningOpSchema = z.object({
    *  Read-only: the Sales Order is the only place it is typed. */
   clientPoLineNo: z.string().nullable().default(null),
   itemName: z.string().nullable().default(null),
+  /** ADR-261 lead columns — the order behind the card (SO code, else the JWSO
+   *  code), the SO's Internal SO No., and the job-card op's created_at (ISO). */
+  soCode: z.string().nullable().optional(),
+  soInternalNo: z.string().nullable().optional(),
+  createdAt: z.string().nullable().optional(),
   opSeq: z.number().int().positive(), // joined
   operation: z.string(), // joined
   machineId: z.string().uuid().nullable(),

@@ -7,6 +7,7 @@ import { DESIGN_TRACKER_STATUSES } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import type { RegisteredReport } from '../registry';
 import {
+  dateCell,
   enumFilter,
   likeFilter,
   numCell,
@@ -33,10 +34,14 @@ export const designHoursVsEstimateReport: RegisteredReport = {
       },
     ],
     columns: [
+      // ADR-261 lead columns. No POL: a Design Tracker entry links to the
+      // SO header, never to one SO line, so there is no customer PO line.
       { key: 'tracker_code', label: 'DSN No.', type: 'text' },
       { key: 'so_code', label: 'SO No.', type: 'text' },
       { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
+      { key: 'created_on', label: 'Created On', type: 'date' },
       { key: 'item_code', label: 'Item Code', type: 'text' },
+      { key: 'item_name', label: 'Item Name', type: 'text' },
       { key: 'designer', label: 'Designer', type: 'text' },
       { key: 'status', label: 'Design Status', type: 'text' },
       { key: 'estimated_hours', label: 'Estimated Hours', type: 'number' },
@@ -58,6 +63,8 @@ export const designHoursVsEstimateReport: RegisteredReport = {
         COALESCE(so.code, dt.so_code_text)           AS so_code,
         so.internal_so_no                            AS so_internal_no,
         COALESCE(it.code, dt.item_code_text, '—')    AS item_code,
+        COALESCE(it.name, dt.item_name_text)         AS item_name,
+        (dt.created_at AT TIME ZONE 'Asia/Kolkata')::date::text AS created_on,
         dt.designer                                  AS designer,
         dt.status                                    AS status,
         dt.estimated_hours::float                    AS estimated_hours,
@@ -91,6 +98,8 @@ export const designHoursVsEstimateReport: RegisteredReport = {
       so_code: textCell(r['so_code']),
       so_internal_no: textCell(r['so_internal_no']),
       item_code: String(r['item_code'] ?? ''),
+      item_name: textCell(r['item_name']),
+      created_on: dateCell(r['created_on']),
       designer: String(r['designer'] ?? ''),
       status: String(r['status'] ?? ''),
       estimated_hours: numCell(r['estimated_hours']),

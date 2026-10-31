@@ -37,6 +37,9 @@ export const pendingSoValueRowSchema = z.object({
   /** ADR-207 Internal SO No. (live from sales_orders); null on old SOs. */
   soInternalNo: z.string().nullable().optional(),
   customerName: z.string().nullable(),
+  /** ADR-261 Created On — the SO's created_at (ISO); optional while web/API
+   *  deploy apart. */
+  createdAt: z.string().nullable().optional(),
   soDate: z.string(),
   dueDate: z.string().nullable(),
   status: z.string(),

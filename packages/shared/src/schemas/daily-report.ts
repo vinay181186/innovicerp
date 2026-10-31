@@ -8,6 +8,8 @@ import { z } from 'zod';
 export const dailyReportRowSchema = z.object({
   logId: z.string().uuid(),
   jcCode: z.string(),
+  /** ADR-261 JC Date — job_cards.jc_date as 'YYYY-MM-DD'. */
+  jcDate: z.string().nullable(),
   itemCode: z.string().nullable(),
   /** The customer's drawing revision behind this log entry, followed from the
    *  job card to its SO line (job_cards.source_so_line_id →
@@ -23,6 +25,11 @@ export const dailyReportRowSchema = z.object({
    *  Read-only: the Sales Order is the only place it is typed. */
   clientPoLineNo: z.string().nullable().default(null),
   itemName: z.string().nullable(),
+  /** ADR-261 lead columns — the order behind the card (SO code, else the JWSO
+   *  code), the SO's Internal SO No., and the log entry's created_at (ISO). */
+  soCode: z.string().nullable().optional(),
+  soInternalNo: z.string().nullable().optional(),
+  createdAt: z.string().nullable().optional(),
   opSeq: z.number().int().positive(),
   operation: z.string(),
   shift: z.string(),

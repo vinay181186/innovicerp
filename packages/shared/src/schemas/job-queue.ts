@@ -10,6 +10,8 @@ export const jobQueueRowSchema = z.object({
   jcOpId: z.string().uuid(),
   jcId: z.string().uuid(),
   jcCode: z.string(),
+  /** ADR-261 JC Date — job_cards.jc_date as 'YYYY-MM-DD'. */
+  jcDate: z.string().nullable(),
   itemCode: z.string().nullable(),
   /** The customer's drawing revision, taken from the SO line the job card was
    *  raised against (job_cards.source_so_line_id → sales_order_lines.revision).
@@ -28,6 +30,8 @@ export const jobQueueRowSchema = z.object({
   soCode: z.string().nullable(),
   /** ADR-207 — the SO's Internal SO No., read live from sales_orders. */
   soInternalNo: z.string().nullable().default(null),
+  /** ADR-261 Created On — the job-card op's own jc_ops.created_at (ISO). */
+  createdAt: z.string().nullable().optional(),
   soCustomer: z.string().nullable(),
   opSeq: z.number().int().positive(),
   operation: z.string(),

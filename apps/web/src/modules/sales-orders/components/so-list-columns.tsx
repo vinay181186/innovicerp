@@ -2,19 +2,24 @@
 // standard 2026-10-01). Split out of routes/list.tsx so that file stays small
 // and the sheet is defined in one place.
 //
-// One row per order, every fact its own one-line column (the stacked SO No. /
-// SO Date and Customer / Client PO cells of the retired card + hand-rolled
-// sheet are gone). The first column (SO No.) is always pinned and carries the
-// fit table's ▸ — the row's one expand control — so no chevron is drawn here.
-// Labels per docs/NAMING.md (SO No., Internal SO No., SO Date, SO Type,
-// Customer, Client PO No., Order Qty, JC Qty, Dispatched, Pending, Due Date).
-// Fulfilment is the ADR-196 badge, given its own column here.
+// ADR-261 (owner 2026-10-31): ONE ROW PER SO LINE (GET /sales-orders/lines).
+// The six lead columns (SO No. · Internal SO No. · POL · Created On · Item
+// Code (CODE/REV) · Item Name) come first via leadColumns; then SO Date, SO
+// Type, Customer, Client PO No., the LINE's Order Qty / JC Qty / Dispatched /
+// Pending / Due Date, SO Status and Fulfilment (the order's). The row ⋯, row
+// click and dialogs still act on the ORDER (each row carries the order's list
+// item). Labels per docs/NAMING.md.
 
-import { SO_STATUSES, SO_TYPES, type SalesOrderListItem } from '@innovic/shared';
+import {
+  SO_STATUSES,
+  SO_TYPES,
+  type SalesOrderLineListItem,
+  type SalesOrderListItem,
+} from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
 import type { DataTableColumn, RowMenuItem } from '@/ui/data';
-import { ROW_TINT } from '@/ui/data';
+import { ROW_TINT, leadColumns } from '@/ui/data';
 import { SO_STATUS_LABEL, SO_TYPE_LABEL } from '../lib/so-status-label';
 import { SoStatusBadge } from './so-status-badge';
 import { SoFulfilmentBadge } from './so-fulfilment-badge';
@@ -23,41 +28,45 @@ import { SoFulfilmentBadge } from './so-fulfilment-badge';
 const SO_TYPE_OPTIONS = SO_TYPES.map((value) => ({ value, label: SO_TYPE_LABEL[value] }));
 const SO_STATUS_OPTIONS = SO_STATUSES.map((value) => ({ value, label: SO_STATUS_LABEL[value] }));
 
-/** Columns off by default on the SO Master sheet — passed to the DataTable's
- *  `defaultHidden`. They stay reachable in ▸ / the Columns menu. */
-export const SO_LIST_HIDDEN_COLUMNS = ['created_on'];
-
-/** Pieces still owed on the order (NAMING.md "Pending"): ordered − dispatched −
- *  the qty dropped by closing lines short (ADR-196). Never below zero. */
-export function soPendingQty(so: SalesOrderListItem): number {
-  return Math.max(0, so.totalQty - so.dispatchedQty - so.shortClosedQty);
+/** Pieces still owed on the LINE (NAMING.md "Pending"): ordered − dispatched;
+ *  nothing once the line is closed short (ADR-196) or cancelled. */
+export function soLinePendingQty(r: SalesOrderLineListItem): number {
+  if (r.lineShortClosedAt || r.lineStatus === 'cancelled') return 0;
+  return Math.max(0, r.lineOrderQty - r.lineDispatchedQty);
 }
 
 /**
- * Whole-row wash by the REAL status + fulfilment enums only (ADR-199 ROW_TINT):
- *   cancelled              → cancelled (grey)
- *   draft                  → pending   (amber)
- *   open + past earliest Due Date → late (red)
- *   closed / dispatched, or fulfilment Completed / Closed → done (green)
- *   everything else (open, in progress) → no wash
+ * Whole-row wash by the REAL status enums only (ADR-199 ROW_TINT), per line:
+ *   order or line cancelled → cancelled (grey)
+ *   draft order             → pending   (amber)
+ *   open order + line past its Due Date with pieces still owed → late (red)
+ *   order closed / dispatched, or nothing owed on the line → done (green)
+ *   everything else → no wash
  * `today` is the IST yyyy-mm-dd the route computes once, so the wash and the
  * Due Date column agree on "late".
  */
-export function soRowTint(so: SalesOrderListItem, today: string): string | undefined {
-  if (so.status === 'cancelled') return ROW_TINT.cancelled;
-  if (so.status === 'draft') return ROW_TINT.pending;
-  const overdue = so.earliestDueDate != null && so.earliestDueDate < today && so.status === 'open';
-  if (overdue) return ROW_TINT.late;
-  if (so.status === 'closed' || so.status === 'dispatched') return ROW_TINT.done;
-  if (so.fulfilmentStatus === 'completed' || so.fulfilmentStatus === 'closed') return ROW_TINT.done;
+export function soLineRowTint(r: SalesOrderLineListItem, today: string): string | undefined {
+  if (r.status === 'cancelled' || r.lineStatus === 'cancelled') return ROW_TINT.cancelled;
+  if (r.status === 'draft') return ROW_TINT.pending;
+  // A line-less SO (one row, no line) owes nothing on a line: no wash.
+  if (r.lineId == null) return undefined;
+  if (lineOverdue(r, today)) return ROW_TINT.late;
+  if (r.status === 'closed' || r.status === 'dispatched') return ROW_TINT.done;
+  if (soLinePendingQty(r) === 0) return ROW_TINT.done;
   return undefined;
+}
+
+function lineOverdue(r: SalesOrderLineListItem, today: string): boolean {
+  return (
+    r.lineDueDate != null && r.lineDueDate < today && r.status === 'open' && soLinePendingQty(r) > 0
+  );
 }
 
 /** JC Qty colour: green once every piece has a job card, amber while some do,
  *  quiet while none do — the rule the card and the old sheet both used. */
-function jcColor(so: SalesOrderListItem): string {
-  if (so.jcQty >= so.totalQty && so.totalQty > 0) return 'var(--green)';
-  if (so.jcQty > 0) return 'var(--amber)';
+function jcColor(r: SalesOrderLineListItem): string {
+  if (r.lineJcQty >= r.lineOrderQty && r.lineOrderQty > 0) return 'var(--green)';
+  if (r.lineJcQty > 0) return 'var(--amber)';
   return 'var(--text3)';
 }
 
@@ -68,53 +77,42 @@ export function soListColumns(opts: {
   onPreviewClientPo: (storagePath: string) => void;
   /** ADR-202 — SO ids with a pending edit; their status cell shows "Draft". */
   draftIds?: Set<string>;
-}): DataTableColumn<SalesOrderListItem>[] {
+}): DataTableColumn<SalesOrderLineListItem>[] {
   const { today, onPreviewClientPo, draftIds } = opts;
   return [
-    {
-      id: 'so_no',
-      sortFilterField: 'soCode',
-      header: 'SO No.',
-      nowrap: true,
-      // The row's ▸ (fit engine) opens the lines; the SO No. link opens the
-      // detail. stopPropagation on the link, not the cell, so clicking the rest
-      // of the cell still opens the row.
-      render: (so) => (
-        <Link
-          to="/sales-orders/$id"
-          params={{ id: so.id }}
-          className="td-code"
-          title="Open the SO Master detail page"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {/* The SYSTEM number only (ADR-207). The office's own number has its
-              own column next to it, so the user can tell the two apart. */}
-          {so.code}
-        </Link>
-      ),
-    },
-    {
-      // ADR-207 — the office's own typed number, its own column beside the
-      // system SO No. so each heading names exactly one of the two numbers.
-      // The id is deliberately NOT the old `internal_so_no`: this column used to
-      // be defaultHidden, and `normalize()` in lib/use-table-layout.ts keeps a
-      // saved hidden flag for any id the code still has. Re-using the old id
-      // would leave the column hidden forever for every user who ever opened
-      // the Columns menu. A new id is treated as added, and is not in
-      // SO_LIST_HIDDEN_COLUMNS, so it shows. Same id as the other 32 screens.
-      id: 'so_internal_no',
-      sortFilterField: 'internalSoNo',
-      header: 'Internal SO No.',
-      nowrap: true,
-      render: (so) =>
-        so.internalSoNo?.trim() ? (
-          <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-            {so.internalSoNo}
-          </span>
-        ) : (
-          <span className="text3">—</span>
-        ),
-    },
+    ...leadColumns<SalesOrderLineListItem>({
+      soNo: (r) => r.code,
+      internalSoNo: (r) => r.internalSoNo,
+      pol: (r) => r.clientPoLineNo,
+      createdOn: (r) => r.lineCreatedAt,
+      itemCode: (r) => r.itemCode,
+      itemRev: (r) => r.itemRevision,
+      // A line-less SO's row has no Item Name → '—'.
+      itemName: (r) => r.itemName || '—',
+      overrides: {
+        so_no: {
+          sortFilterField: 'soCode',
+          // The SYSTEM number (ADR-207) stays a real link — ctrl-click opens
+          // the SO in a new tab; a plain click still opens the row.
+          render: (r) => (
+            <Link
+              to="/sales-orders/$id"
+              params={{ id: r.id }}
+              className="td-code"
+              title="Open the SO Master detail page"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {r.code}
+            </Link>
+          ),
+        },
+        so_internal_no: { sortFilterField: 'internalSoNo' },
+        client_po_line_no: { sortFilterField: 'clientPoLineNo' },
+        created_on: { sortFilterField: 'createdOn' },
+        item_code: { sortFilterField: 'itemCode' },
+        item_name: { sortFilterField: 'itemName' },
+      },
+    }),
     {
       id: 'so_date',
       sortFilterField: 'soDate',
@@ -211,7 +209,7 @@ export function soListColumns(opts: {
       align: 'right',
       className: 'mono fw-700',
       nowrap: true,
-      render: (so) => so.totalQty,
+      render: (r) => r.lineOrderQty,
     },
     {
       id: 'jc_qty',
@@ -221,7 +219,7 @@ export function soListColumns(opts: {
       align: 'right',
       className: 'mono fw-700',
       nowrap: true,
-      render: (so) => <span style={{ color: jcColor(so) }}>{so.jcQty}</span>,
+      render: (r) => <span style={{ color: jcColor(r) }}>{r.lineJcQty}</span>,
     },
     {
       id: 'dispatched_qty',
@@ -232,7 +230,7 @@ export function soListColumns(opts: {
       className: 'mono fw-700',
       headColor: 'var(--green)',
       nowrap: true,
-      render: (so) => <span style={{ color: 'var(--green2)' }}>{so.dispatchedQty}</span>,
+      render: (r) => <span style={{ color: 'var(--green2)' }}>{r.lineDispatchedQty}</span>,
     },
     {
       id: 'pending_qty',
@@ -241,21 +239,20 @@ export function soListColumns(opts: {
       className: 'mono fw-700',
       headColor: 'var(--red)',
       nowrap: true,
-      // ADR-196 — qty dropped by closing lines short is not Pending.
-      render: (so) => <span style={{ color: 'var(--red2)' }}>{soPendingQty(so)}</span>,
+      // ADR-196 — a line closed short owes nothing.
+      render: (r) => <span style={{ color: 'var(--red2)' }}>{soLinePendingQty(r)}</span>,
     },
     {
       id: 'due_date',
-      // The earliest line Due Date (the server's MIN over the SO's lines).
+      // The LINE's own Due Date.
       sortFilterField: 'earliestDueDate',
       kind: 'date',
       header: 'Due Date',
       className: 'mono',
       nowrap: true,
-      render: (so) => {
-        const overdue =
-          so.earliestDueDate != null && so.earliestDueDate < today && so.status === 'open';
-        if (!so.earliestDueDate) return <span className="text2">—</span>;
+      render: (r) => {
+        const overdue = lineOverdue(r, today);
+        if (!r.lineDueDate) return <span className="text2">—</span>;
         return (
           <span
             style={{
@@ -263,7 +260,7 @@ export function soListColumns(opts: {
               fontWeight: overdue ? 700 : undefined,
             }}
           >
-            {fmtDate(so.earliestDueDate)}
+            {fmtDate(r.lineDueDate)}
             {overdue ? ' ⚠' : ''}
           </span>
         );
@@ -291,17 +288,6 @@ export function soListColumns(opts: {
         ) : (
           <span className="text3">—</span>
         ),
-    },
-    {
-      // When the SO record was entered (IST day) — Sort & Filter can pick a
-      // range of it (ADR-200). Off by default; Columns ▾ shows it.
-      id: 'created_on',
-      sortFilterField: 'createdOn',
-      kind: 'date',
-      header: 'Created On',
-      className: 'mono',
-      nowrap: true,
-      render: (so) => fmtDate(so.createdAt),
     },
   ];
 }

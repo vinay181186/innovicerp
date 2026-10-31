@@ -126,35 +126,44 @@ export const JOB_QUEUE_HIDDEN_IDS: string[] = [
 export function jobQueueColumns(opts: { today: string }): DataTableColumn<JobQueueSheetRow>[] {
   const { today } = opts;
   return [
-    // Owner rule 2026-10-31 — the six lead columns first (always shown); JC
-    // No., Sr No and every other fact follow Item Name.
+    // Owner rule 2026-10-31 (ADR-261 amendment) — JC No. first, then the six
+    // lead columns, all locked (always shown); Sr No and every other fact
+    // follow Item Name.
     ...leadColumns<JobQueueSheetRow>({
+      doc: {
+        id: 'jc_no',
+        header: 'JC No.',
+        nowrap: true,
+        render: (r) => (
+          <ActionLink
+            fallback="text"
+            to="/job-cards/$id"
+            params={{ id: r.jcId }}
+            className="td-code cyan"
+            style={{ color: 'inherit', textDecoration: 'underline dotted' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {r.jcCode}
+          </ActionLink>
+        ),
+      },
+      docDate: {
+        id: 'jc_date',
+        kind: 'date',
+        header: 'JC Date',
+        className: 'mono',
+        nowrap: true,
+        render: (r) => fmtDate(r.jcDate ?? null),
+        filterValue: (r) => r.jcDate ?? '',
+      },
       soNo: (r) => r.soCode,
       internalSoNo: (r) => r.soInternalNo,
       pol: (r) => r.clientPoLineNo,
-      // needs API — the queue row carries no created date yet.
-      createdOn: () => null,
+      createdOn: (r) => r.createdAt,
       itemCode: (r) => r.itemCode,
       itemRev: (r) => r.itemRevision,
       itemName: (r) => r.itemName,
     }),
-    {
-      id: 'jc_no',
-      header: 'JC No.',
-      nowrap: true,
-      render: (r) => (
-        <ActionLink
-          fallback="text"
-          to="/job-cards/$id"
-          params={{ id: r.jcId }}
-          className="td-code cyan"
-          style={{ color: 'inherit', textDecoration: 'underline dotted' }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {r.jcCode}
-        </ActionLink>
-      ),
-    },
     {
       id: 'sr_no',
       header: 'Sr No',

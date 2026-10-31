@@ -4,9 +4,10 @@
 // defined in one place.
 //
 // One row per project, every fact its own one-line column (the retired card's
-// stacked name / code / SO / customer block is gone). The first column (Project
-// No.) is always pinned and carries the fit table's ▸ — the row's one expand
-// control — so no chevron is drawn here. Labels: Due Date per docs/NAMING.md
+// stacked name / code / SO / customer block is gone). ADR-261: the six lead
+// columns come first (SO No. · Internal SO No. · POL · Created On · Item Code ·
+// Item Name — POL and item "—", a project has no SO line), then Project No.
+// and Name. Labels: Due Date per docs/NAMING.md
 // row 54 (the brief's "Due" is listed there as a variant to avoid).
 
 import {
@@ -16,7 +17,7 @@ import {
 } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
-import { ProgressBar, ROW_TINT } from '@/ui/data';
+import { leadColumns, ProgressBar, ROW_TINT } from '@/ui/data';
 import type { DataTableColumn } from '@/ui/data';
 
 /** Overdue = past its Due Date and not yet Released — the same test the retired
@@ -69,26 +70,44 @@ export function designProjectColumns(opts: {
 }): DataTableColumn<DesignProjectListItem>[] {
   const { today } = opts;
   return [
-    {
-      id: 'project_no',
-      header: 'Project No.',
-      nowrap: true,
-      // The row's ▸ (fit engine) opens the detail panel; the Project No. link
-      // opens the full project page. stopPropagation on the link only, so the
-      // rest of the cell still opens the row.
-      render: (p) => (
-        <Link
-          to="/design-projects/$id"
-          params={{ id: p.id }}
-          className="td-code"
-          title="Open the Design Project"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {p.code}
-        </Link>
-      ),
-      sortFilterField: 'code',
-    },
+    // ADR-261 lead columns, own number (Project No.) first. A project is header-level (one SO, no SO line and
+    // no item), so POL, Item Code and Item Name read "—".
+    ...leadColumns<DesignProjectListItem>({
+      doc: {
+        id: 'project_no',
+        header: 'Project No.',
+        nowrap: true,
+        // The row's ▸ (fit engine) opens the detail panel; the Project No. link
+        // opens the full project page. stopPropagation on the link only, so the
+        // rest of the cell still opens the row.
+        render: (p) => (
+          <Link
+            to="/design-projects/$id"
+            params={{ id: p.id }}
+            className="td-code"
+            title="Open the Design Project"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {p.code}
+          </Link>
+        ),
+        sortFilterField: 'code',
+      },
+      soNo: (p) => p.soCodeText,
+      internalSoNo: (p) => p.soInternalNo,
+      pol: () => null,
+      createdOn: (p) => p.createdAt,
+      itemCode: () => null,
+      itemName: () => null,
+      overrides: {
+        so_no: { sortFilterField: 'soCode' },
+        so_internal_no: { sortFilterField: 'soInternalNo' },
+        client_po_line_no: { filterable: false },
+        created_on: { sortFilterField: 'createdOn' },
+        item_code: { filterable: false },
+        item_name: { filterable: false, render: () => '—', title: () => '' },
+      },
+    }),
     {
       id: 'name',
       kind: 'text',
@@ -99,26 +118,6 @@ export function designProjectColumns(opts: {
       render: (p) => p.projectName,
       title: (p) => p.projectName,
       sortFilterField: 'projectName',
-    },
-    {
-      id: 'so_no',
-      kind: 'code',
-      header: 'SO No.',
-      className: 'mono text2',
-      nowrap: true,
-      render: (p) => p.soCodeText || '—',
-      sortFilterField: 'soCode',
-    },
-    {
-      // ADR-207 — the office's own Internal SO No., in its own column beside
-      // the system SO No. so the two can be told apart. Older orders have none.
-      id: 'so_internal_no',
-      kind: 'code',
-      header: 'Internal SO No.',
-      className: 'mono fw-700',
-      nowrap: true,
-      render: (p) => <span style={{ color: 'var(--text)' }}>{p.soInternalNo?.trim() || '—'}</span>,
-      sortFilterField: 'soInternalNo',
     },
     {
       id: 'customer',

@@ -221,6 +221,9 @@ export const fixListLineSchema = z.object({
   routeCardCode: z.string().nullable(),
   createdAt: z.string(),
   reason: z.enum(['conflict', 'rev_zero']),
+  /** ADR-261 lead columns: the SO's Internal SO No. (null on a JWSO line). */
+  soInternalNo: z.string().nullable().optional(),
+  clientPoLineNo: z.string().nullable().optional(),
 });
 export type FixListLine = z.infer<typeof fixListLineSchema>;
 
