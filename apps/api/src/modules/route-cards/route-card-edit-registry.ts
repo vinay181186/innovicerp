@@ -43,6 +43,7 @@ import {
   summaryOpsFromInput,
   summaryOpsFromRows,
 } from './route-card-edit-lookups';
+import { readCardDrawing } from './lookup';
 import {
   labelOf,
   overwriteRouteCardFromSource,
@@ -56,13 +57,27 @@ const RC_FORM_KEY: AccessFormKey = 'routecard_create';
 // Labels are the Route Card form's own (the same RC_HEADER_FIELDS the History
 // tab uses — docs/NAMING.md). No Item Code box: moving a card to another item
 // is refused before staging (updateRouteCardOrStage, §20.3 lock order).
-type HeaderKey = 'code' | 'planType' | 'notes';
-const HEADER_KEYS: ReadonlySet<string> = new Set<HeaderKey>(['code', 'planType', 'notes']);
+//
+// Item + Drawing Rev (0232): "Drawing Rev" (set once on an old card) and
+// "Drawing File" (a file adopted by the card's register row) are boxes too.
+type HeaderKey = 'code' | 'planType' | 'notes' | 'drawingRev' | 'drawingFilePath';
+const HEADER_KEYS: ReadonlySet<string> = new Set<HeaderKey>([
+  'code',
+  'planType',
+  'notes',
+  'drawingRev',
+  'drawingFilePath',
+]);
+
+const fileName = (v: unknown): string | null =>
+  v == null || v === '' ? null : (String(v).split('/').pop() ?? String(v));
 
 const RC_EDIT_DIFF_FIELDS: readonly DiffField[] = [
   { key: 'code', label: 'RC No.' },
   { key: 'planType', label: 'Plan Type', format: labelOf(PLAN_TYPE_LABEL) },
   { key: 'notes', label: 'Notes' },
+  { key: 'drawingRev', label: 'Drawing Rev' },
+  { key: 'drawingFilePath', label: 'Drawing File', format: fileName },
   { key: ROUTING_FIELD, label: ROUTING_LABEL },
 ];
 
@@ -86,6 +101,8 @@ interface FilteredRcEdit {
   /** Set = a routing change proposed by a Job Card / plan (not the form). */
   sourceCode: string | null;
   fillRm: boolean;
+  /** Carried with an approved Drawing Rev / Drawing File box. */
+  drawingNo: string | null | undefined;
 }
 
 export const routeCardEditRegistryEntry: DocEditRegistryEntry = {
@@ -148,8 +165,14 @@ export const routeCardEditRegistryEntry: DocEditRegistryEntry = {
       rmQtyPerPiece: rc.rmQtyPerPiece,
     });
 
+    const drawing = await readCardDrawing(tx, rc.itemRevisionId);
     return {
-      doc: { ...rc, routing },
+      doc: {
+        ...rc,
+        routing,
+        drawingRev: drawing.drawingRev,
+        drawingFilePath: drawing.drawingFilePath,
+      },
       updatedAt: rc.updatedAt,
       docCode: rc.code,
       // ADR-253 — only an APPROVED card is live. A Pending Approval / Rejected
@@ -166,6 +189,8 @@ export const routeCardEditRegistryEntry: DocEditRegistryEntry = {
       code: d['code'],
       planType: d['planType'],
       notes: d['notes'] ?? null,
+      drawingRev: d['drawingRev'] ?? null,
+      drawingFilePath: d['drawingFilePath'] ?? null,
       [ROUTING_FIELD]: d['routing'],
     };
   },
@@ -247,6 +272,11 @@ export const routeCardEditRegistryEntry: DocEditRegistryEntry = {
       ...(i.planType !== undefined ? { planType: i.planType } : {}),
       // The writer stores `notes ?? null`, so a left-out note clears it.
       notes: i.notes ?? null,
+      // Left out = the card keeps its own (the writer never clears either).
+      drawingRev: i.drawingRev ?? (target?.doc['drawingRev'] as string | null | undefined) ?? null,
+      drawingFilePath:
+        i.drawingFilePath?.trim() ||
+        ((target?.doc['drawingFilePath'] as string | null | undefined) ?? null),
       [ROUTING_FIELD]: routingSummary(summaryOpsFromInput(i.ops, codes.machines, codes.vendors), {
         rawMaterialGradeText: gradeText,
         rawMaterialSizeText: sizeText,
@@ -276,6 +306,7 @@ export const routeCardEditRegistryEntry: DocEditRegistryEntry = {
       revisionNote: ctx?.firstApply === false ? null : (p.revisionNote ?? null),
       sourceCode: p.sourceCode ?? null,
       fillRm: p.fillRm === true,
+      drawingNo: p.drawingNo,
     };
   },
 
@@ -363,6 +394,11 @@ export const routeCardEditRegistryEntry: DocEditRegistryEntry = {
       // (which may be 'assembly', a value the edit input cannot carry).
       planType: h.planType as UpdateRouteCardInput['planType'],
       notes: 'notes' in h ? ((h.notes as string | null | undefined) ?? null) : cur.notes,
+      // Not approved → undefined: the writer keeps the card's Rev / file.
+      drawingRev: 'drawingRev' in h ? (h.drawingRev as string | null | undefined) : undefined,
+      drawingFilePath:
+        'drawingFilePath' in h ? (h.drawingFilePath as string | null | undefined) : undefined,
+      drawingNo: 'drawingRev' in h || 'drawingFilePath' in h ? f.drawingNo : undefined,
       ...rm,
       ops,
       revisionNote: f.revisionNote,

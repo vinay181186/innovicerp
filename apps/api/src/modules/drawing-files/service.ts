@@ -58,6 +58,7 @@ const SOURCE_LABEL: Record<string, string> = {
   item: 'Item master',
   qc_document: 'QC document',
   so_document: 'SO document',
+  item_revision: 'Drawing Rev',
 };
 
 /**
@@ -129,6 +130,17 @@ async function pathBelongsToCompany(
         -- deleted_at); index op_log_qc_report_path_idx (0216).
         SELECT 1 FROM public.op_log
          WHERE company_id = ${companyId}::uuid AND qc_report_path = ${path}
+        UNION ALL
+        -- Item + Drawing Rev register (0232): the current drawing of ABC/1,
+        -- and every file in its history (a replaced drawing stays openable,
+        -- so a closed Job Card can still show the file it was made with).
+        SELECT 1 FROM public.item_revisions
+         WHERE company_id = ${companyId}::uuid AND deleted_at IS NULL
+           AND drawing_file_path = ${path}
+        UNION ALL
+        SELECT 1 FROM public.item_revision_drawings
+         WHERE company_id = ${companyId}::uuid AND deleted_at IS NULL
+           AND drawing_file_path = ${path}
       ))::int AS "owned"
     `);
     const row = (rs as unknown as Array<Record<string, unknown>>)[0];

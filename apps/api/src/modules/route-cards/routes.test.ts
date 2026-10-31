@@ -51,6 +51,7 @@ beforeAll(async () => {
         revision: 'A',
         uom: 'NOS',
         itemType: 'component',
+        procurementType: 'buy', // not a Drawing Rev test — a MAKE card needs one (0232)
         createdBy: admin.id,
         updatedBy: admin.id,
       },
@@ -61,6 +62,7 @@ beforeAll(async () => {
         revision: 'A',
         uom: 'NOS',
         itemType: 'component',
+        procurementType: 'buy', // not a Drawing Rev test — a MAKE card needs one (0232)
         createdBy: admin.id,
         updatedBy: admin.id,
       },

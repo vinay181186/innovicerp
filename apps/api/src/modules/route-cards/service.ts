@@ -52,6 +52,8 @@ import {
   type ActivityChange,
   type DocumentEditStagedResult,
   ActivityAction,
+  itemRevLabel,
+  normalizeRevision,
   type JcRouteCardWriteBack,
   opSrNo,
   ROUTE_CARD_APPROVAL_LABEL,
@@ -89,6 +91,9 @@ import {
 import { lockDocSeries } from '../../lib/doc-series-lock';
 import { isRouteCardUsable } from '../../lib/route-card-usable';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
+import { isUniqueViolation } from '../../lib/db-retry';
+import { findItemRevision, itemNeedsRev, resolveItemRevision } from '../../lib/item-revision';
+import { findRouteCardForItemRevision, readCardDrawing } from './lookup';
 import { logger } from '../../lib/logger';
 import { emitActivityLog } from '../activity-log/service';
 import {
@@ -433,7 +438,7 @@ export async function listRouteCards(
     const term = input.search ? `%${likeEscape(input.search)}%` : null;
     const searchFrag = term
       ? sql`AND (rc.code ILIKE ${term} ESCAPE '\\' OR i.code ILIKE ${term} ESCAPE '\\'
-          OR i.name ILIKE ${term} ESCAPE '\\')`
+          OR i.name ILIKE ${term} ESCAPE '\\' OR ir.rev ILIKE ${term} ESCAPE '\\')`
       : sql``;
     const itemFrag = input.itemId ? sql`AND rc.item_id = ${input.itemId}::uuid` : sql``;
     // Sort & Filter (ADR-200) — applied to the page AND the count, so `total`
@@ -446,6 +451,7 @@ export async function listRouteCards(
       FROM public.route_cards rc
       LEFT JOIN public.items i ON i.id = rc.item_id AND i.deleted_at IS NULL
       LEFT JOIN public.items rmi ON rmi.id = rc.raw_material_item_id AND rmi.company_id = rc.company_id
+      LEFT JOIN public.item_revisions ir ON ir.id = rc.item_revision_id
       LEFT JOIN LATERAL (
         SELECT COUNT(*) AS op_count
         FROM public.route_card_ops o
@@ -460,6 +466,8 @@ export async function listRouteCards(
     const result = await tx.execute(sql`
       SELECT
         rc.id, rc.company_id AS "companyId", rc.code, rc.item_id AS "itemId",
+        rc.item_revision_id AS "itemRevisionId", ir.rev AS "drawingRev",
+        ir.drawing_file_path AS "drawingFilePath", ir.drawing_no AS "drawingNo",
         rc.current_revision AS "currentRevision",
         rc.raw_material_grade_id AS "rawMaterialGradeId",
         rc.raw_material_grade_text AS "rawMaterialGradeText",
@@ -504,6 +512,10 @@ function toListItem(r: Record<string, unknown>): RouteCardListItem {
     companyId: r['companyId'] as string,
     code: r['code'] as string,
     itemId: r['itemId'] as string,
+    itemRevisionId: (r['itemRevisionId'] as string | null) ?? null,
+    drawingRev: (r['drawingRev'] as string | null) ?? null,
+    drawingFilePath: (r['drawingFilePath'] as string | null) ?? null,
+    drawingNo: (r['drawingNo'] as string | null) ?? null,
     currentRevision: Number(r['currentRevision'] ?? 1),
     rawMaterialGradeId: (r['rawMaterialGradeId'] as string | null) ?? null,
     rawMaterialGradeText: (r['rawMaterialGradeText'] as string | null) ?? null,
@@ -571,6 +583,7 @@ export async function loadRouteCardDetail(
 
   // ADR-253 — who approved / rejected the card, for display.
   const approvalNames = await loadUserNames(tx, [header.approvedBy, header.rejectedBy]);
+  const drawing = await readCardDrawing(tx, header.itemRevisionId);
 
   // Ops with joined machine + machine group + vendor display.
   const opRows = await tx
@@ -613,6 +626,7 @@ export async function loadRouteCardDetail(
     companyId: header.companyId,
     code: header.code,
     itemId: header.itemId,
+    ...drawing,
     currentRevision: header.currentRevision,
     rawMaterialGradeId: header.rawMaterialGradeId,
     rawMaterialGradeText: header.rawMaterialGradeText,
@@ -969,6 +983,27 @@ async function logRouteCardRevision(
 
 // ─── Writes ───────────────────────────────────────────────────────────────
 
+/** 409 for the race the pre-check cannot see: two saves of a card for the same
+ *  Item + Rev (or the same no-Rev item) in the same moment hit the 0232
+ *  partial unique indexes. Anything else → null (rethrow as is). */
+function rcUniqueConflict(e: unknown): ConflictError | null {
+  const raw = isUniqueViolation(e) ? e : (e as { cause?: unknown } | null)?.cause;
+  if (!isUniqueViolation(raw)) return null;
+  const pg = raw as { constraint_name?: unknown; constraint?: unknown };
+  const name = pg.constraint_name ?? pg.constraint;
+  if (name === 'route_cards_company_itemrev_uniq') {
+    return new ConflictError(
+      'A Route Card for this Item + Drawing Rev was just saved by someone else. Reload and edit that one.',
+    );
+  }
+  if (name === 'route_cards_company_item_norev_uniq') {
+    return new ConflictError(
+      'A Route Card for this item was just saved by someone else. Reload and edit that one.',
+    );
+  }
+  return null;
+}
+
 function rcDetailString(code: string, itemCode: string | null): string {
   return itemCode ? `${code} (${itemCode})` : code;
 }
@@ -980,126 +1015,194 @@ export async function createRouteCard(
   await requireFormAccess(user, 'routecard_create', 'entry');
   const companyId = requireCompany(user);
 
-  return withUserContext(user, async (tx) => {
-    // LOCK ORDER — plans BEFORE route_cards (Section 20.3), the same reason the
-    // edit path does it, and NOT because a card row already exists. An earlier
-    // version of this comment claimed create was safe since Execute has no
-    // existing card to contend for; that is only true of saveRouteCardForItem's
-    // UPDATE branch. Its INSERT branch contends for the PARTIAL UNIQUE INDEX
-    // route_cards_company_item_uniq instead: item X has no card, one user saves
-    // a new Route Card for X while another presses Execute on a blank-RM plan
-    // for X, and Execute blocks on this transaction's uncommitted index tuple
-    // while this transaction blocks on the plan row Execute holds — 40P01, raw
-    // database error to whichever loses. Taking the plan locks first makes both
-    // paths plans → route_cards.
-    await lockBackfillCandidates(tx, companyId, input.itemId);
+  try {
+    return await withUserContext(user, async (tx) => {
+      // LOCK ORDER — plans BEFORE route_cards (Section 20.3), the same reason the
+      // edit path does it, and NOT because a card row already exists. An earlier
+      // version of this comment claimed create was safe since Execute has no
+      // existing card to contend for; that is only true of saveRouteCardForItem's
+      // UPDATE branch. Its INSERT branch contends for the PARTIAL UNIQUE INDEX
+      // route_cards_company_item_uniq instead: item X has no card, one user saves
+      // a new Route Card for X while another presses Execute on a blank-RM plan
+      // for X, and Execute blocks on this transaction's uncommitted index tuple
+      // while this transaction blocks on the plan row Execute holds — 40P01, raw
+      // database error to whichever loses. Taking the plan locks first makes both
+      // paths plans → route_cards.
+      await lockBackfillCandidates(tx, companyId, input.itemId);
 
-    // Validate item + capture display label for activity log.
-    const item = await assertItemExists(tx, input.itemId, companyId);
+      // Validate item + capture display label for activity log.
+      const item = await assertItemExists(tx, input.itemId, companyId);
 
-    // Routing rule: a QC op may not sit directly after an OSP op. Route cards
-    // have no rework/grandfather exemption — a routing saved as the item's
-    // master must be clean. (Ops are ordered as sent; op_seq = index + 1.)
-    assertNoQcDirectlyAfterOutsource(input.ops);
+      // Routing rule: a QC op may not sit directly after an OSP op. Route cards
+      // have no rework/grandfather exemption — a routing saved as the item's
+      // master must be clean. (Ops are ordered as sent; op_seq = index + 1.)
+      assertNoQcDirectlyAfterOutsource(input.ops);
 
-    // Validate referenced machines + vendors exist.
-    const machineIds = input.ops.map((o) => o.machineId).filter((x): x is string => Boolean(x));
-    const vendorIds = input.ops.map((o) => o.ospVendorId).filter((x): x is string => Boolean(x));
-    const machinesLookup = await assertMachineIdsExist(tx, machineIds, companyId);
-    const vendorsLookup = await assertVendorIdsExist(tx, vendorIds, companyId);
+      // Validate referenced machines + vendors exist.
+      const machineIds = input.ops.map((o) => o.machineId).filter((x): x is string => Boolean(x));
+      const vendorIds = input.ops.map((o) => o.ospVendorId).filter((x): x is string => Boolean(x));
+      const machinesLookup = await assertMachineIdsExist(tx, machineIds, companyId);
+      const vendorsLookup = await assertVendorIdsExist(tx, vendorIds, companyId);
 
-    // One active RC per item per company.
-    const existing = await tx
-      .select({ id: routeCards.id, code: routeCards.code })
-      .from(routeCards)
-      .where(
-        and(
-          eq(routeCards.companyId, companyId),
-          eq(routeCards.itemId, input.itemId),
-          isNull(routeCards.deletedAt),
-        ),
-      )
-      .limit(1);
-    if (existing.length > 0) {
-      throw new ConflictError(
-        `An active Route Card already exists for ${item.code} (${existing[0]!.code}). Edit that one to add a revision.`,
+      // Item + Drawing Rev register (0232): a MAKE item's card names its Rev.
+      const needsRev = await itemNeedsRev(tx, companyId, input.itemId);
+      if (needsRev && !input.drawingRev) throw new ValidationError('Drawing Rev is required');
+
+      // Auto code when not supplied; reject if supplied + already used.
+      // S2: a typed number is checked under the same series lock (lib/doc-series-lock).
+      await lockDocSeries(tx, companyId, 'route_cards');
+      const code = input.code?.trim() || (await nextRouteCardCode(tx, companyId));
+      if (input.code) {
+        const dup = await tx
+          .select({ id: routeCards.id })
+          .from(routeCards)
+          .where(
+            and(
+              eq(routeCards.companyId, companyId),
+              eq(routeCards.code, code),
+              isNull(routeCards.deletedAt),
+            ),
+          )
+          .limit(1);
+        if (dup.length > 0) throw new ConflictError(`Route Card No. "${code}" already exists`);
+      }
+
+      // ABC/<rev>: found or created inside THIS transaction (lib/item-revision,
+      // the one writer of the register), so card and register commit together.
+      const rev = needsRev
+        ? await resolveItemRevision(tx, user, companyId, {
+            itemId: input.itemId,
+            rev: input.drawingRev,
+            drawingFilePath: input.drawingFilePath,
+            drawingNo: input.drawingNo,
+            sourceType: 'route_card',
+            sourceRef: code,
+          })
+        : null;
+
+      // One live card per Item + Rev (old / Buy cards: one per item with no Rev).
+      const existing = await findRouteCardForItemRevision(
+        tx,
+        companyId,
+        input.itemId,
+        rev?.id ?? null,
+      );
+      if (existing) {
+        throw new ConflictError(
+          rev
+            ? `${existing.code} already exists for ${itemRevLabel(item.code, rev.rev)}. Edit that one to add a revision.`
+            : `An active Route Card already exists for ${item.code} (${existing.code}). Edit that one to add a revision.`,
+        );
+      }
+
+      const rawMaterial = await resolveRcRawMaterial(tx, companyId, input);
+
+      const inserted = await tx
+        .insert(routeCards)
+        .values({
+          companyId,
+          code,
+          itemId: input.itemId,
+          itemRevisionId: rev?.id ?? null,
+          currentRevision: 0,
+          ...rawMaterial,
+          notes: input.notes ?? null,
+          planType: input.planType ?? 'manufacture',
+          // ADR-253 — every new card waits for approval (no switch). Written
+          // explicitly rather than left to the column default.
+          approvalStatus: 'pending',
+          createdBy: user.id,
+          updatedBy: user.id,
+        })
+        .returning();
+      const header = inserted[0]!;
+
+      const opValues = assignOpValues(input.ops, header.id, companyId, user.id);
+      await tx.insert(routeCardOps).values(opValues);
+
+      const snapshot = buildOpsSnapshot(input.ops, machinesLookup, vendorsLookup);
+      await tx.insert(routeCardRevisions).values({
+        companyId,
+        routeCardId: header.id,
+        revisionNo: 0,
+        notes: 'Initial creation',
+        opsSnapshot: snapshot,
+        createdBy: user.id,
+      });
+
+      await emitActivityLog(
+        tx,
+        {
+          action: ActivityAction.Create,
+          entity: 'RouteCard',
+          entityId: header.id,
+          refId: header.code,
+          detail: `${rcDetailString(header.code, item.code)} — sent for approval`,
+        },
+        companyId,
+        user,
+      );
+
+      // ADR-253 — NO raw-material backfill here any more. A new card is
+      // Pending Approval and not usable, so its raw material must not reach the
+      // waiting plans yet; the T2 backfill (plan-rm-backfill) runs when the card
+      // is APPROVED (approveRouteCard, ./approval.ts). The plans pre-lock above
+      // stays: it is about the partial unique index, not the backfill.
+
+      return loadRouteCardDetail(tx, header.id, companyId);
+    });
+  } catch (e) {
+    throw rcUniqueConflict(e) ?? e;
+  }
+}
+
+/** Drawing Rev rules on an edit — READ ONLY (the staging precheck runs this
+ *  too, and must not create register rows):
+ *   • a card that has a Drawing Rev keeps it (no other Rev, no other item);
+ *   • an old card with none may have one SET, if no other live card holds
+ *     that Item + Rev and an offered file does not clash with the register's. */
+async function assertDrawingRevEdit(
+  tx: DbTransaction,
+  companyId: string,
+  id: string,
+  header: typeof routeCards.$inferSelect,
+  input: UpdateRouteCardInput,
+  itemCode: string,
+): Promise<void> {
+  if (header.itemRevisionId) {
+    const cur = await readCardDrawing(tx, header.itemRevisionId);
+    const label = itemRevLabel(itemCode, cur.drawingRev);
+    if (input.itemId !== header.itemId) {
+      throw new ValidationError(
+        `This Route Card is for ${label} — it cannot move to another item. Create a Route Card for that item instead.`,
       );
     }
-
-    // Auto code when not supplied; reject if supplied + already used.
-    // S2: a typed number is checked under the same series lock (lib/doc-series-lock).
-    await lockDocSeries(tx, companyId, 'route_cards');
-    const code = input.code?.trim() || (await nextRouteCardCode(tx, companyId));
-    if (input.code) {
-      const dup = await tx
-        .select({ id: routeCards.id })
-        .from(routeCards)
-        .where(
-          and(
-            eq(routeCards.companyId, companyId),
-            eq(routeCards.code, code),
-            isNull(routeCards.deletedAt),
-          ),
-        )
-        .limit(1);
-      if (dup.length > 0) throw new ConflictError(`Route Card No. "${code}" already exists`);
+    if (input.drawingRev && normalizeRevision(input.drawingRev) !== cur.drawingRev) {
+      throw new ValidationError(
+        `This Route Card is for ${label} — its Drawing Rev cannot change. Create a new Route Card for the new Rev.`,
+      );
     }
-
-    const rawMaterial = await resolveRcRawMaterial(tx, companyId, input);
-
-    const inserted = await tx
-      .insert(routeCards)
-      .values({
-        companyId,
-        code,
-        itemId: input.itemId,
-        currentRevision: 0,
-        ...rawMaterial,
-        notes: input.notes ?? null,
-        planType: input.planType ?? 'manufacture',
-        // ADR-253 — every new card waits for approval (no switch). Written
-        // explicitly rather than left to the column default.
-        approvalStatus: 'pending',
-        createdBy: user.id,
-        updatedBy: user.id,
-      })
-      .returning();
-    const header = inserted[0]!;
-
-    const opValues = assignOpValues(input.ops, header.id, companyId, user.id);
-    await tx.insert(routeCardOps).values(opValues);
-
-    const snapshot = buildOpsSnapshot(input.ops, machinesLookup, vendorsLookup);
-    await tx.insert(routeCardRevisions).values({
-      companyId,
-      routeCardId: header.id,
-      revisionNo: 0,
-      notes: 'Initial creation',
-      opsSnapshot: snapshot,
-      createdBy: user.id,
-    });
-
-    await emitActivityLog(
-      tx,
-      {
-        action: ActivityAction.Create,
-        entity: 'RouteCard',
-        entityId: header.id,
-        refId: header.code,
-        detail: `${rcDetailString(header.code, item.code)} — sent for approval`,
-      },
-      companyId,
-      user,
+    const offered = input.drawingFilePath?.trim() || null;
+    if (offered && cur.drawingFilePath && offered !== cur.drawingFilePath) {
+      throw new ValidationError(
+        `Drawing differs from ${label} — make a new Drawing Rev or use Replace drawing with a reason`,
+      );
+    }
+    return;
+  }
+  if (!input.drawingRev || !(await itemNeedsRev(tx, companyId, input.itemId))) return;
+  const reg = await findItemRevision(tx, companyId, input.itemId, input.drawingRev);
+  if (!reg) return;
+  const label = itemRevLabel(itemCode, normalizeRevision(input.drawingRev));
+  const other = await findRouteCardForItemRevision(tx, companyId, input.itemId, reg.id);
+  if (other && other.id !== id)
+    throw new ConflictError(`${other.code} already exists for ${label}`);
+  const offered = input.drawingFilePath?.trim() || null;
+  if (offered && reg.drawingFilePath && offered !== reg.drawingFilePath) {
+    throw new ValidationError(
+      `Drawing differs from ${label} — make a new Drawing Rev or use Replace drawing with a reason`,
     );
-
-    // ADR-253 — NO raw-material backfill here any more. A new card is
-    // Pending Approval and not usable, so its raw material must not reach the
-    // waiting plans yet; the T2 backfill (plan-rm-backfill) runs when the card
-    // is APPROVED (approveRouteCard, ./approval.ts). The plans pre-lock above
-    // stays: it is about the partial unique index, not the backfill.
-
-    return loadRouteCardDetail(tx, header.id, companyId);
-  });
+  }
 }
 
 /** The checks an edit must pass before anything is written — ONE place, used
@@ -1129,7 +1232,10 @@ export async function validateRouteCardEdit(
   // Validate item exists (may have changed if user re-pointed).
   const item = await assertItemExists(tx, input.itemId, companyId);
 
-  // If item changed, ensure no other active RC owns the new item.
+  await assertDrawingRevEdit(tx, companyId, id, header, input, item.code);
+
+  // If item changed, ensure no other active no-Rev RC owns the new item (a
+  // card with a Drawing Rev cannot move — assertDrawingRevEdit).
   if (input.itemId !== header.itemId) {
     const other = await tx
       .select({ id: routeCards.id, code: routeCards.code })
@@ -1139,6 +1245,7 @@ export async function validateRouteCardEdit(
           eq(routeCards.companyId, companyId),
           eq(routeCards.itemId, input.itemId),
           isNull(routeCards.deletedAt),
+          isNull(routeCards.itemRevisionId),
           sql`${routeCards.id} != ${id}::uuid`,
         ),
       )
@@ -1234,7 +1341,11 @@ export async function updateRouteCard(
   // engine's applyEdit can replay an approved edit for an approver who holds
   // `approve` but not `edit` (the same split as updateBomMaster).
   await requireFormAccess(user, 'routecard_create', 'edit');
-  return withUserContext(user, (tx) => updateRouteCardTx(tx, id, input, user));
+  try {
+    return await withUserContext(user, (tx) => updateRouteCardTx(tx, id, input, user));
+  } catch (e) {
+    throw rcUniqueConflict(e) ?? e;
+  }
 }
 
 /**
@@ -1397,6 +1508,30 @@ export async function updateRouteCardTx(
     headerChanges.push(`Notes ${noteVal(header.notes)} → ${noteVal(input.notes)}`);
   }
 
+  // Item + Drawing Rev (0232). validateRouteCardEdit already refused a Rev
+  // change on a card that has one; here an old card gets its Rev SET, or a
+  // card's register row adopts an offered file — via the register's one
+  // writer, inside this transaction.
+  let itemRevisionId = header.itemRevisionId;
+  const revChanges: ActivityChange[] = [];
+  const curDrawing = await readCardDrawing(tx, header.itemRevisionId);
+  const revText = input.drawingRev ?? curDrawing.drawingRev;
+  if (revText && (input.drawingRev || input.drawingFilePath)) {
+    const r = await resolveItemRevision(tx, user, companyId, {
+      itemId: input.itemId,
+      rev: revText,
+      drawingFilePath: input.drawingFilePath,
+      drawingNo: input.drawingNo,
+      sourceType: 'route_card',
+      sourceRef: input.code,
+    });
+    if (r && r.id !== header.itemRevisionId) {
+      itemRevisionId = r.id;
+      headerChanges.push(`Drawing Rev — → ${r.rev}`);
+      revChanges.push({ field: 'drawingRev', label: 'Drawing Rev', before: null, after: r.rev });
+    }
+  }
+
   // ADR-197 — the same header, as a person reads it, for the log's
   // before → after. Read here, before the UPDATE below.
   const rmCodes = await rmItemCodes(tx, companyId, [
@@ -1442,6 +1577,7 @@ export async function updateRouteCardTx(
     .set({
       code: input.code,
       itemId: input.itemId,
+      itemRevisionId,
       ...rawMaterial,
       notes: input.notes ?? null,
       planType: input.planType ?? header.planType,
@@ -1482,6 +1618,7 @@ export async function updateRouteCardTx(
     { id, code: input.code },
     [
       ...diffFields(beforeView, afterView, RC_HEADER_FIELDS),
+      ...revChanges,
       revChange(header.currentRevision, replaced.newRevision),
       ...(resubmit ? [rcStatusChange('rejected', 'pending')] : []),
     ],
@@ -1599,6 +1736,7 @@ export async function softDeleteRouteCard(
       companyId: header.companyId,
       code: header.code,
       itemId: header.itemId,
+      ...(await readCardDrawing(tx, header.itemRevisionId)),
       currentRevision: header.currentRevision,
       rawMaterialGradeId: header.rawMaterialGradeId,
       rawMaterialGradeText: header.rawMaterialGradeText,
@@ -2388,6 +2526,10 @@ export async function saveRouteCardForItem(
    *  optional: there are only three callers and each one has this to hand, and
    *  an optional argument is exactly how it went missing in the first place. */
   rawMaterial: ResolvedRawMaterial,
+  /** Item + Drawing Rev (0232) of the source document. Required, not optional,
+   *  for the same reason as rawMaterial: given → the card of THAT Item + Rev
+   *  (created with it when there is none); null → the item's old no-Rev card. */
+  itemRevisionId: string | null,
 ): Promise<JcRouteCardWriteBack | null> {
   // Returns what was written (null = the card was not touched) so the saving
   // screen can tell the user "Route Card IN-RC-… updated to Rev n" instead of
@@ -2429,8 +2571,12 @@ export async function saveRouteCardForItem(
     .where(
       and(
         eq(routeCards.companyId, companyId),
-        eq(routeCards.itemId, itemId),
         isNull(routeCards.deletedAt),
+        // One card per Item + Rev; a no-Rev source finds the old no-Rev card
+        // (same rule as findRouteCardForItemRevision, ./lookup.ts).
+        itemRevisionId
+          ? eq(routeCards.itemRevisionId, itemRevisionId)
+          : and(eq(routeCards.itemId, itemId), isNull(routeCards.itemRevisionId)),
       ),
     )
     .limit(1);
@@ -2567,6 +2713,7 @@ export async function saveRouteCardForItem(
       companyId,
       code,
       itemId,
+      itemRevisionId,
       currentRevision: 0,
       ...rawMaterial,
       notes: null,

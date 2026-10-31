@@ -69,6 +69,7 @@ import { ensurePartyMaterial, ensureRmItemForOrderItem } from '../../lib/jw-rm';
 import { jwLineUsage, lockJwLine, recomputeJwHeaderStatus } from '../../lib/jw-line-state';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
+import { type LineRevResult, resolveLineRevision } from '../item-revisions/line-rev';
 import { assertNoPendingCancel } from '../cancel-requests/pending-guard';
 import { rehearseInSavepoint } from '../document-edits/line-boxes';
 import { assertBomUsableForJobWork, cascadeBomToJwLine } from '../bom-master/cascade';
@@ -1032,6 +1033,7 @@ function toJobWorkOrderLine(
     // back exactly as the sales-order line reads them.
     revision: row.revision,
     drawingFilePath: row.drawingFilePath,
+    itemRevisionId: row.itemRevisionId ?? null,
     // Item Master product image (0136) — the thumbnail next to code · name.
     itemImagePath: master?.imagePath ?? null,
     uom: row.uom,
@@ -1191,6 +1193,19 @@ export async function createJobWorkOrder(
       const lineValues: Array<typeof jobWorkOrderLines.$inferInsert> = [];
       for (const [i, l] of input.lines.entries()) {
         const rm = await resolveRm(l.itemId);
+        // Item + Drawing Rev register (0232). A line with no typed Rev (the
+        // '0' default below) registers nothing — item_revision_id stays null.
+        const lr = await resolveLineRevision(tx, user, companyId, {
+          kind: 'jw',
+          orderId: header.id,
+          docCode: code,
+          lineNo: i + 1,
+          itemId: l.itemId,
+          rev: l.revision,
+          sentFile: l.drawingFilePath,
+          sentDrawingNo: l.drawingNo,
+          stored: null,
+        });
         lineValues.push({
           companyId,
           jobWorkOrderId: header.id,
@@ -1206,7 +1221,10 @@ export async function createJobWorkOrder(
           // line without asking a human have no Rev to give; those land on '0',
           // the column's DB default. ADR-177: stored upper-cased.
           revision: l.revision !== undefined ? normalizeRevision(l.revision) : '0',
-          drawingFilePath: l.drawingFilePath ?? null,
+          drawingFilePath:
+            lr.drawingFilePath !== undefined ? lr.drawingFilePath : (l.drawingFilePath ?? null),
+          itemRevisionId: lr.itemRevisionId,
+          ...(l.drawingNo ? {} : lr.registerDrawingNo ? { drawingNo: lr.registerDrawingNo } : {}),
           // ADR-236: the CUSTOMER's PO line number (required) and the
           // optional line note — stored on the JWSO line only.
           clientPoLineNo: l.clientPoLineNo,
@@ -1459,6 +1477,7 @@ export async function updateJobWorkOrderTx(
             showMoney,
             resolveRm,
             jwDate: h.jwDate ?? existingHdr.jwDate,
+            jwCode: existingHdr.code,
           })
         : [];
 
@@ -1688,6 +1707,8 @@ async function mergeLines(
     resolveRm: RmResolver;
     /** The JWSO date after this save — a line's due date may not precede it. */
     jwDate: string;
+    /** The JWSO code, for the Drawing Rev register's source ref / D1 log. */
+    jwCode: string;
   },
 ): Promise<JwLineLog[]> {
   const { jobWorkOrderId, companyId, inputLines, existing, usage, user, showMoney, resolveRm } = p;
@@ -1832,6 +1853,27 @@ async function mergeLines(
     }
     if (u.data.drawingFilePath !== undefined)
       lineUpdate['drawingFilePath'] = u.data.drawingFilePath ?? null;
+    // Item + Drawing Rev register (0232) + D1 — the line links to ABC/<rev>; a
+    // Rev change moves OPEN Job Cards / plans / PROs, refused when all its Job
+    // Cards are closed (item-revisions/line-rev.ts). File copy follows.
+    const lr = await resolveLineRevision(tx, user, companyId, {
+      kind: 'jw',
+      orderId: jobWorkOrderId,
+      docCode: p.jwCode,
+      lineNo: before.lineNo,
+      itemId: u.data.itemId,
+      rev: u.data.revision,
+      sentFile: u.data.drawingFilePath,
+      sentDrawingNo: u.data.drawingNo,
+      stored: before,
+    });
+    if (lr.touched) {
+      lineUpdate['itemRevisionId'] = lr.itemRevisionId;
+      if (lr.drawingFilePath !== undefined) lineUpdate['drawingFilePath'] = lr.drawingFilePath;
+      if (lr.registerDrawingNo && !(u.data.drawingNo ?? before.drawingNo)) {
+        lineUpdate['drawingNo'] = lr.registerDrawingNo;
+      }
+    }
     // UOM only changes when it is sent.
     if (u.data.uom !== undefined) lineUpdate['uom'] = u.data.uom;
     if (u.data.orderQty !== before.orderQty) {
@@ -1885,8 +1927,26 @@ async function mergeLines(
        WHERE job_work_order_id = ${jobWorkOrderId}::uuid
     `)) as unknown as Array<{ n: number }>;
     const startFrom = Number(maxRows[0]?.n ?? 0) + 1;
+    // Item + Drawing Rev register (0232) — same as the create path.
+    const newRevs: LineRevResult[] = [];
+    for (const [i, l] of toInsert.entries()) {
+      newRevs.push(
+        await resolveLineRevision(tx, user, companyId, {
+          kind: 'jw',
+          orderId: jobWorkOrderId,
+          docCode: p.jwCode,
+          lineNo: startFrom + i,
+          itemId: l.itemId,
+          rev: l.revision,
+          sentFile: l.drawingFilePath,
+          sentDrawingNo: l.drawingNo,
+          stored: null,
+        }),
+      );
+    }
     const values = toInsert.map((l, i) => {
       const lineNo = startFrom + i;
+      const lr = newRevs[i]!;
       if (l.dueDate) assertDueNotBeforeJwDate(`Ln ${lineNo}`, l.dueDate, p.jwDate);
       const rm = rmByItem.get(l.itemId)!;
       return {
@@ -1901,7 +1961,10 @@ async function mergeLines(
         // Same as the create path: the Rev the user typed, or '0' when nobody
         // was asked. ADR-177: stored upper-cased.
         revision: l.revision !== undefined ? normalizeRevision(l.revision) : '0',
-        drawingFilePath: l.drawingFilePath ?? null,
+        drawingFilePath:
+          lr.drawingFilePath !== undefined ? lr.drawingFilePath : (l.drawingFilePath ?? null),
+        itemRevisionId: lr.itemRevisionId,
+        ...(l.drawingNo ? {} : lr.registerDrawingNo ? { drawingNo: lr.registerDrawingNo } : {}),
         // ADR-236: same as the create path.
         clientPoLineNo: l.clientPoLineNo,
         remarks: l.remarks ?? null,

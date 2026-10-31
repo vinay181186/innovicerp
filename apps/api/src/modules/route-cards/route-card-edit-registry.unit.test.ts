@@ -403,7 +403,14 @@ describe('Route Card edit-approval — review fixes', () => {
 
   it('no Item Code box (a re-point is refused before staging)', () => {
     const labels = entry.diffFields(targetOf(card)).map((f) => f.label);
-    expect(labels).toEqual(['RC No.', 'Plan Type', 'Notes', 'Operations']);
+    expect(labels).toEqual([
+      'RC No.',
+      'Plan Type',
+      'Notes',
+      'Drawing Rev',
+      'Drawing File',
+      'Operations',
+    ]);
   });
 
   it('header-only approval asks the writer not to re-validate the stored routing', async () => {
