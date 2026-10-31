@@ -1,5 +1,5 @@
-/* ADR-250 — the Approval inbox rows, status pills and action symbols (ADR-264:
-   shown in the home's Approvals view). Tokens only; see home.css. */
+/* ADR-250/264 — the home's panel, empty line, View-all line and status pills.
+   Tokens only; see home.css. */
 
 .dh-panel {
   background: var(--bg2);
@@ -16,85 +16,6 @@
   font-size: var(--fs-sm);
 }
 
-/* ── document rows ── */
-.dh-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1.5fr) 64px 104px 84px;
-  gap: 4px 10px;
-  align-items: center;
-  padding: 5px 12px;
-  border-bottom: 1px solid var(--bg3);
-}
-.dh-row:last-child {
-  border-bottom: 0;
-}
-.dh-row.dh-hd {
-  font-size: var(--fs-xs);
-  color: var(--text3);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  padding-block: 4px;
-}
-.dh-row.dh-ap {
-  grid-template-columns: 22px minmax(0, 1.25fr) minmax(0, 1.5fr) 64px 104px 84px;
-}
-.dh-row .dh-d {
-  min-width: 0;
-}
-.dh-row .dh-q {
-  text-align: right;
-  font-family: var(--mono);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.dh-row .dh-a {
-  display: flex;
-  gap: 4px;
-  justify-content: flex-end;
-}
-.dh-sub {
-  font-size: var(--fs-sm);
-  color: var(--text3);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.dh-row .dh-it {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
-}
-@media (max-width: 620px) {
-  .dh-row,
-  .dh-row.dh-ap {
-    grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-areas: 'd a' 'i p' 'i q';
-  }
-  .dh-row.dh-ap > input {
-    display: none;
-  }
-  .dh-row .dh-d {
-    grid-area: d;
-  }
-  .dh-row .dh-it {
-    grid-area: i;
-    white-space: normal;
-  }
-  .dh-row .dh-q {
-    grid-area: q;
-  }
-  .dh-row .dh-p {
-    grid-area: p;
-    justify-self: end;
-  }
-  .dh-row .dh-a {
-    grid-area: a;
-  }
-  .dh-row.dh-hd {
-    display: none;
-  }
-}
 .dh-pill {
   display: inline-block;
   border-radius: 999px;
@@ -115,43 +36,4 @@
 .dh-pill.t-ok {
   background: var(--green3);
   color: var(--green2);
-}
-
-/* icon action buttons / links */
-.dh-ic {
-  font: inherit;
-  width: 26px;
-  height: 24px;
-  display: inline-grid;
-  place-items: center;
-  border: 1px solid var(--border);
-  background: var(--bg2);
-  color: var(--blue);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  font-size: var(--fs-body);
-  line-height: 1;
-  padding: 0;
-  text-decoration: none;
-}
-.dh-ic:hover {
-  border-color: var(--blue);
-}
-.dh-ic.k-approve {
-  color: var(--green2);
-}
-.dh-ic.k-reject {
-  color: var(--red2);
-}
-.dh-ic[aria-busy='true'] {
-  cursor: progress;
-}
-
-.dh-selbar {
-  display: flex;
-  gap: var(--sp-2);
-  align-items: center;
-  padding: 5px 12px;
-  background: var(--blue3);
-  font-size: var(--fs-sm);
 }

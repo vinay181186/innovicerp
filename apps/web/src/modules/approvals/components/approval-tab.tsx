@@ -40,7 +40,7 @@ export const APPROVAL_VIEWS: Array<{ key: ApprovalView; label: string }> = [
 
 /** The visible ✓ / ✗ for one pending row (bug 1). While that row is being
  *  decided it shows "deciding…" and no buttons (bug 2 — instant lock). */
-function ApprovalRowActions({
+export function ApprovalRowActions({
   busy,
   onApprove,
   onReject,
@@ -247,11 +247,7 @@ export function ApprovalTab<T>(props: ApprovalTabProps<T>): React.JSX.Element {
       }
     : undefined;
 
-  const empty = searching
-    ? emptyNoMatch
-    : view === 'pending'
-      ? emptyPending
-      : emptyDecided;
+  const empty = searching ? emptyNoMatch : view === 'pending' ? emptyPending : emptyDecided;
 
   return (
     <div className="page-fill">

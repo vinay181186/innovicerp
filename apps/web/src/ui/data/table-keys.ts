@@ -172,6 +172,8 @@ export const TABLE_KEYS = {
   dashCheck: 'dash-check',
   /** Home (ADR-264) Day Log view: today's entries. */
   dashDayLog: 'dash-day-log',
+  /** Home (ADR-264) Approvals view: documents waiting for my tick. */
+  dashApproval: 'dash-approval',
 } as const;
 
 export type TableKey = (typeof TABLE_KEYS)[keyof typeof TABLE_KEYS];

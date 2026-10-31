@@ -1,94 +1,93 @@
 // ADR-250 — Approval inbox on the home. Rendered only when the server sends
 // `approvals` (the caller holds an Approve tick). Same rows as GET
 // /approvals/inbox; ✓ / ✕ call the Approvals page's own mutations
-// (use-approval-actions.ts). ADR-264: shown inside the home's Approvals view;
-// the "Sent by me" tab is gone (owner decision).
+// (use-approval-actions.ts). ADR-264: shown inside the home's Approvals view,
+// in THE table (DataTable) with the Approvals page's own row ✓ / ✗ — the
+// hand-built rows are gone (owner 31-Oct: "should be uniform").
 
-import type { ApprovalInboxResponse } from '@innovic/shared';
+import type { ApprovalInboxResponse, ApprovalInboxRow } from '@innovic/shared';
 import { useMemo, useState } from 'react';
-import { ActionLink } from '@/components/shared/action-link';
 import { fmtDate } from '@/lib/date';
 import { ApprovalRejectDialog } from '@/modules/approvals/components/approval-reject-dialog';
+import { ApprovalRowActions } from '@/modules/approvals/components/approval-tab';
+import { DataTable, type DataTableColumn } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { type InboxItem, inboxKey, useApprovalActions } from '../use-approval-actions';
-import { fmtAmount, fmtQty, ItemCell, RowHead, StatusPill } from './dash-row';
-import { DocRef, linkProps } from './dash-text';
-import { Empty, ViewAll } from './home-panel';
+import { fmtAmount, fmtQty } from './dash-row';
+import { DocRef } from './dash-text';
+import { ViewAll } from './home-panel';
 
-function InboxRow({
-  item,
-  selected,
-  busy,
-  onSelect,
-  onApprove,
-  onReject,
-}: {
-  item: InboxItem;
-  selected: boolean;
-  busy: boolean;
-  onSelect: (on: boolean) => void;
-  onApprove: () => void;
-  onReject: () => void;
-}): React.JSX.Element {
-  const r = item.row;
-  const sub = [r.vendorName, r.createdByName ? `from ${r.createdByName}` : null]
-    .filter(Boolean)
-    .join(' · ');
-  return (
-    <div className="dh-row dh-ap" aria-busy={busy}>
-      <input
-        type="checkbox"
-        checked={selected}
-        aria-label={`Select ${r.docCode}`}
-        onChange={(e) => onSelect(e.target.checked)}
-      />
-      <div className="dh-d">
-        <span className="dh-code">
-          <DocRef code={r.docCode} href={r.navPage} />
+const text = (v: string | null): string => v ?? '—';
+
+function columns(showAmount: boolean): DataTableColumn<InboxItem>[] {
+  const r = (i: InboxItem): ApprovalInboxRow => i.row;
+  return [
+    {
+      id: 'doc',
+      header: 'Document',
+      kind: 'code',
+      filterValue: (i) => r(i).docCode,
+      render: (i) => (
+        <span className="dh-doc">
+          <DocRef code={r(i).docCode} href={r(i).navPage} />
         </span>
-        {sub ? <div className="dh-sub">{sub}</div> : null}
-      </div>
-      <ItemCell
-        code={r.itemCode}
-        name={r.itemName}
-        extra={r.docAmount == null ? undefined : fmtAmount(r.docAmount)}
-      />
-      <div className="dh-q">{r.docQty == null ? '—' : fmtQty(r.docQty)}</div>
-      <div className="dh-p">
-        <StatusPill label={fmtDate(r.createdAt)} tone="none" />
-      </div>
-      <div className="dh-a">
-        <button
-          type="button"
-          className="dh-ic k-approve"
-          title={`Approve ${r.docCode}`}
-          aria-label={`Approve ${r.docCode}`}
-          aria-busy={busy}
-          onClick={onApprove}
-        >
-          ✓
-        </button>
-        <button
-          type="button"
-          className="dh-ic k-reject"
-          title={`Reject ${r.docCode}`}
-          aria-label={`Reject ${r.docCode}`}
-          aria-busy={busy}
-          onClick={onReject}
-        >
-          ✕
-        </button>
-        <ActionLink
-          {...linkProps(r.navPage)}
-          check={r.navPage}
-          className="dh-ic k-open"
-          title={`Open ${r.docCode}`}
-          aria-label={`Open ${r.docCode}`}
-        >
-          ↗
-        </ActionLink>
-      </div>
-    </div>
-  );
+      ),
+    },
+    {
+      id: 'item_code',
+      header: 'Item Code',
+      kind: 'code',
+      filterValue: (i) => r(i).itemCode,
+      render: (i) => (r(i).itemCode ? <span className="dh-code">{r(i).itemCode}</span> : '—'),
+    },
+    {
+      id: 'item_name',
+      header: 'Item Name',
+      kind: 'text',
+      ellipsis: true,
+      className: 'text3',
+      filterValue: (i) => r(i).itemName,
+      title: (i) => r(i).itemName ?? '',
+      render: (i) => text(r(i).itemName),
+    },
+    {
+      id: 'qty',
+      header: 'Qty',
+      kind: 'num',
+      align: 'right',
+      filterValue: (i) => r(i).docQty,
+      render: (i) => (r(i).docQty == null ? '—' : fmtQty(r(i).docQty as number)),
+    },
+    ...(showAmount
+      ? [
+          {
+            id: 'amount',
+            header: 'Subtotal',
+            kind: 'num' as const,
+            align: 'right' as const,
+            filterValue: (i: InboxItem) => r(i).docAmount,
+            render: (i: InboxItem) =>
+              r(i).docAmount == null ? '—' : fmtAmount(r(i).docAmount as number),
+          },
+        ]
+      : []),
+    {
+      id: 'raised_by',
+      header: 'Raised By',
+      kind: 'text',
+      ellipsis: true,
+      filterValue: (i) => r(i).createdByName,
+      title: (i) => r(i).createdByName ?? '',
+      render: (i) => text(r(i).createdByName),
+    },
+    {
+      id: 'raised_on',
+      header: 'Raised On',
+      kind: 'date',
+      filterValue: (i) => r(i).createdAt,
+      render: (i) => fmtDate(r(i).createdAt),
+    },
+  ];
 }
 
 export function ApprovalInbox({
@@ -112,16 +111,10 @@ export function ApprovalInbox({
   const keys = items.map(inboxKey);
   const actions = useApprovalActions(keys.join('|'));
   const total = approvals.counts.po + (approvals.counts.rc ?? 0) + approvals.counts.logEntry;
+  // Subtotal only when the caller sees prices (the server sends null otherwise).
+  const showAmount = items.some((i) => i.row.docAmount != null);
   // A selection only ever holds rows still on screen.
-  const selected = items.filter((i) => sel.has(inboxKey(i)));
-
-  const toggle = (k: string, on: boolean): void =>
-    setSel((prev) => {
-      const next = new Set(prev);
-      if (on) next.add(k);
-      else next.delete(k);
-      return next;
-    });
+  const selectedKeys = new Set(keys.filter((k) => sel.has(k)));
 
   const approve = (list: InboxItem[]): void => {
     void actions
@@ -131,45 +124,41 @@ export function ApprovalInbox({
       );
   };
 
-  const body =
-    items.length === 0 ? (
-      <Empty text="Nothing to approve." />
-    ) : (
-      <>
-        {selected.length > 0 ? (
-          <div className="dh-selbar">
-            {selected.length} selected
-            <button
-              type="button"
-              className="btn btn-primary btn-sm"
-              onClick={() => approve(selected)}
-            >
-              ✓ Approve {selected.length}
-            </button>
-          </div>
-        ) : null}
-        <RowHead head={['Document', 'Item', 'Qty', 'Raised On']} approve />
-        {items.map((i) => {
-          const k = inboxKey(i);
-          return (
-            <InboxRow
-              key={k}
-              item={i}
-              selected={sel.has(k)}
-              busy={actions.busy.has(k)}
-              onSelect={(on) => toggle(k, on)}
-              onApprove={() => approve([i])}
-              onReject={() => setRejecting(i)}
-            />
-          );
-        })}
-        {total > items.length ? <ViewAll href="/approvals" total={total} /> : null}
-      </>
-    );
-
   return (
-    <section className="dh-panel" aria-label="Approval inbox">
-      {body}
+    <section aria-label="Approval inbox">
+      <DataTable
+        tableKey={TABLE_KEYS.dashApproval}
+        columns={columns(showAmount)}
+        rows={items}
+        rowKey={inboxKey}
+        // At most a page of the inbox; full sort / filter is on the Approvals page.
+        sortFilter={false}
+        emptyText="Nothing to approve."
+        selectable
+        selectedKeys={selectedKeys}
+        onToggleRow={(k, _row, next) =>
+          setSel((prev) => {
+            const out = new Set(prev);
+            if (next) out.add(String(k));
+            else out.delete(String(k));
+            return out;
+          })
+        }
+        onToggleAll={(next, all) => setSel(next ? new Set(all.map(String)) : new Set())}
+        selectionActions={(rows) => (
+          <button type="button" className="btn btn-primary btn-sm" onClick={() => approve(rows)}>
+            ✓ Approve {rows.length}
+          </button>
+        )}
+        rowActions={(i) => (
+          <ApprovalRowActions
+            busy={actions.busy.has(inboxKey(i))}
+            onApprove={() => approve([i])}
+            onReject={() => setRejecting(i)}
+          />
+        )}
+      />
+      {total > items.length ? <ViewAll href="/approvals" total={total} /> : null}
       {rejecting ? (
         <ApprovalRejectDialog
           title={`Reject — ${rejecting.row.docCode}`}
