@@ -194,8 +194,12 @@ describe('main department', () => {
 
 describe('notifications', () => {
   it('maps each event to its next-step right', () => {
-    expect(notes.noteRuleFor('PurchaseRequest', 'CREATE')?.right).toEqual(['pr_create', 'approve']);
-    expect(notes.noteRuleFor('PurchaseRequest', 'APPROVE')?.right).toEqual(['po_create', 'entry']);
+    // PRs have no approval (owner rule 2026-10-31): a new PR goes straight to
+    // the PO creators, and there is no PR approve event any more.
+    expect(notes.noteRuleFor('PurchaseRequest', 'CREATE')?.right).toEqual(['po_create', 'entry']);
+    expect(notes.noteRuleFor('PurchaseRequest', 'CREATE')?.open).toBe('pr_to_po');
+    expect(notes.noteRuleFor('PurchaseRequest', 'CREATE')?.tail).toBe(' — ready for a PO');
+    expect(notes.noteRuleFor('PurchaseRequest', 'APPROVE')).toBeUndefined();
     expect(notes.noteRuleFor('PurchaseOrder', 'APPROVE')?.right).toEqual(['ospdc_create', 'entry']);
     expect(notes.noteRuleFor('PartyGrn', 'CREATE')?.right).toEqual(['qc_incoming', 'entry']);
     expect(notes.noteRuleFor('GoodsReceiptNote', 'CREATE')?.right).toEqual([
@@ -218,8 +222,8 @@ describe('notifications', () => {
     const rules = notes.rulesFor(buyer);
     const got = notes.candidates(
       [
-        ev({ id: 'a' }),
-        ev({ id: 'b', userId: 'me' }),
+        ev({ id: 'a', action: 'CREATE' }),
+        ev({ id: 'b', userId: 'me', action: 'CREATE' }),
         ev({ id: 'c', entity: 'GoodsReceiptNote', action: 'CREATE' }),
       ],
       rules,
@@ -344,5 +348,22 @@ describe('cues', () => {
     expect(cues[0]).toMatchObject({ key: 'pr_to_po', count: 40, tone: 'late', sub: '3 late' });
     expect(cues.find((c) => c.key === 'waiting')?.count).toBe(2);
     expect(cues.find((c) => c.key === 'done_today')?.count).toBe(5);
+  });
+
+  it('To approve never counts PRs (owner rule 2026-10-31 — PRs have no approval)', () => {
+    const approvals = {
+      counts: { pr: 7, po: 2, logEntry: 1, rc: 3 },
+      pr: [],
+      po: [],
+      logEntry: [],
+      rc: [],
+    };
+    const cues = buildCues([], approvals, 0, 0);
+    expect(cues.find((c) => c.key === 'approvals')?.count).toBe(6);
+  });
+
+  it('a PR-approve-only tick no longer opens the Approvals block', () => {
+    const a = dash({ forms: { pr_create: perms({ view: true, approve: true }) } });
+    expect(lists.holdsAnyApprove(a)).toBe(false);
   });
 });

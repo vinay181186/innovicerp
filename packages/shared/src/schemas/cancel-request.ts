@@ -71,6 +71,18 @@ export const CANCEL_DOC_LABELS: Record<CancelDocType, string> = {
   jw_dc_inward: 'JW DC Receipt',
 };
 
+/** Cancelled in ONE step by the page's Edit tick — no Approve tick, no waiting
+ *  request (owner rule 2026-10-31: PRs have no approval). The one list the
+ *  server (cancel-requests registry), the Cancel dialog and the Approvals tab
+ *  all read. */
+export const ONE_STEP_CANCEL_DOC_TYPES: readonly CancelDocType[] = ['purchase_request'];
+
+/** The tick that decides a cancel on this document type: Approve, or Edit for
+ *  a one-step type. */
+export function cancelDeciderRight(docType: CancelDocType): 'approve' | 'edit' {
+  return ONE_STEP_CANCEL_DOC_TYPES.includes(docType) ? 'edit' : 'approve';
+}
+
 /** The page whose ticks decide the cancel: Edit = may request, Approve = may
  *  approve (ADR-232 — ticks alone decide). */
 export const CANCEL_DOC_FORM_KEY: Record<CancelDocType, string> = {

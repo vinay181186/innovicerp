@@ -21,7 +21,7 @@ import {
 import type { SQL } from 'drizzle-orm';
 import { type DashAccess, canSeeLink, hasTick } from '../access';
 import type { ListFilter, RawRow } from './list-query';
-import { poDraftSql, poOverdueSql, poToDcSql, prPendingSql, prToPoSql } from './rows-purchase';
+import { poDraftSql, poOverdueSql, poToDcSql, prToPoSql } from './rows-purchase';
 import { bomPendingSql, planToProSql, soToPlanSql } from './rows-planning';
 import { jcRunningSql, opsReadySql, opsRunningSql } from './rows-production';
 import { capaMineSql, grnQcSql, qcReportMissingSql } from './rows-qc';
@@ -38,7 +38,7 @@ type Right = readonly [AccessFormKey, AccessAction];
 type Candidate = Omit<DashAction, 'taskFor'>;
 
 export interface ListDef {
-  key: DashListKey | 'pr_pending' | 'po_draft' | 'rc_pending';
+  key: DashListKey | 'po_draft' | 'rc_pending';
   title: string;
   head: DashList['head'];
   href: string;
@@ -304,14 +304,8 @@ export const LIST_DEFS: readonly ListDef[] = [
 ];
 
 /** Waiting-for-approval sources (Sent for approval block) — not home lists. */
-export const APPROVAL_DEFS: Record<'pr_pending' | 'po_draft' | 'rc_pending', ListDef> = {
-  pr_pending: {
-    ...LIST_DEFS.find((d) => d.key === 'pr_to_po')!,
-    key: 'pr_pending',
-    rights: [['pr_create', 'approve']],
-    query: (c, f) => prPendingSql(c.cid, c.today, f),
-    actions: () => [],
-  },
+// PRs have no approval (owner rule 2026-10-31), so there is no PR entry.
+export const APPROVAL_DEFS: Record<'po_draft' | 'rc_pending', ListDef> = {
   po_draft: {
     ...LIST_DEFS.find((d) => d.key === 'po_overdue')!,
     key: 'po_draft',
@@ -346,12 +340,11 @@ export function holdsRights(a: DashAccess, d: ListDef): boolean {
   return d.rights.every(([form, action]) => hasTick(a, form, action));
 }
 
-/** Approvals block: shown to whoever may decide PRs, POs, Route Cards
- *  (ADR-253) or log entries — the same ticks getApprovalInbox itself checks
- *  per section. */
+/** Approvals block: shown to whoever may decide POs, Route Cards (ADR-253)
+ *  or log entries — the same ticks getApprovalInbox itself checks per
+ *  section. PRs have no approval (owner rule 2026-10-31). */
 export function holdsAnyApprove(a: DashAccess): boolean {
   return (
-    hasTick(a, 'pr_create', 'approve') ||
     hasTick(a, 'po_create', 'approve') ||
     hasTick(a, 'routecard_create', 'approve') ||
     hasTick(a, 'op_entry', 'approve') ||

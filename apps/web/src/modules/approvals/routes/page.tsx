@@ -6,16 +6,17 @@
 //
 // ONE UNIFORM structure for every document (owner decision). A FIXED tab row is
 // ALWAYS shown, whatever each has waiting (the old row vanished a tab the moment
-// its count hit 0): PR · PO (the release inbox), then one edit tab per enrolled
+// its count hit 0): PO (the release inbox — PRs need no approval since
+// 2026-10-31), then one edit tab per enrolled
 // document type, then ONE Masters tab, then Op Entry. The edit tabs are BUILT
 // from DOCUMENT_EDIT_ENTITIES / DOCUMENT_EDIT_LABEL (@innovic/shared), so a type
 // the server stages can never again be missing here. Inside Masters a picker row
 // chooses the master (DOCUMENT_EDIT_MASTER_ENTITIES). Every tab renders through
 // the one shared shell (components/approval-tab.tsx): ListHeader(search) + a
 // Pending / Approved / Rejected filter + DataTable + a VISIBLE row ✓ / ✗ + a ▸
-// read-only detail. So PR, PO, the edit tabs and Op Entry all look identical.
+// read-only detail. So PO, the edit tabs and Op Entry all look identical.
 //
-// Each tab's badge is its pending count (omitted at 0): PR / PO / Op Entry from
+// Each tab's badge is its pending count (omitted at 0): PO / Op Entry from
 // the approval inbox (ADR-190), the edit tabs from GET /document-edits/counts
 // (ADR-202, now per-status so the in-tab filter carries counts too). The Masters
 // badge is the sum of its masters' pending counts.
@@ -23,6 +24,8 @@
 import {
   type AccessFormKey,
   CANCEL_DOC_FORM_KEY,
+  CANCEL_DOC_TYPES,
+  cancelDeciderRight,
   DOCUMENT_EDIT_ENTITIES,
   DOCUMENT_EDIT_LABEL,
   DOCUMENT_EDIT_MASTER_ENTITIES,
@@ -46,13 +49,13 @@ export const approvalsRoute = createRoute({
   component: ApprovalsPage,
 });
 
-// The fixed tab set. Each tab is PR/PO (the approval inbox), Op Entry (op-log
+// The fixed tab set. Each tab is PO / Route Card (New) (the approval inbox), Op Entry (op-log
 // time corrections), one enrolled edit document type, or the Masters tab (all
 // enrolled masters behind one picker). Labels per docs/NAMING.md, from
 // DOCUMENT_EDIT_LABEL (JWSO is the registered name for Job Work Order; Client →
 // Customer, etc.).
 type TabDef =
-  | { key: 'pr' | 'po' | 'rc'; kind: 'inbox'; section: 'pr' | 'po' | 'rc'; label: string }
+  | { key: 'po' | 'rc'; kind: 'inbox'; section: 'po' | 'rc'; label: string }
   | { key: 'logEntry'; kind: 'opEntry'; label: string }
   | { key: 'masters'; kind: 'masters'; label: string }
   | { key: 'cancel'; kind: 'cancel'; label: string }
@@ -61,14 +64,15 @@ type TabDef =
 type MasterEntity = (typeof DOCUMENT_EDIT_MASTER_ENTITIES)[number];
 const MASTER_SET: ReadonlySet<DocumentEditEntity> = new Set(DOCUMENT_EDIT_MASTER_ENTITIES);
 
-// PR · PO · Route Card (New) · (edit documents) · Masters · Op Entry — the order the owner named.
-// PR is the stable default (always present), so the page never has to index an
+// PO · Route Card (New) · (edit documents) · Masters · Op Entry — the order the
+// owner named. No PR tab: PRs need no approval (owner rule 2026-10-31); an old
+// pending PR edit or cancel still shows on its edit / Cancel Requests tab.
+// PO is the stable default (always present), so the page never has to index an
 // array.
-const PR_TAB: TabDef = { key: 'pr', kind: 'inbox', section: 'pr', label: 'PR' };
+const PO_TAB: TabDef = { key: 'po', kind: 'inbox', section: 'po', label: 'PO' };
 
 const FIXED_TABS: TabDef[] = [
-  PR_TAB,
-  { key: 'po', kind: 'inbox', section: 'po', label: 'PO' },
+  PO_TAB,
   // ADR-253 — NEW Route Cards waiting for approval. Named apart from the
   // "Route Card" edit tab below (changes to an approved card).
   { key: 'rc', kind: 'inbox', section: 'rc', label: 'Route Card (New)' },
@@ -87,7 +91,6 @@ const FIXED_TABS: TabDef[] = [
 ];
 
 /** The cancel-enrolled pages (ADR-235): Approve on any of them = may decide. */
-const CANCEL_FORM_KEYS = [...new Set(Object.values(CANCEL_DOC_FORM_KEY))] as AccessFormKey[];
 
 /** A tab-style button with its amber pending badge (omitted at 0) — the tab row
  *  and the Masters picker share it so both read the same. */
@@ -133,9 +136,12 @@ function ApprovalsPage(): React.JSX.Element {
   // Entry or on QC Submit in Access Control — the tick alone, no role.
   const canDecideLogEntry =
     effectiveFormPerms(eff, 'op_entry').approve || effectiveFormPerms(eff, 'qc_submit').approve;
-  // ADR-235 — Cancel Requests are decided by the Approve tick on the
-  // document's own page; the tab shows only to someone holding one.
-  const canDecideCancel = CANCEL_FORM_KEYS.some((k) => effectiveFormPerms(eff, k).approve);
+  // ADR-235 — Cancel Requests are decided by the document page's deciding tick
+  // (Approve; Edit for a one-step type such as PR — cancelDeciderRight, the
+  // server's rule); the tab shows only to someone holding one.
+  const canDecideCancel = CANCEL_DOC_TYPES.some(
+    (t) => effectiveFormPerms(eff, CANCEL_DOC_FORM_KEY[t] as AccessFormKey)[cancelDeciderRight(t)],
+  );
   // A one-row read for the tab badge: the server's total of waiting requests.
   const cancelCount = useCancelRequests(
     { status: 'pending', toDecide: 'true', limit: 1, offset: 0 },
@@ -174,7 +180,7 @@ function ApprovalsPage(): React.JSX.Element {
     return counts?.[t.section];
   };
 
-  // Land ONCE on the first tab that has something waiting (PR first), so the
+  // Land ONCE on the first tab that has something waiting (PO first), so the
   // page opens on work rather than an empty list — resolved when both count
   // sources and the access check have answered, then stored as if picked. After that only a click
   // moves the tab: deciding a tab's last item must not jump the approver to
@@ -190,7 +196,7 @@ function ApprovalsPage(): React.JSX.Element {
     (eff !== undefined || accessError);
   const landingKey =
     countsReady && picked === null
-      ? (tabDefs.find((t) => (pendingFor(t) ?? 0) > 0) ?? PR_TAB).key
+      ? (tabDefs.find((t) => (pendingFor(t) ?? 0) > 0) ?? PO_TAB).key
       : null;
   const landingMaster =
     countsReady && pickedMaster === null
@@ -204,7 +210,7 @@ function ApprovalsPage(): React.JSX.Element {
     if (landingMaster !== null) setPickedMaster(landingMaster);
   }, [landingMaster]);
 
-  const active: TabDef = tabDefs.find((t) => t.key === (picked ?? landingKey)) ?? PR_TAB;
+  const active: TabDef = tabDefs.find((t) => t.key === (picked ?? landingKey)) ?? PO_TAB;
   const activeMaster: MasterEntity =
     pickedMaster ?? landingMaster ?? DOCUMENT_EDIT_MASTER_ENTITIES[0];
 

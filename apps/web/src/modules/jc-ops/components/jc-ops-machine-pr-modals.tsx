@@ -313,7 +313,7 @@ export function CreatePrModal({
                 · draft PO <b className="mono">{result.poCode}</b> created
               </>
             ) : null}
-            . It now waits for approval on the Purchase Request list.
+            . It is on the Purchase Request list, ready for a PO.
           </div>
         ) : (
           <div className="text3" style={{ fontSize: 12 }}>

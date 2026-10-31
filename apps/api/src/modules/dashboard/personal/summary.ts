@@ -11,10 +11,11 @@ export interface ListWithLate {
 }
 
 /** Everything waiting for the caller's sign-off — every inbox section,
- *  Route Cards included (ADR-253). One sum for the cue and the headline. */
+ *  Route Cards included (ADR-253). One sum for the cue and the headline. PRs
+ *  have no approval (owner rule 2026-10-31): counts.pr is never added. */
 export function toApproveCount(approvals: ApprovalInboxResponse): number {
   const c = approvals.counts;
-  return c.pr + c.po + c.logEntry + (c.rc ?? 0);
+  return c.po + c.logEntry + (c.rc ?? 0);
 }
 
 export function buildCues(

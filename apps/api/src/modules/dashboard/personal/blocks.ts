@@ -139,9 +139,9 @@ async function ownRows(
   return { rows: out, total };
 }
 
-/** PRs (open), POs (draft) and new Route Cards (pending, ADR-253) the caller
- *  raised, waiting for an approver —
- *  named by the same eligibility the approval inbox applies. */
+/** POs (draft) and new Route Cards (pending, ADR-253) the caller raised,
+ *  waiting for an approver — named by the same eligibility the approval inbox
+ *  applies. PRs have no approval (owner rule 2026-10-31). */
 export async function sentForApproval(
   tx: DbTransaction,
   c: ListCtx,
@@ -149,14 +149,6 @@ export async function sentForApproval(
   holders: Holders,
   canRemind: boolean,
 ): Promise<DashRow[]> {
-  const pr = await ownRows(
-    tx,
-    APPROVAL_DEFS.pr_pending,
-    c,
-    rc,
-    () => holders.of('pr_create', 'approve'),
-    canRemind,
-  );
   const po = await ownRows(
     tx,
     APPROVAL_DEFS.po_draft,
@@ -174,10 +166,10 @@ export async function sentForApproval(
     () => holders.of('routecard_create', 'approve'),
     canRemind,
   );
-  return [...pr.rows, ...po.rows, ...rcRows.rows];
+  return [...po.rows, ...rcRows.rows];
 }
 
-/** The hand-offs the Waiting block follows (approved PR → PO, JW PO → DC,
+/** The hand-offs the Waiting block follows (PR → PO, JW PO → DC,
  *  GRN → QC, SO → plan, plan → PRO). */
 export const WAITING_KEYS = [
   'pr_to_po',

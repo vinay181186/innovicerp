@@ -487,8 +487,8 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
 
           {/* Vendor and the estimate read as one account: rate × qty = amount,
               ending on the result. Status is NOT a field, on create or edit: a
-              new PR is always 'open', stamped by the server, and it advances
-              only via Approve / Reject / Create PO. */}
+              new PR is always 'open', stamped by the server, and is ready
+              for Create PO at once (no approval, 2026-10-31). */}
           <Cluster name="Vendor">
             {/* The shared picker brings its own .form-grp; this cell gives it
                 two of the cluster's four cells. */}

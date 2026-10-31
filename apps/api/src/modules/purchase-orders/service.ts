@@ -291,7 +291,6 @@ async function assertLinesWithinPrBalances(
 
   // One round trip for every PR on the form — not one per PR.
   const balances = await loadPrBalances(tx, prRows);
-  const switches = await readApprovalSwitches(tx, companyId);
   for (const pr of prRows) {
     if (pr.status === 'cancelled') {
       throw new ConflictError(`Cannot create a PO from PR ${pr.code}: it is Cancelled.`);
@@ -302,7 +301,7 @@ async function assertLinesWithinPrBalances(
     // Neutral or a reduction — nothing new is being taken, so nothing to refuse.
     if (asked <= mine) continue;
     // ADR-189 review — taking MORE from a PR on edit is a conversion too.
-    assertPrConvertible(pr, switches);
+    assertPrConvertible(pr);
     // ADR-235 — nor from a PR whose cancel waits (the PR rows are locked above).
     await assertPrsHaveNoPendingCancel(tx, companyId, [pr.id]);
     // Everything below is measured EXCLUDING this PO's own lines, so the
@@ -685,38 +684,29 @@ function escapeLikeTerm(raw: string): string {
   return raw.replace(/[\\%_]/g, (ch) => `\\${ch}`);
 }
 
-// ADR-189 — the company's approval switches (approval_config). A company with
-// no row takes the column defaults, which are ON: approval is the safe default,
-// switched off deliberately on the Approval Configuration screen. Read inside
-// the caller's transaction.
+// ADR-189 — the company's PO approval switch (approval_config.po_approval). A
+// company with no row takes the column default, which is ON: approval is the
+// safe default, switched off deliberately on the Approval Configuration screen.
+// Read inside the caller's transaction. pr_approval is no longer read (owner
+// rule 2026-10-31 — PRs have no approval).
 async function readApprovalSwitches(
   tx: DbTransaction,
   companyId: string,
-): Promise<{ poApproval: boolean; prApproval: boolean }> {
+): Promise<{ poApproval: boolean }> {
   const rows = await tx
-    .select({ poApproval: approvalConfig.poApproval, prApproval: approvalConfig.prApproval })
+    .select({ poApproval: approvalConfig.poApproval })
     .from(approvalConfig)
     .where(and(eq(approvalConfig.companyId, companyId), isNull(approvalConfig.deletedAt)))
     .limit(1);
-  return { poApproval: rows[0]?.poApproval ?? true, prApproval: rows[0]?.prApproval ?? true };
+  return { poApproval: rows[0]?.poApproval ?? true };
 }
 
-/** ADR-189 — only an approved PR may become a PO while PR approval is on.
- *  A PR the SYSTEM raised from a job-card op (outsourced routing: pr_type
- *  'jw_osp' / source_jc_op_id) is exempt: nobody asked for it by hand, and the
- *  PO raised from it still goes through PO approval. */
-function assertPrConvertible(
-  pr: { code: string; status: string; prType?: string | null; sourceJcOpId?: string | null },
-  switches: { prApproval: boolean },
-): void {
+/** A PR may become a PO unless it is Cancelled. Owner rule 2026-10-31: PRs
+ *  have no approval — 'open' and 'approved' (older data) both mean "ready for
+ *  a PO". Quantity / balance / pending-cancel checks are the callers'. */
+function assertPrConvertible(pr: { code: string; status: string }): void {
   if (pr.status === 'cancelled') {
     throw new ConflictError(`Cannot create a PO from PR ${pr.code}: it is Cancelled.`);
-  }
-  const machineRaised = pr.prType === 'jw_osp' || Boolean(pr.sourceJcOpId);
-  if (switches.prApproval && pr.status === 'open' && !machineRaised) {
-    throw new ConflictError(
-      `Cannot create a PO from PR ${pr.code}: it is not approved yet. Approve the PR first.`,
-    );
   }
 }
 
@@ -1387,7 +1377,7 @@ export async function createPurchaseOrder(
   const showMoney = await canSeeFormPrice(user, 'po_create');
 
   return withUserContext(user, async (tx) => {
-    // ADR-189 — approval switches, read once for the whole create.
+    // ADR-189 — the PO approval switch, read once for the whole create.
     const switches = await readApprovalSwitches(tx, companyId);
     // The PO type decides WHICH SERIES numbers this order, so it is resolved
     // before the code. Same expression (and same default) the insert below
@@ -1478,7 +1468,7 @@ export async function createPurchaseOrder(
       for (const prId of distinctPrIds) {
         const pr = prById.get(prId);
         if (!pr) throw new NotFoundError('PR not found. It may have been moved to Trash.');
-        assertPrConvertible(pr, switches);
+        assertPrConvertible(pr);
         sourcePrs.push(pr);
       }
       // What this PO asks of each PR, summed over its own lines.
@@ -3006,7 +2996,7 @@ export async function createPurchaseOrderFromPr(
     const pr = prRows[0];
     if (!pr) throw new NotFoundError('PR not found. It may have been moved to Trash.');
     const switches = await readApprovalSwitches(tx, companyId);
-    assertPrConvertible(pr, switches);
+    assertPrConvertible(pr);
     // ADR-235 — nothing ordered from a PR whose cancel waits (under its lock).
     await assertPrsHaveNoPendingCancel(tx, companyId, [pr.id]);
     // Quantity, not a boolean (ADR-152 phase 2): a PR is convertible for as
@@ -3857,7 +3847,7 @@ export async function createPurchaseOrderFromPrBatch(
       );
     }
     const switches = await readApprovalSwitches(tx, companyId);
-    for (const pr of prRows) assertPrConvertible(pr, switches);
+    for (const pr of prRows) assertPrConvertible(pr);
     // ADR-235 — nothing ordered from a PR whose cancel waits (under the locks).
     await assertPrsHaveNoPendingCancel(
       tx,

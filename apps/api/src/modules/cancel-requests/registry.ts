@@ -87,3 +87,11 @@ export const CANCEL_HANDLERS: Record<CancelDocType, CancelHandler> = {
   dc_receipt: dcReceiptCancelHandler,
   jw_dc_inward: jwDcInwardCancelHandler,
 };
+
+/** One-step cancel (owner rule 2026-10-31, Purchase Request): the page's EDIT
+ *  tick cancels at once. A request is still written (and approved in the same
+ *  transaction) so the history reads like every other document; one already
+ *  pending from before stays decidable / withdrawable with the Edit tick. The
+ *  list and the decider right live in shared (ONE_STEP_CANCEL_DOC_TYPES /
+ *  cancelDeciderRight) so the screens read the same rule. */
+export { cancelDeciderRight } from '@innovic/shared';

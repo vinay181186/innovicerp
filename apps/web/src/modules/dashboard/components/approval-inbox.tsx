@@ -106,7 +106,7 @@ export function ApprovalInbox({
 
   const items = useMemo<InboxItem[]>(
     () => [
-      ...approvals.pr.map((row) => ({ kind: 'pr' as const, row })),
+      // PRs need no approval (owner rule 2026-10-31) — `approvals.pr` is ignored.
       ...approvals.po.map((row) => ({ kind: 'po' as const, row })),
       // ADR-253 — NEW Route Cards (older API answers carry no `rc`).
       ...(approvals.rc ?? []).map((row) => ({ kind: 'rc' as const, row })),
@@ -116,11 +116,7 @@ export function ApprovalInbox({
   );
   const keys = items.map(inboxKey);
   const actions = useApprovalActions(keys.join('|'));
-  const total =
-    approvals.counts.pr +
-    approvals.counts.po +
-    (approvals.counts.rc ?? 0) +
-    approvals.counts.logEntry;
+  const total = approvals.counts.po + (approvals.counts.rc ?? 0) + approvals.counts.logEntry;
   // A selection only ever holds rows still on screen.
   const selected = items.filter((i) => sel.has(inboxKey(i)));
 

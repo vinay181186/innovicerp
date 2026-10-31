@@ -1,16 +1,19 @@
-// AL-002 — Pending PRs > 2 days (purchase). Legacy line 22259-22260.
-// Filter: status = 'open' AND pr_date <= today - 2 days.
+// AL-002 — PRs waiting for a PO > 2 days (purchase). Legacy line 22259-22260.
+// PRs have no approval (owner rule 2026-10-31), so this follows the wait for a
+// PO instead: AL-006's filter (prWaitingForPoSql — not cancelled, not
+// short-closed, qty still to order) AND pr_date <= today - 2 days. Code AL-002 kept.
 
 import { docNavPage } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
+import { prWaitingForPoSql } from '../../purchase-requests/service';
 import type { RegisteredAlert } from '../registry';
 
 export const al002PrsPendingStale: RegisteredAlert = {
   definition: {
     code: 'AL-002',
     dept: 'purchase',
-    name: 'Pending PRs Over 2 Days',
-    description: 'PRs still Open more than 2 days after they were raised.',
+    name: 'PRs Waiting for PO Over 2 Days',
+    description: 'PRs with qty still to order on a PO, more than 2 days after they were raised.',
     columns: [
       { key: 'pr_code', label: 'PR No.', type: 'text' },
       { key: 'pr_date', label: 'PR Date', type: 'date' },
@@ -30,7 +33,7 @@ export const al002PrsPendingStale: RegisteredAlert = {
       LEFT JOIN public.items i ON i.id = pr.item_id
       WHERE pr.company_id = ${companyId}::uuid
         AND pr.deleted_at IS NULL
-        AND pr.status = 'open'
+        AND ${prWaitingForPoSql('pr')}
         AND pr.pr_date <= CURRENT_DATE - INTERVAL '2 days'
       ORDER BY pr.pr_date, pr.code
     `);

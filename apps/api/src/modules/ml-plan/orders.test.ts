@@ -22,6 +22,7 @@ import {
 } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
 import { ConflictError, ValidationError } from '../../lib/errors';
+import { requestCancel } from '../cancel-requests/service';
 import * as mlBomService from '../ml-bom/service';
 import * as planService from '../plans/service';
 import * as prService from '../purchase-requests/service';
@@ -408,7 +409,7 @@ describe('ml-plan raise orders', () => {
     const plan = out.orders.find((o) => o.kind === 'plan')!;
     const pr = out.orders.find((o) => o.kind === 'pr')!;
     await planService.softDeletePlan(plan.docId, 'test', admin);
-    await prService.rejectPurchaseRequest(pr.docId, 'test', admin);
+    await requestCancel('purchase_request', pr.docId, { reason: 'test', approveNow: false }, admin);
     const cancelled = await service.cancelMlPlan(d.id, { reason: 'test cancel' }, admin);
     expect(cancelled.status).toBe('cancelled');
     expect(cancelled.orders.every((o) => !o.live)).toBe(true);

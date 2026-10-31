@@ -3,7 +3,9 @@
 // A live document is never deleted, only Cancelled. A holder of the page's
 // EDIT tick sends a Cancel Request with a reason; a holder of its APPROVE tick
 // approves (the requester may approve their own when they hold Approve;
-// `approveNow` = request + approve in one call). Approval runs the document's
+// `approveNow` = request + approve in one call; a `oneStep` type — Purchase
+// Request, owner rule 2026-10-31 — always does that, on the Edit tick alone,
+// see cancelDeciderRight). Approval runs the document's
 // own cancel worker (CANCEL_HANDLERS → xxxCancelTx) in ONE transaction:
 // blockers re-checked, stock reversed, counters reopened. Reject / withdraw
 // leave the document untouched. Never cascade — live downstream documents
@@ -40,7 +42,7 @@ import {
   blockerRefusal,
   stagedEditMessage,
 } from './messages';
-import { CANCEL_HANDLERS } from './registry';
+import { CANCEL_HANDLERS, cancelDeciderRight } from './registry';
 import { formKeyOf, pendingFor, requireCompany, rowById } from './rows';
 
 export { assertNoPendingCancel } from './pending-guard';
@@ -183,9 +185,10 @@ export async function getCancelPreview(
   const companyId = requireCompany(user);
   const formKey = formKeyOf(docType);
   await requireFormAccess(user, formKey, 'view');
+  // One-step type: canApprove = holds Edit, so the screen offers Cancel now.
   const [canRequest, canApprove] = await Promise.all([
     hasFormAccess(user, formKey, 'edit'),
-    hasFormAccess(user, formKey, 'approve'),
+    hasFormAccess(user, formKey, cancelDeciderRight(docType)),
   ]);
   const handler = CANCEL_HANDLERS[docType];
 
@@ -246,7 +249,9 @@ export async function requestCancel(
   const companyId = requireCompany(user);
   const formKey = formKeyOf(docType);
   await requireFormAccess(user, formKey, 'edit');
-  if (input.approveNow) await requireFormAccess(user, formKey, 'approve');
+  // A one-step type always cancels at once — never leaves a request waiting.
+  const approveNow = input.approveNow || cancelDeciderRight(docType) === 'edit';
+  if (approveNow) await requireFormAccess(user, formKey, cancelDeciderRight(docType));
 
   return withUserContext(user, async (tx) => {
     // Document first (lock order), then the request row via the insert.
@@ -296,7 +301,7 @@ export async function requestCancel(
       user,
     );
 
-    if (input.approveNow) {
+    if (approveNow) {
       await approveInTx(
         tx,
         companyId,
@@ -304,7 +309,7 @@ export async function requestCancel(
         user,
       );
     }
-    return { request: await rowById(tx, companyId, requestId), cancelled: input.approveNow };
+    return { request: await rowById(tx, companyId, requestId), cancelled: approveNow };
   });
 }
 
@@ -323,7 +328,7 @@ export async function decideCancelRequest(
   return withUserContext(user, async (tx) => {
     const req = await readRequest(tx, companyId, requestId);
     const docType = req.docType as CancelDocType;
-    await requireFormAccess(user, formKeyOf(docType), 'approve');
+    await requireFormAccess(user, formKeyOf(docType), cancelDeciderRight(docType));
     if (req.status !== 'pending') await decidedConflict(tx, companyId, req.id);
 
     if (input.decision === 'approve') {
@@ -365,7 +370,9 @@ export async function withdrawCancelRequest(
     const req = await readRequest(tx, companyId, requestId);
     const docType = req.docType as CancelDocType;
     // The requester, or anyone who may approve cancels on that page.
-    if (req.requestedBy !== user.id) await requireFormAccess(user, formKeyOf(docType), 'approve');
+    if (req.requestedBy !== user.id) {
+      await requireFormAccess(user, formKeyOf(docType), cancelDeciderRight(docType));
+    }
     if (req.status !== 'pending') await decidedConflict(tx, companyId, req.id);
 
     await lockDocument(tx, companyId, docType, req.docId, true);

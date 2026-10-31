@@ -1,4 +1,4 @@
-// ADR-250 — review fixes (capa blank name, PR approval predicate, PO approvers,
+// ADR-250 — review fixes (capa blank name, PR-to-PO predicate, PO approvers,
 // JobCard QC notes, Mine scope, ops_running), without a database. Run via
 // `pnpm --filter @innovic/api test:unit`.
 
@@ -49,13 +49,14 @@ describe('review fixes', () => {
     expect(q.params).toContain('');
   });
 
-  it('Sent for approval PRs = NOT the pr_to_po "past approval" rule — one predicate', () => {
-    const past = render(sql`${purchase.prPastApprovalSql('c1')}`).sql;
+  it('PRs have no approval: pr_to_po = every live PR with qty to order, no Sent-for-approval PR source', () => {
     const toPo = render(lists.listDef('pr_to_po')!.query(ctx, {})).sql;
-    const pending = render(lists.APPROVAL_DEFS.pr_pending.query(ctx, {})).sql;
-    const norm = (t: string) => t.replace(/\$\d+/g, '$');
-    expect(norm(toPo)).toContain(norm(past));
-    expect(norm(pending)).toContain(`AND pr.status = 'open' AND NOT ${norm(past)}`);
+    expect(toPo).toContain("AND pr.status <> 'cancelled'");
+    expect(toPo).toContain('AND pr.balance_closed_at IS NULL');
+    expect(toPo).not.toMatch(/approval_config|pr_approval|pr\.status <> 'open'/);
+    expect(Object.keys(lists.APPROVAL_DEFS)).toEqual(['po_draft', 'rc_pending']);
+    expect('prPastApprovalSql' in purchase).toBe(false);
+    expect('prPendingSql' in purchase).toBe(false);
   });
 
   it('draft PO: "with" names and remind follow the approval inbox eligibility', async () => {

@@ -1,7 +1,7 @@
 // Reorder List (ADR-193 phase 5, owner decision Q5): every item Below Reorder
 // (Available + On PO under its Reorder Level) with the suggested PR qty and the
 // vendor of its last PO. Tick rows, adjust qty / vendor, Raise PRs — one Open PR
-// per item, approved as usual. An item that already has an open PR shows it and
+// per item, ready for a PO at once. An item that already has an open PR shows it and
 // cannot be ticked. Nothing is raised automatically.
 //
 // ADR-199 conversion (2026-10-01): now the shared fit table (<DataTable

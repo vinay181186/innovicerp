@@ -1,10 +1,10 @@
 // Approval Configuration page — admin-only.
 //
 // Mirror of legacy renderApprovalConfig (HTML L21608):
-//   - PO Approval switch + manager limit + approvers picker, and the PR
-//     Approval switch — both read by the server since ADR-189 (on: a new PO
-//     starts as Draft; a PR must be approved before it becomes a PO). The
-//     Invoice Approval switch stays hidden: no server code reads it.
+//   - PO Approval switch + manager limit + approvers picker — read by the
+//     server since ADR-189 (on: a new PO starts as Draft). No PR switch: PRs
+//     need no approval (owner rule 2026-10-31). The Invoice Approval switch
+//     stays hidden: no server code reads it.
 //   - Op Entry date/time edit approval toggle
 //   - Recent Approval Activity (last 20 APPROVE / REJECT / PAYMENT rows)
 //
@@ -73,7 +73,6 @@ function ApprovalConfigPage(): React.JSX.Element {
   const dirty =
     cfg &&
     (cfg.poApproval !== draft.poApproval ||
-      cfg.prApproval !== draft.prApproval ||
       cfg.poManagerLimit !== draft.poManagerLimit ||
       cfg.invoiceApproval !== draft.invoiceApproval ||
       cfg.opEntryEditApproval !== draft.opEntryEditApproval ||
@@ -281,26 +280,6 @@ function ApprovalConfigPage(): React.JSX.Element {
               );
             })}
           </div>
-        </div>
-      </div>
-
-      {/* PR approval (ADR-189). Read by the server: while on, only an
-          approved PR can be turned into a PO. PRs raised from a job card
-          are exempt. */}
-      <div className="panel" style={{ padding: 16, marginBottom: 14 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <span style={{ fontSize: 14, fontWeight: 700 }}>Purchase Request Approval</span>
-            <div className="text3" style={{ fontSize: 11 }}>
-              {draft.prApproval
-                ? 'A PR must be approved before it can become a PO. PRs raised from a Job Card do not need it.'
-                : 'PR approval is off. Any open PR can become a PO.'}
-            </div>
-          </div>
-          <OnOffSwitch
-            checked={draft.prApproval}
-            onChange={(v) => setDraft({ ...draft, prApproval: v })}
-          />
         </div>
       </div>
 
