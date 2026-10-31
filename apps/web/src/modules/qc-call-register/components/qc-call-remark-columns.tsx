@@ -29,6 +29,7 @@ export function remarkColumns(): DataTableColumn<CompletedVM>[] {
     },
     {
       id: 'deviation_reason',
+      sortFilterField: 'deviationReason',
       header: 'Deviation Reason',
       align: 'left',
       ellipsis: true,

@@ -13,6 +13,7 @@
 import { type SQL, sql } from 'drizzle-orm';
 import { QC_REGISTER_COMPLETED_SF_FIELDS, QC_REGISTER_PENDING_SF_FIELDS } from '@innovic/shared';
 import type { SfColumnDef, SfColumnType } from '../../lib/list-query';
+import { OP_LOG_QC_REMARKS } from '../../lib/op-log-qc-remarks';
 import { polSql } from '../../lib/pol';
 import {
   CLIENT_PO_NO_SQL,
@@ -50,6 +51,7 @@ const COLS: Record<Field, { alias: string; type: Exclude<SfColumnType, 'list'> }
   inspectedBy: { alias: 'sf_inspected_by', type: 'text' },
   logNo: { alias: 'sf_log_no', type: 'text' },
   remarks: { alias: 'sf_remarks', type: 'text' },
+  deviationReason: { alias: 'sf_deviation_reason', type: 'text' },
 };
 
 const CAST: Record<Exclude<SfColumnType, 'list'>, string> = {
@@ -192,7 +194,8 @@ export const OP_COMPLETED_SF = sfSelect(C, {
   operation: OP_OPERATION,
   calledDate: sql`jo.qc_call_date`,
   logNo: sql`ol.log_no`,
-  remarks: sql`ol.remarks`,
+  remarks: OP_LOG_QC_REMARKS,
+  deviationReason: null,
   plannedMachine: plannedMachineSql(sql`ol.jc_op_id`),
   actualMachine: actualMachineSql(sql`ol.jc_op_id`),
 });
@@ -213,6 +216,7 @@ export const INC_COMPLETED_SF = sfSelect(C, {
   calledDate: sql`h.grn_date`,
   logNo: null,
   remarks: sql`l.qc_remarks`,
+  deviationReason: null,
   plannedMachine: null,
   actualMachine: null,
 });
@@ -232,8 +236,9 @@ export const PGRN_COMPLETED_SF = sfSelect(C, {
   operation: PGRN_OPERATION,
   calledDate: sql`pg.grn_date`,
   logNo: null,
-  // QC Remarks (0232) or, on older lines, the Deviation Reason.
-  remarks: sql`COALESCE(pgl.qc_remarks, pgl.reject_reason)`,
+  // QC Remarks (0232) and the Deviation Reason are separate columns.
+  remarks: sql`pgl.qc_remarks`,
+  deviationReason: sql`pgl.reject_reason`,
   plannedMachine: null,
   actualMachine: null,
 });

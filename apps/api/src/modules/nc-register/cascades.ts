@@ -84,6 +84,7 @@ import { recoveryChildCreditsStock, tryApplyQcStockCascade } from '../op-entry/q
 // ADR-247 — the one writer that moves Party GRN deviated qty back to accepted.
 import { applyPartyGrnUseAsIs } from '../party-grn/deviation';
 import { reinjectLogType } from './reinject-log-type';
+import { capNcReason } from './reason-cap';
 import { cascadeJcCompleteUpChain } from '../op-entry/sales-cascade';
 import { climbRecoveryToAncestors, createRecoveryJobCard, ncOpenQty } from './recovery';
 // ADR-217 phase 3 — the challan the rejected pieces went out on is ASKED, and
@@ -1406,7 +1407,7 @@ export async function autoCreateMaterialNcFromIqcReject(
 
   const reason =
     ctx.remarks && ctx.remarks.length > 0
-      ? `Auto-created from Incoming QC: ${ctx.remarks}`
+      ? capNcReason('Auto-created from Incoming QC: ', ctx.remarks)
       : `Auto-created from Incoming QC on ${ctx.grnCode} Row #${ctx.lineNo}`;
   return insertJobCardlessMaterialNc(
     tx,
@@ -1462,9 +1463,12 @@ export async function autoCreatePartyGrnMaterialNc(
       itemCodeText: input.itemCodeText,
       itemNameText: input.itemNameText,
       rejectedQty: input.rejectedQty,
-      reason:
-        `Auto-created from Party GRN Incoming QC: ${input.reason} on ${input.partyGrnCode} Ln ${input.lineNo}` +
-        (input.qcRemarks ? `; QC Remarks: ${input.qcRemarks}` : ''),
+      reason: input.qcRemarks
+        ? capNcReason(
+            `Auto-created from Party GRN Incoming QC: ${input.reason} on ${input.partyGrnCode} Ln ${input.lineNo}; QC Remarks: `,
+            input.qcRemarks,
+          )
+        : `Auto-created from Party GRN Incoming QC: ${input.reason} on ${input.partyGrnCode} Ln ${input.lineNo}`,
       reportedByText: input.reportedByText,
       source: { partyGrnLineId: input.partyGrnLineId },
       detail: `customer material deviated at Party GRN Incoming QC, ${input.partyGrnCode} Ln ${input.lineNo}`,
@@ -1630,7 +1634,7 @@ export async function autoCreateNcFromQcReject(
   const source = ctx.sourceLabel ?? 'QC inspection';
   const reason =
     ctx.remarks && ctx.remarks.length > 0
-      ? `Auto-created from ${source}: ${ctx.remarks}`
+      ? capNcReason(`Auto-created from ${source}: `, ctx.remarks)
       : // display rule — see opSrNo in @innovic/shared
         `Auto-created from ${source} on ${ctx.jcCode} Op #${opSrNo(ctx.opSeq)}`;
 

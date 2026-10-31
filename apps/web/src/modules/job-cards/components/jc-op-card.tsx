@@ -809,7 +809,7 @@ export function JcOpCard({
                       <b style={{ color: 'var(--red2)' }}>{l.rejectQty}</b>
                     </>
                   ) : null}
-                  <LogRemark remarks={l.remarks} />
+                  <LogRemark log={l} />
                   {' · Operator '}
                   <b style={{ color: 'var(--text)' }}>{l.operatorName ?? '—'}</b>
                   {/* The NC the reject raised, with its status, straight to

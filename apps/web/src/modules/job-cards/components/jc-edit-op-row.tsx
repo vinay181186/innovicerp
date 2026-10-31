@@ -586,7 +586,7 @@ function JcEditOpDetail({
             <span key={l.id} title={l.remarks ?? undefined}>
               <span className="mono text3">{fmtDate(l.logDate)}</span> · {SHIFT_LABELS[l.shift]} ·{' '}
               <b className="jc-ops-good">+{l.qty}</b>
-              <LogRemark remarks={l.remarks} /> · {l.operatorName ?? ''}
+              <LogRemark log={l} /> · {l.operatorName ?? ''}
             </span>
           ))
         )}

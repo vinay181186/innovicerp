@@ -348,6 +348,8 @@ export const QC_REGISTER_COMPLETED_SF_FIELDS = [
   'calledDate',
   'logNo',
   'remarks',
+  /** Party GRN Deviation Reason (blank on every other kind of row). */
+  'deviationReason',
   'plannedMachine',
   'actualMachine',
 ] as const;

@@ -39,6 +39,7 @@ export async function exportTpiRecords(rows: TpiCompletedRow[]): Promise<void> {
       'Inspector Name',
       'Organisation',
       'TPI Certificate No.',
+      'QC Remarks',
     ],
     ...rows.map((l) => [
       l.jcCode,
@@ -58,6 +59,7 @@ export async function exportTpiRecords(rows: TpiCompletedRow[]): Promise<void> {
       l.inspector ?? '',
       l.organization ?? '',
       l.certNo ?? '',
+      l.remarks ?? '',
     ]),
   ];
   const sheet = xlsxUtils.aoa_to_sheet(aoa);

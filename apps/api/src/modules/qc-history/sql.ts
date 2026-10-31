@@ -7,6 +7,7 @@
 import { type SQL, sql } from 'drizzle-orm';
 import type { QcHistoryLogRow, QcHistoryPendingRow } from '@innovic/shared';
 import { likeEscape } from '../../lib/list-query';
+import { OP_LOG_QC_REMARKS } from '../../lib/op-log-qc-remarks';
 import { polSql } from '../../lib/pol';
 import { CLIENT_PO_NO_SQL } from './register-facts';
 
@@ -102,7 +103,7 @@ export const LOGS_SELECT = sql`
   ${LOG_IS_LAST} AS "isLastOp", jo.operation,
   ol.qty AS "accepted", ol.reject_qty AS "rejected",
   ol.log_date AS "logDate", ol.created_at AS "loggedAt", ol.shift,
-  ol.operator_name AS "inspector", ol.remarks,
+  ol.operator_name AS "inspector", ${OP_LOG_QC_REMARKS} AS "remarks",
   ol.log_no AS "logNo", jo.qc_call_date AS "qcCallDate",
   ol.qc_report_path AS "qcReportPath", ol.qc_report_name AS "qcReportName"`;
 
