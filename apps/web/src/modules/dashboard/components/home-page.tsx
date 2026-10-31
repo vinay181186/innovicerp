@@ -97,7 +97,8 @@ export function HomePage({
   }
 
   return (
-    <div className="dh">
+    // Approvals is a wide table: it drops the 960px cap (owner 01-Nov).
+    <div className={view === 'approvals' ? 'dh dh--wide' : 'dh'}>
       <div className="dh-board">
         <HomeMenu
           top={top}
