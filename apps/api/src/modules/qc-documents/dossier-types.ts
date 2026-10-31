@@ -38,6 +38,8 @@ export interface DossierEntryRow {
   logDate: string | null;
   qty: number;
   rejectQty: number;
+  /** QC Remarks typed at Submit QC (op_log.remarks). */
+  remarks: string | null;
   reportRequired: boolean | null;
   qcReportPath: string | null;
   qcReportName: string | null;

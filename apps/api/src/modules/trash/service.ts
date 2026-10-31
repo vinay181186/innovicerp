@@ -379,19 +379,26 @@ export async function restoreFromTrash(
     // ADR-238/245 — Client PO No. is unique per customer within the SO list /
     // the JWSO list. A
     // deleted order may not come back while another live order now uses it.
+    // A cancelled order holds no number (2026-10-31), so it always comes back.
     if (entity.type === 'Sales Order' || entity.type === 'Job Work Order') {
       const gone = (await tx.execute(sql`
-        SELECT client_po_no AS "clientPoNo", client_id AS "clientId" FROM ${sql.raw(`public.${entity.table}`)}
+        SELECT client_po_no AS "clientPoNo", client_id AS "clientId", status::text AS status
+          FROM ${sql.raw(`public.${entity.table}`)}
         WHERE id = ${input.id}::uuid AND company_id = ${companyId}::uuid
-      `)) as unknown as Array<{ clientPoNo: string | null; clientId: string | null }>;
-      await assertClientPoNoFree(
-        tx,
-        entity.type === 'Sales Order' ? 'so' : 'jwso',
-        companyId,
-        gone[0]?.clientId ?? null,
-        gone[0]?.clientPoNo,
-        { id: input.id, currentPoNo: null, currentClientId: null },
-      );
+      `)) as unknown as Array<{
+        clientPoNo: string | null;
+        clientId: string | null;
+        status: string;
+      }>;
+      if (gone[0]?.status !== 'cancelled')
+        await assertClientPoNoFree(
+          tx,
+          entity.type === 'Sales Order' ? 'so' : 'jwso',
+          companyId,
+          gone[0]?.clientId ?? null,
+          gone[0]?.clientPoNo,
+          { id: input.id, currentPoNo: null, currentClientId: null },
+        );
     }
 
     // ADR-225 — a Multi-Level BOM comes back under the tree lock, not as

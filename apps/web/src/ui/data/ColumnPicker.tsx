@@ -92,7 +92,7 @@ export function ColumnPicker({
       onToast(`${labelOf(id)} unpinned — it may drop on a small screen`);
     } else if (canPin(id)) {
       onOp({ type: 'pin', id });
-      onToast(`${labelOf(id)} pinned — it never moves to ▸`);
+      onToast(`${labelOf(id)} pinned — it never leaves the screen`);
     } else {
       onToast('No room — unpin another column first');
     }
@@ -154,7 +154,7 @@ export function ColumnPicker({
             {label}
             {first ? <span className="dt-pick-tag"> (always first)</span> : null}
             {control ? <span className="dt-pick-tag"> (locked)</span> : null}
-            {drop ? <span className="dt-pick-tag"> · in ▸ (no room)</span> : null}
+            {drop ? <span className="dt-pick-tag"> · not on screen (no room)</span> : null}
           </span>
         </label>
         <button

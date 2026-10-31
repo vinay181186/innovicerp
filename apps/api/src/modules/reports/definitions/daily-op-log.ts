@@ -4,6 +4,7 @@
 
 import { opSrNo } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
+import { OP_LOG_QC_REMARKS } from '../../../lib/op-log-qc-remarks';
 import type { RegisteredReport } from '../registry';
 import { REPORT_ROW_CAP } from './report-helpers';
 
@@ -35,6 +36,9 @@ export const dailyOpLogReport: RegisteredReport = {
       { key: 'qty', label: 'Completed', type: 'number' },
       { key: 'reject_qty', label: 'Deviated', type: 'number' },
       { key: 'shift', label: 'Shift', type: 'text' },
+      // NAMING.md: op QC remarks are "QC Remarks" — filled on QC rows only,
+      // blank on a reversal row (lib/op-log-qc-remarks).
+      { key: 'qc_remarks', label: 'QC Remarks', type: 'text' },
     ],
     // ADR-190 — jc_code opens the document; jc_id is not a column.
     rowLink: { column: 'jc_code', route: '/job-cards/$id', idKey: 'jc_id' },
@@ -59,7 +63,8 @@ export const dailyOpLogReport: RegisteredReport = {
         ol.operator_name,
         ol.qty,
         ol.reject_qty,
-        ol.shift
+        ol.shift,
+        CASE WHEN ol.log_type = 'qc' THEN ${OP_LOG_QC_REMARKS} END AS qc_remarks
       FROM public.op_log ol
       JOIN public.jc_ops jo ON jo.id = ol.jc_op_id
       JOIN public.job_cards jc ON jc.id = jo.job_card_id
@@ -91,6 +96,7 @@ export const dailyOpLogReport: RegisteredReport = {
       qty: r['qty'] != null ? Number(r['qty']) : 0,
       reject_qty: r['reject_qty'] != null ? Number(r['reject_qty']) : 0,
       shift: (r['shift'] as string) ?? '',
+      qc_remarks: (r['qc_remarks'] as string | null) ?? null,
     }));
 
     return { columns: dailyOpLogReport.definition.columns, rows };

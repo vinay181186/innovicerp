@@ -26,7 +26,7 @@ import type { ServerSortFilter } from './sort-filter/server-state';
  *   badge   status chip — exact width, never cut
  *   actions buttons — exact width, never cut
  *   control an in-cell input / picker (a qty field, a Vendor picker) — exact
- *           width, NEVER shares spare width, NEVER drops into ▸, never clipped
+ *           width, NEVER shares spare width, NEVER leaves the screen, never clipped
  *           (so a dropdown / popover is not cut off), and swallows the row click
  *           on its own (the cell applies stopRowClick without the caller setting
  *           it). Effectively force-pinned in the Columns menu — it cannot be
@@ -106,7 +106,7 @@ export interface DataTableColumn<T> {
   /**
    * This column's totals-row cell (fit engine, with `showTotals`). A node, or a
    * function given ALL loaded rows so it can sum them. Rendered in a `<tfoot>`
-   * that follows the visible columns — a column moved into ▸ simply does not
+   * that follows the visible columns — a column not on screen simply does not
    * emit its total, so the total always stays under its own column. `num`
    * columns right-align it. The `firstId` column shows `totalsLabel` instead.
    */
@@ -121,7 +121,8 @@ export interface DataTableProps<T> {
 
   /**
    * Turns on the fit engine (ADR-199): the table always fits its width, drops
-   * the rightmost unpinned columns into a ▸ detail row when it cannot, and
+   * the rightmost unpinned columns off screen when it cannot (the toolbar
+   * names them), and
    * shows the Columns / density toolbar. The key names the user's saved
    * layout — register it in ui/data/table-keys.ts. Without it the table
    * renders exactly as before.
@@ -152,7 +153,7 @@ export interface DataTableProps<T> {
    * Per-row gate on `onRowClick` (ADR-199). Return false for a row that must NOT
    * open — a cancelled line, a disabled record — and that row loses its click,
    * its pointer cursor and its clickable hover wash, while every other row stays
-   * clickable. The row's ▸ detail toggle, its checkboxes / inputs and its
+   * clickable. Its checkboxes / inputs and its
    * rowActions still work (they stop the row click already). No effect unless
    * `onRowClick` is set; defaults to clickable.
    */
@@ -164,13 +165,14 @@ export interface DataTableProps<T> {
    * ONE table (one frozen header) instead of a table per group. Return null
    * for a row that continues the group above. `prev` is the row drawn just
    * before (undefined for the first row of the page). The heading row is not
-   * a data row: no click, no tick-box, no ▸, no ⋯.
+   * a data row: no click, no tick-box, no ⋯.
    */
   groupRow?: ((row: T, index: number, prev: T | undefined) => ReactNode) | undefined;
   /**
    * Content revealed IN PLACE under a row — a BOM's part list, a route card's
    * operation sequence. Return null/undefined for a row that is collapsed; the
-   * caller owns the open/closed set and the ▸ chevron that toggles it.
+   * caller owns the open/closed set and what opens it (a row click, a ⋯ item —
+   * never a ▸ chevron, owner 2026-10-31).
    *
    * NOT in design-ref/components/data/DataTable.d.ts — a deliberate app
    * extension, for the same reason `footer` is one: bom-master and route-cards
@@ -180,11 +182,9 @@ export interface DataTableProps<T> {
    */
   renderExpanded?: ((row: T, index: number) => ReactNode) | undefined;
   /**
-   * Fit engine (`tableKey`) only: the engine's ▸ is the ONE expand control on
-   * a row. It opens the engine's detail AND calls this, so the caller can
-   * open its own `renderExpanded` content for the same row. A caller with
-   * renderExpanded must not draw a chevron of its own in a keyed table — a
-   * hidden or dropped column would take it away.
+   * @deprecated Ignored. It was called by the fit engine's row ▸, which was
+   * removed (owner 2026-10-31); callers still passing it are cleaned up
+   * separately.
    */
   onToggleExpanded?: ((row: T, index: number) => void) | undefined;
   /** Any CSS length — `400` (px) or `calc(100vh - 220px)`. Overrides .tbl-wrap. */
@@ -238,7 +238,7 @@ export interface DataTableProps<T> {
   /**
    * Draw a totals `<tfoot>` row that follows the VISIBLE columns: each column's
    * `total` is emitted under its own column and moves with it when the column
-   * drops into ▸, so the row never drifts out of alignment (the raw `footer`
+   * leaves the screen, so the row never drifts out of alignment (the raw `footer`
    * escape hatch could not do this). Replaces a hand-written tfoot.
    * If both `showTotals` and `footer` are set, `showTotals` wins (dev-warn).
    */

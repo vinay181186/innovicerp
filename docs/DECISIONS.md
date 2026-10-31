@@ -14845,3 +14845,21 @@ their direction from the CREATE activity; a row whose direction cannot be told i
 re-added by the Super Admin. 0231 is additive (old columns dropped later) so the running API never breaks. Texts: "Aashvi can now see Parth's
 Day Log" / "Aashvi will no longer see Parth's Day Log".
 
+
+## ADR-259: A cancelled SO / JWSO frees its Client PO No.
+
+**Date:** 2026-10-31
+**Status:** Accepted — amends ADR-238 and ADR-245 ("cancelled documents still count")
+
+### Context
+
+On PROD, IN-JW-00028 (Client PO No. 4505040928) was cancelled. The owner could not raise a new order with the same number for the same customer: the uniqueness check counted cancelled orders.
+
+### Decision
+
+Owner 2026-10-31: "cancelled or deleted SO, I can create a new SO with the same Client PO No." Only orders that are neither deleted nor cancelled hold a Client PO No. (`findClientPoNoHolder`, `status::text <> 'cancelled'`). The rule is still per customer, within the SO list and within the JWSO list. Short-closed and closed orders still hold the number. Restore from Trash skips the check for a cancelled order, because it holds no number. Internal SO No. is unchanged: cancelled orders still count there.
+
+### Consequences
+
+- The same customer can now have one live order and one or more cancelled orders with the same number. List and Dossier searches show both, and the status tells them apart.
+- This relies on cancelled being final: there is no path out of cancelled (`SO_STATUS_MOVES.cancelled = []`, and JWSO edits refuse a cancelled order). If a reopen or un-cancel is ever added, it must call `assertClientPoNoFree` first.

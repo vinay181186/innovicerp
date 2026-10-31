@@ -643,7 +643,9 @@ export async function submitIncomingQc(
         lineRef: `Line ${line.lineNo}`,
         qty: input.acceptedQty,
         operatorName: input.qcInspectedByName,
-        detail: `${line.grnCode} Line ${line.lineNo} — Incoming QC: ${input.acceptedQty} accepted, ${input.rejectedQty} deviated`,
+        detail:
+          `${line.grnCode} Line ${line.lineNo} — Incoming QC: ${input.acceptedQty} accepted, ${input.rejectedQty} deviated` +
+          (input.qcRemarks?.trim() ? ` — QC Remarks: ${input.qcRemarks.trim()}` : ''),
       },
       companyId,
       user,

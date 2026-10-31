@@ -79,6 +79,12 @@ export function entryLabel(e: Pick<QcDossierEntry, 'acceptedQty' | 'inspectedOn'
   return d ? `Accepted ${e.acceptedQty} · ${d}` : `Accepted ${e.acceptedQty}`;
 }
 
+/** The entry's QC Remarks (typed at Submit QC), trimmed; null when none. Shown
+ *  after entryLabel as `· "remark"`. */
+export function entryRemarks(e: Pick<QcDossierEntry, 'remarks'>): string | null {
+  return e.remarks?.trim() || null;
+}
+
 export interface DossierFileRow {
   kind: 'file';
   key: string;

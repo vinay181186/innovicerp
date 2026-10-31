@@ -37,6 +37,7 @@ const entry = (over: Partial<DossierEntryRow>): DossierEntryRow => ({
   logDate: '2026-10-20',
   qty: 5,
   rejectQty: 0,
+  remarks: null,
   reportRequired: true,
   qcReportPath: null,
   qcReportName: null,

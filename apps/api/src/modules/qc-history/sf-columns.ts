@@ -6,6 +6,7 @@
 
 import { sql } from 'drizzle-orm';
 import type { SfColumnMap } from '../../lib/list-query';
+import { OP_LOG_QC_REMARKS } from '../../lib/op-log-qc-remarks';
 import { polSql } from '../../lib/pol';
 import { ITEM_CODE_REV, PEND_SINCE } from './sql';
 
@@ -38,5 +39,5 @@ export const QC_LOGS_SF_COLUMNS: SfColumnMap = {
   logDate: { sql: sql`ol.log_date`, type: 'date' },
   shift: { sql: sql`ol.shift`, type: 'list' },
   inspector: { sql: sql`ol.operator_name`, type: 'text' },
-  remarks: { sql: sql`ol.remarks`, type: 'text' },
+  remarks: { sql: OP_LOG_QC_REMARKS, type: 'text' },
 };

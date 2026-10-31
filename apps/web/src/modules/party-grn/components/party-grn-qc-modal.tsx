@@ -1,6 +1,6 @@
 // Incoming QC on a Party GRN (ADR-203, owner D4) — the separate step after the
 // receipt. One row per line still waiting for QC: Received (read-only),
-// Accepted, Rejected and a Reject Reason. Accepted + Rejected must equal
+// Accepted, Rejected, a Reject Reason and optional QC Remarks. Accepted + Rejected must equal
 // Received, and a reason is required when anything is rejected — the same
 // refine the shared schema (partyGrnQcLineInputSchema) enforces, shown before
 // Save. Only the accepted qty enters the customer-material register; rejected
@@ -17,7 +17,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useDiscardGuard } from '../../store-inventory/components/discard-guard';
 import { usePartyGrnDetail, useQcPartyGrn } from '../api';
 
-type QcEntry = { accepted: string; rejected: string; reason: string };
+type QcEntry = { accepted: string; rejected: string; reason: string; qcRemarks: string };
 
 /** The GRN header facts the popup shows — a list row carries them, and the
  *  QC Call Register builds the same shape off its Party GRN row. */
@@ -63,7 +63,12 @@ export function PartyGrnQcModal({
       const next = { ...prev };
       for (const l of pending) {
         if (!next[l.id])
-          next[l.id] = { accepted: String(l.receivedQty), rejected: '0', reason: '' };
+          next[l.id] = {
+            accepted: String(l.receivedQty),
+            rejected: '0',
+            reason: '',
+            qcRemarks: '',
+          };
       }
       return next;
     });
@@ -72,14 +77,17 @@ export function PartyGrnQcModal({
   const dirty = pending.some((l) => {
     const e = entries[l.id];
     return e
-      ? e.accepted !== String(l.receivedQty) || e.rejected !== '0' || e.reason !== ''
+      ? e.accepted !== String(l.receivedQty) ||
+          e.rejected !== '0' ||
+          e.reason !== '' ||
+          e.qcRemarks !== ''
       : false;
   });
   const guard = useDiscardGuard(dirty, onClose);
 
   const setEntry = (id: string, patch: Partial<QcEntry>): void => {
     setEntries((prev) => {
-      const cur = prev[id] ?? { accepted: '', rejected: '0', reason: '' };
+      const cur = prev[id] ?? { accepted: '', rejected: '0', reason: '', qcRemarks: '' };
       return { ...prev, [id]: { ...cur, ...patch } };
     });
   };
@@ -113,6 +121,7 @@ export function PartyGrnQcModal({
         return;
       }
       const reason = e?.reason.trim() ?? '';
+      const qcRemarks = e?.qcRemarks.trim() ?? '';
       if (rejected > 0 && !reason) {
         setErr(`Line ${l.lineNo}: give a deviation reason — ${rejected} deviated.`);
         return;
@@ -122,6 +131,8 @@ export function PartyGrnQcModal({
         acceptedQty: accepted,
         rejectedQty: rejected,
         ...(rejected > 0 ? { rejectReason: reason } : {}),
+        // QC Remarks — any line, deviated or not; sent only when typed.
+        ...(qcRemarks ? { qcRemarks } : {}),
       });
     }
     if (lines.length === 0) {
@@ -165,7 +176,7 @@ export function PartyGrnQcModal({
           border: '1px solid var(--border)',
           borderRadius: 8,
           padding: 20,
-          width: 'min(900px, 96vw)',
+          width: 'min(1100px, 96vw)',
           maxHeight: '90vh',
           overflowY: 'auto',
         }}
@@ -206,6 +217,7 @@ export function PartyGrnQcModal({
                   </th>
                   <th className="th-num">Deviated Qty</th>
                   <th>Deviation Reason</th>
+                  <th>QC Remarks</th>
                 </tr>
               </thead>
               <tbody>
@@ -268,6 +280,18 @@ export function PartyGrnQcModal({
                           placeholder={rejectedNum > 0 ? 'Required' : ''}
                           value={e?.reason ?? ''}
                           onChange={(ev) => setEntry(l.id, { reason: ev.target.value })}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="text"
+                          className="innovic-input"
+                          aria-label={`QC Remarks, line ${l.lineNo}`}
+                          autoComplete="off"
+                          maxLength={2000}
+                          placeholder="Observations…"
+                          value={e?.qcRemarks ?? ''}
+                          onChange={(ev) => setEntry(l.id, { qcRemarks: ev.target.value })}
                         />
                       </td>
                     </tr>

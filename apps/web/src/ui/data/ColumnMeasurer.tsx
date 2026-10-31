@@ -117,11 +117,6 @@ function MeasurerImpl<T>({
                 <tr key={ri}>
                   {columns.map((c, ci) => (
                     <td key={ci} className={tdClass(c)}>
-                      {ci === 0 ? (
-                        <button type="button" className="dt-exp" tabIndex={-1}>
-                          ▸
-                        </button>
-                      ) : null}
                       {cellValue(c, row, ri)}
                     </td>
                   ))}

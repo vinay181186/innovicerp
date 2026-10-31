@@ -383,6 +383,8 @@ with no live `xxx` to fall back from is a defect (C-13).
 | What a person is doing now (Team Day Logs) | `Now` (`Working` / `On break` / `Idle` / `Not started` / `Submitted` / `Leave`) | `currentStatus` | derived from today's entries + day status | `Current Status`, `Activity` |
 | A person whose saved Day Log entries a User sees, read-only (ONE-WAY: User → Team Mate, set by a Super Admin; ADR-258, 0230/0231) | `Team Mate`; the setup tab `Teams Config` | `mateId` / `DayLogTeamMate` | `day_log_team_mates.mate_id` (row = `user_id` sees `mate_id`) | `Approval Day Log` (the tab it replaced), `Team Member`, `Buddy`, `Sees Each Other` |
 | A company non-working date (Day Log owes no time) | `Holidays` | `holidayDate` | `company_holidays.holiday_date` | `Leave` (that is one person's day) |
+| What the QC inspector wrote at Inspect about one inspection (job-card op QC: `op_log.remarks`; Direct Purchase GRN: `goods_receipt_note_lines.qc_remarks`; Party GRN: `party_grn_lines.qc_remarks`, 0232) | `QC Remarks` | `remarks` (op QC) / `qcRemarks` (GRN, Party GRN) | as named | `Remarks` alone where a gate-in remark is also shown, `Notes`, `Observation` |
+| Why a Party GRN line's deviated qty was deviated (required when Deviated > 0) | `Deviation Reason` | `rejectReason` | `party_grn_lines.reject_reason` | `QC Remarks`, `Reason` |
 
 ---
 

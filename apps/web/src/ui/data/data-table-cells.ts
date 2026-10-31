@@ -73,7 +73,7 @@ export function colKind<T>(col: DataTableColumn<T>): DataTableColumnKind {
   return 'code';
 }
 
-/** Plain text of a header node, for the Columns picker and the ▸ detail labels. */
+/** Plain text of a header node, for the Columns picker. */
 export function nodeText(node: ReactNode): string {
   if (node === null || node === undefined || typeof node === 'boolean') return '';
   if (typeof node === 'string' || typeof node === 'number') return String(node);

@@ -1,6 +1,6 @@
 // Fit-engine layout maths (ADR-199). Pure, so it is easy to reason about:
 // measured widths + the user's layout + the available width in, the columns
-// to draw (and their px widths) and the columns moved into ▸ out.
+// to draw (and their px widths) and the columns left off screen out.
 // Ported from Table-Standard-Prototype.html (`layout()`, `canPin()`).
 
 import type { DataTableColumnKind } from './data-table-types';
@@ -40,7 +40,7 @@ export interface FitResult {
   dropped: string[];
   /** px width per visible column (Action column excluded). */
   w: Record<string, number>;
-  /** The pins alone did not fit — the rightmost pin was moved to ▸. */
+  /** The pins alone did not fit — the rightmost pin left the screen. */
   warn: boolean;
   /** Width available to the data columns, px. */
   budget: number;
@@ -67,7 +67,7 @@ export function columnWidth(
   return { min: w, ideal: w };
 }
 
-/** Columns that must never be dropped into ▸: user-pinned, and `control`
+/** Columns that must never leave the screen: user-pinned, and `control`
  *  columns (an in-cell input / picker is force-pinned by its kind). */
 function undroppable(input: FitInput, id: string): boolean {
   return input.pins.includes(id) || input.kinds[id] === 'control';

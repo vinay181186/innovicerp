@@ -136,6 +136,16 @@ function lineColumns(): DataTableColumn<PartyGrnLine>[] {
       title: (l) => l.rejectReason ?? '',
     },
     {
+      // What the inspector wrote at Incoming QC, on any line (NAMING.md).
+      id: 'qc_remarks',
+      header: 'QC Remarks',
+      align: 'left',
+      ellipsis: true,
+      className: 'text3',
+      render: (l) => l.qcRemarks?.trim() || '—',
+      title: (l) => l.qcRemarks ?? '',
+    },
+    {
       // ADR-203: Incoming QC is a separate step. Who did it is in History below.
       id: 'qc_at',
       header: 'QC At',

@@ -25,6 +25,7 @@ import { PartyGrnQcModal } from '@/modules/party-grn/components/party-grn-qc-mod
 import type { RaisedNc } from './qc-call-inspect-form';
 import type { CompletedVM } from './qc-call-completed-columns';
 import { factExportCells } from './qc-call-fact-columns';
+import { deviationReasonOf } from './qc-call-remark-columns';
 import { type PendingVM, pgrnMaterialOf, pgrnOrderOf } from './qc-call-pending-columns';
 import type { QcView } from './qc-sheet';
 
@@ -74,7 +75,7 @@ function pgrnAsCompleted(r: PartyGrnQcRow): IncomingQcCompletedRow {
       r.rejectedQty > 0 ? (r.acceptedQty > 0 ? 'Partial Accept' : 'Rejected') : 'Accepted',
     qcAt: r.qcDate,
     qcInspectedBy: r.qcByName,
-    qcRemarks: r.rejectReason,
+    qcRemarks: r.qcRemarks,
     qcReportPath: null,
     qcReportName: null,
   };
@@ -82,7 +83,8 @@ function pgrnAsCompleted(r: PartyGrnQcRow): IncomingQcCompletedRow {
 
 /** Export every call matching the register query (search + stage + Mine +
  *  Sort & Filter), with the register's own facts (Planned / Actual Machine —
- *  not on Incoming QC — and Client PO No.) as the last columns. */
+ *  not on Incoming QC — and Client PO No.) as the last columns; the Completed
+ *  sheet ends with Deviation Reason (Party GRN lines only). */
 export async function exportRegister(
   query: Omit<QcRegisterQuery, 'limit' | 'offset'>,
   view: QcView,
@@ -108,6 +110,9 @@ export async function exportRegister(
   const inc: IncomingQcCompletedRow[] = [];
   for (const it of all as CompletedVM[]) {
     facts(it);
+    // Deviation Reason (Party GRN lines only) — its own column, after the facts.
+    const cells = (it.kind === 'op' ? extras.ops : extras.inc).at(-1);
+    if (cells) cells['Deviation Reason'] = deviationReasonOf(it) ?? '';
     if (it.kind === 'op') ops.push(it.row);
     else if (it.kind === 'pgrn') inc.push(pgrnAsCompleted(it.row));
     else inc.push(it.row);

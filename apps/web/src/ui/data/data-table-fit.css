@@ -100,7 +100,7 @@
    Comfortable / 22px Compact from the theme's --tbl-row-h. The vertical
    padding goes; the content is centred in the fixed-height cell instead, so a
    badge, a thumbnail or a button can never push the row taller. */
-.innovic-table.tbl-grid.dt-fit > tbody > tr:not(.dt-detail-row):not(.dt-caller-row) > td {
+.innovic-table.tbl-grid.dt-fit > tbody > tr:not(.dt-caller-row) > td {
   padding-top: 0;
   padding-bottom: 0;
   height: var(--tbl-row-h, 28px);
@@ -127,7 +127,8 @@
   margin-left: 3px;
 }
 
-/* ▸ / ▾ toggle at the start of the first cell. */
+/* ▸ / ▾ toggle class — kept for GRN detail lines (grn-detail-lines.tsx); list
+   rows carry no ▸ (owner 2026-10-31). */
 .dt-exp {
   border: 0;
   background: none;
@@ -142,35 +143,6 @@
 .dt-exp:focus-visible {
   outline: 2px solid var(--blue);
   outline-offset: 1px;
-}
-
-/* R3 — the detail row: every dropped column + full text of text columns. */
-.innovic-table.tbl-grid.dt-fit > tbody > tr.dt-detail-row > td {
-  background: var(--blue3);
-  white-space: normal;
-  overflow: visible;
-  text-align: left;
-  padding: var(--sp-1) var(--sp-3);
-}
-.dt-detail-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: var(--sp-1) var(--sp-4);
-}
-.dt-detail-item {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
-}
-.dt-detail-label {
-  color: var(--text3);
-  font-family: var(--hfont);
-  font-size: var(--fs-xs);
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  margin-right: var(--sp-2);
 }
 
 /* The caller's own renderExpanded content (BOM parts, route-card ops). */
@@ -198,11 +170,6 @@
 }
 .dt-measure-inner .innovic-table {
   width: auto;
-}
-
-.dt-detail-none {
-  color: var(--text3);
-  font-size: var(--fs-xs);
 }
 
 /* The toolbar strip (.dt-toolbar) and the Columns popover (.dt-pick*) now live

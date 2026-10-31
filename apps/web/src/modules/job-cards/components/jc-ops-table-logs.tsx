@@ -9,6 +9,43 @@ import { fmtJcStamp } from '../lib/fmt-jc-date';
 
 const dash = <span className="text3">—</span>;
 
+/** The entry's remark, inline after the qty: muted, one line, cut with an
+ *  ellipsis; the entry's own title carries the full text. Only QC entries that
+ *  are not reversals show it inline — every other entry keeps the remark as the
+ *  hover title alone. `OpLog` carries no reversal field, so this reads the
+ *  optional `reversalOfId` the API may send plus the negative-qty sign, the
+ *  same test as op-entry's op-log-history isReversal. */
+export function LogRemark({
+  log,
+}: {
+  log: Pick<OpLog, 'logType' | 'remarks' | 'qty' | 'rejectQty'> & {
+    reversalOfId?: string | null;
+  };
+}): React.JSX.Element | null {
+  const reversal = Boolean(log.reversalOfId) || log.qty < 0 || log.rejectQty < 0;
+  if (log.logType !== 'qc' || reversal) return null;
+  const t = log.remarks?.trim();
+  if (!t) return null;
+  return (
+    <>
+      {' · '}
+      <span
+        style={{
+          display: 'inline-block',
+          maxWidth: '28ch',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          verticalAlign: 'bottom',
+          color: 'var(--text3)',
+        }}
+      >
+        &ldquo;{t}&rdquo;
+      </span>
+    </>
+  );
+}
+
 export function JcOpsTableLogs({ logs }: { logs: OpLog[] }): React.JSX.Element {
   /** `logs` is latest first (jc-status-view.tsx logsByOp). */
   const recent = logs.slice(0, 3);
@@ -30,6 +67,7 @@ export function JcOpsTableLogs({ logs }: { logs: OpLog[] }): React.JSX.Element {
                   <b className="jc-ops-bad">{l.rejectQty}</b>
                 </>
               ) : null}
+              <LogRemark log={l} />
               {' · '}
               <b>{l.operatorName ?? '—'}</b>
               {l.ncs.length > 0 ? (
