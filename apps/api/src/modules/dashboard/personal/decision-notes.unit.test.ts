@@ -18,24 +18,42 @@ const notes = await import('./notifications');
 const rules = await import('./note-rules');
 const dec = await import('./decision-notes');
 const work = await import('./work-notes');
+const srcs = await import('./note-sources');
 
 const render = (q: SQL) => new PgDialect().sqlToQuery(q);
 const rule = (open: string) => notes.NOTE_RULES.find((r) => r.open === open)!;
 const po = { entity: 'PurchaseOrder', refId: 'IN-PO-1', entityId: 'po1' };
 
+const COMBINED = 'SELECT (SELECT COALESCE(json_agg(row_to_json(x) ORDER BY x.';
+
 /** A tx whose execute answers by the table the statement reads; a nested
- *  transaction (savepoint) runs on the same fake. */
+ *  transaction (savepoint) runs on the same fake. The combined note-source
+ *  statement (note-sources.ts) is answered source by source like Postgres
+ *  would: one JSON column per sub-select, and the whole statement fails when
+ *  one sub-select does. `seen` = each source's text; `statements` = what was
+ *  actually sent. */
 const fakeTx = (answer: (text: string) => Array<Record<string, unknown>>) => {
   const seen: string[] = [];
+  const statements: string[] = [];
   const tx = {
     execute: async (q: SQL) => {
       const text = render(q).sql;
+      statements.push(text);
+      if (text.startsWith(COMBINED)) {
+        const pieces = text.split(/\) x\) AS s\d+/).slice(0, -1);
+        seen.push(...pieces);
+        const row: Record<string, unknown> = {};
+        pieces.forEach((piece, i) => {
+          row[`s${i}`] = answer(piece);
+        });
+        return [row];
+      }
       seen.push(text);
       return answer(text);
     },
     transaction: async <T>(fn: (sp: unknown) => Promise<T>): Promise<T> => fn(tx),
   };
-  return { seen, tx: tx as never };
+  return { seen, statements, tx: tx as never };
 };
 
 describe('raiser-only decision notes (PO / PR / RC / Stock Count / Day Log)', () => {
@@ -175,7 +193,7 @@ describe('new-work notes are gated by the next-step right', () => {
           ]
         : [],
     );
-    const got = await work.readWorkNotes(tx, dash({}), 'c1', 'me', sql`now()`);
+    const got = await srcs.readSources(tx, work.workSources(dash({}), 'c1', 'me', sql`now()`));
     expect(seen.some((s) => s.includes('design_issues'))).toBe(false);
     expect(seen.some((s) => s.includes('design_dcrs'))).toBe(false);
     expect(got.map((n) => n.key)).toEqual(['work:capa:k1']);
@@ -185,12 +203,14 @@ describe('new-work notes are gated by the next-step right', () => {
     // Without the CAPA Edit tick, an unassigned CAPA is not read for them.
     expect(seen[0]).not.toMatch(/OR NOT EXISTS \(SELECT 1 FROM public\.users ru/);
     const holder = fakeTx(() => []);
-    await work.readWorkNotes(
+    await srcs.readSources(
       holder.tx,
-      dash({ forms: { dsnissue_create: perms({ view: true, edit: true }) } }),
-      'c1',
-      'me',
-      sql`now()`,
+      work.workSources(
+        dash({ forms: { dsnissue_create: perms({ view: true, edit: true }) } }),
+        'c1',
+        'me',
+        sql`now()`,
+      ),
     );
     expect(holder.seen.some((s) => s.includes('design_issues'))).toBe(true);
   });
@@ -252,7 +272,7 @@ describe('edit / cancel / time-change decisions → requester AND creator', () =
           ]
         : [],
     );
-    const got = await dec.readDecisionNotes(tx, 'c1', 'me', sql`now()`);
+    const got = await srcs.readSources(tx, dec.decisionSources('c1', 'me', sql`now()`));
     expect(got).toHaveLength(1);
     expect(got[0]!.key).toBe('dec:edit:req1:rejected');
     expect(words(got[0]!)).toBe('Me rejected the edit of IN-PO-7 — your edit · Typo');
@@ -291,7 +311,7 @@ describe('edit / cancel / time-change decisions → requester AND creator', () =
 
   it('every read is bounded: company, deleted_at, window, LIMIT, mine', async () => {
     const { tx, seen } = fakeTx(() => []);
-    await dec.readDecisionNotes(tx, 'c1', 'me', sql`now()`);
+    await srcs.readSources(tx, dec.decisionSources('c1', 'me', sql`now()`));
     expect(seen).toHaveLength(3);
     for (const s of seen) {
       expect(s).toMatch(/company_id = \$\d+::uuid/);
@@ -410,7 +430,7 @@ describe('Super Admin / Full Access see every decision (owner rule 1)', () => {
 
   it('admin decision reads drop the "mine" filter but stay bounded', async () => {
     const { tx, seen } = fakeTx(() => []);
-    await dec.readDecisionNotes(tx, 'c1', 'me', sql`now()`, true);
+    await srcs.readSources(tx, dec.decisionSources('c1', 'me', sql`now()`, true));
     expect(seen).toHaveLength(3);
     for (const s of seen) {
       expect(s).toMatch(/company_id = \$\d+::uuid/);
@@ -476,10 +496,14 @@ describe('code review fixes', () => {
       }
       return [];
     });
-    const got = await dec.readDecisionNotes(tx, 'c1', 'me', sql`now()`);
+    const got = await srcs.readSources(tx, dec.decisionSources('c1', 'me', sql`now()`));
     expect(got.map((n) => n.key)).toEqual(['dec:edit:e1:approved']);
-    expect(logError).toHaveBeenCalledTimes(1);
-    expect(logError.mock.calls[0]![0]).toMatchObject({ source: 'decision:cancel' });
+    // The combined statement failed (logged), then the sources ran one by
+    // one and only the cancel source failed again (logged).
+    expect(logError.mock.calls.map((c) => (c[0] as { source: string }).source)).toEqual([
+      'combined',
+      'decision:cancel',
+    ]);
   });
 
   it("Super Admin gets every work note: another login's CAPA reads with that name", async () => {
@@ -499,7 +523,10 @@ describe('code review fixes', () => {
           ]
         : [],
     );
-    const got = await work.readWorkNotes(tx, dash({}, true), 'c1', 'me', sql`now()`, true);
+    const got = await srcs.readSources(
+      tx,
+      work.workSources(dash({}, true), 'c1', 'me', sql`now()`, true),
+    );
     expect(words(got[0]!)).toBe('Rakesh made Parth Responsible for CAPA-0012 — CAPA to work on');
     // No "mine / no login" filter for the admin; design sources read too.
     expect(seen[0]).not.toMatch(/AND \(\(\(SELECT lower/);
@@ -507,7 +534,7 @@ describe('code review fixes', () => {
     expect(seen.some((s) => s.includes('design_dcrs'))).toBe(true);
     // A non-admin without the CAPA tick still reads only their own.
     const user = fakeTx(() => []);
-    await work.readWorkNotes(user.tx, dash({}), 'c1', 'me', sql`now()`);
+    await srcs.readSources(user.tx, work.workSources(dash({}), 'c1', 'me', sql`now()`));
     expect(user.seen[0]).toMatch(/AND \(\(\(SELECT lower/);
   });
 
@@ -524,6 +551,191 @@ describe('code review fixes', () => {
     expect(q.indexOf('array_remove')).toBeLessThan(q.indexOf('FROM public.activity_log a'));
     expect(q.indexOf('LIMIT')).toBeLessThan(q.lastIndexOf(') ev'));
     expect(q.indexOf('AS raiser_name')).toBeLessThan(q.indexOf('SELECT k.*'));
-    expect(q).toMatch(/ORDER BY ev\.ts DESC$/);
+    expect(q).toMatch(/ORDER BY ev\.ts DESC, ev\.id DESC$/);
+  });
+});
+
+describe('round trips: one statement per step, identical results', () => {
+  it('decision + work sources: ONE statement, one JSON column per source', async () => {
+    const sources = [
+      ...dec.decisionSources('c1', 'me', sql`now()`),
+      ...work.workSources(dash({}, true), 'c1', 'me', sql`now()`, true),
+    ];
+    const q = render(srcs.combinedSourcesSql(sources));
+    expect(q.sql.startsWith('SELECT (SELECT COALESCE(json_agg')).toBe(true);
+    expect(q.sql.match(/ AS s\d+/g)).toEqual(sources.map((_, i) => ` AS s${i}`));
+    const { tx, statements } = fakeTx(() => []);
+    await srcs.readSources(tx, sources);
+    expect(statements).toHaveLength(1);
+  });
+
+  it('combined result = per-source result; a failure falls back source by source', async () => {
+    const row = {
+      id: 'e1',
+      status: 'approved',
+      doc_code: 'IN-SO-1',
+      entity: 'SalesOrder',
+      doc_id: 'so1',
+      requested_by: 'me',
+      decided_by: 'boss',
+      decider: 'Boss',
+      decided_at: '2026-11-01T06:00:00.123456+00:00', // json timestamptz text
+      reason: null,
+      approved_n: 1,
+      total_n: 1,
+      creator: 'me',
+    };
+    const answer = (t: string) => (t.includes('document_edit_requests') ? [row] : []);
+    const combined = fakeTx(answer);
+    const viaOne = await srcs.readSources(combined.tx, dec.decisionSources('c1', 'me', sql`now()`));
+    expect(combined.statements).toHaveLength(1);
+    // The same rows read one source at a time give the same notes.
+    const perSource: Awaited<ReturnType<typeof srcs.readSources>> = [];
+    for (const s of dec.decisionSources('c1', 'me', sql`now()`)) {
+      perSource.push(...s.toNotes(answer(render(s.query).sql)));
+    }
+    expect(viaOne).toEqual(perSource);
+    expect(viaOne[0]!.ts).toBe('2026-11-01T06:00:00.123Z');
+    // A JSON string column is accepted too.
+    const asText = await srcs.readSources(
+      {
+        execute: async () => [{ s0: JSON.stringify([row]) }],
+        transaction: async <T>(fn: (sp: unknown) => Promise<T>) =>
+          fn({ execute: async () => [{ s0: JSON.stringify([row]) }] }),
+      } as never,
+      dec.decisionSources('c1', 'me', sql`now()`).slice(0, 1),
+    );
+    expect(asText.map((n) => n.key)).toEqual(['dec:edit:e1:approved']);
+  });
+
+  it('seen time + activity events: ONE statement, JSON rows read back as events', () => {
+    const rs = notes.rulesFor(dash({}, true));
+    const act = notes.activityReadSql(rs, 'c1', 'me', sql`now()`, 300, true);
+    const q = render(notes.seenAndEventsSql('c1', 'me', act)).sql;
+    expect(q.split(';')).toHaveLength(1);
+    expect(q).toMatch(/FROM public\.user_ui_settings s/);
+    expect(q).toMatch(/json_agg\(row_to_json\(e\) ORDER BY e\.ts DESC, e\.id DESC\)/);
+    expect(q).toMatch(/FROM public\.activity_log a/);
+    expect(render(notes.seenAndEventsSql('c1', 'me', null)).sql).not.toMatch(/activity_log/);
+    const evs = notes.eventsOf([
+      {
+        id: 'a1',
+        ts: '2026-11-01T06:00:00.5+00:00',
+        entity: 'PurchaseOrder',
+        action: 'APPROVE',
+        entity_id: 'po1',
+        ref_id: 'IN-PO-1',
+        user_id: 'u1',
+        qty: 20.5,
+        op_ref: null,
+        reason: null,
+        to_pending: false,
+        rule_keys: ['PurchaseOrder:APPROVE:raiser_po_approved'],
+        actor: 'Bharat',
+        raiser_name: 'Rakesh',
+      },
+    ]);
+    expect(evs[0]).toMatchObject({
+      id: 'a1',
+      entityId: 'po1',
+      qty: 20.5,
+      raiserName: 'Rakesh',
+      ruleKeys: ['PurchaseOrder:APPROVE:raiser_po_approved'],
+    });
+    expect(evs[0]!.ts.toISOString()).toBe('2026-11-01T06:00:00.500Z');
+    expect(notes.seenOf('2026-11-01T06:00:00.000Z')).toBe('2026-11-01T06:00:00.000Z');
+    expect(notes.seenOf(null)).toBeNull();
+  });
+
+  it('"still open?": every kind in ONE statement; the home inbox needs none', async () => {
+    const c = { cid: 'c1', today: '2026-11-02', myName: '' };
+    const cand = (open: string, entityId: string) => ({
+      ev: ev({ entityId }),
+      rule: rule(open),
+      key: `${entityId}:${open}`,
+    });
+    const cands = [
+      cand('pr_to_po', 'pr1'),
+      cand('raiser_po', 'po1'),
+      cand('nc_dispose', 'nc1'),
+      cand('approval_rc', 'rc1'),
+    ];
+    const { tx, statements } = fakeTx(() => [
+      { k: 'pr_to_po', id: 'pr1' },
+      { k: 'nc_dispose', id: 'nc1' },
+    ]);
+    const approvals = { counts: {}, pr: [], po: [], logEntry: [], rc: [{ id: 'rc1' }] } as never;
+    const sets = await notes.openSets(tx, cands, c, 'me', approvals);
+    expect(statements).toHaveLength(1);
+    expect(statements[0]).toMatch(/UNION ALL/);
+    expect(statements[0]).not.toMatch(/route_cards/); // approvals inbox, no statement
+    expect(notes.isStillOpen(sets, cands[0]!)).toBe(true);
+    expect(notes.isStillOpen(sets, cands[1]!)).toBe(false);
+    expect(notes.isStillOpen(sets, cands[2]!)).toBe(true);
+    expect(notes.isStillOpen(sets, cands[3]!)).toBe(true);
+    // The bell's PO inbox rule runs beside the one statement.
+    const inbox = vi.fn(async () => new Set(['po9']));
+    const bell = fakeTx(() => []);
+    const s2 = await notes.openSets(
+      bell.tx,
+      [cand('approval_po', 'po9'), cand('pr_to_po', 'pr1')],
+      c,
+      'me',
+      null,
+      inbox,
+    );
+    expect(inbox).toHaveBeenCalledTimes(1);
+    expect(bell.statements).toHaveLength(1);
+    expect(s2.get('approval_po')?.has('po9')).toBe(true);
+  });
+});
+
+describe('review fixes: still-open ids, no dangling query, stable order', () => {
+  const c = { cid: 'c1', today: '2026-11-02', myName: '' };
+
+  it('a list kind asks DISTINCT ids among the ids given, with no arbitrary LIMIT', () => {
+    const q = render(notes.openKindSql('ops_ready', ['j1', 'j2'], c, 'me', null, false)!);
+    expect(q.sql).toMatch(/^SELECT DISTINCT s\.id::text AS id FROM \(/);
+    expect(q.sql).toMatch(/WHERE s\.id::text = ANY\(\$\d+::text\[\]\)$/);
+    expect(q.sql).not.toMatch(/LIMIT 1000/);
+    expect(q.params).toContainEqual(['j1', 'j2']);
+  });
+
+  it('every statement is built before any query starts (no dangling PO inbox read)', async () => {
+    const inbox = vi.fn(async () => new Set<string>());
+    const bad = { ...rule('pr_to_po'), open: 'no_such_list' as never };
+    const { tx, statements } = fakeTx(() => []);
+    await expect(
+      notes.openSets(
+        tx,
+        [
+          { ev: ev({ entityId: 'po1' }), rule: rule('approval_po'), key: 'a' },
+          { ev: ev({ entityId: 'x1' }), rule: bad, key: 'b' },
+        ],
+        c,
+        'me',
+        null,
+        inbox,
+      ),
+    ).rejects.toThrow();
+    expect(inbox).not.toHaveBeenCalled();
+    expect(statements).toHaveLength(0);
+  });
+
+  it('combined aggregate repeats each source order (col DESC, id DESC) like its own query', () => {
+    const sources = [
+      ...dec.decisionSources('c1', 'me', sql`now()`),
+      ...work.workSources(dash({}, true), 'c1', 'me', sql`now()`, true),
+    ];
+    const q = render(srcs.combinedSourcesSql(sources)).sql;
+    expect(
+      q.match(/json_agg\(row_to_json\(x\) ORDER BY x\.decided_at DESC, x\.id DESC\)/g),
+    ).toHaveLength(3);
+    expect(q.match(/json_agg\(row_to_json\(x\) ORDER BY x\.ts DESC, x\.id DESC\)/g)).toHaveLength(
+      3,
+    );
+    for (const s of sources) {
+      expect(render(s.query).sql).toMatch(/DESC, \w+\.id DESC LIMIT \$\d+$/);
+    }
   });
 });

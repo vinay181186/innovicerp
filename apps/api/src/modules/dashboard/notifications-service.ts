@@ -40,7 +40,7 @@ import {
   openSets,
   readNoteCandidates,
 } from './personal/notifications';
-import { seesAll } from './personal/note-rules';
+import { type Open, seesAll } from './personal/note-rules';
 import { istToday } from './personal/util';
 
 /** Bell window reads: every note in the window, so unread / total are exact. */
@@ -151,15 +151,15 @@ export async function getNotifications(
     const explicit = new Map(rows.map((r) => [r.key, r.isRead]));
     const res = toNotificationsResponse(applyReadState(notes, explicit, seenAt), query);
 
-    // Word the returned notes: Day Log replies carry their own text; events
-    // read "still open?" once per kind of next step (approvals inbox not
-    // loaded — POs ask the inbox's own rule via poInbox, Route Cards the
-    // approval list's query).
+    // Word the returned notes: Day Log replies and decision / work notes
+    // carry their own text; events read "still open?" for the SHOWN ones only
+    // — every kind in ONE statement (openSets), the PO inbox's own rule
+    // (poInbox) beside it; Route Cards the approval list's query.
     const shown = new Set(res.items.map((n) => n.key));
     const shownCands = kept.filter((k) => shown.has(k.key));
     const open = shownCands.length
       ? await openSets(tx, shownCands, c, user.id, null, poInbox, seesAll(a))
-      : new Map();
+      : new Map<Open, Set<string>>();
     const textByKey = new Map<string, NoteWithActor['text']>([
       ...worded.map((n) => [n.key, n.text] as const),
       ...shownCands.map((k) => [k.key, noteText(k.ev, k.rule, isStillOpen(open, k))] as const),

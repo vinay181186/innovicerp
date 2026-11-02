@@ -4,7 +4,7 @@
 
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { dash, perms, raw } from '../personal/test-fixtures';
 
 vi.mock('../../../db/client', () => ({ db: {} }));
@@ -403,5 +403,236 @@ describe('phase 2 fragments render', () => {
     expect(q.params).toContain('2026-10-27');
     expect(q.sql).toContain('"inv".grand_total - "inv".total_paid - "inv".total_tds');
     expect(q.sql).not.toContain('b.balance > 0');
+  });
+});
+
+// ── Fast path: every visible check in ONE statement ──
+
+describe('fast path', () => {
+  const c = { cid: 'c1', today: '2026-10-27' };
+  beforeEach(() => svc.resetCheckQuarantine());
+  const summary = {
+    total: 3,
+    late: 1,
+    dueToday: 1,
+    rows: [
+      {
+        row_key: 'l1',
+        id: 'so-1',
+        code: 'SO-1',
+        kind: 'so',
+        doc_date: '2026-10-01',
+        due_date: '2026-10-20',
+        sort_key: '2026-10-20',
+        party: 'Acme',
+        item_code: 'ITM-1',
+        item_name: 'Shaft',
+        qty: 12.5,
+        uom: 'NOS',
+        amount: null,
+        created_by: 'u1',
+        is_late: 1,
+        x1: 'CPO-9',
+        x2: null,
+        x3: null,
+      },
+      { row_key: 'l2', id: 'so-2', code: 'SO-2', due_date: '2026-10-27', qty: '4', is_late: 0 },
+    ],
+  };
+
+  it('builds ONE statement naming every visible check key', () => {
+    const defs = svc.visibleChecks(dash({}, true));
+    const q = render(svc.fastChecksSql(defs, c));
+    expect(q.sql.startsWith('SELECT jsonb_build_object(')).toBe(true);
+    for (const d of defs) expect(q.params).toContain(d.key);
+    // Each key appears once, as its own `::text` key param.
+    expect(q.sql.match(/::text, \(WITH x AS/g)).toHaveLength(defs.length);
+    // 40 checks at most per jsonb_build_object (100-argument limit).
+    expect(q.sql.split('jsonb_build_object(').length - 1).toBe(Math.ceil(defs.length / 40));
+    // Late first, then oldest — the one ordering, inside every check.
+    expect(q.sql).toContain('r.is_late DESC, r.sort_key ASC NULLS LAST, r.code ASC, r.row_key ASC');
+  });
+
+  it('only the caller’s visible keys go into the statement', () => {
+    const defs = svc.visibleChecks(dash({ departments: { finance: 'L1' } }));
+    const q = render(svc.fastChecksSql(defs, c));
+    expect(q.params).toContain('fin_invoice_overdue');
+    expect(q.params).not.toContain('sales_overdue');
+  });
+
+  it('runCheck and the fast path read the same summary into the same checks', async () => {
+    const defs = svc.CHECK_DEFS.filter((d) =>
+      ['sales_overdue', 'fin_invoice_overdue'].includes(d.key),
+    );
+    const a = dash({}, true);
+    const viaFast = await svc.loadChecks(defs, c, a, {
+      fast: async () => Object.fromEntries(defs.map((d) => [d.key, summary])),
+      one: async () => {
+        throw new Error('must not run');
+      },
+    });
+    const fakeTx = { execute: async () => [{ j: JSON.stringify(summary) }] };
+    const viaOne = await svc.buildChecks(defs, c, a, (d) =>
+      t.runCheck(fakeTx as never, d.query(c), c.today),
+    );
+    expect(viaFast).toEqual(viaOne);
+    expect(viaFast[0]!.count).toBe(3);
+    expect(viaFast[0]!.tone).toBe('late');
+    expect(viaFast[0]!.rows.map((r) => r.qty)).toEqual([12.5, 4]);
+  });
+
+  it('when the single statement throws: logged once, then every check runs alone', async () => {
+    const { logger } = await import('../../../lib/logger');
+    vi.mocked(logger.error).mockClear();
+    const defs = svc.CHECK_DEFS.filter((d) =>
+      ['sales_overdue', 'sales_due_week', 'sales_due_month'].includes(d.key),
+    );
+    const ran: string[] = [];
+    const out = await svc.loadChecks(defs, c, dash({}, true), {
+      fast: async () => {
+        throw new Error('one broken check');
+      },
+      one: async (d) => {
+        ran.push(d.key);
+        if (d.key === 'sales_due_week') throw new Error('this one is broken');
+        return t.parseCheckSummary(summary);
+      },
+    });
+    expect(ran).toHaveLength(3);
+    expect(out.map((x) => x.key)).toEqual(['sales_overdue', 'sales_due_month']);
+    const msgs = vi.mocked(logger.error).mock.calls.map((x) => x[1]);
+    expect(msgs.filter((m) => m === 'dashboard checks fast path failed')).toHaveLength(1);
+    expect(msgs.filter((m) => m === 'dashboard check failed')).toHaveLength(1);
+  });
+
+  it('a check whose SQL cannot be built sends the request down the fallback', async () => {
+    const bad = {
+      ...svc.CHECK_DEFS[0]!,
+      query: () => {
+        throw new Error('bad def');
+      },
+    };
+    const good = svc.CHECK_DEFS[1]!;
+    const out = await svc.loadChecks([bad, good], c, dash({}, true), {
+      fast: async (defs) => {
+        svc.fastChecksSql(defs, c);
+        return {};
+      },
+      one: async (d) => {
+        d.query(c);
+        return t.parseCheckSummary(summary);
+      },
+    });
+    expect(out.map((x) => x.key)).toEqual([good.key]);
+  });
+
+  it('a summary that is not one never reads as 0', () => {
+    expect(() => t.parseCheckSummary(undefined)).toThrow();
+    expect(() => t.parseCheckSummary({ total: 0 })).toThrow();
+    expect(t.parseCheckSummary({ total: 0, late: 0, dueToday: 0, rows: [] }).total).toBe(0);
+  });
+
+  it('runCheck sends one statement: the shared summary over the check', async () => {
+    const seen: string[] = [];
+    const fakeTx = {
+      execute: async (q: ReturnType<typeof sql>) => {
+        seen.push(render(q).sql);
+        return [{ j: summary }];
+      },
+    };
+    await t.runCheck(fakeTx as never, sql`SELECT 1`, c.today);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toContain('(WITH x AS (SELECT 1)');
+    expect(seen[0]).toContain("'dueToday'");
+  });
+
+  it('a missing / malformed key in a good fast result is retried alone, dropped only if that fails', async () => {
+    const defs = svc.CHECK_DEFS.filter((d) =>
+      ['sales_overdue', 'sales_due_week', 'sales_due_month'].includes(d.key),
+    );
+    const ran: string[] = [];
+    const out = await svc.loadChecks(defs, c, dash({}, true), {
+      // sales_due_week missing, sales_due_month malformed.
+      fast: async () => ({ sales_overdue: summary, sales_due_month: { total: 2 } }),
+      one: async (d) => {
+        ran.push(d.key);
+        if (d.key === 'sales_due_month') throw new Error('still broken alone');
+        return t.parseCheckSummary(summary);
+      },
+    });
+    expect(ran.sort()).toEqual(['sales_due_month', 'sales_due_week']);
+    expect(out.map((x) => x.key)).toEqual(['sales_overdue', 'sales_due_week']);
+  });
+
+  it('a check broken alone is remembered 10 min: kept out of the fast statement, run alone, logged once', async () => {
+    const { logger } = await import('../../../lib/logger');
+    const defs = svc.CHECK_DEFS.filter((d) =>
+      ['sales_overdue', 'sales_due_week', 'sales_due_month'].includes(d.key),
+    );
+    const t0 = 1_000_000;
+    const fastSaw: string[][] = [];
+    const aloneSaw: string[][] = [];
+    const readers = (fastFails: boolean) => {
+      const solo: string[] = [];
+      aloneSaw.push(solo);
+      return {
+        fast: async (fd: readonly { key: string }[]) => {
+          fastSaw.push(fd.map((d) => d.key));
+          if (fastFails) throw new Error('big statement failed');
+          return Object.fromEntries(fd.map((d) => [d.key, summary]));
+        },
+        one: async (d: { key: string }) => {
+          solo.push(d.key);
+          if (d.key === 'sales_due_week') throw new Error('broken check');
+          return t.parseCheckSummary(summary);
+        },
+      };
+    };
+    const failLogs = () =>
+      vi.mocked(logger.error).mock.calls.filter((x) => x[1] === 'dashboard check failed').length;
+    vi.mocked(logger.error).mockClear();
+
+    // 1st request: the big statement fails, every check runs alone, the broken
+    // one is logged and remembered.
+    await svc.loadChecks(defs, c, dash({}, true), readers(true) as never, t0);
+    expect(fastSaw[0]).toHaveLength(3);
+    expect(failLogs()).toBe(1);
+
+    // 5 min later: it is left out of the fast statement and runs alone; the
+    // others come from the fast statement. Not logged again.
+    const out = await svc.loadChecks(
+      defs,
+      c,
+      dash({}, true),
+      readers(false) as never,
+      t0 + 5 * 60_000,
+    );
+    expect(fastSaw[1]).toEqual(['sales_overdue', 'sales_due_month']);
+    expect(aloneSaw[1]).toEqual(['sales_due_week']);
+    expect(out.map((x) => x.key)).toEqual(['sales_overdue', 'sales_due_month']);
+    expect(failLogs()).toBe(1);
+
+    // After the 10-minute window it rejoins the fast statement.
+    await svc.loadChecks(defs, c, dash({}, true), readers(false) as never, t0 + 11 * 60_000);
+    expect(fastSaw[2]).toHaveLength(3);
+    expect(aloneSaw[2]).toEqual([]);
+  });
+
+  it('a remembered check that works alone is still shown', async () => {
+    const defs = svc.CHECK_DEFS.filter((d) => ['sales_overdue', 'sales_due_week'].includes(d.key));
+    let broken = true;
+    const readers = {
+      fast: async () => {
+        throw new Error('big statement failed');
+      },
+      one: async (d: { key: string }) => {
+        if (broken && d.key === 'sales_due_week') throw new Error('broken');
+        return t.parseCheckSummary(summary);
+      },
+    };
+    await svc.loadChecks(defs, c, dash({}, true), readers as never, 0);
+    broken = false;
+    const out = await svc.loadChecks(defs, c, dash({}, true), readers as never, 60_000);
+    expect(out.map((x) => x.key)).toEqual(['sales_overdue', 'sales_due_week']);
   });
 });
