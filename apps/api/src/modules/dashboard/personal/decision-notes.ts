@@ -15,38 +15,15 @@
 import {
   CANCEL_DOC_LABELS,
   type CancelDocType,
-  type DashNote,
   docNavPage,
   type DocumentEditEntity,
   ONE_STEP_CANCEL_DOC_TYPES,
 } from '@innovic/shared';
 import { type SQL, sql } from 'drizzle-orm';
-import type { DbTransaction } from '../../../db/with-user-context';
+import type { ExtraNote, NoteSource } from './note-sources';
 import { codePart, entityHref, str } from './util';
 
-/** A note worded at read time (not an activity rule). `open` = its next step
- *  is still open (home shows only open ones; a decision is always open). */
-export type ExtraNote = DashNote & { actorName: string | null; open: boolean };
-
-/** One note source inside its own savepoint (drizzle nested transaction):
- *  a failing statement (a missing grant, a renamed table) rolls back to the
- *  savepoint and is logged, and only THAT source is left out — the home's
- *  other notes and the bell still answer. Sources run one after another
- *  (savepoints on one connection must not interleave). The logger is loaded
- *  only on failure, so the unit tests need no environment. */
-export async function guardedRead<T>(
-  tx: DbTransaction,
-  source: string,
-  read: (sp: DbTransaction) => Promise<T[]>,
-): Promise<T[]> {
-  try {
-    return await tx.transaction((sp) => read(sp as DbTransaction));
-  } catch (err) {
-    const { logger } = await import('../../../lib/logger');
-    logger.error({ err, source }, 'dashboard note source failed');
-    return [];
-  }
-}
+export type { ExtraNote } from './note-sources';
 
 /** Most decision rows read per store. */
 const DECISION_SCAN = 200;
@@ -242,15 +219,9 @@ function toRow(kind: DecisionRow['kind'], r: Record<string, unknown>): DecisionR
   };
 }
 
-/** The three bounded reads (company, window, mine, LIMIT) — run together on
- *  the transaction's connection. `since` = the window's first instant. */
-export async function readDecisionNotes(
-  tx: DbTransaction,
-  cid: string,
-  me: string,
-  since: SQL,
-  seeAll = false,
-): Promise<ExtraNote[]> {
+/** The three bounded sources (company, window, mine, LIMIT). `since` = the
+ *  window's first instant. Read with readSources (one statement). */
+export function decisionSources(cid: string, me: string, since: SQL, seeAll = false): NoteSource[] {
   // Owner rule 1: a caller who sees all reads every decision (still company,
   // window, LIMIT); everyone else only their own (asker or creator).
   const mineQ = seeAll ? sql`` : sql`WHERE q.requested_by = ${me} OR q.creator = ${me}`;
@@ -285,7 +256,7 @@ export async function readDecisionNotes(
           AND d.status IN ('approved', 'rejected')
           AND COALESCE(d.decided_at, d.updated_at) >= ${since}
       ) q ${nameJoins} ${mineQ}
-      ORDER BY q.decided_at DESC LIMIT ${DECISION_SCAN}`,
+      ORDER BY q.decided_at DESC, q.id DESC LIMIT ${DECISION_SCAN}`,
     ],
     [
       'cancel',
@@ -301,7 +272,7 @@ export async function readDecisionNotes(
           AND cr.status IN ('approved', 'rejected')
           AND COALESCE(cr.decided_at, cr.updated_at) >= ${since}
       ) q ${nameJoins} ${mineQ}
-      ORDER BY q.decided_at DESC LIMIT ${DECISION_SCAN}`,
+      ORDER BY q.decided_at DESC, q.id DESC LIMIT ${DECISION_SCAN}`,
     ],
     [
       'time',
@@ -324,17 +295,16 @@ export async function readDecisionNotes(
           AND r.status IN ('approved', 'rejected')
           AND COALESCE(r.decided_at, r.updated_at) >= ${since}
           ${seeAll ? sql`` : sql`AND (r.requested_by = ${me}::uuid OR l.created_by = ${me}::uuid)`}
-        ORDER BY COALESCE(r.decided_at, r.updated_at) DESC LIMIT ${DECISION_SCAN}`,
+        ORDER BY COALESCE(r.decided_at, r.updated_at) DESC, r.id DESC LIMIT ${DECISION_SCAN}`,
     ],
   ];
-  const results: DecisionRow[] = [];
-  for (const [kind, q] of reads) {
-    const rows = await guardedRead(tx, `decision:${kind}`, async (sp) =>
-      ((await sp.execute(q)) as unknown as Array<Record<string, unknown>>).map((r) =>
-        toRow(kind, r),
-      ),
-    );
-    results.push(...rows);
-  }
-  return results.map((r) => decisionNote(r, me, seeAll)).filter((n): n is ExtraNote => n !== null);
+  return reads.map(([kind, query]) => ({
+    source: `decision:${kind}`,
+    query,
+    orderCol: 'decided_at' as const,
+    toNotes: (rows) =>
+      rows
+        .map((r) => decisionNote(toRow(kind, r), me, seeAll))
+        .filter((n): n is ExtraNote => n !== null),
+  }));
 }

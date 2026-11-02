@@ -20,9 +20,8 @@ import { type SQL, sql } from 'drizzle-orm';
 import type { DbTransaction } from '../../../db/with-user-context';
 import { type DashAccess, hasTick } from '../access';
 import { dayLogReplyNote, readDayLogReplies } from './day-log-replies';
-import { type ExtraNote, readDecisionNotes } from './decision-notes';
+import { decisionSources } from './decision-notes';
 import { APPROVAL_DEFS, type ListCtx, listDef } from './lists';
-import { runList } from './list-query';
 import {
   NOTE_RULES,
   type NoteRule,
@@ -38,14 +37,15 @@ import {
   seesAll,
 } from './note-rules';
 import { addDays, codePart, str } from './util';
-import { readWorkNotes } from './work-notes';
+import { type ExtraNote, readSources } from './note-sources';
+import { workSources } from './work-notes';
 
 export const NOTIFICATIONS_SEEN_KEY = 'notifications_seen_at';
 const NOTE_DAYS = 3;
 const NOTE_MAX = 50;
 
 export { NOTE_RULES, rulesFor, type NoteRule } from './note-rules';
-export type { ExtraNote } from './decision-notes';
+export type { ExtraNote } from './note-sources';
 
 /** Next steps where one note per document is enough: a card created,
  *  rejected, resubmitted and restored inside the window is still ONE card
@@ -124,61 +124,58 @@ export function candidates(
  *  at any value), for a caller that has not loaded the whole inbox. */
 export type PoInboxIds = (tx: DbTransaction) => Promise<Set<string>>;
 
-async function openIds(
-  tx: DbTransaction,
+/** The "still open?" statement of one next step over `ids` (SELECT id), or
+ *  null when the answer needs no statement (the home's approvals inbox) or
+ *  is the PO inbox's own rule (poInbox). */
+export function openKindSql(
   open: Open,
   ids: string[],
   c: ListCtx,
   me: string,
   approvals: ApprovalInboxResponse | null,
-  poInbox?: PoInboxIds,
+  usePoInbox: boolean,
   seeAll = false,
-): Promise<Set<string>> {
-  // Owner rule 1: a caller who sees all keeps someone else's document too.
-  const mine = seeAll ? sql`` : sql`AND d.created_by = ${me}::uuid`;
+): SQL | null {
   // The home has the approvals inbox already. The bell does not load it: it
   // asks the PO inbox's own rule (poInbox) so "waiting for your approval"
   // matches the inbox, else the "waiting for approval" list's query.
-  if (open === 'approval_po' && approvals) return new Set((approvals.po ?? []).map((r) => r.id));
-  if (open === 'approval_po' && poInbox) return poInbox(tx);
-  if (open === 'approval_rc' && approvals) return new Set((approvals.rc ?? []).map((r) => r.id));
-  if (open === 'approval_po' || open === 'approval_rc') {
-    const d = APPROVAL_DEFS[open === 'approval_po' ? 'po_draft' : 'rc_pending'];
-    const { rows } = await runList(tx, d.query(c, { ids }), { ids, limit: 1000 });
-    return new Set(rows.map((r) => r.id));
-  }
+  if ((open === 'approval_po' || open === 'approval_rc') && approvals) return null;
+  if (open === 'approval_po' && usePoInbox) return null;
+  const idIn = sql`AND d.id = ANY(${sql.param(ids)}::uuid[])`;
+  // Owner rule 1: a caller who sees all keeps someone else's document too.
+  const mine = seeAll ? sql`` : sql`AND d.created_by = ${me}::uuid`;
   if (open === 'raiser_pr' || open === 'raiser_po') {
     const table =
       open === 'raiser_pr'
         ? sql.raw('public.purchase_requests')
         : sql.raw('public.purchase_orders');
-    const rows = (await tx.execute(sql`
-      SELECT d.id::text AS id FROM ${table} d
-      WHERE d.company_id = ${c.cid}::uuid AND d.deleted_at IS NULL ${mine}
-        AND d.id = ANY(${sql.param(ids)}::uuid[])
-    `)) as unknown as Array<{ id: string }>;
-    return new Set(rows.map((r) => r.id));
+    return sql`SELECT d.id::text AS id FROM ${table} d
+      WHERE d.company_id = ${c.cid}::uuid AND d.deleted_at IS NULL ${mine} ${idIn}`;
   }
   if (open === 'raiser_rc' || open === 'raiser_rc_approved') {
     // Still the caller's card, and still in the state the note announces — a
     // rejection is dropped once the card is sent again (or approved).
     const status = open === 'raiser_rc' ? 'rejected' : 'approved';
-    const rows = (await tx.execute(sql`
-      SELECT d.id::text AS id FROM public.route_cards d
+    return sql`SELECT d.id::text AS id FROM public.route_cards d
       WHERE d.company_id = ${c.cid}::uuid AND d.deleted_at IS NULL ${mine}
-        AND d.approval_status = ${status}
-        AND d.id = ANY(${sql.param(ids)}::uuid[])
-    `)) as unknown as Array<{ id: string }>;
-    return new Set(rows.map((r) => r.id));
+        AND d.approval_status = ${status} ${idIn}`;
   }
   const own = openSql(open, c.cid, me, ids, seeAll);
-  if (own) {
-    const rows = (await tx.execute(own)) as unknown as Array<{ id: string }>;
-    return new Set(rows.map((r) => r.id));
-  }
-  const d = listDef(open)!;
-  const { rows } = await runList(tx, d.query(c, { ids }), { ids, limit: 1000 });
-  return new Set(rows.map((r) => r.id));
+  if (own) return own;
+  // A home list's own inner query (list-query shape). It may return one row
+  // per line / op of a document: DISTINCT ids, bounded by the ids asked.
+  const d =
+    open === 'approval_po' || open === 'approval_rc'
+      ? APPROVAL_DEFS[open === 'approval_po' ? 'po_draft' : 'rc_pending']
+      : listDef(open)!;
+  return sql`SELECT DISTINCT s.id::text AS id FROM (${d.query(c, { ids })}) s
+    WHERE s.id::text = ANY(${sql.param(ids)}::text[])`;
+}
+
+/** ONE statement for every next step that needs one: (k, id) rows. */
+export function openUnionSql(parts: ReadonlyArray<readonly [Open, SQL]>): SQL {
+  const branches = parts.map(([k, q]) => sql`(SELECT ${k}::text AS k, o.id FROM (${q}) o)`);
+  return sql`SELECT u.k, u.id FROM (${sql.join(branches, sql` UNION ALL `)}) u`;
 }
 
 /** ADR-264 — the bell reads the same notes over a longer window, as a history
@@ -216,9 +213,9 @@ export function noteText(ev: ActivityEvent, rule: NoteRule, open: boolean): Dash
   ];
 }
 
-/** One "still open?" read per kind of next step, over every candidate id —
- *  the kinds are independent, so they run together (postgres-js queues them
- *  on the transaction's one connection; no second pool connection). */
+/** "Still open?" for every kind of next step in ONE statement (openUnionSql);
+ *  the home's approvals inbox needs none, the PO inbox's own rule (poInbox)
+ *  runs beside it on the same connection. */
 export async function openSets(
   tx: DbTransaction,
   cands: readonly NoteCandidate[],
@@ -234,13 +231,35 @@ export async function openSets(
     s.add(ev.entityId);
     byOpen.set(rule.open, s);
   }
-  const entries = await Promise.all(
-    [...byOpen].map(
-      async ([open, ids]) =>
-        [open, await openIds(tx, open, [...ids], c, me, approvals, poInbox, seeAll)] as const,
-    ),
-  );
-  return new Map(entries);
+  const out = new Map<Open, Set<string>>();
+  const parts: Array<readonly [Open, SQL]> = [];
+  let wantInbox = false;
+  // Build every statement first (nothing is started yet), then start the
+  // queries together and await them all — nothing is left running if a
+  // statement fails to build.
+  for (const [open, idSet] of byOpen) {
+    out.set(open, new Set<string>());
+    if (open === 'approval_po' && approvals) {
+      out.set(open, new Set((approvals.po ?? []).map((r) => r.id)));
+    } else if (open === 'approval_rc' && approvals) {
+      out.set(open, new Set((approvals.rc ?? []).map((r) => r.id)));
+    } else if (open === 'approval_po' && poInbox) {
+      wantInbox = true;
+    } else {
+      const q = openKindSql(open, [...idSet], c, me, approvals, !!poInbox, seeAll);
+      if (q) parts.push([open, q] as const);
+    }
+  }
+  const union = parts.length ? openUnionSql(parts) : null;
+  const [rows, inboxIds] = await Promise.all([
+    union
+      ? (tx.execute(union) as unknown as Promise<Array<{ k: string; id: string }>>)
+      : Promise.resolve([] as Array<{ k: string; id: string }>),
+    wantInbox && poInbox ? poInbox(tx) : Promise.resolve(null),
+  ]);
+  for (const r of rows) out.get(r.k as Open)?.add(String(r.id));
+  if (inboxIds) out.set('approval_po', inboxIds);
+  return out;
 }
 
 /** True when this candidate's next step is in the open sets. */
@@ -301,10 +320,55 @@ export function activityReadSql(
           AND a.entity_id IS NOT NULL AND a.ref_id IS NOT NULL
       ) k
       WHERE cardinality(k.rule_keys) > 0
-      ORDER BY k.ts DESC
+      ORDER BY k.ts DESC, k.id DESC
       LIMIT ${scan}
     ) ev
-    ORDER BY ev.ts DESC`;
+    ORDER BY ev.ts DESC, ev.id DESC`;
+}
+
+/** ONE statement: the caller's seen time and (when they hold rules) the
+ *  activity events as a JSON array, newest first. */
+export function seenAndEventsSql(cid: string, me: string, events: SQL | null): SQL {
+  return sql`SELECT
+    (SELECT s.setting_value FROM public.user_ui_settings s
+      WHERE s.company_id = ${cid}::uuid AND s.user_id = ${me}::uuid
+        AND s.setting_key = ${NOTIFICATIONS_SEEN_KEY} AND s.deleted_at IS NULL
+      LIMIT 1) AS seen,
+    ${
+      events
+        ? sql`(SELECT COALESCE(json_agg(row_to_json(e) ORDER BY e.ts DESC, e.id DESC), '[]'::json)
+            FROM (${events}) e)`
+        : sql`'[]'::json`
+    } AS events`;
+}
+
+/** The stored seen time as ISO, or null (readSeenAt's rule). */
+export function seenOf(v: unknown): string | null {
+  const s = typeof v === 'string' ? v : null;
+  return s && !Number.isNaN(Date.parse(s)) ? new Date(s).toISOString() : null;
+}
+
+/** The activity read's rows (JSON from seenAndEventsSql) → events, newest
+ *  first. */
+export function eventsOf(v: unknown): ActivityEvent[] {
+  const parsed = typeof v === 'string' ? (JSON.parse(v) as unknown) : v;
+  const rows = Array.isArray(parsed) ? (parsed as Array<Record<string, unknown>>) : [];
+  return rows.map((r) => ({
+    id: String(r['id']),
+    ts: r['ts'] instanceof Date ? r['ts'] : new Date(String(r['ts'])),
+    entity: String(r['entity']),
+    action: String(r['action']),
+    entityId: String(r['entity_id']),
+    refId: String(r['ref_id']),
+    userId: String(r['user_id']),
+    actor: str(r['actor']) ?? 'Someone',
+    qty: r['qty'] === null || r['qty'] === undefined ? null : Number(r['qty']),
+    opRef: str(r['op_ref']),
+    toPending: r['to_pending'] === true,
+    reason: str(r['reason']),
+    ruleKeys: Array.isArray(r['rule_keys']) ? (r['rule_keys'] as unknown[]).map(String) : [],
+    raiserName: str(r['raiser_name']),
+  }));
 }
 
 /** The caller's Day Log reply notes, decision / work notes (worded), seen
@@ -325,43 +389,35 @@ export async function readNoteCandidates(
   const days = opts.days ?? NOTE_DAYS;
   const scan = opts.scan ?? 300;
   const since = windowStart(c.today, days);
-  const seenAt = await readSeenAt(tx, c.cid, me);
-  // Owner 2026-10-30: Day Log hidden ("Hide page") → no Day Log reply notes.
-  const replyNotes: NoteWithActor[] = hasTick(a, 'daylog_view', 'view')
-    ? (await readDayLogReplies(tx, c.cid, me)).map((r) => ({
-        ...dayLogReplyNote(r),
-        actorName: r.author,
-      }))
-    : [];
-  // Each source in its own savepoint, one after another (guardedRead): a
-  // failing source drops only itself.
-  const decisions = await readDecisionNotes(tx, c.cid, me, since, seesAll(a));
-  const work = await readWorkNotes(tx, a, c.cid, me, since, seesAll(a));
-  const extraNotes = [...decisions, ...work].sort((x, y) => Date.parse(y.ts) - Date.parse(x.ts));
-  const rules = rulesFor(a);
-  if (rules.length === 0) return { replyNotes, extraNotes, cands: [], seenAt };
   const seeAll = seesAll(a);
-
-  const res = (await tx.execute(
-    activityReadSql(rules, c.cid, me, since, scan, seeAll),
-  )) as unknown as Array<Record<string, unknown>>;
-  const events: ActivityEvent[] = res.map((r) => ({
-    id: String(r['id']),
-    ts: r['ts'] instanceof Date ? r['ts'] : new Date(String(r['ts'])),
-    entity: String(r['entity']),
-    action: String(r['action']),
-    entityId: String(r['entity_id']),
-    refId: String(r['ref_id']),
-    userId: String(r['user_id']),
-    actor: str(r['actor']) ?? 'Someone',
-    qty: r['qty'] === null || r['qty'] === undefined ? null : Number(r['qty']),
-    opRef: str(r['op_ref']),
-    toPending: r['to_pending'] === true,
-    reason: str(r['reason']),
-    ruleKeys: Array.isArray(r['rule_keys']) ? (r['rule_keys'] as unknown[]).map(String) : [],
-    raiserName: str(r['raiser_name']),
+  const rules = rulesFor(a);
+  // 1. The decision + work sources: ONE statement in one savepoint
+  //    (note-sources.ts; per-source fallback). Alone — savepoints on the
+  //    connection must not interleave with other statements.
+  const extraNotes = (
+    await readSources(tx, [
+      ...decisionSources(c.cid, me, since, seeAll),
+      ...workSources(a, c.cid, me, since, seeAll),
+    ])
+  ).sort((x, y) => Date.parse(y.ts) - Date.parse(x.ts));
+  // 2. Seen time + activity events in ONE statement, with the Day Log
+  //    replies beside it on the same connection.
+  // Owner 2026-10-30: Day Log hidden ("Hide page") → no Day Log reply notes.
+  const events = rules.length ? activityReadSql(rules, c.cid, me, since, scan, seeAll) : null;
+  const [core, replies] = await Promise.all([
+    tx.execute(seenAndEventsSql(c.cid, me, events)) as unknown as Promise<
+      Array<Record<string, unknown>>
+    >,
+    hasTick(a, 'daylog_view', 'view') ? readDayLogReplies(tx, c.cid, me) : Promise.resolve([]),
+  ]);
+  const replyNotes: NoteWithActor[] = replies.map((r) => ({
+    ...dayLogReplyNote(r),
+    actorName: r.author,
   }));
-  return { replyNotes, extraNotes, cands: candidates(events, rules, me), seenAt };
+  const seenAt = seenOf(core[0]?.['seen']);
+  if (rules.length === 0) return { replyNotes, extraNotes, cands: [], seenAt };
+  const evs = eventsOf(core[0]?.['events']);
+  return { replyNotes, extraNotes, cands: candidates(evs, rules, me), seenAt };
 }
 
 /** ADR-250 home block: notes whose next step is still open, newest first

@@ -14,9 +14,8 @@
 
 import { type AccessFormKey, docNavPage } from '@innovic/shared';
 import { type SQL, sql } from 'drizzle-orm';
-import type { DbTransaction } from '../../../db/with-user-context';
 import { type DashAccess, hasTick } from '../access';
-import { type ExtraNote, guardedRead } from './decision-notes';
+import type { ExtraNote, NoteSource } from './note-sources';
 import { codePart, str } from './util';
 
 const WORK_SCAN = 200;
@@ -73,14 +72,15 @@ export function workNote(r: WorkRow): ExtraNote {
 const iso = (v: unknown): string => (v instanceof Date ? v : new Date(String(v))).toISOString();
 const actorOf = sql.raw(`COALESCE(NULLIF(btrim(u.full_name), ''), u.email, 'Someone')`);
 
-export async function readWorkNotes(
-  tx: DbTransaction,
+/** The caller's work sources (only those their rights open). Read with
+ *  readSources (one statement). */
+export function workSources(
   a: DashAccess,
   cid: string,
   me: string,
   since: SQL,
   seeAll = false,
-): Promise<ExtraNote[]> {
+): NoteSource[] {
   // Owner rule 1: Super Admin / Full Access get every work note.
   const may = (form: AccessFormKey): boolean => seeAll || hasTick(a, form, 'edit');
   const capaHolder = may('capa_create');
@@ -104,7 +104,7 @@ export async function readWorkNotes(
       WHERE c.company_id = ${cid}::uuid AND c.deleted_at IS NULL
         AND c.created_by <> ${me}::uuid AND c.created_at >= ${since}
         ${seeAll ? sql`` : sql`AND (${isMine} ${capaHolder ? sql`OR ${noLogin}` : sql``})`}
-      ORDER BY c.created_at DESC LIMIT ${WORK_SCAN}`,
+      ORDER BY c.created_at DESC, c.id DESC LIMIT ${WORK_SCAN}`,
   ]);
   if (may('dsnissue_create')) {
     reads.push([
@@ -116,7 +116,7 @@ export async function readWorkNotes(
         LEFT JOIN public.users u ON u.id = i.created_by
         WHERE i.company_id = ${cid}::uuid AND i.deleted_at IS NULL
           AND i.created_by <> ${me}::uuid AND i.created_at >= ${since}
-        ORDER BY i.created_at DESC LIMIT ${WORK_SCAN}`,
+        ORDER BY i.created_at DESC, i.id DESC LIMIT ${WORK_SCAN}`,
     ]);
   }
   if (may('dsndcr_create')) {
@@ -129,30 +129,30 @@ export async function readWorkNotes(
         LEFT JOIN public.users u ON u.id = d.created_by
         WHERE d.company_id = ${cid}::uuid AND d.deleted_at IS NULL
           AND d.created_by <> ${me}::uuid AND d.created_at >= ${since}
-        ORDER BY d.created_at DESC LIMIT ${WORK_SCAN}`,
+        ORDER BY d.created_at DESC, d.id DESC LIMIT ${WORK_SCAN}`,
     ]);
   }
-  const results: WorkRow[] = [];
-  for (const [kind, q] of reads) {
-    const rows = await guardedRead(tx, `work:${kind}`, async (sp) =>
-      ((await sp.execute(q)) as unknown as Array<Record<string, unknown>>).map(
-        (r): WorkRow => ({
-          kind,
-          id: String(r['id']),
-          code: String(r['code'] ?? ''),
-          href:
-            kind === 'capa'
-              ? `/nc-register?tab=capa&capa=${encodeURIComponent(String(r['code'] ?? ''))}`
-              : docNavPage('design-project', str(r['project_id']) ?? ''),
-          actor: String(r['actor'] ?? 'Someone'),
-          ts: iso(r['ts']),
-          open: r['open'] === true,
-          mine: r['mine'] === true,
-          responsible: str(r['responsible']),
-        }),
+  return reads.map(([kind, query]) => ({
+    source: `work:${kind}`,
+    query,
+    orderCol: 'ts' as const,
+    toNotes: (rows) =>
+      rows.map(
+        (r): ExtraNote =>
+          workNote({
+            kind,
+            id: String(r['id']),
+            code: String(r['code'] ?? ''),
+            href:
+              kind === 'capa'
+                ? `/nc-register?tab=capa&capa=${encodeURIComponent(String(r['code'] ?? ''))}`
+                : docNavPage('design-project', str(r['project_id']) ?? ''),
+            actor: String(r['actor'] ?? 'Someone'),
+            ts: iso(r['ts']),
+            open: r['open'] === true,
+            mine: r['mine'] === true,
+            responsible: str(r['responsible']),
+          }),
       ),
-    );
-    results.push(...rows);
-  }
-  return results.map(workNote);
+  }));
 }

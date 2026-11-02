@@ -121,22 +121,31 @@ export interface CheckResult {
   dueTodayTotal: number;
 }
 
-export async function runCheck(
-  tx: DbTransaction,
-  inner: SQL,
-  today: string,
-  limit = DASH_CHECK_ROW_LIMIT,
-): Promise<CheckResult> {
-  const res = (await tx.execute(sql`
-    SELECT ${COLS},
-           COUNT(*) OVER ()::int AS total_n,
-           COALESCE(SUM(x.is_late) OVER (), 0)::int AS late_n,
-           COUNT(*) FILTER (WHERE x.is_late = 0 AND x.due_date = ${today}) OVER ()::int AS due_n
-    FROM (${inner}) x
-    ORDER BY x.is_late DESC, x.sort_key ASC NULLS LAST, x.code ASC, x.row_key ASC
-    LIMIT ${limit}
-  `)) as unknown as Array<Record<string, unknown>>;
-  const rows: RawRow[] = res.map((r) => ({
+/** The rows order of every check: late first, then oldest (sort_key), then
+ *  number, then row key so ties are stable. One definition, both paths. */
+const ROW_ORDER = (a: string): SQL =>
+  sql.raw(`${a}.is_late DESC, ${a}.sort_key ASC NULLS LAST, ${a}.code ASC, ${a}.row_key ASC`);
+
+/** THE one definition of a check's figures over its inner query, as ONE json
+ *  value (a parenthesised scalar subquery):
+ *    { total, late, dueToday, rows: [first `limit` rows, ROW_ORDER] }
+ *  total = every matching row; late = Σ is_late; dueToday = not late and the
+ *  deadline is `today`. runCheck (one check per statement) and the fast path
+ *  (checks/service.ts: every check in one statement) both read this, and
+ *  parseCheckSummary turns it back into a CheckResult. */
+export function checkSummarySql(inner: SQL, today: string, limit = DASH_CHECK_ROW_LIMIT): SQL {
+  return sql`(WITH x AS (${inner})
+    SELECT json_build_object(
+      'total', (SELECT COUNT(*) FROM x)::int,
+      'late', (SELECT COALESCE(SUM(x.is_late), 0) FROM x)::int,
+      'dueToday', (SELECT COUNT(*) FROM x WHERE x.is_late = 0 AND x.due_date = ${today})::int,
+      'rows', (SELECT COALESCE(json_agg(r ORDER BY ${ROW_ORDER('r')}), '[]'::json)
+               FROM (SELECT ${COLS} FROM x ORDER BY ${ROW_ORDER('x')} LIMIT ${limit}) r)))`;
+}
+
+/** One row of the summary's `rows` (or any list-query row) → RawRow. */
+function toRawRow(r: Record<string, unknown>): RawRow {
+  return {
     rowKey: String(r['row_key'] ?? r['id']),
     id: String(r['id']),
     code: String(r['code'] ?? ''),
@@ -154,14 +163,35 @@ export async function runCheck(
     x1: str(r['x1']),
     x2: str(r['x2']),
     x3: str(r['x3']),
-  }));
-  const first = res[0];
-  return {
-    rows,
-    total: first ? num(first['total_n']) : 0,
-    lateTotal: first ? num(first['late_n']) : 0,
-    dueTodayTotal: first ? num(first['due_n']) : 0,
   };
+}
+
+/** checkSummarySql's json (object, or its text form) → CheckResult. Throws on
+ *  anything that is not a summary, so a missing key can never read as 0. */
+export function parseCheckSummary(v: unknown): CheckResult {
+  const o = (typeof v === 'string' ? JSON.parse(v) : v) as Record<string, unknown> | null;
+  if (!o || typeof o !== 'object' || !Array.isArray(o['rows'])) {
+    throw new Error('not a check summary');
+  }
+  return {
+    rows: (o['rows'] as Array<Record<string, unknown>>).map(toRawRow),
+    total: num(o['total']),
+    lateTotal: num(o['late']),
+    dueTodayTotal: num(o['dueToday']),
+  };
+}
+
+/** One check in its own statement (the per-check / fallback path). */
+export async function runCheck(
+  tx: Pick<DbTransaction, 'execute'>,
+  inner: SQL,
+  today: string,
+  limit = DASH_CHECK_ROW_LIMIT,
+): Promise<CheckResult> {
+  const res = (await tx.execute(
+    sql`SELECT ${checkSummarySql(inner, today, limit)} AS j`,
+  )) as unknown as Array<Record<string, unknown>>;
+  return parseCheckSummary(res[0]?.['j']);
 }
 
 /** One raw row → the contract row. */
