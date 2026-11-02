@@ -57,8 +57,9 @@ export function useStoreInventory(query: ListStoreInventoryQuery, enabled = true
 /** One item's figures added up over its Item + Drawing Rev rows. Since the
  *  list went one row per Rev bucket (2026-11-02) a MAKE item answers SEVERAL
  *  rows, so a screen that wants the item total must sum them — never take the
- *  first row. On PO is item-level and sits on the reorder row only, so the sum
- *  is that one figure. All-zero buckets are dropped by the server; they add 0. */
+ *  first row. On PO is item-level and repeated on every row of the item, so it
+ *  is taken once — from the item's reorder row (any one row if none is
+ *  flagged), never summed. All-zero buckets are dropped by the server; they add 0. */
 export interface ItemStockTotals {
   inStock: number;
   reservedQty: number;
@@ -68,12 +69,21 @@ export interface ItemStockTotals {
 
 export function sumItemStock(rows: readonly StoreInventoryRow[], itemId: string): ItemStockTotals {
   const t: ItemStockTotals = { inStock: 0, reservedQty: 0, availableQty: 0, onPoQty: 0 };
+  let onPoFromReorderRow = false;
+  let seen = false;
   for (const r of rows) {
     if (r.itemId !== itemId) continue;
     t.inStock += r.inStock;
     t.reservedQty += r.reservedQty;
     t.availableQty += r.availableQty;
-    t.onPoQty += r.onPoQty;
+    // Item-level: count once. The reorder row wins; else the first row seen.
+    if (r.reorderRow && !onPoFromReorderRow) {
+      t.onPoQty = r.onPoQty;
+      onPoFromReorderRow = true;
+    } else if (!seen) {
+      t.onPoQty = r.onPoQty;
+    }
+    seen = true;
   }
   const r3 = (v: number): number => Math.round(v * 1000) / 1000;
   return {

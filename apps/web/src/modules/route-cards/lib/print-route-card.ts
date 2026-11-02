@@ -54,7 +54,8 @@ export function printRouteCard(args: {
   // instead of) Route Card Rev. The card's own Drawing No. wins over the
   // item master's.
   const drawing = rc.drawingNo ?? item?.drawingNo ?? '—';
-  const itemCodeRev = itemRevLabel(itemCode, rc.drawingRev);
+  // No item code → the bare value ('—') as before, never '—/1'.
+  const itemCodeRev = rc.itemCode ? itemRevLabel(rc.itemCode, rc.drawingRev) : itemCode;
   const drawingRev = rc.drawingRev?.trim() || '—';
 
   const body = `

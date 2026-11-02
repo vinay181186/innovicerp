@@ -439,6 +439,8 @@ export const listReservationsQuerySchema = z.object({
   itemId: z.string().uuid().optional(),
   soLineId: z.string().uuid().optional(),
   salesOrderId: z.string().uuid().optional(),
+  /** Drawing Rev bucket: a register id, or 'none' = the blank (no-Rev) bucket. */
+  itemRevisionId: z.union([z.string().uuid(), z.literal('none')]).optional(),
   /** Omitted = only the rows still holding stock (active + partially_consumed).
    *  Parsed from the literal string: `z.coerce.boolean()` would turn the
    *  string "false" into TRUE, so an explicit `?includeClosed=false` asked for

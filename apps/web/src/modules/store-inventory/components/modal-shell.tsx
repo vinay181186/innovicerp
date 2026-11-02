@@ -24,6 +24,7 @@ export function ModalShell({
   closeOnEscape?: boolean;
 }): React.JSX.Element {
   const onCloseRef = useRef(onClose);
+  const boxRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     onCloseRef.current = onClose;
   }, [onClose]);
@@ -32,8 +33,9 @@ export function ModalShell({
     const onKey = (e: KeyboardEvent): void => {
       if (e.key !== 'Escape' || e.defaultPrevented) return;
       if (escapeBelongsToAnOpenPicker(e.target)) return;
-      // A column ▾ menu / list open inside the box closes first.
-      if (document.querySelector('[role="menu"], [role="listbox"]')) return;
+      // A column ▾ menu / list open inside THIS box closes first — looked up in
+      // the box itself, so a menu elsewhere on the page never blocks Escape.
+      if (boxRef.current?.querySelector('[role="menu"], [role="listbox"]')) return;
       e.preventDefault();
       onCloseRef.current();
     };
@@ -54,6 +56,7 @@ export function ModalShell({
       onClick={onClose}
     >
       <div
+        ref={boxRef}
         style={{
           background: 'var(--bg)',
           border: '1px solid var(--border)',

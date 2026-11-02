@@ -227,8 +227,17 @@ export function ReservationDrilldown({
 }): React.JSX.Element {
   // Closed rows (released / cancelled / fully dispatched) are left out: the
   // question this box answers is "who is holding my stock right now".
-  const { data, isLoading, isError, error } = useStockReservations({ itemId });
+  // A Store row stands for ONE Item + Drawing Rev bucket, so its Reserved
+  // number counts only that bucket's bookings: filter by the row's Rev, or
+  // 'none' for a MAKE item's blank (no-Rev) row. A Buy item has a single row
+  // (label = the bare code) and keeps the item-wide list.
+  const revScope = itemRevisionId ?? (itemLabel !== itemCode ? 'none' : undefined);
+  const { data, isLoading, isError, error } = useStockReservations({
+    itemId,
+    ...(revScope ? { itemRevisionId: revScope } : {}),
+  });
   const columns = reservationColumns(itemCode, itemName);
+  const scopeName = revScope ? itemLabel : 'this item';
 
   return (
     // The item is named once, in the title — every row is the same item. The
@@ -252,7 +261,7 @@ export function ReservationDrilldown({
           {/* Phase C — the same item split per Item + Drawing Rev bucket. */}
           <RevStockTable itemId={itemId} itemCode={itemCode} focusRevisionId={itemRevisionId} />
           <div style={{ fontSize: 12, marginBottom: 10 }}>
-            <span className="text3">Total reserved for this item: </span>
+            <span className="text3">Total reserved for {scopeName}: </span>
             <b className="mono" style={{ color: 'var(--purple)', fontSize: 16 }}>
               {data?.totalReserved ?? 0}
             </b>
@@ -262,7 +271,7 @@ export function ReservationDrilldown({
             columns={columns}
             rows={data?.rows ?? []}
             rowKey={(row) => row.id}
-            emptyText="No stock is reserved for this item."
+            emptyText={`No stock is reserved for ${scopeName}.`}
           />
         </>
       )}

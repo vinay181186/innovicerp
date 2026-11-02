@@ -27,6 +27,13 @@ export async function readAssemblyReservationRows(
       ${query.includeClosed ? sql`` : sql`AND r.status IN ('active', 'partially_consumed')`}
       ${query.itemId ? sql`AND r.item_id = ${query.itemId}::uuid` : sql``}
       ${query.salesOrderId ? sql`AND r.sales_order_id = ${query.salesOrderId}::uuid` : sql``}
+      ${
+        query.itemRevisionId === 'none'
+          ? sql`AND r.item_revision_id IS NULL`
+          : query.itemRevisionId
+            ? sql`AND r.item_revision_id = ${query.itemRevisionId}::uuid`
+            : sql``
+      }
     ORDER BY r.created_at DESC
   `)) as unknown as Array<Record<string, unknown>>;
   return rows.map((r) => {

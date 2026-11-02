@@ -173,9 +173,14 @@ function invalidateStockViews(qc: ReturnType<typeof useQueryClient>): void {
   void qc.invalidateQueries({ queryKey: stockReservationKeys.all });
 }
 
+/** The reservations list query, plus the optional Item + Drawing Rev bucket
+ *  (`itemRevisionId`, or 'none' = the blank no-Rev bucket) the server accepts
+ *  for the Store drill-down of one Rev row. */
+export type StockReservationsQuery = ListReservationsQuery & { itemRevisionId?: string };
+
 export const stockReservationKeys = {
   all: ['stock-reservations'] as const,
-  list: (q: ListReservationsQuery) =>
+  list: (q: StockReservationsQuery) =>
     [
       ...stockReservationKeys.all,
       'list',
@@ -183,6 +188,7 @@ export const stockReservationKeys = {
       q.soLineId ?? null,
       q.salesOrderId ?? null,
       q.includeClosed ?? false,
+      q.itemRevisionId ?? null,
     ] as const,
   availability: (itemId: string | null) =>
     [...stockReservationKeys.all, 'availability', itemId] as const,
@@ -221,9 +227,10 @@ export function useStockAvailability(itemId: string | null) {
 }
 
 /** "Where is my stock reserved?" — the drill-down behind a Reserved number. */
-export function useStockReservations(query: ListReservationsQuery, enabled = true) {
+export function useStockReservations(query: StockReservationsQuery, enabled = true) {
   const params = new URLSearchParams();
   if (query.itemId) params.set('itemId', query.itemId);
+  if (query.itemRevisionId) params.set('itemRevisionId', query.itemRevisionId);
   if (query.soLineId) params.set('soLineId', query.soLineId);
   if (query.salesOrderId) params.set('salesOrderId', query.salesOrderId);
   if (query.includeClosed) params.set('includeClosed', 'true');

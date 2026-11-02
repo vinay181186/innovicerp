@@ -42,6 +42,9 @@ export function storeInventoryColumns(opts: {
       // plain "ABC" for a Buy item, "ABC · no Rev" for a MAKE item's old
       // stock. Without a Rev the code opens the Item Master record; a real
       // link so it can be ctrl / middle-clicked into a new tab.
+      // The Rev link is deliberately NOT gated on canOpenItem: the drawing
+      // page is open to every logged-in user and the server checks the read
+      // itself. The plain-code (Item Master) link keeps the ADR-234 gate.
       title: (row) => row.itemLabel,
       render: (row) =>
         row.itemRevisionId ? (
@@ -200,9 +203,9 @@ export function storeInventoryColumns(opts: {
       align: 'right',
       nowrap: true,
       className: 'mono text3',
-      // Item-level: shown once, on the item's reorder row; blank on its other
-      // Drawing Rev rows so the figure is never read as per-Rev.
-      render: (row) => (row.reorderRow ? row.reorderLevel || '—' : ''),
+      // Item-level fact, repeated on every Drawing Rev row of the item so a
+      // search that lands on one Rev ("ABC/2") still shows it.
+      render: (row) => row.reorderLevel || '—',
     },
     {
       id: 'on_po',

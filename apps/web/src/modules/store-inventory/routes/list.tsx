@@ -99,6 +99,18 @@ function StoreInventoryPage(): React.JSX.Element {
   });
   useClampPage(page, data?.total, gotoPage);
 
+  // Distinct items behind the rows, for the active Stock filter — the server's
+  // item counts (search + Sort & Filter applied), the ones the filter shows.
+  const itemCount = data
+    ? filter === 'below'
+      ? data.summary.belowReorderCount
+      : filter === 'zero'
+        ? data.summary.zeroStockCount
+        : data.summary.totalItems
+    : undefined;
+  const itemsNote =
+    itemCount === undefined ? '' : ` · ${itemCount} ${itemCount === 1 ? 'item' : 'items'}`;
+
   // ADR-234 — the Item Code opens the Item Master only for someone who may open it.
   const canOpenItem = useCanOpen()('/items/$id');
   const columns = useMemo(
@@ -152,8 +164,12 @@ function StoreInventoryPage(): React.JSX.Element {
           <ListHeader
             title="Store Inventory"
             icon="📦"
+            // One row per Item + Drawing Rev bucket, so the total counts
+            // ROWS; the distinct items under the same filter follow it (the
+            // same figure the Stock filter's option shows).
             count={data?.total}
-            noun="item"
+            noun={`row${itemsNote}`}
+            nounPlural={`rows${itemsNote}`}
             filterNote={
               filter === 'below' ? 'Below Reorder' : filter === 'zero' ? 'Zero Stock' : undefined
             }
@@ -224,10 +240,9 @@ function StoreInventoryPage(): React.JSX.Element {
                 rowKey={(row) => row.rowKey}
                 // Below Reorder row → late wash; the fit table's one-line rows
                 // make an inline "⚠ Below Reorder" impossible, the tint says it.
-                // Reorder is item-level: only the item's reorder row carries it.
-                rowClassName={(row) =>
-                  row.reorderRow && row.belowReorder ? ROW_TINT.late : undefined
-                }
+                // Reorder is item-level and repeated on every Rev row of the
+                // item, so each of its rows carries the wash.
+                rowClassName={(row) => (row.belowReorder ? ROW_TINT.late : undefined)}
                 // Material ships off the default view (kept so no data is lost).
                 defaultHidden={['material']}
                 emptyText={
@@ -269,7 +284,7 @@ function StoreInventoryPage(): React.JSX.Element {
                     label: 'Raise PR',
                     icon: 'plus',
                     group: 'workflow',
-                    hidden: !(canRaisePr && row.reorderRow && row.belowReorder),
+                    hidden: !(canRaisePr && row.belowReorder),
                     to: '/reorder-list',
                   },
                 ]}
@@ -279,7 +294,7 @@ function StoreInventoryPage(): React.JSX.Element {
 
           <ListFooter
             total={data?.total ?? 0}
-            noun="item"
+            noun="row"
             page={page}
             pageSize={LIST_PAGE_SIZE}
             onPage={gotoPage}

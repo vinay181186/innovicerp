@@ -76,7 +76,27 @@ export async function listStoreInventory(
     // row's Item + Rev label, so "ABC/1" hits only that row while "ABC" hits
     // all of ABC's rows), Name, Material and UOM. Quantities stay out: a
     // partial match on a number makes "5" hit almost every item.
+    //
+    // Two halves. `itemSearchFrag` runs inside item_base so the bucket CTEs are
+    // only built for items that can match (code / name / material / uom, or a
+    // "CODE/REV" / "CODE · no Rev" label of the item); it is a superset of the
+    // row filter. `searchFrag` is the row filter on the final rows, so
+    // "ABC/1" still returns only that row.
     const term = input.search ? `%${likeEscape(input.search)}%` : null;
+    const itemSearchFrag = term
+      ? sql`AND (
+          i.code ILIKE ${term} ESCAPE '\\'
+          OR i.name ILIKE ${term} ESCAPE '\\'
+          OR i.material ILIKE ${term} ESCAPE '\\'
+          OR i.uom::text ILIKE ${term} ESCAPE '\\'
+          OR (i.procurement_type = 'make'
+              AND (i.code || ' · no Rev') ILIKE ${term} ESCAPE '\\')
+          OR (i.procurement_type = 'make' AND EXISTS (
+                SELECT 1 FROM public.item_revisions ir
+                 WHERE ir.company_id = i.company_id AND ir.item_id = i.id
+                   AND (i.code || '/' || ir.rev) ILIKE ${term} ESCAPE '\\'))
+        )`
+      : sql``;
     const searchFrag = term
       ? sql`AND (
           b.item_label ILIKE ${term} ESCAPE '\\'
@@ -97,69 +117,41 @@ export async function listStoreInventory(
           ? sql`AND b.item_in_stock = 0`
           : sql``;
 
-    // A MAKE item's rows add up to its old one-row figures:
-    //   • In Stock / Reserved per bucket from v_item_rev_stock_availability
-    //     (0233/0234; per item SUM(bucket) = item_stock_balances);
-    //   • Mfg Pending per bucket from the open Job Card's item_revision_id;
-    //   • At Vendor per bucket from the Job Card behind the v_osp_wip row;
-    //   • On PO is item-level and sits on the item's reorder row only.
+    // A MAKE item's rows add up EXACTLY to its item-level figures (the ones
+    // Below Reorder reads):
+    //   • In Stock per bucket from v_item_rev_stock_availability (0233/0234).
+    //     Item In Stock stays v_item_stock (item_stock_balances); any gap
+    //     between the two ledgers (should be 0 — the same trigger writes
+    //     both) is put on the blank "no Rev" bucket, so the rows still add up.
+    //   • Reserved: the item figure is v_item_stock_availability floored ONCE
+    //     at 0, as before. Buckets take their own booked qty (a negative
+    //     bucket counts as 0) and that item figure is handed out in Rev order
+    //     — each bucket gets min(its booking, what is left of the item
+    //     figure). Normally that is each bucket's own booking; it only bites
+    //     on a data fault (negative booking, or bookings on an item with no
+    //     balance row, which the item view reads as 0).
+    //   • Mfg Pending per bucket from the open Job Card's item_revision_id,
+    //     kept numeric (no per-bucket rounding), so buckets sum to the item.
+    //   • At Vendor per bucket from the Job Card behind the v_osp_wip row.
+    //   • On PO is an ITEM fact (a PO line has no Rev): every row of the item
+    //     shows the item's On PO, like Reorder Level / Qty / Below Reorder.
     // A bucket with nothing in any column is dropped (same rule as the Rev
     // breakdown, rev-stock.ts); an item with no bucket left shows one blank
-    // row of zeros so it still appears. Reorder Level / Qty / Below Reorder
-    // stay item-level (the ONE rule in reorder-rule.ts, on item totals:
-    // reorderable type, level > 0, Available + On PO < level, both rounded to
-    // 3 places) and are repeated on every row of the item; reorderRow marks the
-    // one row the screen shows them on (Rev buckets by Rev, blank bucket last).
+    // row of zeros so it still appears. Below Reorder is the ONE rule in
+    // reorder-rule.ts on item totals (reorderable type, level > 0, Available +
+    // On PO < level, both rounded to 3 places). reorderRow marks the item's
+    // first row (Rev order, blank bucket last) — the one row that carries the
+    // item-level figures for anything that totals them.
+    //
+    // Rev order mirrors compareRevision (packages/shared lib/revision.ts):
+    // all-digit Revs as numbers (2 before 10), all-letter Revs by length then
+    // text (Z before AA), anything else as text; digits, then letters, then
+    // the rest; the blank bucket last.
     const blank = sql.raw(`'${BLANK_REV_KEY}'::uuid`);
     const baseCte = sql`
-      WITH jc_open AS (
-        SELECT
-          jc.item_id,
-          COALESCE(jc.item_revision_id, ${blank}) AS rev_key,
-          SUM(GREATEST(jc.order_qty - COALESCE(comp.completed, 0), 0))::int AS qty
-        FROM public.job_cards jc
-        LEFT JOIN public.v_jc_status v ON v.job_card_id = jc.id
-        LEFT JOIN LATERAL (
-          -- "Completed" for a job card = output of its LAST operation, NOT the sum
-          -- across every op. A JC is the SAME pieces flowing op → op; summing each
-          -- op's logged output multi-counts them and wildly understates (often to
-          -- 0) Mfg Pending on multi-op routes. Mirror the canonical
-          -- lastOpCompletedQty (job-cards/service.ts): a QC / qc-required
-          -- final op credits accepted qty, else completed qty — from the highest
-          -- op_seq.
-          SELECT CASE WHEN vos.op_type = 'qc' OR vos.qc_required
-                      THEN vos.qc_accepted_qty ELSE vos.completed_qty END AS completed
-          FROM public.v_jc_op_status vos
-          WHERE vos.job_card_id = jc.id
-          ORDER BY vos.op_seq DESC LIMIT 1
-        ) comp ON TRUE
-        WHERE jc.company_id = ${companyId}::uuid
-          AND jc.deleted_at IS NULL
-          AND (v.computed_status IS NULL OR v.computed_status NOT IN ('complete', 'closed'))
-        GROUP BY jc.item_id, COALESCE(jc.item_revision_id, ${blank})
-      ),
-      jc_open_item AS (
-        SELECT item_id, SUM(qty)::int AS qty FROM jc_open GROUP BY item_id
-      ),
+      WITH
       -- ADR-189 — the one On PO rule (lib/po-pending.ts).
       po_pending AS (${onPoByItemSql(companyId)}),
-      -- Pieces physically at an OSP vendor: sent on an outward DC, not yet
-      -- returned. Document-derived via v_osp_wip (ADR-066); deliberately NOT
-      -- in the stock ledger (ADR-067), so it must be surfaced as its own
-      -- column or the row silently understates where the material is.
-      -- Bucket = the Drawing Rev of the Job Card the op belongs to.
-      at_vendor AS (
-        SELECT w.item_id, COALESCE(jc.item_revision_id, ${blank}) AS rev_key,
-               SUM(w.at_vendor_qty)::numeric AS qty
-        FROM public.v_osp_wip w
-        LEFT JOIN public.job_cards jc ON jc.id = w.job_card_id
-        WHERE w.company_id = ${companyId}::uuid
-          AND w.item_id IS NOT NULL
-        GROUP BY w.item_id, COALESCE(jc.item_revision_id, ${blank})
-      ),
-      at_vendor_item AS (
-        SELECT item_id, SUM(qty)::numeric AS qty FROM at_vendor GROUP BY item_id
-      ),
       -- Item-level figures (unchanged): totals, reorder, Below Reorder.
       -- Reserved = v_item_stock_availability (sales + assembly bookings,
       -- ADR-180 / 3c), floored at 0.
@@ -192,31 +184,127 @@ export async function listStoreInventory(
         LEFT JOIN po_pending ON po_pending.item_id = i.id
         WHERE i.company_id = ${companyId}::uuid
           AND i.deleted_at IS NULL
+          ${itemSearchFrag}
+      ),
+      jc_open AS (
+        SELECT
+          jc.item_id,
+          COALESCE(jc.item_revision_id, ${blank}) AS rev_key,
+          SUM(GREATEST(jc.order_qty - COALESCE(comp.completed, 0), 0))::numeric AS qty
+        FROM public.job_cards jc
+        LEFT JOIN public.v_jc_status v ON v.job_card_id = jc.id
+        LEFT JOIN LATERAL (
+          -- "Completed" for a job card = output of its LAST operation, NOT the sum
+          -- across every op. A JC is the SAME pieces flowing op → op; summing each
+          -- op's logged output multi-counts them and wildly understates (often to
+          -- 0) Mfg Pending on multi-op routes. Mirror the canonical
+          -- lastOpCompletedQty (job-cards/service.ts): a QC / qc-required
+          -- final op credits accepted qty, else completed qty — from the highest
+          -- op_seq.
+          SELECT CASE WHEN vos.op_type = 'qc' OR vos.qc_required
+                      THEN vos.qc_accepted_qty ELSE vos.completed_qty END AS completed
+          FROM public.v_jc_op_status vos
+          WHERE vos.job_card_id = jc.id
+          ORDER BY vos.op_seq DESC LIMIT 1
+        ) comp ON TRUE
+        WHERE jc.company_id = ${companyId}::uuid
+          AND jc.deleted_at IS NULL
+          AND jc.item_id IN (SELECT item_id FROM item_base)
+          AND (v.computed_status IS NULL OR v.computed_status NOT IN ('complete', 'closed'))
+        GROUP BY jc.item_id, COALESCE(jc.item_revision_id, ${blank})
+      ),
+      jc_open_item AS (
+        SELECT item_id, SUM(qty)::numeric AS qty FROM jc_open GROUP BY item_id
+      ),
+      -- Pieces physically at an OSP vendor: sent on an outward DC, not yet
+      -- returned. Document-derived via v_osp_wip (ADR-066); deliberately NOT
+      -- in the stock ledger (ADR-067), so it must be surfaced as its own
+      -- column or the row silently understates where the material is.
+      -- Bucket = the Drawing Rev of the Job Card the op belongs to.
+      at_vendor AS (
+        SELECT w.item_id, COALESCE(jc.item_revision_id, ${blank}) AS rev_key,
+               SUM(w.at_vendor_qty)::numeric AS qty
+        FROM public.v_osp_wip w
+        LEFT JOIN public.job_cards jc ON jc.id = w.job_card_id
+        WHERE w.company_id = ${companyId}::uuid
+          AND w.item_id IN (SELECT item_id FROM item_base)
+        GROUP BY w.item_id, COALESCE(jc.item_revision_id, ${blank})
+      ),
+      at_vendor_item AS (
+        SELECT item_id, SUM(qty)::numeric AS qty FROM at_vendor GROUP BY item_id
       ),
       rev_avail AS (
         SELECT ra.item_id, ra.rev_key, ra.on_hand_qty, ra.reserved_qty
         FROM public.v_item_rev_stock_availability ra
         WHERE ra.company_id = ${companyId}::uuid
+          AND ra.item_id IN (SELECT item_id FROM item_base WHERE is_make)
+      ),
+      rev_item AS (
+        SELECT item_id, SUM(on_hand_qty)::numeric AS on_hand_qty
+        FROM rev_avail GROUP BY item_id
+      ),
+      -- In Stock the Rev ledger does not account for (normally none) → blank bucket.
+      stock_gap AS (
+        SELECT ib.item_id, (ib.in_stock - COALESCE(ri.on_hand_qty, 0))::numeric AS qty
+        FROM item_base ib
+        LEFT JOIN rev_item ri ON ri.item_id = ib.item_id
+        WHERE ib.is_make AND ib.in_stock <> COALESCE(ri.on_hand_qty, 0)
       ),
       bucket_keys AS (
         SELECT item_id, rev_key FROM rev_avail
         UNION SELECT item_id, rev_key FROM jc_open
         UNION SELECT item_id, rev_key FROM at_vendor
+        UNION SELECT item_id, ${blank} FROM stock_gap
       ),
-      make_buckets AS (
+      make_raw AS (
         SELECT
           ib.item_id,
           NULLIF(k.rev_key, ${blank})                        AS item_revision_id,
-          COALESCE(ra.on_hand_qty, 0)::numeric               AS in_stock,
-          GREATEST(COALESCE(ra.reserved_qty, 0), 0)::numeric AS reserved_qty,
-          COALESCE(jo.qty, 0)::int                           AS mfg_pending_qty,
-          COALESCE(av.qty, 0)::numeric                       AS at_vendor_qty
+          r.rev                                              AS drawing_rev,
+          (COALESCE(ra.on_hand_qty, 0)
+            + CASE WHEN k.rev_key = ${blank} THEN COALESCE(sg.qty, 0) ELSE 0 END)::numeric
+                                                             AS in_stock,
+          GREATEST(COALESCE(ra.reserved_qty, 0), 0)::numeric AS booked_qty,
+          ib.reserved_qty                                    AS item_reserved_qty,
+          COALESCE(jo.qty, 0)::numeric                       AS mfg_pending_qty,
+          COALESCE(av.qty, 0)::numeric                       AS at_vendor_qty,
+          ROW_NUMBER() OVER (
+            PARTITION BY ib.item_id
+            ORDER BY
+              (k.rev_key = ${blank}),
+              CASE WHEN r.rev ~ '^[0-9]+$' THEN 0 WHEN r.rev ~ '^[A-Z]+$' THEN 1 ELSE 2 END,
+              CASE WHEN r.rev ~ '^[0-9]+$' THEN r.rev::numeric END,
+              CASE WHEN r.rev ~ '^[A-Z]+$' THEN length(r.rev) END,
+              r.rev,
+              k.rev_key
+          )                                                  AS ord
         FROM item_base ib
         JOIN bucket_keys k ON k.item_id = ib.item_id
+        LEFT JOIN public.item_revisions r
+          ON r.id = NULLIF(k.rev_key, ${blank}) AND r.company_id = ${companyId}::uuid
         LEFT JOIN rev_avail ra ON ra.item_id = k.item_id AND ra.rev_key = k.rev_key
         LEFT JOIN jc_open jo ON jo.item_id = k.item_id AND jo.rev_key = k.rev_key
         LEFT JOIN at_vendor av ON av.item_id = k.item_id AND av.rev_key = k.rev_key
+        LEFT JOIN stock_gap sg ON sg.item_id = k.item_id
         WHERE ib.is_make
+      ),
+      -- Hand the item's (floored-once) Reserved out over its buckets in Rev
+      -- order: each takes min(its booking, item Reserved − bookings before it).
+      make_buckets AS (
+        SELECT
+          mr.item_id, mr.item_revision_id, mr.drawing_rev, mr.ord,
+          mr.in_stock,
+          LEAST(
+            mr.booked_qty,
+            GREATEST(
+              mr.item_reserved_qty - COALESCE(SUM(mr.booked_qty) OVER (
+                PARTITION BY mr.item_id ORDER BY mr.ord
+                ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0),
+              0)
+          )::numeric AS reserved_qty,
+          mr.mfg_pending_qty,
+          mr.at_vendor_qty
+        FROM make_raw mr
       ),
       make_kept AS (
         SELECT * FROM make_buckets mb
@@ -224,18 +312,21 @@ export async function listStoreInventory(
            OR mb.mfg_pending_qty <> 0 OR mb.at_vendor_qty <> 0
       ),
       bucket_rows AS (
-        SELECT item_id, item_revision_id, in_stock, reserved_qty, mfg_pending_qty, at_vendor_qty
+        SELECT item_id, item_revision_id, drawing_rev, ord,
+               in_stock, reserved_qty, mfg_pending_qty, at_vendor_qty
         FROM make_kept
         UNION ALL
         -- MAKE item with no live bucket: one blank row so it still appears.
-        SELECT ib.item_id, NULL::uuid, 0::numeric, 0::numeric, 0, 0::numeric
+        SELECT ib.item_id, NULL::uuid, NULL::text, 1::bigint,
+               0::numeric, 0::numeric, 0::numeric, 0::numeric
         FROM item_base ib
         WHERE ib.is_make
           AND NOT EXISTS (SELECT 1 FROM make_kept mk WHERE mk.item_id = ib.item_id)
         UNION ALL
         -- Buy item: one row, the item totals (as before).
-        SELECT ib.item_id, NULL::uuid, ib.in_stock, ib.reserved_qty,
-               COALESCE(joi.qty, 0)::int, COALESCE(avi.qty, 0)::numeric
+        SELECT ib.item_id, NULL::uuid, NULL::text, 1::bigint,
+               ib.in_stock, ib.reserved_qty,
+               COALESCE(joi.qty, 0)::numeric, COALESCE(avi.qty, 0)::numeric
         FROM item_base ib
         LEFT JOIN jc_open_item joi ON joi.item_id = ib.item_id
         LEFT JOIN at_vendor_item avi ON avi.item_id = ib.item_id
@@ -244,13 +335,8 @@ export async function listStoreInventory(
       rows_ranked AS (
         SELECT
           br.*,
-          r.rev AS drawing_rev,
-          ROW_NUMBER() OVER (
-            PARTITION BY br.item_id
-            ORDER BY (br.item_revision_id IS NULL), r.rev, br.item_revision_id
-          ) AS bucket_ord
+          ROW_NUMBER() OVER (PARTITION BY br.item_id ORDER BY br.ord) AS bucket_ord
         FROM bucket_rows br
-        LEFT JOIN public.item_revisions r ON r.id = br.item_revision_id
       ),
       base AS (
         SELECT
@@ -274,7 +360,7 @@ export async function listStoreInventory(
           (rr.in_stock - rr.reserved_qty)::numeric          AS available_qty,
           ib.reorder_level,
           ib.reorder_qty,
-          (CASE WHEN rr.bucket_ord = 1 THEN ib.on_po_qty ELSE 0 END)::numeric AS on_po_qty,
+          ib.on_po_qty,
           rr.at_vendor_qty,
           rr.mfg_pending_qty,
           ib.below_reorder,
@@ -284,7 +370,7 @@ export async function listStoreInventory(
       )`;
 
     // Ends on the row key so paging never skips or repeats a row; an item's
-    // rows stay together, Rev buckets by Rev, the blank bucket last.
+    // rows stay together, Rev buckets in Rev order, the blank bucket last.
     const orderBy = sfOrderBy(
       STORE_INV_SF_COLUMNS,
       sf,
@@ -301,7 +387,8 @@ export async function listStoreInventory(
         b.in_stock::float8 AS in_stock, b.reserved_qty::float8 AS reserved_qty,
         b.available_qty::float8 AS available_qty, b.reorder_level::float8 AS reorder_level,
         b.reorder_qty::float8 AS reorder_qty, b.on_po_qty::float8 AS on_po_qty,
-        b.at_vendor_qty::float8 AS at_vendor_qty, b.mfg_pending_qty, b.below_reorder
+        b.at_vendor_qty::float8 AS at_vendor_qty,
+        b.mfg_pending_qty::float8 AS mfg_pending_qty, b.below_reorder
       FROM base b
       WHERE TRUE ${searchFrag} ${sfFrag} ${tileFrag}
       ORDER BY ${orderBy}
@@ -310,8 +397,11 @@ export async function listStoreInventory(
 
     // Tiles stay ITEM counts (count distinct items), so they mean what they
     // meant before a MAKE item could take several rows; In Stock / Zero Stock
-    // read the item total. Pieces are sums over the matching rows. `total`
-    // counts ROWS — it drives paging.
+    // read the item total. Pieces are sums over the matching rows (bucket
+    // figures add up to the item's). No tile sums an item-level figure (On
+    // PO, Reorder Level): those repeat on every row, so any future one must
+    // read them once per item — FILTER (WHERE b.reorder_row). `total` counts
+    // ROWS — it drives paging.
     const [agg] = (await tx.execute(sql`
       ${baseCte}
       SELECT
