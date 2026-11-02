@@ -15,6 +15,7 @@
 import type { SoDurations, SoPhaseTimestamps } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import type { DbTransaction } from '../db/with-user-context';
+import { createdByNameSql } from './created-by-sql';
 
 export interface SoPhaseData {
   soId: string;
@@ -23,6 +24,8 @@ export interface SoPhaseData {
   internalSoNo: string | null;
   /** ADR-261 Created On — the SO's created_at (ISO timestamp). */
   createdAt?: string | null;
+  /** ADR-261 rev Created By — who entered the SO (sales_orders.created_by). */
+  createdByName?: string | null;
   customer: string | null;
   type: string | null;
   status: string;
@@ -63,6 +66,7 @@ type PhaseRow = {
   so_no: string;
   internal_so_no: string | null;
   created_at: string | null;
+  created_by_name: string | null;
   customer: string | null;
   type: string | null;
   status: string;
@@ -100,12 +104,15 @@ export async function loadSoPhaseData(
 ): Promise<SoPhaseData[]> {
   const cid = `'${companyId}'::uuid`;
   const res = await tx.execute(
-    sql.raw(`
+    // Raw text (company id inlined as before) around ONE drizzle fragment: the
+    // shared Created By helper (ADR-261 rev).
+    sql`${sql.raw(`
       SELECT
         so.id AS so_id,
         so.code AS so_no,
         so.internal_so_no AS internal_so_no,
-        to_char(so.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS created_at,
+        to_char(so.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS created_at,`)}
+        ${createdByNameSql(sql`so.created_by`)} AS created_by_name,${sql.raw(`
         COALESCE(cl.name, so.customer_name) AS customer,
         so.type::text AS type,
         so.status::text AS status,
@@ -169,7 +176,7 @@ export async function loadSoPhaseData(
       ) prod ON TRUE
       WHERE so.company_id = ${cid} AND so.deleted_at IS NULL
       ORDER BY so.code DESC
-    `),
+    `)}`,
   );
 
   return (res as unknown as PhaseRow[]).map((r) => {
@@ -196,6 +203,7 @@ export async function loadSoPhaseData(
       soNo: r.so_no,
       internalSoNo: r.internal_so_no,
       createdAt: toStr(r.created_at),
+      createdByName: r.created_by_name ?? null,
       customer: r.customer,
       type: r.type,
       status: r.status,

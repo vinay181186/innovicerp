@@ -103,6 +103,8 @@ export const jcOpEnrichedSchema = z.object({
   soInternalNo: z.string().nullable().optional(),
   /** ADR-261 Created On — the job-card op's own jc_ops.created_at (ISO). */
   createdAt: z.string().nullable().optional(),
+  /** Created By (ADR-261 rev): name of the user who entered the SAME record as createdAt (full name, else e-mail before @); null when unknown. */
+  createdByName: z.string().nullable(),
   opSeq: z.number().int().positive(),
   /** The PLANNED machine: jc_ops.machine_id, where the REMAINING qty is routed.
    *  Carried as an id (not only a code) so the Start popup can default its
@@ -469,6 +471,8 @@ export const runningOpSchema = z.object({
   soCode: z.string().nullable().optional(),
   soInternalNo: z.string().nullable().optional(),
   createdAt: z.string().nullable().optional(),
+  /** Created By (ADR-261 rev): name of the user who entered the SAME record as createdAt (full name, else e-mail before @); null when unknown. */
+  createdByName: z.string().nullable(),
   opSeq: z.number().int().positive(), // joined
   operation: z.string(), // joined
   machineId: z.string().uuid().nullable(),

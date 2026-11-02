@@ -1,6 +1,6 @@
 // ADR-261 guard — the SO No. / Internal SO No. / POL list columns are built ONLY
 // by `leadColumns()` (ui/data/lead-columns.tsx), so every SO-linked list opens
-// with the same fixed six. A column array that hand-writes one of these headers
+// with the same locked lead block. A column array that hand-writes one of these headers
 // fails this test. Detail panels, forms and prints (not DataTable columns) are
 // not scanned: only files whose name says they hold list columns.
 import { readdirSync, readFileSync, statSync } from 'node:fs';
@@ -55,7 +55,7 @@ function allFiles(dir: string): string[] {
   return out;
 }
 
-describe('own document number first (ADR-261, owner 31-Oct)', () => {
+describe('own document number in the block (ADR-261, owner 31-Oct / rev 2-Nov)', () => {
   it('every leadColumns list passes its own number as `doc:` unless the row is the order', () => {
     const missing = allFiles(MODULES)
       .filter((f) => {
@@ -74,5 +74,17 @@ describe('lead columns guard (ADR-261)', () => {
       .filter((f) => HAND_WRITTEN.test(readFileSync(f, 'utf8')))
       .map((f) => relative(MODULES, f).replace(/\\/g, '/'));
     expect(offenders).toEqual([]);
+  });
+});
+
+describe('Created By on every lead list (ADR-261 rev, owner 2-Nov)', () => {
+  it('every file that builds leadColumns also adds createdByColumn', () => {
+    const missing = allFiles(MODULES)
+      .filter((f) => {
+        const src = readFileSync(f, 'utf8');
+        return /leadColumns</.test(src) && !/createdByColumn[<(]/.test(src);
+      })
+      .map((f) => relative(MODULES, f).replace(/\\/g, '/'));
+    expect(missing).toEqual([]);
   });
 });

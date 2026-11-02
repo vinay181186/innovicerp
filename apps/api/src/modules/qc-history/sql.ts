@@ -6,6 +6,7 @@
 
 import { type SQL, sql } from 'drizzle-orm';
 import type { QcHistoryLogRow, QcHistoryPendingRow } from '@innovic/shared';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { isLastLiveOpSql } from '../../lib/jc-last-op-sql';
 import { likeEscape } from '../../lib/list-query';
 import { OP_LOG_QC_REMARKS } from '../../lib/op-log-qc-remarks';
@@ -86,7 +87,7 @@ export const PENDING_SELECT = sql`
   vos.qc_rejected_qty AS "qcRejected", vos.qc_pending AS "qcPending",
   ${polSql('sol', 'rev_jwl')} AS "clientPoLineNo", jo.qc_call_date AS "qcCallDate",
   ${PEND_SINCE} AS "pendSince", qa.inspector_name AS "assignedTo",
-  jo.created_at AS "createdAt"`;
+  jo.created_at AS "createdAt", ${createdByNameSql(sql`jo.created_by`)} AS "createdByName"`;
 
 /** Paging order: latest QC call first, then card + op, then the op id. */
 export const PENDING_ORDER = sql`jo.qc_call_date DESC NULLS LAST, jc.code, vos.op_seq, vos.jc_op_id`;
@@ -120,7 +121,7 @@ export const LOGS_SELECT = sql`
   ol.operator_name AS "inspector", ${OP_LOG_QC_REMARKS} AS "remarks",
   ol.log_no AS "logNo", jo.qc_call_date AS "qcCallDate",
   ol.qc_report_path AS "qcReportPath", ol.qc_report_name AS "qcReportName",
-  ol.created_at AS "createdAt"`;
+  ol.created_at AS "createdAt", ${createdByNameSql(sql`ol.created_by`)} AS "createdByName"`;
 
 export const LOGS_ORDER = sql`ol.log_date DESC, ol.id DESC`;
 
@@ -182,6 +183,7 @@ export function toPendingRow(r: Raw, today: string): QcHistoryPendingRow {
     qcCallDate: r['qcCallDate'] != null ? dateLike(r['qcCallDate']) : null,
     assignedTo: s(r['assignedTo']),
     createdAt: tsOrNull(r['createdAt']),
+    createdByName: s(r['createdByName']),
   };
 }
 
@@ -212,6 +214,7 @@ export function toLogRow(r: Raw): QcHistoryLogRow {
     qcReportPath: s(r['qcReportPath']),
     qcReportName: s(r['qcReportName']),
     createdAt: tsOrNull(r['createdAt']),
+    createdByName: s(r['createdByName']),
   };
 }
 

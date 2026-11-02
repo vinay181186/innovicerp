@@ -9,7 +9,7 @@
 // same "money hidden for L1 viewers" column drop, the same row targets.
 //
 // ADR-261 (owner 2026-10-31): ONE ROW PER INVOICE LINE (GET /invoices/lines),
-// six lead columns first. The stat strip still counts INVOICES; the row click
+// locked lead block first. The stat strip still counts INVOICES; the row click
 // and ⋯ act on the invoice.
 
 import type { ListInvoicesQuery } from '@innovic/shared';
@@ -189,7 +189,7 @@ function InvoiceListPage(): React.JSX.Element {
     void navigate({ to: '/invoices/$id', params: { id } });
   };
 
-  const columns = invoiceListColumns(priceHidden);
+  const columns = invoiceListColumns(pageOffset(page) + 1, priceHidden);
 
   return (
     // `page-fill` (ADR-202): the SO invoice tab fills the content area and the

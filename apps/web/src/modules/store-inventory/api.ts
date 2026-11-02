@@ -9,6 +9,7 @@ import type {
   ReorderPrInput,
   ReorderPrResult,
   SetReorderInput,
+  StoreInventoryRow,
 } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
@@ -51,6 +52,69 @@ export function useStoreInventory(query: ListStoreInventoryQuery, enabled = true
     refetchOnWindowFocus: true,
     placeholderData: (prev) => prev,
   });
+}
+
+/** One item's figures added up over its Item + Drawing Rev rows. Since the
+ *  list went one row per Rev bucket (2026-11-02) a MAKE item answers SEVERAL
+ *  rows, so a screen that wants the item total must sum them — never take the
+ *  first row. On PO is item-level and repeated on every row of the item, so it
+ *  is taken once — from the item's reorder row (any one row if none is
+ *  flagged), never summed. All-zero buckets are dropped by the server; they add 0. */
+export interface ItemStockTotals {
+  inStock: number;
+  reservedQty: number;
+  availableQty: number;
+  onPoQty: number;
+}
+
+export function sumItemStock(rows: readonly StoreInventoryRow[], itemId: string): ItemStockTotals {
+  const t: ItemStockTotals = { inStock: 0, reservedQty: 0, availableQty: 0, onPoQty: 0 };
+  let onPoFromReorderRow = false;
+  let seen = false;
+  for (const r of rows) {
+    if (r.itemId !== itemId) continue;
+    t.inStock += r.inStock;
+    t.reservedQty += r.reservedQty;
+    t.availableQty += r.availableQty;
+    // Item-level: count once. The reorder row wins; else the first row seen.
+    if (r.reorderRow && !onPoFromReorderRow) {
+      t.onPoQty = r.onPoQty;
+      onPoFromReorderRow = true;
+    } else if (!seen) {
+      t.onPoQty = r.onPoQty;
+    }
+    seen = true;
+  }
+  const r3 = (v: number): number => Math.round(v * 1000) / 1000;
+  return {
+    inStock: r3(t.inStock),
+    reservedQty: r3(t.reservedQty),
+    availableQty: r3(t.availableQty),
+    onPoQty: r3(t.onPoQty),
+  };
+}
+
+/** Every Store row of ONE item (all its Drawing Rev buckets) and their sum.
+ *  Searches by the item code (which also hits other codes containing it), then
+ *  keeps only this item's rows. `undefined` totals = not loaded yet. */
+export function useItemStockTotals(
+  itemId: string | null | undefined,
+  itemCode: string | null | undefined,
+): { rows: StoreInventoryRow[]; totals: ItemStockTotals | undefined; isLoading: boolean } {
+  const q = useStoreInventory(
+    { search: itemCode ?? '', filter: 'all', offset: 0 },
+    Boolean(itemId && itemCode),
+  );
+  const all = q.data?.rows ?? [];
+  const rows = itemId ? all.filter((r) => r.itemId === itemId) : [];
+  // placeholderData keeps the previous item's answer while a new one loads —
+  // treat that as not loaded rather than show another item's figures.
+  const fresh = Boolean(itemId && q.data && !q.isPlaceholderData);
+  return {
+    rows,
+    totals: fresh && itemId ? sumItemStock(rows, itemId) : undefined,
+    isLoading: q.isLoading || q.isPlaceholderData,
+  };
 }
 
 export function useAdjustStock() {

@@ -6,6 +6,7 @@
 
 import { sql } from 'drizzle-orm';
 
+import { createdByNameSql } from '../../lib/created-by-sql';
 import type { SfColumnMap } from '../../lib/list-query';
 import { polSql } from '../../lib/pol';
 
@@ -25,6 +26,7 @@ export const JC_OPS_SF_COLUMNS: SfColumnMap = {
   soCode: { sql: sql`COALESCE(bso.code, bjw.code)`, type: 'text' },
   soInternalNo: { sql: sql`bso.internal_so_no`, type: 'text' },
   createdOn: { sql: sql`(op.created_at AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
+  createdBy: { sql: createdByNameSql(sql`op.created_by`), type: 'text' },
   opSeq: { sql: sql`op.op_seq`, type: 'num' },
   // An outsource op shows no machine.
   plannedMachine: {

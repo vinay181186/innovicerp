@@ -29,6 +29,7 @@ import {
   jwReturnChallans,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { requireFormAccess } from '../../lib/access';
 import { recomputeJwHeaderStatus } from '../../lib/jw-line-state';
 import {
@@ -1027,6 +1028,8 @@ function selectListItems(tx: DbTransaction) {
       uom: sql<string | null>`${jobWorkOrderLines.uom}::text`,
       hsnCode: items.hsnCode,
       clientPoNo: jobWorkOrders.clientPoNo,
+      // ADR-261 rev — Created By: who entered this challan (its created_at is Created On).
+      createdByName: createdByNameSql(jwReturnChallans.createdBy),
     })
     .from(jwReturnChallans)
     .leftJoin(clients, eq(clients.id, jwReturnChallans.clientId))
@@ -1046,6 +1049,7 @@ function toListItem(r: {
   uom: string | null;
   hsnCode: string | null;
   clientPoNo: string | null;
+  createdByName: string | null;
 }): JwReturnChallanListItem {
   return {
     ...rowToReturn(r.ret),
@@ -1057,6 +1061,7 @@ function toListItem(r: {
     uom: r.uom ?? null,
     hsnCode: r.hsnCode ?? null,
     clientPoNo: r.clientPoNo ?? null,
+    createdByName: r.createdByName ?? null,
     // The paper's own copy of the customer (0186) — the print reads it.
     clientCopy: readClientCopy({ ...r.ret, clientName: r.ret.clientNameText }),
   };

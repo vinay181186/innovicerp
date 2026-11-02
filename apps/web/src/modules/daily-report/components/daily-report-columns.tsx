@@ -3,7 +3,7 @@
 // ceiling and the sheet is defined in one place. Mirrors legacy renderDailyReport
 // (HTML L10823).
 //
-// One row per log entry. JC No. comes first, then the six lead columns (SO No.
+// One row per log entry. JC No. comes inside the lead block (after Item Name) (SO No.
 // … Item Name, owner rule 2026-10-31), all locked. The Completed column carries the engine's column-following `total`
 // (sum), so the per-machine total sits under its own column and moves with it
 // into ▸ (replacing the old hand-written <tfoot>). Remarks is default-hidden, so
@@ -13,7 +13,7 @@
 import type { DailyReportRow } from '@innovic/shared';
 import { opSrNo, SHIFT_LABELS, type Shift } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
-import { leadColumns, type DataTableColumn } from '@/ui/data';
+import { createdByColumn, leadColumns, type DataTableColumn } from '@/ui/data';
 
 /** Columns that live in the row's ▸ detail by default. */
 export const DAILY_REPORT_HIDDEN = ['remarks'];
@@ -24,20 +24,30 @@ function sumQty(rows: DailyReportRow[]): number {
   return rows.reduce((acc, r) => acc + r.qty, 0);
 }
 
-export const dailyReportColumns: DataTableColumn<DailyReportRow>[] = [
-  // Owner rule 2026-10-31 (ADR-261 amendment) — JC No. first, then the six
-  // lead columns, all locked.
-  // Created On = the log entry's own created_at.
-  ...leadColumns<DailyReportRow>({
-    doc: {
-      id: 'jc_no',
-      kind: 'code',
-      header: 'JC No.',
-      className: 'mono fw-700',
-      nowrap: true,
-      render: (r) => <span style={{ color: 'var(--cyan)' }}>{r.jcCode}</span>,
-    },
-    docDate: {
+function dailyReportColumns(firstRowNo: number): DataTableColumn<DailyReportRow>[] {
+  return [
+    // ADR-261 rev 2026-11-02 — the locked lead block (Sr No … JC No. · Created On);
+    // JC Date is the first ordinary column after it.
+    // Created On = the log entry's own created_at.
+    ...leadColumns<DailyReportRow>({
+      firstRowNo,
+      doc: {
+        id: 'jc_no',
+        kind: 'code',
+        header: 'JC No.',
+        className: 'mono fw-700',
+        nowrap: true,
+        render: (r) => <span style={{ color: 'var(--cyan)' }}>{r.jcCode}</span>,
+      },
+      soNo: (r) => r.soCode,
+      internalSoNo: (r) => r.soInternalNo,
+      pol: (r) => r.clientPoLineNo,
+      createdOn: (r) => r.createdAt,
+      itemCode: (r) => r.itemCode,
+      itemRev: (r) => r.itemRevision,
+      itemName: (r) => r.itemName,
+    }),
+    {
       id: 'jc_date',
       kind: 'date',
       header: 'JC Date',
@@ -46,77 +56,76 @@ export const dailyReportColumns: DataTableColumn<DailyReportRow>[] = [
       render: (r) => fmtDate(r.jcDate ?? null),
       filterValue: (r) => r.jcDate ?? '',
     },
-    soNo: (r) => r.soCode,
-    internalSoNo: (r) => r.soInternalNo,
-    pol: (r) => r.clientPoLineNo,
-    createdOn: (r) => r.createdAt,
-    itemCode: (r) => r.itemCode,
-    itemRev: (r) => r.itemRevision,
-    itemName: (r) => r.itemName,
-  }),
-  {
-    id: 'op',
-    kind: 'code',
-    header: 'Op',
-    className: 'mono',
-    nowrap: true,
-    render: (r) => `Op ${opSrNo(r.opSeq)}`,
-  },
-  {
-    id: 'operation',
-    kind: 'text',
-    header: 'Operation',
-    ellipsis: true,
-    render: (r) => r.operation,
-    title: (r) => r.operation,
-  },
-  {
-    id: 'shift',
-    kind: 'badge',
-    header: 'Shift',
-    nowrap: true,
-    render: (r) => (
-      <span className="badge b-grey">{SHIFT_LABELS[r.shift as Shift] ?? r.shift}</span>
-    ),
-  },
-  {
-    id: 'completed',
-    kind: 'num',
-    header: 'Completed',
-    align: 'right',
-    className: 'mono fw-700',
-    nowrap: true,
-    headColor: 'var(--green)',
-    render: (r) => <span style={{ color: 'var(--green2)' }}>{r.qty}</span>,
-    total: (rows) => <span style={{ color: 'var(--green2)' }}>{sumQty(rows)}</span>,
-  },
-  {
-    id: 'operator',
-    kind: 'text',
-    header: 'Operator',
-    ellipsis: true,
-    render: (r) => r.operator ?? '—',
-    title: (r) => r.operator ?? '',
-  },
-  {
-    id: 'remarks',
-    kind: 'text',
-    header: 'Remarks',
-    align: 'left',
-    className: 'text3',
-    ellipsis: true,
-    render: (r) => r.remarks ?? '',
-    title: (r) => r.remarks ?? '',
-  },
-];
+    {
+      id: 'op',
+      kind: 'code',
+      header: 'Op',
+      className: 'mono',
+      nowrap: true,
+      render: (r) => `Op ${opSrNo(r.opSeq)}`,
+    },
+    {
+      id: 'operation',
+      kind: 'text',
+      header: 'Operation',
+      ellipsis: true,
+      render: (r) => r.operation,
+      title: (r) => r.operation,
+    },
+    {
+      id: 'shift',
+      kind: 'badge',
+      header: 'Shift',
+      nowrap: true,
+      render: (r) => (
+        <span className="badge b-grey">{SHIFT_LABELS[r.shift as Shift] ?? r.shift}</span>
+      ),
+    },
+    {
+      id: 'completed',
+      kind: 'num',
+      header: 'Completed',
+      align: 'right',
+      className: 'mono fw-700',
+      nowrap: true,
+      headColor: 'var(--green)',
+      render: (r) => <span style={{ color: 'var(--green2)' }}>{r.qty}</span>,
+      total: (rows) => <span style={{ color: 'var(--green2)' }}>{sumQty(rows)}</span>,
+    },
+    {
+      id: 'operator',
+      kind: 'text',
+      header: 'Operator',
+      ellipsis: true,
+      render: (r) => r.operator ?? '—',
+      title: (r) => r.operator ?? '',
+    },
+    {
+      id: 'remarks',
+      kind: 'text',
+      header: 'Remarks',
+      align: 'left',
+      className: 'text3',
+      ellipsis: true,
+      render: (r) => r.remarks ?? '',
+      title: (r) => r.remarks ?? '',
+    },
+    createdByColumn<DailyReportRow>({ createdByName: (r) => r.createdByName }),
+  ];
+}
 
 /**
  * The columns for one machine group on a 25-row page (ADR-201): the Completed
  * total is the group's WHOLE-day figure from the server, not the sum of the
  * rows that happen to be on this page.
  */
-export function dailyReportColumnsFor(groupTotal: number): DataTableColumn<DailyReportRow>[] {
-  return dailyReportColumns.map((c) =>
+export function dailyReportColumnsFor(
+  groupTotal: number,
+  /** Sr No of this group's first row: page offset + 1 + rows of the groups
+   *  above it on this page, so the counter runs on across groups and pages. */
+  firstRowNo: number,
+): DataTableColumn<DailyReportRow>[] {
+  return dailyReportColumns(firstRowNo).map((c) =>
     c.id === 'completed'
       ? { ...c, total: () => <span style={{ color: 'var(--green2)' }}>{groupTotal}</span> }
       : c,

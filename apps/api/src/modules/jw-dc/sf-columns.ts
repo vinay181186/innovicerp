@@ -44,6 +44,7 @@ const JW_DC_LINE_LEAD_SF: SfColumnMap = {
   soInternalNo: { sql: sql`z."soInternalNo"`, type: 'text' },
   clientPoLineNo: { sql: sql`z."clientPoLineNo"`, type: 'text' },
   createdOn: { sql: sql`z."createdOn"`, type: 'date' },
+  createdBy: { sql: sql`z."createdByName"`, type: 'text' },
   // CODE/REV as the cell prints it.
   itemCode: { sql: sql`z."itemCodeRev"`, type: 'text' },
   itemName: { sql: sql`z."itemName"`, type: 'text' },

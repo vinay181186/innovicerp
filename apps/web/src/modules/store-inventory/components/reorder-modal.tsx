@@ -7,14 +7,17 @@ import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { isStagedResult } from '@/modules/document-edits/api';
 import { Banner } from '@/ui/feedback';
-import { useSetReorder } from '../api';
+import { useItemStockTotals, useSetReorder } from '../api';
 import { ModalShell } from './modal-shell';
 
 const WHOLE = new Set(['NOS', 'SET']);
 const r3 = (v: number): number => Math.round(v * 1000) / 1000;
 
-/** Same rule as the server's Reorder List (P44 / P45). */
-export function suggestedReorderQty(row: StoreInventoryRow): number {
+/** Same rule as the server's Reorder List (P44 / P45). Pass ITEM totals for
+ *  availableQty / onPoQty (sumItemStock) — one Rev row is not the item. */
+export function suggestedReorderQty(
+  row: Pick<StoreInventoryRow, 'reorderLevel' | 'reorderQty' | 'availableQty' | 'onPoQty' | 'uom'>,
+): number {
   const short = row.reorderLevel - (row.availableQty + row.onPoQty);
   const q = Math.max(row.reorderQty, short, 0);
   return WHOLE.has(row.uom) ? Math.ceil(q) : r3(q);
@@ -34,6 +37,10 @@ export function ReorderModal({
   // its old Reorder Level / Qty, so the modal says so instead of closing as saved.
   const [staged, setStaged] = useState(false);
   const mut = useSetReorder();
+  // Reorder is item-level: Available and On PO are the ITEM's, added up over
+  // all its Drawing Rev rows — the row this box was opened from may be one
+  // Rev bucket only (and On PO sits on the item's reorder row alone).
+  const { totals } = useItemStockTotals(row.itemId, row.itemCode);
 
   const onSave = (): void => {
     setErr(null);
@@ -61,8 +68,9 @@ export function ReorderModal({
   return (
     <ModalShell onClose={onClose} title={`Reorder — ${row.itemCode}`}>
       <div className="text3" style={{ fontSize: 12, marginBottom: 10 }}>
-        0 = off. Available now <b className="mono">{row.availableQty}</b>, On PO{' '}
-        <b className="mono">{row.onPoQty}</b>.
+        0 = off. Available now (all Drawing Revs){' '}
+        <b className="mono">{totals ? totals.availableQty : '…'}</b>, On PO{' '}
+        <b className="mono">{totals ? totals.onPoQty : '…'}</b>.
       </div>
       <div className="form-grid">
         <div className="form-grp">

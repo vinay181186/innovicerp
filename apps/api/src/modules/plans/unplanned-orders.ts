@@ -12,6 +12,7 @@ import type { UnplannedOrdersQuery, UnplannedOrdersResponse } from '@innovic/sha
 import { sql, type SQL } from 'drizzle-orm';
 
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { AuthorizationError } from '../../lib/errors';
 import { likeEscape, readSf, sfOrderBy, sfWhere, type SfColumnMap } from '../../lib/list-query';
 import { soLineCoveredRaw } from '../../lib/so-line-coverage';
@@ -38,6 +39,8 @@ export const UNPLANNED_SF_COLUMNS: SfColumnMap = {
   customerName: { sql: sql`u.customer_name`, type: 'text' },
   // ADR-261 Created On — the SO line's own created_at as the India-time day.
   createdOn: { sql: sql`(u.created_at AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
+  // ADR-261 rev — Created By: who entered the SO line (the `u` CTE column).
+  createdBy: { sql: sql`u.created_by_name`, type: 'text' },
 };
 
 type Row = {
@@ -46,6 +49,7 @@ type Row = {
   so_code: string;
   so_internal_no: string | null;
   created_at: Date | string | null;
+  created_by_name: string | null;
   line_no: number;
   item_code: string | null;
   item_revision: string | null;
@@ -96,6 +100,8 @@ export async function getUnplannedOrders(
           sol.line_no       AS line_no,
           -- ADR-261 Created On — the SO line's own created_at.
           sol.created_at    AS created_at,
+          -- ADR-261 rev — Created By: who entered the same SO line.
+          ${createdByNameSql(sql`sol.created_by`)} AS created_by_name,
           sol.item_code_text AS item_code,
           -- The customer's drawing revision typed on this very SO line — every
           -- row here IS an SO line, so it is never items.revision. Cast to text:
@@ -133,7 +139,8 @@ export async function getUnplannedOrders(
         ${base}
         SELECT u.so_line_id, u.so_id, u.so_code, u.so_internal_no, u.line_no, u.item_code, u.item_revision,
                u.client_po_line_no, u.part_name, u.customer_name, u.due_date::text AS due_date,
-               u.order_qty, u.planned_qty, u.remaining_qty, u.created_at
+               u.order_qty, u.planned_qty, u.remaining_qty, u.created_at,
+               u.created_by_name
         FROM u ${where}
         ORDER BY ${orderBy}
         ${paging}
@@ -153,6 +160,7 @@ export async function getUnplannedOrders(
         soInternalNo: r.so_internal_no,
         createdAt:
           r.created_at instanceof Date ? r.created_at.toISOString() : (r.created_at ?? null),
+        createdByName: r.created_by_name,
         lineNo: Number(r.line_no),
         itemCode: r.item_code,
         // Null passed through rather than blanked: a line with no revision

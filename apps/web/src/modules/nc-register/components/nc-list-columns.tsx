@@ -2,7 +2,7 @@
 // menu for the shared FIT table (ADR-199: <DataTable tableKey=…>). Split out of
 // routes/list.tsx so that file stays under the 400-line ceiling.
 //
-// Columns: the six lead columns (SO No. · Internal SO No. · POL · Created On ·
+// Columns: the locked lead block (SO No. · Internal SO No. · POL · Created On ·
 // Item Code · Item Name, owner rule 2026-10-31) then NC No. · NC Status ·
 // Disposition · Rejected · Reason · NC Date. Centred by the table standard;
 // Rejected is the one number column (align 'right' -> the num kind); Item Name
@@ -28,7 +28,7 @@ import {
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { leadColumns, ROW_TINT, type DataTableColumn } from '@/ui/data';
+import { createdByColumn, leadColumns, ROW_TINT, type DataTableColumn } from '@/ui/data';
 import type { RowMenuItem } from '@/ui/data/row-menu-logic';
 import { NcDispositionBadge } from './nc-disposition-badge';
 import { NcStatusBadge } from './nc-status-badge';
@@ -89,12 +89,15 @@ function ncOpText(nc: NcRegisterListItem): string | null {
 }
 
 export function ncListColumns(
+  /** Sr No of the page's first row (server offset + 1). */
+  firstRowNo: number,
   /** ADR-202 — NC ids with a pending edit; their status cell shows "Draft". */
   draftIds?: Set<string>,
 ): DataTableColumn<NcRegisterListItem>[] {
   return [
     // Owner rule 2026-10-31 — own number (NC No.) first, then the lead columns.
     ...leadColumns<NcRegisterListItem>({
+      firstRowNo,
       doc: {
         id: 'nc_code',
         sortFilterField: 'ncCode',
@@ -113,15 +116,6 @@ export function ncListColumns(
           </Link>
         ),
       },
-      docDate: {
-        id: 'nc_date',
-        sortFilterField: 'ncDate',
-        kind: 'date',
-        header: 'NC Date',
-        className: 'mono',
-        nowrap: true,
-        render: (nc) => fmtDate(nc.ncDate),
-      },
       soNo: (nc) => nc.soCodeText,
       internalSoNo: (nc) => nc.soInternalNo,
       pol: (nc) => nc.clientPoLineNo,
@@ -137,6 +131,15 @@ export function ncListColumns(
         item_name: { sortFilterField: 'itemName' },
       },
     }),
+    {
+      id: 'nc_date',
+      sortFilterField: 'ncDate',
+      kind: 'date',
+      header: 'NC Date',
+      className: 'mono',
+      nowrap: true,
+      render: (nc) => fmtDate(nc.ncDate),
+    },
     {
       id: 'nc_status',
       sortFilterField: 'status',
@@ -180,6 +183,10 @@ export function ncListColumns(
       render: (nc) => NC_REASON_CATEGORY_LABELS[nc.reasonCategory],
       filterValue: (nc) => NC_REASON_CATEGORY_LABELS[nc.reasonCategory],
     },
+    createdByColumn<NcRegisterListItem>({
+      createdByName: (nc) => nc.createdByName,
+      overrides: { sortFilterField: 'createdBy' },
+    }),
   ];
 }
 

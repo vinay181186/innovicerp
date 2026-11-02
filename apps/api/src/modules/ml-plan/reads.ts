@@ -3,6 +3,7 @@
 
 import { sql } from 'drizzle-orm';
 import type { DbTransaction } from '../../db/with-user-context';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { lockDocSeries } from '../../lib/doc-series-lock';
 import { NotFoundError } from '../../lib/errors';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
@@ -157,7 +158,9 @@ export async function listMlPlansTx(
   const rows = (await tx.execute(sql`
     SELECT ${HEADER_COLS},
       COALESCE(na.node_count, 0)::int AS "nodeCount",
-      COALESCE(na.levels, 0)::int AS "levels"
+      COALESCE(na.levels, 0)::int AS "levels",
+      -- ADR-261 rev — who entered the plan (same row as Created On).
+      ${createdByNameSql(sql`mp.created_by`)} AS "createdByName"
     ${fromWhere}
     ORDER BY ${orderBy}
     LIMIT ${input.limit} OFFSET ${input.offset}
@@ -170,6 +173,7 @@ export async function listMlPlansTx(
     ...toMlPlan(r),
     nodeCount: Number(r['nodeCount'] ?? 0),
     levels: Number(r['levels'] ?? 0),
+    createdByName: (r['createdByName'] as string | null) ?? null,
   }));
   return {
     items: listItems,

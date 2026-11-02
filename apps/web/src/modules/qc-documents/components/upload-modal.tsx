@@ -6,7 +6,7 @@ import { QC_DOC_CATEGORIES, type CreateQcDocumentInput, type QcDocCategory } fro
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { SearchableSelect } from '@/ui/forms';
-import { itemCodeWithRev } from '@/lib/item-code';
+import { docDrawingRev, itemCodeWithRev } from '@/lib/item-code';
 import { soNoWithInternal } from '@/lib/so-number';
 import { useSaveKey } from '@/lib/use-save-key';
 import { useJobCardsList } from '@/modules/job-cards/api';
@@ -188,7 +188,7 @@ export function UploadModal({
                 options={jcItems.map((j) => ({
                   id: j.id,
                   code: j.code,
-                  name: `${itemCodeWithRev(j.itemCode, j.itemRevision)} ${j.itemName}`,
+                  name: `${itemCodeWithRev(j.itemCode, docDrawingRev(j))} ${j.itemName}`,
                 }))}
               />
             </div>

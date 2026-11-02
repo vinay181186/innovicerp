@@ -4,7 +4,7 @@
 // Party GRN reads as on Pending: Item Code = the finished part, Item Name = the
 // customer RM, SO No. = the JWSO, Vendor / Customer = the customer; QC Remarks = its qcRemarks and the
 // Deviation Reason (rejectReason, Party GRN only) has its own column.
-// Visible: the six lead columns (owner rule 2026-10-31), then Doc No. ·
+// Visible: the locked lead block (owner rule 2026-10-31), then Doc No. ·
 // Accepted · Deviated · QC
 // Result · Attended · Inspected By · QC Remarks · Planned / Actual Machine ·
 // Client PO No. The rest starts hidden (COMPLETED_HIDDEN) in the ▸ detail row.
@@ -14,7 +14,7 @@ import { opSrNo } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { QcReportLink } from '@/components/shared/qc-report-attach';
 import { fmtDate } from '@/lib/date';
-import { leadColumns, type DataTableColumn } from '@/ui/data';
+import { createdByColumn, leadColumns, type DataTableColumn } from '@/ui/data';
 import { factColumns } from './qc-call-fact-columns';
 import { remarkColumns } from './qc-call-remark-columns';
 import { incomingStageLabel, pgrnMaterialOf, pgrnOrderOf } from './qc-call-pending-columns';
@@ -180,11 +180,12 @@ export const COMPLETED_HIDDEN = [
   'report',
 ];
 
-export function completedColumns(): DataTableColumn<CompletedVM>[] {
+export function completedColumns(firstRowNo: number): DataTableColumn<CompletedVM>[] {
   return [
-    // Owner rule 2026-10-31 — own number (Doc No.) first, the six lead
-    // columns, the rest after Item Name. Created On = each call's own record created_at.
+    // Owner rule 2026-10-31 — own number (Doc No.) inside the lead block
+    // (after Item Name), the rest after Item Name. Created On = each call's own record created_at.
     ...leadColumns<CompletedVM>({
+      firstRowNo,
       doc: {
         id: 'doc_no',
         sortFilterField: 'docNo',
@@ -237,16 +238,6 @@ export function completedColumns(): DataTableColumn<CompletedVM>[] {
             </Link>
           ),
       },
-      docDate: {
-        id: 'doc_date',
-        sortFilterField: 'docDate',
-        kind: 'date',
-        header: 'Doc Date',
-        className: 'mono',
-        nowrap: true,
-        render: (vm) => fmtDate(vm.docDate ?? null),
-        filterValue: (vm) => vm.docDate ?? '',
-      },
       soNo: soNoOf,
       internalSoNo: soInternalNoOf,
       pol: polOf,
@@ -263,6 +254,16 @@ export function completedColumns(): DataTableColumn<CompletedVM>[] {
         created_on: { sortFilterField: 'createdOn' },
       },
     }),
+    {
+      id: 'doc_date',
+      sortFilterField: 'docDate',
+      kind: 'date',
+      header: 'Doc Date',
+      className: 'mono',
+      nowrap: true,
+      render: (vm) => fmtDate(vm.docDate ?? null),
+      filterValue: (vm) => vm.docDate ?? '',
+    },
     {
       id: 'accepted',
       sortFilterField: 'accepted',
@@ -382,5 +383,11 @@ export function completedColumns(): DataTableColumn<CompletedVM>[] {
           <span className="text3">—</span>
         ),
     },
+    // Created By = the created_by of the same record as Created On (op log /
+    // GRN line / Party GRN line, each feed's own row).
+    createdByColumn<CompletedVM>({
+      createdByName: (vm) => vm.row.createdByName,
+      overrides: { sortFilterField: 'createdBy' },
+    }),
   ];
 }

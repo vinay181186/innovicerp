@@ -17,7 +17,7 @@ import {
   resolveActualMachine,
 } from '@/components/shared/machine-split';
 import { fmtDate } from '@/lib/date';
-import { leadColumns, type DataTableColumn } from '@/ui/data';
+import { createdByColumn, leadColumns, type DataTableColumn } from '@/ui/data';
 import { OP_STATUS } from '../../job-cards/lib/jc-op-labels';
 
 /** The lead block (ADR-261) is locked by the table itself — nothing else pinned. */
@@ -97,11 +97,12 @@ function OutsourceRef({ o, st }: { o: JcOpsBoardRow; st: string }): React.JSX.El
   return null;
 }
 
-export function jcOpsColumns(): DataTableColumn<JcOpsBoardRow>[] {
+export function jcOpsColumns(firstRowNo: number): DataTableColumn<JcOpsBoardRow>[] {
   return [
-    // ADR-261 — JC No. first, then the six lead columns, all locked; Op and
+    // ADR-261 — JC No. inside the lead block (after Item Name), all locked; Op and
     // every other fact follow Item Name. `sortFilterField` = JC_OPS_SF_COLUMNS (paged board).
     ...leadColumns<JcOpsBoardRow>({
+      firstRowNo,
       doc: {
         // The JC number opens that card — only when `jcId` resolves; otherwise
         // it renders exactly as it always has (no dead link).
@@ -124,16 +125,6 @@ export function jcOpsColumns(): DataTableColumn<JcOpsBoardRow>[] {
             <span style={{ color: 'var(--cyan)' }}>{o.jcCode}</span>
           ),
       },
-      docDate: {
-        id: 'jc_date',
-        kind: 'date',
-        header: 'JC Date',
-        className: 'mono',
-        nowrap: true,
-        render: (o) => fmtDate(o.jcDate ?? null),
-        filterValue: (o) => o.jcDate ?? '',
-        sortFilterField: 'jcDate',
-      },
       soNo: (o) => o.soCode,
       internalSoNo: (o) => o.soInternalNo,
       pol: (o) => o.clientPoLineNo,
@@ -150,6 +141,16 @@ export function jcOpsColumns(): DataTableColumn<JcOpsBoardRow>[] {
         item_name: { sortFilterField: 'itemName' },
       },
     }),
+    {
+      id: 'jc_date',
+      kind: 'date',
+      header: 'JC Date',
+      className: 'mono',
+      nowrap: true,
+      render: (o) => fmtDate(o.jcDate ?? null),
+      filterValue: (o) => o.jcDate ?? '',
+      sortFilterField: 'jcDate',
+    },
     {
       id: 'op_seq',
       sortFilterField: 'opSeq',
@@ -328,6 +329,10 @@ export function jcOpsColumns(): DataTableColumn<JcOpsBoardRow>[] {
           : '—';
       },
     },
+    createdByColumn<JcOpsBoardRow>({
+      createdByName: (o) => o.createdByName,
+      overrides: { sortFilterField: 'createdBy' },
+    }),
   ];
 }
 

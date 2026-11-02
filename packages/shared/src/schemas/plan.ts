@@ -221,6 +221,8 @@ export type ListPlansQuery = z.infer<typeof listPlansQuerySchema>;
 export const listPlansResponseSchema = z.object({
   items: z.array(
     planSchema.extend({
+      /** Created By (ADR-261 rev): name of the user who entered the SAME record as createdAt (full name, else e-mail before @); null when unknown. */
+      createdByName: z.string().nullable(),
       itemCode: z.string().nullable(),
       /** Same customer drawing revision as `planDetailSchema.itemRevision` — read
        *  live off the plan's SO line, null on a JW-sourced or ad-hoc plan. See
@@ -540,6 +542,8 @@ export const unplannedOrderRowSchema = z.object({
   soInternalNo: z.string().nullable().optional(),
   /** ADR-261 Created On — the SO line's own created_at (ISO). */
   createdAt: z.string().nullable().optional(),
+  /** Created By (ADR-261 rev): name of the user who entered the SAME record as createdAt (full name, else e-mail before @); null when unknown. */
+  createdByName: z.string().nullable(),
   lineNo: z.number().int().positive(),
   itemCode: z.string().nullable(),
   /** The customer's drawing revision typed on this very SO line

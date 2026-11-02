@@ -7,10 +7,11 @@ import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import {
   DrawingRevPicker,
+  NO_REV_OPTION,
   pickedRevisionId,
   useItemRevOptions,
 } from '@/modules/item-revisions/components/drawing-rev-picker';
-import { useAdjustStock } from '../api';
+import { useAdjustStock, useItemRevStock } from '../api';
 import { ModalShell } from './modal-shell';
 
 export function AdjustStockModal({
@@ -25,9 +26,27 @@ export function AdjustStockModal({
   const [remarks, setRemarks] = useState('');
   const [err, setErr] = useState<string | null>(null);
   // Phase C — a MAKE item with Revs is adjusted per Item + Drawing Rev bucket.
-  const [revValue, setRevValue] = useState<string | null>(null);
+  // The Store row IS one bucket, so its Rev comes pre-selected: the row's own
+  // Drawing Rev, or "No Rev (old stock)" for the blank row. (Ignored for an
+  // item with no Revs — the picker is not shown and nothing is sent.)
+  const [revValue, setRevValue] = useState<string | null>(row.itemRevisionId ?? NO_REV_OPTION);
   const revOpts = useItemRevOptions(row.itemId);
   const mut = useAdjustStock();
+  // The figures shown are those of the bucket being adjusted. The Store row is
+  // one bucket, but the picker may move to another Rev — so for an item with
+  // Revs read the item's per-Rev stock and show the PICKED bucket (a bucket
+  // with nothing in it is not listed → 0). No Revs → the row is the item.
+  const revStock = useItemRevStock(revOpts.required ? row.itemId : null);
+  const shown = ((): { inStock: number; reservedQty: number; availableQty: number } | null => {
+    if (!revOpts.required) return row;
+    if (!revValue) return null;
+    if (!revStock.data) return null;
+    const want = pickedRevisionId(revValue);
+    const b = revStock.data.find((r) => (r.itemRevisionId ?? null) === want);
+    return b
+      ? { inStock: b.onHandQty, reservedQty: b.reservedQty, availableQty: b.freeQty }
+      : { inStock: 0, reservedQty: 0, availableQty: 0 };
+  })();
 
   const onSave = (): void => {
     setErr(null);
@@ -62,7 +81,7 @@ export function AdjustStockModal({
   };
 
   return (
-    <ModalShell onClose={onClose} title={`Adjust Stock — ${row.itemCode}`}>
+    <ModalShell onClose={onClose} title={`Adjust Stock — ${row.itemLabel}`}>
       <div
         style={{
           marginBottom: 12,
@@ -78,16 +97,16 @@ export function AdjustStockModal({
           className="mono fw-700"
           style={{ fontSize: 18, color: 'var(--green2)', marginLeft: 8 }}
         >
-          {row.inStock} {row.uom}
+          {shown ? shown.inStock : '—'} {row.uom}
         </span>
         <span className="text3" style={{ fontSize: 11, marginLeft: 10 }}>
           Reserved{' '}
           <b className="mono" style={{ color: 'var(--purple)' }}>
-            {row.reservedQty}
+            {shown ? shown.reservedQty : '—'}
           </b>{' '}
           · Available{' '}
           <b className="mono" style={{ color: 'var(--cyan)' }}>
-            {row.availableQty}
+            {shown ? shown.availableQty : '—'}
           </b>
         </span>
       </div>

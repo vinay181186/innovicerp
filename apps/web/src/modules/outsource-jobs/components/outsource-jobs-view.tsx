@@ -110,7 +110,7 @@ export function OutsourceJobsView(): React.JSX.Element {
     [rows, sel],
   );
 
-  const columns = useMemo(() => outsourceJobsColumns(), []);
+  const columns = useMemo(() => outsourceJobsColumns(pageOffset(page) + 1), [page]);
   const filtering = statusBand !== undefined || jcNo !== undefined || searchText !== '';
 
   return (

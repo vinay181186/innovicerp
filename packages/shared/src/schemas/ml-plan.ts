@@ -127,6 +127,8 @@ export const mlPlanDetailSchema = mlPlanSchema.extend({
 export type MlPlanDetail = z.infer<typeof mlPlanDetailSchema>;
 
 export const mlPlanListItemSchema = mlPlanSchema.extend({
+  /** Created By (ADR-261 rev): name of the user who entered the SAME record as createdAt (full name, else e-mail before @); null when unknown. */
+  createdByName: z.string().nullable(),
   nodeCount: z.number().int().nonnegative(),
   levels: z.number().int().nonnegative(),
 });

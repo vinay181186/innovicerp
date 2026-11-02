@@ -32,6 +32,8 @@ export const jobQueueRowSchema = z.object({
   soInternalNo: z.string().nullable().default(null),
   /** ADR-261 Created On — the job-card op's own jc_ops.created_at (ISO). */
   createdAt: z.string().nullable().optional(),
+  /** Created By (ADR-261 rev): name of the user who entered the SAME record as createdAt (full name, else e-mail before @); null when unknown. */
+  createdByName: z.string().nullable(),
   soCustomer: z.string().nullable(),
   opSeq: z.number().int().positive(),
   operation: z.string(),

@@ -14,6 +14,7 @@ import type {
 } from '@innovic/shared';
 import { productionDashboardPageQuerySchema } from '@innovic/shared';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { AuthorizationError } from '../../lib/errors';
 import { readSf, sfOrderBy, sfWhere, type SfColumnMap } from '../../lib/list-query';
 import { polSql } from '../../lib/pol';
@@ -68,6 +69,7 @@ export async function listOpenJobCards(
         pd_so.internal_so_no AS "soInternalNo",
         -- Created On = the job card's own created_at (the row IS the card).
         jc.created_at AS "createdAt",
+        ${createdByNameSql(sql`jc.created_by`)} AS "createdByName",
         to_char(jc.jc_date, 'YYYY-MM-DD') AS "jcDate",
         jc.priority, jc.order_qty AS "orderQty", jc.due_date AS "dueDate",
         s.total_ops AS "totalOps", s.done_ops AS "doneOps"
@@ -88,6 +90,7 @@ export async function listOpenJobCards(
       soCode: (r['soCode'] as string | null) ?? null,
       soInternalNo: (r['soInternalNo'] as string | null) ?? null,
       createdAt: iso(r['createdAt']),
+      createdByName: (r['createdByName'] as string | null) ?? null,
       priority: r['priority'] as ProductionDashboardJc['priority'],
       orderQty: Number(r['orderQty'] ?? 0),
       doneOps: Number(r['doneOps'] ?? 0),
@@ -118,6 +121,7 @@ export const PROD_READY_SF_COLUMNS: SfColumnMap = {
   soInternalNo: { sql: sql`pd_so.internal_so_no`, type: 'text' },
   clientPoLineNo: { sql: polSql('sol', 'rev_jwl'), type: 'text' },
   createdOn: { sql: sql`(jo.created_at AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
+  createdBy: { sql: createdByNameSql(sql`jo.created_by`), type: 'text' },
   machineCode: { sql: sql`m.code`, type: 'text' },
   orderQty: { sql: sql`jc.order_qty`, type: 'num' },
   completedQty: { sql: sql`vos.completed_qty`, type: 'num' },
@@ -157,6 +161,7 @@ export async function listReadyOps(
         pd_so.internal_so_no AS "soInternalNo",
         -- Created On = the job-card op's own created_at.
         jo.created_at AS "createdAt",
+        ${createdByNameSql(sql`jo.created_by`)} AS "createdByName",
         jc.order_qty AS "orderQty", vos.completed_qty AS "completedQty",
         vos.available, vos.computed_status AS "computedStatus",
         ROUND(vos.available * jo.cycle_time_min / 60.0, 2) AS "pendingHrs",
@@ -193,6 +198,7 @@ export async function listReadyOps(
       soCode: (r['soCode'] as string | null) ?? null,
       soInternalNo: (r['soInternalNo'] as string | null) ?? null,
       createdAt: iso(r['createdAt']),
+      createdByName: (r['createdByName'] as string | null) ?? null,
       machineCode: (r['machineCode'] as string | null) ?? null,
       machines: ((r['machines'] as Array<{ machineCode: string; qty: unknown }> | null) ?? []).map(
         (v) => ({ machineCode: String(v.machineCode), qty: Number(v.qty ?? 0) }),

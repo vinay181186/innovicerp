@@ -119,7 +119,7 @@ function StoreIssuesListPage(): React.JSX.Element {
   );
   useClampPage(page, data?.total, setPage);
 
-  const columns = useMemo(() => issueRegisterColumns(), []);
+  const columns = useMemo(() => issueRegisterColumns(pageOffset(page) + 1), [page]);
   // Row ⋯ Preview / Download PDF — the Item Issue Slip (use-store-issue-print.ts).
   const issuePrint = useStoreIssuePrint();
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / LIST_PAGE_SIZE));

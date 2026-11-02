@@ -66,7 +66,7 @@ export function RegisterView({ toggle }: { toggle: React.ReactNode }): React.JSX
   const items = data?.items ?? [];
   const total = data?.total;
   useClampPage(search.page, total, gotoPage);
-  const columns = useMemo(() => buildRegisterColumns(), []);
+  const columns = useMemo(() => buildRegisterColumns(pageOffset(search.page) + 1), [search.page]);
 
   async function openFile(d: QcDocument): Promise<void> {
     try {

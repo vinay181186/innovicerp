@@ -16,7 +16,7 @@
 
 import type { PlanningLine, ReservationActionResult } from '@innovic/shared';
 import { useState } from 'react';
-import { itemCodeWithRev } from '@/lib/item-code';
+import { docDrawingRev, itemCodeWithRev } from '@/lib/item-code';
 import { soNoWithInternal } from '@/lib/so-number';
 import { useReleaseReservations, useReserveStock, useStockAvailability } from '@/modules/plans/api';
 import { Modal } from './modal';
@@ -54,7 +54,7 @@ export function lineFacts(
     soInternalNo: soInternalNo ?? null,
     lineNo: line.lineNo,
     itemId: line.itemId,
-    itemLabel: itemCodeWithRev(line.itemCode, line.itemRevision),
+    itemLabel: itemCodeWithRev(line.itemCode, docDrawingRev(line)),
     itemName: line.itemName,
     orderQty: line.orderQty,
     dispatchedQty: line.dispatchedQty,

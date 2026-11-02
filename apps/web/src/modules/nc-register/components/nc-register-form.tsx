@@ -21,7 +21,7 @@ import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { SearchableSelect } from '@/ui/forms';
-import { itemCodeWithRev } from '@/lib/item-code';
+import { docDrawingRev, itemCodeWithRev } from '@/lib/item-code';
 import { useSalesOrdersList } from '@/modules/sales-orders/api';
 import { useJobCard, useJobCardsList } from '@/modules/job-cards/api';
 import { useJcOpsEnriched } from '@/modules/op-entry/api';
@@ -115,7 +115,7 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
     // CODE/REV so two job cards on the same part at different drawing
     // revisions can be told apart. What the pick WRITES stays bare — the
     // prefill effect sets itemCodeText from jc.itemCode alone.
-    name: `${itemCodeWithRev(jc.itemCode, jc.itemRevision, '')} ${jc.itemName}`.trim(),
+    name: `${itemCodeWithRev(jc.itemCode, docDrawingRev(jc), '')} ${jc.itemName}`.trim(),
   }));
 
   // SO No.: the picker stores the chosen SO's code (the soCodeText snapshot)
@@ -376,7 +376,7 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
                       const jc = selectedJcId ? resolveJc(selectedJcId) : undefined;
                       const code = itemCodeWithRev(
                         jc?.itemCode ?? watch('itemCodeText'),
-                        jc?.itemRevision,
+                        jc ? docDrawingRev(jc) : null,
                         '',
                       );
                       const name = jc?.itemName ?? watch('itemNameText') ?? '';

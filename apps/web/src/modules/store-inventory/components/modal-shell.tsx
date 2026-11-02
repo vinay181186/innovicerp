@@ -2,18 +2,46 @@
 // the reservation drill-down can use the very same shell as ± Adjust, Min Qty
 // and Manual Receipt — one box, not a second hand-rolled one.
 
+import { useEffect, useRef } from 'react';
+import { escapeBelongsToAnOpenPicker } from '@/lib/exit-guard';
+
 export function ModalShell({
   onClose,
   title,
   children,
   width = 'min(1100px, 96vw)',
+  closeOnEscape = false,
 }: {
   onClose: () => void;
   title: string;
   children: React.ReactNode;
   /** Override only when the content genuinely needs a different box. */
   width?: string;
+  /** Escape closes the box — read-only boxes only (the drill-down); a form box
+   *  keeps it off so a stray key never loses typed input. Same listener shape
+   *  as ui/feedback/Modal: document capture phase, and an open type-to-search
+   *  dropdown keeps the key (lib/exit-guard). */
+  closeOnEscape?: boolean;
 }): React.JSX.Element {
+  const onCloseRef = useRef(onClose);
+  const boxRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+  useEffect(() => {
+    if (!closeOnEscape) return;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      if (escapeBelongsToAnOpenPicker(e.target)) return;
+      // A column ▾ menu / list open inside THIS box closes first — looked up in
+      // the box itself, so a menu elsewhere on the page never blocks Escape.
+      if (boxRef.current?.querySelector('[role="menu"], [role="listbox"]')) return;
+      e.preventDefault();
+      onCloseRef.current();
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, [closeOnEscape]);
   return (
     <div
       style={{
@@ -28,6 +56,7 @@ export function ModalShell({
       onClick={onClose}
     >
       <div
+        ref={boxRef}
         style={{
           background: 'var(--bg)',
           border: '1px solid var(--border)',

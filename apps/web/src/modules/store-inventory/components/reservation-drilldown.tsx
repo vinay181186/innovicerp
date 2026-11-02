@@ -17,9 +17,8 @@ import {
 } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
-import { fmtDate } from '@/lib/date';
 import { useStockReservations } from '@/modules/plans/api';
-import { DataTable, leadColumns, type DataTableColumn } from '@/ui/data';
+import { createdByColumn, DataTable, leadColumns, type DataTableColumn } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ModalShell } from './modal-shell';
 import { RevStockTable } from './rev-stock-table';
@@ -60,10 +59,12 @@ function reservationColumns(
   itemName: string,
 ): DataTableColumn<ReservationDetail>[] {
   return [
-    // ADR-261 — the six lead columns. Created On = the booking's created_at
-    // (the same instant as Reserved On, which stays further right). Item Code
+    // ADR-261 — the locked lead block. Created On = the booking's created_at
+    // (it replaced the old Reserved On column — same fact). Item Code
     // carries the SO line's drawing rev (CODE/REV); Item Name is the item's.
+    // Every open booking of the item in one unpaged box, so Sr No starts at 1.
     ...leadColumns<ReservationDetail>({
+      firstRowNo: 1,
       soNo: (row) => row.soCodeText,
       internalSoNo: (row) => row.soInternalNo,
       pol: (row) => row.clientPoLineNo,
@@ -188,22 +189,13 @@ function reservationColumns(
           <PlainRef code={row.jobCardCode} />
         ),
     },
-    {
-      id: 'reserved_on',
-      header: 'Reserved On',
-      kind: 'date',
-      nowrap: true,
-      className: 'mono',
-      render: (row) => fmtDate(row.reservedAt),
-    },
-    {
-      id: 'reserved_by',
-      header: 'Reserved By',
-      align: 'left',
-      ellipsis: true,
-      render: (row) => row.reservedByName ?? '—',
-      title: (row) => row.remarks ?? '',
-    },
+    // Created On / Created By = when and by whom the booking was made (the
+    // reservation row) — they replace the old Reserved On / Reserved By columns
+    // (same facts, ADR-261 rev). The booking remarks show on hover.
+    createdByColumn<ReservationDetail>({
+      createdByName: (row) => row.reservedByName,
+      overrides: { title: (row) => [row.reservedByName, row.remarks].filter(Boolean).join(' — ') },
+    }),
   ];
 }
 
@@ -211,21 +203,43 @@ export function ReservationDrilldown({
   itemId,
   itemCode,
   itemName,
+  itemLabel,
+  itemRevisionId,
   onClose,
 }: {
   itemId: string;
   itemCode: string;
   itemName: string;
+  /** The Store row's label — "ABC/1", plain "ABC", or "ABC · no Rev". */
+  itemLabel: string;
+  /** The Item + Drawing Rev bucket the row stands for (null = no-Rev bucket);
+   *  highlighted in the per-Rev table. */
+  itemRevisionId: string | null;
   onClose: () => void;
 }): React.JSX.Element {
   // Closed rows (released / cancelled / fully dispatched) are left out: the
   // question this box answers is "who is holding my stock right now".
-  const { data, isLoading, isError, error } = useStockReservations({ itemId });
+  // A Store row stands for ONE Item + Drawing Rev bucket, so its Reserved
+  // number counts only that bucket's bookings: filter by the row's Rev, or
+  // 'none' for a MAKE item's blank (no-Rev) row. A Buy item has a single row
+  // (label = the bare code) and keeps the item-wide list.
+  const revScope = itemRevisionId ?? (itemLabel !== itemCode ? 'none' : undefined);
+  const { data, isLoading, isError, error } = useStockReservations({
+    itemId,
+    ...(revScope ? { itemRevisionId: revScope } : {}),
+  });
   const columns = reservationColumns(itemCode, itemName);
+  const scopeName = revScope ? itemLabel : 'this item';
 
   return (
-    // The item is named once, in the title — every row is the same item.
-    <ModalShell onClose={onClose} title={`Reserved Stock — ${itemCode} (${itemName})`}>
+    // The item is named once, in the title — every row is the same item. The
+    // title says what the row ⋯ menu said ("Stock per Drawing Rev") — one label
+    // per action (owner rule 2026-11-02).
+    <ModalShell
+      onClose={onClose}
+      closeOnEscape
+      title={`Stock per Drawing Rev — ${itemLabel} (${itemName})`}
+    >
       {isLoading ? (
         <div className="text3" style={{ fontSize: 12 }}>
           <Loader2 size={14} className="inline animate-spin" /> Loading…
@@ -237,9 +251,9 @@ export function ReservationDrilldown({
       ) : (
         <>
           {/* Phase C — the same item split per Item + Drawing Rev bucket. */}
-          <RevStockTable itemId={itemId} itemCode={itemCode} />
+          <RevStockTable itemId={itemId} itemCode={itemCode} focusRevisionId={itemRevisionId} />
           <div style={{ fontSize: 12, marginBottom: 10 }}>
-            <span className="text3">Total reserved for this item: </span>
+            <span className="text3">Total reserved for {scopeName}: </span>
             <b className="mono" style={{ color: 'var(--purple)', fontSize: 16 }}>
               {data?.totalReserved ?? 0}
             </b>
@@ -249,7 +263,7 @@ export function ReservationDrilldown({
             columns={columns}
             rows={data?.rows ?? []}
             rowKey={(row) => row.id}
-            emptyText="No stock is reserved for this item."
+            emptyText={`No stock is reserved for ${scopeName}.`}
           />
         </>
       )}

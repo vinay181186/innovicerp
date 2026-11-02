@@ -22,6 +22,8 @@ export const STUCK_SF_COLUMNS: SfColumnMap = {
     sql: sql`(NULLIF(t.created_at, '')::timestamptz AT TIME ZONE 'Asia/Kolkata')::date`,
     type: 'date',
   },
+  // ADR-261 rev — Created By: who entered the SO (a column of the record set).
+  createdBy: { sql: sql`t.created_by_name`, type: 'text' },
   stage: { sql: sql`t.stage`, type: 'text' },
   customer: { sql: sql`t.customer`, type: 'text' },
   days: { sql: sql`t.days`, type: 'num' },
@@ -31,7 +33,7 @@ export const STUCK_SF_COLUMNS: SfColumnMap = {
   detail: { sql: sql`t.detail`, type: 'text' },
 };
 
-const REC = sql`t(so_id text, so_no text, so_internal_no text, created_at text,
+const REC = sql`t(so_id text, so_no text, so_internal_no text, created_at text, created_by_name text,
   customer text, stage text, days int,
   threshold int, detail text, since text, color text, ord int)`;
 
@@ -48,6 +50,7 @@ export async function pageStuckItems(
       so_no: it.soNo,
       so_internal_no: it.soInternalNo ?? null,
       created_at: it.createdAt ?? null,
+      created_by_name: it.createdByName ?? null,
       customer: it.customer,
       stage: it.stage,
       days: it.days,

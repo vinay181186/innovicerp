@@ -30,6 +30,8 @@ export const dailyReportRowSchema = z.object({
   soCode: z.string().nullable().optional(),
   soInternalNo: z.string().nullable().optional(),
   createdAt: z.string().nullable().optional(),
+  /** Created By (ADR-261 rev): name of the user who entered the SAME record as createdAt (full name, else e-mail before @); null when unknown. */
+  createdByName: z.string().nullable(),
   opSeq: z.number().int().positive(),
   operation: z.string(),
   shift: z.string(),

@@ -16,6 +16,7 @@
 
 import { Link } from '@tanstack/react-router';
 import type { StoreInventoryRow } from '@innovic/shared';
+import { ItemRevLink } from '@/modules/item-revisions/components/item-rev-link';
 import type { DataTableColumn } from '@/ui/data';
 
 /** A header cell that carries a tooltip (the fit engine has no header-title prop). */
@@ -36,12 +37,27 @@ export function storeInventoryColumns(opts: {
       header: 'Item Code',
       kind: 'code',
       nowrap: true,
-      // The code opens the Item Master record; a real link so it can be
-      // ctrl / middle-clicked into a new tab.
+      // One row per Item + Drawing Rev bucket (owner rule 2026-11-02): the cell
+      // shows the server's itemLabel — "ABC/1" (opens that drawing page),
+      // plain "ABC" for a Buy item, "ABC · no Rev" for a MAKE item's old
+      // stock. Without a Rev the code opens the Item Master record; a real
+      // link so it can be ctrl / middle-clicked into a new tab.
+      // The Rev link is deliberately NOT gated on canOpenItem: the drawing
+      // page is open to every logged-in user and the server checks the read
+      // itself. The plain-code (Item Master) link keeps the ADR-234 gate.
+      title: (row) => row.itemLabel,
       render: (row) =>
-        !canOpenItem ? (
+        row.itemRevisionId ? (
           <span className="td-code fw-700" style={{ color: 'var(--text)' }}>
-            {row.itemCode}
+            <ItemRevLink
+              itemRevisionId={row.itemRevisionId}
+              label={row.itemLabel}
+              className=""
+            />
+          </span>
+        ) : !canOpenItem ? (
+          <span className="td-code fw-700" style={{ color: 'var(--text)' }}>
+            {row.itemLabel}
           </span>
         ) : (
           <Link
@@ -52,7 +68,7 @@ export function storeInventoryColumns(opts: {
             title="Open this item in the Item Master"
             onClick={(e) => e.stopPropagation()}
           >
-            {row.itemCode}
+            {row.itemLabel}
           </Link>
         ),
     },
@@ -187,6 +203,8 @@ export function storeInventoryColumns(opts: {
       align: 'right',
       nowrap: true,
       className: 'mono text3',
+      // Item-level fact, repeated on every Drawing Rev row of the item so a
+      // search that lands on one Rev ("ABC/2") still shows it.
       render: (row) => row.reorderLevel || '—',
     },
     {

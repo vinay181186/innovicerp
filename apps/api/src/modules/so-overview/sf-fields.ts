@@ -16,6 +16,8 @@ export const SO_OVERVIEW_SF_FIELDS: MemFieldMap<SoOverviewRow> = {
   internalSoNo: { type: 'text', get: (r) => r.internalSoNo },
   // ADR-261 Created On — the SO's created_at as the India-time day.
   createdOn: { type: 'date', get: (r) => istDay(r.createdAt) },
+  // ADR-261 rev — Created By: who entered the SO.
+  createdBy: { type: 'text', get: (r) => r.createdByName },
   customerName: { type: 'text', get: (r) => r.customerName },
   type: { type: 'list', get: (r) => r.type },
   overallStatus: { type: 'list', get: (r) => r.overallStatus },

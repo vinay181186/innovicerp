@@ -11,6 +11,7 @@
 
 import { type SQL, sql } from 'drizzle-orm';
 
+import { createdByNameSql } from '../../lib/created-by-sql';
 import type { SfColumnMap } from '../../lib/list-query';
 
 export function prSfColumns(orderedQty: SQL): SfColumnMap {
@@ -43,5 +44,6 @@ export function prSfColumns(orderedQty: SQL): SfColumnMap {
     requiredDate: { sql: sql`pr.required_date`, type: 'date' },
     status: { sql: sql`pr.status`, type: 'list' },
     createdOn: { sql: sql`(pr.created_at AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
+    createdBy: { sql: createdByNameSql(sql`pr.created_by`), type: 'text' },
   };
 }

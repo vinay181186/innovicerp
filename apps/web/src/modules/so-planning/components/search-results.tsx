@@ -14,7 +14,7 @@
 import type { PlanningSoListItem } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useMemo } from 'react';
-import { itemCodeWithRev } from '@/lib/item-code';
+import { docDrawingRev, itemCodeWithRev } from '@/lib/item-code';
 import { matchesSearchTerm } from '@/components/shared/search-match';
 import { DataTable, Panel } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
@@ -58,7 +58,7 @@ export function useMatchingLines(term: string, sos: PlanningSoListItem[]): Match
           so.customerName,
           `L${line.lineNo}`,
           line.lineNo,
-          itemCodeWithRev(line.itemCode, line.itemRevision, ''),
+          itemCodeWithRev(line.itemCode, docDrawingRev(line), ''),
           line.itemCode,
           line.itemName,
         ],

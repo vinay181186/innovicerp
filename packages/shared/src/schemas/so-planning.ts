@@ -26,6 +26,8 @@ export const planningSoListItemSchema = z.object({
   soInternalNo: z.string().nullable().optional(),
   /** ADR-261 Created On — the order's own created_at (ISO). */
   createdAt: z.string().nullable().optional(),
+  /** Created By (ADR-261 rev): name of the user who entered the SAME record as createdAt (full name, else e-mail before @); null when unknown. */
+  createdByName: z.string().nullable(),
   /** 'so' = sales_orders row, 'jw' = job_work_orders row. Drives which
    *  table the detail endpoint reads and which line link a new plan uses. */
   source: z.enum(['so', 'jw']),
@@ -150,6 +152,8 @@ export const planningLineSchema = z.object({
   clientPoLineNo: z.string().nullable(),
   /** ADR-261 Created On — the SO / JWSO line's own created_at (ISO). */
   createdAt: z.string().nullable().optional(),
+  /** Created By (ADR-261 rev): name of the user who entered the SAME record as createdAt (full name, else e-mail before @); null when unknown. */
+  createdByName: z.string().nullable(),
   itemId: z.string().uuid().nullable(),
   itemCode: z.string().nullable(),
   /** The customer's drawing revision for this line, read off
@@ -439,6 +443,8 @@ export const listReservationsQuerySchema = z.object({
   itemId: z.string().uuid().optional(),
   soLineId: z.string().uuid().optional(),
   salesOrderId: z.string().uuid().optional(),
+  /** Drawing Rev bucket: a register id, or 'none' = the blank (no-Rev) bucket. */
+  itemRevisionId: z.union([z.string().uuid(), z.literal('none')]).optional(),
   /** Omitted = only the rows still holding stock (active + partially_consumed).
    *  Parsed from the literal string: `z.coerce.boolean()` would turn the
    *  string "false" into TRUE, so an explicit `?includeClosed=false` asked for

@@ -88,14 +88,19 @@ export function FitDataTable<T>(props: DataTableProps<T> & { tableKey: string })
     return out;
   }, [columns, ids]);
 
-  // The six lead columns (ui/data/lead-columns.tsx) are one locked block.
+  // The locked lead block (ui/data/lead-columns.tsx) are one locked block.
   const leadIds = useMemo(
     () => (columns[0]?.lead ? lockedLeadIds(columns, ids) : []),
     [columns, ids],
   );
+  // Table-level defaultHidden plus any column that is off by default itself.
+  const hiddenIds = useMemo(() => {
+    const own = columns.flatMap((c, i) => (c.hiddenByDefault ? [ids[i] ?? `col-${i}`] : []));
+    return own.length === 0 ? defaultHidden : [...(defaultHidden ?? []), ...own];
+  }, [columns, ids, defaultHidden]);
   const layout = useTableLayout(tableKey, ids, {
     pins: defaultPinned,
-    hidden: defaultHidden,
+    hidden: hiddenIds,
     locked: leadIds,
   });
   const { density, setDensity } = useTableDensity();

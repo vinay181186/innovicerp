@@ -78,6 +78,7 @@ import {
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { withUniqueRetry } from '../../lib/db-retry';
 import { requireAnyFormAccess, requireFormAccess } from '../../lib/access';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { polOf, polSql } from '../../lib/pol';
 import { drawingRevOf } from '../../lib/drawing-rev';
@@ -457,7 +458,6 @@ const PLAN_RM_ITEM_CODE_SQL = sql<string | null>`(
    LIMIT 1
 )`;
 
-const createdByUser = alias(users, 'po_created_by');
 const closedByUser = alias(users, 'po_closed_by');
 const shortClosedByUser = alias(users, 'po_short_closed_by');
 
@@ -520,7 +520,8 @@ const poColumns = {
   drawingRev: PRO_DRAWING_REV_SQL,
   clientPoLineNo: CLIENT_PO_LINE_NO_SQL,
   soInternalNo: SO_INTERNAL_NO_SQL,
-  createdByName: createdByUser.fullName,
+  // Created By (ADR-261 rev) — the one shared rule (full name, else e-mail).
+  createdByName: createdByNameSql(productionOrders.createdBy),
   closedByName: closedByUser.fullName,
   shortClosedByName: shortClosedByUser.fullName,
 };
@@ -787,7 +788,6 @@ function baseQuery(tx: DbTransaction) {
     .from(productionOrders)
     .leftJoin(jobCards, eq(jobCards.id, productionOrders.jobCardId))
     .leftJoin(plans, eq(plans.id, productionOrders.planId))
-    .leftJoin(createdByUser, eq(createdByUser.id, productionOrders.createdBy))
     .leftJoin(closedByUser, eq(closedByUser.id, productionOrders.closedBy))
     .leftJoin(shortClosedByUser, eq(shortClosedByUser.id, productionOrders.shortClosedBy));
 }

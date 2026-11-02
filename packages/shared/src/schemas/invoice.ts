@@ -281,6 +281,8 @@ export const invoiceListLineRowSchema = z.object({
   clientPoLineNo: z.string().nullable(),
   /** The line's created_at, else the invoice's. The Created On column. */
   createdAt: z.string(),
+  /** Created By (ADR-261 rev): name of the user who entered the SAME record as createdAt (full name, else e-mail before @); null when unknown. */
+  createdByName: z.string().nullable(),
   /** Frozen invoice-time code (invoice_lines.item_code_text). */
   itemCode: z.string().nullable(),
   /** The SO line's drawing revision (CODE/REV); null with no SO line. */

@@ -5,6 +5,7 @@
 
 import { sql } from 'drizzle-orm';
 
+import { createdByNameSql } from '../../lib/created-by-sql';
 import type { SfColumnMap } from '../../lib/list-query';
 
 export const PSV_SF_COLUMNS: SfColumnMap = {
@@ -13,6 +14,8 @@ export const PSV_SF_COLUMNS: SfColumnMap = {
   soInternalNo: { sql: sql`psv.internal_so_no`, type: 'text' },
   // ADR-261 Created On — the SO's created_at as the India-time day.
   createdOn: { sql: sql`(psv.created_at AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
+  // ADR-261 rev — Created By: who entered the SO (the psv CTE's created_by).
+  createdBy: { sql: createdByNameSql(sql`psv.created_by`), type: 'text' },
   customerName: { sql: sql`psv.customer_name`, type: 'text' },
   dueDate: { sql: sql`psv.due_date`, type: 'date' },
   soDate: { sql: sql`psv.so_date`, type: 'date' },

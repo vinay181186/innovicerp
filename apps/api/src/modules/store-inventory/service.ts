@@ -213,6 +213,10 @@ export async function listReservations(
     }
     if (query.itemId) filters.push(eq(soStockReservations.itemId, query.itemId));
     if (query.soLineId) filters.push(eq(soStockReservations.soLineId, query.soLineId));
+    // Drawing Rev bucket (Stock per Drawing Rev drill-down): "none" = blank bucket.
+    if (query.itemRevisionId === 'none') filters.push(isNull(soStockReservations.itemRevisionId));
+    else if (query.itemRevisionId)
+      filters.push(eq(soStockReservations.itemRevisionId, query.itemRevisionId));
     if (query.salesOrderId) filters.push(eq(salesOrderLines.salesOrderId, query.salesOrderId));
 
     const rows = await tx

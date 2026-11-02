@@ -5,6 +5,7 @@
 import type { ListRunningOpsPageQuery, RunningOp } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { AuthorizationError } from '../../lib/errors';
 import { polSql } from '../../lib/pol';
 import { drawingRevOf } from '../../lib/drawing-rev';
@@ -45,6 +46,7 @@ export const RUNNING_OPS_SELECT = sql`
         COALESCE(ro_so.code, ro_jw.code) AS "soCode",
         ro_so.internal_so_no AS "soInternalNo",
         o.created_at        AS "createdAt",
+        ${createdByNameSql(sql`o.created_by`)} AS "createdByName",
         o.op_seq            AS "opSeq",
         o.operation,
         r.machine_id        AS "machineId",
@@ -105,6 +107,7 @@ export function toRunningOp(r: Record<string, unknown>): RunningOp {
       r['createdAt'] instanceof Date
         ? (r['createdAt'] as Date).toISOString()
         : ((r['createdAt'] as string | null) ?? null),
+    createdByName: (r['createdByName'] as string | null) ?? null,
     plannedMachineCode: (r['plannedMachineCode'] as string | null) ?? null,
     startedByName: (r['startedByName'] as string | null) ?? null,
     startDate:
@@ -133,6 +136,7 @@ export const RUNNING_OPS_SF_COLUMNS: SfColumnMap = {
   soCode: { sql: sql`COALESCE(ro_so.code, ro_jw.code)`, type: 'text' },
   soInternalNo: { sql: sql`ro_so.internal_so_no`, type: 'text' },
   createdOn: { sql: sql`(o.created_at AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
+  createdBy: { sql: createdByNameSql(sql`o.created_by`), type: 'text' },
   machineCode: { sql: sql`m.code`, type: 'text' },
   plannedMachineCode: {
     sql: sql`COALESCE(pm.code, NULLIF(o.machine_code_text, 'QC'))`,

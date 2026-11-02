@@ -30,6 +30,7 @@ import {
   vendors,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { canSeeFormPrice, requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { assertActiveParty } from '../../lib/active-party';
@@ -695,6 +696,7 @@ export async function listPurchaseRequests(
         pr.balance_closed_by AS "balanceClosedBy",
         pr.balance_closed_reason AS "balanceClosedReason",
         pr.created_at AS "createdAt", pr.created_by AS "createdBy",
+        ${createdByNameSql(sql`pr.created_by`)} AS "createdByName",
         pr.updated_at AS "updatedAt", pr.updated_by AS "updatedBy",
         pr.deleted_at AS "deletedAt",
         COALESCE(v.name, vt.name) AS "vendorName",
@@ -864,6 +866,7 @@ function toListItem(r: Record<string, unknown>): PurchaseRequestListItem {
     balanceClosedReason: (r['balanceClosedReason'] as string | null) ?? null,
     createdAt: tsLike(r['createdAt']),
     createdBy: r['createdBy'] as string,
+    createdByName: (r['createdByName'] as string | null) ?? null,
     updatedAt: tsLike(r['updatedAt']),
     updatedBy: r['updatedBy'] as string,
     deletedAt: maybeTsLike(r['deletedAt']),

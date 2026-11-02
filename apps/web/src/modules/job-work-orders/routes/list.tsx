@@ -3,7 +3,7 @@
 // ⋯ menu act on the JWSO the line belongs to. The old ▸ (the JWSO's line items)
 // is gone — every line is its own row now.
 //
-// Columns: lead block (JWSO No. · POL · Created On · Item Code/Rev · Item Name)
+// Columns: lead block (JWSO No. · POL · Item Code/Rev · Item Name)
 // then JWSO Date · Customer · Client PO No. · Order Qty · JC Qty · Dispatched ·
 // Pending · Customer Material · Due · JWSO Status — components/jwso-list-columns.tsx.
 //
@@ -139,7 +139,10 @@ function JobWorkOrdersListPage(): React.JSX.Element {
   // ADR-202 — JWSO ids with a pending edit; their status cell reads "Draft".
   const draftIds = usePendingEditIds('JobWorkOrder');
   const orderPrint = useOrderPrint();
-  const columns = useMemo(() => jwsoListColumns(today, draftIds), [today, draftIds]);
+  const columns = useMemo(
+    () => jwsoListColumns(offset + 1, today, draftIds),
+    [offset, today, draftIds],
+  );
 
   const total = data?.total ?? 0;
   const rows = data?.items ?? [];

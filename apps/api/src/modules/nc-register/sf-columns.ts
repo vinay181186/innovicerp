@@ -6,6 +6,7 @@
 
 import { sql } from 'drizzle-orm';
 
+import { createdByNameSql } from '../../lib/created-by-sql';
 import type { SfColumnMap } from '../../lib/list-query';
 import { ncSoKeySql } from './so-key';
 
@@ -38,4 +39,5 @@ export const NC_SF_COLUMNS: SfColumnMap = {
   reasonCategory: { sql: sql`nc.reason_category`, type: 'list' },
   ncDate: { sql: sql`nc.nc_date`, type: 'date' },
   createdOn: { sql: sql`(nc.created_at AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
+  createdBy: { sql: createdByNameSql(sql`nc.created_by`), type: 'text' },
 };

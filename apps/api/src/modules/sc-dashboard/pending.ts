@@ -12,6 +12,7 @@ import type {
 import { scPendingQuerySchema, scTableQuerySchema } from '@innovic/shared';
 import { type SQL, sql } from 'drizzle-orm';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { canSeeFormPrice } from '../../lib/access';
 import { AuthorizationError } from '../../lib/errors';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
@@ -74,6 +75,7 @@ type PendRow = {
   so_internal_no: string | null;
   client_po_line_no: string | null;
   created_at: string | Date | null;
+  created_by_name: string | null;
   item_code: string | null;
   item_revision: string | null;
   item_name: string | null;
@@ -116,6 +118,7 @@ export async function listScPending(
         COALESCE(so.code, rev_jwo.code) AS so_code, so.internal_so_no AS so_internal_no,
         ${polSql('sol', 'rev_jwl')} AS client_po_line_no,
         pol.created_at,
+        ${createdByNameSql(sql`pol.created_by`)} AS created_by_name,
         i.code AS item_code, COALESCE(i.name, pol.item_name) AS item_name,
         -- The customer's drawing revision off the SO line (else the JWSO line),
         -- never items.revision. Cast to text: the column is text only after 0119.
@@ -150,6 +153,7 @@ export async function listScPending(
       soInternalNo: r.so_internal_no,
       clientPoLineNo: r.client_po_line_no,
       createdAt: r.created_at == null ? null : new Date(r.created_at).toISOString(),
+      createdByName: r.created_by_name ?? null,
       itemCode: r.item_code,
       itemRevision: r.item_revision,
       itemName: r.item_name,

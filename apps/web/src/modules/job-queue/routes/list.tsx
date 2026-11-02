@@ -149,7 +149,8 @@ function JobQueuePage(): React.JSX.Element {
   );
 
   const today = todayIst();
-  const columns = useMemo(() => jobQueueColumns({ today }), [today]);
+  const firstRowNo = pageOffset(search.page) + 1;
+  const columns = useMemo(() => jobQueueColumns({ today, firstRowNo }), [today, firstRowNo]);
   const emptyText = machineNotFound
     ? `Machine ${selectedMachineCode} not found.`
     : selectedMachine

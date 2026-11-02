@@ -91,7 +91,7 @@ export function PartyMaterialIssueView({
   const rows = data?.items ?? [];
   const onPage = useCallback((p: number) => setPage(p), []);
   useClampPage(page, data?.total, onPage);
-  const columns = useMemo(() => partyMaterialIssueColumns(), []);
+  const columns = useMemo(() => partyMaterialIssueColumns(pageOffset(page) + 1), [page]);
 
   // ▸ expand — Remarks are already on the row, so no extra fetch.
   const [expanded, setExpanded] = useState<Set<string>>(new Set());

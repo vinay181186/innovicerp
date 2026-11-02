@@ -4,7 +4,7 @@
 // field names, so a small discriminated view-model (PendingVM) maps both onto
 // the one set of accessors the columns read.
 //
-// Visible columns: the six lead columns (SO No. · Internal SO No. · POL ·
+// Visible columns: the locked lead block (SO No. · Internal SO No. · POL ·
 // Created On · Item Code · Item Name, owner rule 2026-10-31), then Doc No. ·
 // QC Pending · Called Date · Days Waiting · Planned Machine · Actual Machine ·
 // Client PO No. · Stage. The secondary facts — Vendor / Customer, Operation,
@@ -26,7 +26,7 @@ import type { PartyGrnQcRow, QcGrnType, QcRegisterPendingItem } from '@innovic/s
 import { QC_GRN_TYPE_LABELS, opSrNo } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate, todayIst } from '@/lib/date';
-import { leadColumns, type DataTableColumn } from '@/ui/data';
+import { createdByColumn, leadColumns, type DataTableColumn } from '@/ui/data';
 import { factColumns } from './qc-call-fact-columns';
 import { QC_STAGES, dayDiff, processStage, type QcStage } from './qc-sheet';
 
@@ -153,11 +153,12 @@ function waitDisplay(vm: PendingVM): React.JSX.Element {
 /** Columns that start hidden — the fit engine shows them in the ▸ detail row. */
 export const PENDING_HIDDEN = ['vendor', 'operation', 'assigned_to', 'received_qty'];
 
-export function pendingColumns(): DataTableColumn<PendingVM>[] {
+export function pendingColumns(firstRowNo: number): DataTableColumn<PendingVM>[] {
   return [
-    // Owner rule 2026-10-31 — own number (Doc No.) first, the six lead
-    // columns, the rest after Item Name. Created On = each call's own record created_at.
+    // Owner rule 2026-10-31 — own number (Doc No.) inside the lead block
+    // (after Item Name), the rest after Item Name. Created On = each call's own record created_at.
     ...leadColumns<PendingVM>({
+      firstRowNo,
       doc: {
         id: 'doc_no',
         sortFilterField: 'docNo',
@@ -199,16 +200,6 @@ export function pendingColumns(): DataTableColumn<PendingVM>[] {
             </Link>
           ),
       },
-      docDate: {
-        id: 'doc_date',
-        sortFilterField: 'docDate',
-        kind: 'date',
-        header: 'Doc Date',
-        className: 'mono',
-        nowrap: true,
-        render: (vm) => fmtDate(vm.docDate ?? null),
-        filterValue: (vm) => vm.docDate ?? '',
-      },
       soNo: soNoOf,
       internalSoNo: soInternalNoOf,
       pol: polOf,
@@ -225,6 +216,16 @@ export function pendingColumns(): DataTableColumn<PendingVM>[] {
         created_on: { sortFilterField: 'createdOn' },
       },
     }),
+    {
+      id: 'doc_date',
+      sortFilterField: 'docDate',
+      kind: 'date',
+      header: 'Doc Date',
+      className: 'mono',
+      nowrap: true,
+      render: (vm) => fmtDate(vm.docDate ?? null),
+      filterValue: (vm) => vm.docDate ?? '',
+    },
     {
       id: 'qc_pending',
       sortFilterField: 'qcPending',
@@ -306,5 +307,11 @@ export function pendingColumns(): DataTableColumn<PendingVM>[] {
       render: (vm) => (vm.kind === 'op' ? (vm.row.assignedTo ?? '—') : '—'),
       title: (vm) => (vm.kind === 'op' ? (vm.row.assignedTo ?? '') : ''),
     },
+    // Created By = the created_by of the same record as Created On (job-card
+    // op / GRN line / Party GRN line, each feed's own row).
+    createdByColumn<PendingVM>({
+      createdByName: (vm) => vm.row.createdByName,
+      overrides: { sortFilterField: 'createdBy' },
+    }),
   ];
 }

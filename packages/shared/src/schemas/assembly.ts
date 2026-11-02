@@ -132,6 +132,8 @@ export const assemblyListItemSchema = z.object({
    *  while web/API deploy apart. */
   itemRevision: z.string().nullable().optional(),
   createdAt: z.string().nullable().optional(),
+  /** Created By (ADR-261 rev): name of the user who entered the SAME record as createdAt (full name, else e-mail before @); null when unknown. */
+  createdByName: z.string().nullable(),
   orderQty: z.number().int().nonnegative(),
   assembledQty: z.number().int().nonnegative(),
   dispatchedQty: z.number().int().nonnegative(),

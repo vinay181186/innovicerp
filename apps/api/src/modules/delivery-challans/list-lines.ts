@@ -24,6 +24,7 @@ import type {
   ListDeliveryChallansQuery,
 } from '@innovic/shared';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { AuthorizationError } from '../../lib/errors';
 import { day, iso, str } from '../../lib/list-line-values';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
@@ -135,6 +136,7 @@ export async function listDeliveryChallanLines(
         jw.code AS "jwCode",
         ${polSql('sol', 'jwl')} AS "clientPoLineNo",
         COALESCE(dcl.created_at, dc.created_at) AS "createdAt",
+        ${createdByNameSql(sql`COALESCE(dcl.created_by, dc.created_by)`)} AS "createdByName",
         COALESCE(i.code, dcl.item_code_text) AS "itemCode",
         ${DC_LINE_REV_SQL} AS "itemRevision",
         COALESCE(i.name, dcl.item_name_text) AS "itemName",
@@ -177,6 +179,7 @@ export async function listDeliveryChallanLines(
         jwCode: str(r['jwCode']),
         clientPoLineNo: str(r['clientPoLineNo']),
         createdAt: iso(r['createdAt']),
+        createdByName: str(r['createdByName']),
         itemCode: str(r['itemCode']),
         itemRevision: str(r['itemRevision']),
         itemName: str(r['itemName']),

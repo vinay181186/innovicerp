@@ -8,6 +8,7 @@
 import { sql } from 'drizzle-orm';
 import type { ListOspWipQuery, ListOspWipResponse, OspWipRow } from '@innovic/shared';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { AuthorizationError } from '../../lib/errors';
 import { polSql } from '../../lib/pol';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
@@ -34,6 +35,7 @@ interface WipRawRow {
   so_code: string | null;
   so_internal_no: string | null;
   created_at: Date | string | null;
+  created_by_name: string | null;
   vendor_name: string | null;
   vendor_code: string | null;
   order_qty: number;
@@ -124,7 +126,8 @@ export async function listOspWip(
         -- line's (ADR-236). Never sol.line_no, which is OUR line number.
         ${polSql('sol', 'rev_jwl')} AS client_po_line_no,
         so.internal_so_no AS so_internal_no,
-        wo.created_at AS created_at
+        wo.created_at AS created_at,
+        ${createdByNameSql(sql`wo.created_by`)} AS created_by_name
       ${fromFrag}
         ${bucketFrag}
       ORDER BY ${orderBy}
@@ -147,6 +150,7 @@ export async function listOspWip(
       soCode: r.so_code,
       soInternalNo: r.so_internal_no,
       createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : (r.created_at ?? null),
+      createdByName: r.created_by_name ?? null,
       vendorName: r.vendor_name,
       vendorCode: r.vendor_code,
       orderQty: Number(r.order_qty),

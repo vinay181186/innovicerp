@@ -4,16 +4,23 @@
 // whole queue and the table shows one 25-row page (ADR-201).
 //
 // ADR-199 table standard: the data table is the shared fit table
-// (<DataTable tableKey={TABLE_KEYS.qcCommandQueue}>). The six lead columns
-// (JC No. · SO No. … Item Name, owner rule 2026-10-31, own number first) lead;
+// (<DataTable tableKey={TABLE_KEYS.qcCommandQueue}>). The locked lead block
+// (JC No. · SO No. … Item Name, owner rule 2026-10-31, own number after Item Name) lead;
 // Customer and Due Date ride in the ▸ detail row (defaultHidden). Overdue rows carry the shared late tint (ROW_TINT.late). The
 // Sort-by bar, the Pick Up / Assign actions and the permission gates are kept.
 
 import { type QcCommandQueueRow, type QcQueueSort, opSrNo } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
-import { DataTable, leadColumns, Panel, ROW_TINT, type DataTableColumn } from '@/ui/data';
+import {
+  DataTable,
+  createdByColumn,
+  leadColumns,
+  Panel,
+  ROW_TINT,
+  type DataTableColumn,
+} from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
-import { type QcPager, TablePager } from './TablePager';
+import { type QcPager, TablePager, rowNo } from './TablePager';
 
 const SORTS: { id: QcQueueSort; label: string }[] = [
   { id: 'age', label: 'Oldest First' },
@@ -67,9 +74,10 @@ export function QueueTab({
   const showActions = canPickUp || canAssign;
 
   const columns: DataTableColumn<QcCommandQueueRow>[] = [
-    // Owner rule 2026-10-31 — own number (JC No.) first, then the six lead
-    // columns. Created On = the QC op's own created_at.
+    // Owner rule 2026-10-31 — own number (JC No.) inside the lead block (after
+    // Item Name). Created On = the QC op's own created_at.
     ...leadColumns<QcCommandQueueRow>({
+      firstRowNo: rowNo(pager, 0),
       doc: {
         id: 'jc_code',
         header: 'JC No.',
@@ -80,15 +88,6 @@ export function QueueTab({
           </span>
         ),
       },
-      docDate: {
-        id: 'jc_date',
-        kind: 'date',
-        header: 'JC Date',
-        className: 'mono',
-        nowrap: true,
-        render: (it) => fmtDate(it.jcDate ?? null),
-        filterValue: (it) => it.jcDate ?? '',
-      },
       soNo: (it) => it.soCode,
       internalSoNo: (it) => it.soInternalNo,
       pol: (it) => it.clientPoLineNo,
@@ -97,6 +96,15 @@ export function QueueTab({
       itemRev: (it) => it.itemRevision,
       itemName: (it) => it.itemName,
     }),
+    {
+      id: 'jc_date',
+      kind: 'date',
+      header: 'JC Date',
+      className: 'mono',
+      nowrap: true,
+      render: (it) => fmtDate(it.jcDate ?? null),
+      filterValue: (it) => it.jcDate ?? '',
+    },
     {
       id: 'op',
       header: 'Op',
@@ -191,6 +199,7 @@ export function QueueTab({
       ),
       filterValue: (it) => it.dueDate ?? '',
     },
+    createdByColumn<QcCommandQueueRow>({ createdByName: (it) => it.createdByName }),
   ];
 
   return (

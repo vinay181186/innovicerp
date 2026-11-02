@@ -5,6 +5,7 @@
 import { sql } from 'drizzle-orm';
 
 import { capaRecords as c } from '../../db/schema';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import type { SfColumnMap } from '../../lib/list-query';
 
 /** NC No. as the cell prints it: the jsonb array joined with ", ". */
@@ -24,6 +25,7 @@ export const CAPA_SF_COLUMNS: SfColumnMap = {
   itemCode: { sql: sql`${c.itemCode}`, type: 'text' },
   itemName: { sql: CAPA_ITEM_NAME, type: 'text' },
   createdOn: { sql: sql`(${c.createdAt} AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
+  createdBy: { sql: createdByNameSql(c.createdBy), type: 'text' },
   code: { sql: sql`${c.code}`, type: 'text' },
   type: { sql: sql`${c.type}`, type: 'list' },
   ncRefs: { sql: CAPA_NC_REFS_TEXT, type: 'text' },

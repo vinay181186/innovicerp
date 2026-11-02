@@ -7,6 +7,7 @@
 
 import { sql } from 'drizzle-orm';
 
+import { createdByNameSql } from '../../lib/created-by-sql';
 import type { SfColumnMap } from '../../lib/list-query';
 import { polSql } from '../../lib/pol';
 
@@ -50,4 +51,5 @@ export const JC_SF_COLUMNS: SfColumnMap = {
   productionOrderCode: { sql: sql`po.code`, type: 'text' },
   remarks: { sql: sql`jc.remarks`, type: 'text' },
   createdOn: { sql: sql`(jc.created_at AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
+  createdBy: { sql: createdByNameSql(sql`jc.created_by`), type: 'text' },
 };

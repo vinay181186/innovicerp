@@ -27,7 +27,7 @@ import { opSrNo } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { addDaysLocal, todayLocal } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
+import { docDrawingRev, itemCodeWithRev } from '@/lib/item-code';
 import { soNoWithInternal } from '@/lib/so-number';
 import { useOpenedVersion } from '@/lib/use-opened-version';
 import { useSaveKey } from '@/lib/use-save-key';
@@ -651,7 +651,11 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
 
   // The two item parts of the identity line below. Empty string, not a dash:
   // DocIdent leaves a part out entirely when the plan does not carry it.
-  const identItemCode = itemCodeWithRev(plan.itemCode ?? plan.itemCodeText, plan.itemRevision, '');
+  const identItemCode = itemCodeWithRev(
+    plan.itemCode ?? plan.itemCodeText,
+    docDrawingRev(plan),
+    '',
+  );
   const identItemName = plan.itemName ?? plan.itemNameText ?? '';
 
   return (

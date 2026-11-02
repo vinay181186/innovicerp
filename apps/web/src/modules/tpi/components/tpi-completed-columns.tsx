@@ -5,33 +5,25 @@
 import { opSrNo, type TpiCompletedRow } from '@innovic/shared';
 import { QcReportLink } from '@/components/shared/qc-report-attach';
 import { fmtDate } from '@/lib/date';
-import { leadColumns, type DataTableColumn } from '@/ui/data';
+import { createdByColumn, leadColumns, type DataTableColumn } from '@/ui/data';
 
 function respLabel(d: number | null): string {
   if (d === null) return '—';
   return d <= 0 ? 'Same day' : `${d} day${d === 1 ? '' : 's'}`;
 }
 
-export function tpiCompletedColumns(): DataTableColumn<TpiCompletedRow>[] {
+export function tpiCompletedColumns(firstRowNo: number): DataTableColumn<TpiCompletedRow>[] {
   return [
-    // ADR-261 — JC No. (own number) first, the six lead columns, then Op. No
+    // ADR-261 — JC No. (own number) inside the lead block (after Item Name), then Op. No
     // server Sort & Filter map in this module, so no sortFilterField.
     ...leadColumns<TpiCompletedRow>({
+      firstRowNo,
       doc: {
         id: 'jc_no',
         kind: 'code',
         header: 'JC No.',
         className: 'fw-700 cyan',
         render: (l) => l.jcCode,
-      },
-      docDate: {
-        id: 'jc_date',
-        kind: 'date',
-        header: 'JC Date',
-        className: 'mono',
-        nowrap: true,
-        render: (l) => fmtDate(l.jcDate ?? null),
-        filterValue: (l) => l.jcDate ?? '',
       },
       soNo: (l) => l.soCode,
       internalSoNo: (l) => l.soInternalNo,
@@ -41,6 +33,15 @@ export function tpiCompletedColumns(): DataTableColumn<TpiCompletedRow>[] {
       itemRev: (l) => l.itemRevision,
       itemName: (l) => l.itemName,
     }),
+    {
+      id: 'jc_date',
+      kind: 'date',
+      header: 'JC Date',
+      className: 'mono',
+      nowrap: true,
+      render: (l) => fmtDate(l.jcDate ?? null),
+      filterValue: (l) => l.jcDate ?? '',
+    },
     { id: 'op_seq', kind: 'code', header: 'Op', render: (l) => `Op ${opSrNo(l.opSeq)}` },
     {
       id: 'operation',
@@ -144,5 +145,6 @@ export function tpiCompletedColumns(): DataTableColumn<TpiCompletedRow>[] {
           '—'
         ),
     },
+    createdByColumn<TpiCompletedRow>({ createdByName: (l) => l.createdByName }),
   ];
 }

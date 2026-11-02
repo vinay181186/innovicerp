@@ -58,9 +58,10 @@ export function routeCardListColumns(offset = 0): DataTableColumn<RouteCardListI
     },
     {
       // Item + Drawing Rev register (2026-10-31): the customer Drawing Rev this
-      // card is for rides in the Item Code cell (CODE/REV, ADR-261 — no
-      // separate Drawing Rev column), linked to its drawing page when the card
-      // has a register row. Bare code on an old card or a Buy item.
+      // card is for rides in the Item Code cell (ABC/1), linked to its drawing
+      // page when the card has a register row. Bare code on an old card or a
+      // Buy item.
+      // No separate Drawing Rev column (ADR-261; owner 2-Nov).
       id: 'item_code',
       sortFilterField: 'itemCode',
       header: 'Item Code',

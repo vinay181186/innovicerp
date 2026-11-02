@@ -7,7 +7,9 @@ import { sql } from 'drizzle-orm';
 import type { SfColumnMap } from '../../lib/list-query';
 
 export const STORE_INV_SF_COLUMNS: SfColumnMap = {
-  itemCode: { sql: sql`b.item_code`, type: 'text' },
+  // Item Code sorts / filters on the row's Item + Drawing Rev label ("ABC/1",
+  // "ABC · no Rev"; plain code for Buy items) — the value the column shows.
+  itemCode: { sql: sql`b.item_label`, type: 'text' },
   itemName: { sql: sql`b.item_name`, type: 'text' },
   material: { sql: sql`b.material`, type: 'text' },
   uom: { sql: sql`b.uom`, type: 'text' },

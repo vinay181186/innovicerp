@@ -7,7 +7,7 @@
 
 import { type JwDcInwardLineRow } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
-import { type DataTableColumn, leadColumns } from '@/ui/data';
+import { createdByColumn, type DataTableColumn, leadColumns } from '@/ui/data';
 
 /** ADR-235 — a Cancelled JW DC Receipt (listed with includeCancelled):
  *  cancelledAt is the standard Cancel's stamp. */
@@ -15,9 +15,10 @@ export function isJwDcInwardCancelled(inv: { cancelledAt: string | null }): bool
   return Boolean(inv.cancelledAt);
 }
 
-export function inwardColumns(): DataTableColumn<JwDcInwardLineRow>[] {
+export function inwardColumns(firstRowNo: number): DataTableColumn<JwDcInwardLineRow>[] {
   return [
     ...leadColumns<JwDcInwardLineRow>({
+      firstRowNo,
       doc: {
         id: 'inward_no',
         sortFilterField: 'code',
@@ -39,15 +40,6 @@ export function inwardColumns(): DataTableColumn<JwDcInwardLineRow>[] {
             <span style={{ color: 'var(--green2)' }}>{inv.docCode}</span>
           ),
       },
-      docDate: {
-        id: 'inward_date',
-        sortFilterField: 'inwardDate',
-        kind: 'date',
-        header: 'Inward Date',
-        className: 'mono text2',
-        nowrap: true,
-        render: (inv) => fmtDate(inv.docDate),
-      },
       soNo: (r) => r.soCode ?? r.jwCode,
       internalSoNo: (r) => r.soInternalNo,
       pol: (r) => r.clientPoLineNo,
@@ -64,6 +56,15 @@ export function inwardColumns(): DataTableColumn<JwDcInwardLineRow>[] {
         item_name: { sortFilterField: 'itemName', filterType: 'text' },
       },
     }),
+    {
+      id: 'inward_date',
+      sortFilterField: 'inwardDate',
+      kind: 'date',
+      header: 'Inward Date',
+      className: 'mono text2',
+      nowrap: true,
+      render: (inv) => fmtDate(inv.docDate),
+    },
     {
       id: 'dc_no',
       sortFilterField: 'dcNo',
@@ -127,5 +128,10 @@ export function inwardColumns(): DataTableColumn<JwDcInwardLineRow>[] {
         <span style={{ color: 'var(--red2)' }}>{inv.rejectedQty > 0 ? inv.rejectedQty : '—'}</span>
       ),
     },
+    // ADR-261 rev — Created By, the last data column.
+    createdByColumn({
+      createdByName: (r) => r.createdByName,
+      overrides: { sortFilterField: 'createdBy' },
+    }),
   ];
 }

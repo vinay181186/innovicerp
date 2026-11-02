@@ -11,7 +11,7 @@
 import type { PlanningDetailResponse, PlanningLine } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
-import { itemCodeWithRev } from '@/lib/item-code';
+import { docDrawingRev, itemCodeWithRev } from '@/lib/item-code';
 import { soNoWithInternal } from '@/lib/so-number';
 import { useRaisePlanningPr } from '../api';
 import { Modal } from './modal';
@@ -87,7 +87,7 @@ export function RaisePrModal({ so, line, onClose, onRaised }: Props): JSX.Elemen
   );
 
   const lineLabel = line.itemCode
-    ? itemCodeWithRev(line.itemCode, line.itemRevision)
+    ? itemCodeWithRev(line.itemCode, docDrawingRev(line))
     : (line.itemName ?? `Line ${line.lineNo}`);
 
   return (
@@ -115,7 +115,7 @@ export function RaisePrModal({ so, line, onClose, onRaised }: Props): JSX.Elemen
             <br />
             {/* Item code is the main thing: strong mono, darkest text. */}
             <b className="mono" style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}>
-              {itemCodeWithRev(line.itemCode, line.itemRevision)}
+              {itemCodeWithRev(line.itemCode, docDrawingRev(line))}
             </b>
             {line.itemName ? (
               <span className="text2" style={{ fontSize: 12, marginLeft: 6 }}>

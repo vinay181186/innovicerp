@@ -36,6 +36,7 @@ import { opSrNo, shortName } from '@innovic/shared';
 import { qcAssignments } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
 import { polSql } from '../../lib/pol';
 import { QC_COMMAND_ALL, pageOf, sortQueue } from './paging';
@@ -82,6 +83,7 @@ interface PendingDbRow {
   lastComplete: unknown;
   jcCreatedAt: unknown;
   opCreatedAt: unknown;
+  opCreatedByName: string | null;
 }
 
 interface QcLogDbRow {
@@ -101,6 +103,7 @@ interface QcLogDbRow {
   logDate: unknown;
   inspector: string;
   opCreatedAt: unknown;
+  opCreatedByName: string | null;
 }
 
 interface OpGroup {
@@ -116,6 +119,7 @@ interface OpGroup {
   soCode: string | null;
   soInternalNo: string | null;
   opCreatedAt: string | null;
+  opCreatedByName: string | null;
   entries: QcLogDbRow[];
 }
 
@@ -165,7 +169,8 @@ export async function getQcCommand(
           vos.qc_pending AS "qcPending",
           (SELECT MAX(ol.log_date) FROM public.op_log ol
             WHERE ol.jc_op_id = vos.jc_op_id AND ol.log_type = 'complete') AS "lastComplete",
-          jc.created_at AS "jcCreatedAt", jo.created_at AS "opCreatedAt"
+          jc.created_at AS "jcCreatedAt", jo.created_at AS "opCreatedAt",
+          ${createdByNameSql(sql`jo.created_by`)} AS "opCreatedByName"
         FROM public.v_jc_op_status vos
         JOIN public.jc_ops jo ON jo.id = vos.jc_op_id AND jo.deleted_at IS NULL
         JOIN public.job_cards jc ON jc.id = vos.job_card_id AND jc.deleted_at IS NULL
@@ -202,7 +207,8 @@ export async function getQcCommand(
           i.name AS "itemName", so.code AS "soCode", so.internal_so_no AS "soInternalNo",
           l.qty AS "qty", l.reject_qty AS "rejectQty", l.log_date AS "logDate",
           COALESCE(NULLIF(l.operator_name, ''), '(unknown)') AS "inspector",
-          jo.created_at AS "opCreatedAt"
+          jo.created_at AS "opCreatedAt",
+          ${createdByNameSql(sql`jo.created_by`)} AS "opCreatedByName"
         FROM public.op_log l
         JOIN public.jc_ops jo ON jo.id = l.jc_op_id AND jo.deleted_at IS NULL
         JOIN public.job_cards jc ON jc.id = jo.job_card_id AND jc.deleted_at IS NULL
@@ -265,6 +271,7 @@ export async function getQcCommand(
           soCode: r.soCode ?? null,
           soInternalNo: r.soInternalNo ?? null,
           opCreatedAt: tsOrNull(r.opCreatedAt),
+          opCreatedByName: r.opCreatedByName ?? null,
           entries: [],
         };
         groups.set(r.jcOpId, g);
@@ -291,6 +298,7 @@ export async function getQcCommand(
         soCode: r.soCode ?? null,
         soInternalNo: r.soInternalNo ?? null,
         createdAt: tsOrNull(r.opCreatedAt),
+        createdByName: r.opCreatedByName ?? null,
         customer: r.customer ?? null,
         pendingQty: Number(r.qcPending ?? 0),
         ageDays: daysBetween(since, today),
@@ -371,6 +379,7 @@ export async function getQcCommand(
           soCode: g.soCode,
           soInternalNo: g.soInternalNo,
           createdAt: g.opCreatedAt,
+          createdByName: g.opCreatedByName,
           attempts: g.entries.length,
           totalRejected: g.entries.reduce((s, e) => s + Number(e.rejectQty), 0),
           firstEntry: first,

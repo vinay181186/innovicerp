@@ -28,7 +28,7 @@
 // param the query reads, row click -> detail, BOM No. -> detail, and the
 // lazily-fetched part list (one detail request per OPENED row, not per row).
 
-import type { BomStatus } from '@innovic/shared';
+import { itemRevLabel, type BomStatus } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
@@ -237,7 +237,8 @@ function ExpandedLines({ bomId }: { bomId: string }): React.JSX.Element {
         header: 'Item Code',
         className: 'td-code',
         nowrap: true,
-        render: (l) => l.childItemCode ?? '—',
+        // Child part as Item + Drawing Rev — SHAFT/2 (owner rule 2026-11-02).
+        render: (l) => (l.childItemCode ? itemRevLabel(l.childItemCode, l.childDrawingRev) : '—'),
       },
       {
         header: 'Item Name',

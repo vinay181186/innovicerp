@@ -21,7 +21,7 @@ import type {
 import { Link } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
-import { LIST_PAGE_SIZE } from '@/lib/list-paging';
+import { LIST_PAGE_SIZE, pageOffset } from '@/lib/list-paging';
 import { DataTable, Panel } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter } from '@/ui/layout';
@@ -197,7 +197,7 @@ export function PendingTracker({
         </div>
         <DataTable
           tableKey={TABLE_KEYS.scDashboard}
-          columns={pendingColumns(priceHidden)}
+          columns={pendingColumns(pageOffset(t.page) + 1, priceHidden)}
           rows={t.data?.items ?? []}
           loading={t.isLoading}
           rowKey={(r) => `${r.poId}:${r.lineNo}`}
@@ -265,7 +265,7 @@ export function SoSummary({
         bodyPadding="none"
       >
         <DataTable
-          columns={soColumns(priceHidden)}
+          columns={soColumns(pageOffset(t.page) + 1, priceHidden)}
           rows={t.data?.items ?? []}
           loading={t.isLoading}
           rowKey={(s) => s.soRefId ?? '_unlinked_'}
@@ -299,7 +299,7 @@ export function PoSummary({
         bodyPadding="none"
       >
         <DataTable
-          columns={poSummaryColumns(priceHidden)}
+          columns={poSummaryColumns(pageOffset(t.page) + 1, priceHidden)}
           rows={t.data?.items ?? []}
           loading={t.isLoading}
           rowKey={(g) => g.poId}

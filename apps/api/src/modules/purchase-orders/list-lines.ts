@@ -20,6 +20,7 @@ import type { ListPurchaseOrderLinesResponse, PurchaseOrderLineListItem } from '
 import { sql } from 'drizzle-orm';
 
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { canSeeFormPrice } from '../../lib/access';
 import { AuthorizationError } from '../../lib/errors';
 import { day, iso, str } from '../../lib/list-line-values';
@@ -51,6 +52,7 @@ export const PO_LINE_SF_COLUMNS: SfColumnMap = {
     sql: sql`(COALESCE(pol.created_at, po.created_at) AT TIME ZONE 'Asia/Kolkata')::date`,
     type: 'date',
   },
+  createdBy: { sql: createdByNameSql(sql`COALESCE(pol.created_by, po.created_by)`), type: 'text' },
   // CODE/REV as the cell prints it (itemCodeWithRev).
   itemCode: {
     sql: sql`(btrim(${ITEM_CODE}) || COALESCE('/' || NULLIF(btrim(${REVISION}), ''), ''))`,
@@ -189,6 +191,7 @@ export async function listPurchaseOrderLines(
         jwo.code AS "jwCode",
         ${polSql('sol', 'rev_jwl')} AS "clientPoLineNo",
         COALESCE(pol.created_at, po.created_at) AS "createdAt",
+        ${createdByNameSql(sql`COALESCE(pol.created_by, po.created_by)`)} AS "createdByName",
         ${ITEM_CODE} AS "itemCode",
         ${REVISION} AS "itemRevision",
         COALESCE(pol.item_name, i.name) AS "itemName",
@@ -231,6 +234,7 @@ function toLineItem(r: Record<string, unknown>, showMoney: boolean): PurchaseOrd
     jwCode: str(r['jwCode']),
     clientPoLineNo: str(r['clientPoLineNo']),
     createdAt: iso(r['createdAt']),
+    createdByName: str(r['createdByName']),
     itemCode: str(r['itemCode']),
     itemRevision: str(r['itemRevision']),
     itemName: str(r['itemName']),

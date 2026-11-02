@@ -129,7 +129,9 @@ function DataTableBody<T>(input: DataTableProps<T>): ReactElement {
   if (tableKey !== undefined && props.variant !== 'list') {
     return <FitDataTable {...props} tableKey={tableKey} />;
   }
-  return <ClassicDataTable {...props} />;
+  // No Columns menu here, so a column that is off by default (Created Time,
+  // ADR-261 rev) is simply not drawn — it would otherwise show for good.
+  return <ClassicDataTable {...props} columns={props.columns.filter((c) => !c.hiddenByDefault)} />;
 }
 
 function ClassicDataTable<T>({

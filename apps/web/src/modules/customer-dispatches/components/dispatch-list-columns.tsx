@@ -1,7 +1,7 @@
 // Customer Dispatch list columns (ADR-199 FIT table).
 // ADR-261 (owner 2026-10-31): ONE ROW PER DISPATCH LINE
-// (GET /customer-dispatches/lines). Dispatch No. and the six lead columns come
-// first (SO No. · Internal SO No. · POL · Created On · Item Code (CODE/REV) ·
+// (GET /customer-dispatches/lines). Dispatch No. and the locked lead block come
+// first (SO No. · Internal SO No. · POL · Item Code (CODE/REV) ·
 // Item Name), then Dispatch Date, Customer, the line's Dispatch Qty, Billed
 // Status, Dispatched By — and the facts the retired ▸ showed (JC No., UOM,
 // Stock Before → After, Remarks). Row click and ⋯ act on the DISPATCH.
@@ -10,7 +10,7 @@
 import { Link } from '@tanstack/react-router';
 import { docDrawingRev } from '@/lib/item-code';
 import { fmtDate } from '@/lib/date';
-import { leadColumns, type DataTableColumn } from '@/ui/data';
+import { createdByColumn, type DataTableColumn, leadColumns } from '@/ui/data';
 import type { CustomerDispatchLineListRow, CustomerDispatchRow } from '@innovic/shared';
 
 /** ADR-190 — how far the dispatch is invoiced. Labels per docs/NAMING.md. */
@@ -32,11 +32,14 @@ const DISPATCH_STATUS_OPTIONS = [
 type Row = CustomerDispatchLineListRow;
 
 export function dispatchListColumns(
+  /** Sr No of the page's first row (offset + 1) — ADR-261 rev. */
+  firstRowNo: number,
   /** ADR-202 — dispatch ids with a pending edit; their status cell shows "Draft". */
   draftIds?: Set<string>,
 ): DataTableColumn<Row>[] {
   return [
     ...leadColumns<Row>({
+      firstRowNo,
       doc: {
         id: 'dispatch_code',
         sortFilterField: 'dispatchCode',
@@ -53,15 +56,6 @@ export function dispatchListColumns(
             {r.dispatchCode}
           </Link>
         ),
-      },
-      docDate: {
-        id: 'dispatch_date',
-        sortFilterField: 'dispatchDate',
-        kind: 'date',
-        header: 'Dispatch Date',
-        className: 'mono',
-        nowrap: true,
-        render: (r) => fmtDate(r.date),
       },
       soNo: (r) => r.soNo,
       internalSoNo: (r) => r.soInternalNo,
@@ -80,6 +74,15 @@ export function dispatchListColumns(
         item_name: { sortFilterField: 'itemName' },
       },
     }),
+    {
+      id: 'dispatch_date',
+      sortFilterField: 'dispatchDate',
+      kind: 'date',
+      header: 'Dispatch Date',
+      className: 'mono',
+      nowrap: true,
+      render: (r) => fmtDate(r.date),
+    },
     {
       id: 'customer',
       sortFilterField: 'customer',
@@ -170,5 +173,10 @@ export function dispatchListColumns(
       render: (r) => r.remarks?.trim() || '—',
       title: (r) => r.remarks ?? '',
     },
+    // ADR-261 rev — Created By, the last data column.
+    createdByColumn({
+      createdByName: (r) => r.createdByName,
+      overrides: { sortFilterField: 'createdBy' },
+    }),
   ];
 }

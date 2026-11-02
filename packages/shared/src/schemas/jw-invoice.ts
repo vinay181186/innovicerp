@@ -62,6 +62,8 @@ export const jwInvoiceSchema = z.object({
 export type JwInvoice = z.infer<typeof jwInvoiceSchema>;
 
 export const jwInvoiceListItemSchema = jwInvoiceSchema.extend({
+  /** Created By (ADR-261 rev): name of the user who entered the SAME record as createdAt (full name, else e-mail before @); null when unknown. */
+  createdByName: z.string().nullable(),
   clientName: z.string().nullable(),
   /** The item code off the JWSO line, printed as CODE/REV with the revision
    *  below. The printed invoice used to show the part name alone. */

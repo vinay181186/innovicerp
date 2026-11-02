@@ -128,6 +128,8 @@ export const designProjectSchema = z.object({
 export type DesignProject = z.infer<typeof designProjectSchema>;
 
 export const designProjectListItemSchema = designProjectSchema.extend({
+  /** Created By (ADR-261 rev): name of the user who entered the SAME record as createdAt (full name, else e-mail before @); null when unknown. */
+  createdByName: z.string().nullable(),
   /** ADR-207 — the driving SO's Internal SO No., read live from sales_orders. */
   soInternalNo: z.string().nullable().default(null),
   taskTotal: z.number().int().nonnegative(),

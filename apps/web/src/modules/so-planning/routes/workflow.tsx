@@ -278,6 +278,7 @@ function PlanningWorkflowPage(): JSX.Element {
             <OrderList
               src={src}
               items={visibleSos}
+              firstRowNo={pageOffset(page) + 1}
               loading={soList.isLoading}
               error={soList.error instanceof Error ? soList.error.message : null}
               onOpen={openOrder}

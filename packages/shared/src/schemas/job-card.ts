@@ -202,6 +202,8 @@ export const jobCardListItemSchema = z.object({
     .nullable()
     .default(null),
   createdAt: z.string(),
+  /** Created By (ADR-261 rev): name of the user who entered the SAME record as createdAt (full name, else e-mail before @); null when unknown. */
+  createdByName: z.string().nullable(),
   createdBy: z.string().uuid(),
   updatedAt: z.string(),
   updatedBy: z.string().uuid(),

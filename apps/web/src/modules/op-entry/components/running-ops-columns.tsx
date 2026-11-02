@@ -11,7 +11,7 @@ import type { RunningOp } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
 import { ActualMachineCell, PlannedMachineCell } from '@/components/shared/machine-split';
 import { fmtDate, fmtDateAndTime, fmtDateTime } from '@/lib/date';
-import { leadColumns, type DataTableColumn } from '@/ui/data';
+import { createdByColumn, leadColumns, type DataTableColumn } from '@/ui/data';
 import { RunningOpStatusBadge } from './status-badge';
 
 /** GET /op-entry/running-ops rows carry `startedByName` — the logged-in user
@@ -37,7 +37,7 @@ function JcLink({ id, code }: { id: string; code: string }): React.JSX.Element {
   );
 }
 
-/** Nothing hidden by default — the six lead columns are always shown (owner
+/** Nothing hidden by default — the locked lead block are always shown (owner
  *  rule 2026-10-31, ADR-261). Kept as the board's defaultHidden hook. */
 export const RUNNING_OPS_DEFAULT_HIDDEN: string[] = [];
 
@@ -49,8 +49,8 @@ function startedByDiffers(r: RunningOpRow): string | null {
   return differs ? startedBy : null;
 }
 
-/** The six lead columns (ADR-261), shared by both tables so the look cannot
- *  drift. `server` = the paged board's server Sort & Filter field names
+/** The locked lead block (ADR-261 rev 2026-11-02) then JC Date as the first
+ *  ordinary column, shared by both tables so the look cannot drift. `server` = the paged board's server Sort & Filter field names
  *  (running-ops-read.ts RUNNING_OPS_SF_COLUMNS); the keyless Recent table
  *  filters its page locally. Spread FIRST — `doc` (the JC No.) is drawn first
  *  and locked with the block; Op and the rest follow Item Name (ADR-261
@@ -58,19 +58,11 @@ function startedByDiffers(r: RunningOpRow): string | null {
 function identityColumns(
   server: boolean,
   doc: DataTableColumn<RunningOpRow>,
+  firstRowNo: number,
 ): DataTableColumn<RunningOpRow>[] {
-  return leadColumns<RunningOpRow>({
+  const lead = leadColumns<RunningOpRow>({
+    firstRowNo,
     doc,
-    docDate: {
-      id: 'jc_date',
-      kind: 'date',
-      header: 'JC Date',
-      className: 'mono',
-      nowrap: true,
-      render: (r) => fmtDate(r.jcDate ?? null),
-      filterValue: (r) => r.jcDate ?? '',
-      ...(server ? { sortFilterField: 'jcDate' } : {}),
-    },
     soNo: (r) => r.soCode,
     internalSoNo: (r) => r.soInternalNo,
     pol: (r) => r.clientPoLineNo,
@@ -91,6 +83,19 @@ function identityColumns(
         }
       : {}),
   });
+  return [
+    ...lead,
+    {
+      id: 'jc_date',
+      kind: 'date',
+      header: 'JC Date',
+      className: 'mono',
+      nowrap: true,
+      render: (r) => fmtDate(r.jcDate ?? null),
+      filterValue: (r) => r.jcDate ?? '',
+      ...(server ? { sortFilterField: 'jcDate' } : {}),
+    },
+  ];
 }
 
 const opColumn: DataTableColumn<RunningOpRow> = {
@@ -169,16 +174,20 @@ const operatorColumn: DataTableColumn<RunningOpRow> = {
  *  server's column map (running-ops-read.ts) — the board's Sort & Filter runs
  *  on the server because it is paged (ADR-201). The lead block is locked;
  *  the Stop action is added by the board as the trailing ⋯ menu. */
-export function runningNowColumns(): DataTableColumn<RunningOpRow>[] {
+export function runningNowColumns(firstRowNo: number): DataTableColumn<RunningOpRow>[] {
   return [
-    ...identityColumns(true, {
-      id: 'jc_no',
-      sortFilterField: 'jobCardCode',
-      kind: 'code',
-      header: 'JC No.',
-      className: 'td-code cyan',
-      render: (r) => <JcLink id={r.jobCardId} code={r.jobCardCode} />,
-    }),
+    ...identityColumns(
+      true,
+      {
+        id: 'jc_no',
+        sortFilterField: 'jobCardCode',
+        kind: 'code',
+        header: 'JC No.',
+        className: 'td-code cyan',
+        render: (r) => <JcLink id={r.jobCardId} code={r.jobCardCode} />,
+      },
+      firstRowNo,
+    ),
     opColumn,
     operationColumn,
     actualMachineColumn,
@@ -192,20 +201,28 @@ export function runningNowColumns(): DataTableColumn<RunningOpRow>[] {
       render: (r) => fmtDateAndTime(r.startDate, r.startTime),
     },
     plannedMachineColumn,
+    createdByColumn<RunningOpRow>({
+      createdByName: (r) => r.createdByName,
+      overrides: { sortFilterField: 'createdBy' },
+    }),
   ];
 }
 
 /** "Recent": the last finished / cancelled sessions. Same layout as Running now
  *  but Ended + Op Status replace Started + the Stop action. */
-export function recentOpsColumns(): DataTableColumn<RunningOpRow>[] {
+export function recentOpsColumns(firstRowNo: number): DataTableColumn<RunningOpRow>[] {
   return [
-    ...identityColumns(false, {
-      id: 'jc_no',
-      kind: 'code',
-      header: 'JC No.',
-      className: 'td-code',
-      render: (r) => <JcLink id={r.jobCardId} code={r.jobCardCode} />,
-    }),
+    ...identityColumns(
+      false,
+      {
+        id: 'jc_no',
+        kind: 'code',
+        header: 'JC No.',
+        className: 'td-code',
+        render: (r) => <JcLink id={r.jobCardId} code={r.jobCardCode} />,
+      },
+      firstRowNo,
+    ),
     opColumn,
     operationColumn,
     actualMachineColumn,
@@ -224,5 +241,6 @@ export function recentOpsColumns(): DataTableColumn<RunningOpRow>[] {
       render: (r) => <RunningOpStatusBadge status={r.status} />,
     },
     plannedMachineColumn,
+    createdByColumn<RunningOpRow>({ createdByName: (r) => r.createdByName }),
   ];
 }

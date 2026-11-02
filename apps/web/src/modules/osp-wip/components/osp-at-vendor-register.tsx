@@ -36,7 +36,7 @@ export function OspAtVendorRegister(): React.JSX.Element {
   const [search, setSearch] = useState('');
   const [term, setTerm] = useState<string | undefined>(undefined);
   const [page, setPage] = useState(1);
-  const columns = useMemo(() => ospAtVendorColumns(), []);
+  const columns = useMemo(() => ospAtVendorColumns(pageOffset(page) + 1), [page]);
   const gotoFirst = useCallback(() => setPage(1), []);
   const sf = useServerSortFilter(TABLE_KEYS.ospAtVendorRegister, gotoFirst);
 

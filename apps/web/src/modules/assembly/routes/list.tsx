@@ -130,7 +130,8 @@ function AssemblyListPage(): React.JSX.Element {
     });
   }, []);
 
-  const columns = useMemo(() => assemblyListColumns(today), [today]);
+  const firstRowNo = pageOffset(search.page) + 1;
+  const columns = useMemo(() => assemblyListColumns(today, firstRowNo), [today, firstRowNo]);
   const rows = data?.items ?? [];
   const counts = data?.counts;
   const filtersActive = searchInput !== '' || filter !== 'all' || sf.filtering;

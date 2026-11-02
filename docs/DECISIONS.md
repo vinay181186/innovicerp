@@ -15098,3 +15098,16 @@ Owner 2026-11-02: "remove this rule — no compulsory fill of back-dated entries
 
 - No limit on how far back a person may write (none was asked for). If one is wanted later, it goes in `guardOwnerWrite` + detail `canWrite` together.
 - Team Day Logs still shows an empty day as "Not started"; nothing blocks on it.
+
+## ADR-261 revision (2026-11-02): lead block order, Created On locked, Created Time / Created By
+
+**Date:** 2026-11-02
+**Status:** Accepted (owner) — supersedes the 31-Oct "own number + own date FIRST" amendment
+
+### Decision
+- Locked block on every SO-linked list (`leadColumns`): **Sr No · SO No. · Internal SO No. · POL · Item Code · Item Name · own No. · Created On**. Sr No = row counter continuing across server pages (`firstRowNo` = offset + 1); added to every list (owner chose "Sr No on all").
+- Created On = the entry date (`<table>.created_at`, set by the system at Save). The typed document date (PO Date, JC Date …) is no longer locked — it is the first ordinary column after the block.
+- **Created Time** (India-time HH:MM of the same created_at): unlocked, OFF by default (new column flag `hiddenByDefault`); ticked in Columns ▾ it returns to its slot next to Created On. The classic DataTable (no Columns menu) does not draw it.
+- **Created By** (`createdByColumn`) LAST on every lead list, shown, movable, hideable. Server: one helper `apps/api/src/lib/created-by-sql.ts createdByNameSql(col)` (full name, else e-mail before @) on the created_by of the SAME record whose created_at feeds Created On (line, else header); screen shortens with shared `shortName`. `createdBy` sort/filter field wherever `createdOn` has one. SO list: `lineCreatedByName` (the header `createdByName` stays the SO creator).
+- One name per fact: Op Log "Logged By" → "Created By" (list, export, JC print, op-log history, NAMING); Job Queue's old "Sr No" (queue position) → "Queue No."; Reserved Stock pop-up drops Reserved On / Reserved By (same facts as Created On / Created By).
+- Guard test: every file that builds `leadColumns` must also add `createdByColumn`.

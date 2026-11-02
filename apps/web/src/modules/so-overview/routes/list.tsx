@@ -129,7 +129,8 @@ function SoOverviewPage(): React.JSX.Element {
 
   const rows = data?.rows ?? [];
   const total = data?.total ?? 0;
-  const columns = useMemo(() => soOverviewColumns(), []);
+  const firstRowNo = pageOffset(page) + 1;
+  const columns = useMemo(() => soOverviewColumns(firstRowNo), [firstRowNo]);
   const setOverall = (next: OverallStatusFilter): void => {
     void routeNavigate({
       search: (prev) => ({

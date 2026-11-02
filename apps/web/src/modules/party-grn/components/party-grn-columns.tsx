@@ -16,7 +16,7 @@
 
 import type { PartyGrnLineListRow, PartyGrnListItem } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
-import { leadColumns, type DataTableColumn } from '@/ui/data';
+import { createdByColumn, type DataTableColumn, leadColumns } from '@/ui/data';
 import { PGRN_QC_BADGE, pgrnQcLabel, pgrnQcState } from '../lib/qc-state';
 
 /** ADR-235 — a Cancelled GRN (listed with includeCancelled). cancelledAt is
@@ -27,9 +27,10 @@ export function isPartyGrnCancelled(
   return Boolean(g.cancelledAt ?? g.deletedAt);
 }
 
-export function partyGrnColumns(): DataTableColumn<PartyGrnLineListRow>[] {
+export function partyGrnColumns(firstRowNo: number): DataTableColumn<PartyGrnLineListRow>[] {
   return [
     ...leadColumns<PartyGrnLineListRow>({
+      firstRowNo,
       doc: {
         id: 'grn_code',
         sortFilterField: 'code',
@@ -41,15 +42,6 @@ export function partyGrnColumns(): DataTableColumn<PartyGrnLineListRow>[] {
             {r.docCode}
           </span>
         ),
-      },
-      docDate: {
-        id: 'grn_date',
-        sortFilterField: 'grnDate',
-        header: 'GRN Date',
-        kind: 'date',
-        className: 'mono',
-        nowrap: true,
-        render: (r) => fmtDate(r.docDate),
       },
       so: 'jwso',
       soNo: (r) => r.jwCode,
@@ -66,6 +58,15 @@ export function partyGrnColumns(): DataTableColumn<PartyGrnLineListRow>[] {
         item_name: { sortFilterField: 'itemName' },
       },
     }),
+    {
+      id: 'grn_date',
+      sortFilterField: 'grnDate',
+      header: 'GRN Date',
+      kind: 'date',
+      className: 'mono',
+      nowrap: true,
+      render: (r) => fmtDate(r.docDate),
+    },
     {
       id: 'customer',
       sortFilterField: 'customer',
@@ -136,5 +137,10 @@ export function partyGrnColumns(): DataTableColumn<PartyGrnLineListRow>[] {
         );
       },
     },
+    // ADR-261 rev — Created By, the last data column.
+    createdByColumn({
+      createdByName: (r) => r.createdByName,
+      overrides: { sortFilterField: 'createdBy' },
+    }),
   ];
 }

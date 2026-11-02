@@ -7,8 +7,22 @@
 import { z } from 'zod';
 import { sfRawParamSchema } from './list-query';
 
+// Drawing Rev register (owner 2026-11-02): one row per Item + Drawing Rev
+// bucket for MAKE items (ABC/1, ABC/2, "ABC · no Rev" for old stock); Buy items
+// keep one row. Every quantity below is THAT bucket's figure; reorder fields
+// are item-level and shown on the item's first row only (reorderRow).
 export const storeInventoryRowSchema = z.object({
+  /** Unique per row: `${itemId}|${itemRevisionId ?? 'none'}` — table row key. */
+  rowKey: z.string(),
   itemId: z.string().uuid(),
+  /** Item + Drawing Rev bucket of this row; null = Buy item or old no-Rev stock. */
+  itemRevisionId: z.string().uuid().nullable().default(null),
+  drawingRev: z.string().nullable().default(null),
+  /** itemRevLabel(itemCode, drawingRev) — "ABC/1"; plain code for Buy items;
+   *  "ABC · no Rev" for a MAKE item's old-stock bucket. */
+  itemLabel: z.string(),
+  /** True on the one row per item that carries the item-level reorder figures. */
+  reorderRow: z.boolean().default(true),
   itemCode: z.string(),
   itemName: z.string(),
   material: z.string().nullable(),

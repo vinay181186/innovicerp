@@ -6,7 +6,7 @@
 // QC Dossier dossier.ts.
 
 import { ActivityAction } from '@innovic/shared';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, getTableColumns, isNull, sql } from 'drizzle-orm';
 import type {
   CreateQcDocumentInput,
   ListQcDocumentsQuery,
@@ -23,6 +23,7 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { softDeleteStamp } from '../../lib/audit-trail';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { polOf } from '../../lib/pol';
 import { assertCompanyStoragePath } from '../../lib/storage-path';
@@ -55,7 +56,10 @@ type DocRow = Pick<
   | 'storagePath'
   | 'uploadedByText'
   | 'createdAt'
->;
+> & {
+  /** Created By (ADR-261 rev) — the document row's own creator (createdByNameSql). */
+  createdByName: string | null;
+};
 
 /** The item facts that belong beside a JC number. A job-card number says WHICH
  *  JOB, not which part, so every list that prints one names the part too. They
@@ -112,6 +116,7 @@ function toItem(r: DocRow, item: DocItem = NO_DOC_ITEM): QcDocument {
     storagePath: r.storagePath,
     uploadedByText: r.uploadedByText ?? null,
     createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt),
+    createdByName: r.createdByName ?? null,
   };
 }
 
@@ -213,6 +218,7 @@ export async function listQcDocuments(
         storagePath: qcDocuments.storagePath,
         uploadedByText: qcDocuments.uploadedByText,
         createdAt: qcDocuments.createdAt,
+        createdByName: createdByNameSql(qcDocuments.createdBy),
         itemCode: items.code,
         itemName: items.name,
         // The CUSTOMER's drawing revision, read live off the SO line the card
@@ -325,8 +331,11 @@ export async function createQcDocument(
         createdBy: user.id,
         updatedBy: user.id,
       })
-      .returning();
-    const row = inserted[0] as Row;
+      .returning({
+        ...getTableColumns(qcDocuments),
+        createdByName: createdByNameSql(qcDocuments.createdBy),
+      });
+    const row = inserted[0] as Row & { createdByName: string | null };
     await emitActivityLog(
       tx,
       {

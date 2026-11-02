@@ -24,6 +24,7 @@ import type {
 } from '@innovic/shared';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice } from '../../lib/access';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { AuthorizationError } from '../../lib/errors';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { PSV_SF_COLUMNS } from './sf-columns';
@@ -165,6 +166,7 @@ export async function getPendingSoValue(
           so.internal_so_no                  AS internal_so_no,
           so.customer_name                   AS customer_name,
           so.created_at                      AS created_at,
+          so.created_by                      AS created_by,
           so.so_date                         AS so_date,
           sov.earliest_due_date              AS due_date,
           so.status::text                    AS status,
@@ -192,6 +194,8 @@ export async function getPendingSoValue(
         SELECT
           psv.so_id, psv.so_code, psv.internal_so_no, psv.customer_name,
           to_char(psv.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS created_at,
+          -- ADR-261 rev — who entered the SO (same record as Created On).
+          ${createdByNameSql(sql`psv.created_by`)} AS created_by_name,
           psv.so_date::text AS so_date, psv.due_date::text AS due_date, psv.status,
           psv.order_value::text AS order_value,
           psv.dispatched_value::text AS dispatched_value,
@@ -226,6 +230,7 @@ export async function getPendingSoValue(
       internal_so_no: string | null;
       customer_name: string | null;
       created_at: string | null;
+      created_by_name: string | null;
       so_date: string;
       due_date: string | null;
       status: string;
@@ -243,6 +248,7 @@ export async function getPendingSoValue(
       | 'internal_so_no'
       | 'customer_name'
       | 'created_at'
+      | 'created_by_name'
       | 'so_date'
       | 'due_date'
       | 'status'
@@ -256,6 +262,7 @@ export async function getPendingSoValue(
       soInternalNo: r.internal_so_no,
       customerName: r.customer_name,
       createdAt: r.created_at,
+      createdByName: r.created_by_name,
       soDate: r.so_date,
       dueDate: r.due_date,
       status: r.status,

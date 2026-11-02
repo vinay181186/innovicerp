@@ -42,6 +42,7 @@ import {
   requireFormAccess,
 } from '../../lib/access';
 import { diffFields } from '../../lib/audit-trail';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { isLastLiveOpSql } from '../../lib/jc-last-op-sql';
 import { polOf, polSql } from '../../lib/pol';
 import { drawingRevOf } from '../../lib/drawing-rev';
@@ -205,6 +206,7 @@ export async function listJcOpsEnriched(
         COALESCE(so.code, jw.code) AS "soCode",
         so.internal_so_no      AS "soInternalNo",
         o.created_at           AS "createdAt",
+        ${createdByNameSql(sql`o.created_by`)} AS "createdByName",
         o.op_seq               AS "opSeq",
         -- The card's LAST live op (same test as qc-history PEND_IS_LAST and
         -- the stock credit): a Last Stage Only report (0235) is compulsory
@@ -388,6 +390,7 @@ export async function listJcOpsEnriched(
       itemName: (r['itemName'] as string | null) ?? null,
       jcDate: (r['jcDate'] as string | null) ?? null,
       createdAt: asIso((r['createdAt'] as Date | string | null) ?? null),
+      createdByName: (r['createdByName'] as string | null) ?? null,
       machines: ((r['machines'] as Array<{ machineCode: string; qty: unknown }> | null) ?? []).map(
         (v) => ({ machineCode: String(v.machineCode), qty: Number(v.qty ?? 0) }),
       ),
