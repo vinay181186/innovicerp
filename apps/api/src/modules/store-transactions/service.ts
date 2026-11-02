@@ -54,7 +54,14 @@ export function buildStoreTxnWhere(companyId: string, query: ListStoreTransactio
     conditions.push(
       sql`(st.source_ref ILIKE ${term} ESCAPE '\\' OR st.remarks ILIKE ${term} ESCAPE '\\'
            OR i.code ILIKE ${term} ESCAPE '\\' OR i.name ILIKE ${term} ESCAPE '\\'
-           OR st.item_code_text ILIKE ${term} ESCAPE '\\')`,
+           OR st.item_code_text ILIKE ${term} ESCAPE '\\'
+           OR EXISTS (
+             -- Item + Drawing Rev ("ABC/1") of the bucket the movement hit.
+             SELECT 1 FROM public.item_revisions sir
+              WHERE sir.id = st.item_revision_id
+                AND (COALESCE(i.code, st.item_code_text) || '/' || sir.rev)
+                    ILIKE ${term} ESCAPE '\\'
+           ))`,
     );
   }
   if (query.itemId) conditions.push(sql`st.item_id = ${query.itemId}::uuid`);
