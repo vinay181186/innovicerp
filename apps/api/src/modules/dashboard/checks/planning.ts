@@ -16,6 +16,8 @@
 //   plan_rc_approval  — personal/rows-route-card.ts rcPendingSql (new Route
 //                       Cards Pending Approval); its date is the card's
 //                       Created On (IST day), the status reads its age.
+//   prod_rc_pending   — production.ts PLAN_RC_PENDING_CHECK (plan available,
+//                       Route Card missing / waiting approval), shown here.
 
 import { type SQL, sql } from 'drizzle-orm';
 import {
@@ -25,6 +27,7 @@ import {
   soLinePlannedRaw,
 } from '../../../lib/so-line-coverage';
 import { rcPendingSql } from '../personal/rows-route-card';
+import { PLAN_RC_PENDING_CHECK } from './production';
 import { orderHref } from './sales';
 import type { CheckCtx, CheckDef } from './types';
 
@@ -102,4 +105,7 @@ export const PLANNING_CHECKS: readonly CheckDef[] = [
     // rcPendingSql's qty is the card's op count, not a quantity.
     noQty: true,
   },
+  // ADR-264 phase 2: moved here from Production (same key, same SQL —
+  // production.ts planRcPendingSql).
+  PLAN_RC_PENDING_CHECK,
 ];

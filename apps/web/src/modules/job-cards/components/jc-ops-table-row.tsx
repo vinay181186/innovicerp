@@ -1,4 +1,5 @@
-// Job Card Operations tab — one operation ROW (+ its ▸ detail row) of the
+// Job Card Operations tab — one operation ROW (its Operation cell opens the popup,
+// jc-op-popup.tsx) of the
 // table in jc-ops-table.tsx. Split out to keep each file under the 400-line
 // rule; see jc-ops-table.tsx for what the table is and where each figure and
 // gate comes from.
@@ -17,10 +18,10 @@ import { useJcOpsBoard } from '@/modules/jc-ops/api';
 import { RowMenu } from '@/ui/data';
 import { OP_STATUS } from '../lib/jc-op-labels';
 import { opActions, type OpAction, type OpActionTarget } from './jc-ops-table-actions';
-import { JcOpsTableDetail } from './jc-ops-table-detail';
+import { JcOpPopup } from './jc-op-popup';
 import { checkText, doneLabel } from './jc-ops-table-notes';
 
-export const COLS = 17;
+export const COLS = 16;
 
 type Navigate = ReturnType<typeof useNavigate>;
 
@@ -88,10 +89,12 @@ export interface RowProps {
   flow: OpFlowRow | undefined;
   eff: EffectiveAccess | undefined;
   stopped: boolean;
+  /** This op's popup is open. */
   open: boolean;
   current: boolean;
-  onToggle: () => void;
-  rowRef: ((el: HTMLTableRowElement | null) => void) | undefined;
+  onOpen: () => void;
+  onClose: () => void;
+  onStep: (dir: -1 | 1) => void;
   logs: OpLog[];
   machineName: string | null;
   toolDetails: string | null;
@@ -115,8 +118,9 @@ export function OpRow({
   stopped,
   open,
   current,
-  onToggle,
-  rowRef,
+  onOpen,
+  onClose,
+  onStep,
   logs,
   machineName,
   toolDetails,
@@ -158,30 +162,39 @@ export function OpRow({
         ? 'btn btn-sm jc-ops-btn-qc'
         : 'btn btn-sm';
 
+  const nextStep = primary ? (
+    <button
+      type="button"
+      className={btnCls(primary)}
+      title={primary.title}
+      onClick={() => go(navigate, primary.target)}
+    >
+      {primary.label}
+    </button>
+  ) : acts.text ? (
+    <span className={`jc-ops-nb-${acts.text.tone}`}>{acts.text.label}</span>
+  ) : null;
+  const statusBadge = <span className={`badge ${st.cls}`}>{st.label}</span>;
+
   return (
     <>
-      <tr className={trCls} ref={rowRef} onClick={onToggle}>
-        <td className="jc-ops-exp">
-          <button
-            type="button"
-            aria-expanded={open}
-            aria-label={open ? 'Hide operation detail' : 'Show operation detail'}
-            title={open ? 'Hide detail' : 'Show machine, operator, times and recent logs'}
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggle();
-            }}
-          >
-            {open ? '▾' : '▸'}
-          </button>
-        </td>
+      <tr className={trCls}>
         <td className={`mono fw-700 jc-ops-opn jc-ops-k-${kind}`}>{fmtOpSrNo(op.opSeq)}</td>
         <td
           className={`jc-ops-opc jc-ops-k-${kind}`}
           title={[op.operation, code, name].filter(Boolean).join(' · ')}
         >
-          <b>{op.operation}</b> <i>{code}</i>
-          {name ? <span className="jc-ops-sub"> {name}</span> : null}
+          {/* Owner 2026-11-02: only this cell opens the operation popup. */}
+          <button
+            type="button"
+            className="jc-ops-open"
+            title="Open this operation: machine, operator, times and recent logs"
+            aria-haspopup="dialog"
+            onClick={onOpen}
+          >
+            <b>{op.operation}</b> <i>{code}</i>
+            {name ? <span className="jc-ops-sub"> {name}</span> : null}
+          </button>
           {hasOspLane ? (
             <span className="badge b-purple" title="In-house + OSP (outsource balance)">
               + OSP{vendorCode ? ` ${vendorCode}` : ''}
@@ -266,24 +279,9 @@ export function OpRow({
             <span className="jc-ops-chk is-off mono">⚠ {flow.unaccountedQty}</span>
           )}
         </td>
+        <td>{statusBadge}</td>
+        <td>{nextStep}</td>
         <td>
-          <span className={`badge ${st.cls}`}>{st.label}</span>
-        </td>
-        <td onClick={(e) => e.stopPropagation()}>
-          {primary ? (
-            <button
-              type="button"
-              className={btnCls(primary)}
-              title={primary.title}
-              onClick={() => go(navigate, primary.target)}
-            >
-              {primary.label}
-            </button>
-          ) : acts.text ? (
-            <span className={`jc-ops-nb-${acts.text.tone}`}>{acts.text.label}</span>
-          ) : null}
-        </td>
-        <td onClick={(e) => e.stopPropagation()}>
           <RowMenu
             label={`Op ${fmtOpSrNo(op.opSeq)} actions`}
             items={acts.more.map((a) => ({
@@ -297,21 +295,22 @@ export function OpRow({
         </td>
       </tr>
       {open ? (
-        <tr className="jc-ops-det">
-          <td colSpan={COLS}>
-            <JcOpsTableDetail
-              jc={jc}
-              op={op}
-              flow={flow}
-              row={row}
-              hasOspLane={hasOspLane}
-              logs={logs}
-              machineName={machineName}
-              toolDetails={toolDetails}
-              rmAvailable={rmAvailable}
-            />
-          </td>
-        </tr>
+        <JcOpPopup
+          jc={jc}
+          op={op}
+          flow={flow}
+          row={row}
+          hasOspLane={hasOspLane}
+          logs={logs}
+          machineName={machineName}
+          toolDetails={toolDetails}
+          rmAvailable={rmAvailable}
+          title={[op.operation, code, name].filter(Boolean).join(' · ')}
+          statusBadge={statusBadge}
+          action={primary ? nextStep : null}
+          onClose={onClose}
+          onStep={onStep}
+        />
       ) : null}
     </>
   );

@@ -27,6 +27,7 @@ import {
 } from '../../lib/errors';
 import { changedByOtherError } from '../../lib/row-lock';
 import { lockDocSeries } from '../../lib/doc-series-lock';
+import { jwToInvoiceQty } from '../../lib/jw-to-invoice';
 import { emitActivityLog } from '../activity-log/service';
 import { blockerRefusal } from '../cancel-requests/messages';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
@@ -167,7 +168,7 @@ export async function createJwInvoice(
     if (!jw) throw new NotFoundError('JWSO not found. It may have been moved to Trash.');
 
     // GUARD — bill only what has been returned to the customer, minus already invoiced.
-    const billable = line.returnedQty - line.invoicedQty;
+    const billable = jwToInvoiceQty(line.returnedQty, line.invoicedQty); // lib/jw-to-invoice.ts
     if (input.qty > billable) {
       throw new ConflictError(
         `Qty (${input.qty}) cannot be more than To Invoice (${Math.max(0, billable)}) — ` +
@@ -457,7 +458,7 @@ export async function listJwInvoiceableLines(
         partName: r.partName ?? null,
         returnedQty: r.returnedQty,
         invoicedQty: r.invoicedQty,
-        toInvoiceQty: Math.max(0, r.returnedQty - r.invoicedQty),
+        toInvoiceQty: Math.max(0, jwToInvoiceQty(r.returnedQty, r.invoicedQty)),
       })),
     };
   });

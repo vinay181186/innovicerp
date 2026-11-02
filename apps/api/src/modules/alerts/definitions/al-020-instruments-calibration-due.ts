@@ -6,9 +6,10 @@
 
 import { docNavPage } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
+import { CALIBRATION_LEAD_DAYS, calibrationDueSql } from '../../instruments/common';
 import type { RegisteredAlert } from '../registry';
 
-const WINDOW_DAYS = 7;
+const WINDOW_DAYS = CALIBRATION_LEAD_DAYS;
 
 export const al020InstrumentsCalibrationDue: RegisteredAlert = {
   definition: {
@@ -37,9 +38,7 @@ export const al020InstrumentsCalibrationDue: RegisteredAlert = {
       JOIN public.items i ON i.id = ins.item_id
       WHERE ins.company_id = ${companyId}::uuid
         AND ins.deleted_at IS NULL
-        AND ins.status NOT IN ('lost', 'scrapped')
-        AND ins.calibration_due_on IS NOT NULL
-        AND ins.calibration_due_on <= (now() AT TIME ZONE 'Asia/Kolkata')::date + ${WINDOW_DAYS}::int
+        AND ${calibrationDueSql(sql`(now() AT TIME ZONE 'Asia/Kolkata')::date`)}
       ORDER BY ins.calibration_due_on, i.code, lower(ins.serial_no)
     `);
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({

@@ -3,6 +3,7 @@
 
 import { docNavPage } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
+import { ncPendingDispositionSql } from '../../../lib/nc-pending';
 import { polSql } from '../../../lib/pol';
 import type { RegisteredAlert } from '../registry';
 
@@ -50,7 +51,7 @@ export const al018NcPendingDisposition: RegisteredAlert = {
       LEFT JOIN public.items i ON i.id = nc.item_id
       WHERE nc.company_id = ${companyId}::uuid
         AND nc.deleted_at IS NULL
-        AND nc.status = 'pending'
+        AND ${ncPendingDispositionSql('nc')}
       ORDER BY nc.nc_date, nc.code
     `);
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({

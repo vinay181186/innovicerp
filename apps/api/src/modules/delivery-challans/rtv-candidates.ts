@@ -32,7 +32,7 @@ import { type AuthContext, type DbTransaction, withUserContext } from '../../db/
 import { requireFormAccess } from '../../lib/access';
 import { polSql } from '../../lib/pol';
 import { AuthorizationError, ConflictError } from '../../lib/errors';
-import { rtvReadyForChallanSql } from '../../lib/rtv-predicates';
+import { NC_SOURCE_VENDOR_JOINS, rtvReadyForChallanSql } from '../../lib/rtv-predicates';
 import { ncSoKeySql } from '../nc-register/so-key';
 
 const RTV_CANDIDATES_LIMIT = 500;
@@ -207,25 +207,8 @@ export async function queryRtvCandidates(
       ON pol.id = rpol.pol_id AND pol.company_id = nc.company_id AND pol.deleted_at IS NULL
     LEFT JOIN public.purchase_orders po
       ON po.id = pol.purchase_order_id AND po.deleted_at IS NULL
-    -- Source vendor — MIRRORS resolveNcSource (nc-register/cascades.ts):
-    --   (a) GRN line set -> the GRN's vendor;
-    --   (b) else origin op is an outsource op -> the vendor of the PO line
-    --       raised for that op (source_jc_op_id), PO-backed rows first, newest.
-    LEFT JOIN LATERAL (
-      SELECT po2.vendor_id
-        FROM public.purchase_order_lines pol2
-        LEFT JOIN public.purchase_orders po2
-          ON po2.id = pol2.purchase_order_id AND po2.deleted_at IS NULL
-       WHERE pol2.source_jc_op_id = oo.id AND pol2.deleted_at IS NULL
-       ORDER BY (po2.id IS NOT NULL) DESC, pol2.created_at DESC
-       LIMIT 1
-    ) opo ON nc.grn_line_id IS NULL AND oo.op_type = 'outsource'
-    LEFT JOIN LATERAL (
-      SELECT CASE
-        WHEN nc.grn_line_id IS NOT NULL THEN grn.vendor_id
-        WHEN oo.op_type = 'outsource' THEN opo.vendor_id
-      END AS vendor_id
-    ) src ON TRUE
+    -- Source vendor (src.vendor_id) — the ONE fragment, lib/rtv-predicates.ts.
+    ${NC_SOURCE_VENDOR_JOINS}
     LEFT JOIN public.vendors v
       ON v.id = src.vendor_id AND v.deleted_at IS NULL
     WHERE nc.company_id = ${companyId}::uuid

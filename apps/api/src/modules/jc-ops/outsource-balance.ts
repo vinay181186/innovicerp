@@ -27,6 +27,7 @@ import { items, jcOps, jobCards, purchaseRequests, runningOps, vendors } from '.
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { lockDocSeries } from '../../lib/doc-series-lock';
+import { liveOspPrForOpSql } from '../../lib/osp-pr';
 import {
   AuthorizationError,
   ConflictError,
@@ -192,10 +193,8 @@ export async function outsourceOpBalance(
       .where(
         and(
           eq(purchaseRequests.companyId, companyId),
-          eq(purchaseRequests.sourceJcOpId, op.id),
-          eq(purchaseRequests.prType, 'jw_osp'),
-          isNull(purchaseRequests.deletedAt),
-          sql`${purchaseRequests.status} <> 'cancelled'`,
+          // The ONE "live outsource PR of this op" rule (lib/osp-pr.ts).
+          liveOspPrForOpSql(sql`${op.id}::uuid`),
         ),
       )
       .orderBy(purchaseRequests.code);

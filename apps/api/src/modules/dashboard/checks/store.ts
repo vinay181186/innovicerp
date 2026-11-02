@@ -7,21 +7,27 @@
 //                    job-work-orders/service.ts receivableFrag (~:414), which
 //                    is a local there — written here per line, same words.
 //                    Qty = Order Qty − committed.
-//   store_party_qc — personal/rows-qc.ts grnQcSql, its Party GRN half only
-//                    (kind = 'party_grn'): one row per Party GRN with a line
-//                    whose QC Pending Qty (received − accepted − rejected) > 0.
 //   store_po_grn   — every PO line still to receive (not only late): PO open /
 //                    partial / qc_pending (lib/po-pending PO_OPEN_STATUSES),
 //                    Pending by lib/po-pending poLinePendingSql > 0. Due Date =
 //                    the line's own, else the PO's.
+//   store_po_dc    — personal/rows-purchase.ts poToDcSql as is (approved PO of
+//                    a send-out type with qty still to send on a DC).
+//   store_tools_out — tool-issues/common.ts ISSUE_SELECT + TOOL_STILL_OUT (the
+//                    register's and AL-021's "still out" rule), by Expected
+//                    Return Date. Qty = Still Out.
+//   store_count_approval — stock counts submitted, waiting approval. A count
+//                    has no location (stock_counts carries none), so the
+//                    reference column is empty.
+// (store_party_qc moved out in phase 2: its rows are in QC's qc_incoming.)
 
 import { docNavPage } from '@innovic/shared';
 import { type SQL, sql } from 'drizzle-orm';
 import { PO_OPEN_STATUSES, poLinePendingSql } from '../../../lib/po-pending';
 import { partyCommittedQtySql } from '../../party-grn/service';
-import { grnQcSql } from '../personal/rows-qc';
-import { entityHref } from '../personal/util';
-import { type CheckCtx, type CheckDef, narrow } from './types';
+import { ISSUE_SELECT, TOOL_STILL_OUT } from '../../tool-issues/common';
+import { poToDcSql } from '../personal/rows-purchase';
+import type { CheckCtx, CheckDef } from './types';
 
 export function jwsoToReceiveSql(c: CheckCtx): SQL {
   return sql`
@@ -71,6 +77,37 @@ export function poLinesToReceiveSql(c: CheckCtx): SQL {
       AND pend.q > 0`;
 }
 
+export function toolsOutSql(c: CheckCtx): SQL {
+  return sql`
+    SELECT x.id::text AS row_key, x.id, x.code, 'tool_issue'::text AS kind,
+           x.issue_date::text AS doc_date, x.expected_return_date::text AS due_date,
+           COALESCE(x.expected_return_date, x.issue_date)::text AS sort_key,
+           NULL::text AS party, x.item_code::text AS item_code, x.item_name::text AS item_name,
+           x.still_out_qty::numeric AS qty, x.uom::text AS uom, NULL::numeric AS amount,
+           x.created_by::text AS created_by,
+           (CASE WHEN x.expected_return_date < ${c.today}::date THEN 1 ELSE 0 END)::int AS is_late,
+           NULLIF(btrim(x.issued_to), '')::text AS x1, NULL::text AS x2, NULL::text AS x3
+    FROM (
+      ${ISSUE_SELECT}
+      WHERE ti.company_id = ${c.cid}::uuid AND ti.deleted_at IS NULL
+    ) x
+    WHERE ${TOOL_STILL_OUT}`;
+}
+
+export function countApprovalSql(c: CheckCtx): SQL {
+  return sql`
+    SELECT sc.id::text AS row_key, sc.id, sc.code, sc.purpose::text AS kind,
+           sc.count_date::text AS doc_date, NULL::text AS due_date,
+           sc.count_date::text AS sort_key,
+           NULL::text AS party, NULL::text AS item_code, NULL::text AS item_name,
+           NULL::numeric AS qty, NULL::text AS uom, NULL::numeric AS amount,
+           sc.created_by::text AS created_by, 0::int AS is_late,
+           NULL::text AS x1, NULL::text AS x2, NULL::text AS x3
+    FROM public.stock_counts sc
+    WHERE sc.company_id = ${c.cid}::uuid AND sc.deleted_at IS NULL
+      AND sc.status = 'submitted'`;
+}
+
 export const STORE_CHECKS: readonly CheckDef[] = [
   {
     key: 'store_jwso_grn',
@@ -84,18 +121,6 @@ export const STORE_CHECKS: readonly CheckDef[] = [
     dated: true,
   },
   {
-    key: 'store_party_qc',
-    dept: 'store',
-    label: 'QC pending against party GRN',
-    head: ['Party GRN No.', 'JWSO No.', 'GRN Date'],
-    href: '/incoming-qc',
-    query: (c) => narrow(grnQcSql(c.cid, {}), sql`x.kind = 'party_grn'`),
-    docHref: (r) => entityHref('PartyGrn', r.id, r.code) ?? '/party-grn',
-    refCode: (r) => r.x3,
-    refHref: (r) => (r.x2 ? docNavPage('job-work-order', r.x2) : null),
-    dated: false,
-  },
-  {
     key: 'store_po_grn',
     dept: 'store',
     label: 'GRN pending',
@@ -104,5 +129,38 @@ export const STORE_CHECKS: readonly CheckDef[] = [
     query: poLinesToReceiveSql,
     docHref: (r) => docNavPage('purchase-order', r.id),
     dated: true,
+  },
+  {
+    key: 'store_po_dc',
+    dept: 'store',
+    label: 'PO material to send out (DC)',
+    head: ['PO No.', 'Vendor', 'PO Date'],
+    href: '/delivery-challans',
+    query: (c) => poToDcSql(c.cid, c.today, {}),
+    docHref: (r) => docNavPage('purchase-order', r.id),
+    dated: false,
+  },
+  {
+    key: 'store_tools_out',
+    dept: 'store',
+    label: 'Tools issued, not returned',
+    head: ['Issue No.', 'Issued To', 'Expected Return'],
+    href: '/issue-register?tab=tools',
+    query: toolsOutSql,
+    docHref: (r) => `/issue-register?tab=tools&search=${encodeURIComponent(r.code)}`,
+    refCode: (r) => r.x1,
+    dated: true,
+  },
+  {
+    key: 'store_count_approval',
+    dept: 'store',
+    label: 'Stock count waiting approval',
+    // stock_counts has no Location: the reference column stays empty.
+    head: ['Count No.', '—', 'Count Date'],
+    href: '/stock-counts',
+    query: countApprovalSql,
+    docHref: (r) => `/stock-counts/${r.id}`,
+    dated: false,
+    noQty: true,
   },
 ];

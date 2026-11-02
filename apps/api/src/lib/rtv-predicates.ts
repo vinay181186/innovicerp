@@ -41,3 +41,30 @@ export function rtvReadyForChallanSql(ncAlias = 'nc'): SQL {
          AND ladc.status <> 'cancelled'
     ))`;
 }
+
+/** The NC's source vendor as `src.vendor_id` — MIRRORS resolveNcSource
+ *  (nc-register/cascades.ts):
+ *    (a) GRN line set -> the GRN's vendor;
+ *    (b) else origin op is an outsource op -> the vendor of the PO line raised
+ *        for that op (source_jc_op_id), PO-backed rows first, newest.
+ *  Two LATERAL joins. The caller's FROM must already have `nc` (nc_register),
+ *  `oo` (jc_ops on nc.jc_op_id) and `grn` (the rejected GRN line's
+ *  goods_receipt_notes). Read by the return-to-vendor picker
+ *  (delivery-challans/rtv-candidates.ts) and the home's Purchase check
+ *  pur_rtv_challan, so both name the same vendor. */
+export const NC_SOURCE_VENDOR_JOINS = sql`
+    LEFT JOIN LATERAL (
+      SELECT po2.vendor_id
+        FROM public.purchase_order_lines pol2
+        LEFT JOIN public.purchase_orders po2
+          ON po2.id = pol2.purchase_order_id AND po2.deleted_at IS NULL
+       WHERE pol2.source_jc_op_id = oo.id AND pol2.deleted_at IS NULL
+       ORDER BY (po2.id IS NOT NULL) DESC, pol2.created_at DESC
+       LIMIT 1
+    ) opo ON nc.grn_line_id IS NULL AND oo.op_type = 'outsource'
+    LEFT JOIN LATERAL (
+      SELECT CASE
+        WHEN nc.grn_line_id IS NOT NULL THEN grn.vendor_id
+        WHEN oo.op_type = 'outsource' THEN opo.vendor_id
+      END AS vendor_id
+    ) src ON TRUE`;

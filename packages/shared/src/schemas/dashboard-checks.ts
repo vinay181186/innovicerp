@@ -9,8 +9,18 @@
 import { z } from 'zod';
 import { dashTextSchema, dashToneSchema } from './dashboard-home';
 
-/** Departments that carry checks, in menu order. Labels come from ACCESS_DEPTS. */
-export const DASH_CHECK_DEPTS = ['sales', 'production', 'purchase', 'store', 'planning'] as const;
+/** Departments that carry checks, in menu order. Labels come from ACCESS_DEPTS.
+ *  ADR-264 phase 2 (owner-approved mockup 2026-11-02): + design, qc, finance. */
+export const DASH_CHECK_DEPTS = [
+  'sales',
+  'design',
+  'planning',
+  'production',
+  'purchase',
+  'store',
+  'qc',
+  'finance',
+] as const;
 export const dashCheckDeptSchema = z.enum(DASH_CHECK_DEPTS);
 export type DashCheckDept = z.infer<typeof dashCheckDeptSchema>;
 
@@ -21,22 +31,50 @@ export const DASH_CHECK_KEYS = [
   'sales_overdue', // line due date before today
   'sales_due_week', // due today .. Sunday (IST), not overdue
   'sales_due_month', // due today .. month end (IST), not overdue
+  'sales_so_draft', // SO saved as draft (status 'draft'), by SO Date
+  // Design (phase 2)
+  'des_bom_pending', // equipment SO with no BOM / BOM Pending (bom_pending rule)
+  'des_projects', // design project not Released / On Hold, by Target Date
+  'des_tracker', // design tracker item not Approved, by Target Date
+  'des_issues', // design issue Open / In Progress, by Raised Date
+  'des_dcr', // DCR Submitted / Under Review, by Request Date
   // Production
   'prod_plans_available', // approved Route Card, Pending > 0, no Production Order (plan_to_pro rule)
   'prod_plans_overdue', // same plans, planned_start_date before today
   'prod_due_week', // open / partially closed Production Orders, target_date this week
-  'prod_rc_pending', // plans whose Route Card is missing or waiting approval
+  'prod_rc_pending', // plans whose Route Card is missing or waiting approval — dept PLANNING (phase 2 move, key kept)
+  'prod_jc_late', // job card not closed, past its Due Date (jc_running rule, late only)
+  'prod_ops_ready', // qty waiting at an op, nothing running (ops_ready rule)
+  'prod_ops_overtime', // op running past its expected time (ops_running rule, late only)
+  'prod_osp_send', // outsource op qty ready to send, not yet on a DC (v_osp_wip)
+  'prod_osp_at_vendor', // material at vendor, PO line due date passed (v_osp_wip)
   // Purchase
   'pur_pr_pending', // approved PR with balance still to order (pr_to_po rule)
   'pur_po_overdue', // PO due date passed, qty still pending (po_overdue rule)
   'pur_po_approval', // PO in draft, waiting approval (po_draft rule)
+  'pur_osp_no_pr', // outsource op on an open job card with no PR and no PO
+  'pur_rtv_challan', // NC disposed Return to Vendor, no live DC (rtv-predicates)
   // Store
   'store_jwso_grn', // JWSO party material not yet received on a Party GRN
-  'store_party_qc', // Party GRN lines waiting for Incoming QC
   'store_po_grn', // PO lines with qty still to receive (all, not only late)
+  'store_po_dc', // approved PO with material still to send out (po_to_dc rule)
+  'store_tools_out', // tool issued, not fully returned, by Expected Return
+  'store_count_approval', // stock count submitted, waiting approval
   // Planning
   'plan_so_unplanned', // SO / JWSO lines not fully planned (so_to_plan rule)
   'plan_rc_approval', // Route Cards waiting approval (rc_pending rule)
+  // QC (phase 2)
+  'qc_incoming', // GRN + Party GRN lines with QC pending (grn_qc rule, both halves) — replaces store_party_qc
+  'qc_inprocess', // in-process QC op with qty waiting inspection (not the last op)
+  'qc_final', // Final Inspection (last QC op) with qty waiting
+  'qc_tpi', // TPI op with qty waiting
+  'qc_nc_pending', // NC waiting disposition (status pending)
+  'qc_capa', // CAPA not Verified / Closed, by Target Date
+  'qc_reports', // QC entry needing a report, none uploaded (qc_report_missing rule)
+  'qc_calibration', // instrument calibration due (live instruments)
+  // Finance (phase 2)
+  'fin_jw_not_invoiced', // JWSO line returned qty more than JW-invoiced qty
+  'fin_invoice_overdue', // SO invoice unpaid balance past its Due Date
 ] as const;
 export const dashCheckKeySchema = z.enum(DASH_CHECK_KEYS);
 export type DashCheckKey = z.infer<typeof dashCheckKeySchema>;

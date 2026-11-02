@@ -7,7 +7,7 @@
 // No navPage: the Tool Issue register has no per-document page kind yet.
 
 import { sql } from 'drizzle-orm';
-import { ISSUE_SELECT } from '../../tool-issues/common';
+import { ISSUE_SELECT, TOOL_STILL_OUT } from '../../tool-issues/common';
 import type { RegisteredAlert } from '../registry';
 
 export const al021ToolsNotReturned: RegisteredAlert = {
@@ -32,8 +32,7 @@ export const al021ToolsNotReturned: RegisteredAlert = {
         ${ISSUE_SELECT}
         WHERE ti.company_id = ${companyId}::uuid AND ti.deleted_at IS NULL
       ) x
-      WHERE x.return_status IN ('issued', 'partial')
-        AND x.still_out_qty > 0
+      WHERE ${TOOL_STILL_OUT}
         AND x.expected_return_date < (now() AT TIME ZONE 'Asia/Kolkata')::date
       ORDER BY x.expected_return_date, x.code
     `);

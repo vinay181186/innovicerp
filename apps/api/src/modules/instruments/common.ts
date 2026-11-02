@@ -2,7 +2,7 @@
 // (ADR-193 phase 4): dates in IST, and the FOR UPDATE lock on register rows.
 
 import type { InstrumentStatus } from '@innovic/shared';
-import { sql } from 'drizzle-orm';
+import { sql, type SQL } from 'drizzle-orm';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
 
@@ -20,6 +20,24 @@ export function todayIst(): string {
 export function addDays(iso: string, n: number): string {
   const [y, m, d] = iso.split('-').map(Number) as [number, number, number];
   return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
+}
+
+/** Calibration "due" lead time: due within this many days, or already past. */
+export const CALIBRATION_LEAD_DAYS = 7;
+
+/** The ONE "calibration due" rule over the instruments row `alias`: a live
+ *  instrument (not Lost / Scrapped) whose Calibration Due is
+ *    'due'     — on or before today + CALIBRATION_LEAD_DAYS (AL-020, the
+ *                register's Due filter, the home's QC check qc_calibration);
+ *    'overdue' — before today (the register's Overdue filter).
+ *  `today` is the India-time day as a date expression (param::date or SQL). */
+export function calibrationDueSql(today: SQL, mode: 'due' | 'overdue' = 'due', alias = 'ins'): SQL {
+  const t = sql.identifier(alias);
+  const cmp =
+    mode === 'overdue'
+      ? sql`< ${today}`
+      : sql`<= (${today}) + ${sql.raw(String(CALIBRATION_LEAD_DAYS))}`;
+  return sql`(${t}.status NOT IN ('lost', 'scrapped') AND ${t}.calibration_due_on ${cmp})`;
 }
 
 export const dateOut = (v: unknown): string | null =>

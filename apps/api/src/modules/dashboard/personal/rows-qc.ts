@@ -10,8 +10,8 @@
 //               register's grnTypeSql rule) so Inspect opens the page that
 //               lists the call.
 //   capa_mine — open CAPAs where the caller is the Responsible person
-//               (capa_records.responsible holds the person's name).
-//               x1 = the next step, x2 = the problem.
+//               (capa_records.responsible holds the person's name) — capaOpenSql
+//               narrowed. x1 = the next step, x2 = the problem, x3 = Responsible.
 //   qc_report_missing — ADR-252: one row per QC entry saved with
 //               report_required = true, accepted qty > 0, not reversed, and
 //               no report (neither op_log.qc_report_path nor a qc_documents
@@ -72,7 +72,10 @@ export function grnQcSql(cid: string, f: ListFilter): SQL {
     GROUP BY p.id, c.name, jw.code`;
 }
 
-export function capaMineSql(cid: string, today: string, myName: string, f: ListFilter): SQL {
+/** Every open CAPA (not Closed / Verified) — the ONE rule. capaMineSql adds
+ *  "Responsible = me"; the home's QC check qc_capa reads it whole.
+ *  x3 = the Responsible person. `extra` is a leading-AND condition. */
+export function capaOpenSql(cid: string, today: string, f: ListFilter, extra: SQL = sql``): SQL {
   return sql`
     SELECT c.id::text AS row_key, c.id, c.code, 'capa'::text AS kind,
            c.capa_date::text AS doc_date, c.target_date::text AS due_date,
@@ -85,15 +88,25 @@ export function capaMineSql(cid: string, today: string, myName: string, f: ListF
                  WHEN NULLIF(btrim(c.corrective_action), '') IS NULL THEN 'Corrective action'
                  WHEN NULLIF(btrim(c.verification), '') IS NULL THEN 'Verification'
                  ELSE 'Preventive action' END)::text AS x1,
-           left(COALESCE(c.problem, ''), 80)::text AS x2, NULL::text AS x3
+           left(COALESCE(c.problem, ''), 80)::text AS x2,
+           NULLIF(btrim(c.responsible), '')::text AS x3
     FROM public.capa_records c
     WHERE c.company_id = ${cid}::uuid AND c.deleted_at IS NULL
       AND lower(c.status) NOT IN ('closed', 'verified')
-      -- A login with no name matches nothing — never the CAPAs whose
-      -- Responsible is blank.
-      AND btrim(${myName}) <> ''
-      AND lower(btrim(COALESCE(c.responsible, ''))) = lower(btrim(${myName}))
+      ${extra}
       ${filterFrag(f, 'c.id', null)}`;
+}
+
+export function capaMineSql(cid: string, today: string, myName: string, f: ListFilter): SQL {
+  return capaOpenSql(
+    cid,
+    today,
+    f,
+    // A login with no name matches nothing — never the CAPAs whose
+    // Responsible is blank.
+    sql`AND btrim(${myName}) <> ''
+      AND lower(btrim(COALESCE(c.responsible, ''))) = lower(btrim(${myName}))`,
+  );
 }
 
 export function qcReportMissingSql(cid: string, f: ListFilter): SQL {

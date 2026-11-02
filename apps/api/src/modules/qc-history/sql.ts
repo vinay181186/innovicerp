@@ -5,7 +5,7 @@
 // everywhere and a page's total is counted over the very rows it pages.
 
 import { type SQL, sql } from 'drizzle-orm';
-import type { QcHistoryLogRow, QcHistoryPendingRow } from '@innovic/shared';
+import type { QcHistoryLogRow, QcHistoryPendingRow, QcRegisterStage } from '@innovic/shared';
 import { createdByNameSql } from '../../lib/created-by-sql';
 import { isLastLiveOpSql } from '../../lib/jc-last-op-sql';
 import { likeEscape } from '../../lib/list-query';
@@ -37,6 +37,16 @@ export const PEND_SINCE = sql`(SELECT MAX(ol.log_date) FROM public.op_log ol
 export const PEND_IS_LAST = sql`(vos.op_seq = (SELECT MAX(lo.op_seq) FROM public.jc_ops lo
   WHERE lo.job_card_id = jc.id AND lo.deleted_at IS NULL))`;
 export const LOG_IS_LAST = isLastLiveOpSql('jo');
+
+/** Stage narrowing of the op feeds (ADR-169): Final Inspection = the card's
+ *  LAST live op, In-process = any other. `isLast` is PEND_IS_LAST (pending
+ *  feed) or LOG_IS_LAST (QC log). The QC Call Register and the home's QC
+ *  checks qc_inprocess / qc_final read it, so the two agree. */
+export function opStageWhere(stage: QcRegisterStage | undefined, isLast: SQL): SQL {
+  if (stage === 'final') return sql`AND ${isLast}`;
+  if (stage === 'inprocess') return sql`AND NOT ${isLast}`;
+  return sql``;
+}
 
 /** CODE/REV exactly as the Item Code cell prints it (itemCodeWithRev): the
  *  code, then '/' + the drawing revision when there is one; no code → null.

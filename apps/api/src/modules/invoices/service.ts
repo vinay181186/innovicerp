@@ -32,6 +32,7 @@ import {
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
 import { assertActiveParty } from '../../lib/active-party';
+import { invoiceBalanceSql, invoiceOverdueSql } from '../../lib/invoice-overdue';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import {
   AuthorizationError,
@@ -211,14 +212,16 @@ export async function listInvoices(
     // the same rules as rowToInvoice (overdue = not paid and past due).
     // TDS / short amounts settle invoices without being money received, so
     // they come off Outstanding Amount but are not added to Total Received.
-    const overdue = sql`(${invoices.status} <> 'paid' AND ${invoices.status} <> 'cancelled' AND ${invoices.dueDate} IS NOT NULL AND ${invoices.dueDate} < ${today})`;
+    // The ONE overdue / balance rule (lib/invoice-overdue.ts) — the home's
+    // Finance check reads the same fragments.
+    const overdue = invoiceOverdueSql(sql`${today}`);
     const [agg] = await tx
       .select({
         total: sql<number>`count(*)::int`,
         totalInvoiced: sql<string>`COALESCE(sum(${invoices.grandTotal}), 0)`,
         totalReceived: sql<string>`COALESCE(sum(${invoices.totalPaid}), 0)`,
         totalTds: sql<string>`COALESCE(sum(${invoices.totalTds}), 0)`,
-        overdueAmount: sql<string>`COALESCE(sum(CASE WHEN ${overdue} THEN ${invoices.grandTotal} - ${invoices.totalPaid} - ${invoices.totalTds} ELSE 0 END), 0)`,
+        overdueAmount: sql<string>`COALESCE(sum(CASE WHEN ${overdue} THEN ${invoiceBalanceSql()} ELSE 0 END), 0)`,
         overdueCount: sql<number>`count(*) FILTER (WHERE ${overdue})::int`,
         unpaidCount: sql<number>`count(*) FILTER (WHERE ${invoices.status} = 'unpaid')::int`,
         partialCount: sql<number>`count(*) FILTER (WHERE ${invoices.status} = 'partial')::int`,

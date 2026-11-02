@@ -32,6 +32,7 @@ import {
 } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { createdByNameSql } from '../../lib/created-by-sql';
+import { designTrackerPendingSql } from '../../lib/design-status';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { lockDocSeries } from '../../lib/doc-series-lock';
 import { DESIGN_TRACKER_SF_COLUMNS, TRACKER_HOURS_SQL } from './sf-columns';
@@ -196,7 +197,7 @@ export async function listDesignTracker(
     else if (input.filter === 'review') filterFrag = sql`AND dt.status = 'Review'`;
     else if (input.filter === 'approved') filterFrag = sql`AND dt.status = 'Approved'`;
     else if (input.filter === 'overdue')
-      filterFrag = sql`AND dt.target_date < ${today}::date AND dt.status <> 'Approved'`;
+      filterFrag = sql`AND dt.target_date < ${today}::date AND ${designTrackerPendingSql('dt')}`;
     else if (input.status) filterFrag = sql`AND dt.status = ${input.status}`;
 
     // One FROM + WHERE for the page, its count and the dropdown counts.
@@ -279,7 +280,7 @@ export async function listDesignTracker(
         COUNT(*) FILTER (WHERE dt.status = 'Review')::int AS review,
         COUNT(*) FILTER (WHERE dt.status = 'Approved')::int AS approved,
         COUNT(*) FILTER (
-          WHERE dt.target_date < ${today}::date AND dt.status <> 'Approved'
+          WHERE dt.target_date < ${today}::date AND ${designTrackerPendingSql('dt')}
         )::int AS overdue
       ${fromWhere}
     `)) as unknown as Array<Record<string, unknown>>;

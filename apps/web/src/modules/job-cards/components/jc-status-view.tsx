@@ -1,14 +1,13 @@
-// JC Status — the VIEW body, laid out to the owner-approved mock-up
-// jobcard-detail-mockup.html (frame 1, 2026-10-06): one 1440×810 screen, no
-// page scroll.
-//
+// JC Status — the VIEW body (mock-up jobcard-detail-mockup.html 2026-10-06;
+// since 2026-11-02 option 4: the PAGE scrolls, ▴ Hide details collapses the
+// facts to one line, and a sticky band holds the summary + tabs).
 //   header     ← Back · JC No. · Job Card · JC status badge ·
-//              Print · Edit · ⋯ (Download Excel) · ▶ Production Entry
+//              Print · Edit · ▴ Hide details · ⋯ · ▶ Production Entry
 //   banners    short-closed Production Order stop (ADR-182) · rework / repair
 //              child note — both null on an ordinary card, both unchanged
 //   facts      picture frame (Photo | Drawing) + identity line + ClusterGrid:
 //              ORDER · QUANTITY · MATERIAL · NOTES (jc-fact-block.tsx)
-//   tabs       ONE tab strip + ONE filling panel, "Current Op" at its right:
+//   tabs       ONE tab strip + ONE panel, "Current Op" at its right:
 //              Operations (JcOpsTable — the old op cards, Route / Operation
 //              Flow strip and Op Qty Flow panel in one table) · Documents &
 //              Quality (+ Rework Tree) · Material · Related Records · History
@@ -24,6 +23,7 @@ import { isProductionOrderStopped } from '@innovic/shared';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { useFactsCollapsed, useStickyBand } from '../lib/jc-detail-sticky';
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { undecidedChangesOf, usePendingEditForDoc } from '@/modules/document-edits/api';
@@ -48,6 +48,7 @@ import { useJcDrawing } from '../lib/jc-drawing';
 import { exportJobCardExcel } from '../lib/export-job-card-excel';
 import { printJobCard } from '../lib/print-job-card';
 import { JcFactBlock } from './jc-fact-block';
+import { JcFactStrip } from './jc-fact-strip';
 import { JcHistoryTable } from './jc-history-table';
 import { JcOpsTable } from './jc-ops-table';
 import { RecoveryBanner } from './jc-recovery-banner';
@@ -118,6 +119,9 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
 
   const [tab, setTab] = useState<TabKey>('ops');
   const [drawingPreviewOpen, setDrawingPreviewOpen] = useState(false);
+  // Option 4 (owner, 2026-11-02): page scroll + collapsible fact block.
+  const [collapsed, setCollapsed] = useFactsCollapsed();
+  const band = useStickyBand();
 
   // WHICH DRAWING THIS SCREEN SHOWS — SO line's drawing, else the JWSO line's,
   // else this card's own upload (first that exists; no item-master fallback —
@@ -185,7 +189,7 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
     });
 
   return (
-    <div className="page-fill jc-detail">
+    <div className="jc-detail" ref={band.rootRef}>
       <DetailHeader
         backLabel="Back"
         backTo="/job-cards"
@@ -235,6 +239,17 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
                 Edit
               </Link>
             ) : null}
+            {collapsed ? null : (
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                aria-expanded="true"
+                title="Hide the Job Card details (the one-line summary stays)"
+                onClick={() => setCollapsed(true)}
+              >
+                ▴ Hide details
+              </button>
+            )}
             <ActionMenu
               label="⋯"
               items={[
@@ -282,16 +297,19 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
           </div>
         ) : null}
         <RecoveryBanner jc={jc} />
-        <JcFactBlock
-          jc={jc}
-          productionOrder={productionOrder}
-          drawing={drawingRef}
-          onOpenDrawing={openDrawing}
-          pendingChanges={pendingChanges}
-          check={opFlow.data?.jobCardCheck}
-          checkError={opFlow.isError}
-        />
+        {!collapsed && (
+          <JcFactBlock
+            jc={jc}
+            productionOrder={productionOrder}
+            drawing={drawingRef}
+            onOpenDrawing={openDrawing}
+            pendingChanges={pendingChanges}
+            check={opFlow.data?.jobCardCheck}
+            checkError={opFlow.isError}
+          />
+        )}
       </DetailHeader>
+      <div ref={band.sentinelRef} aria-hidden="true" />
       {drawingPreviewOpen && drawing ? (
         <FilePreviewModal
           storagePath={drawing.path}
@@ -302,31 +320,43 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
         />
       ) : null}
 
-      {/* The one panel that takes the height left on screen. */}
-      <div className="jc-tabs">
-        <TabStrip
-          label="Job Card lists"
-          activeKey={tab}
-          onChange={(k) => setTab(TAB_KEYS.find((t) => t === k) ?? 'ops')}
-          tabs={[
-            { key: 'ops', label: 'Operations', count: opsData ? sortedOps.length : null },
-            { key: 'docs', label: 'Documents & Quality' },
-            { key: 'material', label: 'Material' },
-            { key: 'related', label: 'Related Records' },
-            {
-              key: 'history',
-              label: 'History',
-              count: extras ? extras.completionLog.total : null,
-            },
-          ]}
-        />
-        <span className="jc-tabs-meta">
-          <span>
-            <JcCurrentOpMeta sortedOps={sortedOps} />
+      {/* Sticky band: summary strip (collapsed / scrolled past) + tabs. */}
+      <div className="jc-band" ref={band.bandRef}>
+        {collapsed || band.past ? (
+          <JcFactStrip
+            jc={jc}
+            productionOrder={productionOrder}
+            check={opFlow.data?.jobCardCheck}
+            collapsed={collapsed}
+            onShowDetails={() => setCollapsed(false)}
+            onTop={band.toTop}
+          />
+        ) : null}
+        <div className="jc-tabs">
+          <TabStrip
+            label="Job Card lists"
+            activeKey={tab}
+            onChange={(k) => setTab(TAB_KEYS.find((t) => t === k) ?? 'ops')}
+            tabs={[
+              { key: 'ops', label: 'Operations', count: opsData ? sortedOps.length : null },
+              { key: 'docs', label: 'Documents & Quality' },
+              { key: 'material', label: 'Material' },
+              { key: 'related', label: 'Related Records' },
+              {
+                key: 'history',
+                label: 'History',
+                count: extras ? extras.completionLog.total : null,
+              },
+            ]}
+          />
+          <span className="jc-tabs-meta">
+            <span>
+              <JcCurrentOpMeta sortedOps={sortedOps} />
+            </span>
           </span>
-        </span>
+        </div>
       </div>
-      <Panel fill bodyPadding="none">
+      <Panel bodyPadding="none" className={tab === 'ops' ? 'jc-ops-panel' : undefined}>
         {tab === 'ops' ? (
           <JcOpsTable
             jobCardId={id}

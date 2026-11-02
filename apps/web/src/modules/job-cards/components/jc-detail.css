@@ -1,34 +1,103 @@
-/* Job Card detail — the fit-to-one-screen page
-   (jobcard-detail-mockup.html, frame 1, approved 2026-10-06).
+/* Job Card detail — the page SCROLLS (owner-approved option 4, 2026-11-02;
+   replaces the fit-to-one-screen layout of 2026-10-06, whose fixed-height ops
+   box left too little room on long route cards).
 
-   Same fix as the Production Order and Route Card pages
-   (production-orders/components/po-detail.css, route-cards/components/
-   rc-detail.css), scoped to `.jc-detail` and tokens only.
-
-   `page-fill` (innovic-theme.css "LIST FILL") asks for min-height: 100%; here
-   the page takes exactly the content area, so the tab panel gets what is left
-   and its table is the only thing that scrolls, with the header rows held.
-   The fallback the theme keeps is kept too: nothing is clipped, and the tab
-   panel never goes below six table rows, so when the chrome above genuinely
-   cannot fit (a phone, 200% zoom, both banners at once) the page outgrows the
-   content area and #content scrolls instead. */
+   #content scrolls the page. Under the header sits a sticky band — the
+   one-line summary (when the fact block is collapsed or scrolled away) and
+   the tab strip; ../lib/jc-detail-sticky.ts writes its height to
+   --jc-sticky-h so the ops table's two header rows stick right under it.
+   Tokens only. */
+/* The Job Card CREATE / EDIT pages (jc-create.css, jc-edit.css) share this
+   file under `page-fill jc-detail` and keep the fit-to-one-screen layout:
+   the page takes exactly the content area, the one fill panel gets what is
+   left (never under six table rows), and its body scrolls. The detail page
+   above no longer carries `page-fill`, so none of these touch it. */
 .page-fill.jc-detail {
   height: 100%;
 }
 .page-fill.jc-detail > .panel--fill {
   min-height: calc(var(--tbl-row-h) * 6 + 2px);
 }
-/* A flex column stretches its children; Back is a button, not a band. */
 .page-fill.jc-detail > .btn {
   align-self: flex-start;
 }
-/* The tab bodies that are not one table (Documents & Quality, Material,
-   Related Records, Document changes) scroll inside the panel too, rather than
-   pushing the page past the screen. The Operations / History tables keep their
-   own `.tbl-wrap` scroll box and sticky header. */
 .page-fill.jc-detail > .panel--fill > .panel-bd--fill {
   overflow: auto;
 }
+.jc-detail .jc-band {
+  position: sticky;
+  top: 0;
+  z-index: 20; /* the ladder's "sticky list header" (ui/feedback/Modal.tsx) */
+  background: var(--bg);
+}
+/* The ops table grows to its full height; the page is its scrollport, so the
+   panel and wrapper must not clip or scroll (either would trap the sticky
+   header inside them). */
+.jc-detail .panel.jc-ops-panel,
+.jc-detail .jc-ops-panel .panel-body,
+.jc-detail .jc-ops-panel .tbl-wrap.jc-ops-wrap {
+  overflow: visible;
+}
+.jc-detail .jc-ops-panel .tbl-wrap.jc-ops-wrap {
+  max-height: none;
+}
+.jc-detail .jc-ops-table thead {
+  top: var(--jc-sticky-h, 0px);
+}
+
+/* ── One-line summary strip (jc-fact-strip.tsx) ── */
+.jc-detail .jc-strip {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-1) var(--sp-3);
+  margin-bottom: var(--panel-gap);
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius2);
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.jc-detail .jc-strip-code {
+  color: var(--text);
+}
+.jc-detail .jc-strip-name {
+  min-width: 0;
+  max-width: 28ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text2);
+}
+.jc-detail .jc-strip-sep {
+  flex-shrink: 0;
+  width: 1px;
+  height: 16px;
+  background: var(--border);
+}
+.jc-detail .jc-strip-k {
+  margin-right: var(--sp-1);
+  color: var(--text3);
+  font-size: var(--fs-xs);
+}
+.jc-detail .jc-strip-f b {
+  font-family: var(--mono);
+  font-weight: 700;
+  color: var(--text);
+}
+.jc-detail .jc-strip-f b.jc-amber {
+  color: var(--amber2);
+}
+.jc-detail .jc-strip-f b.jc-red {
+  color: var(--red2);
+}
+.jc-detail .jc-strip-f b.jc-yes {
+  color: var(--green2);
+}
+.jc-detail .jc-strip-gap {
+  flex: 1;
+}
+
 .jc-detail .jc-tab-pad {
   padding: var(--sp-3);
 }

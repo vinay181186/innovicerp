@@ -5,7 +5,7 @@
 // documents already created (JC op counters + outward-DC receipt lines).
 // Nothing here mutates state.
 
-import { sql } from 'drizzle-orm';
+import { type SQL, sql } from 'drizzle-orm';
 import type { ListOspWipQuery, ListOspWipResponse, OspWipRow } from '@innovic/shared';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { createdByNameSql } from '../../lib/created-by-sql';
@@ -49,6 +49,19 @@ interface WipRawRow {
   ready_to_send_qty: number;
 }
 
+/** The register's bucket filter over v_osp_wip aliased `w` (leading AND, or
+ *  empty). The ONE definition: the home's Production checks prod_osp_send
+ *  ('ready_to_send') and prod_osp_at_vendor ('at_vendor') read it too. */
+export function ospWipBucketSql(filter: ListOspWipQuery['filter']): SQL {
+  return filter === 'at_vendor'
+    ? sql`AND w.at_vendor_qty > 0`
+    : filter === 'not_sent'
+      ? sql`AND w.not_sent_qty > 0`
+      : filter === 'ready_to_send'
+        ? sql`AND w.ready_to_send_qty > 0`
+        : sql``;
+}
+
 export async function listOspWip(
   input: ListOspWipQuery,
   user: AuthContext,
@@ -67,14 +80,7 @@ export async function listOspWip(
     // Sort & Filter (ADR-200): the register's column filters + sort.
     const sf = readSf(input.sf);
     const sfFrag = sfWhere(OSP_WIP_SF_COLUMNS, sf);
-    const bucketFrag =
-      input.filter === 'at_vendor'
-        ? sql`AND w.at_vendor_qty > 0`
-        : input.filter === 'not_sent'
-          ? sql`AND w.not_sent_qty > 0`
-          : input.filter === 'ready_to_send'
-            ? sql`AND w.ready_to_send_qty > 0`
-            : sql``;
+    const bucketFrag = ospWipBucketSql(input.filter);
     const fromFrag = sql`
       FROM public.v_osp_wip w
       LEFT JOIN public.job_cards jc ON jc.id = w.job_card_id AND jc.deleted_at IS NULL

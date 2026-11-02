@@ -6,6 +6,7 @@
 //   sales_overdue   — due before today (IST)
 //   sales_due_week  — today .. Sunday (Monday-start week), not overdue
 //   sales_due_month — today .. last day of the month, not overdue
+//   sales_so_draft  — SO saved as draft (status 'draft'), by SO Date.
 // One row per LINE (document = its SO / JWSO, reference = Client PO No.).
 // No existing fragment reads per-line pending by due date (rows-planning's
 // so_to_plan reads To Plan per order), so the line SQL is written here.
@@ -83,8 +84,40 @@ const salesDef = (key: CheckDef['key'], label: string, w: Window): CheckDef => (
   dated: true,
 });
 
+/** SO saved as draft (status 'draft', not deleted) — one row per SO, dated by
+ *  its SO Date (age: a draft has no deadline). Qty = Σ live line Order Qty. */
+export function soDraftSql(c: CheckCtx): SQL {
+  return sql`
+    SELECT so.id::text AS row_key, so.id, so.code, 'so'::text AS kind,
+           so.so_date::text AS doc_date, NULL::text AS due_date, so.so_date::text AS sort_key,
+           COALESCE(cl.name, so.customer_name)::text AS party,
+           (ARRAY_AGG(COALESCE(i.code, sol.item_code_text) ORDER BY sol.line_no))[1]::text AS item_code,
+           (ARRAY_AGG(sol.part_name ORDER BY sol.line_no))[1]::text AS item_name,
+           SUM(sol.order_qty)::numeric AS qty,
+           (ARRAY_AGG(sol.uom::text ORDER BY sol.line_no))[1]::text AS uom,
+           NULL::numeric AS amount, so.created_by::text AS created_by, 0::int AS is_late,
+           NULL::text AS x1, NULL::text AS x2, NULL::text AS x3
+    FROM public.sales_orders so
+    LEFT JOIN public.sales_order_lines sol
+      ON sol.sales_order_id = so.id AND sol.deleted_at IS NULL AND sol.status <> 'cancelled'
+    LEFT JOIN public.items i ON i.id = sol.item_id
+    LEFT JOIN public.clients cl ON cl.id = so.client_id AND cl.deleted_at IS NULL
+    WHERE so.company_id = ${c.cid}::uuid AND so.deleted_at IS NULL AND so.status = 'draft'
+    GROUP BY so.id, cl.name`;
+}
+
 export const SALES_CHECKS: readonly CheckDef[] = [
   salesDef('sales_overdue', 'Overdue deliveries', 'overdue'),
   salesDef('sales_due_week', 'Delivering this week', 'week'),
   salesDef('sales_due_month', 'Delivering this month', 'month'),
+  {
+    key: 'sales_so_draft',
+    dept: 'sales',
+    label: 'SO saved as draft',
+    head: ['SO No.', 'Customer', 'SO Date'],
+    href: '/sales-orders',
+    query: soDraftSql,
+    docHref: (r) => docNavPage('sales-order', r.id),
+    dated: false,
+  },
 ];

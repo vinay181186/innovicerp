@@ -66,6 +66,15 @@ export const ISSUE_SELECT = sql`
     WHERE l.tool_issue_id = ti.id AND l.deleted_at IS NULL
   ) s ON true`;
 
+/** Out with the holder (over an ISSUE_SELECT row aliased `x`): status Issued
+ *  or Partly returned. */
+export const TOOL_OUT_STATUS = sql`x.return_status IN ('issued', 'partial')`;
+
+/** The ONE "tool still out" rule over an ISSUE_SELECT row aliased `x`: out
+ *  with the holder AND something Still Out. The register's Holders view and
+ *  Overdue filter, AL-021 and the home's Store check store_tools_out read it. */
+export const TOOL_STILL_OUT = sql`(${TOOL_OUT_STATUS} AND x.still_out_qty > 0)`;
+
 const q = (v: unknown): number => roundQty(Number(v ?? 0));
 
 export function toListItem(r: Record<string, unknown>, today = todayIst()): ToolIssueListItem {
