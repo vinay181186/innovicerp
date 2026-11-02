@@ -153,6 +153,8 @@ export const customerMaterialReturnLineRowSchema = z.object({
   clientPoLineNo: z.string().nullable(),
   /** The return LINE's created_at, else its return's. ISO timestamp. */
   createdAt: z.string(),
+  /** Created By (ADR-261 rev): name of the user who entered the SAME record as createdAt (full name, else e-mail before @); null when unknown. */
+  createdByName: z.string().nullable(),
   /** The JWSO line's finished part (live master code, else the line's text). */
   itemCode: z.string().nullable(),
   /** The JWSO line's drawing revision. */

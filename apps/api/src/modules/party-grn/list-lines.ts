@@ -22,7 +22,8 @@ import type {
   PartyGrnLineListRow,
 } from '@innovic/shared';
 import { withUserContext, type AuthContext } from '../../db/with-user-context';
-import { day, iso } from '../../lib/list-line-values';
+import { createdByNameSql } from '../../lib/created-by-sql';
+import { day, iso, str } from '../../lib/list-line-values';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { QC_PENDING_QTY_SQL } from './qc-state';
 import {
@@ -94,6 +95,7 @@ export async function listPartyGrnLines(
         NULLIF(btrim(jwl.revision), '') AS "itemRevision",
         jwl.client_po_line_no AS "clientPoLineNo",
         COALESCE(pgl.created_at, pg.created_at) AS "lineCreatedAt",
+        ${createdByNameSql(sql`COALESCE(pgl.created_by, pg.created_by)`)} AS "createdByName",
         pgl.received_qty AS "lineReceivedQty",
         pgl.accepted_qty AS "lineAcceptedQty",
         pgl.rejected_qty AS "lineRejectedQty",
@@ -162,6 +164,7 @@ export async function listPartyGrnLines(
         jwCode: header.jwCodeText,
         clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
         createdAt: iso(r['lineCreatedAt']),
+        createdByName: str(r['createdByName']),
         itemCode: (r['itemCode'] as string | null) ?? null,
         itemRevision: (r['itemRevision'] as string | null) ?? null,
         itemName: (r['itemName'] as string | null) ?? null,

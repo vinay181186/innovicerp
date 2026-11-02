@@ -8,6 +8,7 @@
 import { type SQL, sql } from 'drizzle-orm';
 
 import { productionOrders } from '../../db/schema';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import type { SfColumnMap } from '../../lib/list-query';
 import { PRO_SHORT_CLOSED_QTY_SQL } from './short-closed-qty';
 
@@ -22,6 +23,8 @@ export function productionOrderSfColumns(frags: {
       sql: sql`(${productionOrders.createdAt} AT TIME ZONE 'Asia/Kolkata')::date`,
       type: 'date',
     },
+    // ADR-261 rev — Created By: who entered the order (same row as Created On).
+    createdBy: { sql: createdByNameSql(productionOrders.createdBy), type: 'text' },
     // CODE/REV as the cell prints it (itemCodeWithRev).
     itemCode: {
       sql: sql`(${productionOrders.itemCodeText} || COALESCE('/' || NULLIF(btrim(${frags.itemRevision}), ''), ''))`,

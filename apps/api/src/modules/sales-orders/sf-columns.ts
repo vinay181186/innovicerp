@@ -12,6 +12,7 @@
 
 import { sql } from 'drizzle-orm';
 
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { jcEffectiveQtySql } from '../../lib/jc-effective-qty';
 import type { SfColumnMap } from '../../lib/list-query';
 
@@ -68,6 +69,11 @@ export const SO_LINE_SF_COLUMNS: SfColumnMap = {
   createdOn: {
     sql: sql`(COALESCE(l.created_at, so.created_at) AT TIME ZONE 'Asia/Kolkata')::date`,
     type: 'date',
+  },
+  // ADR-261 rev — Created By over the same record as Created On (the line, else the SO).
+  createdBy: {
+    sql: createdByNameSql(sql`COALESCE(l.created_by, so.created_by)`),
+    type: 'text',
   },
   itemCode: { sql: sql`COALESCE(it.code, l.item_code_text)`, type: 'text' },
   itemName: { sql: sql`l.part_name`, type: 'text' },

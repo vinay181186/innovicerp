@@ -16,6 +16,7 @@ import type {
   ListCustomerMaterialReturnsQuery,
 } from '@innovic/shared';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { requireFormAccess } from '../../lib/access';
 import { AuthorizationError } from '../../lib/errors';
 import { day, iso, str } from '../../lib/list-line-values';
@@ -38,6 +39,7 @@ function toRow(r: Record<string, unknown>): CustomerMaterialReturnLineRow {
     jwCode: str(r['jwCode']),
     clientPoLineNo: str(r['clientPoLineNo']),
     createdAt: iso(r['createdAt']),
+    createdByName: str(r['createdByName']),
     itemCode: str(r['itemCode']),
     itemRevision: str(r['itemRevision']),
     itemName: str(r['itemName']),
@@ -114,6 +116,7 @@ export async function listCustomerMaterialReturnLines(
         r.job_work_order_id AS "jobWorkOrderId", jw.code AS "jwCode",
         jwl.client_po_line_no AS "clientPoLineNo",
         COALESCE(l.created_at, r.created_at) AS "createdAt",
+        ${createdByNameSql(sql`COALESCE(l.created_by, r.created_by)`)} AS "createdByName",
         COALESCE(i.code, jwl.item_code_text) AS "itemCode",
         NULLIF(btrim(jwl.revision::text), '') AS "itemRevision",
         COALESCE(NULLIF(btrim(jwl.part_name), ''), i.name) AS "itemName",

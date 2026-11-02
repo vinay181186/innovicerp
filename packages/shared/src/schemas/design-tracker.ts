@@ -68,6 +68,8 @@ export const designTrackerSchema = z.object({
 export type DesignTracker = z.infer<typeof designTrackerSchema>;
 
 export const designTrackerListItemSchema = designTrackerSchema.extend({
+  /** Created By (ADR-261 rev): name of the user who entered the SAME record as createdAt (full name, else e-mail before @); null when unknown. */
+  createdByName: z.string().nullable(),
   /** Σ hours from design_work_log rows logged against this design (ADR-188). */
   totalHours: z.number(),
 });

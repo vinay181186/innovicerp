@@ -29,6 +29,8 @@ export const scSoRowSchema = z.object({
   soInternalNo: z.string().nullable().optional(),
   /** ADR-261 — the SO's own created_at (Created On); null on the no-SO row. */
   createdAt: z.string().nullable().optional(),
+  /** Created By (ADR-261 rev): name of the user who entered the SAME record as createdAt (full name, else e-mail before @); null when unknown. */
+  createdByName: z.string().nullable(),
   lines: z.number().int().nonnegative(),
   uniqueVendors: z.number().int().nonnegative(),
   totalQty: z.number().nonnegative(),
@@ -51,6 +53,8 @@ export const scPoSummaryRowSchema = z.object({
   soInternalNo: z.string().nullable().optional(),
   /** ADR-261 — the PO's created_at (Created On). */
   createdAt: z.string().nullable().optional(),
+  /** Created By (ADR-261 rev): name of the user who entered the SAME record as createdAt (full name, else e-mail before @); null when unknown. */
+  createdByName: z.string().nullable(),
   lines: z.number().int().nonnegative(),
   totalQty: z.number().nonnegative(),
   receivedQty: z.number().nonnegative(),
@@ -78,6 +82,8 @@ export const scPendingLineSchema = z.object({
   clientPoLineNo: z.string().nullable().optional(),
   /** ADR-261 — the PO line's created_at (Created On). */
   createdAt: z.string().nullable().optional(),
+  /** Created By (ADR-261 rev): name of the user who entered the SAME record as createdAt (full name, else e-mail before @); null when unknown. */
+  createdByName: z.string().nullable(),
   itemCode: z.string().nullable(),
   /** The customer's drawing revision for this line, read off the SO line the
    *  purchase order line was raised against

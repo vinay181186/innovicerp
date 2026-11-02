@@ -7,7 +7,7 @@
 
 import { opSrNo, type OspWipRow } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
-import { leadColumns, type DataTableColumn } from '@/ui/data';
+import { createdByColumn, type DataTableColumn, leadColumns } from '@/ui/data';
 
 function qty(
   id: string,
@@ -32,11 +32,12 @@ function qty(
   };
 }
 
-export function ospAtVendorColumns(): DataTableColumn<OspWipRow>[] {
+export function ospAtVendorColumns(firstRowNo: number): DataTableColumn<OspWipRow>[] {
   return [
-    // Owner rule 2026-10-31 (ADR-261 amendment) — JC No. first, then the six
-    // lead columns, all locked.
+    // ADR-261 rev 2026-11-02 — JC No. inside the lead block
+    // (after Item Name), all locked.
     ...leadColumns<OspWipRow>({
+      firstRowNo,
       doc: {
         id: 'jc_no',
         sortFilterField: 'jcCode',
@@ -44,16 +45,6 @@ export function ospAtVendorColumns(): DataTableColumn<OspWipRow>[] {
         header: 'JC No.',
         className: 'td-code',
         render: (r) => <span style={{ color: 'var(--cyan)' }}>{r.jcCode}</span>,
-      },
-      docDate: {
-        id: 'jc_date',
-        sortFilterField: 'jcDate',
-        kind: 'date',
-        header: 'JC Date',
-        className: 'mono',
-        nowrap: true,
-        render: (r) => fmtDate(r.jcDate ?? null),
-        filterValue: (r) => r.jcDate ?? '',
       },
       soNo: (r) => r.soCode,
       internalSoNo: (r) => r.soInternalNo,
@@ -71,6 +62,16 @@ export function ospAtVendorColumns(): DataTableColumn<OspWipRow>[] {
         item_name: { sortFilterField: 'itemName' },
       },
     }),
+    {
+      id: 'jc_date',
+      sortFilterField: 'jcDate',
+      kind: 'date',
+      header: 'JC Date',
+      className: 'mono',
+      nowrap: true,
+      render: (r) => fmtDate(r.jcDate ?? null),
+      filterValue: (r) => r.jcDate ?? '',
+    },
     {
       id: 'vendor',
       sortFilterField: 'vendorName',
@@ -131,6 +132,11 @@ export function ospAtVendorColumns(): DataTableColumn<OspWipRow>[] {
       headColor: 'var(--purple)',
       title: 'Cleared by the previous operation — what a challan accepts today',
       bold: true,
+    }),
+    // ADR-261 rev — Created By, the last data column.
+    createdByColumn({
+      createdByName: (r) => r.createdByName,
+      overrides: { sortFilterField: 'createdBy' },
     }),
   ];
 }

@@ -76,7 +76,7 @@ function OpLogListPage(): React.JSX.Element {
   const canReverseQc = Boolean(eff) && qcPerms.edit && qcPerms.approve;
   const canReverse = canReverseProd || canReverseQc;
   const [reversing, setReversing] = useState<OpLogListItem | null>(null);
-  const columns = useMemo(() => opLogColumns(), []);
+  const columns = useMemo(() => opLogColumns(pageOffset(search.page) + 1), [search.page]);
 
   const [jcInput, setJcInput] = useState(search.jcNo ?? '');
   useEffect(() => setJcInput(search.jcNo ?? ''), [search.jcNo]);

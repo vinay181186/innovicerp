@@ -12,7 +12,7 @@ import {
 } from '@innovic/shared';
 import { QcReportLink } from '@/components/shared/qc-report-attach';
 import { fmtDate } from '@/lib/date';
-import { leadColumns, type DataTableColumn } from '@/ui/data';
+import { createdByColumn, leadColumns, type DataTableColumn } from '@/ui/data';
 
 // Sort & Filter (server mode, ADR-200): the Shift tick list — stored code + label.
 const SHIFT_OPTIONS = Object.entries(SHIFT_LABELS as Record<string, string>).map(
@@ -31,15 +31,17 @@ interface QcRowBase {
   itemName: string | null;
   operation: string;
   createdAt: string | null;
+  createdByName: string | null;
 }
 
 /** The columns both tables lead with (owner rule 2026-10-31): JC No. (own
- *  number, first) · SO No. · Internal SO No. · POL · Created On · Item Code ·
+ *  number, first) · SO No. · Internal SO No. · POL · Item Code ·
  *  Item Name, then Op · Operation. Created On = the QC op's created_at
  *  (pending) / the QC log row's created_at (entries). */
-function qcLeadColumns<T extends QcRowBase>(): DataTableColumn<T>[] {
+function qcLeadColumns<T extends QcRowBase>(firstRowNo: number): DataTableColumn<T>[] {
   return [
     ...leadColumns<T>({
+      firstRowNo,
       doc: {
         id: 'jc_no',
         sortFilterField: 'jcCode',
@@ -47,16 +49,6 @@ function qcLeadColumns<T extends QcRowBase>(): DataTableColumn<T>[] {
         header: 'JC No.',
         className: 'td-code cyan',
         render: (o) => o.jcCode,
-      },
-      docDate: {
-        id: 'jc_date',
-        sortFilterField: 'jcDate',
-        kind: 'date',
-        header: 'JC Date',
-        className: 'mono',
-        nowrap: true,
-        render: (o) => fmtDate(o.jcDate ?? null),
-        filterValue: (o) => o.jcDate ?? '',
       },
       soNo: (o) => o.soCode,
       internalSoNo: (o) => o.soInternalNo,
@@ -74,6 +66,16 @@ function qcLeadColumns<T extends QcRowBase>(): DataTableColumn<T>[] {
         created_on: { sortFilterField: 'createdOn' },
       },
     }),
+    {
+      id: 'jc_date',
+      sortFilterField: 'jcDate',
+      kind: 'date',
+      header: 'JC Date',
+      className: 'mono',
+      nowrap: true,
+      render: (o) => fmtDate(o.jcDate ?? null),
+      filterValue: (o) => o.jcDate ?? '',
+    },
     {
       id: 'op_seq',
       kind: 'code',
@@ -112,9 +114,9 @@ function numCol<T>(
   };
 }
 
-export function qcPendingColumns(): DataTableColumn<QcHistoryPendingRow>[] {
+export function qcPendingColumns(firstRowNo: number): DataTableColumn<QcHistoryPendingRow>[] {
   return [
-    ...qcLeadColumns<QcHistoryPendingRow>(),
+    ...qcLeadColumns<QcHistoryPendingRow>(firstRowNo),
     numCol<QcHistoryPendingRow>('order_qty', 'Order Qty', (o) => o.orderQty, undefined, 'orderQty'),
     numCol<QcHistoryPendingRow>(
       'completed',
@@ -157,12 +159,16 @@ export function qcPendingColumns(): DataTableColumn<QcHistoryPendingRow>[] {
         </>
       ),
     },
+    createdByColumn<QcHistoryPendingRow>({
+      createdByName: (o) => o.createdByName,
+      overrides: { sortFilterField: 'createdBy' },
+    }),
   ];
 }
 
-export function qcEntryColumns(): DataTableColumn<QcHistoryLogRow>[] {
+export function qcEntryColumns(firstRowNo: number): DataTableColumn<QcHistoryLogRow>[] {
   return [
-    ...qcLeadColumns<QcHistoryLogRow>(),
+    ...qcLeadColumns<QcHistoryLogRow>(firstRowNo),
     numCol<QcHistoryLogRow>('accepted', 'Accepted', (l) => l.accepted, 'var(--green2)', 'accepted'),
     numCol<QcHistoryLogRow>('rejected', 'Deviated', (l) => l.rejected, 'var(--red2)', 'rejected'),
     {
@@ -213,5 +219,9 @@ export function qcEntryColumns(): DataTableColumn<QcHistoryLogRow>[] {
           '—'
         ),
     },
+    createdByColumn<QcHistoryLogRow>({
+      createdByName: (l) => l.createdByName,
+      overrides: { sortFilterField: 'createdBy' },
+    }),
   ];
 }

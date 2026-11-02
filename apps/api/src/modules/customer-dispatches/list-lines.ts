@@ -99,6 +99,7 @@ export async function listDispatchLines(
           r.line_created_at instanceof Date
             ? r.line_created_at.toISOString()
             : String(r.line_created_at),
+        createdByName: r.line_created_by_name ?? null,
       })),
       total: Number(cnt?.total ?? 0),
       summary: extras.summary,

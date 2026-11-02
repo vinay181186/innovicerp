@@ -10,7 +10,7 @@ import type { ProductionDashboardReadyOp } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
 import { ActualMachineCell, PlannedMachineCell } from '@/components/shared/machine-split';
 import { fmtDate } from '@/lib/date';
-import { leadColumns, ROW_TINT } from '@/ui/data';
+import { createdByColumn, leadColumns, ROW_TINT } from '@/ui/data';
 import type { DataTableColumn, RowMenuItem } from '@/ui/data';
 import { OP_STATUS_BADGES, OpStatusBadge } from './op-status-badge';
 
@@ -44,11 +44,14 @@ export function prodReadyRowTint(op: ProductionDashboardReadyOp): string | undef
   return undefined;
 }
 
-export function prodReadyColumns(): DataTableColumn<ProductionDashboardReadyOp>[] {
+export function prodReadyColumns(
+  firstRowNo: number,
+): DataTableColumn<ProductionDashboardReadyOp>[] {
   return [
-    // ADR-261 — JC No. first, then the six lead columns, all locked (always
+    // ADR-261 — JC No. inside the lead block (after Item Name), all locked (always
     // shown); every other fact follows Item Name. `sortFilterField` = PROD_READY_SF_COLUMNS.
     ...leadColumns<ProductionDashboardReadyOp>({
+      firstRowNo,
       doc: {
         // DESTINATION (user request, 2026-09-11): a JC number goes to the job card
         // itself, everywhere in the app. Op Entry is reachable from the ⋯ menu.
@@ -69,16 +72,6 @@ export function prodReadyColumns(): DataTableColumn<ProductionDashboardReadyOp>[
           </ActionLink>
         ),
       },
-      docDate: {
-        id: 'jc_date',
-        sortFilterField: 'jcDate',
-        kind: 'date',
-        header: 'JC Date',
-        className: 'mono',
-        nowrap: true,
-        render: (op) => fmtDate(op.jcDate ?? null),
-        filterValue: (op) => op.jcDate ?? '',
-      },
       soNo: (op) => op.soCode,
       internalSoNo: (op) => op.soInternalNo,
       pol: (op) => op.clientPoLineNo,
@@ -95,6 +88,16 @@ export function prodReadyColumns(): DataTableColumn<ProductionDashboardReadyOp>[
         item_name: { sortFilterField: 'itemName' },
       },
     }),
+    {
+      id: 'jc_date',
+      sortFilterField: 'jcDate',
+      kind: 'date',
+      header: 'JC Date',
+      className: 'mono',
+      nowrap: true,
+      render: (op) => fmtDate(op.jcDate ?? null),
+      filterValue: (op) => op.jcDate ?? '',
+    },
     {
       id: 'op_seq',
       sortFilterField: 'opSeq',
@@ -181,6 +184,10 @@ export function prodReadyColumns(): DataTableColumn<ProductionDashboardReadyOp>[
       className: 'mono',
       render: (op) => <span style={{ color: 'var(--orange)' }}>{op.pendingHrs}</span>,
     },
+    createdByColumn<ProductionDashboardReadyOp>({
+      createdByName: (op) => op.createdByName,
+      overrides: { sortFilterField: 'createdBy' },
+    }),
   ];
 }
 

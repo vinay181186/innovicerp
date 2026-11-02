@@ -17,7 +17,13 @@ import { opSrNo, type PurchaseRequestListItem } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
 import { prBalanceClosedText, prOrderBalance } from '@/modules/purchase-requests/lib/pr-balance';
 import { PR_STATUS_LABELS } from '@/modules/purchase-requests/lib/pr-labels';
-import { ROW_TINT, leadColumns, renderRowMenuLink, type DataTableColumn } from '@/ui/data';
+import {
+  createdByColumn,
+  type DataTableColumn,
+  leadColumns,
+  renderRowMenuLink,
+  ROW_TINT,
+} from '@/ui/data';
 import { RowActions } from '@/ui/layout';
 
 import { ospCanOrder } from '../lib/osp-band';
@@ -49,11 +55,14 @@ export function ospRowTint(pr: PurchaseRequestListItem): string | undefined {
   return undefined;
 }
 
-export function outsourceJobsColumns(): DataTableColumn<PurchaseRequestListItem>[] {
+export function outsourceJobsColumns(
+  firstRowNo: number,
+): DataTableColumn<PurchaseRequestListItem>[] {
   return [
-    // Owner rule 2026-10-31 (ADR-261 amendment) — PR No. first, then the six
-    // lead columns, all locked; JC No., Op and every other fact follow Item Name.
+    // ADR-261 rev 2026-11-02 — PR No. inside the lead block
+    // (after Item Name), all locked; JC No., Op and every other fact follow Item Name.
     ...leadColumns<PurchaseRequestListItem>({
+      firstRowNo,
       doc: {
         // The OSP PR number (IN-JWPR-…).
         id: 'pr_no',
@@ -62,16 +71,6 @@ export function outsourceJobsColumns(): DataTableColumn<PurchaseRequestListItem>
         header: 'PR No.',
         className: 'mono fw-700',
         render: (pr) => <span style={{ color: 'var(--purple)' }}>{pr.code}</span>,
-      },
-      docDate: {
-        id: 'pr_date',
-        sortFilterField: 'prDate',
-        kind: 'date',
-        header: 'PR Date',
-        className: 'mono',
-        nowrap: true,
-        render: (pr) => fmtDate(pr.prDate ?? null),
-        filterValue: (pr) => pr.prDate ?? '',
       },
       soNo: (pr) => pr.soCode,
       internalSoNo: (pr) => pr.soInternalNo,
@@ -89,6 +88,16 @@ export function outsourceJobsColumns(): DataTableColumn<PurchaseRequestListItem>
         item_name: { sortFilterField: 'itemName' },
       },
     }),
+    {
+      id: 'pr_date',
+      sortFilterField: 'prDate',
+      kind: 'date',
+      header: 'PR Date',
+      className: 'mono',
+      nowrap: true,
+      render: (pr) => fmtDate(pr.prDate ?? null),
+      filterValue: (pr) => pr.prDate ?? '',
+    },
     {
       id: 'jc_no',
       kind: 'code',
@@ -191,6 +200,11 @@ export function outsourceJobsColumns(): DataTableColumn<PurchaseRequestListItem>
         );
       },
     },
+    // ADR-261 rev — Created By, the last data column.
+    createdByColumn({
+      createdByName: (r) => r.createdByName,
+      overrides: { sortFilterField: 'createdBy' },
+    }),
   ];
 }
 

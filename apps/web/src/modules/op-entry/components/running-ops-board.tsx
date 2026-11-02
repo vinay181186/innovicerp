@@ -62,8 +62,8 @@ export function RunningOpsBoard(): React.JSX.Element {
   const [stopRow, setStopRow] = useState<RunningOp | null>(null);
   const [stopError, setStopError] = useState<string | null>(null);
 
-  const runningCols = useMemo(() => runningNowColumns(), []);
-  const recentCols = useMemo(() => recentOpsColumns(), []);
+  const runningCols = useMemo(() => runningNowColumns(pageOffset(runPage) + 1), [runPage]);
+  const recentCols = useMemo(() => recentOpsColumns(pageOffset(recentPage) + 1), [recentPage]);
 
   function submitStop(input: StopOpInput): void {
     if (!stopRow) return;

@@ -12,6 +12,7 @@ import type { ListInvoiceLinesResponse, ListInvoicesQuery } from '@innovic/share
 import { sql } from 'drizzle-orm';
 
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { canSeeFormPrice } from '../../lib/access';
 import { AuthorizationError } from '../../lib/errors';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
@@ -32,6 +33,7 @@ type LineRow = {
   so_internal_no: string | null;
   client_po_line_no: string | null;
   created_at: string | Date;
+  created_by_name: string | null;
   item_code: string | null;
   item_revision: string | null;
   item_name: string;
@@ -110,6 +112,7 @@ export async function listInvoiceLines(
         iso.internal_so_no AS so_internal_no,
         sol.client_po_line_no,
         COALESCE(il.created_at, invoices.created_at) AS created_at,
+        ${createdByNameSql(sql`COALESCE(il.created_by, invoices.created_by)`)} AS created_by_name,
         il.item_code_text AS item_code,
         NULLIF(btrim(sol.revision::text), '') AS item_revision,
         il.item_name, il.qty, il.rate::text AS rate, il.line_amount::text AS line_amount
@@ -159,6 +162,7 @@ export async function listInvoiceLines(
       soInternalNo: r.so_internal_no ?? null,
       clientPoLineNo: r.client_po_line_no ?? null,
       createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
+      createdByName: r.created_by_name ?? null,
       itemCode: r.item_code,
       itemRevision: r.item_revision ?? null,
       itemName: r.item_name,

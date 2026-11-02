@@ -24,6 +24,8 @@ export const PLANNING_LIST_SF_FIELDS: MemFieldMap<PlanningSoListItem> = {
   soInternalNo: { type: 'text', get: (r) => r.soInternalNo },
   // ADR-261 Created On — the order's created_at as the India-time day.
   createdOn: { type: 'date', get: (r) => istDay(r.createdAt) },
+  // ADR-261 rev — Created By: who entered the order.
+  createdBy: { type: 'text', get: (r) => r.createdByName },
   customerName: { type: 'text', get: (r) => r.customerName },
   soType: { type: 'list', get: (r) => r.soType },
   dueDate: { type: 'date', get: (r) => r.dueDate },

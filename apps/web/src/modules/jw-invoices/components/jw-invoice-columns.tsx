@@ -11,7 +11,7 @@
 import type { JwInvoiceListItem } from '@innovic/shared';
 import { PLACE_OF_SUPPLY_UNKNOWN_NOTE } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
-import { leadColumns, type DataTableColumn } from '@/ui/data';
+import { createdByColumn, type DataTableColumn, leadColumns } from '@/ui/data';
 
 const STATUS_OPTIONS = [
   { value: 'issued', label: 'Issued' },
@@ -24,11 +24,15 @@ function money(n: number): string {
 
 /** The register's columns. `priceHidden` drops the money columns for L1 Viewers,
  *  exactly as the old table did. */
-export function jwInvoiceColumns(priceHidden: boolean): DataTableColumn<JwInvoiceListItem>[] {
+export function jwInvoiceColumns(
+  firstRowNo: number,
+  priceHidden: boolean,
+): DataTableColumn<JwInvoiceListItem>[] {
   const cols: DataTableColumn<JwInvoiceListItem>[] = [
     // Owner rule 2026-10-31 — Invoice No. then the lead columns first (JWSO-only
     // list: JWSO No., no Internal SO No.); Customer after Item Name.
     ...leadColumns<JwInvoiceListItem>({
+      firstRowNo,
       doc: {
         id: 'invoice_code',
         header: 'Invoice No.',
@@ -55,15 +59,6 @@ export function jwInvoiceColumns(priceHidden: boolean): DataTableColumn<JwInvoic
           </span>
         ),
       },
-      docDate: {
-        id: 'invoice_date',
-        header: 'Invoice Date',
-        kind: 'date',
-        className: 'mono text2',
-        nowrap: true,
-        render: (r) => fmtDate(r.invoiceDate),
-        sortFilterField: 'invoiceDate',
-      },
       so: 'jwso',
       soNo: (r) => r.jwCodeText,
       pol: (r) => r.clientPoLineNo,
@@ -76,6 +71,15 @@ export function jwInvoiceColumns(priceHidden: boolean): DataTableColumn<JwInvoic
         item_code: { sortFilterField: 'itemCode' },
       },
     }),
+    {
+      id: 'invoice_date',
+      header: 'Invoice Date',
+      kind: 'date',
+      className: 'mono text2',
+      nowrap: true,
+      render: (r) => fmtDate(r.invoiceDate),
+      sortFilterField: 'invoiceDate',
+    },
     {
       id: 'customer',
       header: 'Customer',
@@ -154,5 +158,7 @@ export function jwInvoiceColumns(priceHidden: boolean): DataTableColumn<JwInvoic
     ),
   });
 
+  // ADR-261 rev — Created By, the last data column.
+  cols.push(createdByColumn({ createdByName: (r) => r.createdByName }));
   return cols;
 }

@@ -17,6 +17,7 @@ import type {
 import { sql, type SQL } from 'drizzle-orm';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { withUserContext } from '../../db/with-user-context';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { AuthorizationError } from '../../lib/errors';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { billedStatusOf, loadBilledQtyByDispatch } from './billed';
@@ -27,6 +28,8 @@ const n = (s: string | number | null): number => Number(s ?? 0) || 0;
 export type RegisterRow = {
   line_id: string;
   line_created_at: string | Date;
+  /** ADR-261 rev — Created By of the same record as line_created_at. */
+  line_created_by_name: string | null;
   dispatch_id: string;
   dispatch_code: string;
   status: 'dispatched' | 'cancelled';
@@ -70,6 +73,7 @@ export const LINE_JOINS = sql`
 export const REGISTER_LINE_FROM = sql`
           SELECT l.id::text AS line_id,
             COALESCE(l.created_at, h.created_at) AS line_created_at,
+            ${createdByNameSql(sql`COALESCE(l.created_by, h.created_by)`)} AS line_created_by_name,
             h.id::text AS dispatch_id, h.code AS dispatch_code, h.status,
             h.dispatch_date::text AS dispatch_date, h.so_code_text AS so_no,
             -- ADR-207 — the SO's Internal SO No., live off the SO.

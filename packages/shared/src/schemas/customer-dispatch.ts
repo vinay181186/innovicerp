@@ -288,6 +288,8 @@ export const customerDispatchLineListRowSchema = customerDispatchRegisterRowSche
   lineId: z.string().uuid(),
   /** The line's created_at, else the dispatch's. The Created On column. */
   createdAt: z.string(),
+  /** Created By (ADR-261 rev): name of the user who entered the SAME record as createdAt (full name, else e-mail before @); null when unknown. */
+  createdByName: z.string().nullable(),
 });
 export type CustomerDispatchLineListRow = z.infer<typeof customerDispatchLineListRowSchema>;
 

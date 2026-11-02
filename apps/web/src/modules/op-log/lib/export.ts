@@ -60,7 +60,7 @@ export async function exportOpLog(
     Deviated: r.rejectQty,
     Operator: r.operatorName ?? '',
     Remarks: r.remarks ?? '',
-    'Logged By': r.createdByName ?? '',
+    'Created By': r.createdByName ?? '',
     // ADR-197 — the reversal pair, so a spreadsheet total reads right.
     'Reversal Of': r.reversalOfLogNo ?? '',
     'Reversal Reason': r.reversalReason ?? '',

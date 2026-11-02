@@ -12,7 +12,7 @@
 // this card without walking to Settings → Approvals.
 //
 // ADR-197 — each card names the operator on the floor AND the logged-in user
-// who typed the entry (Logged By). A reversal (an opposite entry added by
+// who typed the entry (Created By). A reversal (an opposite entry added by
 // Reverse on the Operation Log; negative qty / reject) reads "Reversal" with
 // its reason instead of the plain type label.
 
@@ -334,7 +334,7 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
                   <>
                     <span>·</span>
                     <span>
-                      Logged By: <span style={{ color: 'var(--text2)' }}>{l.createdByName}</span>
+                      Created By: <span style={{ color: 'var(--text2)' }}>{l.createdByName}</span>
                     </span>
                   </>
                 ) : null}

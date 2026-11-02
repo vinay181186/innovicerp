@@ -24,7 +24,7 @@ import { fmtDate } from '@/lib/date';
 import { ItemRevLink } from '@/modules/item-revisions/components/item-rev-link';
 import { itemCodeWithRev, docDrawingRev } from '@/lib/item-code';
 import type { DataTableColumn } from '@/ui/data';
-import { ROW_TINT, leadColumns } from '@/ui/data';
+import { ROW_TINT, createdByColumn, leadColumns } from '@/ui/data';
 import { PoStatusBadge } from './po-status-badge';
 
 // Sort & Filter (server mode): the status tick list — stored code + label.
@@ -78,12 +78,12 @@ export function poListColumns(
   offset = 0,
 ): DataTableColumn<ProductionOrderListItem>[] {
   return [
-    // Owner rule 2026-10-31 (ADR-261 amendment) — Production Order No. first,
-    // then the six lead columns, all locked; Sr No and every other fact follow
-    // Item Name. Created On is the
+    // ADR-261 rev 2026-11-02 — the locked lead block (Sr No … Production Order
+    // No. · Created On); Sr No counts on from the page offset. Created On is the
     // order's own createdAt (the old "Production Order Date" column showed the
     // same value, so it is folded into the lead column).
     ...leadColumns<ProductionOrderListItem>({
+      firstRowNo: offset + 1,
       doc: {
         id: 'pro_no',
         header: 'Production Order No.',
@@ -134,16 +134,6 @@ export function poListColumns(
         item_name: { sortFilterField: 'itemName' },
       },
     }),
-    {
-      // Owner request 2026-10-26 — the client-list Sr No column. Column 0 of a
-      // fit table carries the row's ▸; the Production Order No. stays pinned
-      // through PO_LIST_PINNED_IDS.
-      id: 'sr_no',
-      header: 'Sr No',
-      width: '4%',
-      className: 'text3',
-      render: (_po, i) => offset + i + 1,
-    },
     {
       id: 'order_qty',
       header: 'Order Qty',
@@ -263,6 +253,10 @@ export function poListColumns(
         </Link>
       ),
     },
+    createdByColumn<ProductionOrderListItem>({
+      createdByName: (po) => po.createdByName,
+      overrides: { sortFilterField: 'createdBy' },
+    }),
   ];
 }
 

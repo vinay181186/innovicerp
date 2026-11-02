@@ -1,11 +1,17 @@
 import { describe, expect, it } from 'vitest';
 
-import { LEAD_COLUMN_IDS, leadColumns, lockedLeadIds } from '@/ui/data/lead-columns';
+import {
+  LEAD_COLUMN_IDS,
+  createdByColumn,
+  leadColumns,
+  lockedLeadIds,
+} from '@/ui/data/lead-columns';
 
 import { applyLayoutOp } from './table-layout-ops';
 
-// Owner rule 2026-10-31 — SO No. · Internal SO No. · POL · Created On ·
-// Item Code · Item Name are one fixed block at the front of every SO list.
+// ADR-261 rev (owner 2026-11-02) — Sr No · SO No. · Internal SO No. · POL ·
+// Item Code · Item Name · own No. · Created On are one fixed block at the front
+// of every SO list; Created Time follows, off by default; Created By is last.
 const LEAD = [...LEAD_COLUMN_IDS];
 const ORDER = [...LEAD, 'jc_no', 'qty', 'status'];
 const defaults = { order: ORDER, pins: [], hidden: [] };
@@ -20,12 +26,12 @@ describe('lead block lock', () => {
     }
   });
 
-  it('no column can move into the block (nothing between Item Code and Item Name)', () => {
+  it('no column can move into the block', () => {
     const next = applyLayoutOp(state, { type: 'move', id: 'jc_no', dir: -1 }, LEAD, defaults);
     expect(next).toBe(state);
     const moved = applyLayoutOp(state, { type: 'move', id: 'qty', dir: -1 }, LEAD, defaults);
-    expect(moved.order.slice(0, 6)).toEqual(LEAD);
-    expect(moved.order.slice(6)).toEqual(['qty', 'jc_no', 'status']);
+    expect(moved.order.slice(0, LEAD.length)).toEqual(LEAD);
+    expect(moved.order.slice(LEAD.length)).toEqual(['qty', 'jc_no', 'status']);
   });
 
   it('a re-shown column goes back to its own slot, not the end', () => {
@@ -35,19 +41,15 @@ describe('lead block lock', () => {
   });
 
   it('old single-column lock still works', () => {
-    const next = applyLayoutOp(
-      state,
-      { type: 'move', id: 'so_internal_no', dir: -1 },
-      'so_no',
-      defaults,
-    );
-    expect(next.order.slice(0, 2)).toEqual(['so_no', 'so_internal_no']);
+    const next = applyLayoutOp(state, { type: 'move', id: 'so_no', dir: -1 }, 'sr_no', defaults);
+    expect(next).toBe(state);
   });
 });
 
 describe('leadColumns builder', () => {
   type Row = { so: string; cr: string; code: string; rev: string | null; name: string };
   const spec = {
+    firstRowNo: 26,
     soNo: (r: Row) => r.so,
     internalSoNo: () => null,
     pol: () => '10',
@@ -56,48 +58,75 @@ describe('leadColumns builder', () => {
     itemRev: (r: Row) => r.rev,
     itemName: (r: Row) => r.name,
   };
+  const row: Row = {
+    so: 'IN-SO-1',
+    cr: '2026-11-02T09:05:00Z',
+    code: 'A1',
+    rev: null,
+    name: 'Shaft',
+  };
 
-  it('gives the six in the fixed order, all locked', () => {
+  it('gives the block in the fixed order, all locked, then Created Time unlocked', () => {
     const cols = leadColumns<Row>(spec);
-    expect(cols.map((c) => c.id)).toEqual(LEAD);
     expect(cols.map((c) => c.header)).toEqual([
+      'Sr No',
       'SO No.',
       'Internal SO No.',
       'POL',
-      'Created On',
       'Item Code',
       'Item Name',
+      'Created On',
+      'Created Time',
     ]);
-    expect(cols.every((c) => c.lead)).toBe(true);
-    expect(lockedLeadIds(cols, LEAD)).toEqual(LEAD);
+    const ids = cols.map((c) => c.id ?? '');
+    expect(lockedLeadIds(cols, ids)).toEqual(LEAD);
+    const time = cols[cols.length - 1];
+    expect(time?.lead).toBeFalsy();
+    expect(time?.hiddenByDefault).toBe(true);
   });
 
-  it('own doc no. comes FIRST and is locked with the block', () => {
-    const cols = leadColumns<Row>({
-      ...spec,
-      doc: { id: 'plan_no', header: 'Plan No.' },
-      docDate: { id: 'plan_date', header: 'Plan Date' },
-    });
+  it('Sr No continues from the page offset; Created Time is the India-time clock', () => {
+    const cols = leadColumns<Row>(spec);
+    expect(cols[0]?.render?.(row, 0)).toBe(26);
+    expect(cols[0]?.render?.(row, 4)).toBe(30);
+    expect(cols[cols.length - 1]?.render?.(row, 0)).toBe('14:35');
+  });
+
+  it('own doc no. sits between Item Name and Created On, locked', () => {
+    const cols = leadColumns<Row>({ ...spec, doc: { id: 'plan_no', header: 'Plan No.' } });
     const ids = cols.map((c) => c.id ?? '');
-    expect(ids).toEqual(['plan_no', 'plan_date', ...LEAD]);
-    expect(lockedLeadIds(cols, ids)).toEqual(['plan_no', 'plan_date', ...LEAD]);
-    const order = [...ids, 'qty'];
-    const st = { order, pins: [], hidden: [] };
-    const d = { order, pins: [], hidden: [] };
-    expect(applyLayoutOp(st, { type: 'hide', id: 'plan_no' }, ids, d)).toBe(st);
-    expect(applyLayoutOp(st, { type: 'move', id: 'qty', dir: -1 }, ids, d)).toBe(st);
+    expect(ids.slice(0, -1)).toEqual([...LEAD.slice(0, 6), 'plan_no', 'created_on']);
+    expect(lockedLeadIds(cols, ids)).toEqual([...LEAD.slice(0, 6), 'plan_no', 'created_on']);
+  });
+
+  it('ticking Created Time puts it right next to Created On', () => {
+    const ids = [...LEAD, 'created_time', 'qty', 'created_by'];
+    const d = { order: ids, pins: [], hidden: ['created_time'] };
+    const st = { order: ids, pins: [], hidden: ['created_time'] };
+    const shown = applyLayoutOp(st, { type: 'show', id: 'created_time' }, LEAD, d);
+    expect(shown.order.indexOf('created_time')).toBe(shown.order.indexOf('created_on') + 1);
   });
 
   it('JWSO list: JWSO No. and no Internal SO No. column', () => {
     const jw = { ...spec, so: 'jwso' as const, internalSoNo: undefined };
     const cols = leadColumns<Row>(jw);
     expect(cols.map((c) => c.header)).toEqual([
+      'Sr No',
       'JWSO No.',
       'POL',
-      'Created On',
       'Item Code',
       'Item Name',
+      'Created On',
+      'Created Time',
     ]);
+  });
+
+  it('Created By shows the short name, full name on hover, — when unknown', () => {
+    const c = createdByColumn<{ n: string | null }>({ createdByName: (r) => r.n });
+    expect(c.header).toBe('Created By');
+    expect(c.render?.({ n: 'Jinal Rakesh Patel' }, 0)).toBe('Jinal P.');
+    expect(c.title?.({ n: 'Jinal Rakesh Patel' })).toBe('Jinal Rakesh Patel');
+    expect(c.render?.({ n: null }, 0)).toBe('—');
   });
 
   it('a table without lead columns locks column 0 only', () => {

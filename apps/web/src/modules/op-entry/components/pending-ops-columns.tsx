@@ -11,7 +11,7 @@ import { ActionLink } from '@/components/shared/action-link';
 import type { JcOpEnriched } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
-import { leadColumns, type DataTableColumn } from '@/ui/data';
+import { createdByColumn, leadColumns, type DataTableColumn } from '@/ui/data';
 
 /** One op this machine actually produced on, with THAT machine's share of the
  *  completed qty pulled out of the op's per-machine breakdown. */
@@ -20,7 +20,7 @@ export interface MadeHereRow {
   qty: number;
 }
 
-/** Nothing hidden by default — the six lead columns are always shown (owner
+/** Nothing hidden by default — the locked lead block are always shown (owner
  *  rule 2026-10-31). Kept as the section's defaultHidden hook. */
 export const PENDING_OPS_DEFAULT_HIDDEN: string[] = [];
 
@@ -41,25 +41,18 @@ function jcLink(op: JcOpEnriched): React.JSX.Element {
   );
 }
 
-/** The six lead columns (owner rule 2026-10-31), read off a JcOpEnriched.
- *  `pick` lets the Made-here table reuse them against its { op, qty } row
- *  shape. Spread FIRST — `doc` (the JC No.) is drawn first and locked with
- *  the block; Op and the rest follow Item Name (ADR-261 amendment 31-Oct). */
+/** The locked lead block (ADR-261 rev 2026-11-02), read off a JcOpEnriched,
+ *  then JC Date as the first ordinary column. `pick` lets the Made-here table
+ *  reuse them against its { op, qty } row shape. Spread FIRST; Op and the
+ *  rest follow. */
 function identityColumns<T>(
   pick: (row: T) => JcOpEnriched,
   doc: DataTableColumn<T>,
+  firstRowNo: number,
 ): DataTableColumn<T>[] {
-  return leadColumns<T>({
+  const lead = leadColumns<T>({
+    firstRowNo,
     doc,
-    docDate: {
-      id: 'jc_date',
-      kind: 'date',
-      header: 'JC Date',
-      className: 'mono',
-      nowrap: true,
-      render: (row) => fmtDate(pick(row).jcDate ?? null),
-      filterValue: (row) => pick(row).jcDate ?? '',
-    },
     soNo: (row) => pick(row).soCode,
     internalSoNo: (row) => pick(row).soInternalNo,
     pol: (row) => pick(row).clientPoLineNo,
@@ -68,20 +61,36 @@ function identityColumns<T>(
     itemRev: (row) => pick(row).itemRevision,
     itemName: (row) => pick(row).itemName,
   });
+  return [
+    ...lead,
+    {
+      id: 'jc_date',
+      kind: 'date',
+      header: 'JC Date',
+      className: 'mono',
+      nowrap: true,
+      render: (row) => fmtDate(pick(row).jcDate ?? null),
+      filterValue: (row) => pick(row).jcDate ?? '',
+    },
+  ];
 }
 
 /** "Pending Jobs for this Machine" — the ready-to-process list. The ▶ Start
  *  button is added by the section as the trailing Action column. */
-export function pendingOpsColumns(): DataTableColumn<JcOpEnriched>[] {
+export function pendingOpsColumns(firstRowNo: number): DataTableColumn<JcOpEnriched>[] {
   const self = (op: JcOpEnriched): JcOpEnriched => op;
   return [
-    ...identityColumns<JcOpEnriched>(self, {
-      id: 'jc_no',
-      kind: 'code',
-      header: 'JC No.',
-      className: 'mono fw-700 cyan',
-      render: (op) => jcLink(op),
-    }),
+    ...identityColumns<JcOpEnriched>(
+      self,
+      {
+        id: 'jc_no',
+        kind: 'code',
+        header: 'JC No.',
+        className: 'mono fw-700 cyan',
+        render: (op) => jcLink(op),
+      },
+      firstRowNo,
+    ),
     {
       id: 'op_seq',
       kind: 'code',
@@ -107,20 +116,25 @@ export function pendingOpsColumns(): DataTableColumn<JcOpEnriched>[] {
       className: 'mono fw-700 amber',
       render: (op) => op.available,
     },
+    createdByColumn<JcOpEnriched>({ createdByName: (op) => op.createdByName }),
   ];
 }
 
 /** "Made on this Machine" — history only, no Start. Keyless table. */
-export function madeHereColumns(): DataTableColumn<MadeHereRow>[] {
+export function madeHereColumns(firstRowNo: number): DataTableColumn<MadeHereRow>[] {
   const pick = (row: MadeHereRow): JcOpEnriched => row.op;
   return [
-    ...identityColumns<MadeHereRow>(pick, {
-      id: 'jc_no',
-      kind: 'code',
-      header: 'JC No.',
-      className: 'mono fw-700 cyan',
-      render: (row) => jcLink(row.op),
-    }),
+    ...identityColumns<MadeHereRow>(
+      pick,
+      {
+        id: 'jc_no',
+        kind: 'code',
+        header: 'JC No.',
+        className: 'mono fw-700 cyan',
+        render: (row) => jcLink(row.op),
+      },
+      firstRowNo,
+    ),
     {
       id: 'op_seq',
       kind: 'code',
@@ -145,5 +159,6 @@ export function madeHereColumns(): DataTableColumn<MadeHereRow>[] {
       className: 'mono fw-700 green',
       render: (row) => row.qty,
     },
+    createdByColumn<MadeHereRow>({ createdByName: (row) => row.op.createdByName }),
   ];
 }

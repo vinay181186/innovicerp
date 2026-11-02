@@ -23,6 +23,7 @@ import type {
   ListJwDcOutwardQuery,
 } from '@innovic/shared';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { AuthorizationError } from '../../lib/errors';
 import { day, iso, str } from '../../lib/list-line-values';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
@@ -49,8 +50,9 @@ const ORDER_JOINS_SQL = sql.raw(`
   LEFT JOIN public.sales_orders so ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
 `);
 
-/** The six lead fields, off the joins above. `lineTs` = the row's created_at. */
-function leadSelect(lineTs: SQL, itemCodeText: SQL, itemNameText: SQL): SQL {
+/** The six lead fields, off the joins above. `lineTs` = the row's created_at;
+ *  `lineBy` = the created_by of that same record (ADR-261 rev Created By). */
+function leadSelect(lineTs: SQL, lineBy: SQL, itemCodeText: SQL, itemNameText: SQL): SQL {
   const rev = sql`COALESCE(sol.revision::text, jwl.revision::text)`;
   const code = sql`COALESCE(i.code, ${itemCodeText})`;
   return sql`
@@ -58,6 +60,7 @@ function leadSelect(lineTs: SQL, itemCodeText: SQL, itemNameText: SQL): SQL {
     COALESCE(so.code, jwo.code) AS "orderCode",
     ${polSql('sol', 'jwl')} AS "clientPoLineNo",
     ${lineTs} AS "createdAt",
+    ${createdByNameSql(lineBy)} AS "createdByName",
     (${lineTs} AT TIME ZONE 'Asia/Kolkata')::date AS "createdOn",
     ${code} AS "itemCode",
     ${rev} AS "itemRevision",
@@ -91,6 +94,7 @@ function leadOut(r: Record<string, unknown>) {
     jwCode: str(r['jwCode']),
     clientPoLineNo: str(r['clientPoLineNo']),
     createdAt: iso(r['createdAt']),
+    createdByName: str(r['createdByName']),
     itemCode: str(r['itemCode']),
     itemRevision: str(r['itemRevision']),
     itemName: str(r['itemName']),
@@ -146,7 +150,7 @@ export async function listJwDcOutwardLines(
         COALESCE(v.name, jdo.vendor_name_text, jdo.vendor_code_text) AS "vendorName",
         jdo.vehicle_no AS "vehicleNo", jdo.remarks,
         jdol.process_text AS "processText",
-        ${leadSelect(sql`COALESCE(jdol.created_at, jdo.created_at)`, sql`jdol.item_code_text`, sql`jdol.item_name_text`)},
+        ${leadSelect(sql`COALESCE(jdol.created_at, jdo.created_at)`, sql`COALESCE(jdol.created_by, jdo.created_by)`, sql`jdol.item_code_text`, sql`jdol.item_name_text`)},
         jdol.sent_qty::float8 AS "sentQty",
         COALESCE(ret.returned, 0)::float8 AS "receivedQty",
         -- Same rule as the document register, per line: a Cancelled challan has
@@ -257,7 +261,7 @@ export async function listJwDcInwardLines(
         jdo.jwpo_code_text AS "jwpoCodeText",
         COALESCE(v.name, jdo.vendor_name_text) AS "vendorName",
         jdil.process_text AS "processText",
-        ${leadSelect(sql`COALESCE(jdil.created_at, jdi.created_at)`, sql`jdil.item_code_text`, sql`jdil.item_name_text`)},
+        ${leadSelect(sql`COALESCE(jdil.created_at, jdi.created_at)`, sql`COALESCE(jdil.created_by, jdi.created_by)`, sql`jdil.item_code_text`, sql`jdil.item_name_text`)},
         jdil.received_qty::float8 AS "receivedQty",
         -- From 0172 the receipt is inspected on its GRN: OK / Rejected are that
         -- GRN line's QC figures; older receipts keep their own.

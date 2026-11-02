@@ -8,6 +8,7 @@ import type { StuckDashboardQuery, StuckDashboardResponse } from '@innovic/share
 import { DEFAULT_STUCK_THRESHOLDS, stuckDashboardQuerySchema } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { AuthorizationError } from '../../lib/errors';
 import { loadSoPhaseData } from '../../lib/so-phase-data';
 import { pageStuckItems } from './paging';
@@ -105,19 +106,27 @@ export async function getStuckDashboard(
     if (soIds.length > 0) {
       const intRows = (await tx.execute(sql`
         SELECT so.id::text AS id, so.internal_so_no AS internal,
-               to_char(so.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS created
+               to_char(so.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS created,
+               -- ADR-261 rev — Created By: who entered the SO (same record as Created On).
+               ${createdByNameSql(sql`so.created_by`)} AS created_by_name
         FROM sales_orders so
         WHERE so.company_id = ${companyId}::uuid
           AND so.id IN (${sql.join(
             soIds.map((id) => sql`${id}::uuid`),
             sql`, `,
           )})
-      `)) as unknown as Array<{ id: string; internal: string | null; created: string | null }>;
+      `)) as unknown as Array<{
+        id: string;
+        internal: string | null;
+        created: string | null;
+        created_by_name: string | null;
+      }>;
       const byId = new Map(intRows.map((r) => [r.id, r]));
       for (const it of items) {
         const so = byId.get(it.soId);
         it.soInternalNo = so?.internal ?? null;
         it.createdAt = so?.created ?? null;
+        it.createdByName = so?.created_by_name ?? null;
       }
     }
 

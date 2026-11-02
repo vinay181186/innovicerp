@@ -1,12 +1,12 @@
 // SO QC Status columns (ADR-199 fit table, tableKey qcDocsStatus). Ported from
-// the so-qc-status module. ADR-261: the six lead columns (SO No. · Internal SO
-// No. · POL · Created On · Item Code · Item Name), then Ln · QC Stages ·
+// the so-qc-status module. ADR-261: the locked lead block (SO No. · Internal SO
+// No. · POL · Item Code · Item Name), then Ln · QC Stages ·
 // Incoming QC · Docs · Overall; Order Qty rides in the ▸ expand by default.
 // The per-column totals feed the engine's showTotals footer (replacing the
 // hand-written TotalRow).
 
 import type { SoQcLine, SoQcStageOp } from '@innovic/shared';
-import { leadColumns, type DataTableColumn } from '@/ui/data';
+import { createdByColumn, leadColumns, type DataTableColumn } from '@/ui/data';
 
 /** Ids hidden into the ▸ detail by default (never a lead column). */
 export const SO_STATUS_DETAIL_IDS = ['order_qty'];
@@ -146,9 +146,11 @@ export interface SoStatusOrder {
 
 export function buildSoStatusColumns(order: SoStatusOrder | null): DataTableColumn<SoQcLine>[] {
   return [
-    // ADR-261 — the six lead columns first (SO No. / Internal SO No. are the
+    // ADR-261 — the locked lead block first (SO No. / Internal SO No. are the
     // screen's order; POL, item and Created On are the line's), then Ln.
     ...leadColumns<SoQcLine>({
+      // One SO's lines, unpaged — counted from 1.
+      firstRowNo: 1,
       soNo: () => order?.code ?? null,
       internalSoNo: () => order?.internalSoNo ?? null,
       pol: (l) => l.clientPoLineNo,
@@ -256,5 +258,6 @@ export function buildSoStatusColumns(order: SoStatusOrder | null): DataTableColu
         return <ProgressBar pct={pct} />;
       },
     },
+    createdByColumn<SoQcLine>({ createdByName: (l) => l.createdByName }),
   ];
 }

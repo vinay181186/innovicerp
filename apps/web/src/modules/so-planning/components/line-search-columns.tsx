@@ -10,7 +10,7 @@
 import type { PlanningLine, PlanningSoListItem } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
 import { docDrawingRev, itemCodeWithRev } from '@/lib/item-code';
-import { ROW_TINT, leadColumns, type DataTableColumn } from '@/ui/data';
+import { ROW_TINT, createdByColumn, leadColumns, type DataTableColumn } from '@/ui/data';
 import { JwChip, lineStatusOf } from './planning-shared';
 
 /** One result row: the SO it belongs to + the matching line. */
@@ -31,10 +31,13 @@ export function lineRowTint(line: PlanningLine): string | undefined {
 
 export function lineSearchColumns(): DataTableColumn<LineSearchRow>[] {
   return [
-    // Owner rule 2026-10-31 — the six lead columns first; Ln and every other
+    // Owner rule 2026-10-31 — the locked lead block first; Ln and every other
     // fact follow Item Name. This sheet's ▾ runs in the browser over the rows
     // already loaded, so the lead columns filter through `filterValue`.
+    // Every matching line of the orders on this page is drawn at once (the
+    // lines are not paged), so Sr No starts at 1.
     ...leadColumns<LineSearchRow>({
+      firstRowNo: 1,
       soNo: ({ so }) => so.soCode,
       internalSoNo: ({ so }) => so.soInternalNo,
       pol: ({ line }) => line.clientPoLineNo,
@@ -102,5 +105,9 @@ export function lineSearchColumns(): DataTableColumn<LineSearchRow>[] {
       },
       filterValue: ({ line }) => lineStatusOf(line).label,
     },
+    // Created By of the SAME record as Created On (the line, else its order).
+    createdByColumn<LineSearchRow>({
+      createdByName: ({ so, line }) => line.createdByName ?? so.createdByName,
+    }),
   ];
 }

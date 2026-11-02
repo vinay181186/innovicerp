@@ -66,6 +66,7 @@ import {
   requireFormAccess,
 } from '../../lib/access';
 import { ownDraftPlanRefusal } from './own-draft';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { polOf } from '../../lib/pol';
 import { drawingRevOf } from '../../lib/drawing-rev';
@@ -506,6 +507,8 @@ export async function listPlans(
         rmItemCode: PLAN_RM_ITEM_CODE_SQL,
         mlIsAssembly: PLAN_ML_IS_ASSEMBLY_SQL,
         soInternalNo: PLAN_SO_INTERNAL_NO_SQL,
+        // ADR-261 rev — Created By: who entered the plan (same row as Created On).
+        createdByName: createdByNameSql(plans.createdBy),
       })
       .from(plans)
       .leftJoin(items, and(eq(items.id, plans.itemId), isNull(items.deletedAt)))
@@ -570,6 +573,7 @@ export async function listPlans(
         return {
           ...toPlan(r.plan, r.rmItemCode, r.mlIsAssembly, r.drawingRev),
           soInternalNo: r.soInternalNo ?? null,
+          createdByName: r.createdByName ?? null,
           itemCode: r.itemCode ?? null,
           // Null passed through, not coerced to a blank string: the UI has to be
           // able to tell "this plan has no SO line" from "the revision is empty".

@@ -18,8 +18,9 @@ import type {
 } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { requireAnyFormAccess, STORE_VIEW_FORMS } from '../../lib/access';
-import { day, iso } from '../../lib/list-line-values';
+import { day, iso, str } from '../../lib/list-line-values';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { polSql } from '../../lib/pol';
 import { roundQty } from '../../lib/stock-ledger';
@@ -55,6 +56,7 @@ function toRow(r: Record<string, unknown>): StoreIssueLineRow {
     soInternalNo: s('so_internal_no'),
     clientPoLineNo: s('client_po_line_no'),
     createdAt: iso(r['created_at']),
+    createdByName: str(r['created_by_name']),
     itemCode: String(r['item_code'] ?? ''),
     itemRevision: s('item_revision'),
     itemName: s('item_name'),
@@ -120,6 +122,7 @@ export async function listStoreIssueLines(
         so.internal_so_no AS so_internal_no,
         ${polSql('sol', 'jwl')} AS client_po_line_no,
         COALESCE(l.created_at, si.created_at) AS created_at,
+        ${createdByNameSql(sql`COALESCE(l.created_by, si.created_by)`)} AS created_by_name,
         COALESCE(i.code, l.item_code_text) AS item_code,
         CASE
           WHEN sol.item_id IS NOT NULL AND sol.item_id = l.item_id THEN sol.revision::text

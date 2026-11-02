@@ -46,6 +46,7 @@ import {
   salesOrderLines,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { requireFormAccess } from '../../lib/access';
 import {
   AuthorizationError,
@@ -841,6 +842,8 @@ export async function listPartyMaterialIssues(
           jcItemRevision: sql<
             string | null
           >`COALESCE(${salesOrderLines.revision}::text, ${jobWorkOrderLines.revision}::text)`,
+          // ADR-261 rev — Created By: who entered this issue (its created_at is Created On).
+          createdByName: createdByNameSql(partyMaterialIssues.createdBy),
         })
         .from(partyMaterialIssues)
         .leftJoin(partyMaterials, eq(partyMaterials.id, partyMaterialIssues.partyMaterialId))
@@ -899,6 +902,7 @@ export async function listPartyMaterialIssues(
           jcItemName: r.jcItemName ?? null,
         }),
         materialStockQty: r.materialStockQty ?? null,
+        createdByName: r.createdByName ?? null,
       })),
       total: totals[0]?.value ?? 0,
     };

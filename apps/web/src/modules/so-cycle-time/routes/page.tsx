@@ -115,7 +115,11 @@ function SoCycleTimePage(): React.JSX.Element {
   };
 
   const averages = data?.averages ?? { design: 0, production: 0, qc: 0, assembly: 0, total: 0 };
-  const columns = useMemo(() => soCycleTimeColumns(averages.total), [averages.total]);
+  const firstRowNo = pageOffset(urlSearch.page) + 1;
+  const columns = useMemo(
+    () => soCycleTimeColumns(averages.total, firstRowNo),
+    [averages.total, firstRowNo],
+  );
 
   const title = 'SO Cycle Time Report';
   if (isLoading && !data) {

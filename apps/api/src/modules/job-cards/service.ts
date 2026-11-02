@@ -39,6 +39,7 @@ import {
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice, requireDeleteRight, requireFormAccess } from '../../lib/access';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import {
   AuthorizationError,
   ConflictError,
@@ -231,6 +232,7 @@ export async function listJobCards(
         jc.remarks AS "remarks", jc.closed_at AS "closedAt",
         jc.cancel_reason AS "cancelReason", jc.cancelled_at AS "cancelledAt",
         jc.created_at AS "createdAt", jc.created_by AS "createdBy",
+        ${createdByNameSql(sql`jc.created_by`)} AS "createdByName",
         jc.updated_at AS "updatedAt", jc.updated_by AS "updatedBy",
         i.code AS "itemCode", i.name AS "itemName",
         i.image_path AS "itemImagePath",
@@ -396,6 +398,7 @@ export async function getJobCard(id: string, user: AuthContext): Promise<JobCard
         jc.remarks AS "remarks", jc.closed_at AS "closedAt",
         jc.cancel_reason AS "cancelReason", jc.cancelled_at AS "cancelledAt",
         jc.created_at AS "createdAt", jc.created_by AS "createdBy",
+        ${createdByNameSql(sql`jc.created_by`)} AS "createdByName",
         jc.updated_at AS "updatedAt", jc.updated_by AS "updatedBy",
         i.code AS "itemCode", i.name AS "itemName",
         i.image_path AS "itemImagePath",
@@ -682,6 +685,7 @@ function toListItem(r: Record<string, unknown>): JobCardListItem {
     lastOpCompletedQty: Number(r['lastOpCompletedQty'] ?? 0),
     runningCount: Number(r['runningCount'] ?? 0),
     createdAt: tsLike(r['createdAt']),
+    createdByName: (r['createdByName'] as string | null) ?? null,
     createdBy: r['createdBy'] as string,
     updatedAt: tsLike(r['updatedAt']),
     updatedBy: r['updatedBy'] as string,

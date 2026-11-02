@@ -79,7 +79,7 @@ export function CapaView(props: {
   const [assignCapa, setAssignCapa] = useState<CapaRecord | null>(null);
   // The fit table's ▸ is the row's one expand control (CAPA Date + Root Cause).
   const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(new Set());
-  const columns = useMemo(() => capaListColumns(), []);
+  const columns = useMemo(() => capaListColumns(pageOffset(page) + 1), [page]);
 
   const items = useMemo(() => data?.items ?? [], [data]);
   const counters = data?.counters;

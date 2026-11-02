@@ -1,13 +1,13 @@
 // JWSO Master list columns (ADR-199 fit table). ADR-261 (owner 2026-10-31):
 // ONE ROW PER JWSO LINE, opening with the locked lead block (leadColumns,
-// so:'jwso' — JWSO No. · POL · Created On · Item Code/Rev · Item Name; no
+// so:'jwso' — JWSO No. · POL · Item Code/Rev · Item Name; no
 // Internal SO No. on a JWSO-only list). Then: JWSO Date · Customer · Client PO
 // No. · Order Qty · JC Qty · Dispatched · Pending · Customer Material · Due ·
 // JWSO Status — the line's own figures, the JWSO's header facts.
 
 import type { JobWorkOrderLineListRow } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
-import { type DataTableColumn, leadColumns } from '@/ui/data';
+import { createdByColumn, type DataTableColumn, leadColumns } from '@/ui/data';
 import { SoStatusBadge } from '@/modules/sales-orders/components/so-status-badge';
 import { SO_STATUS_LABEL } from '@/modules/sales-orders/lib/so-status-label';
 import { CustomerRmStatus } from './customer-rm-status';
@@ -36,12 +36,15 @@ export function jwLinePendingQty(jw: JobWorkOrderLineListRow): number {
 /** `today` (IST) drives the overdue colour on the Due column — a JWSO line still open
  *  past its own due date is late. */
 export function jwsoListColumns(
+  /** Sr No of the page's first row (offset + 1) — ADR-261 rev. */
+  firstRowNo: number,
   today: string,
   /** ADR-202 — JWSO ids with a pending edit; their status cell shows "Draft". */
   draftIds?: Set<string>,
 ): DataTableColumn<JobWorkOrderLineListRow>[] {
   return [
     ...leadColumns<JobWorkOrderLineListRow>({
+      firstRowNo,
       so: 'jwso',
       soNo: (r) => r.docCode,
       pol: (r) => r.clientPoLineNo,
@@ -210,5 +213,10 @@ export function jwsoListColumns(
         </span>
       ),
     },
+    // ADR-261 rev — Created By, the last data column.
+    createdByColumn({
+      createdByName: (r) => r.createdByName,
+      overrides: { sortFilterField: 'createdBy' },
+    }),
   ];
 }

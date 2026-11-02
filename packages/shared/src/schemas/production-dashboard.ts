@@ -42,6 +42,8 @@ export const productionDashboardJcSchema = z.object({
   soCode: z.string().nullable().optional(),
   soInternalNo: z.string().nullable().optional(),
   createdAt: z.string().nullable().optional(),
+  /** Created By (ADR-261 rev): name of the user who entered the SAME record as createdAt (full name, else e-mail before @); null when unknown. */
+  createdByName: z.string().nullable(),
   priority: z.enum(JC_PRIORITIES),
   orderQty: z.number().int(),
   doneOps: z.number().int().nonnegative(),
@@ -79,6 +81,8 @@ export const productionDashboardReadyOpSchema = z.object({
   soCode: z.string().nullable().optional(),
   soInternalNo: z.string().nullable().optional(),
   createdAt: z.string().nullable().optional(),
+  /** Created By (ADR-261 rev): name of the user who entered the SAME record as createdAt (full name, else e-mail before @); null when unknown. */
+  createdByName: z.string().nullable(),
   /** The machine the REMAINING qty runs on — forward-looking. Not who made
    *  `completedQty`: an op re-routed mid-flight made pieces elsewhere (ADR-126). */
   machineCode: z.string().nullable(),

@@ -21,7 +21,7 @@
 // recorded for the PR list.
 //
 // ADR-261 (2026-10-31): ONE ROW PER DC LINE (GET /delivery-challans/lines) —
-// the six lead columns first (SO No. · Internal SO No. · POL · Created On ·
+// the locked lead block first (SO No. · Internal SO No. · POL · Created On ·
 // Item Code · Item Name), then the DC's own facts. Row click / ⋯ still act on
 // the DC. The totals strip reads the same three line-grain totals.
 
@@ -130,7 +130,10 @@ function DeliveryChallansListPage(): React.JSX.Element {
   const rows = data?.items ?? [];
   // ADR-202 — DC ids with a pending edit; their status cell reads "Draft".
   const draftIds = usePendingEditIds('DeliveryChallan');
-  const columns = useMemo(() => dcListColumns(draftIds), [draftIds]);
+  const columns = useMemo(
+    () => dcListColumns((search.page - 1) * PAGE_SIZE + 1, draftIds),
+    [search.page, draftIds],
+  );
   const ospDcPrint = useOspDcPrint();
 
   function onPrintRegister(): void {
@@ -318,8 +321,8 @@ function DeliveryChallansListPage(): React.JSX.Element {
               message={error instanceof Error ? error.message : 'Could not load DCs. Try again.'}
             />
           ) : (
-            // THE shared FIT table (ADR-199), one row per DC line; the six lead
-            // columns are locked first. Rows tint by DC status, the row click
+            // THE shared FIT table (ADR-199), one row per DC line; the locked lead
+            // block are locked first. Rows tint by DC status, the row click
             // opens the DC, and Receive shows only while the DC is still out at
             // the vendor (status === 'issued') — the same gate the card carried.
             <Panel fill bodyPadding="none">

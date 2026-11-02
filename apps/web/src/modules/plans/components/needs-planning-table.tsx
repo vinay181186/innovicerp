@@ -20,7 +20,7 @@ import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
-import { DataTable, Panel, leadColumns, type DataTableColumn } from '@/ui/data';
+import { DataTable, Panel, createdByColumn, leadColumns, type DataTableColumn } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { SearchInput } from '@/ui/forms';
@@ -62,8 +62,9 @@ export function NeedsPlanningTable(): React.JSX.Element {
   // text columns (Item Name 16→12, Customer 12→9), never off a code/date/qty.
   const columns = useMemo<DataTableColumn<UnplannedOrderRow>[]>(
     () => [
-      // Owner rule 2026-10-31 — the six lead columns first; Ln comes after Item Name.
+      // Owner rule 2026-10-31 — the locked lead block first; Ln comes after Item Name.
       ...leadColumns<UnplannedOrderRow>({
+        firstRowNo: pageOffset(page) + 1,
         soNo: (r) => r.soCode,
         internalSoNo: (r) => r.soInternalNo,
         pol: (r) => r.clientPoLineNo,
@@ -157,8 +158,12 @@ export function NeedsPlanningTable(): React.JSX.Element {
         render: (r) => r.customerName ?? '—',
         title: (r) => r.customerName ?? '',
       },
+      createdByColumn<UnplannedOrderRow>({
+        createdByName: (r) => r.createdByName,
+        overrides: { sortFilterField: 'createdBy' },
+      }),
     ],
-    [],
+    [page],
   );
 
   return (

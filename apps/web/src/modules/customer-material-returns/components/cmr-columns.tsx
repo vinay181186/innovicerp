@@ -3,7 +3,7 @@
 // Sort & Filter.
 //
 // The lead block comes first and is locked (leadColumns, JWSO-only list: no
-// Internal SO No.): Return No. · JWSO No. · POL · Created On · Item Code/Rev ·
+// Internal SO No.): Return No. · JWSO No. · POL · Item Code/Rev ·
 // Item Name — the JWSO line the material belongs to. Then Return Date ·
 // Customer · Return Qty · Return Kind · Customer RM · Return Status ·
 // Vehicle No. Remarks, the cancel reason and History live in the ▸ row.
@@ -14,7 +14,7 @@
 import type { CustomerMaterialReturnKind, CustomerMaterialReturnLineRow } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
 import { statusText } from '@/lib/status-text';
-import { type DataTableColumn, leadColumns } from '@/ui/data';
+import { createdByColumn, type DataTableColumn, leadColumns } from '@/ui/data';
 
 /** The two kinds of returned line, in the words the store uses. */
 export const CMR_KIND_LABEL: Record<CustomerMaterialReturnKind, string> = {
@@ -34,9 +34,10 @@ const KIND_OPTIONS = [
 
 type Row = CustomerMaterialReturnLineRow;
 
-export function cmrColumns(): DataTableColumn<Row>[] {
+export function cmrColumns(firstRowNo: number): DataTableColumn<Row>[] {
   return [
     ...leadColumns<Row>({
+      firstRowNo,
       doc: {
         id: 'return_no',
         sortFilterField: 'code',
@@ -48,15 +49,6 @@ export function cmrColumns(): DataTableColumn<Row>[] {
             {r.docCode}
           </span>
         ),
-      },
-      docDate: {
-        id: 'return_date',
-        sortFilterField: 'returnDate',
-        kind: 'date',
-        header: 'Return Date',
-        className: 'mono text2',
-        nowrap: true,
-        render: (r) => fmtDate(r.docDate),
       },
       so: 'jwso',
       soNo: (r) => r.jwCode,
@@ -73,6 +65,15 @@ export function cmrColumns(): DataTableColumn<Row>[] {
         item_name: { sortFilterField: 'itemName' },
       },
     }),
+    {
+      id: 'return_date',
+      sortFilterField: 'returnDate',
+      kind: 'date',
+      header: 'Return Date',
+      className: 'mono text2',
+      nowrap: true,
+      render: (r) => fmtDate(r.docDate),
+    },
     {
       id: 'customer',
       sortFilterField: 'customer',
@@ -140,5 +141,10 @@ export function cmrColumns(): DataTableColumn<Row>[] {
       nowrap: true,
       render: (r) => r.vehicleNo ?? '—',
     },
+    // ADR-261 rev — Created By, the last data column.
+    createdByColumn({
+      createdByName: (r) => r.createdByName,
+      overrides: { sortFilterField: 'createdBy' },
+    }),
   ];
 }

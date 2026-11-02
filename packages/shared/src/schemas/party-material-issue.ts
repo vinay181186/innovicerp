@@ -65,6 +65,8 @@ export const partyMaterialIssueSchema = z.object({
 export type PartyMaterialIssue = z.infer<typeof partyMaterialIssueSchema>;
 
 export const partyMaterialIssueListItemSchema = partyMaterialIssueSchema.extend({
+  /** Created By (ADR-261 rev): name of the user who entered the SAME record as createdAt (full name, else e-mail before @); null when unknown. */
+  createdByName: z.string().nullable(),
   /** Live remaining party stock for the material after this issue. */
   materialStockQty: z.number().int().nonnegative().nullable(),
 });

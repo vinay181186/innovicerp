@@ -12,7 +12,13 @@
 import type { SoOverallStatus, SoOverviewRow } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate, todayIst } from '@/lib/date';
-import { leadColumns, ProgressBar, ROW_TINT, type DataTableColumn } from '@/ui/data';
+import {
+  createdByColumn,
+  leadColumns,
+  ProgressBar,
+  ROW_TINT,
+  type DataTableColumn,
+} from '@/ui/data';
 
 /** Column ids shown inside the ▸ detail row by default (fit engine
  *  `defaultHidden`): Client PO No., Equipment, Lines, SO Date. */
@@ -157,10 +163,14 @@ function soTypeLabel(type: SoOverviewRow['type']): string {
       : 'Component';
 }
 
-export function soOverviewColumns(): DataTableColumn<SoOverviewRow>[] {
+export function soOverviewColumns(
+  /** Sr No of this page's first row (server offset + 1). */
+  firstRowNo: number,
+): DataTableColumn<SoOverviewRow>[] {
   return [
     // ADR-261 lead columns — one row per ORDER, so no POL / Item columns.
     ...leadColumns<SoOverviewRow>({
+      firstRowNo,
       soNo: (row) => row.code,
       internalSoNo: (row) => row.internalSoNo,
       createdOn: (row) => row.createdAt,
@@ -332,5 +342,9 @@ export function soOverviewColumns(): DataTableColumn<SoOverviewRow>[] {
       nowrap: true,
       render: (row) => <span className="text2">{fmtDate(row.soDate)}</span>,
     },
+    createdByColumn<SoOverviewRow>({
+      createdByName: (row) => row.createdByName,
+      overrides: { sortFilterField: 'createdBy' },
+    }),
   ];
 }

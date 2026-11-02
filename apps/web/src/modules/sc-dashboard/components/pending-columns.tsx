@@ -1,19 +1,23 @@
 // Pending PO Tracker columns for the ADR-199 fit sheet (the headline table on
 // the Supply Chain Dashboard, carrying TABLE_KEYS.scDashboard). One row per PO
-// line. ADR-261: opens with PO No. and the six lead columns (SO No. — the SO,
-// else the JWSO — · Internal SO No. · POL · Created On · Item Code · Item
+// line. ADR-261: opens with PO No. and the locked lead block (SO No. — the SO,
+// else the JWSO — · Internal SO No. · POL · Item Code · Item
 // Name), then Ln · PO Date · Vendor · quantities; the money columns drop out when
 // the server hides prices.
 
 import type { ScPendingLine } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
-import { leadColumns, type DataTableColumn } from '@/ui/data';
+import { createdByColumn, type DataTableColumn, leadColumns } from '@/ui/data';
 import { inr, PO_STATUS_OPTIONS, statusBadge } from './sc-format';
 
-export function pendingColumns(priceHidden: boolean): DataTableColumn<ScPendingLine>[] {
+export function pendingColumns(
+  firstRowNo: number,
+  priceHidden: boolean,
+): DataTableColumn<ScPendingLine>[] {
   const cols: DataTableColumn<ScPendingLine>[] = [
     ...leadColumns<ScPendingLine>({
+      firstRowNo,
       doc: {
         id: 'po_no',
         sortFilterField: 'poNo',
@@ -32,13 +36,6 @@ export function pendingColumns(priceHidden: boolean): DataTableColumn<ScPendingL
           </Link>
         ),
       },
-      docDate: {
-        id: 'po_date',
-        sortFilterField: 'poDate',
-        kind: 'date',
-        header: 'PO Date',
-        render: (p) => fmtDate(p.poDate),
-      },
       soNo: (p) => p.soCode,
       internalSoNo: (p) => p.soInternalNo,
       pol: (p) => p.clientPoLineNo,
@@ -55,6 +52,13 @@ export function pendingColumns(priceHidden: boolean): DataTableColumn<ScPendingL
         item_name: { sortFilterField: 'itemName' },
       },
     }),
+    {
+      id: 'po_date',
+      sortFilterField: 'poDate',
+      kind: 'date',
+      header: 'PO Date',
+      render: (p) => fmtDate(p.poDate),
+    },
     {
       id: 'ln',
       sortFilterField: 'lineNo',
@@ -144,5 +148,12 @@ export function pendingColumns(priceHidden: boolean): DataTableColumn<ScPendingL
       return <span className={`badge ${sb.cls}`}>{sb.label}</span>;
     },
   });
+  // ADR-261 rev — Created By, the last data column.
+  cols.push(
+    createdByColumn({
+      createdByName: (r) => r.createdByName,
+      overrides: { sortFilterField: 'createdBy' },
+    }),
+  );
   return cols;
 }

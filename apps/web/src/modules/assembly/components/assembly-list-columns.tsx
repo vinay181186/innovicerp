@@ -7,7 +7,7 @@
 import type { AssemblyListItem } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
-import { leadColumns, ROW_TINT, type DataTableColumn } from '@/ui/data';
+import { createdByColumn, leadColumns, ROW_TINT, type DataTableColumn } from '@/ui/data';
 
 type StatusKey = AssemblyListItem['status'];
 
@@ -48,12 +48,16 @@ export function statusBadgeLabel(row: AssemblyListItem): string {
   }
 }
 
-export function assemblyListColumns(today: string): DataTableColumn<AssemblyListItem>[] {
+export function assemblyListColumns(
+  today: string,
+  firstRowNo: number,
+): DataTableColumn<AssemblyListItem>[] {
   return [
     // ADR-261 lead columns. One row = one assembly for the SO's equipment item
     // (its first SO line), so Item Code / Item Name are drawn; an order-level
     // row has no single POL, so that column is left out.
     ...leadColumns<AssemblyListItem>({
+      firstRowNo,
       doc: {
         id: 'bom_no',
         sortFilterField: 'bomCode',
@@ -158,5 +162,9 @@ export function assemblyListColumns(today: string): DataTableColumn<AssemblyList
         <span className={`badge ${STATUS_BADGE_CLASS[row.status]}`}>{statusBadgeLabel(row)}</span>
       ),
     },
+    createdByColumn<AssemblyListItem>({
+      createdByName: (row) => row.createdByName,
+      overrides: { sortFilterField: 'createdBy' },
+    }),
   ];
 }

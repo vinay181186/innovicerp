@@ -4,6 +4,7 @@
 
 import { sql } from 'drizzle-orm';
 
+import { createdByNameSql } from '../../lib/created-by-sql';
 import type { SfColumnMap } from '../../lib/list-query';
 import { polSql } from '../../lib/pol';
 
@@ -23,6 +24,7 @@ export const OSP_WIP_SF_COLUMNS: SfColumnMap = {
   soInternalNo: { sql: sql`so.internal_so_no`, type: 'text' },
   // ADR-261 Created On — the op's own created_at (jc_ops wo join).
   createdOn: { sql: sql`(wo.created_at AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
+  createdBy: { sql: createdByNameSql(sql`wo.created_by`), type: 'text' },
   vendorName: { sql: sql`w.vendor_name`, type: 'text' },
   operation: { sql: sql`w.operation`, type: 'text' },
   orderQty: { sql: sql`w.order_qty`, type: 'num' },

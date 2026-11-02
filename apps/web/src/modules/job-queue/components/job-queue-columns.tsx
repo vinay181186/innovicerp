@@ -10,9 +10,9 @@
 // One row per pending op. The eight on-sheet columns below (first pinned =
 // JC No.) carry the facts the shop floor reads at a glance; the rest ride in
 // the row's ▸ detail via JOB_QUEUE_HIDDEN_IDS. Labels per docs/NAMING.md
-// (JC No., Sr No, Op, Operation, Item Code, Available, Op Status, Due Date,
+// (Sr No, JC No., Queue No., Op, Operation, Item Code, Available, Op Status, Due Date,
 // POL, Item Name, SO No., Internal SO No., Customer, Priority, Order Qty,
-// Completed, Actual Machine).
+// Completed, Actual Machine, Created By).
 
 import { ActionLink } from '@/components/shared/action-link';
 import type { JobQueueMachine, JobQueueRow } from '@innovic/shared';
@@ -21,7 +21,7 @@ import { ActualMachineLine } from '@/components/shared/machine-split';
 import { fmtDate } from '@/lib/date';
 import { OP_STATUS } from '@/modules/job-cards/lib/jc-op-labels';
 import { renderJcOpsLink } from '@/modules/jc-ops/components/jc-ops-columns';
-import { ROW_TINT, RowMenu, leadColumns } from '@/ui/data';
+import { ROW_TINT, RowMenu, createdByColumn, leadColumns } from '@/ui/data';
 import type { DataTableColumn } from '@/ui/data';
 
 /** Legacy L10406/L10407 — the ▲/▼ queue-move buttons are inline-styled. */
@@ -119,17 +119,22 @@ export const JOB_QUEUE_HIDDEN_IDS: string[] = [
 ];
 
 /**
- * The columns of the one queue table. Sr No reads the row's place in its
+ * The columns of the one queue table. Queue No. reads the row's place in its
  * machine's FULL queue (not the filtered rows), so it stays true on any page
  * and while a search narrows what is shown.
  */
-export function jobQueueColumns(opts: { today: string }): DataTableColumn<JobQueueSheetRow>[] {
-  const { today } = opts;
+export function jobQueueColumns(opts: {
+  today: string;
+  /** Sr No of the page's first row (server offset + 1). */
+  firstRowNo: number;
+}): DataTableColumn<JobQueueSheetRow>[] {
+  const { today, firstRowNo } = opts;
   return [
-    // Owner rule 2026-10-31 (ADR-261 amendment) — JC No. first, then the six
-    // lead columns, all locked (always shown); Sr No and every other fact
-    // follow Item Name.
+    // ADR-261 rev 2026-11-02 — JC No. inside the lead block
+    // (after Item Name), all locked (always shown); Queue No. and every other fact
+    // follow.
     ...leadColumns<JobQueueSheetRow>({
+      firstRowNo,
       doc: {
         id: 'jc_no',
         header: 'JC No.',
@@ -147,15 +152,6 @@ export function jobQueueColumns(opts: { today: string }): DataTableColumn<JobQue
           </ActionLink>
         ),
       },
-      docDate: {
-        id: 'jc_date',
-        kind: 'date',
-        header: 'JC Date',
-        className: 'mono',
-        nowrap: true,
-        render: (r) => fmtDate(r.jcDate ?? null),
-        filterValue: (r) => r.jcDate ?? '',
-      },
       soNo: (r) => r.soCode,
       internalSoNo: (r) => r.soInternalNo,
       pol: (r) => r.clientPoLineNo,
@@ -165,8 +161,18 @@ export function jobQueueColumns(opts: { today: string }): DataTableColumn<JobQue
       itemName: (r) => r.itemName,
     }),
     {
-      id: 'sr_no',
-      header: 'Sr No',
+      id: 'jc_date',
+      kind: 'date',
+      header: 'JC Date',
+      className: 'mono',
+      nowrap: true,
+      render: (r) => fmtDate(r.jcDate ?? null),
+      filterValue: (r) => r.jcDate ?? '',
+    },
+    {
+      // The op's place in its machine's queue — NOT the row counter (Sr No).
+      id: 'queue_no',
+      header: 'Queue No.',
       kind: 'code',
       className: 'mono fw-700',
       nowrap: true,
@@ -280,6 +286,7 @@ export function jobQueueColumns(opts: { today: string }): DataTableColumn<JobQue
         <ActualMachineLine planned={r.queueMachine.machineCode} machines={r.machines} />
       ),
     },
+    createdByColumn<JobQueueSheetRow>({ createdByName: (r) => r.createdByName }),
   ];
 }
 

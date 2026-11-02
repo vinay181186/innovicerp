@@ -143,6 +143,8 @@ export type PurchaseRequestDetail = z.infer<typeof purchaseRequestDetailSchema>;
  *  source JC op (jc code + op_seq + operation) when set. Mirrors the legacy
  *  PR list columns (`renderPRList()` in the legacy HTML). */
 export const purchaseRequestListItemSchema = purchaseRequestSchema.extend({
+  /** Created By (ADR-261 rev): name of the user who entered the SAME record as createdAt (full name, else e-mail before @); null when unknown. */
+  createdByName: z.string().nullable(),
   /** Told, not inferred. `false` means the server stripped money it may not
    *  send; absent means money is present. See the note on the detail shape. */
   priceVisible: z.boolean().optional(),

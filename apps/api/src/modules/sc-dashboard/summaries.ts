@@ -15,6 +15,7 @@ import type {
 import { scTableQuerySchema } from '@innovic/shared';
 import { type SQL, sql } from 'drizzle-orm';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { readSf, sfOrderBy, sfWhere, type SfColumnMap } from '../../lib/list-query';
 import { poLinePendingRaw } from '../../lib/po-pending';
 import { requireCompany, scShowMoney } from './pending';
@@ -132,6 +133,7 @@ export async function listScSos(user: AuthContext, raw: ScTableQuery): Promise<S
     SELECT
       so.id AS so_ref_id, so.code AS so_code, so.internal_so_no AS so_internal_no,
       so.created_at AS so_created_at,
+      ${createdByNameSql(sql`so.created_by`)} AS so_created_by_name,
       COUNT(pol.id)::int AS lines,
       COUNT(DISTINCT po.vendor_id)::int AS unique_vendors,
       COALESCE(SUM(pol.qty), 0) AS total_qty,
@@ -144,12 +146,13 @@ export async function listScSos(user: AuthContext, raw: ScTableQuery): Promise<S
     LEFT JOIN sales_order_lines sol ON sol.id = pol.source_so_line_id
     LEFT JOIN sales_orders so ON so.id = sol.sales_order_id
     WHERE po.company_id = ${companyId}::uuid AND po.deleted_at IS NULL AND ${OPEN_PO}
-    GROUP BY so.id, so.code, so.internal_so_no, so.created_at`;
+    GROUP BY so.id, so.code, so.internal_so_no, so.created_at, so.created_by`;
   type SRow = GroupRow & {
     so_ref_id: string | null;
     so_code: string | null;
     so_internal_no: string | null;
     so_created_at: string | Date | null;
+    so_created_by_name: string | null;
     unique_vendors: number;
   };
   const { rows, total } = await pageOf<SRow>(
@@ -166,6 +169,7 @@ export async function listScSos(user: AuthContext, raw: ScTableQuery): Promise<S
       soCode: r.so_code,
       soInternalNo: r.so_internal_no,
       createdAt: isoOrNull(r.so_created_at),
+      createdByName: r.so_created_by_name ?? null,
       lines: n(r.lines),
       uniqueVendors: n(r.unique_vendors),
       totalQty: n(r.total_qty),
@@ -191,7 +195,7 @@ export async function listScPoSummary(
   const inner = sql`
     WITH po_agg AS (
       SELECT
-        po.id, po.code, po.po_date, po.status, po.vendor_id, po.vendor_code_text, po.created_at,
+        po.id, po.code, po.po_date, po.status, po.vendor_id, po.vendor_code_text, po.created_at, po.created_by,
         po.sgst_pct, po.cgst_pct, po.igst_pct, po.tax_type,
         COUNT(pol.id)::int AS lines,
         COALESCE(SUM(pol.qty), 0) AS total_qty,
@@ -219,6 +223,7 @@ export async function listScPoSummary(
     )
     SELECT
       p.id AS po_id, p.code AS po_no, p.po_date, p.created_at AS po_created_at,
+      ${createdByNameSql(sql`p.created_by`)} AS po_created_by_name,
       COALESCE(v.name, vt.name, p.vendor_code_text) AS vendor_name,
       COALESCE(v.code, vt.code, p.vendor_code_text) AS vendor_code,
       so.code AS so_code, so.internal_so_no AS so_internal_no,
@@ -242,6 +247,7 @@ export async function listScPoSummary(
     so_code: string | null;
     so_internal_no: string | null;
     po_created_at: string | Date | null;
+    po_created_by_name: string | null;
     lines: number;
     total_qty: Num;
     received_qty: Num;
@@ -271,6 +277,7 @@ export async function listScPoSummary(
     soCode: r.so_code,
     soInternalNo: r.so_internal_no,
     createdAt: isoOrNull(r.po_created_at),
+    createdByName: r.po_created_by_name ?? null,
     lines: n(r.lines),
     totalQty: n(r.total_qty),
     receivedQty: n(r.received_qty),

@@ -63,6 +63,8 @@ export const qcDocumentSchema = z.object({
   storagePath: z.string(),
   uploadedByText: z.string().nullable(),
   createdAt: z.string(),
+  /** Created By (ADR-261 rev): name of the user who entered the SAME record as createdAt (full name, else e-mail before @); null when unknown. */
+  createdByName: z.string().nullable(),
 });
 export type QcDocument = z.infer<typeof qcDocumentSchema>;
 

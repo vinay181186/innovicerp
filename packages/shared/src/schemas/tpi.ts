@@ -83,6 +83,8 @@ export const tpiCompletedRowSchema = z.object({
   qcReportName: z.string().nullable(),
   /** ADR-261 lead Created On — the TPI log row's own created_at (op_log). */
   createdAt: z.string().nullable().default(null),
+  /** Created By (ADR-261 rev): name of the user who entered the SAME record as createdAt (full name, else e-mail before @); null when unknown. */
+  createdByName: z.string().nullable(),
 });
 export type TpiCompletedRow = z.infer<typeof tpiCompletedRowSchema>;
 

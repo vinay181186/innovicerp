@@ -20,6 +20,7 @@ import { sql, type SQL } from 'drizzle-orm';
 import type { z } from 'zod';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice } from '../../lib/access';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { AuthorizationError } from '../../lib/errors';
 import { likeEscape, readSf, sfOrderBy, sfWhere, type SfColumnMap } from '../../lib/list-query';
 
@@ -32,6 +33,8 @@ const SO_COSTING_SF_COLUMNS: SfColumnMap = {
   soInternalNo: { sql: sql`b.so_internal_no`, type: 'text' },
   // ADR-261 Created On — the SO's created_at as the India-time day.
   createdOn: { sql: sql`(b.created_at AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
+  // ADR-261 rev — Created By: who entered the SO (the base CTE column).
+  createdBy: { sql: sql`b.created_by_name`, type: 'text' },
   customer: { sql: sql`b.customer`, type: 'text' },
   lines: { sql: sql`b.line_count`, type: 'num' },
   totalQty: { sql: sql`b.total_qty`, type: 'num' },
@@ -56,6 +59,7 @@ type ListRow = {
   so_no: string;
   so_internal_no: string | null;
   created_iso: string | null;
+  created_by_name: string | null;
   customer: string | null;
   cost_center: string | null;
   cc_name: string | null;
@@ -176,6 +180,8 @@ export async function listSoCosting(
           so.id AS so_id, so.code AS so_no, so.internal_so_no AS so_internal_no,
           so.created_at AS created_at,
           to_char(so.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS created_iso,
+          -- ADR-261 rev — Created By: who entered the SO (same record as Created On).
+          ${createdByNameSql(sql`so.created_by`)} AS created_by_name,
           COALESCE(cl.name, so.customer_name) AS customer,
           -- Cost Center is no longer captured on the SO; every SO is its own
           -- cost centre, so fall back to the SO No. when cost_center is empty.
@@ -226,6 +232,7 @@ export async function listSoCosting(
         soNo: r.so_no,
         soInternalNo: r.so_internal_no,
         createdAt: r.created_iso,
+        createdByName: r.created_by_name ?? null,
         customer: r.customer,
         lineCount: Number(r.line_count) || 0,
         totalQty: Number(r.total_qty) || 0,

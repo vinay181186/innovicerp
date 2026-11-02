@@ -15,6 +15,7 @@ import { sql } from 'drizzle-orm';
 import { REV_KEY_BLANK } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { AuthorizationError } from '../../lib/errors';
 
 /** Live, non-cancelled SO + JWSO lines of MAKE items, one shape. */
@@ -23,7 +24,9 @@ const LIVE_LINES = (companyId: string) => sql`
          l.status::text AS status, l.item_id, UPPER(TRIM(l.revision)) AS rev,
          (NULLIF(TRIM(l.drawing_file_path), '') IS NOT NULL) AS has_drawing,
          l.item_revision_id, l.created_at,
-         h.internal_so_no AS so_internal_no, l.client_po_line_no
+         h.internal_so_no AS so_internal_no, l.client_po_line_no,
+         -- ADR-261 rev — who entered the line (same record as Created On).
+         ${createdByNameSql(sql`l.created_by`)} AS created_by_name
     FROM public.sales_order_lines l
     JOIN public.sales_orders h ON h.id = l.sales_order_id
     JOIN public.items i ON i.id = l.item_id AND i.procurement_type = 'make'
@@ -32,7 +35,7 @@ const LIVE_LINES = (companyId: string) => sql`
   UNION ALL
   SELECT 'JWSO', h.id, h.code, l.id, l.line_no, l.status::text, l.item_id, UPPER(TRIM(l.revision)),
          (NULLIF(TRIM(l.drawing_file_path), '') IS NOT NULL), l.item_revision_id, l.created_at,
-         NULL::text, l.client_po_line_no
+         NULL::text, l.client_po_line_no, ${createdByNameSql(sql`l.created_by`)}
     FROM public.job_work_order_lines l
     JOIN public.job_work_orders h ON h.id = l.job_work_order_id
     JOIN public.items i ON i.id = l.item_id AND i.procurement_type = 'make'
@@ -103,6 +106,7 @@ export async function getItemRevisionFixList(
       reason: r['conflict'] ? 'conflict' : 'rev_zero',
       soInternalNo: (r['so_internal_no'] as string | null) ?? null,
       clientPoLineNo: (r['client_po_line_no'] as string | null) ?? null,
+      createdByName: (r['created_by_name'] as string | null) ?? null,
     }));
 
     const st = (await tx.execute(sql`

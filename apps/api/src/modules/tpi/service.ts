@@ -18,6 +18,7 @@ import type {
   TpiResponse,
 } from '@innovic/shared';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { OP_LOG_QC_REMARKS } from '../../lib/op-log-qc-remarks';
 import { polSql } from '../../lib/pol';
 import { AuthorizationError } from '../../lib/errors';
@@ -95,7 +96,7 @@ const COMPLETED_SELECT = sql`
   ol.tpi_inspector AS "inspector", ol.tpi_organization AS "organization",
   ol.tpi_cert_no AS "certNo", ${OP_LOG_QC_REMARKS} AS "remarks",
   ol.qc_report_path AS "qcReportPath", ol.qc_report_name AS "qcReportName",
-  ol.created_at AS "createdAt"`;
+  ol.created_at AS "createdAt", ${createdByNameSql(sql`ol.created_by`)} AS "createdByName"`;
 const COMPLETED_ORDER = sql`ol.log_date DESC, ol.id DESC`;
 
 /** `AND (… ILIKE …)` over every text the two lists show. */
@@ -166,6 +167,7 @@ function toCompleted(r: Raw): TpiCompletedRow {
     qcReportPath: s(r['qcReportPath']),
     qcReportName: s(r['qcReportName']),
     createdAt: tsOrNull(r['createdAt']),
+    createdByName: s(r['createdByName']),
   };
 }
 

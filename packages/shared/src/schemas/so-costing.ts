@@ -25,6 +25,8 @@ export const soCostingRowSchema = z.object({
   /** ADR-261 Created On — the SO's created_at (ISO); optional while web/API
    *  deploy apart. */
   createdAt: z.string().nullable().optional(),
+  /** Created By (ADR-261 rev): name of the user who entered the SAME record as createdAt (full name, else e-mail before @); null when unknown. */
+  createdByName: z.string().nullable(),
   customer: z.string().nullable(),
   lineCount: z.number().int().nonnegative(),
   totalQty: z.number().int().nonnegative(),

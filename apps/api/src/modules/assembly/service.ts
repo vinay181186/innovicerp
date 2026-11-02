@@ -607,6 +607,7 @@ export async function listAssemblies(
         partName: r.itemName,
         itemRevision: r.itemRevision,
         createdAt: r.createdAt,
+        createdByName: r.createdByName,
         orderQty,
         assembledQty,
         dispatchedQty,

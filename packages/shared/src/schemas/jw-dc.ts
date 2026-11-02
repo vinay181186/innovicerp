@@ -328,6 +328,8 @@ const jwDcLeadFields = {
   clientPoLineNo: z.string().nullable(),
   /** The line's own created_at (ISO timestamp). */
   createdAt: z.string(),
+  /** Created By (ADR-261 rev): name of the user who entered the SAME record as createdAt (full name, else e-mail before @); null when unknown. */
+  createdByName: z.string().nullable(),
   itemCode: z.string().nullable(),
   /** The customer's drawing revision off the SO / JWSO line behind the row. */
   itemRevision: z.string().nullable(),

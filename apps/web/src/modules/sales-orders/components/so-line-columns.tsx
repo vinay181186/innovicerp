@@ -1,7 +1,7 @@
 // SO detail's two fit tables (ADR-199): the line items and the delivery
 // schedule. Moved out of routes/detail.tsx to keep that file from growing.
-// ADR-261: the line table opens with the six lead columns (SO No. · Internal
-// SO No. — the page's order — · POL · Created On · Item Code (CODE/REV) · Item
+// ADR-261: the line table opens with the locked lead block (SO No. · Internal
+// SO No. — the page's order — · POL · Item Code (CODE/REV) · Item
 // Name), then Ln and Image; Drawing and SO Status draw their parts side by side.
 
 import type { DrawingSource, SalesOrderDetail, SalesOrderLine, SoStatus } from '@innovic/shared';
@@ -11,7 +11,7 @@ import { itemCodeWithRev } from '@/lib/item-code';
 import { ItemRevLink } from '@/modules/item-revisions/components/item-rev-link';
 import { inrFormat } from '@/lib/print/doc-print';
 import { Button, Icon, StatusBadge } from '@/ui/core';
-import { leadColumns, type DataTableColumn, type RowMenuItem } from '@/ui/data';
+import { createdByColumn, leadColumns, type DataTableColumn, type RowMenuItem } from '@/ui/data';
 import { SO_STATUS_LABEL } from '../lib/so-status-label';
 import { closableQty } from './so-close-modal';
 import { SoLineShortClosedBadge } from './so-fulfilment-badge';
@@ -41,7 +41,9 @@ export function lineColumns(opts: {
 }): DataTableColumn<SalesOrderLine>[] {
   const { priceHidden, soCode, internalSoNo, onPreview } = opts;
   return [
+    // Every line of the order on one unpaged table, so Sr No starts at 1.
     ...leadColumns<SalesOrderLine>({
+      firstRowNo: 1,
       soNo: () => soCode,
       internalSoNo: () => internalSoNo,
       pol: (l) => l.clientPoLineNo,
@@ -268,6 +270,7 @@ export function lineColumns(opts: {
         </span>
       ),
     },
+    createdByColumn<SalesOrderLine>({ createdByName: (l) => l.createdByName }),
   ];
 }
 

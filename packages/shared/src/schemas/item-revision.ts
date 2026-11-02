@@ -220,6 +220,8 @@ export const fixListLineSchema = z.object({
   hasDrawing: z.boolean(),
   routeCardCode: z.string().nullable(),
   createdAt: z.string(),
+  /** Created By (ADR-261 rev): name of the user who entered the SAME record as createdAt (full name, else e-mail before @); null when unknown. */
+  createdByName: z.string().nullable(),
   reason: z.enum(['conflict', 'rev_zero']),
   /** ADR-261 lead columns: the SO's Internal SO No. (null on a JWSO line). */
   soInternalNo: z.string().nullable().optional(),

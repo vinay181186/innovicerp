@@ -70,8 +70,14 @@ function QcHistoryPage(): React.JSX.Element {
   const [q, setQ] = useState<string | undefined>(undefined);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  const pendingColumns = useMemo(() => qcPendingColumns(), []);
-  const entryColumns = useMemo(() => qcEntryColumns(), []);
+  const pendingColumns = useMemo(
+    () => qcPendingColumns(pageOffset(search.page) + 1),
+    [search.page],
+  );
+  const entryColumns = useMemo(
+    () => qcEntryColumns(pageOffset(search.logPage) + 1),
+    [search.logPage],
+  );
 
   const gotoPages = useCallback(
     (next: { page?: number; logPage?: number }): void => {

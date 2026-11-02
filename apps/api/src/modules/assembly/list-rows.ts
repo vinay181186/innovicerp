@@ -7,6 +7,7 @@
 import { sql } from 'drizzle-orm';
 
 import type { DbTransaction } from '../../db/with-user-context';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { likeEscape, readSf, sfOrderBy, sfWhere, type SfColumnMap } from '../../lib/list-query';
 
 /** The list's sortable / filterable fields — each the SAME expression the row shows. */
@@ -17,6 +18,8 @@ export const ASSEMBLY_SF_COLUMNS: SfColumnMap = {
   // ADR-261 lead columns — Created On (the SO's created_at, India day) and the
   // equipment item (the order's first live line, the same `eq` join below).
   createdOn: { sql: sql`(so.created_at AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
+  // ADR-261 rev — Created By: who entered the SO (the same record as Created On).
+  createdBy: { sql: createdByNameSql(sql`so.created_by`), type: 'text' },
   itemCode: { sql: sql`eq.item_code`, type: 'text' },
   itemName: { sql: sql`eq.part_name`, type: 'text' },
   customerName: { sql: sql`so.customer_name`, type: 'text' },
@@ -32,6 +35,8 @@ export interface AssemblySoRow {
   soInternalNo: string | null;
   /** ADR-261 — the SO's created_at (ISO). */
   createdAt: string | null;
+  /** ADR-261 rev — who entered the SO. */
+  createdByName: string | null;
   customerName: string | null;
   bomMasterId: string | null;
   /** ADR-261 — the equipment item: the order's first live SO line. */
@@ -61,6 +66,7 @@ export async function loadAssemblySoRows(
            so.customer_name AS "customerName",
            so.bom_master_id AS "bomMasterId",
            to_char(so.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "createdAt",
+           ${createdByNameSql(sql`so.created_by`)} AS "createdByName",
            eq.item_code AS "itemCode", eq.revision AS "itemRevision", eq.part_name AS "itemName"
     FROM public.sales_orders so
     LEFT JOIN public.bom_masters bm ON bm.id = so.bom_master_id AND bm.deleted_at IS NULL
@@ -93,6 +99,7 @@ export async function loadAssemblySoRows(
     soCode: r['soCode'] as string,
     soInternalNo: (r['soInternalNo'] as string | null) ?? null,
     createdAt: (r['createdAt'] as string | null) ?? null,
+    createdByName: (r['createdByName'] as string | null) ?? null,
     customerName: (r['customerName'] as string | null) ?? null,
     bomMasterId: (r['bomMasterId'] as string | null) ?? null,
     itemCode: (r['itemCode'] as string | null) ?? null,

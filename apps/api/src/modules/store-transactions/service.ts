@@ -7,6 +7,7 @@
 
 import { type SQL, sql } from 'drizzle-orm';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { requireAnyFormAccess, STORE_VIEW_FORMS } from '../../lib/access';
 import { AuthorizationError } from '../../lib/errors';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
@@ -111,6 +112,7 @@ export async function listStoreTransactions(
         st.stock_after AS "stockAfter",
         st.remarks,
         st.created_at AS "createdAt", st.created_by AS "createdBy",
+        ${createdByNameSql(sql`st.created_by`)} AS "createdByName",
         i.code AS "itemCode",
         i.name AS "itemName",
         ${STOCK_LEDGER_SO_SELECT}
@@ -175,6 +177,7 @@ function toListItem(r: Record<string, unknown>): StoreTransactionListItem {
     remarks: (r['remarks'] as string | null) ?? null,
     createdAt: tsLike(r['createdAt']),
     createdBy: r['createdBy'] as string,
+    createdByName: (r['createdByName'] as string | null) ?? null,
     itemCode: (r['itemCode'] as string | null) ?? null,
     itemName: (r['itemName'] as string | null) ?? null,
     soCode: (r['soCode'] as string | null) ?? null,

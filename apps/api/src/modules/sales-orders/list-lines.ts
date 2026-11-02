@@ -20,6 +20,7 @@ import { sql } from 'drizzle-orm';
 
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice } from '../../lib/access';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { AuthorizationError } from '../../lib/errors';
 import { jcEffectiveQtySql } from '../../lib/jc-effective-qty';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
@@ -133,6 +134,8 @@ export async function listSalesOrderLines(
         -- The line's own facts.
         l.id AS "lineId", l.line_no AS "lineNo",
         COALESCE(l.created_at, so.created_at) AS "lineCreatedAt",
+        -- ADR-261 rev — Created By: who entered the same record as lineCreatedAt.
+        ${createdByNameSql(sql`COALESCE(l.created_by, so.created_by)`)} AS "lineCreatedByName",
         COALESCE(it.code, l.item_code_text) AS "itemCode",
         NULLIF(btrim(l.revision::text), '') AS "itemRevision",
         l.part_name AS "itemName",
@@ -223,6 +226,7 @@ export async function listSalesOrderLines(
         lineId: (r['lineId'] as string | null) ?? null,
         lineNo: r['lineNo'] != null ? Number(r['lineNo']) : null,
         lineCreatedAt: tsText(r['lineCreatedAt']),
+        lineCreatedByName: (r['lineCreatedByName'] as string | null) ?? null,
         itemCode: (r['itemCode'] as string | null) ?? null,
         itemRevision: (r['itemRevision'] as string | null) ?? null,
         itemName: (r['itemName'] as string | null) ?? '',

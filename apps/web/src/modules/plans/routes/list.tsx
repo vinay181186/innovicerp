@@ -139,7 +139,8 @@ function PlansListPage(): React.JSX.Element {
 
   // ADR-202 — plan ids with a pending edit; their status cell reads "Draft".
   const draftIds = usePendingEditIds('Plan');
-  const columns = useMemo(() => plansListColumns(draftIds), [draftIds]);
+  const firstRowNo = pageOffset(page) + 1;
+  const columns = useMemo(() => plansListColumns(draftIds, firstRowNo), [draftIds, firstRowNo]);
 
   // Status dropdown → URL filter. A status sets `status`; "Needs Planning"
   // flips the body to the unplanned-SO-lines table. Each clears the other so

@@ -56,6 +56,8 @@ const SCT_SF_COLUMNS: MemSfColumnMap<SoCycleTimeRow> = {
   internalSoNo: { type: 'text', get: (r) => r.internalSoNo ?? null },
   // ADR-261 Created On — the SO's created_at as the India-time day.
   createdOn: { type: 'date', get: (r) => istDay(r.createdAt) },
+  // ADR-261 rev — Created By: who entered the SO.
+  createdBy: { type: 'text', get: (r) => r.createdByName },
   customer: { type: 'text', get: (r) => r.customer },
   soType: { type: 'list', get: (r) => r.type },
   soStatus: { type: 'list', get: (r) => (r.phases.dispatched ? 'completed' : r.status) },
@@ -88,6 +90,7 @@ export async function getSoCycleTime(
       soNo: d.soNo,
       internalSoNo: d.internalSoNo,
       createdAt: d.createdAt ?? null,
+      createdByName: d.createdByName ?? null,
       customer: d.customer,
       type: d.type,
       status: d.status,

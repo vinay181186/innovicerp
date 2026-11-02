@@ -42,6 +42,8 @@ export type StoreTransaction = z.infer<typeof storeTransactionSchema>;
 
 /** List row: ledger fields + display joins for the item master. */
 export const storeTransactionListItemSchema = storeTransactionSchema.extend({
+  /** Created By (ADR-261 rev): name of the user who entered the SAME record as createdAt (full name, else e-mail before @); null when unknown. */
+  createdByName: z.string().nullable(),
   itemCode: z.string().nullable(),
   itemName: z.string().nullable(),
   // ADR-261 — the lead columns, resolved from the movement's own document

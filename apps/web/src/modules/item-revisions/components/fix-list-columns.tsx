@@ -11,7 +11,7 @@ import type {
 import { ROUTE_CARD_APPROVAL_LABEL } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { RcApprovalBadge } from '@/modules/route-cards/components/rc-approval-badge';
-import { leadColumns, type DataTableColumn } from '@/ui/data';
+import { createdByColumn, leadColumns, type DataTableColumn } from '@/ui/data';
 
 const dash = <span className="text3">—</span>;
 
@@ -102,7 +102,9 @@ export function lineColumns(): DataTableColumn<FixListLine>[] {
     // ADR-261 lead columns. Mixed SO + JWSO list: "SO No." shows whichever
     // order the line is on; a JWSO line has no Internal SO No. ("—"). The
     // line's Drawing Rev rides in the Item Code cell (CODE/REV).
+    // One unpaged list (every line to fix comes in one read), so Sr No starts at 1.
     ...leadColumns<FixListLine>({
+      firstRowNo: 1,
       soNo: (r) => r.docCode,
       internalSoNo: (r) => r.soInternalNo,
       pol: (r) => r.clientPoLineNo,
@@ -163,6 +165,7 @@ export function lineColumns(): DataTableColumn<FixListLine>[] {
       nowrap: true,
       render: (r) => REASON_LABEL[r.reason],
     },
+    createdByColumn<FixListLine>({ createdByName: (r) => r.createdByName }),
   ];
 }
 

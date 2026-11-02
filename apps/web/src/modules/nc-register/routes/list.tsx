@@ -156,7 +156,8 @@ function NcRegisterListPage(): React.JSX.Element {
 
   // ADR-202 — NC ids with a pending edit; their status cell reads "Draft".
   const draftIds = usePendingEditIds('NonConformance');
-  const columns = useMemo(() => ncListColumns(draftIds), [draftIds]);
+  const firstRowNo = (search.page - 1) * PAGE_SIZE + 1;
+  const columns = useMemo(() => ncListColumns(firstRowNo, draftIds), [firstRowNo, draftIds]);
   // ⋯ Preview / Download PDF — the NC Report, fetched fresh per click.
   const ncPrint = useNcPrint();
 

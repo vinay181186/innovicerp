@@ -8,9 +8,10 @@
 
 import { type QcReworkRow, opSrNo } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
-import { DataTable, leadColumns, type DataTableColumn } from '@/ui/data';
+import { useMemo } from 'react';
+import { DataTable, createdByColumn, leadColumns, type DataTableColumn } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
-import { type QcPager, TablePager } from './TablePager';
+import { type QcPager, TablePager, rowNo } from './TablePager';
 
 function attemptColor(attempts: number): string {
   if (attempts === 1) return 'var(--amber)';
@@ -18,23 +19,33 @@ function attemptColor(attempts: number): string {
   return 'var(--red)';
 }
 
-const columns: DataTableColumn<QcReworkRow>[] = [
-  // Owner rule 2026-10-31 — own number (JC / Op) first, then the six lead
-  // columns. Created On = the reworked QC op's own created_at.
-  ...leadColumns<QcReworkRow>({
-    doc: {
-      id: 'jc_op',
-      header: 'JC / Op',
-      nowrap: true,
-      className: 'td-code',
-      render: (g) => (
-        <>
-          <span style={{ color: 'var(--cyan)' }}>{g.jcCode}</span>{' '}
-          <span style={{ color: 'var(--red2)', fontWeight: 700 }}>Op {opSrNo(g.opSeq)}</span>
-        </>
-      ),
-    },
-    docDate: {
+function reworkColumns(firstRowNo: number): DataTableColumn<QcReworkRow>[] {
+  return [
+    // Owner rule 2026-10-31 — own number (JC / Op) inside the lead block (after
+    // Item Name). Created On = the reworked QC op's own created_at.
+    ...leadColumns<QcReworkRow>({
+      firstRowNo,
+      doc: {
+        id: 'jc_op',
+        header: 'JC / Op',
+        nowrap: true,
+        className: 'td-code',
+        render: (g) => (
+          <>
+            <span style={{ color: 'var(--cyan)' }}>{g.jcCode}</span>{' '}
+            <span style={{ color: 'var(--red2)', fontWeight: 700 }}>Op {opSrNo(g.opSeq)}</span>
+          </>
+        ),
+      },
+      soNo: (g) => g.soCode,
+      internalSoNo: (g) => g.soInternalNo,
+      pol: (g) => g.clientPoLineNo,
+      createdOn: (g) => g.createdAt ?? null,
+      itemCode: (g) => g.itemCode,
+      itemRev: (g) => g.itemRevision,
+      itemName: (g) => g.itemName,
+    }),
+    {
       id: 'jc_date',
       kind: 'date',
       header: 'JC Date',
@@ -43,82 +54,76 @@ const columns: DataTableColumn<QcReworkRow>[] = [
       render: (g) => fmtDate(g.jcDate ?? null),
       filterValue: (g) => g.jcDate ?? '',
     },
-    soNo: (g) => g.soCode,
-    internalSoNo: (g) => g.soInternalNo,
-    pol: (g) => g.clientPoLineNo,
-    createdOn: (g) => g.createdAt ?? null,
-    itemCode: (g) => g.itemCode,
-    itemRev: (g) => g.itemRevision,
-    itemName: (g) => g.itemName,
-  }),
-  {
-    id: 'operation',
-    header: 'Operation',
-    align: 'left',
-    ellipsis: true,
-    className: 'text3',
-    render: (g) => g.operation,
-    title: (g) => g.operation,
-  },
-  {
-    id: 'attempts',
-    kind: 'badge',
-    header: 'Attempts',
-    nowrap: true,
-    render: (g) => (
-      <span
-        style={{
-          fontSize: 12,
-          fontWeight: 700,
-          padding: '2px 10px',
-          borderRadius: 10,
-          background: 'var(--bg3)',
-          color: attemptColor(g.attempts),
-        }}
-      >
-        {g.attempts}
-      </span>
-    ),
-    filterValue: (g) => g.attempts,
-  },
-  {
-    id: 'rejected',
-    header: 'Deviated',
-    align: 'right',
-    nowrap: true,
-    className: 'mono fw-700',
-    render: (g) => <span style={{ color: 'var(--red2)' }}>{g.totalRejected}</span>,
-  },
-  {
-    id: 'first_entry',
-    kind: 'date',
-    header: 'First Entry',
-    nowrap: true,
-    render: (g) => fmtDate(g.firstEntry),
-    filterValue: (g) => g.firstEntry ?? '',
-  },
-  {
-    id: 'last_entry',
-    kind: 'date',
-    header: 'Last Entry',
-    nowrap: true,
-    render: (g) => fmtDate(g.lastEntry),
-    filterValue: (g) => g.lastEntry ?? '',
-  },
-  {
-    id: 'days_elapsed',
-    header: 'Days Elapsed',
-    align: 'right',
-    nowrap: true,
-    className: 'mono fw-700',
-    render: (g) => (
-      <span style={{ color: g.daysElapsed > 5 ? 'var(--red)' : 'var(--amber)' }}>
-        {g.daysElapsed} {g.daysElapsed === 1 ? 'day' : 'days'}
-      </span>
-    ),
-    filterValue: (g) => g.daysElapsed,
-  },
-];
+    {
+      id: 'operation',
+      header: 'Operation',
+      align: 'left',
+      ellipsis: true,
+      className: 'text3',
+      render: (g) => g.operation,
+      title: (g) => g.operation,
+    },
+    {
+      id: 'attempts',
+      kind: 'badge',
+      header: 'Attempts',
+      nowrap: true,
+      render: (g) => (
+        <span
+          style={{
+            fontSize: 12,
+            fontWeight: 700,
+            padding: '2px 10px',
+            borderRadius: 10,
+            background: 'var(--bg3)',
+            color: attemptColor(g.attempts),
+          }}
+        >
+          {g.attempts}
+        </span>
+      ),
+      filterValue: (g) => g.attempts,
+    },
+    {
+      id: 'rejected',
+      header: 'Deviated',
+      align: 'right',
+      nowrap: true,
+      className: 'mono fw-700',
+      render: (g) => <span style={{ color: 'var(--red2)' }}>{g.totalRejected}</span>,
+    },
+    {
+      id: 'first_entry',
+      kind: 'date',
+      header: 'First Entry',
+      nowrap: true,
+      render: (g) => fmtDate(g.firstEntry),
+      filterValue: (g) => g.firstEntry ?? '',
+    },
+    {
+      id: 'last_entry',
+      kind: 'date',
+      header: 'Last Entry',
+      nowrap: true,
+      render: (g) => fmtDate(g.lastEntry),
+      filterValue: (g) => g.lastEntry ?? '',
+    },
+    {
+      id: 'days_elapsed',
+      header: 'Days Elapsed',
+      align: 'right',
+      nowrap: true,
+      className: 'mono fw-700',
+      render: (g) => (
+        <span style={{ color: g.daysElapsed > 5 ? 'var(--red)' : 'var(--amber)' }}>
+          {g.daysElapsed} {g.daysElapsed === 1 ? 'day' : 'days'}
+        </span>
+      ),
+      filterValue: (g) => g.daysElapsed,
+    },
+    createdByColumn<QcReworkRow>({ createdByName: (g) => g.createdByName }),
+  ];
+}
 
 export function ReworkTab({
   rework,
@@ -128,6 +133,8 @@ export function ReworkTab({
   rework: QcReworkRow[];
   pager: QcPager;
 }): React.JSX.Element {
+  const firstRowNo = rowNo(pager, 0);
+  const columns = useMemo(() => reworkColumns(firstRowNo), [firstRowNo]);
   return (
     <>
       <div className="panel">

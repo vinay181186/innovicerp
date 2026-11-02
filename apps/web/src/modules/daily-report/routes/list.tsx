@@ -225,7 +225,7 @@ function DailyReportPage(): React.JSX.Element {
           </div>
         </div>
       ) : (
-        data.groups.map((g) => (
+        data.groups.map((g, gi) => (
           <div key={g.machineId ?? g.machineCode} className="panel" style={{ marginBottom: 14 }}>
             <div
               style={{
@@ -270,7 +270,12 @@ function DailyReportPage(): React.JSX.Element {
                 live in each row's ▸ detail. */}
             <DataTable<DailyReportRow>
               tableKey={TABLE_KEYS.dailyReport}
-              columns={dailyReportColumnsFor(g.totalQty)}
+              columns={dailyReportColumnsFor(
+                g.totalQty,
+                pageOffset(search.page) +
+                  1 +
+                  data.groups.slice(0, gi).reduce((n, x) => n + x.rows.length, 0),
+              )}
               rows={g.rows}
               rowKey={(r) => r.logId}
               defaultHidden={DAILY_REPORT_HIDDEN}

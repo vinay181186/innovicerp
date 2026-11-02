@@ -9,6 +9,7 @@
 import { sql } from 'drizzle-orm';
 import type { JobQueueMachine, JobQueueRow } from '@innovic/shared';
 import type { DbTransaction } from '../../db/with-user-context';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { polSql } from '../../lib/pol';
 
 export function num(v: unknown): number {
@@ -68,6 +69,7 @@ export async function loadMachineQueues(
         so.internal_so_no AS "soInternalNo",
         -- ADR-261 Created On — the job-card op's own created_at.
         op.created_at AS "createdAt",
+        ${createdByNameSql(sql`op.created_by`)} AS "createdByName",
         COALESCE(cl_so.name, cl_jw.name, so.customer_name, jw.customer_name) AS "soCustomer",
         op.op_seq AS "opSeq",
         op.operation,
@@ -150,6 +152,7 @@ export async function loadMachineQueues(
         r['createdAt'] instanceof Date
           ? (r['createdAt'] as Date).toISOString()
           : ((r['createdAt'] as string | null) ?? null),
+      createdByName: (r['createdByName'] as string | null) ?? null,
       soCustomer: (r['soCustomer'] as string | null) ?? null,
       opSeq: num(r['opSeq']),
       operation: String(r['operation'] ?? ''),

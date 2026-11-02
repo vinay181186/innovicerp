@@ -54,6 +54,8 @@ export const qcHistoryPendingRowSchema = z.object({
   assignedTo: z.string().nullable().default(null),
   /** ADR-261 lead Created On — the QC op's own record created_at (jc_ops). */
   createdAt: z.string().nullable().default(null),
+  /** Created By (ADR-261 rev): name of the user who entered the SAME record as createdAt (full name, else e-mail before @); null when unknown. */
+  createdByName: z.string().nullable(),
 });
 export type QcHistoryPendingRow = z.infer<typeof qcHistoryPendingRowSchema>;
 
@@ -110,6 +112,8 @@ export const qcHistoryLogRowSchema = z.object({
   qcReportName: z.string().nullable(),
   /** ADR-261 lead Created On — the QC log row's own created_at (op_log). */
   createdAt: z.string().nullable().default(null),
+  /** Created By (ADR-261 rev): name of the user who entered the SAME record as createdAt (full name, else e-mail before @); null when unknown. */
+  createdByName: z.string().nullable(),
 });
 export type QcHistoryLogRow = z.infer<typeof qcHistoryLogRowSchema>;
 
@@ -273,6 +277,8 @@ export interface PartyGrnQcRow {
   waitDays: number;
   /** ADR-261 lead Created On — the Party GRN line's created_at (else its GRN's). */
   createdAt?: string | null;
+  /** Created By (ADR-261 rev): name of the user who entered the SAME record as createdAt (full name, else e-mail before @); null when unknown. */
+  createdByName: string | null;
 }
 
 /** One machine that logged output on the source step (NAMING.md "Actual Machine"). */
@@ -335,6 +341,7 @@ export const QC_REGISTER_PENDING_SF_FIELDS = [
   /** ADR-261 lead SO No. (the SO / JWSO code) and Created On. */
   'soCode',
   'createdOn',
+  'createdBy',
   'docNo',
   /** ADR-261 lead Doc Date (GRN / Party GRN grn_date, JC jc_date). */
   'docDate',
@@ -356,6 +363,7 @@ export const QC_REGISTER_COMPLETED_SF_FIELDS = [
   /** ADR-261 lead SO No. (the SO / JWSO code) and Created On. */
   'soCode',
   'createdOn',
+  'createdBy',
   'docNo',
   /** ADR-261 lead Doc Date (GRN / Party GRN grn_date, JC jc_date). */
   'docDate',

@@ -11,7 +11,7 @@ import { ActualMachineLine } from '@/components/shared/machine-split';
 import { SoNo } from '@/components/shared/so-no';
 import { fmtDate } from '@/lib/date';
 import { OP_STATUS } from '@/modules/job-cards/lib/jc-op-labels';
-import { ROW_TINT, leadColumns } from '@/ui/data';
+import { ROW_TINT, createdByColumn, leadColumns } from '@/ui/data';
 
 // Op Status tick list for the server Sort & Filter (non-complete states only:
 // the table never holds a complete op).
@@ -45,11 +45,12 @@ export function opRowTint(op: MachineLoadOp): string | undefined {
 // engine sizes the columns to the screen and drops the rightmost unpinned ones
 // into ▸ when it is too narrow. Centred by the standard; numbers right-aligned;
 // the Operation name is the one free-text column (left + ellipsis).
-export function opsColumns(): DataTableColumn<MachineLoadOp>[] {
+export function opsColumns(firstRowNo: number): DataTableColumn<MachineLoadOp>[] {
   return [
-    // Owner rule 2026-10-31 (ADR-261 amendment) — JC No. first, then the six
-    // lead columns, all locked; every other fact follows Item Name.
+    // ADR-261 rev 2026-11-02 — JC No. inside the lead block
+    // (after Item Name), all locked; every other fact follows Item Name.
     ...leadColumns<MachineLoadOp>({
+      firstRowNo,
       doc: {
         id: 'jc_code',
         header: 'JC No.',
@@ -72,16 +73,6 @@ export function opsColumns(): DataTableColumn<MachineLoadOp>[] {
           </ActionLink>
         ),
       },
-      docDate: {
-        id: 'jc_date',
-        kind: 'date',
-        header: 'JC Date',
-        className: 'mono',
-        nowrap: true,
-        render: (op) => fmtDate(op.jcDate ?? null),
-        filterValue: (op) => op.jcDate ?? '',
-        sortFilterField: 'jcDate',
-      },
       soNo: (op) => op.soCode,
       internalSoNo: (op) => op.soInternalNo,
       pol: (op) => op.clientPoLineNo,
@@ -100,6 +91,16 @@ export function opsColumns(): DataTableColumn<MachineLoadOp>[] {
         item_name: { sortFilterField: 'itemName' },
       },
     }),
+    {
+      id: 'jc_date',
+      kind: 'date',
+      header: 'JC Date',
+      className: 'mono',
+      nowrap: true,
+      render: (op) => fmtDate(op.jcDate ?? null),
+      filterValue: (op) => op.jcDate ?? '',
+      sortFilterField: 'jcDate',
+    },
     {
       id: 'op_seq',
       header: 'Op',
@@ -169,6 +170,10 @@ export function opsColumns(): DataTableColumn<MachineLoadOp>[] {
       nowrap: true,
       render: (op) => fmtDate(op.dueDate),
     },
+    createdByColumn<MachineLoadOp>({
+      createdByName: (op) => op.createdByName,
+      overrides: { sortFilterField: 'createdBy' },
+    }),
   ];
 }
 

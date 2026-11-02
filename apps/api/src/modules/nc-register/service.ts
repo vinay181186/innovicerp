@@ -34,6 +34,7 @@ import {
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice, requireDeleteRight, requireFormAccess } from '../../lib/access';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import {
@@ -570,6 +571,7 @@ export async function listNcRegister(
         nc.closed_at AS "closedAt",
         nc.closed_by AS "closedBy",
         nc.created_at AS "createdAt", nc.created_by AS "createdBy",
+        ${createdByNameSql(sql`nc.created_by`)} AS "createdByName",
         nc.updated_at AS "updatedAt", nc.updated_by AS "updatedBy",
         nc.deleted_at AS "deletedAt",
         jc.code AS "jcCode",
@@ -896,6 +898,7 @@ function toListItem(r: Record<string, unknown>): NcRegisterListItem {
     linkedCapaCode: (r['linkedCapaCode'] as string | null) ?? null,
     createdAt: tsLike(r['createdAt']),
     createdBy: r['createdBy'] as string,
+    createdByName: (r['createdByName'] as string | null) ?? null,
     updatedAt: tsLike(r['updatedAt']),
     updatedBy: r['updatedBy'] as string,
     deletedAt: maybeTsLike(r['deletedAt']),

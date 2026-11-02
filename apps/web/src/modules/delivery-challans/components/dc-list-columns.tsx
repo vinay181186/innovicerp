@@ -2,7 +2,7 @@
 // (ADR-261, GET /delivery-challans/lines). Split out of routes/list.tsx to keep
 // that file under the 400-line rule.
 //
-// DC No. and the six lead columns come first and are locked (leadColumns): SO No. (the SO
+// DC No. and the locked lead block come first and are locked (leadColumns): SO No. (the SO
 // code, else the JWSO code, else the DC's SO ref) · Internal SO No. · POL ·
 // Created On (the line's) · Item Code (CODE/REV — no separate Drawing Rev
 // column any more) · Item Name. Then DC Date · Vendor · PO No. ·
@@ -12,7 +12,7 @@
 import { DC_STATUSES, type DeliveryChallanListLine } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
-import { leadColumns, type DataTableColumn } from '@/ui/data';
+import { createdByColumn, type DataTableColumn, leadColumns } from '@/ui/data';
 import { DC_STATUS_LABEL } from '../lib/dc-status-label';
 import { DcStatusBadge } from './dc-status-badge';
 
@@ -56,11 +56,14 @@ function PoCell({ dc }: { dc: DeliveryChallanListLine }): React.JSX.Element {
 }
 
 export function dcListColumns(
+  /** Sr No of the page's first row (offset + 1) — ADR-261 rev. */
+  firstRowNo: number,
   /** ADR-202 — DC ids with a pending edit; their status cell shows "Draft". */
   draftIds?: Set<string>,
 ): DataTableColumn<DeliveryChallanListLine>[] {
   return [
     ...leadColumns<DeliveryChallanListLine>({
+      firstRowNo,
       doc: {
         id: 'dc_code',
         sortFilterField: 'dcCode',
@@ -78,15 +81,6 @@ export function dcListColumns(
           </Link>
         ),
       },
-      docDate: {
-        id: 'dc_date',
-        sortFilterField: 'dcDate',
-        kind: 'date',
-        header: 'DC Date',
-        className: 'mono',
-        nowrap: true,
-        render: (dc) => fmtDate(dc.docDate),
-      },
       soNo: (r) => r.soCode ?? r.jwCode,
       internalSoNo: (r) => r.soInternalNo,
       pol: (r) => r.clientPoLineNo,
@@ -103,6 +97,15 @@ export function dcListColumns(
         item_name: { sortFilterField: 'itemName' },
       },
     }),
+    {
+      id: 'dc_date',
+      sortFilterField: 'dcDate',
+      kind: 'date',
+      header: 'DC Date',
+      className: 'mono',
+      nowrap: true,
+      render: (dc) => fmtDate(dc.docDate),
+    },
     {
       id: 'vendor',
       sortFilterField: 'vendor',
@@ -167,5 +170,10 @@ export function dcListColumns(
       render: (dc) => dc.transport?.trim() || '—',
       title: (dc) => dc.transport ?? '',
     },
+    // ADR-261 rev — Created By, the last data column.
+    createdByColumn({
+      createdByName: (r) => r.createdByName,
+      overrides: { sortFilterField: 'createdBy' },
+    }),
   ];
 }

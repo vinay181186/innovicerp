@@ -17,9 +17,8 @@ import {
 } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
-import { fmtDate } from '@/lib/date';
 import { useStockReservations } from '@/modules/plans/api';
-import { DataTable, leadColumns, type DataTableColumn } from '@/ui/data';
+import { createdByColumn, DataTable, leadColumns, type DataTableColumn } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ModalShell } from './modal-shell';
 import { RevStockTable } from './rev-stock-table';
@@ -60,10 +59,12 @@ function reservationColumns(
   itemName: string,
 ): DataTableColumn<ReservationDetail>[] {
   return [
-    // ADR-261 — the six lead columns. Created On = the booking's created_at
-    // (the same instant as Reserved On, which stays further right). Item Code
+    // ADR-261 — the locked lead block. Created On = the booking's created_at
+    // (it replaced the old Reserved On column — same fact). Item Code
     // carries the SO line's drawing rev (CODE/REV); Item Name is the item's.
+    // Every open booking of the item in one unpaged box, so Sr No starts at 1.
     ...leadColumns<ReservationDetail>({
+      firstRowNo: 1,
       soNo: (row) => row.soCodeText,
       internalSoNo: (row) => row.soInternalNo,
       pol: (row) => row.clientPoLineNo,
@@ -188,22 +189,13 @@ function reservationColumns(
           <PlainRef code={row.jobCardCode} />
         ),
     },
-    {
-      id: 'reserved_on',
-      header: 'Reserved On',
-      kind: 'date',
-      nowrap: true,
-      className: 'mono',
-      render: (row) => fmtDate(row.reservedAt),
-    },
-    {
-      id: 'reserved_by',
-      header: 'Reserved By',
-      align: 'left',
-      ellipsis: true,
-      render: (row) => row.reservedByName ?? '—',
-      title: (row) => row.remarks ?? '',
-    },
+    // Created On / Created By = when and by whom the booking was made (the
+    // reservation row) — they replace the old Reserved On / Reserved By columns
+    // (same facts, ADR-261 rev). The booking remarks show on hover.
+    createdByColumn<ReservationDetail>({
+      createdByName: (row) => row.reservedByName,
+      overrides: { title: (row) => [row.reservedByName, row.remarks].filter(Boolean).join(' — ') },
+    }),
   ];
 }
 
