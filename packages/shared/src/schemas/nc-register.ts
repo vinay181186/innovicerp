@@ -74,6 +74,10 @@ export const ncRegisterSchema = z.object({
   soCodeText: z.string().nullable(),
   /** ADR-207: the SO's Internal SO No., read live off sales_orders (soId). */
   soInternalNo: z.string().nullable().default(null),
+  /** The SO No., read live off sales_orders (soId) — filled even when the
+   *  snapshot soCodeText is blank (an NC raised by Incoming QC). Show
+   *  `soCode ?? soCodeText`. */
+  soCode: z.string().nullable().default(null),
   machineCodeText: z.string().nullable(),
   operatorText: z.string().nullable(),
   rejectedQty: z.string(), // numeric stored as string

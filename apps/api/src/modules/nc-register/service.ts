@@ -191,6 +191,8 @@ interface NcJoins {
   clientPoLineNo?: string | null;
   // ADR-207: the SO's Internal SO No., read live off sales_orders (nc.so_id).
   soInternalNo?: string | null;
+  // The SO No., live off sales_orders (same SO key).
+  soCode?: string | null;
   // 0237: the NC's SO key (so-key.ts); falls back to the stored so_id.
   soId?: string | null;
   childJobCardCode?: string | null;
@@ -286,6 +288,7 @@ function toNcRegister(row: typeof ncRegister.$inferSelect, joins: NcJoins = {}):
     soId: joins.soId ?? row.soId ?? null,
     soCodeText: row.soCodeText,
     soInternalNo: joins.soInternalNo ?? null,
+    soCode: joins.soCode ?? null,
     machineCodeText: row.machineCodeText,
     operatorText: row.operatorText,
     rejectedQty: row.rejectedQty,
@@ -526,6 +529,8 @@ export async function listNcRegister(
         -- ADR-207: Internal SO No., live off the NC's SO (one row per NC).
         (SELECT nso.internal_so_no FROM public.sales_orders nso
           WHERE nso.id = ${ncSoKeySql('nc')}) AS "soInternalNo",
+        (SELECT nso.code FROM public.sales_orders nso
+          WHERE nso.id = ${ncSoKeySql('nc')}) AS "soCode",
         nc.machine_code_text AS "machineCodeText",
         nc.operator_text AS "operatorText",
         nc.rejected_qty::text AS "rejectedQty",
@@ -833,6 +838,7 @@ function toListItem(r: Record<string, unknown>): NcRegisterListItem {
     soId: str('soId'),
     soCodeText: (r['soCodeText'] as string | null) ?? null,
     soInternalNo: (r['soInternalNo'] as string | null) ?? null,
+    soCode: (r['soCode'] as string | null) ?? null,
     machineCodeText: (r['machineCodeText'] as string | null) ?? null,
     operatorText: (r['operatorText'] as string | null) ?? null,
     rejectedQty: r['rejectedQty'] as string,
@@ -965,6 +971,10 @@ export async function readNc(
         SELECT nso.internal_so_no FROM public.sales_orders nso
         WHERE nso.id = ${ncSoKeySql('nc_register')}
       )`,
+      soCode: sql<string | null>`(
+        SELECT nso.code FROM public.sales_orders nso
+        WHERE nso.id = ${ncSoKeySql('nc_register')}
+      )`,
       // 0237: nc.so_id, else the card's source SO line's SO (so-key.ts).
       soKey: ncSoKeySql('nc_register'),
       // The ORIGINAL job-work order behind the deviation, through the shared
@@ -1040,6 +1050,7 @@ export async function readNc(
     parentNcCode: found.parentNcCode,
     dispositionByName: found.dispositionByName,
     soInternalNo: found.soInternalNo,
+    soCode: found.soCode,
     soId: found.soKey,
     sourceVendorId: source.sourceVendorId,
     sourceVendorCode: source.sourceVendorCode,
