@@ -58,9 +58,10 @@ export function routeCardListColumns(offset = 0): DataTableColumn<RouteCardListI
     },
     {
       // Item + Drawing Rev register (2026-10-31): the customer Drawing Rev this
-      // card is for rides in the Item Code cell (CODE/REV, ADR-261 — no
-      // separate Drawing Rev column), linked to its drawing page when the card
-      // has a register row. Bare code on an old card or a Buy item.
+      // card is for rides in the Item Code cell (ABC/1), linked to its drawing
+      // page when the card has a register row. Bare code on an old card or a
+      // Buy item. The separate Drawing Rev column below stays as well (owner
+      // decision 2026-11-02: Route Card list keeps BOTH).
       id: 'item_code',
       sortFilterField: 'itemCode',
       header: 'Item Code',
@@ -86,6 +87,17 @@ export function routeCardListColumns(offset = 0): DataTableColumn<RouteCardListI
       className: 'fw-700',
       render: (rc) => rc.itemName ?? '— unknown item —',
       title: (rc) => rc.itemName ?? '',
+    },
+    {
+      // Owner decision 2026-11-02: kept beside the ABC/1 Item Code cell so the
+      // master can be sorted / filtered by Rev alone. Blank on an old card.
+      id: 'drawing_rev',
+      sortFilterField: 'drawingRev',
+      filterType: 'text',
+      header: 'Drawing Rev',
+      className: 'mono fw-700',
+      nowrap: true,
+      render: (rc) => rc.drawingRev ?? <span className="text3">—</span>,
     },
     {
       // Grade then size on one line — the stock this card is cut from, so the

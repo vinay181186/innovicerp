@@ -9,7 +9,7 @@
 
 import type { PlanningLine, PlanningSoListItem } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
+import { docDrawingRev, itemCodeWithRev } from '@/lib/item-code';
 import { ROW_TINT, leadColumns, type DataTableColumn } from '@/ui/data';
 import { JwChip, lineStatusOf } from './planning-shared';
 
@@ -41,7 +41,7 @@ export function lineSearchColumns(): DataTableColumn<LineSearchRow>[] {
       // The line's own created_at, else its order's (ADR-261).
       createdOn: ({ so, line }) => line.createdAt ?? so.createdAt,
       itemCode: ({ line }) => line.itemCode,
-      itemRev: ({ line }) => line.itemRevision,
+      itemRev: ({ line }) => docDrawingRev(line),
       itemName: ({ line }) => line.itemName,
       overrides: {
         so_no: {
@@ -57,7 +57,7 @@ export function lineSearchColumns(): DataTableColumn<LineSearchRow>[] {
           ),
         },
         item_code: {
-          filterValue: ({ line }) => itemCodeWithRev(line.itemCode, line.itemRevision, ''),
+          filterValue: ({ line }) => itemCodeWithRev(line.itemCode, docDrawingRev(line), ''),
         },
       },
     }),

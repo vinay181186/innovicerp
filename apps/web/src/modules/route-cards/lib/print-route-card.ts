@@ -48,16 +48,19 @@ export function printRouteCard(args: {
   // for the drawing's.
   //
   // Since the Item + Drawing Rev register (2026-10-31) a card IS for one
-  // customer Drawing Rev, so it prints in its own box as "ABC/1" — labelled
-  // Drawing Rev, never bare "Rev", and beside (not instead of) Route Card Rev.
-  // The card's own Drawing No. wins over the item master's.
+  // customer Drawing Rev. Owner rule 2026-11-02: the Item Code box itself
+  // prints "ABC/1"; the Drawing Rev box keeps the bare Rev (as the detail
+  // header does) — labelled Drawing Rev, never bare "Rev", and beside (not
+  // instead of) Route Card Rev. The card's own Drawing No. wins over the
+  // item master's.
   const drawing = rc.drawingNo ?? item?.drawingNo ?? '—';
-  const drawingRev = rc.drawingRev ? itemRevLabel(itemCode, rc.drawingRev) : '—';
+  const itemCodeRev = itemRevLabel(itemCode, rc.drawingRev);
+  const drawingRev = rc.drawingRev?.trim() || '—';
 
   const body = `
     <div class="doc-title"><h1>Route Card — ${esc(rc.code || itemCode)}</h1><span class="print-meta">${printedMeta()}</span></div>
     <div class="info-grid" style="grid-template-columns:repeat(3,1fr)">
-      <div class="info-box"><div class="info-lbl">Item Code</div><div class="info-val" style="color:#7c3aed">${esc(itemCode)}</div></div>
+      <div class="info-box"><div class="info-lbl">Item Code</div><div class="info-val" style="color:#7c3aed">${esc(itemCodeRev)}</div></div>
       <div class="info-box"><div class="info-lbl">Item Name</div><div class="info-val">${esc(rc.itemName ?? item?.name ?? '—')}</div></div>
       <div class="info-box"><div class="info-lbl">RM Grade</div><div class="info-val">${esc(rc.rawMaterialGradeText ?? '—')}</div></div>
       <div class="info-box"><div class="info-lbl">RM Size</div><div class="info-val">${esc(rc.rawMaterialSizeText ?? '—')}</div></div>

@@ -26,7 +26,7 @@ import {
   type PlanningLine,
 } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
+import { docDrawingRev, itemCodeWithRev } from '@/lib/item-code';
 import { leadColumns, type DataTableColumn } from '@/ui/data';
 import { planChildItemOf, planStatusOf, prStatusOf } from './plan-chip';
 import {
@@ -93,15 +93,15 @@ export function planningLineColumns(
       pol: (l) => l.clientPoLineNo,
       // The line's own created_at (ADR-261).
       createdOn: (l) => l.createdAt,
-      // `CODE/REV` — the customer's drawing revision from this line; a JW line
-      // has none and keeps the bare code.
+      // `CODE/REV` — the line's own Item + Drawing Rev (register), falling back
+      // to the typed line revision; a line with neither keeps the bare code.
       itemCode: (l) => l.itemCode,
-      itemRev: (l) => l.itemRevision,
+      itemRev: (l) => docDrawingRev(l),
       itemName: (l) => l.itemName,
       overrides: {
         item_code: {
-          title: (l) => itemCodeWithRev(l.itemCode, l.itemRevision, ''),
-          filterValue: (l) => itemCodeWithRev(l.itemCode, l.itemRevision, ''),
+          title: (l) => itemCodeWithRev(l.itemCode, docDrawingRev(l), ''),
+          filterValue: (l) => itemCodeWithRev(l.itemCode, docDrawingRev(l), ''),
         },
         item_name: {
           render: (l) => (

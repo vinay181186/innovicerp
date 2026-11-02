@@ -211,11 +211,18 @@ export function ReservationDrilldown({
   itemId,
   itemCode,
   itemName,
+  itemLabel,
+  itemRevisionId,
   onClose,
 }: {
   itemId: string;
   itemCode: string;
   itemName: string;
+  /** The Store row's label — "ABC/1", plain "ABC", or "ABC · no Rev". */
+  itemLabel: string;
+  /** The Item + Drawing Rev bucket the row stands for (null = no-Rev bucket);
+   *  highlighted in the per-Rev table. */
+  itemRevisionId: string | null;
   onClose: () => void;
 }): React.JSX.Element {
   // Closed rows (released / cancelled / fully dispatched) are left out: the
@@ -224,8 +231,14 @@ export function ReservationDrilldown({
   const columns = reservationColumns(itemCode, itemName);
 
   return (
-    // The item is named once, in the title — every row is the same item.
-    <ModalShell onClose={onClose} title={`Reserved Stock — ${itemCode} (${itemName})`}>
+    // The item is named once, in the title — every row is the same item. The
+    // title says what the row ⋯ menu said ("Stock per Drawing Rev") — one label
+    // per action (owner rule 2026-11-02).
+    <ModalShell
+      onClose={onClose}
+      closeOnEscape
+      title={`Stock per Drawing Rev — ${itemLabel} (${itemName})`}
+    >
       {isLoading ? (
         <div className="text3" style={{ fontSize: 12 }}>
           <Loader2 size={14} className="inline animate-spin" /> Loading…
@@ -237,7 +250,7 @@ export function ReservationDrilldown({
       ) : (
         <>
           {/* Phase C — the same item split per Item + Drawing Rev bucket. */}
-          <RevStockTable itemId={itemId} itemCode={itemCode} />
+          <RevStockTable itemId={itemId} itemCode={itemCode} focusRevisionId={itemRevisionId} />
           <div style={{ fontSize: 12, marginBottom: 10 }}>
             <span className="text3">Total reserved for this item: </span>
             <b className="mono" style={{ color: 'var(--purple)', fontSize: 16 }}>

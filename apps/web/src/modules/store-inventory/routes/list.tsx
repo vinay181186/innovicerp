@@ -220,10 +220,14 @@ function StoreInventoryPage(): React.JSX.Element {
                 rows={data?.rows ?? []}
                 loading={isLoading}
                 sortFilterServer={sf}
-                rowKey={(row) => row.itemId}
+                // One row per Item + Drawing Rev bucket — itemId alone repeats.
+                rowKey={(row) => row.rowKey}
                 // Below Reorder row → late wash; the fit table's one-line rows
                 // make an inline "⚠ Below Reorder" impossible, the tint says it.
-                rowClassName={(row) => (row.belowReorder ? ROW_TINT.late : undefined)}
+                // Reorder is item-level: only the item's reorder row carries it.
+                rowClassName={(row) =>
+                  row.reorderRow && row.belowReorder ? ROW_TINT.late : undefined
+                }
                 // Material ships off the default view (kept so no data is lost).
                 defaultHidden={['material']}
                 emptyText={
@@ -235,7 +239,8 @@ function StoreInventoryPage(): React.JSX.Element {
                 rowMenu={(row) => [
                   {
                     // Phase C — On Hand / Reserved / Free per Item + Drawing
-                    // Rev, with the SO lines holding each (read-only).
+                    // Rev, with the SO lines holding each (read-only). Opens
+                    // on THIS row's bucket (highlighted).
                     key: 'revs',
                     label: 'Stock per Drawing Rev',
                     icon: 'eye',
@@ -264,7 +269,7 @@ function StoreInventoryPage(): React.JSX.Element {
                     label: 'Raise PR',
                     icon: 'plus',
                     group: 'workflow',
-                    hidden: !(canRaisePr && row.belowReorder),
+                    hidden: !(canRaisePr && row.reorderRow && row.belowReorder),
                     to: '/reorder-list',
                   },
                 ]}
@@ -292,6 +297,8 @@ function StoreInventoryPage(): React.JSX.Element {
               itemId={reservedRow.itemId}
               itemCode={reservedRow.itemCode}
               itemName={reservedRow.itemName}
+              itemLabel={reservedRow.itemLabel}
+              itemRevisionId={reservedRow.itemRevisionId}
               onClose={() => setReservedRow(null)}
             />
           ) : null}

@@ -79,12 +79,28 @@ function columns(itemCode: string): DataTableColumn<ItemRevStockRow>[] {
   ];
 }
 
+/** The no-Rev (old stock) bucket with nothing on hand, booked or free — an
+ *  empty "ABC · no Rev 0 0 0" line says nothing, so it is left out. */
+function isEmptyBlankBucket(r: ItemRevStockRow): boolean {
+  return (
+    !r.itemRevisionId &&
+    r.onHandQty === 0 &&
+    r.reservedQty === 0 &&
+    r.freeQty === 0 &&
+    r.bookings.length === 0
+  );
+}
+
 export function RevStockTable({
   itemId,
   itemCode,
+  focusRevisionId,
 }: {
   itemId: string;
   itemCode: string;
+  /** The bucket the box was opened for — highlighted. `null` = the no-Rev
+   *  bucket; `undefined` = no particular bucket (whole item). */
+  focusRevisionId?: string | null;
 }): React.JSX.Element | null {
   const { data, isLoading, isError, error } = useItemRevStock(itemId);
   if (isLoading) {
@@ -101,7 +117,12 @@ export function RevStockTable({
       </div>
     );
   }
-  const rows = data ?? [];
+  const focusing = focusRevisionId !== undefined;
+  const isFocus = (r: ItemRevStockRow): boolean =>
+    focusing && (r.itemRevisionId ?? null) === (focusRevisionId ?? null);
+  // The empty no-Rev line is dropped — unless it is the very bucket the box
+  // was opened for.
+  const rows = (data ?? []).filter((r) => isFocus(r) || !isEmptyBlankBucket(r));
   // Nothing to split: a Buy item, or a make item whose stock is all one bucket
   // with no Rev and nothing on hand.
   if (rows.length === 0) return null;
@@ -115,6 +136,7 @@ export function RevStockTable({
         columns={columns(itemCode)}
         rows={rows}
         rowKey={(r) => r.itemRevisionId ?? 'no-rev'}
+        rowClassName={(r) => (isFocus(r) ? 'row-selected' : undefined)}
         emptyText="No stock for this item."
       />
     </div>

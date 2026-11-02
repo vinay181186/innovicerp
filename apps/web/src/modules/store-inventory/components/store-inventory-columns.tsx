@@ -16,6 +16,7 @@
 
 import { Link } from '@tanstack/react-router';
 import type { StoreInventoryRow } from '@innovic/shared';
+import { ItemRevLink } from '@/modules/item-revisions/components/item-rev-link';
 import type { DataTableColumn } from '@/ui/data';
 
 /** A header cell that carries a tooltip (the fit engine has no header-title prop). */
@@ -36,12 +37,24 @@ export function storeInventoryColumns(opts: {
       header: 'Item Code',
       kind: 'code',
       nowrap: true,
-      // The code opens the Item Master record; a real link so it can be
-      // ctrl / middle-clicked into a new tab.
+      // One row per Item + Drawing Rev bucket (owner rule 2026-11-02): the cell
+      // shows the server's itemLabel — "ABC/1" (opens that drawing page),
+      // plain "ABC" for a Buy item, "ABC · no Rev" for a MAKE item's old
+      // stock. Without a Rev the code opens the Item Master record; a real
+      // link so it can be ctrl / middle-clicked into a new tab.
+      title: (row) => row.itemLabel,
       render: (row) =>
-        !canOpenItem ? (
+        row.itemRevisionId ? (
           <span className="td-code fw-700" style={{ color: 'var(--text)' }}>
-            {row.itemCode}
+            <ItemRevLink
+              itemRevisionId={row.itemRevisionId}
+              label={row.itemLabel}
+              className=""
+            />
+          </span>
+        ) : !canOpenItem ? (
+          <span className="td-code fw-700" style={{ color: 'var(--text)' }}>
+            {row.itemLabel}
           </span>
         ) : (
           <Link
@@ -52,7 +65,7 @@ export function storeInventoryColumns(opts: {
             title="Open this item in the Item Master"
             onClick={(e) => e.stopPropagation()}
           >
-            {row.itemCode}
+            {row.itemLabel}
           </Link>
         ),
     },
@@ -187,7 +200,9 @@ export function storeInventoryColumns(opts: {
       align: 'right',
       nowrap: true,
       className: 'mono text3',
-      render: (row) => row.reorderLevel || '—',
+      // Item-level: shown once, on the item's reorder row; blank on its other
+      // Drawing Rev rows so the figure is never read as per-Rev.
+      render: (row) => (row.reorderRow ? row.reorderLevel || '—' : ''),
     },
     {
       id: 'on_po',

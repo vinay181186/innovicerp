@@ -16,7 +16,12 @@ import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { SearchableSelect } from '@/ui/forms';
 import { useItemsList } from '@/modules/items/api';
-import { useAdjustStock, useStoreInventory } from '../api';
+import {
+  DrawingRevPicker,
+  pickedRevisionId,
+  useItemRevOptions,
+} from '@/modules/item-revisions/components/drawing-rev-picker';
+import { useAdjustStock, useItemRevStock, useItemStockTotals } from '../api';
 import { useDiscardGuard } from './discard-guard';
 import { ModalShell } from './modal-shell';
 
@@ -50,12 +55,23 @@ export function ManualReceiptModal({ onClose }: { onClose: () => void }): React.
     () => (itemsData?.items ?? []).map((it) => ({ id: it.id, code: it.code, name: it.name })),
     [itemsData],
   );
+  // Phase C — a MAKE item with Drawing Revs is received into one Item + Rev
+  // bucket (the server requires it), exactly like ± Adjust.
+  const [revValue, setRevValue] = useState<string | null>(null);
+  const revOpts = useItemRevOptions(itemId);
   // Current stock of the picked item, whatever the inventory page's filter is.
-  const { data: stockData } = useStoreInventory(
-    { search: picked?.code ?? '', filter: 'all', offset: 0 },
-    Boolean(picked),
-  );
-  const stockRow = picked ? (stockData?.rows ?? []).find((r) => r.itemId === itemId) : undefined;
+  // The list answers one row per Drawing Rev bucket, so the item figure is the
+  // SUM of its rows; once a Rev is picked, that bucket's own figure is shown.
+  const { totals } = useItemStockTotals(itemId, picked?.code);
+  const revStock = useItemRevStock(revOpts.required && revValue ? itemId : null);
+  const inStockNow = ((): number | null => {
+    if (revOpts.required && revValue) {
+      if (!revStock.data) return null;
+      const want = pickedRevisionId(revValue);
+      return revStock.data.find((r) => (r.itemRevisionId ?? null) === want)?.onHandQty ?? 0;
+    }
+    return totals ? totals.inStock : null;
+  })();
 
   const dirty = Boolean(itemId || qty.trim() || refNo.trim() || remarks.trim());
   const guard = useDiscardGuard(dirty, onClose);
@@ -75,6 +91,10 @@ export function ManualReceiptModal({ onClose }: { onClose: () => void }): React.
       setErr('Quantity must be more than 0.');
       return;
     }
+    if (revOpts.required && !revValue) {
+      setErr('Drawing Rev is required.');
+      return;
+    }
     const composedRemarks = [
       'Manual receipt',
       refNo.trim() ? `ref=${refNo.trim()}` : null,
@@ -85,6 +105,7 @@ export function ManualReceiptModal({ onClose }: { onClose: () => void }): React.
 
     const input: AdjustStockInput = {
       itemId,
+      ...(revOpts.required ? { itemRevisionId: pickedRevisionId(revValue) } : {}),
       direction: 'add',
       qty: q,
       remarks: composedRemarks,
@@ -109,6 +130,8 @@ export function ManualReceiptModal({ onClose }: { onClose: () => void }): React.
             value={itemId}
             onChange={(id) => {
               setItemId(id);
+              // A new item has its own Revs — never carry the old pick over.
+              if (id !== itemId) setRevValue(null);
               const it = itemsData?.items.find((x) => x.id === id);
               setPicked(it ? { code: it.code, name: it.name, uom: it.uom ?? null } : null);
             }}
@@ -121,10 +144,24 @@ export function ManualReceiptModal({ onClose }: { onClose: () => void }): React.
           />
           {picked ? (
             <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
-              In stock now: {stockRow ? stockRow.inStock : '—'} {picked.uom ?? ''}
+              In stock now{revOpts.required && revValue ? ' (this Drawing Rev)' : ''}:{' '}
+              {inStockNow ?? '—'} {picked.uom ?? ''}
             </div>
           ) : null}
         </div>
+        {revOpts.required ? (
+          <div className="form-grp">
+            <label className="form-label" htmlFor="mr-drawing-rev">
+              Drawing Rev <span className="req">★</span>
+            </label>
+            <DrawingRevPicker
+              id="mr-drawing-rev"
+              itemId={itemId}
+              value={revValue}
+              onChange={setRevValue}
+            />
+          </div>
+        ) : null}
         <div className="form-grp">
           <label className="form-label">
             Quantity <span className="req">★</span>
