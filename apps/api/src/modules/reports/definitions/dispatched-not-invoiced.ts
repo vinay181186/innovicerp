@@ -4,6 +4,7 @@
 // Modelled on ERPNext's "Delivered Items To Be Billed" report.
 
 import { sql } from 'drizzle-orm';
+import { jwLineLastReturnDateSql, jwLineToInvoiceSql } from '../../../lib/jw-to-invoice';
 import type { RegisteredReport } from '../registry';
 import {
   dateCell,
@@ -124,14 +125,10 @@ export const dispatchedNotInvoicedReport: RegisteredReport = {
           (jwl.created_at AT TIME ZONE 'Asia/Kolkata')::date::text AS created_on,
           jwl.returned_qty                             AS dispatched_qty,
           jwl.invoiced_qty                             AS invoiced_qty,
-          (jwl.returned_qty - jwl.invoiced_qty)        AS to_invoice_qty,
+          ${jwLineToInvoiceSql('jwl')}                 AS to_invoice_qty,
           jwl.rate                                     AS rate,
-          ((jwl.returned_qty - jwl.invoiced_qty) * jwl.rate)::numeric(14, 2) AS to_invoice_value,
-          (SELECT MAX(rc.return_date)
-           FROM public.jw_return_challans rc
-           WHERE rc.job_work_order_line_id = jwl.id
-             AND rc.deleted_at IS NULL
-             AND rc.status <> 'cancelled')             AS last_dispatch_date,
+          (${jwLineToInvoiceSql('jwl')} * jwl.rate)::numeric(14, 2) AS to_invoice_value,
+          ${jwLineLastReturnDateSql('jwl')}            AS last_dispatch_date,
           jwl.line_no                                  AS line_no
         FROM public.job_work_order_lines jwl
         JOIN public.job_work_orders jwo
@@ -143,7 +140,7 @@ export const dispatchedNotInvoicedReport: RegisteredReport = {
         WHERE jwl.company_id = ${companyId}::uuid
           AND jwl.deleted_at IS NULL
           AND jwl.status <> 'cancelled'
-          AND jwl.returned_qty > jwl.invoiced_qty
+          AND ${jwLineToInvoiceSql('jwl')} > 0
           ${jwCustomerFrag}
       ) u
       ORDER BY u.last_dispatch_date ASC NULLS LAST, u.so_code, u.line_no

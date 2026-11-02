@@ -30,7 +30,6 @@ import {
   type QcRegisterCompletedItem,
   type QcRegisterPendingItem,
   type QcRegisterResponse,
-  type QcRegisterStage,
   type QcSourceStep,
   type qcRegisterQuerySchema,
   shortName,
@@ -86,6 +85,7 @@ import {
   dateLike,
   logsFrom,
   opSearchWhere,
+  opStageWhere,
   overdueToday,
   pendingFrom,
   toLogRow,
@@ -97,12 +97,6 @@ type Raw = Record<string, unknown>;
 const rows = (r: unknown): Raw[] => r as Raw[];
 
 /** Process-QC stage narrowing on the last-op test. */
-function opStageWhere(stage: QcRegisterStage | undefined, isLast: SQL): SQL {
-  if (stage === 'final') return sql`AND ${isLast}`;
-  if (stage === 'inprocess') return sql`AND NOT ${isLast}`;
-  return sql``;
-}
-
 function idList(ids: string[]): SQL {
   return sql.join(
     ids.map((id) => sql`${id}::uuid`),

@@ -1,4 +1,6 @@
-// ADR-264 — the bell in the top bar, on every page. Red badge = unread events
+// ADR-264 — the bell in the top bar, on every page. A gold bell (owner,
+// approved mockup 2-Nov-2026: a coloured symbol, not a grey outline) that rings
+// twice when there is something unread. Red badge = unread events
 // (the server's `unread`, whatever the filter). Click → popover: Notifications,
 // Mark all as read, All | Unread (n), the newest NOTIFICATION_POPOVER_LIMIT
 // items, View all notifications (→ /?view=notifications).
@@ -11,7 +13,6 @@
 import { NOTIFICATION_POPOVER_LIMIT, type NotificationFilter } from '@innovic/shared';
 import { useNavigate } from '@tanstack/react-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Icon } from '@/ui/core';
 import { useMarkAllNotificationsRead, useNotifications } from '../api';
 import '../home.css';
 import '../notifications.css';
@@ -101,14 +102,20 @@ export function NotificationBell(): React.JSX.Element {
       <button
         ref={btnRef}
         type="button"
-        className="nb-btn"
+        className={unread > 0 ? 'nb-btn nb-ring' : 'nb-btn'}
         title="Notifications"
         aria-label={`Notifications, ${unread} unread`}
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
       >
-        <Icon name="bell" size={16} />
+        <svg className="nb-bell" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+          <path
+            className="nb-bell-body"
+            d="M12 2.5a6.5 6.5 0 0 0-6.5 6.5c0 5.2-2.2 7.4-2.9 8.1-.3.3-.1.9.4.9h18c.5 0 .7-.6.4-.9-.7-.7-2.9-2.9-2.9-8.1A6.5 6.5 0 0 0 12 2.5z"
+          />
+          <path className="nb-bell-clapper" d="M9.6 19.5a2.5 2.5 0 0 0 4.8 0z" />
+        </svg>
         {unread > 0 ? (
           <span className="nb-badge" aria-hidden="true">
             {unread > 99 ? '99+' : unread}

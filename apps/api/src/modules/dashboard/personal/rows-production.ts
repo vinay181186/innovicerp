@@ -10,7 +10,8 @@
 //                time (the old work-list overrun rule). x1 = minutes running,
 //                x2 = op seq, x3 = operation; created_by = who started it.
 //   jc_running — open job cards (not closed, an op not complete), late first.
-//                x1 = ops still open, x2 = ops on the card.
+//                x1 = ops still open, x2 = ops on the card, x3 = its SO / JWSO
+//                number (the order line the card was raised against).
 
 import { type SQL, sql } from 'drizzle-orm';
 import { READY_FROM } from '../ready-ops';
@@ -45,7 +46,8 @@ export function jcRunningSql(cid: string, today: string, f: ListFilter): SQL {
            jc.order_qty::numeric AS qty, i.uom::text AS uom, NULL::numeric AS amount,
            jc.created_by::text AS created_by,
            (CASE WHEN jc.due_date < ${today}::date THEN 1 ELSE 0 END)::int AS is_late,
-           st.open_ops::text AS x1, st.total_ops::text AS x2, NULL::text AS x3
+           st.open_ops::text AS x1, st.total_ops::text AS x2,
+           COALESCE(so.code, jw.code)::text AS x3
     FROM public.job_cards jc
     JOIN (
       SELECT vs.job_card_id,
@@ -57,6 +59,10 @@ export function jcRunningSql(cid: string, today: string, f: ListFilter): SQL {
       GROUP BY vs.job_card_id
     ) st ON st.job_card_id = jc.id AND st.open_ops > 0
     LEFT JOIN public.items i ON i.id = jc.item_id
+    LEFT JOIN public.sales_order_lines sol ON sol.id = jc.source_so_line_id
+    LEFT JOIN public.sales_orders so ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
+    LEFT JOIN public.job_work_order_lines jwl ON jwl.id = jc.source_jw_line_id
+    LEFT JOIN public.job_work_orders jw ON jw.id = jwl.job_work_order_id AND jw.deleted_at IS NULL
     WHERE jc.company_id = ${cid}::uuid AND jc.deleted_at IS NULL AND jc.closed_at IS NULL
       ${filterFrag(f, 'jc.id', 'jc.created_by')}`;
 }

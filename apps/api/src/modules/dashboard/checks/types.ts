@@ -8,6 +8,7 @@
 // TODAY (the check's orange tone). Rows: late first, then oldest.
 
 import {
+  type AccessFormKey,
   type DashCheck,
   type DashCheckDept,
   type DashCheckKey,
@@ -46,6 +47,9 @@ export interface CheckDef {
   statusText?: (r: RawRow) => string | null;
   /** Qty is not a quantity on this check (e.g. a Route Card's op count). */
   noQty?: true;
+  /** Qty is a MONEY figure: shown only to a caller with the Price right on
+   *  this page (dashboard/access.ts canSeePrice) — else qty / uom are null. */
+  priceForm?: AccessFormKey;
 }
 
 // ── IST windows (Monday-start week, CLAUDE.md §6.5: never CURRENT_DATE) ──
@@ -161,8 +165,9 @@ export async function runCheck(
 }
 
 /** One raw row → the contract row. */
-export function toCheckRow(d: CheckDef, r: RawRow, today: string): DashCheckRow {
+export function toCheckRow(d: CheckDef, r: RawRow, today: string, showMoney = true): DashCheckRow {
   const { statusLabel, tone } = rowStatus(d, r, today);
+  const hideQty = d.noQty === true || (d.priceForm !== undefined && !showMoney);
   return {
     key: `${d.key}:${r.rowKey}`,
     docCode: r.code,
@@ -172,15 +177,17 @@ export function toCheckRow(d: CheckDef, r: RawRow, today: string): DashCheckRow 
     party: r.party,
     itemCode: r.itemCode,
     itemName: r.itemName,
-    qty: d.noQty ? null : r.qty,
-    uom: d.noQty ? null : r.uom,
+    qty: hideQty ? null : r.qty,
+    uom: hideQty ? null : r.uom,
     checkDate: (d.dated ? r.dueDate : r.docDate)?.slice(0, 10) ?? null,
     statusLabel,
     tone,
   };
 }
 
-export function toCheck(d: CheckDef, res: CheckResult, today: string): DashCheck {
+/** `showMoney` = the caller may see d.priceForm's prices (ignored when the
+ *  check carries no priceForm). */
+export function toCheck(d: CheckDef, res: CheckResult, today: string, showMoney = true): DashCheck {
   return {
     key: d.key,
     dept: d.dept,
@@ -189,7 +196,7 @@ export function toCheck(d: CheckDef, res: CheckResult, today: string): DashCheck
     // An undated check (approvals, QC) has no deadline: never orange.
     tone: checkTone(res.lateTotal, d.dated ? res.dueTodayTotal : 0),
     head: d.head,
-    rows: res.rows.map((r) => toCheckRow(d, r, today)),
+    rows: res.rows.map((r) => toCheckRow(d, r, today, showMoney)),
     href: d.href,
   };
 }

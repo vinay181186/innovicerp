@@ -13,6 +13,7 @@ import { sql } from 'drizzle-orm';
 
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { createdByNameSql } from '../../lib/created-by-sql';
+import { invoiceBalanceSql, invoiceOverdueSql } from '../../lib/invoice-overdue';
 import { canSeeFormPrice } from '../../lib/access';
 import { AuthorizationError } from '../../lib/errors';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
@@ -98,9 +99,8 @@ export async function listInvoiceLines(
   const limitFrag = input.limit !== undefined ? sql`LIMIT ${input.limit}` : sql``;
   // Same overdue rule as GET /invoices (rowToInvoice / its strip); "today" is
   // the India day (Asia/Kolkata), never the UTC one.
-  const overdue = sql`(invoices.status <> 'paid' AND invoices.status <> 'cancelled'
-    AND invoices.due_date IS NOT NULL
-    AND invoices.due_date < (now() AT TIME ZONE 'Asia/Kolkata')::date)`;
+  // The ONE rule: lib/invoice-overdue.ts.
+  const overdue = invoiceOverdueSql(sql`(now() AT TIME ZONE 'Asia/Kolkata')::date`);
 
   return withUserContext(user, async (tx) => {
     const page = (await tx.execute(sql`
@@ -133,7 +133,7 @@ export async function listInvoiceLines(
         COALESCE(sum(invoices.total_paid), 0)::text AS total_received,
         COALESCE(sum(invoices.total_tds), 0)::text AS total_tds,
         COALESCE(sum(CASE WHEN ${overdue}
-          THEN invoices.grand_total - invoices.total_paid - invoices.total_tds ELSE 0 END), 0)::text
+          THEN ${invoiceBalanceSql()} ELSE 0 END), 0)::text
           AS overdue_amount,
         count(*) FILTER (WHERE ${overdue})::int AS overdue_count,
         count(*) FILTER (WHERE invoices.status = 'unpaid')::int AS unpaid_count,

@@ -9,6 +9,7 @@ import type {
   ListDesignIssuesResponse,
 } from '@innovic/shared';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { designIssueOpenSql } from '../../lib/design-status';
 import { AuthorizationError } from '../../lib/errors';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { DESIGN_ISSUE_SF_COLUMNS, ISSUE_AGE_DAYS_SQL } from './sf-columns';
@@ -49,7 +50,7 @@ export async function listDesignIssuesAll(
         )`
       : sql``;
     let filterFrag = sql``;
-    if (input.filter === 'open') filterFrag = sql`AND di.status IN ('Open','In Progress')`;
+    if (input.filter === 'open') filterFrag = sql`AND ${designIssueOpenSql('di')}`;
     else if (input.filter === 'resolved') filterFrag = sql`AND di.status IN ('Resolved','Closed')`;
     else if (input.filter === 'critical')
       filterFrag = sql`AND di.severity = 'Critical' AND di.status NOT IN ('Resolved','Closed')`;
@@ -97,7 +98,7 @@ export async function listDesignIssuesAll(
     const sumRows = (await tx.execute(sql`
       SELECT
         COUNT(*)::int AS total,
-        COUNT(*) FILTER (WHERE di.status IN ('Open','In Progress'))::int AS open,
+        COUNT(*) FILTER (WHERE ${designIssueOpenSql('di')})::int AS open,
         COUNT(*) FILTER (WHERE di.status IN ('Resolved','Closed'))::int AS resolved,
         COUNT(*) FILTER (WHERE di.severity = 'Critical' AND di.status NOT IN ('Resolved','Closed'))::int AS critical
       ${fromWhere}

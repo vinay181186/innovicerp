@@ -18,10 +18,18 @@ import { requireAnyFormAccess, STORE_VIEW_FORMS } from '../../lib/access';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { roundQty } from '../../lib/stock-ledger';
 import { dateOut, tsOut } from '../instruments/common';
-import { ISSUE_SELECT, readIssue, requireCompany, todayIst, toListItem } from './common';
+import {
+  ISSUE_SELECT,
+  readIssue,
+  requireCompany,
+  TOOL_OUT_STATUS,
+  TOOL_STILL_OUT,
+  todayIst,
+  toListItem,
+} from './common';
 import { TOOL_HOLDER_SF_COLUMNS, TOOL_ISSUE_SF_COLUMNS } from './sf-columns';
 
-const OUT = sql`x.return_status IN ('issued', 'partial')`;
+const OUT = TOOL_OUT_STATUS;
 
 export async function listToolIssues(
   input: ListToolIssuesQuery,
@@ -37,7 +45,7 @@ export async function listToolIssues(
              OR x.issued_to ILIKE ${term} OR x.purpose ILIKE ${term}
              OR x.job_card_code ILIKE ${term} OR x.serial_nos ILIKE ${term})`
       : sql``;
-    const overdue = sql`${OUT} AND x.still_out_qty > 0 AND x.expected_return_date < ${today}::date`;
+    const overdue = sql`${TOOL_STILL_OUT} AND x.expected_return_date < ${today}::date`;
     const filterFrag =
       input.filter === 'out'
         ? sql`AND ${OUT}`
@@ -170,13 +178,13 @@ export async function listToolHolders(
     ) x`;
     const rows = (await tx.execute(sql`
       SELECT x.* FROM ${base}
-      WHERE ${OUT} AND x.still_out_qty > 0 ${sfFrag}
+      WHERE ${TOOL_STILL_OUT} ${sfFrag}
       ORDER BY ${orderBy}
       LIMIT ${input.limit} OFFSET ${input.offset}
     `)) as unknown as Array<Record<string, unknown>>;
     const totals = (await tx.execute(sql`
       SELECT COUNT(*)::int AS total FROM ${base}
-      WHERE ${OUT} AND x.still_out_qty > 0 ${sfFrag}
+      WHERE ${TOOL_STILL_OUT} ${sfFrag}
     `)) as unknown as Array<{ total: number }>;
     const items = rows.map((r): ToolHolderRow => {
       const t = toListItem(r, today);

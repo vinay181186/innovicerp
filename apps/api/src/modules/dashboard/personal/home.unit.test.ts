@@ -212,9 +212,9 @@ describe('notifications', () => {
     expect(notes.noteRuleFor('SalesOrder', 'EDIT')).toBeUndefined();
   });
 
-  it('Full Access / admin get none', () => {
-    expect(notes.rulesFor(dash({}, true))).toEqual([]);
-    expect(notes.rulesFor(dash({ fullAccess: true }))).toEqual([]);
+  it('Super Admin / Full Access get every rule (owner rule 2-Nov-2026)', () => {
+    expect(notes.rulesFor(dash({}, true))).toEqual([...notes.NOTE_RULES]);
+    expect(notes.rulesFor(dash({ fullAccess: true }))).toEqual([...notes.NOTE_RULES]);
   });
 
   it('only rules the caller holds; never their own activity', () => {

@@ -11,16 +11,54 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--border);
+  border: 1px solid var(--amber);
   border-radius: var(--radius-sm);
-  background: var(--bg2);
-  color: var(--text2);
+  background: var(--amber3);
+  color: var(--amber2);
   cursor: pointer;
   padding: 0;
 }
 .nb-btn[aria-expanded='true'] {
-  border-color: var(--blue);
-  color: var(--blue);
+  border-color: var(--amber2);
+  background: var(--amber3);
+}
+/* The gold bell (owner 2-Nov-2026: a coloured symbol). */
+.nb-bell-body {
+  fill: var(--amber);
+  stroke: var(--amber2);
+  stroke-width: 1.2;
+}
+.nb-bell-clapper {
+  fill: var(--amber2);
+}
+.nb-bell {
+  transform-origin: 50% 10%;
+}
+.nb-ring .nb-bell {
+  animation: nb-ring 1.2s ease 2;
+}
+@keyframes nb-ring {
+  0%,
+  100% {
+    transform: rotate(0);
+  }
+  15% {
+    transform: rotate(14deg);
+  }
+  30% {
+    transform: rotate(-12deg);
+  }
+  45% {
+    transform: rotate(8deg);
+  }
+  60% {
+    transform: rotate(-5deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nb-ring .nb-bell {
+    animation: none;
+  }
 }
 .nb-badge {
   position: absolute;

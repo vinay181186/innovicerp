@@ -2,7 +2,10 @@
 // The events, rights and wording are personal/notifications.ts (ADR-250) —
 // called with the bell's options: the last NOTIFICATION_DAYS IST days, no
 // "document still open" filter (it is a history). The caller's own events are
-// never notes; admins / Full Access get none (Day Log replies still come).
+// never notes, except a decision on their own paperwork; Super Admin / Full
+// Access get every rule (owner rules 2-Nov-2026, note-rules.ts). Decision and
+// work notes (decision-notes.ts, work-notes.ts) come worded, like Day Log
+// replies.
 // Wording: a note whose next step is still open keeps its call to action
 // ("— waiting for your approval"); one already done reads as the past fact
 // ("Jinal raised IN-PO-0421"). Only the notes returned are worded, with one
@@ -37,6 +40,7 @@ import {
   openSets,
   readNoteCandidates,
 } from './personal/notifications';
+import { seesAll } from './personal/note-rules';
 import { istToday } from './personal/util';
 
 /** Bell window reads: every note in the window, so unread / total are exact. */
@@ -104,15 +108,23 @@ export async function getNotifications(
         )
     : async () => new Set<string>();
   return withUserContext(user, async (tx) => {
-    const { replyNotes, cands, seenAt } = await readNoteCandidates(tx, a, c, user.id, {
+    const { replyNotes, extraNotes, cands, seenAt } = await readNoteCandidates(tx, a, c, user.id, {
       days: NOTIFICATION_DAYS,
       scan: BELL_SCAN_EVENTS,
     });
-    const kept = bellCandidates(cands, BELL_MAX_NOTES - replyNotes.length);
+    // Decision / work notes are worded at read time (open → call to action,
+    // else the past fact) and, like Day Log replies, carry their own text.
+    const worded: NoteWithActor[] = [
+      ...replyNotes,
+      ...extraNotes
+        .slice(0, Math.max(0, BELL_MAX_NOTES - replyNotes.length))
+        .map(({ open: _open, ...n }) => n),
+    ];
+    const kept = bellCandidates(cands, BELL_MAX_NOTES - worded.length);
     // Read state needs every note (unread / total are over the window); the
     // words are built below for the returned notes only.
     const notes: NoteWithActor[] = [
-      ...replyNotes,
+      ...worded,
       ...kept.map(({ ev, rule, key }) => ({
         key,
         ts: ev.ts.toISOString(),
@@ -146,10 +158,10 @@ export async function getNotifications(
     const shown = new Set(res.items.map((n) => n.key));
     const shownCands = kept.filter((k) => shown.has(k.key));
     const open = shownCands.length
-      ? await openSets(tx, shownCands, c, user.id, null, poInbox)
+      ? await openSets(tx, shownCands, c, user.id, null, poInbox, seesAll(a))
       : new Map();
     const textByKey = new Map<string, NoteWithActor['text']>([
-      ...replyNotes.map((n) => [n.key, n.text] as const),
+      ...worded.map((n) => [n.key, n.text] as const),
       ...shownCands.map((k) => [k.key, noteText(k.ev, k.rule, isStillOpen(open, k))] as const),
     ]);
     return {

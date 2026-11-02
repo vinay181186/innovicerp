@@ -54,7 +54,13 @@ export function canSeeWidget(
   w: { dept: string | null; navPage: string; priceForm?: AccessFormKey },
 ): boolean {
   if (!canSeeLink(a, w.dept, w.navPage)) return false;
-  return !w.priceForm || a.isAdmin || effectiveFormPerms(a.eff, w.priceForm).price;
+  return canSeePrice(a, w.priceForm);
+}
+
+/** The Price right on a page (the same per-page rule the screens use); no
+ *  form = nothing to hide. Admins always see prices. */
+export function canSeePrice(a: DashAccess, form: AccessFormKey | null | undefined): boolean {
+  return !form || a.isAdmin || effectiveFormPerms(a.eff, form).price;
 }
 
 /** ADR-234: does the caller hold this tick? For work-list prompts — a prompt

@@ -17,7 +17,7 @@ import { requireAnyFormAccess, STORE_VIEW_FORMS } from '../../lib/access';
 import { NotFoundError } from '../../lib/errors';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { roundQty } from '../../lib/stock-ledger';
-import { addDays, dateOut, requireCompany, todayIst } from './common';
+import { calibrationDueSql, dateOut, requireCompany, todayIst } from './common';
 import { INSTRUMENT_SF_COLUMNS } from './sf-columns';
 
 // Holder of an Issued instrument = the latest issue it went out on.
@@ -96,9 +96,11 @@ export async function listInstruments(
     if (q.itemId) parts.push(sql`ins.item_id = ${q.itemId}::uuid`);
     if (q.status) parts.push(sql`ins.status = ${q.status}`);
     if (q.due) {
-      const limit =
-        q.due === 'overdue' ? sql`< ${today}::date` : sql`<= ${addDays(today, 7)}::date`;
-      parts.push(sql`ins.status NOT IN ('lost', 'scrapped') AND ins.calibration_due_on ${limit}`);
+      parts.push(
+        q.due === 'overdue'
+          ? calibrationDueSql(sql`${today}::date`, 'overdue')
+          : calibrationDueSql(sql`${today}::date`),
+      );
     }
     // Sort & Filter (ADR-200): the screen's column filters + sort, through the
     // list's own field whitelist (sf-columns.ts). Applied to list AND count.

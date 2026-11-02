@@ -51,7 +51,9 @@ const SO_JOINS = sql`
   LEFT JOIN public.sales_orders so
     ON so.id = sol.sales_order_id AND so.deleted_at IS NULL`;
 
-function pendingFrom(companyId: string): SQL {
+/** Pending TPI ops: FROM … WHERE (company + QC op named TPI + qty waiting).
+ *  Exported: the home's QC check qc_tpi reads the same rows (ADR-264). */
+export function pendingFrom(companyId: string): SQL {
   return sql`
     FROM public.v_jc_op_status vos
     JOIN public.jc_ops jo ON jo.id = vos.jc_op_id AND jo.deleted_at IS NULL
