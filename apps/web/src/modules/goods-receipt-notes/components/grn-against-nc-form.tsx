@@ -8,6 +8,11 @@
 // received_qc_pending, and Incoming QC later credits the NC and re-injects the
 // pieces into the job-card operation.
 //
+// Owner 2026-11-01 (0237): one return challan may carry SEVERAL NCs of one SO,
+// one line per NC. So the picker lists one row per RETURN CHALLAN (row id = the
+// DC id) naming every NC on it, and Received is entered per challan line — each
+// line is one NC, and the server books each line against its own NC.
+//
 // So "Against NC" = pick the NC → its return challan is the source → the SAME
 // receive call the Against JWPO / DC type makes. This file is that form with
 // the NC picker in front and no PO anywhere. An NC is eligible while its
@@ -42,6 +47,7 @@ import {
   useDeliveryChallansList,
   useReceiveDeliveryChallan,
 } from '@/modules/delivery-challans/api';
+import { dcNcs } from '@/modules/delivery-challans/lib/dc-ncs';
 import { computeReceivedByLine } from '@/modules/delivery-challans/lib/receipt-math';
 import { useNcRegister, useNcRegisterList } from '@/modules/nc-register/api';
 import { Panel } from '@/ui/data';
@@ -90,7 +96,8 @@ export function GrnAgainstNcForm({
   const saveKey = useSaveKey();
   const receive = useReceiveDeliveryChallan(saveKey);
 
-  const [ncId, setNcId] = useState<string | null>(null);
+  // The picked RETURN CHALLAN (one row per DC, which may carry several NCs).
+  const [pickedDcId, setPickedDcId] = useState<string | null>(null);
   const [ncSearch, setNcSearch] = useState('');
   const [receiptDate, setReceiptDate] = useState(todayIst());
   const [vendorInvoiceText, setVendorInvoiceText] = useState('');
@@ -103,8 +110,8 @@ export function GrnAgainstNcForm({
   const [linesTouched, setLinesTouched] = useState(false);
 
   // The same query the DC form uses — every challan still awaiting receipt —
-  // but keeping ONLY the return-to-vendor rows (ncId set). One challan per NC
-  // by rule, so each such row IS one eligible NC. 200 is the API's max page
+  // but keeping ONLY the return-to-vendor rows (ncId set — the is-return flag).
+  // One row per challan; a challan may carry several NCs of one SO. 200 is the API's max page
   // and is far above the number of issued-but-unreceived challans at any time.
   const dcList = useDeliveryChallansList({ status: 'issued', limit: 200, offset: 0 });
   const ncRows = useMemo(
@@ -141,12 +148,17 @@ export function GrnAgainstNcForm({
     () =>
       ncRows
         .map((d) => {
-          const ncIdOfRow = d.ncId;
-          const sentOnDc = ncIdOfRow ? (sentOnDcByNcId.get(ncIdOfRow) ?? '') : '';
+          const ncs = dcNcs(d);
+          const sentOnDc = [
+            ...new Set(ncs.map((n) => sentOnDcByNcId.get(n.id)).filter(Boolean)),
+          ].join(' ');
+          // The job card is the header's = the FIRST NC's; named only when the
+          // challan carries one NC, so it is never read as all of them.
+          const jc = ncs.length === 1 ? (d.jobCardCode ?? '—') : `${ncs.length} NCs`;
           return {
-            id: ncIdOfRow ?? d.id,
-            code: d.ncCode ?? d.poCodeText,
-            name: `${d.jobCardCode ?? '—'} · ${d.vendorName ?? d.vendorCodeText}`,
+            id: d.id,
+            code: ncs.map((n) => n.code).join(', ') || d.poCodeText,
+            name: `${jc} · ${d.vendorName ?? d.vendorCodeText}`,
             searchText: sentOnDc ? `${d.code} ${sentOnDc}` : d.code,
           };
         })
@@ -156,13 +168,33 @@ export function GrnAgainstNcForm({
     [ncRows, ncSearch, sentOnDcByNcId],
   );
 
-  // The picked NC's return challan row (from the list) — the source of the
-  // job card, challan code and vendor shown in the header, and of `dcId`.
+  // The picked return challan row (from the list) — the source of the job
+  // card, challan code and vendor shown in the header, and of `dcId`.
   const ncRow = useMemo(
-    () => (ncId ? ncRows.find((d) => d.ncId === ncId) : undefined),
-    [ncId, ncRows],
+    () => (pickedDcId ? ncRows.find((d) => d.id === pickedDcId) : undefined),
+    [pickedDcId, ncRows],
   );
   const dcId = ncRow?.id ?? null;
+  // Every NC on the picked challan; `ncId` is the one NC when there is exactly
+  // one (the chain below is read for it), else null.
+  const pickedNcs = useMemo(() => (ncRow ? dcNcs(ncRow) : []), [ncRow]);
+  const ncId = pickedNcs.length === 1 ? (pickedNcs[0]?.id ?? null) : null;
+  // Several NCs: their chain facts, joined (distinct) off the NC register page
+  // already loaded above. A fact the capped page missed simply shows less.
+  const multiChain = useMemo(() => {
+    if (pickedNcs.length < 2) return null;
+    const rows = (ncRegisterList.data?.items ?? []).filter((n) =>
+      pickedNcs.some((p) => p.id === n.id),
+    );
+    const join = (vals: Array<string | null>): string =>
+      [...new Set(vals.filter((v): v is string => Boolean(v)))].join(', ');
+    return {
+      jc: join(rows.map((n) => n.jcCode)),
+      po: join(rows.map((n) => n.sourcePoCode)),
+      grn: join(rows.map((n) => n.sourceGrnCode)),
+      sentOnDc: join(rows.map((n) => n.sourceDeliveryChallanCode)),
+    };
+  }, [pickedNcs, ncRegisterList.data]);
 
   // ADR-217 — the rest of the chain for the picked NC. GET /nc-register/:id
   // already resolves where the rejected material came from (resolveNcSource:
@@ -233,7 +265,7 @@ export function GrnAgainstNcForm({
   }, [dc]);
 
   const onNcChange = (id: string | null): void => {
-    setNcId(id);
+    setPickedDcId(id);
     setFormError(null);
     setSubmitError(null);
   };
@@ -255,7 +287,7 @@ export function GrnAgainstNcForm({
     e.preventDefault();
     setFormError(null);
     setSubmitError(null);
-    if (!ncId) {
+    if (!pickedDcId) {
       setFormError('NC No. is required.');
       return;
     }
@@ -331,17 +363,17 @@ export function GrnAgainstNcForm({
   }));
 
   const ncValueLabel = useMemo(() => {
-    if (!ncId) return undefined;
-    const o = ncOptions.find((x) => x.id === ncId);
+    if (!pickedDcId) return undefined;
+    const o = ncOptions.find((x) => x.id === pickedDcId);
     return o ? `${o.code} — ${o.name}` : undefined;
-  }, [ncId, ncOptions]);
+  }, [pickedDcId, ncOptions]);
 
   // The header's account, from the same rows and the same `accountOf` the table
   // foots — one rule, one rounding, one answer.
   const { account } = grnReceiptTotals(rows);
 
   // Report to the shell so its header Save / "Not saved" pill stay truthful.
-  const dirty = ncId !== null || vendorInvoiceText !== '' || remarks !== '' || linesTouched;
+  const dirty = pickedDcId !== null || vendorInvoiceText !== '' || remarks !== '' || linesTouched;
   useEffect(() => {
     onStatusChange({ submitting, blocked: false, dirty });
   }, [onStatusChange, submitting, dirty]);
@@ -372,7 +404,7 @@ export function GrnAgainstNcForm({
             >
               <SearchableSelect
                 id="ncId"
-                value={ncId}
+                value={pickedDcId}
                 onChange={onNcChange}
                 options={ncOptions}
                 onSearch={setNcSearch}
@@ -413,37 +445,48 @@ export function GrnAgainstNcForm({
               cells stay EMPTY, because a dash would assert an absence the
               screen has not established. JC No. comes off the picked NC's own
               list row, already loaded, so it has no such wait. */}
-          <Cluster name="Return chain">
-            <ClusterFact
-              label="JC No."
-              num
-              value={ncRow?.jobCardCode ?? '—'}
-              empty={!ncRow?.jobCardCode}
-            />
-            <ClusterFact
-              label="Source PO No."
-              num
-              value={ncSourceKnown ? (ncDetail.sourcePoCode ?? '—') : ''}
-              empty={!ncDetail?.sourcePoCode}
-              {...(ncDetail?.sourcePoCode ? { title: ncDetail.sourcePoCode } : {})}
-            />
-            <ClusterFact
-              label="Source GRN No."
-              num
-              value={ncSourceKnown ? (ncDetail.sourceGrnCode ?? '—') : ''}
-              empty={!ncDetail?.sourceGrnCode}
-              {...(ncDetail?.sourceGrnCode ? { title: ncDetail.sourceGrnCode } : {})}
-            />
-            <ClusterFact
-              label="Sent on DC No."
-              num
-              value={ncSourceKnown ? (ncDetail.sourceDeliveryChallanCode ?? '—') : ''}
-              empty={!ncDetail?.sourceDeliveryChallanCode}
-              {...(ncDetail?.sourceDeliveryChallanCode
-                ? { title: ncDetail.sourceDeliveryChallanCode }
-                : {})}
-            />
-          </Cluster>
+          {multiChain ? (
+            // Several NCs on the challan: each fact joined (distinct) across
+            // them, off the NC register page already loaded.
+            <Cluster name="Return chain">
+              <ChainFact label="JC No." value={multiChain.jc} />
+              <ChainFact label="Source PO No." value={multiChain.po} />
+              <ChainFact label="Source GRN No." value={multiChain.grn} />
+              <ChainFact label="Sent on DC No." value={multiChain.sentOnDc} />
+            </Cluster>
+          ) : (
+            <Cluster name="Return chain">
+              <ClusterFact
+                label="JC No."
+                num
+                value={ncRow?.jobCardCode ?? '—'}
+                empty={!ncRow?.jobCardCode}
+              />
+              <ClusterFact
+                label="Source PO No."
+                num
+                value={ncSourceKnown ? (ncDetail.sourcePoCode ?? '—') : ''}
+                empty={!ncDetail?.sourcePoCode}
+                {...(ncDetail?.sourcePoCode ? { title: ncDetail.sourcePoCode } : {})}
+              />
+              <ClusterFact
+                label="Source GRN No."
+                num
+                value={ncSourceKnown ? (ncDetail.sourceGrnCode ?? '—') : ''}
+                empty={!ncDetail?.sourceGrnCode}
+                {...(ncDetail?.sourceGrnCode ? { title: ncDetail.sourceGrnCode } : {})}
+              />
+              <ClusterFact
+                label="Sent on DC No."
+                num
+                value={ncSourceKnown ? (ncDetail.sourceDeliveryChallanCode ?? '—') : ''}
+                empty={!ncDetail?.sourceDeliveryChallanCode}
+                {...(ncDetail?.sourceDeliveryChallanCode
+                  ? { title: ncDetail.sourceDeliveryChallanCode }
+                  : {})}
+              />
+            </Cluster>
+          )}
 
           <GrnVendorCluster
             vendorId={vendorId}
@@ -494,7 +537,7 @@ export function GrnAgainstNcForm({
           showAccount
           decimal={lines.some((l) => !isWholeNumberUom(l.uom))}
           emptyText={
-            !ncId
+            !pickedDcId
               ? 'Pick an NC to load its return challan.'
               : !dc
                 ? 'Loading return challan lines…'
@@ -512,5 +555,18 @@ export function GrnAgainstNcForm({
         />
       </Panel>
     </form>
+  );
+}
+
+/** One joined chain fact for a challan carrying several NCs. */
+function ChainFact({ label, value }: { label: string; value: string }): React.JSX.Element {
+  return (
+    <ClusterFact
+      label={label}
+      num
+      value={value || '—'}
+      empty={!value}
+      {...(value ? { title: value } : {})}
+    />
   );
 }

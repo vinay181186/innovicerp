@@ -55,6 +55,7 @@ import { Banner } from '@/ui/feedback';
 import { Cluster, ClusterFact, ClusterGrid, FormField, SearchableSelect } from '@/ui/forms';
 import { goodsReceiptNotesKeys } from '../api';
 import { GRN_CREATE_FORM_ID, type GrnTypeFormShellProps } from './grn-create-contract';
+import { dcNcs } from '../../delivery-challans/lib/dc-ncs';
 import { GrnLinesTable, GrnReceiptAccount } from './grn-lines-table';
 import { GrnVendorCluster } from './grn-vendor-cluster';
 import { type GrnLineRow, grnReceivedError, grnReceiptTotals } from './grn-receipt-figures';
@@ -174,7 +175,11 @@ export function GrnAgainstDcForm({
         // challan has no purchase order: that is the pre-ADR-217 shape where
         // the column was made to carry the NC code. Once a return HAS an order,
         // `poCodeText` holds the order's code and `ncCode` is the resolved NC.
-        const ncLabel = d.ncCode ?? (d.purchaseOrderId === null ? d.poCodeText : null);
+        // 0237 — a return DC may carry several NCs: name every one.
+        const allNcs = dcNcs(d)
+          .map((n) => n.code)
+          .join(', ');
+        const ncLabel = allNcs || (d.purchaseOrderId === null ? d.poCodeText : null);
         const long =
           d.ncId !== null
             ? `${RETURN_TAG} · NC ${ncLabel ?? '?'} · ${vendor} · ${fmtDate(d.dcDate)}`
@@ -291,8 +296,9 @@ export function GrnAgainstDcForm({
   // for the pre-ADR-217 shape, where there was no order and that column was made
   // to carry the NC code — reading it once an order exists would print the
   // ORDER's code under an "NC No." label.
+  const pickedNcs = dc ? dcNcs(dc) : pickedRow ? dcNcs(pickedRow) : [];
   const returnNcCode =
-    (dc ? dc.ncCode : (pickedRow?.ncCode ?? null)) ??
+    (pickedNcs.length > 0 ? pickedNcs.map((n) => n.code).join(', ') : null) ??
     (challanPoId === null ? (pickedRow?.poCodeText ?? null) : null);
 
   const vendorId = dc?.vendorId ?? pickedRow?.vendorId ?? undefined;

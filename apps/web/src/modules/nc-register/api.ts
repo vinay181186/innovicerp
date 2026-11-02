@@ -1,6 +1,8 @@
 import { useCallback } from 'react';
 import type {
   CloseNcReworkInput,
+  CreateNcDcBatchInput,
+  CreateNcDcBatchResult,
   CreateNcDcInput,
   CreateNcDcResult,
   CreateNcRegisterInput,
@@ -215,12 +217,21 @@ export function useSoftDeleteNcRegister() {
  *  NC breakup changes), the op-entry jc-ops rows (pending / at-vendor / NC
  *  columns), and delivery challans (an RTV challan is raised from the NC). */
 function useInvalidateNcCascade(id: string) {
+  const many = useInvalidateNcCascadeMany();
+  return (nc: NcRegister) => many([[id, nc]]);
+}
+
+/** The same cascade for a write that moved SEVERAL NCs at once (one return DC
+ *  for many NCs of one SO): every root above is invalidated once, and each NC's
+ *  detail cache is replaced with the copy the server returned. */
+function useInvalidateNcCascadeMany() {
   const qc = useQueryClient();
-  return (nc: NcRegister) => {
+  // [detail id, the NC to store under it]
+  return (ncs: Array<[string, NcRegister]>) => {
     void qc.invalidateQueries({ queryKey: ncRegisterKeys.lists() });
     void qc.invalidateQueries({ queryKey: ncRegisterKeys.summary() });
     void qc.invalidateQueries({ queryKey: activityLogKeys.all });
-    qc.setQueryData(ncRegisterKeys.detail(id), nc);
+    for (const [ncId, nc] of ncs) qc.setQueryData(ncRegisterKeys.detail(ncId), nc);
     void qc.invalidateQueries({ queryKey: jobCardsKeys.all });
     // Prefix of every `opEntryKeys.jcOps(q)` key, whatever the query was.
     void qc.invalidateQueries({ queryKey: [...opEntryKeys.all, 'jc-ops'] });
@@ -257,6 +268,25 @@ export function useCreateNcDc(id: string, saveKey?: SaveKey) {
         }),
       ),
     onSuccess: (resp) => invalidate(resp.nc),
+  });
+}
+
+/** ONE return-to-vendor challan for several NCs of the same SO going to the
+ *  same vendor (owner 2026-11-01) — POST /nc-register/create-dc. `ncIds` order
+ *  is the challan's line order. Same invalidation as useCreateNcDc, once for
+ *  every NC the server returns. */
+export function useCreateNcDcBatch(saveKey?: SaveKey) {
+  const invalidate = useInvalidateNcCascadeMany();
+  return useMutation<CreateNcDcBatchResult, Error, CreateNcDcBatchInput>({
+    mutationFn: (input) =>
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<CreateNcDcBatchResult>('/nc-register/create-dc', {
+          method: 'POST',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
+    onSuccess: (resp) => invalidate(resp.ncs.map((nc): [string, NcRegister] => [nc.id, nc])),
   });
 }
 

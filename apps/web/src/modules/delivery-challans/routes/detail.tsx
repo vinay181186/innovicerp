@@ -15,7 +15,7 @@
 import type { DeliveryChallanLine, DeliveryChallanWithLines } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { ArrowLeft, Ban, Download, Eye, Inbox, Loader2, Pencil } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { undecidedChangesOf, usePendingEditForDoc } from '@/modules/document-edits/api';
@@ -39,6 +39,7 @@ import { usePrintTemplates } from '../../print-templates/api';
 import { useMyCompany } from '../../settings/api';
 import { useVendor } from '../../vendors/api';
 import { useDeliveryChallan } from '../api';
+import { dcNcs } from '../lib/dc-ncs';
 import { DcReceiptsPanel } from '../components/dc-receipts-panel';
 import { DcStatusBadge } from '../components/dc-status-badge';
 import { printOspDc } from '../lib/print-ospdc';
@@ -158,6 +159,9 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
   }
 
   const dc = data;
+  // Every NC this return DC carries (one DC may hold several NCs of one SO).
+  // Empty on an ordinary OSP DC; `dc.ncId` stays the is-return flag.
+  const ncs = dcNcs(dc);
   // Tier-driven, per department (ospdc_create sits in Purchase).
   //   Receive -> entry. It had NO role gate at all, so an L1 Viewer was shown
   //              the button and only found out at the API. Status condition kept.
@@ -245,11 +249,19 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
                 }}
               >
                 <span>↩ Return to vendor —</span>
-                <span>NC</span>
-                <Link to="/nc-register/$id" params={{ id: dc.ncId }} className="td-code">
-                  {dc.ncCode ?? dc.poCodeText}
-                </Link>
-                {dc.jobCardId ? (
+                {/* Every NC on this DC (one DC may hold several NCs of one SO). */}
+                <span>{ncs.length === 1 ? 'NC' : 'NCs'}</span>
+                {ncs.map((n, i) => (
+                  <Fragment key={n.id}>
+                    {i > 0 ? <span>,</span> : null}
+                    <Link to="/nc-register/$id" params={{ id: n.id }} className="td-code">
+                      {n.code}
+                    </Link>
+                  </Fragment>
+                ))}
+                {/* The header job card is the FIRST NC's — shown only when the
+                    DC carries one NC, so it is never read as all of them. */}
+                {dc.jobCardId && ncs.length === 1 ? (
                   <>
                     <span>· JC</span>
                     <Link to="/job-cards/$id" params={{ id: dc.jobCardId }} className="td-code">
@@ -406,6 +418,11 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
               <thead>
                 <tr>
                   <th>Ln</th>
+                  {/* A return DC carries one NC per line. */}
+                  {dc.ncId ? <th>NC No.</th> : null}
+                  {/* Each return line's own JW PO — NCs of one SO may come
+                      from different JW POs. */}
+                  {dc.ncId ? <th>PO No.</th> : null}
                   {/* POL = the CUSTOMER's own PO line number off the SO line
                       behind this challan line. */}
                   <th style={{ color: 'var(--purple)' }}>POL</th>
@@ -420,7 +437,7 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
               <tbody>
                 {dc.lines.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="empty-state">
+                    <td colSpan={dc.ncId ? 10 : 8} className="empty-state">
                       No lines yet.
                     </td>
                   </tr>
@@ -434,6 +451,25 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
                     return (
                       <tr key={line.id}>
                         <td className="mono">{line.lineNo}</td>
+                        {dc.ncId ? (
+                          <td className="mono fw-700">
+                            {line.ncId ? (
+                              <Link
+                                to="/nc-register/$id"
+                                params={{ id: line.ncId }}
+                                className="td-code"
+                              >
+                                {line.ncCode ?? '—'}
+                              </Link>
+                            ) : (
+                              // A DC raised before 0237: its one line is the header NC.
+                              (ncs[0]?.code ?? '—')
+                            )}
+                          </td>
+                        ) : null}
+                        {dc.ncId ? (
+                          <td className="mono">{line.poCode ?? dc.poCode ?? '—'}</td>
+                        ) : null}
                         {/* POL — the customer's PO line number off the SO line
                             behind this row; '—' on a raw-material line. */}
                         <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
@@ -466,7 +502,7 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
               {dc.lines.length > 0 ? (
                 <tfoot>
                   <tr style={{ background: 'var(--bg4)' }}>
-                    <td colSpan={4} style={{ fontWeight: 700 }}>
+                    <td colSpan={dc.ncId ? 6 : 4} style={{ fontWeight: 700 }}>
                       Total
                     </td>
                     <td className="mono fw-700">{fmtQty(totals.ship)}</td>
@@ -538,9 +574,19 @@ function HeaderGrid(props: { dc: DeliveryChallanWithLines }): React.JSX.Element 
         label={dc.ncId ? 'NC No.' : 'PO No.'}
         value={
           dc.ncId ? (
-            <Link to="/nc-register/$id" params={{ id: dc.ncId }} className="badge b-red">
-              {dc.ncCode ?? dc.poCodeText}
-            </Link>
+            // Every NC on this return DC, each a link to its NC.
+            <span style={{ display: 'inline-flex', gap: 4, flexWrap: 'wrap' }}>
+              {dcNcs(dc).map((n) => (
+                <Link
+                  key={n.id}
+                  to="/nc-register/$id"
+                  params={{ id: n.id }}
+                  className="badge b-red"
+                >
+                  {n.code}
+                </Link>
+              ))}
+            </span>
           ) : dc.poCode ? (
             <span className="badge b-green">{dc.poCode}</span>
           ) : dc.poCodeText ? (

@@ -2,10 +2,8 @@
 import { describe, expect, it } from 'vitest';
 import type { DayLine } from './day';
 import {
-  blockedByOf,
   currentOf,
   dmy,
-  dmyDay,
   entryMinutes,
   findOverlap,
   hm,
@@ -96,21 +94,6 @@ describe('findOverlap', () => {
     const open = [withId(work('11:00', null))];
     expect(findOverlap(open, { fromTime: '11:30', toTime: '11:40' }, 12 * 60)).not.toBeNull();
     expect(findOverlap(open, { fromTime: '10:00', toTime: '11:00' }, 12 * 60)).toBeNull();
-  });
-});
-
-describe('yesterday first', () => {
-  it('blocks only when an earlier row exists and the calendar day before is empty', () => {
-    expect(blockedByOf({ hasEarlier: false, prevHasRows: false }, '2026-10-27')).toBeNull();
-    expect(blockedByOf({ hasEarlier: true, prevHasRows: true }, '2026-10-27')).toBeNull();
-    // Monday 2026-10-26 is blocked by Sunday 25-10 — Sundays are not skipped.
-    expect(blockedByOf({ hasEarlier: true, prevHasRows: false }, '2026-10-26')).toEqual({
-      date: '2026-10-25',
-      reason: '25-10-2026 (Sun) has no entries — fill it first',
-    });
-  });
-  it('dmyDay names the weekday', () => {
-    expect(dmyDay('2026-10-26')).toBe('26-10-2026 (Mon)');
   });
 });
 

@@ -40,7 +40,7 @@ export async function updateWork(
       { companyId, viewerId: null, targetId: user.id, date: h.date, replies: true },
       tx,
     );
-    guardOwnerWrite(h.date, snap, clock.today);
+    guardOwnerWrite(h.date, clock.today);
     const self = snap.lines.find((l) => l.id === entryId);
     if (!self || !self.fromTime) throw new NotFoundError('Entry not found');
     // Old Break / Others (leave) rows keep their text.

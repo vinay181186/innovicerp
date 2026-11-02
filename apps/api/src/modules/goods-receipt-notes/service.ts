@@ -70,7 +70,7 @@ import type {
   ListGoodsReceiptNotesResponse,
   UpdateGoodsReceiptNoteInput,
 } from './schema';
-import { GRN_SF_COLUMNS } from './sf-columns';
+import { GRN_NC_CODES_SQL, GRN_SF_COLUMNS } from './sf-columns';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -549,10 +549,15 @@ export async function listGoodsReceiptNotes(
           -- ADR-217: a return's cell shows the NC code. Before ADR-217 that WAS
           -- po_code_text, so this search found it by accident; now the column
           -- holds a real PO code and the NC has to be reached on its own.
+          -- 0237: any NC the GRN's lines settle (line NC, header fallback).
           OR EXISTS (
-            SELECT 1 FROM public.nc_register snc
-            WHERE snc.id = grn.nc_id
-              AND snc.deleted_at IS NULL
+            SELECT 1
+            FROM public.goods_receipt_note_lines sgl
+            JOIN public.nc_register snc
+              ON snc.id = COALESCE(sgl.nc_id, grn.nc_id) AND snc.deleted_at IS NULL
+            WHERE sgl.goods_receipt_note_id = grn.id
+              AND sgl.deleted_at IS NULL
+              AND grn.nc_id IS NOT NULL
               AND snc.code ILIKE ${term} ESCAPE '\\'
           )
           OR EXISTS (
@@ -688,8 +693,10 @@ export async function listGoodsReceiptNotes(
         -- before ADR-217 put the NC code in that column; one raised after it
         -- puts a real PO code there. (No backticks in here: this whole SELECT
         -- is a TypeScript template literal and one would close it.)
-        (SELECT n.code FROM public.nc_register n
-          WHERE n.id = grn.nc_id AND n.deleted_at IS NULL) AS "ncCode",
+        -- 0237 — every NC the lines settle (GRN_NC_CODES_SQL), else the header's.
+        COALESCE(${GRN_NC_CODES_SQL},
+          (SELECT n.code FROM public.nc_register n
+            WHERE n.id = grn.nc_id AND n.deleted_at IS NULL)) AS "ncCode",
         COALESCE(line_agg.line_count, 0)::int AS "lineCount",
         first_line.item_code AS "firstItemCode",
         first_line.item_name AS "firstItemName",
@@ -881,7 +888,8 @@ async function getGoodsReceiptNoteInternal(
         v.name AS "vendorName",
         v.code AS "vendorCode",
         dc.code AS "dcCode",
-        nc.code AS "ncCode"
+        -- 0237 — every NC the lines settle, in line order; header NC fallback.
+        COALESCE(${GRN_NC_CODES_SQL}, nc.code) AS "ncCode"
       FROM public.goods_receipt_notes grn
       LEFT JOIN public.purchase_orders po
         ON po.id = grn.purchase_order_id AND po.deleted_at IS NULL
@@ -915,6 +923,8 @@ async function getGoodsReceiptNoteInternal(
         gnl.item_code_text AS "itemCodeText",
         gnl.item_name AS "itemName",
         gnl.received_qty AS "receivedQty",
+        -- 0237 — the NC this replacement line settles; header for old rows.
+        COALESCE(gnl.nc_id, grn.nc_id) AS "ncId",
         gnl.dc_ref_no AS "dcRefNo",
         gnl.qc_status AS "qcStatus",
         gnl.qc_accepted_qty AS "qcAcceptedQty",
@@ -1002,8 +1012,11 @@ async function getGoodsReceiptNoteInternal(
         ON rev_dc.id = grn.delivery_challan_id AND rev_dc.deleted_at IS NULL
       LEFT JOIN public.job_cards rev_dc_jc
         ON rev_dc_jc.id = rev_dc.job_card_id AND rev_dc_jc.deleted_at IS NULL
+      -- 0237 — the LINE's NC (one replacement GRN may settle several NCs, each
+      -- with its own job card), header as old-row fallback; it is read ahead of
+      -- the DC's header SO line / job card, which name only the FIRST NC's.
       LEFT JOIN public.nc_register rev_nc
-        ON rev_nc.id = grn.nc_id AND rev_nc.deleted_at IS NULL
+        ON rev_nc.id = COALESCE(gnl.nc_id, grn.nc_id) AND rev_nc.deleted_at IS NULL
       LEFT JOIN public.jc_ops rev_nc_op
         ON rev_nc_op.id = rev_nc.jc_op_id AND rev_nc_op.deleted_at IS NULL
       LEFT JOIN public.job_cards rev_nc_jc
@@ -1013,16 +1026,16 @@ async function getGoodsReceiptNoteInternal(
         ON rev_sol.id = COALESCE(
              rev_pol.source_so_line_id,
              rev_pol_jc.source_so_line_id,
+             rev_nc_jc.source_so_line_id,
              rev_dc.sales_order_line_id,
-             rev_dc_jc.source_so_line_id,
-             rev_nc_jc.source_so_line_id
+             rev_dc_jc.source_so_line_id
            )
        AND rev_sol.deleted_at IS NULL
       LEFT JOIN public.job_work_order_lines rev_jwl
         ON rev_jwl.id = COALESCE(
              rev_pol_jc.source_jw_line_id,
-             rev_dc_jc.source_jw_line_id,
-             rev_nc_jc.source_jw_line_id
+             rev_nc_jc.source_jw_line_id,
+             rev_dc_jc.source_jw_line_id
            )
        AND rev_jwl.deleted_at IS NULL
       -- "Received Earlier" = the maintained column MINUS this GRN's own
@@ -1123,6 +1136,7 @@ async function getGoodsReceiptNoteInternal(
       itemCodeText: (r['itemCodeText'] as string | null) ?? null,
       itemName: String(r['itemName'] ?? ''),
       receivedQty: Number(r['receivedQty'] ?? 0),
+      ncId: (r['ncId'] as string | null) ?? null,
       dcRefNo: (r['dcRefNo'] as string | null) ?? null,
       qcStatus: r['qcStatus'] as GoodsReceiptNoteLine['qcStatus'],
       qcAcceptedQty: Number(r['qcAcceptedQty'] ?? 0),
@@ -1363,6 +1377,9 @@ export async function insertGrnForOspReceipt(
       itemCodeText: string | null;
       itemName: string;
       receivedQty: number;
+      /** 0237 — the NC this replacement line settles (the return DC line's
+       *  own NC). Absent → the header `ncId` (single-NC callers). */
+      ncId?: string | null;
     }>;
   },
 ): Promise<{ id: string; code: string }> {
@@ -1409,6 +1426,7 @@ export async function insertGrnForOspReceipt(
       itemCodeText: resolvedId ? null : (code ?? null),
       itemName: l.itemName,
       receivedQty: l.receivedQty,
+      ncId: l.ncId ?? args.ncId ?? null,
       qcStatus: 'pending' as const,
       qcAcceptedQty: 0,
       qcRejectedQty: 0,

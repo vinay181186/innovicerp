@@ -7,6 +7,7 @@
 import { sql } from 'drizzle-orm';
 
 import type { SfColumnMap } from '../../lib/list-query';
+import { ncSoKeySql } from './so-key';
 
 export const NC_SF_COLUMNS: SfColumnMap = {
   ncCode: { sql: sql`nc.code`, type: 'text' },
@@ -25,11 +26,12 @@ export const NC_SF_COLUMNS: SfColumnMap = {
   },
   itemName: { sql: sql`COALESCE(i.name, nc.item_name_text)`, type: 'text' },
   // ADR-207 — the Internal SO No., the SAME scalar the list SELECTs: read live
-  // off the NC's own SO (nc.so_id). A scalar, so it cannot multiply the row and
-  // is valid in the count query, which selects from nc_register too.
+  // off the NC's SO key (so-key.ts: nc.so_id, else the card's SO line's SO). A
+  // scalar, so it cannot multiply the row and is valid in the count query,
+  // which selects from nc_register too.
   soInternalNo: {
     sql: sql`(SELECT nso.internal_so_no FROM public.sales_orders nso
-      WHERE nso.id = nc.so_id)`,
+      WHERE nso.id = ${ncSoKeySql('nc')})`,
     type: 'text',
   },
   rejectedQty: { sql: sql`nc.rejected_qty`, type: 'num' },

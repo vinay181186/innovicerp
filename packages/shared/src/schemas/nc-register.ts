@@ -74,6 +74,10 @@ export const ncRegisterSchema = z.object({
   soCodeText: z.string().nullable(),
   /** ADR-207: the SO's Internal SO No., read live off sales_orders (soId). */
   soInternalNo: z.string().nullable().default(null),
+  /** The SO No., read live off sales_orders (soId) — filled even when the
+   *  snapshot soCodeText is blank (an NC raised by Incoming QC). Show
+   *  `soCode ?? soCodeText`. */
+  soCode: z.string().nullable().default(null),
   machineCodeText: z.string().nullable(),
   operatorText: z.string().nullable(),
   rejectedQty: z.string(), // numeric stored as string
@@ -307,6 +311,27 @@ export const createNcDcResultSchema = z.object({
   deliveryChallanCode: z.string(),
 });
 export type CreateNcDcResult = z.infer<typeof createNcDcResultSchema>;
+
+/** One return-to-vendor DC for SEVERAL NCs (owner 2026-11-01): every NC must
+ *  belong to the same SO and go to the same vendor; each NC becomes one DC line
+ *  carrying its own JW PO line and rejected qty. A single-NC save is the same
+ *  call with one id. Order of `ncIds` = line order on the challan. */
+export const MAX_NCS_PER_DC = 50;
+export const createNcDcBatchInputSchema = createNcDcInputSchema.extend({
+  ncIds: z
+    .array(z.string().uuid())
+    .min(1)
+    .max(MAX_NCS_PER_DC)
+    .refine((ids) => new Set(ids).size === ids.length, 'The same NC is picked twice.'),
+});
+export type CreateNcDcBatchInput = z.infer<typeof createNcDcBatchInputSchema>;
+
+export const createNcDcBatchResultSchema = z.object({
+  ncs: z.array(ncRegisterSchema),
+  deliveryChallanId: z.string().uuid(),
+  deliveryChallanCode: z.string(),
+});
+export type CreateNcDcBatchResult = z.infer<typeof createNcDcBatchResultSchema>;
 
 // CLOSE-REWORK (T-040b) — flips `disposed`+rework → `closed` after rework
 // is complete. Optionally captures rework_done_qty for the audit record.

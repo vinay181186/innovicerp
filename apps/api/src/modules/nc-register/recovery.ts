@@ -718,7 +718,10 @@ export async function onRecoveryJobCardQc(
 // ─── Hook: return-to-vendor challan received (design §5) ──────────────────
 
 /**
- * Called by delivery-challans on receipt of a DC that has nc_id.
+ * Called by delivery-challans on receipt of a return DC — ONCE PER NC on the
+ * challan (0237: one DC may carry several NCs, one per line; pass that line's
+ * nc_id and qty). Every check here is on this NC's own row
+ * (nc.delivery_challan_id = the DC), never on the DC header's nc_id.
  * rtv_received_qty += receivedQty (cap at rtv_sent_qty → ConflictError),
  * status = 'received_qc_pending'. Emits NC_RTV_RECEIVED.
  *
@@ -834,8 +837,10 @@ export async function onNcChallanReceived(
 
 /**
  * Called by delivery-challans.cancelDeliveryChallan when the challan being
- * cancelled has nc_id (a return-to-vendor challan raised by createNcDc) and
- * no receipts exist yet. Undoes exactly what createNcDc wrote on the NC and
+ * cancelled has nc_id (a return-to-vendor challan raised by createNcDcBatch) and
+ * no receipts exist yet. Called ONCE PER NC on the challan (0237); recomputing
+ * the same PO line / header twice when two NCs share it is harmless (both are
+ * full recomputes). Undoes exactly what createNcDc wrote on the NC and
  * the origin op, so the NC goes back to "return-to-vendor chosen, challan not
  * yet issued" (status 'disposed' — packages/shared/src/enums/nc-status.ts)
  * and a fresh challan can be raised.

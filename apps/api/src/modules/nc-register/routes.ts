@@ -4,12 +4,14 @@ import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
 import {
   closeNcReworkInputSchema,
+  createNcDcBatchInputSchema,
   createNcDcInputSchema,
   createNcRegisterInputSchema,
   disposeNcInputSchema,
   listNcRegisterQuerySchema,
   updateNcRegisterInputSchema,
 } from './schema';
+import { createNcDc, createNcDcBatch } from './create-nc-dc';
 import * as service from './service';
 import { getNcSourceChallanCandidates } from './source-challan';
 
@@ -108,12 +110,23 @@ export async function ncRegisterRoutes(app: FastifyInstance): Promise<void> {
     return service.closeNc(id, req.user);
   });
 
+  // 0237 — ONE return-to-vendor challan for several NCs of one SO going to one
+  // vendor (+New DC → Against NC). Static path: no clash with /:id/create-dc.
+  // Duplicate submits are absorbed by the global Idempotency-Key plugin.
+  app.post('/nc-register/create-dc', async (req, reply) => {
+    if (!req.user) throw new AuthenticationError();
+    const body = createNcDcBatchInputSchema.parse(req.body);
+    const result = await createNcDcBatch(body, req.user);
+    reply.code(201);
+    return result; // CreateNcDcBatchResult (createNcDcBatchResultSchema)
+  });
+
   // Return-to-vendor challan raised from the NC itself (design §5).
   app.post('/nc-register/:id/create-dc', async (req, reply) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
     const body = createNcDcInputSchema.parse(req.body);
-    const result = await service.createNcDc(id, body, req.user);
+    const result = await createNcDc(id, body, req.user);
     reply.code(201);
     return result;
   });

@@ -1,13 +1,12 @@
 // "My Day Log" tab of the Task Board (owner final 2026-10-27, ADR-255).
 // One day of the signed-in user: a date box (max today) + Today (+ Holidays
 // for whoever manages them, Print / Export), ONE summary strip (Working hours
-// · First start · Last stop · Entries — server figures), the blocked banner,
-// and the sheet (saved entries on the FIT table, "+ Add entry" under it —
-// day-sheet.tsx). `line` (?line=) opens and scrolls to one entry.
+// · First start · Last stop · Entries — server figures) and the sheet (saved
+// entries on the FIT table, "+ Add entry" under it — day-sheet.tsx). `line` (?line=) opens and scrolls to one entry.
 //
 // Every write follows the SERVER's canWrite, never useCanWrite(): a
-// view-only L1 user still logs their own day. A blocked day (blockedBy)
-// takes no new rows.
+// view-only L1 user still logs their own day. Any day up to today takes
+// new rows, in any order (ADR-266).
 
 import { useCallback, useEffect, useState } from 'react';
 import { Banner } from '@/ui/feedback';
@@ -18,7 +17,6 @@ import { dayTable, fileSlug } from '../lib/export';
 import { errText, liveNowMin } from '../lib/format';
 import { printDayLog } from '../lib/print-day-log';
 import { DaySummaryStrip } from './day-header';
-import { BlockedNotice } from './day-notices';
 import { DaySheet } from './day-sheet';
 import { HolidaysModal } from './holidays-modal';
 import { PrintExportTools } from './print-export-tools';
@@ -60,7 +58,6 @@ export function DayLogTab({
   const nowMin = isToday ? liveNowMin(day.nowTime, query.dataUpdatedAt, tick) : null;
   // While another day is loading the old one stays on screen — no writes then.
   const canWrite = day.canWrite && !query.isPlaceholderData;
-  const canAdd = canWrite && !day.blockedBy;
 
   const goDate = (d: string): void => {
     // A cleared or future date is not a day to show.
@@ -115,7 +112,6 @@ export function DayLogTab({
       <DaySummaryStrip s={day.summary} />
 
       {query.isError ? <Banner tone="error">{errText(query.error)}</Banner> : null}
-      <BlockedNotice day={day} onDate={goDate} />
 
       <DaySheet
         key={day.date}
@@ -123,7 +119,6 @@ export function DayLogTab({
         q={q}
         nowMin={nowMin}
         canWrite={canWrite}
-        canAdd={canAdd}
         line={line}
         onDirty={onDirty}
       />

@@ -340,7 +340,11 @@ export async function submitIncomingQc(
         poLineId: goodsReceiptNoteLines.purchaseOrderLineId,
         // Set when this GRN is the vendor's REPLACEMENT for a return-to-vendor
         // NC (design §5): the inspection then settles that NC, not a fresh one.
-        ncId: goodsReceiptNotes.ncId,
+        // 0237 — the LINE's NC (one replacement GRN may settle several NCs),
+        // the header's for a GRN made before 0237.
+        ncId: sql<
+          string | null
+        >`COALESCE(${goodsReceiptNoteLines.ncId}, ${goodsReceiptNotes.ncId})`,
       })
       .from(goodsReceiptNoteLines)
       .innerJoin(

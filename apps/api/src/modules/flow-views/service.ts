@@ -574,7 +574,12 @@ export async function getNcTimeline(ncId: string, user: AuthContext): Promise<Nc
           doc: dcDoc,
         });
         // Older challans were marked received before received_at existed (0178).
-        if (dc['received_at'] || String(dc['status']) === 'received') {
+        // 0237 — a DC may carry several NCs and a receipt against ANY line
+        // stamps received_at, so the step also needs pieces back on THIS NC.
+        if (
+          (dc['received_at'] || String(dc['status']) === 'received') &&
+          num(nc['rtv_received_qty']) > 0
+        ) {
           steps.push({
             kind: 'received',
             label: 'Received back on the challan',
@@ -623,9 +628,12 @@ export async function getNcTimeline(ncId: string, user: AuthContext): Promise<Nc
             (SELECT COALESCE(NULLIF(u.full_name, ''), u.email) FROM public.users u
               WHERE u.id = (ARRAY_AGG(l.qc_inspected_by) FILTER (WHERE l.qc_inspected_by IS NOT NULL))[1]) AS qc_name
           FROM public.goods_receipt_notes g
-          LEFT JOIN public.goods_receipt_note_lines l
+          -- 0237 — a replacement GRN may settle several NCs, one per line: only
+          -- THIS NC's lines count (the line's NC, header as old-row fallback).
+          JOIN public.goods_receipt_note_lines l
             ON l.goods_receipt_note_id = g.id AND l.deleted_at IS NULL
-          WHERE g.nc_id = ${ncId}::uuid AND g.deleted_at IS NULL
+           AND (l.nc_id = ${ncId}::uuid OR (l.nc_id IS NULL AND g.nc_id = ${ncId}::uuid))
+          WHERE g.nc_id IS NOT NULL AND g.deleted_at IS NULL
           GROUP BY g.id
           ORDER BY g.grn_date, g.code`,
     );

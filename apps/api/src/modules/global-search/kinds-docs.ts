@@ -125,7 +125,19 @@ export const DOC_KINDS: readonly KindMeta[] = [
       LEFT JOIN public.vendors v ON v.id = t.vendor_id
       LEFT JOIN public.purchase_orders po ON po.id = t.purchase_order_id
       LEFT JOIN public.delivery_challans dc ON dc.id = t.delivery_challan_id
-      LEFT JOIN public.nc_register nc ON nc.id = t.nc_id`,
+      -- 0237 — every NC the GRN's lines settle (line NC, header as fallback),
+      -- in line order; read only for a replacement GRN (header nc_id set).
+      LEFT JOIN LATERAL (
+        SELECT string_agg(x.code, ', ' ORDER BY x.first_line, x.code) AS code
+        FROM (
+          SELECT gnc.code, MIN(gl.line_no) AS first_line
+          FROM public.goods_receipt_note_lines gl
+          JOIN public.nc_register gnc ON gnc.id = COALESCE(gl.nc_id, t.nc_id)
+          WHERE gl.goods_receipt_note_id = t.id AND gl.deleted_at IS NULL
+            AND t.nc_id IS NOT NULL
+          GROUP BY gnc.id, gnc.code
+        ) x
+      ) nc ON TRUE`,
     docNo: sql`t.code`,
     date: sql`t.grn_date::date`,
     party: sql`COALESCE(v.name, t.vendor_code_text)`,
@@ -159,7 +171,19 @@ export const DOC_KINDS: readonly KindMeta[] = [
       LEFT JOIN public.vendors v ON v.id = t.vendor_id
       LEFT JOIN public.purchase_orders po ON po.id = t.purchase_order_id
       LEFT JOIN public.job_cards jc ON jc.id = t.job_card_id
-      LEFT JOIN public.nc_register nc ON nc.id = t.nc_id
+      -- 0237 — every NC the challan's lines return (line NC, header as
+      -- fallback), in line order: a search for any one finds the DC.
+      LEFT JOIN LATERAL (
+        SELECT string_agg(x.code, ', ' ORDER BY x.first_line, x.code) AS code
+        FROM (
+          SELECT dnc.code, MIN(dl.line_no) AS first_line
+          FROM public.delivery_challan_lines dl
+          JOIN public.nc_register dnc ON dnc.id = COALESCE(dl.nc_id, t.nc_id)
+          WHERE dl.delivery_challan_id = t.id AND dl.deleted_at IS NULL
+            AND t.nc_id IS NOT NULL
+          GROUP BY dnc.id, dnc.code
+        ) x
+      ) nc ON TRUE
       -- ADR-207 — so_ref_text is free text with no FK: match the SO by its code.
       LEFT JOIN public.sales_orders so
         ON so.company_id = t.company_id AND so.code = t.so_ref_text AND so.deleted_at IS NULL`,

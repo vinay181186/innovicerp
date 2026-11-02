@@ -15,6 +15,7 @@ import {
   jcOps,
   jobCards,
   jobWorkOrderLines,
+  ncRegister,
   purchaseOrderLines,
   purchaseOrders,
   salesOrderLines,
@@ -50,6 +51,8 @@ import {
 } from './cascades';
 import { applyReceiveToJcOp, dcHasActiveReceipts, isDcFullyReconciled } from './receipt-cascades';
 import { DC_SF_COLUMNS, DC_SF_JOINS } from './sf-columns';
+import { lineNcId, receivedQtyByNc, returnDcNcIds } from './rtv-nc-split';
+import { recalcPoHeaderStatus, recalcPoLineReceivedQty } from '../goods-receipt-notes/cascades';
 import { insertGrnForOspReceipt } from '../goods-receipt-notes/service';
 import {
   ActivityAction,
@@ -164,10 +167,15 @@ export async function listDeliveryChallans(
           -- po_code_text; after ADR-217 that column is a real PO code, so the
           -- NC must be reached on its own or the store cannot find the row the
           -- screen is showing them.
+          -- 0237: any NC the challan carries — every line's, header as fallback.
           OR EXISTS (
-            SELECT 1 FROM public.nc_register snc
-            WHERE snc.id = dc.nc_id
-              AND snc.deleted_at IS NULL
+            SELECT 1
+            FROM public.delivery_challan_lines sdcl
+            JOIN public.nc_register snc
+              ON snc.id = COALESCE(sdcl.nc_id, dc.nc_id) AND snc.deleted_at IS NULL
+            WHERE sdcl.delivery_challan_id = dc.id
+              AND sdcl.deleted_at IS NULL
+              AND dc.nc_id IS NOT NULL
               AND snc.code ILIKE ${term} ESCAPE '\\'
           )
           OR EXISTS (
@@ -252,6 +260,8 @@ export async function listDeliveryChallans(
         -- renamed, and the FK is the one true link. Null on an ordinary OSP DC.
         dc.nc_id AS "ncId",
         nc.code AS "ncCode",
+        -- 0237 — every NC the lines carry, in line order (DC_SF_JOINS).
+        dc_ncs.ncs AS "ncs",
         dc.job_card_id AS "jobCardId",
         njc.code AS "jobCardCode",
         dc.reason,
@@ -357,6 +367,26 @@ export async function listDeliveryChallans(
   });
 }
 
+/** 0237 — the list row's `ncs` (dc_ncs json, line order); the header NC alone
+ *  when no line names one; [] on an ordinary OSP DC. */
+function listNcs(r: Record<string, unknown>): Array<{ id: string; code: string }> {
+  const raw = r['ncs'];
+  const parsed: unknown = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  const ncs = Array.isArray(parsed)
+    ? parsed.filter(
+        (x): x is { id: string; code: string } =>
+          typeof x === 'object' &&
+          x !== null &&
+          typeof (x as { id?: unknown }).id === 'string' &&
+          typeof (x as { code?: unknown }).code === 'string',
+      )
+    : [];
+  const ncId = (r['ncId'] as string | null) ?? null;
+  const ncCode = (r['ncCode'] as string | null) ?? null;
+  if (ncs.length === 0 && ncId && ncCode) return [{ id: ncId, code: ncCode }];
+  return ncs.map((x) => ({ id: x.id, code: x.code }));
+}
+
 function toListItem(r: Record<string, unknown>): DeliveryChallanListItem {
   return {
     id: r['id'] as string,
@@ -373,6 +403,7 @@ function toListItem(r: Record<string, unknown>): DeliveryChallanListItem {
     vehicleNo: (r['vehicleNo'] as string | null) ?? null,
     ncId: (r['ncId'] as string | null) ?? null,
     ncCode: (r['ncCode'] as string | null) ?? null,
+    ncs: listNcs(r),
     jobCardId: (r['jobCardId'] as string | null) ?? null,
     jobCardCode: (r['jobCardCode'] as string | null) ?? null,
     reason: (r['reason'] as string | null) ?? null,
@@ -507,9 +538,18 @@ async function loadDeliveryChallanWithLines(
       // The customer's own PO line number, off the SAME two line joins as the
       // revision above: SO line first, else the Job Work SO line (ADR-236).
       clientPoLineNo: polOf(salesOrderLines.clientPoLineNo, jobWorkOrderLines.clientPoLineNo),
+      // 0237 — the NC this return line carries (one DC may hold several).
+      ncCode: ncRegister.code,
+      // The line's OWN JW PO — a multi-NC return DC may span several POs.
+      poCode: sql<string | null>`(SELECT lpo.code FROM public.purchase_orders lpo
+        WHERE lpo.id = ${purchaseOrderLines.purchaseOrderId} AND lpo.deleted_at IS NULL)`,
     })
     .from(deliveryChallanLines)
     .leftJoin(items, and(eq(items.id, deliveryChallanLines.itemId), isNull(items.deletedAt)))
+    .leftJoin(
+      ncRegister,
+      and(eq(ncRegister.id, deliveryChallanLines.ncId), isNull(ncRegister.deletedAt)),
+    )
     // A challan line is a copy of a purchase-order line, and the PO line is the
     // only thing that knows which SO line the work belongs to.
     .leftJoin(
@@ -637,6 +677,24 @@ async function loadDeliveryChallanWithLines(
     }
   }
 
+  // 0237 — line NC rule: the line's own NC, else the header's (pre-0237 rows
+  // are backfilled; the fallback is safety). Header `ncs` = every distinct line
+  // NC in line order; the header NC alone if no line names one; [] on an
+  // ordinary OSP DC.
+  const headerNcId = (headerRow['ncId'] as string | null) ?? null;
+  const headerNcCode = (headerRow['ncCode'] as string | null) ?? null;
+  const lineNc = (ownNcId: string | null, ownNcCode: string | null) =>
+    ownNcId ? { ncId: ownNcId, ncCode: ownNcCode } : { ncId: headerNcId, ncCode: headerNcCode };
+  const ncs: Array<{ id: string; code: string }> = [];
+  for (const { line, ncCode } of lineRows) {
+    const nc = lineNc(line.ncId, ncCode);
+    if (nc.ncId && nc.ncCode && !ncs.some((x) => x.id === nc.ncId)) {
+      ncs.push({ id: nc.ncId, code: nc.ncCode });
+    }
+  }
+  if (ncs.length === 0 && headerNcId && headerNcCode)
+    ncs.push({ id: headerNcId, code: headerNcCode });
+
   return {
     id: headerRow['id'] as string,
     companyId: headerRow['companyId'] as string,
@@ -650,8 +708,9 @@ async function loadDeliveryChallanWithLines(
     soRefText: (headerRow['soRefText'] as string | null) ?? null,
     transport: (headerRow['transport'] as string | null) ?? null,
     vehicleNo: (headerRow['vehicleNo'] as string | null) ?? null,
-    ncId: (headerRow['ncId'] as string | null) ?? null,
-    ncCode: (headerRow['ncCode'] as string | null) ?? null,
+    ncId: headerNcId,
+    ncCode: headerNcCode,
+    ncs,
     jobCardId: (headerRow['jobCardId'] as string | null) ?? null,
     jobCardCode: (headerRow['jobCardCode'] as string | null) ?? null,
     reason: (headerRow['reason'] as string | null) ?? null,
@@ -666,29 +725,33 @@ async function loadDeliveryChallanWithLines(
     soCode: (headerRow['soCode'] as string | null) ?? null,
     soInternalNo: (headerRow['soInternalNo'] as string | null) ?? null,
     soLineRevision: (headerRow['soLineRevision'] as string | null) ?? null,
-    lines: lineRows.map(({ line: l, itemCode, itemName, itemRevision, clientPoLineNo }) => ({
-      id: l.id,
-      companyId: l.companyId,
-      deliveryChallanId: l.deliveryChallanId,
-      lineNo: l.lineNo,
-      itemId: l.itemId,
-      itemCode: itemCode ?? null,
-      itemRevision: itemRevision ?? null,
-      clientPoLineNo: clientPoLineNo ?? null,
-      itemName: itemName ?? null,
-      itemCodeText: l.itemCodeText,
-      itemNameText: l.itemNameText,
-      qty: l.qty,
-      uom: l.uom,
-      materialText: l.materialText,
-      dcRemarks: l.dcRemarks,
-      purchaseOrderLineId: l.purchaseOrderLineId,
-      createdAt: tsLike(l.createdAt),
-      createdBy: l.createdBy,
-      updatedAt: tsLike(l.updatedAt),
-      updatedBy: l.updatedBy,
-      deletedAt: maybeTsLike(l.deletedAt),
-    })),
+    lines: lineRows.map(
+      ({ line: l, itemCode, itemName, itemRevision, clientPoLineNo, ncCode, poCode }) => ({
+        id: l.id,
+        companyId: l.companyId,
+        deliveryChallanId: l.deliveryChallanId,
+        lineNo: l.lineNo,
+        itemId: l.itemId,
+        itemCode: itemCode ?? null,
+        itemRevision: itemRevision ?? null,
+        clientPoLineNo: clientPoLineNo ?? null,
+        itemName: itemName ?? null,
+        itemCodeText: l.itemCodeText,
+        itemNameText: l.itemNameText,
+        qty: l.qty,
+        uom: l.uom,
+        materialText: l.materialText,
+        dcRemarks: l.dcRemarks,
+        purchaseOrderLineId: l.purchaseOrderLineId,
+        poCode: poCode ?? null,
+        ...lineNc(l.ncId, ncCode ?? null),
+        createdAt: tsLike(l.createdAt),
+        createdBy: l.createdBy,
+        updatedAt: tsLike(l.updatedAt),
+        updatedBy: l.updatedBy,
+        deletedAt: maybeTsLike(l.deletedAt),
+      }),
+    ),
     receipts,
   };
 }
@@ -1407,11 +1470,20 @@ export async function deliveryChallanCancelBlockers(
   }
 
   if (header.ncId) {
+    // 0237 — every NC the challan's lines carry (the line's NC, else the
+    // header's for an old row), each checked on its own and named.
     const ncRows = (await tx.execute(sql`
-      SELECT id, code, status::text AS status, delivery_challan_id AS "dcId",
-        rtv_received_qty::float8 AS "rtvReceived"
-      FROM public.nc_register
-      WHERE id = ${header.ncId}::uuid AND company_id = ${companyId}::uuid
+      SELECT nc.id, nc.code, nc.status::text AS status, nc.delivery_challan_id AS "dcId",
+        nc.rtv_received_qty::float8 AS "rtvReceived"
+      FROM public.nc_register nc
+      WHERE nc.company_id = ${companyId}::uuid
+        AND nc.id IN (
+          SELECT COALESCE(l.nc_id, ${header.ncId}::uuid)
+          FROM public.delivery_challan_lines l
+          WHERE l.delivery_challan_id = ${id}::uuid AND l.deleted_at IS NULL
+          UNION SELECT ${header.ncId}::uuid
+        )
+      ORDER BY nc.code
     `)) as unknown as Array<{
       id: string;
       code: string;
@@ -1419,8 +1491,7 @@ export async function deliveryChallanCancelBlockers(
       dcId: string | null;
       rtvReceived: number;
     }>;
-    const nc = ncRows[0];
-    if (nc) {
+    for (const nc of ncRows) {
       const href = `/nc-register/${nc.id}`;
       const back = roundQty(Number(nc.rtvReceived ?? 0));
       if (back > 0) {
@@ -1491,20 +1562,38 @@ export async function cancelDeliveryChallanTx(
 
   const opCascades: Array<{ jcCode: string; jobCardId: string; opSeq: number; qty: number }> = [];
   if (header.ncId) {
-    // Return-to-vendor challan (createNcDc, ADR-166). Its one line carries
-    // the origin op's PO line for the print, but createNcDc never added its
+    // Return-to-vendor challan (createNcDc, ADR-166). Each line carries its
+    // NC's origin-op PO line for the print, but createNcDc never added its
     // qty to jc_ops.outsource_sent_qty (that column counts ordinary sends
     // only), so reverseOutwardFromJcOp must NOT run here — it would subtract
     // pieces that were never added. What has to be unwound instead is the
     // NC's rtv ledger, the op status createNcDc demoted, and the PO line
     // received_qty the ADR-165 formula lowered when the challan went out.
-    // Receipts are already ruled out above (blockers).
-    await onNcChallanCancelled(
-      tx,
-      { ncId: header.ncId, deliveryChallanId: id, reason },
-      companyId,
-      user,
-    );
+    // Receipts are already ruled out above (blockers). 0237 — once per NC the
+    // lines carry (line NC, header as fallback; the header NC — the first —
+    // always included, as the blockers check it), in NC-id order.
+    for (const ncId of returnDcNcIds(header.ncId, lineRows)) {
+      await onNcChallanCancelled(tx, { ncId, deliveryChallanId: id, reason }, companyId, user);
+    }
+    // The save lowered every line's PO line Received (the ADR-165 formula reads
+    // each NC's delivery_challan_id, now cleared). onNcChallanCancelled only
+    // recomputes it for an NC with an origin op, so a bought-material NC
+    // (ADR-189) would stay lowered. Recompute every line's PO line and its
+    // PO header here — both are full recomputes, so an op NC's second pass is
+    // harmless.
+    const rtvPoLineIds = [
+      ...new Set(lineRows.map((l) => l.purchaseOrderLineId).filter((v): v is string => !!v)),
+    ].sort();
+    for (const poLineId of rtvPoLineIds) {
+      await recalcPoLineReceivedQty(tx, poLineId, user.id);
+    }
+    if (rtvPoLineIds.length > 0) {
+      const poRows = await tx
+        .selectDistinct({ poId: purchaseOrderLines.purchaseOrderId })
+        .from(purchaseOrderLines)
+        .where(inArray(purchaseOrderLines.id, rtvPoLineIds));
+      for (const { poId } of poRows) await recalcPoHeaderStatus(tx, poId, user.id);
+    }
   }
   for (const dl of lineRows) {
     // reverseOutwardFromJcOp takes back whole pieces from the op (its sent
@@ -2241,6 +2330,7 @@ export async function receiveAgainstDeliveryChallan(
       itemCodeText: string | null;
       itemName: string;
       receivedQty: number;
+      ncId: string | null;
     }> = [];
     for (const rl of insertedLines) {
       const dcLine = dcLineById.get(rl.deliveryChallanLineId)!;
@@ -2248,6 +2338,8 @@ export async function receiveAgainstDeliveryChallan(
       // 2.5, not 3. A JC operation's whole-piece rule is applied in
       // applyReceiveToJcOp.
       const receivedQty = roundQty(Number(rl.receivedQty));
+      // 0237 — the LINE's NC (one return DC may carry several), header fallback.
+      const ncId = lineNcId(dcLine, dcHeader.ncId);
 
       if (receivedQty > 0) {
         grnLines.push({
@@ -2256,6 +2348,7 @@ export async function receiveAgainstDeliveryChallan(
           itemCodeText: dcLine.itemCodeText,
           itemName: dcLine.itemNameText ?? dcLine.itemCodeText ?? 'Item',
           receivedQty,
+          ncId,
         });
       }
 
@@ -2296,7 +2389,9 @@ export async function receiveAgainstDeliveryChallan(
         remarks: receiptHeader.remarks ?? `Auto GRN from OSP receipt ${receiptCode}`,
         lines: grnLines,
         // A return-to-vendor challan's receipt is the vendor's REPLACEMENT
-        // (design §5): the GRN carries the NC so Incoming QC can settle it.
+        // (design §5): the GRN carries the NC so Incoming QC can settle it —
+        // the header the FIRST NC (the "replacement GRN" flag), each line its
+        // own NC (0237).
         ncId: dcHeader.ncId ?? null,
       });
       autoGrn = { id: grn.id, code: grn.code };
@@ -2309,19 +2404,25 @@ export async function receiveAgainstDeliveryChallan(
     }
 
     // Return-to-vendor challan (design §5): book the pieces as back from the
-    // vendor on the NC (rtv_received_qty, status received_qc_pending). This
+    // vendor on EACH NC the received lines carry (rtv_received_qty, status
+    // received_qc_pending) — once per NC with that NC's own qty, in NC-id
+    // order so two receipts lock NC rows in the same order (0237). This
     // call's total, not the line's cumulative — the cascade adds. Interlock 4
     // (cumulative received <= sent) is already enforced per line by the
     // over-receive check above, and the NC's own DB check
     // (rtv_received_qty <= rtv_sent_qty) backs it.
     if (dcHeader.ncId) {
-      const totalReceivedThisCall = roundQty(
-        insertedLines.reduce((sum, rl) => sum + Number(rl.receivedQty), 0),
+      const perNc = receivedQtyByNc(
+        insertedLines.map((rl) => ({
+          ncId: dcLineById.get(rl.deliveryChallanLineId)!.ncId,
+          receivedQty: Number(rl.receivedQty),
+        })),
+        dcHeader.ncId,
       );
-      if (totalReceivedThisCall > 0) {
+      for (const { ncId, qty } of perNc) {
         await onNcChallanReceived(
           tx,
-          { ncId: dcHeader.ncId, receivedQty: totalReceivedThisCall, deliveryChallanId },
+          { ncId, receivedQty: qty, deliveryChallanId },
           companyId,
           user,
         );

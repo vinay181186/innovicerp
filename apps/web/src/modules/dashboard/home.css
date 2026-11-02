@@ -12,6 +12,10 @@
   max-width: 960px;
   margin-inline: auto;
 }
+/* Home → Approvals: the table needs the full screen width (owner 01-Nov). */
+.dh.dh--wide {
+  max-width: none;
+}
 .dh-code {
   font-family: var(--mono);
   font-weight: 700;

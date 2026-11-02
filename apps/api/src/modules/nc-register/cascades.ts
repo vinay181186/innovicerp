@@ -1657,8 +1657,15 @@ export async function autoCreateNcFromQcReject(
   // parent NC. Without the fallback a reject on such a child got no link.
   let parentNcId: string | null = null;
   if (ctx.grnLineId) {
+    // 0237 — one replacement GRN may settle several NCs, one per line: the
+    // LINE's nc_id names the NC these pieces belong to; the header's (the
+    // first NC) is the fallback for GRNs made before the line column existed.
     const parentRows = await tx
-      .select({ ncId: goodsReceiptNotes.ncId })
+      .select({
+        ncId: sql<
+          string | null
+        >`COALESCE(${goodsReceiptNoteLines.ncId}, ${goodsReceiptNotes.ncId})`,
+      })
       .from(goodsReceiptNoteLines)
       .innerJoin(
         goodsReceiptNotes,

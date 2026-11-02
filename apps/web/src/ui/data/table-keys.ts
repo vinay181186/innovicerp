@@ -173,6 +173,11 @@ export const TABLE_KEYS = {
   dashCheck: 'dash-check',
   /** Home (ADR-264) Day Log view: today's entries. */
   dashDayLog: 'dash-day-log',
+  /** +New DC (owner 2026-11-01, several NCs on one return DC): the Against NC
+   *  tick list, the Against JW PO / DC tick list, and the chosen NCs' lines. */
+  dcRtvNcPick: 'dc-rtv-nc-pick',
+  dcRtvJwpoPick: 'dc-rtv-jwpo-pick',
+  dcRtvNcLines: 'dc-rtv-nc-lines',
 } as const;
 
 export type TableKey = (typeof TABLE_KEYS)[keyof typeof TABLE_KEYS];

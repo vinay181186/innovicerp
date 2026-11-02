@@ -11,19 +11,20 @@
 //     qty per line, submit via createDeliveryChallan. The item-code guard,
 //     maxSendNow/sendNowIssue warnings and canSubmit are exactly as before; this
 //     path is byte-for-byte the same behaviour, only rendered on one screen.
-//   • Against NC — pick a disposed return-to-vendor NC, its read-only summary
-//     (qty = nc.rejectedQty) and vendor/date/transport fields show below, submit
-//     via useCreateNcDc → POST /nc-register/:id/create-dc. It MUST stay createNcDc
-//     (NOT createDeliveryChallan): only createNcDc sets the NC linkage (ncId,
+//   • Against NC — tick one or SEVERAL disposed return-to-vendor NCs of the same
+//     SO going to the same vendor (owner 2026-11-01), their read-only lines (qty
+//     = each nc.rejectedQty) and vendor/date/transport fields show below, submit
+//     via useCreateNcDcBatch → POST /nc-register/create-dc. It MUST stay the NC
+//     endpoint (NOT createDeliveryChallan): only it sets each NC's linkage (ncId,
 //     jobCardId, rtvSentQty, nc.deliveryChallanId, status→sent_to_vendor) and
 //     holds the one-challan-per-NC double-consumption lock. A DC made the PO way
 //     for an NC would silently break receiving/QC/auto-close (QC-NC-HANDLING-
 //     DESIGN.md §5).
 //
 //   • Against JW PO / DC (ADR-211) — the store knows the JW PO No. or the DC No.
-//     the pieces first went out on, not the NC No. Search by either, pick ONE
-//     return-to-vendor NC behind it, and the SAME Against-NC form opens — so the
-//     save is still useCreateNcDc (one writer, one-challan-per-NC lock). Against
+//     the pieces first went out on, not the NC No. Search by either, tick the
+//     return-to-vendor NCs behind it, and the SAME Against-NC form opens — so the
+//     save is still the NC endpoint (one writer, one-challan-per-NC lock). Against
 //     PO also warns when the chosen PO has such pieces waiting, so a return is not
 //     booked as an ordinary send by mistake.
 //
@@ -63,14 +64,12 @@ import {
   RTV_CANDIDATE_STATE_LABELS,
   UOMS,
 } from '@innovic/shared';
-import { useQueryClient } from '@tanstack/react-query';
 import { createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Loader2, Truck } from 'lucide-react';
+import { ArrowLeft, Loader2 } from 'lucide-react';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { useSaveKey } from '@/lib/use-save-key';
 import { matchesSearchTerm } from '@/components/shared/search-match';
-import { VendorPicker } from '@/components/shared/vendor-picker';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { ApiError } from '@/lib/api';
 import { fmtDate, todayIst } from '@/lib/date';
@@ -78,19 +77,16 @@ import { type ExitConfirm, ExitConfirmDialog, useExitConfirm } from '@/lib/exit-
 import { itemCodeWithRev } from '@/lib/item-code';
 import { usePurchaseOrder, usePurchaseOrdersList } from '@/modules/purchase-orders/api';
 import { poStatusLabel } from '@/modules/purchase-orders/lib/po-labels';
-import { useCreateNcDc, useNcRegister } from '@/modules/nc-register/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Banner } from '@/ui/feedback';
 import { FormField, FormGrid, DocNumberInput } from '@/ui/forms';
 import { PageHeader, useSaveShortcut } from '@/ui/layout';
-import {
-  deliveryChallansKeys,
-  useCreateDeliveryChallan,
-  useDcSendable,
-  useEligibleRtvNcs,
-  useRtvCandidates,
-} from '../api';
+import { useCreateDeliveryChallan, useDcSendable, useRtvCandidates } from '../api';
 import { JwpoDcPickerBody } from '../components/jwpo-dc-rtv-picker';
+import { NcDcFormBody } from '../components/nc-dc-form';
+import { NcPickerBody } from '../components/nc-rtv-picker';
+import { type DcSaveCtl, type DcSaveState, NO_SAVE, useReportSave } from '../lib/dc-save-ctl';
+import type { PickNc } from '../lib/nc-dc-pick';
 import { rtvOpenQty } from '../lib/rtv-open-qty';
 
 // poId only. An existing ?poId= link keeps working untouched and preselects the
@@ -172,11 +168,15 @@ function DeliveryChallanNewPage(): React.JSX.Element {
   // one deviation is waiting, so the row it sends them to is already on screen);
   // blank when the source is picked from the dropdown.
   const [pickerSearch, setPickerSearch] = useState('');
+  // The NCs the warning handed over — pre-ticked on Against NC when they all
+  // fit one DC (same SO, same vendor). Empty when the source is picked by hand.
+  const [pickerTicks, setPickerTicks] = useState<string[]>([]);
   // ADR-219 — the warning's button goes to Against NC, the route the owner uses
   // for a return. It used to go to Against JW PO / DC seeded with the PO No.;
   // that screen still exists and is still reachable from the dropdown.
-  const switchToNc = useCallback((ncSearch: string) => {
+  const switchToNc = useCallback((ncSearch: string, ncIds: string[]) => {
     setPickerSearch(ncSearch);
+    setPickerTicks(ncIds);
     setSource('nc');
   }, []);
 
@@ -229,6 +229,7 @@ function DeliveryChallanNewPage(): React.JSX.Element {
             value={source}
             onChange={(e) => {
               setPickerSearch('');
+              setPickerTicks([]);
               setSource(e.target.value as DcSource);
             }}
           >
@@ -249,36 +250,19 @@ function DeliveryChallanNewPage(): React.JSX.Element {
             onSwitchToNc={switchToNc}
           />
         ) : source === 'nc' ? (
-          <NcDcSection initialSearch={pickerSearch} exit={exit} saveCtl={saveCtl} />
+          <RtvNcSection
+            via="nc"
+            initialSearch={pickerSearch}
+            initialTicks={pickerTicks}
+            exit={exit}
+            saveCtl={saveCtl}
+          />
         ) : (
-          <JwpoDcRtvSection initialSearch={pickerSearch} exit={exit} saveCtl={saveCtl} />
+          <RtvNcSection via="jwpo_dc" initialSearch={pickerSearch} exit={exit} saveCtl={saveCtl} />
         )}
       </div>
     </div>
   );
-}
-
-// ─── Header Save wiring ──────────────────────────────────────────────────────
-interface DcSaveState {
-  canSave: boolean;
-  saving: boolean;
-  dirty: boolean;
-}
-const NO_SAVE: DcSaveState = { canSave: false, saving: false, dirty: false };
-interface DcSaveCtl {
-  setState: (s: DcSaveState) => void;
-  submitRef: React.MutableRefObject<() => void>;
-}
-
-/** A form body reports its Save state to the page header while mounted, and
- *  clears it on unmount (back to a picker, or the other source). */
-function useReportSave(ctl: DcSaveCtl, s: DcSaveState): void {
-  const { canSave, saving, dirty } = s;
-  const { setState } = ctl;
-  useEffect(() => {
-    setState({ canSave, saving, dirty });
-  }, [setState, canSave, saving, dirty]);
-  useEffect(() => () => setState(NO_SAVE), [setState]);
 }
 
 // ═══ Against PO ═══════════════════════════════════════════════════════════════
@@ -366,7 +350,7 @@ function PoDcSection({
   saveCtl: DcSaveCtl;
   /** ADR-219 — hand the user to Against NC, seeded with the NC No. when exactly
    *  one deviation is waiting (blank when several are). */
-  onSwitchToNc: (ncSearch: string) => void;
+  onSwitchToNc: (ncSearch: string, ncIds: string[]) => void;
 }): React.JSX.Element {
   // The chosen PO. Preselected from ?poId= (the deep link), else null → picker.
   const [poId, setPoId] = useState<string | null>(initialPoId ?? null);
@@ -584,7 +568,7 @@ function PoDcFormBody({
   exit: ExitConfirm;
   saveCtl: DcSaveCtl;
   /** ADR-219 — hand the user to Against NC for the pieces waiting to go back. */
-  onSwitchToNc: (ncSearch: string) => void;
+  onSwitchToNc: (ncSearch: string, ncIds: string[]) => void;
 }): React.JSX.Element {
   const navigate = useNavigate();
   const { data: po, isLoading: poLoading, isError: poError } = usePurchaseOrder(poId);
@@ -876,7 +860,14 @@ function PoDcFormBody({
   // not by PO No. — so seed its search only when ONE deviation is waiting and
   // the search can land on it. With several, it opens on the full list.
   const doSwitch = (): void =>
-    exit.leave(() => onSwitchToNc(rtvOnPo.length === 1 ? (rtvOnPo[0]?.ncCode ?? '') : ''));
+    exit.leave(() =>
+      onSwitchToNc(
+        rtvOnPo.length === 1 ? (rtvOnPo[0]?.ncCode ?? '') : '',
+        // Owner 2026-11-01 — the ready ones are offered pre-ticked; Against NC
+        // keeps the ticks only when they share one SO and one vendor.
+        rtvOnPo.filter((r) => r.state === 'ready').map((r) => r.ncId),
+      ),
+    );
   const onSwitchClick = (): void => {
     if (editedForSwitch) setConfirmSwitch(true);
     else doSwitch();
@@ -1010,7 +1001,8 @@ function PoDcFormBody({
           >
             <div style={{ marginBottom: 6 }}>
               They are <b>not</b> part of what this screen offers: Against PO sends fresh pieces
-              only. Raise the return on Against NC, one challan per deviation.
+              only. Raise the return on Against NC — NCs of one SO going to one vendor can go back
+              together on one challan.
             </div>
             <ul style={{ margin: '4px 0 8px', paddingLeft: 18 }}>
               {rtvOnPo.map((r) => (
@@ -1259,502 +1251,64 @@ function PoDcFormBody({
   );
 }
 
-// ═══ Against NC — the return-to-vendor challan (design §5) ════════════════════
-// A SECOND entry point to the exact flow the NC detail page runs. It calls
-// useCreateNcDc (NOT createDeliveryChallan) so the NC linkage and the
-// one-challan-per-NC lock are set. The qty is never asked: the challan line is
-// the NC's full rejected qty by rule (interlock 4), shown read-only below.
-// Picker and form share ONE screen: the picker shows until an NC is chosen, then
-// the form body renders in its place. The body is keyed on ncId so its dependent
-// fields (vendor/date/etc.) remount clean when the chosen NC changes.
+// ═══ Against NC / Against JW PO / DC — the return-to-vendor challan ═══════════
+// A SECOND entry point to the flow the NC detail page runs, now for SEVERAL NCs
+// at once (owner 2026-11-01): tick NCs of the same SO going to the same vendor,
+// "Make DC for N NCs", and ONE challan is raised with one line per NC through
+// useCreateNcDcBatch (NOT createDeliveryChallan), so each NC's linkage and the
+// one-challan-per-NC lock are set. The qty is never asked: each line is its
+// NC's full rejected qty by rule (interlock 4). Picker and form share ONE
+// screen; the ticks live HERE so "Change NCs" comes back to the same ticks and
+// the same search. ADR-211: Against JW PO / DC is the same thing found by the
+// JW PO No. or the DC No. the store holds.
 
-function NcDcSection({
+function RtvNcSection({
+  via,
   initialSearch,
+  initialTicks,
   exit,
   saveCtl,
 }: {
+  via: 'nc' | 'jwpo_dc';
   /** ADR-219 — the NC No. the Against PO warning sent the user here to raise,
    *  when there was exactly one. Blank otherwise. */
   initialSearch: string;
+  /** The NCs the Against PO warning handed over (pre-ticked when they fit). */
+  initialTicks?: string[] | undefined;
   exit: ExitConfirm;
   saveCtl: DcSaveCtl;
 }): React.JSX.Element {
-  const [ncId, setNcId] = useState<string | null>(null);
-  // Held here, not in the picker, so "Choose a different NC" comes back to the
-  // same search (the same shape as JwpoDcRtvSection).
   const [search, setSearch] = useState(initialSearch);
+  const [ticked, setTicked] = useState<string[]>([]);
+  const [picked, setPicked] = useState<PickNc[] | null>(null);
 
-  if (ncId === null) {
-    return <NcPickerBody search={search} onSearchChange={setSearch} onSelect={setNcId} />;
+  if (picked !== null) {
+    return (
+      <NcDcFormBody
+        key={picked.map((p) => p.ncId).join(',')}
+        picked={picked}
+        onChangeNcs={() => setPicked(null)}
+        exit={exit}
+        saveCtl={saveCtl}
+      />
+    );
   }
-  return (
-    <NcDcFormBody
-      key={ncId}
-      ncId={ncId}
-      onChangeNc={() => setNcId(null)}
-      exit={exit}
-      saveCtl={saveCtl}
+  return via === 'nc' ? (
+    <NcPickerBody
+      search={search}
+      onSearchChange={setSearch}
+      ticked={ticked}
+      onTickedChange={setTicked}
+      onNext={setPicked}
+      initialTicks={initialTicks}
     />
-  );
-}
-
-// Only NCs ready for a return-to-vendor challan are offered — disposition
-// return_to_vendor, status disposed, no challan yet (useEligibleRtvNcs, the
-// pendingRtvChallan predicate). The whole eligible set loads in one fetch and
-// scrolls; the search box filters it client-side across EVERY visible column (NC
-// No, item code, item name) via the shared matchesSearchTerm helper (universal-
-// search standard).
-function NcPickerBody({
-  search,
-  onSearchChange,
-  onSelect,
-}: {
-  search: string;
-  onSearchChange: (s: string) => void;
-  onSelect: (ncId: string) => void;
-}): React.JSX.Element {
-  const { data, isLoading, isError } = useEligibleRtvNcs();
-
-  const eligible = useMemo(() => {
-    const items = data?.items ?? [];
-    if (search.trim() === '') return items;
-    return items.filter((n) =>
-      matchesSearchTerm(
-        [n.code, n.itemCode, n.itemCodeText, n.itemName, n.itemNameText, n.rejectedQty],
-        search,
-      ),
-    );
-  }, [data, search]);
-
-  return (
-    <>
-      <div className="form-grp" style={{ maxWidth: 420, marginBottom: 12 }}>
-        <label className="form-label" htmlFor="dc-nc-search">
-          Search this list
-        </label>
-        <input
-          id="dc-nc-search"
-          className="innovic-input"
-          value={search}
-          onChange={(e) => onSearchChange(e.target.value)}
-          placeholder="NC no, item code, item name…"
-        />
-      </div>
-
-      {isLoading ? (
-        <div className="empty-state">
-          <Loader2 className="inline h-4 w-4 animate-spin" /> Loading NCs…
-        </div>
-      ) : isError ? (
-        <div className="empty-state" style={{ color: 'var(--red2)' }}>
-          Could not load NCs. Try again.
-        </div>
-      ) : eligible.length === 0 ? (
-        <div className="empty-state" style={{ color: 'var(--amber2)' }}>
-          No NC is awaiting a return-to-vendor challan
-          {search.trim() ? ' for this search' : ''}. Dispose an NC as “Return to Vendor” first.
-        </div>
-      ) : (
-        <div className="tbl-wrap">
-          <table className="innovic-table" style={{ width: '100%' }}>
-            <thead>
-              <tr>
-                <th>NC No.</th>
-                {/* POL = the CUSTOMER's own PO line number off the SO line
-                    behind the job card this NC was raised on. */}
-                <th style={{ color: 'var(--purple)' }}>POL</th>
-                <th>Item Code · Name</th>
-                <th className="th-num">Qty to Return</th>
-                <th style={{ width: 110 }} />
-              </tr>
-            </thead>
-            <tbody>
-              {eligible.map((n) => (
-                <tr key={n.id}>
-                  <td className="mono fw-700" style={{ color: 'var(--blue)' }}>
-                    {n.code}
-                  </td>
-                  <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
-                    {n.clientPoLineNo ?? '—'}
-                  </td>
-                  <td>
-                    <b className="mono fw-700" style={{ color: 'var(--text)' }}>
-                      {itemCodeWithRev(n.itemCode ?? n.itemCodeText, n.itemRevision)}
-                    </b>
-                    <div className="text2" style={{ fontSize: 11 }}>
-                      {n.itemName ?? n.itemNameText ?? '—'}
-                    </div>
-                  </td>
-                  <td className="mono td-num" style={{ color: 'var(--red2)' }}>
-                    {Number(n.rejectedQty)}
-                  </td>
-                  <td>
-                    <button
-                      type="button"
-                      className="btn btn-primary btn-sm"
-                      onClick={() => onSelect(n.id)}
-                    >
-                      Select
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </>
-  );
-}
-
-// ═══ Against JW PO / DC — the return-to-vendor challan found by PO / DC No. ═══
-// ADR-211. The store knows the JW PO No. or the DC No. the pieces first went out
-// on, not the NC No. The picker lists the return-to-vendor NCs behind them
-// (GET /delivery-challans/rtv-candidates); picking one opens the EXISTING
-// NcDcFormBody, so the save is still useCreateNcDc — one writer for the RTV qty
-// and the one-challan-per-NC lock (CLAUDE.md §20.1). One challan per NC.
-
-function JwpoDcRtvSection({
-  initialSearch,
-  exit,
-  saveCtl,
-}: {
-  initialSearch: string;
-  exit: ExitConfirm;
-  saveCtl: DcSaveCtl;
-}): React.JSX.Element {
-  const [ncId, setNcId] = useState<string | null>(null);
-  // Held here, not in the picker, so "Choose a different NC" comes back to the
-  // same search.
-  const [search, setSearch] = useState(initialSearch);
-
-  if (ncId === null) {
-    return <JwpoDcPickerBody search={search} onSearchChange={setSearch} onSelect={setNcId} />;
-  }
-  return (
-    <NcDcFormBody
-      key={ncId}
-      ncId={ncId}
-      onChangeNc={() => setNcId(null)}
-      exit={exit}
-      saveCtl={saveCtl}
+  ) : (
+    <JwpoDcPickerBody
+      search={search}
+      onSearchChange={setSearch}
+      ticked={ticked}
+      onTickedChange={setTicked}
+      onNext={setPicked}
     />
-  );
-}
-
-function NcDcFormBody({
-  ncId,
-  onChangeNc,
-  exit,
-  saveCtl,
-}: {
-  ncId: string;
-  onChangeNc: () => void;
-  exit: ExitConfirm;
-  saveCtl: DcSaveCtl;
-}): React.JSX.Element {
-  const navigate = useNavigate();
-  const { data: eff } = useMyAccess();
-  // Same gate the NC detail page and the server enforce for this challan
-  // (ADR-211, owner): OSP Outward DC ENTRY alone raises the return challan, on
-  // every route. Disposing the NC stays with QC (nc_dispose) — not needed here.
-  // Checked here too because the route is reachable by URL.
-  const canCreateDc = effectiveFormPerms(eff, 'ospdc_create').entry;
-  const qc = useQueryClient();
-
-  // Reuse the NC detail hook rather than refetch by hand — same cache, same
-  // shape. rejectedQty / item fields come straight off it and refresh with ncId.
-  const { data: nc, isLoading, isError } = useNcRegister(ncId);
-  // R2 — one idempotency key per open form, reused on a retry after a dropped save.
-  const saveKey = useSaveKey();
-  const createDc = useCreateNcDc(ncId, saveKey);
-
-  // Only what createNcDcInputSchema takes: dcDate, vendor, transport, vehicleNo,
-  // remarks. No lines, no qty — the server derives the line from the NC.
-  const [dcDate, setDcDate] = useState(todayIst());
-  const [vendorId, setVendorId] = useState<string | null>(null);
-  // The picker's label is "CODE — Name"; the challan stores the code text next to
-  // the id (the DC's ADR-015 pair), so the code is peeled off here.
-  const [vendorCodeText, setVendorCodeText] = useState('');
-  const [transport, setTransport] = useState('');
-  const [vehicleNo, setVehicleNo] = useState('');
-  const [remarks, setRemarks] = useState('');
-  const [submitError, setSubmitError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-
-  // The goods go back to the vendor they came from, so the NC's source vendor
-  // (the GRN's supplier, or the outsource PO's vendor) is filled in once the NC
-  // loads. It stays editable — the user may pick another vendor.
-  const sourceVendorId = nc?.sourceVendorId ?? null;
-  const sourceVendorCode = nc?.sourceVendorCode ?? '';
-  const seededVendorRef = useRef(false);
-  useEffect(() => {
-    if (seededVendorRef.current || !sourceVendorId || !sourceVendorCode) return;
-    seededVendorRef.current = true;
-    setVendorId(sourceVendorId);
-    setVendorCodeText(sourceVendorCode);
-  }, [sourceVendorId, sourceVendorCode]);
-  const sourceVendorLabel = sourceVendorId
-    ? [nc?.sourceVendorCode, nc?.sourceVendorName].filter(Boolean).join(' — ')
-    : '';
-
-  // Guard against reaching this form for an NC that is not (or no longer)
-  // eligible — the server enforces the same predicate, but saying it here avoids
-  // a confusing rejection after the vendor has been picked. Computed before the
-  // early returns (reading `nc?.`) so the header Save state can be reported.
-  const alreadyHasChallan = Boolean(nc?.deliveryChallanId);
-  const isEligible =
-    nc?.disposition === 'return_to_vendor' && nc.status === 'disposed' && !alreadyHasChallan;
-  const canSubmit = isEligible && dcDate !== '' && vendorId != null && vendorCodeText !== '';
-  // The pre-filled source vendor is not the user's typing — only a change is.
-  const dirty =
-    vendorId !== (sourceVendorCode ? sourceVendorId : null) ||
-    transport !== '' ||
-    vehicleNo !== '' ||
-    remarks !== '';
-  useReportSave(saveCtl, { canSave: canCreateDc && canSubmit, saving: submitting, dirty });
-
-  if (eff && !canCreateDc) {
-    return (
-      <div className="empty-state" style={{ color: 'var(--amber2)' }}>
-        You do not have permission to create a return DC. Ask an admin.
-      </div>
-    );
-  }
-
-  if (isLoading) {
-    return (
-      <div className="empty-state">
-        <Loader2 className="inline h-4 w-4 animate-spin" /> Loading NC…
-      </div>
-    );
-  }
-
-  if (isError || !nc) {
-    return (
-      <div className="empty-state" style={{ color: 'var(--red2)' }}>
-        Could not load NC. Try again.
-      </div>
-    );
-  }
-
-  const onSubmit = async (): Promise<void> => {
-    setSubmitError(null);
-    setSubmitting(true);
-    try {
-      // MUST be createNcDc (the NC endpoint), NEVER createDeliveryChallan: only
-      // this sets ncId/jobCardId/rtvSentQty + nc.deliveryChallanId, flips the NC
-      // to sent_to_vendor, and holds the one-challan-per-NC lock. It also
-      // invalidates ncRegisterKeys.lists() on success (useInvalidateNcCascade),
-      // which is the same key useEligibleRtvNcs uses — so this NC drops out of
-      // the picker automatically.
-      const created = await createDc.mutateAsync({
-        dcDate,
-        vendorId,
-        vendorCodeText,
-        transport: transport.trim() || null,
-        vehicleNo: vehicleNo.trim() || null,
-        remarks: remarks.trim() || null,
-      });
-      exit.leave(
-        () =>
-          void navigate({
-            to: '/delivery-challans/$id',
-            params: { id: created.deliveryChallanId },
-          }),
-      );
-    } catch (e) {
-      // 409 — another user / route raised this NC's challan first. Refetch the
-      // Against JW PO / DC candidates so the stale row goes from the picker.
-      if (e instanceof ApiError && e.status === 409) {
-        void qc.invalidateQueries({ queryKey: deliveryChallansKeys.rtvCandidatesAll() });
-      }
-      setSubmitError(e instanceof Error ? e.message : 'Could not save DC. Try again.');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const itemCode = itemCodeWithRev(nc.itemCode ?? nc.itemCodeText, nc.itemRevision);
-  const itemName = nc.itemName ?? nc.itemNameText ?? '—';
-  // The page header's Save (and Ctrl+S) run this body's save.
-  saveCtl.submitRef.current = () => void onSubmit();
-
-  return (
-    <>
-      {/* Save error right under the header's Save. */}
-      {submitError ? (
-        <Banner tone="error" role="alert">
-          {submitError}
-        </Banner>
-      ) : null}
-      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--blue)', marginBottom: 12 }}>
-        <Truck size={14} style={{ verticalAlign: -2 }} /> Create Return-to-Vendor Challan
-      </div>
-
-      {/* Read-only NC summary. Qty to Return is nc.rejectedQty by rule — the
-          full rejected quantity, never editable on this screen.
-          ADR-219 — the JW PO the pieces were made under and the challan they
-          first went out on are read off the deviation and shown here too: it
-          already knows both, so asking the storekeeper for them is asking
-          twice. A dash means the deviation genuinely has none (an in-house
-          deviation has no purchase order behind it) — never a guess. */}
-      <div
-        style={{
-          background: 'var(--bg)',
-          border: '1px solid var(--border)',
-          borderRadius: 8,
-          padding: 12,
-          margin: '4px 0 14px',
-        }}
-      >
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit,minmax(130px,1fr))',
-            gap: 10,
-          }}
-        >
-          <div>
-            <span style={{ fontSize: 11, color: 'var(--text3)' }}>NC No.</span>
-            <br />
-            <b className="mono" style={{ color: 'var(--blue)' }}>
-              {nc.code}
-            </b>
-          </div>
-          {/* POL — the customer's own PO line number off the SO line behind
-              this NC's job card. */}
-          <div>
-            <span style={{ fontSize: 11, color: 'var(--text3)' }}>POL</span>
-            <br />
-            <b className="mono fw-700" style={{ color: 'var(--purple)' }}>
-              {nc.clientPoLineNo ?? '—'}
-            </b>
-          </div>
-          <div>
-            <span style={{ fontSize: 11, color: 'var(--text3)' }}>Item</span>
-            <br />
-            <b className="mono fw-700" style={{ color: 'var(--text)' }}>
-              {itemCode}
-            </b>
-            <div className="text2" style={{ fontSize: 11 }}>
-              {itemName}
-            </div>
-          </div>
-          <div>
-            <span style={{ fontSize: 11, color: 'var(--text3)' }}>Qty to Return</span>
-            <br />
-            <b className="mono" style={{ color: 'var(--red2)' }}>
-              {Number(nc.rejectedQty)} pcs
-            </b>
-          </div>
-          {/* The job-work order the deviated pieces were made under — NOT the
-              ADR-217 replacement order (that is Replacement PO No. elsewhere). */}
-          <div>
-            <span style={{ fontSize: 11, color: 'var(--text3)' }}>JW PO No.</span>
-            <br />
-            <b className="mono fw-700" style={{ color: 'var(--text)' }}>
-              {nc.poCode ?? '—'}
-            </b>
-          </div>
-          {/* The outward challan the rejected pieces first went out on. */}
-          <div>
-            <span style={{ fontSize: 11, color: 'var(--text3)' }}>Sent on DC No.</span>
-            <br />
-            <b className="mono fw-700" style={{ color: 'var(--text)' }}>
-              {nc.sourceDeliveryChallanCode ?? '—'}
-            </b>
-          </div>
-        </div>
-        <div className="text3" style={{ fontSize: 11, marginTop: 8 }}>
-          Read off the deviation — none of it is typed here, and none of it can be edited. Below,
-          the vendor is pre-filled from the deviation and may be changed; the DC date, transporter,
-          vehicle and remarks are yours to fill.
-        </div>
-        {/* Return to the picker WITHOUT leaving the screen — in-component state. */}
-        <button
-          type="button"
-          className="btn btn-ghost btn-sm"
-          style={{ marginTop: 10 }}
-          onClick={onChangeNc}
-        >
-          <ArrowLeft size={12} /> Choose a different NC
-        </button>
-      </div>
-
-      {!isEligible ? (
-        <div
-          style={{
-            color: 'var(--amber2)',
-            background: 'var(--amber3)',
-            border: '1px solid var(--amber)',
-            borderRadius: 6,
-            padding: '6px 10px',
-            fontSize: 12,
-            marginBottom: 12,
-          }}
-        >
-          {alreadyHasChallan
-            ? 'A return challan has already been issued for this NC.'
-            : 'This NC is not ready for a return-to-vendor challan (it must be disposed as “Return to Vendor” first).'}
-        </div>
-      ) : null}
-
-      {/* 12-column grid, party first: Vendor · DC Date · Transporter ·
-          Vehicle No (4 + 3 + 3 + 2), then Remarks (full). */}
-      <FormGrid>
-        <VendorPicker
-          id="ncdc-vendor"
-          className="form-grp f-md"
-          value={vendorId}
-          initialLabel={sourceVendorLabel}
-          onChange={(id, label) => {
-            setVendorId(id);
-            setVendorCodeText(id ? (label.split(' — ')[0] ?? label) : '');
-          }}
-        />
-        <FormField label="DC Date" required size="sm" htmlFor="ncdc-date">
-          <input
-            id="ncdc-date"
-            type="date"
-            className="innovic-input"
-            value={dcDate}
-            onChange={(e) => setDcDate(e.target.value)}
-            required
-          />
-        </FormField>
-        <FormField label="Transporter" size="sm" htmlFor="ncdc-transport">
-          <input
-            id="ncdc-transport"
-            className="innovic-input"
-            maxLength={200}
-            value={transport}
-            onChange={(e) => setTransport(e.target.value)}
-            placeholder="Transporter name"
-          />
-        </FormField>
-        <FormField label="Vehicle No." size="xs" htmlFor="ncdc-vehicle-no">
-          <input
-            id="ncdc-vehicle-no"
-            className="innovic-input"
-            maxLength={50}
-            value={vehicleNo}
-            onChange={(e) => setVehicleNo(e.target.value)}
-            placeholder="GJ-01-AB-1234"
-          />
-        </FormField>
-        <FormField label="Remarks" size="full" htmlFor="ncdc-remarks">
-          <textarea
-            id="ncdc-remarks"
-            className="innovic-textarea"
-            rows={2}
-            maxLength={500}
-            value={remarks}
-            onChange={(e) => setRemarks(e.target.value)}
-            placeholder="optional"
-          />
-        </FormField>
-      </FormGrid>
-    </>
   );
 }

@@ -15,7 +15,7 @@ import {
 } from '../../lib/errors';
 import type { Viewer } from './access';
 import { type DayHeader, type DayLine, inTimeOrder } from './day';
-import { blockedByOf, detailOf } from './detail';
+import { detailOf } from './detail';
 import { type DayLogClock, dmy, findOverlap, istHm } from './rules';
 import type { DaySnapshot } from './snapshot';
 
@@ -28,19 +28,16 @@ export const requireCompany = (user: AuthContext): string => {
 export const hoursOf = (fromTime: string, toTime: string | null): string =>
   toTime ? ((hhmmToMin(toTime) - hhmmToMin(fromTime)) / 60).toFixed(2) : '0';
 
-/** The owner's own write on `date`: not in the future, and yesterday first
- *  — judged on the snapshot read under the day lock. */
-export function guardOwnerWrite(date: string, snap: DaySnapshot, today: string): void {
+/** The owner's own write on `date`: never in the future. Any earlier day may
+ *  be written in any order (owner 2026-11-02, ADR-266). */
+export function guardOwnerWrite(date: string, today: string): void {
   if (date > today) throw new ValidationError(`${dmy(date)} has not come yet`);
-  const blocked = blockedByOf(snap, date);
-  if (blocked) throw new ConflictError(blocked.reason);
 }
 
 /**
  * The owner's DayLogDetail after a write, built in memory from the snapshot
  * read under the lock plus what the write returned: `lines` are the day's
- * lines after it. Yesterday-first looks only at earlier days, so a write on
- * this day never changes it.
+ * lines after it.
  */
 export function ownerDetailAfter(
   snap: DaySnapshot,
@@ -52,7 +49,6 @@ export function ownerDetailAfter(
   if (!snap.target) throw new NotFoundError('User not found');
   return detailOf(
     { header: h, lines: inTimeOrder(lines), holidays: snap.holidays },
-    blockedByOf(snap, h.date),
     v,
     snap.target,
     h.date,

@@ -2702,6 +2702,10 @@ export const goodsReceiptNoteLines = pgTable(
     itemName: text('item_name').notNull(),
     // Decimal (KGS / MTR) — 0172.
     receivedQty: stockQty('received_qty').notNull(),
+    // 0237 — the NC this replacement line settles (copied from the return DC
+    // line at receipt). Null on every other GRN line; pre-0237 rows backfilled
+    // from the header nc_id.
+    ncId: uuid('nc_id').references((): AnyPgColumn => ncRegister.id, { onDelete: 'set null' }),
     dcRefNo: text('dc_ref_no'),
     qcStatus: grnQcStatusEnum('qc_status').notNull().default('pending'),
     qcAcceptedQty: stockQty('qc_accepted_qty').notNull().default(0),
@@ -3210,6 +3214,10 @@ export const deliveryChallanLines = pgTable(
     purchaseOrderLineId: uuid('purchase_order_line_id').references(() => purchaseOrderLines.id, {
       onDelete: 'set null',
     }),
+    // 0237 — the NC this return-to-vendor line carries. One DC may hold several
+    // NCs of one SO; the header nc_id stays the FIRST and marks the DC as a
+    // return DC. Null on an ordinary OSP line.
+    ncId: uuid('nc_id').references((): AnyPgColumn => ncRegister.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()

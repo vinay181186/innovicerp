@@ -59,7 +59,8 @@ export const GRN_LINE_SF_COLUMNS: SfColumnMap = {
   grnCode: { sql: sql`grn.code`, type: 'text' },
   grnDate: { sql: sql`grn.grn_date`, type: 'date' },
   vendorName: { sql: sql`COALESCE(v.name, grn.vendor_code_text)`, type: 'text' },
-  // Same rule as GRN_SF_COLUMNS.poNcCode (an NC return shows its NC code).
+  // Same rule as GRN_SF_COLUMNS.poNcCode (an NC return shows its NC code) —
+  // here the LINE's NC (`nc` joins COALESCE(gl.nc_id, grn.nc_id), 0237).
   poNcCode: {
     sql: sql`(CASE WHEN grn.nc_id IS NOT NULL
               THEN COALESCE(nc.code, grn.po_code_text)
@@ -140,7 +141,10 @@ export async function listGoodsReceiptNoteLines(
       LEFT JOIN public.vendors v ON v.id = grn.vendor_id AND v.deleted_at IS NULL
       LEFT JOIN public.purchase_orders po
         ON po.id = grn.purchase_order_id AND po.deleted_at IS NULL
-      LEFT JOIN public.nc_register nc ON nc.id = grn.nc_id AND nc.deleted_at IS NULL
+      -- 0237 — the LINE's NC (a replacement GRN may settle several), header
+      -- as old-row fallback.
+      LEFT JOIN public.nc_register nc
+        ON nc.id = COALESCE(gl.nc_id, grn.nc_id) AND nc.deleted_at IS NULL
       LEFT JOIN public.items i ON i.id = gl.item_id AND i.deleted_at IS NULL
       LEFT JOIN public.purchase_order_lines pol
         ON pol.id = gl.purchase_order_line_id AND pol.deleted_at IS NULL
@@ -175,7 +179,7 @@ export async function listGoodsReceiptNoteLines(
         grn.vendor_code_text AS "vendorCodeText",
         grn.purchase_order_id AS "purchaseOrderId",
         grn.delivery_challan_id AS "deliveryChallanId",
-        grn.nc_id AS "ncId",
+        COALESCE(gl.nc_id, grn.nc_id) AS "ncId",
         po.code AS "poCode", grn.po_code_text AS "poCodeText", nc.code AS "ncCode",
         grn.dc_no AS "dcNo", grn.invoice_no AS "invoiceNo",
         grn.cancelled_at AS "cancelledAt",

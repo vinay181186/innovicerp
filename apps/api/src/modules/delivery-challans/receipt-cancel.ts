@@ -27,7 +27,7 @@
 //     when none is left).
 // Refused instead of half-undone:
 //   · a return-to-vendor replacement receipt (dc.nc_id) — onNcChallanReceived
-//     has no inverse yet;
+//     has no inverse yet; every NC on the receipt's lines is named (0237);
 //   · a receipt whose Job Card is already complete (tryCascadeJcComplete may
 //     have closed the order line — not unwound here);
 //   · an older receipt whose GRN was never linked (0221 backfilled only the
@@ -206,22 +206,29 @@ export async function dcReceiptCancelBlockers(
   const dcHref = `/delivery-challans/${head.deliveryChallanId}`;
 
   // A return-to-vendor replacement: onNcChallanReceived has no inverse, so the
-  // NC's rtv figures could not be put back. Refused outright.
+  // NC's rtv figures could not be put back. Refused outright — naming every NC
+  // this receipt's lines booked pieces on (0237: the line's NC, header as
+  // fallback; one return DC may carry several), in line order.
   if (head.dcNcId) {
-    const nc = (
-      (await tx.execute(sql`
-        SELECT code FROM public.nc_register
-         WHERE id = ${head.dcNcId}::uuid AND company_id = ${companyId}::uuid
-      `)) as unknown as Array<{ code: string }>
-    )[0];
-    return [
-      {
-        docLabel: 'NC',
-        docNo: nc?.code ?? 'NC',
-        href: `/nc-register/${head.dcNcId}`,
-        reason: 'return-to-vendor replacement — cannot be cancelled yet',
-      },
-    ];
+    const ncs = (await tx.execute(sql`
+      SELECT nc.id, nc.code
+        FROM public.delivery_challan_receipt_lines rl
+        JOIN public.delivery_challan_lines dl ON dl.id = rl.delivery_challan_line_id
+        JOIN public.nc_register nc
+          ON nc.id = COALESCE(dl.nc_id, ${head.dcNcId}::uuid)
+         AND nc.company_id = ${companyId}::uuid
+       WHERE rl.receipt_id = ${id}::uuid AND rl.company_id = ${companyId}::uuid
+         AND rl.deleted_at IS NULL
+       GROUP BY nc.id, nc.code
+       ORDER BY MIN(dl.line_no), nc.code
+    `)) as unknown as Array<{ id: string; code: string }>;
+    const named = ncs.length > 0 ? ncs : [{ id: head.dcNcId, code: 'NC' }];
+    return named.map((nc) => ({
+      docLabel: 'NC',
+      docNo: nc.code,
+      href: `/nc-register/${nc.id}`,
+      reason: 'return-to-vendor replacement — cannot be cancelled yet',
+    }));
   }
 
   const out: CancelBlocker[] = [];
