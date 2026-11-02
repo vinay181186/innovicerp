@@ -1,0 +1,103 @@
+/* ADR-265 — the one Approvals list (home + Settings → Approvals) and its
+   Review side panel. Tokens only. */
+
+/* Document number: mono bold; a link when the caller may open the page,
+   plain grey text otherwise (ActionLink fallback="text"). */
+.apv-doc {
+  font-family: var(--mono);
+  font-weight: 700;
+  white-space: nowrap;
+}
+a.apv-link {
+  color: var(--text-link);
+  text-decoration: none;
+}
+a.apv-link:hover {
+  text-decoration: underline;
+}
+span.apv-link {
+  color: var(--text3);
+  cursor: default;
+}
+/* Item Code is THE main thing — strong, never faint. */
+.apv-code {
+  font-family: var(--mono);
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+/* ── Review side panel (drawer layer 200 on the app's z-index ladder; the
+   Reject reason Modal at 500 sits above it) ── */
+.apv-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  border: 0;
+  padding: 0;
+  background: var(--overlay-bg);
+  cursor: default;
+}
+.apv-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 200;
+  width: 560px;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg2);
+  border-left: 1px solid var(--border);
+  box-shadow: var(--shadow-drawer);
+}
+.apv-panel-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--border);
+}
+.apv-panel-title {
+  margin: 0;
+  font-size: var(--fs-md);
+  font-weight: 700;
+  color: var(--text);
+}
+.apv-panel-meta {
+  font-size: var(--fs-xs);
+  color: var(--text2);
+  margin-top: var(--sp-1);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  align-items: center;
+}
+.apv-panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--sp-3) var(--sp-4);
+}
+.apv-panel-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border-top: 1px solid var(--border);
+  background: var(--bg3);
+}
+.apv-panel-err {
+  color: var(--red2);
+  font-size: var(--fs-xs);
+  margin-bottom: var(--sp-2);
+}
+.apv-now {
+  color: var(--text3);
+  text-decoration: line-through;
+}
+.apv-req {
+  font-weight: 700;
+  color: var(--text);
+}

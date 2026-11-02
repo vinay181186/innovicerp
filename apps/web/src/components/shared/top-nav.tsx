@@ -38,8 +38,7 @@ import { INNOVIC_LOGO_DATA_URI } from '@/lib/print/letterhead-logo';
 import { roleLabel } from '@/lib/role-label';
 import { LiveStatusMarker } from '@/lib/live-updates/live-status-marker';
 import { signOut, useSession } from '@/lib/session';
-import { useApprovalInboxTotal } from '@/modules/approvals/api';
-import { useDocumentEditPendingTotal } from '@/modules/document-edits/api';
+import { useWaitingApprovals } from '@/modules/approvals/api';
 import { NotificationBell } from '@/modules/dashboard/components/notification-bell';
 import { Icon } from '@/ui/core';
 import {
@@ -80,10 +79,9 @@ export function TopNav(): React.JSX.Element {
   const isAdmin = me?.role === 'admin';
   const isSuperAdmin = useIsSuperAdmin();
   // Badge on System Settings → Approvals: everything waiting for THIS user —
-  // the ADR-190 inbox (PR + PO + Log Entry) plus the ADR-202 edits waiting for
-  // approval. The server lists only rows the caller may approve, so someone who
-  // approves nothing sees no badge.
-  const pendingApprovals = useApprovalInboxTotal(!!me) + useDocumentEditPendingTotal(!!me);
+  // the same GET /approvals/waiting list (and query key) the home Approvals view
+  // and the Approvals page show, so the three numbers always match (ADR-265).
+  const pendingApprovals = useWaitingApprovals({ enabled: !!me }).data?.total ?? 0;
 
   // Which module's menu is open. Remembered in sessionStorage so it survives
   // a page reload (user, 2026-09-21: pick a page, then pick "Create SO" from

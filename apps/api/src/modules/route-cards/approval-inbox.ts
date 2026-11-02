@@ -8,6 +8,7 @@ import type { ApprovalInboxRow } from '@innovic/shared';
 import { type SQL, sql } from 'drizzle-orm';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { hasFormAccess } from '../../lib/access';
+import { timestampMs } from '../../lib/edit-conflict';
 
 /** The caller's Access Control answer for the RC inbox. Read BEFORE opening
  *  the inbox transaction (each check opens its own). */
@@ -33,27 +34,32 @@ export function rcPendingWhereSql(companyId: string): SQL {
       AND rc.approval_status = 'pending'`;
 }
 
-export async function listRcApprovalInbox(
-  tx: DbTransaction,
-  companyId: string,
-  access: RcInboxAccess,
-): Promise<ApprovalInboxRow[]> {
-  if (!access.canApprove) return [];
+/** A waiting card plus its `updatedAt` — the `expectedUpdatedAt` the approve /
+ *  reject endpoints check (§20.4). ADR-265's waiting list sends it as `version`. */
+export type RcWaitingRow = ApprovalInboxRow & { version: string };
+
+interface RcRaw {
+  id: string;
+  doc_code: string;
+  item_code: string | null;
+  item_name: string | null;
+  created_by_name: string | null;
+  created_at: Date | string;
+  updated_at: Date | string;
+}
+
+async function readRcRows(tx: DbTransaction, companyId: string): Promise<RcRaw[]> {
   // The same row set the paged inbox (approvals/inbox-list.ts) reads.
-  const rows = (await tx.execute(sql`
-    SELECT t.id, t.doc_code, t.item_code, t.item_name, t.created_by_name, t.created_at
+  return (await tx.execute(sql`
+    SELECT t.id, t.doc_code, t.item_code, t.item_name, t.created_by_name, t.created_at,
+      t.updated_at
     FROM (${rcInboxRowsSql(companyId)}) t
     ORDER BY t.created_at
-  `)) as unknown as Array<{
-    id: string;
-    doc_code: string;
-    item_code: string | null;
-    item_name: string | null;
-    created_by_name: string | null;
-    created_at: Date | string;
-  }>;
+  `)) as unknown as RcRaw[];
+}
 
-  return rows.map((r) => ({
+function toInboxRow(r: RcRaw): ApprovalInboxRow {
+  return {
     id: String(r.id),
     docCode: String(r.doc_code),
     vendorName: null,
@@ -64,6 +70,20 @@ export async function listRcApprovalInbox(
     createdByName: r.created_by_name || null,
     createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
     navPage: rcNavPage(String(r.id)),
+  };
+}
+
+/** NEW Route Cards waiting for the caller's approval (ADR-253), each with its
+ *  `version` for the approve endpoint's expectedUpdatedAt (ADR-265). */
+export async function listRcWaiting(
+  tx: DbTransaction,
+  companyId: string,
+  access: RcInboxAccess,
+): Promise<RcWaitingRow[]> {
+  if (!access.canApprove) return [];
+  return (await readRcRows(tx, companyId)).map((r) => ({
+    ...toInboxRow(r),
+    version: new Date(timestampMs(r.updated_at)).toISOString(),
   }));
 }
 
@@ -75,7 +95,7 @@ export function rcInboxRowsSql(companyId: string): SQL {
       i.code AS item_code, i.name AS item_name,
       NULL::float AS doc_qty, NULL::float AS doc_amount,
       COALESCE(NULLIF(btrim(u.full_name), ''), split_part(u.email, '@', 1)) AS created_by_name,
-      rc.created_at
+      rc.created_at, rc.updated_at
     FROM public.route_cards rc
     LEFT JOIN public.items i ON i.id = rc.item_id
     LEFT JOIN public.users u ON u.id = rc.created_by

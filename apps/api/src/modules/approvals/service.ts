@@ -11,8 +11,15 @@
 //   rc       — route-cards/approval-inbox.ts       (approveRouteCard's rules, ADR-253)
 //   logEntry — op-entry's pending date/time corrections (ADR-130), shown to
 //              whoever holds Approve on Operation Entry or QC Submit (ADR-232, D7)
+//
+// readApprovalInbox is the shared read; GET /approvals/waiting (ADR-265,
+// ./waiting.ts) builds its merged list from the same answer.
 
-import type { ApprovalInboxResponse, ApprovalInboxRow } from '@innovic/shared';
+import type {
+  ApprovalInboxResponse,
+  ApprovalInboxRow,
+  OpLogTimeChangeRequest,
+} from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
@@ -20,13 +27,41 @@ import { hasFormAccess } from '../../lib/access';
 import { AuthorizationError } from '../../lib/errors';
 import { selectTimeChangeRequests } from '../op-entry/service';
 import { decidableTimeChangeScope } from '../op-entry/time-change-page';
-import { listPoApprovalInbox, loadPoInboxAccess } from '../purchase-orders/approval-inbox';
-import { listRcApprovalInbox, loadRcInboxAccess } from '../route-cards/approval-inbox';
+import {
+  listPoApprovalInbox,
+  loadPoInboxAccess,
+  type PoInboxAccess,
+} from '../purchase-orders/approval-inbox';
+import {
+  listRcWaiting,
+  loadRcInboxAccess,
+  type RcInboxAccess,
+  type RcWaitingRow,
+} from '../route-cards/approval-inbox';
 
 /** The most log-entry requests the list endpoint will return in one read. */
 const LOG_ENTRY_LIMIT = 200;
 
-export async function getApprovalInbox(user: AuthContext): Promise<ApprovalInboxResponse> {
+/** A waiting op-log time change plus the Job Card it belongs to. */
+export interface LogEntryWaiting {
+  request: OpLogTimeChangeRequest;
+  jobCardId: string | null;
+}
+
+/** Everything the inbox reads, before it is shaped for a response — shared by
+ *  GET /approvals/inbox (below) and GET /approvals/waiting (ADR-265). */
+export interface ApprovalInboxRead {
+  poAccess: PoInboxAccess;
+  rcAccess: RcInboxAccess;
+  canDecideLogEntry: boolean;
+  po: ApprovalInboxRow[];
+  rc: RcWaitingRow[];
+  logEntry: LogEntryWaiting[];
+  /** The whole waiting log-entry queue (logEntry stops at LOG_ENTRY_LIMIT). */
+  logEntryCount: number;
+}
+
+export async function readApprovalInbox(user: AuthContext): Promise<ApprovalInboxRead> {
   const companyId = user.companyId;
   if (!companyId) throw new AuthorizationError('User is not assigned to a company');
 
@@ -47,19 +82,19 @@ export async function getApprovalInbox(user: AuthContext): Promise<ApprovalInbox
   // Started now, awaited after the log-entry reads, so they run together.
   const prPo = withUserContext(user, async (tx) => ({
     po: await listPoApprovalInbox(tx, companyId, user, poAccess),
-    rc: await listRcApprovalInbox(tx, companyId, rcAccess),
+    rc: await listRcWaiting(tx, companyId, rcAccess),
   }));
   // If the log-entry reads throw first, this must not become an unhandled
   // rejection (it would crash the process); its own error surfaces at the await.
   prPo.catch(() => undefined);
 
-  let logEntry: ApprovalInboxRow[] = [];
+  let logEntry: LogEntryWaiting[] = [];
   let logEntryCount = 0;
   if (canDecideLogEntry) {
     // The count is the whole waiting queue (ADR-201) — the list below stops at
     // LOG_ENTRY_LIMIT. Same rows selectTimeChangeRequests can return: its
     // inner joins (op_log, a live jc_op, its job card) are repeated here.
-    const [countRows, requests] = await Promise.all([
+    const [countRows, listed] = await Promise.all([
       withUserContext(user, (tx) =>
         tx.execute(sql`
         SELECT COUNT(*)::int AS n
@@ -73,35 +108,57 @@ export async function getApprovalInbox(user: AuthContext): Promise<ApprovalInbox
           ${logScope}
       `),
       ),
-      withUserContext(user, (tx) =>
-        selectTimeChangeRequests(tx, companyId, {
+      withUserContext(user, async (tx) => {
+        const requests = await selectTimeChangeRequests(tx, companyId, {
           status: 'pending',
           limit: LOG_ENTRY_LIMIT,
           where: logScope,
-        }),
-      ),
+        });
+        return requests.map((request) => ({
+          request,
+          jobCardId: request.jobCardId ?? null,
+        }));
+      }),
     ]);
     const [c] = countRows as unknown as Array<{ n: number }>;
     logEntryCount = Number(c?.n ?? 0);
-    logEntry = requests.map((r) => ({
-      id: r.id,
-      docCode: `${r.jobCardCode} · Op #${opSrNo(r.opSeq)}`,
-      vendorName: null,
-      itemCode: r.itemCode,
-      itemName: r.itemName,
-      docQty: r.qty,
-      docAmount: null,
-      createdByName: r.requestedByName,
-      createdAt: r.requestedAt,
-      navPage: '/approvals',
-    }));
+    logEntry = listed;
   }
 
   const { po, rc } = await prPo;
+  return { poAccess, rcAccess, canDecideLogEntry, po, rc, logEntry, logEntryCount };
+}
+
+export async function getApprovalInbox(user: AuthContext): Promise<ApprovalInboxResponse> {
+  const read = await readApprovalInbox(user);
+  const logEntry: ApprovalInboxRow[] = read.logEntry.map(({ request: r }) => ({
+    id: r.id,
+    docCode: `${r.jobCardCode} · Op #${opSrNo(r.opSeq)}`,
+    vendorName: null,
+    itemCode: r.itemCode,
+    itemName: r.itemName,
+    docQty: r.qty,
+    docAmount: null,
+    createdByName: r.requestedByName,
+    createdAt: r.requestedAt,
+    navPage: '/approvals',
+  }));
+  const rc: ApprovalInboxRow[] = read.rc.map((r) => ({
+    id: r.id,
+    docCode: r.docCode,
+    vendorName: r.vendorName,
+    itemCode: r.itemCode,
+    itemName: r.itemName,
+    docQty: r.docQty,
+    docAmount: r.docAmount,
+    createdByName: r.createdByName,
+    createdAt: r.createdAt,
+    navPage: r.navPage,
+  }));
   return {
-    counts: { pr: 0, po: po.length, logEntry: logEntryCount, rc: rc.length },
+    counts: { pr: 0, po: read.po.length, logEntry: read.logEntryCount, rc: rc.length },
     pr: [],
-    po,
+    po: read.po,
     logEntry,
     rc,
   };

@@ -19,8 +19,12 @@ import { formKeyOf, requireCompany, selectRows } from './rows';
 /** Doc types whose page grants the caller `action` — the list never shows a
  *  request on a page the caller cannot open. 'decide' = the tick that decides
  *  that type's cancel: Approve, or Edit for a one-step type (Purchase Request,
- *  owner rule 2026-10-31 — so a request left pending from before still shows). */
-async function typesWith(user: AuthContext, action: 'view' | 'decide'): Promise<CancelDocType[]> {
+ *  owner rule 2026-10-31 — so a request left pending from before still shows).
+ *  Also used by GET /approvals/waiting and /approvals/history (ADR-265). */
+export async function typesWith(
+  user: AuthContext,
+  action: 'view' | 'decide',
+): Promise<CancelDocType[]> {
   const ok = await Promise.all(
     CANCEL_DOC_TYPES.map((t) =>
       hasFormAccess(user, formKeyOf(t), action === 'view' ? 'view' : cancelDeciderRight(t)),

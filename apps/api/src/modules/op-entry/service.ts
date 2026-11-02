@@ -2069,6 +2069,7 @@ export async function selectTimeChangeRequests(
       r.op_log_id                       AS "opLogId",
       r.jc_op_id                        AS "jcOpId",
       jc.code                           AS "jobCardCode",
+      jc.id::text                       AS "jobCardId",
       to_char(jc.jc_date, 'YYYY-MM-DD') AS "jcDate",
       o.op_seq                          AS "opSeq",
       o.operation                       AS "operation",

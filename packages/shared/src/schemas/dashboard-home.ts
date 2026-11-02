@@ -205,8 +205,9 @@ export const homeResponseSchema = z.object({
   mainDept: z.string().nullable(),
   headline: dashTextSchema,
   cues: z.array(dashCueSchema),
-  /** Null when the caller holds no Approve tick → the block is not shown.
-   *  Same rows and rules as GET /approvals/inbox (one source). */
+  /** Null when the caller holds no Approve tick, and always null on the lite
+   *  home (ADR-265: its Approvals view reads GET /approvals/waiting — one list
+   *  for the home, the Approvals page and the badge). */
   approvals: approvalInboxResponseSchema.nullable(),
   /** Documents the caller raised that are waiting for someone else's approval. */
   sentForApproval: z.array(dashRowSchema),

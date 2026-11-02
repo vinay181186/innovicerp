@@ -34,6 +34,7 @@ import {
   type Viewer,
   accessJson,
   assertCanWrite,
+  canApproveAny,
   canApproveUser,
   resolveAccess,
   viewerOf,
@@ -117,12 +118,20 @@ function approvalsOf(v: Viewer, json: unknown): DayLogApprovalsResponse {
 
 /** GET /day-logs/approvals — ONE statement (access + every waiting edit). */
 export async function getApprovals(user: AuthContext): Promise<DayLogApprovalsResponse> {
+  return (await readDayLogApprovals(user)).response;
+}
+
+/** The same read, plus whether the caller may approve anyone's edits at all
+ *  (canApproveAny) — GET /approvals/waiting (ADR-265) needs both. */
+export async function readDayLogApprovals(
+  user: AuthContext,
+): Promise<{ response: DayLogApprovalsResponse; canApproveAny: boolean }> {
   const companyId = requireCompany(user);
   const [r] = (await db.execute(sql`
     SELECT ${accessJson(user.id, companyId)} AS access, ${pendingJson(companyId)} AS rows
   `)) as unknown as Array<{ access: unknown; rows: unknown }>;
   const v = viewerOf(user, await resolveAccess(user, r?.access));
-  return approvalsOf(v, r?.rows);
+  return { response: approvalsOf(v, r?.rows), canApproveAny: canApproveAny(v) };
 }
 
 interface Decision {
