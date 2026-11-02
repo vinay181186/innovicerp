@@ -7,7 +7,7 @@ import { db } from '../../db/client';
 import type { AuthContext } from '../../db/with-user-context';
 import { resolveAccess, viewerOf, visibleUser } from './access';
 import { repliesOfLinesJson } from './day';
-import { blockedByOf, detailOf } from './detail';
+import { detailOf } from './detail';
 import { type DayLogClock, istClock } from './rules';
 import { readSnapshot } from './snapshot';
 import { requireCompany } from './writes';
@@ -40,5 +40,5 @@ export async function getDay(
     const by = r?.replies ?? {};
     snap.lines = snap.lines.map((l) => ({ ...l, replies: by[l.id] ?? [] }));
   }
-  return detailOf(snap, blockedByOf(snap, date), v, target, date, clock);
+  return detailOf(snap, v, target, date, clock);
 }

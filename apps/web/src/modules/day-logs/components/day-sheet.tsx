@@ -50,7 +50,6 @@ export function DaySheet({
   q,
   nowMin,
   canWrite,
-  canAdd,
   line,
   onDirty,
 }: {
@@ -59,8 +58,6 @@ export function DaySheet({
   nowMin: number | null;
   /** The server lets the owner write this day, and it is not still loading. */
   canWrite: boolean;
-  /** New rows may be added (canWrite and the day is not blocked). */
-  canAdd: boolean;
   /** ?line= — the entry to open and scroll to. */
   line: string | undefined;
   /** Some draft has something typed in it. */
@@ -80,7 +77,7 @@ export function DaySheet({
   const [savingKeys, setSavingKeys] = useState<ReadonlySet<number>>(() => new Set());
   const saving = addRows.isPending || savingKeys.size > 0;
   const filled = drafts.filter(isFilled);
-  const dirty = canAdd && filled.length > 0;
+  const dirty = canWrite && filled.length > 0;
 
   useEffect(() => onDirty(dirty), [dirty, onDirty]);
   useEffect(() => {
@@ -165,7 +162,7 @@ export function DaySheet({
     </span>
   ) : null;
 
-  const showForm = canAdd && adding;
+  const showForm = canWrite && adding;
   return (
     <>
       <MyDayTable
@@ -176,7 +173,7 @@ export function DaySheet({
         line={line}
         onMessage={(text) => setMsg({ ok: true, text })}
       />
-      {canAdd && !showForm ? (
+      {canWrite && !showForm ? (
         <div className="dl-addbar">
           <button type="button" className="btn btn-primary btn-sm" onClick={openAdd}>
             + Add entry
@@ -225,7 +222,7 @@ export function DaySheet({
           </div>
         </div>
       ) : null}
-      {!canAdd && msgLine ? <div className="dl-addbar">{msgLine}</div> : null}
+      {!canWrite && msgLine ? <div className="dl-addbar">{msgLine}</div> : null}
     </>
   );
 }

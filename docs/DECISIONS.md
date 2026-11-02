@@ -15080,3 +15080,21 @@ actions for the user only; decided items leave it.
   caller cannot decide; every decision in place.
 - Negative: per-type column sets are gone (one common column set).
 - Risks: list over 500 rows shows the first 500 (total still exact).
+
+## ADR-266: Day Log — a missing day no longer blocks the next one
+
+**Date:** 2026-11-02
+**Status:** Accepted — withdraws the "yesterday first" rule of ADR-255 (owner 2026-10-27)
+
+### Context
+
+My Day Log refused new rows on a day whose previous calendar day had no saved row (once the person had any earlier row). The banner read "01-11-2026 (Sun) has no entries — fill it first", so people had to type "Sunday" / "Holiday" rows.
+
+### Decision
+
+Owner 2026-11-02: "remove this rule — no compulsory fill of back-dated entries." Any day up to today can be written, in any order. Removed everywhere: `blockedByOf` (rules.ts), the save guard (writes.ts `guardOwnerWrite`, which now keeps only "has not come yet"), `canWrite` (detail.ts), the two snapshot reads, the shared `blockedBy` field, and the banner (day-notices.tsx deleted). Unchanged: future days are refused, and the day lock, overlap check, stale-edit 409 and Idempotency-Key all stay.
+
+### Consequences
+
+- No limit on how far back a person may write (none was asked for). If one is wanted later, it goes in `guardOwnerWrite` + detail `canWrite` together.
+- Team Day Logs still shows an empty day as "Not started"; nothing blocks on it.

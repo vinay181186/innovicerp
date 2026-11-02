@@ -11,11 +11,8 @@ import {
 } from '@innovic/shared';
 import { type DayUser, type Viewer, canApproveUser, deptLabelOf } from './access';
 import { type DayLine, spansOf } from './day';
-import { blockedByOf, entryMinutes } from './rules';
+import { entryMinutes } from './rules';
 import type { DaySnapshot } from './snapshot';
-
-/** Yesterday first (rules.ts — pure, unit-tested). */
-export { blockedByOf };
 
 /** `nowMin` only when the line's day is today (an old Open entry counts to now).
  *  `withReplies` — ADR-255: only the entry's owner and a Super Admin. */
@@ -60,7 +57,6 @@ export function summaryOf(
  *  a snapshot of that day (read, or brought up to date after a write). */
 export function detailOf(
   snap: Pick<DaySnapshot, 'header' | 'lines' | 'holidays'>,
-  blockedBy: { date: string; reason: string } | null,
   v: Viewer,
   target: DayUser,
   date: string,
@@ -92,10 +88,9 @@ export function detailOf(
     reopenedByName: header?.reopenedByName ?? null,
     reopenReason: header?.reopenReason ?? null,
     leaveReason: header?.leaveReason ?? null,
-    blockedBy,
     strayOpen: null,
     isOwner,
-    canWrite: isOwner && v.writer && !blockedBy && date <= clock.today,
+    canWrite: isOwner && v.writer && date <= clock.today,
     // The viewer may approve this person's edits (never their own).
     canManage: canApproveUser(v, target),
     lastEntryId: null,

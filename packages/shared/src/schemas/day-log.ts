@@ -471,8 +471,6 @@ export const dayLogDetailSchema = z.object({
   reopenedAt: z.string().nullable(),
   reopenedByName: z.string().nullable(),
   reopenReason: z.string().nullable(),
-  /** An earlier working day still open: this day is locked until it is done. */
-  blockedBy: z.object({ date: z.string(), reason: z.string() }).nullable(),
   /** An entry left Open on an earlier day: give it a Stop time first. */
   strayOpen: z
     .object({ date: z.string(), entryId: z.string().uuid(), fromTime: z.string() })

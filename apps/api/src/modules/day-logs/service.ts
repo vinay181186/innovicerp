@@ -5,7 +5,7 @@
 //   approvals.ts — list / approve / reject edits   writes.ts — guards + the ONE row check
 //   team.ts    — Team Day Logs                     person-day.ts — a person, one day
 //   orders.ts  — SO / JWSO picker + check          day.ts    — header / line SQL
-//   detail.ts  — yesterday first, the DayLogDetail  lock.ts  — the day lock
+//   detail.ts  — the DayLogDetail                   lock.ts  — the day lock
 //   sheet.ts   — many new rows at once (one sheet)
 //   text.ts    — Working On edited directly + revisions, replies seen (ADR-255)
 //   replies.ts — Super Admin replies

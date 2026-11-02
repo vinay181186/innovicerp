@@ -9,7 +9,7 @@ import {
   hhmmToMin,
   overlapMin,
 } from '@innovic/shared';
-import { addDays, istDateOf } from '../dashboard/personal/util';
+import { istDateOf } from '../dashboard/personal/util';
 import type { DayLine } from './day';
 
 const IST_OFFSET_MS = 5.5 * 3600 * 1000;
@@ -29,12 +29,6 @@ export function istClock(now: number = Date.now()): DayLogClock {
 export function dmy(date: string): string {
   return `${date.slice(8, 10)}-${date.slice(5, 7)}-${date.slice(0, 4)}`;
 }
-
-const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
-
-/** "26-10-2026 (Mon)". */
-export const dmyDay = (date: string): string =>
-  `${dmy(date)} (${WEEKDAYS[new Date(`${date}T00:00:00Z`).getUTCDay()]})`;
 
 /** Team "Working": the latest Stop is at most this many minutes before now. */
 export const WORKING_WINDOW_MIN = 30;
@@ -86,21 +80,6 @@ export function findOverlap(
       return o;
   }
   return null;
-}
-
-/**
- * YESTERDAY FIRST (owner 2026-10-27): a day can be written only when the
- * PREVIOUS CALENDAR DAY has at least one saved row — no skipping Sundays or
- * holidays (the user writes "Sunday" / "Holiday"). Never blocks a person
- * with no saved row before `date` at all (their very first day).
- */
-export function blockedByOf(
-  snap: { hasEarlier: boolean; prevHasRows: boolean },
-  date: string,
-): { date: string; reason: string } | null {
-  if (!snap.hasEarlier || snap.prevHasRows) return null;
-  const prev = addDays(date, -1);
-  return { date: prev, reason: `${dmyDay(prev)} has no entries — fill it first` };
 }
 
 // ── Team Day Logs ───────────────────────────────────────────────────────────

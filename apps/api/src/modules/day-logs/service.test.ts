@@ -4,7 +4,7 @@ import { addDayLogEntryInputSchema } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
-import { ConflictError, ValidationError } from '../../lib/errors';
+import { ValidationError } from '../../lib/errors';
 import { approvalCases } from './approval-cases';
 import { editCases } from './edit-cases';
 import { sheetCases } from './sheet-cases';
@@ -122,36 +122,26 @@ describe('Day Log — add rows', () => {
   });
 });
 
-describe('Day Log — yesterday first', () => {
-  it("a person's first-ever day is not blocked", async () => {
+describe('Day Log — any day, any order (ADR-266)', () => {
+  it("a person's first-ever day takes rows", async () => {
     const d = await service.getDay({ date: WED }, owner(), at(WED, '12:00'));
-    expect([d.blockedBy, d.strayOpen, d.canWrite]).toEqual([null, null, true]);
+    expect([d.strayOpen, d.canWrite]).toEqual([null, true]);
     await add(WED, at(WED, '12:00'));
   });
 
-  it('D-1 empty while an earlier day has rows → day D is refused with 409', async () => {
+  it('an empty day before does not block: Wednesday saves while Tuesday is empty', async () => {
     await add(MON, at(MON, '18:00'));
     const wed = await service.getDay({ date: WED }, owner(), at(WED, '12:00'));
-    expect(wed.blockedBy).toEqual({
-      date: TUE,
-      reason: '02-01-2001 (Tue) has no entries — fill it first',
-    });
-    expect(wed.canWrite).toBe(false);
-    const err = await add(WED, at(WED, '12:00')).catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(ConflictError);
-    expect((err as Error).message).toBe('02-01-2001 (Tue) has no entries — fill it first');
-    await add(TUE, at(WED, '12:00'), { description: 'Tuesday' });
-    expect((await add(WED, at(WED, '12:00'))).blockedBy).toBeNull();
+    expect(wed.canWrite).toBe(true);
+    expect((await add(WED, at(WED, '12:00'))).entries).toHaveLength(1);
+    // The skipped Tuesday can still be filled later.
+    expect((await add(TUE, at(WED, '13:00'), { description: 'Tuesday' })).entries).toHaveLength(1);
   });
 
-  it('Sunday is not skipped: Monday waits for a Sunday row', async () => {
+  it('Monday after an empty Sunday saves; a future day is still refused', async () => {
     await add(SAT, at(SAT, '18:00'));
-    await expect(add(NEXT_MON, at(NEXT_MON, '12:00'))).rejects.toThrow(
-      '07-01-2001 (Sun) has no entries — fill it first',
-    );
-    await add(SUN, at(NEXT_MON, '12:00'), { description: 'Sunday' });
-    const d = await add(NEXT_MON, at(NEXT_MON, '12:00'));
-    expect(d.entries).toHaveLength(1);
+    expect((await add(NEXT_MON, at(NEXT_MON, '12:00'))).entries).toHaveLength(1);
+    await expect(add(NEXT_MON, at(SUN, '12:00'))).rejects.toThrow('has not come yet');
   });
 });
 

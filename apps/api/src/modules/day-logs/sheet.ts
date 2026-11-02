@@ -76,7 +76,7 @@ export async function addEntries(
       },
       tx,
     );
-    guardOwnerWrite(h.date, snap, clock.today);
+    guardOwnerWrite(h.date, clock.today);
     const lines = snap.lines;
     const rows: Row[] = [];
     for (const [i, row] of input.rows.entries()) {
