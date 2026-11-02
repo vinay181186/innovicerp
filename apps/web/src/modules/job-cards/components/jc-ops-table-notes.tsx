@@ -1,5 +1,7 @@
-// Job Card Operations tab — the NC notes line and the "Job Card check"
-// footer under the operations table.
+// Job Card Operations tab — the per-op NC notes line under the operations
+// table. The column legend and the "Job Card check" footer were removed by the
+// owner (2026-11-02); the same figures stay on the Check fact's hover and in
+// each row's ✓ hover.
 //
 // The WORDING and every figure are today's Op Qty Flow notes
 // (flow-views/components/jc-flow-panels.tsx `OpFlowNotes`, L223-302, and
@@ -7,12 +9,10 @@
 // so the text is copied here verbatim; change both together. Every number is
 // the server's (GET /flow-views/job-cards/:id/op-flow) — nothing is added up
 // on this screen.
-//
-// Layout follows the approved mock-up: the per-op notes and the column legend
-// run as one line under the table; the Job Card check is the footer.
+
 import { fmtOpSrNo } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
-import type { OpFlowResponse, OpFlowRow } from '@/modules/flow-views/types';
+import type { OpFlowRow } from '@/modules/flow-views/types';
 
 /** jc-flow-panels.tsx L59-64 — what "Done" means on this kind of op. */
 export const doneLabel = (o: OpFlowRow): string =>
@@ -98,42 +98,11 @@ export function JcOpsTableNotes({
   ops: OpFlowRow[];
   /** The op-flow request failed: say so here instead of the notes. */
   error: string | null;
-}): React.JSX.Element {
+}): React.JSX.Element | null {
   if (error) {
     return <div className="jc-ops-notes jc-ops-bad">{error}</div>;
   }
   const notes = opNotes(ops);
-  return (
-    <div className="jc-ops-notes">
-      {notes}
-      {/* jc-flow-panels.tsx L295-297 — the column legend. */}
-      <span className="jc-ops-note">
-        <b>Deviated</b> = failed inspection, sent to an NC for a decision · <b>Reworked</b> = the NC
-        recovered it and it was accepted · <b>Rejected</b> = the final NC decision. Hover ✓ for the
-        row&apos;s sum.
-      </span>
-    </div>
-  );
-}
-
-/** jc-flow-panels.tsx L281-293 — the Job Card check sentence, now the footer. */
-export function JcOpsTableCheck({
-  check,
-}: {
-  check: OpFlowResponse['jobCardCheck'] | undefined;
-}): React.JSX.Element | null {
-  if (!check) return null;
-  return (
-    <div className="jc-ops-check">
-      <b>Job Card check:</b> {check.ordered} ordered ={' '}
-      <b className="jc-ops-good">{check.finished} finished</b> + {check.pending} pending +{' '}
-      {check.inQc} in QC + {check.atVendor} at vendor + {check.deviatedOpen} deviated (NC open) +{' '}
-      {check.rejected} rejected{' '}
-      {check.unaccounted === 0 ? (
-        <b className="jc-ops-good">✓</b>
-      ) : (
-        <b className="jc-ops-bad">⚠ {check.unaccounted} not accounted for</b>
-      )}
-    </div>
-  );
+  // Nothing to say on a card with no NC / rework / reversal: no empty band.
+  return notes.length > 0 ? <div className="jc-ops-notes">{notes}</div> : null;
 }

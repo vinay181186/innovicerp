@@ -6,7 +6,8 @@
 // columns, same Check ✓ hover sum, same notes and Job Card check line, and the
 // SAME hook (useOpFlow) for every figure: nothing is recomputed here — plus:
 //
-//   ▸            opens what today's op card body showed (jc-ops-table-detail.tsx)
+//   Operation    its cell opens the operation popup (jc-op-popup.tsx): what today's op
+//                card body showed (jc-ops-table-detail.tsx), ‹ › to step
 //   Operation · Machine / Vendor
 //   Op Status    the op card's badge (lib/jc-op-labels.ts OP_STATUS)
 //   Next Step    the ONE action today's action strip led with
@@ -15,18 +16,18 @@
 // Which actions, under which gates, lives in jc-ops-table-actions.ts — each
 // gate copied verbatim from jc-op-actions.tsx with its source line.
 //
-// The current op (jc-view-summary.tsx currentOp) carries a 3px blue left edge
-// and opens by default. The scroll box is a bare `.tbl-wrap`, so the fragment
-// can sit straight in a `<Panel fill>` body (see production-orders/components/
-// po-close-ledger.tsx `fill`): the table takes the height that is left and
-// scrolls inside it with both header rows fixed.
+// The current op (jc-view-summary.tsx currentOp) carries a 3px blue left edge.
+// The PAGE scrolls (owner-approved option 4, 2026-11-02): the table shows every
+// row at full height and its two header rows stick under the page's sticky
+// band (summary strip + tabs, jc-detail.css --jc-sticky-h). Under the table:
+// the per-op NC notes only (legend + "Job Card check" line removed by owner).
 import type { JcOpEnriched, JobCardListItem, OpLog } from '@innovic/shared';
-import { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useMyAccess } from '@/lib/access-control';
 import { useOpFlow } from '@/modules/flow-views/api';
 import type { useProductionOrderForJobCard } from '@/modules/production-orders/api';
 import { useJobCardStatusExtras } from '../api';
-import { JcOpsTableCheck, JcOpsTableNotes } from './jc-ops-table-notes';
+import { JcOpsTableNotes } from './jc-ops-table-notes';
 import { COLS, OpRow, OpRowWithBoard, type RowProps } from './jc-ops-table-row';
 import { currentOp } from './jc-view-summary';
 import './jc-ops-table.css';
@@ -68,31 +69,19 @@ export function JcOpsTable({
   const cur = currentOp(ops);
   const firstOpId = ops[0]?.id ?? null;
 
-  // null = the default (the current op open) until the user toggles a row.
-  const [openIds, setOpenIds] = useState<Set<string> | null>(null);
-  const effective = openIds ?? new Set(cur ? [cur.id] : []);
-  const toggle = (id: string): void => {
-    const next = new Set(effective);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    setOpenIds(next);
-  };
-
-  // Bring the current op into view once, inside the table's own scroll box
-  // (25-op cards). Never scrolls the page.
-  const wrapRef = useRef<HTMLDivElement>(null);
-  const curRowRef = useRef<HTMLTableRowElement | null>(null);
-  const scrolled = useRef(false);
-  useLayoutEffect(() => {
-    const wrap = wrapRef.current;
-    const tr = curRowRef.current;
-    if (scrolled.current || !wrap || !tr) return;
-    scrolled.current = true;
-    const headH = wrap.querySelector('thead')?.getBoundingClientRect().height ?? 0;
-    if (tr.offsetTop + tr.offsetHeight > wrap.scrollTop + wrap.clientHeight) {
-      wrap.scrollTop = Math.max(0, tr.offsetTop - headH);
-    }
-  });
+  // The op whose popup is open (one at a time); ‹ › / ↑ ↓ step through ops.
+  const [openId, setOpenId] = useState<string | null>(null);
+  const step = useCallback(
+    (dir: -1 | 1): void => {
+      setOpenId((curId) => {
+        const at = ops.findIndex((o) => o.id === curId);
+        if (at < 0 || ops.length === 0) return curId;
+        return ops[(at + dir + ops.length) % ops.length]?.id ?? curId;
+      });
+    },
+    [ops],
+  );
+  const close = useCallback(() => setOpenId(null), []);
 
   const flowError = flowQ.isError
     ? flowQ.error instanceof Error
@@ -102,12 +91,12 @@ export function JcOpsTable({
 
   return (
     <>
-      <div className="tbl-wrap" ref={wrapRef}>
+      <div className="tbl-wrap jc-ops-wrap">
         <table className="innovic-table tbl-nofreeze jc-ops-table">
           <thead>
             {/* Group heads — jc-flow-panels.tsx OP_FLOW_GROUPS, L216-221 */}
             <tr className="dt-head-groups">
-              <th colSpan={3} />
+              <th colSpan={2} />
               <th colSpan={7} className="vsep">
                 At this operation
               </th>
@@ -117,7 +106,6 @@ export function JcOpsTable({
               <th colSpan={4} className="vsep" />
             </tr>
             <tr>
-              <th aria-label="Expand" />
               <th>Op</th>
               <th>Operation · Machine / Vendor</th>
               <th className="th-num vsep">Input</th>
@@ -156,15 +144,11 @@ export function JcOpsTable({
                   flow,
                   eff,
                   stopped,
-                  open: effective.has(op.id),
+                  open: openId === op.id,
                   current: cur?.id === op.id,
-                  onToggle: () => toggle(op.id),
-                  rowRef:
-                    cur?.id === op.id
-                      ? (el) => {
-                          curRowRef.current = el;
-                        }
-                      : undefined,
+                  onOpen: () => setOpenId(op.id),
+                  onClose: close,
+                  onStep: step,
                   logs: logsByOp.get(op.id) ?? [],
                   machineName: extra?.machineName ?? null,
                   toolDetails: extra?.toolDetails ?? null,
@@ -182,7 +166,6 @@ export function JcOpsTable({
         </table>
       </div>
       {ops.length > 0 ? <JcOpsTableNotes ops={flowQ.data?.ops ?? []} error={flowError} /> : null}
-      {ops.length > 0 ? <JcOpsTableCheck check={flowQ.data?.jobCardCheck} /> : null}
     </>
   );
 }
