@@ -13,7 +13,7 @@ import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
 import { ItemRevLink } from '@/modules/item-revisions/components/item-rev-link';
 import { itemCodeWithRev, docDrawingRev } from '@/lib/item-code';
-import { ROW_TINT, leadColumns } from '@/ui/data';
+import { ROW_TINT, createdByColumn, leadColumns } from '@/ui/data';
 import type { DataTableColumn, RowMenuItem } from '@/ui/data';
 import type { RenderLink } from '@/ui/layout';
 import { DERIVED_BADGE, DERIVED_LABEL, STORED_BADGE } from '../lib/derived-status';
@@ -101,10 +101,13 @@ export function planRowTint(row: PlanRow): string | undefined {
 
 export function plansListColumns(
   /** ADR-202 — plan ids with a pending edit; their status cell shows "Draft". */
-  draftIds?: Set<string>,
+  draftIds: Set<string> | undefined,
+  /** Sr No of this page's first row (server offset + 1). */
+  firstRowNo: number,
 ): DataTableColumn<PlanRow>[] {
   return [
     ...leadColumns<PlanRow>({
+      firstRowNo,
       doc: {
         id: 'plan_no',
         sortFilterField: 'code',
@@ -124,15 +127,6 @@ export function plansListColumns(
             {row.code}
           </Link>
         ),
-      },
-      docDate: {
-        id: 'plan_date',
-        sortFilterField: 'planDate',
-        kind: 'date',
-        header: 'Plan Date',
-        className: 'mono text2',
-        nowrap: true,
-        render: (row) => fmtDate(row.planDate),
       },
       soNo: (row) => row.soCodeText,
       internalSoNo: (row) => row.soInternalNo,
@@ -162,6 +156,15 @@ export function plansListColumns(
         item_name: { sortFilterField: 'itemName' },
       },
     }),
+    {
+      id: 'plan_date',
+      sortFilterField: 'planDate',
+      kind: 'date',
+      header: 'Plan Date',
+      className: 'mono text2',
+      nowrap: true,
+      render: (row) => fmtDate(row.planDate),
+    },
     {
       // NAMING.md "Plan End Date" — plans.planned_end_date; blank on a plan
       // saved without a schedule.
@@ -235,6 +238,7 @@ export function plansListColumns(
         return <span className={`badge ${badge.cls}`}>{badge.label}</span>;
       },
     },
+    createdByColumn<PlanRow>({ createdByName: (row) => row.createdByName }),
   ];
 }
 

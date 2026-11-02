@@ -11,7 +11,7 @@
 import type { PlanningSoListItem } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
 import { soTypeLabel } from '@/modules/sales-orders/lib/so-status-label';
-import { ROW_TINT, leadColumns, type DataTableColumn } from '@/ui/data';
+import { ROW_TINT, createdByColumn, leadColumns, type DataTableColumn } from '@/ui/data';
 import {
   JwChip,
   ORDER_STATUS_BADGE,
@@ -45,12 +45,17 @@ const TYPE_OPTIONS = ['component_manufacturing', 'equipment', 'with_material', '
   (value) => ({ value, label: soTypeLabel(value) }),
 );
 
-export function orderListColumns(src: SourceFilter): DataTableColumn<PlanningSoListItem>[] {
+export function orderListColumns(
+  src: SourceFilter,
+  /** Sr No of this page's first row (server offset + 1). */
+  firstRowNo: number,
+): DataTableColumn<PlanningSoListItem>[] {
   return [
     // ADR-261 lead columns — a one-row-per-ORDER summary, so only SO No.,
     // Internal SO No. (not on the JWSO-only view) and Created On are drawn; an
     // order has many POLs / items. Customer and every other fact follow.
     ...leadColumns<PlanningSoListItem>({
+      firstRowNo,
       so: src === 'jw' ? 'jwso' : 'so',
       soNo: (so) => so.soCode,
       internalSoNo: src === 'jw' ? undefined : (so) => so.soInternalNo,
@@ -153,5 +158,9 @@ export function orderListColumns(src: SourceFilter): DataTableColumn<PlanningSoL
         </span>
       ),
     },
+    createdByColumn<PlanningSoListItem>({
+      createdByName: (so) => so.createdByName,
+      overrides: { sortFilterField: 'createdBy' },
+    }),
   ];
 }

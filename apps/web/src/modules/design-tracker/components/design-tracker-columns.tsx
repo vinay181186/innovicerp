@@ -11,7 +11,7 @@
 import { DESIGN_TRACKER_STATUSES, type DesignTrackerListItem } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
 import type { DataTableColumn, RowMenuItem } from '@/ui/data';
-import { ROW_TINT, leadColumns } from '@/ui/data';
+import { ROW_TINT, createdByColumn, leadColumns } from '@/ui/data';
 
 /** True when the design's Due Date is past and it is not yet Approved. */
 export function isDesignOverdue(row: DesignTrackerListItem, today: string): boolean {
@@ -45,12 +45,15 @@ const STATUS_OPTIONS = DESIGN_TRACKER_STATUSES.map((v) => ({ value: v, label: v 
 export function designTrackerColumns(opts: {
   /** IST yyyy-mm-dd for the overdue check — computed once by the route. */
   today: string;
+  /** Sr No of this page's first row (server offset + 1). */
+  firstRowNo: number;
 }): DataTableColumn<DesignTrackerListItem>[] {
-  const { today } = opts;
+  const { today, firstRowNo } = opts;
   return [
-    // Owner rule 2026-10-31 — own number (Design No.) first, then the six lead
-    // columns; every other fact follows Item Name.
+    // Owner rule 2026-10-31 — own number (Design No.) inside the lead block (after
+    // Item Name); every other fact follows Item Name.
     ...leadColumns<DesignTrackerListItem>({
+      firstRowNo,
       doc: {
         id: 'design_no',
         header: 'Design No.',
@@ -153,6 +156,7 @@ export function designTrackerColumns(opts: {
       filterType: 'num',
       render: (d) => <span style={{ color: 'var(--text3)' }}>{d.estimatedHours}h</span>,
     },
+    createdByColumn<DesignTrackerListItem>({ createdByName: (d) => d.createdByName }),
   ];
 }
 

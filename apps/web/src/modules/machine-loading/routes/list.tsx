@@ -156,7 +156,7 @@ function MachineLoadingPage(): React.JSX.Element {
       return next;
     });
 
-  const columns = useMemo(() => opsColumns(), []);
+  const columns = useMemo(() => opsColumns(pageOffset(search.page) + 1), [search.page]);
 
   const tab: MlTab = search.tab ?? 'ops';
   function setTab(k: string): void {

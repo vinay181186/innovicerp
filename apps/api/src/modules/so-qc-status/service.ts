@@ -27,6 +27,7 @@ import type {
   SoQcTpiDetail,
 } from '@innovic/shared';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
 import { buildOrderDossier } from '../qc-documents/dossier';
 
@@ -165,6 +166,7 @@ export async function getSoQcStatus(soId: string, user: AuthContext): Promise<So
         -- for this SO line. Never sol.line_no, which is OUR line number.
         sol.client_po_line_no AS "clientPoLineNo",
         sol.order_qty AS "orderQty", sol.created_at AS "createdAt",
+        ${createdByNameSql(sql`sol.created_by`)} AS "createdByName",
         COUNT(DISTINCT jc.id)::int AS "jcCount",
         COUNT(vos.jc_op_id) FILTER (WHERE vos.qc_required OR vos.op_type = 'qc')::int AS "qcOpsTotal",
         COUNT(vos.jc_op_id) FILTER (
@@ -450,6 +452,7 @@ export async function getSoQcStatus(soId: string, user: AuthContext): Promise<So
             : r['createdAt'] instanceof Date
               ? r['createdAt'].toISOString()
               : String(r['createdAt']),
+        createdByName: (r['createdByName'] as string | null) ?? null,
         orderQty: num(r['orderQty']),
         jcCount: num(r['jcCount']),
         hasAnyQc,

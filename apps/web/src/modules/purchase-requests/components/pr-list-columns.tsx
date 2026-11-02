@@ -1,10 +1,9 @@
 // Purchase Request list columns (ADR-199 fit table). Moved out of
 // routes/list.tsx so that file stays under 400 lines.
 //
-// Visible order (ADR-261 lead columns first): PR No. · SO No. · Internal SO No. ·
-// POL · Created On · Item Code · Item Name · Sr No · PR Date · Vendor · PR Qty ·
-// On PO · Pending · Due · PR Status. A Sr No column ships hidden
-// (defaultHidden in the route). Qty / On PO / Pending are `num`
+// Visible order (ADR-261 rev lead block first: Sr No · SO No. · Internal SO No. ·
+// POL · Item Code · Item Name · PR No. · Created On): PR Date · Vendor · PR Qty ·
+// On PO · Pending · Due · PR Status · Created By. Qty / On PO / Pending are `num`
 // (right-aligned, tabular). Everything the old card showed in its title + metric
 // bands is here; POL, source, operation, est. rate, approval and PO details move
 // into the ▸ expand (pr-list-expand.tsx).
@@ -12,7 +11,7 @@
 import { type PurchaseRequestListItem } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
-import { leadColumns, type DataTableColumn } from '@/ui/data';
+import { createdByColumn, type DataTableColumn, leadColumns } from '@/ui/data';
 import { prBalanceColor, prOrderBalance } from '../lib/pr-balance';
 import { PR_STATUS_LABELS } from '../lib/pr-labels';
 import { PrStatusBadge } from './pr-status-badge';
@@ -26,12 +25,13 @@ const PR_STATUS_OPTIONS = Object.entries(PR_STATUS_LABELS).map(([value, label]) 
 /** @param firstRowNo the Sr No of the page's first row (offset + 1), so Sr No
  *  runs on across pages (page 2 starts at 26). */
 export function prListColumns(
-  firstRowNo = 1,
+  firstRowNo: number,
   /** ADR-202 — PR ids with a pending edit; their status cell shows "Draft". */
   draftIds?: Set<string>,
 ): DataTableColumn<PurchaseRequestListItem>[] {
   return [
     ...leadColumns<PurchaseRequestListItem>({
+      firstRowNo,
       doc: {
         id: 'pr_no',
         sortFilterField: 'prCode',
@@ -53,14 +53,6 @@ export function prListColumns(
           </Link>
         ),
       },
-      docDate: {
-        id: 'pr_date',
-        sortFilterField: 'prDate',
-        header: 'PR Date',
-        kind: 'date',
-        nowrap: true,
-        render: (pr) => fmtDate(pr.prDate),
-      },
       soNo: (pr) => pr.soCode,
       internalSoNo: (pr) => pr.soInternalNo,
       pol: (pr) => pr.clientPoLineNo,
@@ -76,11 +68,12 @@ export function prListColumns(
       },
     }),
     {
-      id: 'sr_no',
-      header: 'Sr No',
-      kind: 'num',
-      className: 'text3',
-      render: (_pr, i) => firstRowNo + i,
+      id: 'pr_date',
+      sortFilterField: 'prDate',
+      header: 'PR Date',
+      kind: 'date',
+      nowrap: true,
+      render: (pr) => fmtDate(pr.prDate),
     },
     {
       id: 'vendor',
@@ -146,5 +139,10 @@ export function prListColumns(
       nowrap: true,
       render: (pr) => <PrStatusBadge status={pr.status} draft={draftIds?.has(pr.id)} />,
     },
+    // ADR-261 rev — Created By, the last data column.
+    createdByColumn({
+      createdByName: (r) => r.createdByName,
+      overrides: { sortFilterField: 'createdBy' },
+    }),
   ];
 }

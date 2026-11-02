@@ -36,6 +36,8 @@ export const jwReturnChallanSchema = z.object({
 export type JwReturnChallan = z.infer<typeof jwReturnChallanSchema>;
 
 export const jwReturnChallanListItemSchema = jwReturnChallanSchema.extend({
+  /** Created By (ADR-261 rev): name of the user who entered the SAME record as createdAt (full name, else e-mail before @); null when unknown. */
+  createdByName: z.string().nullable(),
   clientName: z.string().nullable(),
   partName: z.string().nullable(),
   /** For the printed return challan: the JWSO line's item code (live join,

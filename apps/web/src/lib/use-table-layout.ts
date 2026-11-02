@@ -67,7 +67,7 @@ function isStatus(e: unknown, status: number): boolean {
 }
 
 /** Fit any layout onto the columns the code has today. The locked block
- *  (column 0, or the six lead columns) always comes first in code order and is
+ *  (column 0, or the locked lead block) always comes first in code order and is
  *  never hidden. A column the code added since the user saved lands at its
  *  CODE position (just after the column it follows), never at the end. */
 function normalize(

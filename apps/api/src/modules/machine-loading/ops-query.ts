@@ -7,6 +7,7 @@
 import { sql, type SQL } from 'drizzle-orm';
 import type { MachineLoadOp, MachineLoadingQuery } from '@innovic/shared';
 import type { DbTransaction } from '../../db/with-user-context';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { likeEscape, readSf, sfOrderBy, sfWhere, type SfColumnMap } from '../../lib/list-query';
 import { polSql } from '../../lib/pol';
 
@@ -27,6 +28,7 @@ export const MACHINE_LOAD_SF_COLUMNS: SfColumnMap = {
   soInternalNo: { sql: sql`so.internal_so_no`, type: 'text' },
   clientPoLineNo: { sql: polSql('sol', 'rev_jwl'), type: 'text' },
   createdOn: { sql: sql`(jo.created_at AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
+  createdBy: { sql: createdByNameSql(sql`jo.created_by`), type: 'text' },
   available: { sql: sql`vos.available`, type: 'num' },
   pendingHrs: { sql: sql`ROUND(vos.available * jo.cycle_time_min / 60.0, 2)`, type: 'num' },
   opStatus: { sql: sql`vos.computed_status`, type: 'list' },
@@ -64,6 +66,7 @@ const SELECT_LIST = sql`
         so.internal_so_no AS "soInternalNo",
         -- ADR-261 Created On — the job-card op's own created_at.
         jo.created_at AS "createdAt",
+        ${createdByNameSql(sql`jo.created_by`)} AS "createdByName",
         jc.priority, jc.due_date AS "dueDate", jc.order_qty AS "orderQty",
         vos.completed_qty AS "completedQty", vos.available,
         vos.computed_status AS "computedStatus",
@@ -124,6 +127,7 @@ function toOp(r: Record<string, unknown>): MachineLoadOp {
       r['createdAt'] instanceof Date
         ? (r['createdAt'] as Date).toISOString()
         : ((r['createdAt'] as string | null) ?? null),
+    createdByName: (r['createdByName'] as string | null) ?? null,
     priority: r['priority'] as MachineLoadOp['priority'],
     dueDate: r['dueDate'] != null ? String(r['dueDate']).slice(0, 10) : null,
     orderQty: Number(r['orderQty'] ?? 0),

@@ -129,6 +129,8 @@ export const soQcLineSchema = z.object({
   partName: z.string().nullable(),
   /** ADR-261 lead Created On — the SO line's own created_at. */
   createdAt: z.string().nullable().default(null),
+  /** Created By (ADR-261 rev): name of the user who entered the SAME record as createdAt (full name, else e-mail before @); null when unknown. */
+  createdByName: z.string().nullable(),
   orderQty: z.number().int(),
   jcCount: z.number().int().nonnegative(),
   // True when the line has at least one QC stage of any kind (legacy hasAnyQC).

@@ -9,18 +9,19 @@
 import { type JwReturnChallanListItem } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
 import { statusText } from '@/lib/status-text';
-import { leadColumns, type DataTableColumn } from '@/ui/data';
+import { createdByColumn, type DataTableColumn, leadColumns } from '@/ui/data';
 
 const STATUS_OPTIONS = [
   { value: 'issued', label: statusText('issued') },
   { value: 'cancelled', label: statusText('cancelled') },
 ];
 
-export function jwReturnColumns(): DataTableColumn<JwReturnChallanListItem>[] {
+export function jwReturnColumns(firstRowNo: number): DataTableColumn<JwReturnChallanListItem>[] {
   return [
     // Owner rule 2026-10-31 — Return No. then the lead columns first (JWSO-only
     // list: JWSO No., no Internal SO No.); Customer after Item Name.
     ...leadColumns<JwReturnChallanListItem>({
+      firstRowNo,
       doc: {
         id: 'return_no',
         sortFilterField: 'returnCode',
@@ -29,15 +30,6 @@ export function jwReturnColumns(): DataTableColumn<JwReturnChallanListItem>[] {
         className: 'td-code',
         nowrap: true,
         render: (r) => <span style={{ color: 'var(--cyan)' }}>{r.code}</span>,
-      },
-      docDate: {
-        id: 'return_date',
-        sortFilterField: 'returnDate',
-        kind: 'date',
-        header: 'Return Date',
-        className: 'mono text2',
-        nowrap: true,
-        render: (r) => fmtDate(r.returnDate),
       },
       so: 'jwso',
       soNo: (r) => r.jwCodeText,
@@ -52,6 +44,15 @@ export function jwReturnColumns(): DataTableColumn<JwReturnChallanListItem>[] {
         item_name: { sortFilterField: 'itemName' },
       },
     }),
+    {
+      id: 'return_date',
+      sortFilterField: 'returnDate',
+      kind: 'date',
+      header: 'Return Date',
+      className: 'mono text2',
+      nowrap: true,
+      render: (r) => fmtDate(r.returnDate),
+    },
     {
       id: 'customer',
       sortFilterField: 'customer',
@@ -86,5 +87,7 @@ export function jwReturnColumns(): DataTableColumn<JwReturnChallanListItem>[] {
         </span>
       ),
     },
+    // ADR-261 rev — Created By, the last data column.
+    createdByColumn({ createdByName: (r) => r.createdByName }),
   ];
 }

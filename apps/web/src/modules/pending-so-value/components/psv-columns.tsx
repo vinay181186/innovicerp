@@ -17,7 +17,7 @@
 import type { PendingSoValueResponse, PendingSoValueRow } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
-import { leadColumns, ROW_TINT, type DataTableColumn } from '@/ui/data';
+import { createdByColumn, leadColumns, ROW_TINT, type DataTableColumn } from '@/ui/data';
 import { soStatusLabel } from '@/modules/sales-orders/lib/so-status-label';
 
 // Legacy colours the Invoiced figures `var(--teal,#0d9488)` (L19338). `--teal`
@@ -75,11 +75,14 @@ export function psvColumns(
   today: string,
   /** Server totals over every matching SO (undefined while loading). */
   totals: PsvTotals | undefined,
+  /** Sr No of this page's first row (server offset + 1). */
+  firstRowNo: number,
 ): DataTableColumn<PendingSoValueRow>[] {
   const sum = (k: keyof Omit<PsvTotals, 'soCount'>): number => Number(totals?.[k] ?? 0);
   const cols: DataTableColumn<PendingSoValueRow>[] = [
     // ADR-261 lead columns — one row per ORDER, so no POL / Item columns.
     ...leadColumns<PendingSoValueRow>({
+      firstRowNo,
       soNo: (r) => r.soCode,
       internalSoNo: (r) => r.soInternalNo,
       createdOn: (r) => r.createdAt,
@@ -258,6 +261,13 @@ export function psvColumns(
       },
     );
   }
+
+  cols.push(
+    createdByColumn<PendingSoValueRow>({
+      createdByName: (r) => r.createdByName,
+      overrides: { sortFilterField: 'createdBy' },
+    }),
+  );
 
   return cols;
 }

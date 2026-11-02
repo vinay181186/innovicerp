@@ -42,6 +42,8 @@ export interface QcCommandQueueRow {
   soInternalNo?: string | null;
   /** ADR-261 lead Created On — the QC op's own created_at (jc_ops). */
   createdAt?: string | null;
+  /** Created By (ADR-261 rev): name of the user who entered the SAME record as createdAt (full name, else e-mail before @); null when unknown. */
+  createdByName: string | null;
   customer: string | null;
   pendingQty: number;
   ageDays: number;
@@ -100,6 +102,8 @@ export interface QcReworkRow {
   soInternalNo?: string | null;
   /** ADR-261 lead Created On — the reworked QC op's own created_at (jc_ops). */
   createdAt?: string | null;
+  /** Created By (ADR-261 rev): name of the user who entered the SAME record as createdAt (full name, else e-mail before @); null when unknown. */
+  createdByName: string | null;
   attempts: number;
   totalRejected: number;
   firstEntry: string | null;

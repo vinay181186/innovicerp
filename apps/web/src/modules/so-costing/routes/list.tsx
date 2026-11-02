@@ -30,7 +30,7 @@ import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib
 import { inrFormat } from '@/lib/print/doc-print';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { DataTable, leadColumns, Panel, type DataTableColumn } from '@/ui/data';
+import { createdByColumn, DataTable, leadColumns, Panel, type DataTableColumn } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
@@ -49,10 +49,15 @@ function moneyCell(v: number | null, color: string, bold = false): React.JSX.Ele
   return <span style={{ color, fontWeight: bold ? 700 : undefined }}>{money(v)}</span>;
 }
 
-function soCostingColumns(priceHidden: boolean): DataTableColumn<SoCostingRow>[] {
+function soCostingColumns(
+  priceHidden: boolean,
+  /** Sr No of this page's first row (server offset + 1). */
+  firstRowNo: number,
+): DataTableColumn<SoCostingRow>[] {
   const cols: DataTableColumn<SoCostingRow>[] = [
     // ADR-261 lead columns — one row per ORDER, so no POL / Item columns.
     ...leadColumns<SoCostingRow>({
+      firstRowNo,
       soNo: (r) => r.soNo,
       internalSoNo: (r) => r.soInternalNo,
       createdOn: (r) => r.createdAt,
@@ -175,6 +180,13 @@ function soCostingColumns(priceHidden: boolean): DataTableColumn<SoCostingRow>[]
     );
   }
 
+  cols.push(
+    createdByColumn<SoCostingRow>({
+      createdByName: (r) => r.createdByName,
+      overrides: { sortFilterField: 'createdBy' },
+    }),
+  );
+
   return cols;
 }
 
@@ -231,7 +243,7 @@ function SoCostingListPage(): React.JSX.Element {
   // Told by the server, not inferred from a null money field: a null also means
   // "no value yet", so probing it hid money from users entitled to see it.
   const priceHidden = data ? !data.priceVisible : false;
-  const columns = useMemo(() => soCostingColumns(priceHidden), [priceHidden]);
+  const columns = useMemo(() => soCostingColumns(priceHidden, offset + 1), [priceHidden, offset]);
 
   const header = (
     <ListHeader

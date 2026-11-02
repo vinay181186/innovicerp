@@ -65,7 +65,7 @@ export function StockLedger(): React.JSX.Element {
 
   const { data, isLoading, isFetching, isError, error } = useStoreTransactionsList(query);
 
-  const columns = useMemo(() => stockLedgerColumns(), []);
+  const columns = useMemo(() => stockLedgerColumns(pageOffset(page) + 1), [page]);
   const rows = data?.items ?? [];
 
   const total = data?.total ?? 0;

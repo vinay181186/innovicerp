@@ -14,6 +14,7 @@ import type {
 import { ActivityAction, opSrNo } from '@innovic/shared';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { describeMachineSplit, loadMachineSplit } from '../../lib/machine-split';
@@ -112,6 +113,7 @@ export async function listJcOpsBoard(
         bso.internal_so_no AS "soInternalNo",
         -- ADR-261 Created On — the job-card op's own created_at.
         op.created_at AS "createdAt",
+        ${createdByNameSql(sql`op.created_by`)} AS "createdByName",
         jc.order_qty AS "jcOrderQty",
         op.op_seq AS "opSeq",
         op.operation,
@@ -201,6 +203,7 @@ export async function listJcOpsBoard(
           r['createdAt'] instanceof Date
             ? (r['createdAt'] as Date).toISOString()
             : ((r['createdAt'] as string | null) ?? null),
+        createdByName: (r['createdByName'] as string | null) ?? null,
         jcOrderQty: num(r['jcOrderQty']),
         opSeq: num(r['opSeq']),
         operation: String(r['operation'] ?? ''),

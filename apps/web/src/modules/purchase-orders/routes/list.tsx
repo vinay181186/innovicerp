@@ -5,7 +5,7 @@
 // the old ▸ (which only listed the lines) is gone. Row click and the ⋯ menu act
 // on the line's PO (docId), exactly as before.
 //
-// Columns: the six lead columns (SO No. · Internal SO No. · POL · Created On ·
+// Columns: the locked lead block (SO No. · Internal SO No. · POL · Created On ·
 // Item Code · Item Name), then PO No. · PO Date · PO Type · Vendor · PR No. ·
 // Qty · GRN Received · Accepted · Pending · Value · PO Status — see
 // components/po-list-columns.tsx. Value keeps its price gate (API nulls it).
@@ -166,8 +166,8 @@ function PurchaseOrdersListPage(): React.JSX.Element {
   // ADR-202 — PO ids with a pending edit; their status cell reads "Draft".
   const draftIds = usePendingEditIds('PurchaseOrder');
   const columns = useMemo(
-    () => purchaseOrderListColumns({ canSeePrice: perms.price, draftIds }),
-    [perms.price, draftIds],
+    () => purchaseOrderListColumns({ firstRowNo: offset + 1, canSeePrice: perms.price, draftIds }),
+    [offset, perms.price, draftIds],
   );
 
   // Row ⋯ menu — Preview · Download PDF · Edit · Create DC · Assign Task. No

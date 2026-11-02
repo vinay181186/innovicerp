@@ -5,6 +5,7 @@
 // what the cell shows.
 
 import { sql } from 'drizzle-orm';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import type { SfColumnMap } from '../../lib/list-query';
 import { OP_LOG_QC_REMARKS } from '../../lib/op-log-qc-remarks';
 import { polSql } from '../../lib/pol';
@@ -33,6 +34,7 @@ export const QC_PENDING_SF_COLUMNS: SfColumnMap = {
   pendSince: { sql: PEND_SINCE, type: 'date' },
   // ADR-261 lead Created On — the QC op's own created_at.
   createdOn: { sql: istDaySql(sql`jo.created_at`), type: 'date' },
+  createdBy: { sql: createdByNameSql(sql`jo.created_by`), type: 'text' },
 };
 
 export const QC_LOGS_SF_COLUMNS: SfColumnMap = {
@@ -45,4 +47,5 @@ export const QC_LOGS_SF_COLUMNS: SfColumnMap = {
   remarks: { sql: OP_LOG_QC_REMARKS, type: 'text' },
   // ADR-261 lead Created On — the QC log row's own created_at.
   createdOn: { sql: istDaySql(sql`ol.created_at`), type: 'date' },
+  createdBy: { sql: createdByNameSql(sql`ol.created_by`), type: 'text' },
 };

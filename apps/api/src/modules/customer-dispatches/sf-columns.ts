@@ -5,6 +5,7 @@
 
 import { sql } from 'drizzle-orm';
 
+import { createdByNameSql } from '../../lib/created-by-sql';
 import type { SfColumnMap } from '../../lib/list-query';
 
 export const DISPATCH_SF_COLUMNS: SfColumnMap = {
@@ -35,6 +36,7 @@ export const DISPATCH_LINE_SF_COLUMNS: SfColumnMap = {
     sql: sql`(COALESCE(l.created_at, h.created_at) AT TIME ZONE 'Asia/Kolkata')::date`,
     type: 'date',
   },
+  createdBy: { sql: createdByNameSql(sql`COALESCE(l.created_by, h.created_by)`), type: 'text' },
   itemCode: { sql: sql`COALESCE(i.code, l.item_code_text)`, type: 'text' },
   itemName: { sql: sql`l.item_name`, type: 'text' },
   qty: { sql: sql`l.qty`, type: 'num' },

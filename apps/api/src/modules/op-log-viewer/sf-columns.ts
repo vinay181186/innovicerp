@@ -19,6 +19,7 @@ import {
   salesOrders,
   users,
 } from '../../db/schema';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import type { SfColumnMap } from '../../lib/list-query';
 import { polOf } from '../../lib/pol';
 
@@ -65,4 +66,5 @@ export const OP_LOG_SF_COLUMNS: SfColumnMap = {
   loggedBy: { sql: sql`${users.fullName}`, type: 'text' },
   reversalReason: { sql: sql`${opLog.reversalReason}`, type: 'text' },
   createdOn: { sql: sql`(${opLog.createdAt} AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
+  createdBy: { sql: createdByNameSql(opLog.createdBy), type: 'text' },
 };

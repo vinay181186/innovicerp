@@ -7,6 +7,7 @@
 
 import { sql } from 'drizzle-orm';
 
+import { createdByNameSql } from '../../lib/created-by-sql';
 import type { SfColumnMap } from '../../lib/list-query';
 
 /** The list's FROM: the project plus its task and open-issue counts. */
@@ -53,4 +54,6 @@ export const DESIGN_PROJECT_SF_COLUMNS: SfColumnMap = {
   openIssues: { sql: OPEN_ISSUES_SQL, type: 'num' },
   // ADR-261 — the Created On lead column (IST day of the project row).
   createdOn: { sql: sql`(dp.created_at AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
+  // ADR-261 rev — Created By: who entered the project (same row as Created On).
+  createdBy: { sql: createdByNameSql(sql`dp.created_by`), type: 'text' },
 };

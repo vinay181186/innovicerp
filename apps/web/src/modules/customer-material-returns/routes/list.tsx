@@ -92,7 +92,7 @@ function CustomerMaterialReturnsListPage(): React.JSX.Element {
 
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / LIST_PAGE_SIZE));
   const rows = data?.items ?? [];
-  const columns = useMemo(() => cmrColumns(), []);
+  const columns = useMemo(() => cmrColumns(pageOffset(page) + 1), [page]);
 
   const [showModal, setShowModal] = useState(false);
   const [cancelRow, setCancelRow] = useState<CustomerMaterialReturnLineRow | null>(null);

@@ -155,7 +155,8 @@ function DesignTrackerListPage(): React.JSX.Element {
 
   const today = todayIst();
   const rows = data?.items ?? [];
-  const columns = useMemo(() => designTrackerColumns({ today }), [today]);
+  const firstRowNo = pageOffset(page) + 1;
+  const columns = useMemo(() => designTrackerColumns({ today, firstRowNo }), [today, firstRowNo]);
 
   if (eff && !perms.view) {
     return (

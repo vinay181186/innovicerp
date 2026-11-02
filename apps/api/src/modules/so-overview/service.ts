@@ -16,7 +16,7 @@
 // Role gate: any authenticated user in the company. RLS enforces cross-
 // company isolation at the DB layer.
 
-import { and, asc, eq, inArray, isNull, sql, type SQL } from 'drizzle-orm';
+import { and, asc, eq, getTableColumns, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 import type {
   SoOverviewQuery,
   SoOverviewResponse,
@@ -41,6 +41,7 @@ import {
   rollupJC,
   rollupSoLine,
 } from '../../lib/calc-engine';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { AuthorizationError } from '../../lib/errors';
 import { loadOpenReworkByOp } from '../../lib/open-rework';
 import { readSf } from '../../lib/list-query';
@@ -93,7 +94,11 @@ export async function getSoOverview(
     }
 
     const soHeaders = await tx
-      .select()
+      .select({
+        ...getTableColumns(salesOrders),
+        // ADR-261 rev — Created By: who entered the SO (same row as Created On).
+        createdByName: createdByNameSql(salesOrders.createdBy),
+      })
       .from(salesOrders)
       .where(and(...conditions))
       .orderBy(asc(salesOrders.code));
@@ -334,6 +339,7 @@ export async function getSoOverview(
         code: header.code,
         internalSoNo: header.internalSoNo,
         createdAt: header.createdAt.toISOString(),
+        createdByName: header.createdByName ?? null,
         soDate: header.soDate,
         customerName: header.customerName,
         clientPoNo: header.clientPoNo,

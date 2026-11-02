@@ -1,6 +1,6 @@
 // Outward Register columns (ADR-199 fit table) — ONE ROW PER DC LINE (ADR-261).
-// DC No. and the six lead columns come first and are locked (SO No. · Internal SO No. ·
-// POL · Created On · Item Code · Item Name); SO No. shows the SO code, else the
+// DC No. and the locked lead block come first and are locked (SO No. · Internal SO No. ·
+// POL · Item Code · Item Name); SO No. shows the SO code, else the
 // JWSO code, and Internal SO No. only for an SO. Then DC Date · PO No.
 // · Vendor · Sent · Received · Pending · DC Status — all for THIS line, except
 // DC No. / Date / PO / Vendor which are the challan's. Vehicle / Remarks sit in
@@ -9,7 +9,7 @@
 import { type JwDcOutwardLineRow } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
-import { type DataTableColumn, leadColumns } from '@/ui/data';
+import { createdByColumn, type DataTableColumn, leadColumns } from '@/ui/data';
 
 function statusLabel(s: JwDcOutwardLineRow['returnStatus']): string {
   // Returned = done; Partly Returned / At Vendor = still under way.
@@ -28,9 +28,10 @@ export function isJwDcCancelled(dc: { cancelledAt: string | null }): boolean {
   return Boolean(dc.cancelledAt);
 }
 
-export function outwardColumns(): DataTableColumn<JwDcOutwardLineRow>[] {
+export function outwardColumns(firstRowNo: number): DataTableColumn<JwDcOutwardLineRow>[] {
   return [
     ...leadColumns<JwDcOutwardLineRow>({
+      firstRowNo,
       doc: {
         id: 'dc_no',
         sortFilterField: 'code',
@@ -50,15 +51,6 @@ export function outwardColumns(): DataTableColumn<JwDcOutwardLineRow>[] {
           </Link>
         ),
       },
-      docDate: {
-        id: 'dc_date',
-        sortFilterField: 'dcDate',
-        kind: 'date',
-        header: 'DC Date',
-        className: 'mono text2',
-        nowrap: true,
-        render: (dc) => fmtDate(dc.docDate),
-      },
       soNo: (r) => r.soCode ?? r.jwCode,
       internalSoNo: (r) => r.soInternalNo,
       pol: (r) => r.clientPoLineNo,
@@ -75,6 +67,15 @@ export function outwardColumns(): DataTableColumn<JwDcOutwardLineRow>[] {
         item_name: { sortFilterField: 'itemName', filterType: 'text' },
       },
     }),
+    {
+      id: 'dc_date',
+      sortFilterField: 'dcDate',
+      kind: 'date',
+      header: 'DC Date',
+      className: 'mono text2',
+      nowrap: true,
+      render: (dc) => fmtDate(dc.docDate),
+    },
     {
       id: 'po_no',
       sortFilterField: 'poNo',
@@ -147,5 +148,10 @@ export function outwardColumns(): DataTableColumn<JwDcOutwardLineRow>[] {
           </span>
         ),
     },
+    // ADR-261 rev — Created By, the last data column.
+    createdByColumn({
+      createdByName: (r) => r.createdByName,
+      overrides: { sortFilterField: 'createdBy' },
+    }),
   ];
 }

@@ -16,6 +16,7 @@ import type { SourceFilter } from './planning-shared';
 export function OrderList({
   src,
   items,
+  firstRowNo,
   loading,
   error,
   onOpen,
@@ -23,12 +24,14 @@ export function OrderList({
 }: {
   src: SourceFilter;
   items: PlanningSoListItem[];
+  /** Sr No of this page's first row (server offset + 1). */
+  firstRowNo: number;
   loading: boolean;
   error: string | null;
   onOpen: (soId: string) => void;
   sf: ServerSortFilter;
 }): JSX.Element {
-  const columns = useMemo(() => orderListColumns(src), [src]);
+  const columns = useMemo(() => orderListColumns(src, firstRowNo), [src, firstRowNo]);
 
   if (error) {
     return <PageState state="error" message={error} />;

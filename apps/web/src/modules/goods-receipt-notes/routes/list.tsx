@@ -2,7 +2,7 @@
 //
 // ADR-199 table standard: ONE shared FIT table (<DataTable tableKey=…>).
 // ADR-261 (2026-10-31): ONE ROW PER GRN LINE, read from GET
-// /goods-receipt-notes/lines, opening with the six lead columns. The old ▸
+// /goods-receipt-notes/lines, opening with the locked lead block. The old ▸
 // (the GRN's lines + its vendor challan / invoice / remarks) is gone: the lines
 // are now the rows and the two vendor paper numbers are columns. Row click and
 // the ⋯ menu act on the line's GRN (docId). The QC-status dropdown counts stay
@@ -140,7 +140,10 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
 
   // ADR-202 — GRN ids with a pending edit; their status cell reads "Draft".
   const draftIds = usePendingEditIds('GoodsReceiptNote');
-  const columns = useMemo(() => goodsReceiptNoteListColumns(draftIds), [draftIds]);
+  const columns = useMemo(
+    () => goodsReceiptNoteListColumns((search.page - 1) * PAGE_SIZE + 1, draftIds),
+    [search.page, draftIds],
+  );
 
   // ⋯ row menu — Assign Task (link a task to this GRN), the same gate the
   // retired card used: shown only while a line still awaits QC

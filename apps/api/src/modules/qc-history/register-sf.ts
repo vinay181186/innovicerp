@@ -12,6 +12,7 @@
 
 import { type SQL, sql } from 'drizzle-orm';
 import { QC_REGISTER_COMPLETED_SF_FIELDS, QC_REGISTER_PENDING_SF_FIELDS } from '@innovic/shared';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import type { SfColumnDef, SfColumnType } from '../../lib/list-query';
 import { OP_LOG_QC_REMARKS } from '../../lib/op-log-qc-remarks';
 import { polSql } from '../../lib/pol';
@@ -23,6 +24,7 @@ import {
 } from './register-facts';
 import {
   INC_CREATED_AT,
+  INC_CREATED_BY_NAME,
   INC_PENDING_QTY,
   INC_SO_CODE,
   INC_SO_INTERNAL,
@@ -35,6 +37,7 @@ import {
   JW_CODE,
   PART_CODE,
   PGRN_CREATED_AT,
+  PGRN_CREATED_BY_NAME,
   PGRN_PENDING_QTY,
   PM_CODE,
   QC_DAY,
@@ -49,6 +52,7 @@ type Field = QcPendingSfField | QcCompletedSfField;
 const COLS: Record<Field, { alias: string; type: Exclude<SfColumnType, 'list'> }> = {
   soCode: { alias: 'sf_so_code', type: 'text' },
   createdOn: { alias: 'sf_created_on', type: 'date' },
+  createdBy: { alias: 'sf_created_by', type: 'text' },
   docNo: { alias: 'sf_doc_no', type: 'text' },
   docDate: { alias: 'sf_doc_date', type: 'date' },
   itemCode: { alias: 'sf_item_code', type: 'text' },
@@ -147,6 +151,7 @@ export const OP_PENDING_SF = sfSelect(P, {
   // ADR-261: SO No. filters the order code; Vendor / Customer the party only.
   soCode: sql`so.code`,
   createdOn: istDaySql(sql`jo.created_at`),
+  createdBy: createdByNameSql(sql`jo.created_by`),
   docNo: sql`jc.code`,
   docDate: sql`jc.jc_date`,
   itemCode: ITEM_CODE_REV,
@@ -168,6 +173,7 @@ export const INC_PENDING_SF = sfSelect(P, {
   // ADR-261: SO No. filters the order code; Vendor / Customer the party only.
   soCode: INC_SO_CODE,
   createdOn: istDaySql(INC_CREATED_AT),
+  createdBy: INC_CREATED_BY_NAME,
   docNo: sql`h.code`,
   docDate: sql`h.grn_date`,
   itemCode: INC_ITEM_CODE,
@@ -189,6 +195,7 @@ export const PGRN_PENDING_SF = sfSelect(P, {
   // ADR-261: SO No. filters the order code; Vendor / Customer the party only.
   soCode: JW_CODE,
   createdOn: istDaySql(PGRN_CREATED_AT),
+  createdBy: PGRN_CREATED_BY_NAME,
   docNo: sql`pg.code`,
   docDate: sql`pg.grn_date`,
   itemCode: PGRN_ITEM_CODE,
@@ -214,6 +221,7 @@ export const OP_COMPLETED_SF = sfSelect(C, {
   // ADR-261: SO No. filters the order code; Vendor / Customer the party only.
   soCode: sql`so.code`,
   createdOn: istDaySql(sql`ol.created_at`),
+  createdBy: createdByNameSql(sql`ol.created_by`),
   docNo: sql`jc.code`,
   docDate: sql`jc.jc_date`,
   itemCode: ITEM_CODE_REV,
@@ -239,6 +247,7 @@ export const INC_COMPLETED_SF = sfSelect(C, {
   // ADR-261: SO No. filters the order code; Vendor / Customer the party only.
   soCode: INC_SO_CODE,
   createdOn: istDaySql(INC_CREATED_AT),
+  createdBy: INC_CREATED_BY_NAME,
   docNo: sql`h.code`,
   docDate: sql`h.grn_date`,
   itemCode: INC_ITEM_CODE,
@@ -264,6 +273,7 @@ export const PGRN_COMPLETED_SF = sfSelect(C, {
   // ADR-261: SO No. filters the order code; Vendor / Customer the party only.
   soCode: JW_CODE,
   createdOn: istDaySql(PGRN_CREATED_AT),
+  createdBy: PGRN_CREATED_BY_NAME,
   docNo: sql`pg.code`,
   docDate: sql`pg.grn_date`,
   itemCode: PGRN_ITEM_CODE,

@@ -27,7 +27,7 @@ import { Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { LIST_PAGE_SIZE, useClampPage } from '@/lib/list-paging';
+import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
 import { DataTable, Panel, ROW_TINT, type RowMenuItem } from '@/ui/data';
 import { ListFooter } from '@/ui/layout';
 import { qcHistoryKeys } from '@/modules/qc-history/api';
@@ -124,9 +124,9 @@ export function QcRegisterScreen(props: {
   }, [search, q, gotoPage]);
   const { pendKey, compKey, pendSf, compSf, sf } = useQcTableSf(incoming, view, gotoPage);
 
-  // Fit-table columns — static, so built once.
-  const pendCols = useMemo(() => pendingColumns().filter(keepCol(incoming)), [incoming]);
-  const compCols = useMemo(() => completedColumns().filter(keepCol(incoming)), [incoming]);
+  const n = pageOffset(page) + 1; // Sr No of this page's first row (columns rebuilt per page)
+  const pendCols = useMemo(() => pendingColumns(n).filter(keepCol(incoming)), [n, incoming]);
+  const compCols = useMemo(() => completedColumns(n).filter(keepCol(incoming)), [n, incoming]);
 
   // One page of the register + the server's counts and totals. Incoming QC
   // always narrows to its own GRN Types (and the Incoming stage).

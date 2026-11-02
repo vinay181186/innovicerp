@@ -69,9 +69,6 @@ export const productionDashboardRoute = createRoute({
   component: ProductionDashboardPage,
 });
 
-const READY_COLUMNS = prodReadyColumns();
-const JC_COLUMNS = openJcColumns();
-
 function ProductionDashboardPage(): React.JSX.Element {
   const search = productionDashboardRoute.useSearch();
   const navigate = productionDashboardRoute.useNavigate();
@@ -106,6 +103,9 @@ function ProductionDashboardPage(): React.JSX.Element {
     offset: pageOffset(readyPage),
   });
   useClampPage(readyPage, ready.data?.total, onReadyPage);
+  // Sr No continues across pages (server offset + 1).
+  const readyColumns = useMemo(() => prodReadyColumns(pageOffset(readyPage) + 1), [readyPage]);
+  const jcColumns = useMemo(() => openJcColumns(pageOffset(jcPage) + 1), [jcPage]);
   const readyToProcess = ready.data?.items ?? [];
   const readyTotal = ready.data?.total ?? 0;
   // ▶ Start / ✚ Log on the Ready rows and the Open JC ⋯ Op Entry open Op
@@ -189,7 +189,7 @@ function ProductionDashboardPage(): React.JSX.Element {
               <Panel fill bodyPadding="none">
                 <DataTable
                   tableKey={TABLE_KEYS.prodDashboardReady}
-                  columns={READY_COLUMNS}
+                  columns={readyColumns}
                   rows={readyToProcess}
                   rowKey={(op) => op.jcOpId}
                   sortFilterServer={readySf}
@@ -225,7 +225,7 @@ function ProductionDashboardPage(): React.JSX.Element {
               >
                 <DataTable
                   tableKey={TABLE_KEYS.prodDashboardOpenJcs}
-                  columns={JC_COLUMNS}
+                  columns={jcColumns}
                   rows={openJobCards}
                   rowKey={(jc) => jc.jobCardId}
                   loading={jcs.isLoading}

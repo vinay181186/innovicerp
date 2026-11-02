@@ -52,6 +52,7 @@ import {
   salesOrders,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { requireFormAccess } from '../../lib/access';
 import { withUniqueRetry } from '../../lib/db-retry';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
@@ -411,6 +412,8 @@ export async function getPlanningSoList(
         soInternalNo: salesOrders.internalSoNo,
         // ADR-261 Created On — the order's own created_at.
         createdAt: salesOrders.createdAt,
+        // ADR-261 rev — Created By: who entered the order (same row as Created On).
+        createdByName: createdByNameSql(salesOrders.createdBy),
         customerName: liveSoCustomerName().as('customer_name'),
         soType: salesOrders.type,
         totalLines: sql<number>`count(${salesOrderLines.id})::int`.as('total_lines'),
@@ -465,6 +468,7 @@ export async function getPlanningSoList(
         salesOrders.code,
         salesOrders.internalSoNo,
         salesOrders.createdAt,
+        salesOrders.createdBy,
         salesOrders.customerName,
         salesOrders.type,
       )
@@ -481,6 +485,8 @@ export async function getPlanningSoList(
         soId: jobWorkOrders.id,
         soCode: jobWorkOrders.code,
         createdAt: jobWorkOrders.createdAt,
+        // ADR-261 rev — Created By: who entered the JWSO (same row as Created On).
+        createdByName: createdByNameSql(jobWorkOrders.createdBy),
         customerName: liveJwCustomerName().as('customer_name'),
         totalLines: sql<number>`count(${jobWorkOrderLines.id})::int`.as('total_lines'),
         totalQty: sql<number>`coalesce(sum(${jobWorkOrderLines.orderQty}), 0)::int`.as('total_qty'),
@@ -511,6 +517,7 @@ export async function getPlanningSoList(
         jobWorkOrders.id,
         jobWorkOrders.code,
         jobWorkOrders.createdAt,
+        jobWorkOrders.createdBy,
         jobWorkOrders.customerName,
       )
       .orderBy(desc(jobWorkOrders.code));
@@ -582,6 +589,7 @@ export async function getPlanningSoList(
         soCode: string;
         soInternalNo?: string | null;
         createdAt: Date | string | null;
+        createdByName: string | null;
         customerName: string | null;
         totalLines: number;
         totalQty: number;
@@ -604,6 +612,7 @@ export async function getPlanningSoList(
         soCode: r.soCode,
         soInternalNo: r.soInternalNo ?? null,
         createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : (r.createdAt ?? null),
+        createdByName: r.createdByName ?? null,
         source,
         customerName: r.customerName ?? null,
         soType,
@@ -671,6 +680,8 @@ export async function getPlanningSoDetail(
     const lineRows = await tx
       .select({
         line: salesOrderLines,
+        // ADR-261 rev — Created By: who entered the SO line (same row as Created On).
+        createdByName: createdByNameSql(salesOrderLines.createdBy),
         itemCode: items.code,
         itemName: items.name,
         itemType: items.itemType,
@@ -1128,6 +1139,7 @@ export async function getPlanningSoDetail(
         clientPoLineNo: r.line.clientPoLineNo,
         // ADR-261 Created On — the SO line's own created_at.
         createdAt: r.line.createdAt.toISOString(),
+        createdByName: r.createdByName ?? null,
         itemId: r.line.itemId,
         itemCode: r.itemCode ?? r.line.itemCodeText,
         // Null passed through, not blanked: on a database that predates
@@ -1231,6 +1243,8 @@ async function getJwPlanningDetail(
   const lineRows = await tx
     .select({
       line: jobWorkOrderLines,
+      // ADR-261 rev — Created By: who entered the JWSO line (same row as Created On).
+      createdByName: createdByNameSql(jobWorkOrderLines.createdBy),
       itemCode: items.code,
       itemName: items.name,
       itemProcurementType: items.procurementType,
@@ -1447,6 +1461,7 @@ async function getJwPlanningDetail(
       clientPoLineNo: r.line.clientPoLineNo ?? null,
       // ADR-261 Created On — the JWSO line's own created_at.
       createdAt: r.line.createdAt.toISOString(),
+      createdByName: r.createdByName ?? null,
       itemId: r.line.itemId,
       itemCode: r.itemCode ?? r.line.itemCodeText,
       // ADR-177: the JW line carries its own drawing revision (the customer's

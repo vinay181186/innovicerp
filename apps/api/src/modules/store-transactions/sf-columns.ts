@@ -5,6 +5,7 @@
 
 import { sql } from 'drizzle-orm';
 
+import { createdByNameSql } from '../../lib/created-by-sql';
 import type { SfColumnMap } from '../../lib/list-query';
 
 export const STOCK_LEDGER_SF_COLUMNS: SfColumnMap = {
@@ -21,4 +22,5 @@ export const STOCK_LEDGER_SF_COLUMNS: SfColumnMap = {
   stockAfter: { sql: sql`st.stock_after`, type: 'num' },
   remarks: { sql: sql`st.remarks`, type: 'text' },
   createdOn: { sql: sql`(st.created_at AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
+  createdBy: { sql: createdByNameSql(sql`st.created_by`), type: 'text' },
 };

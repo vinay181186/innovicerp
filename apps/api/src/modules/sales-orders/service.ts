@@ -79,6 +79,7 @@ import {
   readSoLineCommitments,
 } from './line-commitments';
 import { jcEffectiveQtySql } from '../../lib/jc-effective-qty';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { SO_SF_COLUMNS } from './sf-columns';
 import { logSoEdit } from './edit-log';
@@ -735,6 +736,22 @@ function tsLike(v: unknown): string {
   return String(v);
 }
 
+/** ADR-261 rev — Created By of each SO line (lines.created_by), by line id, via
+ *  the one helper. For the create / update write-backs, which re-read lines
+ *  with a bare select. */
+async function readLineCreatedByNames(
+  tx: DbTransaction,
+  companyId: string,
+  lineIds: string[],
+): Promise<Map<string, string | null>> {
+  if (lineIds.length === 0) return new Map();
+  const rows = await tx
+    .select({ id: salesOrderLines.id, name: createdByNameSql(salesOrderLines.createdBy) })
+    .from(salesOrderLines)
+    .where(and(eq(salesOrderLines.companyId, companyId), inArray(salesOrderLines.id, lineIds)));
+  return new Map(rows.map((r) => [r.id, r.name ?? null]));
+}
+
 /** Resolve a user's display name (users.full_name) for the SO "raised by" field. */
 async function resolveUserName(tx: DbTransaction, userId: string): Promise<string | null> {
   const rows = await tx
@@ -772,6 +789,8 @@ export async function getSalesOrder(id: string, user: AuthContext): Promise<Sale
         // The item master's name — the detail screen notes it beside a line
         // whose own (editable) Item Name differs (plan v3 Step 4).
         masterItemName: items.name,
+        // ADR-261 rev — Created By: who entered this line (same row as Created On).
+        createdByName: createdByNameSql(salesOrderLines.createdBy),
       })
       .from(salesOrderLines)
       .leftJoin(items, and(eq(items.id, salesOrderLines.itemId), isNull(items.deletedAt)))
@@ -861,7 +880,7 @@ export async function getSalesOrder(id: string, user: AuthContext): Promise<Sale
 
     const headerOut = toSalesOrder(header);
     const linesOut = lineRows.map((r) => ({
-      ...toSalesOrderLine(r.row, r.itemCode, r.itemImagePath ?? null),
+      ...toSalesOrderLine(r.row, r.itemCode, r.itemImagePath ?? null, r.createdByName ?? null),
       masterItemName: r.masterItemName ?? null,
       billedQty: billedByLine.get(r.row.id) ?? 0,
       jcQty: jcByLine.get(r.row.id) ?? 0,
@@ -1371,6 +1390,8 @@ function toSalesOrderLine(
   row: typeof salesOrderLines.$inferSelect,
   itemCode: string | null = null,
   itemImagePath: string | null = null,
+  /** ADR-261 rev — Created By of THIS line (createdByNameSql over its created_by). */
+  createdByName: string | null = null,
 ): SalesOrderLine {
   return {
     id: row.id,
@@ -1409,6 +1430,7 @@ function toSalesOrderLine(
     sourceBomMasterId: row.sourceBomMasterId,
     createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
     createdBy: row.createdBy,
+    createdByName,
     updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : String(row.updatedAt),
     updatedBy: row.updatedBy,
     deletedAt: row.deletedAt
@@ -1767,6 +1789,11 @@ function createSalesOrderOnce(
       insertedLines.map((l) => l.itemId),
       companyId,
     );
+    const createdLineByNames = await readLineCreatedByNames(
+      tx,
+      companyId,
+      insertedLines.map((l) => l.id),
+    );
     return {
       ...toSalesOrder(header),
       createdByName: await resolveUserName(tx, header.createdBy),
@@ -1778,6 +1805,7 @@ function createSalesOrderOnce(
           row,
           createdCodeMap.get(row.itemId ?? '') ?? null,
           createdImageMap.get(row.itemId ?? '') ?? null,
+          createdLineByNames.get(row.id) ?? null,
         ),
       ),
       milestones: insertedMilestones.map(toSoMilestone),
@@ -2095,6 +2123,11 @@ export async function updateSalesOrderTx(
       lineRows.map((l) => l.itemId),
       companyId,
     );
+    const updatedLineByNames = await readLineCreatedByNames(
+      tx,
+      companyId,
+      lineRows.map((l) => l.id),
+    );
     return {
       ...toSalesOrder(updatedHdr),
       createdByName: await resolveUserName(tx, updatedHdr.createdBy),
@@ -2106,6 +2139,7 @@ export async function updateSalesOrderTx(
           row,
           updatedCodeMap.get(row.itemId ?? '') ?? null,
           updatedImageMap.get(row.itemId ?? '') ?? null,
+          updatedLineByNames.get(row.id) ?? null,
         ),
       ),
       milestones,

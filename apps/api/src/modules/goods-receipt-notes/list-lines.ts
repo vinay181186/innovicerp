@@ -24,6 +24,7 @@ import type {
 import { sql } from 'drizzle-orm';
 
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { AuthorizationError } from '../../lib/errors';
 import { day, iso, str } from '../../lib/list-line-values';
 import { likeEscape, readSf, sfOrderBy, sfWhere, type SfColumnMap } from '../../lib/list-query';
@@ -51,6 +52,7 @@ export const GRN_LINE_SF_COLUMNS: SfColumnMap = {
     sql: sql`(COALESCE(gl.created_at, grn.created_at) AT TIME ZONE 'Asia/Kolkata')::date`,
     type: 'date',
   },
+  createdBy: { sql: createdByNameSql(sql`COALESCE(gl.created_by, grn.created_by)`), type: 'text' },
   itemCode: {
     sql: sql`(btrim(${ITEM_CODE}) || COALESCE('/' || NULLIF(btrim(${REVISION}), ''), ''))`,
     type: 'text',
@@ -193,6 +195,7 @@ export async function listGoodsReceiptNoteLines(
         jwo.code AS "jwCode",
         ${polSql('sol', 'rev_jwl')} AS "clientPoLineNo",
         COALESCE(gl.created_at, grn.created_at) AS "createdAt",
+        ${createdByNameSql(sql`COALESCE(gl.created_by, grn.created_by)`)} AS "createdByName",
         ${ITEM_CODE} AS "itemCode",
         ${REVISION} AS "itemRevision",
         COALESCE(gl.item_name, i.name) AS "itemName",
@@ -275,6 +278,7 @@ function toLineItem(r: Record<string, unknown>): GoodsReceiptNoteLineListItem {
     jwCode: str(r['jwCode']),
     clientPoLineNo: str(r['clientPoLineNo']),
     createdAt: iso(r['createdAt']),
+    createdByName: str(r['createdByName']),
     itemCode: str(r['itemCode']),
     itemRevision: str(r['itemRevision']),
     itemName: str(r['itemName']),

@@ -1,51 +1,60 @@
-// LEAD COLUMNS — the owner's fixed standard (2026-10-31). Every list that
-// carries an SO / JWSO line starts with these six columns, in this order:
+// LEAD COLUMNS — the owner's fixed standard (ADR-261, revised 2026-11-02).
+// Every list that carries an SO / JWSO line starts with this LOCKED block:
 //
-//   [own doc no. · own doc date] · SO No. · Internal SO No. · POL · Created On · Item Code (CODE/REV) · Item Name
+//   Sr No · SO No. · Internal SO No. · POL · Item Code (CODE/REV) · Item Name · own No. · Created On
 //
-// The page's own number (Plan No., JC No., PO No. …) comes FIRST, before SO No.
-// (owner, 31-Oct, amending the earlier "after Item Name" decision); every other
-// column comes AFTER Item Name. The table engine locks the block (`lead: true`): a
-// user cannot move, hide or slip a column between them, a new column a
-// developer adds lands after Item Name, and they never drop off the screen.
-// The Drawing Rev is never its own column — it rides in the Item Code cell.
+// Sr No is the row counter (1, 2, 3 … continuing across server pages). The
+// page's own number (PO No., JC No. …) and the entry date (Created On =
+// <table>.created_at, set by the system at Save) close the block. The own
+// document date (PO Date, JC Date …) is NOT locked — it is an ordinary column
+// after the block. Created Time follows Created On but is off by default (a
+// user ticks it in Columns ▾); Created By (`createdByColumn`) goes at the END,
+// shown by default, movable / hideable.
+//
+// The table engine locks the block (`lead: true`): a user cannot move, hide or
+// slip a column between them, a new column a developer adds lands after the
+// block, and they never drop off the screen. The Drawing Rev is never its own
+// column — it rides in the Item Code cell.
 //
 // JWSO-only lists: pass `so: 'jwso'` and no `internalSoNo` — the slot reads
 // JWSO No. and the Internal SO No. column is left out (owner, 2026-10-31).
 // Mixed SO + JWSO lists keep the label SO No. (NAMING.md) and show whichever
-// order number the row has.
+// order number the row has. Rows that ARE the order (SO list …) pass no `doc`.
 //
 // Build every lead block through `leadColumns` — never hand-write one.
 
+import { shortName } from '@innovic/shared';
 import type { ReactNode } from 'react';
 
-import { fmtDate } from '@/lib/date';
+import { fmtDate, fmtTime } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 
 import type { DataTableColumn } from './data-table-types';
 
 type Text = string | null | undefined;
 
-/** Stable layout ids of the six lead columns, in order. */
+/** Stable layout ids of the built-in lead columns, in order (the own `doc`
+ *  column keeps its own id and sits between item_name and created_on). */
 export const LEAD_COLUMN_IDS = [
+  'sr_no',
   'so_no',
   'so_internal_no',
   'client_po_line_no',
-  'created_on',
   'item_code',
   'item_name',
+  'created_on',
 ] as const;
 export type LeadColumnId = (typeof LEAD_COLUMN_IDS)[number];
 
 export interface LeadColumnSpec<T> {
-  /** The page's OWN document number column (Plan No., JC No., GRN No. …).
-   *  Drawn FIRST, before SO No., and locked with the block (owner 2026-10-31).
-   *  Must carry an `id`. Leave out only where the row IS the SO / JWSO (SO list,
-   *  SO Overview …) — there SO No. is the own number. */
+  /** Sr No of this page's FIRST row (server offset + 1; 1 on an unpaged list),
+   *  so the counter continues across pages. */
+  firstRowNo: number;
+  /** The page's OWN document number column (Plan No., JC No., GRN No. …),
+   *  locked after Item Name, before Created On (owner 2026-11-02). Must carry an
+   *  `id`. Leave out only where the row IS the SO / JWSO (SO list, SO Overview …)
+   *  — there SO No. is the own number. The own DATE is an ordinary column. */
   doc?: DataTableColumn<T> | undefined;
-  /** The own document's DATE (Plan Date, GRN Date, JC Date …), drawn right after
-   *  `doc` and locked with it (owner 2026-10-31). Needs `doc`; must carry an `id`. */
-  docDate?: DataTableColumn<T> | undefined;
   /** 'so' (default) → header "SO No."; 'jwso' → "JWSO No." (JWSO-only lists). */
   so?: 'so' | 'jwso';
   soNo: (row: T) => Text;
@@ -59,7 +68,7 @@ export interface LeadColumnSpec<T> {
   itemRev?: ((row: T) => Text) | undefined;
   itemName?: ((row: T) => Text) | undefined;
   /** Per-column extras (sortFilterField, sortField, filterValue, title, render…). */
-  overrides?: Partial<Record<LeadColumnId, Partial<DataTableColumn<T>>>>;
+  overrides?: Partial<Record<LeadColumnId | 'created_time', Partial<DataTableColumn<T>>>>;
 }
 
 const dash = (v: Text): string => (v ?? '').trim() || '—';
@@ -71,12 +80,27 @@ function col<T>(
   return { ...base, ...extra, lead: true };
 }
 
-/** The six (five on a JWSO-only list) locked lead columns. Spread them FIRST. */
+/** The locked lead block (Sr No · SO No. · [Internal SO No.] · [POL] · [Item Code] ·
+ *  [Item Name] · [own No.] · Created On) + the unlocked, off-by-default Created
+ *  Time. Spread it FIRST; spread `createdByColumn` LAST. */
 export function leadColumns<T>(spec: LeadColumnSpec<T>): DataTableColumn<T>[] {
   const o = spec.overrides ?? {};
   const out: DataTableColumn<T>[] = [];
-  if (spec.doc) out.push({ ...spec.doc, lead: true });
-  if (spec.doc && spec.docDate) out.push({ ...spec.docDate, lead: true });
+  const firstRowNo = spec.firstRowNo;
+  out.push(
+    col<T>(
+      {
+        id: 'sr_no',
+        kind: 'num',
+        header: 'Sr No',
+        className: 'mono',
+        nowrap: true,
+        filterable: false,
+        render: (_r, i) => firstRowNo + i,
+      },
+      o.sr_no,
+    ),
+  );
   out.push(
     col<T>(
       {
@@ -130,20 +154,6 @@ export function leadColumns<T>(spec: LeadColumnSpec<T>): DataTableColumn<T>[] {
       ),
     );
   }
-  out.push(
-    col<T>(
-      {
-        id: 'created_on',
-        kind: 'date',
-        header: 'Created On',
-        className: 'mono',
-        nowrap: true,
-        render: (r) => fmtDate(spec.createdOn(r) ?? null),
-        filterValue: (r) => spec.createdOn(r) ?? '',
-      },
-      o.created_on,
-    ),
-  );
   if (itemCode) {
     out.push(
       col<T>(
@@ -182,7 +192,61 @@ export function leadColumns<T>(spec: LeadColumnSpec<T>): DataTableColumn<T>[] {
       ),
     );
   }
+  if (spec.doc) out.push({ ...spec.doc, lead: true });
+  out.push(
+    col<T>(
+      {
+        id: 'created_on',
+        kind: 'date',
+        header: 'Created On',
+        className: 'mono',
+        nowrap: true,
+        render: (r) => fmtDate(spec.createdOn(r) ?? null),
+        filterValue: (r) => spec.createdOn(r) ?? '',
+      },
+      o.created_on,
+    ),
+  );
+  // Created Time: NOT locked and off by default. Ticked in Columns ▾ it comes
+  // back into its code slot — right after Created On (owner 2026-11-02). Same
+  // created_at as Created On, shown as the India-time clock.
+  out.push({
+    id: 'created_time',
+    kind: 'code',
+    header: 'Created Time',
+    className: 'mono',
+    nowrap: true,
+    hiddenByDefault: true,
+    // Sorted / filtered through Created On (same created_at) — no own filter.
+    filterable: false,
+    render: (r) => fmtTime(spec.createdOn(r) ?? null, '—'),
+    ...o.created_time,
+  });
   return out;
+}
+
+export interface CreatedByColumnSpec<T> {
+  /** The created_by of the SAME record whose created_at feeds Created On
+   *  (line, else header): the server's createdByName (full name, else email).
+   *  Shown through the shared `shortName` rule ("Jinal R."). */
+  createdByName: (row: T) => Text;
+  overrides?: Partial<DataTableColumn<T>>;
+}
+
+/** Created By — spread LAST on every list that uses `leadColumns` (owner
+ *  2026-11-02). An ordinary column: shown by default, movable, hideable. */
+export function createdByColumn<T>(spec: CreatedByColumnSpec<T>): DataTableColumn<T> {
+  return {
+    id: 'created_by',
+    kind: 'text',
+    header: 'Created By',
+    align: 'left',
+    nowrap: true,
+    render: (r) => dash(shortName(spec.createdByName(r) ?? '')),
+    title: (r) => spec.createdByName(r) ?? '',
+    filterValue: (r) => spec.createdByName(r) ?? '',
+    ...spec.overrides,
+  };
 }
 
 /** Ids of the locked block: the leading run of `lead` columns (else column 0). */

@@ -43,6 +43,7 @@ import {
   salesOrders,
 } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { type DocSeries, lockDocSeries } from '../../lib/doc-series-lock';
 import {
@@ -182,6 +183,7 @@ export async function listDesignProjects(
         dp.released_date AS "releasedDate",
         dp.released_by_text AS "releasedByText",
         dp.created_at AS "createdAt", dp.created_by AS "createdBy",
+        ${createdByNameSql(sql`dp.created_by`)} AS "createdByName",
         dp.updated_at AS "updatedAt", dp.updated_by AS "updatedBy",
         dp.deleted_at AS "deletedAt",
         ${TASK_TOTAL_SQL} AS "taskTotal",
@@ -257,6 +259,7 @@ function toProjectListItem(r: Record<string, unknown>): DesignProjectListItem {
     releasedByText: (r['releasedByText'] as string | null) ?? null,
     createdAt: tsLike(r['createdAt']),
     createdBy: r['createdBy'] as string,
+    createdByName: (r['createdByName'] as string | null) ?? null,
     updatedAt: tsLike(r['updatedAt']),
     updatedBy: r['updatedBy'] as string,
     deletedAt: r['deletedAt'] != null ? tsLike(r['deletedAt']) : null,
@@ -294,6 +297,7 @@ export async function getDesignProjectDetail(
         dp.released_date AS "releasedDate",
         dp.released_by_text AS "releasedByText",
         dp.created_at AS "createdAt", dp.created_by AS "createdBy",
+        ${createdByNameSql(sql`dp.created_by`)} AS "createdByName",
         dp.updated_at AS "updatedAt", dp.updated_by AS "updatedBy",
         dp.deleted_at AS "deletedAt",
         COALESCE(t.task_total, 0)::int AS "taskTotal",

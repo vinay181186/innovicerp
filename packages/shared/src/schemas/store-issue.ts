@@ -311,6 +311,8 @@ export interface StoreIssueLineRow {
   clientPoLineNo: string | null;
   /** The line's own created_at (falls back to the slip's). */
   createdAt: string;
+  /** Created By (ADR-261 rev): name of the user who entered the SAME record as createdAt (full name, else e-mail before @); null when unknown. */
+  createdByName: string | null;
   itemCode: string;
   /** Only when the issued item IS the order line's item (never an RM's rev). */
   itemRevision: string | null;

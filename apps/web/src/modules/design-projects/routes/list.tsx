@@ -119,7 +119,7 @@ function DesignProjectsListPage(): React.JSX.Element {
   const today = todayIst();
   const rows = data?.items ?? [];
   const total = data?.total ?? 0;
-  const columns = designProjectColumns({ today });
+  const columns = designProjectColumns({ today, firstRowNo: pageOffset(page) + 1 });
 
   // "Hide page" (Access Control → Config): a user whose VIEW was removed for
   // this page sees the no-access panel, not the list. `eff` undefined only while

@@ -4,7 +4,7 @@
 
 import { SO_STATUSES, type SoCycleTimeRow } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
-import { leadColumns, type DataTableColumn } from '@/ui/data';
+import { createdByColumn, leadColumns, type DataTableColumn } from '@/ui/data';
 import { soStatusLabel } from '@/modules/sales-orders/lib/so-status-label';
 
 export const TYPE_LABEL: Record<string, string> = {
@@ -31,7 +31,11 @@ function durContent(v: number | null): React.JSX.Element {
   );
 }
 
-export function soCycleTimeColumns(avgTotal: number): DataTableColumn<SoCycleTimeRow>[] {
+export function soCycleTimeColumns(
+  avgTotal: number,
+  /** Sr No of this page's first row (server offset + 1). */
+  firstRowNo: number,
+): DataTableColumn<SoCycleTimeRow>[] {
   const dur = (
     id: string,
     header: string,
@@ -48,6 +52,7 @@ export function soCycleTimeColumns(avgTotal: number): DataTableColumn<SoCycleTim
   return [
     // ADR-261 lead columns — one row per ORDER, so no POL / Item columns.
     ...leadColumns<SoCycleTimeRow>({
+      firstRowNo,
       soNo: (r) => r.soNo,
       internalSoNo: (r) => r.internalSoNo,
       createdOn: (r) => r.createdAt,
@@ -131,5 +136,9 @@ export function soCycleTimeColumns(avgTotal: number): DataTableColumn<SoCycleTim
         );
       },
     },
+    createdByColumn<SoCycleTimeRow>({
+      createdByName: (r) => r.createdByName,
+      overrides: { sortFilterField: 'createdBy' },
+    }),
   ];
 }

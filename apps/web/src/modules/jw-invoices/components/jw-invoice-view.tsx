@@ -111,7 +111,10 @@ export function JwInvoiceView({
   // Told by the server, not inferred from a null money field: a null also means
   // "no value yet", so probing it hid money from users entitled to see it.
   const priceHidden = data ? !data.priceVisible : false;
-  const columns = useMemo(() => jwInvoiceColumns(priceHidden), [priceHidden]);
+  const columns = useMemo(
+    () => jwInvoiceColumns(pageOffset(page) + 1, priceHidden),
+    [page, priceHidden],
+  );
   // Preview / Download PDF: no permission gate — anyone who can see the row can print it, as on
   // the DC detail page. Money a viewer may not see is already gone from the row
   // AND the printed sheet.

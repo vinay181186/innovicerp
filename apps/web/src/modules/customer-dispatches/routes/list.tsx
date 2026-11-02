@@ -16,7 +16,7 @@
 // filtered row (fetchAllPages).
 //
 // 2026-10-31 (ADR-261): ONE ROW PER DISPATCH LINE, 25 LINES a page from
-// GET /customer-dispatches/lines, six lead columns first; the ▸ is gone (its
+// GET /customer-dispatches/lines, locked lead block first; the ▸ is gone (its
 // JC No. / UOM / Stock / Remarks are columns now). Row click and ⋯ act on the
 // dispatch. The KPI strip and item-wise summary still count dispatches.
 
@@ -140,7 +140,10 @@ function CustomerDispatchListPage(): React.JSX.Element {
   const soOptions = data?.soOptions ?? [];
   // ADR-202 — dispatch ids with a pending edit; their status cell reads "Draft".
   const draftIds = usePendingEditIds('Dispatch');
-  const columns = useMemo(() => dispatchListColumns(draftIds), [draftIds]);
+  const columns = useMemo(
+    () => dispatchListColumns(pageOffset(page) + 1, draftIds),
+    [page, draftIds],
+  );
 
   // KPIs over ACTIVE rows only (cancelled were reversed) — from the server,
   // over every matching row, never just this page.

@@ -23,6 +23,7 @@ import type {
 import { incomingQcQuerySchema } from '@innovic/shared';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice } from '../../lib/access';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { AuthorizationError } from '../../lib/errors';
 import { polSql } from '../../lib/pol';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
@@ -137,7 +138,9 @@ export async function getIncomingQc(
         COALESCE(i.name, l.item_name) AS "itemName",
         l.received_qty AS "receivedQty",
         (l.received_qty - l.qc_accepted_qty - l.qc_rejected_qty) AS "pendingQty",
-        GREATEST(0, (CURRENT_DATE - h.grn_date))::int AS "waitDays"
+        GREATEST(0, (CURRENT_DATE - h.grn_date))::int AS "waitDays",
+        -- Created By (ADR-261 rev): the GRN line's creator, else its GRN's.
+        ${createdByNameSql(sql`COALESCE(l.created_by, h.created_by)`)} AS "createdByName"
       ${JOINS}
       WHERE ${pendingFilter}
       ORDER BY ${pendingOrder}
@@ -162,6 +165,7 @@ export async function getIncomingQc(
       receivedQty: Number(r['receivedQty'] ?? 0),
       pendingQty: Number(r['pendingQty'] ?? 0),
       waitDays: Number(r['waitDays'] ?? 0),
+      createdByName: str(r['createdByName']),
     }));
 
     // ── Completed (newest first; 20 unless the screen pages) ──
@@ -180,7 +184,8 @@ export async function getIncomingQc(
         l.qc_remarks AS "qcRemarks",
         l.updated_at AS "qcAt",
         COALESCE(l.qc_inspected_by_text, u.full_name, u.email) AS "qcInspectedBy",
-        l.qc_report_path AS "qcReportPath", l.qc_report_name AS "qcReportName"
+        l.qc_report_path AS "qcReportPath", l.qc_report_name AS "qcReportName",
+        ${createdByNameSql(sql`COALESCE(l.created_by, h.created_by)`)} AS "createdByName"
       ${JOINS}
       WHERE ${completedFilter}
       ORDER BY ${completedOrder}
@@ -210,6 +215,7 @@ export async function getIncomingQc(
         qcRemarks: str(r['qcRemarks']),
         qcReportPath: str(r['qcReportPath']),
         qcReportName: str(r['qcReportName']),
+        createdByName: str(r['createdByName']),
       };
     });
 

@@ -9,12 +9,16 @@
 import type { ScPoSummaryRow, ScRecentGrn } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
-import { leadColumns, type DataTableColumn } from '@/ui/data';
+import { createdByColumn, type DataTableColumn, leadColumns } from '@/ui/data';
 import { inr, PO_STATUS_OPTIONS, statusBadge } from './sc-format';
 
-export function poSummaryColumns(priceHidden: boolean): DataTableColumn<ScPoSummaryRow>[] {
+export function poSummaryColumns(
+  firstRowNo: number,
+  priceHidden: boolean,
+): DataTableColumn<ScPoSummaryRow>[] {
   const cols: DataTableColumn<ScPoSummaryRow>[] = [
     ...leadColumns<ScPoSummaryRow>({
+      firstRowNo,
       doc: {
         id: 'po_no',
         sortFilterField: 'poNo',
@@ -33,13 +37,6 @@ export function poSummaryColumns(priceHidden: boolean): DataTableColumn<ScPoSumm
           </Link>
         ),
       },
-      docDate: {
-        id: 'po_date',
-        sortFilterField: 'poDate',
-        kind: 'date',
-        header: 'PO Date',
-        render: (g) => fmtDate(g.poDate),
-      },
       soNo: (g) => g.soCode,
       internalSoNo: (g) => g.soInternalNo,
       createdOn: (g) => g.createdAt,
@@ -49,6 +46,13 @@ export function poSummaryColumns(priceHidden: boolean): DataTableColumn<ScPoSumm
         created_on: { sortFilterField: 'createdOn' },
       },
     }),
+    {
+      id: 'po_date',
+      sortFilterField: 'poDate',
+      kind: 'date',
+      header: 'PO Date',
+      render: (g) => fmtDate(g.poDate),
+    },
     {
       id: 'vendor',
       sortFilterField: 'vendor',
@@ -156,6 +160,13 @@ export function poSummaryColumns(priceHidden: boolean): DataTableColumn<ScPoSumm
         return <span className={`badge ${sb.cls}`}>{sb.label}</span>;
       },
     },
+  );
+  // ADR-261 rev — Created By, the last data column.
+  cols.push(
+    createdByColumn({
+      createdByName: (r) => r.createdByName,
+      overrides: { sortFilterField: 'createdBy' },
+    }),
   );
   return cols;
 }

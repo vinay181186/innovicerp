@@ -31,7 +31,7 @@ const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.s
 
 // Export the SO Master list (already filtered/searched by the caller) to an
 // .xlsx — ADR-261: ONE ROW PER SO LINE, the same columns in the same order as
-// the on-screen table (the six lead columns first). A line-less SO is one row
+// the on-screen table (the locked lead block first). A line-less SO is one row
 // with its line cells blank. Opens a Save-As dialog where the browser supports
 // it, else downloads to Downloads.
 export async function exportSoListExcel(rows: SalesOrderLineListItem[]): Promise<void> {

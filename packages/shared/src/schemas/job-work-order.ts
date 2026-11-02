@@ -413,6 +413,8 @@ export const jobWorkOrderLineListRowSchema = z.object({
   clientPoLineNo: z.string().nullable(),
   /** The line's created_at (falls back to the JWSO's). */
   createdAt: z.string(),
+  /** Created By (ADR-261 rev): name of the user who entered the SAME record as createdAt (full name, else e-mail before @); null when unknown. */
+  createdByName: z.string().nullable(),
   itemCode: z.string().nullable(),
   /** The JWSO line's drawing revision (rides in the Item Code cell). */
   itemRevision: z.string().nullable(),

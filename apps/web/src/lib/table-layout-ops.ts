@@ -17,7 +17,7 @@ export type LayoutOp =
   | { type: 'unpin'; id: string }
   | { type: 'reset' };
 
-/** The locked block at the front: column 0 alone, or the six lead columns
+/** The locked block at the front: column 0 alone, or the locked lead block
  *  (ui/data/lead-columns.tsx). A string is the old "column 0 only" form. */
 export function lockedList(locked: string | readonly string[] | undefined): readonly string[] {
   if (locked === undefined) return [];

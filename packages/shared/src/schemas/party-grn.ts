@@ -217,6 +217,8 @@ export const partyGrnLineListRowSchema = z.object({
   clientPoLineNo: z.string().nullable(),
   /** The line's own created_at (falls back to the GRN's). */
   createdAt: z.string(),
+  /** Created By (ADR-261 rev): name of the user who entered the SAME record as createdAt (full name, else e-mail before @); null when unknown. */
+  createdByName: z.string().nullable(),
   /** Customer RM code received on this line. */
   itemCode: z.string().nullable(),
   /** The JWSO line's drawing revision (null when blank). */

@@ -31,6 +31,7 @@ import {
   salesOrderLines,
 } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { lockDocSeries } from '../../lib/doc-series-lock';
 import { DESIGN_TRACKER_SF_COLUMNS, TRACKER_HOURS_SQL } from './sf-columns';
@@ -249,6 +250,7 @@ export async function listDesignTracker(
         dt.review_submitted_at AS "reviewSubmittedAt",
         dt.revision_history AS "revisionHistory",
         dt.created_at AS "createdAt", dt.created_by AS "createdBy",
+        ${createdByNameSql(sql`dt.created_by`)} AS "createdByName",
         dt.updated_at AS "updatedAt", dt.updated_by AS "updatedBy",
         dt.deleted_at AS "deletedAt",
         -- The customer's drawing revision + PO line number off the SO line
@@ -331,6 +333,7 @@ function toListItem(r: Record<string, unknown>): DesignTrackerListItem {
     revisionHistory,
     createdAt: tsLike(r['createdAt']),
     createdBy: r['createdBy'] as string,
+    createdByName: (r['createdByName'] as string | null) ?? null,
     updatedAt: tsLike(r['updatedAt']),
     updatedBy: r['updatedBy'] as string,
     deletedAt: r['deletedAt'] != null ? tsLike(r['deletedAt']) : null,

@@ -3,7 +3,7 @@
 // and the sheet is defined in one place.
 //
 // ADR-261 (owner 2026-10-31): ONE ROW PER SO LINE (GET /sales-orders/lines).
-// The six lead columns (SO No. · Internal SO No. · POL · Created On · Item
+// The locked lead block (SO No. · Internal SO No. · POL · Created On · Item
 // Code (CODE/REV) · Item Name) come first via leadColumns; then SO Date, SO
 // Type, Customer, Client PO No., the LINE's Order Qty / JC Qty / Dispatched /
 // Pending / Due Date, SO Status and Fulfilment (the order's). The row ⋯, row
@@ -19,7 +19,7 @@ import {
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
 import type { DataTableColumn, RowMenuItem } from '@/ui/data';
-import { ROW_TINT, leadColumns } from '@/ui/data';
+import { ROW_TINT, createdByColumn, leadColumns } from '@/ui/data';
 import { SO_STATUS_LABEL, SO_TYPE_LABEL } from '../lib/so-status-label';
 import { SoStatusBadge } from './so-status-badge';
 import { SoFulfilmentBadge } from './so-fulfilment-badge';
@@ -77,10 +77,13 @@ export function soListColumns(opts: {
   onPreviewClientPo: (storagePath: string) => void;
   /** ADR-202 — SO ids with a pending edit; their status cell shows "Draft". */
   draftIds?: Set<string>;
+  /** Sr No of this page's first row (server offset + 1). */
+  firstRowNo: number;
 }): DataTableColumn<SalesOrderLineListItem>[] {
-  const { today, onPreviewClientPo, draftIds } = opts;
+  const { today, onPreviewClientPo, draftIds, firstRowNo } = opts;
   return [
     ...leadColumns<SalesOrderLineListItem>({
+      firstRowNo,
       soNo: (r) => r.code,
       internalSoNo: (r) => r.internalSoNo,
       pol: (r) => r.clientPoLineNo,
@@ -289,6 +292,11 @@ export function soListColumns(opts: {
           <span className="text3">—</span>
         ),
     },
+    // Created By of the SAME record as Created On (the line, else the order).
+    createdByColumn<SalesOrderLineListItem>({
+      createdByName: (r) => r.lineCreatedByName,
+      overrides: { sortFilterField: 'createdBy' },
+    }),
   ];
 }
 

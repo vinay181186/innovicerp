@@ -26,6 +26,7 @@ import {
   users,
 } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { AuthorizationError } from '../../lib/errors';
 import { polOf } from '../../lib/pol';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
@@ -165,7 +166,8 @@ export async function listOpLog(
           qcReportName: opLog.qcReportName,
           createdAt: opLog.createdAt,
           createdBy: opLog.createdBy,
-          createdByName: users.fullName,
+          // ADR-261 rev: THE Created By expression (full name, else e-mail before @).
+          createdByName: createdByNameSql(opLog.createdBy),
           // 0179 (ADR-197) — a reversal names the entry it cancels; an original
           // that was reversed names its reversal. One reversal per entry.
           reversalOfId: opLog.reversalOfId,

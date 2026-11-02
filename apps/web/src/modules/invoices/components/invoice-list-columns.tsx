@@ -1,8 +1,8 @@
 // SO Invoices list columns (moved out of routes/list.tsx to keep it < 400).
 // ADR-201: sortFilterField = the server column map (api invoices/sf-columns.ts).
 // ADR-261 (owner 2026-10-31): ONE ROW PER INVOICE LINE (GET /invoices/lines).
-// Invoice No. and the six lead columns come first (SO No. · Internal SO No. ·
-// POL · Created On · Item Code (CODE/REV) · Item Name), then Invoice Date,
+// Invoice No. and the locked lead block come first (SO No. · Internal SO No. ·
+// POL · Item Code (CODE/REV) · Item Name), then Invoice Date,
 // Customer, the line's Invoice Qty and Amount (price-gated), Invoice Status, Due
 // Date. Row click and ⋯ act on the INVOICE.
 
@@ -10,7 +10,7 @@ import type { InvoiceListLineRow } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
 import { StatusBadge } from '@/ui/core';
-import { leadColumns, type DataTableColumn } from '@/ui/data';
+import { createdByColumn, type DataTableColumn, leadColumns } from '@/ui/data';
 
 export type InvoiceListRow = InvoiceListLineRow;
 
@@ -29,7 +29,10 @@ const INVOICE_STATUS_OPTIONS = Object.entries(INVOICE_STATUS_LABEL).map(([value,
   label,
 }));
 
-export function invoiceListColumns(priceHidden: boolean): DataTableColumn<InvoiceListRow>[] {
+export function invoiceListColumns(
+  firstRowNo: number,
+  priceHidden: boolean,
+): DataTableColumn<InvoiceListRow>[] {
   const moneyColumns: DataTableColumn<InvoiceListRow>[] = priceHidden
     ? []
     : [
@@ -47,6 +50,7 @@ export function invoiceListColumns(priceHidden: boolean): DataTableColumn<Invoic
 
   return [
     ...leadColumns<InvoiceListRow>({
+      firstRowNo,
       doc: {
         id: 'code',
         header: 'Invoice No.',
@@ -66,14 +70,6 @@ export function invoiceListColumns(priceHidden: boolean): DataTableColumn<Invoic
           </Link>
         ),
       },
-      docDate: {
-        id: 'invoice_date',
-        kind: 'date',
-        sortFilterField: 'invoiceDate',
-        header: 'Invoice Date',
-        nowrap: true,
-        render: (r) => fmtDate(r.invoiceDate),
-      },
       soNo: (r) => r.soCode,
       internalSoNo: (r) => r.soInternalNo,
       pol: (r) => r.clientPoLineNo,
@@ -90,6 +86,14 @@ export function invoiceListColumns(priceHidden: boolean): DataTableColumn<Invoic
         item_name: { sortFilterField: 'itemName' },
       },
     }),
+    {
+      id: 'invoice_date',
+      kind: 'date',
+      sortFilterField: 'invoiceDate',
+      header: 'Invoice Date',
+      nowrap: true,
+      render: (r) => fmtDate(r.invoiceDate),
+    },
     {
       id: 'customer',
       header: 'Customer',
@@ -151,5 +155,10 @@ export function invoiceListColumns(priceHidden: boolean): DataTableColumn<Invoic
         </span>
       ),
     },
+    // ADR-261 rev — Created By, the last data column.
+    createdByColumn({
+      createdByName: (r) => r.createdByName,
+      overrides: { sortFilterField: 'createdBy' },
+    }),
   ];
 }

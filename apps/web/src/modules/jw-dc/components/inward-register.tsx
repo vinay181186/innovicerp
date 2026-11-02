@@ -79,7 +79,7 @@ export function InwardView({
   });
   useClampPage(page, data?.total, setPage);
 
-  const columns = useMemo(() => inwardColumns(), []);
+  const columns = useMemo(() => inwardColumns(pageOffset(page) + 1), [page]);
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / LIST_PAGE_SIZE));
 
   const toggleExpand = useCallback((id: string): void => {

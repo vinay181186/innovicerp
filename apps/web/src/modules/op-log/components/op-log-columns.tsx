@@ -8,7 +8,7 @@ import { ActionLink } from '@/components/shared/action-link';
 import { opSrNo, SHIFT_LABELS, type Shift } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
 import { DocRefLink } from '@/modules/activity-log/components/doc-ref-link';
-import { leadColumns, type DataTableColumn } from '@/ui/data';
+import { createdByColumn, leadColumns, type DataTableColumn } from '@/ui/data';
 import type { OpLogListItem } from '../api';
 
 const LOG_TYPE_LABEL: Record<'start' | 'complete' | 'qc', string> = {
@@ -69,25 +69,18 @@ const SHIFT_OPTIONS = Object.entries(SHIFT_LABELS).map(([value, label]) => ({ va
 /** Each `sortFilterField` is a field of the endpoint's column map
  *  (apps/api/src/modules/op-log-viewer/sf-columns.ts, ADR-200). The Reversal
  *  column has none: its label is built per row. */
-export function opLogColumns(): DataTableColumn<OpLogListItem>[] {
+export function opLogColumns(firstRowNo: number): DataTableColumn<OpLogListItem>[] {
   return [
-    // ADR-261 — Log No. first, then the six lead columns, all locked; JC No.
+    // ADR-261 — Log No. inside the lead block (after Item Name), all locked; JC No.
     // and every other fact follow Item Name. Created On = the entry's own created_at.
     ...leadColumns<OpLogListItem>({
+      firstRowNo,
       doc: {
         id: 'log_no',
         sortFilterField: 'logNo',
         kind: 'code',
         header: 'Log No.',
         render: (r) => jcLink(r, r.logNo),
-      },
-      docDate: {
-        id: 'log_date',
-        sortFilterField: 'logDate',
-        kind: 'date',
-        header: 'Log Date',
-        className: 'text2',
-        render: (r) => fmtDate(r.logDate),
       },
       soNo: (r) => r.soCode,
       internalSoNo: (r) => r.soInternalNo,
@@ -105,6 +98,14 @@ export function opLogColumns(): DataTableColumn<OpLogListItem>[] {
         item_name: { sortFilterField: 'itemName' },
       },
     }),
+    {
+      id: 'log_date',
+      sortFilterField: 'logDate',
+      kind: 'date',
+      header: 'Log Date',
+      className: 'text2',
+      render: (r) => fmtDate(r.logDate),
+    },
     {
       id: 'jc_no',
       sortFilterField: 'jcNo',
@@ -254,16 +255,6 @@ export function opLogColumns(): DataTableColumn<OpLogListItem>[] {
       title: (r) => r.remarks ?? '',
     },
     {
-      id: 'logged_by',
-      sortFilterField: 'loggedBy',
-      kind: 'text',
-      header: 'Logged By',
-      ellipsis: true,
-      className: 'text3',
-      render: (r) => r.createdByName ?? '—',
-      title: (r) => r.createdByName ?? '',
-    },
-    {
       // ADR-197 — a reversal row names the entry it cancels; the original it
       // cancels names the reversal. Used to be a second line in Log Type.
       id: 'reversal',
@@ -294,5 +285,11 @@ export function opLogColumns(): DataTableColumn<OpLogListItem>[] {
       render: (r) => (isReversalRow(r) ? (r.reversalReason ?? '') : ''),
       title: (r) => r.reversalReason ?? '',
     },
+    // Created By (ADR-261 rev) — the entry's op_log.created_by; replaces the
+    // old "Logged By" column (same fact). Server sort/filter field `createdBy`.
+    createdByColumn<OpLogListItem>({
+      createdByName: (r) => r.createdByName,
+      overrides: { sortFilterField: 'createdBy' },
+    }),
   ];
 }

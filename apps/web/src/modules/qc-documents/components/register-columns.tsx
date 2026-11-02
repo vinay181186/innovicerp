@@ -1,13 +1,13 @@
 // File Register columns (ADR-199 fit table, tableKey qcDocsRegister). The flat
 // register of every uploaded QC file. ADR-261 (owner rule 2026-10-31): the six
-// lead columns first — SO No. · Internal SO No. · POL · Created On · Item Code
+// lead columns first — SO No. · Internal SO No. · POL · Item Code
 // (CODE/REV) · Item Name — then Document Type · File Name · JC No.; Category
 // and Uploaded By ride in the ▸ expand by default but stay in the Columns menu.
 // Created On is the file's upload day (qc_documents.created_at), so the old
 // separate "Upload Date" column is gone. Moved out of routes/list.tsx.
 
 import type { QcDocument } from '@innovic/shared';
-import { leadColumns, type DataTableColumn } from '@/ui/data';
+import { createdByColumn, leadColumns, type DataTableColumn } from '@/ui/data';
 import { CATEGORY_LABEL } from './qc-doc-shared';
 
 // Server Sort & Filter (ADR-200): the Category tick list (stored code + label).
@@ -19,9 +19,10 @@ const CATEGORY_OPTIONS = Object.entries(CATEGORY_LABEL).map(([value, label]) => 
 /** Ids hidden into the ▸ detail by default (never a lead column). */
 export const REGISTER_DETAIL_IDS = ['category', 'uploaded_by'];
 
-export function buildRegisterColumns(): DataTableColumn<QcDocument>[] {
+export function buildRegisterColumns(firstRowNo: number): DataTableColumn<QcDocument>[] {
   return [
     ...leadColumns<QcDocument>({
+      firstRowNo,
       soNo: (d) => d.soCodeText,
       internalSoNo: (d) => d.soInternalNo,
       pol: (d) => d.clientPoLineNo,
@@ -86,5 +87,9 @@ export function buildRegisterColumns(): DataTableColumn<QcDocument>[] {
       render: (d) => d.uploadedByText ?? '—',
       title: (d) => d.uploadedByText ?? '',
     },
+    createdByColumn<QcDocument>({
+      createdByName: (d) => d.createdByName,
+      overrides: { sortFilterField: 'createdBy' },
+    }),
   ];
 }

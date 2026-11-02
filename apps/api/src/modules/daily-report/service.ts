@@ -12,6 +12,7 @@ import type {
   DailyReportRow,
 } from '@innovic/shared';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { AuthorizationError } from '../../lib/errors';
 import { polSql } from '../../lib/pol';
 
@@ -58,6 +59,8 @@ export async function getDailyReport(
         COALESCE(so.code, jw.code) AS "soCode",
         so.internal_so_no AS "soInternalNo",
         l.created_at AS "createdAt",
+        -- ADR-261 rev — who entered this log entry (same record as Created On).
+        ${createdByNameSql(sql`l.created_by`)} AS "createdByName",
         op.op_seq AS "opSeq",
         op.operation,
         l.shift::text AS shift,
@@ -112,6 +115,7 @@ export async function getDailyReport(
           r['createdAt'] instanceof Date
             ? (r['createdAt'] as Date).toISOString()
             : ((r['createdAt'] as string | null) ?? null),
+        createdByName: (r['createdByName'] as string | null) ?? null,
         opSeq: Number(r['opSeq'] ?? 0),
         operation: String(r['operation'] ?? ''),
         shift: String(r['shift'] ?? ''),

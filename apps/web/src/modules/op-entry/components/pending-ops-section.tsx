@@ -56,9 +56,6 @@ export function PendingOpsSection({
   // inspection form, which submits under qc_submit Entry — the same rule and
   // label as the JC table on this page (jc-ops-table.tsx rowAction).
   const canQcSubmit = effectiveFormPerms(eff, 'qc_submit').entry;
-  const pendingCols = useMemo(() => pendingOpsColumns(), []);
-  const madeCols = useMemo(() => madeHereColumns(), []);
-
   // 25-row pages; a different machine starts both tables on page 1.
   const [pendPage, setPendPage] = useState(1);
   const [madePage, setMadePage] = useState(1);
@@ -76,6 +73,9 @@ export function PendingOpsSection({
     () => producedOps.slice(pageOffset(madePage), pageOffset(madePage) + LIST_PAGE_SIZE),
     [producedOps, madePage],
   );
+  // Sr No continues across the browser-cut pages (that page's offset + 1).
+  const pendingCols = useMemo(() => pendingOpsColumns(pageOffset(pendPage) + 1), [pendPage]);
+  const madeCols = useMemo(() => madeHereColumns(pageOffset(madePage) + 1), [madePage]);
 
   return (
     <div

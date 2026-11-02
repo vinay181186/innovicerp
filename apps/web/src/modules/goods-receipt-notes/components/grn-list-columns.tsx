@@ -1,6 +1,6 @@
 // Goods Receipt Note list columns (ADR-199 fit table). ADR-261 (2026-10-31):
 // ONE ROW PER GRN LINE (GET /goods-receipt-notes/lines), opening with GRN No.
-// and the six lead columns — SO No. · Internal SO No. · POL · Created On ·
+// and the locked lead block — SO No. · Internal SO No. · POL · Created On ·
 // Item Code (CODE/REV) · Item Name — then GRN Date · Vendor · GRN Type · PO/NC
 // No. · Received · QC Status · Accepted · Deviated · Vendor Challan No. ·
 // Vendor Invoice No. (NAMING.md).
@@ -10,7 +10,7 @@
 import type { GoodsReceiptNoteLineListItem } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
-import { leadColumns, type DataTableColumn } from '@/ui/data';
+import { createdByColumn, type DataTableColumn, leadColumns } from '@/ui/data';
 import { QcStatusBadge } from './qc-status-badge';
 
 /** `GRN Type` — which paper the receipt is against (NAMING.md §A). The three
@@ -46,11 +46,14 @@ export function isGrnCancelled(grn: { cancelledAt: string | null }): boolean {
 }
 
 export function goodsReceiptNoteListColumns(
+  /** Sr No of the page's first row (offset + 1) — ADR-261 rev. */
+  firstRowNo: number,
   /** ADR-202 — GRN ids with a pending edit; their status cell shows "Draft". */
   draftIds?: Set<string>,
 ): DataTableColumn<GoodsReceiptNoteLineListItem>[] {
   return [
     ...leadColumns<GoodsReceiptNoteLineListItem>({
+      firstRowNo,
       doc: {
         id: 'grn_code',
         sortFilterField: 'grnCode',
@@ -69,15 +72,6 @@ export function goodsReceiptNoteListColumns(
           </Link>
         ),
       },
-      docDate: {
-        id: 'grn_date',
-        sortFilterField: 'grnDate',
-        kind: 'date',
-        header: 'GRN Date',
-        className: 'mono',
-        nowrap: true,
-        render: (grn) => fmtDate(grn.docDate),
-      },
       soNo: (l) => l.soCode,
       internalSoNo: (l) => l.soInternalNo,
       pol: (l) => l.clientPoLineNo,
@@ -94,6 +88,15 @@ export function goodsReceiptNoteListColumns(
         item_name: { sortFilterField: 'itemName' },
       },
     }),
+    {
+      id: 'grn_date',
+      sortFilterField: 'grnDate',
+      kind: 'date',
+      header: 'GRN Date',
+      className: 'mono',
+      nowrap: true,
+      render: (grn) => fmtDate(grn.docDate),
+    },
     {
       id: 'vendor',
       sortFilterField: 'vendorName',
@@ -209,5 +212,10 @@ export function goodsReceiptNoteListColumns(
       nowrap: true,
       render: (grn) => grn.invoiceNo ?? '—',
     },
+    // ADR-261 rev — Created By, the last data column.
+    createdByColumn({
+      createdByName: (r) => r.createdByName,
+      overrides: { sortFilterField: 'createdBy' },
+    }),
   ];
 }

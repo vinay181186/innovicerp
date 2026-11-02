@@ -88,8 +88,8 @@ function PendingSoValuePage(): React.JSX.Element {
   const priceHidden = !!data && !data.priceVisible;
   const today = todayIst();
   const columns = useMemo(
-    () => psvColumns(priceHidden, today, data?.totals),
-    [priceHidden, today, data?.totals],
+    () => psvColumns(priceHidden, today, data?.totals, pageOffset(page) + 1),
+    [priceHidden, today, data?.totals, page],
   );
   const defaultHidden = priceHidden ? ['so_date'] : ['so_date', 'invoiced_value', 'received_value'];
 

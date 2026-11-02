@@ -36,7 +36,6 @@ const STRIP: React.CSSProperties = {
 
 export function TpiView(props: { title?: string }): React.JSX.Element {
   const [openId, setOpenId] = useState<string | null>(null);
-  const completedColumns = useMemo(() => tpiCompletedColumns(), []);
 
   // Search over every text column the two lists show (JC, SO, POL, item code /
   // name, operation, inspector, organisation, certificate) — on the server,
@@ -66,6 +65,7 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
   const compQ = useTpiCompletedList(compQuery);
   useClampPage(pendPage, pendQ.data?.total, setPendPage);
   useClampPage(compPage, compQ.data?.total, setCompPage);
+  const completedColumns = useMemo(() => tpiCompletedColumns(pageOffset(compPage) + 1), [compPage]);
 
   const pending = pendQ.data?.items ?? [];
   const completed = compQ.data?.items ?? [];

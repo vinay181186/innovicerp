@@ -53,6 +53,7 @@ function pgrnAsPending(r: PartyGrnQcRow): IncomingQcPendingRow {
     receivedQty: r.receivedQty,
     pendingQty: r.pendingQty,
     waitDays: r.waitDays,
+    createdByName: r.createdByName,
   };
 }
 function pgrnAsCompleted(r: PartyGrnQcRow): IncomingQcCompletedRow {
@@ -86,6 +87,7 @@ function pgrnAsCompleted(r: PartyGrnQcRow): IncomingQcCompletedRow {
     qcRemarks: r.qcRemarks,
     qcReportPath: null,
     qcReportName: null,
+    createdByName: r.createdByName,
   };
 }
 

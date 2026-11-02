@@ -120,6 +120,8 @@ export const salesOrderLineSchema = z.object({
   shortCloseReason: z.string().nullable().default(null),
   sourceBomMasterId: z.string().uuid().nullable().default(null),
   createdAt: z.string(),
+  /** Created By (ADR-261 rev): name of the user who entered the SAME record as createdAt (full name, else e-mail before @); null when unknown. */
+  createdByName: z.string().nullable(),
   createdBy: z.string().uuid(),
   updatedAt: z.string(),
   updatedBy: z.string().uuid(),
@@ -483,6 +485,8 @@ export const salesOrderLineListItemSchema = salesOrderListItemSchema.extend({
   lineNo: z.number().int().positive().nullable(),
   /** The line's own created_at (falls back to the SO's). The Created On column. */
   lineCreatedAt: z.string(),
+  /** Created By (ADR-261 rev): name of the user who entered the SAME record as lineCreatedAt (full name, else e-mail before @); null when unknown. */
+  lineCreatedByName: z.string().nullable(),
   /** Live item code (items.code), else the line's stored code text. */
   itemCode: z.string().nullable(),
   /** The customer's drawing revision typed on the line (CODE/REV). */

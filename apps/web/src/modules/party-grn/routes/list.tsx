@@ -136,7 +136,7 @@ function PartyGrnListPage(): React.JSX.Element {
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / LIST_PAGE_SIZE));
   const summary = data?.summary ?? { totalGrns: 0, totalReceived: 0, today: 0 };
   const rows = data?.items ?? [];
-  const columns = useMemo(() => partyGrnColumns(), []);
+  const columns = useMemo(() => partyGrnColumns(pageOffset(page) + 1), [page]);
   const editRow = editId ? (rows.find((r) => r.header.id === editId)?.header ?? null) : null;
 
   // Row details (row click or ⋯ Show details) — the per-line QC split loads

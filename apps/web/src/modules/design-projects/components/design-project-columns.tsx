@@ -4,8 +4,8 @@
 // defined in one place.
 //
 // One row per project, every fact its own one-line column (the retired card's
-// stacked name / code / SO / customer block is gone). ADR-261: the six lead
-// columns come first (SO No. · Internal SO No. · POL · Created On · Item Code ·
+// stacked name / code / SO / customer block is gone). ADR-261: the locked lead
+// block come first (SO No. · Internal SO No. · POL · Item Code ·
 // Item Name — POL and item "—", a project has no SO line), then Project No.
 // and Name. Labels: Due Date per docs/NAMING.md
 // row 54 (the brief's "Due" is listed there as a variant to avoid).
@@ -17,7 +17,7 @@ import {
 } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
-import { leadColumns, ProgressBar, ROW_TINT } from '@/ui/data';
+import { createdByColumn, leadColumns, ProgressBar, ROW_TINT } from '@/ui/data';
 import type { DataTableColumn } from '@/ui/data';
 
 /** Overdue = past its Due Date and not yet Released — the same test the retired
@@ -67,12 +67,15 @@ function progressColor(pct: number): string {
 export function designProjectColumns(opts: {
   /** IST yyyy-mm-dd for the overdue check — computed once by the route. */
   today: string;
+  /** Sr No of this page's first row (server offset + 1). */
+  firstRowNo: number;
 }): DataTableColumn<DesignProjectListItem>[] {
-  const { today } = opts;
+  const { today, firstRowNo } = opts;
   return [
     // ADR-261 lead columns, own number (Project No.) first. A project is header-level (one SO, no SO line and
     // no item), so POL, Item Code and Item Name read "—".
     ...leadColumns<DesignProjectListItem>({
+      firstRowNo,
       doc: {
         id: 'project_no',
         header: 'Project No.',
@@ -227,6 +230,10 @@ export function designProjectColumns(opts: {
         </span>
       ),
     },
+    createdByColumn<DesignProjectListItem>({
+      createdByName: (p) => p.createdByName,
+      overrides: { sortFilterField: 'createdBy' },
+    }),
   ];
 }
 

@@ -52,6 +52,8 @@ export const incomingQcPendingRowSchema = z.object({
   /** ADR-261 lead Created On — the GRN line's created_at (else its GRN's).
    *  Filled by the QC Call Register; optional so other feeds need not send it. */
   createdAt: z.string().nullable().optional(),
+  /** Created By (ADR-261 rev): name of the user who entered the SAME record as createdAt (full name, else e-mail before @); null when unknown. */
+  createdByName: z.string().nullable(),
 });
 export type IncomingQcPendingRow = z.infer<typeof incomingQcPendingRowSchema>;
 
@@ -101,6 +103,8 @@ export const incomingQcCompletedRowSchema = z.object({
   soCode: z.string().nullable().optional(),
   soInternalNo: z.string().nullable().optional(),
   createdAt: z.string().nullable().optional(),
+  /** Created By (ADR-261 rev): name of the user who entered the SAME record as createdAt (full name, else e-mail before @); null when unknown. */
+  createdByName: z.string().nullable(),
 });
 export type IncomingQcCompletedRow = z.infer<typeof incomingQcCompletedRowSchema>;
 

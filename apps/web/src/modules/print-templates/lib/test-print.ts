@@ -539,6 +539,7 @@ function openJwInvoiceTestPrint(templates: EffectivePrintTemplate[]): boolean {
     cancelReason: null,
     createdAt: '',
     createdBy: JWINV_SAMPLE_ID,
+    createdByName: null,
     updatedAt: '',
     updatedBy: JWINV_SAMPLE_ID,
     deletedAt: null,

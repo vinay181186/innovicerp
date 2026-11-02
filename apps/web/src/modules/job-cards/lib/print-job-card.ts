@@ -13,9 +13,9 @@
 //     directly above Item Name on the right (owner 2026-10-22). The last row
 //     of each column has no rule — the box closes it.
 //   • The operation table: Op · Operation · Plan Machine · Actual Machine ·
-//     Start · Finish · Accepted · Deviated · Logged By.
+//     Start · Finish · Accepted · Deviated · Created By.
 //     Plan is jc_ops.machine_id; Actual is who made the pieces (ADR-164).
-//     "Logged By" is the SYSTEM user who booked the entries — the person
+//     "Created By" is the SYSTEM user who booked the entries — the person
 //     accountable for the record. The shop-floor Operator is NOT printed
 //     (owner 2026-10-22); the JC screen and the ⬇ Excel export still carry it.
 //     Blank rows follow for hand entries.
@@ -218,7 +218,7 @@ export function printJobCard(args: {
       <th>End<br>Date</th>
       <th>Accepted</th>
       <th>Deviated</th>
-      <th>Logged By</th>
+      <th>Created By</th>
     </tr></thead>
   </table>`;
   const opRows = [

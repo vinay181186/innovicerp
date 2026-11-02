@@ -1,7 +1,7 @@
 // SO Master list (UI-003-05). THE Innovic fit table (ADR-199, table standard
 // 2026-10-01): one ruled sheet, no card / list toggle. ADR-261 (owner
 // 2026-10-31): ONE ROW PER SO LINE (GET /sales-orders/lines), opening with the
-// six lead columns; no ▸ (the lines are the rows now). Row click opens the SO
+// locked lead block; no ▸ (the lines are the rows now). Row click opens the SO
 // detail; Preview / Edit / Assign / Cancel / Delete live in the row's ⋯ and act
 // on the ORDER, as before.
 //
@@ -186,8 +186,9 @@ function SalesOrdersListPage(): React.JSX.Element {
   const draftIds = usePendingEditIds('SalesOrder');
   const orderPrint = useOrderPrint();
   const columns = useMemo(
-    () => soListColumns({ today, onPreviewClientPo: setPreviewPath, draftIds }),
-    [today, draftIds],
+    () =>
+      soListColumns({ today, onPreviewClientPo: setPreviewPath, draftIds, firstRowNo: offset + 1 }),
+    [today, draftIds, offset],
   );
 
   // Hide-page: no VIEW → the no-access panel (not while access still loads).

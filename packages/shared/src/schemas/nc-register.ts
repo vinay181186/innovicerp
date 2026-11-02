@@ -187,6 +187,8 @@ export const ncRegisterSchema = z.object({
 export type NcRegister = z.infer<typeof ncRegisterSchema>;
 
 export const ncRegisterListItemSchema = ncRegisterSchema.extend({
+  /** Created By (ADR-261 rev): name of the user who entered the SAME record as createdAt (full name, else e-mail before @); null when unknown. */
+  createdByName: z.string().nullable(),
   jcCode: z.string().nullable(),
   jcOpSeqResolved: z.number().int().nullable(),
   jcOpOperation: z.string().nullable(),

@@ -13,7 +13,7 @@ import { TABLE_KEYS } from '@/ui/data/table-keys';
 import type { MachineLoadOp } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { addDaysLocal, fmtDate, todayIst } from '@/lib/date';
-import { DataTable, leadColumns, Panel } from '@/ui/data';
+import { DataTable, createdByColumn, leadColumns, Panel } from '@/ui/data';
 import type { DataTableColumn } from '@/ui/data';
 import { OpStatusBadge } from './op-status-badge';
 
@@ -67,9 +67,11 @@ export function groupPendingOps(machines: PendingMachine[], ops: MachineLoadOp[]
 }
 
 const COLUMNS: DataTableColumn<PendingRow>[] = [
-  // ADR-261 — JC No. first, then the six lead columns, all locked; every
+  // ADR-261 — JC No. inside the lead block (after Item Name), all locked; every
   // other fact follows Item Name. Created On = the job-card op's own created_at.
   ...leadColumns<PendingRow>({
+    // Unpaged panel — every pending op is on screen, counted from 1.
+    firstRowNo: 1,
     doc: {
       id: 'jc_no',
       header: 'JC No.',
@@ -88,15 +90,6 @@ const COLUMNS: DataTableColumn<PendingRow>[] = [
         </ActionLink>
       ),
     },
-    docDate: {
-      id: 'jc_date',
-      kind: 'date',
-      header: 'JC Date',
-      className: 'mono',
-      nowrap: true,
-      render: ({ op }) => fmtDate(op.jcDate ?? null),
-      filterValue: ({ op }) => op.jcDate ?? '',
-    },
     soNo: ({ op }) => op.soCode,
     internalSoNo: ({ op }) => op.soInternalNo,
     pol: ({ op }) => op.clientPoLineNo,
@@ -105,6 +98,15 @@ const COLUMNS: DataTableColumn<PendingRow>[] = [
     itemRev: ({ op }) => op.itemRevision,
     itemName: ({ op }) => op.itemName,
   }),
+  {
+    id: 'jc_date',
+    kind: 'date',
+    header: 'JC Date',
+    className: 'mono',
+    nowrap: true,
+    render: ({ op }) => fmtDate(op.jcDate ?? null),
+    filterValue: ({ op }) => op.jcDate ?? '',
+  },
   {
     id: 'operation',
     header: 'Operation',
@@ -144,6 +146,7 @@ const COLUMNS: DataTableColumn<PendingRow>[] = [
       );
     },
   },
+  createdByColumn<PendingRow>({ createdByName: ({ op }) => op.createdByName }),
 ];
 
 function MachineHeading({ row }: { row: PendingRow }): React.JSX.Element {

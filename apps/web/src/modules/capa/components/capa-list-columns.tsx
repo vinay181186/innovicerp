@@ -3,7 +3,7 @@
 // is defined in one place.
 //
 // One row per CAPA, every fact its own one-line column (the retired 10-column
-// hand-rolled sheet is gone). The six lead columns come first (owner rule
+// hand-rolled sheet is gone). The locked lead block come first (owner rule
 // 2026-10-31), then CAPA No. The fit table's ▸ reveals CAPA Date and Root
 // Cause — so no chevron is drawn here. CAPA has no per-record
 // route, so the CAPA No. is plain text, not a link; the row click opens the
@@ -12,7 +12,7 @@
 import { CAPA_STATUSES, type CapaRecord } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
 import type { DataTableColumn, RowMenuItem } from '@/ui/data';
-import { leadColumns, ROW_TINT } from '@/ui/data';
+import { createdByColumn, leadColumns, ROW_TINT } from '@/ui/data';
 
 // App status colours: Open / Verified (waiting for the next step) = blue,
 // In Progress = amber, Closed = green.
@@ -30,11 +30,12 @@ export function capaRowTint(c: CapaRecord): string | undefined {
   return c.overdue ? ROW_TINT.late : undefined;
 }
 
-export function capaListColumns(): DataTableColumn<CapaRecord>[] {
+export function capaListColumns(firstRowNo: number): DataTableColumn<CapaRecord>[] {
   return [
-    // Owner rule 2026-10-31 — own number (CAPA No.) first, then the six lead
-    // columns. Internal SO No. / Item Name come off the CAPA's SO / item codes.
+    // Owner rule 2026-10-31 — own number (CAPA No.) inside the lead block (after
+    // Item Name). Internal SO No. / Item Name come off the CAPA's SO / item codes.
     ...leadColumns<CapaRecord>({
+      firstRowNo,
       doc: {
         id: 'capa_no',
         sortFilterField: 'code',
@@ -46,16 +47,6 @@ export function capaListColumns(): DataTableColumn<CapaRecord>[] {
             {c.code}
           </span>
         ),
-      },
-      docDate: {
-        id: 'capa_date',
-        sortFilterField: 'capaDate',
-        kind: 'date',
-        header: 'CAPA Date',
-        className: 'mono',
-        nowrap: true,
-        render: (c) => fmtDate(c.capaDate ?? null),
-        filterValue: (c) => c.capaDate ?? '',
       },
       soNo: (c) => c.soNo,
       internalSoNo: (c) => c.soInternalNo,
@@ -72,6 +63,16 @@ export function capaListColumns(): DataTableColumn<CapaRecord>[] {
         item_name: { sortFilterField: 'itemName', filterType: 'text' },
       },
     }),
+    {
+      id: 'capa_date',
+      sortFilterField: 'capaDate',
+      kind: 'date',
+      header: 'CAPA Date',
+      className: 'mono',
+      nowrap: true,
+      render: (c) => fmtDate(c.capaDate ?? null),
+      filterValue: (c) => c.capaDate ?? '',
+    },
     {
       id: 'type',
       sortFilterField: 'type',
@@ -155,6 +156,10 @@ export function capaListColumns(): DataTableColumn<CapaRecord>[] {
         <span style={{ fontWeight: 700, color: statusColor(c.status) }}>{c.status}</span>
       ),
     },
+    createdByColumn<CapaRecord>({
+      createdByName: (c) => c.createdByName,
+      overrides: { sortFilterField: 'createdBy' },
+    }),
   ];
 }
 

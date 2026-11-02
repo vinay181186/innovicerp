@@ -37,7 +37,13 @@ export function derivePhaseStuckItems(
     if (d.status === 'closed' || d.status === 'cancelled') continue;
     if (d.phases.dispatched) continue; // already dispatched = not stuck
     const p = d.phases;
-    const base = { soId: d.soId, soNo: d.soNo, customer: d.customer };
+    // ADR-261 rev — Created By (the SO's creator); the service re-reads it live.
+    const base = {
+      soId: d.soId,
+      soNo: d.soNo,
+      customer: d.customer,
+      createdByName: d.createdByName ?? null,
+    };
 
     if (p.designAssigned && !p.designApproved) {
       const days = daysSince(p.designAssigned, today);
@@ -153,7 +159,8 @@ export function classifyOpStuck(
 ): StuckItem | null {
   const since = c.lastEntry ?? c.jcDate;
   const days = daysSince(since, today);
-  const base = { soId: c.soId, soNo: c.soNo, customer: c.customer };
+  // ADR-261 rev — Created By is filled by the service from the SO (live).
+  const base = { soId: c.soId, soNo: c.soNo, customer: c.customer, createdByName: null };
   if (c.qcPending > 0) {
     if (days > thr.qc) {
       // display rule — see opSrNo in @innovic/shared

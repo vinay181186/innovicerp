@@ -7,6 +7,7 @@
 
 import { type SQL, sql } from 'drizzle-orm';
 import type { IncomingQcCompletedRow, IncomingQcPendingRow, QcGrnType } from '@innovic/shared';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { likeEscape } from '../../lib/list-query';
 import { polSql } from '../../lib/pol';
 import { CLIENT_PO_NO_SQL } from './register-facts';
@@ -88,11 +89,13 @@ export const INC_SO_CODE = sql`COALESCE(so.code, po_so.code)`;
 export const INC_SO_INTERNAL = sql`NULLIF(btrim(CASE WHEN so.id IS NOT NULL THEN so.internal_so_no ELSE po_so.internal_so_no END), '')`;
 /** ADR-261 lead Created On — the GRN line's created_at, else its GRN's. */
 export const INC_CREATED_AT = sql`COALESCE(l.created_at, h.created_at)`;
+/** Created By (ADR-261 rev) — the user who entered the SAME record as INC_CREATED_AT. */
+export const INC_CREATED_BY_NAME = createdByNameSql(sql`COALESCE(l.created_by, h.created_by)`);
 
 export const INC_PENDING_SELECT = sql`
   l.id AS "grnLineId", h.id AS "grnId", h.code AS "grnNo", h.grn_date AS "grnDate",
   h.po_code_text AS "poCode", ${VENDOR} AS "vendorName", ${INC_SO_CODE} AS "soCode",
-  ${INC_SO_INTERNAL} AS "soInternalNo", ${INC_CREATED_AT} AS "createdAt",
+  ${INC_SO_INTERNAL} AS "soInternalNo", ${INC_CREATED_AT} AS "createdAt", ${INC_CREATED_BY_NAME} AS "createdByName",
   jc.code AS "jcCode", jco.op_seq AS "opSeq", jco.operation AS "opName",
   ${ITEM_CODE} AS "itemCode", ${ITEM_REV} AS "itemRevision",
   ${polSql('sol', 'rev_jwl')} AS "clientPoLineNo", COALESCE(i.name, l.item_name) AS "itemName",
@@ -111,7 +114,7 @@ export const INC_COMPLETED_SELECT = sql`
   COALESCE(l.qc_inspected_by_text, u.full_name, u.email) AS "qcInspectedBy",
   l.qc_report_path AS "qcReportPath", l.qc_report_name AS "qcReportName",
   ${GRN_TYPE_SQL} AS "grnType", ${INC_SO_CODE} AS "soCode",
-  ${INC_SO_INTERNAL} AS "soInternalNo", ${INC_CREATED_AT} AS "createdAt"`;
+  ${INC_SO_INTERNAL} AS "soInternalNo", ${INC_CREATED_AT} AS "createdAt", ${INC_CREATED_BY_NAME} AS "createdByName"`;
 
 /** When the line was inspected — the completed register's newest-first key. */
 export const INC_DONE_AT = sql`COALESCE(l.updated_at, l.qc_date::timestamptz, h.grn_date::timestamptz)`;
@@ -162,6 +165,7 @@ export function toIncPendingRow(r: Raw): IncomingQcPendingRow {
     pendingQty: Number(r['pendingQty'] ?? 0),
     waitDays: Number(r['waitDays'] ?? 0),
     createdAt: tsOrNull(r['createdAt']),
+    createdByName: s(r['createdByName']),
   };
 }
 
@@ -204,5 +208,6 @@ export function toIncCompletedRow(r: Raw): IncomingQcCompletedRow {
     soCode: s(r['soCode']),
     soInternalNo: s(r['soInternalNo']),
     createdAt: tsOrNull(r['createdAt']),
+    createdByName: s(r['createdByName']),
   };
 }

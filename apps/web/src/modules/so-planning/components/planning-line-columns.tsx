@@ -27,7 +27,7 @@ import {
 } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { leadColumns, type DataTableColumn } from '@/ui/data';
+import { createdByColumn, leadColumns, type DataTableColumn } from '@/ui/data';
 import { planChildItemOf, planStatusOf, prStatusOf } from './plan-chip';
 import {
   DocCodes,
@@ -84,10 +84,12 @@ export function planningLineColumns(
 ): DataTableColumn<PlanningLine>[] {
   const { source } = order;
   return [
-    // Owner rule 2026-10-31 — the six lead columns first; Ln and every other
+    // Owner rule 2026-10-31 — the locked lead block first; Ln and every other
     // fact follow Item Name. Mixed SO + JWSO screen: the header stays "SO No."
     // and shows whichever order number this is.
+    // Every line of the order on one unpaged table, so Sr No starts at 1.
     ...leadColumns<PlanningLine>({
+      firstRowNo: 1,
       soNo: () => order.soCode,
       internalSoNo: () => order.soInternalNo,
       pol: (l) => l.clientPoLineNo,
@@ -381,5 +383,6 @@ export function planningLineColumns(
       title: (l) => docText(lineJcs(l)),
       filterValue: (l) => docText(lineJcs(l)),
     },
+    createdByColumn<PlanningLine>({ createdByName: (l) => l.createdByName }),
   ];
 }

@@ -17,6 +17,7 @@ import type {
 } from '@innovic/shared';
 import { clients, items, jobWorkOrderLines, jobWorkOrders, jwInvoices } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
 import {
   AuthorizationError,
@@ -558,6 +559,8 @@ export async function listJwInvoices(
           partName: jobWorkOrderLines.partName,
           // The unit the JWSO line was booked in, for the printed UOM column.
           uom: sql<string | null>`${jobWorkOrderLines.uom}::text`,
+          // ADR-261 rev — Created By: who entered this invoice (its created_at is Created On).
+          createdByName: createdByNameSql(jwInvoices.createdBy),
         })
         .from(jwInvoices)
         .leftJoin(clients, eq(clients.id, jwInvoices.clientId))
@@ -599,6 +602,7 @@ export async function listJwInvoices(
           clientPoLineNo: r.clientPoLineNo ?? null,
           partName: r.partName ?? null,
           uom: r.uom ?? null,
+          createdByName: r.createdByName ?? null,
           // The paper's own copy of the customer (0186) — the print reads it.
           clientCopy: readClientCopy({ ...r.inv, clientName: r.inv.clientNameText }),
         };

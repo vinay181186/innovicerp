@@ -1,6 +1,6 @@
 // Purchase Order list columns (ADR-199 fit table). ADR-261 (2026-10-31): ONE
 // ROW PER PO LINE (GET /purchase-orders/lines), opening with PO No. and the
-// six lead columns — SO No. · Internal SO No. · POL · Created On · Item Code
+// locked lead block — SO No. · Internal SO No. · POL · Item Code
 // (CODE/REV) · Item Name — then PO Date · PO Type · Vendor · PR No. · Qty · GRN
 // Received · Accepted · Pending · Value · PO Status. Qty / Received / Accepted
 // / Pending / Value are the LINE's own. Value keeps its price gate: the API
@@ -10,7 +10,7 @@ import type { PurchaseOrderLineListItem } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
 import { Badge } from '@/ui/core';
-import { leadColumns, type DataTableColumn } from '@/ui/data';
+import { createdByColumn, type DataTableColumn, leadColumns } from '@/ui/data';
 import { PO_STATUS_CHOICES, PO_STATUS_LABELS, PO_TYPE_LABELS } from '../lib/po-labels';
 import { PoStatusBadge } from './po-status-badge';
 
@@ -34,15 +34,19 @@ const PO_TYPE_OPTIONS = toOptions(PO_TYPE_LABELS);
 /** `canSeePrice` — Value is sortable / filterable only for a user who may see
  *  PO prices (the API refuses it otherwise; ADR-200). */
 export function purchaseOrderListColumns({
+  firstRowNo,
   canSeePrice,
   draftIds,
 }: {
+  /** Sr No of the page's first row (offset + 1) — ADR-261 rev. */
+  firstRowNo: number;
   canSeePrice: boolean;
   /** ADR-202 — PO ids with a pending edit; their status cell shows "Draft". */
   draftIds?: Set<string>;
 }): DataTableColumn<PurchaseOrderLineListItem>[] {
   return [
     ...leadColumns<PurchaseOrderLineListItem>({
+      firstRowNo,
       doc: {
         id: 'po_code',
         sortFilterField: 'poCode',
@@ -61,15 +65,6 @@ export function purchaseOrderListColumns({
           </Link>
         ),
       },
-      docDate: {
-        id: 'po_date',
-        sortFilterField: 'poDate',
-        kind: 'date',
-        header: 'PO Date',
-        className: 'mono',
-        nowrap: true,
-        render: (po) => fmtDate(po.docDate),
-      },
       soNo: (l) => l.soCode,
       internalSoNo: (l) => l.soInternalNo,
       pol: (l) => l.clientPoLineNo,
@@ -86,6 +81,15 @@ export function purchaseOrderListColumns({
         item_name: { sortFilterField: 'itemName' },
       },
     }),
+    {
+      id: 'po_date',
+      sortFilterField: 'poDate',
+      kind: 'date',
+      header: 'PO Date',
+      className: 'mono',
+      nowrap: true,
+      render: (po) => fmtDate(po.docDate),
+    },
     {
       id: 'po_type',
       sortFilterField: 'poType',
@@ -209,5 +213,10 @@ export function purchaseOrderListColumns({
       nowrap: true,
       render: (po) => <PoStatusBadge status={po.docStatus} draft={draftIds?.has(po.docId)} />,
     },
+    // ADR-261 rev — Created By, the last data column.
+    createdByColumn({
+      createdByName: (r) => r.createdByName,
+      overrides: { sortFilterField: 'createdBy' },
+    }),
   ];
 }

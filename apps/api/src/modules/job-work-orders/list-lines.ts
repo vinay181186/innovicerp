@@ -18,10 +18,11 @@ import type {
   ListJobWorkOrdersQuery,
 } from '@innovic/shared';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { requireAnyFormAccess } from '../../lib/access';
 import { AuthorizationError } from '../../lib/errors';
 import { jcEffectiveQtySql } from '../../lib/jc-effective-qty';
-import { day, iso } from '../../lib/list-line-values';
+import { day, iso, str } from '../../lib/list-line-values';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { partyCommittedQtySql } from '../party-grn/service';
 import { customerRmByJw } from './customer-rm';
@@ -110,6 +111,7 @@ export async function listJobWorkOrderLines(
         jw.client_po_no AS "clientPoNo",
         l.line_no AS "lineNo", l.client_po_line_no AS "clientPoLineNo",
         COALESCE(l.created_at, jw.created_at) AS "createdAt",
+        ${createdByNameSql(sql`COALESCE(l.created_by, jw.created_by)`)} AS "createdByName",
         COALESCE(i.code, l.item_code_text) AS "itemCode",
         NULLIF(btrim(l.revision), '') AS "itemRevision",
         COALESCE(NULLIF(btrim(l.part_name), ''), i.name) AS "itemName",
@@ -143,6 +145,7 @@ export async function listJobWorkOrderLines(
         lineNo: Number(r['lineNo'] ?? 0),
         clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
         createdAt: iso(r['createdAt']),
+        createdByName: str(r['createdByName']),
         itemCode: (r['itemCode'] as string | null) ?? null,
         itemRevision: (r['itemRevision'] as string | null) ?? null,
         itemName: (r['itemName'] as string | null) ?? null,

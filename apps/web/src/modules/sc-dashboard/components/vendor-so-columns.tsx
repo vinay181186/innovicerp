@@ -6,7 +6,7 @@
 // are hidden.
 
 import type { ScSoRow, ScVendorRow } from '@innovic/shared';
-import { leadColumns, type DataTableColumn } from '@/ui/data';
+import { createdByColumn, type DataTableColumn, leadColumns } from '@/ui/data';
 import { inr } from './sc-format';
 
 export function vendorColumns(priceHidden: boolean): DataTableColumn<ScVendorRow>[] {
@@ -103,12 +103,13 @@ export function vendorColumns(priceHidden: boolean): DataTableColumn<ScVendorRow
   return cols;
 }
 
-export function soColumns(priceHidden: boolean): DataTableColumn<ScSoRow>[] {
+export function soColumns(firstRowNo: number, priceHidden: boolean): DataTableColumn<ScSoRow>[] {
   const cols: DataTableColumn<ScSoRow>[] = [
     // ADR-261 — one row per SO (many lines): the lead columns that fit a whole
     // order (SO No. · Internal SO No. · Created On), no POL / Item columns. The
     // row with no SO behind its lines keeps saying so.
     ...leadColumns<ScSoRow>({
+      firstRowNo,
       soNo: (s) => s.soCode,
       internalSoNo: (s) => s.soInternalNo,
       createdOn: (s) => s.createdAt,
@@ -196,5 +197,12 @@ export function soColumns(priceHidden: boolean): DataTableColumn<ScSoRow>[] {
       },
     );
   }
+  // ADR-261 rev — Created By, the last data column.
+  cols.push(
+    createdByColumn({
+      createdByName: (r) => r.createdByName,
+      overrides: { sortFilterField: 'createdBy' },
+    }),
+  );
   return cols;
 }

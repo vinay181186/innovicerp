@@ -1,7 +1,7 @@
 // CAPA service (QC Wave 3). Mirrors legacy renderCAPA L22779 + _capaNew /
 // _capaEdit (5-step). CRUD over capa_records (migration 0034).
 
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, getTableColumns, isNull, sql } from 'drizzle-orm';
 import type {
   CapaCounters,
   CapaRecord,
@@ -13,6 +13,7 @@ import type {
 import { capaRecords } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { lockDocSeries } from '../../lib/doc-series-lock';
@@ -37,7 +38,13 @@ function tsLike(v: unknown): string {
   return v instanceof Date ? v.toISOString() : String(v);
 }
 
-type Row = typeof capaRecords.$inferSelect;
+type Row = typeof capaRecords.$inferSelect & { createdByName: string | null };
+
+/** Every capa_records column + Created By (ADR-261 rev) — the CAPA's own creator. */
+const CAPA_COLS = {
+  ...getTableColumns(capaRecords),
+  createdByName: createdByNameSql(capaRecords.createdBy),
+};
 
 /** The drawing revision and the customer's own PO line number for a CAPA. */
 interface LineFacts {
@@ -184,6 +191,7 @@ function toRecord(
     department: r.department ?? null,
     overdue,
     createdAt: tsLike(r.createdAt),
+    createdByName: r.createdByName ?? null,
     updatedAt: tsLike(r.updatedAt),
   };
 }
@@ -231,7 +239,7 @@ export async function listCapa(
       sf,
       sql`${capaRecords.capaDate} DESC, ${capaRecords.code} DESC, ${capaRecords.id} DESC`,
     );
-    const base = tx.select().from(capaRecords).where(where).orderBy(order);
+    const base = tx.select(CAPA_COLS).from(capaRecords).where(where).orderBy(order);
     const offset = input.offset ?? 0;
     const rows =
       input.limit !== undefined
@@ -332,7 +340,7 @@ export async function createCapa(input: CreateCapaInput, user: AuthContext): Pro
         createdBy: user.id,
         updatedBy: user.id,
       })
-      .returning();
+      .returning(CAPA_COLS);
     const created = inserted[0] as Row;
     const facts = await lineFactsByJcNo(tx, companyId, created.jcNo ? [created.jcNo] : []);
     const codesOf = await codeFactsOf(tx, companyId, [created]);
@@ -397,7 +405,7 @@ export async function updateCapa(
       .update(capaRecords)
       .set(patch)
       .where(eq(capaRecords.id, id))
-      .returning();
+      .returning(CAPA_COLS);
     const row = updated[0] as Row;
     const facts = await lineFactsByJcNo(tx, companyId, row.jcNo ? [row.jcNo] : []);
     const codesOf = await codeFactsOf(tx, companyId, [row]);

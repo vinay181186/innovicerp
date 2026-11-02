@@ -72,7 +72,7 @@ function JcOpsPage(): React.JSX.Element {
   const [editRow, setEditRow] = useState<JcOpsBoardRow | null>(null);
   const [prRow, setPrRow] = useState<JcOpsBoardRow | null>(null);
   const [outsourceRow, setOutsourceRow] = useState<JcOpsBoardRow | null>(null);
-  const columns = useMemo(() => jcOpsColumns(), []);
+  const columns = useMemo(() => jcOpsColumns(pageOffset(page) + 1), [page]);
   const actionProps: JcOpsActionProps = {
     canWrite,
     canCreatePr,

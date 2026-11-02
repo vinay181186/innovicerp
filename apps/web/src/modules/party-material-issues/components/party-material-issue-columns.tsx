@@ -14,7 +14,7 @@
 
 import type { PartyMaterialIssueListItem } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
-import { leadColumns, type DataTableColumn } from '@/ui/data';
+import { createdByColumn, type DataTableColumn, leadColumns } from '@/ui/data';
 
 /** ADR-235 — a Cancelled issue (listed with includeCancelled). cancelledAt is
  *  the standard Cancel's stamp; deletedAt alone is an issue cancelled before it. */
@@ -24,12 +24,15 @@ export function isIssueCancelled(
   return Boolean(it.cancelledAt ?? it.deletedAt);
 }
 
-export function partyMaterialIssueColumns(): DataTableColumn<PartyMaterialIssueListItem>[] {
+export function partyMaterialIssueColumns(
+  firstRowNo: number,
+): DataTableColumn<PartyMaterialIssueListItem>[] {
   return [
     // Owner rule 2026-10-31 — Issue No. then the lead columns first (JWSO-only
     // list: JWSO No., no Internal SO No.). Item Code / Item Name =
     // OUR produced part. The row carries no POL yet (needs API).
     ...leadColumns<PartyMaterialIssueListItem>({
+      firstRowNo,
       doc: {
         id: 'issue_code',
         sortFilterField: 'issueCode',
@@ -52,15 +55,6 @@ export function partyMaterialIssueColumns(): DataTableColumn<PartyMaterialIssueL
           </>
         ),
       },
-      docDate: {
-        id: 'issue_date',
-        sortFilterField: 'issueDate',
-        header: 'Issue Date',
-        kind: 'date',
-        className: 'text2',
-        nowrap: true,
-        render: (it) => fmtDate(it.issueDate),
-      },
       so: 'jwso',
       soNo: (it) => it.jwCodeText,
       pol: () => null,
@@ -74,6 +68,15 @@ export function partyMaterialIssueColumns(): DataTableColumn<PartyMaterialIssueL
         item_name: { sortFilterField: 'itemName' },
       },
     }),
+    {
+      id: 'issue_date',
+      sortFilterField: 'issueDate',
+      header: 'Issue Date',
+      kind: 'date',
+      className: 'text2',
+      nowrap: true,
+      render: (it) => fmtDate(it.issueDate),
+    },
     {
       id: 'jc_code',
       sortFilterField: 'jcCode',
@@ -134,5 +137,7 @@ export function partyMaterialIssueColumns(): DataTableColumn<PartyMaterialIssueL
           <span className="text3">—</span>
         ),
     },
+    // ADR-261 rev — Created By, the last data column.
+    createdByColumn({ createdByName: (r) => r.createdByName }),
   ];
 }

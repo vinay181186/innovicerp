@@ -6,15 +6,16 @@
 import { ML_PLAN_STATUSES, ML_PLAN_STATUS_LABEL, type MlPlanListItem } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { StatusBadge } from '@/ui/core';
-import { leadColumns, type DataTableColumn } from '@/ui/data';
+import { createdByColumn, leadColumns, type DataTableColumn } from '@/ui/data';
 
 const STATUS_OPTIONS = ML_PLAN_STATUSES.map((v) => ({ value: v, label: ML_PLAN_STATUS_LABEL[v] }));
 
 export function mlPlanListColumns(offset = 0): DataTableColumn<MlPlanListItem>[] {
   return [
-    // Owner rule 2026-10-31 (ADR-261 amendment) — MLP No. first, then the six
-    // lead columns, all locked; Sr No and every other fact follow Item Name.
+    // ADR-261 rev 2026-11-02 — the locked lead block (Sr No … MLP No. · Created
+    // On); Sr No counts on from the page offset. Every other fact follows it.
     ...leadColumns<MlPlanListItem>({
+      firstRowNo: offset + 1,
       doc: {
         id: 'code',
         sortFilterField: 'code',
@@ -57,14 +58,6 @@ export function mlPlanListColumns(offset = 0): DataTableColumn<MlPlanListItem>[]
         item_name: { sortFilterField: 'itemName' },
       },
     }),
-    {
-      id: 'sr_no',
-      header: 'Sr No',
-      width: '4%',
-      className: 'text3',
-      align: 'right',
-      render: (_p, i) => offset + i + 1,
-    },
     {
       id: 'plan_qty',
       sortFilterField: 'planQty',
@@ -120,5 +113,6 @@ export function mlPlanListColumns(offset = 0): DataTableColumn<MlPlanListItem>[]
         <StatusBadge kind="doc" status={p.status} label={ML_PLAN_STATUS_LABEL[p.status]} />
       ),
     },
+    createdByColumn<MlPlanListItem>({ createdByName: (p) => p.createdByName }),
   ];
 }

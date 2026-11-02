@@ -5,6 +5,7 @@
 import { sql } from 'drizzle-orm';
 
 import { items, jobWorkOrderLines, qcDocuments, salesOrderLines } from '../../db/schema';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import type { SfColumnMap } from '../../lib/list-query';
 import { polOf } from '../../lib/pol';
 
@@ -44,4 +45,5 @@ export const QC_DOC_SF_COLUMNS: SfColumnMap = {
     sql: sql`(${qcDocuments.createdAt} AT TIME ZONE 'Asia/Kolkata')::date`,
     type: 'date',
   },
+  createdBy: { sql: createdByNameSql(qcDocuments.createdBy), type: 'text' },
 };

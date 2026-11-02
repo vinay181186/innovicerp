@@ -9,7 +9,7 @@ import { ActionLink } from '@/components/shared/action-link';
 import type { ProductionDashboardJc } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
 import { renderJcOpsLink } from '@/modules/jc-ops/components/jc-ops-columns';
-import { leadColumns, ProgressBar, RowMenu } from '@/ui/data';
+import { createdByColumn, leadColumns, ProgressBar, RowMenu } from '@/ui/data';
 import type { DataTableColumn } from '@/ui/data';
 
 /** done / total ops as a whole %, exactly as the card worked it out. */
@@ -17,11 +17,12 @@ export function jcProgressPct(jc: ProductionDashboardJc): number {
   return jc.totalOps > 0 ? Math.round((jc.doneOps / jc.totalOps) * 100) : 0;
 }
 
-export function openJcColumns(): DataTableColumn<ProductionDashboardJc>[] {
+export function openJcColumns(firstRowNo: number): DataTableColumn<ProductionDashboardJc>[] {
   return [
-    // ADR-261 — JC No. first, then the six lead columns, all locked; every
+    // ADR-261 — JC No. inside the lead block (after Item Name), all locked; every
     // other fact follows Item Name. Created On = the job card's own created_at.
     ...leadColumns<ProductionDashboardJc>({
+      firstRowNo,
       doc: {
         id: 'jc_no',
         header: 'JC No.',
@@ -41,15 +42,6 @@ export function openJcColumns(): DataTableColumn<ProductionDashboardJc>[] {
           </ActionLink>
         ),
       },
-      docDate: {
-        id: 'jc_date',
-        kind: 'date',
-        header: 'JC Date',
-        className: 'mono',
-        nowrap: true,
-        render: (jc) => fmtDate(jc.jcDate ?? null),
-        filterValue: (jc) => jc.jcDate ?? '',
-      },
       soNo: (jc) => jc.soCode,
       internalSoNo: (jc) => jc.soInternalNo,
       pol: (jc) => jc.clientPoLineNo,
@@ -58,6 +50,15 @@ export function openJcColumns(): DataTableColumn<ProductionDashboardJc>[] {
       itemRev: (jc) => jc.itemRevision,
       itemName: (jc) => jc.itemName,
     }),
+    {
+      id: 'jc_date',
+      kind: 'date',
+      header: 'JC Date',
+      className: 'mono',
+      nowrap: true,
+      render: (jc) => fmtDate(jc.jcDate ?? null),
+      filterValue: (jc) => jc.jcDate ?? '',
+    },
     {
       id: 'order_qty',
       header: 'Order Qty',
@@ -102,6 +103,7 @@ export function openJcColumns(): DataTableColumn<ProductionDashboardJc>[] {
         </span>
       ),
     },
+    createdByColumn<ProductionDashboardJc>({ createdByName: (jc) => jc.createdByName }),
   ];
 }
 

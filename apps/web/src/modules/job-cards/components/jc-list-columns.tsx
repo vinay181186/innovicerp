@@ -9,7 +9,7 @@ import { fmtDate } from '@/lib/date';
 import { ItemRevLink } from '@/modules/item-revisions/components/item-rev-link';
 import { itemCodeWithRev, docDrawingRev } from '@/lib/item-code';
 import { Badge, StatusBadge } from '@/ui/core';
-import { ProgressBar, leadColumns, type DataTableColumn } from '@/ui/data';
+import { ProgressBar, createdByColumn, leadColumns, type DataTableColumn } from '@/ui/data';
 import { JC_STATUS_LABEL } from './jc-status-badge';
 
 /** Sort & Filter tick lists (server mode): stored value → the label shown. */
@@ -74,10 +74,11 @@ export function jobCardListColumns(
   draftIds?: Set<string>,
 ): DataTableColumn<JobCardListItem>[] {
   return [
-    // Owner rule 2026-10-31 (ADR-261 amendment) — JC No. first, then the six
-    // lead columns, all locked; Sr No, the picture and every other fact follow
-    // Item Name.
+    // ADR-261 rev 2026-11-02 — JC No. inside the lead block
+    // (after Item Name), all locked (Sr No is the block's first column); the
+    // picture and every other fact follow.
     ...leadColumns<JobCardListItem>({
+      firstRowNo,
       doc: {
         id: 'jc_code',
         sortFilterField: 'jcCode',
@@ -94,15 +95,6 @@ export function jobCardListColumns(
             {jc.code}
           </Link>
         ),
-      },
-      docDate: {
-        id: 'jc_date',
-        sortFilterField: 'jcDate',
-        kind: 'date',
-        header: 'JC Date',
-        className: 'mono',
-        nowrap: true,
-        render: (jc) => fmtDate(jc.jcDate),
       },
       soNo: (jc) => jc.sourceLink?.code,
       internalSoNo: (jc) => (jc.sourceLink?.type === 'so' ? jc.sourceLink.internalSoNo : null),
@@ -152,11 +144,13 @@ export function jobCardListColumns(
       },
     }),
     {
-      id: 'sr_no',
-      header: 'Sr No',
-      width: '4%',
-      className: 'text3',
-      render: (_jc, i) => firstRowNo + i,
+      id: 'jc_date',
+      sortFilterField: 'jcDate',
+      kind: 'date',
+      header: 'JC Date',
+      className: 'mono',
+      nowrap: true,
+      render: (jc) => fmtDate(jc.jcDate),
     },
     {
       id: 'image',
@@ -383,6 +377,10 @@ export function jobCardListColumns(
       render: (jc) => jc.remarks?.trim() || '—',
       title: (jc) => jc.remarks ?? '',
     },
+    createdByColumn<JobCardListItem>({
+      createdByName: (jc) => jc.createdByName,
+      overrides: { sortFilterField: 'createdBy' },
+    }),
   ];
 }
 

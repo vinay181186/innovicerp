@@ -26,6 +26,7 @@ import { AssignTaskModal } from '@/modules/tasks/components/task-modals';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import {
   DataTable,
+  createdByColumn,
   leadColumns,
   Panel,
   ROW_TINT,
@@ -60,10 +61,14 @@ function overColor(over: number): string {
 
 const over = (it: StuckItem): number => it.days - it.threshold;
 
-function stuckColumns(): DataTableColumn<StuckItem>[] {
+function stuckColumns(
+  /** Sr No of this page's first row (server offset + 1). */
+  firstRowNo: number,
+): DataTableColumn<StuckItem>[] {
   return [
     // ADR-261 lead columns — an SO-level activity, so no POL / Item columns.
     ...leadColumns<StuckItem>({
+      firstRowNo,
       soNo: (it) => it.soNo,
       internalSoNo: (it) => it.soInternalNo,
       createdOn: (it) => it.createdAt,
@@ -153,6 +158,10 @@ function stuckColumns(): DataTableColumn<StuckItem>[] {
       render: (it) => it.detail,
       title: (it) => it.detail,
     },
+    createdByColumn<StuckItem>({
+      createdByName: (it) => it.createdByName,
+      overrides: { sortFilterField: 'createdBy' },
+    }),
   ];
 }
 
@@ -197,7 +206,8 @@ function StuckDashboardPage(): React.JSX.Element {
   const rows = data?.items ?? [];
   const filtered = Boolean(search.search) || sf.filtering;
 
-  const columns = useMemo(() => stuckColumns(), []);
+  const firstRowNo = pageOffset(search.page) + 1;
+  const columns = useMemo(() => stuckColumns(firstRowNo), [firstRowNo]);
 
   if (isLoading) {
     return (

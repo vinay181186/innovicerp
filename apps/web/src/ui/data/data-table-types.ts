@@ -60,6 +60,10 @@ export interface DataTableColumn<T> {
    * fixed: it cannot be moved, hidden or crossed, and never drops off screen.
    */
   lead?: boolean | undefined;
+  /** Off until the user ticks it in Columns ▾ (fit engine). Same as listing the
+   *  id in the table's `defaultHidden`, but set once on the column itself —
+   *  `auditColumns` uses it for Created Time (owner 2026-11-02). */
+  hiddenByDefault?: boolean | undefined;
   /**
    * Floor in px for the measured width (fit engine only). For cells whose
    * content has no width of its own, e.g. a thumbnail that fills its cell.

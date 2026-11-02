@@ -5,6 +5,7 @@
 
 import { sql } from 'drizzle-orm';
 
+import { createdByNameSql } from '../../lib/created-by-sql';
 import type { SfColumnMap } from '../../lib/list-query';
 
 export const PARTY_GRN_SF_COLUMNS: SfColumnMap = {
@@ -29,6 +30,7 @@ export const PARTY_GRN_LINE_SF_COLUMNS: SfColumnMap = {
     sql: sql`(COALESCE(pgl.created_at, pg.created_at) AT TIME ZONE 'Asia/Kolkata')::date`,
     type: 'date',
   },
+  createdBy: { sql: createdByNameSql(sql`COALESCE(pgl.created_by, pg.created_by)`), type: 'text' },
   // CODE/REV as the cell prints it (itemCodeWithRev): RM code, then '/' + the
   // JWSO line's drawing revision when it has one.
   itemCode: {

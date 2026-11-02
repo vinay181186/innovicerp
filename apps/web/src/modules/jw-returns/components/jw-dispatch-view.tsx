@@ -98,7 +98,7 @@ export function JwDispatchView({
   // ⋯ Preview / Download PDF of the return challan (usePrintJwReturn).
   const printReturn = usePrintJwReturn();
 
-  const columns = useMemo(() => jwReturnColumns(), []);
+  const columns = useMemo(() => jwReturnColumns(pageOffset(page) + 1), [page]);
 
   const toggleExpand = useCallback((id: string): void => {
     setExpanded((prev) => {

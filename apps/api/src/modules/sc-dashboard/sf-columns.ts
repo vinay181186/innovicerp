@@ -6,6 +6,7 @@
 
 import { sql } from 'drizzle-orm';
 
+import { createdByNameSql } from '../../lib/created-by-sql';
 import type { SfColumnMap } from '../../lib/list-query';
 import { polSql } from '../../lib/pol';
 import { poLinePendingRaw } from '../../lib/po-pending';
@@ -38,6 +39,7 @@ export const SC_PENDING_SF_COLUMNS: SfColumnMap = {
   soCode: { sql: sql`COALESCE(so.code, rev_jwo.code)`, type: 'text' },
   clientPoLineNo: { sql: polSql('sol', 'rev_jwl'), type: 'text' },
   createdOn: { sql: sql`(pol.created_at AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
+  createdBy: { sql: createdByNameSql(sql`pol.created_by`), type: 'text' },
   // ADR-207 — the Internal SO No., off the `so` join pendingFrom makes (shared
   // by the page, the count and the picklists).
   soInternalNo: { sql: sql`so.internal_so_no`, type: 'text' },
@@ -72,6 +74,7 @@ export const SC_SO_SF_COLUMNS: SfColumnMap = {
   // (listScSos GROUPs BY it, so one value per row).
   soInternalNo: { sql: sql`t.so_internal_no`, type: 'text' },
   createdOn: { sql: sql`(t.so_created_at AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
+  createdBy: { sql: sql`t.so_created_by_name`, type: 'text' },
   lines: { sql: sql`t.lines`, type: 'num' },
   uniqueVendors: { sql: sql`t.unique_vendors`, type: 'num' },
   totalQty: { sql: sql`t.total_qty`, type: 'num' },
@@ -92,6 +95,7 @@ export const SC_PO_SUMMARY_SF_COLUMNS: SfColumnMap = {
   // ADR-207 — the Internal SO No., the same subquery column the row shows.
   soInternalNo: { sql: sql`t.so_internal_no`, type: 'text' },
   createdOn: { sql: sql`(t.po_created_at AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
+  createdBy: { sql: sql`t.po_created_by_name`, type: 'text' },
   lines: { sql: sql`t.lines`, type: 'num' },
   totalQty: { sql: sql`t.total_qty`, type: 'num' },
   receivedQty: { sql: sql`t.received_qty`, type: 'num' },

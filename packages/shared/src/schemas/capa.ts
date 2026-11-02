@@ -56,6 +56,8 @@ export const capaRecordSchema = z.object({
   department: z.string().nullable(),
   overdue: z.boolean(),
   createdAt: z.string(),
+  /** Created By (ADR-261 rev): name of the user who entered the SAME record as createdAt (full name, else e-mail before @); null when unknown. */
+  createdByName: z.string().nullable(),
   updatedAt: z.string(),
 });
 export type CapaRecord = z.infer<typeof capaRecordSchema>;

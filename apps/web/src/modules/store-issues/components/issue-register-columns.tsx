@@ -9,7 +9,7 @@
 
 import { ISSUE_AGAINST_LABELS, type StoreIssueLineRow } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
-import { leadColumns, type DataTableColumn } from '@/ui/data';
+import { createdByColumn, type DataTableColumn, leadColumns } from '@/ui/data';
 
 const ISSUE_AGAINST_OPTIONS = Object.entries(ISSUE_AGAINST_LABELS).map(([value, label]) => ({
   value,
@@ -22,9 +22,10 @@ function reference(r: StoreIssueLineRow): string {
   return r.department ?? r.legacyReference ?? '—';
 }
 
-export function issueRegisterColumns(): DataTableColumn<StoreIssueLineRow>[] {
+export function issueRegisterColumns(firstRowNo: number): DataTableColumn<StoreIssueLineRow>[] {
   return [
     ...leadColumns<StoreIssueLineRow>({
+      firstRowNo,
       doc: {
         id: 'issue_no',
         sortFilterField: 'code',
@@ -46,15 +47,6 @@ export function issueRegisterColumns(): DataTableColumn<StoreIssueLineRow>[] {
           </>
         ),
       },
-      docDate: {
-        id: 'issue_date',
-        sortFilterField: 'issueDate',
-        kind: 'date',
-        header: 'Issue Date',
-        className: 'mono text2',
-        nowrap: true,
-        render: (r) => fmtDate(r.docDate),
-      },
       soNo: (r) => r.soCode,
       internalSoNo: (r) => r.soInternalNo,
       pol: (r) => r.clientPoLineNo,
@@ -71,6 +63,15 @@ export function issueRegisterColumns(): DataTableColumn<StoreIssueLineRow>[] {
         item_name: { sortFilterField: 'itemName' },
       },
     }),
+    {
+      id: 'issue_date',
+      sortFilterField: 'issueDate',
+      kind: 'date',
+      header: 'Issue Date',
+      className: 'mono text2',
+      nowrap: true,
+      render: (r) => fmtDate(r.docDate),
+    },
     {
       id: 'issue_against',
       sortFilterField: 'issueAgainst',
@@ -129,5 +130,10 @@ export function issueRegisterColumns(): DataTableColumn<StoreIssueLineRow>[] {
       header: 'Issued By',
       render: (r) => r.issuedByName || '—',
     },
+    // ADR-261 rev — Created By, the last data column.
+    createdByColumn({
+      createdByName: (r) => r.createdByName,
+      overrides: { sortFilterField: 'createdBy' },
+    }),
   ];
 }
