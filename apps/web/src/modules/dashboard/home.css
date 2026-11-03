@@ -145,6 +145,14 @@ span.dh-link {
   display: flex;
   flex-direction: column;
 }
+/* Every block inside keeps its natural height — the content area scrolls,
+   its children never shrink. Without this a long list (839 notifications)
+   squeezed the view header to its 34px min-height and the title and
+   "Mark all as read" spilled over its bottom rule (owner 03-Nov). The
+   Approvals page-fill below opts back in to filling. */
+.dh-main > * {
+  flex-shrink: 0;
+}
 /* No second, guessed scroller inside it: the theme caps every .tbl-wrap at
    calc(100vh - 220px). Check tables hold at most 8 rows; Day Log a day. */
 .dh-main .dh-check-body .tbl-wrap,
