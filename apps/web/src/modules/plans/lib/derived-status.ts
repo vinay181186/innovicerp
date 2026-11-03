@@ -33,6 +33,8 @@ export const DERIVED_LABEL: Record<PlanDerivedStatus, string> = {
   route_card_approval_pending: 'RC Awaiting Approval',
   gen_production_order: 'RC Created',
   in_production: 'In Production',
+  // Owner 2026-11-03: an order is open AND some plan qty is still Pending.
+  partly_in_production: 'Part Prod',
   production_complete: 'Completed',
 };
 
@@ -46,5 +48,7 @@ export const DERIVED_BADGE: Record<PlanDerivedStatus, string> = {
   // Same colour as the stored 'in_production' badge (list STATUS_BADGE): one
   // status, one colour, whichever kind of plan the row is.
   in_production: 'b-amber',
+  // Part Prod — same tone as In Production: an order is open.
+  partly_in_production: 'b-amber',
   production_complete: 'b-green',
 };

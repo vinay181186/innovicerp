@@ -10,7 +10,10 @@
 //                          used yet.
 //   gen_production_order — an APPROVED Route Card exists, no Production Order yet.
 //   in_production        — Production Order is open (Job Card in progress or
-//                          complete but not yet closed).
+//                          complete but not yet closed) and the whole plan qty
+//                          is covered by orders.
+//   partly_in_production — "Part Prod" (owner 2026-11-03): an order is open AND
+//                          some plan qty is still Pending (no order for it yet).
 //   production_complete  — Production Order closed; stock credited.
 //
 // Old plans (`ops_source = 'plan'`) carry null here and keep their stored
@@ -20,6 +23,7 @@ export const PLAN_DERIVED_STATUSES = [
   'route_card_approval_pending',
   'gen_production_order',
   'in_production',
+  'partly_in_production',
   'production_complete',
 ] as const;
 export type PlanDerivedStatus = (typeof PLAN_DERIVED_STATUSES)[number];
@@ -29,5 +33,6 @@ export const PLAN_DERIVED_STATUS_LABEL: Record<PlanDerivedStatus, string> = {
   route_card_approval_pending: 'Route card awaiting approval',
   gen_production_order: 'Gen production order',
   in_production: 'In production',
+  partly_in_production: 'Part Prod',
   production_complete: 'Production complete',
 };
