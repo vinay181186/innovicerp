@@ -236,7 +236,7 @@
 /* ── The grid: columns weighted to what each holds (dates and codes in 3–4
    need more), so nothing wraps at 1440. Only while the grid is wide enough to
    hold four columns — under that the primitive's own narrow layout takes over. */
-@container (min-width: 761px) {
+@container (min-width: 761px) and (max-width: 1499px) {
   .jc-detail .cl-grid > .cl-row {
     grid-template-columns:
       72px minmax(0, 198fr) minmax(0, 196fr) minmax(0, 228fr)
@@ -250,9 +250,8 @@
 
 /* Free text opts into ONE line: the value ellipsises, the cell's title carries
    it in full. Dates and quantities keep the primitive's wrap. */
-.jc-detail .cl-fact.jc-one-line {
-  flex-wrap: nowrap;
-}
+/* Stacked facts (ClusterGrid stack): the label is its own line and the value
+   is already one line with an ellipsis, so `jc-one-line` needs no rule. */
 .jc-detail .cl-fact.jc-wide > .cl-fact-v {
   flex: 1 1 auto;
   margin-left: 0;
@@ -264,10 +263,6 @@
    when it does not fit beside the value it drops under it, right-aligned. */
 .jc-detail .cl-fact.jc-chip {
   flex-wrap: wrap;
-  justify-content: flex-end;
-}
-.jc-detail .cl-fact.jc-chip > .cl-fact-k {
-  margin-right: auto;
 }
 .jc-detail .cl-fact.jc-chip > .cl-fact-after {
   max-width: 100%;

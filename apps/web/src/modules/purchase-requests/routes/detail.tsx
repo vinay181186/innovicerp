@@ -533,7 +533,7 @@ function PrFacts(props: {
           ) : null}
         </div>
       ) : null}
-      <ClusterGrid>
+      <ClusterGrid stack>
         {/* An account that adds up: PR Qty − On PO − Short closed = Pending.
             Pending is the number that decides whether another PO is needed. */}
         <Cluster name="Quantity">

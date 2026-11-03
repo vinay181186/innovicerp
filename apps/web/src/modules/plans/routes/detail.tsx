@@ -364,7 +364,7 @@ function PlanDetailPage(): React.JSX.Element {
             ) : null}
           </DocIdent>
 
-          <ClusterGrid>
+          <ClusterGrid stack>
             {/* An account that reads left to right and ends on its result:
                 Plan Qty − Covered by Production Orders = Pending, the number
                 that decides whether this plan still needs one (ADR-185, the
@@ -519,7 +519,7 @@ function PlanDetailPage(): React.JSX.Element {
                 so the second row continues without a name of its own. */}
             {plan.planType === 'full_outsource' ? (
               <>
-                <Cluster name="Outsource">
+                <Cluster name="Outsource" wide>
                   <ClusterFact
                     label="JW Vendor"
                     empty={!plan.foVendorCodeText}
@@ -543,8 +543,6 @@ function PlanDetailPage(): React.JSX.Element {
                     value={plan.foMaterialSrc ?? '—'}
                     after={<Chip changes={pendingChanges} field="foMaterialSrc" />}
                   />
-                </Cluster>
-                <Cluster name={null}>
                   <ClusterFact
                     num
                     label="Delivery Date"

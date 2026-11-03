@@ -39,8 +39,17 @@ export function IdentSep(): React.JSX.Element {
   );
 }
 
-export function ClusterGrid({ children }: { children?: ReactNode }): React.JSX.Element {
-  return <div className="cl-grid">{children}</div>;
+export function ClusterGrid({
+  children,
+  stack = false,
+}: {
+  children?: ReactNode;
+  /** Read-only detail pages: each fact shows its label ABOVE its value, and a
+   *  `wide` cluster lays its up-to-8 facts on one row when the grid is wide
+   *  (owner 03-Nov, G-safe). Forms with inputs leave this off. */
+  stack?: boolean;
+}): React.JSX.Element {
+  return <div className={stack ? 'cl-grid cl-stack' : 'cl-grid'}>{children}</div>;
 }
 
 export interface ClusterProps {
@@ -56,15 +65,23 @@ export interface ClusterProps {
    *  it apart from (the Create / Edit modals); inventing a name per row of a
    *  single continuous form just adds words. */
   name?: ReactNode | null;
+  /** Inside `<ClusterGrid stack>`: this cluster holds up to 8 facts (what used
+   *  to be its row + a `name={null}` continuation row). One row of 8 when the
+   *  grid is wide; the same facts, same order, on two rows of 4 when not. */
+  wide?: boolean;
   children?: ReactNode;
 }
 
-export function Cluster({ name, children }: ClusterProps): React.JSX.Element {
+export function Cluster({ name, wide = false, children }: ClusterProps): React.JSX.Element {
   if (name === undefined) {
     return <div className="cl-row cl-nogut">{children}</div>;
   }
   return (
-    <div className="cl-row" role="group" aria-label={typeof name === 'string' ? name : undefined}>
+    <div
+      className={wide ? 'cl-row cl-wide' : 'cl-row'}
+      role="group"
+      aria-label={typeof name === 'string' ? name : undefined}
+    >
       <span className="cl-gut" aria-hidden={name === null ? true : undefined}>
         {name}
       </span>
