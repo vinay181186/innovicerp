@@ -1,6 +1,6 @@
 ---
 name: styling
-description: Innovic ERP table/row + KPI styling rules. Use whenever building or editing any list/master table (SO list, Items, Vendors, GRN, etc.) or any row of count/status/KPI tiles above a list — keep short cell values like SO No., Date, codes, qty on ONE line (no wrapping), make data rows clickable to open the detail page, and render all counts as ONE single-row strip instead of separate cards.
+description: Innovic ERP table/row + KPI styling rules. Use whenever building or editing any list/master table (SO list, Items, Vendors, GRN, etc.) or any row of count/status/KPI tiles above a list — keep short cell values like SO No., Date, codes, qty on ONE line (no wrapping), make data rows clickable to open the detail page, and NEVER put a count/KPI tile row above a list (owner 2026-11-03) — status counts go in the Status ▾ filter; tile strips are for dashboards/reports only.
 ---
 
 # Styling — Innovic ERP tables
@@ -105,9 +105,16 @@ Keep the helper hint under the table so it's discoverable:
 </div>
 ```
 
-## Rule 3 — KPI counts go in ONE single-row strip, never separate cards
+## Rule 3 — NO tile row on any list (owner 2026-11-03); dashboards use ONE strip
 
-The counts above a list (Open / Approved / PO Created / All PRs, and every
+**Owner rule 2026-11-03: "like SO Master List, no status tiles row in any list."** A list page
+(`modules/*/routes/list.tsx`) has NO StatStrip / tile row — neither status counts nor money totals.
+Status counts go INTO the Status ▾ filter options ("Unpaid (3)"), the pattern from commit
+a41f9fd2. The SO Master List is the reference. Everything below applies ONLY to dashboards and
+report pages (Home, Production/QC/Supply-Chain/Stuck dashboards, Stock Valuation, SO Cycle Time,
+Pending SO Value, Daily Report), where tiles are the point of the page.
+
+Historic text (dashboards/reports only): the counts above a page (Open / Approved / PO Created / All PRs, and every
 equivalent on SO, JC, GRN, Dispatch, NC…) are **one horizontal strip inside one
 container**, not four floating `.panel` cards.
 
@@ -145,8 +152,8 @@ import { StatStrip } from '@/ui/data';
 />
 ```
 
-Reference implementations: `purchase-requests/routes/list.tsx` (filters) and
-`customer-dispatches/routes/list.tsx` (read-only). The component itself is what
+Reference implementations: dashboards only (e.g. `stock-valuation/routes/page.tsx`). The old list
+references no longer carry a strip. The component itself is what
 enforces the rules below — only change it if the rule changes.
 
 Non-negotiables for the strip:
@@ -260,6 +267,5 @@ their current paging as the pattern to copy.
 - [ ] `<tr>` has `onClick` → detail page and `cursor: 'pointer'`.
 - [ ] Every in-row button / link-that-does-something-else / filter / chevron / icon calls `e.stopPropagation()`.
 - [ ] The "click a row to open it" hint is present under the table.
-- [ ] Counts above the list are ONE single-row strip (`var(--border)` dividers, left-aligned label over number) — not separate `.panel` cards.
-- [ ] Strip stats still filter on click, active state shown by colour + bottom border, and every colour is a `var(--*)` token.
+- [ ] NO tile/count row above a list (owner 2026-11-03) — status counts live in the Status ▾ filter. (Dashboards/reports: ONE StatStrip, `var(--*)` tokens only.)
 - [ ] Loading matches the list's kind: document + master lists scroll in one fetch (`LIST_LIMIT`, `offset: 0`, no Prev/Next); unbounded registers keep Prev/Next with `page` in the URL. Never both footers, never a nested vertical scroller.

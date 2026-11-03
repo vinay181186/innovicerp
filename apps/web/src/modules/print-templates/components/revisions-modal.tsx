@@ -2,8 +2,8 @@
 // _pteShowRevisions (L14989): newest-first, max 5, click Restore to load that
 // version back into the editor (still needs an explicit Save to commit).
 
-import { format } from 'date-fns';
 import { Loader2, X } from 'lucide-react';
+import { fmtDateTime } from '@/lib/date';
 import { RowMenu } from '@/ui/data';
 import { usePrintTemplateRevisions } from '../api';
 
@@ -90,9 +90,7 @@ export function RevisionsModal({
                 {items.map((r, i) => (
                   <tr key={r.id}>
                     <td className="text3">{i + 1}</td>
-                    <td style={{ fontSize: 11 }}>
-                      {format(new Date(r.createdAt), 'dd-MM-yyyy HH:mm')}
-                    </td>
+                    <td style={{ fontSize: 11 }}>{fmtDateTime(r.createdAt)}</td>
                     <td style={{ fontSize: 11 }}>{r.editedByName ?? '—'}</td>
                     <td
                       className="text2"

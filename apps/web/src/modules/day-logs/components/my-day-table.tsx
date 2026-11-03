@@ -16,7 +16,7 @@ import { matchesSearchTerm, normalizeSearchTerm } from '@/components/shared/sear
 import { DataTable, type DataTableColumn } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import type { DayQuery } from '../api';
-import { fmtDmy } from '../lib/format';
+import { fmtDate } from '@/lib/date';
 import { sortEntries } from '../lib/sheet';
 import { EntryExpand, entryAreaId, type EntryMode } from './entry-expand';
 import { EntrySearch } from './entry-search';
@@ -169,7 +169,7 @@ export function MyDayTable({
         wrapClassName="dl-fit"
         columns={COLUMNS}
         rows={shown}
-        empty={needle ? `No entries match "${needle}".` : `Nothing logged on ${fmtDmy(day.date)}.`}
+        empty={needle ? `No entries match "${needle}".` : `Nothing logged on ${fmtDate(day.date)}.`}
         onRowClick={(r) => toggle(r.id)}
         onToggleExpanded={(r) => toggle(r.id)}
         renderExpanded={(r) =>

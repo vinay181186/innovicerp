@@ -53,13 +53,14 @@ export function priorityColor(p: TaskPriority): string {
 }
 
 /** THE one status colour map (strip, badge, widget). To Do waits = grey,
- *  In Progress under way = amber, Completed green, Cancelled grey, Overdue red.
+ *  In Progress under way = amber, Completed green, Cancelled red (owner
+ *  2026-11-03), Overdue red.
  *  `cls` is the badge class; `color` is the matching token for a strip tile. */
 export const TASK_STATUS_TONE: Record<TaskStatus | 'overdue', { cls: string; color: string }> = {
   todo: { cls: 'badge b-grey', color: 'var(--text2)' },
   in_progress: { cls: 'badge b-amber', color: 'var(--amber2)' },
   completed: { cls: 'badge b-green', color: 'var(--green2)' },
-  cancelled: { cls: 'badge b-grey', color: 'var(--text2)' },
+  cancelled: { cls: 'badge b-red', color: 'var(--red2)' },
   overdue: { cls: 'badge b-red', color: 'var(--red2)' },
 };
 

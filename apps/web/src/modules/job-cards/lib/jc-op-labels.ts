@@ -22,11 +22,11 @@ export const OP_STATUS: Record<string, { label: string; cls: string }> = {
   running: { label: 'Running', cls: 'b-green' },
   qc_pending: { label: 'QC Pending', cls: 'b-amber' },
   complete: { label: 'Completed', cls: 'b-green' },
-  pr_raised: { label: 'PR Raised', cls: 'b-amber' },
+  pr_raised: { label: 'PR Raised', cls: 'b-blue' }, // shared map (owner 2026-11-03)
   po_created: { label: 'PO Created', cls: 'b-blue' },
   at_vendor: { label: 'At Vendor', cls: 'b-amber' },
   received: { label: 'Received – QC Pending', cls: 'b-amber' }, // QC Pending = amber (Round 5)
-  ready_for_pr: { label: 'Ready for PR', cls: 'b-amber' },
+  ready_for_pr: { label: 'Ready for PR', cls: 'b-blue' }, // shared map (owner 2026-11-03)
   outsource: { label: 'Outsource', cls: 'b-amber' },
 };
 

@@ -1,5 +1,5 @@
 // Store / Inventory (PL-SI-1) — per-item current stock dashboard.
-// Mirrors legacy renderStore (HTML L24803). KPI strip + filter + the per-item
+// Mirrors legacy renderStore (HTML L24803). Filter bar + the per-item
 // stock table, now on the ADR-199 fit table (<DataTable tableKey={storeInventory}>).
 // Per-row ⋯ menu: ± Adjust (modal), Reorder (modal), Raise PR (→ Reorder List).
 //
@@ -10,21 +10,20 @@
 //
 // 25 rows a page (ADR-201, page in the URL): search, the Stock filter and Sort
 // & Filter (ADR-200, server mode) run on the server over every item; the
-// filter counts and the Items in Stock tile are server figures. Any change →
-// page 1.
+// filter counts are server figures. Any change → page 1. No tile row (owner
+// 2026-11-03: like SO Master) — the read-only "Items in Stock" tile was dropped.
 //
 // Two legacy features are NOT ported (reported as parity gaps):
 //   - per-row History button (legacy L24847/24953) — needs a per-item txn fetch;
 //     /store-transactions cannot filter by item from the URL today.
 //   - Recent Store Transactions panel (legacy L24903) — not on this payload.
 
-import type { ListStoreInventoryResponse, StoreInventoryRow } from '@innovic/shared';
+import type { StoreInventoryRow } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { useCanOpen } from '@/components/shared/action-link';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
-import { StatStrip, type StatStripItem } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -160,7 +159,7 @@ function StoreInventoryPage(): React.JSX.Element {
         <>
           {/* THE list header (ui/layout ListHeader): title · count · + Manual
               Receipt, then the filter bar (search · stock filter with counts ·
-              Clear), with the read-only "Items in Stock" tile in the band. */}
+              Clear). No tile row (owner 2026-11-03). */}
           <ListHeader
             title="Store Inventory"
             icon="📦"
@@ -217,9 +216,7 @@ function StoreInventoryPage(): React.JSX.Element {
                 </button>
               ) : null
             }
-          >
-            {data ? <KpiStrip summary={data.summary} /> : null}
-          </ListHeader>
+          />
 
           {isError ? (
             <PageState
@@ -321,28 +318,6 @@ function StoreInventoryPage(): React.JSX.Element {
       )}
     </div>
   );
-}
-
-// ONE strip, one row — the shared <StatStrip>, not a grid of cards. Item counts
-// only: the ADR-180 piece totals (Reserved, Available) were removed because they
-// summed kg + Nos + m into one meaningless number.
-// 2026-09-26 filter bar: Total / Low / Zero filtered the table, so they are now
-// the counts in the Stock filter dropdown. "Items in Stock" never filtered — it
-// stays here as a read-only tile.
-function KpiStrip({
-  summary,
-}: {
-  summary: ListStoreInventoryResponse['summary'];
-}): React.JSX.Element {
-  const items: StatStripItem[] = [
-    {
-      key: 'inStock',
-      label: 'Items in Stock',
-      count: summary.itemsInStockCount,
-      color: 'var(--green2)',
-    },
-  ];
-  return <StatStrip items={items} />;
 }
 
 /** "Label (N)" when a count is known, bare label otherwise. */

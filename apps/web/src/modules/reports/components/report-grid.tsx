@@ -12,7 +12,7 @@
 import type { ReportColumn, ReportRow, ReportRowLink, RunReportResponse } from '@innovic/shared';
 import { useNavigate } from '@tanstack/react-router';
 import { useMemo, useRef } from 'react';
-import { fmtDateTime } from '@/lib/date';
+import { fmtTime } from '@/lib/date';
 import { LIST_PAGE_SIZE, useClampPage } from '@/lib/list-paging';
 import { DataTable } from '@/ui/data';
 import { TABLE_KEY_PREFIXES } from '@/ui/data/table-keys';
@@ -96,7 +96,7 @@ export function ReportGrid(props: ReportGridProps): React.JSX.Element {
 
   const filtersOn = grid.showFilters && Object.values(grid.terms).some((t) => t.trim() !== '');
   const emptyText = filtersOn ? 'No rows match the column filters' : 'No data for these filters';
-  const updated = data?.generatedAt ? fmtDateTime(data.generatedAt).split(' ')[1] : undefined;
+  const updated = data?.generatedAt ? fmtTime(data.generatedAt) : undefined;
   const unfiltered = data?.unfilteredCount;
 
   const footer =

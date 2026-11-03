@@ -147,7 +147,7 @@ describe('row and check colours', () => {
       tone: 'due',
     });
     expect(t.rowStatus(dated, raw({ dueDate: '2026-10-30' }), today)).toEqual({
-      statusLabel: 'Due 30-Oct',
+      statusLabel: 'Due 30-10',
       tone: 'ok',
     });
   });

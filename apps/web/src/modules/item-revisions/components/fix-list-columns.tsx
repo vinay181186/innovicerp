@@ -1,6 +1,7 @@
 // Columns of the three Drawing Rev Fix List tabs (Phase D). Every code that
-// has a page is a real link; a row click never fires through a link or a
-// button (ItemRevLink / the action cell stop it).
+// has a page is a real link; a row click never fires through a link (they stop
+// it). The row actions (Set Drawing Rev, Set Rev) live in the row ⋯ menu —
+// no hand-made buttons in a cell (owner 2026-11-03).
 
 import type {
   FixListLine,
@@ -11,7 +12,7 @@ import type {
 import { ROUTE_CARD_APPROVAL_LABEL } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { RcApprovalBadge } from '@/modules/route-cards/components/rc-approval-badge';
-import { createdByColumn, leadColumns, type DataTableColumn } from '@/ui/data';
+import { createdByColumn, leadColumns, type DataTableColumn, type RowMenuItem } from '@/ui/data';
 
 const dash = <span className="text3">—</span>;
 
@@ -76,18 +77,18 @@ export function routeCardColumns(canEditRc: boolean): DataTableColumn<FixListRou
       className: 'mono',
       render: (r) => (r.lineRevs.length ? r.lineRevs.join(', ') : dash),
     },
+  ];
+}
+
+/** Route Cards tab ⋯: Set Drawing Rev = the card's Edit page (Route Card Edit right). */
+export function routeCardRowMenu(r: FixListRouteCard, canEditRc: boolean): RowMenuItem[] {
+  return [
     {
-      id: 'action',
-      header: '',
-      nowrap: true,
-      render: (r) =>
-        canEditRc ? (
-          <div onClick={(e) => e.stopPropagation()}>
-            <Link to="/route-cards/$id/edit" params={{ id: r.routeCardId }} className="btn btn-sm">
-              Set Drawing Rev
-            </Link>
-          </div>
-        ) : null,
+      key: 'set-rev',
+      label: 'Set Drawing Rev',
+      icon: 'pencil',
+      to: `/route-cards/${r.routeCardId}/edit`,
+      hidden: !canEditRc,
     },
   ];
 }
@@ -169,10 +170,7 @@ export function lineColumns(): DataTableColumn<FixListLine>[] {
   ];
 }
 
-export function stockColumns(
-  canSetRev: boolean,
-  onSetRev: (row: FixListStock) => void,
-): DataTableColumn<FixListStock>[] {
+export function stockColumns(): DataTableColumn<FixListStock>[] {
   return [
     { id: 'item_code', header: 'Item Code', nowrap: true, render: (r) => strong(r.itemCode) },
     {
@@ -198,28 +196,25 @@ export function stockColumns(
       className: 'mono',
       render: (r) => (r.knownRevs.length ? r.knownRevs.map((k) => k.drawingRev).join(', ') : dash),
     },
+  ];
+}
+
+/** Old Stock tab ⋯: Set Rev moves the no-Rev stock onto an Item + Rev. Greyed
+ *  until a Drawing Rev is known for the item (name one on its SO line or Route
+ *  Card first). */
+export function stockRowMenu(
+  r: FixListStock,
+  canSetRev: boolean,
+  onSetRev: (row: FixListStock) => void,
+): RowMenuItem[] {
+  return [
     {
-      id: 'action',
-      header: '',
-      nowrap: true,
-      render: (r) =>
-        canSetRev ? (
-          <div onClick={(e) => e.stopPropagation()}>
-            <button
-              type="button"
-              className="btn btn-sm"
-              disabled={r.knownRevs.length === 0}
-              title={
-                r.knownRevs.length === 0
-                  ? 'No Drawing Rev is known for this item yet — name one on its SO line or Route Card first.'
-                  : undefined
-              }
-              onClick={() => onSetRev(r)}
-            >
-              Set Rev
-            </button>
-          </div>
-        ) : null,
+      key: 'set-rev',
+      label: 'Set Rev',
+      icon: 'pencil',
+      hidden: !canSetRev,
+      disabledReason: r.knownRevs.length === 0 ? 'No Rev known yet' : undefined,
+      onSelect: () => onSetRev(r),
     },
   ];
 }

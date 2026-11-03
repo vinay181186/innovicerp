@@ -12,6 +12,7 @@
 import { DC_STATUSES, type DeliveryChallanListLine } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
+import { fmtQty } from '@/lib/qty-format';
 import { createdByColumn, type DataTableColumn, leadColumns } from '@/ui/data';
 import { DC_STATUS_LABEL } from '../lib/dc-status-label';
 import { DcStatusBadge } from './dc-status-badge';
@@ -131,12 +132,8 @@ export function dcListColumns(
       header: 'Sent Qty',
       align: 'right',
       nowrap: true,
-      // Whole pieces print whole (12, not 12.00); a real fraction keeps ≤2dp.
-      render: (dc) => (
-        <span className="mono fw-700">
-          {Number(dc.qty).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-        </span>
-      ),
+      // Whole pieces print whole (12, not 12.00); a real fraction keeps ≤3dp.
+      render: (dc) => <span className="mono fw-700">{fmtQty(dc.qty)}</span>,
     },
     {
       id: 'dc_status',

@@ -68,7 +68,7 @@ export async function listPartyStockLedger(
           OR psl.balance_after::text ILIKE ${pat} ESCAPE '\\'
           OR ${SOURCE_DOC_LABEL_SQL} ILIKE ${pat} ESCAPE '\\'
           OR u.full_name ILIKE ${pat} ESCAPE '\\'
-          OR to_char(psl.created_at AT TIME ZONE 'Asia/Kolkata', 'DD-Mon-YYYY') ILIKE ${pat} ESCAPE '\\'
+          OR to_char(psl.created_at AT TIME ZONE 'Asia/Kolkata', 'DD-MM-YYYY') ILIKE ${pat} ESCAPE '\\'
         )`
       : sql``;
     // ONE WHERE for the page and the count, so the total follows the search.

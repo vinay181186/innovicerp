@@ -1,5 +1,7 @@
 // The Route Card sheet's ⋯ row menu (owner-approved spec 2026-10-01):
-//   Edit · Preview · Download PDF · ─ · Move to Trash
+//   Show operations · Edit · Preview · Download PDF · ─ · Move to Trash
+// "Show operations" opens the op sequence under the row — it replaced the
+// row's ▸ (no ▸ on a list row, owner 2026-10-31).
 // No View — the row click already opens the card.
 //
 // ADR-232: the Access Control ticks alone decide — Edit shows with the
@@ -14,11 +16,16 @@ import { usePrintRouteCard } from './print-route-card-button';
 
 export function RouteCardRowMenu({
   rc,
+  opsOpen,
+  onToggleOps,
   canEdit,
   onDelete,
   deleteDisabled,
 }: {
   rc: RouteCardListItem;
+  /** The op sequence is open under this row. */
+  opsOpen: boolean;
+  onToggleOps: () => void;
   canEdit: boolean;
   /** Opens the page's own reason dialog; undefined = no delete right. */
   onDelete: (() => void) | undefined;
@@ -32,6 +39,12 @@ export function RouteCardRowMenu({
       editTo={canEdit ? `/route-cards/${rc.id}/edit` : undefined}
       renderLink={(p) => <Link {...p} />}
       items={[
+        {
+          key: 'ops',
+          label: opsOpen ? 'Hide operations' : `Show operations (${rc.opCount})`,
+          icon: 'eye',
+          onSelect: onToggleOps,
+        },
         { key: 'preview', label: 'Preview', icon: 'eye', onSelect: print.preview },
         { key: 'download', label: 'Download PDF', icon: 'download', onSelect: print.download },
         {

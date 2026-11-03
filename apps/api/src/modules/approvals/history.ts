@@ -92,12 +92,12 @@ function branches(companyId: string, s: ApproverScope): SQL[] {
         jc.id::text, NULL::text, NULL::text,
         -- Same text as timeChangeRequestText (waiting-text.ts).
         CASE WHEN r.prev_log_date = r.requested_log_date
-          THEN 'Start ' || COALESCE(left(r.prev_start_time::text, 5), '—') || ' → '
-            || COALESCE(left(r.requested_start_time::text, 5), '—')
-          ELSE to_char(r.prev_log_date, 'DD-Mon-YYYY') || ' '
-            || COALESCE(left(r.prev_start_time::text, 5), '—') || ' → '
-            || to_char(r.requested_log_date, 'DD-Mon-YYYY') || ' '
-            || COALESCE(left(r.requested_start_time::text, 5), '—')
+          THEN 'Start ' || COALESCE(to_char(r.prev_start_time, 'HH12:MI AM'), '—') || ' → '
+            || COALESCE(to_char(r.requested_start_time, 'HH12:MI AM'), '—')
+          ELSE to_char(r.prev_log_date, 'DD-MM-YYYY') || ' '
+            || COALESCE(to_char(r.prev_start_time, 'HH12:MI AM'), '—') || ' → '
+            || to_char(r.requested_log_date, 'DD-MM-YYYY') || ' '
+            || COALESCE(to_char(r.requested_start_time, 'HH12:MI AM'), '—')
         END || COALESCE(' · ' || NULLIF(btrim(r.reason), ''), ''),
         r.status::text, ${nameOf('du')}, COALESCE(r.decided_at, r.updated_at), r.decision_reason
       FROM public.op_log_time_change_requests r

@@ -4,7 +4,8 @@
 
 import type { DashTone } from '@innovic/shared';
 
-export const fmtQty = (n: number): string => n.toLocaleString('en-IN');
+/** Quantities: THE shared format (whole stays whole, ≤3 decimals). */
+export { fmtQty } from '@/lib/qty-format';
 export const fmtAmount = (n: number): string =>
   `₹${n.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
 

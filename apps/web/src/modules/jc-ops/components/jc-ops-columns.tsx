@@ -47,8 +47,9 @@ const OUTSOURCE_STATUS_LABELS: Record<string, string> = {
 };
 
 const OUTSOURCE_STATUS_COLOR: Record<string, string> = {
-  pending: 'var(--text3)',
-  pr_raised: 'var(--amber)',
+  // Owner 2026-11-03: Pending blue; PR Raised blue as in the shared op map.
+  pending: 'var(--blue)',
+  pr_raised: 'var(--blue)',
   po_created: 'var(--blue)',
   sent: 'var(--amber)',
   received: 'var(--cyan)',

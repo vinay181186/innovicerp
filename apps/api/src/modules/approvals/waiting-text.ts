@@ -12,7 +12,7 @@ import {
   type DocumentEditEntity,
 } from '@innovic/shared';
 import { timestampMs } from '../../lib/edit-conflict';
-import { fmtDate } from '../../lib/format-date';
+import { fmtClock, fmtDate } from '../../lib/format-date';
 
 /** typeKey of an edit request on one document type. */
 export const editTypeKey = (entity: DocumentEditEntity): string => `edit:${entity}`;
@@ -58,10 +58,10 @@ export const poRequestText = (amount: number | null): string =>
   amount == null ? 'Release PO' : `Release PO · ${formatRupees(amount)}`;
 
 export const RC_REQUEST_TEXT = 'New Route Card';
-const hhmm = (t: string | null): string => (t ? t.slice(0, 5) : '—');
+const hhmm = (t: string | null): string => fmtClock(t, '—');
 
-/** "Start 08:00 → 06:00 · forgot to log", or with the dates when the day
- *  moves: "31-Oct-2026 08:00 → 30-Oct-2026 06:00 · forgot to log". */
+/** "Start 08:00 AM → 06:00 AM · forgot to log", or with the dates when the
+ *  day moves: "31-10-2026 08:00 AM → 30-10-2026 06:00 AM · forgot to log". */
 export function timeChangeRequestText(t: {
   prevLogDate: string;
   prevStartTime: string | null;
@@ -92,16 +92,19 @@ export interface DayLogSide {
 }
 
 const orDash = (v: string | null | undefined): string => (v == null || v === '' ? '—' : v);
+/** A stored clock time on the 12-hour dial ("17:30" → "05:30 PM"), '—' when blank. */
+const clockOrDash = (v: string | null | undefined): string => orDash(v ? fmtClock(v) : v);
 
-/** "Stop 17:30 → 18:15" — each part only when it differs; "No change" when
+/** "Stop 05:30 PM → 06:15 PM" — each part only when it differs; "No change" when
  *  nothing differs (an edit re-sent with its old values). */
 export function dayLogRequestText(current: DayLogSide, proposed: DayLogSide): string {
   const parts: string[] = [];
   if ((current.fromTime ?? '') !== (proposed.fromTime ?? '')) {
-    parts.push(`Start ${orDash(current.fromTime)} → ${orDash(proposed.fromTime)}`);
+    parts.push(`Start ${clockOrDash(current.fromTime)} → ${clockOrDash(proposed.fromTime)}`);
   }
   const stopDiffers = (current.toTime ?? '') !== (proposed.toTime ?? '');
-  if (stopDiffers) parts.push(`Stop ${orDash(current.toTime)} → ${orDash(proposed.toTime)}`);
+  if (stopDiffers)
+    parts.push(`Stop ${clockOrDash(current.toTime)} → ${clockOrDash(proposed.toTime)}`);
   if (current.description !== proposed.description) parts.push('Description changed');
   if ((current.orderCode ?? '') !== (proposed.orderCode ?? '')) {
     parts.push(`SO ${orDash(current.orderCode)} → ${orDash(proposed.orderCode)}`);

@@ -599,7 +599,7 @@ async function addProgressComment(
 }
 
 /** The 409 for a status change someone else made first: "Already completed
- *  by Jinal at 31-Oct-2026 14:32" (IST). */
+ *  by Jinal at 31-10-2026 02:32 PM" (IST). */
 async function statusConflict(
   tx: DbTransaction,
   taskId: string,

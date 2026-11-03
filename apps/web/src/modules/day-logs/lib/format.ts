@@ -2,7 +2,8 @@
 // server's `summary` / row figures carry every number the user is judged by;
 // these only turn loaded data into chips, date labels and a ticking clock.
 
-import { fmt12, hhmmToMin } from '@innovic/shared';
+import { hhmmToMin } from '@innovic/shared';
+import { fmtDate, fmtTime } from '@/lib/date';
 
 /** Calendar day ± n, "YYYY-MM-DD" (UTC arithmetic, so no DST/zone drift). */
 export function shiftDate(date: string, n: number): string {
@@ -17,11 +18,6 @@ export function weekday(date: string): string {
   return WEEKDAYS[new Date(`${date}T00:00:00Z`).getUTCDay()] ?? '';
 }
 
-/** "26-10-2026". */
-export function fmtDmy(date: string): string {
-  return `${date.slice(8, 10)}-${date.slice(5, 7)}-${date.slice(0, 4)}`;
-}
-
 /** The server's clock moved on by the time since it answered — display only
  *  (the time picker's "Now" and its upper limit). */
 export function liveNowMin(serverNow: string, fetchedAt: number, nowMs: number): number {
@@ -29,27 +25,13 @@ export function liveNowMin(serverNow: string, fetchedAt: number, nowMs: number):
   return Math.min(24 * 60 - 1, hhmmToMin(serverNow) + drift);
 }
 
-const IST = new Intl.DateTimeFormat('en-GB', {
-  timeZone: 'Asia/Kolkata',
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-  hour: '2-digit',
-  minute: '2-digit',
-  hourCycle: 'h23',
-});
-
 /** A timestamp in IST as { date: "29-10-2026", time: "03:10 PM" } — how the
- *  Day Log shows reply and revision times (ADR-255). Unparseable → "—". */
+ *  Day Log shows reply and revision times (ADR-255). The app's one date /
+ *  time format (lib/date). Unparseable → "—". */
 export function istStamp(ts: string | null | undefined): { date: string; time: string } {
   const d = ts ? new Date(ts) : null;
-  if (!d || Number.isNaN(d.getTime())) return { date: '—', time: '—' };
-  const parts = IST.formatToParts(d);
-  const get = (t: string): string => parts.find((p) => p.type === t)?.value ?? '';
-  return {
-    date: `${get('day')}-${get('month')}-${get('year')}`,
-    time: fmt12(`${get('hour')}:${get('minute')}`),
-  };
+  if (!ts || !d || Number.isNaN(d.getTime())) return { date: '—', time: '—' };
+  return { date: fmtDate(ts), time: fmtTime(ts, '—') };
 }
 
 /** "29-10-2026 03:10 PM". */

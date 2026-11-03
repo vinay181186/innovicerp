@@ -12,7 +12,7 @@ import { useDailyReportDetail } from '../api';
 const LINE_STATUS_BADGE: Record<DailyReportLineStatus, string> = {
   completed: 'badge b-green',
   in_progress: 'badge b-amber',
-  pending: 'badge b-grey',
+  pending: 'badge b-blue', // owner 2026-11-03: Pending blue
   blocked: 'badge b-red',
 };
 

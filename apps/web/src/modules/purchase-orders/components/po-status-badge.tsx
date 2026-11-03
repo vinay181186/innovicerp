@@ -1,6 +1,8 @@
 // PO status → legacy .badge .b-* class (UI-002).
 // draft=grey (pre-active) → open=blue (active) → closed=green (terminal good)
-// → cancelled=grey.
+// → cancelled=red (owner 2026-11-03). Same colours as the shared map
+// (ui/core/StatusBadge.tsx kind="po"); this copy is kept because
+// sc-dashboard/components/sc-format.ts imports the class map.
 //
 // ADR-222: the retired `partial` / `qc_pending` codes take the SAME blue as
 // open, so one of the seven old rows that still hold them is indistinguishable
@@ -16,7 +18,7 @@ export const PO_STATUS_BADGE_CLASSES: Record<PoStatus, string> = {
   partial: 'b-blue',
   qc_pending: 'b-blue',
   closed: 'b-green',
-  cancelled: 'b-grey',
+  cancelled: 'b-red',
 };
 
 export function PoStatusBadge(props: { status: PoStatus; draft?: boolean | undefined }) {

@@ -40,6 +40,7 @@ import { customerMaterialReturnLines, customerMaterialReturns } from '../../db/s
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { lockDocSeries } from '../../lib/doc-series-lock';
+import { fmtDateTime } from '../../lib/format-date';
 import {
   AuthorizationError,
   ConflictError,
@@ -906,7 +907,7 @@ export async function cancelCustomerMaterialReturnTx(
     throw new ConflictError(
       `${n.code} is already cancelled` +
         (n.byName ? ` by ${n.byName}` : '') +
-        (n.cancelledAt != null ? ` at ${tsLike(n.cancelledAt)}` : '') +
+        (n.cancelledAt != null ? ` at ${fmtDateTime(tsLike(n.cancelledAt))}` : '') +
         `. Refresh the page.`,
     );
   }

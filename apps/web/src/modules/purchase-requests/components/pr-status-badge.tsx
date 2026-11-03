@@ -1,26 +1,20 @@
-// PR status → .badge .b-* class (UI-002).
-// One colour per status across the app (R5 settled map, same as the PO badge):
-// Open / Approved (awaiting the next step) blue → PO Created green →
-// Cancelled grey.
+// PR status chip — a thin wrapper over the ONE shared map
+// (ui/core/StatusBadge.tsx kind="pr"): Open / Approved blue → PO Created green
+// → Cancelled red (owner 2026-11-03). Words stay PR_STATUS_LABELS.
 
 import type { PrStatus } from '@innovic/shared';
+import { StatusBadge } from '@/ui/core';
 import { PR_STATUS_LABELS } from '../lib/pr-labels';
 
-const CLASSES: Record<PrStatus, string> = {
-  open: 'b-blue',
-  approved: 'b-blue',
-  po_created: 'b-green',
-  cancelled: 'b-grey',
-};
-
 export function PrStatusBadge(props: { status: PrStatus; draft?: boolean | undefined }) {
-  // ADR-202 — a pending edit overlays grey "Draft" in place of the real status.
-  if (props.draft) {
-    return (
-      <span className="badge b-grey" title="An edit to this document is waiting for approval">
-        Draft
-      </span>
-    );
-  }
-  return <span className={`badge ${CLASSES[props.status]}`}>{PR_STATUS_LABELS[props.status]}</span>;
+  // ADR-202 — a pending edit overlays grey "Draft" in place of the real status
+  // (StatusBadge draws the same overlay).
+  return (
+    <StatusBadge
+      kind="pr"
+      status={props.status}
+      label={PR_STATUS_LABELS[props.status]}
+      draft={props.draft}
+    />
+  );
 }

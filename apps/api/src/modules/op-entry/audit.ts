@@ -3,6 +3,7 @@
 // the op the same way.
 
 import { opSrNo } from '@innovic/shared';
+import { fmtClock, fmtDate } from '../../lib/format-date';
 
 /** `opRef` on an activity_log row: "Op 20 · Turning" (docs/AUDIT-TRAIL.md). */
 export function jcOpRef(opSeq: number, operation: string | null | undefined): string {
@@ -10,7 +11,9 @@ export function jcOpRef(opSeq: number, operation: string | null | undefined): st
   return name ? `Op ${opSrNo(opSeq)} · ${name}` : `Op ${opSrNo(opSeq)}`;
 }
 
-/** "2026-09-28 14:05" / "2026-09-28" — a log entry's date + clock time. */
+/** "28-09-2026 02:05 PM" / "28-09-2026" — a log entry's date + clock time, in
+ *  the one display format (lib/format-date, owner decision 2026-11-03). */
 export function logWhen(date: string, time: string | null | undefined): string {
-  return time ? `${date} ${time.slice(0, 5)}` : date;
+  const clock = fmtClock(time);
+  return clock ? `${fmtDate(date)} ${clock}` : fmtDate(date);
 }

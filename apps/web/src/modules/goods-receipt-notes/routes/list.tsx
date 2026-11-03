@@ -24,7 +24,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
-import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
 import { usePendingEditIds } from '@/modules/document-edits/api';
@@ -275,12 +274,7 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
             </Link>
           ) : null
         }
-      >
-        {/* Read-only context tile: the three filtering tiles (Total / QC
-            Pending / QC Cleared) moved into the QC-status dropdown's option
-            labels; "Today" has no filter behind it, so it stays here. */}
-        {data?.summary ? <GrnTodayStrip today={data.summary.today} /> : null}
-      </ListHeader>
+      />
 
       {isError ? (
         <PageState
@@ -357,14 +351,13 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
 
 // PL-GRN-1b — legacy renderGRN L26483–26488 showed four tiles. Total / QC
 // Pending / QC Cleared filtered by qcStatus; they are now the counts in the
-// QC-status dropdown (2026-09-26 filter bar). "Today" never filtered — it is
-// context only — so it stays as a read-only tile.
+// QC-status dropdown (2026-09-26 filter bar). "Today" never filtered; its
+// read-only tile was dropped 2026-11-03 (owner: no tile row above any list).
 
 interface GrnSummary {
   total: number;
   qcPending: number;
   qcCleared: number;
-  today: number;
 }
 
 /** "Label (N)" when a count is known, bare label otherwise. */
@@ -385,21 +378,4 @@ function qcCountFor(
   if (s === 'pending') return summary.qcPending;
   if (s === 'completed') return summary.qcCleared;
   return undefined;
-}
-
-function GrnTodayStrip({ today }: { today: number }): React.JSX.Element {
-  return (
-    <StatStrip
-      items={[
-        {
-          // Read-only total (no onClick) — legacy showed a "Today" count for
-          // context only, with no filter behind it.
-          key: 'today',
-          label: 'Today',
-          count: today,
-          color: 'var(--blue)',
-        },
-      ]}
-    />
-  );
 }

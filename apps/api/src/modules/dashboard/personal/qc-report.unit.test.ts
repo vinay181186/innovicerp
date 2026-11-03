@@ -53,7 +53,7 @@ describe('qc_report_missing', () => {
       rowCtx(uploader),
     );
     expect(row.docHref).toBe(`/job-cards/${raw().id}`);
-    expect(row.sub).toEqual([{ text: 'DIR · POL 20 · Accepted 8 · 21-Oct' }]);
+    expect(row.sub).toEqual([{ text: 'DIR · POL 20 · Accepted 8 · 21-10' }]);
     expect(row.actions).toEqual([
       {
         kind: 'create',

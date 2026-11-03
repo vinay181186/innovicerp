@@ -25,7 +25,7 @@ describe('closeBlockedReason (ADR-170 + partial close ADR-179)', () => {
         status: 'short_closed',
         shortClosedAt: '2026-09-24T06:15:00.000Z',
       }),
-    ).toBe('No further close — this order was short closed on 2026-09-24');
+    ).toBe('No further close — this order was short closed on 24-09-2026');
   });
 
   it('never prints the word "null" when a short-closed row has no date', () => {

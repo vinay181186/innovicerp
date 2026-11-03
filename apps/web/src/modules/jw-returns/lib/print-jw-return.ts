@@ -12,6 +12,7 @@
 import type { Client, Company, JwReturnChallanListItem } from '@innovic/shared';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { buildDocCompany } from '@/lib/print/company';
+import { fmtQty } from '@/lib/qty-format';
 import { partyForPrint } from '@/lib/print/party-copy';
 import { type SheetField, challanDate, openSheetPrintWindow } from '@/lib/print/sheet-print';
 
@@ -68,11 +69,11 @@ export function printJwReturnChallan(
         itemName: r.partName,
         uom,
         hsn: r.hsnCode?.trim() || null,
-        qty: r.qty.toFixed(2),
+        qty: fmtQty(r.qty, ''),
         remarks: r.remarks,
       },
     ],
-    totalQty: r.qty.toFixed(2),
+    totalQty: fmtQty(r.qty, ''),
     totalUom: uom,
   });
 }

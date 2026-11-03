@@ -37,9 +37,9 @@ describe('cancel-request messages (ADR-235)', () => {
   });
 
   it('formats the decided time in IST', () => {
-    expect(formatIst(new Date('2026-10-24T09:02:00Z'))).toBe('24-10-2026 14:32');
+    expect(formatIst(new Date('2026-10-24T09:02:00Z'))).toBe('24-10-2026 02:32 PM');
     expect(alreadyDecidedMessage('IN-INV-1', 'rejected', 'Rakesh', '2026-10-24T09:02:00Z')).toBe(
-      'The cancel request for IN-INV-1 was already rejected by Rakesh at 24-10-2026 14:32 — reload the page.',
+      'The cancel request for IN-INV-1 was already rejected by Rakesh at 24-10-2026 02:32 PM — reload the page.',
     );
     expect(alreadyDecidedMessage('IN-INV-1', 'approved', null, null)).toBe(
       'The cancel request for IN-INV-1 was already approved — reload the page.',

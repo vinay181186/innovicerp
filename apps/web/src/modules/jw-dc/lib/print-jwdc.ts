@@ -18,6 +18,7 @@ import {
 } from '@/lib/print/sheet-print';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { buildDocCompany, companyAddressLines } from '@/lib/print/company';
+import { fmtQty } from '@/lib/qty-format';
 import { fmtDate, templatesToBlocks } from '@/lib/print/doc-print';
 
 export function printJwDc(args: {
@@ -120,9 +121,9 @@ export function printJwDc(args: {
       // HSN lives on the item master and the JW DC line does not carry it, so
       // the column prints blank.
       hsn: null,
-      qty: l.sentQty.toFixed(2),
+      qty: fmtQty(l.sentQty, ''),
     })),
-    totalQty: totalQty.toFixed(2),
+    totalQty: fmtQty(totalQty, ''),
     totalUom,
   };
 

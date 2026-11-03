@@ -305,7 +305,7 @@ describe('India-time days', () => {
     });
     expect(util.statusFor('2026-10-22', null, '2026-10-22').tone).toBe('due');
     expect(util.statusFor('2026-10-25', null, '2026-10-22')).toEqual({
-      statusLabel: 'due 25-Oct',
+      statusLabel: 'due 25-10',
       tone: 'ok',
     });
     expect(util.statusFor(null, '2026-10-16', '2026-10-22').statusLabel).toBe('6 days');

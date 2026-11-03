@@ -180,7 +180,7 @@ function digestCellText(code: string, key: string, value: string | number | null
   const text = String(value);
   const mapped = DIGEST_STATUS_LABELS[code]?.[key]?.[text];
   if (mapped) return mapped;
-  // Dates read DD-MMM-YYYY (IST), never the raw YYYY-MM-DD the query returns.
+  // Dates read DD-MM-YYYY (IST), never the raw YYYY-MM-DD the query returns.
   if (typeof value === 'string' && isIsoDateLike(text)) return fmtDate(text);
   if (key.endsWith('status') && /^[a-z0-9_]+$/.test(text)) {
     return text

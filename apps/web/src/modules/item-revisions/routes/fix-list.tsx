@@ -13,7 +13,7 @@
 // empties itself as the team fixes rows.
 
 import type { FixListStock } from '@innovic/shared';
-import { createRoute } from '@tanstack/react-router';
+import { Link, createRoute } from '@tanstack/react-router';
 import { useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -22,7 +22,13 @@ import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListHeader, PageState } from '@/ui/layout';
 import { TabStrip } from '@/ui/navigation';
 import { useItemRevisionFixList } from '../api';
-import { lineColumns, routeCardColumns, stockColumns } from '../components/fix-list-columns';
+import {
+  lineColumns,
+  routeCardColumns,
+  routeCardRowMenu,
+  stockColumns,
+  stockRowMenu,
+} from '../components/fix-list-columns';
 import { SetStockRevDialog } from '../components/set-stock-rev-dialog';
 
 export const drawingRevFixListRoute = createRoute({
@@ -90,6 +96,8 @@ function DrawingRevFixListPage(): React.JSX.Element {
             rows={routeCards}
             loading={isLoading}
             rowKey={(r) => r.routeCardId}
+            rowMenu={(r) => routeCardRowMenu(r, canEditRc)}
+            renderLink={(p) => <Link {...p} />}
             emptyText="Every Route Card has its Drawing Rev."
           />
         ) : tab === 'lines' ? (
@@ -104,10 +112,11 @@ function DrawingRevFixListPage(): React.JSX.Element {
         ) : (
           <DataTable
             tableKey={TABLE_KEYS.drawingRevFixStock}
-            columns={stockColumns(canSetRev, setStockRow)}
+            columns={stockColumns()}
             rows={stock}
             loading={isLoading}
             rowKey={(r) => r.itemId}
+            rowMenu={(r) => stockRowMenu(r, canSetRev, setStockRow)}
             emptyText="No old stock without a Drawing Rev."
           />
         )}

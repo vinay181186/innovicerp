@@ -17,7 +17,7 @@ import {
 
 /** One field a service wants compared on Edit. `label` is the screen label
  *  from docs/NAMING.md; `format` turns the raw value into what a person reads
- *  (a vendor id → its code, a date → DD-MMM-YYYY). */
+ *  (a vendor id → its code, a date → DD-MM-YYYY). */
 export interface DiffField {
   key: string;
   label: string;

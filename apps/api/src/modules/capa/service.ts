@@ -207,9 +207,9 @@ function capaSearchSql(term: string | undefined) {
     CAPA_NC_REFS_TEXT,
     sql`${capaRecords.problem}`,
     sql`${capaRecords.responsible}`,
-    sql`to_char(${capaRecords.targetDate}, 'DD-Mon-YYYY')`,
+    sql`to_char(${capaRecords.targetDate}, 'DD-MM-YYYY')`,
     sql`${capaRecords.status}`,
-    sql`to_char(${capaRecords.capaDate}, 'DD-Mon-YYYY')`,
+    sql`to_char(${capaRecords.capaDate}, 'DD-MM-YYYY')`,
     sql`${capaRecords.rootCause}`,
     sql`${capaRecords.jcNo}`,
   ];

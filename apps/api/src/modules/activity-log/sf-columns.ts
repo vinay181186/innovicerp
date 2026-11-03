@@ -12,7 +12,8 @@ import type { SfColumnMap } from '../../lib/list-query';
 export const ACTIVITY_LOG_SF_COLUMNS: SfColumnMap = {
   logDate: { sql: sql`(${activityLog.ts} AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
   logTime: {
-    sql: sql`to_char(${activityLog.ts} AT TIME ZONE 'Asia/Kolkata', 'HH24:MI')`,
+    sql: sql`to_char(${activityLog.ts} AT TIME ZONE 'Asia/Kolkata', 'HH12:MI AM')`,
+    sortSql: sql`(${activityLog.ts} AT TIME ZONE 'Asia/Kolkata')::time`,
     type: 'text',
   },
   action: { sql: sql`${activityLog.action}`, type: 'list' },

@@ -19,7 +19,7 @@
 import { SHIFT_LABELS, type OpLog, type OpLogTimeChangeRequest } from '@innovic/shared';
 import { Check, Clock, Loader2, Pencil, X } from 'lucide-react';
 import { useState } from 'react';
-import { fmtDate, fmtDateAndTime, fmtDateTime, todayIst } from '@/lib/date';
+import { fmtClock, fmtDate, fmtDateAndTime, fmtDateTime, todayIst } from '@/lib/date';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useDecideOpLogTimeChange, useOpLogTimeChangeRequests, useUpdateOpLogTiming } from '../api';
 
@@ -227,7 +227,7 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
                   ) : (
                     <span className="mono" style={{ fontSize: 12, fontWeight: 600 }}>
                       {fmtDate(l.logDate)}
-                      {hhmm(l.startTime) ? ` · ${hhmm(l.startTime)}` : ''}
+                      {fmtClock(l.startTime) ? ` · ${fmtClock(l.startTime)}` : ''}
                     </span>
                   )}
                 </div>

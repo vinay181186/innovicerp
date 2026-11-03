@@ -6,12 +6,13 @@
 // JC cascade fires server-side.
 
 import type { CreateDeliveryChallanReceiptInput } from '@innovic/shared';
-import { QTY_DECIMALS, qtyStepForUom, qtyUomProblem, roundQty } from '@innovic/shared';
+import { qtyStepForUom, qtyUomProblem, roundQty } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { todayIst } from '@/lib/date';
+import { fmtQty } from '@/lib/qty-format';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSaveKey } from '@/lib/use-save-key';
@@ -29,10 +30,6 @@ export const deliveryChallanReceiveRoute = createRoute({
 });
 
 const RECEIVE_FORM_ID = 'dc-receive-form';
-
-/** Up to 3 decimals (S9): 2.5 KGS reads 2.5, 10 NOS reads 10. */
-const fmtQty = (n: number): string =>
-  n.toLocaleString('en-IN', { maximumFractionDigits: QTY_DECIMALS });
 
 interface LineDraft {
   dcLineId: string;

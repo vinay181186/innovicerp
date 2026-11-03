@@ -122,7 +122,7 @@ describe('lineRows', () => {
     const rows = lineRows(l);
     expect(rows.map((r) => r.kind)).toEqual(['missing', 'file']);
     const first = rows[0];
-    expect(first && first.entry ? entryLabel(first.entry) : '').toBe('Accepted 15 · 20-Oct');
+    expect(first && first.entry ? entryLabel(first.entry) : '').toBe('Accepted 15 · 20-10');
     expect(lineRows(l, 'MIR')).toEqual([]);
   });
 });

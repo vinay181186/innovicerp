@@ -1,25 +1,20 @@
-// SO status → legacy .badge .b-* class (UI-002).
-// Mapping per docs/STYLE_GUIDE.md "SO (Sales Order) status → badge class".
+// SO status chip — a thin wrapper over the ONE shared map
+// (ui/core/StatusBadge.tsx kind="so"), so the colour can never drift from it.
+// Owner 2026-11-03: Cancelled red. Words stay SO_STATUS_LABEL.
 
 import type { SoStatus } from '@innovic/shared';
+import { StatusBadge } from '@/ui/core';
 import { SO_STATUS_LABEL } from '../lib/so-status-label';
 
-const CLASSES: Record<SoStatus, string> = {
-  draft: 'b-grey',
-  open: 'b-blue',
-  closed: 'b-green',
-  dispatched: 'b-green',
-  cancelled: 'b-grey',
-};
-
 export function SoStatusBadge(props: { status: SoStatus; draft?: boolean | undefined }) {
-  // ADR-202 — a pending edit overlays grey "Draft" in place of the real status.
-  if (props.draft) {
-    return (
-      <span className="badge b-grey" title="An edit to this document is waiting for approval">
-        Draft
-      </span>
-    );
-  }
-  return <span className={`badge ${CLASSES[props.status]}`}>{SO_STATUS_LABEL[props.status]}</span>;
+  // ADR-202 — a pending edit overlays grey "Draft" in place of the real status
+  // (StatusBadge draws the same overlay).
+  return (
+    <StatusBadge
+      kind="so"
+      status={props.status}
+      label={SO_STATUS_LABEL[props.status]}
+      draft={props.draft}
+    />
+  );
 }

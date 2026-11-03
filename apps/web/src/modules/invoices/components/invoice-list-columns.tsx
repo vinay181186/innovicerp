@@ -24,14 +24,23 @@ const INVOICE_STATUS_LABEL: Record<string, string> = {
   // ADR-202 Phase 3 — a reason-logged cancel replaces editing a statutory doc.
   cancelled: 'Cancelled',
 };
-const INVOICE_STATUS_OPTIONS = Object.entries(INVOICE_STATUS_LABEL).map(([value, label]) => ({
-  value,
-  label,
-}));
+/** Invoice counts per status, shown in the Invoice Status ▾ tick list as
+ *  "Unpaid (3)" (owner 2026-11-03: no tile row above a list). */
+export type InvoiceStatusCounts = Partial<Record<string, number>>;
+
+function statusOptions(
+  counts: InvoiceStatusCounts | undefined,
+): { value: string; label: string }[] {
+  return Object.entries(INVOICE_STATUS_LABEL).map(([value, label]) => {
+    const n = counts?.[value];
+    return { value, label: n === undefined ? label : `${label} (${n})` };
+  });
+}
 
 export function invoiceListColumns(
   firstRowNo: number,
   priceHidden: boolean,
+  statusCounts?: InvoiceStatusCounts,
 ): DataTableColumn<InvoiceListRow>[] {
   const moneyColumns: DataTableColumn<InvoiceListRow>[] = priceHidden
     ? []
@@ -119,7 +128,7 @@ export function invoiceListColumns(
       id: 'status',
       kind: 'badge',
       sortFilterField: 'status',
-      filterOptions: INVOICE_STATUS_OPTIONS,
+      filterOptions: statusOptions(statusCounts),
       header: 'Invoice Status',
       nowrap: true,
       render: (r) => (

@@ -51,9 +51,10 @@ export function pgrnQcLabel(state: PgrnQcState, pendingQty: number): string {
   return 'QC done';
 }
 
-/** Badge class per state — the colours the list already used. */
+/** Badge class per state. Waiting QC orange (QC-waiting); Part QC amber like
+ *  every Partly … state in the shared map (owner 2026-11-03). */
 export const PGRN_QC_BADGE: Record<PgrnQcState, string> = {
   waiting: 'b-amber',
-  partial: 'b-blue',
+  partial: 'b-amber',
   done: 'b-green',
 };

@@ -28,6 +28,8 @@
 //      A settled JC that lost EVERY piece (finished 0) is allowed through: the
 //      service closes it with credited_qty 0 and writes no stock row.
 
+import { fmtDate } from './format-date';
+
 export interface CloseGuardInput {
   /** production_orders.status */
   status: string;
@@ -45,10 +47,10 @@ export interface CloseGuardInput {
   shortClosedAt?: string | null;
 }
 
-/** YYYY-MM-DD out of whatever the row carried, so the sentence never shows a
- *  timestamp or the word "null". */
+/** DD-MM-YYYY (IST) out of whatever the row carried, so the sentence never
+ *  shows a timestamp or the word "null" (lib/format-date). */
 function shortCloseDate(v: string | null | undefined): string {
-  return v ? v.slice(0, 10) : 'an earlier date';
+  return v ? fmtDate(v) : 'an earlier date';
 }
 
 /** Null when SOME close action is possible right now; otherwise the plain-English

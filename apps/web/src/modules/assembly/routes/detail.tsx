@@ -937,7 +937,7 @@ function UnitsPanel({
                         Dispatched ✓{u.dispatchDate ? ` ${fmtDate(u.dispatchDate)}` : ''}
                       </span>
                     ) : (
-                      <span className="badge b-amber">Pending</span>
+                      <span className="badge b-blue">Pending</span>
                     )}
                   </td>
                   <td>

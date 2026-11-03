@@ -12,7 +12,7 @@
 //     report's own SQL order.
 //   • column filter: on a number column `>5` `<5` `>=5` `<=5` `=5` or a bare
 //     number; anything else is "contains" (case-insensitive) on the raw value
-//     or the words the grid shows (26-Sep-2026 for a date, "In Progress" for
+//     or the words the grid shows (26-09-2026 for a date, "In Progress" for
 //     a status code).
 //   • totals: a numeric column whose key/label names an additive measure.
 
@@ -22,6 +22,7 @@ import {
   type ReportColumn,
   type ReportRow,
 } from '@innovic/shared';
+import { fmtDate, fmtDateTime, isIsoDateLike } from '../../lib/format-date';
 
 export interface GridParams {
   limit?: number;
@@ -105,15 +106,12 @@ function isSummable(col: ReportColumn, rows: ReportRow[]): boolean {
   return rows.every((r) => isBlank(r[col.key]) || Number.isFinite(Number(r[col.key])));
 }
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-/** The words the grid shows for a cell, for "contains" matching. */
+/** The words the grid shows for a cell, for "contains" matching — dates in
+ *  the one display format (03-11-2026 / 03-11-2026 02:35 PM, lib/format-date). */
 function shownText(col: ReportColumn, v: unknown): string {
   const s = String(v);
-  if (col.type === 'date' || col.type === 'datetime') {
-    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
-    const mon = m ? MONTHS[Number(m[2]) - 1] : undefined;
-    if (m && mon) return `${m[3]}-${mon}-${m[1]}`;
+  if ((col.type === 'date' || col.type === 'datetime') && isIsoDateLike(s)) {
+    return col.type === 'date' ? fmtDate(s) : fmtDateTime(s);
   }
   // Status / type codes show as words (in_progress → in progress).
   if (/(status$|(^|_)type$)/i.test(col.key)) return s.replace(/_/g, ' ');

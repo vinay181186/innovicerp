@@ -5,13 +5,13 @@
 // to components/design-project-columns.tsx); the Add modal moved to
 // components/add-project-modal.tsx. DATA and RULES are unchanged: same query,
 // same dsnproj_create access matrix, same Project filter + its counts, same
-// StatStrip, same search.
+// search. No tile row (owner 2026-11-03: like SO Master) — the read-only
+// Tasks Completed / Open Issues strip was dropped.
 //
 // ADR-201: 25 projects a page (page in the URL). Search, the Project filter and
 // the column ▾ Sort & Filter run on the server over every project; any change of
-// them goes back to page 1. The filter counts and the Tasks / Open Issues strip
-// come from the server over the same search + Sort & Filter (the strip also
-// follows the Project filter — it sums the listed projects).
+// them goes back to page 1. The filter counts come from the server over the
+// same search + Sort & Filter.
 
 import { type DesignProjectListItem } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
@@ -22,7 +22,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { todayIst } from '@/lib/date';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { DataTable, Panel, StatStrip } from '@/ui/data';
+import { DataTable, Panel } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Select } from '@/ui/forms';
@@ -88,15 +88,7 @@ function DesignProjectsListPage(): React.JSX.Element {
     offset: pageOffset(page),
   });
   useClampPage(page, data?.total, gotoPage);
-  const summary = data?.summary ?? {
-    total: 0,
-    active: 0,
-    released: 0,
-    onHold: 0,
-    totalTasks: 0,
-    doneTasks: 0,
-    openIssues: 0,
-  };
+  const summary = data?.summary ?? { total: 0, active: 0, released: 0, onHold: 0 };
 
   const filterCount: Record<FilterKey, number> = {
     all: summary.total,
@@ -178,26 +170,7 @@ function DesignProjectsListPage(): React.JSX.Element {
             </button>
           ) : null
         }
-      >
-        {/* Read-only totals the Project filter dropdown does not carry. The
-            Total / Active / Released / On Hold counts moved into its labels. */}
-        <StatStrip
-          items={[
-            {
-              key: 'tasks',
-              label: 'Tasks Completed',
-              count: `${summary.doneTasks}/${summary.totalTasks}`,
-              color: 'var(--purple)',
-            },
-            {
-              key: 'issues',
-              label: 'Open Issues',
-              count: summary.openIssues,
-              color: summary.openIssues > 0 ? 'var(--red2)' : 'var(--green2)',
-            },
-          ]}
-        />
-      </ListHeader>
+      />
 
       {isError ? (
         <PageState

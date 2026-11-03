@@ -1,7 +1,9 @@
 // Invoices list — Phase 4 migration onto the ui/ primitives.
 //
 // Canonical LIST composition (design-ref/README.md "Uniformity rule"):
-//   TabStrip (SO ▸ JW view switch) → ListHeader(+StatStrip) → DataTable → ListFooter
+//   TabStrip (SO ▸ JW view switch) → ListHeader → DataTable → ListFooter
+//   (owner 2026-11-03: no tile row above a list — the Unpaid / Partly Paid /
+//   Paid counts ride in the Invoice Status ▾ tick list; the money totals went.)
 //
 // Behaviour is carried over unchanged from the legacy plain-table version
 // (mirror of legacy renderInvoices, L21096): the same `useInvoiceList` fetch,
@@ -9,8 +11,8 @@
 // same "money hidden for L1 viewers" column drop, the same row targets.
 //
 // ADR-261 (owner 2026-10-31): ONE ROW PER INVOICE LINE (GET /invoices/lines),
-// locked lead block first. The stat strip still counts INVOICES; the row click
-// and ⋯ act on the invoice.
+// locked lead block first. The status counts still count INVOICES; the row
+// click and ⋯ act on the invoice.
 
 import type { ListInvoicesQuery } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
@@ -21,13 +23,13 @@ import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib
 import { JwInvoiceView } from '@/modules/jw-invoices/components/jw-invoice-view';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { DataTable, Panel, StatStrip, type StatStripItem } from '@/ui/data';
+import { DataTable, Panel } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { TabStrip } from '@/ui/navigation';
 import { useInvoiceLineList } from '../api';
-import { invoiceListColumns } from '../components/invoice-list-columns';
+import { invoiceListColumns, type InvoiceStatusCounts } from '../components/invoice-list-columns';
 import { useInvoicePrint } from '../components/use-invoice-print';
 import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
 
@@ -52,8 +54,6 @@ export const invoiceListRoute = createRoute({
   component: InvoiceListPage,
 });
 
-const inr = (v: number): string => `₹${Math.round(v).toLocaleString('en-IN')}`;
-
 const TABS = [
   { key: 'so', label: 'SO Invoices' },
   { key: 'jw', label: 'JW Invoices (Labour)' },
@@ -66,7 +66,7 @@ function InvoiceListPage(): React.JSX.Element {
     () => routeSearch.tab ?? (routeSearch.jw ? 'jw' : 'so'),
   );
   // ADR-201: one 25-row page from the server; search + Sort & Filter + the
-  // stat strip run there over EVERY invoice. Any change → page 1.
+  // status counts run there over EVERY invoice. Any change → page 1.
   const page = routeSearch.page;
   const gotoPage = useCallback(
     (p: number) =>
@@ -95,6 +95,19 @@ function InvoiceListPage(): React.JSX.Element {
     [term, sf.param, page],
   );
   const { data, isLoading, isFetching, isError, error } = useInvoiceLineList(query);
+  // Status counts for the Invoice Status ▾ tick list. While a status is ticked,
+  // the counts come from the same list WITHOUT that filter (limit 1: only the
+  // summary is read), so ticking "Unpaid" does not turn the others into "(0)".
+  // With no status filter it is the very same query — no second request.
+  const statusFiltered = 'status' in sf.value.filters;
+  const countQuery: ListInvoicesQuery = useMemo(
+    () =>
+      statusFiltered
+        ? { search: term || undefined, sf: sf.paramWithout('status'), limit: 1, offset: 0 }
+        : query,
+    [statusFiltered, term, sf, query],
+  );
+  const { data: countData } = useInvoiceLineList(countQuery);
   useClampPage(page, data?.total, gotoPage);
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'invoice_create');
@@ -130,66 +143,22 @@ function InvoiceListPage(): React.JSX.Element {
     );
   }
 
-  const s = data?.summary;
-  // Money hidden for L1 Viewers: the API nulls the summary + row amounts, so the
-  // money stats and the Amount/Paid/Balance columns are dropped (counts stay).
-  // Told by the server, not inferred from a null money field: a null also means
-  // "no value yet", so probing it hid money from users entitled to see it.
+  // Money hidden for L1 Viewers: the API nulls the row amounts, so the
+  // Amount column is dropped. Told by the server, not inferred from a null
+  // money field: a null also means "no value yet", so probing it hid money
+  // from users entitled to see it.
   const priceHidden = data ? !data.priceVisible : false;
 
-  // Legacy L21139-21145 rendered these as 7 separate .panel cards. Counts above
-  // a list are ONE StatStrip (design-ref README, "Uniformity rule"); OVERDUE
-  // keeps its "N inv" sub-line (server-supplied count — never computed here).
-  // None of them filters the list today, so every cell is a plain total: no
-  // `onClick`, so StatStrip renders a <div> and announces nothing clickable.
-  const stats: StatStripItem[] = s
-    ? [
-        ...(priceHidden
-          ? []
-          : [
-              {
-                key: 'invoiced',
-                label: 'Total Invoiced',
-                count: inr(s.totalInvoiced ?? 0),
-                color: 'var(--green2)',
-              },
-              {
-                key: 'received',
-                label: 'Paid Amount',
-                count: inr(s.totalReceived ?? 0),
-                color: 'var(--cyan)',
-              },
-              {
-                key: 'outstanding',
-                label: 'Outstanding Amount',
-                count: inr(s.outstanding ?? 0),
-                color: 'var(--amber2)',
-              },
-              {
-                key: 'overdue',
-                label: 'Overdue',
-                count: inr(s.overdueAmount ?? 0),
-                color: 'var(--red2)',
-                sub: <span style={{ color: 'var(--red2)' }}>{s.overdueCount} inv</span>,
-              },
-            ]),
-        { key: 'unpaid', label: 'Unpaid', count: s.unpaidCount, color: 'var(--red2)', sub: 'inv' },
-        {
-          key: 'partial',
-          label: 'Partly Paid',
-          count: s.partialCount,
-          color: 'var(--amber2)',
-          sub: 'inv',
-        },
-        { key: 'paid', label: 'Paid', count: s.paidCount, color: 'var(--green2)', sub: 'inv' },
-      ]
-    : [];
+  const cs = countData?.summary;
+  const statusCounts: InvoiceStatusCounts | undefined = cs
+    ? { unpaid: cs.unpaidCount, partial: cs.partialCount, paid: cs.paidCount }
+    : undefined;
 
   const openInvoice = (id: string): void => {
     void navigate({ to: '/invoices/$id', params: { id } });
   };
 
-  const columns = invoiceListColumns(pageOffset(page) + 1, priceHidden);
+  const columns = invoiceListColumns(pageOffset(page) + 1, priceHidden, statusCounts);
 
   return (
     // `page-fill` (ADR-202): the SO invoice tab fills the content area and the
@@ -217,9 +186,7 @@ function InvoiceListPage(): React.JSX.Element {
             </Link>
           ) : null
         }
-      >
-        {stats.length > 0 ? <StatStrip items={stats} /> : null}
-      </ListHeader>
+      />
 
       {isError || (!isLoading && !data) ? (
         <PageState

@@ -40,7 +40,7 @@ describe('productionOrderStoppedMessage (ADR-182 wording)', () => {
         jcCode: 'IN-JC-26-00055',
       }),
     ).toBe(
-      'Production Order IN-PRO-00007 was short closed on 2026-09-24 — ' +
+      'Production Order IN-PRO-00007 was short closed on 24-09-2026 — ' +
         'no further work is allowed on Job Card IN-JC-26-00055.',
     );
   });
@@ -119,7 +119,7 @@ describe('assertProductionOrderNotShortClosed', () => {
       ValidationError,
     );
     await expect(assertProductionOrderNotShortClosed(tx, JC_ID)).rejects.toThrow(
-      /IN-PRO-00007 was short closed on 2026-09-24/,
+      /IN-PRO-00007 was short closed on 24-09-2026/,
     );
   });
 });
@@ -146,7 +146,7 @@ describe('assertProductionOrderNotShortClosedForOp', () => {
       [{ po_code: 'IN-PRO-00007', short_closed_on: '2026-09-24', jc_code: 'IN-JC-26-00055' }],
     );
     await expect(assertProductionOrderNotShortClosedForOp(tx, OP_ID)).rejects.toThrow(
-      /IN-PRO-00007 was short closed on 2026-09-24/,
+      /IN-PRO-00007 was short closed on 24-09-2026/,
     );
   });
 

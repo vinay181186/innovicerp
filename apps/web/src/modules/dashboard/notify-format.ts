@@ -31,7 +31,7 @@ export function dayGroup(ts: string): DayGroup {
   return 'Earlier';
 }
 
-/** "just now", "12 min ago", "3 hrs ago" today; "Yesterday 17:40"; else "29-Oct-2026 15:30". */
+/** "just now", "12 min ago", "3 hrs ago" today; "Yesterday 05:40 PM"; else "29-10-2026 03:30 PM". */
 export function relTime(ts: string, now = Date.now()): string {
   const g = dayGroup(ts);
   if (g === 'Today') {

@@ -2,9 +2,9 @@
 //
 // PHASE 4 — composed exactly like the reference list
 // (modules/clients/routes/list.tsx), with the one thing this screen adds:
-// the row's ▸ (the fit table's one expand control, ADR-199) still reveals the
-// part list IN PLACE, right under the row (legacy UX), while the row itself
-// opens the detail page.
+// the row's ⋯ "Show parts" reveals the part list IN PLACE, right under the row
+// (legacy UX), while the row itself opens the detail page. No ▸ on a list row
+// (owner 2026-10-31) — the same ⋯ item Planning uses for a BOM's parts.
 //
 //   <ListHeader>            title · count · ⟳ Updating… · + New BOM; filter bar:
 //                           (25 rows a page, ADR-201; search / status / ▾ on the server)
@@ -201,9 +201,16 @@ function BomMastersListPage(): React.JSX.Element {
             // returning null for a collapsed row means ExpandedLines (and its
             // detail query) never mounts for it.
             renderExpanded={(b) => (expanded.has(b.id) ? <ExpandedLines bomId={b.id} /> : null)}
-            // The fit table's ▸ is the row's one expand control: it opens the
-            // part list too.
-            onToggleExpanded={(b) => toggleExpand(b.id)}
+            // ⋯ Show parts / Hide parts opens the part list under the row (no
+            // ▸ on a list row, owner 2026-10-31).
+            rowMenu={(b) => [
+              {
+                key: 'parts',
+                label: expanded.has(b.id) ? 'Hide parts' : `Show parts (${b.lineCount})`,
+                icon: 'eye',
+                onSelect: () => toggleExpand(b.id),
+              },
+            ]}
           />
         </Panel>
       )}
@@ -273,7 +280,7 @@ function ExpandedLines({ bomId }: { bomId: string }): React.JSX.Element {
         className="mono fw-700"
         style={{ fontSize: 'var(--fs-xs)', color: 'var(--cyan)', marginBottom: 'var(--sp-1)' }}
       >
-        ▸ Part List — {data.bomNo}
+        Part List — {data.bomNo}
       </div>
       {/* `compact` is the nested-line-table density — the same sheet, one step
           tighter, because it sits inside a row of the sheet above it. */}

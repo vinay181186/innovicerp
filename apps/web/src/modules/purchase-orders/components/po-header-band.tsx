@@ -29,12 +29,12 @@ import {
 import { PO_TYPE_LABELS, taxTypeLabel } from '../lib/po-labels';
 
 /** Accent bar — the same reading the status badge already gives: green closed,
- *  grey cancelled, grey draft, blue open. The retired `partial` / `qc_pending`
+ *  red cancelled (owner 2026-11-03), grey draft, blue open. The retired `partial` / `qc_pending`
  *  codes fall through to blue with open (ADR-222): an order on one of those
  *  seven old rows reads as Open everywhere, accent included. */
 function accentFor(status: PurchaseOrderDetail['status']): string {
   if (status === 'closed') return 'var(--green)';
-  if (status === 'cancelled') return 'var(--text3)';
+  if (status === 'cancelled') return 'var(--red)';
   if (status === 'draft') return 'var(--text3)';
   return 'var(--blue)';
 }

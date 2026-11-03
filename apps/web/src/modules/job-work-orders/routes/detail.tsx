@@ -803,9 +803,9 @@ function LineRow(props: {
                 color: 'var(--amber2)',
                 background: 'rgba(245,158,11,0.12)',
               }}
-              title={l.shortCloseReason ? `Short-closed: ${l.shortCloseReason}` : 'Short-closed'}
+              title={l.shortCloseReason ? `Short Closed: ${l.shortCloseReason}` : 'Short Closed'}
             >
-              Short-closed
+              Short Closed
             </span>
           ) : null}
         </div>

@@ -19,10 +19,9 @@
 import { type GoodsReceiptNoteLineDetail, type GrnQcStatus, qtyUomProblem } from '@innovic/shared';
 
 /** Received / Accepted / Deviated may be decimal for KGS / MTR (3 places, 0172);
- *  NOS / SET stay whole, so a whole number still prints without a point. ONE
- *  formatter for every quantity on every GRN surface. */
-export const fmtQty = (n: number): string =>
-  n.toLocaleString('en-IN', { maximumFractionDigits: 3 });
+ *  NOS / SET stay whole, so a whole number still prints without a point. The
+ *  app's ONE quantity formatter, re-exported for every GRN surface. */
+export { fmtQty } from '@/lib/qty-format';
 
 /** Quantities are summed before they are shown, and 0.1 + 0.2 is not 0.3 in
  *  binary — round at the 3 places the column itself stores. */
