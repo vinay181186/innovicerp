@@ -7,14 +7,9 @@
   flex-direction: column;
   gap: var(--sp-2);
   min-width: 0;
-  /* Compact, centred board — not edge to edge on wide monitors (owner 31-Oct). */
+  /* Full screen width — no side space (owner 03-Nov; replaces the 960px
+     centred board of 31-Oct). */
   width: 100%;
-  max-width: 960px;
-  margin-inline: auto;
-}
-/* Home → Approvals: the table needs the full screen width (owner 01-Nov). */
-.dh.dh--wide {
-  max-width: none;
 }
 .dh-code {
   font-family: var(--mono);
