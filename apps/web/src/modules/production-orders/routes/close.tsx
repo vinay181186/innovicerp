@@ -249,7 +249,7 @@ function ProductionOrderClosePage(): React.JSX.Element {
                   code: p.code,
                   // POL (the CUSTOMER's own PO line number) leads the label,
                   // ahead of the item code, and is searchable with it.
-                  name: `${p.clientPoLineNo ? `POL ${p.clientPoLineNo} · ` : ''}${itemCodeWithRev(p.itemCodeText, docDrawingRev(p))} · ${p.planCodeText} · Order Qty ${p.orderQty}`,
+                  name: `${p.clientPoLineNo ? `POL ${p.clientPoLineNo} · ` : ''}${itemCodeWithRev(p.itemCodeText, docDrawingRev(p))} · ${p.planCodeText} · PRO Qty ${p.orderQty}`,
                   searchText: [
                     p.jcCodeText,
                     p.soCodeText,
