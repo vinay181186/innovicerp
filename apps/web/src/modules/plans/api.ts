@@ -38,6 +38,7 @@ export const plansKeys = {
       q.opsSource ?? null,
       q.derivedStatus ?? null,
       q.poPending ?? null,
+      q.hasOpenOrder ?? null,
       // ADR-200 — without it a ▾ sort / filter never re-reads the list.
       q.sf ?? null,
       q.limit,
@@ -59,6 +60,7 @@ function buildPlansSearch(q: ListPlansQuery): string {
   // Only ever sent as `true` — the server coerces the string, so a literal
   // `false` would still read as pending.
   if (q.poPending) params.set('poPending', 'true');
+  if (q.hasOpenOrder) params.set('hasOpenOrder', 'true');
   if (q.sf) params.set('sf', q.sf);
   if (q.limit !== undefined) params.set('limit', String(q.limit));
   if (q.offset !== undefined) params.set('offset', String(q.offset));

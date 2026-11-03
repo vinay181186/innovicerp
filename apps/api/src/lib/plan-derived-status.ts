@@ -51,7 +51,10 @@ export interface PlanDerivedStatusInput {
  * facts — is any of its orders still being made, and is any of its qty still
  * Pending:
  *
- *   1. an order still open / partly closed → 'in_production'. Checked first so
+ *   1. an order still open / partly closed → 'in_production', or
+ *                                      'partly_in_production' ("Part Prod",
+ *                                      owner 2026-11-03) when Pending > 0 too.
+ *                                      Checked first so
  *                                      a plan with live work is in production
  *                                      even if the Route Card has since gone.
  *   2. Pending > 0 (nothing being made) → route card missing?
@@ -76,7 +79,10 @@ export interface PlanDerivedStatusInput {
 export function derivePlanStatus(input: PlanDerivedStatusInput): PlanDerivedStatus | null {
   if (input.opsSource !== 'route_card') return null;
   if (input.planStatus === 'cancelled') return null;
-  if (input.openOrderCount > 0) return 'in_production';
+  // Owner 2026-11-03 — "Part Prod": an order is open but some plan qty has no
+  // order yet, so the row must not read as if the whole plan were in production.
+  if (input.openOrderCount > 0)
+    return input.pendingQty > 0 ? 'partly_in_production' : 'in_production';
   if (input.pendingQty > 0) {
     if (!input.hasRouteCard) return 'route_card_pending';
     // ADR-253 — a card that exists but is not approved may not raise an order.

@@ -449,6 +449,12 @@ export async function listPlans(
     // Derived-status filters (ADR-170). Evaluated in SQL against the same
     // joined facts the rows report, so paging stays exact.
     if (query.derivedStatus) conditions.push(sql`${DERIVED_STATUS_SQL} = ${query.derivedStatus}`);
+    // Close Production Order picker — any plan with an OPEN order, whether
+    // it reads In Production or Part Prod (owner 2026-11-03).
+    // Read off the ONE derived-status rule so the picker and the badge agree.
+    if (query.hasOpenOrder) {
+      conditions.push(sql`${DERIVED_STATUS_SQL} IN ('in_production', 'partly_in_production')`);
+    }
     if (query.poPending) {
       // ADR-182 — "still needs a Production Order" is no longer "has none at
       // all": a plan 20-covered of 50 still needs one for the other 30.
@@ -2877,6 +2883,7 @@ export async function getPlanningDashboard(user: AuthContext): Promise<PlanningD
         rcPending: byStatus.get('route_card_pending') ?? 0,
         rcApprovalPending: byStatus.get('route_card_approval_pending') ?? 0,
         rcCreated: byStatus.get('gen_production_order') ?? 0,
+        partlyInProduction: byStatus.get('partly_in_production') ?? 0,
         complete: byStatus.get('complete') ?? 0,
       },
       recentPlans: recentRows.map((r) => ({

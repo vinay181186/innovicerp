@@ -211,6 +211,9 @@ export const listPlansQuerySchema = z.object({
   /** Production → Plans "Pending" button: route-card-driven plans that have no
    *  Production Order yet (route_card_pending + gen_production_order), not cancelled. */
   poPending: queryBoolean().optional(),
+  /** Plans with at least one OPEN Production Order (In Production or Part
+   *  Prod) — the Close Production Order picker. */
+  hasOpenOrder: queryBoolean().optional(),
   /** Sort & Filter (ADR-200) — the screen's column sort + filters. */
   sf: sfRawParamSchema,
   limit: z.coerce.number().int().min(1).max(500).optional().default(100),
@@ -501,6 +504,8 @@ export const planningDashboardKpiSchema = z.object({
   /** ADR-253 — route-card plans whose item card is waiting for approval. */
   rcApprovalPending: z.number().int().nonnegative().default(0),
   rcCreated: z.number().int().nonnegative().default(0),
+  /** Owner 2026-11-03 — "Part Prod": an order open AND qty still Pending. */
+  partlyInProduction: z.number().int().nonnegative().default(0),
 });
 export type PlanningDashboardKpi = z.infer<typeof planningDashboardKpiSchema>;
 

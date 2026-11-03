@@ -21,6 +21,8 @@ export const PLAN_EFFECTIVE_STATUSES = [
   'route_card_pending',
   'route_card_approval_pending',
   'gen_production_order',
+  // Owner 2026-11-03 — "Part Prod": an order is open and some qty is Pending.
+  'partly_in_production',
 ] as const;
 
 export type PlanEffectiveStatus = (typeof PLAN_EFFECTIVE_STATUSES)[number];

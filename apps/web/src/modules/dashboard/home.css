@@ -7,14 +7,16 @@
   flex-direction: column;
   gap: var(--sp-2);
   min-width: 0;
-  /* Compact, centred board — not edge to edge on wide monitors (owner 31-Oct). */
-  width: 100%;
-  max-width: 960px;
-  margin-inline: auto;
-}
-/* Home → Approvals: the table needs the full screen width (owner 01-Nov). */
-.dh.dh--wide {
-  max-width: none;
+  /* Full screen width, edge to edge — no side space (owner 03-Nov; replaces
+     the 960px centred board of 31-Oct). Bleeds through #content's side gutter
+     with the SAME token (innovic-theme.css `#main > #content`). */
+  margin-inline: calc(-1 * var(--content-pad));
+  /* Fit one screen — the PRO-detail rule (po-detail.css): Home takes exactly
+     the content area, so the menu stays put and only the content scrolls.
+     The floor keeps the theme's fallback: on a phone or at 200% zoom the
+     page outgrows the content area and #content scrolls instead. */
+  height: 100%;
+  min-height: 420px;
 }
 .dh-code {
   font-family: var(--mono);
@@ -58,18 +60,20 @@ span.dh-link {
 }
 
 /* ── board: menu + content ── */
+/* Edge to edge: no side borders or rounded corners against the screen edge. */
 .dh-board {
+  flex: 1;
+  min-height: 0;
   display: flex;
-  flex-wrap: wrap;
   background: var(--bg2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius2);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
   overflow: hidden;
-  min-height: 560px;
 }
+/* One fixed width on every view; scrolls on its own if ever too tall. */
 .dh-menu {
-  flex: 1 1 200px;
-  max-width: 230px;
+  flex: 0 0 220px;
+  overflow-y: auto;
   border-right: 1px solid var(--border);
   background: var(--bg2);
   padding: var(--sp-2);
@@ -132,18 +136,50 @@ span.dh-link {
   text-transform: uppercase;
   color: var(--text3);
 }
+/* The ONE scroller of the home (the menu aside). */
 .dh-main {
-  flex: 999 1 560px;
+  flex: 1 1 auto;
   min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
 }
+/* No second, guessed scroller inside it: the theme caps every .tbl-wrap at
+   calc(100vh - 220px). Check tables hold at most 8 rows; Day Log a day. */
+.dh-main .dh-check-body .tbl-wrap,
+.dh-main .dh-body .tbl-wrap {
+  max-height: none;
+}
+/* Approvals (ApprovalsList = page-fill + <Panel fill>): the page fills the
+   content area, so its table is the only thing that scrolls — the list-page
+   fill chain (innovic-theme.css "LIST FILL"). One box: no panel border
+   inside the board's border. */
+.dh-main > .page-fill {
+  flex: 1;
+  min-height: 0;
+}
+.dh-main > .page-fill > .panel--fill {
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  box-shadow: none;
+}
 @media (max-width: 760px) {
+  /* Phone: menu above the content, the page scrolls as normal. */
+  .dh {
+    height: auto;
+  }
+  .dh-board {
+    flex-direction: column;
+  }
   .dh-menu {
-    flex-basis: 100%;
-    max-width: none;
+    flex: none;
     border-right: 0;
     border-bottom: 1px solid var(--border);
+  }
+  .dh-main {
+    overflow-y: visible;
   }
 }
 
@@ -156,6 +192,12 @@ span.dh-link {
   padding: var(--sp-2) var(--sp-4);
   border-bottom: 1px solid var(--border);
   min-height: 34px;
+  /* Title + Expand all / Collapse all stay at the top while the content
+     scrolls. */
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--bg2);
 }
 .dh-vh h2 {
   margin: 0;
@@ -181,6 +223,9 @@ span.dh-link {
   flex-direction: column;
   gap: var(--sp-3);
   min-width: 0;
+  /* Keeps the table's own sticky / pinned layers (z-index 4-6) inside this
+     box, so they never paint over the sticky view header above. */
+  isolation: isolate;
 }
 
 /* ── department checks ── */
@@ -227,6 +272,9 @@ span.dh-link {
 .dh-check-body {
   padding: 0 var(--sp-4) var(--sp-3);
   min-width: 0;
+  /* Keeps the table's own sticky / pinned layers (z-index 4-6) inside this
+     box, so they never paint over the sticky view header above. */
+  isolation: isolate;
 }
 .dh-morerow {
   display: flex;

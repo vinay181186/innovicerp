@@ -181,6 +181,7 @@ const MAP: Record<StatusKind, Record<string, StatusTone>> = {
     route_card_approval_pending: 'grey', // ADR-253
     gen_production_order: 'blue',
     in_production: 'amber',
+    partly_in_production: 'amber', // Part Prod — an order is open, some qty still Pending
     production_complete: 'green',
   },
   // A shop-floor machine, not a document. Carried verbatim from the private
@@ -304,6 +305,7 @@ const LABELS: Partial<Record<StatusKind, Record<string, string>>> = {
     route_card_approval_pending: 'RC Awaiting Approval', // ADR-253
     gen_production_order: 'Ready for Production Order',
     in_production: 'In Production',
+    partly_in_production: 'Part Prod',
     production_complete: 'Completed',
   },
   active: { true: 'Active', false: 'Inactive' },

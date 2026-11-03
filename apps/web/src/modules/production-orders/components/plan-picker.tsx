@@ -7,8 +7,8 @@
 //                   since ADR-182 means Pending > 0 — a plan 20-covered of 50
 //                   is still offered for the other 30). Each row prints
 //                   Plan Qty · Pending.
-//   mode 'close'  → route-card-driven plans that already HAVE one
-//                   (`opsSource=route_card`, kept when productionOrderId is set)
+//   mode 'close'  → route-card plans with an OPEN order (`hasOpenOrder=true`:
+//                   status In Production or Part Prod)
 //
 // `bare` drops the picker's own label + error wrapper, for a screen that puts
 // the box inside its own labelled cell (Create Production Order's Plan No.
@@ -62,9 +62,10 @@ export function PlanPicker({
           offset: 0,
         }
       : {
-          // Plans with an OPEN Production Order — filtered on the server so an
-          // old plan is never cut off by the page size.
-          derivedStatus: 'in_production',
+          // Plans with an OPEN Production Order — In Production AND Part Prod
+          // (owner 2026-11-03) — filtered on the server so an old plan is
+          // never cut off by the page size.
+          hasOpenOrder: true,
           ...(search.trim() ? { search: search.trim() } : {}),
           limit: 50,
           offset: 0,

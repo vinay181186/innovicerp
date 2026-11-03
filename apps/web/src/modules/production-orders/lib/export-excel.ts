@@ -15,7 +15,7 @@ export const PRO_REGISTER_COLUMNS = [
   'Production Order Date',
   'Item Code',
   'Item Name',
-  'Order Qty',
+  'PRO Qty',
   'Completed',
   'Stock Received',
   'Short Closed Qty',

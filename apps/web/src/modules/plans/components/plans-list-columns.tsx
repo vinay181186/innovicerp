@@ -57,7 +57,7 @@ const TYPE_OPTIONS = (Object.keys(TYPE_LABEL) as PlanType[]).map((value) => ({
   label: TYPE_LABEL[value],
 }));
 // The effective status the row shows (ADR-185): stored labels for old plans,
-// plus the two route-card states that have no stored twin.
+// plus the route-card states that have no stored twin.
 const STATUS_OPTIONS = [
   ...(Object.keys(STATUS_BADGE) as PlanStatus[]).map((value) => ({
     value,
@@ -69,6 +69,8 @@ const STATUS_OPTIONS = [
     label: DERIVED_LABEL.route_card_approval_pending,
   },
   { value: 'gen_production_order', label: DERIVED_LABEL.gen_production_order },
+  // Owner 2026-11-03 — order open AND some plan qty still Pending.
+  { value: 'partly_in_production', label: DERIVED_LABEL.partly_in_production },
 ];
 
 /** The status badge the row shows: derived for route-card plans, the stored
@@ -309,7 +311,10 @@ export function planRowMenu(
       },
     ];
   }
-  if (row.derivedStatus !== 'in_production') return [];
+  // Part Prod (owner 2026-11-03) is an open order with qty still Pending — the
+  // same three actions as In Production; Create PO is live since Pending > 0.
+  if (row.derivedStatus !== 'in_production' && row.derivedStatus !== 'partly_in_production')
+    return [];
   // ADR-182 — a plan part-covered by earlier orders still needs one for its
   // Pending qty; with nothing Pending the server refuses a new order.
   const nothingPending = row.pendingQty > 0 ? undefined : 'Nothing Pending';

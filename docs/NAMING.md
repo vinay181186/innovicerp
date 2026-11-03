@@ -412,6 +412,7 @@ with no live `xxx` to fall back from is a defect (C-13).
 | What the QC inspector wrote at Inspect about one inspection (job-card op QC: `op_log.remarks`; Direct Purchase GRN: `goods_receipt_note_lines.qc_remarks`; Party GRN: `party_grn_lines.qc_remarks`, 0232) | `QC Remarks` | `remarks` (op QC) / `qcRemarks` (GRN, Party GRN) | as named | `Remarks` alone where a gate-in remark is also shown, `Notes`, `Observation` |
 | Why a Party GRN line's deviated qty was deviated (required when Deviated > 0) | `Deviation Reason` | `rejectReason` | `party_grn_lines.reject_reason` | `QC Remarks`, `Reason` |
 | Party GRN line / receipt with some pieces inspected and some still waiting for Incoming QC (ADR-260) | `Part QC` (badge `Part QC · n pending`) | derived: qcPendingQty > 0 after the first inspection | `party_grn_lines` accepted/rejected running totals | `Partial` (that is a Customer RM Status), `In Progress` |
+| Route-card plan with an open Production Order AND qty still Pending (no order for it yet) — owner 2026-11-03 (plan 0182) | `Part Prod` | derived status `partly_in_production` (`PLAN_DERIVED_STATUSES`) | `apps/api/src/lib/plan-derived-status.ts` + SQL twin `planDerivedStatusSql` (open orders > 0 and Pending > 0) | `In Production` for this case (hid the un-ordered qty), `Partial`, `Partly in Production` |
 | A Party GRN line's running accepted / deviated totals shown in the Incoming QC popup | `Inspected So Far` | `acceptedQty` / `rejectedQty` | `party_grn_lines.accepted_qty` / `rejected_qty` | `Done`, `Already QC'd` |
 
 ---

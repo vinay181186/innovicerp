@@ -1,16 +1,16 @@
 // Sort & Filter (ADR-200) — what <DataTable> runs before it draws: reads the
 // page scope, keeps this table's sort + filters (per browser tab, so Refresh
-// and Back keep them), filters and sorts the given rows, and puts the ▾ menu
-// into each column header. With nothing sorted or filtered the rows and the
-// columns go through untouched (same array, same objects) — a table looks and
-// behaves exactly as before until the user uses the menu.
+// and Back keep them), filters and sorts the given rows, and makes each
+// column name open that column's menu (owner 03-Nov: click the name = open,
+// click again = close; no page-wide switch). With nothing sorted or filtered
+// the rows go through untouched (same array) — only the header cells change.
 
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 
 import { todayIst } from '@/lib/date';
 
-import { colId, colKind, colLabel, cx } from '../data-table-cells';
+import { colId, colKind, colLabel } from '../data-table-cells';
 import type { DataTableColumn, DataTableProps } from '../data-table-types';
 import { cellText, isFilterableColumn } from './cell-text';
 import {
@@ -27,7 +27,7 @@ import {
 import { HeadMenu } from './HeadMenu';
 import { loadSf, saveSf } from './sf-storage';
 import { useSfSnapshot, useSfStore } from './scope';
-import { SortFilterButton } from './SortFilterButton';
+import { PARTIAL_NOTE } from './partial-note';
 import './sort-filter.css';
 
 const STORE_PREFIX = 'innovic.sf:';
@@ -38,7 +38,7 @@ function isEmpty(s: SfState): boolean {
 
 export interface SortFilterTable<T> {
   props: DataTableProps<T>;
-  /** "Showing 18 of 240 · Clear filters", and the button when the page has no header one. */
+  /** "Showing 18 of 240 · Clear filters" while a filter applies. */
   bar: ReactNode;
 }
 
@@ -77,7 +77,7 @@ export function useSortFilterTable<T>(input: DataTableProps<T>): SortFilterTable
   const serverChange = server?.onChange;
   const setState = serverChange ?? setLocalState;
 
-  // "Clear filters" from the button's Keep/Clear question.
+  // "Clear filters" from the page header (shown when a server list is not drawn).
   const clearSeen = useRef(snap.clearToken);
   useEffect(() => {
     if (snap.clearToken === clearSeen.current) return;
@@ -114,8 +114,11 @@ export function useSortFilterTable<T>(input: DataTableProps<T>): SortFilterTable
     if (store && on) store.setTable(id, registered, isServer);
   }, [store, on, id, registered, isServer]);
 
-  const { columns, rows, onSort: callerSort } = input;
-  const work = live && (snap.enabled || !isEmpty(state));
+  const { columns, rows } = input;
+  // Only WHETHER the screen sorts on a header click matters here — a boolean,
+  // so an inline onSort arrow does not rebuild the headers on every render.
+  const hasCallerSort = input.onSort !== undefined;
+  const work = live;
 
   // The ▾-able columns. Cell text is read LAZILY, one column at a time, only
   // for the columns that are filtered / sorted or whose menu is opened — not
@@ -148,6 +151,23 @@ export function useSortFilterTable<T>(input: DataTableProps<T>): SortFilterTable
   }, [work, cache, state, rows, today, isServer]);
 
   const outCols = useMemo((): Array<DataTableColumn<T>> => {
+    // A list that shows only part of its rows cannot filter them in the
+    // browser — its column names say why instead of opening a menu.
+    if (on && !live) {
+      return columns.map((c, i) =>
+        filterable.has(colId(c, i))
+          ? {
+              ...c,
+              id: colId(c, i),
+              header: (
+                <span className="sf-head" title={PARTIAL_NOTE}>
+                  {c.header}
+                </span>
+              ),
+            }
+          : c,
+      );
+    }
     if (!work) return columns;
     const setFilter = (cid: string, f: ColumnFilter | null): void =>
       setState((s) => {
@@ -184,7 +204,7 @@ export function useSortFilterTable<T>(input: DataTableProps<T>): SortFilterTable
       const f = filterable.get(cid);
       if (!f) return c;
       // The screen sorts this column itself (server sort) — keep its header click.
-      const sortOff = callerSort !== undefined && c.sortField !== undefined;
+      const sortOff = hasCallerSort && c.sortField !== undefined;
       const sortDir = state.sort?.id === cid ? state.sort.dir : null;
       return {
         ...c,
@@ -194,7 +214,6 @@ export function useSortFilterTable<T>(input: DataTableProps<T>): SortFilterTable
           <HeadMenu
             header={c.header}
             label={f.label}
-            showButton={snap.enabled}
             sortDir={sortDir}
             sortOff={sortOff}
             filter={state.filters[cid]}
@@ -205,43 +224,26 @@ export function useSortFilterTable<T>(input: DataTableProps<T>): SortFilterTable
         ),
       };
     });
-  }, [
-    work,
-    filterable,
-    cache,
-    columns,
-    state,
-    snap.enabled,
-    callerSort,
-    today,
-    isServer,
-    setState,
-  ]);
+  }, [on, live, work, filterable, cache, columns, state, hasCallerSort, today, isServer, setState]);
 
   if (!on) return { props: input, bar: null };
 
-  const ownButton = !snap.hasHeaderButton && snap.tables[0] === id;
   const filteredOut = activeCount > 0;
-  const bar =
-    ownButton || filteredOut ? (
-      <div className="sf-bar">
-        {filteredOut ? (
-          <span className="sf-note">
-            {isServer ? 'Filtered' : `Showing ${outRows.length} of ${rows.length}`}
-            {' · '}
-            <button
-              type="button"
-              className="dt-link"
-              onClick={() => setState((s) => ({ ...s, filters: {} }))}
-            >
-              Clear filters
-            </button>
-          </span>
-        ) : null}
-        <span style={{ flex: 1 }} />
-        {ownButton ? <SortFilterButton inTable /> : null}
-      </div>
-    ) : null;
+  const bar = filteredOut ? (
+    <div className="sf-bar">
+      <span className="sf-note">
+        {isServer ? 'Filtered' : `Showing ${outRows.length} of ${rows.length}`}
+        {' · '}
+        <button
+          type="button"
+          className="dt-link"
+          onClick={() => setState((s) => ({ ...s, filters: {} }))}
+        >
+          Clear filters
+        </button>
+      </span>
+    </div>
+  ) : null;
 
   const props: DataTableProps<T> =
     outCols === columns && outRows === rows
@@ -250,7 +252,6 @@ export function useSortFilterTable<T>(input: DataTableProps<T>): SortFilterTable
           ...input,
           columns: outCols,
           rows: outRows,
-          className: cx(input.className, snap.enabled && 'sf-enabled'),
           // A hand-built totals row was summed from ALL rows — it would lie
           // under filtered rows, so it is hidden while a filter applies.
           // (`showTotals` totals are summed from the rows shown, and stay.)

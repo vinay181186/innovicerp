@@ -136,7 +136,8 @@ export function planDerivedStatusSql(): SQL<string | null> {
   return sql<string | null>`CASE
   WHEN ${plans.opsSource} <> 'route_card' THEN NULL
   WHEN ${plans.planStatus} = 'cancelled' THEN NULL
-  WHEN ${PLAN_OPEN_ORDER_COUNT_SQL} > 0 THEN 'in_production'
+  WHEN ${PLAN_OPEN_ORDER_COUNT_SQL} > 0
+    THEN CASE WHEN ${PLAN_PENDING_QTY_SQL} > 0 THEN 'partly_in_production' ELSE 'in_production' END
   WHEN ${PLAN_PENDING_QTY_SQL} > 0
     THEN CASE ${PLAN_ROUTE_CARD_USABLE_SQL}
       WHEN true THEN 'gen_production_order'

@@ -9,7 +9,7 @@
 // secondary facts (Plan No., SO / JWSO No., Internal SO No., POL, JC No.) ship
 // hidden by default (defaultHidden in list.tsx), so they ride in the ▸ detail
 // row rather than the main line. Labels per docs/NAMING.md: Production Order
-// No., Production Order Date, Item Code, Item Name, Order Qty, Completed,
+// No., Production Order Date, Item Code, Item Name, PRO Qty, Completed,
 // Stock Received, Short Closed Qty (ADR-233), Production Order Status, PRO Target Date (the order's own target date, owner
 // label 2026-09-30), plus Plan No., SO / JWSO No., Internal SO No., POL and
 // JC No. in the ▸.
@@ -136,7 +136,7 @@ export function poListColumns(
     }),
     {
       id: 'order_qty',
-      header: 'Order Qty',
+      header: 'PRO Qty',
       kind: 'num',
       align: 'right',
       sortFilterField: 'orderQty',

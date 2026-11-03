@@ -365,7 +365,7 @@ export type PlanPickerItem = ListPlansResponse['items'][number];
 
 export type PlanPickerQuery = Pick<
   ListPlansQuery,
-  'search' | 'opsSource' | 'poPending' | 'derivedStatus' | 'limit' | 'offset'
+  'search' | 'opsSource' | 'poPending' | 'derivedStatus' | 'hasOpenOrder' | 'limit' | 'offset'
 >;
 
 function toPlanPickerQueryString(q: PlanPickerQuery): string {
@@ -374,6 +374,8 @@ function toPlanPickerQueryString(q: PlanPickerQuery): string {
   if (q.opsSource) params.set('opsSource', q.opsSource);
   if (q.derivedStatus) params.set('derivedStatus', q.derivedStatus);
   if (q.poPending !== undefined) params.set('poPending', String(q.poPending));
+  // Only ever sent as `true` — the server coerces the string.
+  if (q.hasOpenOrder) params.set('hasOpenOrder', 'true');
   params.set('limit', String(q.limit ?? 50));
   params.set('offset', String(q.offset ?? 0));
   return params.toString();
@@ -399,7 +401,8 @@ export function usePreselectedPlan(
 ): PlanPickerItem | null {
   const q = usePlanPickerList(
     {
-      ...(mode === 'create' ? { poPending: true } : { derivedStatus: 'in_production' }),
+      // Close: any plan with an open order — In Production AND Part Prod.
+      ...(mode === 'create' ? { poPending: true } : { hasOpenOrder: true }),
       ...(planCode ? { search: planCode } : {}),
       limit: 50,
       offset: 0,

@@ -73,7 +73,11 @@ const NEEDS_PLANNING = '__needs_planning';
 // Status → the planning-dashboard KPI key that counts it (same keys the old
 // tiles read). Cancelled has no tile, so no count.
 const STATUS_KPI_KEY: Record<
-  PlanStatus | 'route_card_pending' | 'route_card_approval_pending' | 'gen_production_order',
+  | PlanStatus
+  | 'route_card_pending'
+  | 'route_card_approval_pending'
+  | 'gen_production_order'
+  | 'partly_in_production',
   string | undefined
 > = {
   in_planning: 'inPlanning',
@@ -86,6 +90,7 @@ const STATUS_KPI_KEY: Record<
   route_card_pending: 'rcPending',
   route_card_approval_pending: 'rcApprovalPending',
   gen_production_order: 'rcCreated',
+  partly_in_production: 'partlyInProduction',
 };
 
 function PlansListPage(): React.JSX.Element {
@@ -252,7 +257,7 @@ function PlansListPage(): React.JSX.Element {
                   {withCount(STATUS_BADGE[s].label, STATUS_KPI_KEY[s])}
                 </option>
               ))}
-              {/* ADR-185 — the two route-card states with no stored twin. */}
+              {/* ADR-185 — the route-card states with no stored twin. */}
               <option value="route_card_pending">
                 {withCount(DERIVED_LABEL.route_card_pending, STATUS_KPI_KEY.route_card_pending)}
               </option>
@@ -264,6 +269,10 @@ function PlansListPage(): React.JSX.Element {
               </option>
               <option value="gen_production_order">
                 {withCount(DERIVED_LABEL.gen_production_order, STATUS_KPI_KEY.gen_production_order)}
+              </option>
+              {/* Owner 2026-11-03 — order open AND some plan qty still Pending. */}
+              <option value="partly_in_production">
+                {withCount(DERIVED_LABEL.partly_in_production, STATUS_KPI_KEY.partly_in_production)}
               </option>
             </select>
             <select
