@@ -225,7 +225,7 @@
   min-width: 0;
   margin-right: 0;
   font-size: var(--fs-xs);
-  line-height: 1.3;
+  line-height: 1.2;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -233,10 +233,13 @@
   margin-left: 0;
   max-width: 100%;
   text-align: left;
-  line-height: 1.35;
+  line-height: 1.25;
 }
+/* Tight: a stacked row costs no more height than the old one-line row, so
+   fit-one-screen pages keep their tab panel (measured on PRO detail 1366). */
 .cl-stack > .cl-row {
-  padding: 6px 0;
+  padding: 3px 0;
+  row-gap: var(--sp-1);
 }
 
 /* Wide grid: 8 tracks. Every ordinary fact spans 2, so a 4-fact cluster looks
