@@ -1,7 +1,11 @@
-// Sort & Filter (ADR-200) — the ▾ inside a column header and its popover.
+// Sort & Filter (ADR-200) — the column name in a header and its popover.
+// Click the column name: that column's sort + search opens; click it again:
+// it closes (owner 03-Nov — no page-wide "Sort & Filter" switch any more).
+// A column whose screen sorts it on a header click (the old ▲▼↕ SortHeader)
+// keeps that click and opens the menu from a small ▾ beside the name instead.
 // The popover is portalled and fixed (like the Columns picker), so no panel's
 // overflow can clip it; it flips above the header when there is more room.
-// The marks beside the header text stay visible even when the ▾ is hidden:
+// The marks beside the name stay visible while the menu is closed:
 // ↑/↓ for the sorted column, ⏷ for a filtered one — a kept filter is never
 // invisible.
 
@@ -35,8 +39,6 @@ function place(btn: HTMLElement, natural: number): CSSProperties {
 export interface HeadMenuProps {
   header: ReactNode;
   label: string;
-  /** Show the ▾ (Sort & Filter is on). */
-  showButton: boolean;
   sortDir: SortDir | null;
   sortOff?: boolean | undefined;
   filter: ColumnFilter | undefined;
@@ -50,6 +52,9 @@ export function HeadMenu(p: HeadMenuProps): ReactElement {
   const [open, setOpen] = useState(false);
   const [menu, setMenu] = useState<MenuSpec>({ type: 'text', values: [] });
   const btnRef = useRef<HTMLButtonElement>(null);
+  // The screen sorts this column on a header click → the name keeps that
+  // click and the menu opens from a ▾ instead.
+  const caret = p.sortOff === true;
   const popRef = useRef<HTMLDivElement>(null);
   const [style, setStyle] = useState<CSSProperties>({ visibility: 'hidden' });
 
@@ -90,15 +95,14 @@ export function HeadMenu(p: HeadMenuProps): ReactElement {
     return () => document.removeEventListener('mousedown', onDown);
   }, [open]);
 
-  // Sort & Filter switched off while the menu is open → close it.
-  useEffect(() => {
-    if (!p.showButton) setOpen(false);
-  }, [p.showButton]);
-
   const filtered = p.filter !== undefined;
-  return (
-    <span className="sf-head">
-      <span className="sf-head-label">{p.header}</span>
+  const toggle = (e: { stopPropagation: () => void }): void => {
+    e.stopPropagation();
+    if (!open) setMenu(p.getMenu());
+    setOpen((o) => !o);
+  };
+  const marks = (
+    <>
       {p.sortDir ? (
         <span
           className="sf-mark"
@@ -112,24 +116,43 @@ export function HeadMenu(p: HeadMenuProps): ReactElement {
           ⏷
         </span>
       ) : null}
-      {p.showButton ? (
+    </>
+  );
+  return (
+    <span className="sf-head">
+      {caret ? (
+        <>
+          <span className="sf-head-label">{p.header}</span>
+          {marks}
+          <button
+            ref={btnRef}
+            type="button"
+            className={filtered || p.sortDir ? 'sf-caret is-on' : 'sf-caret'}
+            aria-label={`Sort or filter ${p.label}`}
+            aria-haspopup="dialog"
+            aria-expanded={open}
+            onKeyDown={(e) => e.stopPropagation()}
+            onClick={toggle}
+          >
+            ▾
+          </button>
+        </>
+      ) : (
         <button
           ref={btnRef}
           type="button"
-          className={filtered || p.sortDir ? 'sf-caret is-on' : 'sf-caret'}
+          className={open || filtered || p.sortDir ? 'sf-name is-on' : 'sf-name'}
           aria-label={`Sort or filter ${p.label}`}
+          title={`Sort or filter ${p.label}`}
           aria-haspopup="dialog"
           aria-expanded={open}
           onKeyDown={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            e.stopPropagation();
-            if (!open) setMenu(p.getMenu());
-            setOpen((o) => !o);
-          }}
+          onClick={toggle}
         >
-          ▾
+          <span className="sf-head-label">{p.header}</span>
+          {marks}
         </button>
-      ) : null}
+      )}
       {open
         ? createPortal(
             <div

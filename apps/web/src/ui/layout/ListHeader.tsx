@@ -26,7 +26,7 @@
 import type { ReactNode } from 'react';
 import { SearchInput } from '../forms/SearchInput';
 import { useSfSnapshot, useSfStore } from '../data/sort-filter/scope';
-import { SortFilterButton } from '../data/sort-filter/SortFilterButton';
+import { HeldFiltersClear } from '../data/sort-filter/HeldFiltersClear';
 import { HeaderBand } from './header-band';
 
 export interface ListHeaderProps {
@@ -92,11 +92,12 @@ export function ListHeader({
     (onSearch ? (
       <SearchInput value={search} onChange={onSearch} placeholder={searchPlaceholder} />
     ) : null);
-  // Sort & Filter (ADR-200): the button sits BEFORE the search box whenever a
-  // table on the page can be sorted / filtered.
+  // Sort & Filter (ADR-200): each column name opens its own menu. The bar only
+  // needs a "Clear filters (n)" link while the page holds server filters and
+  // no server-filtered table is drawn (the table's own strip clears them otherwise).
   const sfSnap = useSfSnapshot(useSfStore());
-  const sfTables = sfSnap.tables.length + sfSnap.heldFilters;
-  const hasBar = searchBox != null || filters != null || onClearFilters != null || sfTables > 0;
+  const sfHeldOnly = sfSnap.serverTables === 0 && sfSnap.heldFilters > 0;
+  const hasBar = searchBox != null || filters != null || onClearFilters != null || sfHeldOnly;
   return (
     <HeaderBand
       title={title}
@@ -133,7 +134,7 @@ export function ListHeader({
     >
       {hasBar ? (
         <div className="list-filterbar" role="search">
-          <SortFilterButton />
+          <HeldFiltersClear />
           {searchBox}
           {filters}
           {onClearFilters ? (

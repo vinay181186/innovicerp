@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -71,18 +71,33 @@ const codes = (): string[] =>
 describe('Sort & Filter', () => {
   beforeEach(() => window.sessionStorage.clear());
 
-  it('is off by default; the button shows the ▾ in every data column but Sr No', () => {
+  it('every data column name but Sr No opens its menu; no page-wide button', () => {
     mount();
-    expect(screen.queryByRole('button', { name: /Sort or filter/ })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: /Sort & Filter/ }));
+    expect(screen.queryByRole('button', { name: /Sort & Filter/ })).toBeNull();
     expect(screen.getByRole('button', { name: 'Sort or filter JC No.' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Sort or filter Due Date' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Sort or filter Sr No' })).toBeNull();
   });
 
+  it('click the column name = open its menu, click again = close; another name swaps', () => {
+    mount();
+    const code = screen.getByRole('button', { name: 'Sort or filter JC No.' });
+    fireEvent.click(code);
+    expect(screen.getByRole('dialog', { name: 'Sort and filter JC No.' })).toBeTruthy();
+    expect(code.getAttribute('aria-expanded')).toBe('true');
+    fireEvent.mouseDown(code);
+    fireEvent.click(code);
+    expect(screen.queryByRole('dialog', { name: 'Sort and filter JC No.' })).toBeNull();
+    fireEvent.click(code);
+    const due = screen.getByRole('button', { name: 'Sort or filter Due Date' });
+    fireEvent.mouseDown(due);
+    fireEvent.click(due);
+    expect(screen.queryByRole('dialog', { name: 'Sort and filter JC No.' })).toBeNull();
+    expect(screen.getByRole('dialog', { name: 'Sort and filter Due Date' })).toBeTruthy();
+  });
+
   it('sorts codes naturally and dates by date, blanks last', () => {
     mount();
-    fireEvent.click(screen.getByRole('button', { name: /Sort & Filter/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Sort or filter JC No.' }));
     fireEvent.click(screen.getByRole('button', { name: /A → Z/ }));
     expect(codes()).toEqual(['IN-JC-00009', 'IN-JC-00010', 'IN-JC-00011']);
@@ -91,16 +106,14 @@ describe('Sort & Filter', () => {
     expect(codes()).toEqual(['IN-JC-00010', 'IN-JC-00009', 'IN-JC-00011']);
   });
 
-  it('tick list filter + number condition, count on the button, Showing X of Y, Clear', () => {
+  it('tick list filter + number condition, Showing X of Y, Clear', () => {
     mount();
-    fireEvent.click(screen.getByRole('button', { name: /Sort & Filter/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Sort or filter Status' }));
     const dlg = screen.getByRole('dialog', { name: 'Sort and filter Status' });
     fireEvent.click(within(dlg).getByLabelText('Closed'));
     fireEvent.click(within(dlg).getByRole('button', { name: 'OK' }));
     expect(codes()).toEqual(['IN-JC-00010', 'IN-JC-00011']);
     expect(screen.getByText(/Showing 2 of 3/)).toBeTruthy();
-    expect(screen.getByRole('button', { name: /Sort & Filter \(1\)/ })).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'Sort or filter Order Qty' }));
     const q = screen.getByRole('dialog', { name: 'Sort and filter Order Qty' });
@@ -113,26 +126,42 @@ describe('Sort & Filter', () => {
     expect(codes()).toHaveLength(3);
   });
 
-  it('turning it off with filters asks keep or clear', () => {
+  it('a kept filter still shows ⏷ after its menu closes', () => {
     mount();
-    const btn = screen.getByRole('button', { name: /Sort & Filter/ });
-    fireEvent.click(btn);
     fireEvent.click(screen.getByRole('button', { name: 'Sort or filter Status' }));
     fireEvent.click(screen.getByLabelText('Open'));
     fireEvent.click(screen.getByRole('button', { name: 'OK' }));
-    fireEvent.click(screen.getByRole('button', { name: /Sort & Filter \(1\)/ }));
-    fireEvent.click(screen.getByRole('button', { name: 'Keep filters' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
     expect(codes()).toEqual(['IN-JC-00009']);
-    expect(screen.queryByRole('button', { name: /Sort or filter/ })).toBeNull();
     expect(screen.getByLabelText('filtered')).toBeTruthy();
   });
 
-  it('is disabled when the list shows only part of the data', () => {
+  it('a list that shows only part of the data keeps plain column names', () => {
     mount(true);
-    const btn = screen.getByRole('button', { name: /Sort & Filter/ });
-    expect(btn.getAttribute('aria-disabled')).toBe('true');
-    fireEvent.click(btn);
     expect(screen.queryByRole('button', { name: /Sort or filter/ })).toBeNull();
+    expect(screen.getAllByText('JC No.')[0]?.closest('[title]')?.getAttribute('title')).toMatch(
+      /needs the server/,
+    );
+  });
+
+  it('the header "Clear filters (n)" shows only while no server table holds the filters', () => {
+    const store = new SfScopeStore();
+    store.setHolder('page', 2);
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <SortFilterProvider store={store}>
+          <ListHeader title="T" search="" onSearch={() => undefined} />
+        </SortFilterProvider>
+      </QueryClientProvider>,
+    );
+    const seen = store.getSnapshot().clearToken;
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters (2)' }));
+    expect(store.getSnapshot().clearToken).toBe(seen + 1);
+    // Another (browser) table on the page does not hide it.
+    act(() => store.setTable('t0', 0, false));
+    expect(screen.getByRole('button', { name: 'Clear filters (2)' })).toBeTruthy();
+    act(() => store.setTable('t1', 0, true));
+    expect(screen.queryByRole('button', { name: /Clear filters/ })).toBeNull();
   });
 
   it('a table outside any scope renders unchanged', () => {
@@ -141,7 +170,7 @@ describe('Sort & Filter', () => {
         <DataTable columns={COLS} rows={ROWS} />
       </QueryClientProvider>,
     );
-    expect(screen.queryByRole('button', { name: /Sort & Filter/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Sort or filter/ })).toBeNull();
   });
 
   it('Enter / Space inside the menu never reach a sortable header', () => {
@@ -157,8 +186,9 @@ describe('Sort & Filter', () => {
         </SortFilterProvider>
       </QueryClientProvider>,
     );
-    fireEvent.click(screen.getByRole('button', { name: /Sort & Filter/ }));
+    // The screen sorts JC No. on a header click → its menu opens from a ▾.
     const caret = screen.getByRole('button', { name: 'Sort or filter JC No.' });
+    expect(caret.textContent).toBe('▾');
     fireEvent.keyDown(caret, { key: 'Enter' });
     fireEvent.click(caret);
     const dlg = screen.getByRole('dialog', { name: 'Sort and filter JC No.' });
@@ -185,7 +215,6 @@ describe('Sort & Filter', () => {
       </QueryClientProvider>,
     );
     expect(screen.getByText('ALL-ROWS-TOTAL')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: /Sort & Filter/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Sort or filter Status' }));
     fireEvent.click(screen.getByLabelText('Closed'));
     fireEvent.click(screen.getByRole('button', { name: 'OK' }));
@@ -228,10 +257,7 @@ describe('Sort & Filter', () => {
         </SortFilterProvider>
       </QueryClientProvider>,
     );
-    const btn = screen.getByRole('button', { name: /Sort & Filter/ });
-    expect(btn.getAttribute('aria-disabled')).toBeNull();
-    fireEvent.click(btn);
-    // A column without a server field has no ▾.
+    // A column without a server field has no menu.
     expect(screen.queryByRole('button', { name: 'Sort or filter Order Qty' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Sort or filter Status' }));
     const dlg = screen.getByRole('dialog', { name: 'Sort and filter Status' });
@@ -260,6 +286,6 @@ describe('Sort & Filter', () => {
         </SortFilterProvider>
       </QueryClientProvider>,
     );
-    expect(screen.queryByRole('button', { name: /Sort & Filter/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Sort or filter/ })).toBeNull();
   });
 });

@@ -1,45 +1,9 @@
-/* Sort & Filter (ADR-200) — the button before the search box, the ▾ in the
-   column headers, and the popover. Theme tokens only; every class `sf-`. */
+/* Sort & Filter (ADR-200) — the clickable column name, the ▾ (columns the
+   screen sorts itself), and the popover. Theme tokens only; every class `sf-`. */
 
-/* ── the button ─────────────────────────────────────────────────────────── */
-.sf-btn-anchor {
-  position: relative;
-  display: inline-flex;
-}
-.sf-btn {
+/* ── the page header's "Clear filters (n)" (only while no table is drawn) ── */
+.sf-held {
   white-space: nowrap;
-}
-.sf-btn.is-on {
-  background: var(--blue3);
-  border-color: var(--blue);
-  color: var(--blue2);
-  font-weight: 700;
-}
-.sf-btn[aria-disabled='true'] {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-.sf-funnel {
-  font-size: var(--fs-xs);
-}
-.sf-ask {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  z-index: 50;
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  white-space: nowrap;
-  background: var(--bg2);
-  border: 1px solid var(--border3);
-  border-radius: var(--radius2);
-  box-shadow: var(--shadow-modal);
-  padding: var(--sp-2);
-  font-size: var(--fs-sm);
-}
-.sf-ask-text {
-  color: var(--text2);
 }
 
 /* ── the strip above a table: "Showing 18 of 240 · Clear filters" ──────── */
@@ -65,6 +29,32 @@
 }
 .sf-head-label {
   min-width: 0;
+}
+/* The column name is the button: click = open its menu, click again = close. */
+.sf-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  cursor: pointer;
+}
+.sf-name:hover,
+.sf-name:focus-visible,
+.sf-name.is-on {
+  color: var(--blue);
+}
+.sf-name:focus-visible {
+  outline: 1px solid var(--blue);
+  outline-offset: 1px;
 }
 .sf-mark {
   font-size: 10px;
