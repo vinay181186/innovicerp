@@ -223,6 +223,9 @@ span.dh-link {
   flex-direction: column;
   gap: var(--sp-3);
   min-width: 0;
+  /* Keeps the table's own sticky / pinned layers (z-index 4-6) inside this
+     box, so they never paint over the sticky view header above. */
+  isolation: isolate;
 }
 
 /* ── department checks ── */
@@ -269,6 +272,9 @@ span.dh-link {
 .dh-check-body {
   padding: 0 var(--sp-4) var(--sp-3);
   min-width: 0;
+  /* Keeps the table's own sticky / pinned layers (z-index 4-6) inside this
+     box, so they never paint over the sticky view header above. */
+  isolation: isolate;
 }
 .dh-morerow {
   display: flex;
