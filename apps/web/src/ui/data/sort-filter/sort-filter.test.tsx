@@ -93,7 +93,10 @@ describe('Sort & Filter', () => {
     fireEvent.mouseDown(due);
     fireEvent.click(due);
     expect(screen.queryByRole('dialog', { name: 'Sort and filter JC No.' })).toBeNull();
-    expect(screen.getByRole('dialog', { name: 'Sort and filter Due Date' })).toBeTruthy();
+    expect(screen.getByRole('dialog', { name: 'Sort and filter Due Date' })).toBeTruthy(); // Esc closes it even while the focus is still on the column name.
+    due.focus();
+    fireEvent.keyDown(due, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
   it('sorts codes naturally and dates by date, blanks last', () => {

@@ -74,11 +74,16 @@ export function HeadMenu(p: HeadMenuProps): ReactElement {
       return;
     }
     reposition();
-    // First focusable control inside, so the keyboard lands in the menu.
-    popRef.current?.querySelector<HTMLElement>('input, select, button')?.focus();
+    // First focusable control inside, so the keyboard lands in the menu —
+    // on the next frame, once the placed popover is visible (a focus() on a
+    // still-hidden element is ignored; Esc then never reached the menu).
+    const frame = requestAnimationFrame(() =>
+      popRef.current?.querySelector<HTMLElement>('input, select, button')?.focus(),
+    );
     window.addEventListener('resize', reposition);
     window.addEventListener('scroll', reposition, true);
     return () => {
+      cancelAnimationFrame(frame);
       window.removeEventListener('resize', reposition);
       window.removeEventListener('scroll', reposition, true);
     };
@@ -91,9 +96,18 @@ export function HeadMenu(p: HeadMenuProps): ReactElement {
       if (btnRef.current?.contains(t) || popRef.current?.contains(t)) return;
       setOpen(false);
     };
+    // Esc closes wherever the focus is (capture: the column name's own
+    // onKeyDown stops the event before it bubbles to the document).
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') close();
+    };
     document.addEventListener('mousedown', onDown);
-    return () => document.removeEventListener('mousedown', onDown);
-  }, [open]);
+    document.addEventListener('keydown', onKey, true);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey, true);
+    };
+  }, [open, close]);
 
   const filtered = p.filter !== undefined;
   const toggle = (e: { stopPropagation: () => void }): void => {
