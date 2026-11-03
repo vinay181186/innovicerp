@@ -32,9 +32,8 @@
    Remarks) opts into ONE line instead: the value ellipsises and the cell's
    title carries the full text. Dates, quantities and JC Finished do not get
    this class and keep the primitive's wrap. */
-.po-detail .cl-fact.po-one-line {
-  flex-wrap: nowrap;
-}
+/* Stacked facts (ClusterGrid stack): the label is its own line and the value
+   is already one line with an ellipsis, so `po-one-line` needs no rule. */
 /* Remarks: reads left to right from the label, like the primitive's `wrap`
    facts. */
 .po-detail .cl-fact.po-wide > .cl-fact-v {
@@ -52,10 +51,6 @@
    the cell's right edge into the next one. */
 .po-detail .cl-fact.po-chip {
   flex-wrap: wrap;
-  justify-content: flex-end;
-}
-.po-detail .cl-fact.po-chip > .cl-fact-k {
-  margin-right: auto;
 }
 .po-detail .cl-fact.po-chip > .cl-fact-after {
   max-width: 100%;

@@ -406,7 +406,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
           ) : null}
         </DocIdent>
 
-        <ClusterGrid>
+        <ClusterGrid stack>
           {/* When it was raised, by whom, from which Plan and Route Card. */}
           <Cluster name="Order">
             <ClusterFact
@@ -461,7 +461,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
               covers, what THIS order is for, what its Job Card has finished),
               then the close account that ends on Pending. `PRO Qty` not a bare
               `Order Qty` — three quantities sit together here (NAMING.md). */}
-          <Cluster name="Quantity">
+          <Cluster name="Quantity" wide>
             <ClusterFact
               num
               label="SO Qty"
@@ -512,8 +512,6 @@ function ProductionOrderDetailPage(): React.JSX.Element {
                 )
               }
             />
-          </Cluster>
-          <Cluster name={null}>
             <ClusterFact
               num
               label="Stock Received"
@@ -597,7 +595,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
               Size and Raw Material Available are the shop floor's own answers
               typed on Create (ADR-182) — the size really cut, not the planned
               one. */}
-          <Cluster name="Material">
+          <Cluster name="Material" wide>
             <ClusterFact
               num
               label="RM Item"
@@ -625,8 +623,6 @@ function ProductionOrderDetailPage(): React.JSX.Element {
               empty={data.rmQtyPerPiece == null}
               value={data.rmQtyPerPiece ?? '—'}
             />
-          </Cluster>
-          <Cluster name={null}>
             <ClusterFact
               className={pSize ? 'po-chip' : 'po-one-line'}
               label="Actual Size"

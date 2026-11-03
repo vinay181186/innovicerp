@@ -221,7 +221,7 @@ function RouteCardDetailPage(): React.JSX.Element {
           />
         </DocIdent>
 
-        <ClusterGrid>
+        <ClusterGrid stack>
           {/* How the item is made, and how many steps of each kind. */}
           <Cluster name="Route">
             <PlanTypeFact planType={detail.planType} />

@@ -213,9 +213,9 @@ export function JcFactBlock({
           ) : null}
         </DocIdent>
 
-        <ClusterGrid>
+        <ClusterGrid stack>
           {/* ── ORDER: where the card came from and what it is made to ── */}
-          <Cluster name="Order">
+          <Cluster name="Order" wide>
             <ClusterFact
               label="Production Order"
               empty={!jc.productionOrderId}
@@ -321,8 +321,6 @@ export function JcFactBlock({
               }
               after={pDrawing?.chip}
             />
-          </Cluster>
-          <Cluster name={null}>
             <ClusterFact num label="JC Date" empty={!jc.jcDate} value={fmtDate(jc.jcDate)} />
             <ClusterFact
               num
@@ -353,7 +351,7 @@ export function JcFactBlock({
           </Cluster>
 
           {/* ── QUANTITY: how many, where they are, ending on Completed ── */}
-          <Cluster name="Quantity">
+          <Cluster name="Quantity" wide>
             <ClusterFact
               num
               className={pQty ? 'jc-chip' : ''}
@@ -407,8 +405,6 @@ export function JcFactBlock({
               title="Failed inspection, NC still waiting for a decision"
               value={q ? q.deviatedOpen : qtyEmpty}
             />
-          </Cluster>
-          <Cluster name={null}>
             <ClusterFact
               num
               label="In Progress"

@@ -207,6 +207,81 @@
   }
 }
 
+/* ── Stacked facts: <ClusterGrid stack> (owner 03-Nov, mockup "G-safe") ──────
+   Read-only detail pages. Each fact shows its label ABOVE its value, so a
+   value can never be read against the next cell's label (on a 1900px screen
+   label-left / value-right put Plan Qty's figure closer to "PRO Qty" than to
+   its own label). The label is a whole line; the value and any pending chip
+   share the line under it. One line each, ellipsis — never a sideways scroll. */
+.cl-stack .cl-fact {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  align-items: baseline;
+  gap: 0 var(--sp-2);
+  min-height: 0;
+}
+.cl-stack .cl-fact > .cl-fact-k {
+  flex: 0 0 100%;
+  min-width: 0;
+  margin-right: 0;
+  font-size: var(--fs-xs);
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cl-stack .cl-fact > .cl-fact-v {
+  margin-left: 0;
+  max-width: 100%;
+  text-align: left;
+  line-height: 1.35;
+}
+.cl-stack > .cl-row {
+  padding: 6px 0;
+}
+
+/* Wide grid: 8 tracks. Every ordinary fact spans 2, so a 4-fact cluster looks
+   exactly as before and its cells line up with a `wide` cluster's 8, which
+   span 1 each. The sequence is the markup order — the grid only decides where
+   the line breaks, never the order. */
+@container (min-width: 1500px) {
+  .cl-stack > .cl-row {
+    grid-template-columns: 104px repeat(8, minmax(0, 1fr));
+  }
+  .cl-stack > .cl-row.cl-nogut {
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+  }
+  .cl-stack > .cl-row > :not(.cl-gut) {
+    grid-column: span 2;
+  }
+  .cl-stack > .cl-row > .cl-span-2 {
+    grid-column: span 4;
+  }
+  .cl-stack > .cl-row > .cl-span-3 {
+    grid-column: span 6;
+  }
+  .cl-stack > .cl-row > .cl-span-4 {
+    grid-column: span 8;
+  }
+  .cl-stack > .cl-row.cl-wide > :not(.cl-gut) {
+    grid-column: span 1;
+  }
+  .cl-stack > .cl-row.cl-wide > .cl-span-2 {
+    grid-column: span 2;
+  }
+}
+/* Narrower: a `wide` cluster's facts flow onto two rows of 4, same order. The
+   gutter holds column 1 on both rows so the second row starts under the first
+   cell, and that cell drops its hairline like the first cell of any row. */
+@container (min-width: 761px) and (max-width: 1499px) {
+  .cl-stack > .cl-row.cl-wide > .cl-gut {
+    grid-row: span 2;
+  }
+  .cl-stack > .cl-row.cl-wide > .cl-fact:nth-child(6):not(.cl-lead) {
+    border-left: none;
+    padding-left: 0;
+  }
+}
+
 /* Width caps — OPT-IN, additive. A cell stays a full quarter of the row (the
    grid must not break), but the control inside it does not have to fill it: a
    Qty box as wide as a name box was the "too long field width" complaint on

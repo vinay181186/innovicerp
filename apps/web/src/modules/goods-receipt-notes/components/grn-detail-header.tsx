@@ -105,7 +105,7 @@ export function ReceiptGrid(props: {
     (!!detail.dcNo && detail.dcNo !== detail.dcCode) ||
     !!headerPendingChange(pendingChanges, 'dcNo');
   return (
-    <ClusterGrid>
+    <ClusterGrid stack>
       {/* 1 — which paper am I receiving against. */}
       <Cluster name="Against">
         <ClusterFact label="GRN Type" empty={!grnType} value={grnType ?? '—'} />
