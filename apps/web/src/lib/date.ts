@@ -144,6 +144,20 @@ export function fmtTime(v: string | number | null | undefined, empty = ''): stri
   return p ? `${p.hh}:${p.mi}` : empty;
 }
 
+/** India-time clock on the 12-hour dial, two-digit hour: `02:35 PM`, `12:15 AM`.
+ *  Same instant as `fmtTime` (which prints `14:35`). Used by the locked
+ *  Created Time column (owner 2026-11-03). */
+export function fmtTime12(v: string | number | null | undefined, empty = ''): string {
+  // A bare calendar date carries no clock — never invent "05:30 AM" from it.
+  if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v.trim())) return empty;
+  const t = fmtTime(v, '');
+  if (t === '') return empty;
+  const [hh, mi] = t.split(':');
+  const h = Number(hh);
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${String(h12).padStart(2, '0')}:${mi} ${h < 12 ? 'AM' : 'PM'}`;
+}
+
 /**
  * A stored calendar date plus an optional wall-clock time (`HH:MM[:SS]`, as
  * the log tables keep them) → `26-Sep-2026 14:05`, or the date alone when
