@@ -20,6 +20,7 @@ import type {
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { createdByNameSql } from '../../lib/created-by-sql';
 import { OP_LOG_QC_REMARKS } from '../../lib/op-log-qc-remarks';
+import { soOrJwCodeSql } from '../../lib/order-code';
 import { polSql } from '../../lib/pol';
 import { AuthorizationError } from '../../lib/errors';
 import { likeEscape } from '../../lib/list-query';
@@ -51,6 +52,9 @@ const SO_JOINS = sql`
   LEFT JOIN public.sales_orders so
     ON so.id = sol.sales_order_id AND so.deleted_at IS NULL`;
 
+// ADR-267 — the bare order No. behind the card: SO, else JWSO.
+const ORDER_CODE = soOrJwCodeSql('so', 'rev_jwl');
+
 /** Pending TPI ops: FROM … WHERE (company + QC op named TPI + qty waiting).
  *  Exported: the home's QC check qc_tpi reads the same rows (ADR-264). */
 export function pendingFrom(companyId: string): SQL {
@@ -77,7 +81,7 @@ function completedFrom(companyId: string): SQL {
 
 const PENDING_SELECT = sql`
   vos.jc_op_id AS "jcOpId", jc.code AS "jcCode", vos.op_seq AS "opSeq",
-  so.code AS "soCode", so.internal_so_no AS "soInternalNo", i.code AS "itemCode",
+  ${ORDER_CODE} AS "soCode", so.internal_so_no AS "soInternalNo", i.code AS "itemCode",
   COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
   ${polSql('sol', 'rev_jwl')} AS "clientPoLineNo", i.name AS "itemName",
   jo.operation, jc.order_qty AS "orderQty", vos.qc_pending AS "qcPending",
@@ -89,7 +93,7 @@ const PENDING_ORDER = sql`jc.code, vos.op_seq, vos.jc_op_id`;
 const COMPLETED_SELECT = sql`
   ol.id AS "logId", jc.code AS "jcCode", jo.op_seq AS "opSeq",
   to_char(jc.jc_date, 'YYYY-MM-DD') AS "jcDate",
-  so.code AS "soCode", so.internal_so_no AS "soInternalNo", i.code AS "itemCode",
+  ${ORDER_CODE} AS "soCode", so.internal_so_no AS "soInternalNo", i.code AS "itemCode",
   COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
   ${polSql('sol', 'rev_jwl')} AS "clientPoLineNo", i.name AS "itemName",
   jo.operation, ol.qty AS "accepted", ol.reject_qty AS "rejected",
@@ -108,7 +112,7 @@ function searchWhere(term: string | undefined, completed: boolean): SQL {
   const p = `%${likeEscape(q)}%`;
   const cols = [
     sql`jc.code`,
-    sql`so.code`,
+    ORDER_CODE,
     // ADR-207: the SO's Internal SO No. finds its rows too.
     sql`so.internal_so_no`,
     polSql('sol', 'rev_jwl'),
@@ -122,6 +126,11 @@ function searchWhere(term: string | undefined, completed: boolean): SQL {
     cols.map((c) => sql`${c} ILIKE ${p} ESCAPE '\\'`),
     sql` OR `,
   )})`;
+}
+
+/** `AND …` for the order dropdown (ADR-267): one order's rows only. */
+function orderWhere(orderCode: string | undefined): SQL {
+  return orderCode ? sql`AND ${ORDER_CODE} = ${orderCode}` : sql``;
 }
 
 function toPending(r: Raw): TpiPendingRow {
@@ -179,7 +188,7 @@ export async function listTpiPending(
   user: AuthContext,
 ): Promise<TpiPendingListResponse> {
   const companyId = requireCompany(user);
-  const where = sql`${pendingFrom(companyId)} ${searchWhere(input.search, false)}`;
+  const where = sql`${pendingFrom(companyId)} ${searchWhere(input.search, false)} ${orderWhere(input.orderCode)}`;
   return withUserContext(user, async (tx) => {
     const page = await tx.execute(sql`
       SELECT ${PENDING_SELECT} ${where} ORDER BY ${PENDING_ORDER}
@@ -195,7 +204,7 @@ export async function listTpiCompleted(
   user: AuthContext,
 ): Promise<TpiCompletedListResponse> {
   const companyId = requireCompany(user);
-  const where = sql`${completedFrom(companyId)} ${searchWhere(input.search, true)}`;
+  const where = sql`${completedFrom(companyId)} ${searchWhere(input.search, true)} ${orderWhere(input.orderCode)}`;
   return withUserContext(user, async (tx) => {
     const page = await tx.execute(sql`
       SELECT ${COMPLETED_SELECT} ${where} ORDER BY ${COMPLETED_ORDER}

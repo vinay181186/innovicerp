@@ -92,7 +92,13 @@ function ProductionDashboardPage(): React.JSX.Element {
   // Open Job Cards — 25 a page (own page number, kept across tab switches).
   const [jcPage, setJcPage] = useState(1);
   const onJcPage = useCallback((p: number) => setJcPage(p), []);
-  const jcs = useOpenJobCards({ limit: LIST_PAGE_SIZE, offset: pageOffset(jcPage) });
+  // The order dropdown is a server filter on soCode (ADR-267); any change → page 1.
+  const jcSf = useServerSortFilter(TABLE_KEYS.prodDashboardOpenJcs, () => setJcPage(1));
+  const jcs = useOpenJobCards({
+    sf: jcSf.param,
+    limit: LIST_PAGE_SIZE,
+    offset: pageOffset(jcPage),
+  });
   useClampPage(jcPage, jcs.data?.total, onJcPage);
   const openJobCards = jcs.data?.items ?? [];
   // Available Now — 25 ops a page, server Sort & Filter (any change → page 1).
@@ -145,9 +151,12 @@ function ProductionDashboardPage(): React.JSX.Element {
         updating={isFetching && !isLoading}
         orderFilter={
           tab === 'ready' ? (
-            <OrderSfFilter sf={readySf} field="soCode" />
+            <OrderSfFilter key={tab} sf={readySf} field="soCode" />
+          ) : tab === 'jcs' ? (
+            <OrderSfFilter key={tab} sf={jcSf} field="soCode" />
           ) : tab === 'machines' ? (
             <OrderSelect
+              key={tab}
               value={machineSo}
               onChange={(option) => setMachineSo(option?.code ?? null)}
             />
@@ -204,7 +213,12 @@ function ProductionDashboardPage(): React.JSX.Element {
             tabs={[
               // Server's full-scope count (every ready op, not the page).
               { key: 'ready', label: 'Available Now', count: c?.readyOps ?? null },
-              { key: 'jcs', label: 'Open Job Cards', count: jcs.data?.total ?? null },
+              // A held order pick narrows the rows, not the tab count (as the other tabs).
+              {
+                key: 'jcs',
+                label: 'Open Job Cards',
+                count: jcSf.filtering ? (c?.openJc ?? null) : (jcs.data?.total ?? null),
+              },
               {
                 key: 'machines',
                 label: 'Machine Pending',
@@ -259,7 +273,7 @@ function ProductionDashboardPage(): React.JSX.Element {
                   rows={openJobCards}
                   rowKey={(jc) => jc.jobCardId}
                   loading={jcs.isLoading}
-                  emptyText="No open Job Cards."
+                  emptyText={jcSf.filtering ? 'No open Job Cards match.' : 'No open Job Cards.'}
                   onRowClick={
                     canOpenJc
                       ? (jc) =>

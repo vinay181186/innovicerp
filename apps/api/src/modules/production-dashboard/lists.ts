@@ -48,17 +48,29 @@ const iso = (v: unknown): string | null =>
 
 type Raw = Record<string, unknown>;
 
+/** ADR-267 — the order dropdown on the Open Job Cards widget; the SELECT's own expression. */
+export const PROD_OPEN_JC_SF_COLUMNS: SfColumnMap = {
+  soCode: { sql: sql`COALESCE(pd_so.code, pd_jw.code)`, type: 'text' },
+};
+
 export async function listOpenJobCards(
   user: AuthContext,
   raw: ProductionDashboardPageQuery,
 ): Promise<ProductionDashboardJcPage> {
   const input = productionDashboardPageQuerySchema.parse(raw);
   const companyId = requireCompany(user);
+  const sf = readSf(input.sf);
   const from = sql`
     FROM public.v_jc_status s
     JOIN public.job_cards jc ON jc.id = s.job_card_id AND jc.deleted_at IS NULL
     ${ITEM_JOINS}
-    WHERE s.company_id = ${companyId}::uuid AND s.computed_status = 'open'`;
+    WHERE s.company_id = ${companyId}::uuid AND s.computed_status = 'open'
+      ${sfWhere(PROD_OPEN_JC_SF_COLUMNS, sf)}`;
+  const order = sfOrderBy(
+    PROD_OPEN_JC_SF_COLUMNS,
+    sf,
+    sql`(jc.priority = 'high') DESC, jc.due_date ASC NULLS LAST, jc.code, jc.id`,
+  );
   return withUserContext(user, async (tx) => {
     const rows = (await tx.execute(sql`
       SELECT
@@ -74,7 +86,7 @@ export async function listOpenJobCards(
         jc.priority, jc.order_qty AS "orderQty", jc.due_date AS "dueDate",
         s.total_ops AS "totalOps", s.done_ops AS "doneOps"
       ${from}
-      ORDER BY (jc.priority = 'high') DESC, jc.due_date ASC NULLS LAST, jc.code, jc.id
+      ORDER BY ${order}
       LIMIT ${input.limit} OFFSET ${input.offset}
     `)) as unknown as Raw[];
     const [cnt] = (await tx.execute(sql`SELECT COUNT(*)::int AS c ${from}`)) as unknown as Array<{

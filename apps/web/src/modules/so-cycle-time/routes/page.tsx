@@ -157,7 +157,9 @@ function SoCycleTimePage(): React.JSX.Element {
             />
           </ReportFilter>
           <ReportFilter label="SO No." size="lg">
-            <OrderSfFilter sf={sf} field="soNo" kind="so" />
+            <div>
+              <OrderSfFilter sf={sf} field="soNo" kind="so" />
+            </div>
           </ReportFilter>
           <ReportFilter label="Show" htmlFor="sct-filter">
             <select

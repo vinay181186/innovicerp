@@ -122,7 +122,9 @@ function PendingSoValuePage(): React.JSX.Element {
             </select>
           </ReportFilter>
           <ReportFilter label="SO No." size="lg">
-            <OrderSfFilter sf={sf} field="soCode" kind="so" />
+            <div>
+              <OrderSfFilter sf={sf} field="soCode" kind="so" />
+            </div>
           </ReportFilter>
           <ReportFilter label="Search" htmlFor="psv-search" size="lg">
             <input

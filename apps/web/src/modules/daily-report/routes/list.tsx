@@ -5,13 +5,14 @@
 // group's Completed total are whole-day figures from the server. Both prints
 // fetch the WHOLE day (fetchFullDailyReport), never just the page.
 
-import type { DailyReportResponse, DailyReportRow } from '@innovic/shared';
+import type { DailyReportResponse, DailyReportRow, OrderOption } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { z } from 'zod';
 import { fmtDate, todayIst } from '@/lib/date';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
+import { OrderSelect } from '@/modules/order-options/components/order-select';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { ListFooter } from '@/ui/layout';
 import { DataTable, StatStrip } from '@/ui/data';
@@ -27,6 +28,8 @@ import { SearchableSelect } from '@/ui/forms';
 const searchSchema = z.object({
   date: z.string().optional(),
   machineId: z.string().optional(),
+  /** ADR-267: one SO / JWSO only (the bare order No.). */
+  orderCode: z.string().optional(),
   page: pageSearchParam,
 });
 
@@ -43,6 +46,7 @@ function DailyReportPage(): React.JSX.Element {
   // IST today, not the UTC date: before 05:30 IST the UTC date is yesterday.
   const date = search.date ?? todayIst();
   const machineId = search.machineId ?? '';
+  const orderCode = search.orderCode;
 
   const { data: machinesData } = useMachinesList({
     limit: 200,
@@ -53,6 +57,7 @@ function DailyReportPage(): React.JSX.Element {
   const { data, isLoading, isError, error } = useDailyReport({
     date,
     machineId: machineId || undefined,
+    orderCode,
     limit: LIST_PAGE_SIZE,
     offset: pageOffset(search.page),
   });
@@ -71,7 +76,7 @@ function DailyReportPage(): React.JSX.Element {
   const loadFullDay = async (): Promise<DailyReportResponse | null> => {
     setPrinting(true);
     try {
-      return await fetchFullDailyReport({ date, machineId: machineId || undefined });
+      return await fetchFullDailyReport({ date, machineId: machineId || undefined, orderCode });
     } catch (e) {
       window.alert(e instanceof Error ? e.message : 'Could not load the report to print.');
       return null;
@@ -86,11 +91,13 @@ function DailyReportPage(): React.JSX.Element {
         return m ? `${m.code} — ${m.name}` : 'Selected Machine';
       })()
     : 'All Machines';
+  // A print of one order's rows says so in its heading.
+  const printLabel = (label: string): string => (orderCode ? `${label} · ${orderCode}` : label);
 
   const onPrint = async (): Promise<void> => {
     const full = await loadFullDay();
     if (!full) return;
-    if (!printDailyReport({ report: full, machineLabel, company })) {
+    if (!printDailyReport({ report: full, machineLabel: printLabel(machineLabel), company })) {
       window.alert('Allow popups to print.');
     }
   };
@@ -115,7 +122,7 @@ function DailyReportPage(): React.JSX.Element {
         jcsActive: new Set(g.rows.map((r) => r.jcCode)).size,
       },
     };
-    if (!printDailyReport({ report: scoped, machineLabel: g.machineCode, company })) {
+    if (!printDailyReport({ report: scoped, machineLabel: printLabel(g.machineCode), company })) {
       window.alert('Allow popups to print.');
     }
   };
@@ -126,6 +133,14 @@ function DailyReportPage(): React.JSX.Element {
   const setMachine = (next: string): void => {
     void navigate({ search: (prev) => ({ ...prev, machineId: next || undefined, page: 1 }) });
   };
+
+  const setOrder = (option: OrderOption | null): void => {
+    if (!option && !orderCode) return;
+    void navigate({ search: (prev) => ({ ...prev, orderCode: option?.code, page: 1 }) });
+  };
+  const noEntries = orderCode
+    ? `No production entries for ${fmtDate(date)} match.`
+    : `No production entries for ${fmtDate(date)}.`;
 
   const summary = data?.summary ?? {
     totalPieces: 0,
@@ -143,11 +158,7 @@ function DailyReportPage(): React.JSX.Element {
           className="btn btn-ghost"
           onClick={() => void onPrint()}
           disabled={!data || data.groups.length === 0 || printing}
-          title={
-            data && data.groups.length === 0
-              ? `No production entries for ${fmtDate(date)}`
-              : 'Print daily production report'
-          }
+          title={data && data.groups.length === 0 ? noEntries : 'Print daily production report'}
         >
           🖨 Print Full Report
         </button>
@@ -178,8 +189,26 @@ function DailyReportPage(): React.JSX.Element {
               onChange={(id) => setMachine(id ?? '')}
             />
           </ReportFilter>
+          <ReportFilter label="SO / JWSO" htmlFor="dr-order" size="lg">
+            {/* The plain div: .order-filter's flex-basis would be a 352px HEIGHT as a
+                direct child of ReportFilter's flex column. */}
+            <div>
+              <OrderSelect id="dr-order" value={orderCode ?? null} onChange={setOrder} />
+            </div>
+          </ReportFilter>
         </>
       }
+      onClear={() => {
+        void navigate({
+          search: (prev) => ({
+            ...prev,
+            date: undefined,
+            machineId: undefined,
+            orderCode: undefined,
+            page: 1,
+          }),
+        });
+      }}
       kpis={
         <StatStrip
           items={[
@@ -226,7 +255,7 @@ function DailyReportPage(): React.JSX.Element {
       ) : !data || data.groups.length === 0 ? (
         <div className="panel">
           <div className="empty-state" style={{ padding: 56 }}>
-            <b>No production entries for {fmtDate(date)}.</b>
+            <b>{noEntries}</b>
           </div>
         </div>
       ) : (

@@ -15130,6 +15130,7 @@ The owner wants one dropdown beside the search box on every list tied to an SO: 
 - `SearchableSelect`: ↑ ↓ scrolls the highlighted row into view (keyboard only).
 - Rollout: where JWSO rows showed a blank SO No. (Machine Loading, OSP at Vendor, QC History, QC Call Register, Purchase Requests, Stock Ledger) `soCode` now reads the SO, else the JWSO, through `lib/order-code.ts`; the cell, filter and search use the same value. Plans and NC Register get `orderCode` because their column prints a snapshot.
 - One dropdown per screen: it replaces the old SO box on Customer Dispatches and Supply Chain Pending. CAPA gets none, because its SO No. is typed free text that an exact pick would miss. Supply Chain Purchase Summary gets none, because it holds only line 1's SO.
+- Exception to no per-endpoint parameter: Job Queue, QC Center, TPI and Daily Report have no Sort & Filter state, so each takes an optional exact `orderCode`. Open Job Cards reads `sf` for this one field and keeps its browser column menus.
 
 ### Alternatives Considered
 

@@ -4,13 +4,14 @@
 // qc_assignments + nc_register) — Pareto + Inspector are now real legacy-parity
 // reports, no longer reusing /qc-dashboard. Legacy chrome.
 
-import type { QcCommandQueueRow, QcCommandTotals, QcQueueSort } from '@innovic/shared';
+import type { OrderOption, QcCommandQueueRow, QcCommandTotals, QcQueueSort } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
+import { OrderSelect } from '@/modules/order-options/components/order-select';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { StatStrip } from '@/ui/data';
 import { ListHeader } from '@/ui/layout';
@@ -77,7 +78,17 @@ function QcCommandPage(): React.JSX.Element {
   // table counts are whole-set figures from the same read.
   const [pages, setPages] = useState<Record<PagedTable, number>>(FIRST_PAGES);
   const [queueSort, setQueueSort] = useState<QcQueueSort>('age');
+  // ADR-267: one order pick for the Queue and Rework tabs. Sent only while on them:
+  // the header's queue count must not stay narrowed under a tab with no dropdown.
+  const [orderCode, setOrderCode] = useState<string | null>(null);
+  const orderTab = tab === 'queue' || tab === 'rework';
+  const setOrder = (option: OrderOption | null): void => {
+    if (!option && orderCode === null) return;
+    setOrderCode(option?.code ?? null);
+    setPages((prev) => ({ ...prev, queue: 1, rework: 1 }));
+  };
   const cmd = useQcCommand({
+    orderCode: orderTab && orderCode !== null ? orderCode : undefined,
     queueSort,
     limit: LIST_PAGE_SIZE,
     queueOffset: pageOffset(pages.queue),
@@ -162,6 +173,7 @@ function QcCommandPage(): React.JSX.Element {
         noun="call in queue"
         nounPlural="calls in queue"
         updating={cmd.isFetching && !loading}
+        orderFilter={orderTab ? <OrderSelect value={orderCode} onChange={setOrder} /> : undefined}
       >
         {/* Stats strip (legacy: Pending / Overdue / Oldest / Rework / FPY) */}
         {!loading ? (
@@ -247,6 +259,7 @@ function QcCommandPage(): React.JSX.Element {
                 setPages((prev) => ({ ...prev, queue: 1 }));
               }}
               pager={pager('queue')}
+              filtered={orderCode !== null}
               canPickUp={canPickUp}
               canAssign={canAssign}
               busyId={busyId}
@@ -258,7 +271,11 @@ function QcCommandPage(): React.JSX.Element {
             <FpyTab fpy={cmd.data.fpy} opPager={pager('fpyOp')} inspPager={pager('fpyInsp')} />
           ) : null}
           {tab === 'rework' ? (
-            <ReworkTab rework={cmd.data?.rework ?? []} pager={pager('rework')} />
+            <ReworkTab
+              rework={cmd.data?.rework ?? []}
+              pager={pager('rework')}
+              filtered={orderCode !== null}
+            />
           ) : null}
           {tab === 'pareto' && cmd.data ? (
             <ParetoTab pareto={cmd.data.pareto} pager={pager('pareto')} />

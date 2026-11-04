@@ -36,6 +36,11 @@ export async function getDailyReport(
     const machineFrag = input.machineId
       ? sql`AND COALESCE(l.machine_id, op.machine_id) = ${input.machineId}::uuid`
       : sql``;
+    // ADR-267 — the order dropdown, the same expression the SELECT prints. Rows,
+    // machine groups and the summary are all built from this one result below.
+    const orderFrag = input.orderCode
+      ? sql`AND COALESCE(so.code, jw.code) = ${input.orderCode}`
+      : sql``;
 
     const result = await tx.execute(sql`
       SELECT
@@ -85,6 +90,7 @@ export async function getDailyReport(
         AND l.log_type <> 'start'
         AND l.qty <> 0 -- 0179: a reversal (negative qty) nets the day total
         ${machineFrag}
+        ${orderFrag}
       ORDER BY COALESCE(m.code, l.machine_code_text, op.machine_code_text, ''), op.op_seq, l.id
     `);
 

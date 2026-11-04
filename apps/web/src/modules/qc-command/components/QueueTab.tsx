@@ -52,6 +52,7 @@ export function QueueTab({
   sort,
   onSort,
   pager,
+  filtered,
   canPickUp,
   canAssign,
   busyId,
@@ -63,6 +64,8 @@ export function QueueTab({
   sort: QcQueueSort;
   onSort: (s: QcQueueSort) => void;
   pager: QcPager;
+  /** An order is picked: an empty list means "none match", not "none at all". */
+  filtered: boolean;
   // Both come from the caller's qc_submit tier now, not their global role:
   // pick-up is `entry`, assign-to-another is `edit`.
   canPickUp: boolean;
@@ -245,7 +248,7 @@ export function QueueTab({
           tip — just the sort bar and this line. */}
       {pager.total === 0 ? (
         <div className="empty-state" style={{ color: 'var(--green2)' }}>
-          No QC Pending items.
+          {filtered ? 'No QC Pending items match.' : 'No QC Pending items.'}
         </div>
       ) : (
         <Panel bodyPadding="none">

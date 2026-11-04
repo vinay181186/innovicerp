@@ -61,6 +61,8 @@ export async function getJobQueue(
     for (const m of all) {
       if (input.machineId && m.machineId !== input.machineId) continue;
       m.rows.forEach((row, i) => {
+        // ADR-267 — the order dropdown. row.soCode is already SO else JWSO.
+        if (input.orderCode && row.soCode !== input.orderCode) return;
         if (term === '' || rowMatches(row, term)) {
           flat.push({ machineId: m.machineId, row: { ...row, queueIndex: i } });
         }
