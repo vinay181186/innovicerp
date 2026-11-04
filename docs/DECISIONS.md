@@ -15111,3 +15111,47 @@ Owner 2026-11-02: "remove this rule — no compulsory fill of back-dated entries
 - **Created By** (`createdByColumn`) LAST on every lead list, shown, movable, hideable. Server: one helper `apps/api/src/lib/created-by-sql.ts createdByNameSql(col)` (full name, else e-mail before @) on the created_by of the SAME record whose created_at feeds Created On (line, else header); screen shortens with shared `shortName`. `createdBy` sort/filter field wherever `createdOn` has one. SO list: `lineCreatedByName` (the header `createdByName` stays the SO creator).
 - One name per fact: Op Log "Logged By" → "Created By" (list, export, JC print, op-log history, NAMING); Job Queue's old "Sr No" (queue position) → "Queue No."; Reserved Stock pop-up drops Reserved On / Reserved By (same facts as Created On / Created By).
 - Guard test: every file that builds `leadColumns` must also add `createdByColumn`.
+
+## ADR-267: SO/JWSO Planning list — one row per POL (owner 2026-11-04)
+
+**Date:** 2026-11-04
+**Status:** Accepted (owner approved plan + mockup)
+
+### Context
+
+The first Planning screen drew one row per order ("Lines 4"), so a planner had to open each
+order to see which POL had which item, Route Card or Production Order. An order covered only by
+draft plans also read "Fully Planned" while its lines read "In Planning" (open since ADR-209).
+
+### Decision
+
+- `GET /so-planning/lines` — one row per live line (not cancelled, on an open SO or JWSO). SO and
+  JWSO alike. Columns: lead block (Sr No · SO No. · Internal SO No. · POL · Item Code · Item Name ·
+  Created On · Created Time) · Ln · Customer · Type · Due Date · Order Qty · Plan Qty · To Plan ·
+  % Planned · Plan Status · RC No. · PRO No. · JC No. · Created By. Lines column gone.
+- A POL with several plans / PROs stays ONE row, codes joined with " · " — two rows would make the
+  Order Qty read double.
+- `GET /so-planning` stays: the Create Plan picker reads it, one row per order.
+- The "Matching lines" tab is deleted: the list IS the lines, and search now covers every page.
+- RC / PRO / JC rule moved to `packages/shared/src/lib/planning-doc-codes.ts`, so the cells and the
+  server's search + Sort & Filter read one rule. Plan loading is one batched helper
+  (`so-planning/plan-summaries.ts`) for SO detail, JWSO detail and the list.
+- JWSO order view fixed so it agrees with the list: a short-closed line reads To Plan 0 / Fully
+  Planned, and a direct rework or repair Job Card is not cover (both already so on the SO path).
+- New table key `planningLineList`, so an old saved ▾ filter cannot ask for a dead field; each
+  user's saved column layout for this screen resets once.
+
+### Alternatives Considered
+
+- One row per PRO — rejected by the owner's "one row per POL"; doubles Order Qty.
+- Per-order detail in a loop — rejected: about 15 queries per order on every page (rule 6).
+- SQL paging — rejected: Plan Status and % are worked out by the shared rule in code, so filter and
+  sort stay in memory like ADR-201's list.
+
+### Consequences
+
+- Positive: same figure on the list and in the order; 14 queries for a page however many orders.
+- Negative: every page request reads every open line. Speed on PROD-size data not measured before
+  release (PROD read not available to the session).
+- Rare: a direct Job Card linked by a plan on ANOTHER order is excluded by the list, included by the
+  order view. None on TEST.

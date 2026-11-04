@@ -276,6 +276,91 @@ export const planningLineSchema = z.object({
 });
 export type PlanningLine = z.infer<typeof planningLineSchema>;
 
+// ─── Planning list: one row per POL (ADR-267) ────────────────────────────
+
+/**
+ * One row of GET /so-planning/lines: one live SO / JWSO line (not cancelled, on
+ * an open order) with its order's header facts. Every line fact is the SAME
+ * field the order's detail sends (`planningLineSchema`), so the list and the
+ * order can never disagree; the screen derives Plan Status and % from
+ * `planningLineStatus()` and RC / PRO / JC from `planning-doc-codes`.
+ */
+export const planningLineListItemSchema = planningLineSchema
+  .pick({
+    soLineId: true,
+    itemRevisionId: true,
+    drawingRev: true,
+    lineNo: true,
+    clientPoLineNo: true,
+    createdAt: true,
+    createdByName: true,
+    itemId: true,
+    itemCode: true,
+    itemRevision: true,
+    itemName: true,
+    orderQty: true,
+    dueDate: true,
+    itemProcurementType: true,
+    prQty: true,
+    prs: true,
+    plans: true,
+    totalPlanned: true,
+    directJcQty: true,
+    directJcCodes: true,
+    remaining: true,
+    shortClosed: true,
+    lineStatus: true,
+  })
+  .extend({
+    soId: z.string().uuid(),
+    soCode: z.string(),
+    /** ADR-207 — null for a JWSO or an old SO. */
+    soInternalNo: z.string().nullable(),
+    source: z.enum(['so', 'jw']),
+    customerName: z.string().nullable(),
+    soType: z.string(),
+  });
+export type PlanningLineListItem = z.infer<typeof planningLineListItemSchema>;
+
+/** Same params as the order list: source, search, Sort & Filter, a 25-row page. */
+export const planningLineListQuerySchema = planningSoListQuerySchema;
+export type PlanningLineListQuery = z.infer<typeof planningLineListQuerySchema>;
+
+export const planningLineListResponseSchema = z.object({
+  generatedAt: z.string(),
+  /** Lines matching src + search + Sort & Filter (items holds one page). */
+  total: z.number().int().nonnegative(),
+  items: z.array(planningLineListItemSchema),
+});
+export type PlanningLineListResponse = z.infer<typeof planningLineListResponseSchema>;
+
+/**
+ * Sort & Filter field names of the Planning list — the server's map and the
+ * screen's column `sortFilterField` both use these, so a heading can never ask
+ * for a field the server does not know.
+ */
+export const PLANNING_LINE_LIST_SF_FIELD = {
+  soCode: 'soCode',
+  soInternalNo: 'soInternalNo',
+  pol: 'pol',
+  itemCode: 'itemCode',
+  itemName: 'itemName',
+  createdOn: 'createdOn',
+  lineNo: 'lineNo',
+  customerName: 'customerName',
+  soType: 'soType',
+  dueDate: 'dueDate',
+  orderQty: 'orderQty',
+  planQty: 'planQty',
+  toPlan: 'toPlan',
+  planningPct: 'planningPct',
+  planState: 'planState',
+  rcNo: 'rcNo',
+  proNo: 'proNo',
+  jcNo: 'jcNo',
+  createdBy: 'createdBy',
+} as const;
+
 export const planningDetailResponseSchema = z.object({
   soId: z.string().uuid(),
   soCode: z.string(),

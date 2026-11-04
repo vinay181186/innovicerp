@@ -4,8 +4,13 @@
 
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { planningSoListQuerySchema, raisePlanningPrInputSchema } from '@innovic/shared';
+import {
+  planningLineListQuerySchema,
+  planningSoListQuerySchema,
+  raisePlanningPrInputSchema,
+} from '@innovic/shared';
 import { AuthenticationError } from '../../lib/errors';
+import { listPlanningLines } from './list-lines';
 import * as service from './service';
 
 const uuidParam = z.object({ id: z.string().uuid() });
@@ -16,6 +21,13 @@ export async function soPlanningRoutes(app: FastifyInstance): Promise<void> {
   app.get('/so-planning', async (req) => {
     if (!req.user) throw new AuthenticationError();
     return service.getPlanningSoList(req.user, planningSoListQuerySchema.parse(req.query));
+  });
+
+  // ADR-267 — the Planning first screen, one row per line.
+  // Must precede '/so-planning/:id' so 'lines' isn't captured as an :id param.
+  app.get('/so-planning/lines', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    return listPlanningLines(req.user, planningLineListQuerySchema.parse(req.query));
   });
 
   // Must precede '/so-planning/:id' so 'lines' isn't captured as an :id param.

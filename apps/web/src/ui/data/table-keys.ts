@@ -79,8 +79,8 @@ export const TABLE_KEYS = {
   jwInvoices: 'jw-invoices',
 
   // ADR-199 conversions — Planning / Finance (batch PF)
-  planningList: 'planning-list',
-  planningLineSearch: 'planning-line-search',
+  /** Level 1 of SO/JWSO Planning: one row per line (ADR-267). */
+  planningLineList: 'planning-line-list',
   plansList: 'plans-list',
   pendingSoValue: 'pending-so-value',
   soCosting: 'so-costing',
