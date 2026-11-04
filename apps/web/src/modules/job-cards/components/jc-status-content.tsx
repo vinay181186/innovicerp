@@ -9,8 +9,8 @@
 // sequence, only the controls differ). Precedent: production-orders/routes/
 // edit.tsx.
 //
-//   header     ← Back · JC No. · Edit Job Card · JC status badge ·
-//              (pending-edit note) · Cancel · Save Changes
+//   header     ← Back · JC No. · Edit Job Card · JC status badge
+//   bottom     FormActions: (pending-edit note) · Cancel · Save Changes
 //   banners    Sent for approval · short-closed Production Order stop
 //              (ADR-182) · rework / repair child note
 //   facts      jc-edit-fact-block.tsx — the detail page's block with Item
@@ -56,7 +56,7 @@ import { useProductionOrderForJobCard } from '@/modules/production-orders/api';
 import { useVendorsList, vendorsKeys } from '@/modules/vendors/api';
 import { opEntryKeys, useJcOpsEnriched, useOpLog } from '@/modules/op-entry/api';
 import { Banner } from '@/ui/feedback';
-import { DetailHeader, useSaveShortcut } from '@/ui/layout';
+import { DetailHeader, FormActions, useSaveShortcut } from '@/ui/layout';
 import {
   jobCardsKeys,
   useFetchJobCardEditModel,
@@ -876,7 +876,7 @@ function JcStatusEditForm({
     }
   };
 
-  // Ctrl+S runs the same Save as the header button. Always bound, so the
+  // Ctrl+S runs the same Save as the bottom button. Always bound, so the
   // browser's "Save page as" never opens; onSave's own guard refuses while
   // Save is off.
   useSaveShortcut(() => void onSave());
@@ -915,41 +915,6 @@ function JcStatusEditForm({
           <>
             <span className="panel-title">Edit Job Card</span>
             <JcStatusBadge status={jc.computedStatus} />
-          </>
-        }
-        actions={
-          <>
-            {hasPendingEdit ? (
-              <span className="jc-edit-pend" role="status" title={PENDING_EDIT_MESSAGE}>
-                {pendingNote}
-              </span>
-            ) : null}
-            <Link
-              to="/job-cards/$id"
-              params={{ id }}
-              className="btn btn-ghost btn-sm"
-              onClick={exit.allow}
-            >
-              Cancel
-            </Link>
-            {/* The wrapper carries the hover text: a disabled button gets none. */}
-            <span title={saveOffTitle}>
-              <button
-                type="button"
-                className="btn btn-primary btn-sm"
-                disabled={submitting || saveBlocked || stopped || Boolean(qtyRule.error)}
-                title={saveOffTitle}
-                onClick={() => void onSave()}
-              >
-                {submitting ? (
-                  <>
-                    <Loader2 size={13} className="animate-spin" /> Saving…
-                  </>
-                ) : (
-                  'Save Changes'
-                )}
-              </button>
-            </span>
           </>
         }
       >
@@ -1103,6 +1068,43 @@ function JcStatusEditForm({
           }}
         />
       ) : null}
+
+      <FormActions
+        note={
+          hasPendingEdit ? (
+            <span className="jc-edit-pend" role="status" title={PENDING_EDIT_MESSAGE}>
+              {pendingNote}
+            </span>
+          ) : undefined
+        }
+      >
+        <Link
+          to="/job-cards/$id"
+          params={{ id }}
+          className="btn btn-ghost btn-sm"
+          onClick={exit.allow}
+        >
+          Cancel
+        </Link>
+        {/* The wrapper carries the hover text: a disabled button gets none. */}
+        <span title={saveOffTitle}>
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            disabled={submitting || saveBlocked || stopped || Boolean(qtyRule.error)}
+            title={saveOffTitle}
+            onClick={() => void onSave()}
+          >
+            {submitting ? (
+              <>
+                <Loader2 size={13} className="animate-spin" /> Saving…
+              </>
+            ) : (
+              'Save Changes'
+            )}
+          </button>
+        </span>
+      </FormActions>
     </div>
   );
 }

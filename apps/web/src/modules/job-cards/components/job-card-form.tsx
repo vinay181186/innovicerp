@@ -9,8 +9,8 @@
 // rule 8: Create, Edit and View share one grid and one sequence. Fits one
 // 1440×810 screen with no page scroll (`page-fill` + one <Panel fill>).
 //
-//   header     ← Back · next JC No. · New Job Card … why Save is off · Cancel ·
-//              Save Job Card
+//   header     ← Back · next JC No. · New Job Card
+//   bottom     FormActions: why Save is off · Cancel · Save Job Card
 //   banners    upload / server error · ops copied for another item · the
 //              "no QC directly after OSP" routing hint
 //   facts      picture frame (JcItemThumb: the item's photo | the drawing
@@ -68,7 +68,7 @@ import {
   IdentSep,
   SearchableSelect,
 } from '@/ui/forms';
-import { DetailHeader, useSaveShortcut } from '@/ui/layout';
+import { DetailHeader, FormActions, useSaveShortcut } from '@/ui/layout';
 import { TabStrip } from '@/ui/navigation';
 import { useCreateJobCard, useJobCardSourceOptions, useNextJcCode } from '../api';
 import {
@@ -732,7 +732,7 @@ export function JobCardForm({
       setError(e instanceof Error ? e.message : 'Could not save Job Card. Try again.');
     }
   };
-  // Ctrl+S runs the same Save as the header button. Always bound, so the
+  // Ctrl+S runs the same Save as the bottom button. Always bound, so the
   // browser's "Save page as" never opens while Save is off; onSubmit's own
   // guards refuse in that case.
   useSaveShortcut(() => void onSubmit());
@@ -781,39 +781,6 @@ export function JobCardForm({
               </span>
             ) : null}
             <span className="panel-title">New Job Card</span>
-          </>
-        }
-        actions={
-          <>
-            {/* Why Save is off — the first validation message, the same text
-                Save gave before. Full text on hover. */}
-            {saveBlockedReason ? (
-              <span className="form-error jcc-why" title={saveBlockedReason}>
-                {saveBlockedReason}
-              </span>
-            ) : null}
-            <button type="button" className="btn btn-ghost" onClick={() => exit.leave(goBack)}>
-              Cancel
-            </button>
-            {/* The wrapper carries the reason too: a disabled button gets no
-                hover in every browser. */}
-            <span title={saveBlockedReason}>
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={submitting || !check.ok}
-                title={saveBlockedReason}
-                onClick={() => void onSubmit()}
-              >
-                {submitting ? (
-                  <>
-                    <Loader2 size={13} className="animate-spin" /> Saving…
-                  </>
-                ) : (
-                  'Save Job Card'
-                )}
-              </button>
-            </span>
           </>
         }
       >
@@ -1315,6 +1282,41 @@ export function JobCardForm({
           />
         )}
       </Panel>
+
+      {/* Why Save is off — the first validation message, the same text Save
+          gave before. Full text on hover. */}
+      <FormActions
+        note={
+          saveBlockedReason ? (
+            <span className="form-error jcc-why" title={saveBlockedReason}>
+              {saveBlockedReason}
+            </span>
+          ) : undefined
+        }
+      >
+        <button type="button" className="btn btn-ghost" onClick={() => exit.leave(goBack)}>
+          Cancel
+        </button>
+        {/* The wrapper carries the reason too: a disabled button gets no
+            hover in every browser. */}
+        <span title={saveBlockedReason}>
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={submitting || !check.ok}
+            title={saveBlockedReason}
+            onClick={() => void onSubmit()}
+          >
+            {submitting ? (
+              <>
+                <Loader2 size={13} className="animate-spin" /> Saving…
+              </>
+            ) : (
+              'Save Job Card'
+            )}
+          </button>
+        </span>
+      </FormActions>
     </div>
   );
 }

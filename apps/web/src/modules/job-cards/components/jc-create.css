@@ -12,12 +12,12 @@
   font-size: var(--fs-xs);
   color: var(--text3);
 }
-/* Why Save is off — one line on Save's row; the full text is on hover. Keeps
-   `.form-error`, the class the e2e specs read refusals by. */
+/* Why Save is off — one line on Save's row (FormActions' note); the full text
+   is on hover. Keeps `.form-error`, the class the e2e specs read refusals by. */
 .jcc .jcc-why {
+  display: block;
   margin: 0;
   min-width: 0;
-  max-width: min(560px, 38vw);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

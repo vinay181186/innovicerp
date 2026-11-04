@@ -19,7 +19,7 @@ import { useSaveKey } from '@/lib/use-save-key';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Banner } from '@/ui/feedback';
 import { FormField, FormGrid } from '@/ui/forms';
-import { PageHeader, useSaveShortcut } from '@/ui/layout';
+import { FormActions, PageHeader, useSaveShortcut } from '@/ui/layout';
 import { useDeliveryChallan, useReceiveDeliveryChallan } from '../api';
 import { computeReceivedByLine } from '../lib/receipt-math';
 
@@ -222,36 +222,11 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
     <div>
       {exit.dialog}
       <PageHeader
-        sticky
         title={`Receive against ${detail.vendorName ?? detail.vendorCodeText}`}
         subtitle={<span className="td-code">{detail.code}</span>}
         backLabel="Back to DC"
         onBack={goBack}
-        dirty={dirty}
-        actions={
-          <>
-            <button type="button" className="btn btn-ghost" onClick={() => exit.leave(goBack)}>
-              Cancel
-            </button>
-            <button
-              type="submit"
-              form={RECEIVE_FORM_ID}
-              className="btn btn-primary"
-              disabled={!canSubmit}
-            >
-              {submitting ? <Loader2 size={13} className="animate-spin" /> : null}
-              {submitting ? 'Saving…' : 'Save Receipt'}
-            </button>
-          </>
-        }
       />
-
-      {/* Save error right under the header's Save. */}
-      {submitError ? (
-        <Banner tone="error" role="alert">
-          {submitError}
-        </Banner>
-      ) : null}
 
       <form id={RECEIVE_FORM_ID} onSubmit={(e) => void onSubmit(e)}>
         <div className="panel">
@@ -364,6 +339,29 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
           </div>
         </div>
       </form>
+      <FormActions
+        dirty={dirty}
+        note={
+          submitError ? (
+            <Banner tone="error" role="alert" flush>
+              {submitError}
+            </Banner>
+          ) : undefined
+        }
+      >
+        <button type="button" className="btn btn-ghost" onClick={() => exit.leave(goBack)}>
+          Cancel
+        </button>
+        <button
+          type="submit"
+          form={RECEIVE_FORM_ID}
+          className="btn btn-primary"
+          disabled={!canSubmit}
+        >
+          {submitting ? <Loader2 size={13} className="animate-spin" /> : null}
+          {submitting ? 'Saving…' : 'Save Receipt'}
+        </button>
+      </FormActions>
     </div>
   );
 }

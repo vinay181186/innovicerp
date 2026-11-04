@@ -24,7 +24,7 @@ import { authenticatedRoute } from '@/routes/_authenticated';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
 import { FormField, FormGrid } from '@/ui/forms';
-import { PageHeader, PageState, useSaveShortcut } from '@/ui/layout';
+import { FormActions, PageHeader, PageState, useSaveShortcut } from '@/ui/layout';
 import {
   type UpdateDeliveryChallanInput,
   useDcSendable,
@@ -400,43 +400,10 @@ function DeliveryChallanEditPage(): React.JSX.Element {
     <div>
       {exit.dialog}
       <PageHeader
-        sticky
         title={`Edit Delivery Challan — ${dc.code}`}
         backLabel="Back to Delivery Challan"
         onBack={goBack}
-        dirty={dirty}
-        actions={
-          <>
-            <button type="button" className="btn btn-ghost" onClick={() => exit.leave(goBack)}>
-              Cancel
-            </button>
-            <button
-              type="button"
-              className="btn btn-primary"
-              disabled={!canSave}
-              title={
-                lineErrors.size > 0
-                  ? 'Fix the highlighted lines — Challan Qty is over what the line allows.'
-                  : undefined
-              }
-              onClick={() => void submit()}
-            >
-              {update.isPending ? 'Saving…' : 'Save Changes'}
-            </button>
-          </>
-        }
       />
-
-      {err ? (
-        <Banner tone="error" role="alert">
-          {err}
-        </Banner>
-      ) : null}
-      {stagedNotice ? (
-        <Banner tone="success" role="status">
-          {stagedNotice}
-        </Banner>
-      ) : null}
 
       <Panel title="DC Details">
         <FormGrid>
@@ -509,6 +476,42 @@ function DeliveryChallanEditPage(): React.JSX.Element {
           onPatch={patchLine}
         />
       </Panel>
+      <FormActions
+        dirty={dirty}
+        note={
+          err || stagedNotice ? (
+            <div style={{ display: 'grid', gap: 'var(--sp-1)' }}>
+              {err ? (
+                <Banner tone="error" role="alert" flush>
+                  {err}
+                </Banner>
+              ) : null}
+              {stagedNotice ? (
+                <Banner tone="success" role="status" flush>
+                  {stagedNotice}
+                </Banner>
+              ) : null}
+            </div>
+          ) : undefined
+        }
+      >
+        <button type="button" className="btn btn-ghost" onClick={() => exit.leave(goBack)}>
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="btn btn-primary"
+          disabled={!canSave}
+          title={
+            lineErrors.size > 0
+              ? 'Fix the highlighted lines — Challan Qty is over what the line allows.'
+              : undefined
+          }
+          onClick={() => void submit()}
+        >
+          {update.isPending ? 'Saving…' : 'Save Changes'}
+        </button>
+      </FormActions>
     </div>
   );
 }

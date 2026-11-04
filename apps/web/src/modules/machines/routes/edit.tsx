@@ -98,22 +98,18 @@ function MachineNewPage(): React.JSX.Element {
       <Link to="/machines" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
         <ArrowLeft size={14} /> Back
       </Link>
-      <div className="panel">
-        <div className="panel-hdr">
+      <MachineForm
+        panelHeader={
           <div>
             {/* Legacy modal title: showModal('Add Machine', …) L13137. */}
             <div className="panel-title">Add Machine</div>
           </div>
-        </div>
-        <div className="panel-body">
-          <MachineForm
-            mode="create"
-            onSubmit={onSubmit}
-            submitError={submitError}
-            onCancel={() => exit.leave(goBack)}
-          />
-        </div>
-      </div>
+        }
+        mode="create"
+        onSubmit={onSubmit}
+        submitError={submitError}
+        onCancel={() => exit.leave(goBack)}
+      />
     </div>
   );
 }
@@ -222,8 +218,8 @@ function MachineEditPage(): React.JSX.Element {
           {stagedNotice}
         </Banner>
       ) : null}
-      <div className="panel">
-        <div className="panel-hdr">
+      <MachineForm
+        panelHeader={
           <div>
             <div
               className="td-code"
@@ -235,17 +231,13 @@ function MachineEditPage(): React.JSX.Element {
               Edit Machine
             </div>
           </div>
-        </div>
-        <div className="panel-body">
-          <MachineForm
-            mode="edit"
-            machine={machine}
-            onSubmit={onSubmit}
-            submitError={submitError}
-            onCancel={() => exit.leave(goBack)}
-          />
-        </div>
-      </div>
+        }
+        mode="edit"
+        machine={machine}
+        onSubmit={onSubmit}
+        submitError={submitError}
+        onCancel={() => exit.leave(goBack)}
+      />
     </div>
   );
 }

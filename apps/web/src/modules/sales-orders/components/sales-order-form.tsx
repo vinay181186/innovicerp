@@ -67,7 +67,7 @@ import { todayLocal } from '@/lib/date';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
 import { FormField, FormGrid, SearchableSelect } from '@/ui/forms';
-import { PageHeader, useSaveShortcut } from '@/ui/layout';
+import { FormActions, PageHeader, useSaveShortcut } from '@/ui/layout';
 import { apiDownload, apiFetch } from '@/lib/api';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useCanOpen } from '@/components/shared/action-link';
@@ -203,9 +203,9 @@ function upperCaseRevField<T extends string>(
 const REV_INPUT_PATTERN = '[A-Z0-9][A-Z0-9.\\/\\-]{0,31}';
 const REV_INPUT_TITLE = 'Drawing Rev: letters, digits, . - / only';
 
-/** Page chrome. The form renders the sticky PageHeader itself so the Save
- *  buttons stay inside <form> (type="submit" + their disabled rules); the page
- *  only names the title and where Back goes. */
+/** Page chrome. The form renders its PageHeader and FormActions itself so the
+ *  Save buttons stay inside <form> (type="submit" + their disabled rules); the
+ *  page only names the title and where Back goes. */
 type FormChrome = {
   title: string;
   backLabel?: string | undefined;
@@ -798,9 +798,9 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
       }
     };
 
-  // ── Page chrome: sticky PageHeader (Cancel · Save as Draft · Save), dirty
-  // pill, Ctrl+S, and ONE error summary right under the header so the person
-  // sees what blocked the save where the Save button is. ──
+  // ── Page chrome: FormActions at the foot (Cancel · Save as Draft · Save), dirty
+  // pill, Ctrl+S, and ONE error summary beside the buttons so the person sees
+  // what blocked the save where the Save button is. ──
   // A Client PO No. already on another SO of this customer blocks Save (not a
   // check still in flight — the server's 409 stays the real guard).
   const saveDisabled = formState.isSubmitting || clientPoCheck.duplicate;
@@ -922,67 +922,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
 
   return (
     <form onSubmit={handleSubmit(onValid(false))}>
-      {/* Sticky page header — the save actions live here, still inside <form>,
-          so type="submit" and the disabled rules are unchanged. */}
-      <PageHeader
-        sticky
-        title={props.title}
-        backLabel={props.backLabel}
-        onBack={props.onBack}
-        dirty={isDirty}
-        actions={
-          <>
-            {props.onCancel ? (
-              <button type="button" className="btn btn-ghost" onClick={props.onCancel}>
-                Cancel
-              </button>
-            ) : null}
-            {isCreate ? (
-              <button
-                type="button"
-                className="btn btn-ghost"
-                disabled={draftDisabled}
-                onClick={() => void handleSubmit(onValid(true))()}
-                title="Save as Draft — not yet released to planning"
-              >
-                Save as Draft
-              </button>
-            ) : null}
-            {/* Legacy footer: addSO L12427 / _editFullSO L12619 reach showModalLg
-                with no explicit saveLabel, so the label is "Save SO". */}
-            {/* On a DRAFT the label says what the button does, because it does
-                more than save: it releases the order to planning. Every other
-                status reads "Save Changes" and the status is left alone. */}
-            <button
-              type="submit"
-              className="btn btn-primary"
-              disabled={saveDisabled}
-              title={
-                isDraft
-                  ? 'Save and release this draft to planning (status becomes Open)'
-                  : undefined
-              }
-            >
-              {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
-              {formState.isSubmitting
-                ? 'Saving…'
-                : (props.submitLabel ??
-                  (isCreate ? 'Save SO' : isDraft ? 'Save & Release' : 'Save Changes'))}
-            </button>
-          </>
-        }
-      >
-        {summaryErrors.length > 0 || hasFieldErrors ? (
-          <Banner tone="error" role="alert" flush>
-            {summaryErrors.map((m) => (
-              <div key={m}>{m}</div>
-            ))}
-            {hasFieldErrors ? (
-              <div>Some fields are missing or wrong — see the red notes below.</div>
-            ) : null}
-          </Banner>
-        ) : null}
-      </PageHeader>
+      <PageHeader title={props.title} backLabel={props.backLabel} onBack={props.onBack} />
 
       {/* Header — customer first, then the document no. / dates / type, then
           remarks. Row 1: Customer 6 + Customer Address 6; then Client PO 4 + GST 2
@@ -1788,6 +1728,59 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
           </Panel>
         </>
       )}
+
+      {/* Still inside <form>, so type="submit" and the disabled rules are unchanged. */}
+      <FormActions
+        dirty={isDirty}
+        note={
+          summaryErrors.length > 0 || hasFieldErrors ? (
+            <Banner tone="error" role="alert" flush>
+              {summaryErrors.map((m) => (
+                <div key={m}>{m}</div>
+              ))}
+              {hasFieldErrors ? (
+                <div>Some fields are missing or wrong — see the red notes above.</div>
+              ) : null}
+            </Banner>
+          ) : undefined
+        }
+      >
+        {props.onCancel ? (
+          <button type="button" className="btn btn-ghost" onClick={props.onCancel}>
+            Cancel
+          </button>
+        ) : null}
+        {isCreate ? (
+          <button
+            type="button"
+            className="btn btn-ghost"
+            disabled={draftDisabled}
+            onClick={() => void handleSubmit(onValid(true))()}
+            title="Save as Draft — not yet released to planning"
+          >
+            Save as Draft
+          </button>
+        ) : null}
+        {/* Legacy footer: addSO L12427 / _editFullSO L12619 reach showModalLg
+                with no explicit saveLabel, so the label is "Save SO". */}
+        {/* On a DRAFT the label says what the button does, because it does
+                more than save: it releases the order to planning. Every other
+                status reads "Save Changes" and the status is left alone. */}
+        <button
+          type="submit"
+          className="btn btn-primary"
+          disabled={saveDisabled}
+          title={
+            isDraft ? 'Save and release this draft to planning (status becomes Open)' : undefined
+          }
+        >
+          {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
+          {formState.isSubmitting
+            ? 'Saving…'
+            : (props.submitLabel ??
+              (isCreate ? 'Save SO' : isDraft ? 'Save & Release' : 'Save Changes'))}
+        </button>
+      </FormActions>
 
       {showAddClient && canAddClient ? (
         <QuickAddClient onClose={() => setShowAddClient(false)} onCreated={onClientCreated} />

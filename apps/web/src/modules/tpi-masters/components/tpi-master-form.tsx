@@ -16,7 +16,9 @@
 
 import type { CreateTpiMasterInput, TpiMaster, UpdateTpiMasterInput } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
+import { FormActions } from '@/ui/layout';
 
 interface FormValues {
   code: string;
@@ -38,6 +40,8 @@ const DEFAULTS: FormValues = {
 
 type CreateMode = {
   mode: 'create';
+  /** The title band of the form's panel; the form owns the panel so its button bar can sit outside it. */
+  panelHeader: ReactNode;
   onSubmit: (values: CreateTpiMasterInput) => Promise<void> | void;
   submitLabel?: string;
   submitError?: string | null;
@@ -46,6 +50,8 @@ type CreateMode = {
 
 type EditMode = {
   mode: 'edit';
+  /** The title band of the form's panel; the form owns the panel so its button bar can sit outside it. */
+  panelHeader: ReactNode;
   detail: TpiMaster;
   onSubmit: (values: UpdateTpiMasterInput) => Promise<void> | void;
   submitLabel?: string;
@@ -89,141 +95,148 @@ export function TpiMasterForm(props: TpiMasterFormProps): React.JSX.Element {
 
   return (
     <form onSubmit={handleSubmit(onValid)}>
-      <div className="form-grid">
-        <div className="form-grp form-full">
-          <label className="form-label" htmlFor="code">
-            Inspector Name{!isEdit ? <span className="req">★</span> : null}
-          </label>
-          <input
-            id="code"
-            className="innovic-input"
-            autoFocus={!isEdit}
-            autoComplete="off"
-            readOnly={isEdit}
-            {...(isEdit ? {} : { placeholder: 'e.g. Mr. Sharma' })}
-            {...register('code', {
-              required: !isEdit ? 'Inspector Name is required.' : false,
-              maxLength: { value: 120, message: 'Max 120 characters.' },
-            })}
-          />
-          {errors.code?.message ? <div className="form-error">{errors.code.message}</div> : null}
-        </div>
+      <div className="panel">
+        <div className="panel-hdr">{props.panelHeader}</div>
+        <div className="panel-body">
+          <div className="form-grid">
+            <div className="form-grp form-full">
+              <label className="form-label" htmlFor="code">
+                Inspector Name{!isEdit ? <span className="req">★</span> : null}
+              </label>
+              <input
+                id="code"
+                className="innovic-input"
+                autoFocus={!isEdit}
+                autoComplete="off"
+                readOnly={isEdit}
+                {...(isEdit ? {} : { placeholder: 'e.g. Mr. Sharma' })}
+                {...register('code', {
+                  required: !isEdit ? 'Inspector Name is required.' : false,
+                  maxLength: { value: 120, message: 'Max 120 characters.' },
+                })}
+              />
+              {errors.code?.message ? (
+                <div className="form-error">{errors.code.message}</div>
+              ) : null}
+            </div>
 
-        <div className="form-grp">
-          <label className="form-label" htmlFor="organization">
-            Organisation
-          </label>
-          <input
-            id="organization"
-            className="innovic-input"
-            autoComplete="off"
-            {...(isEdit ? {} : { placeholder: 'e.g. L&T QA Department' })}
-            {...register('organization', {
-              maxLength: { value: 255, message: 'Max 255 characters.' },
-            })}
-          />
-          {errors.organization?.message ? (
-            <div className="form-error">{errors.organization.message}</div>
-          ) : null}
-        </div>
+            <div className="form-grp">
+              <label className="form-label" htmlFor="organization">
+                Organisation
+              </label>
+              <input
+                id="organization"
+                className="innovic-input"
+                autoComplete="off"
+                {...(isEdit ? {} : { placeholder: 'e.g. L&T QA Department' })}
+                {...register('organization', {
+                  maxLength: { value: 255, message: 'Max 255 characters.' },
+                })}
+              />
+              {errors.organization?.message ? (
+                <div className="form-error">{errors.organization.message}</div>
+              ) : null}
+            </div>
 
-        <div className="form-grp">
-          <label className="form-label" htmlFor="contactNo">
-            Contact No.
-          </label>
-          <input
-            id="contactNo"
-            className="innovic-input"
-            autoComplete="off"
-            {...(isEdit ? {} : { placeholder: 'e.g. 98200 12345' })}
-            {...register('contactNo', {
-              maxLength: { value: 32, message: 'Max 32 characters.' },
-            })}
-          />
-          {errors.contactNo?.message ? (
-            <div className="form-error">{errors.contactNo.message}</div>
-          ) : null}
-        </div>
+            <div className="form-grp">
+              <label className="form-label" htmlFor="contactNo">
+                Contact No.
+              </label>
+              <input
+                id="contactNo"
+                className="innovic-input"
+                autoComplete="off"
+                {...(isEdit ? {} : { placeholder: 'e.g. 98200 12345' })}
+                {...register('contactNo', {
+                  maxLength: { value: 32, message: 'Max 32 characters.' },
+                })}
+              />
+              {errors.contactNo?.message ? (
+                <div className="form-error">{errors.contactNo.message}</div>
+              ) : null}
+            </div>
 
-        <div className="form-grp">
-          <label className="form-label" htmlFor="email">
-            Email
-          </label>
-          <input
-            id="email"
-            className="innovic-input"
-            autoComplete="off"
-            {...(isEdit ? {} : { placeholder: 'e.g. sharma@lnt-qa.com' })}
-            {...register('email', {
-              maxLength: { value: 255, message: 'Max 255 characters.' },
-            })}
-          />
-          {errors.email?.message ? <div className="form-error">{errors.email.message}</div> : null}
-        </div>
+            <div className="form-grp">
+              <label className="form-label" htmlFor="email">
+                Email
+              </label>
+              <input
+                id="email"
+                className="innovic-input"
+                autoComplete="off"
+                {...(isEdit ? {} : { placeholder: 'e.g. sharma@lnt-qa.com' })}
+                {...register('email', {
+                  maxLength: { value: 255, message: 'Max 255 characters.' },
+                })}
+              />
+              {errors.email?.message ? (
+                <div className="form-error">{errors.email.message}</div>
+              ) : null}
+            </div>
 
-        <div className="form-grp">
-          <label className="form-label" htmlFor="isActive">
-            Active
-          </label>
-          <select
-            id="isActive"
-            className="innovic-select"
-            {...register('isActive', {
-              setValueAs: (v) => v === 'true' || v === true,
-            })}
-          >
-            <option value="true">Active</option>
-            <option value="false">Inactive</option>
-          </select>
-        </div>
+            <div className="form-grp">
+              <label className="form-label" htmlFor="isActive">
+                Active
+              </label>
+              <select
+                id="isActive"
+                className="innovic-select"
+                {...register('isActive', {
+                  setValueAs: (v) => v === 'true' || v === true,
+                })}
+              >
+                <option value="true">Active</option>
+                <option value="false">Inactive</option>
+              </select>
+            </div>
 
-        <div className="form-grp form-full">
-          <label className="form-label" htmlFor="remarks">
-            Remarks
-          </label>
-          <input
-            id="remarks"
-            className="innovic-input"
-            autoComplete="off"
-            {...(isEdit ? {} : { placeholder: 'Scope of approval, agency notes…' })}
-            {...register('remarks', {
-              maxLength: { value: 1000, message: 'Max 1000 characters.' },
-            })}
-          />
-          {errors.remarks?.message ? (
-            <div className="form-error">{errors.remarks.message}</div>
-          ) : null}
-        </div>
-      </div>
-
-      <div style={{ marginTop: 16 }}>
-        {props.submitError ? (
-          <div
-            style={{
-              color: 'var(--red2)',
-              background: 'var(--red3)',
-              border: '1px solid var(--red)',
-              borderRadius: 6,
-              padding: '6px 10px',
-              fontSize: 12,
-              marginBottom: 10,
-            }}
-          >
-            {props.submitError}
+            <div className="form-grp form-full">
+              <label className="form-label" htmlFor="remarks">
+                Remarks
+              </label>
+              <input
+                id="remarks"
+                className="innovic-input"
+                autoComplete="off"
+                {...(isEdit ? {} : { placeholder: 'Scope of approval, agency notes…' })}
+                {...register('remarks', {
+                  maxLength: { value: 1000, message: 'Max 1000 characters.' },
+                })}
+              />
+              {errors.remarks?.message ? (
+                <div className="form-error">{errors.remarks.message}</div>
+              ) : null}
+            </div>
           </div>
-        ) : null}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
-          {props.onCancel ? (
-            <button type="button" className="btn btn-ghost" onClick={props.onCancel}>
-              Cancel
-            </button>
-          ) : null}
-          <button type="submit" className="btn btn-primary" disabled={formState.isSubmitting}>
-            {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
-            {formState.isSubmitting ? 'Saving…' : (props.submitLabel ?? 'Save')}
-          </button>
         </div>
       </div>
+
+      {props.submitError ? (
+        <div
+          style={{
+            color: 'var(--red2)',
+            background: 'var(--red3)',
+            border: '1px solid var(--red)',
+            borderRadius: 6,
+            padding: '6px 10px',
+            fontSize: 12,
+            marginBottom: 10,
+          }}
+        >
+          {props.submitError}
+        </div>
+      ) : null}
+      <FormActions>
+        {props.onCancel ? (
+          <button type="button" className="btn btn-ghost" onClick={props.onCancel}>
+            Cancel
+          </button>
+        ) : null}
+        <button type="submit" className="btn btn-primary" disabled={formState.isSubmitting}>
+          {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
+          {formState.isSubmitting ? 'Saving…' : (props.submitLabel ?? 'Save')}
+        </button>
+      </FormActions>
     </form>
   );
 }

@@ -59,34 +59,30 @@ function QcProcessNewPage(): React.JSX.Element {
       <Link to="/qc-processes" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
         <ArrowLeft size={14} /> Back to QC Process Master
       </Link>
-      <div className="panel">
-        <div className="panel-hdr">
+      <QcProcessForm
+        panelHeader={
           <div>
             <div className="panel-title">⚙ Add QC Process</div>
           </div>
-        </div>
-        <div className="panel-body">
-          <QcProcessForm
-            mode="create"
-            submitError={submitError}
-            submitLabel="Save QC Process"
-            onCancel={() => exit.leave(goBack)}
-            onSubmit={async (values: CreateQcProcessInput) => {
-              setSubmitError(null);
-              try {
-                const created = await create.mutateAsync(values);
-                exit.leave(
-                  () => void navigate({ to: '/qc-processes/$id', params: { id: created.id } }),
-                );
-              } catch (e) {
-                setSubmitError(
-                  e instanceof Error ? e.message : 'Could not save QC Process. Try again.',
-                );
-              }
-            }}
-          />
-        </div>
-      </div>
+        }
+        mode="create"
+        submitError={submitError}
+        submitLabel="Save QC Process"
+        onCancel={() => exit.leave(goBack)}
+        onSubmit={async (values: CreateQcProcessInput) => {
+          setSubmitError(null);
+          try {
+            const created = await create.mutateAsync(values);
+            exit.leave(
+              () => void navigate({ to: '/qc-processes/$id', params: { id: created.id } }),
+            );
+          } catch (e) {
+            setSubmitError(
+              e instanceof Error ? e.message : 'Could not save QC Process. Try again.',
+            );
+          }
+        }}
+      />
     </div>
   );
 }

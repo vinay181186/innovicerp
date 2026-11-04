@@ -181,7 +181,7 @@ export function NcDcFormBody({
       setSubmitting(false);
     }
   };
-  // The page header's Save (and Ctrl+S) run this body's save.
+  // The page's bottom Save (and Ctrl+S) run this body's save.
   saveCtl.submitRef.current = () => void onSubmit();
 
   if (eff && !canCreateDc) {

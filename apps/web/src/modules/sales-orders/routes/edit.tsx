@@ -133,9 +133,9 @@ function SalesOrderNewPage(): React.JSX.Element {
   return (
     <>
       {exit.dialog}
-      {/* The form renders its own sticky PageHeader (Back · title · Cancel ·
-          Save) and Panels — no wrapping panel, which would clip the sticky
-          header (.panel is overflow:hidden). Back still passes the exit guard,
+      {/* The form renders its own PageHeader, Panels and bottom FormActions (Cancel ·
+          Save) — no wrapping panel, which would clip the sticky bar
+          (.panel is overflow:hidden). Back still passes the exit guard,
           exactly as the old Back link did. */}
       <SalesOrderForm
         mode="create"

@@ -5,10 +5,10 @@
 // dropdown + RM Grade / RM Size pickers + remove button, all on ONE row.
 // Excel template download + import.
 //
-// Layout is the app theme (create-page pattern): sticky PageHeader (Cancel +
-// blue Save, Ctrl+S, "Not saved") → ONE untitled Panel holding the ClusterGrid
-// (cluster BOM, cluster Parent Item) → Panel(Child Items:
-// .innovic-table.tbl-grid.tbl-edit) → Panel(Revision Note). The private
+// Layout is the app theme (create-page pattern): PageHeader → ONE untitled Panel
+// holding the ClusterGrid (cluster BOM, cluster Parent Item) → Panel(Child Items:
+// .innovic-table.tbl-grid.tbl-edit) → Panel(Revision Note) → FormActions (Cancel +
+// blue Save, Ctrl+S, "Not saved"). The private
 // `bomx-` stylesheet (40px inputs, 36px buttons, own palette) is gone.
 //
 // FITTING ONE SCREEN (bom-create-mockup.html, approved 2026-10-06). The screen
@@ -51,7 +51,7 @@ import { ChildDrawingRevCell } from '@/modules/item-revisions/components/child-d
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
 import { Cluster, ClusterGrid, FormField, SearchableSelect } from '@/ui/forms';
-import { PageHeader, useSaveShortcut } from '@/ui/layout';
+import { FormActions, PageHeader, useSaveShortcut } from '@/ui/layout';
 import { useNextBomNo } from '../api';
 
 // xlsx (~400 KB raw / 140 KB gzip) is dynamic-imported inside the two
@@ -943,7 +943,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
     e.preventDefault();
     void save();
   };
-  // Ctrl+S runs the same Save as the header button, and is off whenever that
+  // Ctrl+S runs the same Save as the bottom button, and is off whenever that
   // button is disabled.
   useSaveShortcut(() => void save(), !validationError && !submitting);
 
@@ -973,7 +973,6 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
   return (
     <form onSubmit={submit}>
       <PageHeader
-        sticky
         title={mode === 'create' ? 'New BOM' : `Edit BOM — ${bom?.bomNo ?? ''}`}
         /* ADR-223 — nothing under "New BOM": the BOM does not exist yet and its
            status is no longer anybody's decision. It has to be undefined rather
@@ -991,25 +990,8 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
             </span>
           ) : undefined
         }
-        dirty={isDirty}
-        actions={
-          <>
-            <button type="button" className="btn btn-ghost" onClick={onCancel}>
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="btn btn-primary"
-              disabled={Boolean(validationError) || submitting}
-              title={validationError ?? 'Save (Ctrl+S)'}
-            >
-              {saveLabel}
-            </button>
-          </>
-        }
       />
 
-      {/* Under the header, next to Save — where the disabled button is. */}
       {validationError ? <Banner tone="warn">{validationError}</Banner> : null}
       {submitError ? (
         <Banner tone="error" role="alert">
@@ -1550,6 +1532,20 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
           </div>
         </Panel>
       ) : null}
+
+      <FormActions dirty={isDirty}>
+        <button type="button" className="btn btn-ghost" onClick={onCancel}>
+          Cancel
+        </button>
+        <button
+          type="submit"
+          className="btn btn-primary"
+          disabled={Boolean(validationError) || submitting}
+          title={validationError ?? 'Save (Ctrl+S)'}
+        >
+          {saveLabel}
+        </button>
+      </FormActions>
     </form>
   );
 }

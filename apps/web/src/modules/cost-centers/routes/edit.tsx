@@ -119,8 +119,8 @@ function CostCenterEditPage(): React.JSX.Element {
           {stagedNotice}
         </Banner>
       ) : null}
-      <div className="panel">
-        <div className="panel-hdr">
+      <CostCenterForm
+        panelHeader={
           <div>
             <div className="td-code fw-700" style={{ color: 'var(--cyan)', fontSize: 14 }}>
               {detail.code}
@@ -129,44 +129,38 @@ function CostCenterEditPage(): React.JSX.Element {
               Edit Cost Centre
             </div>
           </div>
-        </div>
-        <div className="panel-body">
-          <CostCenterForm
-            mode="edit"
-            detail={detail}
-            submitError={submitError}
-            submitLabel="Save Changes"
-            onCancel={() => exit.leave(goBack)}
-            onSubmit={async (values: UpdateCostCenterInput) => {
-              setSubmitError(null);
-              try {
-                // Only the fields that actually moved are sent; a 409 re-reads
-                // and retries onto the fresh row instead of overwriting someone
-                // else's change.
-                const result = await conflict.save(values, (payload, expectedUpdatedAt) =>
-                  update.mutateAsync({ ...payload, expectedUpdatedAt }),
-                );
-                // null = nothing actually changed; the user has been told and
-                // nothing was written. Stay on the form.
-                if (result === null) return;
-                if (isStagedResult(result)) {
-                  // Gate on and this cost centre is live: nothing was changed —
-                  // the edit is now waiting for approval. Say so, then return to
-                  // the record (its fields now carry the pending chip).
-                  setStagedNotice(
-                    'Sent for approval — your changes will apply once an approver signs off.',
-                  );
-                }
-                exit.leave(goBack);
-              } catch (e) {
-                setSubmitError(
-                  e instanceof Error ? e.message : 'Could not save changes. Try again.',
-                );
-              }
-            }}
-          />
-        </div>
-      </div>
+        }
+        mode="edit"
+        detail={detail}
+        submitError={submitError}
+        submitLabel="Save Changes"
+        onCancel={() => exit.leave(goBack)}
+        onSubmit={async (values: UpdateCostCenterInput) => {
+          setSubmitError(null);
+          try {
+            // Only the fields that actually moved are sent; a 409 re-reads
+            // and retries onto the fresh row instead of overwriting someone
+            // else's change.
+            const result = await conflict.save(values, (payload, expectedUpdatedAt) =>
+              update.mutateAsync({ ...payload, expectedUpdatedAt }),
+            );
+            // null = nothing actually changed; the user has been told and
+            // nothing was written. Stay on the form.
+            if (result === null) return;
+            if (isStagedResult(result)) {
+              // Gate on and this cost centre is live: nothing was changed —
+              // the edit is now waiting for approval. Say so, then return to
+              // the record (its fields now carry the pending chip).
+              setStagedNotice(
+                'Sent for approval — your changes will apply once an approver signs off.',
+              );
+            }
+            exit.leave(goBack);
+          } catch (e) {
+            setSubmitError(e instanceof Error ? e.message : 'Could not save changes. Try again.');
+          }
+        }}
+      />
     </div>
   );
 }

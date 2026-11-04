@@ -157,10 +157,10 @@ type EditMode = {
   onCancel?: () => void;
 } & HeaderSaveProps;
 
-/** When the page puts Save in its sticky PageHeader: the header's
- *  `<button type="submit" form={formId}>` submits this form, the bottom
- *  Cancel/Save bar is not rendered, and the form reports its state so the
- *  header button and "Not saved" pill stay truthful. */
+/** When the page puts Save in its FormActions: the page's
+ *  `<button type="submit" form={formId}>` submits this form, this form's own
+ *  Cancel/Save row is not rendered, and the form reports its state so the
+ *  page's button and "Not saved" pill stay truthful. */
 interface HeaderSaveProps {
   formId?: string;
   onStatusChange?: (s: { submitting: boolean; canSubmit: boolean; dirty: boolean }) => void;
@@ -468,7 +468,7 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
 
   return (
     <form id={props.formId} onSubmit={handleSubmit(onValid)}>
-      {/* Save error summary right under the page header, where Save is. */}
+      {/* Save error summary at the top of the form. */}
       {(formError ?? props.submitError) ? (
         <Banner tone="error" role="alert">
           {formError ?? props.submitError}
@@ -707,7 +707,7 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
         />
       </Panel>
 
-      {/* Bottom bar only when the page has not put Save in its sticky header. */}
+      {/* Own Save row only when the page has not put Save in its FormActions. */}
       {props.formId ? null : (
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--sp-2)' }}>
           {props.onCancel ? (

@@ -7,10 +7,10 @@
 // code is auto-generated server-side and is optional in the shared schema,
 // so it carries no req marker.
 //
-// Create-page pattern (2026-09-26): the form owns a sticky PageHeader with
-// Cancel + the blue Save top-right (Ctrl+S runs the same Save), and the
-// fields sit in four sections on the 12-column grid — Identity · Address ·
-// Contact · Terms. Same fields, same schema, same submit as before.
+// Create-page pattern (2026-09-26): the form owns a PageHeader and the fields
+// sit in four sections on the 12-column grid — Identity · Address · Contact ·
+// Terms. Cancel + the blue Save sit in FormActions at the page's end (owner
+// 2026-11-04); Ctrl+S runs the same Save.
 //
 // Master rules (plan v3 Step 2): GST Category and a State pick-list (saving
 // the 2-digit State Code) join the form; the GSTIN / State / GST Category
@@ -52,7 +52,7 @@ import {
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
 import { FormField, FormGrid } from '@/ui/forms';
-import { PageHeader, useSaveShortcut } from '@/ui/layout';
+import { FormActions, PageHeader, useSaveShortcut } from '@/ui/layout';
 import { useNextClientCode } from '../api';
 
 /** The page band the form draws: title, quiet line under it, where Back goes. */
@@ -276,9 +276,9 @@ function EditClientForm(props: EditMode): React.JSX.Element {
   );
 }
 
-/** The page: sticky header (Cancel + blue Save, Ctrl+S), the save error right
- *  under it, then the sections. The header's Save is a real submit button of
- *  this form, so Enter, the button and Ctrl+S all run the one handleSubmit. */
+/** The page: header, the save error right under it, the sections, then the
+ *  bottom bar (Cancel + blue Save, Ctrl+S). The bar's Save is a real submit button
+ *  of this form, so Enter, the button and Ctrl+S all run the one handleSubmit. */
 function ClientFormShell(props: {
   header: ClientFormHeader;
   onSubmit: (e?: React.BaseSyntheticEvent) => Promise<void>;
@@ -296,24 +296,11 @@ function ClientFormShell(props: {
   return (
     <form ref={formRef} onSubmit={(e) => void props.onSubmit(e)}>
       <PageHeader
-        sticky
         icon="🏢"
         title={props.header.title}
         subtitle={props.header.subtitle}
         backLabel={props.header.backLabel}
         onBack={props.onCancel}
-        dirty={props.dirty}
-        actions={
-          <>
-            <button type="button" className="btn btn-ghost" onClick={props.onCancel}>
-              Cancel
-            </button>
-            <button type="submit" className="btn btn-primary" disabled={props.isSubmitting}>
-              {props.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
-              {props.isSubmitting ? 'Saving…' : props.submitLabel}
-            </button>
-          </>
-        }
       />
       {props.submitError ? (
         <Banner tone="error" role="alert">
@@ -321,6 +308,15 @@ function ClientFormShell(props: {
         </Banner>
       ) : null}
       {props.children}
+      <FormActions dirty={props.dirty}>
+        <button type="button" className="btn btn-ghost" onClick={props.onCancel}>
+          Cancel
+        </button>
+        <button type="submit" className="btn btn-primary" disabled={props.isSubmitting}>
+          {props.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
+          {props.isSubmitting ? 'Saving…' : props.submitLabel}
+        </button>
+      </FormActions>
     </form>
   );
 }

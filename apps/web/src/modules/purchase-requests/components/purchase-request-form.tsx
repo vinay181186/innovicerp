@@ -9,8 +9,8 @@
 // (`num_nonnulls(vendor_id, vendor_code_text) >= 1`, ADR-015) demands one of the
 // two. Dropping it would make those PRs unsaveable.
 //
-// Layout (Plan screens method, 2026-10-03): sticky PageHeader (Cancel + blue
-// Save, Ctrl+S) → one Panel: an identity line (PR No., SO line, JC op), then
+// Layout (Plan screens method, 2026-10-03): PageHeader, FormActions at the foot
+// (Cancel + blue Save, Ctrl+S), and between them one Panel: an identity line (PR No., SO line, JC op), then
 // four clusters of four cells, in the order the requester thinks —
 //   Item     Item Code · Item Name (2) · PR Qty
 //   Request  PR Type · PR Date · Due Date · Operation
@@ -41,7 +41,7 @@ import { useItemCodeResolver, useItemCodeSearch } from '@/modules/items/use-item
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
 import { Cluster, ClusterGrid, DocIdent, FormField, IdentCode, IdentSep } from '@/ui/forms';
-import { PageHeader, useSaveShortcut } from '@/ui/layout';
+import { FormActions, PageHeader, useSaveShortcut } from '@/ui/layout';
 import {
   PR_FORM_DEFAULTS,
   PR_ITEM_DATALIST_ID,
@@ -65,8 +65,8 @@ function prField<TName extends Path<FormValues>>(
   return cascadeField<FormValues, PrItemMaster, TName>(name, from, empty, options);
 }
 
-/** The page band the form renders itself, so Save sits top-right in the sticky
- *  header and is a real submit button of THIS form. */
+/** The page band the form renders itself. Save sits in FormActions at the foot
+ *  and is a real submit button of THIS form. */
 type HeaderProps = {
   title: string;
   subtitle?: React.ReactNode;
@@ -226,12 +226,12 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
     }
   };
 
-  // Ctrl+S runs the same Save as the header button.
+  // Ctrl+S runs the same Save as the Save button.
   const submitting = formState.isSubmitting;
   useSaveShortcut(() => void handleSubmit(onValid)(), !submitting);
 
-  // Field errors, collected so the user sees them under the header, where Save
-  // is — not only beside a field that may be scrolled away.
+  // Field errors, collected so the user sees them beside Save
+  // — not only beside a field that may be scrolled away.
   const errorList = [
     errors.prDate?.message,
     errors.itemCodeText?.message,
@@ -251,63 +251,11 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
   return (
     <form onSubmit={handleSubmit(onValid)}>
       <PageHeader
-        sticky
         title={props.title}
         subtitle={props.subtitle}
         backLabel={props.backLabel}
         onBack={props.onBack}
-        dirty={formState.isDirty}
-        actions={
-          <>
-            {props.onCancel ? (
-              <button type="button" className="btn btn-ghost" onClick={props.onCancel}>
-                Cancel
-              </button>
-            ) : null}
-            {onSaveAndNew ? (
-              <button
-                type="button"
-                className="btn btn-ghost"
-                disabled={submitting}
-                title="Save this PR, then open a blank one with the same PR Date, PR Type and Vendor"
-                onClick={() => {
-                  andNewRef.current = true;
-                  void handleSubmit(onValid, () => {
-                    andNewRef.current = false;
-                  })();
-                }}
-              >
-                Save &amp; New
-              </button>
-            ) : null}
-            <button
-              type="submit"
-              className="btn btn-primary"
-              disabled={submitting}
-              title="Save (Ctrl+S)"
-            >
-              {submitting ? (
-                <>
-                  <Loader2 size={13} className="animate-spin" /> Saving…
-                </>
-              ) : (
-                (props.submitLabel ?? (isEdit ? 'Save Changes' : 'Save PR'))
-              )}
-            </button>
-          </>
-        }
       />
-
-      {props.submitError ? (
-        <Banner tone="error" role="alert">
-          {props.submitError}
-        </Banner>
-      ) : null}
-      {errorList.length > 0 ? (
-        <Banner tone="warn" role="alert">
-          {errorList.join(' · ')}
-        </Banner>
-      ) : null}
 
       <Panel>
         {/* Which PR this is — on create the number does not exist yet. */}
@@ -546,6 +494,62 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
           </option>
         ))}
       </datalist>
+
+      <FormActions
+        dirty={formState.isDirty}
+        note={
+          props.submitError || errorList.length > 0 ? (
+            <div style={{ display: 'grid', gap: 'var(--sp-1)' }}>
+              {props.submitError ? (
+                <Banner tone="error" role="alert" flush>
+                  {props.submitError}
+                </Banner>
+              ) : null}
+              {errorList.length > 0 ? (
+                <Banner tone="warn" role="alert" flush>
+                  {errorList.join(' · ')}
+                </Banner>
+              ) : null}
+            </div>
+          ) : undefined
+        }
+      >
+        {props.onCancel ? (
+          <button type="button" className="btn btn-ghost" onClick={props.onCancel}>
+            Cancel
+          </button>
+        ) : null}
+        {onSaveAndNew ? (
+          <button
+            type="button"
+            className="btn btn-ghost"
+            disabled={submitting}
+            title="Save this PR, then open a blank one with the same PR Date, PR Type and Vendor"
+            onClick={() => {
+              andNewRef.current = true;
+              void handleSubmit(onValid, () => {
+                andNewRef.current = false;
+              })();
+            }}
+          >
+            Save &amp; New
+          </button>
+        ) : null}
+        <button
+          type="submit"
+          className="btn btn-primary"
+          disabled={submitting}
+          title="Save (Ctrl+S)"
+        >
+          {submitting ? (
+            <>
+              <Loader2 size={13} className="animate-spin" /> Saving…
+            </>
+          ) : (
+            (props.submitLabel ?? (isEdit ? 'Save Changes' : 'Save PR'))
+          )}
+        </button>
+      </FormActions>
     </form>
   );
 }

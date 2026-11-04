@@ -45,7 +45,7 @@ import { QuickAddClient } from '@/modules/clients/components/quick-add-client';
 import { useItemsList } from '@/modules/items/api';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
-import { PageHeader, useSaveShortcut } from '@/ui/layout';
+import { FormActions, PageHeader, useSaveShortcut } from '@/ui/layout';
 import { useEnsureJwRmItem } from '../api';
 import { parseJwLineFile } from '../lib/import-export';
 import { JwLineDrawingCell } from './jw-line-drawing-cell';
@@ -239,9 +239,9 @@ type EditMode = {
 export type JobWorkOrderFormProps = CreateMode | EditMode;
 
 /** Create-page pattern (ERPNext gap report 2026-09-26): when the route passes a
- *  `pageTitle`, the form renders the page's sticky PageHeader itself — Back,
- *  title, Cancel and the blue Save top-right — and lays each section on its own
- *  Panel. Without it (a route that still wraps the form in its own panel) the
+ *  `pageTitle`, the form renders the page's PageHeader itself (Back, title) and
+ *  FormActions at the foot (Cancel, the blue Save) and lays each section on its
+ *  own Panel. Without it (a route that still wraps the form in its own panel) the
  *  form keeps the flat sections and the Save row at the foot, so it never
  *  renders a panel inside a panel. */
 type PageHeaderSlot = {
@@ -858,7 +858,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
       .filter((m): m is string => Boolean(m))
       .join(' ') || null;
   const submitForm = handleSubmit(onValid);
-  // Ctrl+S runs the same Save as the header button.
+  // Ctrl+S runs the same Save as the Save button.
   useSaveShortcut(() => void submitForm(), !saveDisabled);
   const cancelButton = props.onCancel ? (
     <button type="button" className="btn btn-ghost" onClick={props.onCancel}>
@@ -878,12 +878,12 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
   const errorBanners = (
     <>
       {lineError ? (
-        <Banner tone="error" role="alert">
+        <Banner tone="error" role="alert" flush={standalone}>
           {lineError}
         </Banner>
       ) : null}
       {props.submitError ? (
-        <Banner tone="error" role="alert">
+        <Banner tone="error" role="alert" flush={standalone}>
           {props.submitError}
         </Banner>
       ) : null}
@@ -893,24 +893,12 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
   return (
     <form onSubmit={submitForm}>
       {standalone ? (
-        <>
-          <PageHeader
-            sticky
-            title={props.pageTitle ?? ''}
-            subtitle={props.pageSubtitle}
-            backLabel={props.backLabel}
-            onBack={props.onBack ?? props.onCancel}
-            dirty={formState.isDirty}
-            actions={
-              <>
-                {cancelButton}
-                {saveButton}
-              </>
-            }
-          />
-          {/* Errors sit under the header, beside the Save that raised them. */}
-          {errorBanners}
-        </>
+        <PageHeader
+          title={props.pageTitle ?? ''}
+          subtitle={props.pageSubtitle}
+          backLabel={props.backLabel}
+          onBack={props.onBack ?? props.onCancel}
+        />
       ) : null}
       {/* Header on the 12-column grid, in reading order: Customer + Customer
           Address, then Client PO, then JWSO No. / dates, GST % and (edit) status, then Remarks.
@@ -1670,7 +1658,19 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
         </div>
       </div>
 
-      {standalone ? null : (
+      {standalone ? (
+        <FormActions
+          dirty={formState.isDirty}
+          note={
+            lineError || props.submitError ? (
+              <div style={{ display: 'grid', gap: 'var(--sp-1)' }}>{errorBanners}</div>
+            ) : undefined
+          }
+        >
+          {cancelButton}
+          {saveButton}
+        </FormActions>
+      ) : (
         // Route still wraps the form in its own panel (no page header slot):
         // keep the Save row at the foot, blue primary.
         <div style={{ marginTop: 16 }}>
