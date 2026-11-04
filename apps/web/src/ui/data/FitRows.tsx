@@ -6,7 +6,7 @@
 import { Fragment } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 
-import { cellTitle, cellValue, cx, stopRowClick } from './data-table-cells';
+import { cellTitle, cellValue, cx, rowOpenProps, stopRowClick } from './data-table-cells';
 import { tdClass } from './data-table-head';
 import type { DataTableColumn, DataTableColumnKind } from './data-table-types';
 import { RowCheckbox, type RowSelectionModel } from './FitSelection';
@@ -54,8 +54,7 @@ export function FitRows<T>(p: FitRowsProps<T>): ReactElement {
                 selected && 'row-selected',
                 !!p.onRowClick && !clickable && 'dt-row-static',
               )}
-              onClick={clickable ? () => p.onRowClick?.(row, ri) : undefined}
-              style={clickable ? { cursor: 'pointer' } : undefined}
+              {...rowOpenProps(clickable, () => p.onRowClick?.(row, ri))}
             >
               {p.selectable ? (
                 <td className="dt-sel-col" onClick={stopRowClick}>

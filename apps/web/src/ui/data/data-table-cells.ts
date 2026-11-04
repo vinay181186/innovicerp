@@ -2,7 +2,7 @@
 // (ADR-199). Pure functions — no React state.
 
 import { Children, isValidElement } from 'react';
-import type { MouseEvent, ReactNode } from 'react';
+import type { HTMLAttributes, MouseEvent, ReactNode } from 'react';
 
 import type { DataTableColumn, DataTableColumnKind } from './data-table-types';
 
@@ -90,4 +90,21 @@ export function nodeText(node: ReactNode): string {
 export function colLabel<T>(col: DataTableColumn<T>, index: number): string {
   const text = col.label ?? nodeText(col.header).trim();
   return text.length > 0 ? text : `Column ${index + 1}`;
+}
+
+/** The `<tr>` of a row that opens on click: a pointer, Tab reaches it, Enter opens it.
+ *  Only the row itself takes Enter: on the ⋯ or a link inside, the key stays theirs. */
+export function rowOpenProps(
+  clickable: boolean,
+  open: () => void,
+): HTMLAttributes<HTMLTableRowElement> {
+  if (!clickable) return {};
+  return {
+    onClick: open,
+    tabIndex: 0,
+    onKeyDown: (e) => {
+      if (e.key === 'Enter' && e.target === e.currentTarget) open();
+    },
+    style: { cursor: 'pointer' },
+  };
 }
