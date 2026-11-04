@@ -28,7 +28,7 @@
 
 import { useQueryClient } from '@tanstack/react-query';
 import { createRoute, useNavigate } from '@tanstack/react-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -132,6 +132,10 @@ function PlanningWorkflowPage(): JSX.Element {
     !soId,
   );
   useClampPage(page, soId ? undefined : lineList.data?.total, gotoPage);
+  // Sr No follows the rows on screen: while the next page loads the old rows stay,
+  // and must keep their old numbers.
+  const shownOffset = useRef(pageOffset(page));
+  if (!lineList.isPlaceholderData) shownOffset.current = pageOffset(page);
   const total = lineList.data?.total ?? 0;
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
@@ -196,7 +200,7 @@ function PlanningWorkflowPage(): JSX.Element {
           <LineList
             src={src}
             items={lineList.data?.items ?? []}
-            firstRowNo={pageOffset(page) + 1}
+            firstRowNo={shownOffset.current + 1}
             loading={lineList.isLoading}
             error={lineList.error instanceof Error ? lineList.error.message : null}
             searching={searchTerm !== ''}

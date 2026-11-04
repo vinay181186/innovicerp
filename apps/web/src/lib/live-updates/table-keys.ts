@@ -152,10 +152,17 @@ export const LIVE_TABLE_KEYS: Readonly<Record<LiveTable, readonly QueryKey[]>> =
   // re-read every user's Approvals badge — the 60 s poll covers it (ADR-265).
   op_log: OP_VIEWS,
   sales_orders: SALES_ORDER_VIEWS,
-  sales_order_lines: SALES_ORDER_VIEWS,
+  // ADR-267: the Planning list is one row per line. job_cards stays on its 60 s
+  // poll on purpose: a card changes at every op log, this list reads every open line.
+  sales_order_lines: [...SALES_ORDER_VIEWS, soPlanningKeys.all],
   purchase_orders: PURCHASE_ORDER_VIEWS,
   purchase_order_lines: PURCHASE_ORDER_VIEWS,
-  purchase_requests: [purchaseRequestsKeys.all, approvalsKeys.all, dashboardKeys.home()],
+  purchase_requests: [
+    purchaseRequestsKeys.all,
+    approvalsKeys.all,
+    dashboardKeys.home(),
+    soPlanningKeys.all,
+  ],
   // A new GRN raises an incoming QC call on the QC Call Register.
   goods_receipt_notes: [
     goodsReceiptNotesKeys.all,

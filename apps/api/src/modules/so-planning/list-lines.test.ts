@@ -176,6 +176,15 @@ describe('paging, search, Sort & Filter', () => {
     expect((await rowsOf(`${P}PR-1`)).map((r) => r.lineNo)).toEqual([2]);
   });
 
+  it('a blank cell\'s word "Pending" is not a match; shown values are', async () => {
+    const pending = await listPlanningLines(admin, { search: 'pending', limit: 1000 });
+    expect(pending.items.some((r) => r.soCode === JW_CODE)).toBe(false);
+    for (const shown of ['job work', '01-12-2026']) {
+      const found = await listPlanningLines(admin, { search: shown, limit: 1000 });
+      expect(found.items.some((r) => r.soCode === JW_CODE)).toBe(true);
+    }
+  });
+
   it('filters on planState', async () => {
     const unplanned = await listPlanningLines(admin, {
       search: JW_CODE,

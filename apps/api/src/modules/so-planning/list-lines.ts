@@ -35,6 +35,7 @@ import {
   toProcurementType,
   UUID_RE,
 } from './line-facts';
+import { requireFormAccess } from '../../lib/access';
 import {
   type PlanningLinePageRow,
   pagePlanningLines,
@@ -220,7 +221,7 @@ async function loadSoRows(tx: DbTransaction, companyId: string): Promise<Plannin
 
   const lineIds = lines.map((l) => l.id);
   const { planRows, plansByLine } = await loadPlanSummariesByLine(tx, lineIds, 'so');
-  const directJcByLine = await loadDirectJcsByLine(tx, lines, planRows, 'so');
+  const directJcByLine = await loadDirectJcsByLine(tx, lines, 'so');
   const prsByLine = await loadPrsByLine(tx, companyId, lineIds);
   // The plan summary carries bom_child_code but not bom_master_id, which the
   // part-plan test (ADR-107 / ADR-221) needs too — as the detail does.
@@ -311,7 +312,7 @@ async function loadJwRows(tx: DbTransaction, companyId: string): Promise<Plannin
     lines.map((l) => l.id),
     'jw',
   );
-  const directJcByLine = await loadDirectJcsByLine(tx, lines, planRows, 'jw');
+  const directJcByLine = await loadDirectJcsByLine(tx, lines, 'jw');
 
   return lines.map((l) => {
     const plansOfLine = plansByLine.get(l.id) ?? [];
@@ -336,11 +337,15 @@ export async function listPlanningLines(
   user: AuthContext,
   query: PlanningLineListQuery = {},
 ): Promise<PlanningLineListResponse> {
+  // The screen's own switch ("Hide page"), enforced here too (§22.2.6).
+  await requireFormAccess(user, 'plan_create', 'view');
   const companyId = requireCompany(user);
-  return withUserContext(user, async (tx) => {
+  const rows = await withUserContext(user, async (tx) => {
     // In sequence: one transaction, one connection. SO rows first, then JW.
     const soRows = query.src === 'jw' ? [] : await loadSoRows(tx, companyId);
     const jwRows = query.src === 'so' ? [] : await loadJwRows(tx, companyId);
-    return pagePlanningLines([...soRows, ...jwRows], query);
+    return [...soRows, ...jwRows];
   });
+  // Paged after the transaction: no connection held for in-memory work.
+  return pagePlanningLines(rows, query);
 }

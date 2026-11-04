@@ -55,7 +55,7 @@ export const REFRESH_POLICY: Readonly<Record<string, RefreshRule>> = {
   'shop-floor': live('job_cards / jc_ops'),
   'so-documents': live('qc_documents (0227)'),
   'so-overview': live('sales orders + production'),
-  'so-planning': live('production_orders / route_cards'),
+  'so-planning': live('production_orders / route_cards / sales_order_lines / purchase_requests'),
   'so-status': live('sales orders + production'),
 
   // ── Poll (60 s safety refresh) ──

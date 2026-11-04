@@ -6,13 +6,13 @@ import type {
   PlanningDetailResponse,
   PlanningLineListQuery,
   PlanningLineListResponse,
-  PlanningSoListQuery,
   PlanningSoListResponse,
   RaisePlanningPrInput,
   RaisePlanningPrResponse,
 } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
 import { activityLogKeys } from '@/modules/activity-log/api';
 
 export const soPlanningKeys = {
@@ -39,7 +39,7 @@ export function usePlanningLineList(q: PlanningLineListQuery, enabled = true) {
     queryKey: soPlanningKeys.lineList(qs),
     queryFn: () => apiFetch<PlanningLineListResponse>(`/so-planning/lines${qs ? `?${qs}` : ''}`),
     enabled,
-    refetchInterval: 60_000,
+    refetchInterval: LIVE_FALLBACK_POLL_MS,
     refetchOnWindowFocus: true,
     placeholderData: (prev) => prev,
   });
@@ -47,20 +47,12 @@ export function usePlanningLineList(q: PlanningLineListQuery, enabled = true) {
 
 /** Open SOs + JWSOs to plan, one row per ORDER — the Create Plan form's picker,
  *  which calls it with no query and gets every order. */
-export function usePlanningSoList(q: PlanningSoListQuery = {}) {
-  const params = new URLSearchParams();
-  if (q.src) params.set('src', q.src);
-  if (q.search) params.set('search', q.search);
-  if (q.sf) params.set('sf', q.sf);
-  if (q.limit !== undefined) params.set('limit', String(q.limit));
-  if (q.offset !== undefined) params.set('offset', String(q.offset));
-  const qs = params.toString();
+export function usePlanningSoList() {
   return useQuery<PlanningSoListResponse>({
-    queryKey: soPlanningKeys.list(qs),
-    queryFn: () => apiFetch<PlanningSoListResponse>(`/so-planning${qs ? `?${qs}` : ''}`),
-    refetchInterval: 60_000,
+    queryKey: soPlanningKeys.list(),
+    queryFn: () => apiFetch<PlanningSoListResponse>('/so-planning'),
+    refetchInterval: LIVE_FALLBACK_POLL_MS,
     refetchOnWindowFocus: true,
-    placeholderData: (prev) => prev,
   });
 }
 

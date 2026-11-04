@@ -129,20 +129,18 @@ export function liveJwCustomerName() {
  * Job Cards created directly against these lines WITHOUT a plan (the source line
  * set, not referenced by any non-cancelled plan.jcId) — real production the plans
  * table can't see, counted as covered so Planning stops reporting "yet to plan"
- * while SO Status shows progress. One query. `planRows` = the same lines' plans.
+ * while SO Status shows progress. One query, and ANY plan's jc_id counts, wherever
+ * that plan sits: the rule of soLineDirectJcRaw (lib/so-line-coverage), so the list
+ * and the order view read the same whichever plans each has loaded (ADR-267).
  */
 export async function loadDirectJcsByLine(
   tx: DbTransaction,
   lines: ReadonlyArray<{ id: string; itemId: string | null }>,
-  planRows: ReadonlyArray<{ plan: { jcId: string | null } }>,
   source: LineSource,
 ): Promise<Map<string, { qty: number; codes: string[] }>> {
   const directJcByLine = new Map<string, { qty: number; codes: string[] }>();
   if (lines.length === 0) return directJcByLine;
   const lineIds = lines.map((l) => l.id);
-  const linkedJcIds = new Set(
-    planRows.map((r) => r.plan.jcId).filter((id): id is string => id !== null),
-  );
   const jcRows = await tx
     .select({
       id: jobCards.id,
@@ -165,6 +163,7 @@ export async function loadDirectJcsByLine(
         // Rework/repair children are not extra coverage (gap 3). ADR-267: the
         // JW detail lacked this while the JW order list had it; now one rule.
         isNull(jobCards.recoveryKind),
+        sql`NOT EXISTS (SELECT 1 FROM public.plans lp WHERE lp.jc_id = ${jobCards.id} AND lp.deleted_at IS NULL AND lp.plan_status <> 'cancelled')`,
       ),
     )
     .orderBy(asc(jobCards.code));
@@ -173,7 +172,7 @@ export async function loadDirectJcsByLine(
   const lineItemById = new Map(lines.map((l) => [l.id, l.itemId]));
   for (const jc of jcRows) {
     const lineId = source === 'so' ? jc.soLineId : jc.jwLineId;
-    if (!lineId || linkedJcIds.has(jc.id)) continue;
+    if (!lineId) continue;
     if ((jc.itemId ?? null) !== (lineItemById.get(lineId) ?? null)) continue;
     const entry = directJcByLine.get(lineId) ?? { qty: 0, codes: [] };
     entry.qty += jc.orderQty;

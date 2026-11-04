@@ -3,6 +3,7 @@ export * from './lib/op-sr-no';
 export * from './lib/revision';
 export * from './lib/planning-line-status';
 export * from './lib/planning-doc-codes';
+export * from './lib/item-code';
 export * from './lib/customer-rm-status';
 export * from './lib/so-line-plan-coverage';
 export * from './lib/internal-so-no';

@@ -3,7 +3,9 @@
 // figures are worked out in code, so there is no SQL expression to filter on.
 
 import {
+  docDrawingRev,
   docText,
+  itemCodeWithRev,
   linePros,
   lineJcs,
   lineRouteCards,
@@ -32,19 +34,6 @@ export interface PlanningLinePageRow {
   jcNo: string;
 }
 
-/** `CODE/REV` as the Item Code cell prints it (web itemCodeWithRev + docDrawingRev):
- *  the Drawing Rev register's value, else the line's typed revision. */
-function itemCodeWithRev(
-  code: string | null,
-  drawingRev: string | null,
-  itemRevision: string | null,
-): string {
-  const c = code?.trim();
-  if (!c) return '';
-  const r = drawingRev?.trim() || itemRevision?.trim();
-  return r ? `${c}/${r}` : c;
-}
-
 export function toPlanningLinePageRow(
   item: PlanningLineListItem,
   typed: { itemCodeText: string | null; partName: string | null },
@@ -52,7 +41,7 @@ export function toPlanningLinePageRow(
   return {
     item,
     ...typed,
-    itemCodeRev: itemCodeWithRev(item.itemCode, item.drawingRev, item.itemRevision),
+    itemCodeRev: itemCodeWithRev(item.itemCode, docDrawingRev(item), ''),
     status: planningLineStatus({
       orderQty: item.orderQty,
       remaining: item.remaining,
@@ -91,13 +80,23 @@ export const PLANNING_LINE_LIST_SF_FIELDS: MemFieldMap<PlanningLinePageRow> = {
   createdBy: { type: 'text', get: (r) => r.item.createdByName },
 };
 
+/** YYYY-MM-DD → 03-11-2026, as the screen prints a date. */
+function shownDate(iso: string | null | undefined): string | null {
+  return iso ? iso.split('-').reverse().join('-') : null;
+}
+
+/** "Pending" is what a blank RC / PRO / JC cell reads, not a value: it must not
+ *  make every undone line match a search for "pen". */
+function docSearchText(cell: string): string | null {
+  return cell === 'Pending' ? null : cell;
+}
+
 function matchesTerm(r: PlanningLinePageRow, needle: string): boolean {
   const { item } = r;
   return [
     item.soCode,
     item.soInternalNo,
     item.clientPoLineNo,
-    item.lineNo,
     `L${item.lineNo}`,
     r.itemCodeRev,
     item.itemCode,
@@ -105,12 +104,16 @@ function matchesTerm(r: PlanningLinePageRow, needle: string): boolean {
     r.itemCodeText,
     r.partName,
     item.customerName,
-    item.soType,
+    item.soType.replace(/_/g, ' '),
     item.dueDate,
-    r.status.label,
-    r.rcNo,
-    r.proNo,
-    r.jcNo,
+    shownDate(item.dueDate),
+    shownDate(istDay(item.createdAt)),
+    item.createdByName,
+    // Without its "(450 pending)": the state's name is what a search means.
+    r.status.label.replace(/\s*\(.*\)$/, ''),
+    docSearchText(r.rcNo),
+    docSearchText(r.proNo),
+    docSearchText(r.jcNo),
     ...item.plans.map((p) => p.code),
     ...item.prs.map((p) => p.code),
   ].some((f) => f != null && String(f).toLowerCase().includes(needle));

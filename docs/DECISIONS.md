@@ -15153,5 +15153,7 @@ draft plans also read "Fully Planned" while its lines read "In Planning" (open s
 - Positive: same figure on the list and in the order; 14 queries for a page however many orders.
 - Negative: every page request reads every open line. Speed on PROD-size data not measured before
   release (PROD read not available to the session).
-- Rare: a direct Job Card linked by a plan on ANOTHER order is excluded by the list, included by the
-  order view. None on TEST.
+- A plan or Job Card change reaches the list by the 60 s poll, not live: `plans` is not a live table,
+  and `job_cards` changes at every op log. Production Orders, Route Cards, SO lines and PRs are live.
+- Open: the JW branch of `GET /so-planning` (Create Plan picker) still counts a short-closed line as
+  not covered, so the picker can offer a JWSO with nothing left to plan; the server refuses the plan.

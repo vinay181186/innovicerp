@@ -597,7 +597,6 @@ export async function getPlanningSoDetail(
     const directJcByLine = await loadDirectJcsByLine(
       tx,
       lineRows.map((r) => r.line),
-      planRows,
       'so',
     );
 
@@ -822,7 +821,6 @@ async function getJwPlanningDetail(
   const directJcByLine = await loadDirectJcsByLine(
     tx,
     lineRows.map((r) => r.line),
-    planRows,
     'jw',
   );
 
