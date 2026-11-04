@@ -205,6 +205,7 @@ export function JwDispatchView({
           title={`History — ${historyTarget.code}`}
           onClose={() => setHistoryTarget(null)}
           size="lg"
+          confirmExit={false}
         >
           <DocumentHistory
             entity="JwReturnChallan"

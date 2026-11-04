@@ -59,10 +59,8 @@ export function ReverseOpLogModal({
     <Modal
       title={`Reverse ${row.logNo}`}
       size="sm"
-      onClose={() => {
-        if (!reverse.isPending) onClose();
-      }}
-      closeOnOverlayClick={false}
+      onClose={onClose}
+      closeLocked={reverse.isPending}
       footer={
         <>
           <button

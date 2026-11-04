@@ -81,7 +81,31 @@ export function AdjustStockModal({
   };
 
   return (
-    <ModalShell onClose={onClose} title={`Adjust Stock — ${row.itemLabel}`}>
+    <ModalShell
+      onClose={onClose}
+      title={`Adjust Stock — ${row.itemLabel}`}
+      footer={
+        <>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={onSave}
+            disabled={mut.isPending}
+          >
+            {mut.isPending ? (
+              <>
+                <Loader2 size={14} className="inline animate-spin" /> Saving…
+              </>
+            ) : (
+              'Adjust'
+            )}
+          </button>
+        </>
+      }
+    >
       <div
         style={{
           marginBottom: 12,
@@ -176,20 +200,6 @@ export function AdjustStockModal({
           {err}
         </div>
       ) : null}
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
-        <button type="button" className="btn btn-ghost" onClick={onClose}>
-          Cancel
-        </button>
-        <button type="button" className="btn btn-primary" onClick={onSave} disabled={mut.isPending}>
-          {mut.isPending ? (
-            <>
-              <Loader2 size={14} className="inline animate-spin" /> Saving…
-            </>
-          ) : (
-            'Adjust'
-          )}
-        </button>
-      </div>
     </ModalShell>
   );
 }

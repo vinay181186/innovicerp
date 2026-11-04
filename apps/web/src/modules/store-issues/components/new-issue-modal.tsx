@@ -11,6 +11,7 @@ import {
 } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { Modal } from '@/ui/feedback';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { todayIst } from '@/lib/date';
 import { soNoWithInternal } from '@/lib/so-number';
@@ -155,234 +156,17 @@ export function NewIssueModal({
 
   const mat = against === 'job_card' ? jcMat : against === 'assembly_so' ? soMat : null;
   const docPicked = against === 'job_card' ? Boolean(jobCardId) : Boolean(salesOrderId);
+  // After Save & New only the kept document + person are on screen: nothing to lose yet.
+  const hasUnsaved = !lastSaved || lines.length > 0 || Boolean(purpose.trim() || remarks.trim());
 
   return (
-    <div
-      className="overlay"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className="modal" style={{ maxWidth: 1000, width: '96vw' }}>
-        <div className="modal-hdr">
-          <span className="modal-title">New Item Issue</span>
-          <button type="button" className="btn btn-ghost btn-sm btn-icon" onClick={onClose}>
-            ✕
-          </button>
-        </div>
-
-        <div className="modal-body">
-          <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
-            {ISSUE_AGAINST.map((a) => (
-              <button
-                key={a}
-                type="button"
-                className={against === a ? 'btn btn-primary btn-sm' : 'btn btn-ghost btn-sm'}
-                onClick={() => switchAgainst(a)}
-              >
-                {ISSUE_AGAINST_LABELS[a]}
-              </button>
-            ))}
-          </div>
-
-          <div className="form-grid">
-            {against === 'job_card' ? (
-              <div className="form-grp">
-                <label className="form-label" htmlFor="si-jc">
-                  Job Card <span className="req">★</span>
-                </label>
-                <JobCardPicker
-                  id="si-jc"
-                  value={jobCardId}
-                  valueLabel={jcMat.data?.jcCode}
-                  onChange={setJobCardId}
-                />
-              </div>
-            ) : against === 'assembly_so' ? (
-              <div className="form-grp">
-                <label className="form-label" htmlFor="si-so">
-                  Assembly SO <span className="req">★</span>
-                </label>
-                <SalesOrderPicker
-                  id="si-so"
-                  value={salesOrderId}
-                  valueLabel={
-                    soMat.data
-                      ? soNoWithInternal(soMat.data.soCode, soMat.data.soInternalNo)
-                      : undefined
-                  }
-                  onChange={setSalesOrderId}
-                />
-              </div>
-            ) : (
-              <div className="form-grp">
-                <label className="form-label">
-                  Department <span className="req">★</span>
-                </label>
-                <input
-                  type="text"
-                  className="innovic-input"
-                  placeholder="e.g. Maintenance, Production"
-                  value={department}
-                  onChange={(e) => setDepartment(e.target.value)}
-                />
-              </div>
-            )}
-
-            <div className="form-grp">
-              <label className="form-label">
-                Issue Date <span className="req">★</span>
-              </label>
-              <input
-                type="date"
-                className="innovic-input"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-              />
-            </div>
-
-            <div className="form-grp">
-              <label className="form-label" htmlFor="si-op">
-                Issued To <span className="req">★</span>
-              </label>
-              <ProductionUserPicker
-                id="si-op"
-                value={issuedToUserId}
-                onChange={setIssuedToUserId}
-              />
-              {!issuedToUserId ? (
-                <input
-                  type="text"
-                  className="innovic-input"
-                  style={{ marginTop: 4 }}
-                  placeholder="…or type a name"
-                  value={issuedToText}
-                  onChange={(e) => setIssuedToText(e.target.value)}
-                />
-              ) : null}
-            </div>
-
-            <div className="form-grp">
-              <label className="form-label">
-                Purpose <span className="req">★</span>
-              </label>
-              <input
-                type="text"
-                className="innovic-input"
-                placeholder="Manufacturing / Assembly / Repair"
-                value={purpose}
-                onChange={(e) => setPurpose(e.target.value)}
-              />
-            </div>
-
-            <div className="form-grp form-full">
-              <label className="form-label">Remarks</label>
-              <input
-                type="text"
-                className="innovic-input"
-                value={remarks}
-                onChange={(e) => setRemarks(e.target.value)}
-              />
-            </div>
-          </div>
-
-          {mat && docPicked ? (
-            <div style={{ marginTop: 12 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                <span className="fw-700" style={{ fontSize: 12 }}>
-                  Material
-                </span>
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm"
-                  disabled={!mat.data}
-                  onClick={fillToIssue}
-                  title="One line per item still to issue — qty = To Issue, or Available if less"
-                >
-                  Fill To Issue
-                </button>
-              </div>
-              {mat.isLoading ? (
-                <div className="text3" style={{ fontSize: 12 }}>
-                  <Loader2 size={14} className="inline animate-spin" /> Loading…
-                </div>
-              ) : mat.isError ? (
-                <div style={{ color: 'var(--red2)', fontSize: 12 }}>
-                  {mat.error instanceof Error ? mat.error.message : 'Could not load material.'}
-                </div>
-              ) : against === 'job_card' && jcMat.data ? (
-                <JcMaterialTable data={jcMat.data} />
-              ) : against === 'assembly_so' && soMat.data ? (
-                <SoMaterialTable data={soMat.data} />
-              ) : null}
-            </div>
-          ) : null}
-
-          <div style={{ marginTop: 12 }}>
-            <div className="fw-700" style={{ fontSize: 12, marginBottom: 6 }}>
-              Items to issue
-            </div>
-            <IssueLinesEditor lines={lines} onChange={editLines} />
-          </div>
-
-          {over ? (
-            <div
-              style={{
-                marginTop: 12,
-                padding: 10,
-                border: '1px solid var(--amber2)',
-                borderRadius: 4,
-              }}
-            >
-              <div className="fw-700" style={{ fontSize: 12, color: 'var(--amber2)' }}>
-                More than To Issue
-              </div>
-              <ul style={{ fontSize: 12, margin: '6px 0 8px 16px' }}>
-                {over.map((o) => (
-                  <li key={o.itemCode}>
-                    <span className="mono fw-700">{o.itemCode}</span>: Issue Qty {o.qty}, To Issue{' '}
-                    {o.toIssueQty}
-                  </li>
-                ))}
-              </ul>
-              <div className="text3" style={{ fontSize: 11, marginBottom: 6 }}>
-                {canApprove
-                  ? 'Issuing more needs a reason.'
-                  : 'Issuing more needs a Store user with approve rights — ask one to post this issue, or lower the qty.'}
-              </div>
-              <input
-                type="text"
-                className="innovic-input"
-                disabled={!canApprove}
-                placeholder="Reason, e.g. extra bar for a setup piece"
-                value={confirmReason}
-                onChange={(e) => setConfirmReason(e.target.value)}
-              />
-            </div>
-          ) : null}
-
-          {lastSaved && !err ? (
-            <div className="text2" style={{ marginTop: 12, fontSize: 12 }}>
-              ✓ Saved <span className="td-code">{lastSaved}</span> — enter the next issue.
-            </div>
-          ) : null}
-          {err ? (
-            <div
-              style={{
-                marginTop: 12,
-                padding: 8,
-                background: 'var(--red3)',
-                color: 'var(--red2)',
-                borderRadius: 4,
-                fontSize: 12,
-              }}
-            >
-              {err}
-            </div>
-          ) : null}
-        </div>
-
-        <div className="modal-footer">
+    <Modal
+      title="New Item Issue"
+      onClose={onClose}
+      maxWidth="1000px"
+      confirmExit={hasUnsaved}
+      footer={
+        <>
           <button type="button" className="btn btn-ghost" onClick={onClose}>
             {lastSaved ? 'Close' : 'Cancel'}
           </button>
@@ -427,8 +211,213 @@ export function NewIssueModal({
               </button>
             </>
           )}
+        </>
+      }
+    >
+      <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
+        {ISSUE_AGAINST.map((a) => (
+          <button
+            key={a}
+            type="button"
+            className={against === a ? 'btn btn-primary btn-sm' : 'btn btn-ghost btn-sm'}
+            onClick={() => switchAgainst(a)}
+          >
+            {ISSUE_AGAINST_LABELS[a]}
+          </button>
+        ))}
+      </div>
+
+      <div className="form-grid">
+        {against === 'job_card' ? (
+          <div className="form-grp">
+            <label className="form-label" htmlFor="si-jc">
+              Job Card <span className="req">★</span>
+            </label>
+            <JobCardPicker
+              id="si-jc"
+              value={jobCardId}
+              valueLabel={jcMat.data?.jcCode}
+              onChange={setJobCardId}
+            />
+          </div>
+        ) : against === 'assembly_so' ? (
+          <div className="form-grp">
+            <label className="form-label" htmlFor="si-so">
+              Assembly SO <span className="req">★</span>
+            </label>
+            <SalesOrderPicker
+              id="si-so"
+              value={salesOrderId}
+              valueLabel={
+                soMat.data
+                  ? soNoWithInternal(soMat.data.soCode, soMat.data.soInternalNo)
+                  : undefined
+              }
+              onChange={setSalesOrderId}
+            />
+          </div>
+        ) : (
+          <div className="form-grp">
+            <label className="form-label">
+              Department <span className="req">★</span>
+            </label>
+            <input
+              type="text"
+              className="innovic-input"
+              placeholder="e.g. Maintenance, Production"
+              value={department}
+              onChange={(e) => setDepartment(e.target.value)}
+            />
+          </div>
+        )}
+
+        <div className="form-grp">
+          <label className="form-label">
+            Issue Date <span className="req">★</span>
+          </label>
+          <input
+            type="date"
+            className="innovic-input"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+          />
+        </div>
+
+        <div className="form-grp">
+          <label className="form-label" htmlFor="si-op">
+            Issued To <span className="req">★</span>
+          </label>
+          <ProductionUserPicker id="si-op" value={issuedToUserId} onChange={setIssuedToUserId} />
+          {!issuedToUserId ? (
+            <input
+              type="text"
+              className="innovic-input"
+              style={{ marginTop: 4 }}
+              placeholder="…or type a name"
+              value={issuedToText}
+              onChange={(e) => setIssuedToText(e.target.value)}
+            />
+          ) : null}
+        </div>
+
+        <div className="form-grp">
+          <label className="form-label">
+            Purpose <span className="req">★</span>
+          </label>
+          <input
+            type="text"
+            className="innovic-input"
+            placeholder="Manufacturing / Assembly / Repair"
+            value={purpose}
+            onChange={(e) => setPurpose(e.target.value)}
+          />
+        </div>
+
+        <div className="form-grp form-full">
+          <label className="form-label">Remarks</label>
+          <input
+            type="text"
+            className="innovic-input"
+            value={remarks}
+            onChange={(e) => setRemarks(e.target.value)}
+          />
         </div>
       </div>
-    </div>
+
+      {mat && docPicked ? (
+        <div style={{ marginTop: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+            <span className="fw-700" style={{ fontSize: 12 }}>
+              Material
+            </span>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              disabled={!mat.data}
+              onClick={fillToIssue}
+              title="One line per item still to issue — qty = To Issue, or Available if less"
+            >
+              Fill To Issue
+            </button>
+          </div>
+          {mat.isLoading ? (
+            <div className="text3" style={{ fontSize: 12 }}>
+              <Loader2 size={14} className="inline animate-spin" /> Loading…
+            </div>
+          ) : mat.isError ? (
+            <div style={{ color: 'var(--red2)', fontSize: 12 }}>
+              {mat.error instanceof Error ? mat.error.message : 'Could not load material.'}
+            </div>
+          ) : against === 'job_card' && jcMat.data ? (
+            <JcMaterialTable data={jcMat.data} />
+          ) : against === 'assembly_so' && soMat.data ? (
+            <SoMaterialTable data={soMat.data} />
+          ) : null}
+        </div>
+      ) : null}
+
+      <div style={{ marginTop: 12 }}>
+        <div className="fw-700" style={{ fontSize: 12, marginBottom: 6 }}>
+          Items to issue
+        </div>
+        <IssueLinesEditor lines={lines} onChange={editLines} />
+      </div>
+
+      {over ? (
+        <div
+          style={{
+            marginTop: 12,
+            padding: 10,
+            border: '1px solid var(--amber2)',
+            borderRadius: 4,
+          }}
+        >
+          <div className="fw-700" style={{ fontSize: 12, color: 'var(--amber2)' }}>
+            More than To Issue
+          </div>
+          <ul style={{ fontSize: 12, margin: '6px 0 8px 16px' }}>
+            {over.map((o) => (
+              <li key={o.itemCode}>
+                <span className="mono fw-700">{o.itemCode}</span>: Issue Qty {o.qty}, To Issue{' '}
+                {o.toIssueQty}
+              </li>
+            ))}
+          </ul>
+          <div className="text3" style={{ fontSize: 11, marginBottom: 6 }}>
+            {canApprove
+              ? 'Issuing more needs a reason.'
+              : 'Issuing more needs a Store user with approve rights — ask one to post this issue, or lower the qty.'}
+          </div>
+          <input
+            type="text"
+            className="innovic-input"
+            disabled={!canApprove}
+            placeholder="Reason, e.g. extra bar for a setup piece"
+            value={confirmReason}
+            onChange={(e) => setConfirmReason(e.target.value)}
+          />
+        </div>
+      ) : null}
+
+      {lastSaved && !err ? (
+        <div className="text2" style={{ marginTop: 12, fontSize: 12 }}>
+          ✓ Saved <span className="td-code">{lastSaved}</span> — enter the next issue.
+        </div>
+      ) : null}
+      {err ? (
+        <div
+          style={{
+            marginTop: 12,
+            padding: 8,
+            background: 'var(--red3)',
+            color: 'var(--red2)',
+            borderRadius: 4,
+            fontSize: 12,
+          }}
+        >
+          {err}
+        </div>
+      ) : null}
+    </Modal>
   );
 }

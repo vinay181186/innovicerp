@@ -66,7 +66,38 @@ export function ReorderModal({
   };
 
   return (
-    <ModalShell onClose={onClose} title={`Reorder — ${row.itemCode}`}>
+    <ModalShell
+      onClose={onClose}
+      title={`Reorder — ${row.itemCode}`}
+      confirmExit={!staged}
+      footer={
+        <>
+          <button
+            type="button"
+            className={staged ? 'btn btn-primary' : 'btn btn-ghost'}
+            onClick={onClose}
+          >
+            {staged ? 'Close' : 'Cancel'}
+          </button>
+          {staged ? null : (
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={onSave}
+              disabled={mut.isPending}
+            >
+              {mut.isPending ? (
+                <>
+                  <Loader2 size={14} className="inline animate-spin" /> Saving…
+                </>
+              ) : (
+                'Save'
+              )}
+            </button>
+          )}
+        </>
+      }
+    >
       <div className="text3" style={{ fontSize: 12, marginBottom: 10 }}>
         0 = off. Available now (all Drawing Revs){' '}
         <b className="mono">{totals ? totals.availableQty : '…'}</b>, On PO{' '}
@@ -109,31 +140,6 @@ export function ReorderModal({
           </Banner>
         </div>
       ) : null}
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
-        <button
-          type="button"
-          className={staged ? 'btn btn-primary' : 'btn btn-ghost'}
-          onClick={onClose}
-        >
-          {staged ? 'Close' : 'Cancel'}
-        </button>
-        {staged ? null : (
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={onSave}
-            disabled={mut.isPending}
-          >
-            {mut.isPending ? (
-              <>
-                <Loader2 size={14} className="inline animate-spin" /> Saving…
-              </>
-            ) : (
-              'Save'
-            )}
-          </button>
-        )}
-      </div>
     </ModalShell>
   );
 }

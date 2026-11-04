@@ -12,6 +12,7 @@
 //     gets clipped, which is how several of the hand-rolled ones behaved)
 //   - the shared `.overlay` (navy 45% + 2px blur, z-index 500) and `.modal`
 //     chrome — header band / body / footer band, 8px radius
+//   - ONE closing rule (use-close-rule.tsx): asks before typed data is thrown away.
 //   - click-outside-to-close, on the OVERLAY only (a mousedown that starts
 //     inside the card and ends on the backdrop is a text selection, not a
 //     dismissal, so the check is `e.target === e.currentTarget`)
@@ -39,9 +40,10 @@
 
 import { useCallback, useEffect, useId, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { escapeBelongsToAnOpenPicker } from '@/lib/exit-guard';
+import { escapeBelongsToAnOpenMenu, escapeBelongsToAnOpenPicker } from '@/lib/exit-guard';
 import { Icon } from '../core/Icon';
 import { IconButton } from '../core/IconButton';
+import { useCloseRule } from './use-close-rule';
 
 /** The overlay's own layer — the value `.overlay` carries in innovic-theme.css. */
 export const Z_OVERLAY = 500;
@@ -79,10 +81,15 @@ export interface ModalProps {
   role?: 'dialog' | 'alertdialog';
   /** Stack above another overlay that is already open (600, not 500). */
   elevated?: boolean;
-  /** Turn off the backdrop click (a form mid-edit that must not be lost). */
+  /** Turn off the backdrop click. */
   closeOnOverlayClick?: boolean;
-  /** Turn off Escape (same reason — the screen asks its own question first). */
+  /** Turn off Escape. */
   closeOnEscape?: boolean;
+  /** Ask before closing once something was typed or picked. Default on; a
+   *  view-only pop-up, or a question that is its own answer, turns it off. */
+  confirmExit?: boolean;
+  /** A save is running: nothing closes and nothing asks until it ends. */
+  closeLocked?: boolean;
   /** Render the card WITHOUT the overlay/portal, for the /__ui-kit page. */
   inline?: boolean;
   bodyClassName?: string;
@@ -150,6 +157,8 @@ export function Modal({
   elevated = false,
   closeOnOverlayClick = true,
   closeOnEscape = true,
+  confirmExit = true,
+  closeLocked = false,
   inline = false,
   bodyClassName,
   bodyStyle,
@@ -170,6 +179,17 @@ export function Modal({
   useEffect(() => {
     onCloseRef.current = onClose;
   });
+
+  const rule = useCloseRule({
+    active,
+    confirmExit,
+    closeLocked,
+    questionZIndex: (elevated ? Z_OVERLAY_ABOVE_MODAL : Z_OVERLAY) + 100,
+    cardRef,
+    footerRef,
+    onCloseRef,
+  });
+  const { requestClose, escapeAnswersQuestion } = rule;
 
   // Scroll lock + focus move/restore. One effect so the two always pair up.
   useEffect(() => {
@@ -204,8 +224,10 @@ export function Modal({
       // closes itself without stopping the event, so the check is on the
       // combobox's own aria-expanded — the shared guard, not a second copy.
       if (escapeBelongsToAnOpenPicker(e.target)) return;
+      // A row ⋯ or column ▾ menu open in this dialog closes on the same key.
+      if (escapeBelongsToAnOpenMenu()) return;
       e.preventDefault();
-      onCloseRef.current?.();
+      if (!escapeAnswersQuestion()) requestClose();
     };
     // CAPTURE phase at document, on purpose — NOT a bubble listener on window.
     // searchable-select.tsx:298-299 closes its list on Escape with a bare
@@ -223,7 +245,7 @@ export function Modal({
       const at = escapeStack.lastIndexOf(instanceId);
       if (at >= 0) escapeStack.splice(at, 1);
     };
-  }, [escapeArmed, instanceId]);
+  }, [escapeArmed, instanceId, requestClose, escapeAnswersQuestion]);
 
   // Focus trap. Tab off the last control wraps to the first, and vice versa.
   const onKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -270,6 +292,7 @@ export function Modal({
       style={cardStyle}
       onKeyDown={onKeyDown}
       onMouseDown={(e) => e.stopPropagation()}
+      {...rule.cardHandlers}
     >
       <div className="modal-hdr">
         <div
@@ -287,7 +310,7 @@ export function Modal({
                 size="sm"
                 title={closeLabel}
                 icon={<Icon name="x" size={14} />}
-                onClick={onClose}
+                onClick={requestClose}
               />
             ) : null}
           </div>
@@ -326,7 +349,7 @@ export function Modal({
       style={overlayStyle}
       onMouseDown={(e) => {
         if (!closeOnOverlayClick || !onClose) return;
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget) requestClose();
       }}
       // A portal bubbles through the REACT tree, not the DOM one: a Modal
       // rendered inside the app's standard clickable row (`<tr onClick=…>`)
@@ -334,6 +357,7 @@ export function Modal({
       onClick={(e) => e.stopPropagation()}
     >
       {card}
+      {rule.question}
     </div>,
     document.body,
   );

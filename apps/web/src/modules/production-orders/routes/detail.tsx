@@ -710,7 +710,6 @@ function ProductionOrderDetailPage(): React.JSX.Element {
           title={`Close Qty ${data.code}`}
           size="md"
           {...(closing ? {} : { onClose: () => setCloseOpen(false) })}
-          closeOnOverlayClick={false}
         >
           <PoCloseForm po={data} onClosed={() => setCloseOpen(false)} />
         </Modal>

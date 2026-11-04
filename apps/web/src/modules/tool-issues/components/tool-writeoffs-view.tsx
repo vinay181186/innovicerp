@@ -13,6 +13,7 @@ import {
   type ToolWriteoffStatus,
 } from '@innovic/shared';
 import { useCallback, useMemo, useState } from 'react';
+import { Modal } from '@/ui/feedback';
 import { fmtDate } from '@/lib/date';
 import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
 import { useSession } from '@/lib/session';
@@ -247,46 +248,16 @@ function DecideModal({
         ? 'Reject = it is still with the holder (Still Out again).'
         : 'Reject = the instrument stays in store.';
   return (
-    <div
-      className="overlay"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className="modal">
-        <div className="modal-hdr">
-          <span className="modal-title">
-            Write-off — {w.itemCode}
-            {w.serialNo ? ` · ${w.serialNo}` : ''}
-          </span>
-          <button type="button" className="btn btn-ghost btn-sm btn-icon" onClick={onClose}>
-            ✕
-          </button>
-        </div>
-        <div className="modal-body">
-          <div className="text2" style={{ fontSize: 12, marginBottom: 8 }}>
-            {KIND_LABELS[w.kind]} · qty {r3(w.qty)} · reason: {w.reason}
-          </div>
-          <div className="text3" style={{ fontSize: 11, marginBottom: 8 }}>
-            Approve = written off. {rejectMeans}
-          </div>
-          {own ? (
-            <div style={{ color: 'var(--amber2)', fontSize: 12, marginBottom: 8 }}>
-              You recorded this write-off — another Store In-charge must decide it.
-            </div>
-          ) : null}
-          <input
-            type="text"
-            className="innovic-input"
-            placeholder="Remarks (required to Reject)"
-            value={remarks}
-            onChange={(e) => setRemarks(e.target.value)}
-          />
-          {err ? (
-            <div style={{ color: 'var(--red2)', fontSize: 12, marginTop: 8 }}>{err}</div>
-          ) : null}
-        </div>
-        <div className="modal-footer">
+    <Modal
+      title={
+        <>
+          Write-off — {w.itemCode}
+          {w.serialNo ? ` · ${w.serialNo}` : ''}
+        </>
+      }
+      onClose={onClose}
+      footer={
+        <>
           <button type="button" className="btn btn-ghost" onClick={onClose}>
             Close
           </button>
@@ -306,8 +277,28 @@ function DecideModal({
           >
             Approve Write-off
           </button>
-        </div>
+        </>
+      }
+    >
+      <div className="text2" style={{ fontSize: 12, marginBottom: 8 }}>
+        {KIND_LABELS[w.kind]} · qty {r3(w.qty)} · reason: {w.reason}
       </div>
-    </div>
+      <div className="text3" style={{ fontSize: 11, marginBottom: 8 }}>
+        Approve = written off. {rejectMeans}
+      </div>
+      {own ? (
+        <div style={{ color: 'var(--amber2)', fontSize: 12, marginBottom: 8 }}>
+          You recorded this write-off — another Store In-charge must decide it.
+        </div>
+      ) : null}
+      <input
+        type="text"
+        className="innovic-input"
+        placeholder="Remarks (required to Reject)"
+        value={remarks}
+        onChange={(e) => setRemarks(e.target.value)}
+      />
+      {err ? <div style={{ color: 'var(--red2)', fontSize: 12, marginTop: 8 }}>{err}</div> : null}
+    </Modal>
   );
 }

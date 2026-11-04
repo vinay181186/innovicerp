@@ -134,6 +134,7 @@ export function FilePreview({
       // The reference names this × for what it closes, not for the generic
       // "Close" (design-ref/components/feedback/FilePreview.jsx:14).
       closeLabel="Close preview"
+      confirmExit={false}
       bodyStyle={{ padding: 0, background: 'var(--bg3)' }}
       {...(onClose ? { onClose } : {})}
       headerActions={

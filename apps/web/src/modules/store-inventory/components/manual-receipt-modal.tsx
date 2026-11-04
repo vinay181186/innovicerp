@@ -22,7 +22,6 @@ import {
   useItemRevOptions,
 } from '@/modules/item-revisions/components/drawing-rev-picker';
 import { useAdjustStock, useItemRevStock, useItemStockTotals } from '../api';
-import { useDiscardGuard } from './discard-guard';
 import { ModalShell } from './modal-shell';
 
 /** Sources a Manual Receipt may pick — every one but Purchase (GRN only). */
@@ -73,9 +72,6 @@ export function ManualReceiptModal({ onClose }: { onClose: () => void }): React.
     return totals ? totals.inStock : null;
   })();
 
-  const dirty = Boolean(itemId || qty.trim() || refNo.trim() || remarks.trim());
-  const guard = useDiscardGuard(dirty, onClose);
-
   const onSave = (): void => {
     setErr(null);
     if (!itemId) {
@@ -118,8 +114,31 @@ export function ManualReceiptModal({ onClose }: { onClose: () => void }): React.
   };
 
   return (
-    <ModalShell onClose={guard.requestClose} title="Manual Receipt">
-      {guard.dialog}
+    <ModalShell
+      onClose={onClose}
+      title="Manual Receipt"
+      footer={
+        <>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={onSave}
+            disabled={mut.isPending}
+          >
+            {mut.isPending ? (
+              <>
+                <Loader2 size={14} className="inline animate-spin" /> Saving…
+              </>
+            ) : (
+              'Save Receipt'
+            )}
+          </button>
+        </>
+      }
+    >
       <div className="form-grid">
         <div className="form-grp">
           <label className="form-label" htmlFor="mr-item">
@@ -230,20 +249,6 @@ export function ManualReceiptModal({ onClose }: { onClose: () => void }): React.
           {err}
         </div>
       ) : null}
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
-        <button type="button" className="btn btn-ghost" onClick={onClose}>
-          Cancel
-        </button>
-        <button type="button" className="btn btn-primary" onClick={onSave} disabled={mut.isPending}>
-          {mut.isPending ? (
-            <>
-              <Loader2 size={14} className="inline animate-spin" /> Saving…
-            </>
-          ) : (
-            'Save Receipt'
-          )}
-        </button>
-      </div>
     </ModalShell>
   );
 }

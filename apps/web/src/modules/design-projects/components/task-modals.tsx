@@ -73,7 +73,18 @@ export function TaskFormModal({
   };
 
   return (
-    <Modal onClose={onClose} title={mode === 'add' ? '📝 Add Task' : '✏ Edit Task'}>
+    <Modal
+      onClose={onClose}
+      title={mode === 'add' ? '📝 Add Task' : '✏ Edit Task'}
+      footer={
+        <Actions
+          onClose={onClose}
+          onSave={onSave}
+          saving={createMut.isPending || updateMut.isPending}
+          label={mode === 'add' ? 'Save Task' : 'Save Changes'}
+        />
+      }
+    >
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <div style={{ gridColumn: 'span 2' }}>
           <Field label="Title ★">
@@ -137,12 +148,6 @@ export function TaskFormModal({
         </div>
       </div>
       {err ? <ErrorBox message={err} /> : null}
-      <Actions
-        onClose={onClose}
-        onSave={onSave}
-        saving={createMut.isPending || updateMut.isPending}
-        label={mode === 'add' ? 'Save Task' : 'Save Changes'}
-      />
     </Modal>
   );
 }
@@ -172,7 +177,16 @@ export function ViewTaskModal({
   };
 
   return (
-    <Modal onClose={onClose} title={`📝 ${task.title}`}>
+    <Modal
+      onClose={onClose}
+      title={`📝 ${task.title}`}
+      confirmExit={comment.trim() !== ''}
+      footer={
+        <button type="button" className="btn btn-ghost" onClick={onClose}>
+          Close
+        </button>
+      }
+    >
       <div
         style={{
           display: 'grid',
@@ -303,11 +317,6 @@ export function ViewTaskModal({
             </button>
           </div>
         ) : null}
-      </div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
-        <button type="button" className="btn btn-ghost" onClick={onClose}>
-          Close
-        </button>
       </div>
     </Modal>
   );

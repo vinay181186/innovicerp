@@ -58,7 +58,7 @@ import {
 import { useHistoryTab } from '@/components/shared/document-history';
 import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
 import { AssignTaskModal } from '@/modules/tasks/components/task-modals';
-import { Banner, ConfirmDialog } from '@/ui/feedback';
+import { Banner, ConfirmDialog, Modal } from '@/ui/feedback';
 import { ActionMenu } from '@/ui/layout';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
@@ -586,314 +586,209 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
 
       {/* Approve modal */}
       {approveOpen ? (
-        <div
-          role="dialog"
-          aria-modal="true"
-          onClick={() => setApproveOpen(false)}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,.45)',
-            display: 'flex',
-            alignItems: 'flex-start',
-            justifyContent: 'center',
-            padding: '10vh 16px',
-            zIndex: 60,
-          }}
-        >
-          <div
-            className="panel"
-            onClick={(e) => e.stopPropagation()}
-            style={{ width: 'min(1100px, 96vw)' }}
-          >
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                padding: '12px 16px',
-                borderBottom: '1px solid var(--border)',
-              }}
-            >
-              <div className="fw-700" style={{ color: 'var(--green2)' }}>
-                Approve PO {detail.code}?
-              </div>
+        <Modal
+          title={<span style={{ color: 'var(--green2)' }}>Approve PO {detail.code}?</span>}
+          onClose={() => setApproveOpen(false)}
+          maxWidth="min(1100px, 96vw)"
+          bodyStyle={{ display: 'grid', gap: 12 }}
+          footer={
+            <>
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"
                 onClick={() => setApproveOpen(false)}
               >
-                <X size={14} />
+                Cancel
               </button>
-            </div>
-            <div style={{ padding: 16, display: 'grid', gap: 12 }}>
-              <div className="form-grp">
-                <label className="form-label">Approval Remarks</label>
-                <input
-                  className="innovic-input"
-                  value={approveRemarks}
-                  onChange={(e) => setApproveRemarks(e.target.value)}
-                />
-              </div>
-              {actionError ? (
-                <div
-                  style={{
-                    padding: '8px 12px',
-                    background: 'var(--red3)',
-                    border: '1px solid var(--red)',
-                    borderRadius: 6,
-                    color: 'var(--red2)',
-                    fontSize: 12,
-                  }}
-                >
-                  {actionError}
-                </div>
-              ) : null}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => setApproveOpen(false)}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-success btn-sm"
-                  disabled={approveMut.isPending}
-                  onClick={() => void doApprove()}
-                >
-                  {approveMut.isPending ? (
-                    <>
-                      <Loader2 className="inline h-3 w-3 animate-spin" /> Approving…
-                    </>
-                  ) : (
-                    'Approve PO'
-                  )}
-                </button>
-              </div>
-            </div>
+              <button
+                type="button"
+                className="btn btn-success btn-sm"
+                disabled={approveMut.isPending}
+                onClick={() => void doApprove()}
+              >
+                {approveMut.isPending ? (
+                  <>
+                    <Loader2 className="inline h-3 w-3 animate-spin" /> Approving…
+                  </>
+                ) : (
+                  'Approve PO'
+                )}
+              </button>
+            </>
+          }
+        >
+          <div className="form-grp">
+            <label className="form-label">Approval Remarks</label>
+            <input
+              className="innovic-input"
+              value={approveRemarks}
+              onChange={(e) => setApproveRemarks(e.target.value)}
+            />
           </div>
-        </div>
+          {actionError ? (
+            <div
+              style={{
+                padding: '8px 12px',
+                background: 'var(--red3)',
+                border: '1px solid var(--red)',
+                borderRadius: 6,
+                color: 'var(--red2)',
+                fontSize: 12,
+              }}
+            >
+              {actionError}
+            </div>
+          ) : null}
+        </Modal>
       ) : null}
 
       {/* Reject modal */}
       {rejectOpen ? (
-        <div
-          role="dialog"
-          aria-modal="true"
-          onClick={() => setRejectOpen(false)}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,.45)',
-            display: 'flex',
-            alignItems: 'flex-start',
-            justifyContent: 'center',
-            padding: '10vh 16px',
-            zIndex: 60,
-          }}
-        >
-          <div
-            className="panel"
-            onClick={(e) => e.stopPropagation()}
-            style={{ width: 'min(1100px, 96vw)' }}
-          >
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                padding: '12px 16px',
-                borderBottom: '1px solid var(--border)',
-              }}
-            >
-              <div className="fw-700" style={{ color: 'var(--red2)' }}>
-                Reject PO {detail.code}?
-              </div>
+        <Modal
+          title={<span style={{ color: 'var(--red2)' }}>Reject PO {detail.code}?</span>}
+          onClose={() => setRejectOpen(false)}
+          maxWidth="min(1100px, 96vw)"
+          bodyStyle={{ display: 'grid', gap: 12 }}
+          footer={
+            <>
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"
                 onClick={() => setRejectOpen(false)}
               >
-                <X size={14} />
+                Cancel
               </button>
-            </div>
-            <div style={{ padding: 16, display: 'grid', gap: 12 }}>
-              <div
-                style={{
-                  background: 'var(--red3)',
-                  padding: 12,
-                  border: '1px solid var(--red)',
-                  borderRadius: 8,
-                  fontSize: 11,
-                  color: 'var(--text3)',
-                }}
+              <button
+                type="button"
+                className="btn btn-danger btn-sm"
+                disabled={rejectMut.isPending}
+                onClick={() => void doReject()}
               >
-                The PO will be cancelled. Its PRs go back to pending for a new PO.
-              </div>
-              <div className="form-grp">
-                <label className="form-label">
-                  Rejection Reason <span className="req">★</span>
-                </label>
-                <textarea
-                  className="innovic-input"
-                  rows={3}
-                  value={rejectReason}
-                  onChange={(e) => setRejectReason(e.target.value)}
-                />
-              </div>
-              {actionError ? (
-                <div
-                  style={{
-                    padding: '8px 12px',
-                    background: 'var(--red3)',
-                    border: '1px solid var(--red)',
-                    borderRadius: 6,
-                    color: 'var(--red2)',
-                    fontSize: 12,
-                  }}
-                >
-                  {actionError}
-                </div>
-              ) : null}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => setRejectOpen(false)}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-danger btn-sm"
-                  disabled={rejectMut.isPending}
-                  onClick={() => void doReject()}
-                >
-                  {rejectMut.isPending ? (
-                    <>
-                      <Loader2 className="inline h-3 w-3 animate-spin" /> Rejecting…
-                    </>
-                  ) : (
-                    'Reject PO'
-                  )}
-                </button>
-              </div>
-            </div>
+                {rejectMut.isPending ? (
+                  <>
+                    <Loader2 className="inline h-3 w-3 animate-spin" /> Rejecting…
+                  </>
+                ) : (
+                  'Reject PO'
+                )}
+              </button>
+            </>
+          }
+        >
+          <div
+            style={{
+              background: 'var(--red3)',
+              padding: 12,
+              border: '1px solid var(--red)',
+              borderRadius: 8,
+              fontSize: 11,
+              color: 'var(--text3)',
+            }}
+          >
+            The PO will be cancelled. Its PRs go back to pending for a new PO.
           </div>
-        </div>
+          <div className="form-grp">
+            <label className="form-label">
+              Rejection Reason <span className="req">★</span>
+            </label>
+            <textarea
+              className="innovic-input"
+              rows={3}
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+            />
+          </div>
+          {actionError ? (
+            <div
+              style={{
+                padding: '8px 12px',
+                background: 'var(--red3)',
+                border: '1px solid var(--red)',
+                borderRadius: 6,
+                color: 'var(--red2)',
+                fontSize: 12,
+              }}
+            >
+              {actionError}
+            </div>
+          ) : null}
+        </Modal>
       ) : null}
 
       {/* ADR-189 — Short Close modal */}
       {scOpen ? (
-        <div
-          role="dialog"
-          aria-modal="true"
-          onClick={() => setScOpen(false)}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,.45)',
-            display: 'flex',
-            alignItems: 'flex-start',
-            justifyContent: 'center',
-            padding: '10vh 16px',
-            zIndex: 60,
-          }}
-        >
-          <div
-            className="panel"
-            onClick={(e) => e.stopPropagation()}
-            style={{ width: 'min(1100px, 96vw)' }}
-          >
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                padding: '12px 16px',
-                borderBottom: '1px solid var(--border)',
-              }}
-            >
-              <div className="fw-700" style={{ color: 'var(--red2)' }}>
-                ⏹ Short Close PO — {detail.code}
-              </div>
+        <Modal
+          title={<span style={{ color: 'var(--red2)' }}>⏹ Short Close PO — {detail.code}</span>}
+          onClose={() => setScOpen(false)}
+          maxWidth="min(1100px, 96vw)"
+          bodyStyle={{ display: 'grid', gap: 12 }}
+          footer={
+            <>
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"
                 onClick={() => setScOpen(false)}
               >
-                <X size={14} />
+                Cancel
               </button>
-            </div>
-            <div style={{ padding: 16, display: 'grid', gap: 12 }}>
-              <div
-                style={{
-                  background: 'rgba(239,68,68,0.05)',
-                  padding: 12,
-                  border: '1px solid var(--red)',
-                  borderRadius: 8,
-                  fontSize: 11,
-                  color: 'var(--text3)',
-                }}
+              <button
+                type="button"
+                className="btn btn-danger btn-sm"
+                disabled={shortCloseMut.isPending}
+                onClick={() => void doShortClose()}
               >
-                Nothing received or sent yet → the PO is cancelled and its PRs go back to pending.
-                Otherwise it is closed short: what was received stays, and the rest goes back to its
-                PRs as Pending. Refused while material sent on a DC is still at the vendor.
-              </div>
-              <div className="form-grp">
-                <label className="form-label">
-                  Short Close Reason <span className="req">★</span>
-                </label>
-                <textarea
-                  className="innovic-input"
-                  rows={3}
-                  value={scReason}
-                  onChange={(e) => setScReason(e.target.value)}
-                  placeholder="Why is this PO being stopped (at least 10 characters)…"
-                />
-              </div>
-              {actionError ? (
-                <div
-                  style={{
-                    padding: '8px 12px',
-                    background: 'rgba(239,68,68,0.06)',
-                    border: '1px solid rgba(239,68,68,0.3)',
-                    borderRadius: 6,
-                    color: 'var(--red2)',
-                    fontSize: 12,
-                  }}
-                >
-                  {actionError}
-                </div>
-              ) : null}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => setScOpen(false)}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-danger btn-sm"
-                  disabled={shortCloseMut.isPending}
-                  onClick={() => void doShortClose()}
-                >
-                  {shortCloseMut.isPending ? (
-                    <>
-                      <Loader2 className="inline h-3 w-3 animate-spin" /> Closing…
-                    </>
-                  ) : (
-                    'Short Close PO'
-                  )}
-                </button>
-              </div>
-            </div>
+                {shortCloseMut.isPending ? (
+                  <>
+                    <Loader2 className="inline h-3 w-3 animate-spin" /> Closing…
+                  </>
+                ) : (
+                  'Short Close PO'
+                )}
+              </button>
+            </>
+          }
+        >
+          <div
+            style={{
+              background: 'rgba(239,68,68,0.05)',
+              padding: 12,
+              border: '1px solid var(--red)',
+              borderRadius: 8,
+              fontSize: 11,
+              color: 'var(--text3)',
+            }}
+          >
+            Nothing received or sent yet → the PO is cancelled and its PRs go back to pending.
+            Otherwise it is closed short: what was received stays, and the rest goes back to its PRs
+            as Pending. Refused while material sent on a DC is still at the vendor.
           </div>
-        </div>
+          <div className="form-grp">
+            <label className="form-label">
+              Short Close Reason <span className="req">★</span>
+            </label>
+            <textarea
+              className="innovic-input"
+              rows={3}
+              value={scReason}
+              onChange={(e) => setScReason(e.target.value)}
+              placeholder="Why is this PO being stopped (at least 10 characters)…"
+            />
+          </div>
+          {actionError ? (
+            <div
+              style={{
+                padding: '8px 12px',
+                background: 'rgba(239,68,68,0.06)',
+                border: '1px solid rgba(239,68,68,0.3)',
+                borderRadius: 6,
+                color: 'var(--red2)',
+                fontSize: 12,
+              }}
+            >
+              {actionError}
+            </div>
+          ) : null}
+        </Modal>
       ) : null}
       {cancelOpen ? (
         <CancelDocDialog

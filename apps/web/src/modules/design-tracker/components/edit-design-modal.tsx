@@ -45,7 +45,13 @@ export function EditDesignModal({
   };
 
   return (
-    <ModalShell onClose={onClose} title={`Edit Design — ${row.code}`}>
+    <ModalShell
+      onClose={onClose}
+      title={`Edit Design — ${row.code}`}
+      footer={
+        <Actions onClose={onClose} onSave={onSave} saving={mut.isPending} label="Save Changes" />
+      }
+    >
       <div className="form-grid">
         <Field label="SO No.">
           <input
@@ -125,7 +131,6 @@ export function EditDesignModal({
         </Field>
       </div>
       {err ? <ErrorBox message={err} /> : null}
-      <Actions onClose={onClose} onSave={onSave} saving={mut.isPending} label="Save Changes" />
     </ModalShell>
   );
 }

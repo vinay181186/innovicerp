@@ -659,7 +659,13 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
   const identItemName = plan.itemName ?? plan.itemNameText ?? '';
 
   return (
-    <Modal title={`Edit Plan ${plan.code}`} size="lg" onClose={onClose} footer={footer}>
+    <Modal
+      title={`Edit Plan ${plan.code}`}
+      size="lg"
+      onClose={onClose}
+      footer={footer}
+      confirmExit={stagedNotice === null}
+    >
       {/* WHICH plan this is — identity only, the same line Create Plan shows,
           so the two screens read as one form. A part the plan does not have is
           left out of the line; it is never printed as a dash. */}

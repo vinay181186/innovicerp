@@ -38,8 +38,6 @@ export function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.
   const [remarks, setRemarks] = useState('');
   const [lines, setLines] = useState<InwardLineUi[]>([]);
   const [err, setErr] = useState<string | null>(null);
-  // Anything the user typed or picked — arms the exit question.
-  const [touched, setTouched] = useState(false);
 
   const { data: next } = useNextInwardCode();
 
@@ -115,7 +113,6 @@ export function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.
   };
 
   const setLine = (i: number, patch: Partial<InwardLineUi>): void => {
-    setTouched(true);
     setLines((prev) =>
       prev.map((l, idx) => {
         if (idx !== i) return l;
@@ -134,7 +131,6 @@ export function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.
       onSave={onSave}
       saving={createMut.isPending}
       saveLabel="Save Inward"
-      dirty={touched}
     >
       {/* ADR-189 — Incoming QC is the only inspector. The store records what
           came back; accept / reject happens at Incoming QC, as for DC Receive. */}
@@ -155,10 +151,7 @@ export function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.
             type="date"
             className="innovic-input"
             value={date}
-            onChange={(e) => {
-              setTouched(true);
-              setDate(e.target.value);
-            }}
+            onChange={(e) => setDate(e.target.value)}
           />
         </div>
         <div className="form-grp form-full">
@@ -168,10 +161,7 @@ export function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.
           <select
             className="innovic-select"
             value={dcId ?? ''}
-            onChange={(e) => {
-              setTouched(true);
-              setDcId(e.target.value || null);
-            }}
+            onChange={(e) => setDcId(e.target.value || null)}
           >
             <option value="">-- Select DC --</option>
             {pendingDcs.map((dc) => (
@@ -188,10 +178,7 @@ export function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.
             type="text"
             className="innovic-input"
             value={vendorChallan}
-            onChange={(e) => {
-              setTouched(true);
-              setVendorChallan(e.target.value);
-            }}
+            onChange={(e) => setVendorChallan(e.target.value)}
             placeholder="Vendor reference"
           />
         </div>
@@ -201,10 +188,7 @@ export function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.
             type="text"
             className="innovic-input"
             value={vehicleNo}
-            onChange={(e) => {
-              setTouched(true);
-              setVehicleNo(e.target.value);
-            }}
+            onChange={(e) => setVehicleNo(e.target.value)}
             placeholder="GJ-05-XX-5678"
           />
         </div>
@@ -302,10 +286,7 @@ export function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.
           type="text"
           className="innovic-input"
           value={remarks}
-          onChange={(e) => {
-            setTouched(true);
-            setRemarks(e.target.value);
-          }}
+          onChange={(e) => setRemarks(e.target.value)}
         />
       </div>
 

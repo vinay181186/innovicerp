@@ -10,22 +10,19 @@
 // It deliberately OWNS no entry logic. The body is `QcCallInspectForm`
 // (qc-call-inspect-form.tsx), which holds the fields, the validation messages,
 // the POST body and the cache invalidations. This file only gives that form a
-// heading, a way to close, and the "are you sure?" that every modal form in
-// the app asks when something typed would be lost.
+// heading and the one shared Modal shell (closing rule, Esc, focus, scroll lock).
 //
-// Shape cloned from incoming-qc/components/incoming-qc-inspect-modal.tsx: same
-// overlay, same `.panel` body, same close button. zIndex 60 — BELOW the
-// SearchableSelect listbox (1000) so the QC By dropdown still shows on top,
-// and below the ExitConfirmDialog (600) so the question sits over the form it
-// asks about.
+// `confirmExit` follows the form's own dirty report, not just "something was
+// typed": once an entry is saved and the popup holds on its upload-later note,
+// nothing is left to lose. The form's Cancel sits in the BODY, which the Modal's
+// footer rule does not reach, so that one button asks here.
 
 import { type QcHistoryPendingRow, type QcSourceStep, opSrNo } from '@innovic/shared';
-import { X } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { ExitConfirmDialog, escapeBelongsToAnOpenPicker } from '@/lib/exit-guard';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { QtyStrip } from '@/ui/data';
+import { Modal } from '@/ui/feedback';
 import { actualMachineText, plannedMachineText, stepOpLabel } from './qc-call-fact-columns';
 import { QcCallInspectForm, type RaisedNc } from './qc-call-inspect-form';
 
@@ -60,96 +57,20 @@ export function QcCallInspectModal({
   onNcRaised?: ((nc: RaisedNc) => void) | undefined;
 }): React.JSX.Element {
   // Whether anything has been typed or attached — reported up by the form.
-  // Decides if closing asks first.
   const [dirty, setDirty] = useState(false);
-  const [confirmOpen, setConfirmOpen] = useState(false);
   const { data: eff } = useMyAccess();
   const canEntry = effectiveFormPerms(eff, 'qc_submit').entry;
-
-  // Every way out that is not a successful submit goes through here: ESC,
-  // click on the dim background, the ✕, the form's own Cancel. Clean form →
-  // close at once; anything typed → ask.
-  const requestClose = useCallback((): void => {
-    if (dirty) setConfirmOpen(true);
-    else onClose();
-  }, [dirty, onClose]);
-
-  useEffect(() => {
-    function onKey(e: KeyboardEvent): void {
-      if (e.key !== 'Escape' || e.defaultPrevented) return;
-      // ESC with a type-to-search dropdown open is that dropdown's key.
-      if (escapeBelongsToAnOpenPicker(e.target)) return;
-      // The exit question already has the keyboard; its own ESC means "stay".
-      if (confirmOpen) return;
-      requestClose();
-    }
-    // CAPTURE phase, on purpose. The picker's own onKeyDown (React root
-    // listener, bubble) closes its list and React flushes that before a
-    // bubble listener here would run — so by then the input already reads
-    // aria-expanded="false" and the guard above would fall through, closing
-    // the popup on the very ESC meant for the list. Capture at document runs
-    // BEFORE React's root listener, while the list is still open.
-    document.addEventListener('keydown', onKey, true);
-    return () => document.removeEventListener('keydown', onKey, true);
-  }, [confirmOpen, requestClose]);
-
-  // The page behind must not scroll while the box is up.
-  useEffect(() => {
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, []);
 
   const itemCode = itemCodeWithRev(o.itemCode, o.itemRevision, '');
   const opLabel = `Op ${opSrNo(o.opSeq)} ${o.operation}`;
   const titleText = `${o.jcCode} · ${opLabel}${itemCode ? ` · ${itemCode}` : ''}${
     o.itemName ? ` ${o.itemName}` : ''
   }`;
-  const ariaLabel = `QC Call — ${titleText}`;
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={ariaLabel}
-      onClick={(e) => {
-        // Only the dim backdrop itself -- not the popup rendered inside it.
-        if (e.target === e.currentTarget) requestClose();
-      }}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,.45)',
-        display: 'flex',
-        alignItems: 'flex-start',
-        justifyContent: 'center',
-        padding: '6vh 16px',
-        overflowY: 'auto',
-        zIndex: 60,
-      }}
-    >
-      {confirmOpen ? (
-        <ExitConfirmDialog
-          onStay={() => setConfirmOpen(false)}
-          onExit={() => {
-            setConfirmOpen(false);
-            onClose();
-          }}
-        />
-      ) : null}
-      <div className="panel" style={{ width: 'min(760px, 96vw)' }}>
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            gap: 12,
-            padding: '12px 16px',
-            borderBottom: '1px solid var(--border)',
-          }}
-        >
+    <Modal
+      title={
+        <>
           {/* WHICH CALL — stated before a single field, so the job card, the
               operation and the part being passed are read before any number
               is typed. */}
@@ -187,40 +108,36 @@ export function QcCallInspectModal({
               </span>
             ) : null}
           </div>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={requestClose}
-            aria-label="Close"
-            style={{ flex: 'none' }}
-          >
-            <X size={14} />
-          </button>
-        </div>
-        <StepFacts step={step ?? null} />
+        </>
+      }
+      onClose={onClose}
+      maxWidth="min(760px, 96vw)"
+      bodyStyle={{ padding: 0 }}
+      confirmExit={dirty}
+    >
+      <StepFacts step={step ?? null} />
 
-        {canEntry ? (
-          <QcCallInspectForm
-            o={o}
-            onCancel={requestClose}
-            // Close once the entry has actually landed. The register refetches
-            // behind the box (the form invalidates its feed on success).
-            onDone={(nc) => {
-              if (nc) onNcRaised?.(nc);
-              onClose();
-            }}
-            onDirtyChange={setDirty}
-          />
-        ) : eff ? (
-          /* View-only: the same silence the register keeps (no form drawn),
+      {canEntry ? (
+        <QcCallInspectForm
+          o={o}
+          onCancel={onClose}
+          // Close once the entry has actually landed. The register refetches
+          // behind the box (the form invalidates its feed on success).
+          onDone={(nc) => {
+            if (nc) onNcRaised?.(nc);
+            onClose();
+          }}
+          onDirtyChange={setDirty}
+        />
+      ) : eff ? (
+        /* View-only: the same silence the register keeps (no form drawn),
              said once here because an empty popup would read as broken. Not
              shown while access is still loading, or every inspector would see
              it flash. */
-          <div className="empty-state text3" style={{ padding: 24, fontSize: 12 }}>
-            You do not have permission to inspect this QC call. Ask an admin.
-          </div>
-        ) : null}
-      </div>
-    </div>
+        <div className="empty-state text3" style={{ padding: 24, fontSize: 12 }}>
+          You do not have permission to inspect this QC call. Ask an admin.
+        </div>
+      ) : null}
+    </Modal>
   );
 }

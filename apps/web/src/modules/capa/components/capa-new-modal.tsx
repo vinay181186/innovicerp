@@ -13,8 +13,8 @@ import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { todayIst } from '@/lib/date';
 import { useNcRegisterList } from '@/modules/nc-register/api';
+import { Modal } from '@/ui/feedback';
 import { useCapaList, useCreateCapa, useNextCapaCode } from '../api';
-import { Overlay } from './capa-overlay';
 
 export function NewCapaModal({
   onClose,
@@ -89,7 +89,26 @@ export function NewCapaModal({
   }
 
   return (
-    <Overlay title="New CAPA" onClose={onClose}>
+    <Modal
+      title="New CAPA"
+      onClose={onClose}
+      maxWidth="min(1100px, 96vw)"
+      footer={
+        <>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={create.isPending}
+            onClick={() => void submit()}
+          >
+            {create.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Save CAPA
+          </button>
+        </>
+      }
+    >
       <div className="form-grid">
         <div className="form-grp">
           <label className="form-label">CAPA No.</label>
@@ -184,19 +203,6 @@ export function NewCapaModal({
           {err}
         </div>
       ) : null}
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
-        <button type="button" className="btn btn-ghost" onClick={onClose}>
-          Cancel
-        </button>
-        <button
-          type="button"
-          className="btn btn-primary"
-          disabled={create.isPending}
-          onClick={() => void submit()}
-        >
-          {create.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Save CAPA
-        </button>
-      </div>
-    </Overlay>
+    </Modal>
   );
 }

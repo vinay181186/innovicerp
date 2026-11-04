@@ -9,8 +9,9 @@
 // It is a separate file rather than another 120 lines inside the PR detail
 // page, which is already at the 400-line limit in CLAUDE.md §12.
 
-import { Loader2, X } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { Modal } from '@/ui/feedback';
 import type { PrOrderBalance } from '../lib/pr-balance';
 
 export function CloseBalanceModal({
@@ -36,112 +37,81 @@ export function CloseBalanceModal({
   const canSubmit = reason.trim().length > 0 && !pending;
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      onClick={onCancel}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,.45)',
-        display: 'flex',
-        alignItems: 'flex-start',
-        justifyContent: 'center',
-        padding: '10vh 16px',
-        zIndex: 60,
-      }}
-    >
-      <div
-        className="panel"
-        onClick={(e) => e.stopPropagation()}
-        style={{ width: 'min(560px, 96vw)' }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            padding: '12px 16px',
-            borderBottom: '1px solid var(--border)',
-          }}
-        >
-          <div className="fw-700" style={{ color: 'var(--amber2)' }}>
-            🚫 Short Close — {code}
-          </div>
+    <Modal
+      title={<span style={{ color: 'var(--amber2)' }}>🚫 Short Close — {code}</span>}
+      onClose={onCancel}
+      size="sm"
+      bodyStyle={{ display: 'grid', gap: 12 }}
+      footer={
+        <>
           <button type="button" className="btn btn-ghost btn-sm" onClick={onCancel}>
-            <X size={14} />
+            Cancel
           </button>
-        </div>
-        <div style={{ padding: 16, display: 'grid', gap: 12 }}>
-          <div
-            style={{
-              background: 'var(--bg3)',
-              padding: 12,
-              border: '1px solid var(--border)',
-              borderRadius: 8,
-              fontSize: 12,
-              color: 'var(--text2)',
-              lineHeight: 1.5,
-            }}
-          >
-            Stop ordering the pending{' '}
-            <b className="mono" style={{ color: 'var(--amber2)' }}>
-              {bal.balance}
-            </b>
-            ? Existing POs stay.
-          </div>
-          <div className="form-grp">
-            <label className="form-label" htmlFor="pr-close-balance-reason">
-              Why is the rest not being ordered? <span className="req">★</span>
-            </label>
-            <textarea
-              id="pr-close-balance-reason"
-              className="innovic-input"
-              rows={3}
-              value={reason}
-              autoFocus
-              onChange={(e) => setReason(e.target.value)}
-              placeholder="e.g. Customer cut the order to 10 pcs — rest not required"
-            />
-          </div>
-          {errorText ? (
-            <div
-              style={{
-                padding: '8px 12px',
-                background: 'var(--red3)',
-                border: '1px solid var(--sig-critical-bd)',
-                borderRadius: 6,
-                color: 'var(--red2)',
-                fontSize: 12,
-              }}
-            >
-              {errorText}
-            </div>
-          ) : null}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={onCancel}>
-              Cancel
-            </button>
-            {/* btn-danger, like Delete: this is the irreversible half of the
+          {/* btn-danger, like Delete: this is the irreversible half of the
                 dialog. There is no amber button class and inventing one means
                 editing the shared stylesheet, which this task does not open. */}
-            <button
-              type="button"
-              className="btn btn-danger btn-sm"
-              disabled={!canSubmit}
-              onClick={() => onSubmit(reason.trim())}
-            >
-              {pending ? (
-                <>
-                  <Loader2 className="inline h-3 w-3 animate-spin" /> Closing…
-                </>
-              ) : (
-                'Short Close'
-              )}
-            </button>
-          </div>
-        </div>
+          <button
+            type="button"
+            className="btn btn-danger btn-sm"
+            disabled={!canSubmit}
+            onClick={() => onSubmit(reason.trim())}
+          >
+            {pending ? (
+              <>
+                <Loader2 className="inline h-3 w-3 animate-spin" /> Closing…
+              </>
+            ) : (
+              'Short Close'
+            )}
+          </button>
+        </>
+      }
+    >
+      <div
+        style={{
+          background: 'var(--bg3)',
+          padding: 12,
+          border: '1px solid var(--border)',
+          borderRadius: 8,
+          fontSize: 12,
+          color: 'var(--text2)',
+          lineHeight: 1.5,
+        }}
+      >
+        Stop ordering the pending{' '}
+        <b className="mono" style={{ color: 'var(--amber2)' }}>
+          {bal.balance}
+        </b>
+        ? Existing POs stay.
       </div>
-    </div>
+      <div className="form-grp">
+        <label className="form-label" htmlFor="pr-close-balance-reason">
+          Why is the rest not being ordered? <span className="req">★</span>
+        </label>
+        <textarea
+          id="pr-close-balance-reason"
+          className="innovic-input"
+          rows={3}
+          value={reason}
+          autoFocus
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="e.g. Customer cut the order to 10 pcs — rest not required"
+        />
+      </div>
+      {errorText ? (
+        <div
+          style={{
+            padding: '8px 12px',
+            background: 'var(--red3)',
+            border: '1px solid var(--sig-critical-bd)',
+            borderRadius: 6,
+            color: 'var(--red2)',
+            fontSize: 12,
+          }}
+        >
+          {errorText}
+        </div>
+      ) : null}
+    </Modal>
   );
 }

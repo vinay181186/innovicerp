@@ -88,7 +88,18 @@ export function IssueFormModal({
   };
 
   return (
-    <Modal onClose={onClose} title={mode === 'add' ? 'Raise Issue' : 'Edit Issue'}>
+    <Modal
+      onClose={onClose}
+      title={mode === 'add' ? 'Raise Issue' : 'Edit Issue'}
+      footer={
+        <Actions
+          onClose={onClose}
+          onSave={onSave}
+          saving={createMut.isPending || updateMut.isPending}
+          label={mode === 'add' ? 'Save Issue' : 'Save Changes'}
+        />
+      }
+    >
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <div style={{ gridColumn: 'span 2' }}>
           <Field label="Title ★">
@@ -166,12 +177,6 @@ export function IssueFormModal({
         </div>
       </div>
       {err ? <ErrorBox message={err} /> : null}
-      <Actions
-        onClose={onClose}
-        onSave={onSave}
-        saving={createMut.isPending || updateMut.isPending}
-        label={mode === 'add' ? 'Save Issue' : 'Save Changes'}
-      />
     </Modal>
   );
 }
@@ -202,7 +207,16 @@ export function ViewIssueModal({
   const ageDays = Math.max(0, Math.round(ageMs / 86400000));
 
   return (
-    <Modal onClose={onClose} title={issue.title}>
+    <Modal
+      onClose={onClose}
+      title={issue.title}
+      confirmExit={comment.trim() !== ''}
+      footer={
+        <button type="button" className="btn btn-ghost" onClick={onClose}>
+          Close
+        </button>
+      }
+    >
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
         <div>
           <div className="text3" style={{ fontSize: 11 }}>
@@ -297,11 +311,6 @@ export function ViewIssueModal({
             </button>
           </div>
         ) : null}
-      </div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
-        <button type="button" className="btn btn-ghost" onClick={onClose}>
-          Close
-        </button>
       </div>
     </Modal>
   );

@@ -16,7 +16,6 @@ import { useEffect, useState } from 'react';
 import { SearchableSelect } from '@/ui/forms';
 import { useClientsList } from '../../clients/api';
 import { useItem, useItemsList } from '../../items/api';
-import { useDiscardGuard } from '../../store-inventory/components/discard-guard';
 import { type NewPartyMaterialInput, useCreatePartyMaterial } from '../api';
 import { ErrorBox, Field, ModalActions, ModalShell } from './party-material-modal-shell';
 
@@ -72,8 +71,6 @@ export function AddPartyMaterialModal({ onClose }: { onClose: () => void }): Rea
     setDescription(item.description ?? '');
   }, [itemId, item]);
 
-  const guard = useDiscardGuard(Boolean(clientId || itemId || description.trim()), onClose);
-
   const onSave = (): void => {
     setErr(null);
     if (!clientId) {
@@ -100,8 +97,18 @@ export function AddPartyMaterialModal({ onClose }: { onClose: () => void }): Rea
   };
 
   return (
-    <ModalShell onClose={guard.requestClose} title="Add Customer Material">
-      {guard.dialog}
+    <ModalShell
+      onClose={onClose}
+      title="Add Customer Material"
+      footer={
+        <ModalActions
+          onClose={onClose}
+          onSave={onSave}
+          saving={createMut.isPending}
+          saveLabel="Save Material"
+        />
+      }
+    >
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         {/* Code — assigned by the server on save. */}
         <Field label="Code">
@@ -187,13 +194,6 @@ export function AddPartyMaterialModal({ onClose }: { onClose: () => void }): Rea
       </div>
 
       {err ? <ErrorBox message={err} /> : null}
-
-      <ModalActions
-        onClose={onClose}
-        onSave={onSave}
-        saving={createMut.isPending}
-        saveLabel="Save Material"
-      />
     </ModalShell>
   );
 }

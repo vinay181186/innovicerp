@@ -275,10 +275,10 @@ export function CancelDocDialog({
       <Modal
         title={title}
         size="sm"
-        closeOnOverlayClick={false}
-        onClose={() => {
-          if (!busy) onClose();
-        }}
+        // The reason is the only thing to lose, and only until the request is sent.
+        confirmExit={!sent && trimmed !== ''}
+        onClose={onClose}
+        closeLocked={busy}
         footer={footer}
       >
         {body}

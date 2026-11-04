@@ -7,6 +7,7 @@ import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { fmtDate } from '@/lib/date';
 import { usePendingEditForDoc } from '@/modules/document-edits/api';
+import { Modal } from '@/ui/feedback';
 import { useInstrument } from '../api';
 import { DUE_COLOUR, INSTRUMENT_STATUS_BADGE, dueTone } from '../lib/instrument-ui';
 import { type InstrumentAction, InstrumentActionForm } from './instrument-action-forms';
@@ -44,156 +45,37 @@ export function InstrumentDetailModal({
   const live = ins ? ins.status !== 'lost' && ins.status !== 'scrapped' : false;
 
   return (
-    <div
-      className="overlay"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className="modal" style={{ maxWidth: 900, width: '96vw' }}>
-        <div className="modal-hdr">
-          <span className="modal-title">
-            Instrument{' '}
-            {ins ? (
-              <>
-                <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-                  {ins.itemCode}
-                </span>{' '}
-                · <span className="mono fw-700">{ins.serialNo}</span>
-              </>
-            ) : null}
-            {hasPendingEdit ? (
-              <span
-                className="tag b-amber"
-                style={{ marginLeft: 8 }}
-                title="An edit to this instrument is waiting for approval"
-              >
-                edit pending
-              </span>
-            ) : null}
-          </span>
-          <button type="button" className="btn btn-ghost btn-sm btn-icon" onClick={onClose}>
-            ✕
-          </button>
-        </div>
-        <div className="modal-body">
-          {isLoading ? (
-            <div className="text3" style={{ fontSize: 12 }}>
-              <Loader2 size={14} className="inline animate-spin" /> Loading…
-            </div>
-          ) : isError || !ins ? (
-            <div style={{ color: 'var(--red2)', fontSize: 12 }}>
-              {error instanceof Error ? error.message : 'Could not load the instrument.'}
-            </div>
-          ) : (
+    <Modal
+      // View-only until an action form is open. The key starts each form
+      // untouched, so pressing Edit or Scrap does not itself count as typing.
+      key={mode ?? 'view'}
+      confirmExit={mode !== null}
+      onClose={onClose}
+      maxWidth="min(900px, 96vw)"
+      title={
+        <>
+          Instrument{' '}
+          {ins ? (
             <>
-              <div
-                className="text2"
-                style={{ fontSize: 12, display: 'flex', gap: 18, flexWrap: 'wrap' }}
-              >
-                <Fact label="Item Name">{ins.itemName || '—'}</Fact>
-                <span>
-                  Instrument Status{' '}
-                  <span className={`badge ${INSTRUMENT_STATUS_BADGE[ins.status]}`}>
-                    {INSTRUMENT_STATUS_LABELS[ins.status]}
-                  </span>
-                  {ins.writeoffPending ? (
-                    <span className="badge b-red" style={{ marginLeft: 6 }}>
-                      Write-off pending
-                    </span>
-                  ) : null}
-                </span>
-                <Fact label="Calibration Interval (days)">
-                  {ins.calibrationIntervalDays ?? '—'}
-                </Fact>
-                <Fact label="Last Calibrated">{fmtDate(ins.lastCalibratedOn)}</Fact>
-                <span>
-                  Calibration Due{' '}
-                  <b style={{ color: DUE_COLOUR[tone] }}>
-                    {fmtDate(ins.calibrationDueOn)}
-                    {tone === 'overdue' ? ' · Overdue' : ''}
-                  </b>
-                </span>
-                <Fact label="Location">{ins.location || '—'}</Fact>
-                {ins.status === 'issued' ? (
-                  <Fact label="Held By">
-                    {ins.heldBy || '—'}
-                    {ins.toolIssueCode ? (
-                      <span className="mono" style={{ marginLeft: 6, color: 'var(--purple)' }}>
-                        {ins.toolIssueCode}
-                      </span>
-                    ) : null}
-                  </Fact>
-                ) : null}
-              </div>
-              {ins.remarks ? (
-                <div className="text3" style={{ fontSize: 11, marginTop: 6 }}>
-                  Remarks: {ins.remarks}
-                </div>
-              ) : null}
-
-              <div className="fw-700" style={{ fontSize: 12, margin: '14px 0 6px' }}>
-                Calibration history
-              </div>
-              <div className="tbl-wrap">
-                <table className="innovic-table tbl-grid">
-                  <thead>
-                    <tr>
-                      <th>Calibrated On</th>
-                      <th>Calibration Result</th>
-                      <th>Certificate No.</th>
-                      <th>Agency</th>
-                      <th>Calibration Due</th>
-                      <th>Recorded By</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {ins.calibrations.map((c) => (
-                      <tr key={c.id} title={c.remarks ?? ''}>
-                        <td style={{ whiteSpace: 'nowrap' }}>{fmtDate(c.calibratedOn)}</td>
-                        <td>
-                          <span className={`badge ${c.result === 'pass' ? 'b-green' : 'b-red'}`}>
-                            {c.result === 'pass' ? 'Pass' : 'Fail'}
-                          </span>
-                        </td>
-                        <td className="mono">{c.certificateNo || '—'}</td>
-                        <td>{c.agency || '—'}</td>
-                        <td style={{ whiteSpace: 'nowrap' }}>{fmtDate(c.nextDueOn)}</td>
-                        <td>{c.recordedByName || '—'}</td>
-                      </tr>
-                    ))}
-                    {ins.calibrations.length === 0 ? (
-                      <tr>
-                        <td colSpan={6} className="empty-state">
-                          No calibration recorded yet.
-                        </td>
-                      </tr>
-                    ) : null}
-                  </tbody>
-                </table>
-              </div>
-
-              {mode ? (
-                <InstrumentActionForm
-                  key={mode}
-                  ins={ins}
-                  mode={mode}
-                  onBack={() => setMode(null)}
-                  onDone={(m) => {
-                    setMode(null);
-                    setMsg(m);
-                  }}
-                />
-              ) : null}
-              {msg ? (
-                <div className="text2" style={{ marginTop: 10, fontSize: 12 }}>
-                  ✓ {msg}
-                </div>
-              ) : null}
+              <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+                {ins.itemCode}
+              </span>{' '}
+              · <span className="mono fw-700">{ins.serialNo}</span>
             </>
-          )}
-        </div>
-        <div className="modal-footer">
+          ) : null}
+          {hasPendingEdit ? (
+            <span
+              className="tag b-amber"
+              style={{ marginLeft: 8 }}
+              title="An edit to this instrument is waiting for approval"
+            >
+              edit pending
+            </span>
+          ) : null}
+        </>
+      }
+      footer={
+        <>
           <button type="button" className="btn btn-ghost" onClick={onClose}>
             Close
           </button>
@@ -227,8 +109,122 @@ export function InstrumentDetailModal({
               ) : null}
             </>
           ) : null}
+        </>
+      }
+    >
+      {isLoading ? (
+        <div className="text3" style={{ fontSize: 12 }}>
+          <Loader2 size={14} className="inline animate-spin" /> Loading…
         </div>
-      </div>
-    </div>
+      ) : isError || !ins ? (
+        <div style={{ color: 'var(--red2)', fontSize: 12 }}>
+          {error instanceof Error ? error.message : 'Could not load the instrument.'}
+        </div>
+      ) : (
+        <>
+          <div
+            className="text2"
+            style={{ fontSize: 12, display: 'flex', gap: 18, flexWrap: 'wrap' }}
+          >
+            <Fact label="Item Name">{ins.itemName || '—'}</Fact>
+            <span>
+              Instrument Status{' '}
+              <span className={`badge ${INSTRUMENT_STATUS_BADGE[ins.status]}`}>
+                {INSTRUMENT_STATUS_LABELS[ins.status]}
+              </span>
+              {ins.writeoffPending ? (
+                <span className="badge b-red" style={{ marginLeft: 6 }}>
+                  Write-off pending
+                </span>
+              ) : null}
+            </span>
+            <Fact label="Calibration Interval (days)">{ins.calibrationIntervalDays ?? '—'}</Fact>
+            <Fact label="Last Calibrated">{fmtDate(ins.lastCalibratedOn)}</Fact>
+            <span>
+              Calibration Due{' '}
+              <b style={{ color: DUE_COLOUR[tone] }}>
+                {fmtDate(ins.calibrationDueOn)}
+                {tone === 'overdue' ? ' · Overdue' : ''}
+              </b>
+            </span>
+            <Fact label="Location">{ins.location || '—'}</Fact>
+            {ins.status === 'issued' ? (
+              <Fact label="Held By">
+                {ins.heldBy || '—'}
+                {ins.toolIssueCode ? (
+                  <span className="mono" style={{ marginLeft: 6, color: 'var(--purple)' }}>
+                    {ins.toolIssueCode}
+                  </span>
+                ) : null}
+              </Fact>
+            ) : null}
+          </div>
+          {ins.remarks ? (
+            <div className="text3" style={{ fontSize: 11, marginTop: 6 }}>
+              Remarks: {ins.remarks}
+            </div>
+          ) : null}
+
+          <div className="fw-700" style={{ fontSize: 12, margin: '14px 0 6px' }}>
+            Calibration history
+          </div>
+          <div className="tbl-wrap">
+            <table className="innovic-table tbl-grid">
+              <thead>
+                <tr>
+                  <th>Calibrated On</th>
+                  <th>Calibration Result</th>
+                  <th>Certificate No.</th>
+                  <th>Agency</th>
+                  <th>Calibration Due</th>
+                  <th>Recorded By</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ins.calibrations.map((c) => (
+                  <tr key={c.id} title={c.remarks ?? ''}>
+                    <td style={{ whiteSpace: 'nowrap' }}>{fmtDate(c.calibratedOn)}</td>
+                    <td>
+                      <span className={`badge ${c.result === 'pass' ? 'b-green' : 'b-red'}`}>
+                        {c.result === 'pass' ? 'Pass' : 'Fail'}
+                      </span>
+                    </td>
+                    <td className="mono">{c.certificateNo || '—'}</td>
+                    <td>{c.agency || '—'}</td>
+                    <td style={{ whiteSpace: 'nowrap' }}>{fmtDate(c.nextDueOn)}</td>
+                    <td>{c.recordedByName || '—'}</td>
+                  </tr>
+                ))}
+                {ins.calibrations.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="empty-state">
+                      No calibration recorded yet.
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+
+          {mode ? (
+            <InstrumentActionForm
+              key={mode}
+              ins={ins}
+              mode={mode}
+              onBack={() => setMode(null)}
+              onDone={(m) => {
+                setMode(null);
+                setMsg(m);
+              }}
+            />
+          ) : null}
+          {msg ? (
+            <div className="text2" style={{ marginTop: 10, fontSize: 12 }}>
+              ✓ {msg}
+            </div>
+          ) : null}
+        </>
+      )}
+    </Modal>
   );
 }

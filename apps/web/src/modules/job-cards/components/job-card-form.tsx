@@ -1155,6 +1155,7 @@ export function JobCardForm({
           title={`Job Card ${savedNote.jcCode} saved`}
           size="sm"
           onClose={() => exit.leave(goBack)}
+          confirmExit={false}
           closeOnOverlayClick={false}
           footer={
             <>

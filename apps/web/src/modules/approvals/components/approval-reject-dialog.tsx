@@ -34,6 +34,7 @@ export function ApprovalRejectDialog({
       open
       size="sm"
       role="alertdialog"
+      elevated
       title={title}
       onClose={onCancel}
       showClose={false}

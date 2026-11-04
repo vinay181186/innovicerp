@@ -6,6 +6,7 @@
 import { type CreateJwReturnChallanInput, type JwReturnChallan } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { Modal } from '@/ui/feedback';
 import { SearchableSelect } from '@/ui/forms';
 import { todayLocal } from '@/lib/date';
 import { useSaveKey } from '@/lib/use-save-key';
@@ -97,216 +98,37 @@ export function NewJwReturnModal({ onClose }: { onClose: () => void }): React.JS
   // After Save: say so and offer the challan for the goods going out.
   if (saved) {
     return (
-      <div
-        role="dialog"
-        aria-modal="true"
-        style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(0,0,0,0.5)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 100,
-        }}
-        onClick={onClose}
-      >
-        <div
-          style={{
-            background: 'var(--bg)',
-            border: '1px solid var(--border)',
-            borderRadius: 8,
-            padding: 20,
-            width: 'min(480px, 96vw)',
-          }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="section-hdr" style={{ marginBottom: 10 }}>
-            📦 JW Return saved
-          </div>
-          <div style={{ fontSize: 13, marginBottom: 16 }}>
-            <span className="mono fw-700">{saved.code}</span> — {saved.qty} pcs back to the customer
-            on {saved.jwCodeText ?? 'the JWSO'}. Preview or download the challan to send with the
-            goods.
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+      <Modal
+        key="saved"
+        title="📦 JW Return saved"
+        onClose={onClose}
+        maxWidth="min(480px, 96vw)"
+        confirmExit={false}
+        footer={
+          <>
             <button type="button" className="btn btn-ghost" onClick={onClose}>
               Close
             </button>
             <PrintJwReturnButton returnId={saved.id} code={saved.code} primary />
-          </div>
+          </>
+        }
+      >
+        <div style={{ fontSize: 13, marginBottom: 16 }}>
+          <span className="mono fw-700">{saved.code}</span> — {saved.qty} pcs back to the customer
+          on {saved.jwCodeText ?? 'the JWSO'}. Preview or download the challan to send with the
+          goods.
         </div>
-      </div>
+      </Modal>
     );
   }
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 100,
-      }}
-      onClick={onClose}
-    >
-      <div
-        style={{
-          background: 'var(--bg)',
-          border: '1px solid var(--border)',
-          borderRadius: 8,
-          padding: 20,
-          width: 'min(680px, 96vw)',
-          maxHeight: '90vh',
-          overflowY: 'auto',
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="section-hdr" style={{ marginBottom: 14 }}>
-          📦 New JW Return
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <Field label="Return Date">
-            <input
-              type="date"
-              className="innovic-input"
-              value={returnDate}
-              onChange={(e) => setReturnDate(e.target.value)}
-            />
-          </Field>
-          <div />
-
-          <div style={{ gridColumn: 'span 2' }}>
-            <Field label="JWSO No. ★">
-              <SearchableSelect
-                id="jwret-jwso"
-                value={jwId}
-                onChange={(id) => {
-                  setJwId(id);
-                  setJobWorkOrderLineId('');
-                }}
-                onSearch={setJwSearch}
-                loading={jwQuery.isFetching}
-                placeholder="🔍 Select JWSO — type number or customer…"
-                options={jwHeaders.map((j) => ({
-                  id: j.jwId,
-                  code: j.code,
-                  name: j.customerName ?? '',
-                }))}
-              />
-            </Field>
-          </div>
-
-          <div style={{ gridColumn: 'span 2' }}>
-            <Field label="Ln ★">
-              <select
-                className="innovic-input"
-                value={jobWorkOrderLineId}
-                onChange={(e) => {
-                  const lineId = e.target.value;
-                  setJobWorkOrderLineId(lineId);
-                  // Prefill with what can go back now; blank when nothing can.
-                  const rq = returnableById.get(lineId)?.returnableQty ?? 0;
-                  setQty(rq > 0 ? String(rq) : '');
-                }}
-                disabled={!jwId || jwDetailQ.isFetching}
-                style={{ width: '100%' }}
-              >
-                <option value="">
-                  {!jwId
-                    ? 'Select a JWSO first'
-                    : jwDetailQ.isFetching
-                      ? 'Loading lines…'
-                      : jwLines.length === 0
-                        ? 'No lines'
-                        : 'Select a line…'}
-                </option>
-                {jwLines.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    L{l.lineNo} · {l.partName} · Order Qty {l.orderQty}
-                    {returnableById.has(l.id)
-                      ? ` · Returnable ${returnableById.get(l.id)?.returnableQty ?? 0}`
-                      : ''}
-                  </option>
-                ))}
-              </select>
-            </Field>
-          </div>
-
-          <Field label="Return Qty ★">
-            <input
-              type="number"
-              min={1}
-              step={1}
-              className="innovic-input"
-              value={qty}
-              onChange={(e) => setQty(e.target.value)}
-              placeholder="0"
-              style={{
-                fontWeight: 700,
-                border: '2px solid var(--green)',
-                borderRadius: 4,
-              }}
-            />
-            {pickedReturnable ? (
-              <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
-                Returnable <b className="mono">{pickedReturnable.returnableQty}</b> · Ready{' '}
-                {pickedReturnable.readyQty} · Returned {pickedReturnable.returnedQty} · Pending{' '}
-                {pickedReturnable.pendingQty}
-                {pickedReturnable.returnableQty === 0 ? ' — complete final QC first' : ''}
-              </div>
-            ) : null}
-          </Field>
-          <Field label="Transporter">
-            <input
-              type="text"
-              className="innovic-input"
-              value={transport}
-              onChange={(e) => setTransport(e.target.value)}
-              placeholder="Transporter name"
-            />
-          </Field>
-
-          <Field label="Vehicle No.">
-            <input
-              type="text"
-              className="innovic-input"
-              value={vehicleNo}
-              onChange={(e) => setVehicleNo(e.target.value)}
-              placeholder="Vehicle number"
-            />
-          </Field>
-          <Field label="Remarks">
-            <input
-              type="text"
-              className="innovic-input"
-              value={remarks}
-              onChange={(e) => setRemarks(e.target.value)}
-              placeholder="Notes"
-            />
-          </Field>
-        </div>
-
-        {err ? (
-          <div
-            style={{
-              marginTop: 12,
-              padding: 8,
-              background: 'rgba(239,68,68,0.08)',
-              color: 'var(--red2)',
-              borderRadius: 4,
-              fontSize: 12,
-            }}
-          >
-            {err}
-          </div>
-        ) : null}
-
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+    <Modal
+      title="📦 New JW Return"
+      onClose={onClose}
+      maxWidth="min(680px, 96vw)"
+      footer={
+        <>
           <button type="button" className="btn btn-ghost" onClick={onClose}>
             Cancel
           </button>
@@ -324,9 +146,146 @@ export function NewJwReturnModal({ onClose }: { onClose: () => void }): React.JS
               'Save Return'
             )}
           </button>
+        </>
+      }
+    >
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <Field label="Return Date">
+          <input
+            type="date"
+            className="innovic-input"
+            value={returnDate}
+            onChange={(e) => setReturnDate(e.target.value)}
+          />
+        </Field>
+        <div />
+
+        <div style={{ gridColumn: 'span 2' }}>
+          <Field label="JWSO No. ★">
+            <SearchableSelect
+              id="jwret-jwso"
+              value={jwId}
+              onChange={(id) => {
+                setJwId(id);
+                setJobWorkOrderLineId('');
+              }}
+              onSearch={setJwSearch}
+              loading={jwQuery.isFetching}
+              placeholder="🔍 Select JWSO — type number or customer…"
+              options={jwHeaders.map((j) => ({
+                id: j.jwId,
+                code: j.code,
+                name: j.customerName ?? '',
+              }))}
+            />
+          </Field>
         </div>
+
+        <div style={{ gridColumn: 'span 2' }}>
+          <Field label="Ln ★">
+            <select
+              className="innovic-input"
+              value={jobWorkOrderLineId}
+              onChange={(e) => {
+                const lineId = e.target.value;
+                setJobWorkOrderLineId(lineId);
+                // Prefill with what can go back now; blank when nothing can.
+                const rq = returnableById.get(lineId)?.returnableQty ?? 0;
+                setQty(rq > 0 ? String(rq) : '');
+              }}
+              disabled={!jwId || jwDetailQ.isFetching}
+              style={{ width: '100%' }}
+            >
+              <option value="">
+                {!jwId
+                  ? 'Select a JWSO first'
+                  : jwDetailQ.isFetching
+                    ? 'Loading lines…'
+                    : jwLines.length === 0
+                      ? 'No lines'
+                      : 'Select a line…'}
+              </option>
+              {jwLines.map((l) => (
+                <option key={l.id} value={l.id}>
+                  L{l.lineNo} · {l.partName} · Order Qty {l.orderQty}
+                  {returnableById.has(l.id)
+                    ? ` · Returnable ${returnableById.get(l.id)?.returnableQty ?? 0}`
+                    : ''}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </div>
+
+        <Field label="Return Qty ★">
+          <input
+            type="number"
+            min={1}
+            step={1}
+            className="innovic-input"
+            value={qty}
+            onChange={(e) => setQty(e.target.value)}
+            placeholder="0"
+            style={{
+              fontWeight: 700,
+              border: '2px solid var(--green)',
+              borderRadius: 4,
+            }}
+          />
+          {pickedReturnable ? (
+            <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
+              Returnable <b className="mono">{pickedReturnable.returnableQty}</b> · Ready{' '}
+              {pickedReturnable.readyQty} · Returned {pickedReturnable.returnedQty} · Pending{' '}
+              {pickedReturnable.pendingQty}
+              {pickedReturnable.returnableQty === 0 ? ' — complete final QC first' : ''}
+            </div>
+          ) : null}
+        </Field>
+        <Field label="Transporter">
+          <input
+            type="text"
+            className="innovic-input"
+            value={transport}
+            onChange={(e) => setTransport(e.target.value)}
+            placeholder="Transporter name"
+          />
+        </Field>
+
+        <Field label="Vehicle No.">
+          <input
+            type="text"
+            className="innovic-input"
+            value={vehicleNo}
+            onChange={(e) => setVehicleNo(e.target.value)}
+            placeholder="Vehicle number"
+          />
+        </Field>
+        <Field label="Remarks">
+          <input
+            type="text"
+            className="innovic-input"
+            value={remarks}
+            onChange={(e) => setRemarks(e.target.value)}
+            placeholder="Notes"
+          />
+        </Field>
       </div>
-    </div>
+
+      {err ? (
+        <div
+          style={{
+            marginTop: 12,
+            padding: 8,
+            background: 'rgba(239,68,68,0.08)',
+            color: 'var(--red2)',
+            borderRadius: 4,
+            fontSize: 12,
+          }}
+        >
+          {err}
+        </div>
+      ) : null}
+    </Modal>
   );
 }
 

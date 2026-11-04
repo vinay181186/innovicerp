@@ -411,7 +411,7 @@ export function MasterImportDialog({
       title={title}
       {...(busy ? {} : { onClose })}
       size="lg"
-      closeOnOverlayClick={false}
+      confirmExit={step !== 'done'}
       footer={footer}
     >
       {error ? (

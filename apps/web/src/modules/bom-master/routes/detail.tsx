@@ -28,7 +28,7 @@ import {
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { StatusBadge } from '@/ui/core';
 import { RowMenu } from '@/ui/data';
-import { ConfirmDialog } from '@/ui/feedback';
+import { ConfirmDialog, Modal } from '@/ui/feedback';
 import { ActionMenu } from '@/ui/layout';
 import { useBomLinkedSoLines, useBomMaster, useDeleteBomMaster } from '../api';
 
@@ -445,59 +445,42 @@ function BomMasterDetailPage(): React.JSX.Element {
       ) : null}
 
       {openSnapshot ? (
-        <div
-          className="overlay"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setSnapshotRev(null);
-          }}
+        <Modal
+          title={`${detail.bomNo} — BOM Rev ${openSnapshot.revision} (${openSnapshot.itemsSnapshot.length} items)`}
+          onClose={() => setSnapshotRev(null)}
+          size="lg"
+          confirmExit={false}
+          footer={
+            <button type="button" className="btn btn-ghost" onClick={() => setSnapshotRev(null)}>
+              Close
+            </button>
+          }
         >
-          <div className="modal modal-lg">
-            <div className="modal-hdr">
-              <span className="modal-title">
-                {detail.bomNo} — BOM Rev {openSnapshot.revision} (
-                {openSnapshot.itemsSnapshot.length} items)
-              </span>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm btn-icon"
-                onClick={() => setSnapshotRev(null)}
-              >
-                ✕
-              </button>
-            </div>
-            <div className="modal-body">
-              <table className="innovic-table">
-                <thead>
-                  <tr>
-                    <th className="th-num">Sr No</th>
-                    <th>Item Code</th>
-                    <th>Item Name</th>
-                    <th className="th-num">Qty / Set</th>
-                    <th>BOM Type</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {openSnapshot.itemsSnapshot.map((it, i) => (
-                    <tr key={`${it.childItemId}-${i}`}>
-                      <td className="td-num mono">{i + 1}</td>
-                      <td className="mono fw-700" style={{ color: 'var(--text)' }}>
-                        {it.childItemCode ?? '—'}
-                      </td>
-                      <td>{lineNameById.get(it.childItemId) ?? '—'}</td>
-                      <td className="td-num mono fw-700">{Number(it.qtyPerSet)}</td>
-                      <td style={{ fontSize: 11 }}>{BOM_TYPE_WORD[it.bomType] ?? it.bomType}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="modal-footer">
-              <button type="button" className="btn btn-ghost" onClick={() => setSnapshotRev(null)}>
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
+          <table className="innovic-table">
+            <thead>
+              <tr>
+                <th className="th-num">Sr No</th>
+                <th>Item Code</th>
+                <th>Item Name</th>
+                <th className="th-num">Qty / Set</th>
+                <th>BOM Type</th>
+              </tr>
+            </thead>
+            <tbody>
+              {openSnapshot.itemsSnapshot.map((it, i) => (
+                <tr key={`${it.childItemId}-${i}`}>
+                  <td className="td-num mono">{i + 1}</td>
+                  <td className="mono fw-700" style={{ color: 'var(--text)' }}>
+                    {it.childItemCode ?? '—'}
+                  </td>
+                  <td>{lineNameById.get(it.childItemId) ?? '—'}</td>
+                  <td className="td-num mono fw-700">{Number(it.qtyPerSet)}</td>
+                  <td style={{ fontSize: 11 }}>{BOM_TYPE_WORD[it.bomType] ?? it.bomType}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Modal>
       ) : null}
 
       {confirmDelete ? (
@@ -546,90 +529,73 @@ function LinkedSoLinesModal({
   // ADR-234 — the SO No. links to the Sales Order only for someone who may open it.
   const canOpenSo = useCanOpen()('/sales-orders/$id');
   return (
-    <div
-      className="overlay"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
+    <Modal
+      title={`${bomNo} — Linked SO Lines (${lines.length})`}
+      onClose={onClose}
+      size="lg"
+      confirmExit={false}
+      footer={
+        <button type="button" className="btn btn-primary" onClick={onClose}>
+          Close
+        </button>
+      }
     >
-      <div className="modal modal-lg">
-        <div className="modal-hdr">
-          <span className="modal-title">
-            {bomNo} — Linked SO Lines ({lines.length})
-          </span>
-          <button type="button" className="btn btn-ghost btn-sm btn-icon" onClick={onClose}>
-            ✕
-          </button>
+      {isLoading ? (
+        <div className="text3" style={{ fontSize: 12 }}>
+          <Loader2 size={13} className="animate-spin" /> Loading…
         </div>
-        <div className="modal-body">
-          {isLoading ? (
-            <div className="text3" style={{ fontSize: 12 }}>
-              <Loader2 size={13} className="animate-spin" /> Loading…
-            </div>
-          ) : isError ? (
-            <div style={{ color: 'var(--red2)', fontSize: 12 }}>
-              Could not load the linked SO lines. Try again.
-            </div>
-          ) : lines.length === 0 ? (
-            <div className="text3" style={{ fontSize: 12 }}>
-              No SO line is built from this BOM.
-            </div>
-          ) : (
-            <table className="innovic-table">
-              <thead>
-                <tr>
-                  <th>SO No.</th>
-                  <th>POL</th>
-                  <th>Item Code</th>
-                  <th>Item Name</th>
-                  <th className="th-num">Order Qty</th>
-                  <th>Line Status</th>
-                  <th>Due Date</th>
-                </tr>
-              </thead>
-              <tbody>
-                {lines.map((l) => (
-                  <tr key={l.salesOrderLineId}>
-                    <td style={{ whiteSpace: 'nowrap' }}>
-                      {canOpenSo ? (
-                        <Link
-                          to="/sales-orders/$id"
-                          params={{ id: l.salesOrderId }}
-                          className="td-code"
-                        >
-                          {soNoWithInternal(l.soCode, l.soInternalNo)}
-                        </Link>
-                      ) : (
-                        <span className="td-code">
-                          {soNoWithInternal(l.soCode, l.soInternalNo)}
-                        </span>
-                      )}
-                    </td>
-                    <td className="mono">{l.clientPoLineNo ?? '—'}</td>
-                    <td
-                      className="mono fw-700"
-                      style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}
+      ) : isError ? (
+        <div style={{ color: 'var(--red2)', fontSize: 12 }}>
+          Could not load the linked SO lines. Try again.
+        </div>
+      ) : lines.length === 0 ? (
+        <div className="text3" style={{ fontSize: 12 }}>
+          No SO line is built from this BOM.
+        </div>
+      ) : (
+        <table className="innovic-table">
+          <thead>
+            <tr>
+              <th>SO No.</th>
+              <th>POL</th>
+              <th>Item Code</th>
+              <th>Item Name</th>
+              <th className="th-num">Order Qty</th>
+              <th>Line Status</th>
+              <th>Due Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            {lines.map((l) => (
+              <tr key={l.salesOrderLineId}>
+                <td style={{ whiteSpace: 'nowrap' }}>
+                  {canOpenSo ? (
+                    <Link
+                      to="/sales-orders/$id"
+                      params={{ id: l.salesOrderId }}
+                      className="td-code"
                     >
-                      {itemCodeWithRev(l.itemCode, l.itemRevision)}
-                    </td>
-                    <td>{l.itemName ?? '—'}</td>
-                    <td className="td-num mono fw-700">{l.orderQty}</td>
-                    <td>
-                      <StatusBadge kind="so" status={l.lineStatus} />
-                    </td>
-                    <td style={{ whiteSpace: 'nowrap' }}>{fmtDate(l.dueDate)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-        <div className="modal-footer">
-          <button type="button" className="btn btn-primary" onClick={onClose}>
-            Close
-          </button>
-        </div>
-      </div>
-    </div>
+                      {soNoWithInternal(l.soCode, l.soInternalNo)}
+                    </Link>
+                  ) : (
+                    <span className="td-code">{soNoWithInternal(l.soCode, l.soInternalNo)}</span>
+                  )}
+                </td>
+                <td className="mono">{l.clientPoLineNo ?? '—'}</td>
+                <td className="mono fw-700" style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}>
+                  {itemCodeWithRev(l.itemCode, l.itemRevision)}
+                </td>
+                <td>{l.itemName ?? '—'}</td>
+                <td className="td-num mono fw-700">{l.orderQty}</td>
+                <td>
+                  <StatusBadge kind="so" status={l.lineStatus} />
+                </td>
+                <td style={{ whiteSpace: 'nowrap' }}>{fmtDate(l.dueDate)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </Modal>
   );
 }

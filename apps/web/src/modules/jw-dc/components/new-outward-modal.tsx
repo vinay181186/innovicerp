@@ -80,8 +80,6 @@ export function NewOutwardModal({
   const [remarks, setRemarks] = useState('');
   const [lines, setLines] = useState<OutwardLineUi[]>([]);
   const [err, setErr] = useState<string | null>(null);
-  // Anything the user typed, picked or ticked — arms the exit question.
-  const [touched, setTouched] = useState(false);
   // ADR-217 phase 4 — NCs the server named in a 409, kept so the notice still
   // shows when the check below failed or ran before QC disposed the NC.
   const [rtvConflictRows, setRtvConflictRows] = useState<RtvPanelRow[]>([]);
@@ -277,7 +275,6 @@ export function NewOutwardModal({
   };
 
   const setLine = (i: number, patch: Partial<OutwardLineUi>): void => {
-    setTouched(true);
     setLines((prev) => prev.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
   };
 
@@ -289,7 +286,6 @@ export function NewOutwardModal({
       saving={createMut.isPending}
       saveLabel="Save Outward DC"
       saveDisabled={rtvBlocks}
-      dirty={touched}
     >
       {forJw ? (
         <div
@@ -323,10 +319,7 @@ export function NewOutwardModal({
             type="date"
             className="innovic-input"
             value={date}
-            onChange={(e) => {
-              setTouched(true);
-              setDate(e.target.value);
-            }}
+            onChange={(e) => setDate(e.target.value)}
           />
         </div>
         <div className="form-grp form-full">
@@ -337,7 +330,6 @@ export function NewOutwardModal({
             className="innovic-select"
             value={poId ?? ''}
             onChange={(e) => {
-              setTouched(true);
               // The waiting-deviation notice belongs to the PO it was raised
               // for — drop it (and any tick) when the PO changes.
               setRtvConflictRows([]);
@@ -405,10 +397,7 @@ export function NewOutwardModal({
             <input
               type="checkbox"
               checked={rtvConfirmed}
-              onChange={(e) => {
-                setTouched(true);
-                setRtvConfirmedKey(e.target.checked ? rtvShownKey : null);
-              }}
+              onChange={(e) => setRtvConfirmedKey(e.target.checked ? rtvShownKey : null)}
             />
             These are new pieces, not the ones waiting to go back
             <span className="req">★</span>
@@ -425,10 +414,7 @@ export function NewOutwardModal({
             type="text"
             className="innovic-input"
             value={vehicleNo}
-            onChange={(e) => {
-              setTouched(true);
-              setVehicleNo(e.target.value);
-            }}
+            onChange={(e) => setVehicleNo(e.target.value)}
             placeholder="GJ-05-XX-1234"
           />
         </div>
@@ -438,10 +424,7 @@ export function NewOutwardModal({
             type="text"
             className="innovic-input"
             value={remarks}
-            onChange={(e) => {
-              setTouched(true);
-              setRemarks(e.target.value);
-            }}
+            onChange={(e) => setRemarks(e.target.value)}
           />
         </div>
       </div>

@@ -220,6 +220,7 @@ export function JwInvoiceView({
           title={`History — ${historyTarget.code}`}
           onClose={() => setHistoryTarget(null)}
           size="lg"
+          confirmExit={false}
         >
           <DocumentHistory
             entity="JwInvoice"

@@ -123,6 +123,7 @@ export function LogTimeModal({
     <ModalShell
       onClose={onClose}
       title={`Time Log — ${row.code} (${row.totalHours}h / ${row.estimatedHours}h)`}
+      footer={<Actions onClose={onClose} onSave={onSave} saving={mut.isPending} label="Log Time" />}
     >
       <div
         style={{
@@ -207,7 +208,6 @@ export function LogTimeModal({
         </div>
       ) : null}
       {err ? <ErrorBox message={err} /> : null}
-      <Actions onClose={onClose} onSave={onSave} saving={mut.isPending} label="Log Time" />
     </ModalShell>
   );
 }

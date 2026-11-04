@@ -318,10 +318,13 @@ export function ReleaseStockModal({
   facts,
   onClose,
   onDone,
+  elevated = false,
 }: {
   facts: StockLineFacts;
   onClose: () => void;
   onDone: (result: ReservationActionResult) => void;
+  /** Opened over the Create Plan form. */
+  elevated?: boolean;
 }): JSX.Element {
   const max = facts.reservedQty;
   const [qty, setQty] = useState<string>(max > 0 ? String(max) : '');
@@ -378,7 +381,12 @@ export function ReleaseStockModal({
   );
 
   return (
-    <Modal title={`Release Reserved Stock — ${facts.itemLabel}`} onClose={onClose} footer={footer}>
+    <Modal
+      title={`Release Reserved Stock — ${facts.itemLabel}`}
+      onClose={onClose}
+      footer={footer}
+      elevated={elevated}
+    >
       <LineIdentity f={facts} />
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
         <NumberTile label="Physical" value={facts.physicalQty} color="var(--cyan)" />

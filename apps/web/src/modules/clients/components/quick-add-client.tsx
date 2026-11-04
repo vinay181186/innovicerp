@@ -176,9 +176,9 @@ export function QuickAddClient({
     <Modal
       title="New Customer"
       onClose={onClose}
+      closeLocked={create.isPending}
       size="md"
       maxWidth="520px"
-      closeOnOverlayClick={false}
       footer={
         <>
           <button type="button" className="btn btn-ghost" onClick={onClose}>

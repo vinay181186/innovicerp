@@ -6,7 +6,7 @@
 
 import type { OspProcess, OspProcessInput } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plus, X } from 'lucide-react';
+import { Loader2, Plus } from 'lucide-react';
 import { useState } from 'react';
 import { SearchableSelect } from '@/ui/forms';
 import { apiFetch } from '@/lib/api';
@@ -15,7 +15,7 @@ import { canDeleteRecords, useMyAccess } from '@/lib/access-control';
 import { useSession } from '@/lib/session';
 import { useVendorsList } from '@/modules/vendors/api';
 import { RowMenu } from '@/ui/data';
-import { Banner, ConfirmDialog } from '@/ui/feedback';
+import { Banner, ConfirmDialog, Modal } from '@/ui/feedback';
 
 interface ListOspProcessesResponse {
   items: OspProcess[];
@@ -287,136 +287,102 @@ export function OspProcessesPanel(): React.JSX.Element {
       </div>
 
       {modal ? (
-        <div
-          role="dialog"
-          aria-modal="true"
-          onClick={() => setModal(null)}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,.45)',
-            display: 'flex',
-            alignItems: 'flex-start',
-            justifyContent: 'center',
-            padding: '8vh 16px',
-            zIndex: 60,
-          }}
-        >
-          <div
-            className="panel"
-            onClick={(e) => e.stopPropagation()}
-            style={{ width: 'min(1100px, 96vw)', maxHeight: '84vh', overflow: 'auto' }}
-          >
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                padding: '12px 16px',
-                borderBottom: '1px solid var(--border)',
-              }}
-            >
-              <div className="fw-700">{modal.id ? 'Edit OSP Process' : 'Add OSP Process'}</div>
+        <Modal
+          title={modal.id ? 'Edit OSP Process' : 'Add OSP Process'}
+          onClose={() => setModal(null)}
+          bodyStyle={{ display: 'grid', gap: 12 }}
+          footer={
+            <>
               <button type="button" className="btn btn-ghost btn-sm" onClick={() => setModal(null)}>
-                <X size={14} />
+                Cancel
               </button>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                disabled={createMut.isPending || updateMut.isPending}
+                onClick={() => void save()}
+              >
+                {createMut.isPending || updateMut.isPending ? (
+                  <>
+                    <Loader2 className="inline h-3 w-3 animate-spin" /> Saving…
+                  </>
+                ) : modal.id ? (
+                  'Save Changes'
+                ) : (
+                  'Save OSP Process'
+                )}
+              </button>
+            </>
+          }
+        >
+          <div className="form-grp">
+            <label className="form-label">
+              Process Name <span className="req">★</span>
+            </label>
+            <input
+              className="innovic-input"
+              value={modal.processName}
+              onChange={(e) => setModal({ ...modal, processName: e.target.value })}
+              placeholder="e.g. Coating, Painting, Heat Treatment"
+            />
+          </div>
+          <div className="form-grp">
+            <label className="form-label" htmlFor="ospVendor">
+              Preferred Vendor
+            </label>
+            <SearchableSelect
+              id="ospVendor"
+              value={modal.vendorId || null}
+              onChange={(next) => {
+                const v = (vendorsList?.vendors ?? []).find((x) => x.id === next);
+                setModal({
+                  ...modal,
+                  vendorId: next ?? '',
+                  vendorLabel: v ? `${v.code} — ${v.name}` : '',
+                });
+              }}
+              onSearch={setVendorSearch}
+              loading={vendorsLoading}
+              options={(vendorsList?.vendors ?? []).map((v) => ({
+                id: v.id,
+                code: v.code,
+                name: v.name,
+              }))}
+              placeholder="🔍 Type vendor code or name… (blank = manual PO)"
+              valueLabel={modal.vendorLabel || undefined}
+            />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div className="form-grp">
+              <label className="form-label">Lead Time (days)</label>
+              <input
+                type="number"
+                className="innovic-input"
+                min={1}
+                max={365}
+                value={modal.leadDays}
+                onChange={(e) => setModal({ ...modal, leadDays: Number(e.target.value) || 5 })}
+              />
             </div>
-            <div style={{ padding: 16, display: 'grid', gap: 12 }}>
-              <div className="form-grp">
-                <label className="form-label">
-                  Process Name <span className="req">★</span>
-                </label>
-                <input
-                  className="innovic-input"
-                  value={modal.processName}
-                  onChange={(e) => setModal({ ...modal, processName: e.target.value })}
-                  placeholder="e.g. Coating, Painting, Heat Treatment"
-                />
-              </div>
-              <div className="form-grp">
-                <label className="form-label" htmlFor="ospVendor">
-                  Preferred Vendor
-                </label>
-                <SearchableSelect
-                  id="ospVendor"
-                  value={modal.vendorId || null}
-                  onChange={(next) => {
-                    const v = (vendorsList?.vendors ?? []).find((x) => x.id === next);
-                    setModal({
-                      ...modal,
-                      vendorId: next ?? '',
-                      vendorLabel: v ? `${v.code} — ${v.name}` : '',
-                    });
-                  }}
-                  onSearch={setVendorSearch}
-                  loading={vendorsLoading}
-                  options={(vendorsList?.vendors ?? []).map((v) => ({
-                    id: v.id,
-                    code: v.code,
-                    name: v.name,
-                  }))}
-                  placeholder="🔍 Type vendor code or name… (blank = manual PO)"
-                  valueLabel={modal.vendorLabel || undefined}
-                />
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <div className="form-grp">
-                  <label className="form-label">Lead Time (days)</label>
-                  <input
-                    type="number"
-                    className="innovic-input"
-                    min={1}
-                    max={365}
-                    value={modal.leadDays}
-                    onChange={(e) => setModal({ ...modal, leadDays: Number(e.target.value) || 5 })}
-                  />
-                </div>
-                <div className="form-grp">
-                  <label className="form-label">Auto PO</label>
-                  <select
-                    className="innovic-select"
-                    value={modal.autoPo ? '1' : '0'}
-                    onChange={(e) => setModal({ ...modal, autoPo: e.target.value === '1' })}
-                    disabled={!modal.vendorId}
-                  >
-                    <option value="1">Yes (if vendor set)</option>
-                    <option value="0">No (manual PO)</option>
-                  </select>
-                </div>
-              </div>
-              {submitError ? (
-                <Banner tone="error" role="alert" flush>
-                  {submitError}
-                </Banner>
-              ) : null}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => setModal(null)}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-primary btn-sm"
-                  disabled={createMut.isPending || updateMut.isPending}
-                  onClick={() => void save()}
-                >
-                  {createMut.isPending || updateMut.isPending ? (
-                    <>
-                      <Loader2 className="inline h-3 w-3 animate-spin" /> Saving…
-                    </>
-                  ) : modal.id ? (
-                    'Save Changes'
-                  ) : (
-                    'Save OSP Process'
-                  )}
-                </button>
-              </div>
+            <div className="form-grp">
+              <label className="form-label">Auto PO</label>
+              <select
+                className="innovic-select"
+                value={modal.autoPo ? '1' : '0'}
+                onChange={(e) => setModal({ ...modal, autoPo: e.target.value === '1' })}
+                disabled={!modal.vendorId}
+              >
+                <option value="1">Yes (if vendor set)</option>
+                <option value="0">No (manual PO)</option>
+              </select>
             </div>
           </div>
-        </div>
+          {submitError ? (
+            <Banner tone="error" role="alert" flush>
+              {submitError}
+            </Banner>
+          ) : null}
+        </Modal>
       ) : null}
 
       {overlaps && modal ? (

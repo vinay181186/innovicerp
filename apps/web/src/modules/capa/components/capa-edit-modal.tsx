@@ -15,8 +15,8 @@ import { useMemo, useState } from 'react';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useOperatorsList } from '@/modules/operators/api';
 import { useTaskUserOptions } from '@/modules/tasks/api';
+import { Modal } from '@/ui/feedback';
 import { useUpdateCapa } from '../api';
-import { Overlay } from './capa-overlay';
 
 export function EditCapaModal({
   capa,
@@ -89,7 +89,29 @@ export function EditCapaModal({
   );
 
   return (
-    <Overlay title={`CAPA ${capa.code}`} onClose={onClose}>
+    <Modal
+      title={`CAPA ${capa.code}`}
+      onClose={onClose}
+      maxWidth="min(1100px, 96vw)"
+      confirmExit={!readOnly}
+      footer={
+        <>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>
+            {readOnly ? 'Close' : 'Cancel'}
+          </button>
+          {!readOnly ? (
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={update.isPending}
+              onClick={() => void submit()}
+            >
+              {update.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Save Changes
+            </button>
+          ) : null}
+        </>
+      }
+    >
       <div
         style={{
           background: 'var(--bg3)',
@@ -295,21 +317,6 @@ export function EditCapaModal({
           {err}
         </div>
       ) : null}
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
-        <button type="button" className="btn btn-ghost" onClick={onClose}>
-          {readOnly ? 'Close' : 'Cancel'}
-        </button>
-        {!readOnly ? (
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={update.isPending}
-            onClick={() => void submit()}
-          >
-            {update.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Save Changes
-          </button>
-        ) : null}
-      </div>
-    </Overlay>
+    </Modal>
   );
 }

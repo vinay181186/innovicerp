@@ -59,9 +59,9 @@ export function SoCloseModal(props: {
           : `Close SO ${soNoWithInternal(detail.code, detail.internalSoNo)}`
       }
       onClose={onClose}
+      closeLocked={pending}
       size="md"
       maxWidth="520px"
-      closeOnOverlayClick={false}
       footer={
         <>
           <Button variant="ghost" onClick={onClose} disabled={pending}>
