@@ -1,20 +1,33 @@
-// New Inward Entry modal (split out of routes/list.tsx). Receives processed
-// material back against an outward DC that still has a pending return. The store
-// records only how much came back; accept / reject happens at Incoming QC.
+// New Inward Entry — a full page (owner 2026-11-04: a create form with line items
+// is a page). Receives processed material back against an outward DC that still
+// has a pending return. The store records only how much came back; accept /
+// reject happens at Incoming QC.
 
+import { useSaveKey } from '@/lib/use-save-key';
 import { type CreateJwDcInwardInput, type CreateJwDcInwardLineInput } from '@innovic/shared';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { createRoute, useNavigate } from '@tanstack/react-router';
+import { Loader2 } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { todayLocal } from '@/lib/date';
+import { useExitConfirm } from '@/lib/exit-guard';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { authenticatedRoute } from '@/routes/_authenticated';
+import { Panel } from '@/ui/data';
 import { Banner, useToast } from '@/ui/feedback';
+import { FormField, FormGrid, SearchableSelect } from '@/ui/forms';
+import { FormActions, PageHeader, useSaveShortcut } from '@/ui/layout';
 import {
   useCreateJwDcInward,
   useJwDcOutwardDetail,
   useJwDcOutwardList,
   useNextInwardCode,
 } from '../api';
-import { ErrorBox, ModalShell } from './modal-shell';
-import { SearchableSelect } from '@/ui/forms';
+
+export const jwDcInwardNewRoute = createRoute({
+  getParentRoute: () => authenticatedRoute,
+  path: 'jw-dc/inward/new',
+  component: JwDcInwardNewPage,
+});
 
 interface InwardLineUi {
   outwardLineId: string;
@@ -31,7 +44,14 @@ interface InwardLineUi {
   receivedQty: number;
 }
 
-export function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.Element {
+function JwDcInwardNewPage(): React.JSX.Element {
+  const navigate = useNavigate();
+  const goBack = useCallback(
+    () => void navigate({ to: '/jw-dc', search: { tab: 'inward' } }),
+    [navigate],
+  );
+  const exit = useExitConfirm({ onExit: goBack });
+
   const [date, setDate] = useState(todayLocal());
   const [dcId, setDcId] = useState<string | null>(null);
   const [vendorChallan, setVendorChallan] = useState('');
@@ -78,7 +98,8 @@ export function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.
     );
   }, [detail, dcId]);
 
-  const createMut = useCreateJwDcInward();
+  const saveKey = useSaveKey();
+  const createMut = useCreateJwDcInward(saveKey);
   const toast = useToast();
 
   const onSave = (): void => {
@@ -108,7 +129,7 @@ export function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.
     createMut.mutate(input, {
       onSuccess: (saved) => {
         toast.ok(`Inward ${saved.code} saved`);
-        onClose();
+        exit.leave(goBack);
       },
       onError: (e) =>
         setErr(
@@ -116,6 +137,7 @@ export function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.
         ),
     });
   };
+  useSaveShortcut(onSave, !createMut.isPending);
 
   const setLine = (i: number, patch: Partial<InwardLineUi>): void => {
     setLines((prev) =>
@@ -129,80 +151,83 @@ export function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.
     );
   };
 
+  const dirty = dcId !== null || vendorChallan !== '' || vehicleNo !== '' || remarks !== '';
+
   return (
-    <ModalShell
-      onClose={onClose}
-      title="New Inward Entry"
-      onSave={onSave}
-      saving={createMut.isPending}
-      saveLabel="Save Inward"
-    >
-      {/* ADR-189 — Incoming QC is the only inspector. The store records what
-          came back; accept / reject happens at Incoming QC, as for DC Receive. */}
-      <Banner tone="info">Received qty goes to Incoming QC — no accept/deviate here.</Banner>
-      <div className="form-grid" style={{ marginBottom: 14 }}>
-        <div className="form-grp">
-          <label className="form-label">Inward No.</label>
-          <input
-            type="text"
-            className="innovic-input"
-            value={next?.code ?? '(auto on save)'}
-            readOnly
-          />
-        </div>
-        <div className="form-grp">
-          <label className="form-label">Inward Date</label>
-          <input
-            type="date"
-            className="innovic-input"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-          />
-        </div>
-        <div className="form-grp form-full">
-          <label className="form-label">
-            JW DC<span className="req">★</span>
-          </label>
-          <SearchableSelect
-            value={dcId}
-            onChange={setDcId}
-            options={pendingDcs.map((dc) => ({
-              id: dc.id,
-              code: dc.code,
-              name: `${dc.vendorName ?? dc.vendorNameText ?? dc.vendorCodeText ?? ''} (${dc.jwpoCodeText})`,
-            }))}
-            placeholder="-- Select DC --"
-          />
-        </div>
-        <div className="form-grp">
-          <label className="form-label">Vendor Challan No.</label>
-          <input
-            type="text"
-            className="innovic-input"
-            value={vendorChallan}
-            onChange={(e) => setVendorChallan(e.target.value)}
-            placeholder="Vendor reference"
-          />
-        </div>
-        <div className="form-grp">
-          <label className="form-label">Vehicle No.</label>
-          <input
-            type="text"
-            className="innovic-input"
-            value={vehicleNo}
-            onChange={(e) => setVehicleNo(e.target.value)}
-            placeholder="GJ-05-XX-5678"
-          />
-        </div>
-      </div>
+    <div>
+      {exit.dialog}
+      <PageHeader title="New Inward Entry" backLabel="Back to JW DC" onBack={goBack} />
+
+      <Panel>
+        {/* ADR-189 — Incoming QC is the only inspector. The store records what
+            came back; accept / reject happens at Incoming QC, as for DC Receive. */}
+        <Banner tone="info">Received qty goes to Incoming QC — no accept/deviate here.</Banner>
+        <FormGrid>
+          <FormField label="Inward No." size="sm" htmlFor="jwdc-in-code">
+            <input
+              id="jwdc-in-code"
+              type="text"
+              className="innovic-input"
+              value={next?.code ?? '(auto on save)'}
+              readOnly
+            />
+          </FormField>
+          <FormField label="Inward Date" size="sm" htmlFor="jwdc-in-date">
+            <input
+              id="jwdc-in-date"
+              type="date"
+              className="innovic-input"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+            />
+          </FormField>
+          <FormField label="JW DC" required size="lg" htmlFor="jwdc-in-dc">
+            <SearchableSelect
+              id="jwdc-in-dc"
+              value={dcId}
+              onChange={setDcId}
+              options={pendingDcs.map((dc) => ({
+                id: dc.id,
+                code: dc.code,
+                name: `${dc.vendorName ?? dc.vendorNameText ?? dc.vendorCodeText ?? ''} (${dc.jwpoCodeText})`,
+              }))}
+              placeholder="-- Select DC --"
+            />
+          </FormField>
+          <FormField label="Vendor Challan No." size="md" htmlFor="jwdc-in-challan">
+            <input
+              id="jwdc-in-challan"
+              type="text"
+              className="innovic-input"
+              value={vendorChallan}
+              onChange={(e) => setVendorChallan(e.target.value)}
+              placeholder="Vendor reference"
+            />
+          </FormField>
+          <FormField label="Vehicle No." size="md" htmlFor="jwdc-in-vehicle">
+            <input
+              id="jwdc-in-vehicle"
+              type="text"
+              className="innovic-input"
+              value={vehicleNo}
+              onChange={(e) => setVehicleNo(e.target.value)}
+              placeholder="GJ-05-XX-5678"
+            />
+          </FormField>
+          <FormField label="Remarks" size="md" htmlFor="jwdc-in-remarks">
+            <input
+              id="jwdc-in-remarks"
+              type="text"
+              className="innovic-input"
+              value={remarks}
+              onChange={(e) => setRemarks(e.target.value)}
+            />
+          </FormField>
+        </FormGrid>
+      </Panel>
 
       {lines.length > 0 ? (
-        <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
-          <div
-            style={{ padding: '8px 12px', background: 'var(--bg4)', fontWeight: 700, fontSize: 12 }}
-          >
-            DC Lines
-          </div>
+        <Panel title="DC Lines" bodyPadding="none">
           <table style={{ width: '100%' }}>
             <thead>
               <tr style={{ background: 'var(--bg4)' }}>
@@ -279,20 +304,37 @@ export function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.
               })}
             </tbody>
           </table>
-        </div>
+        </Panel>
       ) : null}
 
-      <div className="form-grp" style={{ marginTop: 14 }}>
-        <label className="form-label">Remarks</label>
-        <input
-          type="text"
-          className="innovic-input"
-          value={remarks}
-          onChange={(e) => setRemarks(e.target.value)}
-        />
-      </div>
-
-      {err ? <ErrorBox message={err} /> : null}
-    </ModalShell>
+      <FormActions
+        dirty={dirty}
+        note={
+          err ? (
+            <Banner tone="error" role="alert" flush>
+              {err}
+            </Banner>
+          ) : undefined
+        }
+      >
+        <button type="button" className="btn btn-ghost" onClick={() => exit.leave(goBack)}>
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="btn btn-primary"
+          disabled={createMut.isPending}
+          onClick={onSave}
+        >
+          {createMut.isPending ? (
+            <>
+              <Loader2 size={14} className="inline animate-spin" /> Saving…
+            </>
+          ) : (
+            'Save Inward'
+          )}
+        </button>
+      </FormActions>
+    </div>
   );
 }

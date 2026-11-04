@@ -5,7 +5,7 @@
 // delivery-challans, bom-master, route-cards, plans, so-costing) copy this
 // composition, which is the canonical one from design-ref/README.md:
 //
-//   DetailHeader (+ ReadGrid of ReadFields)
+//   DetailHeader (+ ClusterGrid stack of ClusterFacts)
 //     -> Panel(s)  — documents bar, line items as a DataTable, delivery schedule
 //     -> RelatedDocs (+ Timeline)
 //
@@ -51,7 +51,8 @@ import { Button, Icon, StatusBadge } from '@/ui/core';
 import { DataTable, Panel, QtyStrip } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Banner, ConfirmDialog, useToast } from '@/ui/feedback';
-import { ActionMenu, DetailHeader, PageState, ReadField, ReadGrid } from '@/ui/layout';
+import { Cluster, ClusterFact, ClusterGrid } from '@/ui/forms';
+import { ActionMenu, DetailHeader, PageState } from '@/ui/layout';
 import { SoDrawingHistory, useSoDrawingHistory } from '../components/so-drawing-history';
 import {
   RevChangesSection,
@@ -149,7 +150,11 @@ function SalesOrderDetailPage(): React.JSX.Element {
   const revChangeCount = useRevChangeCount({ salesOrderId: id });
   // ADR-197 — who did what to this SO (before → after, reasons). Called before
   // the early returns (hooks rule); the code joins once the detail is loaded.
-  const historyTab = useHistoryTab({ entity: 'SalesOrder', entityId: id, refId: detail?.code });
+  const historyTab = useHistoryTab({
+    entity: 'SalesOrder',
+    entityId: detail?.id,
+    refId: detail?.code,
+  });
 
   if (isLoading) {
     return <PageState state="loading" message="Loading sales order…" />;
@@ -699,152 +704,156 @@ function SoReadGrid(props: {
     fontWeight: 600,
   };
 
+  // A null GST % means this user may not see prices: that cell goes and Cost
+  // Centre takes its room, so the row stays full. Same for BOM on the type that
+  // has none — SO Remarks takes the room.
+  const gstShown = detail.gstPercent != null;
+  const bomShown = detail.type !== 'component_manufacturing';
+  const raisedBy =
+    (detail.createdByName ?? '—') +
+    (detail.createdAt ? ` · ${fmtIstDateTime(detail.createdAt)}` : '');
+
   return (
-    <ReadGrid>
-      {/* ADR-207 — the user-typed number; blank on SOs made before it. */}
-      <ReadField
-        label="Internal SO No."
-        size="sm"
-        mono
-        value={withChip(
-          detail.internalSoNo ? <span className="fw-700">{detail.internalSoNo}</span> : null,
-          pendingChanges,
-          'internalSoNo',
-        )}
-      />
-      <ReadField
-        label="SO Type"
-        size="md"
-        value={withChip(SO_TYPE_LABEL[detail.type], pendingChanges, 'type')}
-      />
-      <ReadField
-        label="SO Date"
-        size="sm"
-        mono
-        value={withChip(fmtDate(detail.soDate), pendingChanges, 'soDate')}
-      />
-      <ReadField
-        label="Client PO No."
-        size="sm"
-        mono
-        value={withChip(
-          detail.clientPoNo ? (
-            <span style={{ color: 'var(--purple)', fontWeight: 700 }}>{detail.clientPoNo}</span>
-          ) : null,
-          pendingChanges,
-          'clientPoNo',
-        )}
-      />
-      {detail.gstPercent == null ? null : (
-        <ReadField
-          label="GST %"
-          size="xs"
-          value={withChip(
-            <span style={{ color: 'var(--green2)', fontWeight: 700 }}>{detail.gstPercent}%</span>,
-            pendingChanges,
-            'gstPercent',
-          )}
+    <ClusterGrid stack>
+      <Cluster name="Order">
+        {/* ADR-207 — the user-typed number; blank on SOs made before it. */}
+        <ClusterFact
+          num
+          label="Internal SO No."
+          empty={!detail.internalSoNo}
+          value={detail.internalSoNo ?? '—'}
+          after={<Chip changes={pendingChanges} field="internalSoNo" />}
         />
-      )}
-      {/* ADR-243 — decided by the server from the customer's State. */}
-      <OrderSupplyFields
-        placeOfSupply={detail.totals?.placeOfSupply ?? detail.placeOfSupply}
-        taxType={detail.totals?.taxType ?? detail.taxType}
-      />
-      <ReadField
-        label="Cost Centre"
-        size="md"
-        value={withChip(detail.costCenter, pendingChanges, 'costCenter')}
-      />
-      {detail.type === 'component_manufacturing' ? null : (
-        <ReadField
-          label="BOM"
-          size="md"
-          value={withChip(
-            detail.bomMasterId ? (
-              <>
-                <Link
-                  to="/bom-masters/$id"
-                  params={{ id: detail.bomMasterId }}
-                  className="td-code"
-                  style={{ color: 'var(--blue)' }}
-                >
-                  {detail.bomMasterCode ?? detail.bomMasterId}
-                </Link>
-                {detail.bomStatus ? (
-                  <span
-                    className="text3"
-                    style={{ marginLeft: 'var(--sp-1)', fontSize: 'var(--fs-xs)' }}
+        <ClusterFact
+          label="SO Type"
+          value={SO_TYPE_LABEL[detail.type]}
+          after={<Chip changes={pendingChanges} field="type" />}
+        />
+        <ClusterFact
+          num
+          label="SO Date"
+          value={fmtDate(detail.soDate)}
+          after={<Chip changes={pendingChanges} field="soDate" />}
+        />
+        <ClusterFact
+          num
+          label="Client PO No."
+          empty={!detail.clientPoNo}
+          title={detail.clientPoNo ?? undefined}
+          value={
+            detail.clientPoNo ? (
+              <span style={{ color: 'var(--purple)' }}>{detail.clientPoNo}</span>
+            ) : (
+              '—'
+            )
+          }
+          after={<Chip changes={pendingChanges} field="clientPoNo" />}
+        />
+      </Cluster>
+
+      <Cluster name="Tax & cost">
+        {gstShown ? (
+          <ClusterFact
+            label="GST %"
+            value={
+              <span style={{ color: 'var(--green2)', fontWeight: 700 }}>{detail.gstPercent}%</span>
+            }
+            after={<Chip changes={pendingChanges} field="gstPercent" />}
+          />
+        ) : null}
+        {/* ADR-243 — decided by the server from the customer's State. */}
+        <OrderSupplyFields
+          placeOfSupply={detail.totals?.placeOfSupply ?? detail.placeOfSupply}
+          taxType={detail.totals?.taxType ?? detail.taxType}
+        />
+        <ClusterFact
+          span={gstShown ? 1 : 2}
+          label="Cost Centre"
+          empty={!detail.costCenter}
+          title={detail.costCenter ?? undefined}
+          value={detail.costCenter ?? '—'}
+          after={<Chip changes={pendingChanges} field="costCenter" />}
+        />
+      </Cluster>
+
+      <Cluster name="Record">
+        {bomShown ? (
+          <ClusterFact
+            label="BOM"
+            empty={!detail.bomMasterId}
+            value={
+              detail.bomMasterId ? (
+                <>
+                  <Link
+                    to="/bom-masters/$id"
+                    params={{ id: detail.bomMasterId }}
+                    className="td-code"
+                    style={{ color: 'var(--blue)' }}
                   >
-                    ({detail.bomStatus})
-                  </span>
-                ) : null}
+                    {detail.bomMasterCode ?? detail.bomMasterId}
+                  </Link>
+                  {detail.bomStatus ? (
+                    <span
+                      className="text3"
+                      style={{ marginLeft: 'var(--sp-1)', fontSize: 'var(--fs-xs)' }}
+                    >
+                      ({detail.bomStatus})
+                    </span>
+                  ) : null}
+                </>
+              ) : (
+                '—'
+              )
+            }
+            after={
+              <>
                 <Chip changes={pendingChanges} field="bomStatus" />
+                <Chip changes={pendingChanges} field="bomMasterId" />
               </>
-            ) : null,
-            pendingChanges,
-            'bomMasterId',
-          )}
-        />
-      )}
-      <ReadField
-        label="Raised By"
-        size="md"
-        value={
-          (detail.createdByName ?? '—') +
-          (detail.createdAt ? ` · ${fmtIstDateTime(detail.createdAt)}` : '')
-        }
-      />
-      <ReadField
-        label="SO Remarks"
-        size="full"
-        pre
-        value={withChip(
-          remarks === '' ? null : remarksLong && !showAllRemarks ? (
-            <>
-              {`${remarks.slice(0, 80).trimEnd()}…`}
-              <button type="button" style={toggleStyle} onClick={() => setShowAllRemarks(true)}>
-                more
-              </button>
-            </>
-          ) : (
-            <>
-              {remarks}
-              {remarksLong ? (
-                <button type="button" style={toggleStyle} onClick={() => setShowAllRemarks(false)}>
-                  less
+            }
+          />
+        ) : null}
+        <ClusterFact label="Raised By" title={raisedBy} value={raisedBy} />
+        <ClusterFact
+          span={bomShown ? 2 : 3}
+          wrap
+          label="SO Remarks"
+          empty={remarks === ''}
+          value={
+            remarks === '' ? (
+              '—'
+            ) : remarksLong && !showAllRemarks ? (
+              <>
+                {`${remarks.slice(0, 80).trimEnd()}…`}
+                <button type="button" style={toggleStyle} onClick={() => setShowAllRemarks(true)}>
+                  more
                 </button>
-              ) : null}
-            </>
-          ),
-          pendingChanges,
-          'remarks',
-        )}
-      />
-    </ReadGrid>
+              </>
+            ) : (
+              <>
+                {remarks}
+                {remarksLong ? (
+                  <button
+                    type="button"
+                    style={toggleStyle}
+                    onClick={() => setShowAllRemarks(false)}
+                  >
+                    less
+                  </button>
+                ) : null}
+              </>
+            )
+          }
+          after={<Chip changes={pendingChanges} field="remarks" />}
+        />
+      </Cluster>
+    </ClusterGrid>
   );
 }
 
-/** ADR-202 — append the amber "→ after" chip to a header field's value when an
- *  edit to that field is staged. With no pending change the value is returned
- *  untouched, so ReadField still renders its own em-dash for an empty field. */
-function withChip(
-  value: React.ReactNode,
-  changes: readonly DocumentEditChange[],
-  field: string,
-): React.ReactNode {
-  const c = headerPendingChange(changes, field);
-  if (!c) return value;
-  return (
-    <>
-      {value == null || value === '' ? '—' : value}
-      <PendingChangeChip after={c.after} />
-    </>
-  );
-}
-
-/** ADR-202 — the amber "→ after" chip for a record field with a staged edit,
- *  rendered inline (BOM Status, and the customer name in the header). */
+/** ADR-202 — the amber "→ after" chip for a record field with a staged edit:
+ *  through ClusterFact's `after` on the facts, inline on the customer name in
+ *  the header. */
 function Chip(props: {
   changes: readonly DocumentEditChange[];
   field: string;

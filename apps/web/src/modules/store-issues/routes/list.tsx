@@ -6,7 +6,7 @@
 // act on the slip. Remarks and the cancel reason are in the slip view.
 
 import { ISSUE_AGAINST } from '@innovic/shared';
-import { createRoute } from '@tanstack/react-router';
+import { createRoute, Link } from '@tanstack/react-router';
 import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
@@ -23,14 +23,14 @@ import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useStoreIssueLines } from '../api';
 import { issueRegisterColumns } from '../components/issue-register-columns';
 import { IssueViewModal } from '../components/issue-view-modal';
-import { NewIssueModal, type NewIssueSeed } from '../components/new-issue-modal';
 import { useStoreIssuePrint } from '../components/use-store-issue-print';
 
 // Deep-link seed for Global Search (no detail page here): `?tab=tools&search=
 // TIS-00003` opens the Tool Issues tab with its box pre-filled. Read ONCE into
 // the local state below — tab clicks and typing stay local, never navigate.
-// `?new=job_card&jobCardId=…` (JC Material tab "Issue from Store") or
-// `?new=assembly_so&salesOrderId=…` (assembly page) opens New Issue seeded.
+// `?new=job_card&jobCardId=…` / `?new=assembly_so&salesOrderId=…` (old links; the
+// JC Material tab and the assembly page now go straight to the page) forward to
+// New Issue seeded.
 const searchSchema = z.object({
   tab: z.enum(['items', 'tools']).optional(),
   search: z.string().optional(),
@@ -73,15 +73,6 @@ function StoreIssuesListPage(): React.JSX.Element {
     }, 300);
     return () => window.clearTimeout(id);
   }, [search, term, setPage]);
-  const [newSeed, setNewSeed] = useState<NewIssueSeed | null>(() =>
-    routeSearch.new
-      ? {
-          issueAgainst: routeSearch.new,
-          jobCardId: routeSearch.jobCardId,
-          salesOrderId: routeSearch.salesOrderId,
-        }
-      : null,
-  );
   const [viewId, setViewId] = useState<string | null>(null);
   // ADR-235 — the slip whose standard Cancel dialog is open (row ⋯ or the view).
   const [cancelTarget, setCancelTarget] = useState<{ id: string; code: string } | null>(null);
@@ -94,6 +85,19 @@ function StoreIssuesListPage(): React.JSX.Element {
   // (tier on `toolissue_create`); the server enforces it too.
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'issue_create');
+  // A `?new=` landing forwards to the New Item Issue page (Entry only, as the +
+  // button is). replace: Back must not bounce through here again.
+  const canEnter = perms.entry;
+  const { new: seedAgainst, jobCardId: seedJc, salesOrderId: seedSo } = routeSearch;
+  useEffect(() => {
+    if (seedAgainst && canEnter) {
+      void navigate({
+        to: '/issue-register/new',
+        search: { issueAgainst: seedAgainst, jobCardId: seedJc, salesOrderId: seedSo },
+        replace: true,
+      });
+    }
+  }, [seedAgainst, seedJc, seedSo, canEnter, navigate]);
   // ADR-235 — Cancel Issue: the Edit tick raises the request, the Approve tick
   // decides it (and may Cancel now). The server re-checks both.
   const canCancel = perms.edit || perms.approve;
@@ -193,13 +197,9 @@ function StoreIssuesListPage(): React.JSX.Element {
             searchPlaceholder="Search issue, item, JC, SO, name…"
             primary={
               perms.entry ? (
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  onClick={() => setNewSeed({ issueAgainst: 'job_card' })}
-                >
+                <Link to="/issue-register/new" className="btn btn-primary">
                   <Plus size={14} /> New Issue
-                </button>
+                </Link>
               ) : null
             }
           />
@@ -265,9 +265,6 @@ function StoreIssuesListPage(): React.JSX.Element {
             />
           ) : null}
 
-          {newSeed && perms.entry ? (
-            <NewIssueModal seed={newSeed} onClose={() => setNewSeed(null)} />
-          ) : null}
           {viewId ? (
             <IssueViewModal
               issueId={viewId}

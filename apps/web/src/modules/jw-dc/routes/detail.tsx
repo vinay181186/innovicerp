@@ -14,20 +14,21 @@
 
 import type { JwDcOutwardDetail } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { ArrowLeft, Ban, Download, Eye, Loader2 } from 'lucide-react';
+import { ArrowLeft, Ban, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { fmtDate, fmtDateTime } from '@/lib/date';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
 import { CancelPendingBanner } from '@/modules/cancel-requests/components/cancel-pending-banner';
-import { DocumentHistory } from '@/components/shared/document-history';
-import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
+import { useHistoryTab } from '@/components/shared/document-history';
+import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { runPrint } from '@/lib/print/preview-host';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
+import { Cluster, ClusterFact, ClusterGrid } from '@/ui/forms';
+import { ActionMenu, DetailHeader } from '@/ui/layout';
 import { usePrintTemplates } from '../../print-templates/api';
 import { useMyCompany } from '../../settings/api';
 import { useVendor } from '../../vendors/api';
@@ -54,6 +55,8 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'ospdc_create');
   const [cancelOpen, setCancelOpen] = useState(false);
+  // ADR-197 — who did what to this JW DC. Before the early returns (hooks rule).
+  const historyTab = useHistoryTab({ entity: 'JwDcOutward', entityId: dc?.id, refId: dc?.code });
 
   if (isLoading) {
     return (
@@ -118,38 +121,21 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
 
   return (
     <div>
-      <Link to="/jw-dc" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back to JW Delivery Challans
-      </Link>
-
-      <div className="panel">
-        <div className="panel-hdr">
-          <div>
-            <div
-              className="td-code"
-              style={{ color: 'var(--purple)', fontSize: 16, fontWeight: 800 }}
-            >
-              {dc.code}
-            </div>
-            <div
-              className="panel-title"
-              style={{ marginTop: 2, display: 'flex', alignItems: 'center', gap: 10 }}
-            >
-              {dc.vendorName ?? dc.vendorNameText ?? dc.vendorCodeText ?? '—'}
-              <span className={`badge ${statusClass}`}>{statusLabel}</span>
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 6 }}>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={onPrint}>
-              <Eye size={13} /> Preview
-            </button>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              onClick={() => void onDownload()}
-            >
-              <Download size={13} /> Download PDF
-            </button>
+      <DetailHeader
+        backTo="/jw-dc"
+        backLabel="Back to JW Delivery Challans"
+        renderLink={(p) => <Link {...p} />}
+        code={dc.code}
+        name={dc.vendorName ?? dc.vendorNameText ?? dc.vendorCodeText ?? '—'}
+        badges={<span className={`badge ${statusClass}`}>{statusLabel}</span>}
+        actions={
+          <>
+            <ActionMenu
+              items={[
+                { label: 'Preview', onClick: onPrint },
+                { label: '⬇ Download PDF', onClick: () => void onDownload() },
+              ]}
+            />
             {canCancel ? (
               <button
                 type="button"
@@ -159,17 +145,16 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
                 <Ban size={13} /> Cancel JW DC
               </button>
             ) : null}
-          </div>
-        </div>
-        <div className="panel-body">
-          {printBlocked ? (
-            <Banner tone="error" role="alert">
-              Could not open the print window. Allow pop-ups for this site and try again.
-            </Banner>
-          ) : null}
-          <DetailGrid dc={dc} />
-        </div>
-      </div>
+          </>
+        }
+      >
+        {printBlocked ? (
+          <Banner tone="error" role="alert">
+            Could not open the print window. Allow pop-ups for this site and try again.
+          </Banner>
+        ) : null}
+        <DetailGrid dc={dc} />
+      </DetailHeader>
 
       {/* ADR-235 — an open Cancel Request (orange), or the Cancelled mark (red). */}
       <CancelPendingBanner
@@ -256,20 +241,9 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
             </tbody>
           </table>
         </div>
-        {/* Legacy renders Remarks below the line table (L24608), not in the
-            info block. */}
-        {dc.remarks ? (
-          <div className="panel-body text3" style={{ fontSize: 11 }}>
-            Remarks: {dc.remarks}
-          </div>
-        ) : null}
       </div>
 
-      <RelatedDocsPanel module="jw-dc" id={dc.id} />
-
-      <Panel title="History" bodyPadding="none">
-        <DocumentHistory entity="JwDcOutward" entityId={dc.id} refId={dc.code} />
-      </Panel>
+      <RelatedDocsTabs module="jw-dc" id={dc.id} extraTabs={[historyTab]} />
 
       {cancelOpen ? (
         <CancelDocDialog
@@ -287,24 +261,21 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
 // DC No. / DC Date / PO No. / Vendor / Total Sent / Vehicle No.
 function DetailGrid(props: { dc: JwDcOutwardDetail }): React.JSX.Element {
   const { dc } = props;
+  const vendorName = dc.vendorName ?? dc.vendorNameText ?? dc.vendorCodeText ?? '—';
   return (
-    <div className="form-grid form-grid-3">
-      <Pair label="DC No." value={dc.code} />
-      <Pair label="DC Date" value={fmtDate(dc.dcDate)} />
-      <Pair label="PO No." value={dc.jwpoCodeText ?? '—'} />
-      <Pair label="SO No." value={dc.soCode ?? '—'} />
-      <Pair label="Vendor" value={dc.vendorName ?? dc.vendorNameText ?? dc.vendorCodeText ?? '—'} />
-      <Pair label="Total Sent" value={`${dc.totalSentQty} pcs`} />
-      <Pair label="Vehicle No." value={dc.vehicleNo ?? '—'} />
-    </div>
-  );
-}
-
-function Pair(props: { label: string; value: string }): React.JSX.Element {
-  return (
-    <div className="form-grp">
-      <span className="form-label">{props.label}</span>
-      <div style={{ fontWeight: 600 }}>{props.value}</div>
-    </div>
+    <ClusterGrid stack>
+      <Cluster name="Against">
+        <ClusterFact num label="DC No." value={dc.code} />
+        <ClusterFact num label="DC Date" value={fmtDate(dc.dcDate)} />
+        <ClusterFact num label="PO No." empty={!dc.jwpoCodeText} value={dc.jwpoCodeText ?? '—'} />
+        <ClusterFact num label="SO No." empty={!dc.soCode} value={dc.soCode ?? '—'} />
+      </Cluster>
+      <Cluster name="Transport">
+        <ClusterFact label="Vendor" title={vendorName} value={vendorName} />
+        <ClusterFact num label="Total Sent" value={`${dc.totalSentQty} pcs`} />
+        <ClusterFact num label="Vehicle No." empty={!dc.vehicleNo} value={dc.vehicleNo ?? '—'} />
+        <ClusterFact wrap label="Remarks" empty={!dc.remarks} value={dc.remarks ?? '—'} />
+      </Cluster>
+    </ClusterGrid>
   );
 }

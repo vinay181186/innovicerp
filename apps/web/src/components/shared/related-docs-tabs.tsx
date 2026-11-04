@@ -16,7 +16,7 @@
 // which maps a `routeKind` to a real typed TanStack route. Rule #8 — no dead
 // links — still lives in renderCode: an unknown kind renders as plain text.
 //
-// The whole panel still hides while loading, on error, and when the document
+// Document tabs wait for their data; History never does. The panel hides only when the document
 // has no related paper at all, so this additive endpoint can never break the
 // host page.
 
@@ -68,21 +68,22 @@ export function RelatedDocsTabs({
   id: string;
   extraTabs?: RelatedDocsExtraTab[];
 }): React.JSX.Element | null {
-  const { data, isLoading, isError } = useQuery<DocumentTraceability>({
+  const { data } = useQuery<DocumentTraceability>({
     queryKey: ['related-docs', module, id],
     queryFn: () => apiFetch<DocumentTraceability>(`/${module}/${id}/related`),
     enabled: Boolean(id),
   });
 
-  if (isLoading || isError || !data) return null;
-
   // Upstream + downstream + related, in that order — the reading order of the
   // paper trail. <RelatedDocs> drops the empty buckets itself.
-  const sections: RelatedSection[] = [...data.upstream, ...data.downstream, ...data.related].filter(
-    (s) => s.count > 0,
-  );
+  // Not loaded (or refused): no document tabs yet, but the page's History must not vanish.
+  const sections: RelatedSection[] = [
+    ...(data?.upstream ?? []),
+    ...(data?.downstream ?? []),
+    ...(data?.related ?? []),
+  ].filter((s) => s.count > 0);
   const extras = (extraTabs ?? []).filter((t) => t.count > 0);
-  const events: TimelineEvent[] = data.timeline.map((e, i) => ({
+  const events: TimelineEvent[] = (data?.timeline ?? []).map((e, i) => ({
     key: `${e.code ?? e.label}-${i}`,
     date: e.ts,
     label: e.label,

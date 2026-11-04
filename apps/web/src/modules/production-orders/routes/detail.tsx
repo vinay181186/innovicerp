@@ -12,11 +12,12 @@
 // an order is short closed Close Qty and the ledger's Reverse close go away,
 // and a one-line banner says who stopped it, when and why.
 //
-// Layout (owner-approved mock-up pro-routecard-detail-mockup.html, 2026-10-06):
-// the page fits one 1440×810 screen with no page scroll. Header with the next
-// step as its primary button → identity line → one ClusterGrid read in the
-// order the work happens (Order → Quantity → Schedule → Material) → ONE tabbed
-// panel (Close Ledger | History) that takes the height left and scrolls inside.
+// Layout: the page SCROLLS, like Job Card detail (owner decision 2026-11-04;
+// replaces the fit-to-one-screen page of 2026-10-06). Header with the next step
+// as its primary button → identity line → one ClusterGrid read in the order the
+// work happens (Order → Quantity → Schedule → Material) → ONE tabbed panel
+// (Close Ledger | History). There is no /related endpoint for this document, so
+// History stays in this page's own TabStrip.
 // What moved: the Close form opens as a dialog from Close Qty…; Job Card
 // Progress became the JC Finished cell; the Short Closed / Closed panels became
 // a one-line banner where the Close button sits; "Cannot close yet" became the
@@ -282,15 +283,14 @@ function ProductionOrderDetailPage(): React.JSX.Element {
   );
 
   return (
-    <div className="page-fill po-detail">
+    <div className="po-detail">
       <DetailHeader
         backLabel="Back"
         backTo="/production-orders"
         renderLink={(p) => <Link {...p} />}
         code={data.code}
-        // One header line, as the mock-up draws it: code · document name ·
-        // status. Passed as `badges` because DetailHeader's `name` takes a
-        // second line, and that line is height this page does not have.
+        // One header line: code · document name · status. Passed as `badges`
+        // because DetailHeader's `name` would take a second line.
         badges={
           <>
             <span className="panel-title">Production Order</span>
@@ -665,8 +665,6 @@ function ProductionOrderDetailPage(): React.JSX.Element {
         </ClusterGrid>
       </DetailHeader>
 
-      {/* The one panel that takes the height left on screen. Its table is the
-          page's only scrollbar. */}
       <div className="po-tabs">
         <TabStrip
           label="Production Order lists"
@@ -684,7 +682,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
           received
         </span>
       </div>
-      <Panel fill bodyPadding="none">
+      <Panel bodyPadding="none">
         {tab === 'ledger' ? (
           data.closes.length === 0 ? (
             <EmptyState>No closes yet.</EmptyState>

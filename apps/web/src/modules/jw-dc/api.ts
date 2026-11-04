@@ -1,3 +1,4 @@
+import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 import type {
   CreateJwDcInwardInput,
   CreateJwDcOutwardInput,
@@ -144,10 +145,17 @@ export type CreateJwDcOutwardBody = CreateJwDcOutwardInput & {
   rtvConfirmedNcIds?: string[];
 };
 
-export function useCreateJwDcOutward() {
+export function useCreateJwDcOutward(saveKey?: SaveKey) {
   const qc = useQueryClient();
   return useMutation<JwDcOutward, Error, CreateJwDcOutwardBody>({
-    mutationFn: (input) => apiFetch<JwDcOutward>('/jw-dc/outward', { method: 'POST', json: input }),
+    mutationFn: (input) =>
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<JwDcOutward>('/jw-dc/outward', {
+          method: 'POST',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: jwDcKeys.all });
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
@@ -183,10 +191,17 @@ export function useJwDcInwardList(query: ListJwDcInwardQuery) {
   });
 }
 
-export function useCreateJwDcInward() {
+export function useCreateJwDcInward(saveKey?: SaveKey) {
   const qc = useQueryClient();
   return useMutation<JwDcInward, Error, CreateJwDcInwardInput>({
-    mutationFn: (input) => apiFetch<JwDcInward>('/jw-dc/inward', { method: 'POST', json: input }),
+    mutationFn: (input) =>
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<JwDcInward>('/jw-dc/inward', {
+          method: 'POST',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: jwDcKeys.all });
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });

@@ -37,11 +37,10 @@ interface PoCloseLedgerProps {
   /** True when the user may reverse a close: edit right AND the order is not
    *  short closed (the server's rule). False → no ⋯ column at all. */
   canReverse: boolean;
-  /** Inside a filling tab panel (the Production Order detail page): the table's
-   *  `.tbl-wrap` is handed straight to the panel body so it takes the height
-   *  left on screen and scrolls inside it, and the POL · CODE/REV band is left
-   *  out — that page already says both in its identity line. The Close page
-   *  leaves this off and keeps the band. */
+  /** Inside a tab panel (Production Order detail and edit): the table's
+   *  `.tbl-wrap` is handed straight to the panel body, and the POL · CODE/REV
+   *  band is left out — those pages already say both in their identity line.
+   *  The Close page leaves this off and keeps the band. */
   fill?: boolean | undefined;
 }
 

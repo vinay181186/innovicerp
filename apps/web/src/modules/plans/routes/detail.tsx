@@ -21,8 +21,8 @@ import {
   PendingChangeChip,
   headerPendingChange,
 } from '@/modules/document-edits/components/pending-change-chip';
-import { DocumentHistory } from '@/components/shared/document-history';
-import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
+import { useHistoryTab } from '@/components/shared/document-history';
+import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useCanOpen } from '@/components/shared/action-link';
 import { fmtDate } from '@/lib/date';
@@ -30,7 +30,6 @@ import { ItemRevLink } from '@/modules/item-revisions/components/item-rev-link';
 import { itemCodeWithRev, docDrawingRev } from '@/lib/item-code';
 import { soNoWithInternal } from '@/lib/so-number';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { Panel } from '@/ui/data';
 import { Banner, useToast } from '@/ui/feedback';
 import { Cluster, ClusterFact, ClusterGrid, DocIdent, IdentCode, IdentSep } from '@/ui/forms';
 import { useExecutePlan, useFinalizePlan, usePlan } from '../api';
@@ -93,6 +92,9 @@ function PlanDetailPage(): React.JSX.Element {
   const [actionError, setActionError] = useState<string | null>(null);
   // ADR-249 — the routing differed but was NOT sent for approval: the reason.
   const [rcNotSentReason, setRcNotSentReason] = useState<string | null>(null);
+  // ADR-197 — the plan's own History tab. Called before the early returns (hooks
+  // rule); it waits for the id / code to arrive.
+  const historyTab = useHistoryTab({ entity: 'Plan', entityId: plan?.id, refId: plan?.code });
 
   if (isLoading) {
     return (
@@ -648,11 +650,7 @@ function PlanDetailPage(): React.JSX.Element {
         </div>
       )}
 
-      <RelatedDocsPanel module="plans" id={plan.id} />
-
-      <Panel title="History" bodyPadding="none">
-        <DocumentHistory entity="Plan" entityId={plan.id} refId={plan.code} />
-      </Panel>
+      <RelatedDocsTabs module="plans" id={plan.id} extraTabs={[historyTab]} />
 
       {confirmDelete ? (
         // The modal owns the wait and shows a refusal inside itself.

@@ -22,14 +22,16 @@ export function useSaveShortcut(onSave: () => void, enabled = true): void {
   // Latest handler without re-binding the listener on every render.
   const ref = useRef(onSave);
   ref.current = onSave;
+  const enabledRef = useRef(enabled);
+  enabledRef.current = enabled;
 
   useEffect(() => {
-    if (!enabled) return undefined;
     function onKey(e: KeyboardEvent): void {
       if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 's') {
+        // Always: while Save is off, the browser's "Save page as" still must not open.
         e.preventDefault();
         // A held key repeats; one press = one save.
-        if (e.repeat) return;
+        if (e.repeat || !enabledRef.current) return;
         // A pop-up is open over the form (quick-add customer, confirm, exit
         // guard): Ctrl+S must not submit the form underneath it.
         if (
@@ -44,5 +46,5 @@ export function useSaveShortcut(onSave: () => void, enabled = true): void {
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [enabled]);
+  }, []);
 }

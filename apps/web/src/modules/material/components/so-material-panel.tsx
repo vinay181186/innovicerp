@@ -67,8 +67,8 @@ export function SoMaterialPanel({
         ) : null}
         {canIssue ? (
           <Link
-            to="/issue-register"
-            search={{ tab: 'items', new: 'assembly_so', salesOrderId }}
+            to="/issue-register/new"
+            search={{ issueAgainst: 'assembly_so', salesOrderId }}
             className="btn btn-primary btn-sm"
             style={canReserve ? undefined : { marginLeft: 'auto' }}
           >

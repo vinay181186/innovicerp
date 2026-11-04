@@ -107,6 +107,8 @@ export const PAGE_ACCESS: Readonly<Record<string, PageRule>> = {
   '/qc-history': OPEN,
   '/jw-dc': OPEN,
   '/jw-dc/$id': OPEN,
+  '/jw-dc/outward/new': entry('ospdc_create'),
+  '/jw-dc/inward/new': entry('ospdc_create'),
 
   // ── Saved reports belong to a person, not a page ──
   '/saved-reports': OPEN,
@@ -189,13 +191,16 @@ export const PAGE_ACCESS: Readonly<Record<string, PageRule>> = {
   ...crud('/items', 'item_create'),
   // Item Issues and Tool Issues share the page; each tab checks its own key.
   '/issue-register': { anyOf: [v('issue_create'), v('toolissue_create')] },
+  '/issue-register/new': entry('issue_create'),
   '/stock-counts': v('stockcount_create'),
   '/stock-counts/$id': v('stockcount_create'), // '/stock-counts/new' is this route; the page asks Entry
   '/instruments': v('toolissue_create'),
   '/party-grn': v('party_create'),
+  '/party-grn/new': entry('party_create'),
   '/party-material': v('party_create'),
   '/party-stock-ledger': v('party_create'),
   '/customer-material-returns': v('party_create'),
+  '/customer-material-returns/new': entry('party_create'),
 
   // ── Finance ──
   '/invoices': v('invoice_create'),

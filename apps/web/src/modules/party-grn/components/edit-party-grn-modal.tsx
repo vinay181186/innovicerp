@@ -1,5 +1,5 @@
 // Edit Party Material GRN (ADR-202 Phase 3) — the existing-receipt sibling of
-// new-party-grn-modal.tsx. A receipt's JWSO and its set of lines are fixed once
+// routes/create.tsx. A receipt's JWSO and its set of lines are fixed once
 // saved, so this modal changes only the header (GRN Date · Customer Challan No. ·
 // Received By · Remarks) and, per line still WAITING Incoming QC, that line's
 // Received Qty + line remarks. Lines already QC'd are shown read-only — their

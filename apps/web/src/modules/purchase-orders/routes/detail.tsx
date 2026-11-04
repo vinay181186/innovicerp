@@ -36,11 +36,10 @@
 // query, mutation or calculation changed. The legacy trio above the line items
 // (2-up Vendor / PO Details boxes → 6 bordered KPI tiles → a loose wrapped strip
 // of label/value pairs, each with its own border, fill, alignment and value
-// size) is now ONE four-column band, `components/po-header-band.tsx`:
-// SUPPLIER | ORDER REFERENCES | TOTALS | TAX & APPROVAL, hairline-divided, under
-// a status accent bar. Every field those three blocks showed is still on screen;
-// the vendor name moved out of the panel header into the SUPPLIER column, where
-// its address and GSTIN already belonged.
+// size) is now ONE fact block, `components/po-header-band.tsx`. Every field those
+// three blocks showed is still on screen; the vendor name moved out of the panel
+// header into the Vendor cluster, where its address and GSTIN already belonged.
+// Owner 2026-11-04: that block is the shared `<ClusterGrid stack>`.
 
 import type { DocumentEditChange, PurchaseOrderLine } from '@innovic/shared';
 import { PO_SHORT_CLOSE_REASON_MIN, poLinePendingQty, poSendsMaterialOut } from '@innovic/shared';
@@ -330,8 +329,8 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
       <div className="panel" style={{ overflow: 'hidden' }}>
         <div className="panel-hdr">
           {/* Code + status on one line: the vendor name used to sit here as a
-              second line and now heads the SUPPLIER column of the band below,
-              where its address and GSTIN are. */}
+              second line and now sits in the Vendor cluster below, with its
+              address and GSTIN. */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
             <div
               className="td-code"

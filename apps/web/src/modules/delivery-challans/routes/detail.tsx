@@ -14,10 +14,10 @@
 
 import type { DeliveryChallanLine, DeliveryChallanWithLines } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { ArrowLeft, Ban, Download, Eye, Inbox, Loader2, Pencil } from 'lucide-react';
+import { ArrowLeft, Ban, Inbox, Loader2, Pencil } from 'lucide-react';
 import { Fragment, useMemo, useState } from 'react';
-import { DocumentHistory } from '@/components/shared/document-history';
-import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
+import { useHistoryTab } from '@/components/shared/document-history';
+import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
 import { undecidedChangesOf, usePendingEditForDoc } from '@/modules/document-edits/api';
 import {
   PendingChangeChip,
@@ -34,6 +34,8 @@ import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
+import { Cluster, ClusterFact, ClusterGrid, DocIdent } from '@/ui/forms';
+import { ActionMenu, DetailHeader } from '@/ui/layout';
 import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
 import { CancelPendingBanner } from '@/modules/cancel-requests/components/cancel-pending-banner';
 import { usePrintTemplates } from '../../print-templates/api';
@@ -75,6 +77,12 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
   const [cancelOpen, setCancelOpen] = useState(false);
   // ADR-235 — the receipt whose Cancel dialog is open (docType 'dc_receipt').
   const [cancelReceipt, setCancelReceipt] = useState<{ id: string; code: string } | null>(null);
+  // ADR-197 — who did what to this DC. Before the early returns (hooks rule).
+  const historyTab = useHistoryTab({
+    entity: 'DeliveryChallan',
+    entityId: data?.id,
+    refId: data?.code,
+  });
 
   const aggregatesByLine = useMemo(() => {
     const map = new Map<string, LineAgg>();
@@ -205,85 +213,21 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
 
   return (
     <div>
-      <Link to="/delivery-challans" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back to Delivery Challans
-      </Link>
-
-      <div className="panel">
-        <div className="panel-hdr">
-          <div>
-            {/* --blue, not --cyan: blue is the app's identity/link colour for a
-                document code (SO detail, PR, JWSO, and the DC list card all use
-                it). This page was the last one left on the old teal, so opening
-                a DC from the list changed the colour of its own number. */}
-            <div
-              className="td-code"
-              style={{ color: 'var(--blue)', fontSize: 16, fontWeight: 700 }}
-            >
-              {dc.code}
-            </div>
-            <div
-              className="panel-title"
-              style={{ marginTop: 2, display: 'flex', alignItems: 'center', gap: 10 }}
-            >
-              {dc.vendorName ?? dc.vendorCodeText}
-              <DcStatusBadge status={dc.status} draft={isDraft} />
-            </div>
-            {/* Return-to-vendor challan raised from an NC (design §5): say so
-                in the header, with the NC and the job card one click away —
-                the receive step books the replacement against that NC, so the
-                reader must not mistake this for an ordinary OSP outward DC. */}
-            {dc.ncId ? (
-              <div
-                style={{
-                  marginTop: 4,
-                  fontSize: 12,
-                  color: 'var(--amber2)',
-                  fontWeight: 700,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  flexWrap: 'wrap',
-                }}
-              >
-                <span>↩ Return to vendor —</span>
-                {/* Every NC on this DC (one DC may hold several NCs of one SO). */}
-                <span>{ncs.length === 1 ? 'NC' : 'NCs'}</span>
-                {ncs.map((n, i) => (
-                  <Fragment key={n.id}>
-                    {i > 0 ? <span>,</span> : null}
-                    <Link to="/nc-register/$id" params={{ id: n.id }} className="td-code">
-                      {n.code}
-                    </Link>
-                  </Fragment>
-                ))}
-                {/* The header job card is the FIRST NC's — shown only when the
-                    DC carries one NC, so it is never read as all of them. */}
-                {dc.jobCardId && ncs.length === 1 ? (
-                  <>
-                    <span>· JC</span>
-                    <Link to="/job-cards/$id" params={{ id: dc.jobCardId }} className="td-code">
-                      {dc.jobCardCode ?? '—'}
-                    </Link>
-                  </>
-                ) : null}
-                {dc.reason ? (
-                  <span style={{ color: 'var(--text2)', fontWeight: 400 }}>· {dc.reason}</span>
-                ) : null}
-              </div>
-            ) : null}
-          </div>
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={onPrint}>
-              <Eye size={13} /> Preview
-            </button>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              onClick={() => void onDownload()}
-            >
-              <Download size={13} /> Download PDF
-            </button>
+      <DetailHeader
+        backTo="/delivery-challans"
+        backLabel="Back to Delivery Challans"
+        renderLink={(p) => <Link {...p} />}
+        code={dc.code}
+        name={dc.vendorName ?? dc.vendorCodeText}
+        badges={<DcStatusBadge status={dc.status} draft={isDraft} />}
+        actions={
+          <>
+            <ActionMenu
+              items={[
+                { label: 'Preview', onClick: onPrint },
+                { label: '⬇ Download PDF', onClick: () => void onDownload() },
+              ]}
+            />
             {canEdit ? (
               <Link
                 to="/delivery-challans/$id/edit"
@@ -312,12 +256,55 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
                 <Ban size={13} /> Cancel DC
               </button>
             ) : null}
-          </div>
-        </div>
-        <div className="panel-body">
-          <HeaderGrid dc={dc} />
-        </div>
-      </div>
+          </>
+        }
+      >
+        {/* Return-to-vendor challan raised from an NC (design §5): say so, with
+            the NC and the job card one click away — the receive step books the
+            replacement against that NC, so the reader must not mistake this for
+            an ordinary OSP outward DC. */}
+        {dc.ncId ? (
+          <DocIdent>
+            <div
+              style={{
+                fontSize: 12,
+                color: 'var(--amber2)',
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                flexWrap: 'wrap',
+              }}
+            >
+              <span>↩ Return to vendor —</span>
+              {/* Every NC on this DC (one DC may hold several NCs of one SO). */}
+              <span>{ncs.length === 1 ? 'NC' : 'NCs'}</span>
+              {ncs.map((n, i) => (
+                <Fragment key={n.id}>
+                  {i > 0 ? <span>,</span> : null}
+                  <Link to="/nc-register/$id" params={{ id: n.id }} className="td-code">
+                    {n.code}
+                  </Link>
+                </Fragment>
+              ))}
+              {/* The header job card is the FIRST NC's — shown only when the
+                  DC carries one NC, so it is never read as all of them. */}
+              {dc.jobCardId && ncs.length === 1 ? (
+                <>
+                  <span>· JC</span>
+                  <Link to="/job-cards/$id" params={{ id: dc.jobCardId }} className="td-code">
+                    {dc.jobCardCode ?? '—'}
+                  </Link>
+                </>
+              ) : null}
+              {dc.reason ? (
+                <span style={{ color: 'var(--text2)', fontWeight: 400 }}>· {dc.reason}</span>
+              ) : null}
+            </div>
+          </DocIdent>
+        ) : null}
+        <HeaderGrid dc={dc} />
+      </DetailHeader>
 
       {/* ADR-235 — an open Cancel Request (orange), or the Cancelled mark (red). */}
       <CancelPendingBanner
@@ -426,10 +413,10 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
                   <th style={{ color: 'var(--purple)' }}>POL</th>
                   <th>Item Code</th>
                   <th>Item Name</th>
-                  <th>Sent</th>
-                  <th>Received</th>
-                  <th>Deviated</th>
-                  <th>Pending</th>
+                  <th className="th-num">Sent</th>
+                  <th className="th-num">Received</th>
+                  <th className="th-num">Deviated</th>
+                  <th className="th-num">Pending</th>
                 </tr>
               </thead>
               <tbody>
@@ -484,14 +471,14 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
                           {itemCodeWithRev(line.itemCode ?? line.itemCodeText, line.itemRevision)}
                         </td>
                         <td>{line.itemName ?? line.itemNameText ?? '—'}</td>
-                        <td className="mono fw-700">{fmtQty(ship)}</td>
-                        <td className="mono" style={{ color: 'var(--green2)' }}>
+                        <td className="mono fw-700 td-num">{fmtQty(ship)}</td>
+                        <td className="mono td-num" style={{ color: 'var(--green2)' }}>
                           {fmtQty(received)}
                         </td>
-                        <td className="mono" style={{ color: 'var(--red2)' }}>
+                        <td className="mono td-num" style={{ color: 'var(--red2)' }}>
                           {fmtQty(rejected)}
                         </td>
-                        <td className="mono">{fmtQty(remaining)}</td>
+                        <td className="mono td-num">{fmtQty(remaining)}</td>
                       </tr>
                     );
                   })
@@ -503,14 +490,14 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
                     <td colSpan={dc.ncId ? 6 : 4} style={{ fontWeight: 700 }}>
                       Total
                     </td>
-                    <td className="mono fw-700">{fmtQty(totals.ship)}</td>
-                    <td className="mono fw-700" style={{ color: 'var(--green2)' }}>
+                    <td className="mono fw-700 td-num">{fmtQty(totals.ship)}</td>
+                    <td className="mono fw-700 td-num" style={{ color: 'var(--green2)' }}>
                       {fmtQty(totals.received)}
                     </td>
-                    <td className="mono fw-700" style={{ color: 'var(--red2)' }}>
+                    <td className="mono fw-700 td-num" style={{ color: 'var(--red2)' }}>
                       {fmtQty(totals.rejected)}
                     </td>
-                    <td className="mono fw-700">{fmtQty(totals.remaining)}</td>
+                    <td className="mono fw-700 td-num">{fmtQty(totals.remaining)}</td>
                   </tr>
                 </tfoot>
               ) : null}
@@ -530,11 +517,7 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
         }
       />
 
-      <RelatedDocsPanel module="delivery-challans" id={dc.id} />
-
-      <Panel title="History" bodyPadding="none">
-        <DocumentHistory entity="DeliveryChallan" entityId={dc.id} refId={dc.code} />
-      </Panel>
+      <RelatedDocsTabs module="delivery-challans" id={dc.id} extraTabs={[historyTab]} />
 
       {cancelOpen ? (
         <CancelDocDialog
@@ -558,81 +541,85 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
 
 function HeaderGrid(props: { dc: DeliveryChallanWithLines }): React.JSX.Element {
   const { dc } = props;
-  // `form-grid form-grid-3` stacked a 2-col and a 3-col grid on one element and
-  // left an empty `.form-grp` filler in the last cell. One grid class, and the
-  // sixth cell carries "Issued on" instead of a blank — no orphan cells.
+  const vendorName = dc.vendorName ?? dc.vendorCodeText;
   return (
-    <div className="form-grid-3">
-      <Pair label="DC Date" value={fmtDate(dc.dcDate)} />
-      <Pair label="Vendor" value={dc.vendorName ?? dc.vendorCodeText} />
-      {/* An NC challan has no PO: po_code_text carries the NC code (the column
-          is NOT NULL), so the same cell is labelled NC and linked to the NC,
-          instead of showing that code as an amber "snapshot PO". */}
-      <Pair
-        label={dc.ncId ? 'NC No.' : 'PO No.'}
-        value={
-          dc.ncId ? (
-            // Every NC on this return DC, each a link to its NC.
-            <span style={{ display: 'inline-flex', gap: 4, flexWrap: 'wrap' }}>
-              {dcNcs(dc).map((n) => (
-                <Link
-                  key={n.id}
-                  to="/nc-register/$id"
-                  params={{ id: n.id }}
-                  className="badge b-red"
-                >
-                  {n.code}
-                </Link>
-              ))}
-            </span>
-          ) : dc.poCode ? (
-            <span className="badge b-green">{dc.poCode}</span>
-          ) : dc.poCodeText ? (
-            <span className="badge b-amber" title="PO No. typed by hand — not linked to a PO">
-              {dc.poCodeText}*
-            </span>
-          ) : (
-            '—'
-          )
-        }
-      />
-      {/* Resolved through the PO's lines when the DC has no SO line of its own,
-          which is the normal shape for an OSP/vendor challan. */}
-      <Pair
-        label="SO No."
-        value={
-          dc.soCode || dc.soRefText
-            ? soNoWithInternal(dc.soCode ?? dc.soRefText ?? '', dc.soInternalNo)
-            : '—'
-        }
-      />
-      {/* Its own labelled field, NOT "IN-SO-0012/B" — a slash after an SO
-          number reads as a revision OF THE SALES ORDER, which is not a thing.
-          This is the customer's DRAWING revision, so it is said in words. It is
-          shown only when there is one; an empty "Rev —" tells nobody anything. */}
-      {dc.soLineRevision ? <Pair label="Drawing Rev" value={dc.soLineRevision} /> : null}
+    <ClusterGrid stack>
+      <Cluster name="Against">
+        <ClusterFact num label="DC Date" value={fmtDate(dc.dcDate)} />
+        {/* An NC challan has no PO: po_code_text carries the NC code (the column
+            is NOT NULL), so the same cell is labelled NC and linked to the NC,
+            instead of showing that code as an amber "snapshot PO". */}
+        {dc.ncId ? (
+          // `wrap`: several NCs flow over lines instead of clipping on one.
+          <ClusterFact
+            wrap
+            label="NC No."
+            value={
+              // Every NC on this return DC, each a link to its NC.
+              <span style={{ display: 'inline-flex', gap: 4, flexWrap: 'wrap' }}>
+                {dcNcs(dc).map((n) => (
+                  <Link
+                    key={n.id}
+                    to="/nc-register/$id"
+                    params={{ id: n.id }}
+                    className="badge b-red"
+                  >
+                    {n.code}
+                  </Link>
+                ))}
+              </span>
+            }
+          />
+        ) : (
+          <ClusterFact
+            label="PO No."
+            empty={!dc.poCode && !dc.poCodeText}
+            value={
+              dc.poCode ? (
+                <span className="badge b-green">{dc.poCode}</span>
+              ) : dc.poCodeText ? (
+                <span className="badge b-amber" title="PO No. typed by hand — not linked to a PO">
+                  {dc.poCodeText}*
+                </span>
+              ) : (
+                '—'
+              )
+            }
+          />
+        )}
+        {/* Resolved through the PO's lines when the DC has no SO line of its own,
+            which is the normal shape for an OSP/vendor challan. */}
+        <ClusterFact
+          num
+          label="SO No."
+          empty={!dc.soCode && !dc.soRefText}
+          value={
+            dc.soCode || dc.soRefText
+              ? soNoWithInternal(dc.soCode ?? dc.soRefText ?? '', dc.soInternalNo)
+              : '—'
+          }
+        />
+        {/* Its own labelled field, NOT "IN-SO-0012/B" — a slash after an SO
+            number reads as a revision OF THE SALES ORDER, which is not a thing.
+            This is the customer's DRAWING revision, so it is said in words. It is
+            shown only when there is one; an empty "Rev —" tells nobody anything. */}
+        {dc.soLineRevision ? (
+          <ClusterFact num label="Drawing Rev" value={dc.soLineRevision} />
+        ) : null}
+      </Cluster>
+      <Cluster name="Transport">
+        <ClusterFact label="Vendor" title={vendorName} value={vendorName} />
+        <ClusterFact label="Transporter" empty={!dc.transport} value={dc.transport ?? '—'} />
+        <ClusterFact num label="Vehicle No." empty={!dc.vehicleNo} value={dc.vehicleNo ?? '—'} />
+        <ClusterFact num label="Issued On" value={fmtDateTime(dc.createdAt)} />
+      </Cluster>
       {/* Written server-side at create-DC time ("Return to vendor — rework");
-          only an NC challan has one, so the cell is not shown otherwise. */}
-      {dc.ncId && dc.reason ? <Pair label="Reason" value={dc.reason} /> : null}
-      <Pair label="Transporter" value={dc.transport ?? '—'} />
-      <Pair label="Vehicle No." value={dc.vehicleNo ?? '—'} />
-      <Pair
-        label="Issued On"
-        value={
-          <span className="mono" style={{ fontSize: 12 }}>
-            {fmtDateTime(dc.createdAt)}
-          </span>
-        }
-      />
-    </div>
-  );
-}
-
-function Pair(props: { label: string; value: string | React.ReactNode }): React.JSX.Element {
-  return (
-    <div className="form-grp">
-      <span className="form-label">{props.label}</span>
-      <div style={{ fontWeight: 600 }}>{props.value}</div>
-    </div>
+          only an NC challan has one, so the row is not shown otherwise. */}
+      {dc.ncId && dc.reason ? (
+        <Cluster name="Return">
+          <ClusterFact span={4} wrap label="Reason" value={dc.reason} />
+        </Cluster>
+      ) : null}
+    </ClusterGrid>
   );
 }

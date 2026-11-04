@@ -2,7 +2,7 @@
 // following the approved DETAIL exemplar (modules/vendors/routes/detail.tsx):
 //
 //   ← Back to QC Process Master
-//   DetailHeader (name + "⚙ QC Process" + Active chip + Edit/Delete) → ReadGrid
+//   DetailHeader (name + "⚙ QC Process" + Active chip + Edit/Delete) → ClusterGrid
 //
 // A QC process is a flat 4-field master — no line table, no related-document
 // query — so the composition stops at the header panel. Markup only: the
@@ -23,16 +23,7 @@
 // red here would change what the colour means on this page and would put the
 // chip at odds with qc-processes/routes/list.tsx, which paints the same amber.
 //
-// FIELD SIZES — ReadGrid is the same 12-column grid as the edit form's
-// FormGrid, and each ReadField carries the size that field has in
-// qc-process-form.tsx:
-//
-//   Description full                                    → 12
-//   Default Cycle Time (min) lg · Active lg             → 6 + 6 = 12
-//
-// Active keeps its own cell here, unlike the sibling masters, because cycle
-// time is the only other fact on the page and a row must sum to 12 — and
-// because the edit form puts exactly these two side by side in one row.
+// Active keeps its own fact here, as the edit form puts it beside cycle time.
 
 import type { DocumentEditChange, QcProcess } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
@@ -46,7 +37,9 @@ import {
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Badge, Button, Icon, StatusBadge } from '@/ui/core';
 import { ConfirmDialog } from '@/ui/feedback';
-import { DetailHeader, PageState, ReadField, ReadGrid } from '@/ui/layout';
+import { PendingFact } from '@/modules/document-edits/components/pending-fact';
+import { Cluster, ClusterGrid } from '@/ui/forms';
+import { DetailHeader, PageState } from '@/ui/layout';
 import { useQcProcess, useSoftDeleteQcProcess } from '../api';
 
 export const qcProcessDetailRoute = createRoute({
@@ -193,49 +186,56 @@ function QcProcessFacts(props: {
 }): React.JSX.Element {
   const { qcProcess, pendingChanges: pc } = props;
   // numeric(8,2) arrives as a string. Zero means "not set" on this master, and
-  // an unset value is the em dash ReadField draws for a null — not a "0.00"
+  // an unset value is the em dash drawn for a null — not a "0.00"
   // that reads as a measured cycle time.
   const cycleMin = Number(qcProcess.defaultCycleTimeMin);
   return (
-    <ReadGrid>
-      <ReadField
-        label="Description"
-        size="full"
-        pre
-        value={readWithChip(qcProcess.description, pc, 'description')}
-      />
-
-      <ReadField
-        label="Default Cycle Time (min)"
-        size="lg"
-        mono
-        value={readWithChip(cycleMin > 0 ? cycleMin.toFixed(2) : null, pc, 'defaultCycleTimeMin')}
-      />
-      <ReadField
-        label="Active"
-        size="lg"
-        value={readWithChip(qcProcess.isActive ? 'Active' : 'Inactive', pc, 'isActive')}
-      />
+    <ClusterGrid stack>
+      <Cluster name="Process">
+        <PendingFact
+          span={2}
+          wrap
+          label="Description"
+          value={qcProcess.description}
+          changes={pc}
+          field="description"
+        />
+        <PendingFact
+          num
+          label="Default Cycle Time (min)"
+          value={cycleMin > 0 ? cycleMin.toFixed(2) : null}
+          changes={pc}
+          field="defaultCycleTimeMin"
+        />
+        <PendingFact
+          label="Active"
+          value={qcProcess.isActive ? 'Active' : 'Inactive'}
+          changes={pc}
+          field="isActive"
+        />
+      </Cluster>
       {/* ADR-252 — the report this QC step produces. */}
-      <ReadField
-        label="Report Type"
-        size="full"
-        value={readWithChip(
-          qcProcess.reportTypeName ? (
-            <>
-              {qcProcess.reportTypeName}
-              {qcProcess.reportMandatory ? (
-                <Badge tone="red" style={{ marginLeft: 6 }}>
-                  {qcProcess.reportLastStageOnly ? 'Mandatory (last stage only)' : 'Mandatory'}
-                </Badge>
-              ) : null}
-            </>
-          ) : null,
-          pc,
-          'reportTypeId',
-        )}
-      />
-    </ReadGrid>
+      <Cluster name="Report">
+        <PendingFact
+          span={4}
+          label="Report Type"
+          value={
+            qcProcess.reportTypeName ? (
+              <>
+                {qcProcess.reportTypeName}
+                {qcProcess.reportMandatory ? (
+                  <Badge tone="red" style={{ marginLeft: 6 }}>
+                    {qcProcess.reportLastStageOnly ? 'Mandatory (last stage only)' : 'Mandatory'}
+                  </Badge>
+                ) : null}
+              </>
+            ) : null
+          }
+          changes={pc}
+          field="reportTypeId"
+        />
+      </Cluster>
+    </ClusterGrid>
   );
 }
 
@@ -248,24 +248,4 @@ function Chip(props: {
 }): React.JSX.Element | null {
   const c = headerPendingChange(props.changes, props.field);
   return c ? <PendingChangeChip after={c.after} /> : null;
-}
-
-/** Compose a ReadField value with its pending-change chip. When no edit is
- *  staged for `field`, the value is returned untouched so ReadField's own empty
- *  handling (em dash in --text3) still applies. */
-function readWithChip(
-  value: React.ReactNode,
-  changes: readonly DocumentEditChange[],
-  field: string,
-): React.ReactNode {
-  const c = headerPendingChange(changes, field);
-  if (!c) return value;
-  const base =
-    value == null || value === '' ? <span style={{ color: 'var(--text3)' }}>—</span> : value;
-  return (
-    <>
-      {base}
-      <PendingChangeChip after={c.after} />
-    </>
-  );
 }

@@ -7,11 +7,11 @@
 // emits, previewed in an iframe (screen = print, as on the invoice detail).
 
 import { itemRevLabel } from '@innovic/shared';
-import { Link, createRoute, useNavigate } from '@tanstack/react-router';
+import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { ActionLink } from '@/components/shared/action-link';
-import { DocumentHistory } from '@/components/shared/document-history';
+import { useHistoryTab } from '@/components/shared/document-history';
 import { MasterItemNameNote } from '@/components/shared/master-item-name-note';
 import { undecidedChangesOf, usePendingEditForDoc } from '@/modules/document-edits/api';
 import {
@@ -31,9 +31,11 @@ import { useMyCompany } from '@/modules/settings/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
+import { Cluster, ClusterFact, ClusterGrid } from '@/ui/forms';
+import { TabStrip } from '@/ui/navigation';
 import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
 import { CancelPendingBanner } from '@/modules/cancel-requests/components/cancel-pending-banner';
-import { PageHeader, PageState } from '@/ui/layout';
+import { ActionMenu, DetailHeader, PageState } from '@/ui/layout';
 import { useDispatchDetail } from '../api';
 import { dispatchSheetHtml, printDispatchChallan } from '../lib/print-dc';
 
@@ -45,7 +47,6 @@ export const customerDispatchDetailRoute = createRoute({
 
 function CustomerDispatchDetailPage(): React.JSX.Element {
   const { id } = customerDispatchDetailRoute.useParams();
-  const navigate = useNavigate();
   const { data: d, isLoading, isError, error } = useDispatchDetail(id);
   const { data: client } = useClient(d?.clientId ?? undefined);
   const { data: company } = useMyCompany();
@@ -61,6 +62,8 @@ function CustomerDispatchDetailPage(): React.JSX.Element {
   const isDraft = (pendingEdit.data?.rows?.length ?? 0) > 0;
   const [previewHeight, setPreviewHeight] = useState(1123);
   const [cancelOpen, setCancelOpen] = useState(false);
+  // ADR-197 — who did what to this dispatch. Before the early returns (hooks rule).
+  const historyTab = useHistoryTab({ entity: 'Dispatch', entityId: d?.id, refId: d?.code });
 
   const docHtml = useMemo(
     () =>
@@ -92,34 +95,39 @@ function CustomerDispatchDetailPage(): React.JSX.Element {
 
   return (
     <div>
-      <PageHeader
-        title={`Customer Dispatch ${d.code}`}
-        icon="🚚"
-        subtitle={
+      <DetailHeader
+        backTo="/customer-dispatches"
+        backLabel="Back to Customer Dispatch"
+        renderLink={(p) => <Link {...p} />}
+        code={d.code}
+        name="🚚 Customer Dispatch"
+        badges={
           <>
-            {d.customer ?? '—'} · SO No.{' '}
-            <Link to="/sales-orders/$id" params={{ id: d.salesOrderId }} className="fw-700">
-              {d.soCode ? soNoWithInternal(d.soCode, d.soInternalNo) : '—'}
-            </Link>{' '}
-            · {fmtDate(d.dispatchDate)} · {d.totalQty} pcs
-            {cancelled ? ' · Cancelled' : ''}
+            {cancelled ? <span className="badge b-red">Cancelled</span> : null}
             {isDraft ? (
-              <>
-                {' '}
-                <span
-                  className="badge b-grey"
-                  title="An edit to this document is waiting for approval"
-                >
-                  Draft
-                </span>
-              </>
+              <span
+                className="badge b-grey"
+                title="An edit to this document is waiting for approval"
+              >
+                Draft
+              </span>
             ) : null}
           </>
         }
-        backLabel="Back to Customer Dispatch"
-        onBack={() => void navigate({ to: '/customer-dispatches' })}
         actions={
           <>
+            <ActionMenu
+              items={[
+                { label: 'Preview', onClick: () => printDispatchChallan(d, client, company) },
+                {
+                  label: '⬇ Download PDF',
+                  onClick: () =>
+                    void runPrint('download', { title: 'Delivery Challan', fileName: d.code }, () =>
+                      Promise.resolve(() => printDispatchChallan(d, client, company)),
+                    ),
+                },
+              ]}
+            />
             {perms.edit && !cancelled ? (
               <Link
                 to="/customer-dispatches/$id/edit"
@@ -130,24 +138,6 @@ function CustomerDispatchDetailPage(): React.JSX.Element {
                 ✏️ Edit
               </Link>
             ) : null}
-            <button
-              type="button"
-              className="btn btn-ghost"
-              onClick={() => printDispatchChallan(d, client, company)}
-            >
-              Preview
-            </button>
-            <button
-              type="button"
-              className="btn btn-ghost"
-              onClick={() =>
-                void runPrint('download', { title: 'Delivery Challan', fileName: d.code }, () =>
-                  Promise.resolve(() => printDispatchChallan(d, client, company)),
-                )
-              }
-            >
-              ⬇ Download PDF
-            </button>
             {/* ADR-234 — shown only to an Invoice Entry holder. */}
             {!cancelled && d.billedStatus !== 'full' ? (
               <ActionLink
@@ -171,7 +161,53 @@ function CustomerDispatchDetailPage(): React.JSX.Element {
             ) : null}
           </>
         }
-      />
+      >
+        <ClusterGrid stack>
+          <Cluster name="Dispatch">
+            <ClusterFact
+              label="Customer"
+              empty={!d.customer}
+              title={d.customer ?? undefined}
+              value={d.customer ?? '—'}
+            />
+            <ClusterFact
+              num
+              label="SO No."
+              value={
+                <Link to="/sales-orders/$id" params={{ id: d.salesOrderId }} className="fw-700">
+                  {d.soCode ? soNoWithInternal(d.soCode, d.soInternalNo) : '—'}
+                </Link>
+              }
+            />
+            <ClusterFact num label="Dispatch Date" value={fmtDate(d.dispatchDate)} />
+            <ClusterFact num label="Total Qty" value={`${d.totalQty} pcs`} />
+          </Cluster>
+          {/* The Item + Drawing Rev each line SHIPPED (ABC/1), linked to its drawing
+              page — the challan below is a print preview and cannot carry links.
+              Only lines saved with a register Rev are listed. */}
+          {d.lines.some((l) => l.itemRevisionId) ? (
+            <Cluster name="Shipped">
+              <ClusterFact
+                span={4}
+                wrap
+                label="Drawing Rev shipped"
+                value={d.lines
+                  .filter((l) => l.itemRevisionId)
+                  .map((l, i) => (
+                    <span key={l.id}>
+                      {i > 0 ? ' · ' : null}
+                      <span className="text3">Ln {l.lineNo}</span>{' '}
+                      <ItemRevLink
+                        itemRevisionId={l.itemRevisionId}
+                        label={itemRevLabel(l.itemCode ?? l.itemCodeText, docDrawingRev(l))}
+                      />
+                    </span>
+                  ))}
+              />
+            </Cluster>
+          ) : null}
+        </ClusterGrid>
+      </DetailHeader>
 
       <CancelPendingBanner
         docType="customer_dispatch"
@@ -252,27 +288,6 @@ function CustomerDispatchDetailPage(): React.JSX.Element {
         </div>
       ) : null}
 
-      {/* The Item + Drawing Rev each line SHIPPED (ABC/1), linked to its drawing
-          page — the challan below is a print preview and cannot carry links.
-          Only lines saved with a register Rev are listed. */}
-      {d.lines.some((l) => l.itemRevisionId) ? (
-        <div style={{ maxWidth: 860, margin: '0 auto 10px', fontSize: 12 }}>
-          <span className="text3">Drawing Rev shipped:</span>{' '}
-          {d.lines
-            .filter((l) => l.itemRevisionId)
-            .map((l, i) => (
-              <span key={l.id}>
-                {i > 0 ? ' · ' : null}
-                <span className="text3">Ln {l.lineNo}</span>{' '}
-                <ItemRevLink
-                  itemRevisionId={l.itemRevisionId}
-                  label={itemRevLabel(l.itemCode ?? l.itemCodeText, docDrawingRev(l))}
-                />
-              </span>
-            ))}
-        </div>
-      ) : null}
-
       {/* A4-portrait paper preview — identical markup to the print output. */}
       <iframe
         title={`Delivery Challan ${d.code} preview`}
@@ -293,9 +308,22 @@ function CustomerDispatchDetailPage(): React.JSX.Element {
         }}
       />
 
-      <Panel title="History" bodyPadding="none">
-        <DocumentHistory entity="Dispatch" entityId={d.id} refId={d.code} />
+      {/* No /related endpoint on a dispatch, so History sits in the shared TabStrip. */}
+      <Panel>
+        <TabStrip
+          tabs={[
+            {
+              key: historyTab.key,
+              label: `${historyTab.icon} ${historyTab.title}`,
+              count: historyTab.count,
+            },
+          ]}
+          activeKey={historyTab.key}
+          label="Dispatch tabs"
+        />
+        {historyTab.render()}
       </Panel>
+
       {cancelOpen ? (
         <CancelDocDialog
           docType="customer_dispatch"

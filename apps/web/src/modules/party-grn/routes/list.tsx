@@ -20,7 +20,7 @@
 // Nothing about the data, the queries, the validation or the mutations changed.
 
 import type { PartyGrnListItem } from '@innovic/shared';
-import { createRoute } from '@tanstack/react-router';
+import { createRoute, Link } from '@tanstack/react-router';
 import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
@@ -33,7 +33,6 @@ import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { usePartyGrnLines } from '../api';
-import { NewPartyGrnModal } from '../components/new-party-grn-modal';
 import { EditPartyGrnModal } from '../components/edit-party-grn-modal';
 import { isPartyGrnCancelled, partyGrnColumns } from '../components/party-grn-columns';
 import { PartyGrnExpand } from '../components/party-grn-expand';
@@ -45,8 +44,9 @@ import { PartyMaterialIssueView } from '@/modules/party-material-issues/componen
 // Deep-link seed for Global Search (no detail page here): `?tab=issue&search=
 // IN-PMI-26-0001` opens the Issue tab with its box pre-filled. Read ONCE into
 // the local state below — tab clicks and typing stay local, never navigate.
-// `?jw=<jwsoId>` (from the JWSO screens): opens the Receive tab's New Party
-// GRN modal with that JWSO already picked. A malformed id is ignored.
+// `?jw=<jwsoId>` (an old link; the JWSO screens now go straight to the page):
+// forwards to New Party GRN with that JWSO already picked. A malformed id is
+// ignored.
 // `?page=` is the Receive register's page (ADR-201: 25 rows a page, in the URL).
 const searchSchema = z.object({
   tab: z.enum(['receive', 'issue']).optional(),
@@ -99,10 +99,15 @@ function PartyGrnListPage(): React.JSX.Element {
     }, 300);
     return () => window.clearTimeout(id);
   }, [search, term, setPage]);
-  // A `?jw=` landing opens the New Party GRN modal straight away (Receive tab).
-  const [showModal, setShowModal] = useState(
-    () => Boolean(routeSearch.jw) && (routeSearch.tab ?? 'receive') === 'receive',
-  );
+  // A `?jw=` landing forwards to the New Party GRN page (Receive tab; Entry only,
+  // as the + button is). replace: Back must not bounce through here again.
+  const forwardJw =
+    canCreate && (routeSearch.tab ?? 'receive') === 'receive' ? routeSearch.jw : undefined;
+  useEffect(() => {
+    if (forwardJw) {
+      void navigate({ to: '/party-grn/new', search: { jw: forwardJw }, replace: true });
+    }
+  }, [forwardJw, navigate]);
   const [cancelRow, setCancelRow] = useState<PartyGrnListItem | null>(null);
   const [qcRow, setQcRow] = useState<PartyGrnListItem | null>(null);
   // No detail page and no ▸ (owner 2026-10-31) — Edit opens from the row ⋯.
@@ -217,13 +222,9 @@ function PartyGrnListPage(): React.JSX.Element {
             searchPlaceholder="Search JWSO, customer, material…"
             primary={
               canCreate ? (
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  onClick={() => setShowModal(true)}
-                >
+                <Link to="/party-grn/new" className="btn btn-primary">
                   <Plus size={14} /> New Party GRN
-                </button>
+                </Link>
               ) : null
             }
           />
@@ -325,9 +326,6 @@ function PartyGrnListPage(): React.JSX.Element {
             />
           ) : null}
 
-          {showModal && canCreate ? (
-            <NewPartyGrnModal initialJwId={routeSearch.jw} onClose={() => setShowModal(false)} />
-          ) : null}
           {cancelRow ? (
             <CancelDocDialog
               docType="party_grn"

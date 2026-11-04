@@ -44,6 +44,7 @@ import { SoStatusBadge } from '@/modules/sales-orders/components/so-status-badge
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { RowMenu } from '@/ui/data';
 import { Banner, useToast } from '@/ui/feedback';
+import { Cluster, ClusterFact, ClusterGrid } from '@/ui/forms';
 import { ActionMenu, DetailHeader, PageState } from '@/ui/layout';
 import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
 import { CancelPendingBanner } from '@/modules/cancel-requests/components/cancel-pending-banner';
@@ -83,7 +84,11 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
   const isDraft = (pendingEdit.data?.rows?.length ?? 0) > 0;
   const [confirmDelete, setConfirmDelete] = useState(false);
   // ADR-197: the JWSO's own History tab (hooks run before any early return).
-  const historyTab = useHistoryTab({ entity: 'JobWorkOrder', entityId: id, refId: detail?.code });
+  const historyTab = useHistoryTab({
+    entity: 'JobWorkOrder',
+    entityId: detail?.id,
+    refId: detail?.code,
+  });
   const revChangeCount = useRevChangeCount({ jobWorkOrderId: id });
   // R6 (ADR-194): the line the Short-close dialog is asking about, or null.
   const [shortCloseLine, setShortCloseLine] = useState<JobWorkOrderLine | null>(null);
@@ -160,16 +165,8 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
   const canReceive = effectiveFormPerms(eff, 'party_create').entry && !cancelled;
   const canJwDc = effectiveFormPerms(eff, 'ospdc_create').entry && !cancelled;
   const canJwInvoice = effectiveFormPerms(eff, 'invoice_create').entry && !cancelled;
-  const goReceive = (): void =>
-    void navigate({ to: '/party-grn', search: { tab: 'receive', jw: detail.id } });
-  // `jw` is read by the JW DC screen (owned by another module). The assertion
-  // keeps this compiling whether or not that route's search type lists `jw`
-  // yet; the param still travels in the URL either way.
-  const goJwDc = (): void =>
-    void navigate({
-      to: '/jw-dc',
-      search: { tab: 'outward', jw: detail.id } as { tab: 'outward' },
-    });
+  const goReceive = (): void => void navigate({ to: '/party-grn/new', search: { jw: detail.id } });
+  const goJwDc = (): void => void navigate({ to: '/jw-dc/outward/new', search: { jw: detail.id } });
   const goJwInvoice = (): void =>
     void navigate({ to: '/invoices', search: { tab: 'jw', jw: detail.id } });
   // The most likely next step is the one real button; the other two sit in the
@@ -869,63 +866,75 @@ function DetailGrid(props: {
     fontWeight: 600,
   };
   return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', gap: '10px 24px' }}>
-      <StripItem
-        label="JWSO Date"
-        value={
-          <>
-            <span className="mono">{fmtDate(detail.jwDate)}</span>
-            <Chip changes={pendingChanges} field="jwDate" />
-          </>
-        }
-      />
-      <StripItem
-        label="Client PO No."
-        value={
-          <>
-            {detail.clientPoNo ? (
-              <span className="mono" style={{ color: 'var(--purple)', fontWeight: 700 }}>
-                {detail.clientPoNo}
-              </span>
+    <ClusterGrid stack>
+      <Cluster name="Order">
+        <ClusterFact
+          num
+          label="JWSO Date"
+          value={fmtDate(detail.jwDate)}
+          after={<Chip changes={pendingChanges} field="jwDate" />}
+        />
+        <ClusterFact
+          num
+          label="Client PO No."
+          empty={!detail.clientPoNo}
+          title={detail.clientPoNo ?? undefined}
+          value={
+            detail.clientPoNo ? (
+              <span style={{ color: 'var(--purple)' }}>{detail.clientPoNo}</span>
             ) : (
               '—'
-            )}
-            <Chip changes={pendingChanges} field="clientPoNo" />
-          </>
-        }
-      />
-      {/* ADR-243 — decided by the server from the customer's State. */}
-      <StripItem
-        label="Place of Supply"
-        value={supplyCode ? placeOfSupplyLabel(supplyCode) : '—'}
-      />
-      <StripItem label="Tax Type" value={supplyCode || supplyTax ? taxTypeLabel(supplyTax) : '—'} />
-      <div style={{ flex: '1 1 240px', minWidth: 200 }}>
-        <span className="form-label">JWSO Remarks</span>
-        <div style={{ fontWeight: 600, whiteSpace: 'pre-wrap' }}>
-          {remarks === '' ? (
-            '—'
-          ) : remarksLong && !showAllRemarks ? (
-            <>
-              {`${remarks.slice(0, 80).trimEnd()}…`}
-              <button type="button" style={toggleStyle} onClick={() => setShowAllRemarks(true)}>
-                more
-              </button>
-            </>
-          ) : (
-            <>
-              {remarks}
-              {remarksLong ? (
-                <button type="button" style={toggleStyle} onClick={() => setShowAllRemarks(false)}>
-                  less
+            )
+          }
+          after={<Chip changes={pendingChanges} field="clientPoNo" />}
+        />
+        {/* ADR-243 — decided by the server from the customer's State. */}
+        <ClusterFact
+          label="Place of Supply"
+          empty={!supplyCode}
+          value={supplyCode ? placeOfSupplyLabel(supplyCode) : '—'}
+        />
+        <ClusterFact
+          label="Tax Type"
+          empty={!(supplyCode || supplyTax)}
+          value={supplyCode || supplyTax ? taxTypeLabel(supplyTax) : '—'}
+        />
+      </Cluster>
+      <Cluster name="Notes">
+        <ClusterFact
+          span={4}
+          wrap
+          label="JWSO Remarks"
+          empty={remarks === ''}
+          value={
+            remarks === '' ? (
+              '—'
+            ) : remarksLong && !showAllRemarks ? (
+              <>
+                {`${remarks.slice(0, 80).trimEnd()}…`}
+                <button type="button" style={toggleStyle} onClick={() => setShowAllRemarks(true)}>
+                  more
                 </button>
-              ) : null}
-            </>
-          )}
-          <Chip changes={pendingChanges} field="remarks" />
-        </div>
-      </div>
-    </div>
+              </>
+            ) : (
+              <>
+                {remarks}
+                {remarksLong ? (
+                  <button
+                    type="button"
+                    style={toggleStyle}
+                    onClick={() => setShowAllRemarks(false)}
+                  >
+                    less
+                  </button>
+                ) : null}
+              </>
+            )
+          }
+          after={<Chip changes={pendingChanges} field="remarks" />}
+        />
+      </Cluster>
+    </ClusterGrid>
   );
 }
 
@@ -938,13 +947,4 @@ function Chip(props: {
 }): React.JSX.Element | null {
   const c = headerPendingChange(props.changes, props.field);
   return c ? <PendingChangeChip after={c.after} /> : null;
-}
-
-function StripItem(props: { label: string; value: React.ReactNode }): React.JSX.Element {
-  return (
-    <div style={{ minWidth: 0 }}>
-      <span className="form-label">{props.label}</span>
-      <div style={{ fontWeight: 600 }}>{props.value}</div>
-    </div>
-  );
 }

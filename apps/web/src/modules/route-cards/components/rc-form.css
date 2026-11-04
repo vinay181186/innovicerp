@@ -1,7 +1,7 @@
 /* Route Card Create / Edit — the fit-to-one-screen form
    (pro-routecard-create-edit-mockup.html frames 4 + 5, approved 2026-10-06).
 
-   Same page shape as the Route Card detail page (rc-detail.css): the page takes
+   The page takes
    exactly the content area, the facts block keeps its natural height, and the
    Operation Sequence panel takes what is left — its table is the only thing
    that scrolls, with the header row and the Total row held.

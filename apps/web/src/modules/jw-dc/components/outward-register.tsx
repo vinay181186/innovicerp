@@ -23,7 +23,6 @@ import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc
 import { useJwDcOutwardLines } from '../api';
 import { isJwDcCancelled, outwardColumns } from './outward-columns';
 import { useJwDcPrint } from './use-jwdc-print';
-import { NewOutwardModal } from './new-outward-modal';
 
 const TABLE_KEY = TABLE_KEYS.jwDcOutward;
 
@@ -64,9 +63,13 @@ export function OutwardView({
   // time, so filtering only the loaded page would miss rows. Every change goes
   // back to page 1.
   const sf = useServerSortFilter(TABLE_KEY, () => setPage(1));
-  // A `?jw=` landing opens New Outward DC at once (write access only — the
-  // modal is gated the same way the + button is).
-  const [showModal, setShowModal] = useState(() => Boolean(forJwId));
+  // A `?jw=` landing forwards to the New Outward DC page (write access only, as
+  // the + button is). replace: Back must not bounce through here again.
+  useEffect(() => {
+    if (forJwId && canWrite) {
+      void navigate({ to: '/jw-dc/outward/new', search: { jw: forJwId }, replace: true });
+    }
+  }, [forJwId, canWrite, navigate]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const { data, isLoading, isError, error } = useJwDcOutwardLines({
@@ -111,9 +114,9 @@ export function OutwardView({
         searchPlaceholder="Search DC, PO, vendor…"
         primary={
           canWrite ? (
-            <button type="button" className="btn btn-primary" onClick={() => setShowModal(true)}>
+            <Link to="/jw-dc/outward/new" className="btn btn-primary">
               <Plus size={14} /> New Outward DC
-            </button>
+            </Link>
           ) : null
         }
       />
@@ -204,9 +207,6 @@ export function OutwardView({
         />
       ) : null}
 
-      {showModal && canWrite ? (
-        <NewOutwardModal forJwId={forJwId} onClose={() => setShowModal(false)} />
-      ) : null}
       {cancelRow ? (
         <CancelDocDialog
           docType="jw_dc_outward"

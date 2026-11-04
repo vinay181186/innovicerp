@@ -3,8 +3,8 @@
 //
 // This file is the ROUTE + the tab shell only. Each register lives on the shared
 // FIT DataTable in its own sibling under ../components (ADR-199, table standard
-// 2026-10-01): outward-register / inward-register, their columns, and the two
-// create modals.
+// 2026-10-01): outward-register / inward-register and their columns. The two
+// create forms are their own pages (routes/outward-create, routes/inward-create).
 
 import { createRoute } from '@tanstack/react-router';
 import { z } from 'zod';
@@ -20,8 +20,8 @@ const searchSchema = z.object({
   // pre-fills the active view's search box. Read ONCE by the Outward / Inward
   // views below; typing afterwards stays local.
   search: z.string().optional(),
-  // `?jw=<jwsoId>` (JWSO detail → "JW DC"): opens New Outward DC straight
-  // away, naming that JWSO. A malformed id is ignored.
+  // `?jw=<jwsoId>` (an old link; JWSO detail now goes straight to the page):
+  // forwards to New Outward DC, naming that JWSO. A malformed id is ignored.
   jw: z.string().uuid().optional().catch(undefined),
 });
 

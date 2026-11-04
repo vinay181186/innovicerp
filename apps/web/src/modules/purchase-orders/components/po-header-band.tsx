@@ -1,18 +1,12 @@
-// PO detail header — one four-column band: SUPPLIER | ORDER REFERENCES |
-// TOTALS | TAX & APPROVAL, separated by hairline rules, under an accent bar
-// coloured by status.
+// PO detail header facts — the one shared detail layout, `<ClusterGrid stack>`:
+// label above value, named clusters in the order a PO is read — who it is with,
+// which order it is, how much has come in, what it is worth (ending on Total,
+// the row's result), and who signed it off.
 //
-// Replaces three stacked blocks that each re-stated the same header (a 2-up
-// "Vendor / PO Details" box pair with its own borders + grey fill, a 6-up row of
-// bordered KPI tiles, then a loose wrapped strip of label/value pairs) — ~3
-// screens' worth of chrome for one page of facts, each block with a different
-// border, fill, alignment and value size.
-//
-// PRESENTATION ONLY. Same fields, same values, same sources — nothing is
-// computed, fetched or formatted differently here; the blocks were merged and
-// restyled. Every colour is a token (no hard-coded hex), and the type scale is
-// the app's: 11px Title Case captions, 11px muted labels, 12–13px values, mono
-// for codes and money.
+// Owner 2026-11-04: this replaced a hand-made four-column band (SUPPLIER | ORDER
+// REFERENCES | TOTALS | TAX & APPROVAL). PRESENTATION ONLY — same facts, same
+// values, same sources, same price gate; nothing is computed or fetched
+// differently here. A fact that used to vanish when blank now shows `—`.
 
 import type { DocumentEditChange, PurchaseOrderDetail, Vendor } from '@innovic/shared';
 import { fmtDate, fmtDateTime } from '@/lib/date';
@@ -26,77 +20,8 @@ import {
   signedRoundOff,
   taxTypeLabel as gstTaxTypeLabel,
 } from '@/modules/sales-orders/lib/gst-rows';
+import { Cluster, ClusterFact, ClusterGrid } from '@/ui/forms';
 import { PO_TYPE_LABELS, taxTypeLabel } from '../lib/po-labels';
-
-/** Accent bar — the same reading the status badge already gives: green closed,
- *  red cancelled (owner 2026-11-03), grey draft, blue open. The retired `partial` / `qc_pending`
- *  codes fall through to blue with open (ADR-222): an order on one of those
- *  seven old rows reads as Open everywhere, accent included. */
-function accentFor(status: PurchaseOrderDetail['status']): string {
-  if (status === 'closed') return 'var(--green)';
-  if (status === 'cancelled') return 'var(--red)';
-  if (status === 'draft') return 'var(--text3)';
-  return 'var(--blue)';
-}
-
-const CAPTION: React.CSSProperties = {
-  fontSize: 11,
-  fontWeight: 700,
-  color: 'var(--text3)',
-  marginBottom: 8,
-};
-
-/** One column of the band.
- *
- *  The dividers are NOT per-column borders: a 1px `var(--border)` left border
- *  read as nothing against the white panel, and it only ran as tall as its own
- *  column. Instead the grid carries a 1px gap over a `--border2` background and
- *  each column paints itself `--bg2` — so the gap IS the divider: always the
- *  full height of the tallest column, and one shade stronger. */
-function Col({
-  caption,
-  children,
-}: {
-  caption: string;
-  children: React.ReactNode;
-}): React.JSX.Element {
-  return (
-    <div style={{ padding: '12px 16px', minWidth: 0, background: 'var(--bg2)' }}>
-      <div style={CAPTION}>{caption}</div>
-      {children}
-    </div>
-  );
-}
-
-/** Label left, value right — the shape used by the reference and TOTALS columns.
- *  `align` right-aligns the value for money/qty columns. */
-function Row({
-  label,
-  value,
-  align = 'left',
-}: {
-  label: string;
-  value: React.ReactNode;
-  align?: 'left' | 'right';
-}): React.JSX.Element {
-  return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'baseline',
-        justifyContent: align === 'right' ? 'space-between' : 'flex-start',
-        gap: 10,
-        marginBottom: 5,
-        fontSize: 12,
-      }}
-    >
-      <span className="text3" style={{ flexShrink: 0, minWidth: align === 'right' ? 0 : 96 }}>
-        {label}
-      </span>
-      <span style={{ fontWeight: 700, textAlign: align, minWidth: 0 }}>{value}</span>
-    </div>
-  );
-}
 
 export function PoHeaderBand({
   detail,
@@ -118,18 +43,20 @@ export function PoHeaderBand({
   pendingChanges?: readonly DocumentEditChange[];
 }): React.JSX.Element {
   // The PO edit diff emits these field keys (purchase-orders/service.ts).
-  const poTypePending = headerPendingChange(pendingChanges, 'poType');
-  const poDatePending = headerPendingChange(pendingChanges, 'poDate');
-  const vendorPending = headerPendingChange(pendingChanges, 'vendorId');
-  const remarksPending = headerPendingChange(pendingChanges, 'remarks');
-  const approvalRemarksPending = headerPendingChange(pendingChanges, 'approvalRemarks');
-  const dueDatePending = headerPendingChange(pendingChanges, 'dueDate');
-  const prCodePending = headerPendingChange(pendingChanges, 'prCodeText');
+  const chip = (field: string): React.JSX.Element | null => {
+    const c = headerPendingChange(pendingChanges, field);
+    return c ? <PendingChangeChip after={c.after} /> : null;
+  };
   // Full address incl. pincode (A38 / A39) — street, city, state, pincode.
   const address = [vendor?.addressLine1, vendor?.city, vendor?.state, vendor?.pincode]
     .filter(Boolean)
     .join(', ');
+  const vendorCode = detail.vendorCode ?? detail.vendorCodeText;
+  const vendorName = detail.vendorName ?? detail.vendorCodeText;
   const rejected = Boolean(detail.rejectedAt ?? detail.rejectedBy ?? detail.rejectionReason);
+  // Money is dropped entirely for viewers who may not see prices — the API
+  // returns null for these amounts.
+  const moneyShown = detail.totalAmount != null;
   // ADR-246 — the server's money roll-up (CGST + SGST or IGST from ONE GST %,
   // Round-off, rounded total). The server sends it on the detail read AND on
   // the create / update / approve responses. It is null for an old PO whose
@@ -142,269 +69,197 @@ export function PoHeaderBand({
       (Number(detail.sgstPct ?? 0) + Number(detail.cgstPct ?? 0) + Number(detail.igstPct ?? 0)) *
         100,
     ) / 100;
+  const taxRows: { label: string; value: string }[] = totals
+    ? [
+        ...gstTaxRows(totals).map((r) => ({ label: r.label, value: `₹${r.amount.toFixed(2)}` })),
+        { label: 'Round-off', value: signedRoundOff(totals.roundOff) },
+      ]
+    : [{ label: 'Tax', value: `₹${(detail.taxAmount ?? 0).toFixed(2)}` }];
+  // Subtotal + tax rows + Total comes to 3, 4 or 5 facts. Four fill the row; three
+  // let Total take the spare cell; five need a `wide` row, Total alone on the
+  // second line below the 8-across width.
+  const moneyFacts = taxRows.length + 2;
+  const totalSpan = moneyFacts === 3 ? 2 : moneyFacts === 5 ? 4 : 1;
 
   return (
-    <div style={{ display: 'flex', alignItems: 'stretch' }}>
-      <div style={{ width: 4, flexShrink: 0, background: accentFor(detail.status) }} />
-      <div
-        style={{
-          flex: 1,
-          minWidth: 0,
-          display: 'grid',
-          gridTemplateColumns:
-            'minmax(200px, 1.2fr) minmax(200px, 1.3fr) minmax(170px, 0.9fr) minmax(220px, 1.4fr)',
-          // 1px gap over a border-coloured ground = the vertical dividers.
-          // `--border3` (the darkest of the three border depths) — `--border2`
-          // still read as too faint against the white columns.
-          gap: 1,
-          background: 'var(--border3)',
-        }}
-      >
-        {/* ── Vendor ── */}
-        <Col caption="Vendor">
-          {(detail.vendorCode ?? detail.vendorCodeText) ? (
-            <div
-              className="mono fw-700"
-              style={{ color: 'var(--purple)', fontSize: 13, marginBottom: 2 }}
-            >
-              {detail.vendorCode ?? detail.vendorCodeText}
-            </div>
-          ) : null}
-          <div className="fw-700" style={{ fontSize: 14, marginBottom: 4 }}>
-            {detail.vendorName ?? detail.vendorCodeText ?? '—'}
-            {vendorPending ? <PendingChangeChip after={vendorPending.after} /> : null}
-          </div>
-          {address ? (
-            <div className="text3" style={{ fontSize: 11, marginBottom: 4 }}>
-              {address}
-            </div>
-          ) : null}
-          {vendor?.gstNumber ? (
-            <div style={{ fontSize: 11 }}>
-              <span className="text3">GSTIN </span>
-              <span className="mono fw-700">{vendor.gstNumber}</span>
-            </div>
-          ) : null}
-          {vendor?.contactPerson ? (
-            <div style={{ fontSize: 11, marginTop: 2 }}>
-              <span className="text3">Contact </span>
-              <span className="fw-700">{vendor.contactPerson}</span>
-            </div>
-          ) : null}
-        </Col>
+    <div className="panel-body">
+      <ClusterGrid stack>
+        <Cluster name="Vendor">
+          <ClusterFact
+            num
+            label="Vendor Code"
+            empty={!vendorCode}
+            value={vendorCode ? <span style={{ color: 'var(--purple)' }}>{vendorCode}</span> : '—'}
+          />
+          <ClusterFact
+            label="Vendor"
+            empty={!vendorName}
+            title={vendorName ?? undefined}
+            value={vendorName ?? '—'}
+            after={chip('vendorId')}
+          />
+          <ClusterFact
+            num
+            label="GSTIN"
+            empty={!vendor?.gstNumber}
+            value={vendor?.gstNumber ?? '—'}
+          />
+          <ClusterFact
+            label="Contact"
+            empty={!vendor?.contactPerson}
+            title={vendor?.contactPerson ?? undefined}
+            value={vendor?.contactPerson ?? '—'}
+          />
+        </Cluster>
+        <Cluster name={null}>
+          <ClusterFact
+            span={4}
+            wrap
+            label="Vendor Address"
+            empty={!address}
+            value={address || '—'}
+          />
+        </Cluster>
 
-        {/* ── Order references ── */}
-        <Col caption="Order References">
-          <Row
+        {/* Eight facts, or seven with GST % hidden — then SO No. takes its room. */}
+        <Cluster name="Order" wide>
+          <ClusterFact
+            num
             label="PO No."
-            value={
-              <span className="mono" style={{ color: 'var(--blue)', fontSize: 13 }}>
-                {detail.code}
-              </span>
-            }
+            value={<span style={{ color: 'var(--blue)' }}>{detail.code}</span>}
           />
-          <Row
+          <ClusterFact
             label="PO Type"
-            value={
-              <>
-                {PO_TYPE_LABELS[detail.poType]}
-                {poTypePending ? <PendingChangeChip after={poTypePending.after} /> : null}
-              </>
-            }
+            value={PO_TYPE_LABELS[detail.poType]}
+            after={chip('poType')}
           />
-          <Row
-            label="PO Date"
-            value={
-              <>
-                <span className="mono">{fmtDate(detail.poDate)}</span>
-                {poDatePending ? <PendingChangeChip after={poDatePending.after} /> : null}
-              </>
-            }
+          <ClusterFact num label="PO Date" value={fmtDate(detail.poDate)} after={chip('poDate')} />
+          <ClusterFact
+            num
+            label="Due Date"
+            empty={!detail.dueDate}
+            value={fmtDate(detail.dueDate)}
+            after={chip('dueDate')}
           />
-          <Row
+          <ClusterFact
+            num
             label="PR No."
+            empty={!detail.prCodeText}
             value={
-              <>
-                {detail.prCodeText ? (
-                  <span className="mono" style={{ color: 'var(--purple)' }}>
-                    {detail.prCodeText}
-                  </span>
-                ) : (
-                  <span className="text3">—</span>
-                )}
-                {prCodePending ? <PendingChangeChip after={prCodePending.after} /> : null}
-              </>
+              detail.prCodeText ? (
+                <span style={{ color: 'var(--purple)' }}>{detail.prCodeText}</span>
+              ) : (
+                '—'
+              )
             }
+            after={chip('prCodeText')}
           />
           {/* The customer order this PO ultimately serves, resolved through the
               PO lines' source SO line. Planning stamps it on every line of a PO
               raised off a Job Card; a hand-raised PO has no order behind it. */}
-          <Row
+          <ClusterFact
+            num
+            span={moneyShown ? 1 : 2}
             label="SO No."
+            empty={!detail.soCode}
             value={
               detail.soCode ? (
-                <span className="mono" style={{ color: 'var(--purple)' }}>
+                <span style={{ color: 'var(--purple)' }}>
                   {soNoWithInternal(detail.soCode, detail.soInternalNo)}
                   {detail.soLineNo ? <span className="text3"> · Ln {detail.soLineNo}</span> : null}
                 </span>
               ) : (
-                <span className="text3">—</span>
+                '—'
               )
             }
           />
-        </Col>
-
-        {/* ── Totals ── */}
-        <Col caption="Totals">
-          <Row
-            label="Lines"
-            value={<span className="mono">{detail.lines.length}</span>}
-            align="right"
-          />
-          <Row label="Total Qty" value={<span className="mono">{totalQty}</span>} align="right" />
-          <Row
-            label="GRN Received"
-            value={
-              <span className="mono" style={{ color: 'var(--green2)' }}>
-                {grnReceivedQty}
-              </span>
-            }
-            align="right"
-          />
-          {/* Accepted = the pieces that passed QC. Pending reads off this. */}
-          <Row
-            label="Accepted"
-            value={
-              <span className="mono" style={{ color: 'var(--green2)' }}>
-                {qcAcceptedQty}
-              </span>
-            }
-            align="right"
-          />
-          {/* Money rows are dropped entirely for viewers who may not see
-              prices — the API returns null for these amounts. */}
-          {detail.totalAmount == null ? null : (
-            <>
-              <Row
-                label="Subtotal"
-                value={<span className="mono">₹{(detail.subtotal ?? 0).toFixed(2)}</span>}
-                align="right"
-              />
-              {totals ? (
-                <>
-                  {gstTaxRows(totals).map((r) => (
-                    <Row
-                      key={r.label}
-                      label={r.label}
-                      value={<span className="mono">₹{r.amount.toFixed(2)}</span>}
-                      align="right"
-                    />
-                  ))}
-                  <Row
-                    label="Round-off"
-                    value={<span className="mono">{signedRoundOff(totals.roundOff)}</span>}
-                    align="right"
-                  />
-                </>
-              ) : (
-                <Row
-                  label="Tax"
-                  value={<span className="mono">₹{(detail.taxAmount ?? 0).toFixed(2)}</span>}
-                  align="right"
-                />
-              )}
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'baseline',
-                  gap: 10,
-                  // Matches the column dividers' weight so the Total rule doesn't
-                  // read lighter than the lines crossing beside it.
-                  borderTop: '1px solid var(--border3)',
-                  paddingTop: 6,
-                  marginTop: 2,
-                }}
-              >
-                <span style={{ fontSize: 12, fontWeight: 700 }}>Total</span>
-                <span className="mono fw-700" style={{ fontSize: 16, color: 'var(--green2)' }}>
-                  ₹{(totals?.grandTotal ?? detail.totalAmount).toFixed(2)}
-                </span>
-              </div>
-            </>
-          )}
-        </Col>
-
-        {/* ── Tax & approval ── */}
-        <Col caption="Tax & Approval">
           {/* ADR-246 — ONE GST %; the Tax Type is the server's, from the
               vendor's State (null with totals = State unknown → CGST + SGST). */}
-          {detail.totalAmount == null ? null : (
-            <Row label="GST %" value={<span className="mono">{gstPercent}%</span>} />
-          )}
-          <Row
+          {moneyShown ? <ClusterFact num label="GST %" value={`${gstPercent}%`} /> : null}
+          <ClusterFact
             label="Tax Type"
             value={totals ? gstTaxTypeLabel(totals.taxType) : taxTypeLabel(detail.taxType)}
           />
-          <Row
-            label="Due Date"
-            value={
-              <>
-                <span className="mono">{fmtDate(detail.dueDate)}</span>
-                {dueDatePending ? <PendingChangeChip after={dueDatePending.after} /> : null}
-              </>
-            }
+        </Cluster>
+
+        <Cluster name="Quantity">
+          <ClusterFact num label="Lines" value={detail.lines.length} />
+          <ClusterFact num label="Total Qty" value={totalQty} />
+          <ClusterFact
+            num
+            label="GRN Received"
+            value={<span style={{ color: 'var(--green2)' }}>{grnReceivedQty}</span>}
           />
-          {detail.approvedAt ? (
-            <Row
-              label="Approved At"
-              value={<span className="mono">{fmtDateTime(detail.approvedAt)}</span>}
+          {/* Accepted = the pieces that passed QC. Pending reads off this. */}
+          <ClusterFact
+            num
+            label="Accepted"
+            value={<span style={{ color: 'var(--green2)' }}>{qcAcceptedQty}</span>}
+          />
+        </Cluster>
+
+        {moneyShown ? (
+          <Cluster name="Amount" wide={moneyFacts === 5}>
+            <ClusterFact num label="Subtotal" value={`₹${(detail.subtotal ?? 0).toFixed(2)}`} />
+            {taxRows.map((r) => (
+              <ClusterFact key={r.label} num label={r.label} value={r.value} />
+            ))}
+            <ClusterFact
+              num
+              lead
+              span={totalSpan}
+              label="Total"
+              value={`₹${(totals?.grandTotal ?? detail.totalAmount ?? 0).toFixed(2)}`}
             />
-          ) : null}
-          {detail.approvalRemarks || approvalRemarksPending ? (
-            <Row
-              label="Approval Remarks"
+          </Cluster>
+        ) : null}
+
+        <Cluster name="Approval">
+          <ClusterFact
+            num
+            label="Approved At"
+            empty={!detail.approvedAt}
+            value={fmtDateTime(detail.approvedAt)}
+          />
+          <ClusterFact
+            wrap
+            label="Approval Remarks"
+            empty={!detail.approvalRemarks}
+            value={detail.approvalRemarks ?? '—'}
+            after={chip('approvalRemarks')}
+          />
+          <ClusterFact
+            span={2}
+            wrap
+            label="Remarks"
+            empty={!detail.remarks}
+            value={detail.remarks ?? '—'}
+            after={chip('remarks')}
+          />
+        </Cluster>
+        {rejected ? (
+          <Cluster name={null}>
+            <ClusterFact
+              num
+              label="Rejected At"
+              value={<span style={{ color: 'var(--red2)' }}>{fmtDateTime(detail.rejectedAt)}</span>}
+            />
+            <ClusterFact
+              span={3}
+              wrap
+              label="Rejection Reason"
+              empty={!detail.rejectionReason}
               value={
-                <>
-                  {detail.approvalRemarks ?? '—'}
-                  {approvalRemarksPending ? (
-                    <PendingChangeChip after={approvalRemarksPending.after} />
-                  ) : null}
-                </>
+                detail.rejectionReason ? (
+                  <span style={{ color: 'var(--red2)' }}>{detail.rejectionReason}</span>
+                ) : (
+                  '—'
+                )
               }
             />
-          ) : null}
-          {rejected ? (
-            <>
-              <Row
-                label="Rejected At"
-                value={
-                  <span className="mono" style={{ color: 'var(--red2)' }}>
-                    {fmtDateTime(detail.rejectedAt)}
-                  </span>
-                }
-              />
-              {detail.rejectionReason ? (
-                <Row
-                  label="Rejection Reason"
-                  value={<span style={{ color: 'var(--red2)' }}>{detail.rejectionReason}</span>}
-                />
-              ) : null}
-            </>
-          ) : null}
-          {detail.remarks || remarksPending ? (
-            <div style={{ fontSize: 11, marginTop: 6 }}>
-              <div className="text3" style={{ marginBottom: 2 }}>
-                Remarks
-              </div>
-              <div style={{ whiteSpace: 'pre-wrap' }}>
-                {detail.remarks ?? '—'}
-                {remarksPending ? <PendingChangeChip after={remarksPending.after} /> : null}
-              </div>
-            </div>
-          ) : null}
-        </Col>
-      </div>
+          </Cluster>
+        ) : null}
+      </ClusterGrid>
     </div>
   );
 }

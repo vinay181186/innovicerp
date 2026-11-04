@@ -13,6 +13,7 @@
 import { NC_STATUS_LABELS, type NcRegister } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { useCanOpen } from '@/components/shared/action-link';
+import { Cluster, ClusterFact } from '@/ui/forms';
 
 export function NcLinksBlock(props: {
   detail: NcRegister;
@@ -40,9 +41,9 @@ export function NcLinksBlock(props: {
     return null;
   const linkStyle = { textDecoration: 'none' } as const;
   return (
-    <div className="form-grid" style={{ fontSize: 12, marginBottom: 10 }}>
+    <Cluster name="Linked" wide>
       {childId ? (
-        <InlinePair label={detail.disposition === 'repair' ? 'Repair JC:' : 'Rework JC:'}>
+        <InlinePair label={detail.disposition === 'repair' ? 'Repair JC' : 'Rework JC'}>
           <Link
             to="/job-cards/$id"
             params={{ id: childId }}
@@ -55,7 +56,7 @@ export function NcLinksBlock(props: {
         </InlinePair>
       ) : null}
       {poId ? (
-        <InlinePair label="Replacement PO No.:">
+        <InlinePair label="Replacement PO No.">
           <Link
             to="/purchase-orders/$id"
             params={{ id: poId }}
@@ -69,7 +70,7 @@ export function NcLinksBlock(props: {
         </InlinePair>
       ) : null}
       {dcId ? (
-        <InlinePair label="DC No.:">
+        <InlinePair label="DC No.">
           <Link
             to="/delivery-challans/$id"
             params={{ id: dcId }}
@@ -83,7 +84,7 @@ export function NcLinksBlock(props: {
         </InlinePair>
       ) : null}
       {detail.parentNcId ? (
-        <InlinePair label="Earlier NC:">
+        <InlinePair label="Earlier NC">
           <Link
             to="/nc-register/$id"
             params={{ id: detail.parentNcId }}
@@ -96,7 +97,7 @@ export function NcLinksBlock(props: {
         </InlinePair>
       ) : null}
       {detail.splitFromNcId ? (
-        <InlinePair label="Split from:">
+        <InlinePair label="Split from">
           <Link
             to="/nc-register/$id"
             params={{ id: detail.splitFromNcId }}
@@ -108,7 +109,7 @@ export function NcLinksBlock(props: {
         </InlinePair>
       ) : null}
       {siblings.length > 0 ? (
-        <InlinePair label="Split off this NC:">
+        <InlinePair label="Split off this NC">
           {siblings.map((s, i) => (
             <span key={s.id}>
               {i > 0 ? ', ' : ''}
@@ -125,16 +126,10 @@ export function NcLinksBlock(props: {
           ))}
         </InlinePair>
       ) : null}
-    </div>
+    </Cluster>
   );
 }
 
-// Same inline "Label: <b>value</b>" pair the detail grid uses (legacy
-// HTML L22728-22736), kept local so this block has no import back into the route.
 function InlinePair(props: { label: string; children: React.ReactNode }): React.JSX.Element {
-  return (
-    <div>
-      <span className="text3">{props.label}</span> <b>{props.children}</b>
-    </div>
-  );
+  return <ClusterFact label={props.label} value={props.children} />;
 }

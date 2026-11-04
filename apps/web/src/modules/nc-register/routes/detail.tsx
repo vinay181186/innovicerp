@@ -6,6 +6,9 @@
 // Create-DC form for a return-to-vendor NC, and one Close button that runs
 // under the server's closure gate. The legacy in-route rework row (one with
 // `reworkOpSeq`) keeps its old "Close rework" button.
+//
+// 2026-11-04 (owner): DetailHeader + ClusterGrid facts; History and Related
+// Documents are tabs, as on Sales Order detail. The StatStrip stays.
 
 import {
   type DisposeNcResult,
@@ -27,14 +30,14 @@ import {
   headerPendingChange,
 } from '@/modules/document-edits/components/pending-change-chip';
 import { fmtDate } from '@/lib/date';
-import { Panel } from '@/ui/data';
-import { ActionMenu } from '@/ui/layout';
+import { Cluster, ClusterFact, ClusterGrid } from '@/ui/forms';
+import { ActionMenu, DetailHeader } from '@/ui/layout';
 import { ConfirmDialog, useToast } from '@/ui/feedback';
 import { useCreateCapa } from '@/modules/capa/api';
 import { useJcOpsEnriched } from '@/modules/op-entry/api';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
-import { DocumentHistory } from '@/components/shared/document-history';
-import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
+import { useHistoryTab } from '@/components/shared/document-history';
+import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
@@ -82,6 +85,13 @@ function NcRegisterDetailPage(): React.JSX.Element {
   // Their per-field changes drive the inline amber chips next to the record
   // fields below. Flattened across requests (usually one).
   const pendingEdit = usePendingEditForDoc('NonConformance', detail?.id);
+  // ADR-197 — every action on this NC: who, what, qty, before → after, why.
+  // Called before the early returns (hooks rule).
+  const historyTab = useHistoryTab({
+    entity: 'NonConformance',
+    entityId: detail?.id,
+    refId: detail?.code,
+  });
   const pendingChanges = undecidedChangesOf(pendingEdit.data?.rows);
   // ADR-202 — any pending edit overlays grey "Draft" on the status chip.
   const isDraft = (pendingEdit.data?.rows?.length ?? 0) > 0;
@@ -278,42 +288,34 @@ function NcRegisterDetailPage(): React.JSX.Element {
 
   return (
     <div>
-      <Link to="/nc-register" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back to NC Register
-      </Link>
-
-      <div className="panel">
-        <div className="panel-hdr">
-          <div>
-            <div
-              className="td-code"
-              style={{ color: 'var(--cyan)', fontSize: 16, fontWeight: 700 }}
-            >
-              {detail.code}
-            </div>
-            <div
-              className="panel-title"
-              style={{ marginTop: 2, display: 'flex', alignItems: 'center', gap: 10 }}
-            >
-              <NcStatusBadge status={detail.status} draft={isDraft} />
-              {detail.linkedCapaCode ? (
-                <Link
-                  to="/nc-register"
-                  search={{ tab: 'capa', capa: detail.linkedCapaCode }}
-                  className="mono"
-                  style={{
-                    fontSize: 12,
-                    color: 'var(--purple)',
-                    fontWeight: 700,
-                    textDecoration: 'none',
-                  }}
-                  title={`Open CAPA ${detail.linkedCapaCode}`}
-                >
-                  🛡 {detail.linkedCapaCode}
-                </Link>
-              ) : null}
-            </div>
-          </div>
+      <DetailHeader
+        backLabel="Back to NC Register"
+        backTo="/nc-register"
+        renderLink={(p) => <Link {...p} />}
+        code={detail.code}
+        badges={
+          <>
+            <NcStatusBadge status={detail.status} draft={isDraft} />
+            {detail.linkedCapaCode ? (
+              <Link
+                to="/nc-register"
+                search={{ tab: 'capa', capa: detail.linkedCapaCode }}
+                className="mono"
+                style={{
+                  fontSize: 12,
+                  color: 'var(--purple)',
+                  fontWeight: 700,
+                  textDecoration: 'none',
+                }}
+                title={`Open CAPA ${detail.linkedCapaCode}`}
+              >
+                🛡 {detail.linkedCapaCode}
+              </Link>
+            ) : null}
+          </>
+        }
+        actions={
+          // Up to eight controls on a disposed NC, so this row wraps.
           <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
             <AssignTaskButton
               linkedRef={{
@@ -443,21 +445,22 @@ function NcRegisterDetailPage(): React.JSX.Element {
               </button>
             ) : null}
           </div>
-        </div>
-        <div className="panel-body">
-          {closeError || capaError ? (
-            <div style={{ marginBottom: 10 }}>
-              {closeError ? <Note tone="red">{closeError}</Note> : null}
-              {capaError ? <Note tone="red">{capaError}</Note> : null}
-            </div>
-          ) : null}
-          <DetailGrid detail={detail} jcCode={jcCode} pendingChanges={pendingChanges} />
+        }
+      >
+        {closeError || capaError ? (
+          <div style={{ marginBottom: 10 }}>
+            {closeError ? <Note tone="red">{closeError}</Note> : null}
+            {capaError ? <Note tone="red">{capaError}</Note> : null}
+          </div>
+        ) : null}
+        <ClusterGrid stack>
+          <DetailClusters detail={detail} jcCode={jcCode} pendingChanges={pendingChanges} />
           {detail.disposition || detail.dispositionDate ? (
-            <DispositionBlock detail={detail} />
+            <DispositionCluster detail={detail} />
           ) : null}
           <NcLinksBlock detail={detail} splitParent={splitParent ?? null} siblings={siblings} />
-        </div>
-      </div>
+        </ClusterGrid>
+      </DetailHeader>
 
       {/* Where the rejected pieces stand (design §3). One strip, not cards. */}
       <div style={{ margin: '10px 0' }}>
@@ -551,12 +554,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
       {/* Step-by-step path of this NC with qty and user (req. 3.5, read-only). */}
       <NcTimelinePanel ncId={detail.id} />
 
-      <RelatedDocsPanel module="nc-register" id={detail.id} />
-
-      {/* ADR-197 — every action on this NC: who, what, qty, before → after, why. */}
-      <Panel title="History" bodyPadding="none" style={{ marginTop: 10 }}>
-        <DocumentHistory entity="NonConformance" entityId={detail.id} refId={detail.code} />
-      </Panel>
+      <RelatedDocsTabs module="nc-register" id={detail.id} extraTabs={[historyTab]} />
 
       {confirmDelete ? (
         <ConfirmDialog
@@ -621,7 +619,9 @@ function NcRegisterDetailPage(): React.JSX.Element {
   );
 }
 
-function DetailGrid(props: {
+/** The NC's facts, in the order they are read: which job, which part, where the
+ *  pieces came from, what is wrong. Rendered inside the page's one ClusterGrid. */
+function DetailClusters(props: {
   detail: NcRegister;
   jcCode: string | null;
   pendingChanges: readonly DocumentEditChange[];
@@ -635,103 +635,143 @@ function DetailGrid(props: {
   //   • return_to_vendor  → the OPERATION the pieces go back out for
   //   • anything else / not yet disposed → the OPERATION (sensible default).
   const isReworkDisp = detail.disposition === 'rework';
+  const itemName = detail.itemName ?? detail.itemNameText;
+  const itemCode = detail.itemCode
+    ? itemCodeWithRev(detail.itemCode, detail.itemRevision)
+    : (detail.itemCodeText ?? '—');
+  // The vendor's cell takes whatever the row has left, so the row stays full.
+  const vendorDocs = [
+    detail.sourcePoCode,
+    detail.sourceGrnCode,
+    detail.sourceDeliveryChallanCode,
+  ].filter(Boolean).length;
   return (
     <>
-      {/* Context strip — legacy `_viewNC` header block (HTML L22721-22726). */}
-      <div
-        style={{
-          padding: 12,
-          background: 'var(--bg3)',
-          borderRadius: 8,
-          border: '1px solid var(--border)',
-          marginBottom: 14,
-          display: 'flex',
-          gap: 16,
-          flexWrap: 'wrap',
-        }}
-      >
-        <CtxField label="NC Date">
-          <b>{fmtDate(detail.ncDate)}</b>
-          <Chip changes={pendingChanges} field="ncDate" />
-        </CtxField>
-        <CtxField label="JC No.">
-          <b className="cyan">{jcCode ?? '—'}</b>
-        </CtxField>
-        <CtxField label="SO No.">
-          <b>
-            {detail.soCodeText ? soNoWithInternal(detail.soCodeText, detail.soInternalNo) : '—'}
-          </b>
-        </CtxField>
-      </div>
-      <div className="form-grid" style={{ fontSize: 12, marginBottom: 12 }}>
+      <Cluster name="Reference">
+        <ClusterFact
+          num
+          label="NC Date"
+          value={fmtDate(detail.ncDate)}
+          after={<Chip changes={pendingChanges} field="ncDate" />}
+        />
+        <ClusterFact num label="JC No." empty={!jcCode} value={jcCode ?? '—'} />
+        <ClusterFact
+          num
+          label="SO No."
+          empty={!detail.soCodeText}
+          value={detail.soCodeText ? soNoWithInternal(detail.soCodeText, detail.soInternalNo) : '—'}
+        />
         {/* POL — the CUSTOMER's own PO line number off the SO line behind this
             NC's job card. Not our SO line number; the two rarely match. */}
-        <InlinePair label="POL:">
-          <span className="mono fw-700" style={{ color: 'var(--purple)' }}>
-            {detail.clientPoLineNo ?? '—'}
-          </span>
-        </InlinePair>
-        <InlinePair label="Item Code:">
-          {/* SO pattern: the code strong-mono (td-code) in var(--text) so the
-              part reads as THE value; the name quiet beside it. CODE/REV only on
-              the live joined code; the itemCodeText fallback is what the reporter
-              typed and stays bare. */}
-          <span className="td-code" style={{ color: 'var(--text)' }}>
-            {detail.itemCode
-              ? itemCodeWithRev(detail.itemCode, detail.itemRevision)
-              : (detail.itemCodeText ?? '—')}
-          </span>
-          {(detail.itemName ?? detail.itemNameText) ? (
-            <span className="text3" style={{ marginLeft: 6, fontWeight: 400 }}>
-              {detail.itemName ?? detail.itemNameText}
-            </span>
-          ) : null}
-        </InlinePair>
-        {/* Source of the rejected material. A vendor-sourced NC (sourceVendorId
-            present, e.g. a GRN/OSP reject) shows the original vendor and its
-            PO/GRN so the return-to-vendor route is clear. An in-house NC keeps
-            the Rework-Machine XOR Operation display it always had. */}
+        <ClusterFact
+          num
+          label="POL"
+          empty={!detail.clientPoLineNo}
+          value={
+            detail.clientPoLineNo ? (
+              <span style={{ color: 'var(--purple)' }}>{detail.clientPoLineNo}</span>
+            ) : (
+              '—'
+            )
+          }
+        />
+      </Cluster>
+
+      <Cluster name="Part">
+        {/* SO pattern: the code strong-mono (td-code) in var(--text) so the part
+            reads as THE value; the name quiet beside it. CODE/REV only on the
+            live joined code; the itemCodeText fallback is what the reporter
+            typed and stays bare. */}
+        <ClusterFact
+          span={2}
+          label="Item Code"
+          title={itemName ? `${itemCode} ${itemName}` : itemCode}
+          value={
+            <>
+              <span className="td-code" style={{ color: 'var(--text)' }}>
+                {itemCode}
+              </span>
+              {itemName ? (
+                <span className="text3" style={{ marginLeft: 6, fontWeight: 400 }}>
+                  {itemName}
+                </span>
+              ) : null}
+            </>
+          }
+        />
+        <ClusterFact
+          label="Operator"
+          empty={!detail.operatorText}
+          value={detail.operatorText ?? '—'}
+          after={<Chip changes={pendingChanges} field="operatorText" />}
+        />
+        {/* `||`, not `??`: a cleared Reported By can reach the column as a blank
+            string as well as NULL, and both mean "nobody named". Both must read
+            as the dash, not as an empty gap. */}
+        <ClusterFact
+          label="Reported By"
+          empty={!detail.reportedByText}
+          value={detail.reportedByText || '—'}
+          after={<Chip changes={pendingChanges} field="reportedByText" />}
+        />
+      </Cluster>
+
+      {/* Source of the rejected material. A vendor-sourced NC (sourceVendorId
+          present, e.g. a GRN/OSP reject) shows the original vendor and its
+          PO/GRN so the return-to-vendor route is clear. An in-house NC keeps
+          the Rework-Machine XOR Operation display it always had. */}
+      <Cluster name="Source">
         {/* ADR-247 — customer material deviated at Party GRN Incoming QC. */}
         {detail.partyGrnLineId ? (
           <>
-            <InlinePair label="Source:">Customer material</InlinePair>
-            <InlinePair label="Customer:">{detail.sourceCustomerName ?? '—'}</InlinePair>
-            <InlinePair label="JWSO No.:">
-              <span className="td-code" style={{ color: 'var(--text)' }}>
-                {detail.sourceJwCode ?? '—'}
-              </span>
-            </InlinePair>
-            <InlinePair label="Party GRN No.:">
-              <span className="td-code" style={{ color: 'var(--text)' }}>
-                {detail.sourcePartyGrnCode ?? '—'}
-              </span>
-            </InlinePair>
+            <ClusterFact label="Source" value="Customer material" />
+            <ClusterFact
+              label="Customer"
+              empty={!detail.sourceCustomerName}
+              value={detail.sourceCustomerName ?? '—'}
+            />
+            <ClusterFact
+              num
+              label="JWSO No."
+              empty={!detail.sourceJwCode}
+              value={detail.sourceJwCode ?? '—'}
+            />
+            <ClusterFact
+              num
+              label="Party GRN No."
+              empty={!detail.sourcePartyGrnCode}
+              value={detail.sourcePartyGrnCode ?? '—'}
+            />
           </>
         ) : detail.sourceVendorId ? (
           <>
-            <InlinePair label="Source Vendor:">
-              <span className="td-code" style={{ color: 'var(--text)' }}>
-                {detail.sourceVendorCode ?? '—'}
-              </span>
-              {detail.sourceVendorName ? (
-                <span className="text3" style={{ marginLeft: 6, fontWeight: 400 }}>
-                  {detail.sourceVendorName}
-                </span>
-              ) : null}
-            </InlinePair>
+            <ClusterFact
+              span={vendorDocs === 3 ? 1 : vendorDocs === 2 ? 2 : vendorDocs === 1 ? 3 : 4}
+              label="Source Vendor"
+              empty={!detail.sourceVendorCode && !detail.sourceVendorName}
+              title={
+                detail.sourceVendorName
+                  ? `${detail.sourceVendorCode ?? '—'} ${detail.sourceVendorName}`
+                  : undefined
+              }
+              value={
+                <>
+                  <span className="td-code" style={{ color: 'var(--text)' }}>
+                    {detail.sourceVendorCode ?? '—'}
+                  </span>
+                  {detail.sourceVendorName ? (
+                    <span className="text3" style={{ marginLeft: 6, fontWeight: 400 }}>
+                      {detail.sourceVendorName}
+                    </span>
+                  ) : null}
+                </>
+              }
+            />
             {detail.sourcePoCode ? (
-              <InlinePair label="Source PO No.:">
-                <span className="td-code" style={{ color: 'var(--text)' }}>
-                  {detail.sourcePoCode}
-                </span>
-              </InlinePair>
+              <ClusterFact num label="Source PO No." value={detail.sourcePoCode} />
             ) : null}
             {detail.sourceGrnCode ? (
-              <InlinePair label="Source GRN No.:">
-                <span className="td-code" style={{ color: 'var(--text)' }}>
-                  {detail.sourceGrnCode}
-                </span>
-              </InlinePair>
+              <ClusterFact num label="Source GRN No." value={detail.sourceGrnCode} />
             ) : null}
             {/* ADR-217 Phase 2 — the OUTWARD challan the rejected pieces went
                 out on, the number the STORE holds. Stored on the NC, asked for
@@ -740,124 +780,105 @@ function DetailGrid(props: {
                 grouping and same `Sent on DC No.` label (docs/NAMING.md) the
                 GRN Against NC tab uses for the same fact. */}
             {detail.sourceDeliveryChallanCode ? (
-              <InlinePair label="Sent on DC No.:">
-                <span className="td-code" style={{ color: 'var(--text)' }}>
-                  {detail.sourceDeliveryChallanCode}
-                </span>
-              </InlinePair>
+              <ClusterFact num label="Sent on DC No." value={detail.sourceDeliveryChallanCode} />
             ) : null}
           </>
         ) : isReworkDisp ? (
-          <InlinePair label="Actual Machine:">{detail.machineCodeText ?? '—'}</InlinePair>
+          <ClusterFact
+            span={4}
+            label="Actual Machine"
+            empty={!detail.machineCodeText}
+            value={detail.machineCodeText ?? '—'}
+          />
         ) : (
-          <InlinePair label="Operation:">
-            {/* Op numbers show in tens (display rule, see opSrNo). */}
-            {detail.opSeq != null ? `Op ${opSrNo(detail.opSeq)}` : ''}
-            {detail.opSeq != null && operation ? ' — ' : ''}
-            {operation ?? (detail.opSeq == null ? '—' : '')}
-          </InlinePair>
+          <ClusterFact
+            span={4}
+            label="Operation"
+            empty={detail.opSeq == null && !operation}
+            value={
+              /* Op numbers show in tens (display rule, see opSrNo). */
+              <>
+                {detail.opSeq != null ? `Op ${opSrNo(detail.opSeq)}` : ''}
+                {detail.opSeq != null && operation ? ' — ' : ''}
+                {operation ?? (detail.opSeq == null ? '—' : '')}
+              </>
+            }
+          />
         )}
-        <InlinePair label="Operator:">
-          {detail.operatorText ?? '—'}
-          <Chip changes={pendingChanges} field="operatorText" />
-        </InlinePair>
-        <InlinePair label="Reported By:">
-          {/* `||`, not `??`: a cleared Reported By can reach the column as a
-              blank string as well as NULL, and both mean "nobody named". Both
-              must read as the dash, not as an empty gap. */}
-          {detail.reportedByText || '—'}
-          <Chip changes={pendingChanges} field="reportedByText" />
-        </InlinePair>
-        <InlinePair label="Reason Category:">
-          {NC_REASON_CATEGORY_LABELS[detail.reasonCategory]}
-          <Chip changes={pendingChanges} field="reasonCategory" />
-        </InlinePair>
-        <InlinePair label="Defect Description:">
-          {detail.reason ?? '—'}
-          <Chip changes={pendingChanges} field="reason" />
-        </InlinePair>
-        {detail.timeLogged ? (
-          <div className="form-full">
-            <span className="text3">⏰ Time Logged:</span> <b>{detail.timeLogged}</b>
-          </div>
-        ) : null}
-      </div>
+      </Cluster>
+
+      <Cluster name="Defect">
+        <ClusterFact
+          label="Reason Category"
+          value={NC_REASON_CATEGORY_LABELS[detail.reasonCategory]}
+          after={<Chip changes={pendingChanges} field="reasonCategory" />}
+        />
+        <ClusterFact
+          span={detail.timeLogged ? 2 : 3}
+          wrap
+          label="Defect Description"
+          empty={!detail.reason}
+          value={detail.reason ?? '—'}
+          after={<Chip changes={pendingChanges} field="reason" />}
+        />
+        {detail.timeLogged ? <ClusterFact label="Time Logged" value={detail.timeLogged} /> : null}
+      </Cluster>
     </>
   );
 }
 
-// Disposition block — legacy `_viewNC` tinted panel (HTML L22738-22749). Blue
-// tint mapped from legacy's dark-theme #3b82f6 to the light-theme --blue
-// (#2563eb) at the same alpha, per the light-theme port.
-function DispositionBlock(props: { detail: NcRegister }): React.JSX.Element {
+/** What was decided about the rejected pieces. Up to eight facts, so `wide`. */
+function DispositionCluster(props: { detail: NcRegister }): React.JSX.Element {
   const { detail } = props;
   return (
-    <div
-      style={{
-        padding: '10px 14px',
-        background: 'rgba(37, 99, 235, 0.05)',
-        border: '1px solid rgba(37, 99, 235, 0.2)',
-        borderRadius: 8,
-        marginBottom: 10,
-      }}
-    >
-      <div className="form-grid" style={{ fontSize: 12 }}>
-        <InlinePair label="Disposition:">
-          <NcDispositionBadge disposition={detail.disposition} />
-        </InlinePair>
-        <InlinePair label="Disposition Date:">{fmtDate(detail.dispositionDate)}</InlinePair>
-        <InlinePair label="Disposed By:">{detail.dispositionByText ?? ''}</InlinePair>
-        {/* Legacy in-route rework only — a new rework raises a child JC
-            (linked below) and never sets rework_op_seq. */}
-        {detail.reworkOpSeq != null ? (
-          <InlinePair label="Rework Op:">Op {opSrNo(detail.reworkOpSeq)}</InlinePair>
-        ) : null}
-        {/* Not in legacy `_viewNC`, but legacy's LIST row shows "♻ n/m done"
-            (HTML L22536) and our close-rework flow captures it. Kept. */}
-        {detail.disposition === 'rework' && detail.reworkDoneQty ? (
-          <InlinePair label="Rework Completed:">
-            {Number(detail.reworkDoneQty)} of {Number(detail.rejectedQty)}
-          </InlinePair>
-        ) : null}
-        {detail.disposition === 'scrap' && Number(detail.scrapCost) > 0 ? (
-          <InlinePair label="Scrap Cost:">
-            <span className="red">₹{Number(detail.scrapCost).toFixed(2)}</span>
-          </InlinePair>
-        ) : null}
-        {detail.disposition === 'make_fresh' && detail.reworkJcCodeText ? (
-          <InlinePair label="New JC:">
-            <span className="cyan">{detail.reworkJcCodeText}</span>
-          </InlinePair>
-        ) : null}
-        {detail.dispositionRemarks ? (
-          <div className="form-full">
-            <span className="text3">Remarks:</span> {detail.dispositionRemarks}
-          </div>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-// Legacy renders body fields as inline "Label: <b>value</b>" pairs inside a
-// 2-col grid (HTML L22728-22736), not as stacked .form-label groups.
-function InlinePair(props: { label: string; children: React.ReactNode }): React.JSX.Element {
-  return (
-    <div>
-      <span className="text3">{props.label}</span> <b>{props.children}</b>
-    </div>
-  );
-}
-
-function CtxField(props: { label: string; children: React.ReactNode }): React.JSX.Element {
-  return (
-    <div>
-      <span className="text3" style={{ fontSize: 11 }}>
-        {props.label}
-      </span>
-      <br />
-      {props.children}
-    </div>
+    <Cluster name="Disposition" wide>
+      <ClusterFact
+        label="Disposition"
+        value={<NcDispositionBadge disposition={detail.disposition} />}
+      />
+      <ClusterFact
+        num
+        label="Disposition Date"
+        empty={!detail.dispositionDate}
+        value={fmtDate(detail.dispositionDate)}
+      />
+      <ClusterFact
+        label="Disposed By"
+        empty={!detail.dispositionByText}
+        value={detail.dispositionByText ?? '—'}
+      />
+      {/* Legacy in-route rework only — a new rework raises a child JC (linked
+          below) and never sets rework_op_seq. */}
+      {detail.reworkOpSeq != null ? (
+        <ClusterFact num label="Rework Op" value={`Op ${opSrNo(detail.reworkOpSeq)}`} />
+      ) : null}
+      {/* Not in legacy `_viewNC`, but legacy's LIST row shows "♻ n/m done"
+          (HTML L22536) and our close-rework flow captures it. Kept. */}
+      {detail.disposition === 'rework' && detail.reworkDoneQty ? (
+        <ClusterFact
+          num
+          label="Rework Completed"
+          value={`${Number(detail.reworkDoneQty)} of ${Number(detail.rejectedQty)}`}
+        />
+      ) : null}
+      {detail.disposition === 'scrap' && Number(detail.scrapCost) > 0 ? (
+        <ClusterFact
+          num
+          label="Scrap Cost"
+          value={<span className="red">₹{Number(detail.scrapCost).toFixed(2)}</span>}
+        />
+      ) : null}
+      {detail.disposition === 'make_fresh' && detail.reworkJcCodeText ? (
+        <ClusterFact
+          num
+          label="New JC"
+          value={<span className="cyan">{detail.reworkJcCodeText}</span>}
+        />
+      ) : null}
+      {detail.dispositionRemarks ? (
+        <ClusterFact span={2} wrap label="Remarks" value={detail.dispositionRemarks} />
+      ) : null}
+    </Cluster>
   );
 }
 

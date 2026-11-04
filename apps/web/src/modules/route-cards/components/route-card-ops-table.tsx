@@ -1,10 +1,8 @@
 // The Route Card's Operation Sequence — the live routing, in op order.
 //
-// Rendered as the bare `.tbl-wrap` so it can sit straight inside a filling
-// <Panel fill bodyPadding="none">: the panel takes the height left on the page
-// and this box is what scrolls, with the header row held at the top
-// (ADR-202 list-fill). Columns, colours and row tints are unchanged from the
-// stacked-panel page this came out of.
+// Rendered as the bare `.tbl-wrap` so it sits straight inside the detail page's
+// <Panel bodyPadding="none">. Columns, colours and row tints are unchanged from
+// the stacked-panel page this came out of.
 
 import type { RouteCardOp } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';

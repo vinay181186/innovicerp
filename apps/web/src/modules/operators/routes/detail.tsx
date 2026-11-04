@@ -2,7 +2,7 @@
 // following the approved DETAIL exemplar (modules/vendors/routes/detail.tsx):
 //
 //   ← Back
-//   DetailHeader (code + name + Active chip + Edit/Delete) → ReadGrid
+//   DetailHeader (code + name + Active chip + Edit/Delete) → ClusterGrid
 //
 // An operator is a flat master — no line table, no related-document query —
 // so the composition stops at the header panel. Markup only: the hand-rolled
@@ -15,13 +15,6 @@
 // code, where the exemplar puts it. It is the app's one Active/Inactive chip
 // (`StatusBadge kind="active"`), the same one the vendor detail page and the
 // migrated client list already draw.
-//
-// FIELD SIZES — ReadGrid is the same 12-column grid as the edit form's
-// FormGrid, and each ReadField carries the size that field will have in
-// operator-form.tsx once that form is migrated:
-//
-//   Department lg · Linked user lg                      → 6 + 6 = 12
-//   Skills / Machines full                              → 12
 //
 // Linked user shows the login's NAME · EMAIL for an admin (GET /users/:id is
 // admin-only), and the NAME from the Task Board's active-user list for anyone
@@ -42,7 +35,9 @@ import { Button, Icon, StatusBadge } from '@/ui/core';
 import { useTaskUserOptions } from '@/modules/tasks/api';
 import { useUser } from '@/modules/users/api';
 import { ConfirmDialog } from '@/ui/feedback';
-import { DetailHeader, PageState, ReadField, ReadGrid } from '@/ui/layout';
+import { PendingFact } from '@/modules/document-edits/components/pending-fact';
+import { Cluster, ClusterGrid } from '@/ui/forms';
+import { DetailHeader, PageState } from '@/ui/layout';
 import { useOperator, useSoftDeleteOperator } from '../api';
 
 export const operatorDetailRoute = createRoute({
@@ -201,22 +196,26 @@ function OperatorFacts(props: {
       : (optionName ?? 'User not in the active list')
     : null;
   return (
-    <ReadGrid>
-      <ReadField
-        label="Department"
-        size="lg"
-        value={readWithChip(operator.department, pc, 'department')}
-      />
-      {/* The staged change (ADR-202) carries the linked user's raw id — acceptable. */}
-      <ReadField label="Linked User" size="lg" value={readWithChip(linkedName, pc, 'userId')} />
-
-      <ReadField
-        label="Skills / Machines"
-        size="full"
-        pre
-        value={readWithChip(operator.skills, pc, 'skills')}
-      />
-    </ReadGrid>
+    <ClusterGrid stack>
+      <Cluster name="Details">
+        <PendingFact
+          label="Department"
+          value={operator.department}
+          changes={pc}
+          field="department"
+        />
+        {/* The staged change (ADR-202) carries the linked user's raw id — acceptable. */}
+        <PendingFact label="Linked User" value={linkedName} changes={pc} field="userId" />
+        <PendingFact
+          span={2}
+          wrap
+          label="Skills / Machines"
+          value={operator.skills}
+          changes={pc}
+          field="skills"
+        />
+      </Cluster>
+    </ClusterGrid>
   );
 }
 
@@ -231,9 +230,9 @@ function Chip(props: {
   return c ? <PendingChangeChip after={c.after} /> : null;
 }
 
-/** Compose a ReadField value with its pending-change chip. When no edit is
- *  staged for `field`, the value is returned untouched so ReadField's own empty
- *  handling (em dash in --text3) still applies. When one is, the current value
+/** Compose a header value with its pending-change chip. When no edit is
+ *  staged for `field`, the value is returned untouched (blank stays blank). When one
+ *  is, the current value
  *  (or an em dash) is shown with the amber "→ after" chip after it. */
 function readWithChip(
   value: React.ReactNode,

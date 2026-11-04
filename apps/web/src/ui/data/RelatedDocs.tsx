@@ -90,8 +90,10 @@ export function RelatedDocs({
     : sections.filter((s) => (s.count ?? s.items.length) > 0);
   const extras = (extraTabs ?? []).filter((t) => t.count > 0);
 
-  const activeExtra = extras.find((t) => t.key === selectedKey) ?? null;
-  // An extra tab is only ever active because it was clicked — it never wins the
+  // No document tabs at all: the first extra (History) opens by itself, not an empty body.
+  const activeExtra =
+    extras.find((t) => t.key === selectedKey) ?? (shown.length === 0 ? (extras[0] ?? null) : null);
+  // With document tabs present, an extra tab is active only when clicked — it never wins the
   // fallback, so the panel still opens on the documents it has always shown.
   const active = activeExtra
     ? null

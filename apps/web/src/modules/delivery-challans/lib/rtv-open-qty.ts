@@ -2,8 +2,8 @@
  *
  *  ONE copy, because two screens print this number and their own comments
  *  promise the store reads the identical notice on both: +New DC → Against PO
- *  (routes/create.tsx) and the store's JW DC → New Outward DC modal
- *  (modules/jw-dc/components/new-outward-modal.tsx). Same pattern as
+ *  (routes/create.tsx) and the store's JW DC → New Outward DC page
+ *  (modules/jw-dc/routes/outward-create.tsx). Same pattern as
  *  lib/receipt-math.ts, which the GRN forms import from this module for the
  *  same reason.
  *

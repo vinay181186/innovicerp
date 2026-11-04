@@ -2,7 +2,7 @@
 // following the approved DETAIL exemplar (modules/vendors/routes/detail.tsx):
 //
 //   ← Back
-//   DetailHeader (code + name + machine-state chip + Edit/Delete) → ReadGrid
+//   DetailHeader (code + name + machine-state chip + Edit/Delete) → ClusterGrid
 //
 // A machine is a flat master — no line table, no related-document query — so
 // the composition stops at the header panel. Markup only: the hand-rolled
@@ -20,16 +20,7 @@
 // a one-line change for whoever migrates machines/routes/list.tsx, and until
 // then both draw the same four colours.
 //
-// FIELD SIZES — ReadGrid is the same 12-column grid as the edit form's
-// FormGrid, and each ReadField carries the size that field will have in
-// machine-form.tsx once that form is migrated:
-//
-//   Machine group md · Machine type md · Product code md → 4+4+4 = 12
-//   Capacity / shift lg · Shifts / day lg                → 6 + 6 = 12
-//
-// The two numbers take lg rather than sm for one reason: with the state chip
-// in the header there is no third field to close that row, and every row of
-// the grid must sum to 12.
+// Facts: <ClusterGrid stack>, label above value (owner 2026-11-04).
 
 import type { DocumentEditChange, Machine } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
@@ -45,7 +36,9 @@ import {
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Button, Icon, StatusBadge } from '@/ui/core';
 import { ConfirmDialog } from '@/ui/feedback';
-import { DetailHeader, PageState, ReadField, ReadGrid } from '@/ui/layout';
+import { PendingFact } from '@/modules/document-edits/components/pending-fact';
+import { Cluster, ClusterGrid } from '@/ui/forms';
+import { DetailHeader, PageState } from '@/ui/layout';
 import { useMachine, useMachineGroupLookup, useSoftDeleteMachine } from '../api';
 
 export const machineDetailRoute = createRoute({
@@ -239,46 +232,52 @@ function MachineFacts(props: {
     ? (groupLookup.get(machine.machineGroupId)?.code ?? null)
     : null;
   return (
-    <ReadGrid>
+    <ClusterGrid stack>
       {/* Group first: it is the master-backed field. Type stays exactly as it
           was — free text, alongside the group, not replaced by it. A machine
           with no group (every row created before this change) reads an em dash.
           The staged change (ADR-202) carries the group's raw id — acceptable. */}
-      <ReadField
-        label="Machine Group"
-        size="md"
-        mono
-        value={readWithChip(groupCode, pc, 'machineGroupId')}
-      />
-      <ReadField
-        label="Machine Type"
-        size="md"
-        value={readWithChip(machine.machineType, pc, 'machineType')}
-      />
-      <ReadField
-        label="Product Code"
-        size="md"
-        mono
-        value={readWithChip(machine.productCode, pc, 'productCode')}
-      />
-
-      <ReadField
-        label="Hours per Shift"
-        size="lg"
-        mono
-        value={readWithChip(
-          machine.capacityPerShift !== null ? String(machine.capacityPerShift) : null,
-          pc,
-          'capacityPerShift',
-        )}
-      />
-      <ReadField
-        label="Shifts / Day"
-        size="lg"
-        mono
-        value={readWithChip(String(machine.shiftsPerDay), pc, 'shiftsPerDay')}
-      />
-    </ReadGrid>
+      <Cluster name="Machine">
+        <PendingFact
+          num
+          label="Machine Group"
+          value={groupCode}
+          changes={pc}
+          field="machineGroupId"
+        />
+        <PendingFact
+          label="Machine Type"
+          value={machine.machineType}
+          changes={pc}
+          field="machineType"
+        />
+        <PendingFact
+          span={2}
+          num
+          label="Product Code"
+          value={machine.productCode}
+          changes={pc}
+          field="productCode"
+        />
+      </Cluster>
+      <Cluster name="Capacity">
+        <PendingFact
+          num
+          label="Hours per Shift"
+          value={machine.capacityPerShift !== null ? String(machine.capacityPerShift) : null}
+          changes={pc}
+          field="capacityPerShift"
+        />
+        <PendingFact
+          span={3}
+          num
+          label="Shifts / Day"
+          value={String(machine.shiftsPerDay)}
+          changes={pc}
+          field="shiftsPerDay"
+        />
+      </Cluster>
+    </ClusterGrid>
   );
 }
 
@@ -293,9 +292,9 @@ function Chip(props: {
   return c ? <PendingChangeChip after={c.after} /> : null;
 }
 
-/** Compose a ReadField value with its pending-change chip. When no edit is
- *  staged for `field`, the value is returned untouched so ReadField's own empty
- *  handling (em dash in --text3) still applies. When one is, the current value
+/** Compose a header value with its pending-change chip. When no edit is
+ *  staged for `field`, the value is returned untouched (blank stays blank). When one
+ *  is, the current value
  *  (or an em dash) is shown with the amber "→ after" chip after it. */
 function readWithChip(
   value: React.ReactNode,

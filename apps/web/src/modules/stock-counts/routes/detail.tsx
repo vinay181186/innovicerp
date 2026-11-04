@@ -3,6 +3,10 @@
 // whole numbers for NOS / SET, one line per item, approver ≠ counter, the
 // snapshot on Submit and the "below booked" confirmation on Approve. Cancel is
 // the ONE standard Cancel (ADR-235): CancelDocDialog + the pending banner.
+//
+// 2026-11-04 (owner): DetailHeader. A count that can no longer be edited reads
+// as ClusterGrid facts; New and Draft keep their controls. There is no /related
+// endpoint for this document, so History sits in a TabStrip of its own.
 import {
   STOCK_COUNT_PURPOSE_LABELS,
   STOCK_COUNT_PURPOSES,
@@ -10,9 +14,10 @@ import {
   type StockCountPurpose,
 } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { DocumentHistory } from '@/components/shared/document-history';
+import { useDocumentHistory } from '@/modules/activity-log/api';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate, todayLocal } from '@/lib/date';
 import { useExitConfirm } from '@/lib/exit-guard';
@@ -21,8 +26,9 @@ import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc
 import { CancelPendingBanner } from '@/modules/cancel-requests/components/cancel-pending-banner';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Panel } from '@/ui/data';
-import { Select } from '@/ui/forms';
-import { useSaveShortcut } from '@/ui/layout';
+import { Cluster, ClusterFact, ClusterGrid, Select } from '@/ui/forms';
+import { DetailHeader, useSaveShortcut } from '@/ui/layout';
+import { TabStrip } from '@/ui/navigation';
 import {
   useCreateStockCount,
   useReplaceStockCountLines,
@@ -55,6 +61,13 @@ function StockCountPage(): React.JSX.Element {
   const perms = effectiveFormPerms(eff, 'stockcount_create');
   const toast = useToast();
   const { data: sc, isLoading } = useStockCount(isNew ? undefined : id);
+  // The History tab's count. Same arguments as <DocumentHistory> below, so it is
+  // the same query — one request, not two.
+  const history = useDocumentHistory({
+    entity: 'StockCount',
+    entityId: sc?.id,
+    refId: sc?.code,
+  });
 
   const editable = isNew || sc?.status === 'draft';
   const [countDate, setCountDate] = useState(todayLocal());
@@ -240,31 +253,29 @@ function StockCountPage(): React.JSX.Element {
   return (
     <div>
       {exit.dialog}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-        <Link to="/stock-counts" className="btn btn-ghost btn-sm">
-          <ArrowLeft size={14} /> Stock Count
-        </Link>
-        <span className="td-code" style={{ fontSize: 16 }}>
-          {isNew ? 'New Stock Count' : sc?.code}
-        </span>
-        {!isNew ? (
-          <span className={`badge ${STATUS_BADGE[status]}`}>
-            {STOCK_COUNT_STATUS_LABELS[status]}
-          </span>
+      <DetailHeader
+        backLabel="Stock Count"
+        backTo="/stock-counts"
+        renderLink={(p) => <Link {...p} />}
+        code={isNew ? 'New Stock Count' : (sc?.code ?? '')}
+        badges={
+          !isNew ? (
+            <span className={`badge ${STATUS_BADGE[status]}`}>
+              {STOCK_COUNT_STATUS_LABELS[status]}
+            </span>
+          ) : null
+        }
+      >
+        {!isNew && sc ? (
+          <CancelPendingBanner
+            docType="stock_count"
+            docId={sc.id}
+            cancelled={sc.status === 'cancelled'}
+            {...(canCancel ? { onOpen: () => setCancelOpen(true) } : {})}
+          />
         ) : null}
-      </div>
 
-      {!isNew && sc ? (
-        <CancelPendingBanner
-          docType="stock_count"
-          docId={sc.id}
-          cancelled={sc.status === 'cancelled'}
-          {...(canCancel ? { onOpen: () => setCancelOpen(true) } : {})}
-        />
-      ) : null}
-
-      <div className="panel">
-        <div className="panel-body">
+        {editable ? (
           <div className="form-grid">
             <div className="form-grp">
               <label className="form-label" htmlFor="sc-date">
@@ -307,22 +318,54 @@ function StockCountPage(): React.JSX.Element {
               />
             </div>
           </div>
-          {sc?.status === 'posted' ? (
-            <div className="text3" style={{ fontSize: 12, marginTop: 6 }}>
-              Posted {sc.approvedAt ? fmtDate(sc.approvedAt.slice(0, 10)) : ''} by{' '}
-              {sc.approvedByName ?? '—'}
-              {sc.approvalReason ? ` · confirmed below booked: ${sc.approvalReason}` : ''}
-            </div>
-          ) : null}
-          {sc?.status === 'cancelled' ? (
-            <div className="text3" style={{ fontSize: 12, marginTop: 6 }}>
-              Cancelled — {sc.cancelReason}
-            </div>
-          ) : null}
-        </div>
-      </div>
+        ) : (
+          <ClusterGrid stack>
+            <Cluster name="Count">
+              <ClusterFact num label="Count Date" value={fmtDate(sc?.countDate ?? countDate)} />
+              <ClusterFact
+                label="Purpose"
+                value={STOCK_COUNT_PURPOSE_LABELS[sc?.purpose ?? purpose]}
+              />
+              <ClusterFact
+                span={2}
+                wrap
+                label="Remarks"
+                empty={!sc?.remarks}
+                value={sc?.remarks || '—'}
+              />
+            </Cluster>
+            {sc?.status === 'posted' ? (
+              <Cluster name="Posting">
+                <ClusterFact
+                  span={4}
+                  wrap
+                  label="Posted"
+                  value={
+                    <>
+                      {sc.approvedAt ? fmtDate(sc.approvedAt.slice(0, 10)) : ''} by{' '}
+                      {sc.approvedByName ?? '—'}
+                      {sc.approvalReason ? ` · confirmed below booked: ${sc.approvalReason}` : ''}
+                    </>
+                  }
+                />
+              </Cluster>
+            ) : null}
+            {sc?.status === 'cancelled' ? (
+              <Cluster name="Cancelled">
+                <ClusterFact
+                  span={4}
+                  wrap
+                  label="Cancel Reason"
+                  empty={!sc.cancelReason}
+                  value={sc.cancelReason ?? '—'}
+                />
+              </Cluster>
+            ) : null}
+          </ClusterGrid>
+        )}
+      </DetailHeader>
 
-      <div className="panel" style={{ marginTop: 12 }}>
+      <div className="panel">
         <StockCountLinesTable
           lines={lines}
           setLines={setLines}
@@ -409,8 +452,13 @@ function StockCountPage(): React.JSX.Element {
       </div>
 
       {!isNew && sc ? (
-        <div style={{ marginTop: 14 }}>
-          <Panel title="History" bodyPadding="none">
+        <div style={{ marginTop: 'var(--sp-3)' }}>
+          <TabStrip
+            label="Stock Count lists"
+            activeKey="history"
+            tabs={[{ key: 'history', label: 'History', count: history.data?.rows.length ?? null }]}
+          />
+          <Panel bodyPadding="none">
             <DocumentHistory entity="StockCount" entityId={sc.id} refId={sc.code} />
           </Panel>
         </div>

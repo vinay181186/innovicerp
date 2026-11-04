@@ -17,7 +17,8 @@ import { authenticatedRoute } from '@/routes/_authenticated';
 import { Button, Icon, StatusBadge } from '@/ui/core';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
-import { ActionMenu, DetailHeader, PageState, ReadField, ReadGrid } from '@/ui/layout';
+import { Cluster, ClusterFact, ClusterGrid } from '@/ui/forms';
+import { ActionMenu, DetailHeader, PageState } from '@/ui/layout';
 import { TabStrip, type TabStripTab } from '@/ui/navigation';
 import { useMlBom } from '@/modules/ml-bom/api';
 import { useMlPlan, useRefreshMlPlan } from '../api';
@@ -173,51 +174,74 @@ function MlPlanDetailPage(): React.JSX.Element {
             </Banner>
           </div>
         ) : null}
-        <ReadGrid>
-          <ReadField label="MLP No." size="sm" mono value={detail.code} />
-          <ReadField
-            label="SO No."
-            size="sm"
-            value={
-              <Link
-                to="/sales-orders/$id"
-                params={{ id: detail.salesOrderId }}
-                className="mono"
-                style={{ color: 'var(--blue)', textDecoration: 'none' }}
-              >
-                {detail.soCode}
-              </Link>
-            }
-          />
-          <ReadField label="Internal SO No." size="sm" mono value={detail.soInternalNo} />
-          <ReadField label="POL" size="sm" mono value={detail.clientPoLineNo} />
-          <ReadField
-            label="Item Code"
-            size="sm"
-            value={
-              detail.itemCode ? (
-                <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-                  {detail.itemCode}
-                </span>
-              ) : null
-            }
-          />
-          <ReadField label="Item Name" size="lg" value={detail.itemName} />
-          <ReadField label="Order Qty" size="sm" mono value={detail.orderQty} />
-          <ReadField label="Plan Qty" size="sm" mono value={detail.planQty} />
-          <ReadField
-            label="BOM No."
-            size="sm"
-            value={
-              <Link to="/ml-boms/$id" params={{ id: detail.mlBomId }} className="td-code">
-                {detail.mlBomCode}
-              </Link>
-            }
-          />
-          <ReadField label="BOM Rev" size="sm" mono value={detail.mlBomRevision} />
-          <ReadField label="Snapshot At" size="sm" mono value={fmtDateTime(detail.snapshotAt)} />
-          <ReadField label="Remarks" size="full" pre value={detail.remarks} />
-        </ReadGrid>
+        <ClusterGrid stack>
+          <Cluster name="Plan">
+            <ClusterFact num label="MLP No." value={detail.code} />
+            <ClusterFact num label="Order Qty" value={detail.orderQty} />
+            <ClusterFact num label="Plan Qty" value={detail.planQty} />
+            <ClusterFact num label="Snapshot At" value={fmtDateTime(detail.snapshotAt)} />
+          </Cluster>
+          <Cluster name="Order">
+            <ClusterFact
+              num
+              label="SO No."
+              value={
+                <Link
+                  to="/sales-orders/$id"
+                  params={{ id: detail.salesOrderId }}
+                  style={{ color: 'var(--blue)', textDecoration: 'none' }}
+                >
+                  {detail.soCode}
+                </Link>
+              }
+            />
+            <ClusterFact
+              num
+              label="Internal SO No."
+              empty={!detail.soInternalNo}
+              value={detail.soInternalNo ?? '—'}
+            />
+            <ClusterFact
+              num
+              span={2}
+              label="POL"
+              empty={!detail.clientPoLineNo}
+              value={detail.clientPoLineNo ?? '—'}
+            />
+          </Cluster>
+          <Cluster name="Item & BOM">
+            <ClusterFact
+              num
+              label="Item Code"
+              empty={!detail.itemCode}
+              value={detail.itemCode ?? '—'}
+            />
+            <ClusterFact
+              label="Item Name"
+              empty={!detail.itemName}
+              title={detail.itemName ?? undefined}
+              value={detail.itemName ?? '—'}
+            />
+            <ClusterFact
+              label="BOM No."
+              value={
+                <Link to="/ml-boms/$id" params={{ id: detail.mlBomId }} className="td-code">
+                  {detail.mlBomCode}
+                </Link>
+              }
+            />
+            <ClusterFact num label="BOM Rev" value={detail.mlBomRevision} />
+          </Cluster>
+          <Cluster name="Notes">
+            <ClusterFact
+              span={4}
+              wrap
+              label="Remarks"
+              empty={!detail.remarks}
+              value={detail.remarks ?? '—'}
+            />
+          </Cluster>
+        </ClusterGrid>
         {actionError ? (
           <div style={{ marginTop: 'var(--sp-2)' }}>
             <Banner tone="error" role="alert" flush onDismiss={() => setActionError(null)}>

@@ -36,11 +36,11 @@ import {
   placeOfSupplyLabel,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { ArrowLeft, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useCanOpen } from '@/components/shared/action-link';
-import { DocumentHistory } from '@/components/shared/document-history';
-import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
+import { useHistoryTab } from '@/components/shared/document-history';
+import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { fmtDate, todayIst } from '@/lib/date';
@@ -49,8 +49,8 @@ import { soNoWithInternal } from '@/lib/so-number';
 import { useMyCompany } from '@/modules/settings/api';
 import { StatusBadge } from '@/ui/core';
 import { Banner, useToast } from '@/ui/feedback';
-import { Panel } from '@/ui/data';
-import { ActionMenu } from '@/ui/layout';
+import { Cluster, ClusterFact, ClusterGrid } from '@/ui/forms';
+import { ActionMenu, DetailHeader } from '@/ui/layout';
 import { useAddPayment, useInvoice } from '../api';
 import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
 import { CancelPendingBanner } from '@/modules/cancel-requests/components/cancel-pending-banner';
@@ -114,6 +114,8 @@ function InvoiceDetailPage(): React.JSX.Element {
   const [payErr, setPayErr] = useState<string | null>(null);
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'invoice_create');
+  // ADR-197 — who did what to this invoice. Before the early returns (hooks rule).
+  const historyTab = useHistoryTab({ entity: 'Invoice', entityId: inv?.id, refId: inv?.code });
 
   if (eff && !perms.view) {
     return (
@@ -166,11 +168,10 @@ function InvoiceDetailPage(): React.JSX.Element {
     }
   }
 
-  // Legacy _viewInvoice L21296-21300: five separate .panel cards, 16px for
-  // SUBTOTAL/GST and 18px for TOTAL/PAID/BALANCE. `balance` is server-owned
+  // `balance` is server-owned
   // (service.ts rowToInvoice L64) — never re-derived here.
   // Money hidden for L1 Viewers: the API nulls the amounts, so the whole
-  // money stat strip, the line rate/amount columns, and the payment amounts
+  // money facts, the line rate/amount columns, and the payment amounts
   // are dropped.
   // Told by the server, not inferred from a null money field: a null also means
   // "no value yet", so probing it hid money from users entitled to see it.
@@ -188,100 +189,133 @@ function InvoiceDetailPage(): React.JSX.Element {
     taxType: inv.taxType,
     roundOff: inv.roundOff,
   });
-  const stats: { label: string; value: string; size: number; color?: string }[] = priceHidden
+  // Two accounts, each ending on its result: what was billed, then what is left.
+  const billFacts: MoneyFact[] = priceHidden
     ? []
     : [
-        { label: 'Subtotal', value: inr(inv.subtotal ?? 0), size: 16 },
+        { label: 'Subtotal', value: inr(inv.subtotal ?? 0) },
         // ADR-248 — invoiceTaxSplit picks the rule: an invoice issued before
         // round-off (roundOff null) shows exactly what it always did; a new one
         // shows CGST then SGST (or IGST) and its Round-off.
-        // The stat label drops the print's "@" ("CGST 9%"), as it always has.
+        // The label drops the print's "@" ("CGST 9%"), as it always has.
         ...taxSplit.rows.map((l) => ({
           label: l.label.replace(' @ ', ' '),
           value: inr(l.amount),
-          size: 16,
           color: 'var(--amber2)',
         })),
         ...(taxSplit.roundOff != null
-          ? [{ label: 'Round-off', value: signedRoundOff(taxSplit.roundOff), size: 16 }]
+          ? [{ label: 'Round-off', value: signedRoundOff(taxSplit.roundOff) }]
           : []),
-        { label: 'Grand Total', value: inr(inv.grandTotal ?? 0), size: 18, color: 'var(--green2)' },
-        { label: 'Paid', value: inr(inv.totalPaid ?? 0), size: 18, color: 'var(--cyan)' },
+      ];
+  const paymentFacts: MoneyFact[] = priceHidden
+    ? []
+    : [
+        { label: 'Grand Total', value: inr(inv.grandTotal ?? 0), color: 'var(--green2)' },
+        { label: 'Paid', value: inr(inv.totalPaid ?? 0), color: 'var(--cyan)' },
         ...((inv.totalTds ?? 0) > 0
-          ? [
-              {
-                label: 'TDS / Short',
-                value: inr(inv.totalTds ?? 0),
-                size: 18,
-                color: 'var(--purple)',
-              },
-            ]
+          ? [{ label: 'TDS / Short', value: inr(inv.totalTds ?? 0), color: 'var(--purple)' }]
           : []),
         {
           label: 'Outstanding Amount',
           value: inr(inv.balance ?? 0),
-          size: 18,
           color: (inv.balance ?? 0) > 0 ? 'var(--red)' : 'var(--green)',
         },
       ];
 
   return (
     <div>
-      <Link to="/invoices" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back to Invoices
-      </Link>
-
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 10,
-        }}
-      >
-        <div className="section-hdr" style={{ marginBottom: 0 }}>
-          Invoice {inv.code}{' '}
+      <DetailHeader
+        backTo="/invoices"
+        backLabel="Back to Invoices"
+        renderLink={(p) => <Link {...p} />}
+        code={inv.code}
+        name="Invoice"
+        badges={
           <StatusBadge
             kind="invoice"
             status={inv.status}
             label={INVOICE_STATUS_LABEL[inv.status] ?? inv.status}
           />
-        </div>
-        {/* One primary next step (Add Payment) + the Actions menu for the rest. */}
-        <div style={{ display: 'flex', gap: 8 }}>
-          <ActionMenu
-            items={[
-              {
-                // Opens the in-app Preview box (lib/print/preview-host.tsx).
-                label: 'Preview',
-                onClick: () => {
-                  if (!printInvoice(inv, company)) window.alert('Allow popups to print.');
+        }
+        actions={
+          /* One primary next step (Add Payment) + the Actions menu for the rest. */
+          <>
+            <ActionMenu
+              items={[
+                {
+                  // Opens the in-app Preview box (lib/print/preview-host.tsx).
+                  label: 'Preview',
+                  onClick: () => {
+                    if (!printInvoice(inv, company)) window.alert('Allow popups to print.');
+                  },
                 },
-              },
-              {
-                label: '⬇ Download PDF',
-                onClick: () =>
-                  void runPrint(
-                    'download',
-                    { title: 'Tax Invoice', fileName: inv.code },
-                    async () => () => printInvoice(inv, company),
-                  ),
-              },
-              {
-                label: 'Cancel Invoice',
-                onClick: () => setCancelOpen(true),
-                danger: true,
-                hidden: !canCancel,
-              },
-            ]}
-          />
-          {perms.entry && inv.status !== 'paid' && !isCancelled ? (
-            <button type="button" className="btn btn-primary" onClick={() => setPayOpen((v) => !v)}>
-              💳 Add Payment
-            </button>
-          ) : null}
-        </div>
-      </div>
+                {
+                  label: '⬇ Download PDF',
+                  onClick: () =>
+                    void runPrint(
+                      'download',
+                      { title: 'Tax Invoice', fileName: inv.code },
+                      async () => () => printInvoice(inv, company),
+                    ),
+                },
+                {
+                  label: 'Cancel Invoice',
+                  onClick: () => setCancelOpen(true),
+                  danger: true,
+                  hidden: !canCancel,
+                },
+              ]}
+            />
+            {perms.entry && inv.status !== 'paid' && !isCancelled ? (
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => setPayOpen((v) => !v)}
+              >
+                💳 Add Payment
+              </button>
+            ) : null}
+          </>
+        }
+      >
+        <ClusterGrid stack>
+          <Cluster name="Against">
+            <ClusterFact
+              label="Customer"
+              empty={!inv.clientName}
+              title={inv.clientName ?? undefined}
+              value={inv.clientName ?? '—'}
+            />
+            <ClusterFact
+              num
+              label="SO No."
+              value={
+                <Link
+                  to="/sales-orders/$id"
+                  params={{ id: inv.salesOrderId }}
+                  className="fw-700"
+                  disabled={!canOpen('/sales-orders/$id')}
+                  title={
+                    canOpen('/sales-orders/$id')
+                      ? undefined
+                      : 'You do not have access to Sales Orders'
+                  }
+                >
+                  {inv.soCode ? soNoWithInternal(inv.soCode, inv.soInternalNo) : '—'}
+                </Link>
+              }
+            />
+            <ClusterFact num label="Due Date" value={fmtDate(inv.dueDate)} />
+            <ClusterFact
+              label="Place of Supply"
+              empty={!inv.placeOfSupply}
+              value={inv.placeOfSupply ? placeOfSupplyLabel(inv.placeOfSupply) : '—'}
+            />
+          </Cluster>
+          {billFacts.length > 0 ? <MoneyCluster name="Bill" facts={billFacts} /> : null}
+          {paymentFacts.length > 0 ? <MoneyCluster name="Payment" facts={paymentFacts} /> : null}
+        </ClusterGrid>
+      </DetailHeader>
 
       <CancelPendingBanner
         docType="invoice"
@@ -311,28 +345,6 @@ function InvoiceDetailPage(): React.JSX.Element {
         </div>
       ) : null}
 
-      <div style={{ fontSize: 13, marginBottom: 10 }}>
-        Customer: <b>{inv.clientName ?? '—'}</b> · SO No.:{' '}
-        <Link
-          to="/sales-orders/$id"
-          params={{ id: inv.salesOrderId }}
-          className="fw-700"
-          disabled={!canOpen('/sales-orders/$id')}
-          title={
-            canOpen('/sales-orders/$id') ? undefined : 'You do not have access to Sales Orders'
-          }
-        >
-          {inv.soCode ? soNoWithInternal(inv.soCode, inv.soInternalNo) : '—'}
-        </Link>{' '}
-        · Due Date: <b>{fmtDate(inv.dueDate)}</b>
-        {inv.placeOfSupply ? (
-          <>
-            {' '}
-            · Place of Supply: <b>{placeOfSupplyLabel(inv.placeOfSupply)}</b>
-          </>
-        ) : null}
-      </div>
-
       {/* Screen only — never on the printed (legal) invoice (plan D2). */}
       {!inv.placeOfSupply ? (
         <div className="mb-2">
@@ -353,23 +365,6 @@ function InvoiceDetailPage(): React.JSX.Element {
             ))}
         </div>
       ) : null}
-
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
-        {stats.map((s) => (
-          <div
-            key={s.label}
-            className="panel"
-            style={{ padding: 10, minWidth: 100, textAlign: 'center' }}
-          >
-            <div className="text3" style={{ fontSize: 11 }}>
-              {s.label}
-            </div>
-            <div className="mono fw-700" style={{ fontSize: s.size, color: s.color }}>
-              {s.value}
-            </div>
-          </div>
-        ))}
-      </div>
 
       {payOpen ? (
         <div className="panel" style={{ marginBottom: 14 }}>
@@ -497,8 +492,8 @@ function InvoiceDetailPage(): React.JSX.Element {
               <thead>
                 <tr>
                   <th>Payment Date</th>
-                  <th>Amount</th>
-                  <th>TDS / Short</th>
+                  <th className="th-num">Amount</th>
+                  <th className="th-num">TDS / Short</th>
                   <th>Mode</th>
                   <th>Reference No.</th>
                   <th>Notes</th>
@@ -508,10 +503,10 @@ function InvoiceDetailPage(): React.JSX.Element {
                 {inv.payments.map((p) => (
                   <tr key={p.id}>
                     <td style={{ fontSize: 11 }}>{fmtDate(p.paymentDate)}</td>
-                    <td className="mono fw-700" style={{ color: 'var(--green2)' }}>
+                    <td className="mono fw-700 td-num" style={{ color: 'var(--green2)' }}>
                       {inr(p.amount ?? 0)}
                     </td>
-                    <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                    <td className="mono fw-700 td-num" style={{ color: 'var(--purple)' }}>
                       {(p.tdsAmount ?? 0) > 0 ? inr(p.tdsAmount ?? 0) : '—'}
                     </td>
                     <td style={{ fontSize: 11 }}>{p.mode}</td>
@@ -527,11 +522,7 @@ function InvoiceDetailPage(): React.JSX.Element {
         </div>
       ) : null}
 
-      <RelatedDocsPanel module="invoices" id={inv.id} />
-
-      <Panel title="History" bodyPadding="none">
-        <DocumentHistory entity="Invoice" entityId={inv.id} refId={inv.code} />
-      </Panel>
+      <RelatedDocsTabs module="invoices" id={inv.id} extraTabs={[historyTab]} />
 
       {cancelOpen ? (
         <CancelDocDialog
@@ -542,5 +533,26 @@ function InvoiceDetailPage(): React.JSX.Element {
         />
       ) : null}
     </div>
+  );
+}
+
+type MoneyFact = { label: string; value: string; color?: string };
+
+/** One account row. It has 2 to 4 facts; the last takes what the row has left. */
+function MoneyCluster(props: { name: string; facts: MoneyFact[] }): React.JSX.Element {
+  const { name, facts } = props;
+  const lastSpan = Math.max(1, 5 - facts.length) as 1 | 2 | 3 | 4;
+  return (
+    <Cluster name={name}>
+      {facts.map((s, i) => (
+        <ClusterFact
+          key={s.label}
+          num
+          span={i === facts.length - 1 ? lastSpan : 1}
+          label={s.label}
+          value={s.color ? <span style={{ color: s.color }}>{s.value}</span> : s.value}
+        />
+      ))}
+    </Cluster>
   );
 }

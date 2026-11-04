@@ -13,7 +13,7 @@
 // SO Master shape. No detail page, so a row is not clickable.
 
 import type { CustomerMaterialReturnLineRow } from '@innovic/shared';
-import { createRoute } from '@tanstack/react-router';
+import { createRoute, Link } from '@tanstack/react-router';
 import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
@@ -29,7 +29,6 @@ import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useCustomerMaterialReturnLines } from '../api';
 import { cmrColumns } from '../components/cmr-columns';
 import { CmrExpand } from '../components/cmr-expand';
-import { NewCmrModal } from '../components/new-cmr-modal';
 import { usePrintCmr } from '../components/use-print-cmr';
 
 /** The fit table's saved-layout key (kebab-case, stable — never rename). */
@@ -95,7 +94,6 @@ function CustomerMaterialReturnsListPage(): React.JSX.Element {
   const rows = data?.items ?? [];
   const columns = useMemo(() => cmrColumns(pageOffset(page) + 1), [page]);
 
-  const [showModal, setShowModal] = useState(false);
   const [cancelRow, setCancelRow] = useState<CustomerMaterialReturnLineRow | null>(null);
   const printCmr = usePrintCmr();
 
@@ -137,9 +135,9 @@ function CustomerMaterialReturnsListPage(): React.JSX.Element {
         filtersActive={sf.filtering || searchInput !== ''}
         primary={
           canCreate ? (
-            <button type="button" className="btn btn-primary" onClick={() => setShowModal(true)}>
+            <Link to="/customer-material-returns/new" className="btn btn-primary">
               <Plus size={14} /> New Return
-            </button>
+            </Link>
           ) : null
         }
       />
@@ -206,9 +204,6 @@ function CustomerMaterialReturnsListPage(): React.JSX.Element {
         />
       ) : null}
 
-      {showModal && canCreate ? (
-        <NewCmrModal onClose={() => setShowModal(false)} docPrint={printCmr} />
-      ) : null}
       {cancelRow ? (
         <CancelDocDialog
           docType="customer_material_return"

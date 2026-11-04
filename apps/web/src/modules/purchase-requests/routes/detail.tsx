@@ -37,8 +37,8 @@ import {
   PendingChangeChip,
   headerPendingChange,
 } from '@/modules/document-edits/components/pending-change-chip';
-import { DocumentHistory } from '@/components/shared/document-history';
-import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
+import { useHistoryTab } from '@/components/shared/document-history';
+import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
 import { AssignTaskModal } from '@/modules/tasks/components/task-modals';
 import { ConfirmDialog, useToast } from '@/ui/feedback';
 import { Cluster, ClusterFact, ClusterGrid, DocIdent, IdentCode, IdentSep } from '@/ui/forms';
@@ -108,6 +108,13 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
   const [cancelOpen, setCancelOpen] = useState(false);
   // Preview / ⬇ Download PDF — the PR sheet, loaded fresh (use-pr-print.ts).
   const prPrint = usePrPrint();
+  // ADR-197 — who did what to this PR, with before → after and reasons. Called
+  // before the early returns (hooks rule); it waits for the id / code to arrive.
+  const historyTab = useHistoryTab({
+    entity: 'PurchaseRequest',
+    entityId: detail?.id,
+    refId: detail?.code,
+  });
 
   if (isLoading) {
     return (
@@ -431,15 +438,7 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
         </div>
       </div>
 
-      <RelatedDocsPanel module="purchase-requests" id={detail.id} />
-
-      {/* ADR-197 — who did what to this PR, with before → after and reasons. */}
-      <div className="panel" style={{ marginTop: 14 }}>
-        <div className="panel-hdr">
-          <div className="panel-title">History</div>
-        </div>
-        <DocumentHistory entity="PurchaseRequest" entityId={detail.id} refId={detail.code} />
-      </div>
+      <RelatedDocsTabs module="purchase-requests" id={detail.id} extraTabs={[historyTab]} />
 
       {closeOpen ? (
         <CloseBalanceModal

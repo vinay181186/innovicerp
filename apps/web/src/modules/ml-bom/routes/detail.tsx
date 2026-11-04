@@ -19,7 +19,8 @@ import { authenticatedRoute } from '@/routes/_authenticated';
 import { Icon } from '@/ui/core';
 import { Panel } from '@/ui/data';
 import { Banner, ConfirmDialog, useToast } from '@/ui/feedback';
-import { ActionMenu, DetailHeader, PageState, ReadField, ReadGrid } from '@/ui/layout';
+import { Cluster, ClusterFact, ClusterGrid } from '@/ui/forms';
+import { ActionMenu, DetailHeader, PageState } from '@/ui/layout';
 import { TabStrip, type TabStripTab } from '@/ui/navigation';
 import { useDeleteMlBom, useMakeDefaultMlBom, useMlBom, useMlBomCost, useMlBomTree } from '../api';
 import { MlBomCostTab } from '../components/ml-bom-cost-tab';
@@ -228,25 +229,38 @@ function MlBomDetailPage(): React.JSX.Element {
           </>
         }
       >
-        {/* Two rows of 12: 3+3+6 · 3+3+6. */}
-        <ReadGrid>
-          <ReadField label="BOM No." size="sm" mono value={detail.code} />
-          <ReadField
-            label="Item Code"
-            size="sm"
-            value={
-              detail.itemCode ? (
-                <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-                  {detail.itemCode}
-                </span>
-              ) : null
-            }
-          />
-          <ReadField label="Item Name" size="lg" value={detail.itemName} />
-          <ReadField label="Default" size="sm" value={detail.isDefault ? '✓' : null} />
-          <ReadField label="BOM Rev" size="sm" mono value={detail.revision} />
-          <ReadField label="Remarks" size="lg" pre value={detail.remarks} />
-        </ReadGrid>
+        <ClusterGrid stack>
+          <Cluster name="Item">
+            <ClusterFact
+              num
+              label="Item Code"
+              empty={!detail.itemCode}
+              value={detail.itemCode ?? '—'}
+            />
+            <ClusterFact
+              span={3}
+              label="Item Name"
+              empty={!detail.itemName}
+              title={detail.itemName ?? undefined}
+              value={detail.itemName ?? '—'}
+            />
+          </Cluster>
+          <Cluster name="BOM">
+            <ClusterFact num label="BOM No." value={detail.code} />
+            <ClusterFact num label="BOM Rev" value={detail.revision} />
+            <ClusterFact
+              label="Default"
+              empty={!detail.isDefault}
+              value={detail.isDefault ? '✓' : '—'}
+            />
+            <ClusterFact
+              wrap
+              label="Remarks"
+              empty={!detail.remarks}
+              value={detail.remarks ?? '—'}
+            />
+          </Cluster>
+        </ClusterGrid>
         {hasPendingEdit ? (
           <div style={{ marginTop: 'var(--sp-2)' }}>
             <Banner tone="info" role="status" flush>

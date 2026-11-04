@@ -7,13 +7,16 @@
 // child.stockQty off the items master, and our Item read shape has no on-hand
 // stock field (items has min_stock_qty — a threshold, not on-hand). Computing
 // it browser-side would violate CLAUDE.md rule 1. Reported, not invented.
+//
+// 2026-11-04 (owner): DetailHeader + ClusterGrid facts; History and Related
+// Documents are tabs, as on Sales Order detail.
 
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Pencil } from 'lucide-react';
 import { useState } from 'react';
 import { useCanOpen } from '@/components/shared/action-link';
-import { DocumentHistory } from '@/components/shared/document-history';
-import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
+import { useHistoryTab } from '@/components/shared/document-history';
+import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
@@ -28,8 +31,9 @@ import {
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { StatusBadge } from '@/ui/core';
 import { RowMenu } from '@/ui/data';
-import { ConfirmDialog, Modal } from '@/ui/feedback';
-import { ActionMenu } from '@/ui/layout';
+import { Banner, ConfirmDialog, Modal } from '@/ui/feedback';
+import { Cluster, ClusterFact, ClusterGrid } from '@/ui/forms';
+import { ActionMenu, DetailHeader } from '@/ui/layout';
 import { useBomLinkedSoLines, useBomMaster, useDeleteBomMaster } from '../api';
 
 export const bomMasterDetailRoute = createRoute({
@@ -64,6 +68,12 @@ function BomMasterDetailPage(): React.JSX.Element {
   // Flattened across requests (usually one, but an older request can still be
   // open alongside a new one).
   const pendingEdit = usePendingEditForDoc('BOM', detail?.id);
+  // ADR-197 — called before the early returns (hooks rule).
+  const historyTab = useHistoryTab({
+    entity: 'BOM',
+    entityId: detail?.id,
+    refId: detail?.bomNo,
+  });
   const [delError, setDelError] = useState<string | null>(null);
   const [showLinked, setShowLinked] = useState(false);
   // Legacy _bomViewSnapshot (L8812) — which revision's archived part list is open.
@@ -147,38 +157,33 @@ function BomMasterDetailPage(): React.JSX.Element {
 
   return (
     <div>
-      <Link to="/bom-masters" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back
-      </Link>
-
-      <div className="panel">
-        <div className="panel-hdr">
-          <div>
-            <div className="td-code cyan" style={{ fontSize: 16, fontWeight: 800 }}>
-              {detail.bomNo}
-              {bomNoPending ? <PendingChangeChip after={bomNoPending.after} /> : null}
-            </div>
-            <div
-              className="panel-title"
-              style={{ marginTop: 2, display: 'flex', alignItems: 'center', gap: 10 }}
-            >
-              {detail.bomName}
-              {bomNamePending ? <PendingChangeChip after={bomNamePending.after} /> : null}
-              {/* One kind, one colour map, shared with the BOM Master list —
-                  see ui/core/StatusBadge.tsx `bom`. */}
-              <StatusBadge kind="bom" status={detail.status} />
-              {statusPending ? <PendingChangeChip after={statusPending.after} /> : null}
-              <span
-                className="mono"
-                style={{ fontSize: 11, color: 'var(--cyan)', fontWeight: 700 }}
-              >
-                BOM Rev {detail.revision}
-              </span>
-            </div>
-          </div>
-          {/* ONE primary next step (Edit / Revise) + an Actions menu for the
-              rest, Delete last in red. */}
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+      <DetailHeader
+        backLabel="Back"
+        backTo="/bom-masters"
+        renderLink={(p) => <Link {...p} />}
+        code={detail.bomNo}
+        name={
+          <>
+            {detail.bomName}
+            {bomNamePending ? <PendingChangeChip after={bomNamePending.after} /> : null}
+          </>
+        }
+        badges={
+          <>
+            {bomNoPending ? <PendingChangeChip after={bomNoPending.after} /> : null}
+            {/* One kind, one colour map, shared with the BOM Master list —
+                see ui/core/StatusBadge.tsx `bom`. */}
+            <StatusBadge kind="bom" status={detail.status} />
+            {statusPending ? <PendingChangeChip after={statusPending.after} /> : null}
+            <span className="mono" style={{ fontSize: 11, color: 'var(--cyan)', fontWeight: 700 }}>
+              BOM Rev {detail.revision}
+            </span>
+          </>
+        }
+        actions={
+          /* ONE primary next step (Edit / Revise) + an Actions menu for the
+             rest, Delete last in red. */
+          <>
             {perms.edit && (
               <Link
                 to="/bom-masters/$id/edit"
@@ -203,17 +208,26 @@ function BomMasterDetailPage(): React.JSX.Element {
                 },
               ]}
             />
-          </div>
-        </div>
-        <div className="panel-body">
-          <div className="form-grid">
+          </>
+        }
+      >
+        <ClusterGrid stack>
+          <Cluster name="BOM">
             {/* The parent leads: it is what the BOM builds. Pre-0085 BOMs have
                 none — say so plainly and point at Edit rather than showing a
-                blank, so it is obvious something is missing. */}
-            <div className="form-grp">
-              <span className="form-label">Parent Item</span>
-              <div>
-                {detail.parentItemCode ? (
+                blank, so it is obvious something is missing.
+                The proposed parent may show a raw item id (the diff carries the
+                id, not the resolved code) — acceptable, as PO/Machine do. */}
+            <ClusterFact
+              span={2}
+              label="Parent Item"
+              title={
+                detail.parentItemCode
+                  ? `${detail.parentItemCode} — ${detail.parentItemName ?? ''}`
+                  : undefined
+              }
+              value={
+                detail.parentItemCode ? (
                   <>
                     <span className="mono fw-700">{detail.parentItemCode}</span>
                     <span className="text3"> — {detail.parentItemName}</span>
@@ -222,20 +236,18 @@ function BomMasterDetailPage(): React.JSX.Element {
                   <span style={{ color: 'var(--amber2)', fontWeight: 700 }}>
                     Not set — use Edit / Revise to pick it
                   </span>
-                )}
-                {/* The proposed parent may show a raw item id (the diff carries
-                    the id, not the resolved code) — acceptable, as PO/Machine do. */}
-                {parentItemPending ? <PendingChangeChip after={parentItemPending.after} /> : null}
-              </div>
-            </div>
-            <div className="form-grp">
-              <span className="form-label">Revision Date</span>
-              <div>{fmtDate(detail.revisionDate)}</div>
-            </div>
-            <div className="form-grp">
-              <span className="form-label">Linked SO Lines</span>
-              <div>
-                {detail.linkedSoCount > 0 ? (
+                )
+              }
+              after={
+                parentItemPending ? <PendingChangeChip after={parentItemPending.after} /> : null
+              }
+            />
+            <ClusterFact num label="Revision Date" value={fmtDate(detail.revisionDate)} />
+            <ClusterFact
+              label="Linked SO Lines"
+              empty={detail.linkedSoCount === 0}
+              value={
+                detail.linkedSoCount > 0 ? (
                   <button
                     type="button"
                     className="btn btn-ghost btn-sm"
@@ -246,28 +258,20 @@ function BomMasterDetailPage(): React.JSX.Element {
                     {detail.linkedSoCount} — View
                   </button>
                 ) : (
-                  <span className="text3">—</span>
-                )}
-              </div>
-            </div>
-          </div>
-          {delError ? (
-            <div
-              style={{
-                marginTop: 8,
-                color: 'var(--red2)',
-                background: 'var(--red3)',
-                border: '1px solid var(--red2)',
-                borderRadius: 6,
-                padding: '6px 10px',
-                fontSize: 12,
-              }}
-            >
+                  '—'
+                )
+              }
+            />
+          </Cluster>
+        </ClusterGrid>
+        {delError ? (
+          <div style={{ marginTop: 'var(--sp-2)' }}>
+            <Banner tone="error" flush>
               {delError}
-            </div>
-          ) : null}
-        </div>
-      </div>
+            </Banner>
+          </div>
+        ) : null}
+      </DetailHeader>
 
       <div className="panel">
         <div className="panel-hdr">
@@ -406,7 +410,7 @@ function BomMasterDetailPage(): React.JSX.Element {
                         </span>
                       )}
                     </td>
-                    <td className="td-ctr">
+                    <td>
                       <RowMenu
                         items={[
                           {
@@ -427,14 +431,7 @@ function BomMasterDetailPage(): React.JSX.Element {
         </div>
       ) : null}
 
-      <div className="panel">
-        <div className="panel-hdr">
-          <div className="panel-title">History</div>
-        </div>
-        <DocumentHistory entity="BOM" entityId={detail.id} refId={detail.bomNo} />
-      </div>
-
-      <RelatedDocsPanel module="bom-masters" id={detail.id} />
+      <RelatedDocsTabs module="bom-masters" id={detail.id} extraTabs={[historyTab]} />
 
       {showLinked ? (
         <LinkedSoLinesModal

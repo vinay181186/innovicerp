@@ -271,6 +271,12 @@
   .cl-stack > .cl-row.cl-wide > .cl-span-2 {
     grid-column: span 2;
   }
+  .cl-stack > .cl-row.cl-wide > .cl-span-3 {
+    grid-column: span 3;
+  }
+  .cl-stack > .cl-row.cl-wide > .cl-span-4 {
+    grid-column: span 4;
+  }
 }
 /* Narrower: a `wide` cluster's facts flow onto two rows of 4, same order. The
    gutter holds column 1 on both rows so the second row starts under the first
