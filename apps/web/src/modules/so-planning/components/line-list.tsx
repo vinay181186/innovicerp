@@ -1,4 +1,4 @@
-// Level 1 of SO/JWSO Planning (ADR-267): one row per SO / JWSO line, on the shared
+// Level 1 of SO/JWSO Planning (ADR-268): one row per SO / JWSO line, on the shared
 // FIT table (TABLE_KEYS.planningLineList). The server sends one 25-row page
 // already filtered and sorted, so the table draws the rows as given and its
 // Sort & Filter (▾) runs on the server (`sf`).

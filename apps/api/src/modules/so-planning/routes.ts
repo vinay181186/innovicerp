@@ -23,7 +23,7 @@ export async function soPlanningRoutes(app: FastifyInstance): Promise<void> {
     return service.getPlanningSoList(req.user, planningSoListQuerySchema.parse(req.query));
   });
 
-  // ADR-267 — the Planning first screen, one row per line.
+  // ADR-268 — the Planning first screen, one row per line.
   // Must precede '/so-planning/:id' so 'lines' isn't captured as an :id param.
   app.get('/so-planning/lines', async (req) => {
     if (!req.user) throw new AuthenticationError();

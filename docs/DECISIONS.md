@@ -15112,7 +15112,35 @@ Owner 2026-11-02: "remove this rule — no compulsory fill of back-dated entries
 - One name per fact: Op Log "Logged By" → "Created By" (list, export, JC print, op-log history, NAMING); Job Queue's old "Sr No" (queue position) → "Queue No."; Reserved Stock pop-up drops Reserved On / Reserved By (same facts as Created On / Created By).
 - Guard test: every file that builds `leadColumns` must also add `createdByColumn`.
 
-## ADR-267: SO/JWSO Planning list — one row per POL (owner 2026-11-04)
+## ADR-267: One SO / JWSO dropdown beside the list search (owner 2026-11-04)
+
+**Date:** 2026-11-04
+**Status:** Accepted. Batch 1 built: SO Master, Job Cards, Production Orders, QC Documents (Dossier, SO Status, Register). Batches 2-5 follow.
+
+### Context
+
+The owner wants one dropdown beside the search box on every list tied to an SO: find an order by SO No., Internal SO No., Client PO No. or customer, pick it, see only that order. Mockup approved in Claude Design. Row: `IN-SO-00009 · SO-100 — Customer`, Client PO searchable but not shown; × outside the box, light red with a black ×.
+
+### Decision
+
+- The pick is one exact `values` filter on the list's existing Sort & Filter state (ADR-200), so table, count, paging, Clear and export follow with no per-endpoint parameter and no migration.
+- `GET /order-options` (one module, replaces `GET /qc-documents/dossier/orders`) is login-only by owner decision: the dropdown sits on many departments' pages, and a page-gated list would read as "No matches" (ADR-237). It exposes numbers, customer and Client PO to every login of the company.
+- Job Cards, Production Orders and the QC Register get an `orderCode` filter field: `sourceCode` adds `/lineNo`, a plan's snapshot can be blank, and a JWSO upload leaves `so_code_text` blank. It reads the live order first and the snapshot only as a fallback (§18).
+- Closed and cancelled orders are listed on list filters; the QC Dossier picker keeps leaving cancelled out. Each list keeps its own pick. Op Entry and the 16 unclear screens are left out.
+- `SearchableSelect`: ↑ ↓ scrolls the highlighted row into view (keyboard only).
+
+### Alternatives Considered
+
+- A new `orderId` query parameter on every list endpoint: rejected, about 50 endpoints changed for what the filter already does (§21).
+- Reusing `/day-logs/order-options`: rejected, open orders only, no Client PO search, needs Day Log write.
+
+### Consequences
+
+- Positive: one filter per list. Where the column prints a different value (Job Cards, Production Orders, QC Register) a pick replaces that column's ▾ filter, so the two never combine into an empty list.
+- Negative: users without JWSO rights can see JWSO numbers and customers in this dropdown.
+- Risk: a list whose map lacks the field answers 400, so a list is wired only once its field exists (§20.5).
+
+## ADR-268: SO/JWSO Planning list — one row per POL (owner 2026-11-04)
 
 **Date:** 2026-11-04
 **Status:** Accepted (owner approved plan + mockup)
@@ -15140,6 +15168,9 @@ draft plans also read "Fully Planned" while its lines read "In Planning" (open s
   Planned, and a direct rework or repair Job Card is not cover (both already so on the SO path).
 - New table key `planningLineList`, so an old saved ▾ filter cannot ask for a dead field; each
   user's saved column layout for this screen resets once.
+
+- Direct Job Card rule, SO and JWSO: a card that is any live plan's `jc_id`, wherever that plan sits, is
+  not direct cover. Same as the SQL twin `soLineDirectJcRaw`; the old code checked only the order's plans.
 
 ### Alternatives Considered
 

@@ -48,6 +48,7 @@ export const REFRESH_POLICY: Readonly<Record<string, RefreshRule>> = {
   'purchase-orders': live('purchase_orders / lines'),
   'purchase-requests': live('purchase_requests'),
   'qc-command': live('jc_ops / op_log'),
+  'order-options': live('sales_orders; JWSOs are not live, so a new one shows on the next open'),
   'qc-documents': live('qc_documents (0227)'),
   'qc-history': live('op_log / GRN'),
   'route-cards': live('route_cards / route_card_ops (0227)'),

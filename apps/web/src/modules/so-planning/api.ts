@@ -23,7 +23,7 @@ export const soPlanningKeys = {
   bom: (soLineId: string | null) => [...soPlanningKeys.all, 'bom', soLineId] as const,
 };
 
-/** Level 1 of the Planning screen (ADR-267): one row per open SO / JWSO line.
+/** Level 1 of the Planning screen (ADR-268): one row per open SO / JWSO line.
  *  Sends source + search + Sort & Filter + a 25-row page and gets that page plus
  *  the matching total. `enabled` is off while one order is open, so the list is
  *  not re-worked out behind a screen that does not show it. */

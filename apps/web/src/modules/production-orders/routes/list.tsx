@@ -45,6 +45,7 @@ import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Select } from '@/ui/forms';
 import { ActionMenu, ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { RowActions } from '@/ui/layout';
 import {
   type ProductionOrdersListArgs,
@@ -251,6 +252,7 @@ function ProductionOrdersListPage(): React.JSX.Element {
         updating={isFetching && !isLoading}
         onClearFilters={clearFilters}
         filtersActive={filtersActive}
+        orderFilter={<OrderSfFilter sf={sf} field="orderCode" columnField="sourceCode" />}
         filters={
           <Select
             aria-label="Production Order Status"

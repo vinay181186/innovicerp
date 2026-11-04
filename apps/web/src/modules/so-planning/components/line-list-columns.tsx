@@ -1,4 +1,4 @@
-// Columns for level 1 of SO/JWSO Planning (ADR-267, shared FIT table): one row
+// Columns for level 1 of SO/JWSO Planning (ADR-268, shared FIT table): one row
 // per SO / JWSO LINE. The locked lead block · Ln · Customer · Type · Due Date ·
 // Order Qty · Plan Qty · To Plan · % Planned · Plan Status · RC No. · PRO No. ·
 // JC No. · Created By. Every `sortFilterField` comes from the shared

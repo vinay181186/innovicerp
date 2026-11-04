@@ -1,4 +1,4 @@
-// SO Planning (ADR-267) — the plans of a batch of SO / JWSO lines as
+// SO Planning (ADR-268) — the plans of a batch of SO / JWSO lines as
 // PlanningPlanSummary, in ONE place. The order detail (service.ts, one order's
 // lines) and the Planning list (list-lines.ts, every open order's lines) both read
 // this, so a plan cannot read one way on the list and another on the order.

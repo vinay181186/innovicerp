@@ -1,4 +1,4 @@
-// ADR-267 — GET /so-planning/lines: one row per live line of an open SO / JWSO,
+// ADR-268 — GET /so-planning/lines: one row per live line of an open SO / JWSO,
 // every figure equal to the same line on the order detail. Fixture: list-lines.fixture.ts.
 //
 // NOTE: like every api integration test this writes to the database DATABASE_URL
@@ -212,7 +212,7 @@ describe('paging, search, Sort & Filter', () => {
   });
 });
 
-describe('JWSO: list and order view agree (ADR-267)', () => {
+describe('JWSO: list and order view agree (ADR-268)', () => {
   it('a short-closed line reads remaining 0, fully planned, on BOTH', async () => {
     const row = (await rowsOf(JW_CODE)).find((r) => r.lineNo === 3)!;
     expect(row.shortClosed).toBe(true);

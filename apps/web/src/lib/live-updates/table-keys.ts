@@ -37,6 +37,7 @@ import { purchaseRequestsKeys } from '@/modules/purchase-requests/api';
 import { qcCommandKeys } from '@/modules/qc-command/api';
 import { QC_DOCUMENT_VIEWS } from '@/modules/qc-documents/api';
 import { qcHistoryKeys } from '@/modules/qc-history/api';
+import { orderOptionKeys } from '@/modules/order-options/api';
 import { routeCardsKeys } from '@/modules/route-cards/api';
 import { salesOrdersKeys } from '@/modules/sales-orders/api';
 import { shopFloorKeys } from '@/modules/shop-floor/api';
@@ -72,6 +73,7 @@ const OP_VIEWS: readonly QueryKey[] = [
 
 const SALES_ORDER_VIEWS: readonly QueryKey[] = [
   salesOrdersKeys.all,
+  orderOptionKeys.all,
   dashboardKeys.home(),
   soStatusKeys.all,
   soOverviewKeys.all,
@@ -152,7 +154,7 @@ export const LIVE_TABLE_KEYS: Readonly<Record<LiveTable, readonly QueryKey[]>> =
   // re-read every user's Approvals badge — the 60 s poll covers it (ADR-265).
   op_log: OP_VIEWS,
   sales_orders: SALES_ORDER_VIEWS,
-  // ADR-267: the Planning list is one row per line. job_cards stays on its 60 s
+  // ADR-268: the Planning list is one row per line. job_cards stays on its 60 s
   // poll on purpose: a card changes at every op log, this list reads every open line.
   sales_order_lines: [...SALES_ORDER_VIEWS, soPlanningKeys.all],
   purchase_orders: PURCHASE_ORDER_VIEWS,

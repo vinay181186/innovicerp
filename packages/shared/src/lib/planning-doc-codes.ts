@@ -1,5 +1,5 @@
 // RC No. / PRO No. / JC No. of a planning line (owner-approved 2026-10-26;
-// moved here for ADR-267). ONE rule for which documents a line has produced, so
+// moved here for ADR-268). ONE rule for which documents a line has produced, so
 // the screen's cells and the server's search + Sort & Filter on the Planning
 // list can never read differently. Pure — no React, no database.
 //

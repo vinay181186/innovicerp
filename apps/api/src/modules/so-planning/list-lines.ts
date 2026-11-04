@@ -1,4 +1,4 @@
-// GET /so-planning/lines (ADR-267) — the Planning first screen: ONE ROW PER LINE
+// GET /so-planning/lines (ADR-268) — the Planning first screen: ONE ROW PER LINE
 // of every open SO, then every open JWSO, same line set as the order list and
 // the order detail. Every figure is built the way getPlanningSoDetail builds it,
 // from the same helpers (plan-summaries.ts, line-facts.ts) and the same shared
@@ -79,7 +79,7 @@ function composeRow(
 ): PlanningLinePageRow {
   const { orderQty } = r;
   const directJcQty = cover.directJc?.qty ?? 0;
-  // ADR-196 / ADR-267 — a line closed short wants nothing more, SO or JW.
+  // ADR-196 / ADR-268 — a line closed short wants nothing more, SO or JW.
   const shortClosed = r.shortClosedAt !== null;
   const remaining = shortClosed ? 0 : Math.max(0, orderQty - cover.totalPlanned - directJcQty);
   return toPlanningLinePageRow(
@@ -307,7 +307,7 @@ async function loadJwRows(tx: DbTransaction, companyId: string): Promise<Plannin
     )
     .orderBy(desc(jobWorkOrders.code), asc(jobWorkOrderLines.lineNo));
 
-  const { planRows, plansByLine } = await loadPlanSummariesByLine(
+  const { plansByLine } = await loadPlanSummariesByLine(
     tx,
     lines.map((l) => l.id),
     'jw',

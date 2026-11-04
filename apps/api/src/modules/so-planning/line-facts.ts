@@ -1,4 +1,4 @@
-// SO Planning (ADR-267) — the facts of a line that are not its plans: PRs raised
+// SO Planning (ADR-268) — the facts of a line that are not its plans: PRs raised
 // on it, Job Cards raised straight on it, its procurement type, the live customer
 // name. Read by the order detail (service.ts) and the Planning list
 // (list-lines.ts). All moved here unchanged from service.ts, except
@@ -131,7 +131,7 @@ export function liveJwCustomerName() {
  * table can't see, counted as covered so Planning stops reporting "yet to plan"
  * while SO Status shows progress. One query, and ANY plan's jc_id counts, wherever
  * that plan sits: the rule of soLineDirectJcRaw (lib/so-line-coverage), so the list
- * and the order view read the same whichever plans each has loaded (ADR-267).
+ * and the order view read the same whichever plans each has loaded (ADR-268).
  */
 export async function loadDirectJcsByLine(
   tx: DbTransaction,
@@ -160,7 +160,7 @@ export async function loadDirectJcsByLine(
         // ADR-185 — a Production Order's card belongs to its plan, never
         // a direct card, whether or not it is the plan's jc_id.
         isNull(jobCards.productionOrderId),
-        // Rework/repair children are not extra coverage (gap 3). ADR-267: the
+        // Rework/repair children are not extra coverage (gap 3). ADR-268: the
         // JW detail lacked this while the JW order list had it; now one rule.
         isNull(jobCards.recoveryKind),
         sql`NOT EXISTS (SELECT 1 FROM public.plans lp WHERE lp.jc_id = ${jobCards.id} AND lp.deleted_at IS NULL AND lp.plan_status <> 'cancelled')`,

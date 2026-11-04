@@ -9,7 +9,7 @@
 // different column with a different meaning and the two must never be mixed.
 //
 // One helper so the separator and the empty cases cannot drift between screens,
-// or between a cell and the server's search + Sort & Filter on it (ADR-267).
+// or between a cell and the server's search + Sort & Filter on it (ADR-268).
 
 /** `CODE/REV`, degrading gracefully. A missing revision leaves the code alone
  *  rather than printing a bare slash, and a missing code gives the caller's

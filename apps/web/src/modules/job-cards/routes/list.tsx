@@ -58,6 +58,7 @@ import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib
 import { usePendingEditIds } from '@/modules/document-edits/api';
 import { useMachinesList } from '@/modules/machines/api';
 import { useOperatorsList } from '@/modules/operators/api';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
@@ -334,6 +335,7 @@ function JobCardsListPage(): React.JSX.Element {
         updating={isFetching && !isLoading}
         onClearFilters={clearFilters}
         filtersActive={filtersActive}
+        orderFilter={<OrderSfFilter sf={sf} field="orderCode" columnField="sourceCode" />}
         filters={
           <JcListFilters
             status={search.status}

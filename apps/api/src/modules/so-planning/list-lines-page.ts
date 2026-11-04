@@ -1,4 +1,4 @@
-// SO/JWSO Planning list, one row per line (ADR-267) — source, search, Sort &
+// SO/JWSO Planning list, one row per line (ADR-268) — source, search, Sort &
 // Filter and 25-row paging on the SERVER, in memory like list-page.ts: the
 // figures are worked out in code, so there is no SQL expression to filter on.
 

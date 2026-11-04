@@ -1,6 +1,6 @@
 // RC No. / PRO No. / JC No. on SO + JWSO Planning (owner-approved 2026-10-26):
 // how the codes DRAW. Which documents a line or plan has is the shared rule in
-// packages/shared (lib/planning-doc-codes.ts, ADR-267), so the level-1 list, the
+// packages/shared (lib/planning-doc-codes.ts, ADR-268), so the level-1 list, the
 // line table (planning-line-columns.tsx), the ▸ panel (planning-line-expand.tsx)
 // and the server's search can never read differently.
 //

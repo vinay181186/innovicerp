@@ -276,7 +276,7 @@ export const planningLineSchema = z.object({
 });
 export type PlanningLine = z.infer<typeof planningLineSchema>;
 
-// ─── Planning list: one row per POL (ADR-267) ────────────────────────────
+// ─── Planning list: one row per POL (ADR-268) ────────────────────────────
 
 /**
  * One row of GET /so-planning/lines: one live SO / JWSO line (not cancelled, on

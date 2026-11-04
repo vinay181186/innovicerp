@@ -1,7 +1,7 @@
 // SO/JWSO Planning (PL-4b, rebuilt 2026-09-17 for ADR-170).
 //
 // Two levels, one screen:
-//   Level 1 — one row per open SO / JWSO LINE (ADR-267, components/line-list.tsx,
+//   Level 1 — one row per open SO / JWSO LINE (ADR-268, components/line-list.tsx,
 //             on the shared FIT table). A source dropdown in the header picks
 //             what is listed; the search box narrows it. Click a row to open
 //             its order.
@@ -20,7 +20,7 @@
 //
 // ADR-201 (2026-10-02): level 1 shows 25 rows a page with Prev / Next (?page=).
 // The SO / JWSO source, the search and Sort & Filter run on the server over
-// every open line (GET /so-planning/lines, ADR-267); the header count is the
+// every open line (GET /so-planning/lines, ADR-268); the header count is the
 // server's total.
 //
 // ADR-203 (frozen header): level 1 is `page-fill` — the ONE table on screen

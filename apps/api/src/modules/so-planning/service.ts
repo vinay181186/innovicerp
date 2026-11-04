@@ -5,7 +5,7 @@
 //   GET /so-planning              → left pane SO list with planning %
 //   GET /so-planning/:soId        → right pane lines + plans + BOM flags
 //   GET /so-planning/:soId/bom/:lineId → §8 + §9 BOM explosion + child plans
-//   GET /so-planning/lines        → ADR-267 one row per line (list-lines.ts)
+//   GET /so-planning/lines        → ADR-268 one row per line (list-lines.ts)
 //
 // Math + grouping mirror legacy renderSOPlanning (HTML L9299) +
 // showEquipBOMPlanning (L8848) + showBOMPlanning (L7116). Reads only, except
@@ -815,7 +815,7 @@ async function getJwPlanningDetail(
   const lineIds = lineRows.map((r) => r.line.id);
 
   // 3-5. Plans + linked JC code + PR codes, ops counts, bucketed by line (plans.jw_line_id).
-  const { planRows, plansByLine } = await loadPlanSummariesByLine(tx, lineIds, 'jw');
+  const { plansByLine } = await loadPlanSummariesByLine(tx, lineIds, 'jw');
 
   // 6. Direct (plan-less) Job Cards against these JW lines.
   const directJcByLine = await loadDirectJcsByLine(
@@ -842,7 +842,7 @@ async function getJwPlanningDetail(
     const directJcQty = direct?.qty ?? 0;
     const directJcCodes = direct?.codes ?? [];
     const coveredQty = totalPlanned + directJcQty;
-    // ADR-267 — a JW line closed short (ADR-194) wants nothing more made, same
+    // ADR-268 — a JW line closed short (ADR-194) wants nothing more made, same
     // as an SO line (ADR-196): nothing left to plan, and it reads fully planned.
     const shortClosed = r.line.shortClosedAt !== null;
     const remaining = shortClosed ? 0 : Math.max(0, orderQty - coveredQty);
