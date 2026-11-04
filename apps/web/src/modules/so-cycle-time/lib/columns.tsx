@@ -107,7 +107,7 @@ export function soCycleTimeColumns(
         const done = Boolean(r.phases.dispatched);
         return (
           <span
-            className={`badge ${done ? 'b-green' : r.status === 'cancelled' ? 'b-grey' : 'b-blue'}`}
+            className={`badge ${done ? 'b-green' : r.status === 'cancelled' ? 'b-red' : 'b-blue'}`}
           >
             {done ? 'Completed' : soStatusLabel(r.status)}
           </span>

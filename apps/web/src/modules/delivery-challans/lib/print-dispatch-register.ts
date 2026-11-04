@@ -15,6 +15,7 @@ import type { Company, DcStatus, DeliveryChallanListLine, DispatchSummary } from
 import { itemCodeWithRev } from '@/lib/item-code';
 import { esc, fmtDate } from '@/lib/print/doc-print';
 import { printWindow, printedMeta } from '@/lib/print/print-window';
+import { fmtQty } from '@/lib/qty-format';
 import { DC_STATUS_LABEL } from './dc-status-label';
 
 // The real DC statuses (DC_STATUSES) — same colours as DcStatusBadge on screen.
@@ -54,13 +55,13 @@ export function printDispatchRegister(args: {
       <td style="font-family:monospace">${esc(d.poCode ?? d.poCodeText ?? '—')}</td>
       ${showSo ? `<td style="font-family:monospace;font-size:10px">${esc(soOf(d) ?? '—')}${d.soInternalNo ? `<div style="font-family:inherit;color:#64748b">Internal SO No. ${esc(d.soInternalNo)}</div>` : ''}${d.clientPoLineNo ? `<div style="font-family:inherit;color:#64748b">POL ${esc(d.clientPoLineNo)}</div>` : ''}</td>` : ''}
       <td style="font-family:monospace;font-weight:700">${esc(itemCodeWithRev(d.itemCode, d.itemRevision))}</td>
-      <td style="text-align:right;font-weight:700">${Number(d.qty).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</td>
+      <td style="text-align:right;font-weight:700">${fmtQty(Number(d.qty))}</td>
       <td style="text-align:center">${statusBadge(d.docStatus)}</td>
     </tr>`,
     )
     .join('');
 
-  const totalQty = summary.totalDispatched.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+  const totalQty = fmtQty(summary.totalDispatched);
 
   const body = `
     <div class="doc-title"><h1>DC REGISTER</h1><span class="print-meta">${printedMeta()}</span></div>

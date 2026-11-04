@@ -16,7 +16,7 @@
 
 import type { ActivityChange, ActivityChangeValue, ActivityHistoryRow } from '@innovic/shared';
 import type { RelatedDocsExtraTab } from '@/components/shared/related-docs-tabs';
-import { fmtDateTime } from '@/lib/date';
+import { fmtDate, fmtDateTime, fmtTime } from '@/lib/date';
 import { useDocumentHistory, type DocumentHistoryTarget } from '@/modules/activity-log/api';
 import { activityActionBadge } from '@/modules/activity-log/lib/activity-entity';
 import { DataTable, EmptyState, type DataTableColumn } from '@/ui/data';
@@ -58,14 +58,14 @@ const COLUMNS: DataTableColumn<ActivityHistoryRow>[] = [
     width: '10%',
     nowrap: true,
     className: 'mono',
-    render: (r) => fmtDateTime(r.ts).split(' ')[0] ?? '—',
+    render: (r) => fmtDate(r.ts),
   },
   {
     header: 'Log Time',
     width: '7%',
     nowrap: true,
     className: 'mono',
-    render: (r) => fmtDateTime(r.ts).split(' ')[1] ?? '',
+    render: (r) => fmtTime(r.ts),
   },
   {
     header: 'User',

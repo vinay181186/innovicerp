@@ -1,24 +1,20 @@
-// DC status → legacy .badge .b-* class (UI-002).
-// issued=amber (awaiting receipt) → received=green (terminal good)
-// → cancelled=grey.
+// DC status chip — a thin wrapper over the ONE shared map
+// (ui/core/StatusBadge.tsx kind="dc"): issued amber (awaiting receipt) →
+// received green → cancelled red (owner 2026-11-03). Words stay DC_STATUS_LABEL.
 
 import type { DcStatus } from '@innovic/shared';
+import { StatusBadge } from '@/ui/core';
 import { DC_STATUS_LABEL } from '../lib/dc-status-label';
 
-const CLASSES: Record<DcStatus, string> = {
-  issued: 'b-amber',
-  received: 'b-green',
-  cancelled: 'b-grey',
-};
-
 export function DcStatusBadge(props: { status: DcStatus; draft?: boolean | undefined }) {
-  // ADR-202 — a pending edit overlays grey "Draft" in place of the real status.
-  if (props.draft) {
-    return (
-      <span className="badge b-grey" title="An edit to this document is waiting for approval">
-        Draft
-      </span>
-    );
-  }
-  return <span className={`badge ${CLASSES[props.status]}`}>{DC_STATUS_LABEL[props.status]}</span>;
+  // ADR-202 — a pending edit overlays grey "Draft" in place of the real status
+  // (StatusBadge draws the same overlay).
+  return (
+    <StatusBadge
+      kind="dc"
+      status={props.status}
+      label={DC_STATUS_LABEL[props.status]}
+      draft={props.draft}
+    />
+  );
 }

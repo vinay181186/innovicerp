@@ -10,16 +10,10 @@
 
 import { activityActionLabel as actionLabel } from '@innovic/shared';
 import type { ActivityLogEntry } from '@innovic/shared';
-import { fmtDate, fmtDateTime } from '@/lib/date';
+import { fmtDate, fmtTime } from '@/lib/date';
 import type { DataTableColumn } from '@/ui/data';
 import { activityActionBadge } from '../lib/activity-entity';
 import { DocRefLink } from './doc-ref-link';
-
-/** The time half of `26-Sep-2026 14:05` (IST). '' when the instant has none. */
-function fmtTime(ts: string): string {
-  const parts = fmtDateTime(ts).split(' ');
-  return parts[1] ?? '';
-}
 
 /** Columns off by default (DataTable `defaultHidden`); the Columns menu shows them. */
 export const ACTIVITY_LOG_HIDDEN_COLUMNS = ['created_on'] as const;

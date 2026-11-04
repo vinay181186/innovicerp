@@ -18,6 +18,7 @@ import { dailyReportLines, dailyReports, users } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { canWrite, requireCanWrite } from '../../lib/access';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
+import { fmtDate } from '../../lib/format-date';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { emitActivityLog } from '../activity-log/service';
 import { DTR_SF_COLUMNS, DTR_SHIFT_LABEL } from './sf-columns';
@@ -72,7 +73,7 @@ export async function listDailyReports(
     const term = (filters.search ?? '').trim().replace(/\s+/g, ' ');
     if (term) {
       const pat = `%${likeEscape(term)}%`;
-      conds.push(sql`(to_char(dr.report_date, 'DD-Mon-YYYY') ILIKE ${pat} ESCAPE '\\'
+      conds.push(sql`(to_char(dr.report_date, 'DD-MM-YYYY') ILIKE ${pat} ESCAPE '\\'
         OR u.full_name ILIKE ${pat} ESCAPE '\\'
         OR ${DTR_SHIFT_LABEL} ILIKE ${pat} ESCAPE '\\')`);
     }
@@ -252,7 +253,7 @@ export async function createDailyReport(
       {
         action: 'CREATE',
         entity: 'Daily Report',
-        detail: `Daily report for ${input.reportDate}`,
+        detail: `Daily report for ${fmtDate(input.reportDate)}`,
         refId: input.reportDate,
       },
       companyId,
@@ -317,7 +318,7 @@ export async function updateDailyReport(
       {
         action: 'UPDATE',
         entity: 'Daily Report',
-        detail: `Updated daily report for ${input.reportDate}`,
+        detail: `Updated daily report for ${fmtDate(input.reportDate)}`,
         refId: input.reportDate,
       },
       companyId,

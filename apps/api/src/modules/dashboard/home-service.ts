@@ -35,6 +35,7 @@ import { orderByDept, resolveMainDept } from './personal/main-dept';
 import { buildNotifications, markSeenSql } from './personal/notifications';
 import { buildCues, buildHeadline, type ListWithLate } from './personal/summary';
 import { istToday } from './personal/util';
+import { fmtDate } from '../../lib/format-date';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -53,14 +54,14 @@ function greetingPart(): string {
   if (istHour < 17) return 'afternoon';
   return 'evening';
 }
+/** "Monday, 03-11-2026" — the weekday in words, then the one date format
+ *  (lib/format-date, owner decision 2026-11-03), India time. */
 function dateLabel(): string {
-  return new Date().toLocaleDateString('en-IN', {
+  const weekday = new Date().toLocaleDateString('en-IN', {
     timeZone: 'Asia/Kolkata',
     weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
   });
+  return `${weekday}, ${fmtDate(istToday())}`;
 }
 
 function visibleQuickLinks(a: DashAccess, selected: string[] | null): string[] {

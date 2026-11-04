@@ -206,6 +206,17 @@ export function isUsable(f: ColumnFilter): boolean {
 
 const collator = new Intl.Collator('en', { numeric: true, sensitivity: 'base' });
 
+/** Minutes past midnight of the clock in a displayed date-time
+ *  (`03-11-2026 02:35 PM` → 875, `… 14:35` → 875); null when it has none. */
+function clockMin(s: string): number | null {
+  const m = /\s(\d{1,2}):(\d{2})(?::\d{2})?(?:\s*([AaPp])[Mm])?/.exec(s);
+  if (!m?.[1] || !m[2]) return null;
+  let h = Number(m[1]);
+  const ap = m[3]?.toUpperCase();
+  if (ap) h = (h % 12) + (ap === 'P' ? 12 : 0);
+  return h * 60 + Number(m[2]);
+}
+
 /** Blanks always last, whichever way the column is sorted. */
 export function compareTyped(a: string | null, b: string | null, type: SfType): number {
   if (a === null || b === null) return a === b ? 0 : a === null ? 1 : -1;
@@ -217,6 +228,13 @@ export function compareTyped(a: string | null, b: string | null, type: SfType): 
     const x = parseDate(a);
     const y = parseDate(b);
     if (x !== null && y !== null && x !== y) return x < y ? -1 : 1;
+    // Same day: order by the clock. Times show on the 12-hour dial
+    // (`02:35 PM`, owner 2026-11-03), which plain text order gets wrong.
+    if (x !== null && x === y) {
+      const p = clockMin(a);
+      const q = clockMin(b);
+      if (p !== null && q !== null && p !== q) return p - q;
+    }
   }
   return collator.compare(a, b);
 }

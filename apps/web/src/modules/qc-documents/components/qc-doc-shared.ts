@@ -5,6 +5,7 @@
 
 import type { QcDocCategory } from '@innovic/shared';
 import { canDownloadDrawings, useMyAccess } from '@/lib/access-control';
+import { fmtDate } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { qcDocViewUrl } from '../api';
 
@@ -21,13 +22,10 @@ export const CATEGORY_LABEL: Record<QcDocCategory, string> = {
   other: 'Other',
 };
 
-/** Excel-export date (DD-MM-YYYY) — the export keeps its own format; the
- *  screen uses the shared `fmtDate` (DD-MMM-YYYY). */
+/** Excel-export date (DD-MM-YYYY) — now the app's one date format, so it is
+ *  the shared `fmtDate` (a timestamp reads as its IST date); blank → ''. */
 export function fmtExportDate(iso: string | null): string {
-  if (!iso) return '';
-  const d = iso.slice(0, 10);
-  const [y, m, day] = d.split('-');
-  return y && m && day ? `${day}-${m}-${y}` : d;
+  return fmtDate(iso, '');
 }
 
 /** "May this person SAVE a copy of a QC file?" — the whole-account tick, read

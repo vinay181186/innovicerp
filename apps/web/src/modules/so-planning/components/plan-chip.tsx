@@ -42,7 +42,7 @@ const PLAN_STATUS_COLOR: Record<PlanStatus, string> = {
   pr_created: 'var(--cyan)',
   in_production: 'var(--amber)',
   complete: 'var(--green)',
-  cancelled: 'var(--text3)',
+  cancelled: 'var(--red)', // owner 2026-11-03: Cancelled red everywhere
 };
 
 const DERIVED_STATUS_COLOR: Record<PlanDerivedStatus, string> = {
@@ -62,10 +62,11 @@ const PR_STATUS_LABEL: Record<PrStatus, string> = {
   cancelled: 'Cancelled',
 };
 const PR_STATUS_COLOR: Record<PrStatus, string> = {
-  open: 'var(--amber)',
+  // Owner 2026-11-03: Open blue, Cancelled red — same as <StatusBadge kind="pr">.
+  open: 'var(--blue)',
   approved: 'var(--blue)',
   po_created: 'var(--green)',
-  cancelled: 'var(--text3)',
+  cancelled: 'var(--red)',
 };
 
 /** One plan's status as it reads on screen: the derived label for a route-card

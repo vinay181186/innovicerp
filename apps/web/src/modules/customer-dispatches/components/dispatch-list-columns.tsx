@@ -19,7 +19,7 @@ const BILLED_BADGE: Record<
   { label: string; className: string }
 > = {
   none: { label: 'To Bill', className: 'badge b-amber' },
-  partial: { label: 'Part Billed', className: 'badge b-blue' },
+  partial: { label: 'Part Billed', className: 'badge b-amber' }, // Partly … = amber (owner 2026-11-03)
   full: { label: 'Billed', className: 'badge b-green' },
 };
 

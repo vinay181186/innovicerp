@@ -34,7 +34,7 @@ export function originHost(origin: string): string {
   }
 }
 
-/** "19-Sep-2026 15:42 IST" — the app's one date-time format (lib/format-date). */
+/** "19-09-2026 03:42 PM IST" — the app's one date-time format (lib/format-date). */
 export function formatIst(at: Date): string {
   return `${fmtDateTime(at)} IST`;
 }

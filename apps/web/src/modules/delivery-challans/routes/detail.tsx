@@ -27,6 +27,7 @@ import {
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate, fmtDateTime } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { fmtQty } from '@/lib/qty-format';
 import { soNoWithInternal } from '@/lib/so-number';
 import { runPrint } from '@/lib/print/preview-host';
 import { useSession } from '@/lib/session';
@@ -49,9 +50,6 @@ export const deliveryChallanDetailRoute = createRoute({
   path: 'delivery-challans/$id',
   component: DeliveryChallanDetailPage,
 });
-
-/** Whole pieces print whole (12, not 12.00); a real fraction keeps ≤2dp. */
-const fmtQty = (n: number): string => n.toLocaleString('en-IN', { maximumFractionDigits: 3 });
 
 interface LineAgg {
   receivedQty: number;

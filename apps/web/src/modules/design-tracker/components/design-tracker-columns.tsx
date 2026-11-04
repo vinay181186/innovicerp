@@ -18,9 +18,10 @@ export function isDesignOverdue(row: DesignTrackerListItem, today: string): bool
   return row.targetDate < today && row.status !== 'Approved';
 }
 
-/** Status badge class: Approved green, Pending blue, everything in-flight amber. */
+/** Status badge class: Approved blue and Pending blue (owner 2026-11-03),
+ *  everything in-flight amber. */
 function statusClass(status: DesignTrackerListItem['status']): string {
-  if (status === 'Approved') return 'b-green';
+  if (status === 'Approved') return 'b-blue';
   if (status === 'Pending') return 'b-blue';
   return 'b-amber';
 }

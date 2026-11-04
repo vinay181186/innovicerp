@@ -24,6 +24,7 @@ export function Badge({ value }: { value: string; kind?: 'status' }): React.JSX.
     critical: 'b-red',
     urgent: 'b-red',
     rejected: 'b-red',
+    cancelled: 'b-red', // owner 2026-11-03: Cancelled red everywhere
     high: 'b-amber',
     major: 'b-amber',
     medium: 'b-amber',
@@ -40,7 +41,7 @@ export function Badge({ value }: { value: string; kind?: 'status' }): React.JSX.
     completed: 'b-green',
     released: 'b-green',
     accepted: 'b-green',
-    approved: 'b-green',
+    approved: 'b-blue', // owner 2026-11-03: Approved blue everywhere
     closed: 'b-green',
     notstarted: 'b-grey',
     onhold: 'b-grey',

@@ -3,10 +3,9 @@
 // Mirrors legacy renderPartyGRN (HTML L24251) + addPartyGRN (L24298).
 //
 // Styled to SO Master (sales-orders/routes/list.tsx) 2026-08-13:
-//  - The three `.stat-card` boxes are one `<StatStrip>` row (styling skill
-//    Rule 3, ADR-120). Read-only totals, so no onClick — the strip renders them
-//    as plain cells rather than buttons that do nothing.
-//  - Title + count + search + New Party GRN + the strip sit in the frozen
+//  - No tile row (owner 2026-11-03: like SO Master, no tiles above any list);
+//    the last read-only "Today" tile was dropped then.
+//  - Title + count + search + New Party GRN sit in the frozen
 //    header band; previously the banner, title, search and tiles all scrolled
 //    away, leaving no way to search without scrolling back up.
 //  - The 11-column table is one `.panel` card per GRN. Four of its columns
@@ -25,7 +24,6 @@ import { createRoute } from '@tanstack/react-router';
 import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
-import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -121,8 +119,7 @@ function PartyGrnListPage(): React.JSX.Element {
   // page 1.
   const sf = useServerSortFilter(TABLE_KEYS.partyGrn, () => setPage(1));
 
-  // ADR-261 — ONE ROW PER GRN LINE (GET /party-grn/lines); the Today tile
-  // still counts GRNs (summary).
+  // ADR-261 — ONE ROW PER GRN LINE (GET /party-grn/lines).
   const { data, isLoading, isError, error } = usePartyGrnLines({
     search: term || undefined,
     sf: sf.param,
@@ -134,7 +131,6 @@ function PartyGrnListPage(): React.JSX.Element {
   useClampPage(page, data?.total, setPage);
 
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / LIST_PAGE_SIZE));
-  const summary = data?.summary ?? { totalGrns: 0, totalReceived: 0, today: 0 };
   const rows = data?.items ?? [];
   const columns = useMemo(() => partyGrnColumns(pageOffset(page) + 1), [page]);
   const editRow = editId ? (rows.find((r) => r.header.id === editId)?.header ?? null) : null;
@@ -228,22 +224,7 @@ function PartyGrnListPage(): React.JSX.Element {
                 </button>
               ) : null
             }
-          >
-            {/* Read-only count, not a filter — no onClick, so the cell renders
-                as a <div>. The GRN count sits beside the title, so a separate
-                "Total GRNs" tile is not repeated. */}
-            <StatStrip
-              items={[
-                {
-                  key: 'today',
-                  label: 'Today',
-                  count: summary.today,
-                  color: 'var(--amber2)',
-                  title: 'Party GRNs dated today',
-                },
-              ]}
-            />
-          </ListHeader>
+          />
 
           {isError ? (
             <PageState

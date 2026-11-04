@@ -144,8 +144,8 @@ export function renderCode(
 }
 
 // The round-5 status palette (same as ui/core/StatusBadge's `doc` map):
-// grey not started / cancelled, blue open / pending, amber under way,
-// green finished, red a fault.
+// grey not started / short closed, blue open / pending, amber under way,
+// green finished, red cancelled / a fault (owner 2026-11-03).
 function statusBadgeClass(status: string | null): string {
   switch (status) {
     case 'open':
@@ -168,9 +168,10 @@ function statusBadgeClass(status: string | null): string {
       return 'b-green';
     case 'rejected':
     case 'overdue':
+    case 'cancelled':
       return 'b-red';
     default:
-      // draft, in_planning, cancelled, short_closed …
+      // draft, in_planning, short_closed …
       return 'b-grey';
   }
 }

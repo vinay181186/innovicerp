@@ -2,9 +2,9 @@
 //
 // PHASE 4 — composed exactly like the reference list
 // (modules/clients/routes/list.tsx), with the one thing this screen adds:
-// the row's ▸ (the fit table's one expand control, ADR-199) still reveals the
-// operation sequence IN PLACE, right under the row (legacy UX), while the row
-// itself opens the detail page.
+// the row's ⋯ "Show operations" reveals the operation sequence IN PLACE, right
+// under the row (legacy UX), while the row itself opens the detail page. No ▸
+// on a list row (owner 2026-10-31).
 // Legacy renders that sequence as an inline 8th column, but
 // `RouteCardListItem` carries only `opCount` — the ops live behind the detail
 // endpoint — so the expand-row lazily fetches them instead of firing a detail
@@ -198,15 +198,14 @@ function RouteCardsListPage(): React.JSX.Element {
             // returning null for a collapsed row means ExpandedOps (and its
             // detail query) never mounts for it.
             renderExpanded={(rc) => (expanded.has(rc.id) ? <ExpandedOps rcId={rc.id} /> : null)}
-            // The fit table's ▸ is the row's one expand control: it opens the
-            // op sequence too.
-            onToggleExpanded={(rc) => toggleExpand(rc.id)}
             rowActionsWidth="1%"
             rowActions={(rc) => (
-              // The ⋯ menu: Edit · Print · ─ · Move to Trash (no View — the
-              // row click opens the card).
+              // The ⋯ menu: Show operations · Edit · Print · ─ · Move to Trash
+              // (no View — the row click opens the card).
               <RouteCardRowMenu
                 rc={rc}
+                opsOpen={expanded.has(rc.id)}
+                onToggleOps={() => toggleExpand(rc.id)}
                 canEdit={perms.edit}
                 onDelete={
                   canDelete
@@ -281,7 +280,7 @@ function ExpandedOps({ rcId }: { rcId: string }): React.JSX.Element {
         className="mono fw-700"
         style={{ fontSize: 'var(--fs-xs)', color: 'var(--cyan)', marginBottom: 'var(--sp-1)' }}
       >
-        ▸ Operation Sequence — {data.code}
+        Operation Sequence — {data.code}
       </div>
       <div style={{ display: 'flex', gap: 'var(--sp-1)', flexWrap: 'wrap' }}>
         {data.ops.map((op, i) => {

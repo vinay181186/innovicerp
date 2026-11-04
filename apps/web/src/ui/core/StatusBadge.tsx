@@ -1,13 +1,16 @@
 // StatusBadge — the ONE document-status chip.
 //
 // MAP and LABELS started as a copy of design-ref/components/core/StatusBadge.jsx.
-// Round 5 (owner, 2026-09-26) set ONE palette for every status, and the map now
-// follows it:
-//   grey  — Draft / Not Started / To Do / Waiting / Cancelled / Short Closed
+// Round 5 (owner, 2026-09-26) set ONE palette for every status; owner
+// 2026-11-03: Cancelled red everywhere; Pending/Approved/Open blue; QC Pending
+// orange (amber token). The map now follows it:
+//   grey  — Draft / Not Started / To Do / Waiting / Short Closed
 //   blue  — Open / Pending / Approved (awaiting the next step)
-//   amber — under way: In Progress, Partly …, In Production, At Vendor, QC Pending
+//   amber — under way: In Progress, Partly …, In Production, At Vendor, and
+//           every QC-waiting state (QC Pending — grnqc / grn `pending`)
 //   green — Running; Completed / Closed / Received / Accepted / Dispatched / Paid
-//   red   — Rejected / Overdue / Critical / Blocked / Down
+//           (sofulfil `closed` = closed short stays grey — named exception)
+//   red   — Cancelled (every kind) / Rejected / Overdue / Critical / Blocked / Down
 // Kinds that are not a document status (ncdisp, txn, rating, grn source) keep
 // their own colours.
 //
@@ -78,7 +81,7 @@ export type StatusKind =
 type StatusTone = BadgeTone | '';
 
 const MAP: Record<StatusKind, Record<string, StatusTone>> = {
-  so: { draft: 'grey', open: 'blue', closed: 'green', dispatched: 'green', cancelled: 'grey' },
+  so: { draft: 'grey', open: 'blue', closed: 'green', dispatched: 'green', cancelled: 'red' },
   // ADR-196 — ERPNext's Sales Order progress. Work still owed amber (billing)
   // or blue (delivery only), done green, closed short grey (as short_closed
   // reads everywhere else).
@@ -109,20 +112,23 @@ const MAP: Record<StatusKind, Record<string, StatusTone>> = {
     ready_for_pr: 'blue',
     outsource: 'amber',
   },
-  pr: { open: 'blue', approved: 'blue', po_created: 'green', cancelled: 'grey' },
+  pr: { open: 'blue', approved: 'blue', po_created: 'green', cancelled: 'red' },
+  // ADR-222 (2026-10-07): the retired `partial` / `qc_pending` codes read as
+  // Open — same blue, same label (purchase-orders/lib/po-labels.ts).
   po: {
     draft: 'grey',
     open: 'blue',
-    partial: 'amber',
-    qc_pending: 'amber',
+    partial: 'blue',
+    qc_pending: 'blue',
     closed: 'green',
-    cancelled: 'grey',
+    cancelled: 'red',
   },
   // ADR-182 — `short_closed` means the order was stopped, not finished; the
-  // round-5 palette draws it grey with Cancelled (a stop, not a fault).
+  // round-5 palette draws it grey (a stop, not a fault). Cancelled is red
+  // (owner 2026-11-03); Short Closed stays grey.
   prodorder: { open: 'blue', partially_closed: 'amber', closed: 'green', short_closed: 'grey' },
   grnqc: { pending: 'amber', in_progress: 'amber', completed: 'green' },
-  dc: { issued: 'amber', received: 'green', cancelled: 'grey' },
+  dc: { issued: 'amber', received: 'green', cancelled: 'red' },
   nc: {
     pending: 'blue',
     disposed: 'blue',
@@ -130,7 +136,7 @@ const MAP: Record<StatusKind, Record<string, StatusTone>> = {
     under_repair: 'amber',
     sent_to_vendor: 'amber',
     received_qc_pending: 'amber',
-    rework_done: 'blue',
+    rework_done: 'green',
     closed: 'green',
   },
   ncdisp: {
@@ -174,7 +180,7 @@ const MAP: Record<StatusKind, Record<string, StatusTone>> = {
     pr_created: 'amber',
     in_production: 'amber',
     complete: 'green',
-    cancelled: 'grey',
+    cancelled: 'red',
   },
   planderived: {
     route_card_pending: 'grey',
@@ -218,7 +224,7 @@ const MAP: Record<StatusKind, Record<string, StatusTone>> = {
     to_do: 'grey',
     in_progress: 'amber',
     completed: 'green',
-    cancelled: 'grey',
+    cancelled: 'red',
   },
   grn: {
     pending: 'amber',
@@ -252,7 +258,7 @@ const MAP: Record<StatusKind, Record<string, StatusTone>> = {
     not_started: 'grey',
     waiting: 'grey',
     short_closed: 'grey',
-    cancelled: 'grey',
+    cancelled: 'red',
     rejected: 'red',
     overdue: 'red',
     critical: 'red',
@@ -278,7 +284,7 @@ const LABELS: Partial<Record<StatusKind, Record<string, string>>> = {
     ready_for_pr: 'Ready for PR',
   },
   pr: { po_created: 'PO Created' },
-  po: { partial: 'Partly Received', qc_pending: 'QC Pending' },
+  po: { partial: 'Open', qc_pending: 'Open' },
   prodorder: { partially_closed: 'Partly Closed', short_closed: 'Short Closed' },
   grnqc: { pending: 'QC Pending', in_progress: 'QC In Progress', completed: 'QC Cleared' },
   nc: { pending: 'NC Raised', received_qc_pending: 'Received – QC Pending' },

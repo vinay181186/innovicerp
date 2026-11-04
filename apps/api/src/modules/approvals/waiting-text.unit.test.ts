@@ -34,13 +34,13 @@ describe('approval request texts', () => {
 
   it('day log: only the parts that differ', () => {
     const cur = { fromTime: '09:00', toTime: '17:30', description: 'x', orderCode: 'SO-1' };
-    expect(dayLogRequestText(cur, { ...cur, toTime: '18:15' })).toBe('Stop 17:30 → 18:15');
+    expect(dayLogRequestText(cur, { ...cur, toTime: '18:15' })).toBe('Stop 05:30 PM → 06:15 PM');
     expect(dayLogRequestText(cur, { ...cur, fromTime: '08:30', orderCode: null })).toBe(
-      'Start 09:00 → 08:30 · SO SO-1 → —',
+      'Start 09:00 AM → 08:30 AM · SO SO-1 → —',
     );
     // Nothing differs → says so.
     expect(dayLogRequestText(cur, cur)).toBe('No change');
-    expect(dayLogRequestText({ ...cur, toTime: null }, cur)).toBe('Stop — → 17:30');
+    expect(dayLogRequestText({ ...cur, toTime: null }, cur)).toBe('Stop — → 05:30 PM');
   });
 
   it('labels', () => {
@@ -98,9 +98,9 @@ describe('counts and order', () => {
       requestedStartTime: '06:30:00',
       reason: ' forgot to log ',
     };
-    expect(timeChangeRequestText(t)).toBe('Start 08:00 → 06:30 · forgot to log');
+    expect(timeChangeRequestText(t)).toBe('Start 08:00 AM → 06:30 AM · forgot to log');
     expect(timeChangeRequestText({ ...t, requestedLogDate: '2026-10-30', reason: null })).toBe(
-      '31-Oct-2026 08:00 → 30-Oct-2026 06:30',
+      '31-10-2026 08:00 AM → 30-10-2026 06:30 AM',
     );
   });
 });

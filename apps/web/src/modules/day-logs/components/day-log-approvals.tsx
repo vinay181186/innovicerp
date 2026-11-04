@@ -18,7 +18,8 @@ import { Banner, ConfirmDialog } from '@/ui/feedback';
 import { SearchInput } from '@/ui/forms';
 import { PageState } from '@/ui/layout';
 import { useApproveDayLogEdit, useDayLogApprovals, useRejectDayLogEdit } from '../api';
-import { errText, fmtDmy, weekday } from '../lib/format';
+import { fmtDate } from '@/lib/date';
+import { errText, weekday } from '../lib/format';
 import { spanText } from '../lib/sheet';
 import '../day-log-sheet.css';
 
@@ -46,7 +47,7 @@ const COLUMNS: DataTableColumn<DayLogApprovalRow>[] = [
     filterValue: (r) => r.date,
     render: (r) => (
       <>
-        {fmtDmy(r.date)} <span className="text3">{weekday(r.date)}</span>
+        {fmtDate(r.date)} <span className="text3">{weekday(r.date)}</span>
       </>
     ),
   },
@@ -174,7 +175,7 @@ export function DayLogApprovals(): React.JSX.Element {
         rows={rows}
         rowKey={(r) => r.entryId}
         empty={needle ? `No user matches "${needle}".` : 'No edits waiting.'}
-        rowMenuLabel={(r) => `Actions for ${r.userName}'s edit on ${fmtDmy(r.date)}`}
+        rowMenuLabel={(r) => `Actions for ${r.userName}'s edit on ${fmtDate(r.date)}`}
         rowMenu={(r) => [
           {
             key: 'approve',

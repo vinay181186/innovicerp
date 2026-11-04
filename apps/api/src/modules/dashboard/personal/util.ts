@@ -32,12 +32,10 @@ export function dayDiff(from: string, to: string): number {
   return Math.round((b - a) / 86400000);
 }
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-/** "25-Oct" — the short date the status cell prints. */
+/** "25-10" — the short date (DD-MM) the status cell prints; the one date
+ *  format (DD-MM-YYYY, owner decision 2026-11-03) without its year. */
 export function shortDate(day: string): string {
-  const m = Number(day.slice(5, 7));
-  return `${day.slice(8, 10)}-${MONTHS[m - 1] ?? ''}`;
+  return `${day.slice(8, 10)}-${day.slice(5, 7)}`;
 }
 
 /** "1 day" / "6 days" — the one pluraliser the home uses. */

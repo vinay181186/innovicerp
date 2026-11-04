@@ -24,7 +24,8 @@ import { Input } from '@/ui/forms';
 import { PageState } from '@/ui/layout';
 import { usePersonDay } from '../api';
 import { personDayTable, fileSlug } from '../lib/export';
-import { errText, firstName, fmtDmy, istStamp } from '../lib/format';
+import { fmtDate } from '@/lib/date';
+import { errText, firstName, istStamp } from '../lib/format';
 import { printPersonDay } from '../lib/print-day-log';
 import { sortEntries } from '../lib/sheet';
 import { EntrySearch } from './entry-search';
@@ -246,7 +247,7 @@ export function PersonDayLogs({
         wrapClassName="dl-fit"
         columns={cols}
         rows={shown}
-        empty={needle ? `No entries match "${needle}".` : `Nothing logged on ${fmtDmy(p.date)}.`}
+        empty={needle ? `No entries match "${needle}".` : `Nothing logged on ${fmtDate(p.date)}.`}
         onRowClick={(r) => toggle(r.id)}
         onToggleExpanded={(r) => toggle(r.id)}
         renderExpanded={(r) => (open.has(r.id) ? <PersonExpand r={r} p={p} /> : null)}

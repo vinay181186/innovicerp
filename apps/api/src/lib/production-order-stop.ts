@@ -20,6 +20,7 @@
 import { sql } from 'drizzle-orm';
 import type { DbTransaction } from '../db/with-user-context';
 import { ValidationError } from './errors';
+import { fmtDate } from './format-date';
 import { jobCardOrderChainCte } from './production-order-link';
 
 /** What a stopped order looks like to the guard. */
@@ -36,7 +37,7 @@ export interface StoppedProductionOrder {
  * The refusal sentence. Pure, so it is unit-testable without a database and so
  * every caller refuses in exactly the same words.
  *
- *   "Production Order IN-PRO-00007 was short closed on 2026-09-24 — no further
+ *   "Production Order IN-PRO-00007 was short closed on 24-09-2026 — no further
  *    work is allowed on Job Card IN-JC-26-00055."
  *
  * A missing date reads "was short closed" with no date rather than the word
@@ -44,7 +45,7 @@ export interface StoppedProductionOrder {
  * against a hand-edited row.
  */
 export function productionOrderStoppedMessage(o: StoppedProductionOrder): string {
-  const when = o.shortClosedOn ? ` on ${o.shortClosedOn}` : '';
+  const when = o.shortClosedOn ? ` on ${fmtDate(o.shortClosedOn)}` : '';
   return (
     `Production Order ${o.code} was short closed${when} — ` +
     `no further work is allowed on Job Card ${o.jcCode}.`

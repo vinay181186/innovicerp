@@ -6,26 +6,27 @@
 // 2026-10-01 (ADR-199): the per-dispatch cards are replaced by the ONE shared
 // FIT table (<DataTable tableKey=…>). One line per dispatch, the fit engine
 // sizing columns to the screen and dropping the rightmost unpinned ones into a
-// ▸ detail row (the item lines + Remarks). The item-wise summary strip and the
-// StatStrip counts stay.
+// ▸ detail row (the item lines + Remarks). The item-wise summary strip stays.
 //
 // 2026-10-02 (ADR-201): 25 DISPATCHES a page, loaded from the server. Search,
-// the SO filter and Sort & Filter run there over every row; the KPI strip, the
-// item-wise summary and the SO options come from the server too. Lines are
-// still grouped by dispatch here, inside the page. Excel + Print fetch every
+// the SO filter and Sort & Filter run there over every row; the item-wise
+// summary and the SO options come from the server too. Lines are still grouped
+// by dispatch here, inside the page. Excel + Print fetch every
 // filtered row (fetchAllPages).
 //
 // 2026-10-31 (ADR-261): ONE ROW PER DISPATCH LINE, 25 LINES a page from
 // GET /customer-dispatches/lines, locked lead block first; the ▸ is gone (its
 // JC No. / UOM / Stock / Remarks are columns now). Row click and ⋯ act on the
-// dispatch. The KPI strip and item-wise summary still count dispatches.
+// dispatch. The item-wise summary still counts dispatches.
+//
+// 2026-11-03 (owner): no tile row above a list, like SO Master — the Total
+// Dispatched / Dispatch Entries strip is gone (plain totals, no status filter).
 
 import type { CustomerDispatchRegisterQuery, CustomerDispatchRegisterRow } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
-import { StatStrip } from '@/components/shared/stat-strip';
 import { useCanOpen } from '@/components/shared/action-link';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import {
@@ -144,10 +145,6 @@ function CustomerDispatchListPage(): React.JSX.Element {
     () => dispatchListColumns(pageOffset(page) + 1, draftIds),
     [page, draftIds],
   );
-
-  // KPIs over ACTIVE rows only (cancelled were reversed) — from the server,
-  // over every matching row, never just this page.
-  const totalPcs = data?.summary.totalQty ?? 0;
 
   // Excel: the SO filter + ▾ filters (text search stays screen-only, as
   // before). Print: every filter on screen, active rows only. Both fetch
@@ -286,27 +283,7 @@ function CustomerDispatchListPage(): React.JSX.Element {
             </Link>
           ) : null
         }
-      >
-        {/* Read-only metrics, not filters. Counts are over ACTIVE rows
-            (cancelled dispatches were reversed) and follow the SO filter,
-            search and ▾ filters — worked out on the server over every page. */}
-        <StatStrip
-          items={[
-            {
-              key: 'pcs',
-              label: 'Total Dispatched',
-              count: totalPcs,
-              color: 'var(--green2)',
-              sub: 'pieces',
-            },
-            {
-              key: 'entries',
-              label: 'Dispatch Entries',
-              count: data?.summary.dispatchCount ?? 0,
-            },
-          ]}
-        />
-      </ListHeader>
+      />
 
       {isError ? (
         <PageState

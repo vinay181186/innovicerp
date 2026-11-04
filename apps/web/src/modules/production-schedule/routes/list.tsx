@@ -1,5 +1,11 @@
 // Production Schedule (Gantt chart) — mirrors legacy renderProductionSchedule
 // (HTML L15588). 30-day grid, one row per machine, drag-drop reschedule.
+//
+// No tile row (owner 2026-11-03: like SO Master, no tiles above any list).
+// The total is the header count; the On Schedule / Tight / At Risk / Running
+// counts ride in the colour legend ("Tight (≤ 2-day buffer) (2)"). There is no
+// filter by bar colour to put them in, and adding one needs the API, so the
+// legend carries them. The Unscheduled count was dropped (not on the grid).
 
 import { type ProductionScheduleBar, type ProductionScheduleFilter } from '@innovic/shared';
 import { fmtOpSrNo, opSrNo } from '@innovic/shared';
@@ -7,7 +13,6 @@ import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo } from 'react';
 import { z } from 'zod';
-import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate, todayIst } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
@@ -126,6 +131,8 @@ function ProductionSchedulePage(): React.JSX.Element {
     running: 0,
     unscheduled: 0,
   };
+  // Legend counts only once the schedule has loaded — no "(0)" while loading.
+  const countOf = (n: number): number | undefined => (data ? n : undefined);
 
   const onDrop = (e: React.DragEvent, machineId: string, iso: string): void => {
     e.preventDefault();
@@ -212,30 +219,11 @@ function ProductionSchedulePage(): React.JSX.Element {
           borderRadius: 6,
         }}
       >
-        <LegendDot kind="ok" label="On schedule" />
-        <LegendDot kind="tight" label="Tight (≤ 2-day buffer)" />
-        <LegendDot kind="at_risk" label="Will miss due date" />
-        <LegendDot kind="running" label="Running" />
+        <LegendDot kind="ok" label="On schedule" count={countOf(stats.onSchedule)} />
+        <LegendDot kind="tight" label="Tight (≤ 2-day buffer)" count={countOf(stats.tight)} />
+        <LegendDot kind="at_risk" label="Will miss due date" count={countOf(stats.atRisk)} />
+        <LegendDot kind="running" label="Running" count={countOf(stats.running)} />
         <LegendDot kind="done" label="Completed" />
-      </div>
-
-      {/* Stats — one StatStrip (plain totals, not filters). */}
-      <div style={{ marginBottom: 12 }}>
-        <StatStrip
-          items={[
-            { key: 'total', label: 'Total Ops', count: stats.total },
-            { key: 'ok', label: 'On Schedule', count: stats.onSchedule, color: 'var(--sig-ok)' },
-            { key: 'tight', label: 'Tight', count: stats.tight, color: 'var(--sig-warn)' },
-            { key: 'risk', label: 'At Risk', count: stats.atRisk, color: 'var(--sig-critical)' },
-            { key: 'running', label: 'Running', count: stats.running, color: 'var(--sig-ok)' },
-            {
-              key: 'unscheduled',
-              label: 'Unscheduled',
-              count: stats.unscheduled,
-              color: 'var(--text3)',
-            },
-          ]}
-        />
       </div>
 
       {/* Gantt grid */}
@@ -477,9 +465,12 @@ function Bar({
 function LegendDot({
   kind,
   label,
+  count,
 }: {
   kind: ProductionScheduleBar['colorKind'];
   label: string;
+  /** Ops of this colour in the window (was a tile above the grid). */
+  count?: number | undefined;
 }): React.JSX.Element {
   const c = BAR_PALETTE[kind];
   return (
@@ -494,7 +485,7 @@ function LegendDot({
           borderRadius: 3,
         }}
       />
-      {label}
+      {count === undefined ? label : `${label} (${count})`}
     </div>
   );
 }

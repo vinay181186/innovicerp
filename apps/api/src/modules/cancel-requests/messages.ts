@@ -2,6 +2,7 @@
 // they are unit-tested without a database (messages.test.ts).
 
 import type { CancelBlocker } from '@innovic/shared';
+import { fmtDateTime } from '../../lib/format-date';
 
 /** "IN-CD-00012 can't be cancelled yet — cancel these first: Invoice
  *  IN-INV-00031 (Ln 2 is invoiced (40 pcs)); …" */
@@ -29,20 +30,10 @@ export function alreadyDecidedMessage(
   return `The cancel request for ${docCode} was already ${status}${who}${when} — reload the page.`;
 }
 
-/** dd-MM-yyyy HH:mm in IST — the app's display time zone. */
+/** "24-10-2026 02:32 PM" in IST — the app's one date-time format
+ *  (lib/format-date, owner decision 2026-11-03). */
 export function formatIst(at: Date | string): string {
-  const d = at instanceof Date ? at : new Date(at);
-  const parts = new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Asia/Kolkata',
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).formatToParts(d);
-  const get = (t: string): string => parts.find((p) => p.type === t)?.value ?? '';
-  return `${get('day')}-${get('month')}-${get('year')} ${get('hour')}:${get('minute')}`;
+  return fmtDateTime(at);
 }
 
 /** 409 when a staged edit (ADR-202) waits on the same document. */

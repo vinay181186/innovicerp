@@ -101,13 +101,14 @@ export const SOURCE_LABEL: Record<QcDossierFileSource, string> = {
   job_card: 'Job Card',
 };
 
-/** "18-Oct" — the day and month of a stored date. */
+/** "18-10" — the day and month of a stored date (the app's DD-MM-YYYY
+ *  format, owner 2026-11-03, without the year). */
 export function shortDate(v: string | null): string {
   const d = fmtDate(v, '');
-  return d.length >= 6 ? d.slice(0, 6) : d;
+  return /^\d{2}-\d{2}-\d{4}$/.test(d) ? d.slice(0, 5) : d;
 }
 
-/** "Accepted 25 · 18-Oct" for a QC entry. */
+/** "Accepted 25 · 18-10" for a QC entry. */
 export function entryLabel(e: Pick<QcDossierEntry, 'acceptedQty' | 'inspectedOn'>): string {
   const d = shortDate(e.inspectedOn);
   return d ? `Accepted ${e.acceptedQty} · ${d}` : `Accepted ${e.acceptedQty}`;

@@ -1,10 +1,9 @@
 // OSP / JW Outward DC list — delivery challans issued against a PO_jw.
 //
 // Styled to SO Master (sales-orders/routes/list.tsx) 2026-08-13:
-//  - The three hand-rolled KPI tiles are one `<StatStrip>` row (styling skill
-//    Rule 3, ADR-120) — same three numbers, no per-tile cards, and it now
-//    renders zeros while loading instead of popping in and shoving the list
-//    down ~116px.
+//  - No tile row (owner 2026-11-03: like SO Master, no tiles above any list).
+//    The three plain totals (Sent / DC Lines / Items Sent) were dropped from
+//    the screen; the Print Register sheet still prints them.
 //  - Title + count + search + status filter + Print Register + New DC sit in
 //    the frozen header band.
 //  - The 8-column table is one `.panel` card per DC. Only 8 columns, but
@@ -23,7 +22,7 @@
 // ADR-261 (2026-10-31): ONE ROW PER DC LINE (GET /delivery-challans/lines) —
 // the locked lead block first (SO No. · Internal SO No. · POL · Created On ·
 // Item Code · Item Name), then the DC's own facts. Row click / ⋯ still act on
-// the DC. The totals strip reads the same three line-grain totals.
+// the DC. The printed register reads the three line-grain totals.
 
 import type { ListDeliveryChallansQuery } from '@innovic/shared';
 import { DC_STATUSES, type DcStatus } from '@innovic/shared';
@@ -32,7 +31,6 @@ import { Plus, Printer } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
-import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
 import { usePendingEditIds } from '@/modules/document-edits/api';
@@ -285,35 +283,7 @@ function DeliveryChallansListPage(): React.JSX.Element {
                 </Link>
               ) : null
             }
-          >
-            {/* Read-only totals, not filters — no onClick, so each cell renders
-                as a <div>. Zeros while the first page loads so nothing jumps. */}
-            <StatStrip
-              items={[
-                {
-                  key: 'dispatched',
-                  label: 'Total Sent to Vendor',
-                  count: (data?.summary?.totalDispatched ?? 0).toLocaleString('en-IN', {
-                    maximumFractionDigits: 2,
-                  }),
-                  sub: 'pieces',
-                  title: 'Total quantity sent out on the DCs matching this filter',
-                },
-                {
-                  key: 'entries',
-                  label: 'DC Lines',
-                  count: data?.summary?.entryCount ?? 0,
-                },
-                {
-                  key: 'items',
-                  label: 'Items Sent',
-                  count: data?.summary?.itemCount ?? 0,
-                  color: 'var(--cyan)',
-                  title: 'Distinct items sent out in this filter',
-                },
-              ]}
-            />
-          </ListHeader>
+          />
 
           {isError ? (
             <PageState

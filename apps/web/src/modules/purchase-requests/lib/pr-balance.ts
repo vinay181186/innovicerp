@@ -126,25 +126,26 @@ export function prHasBalanceToOrder(bal: PrOrderBalance): boolean {
   return !bal.closed && bal.balance > 0;
 }
 
-/** Token colour per state — amber waiting, blue part-done, green done, red
- *  wrong, grey deliberately finished. Same meanings the status badge already
- *  carries elsewhere on these screens. */
+/** Token colour per state — blue open (nothing ordered yet), amber part-done,
+ *  green done, red wrong, grey deliberately finished. Same meanings as the
+ *  shared status map (ui/core/StatusBadge.tsx; owner 2026-11-03: Open blue,
+ *  Partly amber). */
 export function prBalanceColor(state: PrBalanceState): string {
   if (state === 'full') return 'var(--green)';
-  if (state === 'partial') return 'var(--blue)';
+  if (state === 'partial') return 'var(--amber)';
   if (state === 'over') return 'var(--red)';
   // Grey, NOT green: a short-closed request was not completed, it was stopped.
   if (state === 'closed') return 'var(--text3)';
-  return 'var(--amber)';
+  return 'var(--blue)';
 }
 
 /** Pill class for the shared `.badge` — same five colours as prBalanceColor. */
 export function prBalanceBadgeClass(state: PrBalanceState): string {
   if (state === 'full') return 'b-green';
-  if (state === 'partial') return 'b-blue';
+  if (state === 'partial') return 'b-amber';
   if (state === 'over') return 'b-red';
   if (state === 'closed') return 'b-grey';
-  return 'b-amber';
+  return 'b-blue';
 }
 
 /** "Balance closed — 90 not ordered". The one phrasing for a short-closed PR,

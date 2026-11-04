@@ -35,6 +35,9 @@ export type SfColumnType = 'text' | 'num' | 'date' | 'list';
 export interface SfColumnDef {
   /** The SAME expression the list SELECT shows for this column. */
   sql: SQL;
+  /** Optional ORDER BY expression when the shown text does not sort in time order
+   *  (a 12-hour clock '01:05 PM' sorts before '11:00 AM' as text). Filter still uses `sql`. */
+  sortSql?: SQL;
   type: SfColumnType;
   /** A money column — only for users who may see prices. */
   price?: boolean;
@@ -162,7 +165,7 @@ export function sfOrderBy(
   if (!q?.sort) return fallback;
   const def = column(map, q.sort.field, opts);
   const dir = q.sort.dir === 'desc' ? sql`DESC` : sql`ASC`;
-  return sql`${def.sql} ${dir} NULLS LAST, ${fallback}`;
+  return sql`${def.sortSql ?? def.sql} ${dir} NULLS LAST, ${fallback}`;
 }
 
 /** The endpoint's raw `sf` string → SfQuery; a malformed one is a 400. */

@@ -12,6 +12,7 @@
 import type { Client, Company, CustomerDispatchDetail } from '@innovic/shared';
 import { docDrawingRev, itemCodeWithRev } from '@/lib/item-code';
 import { buildDocCompany } from '@/lib/print/company';
+import { fmtQty } from '@/lib/qty-format';
 import { partyForPrint } from '@/lib/print/party-copy';
 import {
   type SheetField,
@@ -79,10 +80,10 @@ function dispatchSheetModel(
       uom: uomOf(l.uom),
       // HSN off the item master (A4); the column prints only when a line has one.
       hsn: l.hsnCode?.trim() || null,
-      qty: l.qty.toFixed(2),
+      qty: fmtQty(l.qty, ''),
       remarks: null,
     })),
-    totalQty: totalQty.toFixed(2),
+    totalQty: fmtQty(totalQty, ''),
     totalUom: uoms.size === 1 ? ([...uoms][0] ?? '') : '',
     // ADR-235 — a Cancelled dispatch's challan prints with the CANCELLED stamp.
     cancelled: d.status === 'cancelled',
