@@ -13,6 +13,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { useAddDesignTaskComment, useCreateDesignTask, useUpdateDesignTask } from '../api';
 import { Actions, Badge, ErrorBox, Field, Modal } from './detail-shared';
+import { useToast } from '@/ui/feedback';
 
 export function TaskFormModal({
   projectId,
@@ -34,6 +35,7 @@ export function TaskFormModal({
   const [description, setDescription] = useState(task?.description ?? '');
   const [err, setErr] = useState<string | null>(null);
 
+  const toast = useToast();
   const createMut = useCreateDesignTask();
   const updateMut = useUpdateDesignTask();
 
@@ -57,7 +59,10 @@ export function TaskFormModal({
       createMut.mutate(
         { projectId, input },
         {
-          onSuccess: () => onClose(),
+          onSuccess: () => {
+            toast.ok('Task saved');
+            onClose();
+          },
           onError: (e) => setErr(e instanceof Error ? e.message : 'Could not save. Try again.'),
         },
       );
@@ -65,7 +70,10 @@ export function TaskFormModal({
       updateMut.mutate(
         { id: task.id, input },
         {
-          onSuccess: () => onClose(),
+          onSuccess: () => {
+            toast.ok('Task saved');
+            onClose();
+          },
           onError: (e) => setErr(e instanceof Error ? e.message : 'Could not save. Try again.'),
         },
       );
@@ -162,6 +170,7 @@ export function ViewTaskModal({
   onClose: () => void;
 }): React.JSX.Element {
   const [comment, setComment] = useState('');
+  const toast = useToast();
   const commentMut = useAddDesignTaskComment();
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'dsnproj_create');
@@ -171,7 +180,10 @@ export function ViewTaskModal({
     commentMut.mutate(
       { id: task.id, input: { text: comment.trim() } },
       {
-        onSuccess: () => setComment(''),
+        onSuccess: () => {
+          setComment('');
+          toast.ok('Comment posted');
+        },
       },
     );
   };

@@ -43,7 +43,7 @@ import {
 import { SoStatusBadge } from '@/modules/sales-orders/components/so-status-badge';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { RowMenu } from '@/ui/data';
-import { Banner } from '@/ui/feedback';
+import { Banner, useToast } from '@/ui/feedback';
 import { ActionMenu, DetailHeader, PageState } from '@/ui/layout';
 import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
 import { CancelPendingBanner } from '@/modules/cancel-requests/components/cancel-pending-banner';
@@ -481,6 +481,7 @@ function JwDocumentsPanel(props: {
   const { data, isLoading } = useJwDocuments(props.jwId);
   const del = useDeleteJwDocument();
   const createDoc = useCreateJwDocument();
+  const toast = useToast();
   const files = data?.files ?? [];
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploadKind, setUploadKind] = useState<'po-docs' | 'email_reference'>('po-docs');
@@ -506,6 +507,7 @@ function JwDocumentsPanel(props: {
         fileSize: file.size,
         fileType: file.type || undefined,
       });
+      toast.ok(`${file.name} uploaded`);
     } catch (e) {
       setUploadErr(e instanceof Error ? e.message : 'Could not upload file. Try again.');
     } finally {

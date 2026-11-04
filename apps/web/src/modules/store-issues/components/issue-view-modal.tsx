@@ -7,7 +7,7 @@
 import { ISSUE_AGAINST_LABELS, STORE_ISSUE_REVERSE_REASON_MIN } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
-import { Modal } from '@/ui/feedback';
+import { Modal, useToast } from '@/ui/feedback';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { fmtDate } from '@/lib/date';
 import { soNoWithInternal } from '@/lib/so-number';
@@ -40,7 +40,7 @@ export function IssueViewModal({
   const [retQty, setRetQty] = useState<Record<string, string>>({});
   const [reason, setReason] = useState('');
   const [err, setErr] = useState<string | null>(null);
-  const [msg, setMsg] = useState<string | null>(null);
+  const toast = useToast();
   const returnMut = useReturnStoreIssue();
   const issuePrint = useStoreIssuePrint();
 
@@ -51,7 +51,6 @@ export function IssueViewModal({
   const start = (m: Mode): void => {
     setMode(m);
     setErr(null);
-    setMsg(null);
     setReason('');
     setRetQty({});
   };
@@ -80,7 +79,7 @@ export function IssueViewModal({
       {
         onSuccess: () => {
           setMode('view');
-          setMsg('Returned — stock updated.');
+          toast.ok('Returned — stock updated.');
         },
         onError: (e) => setErr(e instanceof Error ? e.message : 'Could not return. Try again.'),
       },
@@ -287,11 +286,6 @@ export function IssueViewModal({
               </Panel>
             </div>
           )}
-          {msg ? (
-            <div className="text2" style={{ marginTop: 10, fontSize: 12 }}>
-              ✓ {msg}
-            </div>
-          ) : null}
           {err ? (
             <div style={{ color: 'var(--red2)', fontSize: 12, marginTop: 8 }}>{err}</div>
           ) : null}

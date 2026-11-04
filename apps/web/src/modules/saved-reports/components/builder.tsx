@@ -750,6 +750,7 @@ export function Builder(props: Props): JSX.Element {
               style={{ fontSize: 12 }}
               onClick={onPreviewClick}
               disabled={previewLoading || columns.length === 0}
+              title={columns.length === 0 ? 'Add at least one column first' : undefined}
             >
               Preview
             </button>
@@ -760,6 +761,7 @@ export function Builder(props: Props): JSX.Element {
                 style={{ fontSize: 14, padding: '8px 28px', fontWeight: 700 }}
                 onClick={() => onExcel(buildSpec())}
                 disabled={columns.length === 0 || excelLoading}
+                title={columns.length === 0 ? 'Add at least one column first' : undefined}
               >
                 📄 Generate Excel
               </button>
@@ -771,6 +773,13 @@ export function Builder(props: Props): JSX.Element {
               type="submit"
               className="btn btn-primary"
               disabled={saving || columns.length === 0 || !name.trim()}
+              title={
+                columns.length === 0
+                  ? 'Add at least one column first'
+                  : !name.trim()
+                    ? 'Enter the report name first'
+                    : undefined
+              }
             >
               {saving ? <Loader2 className="animate-spin" /> : null}
               {saveLabel}

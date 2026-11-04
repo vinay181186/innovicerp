@@ -42,7 +42,7 @@ import {
 } from '@/modules/document-edits/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { EmptyState, Panel } from '@/ui/data';
-import { Banner } from '@/ui/feedback';
+import { Banner, useToast } from '@/ui/feedback';
 import { Cluster, ClusterGrid } from '@/ui/forms';
 import { DetailHeader, FormActions, useSaveShortcut } from '@/ui/layout';
 import { TabStrip } from '@/ui/navigation';
@@ -87,6 +87,7 @@ function ProductionOrderEditPage(): React.JSX.Element {
   const { data: detail, isLoading, isError, error } = useProductionOrder(id);
   const saveKey = useSaveKey();
   const update = useUpdateProductionOrder(id, saveKey);
+  const toast = useToast();
 
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'prodorder_create');
@@ -125,9 +126,6 @@ function ProductionOrderEditPage(): React.JSX.Element {
   const [actualSize, setActualSize] = useState('');
   const [rawMaterialAvailable, setRawMaterialAvailable] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  // ADR-202 — set when an edit to a LIVE order is staged for approval instead
-  // of applied; the neutral "Sent for approval" banner shows it.
-  const [stagedNotice, setStagedNotice] = useState<string | null>(null);
 
   // Seed the form ONCE from the loaded order — a background refetch must not
   // wipe what the user is typing.
@@ -169,13 +167,14 @@ function ProductionOrderEditPage(): React.JSX.Element {
         // The gate is on and this order is live: nothing changed on the order —
         // the edit is now waiting for approval. Say so, then return to the
         // detail (its fields now carry the pending-change chip).
-        setStagedNotice('Sent for approval — your changes will apply once an approver signs off.');
+        toast.ok('Sent for approval — your changes will apply once an approver signs off.');
         exit.leave(
           () => void navigate({ to: '/production-orders/$id', params: { id }, replace: true }),
         );
         return;
       }
       opened.saved(saved.updatedAt);
+      toast.ok(`Production Order ${detail.code} saved`);
       exit.leave(
         () => void navigate({ to: '/production-orders/$id', params: { id }, replace: true }),
       );
@@ -193,6 +192,7 @@ function ProductionOrderEditPage(): React.JSX.Element {
     rawMaterialAvailable,
     opened,
     exit,
+    toast,
     navigate,
     id,
   ]);
@@ -374,11 +374,6 @@ function ProductionOrderEditPage(): React.JSX.Element {
         </ClusterGrid>
       </DetailHeader>
 
-      {stagedNotice ? (
-        <Banner tone="success" role="status">
-          {stagedNotice}
-        </Banner>
-      ) : null}
       {submitError ? (
         <Banner tone="error" role="alert">
           {submitError}

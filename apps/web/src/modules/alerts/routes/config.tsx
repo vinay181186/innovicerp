@@ -22,6 +22,7 @@ import { authenticatedRoute } from '@/routes/_authenticated';
 import { PageHeader } from '@/ui/layout';
 import { useAlertConfig, useToggleAlert } from '../api';
 import { DEPT_COLOR, DEPT_LABEL } from '../lib/dept';
+import { useToast } from '@/ui/feedback';
 
 export const alertsConfigRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -65,6 +66,7 @@ function AlertsConfigPage() {
 function ConfigTable() {
   const { data, isLoading, isError, error } = useAlertConfig();
   const toggle = useToggleAlert();
+  const toast = useToast();
   const [pending, setPending] = useState<string | null>(null);
 
   // Legacy read from an in-memory `db` and had no loading/error states; these
@@ -96,6 +98,10 @@ function ConfigTable() {
     toggle.mutate(
       { code, active: next },
       {
+        onSuccess: () => {
+          const name = data.entries.find((e) => e.code === code)?.name ?? code;
+          toast.ok(`${name} alert ${next ? 'turned on' : 'turned off'}`);
+        },
         onSettled: () => setPending(null),
       },
     );

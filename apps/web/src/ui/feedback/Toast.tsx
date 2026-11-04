@@ -40,6 +40,8 @@ export type ToastKind = 'ok' | 'err' | 'info' | 'warn';
 /** How long a toast stays before it clears itself, in ms. Long enough to read
  *  a short past-tense line; an error gets longer because it is worth reading. */
 const DEFAULT_MS: Record<ToastKind, number> = { ok: 3000, err: 6000, info: 4000, warn: 6000 };
+const MS_PER_CHAR = 70;
+const MAX_READ_MS = 10000;
 
 export interface ToastProps {
   kind?: ToastKind;
@@ -192,7 +194,10 @@ export function ToastProvider({ children, max = 4 }: ToastProviderProps): React.
   const show = useCallback(
     (message: React.ReactNode, opts?: ToastOptions): string => {
       const kind = opts?.kind ?? 'ok';
-      const durationMs = opts?.durationMs ?? DEFAULT_MS[kind];
+      // A long sentence ("Sent for approval: ...") needs time to be read.
+      const readMs = typeof message === 'string' ? message.length * MS_PER_CHAR : 0;
+      const durationMs =
+        opts?.durationMs ?? Math.max(DEFAULT_MS[kind], Math.min(readMs, MAX_READ_MS));
       seq.current += 1;
       const id = `toast-${seq.current}`;
       setToasts((list) => [...list, { id, kind, message, durationMs }].slice(-max));

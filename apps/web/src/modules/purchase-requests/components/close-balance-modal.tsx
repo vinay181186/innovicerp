@@ -54,6 +54,7 @@ export function CloseBalanceModal({
             type="button"
             className="btn btn-danger btn-sm"
             disabled={!canSubmit}
+            title={reason.trim().length === 0 ? 'Type the reason first' : undefined}
             onClick={() => onSubmit(reason.trim())}
           >
             {pending ? (

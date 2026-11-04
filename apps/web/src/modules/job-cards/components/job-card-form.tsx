@@ -58,7 +58,7 @@ import {
 } from '@/modules/raw-material/components/raw-material-pickers';
 import { useVendorsList, vendorsKeys } from '@/modules/vendors/api';
 import { Panel } from '@/ui/data';
-import { Banner, Modal } from '@/ui/feedback';
+import { Banner, Modal, useToast } from '@/ui/feedback';
 import {
   Cluster,
   ClusterFact,
@@ -169,6 +169,7 @@ export function JobCardForm({
   const navigate = useNavigate();
   const goBack = useCallback(() => void navigate({ to: '/job-cards' }), [navigate]);
   const exit = useExitConfirm({ onExit: goBack });
+  const toast = useToast();
   const { data: me } = useSession();
   const companyId = me?.companyId ?? '';
 
@@ -727,6 +728,7 @@ export function JobCardForm({
         setSavedNote({ jcCode: saved.code, rc: saved.routeCardWriteBack });
         return;
       }
+      toast.ok(`Job Card ${saved.code} saved`);
       exit.leave(goBack);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not save Job Card. Try again.');

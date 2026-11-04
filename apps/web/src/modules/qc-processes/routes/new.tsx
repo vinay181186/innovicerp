@@ -7,6 +7,7 @@ import { useExitConfirm } from '@/lib/exit-guard';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateQcProcess } from '../api';
 import { QcProcessForm } from '../components/qc-process-form';
+import { useToast } from '@/ui/feedback';
 
 export const qcProcessNewRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -15,6 +16,7 @@ export const qcProcessNewRoute = createRoute({
 });
 
 function QcProcessNewPage(): React.JSX.Element {
+  const toast = useToast();
   const navigate = useNavigate();
   const create = useCreateQcProcess();
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -73,6 +75,7 @@ function QcProcessNewPage(): React.JSX.Element {
           setSubmitError(null);
           try {
             const created = await create.mutateAsync(values);
+            toast.ok(`QC Process ${created.code} saved`);
             exit.leave(
               () => void navigate({ to: '/qc-processes/$id', params: { id: created.id } }),
             );

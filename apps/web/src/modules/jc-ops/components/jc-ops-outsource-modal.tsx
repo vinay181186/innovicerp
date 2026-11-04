@@ -7,7 +7,7 @@ import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { SearchableSelect } from '@/ui/forms';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { Modal } from '@/ui/feedback';
+import { Modal, useToast } from '@/ui/feedback';
 import { useVendorsList } from '@/modules/vendors/api';
 import { useOutsourceOpBalance } from '../api';
 
@@ -24,6 +24,7 @@ export function OutsourceBalanceModal({
   onClose: () => void;
 }): React.JSX.Element {
   const outsource = useOutsourceOpBalance();
+  const toast = useToast();
   const [qty, setQty] = useState<number>(row.available);
   const [vendorCode, setVendorCode] = useState<string>(row.outsourceVendorCode ?? '');
   // "CODE — Name" of the picked vendor, kept so the label survives the search
@@ -67,7 +68,10 @@ export function OutsourceBalanceModal({
     outsource.mutate(
       { id: row.jcOpId, input },
       {
-        onSuccess: () => onClose(),
+        onSuccess: (res) => {
+          toast.ok(`Outsource PR ${res.prCode} raised`);
+          onClose();
+        },
         onError: (e) =>
           setErr(
             e instanceof Error ? e.message : 'Could not outsource the pending qty. Try again.',

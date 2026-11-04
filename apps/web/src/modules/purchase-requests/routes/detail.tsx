@@ -40,7 +40,7 @@ import {
 import { DocumentHistory } from '@/components/shared/document-history';
 import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
 import { AssignTaskModal } from '@/modules/tasks/components/task-modals';
-import { ConfirmDialog } from '@/ui/feedback';
+import { ConfirmDialog, useToast } from '@/ui/feedback';
 import { Cluster, ClusterFact, ClusterGrid, DocIdent, IdentCode, IdentSep } from '@/ui/forms';
 import { ActionMenu } from '@/ui/layout';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -100,6 +100,7 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
   // 2026-10-31 — PRs have no approval) — the same right the API gate checks,
   // so the button cannot appear to someone the server then refuses.
   const closeBalanceMut = useClosePurchaseRequestBalance();
+  const toast = useToast();
   const [closeOpen, setCloseOpen] = useState(false);
   const [closeError, setCloseError] = useState<string | null>(null);
   const [assignOpen, setAssignOpen] = useState(false);
@@ -189,7 +190,10 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
     closeBalanceMut.mutate(
       { id: detail.id, reason },
       {
-        onSuccess: () => setCloseOpen(false),
+        onSuccess: () => {
+          toast.ok(`PR ${detail.code} short closed`);
+          setCloseOpen(false);
+        },
         onError: (e) =>
           setCloseError(e instanceof Error ? e.message : 'Could not short close PR. Try again.'),
       },

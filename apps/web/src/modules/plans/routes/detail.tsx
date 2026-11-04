@@ -31,7 +31,7 @@ import { itemCodeWithRev, docDrawingRev } from '@/lib/item-code';
 import { soNoWithInternal } from '@/lib/so-number';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Panel } from '@/ui/data';
-import { Banner } from '@/ui/feedback';
+import { Banner, useToast } from '@/ui/feedback';
 import { Cluster, ClusterFact, ClusterGrid, DocIdent, IdentCode, IdentSep } from '@/ui/forms';
 import { useExecutePlan, useFinalizePlan, usePlan } from '../api';
 import { PlanDeleteModal } from '../components/plan-delete-modal';
@@ -81,6 +81,7 @@ function PlanDetailPage(): React.JSX.Element {
   const pendingChanges = undecidedChangesOf(pendingEdit.data?.rows);
   // ADR-202 — any pending edit overlays grey "Draft" on the status chip.
   const isDraft = (pendingEdit.data?.rows?.length ?? 0) > 0;
+  const toast = useToast();
   const finalize = useFinalizePlan();
   const execute = useExecutePlan();
   const { data: eff } = useMyAccess();
@@ -90,8 +91,6 @@ function PlanDetailPage(): React.JSX.Element {
   const canOpen = useCanOpen();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  // ADR-249 — Execute's Route Card write-back was held for approval.
-  const [rcStagedNote, setRcStagedNote] = useState(false);
   // ADR-249 — the routing differed but was NOT sent for approval: the reason.
   const [rcNotSentReason, setRcNotSentReason] = useState<string | null>(null);
 
@@ -133,6 +132,9 @@ function PlanDetailPage(): React.JSX.Element {
   const onFinalize = (): void => {
     setActionError(null);
     finalize.mutate(plan.id, {
+      onSuccess: () => {
+        toast.ok(`Plan ${plan.code} marked Planned`);
+      },
       onError: (e) =>
         setActionError(
           e instanceof Error ? e.message : 'Could not mark the plan Planned. Try again.',
@@ -141,11 +143,18 @@ function PlanDetailPage(): React.JSX.Element {
   };
   const onExecute = (): void => {
     setActionError(null);
-    setRcStagedNote(false);
     setRcNotSentReason(null);
     execute.mutate(plan.id, {
       onSuccess: (res) => {
-        setRcStagedNote(res.routeCardSentForApproval === true);
+        toast.ok(
+          plan.planType === 'manufacture' || plan.planType === 'assembly'
+            ? 'Job Card created'
+            : 'PR raised',
+        );
+        // ADR-249 — Execute's Route Card write-back was held for approval.
+        if (res.routeCardSentForApproval === true) {
+          toast.ok('Route Card change sent for approval — the card is unchanged until approved.');
+        }
         setRcNotSentReason(res.routeCardNotSentReason ?? null);
       },
       onError: (e) =>
@@ -293,13 +302,6 @@ function PlanDetailPage(): React.JSX.Element {
           </div>
         </div>
         <div className="panel-body">
-          {rcStagedNote ? (
-            <div style={{ marginBottom: 10 }}>
-              <Banner tone="info" role="status" flush onDismiss={() => setRcStagedNote(false)}>
-                Route Card change sent for approval — the card is unchanged until approved.
-              </Banner>
-            </div>
-          ) : null}
           {rcNotSentReason ? (
             <div style={{ marginBottom: 10 }}>
               <Banner tone="warn" role="status" flush onDismiss={() => setRcNotSentReason(null)}>

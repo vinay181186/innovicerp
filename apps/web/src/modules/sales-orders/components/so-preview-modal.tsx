@@ -289,13 +289,20 @@ export function SoPreviewModal({
           >
             Open full detail →
           </Link>
-          <button type="button" className="btn btn-ghost" disabled={!ready} onClick={onPrint}>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            disabled={!ready}
+            title={!ready ? 'The order has not loaded yet' : undefined}
+            onClick={onPrint}
+          >
             <Printer className="inline h-3 w-3" /> Print
           </button>
           <button
             type="button"
             className="btn btn-ghost"
             disabled={!ready || downloading}
+            title={!ready ? 'The order has not loaded yet' : undefined}
             onClick={onDownload}
           >
             {downloading ? (

@@ -11,6 +11,7 @@ import { DataTable, Panel } from '@/ui/data';
 import type { DataTableColumn } from '@/ui/data';
 import { useDesignWorkLogList } from '../api';
 import { addDays, CategoryText, dayName, todayStr, TrackerBadge } from './work-log-shared';
+import { SearchableSelect } from '@/ui/forms';
 
 const COLUMNS: DataTableColumn<DesignWorkLogEntry>[] = [
   {
@@ -136,23 +137,16 @@ export function DailyTab(): React.JSX.Element {
           value={viewDate}
           onChange={(e) => setViewDate(e.target.value)}
         />
-        <select
-          style={{
-            padding: '6px 10px',
-            fontSize: 12,
-            background: 'var(--bg3)',
-            border: '1px solid var(--border)',
-            borderRadius: 6,
-            color: 'var(--text)',
-          }}
-          value={viewEng}
-          onChange={(e) => setViewEng(e.target.value)}
-        >
-          <option value="All">All Design Engineers</option>
-          {engineers.map((e) => (
-            <option key={e}>{e}</option>
-          ))}
-        </select>
+        <SearchableSelect
+          style={{ minWidth: 200 }}
+          ariaLabel="Design Engineer"
+          value={viewEng === 'All' ? null : viewEng}
+          onChange={(id) => setViewEng(id ?? 'All')}
+          options={engineers.map((e) => ({ id: e, name: e }))}
+          valueLabel={viewEng === 'All' ? undefined : viewEng}
+          placeholder="All Design Engineers"
+          clearable
+        />
       </div>
 
       <div

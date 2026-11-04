@@ -127,7 +127,14 @@ export function CreateNcDcPanel(props: {
           </div>
           {error ? <Note tone="red">{error}</Note> : null}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginTop: 16 }}>
-            <button type="submit" className="btn btn-primary" disabled={pending || !canSubmit}>
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={pending || !canSubmit}
+              title={
+                canSubmit ? undefined : dcDate === '' ? 'DC Date is required' : 'Vendor is required'
+              }
+            >
               {pending ? <Loader2 size={13} className="animate-spin" /> : <Truck size={13} />}
               {pending ? 'Saving…' : 'Save DC'}
             </button>

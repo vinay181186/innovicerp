@@ -20,7 +20,7 @@ import {
 } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { Modal } from '@/ui/feedback';
+import { Modal, useToast } from '@/ui/feedback';
 import { SearchableSelect } from '@/ui/forms';
 import { todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
@@ -40,6 +40,7 @@ export function NewPartyGrnModal({
   initialJwId?: string | undefined;
 }): React.JSX.Element {
   const [date, setDate] = useState(todayLocal());
+  const toast = useToast();
   const [jwSearch, setJwSearch] = useState('');
   const [jwId, setJwId] = useState<string | null>(initialJwId ?? null);
   const [dcNo, setDcNo] = useState('');
@@ -167,7 +168,10 @@ export function NewPartyGrnModal({
     if (remarks.trim()) input.remarks = remarks.trim();
 
     createMut.mutate(input, {
-      onSuccess: () => onClose(),
+      onSuccess: (created) => {
+        toast.ok(`Party GRN ${created.code} saved`);
+        onClose();
+      },
       onError: (e) =>
         setErr(
           e instanceof Error ? e.message : 'Could not save GRN. Check the lines and try again.',
@@ -189,6 +193,7 @@ export function NewPartyGrnModal({
             type="button"
             className="btn btn-primary"
             disabled={createMut.isPending || nothingToReceive}
+            title={nothingToReceive ? 'Nothing left to receive on this JWSO' : undefined}
             onClick={onSave}
           >
             {createMut.isPending ? (

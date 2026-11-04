@@ -5,7 +5,7 @@
 import { QC_DOC_CATEGORIES, type CreateQcDocumentInput, type QcDocCategory } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
-import { Modal } from '@/ui/feedback';
+import { Modal, useToast } from '@/ui/feedback';
 import { SearchableSelect } from '@/ui/forms';
 import { docDrawingRev, itemCodeWithRev } from '@/lib/item-code';
 import { soNoWithInternal } from '@/lib/so-number';
@@ -29,6 +29,7 @@ export function UploadModal({
   companyId: string;
   onClose: () => void;
 }): React.JSX.Element {
+  const toast = useToast();
   const saveKey = useSaveKey();
   const create = useCreateQcDocument(saveKey);
   const [file, setFile] = useState<File | null>(null);
@@ -87,6 +88,7 @@ export function UploadModal({
         ...(soCode.trim() ? { soCodeText: soCode.trim() } : {}),
       };
       await create.mutateAsync(input);
+      toast.ok(`QC Document ${file.name} uploaded`);
       onClose();
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Could not upload document. Try again.');
@@ -132,18 +134,15 @@ export function UploadModal({
           <label className="form-label">
             Document Type<span className="req">★</span>
           </label>
-          <select
-            className="innovic-select"
-            value={reportTypeId}
-            onChange={(e) => setReportTypeId(e.target.value)}
-          >
-            <option value="">{reportTypes.isLoading ? 'Loading…' : 'Select…'}</option>
-            {typeOptions.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))}
-          </select>
+          <SearchableSelect
+            ariaLabel="Document Type"
+            value={reportTypeId || null}
+            onChange={(id) => setReportTypeId(id ?? '')}
+            options={typeOptions.map((t) => ({ id: t.id, name: t.name }))}
+            loading={reportTypes.isLoading}
+            error={reportTypes.error}
+            placeholder={reportTypes.isLoading ? 'Loading…' : 'Select…'}
+          />
         </div>
         <div className="form-grp">
           <label className="form-label">Category</label>

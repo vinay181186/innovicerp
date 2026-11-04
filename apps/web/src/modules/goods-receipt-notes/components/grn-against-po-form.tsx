@@ -285,8 +285,8 @@ export function GrnAgainstPoForm({
     linesTouched;
   const blocked = poIneligible !== null;
   useEffect(() => {
-    onStatusChange({ submitting, blocked, dirty });
-  }, [onStatusChange, submitting, blocked, dirty]);
+    onStatusChange({ submitting, blocked, blockedReason: poIneligible ?? undefined, dirty });
+  }, [onStatusChange, submitting, blocked, poIneligible, dirty]);
 
   const errorText = formError ?? submitError;
 

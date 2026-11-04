@@ -190,6 +190,15 @@ export function NewCmrModal({
             type="button"
             className="btn btn-primary"
             disabled={createMut.isPending || !jwId || rows.length === 0}
+            title={
+              !jwId
+                ? 'Pick the JWSO No. first'
+                : rows.length === 0
+                  ? returnableQ.isLoading
+                    ? 'Loading what can be returned…'
+                    : 'Nothing on this JWSO can be returned'
+                  : undefined
+            }
             onClick={onSave}
           >
             {createMut.isPending ? (

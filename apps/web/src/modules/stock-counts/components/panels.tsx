@@ -43,6 +43,11 @@ export function ConfirmBelowBookedPanel(props: {
             type="button"
             className="btn btn-primary"
             disabled={busy || reason.trim().length < STOCK_COUNT_REASON_MIN}
+            title={
+              reason.trim().length < STOCK_COUNT_REASON_MIN
+                ? `Give a reason of at least ${STOCK_COUNT_REASON_MIN} characters`
+                : undefined
+            }
             onClick={onPost}
           >
             Post anyway

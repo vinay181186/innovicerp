@@ -204,6 +204,8 @@ export function Modal({
     // first, then the footer's left-most button — which IS Cancel — and only
     // then the card itself, from which Tab still reaches the header ×.
     const first = firstFocusableIn(bodyRef.current) ?? firstFocusableIn(footerRef.current);
+    // A type-to-search box opens on focus; here the list must wait to be asked for.
+    if (first?.getAttribute('role') === 'combobox') first.setAttribute('data-focus-only', '');
     (first ?? card)?.focus();
     return () => {
       release();

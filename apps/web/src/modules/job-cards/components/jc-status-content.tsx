@@ -11,7 +11,7 @@
 //
 //   header     ← Back · JC No. · Edit Job Card · JC status badge
 //   bottom     FormActions: (pending-edit note) · Cancel · Save Changes
-//   banners    Sent for approval · short-closed Production Order stop
+//   banners    short-closed Production Order stop
 //              (ADR-182) · rework / repair child note
 //   facts      jc-edit-fact-block.tsx — the detail page's block with Item
 //              Code, Due Date, Priority, Order Qty and Remarks as inputs
@@ -55,7 +55,7 @@ import { useMachineGroupsList, useMachinesList } from '@/modules/machines/api';
 import { useProductionOrderForJobCard } from '@/modules/production-orders/api';
 import { useVendorsList, vendorsKeys } from '@/modules/vendors/api';
 import { opEntryKeys, useJcOpsEnriched, useOpLog } from '@/modules/op-entry/api';
-import { Banner } from '@/ui/feedback';
+import { Banner, useToast } from '@/ui/feedback';
 import { DetailHeader, FormActions, useSaveShortcut } from '@/ui/layout';
 import {
   jobCardsKeys,
@@ -216,6 +216,7 @@ function JcStatusEditForm({
     [navigate, id],
   );
   const exit = useExitConfirm({ onExit: goBack });
+  const toast = useToast();
   const queryClient = useQueryClient();
   const update = useUpdateJobCard(id);
   const fetchJcModel = useFetchJobCardEditModel();
@@ -500,10 +501,6 @@ function JcStatusEditForm({
     return page;
   }, [vendorsData, ops, knownVendors]);
   const [error, setError] = useState<string | null>(null);
-  // ADR-202 — set when an edit to a LIVE Job Card is staged for approval instead
-  // of applied; the neutral "Sent for approval" banner shows it before we return
-  // to the status page (whose fields now carry the pending-change chips).
-  const [stagedNotice, setStagedNotice] = useState<string | null>(null);
   // Which op rows have their ▸ detail open (keyed by each op's stable rowKey,
   // so it follows the op on Move up / down). A freshly added op opens, so its
   // tool / cost fields are in view.
@@ -516,7 +513,6 @@ function JcStatusEditForm({
       return next;
     });
   const [balanceOpIdx, setBalanceOpIdx] = useState<number | null>(null);
-  const [balanceNote, setBalanceNote] = useState<string | null>(null);
   // Friendly "op line added — fill it in" feedback. addNote identifies the row
   // that was added (by its rowKey) and what it still needs. The banner names NO
   // Op number: a row added here has no stored op_seq, the Op No. cell shows an
@@ -863,13 +859,14 @@ function JcStatusEditForm({
         // The edit-approval gate is on and this Job Card is live: nothing was
         // changed on the card — the edit is now waiting for approval. Say so,
         // then return to the status page (its fields now carry the chip).
-        setStagedNotice('Sent for approval — your changes will apply once an approver signs off.');
+        toast.ok('Sent for approval — your changes will apply once an approver signs off.');
         void queryClient.invalidateQueries({ queryKey: jobCardsKeys.detail(id) });
         exit.leave(goBack);
         return;
       }
       void queryClient.invalidateQueries({ queryKey: jobCardsKeys.detail(id) });
       void queryClient.invalidateQueries({ queryKey: opEntryKeys.all });
+      toast.ok(`Job Card ${jc.code} saved`);
       exit.leave(goBack);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not save Job Card. Try again.');
@@ -918,11 +915,6 @@ function JcStatusEditForm({
           </>
         }
       >
-        {stagedNotice ? (
-          <Banner tone="success" role="status">
-            {stagedNotice}
-          </Banner>
-        ) : null}
         <JcStoppedBanner order={productionOrder} />
         <RecoveryBanner jc={jc} />
         <JcEditFactBlock
@@ -1007,7 +999,6 @@ function JcStatusEditForm({
       ) : null}
 
       {error ? <Banner tone="error">{error}</Banner> : null}
-      {balanceNote ? <Banner tone="success">{balanceNote}</Banner> : null}
       {addNoteText ? <Banner tone="success">{addNoteText}</Banner> : null}
       {/* The live "no QC directly after OSP" hint — the same message Save and
           the API raise. */}
@@ -1040,10 +1031,7 @@ function JcStatusEditForm({
         onGroupChange={onOpGroupChange}
         onMove={moveOp}
         onRemove={removeOp}
-        onOutsourceBalance={(i) => {
-          setBalanceNote(null);
-          setBalanceOpIdx(i);
-        }}
+        onOutsourceBalance={(i) => setBalanceOpIdx(i)}
       />
 
       {balanceOpIdx !== null && ops[balanceOpIdx]?.id ? (
@@ -1063,7 +1051,7 @@ function JcStatusEditForm({
             const op = ops[idx];
             if (op) setOp(idx, { available: Math.max(0, op.available - qtyDone) });
             const seq = (op?.id ? enrichedById.get(op.id)?.opSeq : undefined) ?? idx + 1;
-            setBalanceNote(`Outsource PR raised for ${qtyDone} pcs (Op ${fmtOpSrNo(seq)}).`);
+            toast.ok(`Outsource PR raised for ${qtyDone} pcs (Op ${fmtOpSrNo(seq)}).`);
             setBalanceOpIdx(null);
           }}
         />

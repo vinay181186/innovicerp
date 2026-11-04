@@ -10,7 +10,7 @@ import { useForm } from 'react-hook-form';
 import { roleLabel } from '@/lib/role-label';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { Banner } from '@/ui/feedback';
+import { Banner, useToast } from '@/ui/feedback';
 import { useMyCompany, useUpdateMyCompany } from '../api';
 import { DataIntegrityPanel } from '../components/data-integrity-panel';
 import { MasterRulesPanel } from '../components/master-rules-panel';
@@ -51,9 +51,9 @@ function toFormValues(company: Company): FormValues {
 function SettingsPage(): React.JSX.Element {
   const { data: me } = useSession();
   const { data: company, isLoading, isError, error } = useMyCompany();
+  const toast = useToast();
   const update = useUpdateMyCompany();
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [submitOk, setSubmitOk] = useState(false);
 
   const isAdmin = me?.role === 'admin';
 
@@ -83,7 +83,6 @@ function SettingsPage(): React.JSX.Element {
 
   const onValid = async (values: FormValues): Promise<void> => {
     setSubmitError(null);
-    setSubmitOk(false);
     const payload: UpdateCompanyInput = {
       name: values.name.trim() || undefined,
       gstNumber: values.gstNumber.trim() || undefined,
@@ -98,8 +97,7 @@ function SettingsPage(): React.JSX.Element {
     try {
       const saved = await update.mutateAsync(payload);
       reset(toFormValues(saved));
-      setSubmitOk(true);
-      window.setTimeout(() => setSubmitOk(false), 3000);
+      toast.ok('Company details saved');
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : 'Could not save company details. Try again.');
     }
@@ -292,11 +290,6 @@ function SettingsPage(): React.JSX.Element {
                         <Banner tone="error" role="alert">
                           {submitError}
                         </Banner>
-                      </div>
-                    ) : null}
-                    {submitOk ? (
-                      <div style={{ marginBottom: 10 }}>
-                        <Banner tone="success">Company details saved.</Banner>
                       </div>
                     ) : null}
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>

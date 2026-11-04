@@ -73,6 +73,7 @@ const TimePicker = forwardRef<
       type="button"
       className={`ss-opt mono${on ? ' hl' : ''}`}
       disabled={off}
+      title={off ? 'This time has not come yet' : undefined}
       onClick={pick}
       style={{
         border: 0,
@@ -141,6 +142,7 @@ const TimePicker = forwardRef<
           type="button"
           className="btn btn-primary btn-sm"
           disabled={after(h * 60 + m)}
+          title={after(h * 60 + m) ? 'This time has not come yet' : undefined}
           onClick={() => onSet(minToHhmm(h * 60 + m))}
         >
           Set

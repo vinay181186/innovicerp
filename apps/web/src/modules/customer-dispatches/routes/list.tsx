@@ -52,6 +52,7 @@ import { dispatchListColumns } from '../components/dispatch-list-columns';
 import { DispatchRowActions } from '../components/dispatch-row-actions';
 import { exportDispatchRegister } from '../lib/export-excel';
 import { printCustomerDispatchRegister } from '../lib/print-register';
+import { SearchableSelect } from '@/ui/forms';
 
 // Deep-link seed for Global Search (this register has no detail page):
 // `?tab=so&search=DSP-0004` opens the right tab with the box pre-filled. The
@@ -230,23 +231,19 @@ function CustomerDispatchListPage(): React.JSX.Element {
         searchPlaceholder="Search dispatch no., SO, JC, POL, item, customer, date…"
         updating={isFetching && !isLoading}
         filters={
-          <select
-            className="innovic-select"
-            aria-label="SO No."
-            title="SO No."
-            value={soFilter}
-            onChange={(e) => {
-              setSoFilter(e.target.value);
+          <SearchableSelect
+            ariaLabel="SO No."
+            style={{ width: 180 }}
+            clearable
+            placeholder="All SOs"
+            value={soFilter || null}
+            valueLabel={soFilter || undefined}
+            options={soOptions.map((s) => ({ id: s, name: s }))}
+            onChange={(id) => {
+              setSoFilter(id ?? '');
               gotoPage(1);
             }}
-          >
-            <option value="">All SOs</option>
-            {soOptions.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
+          />
         }
         onClearFilters={() => {
           sf.clearFilters();

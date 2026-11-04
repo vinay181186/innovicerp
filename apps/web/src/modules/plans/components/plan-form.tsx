@@ -1014,6 +1014,7 @@ export function PlanForm({
           type="submit"
           className="btn btn-primary"
           disabled={isSubmitting || Boolean(opsSeqError)}
+          title={opsSeqError ?? undefined}
         >
           {isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
           {isSubmitting ? 'Saving…' : submitLabel}

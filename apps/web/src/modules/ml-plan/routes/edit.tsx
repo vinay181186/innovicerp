@@ -14,6 +14,7 @@ import { Icon } from '@/ui/core';
 import { PageState } from '@/ui/layout';
 import { useMlPlan, useUpdateMlPlan } from '../api';
 import { MlPlanForm, type MlPlanFormDraft, type MlPlanFormLine } from '../components/ml-plan-form';
+import { useToast } from '@/ui/feedback';
 
 export const mlPlanEditRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -36,6 +37,7 @@ function MlPlanEditPage(): React.JSX.Element {
     [navigate, id],
   );
   const exit = useExitConfirm({ onExit: goBack });
+  const toast = useToast();
 
   const submit = async (_line: MlPlanFormLine, draft: MlPlanFormDraft): Promise<void> => {
     setSubmitError(null);
@@ -46,6 +48,7 @@ function MlPlanEditPage(): React.JSX.Element {
         expectedUpdatedAt: opened.expected(),
       });
       opened.saved(updated.updatedAt);
+      toast.ok(`Multi-Level Plan ${updated.code} saved`);
       exit.leave(
         () => void navigate({ to: '/ml-plans/$id', params: { id: updated.id }, replace: true }),
       );

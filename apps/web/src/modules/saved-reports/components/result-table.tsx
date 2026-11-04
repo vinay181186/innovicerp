@@ -107,6 +107,7 @@ export function ResultTable({
               className="btn btn-ghost btn-sm"
               onClick={onCsv}
               disabled={!data || data.rowCount === 0}
+              title={!data || data.rowCount === 0 ? 'No rows to export' : undefined}
             >
               <Download size={13} /> Export CSV
             </button>
@@ -116,6 +117,7 @@ export function ResultTable({
                 className="btn btn-ghost btn-sm"
                 onClick={onExcel}
                 disabled={!data || data.rowCount === 0 || excelLoading}
+                title={!data || data.rowCount === 0 ? 'No rows to export' : undefined}
               >
                 {excelLoading ? (
                   <Loader2 size={13} className="animate-spin" />

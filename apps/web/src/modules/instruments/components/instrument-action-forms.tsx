@@ -129,7 +129,7 @@ export function InstrumentActionForm({ ins, mode, onBack, onDone }: Props): Reac
             onDone(
               isStagedResult(res)
                 ? 'Sent for approval — your changes will apply once an approver signs off.'
-                : 'Saved.',
+                : 'Instrument saved',
             ),
           onError: fail,
         },

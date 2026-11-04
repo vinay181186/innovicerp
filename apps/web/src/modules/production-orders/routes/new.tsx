@@ -50,7 +50,7 @@ import { soNoWithInternal } from '@/lib/so-number';
 import { useSaveKey } from '@/lib/use-save-key';
 import { useRouteCardsList } from '@/modules/route-cards/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { Banner } from '@/ui/feedback';
+import { Banner, useToast } from '@/ui/feedback';
 import {
   Cluster,
   ClusterFact,
@@ -59,6 +59,7 @@ import {
   FormField,
   IdentCode,
   IdentSep,
+  SearchableSelect,
 } from '@/ui/forms';
 import { DetailHeader, FormActions, useSaveShortcut } from '@/ui/layout';
 import {
@@ -96,6 +97,7 @@ function ProductionOrderNewPage(): React.JSX.Element {
   const preselected = usePreselectedPlan(search.planId, search.planCode, 'create');
   const saveKey = useSaveKey();
   const create = useCreateProductionOrder(saveKey);
+  const toast = useToast();
   const [submitError, setSubmitError] = useState<string | null>(null);
   const goBack = useCallback(() => void navigate({ to: '/production-orders' }), [navigate]);
   const exit = useExitConfirm({ onExit: goBack });
@@ -275,6 +277,7 @@ function ProductionOrderNewPage(): React.JSX.Element {
     };
     try {
       const created = await create.mutateAsync(input);
+      toast.ok(`Production Order ${created.code} saved`);
       exit.leave(() => void navigate({ to: '/production-orders/$id', params: { id: created.id } }));
     } catch (err) {
       setSubmitError(
@@ -491,53 +494,55 @@ function ProductionOrderNewPage(): React.JSX.Element {
               />
             </FormField>
             <FormField label="Route Card" required htmlFor="po-route-card" className="po-in">
-              <select
-                id="po-route-card"
-                className="innovic-select"
-                value={routeCardId ?? ''}
-                disabled={
-                  !plan ||
-                  noRouteCard ||
-                  Boolean(legacyRc) ||
-                  Boolean(unapprovedRc) ||
-                  routeCards.isLoading
-                }
+              {/* The box holds the code only. "IN-RC-00012 · Route Card Rev 2"
+                  needs ~175px and the quarter cell gives the box 167px at
+                  1440 wide, so the revision was the part cut off; the bare
+                  "Rev" that would fit is not a name NAMING.md allows. The
+                  revision is in the list rows, the box's hover text and the
+                  operations panel's header right below. Keyed on the plan so
+                  text typed under one plan never survives into the next. */}
+              <div
                 title={
                   routeCard
                     ? `${routeCard.code} · Route Card Rev ${routeCard.currentRevision}`
                     : undefined
                 }
-                onChange={(e) => setRouteCardId(e.target.value || null)}
               >
-                <option value="">
-                  {!plan
-                    ? PICK_PLAN_FIRST
-                    : routeCards.isLoading
-                      ? 'Loading Route Cards…'
-                      : noRouteCard
-                        ? `No Route Card for ${planRevLabel}`
-                        : legacyRc
-                          ? 'Route Card has no Drawing Rev'
-                          : unapprovedRc
-                            ? 'Route Card not approved yet'
-                            : 'Select Route Card…'}
-                </option>
-                {/* The box holds the code only. "IN-RC-00012 · Route Card Rev 2"
-                    needs ~175px and the quarter cell gives the box 167px at
-                    1440 wide, so the revision was the part cut off; the bare
-                    "Rev" that would fit is not a name NAMING.md allows. The
-                    revision is in the box's hover text and in the operations
-                    panel's header right below. */}
-                {rcItems.map((rc) => (
-                  <option
-                    key={rc.id}
-                    value={rc.id}
-                    title={`${rc.code} · Route Card Rev ${rc.currentRevision}`}
-                  >
-                    {rc.code}
-                  </option>
-                ))}
-              </select>
+                <SearchableSelect
+                  key={plan?.id ?? 'no-plan'}
+                  id="po-route-card"
+                  value={routeCardId}
+                  onChange={setRouteCardId}
+                  disabled={
+                    !plan ||
+                    noRouteCard ||
+                    Boolean(legacyRc) ||
+                    Boolean(unapprovedRc) ||
+                    routeCards.isLoading
+                  }
+                  loading={routeCards.isLoading}
+                  placeholder={
+                    !plan
+                      ? PICK_PLAN_FIRST
+                      : routeCards.isLoading
+                        ? 'Loading Route Cards…'
+                        : noRouteCard
+                          ? `No Route Card for ${planRevLabel}`
+                          : legacyRc
+                            ? 'Route Card has no Drawing Rev'
+                            : unapprovedRc
+                              ? 'Route Card not approved yet'
+                              : 'Select Route Card…'
+                  }
+                  options={rcItems.map((rc) => ({
+                    id: rc.id,
+                    code: rc.code,
+                    name: `Route Card Rev ${rc.currentRevision}`,
+                  }))}
+                  selectedLabel={(o) => o.code ?? o.name}
+                  valueLabel={routeCard?.code}
+                />
+              </div>
             </FormField>
           </Cluster>
 

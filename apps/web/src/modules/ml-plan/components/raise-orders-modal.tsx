@@ -17,7 +17,7 @@ import { useSaveKey } from '@/lib/use-save-key';
 import { useVendorsList } from '@/modules/vendors/api';
 import { Button } from '@/ui/core';
 import { DataTable, type DataTableColumn } from '@/ui/data';
-import { Banner, Modal } from '@/ui/feedback';
+import { Banner, Modal, useToast } from '@/ui/feedback';
 import { useRaiseMlPlanOrders } from '../api';
 
 const dash = <span className="text3">—</span>;
@@ -119,6 +119,7 @@ export function RaiseOrdersModal({ detail, onClose }: Props): React.JSX.Element 
   // Vendors for the Outsource rows — server-side search, one shared term (only
   // one picker is open at a time), active vendors only. Same as the BOM
   // Planning modal.
+  const toast = useToast();
   const [vendorSearch, setVendorSearch] = useState('');
   const { data: vendorPage, isFetching: vendorsFetching } = useVendorsList({
     ...(vendorSearch.trim() ? { search: vendorSearch.trim() } : {}),
@@ -164,7 +165,10 @@ export function RaiseOrdersModal({ detail, onClose }: Props): React.JSX.Element 
     raise.mutate(
       { lines, expectedUpdatedAt: detail.updatedAt },
       {
-        onSuccess: () => onClose(),
+        onSuccess: () => {
+          toast.ok(`Raised ${plural(planCount, 'Plan', 'Plans')}, ${plural(prCount, 'PR', 'PRs')}`);
+          onClose();
+        },
         onError: (e) => setError(e.message),
       },
     );
@@ -322,6 +326,7 @@ export function RaiseOrdersModal({ detail, onClose }: Props): React.JSX.Element 
         onClick={onSubmit}
         loading={raise.isPending}
         disabled={ticked.length === 0}
+        {...(ticked.length === 0 ? { title: 'Tick at least one row' } : {})}
       >
         {raise.isPending ? 'Raising…' : 'Raise Orders'}
       </Button>

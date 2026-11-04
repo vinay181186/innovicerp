@@ -14,7 +14,7 @@ import { useState } from 'react';
 import { useSaveKey } from '@/lib/use-save-key';
 import { DataTable, type DataTableColumn } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
-import { ConfirmDialog } from '@/ui/feedback';
+import { ConfirmDialog, useToast } from '@/ui/feedback';
 import { SearchableSelect, type SearchableOption } from '@/ui/forms';
 import { PageState } from '@/ui/layout';
 import {
@@ -64,15 +64,14 @@ const COLUMNS: DataTableColumn<DayLogTeamMate>[] = [
   },
 ];
 
-type Msg = { tone: 'ok' | 'err'; text: string } | null;
-
 export function TeamsConfig(): React.JSX.Element {
   const access = useDayLogAccess();
   const canManage = Boolean(access.data?.canManageTeams);
   const people = useDayLogTeamPeople(canManage);
   const [userId, setUserId] = useState<string | null>(null);
   const [mateId, setMateId] = useState<string | null>(null);
-  const [msg, setMsg] = useState<Msg>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const toast = useToast();
   const [removing, setRemoving] = useState<DayLogTeamMate | null>(null);
   const mates = useDayLogTeamMates(canManage ? userId : null);
   const saveKey = useSaveKey();
@@ -112,18 +111,15 @@ export function TeamsConfig(): React.JSX.Element {
   const onAdd = (): void => {
     if (!userId || !mateId || add.isPending) return;
     const mateName = nameOf(mateId);
-    setMsg(null);
+    setErr(null);
     add.mutate(
       { userId, mateId },
       {
         onSuccess: () => {
           setMateId(null);
-          setMsg({
-            tone: 'ok',
-            text: `${mateName} added. ${userName} can now see ${mateName}'s Day Log.`,
-          });
+          toast.ok(`${mateName} added. ${userName} can now see ${mateName}'s Day Log.`);
         },
-        onError: (e) => setMsg({ tone: 'err', text: errText(e) }),
+        onError: (e) => setErr(errText(e)),
       },
     );
   };
@@ -147,7 +143,7 @@ export function TeamsConfig(): React.JSX.Element {
               saveKey.rotate();
               setUserId(id);
               setMateId(null);
-              setMsg(null);
+              setErr(null);
             }}
           />
         </div>
@@ -166,7 +162,7 @@ export function TeamsConfig(): React.JSX.Element {
             onChange={(id) => {
               saveKey.rotate();
               setMateId(id);
-              setMsg(null);
+              setErr(null);
             }}
           />
         </div>
@@ -174,22 +170,31 @@ export function TeamsConfig(): React.JSX.Element {
           type="button"
           className="btn btn-primary"
           disabled={!userId || !mateId || !matesReady || add.isPending}
+          title={
+            !userId
+              ? 'Pick a User first'
+              : !matesReady
+                ? "Loading this User's team mates…"
+                : !mateId
+                  ? 'Pick a team mate first'
+                  : undefined
+          }
           onClick={onAdd}
         >
           {add.isPending ? 'Adding…' : '+ Add'}
         </button>
       </div>
-      {msg ? (
+      {err ? (
         <p
-          role={msg.tone === 'err' ? 'alert' : 'status'}
+          role="alert"
           style={{
-            color: msg.tone === 'err' ? 'var(--red2)' : 'var(--green2)',
+            color: 'var(--red2)',
             fontWeight: 600,
             fontSize: 13,
             margin: '0 0 10px',
           }}
         >
-          {msg.text}
+          {err}
         </p>
       ) : null}
       {!userId ? (
@@ -249,9 +254,9 @@ export function TeamsConfig(): React.JSX.Element {
           // either way, the list re-reads (api.ts) and the line says why.
           try {
             await remove.mutateAsync(pair.id);
-            setMsg(null);
+            setErr(null);
           } catch (e) {
-            setMsg({ tone: 'err', text: errText(e) });
+            setErr(errText(e));
           } finally {
             setRemoving(null);
           }

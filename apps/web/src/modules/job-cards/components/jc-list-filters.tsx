@@ -5,7 +5,7 @@
 // Clear button and the create buttons stay on the page — ListHeader owns them.
 
 import { JC_COMPUTED_STATUSES, type JcComputedStatus } from '@innovic/shared';
-import { Input, Select } from '@/ui/forms';
+import { Input, SearchableSelect, Select } from '@/ui/forms';
 import { JC_STATUS_LABEL } from './jc-status-badge';
 
 /** A machine / operator option as the list already maps it. */
@@ -44,6 +44,11 @@ interface JcListFiltersProps {
   statusCounts: JcStatusCounts;
   countsReady: boolean;
   setNav: (update: JcListFilterNav) => void;
+}
+
+function codeNameLabel(options: CodeNameOption[], id: string | undefined): string | undefined {
+  const o = id ? options.find((x) => x.id === id) : undefined;
+  return o ? `${o.code} — ${o.name}` : undefined;
 }
 
 export function JcListFilters({
@@ -90,23 +95,25 @@ export function JcListFilters({
             });
         }}
       />
-      <Select
-        aria-label="Machine"
-        value={machineId ?? ''}
-        options={[
-          { value: '', label: 'All machines' },
-          ...machines.map((m) => ({ value: m.id, label: `${m.code} — ${m.name}` })),
-        ]}
-        onChange={(e) => setNav({ machineId: e.target.value === '' ? undefined : e.target.value })}
+      <SearchableSelect
+        style={{ minWidth: 170 }}
+        ariaLabel="Machine"
+        value={machineId ?? null}
+        options={machines}
+        valueLabel={codeNameLabel(machines, machineId)}
+        placeholder="All machines"
+        clearable
+        onChange={(id) => setNav({ machineId: id ?? undefined })}
       />
-      <Select
-        aria-label="Operator"
-        value={operatorId ?? ''}
-        options={[
-          { value: '', label: 'All operators' },
-          ...operators.map((o) => ({ value: o.id, label: `${o.code} — ${o.name}` })),
-        ]}
-        onChange={(e) => setNav({ operatorId: e.target.value === '' ? undefined : e.target.value })}
+      <SearchableSelect
+        style={{ minWidth: 170 }}
+        ariaLabel="Operator"
+        value={operatorId ?? null}
+        options={operators}
+        valueLabel={codeNameLabel(operators, operatorId)}
+        placeholder="All operators"
+        clearable
+        onChange={(id) => setNav({ operatorId: id ?? undefined })}
       />
       <Input
         type="date"

@@ -12,6 +12,7 @@ import { isOpenTask } from '../lib/format';
 import { CancelModal, CompleteModal, EditTaskModal, ReassignModal } from './task-action-modals';
 import { TaskBody } from './task-detail-body';
 import { Overlay } from './task-overlay';
+import { useToast } from '@/ui/feedback';
 
 type Child =
   | { kind: 'none' }
@@ -35,12 +36,14 @@ export function TaskDetailModal({
   const [child, setChild] = useState<Child>({ kind: 'none' });
   const closeChild = (): void => setChild({ kind: 'none' });
 
+  const toast = useToast();
   const startTask = useUpdateTaskStatus(taskId);
   const [actionErr, setActionErr] = useState<string | null>(null);
   async function start(): Promise<void> {
     setActionErr(null);
     try {
       await startTask.mutateAsync({ status: 'in_progress' });
+      toast.ok('Task started');
     } catch (e) {
       setActionErr(e instanceof Error ? e.message : 'Could not start the task. Try again.');
     }

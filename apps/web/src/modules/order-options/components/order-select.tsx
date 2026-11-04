@@ -126,7 +126,7 @@ export function OrderSelect({
         type="button"
         className="order-filter-clear"
         aria-label={CLEAR_LABEL[kind ?? 'both']}
-        title={CLEAR_LABEL[kind ?? 'both']}
+        title={canClear ? CLEAR_LABEL[kind ?? 'both'] : 'Nothing to clear'}
         disabled={!canClear}
         onClick={clear}
       >

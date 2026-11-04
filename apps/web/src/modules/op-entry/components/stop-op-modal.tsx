@@ -226,6 +226,17 @@ export function StopOpModal({
             type="button"
             className="btn btn-primary btn-sm"
             disabled={!canSubmit}
+            title={
+              missing.length > 0
+                ? `Fill in ${missing.join(', ')}`
+                : qtyIsJunk || rejIsJunk
+                  ? `Enter whole numbers (0 or more) in ${qtyIsJunk ? 'Completed' : 'Deviated'}`
+                  : overCap
+                    ? `Completed + Deviated cannot be more than ${target.availableQty}`
+                    : dateInFuture
+                      ? 'Log Date cannot be in the future'
+                      : undefined
+            }
             onClick={handleStop}
           >
             {pending ? (

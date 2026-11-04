@@ -51,6 +51,17 @@ export function NewJwReturnModal({ onClose }: { onClose: () => void }): React.JS
   );
   const pickedReturnable = jobWorkOrderLineId ? returnableById.get(jobWorkOrderLineId) : undefined;
 
+  const lineOptions = jwLines.map((l) => ({
+    id: l.id,
+    code: `L${l.lineNo}`,
+    name: `${l.partName} · Order Qty ${l.orderQty}${
+      returnableById.has(l.id)
+        ? ` · Returnable ${returnableById.get(l.id)?.returnableQty ?? 0}`
+        : ''
+    }`,
+  }));
+  const pickedLineOption = lineOptions.find((o) => o.id === jobWorkOrderLineId);
+
   const saveKey = useSaveKey();
   const createMut = useCreateJwReturnChallan(saveKey);
 
@@ -183,37 +194,30 @@ export function NewJwReturnModal({ onClose }: { onClose: () => void }): React.JS
 
         <div style={{ gridColumn: 'span 2' }}>
           <Field label="Ln ★">
-            <select
-              className="innovic-input"
-              value={jobWorkOrderLineId}
-              onChange={(e) => {
-                const lineId = e.target.value;
+            <SearchableSelect
+              value={jobWorkOrderLineId || null}
+              onChange={(id) => {
+                const lineId = id ?? '';
                 setJobWorkOrderLineId(lineId);
                 // Prefill with what can go back now; blank when nothing can.
                 const rq = returnableById.get(lineId)?.returnableQty ?? 0;
                 setQty(rq > 0 ? String(rq) : '');
               }}
               disabled={!jwId || jwDetailQ.isFetching}
-              style={{ width: '100%' }}
-            >
-              <option value="">
-                {!jwId
+              options={lineOptions}
+              valueLabel={
+                pickedLineOption ? `${pickedLineOption.code} — ${pickedLineOption.name}` : undefined
+              }
+              placeholder={
+                !jwId
                   ? 'Select a JWSO first'
                   : jwDetailQ.isFetching
                     ? 'Loading lines…'
                     : jwLines.length === 0
                       ? 'No lines'
-                      : 'Select a line…'}
-              </option>
-              {jwLines.map((l) => (
-                <option key={l.id} value={l.id}>
-                  L{l.lineNo} · {l.partName} · Order Qty {l.orderQty}
-                  {returnableById.has(l.id)
-                    ? ` · Returnable ${returnableById.get(l.id)?.returnableQty ?? 0}`
-                    : ''}
-                </option>
-              ))}
-            </select>
+                      : 'Select a line…'
+              }
+            />
           </Field>
         </div>
 

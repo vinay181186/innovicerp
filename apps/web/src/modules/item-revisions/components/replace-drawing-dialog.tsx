@@ -13,7 +13,7 @@ import type { ItemRevision } from '@innovic/shared';
 import { useState } from 'react';
 import { useSession } from '@/lib/session';
 import { uploadFile } from '@/lib/storage';
-import { ConfirmDialog } from '@/ui/feedback';
+import { ConfirmDialog, useToast } from '@/ui/feedback';
 import { FormField } from '@/ui/forms';
 import { useReplaceItemRevisionDrawing } from '../api';
 
@@ -33,6 +33,7 @@ export function ReplaceDrawingDialog({
 }): React.JSX.Element {
   const { data: me } = useSession();
   const replace = useReplaceItemRevisionDrawing(revision.id);
+  const toast = useToast();
   const [path, setPath] = useState<string | null>(null);
   const [drawingNo, setDrawingNo] = useState(revision.drawingNo ?? '');
   const [reason, setReason] = useState('');
@@ -69,7 +70,12 @@ export function ReplaceDrawingDialog({
             The old file stays in this drawing&apos;s history. For a new revision of the drawing,
             use a new Drawing Rev instead.
           </span>
-          <FormField label="New drawing file" required htmlFor="ir-replace-file" error={err ?? undefined}>
+          <FormField
+            label="New drawing file"
+            required
+            htmlFor="ir-replace-file"
+            error={err ?? undefined}
+          >
             <input
               id="ir-replace-file"
               type="file"
@@ -116,6 +122,7 @@ export function ReplaceDrawingDialog({
           reason: reason.trim(),
           expectedUpdatedAt: revision.updatedAt,
         });
+        toast.ok('Drawing replaced');
         onDone(path);
       }}
     />

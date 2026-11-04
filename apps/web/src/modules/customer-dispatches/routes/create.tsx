@@ -23,7 +23,7 @@ import { soNoWithInternal } from '@/lib/so-number';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { todayIst } from '@/lib/date';
 import { Panel } from '@/ui/data';
-import { Banner } from '@/ui/feedback';
+import { Banner, useToast } from '@/ui/feedback';
 import { FormField, FormGrid, SearchableSelect } from '@/ui/forms';
 import { FormActions, PageHeader, useSaveShortcut } from '@/ui/layout';
 import {
@@ -61,6 +61,7 @@ function CustomerDispatchNewPage(): React.JSX.Element {
   const { data: next } = useNextDispatchCode();
   const saveKey = useSaveKey();
   const create = useCreateDispatch(saveKey);
+  const toast = useToast();
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'dispatch_create');
   // Where Cancel goes, and where ESC -> Exit goes. Every other way off the
@@ -151,6 +152,7 @@ function CustomerDispatchNewPage(): React.JSX.Element {
         remarks: remarks || undefined,
         lines: payloadLines,
       });
+      toast.ok(`Dispatch ${saved.code} saved`);
       // Land on the new dispatch — Preview / Download PDF and Create Invoice are right there,
       // instead of hunting for the new DSP on the list.
       exit.leave(() => void navigate({ to: '/customer-dispatches/$id', params: { id: saved.id } }));
@@ -279,6 +281,7 @@ function CustomerDispatchNewPage(): React.JSX.Element {
                 className="btn btn-ghost btn-sm"
                 onClick={addAllPendingLines}
                 disabled={!dispatchable}
+                title={!dispatchable ? "Loading this SO's lines…" : undefined}
               >
                 Add all pending lines
               </button>
@@ -315,9 +318,15 @@ function CustomerDispatchNewPage(): React.JSX.Element {
           className="btn btn-primary"
           disabled={!canSave}
           title={
-            lineErrors.size > 0
-              ? 'Fix the highlighted lines — Dispatch Qty cannot be more than Pending.'
-              : undefined
+            !soId
+              ? 'Pick the SO No. first'
+              : cards.length === 0
+                ? 'Add at least one line'
+                : lineErrors.size > 0
+                  ? 'Fix the highlighted lines — Dispatch Qty cannot be more than Pending.'
+                  : !anyPositiveQty
+                    ? 'Enter a Dispatch Qty on at least one line'
+                    : undefined
           }
           onClick={() => void submit()}
         >

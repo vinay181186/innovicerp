@@ -15,7 +15,7 @@ import { canDeleteRecords, useMyAccess } from '@/lib/access-control';
 import { useSession } from '@/lib/session';
 import { useVendorsList } from '@/modules/vendors/api';
 import { RowMenu } from '@/ui/data';
-import { Banner, ConfirmDialog, Modal } from '@/ui/feedback';
+import { Banner, ConfirmDialog, Modal, useToast } from '@/ui/feedback';
 
 interface ListOspProcessesResponse {
   items: OspProcess[];
@@ -98,6 +98,7 @@ export function OspProcessesPanel(): React.JSX.Element {
   );
   // R2: one save key per Add-modal open — rotated in openCreate(), since the
   // modal is inline here rather than its own component.
+  const toast = useToast();
   const saveKey = useSaveKey();
   const createMut = useCreateOsp(saveKey);
   const updateMut = useUpdateOsp();
@@ -165,6 +166,7 @@ export function OspProcessesPanel(): React.JSX.Element {
     try {
       if (modal.id) await updateMut.mutateAsync({ id: modal.id, input });
       else await createMut.mutateAsync(input);
+      toast.ok(`OSP Process ${input.processName} saved`);
       setModal(null);
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : 'Could not save OSP process. Try again.');

@@ -39,6 +39,7 @@ import {
   useSubmitQcLog,
 } from '../api';
 import { QcReportLaterNote } from './qc-report-later-note';
+import { useToast } from '@/ui/feedback';
 
 // One fixed field grid for both the production and the QC form: four equal
 // columns, so a box never jumps when a neighbour's content changes.
@@ -198,6 +199,7 @@ export function OpEntryForm({
   const [reportLater, setReportLater] = useState<string | null>(null);
   // OSP auto-PR result/error message (ADR-039) — only used on the outsource panel.
   const [ospMsg, setOspMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  const toast = useToast();
   // NC(s) the last completion raised from its rejects (ADR-183), shown as the
   // success notice. Null when the last save raised none.
   const [ncNotice, setNcNotice] = useState<{ ncs: OpLog['ncs']; rejected: number } | null>(null);
@@ -490,6 +492,7 @@ export function OpEntryForm({
       if (saved.ncs && saved.ncs.length > 0) {
         setNcNotice({ ncs: saved.ncs, rejected: rejNum });
       } else {
+        toast.ok('Op Entry saved');
         onSubmitted?.();
       }
       setRejectQty('');
@@ -542,7 +545,10 @@ export function OpEntryForm({
       const skippedOptionalReport = qtyNum > 0 && !qcReportPath && qcReportRule.optionalHere;
       setQty('');
       if (skippedOptionalReport) setReportLater(qcReportRule.reportName ?? 'QC');
-      else onSubmitted?.();
+      else {
+        toast.ok('Inspection saved');
+        onSubmitted?.();
+      }
       setRejectQty('');
       setRemarks('');
       setQcReportPath(null);
@@ -586,6 +592,7 @@ export function OpEntryForm({
     };
     try {
       await start.mutateAsync(input);
+      toast.ok('Operation started');
       onSubmitted?.();
     } catch (err) {
       setErrorMessage(
@@ -642,6 +649,7 @@ export function OpEntryForm({
       setQty('');
       setRejectQty('');
       setRemarks('');
+      toast.ok('Operation stopped — Op Entry saved');
       onSubmitted?.();
     } catch (err) {
       setErrorMessage(
@@ -1007,7 +1015,7 @@ export function OpEntryForm({
                   disabled={
                     blockedReason !== null || submitQc.isPending || qcReportMissing !== null
                   }
-                  title={qcReportMissing ?? undefined}
+                  title={blockedReason ?? qcReportMissing ?? undefined}
                 >
                   {submitQc.isPending ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -1383,9 +1391,12 @@ export function OpEntryForm({
                       blockedReason !== null || start.isPending || Boolean(busy) || busyUnknown
                     }
                     title={
-                      busy
+                      blockedReason ??
+                      (busy
                         ? `${actualLabel ?? 'The chosen machine'} is busy with ${busy.jobCardCode} Op ${fmtOpSrNo(busy.opSeq)} — pick another machine`
-                        : undefined
+                        : busyUnknown
+                          ? 'Could not check whether the machine is free yet'
+                          : undefined)
                     }
                   >
                     {start.isPending ? (
@@ -1402,6 +1413,7 @@ export function OpEntryForm({
                     type="submit"
                     className="btn btn-success"
                     disabled={blockedReason !== null || submit.isPending}
+                    title={blockedReason ?? undefined}
                   >
                     {submit.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}✓
                     Complete
@@ -1423,6 +1435,7 @@ export function OpEntryForm({
                       className="btn btn-ghost"
                       onClick={() => void handleStart()}
                       disabled={blockedReason !== null || start.isPending}
+                      title={blockedReason ?? undefined}
                     >
                       <Play size={14} />
                       Start Operation

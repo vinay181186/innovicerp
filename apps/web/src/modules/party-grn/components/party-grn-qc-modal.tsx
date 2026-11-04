@@ -18,7 +18,7 @@
 import type { PartyGrnListItem, PartyGrnQcInput } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Modal } from '@/ui/feedback';
+import { Modal, useToast } from '@/ui/feedback';
 import { useSaveKey } from '@/lib/use-save-key';
 import { usePartyGrnDetail, useQcPartyGrn } from '../api';
 import { qcPendingQtyOf } from '../lib/qc-state';
@@ -53,6 +53,7 @@ export function PartyGrnQcModal({
   onlyLineId?: string | undefined;
   onClose: () => void;
 }): React.JSX.Element {
+  const toast = useToast();
   const detailQ = usePartyGrnDetail(row.id);
   const pending = useMemo(
     () =>
@@ -159,7 +160,10 @@ export function PartyGrnQcModal({
         onSettled: () => {
           inFlight.current = false;
         },
-        onSuccess: () => onClose(),
+        onSuccess: () => {
+          toast.ok(`Incoming QC on ${row.code} saved`);
+          onClose();
+        },
         onError: (e) =>
           setErr(e instanceof Error ? e.message : 'Could not save Incoming QC. Try again.'),
       },
@@ -180,6 +184,7 @@ export function PartyGrnQcModal({
             type="button"
             className="btn btn-primary"
             disabled={qcMut.isPending || pending.length === 0}
+            title={pending.length === 0 ? 'No line has QC Pending' : undefined}
             onClick={onSave}
           >
             {qcMut.isPending ? (

@@ -5,7 +5,7 @@
 import type { CreateToolIssueInput, InstrumentListItem } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { Modal } from '@/ui/feedback';
+import { Modal, useToast } from '@/ui/feedback';
 import { fmtDate, todayIst } from '@/lib/date';
 import { SearchableSelect } from '@/ui/forms';
 import { useInstrumentsList } from '../../instruments/api';
@@ -36,6 +36,7 @@ export function NewToolIssueModal({ onClose }: { onClose: () => void }): React.J
   const [purpose, setPurpose] = useState('');
   const [remarks, setRemarks] = useState('');
   const [err, setErr] = useState<string | null>(null);
+  const toast = useToast();
   const createMut = useCreateToolIssue();
   const items = useItemsList({
     search: itemSearch.trim() || undefined,
@@ -91,7 +92,10 @@ export function NewToolIssueModal({ onClose }: { onClose: () => void }): React.J
     if (jobCardId) input.jobCardId = jobCardId;
     if (remarks.trim()) input.remarks = remarks.trim();
     createMut.mutate(input, {
-      onSuccess: () => onClose(),
+      onSuccess: (created) => {
+        toast.ok(`Tool Issue ${created.code} saved`);
+        onClose();
+      },
       onError: (e) => setErr(e instanceof Error ? e.message : 'Could not issue. Try again.'),
     });
   };

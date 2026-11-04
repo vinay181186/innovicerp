@@ -18,7 +18,7 @@ import { isStagedResult, usePendingEditForDoc } from '@/modules/document-edits/a
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Icon } from '@/ui/core';
 import { Panel } from '@/ui/data';
-import { Banner, ConfirmDialog } from '@/ui/feedback';
+import { Banner, ConfirmDialog, useToast } from '@/ui/feedback';
 import { ActionMenu, DetailHeader, PageState, ReadField, ReadGrid } from '@/ui/layout';
 import { TabStrip, type TabStripTab } from '@/ui/navigation';
 import { useDeleteMlBom, useMakeDefaultMlBom, useMlBom, useMlBomCost, useMlBomTree } from '../api';
@@ -48,13 +48,12 @@ function MlBomDetailPage(): React.JSX.Element {
   const perms = effectiveFormPerms(eff, 'mlbom_create');
   const makeDefault = useMakeDefaultMlBom();
   const del = useDeleteMlBom();
+  const toast = useToast();
   const [tab, setTab] = useState<TabKey>('lines');
   const [confirmDelete, setConfirmDelete] = useState(false);
   // ADR-197: a delete carries a reason — it is the Reason on the History row.
   const [deleteReason, setDeleteReason] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
-  // ADR-249 Step B — Make Default staged for approval (nothing moved yet).
-  const [stagedNotice, setStagedNotice] = useState<string | null>(null);
   // ADR-249 Step B — an edit / Make Default held for approval leaves the BOM
   // as it was; say so here so the change does not read as lost.
   const pendingEdit = usePendingEditForDoc('MlBom', id);
@@ -119,12 +118,16 @@ function MlBomDetailPage(): React.JSX.Element {
 
   const onMakeDefault = (): void => {
     setActionError(null);
-    setStagedNotice(null);
     makeDefault.mutate(
       { id: detail.id, expectedUpdatedAt: detail.updatedAt },
       {
         onSuccess: (res) => {
-          if (isStagedResult(res)) setStagedNotice('Sent for approval — this BOM becomes the Default once an approver signs off.');
+          // ADR-249 Step B — a staged Make Default: nothing moved yet.
+          toast.ok(
+            isStagedResult(res)
+              ? 'Sent for approval — this BOM becomes the Default once an approver signs off.'
+              : `BOM ${detail.code} is now the Default`,
+          );
         },
         onError: (e) => setActionError(e.message),
       },
@@ -244,17 +247,10 @@ function MlBomDetailPage(): React.JSX.Element {
           <ReadField label="BOM Rev" size="sm" mono value={detail.revision} />
           <ReadField label="Remarks" size="lg" pre value={detail.remarks} />
         </ReadGrid>
-        {hasPendingEdit && !stagedNotice ? (
+        {hasPendingEdit ? (
           <div style={{ marginTop: 'var(--sp-2)' }}>
             <Banner tone="info" role="status" flush>
               A change to this BOM is waiting for approval.
-            </Banner>
-          </div>
-        ) : null}
-        {stagedNotice ? (
-          <div style={{ marginTop: 'var(--sp-2)' }}>
-            <Banner tone="success" role="status" flush onDismiss={() => setStagedNotice(null)}>
-              {stagedNotice}
             </Banner>
           </div>
         ) : null}

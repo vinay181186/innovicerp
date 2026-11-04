@@ -34,7 +34,7 @@ import { useId, useState } from 'react';
 import { ApiError } from '@/lib/api';
 import { useSaveKey } from '@/lib/use-save-key';
 import { serverFieldErrorsOf } from '@/modules/settings/master-rules-ui';
-import { Banner, Modal } from '@/ui/feedback';
+import { Banner, Modal, useToast } from '@/ui/feedback';
 import { FormField } from '@/ui/forms';
 import { useCreateClient } from '../api';
 
@@ -91,6 +91,7 @@ export function QuickAddClient({
   // One save key per pop-up open (the SO / JWSO forms mount it only while open).
   const saveKey = useSaveKey();
   const create = useCreateClient(saveKey);
+  const toast = useToast();
   const [name, setName] = useState('');
   const [contactPerson, setContactPerson] = useState('');
   const [phone, setPhone] = useState('');
@@ -131,6 +132,7 @@ export function QuickAddClient({
         ...Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== undefined)),
         isActive: true,
       });
+      toast.ok(`Customer ${c.code} saved`);
       onCreated(c.id, `${c.code} — ${c.name}`);
     } catch (e) {
       const dup = existingClientFrom(e);

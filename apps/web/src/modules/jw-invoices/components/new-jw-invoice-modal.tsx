@@ -7,7 +7,7 @@
 import { computeGstTotals, type CreateJwInvoiceInput } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { Modal } from '@/ui/feedback';
+import { Modal, useToast } from '@/ui/feedback';
 import { SearchableSelect } from '@/ui/forms';
 import { todayLocal } from '@/lib/date';
 import { useSaveKey } from '@/lib/use-save-key';
@@ -68,6 +68,23 @@ export function NewJwInvoiceModal({
 
   const saveKey = useSaveKey();
   const createMut = useCreateJwInvoice(saveKey);
+  const toast = useToast();
+
+  // A line with nothing left to invoice cannot be picked, so it is not offered.
+  const lineOptions = jwLines
+    .filter((l) => {
+      const b = toInvoiceById.get(l.id);
+      return b ? b.toInvoiceQty > 0 : true;
+    })
+    .map((l) => {
+      const b = toInvoiceById.get(l.id);
+      return {
+        id: l.id,
+        code: `L${l.lineNo}`,
+        name: `${l.partName} · rate ${l.rate ?? ''}${b ? ` · To Invoice ${b.toInvoiceQty}` : ''}`,
+      };
+    });
+  const pickedLineOption = lineOptions.find((o) => o.id === lineId);
 
   const onPickLine = (id: string): void => {
     setLineId(id || null);
@@ -128,7 +145,10 @@ export function NewJwInvoiceModal({
     if (remarks.trim()) input.remarks = remarks.trim();
 
     createMut.mutate(input, {
-      onSuccess: () => onClose(),
+      onSuccess: (saved) => {
+        toast.ok(`JW Invoice ${saved.code} saved`);
+        onClose();
+      },
       onError: (e) =>
         setErr(
           e instanceof Error ? e.message : 'Could not save Invoice. Check the lines and try again.',
@@ -197,15 +217,17 @@ export function NewJwInvoiceModal({
 
         <div style={{ gridColumn: 'span 2' }}>
           <Field label="Ln ★">
-            <select
-              className="innovic-input"
-              value={lineId ?? ''}
+            <SearchableSelect
+              value={lineId}
               disabled={!jwId || jwDetailQ.isFetching || billableQ.isFetching}
-              onChange={(e) => onPickLine(e.target.value)}
-              style={{ width: '100%' }}
-            >
-              <option value="">
-                {!jwId
+              onChange={(id) => onPickLine(id ?? '')}
+              options={lineOptions}
+              valueLabel={
+                pickedLineOption ? `${pickedLineOption.code} — ${pickedLineOption.name}` : undefined
+              }
+              error={jwDetailQ.error ?? billableQ.error}
+              placeholder={
+                !jwId
                   ? 'Select a JWSO first…'
                   : jwDetailQ.isFetching || billableQ.isFetching
                     ? 'Loading lines…'
@@ -216,18 +238,9 @@ export function NewJwInvoiceModal({
                         })()
                       : jwLines.length === 0
                         ? 'No lines on this JWSO'
-                        : 'Select a line…'}
-              </option>
-              {jwLines.map((l) => {
-                const b = toInvoiceById.get(l.id);
-                return (
-                  <option key={l.id} value={l.id} disabled={b ? b.toInvoiceQty <= 0 : false}>
-                    L{l.lineNo} · {l.partName} · rate {l.rate}
-                    {b ? ` · To Invoice ${b.toInvoiceQty}` : ''}
-                  </option>
-                );
-              })}
-            </select>
+                        : 'Select a line…'
+              }
+            />
           </Field>
         </div>
 

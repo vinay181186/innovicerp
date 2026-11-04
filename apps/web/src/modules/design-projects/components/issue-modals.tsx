@@ -14,6 +14,8 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { useAddDesignIssueComment, useCreateDesignIssue, useUpdateDesignIssue } from '../api';
 import { Actions, Badge, ErrorBox, Field, Modal } from './detail-shared';
+import { useToast } from '@/ui/feedback';
+import { SearchableSelect } from '@/ui/forms';
 
 export function IssueFormModal({
   projectId,
@@ -38,6 +40,7 @@ export function IssueFormModal({
   const [description, setDescription] = useState(issue?.description ?? '');
   const [err, setErr] = useState<string | null>(null);
 
+  const toast = useToast();
   const createMut = useCreateDesignIssue();
   const updateMut = useUpdateDesignIssue();
 
@@ -61,7 +64,10 @@ export function IssueFormModal({
       createMut.mutate(
         { projectId, input },
         {
-          onSuccess: () => onClose(),
+          onSuccess: () => {
+            toast.ok('Issue saved');
+            onClose();
+          },
           onError: (e) => setErr(e instanceof Error ? e.message : 'Could not save. Try again.'),
         },
       );
@@ -80,7 +86,10 @@ export function IssueFormModal({
           },
         },
         {
-          onSuccess: () => onClose(),
+          onSuccess: () => {
+            toast.ok('Issue saved');
+            onClose();
+          },
           onError: (e) => setErr(e instanceof Error ? e.message : 'Could not save. Try again.'),
         },
       );
@@ -111,18 +120,14 @@ export function IssueFormModal({
           </Field>
         </div>
         <Field label="Linked Task">
-          <select
-            className="innovic-select"
-            value={taskId}
-            onChange={(e) => setTaskId(e.target.value)}
-          >
-            <option value="">— None —</option>
-            {tasks.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.title}
-              </option>
-            ))}
-          </select>
+          <SearchableSelect
+            value={taskId || null}
+            onChange={(id) => setTaskId(id ?? '')}
+            options={tasks.map((t) => ({ id: t.id, name: t.title }))}
+            valueLabel={tasks.find((t) => t.id === taskId)?.title}
+            placeholder="— None —"
+            clearable
+          />
         </Field>
         <Field label="Item Name">
           <input className="innovic-input" value={part} onChange={(e) => setPart(e.target.value)} />
@@ -189,6 +194,7 @@ export function ViewIssueModal({
   onClose: () => void;
 }): React.JSX.Element {
   const [comment, setComment] = useState('');
+  const toast = useToast();
   const commentMut = useAddDesignIssueComment();
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'dsnissue_create');
@@ -198,7 +204,10 @@ export function ViewIssueModal({
     commentMut.mutate(
       { id: issue.id, input: { text: comment.trim() } },
       {
-        onSuccess: () => setComment(''),
+        onSuccess: () => {
+          setComment('');
+          toast.ok('Comment posted');
+        },
       },
     );
   };

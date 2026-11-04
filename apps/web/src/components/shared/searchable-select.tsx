@@ -95,6 +95,9 @@ export function SearchableSelect({
 }: SearchableSelectProps): React.JSX.Element {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  // The box shows a picked value's label: that is not a search. Until the user types,
+  // opening a filled picker lists everything, or only the current row would show.
+  const [typed, setTyped] = useState(false);
   const [highlight, setHighlight] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -149,6 +152,24 @@ export function SearchableSelect({
   // the same field was emptied): drop the label this box is still showing.
   // Skipped while the box is open — that is the user typing here, and typing
   // already clears the value itself (handleInput).
+  // Left a filled clearable box without picking: the value never moved, so its label returns.
+  const wasOpenRef = useRef(false);
+  useEffect(() => {
+    if (wasOpenRef.current && !open && typed) {
+      setTyped(false);
+      if (value) {
+        const row = options.find((o) => o.id === value);
+        const label = row
+          ? selectedLabel
+            ? selectedLabel(row)
+            : optionLabel(row)
+          : shownLabelRef.current;
+        if (label !== undefined) setQuery(label);
+      }
+    }
+    wasOpenRef.current = open;
+  }, [open, typed, value, options, selectedLabel]);
+
   const prevValueRef = useRef(value);
   useEffect(() => {
     const had = prevValueRef.current;
@@ -259,6 +280,8 @@ export function SearchableSelect({
   const openedRef = useRef(false);
   const queryRef = useRef(query);
   queryRef.current = query;
+  const valueRef = useRef(value);
+  valueRef.current = value;
   useEffect(() => {
     if (!open) {
       openedRef.current = false;
@@ -272,16 +295,16 @@ export function SearchableSelect({
     // of opening. Re-running on every keystroke would bypass the debounce in
     // handleInput and fire a request per character. queryRef keeps the read
     // current without making the effect depend on it.
-    onSearch(queryRef.current.trim());
+    onSearch(valueRef.current ? '' : queryRef.current.trim());
   }, [open, onSearch]);
 
   // Substring match, case-insensitive, anywhere in the label — so a row is found
   // by its starting OR ending characters. Refines the server's results.
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = value && !typed ? '' : query.trim().toLowerCase();
     if (!q) return options;
     return options.filter((o) => matchText(o).includes(q));
-  }, [options, query]);
+  }, [options, query, value, typed]);
 
   useEffect(() => {
     setHighlight((h) => (h >= filtered.length ? 0 : h));
@@ -308,8 +331,11 @@ export function SearchableSelect({
     const next = e.target.value;
     setQuery(next);
     setOpen(true);
-    // Typing invalidates any prior selection — caller must re-pick (saved id clears).
-    if (value) onChange(null);
+    setTyped(true);
+    // Typing invalidates a form's selection: the caller must re-pick (saved id clears).
+    // A clearable box keeps its value until a pick or ×, so a list filter does not
+    // drop and reload on the first keystroke.
+    if (value && !clearable) onChange(null);
     runSearch(next);
   }
 
@@ -317,6 +343,7 @@ export function SearchableSelect({
     // A term typed just before the pick must not arrive after it.
     if (debounceRef.current) clearTimeout(debounceRef.current);
     onChange(o.id);
+    setTyped(false);
     setQuery(selectedLabel ? selectedLabel(o) : optionLabel(o));
     setOpen(false);
     // Tell the page a field changed. A pick sets the value from state, so no
@@ -351,8 +378,11 @@ export function SearchableSelect({
   function clear(): void {
     shownLabelRef.current = undefined;
     setQuery('');
+    setTyped(false);
     onChange(null);
     runSearch('');
+    // The same signal as pick(): the page's exit guard must see this edit.
+    inputRef.current?.dispatchEvent(new Event('change', { bubbles: true }));
     inputRef.current?.focus();
   }
 
@@ -380,7 +410,14 @@ export function SearchableSelect({
         {...(clearable && query ? { title: query } : {})}
         {...(showClear ? { style: { paddingRight: 24 } } : {})}
         onChange={handleInput}
-        onFocus={() => setOpen(true)}
+        onFocus={(e) => {
+          // A pop-up moving focus here on opening is not the user asking for the list.
+          if (e.currentTarget.hasAttribute('data-focus-only')) {
+            e.currentTarget.removeAttribute('data-focus-only');
+            return;
+          }
+          setOpen(true);
+        }}
         onClick={() => setOpen(true)}
         onKeyDown={handleKeyDown}
       />

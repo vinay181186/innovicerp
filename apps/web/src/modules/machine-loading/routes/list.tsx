@@ -220,7 +220,13 @@ function MachineLoadingPage(): React.JSX.Element {
               className="btn btn-ghost"
               onClick={() => void onPrintQueue(selMachineId)}
               disabled={machines.length === 0 || printing}
-              title={selMachineId ? 'Print this machine queue' : 'Print all machine queues'}
+              title={
+                machines.length === 0
+                  ? 'No machines to print'
+                  : selMachineId
+                    ? 'Print this machine queue'
+                    : 'Print all machine queues'
+              }
             >
               <Printer size={13} /> Print Queue
             </button>

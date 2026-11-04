@@ -23,6 +23,7 @@ import {
 } from '@/modules/item-revisions/components/drawing-rev-picker';
 import { useAdjustStock, useItemRevStock, useItemStockTotals } from '../api';
 import { ModalShell } from './modal-shell';
+import { useToast } from '@/ui/feedback';
 
 /** Sources a Manual Receipt may pick — every one but Purchase (GRN only). */
 const RECEIPT_SOURCES: ReadonlyArray<Exclude<ManualReceiptSource, 'purchase'>> = [
@@ -39,6 +40,7 @@ export function ManualReceiptModal({ onClose }: { onClose: () => void }): React.
   const [refNo, setRefNo] = useState('');
   const [remarks, setRemarks] = useState('');
   const [err, setErr] = useState<string | null>(null);
+  const toast = useToast();
   const mut = useAdjustStock();
 
   const { data: itemsData, isFetching: itemsFetching } = useItemsList({
@@ -108,7 +110,10 @@ export function ManualReceiptModal({ onClose }: { onClose: () => void }): React.
       source,
     };
     mut.mutate(input, {
-      onSuccess: () => onClose(),
+      onSuccess: () => {
+        toast.ok('Manual Receipt saved');
+        onClose();
+      },
       onError: (e) => setErr(e instanceof Error ? e.message : 'Could not save receipt. Try again.'),
     });
   };

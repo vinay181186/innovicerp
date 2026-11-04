@@ -15,6 +15,7 @@ import {
   type MlBomFormLineDraft,
   mlBomLinesToInput,
 } from '../components/ml-bom-form';
+import { useToast } from '@/ui/feedback';
 
 export const mlBomEditRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -28,6 +29,7 @@ function MlBomEditPage(): React.JSX.Element {
   const { data: detail, isLoading, isError, error } = useMlBom(id);
   const saveKey = useSaveKey();
   const update = useUpdateMlBom(id, saveKey);
+  const toast = useToast();
   // The version this form opened with — a save over a newer edit is refused
   // with 409 and the server's message shows in the error banner.
   const opened = useOpenedVersion(detail?.updatedAt);
@@ -78,10 +80,12 @@ function MlBomEditPage(): React.JSX.Element {
         // The edit-approval gate is on: nothing was changed on the BOM — the
         // edit is now waiting for approval. Return to the BOM, whose
         // "waiting for approval" notice says so.
+        toast.ok('Sent for approval — your changes will apply once an approver signs off.');
         exit.leave(() => void navigate({ to: '/ml-boms/$id', params: { id }, replace: true }));
         return;
       }
       opened.saved(updated.updatedAt);
+      toast.ok(`BOM ${updated.code} saved`);
       exit.leave(
         () => void navigate({ to: '/ml-boms/$id', params: { id: updated.id }, replace: true }),
       );

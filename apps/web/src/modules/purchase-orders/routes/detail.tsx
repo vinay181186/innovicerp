@@ -58,7 +58,7 @@ import {
 import { useHistoryTab } from '@/components/shared/document-history';
 import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
 import { AssignTaskModal } from '@/modules/tasks/components/task-modals';
-import { Banner, ConfirmDialog, Modal } from '@/ui/feedback';
+import { Banner, ConfirmDialog, Modal, useToast } from '@/ui/feedback';
 import { ActionMenu } from '@/ui/layout';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
@@ -107,6 +107,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
   const { data: vendor } = useVendor(detail?.vendorId ?? undefined);
   const { data: company } = useMyCompany();
   const { data: templates } = usePrintTemplates();
+  const toast = useToast();
   const softDelete = useSoftDeletePurchaseOrder();
   const approveMut = useApprovePurchaseOrder();
   const rejectMut = useRejectPurchaseOrder();
@@ -244,6 +245,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
       const args: { id: string; remarks?: string } = { id: detail.id };
       if (trimmed) args.remarks = trimmed;
       await approveMut.mutateAsync(args);
+      toast.ok(`PO ${detail.code} approved`);
       setApproveOpen(false);
       setApproveRemarks('');
     } catch (e) {
@@ -260,6 +262,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
     }
     try {
       await rejectMut.mutateAsync({ id: detail.id, reason: rejectReason.trim() });
+      toast.ok(`PO ${detail.code} rejected`);
       setRejectOpen(false);
       setRejectReason('');
     } catch (e) {
@@ -276,6 +279,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
     }
     try {
       await shortCloseMut.mutateAsync({ id: detail.id, reason: scReason.trim() });
+      toast.ok(`PO ${detail.code} short closed`);
       setScOpen(false);
       setScReason('');
     } catch (e) {

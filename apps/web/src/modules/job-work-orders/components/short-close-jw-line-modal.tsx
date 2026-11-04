@@ -6,7 +6,7 @@
 import type { JobWorkOrderLine } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
-import { Modal } from '@/ui/feedback';
+import { Modal, useToast } from '@/ui/feedback';
 import { useShortCloseJobWorkOrderLine } from '../api';
 
 export function ShortCloseJwLineModal({
@@ -21,6 +21,7 @@ export function ShortCloseJwLineModal({
   const [reason, setReason] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const mut = useShortCloseJobWorkOrderLine(jwId);
+  const toast = useToast();
   const balance = Math.max(0, line.orderQty - line.returnedQty);
 
   const onConfirm = (): void => {
@@ -32,7 +33,10 @@ export function ShortCloseJwLineModal({
     mut.mutate(
       { lineId: line.id, reason: reason.trim() },
       {
-        onSuccess: () => onClose(),
+        onSuccess: () => {
+          toast.ok(`L${line.lineNo} short-closed`);
+          onClose();
+        },
         onError: (e) =>
           setErr(e instanceof Error ? e.message : 'Could not short-close the line. Try again.'),
       },

@@ -11,6 +11,7 @@ import { useSaveKey } from '@/lib/use-save-key';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateNcRegister } from '../api';
 import { NcRegisterForm } from '../components/nc-register-form';
+import { useToast } from '@/ui/feedback';
 
 // Everything is OPTIONAL: this screen is still opened bare from "+ Report NC".
 // When a QC operation card sends the user here it hands over the job card, the
@@ -49,6 +50,7 @@ function NcRegisterNewPage(): React.JSX.Element {
   // R2 — one idempotency key per open form, reused on a retry after a dropped save.
   const saveKey = useSaveKey();
   const create = useCreateNcRegister(saveKey);
+  const toast = useToast();
   const [submitError, setSubmitError] = useState<string | null>(null);
   const goBack = useCallback(() => void navigate({ to: '/nc-register' }), [navigate]);
   const exit = useExitConfirm({ onExit: goBack });
@@ -121,6 +123,7 @@ function NcRegisterNewPage(): React.JSX.Element {
           setSubmitError(null);
           try {
             const created = await create.mutateAsync(values);
+            toast.ok(`NC ${created.code} saved`);
             exit.leave(() => void navigate({ to: '/nc-register/$id', params: { id: created.id } }));
           } catch (e) {
             setSubmitError(e instanceof Error ? e.message : 'Could not save NC. Try again.');

@@ -12,7 +12,7 @@ import { useSession } from '@/lib/session';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { uploadJwDocFile, useCreateJwDocument } from '@/modules/jwso-documents/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { Banner } from '@/ui/feedback';
+import { useToast } from '@/ui/feedback';
 import { useCreateJobWorkOrder, useJobWorkOrder, useUpdateJobWorkOrder } from '../api';
 import { JobWorkOrderForm } from '../components/job-work-order-form';
 
@@ -79,6 +79,7 @@ function JobWorkOrderNewPage(): React.JSX.Element {
   const emailFileRef = useRef<File | null>(null);
   const goBack = useCallback(() => void navigate({ to: '/job-work-orders' }), [navigate]);
   const exit = useExitConfirm({ onExit: goBack });
+  const toast = useToast();
 
   const onSubmit = async (values: CreateJobWorkOrderInput): Promise<void> => {
     setSubmitError(null);
@@ -106,6 +107,7 @@ function JobWorkOrderNewPage(): React.JSX.Element {
           'Email Reference',
         ),
       ].filter((f): f is string => f !== null);
+      toast.ok(`JWSO ${created.code} saved`);
       exit.leave(
         () =>
           void navigate({
@@ -167,9 +169,6 @@ function JobWorkOrderEditPage(): React.JSX.Element {
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'jw_create');
   const [submitError, setSubmitError] = useState<string | null>(null);
-  // ADR-202 — set when an edit to a LIVE JWSO is staged for approval instead of
-  // applied; the neutral "Sent for approval" banner shows it.
-  const [stagedNotice, setStagedNotice] = useState<string | null>(null);
   const poFileRef = useRef<File | null>(null);
   const emailFileRef = useRef<File | null>(null);
   const goBack = useCallback(
@@ -177,6 +176,7 @@ function JobWorkOrderEditPage(): React.JSX.Element {
     [navigate, id],
   );
   const exit = useExitConfirm({ onExit: goBack });
+  const toast = useToast();
 
   const onSubmit = async (values: UpdateJobWorkOrderInput): Promise<void> => {
     setSubmitError(null);
@@ -216,7 +216,7 @@ function JobWorkOrderEditPage(): React.JSX.Element {
         // The edit-approval gate is on and this JWSO is live: nothing was
         // changed on the JWSO — the edit is now waiting for approval. Say so,
         // then return to the JWSO (its fields now carry the pending-change chip).
-        setStagedNotice('Sent for approval — your changes will apply once an approver signs off.');
+        toast.ok('Sent for approval — your changes will apply once an approver signs off.');
         exit.leave(
           () =>
             void navigate({ to: '/job-work-orders/$id', params: { id }, search, replace: true }),
@@ -224,6 +224,7 @@ function JobWorkOrderEditPage(): React.JSX.Element {
         return;
       }
       opened.saved(saved.updatedAt);
+      toast.ok(`JWSO ${saved.code} saved`);
       exit.leave(
         () => void navigate({ to: '/job-work-orders/$id', params: { id }, search, replace: true }),
       );
@@ -268,11 +269,6 @@ function JobWorkOrderEditPage(): React.JSX.Element {
   return (
     <>
       {exit.dialog}
-      {stagedNotice ? (
-        <Banner tone="success" role="status">
-          {stagedNotice}
-        </Banner>
-      ) : null}
       <JobWorkOrderForm
         mode="edit"
         detail={detail}

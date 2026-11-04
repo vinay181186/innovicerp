@@ -74,6 +74,7 @@ import { useUpdateUser, useUser } from '@/modules/users/api';
 import { useFetchUserAccess, useSaveUserAccess, useUserAccess, useUserAccessList } from '../api';
 import { roleLabel } from '@/lib/role-label';
 import { Banner, Modal, useToast } from '@/ui/feedback';
+import { SearchableSelect } from '@/ui/forms';
 
 interface Props {
   userId: string;
@@ -641,6 +642,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
         }
       }
       watch.acknowledge(); // our own save rang the doorbell; swallow it
+      toast.ok(`${userName}'s access saved`);
       onClose();
     } catch (e) {
       // ADR-226 — someone else saved this person's access first. NOTHING was
@@ -832,28 +834,28 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
             </label>
 
             <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-              <select
-                className="innovic-select"
-                aria-label="Copy access from another user"
+              <div
                 title="Load another user's saved access into this form. Nothing is saved until Save Access."
-                value={copyFromId ?? ''}
-                disabled={Boolean(copyFromId) && !copySource.isError}
-                onChange={(e) => {
-                  setCopiedFrom(null);
-                  setCopyFromId(e.target.value || null);
-                }}
-                style={{ fontSize: 12, width: 'auto', padding: '4px 8px' }}
+                style={{ width: 200 }}
               >
-                <option value="">{copyFromId ? 'Loading…' : 'Copy access from…'}</option>
-                {(userList.data?.items ?? [])
-                  .filter((u) => u.userId !== userId)
-                  .map((u) => (
-                    <option key={u.userId} value={u.userId}>
-                      {u.userName ?? u.userEmail}
-                      {u.isActive ? '' : ' (inactive)'}
-                    </option>
-                  ))}
-              </select>
+                <SearchableSelect
+                  ariaLabel="Copy access from another user"
+                  value={copyFromId}
+                  disabled={Boolean(copyFromId) && !copySource.isError}
+                  clearable
+                  placeholder="Copy access from…"
+                  options={(userList.data?.items ?? [])
+                    .filter((u) => u.userId !== userId)
+                    .map((u) => ({
+                      id: u.userId,
+                      name: `${u.userName ?? u.userEmail}${u.isActive ? '' : ' (inactive)'}`,
+                    }))}
+                  onChange={(id) => {
+                    setCopiedFrom(null);
+                    setCopyFromId(id);
+                  }}
+                />
+              </div>
               {copiedFrom ? (
                 <span className="badge b-amber" role="status">
                   Loaded from {copiedFrom} — Save to keep
@@ -933,6 +935,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                     className="btn btn-primary btn-sm"
                     onClick={handleApplyJson}
                     disabled={!importText.trim()}
+                    title={!importText.trim() ? 'Paste the access text first' : undefined}
                   >
                     Apply to editor
                   </button>

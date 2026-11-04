@@ -26,6 +26,7 @@ import { useCreatePlansBatch } from '@/modules/plans/api';
 import { useVendorsList } from '@/modules/vendors/api';
 import { usePlanningBom } from '../api';
 import { Modal } from './modal';
+import { useToast } from '@/ui/feedback';
 
 interface Props {
   mode: 'equipment' | 'assembly';
@@ -104,6 +105,7 @@ export function BomPlanningModal({
 }: Props): JSX.Element {
   const { data, isLoading, error } = usePlanningBom(soId, soLineId);
   const saveKey = useSaveKey();
+  const toast = useToast();
   const createPlans = useCreatePlansBatch(saveKey);
   const [rowState, setRowState] = useState<Map<string, RowState>>(new Map());
   const [planAssembly, setPlanAssembly] = useState<boolean>(false);
@@ -223,6 +225,7 @@ export function BomPlanningModal({
     setSubmitting(true);
     try {
       await createPlans.mutateAsync({ plans: plansToSave });
+      toast.ok(`${plansToSave.length} Plan${plansToSave.length === 1 ? '' : 's'} saved`);
       onSaved();
     } catch (e) {
       setSubmitErr(
@@ -259,6 +262,7 @@ export function BomPlanningModal({
         type="button"
         className="btn btn-primary"
         disabled={submitting || isLoading || !data}
+        title={!data ? 'The BOM has not loaded' : undefined}
         onClick={submit}
       >
         {submitting ? (

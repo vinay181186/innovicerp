@@ -11,7 +11,7 @@ import { opSrNo } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { useReverseOpLog } from '@/modules/op-entry/api';
-import { Modal } from '@/ui/feedback';
+import { Modal, useToast } from '@/ui/feedback';
 import type { OpLogListItem } from '../api';
 
 const REASON_MAX = 500;
@@ -37,6 +37,7 @@ export function ReverseOpLogModal({
   const [reason, setReason] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const reverse = useReverseOpLog();
+  const toast = useToast();
   const trimmed = reason.trim();
 
   const onSubmit = (): void => {
@@ -48,7 +49,10 @@ export function ReverseOpLogModal({
     reverse.mutate(
       { id: row.id, reason: trimmed },
       {
-        onSuccess: () => onClose(),
+        onSuccess: () => {
+          toast.ok(`Op Log ${row.logNo} reversed`);
+          onClose();
+        },
         onError: (e) =>
           setErr(e instanceof Error ? e.message : 'Could not reverse this entry. Try again.'),
       },

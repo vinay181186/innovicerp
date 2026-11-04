@@ -26,6 +26,7 @@ import { Loader2 } from 'lucide-react';
 import { useEffect, type ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
 import { useReportTypes } from '@/modules/report-types/api';
+import { SearchableSelect } from '@/ui/forms';
 import { FormActions } from '@/ui/layout';
 
 interface FormValues {
@@ -71,7 +72,7 @@ export type QcProcessFormProps = CreateMode | EditMode;
 export function QcProcessForm(props: QcProcessFormProps): React.JSX.Element {
   const isEdit = props.mode === 'edit';
   const defaults: FormValues = isEdit ? detailToFormValues(props.detail) : DEFAULTS;
-  const { register, handleSubmit, formState, setValue } = useForm<FormValues>({
+  const { register, handleSubmit, formState, setValue, watch } = useForm<FormValues>({
     defaultValues: defaults,
   });
   const errors = formState.errors;
@@ -97,6 +98,15 @@ export function QcProcessForm(props: QcProcessFormProps): React.JSX.Element {
   useEffect(() => {
     if (optionsLoaded && savedReportTypeId) setValue('reportTypeId', savedReportTypeId);
   }, [optionsLoaded, savedReportTypeId, setValue]);
+  // The picker's rows: the saved inactive one first (as above), then the Active ones.
+  const reportTypeId = watch('reportTypeId');
+  const reportRows = [
+    ...(savedInactiveLabel ? [{ id: savedReportTypeId, name: savedInactiveLabel }] : []),
+    ...reportOptions.map((t) => ({
+      id: t.id,
+      name: `${t.name}${t.defaultMandatory ? ' (Mandatory)' : ''}`,
+    })),
+  ];
 
   const onValid = async (values: FormValues): Promise<void> => {
     if (isEdit) {
@@ -216,18 +226,17 @@ export function QcProcessForm(props: QcProcessFormProps): React.JSX.Element {
               <label className="form-label" htmlFor="reportTypeId">
                 Report Type
               </label>
-              <select id="reportTypeId" className="innovic-select" {...register('reportTypeId')}>
-                <option value="">{reportTypes.isLoading ? 'Loading…' : '— No report —'}</option>
-                {savedInactiveLabel ? (
-                  <option value={savedReportTypeId}>{savedInactiveLabel}</option>
-                ) : null}
-                {reportOptions.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                    {t.defaultMandatory ? ' (Mandatory)' : ''}
-                  </option>
-                ))}
-              </select>
+              <SearchableSelect
+                id="reportTypeId"
+                value={reportTypeId || null}
+                onChange={(id) => setValue('reportTypeId', id ?? '')}
+                options={reportRows}
+                valueLabel={reportRows.find((r) => r.id === reportTypeId)?.name}
+                loading={reportTypes.isLoading}
+                error={reportTypes.error}
+                placeholder={reportTypes.isLoading ? 'Loading…' : '— No report —'}
+                clearable
+              />
             </div>
           </div>
         </div>

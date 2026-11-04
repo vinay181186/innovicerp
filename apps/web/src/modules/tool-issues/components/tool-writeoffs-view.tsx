@@ -13,7 +13,7 @@ import {
   type ToolWriteoffStatus,
 } from '@innovic/shared';
 import { useCallback, useMemo, useState } from 'react';
-import { Modal } from '@/ui/feedback';
+import { Modal, useToast } from '@/ui/feedback';
 import { fmtDate } from '@/lib/date';
 import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
 import { useSession } from '@/lib/session';
@@ -230,6 +230,7 @@ function DecideModal({
   const [err, setErr] = useState<string | null>(null);
   const mut = useDecideToolWriteoff();
   const own = me?.id === w.requestedBy;
+  const toast = useToast();
   const decide = (decision: 'approve' | 'reject'): void => {
     setErr(null);
     if (decision === 'reject' && !remarks.trim()) {
@@ -238,7 +239,13 @@ function DecideModal({
     }
     mut.mutate(
       { id: w.id, decision, ...(remarks.trim() ? { remarks: remarks.trim() } : {}) },
-      { onSuccess: onClose, onError: (e) => setErr(e.message || 'Could not save the decision.') },
+      {
+        onSuccess: () => {
+          toast.ok(decision === 'approve' ? 'Write-off approved' : 'Write-off rejected');
+          onClose();
+        },
+        onError: (e) => setErr(e.message || 'Could not save the decision.'),
+      },
     );
   };
   const rejectMeans =
@@ -265,6 +272,7 @@ function DecideModal({
             type="button"
             className="btn btn-ghost"
             disabled={own || mut.isPending}
+            title={own ? 'You asked for this write-off — another user must decide it' : undefined}
             onClick={() => decide('reject')}
           >
             Reject
@@ -273,6 +281,7 @@ function DecideModal({
             type="button"
             className="btn btn-primary"
             disabled={own || mut.isPending}
+            title={own ? 'You asked for this write-off — another user must decide it' : undefined}
             onClick={() => decide('approve')}
           >
             Approve Write-off

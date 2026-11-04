@@ -7,7 +7,7 @@
 import { type InstrumentReturnCondition, type ToolIssueDetail } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
-import { Modal } from '@/ui/feedback';
+import { Modal, useToast } from '@/ui/feedback';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { fmtDate } from '@/lib/date';
 import { CancelPendingBanner } from '@/modules/cancel-requests/components/cancel-pending-banner';
@@ -39,10 +39,10 @@ export function ToolIssueViewModal({
   onCancel: (t: { id: string; code: string }) => void;
   onClose: () => void;
 }): React.JSX.Element {
+  const toast = useToast();
   const { data: t, isLoading, isError, error } = useToolIssue(id);
   const [mode, setMode] = useState<Mode>('view');
   const [err, setErr] = useState<string | null>(null);
-  const [msg, setMsg] = useState<string | null>(null);
 
   const open = t && !t.cancelledAt && t.stillOutQty > 0;
   // State, not permission: nothing returned yet and not already cancelled.
@@ -80,7 +80,6 @@ export function ToolIssueViewModal({
                   className="btn btn-primary"
                   onClick={() => {
                     setErr(null);
-                    setMsg(null);
                     setMode('return');
                   }}
                 >
@@ -122,7 +121,7 @@ export function ToolIssueViewModal({
               t={t}
               onDone={(m) => {
                 setMode('view');
-                setMsg(m);
+                toast.ok(m);
               }}
               onError={setErr}
             />
@@ -136,11 +135,6 @@ export function ToolIssueViewModal({
               </div>
             </>
           )}
-          {msg ? (
-            <div className="text2" style={{ marginTop: 10, fontSize: 12 }}>
-              ✓ {msg}
-            </div>
-          ) : null}
           {err ? (
             <div style={{ color: 'var(--red2)', fontSize: 12, marginTop: 8 }}>{err}</div>
           ) : null}

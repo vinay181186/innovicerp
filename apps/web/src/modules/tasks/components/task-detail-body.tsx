@@ -18,6 +18,7 @@ import {
   statusPill,
 } from '../lib/format';
 import { RelatedRefLink } from './related-ref-link';
+import { useToast } from '@/ui/feedback';
 
 function Fact({
   label,
@@ -74,6 +75,7 @@ export function TaskBody({
   const { data: me } = useSession();
   const canWrite = useCanWrite(); // ADR-232: no Add file / Add remark for an Auditor
   const pill = statusPill(t);
+  const toast = useToast();
   const addComment = useAddTaskComment(t.id);
   const addAttachment = useAddTaskAttachment(t.id);
   const [remark, setRemark] = useState('');
@@ -93,6 +95,7 @@ export function TaskBody({
     try {
       await addComment.mutateAsync({ text: remark.trim() });
       setRemark('');
+      toast.ok('Remark added');
     } catch (e) {
       setMsg(e instanceof Error ? e.message : 'Could not add the remark. Try again.');
     }
@@ -117,6 +120,7 @@ export function TaskBody({
           fileType: f.type || undefined,
         });
       }
+      toast.ok(`${files.length} file${files.length === 1 ? '' : 's'} added`);
     } catch (e) {
       setMsg(e instanceof Error ? e.message : 'Could not upload the file. Try again.');
     } finally {
@@ -282,6 +286,7 @@ export function TaskBody({
             type="button"
             className="btn btn-primary btn-sm"
             disabled={addComment.isPending || !remark.trim()}
+            title={!remark.trim() ? 'Type a remark first' : undefined}
             onClick={() => void sendRemark()}
           >
             Add

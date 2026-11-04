@@ -6,7 +6,7 @@ import type { StoreInventoryRow } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { isStagedResult } from '@/modules/document-edits/api';
-import { Banner } from '@/ui/feedback';
+import { useToast } from '@/ui/feedback';
 import { useItemStockTotals, useSetReorder } from '../api';
 import { ModalShell } from './modal-shell';
 
@@ -33,9 +33,7 @@ export function ReorderModal({
   const [level, setLevel] = useState(String(row.reorderLevel));
   const [qty, setQty] = useState(String(row.reorderQty));
   const [err, setErr] = useState<string | null>(null);
-  // ADR-249 Step B — the change was held for approval: the item still carries
-  // its old Reorder Level / Qty, so the modal says so instead of closing as saved.
-  const [staged, setStaged] = useState(false);
+  const toast = useToast();
   const mut = useSetReorder();
   // Reorder is item-level: Available and On PO are the ITEM's, added up over
   // all its Drawing Rev rows — the row this box was opened from may be one
@@ -54,10 +52,13 @@ export function ReorderModal({
       { itemId: row.itemId, reorderLevel: r3(l), reorderQty: r3(q) },
       {
         onSuccess: (res) => {
-          if (isStagedResult(res)) {
-            setStaged(true);
-            return;
-          }
+          // ADR-249 Step B — the change was held for approval: the item still
+          // carries its old Reorder Level / Qty, so the toast says so.
+          toast.ok(
+            isStagedResult(res)
+              ? 'Sent for approval — your changes will apply once an approver signs off.'
+              : `Reorder for ${row.itemCode} saved`,
+          );
           onClose();
         },
         onError: (e) => setErr(e instanceof Error ? e.message : 'Could not save. Try again.'),
@@ -69,32 +70,25 @@ export function ReorderModal({
     <ModalShell
       onClose={onClose}
       title={`Reorder — ${row.itemCode}`}
-      confirmExit={!staged}
       footer={
         <>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>
+            Cancel
+          </button>
           <button
             type="button"
-            className={staged ? 'btn btn-primary' : 'btn btn-ghost'}
-            onClick={onClose}
+            className="btn btn-primary"
+            onClick={onSave}
+            disabled={mut.isPending}
           >
-            {staged ? 'Close' : 'Cancel'}
+            {mut.isPending ? (
+              <>
+                <Loader2 size={14} className="inline animate-spin" /> Saving…
+              </>
+            ) : (
+              'Save'
+            )}
           </button>
-          {staged ? null : (
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={onSave}
-              disabled={mut.isPending}
-            >
-              {mut.isPending ? (
-                <>
-                  <Loader2 size={14} className="inline animate-spin" /> Saving…
-                </>
-              ) : (
-                'Save'
-              )}
-            </button>
-          )}
         </>
       }
     >
@@ -133,13 +127,6 @@ export function ReorderModal({
         </div>
       </div>
       {err ? <div style={{ marginTop: 12, color: 'var(--red2)', fontSize: 12 }}>{err}</div> : null}
-      {staged ? (
-        <div style={{ marginTop: 12 }}>
-          <Banner tone="success" role="status" flush>
-            Sent for approval — your changes will apply once an approver signs off.
-          </Banner>
-        </div>
-      ) : null}
     </ModalShell>
   );
 }

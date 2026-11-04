@@ -33,7 +33,7 @@ import { renderJcOpsLink } from '@/modules/jc-ops/components/jc-ops-columns';
 import { SoMaterialPanel } from '@/modules/material/components/so-material-panel';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { RowMenu } from '@/ui/data';
-import { Banner, ConfirmDialog } from '@/ui/feedback';
+import { Banner, ConfirmDialog, useToast } from '@/ui/feedback';
 import { useAssemblyTracker, useStartAssembly, useStopAssembly, useUndoLastUnit } from '../api';
 import { PlanningUserPicker } from '../components/planning-user-picker';
 import { VarianceConfirm } from '../components/variance-confirm';
@@ -49,6 +49,7 @@ function AssemblyDetailPage(): React.JSX.Element {
   const { data, isLoading, isError, error } = useAssemblyTracker(soId);
   const start = useStartAssembly(soId);
   const undo = useUndoLastUnit(soId);
+  const toast = useToast();
   const [actionError, setActionError] = useState<string | null>(null);
   // Batch quantity to START (put on the bench). No stock leaves yet — that
   // happens per unit at STOP. Serial is auto-generated server-side.
@@ -138,6 +139,7 @@ function AssemblyDetailPage(): React.JSX.Element {
     else if (assembledBy.trim()) input.assembledBy = assembledBy.trim();
     start.mutate(input, {
       onSuccess: () => {
+        toast.ok(`Assembly batch of ${n} started`);
         setQty('1');
         setAssembledByUserId(null);
         setAssembledBy('');
@@ -161,6 +163,7 @@ function AssemblyDetailPage(): React.JSX.Element {
   // shows a failure (e.g. "already dispatched") inside the dialog.
   const doUndo = async (): Promise<void> => {
     await undo.mutateAsync(undefined);
+    if (lastBatch) toast.ok(`Batch No. ${lastBatch.unitNo} undone`);
     setConfirmUndo(false);
   };
 
@@ -372,7 +375,11 @@ function AssemblyDetailPage(): React.JSX.Element {
               className="btn btn-ghost btn-sm"
               onClick={onUndo}
               disabled={undo.isPending || data.units.length === 0}
-              title="Undo the latest batch (in-progress, or completed but not dispatched)"
+              title={
+                data.units.length === 0
+                  ? 'No batch to undo yet'
+                  : 'Undo the latest batch (in-progress, or completed but not dispatched)'
+              }
             >
               {undo.isPending ? (
                 <Loader2 size={13} className="animate-spin" />
@@ -788,6 +795,7 @@ function UnitsPanel({
   const canComplete = effectiveFormPerms(eff, 'assembly_create').entry;
   const canDispatch = effectiveFormPerms(eff, 'dispatch_create').entry;
   const [error, setError] = useState<string | null>(null);
+  const toast = useToast();
   // Per in-progress row: how many of the batch to complete now (default = all
   // that's left in the batch).
   const [stopQty, setStopQty] = useState<Record<string, string>>({});
@@ -829,6 +837,7 @@ function UnitsPanel({
       },
       {
         onSuccess: () => {
+          toast.ok(`Batch No. ${u.unitNo} completed`);
           setStopQty((s) => ({ ...s, [u.id]: '' }));
           setVariance(null);
         },

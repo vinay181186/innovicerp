@@ -125,6 +125,7 @@ export function TodoView({ home }: { home: HomeResponse }): React.JSX.Element {
     setBusyIds((s) => new Set(s).add(t.taskId));
     complete.mutate(t.taskId, {
       // On success the row stays locked until the refetch takes it away.
+      onSuccess: () => void toast.ok('To-Do marked done'),
       onError: (e) => {
         toast.error(e.message);
         setBusyIds((s) => {

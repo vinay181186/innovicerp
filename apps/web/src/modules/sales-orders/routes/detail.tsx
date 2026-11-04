@@ -50,7 +50,7 @@ import { SoDocumentsSection } from '@/modules/so-documents/components/so-documen
 import { Button, Icon, StatusBadge } from '@/ui/core';
 import { DataTable, Panel, QtyStrip } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
-import { Banner, ConfirmDialog } from '@/ui/feedback';
+import { Banner, ConfirmDialog, useToast } from '@/ui/feedback';
 import { ActionMenu, DetailHeader, PageState, ReadField, ReadGrid } from '@/ui/layout';
 import { SoDrawingHistory, useSoDrawingHistory } from '../components/so-drawing-history';
 import {
@@ -524,6 +524,7 @@ function SoFilesPanel({
   companyId: string | null;
   onPreview: (file: PreviewFile) => void;
 }): React.JSX.Element {
+  const toast = useToast();
   const createDoc = useCreateSoDocument();
   const qc = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -557,6 +558,7 @@ function SoFilesPanel({
         fileType: file.type || undefined,
       });
       await qc.invalidateQueries({ queryKey: salesOrdersKeys.detail(detail.id) });
+      toast.ok(`Client PO ${file.name} uploaded`);
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Could not upload file. Try again.');
     } finally {

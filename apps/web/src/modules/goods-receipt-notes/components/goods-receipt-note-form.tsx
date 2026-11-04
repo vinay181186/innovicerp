@@ -46,6 +46,7 @@ import {
   FormField,
   IdentCode,
   IdentSep,
+  SearchableSelect,
 } from '@/ui/forms';
 import { grnTypeLabel } from './grn-list-columns';
 import { GrnLinesTable, GrnReceiptAccount } from './grn-lines-table';
@@ -210,6 +211,7 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
     ? (posData?.items ?? []).filter((p) => ['open', 'partial', 'qc_pending'].includes(p.status))
     : [];
   const selectedPoId = watch('header.purchaseOrderId');
+  const selectedPoRow = pos.find((p) => p.id === selectedPoId);
   const { data: selectedPoDetail } = usePurchaseOrder(
     isCreate && selectedPoId ? selectedPoId : undefined,
   );
@@ -554,18 +556,24 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
               </FormField>
             ) : (
               <FormField label="PO No." htmlFor="purchaseOrderId" className="cl-span-2">
-                <select
+                <SearchableSelect
                   id="purchaseOrderId"
-                  className="innovic-select"
-                  {...register('header.purchaseOrderId')}
-                >
-                  <option value="">— Select PO —</option>
-                  {pos.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.code} · {p.vendorName ?? p.vendorCodeText ?? '—'}
-                    </option>
-                  ))}
-                </select>
+                  value={selectedPoId || null}
+                  onChange={(id) =>
+                    setValue('header.purchaseOrderId', id ?? '', { shouldDirty: true })
+                  }
+                  options={pos.map((p) => ({
+                    id: p.id,
+                    code: p.code,
+                    name: p.vendorName ?? p.vendorCodeText ?? '—',
+                  }))}
+                  valueLabel={
+                    selectedPoRow
+                      ? `${selectedPoRow.code} — ${selectedPoRow.vendorName ?? selectedPoRow.vendorCodeText ?? '—'}`
+                      : undefined
+                  }
+                  placeholder="— Select PO —"
+                />
               </FormField>
             )}
             <FormField label="GRN Date" required htmlFor="grnDate">

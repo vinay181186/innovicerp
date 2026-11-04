@@ -11,6 +11,7 @@ import { useSalesOrder, useSalesOrdersList } from '../../sales-orders/api';
 import { soTypeLabel } from '../../sales-orders/lib/so-status-label';
 import { useCreateDesignTracker, useNextDesignTrackerCode } from '../api';
 import { Actions, ErrorBox, Field, ModalShell } from './design-tracker-modal-shell';
+import { useToast } from '@/ui/feedback';
 
 export function AddDesignModal({ onClose }: { onClose: () => void }): React.JSX.Element {
   const [date] = useState(todayIst());
@@ -36,6 +37,7 @@ export function AddDesignModal({ onClose }: { onClose: () => void }): React.JSX.
   );
 
   const mut = useCreateDesignTracker();
+  const toast = useToast();
   const { data: next } = useNextDesignTrackerCode();
 
   // The SO's lines — the design is for ONE line (POL + CODE/REV), and that
@@ -52,6 +54,7 @@ export function AddDesignModal({ onClose }: { onClose: () => void }): React.JSX.
       .join(' · ');
   // A one-line SO needs no choice.
   const pickedLineId = soLineId || (soLines.length === 1 ? (soLines[0]?.id ?? '') : '');
+  const pickedLine = soLines.find((l) => l.id === pickedLineId);
 
   const onSave = (): void => {
     setErr(null);
@@ -81,7 +84,10 @@ export function AddDesignModal({ onClose }: { onClose: () => void }): React.JSX.
     if (estHours.trim()) input.estimatedHours = Number(estHours);
     if (remarks.trim()) input.remarks = remarks.trim();
     mut.mutate(input, {
-      onSuccess: () => onClose(),
+      onSuccess: (saved) => {
+        toast.ok(`Design ${saved.code} saved`);
+        onClose();
+      },
       onError: (e) => setErr(e instanceof Error ? e.message : 'Could not save Design. Try again.'),
     });
   };
@@ -130,19 +136,14 @@ export function AddDesignModal({ onClose }: { onClose: () => void }): React.JSX.
           />
         </Field>
         <Field label="SO Line (POL · CODE/REV)" req full>
-          <select
-            className="innovic-select"
-            value={pickedLineId}
+          <SearchableSelect
+            value={pickedLineId || null}
             disabled={!soId}
-            onChange={(e) => setSoLineId(e.target.value)}
-          >
-            <option value="">{soId ? '— Select line —' : 'Pick the SO first'}</option>
-            {soLines.map((l) => (
-              <option key={l.id} value={l.id}>
-                {lineLabel(l)}
-              </option>
-            ))}
-          </select>
+            onChange={(id) => setSoLineId(id ?? '')}
+            options={soLines.map((l) => ({ id: l.id, name: lineLabel(l) }))}
+            valueLabel={pickedLine ? lineLabel(pickedLine) : undefined}
+            placeholder={soId ? '— Select line —' : 'Pick the SO first'}
+          />
         </Field>
         <Field label="Design Engineer" req>
           <input

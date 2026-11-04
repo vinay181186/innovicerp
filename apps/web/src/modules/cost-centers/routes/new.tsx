@@ -8,6 +8,7 @@ import { useSaveKey } from '@/lib/use-save-key';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCostCentersList, useCreateCostCenter } from '../api';
 import { CostCenterForm } from '../components/cost-center-form';
+import { useToast } from '@/ui/feedback';
 
 export const costCenterNewRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -19,6 +20,7 @@ function CostCenterNewPage(): React.JSX.Element {
   const navigate = useNavigate();
   const saveKey = useSaveKey();
   const create = useCreateCostCenter(saveKey);
+  const toast = useToast();
   const [submitError, setSubmitError] = useState<string | null>(null);
   const goBack = useCallback(() => void navigate({ to: '/cost-centers' }), [navigate]);
   const exit = useExitConfirm({ onExit: goBack });
@@ -62,6 +64,7 @@ function CostCenterNewPage(): React.JSX.Element {
           setSubmitError(null);
           try {
             const created = await create.mutateAsync(values);
+            toast.ok(`Cost Centre ${created.code} saved`);
             exit.leave(
               () => void navigate({ to: '/cost-centers/$id', params: { id: created.id } }),
             );

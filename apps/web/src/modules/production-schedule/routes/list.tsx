@@ -17,7 +17,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate, todayIst } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { Banner } from '@/ui/feedback';
+import { Banner, useToast } from '@/ui/feedback';
 import { Select } from '@/ui/forms';
 import { ListHeader } from '@/ui/layout';
 import { useProductionSchedule, useRescheduleJcOp } from '../api';
@@ -90,6 +90,7 @@ function ProductionSchedulePage(): React.JSX.Element {
 
   const { data, isLoading, isError, error } = useProductionSchedule({ startDate, filter });
   const rescheduleMut = useRescheduleJcOp();
+  const toast = useToast();
 
   const days = useMemo(() => {
     const out: Array<{
@@ -138,7 +139,14 @@ function ProductionSchedulePage(): React.JSX.Element {
     e.preventDefault();
     const id = e.dataTransfer.getData('text/jc-op-id');
     if (!id) return;
-    rescheduleMut.mutate({ jcOpId: id, input: { machineId, plannedStart: iso } });
+    rescheduleMut.mutate(
+      { jcOpId: id, input: { machineId, plannedStart: iso } },
+      {
+        onSuccess: () => {
+          toast.ok('Operation rescheduled');
+        },
+      },
+    );
   };
 
   return (

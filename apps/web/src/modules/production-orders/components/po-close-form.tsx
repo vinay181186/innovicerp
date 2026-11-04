@@ -24,7 +24,7 @@
 import type { ProductionOrderDetail } from '@innovic/shared';
 import { Loader2, Lock } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { ConfirmDialog } from '@/ui/feedback';
+import { ConfirmDialog, useToast } from '@/ui/feedback';
 import { Cluster, ClusterFact, ClusterGrid, FormField } from '@/ui/forms';
 import { useCloseProductionOrder } from '../api';
 import './po-edit.css';
@@ -39,6 +39,7 @@ interface PoCloseFormProps {
 
 export function PoCloseForm({ po, onClosed, compact }: PoCloseFormProps): React.JSX.Element | null {
   const closeMut = useCloseProductionOrder();
+  const toast = useToast();
   const [qty, setQty] = useState<string>(String(po.availableToClose));
   const [finish, setFinish] = useState(false);
   const [remarks, setRemarks] = useState('');
@@ -88,7 +89,14 @@ export function PoCloseForm({ po, onClosed, compact }: PoCloseFormProps): React.
         onSettled: () => {
           inFlight.current = false;
         },
-        onSuccess: (closed) => onClosed?.(closed),
+        onSuccess: (closed) => {
+          toast.ok(
+            finish
+              ? `Production Order ${po.code} finished short`
+              : `Qty ${qtyNum} closed on ${po.code}`,
+          );
+          onClosed?.(closed);
+        },
         onError: (e) =>
           setError(
             e instanceof Error ? e.message : 'Could not close the Production Order. Try again.',
@@ -276,8 +284,12 @@ export function PoCloseForm({ po, onClosed, compact }: PoCloseFormProps): React.
           style={compact ? { padding: '4px 10px' } : undefined}
           title={
             finish
-              ? `Finish ${po.code}: put the ${po.availableToClose} available into stock, record ${Math.max(0, po.remainingQty - po.availableToClose)} lost`
-              : `Put ${qtyValid ? qtyNum : 0} of ${po.availableToClose} into stock`
+              ? remarksValid
+                ? `Finish ${po.code}: put the ${po.availableToClose} available into stock, record ${Math.max(0, po.remainingQty - po.availableToClose)} lost`
+                : 'Type the reason first'
+              : qtyValid
+                ? `Put ${qtyNum} of ${po.availableToClose} into stock`
+                : `Enter a Qty to Close from 1 to ${max}`
           }
         >
           {closeMut.isPending ? <Loader2 size={14} className="animate-spin" /> : <Lock size={14} />}{' '}

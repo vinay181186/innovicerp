@@ -64,7 +64,7 @@ function RouteCardNewPage(): React.JSX.Element {
         ops: opsToInput(ops),
       });
       // ADR-253 — every new card starts Pending Approval.
-      toast.ok('Route Card saved — sent for approval.');
+      toast.ok(`Route Card ${created.code} saved — sent for approval.`);
       exit.leave(() => void navigate({ to: '/route-cards/$id', params: { id: created.id } }));
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : 'Could not save Route Card. Try again.');

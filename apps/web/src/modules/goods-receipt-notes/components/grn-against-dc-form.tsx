@@ -51,7 +51,7 @@ import {
 import { computeReceivedByLine } from '@/modules/delivery-challans/lib/receipt-math';
 import { purchaseOrdersKeys } from '@/modules/purchase-orders/api';
 import { Panel } from '@/ui/data';
-import { Banner } from '@/ui/feedback';
+import { Banner, useToast } from '@/ui/feedback';
 import { Cluster, ClusterFact, ClusterGrid, FormField, SearchableSelect } from '@/ui/forms';
 import { goodsReceiptNotesKeys } from '../api';
 import { GRN_CREATE_FORM_ID, type GrnTypeFormShellProps } from './grn-create-contract';
@@ -97,6 +97,7 @@ export function GrnAgainstDcForm({
 }: GrnAgainstDcFormProps): React.JSX.Element {
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const toast = useToast();
   // R2 — one idempotency key per open form, reused on a retry after a dropped save.
   const saveKey = useSaveKey();
   const receive = useReceiveDeliveryChallan(saveKey);
@@ -364,6 +365,7 @@ export function GrnAgainstDcForm({
       void qc.invalidateQueries({ queryKey: goodsReceiptNotesKeys.lists() });
       void qc.invalidateQueries({ queryKey: purchaseOrdersKeys.all });
       const grnId = res.autoGrn?.id ?? null;
+      toast.ok(res.autoGrn ? `GRN ${res.autoGrn.code} saved` : 'GRN saved');
       onLeave(() =>
         grnId
           ? void navigate({ to: '/goods-receipt-notes/$id', params: { id: grnId }, replace: true })

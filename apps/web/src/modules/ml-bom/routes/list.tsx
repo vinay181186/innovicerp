@@ -18,7 +18,7 @@ import { Button, Icon } from '@/ui/core';
 import { DataTable, Panel } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
-import { Banner, ConfirmDialog } from '@/ui/feedback';
+import { Banner, ConfirmDialog, useToast } from '@/ui/feedback';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useDeleteMlBom, useMakeDefaultMlBom, useMlBomsList } from '../api';
 import { downloadMlBomTemplate } from '../components/ml-bom-import-template';
@@ -90,12 +90,11 @@ function MlBomsListPage(): React.JSX.Element {
   const makeDefault = useMakeDefaultMlBom();
   const mlBomPrint = useMlBomPrint();
   const del = useDeleteMlBom();
+  const toast = useToast();
   const [toDelete, setToDelete] = useState<MlBomListItem | null>(null);
   // ADR-197: a delete carries a reason — it is the Reason on the History row.
   const [deleteReason, setDeleteReason] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
-  // ADR-249 Step B — Make Default staged for approval (nothing moved yet).
-  const [stagedNotice, setStagedNotice] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [templateBusy, setTemplateBusy] = useState(false);
 
@@ -113,14 +112,14 @@ function MlBomsListPage(): React.JSX.Element {
 
   const onMakeDefault = async (b: MlBomListItem): Promise<void> => {
     setActionError(null);
-    setStagedNotice(null);
     try {
       const res = await makeDefault.mutateAsync({ id: b.id, expectedUpdatedAt: b.updatedAt });
-      if (isStagedResult(res)) {
-        setStagedNotice(
-          `Sent for approval — ${b.code} becomes the Default once an approver signs off.`,
-        );
-      }
+      // ADR-249 Step B — a staged Make Default: nothing moved yet.
+      toast.ok(
+        isStagedResult(res)
+          ? `Sent for approval — ${b.code} becomes the Default once an approver signs off.`
+          : `BOM ${b.code} is now the Default`,
+      );
     } catch (e) {
       setActionError(e instanceof Error ? e.message : 'Could not make this BOM the Default.');
     }
@@ -195,11 +194,6 @@ function MlBomsListPage(): React.JSX.Element {
         }
       />
 
-      {stagedNotice ? (
-        <Banner tone="success" role="status" onDismiss={() => setStagedNotice(null)}>
-          {stagedNotice}
-        </Banner>
-      ) : null}
       {actionError ? (
         <Banner tone="error" role="alert" onDismiss={() => setActionError(null)}>
           {actionError}

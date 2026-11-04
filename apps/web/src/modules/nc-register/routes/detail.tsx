@@ -29,7 +29,7 @@ import {
 import { fmtDate } from '@/lib/date';
 import { Panel } from '@/ui/data';
 import { ActionMenu } from '@/ui/layout';
-import { ConfirmDialog } from '@/ui/feedback';
+import { ConfirmDialog, useToast } from '@/ui/feedback';
 import { useCreateCapa } from '@/modules/capa/api';
 import { useJcOpsEnriched } from '@/modules/op-entry/api';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
@@ -85,6 +85,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
   const pendingChanges = undecidedChangesOf(pendingEdit.data?.rows);
   // ADR-202 — any pending edit overlays grey "Draft" on the status chip.
   const isDraft = (pendingEdit.data?.rows?.length ?? 0) > 0;
+  const toast = useToast();
   const softDelete = useSoftDeleteNcRegister();
   const dispose = useDisposeNcRegister(id);
   const closeRework = useCloseNcRework(id);
@@ -228,6 +229,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
         problem: detail.reason ?? NC_REASON_CATEGORY_LABELS[detail.reasonCategory],
         department: 'QC',
       });
+      toast.ok(`CAPA ${created.code} saved`);
       // Land on the new CAPA's 5-step edit, not the bare NC list.
       void navigate({
         to: '/nc-register',
@@ -256,6 +258,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
         reworkDoneQty === '' ? {} : { reworkDoneQty: Number(reworkDoneQty) },
       );
       setReworkDoneQty('');
+      toast.ok(`Rework on NC ${detail.code} closed`);
     } catch (e) {
       setCloseError(e instanceof Error ? e.message : 'Could not close rework. Try again.');
     }
@@ -267,6 +270,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
     setCloseError(null);
     try {
       await closeNc.mutateAsync();
+      toast.ok(`NC ${detail.code} closed`);
     } catch (e) {
       setCloseError(e instanceof Error ? e.message : 'Could not close the NC. Try again.');
     }
@@ -340,6 +344,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
                 className="btn btn-primary btn-sm"
                 onClick={() => setShowDispose(true)}
                 disabled={showDispose}
+                title={showDispose ? 'The Dispose form is already open' : undefined}
               >
                 <Stamp size={13} /> Dispose
               </button>
@@ -388,6 +393,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
                   className="btn btn-success btn-sm"
                   onClick={() => void onClose()}
                   disabled={closeNc.isPending || detail.closeBlockedReason != null}
+                  title={detail.closeBlockedReason ?? undefined}
                 >
                   {closeNc.isPending ? (
                     <Loader2 size={13} className="animate-spin" />

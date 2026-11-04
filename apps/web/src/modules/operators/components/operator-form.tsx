@@ -20,6 +20,7 @@ import { useEffect, type ReactNode } from 'react';
 import { type Control, Controller, useForm } from 'react-hook-form';
 import { useTaskUserOptions } from '@/modules/tasks/api';
 import { useNextOperatorCode } from '../api';
+import { SearchableSelect } from '@/ui/forms';
 import { FormActions } from '@/ui/layout';
 
 type CreateMode = {
@@ -75,36 +76,38 @@ export function OperatorForm(props: OperatorFormProps): React.JSX.Element {
 // Linked User: a dropdown of the company's active logins (the same list the
 // Task Board's assignee picker reads). It saves the user's id exactly as the
 // old free-text box did; '' = no linked login. A saved link to a user who is
-// no longer in the list (deactivated) keeps its own option, so re-saving the
-// form never silently drops it.
+// no longer in the list (deactivated) keeps its own label, so re-saving the
+// form never silently drops it. The login list is one fixed page, so the search
+// only filters what is loaded.
 function LinkedUserSelect(props: {
   control: Control<CreateOperatorInput> | Control<UpdateOperatorInput>;
 }): React.JSX.Element {
-  const { data, isLoading } = useTaskUserOptions();
-  const options = data?.options ?? [];
+  const { data, isLoading, error } = useTaskUserOptions();
+  const options = (data?.options ?? []).map((u) => ({
+    id: u.id,
+    name: u.role ? `${u.name} — ${u.role}` : u.name,
+  }));
   return (
     <Controller
       control={props.control as Control<CreateOperatorInput>}
       name="userId"
       render={({ field }) => {
         const value = field.value ?? '';
-        const known = value === '' || options.some((u) => u.id === value);
+        const picked = options.find((u) => u.id === value);
         return (
-          <select
+          <SearchableSelect
             id="userId"
-            className="innovic-select"
-            value={value}
-            onChange={(e) => field.onChange(e.target.value)}
-            onBlur={field.onBlur}
-          >
-            <option value="">{isLoading ? 'Loading users…' : '— No linked login —'}</option>
-            {!known ? <option value={value}>(user not in the active list)</option> : null}
-            {options.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.role ? `${u.name} — ${u.role}` : u.name}
-              </option>
-            ))}
-          </select>
+            value={value || null}
+            onChange={(id) => field.onChange(id ?? '')}
+            options={options}
+            loading={isLoading}
+            error={error}
+            clearable
+            placeholder={isLoading ? 'Loading users…' : '— No linked login —'}
+            valueLabel={
+              !value || isLoading ? undefined : (picked?.name ?? '(user not in the active list)')
+            }
+          />
         );
       }}
     />

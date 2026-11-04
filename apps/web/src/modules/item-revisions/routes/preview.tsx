@@ -105,7 +105,13 @@ function DrawingPage(): React.JSX.Element {
         </span>
         <span className="panel-title">Drawing</span>
         <span style={{ flex: 1 }} />
-        <button type="button" className="btn btn-ghost" onClick={onPrint} disabled={!path}>
+        <button
+          type="button"
+          className="btn btn-ghost"
+          onClick={onPrint}
+          disabled={!path}
+          title={path ? undefined : 'This Drawing Rev has no drawing file'}
+        >
           <Printer size={13} /> Print
         </button>
         {mayDownload && path ? (

@@ -398,6 +398,7 @@ export function PlanCreateForm({
           type="button"
           className="btn btn-primary"
           disabled={isSubmitting || Boolean(blocker) || !line}
+          title={blocker ?? (!line ? 'Pick the order and its line first' : undefined)}
           onClick={save}
         >
           {isSubmitting ? 'Saving…' : 'Save Plan'}

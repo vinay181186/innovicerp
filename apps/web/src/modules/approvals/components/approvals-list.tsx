@@ -208,6 +208,11 @@ export function ApprovalsList({
                   type="button"
                   className="btn btn-success btn-sm"
                   disabled={direct.length === 0}
+                  title={
+                    direct.length === 0
+                      ? 'None of the ticked rows can be approved in one go — open each one'
+                      : undefined
+                  }
                   onClick={() => approve(direct)}
                 >
                   ✓ Approve {direct.length}

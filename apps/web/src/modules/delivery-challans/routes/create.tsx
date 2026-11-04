@@ -78,7 +78,7 @@ import { itemCodeWithRev } from '@/lib/item-code';
 import { usePurchaseOrder, usePurchaseOrdersList } from '@/modules/purchase-orders/api';
 import { poStatusLabel } from '@/modules/purchase-orders/lib/po-labels';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { Banner } from '@/ui/feedback';
+import { Banner, useToast } from '@/ui/feedback';
 import { FormField, FormGrid, DocNumberInput } from '@/ui/forms';
 import { FormActions, PageHeader, useSaveShortcut } from '@/ui/layout';
 import { useCreateDeliveryChallan, useDcSendable, useRtvCandidates } from '../api';
@@ -253,6 +253,7 @@ function DeliveryChallanNewPage(): React.JSX.Element {
           className="btn btn-primary"
           onClick={runSave}
           disabled={!save.canSave || save.saving}
+          title={!save.canSave ? (save.reason ?? undefined) : undefined}
         >
           {save.saving ? <Loader2 size={13} className="animate-spin" /> : null}
           {save.saving ? 'Saving…' : 'Save DC'}
@@ -572,6 +573,7 @@ function PoDcFormBody({
   // R2 — one idempotency key per open form, reused on a retry after a dropped save.
   const saveKey = useSaveKey();
   const create = useCreateDeliveryChallan(saveKey);
+  const toast = useToast();
   // Asked as soon as the PO is known, so the allowance is on screen before the
   // first keystroke rather than after the first failed save.
   const { data: sendable } = useDcSendable(poId);
@@ -729,6 +731,21 @@ function PoDcFormBody({
     canSave: perms.entry && canSubmit && !rtvBlocks,
     saving: submitting,
     dirty,
+    reason: !perms.entry
+      ? 'You do not have permission to create a DC'
+      : !po
+        ? 'Loading the PO…'
+        : !dcDate
+          ? 'Enter the DC Date'
+          : !lineDrafts.some((l) => Number(l.shipQty) > 0)
+            ? 'Enter a Send Now quantity on at least one line'
+            : !canSubmit
+              ? 'Fix the Send Now quantity on the highlighted line'
+              : rtv.isLoading
+                ? 'Checking for NCs waiting to go back…'
+                : rtvBlocks
+                  ? 'Tick the box for the NCs waiting to go back first'
+                  : null,
   });
 
   // FLOW HELPER (frontend only): put each line's "Can send now" figure into
@@ -813,6 +830,7 @@ function PoDcFormBody({
         lines,
       };
       const created = await create.mutateAsync(input);
+      toast.ok(`DC ${created.code} saved`);
       exit.leave(() => void navigate({ to: '/delivery-challans/$id', params: { id: created.id } }));
     } catch (e) {
       // QC disposed an NC on this PO between page load and Save (or the check
@@ -1061,6 +1079,7 @@ function PoDcFormBody({
           className="btn btn-ghost btn-sm"
           onClick={fillAllPending}
           disabled={!sendable}
+          title={!sendable ? 'Loading what can be sent…' : undefined}
         >
           Fill all pending
         </button>

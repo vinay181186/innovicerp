@@ -27,7 +27,7 @@ import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
-import { Select } from '@/ui/forms';
+import { SearchableSelect } from '@/ui/forms';
 import { ListFooter, ListHeader } from '@/ui/layout';
 import {
   flattenQueue,
@@ -182,21 +182,20 @@ function JobQueuePage(): React.JSX.Element {
         // clickable machine-card strip became this dropdown — each label carries
         // the pending-op count the card showed, and ▶n when ops are running.
         filters={
-          <Select
-            aria-label="Machine"
-            title="Machine"
-            value={selectedMachine ? selectedMachine.machineCode : ''}
-            options={[
-              {
-                value: '',
-                label: `All machines (${machines.reduce((n, m) => n + m.pendingCount, 0)})`,
-              },
-              ...machines.map((m) => ({
-                value: m.machineCode,
-                label: `${m.machineCode} (${m.pendingCount})${m.runningCount > 0 ? ` ▶${m.runningCount}` : ''}`,
-              })),
-            ]}
-            onChange={(e) => setMachine(e.target.value === '' ? null : e.target.value)}
+          <SearchableSelect
+            style={{ minWidth: 180 }}
+            ariaLabel="Machine"
+            value={selectedMachine ? selectedMachine.machineCode : null}
+            options={machines.map((m) => ({
+              id: m.machineCode,
+              name: `${m.machineCode} (${m.pendingCount})${m.runningCount > 0 ? ` ▶${m.runningCount}` : ''}`,
+            }))}
+            // The box keeps the code alone: the counts move with every refresh.
+            selectedLabel={(o) => o.id}
+            valueLabel={selectedMachine?.machineCode}
+            placeholder={`All machines (${machines.reduce((n, m) => n + m.pendingCount, 0)})`}
+            clearable
+            onChange={setMachine}
           />
         }
         onClearFilters={() => {

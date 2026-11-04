@@ -12,6 +12,7 @@ import {
   type MlBomFormLineDraft,
   mlBomLinesToInput,
 } from '../components/ml-bom-form';
+import { useToast } from '@/ui/feedback';
 
 export const mlBomNewRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -23,6 +24,7 @@ function MlBomNewPage(): React.JSX.Element {
   const navigate = useNavigate();
   const saveKey = useSaveKey();
   const create = useCreateMlBom(saveKey);
+  const toast = useToast();
   const [submitError, setSubmitError] = useState<string | null>(null);
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'mlbom_create');
@@ -44,6 +46,7 @@ function MlBomNewPage(): React.JSX.Element {
         remarks: header.remarks.trim() ? header.remarks.trim() : null,
         lines: mlBomLinesToInput(lines),
       });
+      toast.ok(`BOM ${created.code} saved`);
       exit.leave(() => void navigate({ to: '/ml-boms/$id', params: { id: created.id } }));
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : 'Could not save BOM. Try again.');

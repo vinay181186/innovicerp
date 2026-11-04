@@ -26,7 +26,7 @@ import { todayIst } from '@/lib/date';
 import { useDispatchDetail } from '@/modules/customer-dispatches/api';
 import { DEFAULT_TERMS_DAYS, GST_OPTIONS } from '@/modules/invoices/constants';
 import { Panel } from '@/ui/data';
-import { Banner } from '@/ui/feedback';
+import { Banner, useToast } from '@/ui/feedback';
 import { FormField, FormGrid, SearchableSelect } from '@/ui/forms';
 import { FormActions, PageHeader, useSaveShortcut } from '@/ui/layout';
 import { InvoiceTotals } from '../components/invoice-totals';
@@ -73,6 +73,7 @@ function InvoiceNewPage(): React.JSX.Element {
   // screen (Back link, breadcrumb, browser Back) gets "Are you sure?".
   const goBack = useCallback(() => void navigate({ to: '/invoices' }), [navigate]);
   const exit = useExitConfirm({ onExit: goBack });
+  const toast = useToast();
 
   const [soId, setSoId] = useState('');
   const [invoiceDate, setInvoiceDate] = useState(todayStr());
@@ -223,6 +224,7 @@ function InvoiceNewPage(): React.JSX.Element {
         remarks: remarks || undefined,
         lines: payloadLines,
       });
+      toast.ok(`Invoice ${created.code} saved`);
       exit.leave(() => void navigate({ to: '/invoices/$id', params: { id: created.id } }));
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Could not save Invoice. Try again.');

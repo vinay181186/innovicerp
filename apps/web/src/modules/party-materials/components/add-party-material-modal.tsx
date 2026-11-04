@@ -18,6 +18,7 @@ import { useClientsList } from '../../clients/api';
 import { useItem, useItemsList } from '../../items/api';
 import { type NewPartyMaterialInput, useCreatePartyMaterial } from '../api';
 import { ErrorBox, Field, ModalActions, ModalShell } from './party-material-modal-shell';
+import { useToast } from '@/ui/feedback';
 
 export function AddPartyMaterialModal({ onClose }: { onClose: () => void }): React.JSX.Element {
   const [err, setErr] = useState<string | null>(null);
@@ -28,6 +29,7 @@ export function AddPartyMaterialModal({ onClose }: { onClose: () => void }): Rea
   const [description, setDescription] = useState(''); // auto-filled from item, editable
 
   const createMut = useCreatePartyMaterial();
+  const toast = useToast();
 
   // Customer — server ?search=.
   const { data: clientsData, isFetching: clientsFetching } = useClientsList({
@@ -90,7 +92,10 @@ export function AddPartyMaterialModal({ onClose }: { onClose: () => void }): Rea
     if (description.trim()) input.description = description.trim();
     if (autoMaterial.trim()) input.material = autoMaterial.trim();
     createMut.mutate(input, {
-      onSuccess: () => onClose(),
+      onSuccess: (created) => {
+        toast.ok(`Customer Material ${created.code} saved`);
+        onClose();
+      },
       onError: (e) =>
         setErr(e instanceof Error ? e.message : 'Could not save Material. Try again.'),
     });

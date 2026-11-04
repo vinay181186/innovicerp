@@ -12,10 +12,11 @@ import {
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { fmtDate } from '@/lib/date';
-import { Banner } from '@/ui/feedback';
+import { Banner, useToast } from '@/ui/feedback';
 import { useDesignProjectDetail, useDesignProjectsList } from '../../design-projects/api';
 import { useCreateDesignWorkLog } from '../api';
 import { todayStr } from './work-log-shared';
+import { SearchableSelect } from '@/ui/forms';
 
 export function EntryForm(): React.JSX.Element {
   const [logDate, setLogDate] = useState(todayStr());
@@ -44,6 +45,10 @@ export function EntryForm(): React.JSX.Element {
   const projTasks = projDetail?.tasks ?? [];
 
   const createMut = useCreateDesignWorkLog();
+  const toast = useToast();
+  const pickedProject = projects.find((p) => p.id === projectId);
+  // A task is saved by its title, so two tasks with one title are one choice.
+  const taskTitles = [...new Set(projTasks.map((t) => t.title))];
 
   const onSave = (): void => {
     setErr(null);
@@ -71,6 +76,7 @@ export function EntryForm(): React.JSX.Element {
     if (description.trim()) input.description = description.trim();
     createMut.mutate(input, {
       onSuccess: (saved) => {
+        toast.ok('Work entry saved');
         setHours('');
         setTask('');
         setDescription('');
@@ -103,32 +109,29 @@ export function EntryForm(): React.JSX.Element {
         </div>
         <div className="form-grp">
           <label className="form-label">Project ★</label>
-          <select
-            className="innovic-select"
-            value={projectId}
-            onChange={(e) => {
-              setProjectId(e.target.value);
+          <SearchableSelect
+            value={projectId || null}
+            onChange={(id) => {
+              setProjectId(id ?? '');
               setTask('');
             }}
-          >
-            <option value="">— Select —</option>
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.code} — {p.projectName}
-              </option>
-            ))}
-          </select>
+            options={projects.map((p) => ({ id: p.id, code: p.code, name: p.projectName }))}
+            valueLabel={
+              pickedProject ? `${pickedProject.code} — ${pickedProject.projectName}` : undefined
+            }
+            placeholder="— Select —"
+          />
         </div>
         <div className="form-grp">
           <label className="form-label">Task</label>
-          <select className="innovic-select" value={task} onChange={(e) => setTask(e.target.value)}>
-            <option value="">— General —</option>
-            {projTasks.map((t) => (
-              <option key={t.id} value={t.title}>
-                {t.title}
-              </option>
-            ))}
-          </select>
+          <SearchableSelect
+            value={task || null}
+            onChange={(title) => setTask(title ?? '')}
+            options={taskTitles.map((title) => ({ id: title, name: title }))}
+            valueLabel={task || undefined}
+            placeholder="— General —"
+            clearable
+          />
         </div>
         <div className="form-grp">
           <label className="form-label">Category</label>

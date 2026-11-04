@@ -14,6 +14,8 @@ export interface GrnFormStatus {
   submitting: boolean;
   /** Save is not allowed right now (e.g. the picked PO is not receivable). */
   blocked: boolean;
+  /** Why Save is not allowed, for the greyed button's tooltip. */
+  blockedReason?: string | undefined;
   /** The user has picked or typed something. */
   dirty: boolean;
 }

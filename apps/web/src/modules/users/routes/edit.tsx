@@ -28,7 +28,7 @@ import {
   useUser,
 } from '../api';
 import { roleLabel } from '@/lib/role-label';
-import { Banner, ConfirmDialog } from '@/ui/feedback';
+import { Banner, ConfirmDialog, useToast } from '@/ui/feedback';
 import { FormActions } from '@/ui/layout';
 
 /** The bottom bar sits outside the form's panel; `form=` keeps Save its submit button. */
@@ -87,6 +87,7 @@ function UserEditPage(): React.JSX.Element {
   const { data: me } = useSession();
   const isAdmin = me?.role === 'admin';
   const { data: detail, isLoading, isError, error } = useUser(isAdmin ? id : undefined);
+  const toast = useToast();
   const update = useUpdateUser(id);
   const fetchUser = useFetchUser();
   // ADR-226 / §20.4 — sends only what changed, merges onto someone else's save
@@ -107,7 +108,7 @@ function UserEditPage(): React.JSX.Element {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [newPassword, setNewPassword] = useState('');
-  const [pwMsg, setPwMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  const [pwErr, setPwErr] = useState<string | null>(null);
   // Their department lives on the access row, not the user record.
   const { data: accessList } = useUserAccessList();
 
@@ -202,6 +203,7 @@ function UserEditPage(): React.JSX.Element {
       // null = nothing actually changed; the user has been told and nothing was
       // written. Stay on the form.
       if (saved === null) return;
+      toast.ok(`User ${detail.email} saved`);
       exit.leave(goBack);
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : 'Could not save user. Try again.');
@@ -217,23 +219,17 @@ function UserEditPage(): React.JSX.Element {
   };
 
   const onSetPassword = async (): Promise<void> => {
-    setPwMsg(null);
+    setPwErr(null);
     if (newPassword.length < 8) {
-      setPwMsg({ kind: 'err', text: 'Password must be at least 8 characters.' });
+      setPwErr('Password must be at least 8 characters.');
       return;
     }
     try {
       await setPassword.mutateAsync({ password: newPassword });
       setNewPassword('');
-      setPwMsg({
-        kind: 'ok',
-        text: `Password set for ${detail.email}. Hand it over directly — no email is sent.`,
-      });
+      toast.ok(`Password set for ${detail.email}. Hand it over directly — no email is sent.`);
     } catch (e) {
-      setPwMsg({
-        kind: 'err',
-        text: e instanceof Error ? e.message : 'Could not set password. Try again.',
-      });
+      setPwErr(e instanceof Error ? e.message : 'Could not set password. Try again.');
     }
   };
 
@@ -410,9 +406,9 @@ function UserEditPage(): React.JSX.Element {
           <div className="text3" style={{ fontSize: 12, marginBottom: 10 }}>
             No email is sent — give the new password to the user.
           </div>
-          {pwMsg ? (
+          {pwErr ? (
             <div style={{ marginBottom: 10 }}>
-              <Banner tone={pwMsg.kind === 'ok' ? 'success' : 'error'}>{pwMsg.text}</Banner>
+              <Banner tone="error">{pwErr}</Banner>
             </div>
           ) : null}
           <div style={{ display: 'flex', gap: 6, alignItems: 'flex-end', flexWrap: 'wrap' }}>
@@ -435,6 +431,7 @@ function UserEditPage(): React.JSX.Element {
               className="btn btn-primary"
               onClick={() => void onSetPassword()}
               disabled={setPassword.isPending || newPassword.length === 0}
+              title={newPassword.length === 0 ? 'Type the new password first' : undefined}
             >
               {setPassword.isPending ? <Loader2 size={13} className="animate-spin" /> : null}
               Set Password

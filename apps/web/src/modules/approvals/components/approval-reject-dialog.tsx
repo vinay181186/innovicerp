@@ -47,6 +47,7 @@ export function ApprovalRejectDialog({
             variant="danger"
             size="sm"
             disabled={!canSubmit}
+            {...(canSubmit ? {} : { title: 'Type the reason first' })}
             onClick={() => onReject(reason.trim())}
           >
             {confirmLabel}

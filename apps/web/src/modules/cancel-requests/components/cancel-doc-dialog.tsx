@@ -28,7 +28,7 @@ import { useRef, useState } from 'react';
 import { fmtDateTime } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { ApprovalRejectDialog } from '@/modules/approvals/components/approval-reject-dialog';
-import { Modal } from '@/ui/feedback';
+import { Modal, useToast } from '@/ui/feedback';
 import { useCancelPreview, useDecideCancel, useRequestCancel, useWithdrawCancel } from '../api';
 import { BlockerList, CancelError, EffectsList } from './cancel-doc-parts';
 
@@ -48,6 +48,7 @@ export function CancelDocDialog({
   const preview = useCancelPreview(docType, docId);
   const { data: me } = useSession();
   const requestMut = useRequestCancel();
+  const toast = useToast();
   const decideMut = useDecideCancel();
   const withdrawMut = useWithdrawCancel();
   const [reason, setReason] = useState('');
@@ -67,6 +68,7 @@ export function CancelDocDialog({
   async function run(
     fn: () => Promise<CancelRequestResult>,
     after: 'close' | 'sent' = 'close',
+    okText: string = `${docCode} cancelled`,
   ): Promise<void> {
     if (inFlight.current) return;
     inFlight.current = true;
@@ -74,7 +76,10 @@ export function CancelDocDialog({
     try {
       const res = await fn();
       if (after === 'sent' && !res.cancelled) setSent(res);
-      else onClose();
+      else {
+        toast.ok(okText);
+        onClose();
+      }
     } catch (e) {
       setErr(e);
       void preview.refetch();
@@ -141,7 +146,13 @@ export function CancelDocDialog({
             type="button"
             className="btn btn-ghost"
             disabled={busy}
-            onClick={() => void run(() => withdrawMut.mutateAsync({ id: r.id }))}
+            onClick={() =>
+              void run(
+                () => withdrawMut.mutateAsync({ id: r.id }),
+                'close',
+                `Cancel Request for ${docCode} withdrawn`,
+              )
+            }
           >
             Withdraw
           </button>
@@ -291,7 +302,13 @@ export function CancelDocDialog({
           onReject={(note) => {
             const id = p.pending?.id;
             setRejecting(false);
-            if (id) void run(() => decideMut.mutateAsync({ id, decision: 'reject', note }));
+            if (id) {
+              void run(
+                () => decideMut.mutateAsync({ id, decision: 'reject', note }),
+                'close',
+                `Cancel Request for ${docCode} rejected`,
+              );
+            }
           }}
         />
       ) : null}

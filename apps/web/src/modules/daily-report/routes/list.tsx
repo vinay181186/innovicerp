@@ -22,6 +22,7 @@ import { useMyCompany } from '../../settings/api';
 import { dailyGroupKey, fetchFullDailyReport, useDailyReport } from '../api';
 import { DAILY_REPORT_HIDDEN, dailyReportColumnsFor } from '../components/daily-report-columns';
 import { printDailyReport } from '../lib/print-daily-report';
+import { SearchableSelect } from '@/ui/forms';
 
 const searchSchema = z.object({
   date: z.string().optional(),
@@ -142,7 +143,11 @@ function DailyReportPage(): React.JSX.Element {
           className="btn btn-ghost"
           onClick={() => void onPrint()}
           disabled={!data || data.groups.length === 0 || printing}
-          title="Print daily production report"
+          title={
+            data && data.groups.length === 0
+              ? `No production entries for ${fmtDate(date)}`
+              : 'Print daily production report'
+          }
         >
           🖨 Print Full Report
         </button>
@@ -159,19 +164,19 @@ function DailyReportPage(): React.JSX.Element {
             />
           </ReportFilter>
           <ReportFilter label="Machine" htmlFor="dr-machine" size="lg">
-            <select
+            <SearchableSelect
               id="dr-machine"
-              className="innovic-select"
-              value={machineId}
-              onChange={(e) => setMachine(e.target.value)}
-            >
-              <option value="">All Machines</option>
-              {(machinesData?.machines ?? []).map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.code} — {m.name}
-                </option>
-              ))}
-            </select>
+              clearable
+              placeholder="All Machines"
+              value={machineId || null}
+              valueLabel={machineId ? machineLabel : undefined}
+              options={(machinesData?.machines ?? []).map((m) => ({
+                id: m.id,
+                code: m.code,
+                name: m.name,
+              }))}
+              onChange={(id) => setMachine(id ?? '')}
+            />
           </ReportFilter>
         </>
       }

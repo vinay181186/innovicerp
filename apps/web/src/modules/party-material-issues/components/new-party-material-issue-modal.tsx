@@ -10,7 +10,7 @@
 import { type CreatePartyMaterialIssueInput } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Modal } from '@/ui/feedback';
+import { Modal, useToast } from '@/ui/feedback';
 import { SearchableSelect } from '@/ui/forms';
 import { todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
@@ -25,6 +25,7 @@ export function NewPartyMaterialIssueModal({
 }: {
   onClose: () => void;
 }): React.JSX.Element {
+  const toast = useToast();
   const [issueDate, setIssueDate] = useState(todayLocal());
   const [jwSearch, setJwSearch] = useState('');
   const [jobWorkOrderId, setJobWorkOrderId] = useState<string | null>(null);
@@ -204,7 +205,10 @@ export function NewPartyMaterialIssueModal({
     if (remarks.trim()) input.remarks = remarks.trim();
 
     createMut.mutate(input, {
-      onSuccess: () => onClose(),
+      onSuccess: (created) => {
+        toast.ok(`Customer Material Issue ${created.code} saved`);
+        onClose();
+      },
       onError: (e) =>
         setErr(
           e instanceof Error ? e.message : 'Could not save Issue. Check the lines and try again.',
@@ -310,18 +314,16 @@ export function NewPartyMaterialIssueModal({
         {needsLinePick ? (
           <div style={{ gridColumn: 'span 2' }}>
             <Field label="JWSO Line" required>
-              <select
-                className="innovic-select"
-                value={manualLineId}
-                onChange={(e) => setManualLineId(e.target.value)}
-              >
-                <option value="">Pick the line this Job Card is for…</option>
-                {jwLines.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {`L${l.lineNo} · ${itemCodeWithRev(l.itemCodeText, l.revision)} · ${l.partName}`}
-                  </option>
-                ))}
-              </select>
+              <SearchableSelect
+                id="pmi-jw-line"
+                value={manualLineId || null}
+                onChange={(id) => setManualLineId(id ?? '')}
+                placeholder="Pick the line this Job Card is for…"
+                options={jwLines.map((l) => ({
+                  id: l.id,
+                  name: `L${l.lineNo} · ${itemCodeWithRev(l.itemCodeText, l.revision)} · ${l.partName}`,
+                }))}
+              />
             </Field>
           </div>
         ) : null}

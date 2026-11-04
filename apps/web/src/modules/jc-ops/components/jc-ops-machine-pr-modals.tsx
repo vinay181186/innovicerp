@@ -12,11 +12,12 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { Modal } from '@/ui/feedback';
+import { Modal, useToast } from '@/ui/feedback';
 // The system OSP PR path Op Entry uses — do not build a parallel one.
 import { useGenerateOspPr } from '@/modules/op-entry/api';
 import { useMachinesList } from '../../machines/api';
 import { jcOpsBoardKeys, useChangeJcOpMachine } from '../api';
+import { SearchableSelect } from '@/ui/forms';
 
 export function ChangeMachineModal({
   row,
@@ -29,6 +30,13 @@ export function ChangeMachineModal({
   const [err, setErr] = useState<string | null>(null);
   const { data: machinesData } = useMachinesList({ limit: 200, offset: 0 });
   const mut = useChangeJcOpMachine();
+  const toast = useToast();
+  const machineOptions = (machinesData?.machines ?? []).map((m) => ({
+    id: m.id,
+    code: m.code,
+    name: m.name,
+  }));
+  const pickedMachine = machineOptions.find((m) => m.id === machineId);
 
   // A finished op has no remaining qty to route anywhere, so the server refuses
   // the swap. Say so as the dialog OPENS rather than after a pointless round
@@ -45,7 +53,10 @@ export function ChangeMachineModal({
     mut.mutate(
       { id: row.jcOpId, input },
       {
-        onSuccess: () => onClose(),
+        onSuccess: () => {
+          toast.ok(`Machine changed — ${row.jcCode} Op ${opSrNo(row.opSeq)}`);
+          onClose();
+        },
         onError: (e) =>
           setErr(e instanceof Error ? e.message : 'Could not change the machine. Try again.'),
       },
@@ -67,6 +78,7 @@ export function ChangeMachineModal({
             className="btn btn-primary"
             onClick={onSave}
             disabled={mut.isPending || finished}
+            title={finished ? 'This operation is Completed' : undefined}
           >
             {mut.isPending ? (
               <>
@@ -130,19 +142,19 @@ export function ChangeMachineModal({
         <div className="text3" style={{ fontSize: 11, marginBottom: 4 }}>
           Assign Machine <span className="req">★</span>
         </div>
-        <select
-          className="innovic-select"
-          value={machineId}
-          onChange={(e) => setMachineId(e.target.value)}
-          style={{ width: '100%', fontSize: 12 }}
-        >
-          <option value="">— Select machine —</option>
-          {(machinesData?.machines ?? []).map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.code} — {m.name}
-            </option>
-          ))}
-        </select>
+        <SearchableSelect
+          value={machineId || null}
+          onChange={(id) => setMachineId(id ?? '')}
+          options={machineOptions}
+          valueLabel={
+            pickedMachine
+              ? `${pickedMachine.code} — ${pickedMachine.name}`
+              : machineId
+                ? (row.machineCode ?? undefined)
+                : undefined
+          }
+          placeholder="— Select machine —"
+        />
       </div>
       {finished || err ? (
         <div

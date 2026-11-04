@@ -233,6 +233,7 @@ function ReorderListPage(): React.JSX.Element {
                   type="button"
                   className="btn btn-primary btn-sm"
                   disabled={raise.isPending || tickedCount === 0}
+                  title={tickedCount === 0 ? 'Tick at least one item' : undefined}
                   onClick={onRaise}
                 >
                   {raise.isPending ? 'Raising…' : `Raise PRs (${tickedCount})`}

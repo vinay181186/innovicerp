@@ -7,6 +7,7 @@ import { itemCodeWithRev } from '@/lib/item-code';
 import { soNoWithInternal } from '@/lib/so-number';
 import { useUpdateDesignTracker } from '../api';
 import { Actions, ErrorBox, Field, ModalShell } from './design-tracker-modal-shell';
+import { useToast } from '@/ui/feedback';
 
 export function EditDesignModal({
   row,
@@ -22,6 +23,7 @@ export function EditDesignModal({
   const [remarks, setRemarks] = useState(row.remarks ?? '');
   const [err, setErr] = useState<string | null>(null);
   const mut = useUpdateDesignTracker();
+  const toast = useToast();
 
   const onSave = (): void => {
     setErr(null);
@@ -37,7 +39,10 @@ export function EditDesignModal({
         },
       },
       {
-        onSuccess: () => onClose(),
+        onSuccess: () => {
+          toast.ok(`Design ${row.code} saved`);
+          onClose();
+        },
         onError: (e) =>
           setErr(e instanceof Error ? e.message : 'Could not save Design. Try again.'),
       },

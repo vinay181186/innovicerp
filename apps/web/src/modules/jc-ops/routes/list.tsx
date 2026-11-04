@@ -10,7 +10,7 @@ import { useDebounce } from '@/lib/use-debounce';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { Select } from '@/ui/forms';
+import { SearchableSelect } from '@/ui/forms';
 import { DataTable, Panel } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
@@ -132,14 +132,15 @@ function JcOpsPage(): React.JSX.Element {
         }}
         filtersActive={searchInput.trim() !== '' || jcCode !== '' || sf.filtering}
         filters={
-          <Select
-            aria-label="Job Card"
-            value={jcCode}
-            onChange={(e) => setJcCode(e.target.value)}
-            options={[
-              { value: '', label: 'All Job Cards' },
-              ...(data?.jcOptions ?? []).map((j) => ({ value: j.jcCode, label: j.jcCode })),
-            ]}
+          <SearchableSelect
+            style={{ minWidth: 180 }}
+            ariaLabel="Job Card"
+            value={jcCode || null}
+            onChange={(code) => setJcCode(code ?? '')}
+            options={(data?.jcOptions ?? []).map((j) => ({ id: j.jcCode, name: j.jcCode }))}
+            valueLabel={jcCode || undefined}
+            placeholder="All Job Cards"
+            clearable
           />
         }
         primary={

@@ -9,7 +9,7 @@ import type { SalesOrderDetail, SalesOrderLine } from '@innovic/shared';
 import { useId, useState } from 'react';
 import { soNoWithInternal } from '@/lib/so-number';
 import { Button } from '@/ui/core';
-import { Banner, Modal } from '@/ui/feedback';
+import { Banner, Modal, useToast } from '@/ui/feedback';
 import { FormField } from '@/ui/forms';
 import { useCloseSalesOrder, useShortCloseSalesOrderLine } from '../api';
 
@@ -26,6 +26,7 @@ export function SoCloseModal(props: {
   onClose: () => void;
 }): React.JSX.Element {
   const { detail, line, onClose } = props;
+  const toast = useToast();
   const formId = useId();
   const [reason, setReason] = useState('');
   const [err, setErr] = useState<string | null>(null);
@@ -44,10 +45,17 @@ export function SoCloseModal(props: {
       return;
     }
     const onError = (e: Error): void => setErr(e.message || 'Could not close. Try again.');
+    const closed = (text: string) => (): void => {
+      toast.ok(text);
+      onClose();
+    };
     if (line) {
-      closeLine.mutate({ lineId: line.id, reason: r }, { onSuccess: onClose, onError });
+      closeLine.mutate(
+        { lineId: line.id, reason: r },
+        { onSuccess: closed(`SO ${detail.code} Line ${line.lineNo} closed`), onError },
+      );
     } else {
-      closeSo.mutate({ reason: r }, { onSuccess: onClose, onError });
+      closeSo.mutate({ reason: r }, { onSuccess: closed(`SO ${detail.code} closed`), onError });
     }
   };
 

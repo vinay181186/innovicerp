@@ -9,7 +9,7 @@ import { useExitConfirm } from '@/lib/exit-guard';
 import { useEditConflict } from '@/lib/use-edit-conflict';
 import { useSaveKey } from '@/lib/use-save-key';
 import { isStagedResult } from '@/modules/document-edits/api';
-import { Banner } from '@/ui/feedback';
+import { useToast } from '@/ui/feedback';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateMachine, useFetchMachine, useMachine, useUpdateMachine } from '../api';
 import { MachineForm } from '../components/machine-form';
@@ -66,6 +66,7 @@ function MachineNewPage(): React.JSX.Element {
   const navigate = useNavigate();
   const saveKey = useSaveKey();
   const create = useCreateMachine(saveKey);
+  const toast = useToast();
   const { data: eff } = useMyAccess();
   const [submitError, setSubmitError] = useState<string | null>(null);
   const goBack = useCallback(() => void navigate({ to: '/machines' }), [navigate]);
@@ -75,6 +76,7 @@ function MachineNewPage(): React.JSX.Element {
     setSubmitError(null);
     try {
       const created = await create.mutateAsync(values);
+      toast.ok(`Machine ${created.code} saved`);
       exit.leave(
         () => void navigate({ to: '/machines/$id', params: { id: created.id }, replace: true }),
       );
@@ -119,6 +121,7 @@ function MachineEditPage(): React.JSX.Element {
   const navigate = useNavigate();
   const { data: machine, isLoading, isError, error } = useMachine(id);
   const update = useUpdateMachine(id);
+  const toast = useToast();
   const { data: eff } = useMyAccess();
   const fetchMachine = useFetchMachine();
   // ADR-226 / §20.4 — sends only what changed, merges onto someone else's save
@@ -135,9 +138,6 @@ function MachineEditPage(): React.JSX.Element {
     noun: 'machine',
   });
   const [submitError, setSubmitError] = useState<string | null>(null);
-  // ADR-202 — set when an edit to a LIVE machine is staged for approval instead
-  // of applied; the neutral "Sent for approval" banner shows it.
-  const [stagedNotice, setStagedNotice] = useState<string | null>(null);
 
   const goBack = useCallback(
     () => void navigate({ to: '/machines/$id', params: { id } }),
@@ -160,7 +160,9 @@ function MachineEditPage(): React.JSX.Element {
         // The edit-approval gate is on and this machine is live: nothing was
         // changed on the machine — the edit is now waiting for approval. Say so,
         // then return to the machine (its fields now carry the pending chip).
-        setStagedNotice('Sent for approval — your changes will apply once an approver signs off.');
+        toast.ok('Sent for approval — your changes will apply once an approver signs off.');
+      } else {
+        toast.ok(`Machine ${machine?.code ?? ''} saved`);
       }
       exit.leave(() => void navigate({ to: '/machines/$id', params: { id }, replace: true }));
     } catch (err) {
@@ -213,11 +215,6 @@ function MachineEditPage(): React.JSX.Element {
       >
         <ArrowLeft size={14} /> Back
       </Link>
-      {stagedNotice ? (
-        <Banner tone="success" role="status">
-          {stagedNotice}
-        </Banner>
-      ) : null}
       <MachineForm
         panelHeader={
           <div>

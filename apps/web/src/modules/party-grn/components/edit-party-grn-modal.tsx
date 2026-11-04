@@ -7,13 +7,13 @@
 //
 // Edit-approval: when the gate is on and this receipt is live, the PATCH returns
 // a DocumentEditStagedResult instead of the updated detail — nothing changed, the
-// edit is waiting for approval. We show a neutral "Sent for approval" notice and
-// close; the row-expand then carries the amber pending chips.
+// edit is waiting for approval. A "Sent for approval" toast says so and the modal
+// closes; the row-expand then carries the amber pending chips.
 
 import type { PartyGrnLine, PartyGrnListItem } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Modal } from '@/ui/feedback';
+import { Modal, useToast } from '@/ui/feedback';
 import { useSaveKey } from '@/lib/use-save-key';
 import { isStagedResult } from '@/modules/document-edits/api';
 import { usePartyGrnDetail, useUpdatePartyGrn, type UpdatePartyGrnInput } from '../api';
@@ -31,6 +31,7 @@ export function EditPartyGrnModal({
 }): React.JSX.Element {
   const detailQ = usePartyGrnDetail(row.id);
   const d = detailQ.data;
+  const toast = useToast();
 
   const [grnDate, setGrnDate] = useState('');
   const [dcNo, setDcNo] = useState('');
@@ -38,7 +39,6 @@ export function EditPartyGrnModal({
   const [remarks, setRemarks] = useState('');
   const [entries, setEntries] = useState<Record<string, LineEntry>>({});
   const [err, setErr] = useState<string | null>(null);
-  const [stagedNotice, setStagedNotice] = useState<string | null>(null);
 
   // Seed the form from the loaded detail, once.
   const seeded = useRef(false);
@@ -121,15 +121,13 @@ export function EditPartyGrnModal({
 
     update.mutate(input, {
       onSuccess: (saved) => {
-        if (isStagedResult(saved)) {
-          // Gate on and this receipt is live: nothing changed — the edit is
-          // waiting for approval. Say so, then close (the expand shows chips).
-          setStagedNotice(
-            'Sent for approval — your changes will apply once an approver signs off.',
-          );
-          window.setTimeout(() => onClose(), 1400);
-          return;
-        }
+        // Gate on and this receipt is live: nothing changed — the edit is
+        // waiting for approval. Say so, then close (the expand shows chips).
+        toast.ok(
+          isStagedResult(saved)
+            ? 'Sent for approval — your changes will apply once an approver signs off.'
+            : `Party GRN ${row.code} saved`,
+        );
         onClose();
       },
       onError: (e) => setErr(e instanceof Error ? e.message : 'Could not save changes. Try again.'),
@@ -150,6 +148,7 @@ export function EditPartyGrnModal({
             type="button"
             className="btn btn-primary"
             disabled={update.isPending || !d || !dirty}
+            title={!d ? 'Still loading this GRN' : !dirty ? 'No changes to save' : undefined}
             onClick={onSave}
           >
             {update.isPending ? (
@@ -397,21 +396,6 @@ export function EditPartyGrnModal({
           }}
         >
           {err}
-        </div>
-      ) : null}
-      {stagedNotice ? (
-        <div
-          style={{
-            marginTop: 12,
-            color: 'var(--green2)',
-            background: 'var(--green3)',
-            border: '1px solid var(--green)',
-            borderRadius: 6,
-            padding: '6px 10px',
-            fontSize: 12,
-          }}
-        >
-          {stagedNotice}
         </div>
       ) : null}
     </Modal>

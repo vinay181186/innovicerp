@@ -105,7 +105,6 @@ export function MyDayTable({
   nowMin,
   canWrite,
   line,
-  onMessage,
 }: {
   day: DayLogDetail;
   q: DayQuery;
@@ -114,7 +113,6 @@ export function MyDayTable({
   canWrite: boolean;
   /** Entry to open and scroll to (?line=). */
   line: string | undefined;
-  onMessage: (text: string) => void;
 }): React.JSX.Element {
   const rows = useMemo<Row[]>(
     () => sortEntries(day.entries).map((e, i) => ({ ...e, srNo: i + 1 })),
@@ -181,10 +179,7 @@ export function MyDayTable({
               isOwner={day.isOwner}
               nowMin={nowMin}
               onMode={(m) => setMode(r.id, m)}
-              onTimesSent={() => {
-                setMode(r.id, 'view');
-                onMessage('Saved.');
-              }}
+              onTimesSent={() => setMode(r.id, 'view')}
             />
           ) : null
         }

@@ -96,6 +96,7 @@ export function NotificationsView(): React.JSX.Element {
           type="button"
           className="btn btn-ghost btn-sm"
           disabled={markAll.disabled}
+          title={markAll.reason}
           onClick={markAll.run}
         >
           Mark all as read

@@ -21,6 +21,7 @@ import {
   attachmentTypeAllowed,
 } from '@innovic/shared';
 import { qcDocumentsKeys, uploadQcFile, useCreateQcDocument } from '../api';
+import { useToast } from '@/ui/feedback';
 
 /** What the picked file belongs to. */
 export type UploadTarget =
@@ -47,6 +48,7 @@ export function useDossierUpload(): {
   /** Slots (uploadSlotKey) whose upload saved but whose refetched dossier has not arrived. */
   refreshing: ReadonlySet<string>;
 } {
+  const toast = useToast();
   const qc = useQueryClient();
   const companyId = useSession().data?.companyId ?? null;
   const saveKey = useSaveKey();
@@ -113,6 +115,7 @@ export function useDossierUpload(): {
             }),
       };
       await create.mutateAsync(input);
+      toast.ok(`${file.name} uploaded`);
       // Saved. Until the refetched dossier arrives the row still reads "no report"
       // with a live ＋ — mark the slot so a second upload cannot start meanwhile.
       const slot = uploadSlotKey(t);

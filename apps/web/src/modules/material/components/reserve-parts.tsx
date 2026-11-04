@@ -5,7 +5,7 @@ import type { SoMaterial, SoMaterialLine } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { soNoWithInternal } from '@/lib/so-number';
-import { Modal } from '@/ui/feedback';
+import { Modal, useToast } from '@/ui/feedback';
 import { useReleaseParts, useReserveParts } from '../api';
 
 const r3 = (v: number): number => Math.round(v * 1000) / 1000;
@@ -34,6 +34,7 @@ export function ReservePartsModal({
   );
   const [err, setErr] = useState<string | null>(null);
   const reserve = useReserveParts(data.salesOrderId);
+  const toast = useToast();
 
   const save = (): void => {
     setErr(null);
@@ -52,7 +53,10 @@ export function ReservePartsModal({
     reserve.mutate(
       { lines },
       {
-        onSuccess: () => onClose(),
+        onSuccess: () => {
+          toast.ok('Parts reserved');
+          onClose();
+        },
         onError: (e) => setErr(e instanceof Error ? e.message : 'Could not reserve. Try again.'),
       },
     );
@@ -72,6 +76,7 @@ export function ReservePartsModal({
             type="button"
             className="btn btn-primary"
             disabled={reserve.isPending || rows.length === 0}
+            title={rows.length === 0 ? 'No part still needs reserving' : undefined}
             onClick={save}
           >
             {reserve.isPending ? (
@@ -145,6 +150,7 @@ export function ReleasePartModal({
   const [reason, setReason] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const release = useReleaseParts(salesOrderId);
+  const toast = useToast();
 
   const save = (): void => {
     setErr(null);
@@ -156,7 +162,10 @@ export function ReleasePartModal({
     release.mutate(
       { itemId: line.itemId, qty: q, reason: reason.trim() },
       {
-        onSuccess: () => onClose(),
+        onSuccess: () => {
+          toast.ok(`${line.itemCode} released`);
+          onClose();
+        },
         onError: (e) => setErr(e instanceof Error ? e.message : 'Could not release. Try again.'),
       },
     );

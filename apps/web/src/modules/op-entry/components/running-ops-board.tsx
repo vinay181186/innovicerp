@@ -29,9 +29,11 @@ import {
   type RunningOpRow,
 } from './running-ops-columns';
 import { StopOpModal } from './stop-op-modal';
+import { useToast } from '@/ui/feedback';
 
 export function RunningOpsBoard(): React.JSX.Element {
   const stop = useStopOp();
+  const toast = useToast();
   // Stopping a session commits produced qty to op_log → op_entry entry (Production).
   const { data: eff } = useMyAccess();
   const canOpEntry = effectiveFormPerms(eff, 'op_entry').entry;
@@ -71,7 +73,10 @@ export function RunningOpsBoard(): React.JSX.Element {
     stop.mutate(
       { id: stopRow.id, ...input },
       {
-        onSuccess: () => setStopRow(null),
+        onSuccess: () => {
+          toast.ok('Operation stopped — Op Entry saved');
+          setStopRow(null);
+        },
         onError: (e) =>
           setStopError(e instanceof Error ? e.message : 'Could not stop operation. Try again.'),
       },

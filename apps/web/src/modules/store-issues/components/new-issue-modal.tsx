@@ -11,7 +11,7 @@ import {
 } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
-import { Modal } from '@/ui/feedback';
+import { Modal, useToast } from '@/ui/feedback';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { todayIst } from '@/lib/date';
 import { soNoWithInternal } from '@/lib/so-number';
@@ -61,6 +61,7 @@ export function NewIssueModal({
 
   // R2 — one idempotency key per open modal, reused on a retry after a dropped save.
   const saveKey = useSaveKey();
+  const toast = useToast();
   const createMut = useCreateStoreIssue(saveKey);
   const { data: eff } = useMyAccess();
   const canApprove = effectiveFormPerms(eff, 'issue_create').approve;
@@ -136,7 +137,11 @@ export function NewIssueModal({
       onSuccess: (created) => {
         setOver(null);
         setConfirmReason('');
-        if (!andAnother) return onClose();
+        if (!andAnother) {
+          toast.ok(`Item Issue ${created.code} saved`);
+          return onClose();
+        }
+        toast.ok(`Item Issue ${created.code} saved — enter the next issue.`);
         // Keep against / document / received-by; clear the lines.
         setLastSaved(created.code);
         setLines([]);
@@ -399,11 +404,6 @@ export function NewIssueModal({
         </div>
       ) : null}
 
-      {lastSaved && !err ? (
-        <div className="text2" style={{ marginTop: 12, fontSize: 12 }}>
-          ✓ Saved <span className="td-code">{lastSaved}</span> — enter the next issue.
-        </div>
-      ) : null}
       {err ? (
         <div
           style={{

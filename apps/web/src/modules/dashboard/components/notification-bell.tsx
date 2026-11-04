@@ -31,6 +31,8 @@ export function useMarkAllShown() {
   return {
     all,
     disabled: newest == null || (all.data?.unread ?? 0) === 0 || markAll.isPending,
+    /** Why the button is grey, when it is not only a save in flight. */
+    reason: newest == null || (all.data?.unread ?? 0) === 0 ? 'No unread notifications' : undefined,
     run: (): void => {
       if (newest) markAll.mutate({ upTo: new Date(newest).toISOString() });
     },
@@ -130,6 +132,7 @@ export function NotificationBell(): React.JSX.Element {
               type="button"
               className="dh-textbtn"
               disabled={markAll.disabled}
+              title={markAll.reason}
               onClick={markAll.run}
             >
               Mark all as read

@@ -15,6 +15,7 @@ import type {
   TaskView,
 } from '@innovic/shared';
 import { TASK_PRIORITIES, TASK_PRIORITY_LABELS, TASK_VIEW_LABELS } from '@innovic/shared';
+import { SearchableSelect } from '@/ui/forms';
 import { PERSON_LABEL } from './task-table';
 
 const STATUS_OPTIONS: { value: TaskStatus | ''; label: string }[] = [
@@ -127,6 +128,9 @@ export function TaskTabs({
   );
 }
 
+/** The filter bar sizes native selects itself; a picker's box carries its own. */
+const FILTER_PICKER: React.CSSProperties = { minWidth: 170 };
+
 export interface BoardFilterValues {
   searchInput: string;
   status: TaskStatus | '';
@@ -163,11 +167,8 @@ export function TaskFilters({
   onDept: (v: string) => void;
   onDue: (v: TaskDueFilter | '') => void;
 }): React.JSX.Element {
-  const userOptions = users.map((u) => (
-    <option key={u.id} value={u.id}>
-      {u.name}
-    </option>
-  ));
+  const userOptions = users.map((u) => ({ id: u.id, name: u.name }));
+  const userName = (id: string): string | undefined => users.find((u) => u.id === id)?.name;
   // The filter selects only — they sit in the board ListHeader's filter bar,
   // after the header's own search box (which owns the search term). The bar
   // sizes every select, so none carries a width of its own.
@@ -203,25 +204,29 @@ export function TaskFilters({
         ))}
       </select>
       {view !== 'todo' ? (
-        <select
-          className="innovic-select"
-          value={values.person}
-          onChange={(e) => onPerson(e.target.value)}
-        >
-          <option value="">{PERSON_LABEL[view]}: All</option>
-          {userOptions}
-        </select>
+        <SearchableSelect
+          style={FILTER_PICKER}
+          ariaLabel={PERSON_LABEL[view]}
+          value={values.person || null}
+          valueLabel={userName(values.person)}
+          onChange={(id) => onPerson(id ?? '')}
+          options={userOptions}
+          placeholder={`${PERSON_LABEL[view]}: All`}
+          clearable
+        />
       ) : null}
       {view === 'all' ? (
         <>
-          <select
-            className="innovic-select"
-            value={values.assignedBy}
-            onChange={(e) => onAssignedBy(e.target.value)}
-          >
-            <option value="">Assigned By: All</option>
-            {userOptions}
-          </select>
+          <SearchableSelect
+            style={FILTER_PICKER}
+            ariaLabel="Assigned By"
+            value={values.assignedBy || null}
+            valueLabel={userName(values.assignedBy)}
+            onChange={(id) => onAssignedBy(id ?? '')}
+            options={userOptions}
+            placeholder="Assigned By: All"
+            clearable
+          />
           <select
             className="innovic-select"
             value={values.dept}

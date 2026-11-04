@@ -487,6 +487,15 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
                 type="submit"
                 className="btn btn-primary"
                 disabled={pending || !action || !qtyValid}
+                title={
+                  !action
+                    ? 'Select the Disposition first'
+                    : !qtyValid
+                      ? needsWhole
+                        ? `Enter a whole number from 1 to ${openQty}`
+                        : `Enter a qty more than 0 and up to ${openQty}`
+                      : undefined
+                }
               >
                 {pending ? <Loader2 size={13} className="animate-spin" /> : null}
                 Save Disposition

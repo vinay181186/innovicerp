@@ -48,7 +48,7 @@ import { runPrint } from '@/lib/print/preview-host';
 import { soNoWithInternal } from '@/lib/so-number';
 import { useMyCompany } from '@/modules/settings/api';
 import { StatusBadge } from '@/ui/core';
-import { Banner } from '@/ui/feedback';
+import { Banner, useToast } from '@/ui/feedback';
 import { Panel } from '@/ui/data';
 import { ActionMenu } from '@/ui/layout';
 import { useAddPayment, useInvoice } from '../api';
@@ -88,6 +88,7 @@ function InvoiceDetailPage(): React.JSX.Element {
   const { data: inv, isLoading, isError, error } = useInvoice(id);
   const { data: company } = useMyCompany();
   const addPayment = useAddPayment(id);
+  const toast = useToast();
   // ADR-234 — the SO No. stays as text (no link) for someone who may not open SOs.
   const canOpen = useCanOpen();
   // The preview is the print: the same Innovic Sheet markup + stylesheet, in an
@@ -154,6 +155,7 @@ function InvoiceDetailPage(): React.JSX.Element {
         refNo: payRef || undefined,
         notes: payNotes || undefined,
       });
+      toast.ok('Payment saved');
       setPayOpen(false);
       setPayAmt('');
       setPayTds('');
@@ -316,6 +318,9 @@ function InvoiceDetailPage(): React.JSX.Element {
           params={{ id: inv.salesOrderId }}
           className="fw-700"
           disabled={!canOpen('/sales-orders/$id')}
+          title={
+            canOpen('/sales-orders/$id') ? undefined : 'You do not have access to Sales Orders'
+          }
         >
           {inv.soCode ? soNoWithInternal(inv.soCode, inv.soInternalNo) : '—'}
         </Link>{' '}

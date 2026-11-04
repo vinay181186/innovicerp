@@ -17,6 +17,7 @@ import { useClientsList } from '../../clients/api';
 import { useItemsList } from '../../items/api';
 import { useUpdatePartyMaterial } from '../api';
 import { ErrorBox, Field, ModalActions, ModalShell } from './party-material-modal-shell';
+import { useToast } from '@/ui/feedback';
 
 export function EditPartyMaterialModal({
   row,
@@ -77,6 +78,7 @@ export function EditPartyMaterialModal({
   }, [itemId, itemsData, row]);
 
   const updateMut = useUpdatePartyMaterial();
+  const toast = useToast();
 
   const onSave = (): void => {
     setErr(null);
@@ -106,7 +108,10 @@ export function EditPartyMaterialModal({
     updateMut.mutate(
       { id: row.id, input },
       {
-        onSuccess: () => onClose(),
+        onSuccess: () => {
+          toast.ok(`Customer Material ${row.code} saved`);
+          onClose();
+        },
         onError: (e) =>
           setErr(e instanceof Error ? e.message : 'Could not save changes. Try again.'),
       },

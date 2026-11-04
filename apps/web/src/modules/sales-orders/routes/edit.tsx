@@ -13,7 +13,7 @@ import { useSession } from '@/lib/session';
 import { soNoWithInternal } from '@/lib/so-number';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { Banner } from '@/ui/feedback';
+import { useToast } from '@/ui/feedback';
 import { uploadSoDocFile, useCreateSoDocument } from '@/modules/so-documents/api';
 import { useCreateSalesOrder, useSalesOrder, useUpdateSalesOrder } from '../api';
 import { SalesOrderForm } from '../components/sales-order-form';
@@ -81,6 +81,7 @@ async function uploadSoDocs(
 
 function SalesOrderNewPage(): React.JSX.Element {
   const navigate = useNavigate();
+  const toast = useToast();
   const saveKey = useSaveKey();
   const create = useCreateSalesOrder(saveKey);
   const createDoc = useCreateSoDocument();
@@ -97,6 +98,7 @@ function SalesOrderNewPage(): React.JSX.Element {
     setSubmitError(null);
     try {
       const created = await create.mutateAsync(values);
+      toast.ok(`SO ${created.code} saved`);
       // Upload the chosen client-PO document + email reference against the new
       // SO (legacy addSO L12459 uploads after save). The SO is already saved, so
       // a failed upload never undoes it — but it is no longer swallowed: the SO
@@ -160,6 +162,7 @@ function SalesOrderNewPage(): React.JSX.Element {
 function SalesOrderEditPage(): React.JSX.Element {
   const { id } = salesOrderEditRoute.useParams();
   const navigate = useNavigate();
+  const toast = useToast();
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'so_create');
   const { data: detail, isLoading, error } = useSalesOrder(id);
@@ -178,9 +181,6 @@ function SalesOrderEditPage(): React.JSX.Element {
   // touches the form; the 409 above is still the guard.
   const liveWatch = useLiveChangeNotice('sales_orders', id, 'Sales Order', update.isPending);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  // ADR-202 — set when an edit to a LIVE SO is staged for approval instead of
-  // applied; the neutral "Sent for approval" banner shows it.
-  const [stagedNotice, setStagedNotice] = useState<string | null>(null);
   const goBack = useCallback(
     () => void navigate({ to: '/sales-orders/$id', params: { id } }),
     [navigate, id],
@@ -216,13 +216,14 @@ function SalesOrderEditPage(): React.JSX.Element {
         // The edit-approval gate is on and this SO is live: nothing was changed
         // on the SO — the edit is now waiting for approval. Say so, then return
         // to the SO (its fields now carry the pending-change chip).
-        setStagedNotice('Sent for approval — your changes will apply once an approver signs off.');
+        toast.ok('Sent for approval — your changes will apply once an approver signs off.');
         exit.leave(
           () => void navigate({ to: '/sales-orders/$id', params: { id }, search, replace: true }),
         );
         return;
       }
       opened.saved(saved.updatedAt);
+      toast.ok(`SO ${detail?.code ?? ''} saved`);
       exit.leave(
         () => void navigate({ to: '/sales-orders/$id', params: { id }, search, replace: true }),
       );
@@ -263,11 +264,6 @@ function SalesOrderEditPage(): React.JSX.Element {
   return (
     <>
       {exit.dialog}
-      {stagedNotice ? (
-        <Banner tone="success" role="status">
-          {stagedNotice}
-        </Banner>
-      ) : null}
       <SalesOrderForm
         mode="edit"
         detail={detail}

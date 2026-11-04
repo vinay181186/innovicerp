@@ -6,7 +6,7 @@ import { type CreateJwDcInwardInput, type CreateJwDcInwardLineInput } from '@inn
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { Banner } from '@/ui/feedback';
+import { Banner, useToast } from '@/ui/feedback';
 import {
   useCreateJwDcInward,
   useJwDcOutwardDetail,
@@ -14,6 +14,7 @@ import {
   useNextInwardCode,
 } from '../api';
 import { ErrorBox, ModalShell } from './modal-shell';
+import { SearchableSelect } from '@/ui/forms';
 
 interface InwardLineUi {
   outwardLineId: string;
@@ -78,6 +79,7 @@ export function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.
   }, [detail, dcId]);
 
   const createMut = useCreateJwDcInward();
+  const toast = useToast();
 
   const onSave = (): void => {
     setErr(null);
@@ -104,7 +106,10 @@ export function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.
     if (remarks.trim()) input.remarks = remarks.trim();
 
     createMut.mutate(input, {
-      onSuccess: () => onClose(),
+      onSuccess: (saved) => {
+        toast.ok(`Inward ${saved.code} saved`);
+        onClose();
+      },
       onError: (e) =>
         setErr(
           e instanceof Error ? e.message : 'Could not save Inward. Check the lines and try again.',
@@ -158,19 +163,16 @@ export function NewInwardModal({ onClose }: { onClose: () => void }): React.JSX.
           <label className="form-label">
             JW DC<span className="req">★</span>
           </label>
-          <select
-            className="innovic-select"
-            value={dcId ?? ''}
-            onChange={(e) => setDcId(e.target.value || null)}
-          >
-            <option value="">-- Select DC --</option>
-            {pendingDcs.map((dc) => (
-              <option key={dc.id} value={dc.id}>
-                {dc.code} — {dc.vendorName ?? dc.vendorNameText ?? dc.vendorCodeText ?? ''} (
-                {dc.jwpoCodeText})
-              </option>
-            ))}
-          </select>
+          <SearchableSelect
+            value={dcId}
+            onChange={setDcId}
+            options={pendingDcs.map((dc) => ({
+              id: dc.id,
+              code: dc.code,
+              name: `${dc.vendorName ?? dc.vendorNameText ?? dc.vendorCodeText ?? ''} (${dc.jwpoCodeText})`,
+            }))}
+            placeholder="-- Select DC --"
+          />
         </div>
         <div className="form-grp">
           <label className="form-label">Vendor Challan No.</label>

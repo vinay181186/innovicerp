@@ -12,6 +12,7 @@ export function ModalShell({
   saving,
   saveLabel,
   saveDisabled = false,
+  saveDisabledReason,
   children,
 }: {
   onClose: () => void;
@@ -23,6 +24,8 @@ export function ModalShell({
    *  phase 4: the "These are new pieces" tick is still unticked). Optional and
    *  false by default, so the New Inward modal is untouched. */
   saveDisabled?: boolean;
+  /** Why saveDisabled is on — the greyed button's tooltip. */
+  saveDisabledReason?: string | undefined;
   children: React.ReactNode;
 }): React.JSX.Element {
   return (
@@ -40,6 +43,7 @@ export function ModalShell({
             type="button"
             className="btn btn-primary"
             disabled={saving || saveDisabled}
+            title={saveDisabled ? saveDisabledReason : undefined}
             onClick={onSave}
           >
             {saving ? (

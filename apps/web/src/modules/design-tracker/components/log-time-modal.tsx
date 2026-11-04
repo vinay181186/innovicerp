@@ -16,7 +16,7 @@ import { itemCodeWithRev } from '@/lib/item-code';
 import { soNoWithInternal } from '@/lib/so-number';
 import { DataTable } from '@/ui/data';
 import type { DataTableColumn } from '@/ui/data';
-import { Banner } from '@/ui/feedback';
+import { Banner, useToast } from '@/ui/feedback';
 import { useDesignTrackerDetail, useLogDesignTime } from '../api';
 import { Actions, ErrorBox, Field, ModalShell } from './design-tracker-modal-shell';
 
@@ -35,6 +35,7 @@ export function LogTimeModal({
   // Set after a save that took the person's day above the warning line.
   const [dayWarn, setDayWarn] = useState<string | null>(null);
   const mut = useLogDesignTime();
+  const toast = useToast();
 
   const { data: detail } = useDesignTrackerDetail(row.id);
   const previous = detail?.timeLog ?? [];
@@ -64,6 +65,7 @@ export function LogTimeModal({
       { id: row.id, input },
       {
         onSuccess: (saved) => {
+          toast.ok(`Time logged on ${row.code}`);
           const day = saved.dayTotalHours ?? 0;
           if (day > DESIGN_DAY_HOURS_WARN) {
             // Saved, but flag it: keep the box open so the warning is seen.

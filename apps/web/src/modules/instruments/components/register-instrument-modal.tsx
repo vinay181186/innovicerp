@@ -7,7 +7,7 @@ import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { addDaysLocal } from '@/lib/date';
 import { useSaveKey } from '@/lib/use-save-key';
-import { Modal } from '@/ui/feedback';
+import { Modal, useToast } from '@/ui/feedback';
 import { SearchableSelect } from '@/ui/forms';
 import { useItemsList } from '../../items/api';
 import { useCreateInstrument } from '../api';
@@ -40,6 +40,7 @@ export function RegisterInstrumentModal({
   // One save key per modal open (the list mounts it only while open).
   const saveKey = useSaveKey();
   const create = useCreateInstrument(saveKey);
+  const toast = useToast();
 
   const { data, isFetching } = useItemsList({
     search: search.trim() || undefined,
@@ -82,7 +83,10 @@ export function RegisterInstrumentModal({
       ...(remarks.trim() ? { remarks: remarks.trim() } : {}),
     };
     create.mutate(input, {
-      onSuccess: () => onClose(),
+      onSuccess: () => {
+        toast.ok('Instrument saved');
+        onClose();
+      },
       onError: (e) => setErr(errText(e, 'Could not register the instrument. Try again.')),
     });
   };

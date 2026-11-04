@@ -8,7 +8,7 @@ import type { FixListStock } from '@innovic/shared';
 import { itemRevLabel } from '@innovic/shared';
 import { useState } from 'react';
 import { useSaveKey } from '@/lib/use-save-key';
-import { ConfirmDialog } from '@/ui/feedback';
+import { ConfirmDialog, useToast } from '@/ui/feedback';
 import { FormField, SearchableSelect } from '@/ui/forms';
 import { useSetStockRev } from '../api';
 
@@ -21,6 +21,7 @@ export function SetStockRevDialog({
 }): React.JSX.Element {
   const saveKey = useSaveKey();
   const setRev = useSetStockRev(saveKey);
+  const toast = useToast();
   const [revId, setRevId] = useState<string | null>(
     row.knownRevs.length === 1 ? (row.knownRevs[0]?.itemRevisionId ?? null) : null,
   );
@@ -98,6 +99,7 @@ export function SetStockRevDialog({
           qty: q,
           ...(remarks.trim() ? { remarks: remarks.trim() } : {}),
         });
+        toast.ok('Drawing Rev saved');
         onClose();
       }}
     />

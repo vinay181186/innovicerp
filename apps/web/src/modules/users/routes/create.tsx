@@ -17,7 +17,7 @@ import { useForm } from 'react-hook-form';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { Banner } from '@/ui/feedback';
+import { Banner, useToast } from '@/ui/feedback';
 import { FormActions } from '@/ui/layout';
 import { useCreateUser } from '../api';
 
@@ -42,6 +42,7 @@ function UserCreatePage(): React.JSX.Element {
   const navigate = useNavigate();
   const { data: me } = useSession();
   const isAdmin = me?.role === 'admin';
+  const toast = useToast();
   const create = useCreateUser();
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -83,6 +84,7 @@ function UserCreatePage(): React.JSX.Element {
     };
     try {
       const created = await create.mutateAsync(payload);
+      toast.ok(`User ${created.email} saved`);
       // Straight into that user's Access Control box. Creating an account and
       // granting it access is one job; making the admin navigate and find the
       // row again is how people end up with unconfigured users.

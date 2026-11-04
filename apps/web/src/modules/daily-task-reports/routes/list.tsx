@@ -21,6 +21,7 @@ import { ListFooter, ListHeader } from '@/ui/layout';
 import { useDailyReportList } from '../api';
 import { ReportLinesExpand } from '../components/report-lines-expand';
 import { EditReportModal, NewReportModal, ViewReportModal } from '../components/report-modals';
+import { SearchableSelect } from '@/ui/forms';
 
 export const dailyTaskReportsRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -190,20 +191,16 @@ function DailyTaskReportsPage(): React.JSX.Element {
         filters={
           <>
             {data.canSeeAll ? (
-              <select
-                className="innovic-select"
-                aria-label="User"
-                title="User"
-                value={userFilter}
-                onChange={(e) => setUserFilter(e.target.value)}
-              >
-                <option value="">All Users</option>
-                {data.userOptions.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.name}
-                  </option>
-                ))}
-              </select>
+              <SearchableSelect
+                ariaLabel="User"
+                style={{ width: 180 }}
+                clearable
+                placeholder="All Users"
+                value={userFilter || null}
+                valueLabel={data.userOptions.find((u) => u.id === userFilter)?.name}
+                options={data.userOptions.map((u) => ({ id: u.id, name: u.name }))}
+                onChange={(id) => setUserFilter(id ?? '')}
+              />
             ) : null}
             <input
               type="date"

@@ -19,7 +19,8 @@ import { itemCodeWithRev } from '@/lib/item-code';
 import { soNoWithInternal } from '@/lib/so-number';
 import { useSession } from '@/lib/session';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { ConfirmDialog, Modal } from '@/ui/feedback';
+import { ConfirmDialog, Modal, useToast } from '@/ui/feedback';
+import { SearchableSelect } from '@/ui/forms';
 import { uploadSoDocFile, useCreateSoDocument, useDeleteSoDocument, useSoDocDetail } from '../api';
 
 function fmtSize(bytes: number | null): string {
@@ -395,8 +396,13 @@ function UploadDialog({
   companyId: string | null;
   onClose: () => void;
 }): React.JSX.Element {
+  const toast = useToast();
   const createDoc = useCreateSoDocument();
   const [lineKey, setLineKey] = useState(''); // '' = SO level, else soLineId
+  const lineOptions = lines.map((l) => ({
+    id: l.soLineId,
+    name: `Line ${l.lineNo} · POL ${l.clientPoLineNo ?? '—'}: ${itemCodeWithRev(l.itemCode, l.itemRevision, '')} — ${l.itemName ?? ''}`,
+  }));
   const [category, setCategory] = useState<SoDocCategory>('other');
   const [docType, setDocType] = useState('');
   const [files, setFiles] = useState<File[]>([]);
@@ -439,6 +445,7 @@ function UploadDialog({
     }
     setBusy(false);
     if (fails.length === 0) {
+      toast.ok(`${ok} document${ok === 1 ? '' : 's'} uploaded to ${soCode}`);
       onClose();
     } else {
       setMsg(`Uploaded ${ok}/${files.length}. Failures: ${fails.slice(0, 3).join('; ')}`);
@@ -470,20 +477,14 @@ function UploadDialog({
     >
       <div>
         <label className="form-label">Ln</label>
-        <select
-          className="innovic-select"
-          value={lineKey}
-          onChange={(e) => setLineKey(e.target.value)}
-          style={{ width: '100%' }}
-        >
-          <option value="">SO Level (no specific line)</option>
-          {lines.map((l) => (
-            <option key={l.soLineId} value={l.soLineId}>
-              Line {l.lineNo} · POL {l.clientPoLineNo ?? '—'}:{' '}
-              {itemCodeWithRev(l.itemCode, l.itemRevision, '')} — {l.itemName ?? ''}
-            </option>
-          ))}
-        </select>
+        <SearchableSelect
+          ariaLabel="Ln"
+          value={lineKey || null}
+          onChange={(id) => setLineKey(id ?? '')}
+          options={lineOptions}
+          placeholder="SO Level (no specific line)"
+          clearable
+        />
       </div>
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: 160 }}>

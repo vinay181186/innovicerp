@@ -10,6 +10,7 @@ import { isoToLocalDateTime, localDateTimeToIso } from '../lib/format';
 import { ActionFooter, TaskHead } from './task-action-common';
 import { FormError, Overlay } from './task-overlay';
 import { UserPicker } from './user-picker';
+import { useToast } from '@/ui/feedback';
 
 // ── Reassign (creator / admin) ──
 export function ReassignModal({
@@ -19,6 +20,7 @@ export function ReassignModal({
   task: TaskRow;
   onClose: () => void;
 }): React.JSX.Element {
+  const toast = useToast();
   const reassign = useReassignTask(task.id);
   const { data: userOpts, isFetching } = useTaskUserOptions();
   const [assignedTo, setAssignedTo] = useState<string | null>(null);
@@ -30,6 +32,7 @@ export function ReassignModal({
     if (!assignedTo) return setErr('Assigned To is required.');
     try {
       await reassign.mutateAsync({ assignedTo, note: note.trim() || undefined });
+      toast.ok(`Task ${task.code} reassigned`);
       onClose();
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Could not reassign task. Try again.');
@@ -96,6 +99,7 @@ export function CancelModal({
   task: TaskRow;
   onClose: () => void;
 }): React.JSX.Element {
+  const toast = useToast();
   const cancel = useCancelTask(task.id);
   const [reason, setReason] = useState('');
   const [err, setErr] = useState<string | null>(null);
@@ -104,6 +108,7 @@ export function CancelModal({
     setErr(null);
     try {
       await cancel.mutateAsync({ reason: reason.trim() || undefined });
+      toast.ok(`Task ${task.code} cancelled`);
       onClose();
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Could not cancel task. Try again.');
@@ -158,6 +163,7 @@ export function EditTaskModal({
   task: TaskRow;
   onClose: () => void;
 }): React.JSX.Element {
+  const toast = useToast();
   const update = useUpdateTask(task.id);
   const [title, setTitle] = useState(task.title);
   const [description, setDescription] = useState(task.description ?? '');
@@ -183,6 +189,7 @@ export function EditTaskModal({
         dueDate: dueDate || null,
         reminderAt: reminder ? (localDateTimeToIso(reminder) ?? null) : null,
       });
+      toast.ok(`Task ${task.code} saved`);
       onClose();
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Could not save task. Try again.');

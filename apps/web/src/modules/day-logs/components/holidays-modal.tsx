@@ -7,7 +7,7 @@ import { fmtDate } from '@/lib/date';
 import { DataTable } from '@/ui/data';
 import type { DataTableColumn } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
-import { Modal } from '@/ui/feedback';
+import { Modal, useToast } from '@/ui/feedback';
 import { useAddHoliday, useHolidays, useRemoveHoliday } from '../api';
 import { errText } from '../lib/format';
 
@@ -38,6 +38,7 @@ export function HolidaysModal({ onClose }: { onClose: () => void }): React.JSX.E
   const q = useHolidays();
   const add = useAddHoliday();
   const remove = useRemoveHoliday();
+  const toast = useToast();
   const [date, setDate] = useState('');
   const [name, setName] = useState('');
   const [err, setErr] = useState<string | null>(null);
@@ -125,9 +126,13 @@ export function HolidaysModal({ onClose }: { onClose: () => void }): React.JSX.E
           type="button"
           className="btn btn-primary"
           disabled={busy || !date || name.trim() === ''}
+          title={
+            !date ? 'Enter the Holiday Date' : name.trim() === '' ? 'Enter the Holiday' : undefined
+          }
           onClick={() => {
             void run(add.mutateAsync({ date, name: name.trim() })).then((ok) => {
               if (ok) {
+                toast.ok(`Holiday ${name.trim()} saved`);
                 setDate('');
                 setName('');
               }

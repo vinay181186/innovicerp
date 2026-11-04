@@ -868,7 +868,16 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
   // Legacy called this "✓ Save JW" on .btn-success (addJW L12890 / editJW
   // L12926). One Save colour now: blue primary. Same label in both modes.
   const saveButton = (
-    <button type="submit" className="btn btn-primary" disabled={saveDisabled}>
+    <button
+      type="submit"
+      className="btn btn-primary"
+      disabled={saveDisabled}
+      title={
+        clientPoCheck.duplicate
+          ? `Client PO No. already used on ${clientPoCheck.code ?? 'another JWSO'} for this customer`
+          : undefined
+      }
+    >
       {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
       {formState.isSubmitting
         ? 'Saving…'
@@ -937,6 +946,9 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                   className="btn btn-ghost btn-sm"
                   style={{ whiteSpace: 'nowrap' }}
                   disabled={anyLineInUse}
+                  title={
+                    anyLineInUse ? 'Customer is locked — a line of this JWSO is in use' : undefined
+                  }
                   onClick={() => setShowAddClient(true)}
                 >
                   + New
@@ -1593,18 +1605,28 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                             </div>
                             <div className="form-grp f-lg" title={inUse ? IN_USE_TITLE : undefined}>
                               <label className="form-label">Assembly BOM</label>
-                              <select
-                                className="innovic-select"
+                              <SearchableSelect
                                 disabled={inUse}
-                                {...register(`lines.${idx}.sourceBomMasterId` as const)}
-                              >
-                                <option value="">— none (plain machining) —</option>
-                                {jwUsableBoms.map((b) => (
-                                  <option key={b.id} value={b.id}>
-                                    {b.bomNo} — {b.bomName}
-                                  </option>
-                                ))}
-                              </select>
+                                value={wl?.sourceBomMasterId || null}
+                                onChange={(id) =>
+                                  setValue(`lines.${idx}.sourceBomMasterId`, id ?? '', {
+                                    shouldDirty: true,
+                                  })
+                                }
+                                options={jwUsableBoms.map((b) => ({
+                                  id: b.id,
+                                  code: b.bomNo,
+                                  name: b.bomName,
+                                }))}
+                                valueLabel={(() => {
+                                  const b = jwUsableBoms.find(
+                                    (x) => x.id === wl?.sourceBomMasterId,
+                                  );
+                                  return b ? `${b.bomNo} — ${b.bomName}` : undefined;
+                                })()}
+                                placeholder="— none (plain machining) —"
+                                clearable
+                              />
                             </div>
                             {/* ADR-236: this line's own note (optional, never locked). */}
                             <div className="form-grp f-full">

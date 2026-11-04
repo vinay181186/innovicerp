@@ -7,7 +7,7 @@
 import { type PartyMaterialIssueListItem } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
-import { Modal } from '@/ui/feedback';
+import { Modal, useToast } from '@/ui/feedback';
 import { useReturnPartyMaterialIssueToStore } from '../api';
 import { Field } from './modal-field';
 
@@ -23,6 +23,7 @@ export function ReturnToStoreModal({
   const [err, setErr] = useState<string | null>(null);
   const returnMut = useReturnPartyMaterialIssueToStore();
   const notYetReturned = row.qty - row.returnedToStoreQty;
+  const toast = useToast();
 
   const onConfirm = (): void => {
     setErr(null);
@@ -42,7 +43,10 @@ export function ReturnToStoreModal({
     returnMut.mutate(
       { id: row.id, qty: q, reason: reason.trim() },
       {
-        onSuccess: () => onClose(),
+        onSuccess: () => {
+          toast.ok(`${q} returned to store on ${row.code}`);
+          onClose();
+        },
         onError: (e) =>
           setErr(e instanceof Error ? e.message : 'Could not return to store. Try again.'),
       },

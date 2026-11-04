@@ -11,6 +11,7 @@ import { useCompleteTask, useUpdateTaskStatus } from '../api';
 import { oversizedFile } from '../lib/format';
 import { ActionFooter, TaskHead } from './task-action-common';
 import { FormError, Overlay } from './task-overlay';
+import { useToast } from '@/ui/feedback';
 
 // ── Update Status (To Do / In Progress / Completed; Cancelled only via Cancel) ──
 export function UpdateStatusModal({
@@ -20,6 +21,7 @@ export function UpdateStatusModal({
   task: TaskRow;
   onClose: () => void;
 }): React.JSX.Element {
+  const toast = useToast();
   const update = useUpdateTaskStatus(task.id);
   const [status, setStatus] = useState<'todo' | 'in_progress' | 'completed'>(
     task.status === 'completed'
@@ -35,6 +37,7 @@ export function UpdateStatusModal({
     setErr(null);
     try {
       await update.mutateAsync({ status, comment: comment.trim() || undefined });
+      toast.ok(`Task ${task.code} status updated`);
       onClose();
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Could not update task. Try again.');
@@ -102,6 +105,7 @@ export function CompleteModal({
   onClose: () => void;
 }): React.JSX.Element {
   const { data: me } = useSession();
+  const toast = useToast();
   const complete = useCompleteTask(task.id);
   const [remark, setRemark] = useState('');
   const [files, setFiles] = useState<File[]>([]);
@@ -133,6 +137,7 @@ export function CompleteModal({
         remark: remark.trim() || undefined,
         attachments: attachments.length > 0 ? attachments : undefined,
       });
+      toast.ok(`Task ${task.code} completed`);
       onClose();
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Could not complete the task. Try again.');

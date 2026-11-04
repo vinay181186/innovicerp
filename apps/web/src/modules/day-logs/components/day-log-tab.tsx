@@ -88,6 +88,7 @@ export function DayLogTab({
           type="button"
           className="btn btn-ghost btn-sm"
           disabled={isToday}
+          title={isToday ? 'Already showing today' : undefined}
           onClick={() => goDate(day.today)}
         >
           Today

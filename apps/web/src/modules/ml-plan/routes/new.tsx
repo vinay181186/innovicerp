@@ -13,6 +13,7 @@ import { authenticatedRoute } from '@/routes/_authenticated';
 import { PageState } from '@/ui/layout';
 import { useCreateMlPlan, useMlPlanEligibleLines } from '../api';
 import { MlPlanForm, type MlPlanFormDraft, type MlPlanFormLine } from '../components/ml-plan-form';
+import { useToast } from '@/ui/feedback';
 
 const searchSchema = z.object({
   soLineId: z.string().uuid().optional().catch(undefined),
@@ -36,6 +37,7 @@ function MlPlanNewPage(): React.JSX.Element {
   const perms = effectiveFormPerms(eff, 'mlplan_create');
   const goBack = useCallback(() => void navigate({ to: '/ml-plans' }), [navigate]);
   const exit = useExitConfirm({ onExit: goBack });
+  const toast = useToast();
 
   // The preselected line, looked up in the server's eligible list (the SO's
   // lines when the SO is known, else the first page).
@@ -57,6 +59,7 @@ function MlPlanNewPage(): React.JSX.Element {
         planQty: Number(draft.planQty),
         remarks: draft.remarks.trim() ? draft.remarks.trim() : null,
       });
+      toast.ok(`Multi-Level Plan ${created.code} saved`);
       exit.leave(() => void navigate({ to: '/ml-plans/$id', params: { id: created.id } }));
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : 'Could not save plan. Try again.');

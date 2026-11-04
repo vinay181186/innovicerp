@@ -266,7 +266,11 @@ function OpLogListPage(): React.JSX.Element {
               type="button"
               className="btn btn-ghost btn-sm"
               disabled={exporting || total === 0}
-              title="Export every entry matching the current filter to Excel"
+              title={
+                total === 0
+                  ? 'No entries to export'
+                  : 'Export every entry matching the current filter to Excel'
+              }
               onClick={() => void onExport()}
             >
               {exporting ? <Loader2 className="inline h-3 w-3 animate-spin" /> : '⬇'} Export

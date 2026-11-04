@@ -374,6 +374,7 @@ export function MlBomImportDialog({ onClose }: MlBomImportDialogProps): React.JS
           variant="primary"
           loading={busy}
           disabled={!file || busy}
+          {...(!file ? { title: 'Choose a file first' } : {})}
           onClick={() => void runPreview()}
         >
           Preview
@@ -402,6 +403,7 @@ export function MlBomImportDialog({ onClose }: MlBomImportDialogProps): React.JS
           variant="primary"
           loading={busy}
           disabled={!preview?.ok || busy}
+          {...(!preview?.ok ? { title: 'Fix the errors in the file first' } : {})}
           onClick={() => void runImport()}
         >
           {busy ? 'Importing…' : 'Import'}

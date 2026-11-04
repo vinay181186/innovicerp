@@ -13,7 +13,7 @@ import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
-import { Modal } from '@/ui/feedback';
+import { Modal, useToast } from '@/ui/feedback';
 import { ListFooter, PageState } from '@/ui/layout';
 import {
   useCreateReportType,
@@ -214,6 +214,7 @@ export function ReportTypesPanel(): React.JSX.Element {
 
 function ReportTypeModal(props: { row?: ReportType; onClose: () => void }): React.JSX.Element {
   const { row, onClose } = props;
+  const toast = useToast();
   const create = useCreateReportType();
   const update = useUpdateReportType();
   const [name, setName] = useState(row?.name ?? '');
@@ -243,6 +244,7 @@ function ReportTypeModal(props: { row?: ReportType; onClose: () => void }): Reac
     try {
       if (row) await update.mutateAsync({ id: row.id, input });
       else await create.mutateAsync(input);
+      toast.ok(`Report Type ${input.name} saved`);
       onClose();
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Could not save report type. Try again.');

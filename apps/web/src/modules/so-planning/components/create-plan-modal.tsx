@@ -45,6 +45,7 @@ import {
 } from '@/ui/forms';
 import { Modal } from './modal';
 import { ReleaseStockModal, lineFacts } from './reservation-modals';
+import { useToast } from '@/ui/feedback';
 
 interface Props {
   so: PlanningDetailResponse;
@@ -92,6 +93,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
   const [err, setErr] = useState<string | null>(null);
   const saveKey = useSaveKey();
   const createPlan = useCreatePlan(saveKey);
+  const toast = useToast();
   const reserve = useReserveStock();
   // ADR-180: releasing a booking now needs a reason, so the old one-click
   // "release" link is a box of its own (shared with the Planning sheet).
@@ -119,6 +121,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
         soCodeText: so.soCode,
         lineNo: line.lineNo,
       });
+      toast.ok(`Reserved ${qtyToReserve} pcs to ${soNoWithInternal(so.soCode, so.soInternalNo)}`);
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Could not reserve stock. Try again.');
     }

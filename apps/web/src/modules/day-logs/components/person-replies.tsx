@@ -12,10 +12,12 @@ import { useSaveKey } from '@/lib/use-save-key';
 import { useEditDayLogReply, useSendDayLogReply } from '../api';
 import { errText, fmtStamp } from '../lib/format';
 import { RowError } from './work-line';
+import { useToast } from '@/ui/feedback';
 
 function ReplyEdit({ r, onDone }: { r: DayLogAdminReply; onDone: () => void }): React.JSX.Element {
   const saveKey = useSaveKey();
   const edit = useEditDayLogReply(saveKey);
+  const toast = useToast();
   const [body, setBody] = useState(r.body);
   const [loadedAt] = useState(r.updatedAt);
   const [err, setErr] = useState<string | null>(null);
@@ -27,6 +29,7 @@ function ReplyEdit({ r, onDone }: { r: DayLogAdminReply; onDone: () => void }): 
     setErr(null);
     try {
       await edit.mutateAsync({ replyId: r.id, body: text, updatedAt: loadedAt });
+      toast.ok('Reply saved');
       onDone();
     } catch (x) {
       setErr(errText(x));
@@ -49,6 +52,7 @@ function ReplyEdit({ r, onDone }: { r: DayLogAdminReply; onDone: () => void }): 
           type="button"
           className="btn btn-primary btn-sm"
           disabled={edit.isPending || off}
+          title={off ? (!text ? 'Type the reply first' : 'No changes to save') : undefined}
           onClick={() => void save()}
         >
           {edit.isPending ? 'Saving…' : 'Save'}
@@ -70,6 +74,7 @@ function ReplyEdit({ r, onDone }: { r: DayLogAdminReply; onDone: () => void }): 
 function SendBox({ entryId, first }: { entryId: string; first: string }): React.JSX.Element {
   const saveKey = useSaveKey();
   const send = useSendDayLogReply(saveKey);
+  const toast = useToast();
   const [body, setBody] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const text = body.trim();
@@ -79,6 +84,7 @@ function SendBox({ entryId, first }: { entryId: string; first: string }): React.
     setErr(null);
     try {
       await send.mutateAsync({ entryId, body: text });
+      toast.ok(`Reply sent to ${first}`);
       setBody('');
     } catch (x) {
       setErr(errText(x));
@@ -105,6 +111,7 @@ function SendBox({ entryId, first }: { entryId: string; first: string }): React.
           type="button"
           className="btn btn-primary btn-sm"
           disabled={send.isPending || !text}
+          title={!text ? 'Type the reply first' : undefined}
           onClick={() => void go()}
         >
           {send.isPending ? 'Sending…' : 'Send reply'}

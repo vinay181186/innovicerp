@@ -22,6 +22,7 @@ import { useState } from 'react';
 import { fmtClock, fmtDate, fmtDateAndTime, fmtDateTime, todayIst } from '@/lib/date';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useDecideOpLogTimeChange, useOpLogTimeChangeRequests, useUpdateOpLogTiming } from '../api';
+import { useToast } from '@/ui/feedback';
 
 /** GET /op-entry/op-log rows carry three fields the shared OpLog type does not
  *  declare yet (ADR-197). Optional so a plain OpLog[] still fits. */
@@ -77,6 +78,7 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
   const [draftTime, setDraftTime] = useState('');
   const [reason, setReason] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
+  const toast = useToast();
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState('');
 
@@ -112,9 +114,10 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
       {
         onSuccess: (res) => {
           setEditingId(null);
-          setNotice(
+          setNotice(null);
+          toast.ok(
             res.applied
-              ? null
+              ? 'Log Date and time saved'
               : `Sent for approval — the entry still shows ${whenLabel(
                   res.opLog.logDate,
                   res.opLog.startTime,
@@ -399,7 +402,13 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
                     className="btn btn-primary btn-sm"
                     onClick={() => save(l.id)}
                     disabled={busy || !draftDate}
-                    title={canApprove ? 'Save date/time' : 'Send for approval'}
+                    title={
+                      !draftDate
+                        ? 'Pick the Log Date first'
+                        : canApprove
+                          ? 'Save date/time'
+                          : 'Send for approval'
+                    }
                   >
                     {retime.isPending ? (
                       <Loader2 className="h-3 w-3 animate-spin" />
@@ -435,6 +444,7 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
                     type="button"
                     className="btn btn-danger btn-sm"
                     disabled={busy || !rejectReason.trim()}
+                    title={!rejectReason.trim() ? 'Type the reason first' : undefined}
                     onClick={() =>
                       decide.mutate(
                         { id: req.id, decision: 'reject', decisionReason: rejectReason.trim() },

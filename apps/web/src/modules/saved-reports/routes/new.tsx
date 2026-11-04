@@ -6,6 +6,7 @@ import { useExitConfirm } from '@/lib/exit-guard';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateSavedReport, usePreviewSpec, useSourceCatalog } from '../api';
 import { Builder, type SaveInput } from '../components/builder';
+import { useToast } from '@/ui/feedback';
 
 export const savedReportNewRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -14,6 +15,7 @@ export const savedReportNewRoute = createRoute({
 });
 
 function SavedReportNewPage() {
+  const toast = useToast();
   const navigate = useNavigate();
   const sourcesQ = useSourceCatalog();
   const previewMutation = usePreviewSpec();
@@ -43,6 +45,7 @@ function SavedReportNewPage() {
       },
       {
         onSuccess: (created) => {
+          toast.ok(`Report ${input.name} saved`);
           exit.leave(() => void navigate({ to: '/saved-reports/$id', params: { id: created.id } }));
         },
         onError: (e) => setSaveError(e instanceof Error ? e.message : String(e)),

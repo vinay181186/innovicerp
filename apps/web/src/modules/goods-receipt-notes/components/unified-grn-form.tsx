@@ -49,6 +49,7 @@ import { GrnAgainstDcForm } from './grn-against-dc-form';
 import { GrnAgainstNcForm } from './grn-against-nc-form';
 import { GrnAgainstPoForm } from './grn-against-po-form';
 import { GRN_CREATE_FORM_ID, type GrnFormStatus } from './grn-create-contract';
+import { useToast } from '@/ui/feedback';
 
 // Option text — the first two verbatim from legacy addGRN() L26533-26534.
 const TYPE_META: Record<GrnInwardType, { label: string }> = {
@@ -82,6 +83,7 @@ export function UnifiedGrnForm({
   // their save rather than a second guard.
   const goBack = useCallback(() => void navigate({ to: '/goods-receipt-notes' }), [navigate]);
   const exit = useExitConfirm({ onExit: goBack });
+  const toast = useToast();
 
   // Purchase branch — the existing create endpoint; the form is the new
   // PO-driven one (lines come from the PO, never typed by hand).
@@ -93,6 +95,7 @@ export function UnifiedGrnForm({
     setPurchaseErr(null);
     try {
       const created = await createPurchase.mutateAsync(values);
+      toast.ok(`GRN ${created.code} saved`);
       exit.leave(
         () =>
           void navigate({
@@ -174,6 +177,7 @@ export function UnifiedGrnForm({
           form={GRN_CREATE_FORM_ID}
           className="btn btn-primary"
           disabled={!canSave}
+          title={status.blocked ? status.blockedReason : undefined}
         >
           {status.submitting ? (
             <>

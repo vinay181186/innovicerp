@@ -7,7 +7,7 @@ import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { fmtDate } from '@/lib/date';
 import { usePendingEditForDoc } from '@/modules/document-edits/api';
-import { Modal } from '@/ui/feedback';
+import { Modal, useToast } from '@/ui/feedback';
 import { useInstrument } from '../api';
 import { DUE_COLOUR, INSTRUMENT_STATUS_BADGE, dueTone } from '../lib/instrument-ui';
 import { type InstrumentAction, InstrumentActionForm } from './instrument-action-forms';
@@ -31,7 +31,7 @@ export function InstrumentDetailModal({
 }): React.JSX.Element {
   const { data: ins, isLoading, isError, error } = useInstrument(instrumentId);
   const [mode, setMode] = useState<InstrumentAction | null>(null);
-  const [msg, setMsg] = useState<string | null>(null);
+  const toast = useToast();
   // ADR-202 — does this instrument have an edit waiting for approval? Shown as an
   // amber chip in the header (there is no detail page to carry per-field chips).
   const pendingEdit = usePendingEditForDoc('Instrument', instrumentId);
@@ -39,7 +39,6 @@ export function InstrumentDetailModal({
 
   const start = (m: InstrumentAction): void => {
     setMode(m);
-    setMsg(null);
   };
   const tone = ins ? dueTone(ins.calibrationDueOn, ins.isCalibrationOverdue) : 'none';
   const live = ins ? ins.status !== 'lost' && ins.status !== 'scrapped' : false;
@@ -214,14 +213,9 @@ export function InstrumentDetailModal({
               onBack={() => setMode(null)}
               onDone={(m) => {
                 setMode(null);
-                setMsg(m);
+                toast.ok(m);
               }}
             />
-          ) : null}
-          {msg ? (
-            <div className="text2" style={{ marginTop: 10, fontSize: 12 }}>
-              ✓ {msg}
-            </div>
           ) : null}
         </>
       )}

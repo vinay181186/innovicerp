@@ -22,6 +22,7 @@ import { useUsersList } from '@/modules/users/api';
 import { useApprovalConfig, useSaveApprovalConfig } from '../api';
 import { ApprovalHistoryTable } from '../components/approval-history-table';
 import { roleLabel } from '@/lib/role-label';
+import { useToast } from '@/ui/feedback';
 
 export const approvalConfigRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -35,9 +36,9 @@ function ApprovalConfigPage(): React.JSX.Element {
   const { data: cfg, isLoading, isError, error } = useApprovalConfig();
   const { data: users } = useUsersList({ limit: 100, offset: 0 }, { enabled: isAdmin });
   const save = useSaveApprovalConfig();
+  const toast = useToast();
 
   const [draft, setDraft] = useState<ApprovalConfig | null>(null);
-  const [submitOk, setSubmitOk] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -93,12 +94,10 @@ function ApprovalConfigPage(): React.JSX.Element {
   async function onSave(): Promise<void> {
     if (!draft) return;
     setSubmitError(null);
-    setSubmitOk(false);
     try {
       const saved = await save.mutateAsync(draft);
       setDraft({ ...saved });
-      setSubmitOk(true);
-      window.setTimeout(() => setSubmitOk(false), 3000);
+      toast.ok('Approval Rules saved');
     } catch (e) {
       setSubmitError(
         e instanceof Error ? e.message : 'Could not save approval settings. Try again.',
@@ -115,15 +114,11 @@ function ApprovalConfigPage(): React.JSX.Element {
         dirty={Boolean(dirty)}
         actions={
           <>
-            {submitOk ? (
-              <span className="text2" style={{ fontSize: 11, color: 'var(--green2)' }}>
-                ✅ Saved
-              </span>
-            ) : null}
             <button
               type="button"
               className="btn btn-primary"
               disabled={!dirty || save.isPending}
+              title={!dirty ? 'No changes to save' : undefined}
               onClick={() => void onSave()}
             >
               {save.isPending ? (

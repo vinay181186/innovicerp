@@ -35,6 +35,7 @@ import { StockCountLinesTable } from '../components/lines-table';
 import { type DraftLine, fromServer, lineKey } from '../lib/draft-line';
 import { mergeStockCountSheet } from '../lib/excel';
 import { STATUS_BADGE } from './list';
+import { useToast } from '@/ui/feedback';
 
 export const stockCountDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -52,6 +53,7 @@ function StockCountPage(): React.JSX.Element {
   const { data: me } = useSession();
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'stockcount_create');
+  const toast = useToast();
   const { data: sc, isLoading } = useStockCount(isNew ? undefined : id);
 
   const editable = isNew || sc?.status === 'draft';
@@ -131,7 +133,8 @@ function StockCountPage(): React.JSX.Element {
     return out.length ? out : 'Add at least one item.';
   };
 
-  const save = async (): Promise<string | null> => {
+  // quiet: Submit saves first and then reports the submit, not the save too.
+  const save = async (quiet = false): Promise<string | null> => {
     setMsg(null);
     const ls = payloadLines();
     if (typeof ls === 'string') {
@@ -146,13 +149,14 @@ function StockCountPage(): React.JSX.Element {
           ...(remarks.trim() ? { remarks: remarks.trim() } : {}),
           lines: ls,
         });
+        if (!quiet) toast.ok(`Stock Count ${c.code} saved`);
         exit.leave(
           () => void navigate({ to: '/stock-counts/$id', params: { id: c.id }, replace: true }),
         );
         return c.id;
       }
       await replace.mutateAsync({ id, remarks: remarks.trim(), lines: ls });
-      setMsg({ ok: true, text: 'Draft saved.' });
+      if (!quiet) toast.ok(`Stock Count ${sc?.code ?? ''} saved`);
       return id;
     } catch (e) {
       setMsg({ ok: false, text: errText(e, 'Could not save.') });
@@ -161,14 +165,11 @@ function StockCountPage(): React.JSX.Element {
   };
 
   const doSubmit = async (): Promise<void> => {
-    const savedId = await save();
+    const savedId = await save(true);
     if (!savedId) return;
     try {
       await submit.mutateAsync({ id: savedId });
-      setMsg({
-        ok: true,
-        text: 'Submitted — system stock snapshotted. Another user must approve to post.',
-      });
+      toast.ok('Submitted — system stock snapshotted. Another user must approve to post.');
     } catch (e) {
       setMsg({ ok: false, text: errText(e, 'Could not submit.') });
     }
@@ -179,7 +180,7 @@ function StockCountPage(): React.JSX.Element {
     try {
       await approve.mutateAsync({ id, ...(reason ? { confirmReason: reason } : {}) });
       setConfirmShort(null);
-      setMsg({ ok: true, text: 'Posted — stock updated.' });
+      toast.ok('Posted — stock updated.');
     } catch (e) {
       const details = (
         e as {

@@ -20,6 +20,7 @@ import { itemCodeWithRev, docDrawingRev } from '@/lib/item-code';
 import { RowMenu } from '@/ui/data';
 import { useReverseProductionOrderClose } from '../api';
 import { ReverseReasonDialog } from './reverse-reason-dialog';
+import { useToast } from '@/ui/feedback';
 
 /** ADR-233 — what each history row was, in the owner's words. Badge colours
  *  follow the order status badge: a close puts stock in (green), Finish Short
@@ -50,6 +51,7 @@ export function PoCloseLedger({
   fill = false,
 }: PoCloseLedgerProps): React.JSX.Element {
   const reverseMut = useReverseProductionOrderClose();
+  const toast = useToast();
   // The close whose "Reverse close?" dialog is open.
   const [askClose, setAskClose] = useState<ProductionOrderClose | null>(null);
 
@@ -202,6 +204,7 @@ export function PoCloseLedger({
           onCancel={() => setAskClose(null)}
           onConfirm={async (remarks) => {
             await reverseMut.mutateAsync({ id: po.id, input: { closeId: askClose.id, remarks } });
+            toast.ok(`Close of ${askClose.qty} on ${po.code} reversed`);
             setAskClose(null);
           }}
         />

@@ -21,12 +21,14 @@ import { spanMinutes } from '../lib/sheet';
 import { OrderSelect } from './order-select';
 import { TimeField } from './time-field';
 import { RowError, WorkBox } from './work-line';
+import { useToast } from '@/ui/feedback';
 
 function Buttons({
   label,
   busyLabel,
   busy,
   off,
+  offReason,
   onSave,
   onCancel,
 }: {
@@ -34,6 +36,8 @@ function Buttons({
   busyLabel: string;
   busy: boolean;
   off: boolean;
+  /** Why Save is grey while `off`. */
+  offReason?: string | undefined;
   onSave: () => void;
   onCancel: () => void;
 }): React.JSX.Element {
@@ -43,6 +47,7 @@ function Buttons({
         type="button"
         className="btn btn-primary btn-sm"
         disabled={busy || off}
+        title={off ? offReason : undefined}
         onClick={onSave}
       >
         {busy ? busyLabel : label}
@@ -65,6 +70,7 @@ export function EditWorkForm({
 }): React.JSX.Element {
   const saveKey = useSaveKey();
   const save = useUpdateDayLogWork(q, saveKey);
+  const toast = useToast();
   const [desc, setDesc] = useState(e.description);
   const [loadedAt] = useState(e.updatedAt);
   const [err, setErr] = useState<string | null>(null);
@@ -76,6 +82,7 @@ export function EditWorkForm({
     setErr(null);
     try {
       await save.mutateAsync({ id: e.id, description: text, updatedAt: loadedAt });
+      toast.ok('Day Log entry saved');
       onDone();
     } catch (x) {
       setErr(errText(x));
@@ -91,6 +98,7 @@ export function EditWorkForm({
           busyLabel="Saving…"
           busy={save.isPending}
           off={off}
+          offReason={!text ? 'Type what you worked on first' : 'No changes to save'}
           onSave={() => void send()}
           onCancel={onDone}
         />
@@ -114,6 +122,7 @@ export function EditTimesForm({
   onCancel: () => void;
 }): React.JSX.Element {
   const update = useUpdateDayLogEntry(q);
+  const toast = useToast();
   const [start, setStart] = useState(fmt12(e.fromTime));
   const [stop, setStop] = useState(e.toTime ? fmt12(e.toTime) : '');
   const [order, setOrder] = useState<DayLogOrder | null>(e.order);
@@ -143,6 +152,7 @@ export function EditTimesForm({
     if (!check.success) return setErr(check.error.issues[0]?.message ?? 'Check the row.');
     try {
       await update.mutateAsync({ id: e.id, ...body });
+      toast.ok('Day Log entry saved');
       onSent();
     } catch (x) {
       setErr(errText(x));

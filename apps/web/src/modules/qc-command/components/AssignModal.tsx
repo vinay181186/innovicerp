@@ -4,7 +4,8 @@
 import { type QcCommandQueueRow, type QcInspectorOption, opSrNo } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
-import { Modal } from '@/ui/feedback';
+import { Modal, useToast } from '@/ui/feedback';
+import { SearchableSelect } from '@/ui/forms';
 import { useAssignQc } from '../api';
 
 export function AssignModal({
@@ -16,6 +17,7 @@ export function AssignModal({
   inspectors: QcInspectorOption[];
   onClose: () => void;
 }): React.JSX.Element {
+  const toast = useToast();
   const assign = useAssignQc();
   const [inspectorUserId, setInspectorUserId] = useState('');
   const [note, setNote] = useState('');
@@ -33,6 +35,7 @@ export function AssignModal({
         inspectorUserId,
         ...(note.trim() ? { note: note.trim() } : {}),
       });
+      toast.ok(`Inspector assigned — ${row.jcCode} Op ${opSrNo(row.opSeq)}`);
       onClose();
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Could not assign inspector. Try again.');
@@ -65,18 +68,13 @@ export function AssignModal({
           <label className="form-label">
             Assign to Inspector<span className="req">★</span>
           </label>
-          <select
-            className="innovic-select"
-            value={inspectorUserId}
-            onChange={(e) => setInspectorUserId(e.target.value)}
-          >
-            <option value="">— Select —</option>
-            {inspectors.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.name} ({u.role})
-              </option>
-            ))}
-          </select>
+          <SearchableSelect
+            ariaLabel="Assign to Inspector"
+            value={inspectorUserId || null}
+            onChange={(id) => setInspectorUserId(id ?? '')}
+            options={inspectors.map((u) => ({ id: u.id, name: `${u.name} (${u.role})` }))}
+            placeholder="— Select —"
+          />
         </div>
         <div className="form-grp form-full">
           <label className="form-label">Note (optional)</label>

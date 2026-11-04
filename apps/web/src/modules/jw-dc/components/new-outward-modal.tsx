@@ -12,7 +12,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ApiError } from '@/lib/api';
 import { todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { Banner } from '@/ui/feedback';
+import { Banner, useToast } from '@/ui/feedback';
 import { useRtvCandidates } from '../../delivery-challans/api';
 import { useJobWorkOrder } from '../../job-work-orders/api';
 import { usePurchaseOrdersList } from '../../purchase-orders/api';
@@ -25,6 +25,7 @@ import {
 import { ErrorBox, ModalShell } from './modal-shell';
 import { OutwardLineTable, type OutwardLineUi } from './outward-line-table';
 import { rtvOpenQty } from '@/modules/delivery-challans/lib/rtv-open-qty';
+import { SearchableSelect } from '@/ui/forms';
 
 /** PO statuses material may go out against: approved and still live. */
 const SENDABLE_PO_STATUSES: ReadonlySet<string> = new Set(['open', 'partial', 'qc_pending']);
@@ -204,6 +205,10 @@ export function NewOutwardModal({
   const rtvBlocks = rtv.isLoading || (rtvRows.length > 0 && !rtvConfirmed);
 
   const createMut = useCreateJwDcOutward();
+  const toast = useToast();
+  const rtvBlockedReason = rtv.isLoading
+    ? 'Still checking for pieces waiting to go back to the vendor'
+    : 'Tick "These are new pieces, not the ones waiting to go back" first';
 
   const onSave = (): void => {
     setErr(null);
@@ -240,7 +245,10 @@ export function NewOutwardModal({
     if (rtvConfirmed) input.rtvConfirmedNcIds = rtvRows.map((r) => r.ncId);
 
     createMut.mutate(input, {
-      onSuccess: () => onClose(),
+      onSuccess: (saved) => {
+        toast.ok(`Outward DC ${saved.code} saved`);
+        onClose();
+      },
       onError: (e) => {
         // QC disposed an NC on this PO between opening the form and Save (or
         // the check above failed): show the NCs the server named, and make the
@@ -286,6 +294,7 @@ export function NewOutwardModal({
       saving={createMut.isPending}
       saveLabel="Save Outward DC"
       saveDisabled={rtvBlocks}
+      saveDisabledReason={rtvBlockedReason}
     >
       {forJw ? (
         <div
@@ -326,24 +335,28 @@ export function NewOutwardModal({
           <label className="form-label">
             PO No.<span className="req">★</span>
           </label>
-          <select
-            className="innovic-select"
-            value={poId ?? ''}
-            onChange={(e) => {
+          <SearchableSelect
+            value={poId}
+            onChange={(id) => {
               // The waiting-deviation notice belongs to the PO it was raised
               // for — drop it (and any tick) when the PO changes.
               setRtvConflictRows([]);
               setRtvConfirmedKey(null);
-              setPoId(e.target.value || null);
+              setPoId(id);
             }}
-          >
-            <option value="">-- Select PO --</option>
-            {poData.items.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.code} — {p.vendorName ?? p.vendorCodeText ?? ''}
-              </option>
-            ))}
-          </select>
+            options={poData.items.map((p) => ({
+              id: p.id,
+              code: p.code,
+              name: p.vendorName ?? p.vendorCodeText ?? '',
+            }))}
+            // The `?jw=` deep link can pre-pick the PO without a click.
+            valueLabel={
+              selectedPo
+                ? `${selectedPo.code} — ${selectedPo.vendorName ?? selectedPo.vendorCodeText ?? ''}`
+                : undefined
+            }
+            placeholder="-- Select PO --"
+          />
         </div>
         {selectedPo ? (
           <div className="form-grp form-full">
