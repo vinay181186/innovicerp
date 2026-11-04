@@ -318,6 +318,18 @@ function ClassicDataTable<T>({
                         !!onRowClick && !clickable && 'dt-row-static',
                       )}
                       onClick={clickable ? () => onRowClick?.(row, ri) : undefined}
+                      // A row that opens on click opens on Enter too. Only the row
+                      // itself: Enter on the ⋯ or a link inside it stays theirs.
+                      tabIndex={clickable ? 0 : undefined}
+                      onKeyDown={
+                        clickable
+                          ? (e) => {
+                              if (e.key === 'Enter' && e.target === e.currentTarget) {
+                                onRowClick?.(row, ri);
+                              }
+                            }
+                          : undefined
+                      }
                       style={clickable ? { cursor: 'pointer' } : undefined}
                     >
                       {selectable ? (

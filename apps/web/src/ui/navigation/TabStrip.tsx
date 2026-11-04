@@ -53,9 +53,11 @@ export function TabStrip({ tabs, activeKey, onChange, label }: TabStripProps): R
             type="button"
             role="tab"
             aria-selected={on}
+            className="tab-strip-tab"
             onClick={() => onChange?.(t.key)}
             style={{
-              background: on ? 'var(--blue3)' : 'transparent',
+              // Not selected: the fill comes from .tab-strip-tab, so it can hover.
+              ...(on ? { background: 'var(--blue3)' } : {}),
               border: 'none',
               // Hairline between tabs, none after the last one.
               borderRight: i < tabs.length - 1 ? '1px solid var(--border)' : 'none',

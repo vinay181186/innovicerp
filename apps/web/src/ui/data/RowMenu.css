@@ -76,7 +76,6 @@
 .row-menu-item:hover,
 .row-menu-item:focus-visible {
   background: var(--bg4);
-  outline: none;
 }
 .row-menu-item.is-danger {
   color: var(--red2);
