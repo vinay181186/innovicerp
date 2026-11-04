@@ -1,34 +1,23 @@
 // Columns for level 1 of SO/JWSO Planning (ADR-268, shared FIT table): one row
 // per SO / JWSO LINE. The locked lead block · Ln · Customer · Type · Due Date ·
-// Order Qty · Plan Qty · To Plan · % Planned · Plan Status · RC No. · PRO No. ·
-// JC No. · Created By. Every `sortFilterField` comes from the shared
+// Order Qty · Plan Qty · To Plan · % Planned · Plan Status · Created By. Every `sortFilterField` comes from the shared
 // PLANNING_LINE_LIST_SF_FIELD, so a heading can never ask the server for a field
 // it does not know. The list is paged, so ▾ runs on the server.
 //
-// RC No. / PRO No. / JC No. stay on screen on a narrow window: line-list.tsx pins
-// them (LINE_LIST_PINNED_IDS), so the fit engine takes other columns off first.
+// Plan Status stays on screen on a narrow window: line-list.tsx pins it
+// (LINE_LIST_PINNED_IDS), so the fit engine takes other columns off first.
 // Customer is a `text` column and shortens with "…" before anything leaves.
 
-import {
-  PLANNING_LINE_LIST_SF_FIELD as SF,
-  docText,
-  lineJcs,
-  linePros,
-  lineRouteCards,
-  rcText,
-  planningLineStatus,
-  type PlanningLineListItem,
-} from '@innovic/shared';
+import { PLANNING_LINE_LIST_SF_FIELD as SF, type PlanningLineListItem } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
 import { docDrawingRev } from '@/lib/item-code';
 import { soTypeLabel } from '@/modules/sales-orders/lib/so-status-label';
 import { ROW_TINT, createdByColumn, leadColumns, type DataTableColumn } from '@/ui/data';
-import { DocCodes, RcCodes } from './planning-doc-cells';
 import { PLANNING_STATE_LABEL } from './planning-line-columns';
 import { JwChip, lineStatusOf, type SourceFilter } from './planning-shared';
 
 /** The columns a planner opens this screen for: never taken off screen. */
-export const LINE_LIST_PINNED_IDS = ['plan_status', 'rc_no', 'pro_no', 'jc_no'];
+export const LINE_LIST_PINNED_IDS = ['plan_status'];
 
 /** Row tint by the line's derived plan status (ADR-199 Wave A, ROW_TINT): the
  *  same green/amber lineStatusOf gives the status text, so the wash can never
@@ -117,7 +106,7 @@ export function lineListColumns(
       ),
       label: src === 'jw' ? 'JWSO Type' : src === 'so' ? 'SO Type' : 'SO / JWSO Type',
       // Text, not badge: the long "Component Manufacturing" gives way with "…" so
-      // Plan Status and the RC / PRO / JC columns stay on screen.
+      // Plan Status stays on screen.
       kind: 'text',
       filterType: 'list',
       ellipsis: true,
@@ -238,36 +227,6 @@ export function lineListColumns(
           </span>
         );
       },
-    },
-    {
-      id: 'rc_no',
-      header: 'RC No.',
-      kind: 'text',
-      align: 'left',
-      ellipsis: true,
-      sortFilterField: SF.rcNo,
-      render: (r) => <RcCodes rcs={lineRouteCards(r)} />,
-      title: (r) => rcText(lineRouteCards(r)),
-    },
-    {
-      id: 'pro_no',
-      header: 'PRO No.',
-      kind: 'text',
-      align: 'left',
-      ellipsis: true,
-      sortFilterField: SF.proNo,
-      render: (r) => <DocCodes docs={linePros(r)} kind="pro" />,
-      title: (r) => docText(linePros(r)),
-    },
-    {
-      id: 'jc_no',
-      header: 'JC No.',
-      kind: 'text',
-      align: 'left',
-      ellipsis: true,
-      sortFilterField: SF.jcNo,
-      render: (r) => <DocCodes docs={lineJcs(r)} kind="jc" />,
-      title: (r) => docText(lineJcs(r)),
     },
     createdByColumn<PlanningLineListItem>({
       createdByName: (r) => r.createdByName,

@@ -8,7 +8,12 @@ import { and, asc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 
 import { jobCards, plans, routeCards } from '../../db/schema';
 import type { DbTransaction } from '../../db/with-user-context';
-import { loadProductionOrdersByPlan, PLAN_RC_JOIN_ON } from './plan-summaries';
+import {
+  LIVE_PLAN,
+  loadProductionOrdersByPlan,
+  PLAN_RC_JOIN_ON,
+  toRouteCardApprovalStatus,
+} from './plan-summaries';
 
 export interface ListPlansOfLines {
   plansByLine: Map<string, PlanningLineListPlan[]>;
@@ -50,8 +55,7 @@ export async function loadListPlansByLine(
           soLineIds.length > 0 ? inArray(plans.soLineId, soLineIds) : undefined,
           jwLineIds.length > 0 ? inArray(plans.jwLineId, jwLineIds) : undefined,
         ),
-        isNull(plans.deletedAt),
-        sql`${plans.planStatus} <> 'cancelled'`,
+        LIVE_PLAN,
       ),
     )
     .orderBy(asc(plans.code));
@@ -71,7 +75,7 @@ export async function loadListPlansByLine(
       planQty: r.planQty,
       bomChildCode: r.bomChildCode,
       routeCardCode: r.routeCardCode ?? null,
-      routeCardApprovalStatus: r.routeCardApprovalStatus ?? null,
+      routeCardApprovalStatus: toRouteCardApprovalStatus(r.routeCardApprovalStatus),
       productionOrders: posByPlan.get(r.id) ?? [],
       // The list always sends the full list above, so the older-build fallback
       // these two feed in planPros never applies.

@@ -74,9 +74,6 @@ export const PLANNING_LINE_LIST_SF_FIELDS: MemFieldMap<PlanningLinePageRow> = {
   toPlan: { type: 'num', get: (r) => r.item.remaining },
   planningPct: { type: 'num', get: (r) => r.status.pct },
   planState: { type: 'list', get: (r) => r.status.state },
-  rcNo: { type: 'text', get: (r) => r.rcNo },
-  proNo: { type: 'text', get: (r) => r.proNo },
-  jcNo: { type: 'text', get: (r) => r.jcNo },
   createdBy: { type: 'text', get: (r) => r.item.createdByName },
 };
 

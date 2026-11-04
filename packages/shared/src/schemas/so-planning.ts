@@ -373,9 +373,6 @@ export const PLANNING_LINE_LIST_SF_FIELD = {
   toPlan: 'toPlan',
   planningPct: 'planningPct',
   planState: 'planState',
-  rcNo: 'rcNo',
-  proNo: 'proNo',
-  jcNo: 'jcNo',
   createdBy: 'createdBy',
 } as const;
 

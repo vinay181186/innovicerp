@@ -1,8 +1,8 @@
 // SO Planning (ADR-268) — the plans of a batch of SO / JWSO lines as
-// PlanningPlanSummary, in ONE place. The order detail (service.ts, one order's
-// lines) and the Planning list (list-lines.ts, every open order's lines) both read
-// this, so a plan cannot read one way on the list and another on the order.
-// A fixed number of queries whatever the number of lines. The helpers below were
+// PlanningPlanSummary, in ONE place, for the order detail (service.ts). The Planning
+// list reads a leaner set of columns (list-lines-plans.ts) through the same rules
+// below: LIVE_PLAN, PLAN_RC_JOIN_ON, loadProductionOrdersByPlan. list-lines.test.ts
+// holds the two together. A fixed number of queries whatever the number of lines. The helpers below were
 // moved here unchanged from service.ts.
 
 import type { PlanningPlanSummary } from '@innovic/shared';
@@ -97,7 +97,7 @@ export function routeCardPlanFields(r: {
 }
 
 /** The contract's three approval states; anything else (no card) is null. */
-function toRouteCardApprovalStatus(
+export function toRouteCardApprovalStatus(
   raw: string | null | undefined,
 ): PlanningPlanSummary['routeCardApprovalStatus'] {
   return raw === 'pending' || raw === 'approved' || raw === 'rejected' ? raw : null;
@@ -133,6 +133,9 @@ export function planItemFields(r: {
  *  ad-hoc plan has no item_id and a plan whose item was deleted must still
  *  appear on the line. `deleted_at is null` so a soft-deleted item cannot
  *  resurrect its name here. */
+/** A plan that counts: not in Trash, not cancelled. */
+export const LIVE_PLAN = and(isNull(plans.deletedAt), sql`${plans.planStatus} <> 'cancelled'`);
+
 export const PLAN_ITEM_JOIN_ON = sql`plan_item.id = ${plans.itemId} and plan_item.deleted_at is null`;
 
 /** The `plan_rc` join: the plan's live Route Card (code + ADR-253 approval
@@ -296,8 +299,7 @@ export async function loadPlanSummariesByLine(
           .where(
             and(
               source === 'so' ? inArray(plans.soLineId, lineIds) : inArray(plans.jwLineId, lineIds),
-              isNull(plans.deletedAt),
-              sql`${plans.planStatus} <> 'cancelled'`,
+              LIVE_PLAN,
             ),
           )
           .orderBy(asc(plans.code));

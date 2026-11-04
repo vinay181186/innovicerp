@@ -37,18 +37,11 @@ export function DocCode({ doc, kind }: { doc: PlanningDocRef; kind: 'pro' | 'jc'
       params={{ id: doc.id }}
       className="mono fw-700"
       style={CODE_STYLE}
-      onClick={(e) => e.stopPropagation()}
     >
       {doc.code}
     </Link>
   ) : (
-    <Link
-      to="/job-cards/$id"
-      params={{ id: doc.id }}
-      className="mono fw-700"
-      style={CODE_STYLE}
-      onClick={(e) => e.stopPropagation()}
-    >
+    <Link to="/job-cards/$id" params={{ id: doc.id }} className="mono fw-700" style={CODE_STYLE}>
       {doc.code}
     </Link>
   );

@@ -15156,9 +15156,10 @@ draft plans also read "Fully Planned" while its lines read "In Planning" (open s
 - `GET /so-planning/lines` — one row per live line (not cancelled, on an open SO or JWSO). SO and
   JWSO alike. Columns: lead block (Sr No · SO No. · Internal SO No. · POL · Item Code · Item Name ·
   Created On · Created Time) · Ln · Customer · Type · Due Date · Order Qty · Plan Qty · To Plan ·
-  % Planned · Plan Status · RC No. · PRO No. · JC No. · Created By. Lines column gone.
-- A POL with several plans / PROs stays ONE row, codes joined with " · " — two rows would make the
-  Order Qty read double.
+  % Planned · Plan Status · Created By. Lines column gone.
+- RC No. / PRO No. / JC No. are NOT on this list (owner, after seeing it on TEST): they stay inside the
+  order, after clicking a row, unchanged. Search still finds a line by those numbers.
+- A POL with several plans / PROs stays ONE row — two rows would make the Order Qty read double.
 - `GET /so-planning` stays: the Create Plan picker reads it, one row per order.
 - The "Matching lines" tab is deleted: the list IS the lines, and search now covers every page.
 - RC / PRO / JC rule moved to `packages/shared/src/lib/planning-doc-codes.ts`, so the cells and the
