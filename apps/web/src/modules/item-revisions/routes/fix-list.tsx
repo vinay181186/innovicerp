@@ -10,16 +10,18 @@
 //
 // One read (GET /item-revisions/fix-list) answers all three; the lists are
 // bounded fix lists, not registers, so they are shown whole. Each list
-// empties itself as the team fixes rows.
+// empties itself as the team fixes rows. The API has no search parameter, but
+// the lists are whole in the browser, so the box searches every row of the tab.
 
 import type { FixListStock } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { matchesSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
-import { ListHeader, PageState } from '@/ui/layout';
+import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { TabStrip } from '@/ui/navigation';
 import { useItemRevisionFixList } from '../api';
 import {
@@ -49,6 +51,24 @@ function DrawingRevFixListPage(): React.JSX.Element {
   const canSetRev = effectiveFormPerms(eff, 'item_create').edit;
   const [tab, setTab] = useState<TabKey>('route-cards');
   const [stockRow, setStockRow] = useState<FixListStock | null>(null);
+  const [term, setTerm] = useState('');
+  const routeCards = useMemo(() => data?.routeCards ?? [], [data?.routeCards]);
+  const lines = useMemo(() => data?.lines ?? [], [data?.lines]);
+  const stock = useMemo(() => data?.stock ?? [], [data?.stock]);
+  // Every plain field of the row, so a column added later is searched too.
+  const shown = <T extends object>(rows: T[]): T[] =>
+    rows.filter((r) =>
+      matchesSearchTerm(
+        Object.values(r).flatMap((v: unknown) =>
+          typeof v === 'string' || typeof v === 'number'
+            ? [v]
+            : Array.isArray(v)
+              ? v.filter((x): x is string => typeof x === 'string')
+              : [],
+        ),
+        term,
+      ),
+    );
 
   if (isError) {
     return (
@@ -59,19 +79,19 @@ function DrawingRevFixListPage(): React.JSX.Element {
     );
   }
 
-  const routeCards = data?.routeCards ?? [];
-  const lines = data?.lines ?? [];
-  const stock = data?.stock ?? [];
   const total = routeCards.length + lines.length + stock.length;
 
   return (
-    <div>
+    <div className="page-fill">
       <ListHeader
         title="Drawing Rev Fix List"
         icon="🛠"
         count={total}
         noun="row to fix"
         nounPlural="rows to fix"
+        search={term}
+        onSearch={setTerm}
+        searchPlaceholder="Search this tab: RC No., item, SO, customer, Drawing Rev…"
         updating={isFetching && !isLoading}
       />
       <TabStrip
@@ -93,34 +113,43 @@ function DrawingRevFixListPage(): React.JSX.Element {
           <DataTable
             tableKey={TABLE_KEYS.drawingRevFixRouteCards}
             columns={routeCardColumns(canEditRc)}
-            rows={routeCards}
+            rows={shown(routeCards)}
             loading={isLoading}
             rowKey={(r) => r.routeCardId}
             rowMenu={(r) => routeCardRowMenu(r, canEditRc)}
             renderLink={(p) => <Link {...p} />}
-            emptyText="Every Route Card has its Drawing Rev."
+            emptyText={
+              term.trim() ? 'No Route Cards match.' : 'Every Route Card has its Drawing Rev.'
+            }
           />
         ) : tab === 'lines' ? (
           <DataTable
             tableKey={TABLE_KEYS.drawingRevFixLines}
             columns={lineColumns()}
-            rows={lines}
+            rows={shown(lines)}
             loading={isLoading}
             rowKey={(r) => r.lineId}
-            emptyText="No order lines with conflicting Drawing Revs or Rev 0."
+            emptyText={
+              term.trim()
+                ? 'No order lines match.'
+                : 'No order lines with conflicting Drawing Revs or Rev 0.'
+            }
           />
         ) : (
           <DataTable
             tableKey={TABLE_KEYS.drawingRevFixStock}
             columns={stockColumns()}
-            rows={stock}
+            rows={shown(stock)}
             loading={isLoading}
             rowKey={(r) => r.itemId}
             rowMenu={(r) => stockRowMenu(r, canSetRev, setStockRow)}
-            emptyText="No old stock without a Drawing Rev."
+            emptyText={
+              term.trim() ? 'No old stock lines match.' : 'No old stock without a Drawing Rev.'
+            }
           />
         )}
       </Panel>
+      <ListFooter total={total} noun="row to fix" nounPlural="rows to fix" />
       {stockRow ? <SetStockRevDialog row={stockRow} onClose={() => setStockRow(null)} /> : null}
     </div>
   );

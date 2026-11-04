@@ -3,14 +3,13 @@
 // movement (receive / issue / consume / return / reversal, each in or out); no
 // value column — party material carries no rupee value on our books.
 //
-// Styled to the SO Master list conventions: ListHeader (title · count · search)
-// over a `.innovic-table`. ADR-201: 25 movements a page with Prev / Next (page
+// The list standard: ListHeader (title · count · search) over Panel + DataTable
+// over ListFooter. ADR-201: 25 movements a page with Prev / Next (page
 // in the URL); the search box runs on the SERVER over every movement and the
 // columns on screen, and a new search goes back to page 1.
 
-import type { PartyStockMovement } from '@innovic/shared';
+import type { PartyStockLedgerListItem, PartyStockMovement } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
-import { Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
@@ -18,8 +17,9 @@ import { fmtDate } from '@/lib/date';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { Panel } from '@/ui/data';
-import { ListFooter, ListHeader } from '@/ui/layout';
+import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
+import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { usePartyStockLedgerList } from '../api';
 
 const MOVEMENT_LABELS: Record<PartyStockMovement, string> = {
@@ -46,6 +46,99 @@ const SOURCE_DOC_LABELS: Record<string, string> = {
   // historical rows still read sensibly.
   party_material_return: 'Returned to Customer (old)',
 };
+
+/** In = green, Out = orange, on the In / Out and Movement Qty columns. */
+function directionColor(r: PartyStockLedgerListItem): string {
+  return r.direction === 'in' ? 'var(--green2)' : 'var(--amber2)';
+}
+
+const COLUMNS: DataTableColumn<PartyStockLedgerListItem>[] = [
+  {
+    id: 'movement_date',
+    header: 'Movement Date',
+    kind: 'date',
+    className: 'text2',
+    nowrap: true,
+    render: (r) => <span style={{ fontSize: 11 }}>{fmtDate(r.createdAt)}</span>,
+  },
+  {
+    id: 'customer_material',
+    header: 'Customer Material',
+    kind: 'text',
+    title: (r) => r.partyMaterialName ?? r.partyMaterialCode ?? '',
+    render: (r) => (
+      <>
+        <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+          {r.partyMaterialCode ?? '—'}
+        </span>
+        {r.partyMaterialName ? (
+          <span className="text3" style={{ fontSize: 11, marginLeft: 6 }}>
+            {r.partyMaterialName}
+          </span>
+        ) : null}
+      </>
+    ),
+  },
+  {
+    id: 'movement',
+    header: 'Movement',
+    kind: 'badge',
+    nowrap: true,
+    render: (r) => <span style={{ fontSize: 12 }}>{MOVEMENT_LABELS[r.movement]}</span>,
+  },
+  {
+    id: 'direction',
+    header: 'In / Out',
+    kind: 'badge',
+    nowrap: true,
+    render: (r) => (
+      <span style={{ fontSize: 11, fontWeight: 700, color: directionColor(r) }}>
+        {r.direction === 'in' ? 'In' : 'Out'}
+      </span>
+    ),
+  },
+  {
+    id: 'movement_qty',
+    header: 'Movement Qty',
+    kind: 'num',
+    align: 'right',
+    className: 'mono fw-700',
+    render: (r) => (
+      <span style={{ color: directionColor(r) }}>
+        {r.direction === 'in' ? '+' : '−'}
+        {r.qty}
+      </span>
+    ),
+  },
+  {
+    id: 'balance',
+    header: 'Balance',
+    headColor: 'var(--green2)',
+    kind: 'num',
+    align: 'right',
+    className: 'mono',
+    render: (r) => r.balanceAfter,
+  },
+  {
+    id: 'source_doc',
+    header: 'Source Doc',
+    kind: 'code',
+    className: 'text2',
+    nowrap: true,
+    render: (r) => (
+      <span style={{ fontSize: 11 }}>{SOURCE_DOC_LABELS[r.sourceDocType] ?? r.sourceDocType}</span>
+    ),
+  },
+  {
+    id: 'recorded_by',
+    header: 'Recorded By',
+    kind: 'text',
+    className: 'text3',
+    ellipsis: true,
+    title: (r) => r.createdByName ?? '',
+    render: (r) => <span style={{ fontSize: 11 }}>{r.createdByName ?? '—'}</span>,
+  },
+];
 
 export const partyStockLedgerListRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -111,101 +204,30 @@ function PartyStockLedgerListPage(): React.JSX.Element {
         updating={isFetching && !isLoading}
       />
 
-      <Panel fill bodyPadding="none">
-        {isLoading ? (
-          <div className="panel-body">
-            <div className="text3" style={{ fontSize: 12 }}>
-              <Loader2 size={14} className="inline animate-spin" /> Loading…
-            </div>
-          </div>
-        ) : isError ? (
-          <div className="panel-body">
-            <div className="empty-state" style={{ color: 'var(--red2)' }}>
-              {error instanceof Error
-                ? error.message
-                : 'Could not load the Customer Material Stock Ledger. Try again.'}
-            </div>
-          </div>
-        ) : (
-          <div className="tbl-wrap">
-            <table className="innovic-table tbl-grid">
-              <thead>
-                <tr>
-                  <th>Movement Date</th>
-                  <th>Customer Material</th>
-                  <th>Movement</th>
-                  <th>In / Out</th>
-                  <th className="th-num">Movement Qty</th>
-                  <th className="th-num" style={{ color: 'var(--green2)' }}>
-                    Balance
-                  </th>
-                  <th>Source Doc</th>
-                  <th>Recorded By</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} className="empty-state">
-                      {search.trim() ? 'No movements match.' : 'No party stock movements yet.'}
-                    </td>
-                  </tr>
-                ) : (
-                  rows.map((r) => (
-                    <tr key={r.id}>
-                      <td className="text2" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
-                        {fmtDate(r.createdAt)}
-                      </td>
-                      <td style={{ whiteSpace: 'nowrap' }}>
-                        <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-                          {r.partyMaterialCode ?? '—'}
-                        </span>
-                        {r.partyMaterialName ? (
-                          <span
-                            className="text3"
-                            style={{
-                              fontSize: 11,
-                              marginLeft: 6,
-                            }}
-                          >
-                            {r.partyMaterialName}
-                          </span>
-                        ) : null}
-                      </td>
-                      <td style={{ fontSize: 12 }}>{MOVEMENT_LABELS[r.movement]}</td>
-                      <td>
-                        <span
-                          style={{
-                            fontSize: 11,
-                            fontWeight: 700,
-                            color: r.direction === 'in' ? 'var(--green2)' : 'var(--amber2)',
-                          }}
-                        >
-                          {r.direction === 'in' ? 'In' : 'Out'}
-                        </span>
-                      </td>
-                      <td
-                        className="mono fw-700 td-num"
-                        style={{ color: r.direction === 'in' ? 'var(--green2)' : 'var(--amber2)' }}
-                      >
-                        {r.direction === 'in' ? '+' : '−'}
-                        {r.qty}
-                      </td>
-                      <td className="mono td-num">{r.balanceAfter}</td>
-                      <td className="text2" style={{ fontSize: 11 }}>
-                        {SOURCE_DOC_LABELS[r.sourceDocType] ?? r.sourceDocType}
-                      </td>
-                      <td className="text3" style={{ fontSize: 11 }}>
-                        {r.createdByName ?? '—'}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Panel>
+      {isError ? (
+        <PageState
+          state="error"
+          message={
+            error instanceof Error
+              ? error.message
+              : 'Could not load the Customer Material Stock Ledger. Try again.'
+          }
+        />
+      ) : (
+        <Panel fill bodyPadding="none">
+          {/* The API pages and searches but has no column Sort & Filter, and a
+              browser-side ▾ over one page of 25 would hide rows, so it stays off. */}
+          <DataTable
+            tableKey={TABLE_KEYS.partyStockLedger}
+            columns={COLUMNS}
+            rows={rows}
+            loading={isLoading}
+            rowKey={(r) => r.id}
+            sortFilter={false}
+            emptyText={term ? 'No movements match.' : 'No movements yet.'}
+          />
+        </Panel>
+      )}
 
       <ListFooter
         total={total}

@@ -1,6 +1,6 @@
-// TabStrip — THE one in-page tab look
-// (design-ref/components/navigation/TabStrip.*), derived from the Task Board's
-// TaskTabs (modules/tasks/components/board-filters.tsx, ADR-176).
+// TabStrip — THE one in-page tab look (owner 2026-11-04)
+// (design-ref/components/navigation/TabStrip.*). Every in-page tab bar uses it;
+// on a list page it goes in the ListHeader band, under the title and filters.
 //
 // Switches VIEWS within one page (Inbox / Outbox / My To-Do / All Tasks; the
 // Job Card view tabs). Not to be confused with:

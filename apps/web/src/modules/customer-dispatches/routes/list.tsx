@@ -53,6 +53,8 @@ import { dispatchListColumns } from '../components/dispatch-list-columns';
 import { DispatchRowActions } from '../components/dispatch-row-actions';
 import { exportDispatchRegister } from '../lib/export-excel';
 import { printCustomerDispatchRegister } from '../lib/print-register';
+import { TabStrip } from '@/ui/navigation';
+import { useToast } from '@/ui/feedback';
 
 // Deep-link seed for Global Search (this register has no detail page):
 // `?tab=so&search=DSP-0004` opens the right tab with the box pre-filled. The
@@ -83,6 +85,7 @@ async function fetchAllRegisterRows(
 }
 
 function CustomerDispatchListPage(): React.JSX.Element {
+  const toast = useToast();
   // JW Dispatch (jw-returns) folded in here as a tab — same job, two document
   // families: this one ships finished goods against an SO, that one returns
   // machined goods against a JWSO line. Its own hooks/mutations are unchanged.
@@ -157,41 +160,26 @@ function CustomerDispatchListPage(): React.JSX.Element {
         const all = await fetchAllRegisterRows(filters);
         const active = all.filter((r) => r.status !== 'cancelled');
         if (!printCustomerDispatchRegister({ rows: active, company })) {
-          window.alert('Allow popups to print.');
+          toast.error('Allow popups to print.');
         }
       }
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : 'Could not load the register. Try again.');
+      toast.error(e instanceof Error ? e.message : 'Could not load the register. Try again.');
     } finally {
       setExporting(false);
     }
   }
 
   const tabBar = (
-    <div
-      style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', marginBottom: 14 }}
-    >
-      {(['so', 'jw'] as const).map((t) => (
-        <button
-          key={t}
-          type="button"
-          onClick={() => setTab(t)}
-          style={{
-            background: 'none',
-            border: 'none',
-            borderBottom: tab === t ? '2px solid var(--cyan)' : '2px solid transparent',
-            color: tab === t ? 'var(--cyan)' : 'var(--text3)',
-            fontSize: 12,
-            fontWeight: 700,
-            padding: '6px 12px',
-            cursor: 'pointer',
-            marginBottom: -1,
-          }}
-        >
-          {t === 'so' ? 'Customer Dispatch' : 'JW Return'}
-        </button>
-      ))}
-    </div>
+    <TabStrip
+      label="Dispatch type"
+      tabs={[
+        { key: 'so', label: 'Customer Dispatch' },
+        { key: 'jw', label: 'JW Return' },
+      ]}
+      activeKey={tab}
+      onChange={(k) => setTab(k === 'jw' ? 'jw' : 'so')}
+    />
   );
 
   if (eff && !perms.view) {
@@ -201,10 +189,13 @@ function CustomerDispatchListPage(): React.JSX.Element {
   if (tab === 'jw') {
     return (
       <div>
-        {tabBar}
         {/* key: a new ?search landing while already on this page remounts the
             view so it re-seeds; nothing else changes the key. */}
-        <JwDispatchView key={routeSearch.search ?? ''} initialSearch={routeSearch.search} />
+        <JwDispatchView
+          key={routeSearch.search ?? ''}
+          initialSearch={routeSearch.search}
+          tabs={tabBar}
+        />
       </div>
     );
   }
@@ -214,7 +205,6 @@ function CustomerDispatchListPage(): React.JSX.Element {
     // Log table is the only thing that scrolls, so its column header stays on
     // screen down to the last row.
     <div className="page-fill">
-      {tabBar}
       {/* The ONE list header (ui/layout ListHeader). Search / SO / ▾ run on
           the server; Export / Print fetch every filtered row. */}
       <ListHeader
@@ -262,7 +252,9 @@ function CustomerDispatchListPage(): React.JSX.Element {
             </Link>
           ) : null
         }
-      />
+      >
+        {tabBar}
+      </ListHeader>
 
       {isError ? (
         <PageState

@@ -301,7 +301,7 @@ export function PartyGrnExpand({ g }: { g: PartyGrnListItem }): React.JSX.Elemen
           rows={lines}
           rowKey={(l) => l.id}
           density="compact"
-          emptyText="No lines."
+          emptyText="No lines yet."
         />
       )}
 

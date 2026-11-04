@@ -172,7 +172,7 @@ export function DayLogApprovals(): React.JSX.Element {
         columns={COLUMNS}
         rows={rows}
         rowKey={(r) => r.entryId}
-        empty={needle ? `No user matches "${needle}".` : 'No edits waiting.'}
+        empty={needle ? 'No waiting edits match.' : 'No waiting edits yet.'}
         rowMenuLabel={(r) => `Actions for ${r.userName}'s edit on ${fmtDate(r.date)}`}
         rowMenu={(r) => [
           {

@@ -167,7 +167,7 @@ export function MyDayTable({
         wrapClassName="dl-fit"
         columns={COLUMNS}
         rows={shown}
-        empty={needle ? `No entries match "${needle}".` : `Nothing logged on ${fmtDate(day.date)}.`}
+        empty={needle ? 'No entries match.' : `Nothing logged on ${fmtDate(day.date)}.`}
         onRowClick={(r) => toggle(r.id)}
         onToggleExpanded={(r) => toggle(r.id)}
         renderExpanded={(r) =>

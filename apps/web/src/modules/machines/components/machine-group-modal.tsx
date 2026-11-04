@@ -71,7 +71,7 @@ export function MachineGroupModal({
       <div className="form-grid">
         <div className="form-grp form-full">
           <label className="form-label" htmlFor="mgCode">
-            Machine Group <span className="req">★</span>
+            Machine Group<span className="req">★</span>
           </label>
           <input
             id="mgCode"

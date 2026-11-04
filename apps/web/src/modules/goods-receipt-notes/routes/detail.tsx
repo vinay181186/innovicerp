@@ -28,7 +28,7 @@ import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { Banner, ConfirmDialog } from '@/ui/feedback';
+import { Banner, ConfirmDialog, useToast } from '@/ui/feedback';
 import { fmtDateTime } from '@/lib/date';
 import { ActionMenu } from '@/ui/layout';
 import { useSession } from '@/lib/session';
@@ -51,6 +51,7 @@ export const goodsReceiptNoteDetailRoute = createRoute({
 });
 
 function GoodsReceiptNoteDetailPage(): React.JSX.Element {
+  const toast = useToast();
   const { id } = goodsReceiptNoteDetailRoute.useParams();
   const navigate = useNavigate();
   const {
@@ -150,7 +151,7 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
   };
   const onPrint = (): void => {
     const ok = printGrn(printArgs);
-    if (!ok) window.alert('Allow popups to print.');
+    if (!ok) toast.error('Allow popups to print.');
   };
   // ⬇ Download PDF — the same sheet as Preview, saved as `<GRN code>.pdf`.
   const onDownload = (): Promise<void> =>

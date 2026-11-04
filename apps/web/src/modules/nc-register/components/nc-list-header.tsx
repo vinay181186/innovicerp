@@ -29,6 +29,8 @@ export interface NcListHeaderProps {
   columnFiltering: boolean;
   canReportNc: boolean;
   orderFilter: ReactNode;
+  /** The page's tab strip, drawn under the header. */
+  tabs?: ReactNode;
 }
 
 export function NcListHeader({
@@ -44,6 +46,7 @@ export function NcListHeader({
   columnFiltering,
   canReportNc,
   orderFilter,
+  tabs,
 }: NcListHeaderProps): React.JSX.Element {
   return (
     <ListHeader
@@ -116,6 +119,8 @@ export function NcListHeader({
           </Link>
         ) : null
       }
-    />
+    >
+      {tabs}
+    </ListHeader>
   );
 }

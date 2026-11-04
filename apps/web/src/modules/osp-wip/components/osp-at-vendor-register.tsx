@@ -28,7 +28,7 @@ const FILTER_LABELS: Record<FilterKey, string | undefined> = {
   ready_to_send: 'Ready to send today',
 };
 
-export function OspAtVendorRegister(): React.JSX.Element {
+export function OspAtVendorRegister({ tabs }: { tabs?: React.ReactNode }): React.JSX.Element {
   // Opens on 'all', not 'at_vendor'. The at-vendor bucket is empty whenever
   // every outsourced op has come back, so defaulting to it showed an empty
   // table on a register that does have rows. The Bucket dropdown still filters to it.
@@ -112,7 +112,9 @@ export function OspAtVendorRegister(): React.JSX.Element {
           setPage(1);
         }}
         filtersActive={filter !== 'all' || search !== '' || sf.filtering}
-      />
+      >
+        {tabs}
+      </ListHeader>
 
       {isError ? (
         <PageState

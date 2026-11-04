@@ -40,8 +40,11 @@ import { ReturnToStoreModal } from './return-to-store-modal';
 // Search deep link). It fills the box AND the debounced term, so the first fetch
 // already carries it; typing afterwards is local and never touches the URL.
 export function PartyMaterialIssueView({
+  tabs,
   initialSearch,
 }: {
+  /** The page's tab strip, drawn under this view's header. */
+  tabs?: React.ReactNode;
   initialSearch?: string | undefined;
 }): React.JSX.Element {
   // Tier-driven, per department (party_create sits in Store). This view renders
@@ -111,8 +114,11 @@ export function PartyMaterialIssueView({
   // user flashes this panel on cold load.
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        You do not have permission to view Customer Material Issues. Ask an admin.
+      <div>
+        {tabs}
+        <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
+          You do not have permission to view Customer Material Issues. Ask an admin.
+        </div>
       </div>
     );
   }
@@ -143,7 +149,9 @@ export function PartyMaterialIssueView({
             </button>
           ) : null
         }
-      />
+      >
+        {tabs}
+      </ListHeader>
 
       {isError ? (
         <PageState

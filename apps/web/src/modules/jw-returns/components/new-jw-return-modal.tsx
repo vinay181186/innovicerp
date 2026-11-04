@@ -172,7 +172,13 @@ export function NewJwReturnModal({ onClose }: { onClose: () => void }): React.JS
         <div />
 
         <div style={{ gridColumn: 'span 2' }}>
-          <Field label="JWSO No. ★">
+          <Field
+            label={
+              <>
+                JWSO No.<span className="req">★</span>
+              </>
+            }
+          >
             <SearchableSelect
               id="jwret-jwso"
               value={jwId}
@@ -193,7 +199,13 @@ export function NewJwReturnModal({ onClose }: { onClose: () => void }): React.JS
         </div>
 
         <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Ln ★">
+          <Field
+            label={
+              <>
+                Ln<span className="req">★</span>
+              </>
+            }
+          >
             <SearchableSelect
               value={jobWorkOrderLineId || null}
               onChange={(id) => {
@@ -221,7 +233,13 @@ export function NewJwReturnModal({ onClose }: { onClose: () => void }): React.JS
           </Field>
         </div>
 
-        <Field label="Return Qty ★">
+        <Field
+          label={
+            <>
+              Return Qty<span className="req">★</span>
+            </>
+          }
+        >
           <input
             type="number"
             min={1}
@@ -297,7 +315,7 @@ function Field({
   label,
   children,
 }: {
-  label: string;
+  label: React.ReactNode;
   children: React.ReactNode;
 }): React.JSX.Element {
   return (

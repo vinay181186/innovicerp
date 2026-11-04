@@ -22,6 +22,7 @@ import { InspectorTab } from '../components/InspectorTab';
 import { ParetoTab } from '../components/ParetoTab';
 import { QueueTab } from '../components/QueueTab';
 import { ReworkTab } from '../components/ReworkTab';
+import { TabStrip } from '@/ui/navigation';
 
 const searchSchema = z.object({
   tab: z.enum(['queue', 'fpy', 'pareto', 'inspector', 'rework']).optional(),
@@ -222,33 +223,12 @@ function QcCommandPage(): React.JSX.Element {
         </div>
       ) : (
         <>
-          {/* Tabs */}
-          <div
-            style={{
-              display: 'flex',
-              gap: 4,
-              borderBottom: '1px solid var(--border)',
-              marginBottom: 14,
-              flexWrap: 'wrap',
-            }}
-          >
-            {TABS.map((t) => (
-              <div
-                key={t.id}
-                onClick={() => setTab(t.id)}
-                style={{
-                  padding: '10px 16px',
-                  cursor: 'pointer',
-                  fontSize: 12,
-                  fontWeight: 600,
-                  borderBottom: `2px solid ${tab === t.id ? 'var(--red)' : 'transparent'}`,
-                  color: tab === t.id ? 'var(--red)' : 'var(--text3)',
-                }}
-              >
-                {t.label}
-              </div>
-            ))}
-          </div>
+          <TabStrip
+            label="QC Center views"
+            tabs={TABS.map((t) => ({ key: t.id, label: t.label }))}
+            activeKey={tab}
+            onChange={(k) => setTab(TABS.find((t) => t.id === k)?.id ?? 'queue')}
+          />
 
           {tab === 'queue' ? (
             <QueueTab

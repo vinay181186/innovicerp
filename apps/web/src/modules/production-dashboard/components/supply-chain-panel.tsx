@@ -107,7 +107,7 @@ export function SupplyChainPanel({
           rowKey={(i) => i.itemId}
           loading={!data}
           emptyText={
-            allZero ? 'Nothing to report in the supply chain.' : 'No items below reorder level.'
+            allZero ? 'Nothing to report in the supply chain.' : 'No items below reorder level yet.'
           }
         />
       </Panel>

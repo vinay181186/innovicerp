@@ -38,9 +38,12 @@ import { usePrintJwInvoice } from './use-print-jw-invoice';
 // Search deep link). It fills the box AND the debounced term, so the first fetch
 // already carries it; typing afterwards is local and never touches the URL.
 export function JwInvoiceView({
+  tabs,
   initialSearch,
   initialJwId,
 }: {
+  /** The page's tab strip, drawn under this view's header. */
+  tabs?: React.ReactNode;
   initialSearch?: string | undefined;
   /** `?jw=<jwsoId>` from the JWSO detail "JW Invoice" button — opens the
    *  New JW Invoice form with that JWSO already picked. */
@@ -145,7 +148,9 @@ export function JwInvoiceView({
             </button>
           ) : null
         }
-      />
+      >
+        {tabs}
+      </ListHeader>
 
       {isError ? (
         <PageState

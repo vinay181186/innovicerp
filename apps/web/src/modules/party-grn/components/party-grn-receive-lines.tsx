@@ -66,7 +66,7 @@ export function PartyGrnReceiveLines({
             <th className="th-num">Waiting QC</th>
             <th className="th-num">Pending</th>
             <th className="th-num">
-              Received Qty <span className="req">★</span>
+              Received Qty<span className="req">★</span>
             </th>
             <th>Remarks</th>
             <th />

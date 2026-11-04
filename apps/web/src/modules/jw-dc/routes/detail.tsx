@@ -207,7 +207,7 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
               {dc.lines.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="empty-state">
-                    No lines on this DC.
+                    No lines on this DC yet.
                   </td>
                 </tr>
               ) : (

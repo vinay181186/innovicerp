@@ -6,6 +6,7 @@ import { authenticatedRoute } from '@/routes/_authenticated';
 import { ListHeader } from '@/ui/layout';
 import { useRunningOpsPage } from '../running-ops-page-api';
 import { RunningOpsBoard } from '../components/running-ops-board';
+import { TabStrip } from '@/ui/navigation';
 
 // Module-level so the count query key is stable.
 const RUNNING_COUNT = { view: 'running', limit: 1, offset: 0 } as const;
@@ -36,28 +37,15 @@ function RunningOpsPage(): React.JSX.Element {
           </Link>
         }
       >
-        <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)' }}>
-          {(['table', 'machine'] as const).map((v) => (
-            <button
-              key={v}
-              type="button"
-              onClick={() => setView(v)}
-              style={{
-                background: 'none',
-                border: 'none',
-                borderBottom: view === v ? '2px solid var(--cyan)' : '2px solid transparent',
-                color: view === v ? 'var(--cyan)' : 'var(--text3)',
-                fontSize: 12,
-                fontWeight: 700,
-                padding: '6px 12px',
-                cursor: 'pointer',
-                marginBottom: -1,
-              }}
-            >
-              {v === 'table' ? 'Table' : 'By Machine'}
-            </button>
-          ))}
-        </div>
+        <TabStrip
+          label="Live Operations views"
+          tabs={[
+            { key: 'table', label: 'Table' },
+            { key: 'machine', label: 'By Machine' },
+          ]}
+          activeKey={view}
+          onChange={(k) => setView(k === 'machine' ? 'machine' : 'table')}
+        />
       </ListHeader>
 
       {view === 'machine' ? (

@@ -185,7 +185,7 @@ export function ToolWriteoffsView({ canDecide }: { canDecide: boolean }): React.
             sortFilterServer={sf}
             rowKey={(w) => w.id}
             loading={isLoading}
-            empty="No write-offs here."
+            empty="No write-offs yet."
             // A decided write-off is washed: approved greens the row, rejected
             // greys it; a pending one (awaiting the Store In-charge) stays plain.
             rowClassName={(w) =>

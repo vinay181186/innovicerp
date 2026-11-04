@@ -108,7 +108,9 @@ export function EntryForm(): React.JSX.Element {
           />
         </div>
         <div className="form-grp">
-          <label className="form-label">Project ★</label>
+          <label className="form-label">
+            Project<span className="req">★</span>
+          </label>
           <SearchableSelect
             value={projectId || null}
             onChange={(id) => {
@@ -146,7 +148,9 @@ export function EntryForm(): React.JSX.Element {
           </select>
         </div>
         <div className="form-grp">
-          <label className="form-label">Hours ★</label>
+          <label className="form-label">
+            Hours<span className="req">★</span>
+          </label>
           <input
             type="number"
             min={0.5}

@@ -13,7 +13,7 @@ import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
-import { Modal, useToast } from '@/ui/feedback';
+import { ConfirmDialog, Modal, useToast } from '@/ui/feedback';
 import { ListFooter, PageState } from '@/ui/layout';
 import {
   useCreateReportType,
@@ -51,9 +51,9 @@ export function ReportTypesPanel(): React.JSX.Element {
   const [modal, setModal] = useState<ModalState>({ kind: 'none' });
   const items = data?.items ?? [];
 
-  async function onDelete(row: ReportType): Promise<void> {
-    if (!window.confirm(`Delete report type "${row.name}"?`)) return;
-    await del.mutateAsync(row.id);
+  const [askDelete, setAskDelete] = useState<ReportType | null>(null);
+  function onDelete(row: ReportType): void {
+    setAskDelete(row);
   }
 
   // The sheet's columns (first = the Report / Document Name, always pinned).
@@ -170,7 +170,7 @@ export function ReportTypesPanel(): React.JSX.Element {
             emptyText={
               sf.filtering
                 ? 'No report types match.'
-                : 'No report types defined. Click + Add Report Type.'
+                : 'No report types yet. Click + Add Report Type.'
             }
             rowMenu={(row) => [
               {
@@ -202,6 +202,17 @@ export function ReportTypesPanel(): React.JSX.Element {
         onPage={setPage}
       />
 
+      <ConfirmDialog
+        open={askDelete !== null}
+        title="Delete this report type?"
+        message={askDelete ? `Delete report type "${askDelete.name}"?` : undefined}
+        confirmLabel="Delete"
+        onCancel={() => setAskDelete(null)}
+        onConfirm={async () => {
+          if (askDelete) await del.mutateAsync(askDelete.id);
+          setAskDelete(null);
+        }}
+      />
       {modal.kind !== 'none' ? (
         <ReportTypeModal
           {...(modal.kind === 'edit' ? { row: modal.row } : {})}
@@ -276,7 +287,7 @@ function ReportTypeModal(props: { row?: ReportType; onClose: () => void }): Reac
       <div className="form-grid">
         <div className="form-grp form-full">
           <label className="form-label">
-            Report / Document Name <span className="req">★</span>
+            Report / Document Name<span className="req">★</span>
           </label>
           <input
             className="innovic-input"

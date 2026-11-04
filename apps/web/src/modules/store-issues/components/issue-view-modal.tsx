@@ -270,7 +270,9 @@ export function IssueViewModal({
 
           {mode !== 'view' ? (
             <div className="form-grp form-full" style={{ marginTop: 10 }}>
-              <label className="form-label">Reason ★</label>
+              <label className="form-label">
+                Reason<span className="req">★</span>
+              </label>
               <input
                 type="text"
                 className="innovic-input"

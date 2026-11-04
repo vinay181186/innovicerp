@@ -33,7 +33,7 @@ import { runPrint } from '@/lib/print/preview-host';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Panel } from '@/ui/data';
-import { Banner } from '@/ui/feedback';
+import { Banner, useToast } from '@/ui/feedback';
 import { Cluster, ClusterFact, ClusterGrid, DocIdent } from '@/ui/forms';
 import { ActionMenu, DetailHeader } from '@/ui/layout';
 import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
@@ -59,6 +59,7 @@ interface LineAgg {
 }
 
 function DeliveryChallanDetailPage(): React.JSX.Element {
+  const toast = useToast();
   const { id } = deliveryChallanDetailRoute.useParams();
   const { data, isLoading, isError, error } = useDeliveryChallan(id);
   const { data: me } = useSession();
@@ -202,7 +203,7 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
   // Preview: the print now opens the in-app Preview box.
   const onPrint = (): void => {
     const ok = printOspDc(printArgs);
-    if (!ok) window.alert('Allow popups to print.');
+    if (!ok) toast.error('Allow popups to print.');
   };
   const onDownload = (): Promise<void> =>
     runPrint(

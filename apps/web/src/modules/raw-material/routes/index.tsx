@@ -17,6 +17,7 @@ import { pageSearchParam } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { GradeTab } from '../components/grade-tab';
 import { SizeTab } from '../components/size-tab';
+import { TabStrip } from '@/ui/navigation';
 
 const searchSchema = z.object({
   tab: z.enum(['size']).optional(),
@@ -87,42 +88,19 @@ function RawMaterialPage(): React.JSX.Element {
   // Grade | Size switch — same strip as Op Entry's By Job Card / By Machine.
   // Drawn inside the panel's one header band (list standard 2026-09-26).
   const tabStrip = (
-    <div
-      style={{
-        display: 'flex',
-        gap: 4,
-        borderBottom: '1px solid var(--border)',
-        marginBottom: 'var(--sp-2)',
-      }}
-    >
-      {TABS.map((t) => (
-        <button
-          key={t.key}
-          type="button"
-          onClick={() =>
-            void navigate({
-              // Switching master clears the search term — a grade search means
-              // nothing on the size list.
-              search: () => (t.key === 'grade' ? {} : { tab: 'size' }),
-              replace: true,
-            })
-          }
-          style={{
-            background: 'none',
-            border: 'none',
-            borderBottom: tab === t.key ? '2px solid var(--cyan)' : '2px solid transparent',
-            color: tab === t.key ? 'var(--cyan)' : 'var(--text3)',
-            fontSize: 12,
-            fontWeight: 700,
-            padding: '6px 12px',
-            cursor: 'pointer',
-            marginBottom: -1,
-          }}
-        >
-          {t.label}
-        </button>
-      ))}
-    </div>
+    <TabStrip
+      label="Raw Material master"
+      tabs={[...TABS]}
+      activeKey={tab}
+      onChange={(k) =>
+        void navigate({
+          // Switching master clears the search term — a grade search means
+          // nothing on the size list.
+          search: () => (k === 'size' ? { tab: 'size' } : {}),
+          replace: true,
+        })
+      }
+    />
   );
 
   return (

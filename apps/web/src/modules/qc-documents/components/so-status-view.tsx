@@ -31,7 +31,7 @@ const ROW_TINT_BY_OVERALL: Record<SoQcLine['overall'], string | undefined> = {
 const hasDetail = (l: SoQcLine): boolean =>
   l.grnDetail.length > 0 || l.tpiDetail.length > 0 || l.docDetail.length > 0;
 
-export function SoStatusView({ toggle }: { toggle: React.ReactNode }): React.JSX.Element {
+export function SoStatusView({ tabs }: { tabs: React.ReactNode }): React.JSX.Element {
   const [selectedSo, setSelectedSo] = useState<{ id: string; code: string } | null>(null);
   const detail = useSoQcStatus(selectedSo?.id);
 
@@ -61,7 +61,6 @@ export function SoStatusView({ toggle }: { toggle: React.ReactNode }): React.JSX
       <ListHeader
         title="QC Documents"
         icon="🗃"
-        tools={toggle}
         searchSlot={
           <OrderSelect
             id="so-qc-select"
@@ -70,7 +69,9 @@ export function SoStatusView({ toggle }: { toggle: React.ReactNode }): React.JSX
             onChange={(o) => setSelectedSo(o ? { id: o.id, code: o.code } : null)}
           />
         }
-      />
+      >
+        {tabs}
+      </ListHeader>
 
       {!selectedSo ? (
         <PageState
@@ -132,7 +133,7 @@ export function SoStatusView({ toggle }: { toggle: React.ReactNode }): React.JSX
               columns={columns}
               rows={lines}
               rowKey={(l) => l.soLineId}
-              emptyText="No lines on this SO."
+              emptyText="No lines on this SO yet."
               defaultHidden={SO_STATUS_DETAIL_IDS}
               showTotals
               totalsLabel={`Total (${lines.length} lines)`}

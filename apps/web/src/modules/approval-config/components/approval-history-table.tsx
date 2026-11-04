@@ -174,9 +174,7 @@ export function ApprovalHistoryTable(): React.JSX.Element {
         loading={isLoading}
         rowKey={(h) => h.id}
         sortFilterServer={sf}
-        emptyText={
-          search || sf.filtering ? 'No approval activity matches.' : 'No approval activity yet.'
-        }
+        emptyText={search || sf.filtering ? 'No approvals match.' : 'No approvals yet.'}
       />
       <ListFooter
         total={total}

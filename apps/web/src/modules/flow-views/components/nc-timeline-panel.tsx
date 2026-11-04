@@ -89,7 +89,7 @@ export function NcTimelinePanel({ ncId }: { ncId: string }): React.JSX.Element {
       ) : isLoading ? (
         <div className="empty-state">Loading…</div>
       ) : (
-        <Timeline events={(data?.steps ?? []).map(toEvent)} emptyText="No steps recorded yet." />
+        <Timeline events={(data?.steps ?? []).map(toEvent)} emptyText="No steps yet." />
       )}
     </Panel>
   );

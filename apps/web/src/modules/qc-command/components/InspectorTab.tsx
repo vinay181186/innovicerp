@@ -109,7 +109,7 @@ export function InspectorTab({
           columns={columns}
           rows={perf}
           rowKey={(p) => p.name}
-          emptyText="No inspections recorded yet."
+          emptyText="No inspections yet."
         />
         <TablePager pager={pager} noun="inspector" />
       </div>

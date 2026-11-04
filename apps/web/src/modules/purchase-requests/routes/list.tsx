@@ -228,15 +228,15 @@ function PurchaseRequestsListPage(): React.JSX.Element {
     return <PageState as="page" state="noaccess" />;
   }
 
+  const tabBar = <PrListTabs tab={tab} onChange={setTab} />;
+
   return (
     // `page-fill` (ADR-202): on the list tab the page fills the content area and the
     // TABLE is the only scrollbox, so the column header cannot ride off the top at the
     // last row. The Outsource Jobs tab is its own screen and keeps today's page scroll.
     <div className={tab === 'osp' ? undefined : 'page-fill'}>
-      <PrListTabs tab={tab} onChange={setTab} />
-
       {tab === 'osp' ? (
-        <OutsourceJobsView />
+        <OutsourceJobsView tabs={tabBar} />
       ) : (
         <>
           <ListHeader
@@ -280,7 +280,9 @@ function PurchaseRequestsListPage(): React.JSX.Element {
                 </Link>
               ) : null
             }
-          />
+          >
+            {tabBar}
+          </ListHeader>
 
           {isError ? (
             <PageState

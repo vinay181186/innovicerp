@@ -282,7 +282,7 @@ function QcHistoryPage(): React.JSX.Element {
               sortFilterServer={sfPend}
               rowClassName={(o) => (o.overdue ? 'qc-alert-blink' : undefined)}
               emptyText={
-                q || sfPend.filtering ? 'Nothing QC Pending matches.' : 'Nothing QC Pending.'
+                q || sfPend.filtering ? 'No QC Pending items match.' : 'No QC Pending items yet.'
               }
               rowMenu={(o) => [
                 {

@@ -347,7 +347,7 @@ function InstrumentsListPage(): React.JSX.Element {
             columns={columns}
             rows={data?.items ?? []}
             loading={isLoading}
-            emptyText={filtered ? 'No instruments match.' : 'No instruments registered yet.'}
+            emptyText={filtered ? 'No instruments match.' : 'No instruments yet.'}
             onRowClick={(ins) => setViewId(ins.id)}
             rowClassName={(ins) => (ins.isCalibrationOverdue ? ROW_TINT.late : undefined)}
           />

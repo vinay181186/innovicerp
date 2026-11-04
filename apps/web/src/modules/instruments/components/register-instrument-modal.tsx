@@ -124,7 +124,7 @@ export function RegisterInstrumentModal({
       <div className="form-grid">
         <div className="form-grp form-full">
           <label className="form-label" htmlFor="ins-item">
-            Item ★
+            Item<span className="req">★</span>
           </label>
           <SearchableSelect
             id="ins-item"
@@ -140,7 +140,7 @@ export function RegisterInstrumentModal({
         </div>
         <div className="form-grp">
           <label className="form-label" htmlFor="ins-serial">
-            Instrument Serial No. ★
+            Instrument Serial No.<span className="req">★</span>
           </label>
           <input
             id="ins-serial"

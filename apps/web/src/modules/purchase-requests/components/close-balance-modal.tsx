@@ -87,7 +87,7 @@ export function CloseBalanceModal({
       </div>
       <div className="form-grp">
         <label className="form-label" htmlFor="pr-close-balance-reason">
-          Why is the rest not being ordered? <span className="req">★</span>
+          Why is the rest not being ordered?<span className="req">★</span>
         </label>
         <textarea
           id="pr-close-balance-reason"

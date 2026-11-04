@@ -313,7 +313,7 @@ export function EditPartyGrnModal({
                 {lines.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="empty-state" style={{ padding: 14 }}>
-                      No lines.
+                      No lines yet.
                     </td>
                   </tr>
                 ) : (

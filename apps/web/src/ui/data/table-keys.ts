@@ -178,6 +178,16 @@ export const TABLE_KEYS = {
   dcRtvNcPick: 'dc-rtv-nc-pick',
   dcRtvJwpoPick: 'dc-rtv-jwpo-pick',
   dcRtvNcLines: 'dc-rtv-nc-lines',
+  /** Customer Material Stock Ledger (ADR-194): one row per movement. */
+  partyStockLedger: 'party-stock-ledger',
+  /** Design Work Log tabs: My Log, Daily View, Weekly View, Project Hours, Alerts. */
+  designWorkLogEntries: 'design-work-log-entries',
+  designWorkLogDaily: 'design-work-log-daily',
+  designWorkLogWeekly: 'design-work-log-weekly',
+  designWorkLogProjects: 'design-work-log-projects',
+  designWorkLogUnlogged: 'design-work-log-unlogged',
+  designWorkLogLowHours: 'design-work-log-low-hours',
+  designWorkLogUtilization: 'design-work-log-utilization',
 } as const;
 
 export type TableKey = (typeof TABLE_KEYS)[keyof typeof TABLE_KEYS];

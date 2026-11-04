@@ -42,6 +42,7 @@ import { OpsExpanded, opRowTint, opsColumns } from '../components/machine-loadin
 import { useMyCompany } from '../../settings/api';
 import { fetchMachineLoading, useMachineLoading } from '../api';
 import { printMachineQueue } from '../lib/print-machine-queue';
+import { useToast } from '@/ui/feedback';
 
 const searchSchema = z.object({
   m: z.string().uuid().optional(),
@@ -65,6 +66,7 @@ export const machineLoadingRoute = createRoute({
 });
 
 function MachineLoadingPage(): React.JSX.Element {
+  const toast = useToast();
   const search = machineLoadingRoute.useSearch();
   const navigate = machineLoadingRoute.useNavigate();
   // ADR-234: a row opens its Job Card only for someone who may open Job Cards.
@@ -132,10 +134,10 @@ function MachineLoadingPage(): React.JSX.Element {
         return { items: res.ops, total: res.total ?? res.ops.length };
       });
       if (!printMachineQueue({ machines, ops, company, machineId })) {
-        window.alert('Allow popups to print.');
+        toast.error('Allow popups to print.');
       }
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : 'Could not load the queue to print.');
+      toast.error(e instanceof Error ? e.message : 'Could not load the queue to print.');
     } finally {
       setPrinting(false);
     }

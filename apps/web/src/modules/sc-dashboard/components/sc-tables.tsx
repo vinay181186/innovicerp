@@ -187,7 +187,7 @@ export function PendingTracker({
           rowKey={(r) => `${r.poId}:${r.lineNo}`}
           sortFilterServer={t.sf}
           emptyText={
-            errText(t) ?? (isFiltered ? 'No pending PO lines match.' : 'No pending PO lines.')
+            errText(t) ?? (isFiltered ? 'No pending PO lines match.' : 'No pending PO lines yet.')
           }
         />
       </Panel>
@@ -222,7 +222,7 @@ export function VendorSummary({
           // grouped apart, as before), so the row's place on the page keys it.
           rowKey={(v, i) => `${v.vendorId ?? ''}:${v.vendorCode ?? 'unknown'}:${t.page}:${i}`}
           sortFilterServer={t.sf}
-          emptyText={errText(t) ?? 'No open POs'}
+          emptyText={errText(t) ?? 'No open POs yet.'}
         />
       </Panel>
       <Footer t={t} noun="vendor" />
@@ -254,7 +254,7 @@ export function SoSummary({
           loading={t.isLoading}
           rowKey={(s) => s.soRefId ?? '_unlinked_'}
           sortFilterServer={t.sf}
-          emptyText={errText(t) ?? 'No open POs'}
+          emptyText={errText(t) ?? 'No open POs yet.'}
         />
       </Panel>
       <Footer t={t} noun="order" />

@@ -246,7 +246,7 @@ function InvoiceDetailPage(): React.JSX.Element {
                   // Opens the in-app Preview box (lib/print/preview-host.tsx).
                   label: 'Preview',
                   onClick: () => {
-                    if (!printInvoice(inv, company)) window.alert('Allow popups to print.');
+                    if (!printInvoice(inv, company)) toast.error('Allow popups to print.');
                   },
                 },
                 {

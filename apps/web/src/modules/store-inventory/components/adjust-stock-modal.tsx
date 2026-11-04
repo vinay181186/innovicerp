@@ -153,7 +153,7 @@ export function AdjustStockModal({
         </div>
         <div className="form-grp">
           <label className="form-label">
-            Quantity <span className="req">★</span>
+            Quantity<span className="req">★</span>
           </label>
           <input
             type="number"
@@ -168,7 +168,7 @@ export function AdjustStockModal({
         {revOpts.required ? (
           <div className="form-grp">
             <label className="form-label" htmlFor="adjust-drawing-rev">
-              Drawing Rev <span className="req">★</span>
+              Drawing Rev<span className="req">★</span>
             </label>
             <DrawingRevPicker
               id="adjust-drawing-rev"
@@ -180,7 +180,7 @@ export function AdjustStockModal({
         ) : null}
         <div className="form-grp form-full">
           <label className="form-label">
-            Reason / Remarks <span className="req">★</span>
+            Reason / Remarks<span className="req">★</span>
           </label>
           <input
             type="text"

@@ -35,7 +35,7 @@ const STRIP: React.CSSProperties = {
   alignItems: 'center',
 };
 
-export function TpiView(props: { title?: string }): React.JSX.Element {
+export function TpiView(props: { title?: string; tabs?: React.ReactNode }): React.JSX.Element {
   const [openId, setOpenId] = useState<string | null>(null);
 
   // Search over every text column the two lists show (JC, SO, POL, item code /
@@ -125,7 +125,9 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
             ⬇ Export
           </button>
         }
-      />
+      >
+        {props.tabs}
+      </ListHeader>
 
       {isLoading ? (
         <div className="panel">

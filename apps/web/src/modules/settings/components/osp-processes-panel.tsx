@@ -319,7 +319,7 @@ export function OspProcessesPanel(): React.JSX.Element {
         >
           <div className="form-grp">
             <label className="form-label">
-              Process Name <span className="req">★</span>
+              Process Name<span className="req">★</span>
             </label>
             <input
               className="innovic-input"

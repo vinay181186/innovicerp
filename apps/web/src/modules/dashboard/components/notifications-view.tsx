@@ -52,10 +52,10 @@ export function NotificationsView(): React.JSX.Element {
         state="empty"
         message={
           filter === 'unread'
-            ? 'No unread notifications.'
+            ? 'No unread notifications yet.'
             : filter === 'read'
-              ? 'No read notifications.'
-              : 'No notifications.'
+              ? 'No read notifications yet.'
+              : 'No notifications yet.'
         }
       />
     );

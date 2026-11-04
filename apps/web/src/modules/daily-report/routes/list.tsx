@@ -24,6 +24,7 @@ import { dailyGroupKey, fetchFullDailyReport, useDailyReport } from '../api';
 import { DAILY_REPORT_HIDDEN, dailyReportColumnsFor } from '../components/daily-report-columns';
 import { printDailyReport } from '../lib/print-daily-report';
 import { SearchableSelect } from '@/ui/forms';
+import { useToast } from '@/ui/feedback';
 
 const searchSchema = z.object({
   date: z.string().optional(),
@@ -41,6 +42,7 @@ export const dailyReportRoute = createRoute({
 });
 
 function DailyReportPage(): React.JSX.Element {
+  const toast = useToast();
   const search = dailyReportRoute.useSearch();
   const navigate = dailyReportRoute.useNavigate();
   // IST today, not the UTC date: before 05:30 IST the UTC date is yesterday.
@@ -78,7 +80,7 @@ function DailyReportPage(): React.JSX.Element {
     try {
       return await fetchFullDailyReport({ date, machineId: machineId || undefined, orderCode });
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : 'Could not load the report to print.');
+      toast.error(e instanceof Error ? e.message : 'Could not load the report to print.');
       return null;
     } finally {
       setPrinting(false);
@@ -98,7 +100,7 @@ function DailyReportPage(): React.JSX.Element {
     const full = await loadFullDay();
     if (!full) return;
     if (!printDailyReport({ report: full, machineLabel: printLabel(machineLabel), company })) {
-      window.alert('Allow popups to print.');
+      toast.error('Allow popups to print.');
     }
   };
 
@@ -123,7 +125,7 @@ function DailyReportPage(): React.JSX.Element {
       },
     };
     if (!printDailyReport({ report: scoped, machineLabel: printLabel(g.machineCode), company })) {
-      window.alert('Allow popups to print.');
+      toast.error('Allow popups to print.');
     }
   };
 

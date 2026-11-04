@@ -27,9 +27,12 @@ import { useJwDcPrint } from './use-jwdc-print';
 const TABLE_KEY = TABLE_KEYS.jwDcOutward;
 
 export function OutwardView({
+  tabs,
   forJwId,
   initialSearch,
 }: {
+  /** The page's tab strip, drawn under this view's header. */
+  tabs?: React.ReactNode;
   forJwId?: string | undefined;
   /** Seeded ONCE from the route's ?search (deep link); keystrokes stay local. */
   initialSearch?: string | undefined;
@@ -119,7 +122,9 @@ export function OutwardView({
             </Link>
           ) : null
         }
-      />
+      >
+        {tabs}
+      </ListHeader>
 
       {isError ? (
         <PageState
@@ -137,7 +142,7 @@ export function OutwardView({
             rows={data?.items ?? []}
             rowKey={(dc) => dc.lineId}
             loading={isLoading}
-            empty={term || sf.filtering ? 'No outward DC lines match.' : 'No outward DCs yet.'}
+            empty={term || sf.filtering ? 'No outward DC lines match.' : 'No outward DC lines yet.'}
             onRowClick={(dc) => void navigate({ to: '/jw-dc/$id', params: { id: dc.docId } })}
             // Green when every unit is back, amber while a return is still
             // partial. A freshly-sent DC (nothing back yet) stays untinted.

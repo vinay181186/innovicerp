@@ -1350,16 +1350,16 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                   <tr>
                     <th style={{ width: '4%' }}>Ln</th>
                     <th style={{ width: '22%' }}>
-                      Item Code <span className="req">★</span> · Drawing Rev{' '}
+                      Item Code<span className="req">★</span> · Drawing Rev{' '}
                       <span className="req">★</span>
                     </th>
                     <th style={{ width: '14%' }}>Item Name</th>
                     <th style={{ width: '7%', color: 'var(--purple)' }}>
-                      POL <span className="req">★</span>
+                      POL<span className="req">★</span>
                     </th>
                     <th style={{ width: '5%' }}>UOM</th>
                     <th className="th-num" style={{ width: '7%' }}>
-                      Order Qty <span className="req">★</span>
+                      Order Qty<span className="req">★</span>
                     </th>
                     <th className="th-num" style={{ width: '8%' }}>
                       Rate (₹)

@@ -95,7 +95,13 @@ export function TaskFormModal({
     >
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Title ★">
+          <Field
+            label={
+              <>
+                Title<span className="req">★</span>
+              </>
+            }
+          >
             <input
               className="innovic-input"
               value={title}

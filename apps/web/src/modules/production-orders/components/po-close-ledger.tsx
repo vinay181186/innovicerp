@@ -71,7 +71,7 @@ export function PoCloseLedger({
   if (po.closes.length === 0) {
     return (
       <div className="empty-state" style={{ fontSize: 12 }}>
-        Nothing closed yet.
+        No closes yet.
       </div>
     );
   }

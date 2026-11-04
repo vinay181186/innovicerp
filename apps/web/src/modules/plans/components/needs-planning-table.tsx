@@ -203,7 +203,7 @@ export function NeedsPlanningTable(): React.JSX.Element {
             empty={
               <>
                 <div className="empty-icon">✅</div>
-                {term || sf.filtering ? 'No SO lines match.' : 'No SO lines to plan.'}
+                {term || sf.filtering ? 'No SO lines match.' : 'No SO lines to plan yet.'}
               </>
             }
             // The item's `to` carries ?soId=; Planning reads it as search, so

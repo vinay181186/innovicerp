@@ -334,7 +334,7 @@ export function StopOpModal({
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
         <div className="form-grp" style={{ width: 150 }}>
           <label className="form-label" htmlFor="stop-op-date">
-            Log Date <span className="req">★</span>
+            Log Date<span className="req">★</span>
           </label>
           <input
             id="stop-op-date"
@@ -348,7 +348,7 @@ export function StopOpModal({
         </div>
         <div className="form-grp" style={{ width: 120 }}>
           <label className="form-label" htmlFor="stop-op-time">
-            Time <span className="req">★</span>
+            Time<span className="req">★</span>
           </label>
           <input
             id="stop-op-time"
@@ -361,7 +361,7 @@ export function StopOpModal({
         </div>
         <div className="form-grp" style={{ width: 140 }}>
           <label className="form-label" htmlFor="stop-op-shift">
-            Shift <span className="req">★</span>
+            Shift<span className="req">★</span>
           </label>
           <select
             id="stop-op-shift"
@@ -383,7 +383,7 @@ export function StopOpModal({
 
       <div className="form-grp" style={{ margin: 0 }}>
         <label className="form-label" htmlFor="stop-op-operator">
-          Operator <span className="req">★</span>
+          Operator<span className="req">★</span>
         </label>
         <input
           id="stop-op-operator"
@@ -408,7 +408,7 @@ export function StopOpModal({
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
         <div className="form-grp" style={{ width: 150 }}>
           <label className="form-label" htmlFor="stop-op-qty">
-            Completed <span className="req">★</span>
+            Completed<span className="req">★</span>
           </label>
           <input
             id="stop-op-qty"

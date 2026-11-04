@@ -233,7 +233,7 @@ function ActivityLogListPage() {
               search.toDate ||
               sf.filtering
                 ? 'No entries match.'
-                : 'No activity yet.'
+                : 'No entries yet.'
             }
             renderExpanded={(e) => (expanded.has(e.id) ? <ActivityLogExpand entry={e} /> : null)}
             onToggleExpanded={(e) => toggleExpand(e.id)}

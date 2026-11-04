@@ -36,11 +36,17 @@ function SheetGridHead(): React.JSX.Element {
   return (
     <div className="dl-cols dl-head" aria-hidden>
       <span className="dl-c">Sr No</span>
-      <span className="dl-c">Start Time *</span>
-      <span className="dl-c">Stop Time *</span>
+      <span className="dl-c">
+        Start Time<span className="req">★</span>
+      </span>
+      <span className="dl-c">
+        Stop Time<span className="req">★</span>
+      </span>
       <span className="dl-c dl-dur">Working Hours</span>
       <span className="dl-c">SO / JWSO</span>
-      <span className="dl-c">Working On *</span>
+      <span className="dl-c">
+        Working On<span className="req">★</span>
+      </span>
       <span className="dl-c" />
     </div>
   );

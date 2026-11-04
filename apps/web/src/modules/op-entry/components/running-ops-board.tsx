@@ -99,7 +99,7 @@ export function RunningOpsBoard(): React.JSX.Element {
           loading={runQ.isLoading}
           sortFilterServer={sf}
           defaultHidden={RUNNING_OPS_DEFAULT_HIDDEN}
-          emptyText={sf.filtering ? 'No running operations match.' : 'No operations running.'}
+          emptyText={sf.filtering ? 'No running operations match.' : 'No running operations.'}
           // Stop stays the ⋯ row action it has always been — shown only to a
           // user with op_entry entry, busy-locked while a stop is in flight.
           rowMenu={

@@ -1,16 +1,28 @@
 // Design Work Log — Daily View tab (ADR-203 frozen header). Chrome: the date
-// navigator + engineer picker and the engineer hour tiles (+ Total). The day's
+// navigator + engineer picker, whose options carry each engineer's hours (no
+// tile row on a list, owner 2026-11-03); the Total sits in the ListFooter. The day's
 // entries — formerly one block of cards per engineer — are ONE filled table
 // with a group heading per Design Engineer carrying that engineer's hours
 // (≥ 6 h green, else amber, as before).
 
 import type { DesignWorkLogEntry } from '@innovic/shared';
 import { useMemo, useState } from 'react';
+import { matchesSearchTerm } from '@/components/shared/search-match';
 import { fmtDate } from '@/lib/date';
 import { DataTable, Panel } from '@/ui/data';
 import type { DataTableColumn } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
+import { ListFooter } from '@/ui/layout';
 import { useDesignWorkLogList } from '../api';
-import { addDays, CategoryText, dayName, todayStr, TrackerBadge } from './work-log-shared';
+import {
+  addDays,
+  CategoryText,
+  dayName,
+  todayStr,
+  TrackerBadge,
+  useReportCount,
+  type TabListProps,
+} from './work-log-shared';
 import { SearchableSelect } from '@/ui/forms';
 
 const COLUMNS: DataTableColumn<DesignWorkLogEntry>[] = [
@@ -62,7 +74,7 @@ const COLUMNS: DataTableColumn<DesignWorkLogEntry>[] = [
   },
 ];
 
-export function DailyTab(): React.JSX.Element {
+export function DailyTab({ term, onCount }: TabListProps): React.JSX.Element {
   const [viewDate, setViewDate] = useState(todayStr());
   const [viewEng, setViewEng] = useState<string>('All');
   const { data, isLoading } = useDesignWorkLogList({
@@ -73,8 +85,8 @@ export function DailyTab(): React.JSX.Element {
   });
   const allDayLogs = useMemo(() => data?.items ?? [], [data?.items]);
 
-  // Legacy L7994-7997: the engineer cards always show that engineer's full day,
-  // while the entry list and the Total tile follow the selected engineer.
+  // Legacy L7994-7997: the engineer options always show that engineer's full day,
+  // while the entry list and the Total follow the selected engineer.
   const logs =
     viewEng === 'All' ? allDayLogs : allDayLogs.filter((l) => l.engineerText === viewEng);
   const totalHrs = logs.reduce((s, l) => s + l.hours, 0);
@@ -102,6 +114,14 @@ export function DailyTab(): React.JSX.Element {
     }
     return { rows: Object.values(byEng).flat(), engHrs: totals };
   }, [logs]);
+
+  const shownRows = rows.filter((l) =>
+    matchesSearchTerm(
+      [l.engineerText, l.projectName, l.taskText ?? 'General', l.category, l.hours, l.description],
+      term,
+    ),
+  );
+  useReportCount(onCount, isLoading ? undefined : shownRows.length);
 
   return (
     <>
@@ -142,74 +162,27 @@ export function DailyTab(): React.JSX.Element {
           ariaLabel="Design Engineer"
           value={viewEng === 'All' ? null : viewEng}
           onChange={(id) => setViewEng(id ?? 'All')}
-          options={engineers.map((e) => ({ id: e, name: e }))}
+          options={engineers.map((e) => ({
+            id: e,
+            name: `${e} · ${allDayLogs
+              .filter((l) => l.engineerText === e)
+              .reduce((s, l) => s + l.hours, 0)
+              .toFixed(1)}h`,
+          }))}
           valueLabel={viewEng === 'All' ? undefined : viewEng}
           placeholder="All Design Engineers"
           clearable
         />
       </div>
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))',
-          gap: 10,
-          marginBottom: 'var(--panel-gap)',
-        }}
-      >
-        {engineers.map((eng) => {
-          const hrs = allDayLogs
-            .filter((l) => l.engineerText === eng)
-            .reduce((s, l) => s + l.hours, 0);
-          return (
-            <div
-              key={eng}
-              className="panel"
-              style={{
-                textAlign: 'center',
-                padding: 10,
-                marginBottom: 0,
-                cursor: 'pointer',
-                border: `1px solid ${viewEng === eng ? 'var(--blue)' : 'var(--border)'}`,
-              }}
-              onClick={() => setViewEng(viewEng === eng ? 'All' : eng)}
-            >
-              <div
-                style={{
-                  fontSize: 18,
-                  fontWeight: 700,
-                  fontFamily: 'var(--mono)',
-                  color: hrs >= 6 ? 'var(--green)' : hrs > 0 ? 'var(--amber)' : 'var(--red)',
-                }}
-              >
-                {hrs.toFixed(1)}h
-              </div>
-              <div style={{ fontSize: 11, color: 'var(--text3)' }}>{eng}</div>
-            </div>
-          );
-        })}
-        <div className="panel" style={{ textAlign: 'center', padding: 10, marginBottom: 0 }}>
-          <div
-            style={{
-              fontSize: 18,
-              fontWeight: 700,
-              fontFamily: 'var(--mono)',
-              color: 'var(--blue)',
-            }}
-          >
-            {totalHrs.toFixed(1)}h
-          </div>
-          <div style={{ fontSize: 11, color: 'var(--text3)' }}>Total</div>
-        </div>
-      </div>
-
       <Panel fill bodyPadding="none">
         <DataTable<DesignWorkLogEntry>
+          tableKey={TABLE_KEYS.designWorkLogDaily}
           columns={COLUMNS}
-          rows={rows}
+          rows={shownRows}
           rowKey={(l) => l.id}
           loading={isLoading}
-          emptyText="No entries yet."
+          emptyText={term.trim() || viewEng !== 'All' ? 'No entries match.' : 'No entries yet.'}
           groupRow={(l, _i, prev) => {
             if (prev && prev.engineerText === l.engineerText) return null;
             const et = engHrs.get(l.engineerText) ?? 0;
@@ -228,6 +201,13 @@ export function DailyTab(): React.JSX.Element {
           }}
         />
       </Panel>
+      <ListFooter
+        total={rows.length}
+        shown={shownRows.length}
+        noun="entry"
+        nounPlural="entries"
+        summary={`Total ${totalHrs.toFixed(1)}h`}
+      />
     </>
   );
 }

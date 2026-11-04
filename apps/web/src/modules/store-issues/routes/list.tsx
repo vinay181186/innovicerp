@@ -24,6 +24,7 @@ import { useStoreIssueLines } from '../api';
 import { issueRegisterColumns } from '../components/issue-register-columns';
 import { IssueViewModal } from '../components/issue-view-modal';
 import { useStoreIssuePrint } from '../components/use-store-issue-print';
+import { TabStrip } from '@/ui/navigation';
 
 // Deep-link seed for Global Search (no detail page here): `?tab=tools&search=
 // TIS-00003` opens the Tool Issues tab with its box pre-filled. Read ONCE into
@@ -141,47 +142,31 @@ function StoreIssuesListPage(): React.JSX.Element {
     );
   }
 
+  const tabBar = (
+    <TabStrip
+      label="Issue type"
+      tabs={[
+        ...(showItemsTab ? [{ key: 'items', label: 'Item Issues' }] : []),
+        ...(showToolsTab ? [{ key: 'tools', label: 'Tool Issues' }] : []),
+      ]}
+      activeKey={activeTab}
+      onChange={(k) => setTab(k === 'tools' ? 'tools' : 'items')}
+    />
+  );
+
   return (
     // `page-fill` (ADR-202): on the list tab the page fills the content area and the
     // TABLE is the only scrollbox, so the column header cannot ride off the top at the
     // last row. The Tool Issues tab is its own screen and keeps today's page scroll.
     <div className={activeTab === 'tools' ? undefined : 'page-fill'}>
-      <div
-        style={{
-          display: 'flex',
-          gap: 4,
-          borderBottom: '1px solid var(--border)',
-          marginBottom: 14,
-        }}
-      >
-        {(['items', 'tools'] as const)
-          .filter((t) => (t === 'items' ? showItemsTab : showToolsTab))
-          .map((t) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => setTab(t)}
-              style={{
-                background: 'none',
-                border: 'none',
-                borderBottom: activeTab === t ? '2px solid var(--cyan)' : '2px solid transparent',
-                color: activeTab === t ? 'var(--cyan)' : 'var(--text3)',
-                fontSize: 12,
-                fontWeight: 700,
-                padding: '6px 12px',
-                cursor: 'pointer',
-                marginBottom: -1,
-              }}
-            >
-              {t === 'items' ? 'Item Issues' : 'Tool Issues'}
-            </button>
-          ))}
-      </div>
-
       {activeTab === 'tools' ? (
         // key: a new ?search landing while already on this page remounts the
         // view so it re-seeds; nothing else changes the key.
-        <ToolIssueRegisterView key={routeSearch.search ?? ''} initialSearch={routeSearch.search} />
+        <ToolIssueRegisterView
+          key={routeSearch.search ?? ''}
+          initialSearch={routeSearch.search}
+          tabs={tabBar}
+        />
       ) : (
         <>
           {/* THE list header (ui/layout ListHeader): title · count · search ·
@@ -202,7 +187,9 @@ function StoreIssuesListPage(): React.JSX.Element {
                 </Link>
               ) : null
             }
-          />
+          >
+            {tabBar}
+          </ListHeader>
 
           {isError ? (
             <PageState

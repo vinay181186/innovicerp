@@ -1266,7 +1266,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
           <div className="form-grid">
             <div className="form-grp">
               <label className="form-label" style={{ color: 'var(--purple)' }}>
-                Vendor ★
+                Vendor<span className="req">★</span>
               </label>
               <SearchableSelect
                 id="plan-fo-vend"
@@ -1293,7 +1293,9 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
               />
             </div>
             <div className="form-grp form-full">
-              <label className="form-label">Process Description ★</label>
+              <label className="form-label">
+                Process Description<span className="req">★</span>
+              </label>
               <input
                 value={foProcess}
                 onChange={(e) => setFoProcess(e.target.value)}
@@ -1341,7 +1343,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
           <div className="form-grid">
             <div className="form-grp">
               <label className="form-label" style={{ color: 'var(--green2)' }}>
-                Vendor ★
+                Vendor<span className="req">★</span>
               </label>
               <SearchableSelect
                 id="plan-dp-vend"
@@ -1407,7 +1409,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
         <div>
           {requiredDocs.length === 0 ? (
             <div className="empty-state" style={{ padding: 14, fontSize: 12 }}>
-              — No document requirements. Click + Add Document.
+              No document requirements yet. Click + Add Document.
             </div>
           ) : (
             <>
@@ -1420,7 +1422,9 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                 <thead>
                   <tr style={{ background: 'var(--bg4)' }}>
                     <th style={{ width: 44, textAlign: 'center' }}>Sr No</th>
-                    <th>Document Name ★</th>
+                    <th>
+                      Document Name<span className="req">★</span>
+                    </th>
                     <th style={{ width: 180 }}>Requirement</th>
                     <th style={{ width: 56 }} />
                   </tr>

@@ -13,7 +13,7 @@ import { itemCodeWithRev } from '@/lib/item-code';
 import { Badge } from '@/ui/core';
 import { DataTable, type DataTableColumn } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
-import { ConfirmDialog } from '@/ui/feedback';
+import { ConfirmDialog, useToast } from '@/ui/feedback';
 import { saveQcDoc, useDeleteQcDocument } from '../api';
 import {
   entryLabel,
@@ -176,6 +176,7 @@ export function DossierFileSheet({
   onUpload: (t: UploadTarget) => void;
   refreshing?: ReadonlySet<string>;
 }): React.JSX.Element {
+  const toast = useToast();
   const del = useDeleteQcDocument();
   const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string } | null>(null);
   const [delErr, setDelErr] = useState<string | null>(null);
@@ -297,7 +298,13 @@ export function DossierFileSheet({
               <>
                 <Sym
                   title="View"
-                  onClick={() => void openStoragePath(r.file.storagePath, orderCode)}
+                  onClick={() =>
+                    void openStoragePath(r.file.storagePath, orderCode).catch((e) =>
+                      toast.error(
+                        e instanceof Error ? e.message : 'Could not open file. Try again.',
+                      ),
+                    )
+                  }
                 >
                   👁
                 </Sym>
@@ -306,7 +313,7 @@ export function DossierFileSheet({
                     title="Download"
                     onClick={() =>
                       void saveQcDoc(r.file.storagePath, r.file.fileName, orderCode).catch((e) =>
-                        window.alert(e instanceof Error ? e.message : 'Could not download.'),
+                        toast.error(e instanceof Error ? e.message : 'Could not download.'),
                       )
                     }
                   >

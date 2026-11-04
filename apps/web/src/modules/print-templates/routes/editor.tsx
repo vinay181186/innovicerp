@@ -523,7 +523,7 @@ function PrintTemplatesPage(): React.JSX.Element {
                   : undefined
             }
             onClick={() => {
-              if (!openTestPrint(doc, allTemplates)) window.alert('Allow popups to print.');
+              if (!openTestPrint(doc, allTemplates)) toast.error('Allow popups to print.');
             }}
           >
             <Printer size={13} /> Test Print

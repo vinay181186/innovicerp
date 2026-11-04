@@ -626,7 +626,7 @@ function PlanDetailPage(): React.JSX.Element {
                 {plan.ops.length === 0 ? (
                   <tr>
                     <td colSpan={priceHidden ? 7 : 8} className="empty-state">
-                      No operations on this plan.
+                      No operations on this plan yet.
                     </td>
                   </tr>
                 ) : (

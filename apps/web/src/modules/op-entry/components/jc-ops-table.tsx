@@ -138,7 +138,7 @@ export function JcOpsTable({ ops, selectedOpId, onSelect, onOpenEntry }: Props):
           {ops.length === 0 ? (
             <tr>
               <td colSpan={9} className="empty-state">
-                No ops on this job card.
+                No ops on this job card yet.
               </td>
             </tr>
           ) : (

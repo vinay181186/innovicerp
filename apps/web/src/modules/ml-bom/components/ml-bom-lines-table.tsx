@@ -112,7 +112,7 @@ export function MlBomLinesTable(props: Props): React.JSX.Element {
           {lines.length === 0 ? (
             <tr>
               <td colSpan={COLS} className="empty-state">
-                No lines.
+                No lines yet.
               </td>
             </tr>
           ) : null}

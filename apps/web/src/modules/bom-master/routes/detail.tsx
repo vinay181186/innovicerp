@@ -488,7 +488,7 @@ function BomMasterDetailPage(): React.JSX.Element {
               You can restore it from Trash.
               <span className="form-grp" style={{ display: 'block', marginTop: 10 }}>
                 <label className="form-label" htmlFor="bom-delete-reason">
-                  Reason <span className="req">★</span>
+                  Reason<span className="req">★</span>
                 </label>
                 <textarea
                   id="bom-delete-reason"

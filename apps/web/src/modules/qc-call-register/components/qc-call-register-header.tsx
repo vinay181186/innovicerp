@@ -1,6 +1,6 @@
 // QC Call Register — the list header band (title · count · the register totals
-// summary line · search · Stage filter · Mine toggle · the Pending|Completed
-// switch · Full History · Export). Split out of routes/index.tsx so that file
+// summary line · search · Stage filter · Mine toggle · Full History · Export ·
+// the Pending|Completed tabs). Split out of routes/index.tsx so that file
 // stays under the 400-line ceiling. Presentational — every lever is a prop.
 //
 // ADR-251: a GRN Type filter beside Stage, and an 'incoming' mode for the
@@ -17,34 +17,7 @@ import {
 import { Link } from '@tanstack/react-router';
 import { ListHeader } from '@/ui/layout';
 import { QC_STAGES, type QcStage, type QcView, type StageStat } from './qc-sheet';
-
-/** The Pending | Completed segmented toggle: the chosen side filled dark, the
- *  other outlined — the mockup's two-button switch on the .btn base. */
-function viewBtn(
-  v: QcView,
-  label: string,
-  view: QcView,
-  setView: (v: QcView) => void,
-): React.JSX.Element {
-  const on = view === v;
-  return (
-    <button
-      key={v}
-      type="button"
-      className="btn btn-sm"
-      aria-pressed={on}
-      onClick={() => setView(v)}
-      style={{
-        background: on ? 'var(--text)' : 'var(--bg2)',
-        color: on ? 'var(--bg2)' : 'var(--text)',
-        border: `1px solid ${on ? 'var(--text)' : 'var(--border2)'}`,
-        fontSize: 12,
-      }}
-    >
-      {label}
-    </button>
-  );
-}
+import { TabStrip } from '@/ui/navigation';
 
 /** Which screen the register body is drawn for (ADR-251). */
 export type QcScreenMode = 'register' | 'incoming';
@@ -74,6 +47,8 @@ export function QcCallRegisterHeader(props: {
   isEmpty: boolean;
   onExport: () => void;
   orderFilter: ReactNode;
+  /** The register's QC Calls | TPI tabs (none on Incoming QC). */
+  tabs?: ReactNode;
 }): React.JSX.Element {
   const { mode, view, stage, stageStats, mineOnly, search, grnType, grnTypeStats } = props;
   const incoming = mode === 'incoming';
@@ -163,10 +138,6 @@ export function QcCallRegisterHeader(props: {
       }
       tools={
         <>
-          <div style={{ display: 'flex', gap: 4 }}>
-            {viewBtn('pending', 'Pending', view, props.setView)}
-            {viewBtn('completed', 'Completed', view, props.setView)}
-          </div>
           {view === 'completed' && !incoming ? (
             <Link
               to="/qc-history"
@@ -188,6 +159,16 @@ export function QcCallRegisterHeader(props: {
         </>
       }
     >
+      {props.tabs}
+      <TabStrip
+        label="QC call status"
+        tabs={[
+          { key: 'pending', label: 'Pending' },
+          { key: 'completed', label: 'Completed' },
+        ]}
+        activeKey={view}
+        onChange={(k) => props.setView(k === 'completed' ? 'completed' : 'pending')}
+      />
       <div className="text3" style={{ fontSize: 12 }}>
         {props.pendingCount} calls · {props.pcsPending} pcs QC Pending · {props.completeCount}{' '}
         completed

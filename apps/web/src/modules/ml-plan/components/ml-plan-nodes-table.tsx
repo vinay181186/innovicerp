@@ -92,7 +92,7 @@ export function MlPlanNodesTable({ nodes }: { nodes: MlPlanNode[] }): React.JSX.
       rowKey={(n) => n.id}
       density="compact"
       autoWidth
-      emptyText="No lines."
+      emptyText="No lines yet."
     />
   );
 }

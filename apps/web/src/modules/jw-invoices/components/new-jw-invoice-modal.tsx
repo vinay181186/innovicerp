@@ -185,7 +185,13 @@ export function NewJwInvoiceModal({
     >
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <div style={{ gridColumn: 'span 2' }}>
-          <Field label="JWSO No. ★">
+          <Field
+            label={
+              <>
+                JWSO No.<span className="req">★</span>
+              </>
+            }
+          >
             <SearchableSelect
               id="jwinv-jwso"
               value={jwId}
@@ -216,7 +222,13 @@ export function NewJwInvoiceModal({
         </div>
 
         <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Ln ★">
+          <Field
+            label={
+              <>
+                Ln<span className="req">★</span>
+              </>
+            }
+          >
             <SearchableSelect
               value={lineId}
               disabled={!jwId || jwDetailQ.isFetching || billableQ.isFetching}
@@ -254,9 +266,10 @@ export function NewJwInvoiceModal({
         </Field>
         <Field
           label={
-            pickedBillable
-              ? `Invoice Qty ★ (To Invoice ${pickedBillable.toInvoiceQty})`
-              : 'Invoice Qty ★'
+            <>
+              Invoice Qty<span className="req">★</span>
+              {pickedBillable ? ` (To Invoice ${pickedBillable.toInvoiceQty})` : null}
+            </>
           }
         >
           <input

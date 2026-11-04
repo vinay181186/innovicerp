@@ -404,7 +404,7 @@ export function OrderDetail({
           renderLink={renderRowMenuLink}
           rowMenuLabel={(l) => `Actions for line ${l.lineNo}`}
           rowMenu={(line) => planningLineMenu(menuArgs(line))}
-          empty="This order has no lines."
+          empty="No lines yet."
         />
       </div>
 

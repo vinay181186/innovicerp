@@ -159,7 +159,7 @@ export function RaisePrModal({ so, line, onClose, onRaised }: Props): JSX.Elemen
             htmlFor="raise-pr-qty"
             style={{ color: 'var(--purple)', fontWeight: 700, fontSize: 14 }}
           >
-            PR Qty ★
+            PR Qty<span className="req">★</span>
           </label>
           <input
             id="raise-pr-qty"

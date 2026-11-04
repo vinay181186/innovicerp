@@ -16,12 +16,16 @@
 // the loop index) and the user's saved layout survives a reload.
 // Several legacy columns are not sourceable from our payload at all; they are
 // reported rather than fabricated. See the refactor report / ISSUE-088.
+//
+// Search: the API has no search parameter, so the box narrows the records of
+// THIS page only (every column the server sent).
 
 import type { AlertColumn, AlertRow } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { z } from 'zod';
+import { matchesSearchTerm } from '@/components/shared/search-match';
 import { fmtDate } from '@/lib/date';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -85,6 +89,7 @@ function AlertDrillPage() {
     [routeNavigate],
   );
   useClampPage(page, data?.alert.count, gotoPage);
+  const [term, setTerm] = useState('');
 
   const notFound = error?.message?.toLowerCase().includes('not found') ?? false;
 
@@ -100,6 +105,9 @@ function AlertDrillPage() {
         icon="🔔"
         count={data ? data.alert.count : undefined}
         noun="record"
+        search={term}
+        onSearch={setTerm}
+        searchPlaceholder="Search this page: any column…"
         tools={
           <Link to="/alerts" className="btn btn-ghost btn-sm">
             ← Back to Alerts
@@ -130,10 +138,19 @@ function AlertDrillPage() {
             <DataTable
               tableKey={TABLE_KEYS.alertDrill}
               columns={buildColumns(data.columns)}
-              rows={data.alert.records}
+              rows={data.alert.records.filter((row) =>
+                matchesSearchTerm(
+                  data.columns.map((c) => {
+                    const v = row[c.key];
+                    if (v == null) return null;
+                    return c.type === 'date' ? fmtDate(String(v), '') : String(v);
+                  }),
+                  term,
+                ),
+              )}
               rowKey={(_, i) => `row-${offset + i}`}
               sortFilter={false}
-              empty="✅ Nothing pending"
+              emptyText={term.trim() ? 'No records match.' : 'No records yet.'}
               isRowClickable={(row) => rowNavPage(row) !== null}
               onRowClick={(row) => {
                 const to = rowNavPage(row);

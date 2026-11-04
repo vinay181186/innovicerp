@@ -38,6 +38,8 @@ type ModalState =
   | { kind: 'edit'; capa: CapaRecord; readOnly: boolean };
 
 export function CapaView(props: {
+  /** The page's tab strip, drawn under this view's header. */
+  tabs?: React.ReactNode;
   title?: string;
   initialSearch?: string | undefined;
   /** Open the CAPA named by initialSearch in its 5-step edit (not read-only) —
@@ -148,7 +150,9 @@ export function CapaView(props: {
             </button>
           ) : null
         }
-      />
+      >
+        {props.tabs}
+      </ListHeader>
 
       {isLoading ? (
         <div className="panel">

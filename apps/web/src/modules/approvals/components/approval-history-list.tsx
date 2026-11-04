@@ -162,8 +162,8 @@ export function ApprovalHistoryList({
                 searching || type !== ALL_TYPES
                   ? 'No decisions match.'
                   : decision === 'approved'
-                    ? 'Nothing approved yet.'
-                    : 'Nothing rejected yet.'
+                    ? 'No approved decisions yet.'
+                    : 'No rejected decisions yet.'
               }
             />
           </Panel>

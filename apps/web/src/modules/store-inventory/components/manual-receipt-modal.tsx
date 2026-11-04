@@ -147,7 +147,7 @@ export function ManualReceiptModal({ onClose }: { onClose: () => void }): React.
       <div className="form-grid">
         <div className="form-grp">
           <label className="form-label" htmlFor="mr-item">
-            Item <span className="req">★</span>
+            Item<span className="req">★</span>
           </label>
           <SearchableSelect
             id="mr-item"
@@ -176,7 +176,7 @@ export function ManualReceiptModal({ onClose }: { onClose: () => void }): React.
         {revOpts.required ? (
           <div className="form-grp">
             <label className="form-label" htmlFor="mr-drawing-rev">
-              Drawing Rev <span className="req">★</span>
+              Drawing Rev<span className="req">★</span>
             </label>
             <DrawingRevPicker
               id="mr-drawing-rev"
@@ -188,7 +188,7 @@ export function ManualReceiptModal({ onClose }: { onClose: () => void }): React.
         ) : null}
         <div className="form-grp">
           <label className="form-label">
-            Quantity <span className="req">★</span>
+            Quantity<span className="req">★</span>
             {picked?.uom ? <span className="text3"> ({picked.uom})</span> : null}
           </label>
           <input

@@ -162,7 +162,7 @@ export function OutsourceBalanceModal({
               color: 'var(--amber2)',
             }}
           >
-            Qty to Outsource <span className="req">★</span>
+            Qty to Outsource<span className="req">★</span>
           </div>
           <input
             type="number"
@@ -176,7 +176,7 @@ export function OutsourceBalanceModal({
         </div>
         <div style={{ flex: '1 1 200px' }}>
           <div className="text3" style={{ fontSize: 11, marginBottom: 4 }}>
-            Vendor <span className="req">★</span>
+            Vendor<span className="req">★</span>
           </div>
           <SearchableSelect
             id="jcOutsourceBalanceVendor"

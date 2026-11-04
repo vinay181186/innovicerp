@@ -140,7 +140,7 @@ export function ChangeMachineModal({
       </div>
       <div>
         <div className="text3" style={{ fontSize: 11, marginBottom: 4 }}>
-          Assign Machine <span className="req">★</span>
+          Assign Machine<span className="req">★</span>
         </div>
         <SearchableSelect
           value={machineId || null}

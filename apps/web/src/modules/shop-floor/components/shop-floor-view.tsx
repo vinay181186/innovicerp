@@ -134,7 +134,7 @@ export function ShopFloorView(): React.JSX.Element {
         <div className="panel">
           <div className="empty-state" style={{ padding: 56 }}>
             <div className="empty-icon">🏭</div>
-            <b>No operations running.</b>
+            <b>No running operations.</b>
             <br />
             <span className="text3" style={{ fontSize: 12, marginTop: 8, display: 'block' }}>
               Use Op Entry → ▶ Start Operation to begin.

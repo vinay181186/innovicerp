@@ -486,7 +486,7 @@ export function MlBomImportDialog({ onClose }: MlBomImportDialogProps): React.JS
                 density="compact"
                 autoWidth
                 maxHeight="36vh"
-                emptyText="No lines."
+                emptyText="No lines yet."
               />
             ) : null}
             {msgs.length > 0 ? (
@@ -497,7 +497,7 @@ export function MlBomImportDialog({ onClose }: MlBomImportDialogProps): React.JS
                 density="compact"
                 autoWidth
                 maxHeight="28vh"
-                emptyText="No messages."
+                emptyText="No messages yet."
               />
             ) : null}
           </>
@@ -538,7 +538,7 @@ export function MlBomImportDialog({ onClose }: MlBomImportDialogProps): React.JS
               density="compact"
               autoWidth
               maxHeight="50vh"
-              emptyText="No BOMs."
+              emptyText="No BOMs yet."
             />
           </>
         ) : null}

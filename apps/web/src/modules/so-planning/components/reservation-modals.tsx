@@ -267,7 +267,7 @@ export function AllocateStockModal({
           htmlFor="allocate-qty"
           style={{ color: 'var(--amber2)', fontWeight: 700 }}
         >
-          Qty to allocate ★
+          Qty to allocate<span className="req">★</span>
         </label>
         <input
           id="allocate-qty"
@@ -408,7 +408,7 @@ export function ReleaseStockModal({
           htmlFor="release-qty"
           style={{ color: 'var(--amber2)', fontWeight: 700 }}
         >
-          Qty to release ★
+          Qty to release<span className="req">★</span>
         </label>
         <input
           id="release-qty"
@@ -433,7 +433,7 @@ export function ReleaseStockModal({
           htmlFor="release-reason"
           style={{ color: 'var(--amber2)', fontWeight: 700 }}
         >
-          Reason ★
+          Reason<span className="req">★</span>
         </label>
         <textarea
           id="release-reason"

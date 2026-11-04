@@ -40,12 +40,9 @@ export function useMaySaveFiles(): boolean {
 
 // A LOOK at one file. Deliberately still a view, not a save: this is how
 // everyone on the page reaches a report, and the restricted act is keeping a
-// copy, not reading one. The server logs it either way.
+// copy, not reading one. The server logs it either way. Throws on failure; the
+// caller shows the toast (this helper is not a hook).
 export async function openStoragePath(path: string, refCode?: string | null): Promise<void> {
-  try {
-    const url = await qcDocViewUrl(path, refCode);
-    window.open(url, '_blank', 'noopener');
-  } catch (e) {
-    window.alert(e instanceof Error ? e.message : 'Could not open file. Try again.');
-  }
+  const url = await qcDocViewUrl(path, refCode);
+  window.open(url, '_blank', 'noopener');
 }

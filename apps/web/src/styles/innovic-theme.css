@@ -1421,7 +1421,7 @@ tr:focus-visible,
   font-weight: 600;
   font-family: var(--bfont);
 }
-.form-label .req {
+.req {
   color: var(--red2);
   margin-left: 2px;
 }

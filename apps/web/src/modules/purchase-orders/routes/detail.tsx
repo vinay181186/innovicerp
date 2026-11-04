@@ -199,7 +199,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
   };
   const onPrint = (): void => {
     const ok = printPurchaseOrder(printArgs);
-    if (!ok) window.alert('Allow popups to print.');
+    if (!ok) toast.error('Allow popups to print.');
   };
   // ⬇ Download PDF — the same sheet as Preview, saved as `<PO code>.pdf`.
   const onDownload = (): Promise<void> =>
@@ -558,7 +558,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
               <div style={{ marginBottom: 8 }}>You can restore it from Trash.</div>
               <div className="form-grp">
                 <label className="form-label">
-                  Reason <span className="req">★</span>
+                  Reason<span className="req">★</span>
                 </label>
                 <textarea
                   className="innovic-input"
@@ -692,7 +692,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
           </div>
           <div className="form-grp">
             <label className="form-label">
-              Rejection Reason <span className="req">★</span>
+              Rejection Reason<span className="req">★</span>
             </label>
             <textarea
               className="innovic-input"
@@ -767,7 +767,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
           </div>
           <div className="form-grp">
             <label className="form-label">
-              Short Close Reason <span className="req">★</span>
+              Short Close Reason<span className="req">★</span>
             </label>
             <textarea
               className="innovic-input"

@@ -35,6 +35,7 @@ import {
 } from '../components/op-log-columns';
 import { ReverseOpLogModal } from '../components/reverse-op-log-modal';
 import { exportOpLog } from '../lib/export';
+import { useToast } from '@/ui/feedback';
 
 const listSearchSchema = z.object({
   jcNo: z.string().optional(),
@@ -64,6 +65,7 @@ function canReverseRow(r: OpLogListItem): boolean {
 }
 
 function OpLogListPage(): React.JSX.Element {
+  const toast = useToast();
   const search = opLogListRoute.useSearch();
   const navigate = opLogListRoute.useNavigate();
 
@@ -144,12 +146,12 @@ function OpLogListPage(): React.JSX.Element {
         sf: sf.param,
       });
       if (written < all) {
-        window.alert(
+        toast.error(
           `Exported the first ${written} of ${all} entries. Narrow the filter to export the rest.`,
         );
       }
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : 'Could not export the operation log.');
+      toast.error(e instanceof Error ? e.message : 'Could not export the operation log.');
     } finally {
       setExporting(false);
     }
@@ -295,7 +297,16 @@ function OpLogListPage(): React.JSX.Element {
             defaultHidden={[...OP_LOG_HIDDEN_COLUMNS]}
             rows={items}
             loading={isLoading}
-            emptyText="No log entries match these filters."
+            emptyText={
+              search.jcNo ||
+              search.logType ||
+              search.shift ||
+              search.fromDate ||
+              search.toDate ||
+              sf.filtering
+                ? 'No log entries match.'
+                : 'No log entries yet.'
+            }
             defaultPinned={OP_LOG_DEFAULT_PINNED}
             // ⋯ menu: Reverse — only on an entry that can still be reversed,
             // and only for a user with edit + approve on that entry's page.

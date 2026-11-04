@@ -1,5 +1,4 @@
-// Task Board chrome above the table (ADR-176): the tab strip (Inbox / Outbox /
-// My To-Do / All Tasks) and the filter selects (Status + Priority +
+// Task Board chrome above the table (ADR-176): the filter selects (Status + Priority +
 // Person + Due Date; All Tasks adds Assigned By + Department; search is the board ListHeader's). Presentational —
 // the board route owns every value and hands the setters down. The Status and
 // Due Date options carry the view's counts ("To Do (4)", "Overdue (2)") — they
@@ -14,7 +13,7 @@ import type {
   TaskUserOption,
   TaskView,
 } from '@innovic/shared';
-import { TASK_PRIORITIES, TASK_PRIORITY_LABELS, TASK_VIEW_LABELS } from '@innovic/shared';
+import { TASK_PRIORITIES, TASK_PRIORITY_LABELS } from '@innovic/shared';
 import { SearchableSelect } from '@/ui/forms';
 import { PERSON_LABEL } from './task-table';
 
@@ -36,96 +35,6 @@ const DUE_OPTIONS: { value: TaskDueFilter | ''; label: string }[] = [
 /** "To Do (4)" — the count only where the server sends one for that choice. */
 function withCount(label: string, n: number | undefined): string {
   return n == null ? label : `${label} (${n})`;
-}
-
-/** One tab's look — shared by the task views and the extra (Day Log) tabs. */
-function tabStyle(active: boolean, last: boolean): React.CSSProperties {
-  return {
-    background: active ? 'var(--blue3)' : 'transparent',
-    border: 'none',
-    borderRight: last ? 'none' : '1px solid var(--border)',
-    borderBottom: `3px solid ${active ? 'var(--blue)' : 'transparent'}`,
-    padding: '10px 20px',
-    cursor: 'pointer',
-    fontSize: 13,
-    fontWeight: active ? 700 : 600,
-    color: active ? 'var(--blue)' : 'var(--text2)',
-    font: 'inherit',
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 6,
-  };
-}
-
-export function TaskTabs({
-  tabs,
-  view,
-  countOf,
-  onChange,
-  extra = [],
-  onExtra,
-}: {
-  tabs: TaskView[];
-  /** The active tab: a task view, or one of `extra`'s keys. */
-  view: string;
-  countOf: (v: TaskView) => number | null;
-  onChange: (v: TaskView) => void;
-  /** Tabs after the task views that are not task views (My Day Log, Team
-   *  Day Logs) — no count badge. */
-  extra?: { key: string; label: string }[];
-  onExtra?: (key: string) => void;
-}): React.JSX.Element {
-  return (
-    <div
-      role="tablist"
-      className="panel"
-      style={{
-        display: 'flex',
-        flexWrap: 'wrap',
-        marginBottom: 10,
-        borderRadius: 'var(--radius2) var(--radius2) 0 0',
-      }}
-    >
-      {tabs.map((v, i) => {
-        const active = v === view;
-        const n = countOf(v);
-        return (
-          <button
-            key={v}
-            type="button"
-            role="tab"
-            aria-selected={active}
-            onClick={() => onChange(v)}
-            style={tabStyle(active, i === tabs.length - 1 && extra.length === 0)}
-          >
-            {TASK_VIEW_LABELS[v]}
-            {n != null ? (
-              <span className="badge b-blue" style={{ borderRadius: 10, padding: '1px 7px' }}>
-                {n}
-              </span>
-            ) : null}
-            {v === 'all' ? (
-              <small className="text3" style={{ fontWeight: 400 }}>
-                (Admin)
-              </small>
-            ) : null}
-          </button>
-        );
-      })}
-      {extra.map((t, i) => (
-        <button
-          key={t.key}
-          type="button"
-          role="tab"
-          aria-selected={t.key === view}
-          onClick={() => onExtra?.(t.key)}
-          style={tabStyle(t.key === view, i === extra.length - 1)}
-        >
-          {t.label}
-        </button>
-      ))}
-    </div>
-  );
 }
 
 /** The filter bar sizes native selects itself; a picker's box carries its own. */

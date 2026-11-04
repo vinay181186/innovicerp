@@ -184,7 +184,7 @@ function JcOpsPage(): React.JSX.Element {
             rowKey={(o) => o.jcOpId}
             loading={isLoading}
             emptyText={
-              sf.filtering || jcCode || searchTerm ? 'No operations match.' : 'No Operations yet.'
+              sf.filtering || jcCode || searchTerm ? 'No operations match.' : 'No operations yet.'
             }
             defaultPinned={JC_OPS_DEFAULT_PINNED}
             defaultHidden={JC_OPS_DEFAULT_HIDDEN}

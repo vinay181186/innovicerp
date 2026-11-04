@@ -75,7 +75,7 @@ export function HolidaysModal({ onClose }: { onClose: () => void }): React.JSX.E
         rowKey={(h) => h.id}
         loading={q.isLoading}
         maxHeight={320}
-        empty={q.isError ? errText(q.error, 'Could not load the holidays.') : 'No holidays set.'}
+        empty={q.isError ? errText(q.error, 'Could not load the holidays.') : 'No holidays yet.'}
         rowMenuLabel={(h) => `Actions for ${h.name}`}
         rowMenu={(h) => [
           {
@@ -99,7 +99,7 @@ export function HolidaysModal({ onClose }: { onClose: () => void }): React.JSX.E
       >
         <div>
           <label className="form-label" htmlFor="hol-date">
-            Holiday Date <span className="req">*</span>
+            Holiday Date<span className="req">★</span>
           </label>
           <input
             id="hol-date"
@@ -112,7 +112,7 @@ export function HolidaysModal({ onClose }: { onClose: () => void }): React.JSX.E
         </div>
         <div style={{ flex: '1 1 200px' }}>
           <label className="form-label" htmlFor="hol-name">
-            Holiday <span className="req">*</span>
+            Holiday<span className="req">★</span>
           </label>
           <input
             id="hol-name"

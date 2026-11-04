@@ -301,7 +301,7 @@ function AlertsDashboardPage() {
               rowKey={(a) => a.code}
               loading={isLoading}
               sortFilter={false}
-              empty={term.trim() ? 'No alerts match.' : '✅ Nothing pending'}
+              empty={term.trim() ? 'No alerts match.' : 'No alerts yet.'}
               isRowClickable={(a) => a.count > 0}
               onRowClick={(a) => void navigate({ to: '/alerts/$code', params: { code: a.code } })}
               rowClassName={(a) => (isUrgent(a) ? ROW_TINT.late : undefined)}

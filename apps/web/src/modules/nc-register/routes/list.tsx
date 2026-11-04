@@ -40,6 +40,7 @@ import {
   ncRowMenu,
   ncRowTint,
 } from '../components/nc-list-columns';
+import { TabStrip } from '@/ui/navigation';
 
 const PAGE_SIZE = 25;
 
@@ -183,40 +184,15 @@ function NcRegisterListPage(): React.JSX.Element {
       : 'No NCs yet.';
 
   const tabBar = (
-    <div
-      style={{
-        display: 'flex',
-        gap: 4,
-        borderBottom: '1px solid var(--border)',
-        marginBottom: 14,
-      }}
-    >
-      {(
-        [
-          ['nc', 'NC Register'],
-          ['capa', 'CAPA'],
-        ] as const
-      ).map(([key, label]) => (
-        <button
-          key={key}
-          type="button"
-          onClick={() => setTab(key)}
-          style={{
-            background: 'none',
-            border: 'none',
-            borderBottom: tab === key ? '2px solid var(--cyan)' : '2px solid transparent',
-            color: tab === key ? 'var(--cyan)' : 'var(--text3)',
-            fontSize: 12,
-            fontWeight: 700,
-            padding: '6px 12px',
-            cursor: 'pointer',
-            marginBottom: -1,
-          }}
-        >
-          {label}
-        </button>
-      ))}
-    </div>
+    <TabStrip
+      label="NC Register views"
+      tabs={[
+        { key: 'nc', label: 'NC Register' },
+        { key: 'capa', label: 'CAPA' },
+      ]}
+      activeKey={tab}
+      onChange={(k) => setTab(k === 'capa' ? 'capa' : 'nc')}
+    />
   );
 
   return (
@@ -224,11 +200,11 @@ function NcRegisterListPage(): React.JSX.Element {
     // scrollbar, so the column header stays on screen at the last row. The
     // other tab is a different, self-sizing view and keeps the page scroll.
     <div className={tab === 'capa' ? undefined : 'page-fill'}>
-      {tabBar}
       {tab === 'capa' ? (
         // key: a new ?capa landing while already on this page remounts the
         // view so it re-seeds; nothing else changes the key.
         <CapaView
+          tabs={tabBar}
           key={search.capa ?? ''}
           initialSearch={search.capa}
           openForEdit={search.capaEdit}
@@ -236,6 +212,7 @@ function NcRegisterListPage(): React.JSX.Element {
       ) : (
         <>
           <NcListHeader
+            tabs={tabBar}
             orderFilter={<OrderSfFilter sf={sf} field="orderCode" columnField="soCode" />}
             count={data ? total : undefined}
             searchInput={searchInput}

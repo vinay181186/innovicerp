@@ -10,6 +10,7 @@
 
 import { useEffect, useState } from 'react';
 import { SheetPreviewModal } from '@/components/shared/sheet-preview-modal';
+import { useToast } from '@/ui/feedback';
 import { downloadHtmlPdf } from './sheet-pdf';
 
 export interface PrintDocument {
@@ -25,6 +26,8 @@ type HostState =
   | (Omit<PrintDocument, 'html'> & { html: string | null; error?: string | null })
   | null;
 let show: ((d: HostState) => void) | null = null;
+/** The toast of the signed-in shell, set by the host, for runPrint (not a hook). */
+let notifyError: ((message: string) => void) | null = null;
 let downloading: Promise<void> | null = null;
 let mode: 'preview' | 'download' = 'preview';
 /** The preview the box is waiting for. Closing the box or asking for another
@@ -77,7 +80,7 @@ export function runPrint(
   if (action === 'download') {
     return load()
       .then((build) => asDownload(build))
-      .catch((e: unknown) => window.alert(message(e)));
+      .catch((e: unknown) => notifyError?.(message(e)));
   }
   const mine = ++awaited;
   show?.({ ...label, html: null });
@@ -97,12 +100,15 @@ export function runPrint(
 /** Mounted once in the signed-in shell (routes/_authenticated.tsx). */
 export function PrintPreviewHost(): React.JSX.Element | null {
   const [doc, setDoc] = useState<HostState>(null);
+  const toast = useToast();
   useEffect(() => {
     show = setDoc;
+    notifyError = (m) => void toast.error(m);
     return () => {
       show = null;
+      notifyError = null;
     };
-  }, []);
+  }, [toast]);
   if (!doc) return null;
   return (
     <SheetPreviewModal

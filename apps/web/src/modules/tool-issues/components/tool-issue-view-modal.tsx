@@ -242,7 +242,7 @@ function History({ t }: { t: ToolIssueDetail }): React.JSX.Element {
             {t.returns.length === 0 ? (
               <tr>
                 <td colSpan={7} className="empty-state">
-                  Nothing returned yet.
+                  No returns yet.
                 </td>
               </tr>
             ) : null}

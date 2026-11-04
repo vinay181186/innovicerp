@@ -147,7 +147,7 @@ export function PartyGrnQcModal({
     if (lines.length === 0) {
       setErr(
         pending.length === 0
-          ? 'No line has QC Pending.'
+          ? 'No QC Pending lines yet.'
           : 'Enter the Accepted and/or Deviated qty.',
       );
       return;
@@ -215,7 +215,7 @@ export function PartyGrnQcModal({
         </div>
       ) : pending.length === 0 ? (
         <div className="empty-state" style={{ padding: 14 }}>
-          No line has QC Pending.
+          No QC Pending lines yet.
         </div>
       ) : (
         <div className="tbl-wrap">

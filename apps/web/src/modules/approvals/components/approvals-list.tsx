@@ -187,7 +187,7 @@ export function ApprovalsList({
             emptyText={
               term.trim() !== '' || type !== ALL_TYPES
                 ? 'No waiting approvals match.'
-                : 'Nothing waiting for your approval.'
+                : 'No waiting approvals yet.'
             }
             selectable
             isRowSelectable={isBulkable}

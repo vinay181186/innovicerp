@@ -129,7 +129,7 @@ export function TeamsConfig(): React.JSX.Element {
       <div className="dl-addbar" style={{ alignItems: 'flex-end', gap: 16 }}>
         <div>
           <label className="form-label" htmlFor="dl-teams-user">
-            User <span className="req">*</span>
+            User<span className="req">★</span>
           </label>
           <SearchableSelect
             id="dl-teams-user"

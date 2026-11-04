@@ -239,7 +239,7 @@ function ProductionDashboardPage(): React.JSX.Element {
                   sortFilterServer={readySf}
                   loading={ready.isLoading}
                   emptyText={
-                    readySf.filtering ? 'No operations match.' : 'No operations available now.'
+                    readySf.filtering ? 'No operations match.' : 'No available operations yet.'
                   }
                   defaultPinned={PROD_READY_DEFAULT_PINNED}
                   defaultHidden={PROD_READY_DEFAULT_HIDDEN}

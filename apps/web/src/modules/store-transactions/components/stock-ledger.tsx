@@ -31,7 +31,7 @@ import { useStoreTransactionsList } from '../api';
 import { STORE_TXN_SOURCE_LABELS, STORE_TXN_TYPE_LABELS } from '../lib/txn-labels';
 import { STOCK_LEDGER_HIDDEN_COLUMNS, stockLedgerColumns } from './stock-ledger-columns';
 
-export function StockLedger(): React.JSX.Element {
+export function StockLedger({ tabs }: { tabs?: React.ReactNode }): React.JSX.Element {
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState<string | undefined>(undefined);
   const [txnType, setTxnType] = useState<StoreTxnType | undefined>(undefined);
@@ -146,7 +146,9 @@ export function StockLedger(): React.JSX.Element {
         filtersActive={
           sf.filtering || txnType !== undefined || sourceType !== undefined || searchInput !== ''
         }
-      />
+      >
+        {tabs}
+      </ListHeader>
 
       {isError ? (
         <PageState

@@ -40,6 +40,7 @@ import { PartyGrnQcModal } from '../components/party-grn-qc-modal';
 import { usePartyGrnPrint } from '../components/use-party-grn-print';
 import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
 import { PartyMaterialIssueView } from '@/modules/party-material-issues/components/party-material-issue-view';
+import { TabStrip } from '@/ui/navigation';
 
 // Deep-link seed for Global Search (no detail page here): `?tab=issue&search=
 // IN-PMI-26-0001` opens the Issue tab with its box pre-filled. Read ONCE into
@@ -165,47 +166,33 @@ function PartyGrnListPage(): React.JSX.Element {
     );
   }
 
+  // Receive (GRN) | Issue tabs (Issue is the former standalone Party Material
+  // Issue screen).
+  const tabBar = (
+    <TabStrip
+      label="Party GRN views"
+      tabs={[
+        { key: 'receive', label: 'Receive (Party GRN)' },
+        { key: 'issue', label: 'Issue' },
+      ]}
+      activeKey={tab}
+      onChange={(k) => setTab(k === 'issue' ? 'issue' : 'receive')}
+    />
+  );
+
   return (
     // `page-fill` (ADR-202): on the list tab the page fills the content area and the
     // TABLE is the only scrollbox, so the column header cannot ride off the top at the
     // last row. The Issue tab is its own screen and keeps today's page scroll.
     <div className={tab === 'issue' ? undefined : 'page-fill'}>
-      {/* Receive (GRN) | Issue tabs (Issue is the former standalone Party Material
-          Issue screen). */}
-      <div
-        style={{
-          display: 'flex',
-          gap: 4,
-          borderBottom: '1px solid var(--border)',
-          marginBottom: 12,
-        }}
-      >
-        {(['receive', 'issue'] as const).map((t) => (
-          <button
-            key={t}
-            type="button"
-            onClick={() => setTab(t)}
-            style={{
-              background: 'none',
-              border: 'none',
-              borderBottom: tab === t ? '2px solid var(--cyan)' : '2px solid transparent',
-              color: tab === t ? 'var(--cyan)' : 'var(--text3)',
-              fontSize: 12,
-              fontWeight: 700,
-              padding: '6px 12px',
-              cursor: 'pointer',
-              marginBottom: -1,
-            }}
-          >
-            {t === 'receive' ? 'Receive (Party GRN)' : 'Issue'}
-          </button>
-        ))}
-      </div>
-
       {tab === 'issue' ? (
         // key: a new ?search landing while already on this page remounts the
         // view so it re-seeds; nothing else changes the key.
-        <PartyMaterialIssueView key={routeSearch.search ?? ''} initialSearch={routeSearch.search} />
+        <PartyMaterialIssueView
+          key={routeSearch.search ?? ''}
+          initialSearch={routeSearch.search}
+          tabs={tabBar}
+        />
       ) : (
         <>
           {/* THE list header (ui/layout ListHeader): title · count · search ·
@@ -227,7 +214,9 @@ function PartyGrnListPage(): React.JSX.Element {
                 </Link>
               ) : null
             }
-          />
+          >
+            {tabBar}
+          </ListHeader>
 
           {isError ? (
             <PageState

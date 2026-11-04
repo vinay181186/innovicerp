@@ -34,8 +34,11 @@ import { inwardColumns, isJwDcInwardCancelled } from './inward-columns';
 const TABLE_KEY = TABLE_KEYS.jwDcInward;
 
 export function InwardView({
+  tabs,
   initialSearch,
 }: {
+  /** The page's tab strip, drawn under this view's header. */
+  tabs?: React.ReactNode;
   /** Seeded ONCE from the route's ?search (deep link); keystrokes stay local. */
   initialSearch?: string | undefined;
 }): React.JSX.Element {
@@ -115,7 +118,9 @@ export function InwardView({
             </Link>
           ) : null
         }
-      />
+      >
+        {tabs}
+      </ListHeader>
 
       {isError ? (
         <PageState
@@ -133,7 +138,7 @@ export function InwardView({
             rows={data?.items ?? []}
             rowKey={(inv) => inv.lineId}
             loading={isLoading}
-            empty={term || sf.filtering ? 'No inward lines match.' : 'No inward entries yet.'}
+            empty={term || sf.filtering ? 'No inward lines match.' : 'No inward lines yet.'}
             // A receipt that had rejections at Incoming QC stands out red.
             rowClassName={(inv) =>
               isJwDcInwardCancelled(inv)

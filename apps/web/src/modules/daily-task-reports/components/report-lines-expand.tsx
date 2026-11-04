@@ -96,7 +96,7 @@ export function ReportLinesExpand({ id }: { id: string }): React.JSX.Element {
         columns={lineColumns}
         rows={data.lines}
         density="compact"
-        empty="No task lines."
+        empty="No task lines yet."
       />
     </div>
   );

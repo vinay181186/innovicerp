@@ -54,7 +54,7 @@ export function LineList({
         emptyText={
           sf.filtering || searching
             ? 'No lines match.'
-            : `No open ${src === 'jw' ? 'JWSO' : src === 'so' ? 'SO' : 'SO / JWSO'} lines to plan`
+            : `No open ${src === 'jw' ? 'JWSO' : src === 'so' ? 'SO' : 'SO / JWSO'} lines to plan yet.`
         }
         onRowClick={(r) => onOpen(r.soId)}
         rowClassName={lineRowTint}

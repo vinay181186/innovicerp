@@ -9,6 +9,7 @@
 import { createRoute } from '@tanstack/react-router';
 import { z } from 'zod';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { TabStrip } from '@/ui/navigation';
 import { InwardView } from '../components/inward-register';
 import { OutwardView } from '../components/outward-register';
 
@@ -43,54 +44,30 @@ function JwDcPage(): React.JSX.Element {
     void navigate({ search: { tab: next === 'outward' ? undefined : next } });
   };
 
+  const tabBar = (
+    <TabStrip
+      label="JW DC direction"
+      tabs={[
+        { key: 'outward', label: 'Outward (to Vendor)' },
+        { key: 'inward', label: 'Inward (Return from Vendor)' },
+      ]}
+      activeKey={tab}
+      onChange={(k) => setTab(k === 'inward' ? 'inward' : 'outward')}
+    />
+  );
+
   return (
     <div>
-      <div style={{ display: 'flex', gap: 4, marginBottom: 16 }}>
-        <TabButton
-          active={tab === 'outward'}
-          color="var(--purple)"
-          onClick={() => setTab('outward')}
-        >
-          Outward (to Vendor)
-        </TabButton>
-        <TabButton active={tab === 'inward'} color="var(--green)" onClick={() => setTab('inward')}>
-          Inward (Return from Vendor)
-        </TabButton>
-      </div>
-
       {tab === 'outward' ? (
-        <OutwardView key={search.jw ?? ''} forJwId={search.jw} initialSearch={search.search} />
+        <OutwardView
+          key={search.jw ?? ''}
+          forJwId={search.jw}
+          initialSearch={search.search}
+          tabs={tabBar}
+        />
       ) : (
-        <InwardView initialSearch={search.search} />
+        <InwardView initialSearch={search.search} tabs={tabBar} />
       )}
     </div>
-  );
-}
-
-function TabButton({
-  active,
-  color,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  color: string;
-  onClick: () => void;
-  children: React.ReactNode;
-}): React.JSX.Element {
-  return (
-    <button
-      type="button"
-      className="btn btn-sm"
-      onClick={onClick}
-      style={{
-        fontWeight: 700,
-        background: active ? color : 'var(--bg4)',
-        color: active ? 'var(--bg2)' : 'var(--text2)',
-        border: `1px solid ${active ? color : 'var(--border)'}`,
-      }}
-    >
-      {children}
-    </button>
   );
 }

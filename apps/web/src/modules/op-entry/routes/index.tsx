@@ -17,6 +17,7 @@ import { MachineOpEntryView } from '../components/machine-op-entry-view';
 import { MachineOutputPanel } from '../components/machine-output-panel';
 import { OpEntryModal, type OpEntryModalTarget } from '../components/op-entry-modal';
 import { OpLogHistory } from '../components/op-log-history';
+import { TabStrip } from '@/ui/navigation';
 
 const searchSchema = z.object({
   jc: z.string().optional(),
@@ -237,40 +238,20 @@ function OpEntryPage() {
 
       {/* By Job Card | By Machine switch (By Machine is the former standalone
           Machine Op Entry screen). */}
-      <div
-        style={{
-          display: 'flex',
-          gap: 4,
-          borderBottom: '1px solid var(--border)',
-          marginBottom: 14,
-        }}
-      >
-        {(['jc', 'machine'] as const).map((v) => (
-          <button
-            key={v}
-            type="button"
-            onClick={() =>
-              void navigate({
-                search: (prev) => ({ ...prev, view: v === 'jc' ? undefined : 'machine' }),
-                replace: true,
-              })
-            }
-            style={{
-              background: 'none',
-              border: 'none',
-              borderBottom: view === v ? '2px solid var(--cyan)' : '2px solid transparent',
-              color: view === v ? 'var(--cyan)' : 'var(--text3)',
-              fontSize: 12,
-              fontWeight: 700,
-              padding: '6px 12px',
-              cursor: 'pointer',
-              marginBottom: -1,
-            }}
-          >
-            {v === 'jc' ? 'By Job Card' : 'By Machine'}
-          </button>
-        ))}
-      </div>
+      <TabStrip
+        label="Op Entry views"
+        tabs={[
+          { key: 'jc', label: 'By Job Card' },
+          { key: 'machine', label: 'By Machine' },
+        ]}
+        activeKey={view}
+        onChange={(k) =>
+          void navigate({
+            search: (prev) => ({ ...prev, view: k === 'machine' ? 'machine' : undefined }),
+            replace: true,
+          })
+        }
+      />
 
       {view === 'machine' ? (
         <MachineOpEntryView initialMachineId={search.machineId ?? null} />
@@ -442,45 +423,30 @@ function OpEntryPage() {
               </div>
 
               {selectedOp ? (
-                <div className="panel">
-                  <div
-                    className="panel-hdr"
-                    style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}
-                  >
-                    {(
-                      [
-                        { key: 'machine', label: 'Machine-wise output' },
-                        { key: 'log', label: 'Recent log' },
-                      ] as const
-                    ).map((t) => {
-                      const active = rightTab === t.key;
-                      return (
-                        <button
-                          key={t.key}
-                          type="button"
-                          // Active tab = solid filled pill (btn-primary), inactive
-                          // = outline (btn-ghost) — clear highlight on click.
-                          className={`btn btn-sm ${active ? 'btn-primary' : 'btn-ghost'}`}
-                          onClick={() => setRightTab(t.key)}
-                          style={{ fontWeight: 700 }}
-                        >
-                          {t.label}
-                        </button>
-                      );
-                    })}
+                <div>
+                  <TabStrip
+                    label="Selected operation"
+                    tabs={[
+                      { key: 'machine', label: 'Machine-wise output' },
+                      { key: 'log', label: 'Recent log' },
+                    ]}
+                    activeKey={rightTab}
+                    onChange={(k) => setRightTab(k === 'log' ? 'log' : 'machine')}
+                  />
+                  <div className="panel">
+                    {rightTab === 'machine' ? (
+                      <MachineOutputPanel
+                        rows={machineOutput.data ?? []}
+                        isLoading={machineOutput.isLoading}
+                      />
+                    ) : (
+                      <OpLogHistory
+                        logs={opLog.data ?? []}
+                        isLoading={opLog.isLoading}
+                        {...(selectedOp ? { jcOpId: selectedOp.id } : {})}
+                      />
+                    )}
                   </div>
-                  {rightTab === 'machine' ? (
-                    <MachineOutputPanel
-                      rows={machineOutput.data ?? []}
-                      isLoading={machineOutput.isLoading}
-                    />
-                  ) : (
-                    <OpLogHistory
-                      logs={opLog.data ?? []}
-                      isLoading={opLog.isLoading}
-                      {...(selectedOp ? { jcOpId: selectedOp.id } : {})}
-                    />
-                  )}
                 </div>
               ) : null}
             </div>

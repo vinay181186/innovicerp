@@ -95,7 +95,7 @@ export function DcEditLineTable(props: {
             {cards.length === 0 ? (
               <tr>
                 <td colSpan={COL_COUNT} className="empty-state" style={{ padding: 14 }}>
-                  No lines on this DC.
+                  No lines on this DC yet.
                 </td>
               </tr>
             ) : (

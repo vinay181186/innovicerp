@@ -36,7 +36,7 @@ function lineFields(l: QcDossierLine): Array<string | number | null> {
   ];
 }
 
-export function DossierView({ toggle }: { toggle: React.ReactNode }): React.JSX.Element {
+export function DossierView({ tabs }: { tabs: React.ReactNode }): React.JSX.Element {
   const search = qcDocumentsListRoute.useSearch();
   const navigate = qcDocumentsListRoute.useNavigate();
   const { data: eff } = useMyAccess();
@@ -193,7 +193,6 @@ export function DossierView({ toggle }: { toggle: React.ReactNode }): React.JSX.
       }
       tools={
         <>
-          {toggle}
           {rights.maySave && dossier && dossier.totals.files > 0 ? (
             <button
               type="button"
@@ -207,7 +206,9 @@ export function DossierView({ toggle }: { toggle: React.ReactNode }): React.JSX.
           ) : null}
         </>
       }
-    />
+    >
+      {tabs}
+    </ListHeader>
   );
 
   if (!orderId) {

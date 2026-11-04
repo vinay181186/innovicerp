@@ -29,6 +29,7 @@ import { clientsKeys } from '@/modules/clients/api';
 import { jobWorkOrdersKeys } from '@/modules/job-work-orders/api';
 import { printTemplatesKeys } from '@/modules/print-templates/api';
 import { companyKeys } from '@/modules/settings/api';
+import { useToast } from '@/ui/feedback';
 import { salesOrdersKeys } from '../api';
 import { jwSalesOrderSheet, salesOrderSheet } from '../lib/print-order';
 
@@ -70,6 +71,7 @@ export function useOrderPrint(): {
 } {
   const qc = useQueryClient();
   const { data: me } = useSession();
+  const toast = useToast();
   const [open, setOpen] = useState<{
     code: string;
     title: string;
@@ -122,7 +124,9 @@ export function useOrderPrint(): {
     download: (t, draft) =>
       build(t, draft)
         .then((model) => downloadSheetPdf(model, t.code))
-        .catch((e: unknown) => window.alert(message(e))),
+        .catch((e: unknown) => {
+          toast.error(message(e));
+        }),
     modal: open ? (
       <SheetPreviewModal
         title={open.title}

@@ -197,7 +197,9 @@ export function ReleasePartModal({
       </div>
       <div className="form-grid">
         <div className="form-grp">
-          <label className="form-label">Release Qty ★</label>
+          <label className="form-label">
+            Release Qty<span className="req">★</span>
+          </label>
           <input
             type="number"
             min={0}
@@ -209,7 +211,9 @@ export function ReleasePartModal({
           />
         </div>
         <div className="form-grp">
-          <label className="form-label">Reason ★</label>
+          <label className="form-label">
+            Reason<span className="req">★</span>
+          </label>
           <input
             type="text"
             className="innovic-input"

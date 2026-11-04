@@ -289,7 +289,7 @@ function StuckDashboardPage(): React.JSX.Element {
               rows={rows}
               sortFilterServer={sf}
               rowKey={(it, i) => `${it.soId}:${it.stage}:${pageOffset(search.page) + i}`}
-              empty={filtered ? 'No stuck activities match.' : 'No stuck jobs.'}
+              empty={filtered ? 'No stuck jobs match.' : 'No stuck jobs.'}
               rowClassName={(it) => (over(it) > 5 ? ROW_TINT.late : ROW_TINT.pending)}
               onRowClick={(it) =>
                 void navigate({ to: '/sales-orders/$id', params: { id: it.soId } })

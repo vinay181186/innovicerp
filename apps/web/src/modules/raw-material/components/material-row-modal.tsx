@@ -88,7 +88,8 @@ export function MaterialRowModal({
         ) : null}
         <div className={row ? 'form-grp' : 'form-grp form-full'}>
           <label className="form-label">
-            {noun} <span className="req">★</span>
+            {noun}
+            <span className="req">★</span>
           </label>
           <input
             className="innovic-input"

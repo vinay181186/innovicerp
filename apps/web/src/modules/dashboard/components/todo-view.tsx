@@ -13,6 +13,7 @@ import { useCompleteTodo } from '../todo-api';
 import { DashTextView, DocRef } from './dash-text';
 import { TodoCreate } from './todo-create';
 import { ViewHead } from './view-head';
+import { TabStrip } from '@/ui/navigation';
 
 type Tab = 'late' | 'today' | 'planned' | 'done';
 const TABS: ReadonlyArray<{ key: Tab; label: string }> = [
@@ -144,7 +145,7 @@ export function TodoView({ home }: { home: HomeResponse }): React.JSX.Element {
   else if (none && !creating) {
     body = (
       <EmptyState icon="☑">
-        <div style={{ fontWeight: 700 }}>No to-dos yet</div>
+        <div style={{ fontWeight: 700 }}>No to-dos yet.</div>
         <div>Write down what you must do today, or give a task to someone in your team.</div>
         {openCreate ? (
           <button
@@ -186,19 +187,12 @@ export function TodoView({ home }: { home: HomeResponse }): React.JSX.Element {
         ) : null}
       </ViewHead>
       {creating ? <TodoCreate onClose={() => setCreating(false)} /> : null}
-      <div className="dh-tabs" role="tablist" aria-label="My to-do">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            role="tab"
-            aria-selected={tab === t.key}
-            onClick={() => setTab(t.key)}
-          >
-            {t.label} ({count(t.key)})
-          </button>
-        ))}
-      </div>
+      <TabStrip
+        label="My to-do"
+        tabs={TABS.map((t) => ({ key: t.key, label: t.label, count: count(t.key) }))}
+        activeKey={tab}
+        onChange={(k) => setTab(TABS.find((t) => t.key === k)?.key ?? tab)}
+      />
       {body}
     </>
   );

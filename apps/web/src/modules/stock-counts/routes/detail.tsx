@@ -279,7 +279,7 @@ function StockCountPage(): React.JSX.Element {
           <div className="form-grid">
             <div className="form-grp">
               <label className="form-label" htmlFor="sc-date">
-                Count Date ★
+                Count Date<span className="req">★</span>
               </label>
               <input
                 id="sc-date"
@@ -292,7 +292,7 @@ function StockCountPage(): React.JSX.Element {
             </div>
             <div className="form-grp">
               <label className="form-label" htmlFor="sc-purpose">
-                Purpose ★
+                Purpose<span className="req">★</span>
               </label>
               <Select
                 id="sc-purpose"

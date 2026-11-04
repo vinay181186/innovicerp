@@ -33,6 +33,7 @@ import { ListFooter } from '@/ui/layout';
 import { fetchAllSoCycleTime, useSoCycleTime, type SoCycleTimeParams } from '../api';
 import { soCycleTimeColumns } from '../lib/columns';
 import { exportSoCycleTime } from '../lib/export';
+import { useToast } from '@/ui/feedback';
 
 const sctSearchSchema = z.object({
   show: z.enum(SO_CYCLE_TIME_SHOW).optional(),
@@ -61,6 +62,7 @@ const FILTERS: { value: SoCycleTimeShow; label: string }[] = [
 ];
 
 function SoCycleTimePage(): React.JSX.Element {
+  const toast = useToast();
   const urlSearch = soCycleTimeRoute.useSearch();
   const routeNavigate = soCycleTimeRoute.useNavigate();
   const navigate = useNavigate();
@@ -110,7 +112,7 @@ function SoCycleTimePage(): React.JSX.Element {
     void fetchAllSoCycleTime(params)
       .then((all) => exportSoCycleTime(all))
       .catch((e: unknown) =>
-        window.alert(e instanceof Error ? e.message : 'Could not export. Try again.'),
+        toast.error(e instanceof Error ? e.message : 'Could not export. Try again.'),
       )
       .finally(() => setExporting(false));
   };

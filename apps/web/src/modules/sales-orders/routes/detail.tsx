@@ -411,7 +411,7 @@ function SalesOrderDetailPage(): React.JSX.Element {
             tableKey={TABLE_KEYS.soDetailMilestones}
             columns={MILESTONE_COLUMNS}
             rows={detail.milestones}
-            empty="No delivery lots scheduled."
+            empty="No delivery lots yet."
           />
         </Panel>
       ) : null}

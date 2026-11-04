@@ -51,7 +51,7 @@ const COUNT_ALL: ListPurchaseRequestsQuery = { prType: 'jw_osp', limit: 1, offse
 const COUNT_OPEN: ListPurchaseRequestsQuery = { ...COUNT_ALL, orderBand: 'open' };
 const COUNT_ORDERED: ListPurchaseRequestsQuery = { ...COUNT_ALL, orderBand: 'ordered' };
 
-export function OutsourceJobsView(): React.JSX.Element {
+export function OutsourceJobsView({ tabs }: { tabs?: React.ReactNode }): React.JSX.Element {
   const [jcNo, setJcNo] = useState<string | undefined>(undefined);
   const [statusBand, setStatusBand] = useState<Band | undefined>(undefined);
   const [searchText, setSearchText] = useState('');
@@ -160,7 +160,9 @@ export function OutsourceJobsView(): React.JSX.Element {
           sf.clearFilters();
         }}
         filtersActive={filtering || sf.filtering}
-      />
+      >
+        {tabs}
+      </ListHeader>
 
       {isError ? (
         <PageState

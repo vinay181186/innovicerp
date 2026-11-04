@@ -1337,24 +1337,24 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
             <tr>
               <th style={{ width: '4%' }}>Ln</th>
               <th style={{ width: `${W.code}%` }}>
-                Item Code <span className="req">★</span>
+                Item Code<span className="req">★</span>
               </th>
               <th style={{ width: `${W.name}%` }}>Item Name</th>
               <th
                 style={{ width: '6%', color: 'var(--purple)' }}
                 title="POL — the customer's PO line number"
               >
-                POL <span className="req">★</span>
+                POL<span className="req">★</span>
               </th>
               <th style={{ width: `${W.rm}%` }} title="The customer's raw material for this item">
                 Customer RM
               </th>
               <th style={{ width: '6%' }}>
-                Drawing Rev <span className="req">★</span>
+                Drawing Rev<span className="req">★</span>
               </th>
               <th style={{ width: '6%' }}>UOM</th>
               <th className="th-num" style={{ width: '6%' }}>
-                Order Qty <span className="req">★</span>
+                Order Qty<span className="req">★</span>
               </th>
               {priceVisible ? (
                 <>

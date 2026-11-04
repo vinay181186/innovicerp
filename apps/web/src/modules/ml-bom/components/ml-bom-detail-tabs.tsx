@@ -102,7 +102,7 @@ export function MlBomLinesTab({ detail }: { detail: MlBomDetail }): React.JSX.El
       rows={detail.lines}
       density="compact"
       autoWidth
-      emptyText="No lines."
+      emptyText="No lines yet."
     />
   );
 }
@@ -176,7 +176,7 @@ export function MlBomTreeTab({ tree, loading, error }: TreeTabProps): React.JSX.
       loading={loading && !tree}
       density="compact"
       autoWidth
-      emptyText="No lines."
+      emptyText="No lines yet."
     />
   );
 }
@@ -213,7 +213,7 @@ export function MlBomExplodedTab({ tree, loading, error }: TreeTabProps): React.
       loading={loading && !tree}
       density="compact"
       autoWidth
-      emptyText="No lines."
+      emptyText="No lines yet."
     />
   );
 }

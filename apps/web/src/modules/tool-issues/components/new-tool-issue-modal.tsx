@@ -130,7 +130,7 @@ export function NewToolIssueModal({ onClose }: { onClose: () => void }): React.J
       <div className="form-grid">
         <div className="form-grp form-full">
           <label className="form-label" htmlFor="ti-item">
-            Tool / Instrument <span className="req">★</span>
+            Tool / Instrument<span className="req">★</span>
           </label>
           <SearchableSelect
             id="ti-item"
@@ -147,7 +147,7 @@ export function NewToolIssueModal({ onClose }: { onClose: () => void }): React.J
 
         <div className="form-grp">
           <label className="form-label">
-            Issue Date <span className="req">★</span>
+            Issue Date<span className="req">★</span>
           </label>
           <input
             type="date"
@@ -158,7 +158,7 @@ export function NewToolIssueModal({ onClose }: { onClose: () => void }): React.J
         </div>
         <div className="form-grp">
           <label className="form-label">
-            Expected Return Date <span className="req">★</span>
+            Expected Return Date<span className="req">★</span>
           </label>
           <input
             type="date"
@@ -171,7 +171,7 @@ export function NewToolIssueModal({ onClose }: { onClose: () => void }): React.J
         {item && !serial ? (
           <div className="form-grp">
             <label className="form-label">
-              Issue Qty <span className="req">★</span>
+              Issue Qty<span className="req">★</span>
             </label>
             <input
               type="number"
@@ -187,7 +187,7 @@ export function NewToolIssueModal({ onClose }: { onClose: () => void }): React.J
 
         <div className="form-grp">
           <label className="form-label" htmlFor="ti-op">
-            Issued To <span className="req">★</span>
+            Issued To<span className="req">★</span>
           </label>
           <OperatorPicker id="ti-op" value={operatorId} onChange={setOperatorId} />
           {!operatorId ? (
@@ -209,7 +209,7 @@ export function NewToolIssueModal({ onClose }: { onClose: () => void }): React.J
         </div>
         <div className="form-grp">
           <label className="form-label">
-            Purpose <span className="req">★</span>
+            Purpose<span className="req">★</span>
           </label>
           <input
             type="text"
