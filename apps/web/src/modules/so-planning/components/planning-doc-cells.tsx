@@ -1,6 +1,6 @@
 // RC No. / PRO No. / JC No. on SO + JWSO Planning (owner-approved 2026-10-26):
 // how the codes DRAW. Which documents a line or plan has is the shared rule in
-// packages/shared (lib/planning-doc-codes.ts, ADR-268), so the level-1 list, the
+// packages/shared (lib/planning-doc-codes.ts, ADR-268), so the
 // line table (planning-line-columns.tsx), the ▸ panel (planning-line-expand.tsx)
 // and the server's search can never read differently.
 //
@@ -30,7 +30,6 @@ export function DocCode({ doc, kind }: { doc: PlanningDocRef; kind: 'pro' | 'jc'
       </span>
     );
   }
-  // A row of the list opens its order on click; the link must open only the PRO / JC.
   return kind === 'pro' ? (
     <Link
       to="/production-orders/$id"

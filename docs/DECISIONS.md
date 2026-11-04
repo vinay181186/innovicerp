@@ -15162,8 +15162,8 @@ draft plans also read "Fully Planned" while its lines read "In Planning" (open s
 - A POL with several plans / PROs stays ONE row — two rows would make the Order Qty read double.
 - `GET /so-planning` stays: the Create Plan picker reads it, one row per order.
 - The "Matching lines" tab is deleted: the list IS the lines, and search now covers every page.
-- RC / PRO / JC rule moved to `packages/shared/src/lib/planning-doc-codes.ts`, so the cells and the
-  server's search + Sort & Filter read one rule. Plan loading is one batched helper
+- RC / PRO / JC rule moved to `packages/shared/src/lib/planning-doc-codes.ts`, so the cells inside
+  the order and the server's search read one rule. Plan loading is one batched helper
   (`so-planning/plan-summaries.ts`) for SO and JWSO detail. The list reads named columns only
   (`list-lines-plans.ts`, same live-plan rule and RC join), one query for both sources, because it
   runs for every open line on every page; `list-lines.test.ts` compares each plan with the detail.

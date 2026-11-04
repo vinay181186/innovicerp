@@ -301,7 +301,8 @@ export type PlanningLineListPlan = z.infer<typeof planningLineListPlanSchema>;
  * an open order) with its order's header facts. Every line fact is the SAME
  * field the order's detail sends (`planningLineSchema`), so the list and the
  * order can never disagree; the screen derives Plan Status and % from
- * `planningLineStatus()` and RC / PRO / JC from `planning-doc-codes`.
+ * `planningLineStatus()`. RC / PRO / JC are not columns here (owner, ADR-268); the
+ * server searches them through `planning-doc-codes`.
  */
 export const planningLineListItemSchema = planningLineSchema
   .pick({

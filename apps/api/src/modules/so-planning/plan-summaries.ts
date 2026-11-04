@@ -129,13 +129,13 @@ export function planItemFields(r: {
   };
 }
 
+/** A plan that counts: not in Trash, not cancelled. */
+export const LIVE_PLAN = and(isNull(plans.deletedAt), sql`${plans.planStatus} <> 'cancelled'`);
+
 /** The `plan_item` join behind {@link planItemFields}. LEFT, never inner: an
  *  ad-hoc plan has no item_id and a plan whose item was deleted must still
  *  appear on the line. `deleted_at is null` so a soft-deleted item cannot
  *  resurrect its name here. */
-/** A plan that counts: not in Trash, not cancelled. */
-export const LIVE_PLAN = and(isNull(plans.deletedAt), sql`${plans.planStatus} <> 'cancelled'`);
-
 export const PLAN_ITEM_JOIN_ON = sql`plan_item.id = ${plans.itemId} and plan_item.deleted_at is null`;
 
 /** The `plan_rc` join: the plan's live Route Card (code + ADR-253 approval
