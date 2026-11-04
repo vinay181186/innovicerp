@@ -1,6 +1,6 @@
 // One order picker's data (owner 2026-11-04): the SO / JWSO options behind the
 // dropdown beside the list search and the QC Documents pickers. GET
-// /order-options. Read-only, so there is nothing to invalidate here.
+// /order-options. Read-only; sales_orders changes refresh it (LIVE_TABLE_KEYS).
 
 import type { OrderOptionsQuery, OrderOptionsResponse, QcDossierOrderKind } from '@innovic/shared';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
@@ -19,7 +19,7 @@ export const orderOptionKeys = {
     [...orderOptionKeys.all, 'list', a.search, a.kind ?? 'both', a.cancelled ?? 'include'] as const,
 };
 
-export function useOrderOptions(args: OrderOptionsArgs) {
+export function useOrderOptions(args: OrderOptionsArgs, enabled = true) {
   return useQuery<OrderOptionsResponse>({
     queryKey: orderOptionKeys.list(args),
     queryFn: () => {
@@ -31,6 +31,6 @@ export function useOrderOptions(args: OrderOptionsArgs) {
       return apiFetch<OrderOptionsResponse>(`/order-options${s ? `?${s}` : ''}`);
     },
     placeholderData: keepPreviousData,
-    staleTime: 60_000,
+    enabled,
   });
 }

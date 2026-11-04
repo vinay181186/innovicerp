@@ -37,6 +37,7 @@ import { purchaseRequestsKeys } from '@/modules/purchase-requests/api';
 import { qcCommandKeys } from '@/modules/qc-command/api';
 import { QC_DOCUMENT_VIEWS } from '@/modules/qc-documents/api';
 import { qcHistoryKeys } from '@/modules/qc-history/api';
+import { orderOptionKeys } from '@/modules/order-options/api';
 import { routeCardsKeys } from '@/modules/route-cards/api';
 import { salesOrdersKeys } from '@/modules/sales-orders/api';
 import { shopFloorKeys } from '@/modules/shop-floor/api';
@@ -72,6 +73,7 @@ const OP_VIEWS: readonly QueryKey[] = [
 
 const SALES_ORDER_VIEWS: readonly QueryKey[] = [
   salesOrdersKeys.all,
+  orderOptionKeys.all,
   dashboardKeys.home(),
   soStatusKeys.all,
   soOverviewKeys.all,

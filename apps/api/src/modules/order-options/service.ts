@@ -14,7 +14,7 @@ function requireCompany(user: AuthContext): string {
 }
 
 /** Newest first. The term matches SO / JWSO No., Internal SO No., Client PO No.,
- *  customer, or the "IN-SO-00009 · SO-100" label the dropdown re-sends from its
+ *  customer (the master's name or the one kept on the order), or the "IN-SO-00009 · SO-100" label the dropdown re-sends from its
  *  box when reopened. */
 export async function listOrderOptions(
   input: OrderOptionsQuery,
@@ -33,7 +33,7 @@ export async function listOrderOptions(
       const soMatch = term
         ? sql`AND (o.code ILIKE ${term} ESCAPE '\\' OR o.internal_so_no ILIKE ${term} ESCAPE '\\'
                    OR (o.code || ' · ' || o.internal_so_no) ILIKE ${term} ESCAPE '\\'
-                   OR o.client_po_no ILIKE ${term} ESCAPE '\\' OR ${customer} ILIKE ${term} ESCAPE '\\')`
+                   OR o.client_po_no ILIKE ${term} ESCAPE '\\' OR c.name ILIKE ${term} ESCAPE '\\' OR o.customer_name ILIKE ${term} ESCAPE '\\')`
         : sql``;
       arms.push(sql`
         SELECT 'so' AS kind, o.id, o.code, o.internal_so_no, o.client_po_no,
@@ -47,7 +47,7 @@ export async function listOrderOptions(
     if (input.kind !== 'so') {
       const jwMatch = term
         ? sql`AND (o.code ILIKE ${term} ESCAPE '\\' OR o.client_po_no ILIKE ${term} ESCAPE '\\'
-                   OR ${customer} ILIKE ${term} ESCAPE '\\')`
+                   OR c.name ILIKE ${term} ESCAPE '\\' OR o.customer_name ILIKE ${term} ESCAPE '\\')`
         : sql``;
       // Every column is named: with kind=jwso this arm runs alone.
       arms.push(sql`

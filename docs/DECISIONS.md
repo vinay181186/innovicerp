@@ -15125,7 +15125,7 @@ The owner wants one dropdown beside the search box on every list tied to an SO: 
 
 - The pick is one exact `values` filter on the list's existing Sort & Filter state (ADR-200), so table, count, paging, Clear and export follow with no per-endpoint parameter and no migration.
 - `GET /order-options` (one module, replaces `GET /qc-documents/dossier/orders`) is login-only by owner decision: the dropdown sits on many departments' pages, and a page-gated list would read as "No matches" (ADR-237). It exposes numbers, customer and Client PO to every login of the company.
-- Job Cards and Production Orders get an `orderCode` filter field, because `sourceCode` adds `/lineNo` and an exact match would miss line 2 onward.
+- Job Cards, Production Orders and the QC Register get an `orderCode` filter field: `sourceCode` adds `/lineNo`, a plan's snapshot can be blank, and a JWSO upload leaves `so_code_text` blank. It reads the live order first and the snapshot only as a fallback (§18).
 - Closed and cancelled orders are listed on list filters; the QC Dossier picker keeps leaving cancelled out. Each list keeps its own pick. Op Entry and the 16 unclear screens are left out.
 - `SearchableSelect`: ↑ ↓ scrolls the highlighted row into view (keyboard only).
 
@@ -15136,6 +15136,6 @@ The owner wants one dropdown beside the search box on every list tied to an SO: 
 
 ### Consequences
 
-- Positive: one filter per list, so dropdown and column ▾ cannot disagree.
+- Positive: one filter per list. Where the column prints a different value (Job Cards, Production Orders, QC Register) a pick replaces that column's ▾ filter, so the two never combine into an empty list.
 - Negative: users without JWSO rights can see JWSO numbers and customers in this dropdown.
 - Risk: a list whose map lacks the field answers 400, so a list is wired only once its field exists (§20.5).

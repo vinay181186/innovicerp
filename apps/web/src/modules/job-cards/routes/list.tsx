@@ -335,7 +335,7 @@ function JobCardsListPage(): React.JSX.Element {
         updating={isFetching && !isLoading}
         onClearFilters={clearFilters}
         filtersActive={filtersActive}
-        orderFilter={<OrderSfFilter sf={sf} field="orderCode" />}
+        orderFilter={<OrderSfFilter sf={sf} field="orderCode" columnField="sourceCode" />}
         filters={
           <JcListFilters
             status={search.status}

@@ -102,7 +102,7 @@ export function RegisterView({ toggle }: { toggle: React.ReactNode }): React.JSX
         }}
         searchPlaceholder="Search doc type, file, JC, item, SO…"
         updating={isFetching && !isLoading}
-        orderFilter={<OrderSfFilter sf={sf} field="soCode" />}
+        orderFilter={<OrderSfFilter sf={sf} field="orderCode" columnField="soCode" />}
         filters={
           <select
             className="innovic-select"

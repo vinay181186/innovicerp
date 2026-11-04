@@ -51,7 +51,21 @@ export function productionOrderSfColumns(frags: {
       type: 'text',
     },
     // The bare order No. for the order dropdown: sourceCode adds "/lineNo", so an exact match on it misses line 2+.
-    orderCode: { sql: sql`${productionOrders.soCodeText}`, type: 'text' },
+    // Live through the plan, the snapshot only as the fallback (CLAUDE.md §18).
+    orderCode: {
+      sql: sql`COALESCE(
+        (SELECT so.code FROM public.plans p
+           JOIN public.sales_order_lines sol ON sol.id = p.so_line_id
+           JOIN public.sales_orders so ON so.id = sol.sales_order_id
+          WHERE p.id = ${productionOrders.planId} LIMIT 1),
+        (SELECT jw.code FROM public.plans p
+           JOIN public.job_work_order_lines jwl ON jwl.id = p.jw_line_id
+           JOIN public.job_work_orders jw ON jw.id = jwl.job_work_order_id
+          WHERE p.id = ${productionOrders.planId} LIMIT 1),
+        ${productionOrders.soCodeText}
+      )`,
+      type: 'text',
+    },
     // ADR-207 — the Internal SO No., the SAME scalar the list SELECTs
     // (service.ts SO_INTERNAL_NO_SQL): read live through the order's plan → SO
     // line → SO. Keyed on production_orders.plan_id only, so it is valid in the

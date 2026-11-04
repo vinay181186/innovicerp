@@ -16,6 +16,7 @@ const DEFAULT_PLACEHOLDER = {
 } as const;
 
 const NOUN = { so: 'SO', jwso: 'JWSO', both: 'SO or JWSO' } as const;
+const CLEAR_LABEL = { so: 'Clear SO', jwso: 'Clear JWSO', both: 'Clear SO / JWSO' } as const;
 
 const orderLabel = (o: OrderOption): string => soNoWithInternal(o.code, o.internalSoNo);
 const boxLabel = (o: SearchableOption): string => o.code ?? o.name;
@@ -50,7 +51,9 @@ export function OrderSelect({
   const pickedRef = useRef<OrderOption | null>(null);
 
   // A value restored after a refresh is searched for, so it resolves to its full label.
-  const query = useOrderOptions({ search: term || value || '', kind, cancelled });
+  // Nothing is read until the box is opened or holds a value.
+  const [asked, setAsked] = useState(false);
+  const query = useOrderOptions({ search: term || value || '', kind, cancelled }, asked || !!value);
   const orders = useMemo(() => query.data?.orders ?? [], [query.data?.orders]);
   const options = useMemo(
     () =>
@@ -74,6 +77,7 @@ export function OrderSelect({
   const labelRef = useRef(valueLabel);
   labelRef.current = valueLabel;
   const handleSearch = useCallback((t: string): void => {
+    setAsked(true);
     setTerm(t === labelRef.current ? '' : t);
   }, []);
 
@@ -121,8 +125,8 @@ export function OrderSelect({
       <button
         type="button"
         className="order-filter-clear"
-        aria-label="Clear SO"
-        title="Clear SO"
+        aria-label={CLEAR_LABEL[kind ?? 'both']}
+        title={CLEAR_LABEL[kind ?? 'both']}
         disabled={!canClear}
         onClick={clear}
       >

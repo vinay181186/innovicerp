@@ -287,13 +287,14 @@ export function SearchableSelect({
     setHighlight((h) => (h >= filtered.length ? 0 : h));
   }, [filtered.length]);
 
-  // Set only by ↑ ↓: a mouse hover also moves `highlight` and must not scroll the list.
-  const keyMovedRef = useRef(false);
-  useEffect(() => {
-    if (!keyMovedRef.current) return;
-    keyMovedRef.current = false;
-    document.getElementById(`${baseId}-opt-${highlight}`)?.scrollIntoView?.({ block: 'nearest' });
-  }, [highlight, baseId]);
+  // ↑ ↓ only: a mouse hover also moves the highlight and must not scroll the list.
+  // After the paint, because the same key may have just opened the list.
+  function moveHighlightByKey(next: number): void {
+    setHighlight(next);
+    requestAnimationFrame(() => {
+      document.getElementById(`${baseId}-opt-${next}`)?.scrollIntoView?.({ block: 'nearest' });
+    });
+  }
 
   const runSearch = useCallback(
     (term: string) => {
@@ -313,6 +314,8 @@ export function SearchableSelect({
   }
 
   function pick(o: SearchableOption): void {
+    // A term typed just before the pick must not arrive after it.
+    if (debounceRef.current) clearTimeout(debounceRef.current);
     onChange(o.id);
     setQuery(selectedLabel ? selectedLabel(o) : optionLabel(o));
     setOpen(false);
@@ -327,13 +330,11 @@ export function SearchableSelect({
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>): void {
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      keyMovedRef.current = true;
       if (!open) setOpen(true);
-      setHighlight((h) => Math.min(h + 1, Math.max(filtered.length - 1, 0)));
+      moveHighlightByKey(Math.min(highlight + 1, Math.max(filtered.length - 1, 0)));
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
-      keyMovedRef.current = true;
-      setHighlight((h) => Math.max(h - 1, 0));
+      moveHighlightByKey(Math.max(highlight - 1, 0));
     } else if (e.key === 'Enter') {
       if (open && filtered[highlight]) {
         e.preventDefault();

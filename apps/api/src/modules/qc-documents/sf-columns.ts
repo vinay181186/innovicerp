@@ -4,7 +4,7 @@
 
 import { sql } from 'drizzle-orm';
 
-import { items, jobWorkOrderLines, qcDocuments, salesOrderLines } from '../../db/schema';
+import { items, jobCards, jobWorkOrderLines, qcDocuments, salesOrderLines } from '../../db/schema';
 import { createdByNameSql } from '../../lib/created-by-sql';
 import type { SfColumnMap } from '../../lib/list-query';
 import { polOf } from '../../lib/pol';
@@ -25,6 +25,21 @@ export const QC_DOC_SF_COLUMNS: SfColumnMap = {
   },
   itemName: { sql: sql`${items.name}`, type: 'text' },
   soCode: { sql: sql`${qcDocuments.soCodeText}`, type: 'text' },
+  // The order dropdown: the live SO / JWSO, because a JWSO upload leaves
+  // so_code_text blank and the upload form stores free text in it.
+  orderCode: {
+    sql: sql`COALESCE(
+      (SELECT so.code FROM public.sales_orders so WHERE so.id = ${qcDocuments.salesOrderId}),
+      (SELECT so.code FROM public.sales_order_lines sol
+         JOIN public.sales_orders so ON so.id = sol.sales_order_id
+        WHERE sol.id = COALESCE(${qcDocuments.soLineId}, ${jobCards.sourceSoLineId})),
+      (SELECT jw.code FROM public.job_work_order_lines jwl
+         JOIN public.job_work_orders jw ON jw.id = jwl.job_work_order_id
+        WHERE jwl.id = COALESCE(${qcDocuments.jwLineId}, ${jobCards.sourceJwLineId})),
+      ${qcDocuments.soCodeText}
+    )`,
+    type: 'text',
+  },
   // ADR-207 — the Internal SO No., the SAME scalar the page query SELECTs: read
   // live off the document's own SO (FK). A scalar on qc_documents, so it is
   // valid in the count query too.

@@ -119,6 +119,27 @@ describe('order-options routes', () => {
     ]);
   });
 
+  it('finds an order by the customer name kept on the order too', async () => {
+    const res = await (
+      await buildApp(admin)
+    ).inject({
+      method: 'GET',
+      url: `/order-options?search=${encodeURIComponent('Old name on the order')}`,
+    });
+    const body = res.json<OrderOptionsResponse>();
+    expect(body.orders.map((o) => o.code)).toContain(OPEN_SO);
+  });
+
+  it('refuses an over-long search', async () => {
+    const res = await (
+      await buildApp(admin)
+    ).inject({
+      method: 'GET',
+      url: `/order-options?search=${'x'.repeat(101)}`,
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
   it('finds an SO by the label the dropdown re-sends from its box', async () => {
     const label = encodeURIComponent(`${OPEN_SO} · ${INTERNAL_NO}`);
     expect(await codes(`search=${label}`)).toEqual([OPEN_SO]);
