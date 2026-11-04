@@ -278,6 +278,24 @@ export type PlanningLine = z.infer<typeof planningLineSchema>;
 
 // ─── Planning list: one row per POL (ADR-268) ────────────────────────────
 
+/** The plan facts the Planning list reads: status rule, plan code search, RC / PRO /
+ *  JC. Named fields only, so the list never loads what it does not show (ADR-268). */
+export const planningLineListPlanSchema = planningPlanSummarySchema.pick({
+  id: true,
+  code: true,
+  planStatus: true,
+  planQty: true,
+  bomChildCode: true,
+  routeCardCode: true,
+  routeCardApprovalStatus: true,
+  productionOrders: true,
+  productionOrderId: true,
+  productionOrderCode: true,
+  jcId: true,
+  jcCode: true,
+});
+export type PlanningLineListPlan = z.infer<typeof planningLineListPlanSchema>;
+
 /**
  * One row of GET /so-planning/lines: one live SO / JWSO line (not cancelled, on
  * an open order) with its order's header facts. Every line fact is the SAME
@@ -303,7 +321,6 @@ export const planningLineListItemSchema = planningLineSchema
     itemProcurementType: true,
     prQty: true,
     prs: true,
-    plans: true,
     totalPlanned: true,
     directJcQty: true,
     directJcCodes: true,
@@ -312,6 +329,7 @@ export const planningLineListItemSchema = planningLineSchema
     lineStatus: true,
   })
   .extend({
+    plans: z.array(planningLineListPlanSchema),
     soId: z.string().uuid(),
     soCode: z.string(),
     /** ADR-207 — null for a JWSO or an old SO. */

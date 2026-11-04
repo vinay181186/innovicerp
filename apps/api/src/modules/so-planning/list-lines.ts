@@ -41,7 +41,7 @@ import {
   pagePlanningLines,
   toPlanningLinePageRow,
 } from './list-lines-page';
-import { loadPlanSummariesByLine } from './plan-summaries';
+import { type ListPlansOfLines, loadListPlansByLine } from './list-lines-plans';
 
 /** What both sources give for a line, before its plans and cover are joined on. */
 interface LineFacts {
@@ -172,8 +172,8 @@ async function loadEquipmentBoms(
   return map;
 }
 
-async function loadSoRows(tx: DbTransaction, companyId: string): Promise<PlanningLinePageRow[]> {
-  const lines = await tx
+function loadSoLines(tx: DbTransaction, companyId: string) {
+  return tx
     .select({
       id: salesOrderLines.id,
       soId: salesOrders.id,
@@ -218,14 +218,17 @@ async function loadSoRows(tx: DbTransaction, companyId: string): Promise<Plannin
       ),
     )
     .orderBy(desc(salesOrders.code), asc(salesOrderLines.lineNo));
+}
 
+async function composeSoRows(
+  tx: DbTransaction,
+  companyId: string,
+  lines: Awaited<ReturnType<typeof loadSoLines>>,
+  { plansByLine, bomMasterByPlan }: ListPlansOfLines,
+): Promise<PlanningLinePageRow[]> {
   const lineIds = lines.map((l) => l.id);
-  const { planRows, plansByLine } = await loadPlanSummariesByLine(tx, lineIds, 'so');
   const directJcByLine = await loadDirectJcsByLine(tx, lines, 'so');
   const prsByLine = await loadPrsByLine(tx, companyId, lineIds);
-  // The plan summary carries bom_child_code but not bom_master_id, which the
-  // part-plan test (ADR-107 / ADR-221) needs too — as the detail does.
-  const planBomMasterById = new Map(planRows.map((r) => [r.plan.id, r.plan.bomMasterId]));
 
   const equipBomIdOf = (l: (typeof lines)[number]): string | null =>
     l.soType === 'equipment' && l.soBomMasterId && UUID_RE.test(l.soBomMasterId)
@@ -248,7 +251,7 @@ async function loadSoRows(tx: DbTransaction, companyId: string): Promise<Plannin
       orderQty: l.orderQty,
       plans: plansOfLine.map((p) => ({
         planQty: p.planQty,
-        bomMasterId: planBomMasterById.get(p.id) ?? null,
+        bomMasterId: bomMasterByPlan.get(p.id) ?? null,
         bomChildCode: p.bomChildCode,
       })),
       bomLines: isEquipmentLine ? equip.lines : [],
@@ -264,8 +267,8 @@ async function loadSoRows(tx: DbTransaction, companyId: string): Promise<Plannin
   });
 }
 
-async function loadJwRows(tx: DbTransaction, companyId: string): Promise<PlanningLinePageRow[]> {
-  const lines = await tx
+function loadJwLines(tx: DbTransaction, companyId: string) {
+  return tx
     .select({
       id: jobWorkOrderLines.id,
       soId: jobWorkOrders.id,
@@ -306,12 +309,13 @@ async function loadJwRows(tx: DbTransaction, companyId: string): Promise<Plannin
       ),
     )
     .orderBy(desc(jobWorkOrders.code), asc(jobWorkOrderLines.lineNo));
+}
 
-  const { plansByLine } = await loadPlanSummariesByLine(
-    tx,
-    lines.map((l) => l.id),
-    'jw',
-  );
+async function composeJwRows(
+  tx: DbTransaction,
+  lines: Awaited<ReturnType<typeof loadJwLines>>,
+  { plansByLine }: ListPlansOfLines,
+): Promise<PlanningLinePageRow[]> {
   const directJcByLine = await loadDirectJcsByLine(tx, lines, 'jw');
 
   return lines.map((l) => {
@@ -342,9 +346,17 @@ export async function listPlanningLines(
   const companyId = requireCompany(user);
   const rows = await withUserContext(user, async (tx) => {
     // In sequence: one transaction, one connection. SO rows first, then JW.
-    const soRows = query.src === 'jw' ? [] : await loadSoRows(tx, companyId);
-    const jwRows = query.src === 'so' ? [] : await loadJwRows(tx, companyId);
-    return [...soRows, ...jwRows];
+    const soLines = query.src === 'jw' ? [] : await loadSoLines(tx, companyId);
+    const jwLines = query.src === 'so' ? [] : await loadJwLines(tx, companyId);
+    const planned = await loadListPlansByLine(
+      tx,
+      soLines.map((l) => l.id),
+      jwLines.map((l) => l.id),
+    );
+    return [
+      ...(await composeSoRows(tx, companyId, soLines, planned)),
+      ...(await composeJwRows(tx, jwLines, planned)),
+    ];
   });
   // Paged after the transaction: no connection held for in-memory work.
   return pagePlanningLines(rows, query);

@@ -6,7 +6,14 @@
 
 import Fastify, { type FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { PlanningLineListItem } from '@innovic/shared';
+import {
+  docText,
+  lineJcs,
+  linePros,
+  lineRouteCards,
+  rcText,
+  type PlanningLineListItem,
+} from '@innovic/shared';
 import type { AuthContext } from '../../db/with-user-context';
 import { errorHandlerPlugin } from '../../plugins/error-handler';
 import { listPlanningLines } from './list-lines';
@@ -100,7 +107,6 @@ describe('every figure on a list row equals the same line on the order detail', 
     'itemProcurementType',
     'prQty',
     'prs',
-    'plans',
     'totalPlanned',
     'directJcQty',
     'directJcCodes',
@@ -121,6 +127,10 @@ describe('every figure on a list row equals the same line on the order detail', 
     for (const row of rows) {
       const line = detail.lines.find((l) => l.soLineId === row.soLineId)!;
       for (const f of SHARED_FIELDS) expect(row[f], f).toEqual(line[f]);
+      expect(row.plans.map((p) => p.code)).toEqual(line.plans.map((p) => p.code));
+      expect(rcText(lineRouteCards(row))).toBe(rcText(lineRouteCards(line)));
+      expect(docText(linePros(row))).toBe(docText(linePros(line)));
+      expect(docText(lineJcs(row))).toBe(docText(lineJcs(line)));
       expect(row.soCode).toBe(detail.soCode);
       expect(row.customerName).toBe(detail.customerName);
       expect(row.soType).toBe(detail.soType);

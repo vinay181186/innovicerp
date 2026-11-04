@@ -21,10 +21,22 @@ export interface PlanningDocRef {
 }
 
 /** Only what the rule reads, so a list row and a full PlanningLine both fit. */
-export type PlanningLineDocsInput = Pick<PlanningLine, 'plans' | 'directJcCodes'>;
+export type PlanningPlanDocsInput = Pick<
+  PlanningPlanSummary,
+  | 'routeCardCode'
+  | 'routeCardApprovalStatus'
+  | 'productionOrders'
+  | 'productionOrderId'
+  | 'productionOrderCode'
+  | 'jcId'
+  | 'jcCode'
+>;
+export type PlanningLineDocsInput = Pick<PlanningLine, 'directJcCodes'> & {
+  plans: readonly PlanningPlanDocsInput[];
+};
 
 /** The plan's Route Card, or none. */
-export function planRouteCards(plan: PlanningPlanSummary): PlanningRcRef[] {
+export function planRouteCards(plan: PlanningPlanDocsInput): PlanningRcRef[] {
   return plan.routeCardCode
     ? [{ code: plan.routeCardCode, approval: plan.routeCardApprovalStatus }]
     : [];
@@ -32,7 +44,7 @@ export function planRouteCards(plan: PlanningPlanSummary): PlanningRcRef[] {
 
 /** Every live Production Order of the plan, oldest first. An older API build
  *  sends no list — fall back to the single newest PRO it does send. */
-export function planPros(plan: PlanningPlanSummary): PlanningDocRef[] {
+export function planPros(plan: PlanningPlanDocsInput): PlanningDocRef[] {
   if (plan.productionOrders.length === 0 && plan.productionOrderCode) {
     return [{ code: plan.productionOrderCode, id: plan.productionOrderId }];
   }
@@ -41,7 +53,7 @@ export function planPros(plan: PlanningPlanSummary): PlanningDocRef[] {
 
 /** A Job Card the plan made itself (Execute on an ops-editor plan), not through
  *  a PRO — it was in the old "Linked" cell and must not disappear. */
-export function planOwnJc(plan: PlanningPlanSummary): PlanningDocRef | null {
+export function planOwnJc(plan: PlanningPlanDocsInput): PlanningDocRef | null {
   if (!plan.jcCode) return null;
   if (plan.productionOrders.some((po) => po.jcCode === plan.jcCode)) return null;
   return { code: plan.jcCode, id: plan.jcId };
@@ -49,7 +61,7 @@ export function planOwnJc(plan: PlanningPlanSummary): PlanningDocRef | null {
 
 /** The Job Card of each PRO, same order (a JC in Trash comes back null →
  *  skipped), then the plan's own Job Card if it has one. */
-export function planJcs(plan: PlanningPlanSummary): PlanningDocRef[] {
+export function planJcs(plan: PlanningPlanDocsInput): PlanningDocRef[] {
   const own = planOwnJc(plan);
   return [
     ...plan.productionOrders
@@ -61,7 +73,7 @@ export function planJcs(plan: PlanningPlanSummary): PlanningDocRef[] {
 
 /** Unique Route Cards across the line's plans (a card's approval is one value,
  *  so the first plan naming it speaks for all). */
-export function lineRouteCards(line: Pick<PlanningLine, 'plans'>): PlanningRcRef[] {
+export function lineRouteCards(line: Pick<PlanningLineDocsInput, 'plans'>): PlanningRcRef[] {
   const byCode = new Map<string, PlanningRcRef>();
   for (const p of line.plans) {
     for (const rc of planRouteCards(p)) if (!byCode.has(rc.code)) byCode.set(rc.code, rc);
@@ -69,7 +81,7 @@ export function lineRouteCards(line: Pick<PlanningLine, 'plans'>): PlanningRcRef
   return [...byCode.values()];
 }
 
-export function linePros(line: Pick<PlanningLine, 'plans'>): PlanningDocRef[] {
+export function linePros(line: Pick<PlanningLineDocsInput, 'plans'>): PlanningDocRef[] {
   return line.plans.flatMap(planPros);
 }
 

@@ -16,6 +16,7 @@ import {
   linePros,
   lineRouteCards,
   rcText,
+  planningLineStatus,
   type PlanningLineListItem,
 } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
@@ -27,7 +28,7 @@ import { PLANNING_STATE_LABEL } from './planning-line-columns';
 import { JwChip, lineStatusOf, type SourceFilter } from './planning-shared';
 
 /** The columns a planner opens this screen for: never taken off screen. */
-export const LINE_LIST_PINNED_IDS = ['rc_no', 'pro_no', 'jc_no'];
+export const LINE_LIST_PINNED_IDS = ['plan_status', 'rc_no', 'pro_no', 'jc_no'];
 
 /** Row tint by the line's derived plan status (ADR-199 Wave A, ROW_TINT): the
  *  same green/amber lineStatusOf gives the status text, so the wash can never
@@ -107,12 +108,36 @@ export function lineListColumns(
     },
     {
       id: 'so_type',
-      header: src === 'jw' ? 'JWSO Type' : src === 'so' ? 'SO Type' : 'SO / JWSO Type',
-      kind: 'badge',
+      header: (
+        <>
+          {src === 'jw' ? 'JWSO' : src === 'so' ? 'SO' : 'SO / JWSO'}
+          <br />
+          Type
+        </>
+      ),
+      label: src === 'jw' ? 'JWSO Type' : src === 'so' ? 'SO Type' : 'SO / JWSO Type',
+      // Text, not badge: the long "Component Manufacturing" gives way with "…" so
+      // Plan Status and the RC / PRO / JC columns stay on screen.
+      kind: 'text',
+      filterType: 'list',
+      ellipsis: true,
       sortFilterField: SF.soType,
       filterOptions: TYPE_OPTIONS,
-      nowrap: true,
-      render: (r) => <span className="badge b-grey">{soTypeLabel(r.soType)}</span>,
+      render: (r) => (
+        <span
+          className="badge b-grey"
+          style={{
+            display: 'inline-block',
+            maxWidth: '100%',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            verticalAlign: 'middle',
+          }}
+        >
+          {soTypeLabel(r.soType)}
+        </span>
+      ),
+      title: (r) => soTypeLabel(r.soType),
     },
     {
       id: 'due_date',
@@ -124,7 +149,14 @@ export function lineListColumns(
     },
     {
       id: 'order_qty',
-      header: 'Order Qty',
+      header: (
+        <>
+          Order
+          <br />
+          Qty
+        </>
+      ),
+      label: 'Order Qty',
       kind: 'num',
       align: 'right',
       sortFilterField: SF.orderQty,
@@ -134,7 +166,14 @@ export function lineListColumns(
     },
     {
       id: 'plan_qty',
-      header: 'Plan Qty',
+      header: (
+        <>
+          Plan
+          <br />
+          Qty
+        </>
+      ),
+      label: 'Plan Qty',
       kind: 'num',
       align: 'right',
       sortFilterField: SF.planQty,
@@ -144,7 +183,14 @@ export function lineListColumns(
     },
     {
       id: 'to_plan',
-      header: 'To Plan',
+      header: (
+        <>
+          To
+          <br />
+          Plan
+        </>
+      ),
+      label: 'To Plan',
       kind: 'num',
       align: 'right',
       sortFilterField: SF.toPlan,
@@ -158,7 +204,14 @@ export function lineListColumns(
     },
     {
       id: 'pct_planned',
-      header: '% Planned',
+      header: (
+        <>
+          %
+          <br />
+          Planned
+        </>
+      ),
+      label: '% Planned',
       kind: 'num',
       align: 'right',
       sortFilterField: SF.planningPct,
@@ -177,8 +230,13 @@ export function lineListColumns(
       filterOptions: PLAN_STATE_OPTIONS,
       nowrap: true,
       render: (r) => {
+        // The state's name only: To Plan beside it already says how many are pending.
         const st = lineStatusOf(r);
-        return <span style={{ fontSize: 11, fontWeight: 700, color: st.color }}>{st.label}</span>;
+        return (
+          <span style={{ fontSize: 11, fontWeight: 700, color: st.color }}>
+            {PLANNING_STATE_LABEL[planningLineStatus(r).state]}
+          </span>
+        );
       },
     },
     {
@@ -213,7 +271,17 @@ export function lineListColumns(
     },
     createdByColumn<PlanningLineListItem>({
       createdByName: (r) => r.createdByName,
-      overrides: { sortFilterField: SF.createdBy },
+      overrides: {
+        sortFilterField: SF.createdBy,
+        header: (
+          <>
+            Created
+            <br />
+            By
+          </>
+        ),
+        label: 'Created By',
+      },
     }),
   ];
 }
