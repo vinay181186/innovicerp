@@ -32,6 +32,9 @@ export interface ListFooterProps {
   onPage?: ((p: number) => void) | undefined;
   /** Interaction hint, e.g. "Click a row to open its detail page." */
   hint?: ReactNode | undefined;
+  /** Totals for the list, e.g. "Scrap Qty 120". Lists have no tile row (owner
+   *  2026-11-03), so a figure with no Status ▾ option to sit on goes here. */
+  summary?: ReactNode | undefined;
   /** ⬇ Download Excel Template / 📄 Import from Excel. */
   actions?: ReactNode | undefined;
 }
@@ -46,6 +49,7 @@ export function ListFooter({
   pageSize = 25,
   onPage,
   hint,
+  summary,
   actions,
 }: ListFooterProps): React.JSX.Element {
   const plural = nounPlural ?? `${noun}s`;
@@ -108,6 +112,18 @@ export function ListFooter({
           </div>
         ) : null}
       </div>
+      {summary ? (
+        <div
+          style={{
+            fontSize: 'var(--fs-sm)',
+            color: 'var(--text2)',
+            marginTop: 'var(--sp-1)',
+            padding: '0 var(--sp-1)',
+          }}
+        >
+          {summary}
+        </div>
+      ) : null}
       {hint ? (
         <div
           style={{

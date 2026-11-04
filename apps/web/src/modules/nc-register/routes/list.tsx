@@ -6,7 +6,7 @@
 //
 // Columns (first pinned) + tint + the per-row ⋯ menu live in
 // components/nc-list-columns.tsx so this file stays under the 400-line ceiling.
-// CAPA stays folded in as a tab; the NC filters, StatStrip and permission gates
+// CAPA stays folded in as a tab; the NC filters and permission gates
 // are unchanged.
 
 import {
@@ -14,6 +14,7 @@ import {
   type NcRegisterListItem,
   NC_REASON_CATEGORIES,
   NC_STATUSES,
+  roundQty,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -268,7 +269,6 @@ function NcRegisterListPage(): React.JSX.Element {
             }}
             columnFiltering={sf.filtering}
             canReportNc={canReportNc}
-            summary={summary}
           />
 
           {isError ? (
@@ -316,6 +316,11 @@ function NcRegisterListPage(): React.JSX.Element {
             noun="NC"
             page={currentPage}
             pageSize={PAGE_SIZE}
+            summary={
+              summary
+                ? `All NCs: ${summary.total} · NC Raised ${summary.pending} · Deviated Qty ${roundQty(summary.totalQty)} · Rework Qty ${roundQty(summary.reworkQty)} · Scrap Qty ${roundQty(summary.scrapQty)}`
+                : undefined
+            }
             onPage={(p) =>
               void navigate({
                 search: (prev) => ({ ...prev, page: Math.min(totalPages, Math.max(1, p)) }),

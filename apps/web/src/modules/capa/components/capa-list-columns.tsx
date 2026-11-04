@@ -30,7 +30,14 @@ export function capaRowTint(c: CapaRecord): string | undefined {
   return c.overdue ? ROW_TINT.late : undefined;
 }
 
-export function capaListColumns(firstRowNo: number): DataTableColumn<CapaRecord>[] {
+/** CAPA counts per status, shown in the CAPA Status ▾ tick list as "Open (3)"
+ *  (owner 2026-11-03: no tile row above a list). */
+export type CapaStatusCounts = Partial<Record<string, number>>;
+
+export function capaListColumns(
+  firstRowNo: number,
+  statusCounts?: CapaStatusCounts,
+): DataTableColumn<CapaRecord>[] {
   return [
     // Owner rule 2026-10-31 — own number (CAPA No.) inside the lead block (after
     // Item Name). Internal SO No. / Item Name come off the CAPA's SO / item codes.
@@ -148,7 +155,10 @@ export function capaListColumns(firstRowNo: number): DataTableColumn<CapaRecord>
     {
       id: 'status',
       sortFilterField: 'status',
-      filterOptions: CAPA_STATUSES.map((v) => ({ value: v, label: v })),
+      filterOptions: CAPA_STATUSES.map((v) => {
+        const n = statusCounts?.[v];
+        return { value: v, label: n === undefined ? v : `${v} (${n})` };
+      }),
       kind: 'badge',
       header: 'CAPA Status',
       nowrap: true,
