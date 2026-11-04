@@ -15194,3 +15194,33 @@ draft plans also read "Fully Planned" while its lines read "In Planning" (open s
   and `job_cards` changes at every op log. Production Orders, Route Cards, SO lines and PRs are live.
 - Open: the JW branch of `GET /so-planning` (Create Plan picker) still counts a short-closed line as
   not covered, so the picker can offer a JWSO with nothing left to plan; the server refuses the plan.
+
+## ADR-269: One standard for every element, component, layout and effect
+
+**Date:** 2026-11-04
+**Status:** Accepted (owner)
+
+### Context
+
+The same thing looked and behaved differently from page to page: pop-ups lost typing on a stray click, Save sat at the top or the bottom, detail pages had three fact layouts.
+
+### Decision
+
+- Effects: buttons darken on hover, go a little darker when pressed, one blue keyboard ring, disabled 50% with no hover. Rows open on Tab + Enter (`rowOpenProps`).
+- Pop-ups: only `ui/feedback/Modal`. Outside click, Esc, x and Cancel ask only if something was typed (`use-close-rule`).
+- Forms: every Save at the bottom in `ui/layout/FormActions` (owner chose bottom over the recommended top). A form with line items is a page; a small entry is a pop-up.
+- Saved message: sliding toast. Banner = a condition still true. An error or success Banner scrolls itself into view.
+- Detail pages: `ClusterGrid stack` facts, `RelatedDocsTabs` + History, the page scrolls, Print in the menu. Approved one-screen create/edit and Home stay.
+- Look: 13px reading text, 11px helper text; item codes dark bold mono; document numbers blue; `Icon` on action buttons.
+- `ui/standard.guard.test.ts` holds it in CI. Exceptions are listed there with their reason.
+
+### Alternatives Considered
+
+- Save at top: recommended, owner chose bottom.
+- Rounding off-scale spacing (6, 10, 14): left as typed, it would risk the one-screen layouts for little visible gain.
+
+### Consequences
+
+- Positive: one place to change each behaviour; a new screen cannot silently drift.
+- Negative: Playwright specs that used the old controls need updating, see TASKS.
+- Risks: wide visual change, checked by tests and partly in a browser.
