@@ -15111,3 +15111,31 @@ Owner 2026-11-02: "remove this rule — no compulsory fill of back-dated entries
 - **Created By** (`createdByColumn`) LAST on every lead list, shown, movable, hideable. Server: one helper `apps/api/src/lib/created-by-sql.ts createdByNameSql(col)` (full name, else e-mail before @) on the created_by of the SAME record whose created_at feeds Created On (line, else header); screen shortens with shared `shortName`. `createdBy` sort/filter field wherever `createdOn` has one. SO list: `lineCreatedByName` (the header `createdByName` stays the SO creator).
 - One name per fact: Op Log "Logged By" → "Created By" (list, export, JC print, op-log history, NAMING); Job Queue's old "Sr No" (queue position) → "Queue No."; Reserved Stock pop-up drops Reserved On / Reserved By (same facts as Created On / Created By).
 - Guard test: every file that builds `leadColumns` must also add `createdByColumn`.
+
+## ADR-267: One SO / JWSO dropdown beside the list search (owner 2026-11-04)
+
+**Date:** 2026-11-04
+**Status:** Accepted. Batch 1 built: SO Master, Job Cards, Production Orders, QC Documents (Dossier, SO Status, Register). Batches 2-5 follow.
+
+### Context
+
+The owner wants one dropdown beside the search box on every list tied to an SO: find an order by SO No., Internal SO No., Client PO No. or customer, pick it, see only that order. Mockup approved in Claude Design. Row: `IN-SO-00009 · SO-100 — Customer`, Client PO searchable but not shown; × outside the box, light red with a black ×.
+
+### Decision
+
+- The pick is one exact `values` filter on the list's existing Sort & Filter state (ADR-200), so table, count, paging, Clear and export follow with no per-endpoint parameter and no migration.
+- `GET /order-options` (one module, replaces `GET /qc-documents/dossier/orders`) is login-only by owner decision: the dropdown sits on many departments' pages, and a page-gated list would read as "No matches" (ADR-237). It exposes numbers, customer and Client PO to every login of the company.
+- Job Cards and Production Orders get an `orderCode` filter field, because `sourceCode` adds `/lineNo` and an exact match would miss line 2 onward.
+- Closed and cancelled orders are listed on list filters; the QC Dossier picker keeps leaving cancelled out. Each list keeps its own pick. Op Entry and the 16 unclear screens are left out.
+- `SearchableSelect`: ↑ ↓ scrolls the highlighted row into view (keyboard only).
+
+### Alternatives Considered
+
+- A new `orderId` query parameter on every list endpoint: rejected, about 50 endpoints changed for what the filter already does (§21).
+- Reusing `/day-logs/order-options`: rejected, open orders only, no Client PO search, needs Day Log write.
+
+### Consequences
+
+- Positive: one filter per list, so dropdown and column ▾ cannot disagree.
+- Negative: users without JWSO rights can see JWSO numbers and customers in this dropdown.
+- Risk: a list whose map lacks the field answers 400, so a list is wired only once its field exists (§20.5).

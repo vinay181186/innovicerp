@@ -2056,6 +2056,46 @@ input[type='radio'] {
   width: 168px !important;
   flex: 0 0 auto;
 }
+/* SO / JWSO dropdown: 320px box + 4px gap + 28px × (owner 2026-11-04). */
+.order-filter {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  flex: 0 1 352px;
+  max-width: 100%;
+  min-width: 0;
+}
+.order-filter-box {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+/* Same specificity as the 168px rule above, so this must stay AFTER it. */
+.list-filterbar .order-filter .innovic-input {
+  width: 100% !important;
+  text-overflow: ellipsis;
+}
+.order-filter-clear {
+  flex: 0 0 var(--control-h);
+  width: var(--control-h);
+  height: var(--control-h);
+  padding: 0;
+  line-height: 1;
+  font-size: var(--fs-md);
+  font-weight: 700;
+  cursor: pointer;
+  color: var(--sig-clear-fg);
+  background: var(--sig-clear-bg);
+  border: 1px solid var(--sig-clear-bd);
+  border-radius: var(--radius);
+}
+.order-filter-clear:hover:not(:disabled) {
+  background: var(--sig-clear-bg-hover);
+  border-color: var(--sig-clear-bd-hover);
+}
+.order-filter-clear:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 
 /* ADR-212 — vertical separator between logical column groups (Op Qty Flow),
    and the optional group-label band DataTable draws above the headers. */

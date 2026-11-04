@@ -9,11 +9,10 @@
 
 import type { SoQcLine, SoStatus } from '@innovic/shared';
 import { useCallback, useMemo, useState } from 'react';
-import { SearchableSelect } from '@/ui/forms';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { fmtDate } from '@/lib/date';
 import { soNoWithInternal } from '@/lib/so-number';
-import { useSalesOrdersList } from '@/modules/sales-orders/api';
+import { OrderSelect } from '@/modules/order-options/components/order-select';
 import { SoStatusBadge } from '@/modules/sales-orders/components/so-status-badge';
 import { useSoQcStatus } from '@/modules/so-qc-status/api';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
@@ -33,10 +32,8 @@ const hasDetail = (l: SoQcLine): boolean =>
   l.grnDetail.length > 0 || l.tpiDetail.length > 0 || l.docDetail.length > 0;
 
 export function SoStatusView({ toggle }: { toggle: React.ReactNode }): React.JSX.Element {
-  const [selectedSo, setSelectedSo] = useState<string | null>(null);
-  const [soSearch, setSoSearch] = useState('');
-  const soList = useSalesOrdersList({ search: soSearch || undefined, limit: 20, offset: 0 });
-  const detail = useSoQcStatus(selectedSo ?? undefined);
+  const [selectedSo, setSelectedSo] = useState<{ id: string; code: string } | null>(null);
+  const detail = useSoQcStatus(selectedSo?.id);
 
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
   const toggleExpand = useCallback((key: string): void => {
@@ -61,24 +58,19 @@ export function SoStatusView({ toggle }: { toggle: React.ReactNode }): React.JSX
     // are fixed chrome; the lines table takes the rest of the screen and is the
     // ONE thing that scrolls, so its column header never leaves the screen.
     <div className="page-fill">
-      <ListHeader title="QC Documents" icon="🗃" tools={toggle} />
-      <div style={{ marginBottom: 14, display: 'flex', justifyContent: 'flex-end' }}>
-        <div style={{ minWidth: 300 }}>
-          <SearchableSelect
+      <ListHeader
+        title="QC Documents"
+        icon="🗃"
+        tools={toggle}
+        searchSlot={
+          <OrderSelect
             id="so-qc-select"
-            value={selectedSo}
-            onChange={setSelectedSo}
-            onSearch={setSoSearch}
-            loading={soList.isFetching}
-            placeholder="Search SO No. or customer…"
-            options={(soList.data?.items ?? []).map((s) => ({
-              id: s.id,
-              code: soNoWithInternal(s.code, s.internalSoNo),
-              name: s.customerName ?? '',
-            }))}
+            kind="so"
+            value={selectedSo?.code ?? null}
+            onChange={(o) => setSelectedSo(o ? { id: o.id, code: o.code } : null)}
           />
-        </div>
-      </div>
+        }
+      />
 
       {!selectedSo ? (
         <PageState

@@ -187,5 +187,6 @@ export * from './schemas/dashboard-home';
 export * from './schemas/dashboard-checks';
 export * from './schemas/table-prefs';
 export * from './schemas/list-query';
+export * from './schemas/order-option';
 export * from './schemas/dashboard-registry';
 export * from './lib/page-access';

@@ -287,6 +287,14 @@ export function SearchableSelect({
     setHighlight((h) => (h >= filtered.length ? 0 : h));
   }, [filtered.length]);
 
+  // Set only by ↑ ↓: a mouse hover also moves `highlight` and must not scroll the list.
+  const keyMovedRef = useRef(false);
+  useEffect(() => {
+    if (!keyMovedRef.current) return;
+    keyMovedRef.current = false;
+    document.getElementById(`${baseId}-opt-${highlight}`)?.scrollIntoView?.({ block: 'nearest' });
+  }, [highlight, baseId]);
+
   const runSearch = useCallback(
     (term: string) => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -319,10 +327,12 @@ export function SearchableSelect({
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>): void {
     if (e.key === 'ArrowDown') {
       e.preventDefault();
+      keyMovedRef.current = true;
       if (!open) setOpen(true);
       setHighlight((h) => Math.min(h + 1, Math.max(filtered.length - 1, 0)));
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
+      keyMovedRef.current = true;
       setHighlight((h) => Math.max(h - 1, 0));
     } else if (e.key === 'Enter') {
       if (open && filtered[highlight]) {

@@ -26,6 +26,8 @@ export const JC_SF_COLUMNS: SfColumnMap = {
     sql: sql`(COALESCE(so.code, jw.code) || CASE WHEN COALESCE(sol.line_no, jwl.line_no) <> 1 THEN '/' || COALESCE(sol.line_no, jwl.line_no)::text ELSE '' END)`,
     type: 'text',
   },
+  // The bare order No. for the order dropdown: sourceCode adds "/lineNo", so an exact match on it misses line 2+.
+  orderCode: { sql: sql`COALESCE(so.code, jw.code)`, type: 'text' },
   // ADR-207 — the Internal SO No. of that same SO, off the `so` join
   // JC_LIST_JOINS makes for both the list and its count. Null on a
   // JWSO-sourced or standalone card, which has no sales order behind it.

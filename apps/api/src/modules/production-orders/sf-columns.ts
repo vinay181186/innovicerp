@@ -50,6 +50,8 @@ export function productionOrderSfColumns(frags: {
       sql: sql`(${productionOrders.soCodeText} || COALESCE('/' || NULLIF(${productionOrders.lineNo}, 0)::text, ''))`,
       type: 'text',
     },
+    // The bare order No. for the order dropdown: sourceCode adds "/lineNo", so an exact match on it misses line 2+.
+    orderCode: { sql: sql`${productionOrders.soCodeText}`, type: 'text' },
     // ADR-207 — the Internal SO No., the SAME scalar the list SELECTs
     // (service.ts SO_INTERNAL_NO_SQL): read live through the order's plan → SO
     // line → SO. Keyed on production_orders.plan_id only, so it is valid in the

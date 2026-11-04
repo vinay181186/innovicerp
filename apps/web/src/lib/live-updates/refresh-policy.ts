@@ -119,6 +119,7 @@ export const REFRESH_POLICY: Readonly<Record<string, RefreshRule>> = {
   me: onOpen("the user's own preferences"),
   'op-log': onOpen('history report; Op Entry is the live screen'),
   operators: onOpen(MASTER),
+  'order-options': onOpen('SO / JWSO dropdown options, read when the box opens or is typed in'),
   'print-templates': onOpen(MASTER),
   'qc-processes': onOpen(MASTER),
   'related-docs': onOpen(LOOKUP),

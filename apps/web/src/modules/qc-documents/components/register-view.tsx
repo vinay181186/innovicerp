@@ -15,6 +15,7 @@ import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
 import { useSession } from '@/lib/session';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { ConfirmDialog } from '@/ui/feedback';
 import { DataTable, Panel } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
@@ -101,6 +102,7 @@ export function RegisterView({ toggle }: { toggle: React.ReactNode }): React.JSX
         }}
         searchPlaceholder="Search doc type, file, JC, item, SO…"
         updating={isFetching && !isLoading}
+        orderFilter={<OrderSfFilter sf={sf} field="soCode" />}
         filters={
           <select
             className="innovic-select"
