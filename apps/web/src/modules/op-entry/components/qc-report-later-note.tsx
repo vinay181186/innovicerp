@@ -49,7 +49,9 @@ export function QcReportLaterNote({
         It is optional on this QC stage. You can upload it later — it stays on Home under Reports to
         upload.
       </div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
+      <div
+        style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--sp-2)', marginTop: 'var(--sp-2)' }}
+      >
         {uploadLink}
         <button type="button" className="btn btn-sm" onClick={onDone}>
           Close

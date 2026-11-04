@@ -75,7 +75,10 @@ export function partyMaterialColumns(): DataTableColumn<PartyMaterialListItem>[]
       render: (pm) => (
         <span
           className="mono fw-700"
-          style={{ fontSize: 14, color: pm.stockQty > 0 ? 'var(--green)' : 'var(--text3)' }}
+          style={{
+            fontSize: 'var(--fs-sm)',
+            color: pm.stockQty > 0 ? 'var(--green)' : 'var(--text3)',
+          }}
         >
           {pm.stockQty}
         </span>
@@ -152,10 +155,13 @@ function DetailField({
 }): React.JSX.Element {
   return (
     <div>
-      <div className="text3" style={{ fontSize: 11, marginBottom: 2 }}>
+      <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginBottom: 'var(--sp-0)' }}>
         {label}
       </div>
-      <div className={mono ? 'mono' : undefined} style={{ fontSize: 12, ...valueStyle }}>
+      <div
+        className={mono ? 'mono' : undefined}
+        style={{ fontSize: 'var(--fs-sm)', ...valueStyle }}
+      >
         {value}
       </div>
     </div>

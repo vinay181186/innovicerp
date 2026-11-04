@@ -265,20 +265,20 @@ function DailyReportPage(): React.JSX.Element {
           <div key={g.machineId ?? g.machineCode} className="panel" style={{ marginBottom: 14 }}>
             <div
               style={{
-                padding: '8px 12px',
+                padding: 'var(--sp-2) var(--sp-3)',
                 background: 'var(--bg4)',
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
               }}
             >
-              <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: 'var(--sp-3)', alignItems: 'center' }}>
                 <span className="mono fw-700" style={{ fontSize: 'var(--fs-md)' }}>
                   {g.machineCode}
                 </span>
                 <span className="text2">{g.machineName ?? ''}</span>
               </div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: 'var(--sp-2)', alignItems: 'center' }}>
                 <span
                   style={{
                     fontFamily: 'var(--mono)',

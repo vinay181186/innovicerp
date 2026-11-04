@@ -135,7 +135,7 @@ export function EditPartyMaterialModal({
         />
       }
     >
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-3)' }}>
         <Field label="Code">
           <input
             type="text"
@@ -157,7 +157,7 @@ export function EditPartyMaterialModal({
         </Field>
 
         {lockHint ? (
-          <div className="text3" style={{ gridColumn: 'span 2', fontSize: 11 }}>
+          <div className="text3" style={{ gridColumn: 'span 2', fontSize: 'var(--fs-xs)' }}>
             Customer and Customer RM are fixed — this material already has stock movement (received,
             issued or returned).
           </div>

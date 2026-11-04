@@ -28,21 +28,21 @@ export function MachineCard({ machine, running, isSelected, onSelect }: Props): 
         border: `2px solid ${isSelected ? 'var(--cyan)' : 'var(--border)'}`,
         borderRadius: 10,
         background: isSelected ? 'var(--cyan3)' : 'var(--bg3)',
-        padding: 12,
+        padding: 'var(--sp-3)',
         textAlign: 'left',
         cursor: 'pointer',
         transition: 'all .15s',
       }}
     >
-      <div className="mono cyan" style={{ fontWeight: 800, fontSize: 14 }}>
+      <div className="mono cyan" style={{ fontWeight: 800, fontSize: 'var(--fs-sm)' }}>
         {machine.code}
       </div>
-      <div className="text3" style={{ fontSize: 11, marginBottom: 6 }}>
+      <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginBottom: 6 }}>
         {machine.name}
       </div>
       <div
         style={{
-          fontSize: 11,
+          fontSize: 'var(--fs-xs)',
           fontWeight: 700,
           color: running ? 'var(--green)' : 'var(--text3)',
         }}
@@ -51,7 +51,7 @@ export function MachineCard({ machine, running, isSelected, onSelect }: Props): 
       </div>
       {running ? (
         <>
-          <div className="mono text2" style={{ fontSize: 11, marginTop: 3 }}>
+          <div className="mono text2" style={{ fontSize: 'var(--fs-xs)', marginTop: 3 }}>
             {running.jobCardCode}
           </div>
           {/* The part, as its CODE only. These tiles pack the whole shop onto
@@ -66,7 +66,7 @@ export function MachineCard({ machine, running, isSelected, onSelect }: Props): 
             <div
               className="mono"
               style={{
-                fontSize: 11,
+                fontSize: 'var(--fs-xs)',
                 color: 'var(--purple)',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
@@ -83,7 +83,7 @@ export function MachineCard({ machine, running, isSelected, onSelect }: Props): 
               {itemCode}
             </div>
           ) : null}
-          <div className="text3" style={{ fontSize: 11 }}>
+          <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
             Op {opSrNo(running.opSeq)}: {running.operation}
           </div>
         </>

@@ -55,7 +55,7 @@ function JcChip({
 
 /** The quiet caption in front of a value (`Drawing`, `Due Date`, …). */
 const kvLabel: React.CSSProperties = {
-  fontSize: 12,
+  fontSize: 'var(--fs-xs)',
   color: 'var(--text3)',
   whiteSpace: 'nowrap',
 };
@@ -63,7 +63,7 @@ const kvLabel: React.CSSProperties = {
 const codeLink: React.CSSProperties = {
   color: 'var(--blue)',
   textDecoration: 'none',
-  fontSize: 12,
+  fontSize: 'var(--fs-xs)',
 };
 
 /** A `label   value` pair on the two-column key/value grids. */
@@ -71,7 +71,7 @@ function Kv({ label, children }: { label: string; children: React.ReactNode }): 
   return (
     <>
       <div style={kvLabel}>{label}</div>
-      <div style={{ minWidth: 0, fontSize: 12.5, fontWeight: 600, color: 'var(--text)' }}>
+      <div style={{ minWidth: 0, fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text)' }}>
         {children}
       </div>
     </>
@@ -136,9 +136,9 @@ function KpiTile({
       </div>
       <div
         style={{
-          fontSize: 11,
+          fontSize: 'var(--fs-xs)',
           color: 'var(--text3)',
-          marginTop: 2,
+          marginTop: 'var(--sp-0)',
           whiteSpace: 'nowrap',
         }}
       >
@@ -300,7 +300,7 @@ export function JcViewSummary({
   const childJobCards = jc.childJobCards ?? [];
 
   return (
-    <div className="panel" style={{ marginBottom: 12 }}>
+    <div className="panel" style={{ marginBottom: 'var(--sp-3)' }}>
       <div
         className="panel-body"
         style={{
@@ -330,7 +330,7 @@ export function JcViewSummary({
             codeColor="var(--text)"
             nameMaxWidth="none"
           >
-            <div style={{ marginTop: 6, fontSize: 12.5, lineHeight: 1.5 }}>
+            <div style={{ marginTop: 6, fontSize: 'var(--fs-sm)', lineHeight: 1.5 }}>
               <div style={{ display: 'flex', gap: 6, minWidth: 0 }}>
                 <span style={{ color: 'var(--text3)', flexShrink: 0 }}>RM Grade:</span>
                 <span
@@ -388,7 +388,7 @@ export function JcViewSummary({
           {/* ADR-202 — a staged change to the Item Code shows here, under the
               product badge (the code itself lives inside ItemBadge). */}
           {headerPendingChange(changes, 'itemCode') ? (
-            <div style={{ marginTop: 4 }}>
+            <div style={{ marginTop: 'var(--sp-1)' }}>
               <span style={kvLabel}>New Item Code</span>
               <JcChip changes={changes} field="itemCode" />
             </div>
@@ -414,8 +414,8 @@ export function JcViewSummary({
                 style={{
                   background: 'none',
                   border: '1px solid var(--border2)',
-                  borderRadius: 8,
-                  padding: 2,
+                  borderRadius: 'var(--radius2)',
+                  padding: 'var(--sp-0)',
                   cursor: 'pointer',
                   lineHeight: 0,
                 }}
@@ -423,7 +423,12 @@ export function JcViewSummary({
                 <img
                   src={drawing.thumbUrl}
                   alt={`${drawing.label} drawing`}
-                  style={{ maxHeight: 56, maxWidth: 116, borderRadius: 6, display: 'block' }}
+                  style={{
+                    maxHeight: 56,
+                    maxWidth: 116,
+                    borderRadius: 'var(--radius)',
+                    display: 'block',
+                  }}
                 />
               </button>
             </div>
@@ -435,8 +440,8 @@ export function JcViewSummary({
           style={{
             display: 'grid',
             gridTemplateColumns: 'auto minmax(0, 1fr)',
-            columnGap: 12,
-            rowGap: 4,
+            columnGap: 'var(--sp-3)',
+            rowGap: 'var(--sp-1)',
             alignItems: 'baseline',
             alignContent: 'start',
             minWidth: 0,
@@ -467,7 +472,7 @@ export function JcViewSummary({
                       cursor: 'pointer',
                       textAlign: 'left',
                       font: 'inherit',
-                      fontSize: 11,
+                      fontSize: 'var(--fs-xs)',
                       fontWeight: 400,
                       color: 'var(--blue)',
                       overflowWrap: 'anywhere',
@@ -527,7 +532,10 @@ export function JcViewSummary({
                   {jc.routeCardCode}
                 </Link>
                 {jc.routeCardRevision != null ? (
-                  <span className="badge b-grey" style={{ fontSize: 11, padding: '1px 7px' }}>
+                  <span
+                    className="badge b-grey"
+                    style={{ fontSize: 'var(--fs-xs)', padding: '1px 7px' }}
+                  >
                     Route Card Rev {jc.routeCardRevision}
                   </span>
                 ) : null}
@@ -555,7 +563,10 @@ export function JcViewSummary({
               '—'
             )}
             {jc.clientPoLineNo ? (
-              <span className="mono fw-700" style={{ color: 'var(--purple)', fontSize: 12 }}>
+              <span
+                className="mono fw-700"
+                style={{ color: 'var(--purple)', fontSize: 'var(--fs-sm)' }}
+              >
                 {' · '}POL {jc.clientPoLineNo}
               </span>
             ) : null}
@@ -599,7 +610,7 @@ export function JcViewSummary({
                   {c.recoveryKind ? (
                     <span
                       className={`badge ${c.recoveryKind === 'rework' ? 'b-amber' : 'b-blue'}`}
-                      style={{ fontSize: 11, padding: '1px 7px' }}
+                      style={{ fontSize: 'var(--fs-xs)', padding: '1px 7px' }}
                     >
                       {c.recoveryKind === 'rework' ? 'Rework' : 'Repair'}
                     </span>
@@ -676,7 +687,7 @@ export function JcViewSummary({
             display: 'grid',
             gridTemplateColumns: 'auto auto',
             columnGap: 10,
-            rowGap: 4,
+            rowGap: 'var(--sp-1)',
             alignItems: 'center',
             alignContent: 'start',
             flex: '0 0 auto',
@@ -686,7 +697,7 @@ export function JcViewSummary({
           <div style={kvLabel}>Due Date</div>
           <div
             className="fw-700"
-            style={{ fontSize: 12.5, whiteSpace: 'nowrap', textAlign: 'right' }}
+            style={{ fontSize: 'var(--fs-sm)', whiteSpace: 'nowrap', textAlign: 'right' }}
           >
             {jc.dueDate ? fmtJcDate(jc.dueDate) : '—'}
             <JcChip changes={changes} field="dueDate" />
@@ -696,7 +707,7 @@ export function JcViewSummary({
           <div style={kvLabel}>Customer Dispatch Date</div>
           <div
             className="fw-700"
-            style={{ fontSize: 12.5, whiteSpace: 'nowrap', textAlign: 'right' }}
+            style={{ fontSize: 'var(--fs-sm)', whiteSpace: 'nowrap', textAlign: 'right' }}
           >
             {jc.customerDispatchDate ? fmtJcDate(jc.customerDispatchDate) : '—'}
           </div>
@@ -708,7 +719,7 @@ export function JcViewSummary({
             <JcChip changes={changes} field="priority" />
           </div>
           <div style={kvLabel}>Current Op</div>
-          <div className="fw-700" style={{ fontSize: 12.5, textAlign: 'right' }}>
+          <div className="fw-700" style={{ fontSize: 'var(--fs-sm)', textAlign: 'right' }}>
             {stuck ? (
               <>
                 Op {opSrNo(stuck.opSeq)} · {stuckWhere}
@@ -756,12 +767,12 @@ export function SectionBar({
           cursor: 'pointer',
           display: 'inline-flex',
           alignItems: 'center',
-          gap: 8,
-          fontSize: 15,
+          gap: 'var(--sp-2)',
+          fontSize: 'var(--fs-sm)',
           color: 'var(--blue2)',
         }}
       >
-        <span style={{ fontSize: 11, color: 'var(--text3)' }}>{open ? '▾' : '▸'}</span>
+        <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>{open ? '▾' : '▸'}</span>
         {title}
       </button>
       {right ? <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>{right}</div> : null}
@@ -786,10 +797,10 @@ export function JcRouteFlowPanel({
   onToggle: () => void;
 }): React.JSX.Element {
   return (
-    <div className="panel" style={{ marginBottom: 12 }}>
+    <div className="panel" style={{ marginBottom: 'var(--sp-3)' }}>
       <SectionBar title="Route / Operation Flow" open={open} onToggle={onToggle} />
       {open ? (
-        <div className="panel-body" style={{ padding: '12px 16px' }}>
+        <div className="panel-body" style={{ padding: 'var(--sp-3) var(--sp-4)' }}>
           <JcOpFlowCards jc={jc} sortedOps={sortedOps} opExtraById={opExtraById} />
         </div>
       ) : null}

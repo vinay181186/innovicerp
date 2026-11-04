@@ -94,9 +94,15 @@ export function EntryForm(): React.JSX.Element {
   return (
     <div
       className="panel"
-      style={{ padding: 16, marginBottom: 'var(--panel-gap)', borderLeft: '3px solid var(--blue)' }}
+      style={{
+        padding: 'var(--sp-4)',
+        marginBottom: 'var(--panel-gap)',
+        borderLeft: '3px solid var(--blue)',
+      }}
     >
-      <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>Log Work Entry</div>
+      <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 700, marginBottom: 10 }}>
+        Log Work Entry
+      </div>
       <div className="form-grid">
         <div className="form-grp">
           <label className="form-label">Log Date</label>
@@ -173,7 +179,7 @@ export function EntryForm(): React.JSX.Element {
         </div>
       </div>
       {dayWarn ? (
-        <div style={{ marginTop: 12 }}>
+        <div style={{ marginTop: 'var(--sp-3)' }}>
           <Banner tone="warn" flush onDismiss={() => setDayWarn(null)}>
             {dayWarn}
           </Banner>
@@ -182,12 +188,12 @@ export function EntryForm(): React.JSX.Element {
       {err ? (
         <div
           style={{
-            marginTop: 12,
-            padding: 8,
+            marginTop: 'var(--sp-3)',
+            padding: 'var(--sp-2)',
             background: 'var(--red3)',
             color: 'var(--red2)',
-            fontSize: 12,
-            borderRadius: 4,
+            fontSize: 'var(--fs-sm)',
+            borderRadius: 'var(--radius-sm)',
           }}
         >
           {err}

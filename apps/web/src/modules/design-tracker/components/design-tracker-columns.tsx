@@ -164,7 +164,14 @@ export function designTrackerColumns(opts: {
 /** The ▸ detail content — Start Date, moved off the main row (brief). */
 export function DesignTrackerExpanded({ row }: { row: DesignTrackerListItem }): React.JSX.Element {
   return (
-    <div style={{ display: 'flex', gap: 'var(--sp-2)', fontSize: 12, padding: '4px 0' }}>
+    <div
+      style={{
+        display: 'flex',
+        gap: 'var(--sp-2)',
+        fontSize: 'var(--fs-sm)',
+        padding: 'var(--sp-1) 0',
+      }}
+    >
       <span style={{ color: 'var(--text3)', fontWeight: 700 }}>Start Date</span>
       <span className="mono text2">{fmtDate(row.startDate)}</span>
     </div>

@@ -71,7 +71,7 @@ export function StockCountAddBar(props: {
   return (
     <div
       className="panel-body"
-      style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}
+      style={{ display: 'flex', gap: 'var(--sp-2)', alignItems: 'center', flexWrap: 'wrap' }}
     >
       <div style={{ minWidth: 320 }}>
         <SearchableSelect

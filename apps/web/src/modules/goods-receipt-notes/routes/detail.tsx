@@ -116,7 +116,7 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
     return (
       <div className="panel">
         <div className="panel-body">
-          <div style={{ marginBottom: 8 }}>
+          <div style={{ marginBottom: 'var(--sp-2)' }}>
             <Link to="/goods-receipt-notes" className="btn btn-ghost btn-sm">
               <ArrowLeft size={14} /> Back
             </Link>
@@ -236,7 +236,7 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
               not facts about the receipt, so they moved into the identity line
               in the body and the panel says what the panel is. The QC badge
               stays. */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)' }}>
             <span className="panel-title">Receipt</span>
             <QcStatusBadge status={headerQcStatus} draft={isDraft} />
           </div>
@@ -411,7 +411,7 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
         <ConfirmDialog
           title={`Move GRN ${detail.code} to Trash?`}
           message={
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-2)' }}>
               <span>You can restore it from Trash.</span>
               <label className="form-grp" style={{ margin: 0 }}>
                 <span className="form-label">

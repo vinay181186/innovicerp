@@ -157,7 +157,7 @@ export function QueueTab({
       render: (it) => (
         <span
           style={{
-            fontSize: 11,
+            fontSize: 'var(--fs-xs)',
             fontWeight: 700,
             padding: '2px 10px',
             borderRadius: 10,
@@ -212,14 +212,14 @@ export function QueueTab({
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          marginBottom: 12,
+          marginBottom: 'var(--sp-3)',
           flexWrap: 'wrap',
-          gap: 8,
+          gap: 'var(--sp-2)',
         }}
       >
         {/* No title here — the tab above already names this list. */}
         <div />
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 11 }}>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 'var(--fs-xs)' }}>
           <span className="text3">Sort by:</span>
           {SORTS.map((s) => (
             <button
@@ -229,12 +229,12 @@ export function QueueTab({
               style={
                 sort === s.id
                   ? {
-                      fontSize: 11,
+                      fontSize: 'var(--fs-xs)',
                       background: 'var(--red3)',
                       color: 'var(--red2)',
                       border: '1px solid var(--red)',
                     }
-                  : { fontSize: 11 }
+                  : { fontSize: 'var(--fs-xs)' }
               }
               onClick={() => onSort(s.id)}
             >

@@ -216,7 +216,7 @@ export function StopOpModal({
       title={<span style={{ color: 'var(--amber2)' }}>■ Stop Operation</span>}
       onClose={onCancel}
       maxWidth="min(520px, 96vw)"
-      bodyStyle={{ display: 'grid', gap: 12 }}
+      bodyStyle={{ display: 'grid', gap: 'var(--sp-3)' }}
       footer={
         <>
           <button type="button" className="btn btn-ghost btn-sm" onClick={onCancel}>
@@ -254,10 +254,10 @@ export function StopOpModal({
       <div
         style={{
           background: 'var(--bg3)',
-          padding: 12,
+          padding: 'var(--sp-3)',
           border: '1px solid var(--border)',
-          borderRadius: 8,
-          fontSize: 12,
+          borderRadius: 'var(--radius2)',
+          fontSize: 'var(--fs-sm)',
           color: 'var(--text2)',
           lineHeight: 1.5,
         }}
@@ -276,7 +276,7 @@ export function StopOpModal({
         {itemCode ? (
           <div
             style={{
-              marginTop: 4,
+              marginTop: 'var(--sp-1)',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
@@ -303,7 +303,7 @@ export function StopOpModal({
         ) : null}
         {/* Planned · Actual (ADR-164). The actual turns amber only when
                 it is not the plan — the same rule as resolveActualMachine. */}
-        <div className="text3" style={{ marginTop: 4 }}>
+        <div className="text3" style={{ marginTop: 'var(--sp-1)' }}>
           {target.plannedMachineLabel !== undefined ? (
             <>
               Planned <b className="mono">{target.plannedMachineLabel}</b> · Actual{' '}
@@ -331,7 +331,7 @@ export function StopOpModal({
       {/* Date · Time · Shift on one wrapping row. Each form-grp carries an
               explicit width because .innovic-input is width:100% and would
               otherwise collapse in a flex row (same trick as op-entry-form). */}
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 'var(--sp-3)', flexWrap: 'wrap' }}>
         <div className="form-grp" style={{ width: 150 }}>
           <label className="form-label" htmlFor="stop-op-date">
             Log Date<span className="req">★</span>
@@ -405,7 +405,7 @@ export function StopOpModal({
         </datalist>
       </div>
 
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 'var(--sp-3)', flexWrap: 'wrap' }}>
         <div className="form-grp" style={{ width: 150 }}>
           <label className="form-label" htmlFor="stop-op-qty">
             Completed<span className="req">★</span>
@@ -454,7 +454,7 @@ export function StopOpModal({
         />
       </div>
 
-      <div style={{ fontSize: 11, color: 'var(--text3)' }}>
+      <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>
         Max{' '}
         <b className="mono" style={{ color: 'var(--cyan)' }}>
           {target.availableQty}
@@ -463,16 +463,18 @@ export function StopOpModal({
       </div>
 
       {overCap ? (
-        <div style={{ fontSize: 11, color: 'var(--red2)' }}>
+        <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--red2)' }}>
           Completed + Deviated ({totalNum}) cannot be more than Available ({target.availableQty}
           ).
         </div>
       ) : null}
       {dateInFuture ? (
-        <div style={{ fontSize: 11, color: 'var(--red2)' }}>Log Date cannot be in the future.</div>
+        <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--red2)' }}>
+          Log Date cannot be in the future.
+        </div>
       ) : null}
       {qtyIsJunk || rejIsJunk ? (
-        <div style={{ fontSize: 11, color: 'var(--red2)' }}>
+        <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--red2)' }}>
           Enter whole numbers (0 or more) in {qtyIsJunk ? 'Completed' : 'Deviated'}.
         </div>
       ) : null}
@@ -480,7 +482,7 @@ export function StopOpModal({
               and leaving the operator to hunt for the reason. Hidden while every
               box is still empty, i.e. on open. */}
       {missing.length > 0 && missing.length < 5 ? (
-        <div style={{ fontSize: 11, color: 'var(--amber2)' }}>
+        <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--amber2)' }}>
           Still to fill in: <b>{missing.join(', ')}</b>.
         </div>
       ) : null}
@@ -488,12 +490,12 @@ export function StopOpModal({
       {errorText ? (
         <div
           style={{
-            padding: '8px 12px',
+            padding: 'var(--sp-2) var(--sp-3)',
             background: 'var(--red3)',
             border: '1px solid var(--sig-critical-bd)',
-            borderRadius: 6,
+            borderRadius: 'var(--radius)',
             color: 'var(--red2)',
-            fontSize: 12,
+            fontSize: 'var(--fs-sm)',
           }}
         >
           {errorText}

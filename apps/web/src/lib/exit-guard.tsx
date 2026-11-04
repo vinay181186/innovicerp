@@ -334,13 +334,13 @@ export function ExitConfirmDialog({
           </div>
         </div>
         <div className="modal-body" style={{ padding: '16px 20px' }}>
-          <p style={{ margin: 0, color: 'var(--text2)', fontSize: 13 }}>
+          <p style={{ margin: 0, color: 'var(--text2)', fontSize: 'var(--fs-sm)' }}>
             Anything entered on this form will be lost.
           </p>
         </div>
         <div
           className="modal-footer"
-          style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}
+          style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--sp-2)' }}
         >
           <button ref={stayRef} type="button" className="btn btn-ghost btn-sm" onClick={onStay}>
             Cancel

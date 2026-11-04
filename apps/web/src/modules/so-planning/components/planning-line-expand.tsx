@@ -112,7 +112,7 @@ function PlanJcCell({ plan }: { plan: PlanningPlanSummary }): JSX.Element {
 function Fact({ label, children }: { label: string; children: React.ReactNode }): JSX.Element {
   return (
     <span>
-      <span className="mono text3" style={{ fontSize: 11 }}>
+      <span className="mono text3" style={{ fontSize: 'var(--fs-xs)' }}>
         {label}
       </span>{' '}
       {children}
@@ -154,7 +154,7 @@ export function PlanningLineExpand({
           flexWrap: 'wrap',
           alignItems: 'center',
           gap: 'var(--sp-4)',
-          fontSize: 12,
+          fontSize: 'var(--fs-sm)',
           marginBottom: 'var(--sp-2)',
         }}
       >
@@ -180,7 +180,7 @@ export function PlanningLineExpand({
       </div>
 
       {line.plans.length === 0 && line.prs.length === 0 && !status.hasDirectJc ? (
-        <div className="text3" style={{ fontSize: 12 }}>
+        <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
           No plans or purchase requests on this line yet.
         </div>
       ) : null}
@@ -196,7 +196,7 @@ export function PlanningLineExpand({
           style={{
             marginBottom: 'var(--sp-2)',
             border: '1px solid var(--border)',
-            borderRadius: 8,
+            borderRadius: 'var(--radius2)',
           }}
         >
           <table className="innovic-table tbl-grid tbl-compact">
@@ -312,18 +312,18 @@ export function PlanningLineExpand({
             flexWrap: 'wrap',
             gap: 6,
             padding: '3px 8px',
-            margin: '2px 0',
+            margin: 'var(--sp-0) 0',
             background: 'var(--cyan3)',
             border: '1px solid var(--cyan2)',
-            borderRadius: 6,
-            fontSize: 11,
+            borderRadius: 'var(--radius)',
+            fontSize: 'var(--fs-xs)',
           }}
           title="Job Card(s) created directly from SO Status — counted as covered."
         >
           <span>🏭</span>
           <span style={{ fontWeight: 700, color: 'var(--cyan)' }}>In Production (no plan)</span>
           <span className="text2">{line.directJcQty} pcs</span>
-          <span className="mono text3" style={{ fontSize: 11 }}>
+          <span className="mono text3" style={{ fontSize: 'var(--fs-xs)' }}>
             {line.directJcCodes.join(', ')}
           </span>
         </div>

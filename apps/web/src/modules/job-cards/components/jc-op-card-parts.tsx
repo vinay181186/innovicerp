@@ -30,19 +30,22 @@ export function QtyChip({
         minWidth: 0,
         padding: 7,
         textAlign: 'center',
-        borderRadius: 8,
+        borderRadius: 'var(--radius2)',
         border: `1px solid ${highlight ? 'var(--amber)' : 'var(--border)'}`,
         background: highlight ? 'var(--amber3)' : 'var(--bg2)',
       }}
     >
-      <div className="mono" style={{ fontSize: 16, fontWeight: 800, color, lineHeight: 1.2 }}>
+      <div
+        className="mono"
+        style={{ fontSize: 'var(--fs-md)', fontWeight: 800, color, lineHeight: 1.2 }}
+      >
         {value}
       </div>
       <div
         style={{
-          fontSize: 11,
+          fontSize: 'var(--fs-xs)',
           color: 'var(--text3)',
-          marginTop: 2,
+          marginTop: 'var(--sp-0)',
           whiteSpace: 'nowrap',
           overflow: 'hidden',
           textOverflow: 'ellipsis',

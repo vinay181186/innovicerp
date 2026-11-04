@@ -37,13 +37,13 @@ function buildColumns(weekDates: string[]): DataTableColumn<WeekRow>[] {
       kind: 'text',
       className: 'fw-700',
       filterValue: (r) => r.engineer,
-      render: (r) => <span style={{ fontSize: 12 }}>{r.engineer}</span>,
+      render: (r) => <span style={{ fontSize: 'var(--fs-sm)' }}>{r.engineer}</span>,
     },
     ...dynamicColumns<string, WeekRow>('day', weekDates, (dt) => ({
       idSeed: dayName(dt),
       label: dayName(dt),
       header: (
-        <span style={{ fontSize: 11 }}>
+        <span style={{ fontSize: 'var(--fs-xs)' }}>
           {dayName(dt)}
           <br />
           {fmtDate(dt)}
@@ -144,7 +144,9 @@ export function WeeklyTab({ term, onCount }: TabListProps): React.JSX.Element {
         >
           ←
         </button>
-        <div style={{ fontSize: 14, fontWeight: 700, minWidth: 200, textAlign: 'center' }}>
+        <div
+          style={{ fontSize: 'var(--fs-sm)', fontWeight: 700, minWidth: 200, textAlign: 'center' }}
+        >
           {fmtDate(weekDates[0])} — {fmtDate(weekDates[6])}
         </div>
         <button

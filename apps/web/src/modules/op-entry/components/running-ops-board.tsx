@@ -84,11 +84,11 @@ export function RunningOpsBoard(): React.JSX.Element {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-4)' }}>
       <div className="panel">
         <div className="panel-hdr">
           <span className="panel-title">Running now</span>
-          <span className="mono text3" style={{ fontSize: 11 }}>
+          <span className="mono text3" style={{ fontSize: 'var(--fs-xs)' }}>
             {runTotal} session{runTotal !== 1 ? 's' : ''}
           </span>
         </div>
@@ -133,7 +133,7 @@ export function RunningOpsBoard(): React.JSX.Element {
         <div className="panel">
           <div className="panel-hdr">
             <span className="panel-title">Recent</span>
-            <span className="mono text3" style={{ fontSize: 11 }}>
+            <span className="mono text3" style={{ fontSize: 'var(--fs-xs)' }}>
               {recentTotal} session{recentTotal !== 1 ? 's' : ''}
             </span>
           </div>

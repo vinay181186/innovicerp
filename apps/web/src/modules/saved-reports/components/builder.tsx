@@ -72,16 +72,20 @@ function dotColor(type: string): string {
 // Legacy's zone boxes / chips are inline-styled (L17530-17594) — no classes
 // exist for them in either stylesheet, so they are mirrored inline against
 // our tokens rather than approximated with an invented class.
-const PANEL_TITLE: CSSProperties = { fontSize: 14, fontWeight: 700, marginBottom: 10 };
-const ZONE_TITLE: CSSProperties = { fontSize: 13, fontWeight: 700, marginBottom: 6 };
-const ZONE_HINT: CSSProperties = { fontSize: 11, color: 'var(--text3)', fontWeight: 400 };
+const PANEL_TITLE: CSSProperties = { fontSize: 'var(--fs-sm)', fontWeight: 700, marginBottom: 10 };
+const ZONE_TITLE: CSSProperties = { fontSize: 'var(--fs-sm)', fontWeight: 700, marginBottom: 6 };
+const ZONE_HINT: CSSProperties = {
+  fontSize: 'var(--fs-xs)',
+  color: 'var(--text3)',
+  fontWeight: 400,
+};
 const CHIP: CSSProperties = {
   display: 'inline-flex',
   alignItems: 'center',
-  gap: 4,
+  gap: 'var(--sp-1)',
   padding: '5px 12px',
   borderRadius: 16,
-  fontSize: 12,
+  fontSize: 'var(--fs-xs)',
   fontWeight: 500,
   background: 'var(--bg)',
   border: '1px solid var(--border)',
@@ -93,15 +97,15 @@ const CHIP_X: CSSProperties = {
   padding: 0,
   color: 'var(--text3)',
   cursor: 'pointer',
-  fontSize: 14,
+  fontSize: 'var(--fs-sm)',
   lineHeight: 1,
 };
 const COMPACT_CONTROL: CSSProperties = {
   padding: '5px 8px',
-  fontSize: 12,
+  fontSize: 'var(--fs-xs)',
   background: 'var(--bg)',
   border: '1px solid var(--border)',
-  borderRadius: 6,
+  borderRadius: 'var(--radius)',
   color: 'var(--text)',
 };
 
@@ -315,7 +319,9 @@ export function Builder(props: Props): JSX.Element {
               <label className="form-label" htmlFor="rb-shared">
                 Shared
               </label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+              <label
+                style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--fs-sm)' }}
+              >
                 <input
                   id="rb-shared"
                   type="checkbox"
@@ -346,8 +352,8 @@ export function Builder(props: Props): JSX.Element {
                   style={{
                     display: 'inline-block',
                     padding: '5px 14px',
-                    borderRadius: 8,
-                    fontSize: 12,
+                    borderRadius: 'var(--radius2)',
+                    fontSize: 'var(--fs-sm)',
                     fontWeight: sel ? 700 : 400,
                     cursor: 'pointer',
                     border: `1px solid ${sel ? 'var(--blue)' : 'var(--border)'}`,
@@ -356,7 +362,7 @@ export function Builder(props: Props): JSX.Element {
                   }}
                 >
                   {s.label}
-                  <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--text3)' }}>
+                  <span style={{ marginLeft: 6, fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>
                     {s.group}
                   </span>
                 </button>
@@ -364,7 +370,9 @@ export function Builder(props: Props): JSX.Element {
             })}
           </div>
           {source ? (
-            <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text3)' }}>
+            <div
+              style={{ marginTop: 'var(--sp-2)', fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}
+            >
               {source.description}
             </div>
           ) : null}
@@ -381,18 +389,24 @@ export function Builder(props: Props): JSX.Element {
             style={{
               display: 'grid',
               gridTemplateColumns: '200px minmax(0,1fr)',
-              gap: 12,
-              marginBottom: 12,
+              gap: 'var(--sp-3)',
+              marginBottom: 'var(--sp-3)',
             }}
           >
             {/* Available Fields — legacy L17565 */}
             <div className="panel" style={{ marginBottom: 0 }}>
               <div className="panel-body">
                 <div style={ZONE_TITLE}>Available Fields</div>
-                <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 8 }}>
+                <div
+                  style={{
+                    fontSize: 'var(--fs-xs)',
+                    color: 'var(--text3)',
+                    marginBottom: 'var(--sp-2)',
+                  }}
+                >
                   Drag to right zones →
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-1)' }}>
                   {source.fields.map((f) => {
                     const used = usedKeys.has(f.key);
                     return (
@@ -406,7 +420,7 @@ export function Builder(props: Props): JSX.Element {
                           gap: 6,
                           padding: '5px 10px',
                           borderRadius: 16,
-                          fontSize: 12,
+                          fontSize: 'var(--fs-sm)',
                           background: 'var(--bg)',
                           border: '1px solid var(--border)',
                           color: 'var(--text)',
@@ -423,8 +437,8 @@ export function Builder(props: Props): JSX.Element {
                 </div>
                 <div
                   style={{
-                    marginTop: 8,
-                    fontSize: 11,
+                    marginTop: 'var(--sp-2)',
+                    fontSize: 'var(--fs-xs)',
                     color: 'var(--text3)',
                     display: 'flex',
                     gap: 6,
@@ -444,7 +458,7 @@ export function Builder(props: Props): JSX.Element {
             </div>
 
             {/* Drop zones — legacy L17572 */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)' }}>
               {/* Excel Columns — legacy L17574 */}
               <div className="panel" style={{ marginBottom: 0 }}>
                 <div className="panel-body">
@@ -459,11 +473,11 @@ export function Builder(props: Props): JSX.Element {
                     <span>
                       Excel Columns <span style={ZONE_HINT}>(order = Excel order)</span>
                     </span>
-                    <div style={{ display: 'flex', gap: 4 }}>
+                    <div style={{ display: 'flex', gap: 'var(--sp-1)' }}>
                       <button
                         type="button"
                         className="btn btn-ghost btn-sm"
-                        style={{ fontSize: 11 }}
+                        style={{ fontSize: 'var(--fs-xs)' }}
                         onClick={onAllColumns}
                       >
                         All
@@ -471,7 +485,7 @@ export function Builder(props: Props): JSX.Element {
                       <button
                         type="button"
                         className="btn btn-ghost btn-sm"
-                        style={{ fontSize: 11 }}
+                        style={{ fontSize: 'var(--fs-xs)' }}
                         onClick={() => setColumns([])}
                       >
                         Clear
@@ -484,15 +498,15 @@ export function Builder(props: Props): JSX.Element {
                     style={{
                       minHeight: 44,
                       border: '1.5px dashed var(--cyan)',
-                      borderRadius: 8,
-                      padding: 8,
+                      borderRadius: 'var(--radius2)',
+                      padding: 'var(--sp-2)',
                       display: 'flex',
                       flexWrap: 'wrap',
                       gap: 6,
                     }}
                   >
                     {columns.length === 0 ? (
-                      <span style={{ color: 'var(--text3)', fontSize: 12, padding: 6 }}>
+                      <span style={{ color: 'var(--text3)', fontSize: 'var(--fs-xs)', padding: 6 }}>
                         Drop fields here
                       </span>
                     ) : (
@@ -536,8 +550,8 @@ export function Builder(props: Props): JSX.Element {
                     style={{
                       minHeight: 44,
                       border: '1.5px dashed var(--amber)',
-                      borderRadius: 8,
-                      padding: 8,
+                      borderRadius: 'var(--radius2)',
+                      padding: 'var(--sp-2)',
                     }}
                   >
                     {filters.map((f) => {
@@ -548,19 +562,19 @@ export function Builder(props: Props): JSX.Element {
                           key={f.field}
                           style={{
                             display: 'flex',
-                            gap: 8,
+                            gap: 'var(--sp-2)',
                             alignItems: 'center',
-                            padding: '8px 12px',
+                            padding: 'var(--sp-2) var(--sp-3)',
                             background: 'var(--bg)',
                             border: '1px solid var(--border)',
-                            borderRadius: 8,
+                            borderRadius: 'var(--radius2)',
                             marginBottom: 6,
                             flexWrap: 'wrap',
                           }}
                         >
                           <span
                             style={{
-                              fontSize: 12,
+                              fontSize: 'var(--fs-sm)',
                               fontWeight: 700,
                               color: dotColor(fd?.type ?? 'text'),
                               minWidth: 80,
@@ -616,9 +630,9 @@ export function Builder(props: Props): JSX.Element {
                         padding: 6,
                         textAlign: 'center',
                         color: 'var(--text3)',
-                        fontSize: 11,
+                        fontSize: 'var(--fs-xs)',
                         border: '1.5px dashed var(--border)',
-                        borderRadius: 6,
+                        borderRadius: 'var(--radius)',
                       }}
                     >
                       Drop a field here to add filter
@@ -639,15 +653,21 @@ export function Builder(props: Props): JSX.Element {
                     style={{
                       minHeight: 36,
                       border: '1.5px dashed var(--purple)',
-                      borderRadius: 8,
-                      padding: 8,
+                      borderRadius: 'var(--radius2)',
+                      padding: 'var(--sp-2)',
                       display: 'flex',
                       flexWrap: 'wrap',
                       gap: 6,
                     }}
                   >
                     {!groupBy ? (
-                      <span style={{ color: 'var(--text3)', fontSize: 12, padding: 4 }}>
+                      <span
+                        style={{
+                          color: 'var(--text3)',
+                          fontSize: 'var(--fs-xs)',
+                          padding: 'var(--sp-1)',
+                        }}
+                      >
                         Drop a field here
                       </span>
                     ) : (
@@ -678,14 +698,16 @@ export function Builder(props: Props): JSX.Element {
                     <div
                       style={{
                         display: 'flex',
-                        gap: 12,
-                        marginTop: 8,
+                        gap: 'var(--sp-3)',
+                        marginTop: 'var(--sp-2)',
                         alignItems: 'center',
                         flexWrap: 'wrap',
                       }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <span style={{ fontSize: 11, color: 'var(--text3)' }}>Summarize:</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-1)' }}>
+                        <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>
+                          Summarize:
+                        </span>
                         <select
                           value={sumCol ?? ''}
                           onChange={(e) => setSumCol(e.target.value || null)}
@@ -699,8 +721,10 @@ export function Builder(props: Props): JSX.Element {
                           ))}
                         </select>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <span style={{ fontSize: 11, color: 'var(--text3)' }}>Function:</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-1)' }}>
+                        <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>
+                          Function:
+                        </span>
                         <select
                           value={sumFn}
                           onChange={(e) => setSumFn(e.target.value as AggFunction)}
@@ -739,7 +763,7 @@ export function Builder(props: Props): JSX.Element {
             <button
               type="button"
               className="btn btn-ghost btn-sm"
-              style={{ fontSize: 11, color: 'var(--text3)' }}
+              style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}
               onClick={onClearAll}
             >
               Clear All
@@ -747,7 +771,7 @@ export function Builder(props: Props): JSX.Element {
             <button
               type="button"
               className="btn btn-ghost btn-sm"
-              style={{ fontSize: 12 }}
+              style={{ fontSize: 'var(--fs-sm)' }}
               onClick={onPreviewClick}
               disabled={previewLoading || columns.length === 0}
               title={columns.length === 0 ? 'Add at least one column first' : undefined}
@@ -758,7 +782,7 @@ export function Builder(props: Props): JSX.Element {
               <button
                 type="button"
                 className="btn btn-success"
-                style={{ fontSize: 14, padding: '8px 28px', fontWeight: 700 }}
+                style={{ fontSize: 'var(--fs-sm)', padding: '8px 28px', fontWeight: 700 }}
                 onClick={() => onExcel(buildSpec())}
                 disabled={columns.length === 0 || excelLoading}
                 title={columns.length === 0 ? 'Add at least one column first' : undefined}

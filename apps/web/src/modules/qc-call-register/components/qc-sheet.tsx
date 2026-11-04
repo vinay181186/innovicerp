@@ -39,7 +39,7 @@ export interface StageStat {
 // ─── shared type styles ──────────────────────────────────────────────────────
 // Small bold caption, Title Case as written (no ALL-CAPS).
 const CAPTION: CSSProperties = {
-  fontSize: 11,
+  fontSize: 'var(--fs-xs)',
   fontWeight: 700,
   color: 'var(--text2)',
 };
@@ -50,7 +50,7 @@ const TD: CSSProperties = {
 const NOWRAP: CSSProperties = { whiteSpace: 'nowrap' };
 const MONO: CSSProperties = { fontFamily: 'var(--mono)' };
 const MONO_STRONG: CSSProperties = { ...MONO, fontWeight: 700, color: 'var(--text)' };
-const QUIET: CSSProperties = { fontSize: 11, color: 'var(--text3)' };
+const QUIET: CSSProperties = { fontSize: 'var(--fs-xs)', color: 'var(--text3)' };
 const TRUNC: CSSProperties = {
   maxWidth: '100%',
   overflow: 'hidden',
@@ -68,7 +68,7 @@ function PartCell({ name, code }: { name: string | null; code: string }): React.
       <div className="fw-700" style={TRUNC} title={name ?? undefined}>
         {name ?? '—'}
       </div>
-      <div style={{ ...MONO_STRONG, fontSize: 12 }}>{code}</div>
+      <div style={{ ...MONO_STRONG, fontSize: 'var(--fs-sm)' }}>{code}</div>
     </td>
   );
 }
@@ -78,7 +78,9 @@ function PartCell({ name, code }: { name: string | null; code: string }): React.
 function PolCell({ value }: { value: string | null }): React.JSX.Element {
   return (
     <td style={{ ...TD, ...NOWRAP }}>
-      <span style={{ ...MONO_STRONG, fontSize: 12, color: 'var(--purple)' }}>{value ?? '—'}</span>
+      <span style={{ ...MONO_STRONG, fontSize: 'var(--fs-sm)', color: 'var(--purple)' }}>
+        {value ?? '—'}
+      </span>
     </td>
   );
 }
@@ -155,14 +157,14 @@ export function PendingSheetRow(props: {
       onClick={props.canInspect ? props.onInspect : undefined}
     >
       <td style={{ ...TD, ...NOWRAP }} onClick={(e) => e.stopPropagation()}>
-        <span style={{ ...MONO_STRONG, fontSize: 12 }}>{props.code}</span>
+        <span style={{ ...MONO_STRONG, fontSize: 'var(--fs-sm)' }}>{props.code}</span>
       </td>
       <PolCell value={props.clientPoLineNo} />
       <PartCell name={props.partName} code={props.itemCode} />
       <ContextCell line1={props.context} line2={props.contextLine2} />
       <NumCell value={props.qty} />
       <td style={{ ...TD, ...NOWRAP }}>
-        <div style={{ ...MONO, fontSize: 12 }}>{fmtDate(props.calledDate)}</div>
+        <div style={{ ...MONO, fontSize: 'var(--fs-sm)' }}>{fmtDate(props.calledDate)}</div>
         {wait ? (
           <div
             style={{
@@ -184,9 +186,11 @@ export function PendingSheetRow(props: {
           {/* No form to open (viewer without `entry` for this kind of call) →
               a dash instead of an "Inspect ▸" that opens nothing. */}
           {props.canInspect ? (
-            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--cyan)' }}>Inspect ▸</span>
+            <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 700, color: 'var(--cyan)' }}>
+              Inspect ▸
+            </span>
           ) : (
-            <span style={{ fontSize: 11, color: 'var(--text3)' }}>—</span>
+            <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>—</span>
           )}
         </td>
       )}

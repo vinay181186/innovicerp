@@ -29,7 +29,7 @@ export function DispatchItemSummary({
 
   return (
     <>
-      <div style={{ marginBottom: 8 }}>
+      <div style={{ marginBottom: 'var(--sp-2)' }}>
         <button
           type="button"
           className="btn btn-ghost btn-sm"
@@ -67,7 +67,10 @@ export function DispatchItemSummary({
                     <td className="mono fw-700 td-num" style={{ color: 'var(--green2)' }}>
                       {s.total}
                     </td>
-                    <td className="mono td-num" style={{ fontSize: 11, color: 'var(--text3)' }}>
+                    <td
+                      className="mono td-num"
+                      style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}
+                    >
                       {s.count}
                     </td>
                     <td className="mono fw-700 td-num" style={{ color: 'var(--green2)' }}>

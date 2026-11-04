@@ -133,7 +133,7 @@ export function opLogColumns(firstRowNo: number): DataTableColumn<OpLogListItem>
         <>
           <span className={`badge ${logTypeBadge(r.logType)}`}>{LOG_TYPE_LABEL[r.logType]}</span>
           {r.isTpi ? (
-            <span className="badge b-purple" style={{ marginLeft: 4 }}>
+            <span className="badge b-purple" style={{ marginLeft: 'var(--sp-1)' }}>
               TPI
             </span>
           ) : null}

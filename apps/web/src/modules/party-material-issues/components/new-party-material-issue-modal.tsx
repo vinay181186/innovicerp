@@ -243,7 +243,7 @@ export function NewPartyMaterialIssueModal({
         </>
       }
     >
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-3)' }}>
         <Field label="Issue Date">
           <input
             type="date"
@@ -264,10 +264,10 @@ export function NewPartyMaterialIssueModal({
             onChange={(e) => setQty(e.target.value)}
             placeholder="0"
             style={{
-              fontSize: 14,
+              fontSize: 'var(--fs-sm)',
               fontWeight: 700,
               border: '2px solid var(--green)',
-              borderRadius: 4,
+              borderRadius: 'var(--radius-sm)',
               maxWidth: '12ch',
             }}
           />
@@ -337,7 +337,7 @@ export function NewPartyMaterialIssueModal({
                 background: 'var(--bg4)',
                 display: 'flex',
                 alignItems: 'center',
-                gap: 8,
+                gap: 'var(--sp-2)',
                 minHeight: 32,
               }}
             >
@@ -365,7 +365,7 @@ export function NewPartyMaterialIssueModal({
                     {line.rmItemCode ?? line.partyMaterialCode}
                   </span>
                   {material ? (
-                    <span className="text3" style={{ fontSize: 11 }}>
+                    <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
                       {material.code} · {material.name}
                     </span>
                   ) : null}
@@ -374,7 +374,7 @@ export function NewPartyMaterialIssueModal({
             </div>
           </Field>
           {jobCardId ? (
-            <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
+            <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-1)' }}>
               {issuableQ.isError ? (
                 <span style={{ color: 'var(--red2)' }}>Could not load the To Issue qty.</span>
               ) : !issuable ? (
@@ -393,7 +393,7 @@ export function NewPartyMaterialIssueModal({
                     {issuable.issuable}
                   </span>{' '}
                   NOS{' '}
-                  <span style={{ fontSize: 10 }}>
+                  <span style={{ fontSize: 'var(--fs-xs)' }}>
                     {issuable.blockedReason
                       ? `— ${issuable.blockedReason}`
                       : `(line has ${issuable.lineBalance} · JC needs ${issuable.jcRemaining})`}
@@ -420,12 +420,12 @@ export function NewPartyMaterialIssueModal({
       {err ? (
         <div
           style={{
-            marginTop: 12,
-            padding: 8,
+            marginTop: 'var(--sp-3)',
+            padding: 'var(--sp-2)',
             background: 'rgba(239,68,68,0.08)',
             color: 'var(--red2)',
-            borderRadius: 4,
-            fontSize: 12,
+            borderRadius: 'var(--radius-sm)',
+            fontSize: 'var(--fs-sm)',
           }}
         >
           {err}

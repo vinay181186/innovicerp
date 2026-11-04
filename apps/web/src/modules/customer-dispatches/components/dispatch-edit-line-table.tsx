@@ -55,7 +55,7 @@ export function DispatchEditLineTable(props: {
         style={{
           overflow: 'visible',
           border: '1px solid var(--border)',
-          borderRadius: 8,
+          borderRadius: 'var(--radius2)',
           borderBottomLeftRadius: 0,
           borderBottomRightRadius: 0,
           borderBottom: 'none',
@@ -154,10 +154,10 @@ export function DispatchEditLineTable(props: {
                         value={card.qty}
                         onChange={(e) => props.onPatch(card.id, e.target.value)}
                         style={{
-                          fontSize: 12,
+                          fontSize: 'var(--fs-sm)',
                           fontWeight: 700,
                           color: err ? 'var(--red)' : 'var(--green)',
-                          padding: '4px 4px',
+                          padding: 'var(--sp-1) var(--sp-1)',
                           ...(err ? { borderColor: 'var(--red)' } : {}),
                         }}
                       />
@@ -193,11 +193,11 @@ export function DispatchEditLineTable(props: {
           flexWrap: 'wrap',
         }}
       >
-        <span style={{ fontSize: 12 }}>
+        <span style={{ fontSize: 'var(--fs-sm)' }}>
           <span className="green" style={{ fontWeight: 800 }}>
             Total Dispatch Qty{' '}
           </span>
-          <span className="mono fw-700 green" style={{ fontSize: 16 }}>
+          <span className="mono fw-700 green" style={{ fontSize: 'var(--fs-md)' }}>
             {totalQty}
           </span>
         </span>

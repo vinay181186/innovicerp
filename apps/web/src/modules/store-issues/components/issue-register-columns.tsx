@@ -38,7 +38,7 @@ export function issueRegisterColumns(firstRowNo: number): DataTableColumn<StoreI
             <span style={{ color: 'var(--cyan)' }}>{r.docCode}</span>
             {r.reversedAt ? (
               <div
-                style={{ fontSize: 10, fontWeight: 700, color: 'var(--red)' }}
+                style={{ fontSize: 'var(--fs-xs)', fontWeight: 700, color: 'var(--red)' }}
                 title={`Cancelled ${fmtDate(r.reversedAt.slice(0, 10))} — ${r.reversalReason ?? ''}`}
               >
                 Cancelled

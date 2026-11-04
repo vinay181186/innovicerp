@@ -138,7 +138,7 @@ function CustomerMaterialReturnNewPage(): React.JSX.Element {
           onBack={goBack}
         />
         <Panel>
-          <div style={{ fontSize: 13 }}>
+          <div style={{ fontSize: 'var(--fs-sm)' }}>
             <span className="mono fw-700">{saved.code}</span> — {saved.totalQty} pcs back to the
             customer on {saved.jwCode ?? 'the JWSO'}. Preview or download the return to send with
             the material.
@@ -262,7 +262,7 @@ function CustomerMaterialReturnNewPage(): React.JSX.Element {
             Pick a JWSO first.
           </div>
         ) : returnableQ.isLoading ? (
-          <div className="text3" style={{ fontSize: 12, padding: 8 }}>
+          <div className="text3" style={{ fontSize: 'var(--fs-xs)', padding: 'var(--sp-2)' }}>
             <Loader2 size={13} className="inline animate-spin" /> Loading…
           </div>
         ) : returnableQ.isError ? (

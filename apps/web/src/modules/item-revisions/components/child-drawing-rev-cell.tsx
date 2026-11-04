@@ -54,7 +54,7 @@ export function ChildDrawingRevCell({
       <DrawingStatusLink itemRevisionId={revision.id} drawingFilePath={revision.drawingFilePath} />
     );
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-0)' }}>
       <input
         id={id}
         className="innovic-input mono"
@@ -65,7 +65,7 @@ export function ChildDrawingRevCell({
         value={value}
         onChange={(e) => onChange(e.target.value.toUpperCase())}
       />
-      {note ? <span style={{ fontSize: 11, whiteSpace: 'nowrap' }}>{note}</span> : null}
+      {note ? <span style={{ fontSize: 'var(--fs-xs)', whiteSpace: 'nowrap' }}>{note}</span> : null}
     </div>
   );
 }

@@ -69,7 +69,10 @@ export function DeleteJwsoModal({
         </>
       }
     >
-      <div className="text2" style={{ fontSize: 12, marginBottom: 12, lineHeight: 1.6 }}>
+      <div
+        className="text2"
+        style={{ fontSize: 'var(--fs-sm)', marginBottom: 'var(--sp-3)', lineHeight: 1.6 }}
+      >
         You can restore it from Trash.
       </div>
       <div className="form-grp">
@@ -89,13 +92,13 @@ export function DeleteJwsoModal({
       {err ? (
         <div
           style={{
-            marginTop: 12,
+            marginTop: 'var(--sp-3)',
             color: 'var(--red2)',
             background: 'var(--red3)',
             border: '1px solid var(--red)',
-            borderRadius: 6,
+            borderRadius: 'var(--radius)',
             padding: '6px 10px',
-            fontSize: 12,
+            fontSize: 'var(--fs-sm)',
           }}
         >
           {err}

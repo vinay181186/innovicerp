@@ -151,7 +151,7 @@ function LineBlock({ l }: { l: PreviewLine }): React.JSX.Element {
         style={{
           display: 'flex',
           flexWrap: 'wrap',
-          gap: '2px 8px',
+          gap: 'var(--sp-0) var(--sp-2)',
           alignItems: 'center',
           fontSize: 'var(--fs-sm)',
           marginBottom: 'var(--sp-1)',

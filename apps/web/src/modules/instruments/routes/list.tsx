@@ -162,7 +162,7 @@ function InstrumentsListPage(): React.JSX.Element {
               {INSTRUMENT_STATUS_LABELS[ins.status]}
             </span>
             {ins.writeoffPending ? (
-              <span className="badge b-red" style={{ marginLeft: 4 }}>
+              <span className="badge b-red" style={{ marginLeft: 'var(--sp-1)' }}>
                 Write-off pending
               </span>
             ) : null}
@@ -311,7 +311,9 @@ function InstrumentsListPage(): React.JSX.Element {
 
       {pending.length > 0 ? (
         <Banner tone="info" title="Received but not registered">
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+          <div
+            style={{ display: 'flex', gap: 'var(--sp-3)', flexWrap: 'wrap', alignItems: 'center' }}
+          >
             {pending.map((u) => (
               <span key={u.itemId} style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
                 <span className="mono fw-700" style={{ color: 'var(--text)' }}>

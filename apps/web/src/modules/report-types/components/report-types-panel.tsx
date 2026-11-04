@@ -122,12 +122,12 @@ export function ReportTypesPanel(): React.JSX.Element {
           display: 'flex',
           justifyContent: 'flex-end',
           alignItems: 'center',
-          marginBottom: 12,
-          gap: 8,
+          marginBottom: 'var(--sp-3)',
+          gap: 'var(--sp-2)',
         }}
       >
         {isFetching && !isLoading ? (
-          <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
+          <span className="text3" style={{ fontSize: 'var(--fs-xs)', fontFamily: 'var(--mono)' }}>
             <Loader2 className="inline h-3 w-3 animate-spin" />
           </span>
         ) : null}
@@ -142,9 +142,9 @@ export function ReportTypesPanel(): React.JSX.Element {
         ) : null}
       </div>
 
-      <div className="panel" style={{ marginBottom: 12 }}>
+      <div className="panel" style={{ marginBottom: 'var(--sp-3)' }}>
         <div className="panel-body" style={{ padding: '10px 14px' }}>
-          <span className="text2" style={{ fontSize: 12 }}>
+          <span className="text2" style={{ fontSize: 'var(--fs-sm)' }}>
             💡 Define report/document types here. These will appear as options when adding QC
             document requirements in SO/JW Planning.
           </span>
@@ -351,7 +351,10 @@ function ReportTypeModal(props: { row?: ReportType; onClose: () => void }): Reac
         </div>
       </div>
       {err ? (
-        <div role="alert" style={{ color: 'var(--red2)', fontSize: 12, marginTop: 8 }}>
+        <div
+          role="alert"
+          style={{ color: 'var(--red2)', fontSize: 'var(--fs-sm)', marginTop: 'var(--sp-2)' }}
+        >
           {err}
         </div>
       ) : null}

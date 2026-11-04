@@ -31,7 +31,7 @@ export function CancelPendingBanner({
         <div>
           Reason: <b>{r.reason}</b>
         </div>
-        <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
+        <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-0)' }}>
           Asked on {fmtDateTime(r.requestedAt)} — waiting for approval. Until it is approved the
           document stays as it is.
           {onOpen ? (

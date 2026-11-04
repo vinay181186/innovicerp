@@ -25,7 +25,7 @@ export function OrderCancelledBanner({
           Reason: <b>{reason ?? '—'}</b>
           {cancelledAt ? <span className="text3"> · {fmtDateTime(cancelledAt)}</span> : null}
         </div>
-        <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
+        <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-0)' }}>
           Who cancelled it is in History below.
         </div>
       </Banner>

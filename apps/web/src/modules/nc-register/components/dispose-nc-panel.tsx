@@ -294,7 +294,7 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
                 <label className="form-label" htmlFor="dispQty">
                   Disposition Qty<span className="req">★</span>
                 </label>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)' }}>
                   <input
                     id="dispQty"
                     type="number"
@@ -307,7 +307,10 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
                     onChange={(e) => setQty(e.target.value === '' ? '' : Number(e.target.value))}
                     required
                   />
-                  <span className="text3" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
+                  <span
+                    className="text3"
+                    style={{ fontSize: 'var(--fs-xs)', whiteSpace: 'nowrap' }}
+                  >
                     of {openQty} open
                   </span>
                 </div>
@@ -479,7 +482,14 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
 
             {error ? <Note tone="red">{error}</Note> : null}
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginTop: 16 }}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: 6,
+                marginTop: 'var(--sp-4)',
+              }}
+            >
               <button type="button" className="btn btn-ghost" onClick={onCancel} disabled={pending}>
                 Cancel
               </button>
@@ -528,7 +538,7 @@ function DisposeOutcome(props: {
         for {Number(nc.rejectedQty)} pcs.
       </Note>
       {childJobCardId && childJobCardCode ? (
-        <div style={{ marginTop: 10, fontSize: 12 }}>
+        <div style={{ marginTop: 10, fontSize: 'var(--fs-sm)' }}>
           <span className="text3">{nc.disposition === 'repair' ? 'Repair' : 'Rework'} JC:</span>{' '}
           <Link
             to="/job-cards/$id"
@@ -542,7 +552,7 @@ function DisposeOutcome(props: {
         </div>
       ) : null}
       {remainderNc ? (
-        <div style={{ marginTop: 6, fontSize: 12 }}>
+        <div style={{ marginTop: 6, fontSize: 'var(--fs-sm)' }}>
           <span className="text3">New NC for the other {Number(remainderNc.rejectedQty)} pcs:</span>{' '}
           <Link
             to="/nc-register/$id"
@@ -554,7 +564,7 @@ function DisposeOutcome(props: {
           </Link>
         </div>
       ) : null}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 'var(--sp-4)' }}>
         <button type="button" className="btn btn-ghost" onClick={onClose}>
           Done
         </button>

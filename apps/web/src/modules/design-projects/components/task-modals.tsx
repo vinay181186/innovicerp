@@ -93,7 +93,7 @@ export function TaskFormModal({
         />
       }
     >
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-3)' }}>
         <div style={{ gridColumn: 'span 2' }}>
           <Field
             label={
@@ -209,53 +209,60 @@ export function ViewTaskModal({
         style={{
           display: 'grid',
           gridTemplateColumns: '1fr 1fr',
-          gap: 12,
-          marginBottom: 12,
+          gap: 'var(--sp-3)',
+          marginBottom: 'var(--sp-3)',
         }}
       >
         <div>
-          <div className="text3" style={{ fontSize: 11 }}>
+          <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
             Assignee
           </div>
           <div style={{ fontWeight: 600 }}>{task.assigneeText ?? ''}</div>
         </div>
         <div>
-          <div className="text3" style={{ fontSize: 11 }}>
+          <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
             Item Name
           </div>
           <div>{task.partText ?? '—'}</div>
         </div>
         <div>
-          <div className="text3" style={{ fontSize: 11 }}>
+          <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
             Priority
           </div>
           <Badge value={task.priority} />
         </div>
         <div>
-          <div className="text3" style={{ fontSize: 11 }}>
+          <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
             Due Date
           </div>
           <div>{fmtDate(task.dueDate)}</div>
         </div>
         <div>
-          <div className="text3" style={{ fontSize: 11 }}>
+          <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
             Task Status
           </div>
           <Badge value={task.status} kind="status" />
         </div>
       </div>
       <div>
-        <div className="text3" style={{ fontSize: 11 }}>
+        <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
           Description
         </div>
-        <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 2 }}>
+        <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text2)', marginTop: 'var(--sp-0)' }}>
           {task.description ?? '—'}
         </div>
       </div>
 
       {issues.length > 0 ? (
-        <div style={{ marginTop: 12 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--red2)', marginBottom: 6 }}>
+        <div style={{ marginTop: 'var(--sp-3)' }}>
+          <div
+            style={{
+              fontSize: 'var(--fs-sm)',
+              fontWeight: 700,
+              color: 'var(--red2)',
+              marginBottom: 6,
+            }}
+          >
             ⚠ Issues ({issues.length})
           </div>
           {issues.map((i) => (
@@ -264,9 +271,9 @@ export function ViewTaskModal({
               style={{
                 padding: '6px 10px',
                 background: 'var(--bg3)',
-                borderRadius: 4,
+                borderRadius: 'var(--radius-sm)',
                 marginBottom: 3,
-                fontSize: 12,
+                fontSize: 'var(--fs-sm)',
                 display: 'flex',
                 justifyContent: 'space-between',
               }}
@@ -285,11 +292,21 @@ export function ViewTaskModal({
           paddingTop: 10,
         }}
       >
-        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 8 }}>
+        <div
+          style={{
+            fontSize: 'var(--fs-sm)',
+            fontWeight: 700,
+            color: 'var(--text2)',
+            marginBottom: 'var(--sp-2)',
+          }}
+        >
           💬 Discussion ({task.discussions.length})
         </div>
         {task.discussions.map((d, idx) => (
-          <div key={idx} style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+          <div
+            key={idx}
+            style={{ display: 'flex', gap: 'var(--sp-2)', marginBottom: 'var(--sp-2)' }}
+          >
             <div
               style={{
                 width: 28,
@@ -299,7 +316,7 @@ export function ViewTaskModal({
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                fontSize: 11,
+                fontSize: 'var(--fs-xs)',
                 fontWeight: 700,
                 color: 'var(--blue)',
                 flexShrink: 0,
@@ -308,16 +325,24 @@ export function ViewTaskModal({
               {(d.author || '?').charAt(0).toUpperCase()}
             </div>
             <div>
-              <div style={{ fontSize: 11, fontWeight: 700 }}>
+              <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 700 }}>
                 {d.author} <span className="text3">{fmtDate(d.date)}</span>
               </div>
-              <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 2 }}>{d.text}</div>
+              <div
+                style={{
+                  fontSize: 'var(--fs-sm)',
+                  color: 'var(--text2)',
+                  marginTop: 'var(--sp-0)',
+                }}
+              >
+                {d.text}
+              </div>
             </div>
           </div>
         ))}
         {/* ADR-231 — adding to the discussion moves the work on: dsnproj_create Advance. */}
         {perms.advance ? (
-          <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+          <div style={{ display: 'flex', gap: 6, marginTop: 'var(--sp-2)' }}>
             <input
               className="innovic-input"
               placeholder="Add comment…"

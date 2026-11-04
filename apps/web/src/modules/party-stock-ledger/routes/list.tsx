@@ -59,7 +59,7 @@ const COLUMNS: DataTableColumn<PartyStockLedgerListItem>[] = [
     kind: 'date',
     className: 'text2',
     nowrap: true,
-    render: (r) => <span style={{ fontSize: 11 }}>{fmtDate(r.createdAt)}</span>,
+    render: (r) => <span style={{ fontSize: 'var(--fs-xs)' }}>{fmtDate(r.createdAt)}</span>,
   },
   {
     id: 'customer_material',
@@ -72,7 +72,7 @@ const COLUMNS: DataTableColumn<PartyStockLedgerListItem>[] = [
           {r.partyMaterialCode ?? '—'}
         </span>
         {r.partyMaterialName ? (
-          <span className="text3" style={{ fontSize: 11, marginLeft: 6 }}>
+          <span className="text3" style={{ fontSize: 'var(--fs-xs)', marginLeft: 6 }}>
             {r.partyMaterialName}
           </span>
         ) : null}
@@ -84,7 +84,7 @@ const COLUMNS: DataTableColumn<PartyStockLedgerListItem>[] = [
     header: 'Movement',
     kind: 'badge',
     nowrap: true,
-    render: (r) => <span style={{ fontSize: 12 }}>{MOVEMENT_LABELS[r.movement]}</span>,
+    render: (r) => <span style={{ fontSize: 'var(--fs-sm)' }}>{MOVEMENT_LABELS[r.movement]}</span>,
   },
   {
     id: 'direction',
@@ -92,7 +92,7 @@ const COLUMNS: DataTableColumn<PartyStockLedgerListItem>[] = [
     kind: 'badge',
     nowrap: true,
     render: (r) => (
-      <span style={{ fontSize: 11, fontWeight: 700, color: directionColor(r) }}>
+      <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 700, color: directionColor(r) }}>
         {r.direction === 'in' ? 'In' : 'Out'}
       </span>
     ),
@@ -126,7 +126,9 @@ const COLUMNS: DataTableColumn<PartyStockLedgerListItem>[] = [
     className: 'text2',
     nowrap: true,
     render: (r) => (
-      <span style={{ fontSize: 11 }}>{SOURCE_DOC_LABELS[r.sourceDocType] ?? r.sourceDocType}</span>
+      <span style={{ fontSize: 'var(--fs-xs)' }}>
+        {SOURCE_DOC_LABELS[r.sourceDocType] ?? r.sourceDocType}
+      </span>
     ),
   },
   {
@@ -136,7 +138,7 @@ const COLUMNS: DataTableColumn<PartyStockLedgerListItem>[] = [
     className: 'text3',
     ellipsis: true,
     title: (r) => r.createdByName ?? '',
-    render: (r) => <span style={{ fontSize: 11 }}>{r.createdByName ?? '—'}</span>,
+    render: (r) => <span style={{ fontSize: 'var(--fs-xs)' }}>{r.createdByName ?? '—'}</span>,
   },
 ];
 

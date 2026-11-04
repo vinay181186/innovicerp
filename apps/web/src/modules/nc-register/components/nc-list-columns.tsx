@@ -210,8 +210,8 @@ export function NcExpanded({
         display: 'flex',
         flexWrap: 'wrap',
         gap: '6px 24px',
-        padding: '4px 2px',
-        fontSize: 12,
+        padding: 'var(--sp-1) var(--sp-0)',
+        fontSize: 'var(--fs-sm)',
       }}
     >
       <Field label="POL">

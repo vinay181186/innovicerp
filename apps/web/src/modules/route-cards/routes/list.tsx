@@ -235,7 +235,7 @@ function RouteCardsListPage(): React.JSX.Element {
               rows={2}
               value={deleteReason}
               onChange={(e) => setDeleteReason(e.target.value)}
-              style={{ display: 'block', width: '100%', marginTop: 8 }}
+              style={{ display: 'block', width: '100%', marginTop: 'var(--sp-2)' }}
             />
           </>
         }

@@ -28,7 +28,7 @@ function SubHdr({ children }: { children: React.ReactNode }): React.JSX.Element 
     <div
       style={{
         padding: '10px 14px',
-        fontSize: 12,
+        fontSize: 'var(--fs-sm)',
         fontWeight: 700,
         borderBottom: '1px solid var(--border)',
         color: 'var(--text2)',

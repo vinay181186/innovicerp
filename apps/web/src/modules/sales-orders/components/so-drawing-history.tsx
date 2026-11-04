@@ -164,7 +164,7 @@ export function SoDrawingHistory({
 
       {active ? (
         <>
-          <div className="text3" style={{ fontSize: 11, marginBottom: 8 }}>
+          <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginBottom: 'var(--sp-2)' }}>
             Line {active.lineNo} · {active.partName}
             {active.drawingNo ? ` · Drawing ${active.drawingNo}` : ''} · current Drawing Rev{' '}
             {/* The Rev typed on the SO line TODAY. A string since 0119, printed
@@ -246,7 +246,7 @@ export function SoDrawingHistory({
                         <td
                           className="text2"
                           style={{
-                            fontSize: 12,
+                            fontSize: 'var(--fs-sm)',
                             maxWidth: 0,
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
@@ -259,10 +259,10 @@ export function SoDrawingHistory({
                             <span className="text3">— drawing cleared</span>
                           )}
                         </td>
-                        <td className="text2" style={{ fontSize: 12 }}>
+                        <td className="text2" style={{ fontSize: 'var(--fs-sm)' }}>
                           {r.createdByName ?? '—'}
                         </td>
-                        <td className="text3" style={{ fontSize: 11 }}>
+                        <td className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
                           {fmtIstDateTime(r.createdAt)}
                         </td>
                         <td>
@@ -270,7 +270,7 @@ export function SoDrawingHistory({
                             <button
                               type="button"
                               className="btn btn-ghost btn-sm"
-                              style={{ padding: '1px 6px', fontSize: 11 }}
+                              style={{ padding: '1px 6px', fontSize: 'var(--fs-xs)' }}
                               onClick={() => setPreviewPath(path)}
                               title="Preview this drawing"
                             >

@@ -13,7 +13,7 @@ export function EquipmentSoExpand({ so }: { so: SalesOrderDetail }): React.JSX.E
   const line = so.lines[0];
   if (!line)
     return (
-      <div style={{ padding: '12px 18px', fontSize: 12, color: 'var(--text3)' }}>
+      <div style={{ padding: '12px 18px', fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>
         No lines yet — add an item to this SO.
       </div>
     );
@@ -33,7 +33,7 @@ export function EquipmentSoExpand({ so }: { so: SalesOrderDetail }): React.JSX.E
             code · name) rather than a string. The equipment line is an SO line
             like any other, so its drawing revision renders as CODE/REV (ADR-177). */}
         <div>
-          <div style={{ fontSize: 11, color: 'var(--text3)' }}>Equipment</div>
+          <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>Equipment</div>
           <ItemBadge
             size="row"
             code={line.itemCode ?? line.itemCodeText}
@@ -45,7 +45,7 @@ export function EquipmentSoExpand({ so }: { so: SalesOrderDetail }): React.JSX.E
         <Fact label="Order Qty" value={String(line.orderQty)} big />
         <Fact label="Due Date" value={fmtDate(line.dueDate)} />
         <div>
-          <div style={{ fontSize: 11, color: 'var(--text3)' }}>BOM Status</div>
+          <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>BOM Status</div>
           <div
             style={{
               fontWeight: 700,
@@ -69,7 +69,7 @@ export function EquipmentSoExpand({ so }: { so: SalesOrderDetail }): React.JSX.E
             style={{
               marginLeft: 'auto',
               color: 'var(--amber2)',
-              fontSize: 12,
+              fontSize: 'var(--fs-sm)',
               fontWeight: 600,
               alignSelf: 'center',
             }}
@@ -88,14 +88,14 @@ function EquipmentBomItems({ soId }: { soId: string }): React.JSX.Element | null
   const items = data?.bomItems ?? [];
   if (items.length === 0) return null;
   return (
-    <div style={{ padding: '4px 12px 8px 32px' }}>
+    <div style={{ padding: 'var(--sp-1) var(--sp-3) var(--sp-2) var(--sp-6)' }}>
       <div
         style={{
-          fontSize: 11,
+          fontSize: 'var(--fs-xs)',
           color: 'var(--cyan)',
           fontFamily: 'var(--mono)',
           fontWeight: 700,
-          marginBottom: 4,
+          marginBottom: 'var(--sp-1)',
         }}
       >
         BOM Items — {data?.header.equipmentInfo?.bomNo ?? ''} ×{' '}
@@ -153,11 +153,16 @@ function BomPartsTable({ items }: { items: SoStatusBomItem[] }): React.JSX.Eleme
               </td>
               <td>{c.childItemName}</td>
               <td className="td-num mono fw-700">{c.qtyPerSet}</td>
-              <td className="td-num mono fw-700" style={{ fontSize: 14, color: 'var(--cyan)' }}>
+              <td
+                className="td-num mono fw-700"
+                style={{ fontSize: 'var(--fs-sm)', color: 'var(--cyan)' }}
+              >
                 {c.totalNeed}
               </td>
               <td>
-                <span style={{ color: typeColor, fontSize: 11, fontWeight: 700 }}>{typeLabel}</span>
+                <span style={{ color: typeColor, fontSize: 'var(--fs-xs)', fontWeight: 700 }}>
+                  {typeLabel}
+                </span>
               </td>
               <td
                 className="td-num mono fw-700"
@@ -208,7 +213,7 @@ export function SoBomPartsPanel({ so }: { so: SalesOrderDetail }): React.JSX.Ele
     : '';
   const title = detailBits ? `BOM Parts — ${detailBits}` : 'BOM Parts';
   const note = (text: string, color: string): React.JSX.Element => (
-    <div style={{ padding: '12px 18px', fontSize: 12, color }}>{text}</div>
+    <div style={{ padding: '12px 18px', fontSize: 'var(--fs-sm)', color }}>{text}</div>
   );
   return (
     <Panel title={title} bodyPadding="none">
@@ -240,7 +245,7 @@ function Fact({
 }): React.JSX.Element {
   return (
     <div>
-      <div style={{ fontSize: 11, color: 'var(--text3)' }}>{label}</div>
+      <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>{label}</div>
       <div style={{ fontWeight: 700, color, fontSize: big ? 16 : undefined }}>{value}</div>
     </div>
   );

@@ -27,7 +27,14 @@ function Breakdown({ by }: { by: Record<string, number> }): React.JSX.Element {
   const list = Object.entries(by).sort((a, b) => b[1] - a[1]);
   if (list.length === 0) return <span className="text3">—</span>;
   return (
-    <span style={{ display: 'inline-flex', flexWrap: 'wrap', columnGap: 12, rowGap: 2 }}>
+    <span
+      style={{
+        display: 'inline-flex',
+        flexWrap: 'wrap',
+        columnGap: 'var(--sp-3)',
+        rowGap: 'var(--sp-0)',
+      }}
+    >
       {list.map(([k, hrs]) => (
         <span key={k} style={{ whiteSpace: 'nowrap' }}>
           {k} <span className="mono fw-700">{hrs.toFixed(1)}h</span>

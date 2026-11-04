@@ -44,7 +44,10 @@ function Metric({
           (styling skill rule 1 — short values stay on one line). Too narrow for
           all the tiles and they wrap as WHOLE tiles, label and number together,
           which is the right failure. */}
-      <div className="mono" style={{ fontSize: 11, color: 'var(--text3)', whiteSpace: 'nowrap' }}>
+      <div
+        className="mono"
+        style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)', whiteSpace: 'nowrap' }}
+      >
         {label}
       </div>
       <div
@@ -63,19 +66,26 @@ export function JcCustomerMaterialPanel({ jc }: { jc: JobCardListItem }): React.
   if (!cm) return null;
 
   return (
-    <div className="panel" style={{ marginBottom: 12, padding: 0, overflow: 'hidden' }}>
+    <div className="panel" style={{ marginBottom: 'var(--sp-3)', padding: 0, overflow: 'hidden' }}>
       <div
         className="panel-hdr"
-        style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}
+        style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)', flexWrap: 'wrap' }}
       >
         <div className="panel-title" style={{ color: 'var(--purple)' }}>
           Customer Material
         </div>
-        <span className="text3" style={{ fontSize: 11 }}>
+        <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
           (this Job Card · 1 RM piece per part)
         </span>
       </div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'stretch', padding: '4px 0' }}>
+      <div
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'stretch',
+          padding: 'var(--sp-1) 0',
+        }}
+      >
         {/* The first cell drops its left border so the row reads as one strip. */}
         <div
           style={{
@@ -87,7 +97,7 @@ export function JcCustomerMaterialPanel({ jc }: { jc: JobCardListItem }): React.
         >
           <div
             className="mono"
-            style={{ fontSize: 11, color: 'var(--text3)', whiteSpace: 'nowrap' }}
+            style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)', whiteSpace: 'nowrap' }}
           >
             Needed
           </div>
@@ -109,9 +119,9 @@ export function JcCustomerMaterialPanel({ jc }: { jc: JobCardListItem }): React.
         style={{
           display: 'flex',
           flexWrap: 'wrap',
-          gap: 16,
+          gap: 'var(--sp-4)',
           padding: '4px 14px 8px',
-          fontSize: 11,
+          fontSize: 'var(--fs-xs)',
         }}
       >
         <span>JWSO line totals —</span>

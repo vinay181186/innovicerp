@@ -187,12 +187,15 @@ export function OspProcessesPanel(): React.JSX.Element {
 
   return (
     // Legacy `<div class="panel mt-16">` (L13399); .mt-16 (L268) is not in our theme.
-    <div className="panel" style={{ marginTop: 16 }}>
+    <div className="panel" style={{ marginTop: 'var(--sp-4)' }}>
       <div className="panel-hdr">
         <span className="panel-title">OSP Process Configuration</span>
       </div>
       <div className="panel-body">
-        <p className="text2" style={{ fontSize: 12, lineHeight: 1.7, marginBottom: 12 }}>
+        <p
+          className="text2"
+          style={{ fontSize: 'var(--fs-sm)', lineHeight: 1.7, marginBottom: 'var(--sp-3)' }}
+        >
           Outside processes. Starting one on a JC raises a JW PR.
         </p>
 
@@ -205,7 +208,7 @@ export function OspProcessesPanel(): React.JSX.Element {
             {error instanceof Error ? error.message : 'Could not load OSP processes. Try again.'}
           </div>
         ) : items.length === 0 ? (
-          <div className="text3" style={{ fontSize: 12, padding: '8px 0' }}>
+          <div className="text3" style={{ fontSize: 'var(--fs-xs)', padding: 'var(--sp-2) 0' }}>
             No OSP processes yet.
           </div>
         ) : (
@@ -226,7 +229,7 @@ export function OspProcessesPanel(): React.JSX.Element {
                     <td className="fw-700" style={{ color: 'var(--purple)' }}>
                       {p.processName}
                     </td>
-                    <td style={{ fontSize: 11 }}>
+                    <td style={{ fontSize: 'var(--fs-xs)' }}>
                       {p.vendorName ? (
                         <>
                           {p.vendorCode ? <span className="text3">{p.vendorCode} — </span> : null}
@@ -243,7 +246,7 @@ export function OspProcessesPanel(): React.JSX.Element {
                         <span className="text3">—</span>
                       )}
                     </td>
-                    <td className="text3" style={{ fontSize: 11 }}>
+                    <td className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
                       {p.leadDays} days
                     </td>
                     <td>
@@ -292,7 +295,7 @@ export function OspProcessesPanel(): React.JSX.Element {
         <Modal
           title={modal.id ? 'Edit OSP Process' : 'Add OSP Process'}
           onClose={() => setModal(null)}
-          bodyStyle={{ display: 'grid', gap: 12 }}
+          bodyStyle={{ display: 'grid', gap: 'var(--sp-3)' }}
           footer={
             <>
               <button type="button" className="btn btn-ghost btn-sm" onClick={() => setModal(null)}>
@@ -354,7 +357,7 @@ export function OspProcessesPanel(): React.JSX.Element {
               valueLabel={modal.vendorLabel || undefined}
             />
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-3)' }}>
             <div className="form-grp">
               <label className="form-label">Lead Time (days)</label>
               <input

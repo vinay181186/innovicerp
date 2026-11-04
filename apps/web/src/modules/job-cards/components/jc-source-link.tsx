@@ -18,7 +18,7 @@ export function JcSourceLink(props: { sourceLink: JobCardSourceLink | null }): R
         to="/sales-orders/$id"
         params={{ id: sourceLink.salesOrderId }}
         className="mono"
-        style={{ color: 'var(--cyan)', textDecoration: 'none', fontSize: 11 }}
+        style={{ color: 'var(--cyan)', textDecoration: 'none', fontSize: 'var(--fs-xs)' }}
         onClick={(e) => e.stopPropagation()}
       >
         {soNoWithInternal(sourceLink.code, sourceLink.internalSoNo)} ▸ line {sourceLink.lineNo}
@@ -31,7 +31,7 @@ export function JcSourceLink(props: { sourceLink: JobCardSourceLink | null }): R
       to="/job-work-orders/$id"
       params={{ id: sourceLink.jobWorkOrderId }}
       className="mono"
-      style={{ color: 'var(--cyan)', textDecoration: 'none', fontSize: 11 }}
+      style={{ color: 'var(--cyan)', textDecoration: 'none', fontSize: 'var(--fs-xs)' }}
       onClick={(e) => e.stopPropagation()}
     >
       {sourceLink.code} ▸ line {sourceLink.lineNo}

@@ -34,15 +34,18 @@ export function DataIntegrityPanel(): React.JSX.Element {
 
   return (
     // Legacy `<div class="panel mt-16">` (L13420); .mt-16 (L268) is not in our theme.
-    <div className="panel" style={{ marginTop: 16 }}>
+    <div className="panel" style={{ marginTop: 'var(--sp-4)' }}>
       <div className="panel-hdr">
         <span className="panel-title">Data Integrity Check</span>
       </div>
       <div className="panel-body">
-        <p className="text2" style={{ fontSize: 12, lineHeight: 1.7, marginBottom: 12 }}>
+        <p
+          className="text2"
+          style={{ fontSize: 'var(--fs-sm)', lineHeight: 1.7, marginBottom: 'var(--sp-3)' }}
+        >
           Finds broken links and negative stock.
         </p>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 'var(--sp-2)', alignItems: 'center' }}>
           <button
             type="button"
             className="btn btn-primary"
@@ -60,14 +63,14 @@ export function DataIntegrityPanel(): React.JSX.Element {
             )}
           </button>
           {result ? (
-            <span className="text3" style={{ fontSize: 11 }}>
+            <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
               Last run: {fmtDateTime(result.ranAt)}
             </span>
           ) : null}
         </div>
 
         {run.isError ? (
-          <div style={{ marginTop: 12 }}>
+          <div style={{ marginTop: 'var(--sp-3)' }}>
             <Banner tone="error" role="alert">
               {run.error instanceof Error
                 ? run.error.message
@@ -83,7 +86,7 @@ export function DataIntegrityPanel(): React.JSX.Element {
                 key={r.code}
                 style={{
                   padding: 10,
-                  borderRadius: 6,
+                  borderRadius: 'var(--radius)',
                   border: `1px solid ${severityColor(r.severity)}`,
                   background:
                     r.severity === 'ok'
@@ -108,16 +111,22 @@ export function DataIntegrityPanel(): React.JSX.Element {
                   </div>
                   <span
                     className="mono fw-700"
-                    style={{ fontSize: 16, color: severityColor(r.severity) }}
+                    style={{ fontSize: 'var(--fs-md)', color: severityColor(r.severity) }}
                   >
                     {r.count}
                   </span>
                 </div>
-                <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
+                <div
+                  className="text3"
+                  style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-1)' }}
+                >
                   {r.detail}
                 </div>
                 {r.samples.length > 0 ? (
-                  <div className="text2" style={{ fontSize: 11, marginTop: 4 }}>
+                  <div
+                    className="text2"
+                    style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-1)' }}
+                  >
                     <span className="text3">Samples:</span>{' '}
                     {r.samples.map((s, i) => (
                       <span key={i} className="mono" style={{ marginRight: 6 }}>

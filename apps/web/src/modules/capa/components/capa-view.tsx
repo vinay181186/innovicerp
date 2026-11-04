@@ -174,15 +174,15 @@ export function CapaView(props: {
                 padding: '10px 14px',
                 background: 'var(--amber3)',
                 border: '1px solid var(--amber2)',
-                borderRadius: 8,
-                marginBottom: 12,
-                fontSize: 12,
+                borderRadius: 'var(--radius2)',
+                marginBottom: 'var(--sp-3)',
+                fontSize: 'var(--fs-sm)',
                 display: 'flex',
-                gap: 8,
+                gap: 'var(--sp-2)',
                 alignItems: 'center',
               }}
             >
-              <span style={{ fontSize: 16 }}>⚠️</span>
+              <span style={{ fontSize: 'var(--fs-md)' }}>⚠️</span>
               <b style={{ color: 'var(--amber2)' }}>{overdueCount} CAPAs overdue</b>
             </div>
           ) : null}
@@ -205,10 +205,10 @@ export function CapaView(props: {
                   <div
                     style={{
                       display: 'flex',
-                      gap: 24,
+                      gap: 'var(--sp-5)',
                       flexWrap: 'wrap',
-                      fontSize: 12,
-                      padding: '2px 2px',
+                      fontSize: 'var(--fs-sm)',
+                      padding: 'var(--sp-0) var(--sp-0)',
                     }}
                   >
                     <span>

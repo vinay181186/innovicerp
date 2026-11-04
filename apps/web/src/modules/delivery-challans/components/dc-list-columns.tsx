@@ -29,7 +29,7 @@ function PoCell({ dc }: { dc: DeliveryChallanListLine }): React.JSX.Element {
       <span
         className="badge b-red"
         title={`Return to vendor — NC ${dc.ncCode ?? dc.poCodeText}${dc.jobCardCode ? ` · JC ${dc.jobCardCode}` : ''}`}
-        style={{ fontSize: 11 }}
+        style={{ fontSize: 'var(--fs-xs)' }}
       >
         NC {dc.ncCode ?? dc.poCodeText}
       </span>
@@ -37,7 +37,11 @@ function PoCell({ dc }: { dc: DeliveryChallanListLine }): React.JSX.Element {
   }
   if (dc.poCode) {
     return (
-      <span className="badge b-green" title={`Linked PO ${dc.poCode}`} style={{ fontSize: 11 }}>
+      <span
+        className="badge b-green"
+        title={`Linked PO ${dc.poCode}`}
+        style={{ fontSize: 'var(--fs-xs)' }}
+      >
         {dc.poCode}
       </span>
     );
@@ -47,7 +51,7 @@ function PoCell({ dc }: { dc: DeliveryChallanListLine }): React.JSX.Element {
       <span
         className="badge b-amber"
         title="PO No. typed by hand — not linked to a PO"
-        style={{ fontSize: 11 }}
+        style={{ fontSize: 'var(--fs-xs)' }}
       >
         {dc.poCodeText}*
       </span>

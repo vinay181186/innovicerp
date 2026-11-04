@@ -18,7 +18,7 @@ export function ReasonField(props: {
       maxLength={500}
       value={props.value}
       onChange={(e) => props.onChange(e.target.value)}
-      style={{ display: 'block', width: '100%', marginTop: 8 }}
+      style={{ display: 'block', width: '100%', marginTop: 'var(--sp-2)' }}
     />
   );
 }

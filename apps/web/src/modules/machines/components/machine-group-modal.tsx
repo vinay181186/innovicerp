@@ -85,7 +85,7 @@ export function MachineGroupModal({
             readOnly={Boolean(row)}
           />
           {row ? (
-            <div className="text3" style={{ fontSize: 11, marginTop: 3 }}>
+            <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginTop: 3 }}>
               Cannot be changed. Set Status to Inactive to retire it.
             </div>
           ) : null}
@@ -118,7 +118,10 @@ export function MachineGroupModal({
         </div>
       </div>
       {err ? (
-        <div role="alert" style={{ color: 'var(--red2)', fontSize: 12, marginTop: 8 }}>
+        <div
+          role="alert"
+          style={{ color: 'var(--red2)', fontSize: 'var(--fs-sm)', marginTop: 'var(--sp-2)' }}
+        >
           {err}
         </div>
       ) : null}

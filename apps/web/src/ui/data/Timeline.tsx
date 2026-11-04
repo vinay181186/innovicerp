@@ -180,7 +180,7 @@ export function Timeline({
                       justifyContent: 'space-between',
                       alignItems: 'center',
                       gap: 'var(--sp-2)',
-                      marginBottom: 2,
+                      marginBottom: 'var(--sp-0)',
                     }}
                   >
                     <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 700, color }}>

@@ -50,11 +50,14 @@ export function ResultTable({
   return (
     <div>
       {data && data.summary.length > 0 ? (
-        <div className="panel" style={{ marginBottom: 12 }}>
+        <div className="panel" style={{ marginBottom: 'var(--sp-3)' }}>
           <div className="panel-hdr">
             <span className="panel-title">
               Summary
-              <span className="text3" style={{ fontSize: 11, fontWeight: 400, marginLeft: 8 }}>
+              <span
+                className="text3"
+                style={{ fontSize: 'var(--fs-xs)', fontWeight: 400, marginLeft: 'var(--sp-2)' }}
+              >
                 Count per group
                 {summaryColLabel ? ` + ${fnLabel(data.summaryFunction)} of ${summaryColLabel}` : ''}
               </span>
@@ -95,7 +98,10 @@ export function ResultTable({
         <div className="panel-hdr">
           <span className="panel-title">
             Results
-            <span className="text3" style={{ fontSize: 11, fontWeight: 400, marginLeft: 8 }}>
+            <span
+              className="text3"
+              style={{ fontSize: 'var(--fs-xs)', fontWeight: 400, marginLeft: 'var(--sp-2)' }}
+            >
               {data
                 ? `${data.rowCount} rows · refreshed ${fmtDateTime(data.generatedAt)}`
                 : 'No results yet.'}

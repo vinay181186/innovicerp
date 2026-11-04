@@ -13,7 +13,7 @@ export function Field({
 }): React.JSX.Element {
   return (
     <div>
-      <div className="text3" style={{ fontSize: 11, marginBottom: 4 }}>
+      <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginBottom: 'var(--sp-1)' }}>
         {label}
         {required ? <span className="req">★</span> : null}
       </div>

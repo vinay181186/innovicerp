@@ -216,7 +216,7 @@ function ProductionOrderEditPage(): React.JSX.Element {
     return (
       <div className="panel">
         <div className="panel-body">
-          <div style={{ marginBottom: 8 }}>
+          <div style={{ marginBottom: 'var(--sp-2)' }}>
             <Link to="/production-orders" className="btn btn-ghost btn-sm">
               <ArrowLeft size={14} /> Back
             </Link>
@@ -246,7 +246,7 @@ function ProductionOrderEditPage(): React.JSX.Element {
     return (
       <div className="panel">
         <div className="panel-body">
-          <div style={{ marginBottom: 8 }}>
+          <div style={{ marginBottom: 'var(--sp-2)' }}>
             <Link to="/production-orders/$id" params={{ id }} className="btn btn-ghost btn-sm">
               <ArrowLeft size={14} /> Back to Production Order
             </Link>

@@ -87,7 +87,10 @@ export function IssueLinesEditor({
                     aria-label={`Issue Qty for ${l.itemCode}`}
                   />
                   {l.hint ? (
-                    <div className="text3" style={{ fontSize: 10, marginTop: 2 }}>
+                    <div
+                      className="text3"
+                      style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-0)' }}
+                    >
                       {l.hint}
                     </div>
                   ) : null}
@@ -114,7 +117,7 @@ export function IssueLinesEditor({
           </tbody>
         </table>
       </div>
-      <div style={{ marginTop: 8 }}>
+      <div style={{ marginTop: 'var(--sp-2)' }}>
         <SearchableSelect
           key={pickerKey}
           id="si-add-item"

@@ -194,7 +194,7 @@ export function NewToolIssueModal({ onClose }: { onClose: () => void }): React.J
             <input
               type="text"
               className="innovic-input"
-              style={{ marginTop: 4 }}
+              style={{ marginTop: 'var(--sp-1)' }}
               placeholder="…or type a name if not an operator"
               value={issuedToText}
               onChange={(e) => setIssuedToText(e.target.value)}
@@ -231,12 +231,12 @@ export function NewToolIssueModal({ onClose }: { onClose: () => void }): React.J
       </div>
 
       {serial ? (
-        <div style={{ marginTop: 12 }}>
-          <div className="fw-700" style={{ fontSize: 12, marginBottom: 6 }}>
+        <div style={{ marginTop: 'var(--sp-3)' }}>
+          <div className="fw-700" style={{ fontSize: 'var(--fs-sm)', marginBottom: 6 }}>
             Instruments in store — tick the ones handed out
           </div>
           {instruments.isLoading ? (
-            <div className="text3" style={{ fontSize: 12 }}>
+            <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
               <Loader2 size={14} className="inline animate-spin" /> Loading…
             </div>
           ) : (
@@ -292,12 +292,12 @@ export function NewToolIssueModal({ onClose }: { onClose: () => void }): React.J
       {err ? (
         <div
           style={{
-            marginTop: 12,
-            padding: 8,
+            marginTop: 'var(--sp-3)',
+            padding: 'var(--sp-2)',
             background: 'var(--red3)',
             color: 'var(--red2)',
-            borderRadius: 4,
-            fontSize: 12,
+            borderRadius: 'var(--radius-sm)',
+            fontSize: 'var(--fs-sm)',
           }}
         >
           {err}

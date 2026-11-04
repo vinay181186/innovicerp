@@ -112,7 +112,7 @@ export function PartyGrnReceiveLines({
                     <td style={{ whiteSpace: 'normal' }}>{l.partName.trim() || '—'}</td>
                     <td>
                       {noRm ? (
-                        <span className="text3" style={{ fontSize: 11 }}>
+                        <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
                           No customer RM — save the JWSO first
                         </span>
                       ) : (
@@ -148,7 +148,7 @@ export function PartyGrnReceiveLines({
                       ) : noRm ? (
                         '—'
                       ) : (
-                        <span className="text3" style={{ fontSize: 11 }}>
+                        <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
                           {waitingOf(l.id) > 0 ? 'Waiting QC' : 'Fully received'}
                         </span>
                       )}

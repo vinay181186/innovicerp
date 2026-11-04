@@ -133,7 +133,7 @@ function AlertsDashboardPage() {
       kind: 'code',
       filterValue: (a) => DEPT_LABEL[a.dept],
       render: (a) => (
-        <span style={{ fontWeight: 700, color: DEPT_COLOR[a.dept], fontSize: 12 }}>
+        <span style={{ fontWeight: 700, color: DEPT_COLOR[a.dept], fontSize: 'var(--fs-sm)' }}>
           {DEPT_LABEL[a.dept]}
         </span>
       ),
@@ -148,7 +148,7 @@ function AlertsDashboardPage() {
         <span
           className="mono fw-700"
           style={{
-            fontSize: 16,
+            fontSize: 'var(--fs-md)',
             color: a.count > 0 ? (isUrgent(a) ? 'var(--red2)' : 'var(--amber2)') : 'var(--green2)',
           }}
         >
@@ -220,11 +220,11 @@ function AlertsDashboardPage() {
         filters={
           <label
             style={{
-              fontSize: 11,
+              fontSize: 'var(--fs-xs)',
               color: 'var(--text3)',
               display: 'flex',
               alignItems: 'center',
-              gap: 4,
+              gap: 'var(--sp-1)',
               cursor: 'pointer',
             }}
           >
@@ -315,7 +315,9 @@ function AlertsDashboardPage() {
             onPage={gotoPage}
           />
 
-          <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 8 }}>
+          <div
+            style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)', marginTop: 'var(--sp-2)' }}
+          >
             <Bell size={12} className="inline align-text-bottom" /> = get this alert by email.
           </div>
         </>

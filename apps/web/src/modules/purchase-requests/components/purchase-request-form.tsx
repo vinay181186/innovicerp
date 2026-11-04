@@ -343,7 +343,10 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
                 <>
                   PR Qty
                   {qtyUom ? (
-                    <span className="mono" style={{ color: 'var(--text2)', marginLeft: 4 }}>
+                    <span
+                      className="mono"
+                      style={{ color: 'var(--text2)', marginLeft: 'var(--sp-1)' }}
+                    >
                       ({qtyUom})
                     </span>
                   ) : null}

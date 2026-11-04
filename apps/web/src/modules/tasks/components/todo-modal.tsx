@@ -45,7 +45,10 @@ export function TodoModal({ onClose }: { onClose: () => void }): React.JSX.Eleme
         <>
           Create My To-Do
           {next?.code ? (
-            <span className="mono text3" style={{ fontSize: 12, marginLeft: 10, fontWeight: 600 }}>
+            <span
+              className="mono text3"
+              style={{ fontSize: 'var(--fs-xs)', marginLeft: 10, fontWeight: 600 }}
+            >
               {next.code}
             </span>
           ) : null}

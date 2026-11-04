@@ -198,7 +198,7 @@ function StoreIssueNewPage(): React.JSX.Element {
       <PageHeader title="New Item Issue" backLabel="Back to Item Issue Register" onBack={goBack} />
 
       <Panel>
-        <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 6, marginBottom: 'var(--sp-3)', flexWrap: 'wrap' }}>
           {ISSUE_AGAINST.map((a) => (
             <button
               key={a}
@@ -263,7 +263,7 @@ function StoreIssueNewPage(): React.JSX.Element {
               <input
                 type="text"
                 className="innovic-input"
-                style={{ marginTop: 4 }}
+                style={{ marginTop: 'var(--sp-1)' }}
                 placeholder="…or type a name"
                 value={issuedToText}
                 onChange={(e) => setIssuedToText(e.target.value)}
@@ -310,11 +310,11 @@ function StoreIssueNewPage(): React.JSX.Element {
           }
         >
           {mat.isLoading ? (
-            <div className="text3" style={{ fontSize: 12 }}>
+            <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
               <Loader2 size={14} className="inline animate-spin" /> Loading…
             </div>
           ) : mat.isError ? (
-            <div style={{ color: 'var(--red2)', fontSize: 12 }}>
+            <div style={{ color: 'var(--red2)', fontSize: 'var(--fs-sm)' }}>
               {mat.error instanceof Error ? mat.error.message : 'Could not load material.'}
             </div>
           ) : against === 'job_card' && jcMat.data ? (

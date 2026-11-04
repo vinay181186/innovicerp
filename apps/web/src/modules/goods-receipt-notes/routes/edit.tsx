@@ -107,7 +107,7 @@ function GoodsReceiptNoteNewPage(): React.JSX.Element {
     return (
       <div className="panel">
         <div className="panel-body">
-          <div style={{ marginBottom: 8 }}>
+          <div style={{ marginBottom: 'var(--sp-2)' }}>
             <Link to="/goods-receipt-notes" className="btn btn-ghost btn-sm">
               <ArrowLeft size={14} /> Back to GRN list
             </Link>
@@ -236,7 +236,7 @@ function GoodsReceiptNoteEditPage(): React.JSX.Element {
     return (
       <div className="panel">
         <div className="panel-body">
-          <div style={{ marginBottom: 8 }}>
+          <div style={{ marginBottom: 'var(--sp-2)' }}>
             <Link to="/goods-receipt-notes/$id" params={{ id }} className="btn btn-ghost btn-sm">
               <ArrowLeft size={14} /> Back to GRN
             </Link>
@@ -257,7 +257,7 @@ function GoodsReceiptNoteEditPage(): React.JSX.Element {
     return (
       <div className="panel">
         <div className="panel-body">
-          <div style={{ marginBottom: 8 }}>
+          <div style={{ marginBottom: 'var(--sp-2)' }}>
             <Link to="/goods-receipt-notes" className="btn btn-ghost btn-sm">
               <ArrowLeft size={14} /> Back
             </Link>

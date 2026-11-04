@@ -198,7 +198,7 @@ function DeliveryChallanNewPage(): React.JSX.Element {
         onBack={goBack}
       />
 
-      <div className="panel" style={{ padding: 16 }}>
+      <div className="panel" style={{ padding: 'var(--sp-4)' }}>
         {/* ▸ DC AGAINST — a compact dropdown (Against PO / Against NC). State,
             not navigation; switching unmounts the other side below. */}
         <div className="form-grp" style={{ maxWidth: 220, marginBottom: 14 }}>
@@ -440,19 +440,21 @@ function PoPickerBody({ onSelect }: { onSelect: (poId: string) => void }): React
 
   return (
     <>
-      <div className="text3" style={{ fontSize: 11, marginBottom: 12 }}>
+      <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginBottom: 'var(--sp-3)' }}>
         Pick a PO.
       </div>
       {/* ADR-219 — why an order with nothing left to send is still in the list,
           said once above the table instead of on every row. */}
       {anyRtvPending ? (
-        <div style={{ fontSize: 11, color: 'var(--amber2)', marginBottom: 12 }}>
+        <div
+          style={{ fontSize: 'var(--fs-xs)', color: 'var(--amber2)', marginBottom: 'var(--sp-3)' }}
+        >
           Marked orders have deviated pieces waiting to go back to the vendor. This screen sends
           fresh pieces only — raise the return on Against NC.
         </div>
       ) : null}
 
-      <div className="form-grp" style={{ maxWidth: 420, marginBottom: 12 }}>
+      <div className="form-grp" style={{ maxWidth: 420, marginBottom: 'var(--sp-3)' }}>
         <label className="form-label" htmlFor="dc-po-search">
           Search this list
         </label>
@@ -900,8 +902,8 @@ function PoDcFormBody({
         style={{
           background: 'var(--bg)',
           border: '1px solid var(--border)',
-          borderRadius: 8,
-          padding: 12,
+          borderRadius: 'var(--radius2)',
+          padding: 'var(--sp-3)',
           margin: '4px 0 14px',
         }}
       >
@@ -913,19 +915,19 @@ function PoDcFormBody({
           }}
         >
           <div>
-            <span style={{ fontSize: 11, color: 'var(--text3)' }}>PO No.</span>
+            <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>PO No.</span>
             <br />
             <b className="mono" style={{ color: 'var(--blue)' }}>
               {po.code}
             </b>
           </div>
           <div>
-            <span style={{ fontSize: 11, color: 'var(--text3)' }}>Vendor</span>
+            <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>Vendor</span>
             <br />
             <b>{po.vendorName ?? po.vendorCodeText ?? '—'}</b>
           </div>
           <div>
-            <span style={{ fontSize: 11, color: 'var(--text3)' }}>Process</span>
+            <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>Process</span>
             <br />
             {/* The operation the vendor does: an OSP PO line carries it in
                 lineRemarks (written from the JC op / PR operation, and read the
@@ -940,7 +942,7 @@ function PoDcFormBody({
             </b>
           </div>
           <div>
-            <span style={{ fontSize: 11, color: 'var(--text3)' }}>Lines</span>
+            <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>Lines</span>
             <br />
             <b>{po.lines.length}</b>
           </div>
@@ -996,7 +998,7 @@ function PoDcFormBody({
           challan sends. Shown only when there are some; with none, Against PO
           is exactly as before. */}
       {rtv.isError ? (
-        <div className="text3" style={{ fontSize: 11, marginTop: 'var(--sp-2)' }}>
+        <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-2)' }}>
           Could not check for pieces waiting to go back; the save will check.
         </div>
       ) : null}
@@ -1019,7 +1021,7 @@ function PoDcFormBody({
               only. Raise the return on Against NC — NCs of one SO going to one vendor can go back
               together on one challan.
             </div>
-            <ul style={{ margin: '4px 0 8px', paddingLeft: 18 }}>
+            <ul style={{ margin: 'var(--sp-1) 0 var(--sp-2)', paddingLeft: 18 }}>
               {rtvOnPo.map((r) => (
                 <li key={r.ncId}>
                   <b className="mono fw-700">{r.ncCode}</b> —{' '}
@@ -1030,7 +1032,14 @@ function PoDcFormBody({
                 </li>
               ))}
             </ul>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 'var(--sp-4)',
+                flexWrap: 'wrap',
+              }}
+            >
               <button type="button" className="btn btn-ghost btn-sm" onClick={onSwitchClick}>
                 {rtvOpenTotal > 0
                   ? `Send the ${rtvOpenTotal} back → Against NC`
@@ -1169,7 +1178,7 @@ function PoDcFormBody({
                       {cap ? (
                         <div
                           style={{
-                            fontSize: 11,
+                            fontSize: 'var(--fs-xs)',
                             marginTop: 3,
                             color: done
                               ? 'var(--green)'
@@ -1231,7 +1240,7 @@ function PoDcFormBody({
                   user staring at a zero with no explanation. */}
                   {issue || blocked ? (
                     <tr>
-                      <td colSpan={9} style={{ padding: '0 8px 8px' }}>
+                      <td colSpan={9} style={{ padding: '0 var(--sp-2) var(--sp-2)' }}>
                         <div
                           style={{
                             color: issue ? 'var(--red)' : done ? 'var(--text2)' : 'var(--amber)',
@@ -1243,9 +1252,9 @@ function PoDcFormBody({
                             border: `1px solid ${
                               issue ? 'var(--red)' : done ? 'var(--border)' : 'var(--amber)'
                             }`,
-                            borderRadius: 6,
+                            borderRadius: 'var(--radius)',
                             padding: '6px 10px',
-                            fontSize: 12,
+                            fontSize: 'var(--fs-sm)',
                             lineHeight: 1.5,
                           }}
                         >

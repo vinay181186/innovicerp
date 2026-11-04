@@ -141,7 +141,7 @@ export function ToolWriteoffsView({ canDecide }: { canDecide: boolean }): React.
           <>
             {STATUS_LABELS[w.status]}
             {w.decidedByName ? (
-              <div className="text3" style={{ fontSize: 11 }}>
+              <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
                 {w.decidedByName}
                 {w.decisionRemarks ? ` — ${w.decisionRemarks}` : ''}
               </div>
@@ -155,7 +155,7 @@ export function ToolWriteoffsView({ canDecide }: { canDecide: boolean }): React.
 
   return (
     <div>
-      <div style={{ marginBottom: 8 }}>
+      <div style={{ marginBottom: 'var(--sp-2)' }}>
         <select
           className="innovic-select"
           aria-label="Write-off Status"
@@ -289,14 +289,16 @@ function DecideModal({
         </>
       }
     >
-      <div className="text2" style={{ fontSize: 12, marginBottom: 8 }}>
+      <div className="text2" style={{ fontSize: 'var(--fs-sm)', marginBottom: 'var(--sp-2)' }}>
         {KIND_LABELS[w.kind]} · qty {r3(w.qty)} · reason: {w.reason}
       </div>
-      <div className="text3" style={{ fontSize: 11, marginBottom: 8 }}>
+      <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginBottom: 'var(--sp-2)' }}>
         Approve = written off. {rejectMeans}
       </div>
       {own ? (
-        <div style={{ color: 'var(--amber2)', fontSize: 12, marginBottom: 8 }}>
+        <div
+          style={{ color: 'var(--amber2)', fontSize: 'var(--fs-sm)', marginBottom: 'var(--sp-2)' }}
+        >
           You recorded this write-off — another Store In-charge must decide it.
         </div>
       ) : null}
@@ -307,7 +309,11 @@ function DecideModal({
         value={remarks}
         onChange={(e) => setRemarks(e.target.value)}
       />
-      {err ? <div style={{ color: 'var(--red2)', fontSize: 12, marginTop: 8 }}>{err}</div> : null}
+      {err ? (
+        <div style={{ color: 'var(--red2)', fontSize: 'var(--fs-sm)', marginTop: 'var(--sp-2)' }}>
+          {err}
+        </div>
+      ) : null}
     </Modal>
   );
 }

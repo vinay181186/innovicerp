@@ -92,7 +92,7 @@ export function ReorderModal({
         </>
       }
     >
-      <div className="text3" style={{ fontSize: 12, marginBottom: 10 }}>
+      <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginBottom: 10 }}>
         0 = off. Available now (all Drawing Revs){' '}
         <b className="mono">{totals ? totals.availableQty : '…'}</b>, On PO{' '}
         <b className="mono">{totals ? totals.onPoQty : '…'}</b>.
@@ -108,7 +108,7 @@ export function ReorderModal({
             value={level}
             onChange={(e) => setLevel(e.target.value)}
             onWheel={(e) => e.currentTarget.blur()}
-            style={{ fontSize: 16, fontWeight: 700 }}
+            style={{ fontSize: 'var(--fs-md)', fontWeight: 700 }}
           />
         </div>
         <div className="form-grp">
@@ -121,12 +121,16 @@ export function ReorderModal({
             value={qty}
             onChange={(e) => setQty(e.target.value)}
             onWheel={(e) => e.currentTarget.blur()}
-            style={{ fontSize: 16, fontWeight: 700 }}
+            style={{ fontSize: 'var(--fs-md)', fontWeight: 700 }}
             title="How much one reorder buys. 0 = buy just the shortfall."
           />
         </div>
       </div>
-      {err ? <div style={{ marginTop: 12, color: 'var(--red2)', fontSize: 12 }}>{err}</div> : null}
+      {err ? (
+        <div style={{ marginTop: 'var(--sp-3)', color: 'var(--red2)', fontSize: 'var(--fs-sm)' }}>
+          {err}
+        </div>
+      ) : null}
     </ModalShell>
   );
 }

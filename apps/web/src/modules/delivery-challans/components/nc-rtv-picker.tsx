@@ -63,7 +63,7 @@ export function NcPickerBody({
 
   return (
     <>
-      <div className="form-grp" style={{ maxWidth: 420, marginBottom: 12 }}>
+      <div className="form-grp" style={{ maxWidth: 420, marginBottom: 'var(--sp-3)' }}>
         <label className="form-label" htmlFor="dc-nc-search">
           Search this list
         </label>

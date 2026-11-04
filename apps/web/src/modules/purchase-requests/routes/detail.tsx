@@ -127,7 +127,7 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
     return (
       <div className="panel">
         <div className="panel-body">
-          <div style={{ marginBottom: 8 }}>
+          <div style={{ marginBottom: 'var(--sp-2)' }}>
             <Link to="/purchase-requests" className="btn btn-ghost btn-sm">
               <ArrowLeft size={14} /> Back
             </Link>
@@ -230,13 +230,13 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
           <div style={{ minWidth: 0 }}>
             <div
               className="td-code"
-              style={{ color: 'var(--blue)', fontSize: 16, fontWeight: 700 }}
+              style={{ color: 'var(--blue)', fontSize: 'var(--fs-md)', fontWeight: 700 }}
             >
               {detail.code}
             </div>
             <div
               className="panel-title"
-              style={{ marginTop: 2, display: 'flex', alignItems: 'center', gap: 10 }}
+              style={{ marginTop: 'var(--sp-0)', display: 'flex', alignItems: 'center', gap: 10 }}
             >
               {/* Falls back to CODE/REV, never the bare snapshot code — the
                   revision travels with the code everywhere else on this page. */}
@@ -344,7 +344,7 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
                   rows={2}
                   value={deleteReason}
                   onChange={(e) => setDeleteReason(e.target.value)}
-                  style={{ display: 'block', width: '100%', marginTop: 8 }}
+                  style={{ display: 'block', width: '100%', marginTop: 'var(--sp-2)' }}
                 />
               </>
             }
@@ -374,9 +374,9 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
                 color: 'var(--red2)',
                 background: 'var(--red3)',
                 border: '1px solid var(--sig-critical-bd)',
-                borderRadius: 6,
+                borderRadius: 'var(--radius)',
                 padding: '6px 10px',
-                fontSize: 12,
+                fontSize: 'var(--fs-sm)',
                 marginBottom: 10,
               }}
             >
@@ -497,10 +497,10 @@ function PrFacts(props: {
             color: 'var(--red2)',
             background: 'var(--red3)',
             border: '1px solid var(--sig-critical-bd)',
-            borderRadius: 6,
+            borderRadius: 'var(--radius)',
             padding: '6px 10px',
-            fontSize: 12,
-            margin: '8px 0',
+            fontSize: 'var(--fs-sm)',
+            margin: 'var(--sp-2) 0',
             fontWeight: 600,
           }}
         >
@@ -518,18 +518,18 @@ function PrFacts(props: {
             color: 'var(--text2)',
             background: 'var(--bg3)',
             border: '1px solid var(--border2)',
-            borderRadius: 6,
+            borderRadius: 'var(--radius)',
             padding: '8px 10px',
-            fontSize: 12,
-            margin: '8px 0',
+            fontSize: 'var(--fs-sm)',
+            margin: 'var(--sp-2) 0',
           }}
         >
           <div className="fw-700">🚫 {prBalanceClosedText(bal)}</div>
-          <div style={{ marginTop: 4, whiteSpace: 'pre-wrap' }}>
+          <div style={{ marginTop: 'var(--sp-1)', whiteSpace: 'pre-wrap' }}>
             <span className="form-label">Reason</span> {bal.closedReason ?? '—'}
           </div>
           {bal.closedAt ? (
-            <div className="text3" style={{ marginTop: 2 }}>
+            <div className="text3" style={{ marginTop: 'var(--sp-0)' }}>
               Closed on <span className="mono">{fmtDate(bal.closedAt)}</span>. The {bal.ordered}{' '}
               already on purchase orders still stands.
             </div>

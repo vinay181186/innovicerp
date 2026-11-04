@@ -106,7 +106,7 @@ export function VendorPicker({
       {/* An older document whose vendor was only ever free text: show what is
           stored so the empty picker does not read as "no vendor at all". */}
       {!value && carriedText ? (
-        <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
+        <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-1)' }}>
           Saved as free text: <b>{carriedText}</b> — pick a vendor to link it.
         </div>
       ) : null}

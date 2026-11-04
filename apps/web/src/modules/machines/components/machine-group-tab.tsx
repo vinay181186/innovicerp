@@ -245,10 +245,10 @@ export function MachineGroupTab({ tabs }: { tabs: React.ReactNode }): React.JSX.
       </ListHeader>
 
       {softDelete.isError ? (
-        <div className="panel" style={{ marginBottom: 12 }}>
+        <div className="panel" style={{ marginBottom: 'var(--sp-3)' }}>
           <div
             className="panel-body"
-            style={{ padding: '10px 14px', fontSize: 12, color: 'var(--red2)' }}
+            style={{ padding: '10px 14px', fontSize: 'var(--fs-sm)', color: 'var(--red2)' }}
           >
             {softDelete.error instanceof Error
               ? softDelete.error.message

@@ -145,7 +145,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
     return (
       <div className="panel">
         <div className="panel-body">
-          <div style={{ marginBottom: 8 }}>
+          <div style={{ marginBottom: 'var(--sp-2)' }}>
             <Link to="/nc-register" className="btn btn-ghost btn-sm">
               <ArrowLeft size={14} /> Back
             </Link>
@@ -302,7 +302,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
                 search={{ tab: 'capa', capa: detail.linkedCapaCode }}
                 className="mono"
                 style={{
-                  fontSize: 12,
+                  fontSize: 'var(--fs-sm)',
                   color: 'var(--purple)',
                   fontWeight: 700,
                   textDecoration: 'none',
@@ -353,7 +353,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
             ) : null}
             {isReworkDisposed && canAdvance ? (
               <>
-                <span className="text3" style={{ fontSize: 11 }}>
+                <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
                   Rework Completed Qty
                 </span>
                 <input
@@ -366,7 +366,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
                   onChange={(e) =>
                     setReworkDoneQty(e.target.value === '' ? '' : Number(e.target.value))
                   }
-                  style={{ width: 90, fontSize: 12 }}
+                  style={{ width: 90, fontSize: 'var(--fs-sm)' }}
                 />
                 <button
                   type="button"
@@ -386,7 +386,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
             {showClose ? (
               <>
                 {detail.closeBlockedReason ? (
-                  <span className="text3" style={{ fontSize: 11, maxWidth: 360 }}>
+                  <span className="text3" style={{ fontSize: 'var(--fs-xs)', maxWidth: 360 }}>
                     {detail.closeBlockedReason}
                   </span>
                 ) : null}

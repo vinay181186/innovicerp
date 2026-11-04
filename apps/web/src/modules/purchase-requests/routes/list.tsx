@@ -320,7 +320,7 @@ function PurchaseRequestsListPage(): React.JSX.Element {
                 selectionActions={() => (
                   <>
                     {sel.lockedVendor ? (
-                      <span className="text3" style={{ fontSize: 12 }}>
+                      <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
                         Vendor <span className="text2 fw-700">{sel.lockedVendor.label}</span>
                       </span>
                     ) : null}

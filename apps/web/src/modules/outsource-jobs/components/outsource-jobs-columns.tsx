@@ -192,7 +192,7 @@ export function outsourceJobsColumns(
               {PR_STATUS_LABELS[pr.status]}
             </span>
             {bal.closed ? (
-              <span className="badge b-grey" style={{ marginLeft: 4 }}>
+              <span className="badge b-grey" style={{ marginLeft: 'var(--sp-1)' }}>
                 Short Closed
               </span>
             ) : null}
@@ -217,10 +217,10 @@ export function OutsourceJobExpand({ pr }: { pr: PurchaseRequestListItem }): Rea
     <div
       style={{
         display: 'flex',
-        gap: 24,
+        gap: 'var(--sp-5)',
         flexWrap: 'wrap',
         padding: '8px 14px',
-        fontSize: 12,
+        fontSize: 'var(--fs-sm)',
       }}
     >
       <span>

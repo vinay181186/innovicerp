@@ -46,7 +46,7 @@ import { useToast } from '@/ui/feedback';
 const FIELD_GRID = {
   display: 'grid',
   gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
-  gap: 12,
+  gap: 'var(--sp-3)',
   alignItems: 'start',
 } as const;
 
@@ -688,13 +688,13 @@ export function OpEntryForm({
   const blockedBanner = blockedReason ? (
     <div
       style={{
-        marginTop: 12,
+        marginTop: 'var(--sp-3)',
         padding: '8px 10px',
-        borderRadius: 6,
+        borderRadius: 'var(--radius)',
         background: 'var(--amber3)',
         border: '1px solid var(--amber2)',
         color: 'var(--amber2)',
-        fontSize: 12,
+        fontSize: 'var(--fs-sm)',
         fontWeight: 600,
       }}
     >
@@ -703,7 +703,10 @@ export function OpEntryForm({
   ) : null;
 
   const errorBanner = errorMessage ? (
-    <div role="alert" style={{ color: 'var(--red2)', fontSize: 12, marginTop: 8 }}>
+    <div
+      role="alert"
+      style={{ color: 'var(--red2)', fontSize: 'var(--fs-sm)', marginTop: 'var(--sp-2)' }}
+    >
       {errorMessage}
     </div>
   ) : null;
@@ -717,13 +720,13 @@ export function OpEntryForm({
         display: 'flex',
         gap: 10,
         alignItems: 'center',
-        marginTop: 12,
+        marginTop: 'var(--sp-3)',
         padding: '8px 10px',
-        borderRadius: 6,
+        borderRadius: 'var(--radius)',
         background: 'var(--green3)',
         border: '1px solid var(--green2)',
         color: 'var(--green2)',
-        fontSize: 12,
+        fontSize: 'var(--fs-sm)',
         fontWeight: 600,
       }}
     >
@@ -768,19 +771,19 @@ export function OpEntryForm({
       <div className="panel">
         <div className="panel-hdr">
           <span className="panel-title">Outside processing</span>
-          <span className="text3" style={{ fontSize: 11 }}>
+          <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
             Op {opSrNo(op.opSeq)} · <span className="mono">{op.operation}</span>
           </span>
         </div>
         <div className="panel-body">
           <div
             style={{
-              marginBottom: 12,
+              marginBottom: 'var(--sp-3)',
               padding: '8px 10px',
-              borderRadius: 6,
+              borderRadius: 'var(--radius)',
               background: 'var(--bg4)',
               border: '1px solid var(--border)',
-              fontSize: 12,
+              fontSize: 'var(--fs-sm)',
             }}
           >
             Status:{' '}
@@ -792,7 +795,7 @@ export function OpEntryForm({
           </div>
 
           {alreadyRaised ? (
-            <div className="text2" style={{ fontSize: 13, lineHeight: 1.6 }}>
+            <div className="text2" style={{ fontSize: 'var(--fs-sm)', lineHeight: 1.6 }}>
               An OSP purchase request already exists for this operation. Manage it from{' '}
               <Link to="/purchase-orders" style={{ color: 'var(--cyan)', fontWeight: 600 }}>
                 Purchase Orders
@@ -800,7 +803,7 @@ export function OpEntryForm({
               .
             </div>
           ) : !canWrite ? (
-            <div className="text3" style={{ fontSize: 12 }}>
+            <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
               Generating an OSP purchase request needs the Purchase Request create right.
             </div>
           ) : (
@@ -825,8 +828,8 @@ export function OpEntryForm({
             <div
               role="alert"
               style={{
-                marginTop: 12,
-                fontSize: 12,
+                marginTop: 'var(--sp-3)',
+                fontSize: 'var(--fs-sm)',
                 color: ospMsg.kind === 'ok' ? 'var(--green)' : 'var(--red)',
               }}
             >
@@ -857,7 +860,7 @@ export function OpEntryForm({
       <form onSubmit={handleSubmitQc}>
         <div className="panel">
           <div className="panel-hdr">
-            <span className="text3" style={{ fontSize: 11 }}>
+            <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
               QC Pending: <span className="mono">{op.qcPending}</span>
             </span>
           </div>
@@ -1007,7 +1010,14 @@ export function OpEntryForm({
             {/* One notice slot, below the fields and above the buttons. */}
             {blockedBanner}
             {errorBanner}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
+            <div
+              style={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: 'var(--sp-2)',
+                marginTop: 'var(--sp-3)',
+              }}
+            >
               {canQcSubmit ? (
                 <button
                   type="submit"
@@ -1060,7 +1070,7 @@ export function OpEntryForm({
     <form onSubmit={(e) => void handleProductionSubmit(e)}>
       <div className="panel">
         <div className="panel-hdr">
-          <span className="text3" style={{ fontSize: 11 }}>
+          <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
             Op {opSrNo(op.opSeq)} · <span className="mono">{op.operation}</span>
           </span>
         </div>
@@ -1298,15 +1308,19 @@ export function OpEntryForm({
                 gap: 10,
                 alignItems: 'flex-start',
                 padding: '10px 12px',
-                marginTop: 12,
+                marginTop: 'var(--sp-3)',
                 background: 'var(--bg3)',
                 border: '1px solid var(--amber)',
-                borderRadius: 8,
-                fontSize: 12,
+                borderRadius: 'var(--radius2)',
+                fontSize: 'var(--fs-sm)',
                 lineHeight: 1.5,
               }}
             >
-              <AlertTriangle size={18} className="amber" style={{ flex: 'none', marginTop: 2 }} />
+              <AlertTriangle
+                size={18}
+                className="amber"
+                style={{ flex: 'none', marginTop: 'var(--sp-0)' }}
+              />
               <div style={{ flex: 1 }}>
                 <b className="mono">{actualLabel ?? 'This machine'}</b> is currently running{' '}
                 <span className="mono fw-700 cyan">
@@ -1352,14 +1366,14 @@ export function OpEntryForm({
               className="text3"
               style={{
                 display: 'flex',
-                gap: 8,
+                gap: 'var(--sp-2)',
                 alignItems: 'center',
                 padding: 10,
-                marginTop: 12,
+                marginTop: 'var(--sp-3)',
                 background: 'var(--bg3)',
                 border: '1px solid var(--border)',
-                borderRadius: 8,
-                fontSize: 12,
+                borderRadius: 'var(--radius2)',
+                fontSize: 'var(--fs-xs)',
               }}
             >
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -1368,7 +1382,14 @@ export function OpEntryForm({
           ) : null}
           {ncBanner}
           {errorBanner}
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 'var(--sp-2)',
+              marginTop: 'var(--sp-3)',
+            }}
+          >
             {canOpEntry ? (
               isStart ? (
                 activeRunningId ? (

@@ -188,7 +188,7 @@ export function DcrDcnTab({ detail }: { detail: DesignProjectDetail }): React.JS
 
   return (
     <div>
-      <div style={{ marginBottom: 16 }}>
+      <div style={{ marginBottom: 'var(--sp-4)' }}>
         <StatStrip
           items={[
             { key: 'dcrs', label: 'Total DCRs', count: dcrs.length },
@@ -213,19 +213,19 @@ export function DcrDcnTab({ detail }: { detail: DesignProjectDetail }): React.JS
           display: 'flex',
           justifyContent: 'flex-end',
           alignItems: 'center',
-          marginBottom: 12,
+          marginBottom: 'var(--sp-3)',
           flexWrap: 'wrap',
-          gap: 8,
+          gap: 'var(--sp-2)',
         }}
       >
         <div style={{ display: 'flex', gap: 6 }}>
           <select
             style={{
               padding: '5px 8px',
-              fontSize: 11,
+              fontSize: 'var(--fs-xs)',
               background: 'var(--bg3)',
               border: '1px solid var(--border)',
-              borderRadius: 6,
+              borderRadius: 'var(--radius)',
               color: 'var(--text)',
             }}
             value={statusFilter}

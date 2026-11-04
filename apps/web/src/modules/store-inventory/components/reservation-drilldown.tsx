@@ -48,7 +48,7 @@ function StatusBadge({ row }: { row: ReservationDetail }): React.JSX.Element {
           ? 'var(--green)'
           : 'var(--text3)';
   return (
-    <span style={{ fontSize: 11, fontWeight: 700, color }}>
+    <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 700, color }}>
       {RESERVATION_STATUS_LABEL[row.status]}
     </span>
   );
@@ -241,7 +241,7 @@ export function ReservationDrilldown({
       title={`Stock per Drawing Rev — ${itemLabel} (${itemName})`}
     >
       {isLoading ? (
-        <div className="text3" style={{ fontSize: 12 }}>
+        <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
           <Loader2 size={14} className="inline animate-spin" /> Loading…
         </div>
       ) : isError ? (
@@ -252,9 +252,9 @@ export function ReservationDrilldown({
         <>
           {/* Phase C — the same item split per Item + Drawing Rev bucket. */}
           <RevStockTable itemId={itemId} itemCode={itemCode} focusRevisionId={itemRevisionId} />
-          <div style={{ fontSize: 12, marginBottom: 10 }}>
+          <div style={{ fontSize: 'var(--fs-sm)', marginBottom: 10 }}>
             <span className="text3">Total reserved for {scopeName}: </span>
-            <b className="mono" style={{ color: 'var(--purple)', fontSize: 16 }}>
+            <b className="mono" style={{ color: 'var(--purple)', fontSize: 'var(--fs-md)' }}>
               {data?.totalReserved ?? 0}
             </b>
           </div>

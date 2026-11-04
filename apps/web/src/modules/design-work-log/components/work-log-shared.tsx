@@ -58,7 +58,11 @@ export function dayName(date: string): string {
 export function TrackerBadge(props: { designTrackerId: string | null }): React.JSX.Element | null {
   if (!props.designTrackerId) return null;
   return (
-    <span className="badge b-blue" title="Logged from the Design Tracker" style={{ marginLeft: 4 }}>
+    <span
+      className="badge b-blue"
+      title="Logged from the Design Tracker"
+      style={{ marginLeft: 'var(--sp-1)' }}
+    >
       Tracker
     </span>
   );

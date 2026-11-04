@@ -31,7 +31,7 @@ export function TrashReasonDialog({
             rows={2}
             value={reason}
             onChange={(e) => setReason(e.target.value)}
-            style={{ display: 'block', width: '100%', marginTop: 8 }}
+            style={{ display: 'block', width: '100%', marginTop: 'var(--sp-2)' }}
           />
         </>
       }

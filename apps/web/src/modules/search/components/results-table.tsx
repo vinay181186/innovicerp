@@ -64,7 +64,7 @@ export function ResultsTable({
                     onClick={() => onOpen(r)}
                   >
                     <td className="mono">{fmtDate(r.date)}</td>
-                    <td className="text3" style={{ fontSize: 12 }}>
+                    <td className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
                       {GLOBAL_SEARCH_KIND_META[r.kind].label}
                     </td>
                     <td className="gs-ellipsis">
@@ -84,7 +84,7 @@ export function ResultsTable({
                         <div key={i}>{l}</div>
                       ))}
                       {r.hit ? (
-                        <div className="text3" style={{ fontSize: 12 }}>
+                        <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
                           matched: {r.hit}
                         </div>
                       ) : null}

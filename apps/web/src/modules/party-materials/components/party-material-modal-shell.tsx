@@ -64,7 +64,7 @@ export function Field({
 }): React.JSX.Element {
   return (
     <div>
-      <div className="text3" style={{ fontSize: 11, marginBottom: 4 }}>
+      <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginBottom: 'var(--sp-1)' }}>
         {label}
         {required ? <span className="req">★</span> : null}
       </div>
@@ -77,12 +77,12 @@ export function ErrorBox({ message }: { message: string }): React.JSX.Element {
   return (
     <div
       style={{
-        marginTop: 12,
-        padding: 8,
+        marginTop: 'var(--sp-3)',
+        padding: 'var(--sp-2)',
         background: 'rgba(239,68,68,0.08)',
         color: 'var(--red2)',
-        borderRadius: 4,
-        fontSize: 12,
+        borderRadius: 'var(--radius-sm)',
+        fontSize: 'var(--fs-sm)',
       }}
     >
       {message}

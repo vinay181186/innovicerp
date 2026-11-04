@@ -118,7 +118,7 @@ export function RegisterInstrumentModal({
         </>
       }
     >
-      <div className="text3" style={{ fontSize: 11, marginBottom: 10 }}>
+      <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginBottom: 10 }}>
         Registering does not move stock — the piece must already be received by GRN or Stock Count.
       </div>
       <div className="form-grid">
@@ -228,7 +228,10 @@ export function RegisterInstrumentModal({
         </div>
       </div>
       {err ? (
-        <div role="alert" style={{ color: 'var(--red2)', fontSize: 12, marginTop: 8 }}>
+        <div
+          role="alert"
+          style={{ color: 'var(--red2)', fontSize: 'var(--fs-sm)', marginTop: 'var(--sp-2)' }}
+        >
           {err}
         </div>
       ) : null}

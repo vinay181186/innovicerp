@@ -74,14 +74,14 @@ function SoStatusIndexPage(): React.JSX.Element {
 
   if (isLoading) {
     return (
-      <div className="text3" style={{ fontSize: 12, padding: 16 }}>
+      <div className="text3" style={{ fontSize: 'var(--fs-xs)', padding: 'var(--sp-4)' }}>
         <Loader2 size={14} className="inline animate-spin" /> Loading…
       </div>
     );
   }
   if (isError || !data) {
     return (
-      <div className="empty-state" style={{ color: 'var(--red2)', padding: 24 }}>
+      <div className="empty-state" style={{ color: 'var(--red2)', padding: 'var(--sp-5)' }}>
         {error instanceof Error ? error.message : 'Could not load SO list. Try again.'}
       </div>
     );
@@ -124,7 +124,12 @@ function SoStatusIndexPage(): React.JSX.Element {
         >
           <div
             className="text3"
-            style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.08em', marginBottom: 6 }}
+            style={{
+              fontSize: 'var(--fs-xs)',
+              fontWeight: 700,
+              letterSpacing: '.08em',
+              marginBottom: 6,
+            }}
           >
             Select SO
           </div>
@@ -136,7 +141,14 @@ function SoStatusIndexPage(): React.JSX.Element {
           />
         </div>
         {filtered.length === 0 ? (
-          <div style={{ padding: 24, textAlign: 'center', color: 'var(--text3)', fontSize: 12 }}>
+          <div
+            style={{
+              padding: 'var(--sp-5)',
+              textAlign: 'center',
+              color: 'var(--text3)',
+              fontSize: 'var(--fs-xs)',
+            }}
+          >
             {data.rows.length === 0 ? 'No SOs yet.' : 'No SOs match.'}
           </div>
         ) : (
@@ -169,7 +181,7 @@ function SoStatusIndexPage(): React.JSX.Element {
                   <span
                     style={{
                       fontWeight: 700,
-                      fontSize: 13,
+                      fontSize: 'var(--fs-sm)',
                       color: active ? 'var(--cyan)' : 'var(--text)',
                     }}
                   >
@@ -178,7 +190,7 @@ function SoStatusIndexPage(): React.JSX.Element {
                   <span
                     className="text3"
                     style={{
-                      fontSize: 11,
+                      fontSize: 'var(--fs-xs)',
                       background: 'var(--bg4)',
                       padding: '1px 5px',
                       borderRadius: 3,
@@ -190,8 +202,8 @@ function SoStatusIndexPage(): React.JSX.Element {
                 <div
                   className="text3"
                   style={{
-                    fontSize: 11,
-                    marginTop: 2,
+                    fontSize: 'var(--fs-xs)',
+                    marginTop: 'var(--sp-0)',
                     whiteSpace: 'nowrap',
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
@@ -201,16 +213,28 @@ function SoStatusIndexPage(): React.JSX.Element {
                 </div>
                 {bomPending ? (
                   <div
-                    style={{ fontSize: 11, color: 'var(--amber2)', fontWeight: 700, marginTop: 2 }}
+                    style={{
+                      fontSize: 'var(--fs-xs)',
+                      color: 'var(--amber2)',
+                      fontWeight: 700,
+                      marginTop: 'var(--sp-0)',
+                    }}
                   >
                     ⚠ BOM Pending
                   </div>
                 ) : null}
-                <div style={{ display: 'flex', gap: 8, marginTop: 4, alignItems: 'center' }}>
-                  <span className="text3" style={{ fontSize: 11 }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    gap: 'var(--sp-2)',
+                    marginTop: 'var(--sp-1)',
+                    alignItems: 'center',
+                  }}
+                >
+                  <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
                     Order Qty: <b>{r.totalRequiredQty}</b>
                   </span>
-                  <span className="text3" style={{ fontSize: 11 }}>
+                  <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
                     Completed: <b style={{ color: 'var(--green2)' }}>{r.totalDoneQty}</b>
                   </span>
                   <div
@@ -231,7 +255,7 @@ function SoStatusIndexPage(): React.JSX.Element {
                       }}
                     />
                   </div>
-                  <span className="text3" style={{ fontSize: 11 }}>
+                  <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
                     {r.overallPct}%
                   </span>
                 </div>
@@ -246,7 +270,7 @@ function SoStatusIndexPage(): React.JSX.Element {
         {selected ? (
           <SoStatusDetailView soId={selected} />
         ) : (
-          <div className="empty-state" style={{ padding: 60, fontSize: 14 }}>
+          <div className="empty-state" style={{ padding: 60, fontSize: 'var(--fs-sm)' }}>
             Select an SO
           </div>
         )}

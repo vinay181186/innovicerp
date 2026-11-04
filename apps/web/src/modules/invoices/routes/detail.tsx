@@ -336,7 +336,7 @@ function InvoiceDetailPage(): React.JSX.Element {
               </div>
             ) : null}
             {inv.cancelledAt ? (
-              <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
+              <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-0)' }}>
                 Cancelled {inv.cancelledBy ? `by ${inv.cancelledBy} ` : ''}on{' '}
                 {fmtDate(inv.cancelledAt)}
               </div>
@@ -355,7 +355,7 @@ function InvoiceDetailPage(): React.JSX.Element {
       {/* The invoice keeps its own item names; where the item master's name
           has changed since, show it beside (screen only, plan v3 Step 4). */}
       {inv.lines.some((l) => l.masterItemName && l.masterItemName !== l.itemName) ? (
-        <div className="text3" style={{ fontSize: 11, marginBottom: 10 }}>
+        <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginBottom: 10 }}>
           {inv.lines
             .filter((l) => l.masterItemName && l.masterItemName !== l.itemName)
             .map((l) => (
@@ -439,9 +439,20 @@ function InvoiceDetailPage(): React.JSX.Element {
               </div>
             </div>
             {payErr ? (
-              <div style={{ color: 'var(--red2)', fontSize: 12, marginTop: 8 }}>{payErr}</div>
+              <div
+                style={{ color: 'var(--red2)', fontSize: 'var(--fs-sm)', marginTop: 'var(--sp-2)' }}
+              >
+                {payErr}
+              </div>
             ) : null}
-            <div style={{ display: 'flex', gap: 8, marginTop: 10, justifyContent: 'flex-end' }}>
+            <div
+              style={{
+                display: 'flex',
+                gap: 'var(--sp-2)',
+                marginTop: 10,
+                justifyContent: 'flex-end',
+              }}
+            >
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"
@@ -478,7 +489,7 @@ function InvoiceDetailPage(): React.JSX.Element {
           height: previewHeight,
           margin: '0 auto 14px',
           border: 'none',
-          borderRadius: 4,
+          borderRadius: 'var(--radius-sm)',
         }}
       />
 
@@ -502,16 +513,18 @@ function InvoiceDetailPage(): React.JSX.Element {
               <tbody>
                 {inv.payments.map((p) => (
                   <tr key={p.id}>
-                    <td style={{ fontSize: 11 }}>{fmtDate(p.paymentDate)}</td>
+                    <td style={{ fontSize: 'var(--fs-xs)' }}>{fmtDate(p.paymentDate)}</td>
                     <td className="mono fw-700 td-num" style={{ color: 'var(--green2)' }}>
                       {inr(p.amount ?? 0)}
                     </td>
                     <td className="mono fw-700 td-num" style={{ color: 'var(--purple)' }}>
                       {(p.tdsAmount ?? 0) > 0 ? inr(p.tdsAmount ?? 0) : '—'}
                     </td>
-                    <td style={{ fontSize: 11 }}>{p.mode}</td>
-                    <td style={{ fontSize: 11, color: 'var(--purple)' }}>{p.refNo ?? ''}</td>
-                    <td style={{ fontSize: 11 }} className="text3">
+                    <td style={{ fontSize: 'var(--fs-xs)' }}>{p.mode}</td>
+                    <td style={{ fontSize: 'var(--fs-xs)', color: 'var(--purple)' }}>
+                      {p.refNo ?? ''}
+                    </td>
+                    <td style={{ fontSize: 'var(--fs-xs)' }} className="text3">
                       {p.notes ?? ''}
                     </td>
                   </tr>

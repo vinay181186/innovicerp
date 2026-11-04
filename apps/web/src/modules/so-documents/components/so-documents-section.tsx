@@ -101,7 +101,7 @@ export function SoDocumentsSection({ soId }: { soId: string }): React.JSX.Elemen
   return (
     <div>
       {/* One count line in place of the old five stat tiles. */}
-      <div className="text3" style={{ fontSize: 12, marginBottom: 12 }}>
+      <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginBottom: 'var(--sp-3)' }}>
         <b className="mono" style={{ color: 'var(--text)' }}>
           {data.totals.fileCount}
         </b>{' '}
@@ -110,7 +110,14 @@ export function SoDocumentsSection({ soId }: { soId: string }): React.JSX.Elemen
       </div>
 
       {/* Action bar */}
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+      <div
+        style={{
+          display: 'flex',
+          gap: 'var(--sp-2)',
+          flexWrap: 'wrap',
+          marginBottom: 'var(--sp-4)',
+        }}
+      >
         {canUpload ? (
           <button type="button" className="btn btn-primary" onClick={() => setUploadOpen(true)}>
             <Upload size={14} /> Upload Document
@@ -133,7 +140,7 @@ export function SoDocumentsSection({ soId }: { soId: string }): React.JSX.Elemen
 
       {/* SO-level / unlinked files (legacy L19617-19634) */}
       {unlinked.length > 0 ? (
-        <div className="panel" style={{ marginBottom: 12 }}>
+        <div className="panel" style={{ marginBottom: 'var(--sp-3)' }}>
           <div className="panel-hdr">
             <span className="panel-title">📁 SO-Level Documents (not linked to a line)</span>
           </div>
@@ -178,7 +185,7 @@ export function SoDocumentsSection({ soId }: { soId: string }): React.JSX.Elemen
               maxLength={500}
               value={deleteReason}
               onChange={(e) => setDeleteReason(e.target.value)}
-              style={{ display: 'block', width: '100%', marginTop: 8 }}
+              style={{ display: 'block', width: '100%', marginTop: 'var(--sp-2)' }}
             />
           </>
         }
@@ -244,7 +251,7 @@ function LinePanel({
   }
 
   return (
-    <div className="panel" style={{ marginBottom: 12 }}>
+    <div className="panel" style={{ marginBottom: 'var(--sp-3)' }}>
       <div className="panel-hdr" style={{ background: 'rgba(34,197,94,0.06)' }}>
         <span className="panel-title" style={{ color: 'var(--green2)' }}>
           {/* POL is the line number on the CUSTOMER'S OWN purchase order — an
@@ -256,12 +263,19 @@ function LinePanel({
           : {itemCodeWithRev(line.itemCode, line.itemRevision, '')} — {line.itemName ?? ''}
           {line.orderQty ? ` (Qty: ${line.orderQty})` : ''}
         </span>
-        <span style={{ fontSize: 11, color: 'var(--text3)' }}>
+        <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>
           {files.length} files · {(lineSize / 1024).toFixed(0)} KB
         </span>
       </div>
       {files.length === 0 ? (
-        <div style={{ padding: 16, textAlign: 'center', color: 'var(--text3)', fontSize: 12 }}>
+        <div
+          style={{
+            padding: 'var(--sp-4)',
+            textAlign: 'center',
+            color: 'var(--text3)',
+            fontSize: 'var(--fs-xs)',
+          }}
+        >
           No documents uploaded for this line yet
         </div>
       ) : (
@@ -273,7 +287,7 @@ function LinePanel({
                 style={{
                   padding: '6px 14px',
                   background: 'var(--bg4)',
-                  fontSize: 11,
+                  fontSize: 'var(--fs-xs)',
                   fontWeight: 700,
                   color: 'var(--text3)',
                 }}
@@ -335,11 +349,11 @@ function FileRow({
         background: idx % 2 === 0 ? 'var(--bg)' : 'var(--bg3)',
       }}
     >
-      <div style={{ fontSize: 16 }}>{fileIcon(file)}</div>
+      <div style={{ fontSize: 'var(--fs-md)' }}>{fileIcon(file)}</div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div
           style={{
-            fontSize: 12,
+            fontSize: 'var(--fs-sm)',
             fontWeight: 600,
             overflow: 'hidden',
             textOverflow: 'ellipsis',
@@ -348,18 +362,18 @@ function FileRow({
         >
           {file.fileName}
           {file.source === 'qc' ? (
-            <span className="badge b-grey" style={{ marginLeft: 6, fontSize: 11 }}>
+            <span className="badge b-grey" style={{ marginLeft: 6, fontSize: 'var(--fs-xs)' }}>
               QC · read-only
             </span>
           ) : null}
         </div>
-        <div style={{ fontSize: 11, color: 'var(--text3)' }}>{meta}</div>
+        <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>{meta}</div>
       </div>
-      <div style={{ display: 'flex', gap: 4 }}>
+      <div style={{ display: 'flex', gap: 'var(--sp-1)' }}>
         <button
           type="button"
           className="btn btn-ghost btn-sm"
-          style={{ fontSize: 11 }}
+          style={{ fontSize: 'var(--fs-xs)' }}
           title="Preview this file (download from the preview window)"
           onClick={() => onView(file)}
         >
@@ -369,7 +383,7 @@ function FileRow({
           <button
             type="button"
             className="btn btn-danger btn-sm"
-            style={{ fontSize: 11, padding: '2px 6px' }}
+            style={{ fontSize: 'var(--fs-xs)', padding: '2px 6px' }}
             disabled={deleting}
             onClick={() => onDelete(file)}
           >
@@ -457,7 +471,7 @@ function UploadDialog({
       title={`📤 Upload Documents to ${soNoWithInternal(soCode, soInternalNo)}`}
       onClose={onClose}
       closeLocked={busy}
-      bodyStyle={{ display: 'grid', gap: 12 }}
+      bodyStyle={{ display: 'grid', gap: 'var(--sp-3)' }}
       footer={
         <>
           <button type="button" className="btn btn-ghost" disabled={busy} onClick={onClose}>
@@ -486,7 +500,7 @@ function UploadDialog({
           clearable
         />
       </div>
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 'var(--sp-3)', flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: 160 }}>
           <label className="form-label">Category</label>
           <select
@@ -522,12 +536,19 @@ function UploadDialog({
           onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
         />
         {files.length > 0 ? (
-          <div style={{ fontSize: 12, color: 'var(--green2)', fontWeight: 700, marginTop: 4 }}>
+          <div
+            style={{
+              fontSize: 'var(--fs-sm)',
+              color: 'var(--green2)',
+              fontWeight: 700,
+              marginTop: 'var(--sp-1)',
+            }}
+          >
             {files.length} file(s): {files.map((f) => f.name).join(', ')}
           </div>
         ) : null}
       </div>
-      {msg ? <div style={{ fontSize: 12, color: 'var(--red2)' }}>{msg}</div> : null}
+      {msg ? <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--red2)' }}>{msg}</div> : null}
     </Modal>
   );
 }

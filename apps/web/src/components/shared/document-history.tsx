@@ -39,7 +39,9 @@ function showValue(v: ActivityChangeValue): string {
 
 function ChangeList({ changes }: { changes: ActivityChange[] }): React.JSX.Element {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, textAlign: 'left' }}>
+    <div
+      style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-0)', textAlign: 'left' }}
+    >
       {changes.map((c) => (
         <div key={c.field}>
           <span className="fw-700">{c.label}</span>{' '}
@@ -89,7 +91,7 @@ const COLUMNS: DataTableColumn<ActivityHistoryRow>[] = [
       <div>
         <span className={`badge ${activityActionBadge(r.action)}`}>{r.actionLabel}</span>
         {r.lineRef || r.opRef ? (
-          <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginTop: 2 }}>
+          <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-0)' }}>
             {[r.lineRef, r.opRef].filter(Boolean).join(' · ')}
           </div>
         ) : null}

@@ -132,11 +132,11 @@ export function PrChip({ pr }: { pr: PlanningLine['prs'][number] }): JSX.Element
         flexWrap: 'wrap',
         gap: 6,
         padding: '3px 8px',
-        margin: '2px 0',
+        margin: 'var(--sp-0) 0',
         background: 'var(--bg)',
         border: '1px solid var(--border)',
-        borderRadius: 6,
-        fontSize: 11,
+        borderRadius: 'var(--radius)',
+        fontSize: 'var(--fs-xs)',
       }}
     >
       <span>🛒</span>
@@ -152,7 +152,9 @@ export function PrChip({ pr }: { pr: PlanningLine['prs'][number] }): JSX.Element
       <span className="text2">
         PR · <b>{pr.qty} pcs</b>
       </span>
-      <span style={{ fontWeight: 700, color: PR_STATUS_COLOR[pr.status], fontSize: 11 }}>
+      <span
+        style={{ fontWeight: 700, color: PR_STATUS_COLOR[pr.status], fontSize: 'var(--fs-xs)' }}
+      >
         {pr.status === 'po_created' && pr.poCode ? (
           <>
             PO <span className="mono">{pr.poCode}</span>

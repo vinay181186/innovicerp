@@ -14,7 +14,11 @@ export function MasterItemNameNote({
   const master = masterItemName?.trim() ?? '';
   if (master === '' || master === (lineName ?? '').trim()) return null;
   return (
-    <div className="text3" style={{ fontSize: 11 }} title="Item Name on the Item Master">
+    <div
+      className="text3"
+      style={{ fontSize: 'var(--fs-xs)' }}
+      title="Item Name on the Item Master"
+    >
       Master: {master}
     </div>
   );

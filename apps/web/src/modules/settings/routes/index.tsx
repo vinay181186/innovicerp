@@ -106,15 +106,15 @@ function SettingsPage(): React.JSX.Element {
   return (
     <div>
       {/* Legacy L13355–13365 puts the signed-in-user card ABOVE the section header. */}
-      <div className="panel" style={{ marginBottom: 16 }}>
+      <div className="panel" style={{ marginBottom: 'var(--sp-4)' }}>
         <div className="panel-body">
           <div>
             {/* Legacy L13357 shows cu.name here; MeResponse has no name, so email is the identity. */}
-            <div className="fw-700" style={{ fontSize: 14 }}>
+            <div className="fw-700" style={{ fontSize: 'var(--fs-sm)' }}>
               {me?.email ?? 'Guest'}
             </div>
             {/* Role label only — no company id; Sign Out lives in the top bar. */}
-            <div className="text3" style={{ fontSize: 11 }}>
+            <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
               {me?.role ? roleLabel(me.role) : '—'}
             </div>
           </div>
@@ -127,7 +127,7 @@ function SettingsPage(): React.JSX.Element {
         <div className="panel-hdr">
           <div>
             <span className="panel-title">Company Info</span>
-            <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
+            <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-0)' }}>
               {isAdmin
                 ? 'Printed on every document.'
                 : 'You do not have permission to edit company details. Ask an admin.'}
@@ -284,7 +284,7 @@ function SettingsPage(): React.JSX.Element {
                 </div>
 
                 {isAdmin ? (
-                  <div style={{ marginTop: 16 }}>
+                  <div style={{ marginTop: 'var(--sp-4)' }}>
                     {submitError ? (
                       <div style={{ marginBottom: 10 }}>
                         <Banner tone="error" role="alert">

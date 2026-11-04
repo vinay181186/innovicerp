@@ -198,7 +198,7 @@ export function PartyGrnQcModal({
         </>
       }
     >
-      <div className="text3" style={{ fontSize: 12, marginBottom: 12 }}>
+      <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginBottom: 'var(--sp-3)' }}>
         JWSO <span className="mono fw-700">{row.jwCodeText ?? '—'}</span> ·{' '}
         {row.clientName ?? row.clientCodeText ?? '—'}. Only the accepted qty enters customer stock.
         Deviated pieces raise an NC automatically — QC Head decides Use As Is, Return to Customer or
@@ -206,11 +206,11 @@ export function PartyGrnQcModal({
       </div>
 
       {detailQ.isError ? (
-        <div className="empty-state" style={{ color: 'var(--red2)', padding: 8 }}>
+        <div className="empty-state" style={{ color: 'var(--red2)', padding: 'var(--sp-2)' }}>
           Could not load lines. Try again.
         </div>
       ) : detailQ.isLoading ? (
-        <div className="text3" style={{ fontSize: 12 }}>
+        <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
           <Loader2 size={13} className="inline animate-spin" /> Loading lines…
         </div>
       ) : pending.length === 0 ? (
@@ -321,13 +321,13 @@ export function PartyGrnQcModal({
       {err ? (
         <div
           style={{
-            marginTop: 12,
+            marginTop: 'var(--sp-3)',
             color: 'var(--red2)',
             background: 'var(--red3)',
             border: '1px solid var(--red)',
-            borderRadius: 6,
+            borderRadius: 'var(--radius)',
             padding: '6px 10px',
-            fontSize: 12,
+            fontSize: 'var(--fs-sm)',
           }}
         >
           {err}

@@ -284,13 +284,13 @@ function InvoiceNewPage(): React.JSX.Element {
 
       <Panel title="Invoice Details">
         {fromDispatch && fromDispatch.status !== 'cancelled' ? (
-          <div style={{ marginBottom: 12 }}>
+          <div style={{ marginBottom: 'var(--sp-3)' }}>
             <span
               style={{
                 display: 'inline-block',
                 background: 'var(--bg3)',
                 border: '1px solid var(--border)',
-                borderRadius: 6,
+                borderRadius: 'var(--radius)',
                 padding: '4px 10px',
                 fontSize: 'var(--fs-xs)',
               }}
@@ -442,7 +442,7 @@ function InvoiceNewPage(): React.JSX.Element {
               style={{
                 display: 'grid',
                 gridTemplateColumns: GRID,
-                gap: 8,
+                gap: 'var(--sp-2)',
                 padding: '0 10px 4px',
                 fontSize: 'var(--fs-xs)',
                 fontWeight: 700,
@@ -496,13 +496,13 @@ function InvoiceNewPage(): React.JSX.Element {
                 style={{
                   display: 'grid',
                   gridTemplateColumns: GRID,
-                  gap: 8,
+                  gap: 'var(--sp-2)',
                   alignItems: 'center',
                   background: 'var(--bg)',
                   border: '1px solid var(--border)',
-                  borderRadius: 8,
+                  borderRadius: 'var(--radius2)',
                   padding: 10,
-                  marginBottom: 8,
+                  marginBottom: 'var(--sp-2)',
                 }}
               >
                 <span

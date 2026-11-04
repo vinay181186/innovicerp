@@ -101,7 +101,7 @@ export function IssuesTab({ detail }: { detail: DesignProjectDetail }): React.JS
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          marginBottom: 12,
+          marginBottom: 'var(--sp-3)',
         }}
       >
         <div className="section-hdr m-0">Design Issues</div>

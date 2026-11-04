@@ -143,9 +143,9 @@ export function TpiView(props: { title?: string; tabs?: React.ReactNode }): Reac
         </div>
       ) : (
         <>
-          <div className="panel" style={{ marginBottom: 16 }}>
+          <div className="panel" style={{ marginBottom: 'var(--sp-4)' }}>
             <div style={STRIP}>
-              <span style={{ fontWeight: 700, fontSize: 13 }}>
+              <span style={{ fontWeight: 700, fontSize: 'var(--fs-sm)' }}>
                 <span style={{ color: 'var(--amber2)' }}>⏳</span> Pending TPI ({pendTotal})
               </span>
             </div>
@@ -177,7 +177,7 @@ export function TpiView(props: { title?: string; tabs?: React.ReactNode }): Reac
 
           <div className="panel">
             <div style={STRIP}>
-              <span style={{ fontWeight: 700, fontSize: 13 }}>
+              <span style={{ fontWeight: 700, fontSize: 'var(--fs-sm)' }}>
                 <span style={{ color: 'var(--green2)' }}>✅</span> Completed TPI ({compTotal})
               </span>
             </div>

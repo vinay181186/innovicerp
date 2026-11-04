@@ -140,7 +140,9 @@ export function DailyTab({ term, onCount }: TabListProps): React.JSX.Element {
         >
           ←
         </button>
-        <div style={{ fontSize: 14, fontWeight: 700, minWidth: 160, textAlign: 'center' }}>
+        <div
+          style={{ fontSize: 'var(--fs-sm)', fontWeight: 700, minWidth: 160, textAlign: 'center' }}
+        >
           {fmtDate(viewDate)} ({dayName(viewDate)})
         </div>
         <button
@@ -187,7 +189,7 @@ export function DailyTab({ term, onCount }: TabListProps): React.JSX.Element {
             if (prev && prev.engineerText === l.engineerText) return null;
             const et = engHrs.get(l.engineerText) ?? 0;
             return (
-              <span style={{ display: 'inline-flex', gap: 8 }}>
+              <span style={{ display: 'inline-flex', gap: 'var(--sp-2)' }}>
                 <span>👤 {l.engineerText}</span>
                 <span>·</span>
                 <span

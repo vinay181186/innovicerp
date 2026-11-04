@@ -371,7 +371,7 @@ export function PoFormLine({
             {...register(`lines.${idx}.qty` as const, { valueAsNumber: true })}
           />
           {matched?.uom ? (
-            <div className="mono" style={{ fontSize: 11, color: 'var(--text2)' }}>
+            <div className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--text2)' }}>
               {matched.uom}
             </div>
           ) : null}

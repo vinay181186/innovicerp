@@ -108,7 +108,9 @@ export function ReverseOpLogModal({
         </Fact>
       </div>
 
-      <div style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.6, marginTop: 10 }}>
+      <div
+        style={{ fontSize: 'var(--fs-sm)', color: 'var(--text2)', lineHeight: 1.6, marginTop: 10 }}
+      >
         The original entry stays; an opposite entry is added and quantities recalculate.
       </div>
 
@@ -128,7 +130,7 @@ export function ReverseOpLogModal({
       </div>
 
       {err ? (
-        <div role="alert" className="form-error" style={{ marginTop: 8 }}>
+        <div role="alert" className="form-error" style={{ marginTop: 'var(--sp-2)' }}>
           {err}
         </div>
       ) : null}

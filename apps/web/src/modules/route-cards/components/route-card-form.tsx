@@ -923,12 +923,16 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
                 </div>
               ) : null}
               {copyError ? (
-                <span className="text2" role="alert" style={{ fontSize: 11, color: 'var(--red2)' }}>
+                <span
+                  className="text2"
+                  role="alert"
+                  style={{ fontSize: 'var(--fs-xs)', color: 'var(--red2)' }}
+                >
                   {copyError}
                 </span>
               ) : null}
               {copiedFrom && mode === 'create' ? (
-                <span className="text2" style={{ fontSize: 11 }}>
+                <span className="text2" style={{ fontSize: 'var(--fs-xs)' }}>
                   Copied from <span className="mono fw-700">{copiedFrom.label}</span> — edit freely
                 </span>
               ) : null}

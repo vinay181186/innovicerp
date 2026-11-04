@@ -278,7 +278,7 @@ function StuckDashboardPage(): React.JSX.Element {
             borderRadius: 'var(--radius2)',
           }}
         >
-          <div style={{ fontSize: 16, fontWeight: 700 }}>No stuck jobs.</div>
+          <div style={{ fontSize: 'var(--fs-md)', fontWeight: 700 }}>No stuck jobs.</div>
         </div>
       ) : (
         <>
@@ -321,8 +321,8 @@ function StuckDashboardPage(): React.JSX.Element {
                 inline-block is blockified, which stretched the `help` cursor and
                 the tooltip across the whole page. */
             style={{
-              fontSize: 11,
-              marginTop: 12,
+              fontSize: 'var(--fs-xs)',
+              marginTop: 'var(--sp-3)',
               cursor: 'help',
               display: 'inline-block',
               alignSelf: 'flex-start',

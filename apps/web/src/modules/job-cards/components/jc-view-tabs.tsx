@@ -46,7 +46,7 @@ function DocCard({
           height: 30,
           borderRadius: 7,
           background: iconBg,
-          fontSize: 15,
+          fontSize: 'var(--fs-sm)',
           flexShrink: 0,
         }}
       >
@@ -55,7 +55,12 @@ function DocCard({
       <span style={{ minWidth: 0 }}>
         <span
           className="fw-700"
-          style={{ display: 'block', fontSize: 12.5, color: 'var(--text)', whiteSpace: 'nowrap' }}
+          style={{
+            display: 'block',
+            fontSize: 'var(--fs-sm)',
+            color: 'var(--text)',
+            whiteSpace: 'nowrap',
+          }}
         >
           {title}
         </span>
@@ -63,7 +68,7 @@ function DocCard({
           className="mono"
           style={{
             display: 'block',
-            fontSize: 11,
+            fontSize: 'var(--fs-xs)',
             color: 'var(--text3)',
             whiteSpace: 'nowrap',
             overflow: 'hidden',
@@ -213,7 +218,7 @@ function DocumentsTab({
         />
       ) : null}
       {nothing ? (
-        <div className="empty-state" style={{ padding: 16, width: '100%' }}>
+        <div className="empty-state" style={{ padding: 'var(--sp-4)', width: '100%' }}>
           No QC document, QC call or NC on this job card yet.
         </div>
       ) : null}

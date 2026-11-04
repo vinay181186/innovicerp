@@ -204,14 +204,14 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
         </td>
         <td>
           {op.opType === 'qc' ? (
-            <span className="badge b-green" style={{ fontSize: 11 }}>
+            <span className="badge b-green" style={{ fontSize: 'var(--fs-xs)' }}>
               🔬 QC
             </span>
           ) : op.opType === 'outsource' ? (
             <span
               className="badge"
               style={{
-                fontSize: 11,
+                fontSize: 'var(--fs-xs)',
                 color: 'var(--purple)',
                 background: 'var(--purple3)',
                 border: '1px solid var(--purple)',
@@ -233,13 +233,16 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
             <>
               <RouteCardVendorCell id={`rc-vend-${idx}`} op={op} onChange={onVendorChange} />
               {vendorLabel ? (
-                <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
+                <div
+                  className="text3"
+                  style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-0)' }}
+                >
                   {vendorLabel}
                 </div>
               ) : null}
             </>
           ) : op.opType === 'qc' ? (
-            <span className="badge b-green" style={{ fontSize: 11 }}>
+            <span className="badge b-green" style={{ fontSize: 'var(--fs-xs)' }}>
               QC
             </span>
           ) : (
@@ -266,7 +269,10 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
                 selectedLabel={(o) => (o.code ? codeAndName(o.code, o.name) : o.name)}
               />
               {machineWarning ? (
-                <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
+                <div
+                  className="text3"
+                  style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-0)' }}
+                >
                   {machineWarning}
                 </div>
               ) : null}

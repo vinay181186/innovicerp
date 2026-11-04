@@ -19,27 +19,34 @@ export function JcMaterialPanel({
   const canIssue = effectiveFormPerms(eff, 'issue_create').entry && !stopped;
   if (isLoading)
     return (
-      <div className="text3" style={{ fontSize: 12 }}>
+      <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
         <Loader2 size={14} className="inline animate-spin" /> Loading…
       </div>
     );
   // No view right on Material (403) — say so plainly, not the raw server text.
   if (isError && (error as { status?: number }).status === 403)
     return (
-      <div className="text3" style={{ fontSize: 12 }}>
+      <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
         Your access does not include the Material view.
       </div>
     );
   if (isError || !data)
     return (
-      <div style={{ color: 'var(--red2)', fontSize: 12 }}>
+      <div style={{ color: 'var(--red2)', fontSize: 'var(--fs-sm)' }}>
         {error instanceof Error ? error.message : 'Could not load material.'}
       </div>
     );
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-        <span className="text3" style={{ fontSize: 12 }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 'var(--sp-2)',
+          marginBottom: 'var(--sp-2)',
+        }}
+      >
+        <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
           Order Qty <b className="mono">{data.orderQty}</b>
         </span>
         {canIssue ? (

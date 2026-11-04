@@ -32,7 +32,11 @@ import { Modal, useToast } from '@/ui/feedback';
 import { useCancelPreview, useDecideCancel, useRequestCancel, useWithdrawCancel } from '../api';
 import { BlockerList, CancelError, EffectsList } from './cancel-doc-parts';
 
-const TEXT: React.CSSProperties = { fontSize: 12, color: 'var(--text2)', lineHeight: 1.6 };
+const TEXT: React.CSSProperties = {
+  fontSize: 'var(--fs-sm)',
+  color: 'var(--text2)',
+  lineHeight: 1.6,
+};
 
 export function CancelDocDialog({
   docType,
@@ -227,7 +231,7 @@ export function CancelDocDialog({
           />
         </div>
         {!p.canApprove && !oneStepLabel ? (
-          <div className="text3" style={{ fontSize: 11 }}>
+          <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
             A holder of the Approve tick on this page approves it before {docCode} is cancelled.
           </div>
         ) : null}

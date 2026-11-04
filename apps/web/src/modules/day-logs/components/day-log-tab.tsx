@@ -81,7 +81,13 @@ export function DayLogTab({
         }}
       />
       <div
-        style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 8 }}
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          gap: 'var(--sp-2)',
+          marginBottom: 'var(--sp-2)',
+        }}
       >
         <label className="text3" htmlFor="dl-day">
           Day

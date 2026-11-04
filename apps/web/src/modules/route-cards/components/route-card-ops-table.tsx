@@ -83,14 +83,14 @@ export function RouteCardOpsTable({ ops }: { ops: RouteCardOp[] }): React.JSX.El
                   </td>
                   <td>
                     {op.opType === 'qc' ? (
-                      <span className="badge b-green" style={{ fontSize: 11 }}>
+                      <span className="badge b-green" style={{ fontSize: 'var(--fs-xs)' }}>
                         🔬 QC
                       </span>
                     ) : op.opType === 'outsource' ? (
                       <span
                         className="badge"
                         style={{
-                          fontSize: 11,
+                          fontSize: 'var(--fs-xs)',
                           color: 'var(--purple)',
                           background: 'var(--purple3)',
                           border: '1px solid var(--purple)',
@@ -120,7 +120,7 @@ export function RouteCardOpsTable({ ops }: { ops: RouteCardOp[] }): React.JSX.El
                       {tagName ? (
                         <span
                           style={{
-                            fontSize: 11,
+                            fontSize: 'var(--fs-xs)',
                             color: 'var(--text3)',
                             fontWeight: 400,
                             display: 'block',
@@ -135,19 +135,19 @@ export function RouteCardOpsTable({ ops }: { ops: RouteCardOp[] }): React.JSX.El
                   <td className="td-num mono">
                     {op.opType === 'outsource' ? '—' : Number(op.cycleTimeMin) || '—'}
                   </td>
-                  <td className="mono" style={{ fontSize: 12, color: 'var(--blue)' }}>
+                  <td className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--blue)' }}>
                     {op.opType === 'outsource' ? '—' : (op.program ?? '—')}
                   </td>
-                  <td className="td-num mono" style={{ fontSize: 12 }}>
+                  <td className="td-num mono" style={{ fontSize: 'var(--fs-sm)' }}>
                     {op.opType === 'outsource' ? (op.ospLeadDays ?? '—') : '—'}
                   </td>
-                  <td className="mono" style={{ fontSize: 12, color: 'var(--cyan)' }}>
+                  <td className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--cyan)' }}>
                     {op.toolNo ?? '—'}
                   </td>
-                  <td className="text3" style={{ fontSize: 12 }}>
+                  <td className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
                     {op.toolDetails ?? '—'}
                   </td>
-                  <td className="text2" style={{ fontSize: 12 }}>
+                  <td className="text2" style={{ fontSize: 'var(--fs-sm)' }}>
                     {op.remarks ?? '—'}
                   </td>
                 </tr>

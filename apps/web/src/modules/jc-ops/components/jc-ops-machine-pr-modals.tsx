@@ -95,12 +95,12 @@ export function ChangeMachineModal({
         style={{
           background: 'var(--bg3)',
           padding: '10px 14px',
-          borderRadius: 8,
+          borderRadius: 'var(--radius2)',
           marginBottom: 14,
           border: '1px solid var(--border)',
         }}
       >
-        <div style={{ fontSize: 12, color: 'var(--text2)' }}>
+        <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text2)' }}>
           Operation: <b>{row.operation}</b> · Planned machine:{' '}
           <b className="mono">{row.machineCode ?? '—'}</b>
         </div>
@@ -111,7 +111,9 @@ export function ChangeMachineModal({
         {row.machines.length > 1 ? (
           // ADR-126 — after a second swap the completed total spans several
           // machines, so naming only the current one would be a lie. List them.
-          <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
+          <div
+            style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)', marginTop: 'var(--sp-0)' }}
+          >
             Already made:{' '}
             {row.machines.map((m, i) => (
               <span key={m.machineCode}>
@@ -123,7 +125,9 @@ export function ChangeMachineModal({
             <b style={{ color: 'var(--amber2)' }}>{row.available}</b> pcs.
           </div>
         ) : row.completed > 0 ? (
-          <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
+          <div
+            style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)', marginTop: 'var(--sp-0)' }}
+          >
             {row.completed} pcs already made stay recorded against{' '}
             <b style={{ color: 'var(--text2)' }}>
               {row.machines[0]?.machineCode ?? row.machineCode ?? 'the planned machine'}
@@ -132,14 +136,16 @@ export function ChangeMachineModal({
             <b style={{ color: 'var(--amber2)' }}>{row.available}</b> pcs.
           </div>
         ) : (
-          <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
+          <div
+            style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)', marginTop: 'var(--sp-0)' }}
+          >
             Nothing logged yet — the new machine takes all{' '}
             <b style={{ color: 'var(--amber2)' }}>{row.available}</b> pcs.
           </div>
         )}
       </div>
       <div>
-        <div className="text3" style={{ fontSize: 11, marginBottom: 4 }}>
+        <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginBottom: 'var(--sp-1)' }}>
           Assign Machine<span className="req">★</span>
         </div>
         <SearchableSelect
@@ -159,20 +165,23 @@ export function ChangeMachineModal({
       {finished || err ? (
         <div
           style={{
-            marginTop: 12,
+            marginTop: 'var(--sp-3)',
             padding: '10px 12px',
             background: 'rgba(239,68,68,0.08)',
             border: '1px solid var(--red)',
             color: 'var(--red2)',
-            borderRadius: 6,
-            fontSize: 12,
+            borderRadius: 'var(--radius)',
+            fontSize: 'var(--fs-sm)',
             lineHeight: 1.5,
             display: 'flex',
             alignItems: 'flex-start',
-            gap: 8,
+            gap: 'var(--sp-2)',
           }}
         >
-          <span aria-hidden="true" style={{ fontSize: 14, fontWeight: 700, lineHeight: 1.3 }}>
+          <span
+            aria-hidden="true"
+            style={{ fontSize: 'var(--fs-sm)', fontWeight: 700, lineHeight: 1.3 }}
+          >
             &#10007;
           </span>
           <span>
@@ -255,16 +264,16 @@ export function CreatePrModal({
         style={{
           background: 'var(--bg3)',
           padding: '10px 14px',
-          borderRadius: 8,
+          borderRadius: 'var(--radius2)',
           marginBottom: 14,
           border: '1px solid var(--border)',
         }}
       >
-        <div style={{ fontSize: 12, color: 'var(--text2)' }}>
+        <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text2)' }}>
           Operation: <b>{row.operation}</b> · Planned machine:{' '}
           <b className="mono">{row.machineCode ?? '—'}</b>
         </div>
-        <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
+        <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)', marginTop: 'var(--sp-0)' }}>
           {/* POL — the CUSTOMER's own PO line number, ahead of the item code.
                 Omitted when there is no sales order behind this job card. */}
           {row.clientPoLineNo ? (
@@ -295,8 +304,8 @@ export function CreatePrModal({
             background: 'var(--green3)',
             border: '1px solid var(--green)',
             color: 'var(--green2)',
-            borderRadius: 6,
-            fontSize: 12,
+            borderRadius: 'var(--radius)',
+            fontSize: 'var(--fs-sm)',
           }}
         >
           PR <b className="mono">{result.prCode}</b> raised
@@ -315,7 +324,7 @@ export function CreatePrModal({
           . It is on the Purchase Request list, ready for a PO.
         </div>
       ) : (
-        <div className="text3" style={{ fontSize: 12 }}>
+        <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
           The system numbers this request (IN-JWPR-#####), takes the vendor from System Settings →
           OSP Processes for &ldquo;{row.operation}&rdquo;, and shows the number here once saved.
         </div>
@@ -325,12 +334,12 @@ export function CreatePrModal({
         <div
           role="alert"
           style={{
-            marginTop: 12,
-            padding: 8,
+            marginTop: 'var(--sp-3)',
+            padding: 'var(--sp-2)',
             background: 'var(--red3)',
             color: 'var(--red2)',
-            borderRadius: 4,
-            fontSize: 12,
+            borderRadius: 'var(--radius-sm)',
+            fontSize: 'var(--fs-sm)',
           }}
         >
           {err}

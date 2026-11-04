@@ -49,8 +49,8 @@ export function FormNote({ children }: { children: React.ReactNode }): React.JSX
         background: 'var(--blue3)',
         border: '1px solid var(--border)',
         borderRadius: 'var(--radius)',
-        marginBottom: 12,
-        fontSize: 11,
+        marginBottom: 'var(--sp-3)',
+        fontSize: 'var(--fs-xs)',
         color: 'var(--text2)',
       }}
     >
@@ -62,7 +62,7 @@ export function FormNote({ children }: { children: React.ReactNode }): React.JSX
 export function FormError({ msg }: { msg: string | null }): React.JSX.Element | null {
   if (!msg) return null;
   return (
-    <div role="alert" className="form-error" style={{ marginTop: 8 }}>
+    <div role="alert" className="form-error" style={{ marginTop: 'var(--sp-2)' }}>
       {msg}
     </div>
   );

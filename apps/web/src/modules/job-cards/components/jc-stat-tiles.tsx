@@ -27,14 +27,14 @@ import { OUTSOURCE_STATUS_LABEL } from '../lib/jc-op-labels';
 import { docDrawingRev } from '@/lib/item-code';
 
 const lblStyle: React.CSSProperties = {
-  fontSize: 11,
+  fontSize: 'var(--fs-xs)',
   fontWeight: 700,
   color: 'var(--text3)',
   marginBottom: 6,
 };
 // Explanatory sentences use --text2 (never the faint --text3, which is reserved
 // for the section labels above) — the spec's contrast rule.
-const noteStyle: React.CSSProperties = { fontSize: 12, color: 'var(--text2)' };
+const noteStyle: React.CSSProperties = { fontSize: 'var(--fs-xs)', color: 'var(--text2)' };
 
 export function JcStatTiles({
   jc,
@@ -86,8 +86,8 @@ export function JcStatTiles({
         background: 'var(--bg2)',
         border: '1px solid var(--border)',
         borderRadius: 'var(--radius2)',
-        padding: 16,
-        marginBottom: 16,
+        padding: 'var(--sp-4)',
+        marginBottom: 'var(--sp-4)',
       }}
     >
       {/* ───────── Row 1 — four info groups ─────────
@@ -98,7 +98,7 @@ export function JcStatTiles({
         style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
-          gap: 16,
+          gap: 'var(--sp-4)',
         }}
       >
         {/* ITEM */}
@@ -131,7 +131,7 @@ export function JcStatTiles({
           />
           {/* Raw material planned for this job card (both optional — a dash
               when the plan carried neither). */}
-          <div style={{ fontSize: 11, marginTop: 4 }}>
+          <div style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-1)' }}>
             <span style={{ color: 'var(--text3)' }}>RM Grade: </span>
             <span className="mono fw-700">{jc.rawMaterialGradeText || '—'}</span>
             <span style={{ color: 'var(--text3)' }}> · RM Size: </span>
@@ -143,13 +143,19 @@ export function JcStatTiles({
               material they talk about, which is why they were being missed.
               Shown here only — one remark, one place. */}
           {jc.remarks ? (
-            <div style={{ fontSize: 11, marginTop: 4, overflowWrap: 'anywhere' }}>
+            <div
+              style={{
+                fontSize: 'var(--fs-xs)',
+                marginTop: 'var(--sp-1)',
+                overflowWrap: 'anywhere',
+              }}
+            >
               <span style={{ color: 'var(--text3)' }}>Remarks: </span>
               <span style={{ color: 'var(--text)' }}>{jc.remarks}</span>
             </div>
           ) : null}
           {/* Route Card reference (the item's active route card + revision). */}
-          <div style={{ fontSize: 11, marginTop: 4 }}>
+          <div style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-1)' }}>
             {jc.routeCardCode ? (
               <>
                 <span style={{ color: 'var(--text3)' }}>Route Card: </span>
@@ -157,7 +163,10 @@ export function JcStatTiles({
                   {jc.routeCardCode}
                 </span>
                 {jc.routeCardRevision != null ? (
-                  <span className="badge b-blue" style={{ marginLeft: 4, fontSize: 11 }}>
+                  <span
+                    className="badge b-blue"
+                    style={{ marginLeft: 'var(--sp-1)', fontSize: 'var(--fs-xs)' }}
+                  >
                     Route Card Rev {jc.routeCardRevision}
                   </span>
                 ) : null}
@@ -173,18 +182,18 @@ export function JcStatTiles({
         {/* SO / WO */}
         <div style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
           <div style={lblStyle}>SO / JWSO No.</div>
-          <div className="fw-700 mono" style={{ fontSize: 16 }}>
+          <div className="fw-700 mono" style={{ fontSize: 'var(--fs-md)' }}>
             {jc.sourceLink
               ? jc.sourceLink.type === 'so'
                 ? soNoWithInternal(jc.sourceLink.code, jc.sourceLink.internalSoNo)
                 : jc.sourceLink.code
               : '—'}
           </div>
-          <div style={{ ...noteStyle, marginTop: 2 }}>
+          <div style={{ ...noteStyle, marginTop: 'var(--sp-0)' }}>
             Ln <b>{jc.sourceLink?.lineNo ?? '1'}</b> · Due {fmtDate(jc.dueDate)}
           </div>
           {jc.clientPoLineNo ? (
-            <div style={{ fontSize: 11, color: 'var(--purple)', fontWeight: 700 }}>
+            <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--purple)', fontWeight: 700 }}>
               POL: {jc.clientPoLineNo}
             </div>
           ) : null}
@@ -193,7 +202,7 @@ export function JcStatTiles({
               OSP GRN), so the link is the operator's cue for where "finished"
               actually lands. Old cards carry null and show nothing here. */}
           {jc.productionOrderId && jc.productionOrderCode ? (
-            <div style={{ fontSize: 11, marginTop: 4 }}>
+            <div style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-1)' }}>
               <span style={{ color: 'var(--text3)' }}>Production Order: </span>
               <Link
                 to="/production-orders/$id"
@@ -215,7 +224,7 @@ export function JcStatTiles({
             style={{
               display: 'flex',
               border: '1px solid var(--border2)',
-              borderRadius: 8,
+              borderRadius: 'var(--radius2)',
               overflow: 'hidden',
             }}
           >
@@ -241,7 +250,7 @@ export function JcStatTiles({
             <div
               style={{
                 marginTop: 6,
-                fontSize: 11,
+                fontSize: 'var(--fs-xs)',
                 color: rmAvailable.availableQty > 0 ? 'var(--text2)' : 'var(--red)',
                 fontWeight: rmAvailable.availableQty > 0 ? 400 : 700,
               }}
@@ -301,11 +310,11 @@ export function JcStatTiles({
         <div className="prog-wrap" style={{ height: 8 }}>
           <div className="prog-bar" style={{ width: `${pct}%`, background: 'var(--blue)' }} />
         </div>
-        <div style={{ marginTop: 4 }}>
-          <b style={{ color: 'var(--text)', fontSize: 12 }}>
+        <div style={{ marginTop: 'var(--sp-1)' }}>
+          <b style={{ color: 'var(--text)', fontSize: 'var(--fs-sm)' }}>
             {doneOps} of {totalOps} operations complete · {pct}%
           </b>
-          <span style={{ ...noteStyle, marginLeft: 8 }}>
+          <span style={{ ...noteStyle, marginLeft: 'var(--sp-2)' }}>
             Finished goods counted only after the last op
           </span>
         </div>
@@ -386,9 +395,9 @@ export function JcOpFlowChips({
   stateIcons?: boolean;
 }): React.JSX.Element {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-1)', flexWrap: 'wrap' }}>
       {sortedOps.length === 0 ? (
-        <span className="text3" style={{ fontSize: 12 }}>
+        <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
           No operations
         </span>
       ) : (
@@ -426,18 +435,21 @@ export function JcOpFlowChips({
                 : 'var(--text3)';
           const doneColor = opColor;
           return (
-            <div key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <div key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-1)' }}>
               <div
                 style={{
                   background: bg,
                   border: `1px solid ${bdr}`,
-                  borderRadius: 6,
+                  borderRadius: 'var(--radius)',
                   padding: '6px 10px',
                   textAlign: 'center',
                   minWidth: 80,
                 }}
               >
-                <div className="mono" style={{ fontSize: 11, fontWeight: 700, color: opColor }}>
+                <div
+                  className="mono"
+                  style={{ fontSize: 'var(--fs-xs)', fontWeight: 700, color: opColor }}
+                >
                   Op {opSrNo(o.opSeq)}
                   {isOut ? ' 🏭' : ''}
                   {isQc ? ' 🔬' : ''}
@@ -446,22 +458,24 @@ export function JcOpFlowChips({
                   <>
                     <div
                       style={{
-                        fontSize: 11,
+                        fontSize: 'var(--fs-xs)',
                         fontWeight: 600,
-                        margin: '2px 0',
+                        margin: 'var(--sp-0) 0',
                         color: 'var(--green2)',
                       }}
                     >
                       QC
                     </div>
-                    <div style={{ fontSize: 11, color: 'var(--text3)' }}>{o.operation}</div>
+                    <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>
+                      {o.operation}
+                    </div>
                   </>
                 ) : isOut ? (
                   <div
                     style={{
-                      fontSize: 11,
+                      fontSize: 'var(--fs-xs)',
                       fontWeight: 600,
-                      margin: '2px 0',
+                      margin: 'var(--sp-0) 0',
                       color: 'var(--amber2)',
                     }}
                   >
@@ -471,9 +485,9 @@ export function JcOpFlowChips({
                   <>
                     <div
                       style={{
-                        fontSize: 11,
+                        fontSize: 'var(--fs-xs)',
                         fontWeight: 600,
-                        margin: '2px 0',
+                        margin: 'var(--sp-0) 0',
                         color: 'var(--cyan)',
                       }}
                     >
@@ -491,7 +505,11 @@ export function JcOpFlowChips({
                       return actual.differs ? (
                         <div
                           className="mono"
-                          style={{ fontSize: 11, fontWeight: 700, color: 'var(--amber2)' }}
+                          style={{
+                            fontSize: 'var(--fs-xs)',
+                            fontWeight: 700,
+                            color: 'var(--amber2)',
+                          }}
                           title={`Actual machine: ${actual.label}`}
                         >
                           {actual.label}
@@ -499,19 +517,19 @@ export function JcOpFlowChips({
                       ) : null;
                     })()}
                     {opExtraById.get(o.id)?.machineName ? (
-                      <div style={{ fontSize: 11, color: 'var(--text3)' }}>
+                      <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>
                         {opExtraById.get(o.id)?.machineName}
                       </div>
                     ) : null}
                   </>
                 )}
-                <div style={{ fontSize: 11, color: 'var(--text3)' }}>
+                <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>
                   {isQc ? '' : o.operation.split(' ').slice(0, 2).join(' ')}
                 </div>
                 {isOut ? (
                   <div
                     style={{
-                      fontSize: 11,
+                      fontSize: 'var(--fs-xs)',
                       marginTop: 3,
                       fontWeight: 700,
                       color: 'var(--amber2)',
@@ -523,7 +541,14 @@ export function JcOpFlowChips({
                 {/* Every op carries a qty, outsource included — it used to
                     show the vendor status alone, so a chip with 38 pieces
                     accepted back read as bare "Received" with no number. */}
-                <div style={{ fontSize: 11, marginTop: 3, fontWeight: 700, color: doneColor }}>
+                <div
+                  style={{
+                    fontSize: 'var(--fs-xs)',
+                    marginTop: 3,
+                    fontWeight: 700,
+                    color: doneColor,
+                  }}
+                >
                   {stateIcons && done ? (
                     <span style={{ color: 'var(--green2)' }}>✓ </span>
                   ) : stateIcons && partial ? (
@@ -534,8 +559,8 @@ export function JcOpFlowChips({
                 {o.reworkPendingQty > 0 || o.reworkRaisedQty > 0 ? (
                   <div
                     style={{
-                      fontSize: 11,
-                      marginTop: 2,
+                      fontSize: 'var(--fs-xs)',
+                      marginTop: 'var(--sp-0)',
                       fontWeight: 700,
                       color: 'var(--amber2)',
                     }}
@@ -581,7 +606,7 @@ export function JcOpFlowCards({
 }): React.JSX.Element {
   if (sortedOps.length === 0) {
     return (
-      <span className="text3" style={{ fontSize: 12 }}>
+      <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
         No operations
       </span>
     );
@@ -592,8 +617,8 @@ export function JcOpFlowCards({
         display: 'flex',
         flexWrap: 'wrap',
         alignItems: 'stretch',
-        rowGap: 8,
-        padding: '2px 2px',
+        rowGap: 'var(--sp-2)',
+        padding: 'var(--sp-0) var(--sp-0)',
       }}
     >
       {sortedOps.map((o, i) => {
@@ -653,12 +678,12 @@ export function JcOpFlowCards({
                 height: 92,
                 boxSizing: 'border-box',
                 border: `1.5px solid ${border}`,
-                borderRadius: 8,
+                borderRadius: 'var(--radius2)',
                 background: bg,
                 padding: '7px 10px',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: 2,
+                gap: 'var(--sp-0)',
                 minWidth: 0,
                 overflow: 'hidden',
               }}
@@ -667,7 +692,7 @@ export function JcOpFlowCards({
               <div
                 className="mono"
                 style={{
-                  fontSize: 11,
+                  fontSize: 'var(--fs-xs)',
                   fontWeight: 800,
                   color: 'var(--text3)',
                   whiteSpace: 'nowrap',
@@ -680,7 +705,7 @@ export function JcOpFlowCards({
               <div
                 className="fw-700"
                 style={{
-                  fontSize: 13,
+                  fontSize: 'var(--fs-sm)',
                   color: mainColor,
                   whiteSpace: 'nowrap',
                   overflow: 'hidden',
@@ -703,7 +728,9 @@ export function JcOpFlowCards({
                       </span>
                     ) : null}
                     {machineName ? (
-                      <span style={{ fontWeight: 400, fontSize: 11, color: 'var(--text3)' }}>
+                      <span
+                        style={{ fontWeight: 400, fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}
+                      >
                         {' '}
                         · {machineName}
                       </span>
@@ -714,7 +741,7 @@ export function JcOpFlowCards({
               {/* line 3 — operation name, one line (full name on hover) */}
               <div
                 style={{
-                  fontSize: 12,
+                  fontSize: 'var(--fs-sm)',
                   color: nameColor,
                   lineHeight: 1.25,
                   whiteSpace: 'nowrap',
@@ -730,7 +757,7 @@ export function JcOpFlowCards({
                 className="mono fw-700"
                 style={{
                   marginTop: 'auto',
-                  fontSize: 12,
+                  fontSize: 'var(--fs-sm)',
                   lineHeight: 1.25,
                   color: qtyColor,
                   whiteSpace: 'nowrap',
@@ -752,7 +779,7 @@ export function JcOpFlowCards({
                   alignItems: 'center',
                   justifyContent: 'center',
                   color: 'var(--border3)',
-                  fontSize: 16,
+                  fontSize: 'var(--fs-md)',
                 }}
               >
                 →
@@ -800,9 +827,9 @@ function QtySeg({
       </div>
       <div
         style={{
-          fontSize: 11,
+          fontSize: 'var(--fs-xs)',
           color: 'var(--text3)',
-          marginTop: 2,
+          marginTop: 'var(--sp-0)',
         }}
       >
         {label}

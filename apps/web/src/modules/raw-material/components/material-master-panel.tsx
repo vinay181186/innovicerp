@@ -298,13 +298,13 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
       </ListHeader>
 
       {importMsg ? (
-        <div className="panel" style={{ marginBottom: 12 }}>
-          <div className="panel-body" style={{ padding: '10px 14px', fontSize: 12 }}>
+        <div className="panel" style={{ marginBottom: 'var(--sp-3)' }}>
+          <div className="panel-body" style={{ padding: '10px 14px', fontSize: 'var(--fs-sm)' }}>
             {importMsg}
             <button
               type="button"
               className="btn btn-ghost btn-sm"
-              style={{ marginLeft: 8, fontSize: 11 }}
+              style={{ marginLeft: 'var(--sp-2)', fontSize: 'var(--fs-xs)' }}
               onClick={() => setImportMsg(null)}
             >
               ✕
@@ -373,7 +373,7 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"
-                style={{ fontSize: 11 }}
+                style={{ fontSize: 'var(--fs-xs)' }}
                 onClick={onDownloadTemplate}
               >
                 ⬇ Download Excel Template
@@ -381,7 +381,7 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
               <button
                 type="button"
                 className="btn btn-ghost btn-sm"
-                style={{ fontSize: 11 }}
+                style={{ fontSize: 'var(--fs-xs)' }}
                 disabled={importing}
                 onClick={() => fileRef.current?.click()}
               >

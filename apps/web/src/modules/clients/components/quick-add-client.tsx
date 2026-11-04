@@ -253,7 +253,7 @@ export function QuickAddClient({
         <FormField label="Phone" htmlFor={`${formId}-phone`}>
           {input('phone', phone, setPhone)}
         </FormField>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-2)' }}>
           <FormField
             label="GST Category"
             required
@@ -286,7 +286,7 @@ export function QuickAddClient({
         <FormField label="Address" htmlFor={`${formId}-addr`}>
           {input('addr', addressLine1, setAddressLine1)}
         </FormField>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 'var(--sp-2)' }}>
           <FormField label="City" htmlFor={`${formId}-city`}>
             {input('city', city, setCity)}
           </FormField>

@@ -113,22 +113,22 @@ export function AdjustStockModal({
     >
       <div
         style={{
-          marginBottom: 12,
+          marginBottom: 'var(--sp-3)',
           padding: 10,
           background: 'var(--bg3)',
-          borderRadius: 8,
+          borderRadius: 'var(--radius2)',
         }}
       >
-        <span className="text3" style={{ fontSize: 11 }}>
+        <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
           Physical:
         </span>
         <span
           className="mono fw-700"
-          style={{ fontSize: 18, color: 'var(--green2)', marginLeft: 8 }}
+          style={{ fontSize: 18, color: 'var(--green2)', marginLeft: 'var(--sp-2)' }}
         >
           {shown ? shown.inStock : '—'} {row.uom}
         </span>
-        <span className="text3" style={{ fontSize: 11, marginLeft: 10 }}>
+        <span className="text3" style={{ fontSize: 'var(--fs-xs)', marginLeft: 10 }}>
           Reserved{' '}
           <b className="mono" style={{ color: 'var(--purple)' }}>
             {shown ? shown.reservedQty : '—'}
@@ -162,7 +162,7 @@ export function AdjustStockModal({
             value={qty}
             onChange={(e) => setQty(e.target.value)}
             placeholder="0"
-            style={{ fontSize: 16, fontWeight: 700 }}
+            style={{ fontSize: 'var(--fs-md)', fontWeight: 700 }}
           />
         </div>
         {revOpts.required ? (
@@ -194,12 +194,12 @@ export function AdjustStockModal({
       {err ? (
         <div
           style={{
-            marginTop: 12,
-            padding: 8,
+            marginTop: 'var(--sp-3)',
+            padding: 'var(--sp-2)',
             background: 'rgba(239,68,68,0.08)',
             color: 'var(--red2)',
-            fontSize: 12,
-            borderRadius: 4,
+            fontSize: 'var(--fs-sm)',
+            borderRadius: 'var(--radius-sm)',
           }}
         >
           {err}

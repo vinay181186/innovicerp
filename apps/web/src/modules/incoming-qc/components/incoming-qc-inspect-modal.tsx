@@ -114,7 +114,10 @@ export function IncomingQcInspectModal({
              said once here because an empty popup would read as broken. Not
              shown while access is still loading, or every inspector would see
              it flash. */
-        <div className="empty-state text3" style={{ padding: 24, fontSize: 12 }}>
+        <div
+          className="empty-state text3"
+          style={{ padding: 'var(--sp-5)', fontSize: 'var(--fs-xs)' }}
+        >
           You do not have permission to inspect this GRN line. Ask an admin.
         </div>
       ) : null}

@@ -158,8 +158,8 @@ function taskColumns(view: TaskView): DataTableColumn<TaskRow>[] {
 /** The ▸ reveal: Last Update, the 📎 / 💬 counts and the task's remarks. */
 function TaskExpand({ t }: { t: TaskRow }): React.JSX.Element {
   return (
-    <div style={{ padding: '10px 14px', fontSize: 12, color: 'var(--text2)' }}>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 24, marginBottom: 6 }}>
+    <div style={{ padding: '10px 14px', fontSize: 'var(--fs-sm)', color: 'var(--text2)' }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--sp-5)', marginBottom: 6 }}>
         <span>
           <span className="text3">Last Update: </span>
           <span className="mono">{fmtTaskDateTime(t.updatedAt)}</span>
@@ -174,7 +174,7 @@ function TaskExpand({ t }: { t: TaskRow }): React.JSX.Element {
         </span>
       </div>
       {t.description ? (
-        <div style={{ marginBottom: 4 }}>
+        <div style={{ marginBottom: 'var(--sp-1)' }}>
           <span className="text3">Description: </span>
           {t.description}
         </div>

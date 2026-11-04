@@ -218,7 +218,7 @@ function CustomerDispatchDetailPage(): React.JSX.Element {
       {cancelled ? (
         <div className="mb-2">
           <Banner tone="error" accent title="Cancelled — this dispatch was reversed">
-            <div className="text3" style={{ fontSize: 11 }}>
+            <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
               {d.cancelReason
                 ? `Reason: ${d.cancelReason}${d.cancelledAt ? ` · ${fmtDateTime(d.cancelledAt)}` : ''}. `
                 : ''}
@@ -235,7 +235,9 @@ function CustomerDispatchDetailPage(): React.JSX.Element {
           line's Dispatch Qty. Hidden entirely when nothing is pending. */}
       {pendingChanges.length > 0 ? (
         <Panel title="Changes awaiting approval">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
+          <div
+            style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 'var(--fs-sm)' }}
+          >
             {[
               { field: 'dispatchDate', label: 'Dispatch Date' },
               { field: 'transport', label: 'Transporter' },
@@ -277,7 +279,7 @@ function CustomerDispatchDetailPage(): React.JSX.Element {
             <div key={l.id} style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
               {l.masterItemName && l.masterItemName.trim() !== l.itemName.trim() ? (
                 <>
-                  <span className="text3" style={{ fontSize: 11 }}>
+                  <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
                     Ln {l.lineNo} · {l.itemName} —
                   </span>
                   <MasterItemNameNote lineName={l.itemName} masterItemName={l.masterItemName} />
@@ -304,7 +306,7 @@ function CustomerDispatchDetailPage(): React.JSX.Element {
           height: previewHeight,
           margin: '0 auto 14px',
           border: 'none',
-          borderRadius: 4,
+          borderRadius: 'var(--radius-sm)',
         }}
       />
 

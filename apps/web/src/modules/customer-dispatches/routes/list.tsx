@@ -267,11 +267,11 @@ function CustomerDispatchListPage(): React.JSX.Element {
 
           <div
             style={{
-              fontSize: 11,
+              fontSize: 'var(--fs-xs)',
               color: 'var(--cyan)',
               fontFamily: 'var(--mono)',
               fontWeight: 700,
-              margin: '4px 0 8px',
+              margin: 'var(--sp-1) 0 var(--sp-2)',
             }}
           >
             Dispatch Log

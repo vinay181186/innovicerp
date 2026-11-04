@@ -38,10 +38,13 @@ function ProgBar({ pct }: { pct: number }): React.JSX.Element {
 function Num({ val, lbl, color }: { val: number; lbl: string; color?: string }): React.JSX.Element {
   return (
     <div style={{ textAlign: 'center' }}>
-      <div className="mono fw-700" style={{ fontSize: 14, color: color ?? 'var(--text)' }}>
+      <div
+        className="mono fw-700"
+        style={{ fontSize: 'var(--fs-sm)', color: color ?? 'var(--text)' }}
+      >
         {val}
       </div>
-      <div className="text3" style={{ fontSize: 11 }}>
+      <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
         {lbl}
       </div>
     </div>
@@ -80,13 +83,13 @@ export function MachineLoadCardView({
       }}
     >
       {/* Legacy .mach-id (L224) is not in our theme — inline approximation kept. */}
-      <div className="mono fw-700" style={{ color: 'var(--cyan)', fontSize: 13 }}>
+      <div className="mono fw-700" style={{ color: 'var(--cyan)', fontSize: 'var(--fs-sm)' }}>
         {card.machineCode}
       </div>
-      <div className="text3" style={{ fontSize: 11, marginBottom: 2 }}>
+      <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginBottom: 'var(--sp-0)' }}>
         {card.name}
       </div>
-      <div className="text3 mono" style={{ fontSize: 11, marginBottom: 8 }}>
+      <div className="text3 mono" style={{ fontSize: 'var(--fs-xs)', marginBottom: 'var(--sp-2)' }}>
         {card.machineType ?? '—'}
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
@@ -99,11 +102,11 @@ export function MachineLoadCardView({
         style={{
           display: 'flex',
           justifyContent: 'space-between',
-          marginTop: 4,
+          marginTop: 'var(--sp-1)',
           alignItems: 'center',
         }}
       >
-        <span className="mono text3" style={{ fontSize: 11 }}>
+        <span className="mono text3" style={{ fontSize: 'var(--fs-xs)' }}>
           {pct}%
         </span>
         <span className={`badge ${loadBadgeClass(card.loadStatus)}`}>{card.loadStatus}</span>

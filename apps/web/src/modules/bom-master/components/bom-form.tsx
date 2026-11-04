@@ -1300,7 +1300,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
                         <Download size={12} /> Download {missingCodes.length} missing Item Code
                         {missingCodes.length === 1 ? '' : 's'} for Item Master import
                       </button>
-                      <div style={{ marginTop: 4 }}>
+                      <div style={{ marginTop: 'var(--sp-1)' }}>
                         Import them on Item Master, then import this BOM again.
                       </div>
                     </div>

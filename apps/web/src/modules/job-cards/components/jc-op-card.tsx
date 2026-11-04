@@ -85,10 +85,10 @@ function NcBreakupStrip({
         gap: '2px 6px',
         marginBottom: 10,
         padding: '3px 8px',
-        fontSize: 11,
+        fontSize: 'var(--fs-xs)',
         background: open ? 'var(--amber3)' : 'var(--bg3)',
         border: `1px solid ${open ? 'var(--amber)' : 'var(--border)'}`,
-        borderRadius: 6,
+        borderRadius: 'var(--radius)',
       }}
       title={
         open
@@ -137,10 +137,10 @@ function OrdinalBox({ n }: { n: number }): React.JSX.Element {
         minWidth: 24,
         height: 24,
         padding: '0 5px',
-        borderRadius: 6,
+        borderRadius: 'var(--radius)',
         background: 'var(--bg4)',
         border: '1px solid var(--border)',
-        fontSize: 12,
+        fontSize: 'var(--fs-sm)',
         color: 'var(--text)',
         flexShrink: 0,
       }}
@@ -181,7 +181,7 @@ function InfoCell({
     <div title={title} style={{ minWidth: 0 }}>
       <div
         style={{
-          fontSize: 11,
+          fontSize: 'var(--fs-xs)',
           color: 'var(--text3)',
           whiteSpace: 'nowrap',
         }}
@@ -191,12 +191,12 @@ function InfoCell({
       <div
         className="fw-700"
         style={{
-          fontSize: 13,
+          fontSize: 'var(--fs-sm)',
           color: 'var(--text)',
           whiteSpace: 'nowrap',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
-          marginTop: 2,
+          marginTop: 'var(--sp-0)',
         }}
       >
         {children}
@@ -216,7 +216,7 @@ function Sub({
   title?: string;
 }): React.JSX.Element {
   return (
-    <div style={{ fontSize: 11, color }} title={title}>
+    <div style={{ fontSize: 'var(--fs-xs)', color }} title={title}>
       {children}
     </div>
   );
@@ -414,13 +414,13 @@ export function JcOpCard({
           }}
         >
           <OrdinalBox n={index} />
-          <span className="mono fw-700" style={{ fontSize: 13, whiteSpace: 'nowrap' }}>
+          <span className="mono fw-700" style={{ fontSize: 'var(--fs-sm)', whiteSpace: 'nowrap' }}>
             Op {opSrNo(op.opSeq)}
           </span>
           <KindChip op={op} />
           <span
             style={{
-              fontSize: 13,
+              fontSize: 'var(--fs-sm)',
               color: 'var(--text)',
               minWidth: 0,
               overflow: 'hidden',
@@ -441,14 +441,14 @@ export function JcOpCard({
             </span>
           ) : null}
           <span style={{ flex: 1 }} />
-          <span className="mono fw-700" style={{ fontSize: 13, whiteSpace: 'nowrap' }}>
+          <span className="mono fw-700" style={{ fontSize: 'var(--fs-sm)', whiteSpace: 'nowrap' }}>
             {doneQty} / {flowDenom}
           </span>
           <span className={`badge ${st.cls}`}>{st.label}</span>
           {/* The mockup's "Due : dd-MMM-yyyy" goes here once jc_ops.planned_end
               reaches the op-entry contract; until then nothing is shown rather
               than borrowing the job card's due date. */}
-          <span style={{ color: 'var(--text3)', fontSize: 14 }}>›</span>
+          <span style={{ color: 'var(--text3)', fontSize: 'var(--fs-sm)' }}>›</span>
         </button>
       </div>
     );
@@ -476,15 +476,15 @@ export function JcOpCard({
           }}
         >
           <OrdinalBox n={index} />
-          <span className="mono fw-700" style={{ fontSize: 13, whiteSpace: 'nowrap' }}>
+          <span className="mono fw-700" style={{ fontSize: 'var(--fs-sm)', whiteSpace: 'nowrap' }}>
             Op {opSrNo(op.opSeq)}
           </span>
         </button>
         <KindChip op={op} />
         {machineName && !isQc && !isOut ? (
-          <span style={{ fontSize: 11, color: 'var(--text3)' }}>{machineName}</span>
+          <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>{machineName}</span>
         ) : null}
-        <span className="fw-700" style={{ fontSize: 13, color: 'var(--text)' }}>
+        <span className="fw-700" style={{ fontSize: 'var(--fs-sm)', color: 'var(--text)' }}>
           {op.operation}
         </span>
         {!isQc && op.qcRequired ? (
@@ -505,20 +505,26 @@ export function JcOpCard({
         ) : null}
         <span className={`badge ${st.cls}`}>{st.label}</span>
         <span style={{ flex: 1 }} />
-        <span style={{ fontSize: 12, color: 'var(--text3)', whiteSpace: 'nowrap' }}>
+        <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)', whiteSpace: 'nowrap' }}>
           Start : <b style={{ color: 'var(--text)' }}>{startStamp}</b>
         </span>
-        <span style={{ fontSize: 12, color: 'var(--text3)', whiteSpace: 'nowrap' }}>
+        <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)', whiteSpace: 'nowrap' }}>
           End : <b style={{ color: 'var(--text)' }}>{endStamp}</b>
         </span>
-        <span style={{ fontSize: 12, color: 'var(--text3)', whiteSpace: 'nowrap' }}>
+        <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)', whiteSpace: 'nowrap' }}>
           Cycle Time :{' '}
           <b style={{ color: 'var(--text)' }}>{cycleMin != null ? `${cycleMin} min` : '—'}</b>
         </span>
       </div>
 
       {/* ── BODY ── */}
-      <div style={{ borderTop: '1px solid var(--border)', padding: 12, background: 'var(--bg3)' }}>
+      <div
+        style={{
+          borderTop: '1px solid var(--border)',
+          padding: 'var(--sp-3)',
+          background: 'var(--bg3)',
+        }}
+      >
         {/* ── NC BREAKUP (§6): where this op's rejected pieces are right now ── */}
         <NcBreakupStrip nc={op.ncBreakup} jcCode={jc.code} />
 
@@ -530,7 +536,7 @@ export function JcOpCard({
           style={{
             display: 'grid',
             gridTemplateColumns: 'repeat(auto-fit, minmax(96px, 1fr))',
-            gap: 8,
+            gap: 'var(--sp-2)',
             marginBottom: 10,
           }}
         >
@@ -615,7 +621,7 @@ export function JcOpCard({
                     : 'No customer material has been issued to this job card yet — issue it from Customer Material Issue.')
               }
               sub={
-                <div style={{ fontSize: 11, color: 'var(--text3)' }}>
+                <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>
                   {rmAvailable.issuedQty} issued
                   {rmAvailable.availableQty === 0 && rmAvailable.issuedQty === 0 ? (
                     <div style={{ color: 'var(--red2)' }}>issue material</div>
@@ -685,7 +691,7 @@ export function JcOpCard({
                     '—'
                   )
                 ) : (
-                  <span style={{ display: 'inline-flex', gap: 4 }}>
+                  <span style={{ display: 'inline-flex', gap: 'var(--sp-1)' }}>
                     {op.qcAcceptedQty > 0 ? (
                       <span className="badge b-green">Accepted {op.qcAcceptedQty}</span>
                     ) : null}
@@ -722,7 +728,7 @@ export function JcOpCard({
                 {actual.split.map((m) => (
                   <div
                     key={m.machineCode}
-                    style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 400 }}
+                    style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)', fontWeight: 400 }}
                   >
                     {m.machineCode}: <b>{m.qty}</b> pcs
                   </div>
@@ -774,9 +780,9 @@ export function JcOpCard({
             gap: 14,
             flexWrap: 'wrap',
             marginTop: 10,
-            paddingTop: 8,
+            paddingTop: 'var(--sp-2)',
             borderTop: '1px dashed var(--border)',
-            fontSize: 12,
+            fontSize: 'var(--fs-xs)',
             color: 'var(--text3)',
           }}
         >

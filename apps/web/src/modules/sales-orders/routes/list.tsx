@@ -309,13 +309,18 @@ function SalesOrdersListPage(): React.JSX.Element {
       {importMsg ? (
         <div
           className="panel"
-          style={{ marginBottom: 10, padding: '8px 12px', fontSize: 12, color: 'var(--text2)' }}
+          style={{
+            marginBottom: 10,
+            padding: 'var(--sp-2) var(--sp-3)',
+            fontSize: 'var(--fs-sm)',
+            color: 'var(--text2)',
+          }}
         >
           {importMsg}
           <button
             type="button"
             className="btn btn-ghost btn-sm"
-            style={{ marginLeft: 8, fontSize: 11 }}
+            style={{ marginLeft: 'var(--sp-2)', fontSize: 'var(--fs-xs)' }}
             onClick={() => setImportMsg(null)}
           >
             ✕

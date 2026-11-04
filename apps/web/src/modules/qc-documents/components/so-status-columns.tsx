@@ -65,29 +65,58 @@ function StageOpRow({ op }: { op: SoQcStageOp }): React.JSX.Element {
       ? 'var(--green)'
       : 'var(--text3)';
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 0', fontSize: 11 }}>
-      <span style={{ fontSize: 14, width: 18, textAlign: 'center', flexShrink: 0 }}>
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+        padding: '3px 0',
+        fontSize: 'var(--fs-xs)',
+      }}
+    >
+      <span style={{ fontSize: 'var(--fs-sm)', width: 18, textAlign: 'center', flexShrink: 0 }}>
         {stageIcon(op.status)}
       </span>
       <span style={{ flex: 1, minWidth: 0, fontWeight: 600 }}>{op.operation}</span>
       <span
         className="mono fw-700"
-        style={{ fontSize: 11, color: countColor, whiteSpace: 'nowrap' }}
+        style={{ fontSize: 'var(--fs-xs)', color: countColor, whiteSpace: 'nowrap' }}
       >
         {op.accepted}/{op.orderQty}
       </span>
       {op.rejected > 0 ? (
-        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--red2)', marginLeft: 2 }}>
+        <span
+          style={{
+            fontSize: 'var(--fs-xs)',
+            fontWeight: 700,
+            color: 'var(--red2)',
+            marginLeft: 'var(--sp-0)',
+          }}
+        >
           {op.rejected} Deviated
         </span>
       ) : null}
       {op.pending > 0 ? (
-        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--amber2)', marginLeft: 2 }}>
+        <span
+          style={{
+            fontSize: 'var(--fs-xs)',
+            fontWeight: 700,
+            color: 'var(--amber2)',
+            marginLeft: 'var(--sp-0)',
+          }}
+        >
           {op.pending} QC Pending
         </span>
       ) : null}
       {op.attempts > 1 ? (
-        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--amber2)', marginLeft: 2 }}>
+        <span
+          style={{
+            fontSize: 'var(--fs-xs)',
+            fontWeight: 700,
+            color: 'var(--amber2)',
+            marginLeft: 'var(--sp-0)',
+          }}
+        >
           {op.attempts} attempts
         </span>
       ) : null}
@@ -98,14 +127,14 @@ function StageOpRow({ op }: { op: SoQcStageOp }): React.JSX.Element {
 function StagesCell({ l }: { l: SoQcLine }): React.JSX.Element {
   if (!l.hasAnyQc) {
     return (
-      <span style={{ color: 'var(--amber2)', fontWeight: 700, fontSize: 11 }}>
+      <span style={{ color: 'var(--amber2)', fontWeight: 700, fontSize: 'var(--fs-xs)' }}>
         ⚠ No QC stage defined for this line
       </span>
     );
   }
   if (l.jcQc.length === 0) {
     return (
-      <span className="text3" style={{ fontSize: 11 }}>
+      <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
         —
       </span>
     );
@@ -117,7 +146,7 @@ function StagesCell({ l }: { l: SoQcLine }): React.JSX.Element {
           <div
             className="mono fw-700"
             style={{
-              fontSize: 11,
+              fontSize: 'var(--fs-xs)',
               color: 'var(--cyan)',
               padding: '3px 0 2px',
               marginTop: ji > 0 ? 4 : 0,
@@ -186,7 +215,7 @@ export function buildSoStatusColumns(order: SoStatusOrder | null): DataTableColu
         const qcOps = rows.reduce((a, l) => a + l.qcOpsTotal, 0);
         const jcCount = rows.reduce((a, l) => a + l.jcQc.length, 0);
         return (
-          <span style={{ fontSize: 11, color: 'var(--text2)' }}>
+          <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text2)' }}>
             {qcOps} QC stages across {jcCount} JCs
           </span>
         );
@@ -243,7 +272,9 @@ export function buildSoStatusColumns(order: SoStatusOrder | null): DataTableColu
         l.hasAnyQc ? (
           <ProgressBar pct={l.overallPct} />
         ) : (
-          <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text3)' }}>— N/A</span>
+          <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 700, color: 'var(--text3)' }}>
+            — N/A
+          </span>
         ),
       total: (rows) => {
         const totItems = rows.reduce(

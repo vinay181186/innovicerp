@@ -92,7 +92,7 @@ function ReportEditor({
 
   return (
     <div>
-      <div className="form-grid" style={{ marginBottom: 12 }}>
+      <div className="form-grid" style={{ marginBottom: 'var(--sp-3)' }}>
         <div className="form-grp">
           <label className="form-label">Report Date</label>
           <input
@@ -127,7 +127,7 @@ function ReportEditor({
       >
         <div
           style={{
-            padding: '8px 12px',
+            padding: 'var(--sp-2) var(--sp-3)',
             background: 'var(--bg4)',
             display: 'flex',
             justifyContent: 'space-between',
@@ -167,7 +167,7 @@ function ReportEditor({
                   <td>
                     <input
                       className="innovic-input"
-                      style={{ width: '100%', fontSize: 12 }}
+                      style={{ width: '100%', fontSize: 'var(--fs-sm)' }}
                       value={l.description}
                       placeholder="Task description"
                       onChange={(e) => setLine(i, { description: e.target.value })}
@@ -176,7 +176,7 @@ function ReportEditor({
                   <td>
                     <input
                       className="innovic-input"
-                      style={{ width: 80, fontSize: 11 }}
+                      style={{ width: 80, fontSize: 'var(--fs-xs)' }}
                       value={l.ref}
                       placeholder="SO/JC"
                       onChange={(e) => setLine(i, { ref: e.target.value })}
@@ -196,7 +196,7 @@ function ReportEditor({
                   <td>
                     <select
                       className="innovic-select"
-                      style={{ fontSize: 12, width: '100%' }}
+                      style={{ fontSize: 'var(--fs-sm)', width: '100%' }}
                       value={l.status}
                       onChange={(e) =>
                         setLine(i, { status: e.target.value as DailyReportLineStatus })
@@ -212,7 +212,7 @@ function ReportEditor({
                   <td>
                     <input
                       className="innovic-input"
-                      style={{ width: '100%', fontSize: 11 }}
+                      style={{ width: '100%', fontSize: 'var(--fs-xs)' }}
                       value={l.remarks}
                       placeholder="Notes"
                       onChange={(e) => setLine(i, { remarks: e.target.value })}
@@ -222,7 +222,7 @@ function ReportEditor({
                     <button
                       type="button"
                       className="btn btn-danger btn-sm"
-                      style={{ fontSize: 12 }}
+                      style={{ fontSize: 'var(--fs-sm)' }}
                       disabled={lines.length === 1}
                       title={lines.length === 1 ? 'A report needs at least one line' : undefined}
                       onClick={() => setLines((ls) => ls.filter((_, idx) => idx !== i))}
@@ -238,11 +238,21 @@ function ReportEditor({
       </div>
 
       {err ? (
-        <div role="alert" style={{ color: 'var(--red2)', fontSize: 12, marginTop: 8 }}>
+        <div
+          role="alert"
+          style={{ color: 'var(--red2)', fontSize: 'var(--fs-sm)', marginTop: 'var(--sp-2)' }}
+        >
           {err}
         </div>
       ) : null}
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
+      <div
+        style={{
+          display: 'flex',
+          gap: 'var(--sp-2)',
+          justifyContent: 'flex-end',
+          marginTop: 'var(--sp-3)',
+        }}
+      >
         <button type="button" className="btn btn-ghost" onClick={onCancel}>
           Cancel
         </button>
@@ -349,7 +359,7 @@ export function ViewReportModal({
             style={{
               padding: '10px 14px',
               background: 'var(--bg3)',
-              borderRadius: 8,
+              borderRadius: 'var(--radius2)',
               border: '1px solid var(--border)',
               marginBottom: 14,
               display: 'flex',
@@ -358,22 +368,22 @@ export function ViewReportModal({
             }}
           >
             <div>
-              <span style={{ fontSize: 11, color: 'var(--text3)' }}>User</span>
+              <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>User</span>
               <br />
               <b>{r.userName ?? '—'}</b>
             </div>
             <div>
-              <span style={{ fontSize: 11, color: 'var(--text3)' }}>Report Date</span>
+              <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>Report Date</span>
               <br />
               <b>{fmtDate(r.reportDate)}</b>
             </div>
             <div>
-              <span style={{ fontSize: 11, color: 'var(--text3)' }}>Shift</span>
+              <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>Shift</span>
               <br />
               <b>{SHIFT_LABELS[r.shift]}</b>
             </div>
             <div>
-              <span style={{ fontSize: 11, color: 'var(--text3)' }}>Total Hours</span>
+              <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>Total Hours</span>
               <br />
               <b style={{ color: 'var(--cyan)' }}>{r.totalHours.toFixed(1)}h</b>
             </div>
@@ -394,7 +404,7 @@ export function ViewReportModal({
                 <tr key={l.id}>
                   <td className="td-ctr">{l.lineNo}</td>
                   <td>{l.description}</td>
-                  <td className="mono" style={{ fontSize: 11, color: 'var(--cyan)' }}>
+                  <td className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--cyan)' }}>
                     {l.ref || '—'}
                   </td>
                   <td className="td-ctr mono fw-700">{l.hours.toFixed(1)}</td>
@@ -403,7 +413,9 @@ export function ViewReportModal({
                       {DAILY_REPORT_LINE_STATUS_LABELS[l.status]}
                     </span>
                   </td>
-                  <td style={{ fontSize: 11, color: 'var(--text3)' }}>{l.remarks ?? ''}</td>
+                  <td style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>
+                    {l.remarks ?? ''}
+                  </td>
                 </tr>
               ))}
             </tbody>

@@ -200,7 +200,7 @@ function ProductionOrderClosePage(): React.JSX.Element {
     return (
       <div className="panel">
         <div className="panel-body">
-          <div style={{ marginBottom: 8 }}>
+          <div style={{ marginBottom: 'var(--sp-2)' }}>
             <Link to="/production-orders" className="btn btn-ghost btn-sm">
               <ArrowLeft size={14} /> Back
             </Link>
@@ -304,13 +304,13 @@ function ProductionOrderClosePage(): React.JSX.Element {
             <div
               role="alert"
               style={{
-                marginTop: 12,
+                marginTop: 'var(--sp-3)',
                 color: 'var(--red2)',
                 background: 'var(--red3)',
                 border: '1px solid var(--red)',
-                borderRadius: 6,
+                borderRadius: 'var(--radius)',
                 padding: '6px 10px',
-                fontSize: 12,
+                fontSize: 'var(--fs-sm)',
               }}
             >
               {detail.error instanceof Error
@@ -326,7 +326,7 @@ function ProductionOrderClosePage(): React.JSX.Element {
                 padding: '10px 12px',
                 background: 'var(--bg3)',
                 border: '1px solid var(--border)',
-                borderRadius: 6,
+                borderRadius: 'var(--radius)',
                 display: 'flex',
                 alignItems: 'center',
                 gap: 14,
@@ -337,7 +337,7 @@ function ProductionOrderClosePage(): React.JSX.Element {
                 {po.code}
               </span>
               <PoStatusBadge status={po.status} shortClosedQty={po.shortClosedQty} />
-              <span className="text3" style={{ fontSize: 11 }}>
+              <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
                 JC
               </span>
               <Link
@@ -353,7 +353,7 @@ function ProductionOrderClosePage(): React.JSX.Element {
               ) : (
                 <span className="badge b-grey">No Job Card</span>
               )}
-              <span className="text2" style={{ fontSize: 12 }}>
+              <span className="text2" style={{ fontSize: 'var(--fs-sm)' }}>
                 Completed{' '}
                 <b className="mono" style={{ color: 'var(--text)' }}>
                   {po.jcFinishedQty}
@@ -366,14 +366,14 @@ function ProductionOrderClosePage(): React.JSX.Element {
               {/* POL — the CUSTOMER's own PO line number, before the item
                   code. Absent when there is no sales order behind the PO. */}
               {po.clientPoLineNo ? (
-                <span className="mono text3" style={{ fontSize: 11 }}>
+                <span className="mono text3" style={{ fontSize: 'var(--fs-xs)' }}>
                   · POL{' '}
                   <span style={{ color: 'var(--purple)', fontWeight: 700 }}>
                     {po.clientPoLineNo}
                   </span>
                 </span>
               ) : null}
-              <span className="mono text3" style={{ fontSize: 11 }}>
+              <span className="mono text3" style={{ fontSize: 'var(--fs-xs)' }}>
                 · {itemCodeWithRev(po.itemCodeText, docDrawingRev(po))}
               </span>
             </div>
@@ -383,12 +383,12 @@ function ProductionOrderClosePage(): React.JSX.Element {
             <div
               className="text3"
               style={{
-                fontSize: 12,
+                fontSize: 'var(--fs-xs)',
                 marginTop: 10,
                 padding: '6px 10px',
                 background: 'var(--bg3)',
                 border: '1px solid var(--border)',
-                borderRadius: 6,
+                borderRadius: 'var(--radius)',
               }}
             >
               🔒 Cannot close yet — {po.closeBlockedReason}
@@ -399,7 +399,7 @@ function ProductionOrderClosePage(): React.JSX.Element {
               remarks. On success go to the PO detail, which shows the running
               credited total and the ledger. */}
           {po && po.canClose ? (
-            <div style={{ marginTop: 16 }}>
+            <div style={{ marginTop: 'var(--sp-4)' }}>
               <PoCloseForm
                 po={po}
                 onClosed={(closed) =>
@@ -412,7 +412,7 @@ function ProductionOrderClosePage(): React.JSX.Element {
           {/* Already-closed pieces on this order, so a partial close shows its
               history before adding more. */}
           {po && po.closes.length > 0 ? (
-            <div style={{ marginTop: 16 }}>
+            <div style={{ marginTop: 'var(--sp-4)' }}>
               <div className="form-label" style={{ marginBottom: 6 }}>
                 Close Ledger
               </div>

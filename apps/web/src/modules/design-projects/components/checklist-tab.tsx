@@ -50,10 +50,10 @@ export function ChecklistTab({
           style={{
             background: 'var(--amber3)',
             border: '1px solid var(--amber)',
-            borderRadius: 8,
+            borderRadius: 'var(--radius2)',
             padding: '10px 14px',
-            marginBottom: 12,
-            fontSize: 12,
+            marginBottom: 'var(--sp-3)',
+            fontSize: 'var(--fs-sm)',
             color: 'var(--amber2)',
           }}
         >
@@ -65,10 +65,10 @@ export function ChecklistTab({
           style={{
             background: 'var(--red3)',
             border: '1px solid var(--red)',
-            borderRadius: 8,
+            borderRadius: 'var(--radius2)',
             padding: '10px 14px',
-            marginBottom: 12,
-            fontSize: 12,
+            marginBottom: 'var(--sp-3)',
+            fontSize: 'var(--fs-sm)',
             color: 'var(--red2)',
           }}
         >
@@ -77,16 +77,16 @@ export function ChecklistTab({
         </div>
       ) : null}
 
-      <div className="panel" style={{ padding: 16 }}>
+      <div className="panel" style={{ padding: 'var(--sp-4)' }}>
         {Object.entries(cats).map(([cat, items]) => (
           <div key={cat} style={{ marginBottom: 14 }}>
             <div
               className="text3"
               style={{
-                fontSize: 11,
+                fontSize: 'var(--fs-xs)',
                 fontWeight: 700,
-                marginBottom: 8,
-                paddingBottom: 4,
+                marginBottom: 'var(--sp-2)',
+                paddingBottom: 'var(--sp-1)',
                 borderBottom: '1px solid var(--border)',
               }}
             >
@@ -119,7 +119,7 @@ export function ChecklistTab({
                     style={{
                       width: 20,
                       height: 20,
-                      borderRadius: 4,
+                      borderRadius: 'var(--radius-sm)',
                       border: `2px solid ${checked ? 'var(--green)' : 'var(--border2)'}`,
                       background: checked ? 'var(--green)' : 'var(--bg)',
                       display: 'flex',
@@ -128,11 +128,13 @@ export function ChecklistTab({
                       flexShrink: 0,
                     }}
                   >
-                    {checked ? <span style={{ color: 'var(--bg)', fontSize: 12 }}>✓</span> : null}
+                    {checked ? (
+                      <span style={{ color: 'var(--bg)', fontSize: 'var(--fs-sm)' }}>✓</span>
+                    ) : null}
                   </div>
                   <span
                     style={{
-                      fontSize: 13,
+                      fontSize: 'var(--fs-sm)',
                       color: checked ? 'var(--text3)' : undefined,
                       textDecoration: checked ? 'line-through' : undefined,
                     }}
@@ -140,7 +142,7 @@ export function ChecklistTab({
                     {c.label}
                   </span>
                   {system ? (
-                    <span className="text3" style={{ fontSize: 11 }}>
+                    <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
                       (checked by the system)
                     </span>
                   ) : null}
@@ -156,20 +158,20 @@ export function ChecklistTab({
           style={{
             background: 'var(--green3)',
             border: '1px solid var(--green)',
-            borderRadius: 8,
+            borderRadius: 'var(--radius2)',
             padding: 20,
             marginTop: 14,
             textAlign: 'center',
           }}
         >
-          <div style={{ fontWeight: 700, color: 'var(--green2)', fontSize: 15 }}>
+          <div style={{ fontWeight: 700, color: 'var(--green2)', fontSize: 'var(--fs-sm)' }}>
             Ready for Release
           </div>
           {canApprove && detail.project.status !== 'Released' ? (
             <button
               type="button"
               className="btn btn-primary"
-              style={{ marginTop: 12 }}
+              style={{ marginTop: 'var(--sp-3)' }}
               disabled={releaseMut.isPending}
               onClick={() => setAskRelease(true)}
             >

@@ -60,7 +60,14 @@ export function RcCodes({ rcs }: { rcs: PlanningRcRef[] }): JSX.Element {
               {rc.code}
             </span>
             {warn ? (
-              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--amber)', marginLeft: 4 }}>
+              <span
+                style={{
+                  fontSize: 'var(--fs-xs)',
+                  fontWeight: 700,
+                  color: 'var(--amber)',
+                  marginLeft: 'var(--sp-1)',
+                }}
+              >
                 {warn}
               </span>
             ) : null}

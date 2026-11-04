@@ -31,7 +31,7 @@ import { QcCallInspectForm, type RaisedNc } from './qc-call-inspect-form';
  *  Planned / Actual Machine columns. */
 function StepFacts({ step }: { step: QcSourceStep | null }): React.JSX.Element {
   return (
-    <div style={{ padding: '8px 16px', borderBottom: '1px solid var(--border)' }}>
+    <div style={{ padding: 'var(--sp-2) var(--sp-4)', borderBottom: '1px solid var(--border)' }}>
       <QtyStrip
         items={[
           { label: 'Inspecting step', value: step ? stepOpLabel(step) : '— first step' },
@@ -134,7 +134,10 @@ export function QcCallInspectModal({
              said once here because an empty popup would read as broken. Not
              shown while access is still loading, or every inspector would see
              it flash. */
-        <div className="empty-state text3" style={{ padding: 24, fontSize: 12 }}>
+        <div
+          className="empty-state text3"
+          style={{ padding: 'var(--sp-5)', fontSize: 'var(--fs-xs)' }}
+        >
           You do not have permission to inspect this QC call. Ask an admin.
         </div>
       ) : null}

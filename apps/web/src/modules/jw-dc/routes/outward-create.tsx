@@ -199,12 +199,12 @@ function JwDcOutwardNewPage(): React.JSX.Element {
           <div
             className="text2"
             style={{
-              marginBottom: 12,
-              padding: '8px 12px',
+              marginBottom: 'var(--sp-3)',
+              padding: 'var(--sp-2) var(--sp-3)',
               background: 'var(--purple3)',
               border: '1px solid var(--border)',
-              borderRadius: 6,
-              fontSize: 12,
+              borderRadius: 'var(--radius)',
+              fontSize: 'var(--fs-sm)',
             }}
           >
             For JWSO <span className="td-code">{forJw.code}</span>
@@ -258,11 +258,11 @@ function JwDcOutwardNewPage(): React.JSX.Element {
             <div className="f-full">
               <div
                 style={{
-                  padding: '8px 12px',
+                  padding: 'var(--sp-2) var(--sp-3)',
                   background: 'var(--bg3)',
-                  borderRadius: 6,
+                  borderRadius: 'var(--radius)',
                   border: '1px solid var(--border)',
-                  fontSize: 12,
+                  fontSize: 'var(--fs-sm)',
                 }}
               >
                 <b>Vendor:</b> {selectedPo.vendorName ?? selectedPo.vendorCodeText ?? '—'} |{' '}
@@ -296,12 +296,12 @@ function JwDcOutwardNewPage(): React.JSX.Element {
           this challan sends. Shown only when there are some; with none, the
           New Outward DC form is exactly as before. */}
       {poId && rtv.loading ? (
-        <div className="text3" style={{ fontSize: 11, marginBottom: 12 }}>
+        <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginBottom: 'var(--sp-3)' }}>
           Checking for pieces waiting to go back to the vendor…
         </div>
       ) : null}
       {poId && rtv.failed ? (
-        <div className="text3" style={{ fontSize: 11, marginBottom: 12 }}>
+        <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginBottom: 'var(--sp-3)' }}>
           Could not check for pieces waiting to go back; the save will check.
         </div>
       ) : null}

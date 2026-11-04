@@ -16,12 +16,22 @@ function DetailHeading({
   color: string;
   children: React.ReactNode;
 }): React.JSX.Element {
-  return <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 8, color }}>{children}</div>;
+  return (
+    <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 700, marginBottom: 'var(--sp-2)', color }}>
+      {children}
+    </div>
+  );
 }
 
 export function SoStatusExpanded({ l }: { l: SoQcLine }): React.JSX.Element {
   return (
-    <div style={{ background: 'var(--bg)', borderTop: '2px solid var(--cyan)', padding: 16 }}>
+    <div
+      style={{
+        background: 'var(--bg)',
+        borderTop: '2px solid var(--cyan)',
+        padding: 'var(--sp-4)',
+      }}
+    >
       {l.grnDetail.length > 0 ? <GrnDetailTable l={l} /> : null}
       {l.tpiDetail.length > 0 ? <TpiDetailTable l={l} /> : null}
       {l.docDetail.length > 0 ? <DocDetailTable l={l} /> : null}
@@ -178,7 +188,7 @@ function DocDetailTable({ l }: { l: SoQcLine }): React.JSX.Element {
                 {d.jcCode}
               </td>
               <td>{d.docType}</td>
-              <td className="text3" style={{ fontSize: 11 }}>
+              <td className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
                 {d.fileName ?? '—'}
               </td>
               <td>

@@ -150,7 +150,7 @@ export function SearchResults({
   const truncated = !paged && !searching && rows.data?.truncated === true;
 
   const summary = (
-    <div className="text3" style={{ fontSize: 12 }}>
+    <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
       {!hasQuery ? null : !countsReady ? (
         <>Searching for &ldquo;{q}&rdquo;…</>
       ) : (
@@ -203,7 +203,7 @@ export function SearchResults({
     </>
   );
   const note = truncated ? (
-    <div className="text3" style={{ fontSize: 12, marginTop: 8 }}>
+    <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-2)' }}>
       Showing the first {items.length} — narrow it down or pick a type above.
     </div>
   ) : null;
@@ -221,7 +221,7 @@ export function SearchResults({
             top: 0,
             zIndex: 20,
             background: 'var(--bg)',
-            paddingBottom: 8,
+            paddingBottom: 'var(--sp-2)',
             marginBottom: 10,
             borderBottom: '1px solid var(--border)',
           }}
@@ -230,7 +230,7 @@ export function SearchResults({
             <div className="section-hdr" style={{ marginBottom: 0 }}>
               Search
             </div>
-            <div style={{ marginTop: 2 }}>{summary}</div>
+            <div style={{ marginTop: 'var(--sp-0)' }}>{summary}</div>
           </div>
           {strip}
         </div>

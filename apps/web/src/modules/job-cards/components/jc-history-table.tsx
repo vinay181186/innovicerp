@@ -236,7 +236,7 @@ export function JcHistoryTable({ jobCardId }: { jobCardId: string }): React.JSX.
         {jc ? (
           <DocumentHistory entity="JobCard" entityId={jobCardId} refId={jc.code} />
         ) : (
-          <div className="empty-state" style={{ padding: 16 }}>
+          <div className="empty-state" style={{ padding: 'var(--sp-4)' }}>
             Loading…
           </div>
         )}
@@ -265,7 +265,7 @@ export function JcHistoryTable({ jobCardId }: { jobCardId: string }): React.JSX.
           <tbody>
             {feed.rows.length === 0 ? (
               <tr>
-                <td colSpan={9} className="empty-state" style={{ padding: 16 }}>
+                <td colSpan={9} className="empty-state" style={{ padding: 'var(--sp-4)' }}>
                   {extrasLoading ? 'Loading…' : 'No entries yet.'}
                 </td>
               </tr>

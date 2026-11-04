@@ -137,7 +137,7 @@ function PurchaseRequestNewPage(): React.JSX.Element {
     return (
       <div className="panel">
         <div className="panel-body">
-          <div style={{ marginBottom: 8 }}>
+          <div style={{ marginBottom: 'var(--sp-2)' }}>
             <Link to="/purchase-requests" className="btn btn-ghost btn-sm">
               <ArrowLeft size={14} /> Back to Purchase Requests
             </Link>
@@ -224,7 +224,7 @@ function PurchaseRequestEditPage(): React.JSX.Element {
     return (
       <div className="panel">
         <div className="panel-body">
-          <div style={{ marginBottom: 8 }}>
+          <div style={{ marginBottom: 'var(--sp-2)' }}>
             <Link to="/purchase-requests/$id" params={{ id }} className="btn btn-ghost btn-sm">
               <ArrowLeft size={14} /> Back to PR
             </Link>
@@ -245,7 +245,7 @@ function PurchaseRequestEditPage(): React.JSX.Element {
     return (
       <div className="panel">
         <div className="panel-body">
-          <div style={{ marginBottom: 8 }}>
+          <div style={{ marginBottom: 'var(--sp-2)' }}>
             <Link to="/purchase-requests" className="btn btn-ghost btn-sm">
               <ArrowLeft size={14} /> Back
             </Link>
@@ -263,7 +263,7 @@ function PurchaseRequestEditPage(): React.JSX.Element {
     return (
       <div className="panel">
         <div className="panel-body">
-          <div style={{ marginBottom: 8 }}>
+          <div style={{ marginBottom: 'var(--sp-2)' }}>
             <Link to="/purchase-requests/$id" params={{ id }} className="btn btn-ghost btn-sm">
               <ArrowLeft size={14} /> Back to PR
             </Link>

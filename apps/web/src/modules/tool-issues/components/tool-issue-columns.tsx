@@ -62,7 +62,7 @@ export function toolIssueColumns(): DataTableColumn<ToolIssueListItem>[] {
             {t.itemCode ?? '—'}
           </span>
           {t.itemName ? (
-            <div className="text3" style={{ fontSize: 11 }}>
+            <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
               {t.itemName}
             </div>
           ) : null}
@@ -122,7 +122,7 @@ export function toolIssueColumns(): DataTableColumn<ToolIssueListItem>[] {
         <>
           {r3(t.stillOutQty)}
           {t.writeoffPendingQty > 0 ? (
-            <div style={{ fontSize: 10, color: 'var(--amber2)' }}>
+            <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--amber2)' }}>
               {r3(t.writeoffPendingQty)} write-off pending
             </div>
           ) : null}

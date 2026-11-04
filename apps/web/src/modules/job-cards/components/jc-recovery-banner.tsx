@@ -49,9 +49,9 @@ export function RecoveryBanner({ jc }: { jc: JobCardListItem }): React.JSX.Eleme
         background: 'var(--amber3)',
         border: '1px solid var(--amber)',
         borderLeft: '4px solid var(--amber)',
-        borderRadius: 8,
-        padding: '8px 12px',
-        marginBottom: 12,
+        borderRadius: 'var(--radius2)',
+        padding: 'var(--sp-2) var(--sp-3)',
+        marginBottom: 'var(--sp-3)',
       }}
     >
       <div
@@ -61,7 +61,7 @@ export function RecoveryBanner({ jc }: { jc: JobCardListItem }): React.JSX.Eleme
           alignItems: 'center',
           gap: 6,
           flexWrap: 'wrap',
-          fontSize: 13,
+          fontSize: 'var(--fs-sm)',
           color: 'var(--amber2)',
         }}
       >

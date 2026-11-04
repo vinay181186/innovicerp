@@ -162,7 +162,7 @@ export function DaySheet({
   }
 
   const msgLine = err ? (
-    <span role="alert" style={{ fontSize: 13, color: 'var(--red2)' }}>
+    <span role="alert" style={{ fontSize: 'var(--fs-sm)', color: 'var(--red2)' }}>
       {err}
     </span>
   ) : null;

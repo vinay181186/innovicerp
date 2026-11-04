@@ -10,7 +10,7 @@ import { soNoWithInternal } from '@/lib/so-number';
 export function SoTimelineBody({ data }: { data: SoTimelineResponse }): React.JSX.Element {
   // Legacy L17844: header line is the SO number only — no customer/type/count.
   const header = (
-    <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>
+    <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 700, marginBottom: 'var(--sp-3)' }}>
       📅 SO Timeline — {soNoWithInternal(data.soCode, data.soInternalNo)}
     </div>
   );
@@ -41,7 +41,10 @@ export function SoTimelineBody({ data }: { data: SoTimelineResponse }): React.JS
           }}
         />
         {data.events.map((evt, idx) => (
-          <div key={`${evt.kind}-${idx}-${evt.date}`} style={{ position: 'relative', marginBottom: 16 }}>
+          <div
+            key={`${evt.kind}-${idx}-${evt.date}`}
+            style={{ position: 'relative', marginBottom: 'var(--sp-4)' }}
+          >
             <div
               style={{
                 position: 'absolute',
@@ -54,7 +57,7 @@ export function SoTimelineBody({ data }: { data: SoTimelineResponse }): React.JS
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                fontSize: 11,
+                fontSize: 'var(--fs-xs)',
                 color: '#fff',
                 zIndex: 1,
                 border: '2px solid var(--bg)',
@@ -76,15 +79,17 @@ export function SoTimelineBody({ data }: { data: SoTimelineResponse }): React.JS
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
-                  marginBottom: 2,
+                  marginBottom: 'var(--sp-0)',
                 }}
               >
-                <span style={{ fontSize: 12, fontWeight: 700, color: evt.color }}>{evt.label}</span>
-                <span style={{ fontSize: 11, color: 'var(--text3)' }}>
+                <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 700, color: evt.color }}>
+                  {evt.label}
+                </span>
+                <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>
                   {fmtDateTime(evt.date)}
                 </span>
               </div>
-              <div style={{ fontSize: 11, color: 'var(--text2)' }}>{evt.detail}</div>
+              <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text2)' }}>{evt.detail}</div>
             </div>
           </div>
         ))}

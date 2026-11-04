@@ -69,7 +69,7 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
     return (
       <div className="panel">
         <div className="panel-body">
-          <div style={{ marginBottom: 8 }}>
+          <div style={{ marginBottom: 'var(--sp-2)' }}>
             <Link to="/jw-dc" className="btn btn-ghost btn-sm">
               <ArrowLeft size={14} /> Back
             </Link>
@@ -177,7 +177,7 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
       <div className="panel">
         <div className="panel-hdr">
           <div className="panel-title">Line Items ({dc.lines.length})</div>
-          <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
+          <span className="text3" style={{ fontSize: 'var(--fs-xs)', fontFamily: 'var(--mono)' }}>
             Sent <b style={{ color: 'var(--text)' }}>{dc.totalSentQty}</b> · Received{' '}
             <b style={{ color: 'var(--green2)' }}>{dc.totalReturnedQty}</b> · Pending{' '}
             <b style={{ color: dc.pendingQty > 0 ? 'var(--red)' : 'var(--green)' }}>
@@ -221,7 +221,9 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
                       {itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.itemRevision)}
                     </td>
                     <td>{l.itemName ?? l.itemNameText ?? '—'}</td>
-                    <td style={{ fontSize: 11, color: 'var(--purple)' }}>{l.processText ?? '—'}</td>
+                    <td style={{ fontSize: 'var(--fs-xs)', color: 'var(--purple)' }}>
+                      {l.processText ?? '—'}
+                    </td>
                     <td className="mono td-num">{l.poQty}</td>
                     <td className="mono fw-700 td-num" style={{ color: 'var(--cyan)' }}>
                       {l.sentQty}

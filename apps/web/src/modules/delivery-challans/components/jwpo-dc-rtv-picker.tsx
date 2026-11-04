@@ -93,7 +93,7 @@ export function JwpoDcPickerBody({
 
   return (
     <>
-      <div className="form-grp" style={{ maxWidth: 420, marginBottom: 12 }}>
+      <div className="form-grp" style={{ maxWidth: 420, marginBottom: 'var(--sp-3)' }}>
         <label className="form-label" htmlFor="dc-jwpo-search">
           PO No. / Sent on DC No.
         </label>

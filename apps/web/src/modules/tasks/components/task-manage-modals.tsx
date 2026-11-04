@@ -56,7 +56,7 @@ export function ReassignModal({
       }
     >
       <TaskHead task={task} />
-      <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 10 }}>
+      <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)', marginBottom: 10 }}>
         Currently assigned to <b style={{ color: 'var(--text)' }}>{task.assignedToName ?? '—'}</b>
       </div>
       <div className="form-grid">
@@ -133,7 +133,7 @@ export function CancelModal({
       }
     >
       <TaskHead task={task} />
-      <p style={{ margin: '0 0 10px', fontSize: 12, color: 'var(--text2)' }}>
+      <p style={{ margin: '0 0 10px', fontSize: 'var(--fs-sm)', color: 'var(--text2)' }}>
         This closes the task as <b>Cancelled</b>. The assignee will see it in their board history;
         it cannot be reopened.
       </p>

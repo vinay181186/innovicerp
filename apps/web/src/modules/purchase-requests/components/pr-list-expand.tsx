@@ -50,8 +50,8 @@ function Fact({
 }): React.JSX.Element {
   return (
     <div>
-      <div style={{ fontSize: 11, color: 'var(--text3)' }}>{label}</div>
-      <div style={{ fontSize: 12, fontWeight: 600 }}>{children}</div>
+      <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>{label}</div>
+      <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600 }}>{children}</div>
     </div>
   );
 }
@@ -73,7 +73,7 @@ export function PrListExpand({
       style={{
         display: 'flex',
         flexWrap: 'wrap',
-        gap: 24,
+        gap: 'var(--sp-5)',
         padding: 'var(--sp-2) var(--sp-3) var(--sp-3) var(--sp-6)',
         background: 'var(--bg3)',
       }}

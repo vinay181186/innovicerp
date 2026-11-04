@@ -176,7 +176,7 @@ export function RawMaterialGroup({ children }: { children: React.ReactNode }): R
       <div
         className="text3"
         style={{
-          fontSize: 11,
+          fontSize: 'var(--fs-xs)',
           fontWeight: 700,
           marginBottom: 6,
         }}
@@ -187,7 +187,7 @@ export function RawMaterialGroup({ children }: { children: React.ReactNode }): R
         style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
-          gap: 8,
+          gap: 'var(--sp-2)',
         }}
       >
         {children}

@@ -211,7 +211,10 @@ function ReportRunPage() {
         onClear={clearFilters}
       />
       {data?.note ? (
-        <div className="text2" style={{ fontSize: 12, margin: '6px 0', color: 'var(--amber2)' }}>
+        <div
+          className="text2"
+          style={{ fontSize: 'var(--fs-sm)', margin: '6px 0', color: 'var(--amber2)' }}
+        >
           {data.note}
         </div>
       ) : null}

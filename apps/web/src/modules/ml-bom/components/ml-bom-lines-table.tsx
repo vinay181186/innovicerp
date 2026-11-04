@@ -141,7 +141,7 @@ export function MlBomLinesTable(props: Props): React.JSX.Element {
                         : {})}
                   />
                   {mode === 'edit' && line.childMlBomId && line.childMlBomCode ? (
-                    <div style={{ marginTop: 2 }}>
+                    <div style={{ marginTop: 'var(--sp-0)' }}>
                       <Link
                         to="/ml-boms/$id"
                         params={{ id: line.childMlBomId }}

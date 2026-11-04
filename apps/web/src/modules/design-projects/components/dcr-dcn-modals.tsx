@@ -112,7 +112,7 @@ export function DcrFormModal({
         />
       }
     >
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-3)' }}>
         <div style={{ gridColumn: 'span 2' }}>
           <Field
             label={
@@ -282,7 +282,7 @@ export function DcnFormModal({
         />
       }
     >
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-3)' }}>
         <div style={{ gridColumn: 'span 2' }}>
           <Field
             label={

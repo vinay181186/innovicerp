@@ -147,7 +147,13 @@ export function DayLogApprovals(): React.JSX.Element {
   return (
     <div>
       <div
-        style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 8 }}
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          gap: 'var(--sp-2)',
+          marginBottom: 'var(--sp-2)',
+        }}
       >
         <strong>Day Log edits waiting for approval</strong>
         {query.isFetching ? <span className="text3">⟳ Updating…</span> : null}
@@ -199,7 +205,7 @@ export function DayLogApprovals(): React.JSX.Element {
         <ConfirmDialog
           title={`Reject ${rejecting.userName}'s edit?`}
           message={
-            <label style={{ display: 'grid', gap: 4 }}>
+            <label style={{ display: 'grid', gap: 'var(--sp-1)' }}>
               <span className="text3">Reason * — {rejecting.userName} sees it on the row</span>
               <textarea
                 className="innovic-textarea"

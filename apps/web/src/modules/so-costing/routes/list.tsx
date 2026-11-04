@@ -130,7 +130,7 @@ function soCostingColumns(
     className: 'text2',
     filterValue: (r) => r.costCenter,
     render: (r) => (
-      <span style={{ fontSize: 11, color: 'var(--teal2)' }}>
+      <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--teal2)' }}>
         {r.costCenter ? `${r.costCenter}${r.costCenterName ? ` — ${r.costCenterName}` : ''}` : '—'}
       </span>
     ),

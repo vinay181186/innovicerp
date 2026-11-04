@@ -222,7 +222,7 @@ export function lineListColumns(
         // The state's name only: the To Plan column carries how many are pending.
         const st = lineStatusOf(r);
         return (
-          <span style={{ fontSize: 11, fontWeight: 700, color: st.color }}>
+          <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 700, color: st.color }}>
             {PLANNING_STATE_LABEL[st.state]}
           </span>
         );

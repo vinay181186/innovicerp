@@ -11,7 +11,11 @@ import { fmtDate } from '@/lib/date';
 import { Banner, ConfirmDialog } from '@/ui/feedback';
 import { useApproveRouteCard, useRejectRouteCard } from '../api';
 
-const BOX_STYLE: React.CSSProperties = { display: 'block', width: '100%', marginTop: 8 };
+const BOX_STYLE: React.CSSProperties = {
+  display: 'block',
+  width: '100%',
+  marginTop: 'var(--sp-2)',
+};
 
 /** "Approved by X on <date>" / "Rejected by X on <date> — <reason>". */
 export function rcApprovalLine(rc: RouteCardDetail): string {

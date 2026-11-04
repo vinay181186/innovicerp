@@ -69,7 +69,7 @@ export function PlanDeleteModal({
         </>
       }
     >
-      <div style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.6 }}>
+      <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text2)', lineHeight: 1.6 }}>
         You can restore it from Trash.
       </div>
 
@@ -89,7 +89,7 @@ export function PlanDeleteModal({
       </div>
 
       {err ? (
-        <div role="alert" className="form-error" style={{ marginTop: 8 }}>
+        <div role="alert" className="form-error" style={{ marginTop: 'var(--sp-2)' }}>
           {err}
         </div>
       ) : null}

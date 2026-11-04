@@ -22,16 +22,16 @@ export function IssueOverBox({
   return (
     <div
       style={{
-        marginTop: 12,
+        marginTop: 'var(--sp-3)',
         padding: 10,
         border: '1px solid var(--amber2)',
-        borderRadius: 4,
+        borderRadius: 'var(--radius-sm)',
       }}
     >
-      <div className="fw-700" style={{ fontSize: 12, color: 'var(--amber2)' }}>
+      <div className="fw-700" style={{ fontSize: 'var(--fs-sm)', color: 'var(--amber2)' }}>
         More than To Issue
       </div>
-      <ul style={{ fontSize: 12, margin: '6px 0 8px 16px' }}>
+      <ul style={{ fontSize: 'var(--fs-sm)', margin: '6px 0 8px 16px' }}>
         {over.map((o) => (
           <li key={o.itemCode}>
             <span className="mono fw-700">{o.itemCode}</span>: Issue Qty {o.qty}, To Issue{' '}
@@ -39,7 +39,7 @@ export function IssueOverBox({
           </li>
         ))}
       </ul>
-      <div className="text3" style={{ fontSize: 11, marginBottom: 6 }}>
+      <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginBottom: 6 }}>
         {canApprove
           ? 'Issuing more needs a reason.'
           : 'Issuing more needs a Store user with approve rights — ask one to post this issue, or lower the qty.'}

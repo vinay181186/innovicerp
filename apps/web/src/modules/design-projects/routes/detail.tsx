@@ -68,7 +68,7 @@ function DesignProjectDetailPage(): React.JSX.Element {
                   : 'Could not load design project. Try again.'}
               </div>
             ) : (
-              <div className="text3" style={{ fontSize: 12 }}>
+              <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
                 <Loader2 size={14} className="inline animate-spin" /> Loading…
               </div>
             )}

@@ -109,7 +109,7 @@ function RouteCardDetailPage(): React.JSX.Element {
     return (
       <div className="panel">
         <div className="panel-body">
-          <div style={{ marginBottom: 8 }}>
+          <div style={{ marginBottom: 'var(--sp-2)' }}>
             <Link to="/route-cards" className="btn btn-ghost btn-sm">
               <ArrowLeft size={14} /> Back
             </Link>
@@ -226,7 +226,11 @@ function RouteCardDetailPage(): React.JSX.Element {
                   {detail.ops.length > 0 ? (
                     <span
                       className="mono text3"
-                      style={{ fontSize: 'var(--fs-xs)', fontWeight: 400, marginLeft: 8 }}
+                      style={{
+                        fontSize: 'var(--fs-xs)',
+                        fontWeight: 400,
+                        marginLeft: 'var(--sp-2)',
+                      }}
                     >
                       {inHouse} in-house · {osp} OSP · {qc} QC
                     </span>
@@ -291,13 +295,13 @@ function RouteCardDetailPage(): React.JSX.Element {
         {notice ? (
           <div
             style={{
-              marginTop: 8,
+              marginTop: 'var(--sp-2)',
               color: 'var(--red2)',
               background: 'var(--red3)',
               border: '1px solid var(--red2)',
-              borderRadius: 6,
+              borderRadius: 'var(--radius)',
               padding: '6px 10px',
-              fontSize: 12,
+              fontSize: 'var(--fs-sm)',
             }}
           >
             {notice}
@@ -339,7 +343,7 @@ function RouteCardDetailPage(): React.JSX.Element {
               rows={2}
               value={deleteReason}
               onChange={(e) => setDeleteReason(e.target.value)}
-              style={{ display: 'block', width: '100%', marginTop: 8 }}
+              style={{ display: 'block', width: '100%', marginTop: 'var(--sp-2)' }}
             />
           </>
         }

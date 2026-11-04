@@ -23,15 +23,15 @@ function Cell({ label, value }: { label: string; value: React.ReactNode }): Reac
       <div
         className="text3"
         style={{
-          fontSize: 10,
+          fontSize: 'var(--fs-xs)',
           textTransform: 'uppercase',
           letterSpacing: '0.05em',
-          marginBottom: 2,
+          marginBottom: 'var(--sp-0)',
         }}
       >
         {label}
       </div>
-      <div className="mono" style={{ fontSize: 12, color: 'var(--text)' }}>
+      <div className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--text)' }}>
         {value}
       </div>
     </div>
@@ -78,7 +78,7 @@ export function JwInvoiceExpand({
 
       {/* Screen-only (plan D2, 0186), never printed. */}
       {r.status !== 'cancelled' && !r.placeOfSupply ? (
-        <div style={{ marginTop: 'var(--sp-2)', fontSize: 11, color: 'var(--amber2)' }}>
+        <div style={{ marginTop: 'var(--sp-2)', fontSize: 'var(--fs-xs)', color: 'var(--amber2)' }}>
           ⚠ {PLACE_OF_SUPPLY_UNKNOWN_NOTE}
         </div>
       ) : null}

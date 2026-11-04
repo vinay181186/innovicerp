@@ -124,7 +124,7 @@ export function QcCallRegisterHeader(props: {
                 background: mineOnly ? 'var(--text)' : 'var(--bg2)',
                 color: mineOnly ? 'var(--bg2)' : 'var(--text)',
                 border: `1px solid ${mineOnly ? 'var(--text)' : 'var(--border2)'}`,
-                fontSize: 12,
+                fontSize: 'var(--fs-sm)',
               }}
             >
               👤 Mine
@@ -169,7 +169,7 @@ export function QcCallRegisterHeader(props: {
         activeKey={view}
         onChange={(k) => props.setView(k === 'completed' ? 'completed' : 'pending')}
       />
-      <div className="text3" style={{ fontSize: 12 }}>
+      <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
         {props.pendingCount} calls · {props.pcsPending} pcs QC Pending · {props.completeCount}{' '}
         completed
       </div>

@@ -384,7 +384,11 @@ function StockCountPage(): React.JSX.Element {
 
       {msg ? (
         <div
-          style={{ marginTop: 10, color: msg.ok ? 'var(--green)' : 'var(--red2)', fontSize: 13 }}
+          style={{
+            marginTop: 10,
+            color: msg.ok ? 'var(--green)' : 'var(--red2)',
+            fontSize: 'var(--fs-sm)',
+          }}
         >
           {msg.text}
         </div>
@@ -401,7 +405,9 @@ function StockCountPage(): React.JSX.Element {
         />
       ) : null}
 
-      <div style={{ marginTop: 14, display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+      <div
+        style={{ marginTop: 14, display: 'flex', gap: 'var(--sp-2)', justifyContent: 'flex-end' }}
+      >
         {editable && perms.entry ? (
           <>
             <button
@@ -434,7 +440,7 @@ function StockCountPage(): React.JSX.Element {
           </button>
         ) : null}
         {sc?.status === 'submitted' && sc.blockedApproverIds.includes(me?.id ?? '') ? (
-          <span className="text3" style={{ fontSize: 12, alignSelf: 'center' }}>
+          <span className="text3" style={{ fontSize: 'var(--fs-xs)', alignSelf: 'center' }}>
             Waiting for another user to approve.
           </span>
         ) : null}

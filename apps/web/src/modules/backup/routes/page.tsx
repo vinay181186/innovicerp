@@ -126,8 +126,10 @@ function BackupPage(): React.JSX.Element {
       </div>
 
       {/* Action panel */}
-      <div className="panel" style={{ padding: 16, marginBottom: 16 }}>
-        <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 12 }}>Export Options</div>
+      <div className="panel" style={{ padding: 'var(--sp-4)', marginBottom: 'var(--sp-4)' }}>
+        <div style={{ fontWeight: 700, fontSize: 'var(--fs-sm)', marginBottom: 'var(--sp-3)' }}>
+          Export Options
+        </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           <button
             type="button"
@@ -146,7 +148,7 @@ function BackupPage(): React.JSX.Element {
             )}
           </button>
         </div>
-        <div className="text3" style={{ fontSize: 11, marginTop: 10, lineHeight: 1.6 }}>
+        <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginTop: 10, lineHeight: 1.6 }}>
           Max 5,000 rows per table. Full backup runs every night.
         </div>
         {download.isError ? (
@@ -193,7 +195,10 @@ function BackupPage(): React.JSX.Element {
                 collections.map((c) => (
                   <tr key={c.table}>
                     <td>
-                      <span className="fw-700" style={{ color: 'var(--cyan)', fontSize: 12 }}>
+                      <span
+                        className="fw-700"
+                        style={{ color: 'var(--cyan)', fontSize: 'var(--fs-sm)' }}
+                      >
                         {c.label}
                       </span>
                     </td>

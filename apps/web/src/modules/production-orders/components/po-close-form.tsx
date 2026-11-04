@@ -221,9 +221,9 @@ export function PoCloseForm({ po, onClosed, compact }: PoCloseFormProps): React.
         style={{
           display: 'flex',
           alignItems: 'flex-start',
-          gap: 8,
+          gap: 'var(--sp-2)',
           marginTop: 10,
-          fontSize: 12,
+          fontSize: 'var(--fs-sm)',
           cursor: 'pointer',
         }}
       >
@@ -234,7 +234,7 @@ export function PoCloseForm({ po, onClosed, compact }: PoCloseFormProps): React.
             setFinish(e.target.checked);
             setError(null);
           }}
-          style={{ marginTop: 2 }}
+          style={{ marginTop: 'var(--sp-0)' }}
         />
         <span>
           <b style={{ color: 'var(--amber2)' }}>Finish Short</b>
@@ -248,12 +248,12 @@ export function PoCloseForm({ po, onClosed, compact }: PoCloseFormProps): React.
       </label>
 
       {!remarksValid ? (
-        <div className="form-error" style={{ marginTop: 8 }}>
+        <div className="form-error" style={{ marginTop: 'var(--sp-2)' }}>
           Reason is required.
         </div>
       ) : null}
       {!finish && !qtyValid && qty.trim() !== '' ? (
-        <div className="form-error" style={{ marginTop: 8 }}>
+        <div className="form-error" style={{ marginTop: 'var(--sp-2)' }}>
           Qty to Close must be a whole number from 1 to {max}.
         </div>
       ) : null}
@@ -266,16 +266,16 @@ export function PoCloseForm({ po, onClosed, compact }: PoCloseFormProps): React.
             color: 'var(--red2)',
             background: 'var(--red3)',
             border: '1px solid var(--red)',
-            borderRadius: 6,
+            borderRadius: 'var(--radius)',
             padding: '6px 10px',
-            fontSize: 12,
+            fontSize: 'var(--fs-sm)',
           }}
         >
           {error}
         </div>
       ) : null}
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 'var(--sp-3)' }}>
         <button
           type="button"
           className={finish ? 'btn btn-primary' : 'btn btn-success'}

@@ -31,7 +31,7 @@ export function InvoiceTotals({
         justifyContent: 'end',
         columnGap: 'var(--sp-3)',
         rowGap: 'var(--sp-1)',
-        marginTop: 12,
+        marginTop: 'var(--sp-3)',
         textAlign: 'right',
       }}
     >

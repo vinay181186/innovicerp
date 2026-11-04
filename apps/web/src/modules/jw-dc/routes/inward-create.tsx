@@ -265,11 +265,11 @@ function JwDcInwardNewPage(): React.JSX.Element {
                     >
                       {l.clientPoLineNo ?? '—'}
                     </td>
-                    <td style={{ padding: 6, fontSize: 12 }}>
+                    <td style={{ padding: 6, fontSize: 'var(--fs-sm)' }}>
                       <b>{itemCodeWithRev(l.itemCode, l.itemRevision)}</b>{' '}
                       <span style={{ color: 'var(--text3)' }}>{l.itemName}</span>
                     </td>
-                    <td style={{ padding: 6, fontSize: 11, color: 'var(--purple)' }}>
+                    <td style={{ padding: 6, fontSize: 'var(--fs-xs)', color: 'var(--purple)' }}>
                       {l.processText ?? '—'}
                     </td>
                     <td className="mono td-num" style={{ padding: 6 }}>
@@ -296,7 +296,12 @@ function JwDcInwardNewPage(): React.JSX.Element {
                           const r = Math.min(Number(e.target.value) || 0, l.pending);
                           setLine(i, { receivedQty: r });
                         }}
-                        style={{ width: 65, fontSize: 13, fontWeight: 700, textAlign: 'right' }}
+                        style={{
+                          width: 65,
+                          fontSize: 'var(--fs-sm)',
+                          fontWeight: 700,
+                          textAlign: 'right',
+                        }}
                       />
                     </td>
                   </tr>

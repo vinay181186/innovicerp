@@ -196,10 +196,10 @@ function DocRow({
 }): React.JSX.Element {
   return (
     <tr>
-      <td className="mono" style={{ fontSize: 12 }}>
+      <td className="mono" style={{ fontSize: 'var(--fs-sm)' }}>
         {renderCode(doc.code, routeKind, doc.id, doc.linkId)}
         {doc.label ? (
-          <span className="text2" style={{ marginLeft: 8, fontSize: 11 }}>
+          <span className="text2" style={{ marginLeft: 'var(--sp-2)', fontSize: 'var(--fs-xs)' }}>
             {doc.label}
           </span>
         ) : null}
@@ -207,7 +207,7 @@ function DocRow({
       <td>
         <StatusBadge status={doc.status} kind={routeKind} />
       </td>
-      <td className="text2" style={{ fontSize: 11 }}>
+      <td className="text2" style={{ fontSize: 'var(--fs-xs)' }}>
         {fmtDate(doc.date)}
       </td>
     </tr>
@@ -217,15 +217,15 @@ function DocRow({
 function Section({ section }: { section: RelatedSection }): React.JSX.Element {
   return (
     <div style={{ marginBottom: 14 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-        <span style={{ fontWeight: 600, fontSize: 13 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)', marginBottom: 6 }}>
+        <span style={{ fontWeight: 600, fontSize: 'var(--fs-sm)' }}>
           {section.icon ? `${section.icon} ` : ''}
           {section.title}
         </span>
         <span className="badge b-grey">{section.count}</span>
       </div>
       {section.count === 0 ? (
-        <div className="text3" style={{ fontSize: 12, paddingLeft: 4 }}>
+        <div className="text3" style={{ fontSize: 'var(--fs-xs)', paddingLeft: 'var(--sp-1)' }}>
           none
         </div>
       ) : (
@@ -260,7 +260,10 @@ function SectionBlock({
   if (nonEmpty.length === 0) return null;
   return (
     <div style={{ marginBottom: 18 }}>
-      <div className="text3" style={{ fontSize: 11, fontWeight: 700, marginBottom: 8 }}>
+      <div
+        className="text3"
+        style={{ fontSize: 'var(--fs-xs)', fontWeight: 700, marginBottom: 'var(--sp-2)' }}
+      >
         {heading}
       </div>
       {nonEmpty.map((s) => (
@@ -274,7 +277,10 @@ export function Timeline({ events }: { events: RelatedTimelineEvent[] }): React.
   if (events.length === 0) return null;
   return (
     <div>
-      <div className="text3" style={{ fontSize: 11, fontWeight: 700, marginBottom: 8 }}>
+      <div
+        className="text3"
+        style={{ fontSize: 'var(--fs-xs)', fontWeight: 700, marginBottom: 'var(--sp-2)' }}
+      >
         Document Timeline
       </div>
       <ul
@@ -296,10 +302,13 @@ export function Timeline({ events }: { events: RelatedTimelineEvent[] }): React.
                 background: 'var(--text3)',
               }}
             />
-            <span className="text2" style={{ fontSize: 11, marginRight: 8 }}>
+            <span
+              className="text2"
+              style={{ fontSize: 'var(--fs-xs)', marginRight: 'var(--sp-2)' }}
+            >
               {fmtDate(e.ts)}
             </span>
-            <span style={{ fontSize: 12 }}>
+            <span style={{ fontSize: 'var(--fs-sm)' }}>
               {e.label}
               {e.code ? (
                 <span style={{ marginLeft: 6 }}>
@@ -326,15 +335,18 @@ function CompactList({ data }: { data: DocumentTraceability }): React.JSX.Elemen
       {sections.map((s) => (
         <div
           key={s.key}
-          style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}
+          style={{ display: 'flex', gap: 'var(--sp-2)', alignItems: 'baseline', flexWrap: 'wrap' }}
         >
-          <span className="text3" style={{ fontSize: 12, fontWeight: 600, minWidth: 140 }}>
+          <span
+            className="text3"
+            style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, minWidth: 140 }}
+          >
             {s.icon ? `${s.icon} ` : ''}
             {s.title}
           </span>
           <span style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             {s.items.map((doc) => (
-              <span key={doc.id} className="mono" style={{ fontSize: 12 }}>
+              <span key={doc.id} className="mono" style={{ fontSize: 'var(--fs-sm)' }}>
                 {renderCode(doc.code, s.routeKind, doc.id, doc.linkId)}
               </span>
             ))}

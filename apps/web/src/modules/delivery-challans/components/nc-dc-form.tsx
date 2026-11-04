@@ -216,10 +216,17 @@ export function NcDcFormBody({
           {submitError}
         </Banner>
       ) : null}
-      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--blue)', marginBottom: 8 }}>
+      <div
+        style={{
+          fontSize: 'var(--fs-sm)',
+          fontWeight: 700,
+          color: 'var(--blue)',
+          marginBottom: 'var(--sp-2)',
+        }}
+      >
         <Truck size={14} style={{ verticalAlign: -2 }} /> Create Return-to-Vendor Challan
         {soLabel ? (
-          <span className="text2" style={{ fontWeight: 400, marginLeft: 8 }}>
+          <span className="text2" style={{ fontWeight: 400, marginLeft: 'var(--sp-2)' }}>
             SO No. <b className="mono">{soLabel}</b> · {picked.length} NC
             {picked.length === 1 ? '' : 's'}
           </span>
@@ -235,12 +242,14 @@ export function NcDcFormBody({
         sortFilter={false}
         showTotals
       />
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '8px 0 14px' }}>
+      <div
+        style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-3)', margin: '8px 0 14px' }}
+      >
         {/* Back to the picker WITHOUT leaving the screen; the ticks are kept. */}
         <button type="button" className="btn btn-ghost btn-sm" onClick={onChangeNcs}>
           <ArrowLeft size={12} /> Change NCs
         </button>
-        <span className="text3" style={{ fontSize: 11 }}>
+        <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
           Each NC goes back in full on its own line. The vendor is pre-filled from the NCs and may
           be changed.
         </span>

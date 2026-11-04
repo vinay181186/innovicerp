@@ -64,7 +64,7 @@ export function assemblyListColumns(
         header: 'BOM No.',
         nowrap: true,
         render: (row) => (
-          <span className="text3" style={{ fontSize: 12 }}>
+          <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
             {row.bomCode ?? '—'}
             {/* Loose != null on purpose: web and API deploy independently, so for
                   a few minutes the old API returns no bomRevision. Strict !== null

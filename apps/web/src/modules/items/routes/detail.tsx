@@ -107,7 +107,7 @@ function ItemDetailPage(): React.JSX.Element {
     return (
       <div className="panel">
         <div className="panel-body">
-          <div style={{ marginBottom: 8 }}>
+          <div style={{ marginBottom: 'var(--sp-2)' }}>
             <Link to="/items" className="btn btn-ghost btn-sm">
               <ArrowLeft size={14} /> Back
             </Link>
@@ -220,14 +220,14 @@ function OnHandBadge(props: { itemId: string }): React.JSX.Element {
   if (isLoading) {
     return (
       <span className="badge b-grey" title="Loading stock…">
-        <Loader2 size={11} className="animate-spin" style={{ marginRight: 4 }} /> stock…
+        <Loader2 size={11} className="animate-spin" style={{ marginRight: 'var(--sp-1)' }} /> stock…
       </span>
     );
   }
   if (isError) {
     return (
       <span className="badge b-grey" title="You do not have access to store stock">
-        <Package size={11} style={{ marginRight: 4 }} /> stock not shown
+        <Package size={11} style={{ marginRight: 'var(--sp-1)' }} /> stock not shown
       </span>
     );
   }
@@ -237,9 +237,9 @@ function OnHandBadge(props: { itemId: string }): React.JSX.Element {
       className={`badge ${onHand > 0 ? 'b-green' : 'b-grey'}`}
       title="Physical: stock on the shelf now"
     >
-      <Package size={11} style={{ marginRight: 4 }} />
+      <Package size={11} style={{ marginRight: 'var(--sp-1)' }} />
       Physical:{' '}
-      <span className="mono" style={{ marginLeft: 4 }}>
+      <span className="mono" style={{ marginLeft: 'var(--sp-1)' }}>
         {onHand}
       </span>
     </span>
@@ -259,10 +259,10 @@ function StockHistoryCard(props: { itemId: string }): React.JSX.Element {
   return (
     <div className="panel">
       <div className="panel-hdr">
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 'var(--sp-2)' }}>
           <div className="panel-title">Stock Ledger</div>
           {capped ? (
-            <span className="text3" style={{ fontSize: 11 }}>
+            <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
               Showing latest {LEDGER_LIMIT} of {total}
             </span>
           ) : null}
@@ -306,16 +306,16 @@ function StockHistoryCard(props: { itemId: string }): React.JSX.Element {
             ) : (
               data!.items.map((r) => (
                 <tr key={r.id}>
-                  <td className="mono" style={{ fontSize: 11 }}>
+                  <td className="mono" style={{ fontSize: 'var(--fs-xs)' }}>
                     {fmtDate(r.txnDate)}
                   </td>
                   <td>
                     <TxnTypeBadge type={r.txnType} />
                   </td>
-                  <td className="text2" style={{ fontSize: 11 }}>
+                  <td className="text2" style={{ fontSize: 'var(--fs-xs)' }}>
                     {STORE_TXN_SOURCE_LABELS[r.sourceType]}
                   </td>
-                  <td className="mono" style={{ fontSize: 11, color: 'var(--purple)' }}>
+                  <td className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--purple)' }}>
                     {r.sourceRef}
                   </td>
                   {/* Same +/− colours as the Stock Ledger tab. */}
@@ -332,10 +332,10 @@ function StockHistoryCard(props: { itemId: string }): React.JSX.Element {
                     {r.txnType === 'in' ? '+' : r.txnType === 'out' ? '-' : ''}
                     {r.qty}
                   </td>
-                  <td className="mono td-num" style={{ fontSize: 11 }}>
+                  <td className="mono td-num" style={{ fontSize: 'var(--fs-xs)' }}>
                     {r.stockBefore} → <b>{r.stockAfter}</b>
                   </td>
-                  <td className="text3" style={{ fontSize: 11 }}>
+                  <td className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
                     {r.remarks ?? ''}
                   </td>
                 </tr>
