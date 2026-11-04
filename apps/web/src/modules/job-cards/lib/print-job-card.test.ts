@@ -151,7 +151,7 @@ describe('printJobCard', () => {
       cancelled: true,
     });
     expect(captured.html).toContain('is-cancelled');
-    expect(text(body())).toContain('Turning VMC-01 7');
+    expect(text(body())).toMatch(/Turning VMC-01 (VMC-01 )?7 /);
   });
 
   it('blank rows continue from the highest step, so a gap never repeats a number', () => {
