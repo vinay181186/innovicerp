@@ -38,6 +38,8 @@ import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { TabStrip } from '@/ui/navigation/TabStrip';
 import { renderJcOpsLink } from '@/modules/jc-ops/components/jc-ops-columns';
 import { useMachineLoading } from '@/modules/machine-loading/api';
+import { OrderSelect } from '@/modules/order-options/components/order-select';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import {
   countBusyMachines,
   groupPendingOps,
@@ -120,10 +122,38 @@ function ProductionDashboardPage(): React.JSX.Element {
     () => groupPendingOps(machine.data?.machines ?? [], machine.data?.ops ?? []),
     [machine.data],
   );
+  // Machine Pending reads the whole board, so its order pick filters in the browser.
+  // Only the rows narrow: the Idle line, the tab count and each machine heading
+  // stay whole-board figures.
+  const [machineSo, setMachineSo] = useState<string | null>(null);
+  const shownMachineGroups = useMemo(
+    () =>
+      machineSo
+        ? {
+            ...machineGroups,
+            rows: machineGroups.rows.filter((r) => r.op.soCode === machineSo),
+          }
+        : machineGroups,
+    [machineGroups, machineSo],
+  );
 
   return (
     <div className="page-fill">
-      <ListHeader title="Production Dashboard" icon="📊" updating={isFetching && !isLoading} />
+      <ListHeader
+        title="Production Dashboard"
+        icon="📊"
+        updating={isFetching && !isLoading}
+        orderFilter={
+          tab === 'ready' ? (
+            <OrderSfFilter sf={readySf} field="soCode" />
+          ) : tab === 'machines' ? (
+            <OrderSelect
+              value={machineSo}
+              onChange={(option) => setMachineSo(option?.code ?? null)}
+            />
+          ) : undefined
+        }
+      />
 
       {isLoading ? (
         <PageState state="loading" message="Loading dashboard…" />
@@ -250,9 +280,10 @@ function ProductionDashboardPage(): React.JSX.Element {
             </>
           ) : tab === 'machines' ? (
             <MachinePendingPanel
-              grouped={machineGroups}
+              grouped={shownMachineGroups}
               machineCount={machineCount}
               isLoading={machine.isLoading}
+              filtered={machineSo !== null}
             />
           ) : (
             <SupplyChainPanel data={supplyChain} />

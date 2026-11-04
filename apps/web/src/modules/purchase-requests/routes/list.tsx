@@ -30,6 +30,7 @@ import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc
 import { usePendingEditIds } from '@/modules/document-edits/api';
 import { AssignTaskModal } from '@/modules/tasks/components/assign-task-modal';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
@@ -239,6 +240,7 @@ function PurchaseRequestsListPage(): React.JSX.Element {
       ) : (
         <>
           <ListHeader
+            orderFilter={<OrderSfFilter sf={sf} field="soCode" />}
             title="Purchase Requests"
             icon="📄"
             count={total}

@@ -30,6 +30,7 @@ import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib
 import { inrFormat } from '@/lib/print/doc-print';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { createdByColumn, DataTable, leadColumns, Panel, type DataTableColumn } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
@@ -247,6 +248,7 @@ function SoCostingListPage(): React.JSX.Element {
 
   const header = (
     <ListHeader
+      orderFilter={<OrderSfFilter sf={sf} field="soNo" kind="so" />}
       title="SO Costing"
       icon="💰"
       count={data ? data.total : undefined}

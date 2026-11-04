@@ -13,6 +13,16 @@ import { type SQL, sql } from 'drizzle-orm';
 
 import { createdByNameSql } from '../../lib/created-by-sql';
 import type { SfColumnMap } from '../../lib/list-query';
+import { soOrJwCodeSql } from '../../lib/order-code';
+
+/** The SO No. cell and its filter: the PR's SO, else the job card's SO (Outsource
+ *  Balance stores no source SO line), else the card's JWSO (ADR-267). so / jc /
+ *  rev_jwl are joined by the list AND the count. */
+export const PR_ORDER_CODE = sql`COALESCE(
+  ${soOrJwCodeSql('so', 'rev_jwl')},
+  (SELECT oso.code FROM public.sales_order_lines osol
+     JOIN public.sales_orders oso ON oso.id = osol.sales_order_id AND oso.deleted_at IS NULL
+    WHERE osol.id = jc.source_so_line_id))`;
 
 export function prSfColumns(orderedQty: SQL): SfColumnMap {
   return {
@@ -26,6 +36,7 @@ export function prSfColumns(orderedQty: SQL): SfColumnMap {
       type: 'text',
     },
     itemName: { sql: sql`pr.item_name`, type: 'text' },
+    soCode: { sql: PR_ORDER_CODE, type: 'text' },
     // ADR-207 — the Internal SO No. of the order behind the PR, off the `so`
     // join BOTH the list and the count query make (through pr.source_so_line_id).
     // Null on a PR raised for stock, which has no sales order behind it.

@@ -34,6 +34,7 @@ import {
   type DataTableColumn,
   type RowMenuItem,
 } from '@/ui/data';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader } from '@/ui/layout';
@@ -231,6 +232,7 @@ function StuckDashboardPage(): React.JSX.Element {
     // KPI strip in the header and the thresholds hint stay fixed chrome.
     <div className="page-fill">
       <ListHeader
+        orderFilter={<OrderSfFilter sf={sf} field="soNo" kind="so" />}
         title="Stuck Dashboard"
         icon="⚠"
         count={data.total}

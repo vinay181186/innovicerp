@@ -93,6 +93,10 @@ export async function listStoreTransactions(
     const sf = readSf(input.sf);
     const sfFrag = sfWhere(STOCK_LEDGER_SF_COLUMNS, sf);
     const whereClause = sql`${sql.join(buildStoreTxnWhere(companyId, input), sql` AND `)} ${sfFrag}`;
+    // ADR-267: the count and KPI queries need the SO trace only to filter on it.
+    const totalsSoJoins = sf?.filters.some((f) => f.field === 'soCode')
+      ? STOCK_LEDGER_SO_JOINS
+      : sql``;
     const orderBy = sfOrderBy(
       STOCK_LEDGER_SF_COLUMNS,
       sf,
@@ -129,6 +133,7 @@ export async function listStoreTransactions(
       SELECT COUNT(*)::int AS value
       FROM public.store_transactions st
       LEFT JOIN public.items i ON i.id = st.item_id AND i.deleted_at IS NULL
+      ${totalsSoJoins}
       WHERE ${whereClause}
     `)) as unknown as Array<{ value: number }>;
     const total = Number(countRows[0]?.value ?? 0);
@@ -143,6 +148,7 @@ export async function listStoreTransactions(
         COUNT(DISTINCT st.item_id)::int                                  AS item_count
       FROM public.store_transactions st
       LEFT JOIN public.items i ON i.id = st.item_id AND i.deleted_at IS NULL
+      ${totalsSoJoins}
       WHERE ${whereClause}
     `);
     const sumRow = (summaryRows as unknown as Array<Record<string, unknown>>)[0] ?? {};

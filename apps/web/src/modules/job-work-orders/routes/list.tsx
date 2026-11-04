@@ -34,6 +34,7 @@ import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-
 import { usePendingEditIds } from '@/modules/document-edits/api';
 import { SO_STATUS_LABEL } from '@/modules/sales-orders/lib/so-status-label';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
@@ -211,6 +212,7 @@ function JobWorkOrdersListPage(): React.JSX.Element {
       {/* The ONE list header (ui/layout ListHeader) — same URL params, same
           query as before; the status filter stays a select. */}
       <ListHeader
+        orderFilter={<OrderSfFilter sf={sf} field="code" kind="jwso" />}
         title="JWSO Master"
         icon="🔧"
         count={total}

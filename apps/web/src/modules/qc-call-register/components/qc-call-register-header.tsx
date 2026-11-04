@@ -7,6 +7,7 @@
 // Incoming QC screen (its own title, no Stage / Mine / Full History, and the
 // GRN Type choices narrowed to Direct Purchase + Party GRN).
 
+import type { ReactNode } from 'react';
 import {
   INCOMING_QC_GRN_TYPES,
   QC_GRN_TYPES,
@@ -72,6 +73,7 @@ export function QcCallRegisterHeader(props: {
   pcsPending: number;
   isEmpty: boolean;
   onExport: () => void;
+  orderFilter: ReactNode;
 }): React.JSX.Element {
   const { mode, view, stage, stageStats, mineOnly, search, grnType, grnTypeStats } = props;
   const incoming = mode === 'incoming';
@@ -81,6 +83,7 @@ export function QcCallRegisterHeader(props: {
   return (
     <ListHeader
       title={incoming ? 'Incoming QC' : 'QC Call Register'}
+      orderFilter={props.orderFilter}
       icon={incoming ? '🔬' : '📋'}
       count={props.shownCount}
       noun={view === 'pending' ? 'pending call' : 'completed entry'}

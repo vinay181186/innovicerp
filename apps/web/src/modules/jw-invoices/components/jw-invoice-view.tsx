@@ -16,6 +16,7 @@ import { DocumentHistory } from '@/components/shared/document-history';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
@@ -123,6 +124,7 @@ export function JwInvoiceView({
   return (
     <div>
       <ListHeader
+        orderFilter={<OrderSfFilter sf={sf} field="jwsoCode" kind="jwso" />}
         title="JW Invoices (Labour)"
         icon="🔧"
         count={total}

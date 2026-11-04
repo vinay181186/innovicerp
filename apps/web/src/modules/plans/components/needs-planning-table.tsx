@@ -20,6 +20,7 @@ import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { DataTable, Panel, createdByColumn, leadColumns, type DataTableColumn } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
@@ -173,12 +174,15 @@ export function NeedsPlanningTable(): React.JSX.Element {
         bodyPadding="none"
         title={<span style={{ color: 'var(--red2)' }}>⚠ Needs Planning ({total} SO lines)</span>}
         actions={
-          <SearchInput
-            value={search}
-            onChange={setSearch}
-            placeholder="Search SO, item, customer…"
-            aria-label="Search unplanned SO lines"
-          />
+          <>
+            <SearchInput
+              value={search}
+              onChange={setSearch}
+              placeholder="Search SO, item, customer…"
+              aria-label="Search unplanned SO lines"
+            />
+            <OrderSfFilter sf={sf} field="soCode" kind="so" />
+          </>
         }
       >
         {isError ? (

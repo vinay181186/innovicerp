@@ -22,6 +22,7 @@ import { todayIst } from '@/lib/date';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { soNoWithInternal } from '@/lib/so-number';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { DataTable, Panel } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
@@ -181,6 +182,7 @@ function DesignTrackerListPage(): React.JSX.Element {
     // column header cannot ride off the top of the screen at the last row.
     <div className="page-fill">
       <ListHeader
+        orderFilter={<OrderSfFilter sf={sf} field="soCode" kind="so" />}
         title="Design Tracker"
         icon="🎨"
         count={data?.total}

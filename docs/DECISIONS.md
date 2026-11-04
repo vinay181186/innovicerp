@@ -15128,6 +15128,8 @@ The owner wants one dropdown beside the search box on every list tied to an SO: 
 - Job Cards, Production Orders and the QC Register get an `orderCode` filter field: `sourceCode` adds `/lineNo`, a plan's snapshot can be blank, and a JWSO upload leaves `so_code_text` blank. It reads the live order first and the snapshot only as a fallback (§18).
 - Closed and cancelled orders are listed on list filters; the QC Dossier picker keeps leaving cancelled out. Each list keeps its own pick. Op Entry and the 16 unclear screens are left out.
 - `SearchableSelect`: ↑ ↓ scrolls the highlighted row into view (keyboard only).
+- Rollout: where JWSO rows showed a blank SO No. (Machine Loading, OSP at Vendor, QC History, QC Call Register, Purchase Requests, Stock Ledger) `soCode` now reads the SO, else the JWSO, through `lib/order-code.ts`; the cell, filter and search use the same value. Plans and NC Register get `orderCode` because their column prints a snapshot.
+- One dropdown per screen: it replaces the old SO box on Customer Dispatches and Supply Chain Pending. CAPA gets none, because its SO No. is typed free text that an exact pick would miss. Supply Chain Purchase Summary gets none, because it holds only line 1's SO.
 
 ### Alternatives Considered
 

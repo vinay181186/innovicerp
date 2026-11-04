@@ -20,6 +20,7 @@ import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
 import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
@@ -121,6 +122,7 @@ export function PartyMaterialIssueView({
       {/* THE list header (ui/layout ListHeader): title · count · search ·
           + New Issue. */}
       <ListHeader
+        orderFilter={<OrderSfFilter sf={sf} field="jwsoCode" kind="jwso" />}
         title="Customer Material Issue"
         icon="📤"
         count={data?.total}

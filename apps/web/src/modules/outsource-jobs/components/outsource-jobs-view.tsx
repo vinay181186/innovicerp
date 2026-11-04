@@ -29,6 +29,7 @@ import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
 import { useDebounce } from '@/lib/use-debounce';
 import { usePurchaseRequestsList } from '@/modules/purchase-requests/api';
 import { usePrSelection } from '@/modules/purchase-requests/lib/use-pr-selection';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { DataTable, Panel } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
@@ -116,6 +117,7 @@ export function OutsourceJobsView(): React.JSX.Element {
   return (
     <div>
       <ListHeader
+        orderFilter={<OrderSfFilter sf={sf} field="soCode" />}
         title="Outsource Jobs"
         icon="📦"
         count={data?.total}

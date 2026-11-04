@@ -31,6 +31,7 @@ import {
   useClampPage,
 } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { DataTable, Panel } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
@@ -178,6 +179,7 @@ function MachineLoadingPage(): React.JSX.Element {
     // is the only scrollbar and its column header never scrolls away.
     <div className="page-fill">
       <ListHeader
+        orderFilter={<OrderSfFilter sf={sf} field="soCode" />}
         title="Machine Loading"
         icon="▣"
         count={total}

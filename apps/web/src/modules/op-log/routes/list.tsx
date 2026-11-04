@@ -21,6 +21,7 @@ import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { DataTable, Panel } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
@@ -160,6 +161,7 @@ function OpLogListPage(): React.JSX.Element {
     // top of the screen at the last row.
     <div className="page-fill">
       <ListHeader
+        orderFilter={<OrderSfFilter sf={sf} field="soCode" />}
         title="Operation Log"
         icon="☰"
         count={data ? total : undefined}

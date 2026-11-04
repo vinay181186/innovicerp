@@ -39,6 +39,7 @@ import {
 import { usePendingEditIds } from '@/modules/document-edits/api';
 import { JwDispatchView } from '@/modules/jw-returns/components/jw-dispatch-view';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
@@ -52,7 +53,6 @@ import { dispatchListColumns } from '../components/dispatch-list-columns';
 import { DispatchRowActions } from '../components/dispatch-row-actions';
 import { exportDispatchRegister } from '../lib/export-excel';
 import { printCustomerDispatchRegister } from '../lib/print-register';
-import { SearchableSelect } from '@/ui/forms';
 
 // Deep-link seed for Global Search (this register has no detail page):
 // `?tab=so&search=DSP-0004` opens the right tab with the box pre-filled. The
@@ -103,7 +103,6 @@ function CustomerDispatchListPage(): React.JSX.Element {
     (routeSearch.tab ?? 'so') === 'so' ? (routeSearch.search ?? '') : '',
   );
   const [term, setTerm] = useState(() => normalizeSearchTerm(search));
-  const [soFilter, setSoFilter] = useState('');
   const [cancelling, setCancelling] = useState<{ dispatchId: string; code: string } | null>(null);
   const [exporting, setExporting] = useState(false);
 
@@ -127,10 +126,7 @@ function CustomerDispatchListPage(): React.JSX.Element {
   // Search covers every column on screen — dispatch no, date, SO, customer,
   // dispatched by, JC no, POL, item code, item name, UOM, Remarks — matched on
   // the server (register.ts lineMatch). Not the qty / stock numbers.
-  const filters = useMemo(
-    () => ({ search: term || undefined, soNo: soFilter || undefined, sf: sf.param }),
-    [term, soFilter, sf.param],
-  );
+  const filters = useMemo(() => ({ search: term || undefined, sf: sf.param }), [term, sf.param]);
   const { data, isLoading, isFetching, isError, error } = useDispatchLines({
     ...filters,
     limit: LIST_PAGE_SIZE,
@@ -139,7 +135,8 @@ function CustomerDispatchListPage(): React.JSX.Element {
   useClampPage(page, data?.total, gotoPage);
   const total = data?.total ?? 0;
   const rows = useMemo(() => data?.rows ?? [], [data]);
-  const soOptions = data?.soOptions ?? [];
+  const heldSo = sf.value.filters['soCode'];
+  const pickedSo = heldSo?.kind === 'values' ? heldSo.values.join(', ') : undefined;
   // ADR-202 — dispatch ids with a pending edit; their status cell reads "Draft".
   const draftIds = usePendingEditIds('Dispatch');
   const columns = useMemo(
@@ -155,7 +152,7 @@ function CustomerDispatchListPage(): React.JSX.Element {
     try {
       if (kind === 'excel') {
         const all = await fetchAllRegisterRows({ ...filters, search: undefined });
-        exportDispatchRegister(all, soFilter || undefined);
+        exportDispatchRegister(all, pickedSo);
       } else {
         const all = await fetchAllRegisterRows(filters);
         const active = all.filter((r) => r.status !== 'cancelled');
@@ -221,37 +218,22 @@ function CustomerDispatchListPage(): React.JSX.Element {
       {/* The ONE list header (ui/layout ListHeader). Search / SO / ▾ run on
           the server; Export / Print fetch every filtered row. */}
       <ListHeader
+        orderFilter={<OrderSfFilter sf={sf} field="soCode" kind="so" />}
         title="Customer Dispatch"
         icon="🚚"
         count={total}
         noun="line"
-        filterNote={soFilter || undefined}
+        filterNote={pickedSo}
         search={search}
         onSearch={setSearch}
         searchPlaceholder="Search dispatch no., SO, JC, POL, item, customer, date…"
         updating={isFetching && !isLoading}
-        filters={
-          <SearchableSelect
-            ariaLabel="SO No."
-            style={{ width: 180 }}
-            clearable
-            placeholder="All SOs"
-            value={soFilter || null}
-            valueLabel={soFilter || undefined}
-            options={soOptions.map((s) => ({ id: s, name: s }))}
-            onChange={(id) => {
-              setSoFilter(id ?? '');
-              gotoPage(1);
-            }}
-          />
-        }
         onClearFilters={() => {
           sf.clearFilters();
           setSearch('');
-          setSoFilter('');
           gotoPage(1);
         }}
-        filtersActive={sf.filtering || search !== '' || soFilter !== ''}
+        filtersActive={sf.filtering || search !== ''}
         tools={
           <>
             <ActionMenu
@@ -314,9 +296,7 @@ function CustomerDispatchListPage(): React.JSX.Element {
               rowKey={(r) => r.lineId}
               loading={isLoading}
               sortFilterServer={sf}
-              emptyText={
-                term || soFilter || sf.filtering ? 'No Dispatches match.' : 'No Dispatches yet.'
-              }
+              emptyText={term || sf.filtering ? 'No Dispatches match.' : 'No Dispatches yet.'}
               onRowClick={(r) =>
                 void navigate({ to: '/customer-dispatches/$id', params: { id: r.dispatchId } })
               }

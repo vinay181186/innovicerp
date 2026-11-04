@@ -23,6 +23,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDateTime } from '@/lib/date';
 import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
 import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
@@ -96,6 +97,7 @@ export function InwardView({
       {/* THE list header (ui/layout ListHeader): title · count · search ·
           + New Inward Entry. */}
       <ListHeader
+        orderFilter={<OrderSfFilter sf={sf} field="soCode" />}
         title="Inward Register"
         icon="📥"
         count={data?.total}

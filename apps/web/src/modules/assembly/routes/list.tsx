@@ -37,6 +37,7 @@ import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { todayIst } from '@/lib/date';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { DataTable, Panel } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
@@ -145,6 +146,7 @@ function AssemblyListPage(): React.JSX.Element {
           filter bar — search · status dropdown (the old tiles' counts in its
           option labels, counted on the server) · Clear. */}
       <ListHeader
+        orderFilter={<OrderSfFilter sf={sf} field="soCode" kind="so" />}
         title="Assembly Tracker"
         icon="🔧"
         count={data ? data.total : undefined}

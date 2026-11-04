@@ -24,6 +24,7 @@ import { usePendingEditIds } from '@/modules/document-edits/api';
 import { AssignTaskModal } from '@/modules/tasks/components/assign-task-modal';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { DataTable, Panel } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
@@ -235,6 +236,7 @@ function NcRegisterListPage(): React.JSX.Element {
       ) : (
         <>
           <NcListHeader
+            orderFilter={<OrderSfFilter sf={sf} field="orderCode" columnField="soCode" />}
             count={data ? total : undefined}
             searchInput={searchInput}
             onSearch={setSearchInput}

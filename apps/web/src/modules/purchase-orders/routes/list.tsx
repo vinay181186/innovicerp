@@ -45,6 +45,7 @@ import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc
 import { usePendingEditIds } from '@/modules/document-edits/api';
 import { AssignTaskModal } from '@/modules/tasks/components/assign-task-modal';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { DataTable, Panel, ROW_TINT, renderRowMenuLink } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
@@ -259,6 +260,7 @@ function PurchaseOrdersListPage(): React.JSX.Element {
       {/* THE list header (ui/layout ListHeader): title · count · + New PO, then
           the filter bar (search · status · type · Clear). */}
       <ListHeader
+        orderFilter={<OrderSfFilter sf={sf} field="soCode" />}
         title="Purchase Orders"
         icon="📋"
         count={total}

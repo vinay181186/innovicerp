@@ -35,6 +35,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
 import { usePendingEditIds } from '@/modules/document-edits/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
@@ -220,6 +221,7 @@ function DeliveryChallansListPage(): React.JSX.Element {
               Register · + New DC, then the filter bar (search · status ·
               Clear), with the read-only totals strip pinned inside the band. */}
           <ListHeader
+            orderFilter={<OrderSfFilter sf={sf} field="soCode" />}
             title="OSP Outward DC"
             icon="🚛"
             count={total}

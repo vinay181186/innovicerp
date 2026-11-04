@@ -9,6 +9,7 @@
 // counts are the two lists' server totals, the KPI tiles are server figures,
 // and the Excel export fetches EVERY filtered row.
 
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import type { ListQcLogsQuery, ListQcPendingQuery } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
@@ -165,6 +166,9 @@ function QcHistoryPage(): React.JSX.Element {
     <div className="page-fill">
       <ListHeader
         title="QC History"
+        orderFilter={
+          <OrderSfFilter key={tab} sf={tab === 'pending' ? sfPend : sfLogs} field="soCode" />
+        }
         icon="📊"
         count={loaded ? shownCount : undefined}
         noun="row"

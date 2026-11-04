@@ -10,6 +10,7 @@ import { createdByNameSql } from '../../lib/created-by-sql';
 import { isLastLiveOpSql } from '../../lib/jc-last-op-sql';
 import { likeEscape } from '../../lib/list-query';
 import { OP_LOG_QC_REMARKS } from '../../lib/op-log-qc-remarks';
+import { soOrJwCodeSql } from '../../lib/order-code';
 import { polSql } from '../../lib/pol';
 import { CLIENT_PO_NO_SQL } from './register-facts';
 
@@ -59,6 +60,10 @@ export const ITEM_CODE_REV = codeRevSql(
   sql`COALESCE(sol.revision::text, rev_jwl.revision::text)`,
 );
 
+/** The SO No. of a job-card call: the SO's code, else the JWSO's (ADR-267). Reads
+ *  the so / rev_jwl aliases pendingFrom, logsFrom and incJoins all make. */
+export const OP_ORDER_CODE = soOrJwCodeSql('so', 'rev_jwl');
+
 /** Pending QC ops: FROM … WHERE (company + qc op + something waiting). */
 export function pendingFrom(companyId: string): SQL {
   return sql`
@@ -88,7 +93,7 @@ export function pendingFrom(companyId: string): SQL {
 export const PENDING_SELECT = sql`
   vos.jc_op_id AS "jcOpId", jc.id AS "jobCardId", jc.code AS "jcCode",
   to_char(jc.jc_date, 'YYYY-MM-DD') AS "jcDate",
-  vos.op_seq AS "opSeq", so.code AS "soCode", so.internal_so_no AS "soInternalNo",
+  vos.op_seq AS "opSeq", ${OP_ORDER_CODE} AS "soCode", so.internal_so_no AS "soInternalNo",
   i.code AS "itemCode",
   COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
   i.name AS "itemName", ${PEND_IS_LAST} AS "isLastOp",
@@ -122,7 +127,7 @@ export function logsFrom(companyId: string): SQL {
 export const LOGS_SELECT = sql`
   ol.id AS "logId", jc.id AS "jobCardId", jc.code AS "jcCode", jo.op_seq AS "opSeq",
   to_char(jc.jc_date, 'YYYY-MM-DD') AS "jcDate",
-  so.code AS "soCode", so.internal_so_no AS "soInternalNo", i.code AS "itemCode",
+  ${OP_ORDER_CODE} AS "soCode", so.internal_so_no AS "soInternalNo", i.code AS "itemCode",
   COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
   ${polSql('sol', 'rev_jwl')} AS "clientPoLineNo", i.name AS "itemName",
   ${LOG_IS_LAST} AS "isLastOp", jo.operation,
@@ -145,7 +150,7 @@ export function opSearchWhere(term: string | undefined): SQL {
   const p = `%${likeEscape(q)}%`;
   const cols = [
     sql`jc.code`,
-    sql`so.code`,
+    OP_ORDER_CODE,
     // ADR-207: the SO's Internal SO No. finds its rows too.
     sql`so.internal_so_no`,
     polSql('sol', 'rev_jwl'),

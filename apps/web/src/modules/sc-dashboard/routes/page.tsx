@@ -25,6 +25,7 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { z } from 'zod';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { StatStrip } from '@/ui/data';
 import { ListHeader } from '@/ui/layout';
 import { TabStrip } from '@/ui/navigation';
@@ -94,6 +95,13 @@ function ScDashboardPage(): React.JSX.Element {
     <div className="page-fill">
       <ListHeader
         title="Supply Chain Dashboard"
+        orderFilter={
+          tab === 'pending' ? (
+            <OrderSfFilter key={tab} sf={tables.pending.t.sf} field="soCode" />
+          ) : tab === 'sos' ? (
+            <OrderSfFilter key={tab} sf={tables.sos.sf} field="soCode" kind="so" />
+          ) : undefined
+        }
         icon="🔗"
         tools={
           <>

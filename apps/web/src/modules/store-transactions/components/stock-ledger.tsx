@@ -21,6 +21,7 @@ import { useEffect, useMemo, useState } from 'react';
 
 import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
 
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { DataTable, Panel } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
@@ -78,6 +79,7 @@ export function StockLedger(): React.JSX.Element {
       {/* THE list header (ui/layout ListHeader): title · count, then the filter
           bar (search · Type / Source · Clear). */}
       <ListHeader
+        orderFilter={<OrderSfFilter sf={sf} field="soCode" />}
         title="Stock Ledger"
         icon="📦"
         count={data ? total : undefined}

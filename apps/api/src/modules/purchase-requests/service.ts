@@ -54,7 +54,7 @@ import { lockDocSeries } from '../../lib/doc-series-lock';
 import { assertNoPendingCancel } from '../cancel-requests/pending-guard';
 import { stagedEditMessage } from '../cancel-requests/messages';
 import { releaseSourceJcOps } from './pr-cancel-writer';
-import { prSfColumns } from './sf-columns';
+import { PR_ORDER_CODE, prSfColumns } from './sf-columns';
 import type {
   ClosePurchaseRequestBalanceInput,
   CreatePurchaseRequestInput,
@@ -614,7 +614,7 @@ export async function listPurchaseRequests(
           OR pr.balance_closed_reason ILIKE ${term} ESCAPE '\\'
           OR pr.balance_closed_at::text ILIKE ${term} ESCAPE '\\'
           -- Source ref + the PO link on the card, both already joined below.
-          OR so.code ILIKE ${term} ESCAPE '\\'
+          OR ${PR_ORDER_CODE} ILIKE ${term} ESCAPE '\\'
           OR so.internal_so_no ILIKE ${term} ESCAPE '\\'
           -- POL, the customer's own PO line number, now printed on the card.
           -- Off the same sol / rev_jwl joins (ADR-236), both made by BOTH the
@@ -723,7 +723,7 @@ export async function listPurchaseRequests(
         jc.code AS "sourceJcCode",
         jo.op_seq AS "sourceJcOpSeq",
         po.code AS "poCode",
-        so.code AS "soCode",
+        ${PR_ORDER_CODE} AS "soCode",
         so.internal_so_no AS "soInternalNo",
         sol.line_no AS "soLineNo",
         -- Ordered / balance quantity (ADR-152). Two scalar subqueries per row,

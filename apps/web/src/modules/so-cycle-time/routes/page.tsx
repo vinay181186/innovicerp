@@ -24,6 +24,7 @@ import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { DataTable, Panel, ROW_TINT, StatStrip } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
@@ -155,6 +156,9 @@ function SoCycleTimePage(): React.JSX.Element {
               onChange={(e) => setSearch(e.target.value)}
             />
           </ReportFilter>
+          <ReportFilter label="SO No." size="lg">
+            <OrderSfFilter sf={sf} field="soNo" kind="so" />
+          </ReportFilter>
           <ReportFilter label="Show" htmlFor="sct-filter">
             <select
               id="sct-filter"
@@ -172,6 +176,7 @@ function SoCycleTimePage(): React.JSX.Element {
         </>
       }
       onClear={() => {
+        sf.clearFilters();
         setSearch('');
         void routeNavigate({ search: { page: 1 }, replace: true });
       }}

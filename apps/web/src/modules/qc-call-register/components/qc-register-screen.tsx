@@ -28,6 +28,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { DataTable, Panel, ROW_TINT, type RowMenuItem } from '@/ui/data';
 import { ListFooter } from '@/ui/layout';
 import { qcHistoryKeys } from '@/modules/qc-history/api';
@@ -278,6 +279,7 @@ export function QcRegisterScreen(props: {
   return shell(
     <>
       <QcCallRegisterHeader
+        orderFilter={<OrderSfFilter key={view} sf={sf} field="soCode" />}
         mode={mode}
         view={view}
         setView={(v) => {

@@ -27,6 +27,7 @@ import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
@@ -206,6 +207,7 @@ function PartyGrnListPage(): React.JSX.Element {
               + New Party GRN, with the read-only totals pinned inside the
               same band. */}
           <ListHeader
+            orderFilter={<OrderSfFilter sf={sf} field="jwCode" kind="jwso" />}
             title="Party GRN"
             icon="📥"
             count={data?.total}

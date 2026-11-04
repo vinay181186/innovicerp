@@ -34,6 +34,7 @@ import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
@@ -164,6 +165,13 @@ function PlanningWorkflowPage(): JSX.Element {
               JWSO source dropdown · Clear. ── */}
           <ListHeader
             title="SO/JWSO Planning"
+            orderFilter={
+              <OrderSfFilter
+                sf={sf}
+                field="soCode"
+                kind={src === 'so' ? 'so' : src === 'jw' ? 'jwso' : undefined}
+              />
+            }
             icon="📋"
             count={lineList.data ? total : undefined}
             noun={sourceNoun(src)}

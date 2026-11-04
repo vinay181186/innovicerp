@@ -29,6 +29,7 @@ import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
 import { usePendingEditIds } from '@/modules/document-edits/api';
 import { AssignTaskModal } from '@/modules/tasks/components/assign-task-modal';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
@@ -221,6 +222,7 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
           the filter bar (search · QC status with counts · Clear), with the
           read-only "Today" tile inside the same band. */}
       <ListHeader
+        orderFilter={<OrderSfFilter sf={sf} field="soCode" />}
         title="GRN"
         icon="📥"
         count={total}

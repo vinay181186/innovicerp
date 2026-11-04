@@ -12,6 +12,7 @@ import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { Icon } from '@/ui/core';
 import { DataTable, Panel } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
@@ -102,6 +103,7 @@ function MlPlansListPage(): React.JSX.Element {
   return (
     <div className="page-fill">
       <ListHeader
+        orderFilter={<OrderSfFilter sf={sf} field="soCode" kind="so" />}
         title="Multi-Level Plan"
         count={total}
         noun="plan"

@@ -12,6 +12,7 @@ import {
   type NcStatus,
 } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
+import type { ReactNode } from 'react';
 import { ListHeader } from '@/ui/layout';
 
 export interface NcListHeaderProps {
@@ -27,6 +28,7 @@ export interface NcListHeaderProps {
   /** A column ▾ filter is applied (Sort & Filter, ADR-200) — lights Clear. */
   columnFiltering: boolean;
   canReportNc: boolean;
+  orderFilter: ReactNode;
 }
 
 export function NcListHeader({
@@ -41,10 +43,12 @@ export function NcListHeader({
   onClearFilters,
   columnFiltering,
   canReportNc,
+  orderFilter,
 }: NcListHeaderProps): React.JSX.Element {
   return (
     <ListHeader
       title="NC Register"
+      orderFilter={orderFilter}
       icon="⚠️"
       count={count}
       noun="NC"

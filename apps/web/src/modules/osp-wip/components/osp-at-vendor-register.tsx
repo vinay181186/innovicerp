@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { DataTable, Panel } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
@@ -64,6 +65,7 @@ export function OspAtVendorRegister(): React.JSX.Element {
       {/* THE list header (ui/layout ListHeader): title · count, then the filter
           bar (search · bucket with its qty · Clear). */}
       <ListHeader
+        orderFilter={<OrderSfFilter sf={sf} field="soCode" />}
         title="At-Vendor Register"
         icon="🚚"
         count={data?.total}

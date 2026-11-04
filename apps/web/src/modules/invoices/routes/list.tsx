@@ -23,6 +23,7 @@ import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib
 import { JwInvoiceView } from '@/modules/jw-invoices/components/jw-invoice-view';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { DataTable, Panel } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
@@ -167,6 +168,7 @@ function InvoiceListPage(): React.JSX.Element {
     <div className="page-fill">
       {tabs}
       <ListHeader
+        orderFilter={<OrderSfFilter sf={sf} field="soCode" kind="so" />}
         title="Invoices"
         count={data ? data.total : undefined}
         noun="line"

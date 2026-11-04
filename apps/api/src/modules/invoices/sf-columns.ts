@@ -30,6 +30,9 @@ export const INVOICE_SF_COLUMNS: SfColumnMap = {
 // line fields use il = invoice line, sol = its SO line, iso = the SO.
 export const INVOICE_LINE_SF_COLUMNS: SfColumnMap = {
   ...INVOICE_SF_COLUMNS,
+  // ADR-267 — the live SO first, the snapshot as the fallback (`iso` is in the ONE
+  // FROM of list-lines.ts: page, count and summary).
+  soCode: { sql: sql`COALESCE(iso.code, ${invoices.soCodeText})`, type: 'text' },
   soInternalNo: { sql: sql`iso.internal_so_no`, type: 'text' },
   clientPoLineNo: { sql: sql`sol.client_po_line_no`, type: 'text' },
   createdOn: {

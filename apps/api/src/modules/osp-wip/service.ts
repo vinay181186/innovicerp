@@ -12,7 +12,7 @@ import { createdByNameSql } from '../../lib/created-by-sql';
 import { AuthorizationError } from '../../lib/errors';
 import { polSql } from '../../lib/pol';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
-import { OSP_WIP_SF_COLUMNS } from './sf-columns';
+import { OSP_ORDER_CODE, OSP_WIP_SF_COLUMNS } from './sf-columns';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -73,7 +73,7 @@ export async function listOspWip(
       ? // POL is now a column on this register, so the box must find it. sol /
         // rev_jwl are the line joins the FROM below makes (ADR-236).
         sql`AND (w.jc_code ILIKE ${term} ESCAPE '\\' OR w.item_code ILIKE ${term} ESCAPE '\\'
-          OR w.item_name ILIKE ${term} ESCAPE '\\' OR w.so_code ILIKE ${term} ESCAPE '\\'
+          OR w.item_name ILIKE ${term} ESCAPE '\\' OR ${OSP_ORDER_CODE} ILIKE ${term} ESCAPE '\\'
           OR w.vendor_name ILIKE ${term} ESCAPE '\\' OR ${polSql('sol', 'rev_jwl')} ILIKE ${term} ESCAPE '\\'
           OR so.internal_so_no ILIKE ${term} ESCAPE '\\')`
       : sql``;
@@ -110,7 +110,7 @@ export async function listOspWip(
       SELECT
         w.jc_op_id, w.job_card_id, w.jc_code, to_char(jc.jc_date, 'YYYY-MM-DD') AS jc_date,
         w.op_seq, w.operation, w.outsource_status,
-        w.item_id, w.item_code, w.item_name, w.so_code, w.vendor_name, w.vendor_code,
+        w.item_id, w.item_code, w.item_name, ${OSP_ORDER_CODE} AS so_code, w.vendor_name, w.vendor_code,
         w.order_qty, w.sent_qty, w.returned_qty, w.rejected_qty,
         w.accepted_qty, w.at_vendor_qty, w.not_sent_qty, w.in_qc_qty,
         w.ready_to_send_qty,
