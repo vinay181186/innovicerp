@@ -8,6 +8,7 @@ import { useSaveKey } from '@/lib/use-save-key';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateTpiMaster } from '../api';
 import { TpiMasterForm } from '../components/tpi-master-form';
+import { useToast } from '@/ui/feedback';
 
 export const tpiMasterNewRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -16,6 +17,7 @@ export const tpiMasterNewRoute = createRoute({
 });
 
 function TpiMasterNewPage(): React.JSX.Element {
+  const toast = useToast();
   const navigate = useNavigate();
   const saveKey = useSaveKey();
   const create = useCreateTpiMaster(saveKey);
@@ -59,34 +61,27 @@ function TpiMasterNewPage(): React.JSX.Element {
       <Link to="/tpi-masters" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
         <ArrowLeft size={14} /> Back to TPI Master
       </Link>
-      <div className="panel">
-        <div className="panel-hdr">
+      <TpiMasterForm
+        panelHeader={
           <div>
             <div className="panel-title">🔍 Add Inspector</div>
           </div>
-        </div>
-        <div className="panel-body">
-          <TpiMasterForm
-            mode="create"
-            submitError={submitError}
-            submitLabel="Save Inspector"
-            onCancel={() => exit.leave(goBack)}
-            onSubmit={async (values: CreateTpiMasterInput) => {
-              setSubmitError(null);
-              try {
-                const created = await create.mutateAsync(values);
-                exit.leave(
-                  () => void navigate({ to: '/tpi-masters/$id', params: { id: created.id } }),
-                );
-              } catch (e) {
-                setSubmitError(
-                  e instanceof Error ? e.message : 'Could not save Inspector. Try again.',
-                );
-              }
-            }}
-          />
-        </div>
-      </div>
+        }
+        mode="create"
+        submitError={submitError}
+        submitLabel="Save Inspector"
+        onCancel={() => exit.leave(goBack)}
+        onSubmit={async (values: CreateTpiMasterInput) => {
+          setSubmitError(null);
+          try {
+            const created = await create.mutateAsync(values);
+            toast.ok(`Inspector ${created.code} saved`);
+            exit.leave(() => void navigate({ to: '/tpi-masters/$id', params: { id: created.id } }));
+          } catch (e) {
+            setSubmitError(e instanceof Error ? e.message : 'Could not save Inspector. Try again.');
+          }
+        }}
+      />
     </div>
   );
 }

@@ -19,7 +19,7 @@ import { fmtDate } from '@/lib/date';
 import { soNoWithInternal } from '@/lib/so-number';
 import { DataTable, renderRowMenuLink } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
-import { Banner } from '@/ui/feedback';
+import { Banner, useToast } from '@/ui/feedback';
 import { useExecutePlan } from '@/modules/plans/api';
 import { soTypeLabel } from '@/modules/sales-orders/lib/so-status-label';
 import { usePlanningSoDetail } from '../api';
@@ -81,6 +81,7 @@ export function OrderDetail({
   // only way on is a Production Order, so the page offers it right here
   // instead of the box just closing (the planner used to go to Production
   // Orders → New and find the plan again).
+  const toast = useToast();
   const [savedPlan, setSavedPlan] = useState<SavedPlanNote | null>(null);
   const { data: eff } = useMyAccess();
   const canProductionOrder = effectiveFormPerms(eff, 'prodorder_create').entry;
@@ -142,6 +143,7 @@ export function OrderDetail({
     setRcNotSent(null);
     try {
       const res = await executePlan.mutateAsync(plan.id);
+      toast.ok(`Job Card / PR created from Plan ${plan.code}`);
       if (res.routeCardSentForApproval === true) setRcStagedCode(plan.code);
       if (res.routeCardNotSentReason) {
         setRcNotSent({ code: plan.code, reason: res.routeCardNotSentReason });
@@ -402,7 +404,7 @@ export function OrderDetail({
           renderLink={renderRowMenuLink}
           rowMenuLabel={(l) => `Actions for line ${l.lineNo}`}
           rowMenu={(line) => planningLineMenu(menuArgs(line))}
-          empty="This order has no lines."
+          empty="No lines yet."
         />
       </div>
 

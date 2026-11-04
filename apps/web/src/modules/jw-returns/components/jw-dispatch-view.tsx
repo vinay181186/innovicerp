@@ -21,6 +21,7 @@ import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
@@ -40,8 +41,11 @@ import { usePrintJwReturn } from './use-print-jw-return';
 // Search deep link). It fills the box AND the debounced term, so the first fetch
 // already carries it; typing afterwards is local and never touches the URL.
 export function JwDispatchView({
+  tabs,
   initialSearch,
 }: {
+  /** The page's tab strip, drawn under this view's header. */
+  tabs?: React.ReactNode;
   initialSearch?: string | undefined;
 }): React.JSX.Element {
   // ADR-232 — the ticks alone, matching the server (jw-returns service):
@@ -112,6 +116,7 @@ export function JwDispatchView({
   return (
     <div>
       <ListHeader
+        orderFilter={<OrderSfFilter sf={sf} field="jwsoCode" kind="jwso" />}
         title="JW Return"
         icon="📦"
         count={total}
@@ -132,7 +137,9 @@ export function JwDispatchView({
             </button>
           ) : null
         }
-      />
+      >
+        {tabs}
+      </ListHeader>
 
       {isError ? (
         <PageState
@@ -205,6 +212,7 @@ export function JwDispatchView({
           title={`History — ${historyTarget.code}`}
           onClose={() => setHistoryTarget(null)}
           size="lg"
+          confirmExit={false}
         >
           <DocumentHistory
             entity="JwReturnChallan"

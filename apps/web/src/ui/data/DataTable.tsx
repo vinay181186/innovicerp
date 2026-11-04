@@ -51,7 +51,14 @@ import type { CSSProperties, ReactElement, ReactNode } from 'react';
 import { useTableDensity } from '@/lib/use-ui-settings';
 
 import { PageState } from '../layout/PageState';
-import { cellTitle, cellValue, cx, defaultRowKey, stopRowClick } from './data-table-cells';
+import {
+  cellTitle,
+  cellValue,
+  cx,
+  defaultRowKey,
+  rowOpenProps,
+  stopRowClick,
+} from './data-table-cells';
 import { headContent, tdClass, thAriaSort, thClass, thStyle } from './data-table-head';
 import type { DataTableColumn, DataTableHeadGroup, DataTableProps } from './data-table-types';
 import { FitDataTable } from './FitDataTable';
@@ -317,8 +324,7 @@ function ClassicDataTable<T>({
                         selected && 'row-selected',
                         !!onRowClick && !clickable && 'dt-row-static',
                       )}
-                      onClick={clickable ? () => onRowClick?.(row, ri) : undefined}
-                      style={clickable ? { cursor: 'pointer' } : undefined}
+                      {...rowOpenProps(clickable, () => onRowClick?.(row, ri))}
                     >
                       {selectable ? (
                         <td className="dt-sel-col" onClick={stopRowClick}>

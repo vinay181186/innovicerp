@@ -45,7 +45,7 @@ import { QuickAddClient } from '@/modules/clients/components/quick-add-client';
 import { useItemsList } from '@/modules/items/api';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
-import { PageHeader, useSaveShortcut } from '@/ui/layout';
+import { FormActions, PageHeader, useSaveShortcut } from '@/ui/layout';
 import { useEnsureJwRmItem } from '../api';
 import { parseJwLineFile } from '../lib/import-export';
 import { JwLineDrawingCell } from './jw-line-drawing-cell';
@@ -239,9 +239,9 @@ type EditMode = {
 export type JobWorkOrderFormProps = CreateMode | EditMode;
 
 /** Create-page pattern (ERPNext gap report 2026-09-26): when the route passes a
- *  `pageTitle`, the form renders the page's sticky PageHeader itself — Back,
- *  title, Cancel and the blue Save top-right — and lays each section on its own
- *  Panel. Without it (a route that still wraps the form in its own panel) the
+ *  `pageTitle`, the form renders the page's PageHeader itself (Back, title) and
+ *  FormActions at the foot (Cancel, the blue Save) and lays each section on its
+ *  own Panel. Without it (a route that still wraps the form in its own panel) the
  *  form keeps the flat sections and the Save row at the foot, so it never
  *  renders a panel inside a panel. */
 type PageHeaderSlot = {
@@ -858,7 +858,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
       .filter((m): m is string => Boolean(m))
       .join(' ') || null;
   const submitForm = handleSubmit(onValid);
-  // Ctrl+S runs the same Save as the header button.
+  // Ctrl+S runs the same Save as the Save button.
   useSaveShortcut(() => void submitForm(), !saveDisabled);
   const cancelButton = props.onCancel ? (
     <button type="button" className="btn btn-ghost" onClick={props.onCancel}>
@@ -868,7 +868,16 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
   // Legacy called this "✓ Save JW" on .btn-success (addJW L12890 / editJW
   // L12926). One Save colour now: blue primary. Same label in both modes.
   const saveButton = (
-    <button type="submit" className="btn btn-primary" disabled={saveDisabled}>
+    <button
+      type="submit"
+      className="btn btn-primary"
+      disabled={saveDisabled}
+      title={
+        clientPoCheck.duplicate
+          ? `Client PO No. already used on ${clientPoCheck.code ?? 'another JWSO'} for this customer`
+          : undefined
+      }
+    >
       {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
       {formState.isSubmitting
         ? 'Saving…'
@@ -878,12 +887,12 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
   const errorBanners = (
     <>
       {lineError ? (
-        <Banner tone="error" role="alert">
+        <Banner tone="error" role="alert" flush={standalone}>
           {lineError}
         </Banner>
       ) : null}
       {props.submitError ? (
-        <Banner tone="error" role="alert">
+        <Banner tone="error" role="alert" flush={standalone}>
           {props.submitError}
         </Banner>
       ) : null}
@@ -893,24 +902,12 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
   return (
     <form onSubmit={submitForm}>
       {standalone ? (
-        <>
-          <PageHeader
-            sticky
-            title={props.pageTitle ?? ''}
-            subtitle={props.pageSubtitle}
-            backLabel={props.backLabel}
-            onBack={props.onBack ?? props.onCancel}
-            dirty={formState.isDirty}
-            actions={
-              <>
-                {cancelButton}
-                {saveButton}
-              </>
-            }
-          />
-          {/* Errors sit under the header, beside the Save that raised them. */}
-          {errorBanners}
-        </>
+        <PageHeader
+          title={props.pageTitle ?? ''}
+          subtitle={props.pageSubtitle}
+          backLabel={props.backLabel}
+          onBack={props.onBack ?? props.onCancel}
+        />
       ) : null}
       {/* Header on the 12-column grid, in reading order: Customer + Customer
           Address, then Client PO, then JWSO No. / dates, GST % and (edit) status, then Remarks.
@@ -949,6 +946,9 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                   className="btn btn-ghost btn-sm"
                   style={{ whiteSpace: 'nowrap' }}
                   disabled={anyLineInUse}
+                  title={
+                    anyLineInUse ? 'Customer is locked — a line of this JWSO is in use' : undefined
+                  }
                   onClick={() => setShowAddClient(true)}
                 >
                   + New
@@ -1337,24 +1337,24 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
             <tr>
               <th style={{ width: '4%' }}>Ln</th>
               <th style={{ width: `${W.code}%` }}>
-                Item Code <span className="req">★</span>
+                Item Code<span className="req">★</span>
               </th>
               <th style={{ width: `${W.name}%` }}>Item Name</th>
               <th
                 style={{ width: '6%', color: 'var(--purple)' }}
                 title="POL — the customer's PO line number"
               >
-                POL <span className="req">★</span>
+                POL<span className="req">★</span>
               </th>
               <th style={{ width: `${W.rm}%` }} title="The customer's raw material for this item">
                 Customer RM
               </th>
               <th style={{ width: '6%' }}>
-                Drawing Rev <span className="req">★</span>
+                Drawing Rev<span className="req">★</span>
               </th>
               <th style={{ width: '6%' }}>UOM</th>
               <th className="th-num" style={{ width: '6%' }}>
-                Order Qty <span className="req">★</span>
+                Order Qty<span className="req">★</span>
               </th>
               {priceVisible ? (
                 <>
@@ -1605,18 +1605,28 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                             </div>
                             <div className="form-grp f-lg" title={inUse ? IN_USE_TITLE : undefined}>
                               <label className="form-label">Assembly BOM</label>
-                              <select
-                                className="innovic-select"
+                              <SearchableSelect
                                 disabled={inUse}
-                                {...register(`lines.${idx}.sourceBomMasterId` as const)}
-                              >
-                                <option value="">— none (plain machining) —</option>
-                                {jwUsableBoms.map((b) => (
-                                  <option key={b.id} value={b.id}>
-                                    {b.bomNo} — {b.bomName}
-                                  </option>
-                                ))}
-                              </select>
+                                value={wl?.sourceBomMasterId || null}
+                                onChange={(id) =>
+                                  setValue(`lines.${idx}.sourceBomMasterId`, id ?? '', {
+                                    shouldDirty: true,
+                                  })
+                                }
+                                options={jwUsableBoms.map((b) => ({
+                                  id: b.id,
+                                  code: b.bomNo,
+                                  name: b.bomName,
+                                }))}
+                                valueLabel={(() => {
+                                  const b = jwUsableBoms.find(
+                                    (x) => x.id === wl?.sourceBomMasterId,
+                                  );
+                                  return b ? `${b.bomNo} — ${b.bomName}` : undefined;
+                                })()}
+                                placeholder="— none (plain machining) —"
+                                clearable
+                              />
                             </div>
                             {/* ADR-236: this line's own note (optional, never locked). */}
                             <div className="form-grp f-full">
@@ -1670,7 +1680,19 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
         </div>
       </div>
 
-      {standalone ? null : (
+      {standalone ? (
+        <FormActions
+          dirty={formState.isDirty}
+          note={
+            lineError || props.submitError ? (
+              <div style={{ display: 'grid', gap: 'var(--sp-1)' }}>{errorBanners}</div>
+            ) : undefined
+          }
+        >
+          {cancelButton}
+          {saveButton}
+        </FormActions>
+      ) : (
         // Route still wraps the form in its own panel (no page header slot):
         // keep the Save row at the foot, blue primary.
         <div style={{ marginTop: 16 }}>

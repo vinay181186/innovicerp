@@ -17,19 +17,17 @@
 // canonical CREATE/EDIT composition, so the ~20 thin `<XForm>` wrappers behind
 // a new+edit route pair can copy it verbatim:
 //
-//   <form> → PageHeader (back · title · Cancel + Save)
+//   <form> → PageHeader (back · title)
 //          → Banner (submit error)
 //          → Panel → FormGrid (12-col) → FormField per field
+//          → FormActions (Cancel + Save, owner 2026-11-04: every Save at the bottom)
 //
 // The route keeps everything that is NOT layout: data hooks, permission
 // gating, the exit guard, navigation. It passes `title` / `backLabel` /
 // `onBack` in and renders nothing of its own around the form.
 //
-// Save/Cancel moved from the old `.modal-footer` at the bottom into the page
-// header (design-ref/README.md "Uniformity rule" — Create/Edit page =
-// section-hdr + Save/Cancel → Panel(FormGrid)). Nothing else about them
-// changed: Save is still this form's only submit button, still disabled while
-// submitting; Cancel still calls the caller's `onCancel` untouched.
+// Save is this form's only submit button, disabled while submitting; Cancel
+// calls the caller's `onCancel` untouched.
 //
 // Field widths are the 12-column `size` prop, chosen by CONTENT TYPE and then
 // upsized (never downsized) so each row sums to 12, per ui/forms/FormGrid:
@@ -65,7 +63,7 @@ import {
   ruleHelp,
   useItemHsnNote,
 } from '@/modules/settings/master-rules-ui';
-import { PageHeader, useSaveShortcut } from '@/ui/layout';
+import { FormActions, PageHeader, useSaveShortcut } from '@/ui/layout';
 import { useNextItemCode } from '../api';
 import { ItemImageField } from './item-image-field';
 
@@ -165,19 +163,12 @@ export function ItemForm(props: ItemFormProps): React.JSX.Element {
   return <EditItemForm {...props} />;
 }
 
-/**
- * The page band both modes share: back link, title, Cancel + Save. Save is a
- * real `type="submit"` inside the `<form>`, so Enter in any field still saves.
- */
+/** The page band both modes share: back link and title; it also owns Ctrl+S. */
 function ItemFormHeader(props: {
   title: string;
   backLabel?: string | undefined;
   onBack?: (() => void) | undefined;
-  onCancel?: (() => void) | undefined;
   isSubmitting: boolean;
-  submitLabel: string;
-  /** Unsaved edits → the "Not saved" pill beside Save. */
-  dirty: boolean;
   /** The page's own <form>, so Ctrl+S runs the same submit as the Save button. */
   formRef: React.RefObject<HTMLFormElement | null>;
 }): React.JSX.Element {
@@ -185,25 +176,32 @@ function ItemFormHeader(props: {
   const runSave = useCallback(() => formRef.current?.requestSubmit(), [formRef]);
   useSaveShortcut(runSave, !props.isSubmitting);
   return (
-    <PageHeader
-      sticky
-      dirty={props.dirty}
-      title={props.title}
-      backLabel={props.backLabel ?? 'Back'}
-      onBack={props.onBack}
-      actions={
-        <>
-          {props.onCancel ? (
-            <Button variant="ghost" onClick={props.onCancel}>
-              Cancel
-            </Button>
-          ) : null}
-          <Button type="submit" variant="primary" loading={props.isSubmitting}>
-            {props.isSubmitting ? 'Saving…' : props.submitLabel}
-          </Button>
-        </>
-      }
-    />
+    <PageHeader title={props.title} backLabel={props.backLabel ?? 'Back'} onBack={props.onBack} />
+  );
+}
+
+/**
+ * The bottom bar both modes share: Cancel + Save. Save is a real `type="submit"`
+ * inside the `<form>`, so Enter in any field still saves.
+ */
+function ItemFormActions(props: {
+  onCancel?: (() => void) | undefined;
+  isSubmitting: boolean;
+  submitLabel: string;
+  /** Unsaved edits → the "Not saved" pill beside Save. */
+  dirty: boolean;
+}): React.JSX.Element {
+  return (
+    <FormActions dirty={props.dirty}>
+      {props.onCancel ? (
+        <Button variant="ghost" onClick={props.onCancel}>
+          Cancel
+        </Button>
+      ) : null}
+      <Button type="submit" variant="primary" loading={props.isSubmitting}>
+        {props.isSubmitting ? 'Saving…' : props.submitLabel}
+      </Button>
+    </FormActions>
   );
 }
 
@@ -273,18 +271,14 @@ function CreateItemForm(props: CreateMode): React.JSX.Element {
         await props.onSubmit(
           withCode.itemType === 'tool' ? { ...withCode, trackSerial: !!trackSerial } : withCode,
         );
-
       })}
     >
       <ItemFormHeader
         title={props.title}
         backLabel={props.backLabel}
         onBack={props.onBack}
-        onCancel={props.onCancel}
         isSubmitting={formState.isSubmitting}
-        dirty={formState.isDirty}
         formRef={formRef}
-        submitLabel="Save Item"
       />
 
       {props.submitError ? (
@@ -327,11 +321,7 @@ function CreateItemForm(props: CreateMode): React.JSX.Element {
             htmlFor="name"
             error={errors.name?.message}
           >
-            <Input
-              id="name"
-              autoComplete="off"
-              {...register('name')}
-            />
+            <Input id="name" autoComplete="off" {...register('name')} />
           </FormField>
 
           <FormField
@@ -340,11 +330,7 @@ function CreateItemForm(props: CreateMode): React.JSX.Element {
             htmlFor="description"
             error={errors.description?.message}
           >
-            <Input
-              id="description"
-              autoComplete="off"
-              {...register('description')}
-            />
+            <Input id="description" autoComplete="off" {...register('description')} />
           </FormField>
 
           <FormField label="Material" size="md" htmlFor="material" error={errors.material?.message}>
@@ -411,6 +397,13 @@ function CreateItemForm(props: CreateMode): React.JSX.Element {
           />
         </FormGrid>
       </Panel>
+
+      <ItemFormActions
+        onCancel={props.onCancel}
+        isSubmitting={formState.isSubmitting}
+        dirty={formState.isDirty}
+        submitLabel="Save Item"
+      />
     </form>
   );
 }
@@ -448,11 +441,8 @@ function EditItemForm(props: EditMode): React.JSX.Element {
         title={props.title}
         backLabel={props.backLabel}
         onBack={props.onBack}
-        onCancel={props.onCancel}
         isSubmitting={formState.isSubmitting}
-        dirty={formState.isDirty}
         formRef={formRef}
-        submitLabel="Save Changes"
       />
 
       {props.submitError ? (
@@ -482,11 +472,7 @@ function EditItemForm(props: EditMode): React.JSX.Element {
             htmlFor="name"
             error={errors.name?.message}
           >
-            <Input
-              id="name"
-              autoComplete="off"
-              {...register('name')}
-            />
+            <Input id="name" autoComplete="off" {...register('name')} />
           </FormField>
 
           <FormField
@@ -495,11 +481,7 @@ function EditItemForm(props: EditMode): React.JSX.Element {
             htmlFor="description"
             error={errors.description?.message}
           >
-            <Input
-              id="description"
-              autoComplete="off"
-              {...register('description')}
-            />
+            <Input id="description" autoComplete="off" {...register('description')} />
           </FormField>
 
           <FormField label="Material" size="md" htmlFor="material" error={errors.material?.message}>
@@ -566,6 +548,13 @@ function EditItemForm(props: EditMode): React.JSX.Element {
           />
         </FormGrid>
       </Panel>
+
+      <ItemFormActions
+        onCancel={props.onCancel}
+        isSubmitting={formState.isSubmitting}
+        dirty={formState.isDirty}
+        submitLabel="Save Changes"
+      />
     </form>
   );
 }

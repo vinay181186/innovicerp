@@ -6,20 +6,25 @@
 // counts ride in the colour legend ("Tight (≤ 2-day buffer) (2)"). There is no
 // filter by bar colour to put them in, and adding one needs the API, so the
 // legend carries them. The Unscheduled count was dropped (not on the grid).
+//
+// Search: the API has no search parameter. The window comes back whole, so the
+// box narrows the machines and bars already loaded. The Gantt itself is a grid
+// of days, not a list, so it stays its own table and not a DataTable.
 
 import { type ProductionScheduleBar, type ProductionScheduleFilter } from '@innovic/shared';
 import { fmtOpSrNo, opSrNo } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
-import { Loader2 } from 'lucide-react';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { z } from 'zod';
+import { matchesSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate, todayIst } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { Banner } from '@/ui/feedback';
+import { Panel } from '@/ui/data';
+import { Banner, useToast } from '@/ui/feedback';
 import { Select } from '@/ui/forms';
-import { ListHeader } from '@/ui/layout';
+import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useProductionSchedule, useRescheduleJcOp } from '../api';
 
 const COL_WIDTH = 48; // px per day
@@ -90,6 +95,38 @@ function ProductionSchedulePage(): React.JSX.Element {
 
   const { data, isLoading, isError, error } = useProductionSchedule({ startDate, filter });
   const rescheduleMut = useRescheduleJcOp();
+  const toast = useToast();
+  const [term, setTerm] = useState('');
+
+  // A machine that matches keeps every bar; otherwise only its matching bars,
+  // and a machine with none left drops out of the grid.
+  const machines = useMemo(
+    () =>
+      (data?.machines ?? [])
+        .map((m) =>
+          matchesSearchTerm([m.machineCode, m.machineName, m.machineType], term)
+            ? m
+            : {
+                ...m,
+                bars: m.bars.filter((b) =>
+                  matchesSearchTerm(
+                    [
+                      b.jcCode,
+                      b.operation,
+                      b.itemCode,
+                      b.itemRevision,
+                      b.itemName,
+                      b.clientPoLineNo,
+                    ],
+                    term,
+                  ),
+                ),
+              },
+        )
+        .filter((m) => !term.trim() || m.bars.length > 0),
+    [data?.machines, term],
+  );
+  const shownOps = machines.reduce((n, m) => n + m.bars.length, 0);
 
   const days = useMemo(() => {
     const out: Array<{
@@ -138,11 +175,18 @@ function ProductionSchedulePage(): React.JSX.Element {
     e.preventDefault();
     const id = e.dataTransfer.getData('text/jc-op-id');
     if (!id) return;
-    rescheduleMut.mutate({ jcOpId: id, input: { machineId, plannedStart: iso } });
+    rescheduleMut.mutate(
+      { jcOpId: id, input: { machineId, plannedStart: iso } },
+      {
+        onSuccess: () => {
+          toast.ok('Operation rescheduled');
+        },
+      },
+    );
   };
 
   return (
-    <div>
+    <div className="page-fill">
       {/* The one header band: title · op count … the window's date controls;
           the filter bar carries the Show dropdown (it replaced the row of
           Show buttons — owner's filter-bar decision 2026-09-26) and Clear. */}
@@ -151,6 +195,9 @@ function ProductionSchedulePage(): React.JSX.Element {
         icon="📅"
         count={isLoading ? undefined : stats.total}
         noun="op"
+        search={term}
+        onSearch={setTerm}
+        searchPlaceholder="Search machine, JC No., operation, item, POL…"
         filterNote={filter === 'all' ? undefined : FILTER_BTNS.find(([f]) => f === filter)?.[1]}
         filters={
           <Select
@@ -228,30 +275,24 @@ function ProductionSchedulePage(): React.JSX.Element {
 
       {/* Gantt grid */}
       {isLoading ? (
-        <div className="panel">
-          <div className="panel-body">
-            <div className="text3" style={{ fontSize: 12 }}>
-              <Loader2 size={14} className="inline animate-spin" /> Loading…
-            </div>
-          </div>
-        </div>
+        <PageState state="loading" />
       ) : isError ? (
-        <div className="panel">
-          <div className="panel-body">
-            <div className="empty-state" style={{ color: 'var(--red2)' }}>
-              {error instanceof Error
-                ? error.message
-                : 'Could not load production schedule. Try again.'}
-            </div>
-          </div>
-        </div>
-      ) : !data || data.machines.length === 0 ? (
-        <div className="panel empty-state">
-          <div style={{ fontWeight: 700 }}>No operations match.</div>
-        </div>
+        <PageState
+          state="error"
+          message={
+            error instanceof Error
+              ? error.message
+              : 'Could not load production schedule. Try again.'
+          }
+        />
+      ) : machines.length === 0 ? (
+        <PageState
+          state="empty"
+          message={filter !== 'all' || term.trim() ? 'No operations match.' : 'No operations yet.'}
+        />
       ) : (
-        <>
-          <div className="panel" style={{ padding: 0, overflow: 'auto', maxHeight: 600 }}>
+        <Panel fill bodyPadding="none">
+          <div className="tbl-wrap">
             <table
               style={{
                 borderCollapse: 'collapse',
@@ -312,7 +353,7 @@ function ProductionSchedulePage(): React.JSX.Element {
                 </tr>
               </thead>
               <tbody>
-                {data.machines.map((m) => (
+                {machines.map((m) => (
                   <tr key={m.machineId}>
                     <td
                       style={{
@@ -367,8 +408,9 @@ function ProductionSchedulePage(): React.JSX.Element {
               </tbody>
             </table>
           </div>
-        </>
+        </Panel>
       )}
+      {isLoading || isError ? null : <ListFooter total={stats.total} shown={shownOps} noun="op" />}
     </div>
   );
 }

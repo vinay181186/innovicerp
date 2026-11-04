@@ -345,7 +345,7 @@ function OpRow({
             className="btn btn-ghost btn-sm btn-icon"
             disabled={isFirst}
             onClick={() => onMove(idx, -1)}
-            title="Move up"
+            title={isFirst ? 'Already the first operation' : 'Move up'}
             aria-label={`Move operation ${sr} up`}
           >
             ▲
@@ -355,7 +355,7 @@ function OpRow({
             className="btn btn-ghost btn-sm btn-icon"
             disabled={isLast}
             onClick={() => onMove(idx, 1)}
-            title="Move down"
+            title={isLast ? 'Already the last operation' : 'Move down'}
             aria-label={`Move operation ${sr} down`}
           >
             ▼

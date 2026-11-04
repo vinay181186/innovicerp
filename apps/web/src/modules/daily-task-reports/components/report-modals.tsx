@@ -16,6 +16,7 @@ import { fmtDate, todayIst } from '@/lib/date';
 // sure you want to exit?" instead of silently dropping typed task lines.
 import { Overlay } from '@/modules/tasks/components/task-overlay';
 import { useCreateDailyReport, useDailyReportDetail, useUpdateDailyReport } from '../api';
+import { useToast } from '@/ui/feedback';
 
 function todayStr(): string {
   return todayIst();
@@ -223,6 +224,7 @@ function ReportEditor({
                       className="btn btn-danger btn-sm"
                       style={{ fontSize: 12 }}
                       disabled={lines.length === 1}
+                      title={lines.length === 1 ? 'A report needs at least one line' : undefined}
                       onClick={() => setLines((ls) => ls.filter((_, idx) => idx !== i))}
                     >
                       ×
@@ -259,6 +261,7 @@ function ReportEditor({
 
 export function NewReportModal({ onClose }: { onClose: () => void }): React.JSX.Element {
   const create = useCreateDailyReport();
+  const toast = useToast();
   return (
     <Overlay title="New Daily Report" onClose={onClose} wide guard>
       <ReportEditor
@@ -270,6 +273,7 @@ export function NewReportModal({ onClose }: { onClose: () => void }): React.JSX.
         onCancel={onClose}
         onSubmit={async (input) => {
           await create.mutateAsync(input);
+          toast.ok('Daily Report saved');
           onClose();
         }}
       />
@@ -286,6 +290,7 @@ export function EditReportModal({
 }): React.JSX.Element {
   const { data, isLoading } = useDailyReportDetail(id);
   const update = useUpdateDailyReport(id);
+  const toast = useToast();
   return (
     <Overlay title="Edit Daily Report" onClose={onClose} wide guard>
       {isLoading || !data ? (
@@ -306,6 +311,7 @@ export function EditReportModal({
           onCancel={onClose}
           onSubmit={async (input) => {
             await update.mutateAsync(input);
+            toast.ok('Daily Report saved');
             onClose();
           }}
         />

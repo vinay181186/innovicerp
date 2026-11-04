@@ -1,30 +1,10 @@
-// Client detail page (UI-003-03). Group-4 migration onto the primitives,
-// following the approved DETAIL exemplar (modules/vendors/routes/detail.tsx):
+// Client detail page (UI-003-03).
 //
-//   ← Back to Client Master
-//   DetailHeader (code + Active chip + Edit/Delete)  →  ReadGrid of ReadFields
+//   ← Back to Customer Master
+//   DetailHeader (code + Active chip + Edit/Delete) → ClusterGrid facts
+//   Related documents + History tabs, as on Sales Order detail
 //
-// A client has no line table and no related-document query, so the
-// composition stops at the header panel — same as the vendor, its sibling
-// master. What changed is markup only: the hand-rolled panel-hdr, the inline
-// "Delete? [Confirm][Cancel]" button swap, the hand-styled red error box and
-// the local Pair()/DetailGrid() helpers are gone. The route, the query hooks,
-// the `client_create` permission expression and the soft-delete call are
-// untouched.
-//
-// FIELD SIZES — ReadGrid is the same 12-column grid as the edit form's
-// FormGrid, and each ReadField carries the size that field will have in
-// client-form.tsx once that form is migrated. Keep the two in step:
-//
-//   Contact person lg · Email lg                        → 6 + 6  = 12
-//   Phone md · GSTIN md · GST Category md               → 4+4+4  = 12
-//   City lg · State md · Pincode xs                     → 6+4+2  = 12
-//   Payment Days xs (ADR-188)                           → 2, row closes
-//   Address full                                        → 12
-//
-// The address row is deliberately identical to the vendor's. GST Category
-// (plan v3 Step 2) closes the Phone · GSTIN row at md · md · md; State shows
-// "Name (code)" from the State Code, else an old record's free text.
+// State shows "Name (code)" from the State Code, else an old record's free text.
 
 import {
   type Client,
@@ -35,8 +15,8 @@ import {
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { DocumentHistory } from '@/components/shared/document-history';
-import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
+import { useHistoryTab } from '@/components/shared/document-history';
+import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
 import { undecidedChangesOf, usePendingEditForDoc } from '@/modules/document-edits/api';
 import {
   PendingChangeChip,
@@ -44,8 +24,9 @@ import {
 } from '@/modules/document-edits/components/pending-change-chip';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Button, Icon, StatusBadge } from '@/ui/core';
-import { Panel } from '@/ui/data';
-import { DetailHeader, PageState, ReadField, ReadGrid } from '@/ui/layout';
+import { Cluster, ClusterGrid } from '@/ui/forms';
+import { PendingFact } from '@/modules/document-edits/components/pending-fact';
+import { DetailHeader, PageState } from '@/ui/layout';
 import { useClient, useSoftDeleteClient } from '../api';
 import { TrashReasonDialog } from '@/modules/items/components/trash-reason-dialog';
 
@@ -82,6 +63,8 @@ function ClientDetailPage(): React.JSX.Element {
   // record fields below. Flattened across requests (usually one).
   const pendingEdit = usePendingEditForDoc('Client', client?.id);
   const pendingChanges = undecidedChangesOf(pendingEdit.data?.rows);
+  // ADR-197 — who created / edited / deleted this customer, with Before → After.
+  const historyTab = useHistoryTab({ entity: 'Client', entityId: client?.id, refId: client?.code });
 
   // "Hide page" (Access Control → Config): once access has loaded, a user
   // whose VIEW was removed for this page sees the no-access panel, not the
@@ -164,14 +147,8 @@ function ClientDetailPage(): React.JSX.Element {
         <ClientFacts client={client} pendingChanges={pendingChanges} />
       </DetailHeader>
 
-      {/* Sales Orders, dispatches and outstanding invoices for this customer
-          (ADR-190). Hides when empty. */}
-      <RelatedDocsPanel module="clients" id={client.id} />
-
-      {/* ADR-197 — who created / edited / deleted this customer, with Before → After. */}
-      <Panel title="History" bodyPadding="none">
-        <DocumentHistory entity="Client" entityId={client.id} refId={client.code} />
-      </Panel>
+      {/* Sales Orders, dispatches and outstanding invoices (ADR-190) + History. */}
+      <RelatedDocsTabs module="clients" id={client.id} extraTabs={[historyTab]} />
 
       {confirmDelete ? (
         <TrashReasonDialog
@@ -190,54 +167,53 @@ function ClientFacts(props: {
 }): React.JSX.Element {
   const { client, pendingChanges: pc } = props;
   return (
-    <ReadGrid>
+    <ClusterGrid stack>
       {/* Same order as the Customer form: the address block, then contact. */}
-      <ReadField
-        label="Address"
-        size="full"
-        pre
-        value={readWithChip(client.addressLine1, pc, 'addressLine1')}
-      />
-
-      <ReadField label="City" size="lg" value={readWithChip(client.city, pc, 'city')} />
-      <ReadField
-        label="State"
-        size="md"
-        value={readWithChip(stateLabel(client.stateCode) || client.state, pc, 'stateCode', 'state')}
-      />
-      <ReadField
-        label="Pincode"
-        size="xs"
-        mono
-        value={readWithChip(client.pincode, pc, 'pincode')}
-      />
-
-      <ReadField
-        label="Contact Person"
-        size="lg"
-        value={readWithChip(client.contactPerson, pc, 'contactPerson')}
-      />
-      <ReadField label="Email" size="lg" value={readWithChip(client.email, pc, 'email')} />
-
-      <ReadField label="Phone" size="md" mono value={readWithChip(client.phone, pc, 'phone')} />
-      <ReadField
-        label="GSTIN"
-        size="md"
-        mono
-        value={readWithChip(client.gstNumber, pc, 'gstNumber')}
-      />
-      <ReadField
-        label="GST Category"
-        size="md"
-        value={readWithChip(gstCategoryLabel(client.gstCategory), pc, 'gstCategory')}
-      />
-      <ReadField
-        label="Payment Days"
-        size="xs"
-        mono
-        value={readWithChip(client.paymentDays ?? null, pc, 'paymentDays')}
-      />
-    </ReadGrid>
+      <Cluster name="Address">
+        <PendingFact
+          wrap
+          label="Address"
+          value={client.addressLine1}
+          changes={pc}
+          field="addressLine1"
+        />
+        <PendingFact label="City" value={client.city} changes={pc} field="city" />
+        <PendingFact
+          label="State"
+          value={stateLabel(client.stateCode) || client.state}
+          changes={pc}
+          field={['stateCode', 'state']}
+        />
+        <PendingFact num label="Pincode" value={client.pincode} changes={pc} field="pincode" />
+      </Cluster>
+      <Cluster name="Contact">
+        <PendingFact
+          label="Contact Person"
+          value={client.contactPerson}
+          changes={pc}
+          field="contactPerson"
+        />
+        <PendingFact span={2} label="Email" value={client.email} changes={pc} field="email" />
+        <PendingFact num label="Phone" value={client.phone} changes={pc} field="phone" />
+      </Cluster>
+      <Cluster name="Tax & terms">
+        <PendingFact num label="GSTIN" value={client.gstNumber} changes={pc} field="gstNumber" />
+        <PendingFact
+          label="GST Category"
+          value={gstCategoryLabel(client.gstCategory)}
+          changes={pc}
+          field="gstCategory"
+        />
+        <PendingFact
+          span={2}
+          num
+          label="Payment Days"
+          value={client.paymentDays ?? null}
+          changes={pc}
+          field="paymentDays"
+        />
+      </Cluster>
+    </ClusterGrid>
   );
 }
 
@@ -252,9 +228,9 @@ function Chip(props: {
   return c ? <PendingChangeChip after={c.after} /> : null;
 }
 
-/** Compose a ReadField value with its pending-change chip. When no edit is
- *  staged for any of `fields`, the value is returned untouched so ReadField's
- *  own empty handling (em dash in --text3) still applies. When one is, the
+/** Compose a header value with its pending-change chip. When no edit is
+ *  staged for any of `fields`, the value is returned untouched (blank stays blank).
+ *  When one is, the
  *  current value (or an em dash) is shown with the amber "→ after" chip after
  *  it. `fields` takes more than one key for a value fed by two columns (State
  *  shows the State Code's label, so it watches both stateCode and state). */

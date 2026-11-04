@@ -22,7 +22,7 @@ import { INNOVIC_LOGO_DATA_URI } from '@/lib/print/letterhead-logo';
 import type { SheetField } from '@/lib/print/sheet-print';
 import { statusText } from '@/lib/status-text';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { ConfirmDialog } from '@/ui/feedback';
+import { ConfirmDialog, useToast } from '@/ui/feedback';
 import { usePrintTemplates, useRestorePrintTemplateDefault, useSavePrintTemplate } from '../api';
 import { RevisionsModal } from '../components/revisions-modal';
 import {
@@ -115,6 +115,7 @@ function PrintTemplatesPage(): React.JSX.Element {
   const { data, isLoading, isError } = usePrintTemplates({ enabled: canOpen });
   const save = useSavePrintTemplate();
   const restore = useRestorePrintTemplateDefault();
+  const toast = useToast();
 
   const allTemplates = useMemo(() => data?.items ?? [], [data]);
   const docTemplates = useMemo(
@@ -190,7 +191,15 @@ function PrintTemplatesPage(): React.JSX.Element {
   }
   function doSave(): void {
     if (!editingKey) return;
-    save.mutate({ key: editingKey, content: draft }, { onSuccess: () => cancelEdit() });
+    save.mutate(
+      { key: editingKey, content: draft },
+      {
+        onSuccess: () => {
+          toast.ok('Print template saved');
+          cancelEdit();
+        },
+      },
+    );
   }
   function commitSave(): void {
     if (!editingKey) return;
@@ -211,7 +220,12 @@ function PrintTemplatesPage(): React.JSX.Element {
     setAsking({
       title: 'Reset this block to the factory default?',
       confirmLabel: 'Reset',
-      run: () => restore.mutate(key),
+      run: () =>
+        restore.mutate(key, {
+          onSuccess: () => {
+            toast.ok('Print template reset to the factory default');
+          },
+        }),
     });
   }
   function insertVar(v: string): void {
@@ -501,8 +515,15 @@ function PrintTemplatesPage(): React.JSX.Element {
             // be clicked while the templates were still in flight and printed a
             // sample document with every editable block blank.
             disabled={isLoading || allTemplates.length === 0}
+            title={
+              isLoading
+                ? 'Templates are still loading'
+                : allTemplates.length === 0
+                  ? 'No templates to print'
+                  : undefined
+            }
             onClick={() => {
-              if (!openTestPrint(doc, allTemplates)) window.alert('Allow popups to print.');
+              if (!openTestPrint(doc, allTemplates)) toast.error('Allow popups to print.');
             }}
           >
             <Printer size={13} /> Test Print

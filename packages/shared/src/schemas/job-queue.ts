@@ -74,6 +74,8 @@ export const jobQueueMachineSchema = z.object({
 export type JobQueueMachine = z.infer<typeof jobQueueMachineSchema>;
 
 export const jobQueueQuerySchema = z.object({
+  /** One order's rows only: the bare SO / JWSO No. picked in the order dropdown (ADR-267). */
+  orderCode: z.string().trim().max(40).optional(),
   /** Without `limit`: only this machine is returned (unchanged). With `limit`
    *  (paged mode): only this machine's ROWS are paged, while every machine's
    *  summary (pendingCount / pendingHrs / runningCount) is still returned for

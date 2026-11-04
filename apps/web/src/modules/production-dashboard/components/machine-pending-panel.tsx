@@ -177,10 +177,13 @@ export function MachinePendingPanel({
   grouped,
   machineCount,
   isLoading,
+  filtered = false,
 }: {
   grouped: PendingGroups;
   machineCount: number;
   isLoading: boolean;
+  /** An SO is picked: nothing on screen means nothing for that SO, not an empty board. */
+  filtered?: boolean;
 }): React.JSX.Element {
   const { rows, idle } = grouped;
   return (
@@ -206,7 +209,13 @@ export function MachinePendingPanel({
           rows={rows}
           rowKey={(r) => `${r.machine.machineId}:${r.op.jcOpId}`}
           loading={isLoading && machineCount === 0}
-          emptyText={machineCount === 0 ? 'No Machines yet.' : 'No pending work on any machine.'}
+          emptyText={
+            filtered
+              ? 'No pending work for this order.'
+              : machineCount === 0
+                ? 'No Machines yet.'
+                : 'No pending work on any machine.'
+          }
           groupRow={(r, _i, prev) =>
             prev && prev.machine.machineId === r.machine.machineId ? null : (
               <MachineHeading row={r} />

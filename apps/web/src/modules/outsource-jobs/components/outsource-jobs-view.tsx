@@ -29,6 +29,7 @@ import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
 import { useDebounce } from '@/lib/use-debounce';
 import { usePurchaseRequestsList } from '@/modules/purchase-requests/api';
 import { usePrSelection } from '@/modules/purchase-requests/lib/use-pr-selection';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { DataTable, Panel } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
@@ -50,7 +51,7 @@ const COUNT_ALL: ListPurchaseRequestsQuery = { prType: 'jw_osp', limit: 1, offse
 const COUNT_OPEN: ListPurchaseRequestsQuery = { ...COUNT_ALL, orderBand: 'open' };
 const COUNT_ORDERED: ListPurchaseRequestsQuery = { ...COUNT_ALL, orderBand: 'ordered' };
 
-export function OutsourceJobsView(): React.JSX.Element {
+export function OutsourceJobsView({ tabs }: { tabs?: React.ReactNode }): React.JSX.Element {
   const [jcNo, setJcNo] = useState<string | undefined>(undefined);
   const [statusBand, setStatusBand] = useState<Band | undefined>(undefined);
   const [searchText, setSearchText] = useState('');
@@ -116,6 +117,7 @@ export function OutsourceJobsView(): React.JSX.Element {
   return (
     <div>
       <ListHeader
+        orderFilter={<OrderSfFilter sf={sf} field="soCode" />}
         title="Outsource Jobs"
         icon="📦"
         count={data?.total}
@@ -158,7 +160,9 @@ export function OutsourceJobsView(): React.JSX.Element {
           sf.clearFilters();
         }}
         filtersActive={filtering || sf.filtering}
-      />
+      >
+        {tabs}
+      </ListHeader>
 
       {isError ? (
         <PageState

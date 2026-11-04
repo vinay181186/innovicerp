@@ -3,6 +3,7 @@
 // crosses the 400-line ceiling. Behaviour and markup are unchanged.
 
 import { Loader2 } from 'lucide-react';
+import { Modal as SharedModal } from '@/ui/feedback';
 
 /** Design Active / In Review = under way (amber); Released = done (green);
  *  On Hold = waiting (grey). Badge classes only. */
@@ -53,43 +54,27 @@ export function Badge({ value }: { value: string; kind?: 'status' }): React.JSX.
 export function Modal({
   onClose,
   title,
+  footer,
+  confirmExit = true,
   children,
 }: {
   onClose: () => void;
   title: string;
+  footer: React.ReactNode;
+  /** Off once there is nothing unsaved to lose (a posted comment). */
+  confirmExit?: boolean;
   children: React.ReactNode;
 }): React.JSX.Element {
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 100,
-      }}
-      onClick={onClose}
+    <SharedModal
+      title={title}
+      onClose={onClose}
+      footer={footer}
+      maxWidth="min(1100px, 96vw)"
+      confirmExit={confirmExit}
     >
-      <div
-        style={{
-          background: 'var(--bg)',
-          border: '1px solid var(--border)',
-          borderRadius: 8,
-          padding: 20,
-          width: 'min(1100px, 96vw)',
-          maxHeight: '90vh',
-          overflowY: 'auto',
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="section-hdr" style={{ marginBottom: 14 }}>
-          {title}
-        </div>
-        {children}
-      </div>
-    </div>
+      {children}
+    </SharedModal>
   );
 }
 
@@ -97,7 +82,7 @@ export function Field({
   label,
   children,
 }: {
-  label: string;
+  label: React.ReactNode;
   children: React.ReactNode;
 }): React.JSX.Element {
   return (
@@ -128,7 +113,7 @@ export function Actions({
   label: string;
 }): React.JSX.Element {
   return (
-    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+    <>
       <button type="button" className="btn btn-ghost" onClick={onClose}>
         Cancel
       </button>
@@ -141,7 +126,7 @@ export function Actions({
           label
         )}
       </button>
-    </div>
+    </>
   );
 }
 

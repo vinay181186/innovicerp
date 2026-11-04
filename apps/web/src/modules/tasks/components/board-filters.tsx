@@ -1,5 +1,4 @@
-// Task Board chrome above the table (ADR-176): the tab strip (Inbox / Outbox /
-// My To-Do / All Tasks) and the filter selects (Status + Priority +
+// Task Board chrome above the table (ADR-176): the filter selects (Status + Priority +
 // Person + Due Date; All Tasks adds Assigned By + Department; search is the board ListHeader's). Presentational —
 // the board route owns every value and hands the setters down. The Status and
 // Due Date options carry the view's counts ("To Do (4)", "Overdue (2)") — they
@@ -14,7 +13,8 @@ import type {
   TaskUserOption,
   TaskView,
 } from '@innovic/shared';
-import { TASK_PRIORITIES, TASK_PRIORITY_LABELS, TASK_VIEW_LABELS } from '@innovic/shared';
+import { TASK_PRIORITIES, TASK_PRIORITY_LABELS } from '@innovic/shared';
+import { SearchableSelect } from '@/ui/forms';
 import { PERSON_LABEL } from './task-table';
 
 const STATUS_OPTIONS: { value: TaskStatus | ''; label: string }[] = [
@@ -37,95 +37,8 @@ function withCount(label: string, n: number | undefined): string {
   return n == null ? label : `${label} (${n})`;
 }
 
-/** One tab's look — shared by the task views and the extra (Day Log) tabs. */
-function tabStyle(active: boolean, last: boolean): React.CSSProperties {
-  return {
-    background: active ? 'var(--blue3)' : 'transparent',
-    border: 'none',
-    borderRight: last ? 'none' : '1px solid var(--border)',
-    borderBottom: `3px solid ${active ? 'var(--blue)' : 'transparent'}`,
-    padding: '10px 20px',
-    cursor: 'pointer',
-    fontSize: 13,
-    fontWeight: active ? 700 : 600,
-    color: active ? 'var(--blue)' : 'var(--text2)',
-    font: 'inherit',
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 6,
-  };
-}
-
-export function TaskTabs({
-  tabs,
-  view,
-  countOf,
-  onChange,
-  extra = [],
-  onExtra,
-}: {
-  tabs: TaskView[];
-  /** The active tab: a task view, or one of `extra`'s keys. */
-  view: string;
-  countOf: (v: TaskView) => number | null;
-  onChange: (v: TaskView) => void;
-  /** Tabs after the task views that are not task views (My Day Log, Team
-   *  Day Logs) — no count badge. */
-  extra?: { key: string; label: string }[];
-  onExtra?: (key: string) => void;
-}): React.JSX.Element {
-  return (
-    <div
-      role="tablist"
-      className="panel"
-      style={{
-        display: 'flex',
-        flexWrap: 'wrap',
-        marginBottom: 10,
-        borderRadius: 'var(--radius2) var(--radius2) 0 0',
-      }}
-    >
-      {tabs.map((v, i) => {
-        const active = v === view;
-        const n = countOf(v);
-        return (
-          <button
-            key={v}
-            type="button"
-            role="tab"
-            aria-selected={active}
-            onClick={() => onChange(v)}
-            style={tabStyle(active, i === tabs.length - 1 && extra.length === 0)}
-          >
-            {TASK_VIEW_LABELS[v]}
-            {n != null ? (
-              <span className="badge b-blue" style={{ borderRadius: 10, padding: '1px 7px' }}>
-                {n}
-              </span>
-            ) : null}
-            {v === 'all' ? (
-              <small className="text3" style={{ fontWeight: 400 }}>
-                (Admin)
-              </small>
-            ) : null}
-          </button>
-        );
-      })}
-      {extra.map((t, i) => (
-        <button
-          key={t.key}
-          type="button"
-          role="tab"
-          aria-selected={t.key === view}
-          onClick={() => onExtra?.(t.key)}
-          style={tabStyle(t.key === view, i === extra.length - 1)}
-        >
-          {t.label}
-        </button>
-      ))}
-    </div>
-  );
-}
+/** The filter bar sizes native selects itself; a picker's box carries its own. */
+const FILTER_PICKER: React.CSSProperties = { minWidth: 170 };
 
 export interface BoardFilterValues {
   searchInput: string;
@@ -163,11 +76,8 @@ export function TaskFilters({
   onDept: (v: string) => void;
   onDue: (v: TaskDueFilter | '') => void;
 }): React.JSX.Element {
-  const userOptions = users.map((u) => (
-    <option key={u.id} value={u.id}>
-      {u.name}
-    </option>
-  ));
+  const userOptions = users.map((u) => ({ id: u.id, name: u.name }));
+  const userName = (id: string): string | undefined => users.find((u) => u.id === id)?.name;
   // The filter selects only — they sit in the board ListHeader's filter bar,
   // after the header's own search box (which owns the search term). The bar
   // sizes every select, so none carries a width of its own.
@@ -203,25 +113,29 @@ export function TaskFilters({
         ))}
       </select>
       {view !== 'todo' ? (
-        <select
-          className="innovic-select"
-          value={values.person}
-          onChange={(e) => onPerson(e.target.value)}
-        >
-          <option value="">{PERSON_LABEL[view]}: All</option>
-          {userOptions}
-        </select>
+        <SearchableSelect
+          style={FILTER_PICKER}
+          ariaLabel={PERSON_LABEL[view]}
+          value={values.person || null}
+          valueLabel={userName(values.person)}
+          onChange={(id) => onPerson(id ?? '')}
+          options={userOptions}
+          placeholder={`${PERSON_LABEL[view]}: All`}
+          clearable
+        />
       ) : null}
       {view === 'all' ? (
         <>
-          <select
-            className="innovic-select"
-            value={values.assignedBy}
-            onChange={(e) => onAssignedBy(e.target.value)}
-          >
-            <option value="">Assigned By: All</option>
-            {userOptions}
-          </select>
+          <SearchableSelect
+            style={FILTER_PICKER}
+            ariaLabel="Assigned By"
+            value={values.assignedBy || null}
+            valueLabel={userName(values.assignedBy)}
+            onChange={(id) => onAssignedBy(id ?? '')}
+            options={userOptions}
+            placeholder="Assigned By: All"
+            clearable
+          />
           <select
             className="innovic-select"
             value={values.dept}

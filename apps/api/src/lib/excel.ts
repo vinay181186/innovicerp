@@ -9,7 +9,7 @@
 // by the caller via reply.type().
 
 import ExcelJS from 'exceljs';
-import { fmtDateTime } from './format-date';
+import { excelDateValue, fmtDate, fmtDateTime, isIsoDateLike } from './format-date';
 
 export interface ExcelColumn {
   key: string;
@@ -44,6 +44,17 @@ export interface BuildWorkbookInput {
   generatedAt: string;
 }
 
+// Real Excel date cells so a date column sorts as dates (owner 2026-11-03).
+const DATE_CELL_FORMAT = 'dd-mm-yyyy';
+const DATETIME_CELL_FORMAT = 'dd-mm-yyyy hh:mm AM/PM';
+/** Wide enough for `03-11-2026 02:35 PM`; a narrower column shows #####. */
+const DATETIME_MIN_WIDTH = 20;
+
+/** A text cell holding a date reads like every other date: 03-11-2026. */
+function dateText(s: string): string {
+  return isIsoDateLike(s) ? fmtDate(s) : s;
+}
+
 // Screen words for the summary aggregate (wording clean-up 2026-09-26).
 // Display only — the stored function codes (SUM, AVG …) are unchanged.
 const AGG_FUNCTION_LABELS: Record<string, string> = {
@@ -75,7 +86,13 @@ export async function buildWorkbookBuffer(input: BuildWorkbookInput): Promise<Bu
   data.columns = input.columns.map((c) => ({
     header: c.label,
     key: c.key,
-    width: c.type === 'number' ? 14 : Math.max(12, Math.min(30, c.label.length + 6)),
+    width:
+      c.type === 'number'
+        ? 14
+        : Math.max(
+            c.type === 'datetime' ? DATETIME_MIN_WIDTH : 12,
+            Math.min(30, c.label.length + 6),
+          ),
   }));
   data.getRow(1).font = { bold: true };
 
@@ -84,8 +101,14 @@ export async function buildWorkbookBuffer(input: BuildWorkbookInput): Promise<Bu
       Object.fromEntries(
         input.columns.map((c) => {
           const v = r[c.key];
-          if (v === null || v === undefined) return [c.key, ''];
+          // A date column's blank is a truly empty cell: text would sort above every date.
+          if (v === null || v === undefined || v === '') {
+            return [c.key, c.type === 'date' || c.type === 'datetime' ? null : ''];
+          }
           if (c.type === 'number') return [c.key, Number(v)];
+          if (c.type === 'date' || c.type === 'datetime') {
+            return [c.key, excelDateValue(String(v), c.type === 'datetime') ?? v];
+          }
           return [c.key, v];
         }),
       ),
@@ -115,6 +138,8 @@ export async function buildWorkbookBuffer(input: BuildWorkbookInput): Promise<Bu
       const col = data.getColumn(i + 1);
       col.alignment = { horizontal: 'right' };
       col.numFmt = '#,##0.00';
+    } else if (c.type === 'date' || c.type === 'datetime') {
+      data.getColumn(i + 1).numFmt = c.type === 'date' ? DATE_CELL_FORMAT : DATETIME_CELL_FORMAT;
     }
   });
 
@@ -134,7 +159,7 @@ export async function buildWorkbookBuffer(input: BuildWorkbookInput): Promise<Bu
     for (const s of input.summary) {
       const aggValue = s.aggregate != null ? Number(s.aggregate) : null;
       summary.addRow({
-        group: s.group,
+        group: dateText(s.group),
         count: s.count,
         ...(aggLabel ? { aggregate: aggValue ?? 0 } : {}),
       });
@@ -180,7 +205,7 @@ export async function buildWorkbookBuffer(input: BuildWorkbookInput): Promise<Bu
   info.addRow({ k: 'Filters', v: '' });
   if (input.filters && Object.keys(input.filters).length > 0) {
     for (const [k, v] of Object.entries(input.filters)) {
-      info.addRow({ k, v });
+      info.addRow({ k, v: dateText(v) });
     }
   } else {
     info.addRow({ k: '(none)', v: '' });

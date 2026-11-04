@@ -14,6 +14,7 @@ export const dailyReportKeys = {
       ...dailyReportKeys.all,
       q.date,
       q.machineId ?? null,
+      q.orderCode ?? null,
       q.limit ?? null,
       q.offset ?? null,
     ] as const,
@@ -23,6 +24,7 @@ function buildQs(q: DailyReportQuery): string {
   const p = new URLSearchParams();
   p.set('date', q.date);
   if (q.machineId) p.set('machineId', q.machineId);
+  if (q.orderCode) p.set('orderCode', q.orderCode);
   if (q.limit != null) p.set('limit', String(q.limit));
   if (q.offset != null) p.set('offset', String(q.offset));
   return p.toString();
@@ -38,7 +40,7 @@ export function dailyGroupKey(g: DailyReportMachineGroup): string {
  * printed report, which must never hold just the 25 rows on screen.
  */
 export async function fetchFullDailyReport(
-  q: Pick<DailyReportQuery, 'date' | 'machineId'>,
+  q: Pick<DailyReportQuery, 'date' | 'machineId' | 'orderCode'>,
 ): Promise<DailyReportResponse> {
   let last: DailyReportResponse | null = null;
   const tagged = await fetchAllPages(async (limit, offset) => {

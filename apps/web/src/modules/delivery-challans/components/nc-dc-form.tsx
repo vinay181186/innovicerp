@@ -24,7 +24,7 @@ import { useSaveKey } from '@/lib/use-save-key';
 import { ncRegisterKeys, useCreateNcDcBatch } from '@/modules/nc-register/api';
 import { DataTable, type DataTableColumn } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
-import { Banner } from '@/ui/feedback';
+import { Banner, useToast } from '@/ui/feedback';
 import { FormField, FormGrid } from '@/ui/forms';
 import { deliveryChallansKeys } from '../api';
 import { type DcSaveCtl, useReportSave } from '../lib/dc-save-ctl';
@@ -114,6 +114,7 @@ export function NcDcFormBody({
   // R2 — one idempotency key per open form, reused on a retry after a dropped save.
   const saveKey = useSaveKey();
   const createDc = useCreateNcDcBatch(saveKey);
+  const toast = useToast();
 
   // The goods go back to the vendor they came from: the NCs' shared source
   // vendor (all ticked NCs agree, or have none). Editable.
@@ -143,7 +144,20 @@ export function NcDcFormBody({
     transport !== '' ||
     vehicleNo !== '' ||
     remarks !== '';
-  useReportSave(saveCtl, { canSave: canCreateDc && canSubmit, saving: submitting, dirty });
+  useReportSave(saveCtl, {
+    canSave: canCreateDc && canSubmit,
+    saving: submitting,
+    dirty,
+    reason: !canCreateDc
+      ? 'You do not have permission to create a return DC'
+      : picked.length === 0
+        ? 'Tick at least one NC first'
+        : dcDate === ''
+          ? 'Enter the DC Date'
+          : vendorId == null || vendorCodeText === ''
+            ? 'Pick the Vendor first'
+            : null,
+  });
 
   const onSubmit = async (): Promise<void> => {
     if (inFlight.current || !canSubmit) return;
@@ -160,6 +174,7 @@ export function NcDcFormBody({
         vehicleNo: vehicleNo.trim() || null,
         remarks: remarks.trim() || null,
       });
+      toast.ok(`DC ${created.deliveryChallanCode} saved`);
       exit.leave(
         () =>
           void navigate({
@@ -181,7 +196,7 @@ export function NcDcFormBody({
       setSubmitting(false);
     }
   };
-  // The page header's Save (and Ctrl+S) run this body's save.
+  // The page's bottom Save (and Ctrl+S) run this body's save.
   saveCtl.submitRef.current = () => void onSubmit();
 
   if (eff && !canCreateDc) {

@@ -8,8 +8,10 @@ import { useState } from 'react';
 import { useCreatePersonalTodo, useNextTaskCode } from '../api';
 import { localDateTimeToIso } from '../lib/format';
 import { FormError, Overlay } from './task-overlay';
+import { useToast } from '@/ui/feedback';
 
 export function TodoModal({ onClose }: { onClose: () => void }): React.JSX.Element {
+  const toast = useToast();
   const create = useCreatePersonalTodo();
   const { data: next } = useNextTaskCode('personal');
   const [title, setTitle] = useState('');
@@ -30,6 +32,7 @@ export function TodoModal({ onClose }: { onClose: () => void }): React.JSX.Eleme
         dueDate: dueDate || undefined,
         reminderAt: localDateTimeToIso(reminder),
       });
+      toast.ok('To-Do saved');
       onClose();
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Could not save to-do. Try again.');

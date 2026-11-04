@@ -24,6 +24,7 @@ import { ReportFilter, ReportShell } from '@/ui/data/ReportShell';
 import { ListFooter } from '@/ui/layout';
 import { fetchAllStockValuation, useStockValuation, type StockValuationParams } from '../api';
 import { categoryLabel, exportStockValuation } from '../lib/export';
+import { useToast } from '@/ui/feedback';
 
 const svSearchSchema = z.object({
   category: z.string().optional(),
@@ -48,6 +49,7 @@ function inr(v: number | null): string {
 }
 
 function StockValuationPage(): React.JSX.Element {
+  const toast = useToast();
   const urlSearch = stockValuationRoute.useSearch();
   const navigate = stockValuationRoute.useNavigate();
   const filter = urlSearch.category ?? 'all';
@@ -93,7 +95,7 @@ function StockValuationPage(): React.JSX.Element {
     void fetchAllStockValuation(params)
       .then((all) => exportStockValuation(all.rows, !all.priceVisible))
       .catch((e: unknown) =>
-        window.alert(e instanceof Error ? e.message : 'Could not export. Try again.'),
+        toast.error(e instanceof Error ? e.message : 'Could not export. Try again.'),
       )
       .finally(() => setExporting(false));
   };

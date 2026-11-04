@@ -20,6 +20,7 @@ import { itemCodeWithRev, docDrawingRev } from '@/lib/item-code';
 import { RowMenu } from '@/ui/data';
 import { useReverseProductionOrderClose } from '../api';
 import { ReverseReasonDialog } from './reverse-reason-dialog';
+import { useToast } from '@/ui/feedback';
 
 /** ADR-233 — what each history row was, in the owner's words. Badge colours
  *  follow the order status badge: a close puts stock in (green), Finish Short
@@ -36,11 +37,10 @@ interface PoCloseLedgerProps {
   /** True when the user may reverse a close: edit right AND the order is not
    *  short closed (the server's rule). False → no ⋯ column at all. */
   canReverse: boolean;
-  /** Inside a filling tab panel (the Production Order detail page): the table's
-   *  `.tbl-wrap` is handed straight to the panel body so it takes the height
-   *  left on screen and scrolls inside it, and the POL · CODE/REV band is left
-   *  out — that page already says both in its identity line. The Close page
-   *  leaves this off and keeps the band. */
+  /** Inside a tab panel (Production Order detail and edit): the table's
+   *  `.tbl-wrap` is handed straight to the panel body, and the POL · CODE/REV
+   *  band is left out — those pages already say both in their identity line.
+   *  The Close page leaves this off and keeps the band. */
   fill?: boolean | undefined;
 }
 
@@ -50,6 +50,7 @@ export function PoCloseLedger({
   fill = false,
 }: PoCloseLedgerProps): React.JSX.Element {
   const reverseMut = useReverseProductionOrderClose();
+  const toast = useToast();
   // The close whose "Reverse close?" dialog is open.
   const [askClose, setAskClose] = useState<ProductionOrderClose | null>(null);
 
@@ -70,7 +71,7 @@ export function PoCloseLedger({
   if (po.closes.length === 0) {
     return (
       <div className="empty-state" style={{ fontSize: 12 }}>
-        Nothing closed yet.
+        No closes yet.
       </div>
     );
   }
@@ -202,6 +203,7 @@ export function PoCloseLedger({
           onCancel={() => setAskClose(null)}
           onConfirm={async (remarks) => {
             await reverseMut.mutateAsync({ id: po.id, input: { closeId: askClose.id, remarks } });
+            toast.ok(`Close of ${askClose.qty} on ${po.code} reversed`);
             setAskClose(null);
           }}
         />

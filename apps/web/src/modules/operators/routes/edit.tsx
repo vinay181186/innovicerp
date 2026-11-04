@@ -9,7 +9,7 @@ import { useEditConflict } from '@/lib/use-edit-conflict';
 import { useSaveKey } from '@/lib/use-save-key';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { isStagedResult } from '@/modules/document-edits/api';
-import { Banner } from '@/ui/feedback';
+import { useToast } from '@/ui/feedback';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateOperator, useFetchOperator, useOperator, useUpdateOperator } from '../api';
 import { OperatorForm } from '../components/operator-form';
@@ -53,6 +53,7 @@ function OperatorNewPage(): React.JSX.Element {
   const navigate = useNavigate();
   const saveKey = useSaveKey();
   const create = useCreateOperator(saveKey);
+  const toast = useToast();
   const [submitError, setSubmitError] = useState<string | null>(null);
   // Tier gate (operator_create sits in Production). The list's Add button is
   // hidden without entry rights, but this URL-reachable form had no gate of its
@@ -66,6 +67,7 @@ function OperatorNewPage(): React.JSX.Element {
     setSubmitError(null);
     try {
       const created = await create.mutateAsync(values);
+      toast.ok(`Operator ${created.code} saved`);
       exit.leave(
         () => void navigate({ to: '/operators/$id', params: { id: created.id }, replace: true }),
       );
@@ -106,21 +108,17 @@ function OperatorNewPage(): React.JSX.Element {
       <Link to="/operators" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
         <ArrowLeft size={14} /> Back
       </Link>
-      <div className="panel">
-        <div className="panel-hdr">
+      <OperatorForm
+        panelHeader={
           <div>
             <div className="panel-title">+ Add Operator</div>
           </div>
-        </div>
-        <div className="panel-body">
-          <OperatorForm
-            mode="create"
-            onSubmit={onSubmit}
-            submitError={submitError}
-            onCancel={() => exit.leave(goBack)}
-          />
-        </div>
-      </div>
+        }
+        mode="create"
+        onSubmit={onSubmit}
+        submitError={submitError}
+        onCancel={() => exit.leave(goBack)}
+      />
     </div>
   );
 }
@@ -133,6 +131,7 @@ function OperatorEditPage(): React.JSX.Element {
   const canEdit = effectiveFormPerms(eff, 'operator_create').edit;
   const { data: operator, isLoading, isError, error } = useOperator(canEdit ? id : undefined);
   const update = useUpdateOperator(id);
+  const toast = useToast();
   const fetchOperator = useFetchOperator();
   // ADR-226 / §20.4 — sends only what changed, merges onto someone else's save
   // instead of overwriting it, and raises the 3-second notice. Also subscribes
@@ -148,9 +147,6 @@ function OperatorEditPage(): React.JSX.Element {
     noun: 'operator',
   });
   const [submitError, setSubmitError] = useState<string | null>(null);
-  // ADR-202 — set when an edit to a LIVE operator is staged for approval instead
-  // of applied; the neutral "Sent for approval" banner shows it.
-  const [stagedNotice, setStagedNotice] = useState<string | null>(null);
 
   const goBack = useCallback(
     () => void navigate({ to: '/operators/$id', params: { id } }),
@@ -173,7 +169,9 @@ function OperatorEditPage(): React.JSX.Element {
         // The edit-approval gate is on and this operator is live: nothing was
         // changed on the operator — the edit is now waiting for approval. Say so,
         // then return to the operator (its fields now carry the pending chip).
-        setStagedNotice('Sent for approval — your changes will apply once an approver signs off.');
+        toast.ok('Sent for approval — your changes will apply once an approver signs off.');
+      } else {
+        toast.ok(`Operator ${operator?.code ?? ''} saved`);
       }
       exit.leave(() => void navigate({ to: '/operators/$id', params: { id }, replace: true }));
     } catch (err) {
@@ -199,8 +197,8 @@ function OperatorEditPage(): React.JSX.Element {
             </Link>
           </div>
           <div className="empty-state" style={{ color: 'var(--amber2)' }}>
-            ⛔ You do not have edit access to Operator Master. Ask an admin for L3 Editor or above in
-            Production.
+            ⛔ You do not have edit access to Operator Master. Ask an admin for L3 Editor or above
+            in Production.
           </div>
         </div>
       </div>
@@ -243,13 +241,8 @@ function OperatorEditPage(): React.JSX.Element {
       >
         <ArrowLeft size={14} /> Back
       </Link>
-      {stagedNotice ? (
-        <Banner tone="success" role="status">
-          {stagedNotice}
-        </Banner>
-      ) : null}
-      <div className="panel">
-        <div className="panel-hdr">
+      <OperatorForm
+        panelHeader={
           <div>
             <div
               className="td-code"
@@ -261,17 +254,13 @@ function OperatorEditPage(): React.JSX.Element {
               Edit Operator
             </div>
           </div>
-        </div>
-        <div className="panel-body">
-          <OperatorForm
-            mode="edit"
-            operator={operator}
-            onSubmit={onSubmit}
-            submitError={submitError}
-            onCancel={() => exit.leave(goBack)}
-          />
-        </div>
-      </div>
+        }
+        mode="edit"
+        operator={operator}
+        onSubmit={onSubmit}
+        submitError={submitError}
+        onCancel={() => exit.leave(goBack)}
+      />
     </div>
   );
 }

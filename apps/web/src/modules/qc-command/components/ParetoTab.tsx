@@ -120,7 +120,7 @@ export function ParetoTab({
         </div>
         {pager.total === 0 ? (
           <div className="empty-state" style={{ color: 'var(--green2)' }}>
-            No deviations recorded yet.
+            No deviations yet.
           </div>
         ) : (
           <DataTable

@@ -13,6 +13,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { useAddDesignTaskComment, useCreateDesignTask, useUpdateDesignTask } from '../api';
 import { Actions, Badge, ErrorBox, Field, Modal } from './detail-shared';
+import { useToast } from '@/ui/feedback';
 
 export function TaskFormModal({
   projectId,
@@ -34,6 +35,7 @@ export function TaskFormModal({
   const [description, setDescription] = useState(task?.description ?? '');
   const [err, setErr] = useState<string | null>(null);
 
+  const toast = useToast();
   const createMut = useCreateDesignTask();
   const updateMut = useUpdateDesignTask();
 
@@ -57,7 +59,10 @@ export function TaskFormModal({
       createMut.mutate(
         { projectId, input },
         {
-          onSuccess: () => onClose(),
+          onSuccess: () => {
+            toast.ok('Task saved');
+            onClose();
+          },
           onError: (e) => setErr(e instanceof Error ? e.message : 'Could not save. Try again.'),
         },
       );
@@ -65,7 +70,10 @@ export function TaskFormModal({
       updateMut.mutate(
         { id: task.id, input },
         {
-          onSuccess: () => onClose(),
+          onSuccess: () => {
+            toast.ok('Task saved');
+            onClose();
+          },
           onError: (e) => setErr(e instanceof Error ? e.message : 'Could not save. Try again.'),
         },
       );
@@ -73,10 +81,27 @@ export function TaskFormModal({
   };
 
   return (
-    <Modal onClose={onClose} title={mode === 'add' ? '📝 Add Task' : '✏ Edit Task'}>
+    <Modal
+      onClose={onClose}
+      title={mode === 'add' ? '📝 Add Task' : '✏ Edit Task'}
+      footer={
+        <Actions
+          onClose={onClose}
+          onSave={onSave}
+          saving={createMut.isPending || updateMut.isPending}
+          label={mode === 'add' ? 'Save Task' : 'Save Changes'}
+        />
+      }
+    >
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Title ★">
+          <Field
+            label={
+              <>
+                Title<span className="req">★</span>
+              </>
+            }
+          >
             <input
               className="innovic-input"
               value={title}
@@ -137,12 +162,6 @@ export function TaskFormModal({
         </div>
       </div>
       {err ? <ErrorBox message={err} /> : null}
-      <Actions
-        onClose={onClose}
-        onSave={onSave}
-        saving={createMut.isPending || updateMut.isPending}
-        label={mode === 'add' ? 'Save Task' : 'Save Changes'}
-      />
     </Modal>
   );
 }
@@ -157,6 +176,7 @@ export function ViewTaskModal({
   onClose: () => void;
 }): React.JSX.Element {
   const [comment, setComment] = useState('');
+  const toast = useToast();
   const commentMut = useAddDesignTaskComment();
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'dsnproj_create');
@@ -166,13 +186,25 @@ export function ViewTaskModal({
     commentMut.mutate(
       { id: task.id, input: { text: comment.trim() } },
       {
-        onSuccess: () => setComment(''),
+        onSuccess: () => {
+          setComment('');
+          toast.ok('Comment posted');
+        },
       },
     );
   };
 
   return (
-    <Modal onClose={onClose} title={`📝 ${task.title}`}>
+    <Modal
+      onClose={onClose}
+      title={`📝 ${task.title}`}
+      confirmExit={comment.trim() !== ''}
+      footer={
+        <button type="button" className="btn btn-ghost" onClick={onClose}>
+          Close
+        </button>
+      }
+    >
       <div
         style={{
           display: 'grid',
@@ -303,11 +335,6 @@ export function ViewTaskModal({
             </button>
           </div>
         ) : null}
-      </div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
-        <button type="button" className="btn btn-ghost" onClick={onClose}>
-          Close
-        </button>
       </div>
     </Modal>
   );

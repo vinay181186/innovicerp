@@ -12,6 +12,7 @@ import {
   type BomFormLineDraft,
   linesToInput,
 } from '../components/bom-form';
+import { useToast } from '@/ui/feedback';
 
 export const bomMasterNewRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -23,6 +24,7 @@ function BomMasterNewPage(): React.JSX.Element {
   const navigate = useNavigate();
   const saveKey = useSaveKey();
   const create = useCreateBomMaster(saveKey);
+  const toast = useToast();
   const [submitError, setSubmitError] = useState<string | null>(null);
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'bom_create');
@@ -42,6 +44,7 @@ function BomMasterNewPage(): React.JSX.Element {
         parentItemId: header.parentItemId,
         lines: linesToInput(lines),
       });
+      toast.ok(`BOM ${created.bomNo} saved`);
       exit.leave(() => void navigate({ to: '/bom-masters/$id', params: { id: created.id } }));
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : 'Could not save BOM. Try again.');

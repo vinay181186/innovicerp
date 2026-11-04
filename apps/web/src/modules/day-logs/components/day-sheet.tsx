@@ -29,17 +29,24 @@ import {
 import { MyDayTable } from './my-day-table';
 import { SheetDraftRow, startInputId } from './sheet-draft-row';
 import '../day-log-sheet.css';
+import { useToast } from '@/ui/feedback';
 
 /** The sheet's header row — the same grid as every entry row. */
 function SheetGridHead(): React.JSX.Element {
   return (
     <div className="dl-cols dl-head" aria-hidden>
       <span className="dl-c">Sr No</span>
-      <span className="dl-c">Start Time *</span>
-      <span className="dl-c">Stop Time *</span>
+      <span className="dl-c">
+        Start Time<span className="req">★</span>
+      </span>
+      <span className="dl-c">
+        Stop Time<span className="req">★</span>
+      </span>
       <span className="dl-c dl-dur">Working Hours</span>
       <span className="dl-c">SO / JWSO</span>
-      <span className="dl-c">Working On *</span>
+      <span className="dl-c">
+        Working On<span className="req">★</span>
+      </span>
       <span className="dl-c" />
     </div>
   );
@@ -71,7 +78,8 @@ export function DaySheet({
   const [adding, setAdding] = useState(false);
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [rowErrs, setRowErrs] = useState<Record<number, string>>({});
-  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const toast = useToast();
   const [focusKey, setFocusKey] = useState<number | null>(null);
   // Draft keys the in-flight batch carries — only those rows are locked.
   const [savingKeys, setSavingKeys] = useState<ReadonlySet<number>>(() => new Set());
@@ -89,7 +97,7 @@ export function DaySheet({
   const patch = (key: number, p: Partial<Draft>): void =>
     setDrafts((ds) => ds.map((d) => (d.key === key ? { ...d, ...p } : d)));
   const openAdd = (): void => {
-    setMsg(null);
+    setErr(null);
     setRowErrs({});
     const d = blankDraft(lastStop);
     setDrafts([d]);
@@ -110,7 +118,7 @@ export function DaySheet({
   /** Cancel: drop every unsaved row (not the ones a running save carries). */
   const cancelRows = (): void => {
     setRowErrs({});
-    setMsg(null);
+    setErr(null);
     const keep = drafts.filter((d) => savingKeys.has(d.key));
     setDrafts(keep);
     if (!keep.length) setAdding(false);
@@ -118,13 +126,13 @@ export function DaySheet({
 
   async function save(): Promise<void> {
     if (saving || !filled.length) return;
-    setMsg(null);
+    setErr(null);
     setRowErrs({});
     const bad = checkDrafts(day.date, filled);
     const badRow = bad ? filled[bad.index] : undefined;
     if (bad && badRow) {
       setRowErrs({ [badRow.key]: bad.text });
-      setMsg({ ok: false, text: 'Nothing saved — fix the red row.' });
+      setErr('Nothing saved — fix the red row.');
       return;
     }
     const sent = new Set(filled.map((d) => d.key));
@@ -137,42 +145,32 @@ export function DaySheet({
         if (!rest.length) setAdding(false);
         return rest;
       });
-      setMsg({ ok: true, text: `Saved ${filled.length} row${filled.length > 1 ? 's' : ''}.` });
+      toast.ok(`Day Log saved — ${filled.length} row${filled.length > 1 ? 's' : ''}`);
     } catch (e) {
       const text = errText(e);
       const r = rowError(text);
       const target = r ? filled[r.row - 1] : undefined;
       if (r && target) {
         setRowErrs({ [target.key]: r.text });
-        setMsg({ ok: false, text: 'Nothing saved — fix the red row.' });
+        setErr('Nothing saved — fix the red row.');
       } else {
-        setMsg({ ok: false, text });
+        setErr(text);
       }
     } finally {
       setSavingKeys(new Set());
     }
   }
 
-  const msgLine = msg ? (
-    <span
-      role={msg.ok ? 'status' : 'alert'}
-      style={{ fontSize: 13, color: msg.ok ? 'var(--green2)' : 'var(--red2)' }}
-    >
-      {msg.text}
+  const msgLine = err ? (
+    <span role="alert" style={{ fontSize: 13, color: 'var(--red2)' }}>
+      {err}
     </span>
   ) : null;
 
   const showForm = canWrite && adding;
   return (
     <>
-      <MyDayTable
-        day={day}
-        q={q}
-        nowMin={nowMin}
-        canWrite={canWrite}
-        line={line}
-        onMessage={(text) => setMsg({ ok: true, text })}
-      />
+      <MyDayTable day={day} q={q} nowMin={nowMin} canWrite={canWrite} line={line} />
       {canWrite && !showForm ? (
         <div className="dl-addbar">
           <button type="button" className="btn btn-primary btn-sm" onClick={openAdd}>
@@ -214,6 +212,7 @@ export function DaySheet({
               type="button"
               className="btn btn-primary"
               disabled={saving || !dirty}
+              title={!saving && !dirty ? 'Fill in a row first' : undefined}
               onClick={() => void save()}
               style={{ minWidth: 120 }}
             >

@@ -6,7 +6,7 @@ export function Field({
   label,
   children,
 }: {
-  label: string;
+  label: React.ReactNode;
   children: React.ReactNode;
 }): React.JSX.Element {
   return (

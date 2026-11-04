@@ -1,11 +1,13 @@
-/* Production Order detail — the fit-to-one-screen page
-   (pro-routecard-detail-mockup.html, approved 2026-10-06).
+/* Production Order detail — the page SCROLLS, like Job Card detail (owner
+   decision 2026-11-04; replaces the fit-to-one-screen page of 2026-10-06).
 
    The page is the ClusterGrid view (ui/forms/cluster-grid.css) plus the few
    things that page needs and the primitive does not offer. Everything here is
    scoped to `.po-detail` and uses tokens only. */
 
-/* ── Fit to one screen ───────────────────────────────────────────────────────
+/* ── Fit to one screen — Production Order EDIT only ──────────────────────────
+   The detail page no longer carries `page-fill`, so none of this touches it;
+   the edit page shares this file under `page-fill po-detail`.
    `page-fill` (innovic-theme.css "LIST FILL") asks for min-height: 100%, which
    lets a long table grow the page instead of scrolling — a list page never
    meets that because it pages 25 rows at a time, but a Close Ledger or a

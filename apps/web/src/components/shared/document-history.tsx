@@ -160,12 +160,13 @@ export function DocumentHistory({
  * other extra tab. Shares its query with the tab body, so it is one request.
  */
 export function useHistoryTab(target: DocumentHistoryTarget): RelatedDocsExtraTab {
-  const { data } = useDocumentHistory(target);
+  const { data, isError } = useDocumentHistory(target);
   return {
     key: 'history',
     title: 'History',
     icon: '🕒',
-    count: data?.rows.length ?? 0,
+    // A failed load must not look like "no history": the tab stays, showing the error.
+    count: isError ? 1 : (data?.rows.length ?? 0),
     render: () => <DocumentHistory {...target} />,
   };
 }

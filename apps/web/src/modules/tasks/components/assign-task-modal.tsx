@@ -28,6 +28,7 @@ import { useCreateTask, useNextTaskCode, useRelatedOptions, useTaskUserOptions }
 import { oversizedFile, relatedNavPage } from '../lib/format';
 import { FormError, Overlay } from './task-overlay';
 import { UserPicker } from './user-picker';
+import { useToast } from '@/ui/feedback';
 
 // A contextual link's record type as the user reads it. The shared map covers
 // the Related To picker's types; the contextual Assign buttons add a few more.
@@ -55,6 +56,7 @@ export function AssignTaskModal({
   suggestedTitle?: string | undefined;
 }): React.JSX.Element {
   const { data: me } = useSession();
+  const toast = useToast();
   const create = useCreateTask();
   const { data: next } = useNextTaskCode('assigned');
   const { data: userOpts, isFetching: usersLoading } = useTaskUserOptions();
@@ -145,6 +147,7 @@ export function AssignTaskModal({
         linkedRef: ref,
         attachments: attachments.length > 0 ? attachments : undefined,
       });
+      toast.ok('Task assigned');
       onClose();
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Could not assign task. Try again.');

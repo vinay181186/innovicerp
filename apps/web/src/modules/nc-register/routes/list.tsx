@@ -6,7 +6,7 @@
 //
 // Columns (first pinned) + tint + the per-row ⋯ menu live in
 // components/nc-list-columns.tsx so this file stays under the 400-line ceiling.
-// CAPA stays folded in as a tab; the NC filters, StatStrip and permission gates
+// CAPA stays folded in as a tab; the NC filters and permission gates
 // are unchanged.
 
 import {
@@ -14,6 +14,7 @@ import {
   type NcRegisterListItem,
   NC_REASON_CATEGORIES,
   NC_STATUSES,
+  roundQty,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -23,6 +24,7 @@ import { usePendingEditIds } from '@/modules/document-edits/api';
 import { AssignTaskModal } from '@/modules/tasks/components/assign-task-modal';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { DataTable, Panel } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
@@ -38,6 +40,7 @@ import {
   ncRowMenu,
   ncRowTint,
 } from '../components/nc-list-columns';
+import { TabStrip } from '@/ui/navigation';
 
 const PAGE_SIZE = 25;
 
@@ -181,40 +184,15 @@ function NcRegisterListPage(): React.JSX.Element {
       : 'No NCs yet.';
 
   const tabBar = (
-    <div
-      style={{
-        display: 'flex',
-        gap: 4,
-        borderBottom: '1px solid var(--border)',
-        marginBottom: 14,
-      }}
-    >
-      {(
-        [
-          ['nc', 'NC Register'],
-          ['capa', 'CAPA'],
-        ] as const
-      ).map(([key, label]) => (
-        <button
-          key={key}
-          type="button"
-          onClick={() => setTab(key)}
-          style={{
-            background: 'none',
-            border: 'none',
-            borderBottom: tab === key ? '2px solid var(--cyan)' : '2px solid transparent',
-            color: tab === key ? 'var(--cyan)' : 'var(--text3)',
-            fontSize: 12,
-            fontWeight: 700,
-            padding: '6px 12px',
-            cursor: 'pointer',
-            marginBottom: -1,
-          }}
-        >
-          {label}
-        </button>
-      ))}
-    </div>
+    <TabStrip
+      label="NC Register views"
+      tabs={[
+        { key: 'nc', label: 'NC Register' },
+        { key: 'capa', label: 'CAPA' },
+      ]}
+      activeKey={tab}
+      onChange={(k) => setTab(k === 'capa' ? 'capa' : 'nc')}
+    />
   );
 
   return (
@@ -222,11 +200,11 @@ function NcRegisterListPage(): React.JSX.Element {
     // scrollbar, so the column header stays on screen at the last row. The
     // other tab is a different, self-sizing view and keeps the page scroll.
     <div className={tab === 'capa' ? undefined : 'page-fill'}>
-      {tabBar}
       {tab === 'capa' ? (
         // key: a new ?capa landing while already on this page remounts the
         // view so it re-seeds; nothing else changes the key.
         <CapaView
+          tabs={tabBar}
           key={search.capa ?? ''}
           initialSearch={search.capa}
           openForEdit={search.capaEdit}
@@ -234,6 +212,8 @@ function NcRegisterListPage(): React.JSX.Element {
       ) : (
         <>
           <NcListHeader
+            tabs={tabBar}
+            orderFilter={<OrderSfFilter sf={sf} field="orderCode" columnField="soCode" />}
             count={data ? total : undefined}
             searchInput={searchInput}
             onSearch={setSearchInput}
@@ -268,7 +248,6 @@ function NcRegisterListPage(): React.JSX.Element {
             }}
             columnFiltering={sf.filtering}
             canReportNc={canReportNc}
-            summary={summary}
           />
 
           {isError ? (
@@ -316,6 +295,11 @@ function NcRegisterListPage(): React.JSX.Element {
             noun="NC"
             page={currentPage}
             pageSize={PAGE_SIZE}
+            summary={
+              summary
+                ? `All NCs: ${summary.total} · NC Raised ${summary.pending} · Deviated Qty ${roundQty(summary.totalQty)} · Rework Qty ${roundQty(summary.reworkQty)} · Scrap Qty ${roundQty(summary.scrapQty)}`
+                : undefined
+            }
             onPage={(p) =>
               void navigate({
                 search: (prev) => ({ ...prev, page: Math.min(totalPages, Math.max(1, p)) }),

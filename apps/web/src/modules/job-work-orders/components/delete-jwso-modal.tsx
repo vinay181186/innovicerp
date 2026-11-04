@@ -4,6 +4,7 @@
 
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { Modal } from '@/ui/feedback';
 import { useSoftDeleteJobWorkOrder } from '../api';
 
 export function DeleteJwsoModal({
@@ -42,64 +43,12 @@ export function DeleteJwsoModal({
   };
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 200,
-      }}
-      onClick={onClose}
-    >
-      <div
-        style={{
-          background: 'var(--bg)',
-          border: '1px solid var(--border)',
-          borderRadius: 8,
-          padding: 20,
-          width: 'min(520px, 94vw)',
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="section-hdr" style={{ marginBottom: 12 }}>
-          ⚠ Move JWSO {code} to Trash?
-        </div>
-        <div className="text2" style={{ fontSize: 12, marginBottom: 12, lineHeight: 1.6 }}>
-          You can restore it from Trash.
-        </div>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="jwso-delete-reason">
-            Reason<span className="req">★</span>
-          </label>
-          <input
-            id="jwso-delete-reason"
-            type="text"
-            className="innovic-input"
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            placeholder="e.g. entered twice, customer withdrew the order"
-            autoFocus
-          />
-        </div>
-        {err ? (
-          <div
-            style={{
-              marginTop: 12,
-              color: 'var(--red2)',
-              background: 'var(--red3)',
-              border: '1px solid var(--red)',
-              borderRadius: 6,
-              padding: '6px 10px',
-              fontSize: 12,
-            }}
-          >
-            {err}
-          </div>
-        ) : null}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+    <Modal
+      title={<>⚠ Move JWSO {code} to Trash?</>}
+      onClose={onClose}
+      maxWidth="min(520px, 94vw)"
+      footer={
+        <>
           <button type="button" className="btn btn-ghost" onClick={onClose}>
             Keep it
           </button>
@@ -117,8 +66,41 @@ export function DeleteJwsoModal({
               'Move to Trash'
             )}
           </button>
-        </div>
+        </>
+      }
+    >
+      <div className="text2" style={{ fontSize: 12, marginBottom: 12, lineHeight: 1.6 }}>
+        You can restore it from Trash.
       </div>
-    </div>
+      <div className="form-grp">
+        <label className="form-label" htmlFor="jwso-delete-reason">
+          Reason<span className="req">★</span>
+        </label>
+        <input
+          id="jwso-delete-reason"
+          type="text"
+          className="innovic-input"
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="e.g. entered twice, customer withdrew the order"
+          autoFocus
+        />
+      </div>
+      {err ? (
+        <div
+          style={{
+            marginTop: 12,
+            color: 'var(--red2)',
+            background: 'var(--red3)',
+            border: '1px solid var(--red)',
+            borderRadius: 6,
+            padding: '6px 10px',
+            fontSize: 12,
+          }}
+        >
+          {err}
+        </div>
+      ) : null}
+    </Modal>
   );
 }

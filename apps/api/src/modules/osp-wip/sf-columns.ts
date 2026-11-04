@@ -6,7 +6,12 @@ import { sql } from 'drizzle-orm';
 
 import { createdByNameSql } from '../../lib/created-by-sql';
 import type { SfColumnMap } from '../../lib/list-query';
+import { soOrJwCodeSql } from '../../lib/order-code';
 import { polSql } from '../../lib/pol';
+
+/** The SO No. cell and its filter: the SO's code, else the JWSO's (ADR-267).
+ *  v_osp_wip.so_code is SO only, so the shared FROM's so / rev_jwl joins are read. */
+export const OSP_ORDER_CODE = soOrJwCodeSql('so', 'rev_jwl');
 
 export const OSP_WIP_SF_COLUMNS: SfColumnMap = {
   jcCode: { sql: sql`w.jc_code`, type: 'text' },
@@ -18,7 +23,7 @@ export const OSP_WIP_SF_COLUMNS: SfColumnMap = {
     type: 'text',
   },
   itemName: { sql: sql`w.item_name`, type: 'text' },
-  soCode: { sql: sql`w.so_code`, type: 'text' },
+  soCode: { sql: OSP_ORDER_CODE, type: 'text' },
   // ADR-207 — the Internal SO No. of that same SO, off the `so` join the
   // register's shared FROM makes (page and summary alike).
   soInternalNo: { sql: sql`so.internal_so_no`, type: 'text' },

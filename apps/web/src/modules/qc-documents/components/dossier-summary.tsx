@@ -142,7 +142,7 @@ export function DossierSummary({
         rows={lines}
         rowKey={(l) => l.lineId}
         sortFilter={false}
-        emptyText={dossier.lines.length === 0 ? 'No lines on this order.' : 'No POL matches.'}
+        emptyText={dossier.lines.length === 0 ? 'No lines on this order yet.' : 'No POLs match.'}
         onRowClick={(l) => onOpenLine(l.lineId)}
       />
     </>

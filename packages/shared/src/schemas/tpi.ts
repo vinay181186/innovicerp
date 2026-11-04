@@ -100,6 +100,8 @@ export type TpiResponse = z.infer<typeof tpiResponseSchema>;
 // completed capped at 200) stays for older callers.
 
 export const listTpiQuerySchema = z.object({
+  /** One order's rows only: the bare SO / JWSO No. picked in the order dropdown (ADR-267). */
+  orderCode: z.string().trim().max(40).optional(),
   /** JC, SO, POL, item code / revision / name, operation (+ inspector,
    *  organisation, certificate on the completed list). */
   search: z.string().trim().max(100).optional(),

@@ -13,6 +13,8 @@
 // one of those declarations is invalid → inert in legacy. They are therefore NOT
 // painted teal here. The one real teal is legacy's literal `#14b8a6` on the
 // "Done" badge (L28781) → `.b-teal`.
+//
+// 2026-11-04 (owner): DetailHeader + ClusterGrid facts; Related Documents as tabs.
 
 import type {
   AssemblyComponentRow,
@@ -25,7 +27,7 @@ import type {
 import { Link, createRoute } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Play, RotateCcw } from 'lucide-react';
 import { useState } from 'react';
-import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
+import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate, todayIst } from '@/lib/date';
 import { soNoWithInternal } from '@/lib/so-number';
@@ -33,7 +35,9 @@ import { renderJcOpsLink } from '@/modules/jc-ops/components/jc-ops-columns';
 import { SoMaterialPanel } from '@/modules/material/components/so-material-panel';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { RowMenu } from '@/ui/data';
-import { Banner, ConfirmDialog } from '@/ui/feedback';
+import { Banner, ConfirmDialog, useToast } from '@/ui/feedback';
+import { Cluster, ClusterFact, ClusterGrid } from '@/ui/forms';
+import { DetailHeader } from '@/ui/layout';
 import { useAssemblyTracker, useStartAssembly, useStopAssembly, useUndoLastUnit } from '../api';
 import { PlanningUserPicker } from '../components/planning-user-picker';
 import { VarianceConfirm } from '../components/variance-confirm';
@@ -49,6 +53,7 @@ function AssemblyDetailPage(): React.JSX.Element {
   const { data, isLoading, isError, error } = useAssemblyTracker(soId);
   const start = useStartAssembly(soId);
   const undo = useUndoLastUnit(soId);
+  const toast = useToast();
   const [actionError, setActionError] = useState<string | null>(null);
   // Batch quantity to START (put on the bench). No stock leaves yet — that
   // happens per unit at STOP. Serial is auto-generated server-side.
@@ -138,6 +143,7 @@ function AssemblyDetailPage(): React.JSX.Element {
     else if (assembledBy.trim()) input.assembledBy = assembledBy.trim();
     start.mutate(input, {
       onSuccess: () => {
+        toast.ok(`Assembly batch of ${n} started`);
         setQty('1');
         setAssembledByUserId(null);
         setAssembledBy('');
@@ -161,17 +167,13 @@ function AssemblyDetailPage(): React.JSX.Element {
   // shows a failure (e.g. "already dispatched") inside the dialog.
   const doUndo = async (): Promise<void> => {
     await undo.mutateAsync(undefined);
+    if (lastBatch) toast.ok(`Batch No. ${lastBatch.unitNo} undone`);
     setConfirmUndo(false);
   };
 
   return (
     <div>
-      <Link to="/assemblies" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back
-      </Link>
-
       <HeaderPanel data={data} />
-      <RollupPanel rollup={data.rollup} components={data.components} />
 
       {actionError ? (
         <div
@@ -237,8 +239,8 @@ function AssemblyDetailPage(): React.JSX.Element {
                   {' '}
                   —{' '}
                   <Link
-                    to="/issue-register"
-                    search={{ tab: 'items', new: 'assembly_so', salesOrderId: soId }}
+                    to="/issue-register/new"
+                    search={{ issueAgainst: 'assembly_so', salesOrderId: soId }}
                     className="fw-700"
                     style={{ color: 'var(--blue)' }}
                   >
@@ -372,7 +374,11 @@ function AssemblyDetailPage(): React.JSX.Element {
               className="btn btn-ghost btn-sm"
               onClick={onUndo}
               disabled={undo.isPending || data.units.length === 0}
-              title="Undo the latest batch (in-progress, or completed but not dispatched)"
+              title={
+                data.units.length === 0
+                  ? 'No batch to undo yet'
+                  : 'Undo the latest batch (in-progress, or completed but not dispatched)'
+              }
             >
               {undo.isPending ? (
                 <Loader2 size={13} className="animate-spin" />
@@ -424,7 +430,7 @@ function AssemblyDetailPage(): React.JSX.Element {
 
       <UnitsPanel units={data.units} soId={soId} />
 
-      <RelatedDocsPanel module="assembly" id={soId} />
+      <RelatedDocsTabs module="assembly" id={soId} />
     </div>
   );
 }
@@ -480,20 +486,23 @@ function HeaderPanel({ data }: { data: AssemblyTrackerResponse }): React.JSX.Ele
         ? 'var(--green)'
         : 'var(--amber)';
   return (
-    <div className="panel">
-      <div className="panel-hdr">
-        <div>
-          <div style={{ fontSize: 14, fontWeight: 700 }}>
-            {soNoWithInternal(header.soCode, header.soInternalNo)} — {header.bomName ?? '—'}{' '}
-            <span className="text3" style={{ fontWeight: 400, fontSize: 12 }}>
-              × {header.orderQty} nos
-            </span>
-          </div>
-          <div className="text2" style={{ fontSize: 12, marginTop: 2 }}>
-            Customer: {header.customerName ?? ''} | BOM: {header.bomCode ?? '—'} |{' '}
-            <StatusBadge rollup={rollup} readyCount={readyCount} totalCount={components.length} />
-          </div>
-        </div>
+    <DetailHeader
+      backLabel="Back"
+      backTo="/assemblies"
+      renderLink={(p) => <Link {...p} />}
+      code={soNoWithInternal(header.soCode, header.soInternalNo)}
+      name={
+        <>
+          {header.bomName ?? '—'}{' '}
+          <span className="text3" style={{ fontWeight: 400, fontSize: 12 }}>
+            × {header.orderQty} nos
+          </span>
+        </>
+      }
+      badges={
+        <StatusBadge rollup={rollup} readyCount={readyCount} totalCount={components.length} />
+      }
+      actions={
         <div style={{ textAlign: 'right' }}>
           <div style={{ fontSize: 22, fontWeight: 700, color: countColor }}>
             {rollup.assembledQty}/{rollup.orderQty}
@@ -502,22 +511,19 @@ function HeaderPanel({ data }: { data: AssemblyTrackerResponse }): React.JSX.Ele
             assembled
           </div>
         </div>
-      </div>
-    </div>
+      }
+    >
+      <RollupFacts data={data} />
+    </DetailHeader>
   );
 }
 
-// Legacy L28790–28799: progress bar + the inline stats strip, in legacy's order
-// (ORDER QTY · CAN ASSEMBLE · ASSEMBLED · DISPATCHED · BALANCE · COMPONENTS ·
-// BOTTLENECK). Legacy carries no Status stat here — the status is the header
-// badge (L28778–28781), where it is now rendered.
-function RollupPanel({
-  rollup,
-  components,
-}: {
-  rollup: AssemblyRollup;
-  components: AssemblyComponentRow[];
-}): React.JSX.Element {
+// Legacy L28790–28799: progress bar + the stats, in legacy's order (ORDER QTY ·
+// CAN ASSEMBLE · ASSEMBLED · DISPATCHED · BALANCE · COMPONENTS · BOTTLENECK).
+// Legacy carries no Status stat here — the status is the header badge
+// (L28778–28781), where it is now rendered.
+function RollupFacts({ data }: { data: AssemblyTrackerResponse }): React.JSX.Element {
+  const { header, rollup, components } = data;
   const readyCount = components.filter((c) => c.status === 'ready').length;
   const pctAssembled =
     rollup.orderQty > 0 ? Math.round((rollup.assembledQty / rollup.orderQty) * 100) : 0;
@@ -528,92 +534,78 @@ function RollupPanel({
   const canAssembleColor =
     rollup.canAssembleAdditional >= rollup.balanceQty ? 'var(--green)' : 'var(--amber)';
   return (
-    <div className="panel" style={{ marginBottom: 12 }}>
-      <div className="panel-body">
-        {/* Legacy L28790. Legacy switches the fill to var(--teal) at 100%, but
-            --teal is undefined there → invalid → the bar renders EMPTY when
-            complete. Ported as cyan throughout rather than copying that bug. */}
-        <div className="prog-wrap" style={{ marginBottom: 10 }}>
-          <div
-            className="prog-bar"
-            style={{ width: `${pctAssembled}%`, background: 'var(--cyan)' }}
-          />
-        </div>
+    <>
+      {/* Legacy L28790. Legacy switches the fill to var(--teal) at 100%, but
+          --teal is undefined there → invalid → the bar renders EMPTY when
+          complete. Ported as cyan throughout rather than copying that bug. */}
+      <div className="prog-wrap" style={{ marginBottom: 'var(--sp-2)' }}>
         <div
-          style={{
-            display: 'flex',
-            gap: 16,
-            flexWrap: 'wrap',
-            padding: '10px 14px',
-            background: 'var(--bg)',
-            borderRadius: 8,
-            border: '1px solid var(--border)',
-          }}
-        >
-          <div>
-            <span className="text3" style={{ fontSize: 11 }}>
-              Order Qty
-            </span>
-            <br />
-            <b style={{ fontSize: 18 }}>{rollup.orderQty}</b>
-          </div>
-          <div>
-            <span className="text3" style={{ fontSize: 11 }}>
-              Can Assemble
-            </span>
-            <br />
-            <b style={{ fontSize: 18, color: canAssembleColor }}>{rollup.canAssembleAdditional}</b>
-          </div>
-          <div>
-            <span style={{ fontSize: 11 }}>Assembled</span>
-            <br />
-            <b style={{ fontSize: 18 }}>{rollup.assembledQty}</b>
-          </div>
-          <div>
-            <span style={{ fontSize: 11, color: 'var(--amber2)' }}>In Assembly</span>
-            <br />
-            <b
-              style={{ fontSize: 18, color: rollup.inProgressQty > 0 ? 'var(--amber)' : undefined }}
-            >
-              {rollup.inProgressQty}
-            </b>
-          </div>
-          <div>
-            <span style={{ fontSize: 11, color: 'var(--green2)' }}>Dispatched</span>
-            <br />
-            <b style={{ fontSize: 18, color: 'var(--green2)' }}>{rollup.dispatchedQty}</b>
-          </div>
-          <div>
-            <span className="text3" style={{ fontSize: 11 }}>
-              Pending
-            </span>
-            <br />
-            <b
-              style={{ fontSize: 18, color: rollup.balanceQty > 0 ? 'var(--red)' : 'var(--green)' }}
-            >
-              {rollup.balanceQty}
-            </b>
-          </div>
-          <div>
-            <span className="text3" style={{ fontSize: 11 }}>
-              Components
-            </span>
-            <br />
-            <b style={{ fontSize: 18 }}>
-              {readyCount}/{components.length} ready
-            </b>
-          </div>
-          {rollup.bottleneck && rollup.bottleneck.enoughForUnits < rollup.orderQty ? (
-            <div>
-              <span style={{ fontSize: 11, color: 'var(--red2)' }}>Bottleneck</span>
-              <br />
-              {/* Legacy prints childName||childCode; the rollup carries only the code. */}
-              <b style={{ color: 'var(--red2)' }}>{rollup.bottleneck.childItemCode}</b>
-            </div>
-          ) : null}
-        </div>
+          className="prog-bar"
+          style={{ width: `${pctAssembled}%`, background: 'var(--cyan)' }}
+        />
       </div>
-    </div>
+      <ClusterGrid stack>
+        <Cluster name="Order">
+          <ClusterFact
+            span={2}
+            label="Customer"
+            empty={!header.customerName}
+            title={header.customerName ?? undefined}
+            value={header.customerName ?? '—'}
+          />
+          <ClusterFact
+            span={2}
+            num
+            label="BOM"
+            empty={!header.bomCode}
+            value={header.bomCode ?? '—'}
+          />
+        </Cluster>
+        <Cluster name="Quantity" wide>
+          <ClusterFact num label="Order Qty" value={rollup.orderQty} />
+          <ClusterFact
+            num
+            label="Can Assemble"
+            value={<span style={{ color: canAssembleColor }}>{rollup.canAssembleAdditional}</span>}
+          />
+          <ClusterFact num label="Assembled" value={rollup.assembledQty} />
+          <ClusterFact
+            num
+            label="In Assembly"
+            value={
+              <span style={{ color: rollup.inProgressQty > 0 ? 'var(--amber)' : undefined }}>
+                {rollup.inProgressQty}
+              </span>
+            }
+          />
+          <ClusterFact
+            num
+            label="Dispatched"
+            value={<span style={{ color: 'var(--green2)' }}>{rollup.dispatchedQty}</span>}
+          />
+          <ClusterFact
+            num
+            label="Pending"
+            value={
+              <span style={{ color: rollup.balanceQty > 0 ? 'var(--red)' : 'var(--green)' }}>
+                {rollup.balanceQty}
+              </span>
+            }
+          />
+          <ClusterFact num label="Components" value={`${readyCount}/${components.length} ready`} />
+          {rollup.bottleneck && rollup.bottleneck.enoughForUnits < rollup.orderQty ? (
+            // Legacy prints childName||childCode; the rollup carries only the code.
+            <ClusterFact
+              num
+              label="Bottleneck"
+              value={
+                <span style={{ color: 'var(--red2)' }}>{rollup.bottleneck.childItemCode}</span>
+              }
+            />
+          ) : null}
+        </Cluster>
+      </ClusterGrid>
+    </>
   );
 }
 
@@ -658,9 +650,9 @@ function ComponentsPanel({
               <th>Item Code</th>
               <th>BOM Type</th>
               {/* Qty/Set + Stock have no legacy counterpart — kept (live system). */}
-              <th>Qty / Set</th>
-              <th>Required</th>
-              <th>Stock</th>
+              <th className="th-num">Qty / Set</th>
+              <th className="th-num">Required</th>
+              <th className="th-num">Stock</th>
               {/* Still Out (docs/NAMING.md §A — Issued − Returned − Fitted) is
                   the number Complete reads; `Stock` beside it is shelf stock
                   and gates nothing. Marked th-num/td-num so it right-aligns
@@ -671,10 +663,12 @@ function ComponentsPanel({
               >
                 Still Out
               </th>
-              <th>In Assembly</th>
-              <th>Assembled</th>
-              <th style={{ color: 'var(--red2)' }}>Pending</th>
-              <th>Enough For</th>
+              <th className="th-num">In Assembly</th>
+              <th className="th-num">Assembled</th>
+              <th className="th-num" style={{ color: 'var(--red2)' }}>
+                Pending
+              </th>
+              <th className="th-num">Enough For</th>
               <th>Stock Status</th>
             </tr>
           </thead>
@@ -702,9 +696,11 @@ function ComponentsPanel({
                     {TYPE_META[c.bomType].label}
                   </span>
                 </td>
-                <td>{c.qtyPerSet}</td>
-                <td className="fw-700">{c.totalNeed}</td>
-                <td style={{ color: 'var(--green2)' }}>{c.stockQty}</td>
+                <td className="td-num">{c.qtyPerSet}</td>
+                <td className="td-num fw-700">{c.totalNeed}</td>
+                <td className="td-num" style={{ color: 'var(--green2)' }}>
+                  {c.stockQty}
+                </td>
                 {/* Still Out — what is actually out of the store for this order
                     and not yet fitted, the raw registered fact. NOT
                     `finalReadyQty`: that is capped at Required and floored by
@@ -721,19 +717,20 @@ function ComponentsPanel({
                     batches (qtyPerSet × in-progress units, ADR-129). Assembled =
                     components already consumed into completed units (qtyPerSet ×
                     units built). Both derive from the rollup — no fabricated data. */}
-                <td style={{ color: 'var(--amber2)', fontWeight: 600 }}>
+                <td className="td-num" style={{ color: 'var(--amber2)', fontWeight: 600 }}>
                   {c.qtyPerSet * inProgressQty}
                 </td>
-                <td className="fw-700" style={{ color: 'var(--green2)' }}>
+                <td className="td-num fw-700" style={{ color: 'var(--green2)' }}>
                   {c.qtyPerSet * assembledQty}
                 </td>
                 <td
-                  className="fw-700"
+                  className="td-num fw-700"
                   style={{ color: c.shortfall > 0 ? 'var(--red)' : 'var(--green)' }}
                 >
                   {c.shortfall}
                 </td>
                 <td
+                  className="td-num"
                   style={{
                     fontWeight: 600,
                     color: c.enoughForUnits >= orderQty ? 'var(--green)' : 'var(--amber)',
@@ -788,6 +785,7 @@ function UnitsPanel({
   const canComplete = effectiveFormPerms(eff, 'assembly_create').entry;
   const canDispatch = effectiveFormPerms(eff, 'dispatch_create').entry;
   const [error, setError] = useState<string | null>(null);
+  const toast = useToast();
   // Per in-progress row: how many of the batch to complete now (default = all
   // that's left in the batch).
   const [stopQty, setStopQty] = useState<Record<string, string>>({});
@@ -829,6 +827,7 @@ function UnitsPanel({
       },
       {
         onSuccess: () => {
+          toast.ok(`Batch No. ${u.unitNo} completed`);
           setStopQty((s) => ({ ...s, [u.id]: '' }));
           setVariance(null);
         },
@@ -879,13 +878,13 @@ function UnitsPanel({
             <tr>
               <th>Batch No.</th>
               <th>Batch Status</th>
-              <th>Batch Qty</th>
+              <th className="th-num">Batch Qty</th>
               <th>Serial No.</th>
               <th>Assembly Date</th>
               <th>Assembled By</th>
               <th>Remarks</th>
               <th>Dispatch</th>
-              <th>Good Qty</th>
+              <th className="th-num">Good Qty</th>
               <th aria-label="Actions" />
             </tr>
           </thead>
@@ -905,7 +904,7 @@ function UnitsPanel({
                       <span className="badge b-green">Completed ✓</span>
                     )}
                   </td>
-                  <td className="fw-700">
+                  <td className="td-num fw-700">
                     {u.qty}
                     {wip ? (
                       <span className="text3" style={{ fontSize: 11 }}>
@@ -940,7 +939,7 @@ function UnitsPanel({
                       <span className="badge b-blue">Pending</span>
                     )}
                   </td>
-                  <td>
+                  <td className="td-num">
                     {wip ? (
                       /* STOP: enter how many came out good, then ⋯ → Complete;
                          the rest stays in assembly (ADR-129). */
@@ -949,7 +948,7 @@ function UnitsPanel({
                         min={1}
                         max={u.qty}
                         className="innovic-input"
-                        style={{ width: 64, textAlign: 'center', padding: '3px 4px' }}
+                        style={{ width: 64, padding: '3px 4px' }}
                         value={stopQty[u.id] ?? String(u.qty)}
                         onChange={(e) => setStopQty((s) => ({ ...s, [u.id]: e.target.value }))}
                         title="Good qty to complete now"
@@ -960,7 +959,7 @@ function UnitsPanel({
                       </span>
                     )}
                   </td>
-                  <td className="td-ctr" onClick={(e) => e.stopPropagation()}>
+                  <td onClick={(e) => e.stopPropagation()}>
                     <RowMenu
                       renderLink={renderJcOpsLink}
                       items={[

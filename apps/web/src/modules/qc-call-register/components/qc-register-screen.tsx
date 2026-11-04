@@ -28,6 +28,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { DataTable, Panel, ROW_TINT, type RowMenuItem } from '@/ui/data';
 import { ListFooter } from '@/ui/layout';
 import { qcHistoryKeys } from '@/modules/qc-history/api';
@@ -39,7 +40,6 @@ import { QC_STAGES, type QcStage, type QcView } from './qc-sheet';
 import { useQcCallData, useQcTableSf } from './qc-call-data';
 import { PgrnQcPopup, RaisedNcBanner, exportRegister } from './qc-call-extras';
 import { useQcInspect } from './use-qc-inspect';
-import { QcCallTabs } from './qc-call-tabs';
 import { QcCallRegisterHeader, type QcScreenMode } from './qc-call-register-header';
 import {
   PENDING_HIDDEN,
@@ -54,6 +54,7 @@ import {
   completedColumns,
   completedVmKey,
 } from './qc-call-completed-columns';
+import { TabStrip } from '@/ui/navigation';
 
 /** The URL params the screen reads (each route validates its own). */
 export interface QcScreenParams {
@@ -204,15 +205,18 @@ export function QcRegisterScreen(props: {
       ]
     : undefined;
 
-  // The register's QC Calls | TPI tab bar; Incoming QC has no tabs.
-  const shell = (children: React.ReactNode): React.JSX.Element =>
-    incoming ? (
-      <div>{children}</div>
-    ) : (
-      <QcCallTabs tab={tab} setTab={setTab}>
-        {children}
-      </QcCallTabs>
-    );
+  // The register's QC Calls | TPI tabs; Incoming QC has no tabs.
+  const tabBar = incoming ? null : (
+    <TabStrip
+      label="QC Call Register views"
+      tabs={[
+        { key: 'qc', label: 'QC Calls' },
+        { key: 'tpi', label: 'TPI' },
+      ]}
+      activeKey={tab}
+      onChange={(k) => setTab(k === 'tpi' ? 'tpi' : 'qc')}
+    />
+  );
 
   // "Hide page": once access has loaded (`eff` set), no VIEW = the no-access panel.
   if (eff && !effectiveFormPerms(eff, incoming ? 'qc_incoming' : 'qc_submit').view) {
@@ -227,32 +231,42 @@ export function QcRegisterScreen(props: {
 
   // TPI first, ahead of the QC loading/error gates (its own query).
   if (!incoming && tab === 'tpi') {
-    return shell(<TpiView />);
+    return (
+      <div>
+        <TpiView tabs={tabBar} />
+      </div>
+    );
   }
   if (qc.isLoading) {
-    return shell(
-      <div className="panel">
-        <div className="empty-state">
-          <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Loading QC calls…
+    return (
+      <div>
+        {tabBar}
+        <div className="panel">
+          <div className="empty-state">
+            <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Loading QC calls…
+          </div>
         </div>
-      </div>,
+      </div>
     );
   }
   if (qc.error || !qc.loaded) {
-    return shell(
-      <div className="panel">
-        <div className="empty-state" style={{ color: 'var(--red2)' }}>
-          {qc.error instanceof Error
-            ? qc.error.message
-            : `Could not load ${incoming ? 'Incoming QC' : 'QC Call Register'}. Try again.`}{' '}
-          {/* No header here — a column filter the server refused is cleared here. */}
-          {sf.filtering ? (
-            <button type="button" className="btn btn-ghost btn-sm" onClick={sf.clearFilters}>
-              Clear column filters
-            </button>
-          ) : null}
+    return (
+      <div>
+        {tabBar}
+        <div className="panel">
+          <div className="empty-state" style={{ color: 'var(--red2)' }}>
+            {qc.error instanceof Error
+              ? qc.error.message
+              : `Could not load ${incoming ? 'Incoming QC' : 'QC Call Register'}. Try again.`}{' '}
+            {/* No header here — a column filter the server refused is cleared here. */}
+            {sf.filtering ? (
+              <button type="button" className="btn btn-ghost btn-sm" onClick={sf.clearFilters}>
+                Clear column filters
+              </button>
+            ) : null}
+          </div>
         </div>
-      </div>,
+      </div>
     );
   }
 
@@ -268,16 +282,18 @@ export function QcRegisterScreen(props: {
     narrowed || mineOnly
       ? 'No QC calls match.'
       : incoming
-        ? 'No incoming QC calls waiting.'
+        ? 'No incoming QC calls yet.'
         : 'No pending QC calls yet.';
   const completedEmptyText = narrowed ? 'No QC entries match.' : 'No QC entries yet.';
   const totals = incoming
     ? qc.incomingTotals
     : { pendingCount: qc.pendingCount, completeCount: qc.completeCount, pcsPending: qc.pcsPending };
 
-  return shell(
-    <>
+  return (
+    <div>
       <QcCallRegisterHeader
+        tabs={tabBar}
+        orderFilter={<OrderSfFilter key={view} sf={sf} field="soCode" />}
         mode={mode}
         view={view}
         setView={(v) => {
@@ -395,6 +411,6 @@ export function QcRegisterScreen(props: {
       {inspectPgrn && canIncoming ? (
         <PgrnQcPopup key={inspectPgrn.partyGrnLineId} row={inspectPgrn} onClose={closeInspect} />
       ) : null}
-    </>,
+    </div>
   );
 }

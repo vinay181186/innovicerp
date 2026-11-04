@@ -38,6 +38,7 @@ import { type AuthContext, type DbTransaction, withUserContext } from '../../db/
 import { requireFormAccess } from '../../lib/access';
 import { createdByNameSql } from '../../lib/created-by-sql';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
+import { soOrJwCodeSql } from '../../lib/order-code';
 import { polSql } from '../../lib/pol';
 import { QC_COMMAND_ALL, pageOf, sortQueue } from './paging';
 
@@ -164,7 +165,7 @@ export async function getQcCommand(
           -- has selected it all along; the queue was the one place it was
           -- missing, which is why the board could show a JC with no part.
           i.name AS "itemName",
-          so.code AS "soCode", so.internal_so_no AS "soInternalNo",
+          ${soOrJwCodeSql('so', 'rev_jwl')} AS "soCode", so.internal_so_no AS "soInternalNo",
           so.customer_name AS "customer", jc.due_date AS "dueDate",
           vos.qc_pending AS "qcPending",
           (SELECT MAX(ol.log_date) FROM public.op_log ol
@@ -204,7 +205,8 @@ export async function getQcCommand(
           -- line first, else the JWSO line (ADR-236). Never sol.line_no,
           -- which is OUR line number.
           ${polSql('sol', 'rev_jwl')} AS "clientPoLineNo",
-          i.name AS "itemName", so.code AS "soCode", so.internal_so_no AS "soInternalNo",
+          i.name AS "itemName", ${soOrJwCodeSql('so', 'rev_jwl')} AS "soCode",
+          so.internal_so_no AS "soInternalNo",
           l.qty AS "qty", l.reject_qty AS "rejectQty", l.log_date AS "logDate",
           COALESCE(NULLIF(l.operator_name, ''), '(unknown)') AS "inspector",
           jo.created_at AS "opCreatedAt",
@@ -482,8 +484,12 @@ export async function getQcCommand(
         pct: pct(v.passed, v.total),
       }))
       .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
-    const sortedQueue = sortQueue(queue, query.queueSort);
-    const { limit } = query;
+    const { limit, orderCode } = query;
+    // ADR-267 — the order dropdown narrows the Queue and Rework lists and their
+    // totals. The stats strip, FPY, Pareto and inspector figures stay whole-company.
+    const orderQueue = orderCode ? queue.filter((q) => q.soCode === orderCode) : queue;
+    const orderRework = orderCode ? rework.filter((r) => r.soCode === orderCode) : rework;
+    const sortedQueue = sortQueue(orderQueue, query.queueSort);
 
     // Stats + totals are over EVERY row; only the table bodies are paged.
     return {
@@ -495,13 +501,13 @@ export async function getQcCommand(
         fpyPct: pct(fpyPassed, fpyTotal),
       },
       totals: {
-        queue: queue.length,
+        queue: orderQueue.length,
         fpyByOperation: byOperation.length,
         fpyByInspector: byInspector.length,
         fpyByItem: byItem.length,
         pareto: paretoRows.length,
         inspectorPerf: inspectorPerf.length,
-        rework: rework.length,
+        rework: orderRework.length,
       },
       queue: pageOf(sortedQueue, limit, query.queueOffset),
       fpy: {
@@ -513,7 +519,7 @@ export async function getQcCommand(
         // Top 10 by design — always one page.
         byItem,
       },
-      rework: pageOf(rework, limit, query.reworkOffset),
+      rework: pageOf(orderRework, limit, query.reworkOffset),
       pareto: { ...pareto, rows: pageOf(pareto.rows, limit, query.paretoOffset) },
       inspectorPerf: pageOf(inspectorPerf, limit, query.inspectorOffset),
       inspectors,

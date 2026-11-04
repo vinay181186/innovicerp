@@ -1,5 +1,5 @@
 // Preview / ⬇ Download PDF for one Customer Material Return — the register's
-// ⋯ row menu and the "saved" step of the New Return modal (owner rule
+// ⋯ row menu and the "saved" step of the New Return page (owner rule
 // 2026-10-21: every document offers Preview and Download PDF instead of
 // Print). The list row has no lines and no customer address, so the return's
 // detail and the customer are read on the click, and the sheet is built once

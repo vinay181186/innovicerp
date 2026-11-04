@@ -2,7 +2,8 @@
 // since 2026-11-02 option 4: the PAGE scrolls, ▴ Hide details collapses the
 // facts to one line, and a sticky band holds the summary + tabs).
 //   header     ← Back · JC No. · Job Card · JC status badge ·
-//              Print · Edit · ▴ Hide details · ⋯ · ▶ Production Entry
+//              Edit · ▴ Hide details · ⋯ (Preview, PDF, Excel, Cancel JC) ·
+//              ▶ Production Entry
 //   banners    short-closed Production Order stop (ADR-182) · rework / repair
 //              child note — both null on an ordinary card, both unchanged
 //   facts      picture frame (Photo | Drawing) + identity line + ClusterGrid:
@@ -205,28 +206,6 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
         }
         actions={
           <>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              disabled={opsLoading}
-              title="Preview Job Card"
-              onClick={printJc}
-            >
-              Preview
-            </button>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              disabled={opsLoading}
-              title="Download Job Card as PDF"
-              onClick={() =>
-                void runPrint('download', { title: 'Job Card', fileName: jc.code }, () =>
-                  Promise.resolve(printJc),
-                )
-              }
-            >
-              ⬇ Download PDF
-            </button>
             {/* ADR-182 — a stopped order's card takes no more edits. The
                 server refuses them anyway. */}
             {canWrite && !frozen ? (
@@ -253,6 +232,21 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
             <ActionMenu
               label="⋯"
               items={[
+                {
+                  label: 'Preview',
+                  disabled: opsLoading,
+                  title: 'Preview Job Card',
+                  onClick: printJc,
+                },
+                {
+                  label: '⬇ Download PDF',
+                  disabled: opsLoading,
+                  title: 'Download Job Card as PDF',
+                  onClick: () =>
+                    void runPrint('download', { title: 'Job Card', fileName: jc.code }, () =>
+                      Promise.resolve(printJc),
+                    ),
+                },
                 {
                   label: 'Download Excel',
                   title: 'Download Excel (with production log)',

@@ -12,8 +12,10 @@
 //                          source SO line, else its OSP op's Job Card line
 //
 // Every other kind (manual adjust, stock count, tool moves, JW DC, rev change…)
-// has no order line → "—". Used on the PAGE query only (25 rows): the SO
-// columns are display-only, so the count and KPI queries stay as they were.
+// has no order line → "—". The page query always joins this; the count and KPI
+// queries join it only when a filter reads `soCode` (ADR-267): every hop is one
+// row per movement (LATERAL … LIMIT 1, then id-to-id joins), so it cannot change
+// a total, and the per-row trace is not paid for on an unfiltered list.
 
 import { sql } from 'drizzle-orm';
 
@@ -87,9 +89,12 @@ export const STOCK_LEDGER_SO_JOINS = sql`
   LEFT JOIN public.job_work_orders jw ON jw.id = jwl.job_work_order_id
   LEFT JOIN public.item_revisions ir ON ir.id = st.item_revision_id`;
 
+/** The SO No. cell and its filter (sf-columns.ts); needs the joins above. */
+export const STOCK_LEDGER_SO_CODE = sql`COALESCE(so.code, jw.code)`;
+
 /** The select list the joins above feed. */
 export const STOCK_LEDGER_SO_SELECT = sql`
-  COALESCE(so.code, jw.code) AS "soCode",
+  ${STOCK_LEDGER_SO_CODE} AS "soCode",
   so.internal_so_no AS "soInternalNo",
   ${polSql('sol', 'jwl')} AS "clientPoLineNo",
   ir.rev AS "itemRevision"`;

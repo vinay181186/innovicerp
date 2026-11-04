@@ -22,6 +22,7 @@ import type {
 } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState, type CSSProperties, type DragEvent } from 'react';
+import { FormActions } from '@/ui/layout';
 import { ResultTable } from './result-table';
 
 interface Props {
@@ -327,7 +328,6 @@ export function Builder(props: Props): JSX.Element {
               </label>
             </div>
           </div>
-          {saveError ? <div className="form-error">{saveError}</div> : null}
         </div>
       </div>
 
@@ -721,60 +721,6 @@ export function Builder(props: Props): JSX.Element {
             </div>
           </div>
 
-          {/* Actions — legacy L17597 */}
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginBottom: 16,
-              flexWrap: 'wrap',
-              gap: 8,
-            }}
-          >
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              {/* Legacy saves from the header via prompt() (_rbSaveTemplate L17673);
-              here the Report Details panel owns the name, so the submit sits
-              with the other actions. */}
-              <button
-                type="submit"
-                className="btn btn-primary"
-                disabled={saving || columns.length === 0 || !name.trim()}
-              >
-                {saving ? <Loader2 className="animate-spin" /> : null}
-                {saveLabel}
-              </button>
-              {onExcel ? (
-                <button
-                  type="button"
-                  className="btn btn-success"
-                  style={{ fontSize: 14, padding: '8px 28px', fontWeight: 700 }}
-                  onClick={() => onExcel(buildSpec())}
-                  disabled={columns.length === 0 || excelLoading}
-                >
-                  📄 Generate Excel
-                </button>
-              ) : null}
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                style={{ fontSize: 12 }}
-                onClick={onPreviewClick}
-                disabled={previewLoading || columns.length === 0}
-              >
-                Preview
-              </button>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                style={{ fontSize: 11, color: 'var(--text3)' }}
-                onClick={onClearAll}
-              >
-                Clear All
-              </button>
-            </div>
-          </div>
-
           {/* Preview pane — legacy renders `_rbPreview` here (L17603) */}
           {previewLoading || preview || previewError ? (
             <ResultTable
@@ -787,6 +733,58 @@ export function Builder(props: Props): JSX.Element {
               excelLoading={excelLoading}
             />
           ) : null}
+
+          {/* Actions — legacy L17597 */}
+          <FormActions note={saveError ? <div className="form-error">{saveError}</div> : undefined}>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              style={{ fontSize: 11, color: 'var(--text3)' }}
+              onClick={onClearAll}
+            >
+              Clear All
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              style={{ fontSize: 12 }}
+              onClick={onPreviewClick}
+              disabled={previewLoading || columns.length === 0}
+              title={columns.length === 0 ? 'Add at least one column first' : undefined}
+            >
+              Preview
+            </button>
+            {onExcel ? (
+              <button
+                type="button"
+                className="btn btn-success"
+                style={{ fontSize: 14, padding: '8px 28px', fontWeight: 700 }}
+                onClick={() => onExcel(buildSpec())}
+                disabled={columns.length === 0 || excelLoading}
+                title={columns.length === 0 ? 'Add at least one column first' : undefined}
+              >
+                📄 Generate Excel
+              </button>
+            ) : null}
+            {/* Legacy saves from the header via prompt() (_rbSaveTemplate L17673);
+              here the Report Details panel owns the name, so the submit sits
+              with the other actions. */}
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={saving || columns.length === 0 || !name.trim()}
+              title={
+                columns.length === 0
+                  ? 'Add at least one column first'
+                  : !name.trim()
+                    ? 'Enter the report name first'
+                    : undefined
+              }
+            >
+              {saving ? <Loader2 className="animate-spin" /> : null}
+              {saveLabel}
+            </button>
+          </FormActions>
         </>
       ) : null}
     </form>

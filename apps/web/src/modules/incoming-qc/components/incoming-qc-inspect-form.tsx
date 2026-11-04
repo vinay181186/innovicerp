@@ -33,6 +33,7 @@ import { useSaveKey } from '@/lib/use-save-key';
 import { useQcUserOptions } from '@/modules/qc-users/api';
 import { NO_SERVER_SEARCH, qcSelectedLabel, toQcSearchOptions } from '@/modules/qc-users/options';
 import { useSubmitIncomingQc } from '../api';
+import { useToast } from '@/ui/feedback';
 
 function todayIso(): string {
   return todayIst();
@@ -87,6 +88,7 @@ export function useIncomingQcInspect(props: {
   const saveKey = useSaveKey();
   useEffect(() => saveKey.rotate(), [saveKey, o.grnLineId]);
   const submit = useSubmitIncomingQc(saveKey);
+  const toast = useToast();
   const session = useSession().data;
   const companyId = session?.companyId ?? null;
   // Incoming material is its OWN form key — this row sits on the QC Call
@@ -191,6 +193,7 @@ export function useIncomingQcInspect(props: {
       setRemarks('');
       setQcReportPath(null);
       setQcReportName(null);
+      toast.ok('QC Inspection saved');
       onDone(res.raisedNc ?? undefined);
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Could not save QC Inspection. Try again.');
@@ -375,7 +378,7 @@ export function IncomingQcInspectFormView(props: {
         </div>
       ) : null}
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 10 }}>
-        <button type="button" className="btn btn-ghost btn-sm" onClick={onCancel}>
+        <button type="button" className="btn btn-ghost btn-sm" data-modal-exit onClick={onCancel}>
           Cancel
         </button>
         <button

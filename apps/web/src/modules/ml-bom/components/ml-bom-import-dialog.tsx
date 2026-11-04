@@ -292,8 +292,7 @@ export function MlBomImportDialog({ onClose }: MlBomImportDialogProps): React.JS
   // A revise held for approval or refused did not revise anything (ADR-249).
   const nRevise =
     shown?.boms.filter(
-      (b) =>
-        b.action === 'revise' && b.outcome !== 'sent_for_approval' && b.outcome !== 'not_sent',
+      (b) => b.action === 'revise' && b.outcome !== 'sent_for_approval' && b.outcome !== 'not_sent',
     ).length ?? 0;
   const nSentForApproval =
     finalResult?.sentForApprovalCount ??
@@ -375,6 +374,7 @@ export function MlBomImportDialog({ onClose }: MlBomImportDialogProps): React.JS
           variant="primary"
           loading={busy}
           disabled={!file || busy}
+          {...(!file ? { title: 'Choose a file first' } : {})}
           onClick={() => void runPreview()}
         >
           Preview
@@ -403,6 +403,7 @@ export function MlBomImportDialog({ onClose }: MlBomImportDialogProps): React.JS
           variant="primary"
           loading={busy}
           disabled={!preview?.ok || busy}
+          {...(!preview?.ok ? { title: 'Fix the errors in the file first' } : {})}
           onClick={() => void runImport()}
         >
           {busy ? 'Importing…' : 'Import'}
@@ -419,7 +420,7 @@ export function MlBomImportDialog({ onClose }: MlBomImportDialogProps): React.JS
       title="Import Multi-Level BOM"
       {...(busy ? {} : { onClose })}
       size="lg"
-      closeOnOverlayClick={false}
+      confirmExit={step !== 'done'}
       footer={footer}
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)' }}>
@@ -485,7 +486,7 @@ export function MlBomImportDialog({ onClose }: MlBomImportDialogProps): React.JS
                 density="compact"
                 autoWidth
                 maxHeight="36vh"
-                emptyText="No lines."
+                emptyText="No lines yet."
               />
             ) : null}
             {msgs.length > 0 ? (
@@ -496,7 +497,7 @@ export function MlBomImportDialog({ onClose }: MlBomImportDialogProps): React.JS
                 density="compact"
                 autoWidth
                 maxHeight="28vh"
-                emptyText="No messages."
+                emptyText="No messages yet."
               />
             ) : null}
           </>
@@ -537,7 +538,7 @@ export function MlBomImportDialog({ onClose }: MlBomImportDialogProps): React.JS
               density="compact"
               autoWidth
               maxHeight="50vh"
-              emptyText="No BOMs."
+              emptyText="No BOMs yet."
             />
           </>
         ) : null}

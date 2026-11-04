@@ -195,6 +195,7 @@ export function ReviewPanel({
             type="button"
             className="btn btn-success btn-sm"
             disabled={open.length === 0}
+            title={open.length === 0 ? 'Every change here is already being decided' : undefined}
             onClick={() => void run(open, 'approve')}
           >
             ✓ Approve all
@@ -203,6 +204,7 @@ export function ReviewPanel({
             type="button"
             className="btn btn-danger btn-sm"
             disabled={open.length === 0}
+            title={open.length === 0 ? 'Every change here is already being decided' : undefined}
             onClick={() => {
               setError(null);
               setRejecting(open);

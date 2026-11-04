@@ -45,6 +45,7 @@ import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Select } from '@/ui/forms';
 import { ActionMenu, ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { RowActions } from '@/ui/layout';
 import {
   type ProductionOrdersListArgs,
@@ -60,6 +61,7 @@ import {
 } from '../components/po-list-columns';
 import { exportProductionOrders } from '../lib/export-excel';
 import { printProductionOrderRegister } from '../lib/print-register';
+import { useToast } from '@/ui/feedback';
 
 // Tile counts ignore the search box (they count the whole book, like SO Master
 // and the PR list). Module-level constants keep the query keys stable.
@@ -93,6 +95,7 @@ export const productionOrdersListRoute = createRoute({
 });
 
 function ProductionOrdersListPage(): React.JSX.Element {
+  const toast = useToast();
   const search = productionOrdersListRoute.useSearch();
   const navigate = productionOrdersListRoute.useNavigate();
   // Tier-driven, per department (Production). Entry raises a PO.
@@ -197,7 +200,7 @@ function ProductionOrdersListPage(): React.JSX.Element {
         fetchProductionOrders({ ...query, limit, offset: off }),
       );
       if (all.length === 0) {
-        window.alert('Nothing to export.');
+        toast.error('Nothing to export.');
         return;
       }
       if (kind === 'excel') {
@@ -212,7 +215,7 @@ function ProductionOrdersListPage(): React.JSX.Element {
         );
       }
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : 'Could not load Production Orders. Try again.');
+      toast.error(e instanceof Error ? e.message : 'Could not load Production Orders. Try again.');
     } finally {
       exportingRef.current = false;
       setExporting(false);
@@ -251,6 +254,7 @@ function ProductionOrdersListPage(): React.JSX.Element {
         updating={isFetching && !isLoading}
         onClearFilters={clearFilters}
         filtersActive={filtersActive}
+        orderFilter={<OrderSfFilter sf={sf} field="orderCode" columnField="sourceCode" />}
         filters={
           <Select
             aria-label="Production Order Status"

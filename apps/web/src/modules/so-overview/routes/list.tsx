@@ -20,6 +20,7 @@ import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { SearchInput } from '@/ui/forms';
 import { DataTable, Panel } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
@@ -152,6 +153,7 @@ function SoOverviewPage(): React.JSX.Element {
           SO status and overall-status (with counts) dropdowns sit beside it
           in the filter bar. */}
       <ListHeader
+        orderFilter={<OrderSfFilter sf={sf} field="code" kind="so" />}
         title="SO Overview"
         icon="📊"
         count={data ? total : undefined}

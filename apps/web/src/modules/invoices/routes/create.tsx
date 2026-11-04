@@ -26,9 +26,9 @@ import { todayIst } from '@/lib/date';
 import { useDispatchDetail } from '@/modules/customer-dispatches/api';
 import { DEFAULT_TERMS_DAYS, GST_OPTIONS } from '@/modules/invoices/constants';
 import { Panel } from '@/ui/data';
-import { Banner } from '@/ui/feedback';
+import { Banner, useToast } from '@/ui/feedback';
 import { FormField, FormGrid, SearchableSelect } from '@/ui/forms';
-import { PageHeader, useSaveShortcut } from '@/ui/layout';
+import { FormActions, PageHeader, useSaveShortcut } from '@/ui/layout';
 import { InvoiceTotals } from '../components/invoice-totals';
 import {
   useCreateInvoice,
@@ -73,6 +73,7 @@ function InvoiceNewPage(): React.JSX.Element {
   // screen (Back link, breadcrumb, browser Back) gets "Are you sure?".
   const goBack = useCallback(() => void navigate({ to: '/invoices' }), [navigate]);
   const exit = useExitConfirm({ onExit: goBack });
+  const toast = useToast();
 
   const [soId, setSoId] = useState('');
   const [invoiceDate, setInvoiceDate] = useState(todayStr());
@@ -223,13 +224,14 @@ function InvoiceNewPage(): React.JSX.Element {
         remarks: remarks || undefined,
         lines: payloadLines,
       });
+      toast.ok(`Invoice ${created.code} saved`);
       exit.leave(() => void navigate({ to: '/invoices/$id', params: { id: created.id } }));
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Could not save Invoice. Try again.');
     }
   }
 
-  // Ctrl+S runs the same Save as the header button, only while it is enabled.
+  // Ctrl+S runs the same Save as the Save button, only while it is enabled.
   const submitRef = useRef(submit);
   submitRef.current = submit;
   const runSave = useCallback(() => void submitRef.current(), []);
@@ -273,35 +275,7 @@ function InvoiceNewPage(): React.JSX.Element {
   return (
     <div>
       {exit.dialog}
-      <PageHeader
-        sticky
-        title="New Invoice"
-        backLabel="Back to Invoices"
-        onBack={goBack}
-        dirty={dirty}
-        actions={
-          <>
-            <button type="button" className="btn btn-ghost" onClick={() => exit.leave(goBack)}>
-              Cancel
-            </button>
-            <button
-              type="button"
-              className="btn btn-primary"
-              disabled={create.isPending}
-              onClick={() => void submit()}
-            >
-              {create.isPending ? 'Saving…' : 'Save Invoice'}
-            </button>
-          </>
-        }
-      />
-
-      {/* Save error right under the header's Save. */}
-      {err ? (
-        <Banner tone="error" role="alert">
-          {err}
-        </Banner>
-      ) : null}
+      <PageHeader title="New Invoice" backLabel="Back to Invoices" onBack={goBack} />
 
       {/* Place of Supply unknown (warn mode) — screen only, never printed. */}
       {inv && inv.salesOrderId === soId && !inv.placeOfSupply ? (
@@ -659,6 +633,28 @@ function InvoiceNewPage(): React.JSX.Element {
           <InvoiceTotals subtotal={subtotal} gstPercent={gstPctNum} taxType={taxType} />
         </Panel>
       ) : null}
+      <FormActions
+        dirty={dirty}
+        note={
+          err ? (
+            <Banner tone="error" role="alert" flush>
+              {err}
+            </Banner>
+          ) : undefined
+        }
+      >
+        <button type="button" className="btn btn-ghost" onClick={() => exit.leave(goBack)}>
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="btn btn-primary"
+          disabled={create.isPending}
+          onClick={() => void submit()}
+        >
+          {create.isPending ? 'Saving…' : 'Save Invoice'}
+        </button>
+      </FormActions>
     </div>
   );
 }

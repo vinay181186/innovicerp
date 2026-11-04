@@ -45,6 +45,7 @@ import {
 } from '@/ui/forms';
 import { Modal } from './modal';
 import { ReleaseStockModal, lineFacts } from './reservation-modals';
+import { useToast } from '@/ui/feedback';
 
 interface Props {
   so: PlanningDetailResponse;
@@ -92,6 +93,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
   const [err, setErr] = useState<string | null>(null);
   const saveKey = useSaveKey();
   const createPlan = useCreatePlan(saveKey);
+  const toast = useToast();
   const reserve = useReserveStock();
   // ADR-180: releasing a booking now needs a reason, so the old one-click
   // "release" link is a box of its own (shared with the Planning sheet).
@@ -119,6 +121,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
         soCodeText: so.soCode,
         lineNo: line.lineNo,
       });
+      toast.ok(`Reserved ${qtyToReserve} pcs to ${soNoWithInternal(so.soCode, so.soInternalNo)}`);
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Could not reserve stock. Try again.');
     }
@@ -225,210 +228,206 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
     : (line.itemName ?? `Line ${line.lineNo}`);
 
   // ADR-180 — releasing needs a qty and a reason, so it has its own box, shared
-  // with the Planning sheet. It SWAPS for this one rather than sitting inside
-  // it: two Modal instances each register a window ESC listener and each
-  // set/clear document.body.style.overflow, so ESC raised two "are you sure you
-  // want to exit?" prompts at once and closing the inner box gave the page its
-  // scrollbar back while the outer one was still open. This component stays
-  // mounted either way, so a half-filled plan form is still there when the
-  // release box closes.
-  if (releaseOpen) {
-    return (
-      <ReleaseStockModal
-        facts={lineFacts(so.soCode, line, so.soInternalNo)}
-        onClose={() => setReleaseOpen(false)}
-        onDone={() => setReleaseOpen(false)}
-      />
-    );
-  }
-
+  // with the Planning sheet. It opens OVER this form as a sibling, not inside it,
+  // so nothing typed in it counts as an edit of the plan and the half-filled plan
+  // keeps its "are you sure" when the release box closes.
   return (
-    <Modal title={`Create Plan — ${lineLabel}`} size="lg" onClose={onClose} footer={footer}>
-      {/* ── WHICH line is being planned. Identity only — no facts here. ── */}
-      <DocIdent>
-        <span>
-          {so.source === 'jw' ? 'JWSO' : 'SO'}{' '}
-          <IdentCode>{soNoWithInternal(so.soCode, so.soInternalNo)}</IdentCode>
-        </span>
-        <IdentSep />
-        <span>Ln {line.lineNo}</span>
-        <IdentSep />
-        {/* Item code is the main thing: strong mono, darkest text. */}
-        <IdentCode>{itemCodeWithRev(line.itemCode, docDrawingRev(line))}</IdentCode>
-        {line.itemName ? <span>{line.itemName}</span> : null}
-      </DocIdent>
+    <>
+      <Modal title={`Create Plan — ${lineLabel}`} size="lg" onClose={onClose} footer={footer}>
+        {/* ── WHICH line is being planned. Identity only — no facts here. ── */}
+        <DocIdent>
+          <span>
+            {so.source === 'jw' ? 'JWSO' : 'SO'}{' '}
+            <IdentCode>{soNoWithInternal(so.soCode, so.soInternalNo)}</IdentCode>
+          </span>
+          <IdentSep />
+          <span>Ln {line.lineNo}</span>
+          <IdentSep />
+          {/* Item code is the main thing: strong mono, darkest text. */}
+          <IdentCode>{itemCodeWithRev(line.itemCode, docDrawingRev(line))}</IdentCode>
+          {line.itemName ? <span>{line.itemName}</span> : null}
+        </DocIdent>
 
-      {/* ── The qty account, left to right, ending on its result: the order
+        {/* ── The qty account, left to right, ending on its result: the order
              qty, less what plans and plan-less Job Cards already cover, is
              what is STILL TO PLAN (the green rule). ── */}
-      <ClusterGrid>
-        <Cluster>
-          <ClusterFact label="Order Qty" value={line.orderQty} num />
-          <ClusterFact label="Already Planned" value={line.totalPlanned} num />
-          <ClusterFact
-            label="JC Qty"
-            value={line.directJcQty}
-            num
-            title={
-              line.directJcCodes.length > 0
-                ? `On Job Cards raised straight off this line, with no plan behind them: ${line.directJcCodes.join(', ')}`
-                : 'Job Cards raised straight off this line, with no plan behind them'
-            }
-          />
-          <ClusterFact label="To Plan" value={remaining} num lead />
-        </Cluster>
-      </ClusterGrid>
+        <ClusterGrid>
+          <Cluster>
+            <ClusterFact label="Order Qty" value={line.orderQty} num />
+            <ClusterFact label="Already Planned" value={line.totalPlanned} num />
+            <ClusterFact
+              label="JC Qty"
+              value={line.directJcQty}
+              num
+              title={
+                line.directJcCodes.length > 0
+                  ? `On Job Cards raised straight off this line, with no plan behind them: ${line.directJcCodes.join(', ')}`
+                  : 'Job Cards raised straight off this line, with no plan behind them'
+              }
+            />
+            <ClusterFact label="To Plan" value={remaining} num lead />
+          </Cluster>
+        </ClusterGrid>
 
-      <div className="divider" />
+        <div className="divider" />
 
-      {/* ── The eight fields, four to a row on the 12-column grid. ── */}
-      <div className="form-grid-12">
-        <FormField
-          label="Plan Qty"
-          required
-          size="sm"
-          htmlFor="create-plan-qty"
-          help={`of ${remaining} to plan`}
-        >
-          <input
-            id="create-plan-qty"
-            type="number"
-            className="innovic-input cl-num"
-            min={1}
-            max={remaining}
-            value={planQty}
-            onChange={(e) => setPlanQty(Number(e.target.value))}
-          />
-        </FormField>
+        {/* ── The eight fields, four to a row on the 12-column grid. ── */}
+        <div className="form-grid-12">
+          <FormField
+            label="Plan Qty"
+            required
+            size="sm"
+            htmlFor="create-plan-qty"
+            help={`of ${remaining} to plan`}
+          >
+            <input
+              id="create-plan-qty"
+              type="number"
+              className="innovic-input cl-num"
+              min={1}
+              max={remaining}
+              value={planQty}
+              onChange={(e) => setPlanQty(Number(e.target.value))}
+            />
+          </FormField>
 
-        {/* Reserve from stock — the typed qty IS the booking; the Reserve
+          {/* Reserve from stock — the typed qty IS the booking; the Reserve
             button in the footer books exactly what is set here. Reserving
             again adds to the line (the max recomputes); "release" gives a
             booking back and needs a reason (ADR-180). */}
-        {line.itemId ? (
-          <FormField
-            label="Reserve Qty"
-            size="sm"
-            htmlFor="reserve-qty"
-            help={
-              <>
-                {reservable > 0
-                  ? `Max ${reservable} · ${stock} available · ${line.physicalQty} on shelf`
-                  : stock <= 0
-                    ? `No free stock to reserve — Available is 0 · ${line.physicalQty} on shelf`
-                    : `This line is already fully covered — nothing left to reserve · ${line.physicalQty} on shelf`}
-                {reserved > 0 ? (
-                  <>
-                    {` · ${reserved} reserved `}
-                    <button
-                      type="button"
-                      onClick={() => setReleaseOpen(true)}
-                      title="Give this booking back to free stock — a reason is required"
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        padding: 0,
-                        color: 'var(--cyan)',
-                        fontSize: 11,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      release
-                    </button>
-                  </>
-                ) : null}
-              </>
-            }
-          >
+          {line.itemId ? (
+            <FormField
+              label="Reserve Qty"
+              size="sm"
+              htmlFor="reserve-qty"
+              help={
+                <>
+                  {reservable > 0
+                    ? `Max ${reservable} · ${stock} available · ${line.physicalQty} on shelf`
+                    : stock <= 0
+                      ? `No free stock to reserve — Available is 0 · ${line.physicalQty} on shelf`
+                      : `This line is already fully covered — nothing left to reserve · ${line.physicalQty} on shelf`}
+                  {reserved > 0 ? (
+                    <>
+                      {` · ${reserved} reserved `}
+                      <button
+                        type="button"
+                        onClick={() => setReleaseOpen(true)}
+                        title="Give this booking back to free stock — a reason is required"
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          padding: 0,
+                          color: 'var(--cyan)',
+                          fontSize: 11,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        release
+                      </button>
+                    </>
+                  ) : null}
+                </>
+              }
+            >
+              <input
+                id="reserve-qty"
+                type="number"
+                className="innovic-input cl-num"
+                min={0}
+                max={reservable}
+                step={1}
+                value={qtyToReserve}
+                onChange={(e) => setReserveQty(Number(e.target.value))}
+                disabled={reservable <= 0}
+              />
+            </FormField>
+          ) : (
+            // No stock-tracked item on this line, so there is nothing to book —
+            // the cell still stands so the row keeps its four columns.
+            <FormField label="Reserve Qty" size="sm" help="This line has no stock-tracked item.">
+              <input className="innovic-input cl-num" value="" readOnly disabled tabIndex={-1} />
+            </FormField>
+          )}
+
+          <FormField label="Planned Start Date" required size="sm" htmlFor="create-plan-start">
             <input
-              id="reserve-qty"
-              type="number"
-              className="innovic-input cl-num"
-              min={0}
-              max={reservable}
-              step={1}
-              value={qtyToReserve}
-              onChange={(e) => setReserveQty(Number(e.target.value))}
-              disabled={reservable <= 0}
+              id="create-plan-start"
+              type="date"
+              className="innovic-input"
+              value={plannedStartDate}
+              onChange={(e) => setPlannedStartDate(e.target.value)}
             />
           </FormField>
-        ) : (
-          // No stock-tracked item on this line, so there is nothing to book —
-          // the cell still stands so the row keeps its four columns.
-          <FormField label="Reserve Qty" size="sm" help="This line has no stock-tracked item.">
-            <input className="innovic-input cl-num" value="" readOnly disabled tabIndex={-1} />
+
+          <FormField label="Planned End Date" required size="sm" htmlFor="create-plan-end">
+            <input
+              id="create-plan-end"
+              type="date"
+              className="innovic-input"
+              value={plannedEndDate}
+              onChange={(e) => setPlannedEndDate(e.target.value)}
+            />
           </FormField>
-        )}
 
-        <FormField label="Planned Start Date" required size="sm" htmlFor="create-plan-start">
-          <input
-            id="create-plan-start"
-            type="date"
-            className="innovic-input"
-            value={plannedStartDate}
-            onChange={(e) => setPlannedStartDate(e.target.value)}
-          />
-        </FormField>
+          <FormField label="Customer Dispatch Date" size="sm" htmlFor="create-plan-dispatch">
+            <input
+              id="create-plan-dispatch"
+              type="date"
+              className="innovic-input"
+              value={customerDispatchDate}
+              onChange={(e) => setCustomerDispatchDate(e.target.value)}
+            />
+          </FormField>
 
-        <FormField label="Planned End Date" required size="sm" htmlFor="create-plan-end">
-          <input
-            id="create-plan-end"
-            type="date"
-            className="innovic-input"
-            value={plannedEndDate}
-            onChange={(e) => setPlannedEndDate(e.target.value)}
-          />
-        </FormField>
-
-        <FormField label="Customer Dispatch Date" size="sm" htmlFor="create-plan-dispatch">
-          <input
-            id="create-plan-dispatch"
-            type="date"
-            className="innovic-input"
-            value={customerDispatchDate}
-            onChange={(e) => setCustomerDispatchDate(e.target.value)}
-          />
-        </FormField>
-
-        {/* ADR-218 — shown, not picked: these are the values the new plan will
+          {/* ADR-218 — shown, not picked: these are the values the new plan will
             be given. The pale blue grouping wash (.field-tint) is gone with the
             pickers — it would have painted over the grey "not editable" fill
             and the boxes would still have read as something to type in. */}
-        <FormField label="RM Grade" size="sm" help={RM_SOURCE_HELP}>
-          <MaterialValueDisplay value={defaultOps?.rawMaterialGradeText} />
-        </FormField>
+          <FormField label="RM Grade" size="sm" help={RM_SOURCE_HELP}>
+            <MaterialValueDisplay value={defaultOps?.rawMaterialGradeText} />
+          </FormField>
 
-        <FormField label="RM Size" size="sm">
-          <MaterialValueDisplay value={defaultOps?.rawMaterialSizeText} />
-        </FormField>
+          <FormField label="RM Size" size="sm">
+            <MaterialValueDisplay value={defaultOps?.rawMaterialSizeText} />
+          </FormField>
 
-        <FormField label="Remarks" size="sm" htmlFor="create-plan-remark">
-          <textarea
-            id="create-plan-remark"
-            className="innovic-input"
-            rows={2}
-            maxLength={500}
-            value={remarks}
-            onChange={(e) => setRemarks(e.target.value)}
-          />
-        </FormField>
-      </div>
-
-      {err ? (
-        <div
-          className="empty-state"
-          style={{
-            marginTop: 12,
-            padding: 8,
-            borderRadius: 4,
-            background: 'var(--red3)',
-            color: 'var(--red2)',
-            fontSize: 12,
-          }}
-        >
-          {err}
+          <FormField label="Remarks" size="sm" htmlFor="create-plan-remark">
+            <textarea
+              id="create-plan-remark"
+              className="innovic-input"
+              rows={2}
+              maxLength={500}
+              value={remarks}
+              onChange={(e) => setRemarks(e.target.value)}
+            />
+          </FormField>
         </div>
+
+        {err ? (
+          <div
+            className="empty-state"
+            style={{
+              marginTop: 12,
+              padding: 8,
+              borderRadius: 4,
+              background: 'var(--red3)',
+              color: 'var(--red2)',
+              fontSize: 12,
+            }}
+          >
+            {err}
+          </div>
+        ) : null}
+      </Modal>
+      {releaseOpen ? (
+        <ReleaseStockModal
+          elevated
+          facts={lineFacts(so.soCode, line, so.soInternalNo)}
+          onClose={() => setReleaseOpen(false)}
+          onDone={() => setReleaseOpen(false)}
+        />
       ) : null}
-    </Modal>
+    </>
   );
 }

@@ -14,7 +14,7 @@ import { matchesSearchTerm, normalizeSearchTerm } from '@/components/shared/sear
 import { DataTable } from '@/ui/data';
 import type { DataTableColumn } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
-import { Banner, ConfirmDialog } from '@/ui/feedback';
+import { Banner, ConfirmDialog, useToast } from '@/ui/feedback';
 import { SearchInput } from '@/ui/forms';
 import { PageState } from '@/ui/layout';
 import { useApproveDayLogEdit, useDayLogApprovals, useRejectDayLogEdit } from '../api';
@@ -84,7 +84,8 @@ export function DayLogApprovals(): React.JSX.Element {
   const approve = useApproveDayLogEdit();
   const reject = useRejectDayLogEdit();
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const toast = useToast();
   const [rejecting, setRejecting] = useState<DayLogApprovalRow | null>(null);
   const [reason, setReason] = useState('');
   const [rejectErr, setRejectErr] = useState<string | null>(null);
@@ -107,12 +108,12 @@ export function DayLogApprovals(): React.JSX.Element {
   const doApprove = async (r: DayLogApprovalRow): Promise<void> => {
     if (busyId) return;
     setBusyId(r.entryId);
-    setMsg(null);
+    setErr(null);
     try {
       await approve.mutateAsync({ id: r.entryId, requestedAt: r.requestedAt });
-      setMsg({ ok: true, text: `Approved — ${r.userName}'s row now shows the new values.` });
+      toast.ok(`Approved — ${r.userName}'s row now shows the new values.`);
     } catch (e) {
-      setMsg({ ok: false, text: errText(e) });
+      setErr(errText(e));
     } finally {
       setBusyId(null);
     }
@@ -133,10 +134,7 @@ export function DayLogApprovals(): React.JSX.Element {
         reason: reason.trim(),
       });
       setRejecting(null);
-      setMsg({
-        ok: true,
-        text: `Rejected — the row stays as it was; ${r.userName} sees the reason.`,
-      });
+      toast.ok(`Rejected — the row stays as it was; ${r.userName} sees the reason.`);
     } catch (e) {
       setRejectErr(errText(e));
     } finally {
@@ -154,7 +152,7 @@ export function DayLogApprovals(): React.JSX.Element {
         <strong>Day Log edits waiting for approval</strong>
         {query.isFetching ? <span className="text3">⟳ Updating…</span> : null}
       </div>
-      {msg ? <Banner tone={msg.ok ? 'success' : 'error'}>{msg.text}</Banner> : null}
+      {err ? <Banner tone="error">{err}</Banner> : null}
       {query.isError ? <Banner tone="error">{errText(query.error)}</Banner> : null}
       <div className="dl-searchbar" role="search">
         <SearchInput value={term} onChange={setTerm} placeholder="Search User…" />
@@ -174,7 +172,7 @@ export function DayLogApprovals(): React.JSX.Element {
         columns={COLUMNS}
         rows={rows}
         rowKey={(r) => r.entryId}
-        empty={needle ? `No user matches "${needle}".` : 'No edits waiting.'}
+        empty={needle ? 'No waiting edits match.' : 'No waiting edits yet.'}
         rowMenuLabel={(r) => `Actions for ${r.userName}'s edit on ${fmtDate(r.date)}`}
         rowMenu={(r) => [
           {
@@ -189,7 +187,7 @@ export function DayLogApprovals(): React.JSX.Element {
             group: 'danger',
             disabledReason: busyReason,
             onSelect: () => {
-              setMsg(null);
+              setErr(null);
               setReason('');
               setRejectErr(null);
               setRejecting(r);

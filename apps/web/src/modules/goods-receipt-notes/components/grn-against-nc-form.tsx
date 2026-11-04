@@ -51,7 +51,7 @@ import { dcNcs } from '@/modules/delivery-challans/lib/dc-ncs';
 import { computeReceivedByLine } from '@/modules/delivery-challans/lib/receipt-math';
 import { useNcRegister, useNcRegisterList } from '@/modules/nc-register/api';
 import { Panel } from '@/ui/data';
-import { Banner } from '@/ui/feedback';
+import { Banner, useToast } from '@/ui/feedback';
 import { Cluster, ClusterFact, ClusterGrid, FormField, SearchableSelect } from '@/ui/forms';
 import { goodsReceiptNotesKeys } from '../api';
 import { GRN_CREATE_FORM_ID, type GrnTypeFormShellProps } from './grn-create-contract';
@@ -92,6 +92,7 @@ export function GrnAgainstNcForm({
 }: GrnAgainstNcFormProps): React.JSX.Element {
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const toast = useToast();
   // R2 — one idempotency key per open form, reused on a retry after a dropped save.
   const saveKey = useSaveKey();
   const receive = useReceiveDeliveryChallan(saveKey);
@@ -332,6 +333,7 @@ export function GrnAgainstNcForm({
       // here. (No PO to refresh — an NC return challan has none.)
       void qc.invalidateQueries({ queryKey: goodsReceiptNotesKeys.lists() });
       const grnId = res.autoGrn?.id ?? null;
+      toast.ok(res.autoGrn ? `GRN ${res.autoGrn.code} saved` : 'GRN saved');
       onLeave(() =>
         grnId
           ? void navigate({ to: '/goods-receipt-notes/$id', params: { id: grnId }, replace: true })
@@ -382,7 +384,7 @@ export function GrnAgainstNcForm({
 
   return (
     <form id={GRN_CREATE_FORM_ID} onSubmit={(e) => void handleSubmit(e)}>
-      {/* Validation summary right under the header, where Save is. */}
+      {/* Validation summary at the top of the form; it scrolls itself into view. */}
       {errorText ? (
         <Banner tone="error" role="alert">
           {errorText}

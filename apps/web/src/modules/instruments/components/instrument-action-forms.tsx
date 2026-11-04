@@ -25,7 +25,7 @@ interface Props {
 }
 
 function Field(props: {
-  label: string;
+  label: React.ReactNode;
   id: string;
   full?: boolean;
   children: React.ReactNode;
@@ -129,7 +129,7 @@ export function InstrumentActionForm({ ins, mode, onBack, onDone }: Props): Reac
             onDone(
               isStagedResult(res)
                 ? 'Sent for approval — your changes will apply once an approver signs off.'
-                : 'Saved.',
+                : 'Instrument saved',
             ),
           onError: fail,
         },
@@ -156,7 +156,15 @@ export function InstrumentActionForm({ ins, mode, onBack, onDone }: Props): Reac
         </div>
         <div className="form-grid">
           {mode === 'send' || mode === 'record' ? (
-            <Field label={mode === 'send' ? 'Sent On ★' : 'Calibrated On ★'} id="ia-date">
+            <Field
+              label={
+                <>
+                  {mode === 'send' ? 'Sent On' : 'Calibrated On'}
+                  <span className="req">★</span>
+                </>
+              }
+              id="ia-date"
+            >
               <input
                 id="ia-date"
                 type="date"
@@ -168,7 +176,10 @@ export function InstrumentActionForm({ ins, mode, onBack, onDone }: Props): Reac
             </Field>
           ) : null}
           {mode === 'send' || mode === 'record' ? (
-            <Field label={mode === 'send' ? 'Agency ★' : 'Agency'} id="ia-agency">
+            <Field
+              label={<>Agency{mode === 'send' ? <span className="req">★</span> : null}</>}
+              id="ia-agency"
+            >
               <input
                 id="ia-agency"
                 className="innovic-input"
@@ -181,7 +192,14 @@ export function InstrumentActionForm({ ins, mode, onBack, onDone }: Props): Reac
           ) : null}
           {mode === 'record' ? (
             <>
-              <Field label="Calibration Result ★" id="ia-result">
+              <Field
+                label={
+                  <>
+                    Calibration Result<span className="req">★</span>
+                  </>
+                }
+                id="ia-result"
+              >
                 <select
                   id="ia-result"
                   className="innovic-select"
@@ -220,7 +238,15 @@ export function InstrumentActionForm({ ins, mode, onBack, onDone }: Props): Reac
             </>
           ) : null}
           {mode === 'scrap' || mode === 'missing' ? (
-            <Field label="Reason ★" id="ia-reason" full>
+            <Field
+              label={
+                <>
+                  Reason<span className="req">★</span>
+                </>
+              }
+              id="ia-reason"
+              full
+            >
               <input
                 id="ia-reason"
                 className="innovic-input"

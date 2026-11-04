@@ -46,6 +46,7 @@ import {
   FormField,
   IdentCode,
   IdentSep,
+  SearchableSelect,
 } from '@/ui/forms';
 import { grnTypeLabel } from './grn-list-columns';
 import { GrnLinesTable, GrnReceiptAccount } from './grn-lines-table';
@@ -157,10 +158,10 @@ type EditMode = {
   onCancel?: () => void;
 } & HeaderSaveProps;
 
-/** When the page puts Save in its sticky PageHeader: the header's
- *  `<button type="submit" form={formId}>` submits this form, the bottom
- *  Cancel/Save bar is not rendered, and the form reports its state so the
- *  header button and "Not saved" pill stay truthful. */
+/** When the page puts Save in its FormActions: the page's
+ *  `<button type="submit" form={formId}>` submits this form, this form's own
+ *  Cancel/Save row is not rendered, and the form reports its state so the
+ *  page's button and "Not saved" pill stay truthful. */
 interface HeaderSaveProps {
   formId?: string;
   onStatusChange?: (s: { submitting: boolean; canSubmit: boolean; dirty: boolean }) => void;
@@ -210,6 +211,7 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
     ? (posData?.items ?? []).filter((p) => ['open', 'partial', 'qc_pending'].includes(p.status))
     : [];
   const selectedPoId = watch('header.purchaseOrderId');
+  const selectedPoRow = pos.find((p) => p.id === selectedPoId);
   const { data: selectedPoDetail } = usePurchaseOrder(
     isCreate && selectedPoId ? selectedPoId : undefined,
   );
@@ -468,7 +470,7 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
 
   return (
     <form id={props.formId} onSubmit={handleSubmit(onValid)}>
-      {/* Save error summary right under the page header, where Save is. */}
+      {/* Save error summary at the top of the form. */}
       {(formError ?? props.submitError) ? (
         <Banner tone="error" role="alert">
           {formError ?? props.submitError}
@@ -554,18 +556,24 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
               </FormField>
             ) : (
               <FormField label="PO No." htmlFor="purchaseOrderId" className="cl-span-2">
-                <select
+                <SearchableSelect
                   id="purchaseOrderId"
-                  className="innovic-select"
-                  {...register('header.purchaseOrderId')}
-                >
-                  <option value="">— Select PO —</option>
-                  {pos.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.code} · {p.vendorName ?? p.vendorCodeText ?? '—'}
-                    </option>
-                  ))}
-                </select>
+                  value={selectedPoId || null}
+                  onChange={(id) =>
+                    setValue('header.purchaseOrderId', id ?? '', { shouldDirty: true })
+                  }
+                  options={pos.map((p) => ({
+                    id: p.id,
+                    code: p.code,
+                    name: p.vendorName ?? p.vendorCodeText ?? '—',
+                  }))}
+                  valueLabel={
+                    selectedPoRow
+                      ? `${selectedPoRow.code} — ${selectedPoRow.vendorName ?? selectedPoRow.vendorCodeText ?? '—'}`
+                      : undefined
+                  }
+                  placeholder="— Select PO —"
+                />
               </FormField>
             )}
             <FormField label="GRN Date" required htmlFor="grnDate">
@@ -707,7 +715,7 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
         />
       </Panel>
 
-      {/* Bottom bar only when the page has not put Save in its sticky header. */}
+      {/* Own Save row only when the page has not put Save in its FormActions. */}
       {props.formId ? null : (
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--sp-2)' }}>
           {props.onCancel ? (

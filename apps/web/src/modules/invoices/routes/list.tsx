@@ -1,7 +1,7 @@
 // Invoices list — Phase 4 migration onto the ui/ primitives.
 //
 // Canonical LIST composition (design-ref/README.md "Uniformity rule"):
-//   TabStrip (SO ▸ JW view switch) → ListHeader → DataTable → ListFooter
+//   ListHeader (TabStrip SO ▸ JW view switch in its band) → DataTable → ListFooter
 //   (owner 2026-11-03: no tile row above a list — the Unpaid / Partly Paid /
 //   Paid counts ride in the Invoice Status ▾ tick list; the money totals went.)
 //
@@ -23,6 +23,7 @@ import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib
 import { JwInvoiceView } from '@/modules/jw-invoices/components/jw-invoice-view';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { DataTable, Panel } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
@@ -131,13 +132,13 @@ function InvoiceListPage(): React.JSX.Element {
   if (tab === 'jw') {
     return (
       <div>
-        {tabs}
         {/* key: a new ?search landing while already on this page remounts the
             view so it re-seeds; nothing else changes the key. */}
         <JwInvoiceView
           key={`${routeSearch.search ?? ''}|${routeSearch.jw ?? ''}`}
           initialSearch={routeSearch.search}
           initialJwId={routeSearch.jw}
+          tabs={tabs}
         />
       </div>
     );
@@ -165,8 +166,8 @@ function InvoiceListPage(): React.JSX.Element {
     // TABLE is the only thing that scrolls, so the column header stays on
     // screen down to the last row.
     <div className="page-fill">
-      {tabs}
       <ListHeader
+        orderFilter={<OrderSfFilter sf={sf} field="soCode" kind="so" />}
         title="Invoices"
         count={data ? data.total : undefined}
         noun="line"
@@ -186,7 +187,9 @@ function InvoiceListPage(): React.JSX.Element {
             </Link>
           ) : null
         }
-      />
+      >
+        {tabs}
+      </ListHeader>
 
       {isError || (!isLoading && !data) ? (
         <PageState

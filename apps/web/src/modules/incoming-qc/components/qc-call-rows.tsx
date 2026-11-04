@@ -56,7 +56,7 @@ export function IncomingPendingRow(props: {
           {o.soCode ? (
             <>
               {' '}
-              · SO <span className="mono">{soNoWithInternal(o.soCode, o.soInternalNo)}</span>
+              · SO / JWSO <span className="mono">{soNoWithInternal(o.soCode, o.soInternalNo)}</span>
             </>
           ) : null}
         </>

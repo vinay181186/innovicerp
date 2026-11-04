@@ -7,7 +7,7 @@
 //
 // Presentation/data-prep only: builds the `drawing` (path + label + source used
 // by the file preview) and the `drawingRef` (label + file name + optional
-// thumbnail) that JcViewSummary / JcViewTabs render. Both callers pass their
+// thumbnail) that JcViewSummary renders. Both callers pass their
 // already-loaded `jc` and edit `model`; this hook fetches only the thumbnail
 // URL for an image drawing.
 import type { JobCardEditModel, JobCardListItem } from '@innovic/shared';

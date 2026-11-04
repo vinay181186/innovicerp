@@ -12,7 +12,9 @@ export const DISPATCH_SF_COLUMNS: SfColumnMap = {
   dispatchCode: { sql: sql`h.code`, type: 'text' },
   dispatchDate: { sql: sql`h.dispatch_date`, type: 'date' },
   customer: { sql: sql`COALESCE(cli.name, h.customer_text)`, type: 'text' },
-  soCode: { sql: sql`h.so_code_text`, type: 'text' },
+  // ADR-267 — the live SO first, the snapshot as the fallback (the `cso` join is
+  // in HEADER_JOINS, which every query reading this map makes).
+  soCode: { sql: sql`COALESCE(cso.code, h.so_code_text)`, type: 'text' },
   // ADR-207 — the Internal SO No., live off the dispatch's SO (the `cso` join
   // HEADER_JOINS already makes, so the dispatch page and its count agree).
   soInternalNo: { sql: sql`cso.internal_so_no`, type: 'text' },

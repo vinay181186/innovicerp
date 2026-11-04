@@ -387,3 +387,9 @@ textarea.dl-rbox {
     grid-template-columns: 1fr;
   }
 }
+
+/* The one required mark on the sheet header. */
+.dl-head .req {
+  color: var(--red2);
+  margin-left: 2px;
+}

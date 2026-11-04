@@ -39,9 +39,9 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Package, Pencil, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { fmtDate } from '@/lib/date';
-import { DocumentHistory } from '@/components/shared/document-history';
+import { useHistoryTab } from '@/components/shared/document-history';
 import { ItemBadge } from '@/components/shared/item-badge';
-import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
+import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
 import { undecidedChangesOf, usePendingEditForDoc } from '@/modules/document-edits/api';
 import {
   PendingChangeChip,
@@ -52,6 +52,8 @@ import { useItemBalance, useStoreTransactionsList } from '@/modules/store-transa
 import { TxnTypeBadge } from '@/modules/store-transactions/components/txn-type-badge';
 import { STORE_TXN_SOURCE_LABELS } from '@/modules/store-transactions/lib/txn-labels';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { PendingFact } from '@/modules/document-edits/components/pending-fact';
+import { Cluster, ClusterGrid } from '@/ui/forms';
 import { useItem, useSoftDeleteItem } from '../api';
 import { TrashReasonDialog } from '../components/trash-reason-dialog';
 
@@ -78,6 +80,8 @@ function ItemDetailPage(): React.JSX.Element {
   // record fields below. Flattened across requests (usually one).
   const pendingEdit = usePendingEditForDoc('Item', item?.id);
   const pendingChanges = undecidedChangesOf(pendingEdit.data?.rows);
+  // ADR-197 — who created / edited / deleted this item, with Before → After.
+  const historyTab = useHistoryTab({ entity: 'Item', entityId: item?.id, refId: item?.code });
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
   // VIEW was removed for this page sees the no-access panel, not the page. `eff`
@@ -150,7 +154,13 @@ function ItemDetailPage(): React.JSX.Element {
             codeColor="var(--text)"
           >
             <div
-              style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}
+              style={{
+                marginTop: 6,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                flexWrap: 'wrap',
+              }}
             >
               <OnHandBadge itemId={item.id} />
               {/* ADR-202 — staged change to the item name, shown by the item name. */}
@@ -191,13 +201,8 @@ function ItemDetailPage(): React.JSX.Element {
 
       <StockHistoryCard itemId={item.id} />
 
-      {/* ADR-197 — who created / edited / deleted this item, with Before → After. */}
-      <div className="panel">
-        <div className="panel-hdr">
-          <div className="panel-title">History</div>
-        </div>
-        <DocumentHistory entity="Item" entityId={item.id} refId={item.code} />
-      </div>
+      {/* Open PRs, POs and GRNs for this item (ADR-190) + History. */}
+      <RelatedDocsTabs module="items" id={item.id} extraTabs={[historyTab]} />
 
       {confirmDelete ? (
         <TrashReasonDialog
@@ -206,8 +211,6 @@ function ItemDetailPage(): React.JSX.Element {
           onCancel={() => setConfirmDelete(false)}
         />
       ) : null}
-      {/* Open PRs, POs and GRNs for this item (ADR-190). Hides when empty. */}
-      <RelatedDocsPanel module="items" id={item.id} />
     </div>
   );
 }
@@ -349,58 +352,41 @@ function DetailGrid(props: {
   item: Item;
   pendingChanges: readonly DocumentEditChange[];
 }): React.JSX.Element {
-  const { item, pendingChanges } = props;
+  const { item, pendingChanges: pc } = props;
   return (
-    <div className="form-grid">
-      <Pair
-        label="Item Type"
-        value={itemTypeLabel(item.itemType)}
-        chip={<Chip changes={pendingChanges} field="itemType" />}
-      />
-      <div className="form-grp">
-        <span className="form-label">Make / Buy</span>
-        <div>
-          <span className={`badge ${item.procurementType === 'buy' ? 'b-blue' : 'b-grey'}`}>
-            {ITEM_PROCUREMENT_TYPE_LABEL[item.procurementType]}
-          </span>
-          <Chip changes={pendingChanges} field="procurementType" />
-        </div>
-      </div>
-      <Pair label="UOM" value={item.uom} chip={<Chip changes={pendingChanges} field="uom" />} />
-      <Pair
-        label="Material"
-        value={item.material ?? '—'}
-        chip={<Chip changes={pendingChanges} field="material" />}
-      />
-      <Pair
-        label="HSN Code"
-        value={item.hsnCode ?? '—'}
-        chip={<Chip changes={pendingChanges} field="hsnCode" />}
-      />
-      <div className="form-grp form-full">
-        <span className="form-label">Description</span>
-        <div style={{ whiteSpace: 'pre-wrap' }}>
-          {item.description ?? '—'}
-          <Chip changes={pendingChanges} field="description" />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Pair(props: {
-  label: string;
-  value: string;
-  chip?: React.ReactNode;
-}): React.JSX.Element {
-  return (
-    <div className="form-grp">
-      <span className="form-label">{props.label}</span>
-      <div style={{ fontWeight: 600 }}>
-        {props.value}
-        {props.chip}
-      </div>
-    </div>
+    <ClusterGrid stack>
+      <Cluster name="Item">
+        <PendingFact
+          label="Item Type"
+          value={itemTypeLabel(item.itemType)}
+          changes={pc}
+          field="itemType"
+        />
+        <PendingFact
+          label="Make / Buy"
+          value={
+            <span className={`badge ${item.procurementType === 'buy' ? 'b-blue' : 'b-grey'}`}>
+              {ITEM_PROCUREMENT_TYPE_LABEL[item.procurementType]}
+            </span>
+          }
+          changes={pc}
+          field="procurementType"
+        />
+        <PendingFact label="UOM" value={item.uom} changes={pc} field="uom" />
+        <PendingFact label="Material" value={item.material} changes={pc} field="material" />
+      </Cluster>
+      <Cluster name="Details">
+        <PendingFact num label="HSN Code" value={item.hsnCode} changes={pc} field="hsnCode" />
+        <PendingFact
+          span={3}
+          wrap
+          label="Description"
+          value={item.description}
+          changes={pc}
+          field="description"
+        />
+      </Cluster>
+    </ClusterGrid>
   );
 }
 

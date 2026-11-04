@@ -220,28 +220,6 @@ export const QC_DOSSIER_ORDER_KINDS = ['so', 'jwso'] as const;
 export const qcDossierOrderKindSchema = z.enum(QC_DOSSIER_ORDER_KINDS);
 export type QcDossierOrderKind = (typeof QC_DOSSIER_ORDER_KINDS)[number];
 
-/** GET /qc-documents/dossier/orders — the order picker (server search). */
-export const qcDossierOrdersQuerySchema = z.object({
-  search: z.string().min(1).max(100).optional(),
-  limit: z.coerce.number().int().positive().max(50).default(20),
-});
-export type QcDossierOrdersQuery = z.infer<typeof qcDossierOrdersQuerySchema>;
-
-export interface QcDossierOrderOption {
-  kind: QcDossierOrderKind;
-  id: string;
-  /** IN-SO-##### or IN-JW-#####. */
-  code: string;
-  /** ADR-207: Internal SO No. (SO only; null otherwise). */
-  internalSoNo: string | null;
-  /** The customer's PO number — searchable, not shown in the picker row. */
-  clientPoNo: string | null;
-  customerName: string | null;
-}
-export interface QcDossierOrdersResponse {
-  orders: QcDossierOrderOption[];
-}
-
 /** GET /qc-documents/dossier?kind=&orderId= */
 export const qcDossierQuerySchema = z.object({
   kind: qcDossierOrderKindSchema,

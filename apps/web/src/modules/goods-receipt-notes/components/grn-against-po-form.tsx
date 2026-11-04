@@ -285,14 +285,14 @@ export function GrnAgainstPoForm({
     linesTouched;
   const blocked = poIneligible !== null;
   useEffect(() => {
-    onStatusChange({ submitting, blocked, dirty });
-  }, [onStatusChange, submitting, blocked, dirty]);
+    onStatusChange({ submitting, blocked, blockedReason: poIneligible ?? undefined, dirty });
+  }, [onStatusChange, submitting, blocked, poIneligible, dirty]);
 
   const errorText = formError ?? submitError;
 
   return (
     <form id={GRN_CREATE_FORM_ID} onSubmit={(e) => void handleSubmit(e)}>
-      {/* Validation summary right under the header, where Save is. */}
+      {/* Validation summary at the top of the form; it scrolls itself into view. */}
       {errorText ? (
         <Banner tone="error" role="alert">
           {errorText}

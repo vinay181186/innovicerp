@@ -10,7 +10,7 @@
 // operations table, so an old routing reads exactly like the current one.
 //
 // Rendered as the bare `.tbl-wrap` so it sits straight inside the Route Card
-// detail's filling tab panel (it was its own stacked panel before).
+// detail's tab panel (it was its own stacked panel before).
 
 import type { RouteCardRevision } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';

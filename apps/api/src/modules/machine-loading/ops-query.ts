@@ -9,10 +9,14 @@ import type { MachineLoadOp, MachineLoadingQuery } from '@innovic/shared';
 import type { DbTransaction } from '../../db/with-user-context';
 import { createdByNameSql } from '../../lib/created-by-sql';
 import { likeEscape, readSf, sfOrderBy, sfWhere, type SfColumnMap } from '../../lib/list-query';
+import { soOrJwCodeSql } from '../../lib/order-code';
 import { polSql } from '../../lib/pol';
 
 /** CODE/REV exactly as the cell prints it (itemCodeWithRev). */
 const CODE_REV = sql`(i.code || COALESCE('/' || NULLIF(btrim(COALESCE(sol.revision::text, rev_jwl.revision::text)), ''), ''))`;
+
+/** The SO No. cell and its filter: the SO's code, else the JWSO's (ADR-267). */
+const ORDER_CODE = soOrJwCodeSql('so', 'rev_jwl');
 
 /** Sort & Filter (ADR-200) fields of the open-operations table — each the same
  *  expression the SELECT shows, valid in the count query too. */
@@ -24,7 +28,7 @@ export const MACHINE_LOAD_SF_COLUMNS: SfColumnMap = {
   itemCode: { sql: CODE_REV, type: 'text' },
   // ADR-261 lead columns.
   itemName: { sql: sql`i.name`, type: 'text' },
-  soCode: { sql: sql`so.code`, type: 'text' },
+  soCode: { sql: ORDER_CODE, type: 'text' },
   soInternalNo: { sql: sql`so.internal_so_no`, type: 'text' },
   clientPoLineNo: { sql: polSql('sol', 'rev_jwl'), type: 'text' },
   createdOn: { sql: sql`(jo.created_at AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
@@ -62,7 +66,7 @@ const SELECT_LIST = sql`
         -- off the same SO line as the revision above, else the Job Work SO
         -- line's POL for a JW-sourced card (ADR-236).
         ${polSql('sol', 'rev_jwl')} AS "clientPoLineNo",
-        so.code AS "soCode",
+        ${ORDER_CODE} AS "soCode",
         so.internal_so_no AS "soInternalNo",
         -- ADR-261 Created On — the job-card op's own created_at.
         jo.created_at AS "createdAt",
@@ -155,7 +159,7 @@ function pagedWhere(input: MachineLoadingQuery): SQL {
       OR ${polSql('sol', 'rev_jwl')} ILIKE ${pat} ESCAPE '\\'
       OR ${CODE_REV} ILIKE ${pat} ESCAPE '\\'
       OR i.name ILIKE ${pat} ESCAPE '\\'
-      OR so.code ILIKE ${pat} ESCAPE '\\'
+      OR ${ORDER_CODE} ILIKE ${pat} ESCAPE '\\'
       OR so.internal_so_no ILIKE ${pat} ESCAPE '\\'
       OR jo.operation ILIKE ${pat} ESCAPE '\\'
     )`);

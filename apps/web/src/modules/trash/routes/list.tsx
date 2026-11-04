@@ -201,7 +201,7 @@ function TrashListPage(): React.JSX.Element {
             emptyText={
               urlTerm || search.type || sf.filtering
                 ? 'No deleted documents match.'
-                : 'Trash is empty.'
+                : 'No deleted documents yet.'
             }
             rowMenu={(it) => [
               {

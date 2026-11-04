@@ -9,7 +9,7 @@
 // new rows, in any order (ADR-266).
 
 import { useCallback, useEffect, useState } from 'react';
-import { Banner } from '@/ui/feedback';
+import { Banner, ConfirmDialog } from '@/ui/feedback';
 import { Input } from '@/ui/forms';
 import { PageState } from '@/ui/layout';
 import { useDayLog, useDayLogAccess, type DayQuery } from '../api';
@@ -59,16 +59,27 @@ export function DayLogTab({
   // While another day is loading the old one stays on screen — no writes then.
   const canWrite = day.canWrite && !query.isPlaceholderData;
 
+  const [leaveTo, setLeaveTo] = useState<string | null>(null);
   const goDate = (d: string): void => {
     // A cleared or future date is not a day to show.
     if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || d > day.today || d === day.date) return;
-    if (dirty && !window.confirm('You have rows that are not saved. Leave this day and lose them?'))
-      return;
+    if (dirty) return setLeaveTo(d);
     onDate(d === day.today ? undefined : d);
   };
 
   return (
     <div>
+      <ConfirmDialog
+        open={leaveTo !== null}
+        title="Leave this day?"
+        message="You have rows that are not saved. Leave this day and lose them?"
+        confirmLabel="Leave"
+        onCancel={() => setLeaveTo(null)}
+        onConfirm={() => {
+          if (leaveTo) onDate(leaveTo === day.today ? undefined : leaveTo);
+          setLeaveTo(null);
+        }}
+      />
       <div
         style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 8 }}
       >
@@ -88,6 +99,7 @@ export function DayLogTab({
           type="button"
           className="btn btn-ghost btn-sm"
           disabled={isToday}
+          title={isToday ? 'Already showing today' : undefined}
           onClick={() => goDate(day.today)}
         >
           Today

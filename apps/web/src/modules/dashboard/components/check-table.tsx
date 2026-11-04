@@ -109,7 +109,7 @@ export function CheckTable({ check }: { check: DashCheck }): React.JSX.Element {
         // every check shares one saved key per page, so a filter would cross-filter
         // the other checks; full sort/filter lives on the View-all page.
         sortFilter={false}
-        emptyText="Nothing waiting."
+        emptyText="No documents yet."
       />
       {more ? (
         <div className="dh-morerow">

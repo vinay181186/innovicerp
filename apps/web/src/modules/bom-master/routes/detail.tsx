@@ -7,13 +7,16 @@
 // child.stockQty off the items master, and our Item read shape has no on-hand
 // stock field (items has min_stock_qty — a threshold, not on-hand). Computing
 // it browser-side would violate CLAUDE.md rule 1. Reported, not invented.
+//
+// 2026-11-04 (owner): DetailHeader + ClusterGrid facts; History and Related
+// Documents are tabs, as on Sales Order detail.
 
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2, Pencil } from 'lucide-react';
 import { useState } from 'react';
 import { useCanOpen } from '@/components/shared/action-link';
-import { DocumentHistory } from '@/components/shared/document-history';
-import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
+import { useHistoryTab } from '@/components/shared/document-history';
+import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
@@ -28,8 +31,9 @@ import {
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { StatusBadge } from '@/ui/core';
 import { RowMenu } from '@/ui/data';
-import { ConfirmDialog } from '@/ui/feedback';
-import { ActionMenu } from '@/ui/layout';
+import { Banner, ConfirmDialog, Modal } from '@/ui/feedback';
+import { Cluster, ClusterFact, ClusterGrid } from '@/ui/forms';
+import { ActionMenu, DetailHeader } from '@/ui/layout';
 import { useBomLinkedSoLines, useBomMaster, useDeleteBomMaster } from '../api';
 
 export const bomMasterDetailRoute = createRoute({
@@ -64,6 +68,12 @@ function BomMasterDetailPage(): React.JSX.Element {
   // Flattened across requests (usually one, but an older request can still be
   // open alongside a new one).
   const pendingEdit = usePendingEditForDoc('BOM', detail?.id);
+  // ADR-197 — called before the early returns (hooks rule).
+  const historyTab = useHistoryTab({
+    entity: 'BOM',
+    entityId: detail?.id,
+    refId: detail?.bomNo,
+  });
   const [delError, setDelError] = useState<string | null>(null);
   const [showLinked, setShowLinked] = useState(false);
   // Legacy _bomViewSnapshot (L8812) — which revision's archived part list is open.
@@ -147,38 +157,33 @@ function BomMasterDetailPage(): React.JSX.Element {
 
   return (
     <div>
-      <Link to="/bom-masters" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
-        <ArrowLeft size={14} /> Back
-      </Link>
-
-      <div className="panel">
-        <div className="panel-hdr">
-          <div>
-            <div className="td-code cyan" style={{ fontSize: 16, fontWeight: 800 }}>
-              {detail.bomNo}
-              {bomNoPending ? <PendingChangeChip after={bomNoPending.after} /> : null}
-            </div>
-            <div
-              className="panel-title"
-              style={{ marginTop: 2, display: 'flex', alignItems: 'center', gap: 10 }}
-            >
-              {detail.bomName}
-              {bomNamePending ? <PendingChangeChip after={bomNamePending.after} /> : null}
-              {/* One kind, one colour map, shared with the BOM Master list —
-                  see ui/core/StatusBadge.tsx `bom`. */}
-              <StatusBadge kind="bom" status={detail.status} />
-              {statusPending ? <PendingChangeChip after={statusPending.after} /> : null}
-              <span
-                className="mono"
-                style={{ fontSize: 11, color: 'var(--cyan)', fontWeight: 700 }}
-              >
-                BOM Rev {detail.revision}
-              </span>
-            </div>
-          </div>
-          {/* ONE primary next step (Edit / Revise) + an Actions menu for the
-              rest, Delete last in red. */}
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+      <DetailHeader
+        backLabel="Back"
+        backTo="/bom-masters"
+        renderLink={(p) => <Link {...p} />}
+        code={detail.bomNo}
+        name={
+          <>
+            {detail.bomName}
+            {bomNamePending ? <PendingChangeChip after={bomNamePending.after} /> : null}
+          </>
+        }
+        badges={
+          <>
+            {bomNoPending ? <PendingChangeChip after={bomNoPending.after} /> : null}
+            {/* One kind, one colour map, shared with the BOM Master list —
+                see ui/core/StatusBadge.tsx `bom`. */}
+            <StatusBadge kind="bom" status={detail.status} />
+            {statusPending ? <PendingChangeChip after={statusPending.after} /> : null}
+            <span className="mono" style={{ fontSize: 11, color: 'var(--cyan)', fontWeight: 700 }}>
+              BOM Rev {detail.revision}
+            </span>
+          </>
+        }
+        actions={
+          /* ONE primary next step (Edit / Revise) + an Actions menu for the
+             rest, Delete last in red. */
+          <>
             {perms.edit && (
               <Link
                 to="/bom-masters/$id/edit"
@@ -203,17 +208,26 @@ function BomMasterDetailPage(): React.JSX.Element {
                 },
               ]}
             />
-          </div>
-        </div>
-        <div className="panel-body">
-          <div className="form-grid">
+          </>
+        }
+      >
+        <ClusterGrid stack>
+          <Cluster name="BOM">
             {/* The parent leads: it is what the BOM builds. Pre-0085 BOMs have
                 none — say so plainly and point at Edit rather than showing a
-                blank, so it is obvious something is missing. */}
-            <div className="form-grp">
-              <span className="form-label">Parent Item</span>
-              <div>
-                {detail.parentItemCode ? (
+                blank, so it is obvious something is missing.
+                The proposed parent may show a raw item id (the diff carries the
+                id, not the resolved code) — acceptable, as PO/Machine do. */}
+            <ClusterFact
+              span={2}
+              label="Parent Item"
+              title={
+                detail.parentItemCode
+                  ? `${detail.parentItemCode} — ${detail.parentItemName ?? ''}`
+                  : undefined
+              }
+              value={
+                detail.parentItemCode ? (
                   <>
                     <span className="mono fw-700">{detail.parentItemCode}</span>
                     <span className="text3"> — {detail.parentItemName}</span>
@@ -222,20 +236,18 @@ function BomMasterDetailPage(): React.JSX.Element {
                   <span style={{ color: 'var(--amber2)', fontWeight: 700 }}>
                     Not set — use Edit / Revise to pick it
                   </span>
-                )}
-                {/* The proposed parent may show a raw item id (the diff carries
-                    the id, not the resolved code) — acceptable, as PO/Machine do. */}
-                {parentItemPending ? <PendingChangeChip after={parentItemPending.after} /> : null}
-              </div>
-            </div>
-            <div className="form-grp">
-              <span className="form-label">Revision Date</span>
-              <div>{fmtDate(detail.revisionDate)}</div>
-            </div>
-            <div className="form-grp">
-              <span className="form-label">Linked SO Lines</span>
-              <div>
-                {detail.linkedSoCount > 0 ? (
+                )
+              }
+              after={
+                parentItemPending ? <PendingChangeChip after={parentItemPending.after} /> : null
+              }
+            />
+            <ClusterFact num label="Revision Date" value={fmtDate(detail.revisionDate)} />
+            <ClusterFact
+              label="Linked SO Lines"
+              empty={detail.linkedSoCount === 0}
+              value={
+                detail.linkedSoCount > 0 ? (
                   <button
                     type="button"
                     className="btn btn-ghost btn-sm"
@@ -246,28 +258,20 @@ function BomMasterDetailPage(): React.JSX.Element {
                     {detail.linkedSoCount} — View
                   </button>
                 ) : (
-                  <span className="text3">—</span>
-                )}
-              </div>
-            </div>
-          </div>
-          {delError ? (
-            <div
-              style={{
-                marginTop: 8,
-                color: 'var(--red2)',
-                background: 'var(--red3)',
-                border: '1px solid var(--red2)',
-                borderRadius: 6,
-                padding: '6px 10px',
-                fontSize: 12,
-              }}
-            >
+                  '—'
+                )
+              }
+            />
+          </Cluster>
+        </ClusterGrid>
+        {delError ? (
+          <div style={{ marginTop: 'var(--sp-2)' }}>
+            <Banner tone="error" flush>
               {delError}
-            </div>
-          ) : null}
-        </div>
-      </div>
+            </Banner>
+          </div>
+        ) : null}
+      </DetailHeader>
 
       <div className="panel">
         <div className="panel-hdr">
@@ -406,7 +410,7 @@ function BomMasterDetailPage(): React.JSX.Element {
                         </span>
                       )}
                     </td>
-                    <td className="td-ctr">
+                    <td>
                       <RowMenu
                         items={[
                           {
@@ -427,14 +431,7 @@ function BomMasterDetailPage(): React.JSX.Element {
         </div>
       ) : null}
 
-      <div className="panel">
-        <div className="panel-hdr">
-          <div className="panel-title">History</div>
-        </div>
-        <DocumentHistory entity="BOM" entityId={detail.id} refId={detail.bomNo} />
-      </div>
-
-      <RelatedDocsPanel module="bom-masters" id={detail.id} />
+      <RelatedDocsTabs module="bom-masters" id={detail.id} extraTabs={[historyTab]} />
 
       {showLinked ? (
         <LinkedSoLinesModal
@@ -445,59 +442,42 @@ function BomMasterDetailPage(): React.JSX.Element {
       ) : null}
 
       {openSnapshot ? (
-        <div
-          className="overlay"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setSnapshotRev(null);
-          }}
+        <Modal
+          title={`${detail.bomNo} — BOM Rev ${openSnapshot.revision} (${openSnapshot.itemsSnapshot.length} items)`}
+          onClose={() => setSnapshotRev(null)}
+          size="lg"
+          confirmExit={false}
+          footer={
+            <button type="button" className="btn btn-ghost" onClick={() => setSnapshotRev(null)}>
+              Close
+            </button>
+          }
         >
-          <div className="modal modal-lg">
-            <div className="modal-hdr">
-              <span className="modal-title">
-                {detail.bomNo} — BOM Rev {openSnapshot.revision} (
-                {openSnapshot.itemsSnapshot.length} items)
-              </span>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm btn-icon"
-                onClick={() => setSnapshotRev(null)}
-              >
-                ✕
-              </button>
-            </div>
-            <div className="modal-body">
-              <table className="innovic-table">
-                <thead>
-                  <tr>
-                    <th className="th-num">Sr No</th>
-                    <th>Item Code</th>
-                    <th>Item Name</th>
-                    <th className="th-num">Qty / Set</th>
-                    <th>BOM Type</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {openSnapshot.itemsSnapshot.map((it, i) => (
-                    <tr key={`${it.childItemId}-${i}`}>
-                      <td className="td-num mono">{i + 1}</td>
-                      <td className="mono fw-700" style={{ color: 'var(--text)' }}>
-                        {it.childItemCode ?? '—'}
-                      </td>
-                      <td>{lineNameById.get(it.childItemId) ?? '—'}</td>
-                      <td className="td-num mono fw-700">{Number(it.qtyPerSet)}</td>
-                      <td style={{ fontSize: 11 }}>{BOM_TYPE_WORD[it.bomType] ?? it.bomType}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="modal-footer">
-              <button type="button" className="btn btn-ghost" onClick={() => setSnapshotRev(null)}>
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
+          <table className="innovic-table">
+            <thead>
+              <tr>
+                <th className="th-num">Sr No</th>
+                <th>Item Code</th>
+                <th>Item Name</th>
+                <th className="th-num">Qty / Set</th>
+                <th>BOM Type</th>
+              </tr>
+            </thead>
+            <tbody>
+              {openSnapshot.itemsSnapshot.map((it, i) => (
+                <tr key={`${it.childItemId}-${i}`}>
+                  <td className="td-num mono">{i + 1}</td>
+                  <td className="mono fw-700" style={{ color: 'var(--text)' }}>
+                    {it.childItemCode ?? '—'}
+                  </td>
+                  <td>{lineNameById.get(it.childItemId) ?? '—'}</td>
+                  <td className="td-num mono fw-700">{Number(it.qtyPerSet)}</td>
+                  <td style={{ fontSize: 11 }}>{BOM_TYPE_WORD[it.bomType] ?? it.bomType}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Modal>
       ) : null}
 
       {confirmDelete ? (
@@ -508,7 +488,7 @@ function BomMasterDetailPage(): React.JSX.Element {
               You can restore it from Trash.
               <span className="form-grp" style={{ display: 'block', marginTop: 10 }}>
                 <label className="form-label" htmlFor="bom-delete-reason">
-                  Reason <span className="req">★</span>
+                  Reason<span className="req">★</span>
                 </label>
                 <textarea
                   id="bom-delete-reason"
@@ -546,90 +526,73 @@ function LinkedSoLinesModal({
   // ADR-234 — the SO No. links to the Sales Order only for someone who may open it.
   const canOpenSo = useCanOpen()('/sales-orders/$id');
   return (
-    <div
-      className="overlay"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
+    <Modal
+      title={`${bomNo} — Linked SO Lines (${lines.length})`}
+      onClose={onClose}
+      size="lg"
+      confirmExit={false}
+      footer={
+        <button type="button" className="btn btn-primary" onClick={onClose}>
+          Close
+        </button>
+      }
     >
-      <div className="modal modal-lg">
-        <div className="modal-hdr">
-          <span className="modal-title">
-            {bomNo} — Linked SO Lines ({lines.length})
-          </span>
-          <button type="button" className="btn btn-ghost btn-sm btn-icon" onClick={onClose}>
-            ✕
-          </button>
+      {isLoading ? (
+        <div className="text3" style={{ fontSize: 12 }}>
+          <Loader2 size={13} className="animate-spin" /> Loading…
         </div>
-        <div className="modal-body">
-          {isLoading ? (
-            <div className="text3" style={{ fontSize: 12 }}>
-              <Loader2 size={13} className="animate-spin" /> Loading…
-            </div>
-          ) : isError ? (
-            <div style={{ color: 'var(--red2)', fontSize: 12 }}>
-              Could not load the linked SO lines. Try again.
-            </div>
-          ) : lines.length === 0 ? (
-            <div className="text3" style={{ fontSize: 12 }}>
-              No SO line is built from this BOM.
-            </div>
-          ) : (
-            <table className="innovic-table">
-              <thead>
-                <tr>
-                  <th>SO No.</th>
-                  <th>POL</th>
-                  <th>Item Code</th>
-                  <th>Item Name</th>
-                  <th className="th-num">Order Qty</th>
-                  <th>Line Status</th>
-                  <th>Due Date</th>
-                </tr>
-              </thead>
-              <tbody>
-                {lines.map((l) => (
-                  <tr key={l.salesOrderLineId}>
-                    <td style={{ whiteSpace: 'nowrap' }}>
-                      {canOpenSo ? (
-                        <Link
-                          to="/sales-orders/$id"
-                          params={{ id: l.salesOrderId }}
-                          className="td-code"
-                        >
-                          {soNoWithInternal(l.soCode, l.soInternalNo)}
-                        </Link>
-                      ) : (
-                        <span className="td-code">
-                          {soNoWithInternal(l.soCode, l.soInternalNo)}
-                        </span>
-                      )}
-                    </td>
-                    <td className="mono">{l.clientPoLineNo ?? '—'}</td>
-                    <td
-                      className="mono fw-700"
-                      style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}
+      ) : isError ? (
+        <div style={{ color: 'var(--red2)', fontSize: 12 }}>
+          Could not load the linked SO lines. Try again.
+        </div>
+      ) : lines.length === 0 ? (
+        <div className="text3" style={{ fontSize: 12 }}>
+          No SO line is built from this BOM.
+        </div>
+      ) : (
+        <table className="innovic-table">
+          <thead>
+            <tr>
+              <th>SO No.</th>
+              <th>POL</th>
+              <th>Item Code</th>
+              <th>Item Name</th>
+              <th className="th-num">Order Qty</th>
+              <th>Line Status</th>
+              <th>Due Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            {lines.map((l) => (
+              <tr key={l.salesOrderLineId}>
+                <td style={{ whiteSpace: 'nowrap' }}>
+                  {canOpenSo ? (
+                    <Link
+                      to="/sales-orders/$id"
+                      params={{ id: l.salesOrderId }}
+                      className="td-code"
                     >
-                      {itemCodeWithRev(l.itemCode, l.itemRevision)}
-                    </td>
-                    <td>{l.itemName ?? '—'}</td>
-                    <td className="td-num mono fw-700">{l.orderQty}</td>
-                    <td>
-                      <StatusBadge kind="so" status={l.lineStatus} />
-                    </td>
-                    <td style={{ whiteSpace: 'nowrap' }}>{fmtDate(l.dueDate)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-        <div className="modal-footer">
-          <button type="button" className="btn btn-primary" onClick={onClose}>
-            Close
-          </button>
-        </div>
-      </div>
-    </div>
+                      {soNoWithInternal(l.soCode, l.soInternalNo)}
+                    </Link>
+                  ) : (
+                    <span className="td-code">{soNoWithInternal(l.soCode, l.soInternalNo)}</span>
+                  )}
+                </td>
+                <td className="mono">{l.clientPoLineNo ?? '—'}</td>
+                <td className="mono fw-700" style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}>
+                  {itemCodeWithRev(l.itemCode, l.itemRevision)}
+                </td>
+                <td>{l.itemName ?? '—'}</td>
+                <td className="td-num mono fw-700">{l.orderQty}</td>
+                <td>
+                  <StatusBadge kind="so" status={l.lineStatus} />
+                </td>
+                <td style={{ whiteSpace: 'nowrap' }}>{fmtDate(l.dueDate)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </Modal>
   );
 }

@@ -20,8 +20,8 @@
 //     enforces exactly that (`createPurchaseOrderInputSchema`), so ADR-138
 //     ("a PO is always raised against a Purchase Request") still holds.
 //
-// Styling is the app theme: sticky PageHeader (Cancel + Save, Ctrl+S) →
-// Panel(FormGrid) → Panel(line table) → Panel(taxes + totals). The old private
+// Styling is the app theme: PageHeader → Panel(FormGrid) → Panel(line table) →
+// Panel(taxes + totals) → FormActions (Cancel + Save, Ctrl+S). The old private
 // `.pof-` palette (po-form-css.ts) is gone.
 
 import {
@@ -52,9 +52,9 @@ import { useSaveKey } from '@/lib/use-save-key';
 import { useMyCompany } from '@/modules/settings/api';
 import { useVendor, useVendorsList } from '@/modules/vendors/api';
 import { Panel } from '@/ui/data';
-import { Banner } from '@/ui/feedback';
+import { Banner, useToast } from '@/ui/feedback';
 import { FormField, FormGrid } from '@/ui/forms';
-import { PageHeader, useSaveShortcut } from '@/ui/layout';
+import { FormActions, PageHeader, useSaveShortcut } from '@/ui/layout';
 import { isStagedResult } from '@/modules/document-edits/api';
 import {
   OrderSupplyFormFields,
@@ -121,6 +121,7 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
   const navigate = useNavigate();
   // R2 — one idempotency key per open form, reused on a retry after a dropped save.
   const saveKey = useSaveKey();
+  const toast = useToast();
   const createPo = useCreatePurchaseOrder(saveKey);
   const updatePo = useUpdatePurchaseOrder(props.mode === 'edit' ? props.detail.id : '', saveKey);
   // R5 — the PO's version as it was when this edit form opened.
@@ -134,9 +135,6 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
     updatePo.isPending,
   );
   const [submitError, setSubmitError] = useState<string | null>(null);
-  // ADR-202 — set when an edit to a LIVE PO is staged for approval instead of
-  // applied. Shown as a neutral success banner before we return to the PO.
-  const [stagedNotice, setStagedNotice] = useState<string | null>(null);
   // Where Cancel goes — and therefore where ESC → Exit goes too. The exit guard
   // asks "Are you sure?" on every other way off this screen (Back link,
   // breadcrumb, browser Back); Save and Cancel pass through `exit.leave`.
@@ -485,7 +483,7 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
       .map((x) => x.i + 1);
   }, [lines, prById, vendorId, vendorCode]);
 
-  // ── The ONE blocking message, shown under the header in amber. First problem wins,
+  // ── The ONE blocking message, shown beside Save in amber. First problem wins,
   //    so the buyer is told what to do next rather than handed a list.
   const blocking = useMemo((): string | null => {
     // ADR-227: nothing about the PO No. can block a save — it is not sent.
@@ -587,9 +585,7 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
           // The edit-approval gate is on and this PO is live: nothing was
           // changed on the PO — the edit is now waiting for approval. Say so,
           // then return to the PO (its fields now carry the pending-change chip).
-          setStagedNotice(
-            'Sent for approval — your changes will apply once an approver signs off.',
-          );
+          toast.ok('Sent for approval — your changes will apply once an approver signs off.');
           exit.leave(
             () =>
               void navigate({
@@ -601,6 +597,7 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
           return;
         }
         opened.saved(saved.updatedAt);
+        toast.ok(`PO ${props.detail.code} saved`);
         exit.leave(
           () =>
             void navigate({ to: '/purchase-orders/$id', params: { id: editedId }, replace: true }),
@@ -620,6 +617,7 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
           lines: outLines,
         } as CreatePurchaseOrderInput;
         const created = await createPo.mutateAsync(payload);
+        toast.ok(`PO ${created.code} saved`);
         exit.leave(
           () =>
             void navigate({
@@ -644,7 +642,7 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
   const firstWithoutPr = lines.findIndex((l) => !l.sourcePrId);
   const hintLineIdx = lines.length === 0 ? -1 : Math.max(firstWithoutPr, 0);
 
-  // Ctrl+S runs the same Save as the header button — and is off whenever that
+  // Ctrl+S runs the same Save as the Save button — and is off whenever that
   // button is disabled, so a held key can neither double-post nor bypass a block.
   useSaveShortcut(() => void handleSubmit(onValid)(), !disabled);
 
@@ -653,7 +651,6 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
       {exit.dialog}
 
       <PageHeader
-        sticky
         title={isEdit ? 'Edit Purchase Order' : 'New Purchase Order'}
         subtitle={
           props.mode === 'edit' ? (
@@ -662,45 +659,7 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
         }
         backLabel={isEdit ? 'Back to PO' : 'Back to Purchase Orders'}
         onBack={goBack}
-        dirty={formState.isDirty}
-        actions={
-          <>
-            <button type="button" className="btn btn-ghost" onClick={() => exit.leave(goBack)}>
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="btn btn-primary"
-              disabled={disabled}
-              title={blocking ?? 'Save (Ctrl+S)'}
-            >
-              {submitting ? (
-                <>
-                  <Loader2 size={13} className="animate-spin" /> Saving…
-                </>
-              ) : isEdit ? (
-                'Save Changes'
-              ) : (
-                'Save PO'
-              )}
-            </button>
-          </>
-        }
       />
-
-      {/* The ONE blocking message sits under the header, beside Save — first
-          problem wins, so the buyer is told what to do next. */}
-      {stagedNotice ? (
-        <Banner tone="success" role="status">
-          {stagedNotice}
-        </Banner>
-      ) : null}
-      {submitError ? (
-        <Banner tone="error" role="alert">
-          {submitError}
-        </Banner>
-      ) : null}
-      {blocking ? <Banner tone="warn">{blocking}</Banner> : null}
 
       <Panel title="PO Details">
         <FormGrid>
@@ -987,6 +946,48 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
           </span>
         </div>
       </Panel>
+
+      {/* The ONE blocking message sits beside Save — first problem wins, so the
+    buyer is told what to do next. */}
+      <FormActions
+        dirty={formState.isDirty}
+        note={
+          submitError || blocking ? (
+            <div style={{ display: 'grid', gap: 'var(--sp-1)' }}>
+              {submitError ? (
+                <Banner tone="error" role="alert" flush>
+                  {submitError}
+                </Banner>
+              ) : null}
+              {blocking ? (
+                <Banner tone="warn" flush>
+                  {blocking}
+                </Banner>
+              ) : null}
+            </div>
+          ) : undefined
+        }
+      >
+        <button type="button" className="btn btn-ghost" onClick={() => exit.leave(goBack)}>
+          Cancel
+        </button>
+        <button
+          type="submit"
+          className="btn btn-primary"
+          disabled={disabled}
+          title={blocking ?? 'Save (Ctrl+S)'}
+        >
+          {submitting ? (
+            <>
+              <Loader2 size={13} className="animate-spin" /> Saving…
+            </>
+          ) : isEdit ? (
+            'Save Changes'
+          ) : (
+            'Save PO'
+          )}
+        </button>
+      </FormActions>
     </form>
   );
 }

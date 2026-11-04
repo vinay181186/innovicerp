@@ -9,11 +9,11 @@
 // tile are server sums over every matching op. Any change → page 1. The page
 // lives in component state (this is a tab, not a route).
 
-import { type ListOspWipResponse } from '@innovic/shared';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
-import { DataTable, Panel, StatStrip } from '@/ui/data';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
+import { DataTable, Panel } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
@@ -28,7 +28,7 @@ const FILTER_LABELS: Record<FilterKey, string | undefined> = {
   ready_to_send: 'Ready to send today',
 };
 
-export function OspAtVendorRegister(): React.JSX.Element {
+export function OspAtVendorRegister({ tabs }: { tabs?: React.ReactNode }): React.JSX.Element {
   // Opens on 'all', not 'at_vendor'. The at-vendor bucket is empty whenever
   // every outsourced op has come back, so defaulting to it showed an empty
   // table on a register that does have rows. The Bucket dropdown still filters to it.
@@ -63,9 +63,9 @@ export function OspAtVendorRegister(): React.JSX.Element {
   return (
     <div>
       {/* THE list header (ui/layout ListHeader): title · count, then the filter
-          bar (search · bucket with its qty · Clear), with the read-only
-          "Total Sent" tile inside the same band. */}
+          bar (search · bucket with its qty · Clear). */}
       <ListHeader
+        orderFilter={<OrderSfFilter sf={sf} field="soCode" />}
         title="At-Vendor Register"
         icon="🚚"
         count={data?.total}
@@ -113,7 +113,7 @@ export function OspAtVendorRegister(): React.JSX.Element {
         }}
         filtersActive={filter !== 'all' || search !== '' || sf.filtering}
       >
-        {data ? <KpiStrip summary={data.summary} /> : null}
+        {tabs}
       </ListHeader>
 
       {isError ? (
@@ -148,29 +148,12 @@ export function OspAtVendorRegister(): React.JSX.Element {
               page={page}
               pageSize={LIST_PAGE_SIZE}
               onPage={setPage}
+              summary={`Total Sent ${data.summary.sentQty}`}
               hint="Order Qty = Accepted + In QC + At Vendor + Not Sent."
             />
           ) : null}
         </>
       ) : null}
     </div>
-  );
-}
-
-// The filtering buckets (Outsourced Ops / At Vendor / Not Sent / Ready to
-// Send) moved into the Bucket dropdown (2026-09-26 filter bar). "Total Sent"
-// never filtered, so it stays as a read-only tile.
-function KpiStrip({ summary }: { summary: ListOspWipResponse['summary'] }): React.JSX.Element {
-  return (
-    <StatStrip
-      items={[
-        {
-          key: 'sent',
-          label: 'Total Sent',
-          // Body colour: green in this table means Accepted (R5 PU-N46).
-          count: summary.sentQty,
-        },
-      ]}
-    />
   );
 }

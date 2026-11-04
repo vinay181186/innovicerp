@@ -22,6 +22,21 @@ export function planSfColumns(effectiveStatus: SQL): SfColumnMap {
     // source it has (plans.so_code_text, the same value listPlans returns as
     // soCodeText). A plan column, so the count query can use it too.
     soCodeText: { sql: sql`${plans.soCodeText}`, type: 'text' },
+    // ADR-267 — the bare order No. for the order dropdown: live through the plan's
+    // line, the snapshot only as the fallback (CLAUDE.md §18), which a JWSO upload
+    // can leave blank. Scalars, so the count query needs no extra join.
+    orderCode: {
+      sql: sql`COALESCE(
+        (SELECT oso.code FROM public.sales_order_lines osol
+           JOIN public.sales_orders oso ON oso.id = osol.sales_order_id
+          WHERE osol.id = ${plans.soLineId} LIMIT 1),
+        (SELECT ojw.code FROM public.job_work_order_lines ojwl
+           JOIN public.job_work_orders ojw ON ojw.id = ojwl.job_work_order_id
+          WHERE ojwl.id = ${plans.jwLineId} LIMIT 1),
+        ${plans.soCodeText}
+      )`,
+      type: 'text',
+    },
     // ADR-207 — the Internal SO No. of the plan's order, the SAME scalar
     // listPlans SELECTs (service.ts PLAN_SO_INTERNAL_NO_SQL): read live through
     // the plan's SO line, never copied onto the plan. Keyed on plans.so_line_id

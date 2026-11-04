@@ -159,7 +159,13 @@ export function DocNumberInput({
         {showStatus ? (
           <span
             aria-hidden
-            style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', display: 'inline-flex' }}
+            style={{
+              position: 'absolute',
+              right: 8,
+              top: '50%',
+              transform: 'translateY(-50%)',
+              display: 'inline-flex',
+            }}
           >
             {state.checking ? (
               <Loader2 size={14} className="animate-spin" style={{ color: 'var(--text3)' }} />
@@ -182,9 +188,13 @@ export function DocNumberInput({
       ) : value.trim() === '' ? (
         <div className="form-help">Leave blank for the next number.</div>
       ) : suggestionTaken ? (
-        <div className="form-help">Just used by someone else — the next free number is given on save.</div>
+        <div className="form-help">
+          Just used by someone else — the next free number is given on save.
+        </div>
       ) : (
-        <div className="form-help" style={{ color: 'var(--green2)' }}>✓ Available</div>
+        <div className="form-help" style={{ color: 'var(--green2)' }}>
+          ✓ Available
+        </div>
       )}
     </div>
   );

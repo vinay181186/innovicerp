@@ -10,13 +10,12 @@
 import type { QcDossierLine, QcDossierOrderKind } from '@innovic/shared';
 import { useMemo, useState } from 'react';
 import { matchesSearchTerm, normalizeSearchTerm } from '@/components/shared/search-match';
-import { SearchableSelect } from '@/ui/forms';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { soNoWithInternal } from '@/lib/so-number';
+import { OrderSelect } from '@/modules/order-options/components/order-select';
 import { Panel, StatStrip } from '@/ui/data';
 import { ListHeader, PageState } from '@/ui/layout';
-import { useQcDossier, useQcDossierOrders } from '../api';
+import { useQcDossier } from '../api';
 import { qcDocumentsListRoute } from '../routes/list';
 import '../dossier.css';
 import { DossierFileSheet, DossierLineHead, lineFileCount } from './dossier-files';
@@ -37,7 +36,7 @@ function lineFields(l: QcDossierLine): Array<string | number | null> {
   ];
 }
 
-export function DossierView({ toggle }: { toggle: React.ReactNode }): React.JSX.Element {
+export function DossierView({ tabs }: { tabs: React.ReactNode }): React.JSX.Element {
   const search = qcDocumentsListRoute.useSearch();
   const navigate = qcDocumentsListRoute.useNavigate();
   const { data: eff } = useMyAccess();
@@ -50,20 +49,23 @@ export function DossierView({ toggle }: { toggle: React.ReactNode }): React.JSX.
   );
   const upload = useDossierUpload();
 
-  const [pickSearch, setPickSearch] = useState('');
-  const orders = useQcDossierOrders(pickSearch);
-  const options = orders.data?.orders ?? [];
   // Nothing opens by itself: the order comes only from the URL, i.e. the one the
   // user picked (or a dashboard link named). No order → the empty page below.
   const orderId = search.orderId;
   const kind: QcDossierOrderKind | undefined = orderId ? (search.kind ?? 'so') : undefined;
-  const pickEmptyText = pickSearch
-    ? `No SO or JWSO matches "${pickSearch}".`
-    : 'No SO or JWSO yet.';
   const dq = useQcDossier(kind, orderId);
   // placeholderData keeps the last order's data after the field is cleared — never show it then.
   const dossier = orderId ? dq.data : undefined;
   const { isLoading, isFetching, isError, error } = dq;
+  // The box names only the order the URL has open: placeholderData can still hold
+  // the previous one. Between a pick and its dossier arriving, the pick names it.
+  const [picked, setPicked] = useState<{ id: string; code: string } | null>(null);
+  const openOrderCode =
+    orderId && picked?.id === orderId
+      ? picked.code
+      : dossier?.order.id === orderId
+        ? (dossier?.order.code ?? null)
+        : null;
 
   const [term, setTerm] = useState(search.search ?? '');
   const q = search.search ?? '';
@@ -132,47 +134,29 @@ export function DossierView({ toggle }: { toggle: React.ReactNode }): React.JSX.
     zip ? `Zipping ${zip.done}/${zip.total}…` : `⬇ ZIP (${what})`;
 
   const picker = (
-    <div className="qd-order-pick">
-      <SearchableSelect
-        id="qc-dossier-order"
-        clearable
-        ariaLabel="SO / JWSO"
-        value={kind && orderId ? `${kind}:${orderId}` : null}
-        valueLabel={
-          dossier
-            ? `${soNoWithInternal(dossier.order.code, dossier.order.internalSoNo)}${dossier.order.customerName ? ` · ${dossier.order.customerName}` : ''}`
-            : undefined
-        }
-        onChange={(v) => {
-          // Clearing the field (or typing a new search) closes the open order;
-          // the next pick opens its dossier.
-          const [k, id] = v ? v.split(':') : [];
-          setTerm('');
-          void navigate({
-            search: (p) => ({
-              ...p,
-              kind: k === 'jwso' ? 'jwso' : k === 'so' ? 'so' : undefined,
-              orderId: id || undefined,
-              lineId: undefined,
-              folder: undefined,
-              search: undefined,
-            }),
-            replace: true,
-          });
-        }}
-        onSearch={setPickSearch}
-        loading={orders.isFetching}
-        emptyText={pickEmptyText}
-        placeholder="Search SO / JWSO No., Internal SO No., Client PO No., customer…"
-        options={options.map((o) => ({
-          id: `${o.kind}:${o.id}`,
-          code: o.internalSoNo ? `${o.code} · ${o.internalSoNo}` : o.code,
-          name: o.customerName ?? '',
-          // The server also matched Client PO No.; keep that row through the box's own filter.
-          searchText: o.clientPoNo,
-        }))}
-      />
-    </div>
+    <OrderSelect
+      id="qc-dossier-order"
+      cancelled="exclude"
+      placeholder="Type SO / JWSO, Client PO, customer…"
+      value={openOrderCode}
+      onChange={(option) => {
+        // Clearing the field (or typing a new search) closes the open order;
+        // the next pick opens its dossier.
+        setPicked(option ? { id: option.id, code: option.code } : null);
+        setTerm('');
+        void navigate({
+          search: (p) => ({
+            ...p,
+            kind: option?.kind,
+            orderId: option?.id,
+            lineId: undefined,
+            folder: undefined,
+            search: undefined,
+          }),
+          replace: true,
+        });
+      }}
+    />
   );
 
   const header = (
@@ -182,7 +166,7 @@ export function DossierView({ toggle }: { toggle: React.ReactNode }): React.JSX.
       count={dossier ? lines.length : undefined}
       noun="POL"
       updating={isFetching && !isLoading}
-      searchSlot={picker}
+      orderFilter={picker}
       filters={
         !orderId ? undefined : (
           <input
@@ -209,7 +193,6 @@ export function DossierView({ toggle }: { toggle: React.ReactNode }): React.JSX.
       }
       tools={
         <>
-          {toggle}
           {rights.maySave && dossier && dossier.totals.files > 0 ? (
             <button
               type="button"
@@ -223,7 +206,9 @@ export function DossierView({ toggle }: { toggle: React.ReactNode }): React.JSX.
           ) : null}
         </>
       }
-    />
+    >
+      {tabs}
+    </ListHeader>
   );
 
   if (!orderId) {

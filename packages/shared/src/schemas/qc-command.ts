@@ -154,6 +154,8 @@ export const QC_QUEUE_SORTS = ['age', 'due', 'customer'] as const;
 export type QcQueueSort = (typeof QC_QUEUE_SORTS)[number];
 const qcOffset = z.coerce.number().int().nonnegative().default(0);
 export const qcCommandQuerySchema = z.object({
+  /** One order's rows only: the bare SO / JWSO No. picked in the order dropdown (ADR-267). */
+  orderCode: z.string().trim().max(40).optional(),
   /** Queue order: oldest first (default), due date (blank last), customer A→Z. */
   queueSort: z.enum(QC_QUEUE_SORTS).default('age'),
   limit: z.coerce.number().int().positive().max(1000).optional(),

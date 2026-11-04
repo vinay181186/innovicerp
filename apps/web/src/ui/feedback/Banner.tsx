@@ -14,6 +14,7 @@
 // `accent` is the JC recovery banner's 4px left bar — a notice that identifies
 // the whole document rather than flagging one field.
 
+import { useEffect, useRef } from 'react';
 import { Icon } from '../core/Icon';
 import { IconButton } from '../core/IconButton';
 
@@ -70,8 +71,18 @@ export function Banner({
   role = 'status',
 }: BannerProps): React.JSX.Element {
   const t = TONES[tone];
+  // Save is at the bottom of a long form (owner 2026-11-04): the result of pressing it
+  // must not appear off-screen at the top, so an error or success notice shows itself.
+  // 'nearest' does nothing when it is already in view.
+  const boxRef = useRef<HTMLDivElement>(null);
+  const reveals = tone === 'error' || tone === 'success';
+  const text = typeof children === 'string' ? children : '';
+  useEffect(() => {
+    if (reveals) boxRef.current?.scrollIntoView?.({ block: 'nearest' });
+  }, [reveals, text]);
   return (
     <div
+      ref={boxRef}
       role={role}
       style={{
         background: t.bg,

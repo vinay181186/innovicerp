@@ -4,14 +4,11 @@
 
 import type {
   QcDossierOrderKind,
-  QcDossierOrdersQuery,
-  QcDossierOrdersResponse,
   QcDossierQuery,
   QcDossierResponse,
   QcDossierUrlsInput,
   QcDossierUrlsResponse,
 } from '@innovic/shared';
-import { sql } from 'drizzle-orm';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
@@ -24,10 +21,6 @@ function requireCompany(user: AuthContext): string {
   return user.companyId;
 }
 
-function escapeLikeTerm(raw: string): string {
-  return raw.replace(/[\\%_]/g, (ch) => `\\${ch}`);
-}
-
 /** The built dossier of one order — the one entry point the Matrix and SO QC
  *  Status use too, so the three screens agree. */
 export async function buildOrderDossier(
@@ -37,53 +30,6 @@ export async function buildOrderDossier(
   orderId: string,
 ): Promise<DossierBuilt> {
   return buildDossier(await loadDossierRaw(tx, cid, kind, orderId));
-}
-
-/** Order picker: SOs and JWSOs, not cancelled, newest first. The term matches
- *  SO / JWSO No., Internal SO No., Client PO No. or customer. */
-export async function listQcDossierOrders(
-  input: QcDossierOrdersQuery,
-  user: AuthContext,
-): Promise<QcDossierOrdersResponse> {
-  await requireFormAccess(user, 'qcdocs_upload', 'view');
-  const cid = requireCompany(user);
-  return withUserContext(user, async (tx) => {
-    const term = input.search ? `%${escapeLikeTerm(input.search)}%` : null;
-    const soMatch = term
-      ? sql`AND (o.code ILIKE ${term} ESCAPE '\\' OR o.internal_so_no ILIKE ${term} ESCAPE '\\'
-                 OR o.client_po_no ILIKE ${term} ESCAPE '\\' OR o.customer_name ILIKE ${term} ESCAPE '\\')`
-      : sql``;
-    const jwMatch = term
-      ? sql`AND (o.code ILIKE ${term} ESCAPE '\\' OR o.client_po_no ILIKE ${term} ESCAPE '\\'
-                 OR o.customer_name ILIKE ${term} ESCAPE '\\')`
-      : sql``;
-    const rs = (await tx.execute(sql`
-      SELECT x.kind, x.id, x.code, x.internal_so_no, x.client_po_no, x.customer_name FROM (
-        SELECT 'so' AS kind, o.id, o.code, o.internal_so_no, o.client_po_no, o.customer_name,
-               o.so_date AS order_date, o.created_at
-        FROM public.sales_orders o
-        WHERE o.company_id = ${cid}::uuid AND o.deleted_at IS NULL AND o.status <> 'cancelled'
-          ${soMatch}
-        UNION ALL
-        SELECT 'jwso', o.id, o.code, NULL::text, o.client_po_no, o.customer_name, o.jw_date, o.created_at
-        FROM public.job_work_orders o
-        WHERE o.company_id = ${cid}::uuid AND o.deleted_at IS NULL AND o.status <> 'cancelled'
-          ${jwMatch}
-      ) x
-      ORDER BY x.order_date DESC NULLS LAST, x.created_at DESC, x.code DESC
-      LIMIT ${input.limit}
-    `)) as unknown as Array<Record<string, unknown>>;
-    return {
-      orders: rs.map((r) => ({
-        kind: r['kind'] === 'jwso' ? ('jwso' as const) : ('so' as const),
-        id: String(r['id']),
-        code: String(r['code']),
-        internalSoNo: (r['internal_so_no'] as string | null) ?? null,
-        clientPoNo: (r['client_po_no'] as string | null) ?? null,
-        customerName: (r['customer_name'] as string | null) ?? null,
-      })),
-    };
-  });
 }
 
 async function readDossier(

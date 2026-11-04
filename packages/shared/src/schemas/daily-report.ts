@@ -59,6 +59,8 @@ export const dailyReportSummarySchema = z.object({
 export type DailyReportSummary = z.infer<typeof dailyReportSummarySchema>;
 
 export const dailyReportQuerySchema = z.object({
+  /** One order's rows only: the bare SO / JWSO No. picked in the order dropdown (ADR-267). */
+  orderCode: z.string().trim().max(40).optional(),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   machineId: z.string().uuid().optional(),
   /** Set -> paged (ADR-201): `groups` carry only this page's rows (machines in

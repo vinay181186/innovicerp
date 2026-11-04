@@ -22,7 +22,7 @@ import {
 } from '@innovic/shared';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Loader2 } from 'lucide-react';
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, type ReactNode } from 'react';
 import { type FieldErrors, type UseFormRegister, useForm } from 'react-hook-form';
 import {
   GST_CATEGORY_OPTIONS,
@@ -40,9 +40,12 @@ import {
   usePartyGstNotes,
 } from '@/modules/settings/master-rules-ui';
 import { useNextVendorCode } from '../api';
+import { FormActions } from '@/ui/layout';
 
 type CreateMode = {
   mode: 'create';
+  /** The title band of the form's panel; the form owns the panel so its button bar can sit outside it. */
+  panelHeader: ReactNode;
   defaultValues?: Partial<CreateVendorInput>;
   onSubmit: (values: CreateVendorInput) => Promise<void> | void;
   submitLabel?: string;
@@ -54,6 +57,8 @@ type CreateMode = {
 
 type EditMode = {
   mode: 'edit';
+  /** The title band of the form's panel; the form owns the panel so its button bar can sit outside it. */
+  panelHeader: ReactNode;
   vendor: Vendor;
   onSubmit: (values: UpdateVendorInput) => Promise<void> | void;
   submitLabel?: string;
@@ -171,156 +176,168 @@ function CreateVendorForm(props: CreateMode): React.JSX.Element {
         });
       })}
     >
-      <div className="form-grid">
-        <div className="form-grp">
-          <label className="form-label" htmlFor="code">
-            Vendor Code
-          </label>
-          <input
-            id="code"
-            className="innovic-input"
-            readOnly
-            autoComplete="off"
-            placeholder="Auto-generated on save"
-            {...register('code', {
-              // Read-only, auto-generated server-side. RHF reads the blank DOM
-              // value back as "" on submit, failing the schema's min(1); coerce
-              // blank → undefined so `code` is omitted (optional).
-              setValueAs: (v: string) => (typeof v === 'string' && v.trim() ? v.trim() : undefined),
-            })}
-          />
-          {errors.code?.message ? <div className="form-error">{errors.code.message}</div> : null}
-        </div>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="name">
-            Vendor Name<span className="req">★</span>
-          </label>
-          <input id="name" className="innovic-input" autoComplete="off" {...register('name')} />
-          {errors.name?.message ? <div className="form-error">{errors.name.message}</div> : null}
-        </div>
+      <div className="panel">
+        <div className="panel-hdr">{props.panelHeader}</div>
+        <div className="panel-body">
+          <div className="form-grid">
+            <div className="form-grp">
+              <label className="form-label" htmlFor="code">
+                Vendor Code
+              </label>
+              <input
+                id="code"
+                className="innovic-input"
+                readOnly
+                autoComplete="off"
+                placeholder="Auto-generated on save"
+                {...register('code', {
+                  // Read-only, auto-generated server-side. RHF reads the blank DOM
+                  // value back as "" on submit, failing the schema's min(1); coerce
+                  // blank → undefined so `code` is omitted (optional).
+                  setValueAs: (v: string) =>
+                    typeof v === 'string' && v.trim() ? v.trim() : undefined,
+                })}
+              />
+              {errors.code?.message ? (
+                <div className="form-error">{errors.code.message}</div>
+              ) : null}
+            </div>
+            <div className="form-grp">
+              <label className="form-label" htmlFor="name">
+                Vendor Name<span className="req">★</span>
+              </label>
+              <input id="name" className="innovic-input" autoComplete="off" {...register('name')} />
+              {errors.name?.message ? (
+                <div className="form-error">{errors.name.message}</div>
+              ) : null}
+            </div>
 
-        <div className="form-grp">
-          <label className="form-label" htmlFor="contactPerson">
-            Contact Person
-          </label>
-          <input
-            id="contactPerson"
-            className="innovic-input"
-            autoComplete="off"
-            {...register('contactPerson')}
-          />
-        </div>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="phone">
-            Phone
-          </label>
-          <input
-            id="phone"
-            className="innovic-input"
-            autoComplete="off"
-            placeholder="9876543210"
-            {...register('phone')}
-          />
-        </div>
+            <div className="form-grp">
+              <label className="form-label" htmlFor="contactPerson">
+                Contact Person
+              </label>
+              <input
+                id="contactPerson"
+                className="innovic-input"
+                autoComplete="off"
+                {...register('contactPerson')}
+              />
+            </div>
+            <div className="form-grp">
+              <label className="form-label" htmlFor="phone">
+                Phone
+              </label>
+              <input
+                id="phone"
+                className="innovic-input"
+                autoComplete="off"
+                placeholder="9876543210"
+                {...register('phone')}
+              />
+            </div>
 
-        <div className="form-grp">
-          <label className="form-label" htmlFor="email">
-            Email
-          </label>
-          <input
-            id="email"
-            className="innovic-input"
-            type="email"
-            autoComplete="off"
-            placeholder="email@vendor.com"
-            {...register('email')}
-          />
-          {errors.email?.message ? <div className="form-error">{errors.email.message}</div> : null}
-        </div>
-        <VendorGstinField
-          register={fieldRegister}
-          errors={fieldErrors}
-          notes={notes}
-          gstCategory={watch('gstCategory')}
-        />
-        <VendorTermsFields register={fieldRegister} errors={fieldErrors} notes={notes} />
+            <div className="form-grp">
+              <label className="form-label" htmlFor="email">
+                Email
+              </label>
+              <input
+                id="email"
+                className="innovic-input"
+                type="email"
+                autoComplete="off"
+                placeholder="email@vendor.com"
+                {...register('email')}
+              />
+              {errors.email?.message ? (
+                <div className="form-error">{errors.email.message}</div>
+              ) : null}
+            </div>
+            <VendorGstinField
+              register={fieldRegister}
+              errors={fieldErrors}
+              notes={notes}
+              gstCategory={watch('gstCategory')}
+            />
+            <VendorTermsFields register={fieldRegister} errors={fieldErrors} notes={notes} />
 
-        <div className="form-grp form-full">
-          <label className="form-label" htmlFor="addressLine1">
-            Address
-          </label>
-          <textarea
-            id="addressLine1"
-            className="innovic-textarea"
-            rows={2}
-            {...register('addressLine1')}
-          />
-        </div>
+            <div className="form-grp form-full">
+              <label className="form-label" htmlFor="addressLine1">
+                Address
+              </label>
+              <textarea
+                id="addressLine1"
+                className="innovic-textarea"
+                rows={2}
+                {...register('addressLine1')}
+              />
+            </div>
 
-        <div className="form-grp">
-          <label className="form-label" htmlFor="city">
-            City
-          </label>
-          <input id="city" className="innovic-input" autoComplete="off" {...register('city')} />
-        </div>
-        <VendorStateField
-          register={fieldRegister}
-          errors={fieldErrors}
-          notes={notes}
-          oldState={oldState}
-          stateChosen={!!stateCode}
-        />
+            <div className="form-grp">
+              <label className="form-label" htmlFor="city">
+                City
+              </label>
+              <input id="city" className="innovic-input" autoComplete="off" {...register('city')} />
+            </div>
+            <VendorStateField
+              register={fieldRegister}
+              errors={fieldErrors}
+              notes={notes}
+              oldState={oldState}
+              stateChosen={!!stateCode}
+            />
 
-        <div className="form-grp">
-          <label className="form-label" htmlFor="pincode">
-            Pincode
-          </label>
-          <input
-            id="pincode"
-            className="innovic-input"
-            autoComplete="off"
-            {...register('pincode')}
-          />
-        </div>
+            <div className="form-grp">
+              <label className="form-label" htmlFor="pincode">
+                Pincode
+              </label>
+              <input
+                id="pincode"
+                className="innovic-input"
+                autoComplete="off"
+                {...register('pincode')}
+              />
+            </div>
 
-        <div className="form-grp form-full">
-          <label className="form-label" htmlFor="materialsSupplied">
-            Materials Supplied
-          </label>
-          <textarea
-            id="materialsSupplied"
-            className="innovic-textarea"
-            rows={2}
-            placeholder="EN8, SS304, Cutting tools..."
-            {...register('materialsSupplied')}
-          />
-        </div>
+            <div className="form-grp form-full">
+              <label className="form-label" htmlFor="materialsSupplied">
+                Materials Supplied
+              </label>
+              <textarea
+                id="materialsSupplied"
+                className="innovic-textarea"
+                rows={2}
+                placeholder="EN8, SS304, Cutting tools..."
+                {...register('materialsSupplied')}
+              />
+            </div>
 
-        <div className="form-grp">
-          <label className="form-label" htmlFor="rating">
-            Rating
-          </label>
-          <select id="rating" className="innovic-select" {...register('rating')}>
-            <option value="">— None —</option>
-            <option value="A">A</option>
-            <option value="B">B</option>
-            <option value="C">C</option>
-          </select>
-        </div>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="isActive">
-            Vendor Status
-          </label>
-          <select
-            id="isActive"
-            className="innovic-select"
-            {...register('isActive', {
-              setValueAs: (v: string | boolean) => (typeof v === 'string' ? v === 'true' : v),
-            })}
-          >
-            <option value="true">Active</option>
-            <option value="false">Inactive</option>
-          </select>
+            <div className="form-grp">
+              <label className="form-label" htmlFor="rating">
+                Rating
+              </label>
+              <select id="rating" className="innovic-select" {...register('rating')}>
+                <option value="">— None —</option>
+                <option value="A">A</option>
+                <option value="B">B</option>
+                <option value="C">C</option>
+              </select>
+            </div>
+            <div className="form-grp">
+              <label className="form-label" htmlFor="isActive">
+                Vendor Status
+              </label>
+              <select
+                id="isActive"
+                className="innovic-select"
+                {...register('isActive', {
+                  setValueAs: (v: string | boolean) => (typeof v === 'string' ? v === 'true' : v),
+                })}
+              >
+                <option value="true">Active</option>
+                <option value="false">Inactive</option>
+              </select>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -370,143 +387,152 @@ function EditVendorForm(props: EditMode): React.JSX.Element {
         await props.onSubmit(code || vendor.stateCode ? values : rest);
       })}
     >
-      <div className="form-grid">
-        <div className="form-grp">
-          <label className="form-label" htmlFor="code">
-            Vendor Code
-          </label>
-          <input id="code" className="innovic-input" value={props.vendor.code} readOnly />
-        </div>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="name">
-            Vendor Name<span className="req">★</span>
-          </label>
-          <input id="name" className="innovic-input" autoComplete="off" {...register('name')} />
-          {errors.name?.message ? <div className="form-error">{errors.name.message}</div> : null}
-        </div>
+      <div className="panel">
+        <div className="panel-hdr">{props.panelHeader}</div>
+        <div className="panel-body">
+          <div className="form-grid">
+            <div className="form-grp">
+              <label className="form-label" htmlFor="code">
+                Vendor Code
+              </label>
+              <input id="code" className="innovic-input" value={props.vendor.code} readOnly />
+            </div>
+            <div className="form-grp">
+              <label className="form-label" htmlFor="name">
+                Vendor Name<span className="req">★</span>
+              </label>
+              <input id="name" className="innovic-input" autoComplete="off" {...register('name')} />
+              {errors.name?.message ? (
+                <div className="form-error">{errors.name.message}</div>
+              ) : null}
+            </div>
 
-        <div className="form-grp">
-          <label className="form-label" htmlFor="contactPerson">
-            Contact Person
-          </label>
-          <input
-            id="contactPerson"
-            className="innovic-input"
-            autoComplete="off"
-            {...register('contactPerson')}
-          />
-        </div>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="phone">
-            Phone
-          </label>
-          <input
-            id="phone"
-            className="innovic-input"
-            autoComplete="off"
-            placeholder="9876543210"
-            {...register('phone')}
-          />
-        </div>
+            <div className="form-grp">
+              <label className="form-label" htmlFor="contactPerson">
+                Contact Person
+              </label>
+              <input
+                id="contactPerson"
+                className="innovic-input"
+                autoComplete="off"
+                {...register('contactPerson')}
+              />
+            </div>
+            <div className="form-grp">
+              <label className="form-label" htmlFor="phone">
+                Phone
+              </label>
+              <input
+                id="phone"
+                className="innovic-input"
+                autoComplete="off"
+                placeholder="9876543210"
+                {...register('phone')}
+              />
+            </div>
 
-        <div className="form-grp">
-          <label className="form-label" htmlFor="email">
-            Email
-          </label>
-          <input
-            id="email"
-            className="innovic-input"
-            type="email"
-            autoComplete="off"
-            placeholder="email@vendor.com"
-            {...register('email')}
-          />
-          {errors.email?.message ? <div className="form-error">{errors.email.message}</div> : null}
-        </div>
-        <VendorGstinField
-          register={fieldRegister}
-          errors={fieldErrors}
-          notes={notes}
-          gstCategory={watch('gstCategory')}
-        />
-        <VendorTermsFields register={fieldRegister} errors={fieldErrors} notes={notes} />
+            <div className="form-grp">
+              <label className="form-label" htmlFor="email">
+                Email
+              </label>
+              <input
+                id="email"
+                className="innovic-input"
+                type="email"
+                autoComplete="off"
+                placeholder="email@vendor.com"
+                {...register('email')}
+              />
+              {errors.email?.message ? (
+                <div className="form-error">{errors.email.message}</div>
+              ) : null}
+            </div>
+            <VendorGstinField
+              register={fieldRegister}
+              errors={fieldErrors}
+              notes={notes}
+              gstCategory={watch('gstCategory')}
+            />
+            <VendorTermsFields register={fieldRegister} errors={fieldErrors} notes={notes} />
 
-        <div className="form-grp form-full">
-          <label className="form-label" htmlFor="addressLine1">
-            Address
-          </label>
-          <textarea
-            id="addressLine1"
-            className="innovic-textarea"
-            rows={2}
-            {...register('addressLine1')}
-          />
-        </div>
+            <div className="form-grp form-full">
+              <label className="form-label" htmlFor="addressLine1">
+                Address
+              </label>
+              <textarea
+                id="addressLine1"
+                className="innovic-textarea"
+                rows={2}
+                {...register('addressLine1')}
+              />
+            </div>
 
-        <div className="form-grp">
-          <label className="form-label" htmlFor="city">
-            City
-          </label>
-          <input id="city" className="innovic-input" autoComplete="off" {...register('city')} />
-        </div>
-        <VendorStateField
-          register={fieldRegister}
-          errors={fieldErrors}
-          notes={notes}
-          oldState={oldState}
-          stateChosen={!!stateCode}
-        />
+            <div className="form-grp">
+              <label className="form-label" htmlFor="city">
+                City
+              </label>
+              <input id="city" className="innovic-input" autoComplete="off" {...register('city')} />
+            </div>
+            <VendorStateField
+              register={fieldRegister}
+              errors={fieldErrors}
+              notes={notes}
+              oldState={oldState}
+              stateChosen={!!stateCode}
+            />
 
-        <div className="form-grp">
-          <label className="form-label" htmlFor="pincode">
-            Pincode
-          </label>
-          <input
-            id="pincode"
-            className="innovic-input"
-            autoComplete="off"
-            {...register('pincode')}
-          />
-        </div>
+            <div className="form-grp">
+              <label className="form-label" htmlFor="pincode">
+                Pincode
+              </label>
+              <input
+                id="pincode"
+                className="innovic-input"
+                autoComplete="off"
+                {...register('pincode')}
+              />
+            </div>
 
-        <div className="form-grp form-full">
-          <label className="form-label" htmlFor="materialsSupplied">
-            Materials Supplied
-          </label>
-          <textarea
-            id="materialsSupplied"
-            className="innovic-textarea"
-            rows={2}
-            placeholder="EN8, SS304, Cutting tools..."
-            {...register('materialsSupplied')}
-          />
-        </div>
+            <div className="form-grp form-full">
+              <label className="form-label" htmlFor="materialsSupplied">
+                Materials Supplied
+              </label>
+              <textarea
+                id="materialsSupplied"
+                className="innovic-textarea"
+                rows={2}
+                placeholder="EN8, SS304, Cutting tools..."
+                {...register('materialsSupplied')}
+              />
+            </div>
 
-        <div className="form-grp">
-          <label className="form-label" htmlFor="rating">
-            Rating
-          </label>
-          <select id="rating" className="innovic-select" {...register('rating')}>
-            <option value="">— None —</option>
-            <option value="A">A</option>
-            <option value="B">B</option>
-            <option value="C">C</option>
-          </select>
-        </div>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="isActive">
-            Vendor Status
-          </label>
-          <select
-            id="isActive"
-            className="innovic-select"
-            {...register('isActive', {
-              setValueAs: (v: string | boolean) => (typeof v === 'string' ? v === 'true' : v),
-            })}
-          >
-            <option value="true">Active</option>
-            <option value="false">Inactive</option>
-          </select>
+            <div className="form-grp">
+              <label className="form-label" htmlFor="rating">
+                Rating
+              </label>
+              <select id="rating" className="innovic-select" {...register('rating')}>
+                <option value="">— None —</option>
+                <option value="A">A</option>
+                <option value="B">B</option>
+                <option value="C">C</option>
+              </select>
+            </div>
+            <div className="form-grp">
+              <label className="form-label" htmlFor="isActive">
+                Vendor Status
+              </label>
+              <select
+                id="isActive"
+                className="innovic-select"
+                {...register('isActive', {
+                  setValueAs: (v: string | boolean) => (typeof v === 'string' ? v === 'true' : v),
+                })}
+              >
+                <option value="true">Active</option>
+                <option value="false">Inactive</option>
+              </select>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -659,7 +685,7 @@ function FormFooter(props: {
   onCancel?: (() => void) | undefined;
 }): React.JSX.Element {
   return (
-    <div style={{ marginTop: 16 }}>
+    <>
       {props.submitError ? (
         <div
           style={{
@@ -675,7 +701,7 @@ function FormFooter(props: {
           {props.submitError}
         </div>
       ) : null}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
+      <FormActions>
         {props.onCancel ? (
           <button type="button" className="btn btn-ghost" onClick={props.onCancel}>
             Cancel
@@ -685,7 +711,7 @@ function FormFooter(props: {
           {props.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
           {props.isSubmitting ? 'Saving…' : props.submitLabel}
         </button>
-      </div>
-    </div>
+      </FormActions>
+    </>
   );
 }

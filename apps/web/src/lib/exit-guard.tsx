@@ -80,16 +80,23 @@ export function escapeBelongsToAnOpenPicker(target: EventTarget | null): boolean
   return box?.getAttribute('aria-expanded') === 'true';
 }
 
+/** A row ⋯ or a column ▾ menu is open: that ESC closes the menu, not the pop-up. */
+export function escapeBelongsToAnOpenMenu(): boolean {
+  return document.querySelector('[role="menu"], [aria-haspopup][aria-expanded="true"]') !== null;
+}
+
 // Anything open on the page that answers ESC by closing itself: a dropdown
 // list, a menu, a dialog / overlay. The ESC listener below runs in the CAPTURE
 // phase, so these are still open when it looks -- and that ESC is theirs.
 const OPEN_POPUP_SELECTOR =
   '.overlay, [role="dialog"], [role="alertdialog"], [aria-modal="true"], [role="listbox"], [role="menu"], [role="combobox"][aria-expanded="true"], [aria-haspopup][aria-expanded="true"]';
 
-// The controls whose click is a way OUT, not an edit.
-const EXIT_WORDS = /^(?:[←‹<×✕]\s*)?(?:back|cancel|close|exit|discard)\b/i;
+// The controls whose click is a way OUT, not an edit. The WHOLE label: "Cancel PR"
+// and "Close SO" are actions; "Back to Orders" and "Keep it" are ways out.
+const EXIT_WORDS =
+  /^(?:[←‹<×✕]\s*)?(?:back(?: to .+)?|cancel|close(?: preview| review)?|exit|discard|keep(?: it(?: open)?)?)$/i;
 
-function isExitControl(el: Element): boolean {
+export function isExitControl(el: Element): boolean {
   const words = (el.getAttribute('aria-label') ?? el.textContent ?? '').trim();
   if (EXIT_WORDS.test(words)) return true;
   // A bare arrow / cross glyph with no words.
@@ -331,7 +338,10 @@ export function ExitConfirmDialog({
             Anything entered on this form will be lost.
           </p>
         </div>
-        <div className="modal-footer" style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+        <div
+          className="modal-footer"
+          style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}
+        >
           <button ref={stayRef} type="button" className="btn btn-ghost btn-sm" onClick={onStay}>
             Cancel
           </button>

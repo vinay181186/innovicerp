@@ -15,6 +15,7 @@
 // the server. Up/down asks the server to swap the row with its neighbour in the
 // machine's FULL queue, so a move on page 2 never disturbs another page.
 
+import type { OrderOption } from '@innovic/shared';
 import { useCanOpen } from '@/components/shared/action-link';
 import { createRoute } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -23,11 +24,12 @@ import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { todayIst } from '@/lib/date';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
+import { OrderSelect } from '@/modules/order-options/components/order-select';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
-import { Select } from '@/ui/forms';
+import { SearchableSelect } from '@/ui/forms';
 import { ListFooter, ListHeader } from '@/ui/layout';
 import {
   flattenQueue,
@@ -88,6 +90,8 @@ function JobQueuePage(): React.JSX.Element {
     return () => window.clearTimeout(id);
   }, [searchInput, search.search, navigate]);
   const searching = (search.search ?? '') !== '';
+  // ADR-267: one order's ops only (kept for this visit, not in the URL).
+  const [orderCode, setOrderCode] = useState<string | null>(null);
 
   // The URL carries the machine CODE; the server pages by machine id. Every
   // paged response carries ALL machine summaries, so the code resolves from
@@ -99,6 +103,7 @@ function JobQueuePage(): React.JSX.Element {
   const { data, isLoading, isError, error } = useJobQueue({
     machineId,
     search: search.search,
+    orderCode: orderCode ?? undefined,
     limit: resolvingMachine ? 1 : LIST_PAGE_SIZE,
     offset: resolvingMachine ? 0 : pageOffset(search.page),
   });
@@ -136,6 +141,11 @@ function JobQueuePage(): React.JSX.Element {
     [navigate],
   );
   useClampPage(search.page, total, setPage);
+  const setOrder = (option: OrderOption | null): void => {
+    if (!option && orderCode === null) return;
+    setOrderCode(option?.code ?? null);
+    setPage(1);
+  };
 
   // The page's rows as ONE list, grouped under machine headings (machines in
   // code order). A picked machine with nothing pending shows its own
@@ -153,9 +163,9 @@ function JobQueuePage(): React.JSX.Element {
   const columns = useMemo(() => jobQueueColumns({ today, firstRowNo }), [today, firstRowNo]);
   const emptyText = machineNotFound
     ? `Machine ${selectedMachineCode} not found.`
-    : selectedMachine
+    : selectedMachine && orderCode === null
       ? `✓ No pending jobs for ${selectedMachine.machineCode}`
-      : searching
+      : searching || orderCode !== null
         ? 'No pending operations match.'
         : 'No pending operations.';
 
@@ -178,34 +188,35 @@ function JobQueuePage(): React.JSX.Element {
         search={searchInput}
         onSearch={setSearchInput}
         searchPlaceholder="Search JC no., POL, item, SO no., customer, operation…"
+        orderFilter={<OrderSelect value={orderCode} onChange={setOrder} />}
         // The machine picker (owner's filter-bar decision 2026-09-26): the
         // clickable machine-card strip became this dropdown — each label carries
         // the pending-op count the card showed, and ▶n when ops are running.
         filters={
-          <Select
-            aria-label="Machine"
-            title="Machine"
-            value={selectedMachine ? selectedMachine.machineCode : ''}
-            options={[
-              {
-                value: '',
-                label: `All machines (${machines.reduce((n, m) => n + m.pendingCount, 0)})`,
-              },
-              ...machines.map((m) => ({
-                value: m.machineCode,
-                label: `${m.machineCode} (${m.pendingCount})${m.runningCount > 0 ? ` ▶${m.runningCount}` : ''}`,
-              })),
-            ]}
-            onChange={(e) => setMachine(e.target.value === '' ? null : e.target.value)}
+          <SearchableSelect
+            style={{ minWidth: 180 }}
+            ariaLabel="Machine"
+            value={selectedMachine ? selectedMachine.machineCode : null}
+            options={machines.map((m) => ({
+              id: m.machineCode,
+              name: `${m.machineCode} (${m.pendingCount})${m.runningCount > 0 ? ` ▶${m.runningCount}` : ''}`,
+            }))}
+            // The box keeps the code alone: the counts move with every refresh.
+            selectedLabel={(o) => o.id}
+            valueLabel={selectedMachine?.machineCode}
+            placeholder={`All machines (${machines.reduce((n, m) => n + m.pendingCount, 0)})`}
+            clearable
+            onChange={setMachine}
           />
         }
         onClearFilters={() => {
           setSearchInput('');
+          setOrderCode(null);
           void navigate({
             search: (prev) => ({ ...prev, machine: undefined, search: undefined, page: 1 }),
           });
         }}
-        filtersActive={searchInput !== '' || selectedMachineCode !== ''}
+        filtersActive={searchInput !== '' || selectedMachineCode !== '' || orderCode !== null}
         tools={
           <>
             {isAdmin ? (
@@ -260,7 +271,15 @@ function JobQueuePage(): React.JSX.Element {
                 : undefined
             }
             rowActions={(r) =>
-              jobQueueRowActions({ row: r, canReorder, canOpEntry, searching, onMove })
+              jobQueueRowActions({
+                row: r,
+                canReorder,
+                canOpEntry,
+                // A narrowed list hides the arrows: the neighbour on screen is not
+                // the neighbour in the machine's queue.
+                searching: searching || orderCode !== null,
+                onMove,
+              })
             }
           />
         </Panel>

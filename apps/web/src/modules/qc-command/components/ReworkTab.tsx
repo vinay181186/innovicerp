@@ -128,10 +128,13 @@ function reworkColumns(firstRowNo: number): DataTableColumn<QcReworkRow>[] {
 export function ReworkTab({
   rework,
   pager,
+  filtered,
 }: {
   /** This page of rework rows (server-paged, ADR-201). */
   rework: QcReworkRow[];
   pager: QcPager;
+  /** An order is picked: an empty list means "none match", not "none yet". */
+  filtered: boolean;
 }): React.JSX.Element {
   const firstRowNo = rowNo(pager, 0);
   const columns = useMemo(() => reworkColumns(firstRowNo), [firstRowNo]);
@@ -152,7 +155,7 @@ export function ReworkTab({
         </div>
         {pager.total === 0 ? (
           <div className="empty-state" style={{ color: 'var(--green2)' }}>
-            No rework cycles yet.
+            {filtered ? 'No rework cycles match.' : 'No rework cycles yet.'}
           </div>
         ) : (
           <DataTable

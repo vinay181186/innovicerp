@@ -1,7 +1,6 @@
 import {
   createQcDocumentInputSchema,
   listQcDocumentsQuerySchema,
-  qcDossierOrdersQuerySchema,
   qcDossierQuerySchema,
   qcDossierUrlsInputSchema,
   qcMatrixQuerySchema,
@@ -32,12 +31,6 @@ export async function qcDocumentsRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // ADR-252 — QC Dossier: SO / JWSO -> POL -> report folders -> files.
-  app.get('/qc-documents/dossier/orders', async (req) => {
-    if (!req.user) throw new AuthenticationError();
-    const query = qcDossierOrdersQuerySchema.parse(req.query);
-    return dossier.listQcDossierOrders(query, req.user);
-  });
-
   app.get('/qc-documents/dossier', async (req) => {
     if (!req.user) throw new AuthenticationError();
     const query = qcDossierQuerySchema.parse(req.query);

@@ -38,6 +38,8 @@ import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { TabStrip } from '@/ui/navigation/TabStrip';
 import { renderJcOpsLink } from '@/modules/jc-ops/components/jc-ops-columns';
 import { useMachineLoading } from '@/modules/machine-loading/api';
+import { OrderSelect } from '@/modules/order-options/components/order-select';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import {
   countBusyMachines,
   groupPendingOps,
@@ -90,7 +92,13 @@ function ProductionDashboardPage(): React.JSX.Element {
   // Open Job Cards — 25 a page (own page number, kept across tab switches).
   const [jcPage, setJcPage] = useState(1);
   const onJcPage = useCallback((p: number) => setJcPage(p), []);
-  const jcs = useOpenJobCards({ limit: LIST_PAGE_SIZE, offset: pageOffset(jcPage) });
+  // The order dropdown is a server filter on soCode (ADR-267); any change → page 1.
+  const jcSf = useServerSortFilter(TABLE_KEYS.prodDashboardOpenJcs, () => setJcPage(1));
+  const jcs = useOpenJobCards({
+    sf: jcSf.param,
+    limit: LIST_PAGE_SIZE,
+    offset: pageOffset(jcPage),
+  });
   useClampPage(jcPage, jcs.data?.total, onJcPage);
   const openJobCards = jcs.data?.items ?? [];
   // Available Now — 25 ops a page, server Sort & Filter (any change → page 1).
@@ -120,10 +128,41 @@ function ProductionDashboardPage(): React.JSX.Element {
     () => groupPendingOps(machine.data?.machines ?? [], machine.data?.ops ?? []),
     [machine.data],
   );
+  // Machine Pending reads the whole board, so its order pick filters in the browser.
+  // Only the rows narrow: the Idle line, the tab count and each machine heading
+  // stay whole-board figures.
+  const [machineSo, setMachineSo] = useState<string | null>(null);
+  const shownMachineGroups = useMemo(
+    () =>
+      machineSo
+        ? {
+            ...machineGroups,
+            rows: machineGroups.rows.filter((r) => r.op.soCode === machineSo),
+          }
+        : machineGroups,
+    [machineGroups, machineSo],
+  );
 
   return (
     <div className="page-fill">
-      <ListHeader title="Production Dashboard" icon="📊" updating={isFetching && !isLoading} />
+      <ListHeader
+        title="Production Dashboard"
+        icon="📊"
+        updating={isFetching && !isLoading}
+        orderFilter={
+          tab === 'ready' ? (
+            <OrderSfFilter key={tab} sf={readySf} field="soCode" />
+          ) : tab === 'jcs' ? (
+            <OrderSfFilter key={tab} sf={jcSf} field="soCode" />
+          ) : tab === 'machines' ? (
+            <OrderSelect
+              key={tab}
+              value={machineSo}
+              onChange={(option) => setMachineSo(option?.code ?? null)}
+            />
+          ) : undefined
+        }
+      />
 
       {isLoading ? (
         <PageState state="loading" message="Loading dashboard…" />
@@ -174,7 +213,12 @@ function ProductionDashboardPage(): React.JSX.Element {
             tabs={[
               // Server's full-scope count (every ready op, not the page).
               { key: 'ready', label: 'Available Now', count: c?.readyOps ?? null },
-              { key: 'jcs', label: 'Open Job Cards', count: jcs.data?.total ?? null },
+              // A held order pick narrows the rows, not the tab count (as the other tabs).
+              {
+                key: 'jcs',
+                label: 'Open Job Cards',
+                count: jcSf.filtering ? (c?.openJc ?? null) : (jcs.data?.total ?? null),
+              },
               {
                 key: 'machines',
                 label: 'Machine Pending',
@@ -195,7 +239,7 @@ function ProductionDashboardPage(): React.JSX.Element {
                   sortFilterServer={readySf}
                   loading={ready.isLoading}
                   emptyText={
-                    readySf.filtering ? 'No operations match.' : 'No operations available now.'
+                    readySf.filtering ? 'No operations match.' : 'No available operations yet.'
                   }
                   defaultPinned={PROD_READY_DEFAULT_PINNED}
                   defaultHidden={PROD_READY_DEFAULT_HIDDEN}
@@ -229,7 +273,7 @@ function ProductionDashboardPage(): React.JSX.Element {
                   rows={openJobCards}
                   rowKey={(jc) => jc.jobCardId}
                   loading={jcs.isLoading}
-                  emptyText="No open Job Cards."
+                  emptyText={jcSf.filtering ? 'No open Job Cards match.' : 'No open Job Cards.'}
                   onRowClick={
                     canOpenJc
                       ? (jc) =>
@@ -250,9 +294,10 @@ function ProductionDashboardPage(): React.JSX.Element {
             </>
           ) : tab === 'machines' ? (
             <MachinePendingPanel
-              grouped={machineGroups}
+              grouped={shownMachineGroups}
               machineCount={machineCount}
               isLoading={machine.isLoading}
+              filtered={machineSo !== null}
             />
           ) : (
             <SupplyChainPanel data={supplyChain} />

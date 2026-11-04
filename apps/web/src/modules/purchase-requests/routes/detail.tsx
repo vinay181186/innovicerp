@@ -37,10 +37,10 @@ import {
   PendingChangeChip,
   headerPendingChange,
 } from '@/modules/document-edits/components/pending-change-chip';
-import { DocumentHistory } from '@/components/shared/document-history';
-import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
+import { useHistoryTab } from '@/components/shared/document-history';
+import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
 import { AssignTaskModal } from '@/modules/tasks/components/task-modals';
-import { ConfirmDialog } from '@/ui/feedback';
+import { ConfirmDialog, useToast } from '@/ui/feedback';
 import { Cluster, ClusterFact, ClusterGrid, DocIdent, IdentCode, IdentSep } from '@/ui/forms';
 import { ActionMenu } from '@/ui/layout';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -100,6 +100,7 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
   // 2026-10-31 — PRs have no approval) — the same right the API gate checks,
   // so the button cannot appear to someone the server then refuses.
   const closeBalanceMut = useClosePurchaseRequestBalance();
+  const toast = useToast();
   const [closeOpen, setCloseOpen] = useState(false);
   const [closeError, setCloseError] = useState<string | null>(null);
   const [assignOpen, setAssignOpen] = useState(false);
@@ -107,6 +108,13 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
   const [cancelOpen, setCancelOpen] = useState(false);
   // Preview / ⬇ Download PDF — the PR sheet, loaded fresh (use-pr-print.ts).
   const prPrint = usePrPrint();
+  // ADR-197 — who did what to this PR, with before → after and reasons. Called
+  // before the early returns (hooks rule); it waits for the id / code to arrive.
+  const historyTab = useHistoryTab({
+    entity: 'PurchaseRequest',
+    entityId: detail?.id,
+    refId: detail?.code,
+  });
 
   if (isLoading) {
     return (
@@ -189,7 +197,10 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
     closeBalanceMut.mutate(
       { id: detail.id, reason },
       {
-        onSuccess: () => setCloseOpen(false),
+        onSuccess: () => {
+          toast.ok(`PR ${detail.code} short closed`);
+          setCloseOpen(false);
+        },
         onError: (e) =>
           setCloseError(e instanceof Error ? e.message : 'Could not short close PR. Try again.'),
       },
@@ -427,15 +438,7 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
         </div>
       </div>
 
-      <RelatedDocsPanel module="purchase-requests" id={detail.id} />
-
-      {/* ADR-197 — who did what to this PR, with before → after and reasons. */}
-      <div className="panel" style={{ marginTop: 14 }}>
-        <div className="panel-hdr">
-          <div className="panel-title">History</div>
-        </div>
-        <DocumentHistory entity="PurchaseRequest" entityId={detail.id} refId={detail.code} />
-      </div>
+      <RelatedDocsTabs module="purchase-requests" id={detail.id} extraTabs={[historyTab]} />
 
       {closeOpen ? (
         <CloseBalanceModal

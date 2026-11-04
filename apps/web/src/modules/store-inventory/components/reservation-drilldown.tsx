@@ -237,7 +237,7 @@ export function ReservationDrilldown({
     // per action (owner rule 2026-11-02).
     <ModalShell
       onClose={onClose}
-      closeOnEscape
+      confirmExit={false}
       title={`Stock per Drawing Rev — ${itemLabel} (${itemName})`}
     >
       {isLoading ? (

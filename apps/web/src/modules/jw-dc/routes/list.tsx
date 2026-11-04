@@ -3,12 +3,13 @@
 //
 // This file is the ROUTE + the tab shell only. Each register lives on the shared
 // FIT DataTable in its own sibling under ../components (ADR-199, table standard
-// 2026-10-01): outward-register / inward-register, their columns, and the two
-// create modals.
+// 2026-10-01): outward-register / inward-register and their columns. The two
+// create forms are their own pages (routes/outward-create, routes/inward-create).
 
 import { createRoute } from '@tanstack/react-router';
 import { z } from 'zod';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { TabStrip } from '@/ui/navigation';
 import { InwardView } from '../components/inward-register';
 import { OutwardView } from '../components/outward-register';
 
@@ -20,8 +21,8 @@ const searchSchema = z.object({
   // pre-fills the active view's search box. Read ONCE by the Outward / Inward
   // views below; typing afterwards stays local.
   search: z.string().optional(),
-  // `?jw=<jwsoId>` (JWSO detail → "JW DC"): opens New Outward DC straight
-  // away, naming that JWSO. A malformed id is ignored.
+  // `?jw=<jwsoId>` (an old link; JWSO detail now goes straight to the page):
+  // forwards to New Outward DC, naming that JWSO. A malformed id is ignored.
   jw: z.string().uuid().optional().catch(undefined),
 });
 
@@ -43,54 +44,30 @@ function JwDcPage(): React.JSX.Element {
     void navigate({ search: { tab: next === 'outward' ? undefined : next } });
   };
 
+  const tabBar = (
+    <TabStrip
+      label="JW DC direction"
+      tabs={[
+        { key: 'outward', label: 'Outward (to Vendor)' },
+        { key: 'inward', label: 'Inward (Return from Vendor)' },
+      ]}
+      activeKey={tab}
+      onChange={(k) => setTab(k === 'inward' ? 'inward' : 'outward')}
+    />
+  );
+
   return (
     <div>
-      <div style={{ display: 'flex', gap: 4, marginBottom: 16 }}>
-        <TabButton
-          active={tab === 'outward'}
-          color="var(--purple)"
-          onClick={() => setTab('outward')}
-        >
-          Outward (to Vendor)
-        </TabButton>
-        <TabButton active={tab === 'inward'} color="var(--green)" onClick={() => setTab('inward')}>
-          Inward (Return from Vendor)
-        </TabButton>
-      </div>
-
       {tab === 'outward' ? (
-        <OutwardView key={search.jw ?? ''} forJwId={search.jw} initialSearch={search.search} />
+        <OutwardView
+          key={search.jw ?? ''}
+          forJwId={search.jw}
+          initialSearch={search.search}
+          tabs={tabBar}
+        />
       ) : (
-        <InwardView initialSearch={search.search} />
+        <InwardView initialSearch={search.search} tabs={tabBar} />
       )}
     </div>
-  );
-}
-
-function TabButton({
-  active,
-  color,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  color: string;
-  onClick: () => void;
-  children: React.ReactNode;
-}): React.JSX.Element {
-  return (
-    <button
-      type="button"
-      className="btn btn-sm"
-      onClick={onClick}
-      style={{
-        fontWeight: 700,
-        background: active ? color : 'var(--bg4)',
-        color: active ? 'var(--bg2)' : 'var(--text2)',
-        border: `1px solid ${active ? color : 'var(--border)'}`,
-      }}
-    >
-      {children}
-    </button>
   );
 }

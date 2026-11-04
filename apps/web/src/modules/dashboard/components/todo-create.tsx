@@ -25,6 +25,7 @@ import { taskKeys, useTaskUserOptions } from '@/modules/tasks/api';
 import { relatedNavPage } from '@/modules/tasks/lib/format';
 import { FormField, FormGrid, SearchableSelect } from '@/ui/forms';
 import { useCreateTodo } from '../todo-api';
+import { useToast } from '@/ui/feedback';
 
 const ME = 'me';
 
@@ -55,6 +56,7 @@ function useLinkedDocOptions(search: string, enabled: boolean) {
 export function TodoCreate({ onClose }: { onClose: () => void }): React.JSX.Element {
   const saveKey = useSaveKey();
   const create = useCreateTodo(saveKey);
+  const toast = useToast();
   const myId = useSession().data?.id;
   const users = useTaskUserOptions();
 
@@ -115,7 +117,13 @@ export function TodoCreate({ onClose }: { onClose: () => void }): React.JSX.Elem
         navPage: relatedNavPage(docPick.type, docPick.opt.id),
       };
     }
-    const done = { onSuccess: onClose, onError: (e: Error) => setErr(e.message) };
+    const done = {
+      onSuccess: () => {
+        toast.ok('To-Do saved');
+        onClose();
+      },
+      onError: (e: Error) => setErr(e.message),
+    };
     if (assignTo === ME) {
       create.mutate(
         {

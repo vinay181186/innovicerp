@@ -23,10 +23,10 @@
 // Layout (owner-approved mock-up pro-routecard-create-edit-mockup.html, frame
 // "1 · Production Order — Create", 2026-10-06): the page fits one 1440×810
 // screen with no page scroll, on the SAME grid and cluster order as the
-// Production Order detail page — only the controls differ. Header (next no.,
-// Cancel, Save) → identity line filled from the Plan → Order · Quantity ·
-// Schedule · Material clusters → ONE read-only panel of the Route Card's
-// operations that takes the height left. The decision is WHICH PLAN: the Plan
+// Production Order detail page — only the controls differ. Header (next no.)
+// → identity line filled from the Plan → Order · Quantity · Schedule · Material
+// clusters → ONE read-only panel of the Route Card's operations that takes the
+// height left → FormActions (Cancel, Save). The decision is WHICH PLAN: the Plan
 // No. cell carries the blue rule and every other input is off until a plan is
 // picked. The Quantity row reads Plan Qty − Covered = Pending and ends on the
 // PRO Qty typed (green rule).
@@ -50,7 +50,7 @@ import { soNoWithInternal } from '@/lib/so-number';
 import { useSaveKey } from '@/lib/use-save-key';
 import { useRouteCardsList } from '@/modules/route-cards/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { Banner } from '@/ui/feedback';
+import { Banner, useToast } from '@/ui/feedback';
 import {
   Cluster,
   ClusterFact,
@@ -59,8 +59,9 @@ import {
   FormField,
   IdentCode,
   IdentSep,
+  SearchableSelect,
 } from '@/ui/forms';
-import { DetailHeader, useSaveShortcut } from '@/ui/layout';
+import { DetailHeader, FormActions, useSaveShortcut } from '@/ui/layout';
 import {
   type PlanPickerItem,
   useCreateProductionOrder,
@@ -96,6 +97,7 @@ function ProductionOrderNewPage(): React.JSX.Element {
   const preselected = usePreselectedPlan(search.planId, search.planCode, 'create');
   const saveKey = useSaveKey();
   const create = useCreateProductionOrder(saveKey);
+  const toast = useToast();
   const [submitError, setSubmitError] = useState<string | null>(null);
   const goBack = useCallback(() => void navigate({ to: '/production-orders' }), [navigate]);
   const exit = useExitConfirm({ onExit: goBack });
@@ -275,6 +277,7 @@ function ProductionOrderNewPage(): React.JSX.Element {
     };
     try {
       const created = await create.mutateAsync(input);
+      toast.ok(`Production Order ${created.code} saved`);
       exit.leave(() => void navigate({ to: '/production-orders/$id', params: { id: created.id } }));
     } catch (err) {
       setSubmitError(
@@ -286,10 +289,10 @@ function ProductionOrderNewPage(): React.JSX.Element {
     e.preventDefault();
     await save();
   };
-  // Ctrl+S runs the same Save as the header button (off while it is disabled).
+  // Ctrl+S runs the same Save as the bottom button (off while it is disabled).
   useSaveShortcut(() => void save(), canSubmit && !create.isPending);
 
-  // Why Save is off — the header button's tooltip. The "Raw Material Available
+  // Why Save is off — the Save button's tooltip. The "Raw Material Available
   // is required" message used to be a red banner that showed the moment the
   // page opened; it is this tooltip now, in its turn after the fields above it.
   const saveBlockedReason = !plan
@@ -379,38 +382,8 @@ function ProductionOrderNewPage(): React.JSX.Element {
             <span className="panel-title">New Production Order</span>
           </>
         }
-        actions={
-          <>
-            <button
-              type="button"
-              className="btn btn-ghost"
-              onClick={() => exit.leave(goBack)}
-              disabled={create.isPending}
-            >
-              Cancel
-            </button>
-            {/* The wrapper carries the reason too: a disabled button gets no
-                hover in every browser. */}
-            <span title={saveBlockedReason}>
-              <button
-                type="submit"
-                className="btn btn-primary"
-                disabled={!canSubmit || create.isPending}
-                title={saveBlockedReason}
-              >
-                {create.isPending ? (
-                  <>
-                    <Loader2 size={14} className="animate-spin" /> Saving…
-                  </>
-                ) : (
-                  <>Save Production Order &amp; Create JC</>
-                )}
-              </button>
-            </span>
-          </>
-        }
       >
-        {/* What stops Save, under the header where the Save button is. */}
+        {/* What stops Save, under the header. */}
         {noRouteCard ? (
           <Banner tone="warn" role="alert">
             ⚠ No Route Card for {planRevLabel} —{' '}
@@ -521,53 +494,55 @@ function ProductionOrderNewPage(): React.JSX.Element {
               />
             </FormField>
             <FormField label="Route Card" required htmlFor="po-route-card" className="po-in">
-              <select
-                id="po-route-card"
-                className="innovic-select"
-                value={routeCardId ?? ''}
-                disabled={
-                  !plan ||
-                  noRouteCard ||
-                  Boolean(legacyRc) ||
-                  Boolean(unapprovedRc) ||
-                  routeCards.isLoading
-                }
+              {/* The box holds the code only. "IN-RC-00012 · Route Card Rev 2"
+                  needs ~175px and the quarter cell gives the box 167px at
+                  1440 wide, so the revision was the part cut off; the bare
+                  "Rev" that would fit is not a name NAMING.md allows. The
+                  revision is in the list rows, the box's hover text and the
+                  operations panel's header right below. Keyed on the plan so
+                  text typed under one plan never survives into the next. */}
+              <div
                 title={
                   routeCard
                     ? `${routeCard.code} · Route Card Rev ${routeCard.currentRevision}`
                     : undefined
                 }
-                onChange={(e) => setRouteCardId(e.target.value || null)}
               >
-                <option value="">
-                  {!plan
-                    ? PICK_PLAN_FIRST
-                    : routeCards.isLoading
-                      ? 'Loading Route Cards…'
-                      : noRouteCard
-                        ? `No Route Card for ${planRevLabel}`
-                        : legacyRc
-                          ? 'Route Card has no Drawing Rev'
-                          : unapprovedRc
-                            ? 'Route Card not approved yet'
-                            : 'Select Route Card…'}
-                </option>
-                {/* The box holds the code only. "IN-RC-00012 · Route Card Rev 2"
-                    needs ~175px and the quarter cell gives the box 167px at
-                    1440 wide, so the revision was the part cut off; the bare
-                    "Rev" that would fit is not a name NAMING.md allows. The
-                    revision is in the box's hover text and in the operations
-                    panel's header right below. */}
-                {rcItems.map((rc) => (
-                  <option
-                    key={rc.id}
-                    value={rc.id}
-                    title={`${rc.code} · Route Card Rev ${rc.currentRevision}`}
-                  >
-                    {rc.code}
-                  </option>
-                ))}
-              </select>
+                <SearchableSelect
+                  key={plan?.id ?? 'no-plan'}
+                  id="po-route-card"
+                  value={routeCardId}
+                  onChange={setRouteCardId}
+                  disabled={
+                    !plan ||
+                    noRouteCard ||
+                    Boolean(legacyRc) ||
+                    Boolean(unapprovedRc) ||
+                    routeCards.isLoading
+                  }
+                  loading={routeCards.isLoading}
+                  placeholder={
+                    !plan
+                      ? PICK_PLAN_FIRST
+                      : routeCards.isLoading
+                        ? 'Loading Route Cards…'
+                        : noRouteCard
+                          ? `No Route Card for ${planRevLabel}`
+                          : legacyRc
+                            ? 'Route Card has no Drawing Rev'
+                            : unapprovedRc
+                              ? 'Route Card not approved yet'
+                              : 'Select Route Card…'
+                  }
+                  options={rcItems.map((rc) => ({
+                    id: rc.id,
+                    code: rc.code,
+                    name: `Route Card Rev ${rc.currentRevision}`,
+                  }))}
+                  selectedLabel={(o) => o.code ?? o.name}
+                  valueLabel={routeCard?.code}
+                />
+              </div>
             </FormField>
           </Cluster>
 
@@ -753,6 +728,35 @@ function ProductionOrderNewPage(): React.JSX.Element {
         routeCardsLoading={Boolean(planItemId) && routeCards.isLoading}
         planRemarks={plan?.remarks ?? null}
       />
+
+      <FormActions>
+        <button
+          type="button"
+          className="btn btn-ghost"
+          onClick={() => exit.leave(goBack)}
+          disabled={create.isPending}
+        >
+          Cancel
+        </button>
+        {/* The wrapper carries the reason too: a disabled button gets no
+            hover in every browser. */}
+        <span title={saveBlockedReason}>
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={!canSubmit || create.isPending}
+            title={saveBlockedReason}
+          >
+            {create.isPending ? (
+              <>
+                <Loader2 size={14} className="animate-spin" /> Saving…
+              </>
+            ) : (
+              <>Save Production Order &amp; Create JC</>
+            )}
+          </button>
+        </span>
+      </FormActions>
     </form>
   );
 }

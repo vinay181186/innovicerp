@@ -15,8 +15,30 @@ import { useMemo, useState } from 'react';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useOperatorsList } from '@/modules/operators/api';
 import { useTaskUserOptions } from '@/modules/tasks/api';
+import { Modal, useToast } from '@/ui/feedback';
+import { SearchableSelect, type SearchableOption } from '@/ui/forms';
 import { useUpdateCapa } from '../api';
-import { Overlay } from './capa-overlay';
+
+// Declared out here, not inside the modal: a component created during render is
+// a new type every render, so React rebuilt everything inside each Step on every
+// keystroke — the box lost focus and a type-to-search picker could never stay open.
+function Step(props: { n: number; title: string; children: React.ReactNode }): React.JSX.Element {
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--purple)', marginBottom: 6 }}>
+        Step {props.n}: {props.title}
+      </div>
+      {props.children}
+    </div>
+  );
+}
+
+/** Picker rows for Responsible / Verified By: the names, plus a saved name that is
+ *  no longer on the list, so an old value is still shown and can be kept. */
+function nameOptions(names: string[], current: string | undefined): SearchableOption[] {
+  const all = current && !names.includes(current) ? [current, ...names] : names;
+  return all.map((n) => ({ id: n, name: n }));
+}
 
 export function EditCapaModal({
   capa,
@@ -28,6 +50,7 @@ export function EditCapaModal({
   onClose: () => void;
 }): React.JSX.Element {
   const update = useUpdateCapa();
+  const toast = useToast();
   // Responsible and Verified By are one select of operators + active users
   // (legacy L22862).
   const operatorsQuery = useOperatorsList({ limit: 200, offset: 0, isActive: true });
@@ -69,27 +92,37 @@ export function EditCapaModal({
     setErr(null);
     try {
       await update.mutateAsync({ id: capa.id, input: f });
+      toast.ok(`CAPA ${capa.code} saved`);
       onClose();
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Could not save CAPA. Try again.');
     }
   }
 
-  const Step = (props: {
-    n: number;
-    title: string;
-    children: React.ReactNode;
-  }): React.JSX.Element => (
-    <div style={{ marginBottom: 14 }}>
-      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--purple)', marginBottom: 6 }}>
-        Step {props.n}: {props.title}
-      </div>
-      {props.children}
-    </div>
-  );
-
   return (
-    <Overlay title={`CAPA ${capa.code}`} onClose={onClose}>
+    <Modal
+      title={`CAPA ${capa.code}`}
+      onClose={onClose}
+      maxWidth="min(1100px, 96vw)"
+      confirmExit={!readOnly}
+      footer={
+        <>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>
+            {readOnly ? 'Close' : 'Cancel'}
+          </button>
+          {!readOnly ? (
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={update.isPending}
+              onClick={() => void submit()}
+            >
+              {update.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Save Changes
+            </button>
+          ) : null}
+        </>
+      }
+    >
       <div
         style={{
           background: 'var(--bg3)',
@@ -175,21 +208,16 @@ export function EditCapaModal({
           <div className="form-grid" style={{ marginTop: 6 }}>
             <div className="form-grp">
               <label className="form-label">Responsible</label>
-              <select
-                className="innovic-select"
-                value={f.responsible ?? ''}
-                onChange={(e) => set('responsible', e.target.value)}
-              >
-                <option value="">— Select —</option>
-                {f.responsible && !responsibleOptions.includes(f.responsible) ? (
-                  <option value={f.responsible}>{f.responsible}</option>
-                ) : null}
-                {responsibleOptions.map((n) => (
-                  <option key={n} value={n}>
-                    {n}
-                  </option>
-                ))}
-              </select>
+              <SearchableSelect
+                ariaLabel="Responsible"
+                value={f.responsible || null}
+                valueLabel={f.responsible || undefined}
+                disabled={readOnly}
+                clearable
+                placeholder="— Select —"
+                options={nameOptions(responsibleOptions, f.responsible || undefined)}
+                onChange={(id) => set('responsible', id ?? '')}
+              />
             </div>
             <div className="form-grp">
               <label className="form-label">Target Date</label>
@@ -213,21 +241,16 @@ export function EditCapaModal({
           <div className="form-grid" style={{ marginTop: 6 }}>
             <div className="form-grp">
               <label className="form-label">Verified By</label>
-              <select
-                className="innovic-select"
-                value={f.verifiedBy ?? ''}
-                onChange={(e) => set('verifiedBy', e.target.value)}
-              >
-                <option value="">— Select —</option>
-                {f.verifiedBy && !responsibleOptions.includes(f.verifiedBy) ? (
-                  <option value={f.verifiedBy}>{f.verifiedBy}</option>
-                ) : null}
-                {responsibleOptions.map((n) => (
-                  <option key={n} value={n}>
-                    {n}
-                  </option>
-                ))}
-              </select>
+              <SearchableSelect
+                ariaLabel="Verified By"
+                value={f.verifiedBy || null}
+                valueLabel={f.verifiedBy || undefined}
+                disabled={readOnly}
+                clearable
+                placeholder="— Select —"
+                options={nameOptions(responsibleOptions, f.verifiedBy || undefined)}
+                onChange={(id) => set('verifiedBy', id ?? '')}
+              />
             </div>
             <div className="form-grp">
               <label className="form-label">Verification Date</label>
@@ -295,21 +318,6 @@ export function EditCapaModal({
           {err}
         </div>
       ) : null}
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
-        <button type="button" className="btn btn-ghost" onClick={onClose}>
-          {readOnly ? 'Close' : 'Cancel'}
-        </button>
-        {!readOnly ? (
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={update.isPending}
-            onClick={() => void submit()}
-          >
-            {update.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Save Changes
-          </button>
-        ) : null}
-      </div>
-    </Overlay>
+    </Modal>
   );
 }

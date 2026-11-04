@@ -6,6 +6,7 @@ import { Download, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useJcOpsEnriched, useOpLog } from '@/modules/op-entry/api';
 import { exportJobCardExcel } from '../lib/export-job-card-excel';
+import { useToast } from '@/ui/feedback';
 
 /**
  * The Excel click logic, shared by the card view's button and the sheet's ⋯
@@ -17,6 +18,7 @@ export function useExcelJc(jc: JobCardListItem): {
   start: () => Promise<void>;
   loading: boolean;
 } {
+  const toast = useToast();
   const [armed, setArmed] = useState(false);
   const [pending, setPending] = useState(false);
   const doneRef = useRef(false);
@@ -36,7 +38,7 @@ export function useExcelJc(jc: JobCardListItem): {
     if (opsQuery.isError || logsQuery.isError) {
       setPending(false);
       settle();
-      window.alert('Could not load Job Card data for export. Try again.');
+      toast.error('Could not load Job Card data for export. Try again.');
       return;
     }
     if (!opsQuery.data || opsQuery.isFetching || logsQuery.isFetching) return;
@@ -54,6 +56,7 @@ export function useExcelJc(jc: JobCardListItem): {
     logsQuery.isFetching,
     jc,
     settle,
+    toast,
   ]);
 
   const start = useCallback((): Promise<void> => {

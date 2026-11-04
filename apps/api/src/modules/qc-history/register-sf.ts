@@ -42,7 +42,7 @@ import {
   PM_CODE,
   QC_DAY,
 } from './register-party';
-import { ITEM_CODE_REV, PEND_SINCE, codeRevSql, istDaySql } from './sql';
+import { ITEM_CODE_REV, OP_ORDER_CODE, PEND_SINCE, codeRevSql, istDaySql } from './sql';
 
 export type QcPendingSfField = (typeof QC_REGISTER_PENDING_SF_FIELDS)[number];
 export type QcCompletedSfField = (typeof QC_REGISTER_COMPLETED_SF_FIELDS)[number];
@@ -149,7 +149,7 @@ const P = QC_REGISTER_PENDING_SF_FIELDS;
 
 export const OP_PENDING_SF = sfSelect(P, {
   // ADR-261: SO No. filters the order code; Vendor / Customer the party only.
-  soCode: sql`so.code`,
+  soCode: OP_ORDER_CODE,
   createdOn: istDaySql(sql`jo.created_at`),
   createdBy: createdByNameSql(sql`jo.created_by`),
   docNo: sql`jc.code`,
@@ -219,7 +219,7 @@ const C = QC_REGISTER_COMPLETED_SF_FIELDS;
 
 export const OP_COMPLETED_SF = sfSelect(C, {
   // ADR-261: SO No. filters the order code; Vendor / Customer the party only.
-  soCode: sql`so.code`,
+  soCode: OP_ORDER_CODE,
   createdOn: istDaySql(sql`ol.created_at`),
   createdBy: createdByNameSql(sql`ol.created_by`),
   docNo: sql`jc.code`,

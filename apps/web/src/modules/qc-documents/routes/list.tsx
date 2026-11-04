@@ -17,6 +17,7 @@ import { authenticatedRoute } from '@/routes/_authenticated';
 import { DossierView } from '../components/dossier-view';
 import { RegisterView } from '../components/register-view';
 import { SoStatusView } from '../components/so-status-view';
+import { TabStrip } from '@/ui/navigation';
 
 const searchSchema = z.object({
   /** 'matrix' is the retired Matrix tab: old links land on the Dossier. */
@@ -58,37 +59,30 @@ function QcDocumentsPage(): React.JSX.Element {
     );
   }
 
-  // Dossier | File Register | SO Status — the view switch sits in every
-  // view's ListHeader tools, so each view owns its own count, search and
+  // Dossier | File Register | SO Status — the tabs sit in every view's
+  // ListHeader band, so each view owns its own count, search and
   // actions. The search box term belongs to one view, so it does not follow.
   const setView = (v: 'dossier' | 'register' | 'status'): void =>
     void navigate({
       search: (p) => ({ ...p, view: v, search: undefined, page: 1 }),
       replace: true,
     });
-  const toggle = (
-    <div style={{ display: 'flex', gap: 4 }}>
-      {(
-        [
-          ['dossier', 'Dossier'],
-          ['register', 'File Register'],
-          ['status', 'SO Status'],
-        ] as const
-      ).map(([v, label]) => (
-        <button
-          key={v}
-          type="button"
-          className={view === v ? 'btn btn-primary btn-sm' : 'btn btn-ghost btn-sm'}
-          aria-pressed={view === v}
-          onClick={() => setView(v)}
-        >
-          {label}
-        </button>
-      ))}
-    </div>
+  const tabs = (
+    <TabStrip
+      label="QC Documents views"
+      tabs={[
+        { key: 'dossier', label: 'Dossier' },
+        { key: 'register', label: 'File Register' },
+        { key: 'status', label: 'SO Status' },
+      ]}
+      activeKey={view}
+      onChange={(k) =>
+        setView(k === 'register' ? 'register' : k === 'status' ? 'status' : 'dossier')
+      }
+    />
   );
 
-  if (view === 'dossier') return <DossierView toggle={toggle} />;
-  if (view === 'register') return <RegisterView toggle={toggle} />;
-  return <SoStatusView toggle={toggle} />;
+  if (view === 'dossier') return <DossierView tabs={tabs} />;
+  if (view === 'register') return <RegisterView tabs={tabs} />;
+  return <SoStatusView tabs={tabs} />;
 }

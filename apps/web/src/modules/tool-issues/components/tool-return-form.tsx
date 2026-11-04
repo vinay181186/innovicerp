@@ -88,7 +88,9 @@ export function ReturnForm({
     <div style={{ marginTop: 12 }}>
       <div className="form-grid">
         <div className="form-grp">
-          <label className="form-label">Return Date ★</label>
+          <label className="form-label">
+            Return Date<span className="req">★</span>
+          </label>
           <input
             type="date"
             className="innovic-input"
@@ -158,7 +160,9 @@ export function ReturnForm({
         </div>
       )}
       <div className="form-grp form-full" style={{ marginTop: 8 }}>
-        <label className="form-label">Reason {needsReason ? '★' : ''}</label>
+        <label className="form-label">
+          Reason{needsReason ? <span className="req">★</span> : null}
+        </label>
         <input
           type="text"
           className="innovic-input"

@@ -20,6 +20,7 @@ import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
 import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
@@ -39,8 +40,11 @@ import { ReturnToStoreModal } from './return-to-store-modal';
 // Search deep link). It fills the box AND the debounced term, so the first fetch
 // already carries it; typing afterwards is local and never touches the URL.
 export function PartyMaterialIssueView({
+  tabs,
   initialSearch,
 }: {
+  /** The page's tab strip, drawn under this view's header. */
+  tabs?: React.ReactNode;
   initialSearch?: string | undefined;
 }): React.JSX.Element {
   // Tier-driven, per department (party_create sits in Store). This view renders
@@ -110,8 +114,11 @@ export function PartyMaterialIssueView({
   // user flashes this panel on cold load.
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        You do not have permission to view Customer Material Issues. Ask an admin.
+      <div>
+        {tabs}
+        <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
+          You do not have permission to view Customer Material Issues. Ask an admin.
+        </div>
       </div>
     );
   }
@@ -121,6 +128,7 @@ export function PartyMaterialIssueView({
       {/* THE list header (ui/layout ListHeader): title · count · search ·
           + New Issue. */}
       <ListHeader
+        orderFilter={<OrderSfFilter sf={sf} field="jwsoCode" kind="jwso" />}
         title="Customer Material Issue"
         icon="📤"
         count={data?.total}
@@ -141,7 +149,9 @@ export function PartyMaterialIssueView({
             </button>
           ) : null
         }
-      />
+      >
+        {tabs}
+      </ListHeader>
 
       {isError ? (
         <PageState

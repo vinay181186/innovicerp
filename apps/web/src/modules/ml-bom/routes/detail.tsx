@@ -18,8 +18,9 @@ import { isStagedResult, usePendingEditForDoc } from '@/modules/document-edits/a
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Icon } from '@/ui/core';
 import { Panel } from '@/ui/data';
-import { Banner, ConfirmDialog } from '@/ui/feedback';
-import { ActionMenu, DetailHeader, PageState, ReadField, ReadGrid } from '@/ui/layout';
+import { Banner, ConfirmDialog, useToast } from '@/ui/feedback';
+import { Cluster, ClusterFact, ClusterGrid } from '@/ui/forms';
+import { ActionMenu, DetailHeader, PageState } from '@/ui/layout';
 import { TabStrip, type TabStripTab } from '@/ui/navigation';
 import { useDeleteMlBom, useMakeDefaultMlBom, useMlBom, useMlBomCost, useMlBomTree } from '../api';
 import { MlBomCostTab } from '../components/ml-bom-cost-tab';
@@ -48,13 +49,12 @@ function MlBomDetailPage(): React.JSX.Element {
   const perms = effectiveFormPerms(eff, 'mlbom_create');
   const makeDefault = useMakeDefaultMlBom();
   const del = useDeleteMlBom();
+  const toast = useToast();
   const [tab, setTab] = useState<TabKey>('lines');
   const [confirmDelete, setConfirmDelete] = useState(false);
   // ADR-197: a delete carries a reason — it is the Reason on the History row.
   const [deleteReason, setDeleteReason] = useState('');
   const [actionError, setActionError] = useState<string | null>(null);
-  // ADR-249 Step B — Make Default staged for approval (nothing moved yet).
-  const [stagedNotice, setStagedNotice] = useState<string | null>(null);
   // ADR-249 Step B — an edit / Make Default held for approval leaves the BOM
   // as it was; say so here so the change does not read as lost.
   const pendingEdit = usePendingEditForDoc('MlBom', id);
@@ -119,12 +119,16 @@ function MlBomDetailPage(): React.JSX.Element {
 
   const onMakeDefault = (): void => {
     setActionError(null);
-    setStagedNotice(null);
     makeDefault.mutate(
       { id: detail.id, expectedUpdatedAt: detail.updatedAt },
       {
         onSuccess: (res) => {
-          if (isStagedResult(res)) setStagedNotice('Sent for approval — this BOM becomes the Default once an approver signs off.');
+          // ADR-249 Step B — a staged Make Default: nothing moved yet.
+          toast.ok(
+            isStagedResult(res)
+              ? 'Sent for approval — this BOM becomes the Default once an approver signs off.'
+              : `BOM ${detail.code} is now the Default`,
+          );
         },
         onError: (e) => setActionError(e.message),
       },
@@ -225,36 +229,42 @@ function MlBomDetailPage(): React.JSX.Element {
           </>
         }
       >
-        {/* Two rows of 12: 3+3+6 · 3+3+6. */}
-        <ReadGrid>
-          <ReadField label="BOM No." size="sm" mono value={detail.code} />
-          <ReadField
-            label="Item Code"
-            size="sm"
-            value={
-              detail.itemCode ? (
-                <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-                  {detail.itemCode}
-                </span>
-              ) : null
-            }
-          />
-          <ReadField label="Item Name" size="lg" value={detail.itemName} />
-          <ReadField label="Default" size="sm" value={detail.isDefault ? '✓' : null} />
-          <ReadField label="BOM Rev" size="sm" mono value={detail.revision} />
-          <ReadField label="Remarks" size="lg" pre value={detail.remarks} />
-        </ReadGrid>
-        {hasPendingEdit && !stagedNotice ? (
+        <ClusterGrid stack>
+          <Cluster name="Item">
+            <ClusterFact
+              num
+              label="Item Code"
+              empty={!detail.itemCode}
+              value={detail.itemCode ?? '—'}
+            />
+            <ClusterFact
+              span={3}
+              label="Item Name"
+              empty={!detail.itemName}
+              title={detail.itemName ?? undefined}
+              value={detail.itemName ?? '—'}
+            />
+          </Cluster>
+          <Cluster name="BOM">
+            <ClusterFact num label="BOM No." value={detail.code} />
+            <ClusterFact num label="BOM Rev" value={detail.revision} />
+            <ClusterFact
+              label="Default"
+              empty={!detail.isDefault}
+              value={detail.isDefault ? '✓' : '—'}
+            />
+            <ClusterFact
+              wrap
+              label="Remarks"
+              empty={!detail.remarks}
+              value={detail.remarks ?? '—'}
+            />
+          </Cluster>
+        </ClusterGrid>
+        {hasPendingEdit ? (
           <div style={{ marginTop: 'var(--sp-2)' }}>
             <Banner tone="info" role="status" flush>
               A change to this BOM is waiting for approval.
-            </Banner>
-          </div>
-        ) : null}
-        {stagedNotice ? (
-          <div style={{ marginTop: 'var(--sp-2)' }}>
-            <Banner tone="success" role="status" flush onDismiss={() => setStagedNotice(null)}>
-              {stagedNotice}
             </Banner>
           </div>
         ) : null}
@@ -318,7 +328,7 @@ function MlBomDetailPage(): React.JSX.Element {
               You can restore it from Trash.
               <span className="form-grp" style={{ display: 'block', marginTop: 10 }}>
                 <label className="form-label" htmlFor="mlbom-delete-reason">
-                  Reason <span className="req">★</span>
+                  Reason<span className="req">★</span>
                 </label>
                 <textarea
                   id="mlbom-delete-reason"

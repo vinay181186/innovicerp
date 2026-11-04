@@ -103,7 +103,7 @@ export function TeamDayLogsTab({
         columns={teamColumns()}
         rows={rows}
         rowKey={(r) => r.userId}
-        empty={needle ? `No user matches "${needle}".` : 'No one to show for this day.'}
+        empty={needle ? 'No users match.' : 'No one to show for this day.'}
         onRowClick={(r) => onOpenPerson(r.userId, team.date)}
       />
     </div>

@@ -38,6 +38,7 @@ import { ReorderModal } from '../components/reorder-modal';
 import { ReservationDrilldown } from '../components/reservation-drilldown';
 import { storeInventoryColumns } from '../components/store-inventory-columns';
 import { StockLedger } from '@/modules/store-transactions/components/stock-ledger';
+import { TabStrip } from '@/ui/navigation';
 
 type FilterKey = 'all' | 'below' | 'zero';
 
@@ -117,44 +118,26 @@ function StoreInventoryPage(): React.JSX.Element {
     [canOpenItem],
   );
 
+  // Inventory | Stock Ledger tabs (Stock Ledger is the former standalone screen).
+  const tabBar = (
+    <TabStrip
+      label="Store Inventory views"
+      tabs={[
+        { key: 'inventory', label: 'Inventory' },
+        { key: 'ledger', label: 'Stock Ledger' },
+      ]}
+      activeKey={tab}
+      onChange={(k) => setTab(k === 'ledger' ? 'ledger' : 'inventory')}
+    />
+  );
+
   return (
     // `page-fill` (ADR-202): on the list tab the page fills the content area and the
     // TABLE is the only scrollbox, so the column header cannot ride off the top at the
     // last row. The Stock Ledger tab is its own screen and keeps today's page scroll.
     <div className={tab === 'ledger' ? undefined : 'page-fill'}>
-      {/* Inventory | Stock Ledger tabs (Stock Ledger is the former standalone screen). */}
-      <div
-        style={{
-          display: 'flex',
-          gap: 4,
-          borderBottom: '1px solid var(--border)',
-          marginBottom: 14,
-        }}
-      >
-        {(['inventory', 'ledger'] as const).map((t) => (
-          <button
-            key={t}
-            type="button"
-            onClick={() => setTab(t)}
-            style={{
-              background: 'none',
-              border: 'none',
-              borderBottom: tab === t ? '2px solid var(--cyan)' : '2px solid transparent',
-              color: tab === t ? 'var(--cyan)' : 'var(--text3)',
-              fontSize: 12,
-              fontWeight: 700,
-              padding: '6px 12px',
-              cursor: 'pointer',
-              marginBottom: -1,
-            }}
-          >
-            {t === 'inventory' ? 'Inventory' : 'Stock Ledger'}
-          </button>
-        ))}
-      </div>
-
       {tab === 'ledger' ? (
-        <StockLedger />
+        <StockLedger tabs={tabBar} />
       ) : (
         <>
           {/* THE list header (ui/layout ListHeader): title · count · + Manual
@@ -216,7 +199,9 @@ function StoreInventoryPage(): React.JSX.Element {
                 </button>
               ) : null
             }
-          />
+          >
+            {tabBar}
+          </ListHeader>
 
           {isError ? (
             <PageState

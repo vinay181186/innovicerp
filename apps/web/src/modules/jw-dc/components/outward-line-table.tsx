@@ -1,5 +1,5 @@
-// The "PO Lines" picker inside New Outward DC (split out of routes/list.tsx so
-// the modal stays under the 400-line ceiling). A form-style editor table: tick
+// The "PO Lines" picker inside New Outward DC (split out of the page,
+// routes/outward-create.tsx, to keep it under the 400-line ceiling). A form-style editor table: tick
 // a line, type Send Now. Numbers right-align (owner decision 2026-09-26); the
 // tick and POL are centred.
 
@@ -30,10 +30,7 @@ export function OutwardLineTable({
   setLine: (i: number, patch: Partial<OutwardLineUi>) => void;
 }): React.JSX.Element {
   return (
-    <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
-      <div style={{ padding: '8px 12px', background: 'var(--bg4)', fontWeight: 700, fontSize: 12 }}>
-        PO Lines
-      </div>
+    <div>
       <table style={{ width: '100%' }}>
         <thead>
           <tr style={{ background: 'var(--bg4)' }}>

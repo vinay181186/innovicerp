@@ -16,6 +16,7 @@ import { DocumentHistory } from '@/components/shared/document-history';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
@@ -37,9 +38,12 @@ import { usePrintJwInvoice } from './use-print-jw-invoice';
 // Search deep link). It fills the box AND the debounced term, so the first fetch
 // already carries it; typing afterwards is local and never touches the URL.
 export function JwInvoiceView({
+  tabs,
   initialSearch,
   initialJwId,
 }: {
+  /** The page's tab strip, drawn under this view's header. */
+  tabs?: React.ReactNode;
   initialSearch?: string | undefined;
   /** `?jw=<jwsoId>` from the JWSO detail "JW Invoice" button — opens the
    *  New JW Invoice form with that JWSO already picked. */
@@ -123,6 +127,7 @@ export function JwInvoiceView({
   return (
     <div>
       <ListHeader
+        orderFilter={<OrderSfFilter sf={sf} field="jwsoCode" kind="jwso" />}
         title="JW Invoices (Labour)"
         icon="🔧"
         count={total}
@@ -143,7 +148,9 @@ export function JwInvoiceView({
             </button>
           ) : null
         }
-      />
+      >
+        {tabs}
+      </ListHeader>
 
       {isError ? (
         <PageState
@@ -220,6 +227,7 @@ export function JwInvoiceView({
           title={`History — ${historyTarget.code}`}
           onClose={() => setHistoryTarget(null)}
           size="lg"
+          confirmExit={false}
         >
           <DocumentHistory
             entity="JwInvoice"

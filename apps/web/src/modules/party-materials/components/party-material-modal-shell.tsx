@@ -4,47 +4,23 @@
 // copy of the shell, the action row, the field label and the error box.
 
 import { Loader2 } from 'lucide-react';
+import { Modal } from '@/ui/feedback';
 
 export function ModalShell({
   onClose,
   title,
+  footer,
   children,
 }: {
   onClose: () => void;
   title: string;
+  footer: React.ReactNode;
   children: React.ReactNode;
 }): React.JSX.Element {
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 100,
-      }}
-      onClick={onClose}
-    >
-      <div
-        style={{
-          background: 'var(--bg)',
-          border: '1px solid var(--border)',
-          borderRadius: 8,
-          padding: 20,
-          width: 'min(1100px, 96vw)',
-          maxHeight: '90vh',
-          overflowY: 'auto',
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="section-hdr" style={{ marginBottom: 14 }}>
-          {title}
-        </div>
-        {children}
-      </div>
-    </div>
+    <Modal title={title} onClose={onClose} footer={footer} maxWidth="min(1100px, 96vw)">
+      {children}
+    </Modal>
   );
 }
 
@@ -60,7 +36,7 @@ export function ModalActions({
   saveLabel: string;
 }): React.JSX.Element {
   return (
-    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+    <>
       <button type="button" className="btn btn-ghost" onClick={onClose}>
         Cancel
       </button>
@@ -73,7 +49,7 @@ export function ModalActions({
           saveLabel
         )}
       </button>
-    </div>
+    </>
   );
 }
 

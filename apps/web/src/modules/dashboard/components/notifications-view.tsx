@@ -52,10 +52,10 @@ export function NotificationsView(): React.JSX.Element {
         state="empty"
         message={
           filter === 'unread'
-            ? 'No unread notifications.'
+            ? 'No unread notifications yet.'
             : filter === 'read'
-              ? 'No read notifications.'
-              : 'No notifications.'
+              ? 'No read notifications yet.'
+              : 'No notifications yet.'
         }
       />
     );
@@ -96,6 +96,7 @@ export function NotificationsView(): React.JSX.Element {
           type="button"
           className="btn btn-ghost btn-sm"
           disabled={markAll.disabled}
+          title={markAll.reason}
           onClick={markAll.run}
         >
           Mark all as read

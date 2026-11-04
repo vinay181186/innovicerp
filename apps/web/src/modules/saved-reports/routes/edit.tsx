@@ -13,6 +13,7 @@ import {
   useUpdateSavedReport,
 } from '../api';
 import { Builder, type SaveInput } from '../components/builder';
+import { useToast } from '@/ui/feedback';
 
 // ADR-226 — the fields THIS screen can edit, and what the user calls each one
 // (the builder's own labels; none of the four has a row in docs/NAMING.md).
@@ -43,6 +44,7 @@ export const savedReportEditRoute = createRoute({
 
 function SavedReportEditPage() {
   const { id } = savedReportEditRoute.useParams();
+  const toast = useToast();
   const navigate = useNavigate();
   const sourcesQ = useSourceCatalog();
   const reportQ = useSavedReport(id);
@@ -101,6 +103,7 @@ function SavedReportEditPage() {
         // null = nothing actually changed; the user has been told and nothing was
         // written. Stay in the builder.
         if (saved === null) return;
+        toast.ok(`Report ${input.name} saved`);
         exit.leave(() => void navigate({ to: '/saved-reports/$id', params: { id } }));
       } catch (e) {
         setSaveError(e instanceof Error ? e.message : String(e));

@@ -4,7 +4,6 @@ import type {
   ListQcDocumentsResponse,
   QcDocument,
   QcDossierOrderKind,
-  QcDossierOrdersResponse,
   QcDossierResponse,
   QcDossierUrlsInput,
   QcDossierUrlsResponse,
@@ -21,7 +20,6 @@ import { soDocumentsKeys } from '@/modules/so-documents/api';
 export const qcDocumentsKeys = {
   all: ['qc-documents'] as const,
   list: (q: ListQcDocumentsQuery) => [...qcDocumentsKeys.all, 'list', q] as const,
-  dossierOrders: (search: string) => [...qcDocumentsKeys.all, 'dossier-orders', search] as const,
   dossier: (kind: QcDossierOrderKind, orderId: string) =>
     [...qcDocumentsKeys.all, 'dossier', kind, orderId] as const,
 };
@@ -83,20 +81,6 @@ export function saveQcDoc(
     source: 'qc_document',
     ...(fileName ? { fileName } : {}),
     ...(refCode ? { refCode } : {}),
-  });
-}
-
-/** ADR-252 — the Dossier order picker (SO + JWSO, server search). */
-export function useQcDossierOrders(search: string) {
-  return useQuery<QcDossierOrdersResponse>({
-    queryKey: qcDocumentsKeys.dossierOrders(search),
-    queryFn: () => {
-      const p = new URLSearchParams();
-      if (search) p.set('search', search);
-      p.set('limit', '20');
-      return apiFetch<QcDossierOrdersResponse>(`/qc-documents/dossier/orders?${p.toString()}`);
-    },
-    placeholderData: (prev) => prev,
   });
 }
 

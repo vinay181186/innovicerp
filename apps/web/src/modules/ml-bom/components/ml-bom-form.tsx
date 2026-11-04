@@ -1,6 +1,6 @@
 // Multi-Level BOM create + edit form (ADR-225). Same layout as BOM Master's
-// form (bom-master/components/bom-form.tsx): sticky PageHeader (Cancel + blue
-// Save, Ctrl+S, "Not saved") → one Panel with the ClusterGrid → Lines panel.
+// form (bom-master/components/bom-form.tsx): PageHeader → one Panel with the
+// ClusterGrid → Lines panel → FormActions (Cancel + blue Save, Ctrl+S, "Not saved").
 // No Excel import (phase 2).
 
 import { type MlBomLineInput, qtyUomProblem } from '@innovic/shared';
@@ -10,7 +10,7 @@ import { cleanDrawingRev } from '@/modules/item-revisions/api';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
 import { Cluster, ClusterGrid, FormField, SearchableSelect } from '@/ui/forms';
-import { PageHeader, useSaveShortcut } from '@/ui/layout';
+import { FormActions, PageHeader, useSaveShortcut } from '@/ui/layout';
 import { useNextMlBomNo } from '../api';
 import { MlBomLinesTable, type MlBomFormLineDraft, emptyMlBomLine } from './ml-bom-lines-table';
 import { itemDisplayName, useMlBomItems } from './use-ml-bom-items';
@@ -182,7 +182,6 @@ export function MlBomForm(props: MlBomFormProps): React.JSX.Element {
       }}
     >
       <PageHeader
-        sticky
         title={mode === 'create' ? 'New Multi-Level BOM' : `Edit ${header.code}`}
         subtitle={
           mode === 'edit' ? (
@@ -190,22 +189,6 @@ export function MlBomForm(props: MlBomFormProps): React.JSX.Element {
               BOM Rev {revision ?? 1} → {(revision ?? 1) + 1}
             </span>
           ) : undefined
-        }
-        dirty={isDirty}
-        actions={
-          <>
-            <button type="button" className="btn btn-ghost" onClick={props.onCancel}>
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="btn btn-primary"
-              disabled={Boolean(validationError) || submitting}
-              title={validationError ?? 'Save (Ctrl+S)'}
-            >
-              {submitting ? 'Saving…' : mode === 'create' ? 'Save BOM' : 'Save Changes'}
-            </button>
-          </>
         }
       />
 
@@ -356,6 +339,20 @@ export function MlBomForm(props: MlBomFormProps): React.JSX.Element {
           />
         </Panel>
       ) : null}
+
+      <FormActions dirty={isDirty}>
+        <button type="button" className="btn btn-ghost" onClick={props.onCancel}>
+          Cancel
+        </button>
+        <button
+          type="submit"
+          className="btn btn-primary"
+          disabled={Boolean(validationError) || submitting}
+          title={validationError ?? 'Save (Ctrl+S)'}
+        >
+          {submitting ? 'Saving…' : mode === 'create' ? 'Save BOM' : 'Save Changes'}
+        </button>
+      </FormActions>
     </form>
   );
 }

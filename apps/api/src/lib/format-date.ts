@@ -61,6 +61,38 @@ function toInstant(d: Date | string): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+/** Excel cannot show a date before 1900 (legacy placeholders such as 0001-01-01). */
+const EXCEL_FIRST_YEAR = 1900;
+
+/** The value of a real Excel date cell (owner 2026-11-03): a Date whose UTC parts ARE the
+ *  India calendar day (and clock, when `withTime`), because Excel cells have no timezone.
+ *  Null when `s` is not a date, so the caller keeps it as text. */
+export function excelDateValue(s: string, withTime: boolean): Date | null {
+  const t = s.trim();
+  const bare = DATE_ONLY.exec(t);
+  if (bare) {
+    const [y, m, d] = [Number(bare[1]), Number(bare[2]), Number(bare[3])];
+    const date = new Date(Date.UTC(y, m - 1, d));
+    return y >= EXCEL_FIRST_YEAR && date.getUTCMonth() === m - 1 && date.getUTCDate() === d
+      ? date
+      : null;
+  }
+  if (!isIsoDateLike(t)) return null;
+  const instant = toInstant(t);
+  if (!instant) return null;
+  const p = istParts(instant);
+  if (Number(p.y) < EXCEL_FIRST_YEAR) return null;
+  return new Date(
+    Date.UTC(
+      Number(p.y),
+      Number(p.m) - 1,
+      Number(p.d),
+      withTime ? Number(p.hh) : 0,
+      withTime ? Number(p.mi) : 0,
+    ),
+  );
+}
+
 /** 24-hour `HH` + `MM` on the 12-hour dial: `14`,`35` → `02:35 PM`,
  *  `00`,`15` → `12:15 AM`, `12`,`00` → `12:00 PM`. */
 function to12(hh: string | number, mi: string): string {

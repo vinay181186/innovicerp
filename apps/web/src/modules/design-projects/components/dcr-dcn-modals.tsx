@@ -20,6 +20,8 @@ import {
   useUpdateDesignDcr,
 } from '../api';
 import { Actions, ErrorBox, Field, Modal } from './detail-shared';
+import { useToast } from '@/ui/feedback';
+import { SearchableSelect } from '@/ui/forms';
 
 export function DcrFormModal({
   projectId,
@@ -42,6 +44,7 @@ export function DcrFormModal({
   const [description, setDescription] = useState(dcr?.description ?? '');
   const [err, setErr] = useState<string | null>(null);
 
+  const toast = useToast();
   const createMut = useCreateDesignDcr();
   const updateMut = useUpdateDesignDcr();
 
@@ -64,7 +67,10 @@ export function DcrFormModal({
       createMut.mutate(
         { projectId, input },
         {
-          onSuccess: () => onClose(),
+          onSuccess: (saved) => {
+            toast.ok(`DCR ${saved.code} saved`);
+            onClose();
+          },
           onError: (e) => setErr(e instanceof Error ? e.message : 'Could not save. Try again.'),
         },
       );
@@ -83,7 +89,10 @@ export function DcrFormModal({
           },
         },
         {
-          onSuccess: () => onClose(),
+          onSuccess: (saved) => {
+            toast.ok(`DCR ${saved.code} saved`);
+            onClose();
+          },
           onError: (e) => setErr(e instanceof Error ? e.message : 'Could not save. Try again.'),
         },
       );
@@ -94,10 +103,24 @@ export function DcrFormModal({
     <Modal
       onClose={onClose}
       title={mode === 'add' ? '📋 New DCR' : `✏ Edit DCR ${dcr?.code ?? ''}`}
+      footer={
+        <Actions
+          onClose={onClose}
+          onSave={onSave}
+          saving={createMut.isPending || updateMut.isPending}
+          label={mode === 'add' ? 'Save DCR' : 'Save Changes'}
+        />
+      }
     >
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Title ★">
+          <Field
+            label={
+              <>
+                Title<span className="req">★</span>
+              </>
+            }
+          >
             <input
               className="innovic-input"
               value={title}
@@ -174,12 +197,6 @@ export function DcrFormModal({
         </div>
       </div>
       {err ? <ErrorBox message={err} /> : null}
-      <Actions
-        onClose={onClose}
-        onSave={onSave}
-        saving={createMut.isPending || updateMut.isPending}
-        label={mode === 'add' ? 'Save DCR' : 'Save Changes'}
-      />
     </Modal>
   );
 }
@@ -203,7 +220,10 @@ export function DcnFormModal({
   const [description, setDescription] = useState(dcn?.description ?? '');
   const [err, setErr] = useState<string | null>(null);
 
+  const toast = useToast();
   const createMut = useCreateDesignDcn();
+  const linkedDcr = dcrs.find((d) => d.id === linkedDcrId);
+  const linkedDcrLabel = linkedDcr ? `${linkedDcr.code} — ${linkedDcr.title}` : undefined;
   const updateMut = useUpdateDesignDcn();
 
   const onSave = (): void => {
@@ -221,7 +241,10 @@ export function DcnFormModal({
       createMut.mutate(
         { projectId, input },
         {
-          onSuccess: () => onClose(),
+          onSuccess: (saved) => {
+            toast.ok(`DCN ${saved.code} saved`);
+            onClose();
+          },
           onError: (e) => setErr(e instanceof Error ? e.message : 'Could not save. Try again.'),
         },
       );
@@ -236,7 +259,10 @@ export function DcnFormModal({
           },
         },
         {
-          onSuccess: () => onClose(),
+          onSuccess: (saved) => {
+            toast.ok(`DCN ${saved.code} saved`);
+            onClose();
+          },
           onError: (e) => setErr(e instanceof Error ? e.message : 'Could not save. Try again.'),
         },
       );
@@ -247,10 +273,24 @@ export function DcnFormModal({
     <Modal
       onClose={onClose}
       title={mode === 'add' ? '📝 New DCN' : `✏ Edit DCN ${dcn?.code ?? ''}`}
+      footer={
+        <Actions
+          onClose={onClose}
+          onSave={onSave}
+          saving={createMut.isPending || updateMut.isPending}
+          label={mode === 'add' ? 'Save DCN' : 'Save Changes'}
+        />
+      }
     >
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Title ★">
+          <Field
+            label={
+              <>
+                Title<span className="req">★</span>
+              </>
+            }
+          >
             <input
               className="innovic-input"
               value={title}
@@ -259,18 +299,14 @@ export function DcnFormModal({
           </Field>
         </div>
         <Field label="Linked DCR">
-          <select
-            className="innovic-select"
-            value={linkedDcrId}
-            onChange={(e) => setLinkedDcrId(e.target.value)}
-          >
-            <option value="">— None —</option>
-            {dcrs.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.code} — {d.title}
-              </option>
-            ))}
-          </select>
+          <SearchableSelect
+            value={linkedDcrId || null}
+            onChange={(id) => setLinkedDcrId(id ?? '')}
+            options={dcrs.map((d) => ({ id: d.id, code: d.code, name: d.title }))}
+            valueLabel={linkedDcrLabel}
+            placeholder="— None —"
+            clearable
+          />
         </Field>
         {mode === 'edit' ? (
           <Field label="DCN Status">
@@ -297,12 +333,6 @@ export function DcnFormModal({
         </div>
       </div>
       {err ? <ErrorBox message={err} /> : null}
-      <Actions
-        onClose={onClose}
-        onSave={onSave}
-        saving={createMut.isPending || updateMut.isPending}
-        label={mode === 'add' ? 'Save DCN' : 'Save Changes'}
-      />
     </Modal>
   );
 }

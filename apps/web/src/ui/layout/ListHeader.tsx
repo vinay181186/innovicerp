@@ -10,8 +10,8 @@
 //   sticky band on --bg
 //   ├─ row 1 left  : .section-hdr title (module emoji first) + "N vendors · open only"
 //   ├─ row 1 right : tools (view toggle / Export / secondary buttons) → ⟳ Updating… → primary
-//   └─ row 2       : FILTER BAR — search → `filters` (every filter the same
-//                    width) → Clear
+//   └─ row 2       : FILTER BAR — search → `orderFilter` → `filters` (every
+//                    filter the same width) → Clear
 //   children : anything else that belongs in the band (rare; NOT status
 //              capsules — a status filter is a dropdown in `filters` whose
 //              option labels carry the counts, e.g. "Open (40)").
@@ -47,6 +47,8 @@ export interface ListHeaderProps {
   searchPlaceholder?: string | undefined;
   /** Own search control — rendered instead of the built-in SearchInput. */
   searchSlot?: ReactNode | undefined;
+  /** The SO / JWSO dropdown: right after the search box, before `filters`. */
+  orderFilter?: ReactNode | undefined;
   /** Shows the "⟳ Updating…" note while a background refetch runs. */
   updating?: boolean | undefined;
   /** Title-row controls: view toggle, Export, secondary buttons. NOT filters. */
@@ -77,6 +79,7 @@ export function ListHeader({
   onSearch,
   searchPlaceholder = 'Search this list…',
   searchSlot,
+  orderFilter,
   updating = false,
   tools,
   filters,
@@ -97,7 +100,12 @@ export function ListHeader({
   // no server-filtered table is drawn (the table's own strip clears them otherwise).
   const sfSnap = useSfSnapshot(useSfStore());
   const sfHeldOnly = sfSnap.serverTables === 0 && sfSnap.heldFilters > 0;
-  const hasBar = searchBox != null || filters != null || onClearFilters != null || sfHeldOnly;
+  const hasBar =
+    searchBox != null ||
+    orderFilter != null ||
+    filters != null ||
+    onClearFilters != null ||
+    sfHeldOnly;
   return (
     <HeaderBand
       title={title}
@@ -136,6 +144,7 @@ export function ListHeader({
         <div className="list-filterbar" role="search">
           <HeldFiltersClear />
           {searchBox}
+          {orderFilter}
           {filters}
           {onClearFilters ? (
             <button

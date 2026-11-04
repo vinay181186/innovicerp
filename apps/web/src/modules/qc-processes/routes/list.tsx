@@ -4,8 +4,8 @@
 // (modules/clients/routes/list.tsx) as the reference. The composition is the
 // canonical one and nothing else:
 //
-//   <TabStrip>              QC Processes | Report Types
-//   <ListHeader>            title · count · primary; filter bar: SearchInput · Active · Clear
+//   <ListHeader>            title · count · primary; filter bar: SearchInput · Active · Clear;
+//                           <TabStrip> QC Processes | Report Types in its band
 //   <Panel>                 the 💡 what-this-master-is-for note
 //   <Banner>                a refused delete, in the server's own words
 //   <Panel><DataTable>      THE ruled sheet — loading + empty are its own states
@@ -146,27 +146,32 @@ function QcProcessesListPage(): React.JSX.Element {
     return <PageState as="page" state="noaccess" />;
   }
 
+  // QC Processes | Report Types tabs (Report Types is the former standalone
+  // Report / Document Master screen).
+  const tabBar = (
+    <TabStrip
+      label="QC master"
+      tabs={TABS}
+      activeKey={tab}
+      onChange={(k) =>
+        void navigate({
+          search: (prev) => ({ ...prev, tab: k === 'processes' ? undefined : 'reports' }),
+          replace: true,
+        })
+      }
+    />
+  );
+
   return (
     // `page-fill` (ADR-202): on the list tab the TABLE is the page's only
     // scrollbar, so the column header stays on screen at the last row. The
     // other tab is a different, self-sizing view and keeps the page scroll.
     <div className={tab === 'reports' ? undefined : 'page-fill'}>
-      {/* QC Processes | Report Types tabs (Report Types is the former standalone
-          Report / Document Master screen). */}
-      <TabStrip
-        label="QC master"
-        tabs={TABS}
-        activeKey={tab}
-        onChange={(k) =>
-          void navigate({
-            search: (prev) => ({ ...prev, tab: k === 'processes' ? undefined : 'reports' }),
-            replace: true,
-          })
-        }
-      />
-
       {tab === 'reports' ? (
-        <ReportTypesPanel />
+        <>
+          {tabBar}
+          <ReportTypesPanel />
+        </>
       ) : (
         <>
           {/* The frozen header band: title, count, search, the Active filter
@@ -224,7 +229,9 @@ function QcProcessesListPage(): React.JSX.Element {
                 </Link>
               ) : null
             }
-          />
+          >
+            {tabBar}
+          </ListHeader>
 
           {/* Why a banner and not a toast: the delete is refused for a reason the
           user has to act on (retire it as Inactive instead), and that sentence

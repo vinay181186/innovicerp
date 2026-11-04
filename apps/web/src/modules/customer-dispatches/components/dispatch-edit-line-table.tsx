@@ -91,7 +91,7 @@ export function DispatchEditLineTable(props: {
             {cards.length === 0 ? (
               <tr>
                 <td colSpan={COL_COUNT} className="empty-state" style={{ padding: 14 }}>
-                  No lines on this dispatch.
+                  No lines on this dispatch yet.
                 </td>
               </tr>
             ) : (
@@ -124,11 +124,7 @@ export function DispatchEditLineTable(props: {
                       />
                     </td>
                     <td>
-                      <input
-                        className="innovic-input"
-                        readOnly
-                        value={saved?.itemName ?? ''}
-                      />
+                      <input className="innovic-input" readOnly value={saved?.itemName ?? ''} />
                       <MasterItemNameNote
                         lineName={saved?.itemName}
                         masterItemName={saved?.masterItemName}
@@ -166,7 +162,10 @@ export function DispatchEditLineTable(props: {
                         }}
                       />
                       {err ? (
-                        <div className="form-error" style={{ whiteSpace: 'normal', lineHeight: 1.3 }}>
+                        <div
+                          className="form-error"
+                          style={{ whiteSpace: 'normal', lineHeight: 1.3 }}
+                        >
                           ⚠ {err}
                         </div>
                       ) : null}

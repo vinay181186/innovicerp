@@ -17,8 +17,12 @@ import { useForm } from 'react-hook-form';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { Banner } from '@/ui/feedback';
+import { Banner, useToast } from '@/ui/feedback';
+import { FormActions } from '@/ui/layout';
 import { useCreateUser } from '../api';
+
+/** The bottom bar sits outside the form's panel; `form=` keeps Save its submit button. */
+const FORM_ID = 'user-create-form';
 
 export const userCreateRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -38,6 +42,7 @@ function UserCreatePage(): React.JSX.Element {
   const navigate = useNavigate();
   const { data: me } = useSession();
   const isAdmin = me?.role === 'admin';
+  const toast = useToast();
   const create = useCreateUser();
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -79,6 +84,7 @@ function UserCreatePage(): React.JSX.Element {
     };
     try {
       const created = await create.mutateAsync(payload);
+      toast.ok(`User ${created.email} saved`);
       // Straight into that user's Access Control box. Creating an account and
       // granting it access is one job; making the admin navigate and find the
       // row again is how people end up with unconfigured users.
@@ -113,7 +119,7 @@ function UserCreatePage(): React.JSX.Element {
           </div>
         </div>
         <div className="panel-body">
-          <form onSubmit={handleSubmit(onValid)}>
+          <form id={FORM_ID} onSubmit={handleSubmit(onValid)}>
             {/* Legacy BASIC INFO (L13484-13495) put Role between Name and Email and the
                 APPROVAL RIGHTS limit (L13538) last. Both are gone from this form — they are
                 access decisions and live on Access Control. What is left is identity:
@@ -159,9 +165,7 @@ function UserCreatePage(): React.JSX.Element {
                 {formState.errors.email ? (
                   <div className="form-error">{formState.errors.email.message}</div>
                 ) : (
-                  <div className="form-help">
-                    Used to sign in. Cannot be changed later.
-                  </div>
+                  <div className="form-help">Used to sign in. Cannot be changed later.</div>
                 )}
               </div>
               <div className="form-grp">
@@ -176,7 +180,10 @@ function UserCreatePage(): React.JSX.Element {
                   placeholder="At least 8 characters"
                   {...register('password', {
                     required: 'Initial Password is required.',
-                    minLength: { value: 8, message: 'Initial Password must be at least 8 characters.' },
+                    minLength: {
+                      value: 8,
+                      message: 'Initial Password must be at least 8 characters.',
+                    },
                     maxLength: {
                       value: 72,
                       message: 'Initial Password cannot be more than 72 characters.',
@@ -216,37 +223,32 @@ function UserCreatePage(): React.JSX.Element {
               </div>
             </div>
 
-            <div style={{ marginTop: 16 }}>
-              {submitError ? (
-                <div style={{ marginBottom: 10 }}>
-                  <Banner tone="error" role="alert">
-                    {submitError}
-                  </Banner>
-                </div>
-              ) : null}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  onClick={() => exit.leave(goBack)}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="btn btn-primary"
-                  disabled={formState.isSubmitting || create.isPending}
-                >
-                  {formState.isSubmitting || create.isPending ? (
-                    <Loader2 size={13} className="animate-spin" />
-                  ) : null}
-                  Save User
-                </button>
+            {submitError ? (
+              <div style={{ marginTop: 16 }}>
+                <Banner tone="error" role="alert">
+                  {submitError}
+                </Banner>
               </div>
-            </div>
+            ) : null}
           </form>
         </div>
       </div>
+      <FormActions>
+        <button type="button" className="btn btn-ghost" onClick={() => exit.leave(goBack)}>
+          Cancel
+        </button>
+        <button
+          type="submit"
+          form={FORM_ID}
+          className="btn btn-primary"
+          disabled={formState.isSubmitting || create.isPending}
+        >
+          {formState.isSubmitting || create.isPending ? (
+            <Loader2 size={13} className="animate-spin" />
+          ) : null}
+          Save User
+        </button>
+      </FormActions>
     </div>
   );
 }

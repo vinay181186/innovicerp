@@ -1,21 +1,19 @@
 // Route Card detail page. Mirrors legacy viewRouteCard modal (L10143).
 //
-// 2026-10-06 layout (owner-approved mock-up pro-routecard-detail-mockup.html,
-// "Route Card detail"): the whole page fits one 1440×810 screen with no page
-// scroll. Top to bottom:
-//   header      ← Back · code · Route Card · Rev chip … Print · ⋯ (Delete) · Edit / Revise
+// Layout: the page SCROLLS, like Job Card detail (owner decision 2026-11-04;
+// replaces the fit-to-one-screen page of 2026-10-06). Top to bottom:
+//   header      ← Back · code · Route Card · Rev chip … ⋯ (Preview, PDF, Delete) · Edit / Revise
 //   identity    which item this route belongs to (DocIdent)
-//   facts       Route · Material · Notes, one line each (ClusterGrid — the Plan
-//               screens method, ADR-214)
-//   tab panel   Operation Sequence | Revision History | History — the one block
-//               that takes the height left (`page-fill rc-detail` + <Panel fill>); its
-//               table scrolls inside with the header row held.
-// Data, permissions, print and delete are unchanged from the stacked-panel page.
+//   facts       Route · Material · Notes (ClusterGrid stack — ADR-214 method)
+//   tab panel   Operation Sequence | Revision History | History. There is no
+//               /related endpoint for this document, so History stays in this
+//               page's own TabStrip.
+// Data, permissions, print and delete are unchanged.
 
 import type { RouteCardDetail } from '@innovic/shared';
 import { itemRevLabel } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Download, Eye, Loader2, Pencil } from 'lucide-react';
+import { ArrowLeft, Loader2, Pencil } from 'lucide-react';
 import { useState } from 'react';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -28,7 +26,7 @@ import { authenticatedRoute } from '@/routes/_authenticated';
 import { Panel } from '@/ui/data';
 import { Banner, ConfirmDialog } from '@/ui/feedback';
 import { Cluster, ClusterFact, ClusterGrid, DocIdent, IdentCode, IdentSep } from '@/ui/forms';
-import { ActionMenu } from '@/ui/layout';
+import { ActionMenu, DetailHeader } from '@/ui/layout';
 import { TabStrip } from '@/ui/navigation';
 import { useItem } from '../../items/api';
 import { useMyCompany } from '../../settings/api';
@@ -42,7 +40,6 @@ import { RcApprovalBadge } from '../components/rc-approval-badge';
 import { RouteCardOpsTable } from '../components/route-card-ops-table';
 import { RouteCardRevisionHistory } from '../components/route-card-revision-history';
 import { printRouteCard } from '../lib/print-route-card';
-import '../components/rc-detail.css';
 
 export const routeCardDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -132,70 +129,65 @@ function RouteCardDetailPage(): React.JSX.Element {
   const qc = detail.ops.filter((o) => o.opType === 'qc').length;
 
   return (
-    <div className="page-fill rc-detail">
+    <div>
       {/* Header: the number, its revision, and the next step (Edit / Revise)
-          as the one primary button. Delete folds into the ⋯ menu. */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: 'var(--sp-2)',
-          marginBottom: 'var(--panel-gap)',
-        }}
+          as the one primary button. Print and Delete fold into the ⋯ menu. */}
+      <DetailHeader
+        backLabel="Back"
+        backTo="/route-cards"
+        renderLink={(p) => <Link {...p} />}
+        code={detail.code}
+        badges={
+          <>
+            <span className="panel-title">Route Card</span>
+            <span className="badge b-blue">Route Card Rev {detail.currentRevision}</span>
+            <RcApprovalBadge status={detail.approvalStatus} />
+          </>
+        }
+        actions={
+          <>
+            {/* ADR-253 — Approve / Reject a pending card (Approve tick only). */}
+            <RcApprovalActions detail={detail} canApprove={perms.approve} />
+            <ActionMenu
+              label="⋯"
+              items={[
+                { label: 'Preview', onClick: onPrint },
+                { label: '⬇ Download PDF', onClick: onDownload },
+                {
+                  label: 'Delete',
+                  danger: true,
+                  // ADR-232: deleting any record is Super Admin only.
+                  hidden: !canDeleteRecords(eff),
+                  disabled: del.isPending,
+                  title: 'Move this Route Card to Trash',
+                  onClick: () => {
+                    setDeleteReason('');
+                    setConfirmDelete(true);
+                  },
+                },
+              ]}
+            />
+            {perms.edit && (
+              <Link
+                to="/route-cards/$id/edit"
+                params={{ id: detail.id }}
+                className="btn btn-primary"
+              >
+                <Pencil size={13} /> Edit / Revise
+              </Link>
+            )}
+          </>
+        }
       >
-        <Link to="/route-cards" className="btn btn-ghost">
-          <ArrowLeft size={14} /> Back
-        </Link>
-        <span className="td-code" style={{ color: 'var(--blue)', fontSize: 'var(--fs-md)' }}>
-          {detail.code}
-        </span>
-        <span className="panel-title">Route Card</span>
-        <span className="badge b-blue">Route Card Rev {detail.currentRevision}</span>
-        <RcApprovalBadge status={detail.approvalStatus} />
-        <span style={{ flex: 1 }} />
-        {/* ADR-253 — Approve / Reject a pending card (Approve tick only). */}
-        <RcApprovalActions detail={detail} canApprove={perms.approve} />
-        <button type="button" className="btn btn-ghost" onClick={onPrint}>
-          <Eye size={13} /> Preview
-        </button>
-        <button type="button" className="btn btn-ghost" onClick={onDownload}>
-          <Download size={13} /> Download PDF
-        </button>
-        <ActionMenu
-          label="⋯"
-          items={[
-            {
-              label: 'Delete',
-              danger: true,
-              // ADR-232: deleting any record is Super Admin only.
-              hidden: !canDeleteRecords(eff),
-              disabled: del.isPending,
-              title: 'Move this Route Card to Trash',
-              onClick: () => {
-                setDeleteReason('');
-                setConfirmDelete(true);
-              },
-            },
-          ]}
-        />
-        {perms.edit && (
-          <Link to="/route-cards/$id/edit" params={{ id: detail.id }} className="btn btn-primary">
-            <Pencil size={13} /> Edit / Revise
-          </Link>
-        )}
-      </div>
+        <RcApprovalBanner detail={detail} />
+        {hasPendingEdit ? (
+          <div style={{ marginBottom: 'var(--panel-gap)' }}>
+            <Banner tone="info" role="status" flush>
+              A change to this Route Card is waiting for approval.
+            </Banner>
+          </div>
+        ) : null}
 
-      <RcApprovalBanner detail={detail} />
-      {hasPendingEdit ? (
-        <div style={{ marginBottom: 'var(--panel-gap)' }}>
-          <Banner tone="info" role="status" flush>
-            A change to this Route Card is waiting for approval.
-          </Banner>
-        </div>
-      ) : null}
-
-      <Panel>
         {/* WHICH item this route belongs to — identity, not a fact about the
             route, so it heads the block instead of taking grid cells. */}
         <DocIdent>
@@ -311,7 +303,7 @@ function RouteCardDetailPage(): React.JSX.Element {
             {notice}
           </div>
         ) : null}
-      </Panel>
+      </DetailHeader>
 
       <TabStrip
         label="Route Card lists"
@@ -325,9 +317,7 @@ function RouteCardDetailPage(): React.JSX.Element {
         ]}
       />
 
-      {/* The one block that takes the height left on the page; the table in
-          it is what scrolls, with its header row held at the top. */}
-      <Panel fill bodyPadding="none">
+      <Panel bodyPadding="none">
         {tab === 'ops' ? <RouteCardOpsTable ops={detail.ops} /> : null}
         {tab === 'revisions' ? <RouteCardRevisionHistory revisions={detail.revisions} /> : null}
         {/* ADR-197 — who did what to this card, with before → after and reasons. */}

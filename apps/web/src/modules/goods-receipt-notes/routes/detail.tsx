@@ -23,13 +23,12 @@ import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc
 import { CancelPendingBanner } from '@/modules/cancel-requests/components/cancel-pending-banner';
 import { AssignTaskButton } from '@/modules/tasks/components/assign-task-button';
 import { ActionLink } from '@/components/shared/action-link';
-import { DocumentHistory } from '@/components/shared/document-history';
-import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
+import { useHistoryTab } from '@/components/shared/document-history';
+import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { Panel } from '@/ui/data';
-import { Banner, ConfirmDialog } from '@/ui/feedback';
+import { Banner, ConfirmDialog, useToast } from '@/ui/feedback';
 import { fmtDateTime } from '@/lib/date';
 import { ActionMenu } from '@/ui/layout';
 import { useSession } from '@/lib/session';
@@ -52,6 +51,7 @@ export const goodsReceiptNoteDetailRoute = createRoute({
 });
 
 function GoodsReceiptNoteDetailPage(): React.JSX.Element {
+  const toast = useToast();
   const { id } = goodsReceiptNoteDetailRoute.useParams();
   const navigate = useNavigate();
   const {
@@ -84,6 +84,14 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
   const [deleteReason, setDeleteReason] = useState('');
   // ADR-235 — the ONE standard Cancel dialog (docType 'grn').
   const [cancelOpen, setCancelOpen] = useState(false);
+  // ADR-197 — this GRN's own History: create, edits (before → after), Incoming
+  // QC per line (inspector + accepted qty), delete. Called before the early
+  // returns (hooks rule); it waits for the id / code to arrive.
+  const historyTab = useHistoryTab({
+    entity: 'GoodsReceiptNote',
+    entityId: detail?.id,
+    refId: detail?.code,
+  });
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
   // VIEW was removed for this page sees the no-access panel, not the page. `eff`
@@ -143,7 +151,7 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
   };
   const onPrint = (): void => {
     const ok = printGrn(printArgs);
-    if (!ok) window.alert('Allow popups to print.');
+    if (!ok) toast.error('Allow popups to print.');
   };
   // ⬇ Download PDF — the same sheet as Preview, saved as `<GRN code>.pdf`.
   const onDownload = (): Promise<void> =>
@@ -388,13 +396,7 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
         poQtyTotal={account ? account.poQty : null}
       />
 
-      <RelatedDocsPanel module="goods-receipt-notes" id={detail.id} />
-
-      {/* ADR-197 — this GRN's own History: create, edits (before → after),
-          Incoming QC per line (inspector + accepted qty), delete. */}
-      <Panel title="History" bodyPadding="none">
-        <DocumentHistory entity="GoodsReceiptNote" entityId={detail.id} refId={detail.code} />
-      </Panel>
+      <RelatedDocsTabs module="goods-receipt-notes" id={detail.id} extraTabs={[historyTab]} />
 
       {cancelOpen ? (
         <CancelDocDialog

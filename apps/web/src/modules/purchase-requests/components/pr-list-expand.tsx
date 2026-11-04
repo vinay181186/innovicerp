@@ -11,13 +11,22 @@ import { fmtDate } from '@/lib/date';
 import { soNoWithInternal } from '@/lib/so-number';
 import { prBalanceClosedText, prOrderBalance } from '../lib/pr-balance';
 
-/** The SO or JC this PR came from — one or the other, like the old card. */
+/** The order and / or JC this PR came from. */
 function SourceRef({ pr }: { pr: PurchaseRequestListItem }): React.JSX.Element {
   if (pr.soCode) {
     return (
       <span style={{ color: 'var(--cyan)' }}>
         {soNoWithInternal(pr.soCode, pr.soInternalNo)}
         {pr.soLineNo ? <span className="text3"> · Ln {pr.soLineNo}</span> : null}
+        {pr.sourceJcCode ? (
+          <>
+            {' · '}
+            {pr.sourceJcCode}
+            {pr.sourceJcOpSeq ? (
+              <span className="text3"> · Op {opSrNo(pr.sourceJcOpSeq)}</span>
+            ) : null}
+          </>
+        ) : null}
       </span>
     );
   }

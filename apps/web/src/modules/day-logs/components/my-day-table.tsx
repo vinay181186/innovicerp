@@ -105,7 +105,6 @@ export function MyDayTable({
   nowMin,
   canWrite,
   line,
-  onMessage,
 }: {
   day: DayLogDetail;
   q: DayQuery;
@@ -114,7 +113,6 @@ export function MyDayTable({
   canWrite: boolean;
   /** Entry to open and scroll to (?line=). */
   line: string | undefined;
-  onMessage: (text: string) => void;
 }): React.JSX.Element {
   const rows = useMemo<Row[]>(
     () => sortEntries(day.entries).map((e, i) => ({ ...e, srNo: i + 1 })),
@@ -169,7 +167,7 @@ export function MyDayTable({
         wrapClassName="dl-fit"
         columns={COLUMNS}
         rows={shown}
-        empty={needle ? `No entries match "${needle}".` : `Nothing logged on ${fmtDate(day.date)}.`}
+        empty={needle ? 'No entries match.' : `Nothing logged on ${fmtDate(day.date)}.`}
         onRowClick={(r) => toggle(r.id)}
         onToggleExpanded={(r) => toggle(r.id)}
         renderExpanded={(r) =>
@@ -181,10 +179,7 @@ export function MyDayTable({
               isOwner={day.isOwner}
               nowMin={nowMin}
               onMode={(m) => setMode(r.id, m)}
-              onTimesSent={() => {
-                setMode(r.id, 'view');
-                onMessage('Saved.');
-              }}
+              onTimesSent={() => setMode(r.id, 'view')}
             />
           ) : null
         }

@@ -7,8 +7,12 @@
 // form, date / week navigators, tiles, sub-tabs) is fixed chrome. The active
 // tab lives in the URL `tab` (Alerts' sub-tab in `alert`), so Refresh / Back
 // keep it. The tabs live in ../components (this file was 1122 lines).
+//
+// Search: the API has no search parameter, so the header's box narrows the rows
+// each tab has already loaded (its date window). Each tab reports its row count.
 
 import { createRoute } from '@tanstack/react-router';
+import { useState } from 'react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -31,6 +35,14 @@ const TABS: Array<{ key: TabKey; label: string }> = [
   { key: 'alerts', label: 'Alerts' },
 ];
 
+const COUNT_NOUN: Record<TabKey, { noun: string; nounPlural: string }> = {
+  entry: { noun: 'entry', nounPlural: 'entries' },
+  daily: { noun: 'entry', nounPlural: 'entries' },
+  weekly: { noun: 'Design Engineer', nounPlural: 'Design Engineers' },
+  project: { noun: 'project', nounPlural: 'projects' },
+  alerts: { noun: 'row', nounPlural: 'rows' },
+};
+
 const searchSchema = z.object({
   /** Active tab; absent = My Log. */
   tab: z.enum(TAB_KEYS).optional(),
@@ -52,6 +64,8 @@ function DesignWorkLogPage(): React.JSX.Element {
   const navigate = designWorkLogListRoute.useNavigate();
   const tab: TabKey = search.tab ?? 'entry';
   const alertTab = search.alert ?? 'unlogged';
+  const [term, setTerm] = useState('');
+  const [count, setCount] = useState<number | undefined>(undefined);
 
   if (eff && !perms.view) {
     return (
@@ -71,15 +85,25 @@ function DesignWorkLogPage(): React.JSX.Element {
 
   return (
     <div className="page-fill">
-      <ListHeader title="Design Work Log" icon="⏱" />
+      <ListHeader
+        title="Design Work Log"
+        icon="⏱"
+        count={count}
+        {...COUNT_NOUN[tab]}
+        search={term}
+        onSearch={setTerm}
+        searchPlaceholder="Search project, task, category, Design Engineer…"
+      />
       <TabStrip label="Design Work Log views" activeKey={tab} onChange={setTab} tabs={TABS} />
 
-      {tab === 'entry' ? <EntryTab /> : null}
-      {tab === 'daily' ? <DailyTab /> : null}
-      {tab === 'weekly' ? <WeeklyTab /> : null}
-      {tab === 'project' ? <ProjectTab /> : null}
+      {tab === 'entry' ? <EntryTab term={term} onCount={setCount} /> : null}
+      {tab === 'daily' ? <DailyTab term={term} onCount={setCount} /> : null}
+      {tab === 'weekly' ? <WeeklyTab term={term} onCount={setCount} /> : null}
+      {tab === 'project' ? <ProjectTab term={term} onCount={setCount} /> : null}
       {tab === 'alerts' ? (
         <AlertsTab
+          term={term}
+          onCount={setCount}
           sub={alertTab}
           onSub={(k) =>
             void navigate({

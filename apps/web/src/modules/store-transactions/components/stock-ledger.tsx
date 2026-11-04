@@ -15,12 +15,14 @@ import {
   STORE_TXN_TYPES,
   type StoreTxnSourceType,
   type StoreTxnType,
+  roundQty,
 } from '@innovic/shared';
 import { useEffect, useMemo, useState } from 'react';
 
 import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
 
-import { StatStrip, DataTable, Panel } from '@/ui/data';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
+import { DataTable, Panel } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
@@ -29,7 +31,7 @@ import { useStoreTransactionsList } from '../api';
 import { STORE_TXN_SOURCE_LABELS, STORE_TXN_TYPE_LABELS } from '../lib/txn-labels';
 import { STOCK_LEDGER_HIDDEN_COLUMNS, stockLedgerColumns } from './stock-ledger-columns';
 
-export function StockLedger(): React.JSX.Element {
+export function StockLedger({ tabs }: { tabs?: React.ReactNode }): React.JSX.Element {
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState<string | undefined>(undefined);
   const [txnType, setTxnType] = useState<StoreTxnType | undefined>(undefined);
@@ -75,9 +77,9 @@ export function StockLedger(): React.JSX.Element {
   return (
     <div>
       {/* THE list header (ui/layout ListHeader): title · count, then the filter
-          bar (search · Type / Source · Clear), with the movement counts pinned
-          inside the same band. */}
+          bar (search · Type / Source · Clear). */}
       <ListHeader
+        orderFilter={<OrderSfFilter sf={sf} field="soCode" />}
         title="Stock Ledger"
         icon="📦"
         count={data ? total : undefined}
@@ -145,43 +147,7 @@ export function StockLedger(): React.JSX.Element {
           sf.filtering || txnType !== undefined || sourceType !== undefined || searchInput !== ''
         }
       >
-        {data?.summary ? (
-          <StatStrip
-            items={[
-              {
-                key: 'movements',
-                label: 'Movements',
-                count: data.summary.txnCount,
-                color: 'var(--cyan)',
-              },
-              // In / Out / Net only mean something for ONE item — across items
-              // they would add kg, Nos and m together.
-              ...(data.summary.itemCount === 1
-                ? [
-                    {
-                      key: 'in',
-                      label: 'Total In',
-                      count: `+${data.summary.totalIn}`,
-                      color: 'var(--green2)',
-                    },
-                    {
-                      key: 'out',
-                      label: 'Total Out',
-                      count: `-${data.summary.totalOut}`,
-                      color: 'var(--red2)',
-                    },
-                    {
-                      key: 'net',
-                      label: 'Net',
-                      count: `${data.summary.net >= 0 ? '+' : ''}${data.summary.net}`,
-                      color: data.summary.net >= 0 ? 'var(--green2)' : 'var(--red2)',
-                    },
-                  ]
-                : []),
-              { key: 'items', label: 'Items', count: data.summary.itemCount },
-            ]}
-          />
-        ) : null}
+        {tabs}
       </ListHeader>
 
       {isError ? (
@@ -215,6 +181,15 @@ export function StockLedger(): React.JSX.Element {
         page={page}
         pageSize={LIST_PAGE_SIZE}
         onPage={(p) => setPage(Math.min(totalPages, Math.max(1, p)))}
+        summary={
+          data?.summary
+            ? // In / Out / Net only mean something for ONE item — across items
+              // they would add kg, Nos and m together.
+              data.summary.itemCount === 1
+              ? `Total In +${roundQty(data.summary.totalIn)} · Total Out -${roundQty(data.summary.totalOut)} · Net ${data.summary.net >= 0 ? '+' : ''}${roundQty(data.summary.net)}`
+              : `Items ${data.summary.itemCount}`
+            : undefined
+        }
       />
     </div>
   );

@@ -6,7 +6,7 @@
 import { type ServicePoTaxType, type SoTotals, placeOfSupplyLabel } from '@innovic/shared';
 import { QtyStrip } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
-import { ReadField } from '@/ui/layout';
+import { ClusterFact } from '@/ui/forms';
 import {
   ORDER_STATE_MISSING_NOTE,
   gstTaxRows,
@@ -56,15 +56,15 @@ export function OrderSupplyFields(props: {
 }): React.JSX.Element {
   return (
     <>
-      <ReadField
+      <ClusterFact
         label="Place of Supply"
-        size="md"
-        value={props.placeOfSupply ? placeOfSupplyLabel(props.placeOfSupply) : null}
+        empty={!props.placeOfSupply}
+        value={props.placeOfSupply ? placeOfSupplyLabel(props.placeOfSupply) : '—'}
       />
-      <ReadField
+      <ClusterFact
         label="Tax Type"
-        size="sm"
-        value={props.placeOfSupply || props.taxType ? taxTypeLabel(props.taxType) : null}
+        empty={!(props.placeOfSupply || props.taxType)}
+        value={props.placeOfSupply || props.taxType ? taxTypeLabel(props.taxType) : '—'}
       />
     </>
   );

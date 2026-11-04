@@ -1,5 +1,6 @@
-// Design Work Log — My Log tab (ADR-203 frozen header). Chrome: the three-figure
-// StatStrip and the Log Work Entry form (entry permission only). Then the
+// Design Work Log — My Log tab (ADR-203 frozen header). Chrome: the Log Work
+// Entry form (entry permission only); the three figures sit in the ListFooter
+// (no tile row on a list, owner 2026-11-03). Then the
 // "Recent Work Log" — formerly one card per entry under a date chip — as ONE
 // filled table with a group heading per Log Date carrying that day's total
 // hours (same colours: ≥ 6 h green, ≥ 3 h amber, else red). Same rows as
@@ -7,16 +8,25 @@
 
 import type { DesignWorkLogEntry } from '@innovic/shared';
 import { useMemo, useState } from 'react';
-import { StatStrip } from '@/components/shared/stat-strip';
+import { matchesSearchTerm } from '@/components/shared/search-match';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { useSession } from '@/lib/session';
-import { DataTable, Panel, RowMenu } from '@/ui/data';
+import { DataTable, Panel } from '@/ui/data';
 import type { DataTableColumn } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ConfirmDialog } from '@/ui/feedback';
+import { ListFooter } from '@/ui/layout';
 import { useDeleteDesignWorkLog, useDesignWorkLogList } from '../api';
 import { EntryForm } from './entry-form';
-import { catColor, CategoryText, todayStr, TrackerBadge } from './work-log-shared';
+import {
+  catColor,
+  CategoryText,
+  todayStr,
+  TrackerBadge,
+  useReportCount,
+  type TabListProps,
+} from './work-log-shared';
 
 const COLUMNS: DataTableColumn<DesignWorkLogEntry>[] = [
   {
@@ -79,7 +89,7 @@ function dayHrsColor(h: number): string {
   return h >= 6 ? 'var(--green)' : h >= 3 ? 'var(--amber)' : 'var(--red)';
 }
 
-export function EntryTab(): React.JSX.Element {
+export function EntryTab({ term, onCount }: TabListProps): React.JSX.Element {
   const { data: me } = useSession();
   // Tier-driven (dsnworklog_create, Design dept). Create → entry; delete → L6
   // Super Admin only (ADR-232).
@@ -121,18 +131,23 @@ export function EntryTab(): React.JSX.Element {
     return { rows: dates.flatMap((d) => grouped[d]!), dayHrs: totals };
   }, [myLogs]);
 
+  const shownRows = rows.filter((l) =>
+    matchesSearchTerm(
+      [
+        fmtDate(l.logDate),
+        l.projectName,
+        l.taskText ?? 'General',
+        l.category,
+        l.hours,
+        l.description,
+      ],
+      term,
+    ),
+  );
+  useReportCount(onCount, isLoading ? undefined : shownRows.length);
+
   return (
     <>
-      <div style={{ marginBottom: 'var(--panel-gap)' }}>
-        <StatStrip
-          items={[
-            { key: 'today', label: 'Today', count: `${todayHrs.toFixed(1)}h` },
-            { key: 'entries', label: 'Entries Today', count: todayLogs.length },
-            { key: 'total', label: 'Booked Hours', count: `${totalHrs.toFixed(0)}h` },
-          ]}
-        />
-      </div>
-
       {canAdd ? <EntryForm /> : null}
 
       <ConfirmDialog
@@ -149,11 +164,12 @@ export function EntryTab(): React.JSX.Element {
 
       <Panel fill bodyPadding="none" title="Recent Work Log">
         <DataTable<DesignWorkLogEntry>
+          tableKey={TABLE_KEYS.designWorkLogEntries}
           columns={COLUMNS}
-          rows={rows}
+          rows={shownRows}
           rowKey={(l) => l.id}
           loading={isLoading}
-          emptyText="No work logged yet."
+          emptyText={term.trim() ? 'No entries match.' : 'No entries yet.'}
           groupRow={(l, _i, prev) => {
             if (prev && prev.logDate === l.logDate) return null;
             const h = dayHrs.get(l.logDate) ?? 0;
@@ -167,27 +183,29 @@ export function EntryTab(): React.JSX.Element {
               </span>
             );
           }}
-          {...(canDelete
-            ? {
-                rowActionsWidth: '1%',
-                rowActions: (l: DesignWorkLogEntry) => (
-                  <RowMenu
-                    items={[
-                      {
-                        key: 'delete',
-                        label: 'Delete',
-                        icon: 'trash-2',
-                        group: 'danger',
-                        disabledReason: deleteMut.isPending ? 'Deleting…' : undefined,
-                        onSelect: () => setAskDelete(l.id),
-                      },
-                    ]}
-                  />
-                ),
-              }
-            : {})}
+          rowMenu={
+            canDelete
+              ? (l) => [
+                  {
+                    key: 'delete',
+                    label: 'Delete',
+                    icon: 'trash-2',
+                    group: 'danger',
+                    disabledReason: deleteMut.isPending ? 'Deleting…' : undefined,
+                    onSelect: () => setAskDelete(l.id),
+                  },
+                ]
+              : undefined
+          }
         />
       </Panel>
+      <ListFooter
+        total={rows.length}
+        shown={shownRows.length}
+        noun="entry"
+        nounPlural="entries"
+        summary={`Today ${todayHrs.toFixed(1)}h · Entries Today ${todayLogs.length} · Booked Hours ${totalHrs.toFixed(0)}h`}
+      />
     </>
   );
 }

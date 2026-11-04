@@ -11,11 +11,12 @@
 // page 1; the counts are server totals; the Excel export fetches EVERY record
 // matching the search.
 
-import type { ListTpiQuery } from '@innovic/shared';
+import type { ListTpiQuery, OrderOption } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { LIST_PAGE_SIZE, fetchAllPages, pageOffset, useClampPage } from '@/lib/list-paging';
+import { OrderSelect } from '@/modules/order-options/components/order-select';
 import { DataTable } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader } from '@/ui/layout';
@@ -34,7 +35,7 @@ const STRIP: React.CSSProperties = {
   alignItems: 'center',
 };
 
-export function TpiView(props: { title?: string }): React.JSX.Element {
+export function TpiView(props: { title?: string; tabs?: React.ReactNode }): React.JSX.Element {
   const [openId, setOpenId] = useState<string | null>(null);
 
   // Search over every text column the two lists show (JC, SO, POL, item code /
@@ -55,13 +56,30 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
     return () => window.clearTimeout(id);
   }, [term, q]);
 
+  // ADR-267: one order pick narrows both lists and the export; both go back to page 1.
+  const [orderCode, setOrderCode] = useState<string | null>(null);
+  const setOrder = (option: OrderOption | null): void => {
+    if (!option && orderCode === null) return;
+    setOrderCode(option?.code ?? null);
+    setPendPage(1);
+    setCompPage(1);
+  };
+  const narrowed = q !== '' || orderCode !== null;
+
   const search = q || undefined;
+  const order = orderCode ?? undefined;
   const pendQ = useTpiPendingList({
     search,
+    orderCode: order,
     limit: LIST_PAGE_SIZE,
     offset: pageOffset(pendPage),
   });
-  const compQuery: ListTpiQuery = { search, limit: LIST_PAGE_SIZE, offset: pageOffset(compPage) };
+  const compQuery: ListTpiQuery = {
+    search,
+    orderCode: order,
+    limit: LIST_PAGE_SIZE,
+    offset: pageOffset(compPage),
+  };
   const compQ = useTpiCompletedList(compQuery);
   useClampPage(pendPage, pendQ.data?.total, setPendPage);
   useClampPage(compPage, compQ.data?.total, setCompPage);
@@ -76,13 +94,13 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
   const error = pendQ.error ?? compQ.error;
   const loaded = pendQ.data !== undefined && compQ.data !== undefined;
 
-  // Excel: EVERY completed record matching the search, not just this page.
+  // Excel: EVERY completed record matching the search and the pick, not just this page.
   const onExport = useCallback(async (): Promise<void> => {
     const rows = await fetchAllPages((limit, offset) =>
-      fetchTpiCompleted({ search, limit, offset }),
+      fetchTpiCompleted({ search, orderCode: order, limit, offset }),
     );
     await exportTpiRecords(rows);
-  }, [search]);
+  }, [search, order]);
 
   return (
     <div>
@@ -94,19 +112,22 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
         search={term}
         onSearch={setTerm}
         searchPlaceholder="Search JC, SO, POL, item, operation, inspector, certificate…"
+        orderFilter={<OrderSelect value={orderCode} onChange={setOrder} />}
         updating={isFetching && !isLoading}
         tools={
           <button
             type="button"
             className="btn btn-ghost btn-sm"
-            title="Export every completed TPI record matching the search to Excel"
+            title="Export every completed TPI record matching the search and the SO / JWSO to Excel"
             disabled={compTotal === 0}
             onClick={() => void onExport()}
           >
             ⬇ Export
           </button>
         }
-      />
+      >
+        {props.tabs}
+      </ListHeader>
 
       {isLoading ? (
         <div className="panel">
@@ -131,7 +152,7 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
             <div style={{ padding: 10 }}>
               {pending.length === 0 ? (
                 <div className="empty-state" style={{ padding: 20, color: 'var(--green2)' }}>
-                  {q ? 'No pending TPI calls match.' : '✅ No pending TPI calls'}
+                  {narrowed ? 'No pending TPI calls match.' : '✅ No pending TPI calls'}
                 </div>
               ) : (
                 pending.map((o) => (
@@ -166,7 +187,7 @@ export function TpiView(props: { title?: string }): React.JSX.Element {
               rows={completed}
               sortFilter={false}
               rowKey={(l) => l.logId}
-              emptyText={q ? 'No TPI records match.' : 'No TPI records yet.'}
+              emptyText={narrowed ? 'No TPI records match.' : 'No TPI records yet.'}
             />
             <ListFooter
               total={compTotal}

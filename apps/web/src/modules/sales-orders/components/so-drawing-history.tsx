@@ -100,7 +100,12 @@ export function SoDrawingHistory({
   const [previewPath, setPreviewPath] = useState<string | null>(null);
 
   if (isLoading) return <div className="empty-state">Loading drawing history…</div>;
-  if (isError) return <div className="empty-state" style={{ color: 'var(--red2)' }}>Could not load drawing history.</div>;
+  if (isError)
+    return (
+      <div className="empty-state" style={{ color: 'var(--red2)' }}>
+        Could not load drawing history.
+      </div>
+    );
   if (!data || data.lines.length === 0) {
     return <div className="empty-state">No drawing history on this order yet.</div>;
   }
@@ -110,9 +115,7 @@ export function SoDrawingHistory({
   // removed from the SO between refetches).
   const active = data.lines.find((l) => l.soLineId === activeLineId) ?? data.lines[0] ?? null;
   // What the access log should call whatever the user opens from this tab.
-  const previewRefCode = active
-    ? `${soCode ? `${soCode} ` : ''}L${active.lineNo}`.trim()
-    : soCode;
+  const previewRefCode = active ? `${soCode ? `${soCode} ` : ''}L${active.lineNo}`.trim() : soCode;
 
   return (
     <div>
@@ -146,7 +149,11 @@ export function SoDrawingHistory({
               <span className="mono">{labels.get(l.soLineId) ?? l.partName}</span>
               <span
                 className="mono"
-                style={{ marginLeft: 6, fontWeight: 700, color: isActive ? 'var(--cyan)' : 'var(--text3)' }}
+                style={{
+                  marginLeft: 6,
+                  fontWeight: 700,
+                  color: isActive ? 'var(--cyan)' : 'var(--text3)',
+                }}
               >
                 {l.revisions.length}
               </span>
@@ -163,7 +170,9 @@ export function SoDrawingHistory({
             {/* The Rev typed on the SO line TODAY. A string since 0119, printed
                 as-is — never compared with or counted against the sequence
                 numbers below, which measure a different thing entirely. */}
-            <span className="mono" style={{ color: 'var(--text2)' }}>{active.currentRevision}</span>
+            <span className="mono" style={{ color: 'var(--text2)' }}>
+              {active.currentRevision}
+            </span>
           </div>
           <div className="tbl-wrap">
             <table className="innovic-table tbl-ctr" style={{ width: '100%' }}>
@@ -185,7 +194,9 @@ export function SoDrawingHistory({
               <tbody>
                 {active.revisions.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="empty-state">No revisions on this line.</td>
+                    <td colSpan={7} className="empty-state">
+                      No revisions on this line yet.
+                    </td>
                   </tr>
                 ) : (
                   // Rendered in the order the API sent — newest first. Not re-sorted
@@ -202,7 +213,9 @@ export function SoDrawingHistory({
                         <td className="mono" style={{ fontWeight: 700, color: 'var(--text3)' }}>
                           #{r.revisionNo}
                           {i === 0 ? (
-                            <span className="badge b-blue" style={{ marginLeft: 6 }}>Current</span>
+                            <span className="badge b-blue" style={{ marginLeft: 6 }}>
+                              Current
+                            </span>
                           ) : null}
                         </td>
                         {/* The customer's revision as it stood when this drawing change
@@ -226,11 +239,18 @@ export function SoDrawingHistory({
                           )}
                         </td>
                         <td>
-                          <span className={`badge ${ACTION_CLASS[r.action]}`}>{ACTION_LABEL[r.action]}</span>
+                          <span className={`badge ${ACTION_CLASS[r.action]}`}>
+                            {ACTION_LABEL[r.action]}
+                          </span>
                         </td>
                         <td
                           className="text2"
-                          style={{ fontSize: 12, maxWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}
+                          style={{
+                            fontSize: 12,
+                            maxWidth: 0,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                          }}
                           title={path ? fileNameFromPath(path) : 'drawing cleared'}
                         >
                           {path ? (
@@ -239,8 +259,12 @@ export function SoDrawingHistory({
                             <span className="text3">— drawing cleared</span>
                           )}
                         </td>
-                        <td className="text2" style={{ fontSize: 12 }}>{r.createdByName ?? '—'}</td>
-                        <td className="text3" style={{ fontSize: 11 }}>{fmtIstDateTime(r.createdAt)}</td>
+                        <td className="text2" style={{ fontSize: 12 }}>
+                          {r.createdByName ?? '—'}
+                        </td>
+                        <td className="text3" style={{ fontSize: 11 }}>
+                          {fmtIstDateTime(r.createdAt)}
+                        </td>
                         <td>
                           {path ? (
                             <button

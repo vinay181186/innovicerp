@@ -16,9 +16,9 @@ import { useEffect, useState } from 'react';
 import { SearchableSelect } from '@/ui/forms';
 import { useClientsList } from '../../clients/api';
 import { useItem, useItemsList } from '../../items/api';
-import { useDiscardGuard } from '../../store-inventory/components/discard-guard';
 import { type NewPartyMaterialInput, useCreatePartyMaterial } from '../api';
 import { ErrorBox, Field, ModalActions, ModalShell } from './party-material-modal-shell';
+import { useToast } from '@/ui/feedback';
 
 export function AddPartyMaterialModal({ onClose }: { onClose: () => void }): React.JSX.Element {
   const [err, setErr] = useState<string | null>(null);
@@ -29,6 +29,7 @@ export function AddPartyMaterialModal({ onClose }: { onClose: () => void }): Rea
   const [description, setDescription] = useState(''); // auto-filled from item, editable
 
   const createMut = useCreatePartyMaterial();
+  const toast = useToast();
 
   // Customer — server ?search=.
   const { data: clientsData, isFetching: clientsFetching } = useClientsList({
@@ -72,8 +73,6 @@ export function AddPartyMaterialModal({ onClose }: { onClose: () => void }): Rea
     setDescription(item.description ?? '');
   }, [itemId, item]);
 
-  const guard = useDiscardGuard(Boolean(clientId || itemId || description.trim()), onClose);
-
   const onSave = (): void => {
     setErr(null);
     if (!clientId) {
@@ -93,15 +92,28 @@ export function AddPartyMaterialModal({ onClose }: { onClose: () => void }): Rea
     if (description.trim()) input.description = description.trim();
     if (autoMaterial.trim()) input.material = autoMaterial.trim();
     createMut.mutate(input, {
-      onSuccess: () => onClose(),
+      onSuccess: (created) => {
+        toast.ok(`Customer Material ${created.code} saved`);
+        onClose();
+      },
       onError: (e) =>
         setErr(e instanceof Error ? e.message : 'Could not save Material. Try again.'),
     });
   };
 
   return (
-    <ModalShell onClose={guard.requestClose} title="Add Customer Material">
-      {guard.dialog}
+    <ModalShell
+      onClose={onClose}
+      title="Add Customer Material"
+      footer={
+        <ModalActions
+          onClose={onClose}
+          onSave={onSave}
+          saving={createMut.isPending}
+          saveLabel="Save Material"
+        />
+      }
+    >
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         {/* Code — assigned by the server on save. */}
         <Field label="Code">
@@ -187,13 +199,6 @@ export function AddPartyMaterialModal({ onClose }: { onClose: () => void }): Rea
       </div>
 
       {err ? <ErrorBox message={err} /> : null}
-
-      <ModalActions
-        onClose={onClose}
-        onSave={onSave}
-        saving={createMut.isPending}
-        saveLabel="Save Material"
-      />
     </ModalShell>
   );
 }

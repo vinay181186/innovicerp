@@ -11,6 +11,7 @@ import { DataTable, ROW_TINT, type DataTableColumn } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Badge } from './detail-shared';
 import { TaskFormModal, ViewTaskModal } from './task-modals';
+import { TabStrip } from '@/ui/navigation';
 
 export function TasksTab({ detail }: { detail: DesignProjectDetail }): React.JSX.Element {
   // Tasks are part of the Design Project form (dsnproj_create).
@@ -107,26 +108,6 @@ export function TasksTab({ detail }: { detail: DesignProjectDetail }): React.JSX
       >
         <div className="section-hdr m-0">Task Board</div>
         <div style={{ display: 'flex', gap: 6 }}>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            style={
-              view === 'table' ? { background: 'var(--blue3)', color: 'var(--blue)' } : undefined
-            }
-            onClick={() => setView('table')}
-          >
-            Table
-          </button>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            style={
-              view === 'kanban' ? { background: 'var(--blue3)', color: 'var(--blue)' } : undefined
-            }
-            onClick={() => setView('kanban')}
-          >
-            Kanban
-          </button>
           {canAdd ? (
             <button
               type="button"
@@ -138,6 +119,15 @@ export function TasksTab({ detail }: { detail: DesignProjectDetail }): React.JSX
           ) : null}
         </div>
       </div>
+      <TabStrip
+        label="Task Board layout"
+        tabs={[
+          { key: 'table', label: 'Table' },
+          { key: 'kanban', label: 'Kanban' },
+        ]}
+        activeKey={view}
+        onChange={(k) => setView(k === 'kanban' ? 'kanban' : 'table')}
+      />
 
       {view === 'table' ? (
         <DataTable

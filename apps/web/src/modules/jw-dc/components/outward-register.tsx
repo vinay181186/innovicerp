@@ -13,6 +13,7 @@ import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
@@ -22,14 +23,16 @@ import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc
 import { useJwDcOutwardLines } from '../api';
 import { isJwDcCancelled, outwardColumns } from './outward-columns';
 import { useJwDcPrint } from './use-jwdc-print';
-import { NewOutwardModal } from './new-outward-modal';
 
 const TABLE_KEY = TABLE_KEYS.jwDcOutward;
 
 export function OutwardView({
+  tabs,
   forJwId,
   initialSearch,
 }: {
+  /** The page's tab strip, drawn under this view's header. */
+  tabs?: React.ReactNode;
   forJwId?: string | undefined;
   /** Seeded ONCE from the route's ?search (deep link); keystrokes stay local. */
   initialSearch?: string | undefined;
@@ -63,9 +66,13 @@ export function OutwardView({
   // time, so filtering only the loaded page would miss rows. Every change goes
   // back to page 1.
   const sf = useServerSortFilter(TABLE_KEY, () => setPage(1));
-  // A `?jw=` landing opens New Outward DC at once (write access only — the
-  // modal is gated the same way the + button is).
-  const [showModal, setShowModal] = useState(() => Boolean(forJwId));
+  // A `?jw=` landing forwards to the New Outward DC page (write access only, as
+  // the + button is). replace: Back must not bounce through here again.
+  useEffect(() => {
+    if (forJwId && canWrite) {
+      void navigate({ to: '/jw-dc/outward/new', search: { jw: forJwId }, replace: true });
+    }
+  }, [forJwId, canWrite, navigate]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const { data, isLoading, isError, error } = useJwDcOutwardLines({
@@ -95,6 +102,7 @@ export function OutwardView({
       {/* THE list header (ui/layout ListHeader): title · count · search ·
           + New Outward DC. */}
       <ListHeader
+        orderFilter={<OrderSfFilter sf={sf} field="soCode" />}
         title="Outward Register"
         icon="📤"
         count={data?.total}
@@ -109,12 +117,14 @@ export function OutwardView({
         searchPlaceholder="Search DC, PO, vendor…"
         primary={
           canWrite ? (
-            <button type="button" className="btn btn-primary" onClick={() => setShowModal(true)}>
+            <Link to="/jw-dc/outward/new" className="btn btn-primary">
               <Plus size={14} /> New Outward DC
-            </button>
+            </Link>
           ) : null
         }
-      />
+      >
+        {tabs}
+      </ListHeader>
 
       {isError ? (
         <PageState
@@ -132,7 +142,7 @@ export function OutwardView({
             rows={data?.items ?? []}
             rowKey={(dc) => dc.lineId}
             loading={isLoading}
-            empty={term || sf.filtering ? 'No outward DC lines match.' : 'No outward DCs yet.'}
+            empty={term || sf.filtering ? 'No outward DC lines match.' : 'No outward DC lines yet.'}
             onRowClick={(dc) => void navigate({ to: '/jw-dc/$id', params: { id: dc.docId } })}
             // Green when every unit is back, amber while a return is still
             // partial. A freshly-sent DC (nothing back yet) stays untinted.
@@ -202,9 +212,6 @@ export function OutwardView({
         />
       ) : null}
 
-      {showModal && canWrite ? (
-        <NewOutwardModal forJwId={forJwId} onClose={() => setShowModal(false)} />
-      ) : null}
       {cancelRow ? (
         <CancelDocDialog
           docType="jw_dc_outward"

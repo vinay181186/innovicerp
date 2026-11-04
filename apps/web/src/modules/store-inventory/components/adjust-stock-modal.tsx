@@ -13,6 +13,7 @@ import {
 } from '@/modules/item-revisions/components/drawing-rev-picker';
 import { useAdjustStock, useItemRevStock } from '../api';
 import { ModalShell } from './modal-shell';
+import { useToast } from '@/ui/feedback';
 
 export function AdjustStockModal({
   row,
@@ -31,6 +32,7 @@ export function AdjustStockModal({
   // item with no Revs — the picker is not shown and nothing is sent.)
   const [revValue, setRevValue] = useState<string | null>(row.itemRevisionId ?? NO_REV_OPTION);
   const revOpts = useItemRevOptions(row.itemId);
+  const toast = useToast();
   const mut = useAdjustStock();
   // The figures shown are those of the bucket being adjusted. The Store row is
   // one bucket, but the picker may move to another Rev — so for an item with
@@ -75,13 +77,40 @@ export function AdjustStockModal({
       remarks: remarks.trim(),
     };
     mut.mutate(input, {
-      onSuccess: () => onClose(),
+      onSuccess: () => {
+        toast.ok(`Stock adjusted — ${row.itemLabel}`);
+        onClose();
+      },
       onError: (e) => setErr(e instanceof Error ? e.message : 'Could not adjust stock. Try again.'),
     });
   };
 
   return (
-    <ModalShell onClose={onClose} title={`Adjust Stock — ${row.itemLabel}`}>
+    <ModalShell
+      onClose={onClose}
+      title={`Adjust Stock — ${row.itemLabel}`}
+      footer={
+        <>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={onSave}
+            disabled={mut.isPending}
+          >
+            {mut.isPending ? (
+              <>
+                <Loader2 size={14} className="inline animate-spin" /> Saving…
+              </>
+            ) : (
+              'Adjust'
+            )}
+          </button>
+        </>
+      }
+    >
       <div
         style={{
           marginBottom: 12,
@@ -124,7 +153,7 @@ export function AdjustStockModal({
         </div>
         <div className="form-grp">
           <label className="form-label">
-            Quantity <span className="req">★</span>
+            Quantity<span className="req">★</span>
           </label>
           <input
             type="number"
@@ -139,7 +168,7 @@ export function AdjustStockModal({
         {revOpts.required ? (
           <div className="form-grp">
             <label className="form-label" htmlFor="adjust-drawing-rev">
-              Drawing Rev <span className="req">★</span>
+              Drawing Rev<span className="req">★</span>
             </label>
             <DrawingRevPicker
               id="adjust-drawing-rev"
@@ -151,7 +180,7 @@ export function AdjustStockModal({
         ) : null}
         <div className="form-grp form-full">
           <label className="form-label">
-            Reason / Remarks <span className="req">★</span>
+            Reason / Remarks<span className="req">★</span>
           </label>
           <input
             type="text"
@@ -176,20 +205,6 @@ export function AdjustStockModal({
           {err}
         </div>
       ) : null}
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
-        <button type="button" className="btn btn-ghost" onClick={onClose}>
-          Cancel
-        </button>
-        <button type="button" className="btn btn-primary" onClick={onSave} disabled={mut.isPending}>
-          {mut.isPending ? (
-            <>
-              <Loader2 size={14} className="inline animate-spin" /> Saving…
-            </>
-          ) : (
-            'Adjust'
-          )}
-        </button>
-      </div>
     </ModalShell>
   );
 }

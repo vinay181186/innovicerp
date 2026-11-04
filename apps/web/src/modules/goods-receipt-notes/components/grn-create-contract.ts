@@ -1,6 +1,6 @@
 // What <UnifiedGrnForm> and its three type forms share.
 //
-// The Save button lives in the shell's sticky PageHeader, but each type form
+// The Save button lives in the shell's bottom bar (FormActions), but each type form
 // owns its own submit handler. The button reaches it through the HTML `form`
 // attribute (`<button type="submit" form={GRN_CREATE_FORM_ID}>`), and the form
 // reports back whether it is saving / blocked / dirty so the header button and
@@ -14,6 +14,8 @@ export interface GrnFormStatus {
   submitting: boolean;
   /** Save is not allowed right now (e.g. the picked PO is not receivable). */
   blocked: boolean;
+  /** Why Save is not allowed, for the greyed button's tooltip. */
+  blockedReason?: string | undefined;
   /** The user has picked or typed something. */
   dirty: boolean;
 }

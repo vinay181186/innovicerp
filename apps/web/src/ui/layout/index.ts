@@ -2,11 +2,13 @@
 //
 //   LIST   = ListHeader → (StatStrip | StatusPills) → DataTable | DocCard list → ListFooter
 //   DETAIL = DetailHeader (+ ReadGrid / ReadField) → Panels → RelatedDocs (+ Timeline)
-//   FORM   = PageHeader (Save / Cancel) → Panel(FormGrid) → Panel(line table) → ConfirmDialog
+//   FORM   = PageHeader → Panel(FormGrid) → Panel(line table) → FormActions → ConfirmDialog
 //   HOME   = WorkList · AttentionList · StatRow · QuickLinks
 //
 // Other groups append their own exports below; never overwrite this file.
 
+export { FormActions } from './FormActions';
+export type { FormActionsProps } from './FormActions';
 export { PageHeader } from './PageHeader';
 export type { PageHeaderProps } from './PageHeader';
 

@@ -151,7 +151,7 @@ export function MlBomCostTab({ cost, loading, error }: CostTabProps): React.JSX.
         loading={loading && !cost}
         density="compact"
         autoWidth
-        emptyText="No lines."
+        emptyText="No lines yet."
       />
     </div>
   );

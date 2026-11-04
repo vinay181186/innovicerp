@@ -2,14 +2,18 @@
 // fields. Each expression is the SAME one listStoreTransactions SELECTs for
 // that column (aliases `st` = store_transactions, `i` = items), valid in its
 // rows, count and KPI summary queries alike — all three LEFT JOIN items i.
+// soCode reads STOCK_LEDGER_SO_JOINS: the rows query always joins them, the count
+// and KPI queries when a filter is on that field (service.ts).
 
 import { sql } from 'drizzle-orm';
 
 import { createdByNameSql } from '../../lib/created-by-sql';
 import type { SfColumnMap } from '../../lib/list-query';
+import { STOCK_LEDGER_SO_CODE } from './so-link';
 
 export const STOCK_LEDGER_SF_COLUMNS: SfColumnMap = {
   txnDate: { sql: sql`st.txn_date`, type: 'date' },
+  soCode: { sql: STOCK_LEDGER_SO_CODE, type: 'text' },
   sourceRef: { sql: sql`st.source_ref`, type: 'text' },
   // The Item Code cell: the item master's code, else the free-text code the
   // row was written with.

@@ -13,8 +13,9 @@ import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { todayIst } from '@/lib/date';
 import { useNcRegisterList } from '@/modules/nc-register/api';
+import { Modal, useToast } from '@/ui/feedback';
 import { useCapaList, useCreateCapa, useNextCapaCode } from '../api';
-import { Overlay } from './capa-overlay';
+import { SearchableSelect } from '@/ui/forms';
 
 export function NewCapaModal({
   onClose,
@@ -24,6 +25,7 @@ export function NewCapaModal({
   onCreated: (capa: CapaRecord) => void;
 }): React.JSX.Element {
   const create = useCreateCapa();
+  const toast = useToast();
   const nextCode = useNextCapaCode();
   // NC Reference is a dropdown of NCs that don't yet have a CAPA (legacy
   // _capaForNC filter, L22832). On pick, back-fill jc/so/item/operation from
@@ -82,6 +84,7 @@ export function NewCapaModal({
     };
     try {
       const created = await create.mutateAsync(input);
+      toast.ok(`CAPA ${created.code} saved`);
       onCreated(created);
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Could not save CAPA. Try again.');
@@ -89,7 +92,26 @@ export function NewCapaModal({
   }
 
   return (
-    <Overlay title="New CAPA" onClose={onClose}>
+    <Modal
+      title="New CAPA"
+      onClose={onClose}
+      maxWidth="min(1100px, 96vw)"
+      footer={
+        <>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={create.isPending}
+            onClick={() => void submit()}
+          >
+            {create.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Save CAPA
+          </button>
+        </>
+      }
+    >
       <div className="form-grid">
         <div className="form-grp">
           <label className="form-label">CAPA No.</label>
@@ -122,19 +144,19 @@ export function NewCapaModal({
         </div>
         <div className="form-grp">
           <label className="form-label">NC Reference</label>
-          <select
-            className="innovic-select"
-            value={ncRef}
-            onChange={(e) => onPickNc(e.target.value)}
+          <SearchableSelect
+            ariaLabel="NC Reference"
+            value={ncRef || null}
+            onChange={(code) => onPickNc(code ?? '')}
             disabled={ncQuery.isLoading}
-          >
-            <option value="">{ncQuery.isLoading ? 'Loading NCs…' : '— None —'}</option>
-            {availableNcs.map((nc) => (
-              <option key={nc.id} value={nc.code}>
-                {nc.code} — {NC_REASON_CATEGORY_LABELS[nc.reasonCategory]} — {nc.jcCode ?? ''}
-              </option>
-            ))}
-          </select>
+            clearable
+            placeholder={ncQuery.isLoading ? 'Loading NCs…' : '— None —'}
+            options={availableNcs.map((nc) => ({
+              id: nc.code,
+              code: nc.code,
+              name: `${NC_REASON_CATEGORY_LABELS[nc.reasonCategory]} — ${nc.jcCode ?? ''}`,
+            }))}
+          />
         </div>
         <div className="form-grp">
           <label className="form-label">JC No.</label>
@@ -184,19 +206,6 @@ export function NewCapaModal({
           {err}
         </div>
       ) : null}
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
-        <button type="button" className="btn btn-ghost" onClick={onClose}>
-          Cancel
-        </button>
-        <button
-          type="button"
-          className="btn btn-primary"
-          disabled={create.isPending}
-          onClick={() => void submit()}
-        >
-          {create.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Save CAPA
-        </button>
-      </div>
-    </Overlay>
+    </Modal>
   );
 }

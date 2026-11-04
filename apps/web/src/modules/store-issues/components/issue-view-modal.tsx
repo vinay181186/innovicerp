@@ -7,6 +7,7 @@
 import { ISSUE_AGAINST_LABELS, STORE_ISSUE_REVERSE_REASON_MIN } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { Modal, useToast } from '@/ui/feedback';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { fmtDate } from '@/lib/date';
 import { soNoWithInternal } from '@/lib/so-number';
@@ -39,7 +40,7 @@ export function IssueViewModal({
   const [retQty, setRetQty] = useState<Record<string, string>>({});
   const [reason, setReason] = useState('');
   const [err, setErr] = useState<string | null>(null);
-  const [msg, setMsg] = useState<string | null>(null);
+  const toast = useToast();
   const returnMut = useReturnStoreIssue();
   const issuePrint = useStoreIssuePrint();
 
@@ -50,7 +51,6 @@ export function IssueViewModal({
   const start = (m: Mode): void => {
     setMode(m);
     setErr(null);
-    setMsg(null);
     setReason('');
     setRetQty({});
   };
@@ -79,7 +79,7 @@ export function IssueViewModal({
       {
         onSuccess: () => {
           setMode('view');
-          setMsg('Returned — stock updated.');
+          toast.ok('Returned — stock updated.');
         },
         onError: (e) => setErr(e instanceof Error ? e.message : 'Could not return. Try again.'),
       },
@@ -96,156 +96,17 @@ export function IssueViewModal({
         : (iss.department ?? iss.legacyReference)
     : null;
 
+  // Keyed on the mode: pressing Return is not a typed change, so the return form
+  // starts clean and asks before exit only once a qty or reason is typed.
   return (
-    <div
-      className="overlay"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className="modal" style={{ maxWidth: 860, width: '96vw' }}>
-        <div className="modal-hdr">
-          <span className="modal-title">Item Issue {iss?.code ?? ''}</span>
-          <button type="button" className="btn btn-ghost btn-sm btn-icon" onClick={onClose}>
-            ✕
-          </button>
-        </div>
-        <div className="modal-body">
-          {isLoading ? (
-            <div className="text3" style={{ fontSize: 12 }}>
-              <Loader2 size={14} className="inline animate-spin" /> Loading…
-            </div>
-          ) : isError || !iss ? (
-            <div style={{ color: 'var(--red2)', fontSize: 12 }}>
-              {error instanceof Error ? error.message : 'Could not load the issue.'}
-            </div>
-          ) : (
-            <>
-              <div
-                className="text2"
-                style={{ fontSize: 12, display: 'flex', gap: 18, flexWrap: 'wrap' }}
-              >
-                <span>
-                  Issue Date <b>{fmtDate(iss.issueDate)}</b>
-                </span>
-                <span>
-                  {ISSUE_AGAINST_LABELS[iss.issueAgainst]} <b className="mono">{ref || '—'}</b>
-                </span>
-                <span>
-                  Issued To <b>{iss.issuedTo || '—'}</b>
-                </span>
-                <span>
-                  Purpose <b>{iss.purpose || '—'}</b>
-                </span>
-                <span>
-                  Issued By <b>{iss.issuedByName || '—'}</b>
-                </span>
-              </div>
-              {iss.reversedAt ? (
-                <div style={{ marginTop: 6, fontSize: 12, fontWeight: 700, color: 'var(--red)' }}>
-                  Cancelled {fmtDate(iss.reversedAt.slice(0, 10))} — {iss.reversalReason ?? ''}
-                </div>
-              ) : (
-                <div style={{ marginTop: 8 }}>
-                  <CancelPendingBanner
-                    docType="store_issue"
-                    docId={iss.id}
-                    cancelled={false}
-                    {...(canCancel ? { onOpen: () => onCancel(iss) } : {})}
-                  />
-                </div>
-              )}
-
-              <div className="tbl-wrap" style={{ marginTop: 10 }}>
-                <table className="innovic-table tbl-grid">
-                  <thead>
-                    <tr>
-                      <th>Item Code</th>
-                      <th>Item Name</th>
-                      <th>UOM</th>
-                      <th className="th-num">Issue Qty</th>
-                      <th className="th-num">Returned</th>
-                      <th className="th-num">Still Out</th>
-                      {mode === 'return' ? <th className="th-num">Return Qty</th> : null}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {iss.lines.map((l) => {
-                      const unused = r3(l.qty - l.returnedQty);
-                      return (
-                        <tr key={l.id}>
-                          <td>
-                            <span className="td-code mono fw-700" style={{ color: 'var(--text)' }}>
-                              {l.itemCode}
-                            </span>
-                          </td>
-                          <td>{l.itemName || '—'}</td>
-                          <td className="text3">{l.uom || '—'}</td>
-                          <td
-                            className="mono fw-700 td-num"
-                            style={{
-                              textDecoration: iss.reversedAt ? 'line-through' : undefined,
-                            }}
-                          >
-                            {r3(l.qty)}
-                          </td>
-                          <td className="mono td-num">{r3(l.returnedQty)}</td>
-                          <td className="mono td-num">{iss.reversedAt ? 0 : unused}</td>
-                          {mode === 'return' ? (
-                            <td className="td-num">
-                              <input
-                                type="number"
-                                min={0}
-                                step="any"
-                                className="innovic-input mono"
-                                style={{ width: 100, textAlign: 'right' }}
-                                disabled={unused <= 0}
-                                value={retQty[l.id] ?? ''}
-                                onChange={(e) =>
-                                  setRetQty((s) => ({ ...s, [l.id]: e.target.value }))
-                                }
-                                onWheel={(e) => e.currentTarget.blur()}
-                                aria-label={`Return Qty for ${l.itemCode}`}
-                              />
-                            </td>
-                          ) : null}
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              {mode !== 'view' ? (
-                <div className="form-grp form-full" style={{ marginTop: 10 }}>
-                  <label className="form-label">Reason ★</label>
-                  <input
-                    type="text"
-                    className="innovic-input"
-                    placeholder="e.g. 2 pcs left over after the job"
-                    value={reason}
-                    onChange={(e) => setReason(e.target.value)}
-                  />
-                </div>
-              ) : (
-                <div style={{ marginTop: 10 }}>
-                  <Panel title="History" bodyPadding="none">
-                    <DocumentHistory entity="StoreIssue" entityId={iss.id} refId={iss.code} />
-                  </Panel>
-                </div>
-              )}
-              {msg ? (
-                <div className="text2" style={{ marginTop: 10, fontSize: 12 }}>
-                  ✓ {msg}
-                </div>
-              ) : null}
-              {err ? (
-                <div style={{ color: 'var(--red2)', fontSize: 12, marginTop: 8 }}>{err}</div>
-              ) : null}
-            </>
-          )}
-        </div>
-        <div className="modal-footer">
+    <Modal
+      key={mode}
+      title={<>Item Issue {iss?.code ?? ''}</>}
+      onClose={onClose}
+      maxWidth="860px"
+      confirmExit={mode === 'return'}
+      footer={
+        <>
           {mode === 'view' ? (
             <>
               <button type="button" className="btn btn-ghost" onClick={onClose}>
@@ -301,8 +162,137 @@ export function IssueViewModal({
               </button>
             </>
           )}
+        </>
+      }
+    >
+      {isLoading ? (
+        <div className="text3" style={{ fontSize: 12 }}>
+          <Loader2 size={14} className="inline animate-spin" /> Loading…
         </div>
-      </div>
-    </div>
+      ) : isError || !iss ? (
+        <div style={{ color: 'var(--red2)', fontSize: 12 }}>
+          {error instanceof Error ? error.message : 'Could not load the issue.'}
+        </div>
+      ) : (
+        <>
+          <div
+            className="text2"
+            style={{ fontSize: 12, display: 'flex', gap: 18, flexWrap: 'wrap' }}
+          >
+            <span>
+              Issue Date <b>{fmtDate(iss.issueDate)}</b>
+            </span>
+            <span>
+              {ISSUE_AGAINST_LABELS[iss.issueAgainst]} <b className="mono">{ref || '—'}</b>
+            </span>
+            <span>
+              Issued To <b>{iss.issuedTo || '—'}</b>
+            </span>
+            <span>
+              Purpose <b>{iss.purpose || '—'}</b>
+            </span>
+            <span>
+              Issued By <b>{iss.issuedByName || '—'}</b>
+            </span>
+          </div>
+          {iss.reversedAt ? (
+            <div style={{ marginTop: 6, fontSize: 12, fontWeight: 700, color: 'var(--red)' }}>
+              Cancelled {fmtDate(iss.reversedAt.slice(0, 10))} — {iss.reversalReason ?? ''}
+            </div>
+          ) : (
+            <div style={{ marginTop: 8 }}>
+              <CancelPendingBanner
+                docType="store_issue"
+                docId={iss.id}
+                cancelled={false}
+                {...(canCancel ? { onOpen: () => onCancel(iss) } : {})}
+              />
+            </div>
+          )}
+
+          <div className="tbl-wrap" style={{ marginTop: 10 }}>
+            <table className="innovic-table tbl-grid">
+              <thead>
+                <tr>
+                  <th>Item Code</th>
+                  <th>Item Name</th>
+                  <th>UOM</th>
+                  <th className="th-num">Issue Qty</th>
+                  <th className="th-num">Returned</th>
+                  <th className="th-num">Still Out</th>
+                  {mode === 'return' ? <th className="th-num">Return Qty</th> : null}
+                </tr>
+              </thead>
+              <tbody>
+                {iss.lines.map((l) => {
+                  const unused = r3(l.qty - l.returnedQty);
+                  return (
+                    <tr key={l.id}>
+                      <td>
+                        <span className="td-code mono fw-700" style={{ color: 'var(--text)' }}>
+                          {l.itemCode}
+                        </span>
+                      </td>
+                      <td>{l.itemName || '—'}</td>
+                      <td className="text3">{l.uom || '—'}</td>
+                      <td
+                        className="mono fw-700 td-num"
+                        style={{
+                          textDecoration: iss.reversedAt ? 'line-through' : undefined,
+                        }}
+                      >
+                        {r3(l.qty)}
+                      </td>
+                      <td className="mono td-num">{r3(l.returnedQty)}</td>
+                      <td className="mono td-num">{iss.reversedAt ? 0 : unused}</td>
+                      {mode === 'return' ? (
+                        <td className="td-num">
+                          <input
+                            type="number"
+                            min={0}
+                            step="any"
+                            className="innovic-input mono"
+                            style={{ width: 100, textAlign: 'right' }}
+                            disabled={unused <= 0}
+                            value={retQty[l.id] ?? ''}
+                            onChange={(e) => setRetQty((s) => ({ ...s, [l.id]: e.target.value }))}
+                            onWheel={(e) => e.currentTarget.blur()}
+                            aria-label={`Return Qty for ${l.itemCode}`}
+                          />
+                        </td>
+                      ) : null}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {mode !== 'view' ? (
+            <div className="form-grp form-full" style={{ marginTop: 10 }}>
+              <label className="form-label">
+                Reason<span className="req">★</span>
+              </label>
+              <input
+                type="text"
+                className="innovic-input"
+                placeholder="e.g. 2 pcs left over after the job"
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+              />
+            </div>
+          ) : (
+            <div style={{ marginTop: 10 }}>
+              <Panel title="History" bodyPadding="none">
+                <DocumentHistory entity="StoreIssue" entityId={iss.id} refId={iss.code} />
+              </Panel>
+            </div>
+          )}
+          {err ? (
+            <div style={{ color: 'var(--red2)', fontSize: 12, marginTop: 8 }}>{err}</div>
+          ) : null}
+        </>
+      )}
+    </Modal>
   );
 }

@@ -6,14 +6,20 @@
 // ./components/* (every file < 400 lines) and each tab's DATA TABLE renders on
 // the shared FIT table (DataTable + tableKey). This file is just the route, the
 // project header and the tab switch.
+//
+// 2026-11-04 (owner): DetailHeader + ClusterGrid facts + the shared TabStrip +
+// Related Documents as tabs. Tabs, their counts and their data are unchanged.
 
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
-import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
+import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { soNoWithInternal } from '@/lib/so-number';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { Cluster, ClusterFact, ClusterGrid } from '@/ui/forms';
+import { DetailHeader } from '@/ui/layout';
+import { TabStrip } from '@/ui/navigation';
 import { useDesignProjectDetail } from '../api';
 import { ChecklistTab } from '../components/checklist-tab';
 import { CHECKLIST, isChecked } from '../components/checklist-data';
@@ -76,61 +82,65 @@ function DesignProjectDetailPage(): React.JSX.Element {
   const checkDone = CHECKLIST.filter((c) => isChecked(data, c.key)).length;
   // The tab badges carry the counts (no separate tiles): Tasks completed/total,
   // Issues open/total.
-  const tabs: Array<{ k: TabKey; label: string; badge: string }> = [
-    { k: 'tasks', label: 'Tasks', badge: `${p.taskDone}/${p.taskTotal} completed` },
+  const tabs = [
+    { key: 'tasks', label: 'Tasks', note: `${p.taskDone}/${p.taskTotal} completed` },
     {
-      k: 'issues',
+      key: 'issues',
       label: 'Issues',
-      badge: `${p.openIssuesCount}/${data.issues.length} open`,
+      note: `${p.openIssuesCount}/${data.issues.length} open`,
     },
-    { k: 'checklist', label: 'Checklist', badge: `${checkDone}/${CHECKLIST.length}` },
-    { k: 'dcr', label: 'DCR/DCN', badge: `${data.dcrs.length}/${data.dcns.length}` },
+    { key: 'checklist', label: 'Checklist', note: `${checkDone}/${CHECKLIST.length}` },
+    { key: 'dcr', label: 'DCR/DCN', note: `${data.dcrs.length}/${data.dcns.length}` },
   ];
 
   return (
     <div>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
-          marginBottom: 16,
-          flexWrap: 'wrap',
-        }}
+      <DetailHeader
+        backLabel="Back to Design Projects"
+        backTo="/design-projects"
+        renderLink={(l) => <Link {...l} />}
+        code={p.code}
+        name={p.projectName}
+        badges={<StatusBadge status={p.status} />}
       >
-        <Link to="/design-projects" className="btn btn-ghost btn-sm">
-          ← Back to Design Projects
-        </Link>
-        <div style={{ flex: 1, minWidth: 200 }}>
-          <div style={{ fontSize: 17, fontWeight: 700 }}>{p.projectName}</div>
-          <div className="text3" style={{ fontSize: 11 }}>
-            {p.code} · {p.soCodeText ? soNoWithInternal(p.soCodeText, p.soInternalNo) : ''} ·{' '}
-            {p.clientText ?? ''} · Lead: {p.leadText ?? ''}
-          </div>
-        </div>
-        <StatusBadge status={p.status} />
-      </div>
+        <ClusterGrid stack>
+          <Cluster name="Project">
+            <ClusterFact
+              num
+              label="SO No."
+              empty={!p.soCodeText}
+              value={p.soCodeText ? soNoWithInternal(p.soCodeText, p.soInternalNo) : '—'}
+            />
+            <ClusterFact
+              label="Customer"
+              empty={!p.clientText}
+              title={p.clientText ?? undefined}
+              value={p.clientText ?? '—'}
+            />
+            <ClusterFact
+              span={2}
+              label="Lead"
+              empty={!p.leadText}
+              title={p.leadText ?? undefined}
+              value={p.leadText ?? '—'}
+            />
+          </Cluster>
+        </ClusterGrid>
+      </DetailHeader>
 
-      <div style={{ display: 'flex', gap: 4, marginBottom: 16, flexWrap: 'wrap' }}>
-        {tabs.map((t) => (
-          <button
-            key={t.k}
-            type="button"
-            className={`btn btn-sm ${tab === t.k ? 'btn-primary' : 'btn-ghost'}`}
-            style={{ fontWeight: 700 }}
-            onClick={() => setTab(t.k)}
-          >
-            {t.label} ({t.badge})
-          </button>
-        ))}
-      </div>
+      <TabStrip
+        label="Design Project lists"
+        activeKey={tab}
+        onChange={(k) => setTab(k as TabKey)}
+        tabs={tabs}
+      />
 
       {tab === 'tasks' ? <TasksTab detail={data} /> : null}
       {tab === 'issues' ? <IssuesTab detail={data} /> : null}
       {tab === 'checklist' ? <ChecklistTab detail={data} checkDone={checkDone} /> : null}
       {tab === 'dcr' ? <DcrDcnTab detail={data} /> : null}
 
-      <RelatedDocsPanel module="design-projects" id={id} />
+      <RelatedDocsTabs module="design-projects" id={id} />
     </div>
   );
 }

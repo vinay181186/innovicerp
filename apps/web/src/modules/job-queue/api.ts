@@ -14,6 +14,7 @@ export const jobQueueKeys = {
       ...jobQueueKeys.all,
       q.machineId ?? null,
       q.search ?? null,
+      q.orderCode ?? null,
       q.limit ?? null,
       q.offset ?? null,
     ] as const,
@@ -23,6 +24,7 @@ function buildQs(q: JobQueueQuery): string {
   const p = new URLSearchParams();
   if (q.machineId) p.set('machineId', q.machineId);
   if (q.search) p.set('search', q.search);
+  if (q.orderCode) p.set('orderCode', q.orderCode);
   if (q.limit != null) p.set('limit', String(q.limit));
   if (q.offset != null) p.set('offset', String(q.offset));
   return p.toString();

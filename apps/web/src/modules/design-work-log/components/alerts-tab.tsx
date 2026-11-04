@@ -1,18 +1,20 @@
-// Design Work Log — Alerts tab (ADR-203 frozen header). Chrome: the
-// Unlogged Days / Low Hours StatStrip and a small TabStrip "Unlogged Days (n) |
+// Design Work Log — Alerts tab (ADR-203 frozen header). Chrome: a small
+// TabStrip, which already carries the counts: "Unlogged Days (n) |
 // Low Hours (n) | Utilization" (sub-tab in the URL `alert`). Each sub-tab is ONE
 // filled table — the three stacked tables of before. Every figure is worked out
 // exactly as before over the last 10 working days (Mon–Fri, back from today).
 
 import type { DesignWorkLogEntry } from '@innovic/shared';
 import { useMemo } from 'react';
-import { StatStrip } from '@/components/shared/stat-strip';
+import { matchesSearchTerm } from '@/components/shared/search-match';
 import { fmtDate } from '@/lib/date';
 import { DataTable, Panel } from '@/ui/data';
 import type { DataTableColumn } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
+import { ListFooter } from '@/ui/layout';
 import { TabStrip } from '@/ui/navigation/TabStrip';
 import { useDesignWorkLogList } from '../api';
-import { dayName, localYmd, todayStr } from './work-log-shared';
+import { dayName, localYmd, todayStr, useReportCount, type TabListProps } from './work-log-shared';
 
 export const ALERT_TABS = ['unlogged', 'low', 'util'] as const;
 export type AlertTab = (typeof ALERT_TABS)[number];
@@ -129,9 +131,11 @@ function hoursOn(logs: DesignWorkLogEntry[], date: string, eng: string): number 
 }
 
 export function AlertsTab({
+  term,
+  onCount,
   sub,
   onSub,
-}: {
+}: TabListProps & {
   sub: AlertTab;
   onSub: (k: AlertTab) => void;
 }): React.JSX.Element {
@@ -179,22 +183,23 @@ export function AlertsTab({
     return { unlogged: un, lowHours: low, utilisation: util };
   }, [data?.items, checkDays]);
 
+  const dayMatches = (u: DayRow): boolean =>
+    matchesSearchTerm([fmtDate(u.date), dayName(u.date), u.engineer, u.hours.toFixed(1)], term);
+  const shownUnlogged = unlogged.filter(dayMatches);
+  const shownLow = lowHours.filter(dayMatches);
+  const shownUtil = utilisation.filter((u) => matchesSearchTerm([u.engineer], term));
+  // The Unlogged list has always shown the first 30 (the footer says so).
+  const unloggedRows = shownUnlogged.slice(0, 30);
+  const [total, shown, noun, nounPlural] =
+    sub === 'unlogged'
+      ? [unlogged.length, unloggedRows.length, 'unlogged day', 'unlogged days']
+      : sub === 'low'
+        ? [lowHours.length, shownLow.length, 'low-hour day', 'low-hour days']
+        : [utilisation.length, shownUtil.length, 'Design Engineer', 'Design Engineers'];
+  useReportCount(onCount, isLoading ? undefined : shown);
+
   return (
     <>
-      <div style={{ marginBottom: 'var(--panel-gap)' }}>
-        <StatStrip
-          items={[
-            {
-              key: 'unlogged',
-              label: 'Unlogged Days',
-              count: unlogged.length,
-              color: 'var(--red2)',
-            },
-            { key: 'low', label: 'Low Hours', count: lowHours.length, color: 'var(--amber2)' },
-          ]}
-        />
-      </div>
-
       <TabStrip
         label="Alerts views"
         activeKey={sub}
@@ -212,33 +217,40 @@ export function AlertsTab({
           // tab's sort / filter never carries over to the next.
           <DataTable<DayRow>
             key="unlogged"
+            tableKey={TABLE_KEYS.designWorkLogUnlogged}
             columns={DATE_COLS}
-            // The list has always shown the first 30 (the count is the full one).
-            rows={unlogged.slice(0, 30)}
+            rows={unloggedRows}
             rowKey={(u) => `${u.date}:${u.engineer}`}
             loading={isLoading}
-            emptyText="No unlogged working days."
+            emptyText={term.trim() ? 'No unlogged days match.' : 'No unlogged days yet.'}
           />
         ) : sub === 'low' ? (
           <DataTable<DayRow>
             key="low"
+            tableKey={TABLE_KEYS.designWorkLogLowHours}
             columns={LOW_COLS}
-            rows={lowHours}
+            rows={shownLow}
             rowKey={(u) => `${u.date}:${u.engineer}`}
             loading={isLoading}
-            emptyText="No low-hour days."
+            emptyText={term.trim() ? 'No low-hour days match.' : 'No low-hour days yet.'}
           />
         ) : (
           <DataTable<UtilRow>
             key="util"
+            tableKey={TABLE_KEYS.designWorkLogUtilization}
             columns={UTIL_COLS}
-            rows={utilisation}
+            rows={shownUtil}
             rowKey={(u) => u.engineer}
             loading={isLoading}
-            emptyText="No work logged in the last 10 working days."
+            emptyText={
+              term.trim()
+                ? 'No Design Engineers match.'
+                : 'No work logged in the last 10 working days.'
+            }
           />
         )}
       </Panel>
+      <ListFooter total={total} shown={shown} noun={noun} nounPlural={nounPlural} />
     </>
   );
 }

@@ -6,7 +6,7 @@
 // act on the slip. Remarks and the cancel reason are in the slip view.
 
 import { ISSUE_AGAINST } from '@innovic/shared';
-import { createRoute } from '@tanstack/react-router';
+import { createRoute, Link } from '@tanstack/react-router';
 import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
@@ -15,6 +15,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
@@ -22,14 +23,15 @@ import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useStoreIssueLines } from '../api';
 import { issueRegisterColumns } from '../components/issue-register-columns';
 import { IssueViewModal } from '../components/issue-view-modal';
-import { NewIssueModal, type NewIssueSeed } from '../components/new-issue-modal';
 import { useStoreIssuePrint } from '../components/use-store-issue-print';
+import { TabStrip } from '@/ui/navigation';
 
 // Deep-link seed for Global Search (no detail page here): `?tab=tools&search=
 // TIS-00003` opens the Tool Issues tab with its box pre-filled. Read ONCE into
 // the local state below — tab clicks and typing stay local, never navigate.
-// `?new=job_card&jobCardId=…` (JC Material tab "Issue from Store") or
-// `?new=assembly_so&salesOrderId=…` (assembly page) opens New Issue seeded.
+// `?new=job_card&jobCardId=…` / `?new=assembly_so&salesOrderId=…` (old links; the
+// JC Material tab and the assembly page now go straight to the page) forward to
+// New Issue seeded.
 const searchSchema = z.object({
   tab: z.enum(['items', 'tools']).optional(),
   search: z.string().optional(),
@@ -72,15 +74,6 @@ function StoreIssuesListPage(): React.JSX.Element {
     }, 300);
     return () => window.clearTimeout(id);
   }, [search, term, setPage]);
-  const [newSeed, setNewSeed] = useState<NewIssueSeed | null>(() =>
-    routeSearch.new
-      ? {
-          issueAgainst: routeSearch.new,
-          jobCardId: routeSearch.jobCardId,
-          salesOrderId: routeSearch.salesOrderId,
-        }
-      : null,
-  );
   const [viewId, setViewId] = useState<string | null>(null);
   // ADR-235 — the slip whose standard Cancel dialog is open (row ⋯ or the view).
   const [cancelTarget, setCancelTarget] = useState<{ id: string; code: string } | null>(null);
@@ -93,6 +86,19 @@ function StoreIssuesListPage(): React.JSX.Element {
   // (tier on `toolissue_create`); the server enforces it too.
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'issue_create');
+  // A `?new=` landing forwards to the New Item Issue page (Entry only, as the +
+  // button is). replace: Back must not bounce through here again.
+  const canEnter = perms.entry;
+  const { new: seedAgainst, jobCardId: seedJc, salesOrderId: seedSo } = routeSearch;
+  useEffect(() => {
+    if (seedAgainst && canEnter) {
+      void navigate({
+        to: '/issue-register/new',
+        search: { issueAgainst: seedAgainst, jobCardId: seedJc, salesOrderId: seedSo },
+        replace: true,
+      });
+    }
+  }, [seedAgainst, seedJc, seedSo, canEnter, navigate]);
   // ADR-235 — Cancel Issue: the Edit tick raises the request, the Approve tick
   // decides it (and may Cancel now). The server re-checks both.
   const canCancel = perms.edit || perms.approve;
@@ -136,52 +142,37 @@ function StoreIssuesListPage(): React.JSX.Element {
     );
   }
 
+  const tabBar = (
+    <TabStrip
+      label="Issue type"
+      tabs={[
+        ...(showItemsTab ? [{ key: 'items', label: 'Item Issues' }] : []),
+        ...(showToolsTab ? [{ key: 'tools', label: 'Tool Issues' }] : []),
+      ]}
+      activeKey={activeTab}
+      onChange={(k) => setTab(k === 'tools' ? 'tools' : 'items')}
+    />
+  );
+
   return (
     // `page-fill` (ADR-202): on the list tab the page fills the content area and the
     // TABLE is the only scrollbox, so the column header cannot ride off the top at the
     // last row. The Tool Issues tab is its own screen and keeps today's page scroll.
     <div className={activeTab === 'tools' ? undefined : 'page-fill'}>
-      <div
-        style={{
-          display: 'flex',
-          gap: 4,
-          borderBottom: '1px solid var(--border)',
-          marginBottom: 14,
-        }}
-      >
-        {(['items', 'tools'] as const)
-          .filter((t) => (t === 'items' ? showItemsTab : showToolsTab))
-          .map((t) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => setTab(t)}
-              style={{
-                background: 'none',
-                border: 'none',
-                borderBottom: activeTab === t ? '2px solid var(--cyan)' : '2px solid transparent',
-                color: activeTab === t ? 'var(--cyan)' : 'var(--text3)',
-                fontSize: 12,
-                fontWeight: 700,
-                padding: '6px 12px',
-                cursor: 'pointer',
-                marginBottom: -1,
-              }}
-            >
-              {t === 'items' ? 'Item Issues' : 'Tool Issues'}
-            </button>
-          ))}
-      </div>
-
       {activeTab === 'tools' ? (
         // key: a new ?search landing while already on this page remounts the
         // view so it re-seeds; nothing else changes the key.
-        <ToolIssueRegisterView key={routeSearch.search ?? ''} initialSearch={routeSearch.search} />
+        <ToolIssueRegisterView
+          key={routeSearch.search ?? ''}
+          initialSearch={routeSearch.search}
+          tabs={tabBar}
+        />
       ) : (
         <>
           {/* THE list header (ui/layout ListHeader): title · count · search ·
               + New Issue. */}
           <ListHeader
+            orderFilter={<OrderSfFilter sf={sf} field="soCode" />}
             title="Item Issue Register"
             icon="📋"
             count={data?.total}
@@ -191,16 +182,14 @@ function StoreIssuesListPage(): React.JSX.Element {
             searchPlaceholder="Search issue, item, JC, SO, name…"
             primary={
               perms.entry ? (
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  onClick={() => setNewSeed({ issueAgainst: 'job_card' })}
-                >
+                <Link to="/issue-register/new" className="btn btn-primary">
                   <Plus size={14} /> New Issue
-                </button>
+                </Link>
               ) : null
             }
-          />
+          >
+            {tabBar}
+          </ListHeader>
 
           {isError ? (
             <PageState
@@ -263,9 +252,6 @@ function StoreIssuesListPage(): React.JSX.Element {
             />
           ) : null}
 
-          {newSeed && perms.entry ? (
-            <NewIssueModal seed={newSeed} onClose={() => setNewSeed(null)} />
-          ) : null}
           {viewId ? (
             <IssueViewModal
               issueId={viewId}

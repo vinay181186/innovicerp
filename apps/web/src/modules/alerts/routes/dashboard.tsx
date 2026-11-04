@@ -30,6 +30,7 @@ import { ListFooter, ListHeader } from '@/ui/layout';
 import { alertsKeys, useAlertsPage, useMySubscriptions, useToggleSubscription } from '../api';
 import { DEPT_COLOR, DEPT_LABEL } from '../lib/dept';
 import { useQueryClient } from '@tanstack/react-query';
+import { useToast } from '@/ui/feedback';
 
 // ADR-201: 25 alerts a page. The search, the "show zero records" switch and
 // the page live in the URL and run on the SERVER; the department strip and the
@@ -70,6 +71,7 @@ function AlertsDashboardPage() {
   });
   const subscriptions = useMySubscriptions();
   const toggleSub = useToggleSubscription();
+  const toast = useToast();
   const qc = useQueryClient();
   const navigate = useNavigate();
 
@@ -169,7 +171,13 @@ function AlertsDashboardPage() {
             disabled={subBusy || subscriptions.isLoading}
             onClick={(e) => {
               e.stopPropagation();
-              toggleSub.mutate({ code: a.code, subscribed: !subscribed });
+              toggleSub.mutate(
+                { code: a.code, subscribed: !subscribed },
+                {
+                  onSuccess: () =>
+                    void toast.ok(`${a.name}: email ${subscribed ? 'turned off' : 'turned on'}`),
+                },
+              );
             }}
             className="btn btn-ghost btn-icon"
             aria-pressed={subscribed}
@@ -293,7 +301,7 @@ function AlertsDashboardPage() {
               rowKey={(a) => a.code}
               loading={isLoading}
               sortFilter={false}
-              empty={term.trim() ? 'No alerts match.' : '✅ Nothing pending'}
+              empty={term.trim() ? 'No alerts match.' : 'No alerts yet.'}
               isRowClickable={(a) => a.count > 0}
               onRowClick={(a) => void navigate({ to: '/alerts/$code', params: { code: a.code } })}
               rowClassName={(a) => (isUrgent(a) ? ROW_TINT.late : undefined)}

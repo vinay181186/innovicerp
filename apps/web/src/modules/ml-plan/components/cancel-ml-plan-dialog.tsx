@@ -31,7 +31,7 @@ export function CancelMlPlanDialog({ plan, onDone, onCancel }: Props): React.JSX
       message={
         <span className="form-grp" style={{ display: 'block' }}>
           <label className="form-label" htmlFor="mlplan-cancel-reason">
-            Reason <span className="req">★</span>
+            Reason<span className="req">★</span>
           </label>
           <textarea
             id="mlplan-cancel-reason"

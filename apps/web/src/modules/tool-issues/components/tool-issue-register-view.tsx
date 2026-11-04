@@ -20,6 +20,7 @@ import { TOOL_ISSUE_HIDDEN_COLUMNS, toolIssueColumns } from './tool-issue-column
 import { ToolHoldersView } from './tool-holders-view';
 import { ToolIssueViewModal } from './tool-issue-view-modal';
 import { ToolWriteoffsView } from './tool-writeoffs-view';
+import { TabStrip } from '@/ui/navigation';
 
 type FilterKey = 'all' | 'out' | 'overdue' | 'returned' | 'cancelled';
 const FILTER_LABELS: Record<FilterKey, string> = {
@@ -34,8 +35,11 @@ const withCount = (label: string, n: number | undefined): string =>
   n == null ? label : `${label} (${n})`;
 
 export function ToolIssueRegisterView({
+  tabs,
   initialSearch,
 }: {
+  /** The page's Item | Tool Issues tabs, drawn under this view's header. */
+  tabs?: React.ReactNode;
   initialSearch?: string | undefined;
 }): React.JSX.Element {
   const { data: eff } = useMyAccess();
@@ -69,34 +73,41 @@ export function ToolIssueRegisterView({
 
   if (eff && !perms.view) {
     return (
-      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        You do not have permission to view Tool Issues. Ask an admin.
+      <div>
+        {tabs}
+        <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
+          You do not have permission to view Tool Issues. Ask an admin.
+        </div>
       </div>
     );
   }
 
   const pendingWriteoffs = data?.summary?.writeoffsPending ?? 0;
 
+  const viewTabs = (
+    <TabStrip
+      label="Tool Issue views"
+      tabs={[
+        { key: 'issues', label: 'Tool Issues' },
+        { key: 'holders', label: 'Who Holds What' },
+        { key: 'writeoffs', label: 'Write-offs', count: pendingWriteoffs || null },
+      ]}
+      activeKey={view}
+      onChange={(k) =>
+        setView(k === 'holders' ? 'holders' : k === 'writeoffs' ? 'writeoffs' : 'issues')
+      }
+    />
+  );
+
   return (
     <div>
-      <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-        {(
-          [
-            ['issues', 'Tool Issues'],
-            ['holders', 'Who Holds What'],
-            ['writeoffs', withCount('Write-offs', pendingWriteoffs || undefined)],
-          ] as const
-        ).map(([k, label]) => (
-          <button
-            key={k}
-            type="button"
-            className={view === k ? 'btn btn-primary btn-sm' : 'btn btn-ghost btn-sm'}
-            onClick={() => setView(k)}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      {/* These two views have no header of their own, so the tabs lead. */}
+      {view === 'issues' ? null : (
+        <>
+          {tabs}
+          {viewTabs}
+        </>
+      )}
 
       {view === 'holders' ? (
         <ToolHoldersView onOpen={setOpenId} />
@@ -152,7 +163,10 @@ export function ToolIssueRegisterView({
                 </button>
               ) : null
             }
-          />
+          >
+            {tabs}
+            {viewTabs}
+          </ListHeader>
 
           {isError ? (
             <PageState

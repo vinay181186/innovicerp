@@ -30,6 +30,7 @@ import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc
 import { usePendingEditIds } from '@/modules/document-edits/api';
 import { AssignTaskModal } from '@/modules/tasks/components/assign-task-modal';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
@@ -227,18 +228,19 @@ function PurchaseRequestsListPage(): React.JSX.Element {
     return <PageState as="page" state="noaccess" />;
   }
 
+  const tabBar = <PrListTabs tab={tab} onChange={setTab} />;
+
   return (
     // `page-fill` (ADR-202): on the list tab the page fills the content area and the
     // TABLE is the only scrollbox, so the column header cannot ride off the top at the
     // last row. The Outsource Jobs tab is its own screen and keeps today's page scroll.
     <div className={tab === 'osp' ? undefined : 'page-fill'}>
-      <PrListTabs tab={tab} onChange={setTab} />
-
       {tab === 'osp' ? (
-        <OutsourceJobsView />
+        <OutsourceJobsView tabs={tabBar} />
       ) : (
         <>
           <ListHeader
+            orderFilter={<OrderSfFilter sf={sf} field="soCode" />}
             title="Purchase Requests"
             icon="📄"
             count={total}
@@ -278,7 +280,9 @@ function PurchaseRequestsListPage(): React.JSX.Element {
                 </Link>
               ) : null
             }
-          />
+          >
+            {tabBar}
+          </ListHeader>
 
           {isError ? (
             <PageState

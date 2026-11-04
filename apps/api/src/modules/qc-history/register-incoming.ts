@@ -11,7 +11,7 @@ import { createdByNameSql } from '../../lib/created-by-sql';
 import { likeEscape } from '../../lib/list-query';
 import { polSql } from '../../lib/pol';
 import { CLIENT_PO_NO_SQL } from './register-facts';
-import { tsOrNull } from './sql';
+import { OP_ORDER_CODE, tsOrNull } from './sql';
 
 /** A GRN's own GRN Type (no Party GRN — that is a different table). */
 export type IncGrnType = Exclude<QcGrnType, 'party_grn'>;
@@ -84,8 +84,9 @@ export function incCompletedFrom(companyId: string): SQL {
 export const ITEM_CODE = sql`COALESCE(i.code, l.item_code_text)`;
 export const ITEM_REV = sql`COALESCE(sol.revision::text, rev_jwl.revision::text)`;
 export const VENDOR = sql`COALESCE(v.name, h.vendor_code_text)`;
-/** ADR-261 lead SO No. / Internal SO No.: the job card's SO, else the PO line's source SO. */
-export const INC_SO_CODE = sql`COALESCE(so.code, po_so.code)`;
+/** ADR-261 lead SO No. / Internal SO No.: the job card's SO (ADR-267: or its JWSO, on an
+ *  OSP return against a JWSO card), else the PO line's source SO. */
+export const INC_SO_CODE = sql`COALESCE(${OP_ORDER_CODE}, po_so.code)`;
 export const INC_SO_INTERNAL = sql`NULLIF(btrim(CASE WHEN so.id IS NOT NULL THEN so.internal_so_no ELSE po_so.internal_so_no END), '')`;
 /** ADR-261 lead Created On — the GRN line's created_at, else its GRN's. */
 export const INC_CREATED_AT = sql`COALESCE(l.created_at, h.created_at)`;

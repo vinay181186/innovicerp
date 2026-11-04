@@ -27,6 +27,7 @@ export function DeptView({
             type="button"
             className="btn btn-ghost btn-sm"
             disabled={checks.length === 0}
+            title={checks.length === 0 ? 'Nothing to check right now' : undefined}
             onClick={() => open.setAll(checks, true)}
           >
             Expand all
@@ -35,6 +36,7 @@ export function DeptView({
             type="button"
             className="btn btn-ghost btn-sm"
             disabled={checks.length === 0}
+            title={checks.length === 0 ? 'Nothing to check right now' : undefined}
             onClick={() => open.setAll(checks, false)}
           >
             Collapse all

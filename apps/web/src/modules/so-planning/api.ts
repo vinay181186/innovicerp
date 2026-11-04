@@ -4,26 +4,30 @@
 import type {
   PlanningBomResponse,
   PlanningDetailResponse,
-  PlanningSoListQuery,
+  PlanningLineListQuery,
+  PlanningLineListResponse,
   PlanningSoListResponse,
   RaisePlanningPrInput,
   RaisePlanningPrResponse,
 } from '@innovic/shared';
-import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
 import { activityLogKeys } from '@/modules/activity-log/api';
 
 export const soPlanningKeys = {
   all: ['so-planning'] as const,
   list: (qs = '') => [...soPlanningKeys.all, 'list', qs] as const,
+  lineList: (qs = '') => [...soPlanningKeys.all, 'line-list', qs] as const,
   detail: (soId: string | null) => [...soPlanningKeys.all, 'detail', soId] as const,
   bom: (soLineId: string | null) => [...soPlanningKeys.all, 'bom', soLineId] as const,
 };
 
-/** Open SOs + JWSOs to plan. With no query: every order (the Create Plan
- *  form's picker). The Planning list sends source + search + Sort & Filter +
- *  a 25-row page (ADR-201) and gets that page plus the matching total. */
-export function usePlanningSoList(q: PlanningSoListQuery = {}) {
+/** Level 1 of the Planning screen (ADR-268): one row per open SO / JWSO line.
+ *  Sends source + search + Sort & Filter + a 25-row page and gets that page plus
+ *  the matching total. `enabled` is off while one order is open, so the list is
+ *  not re-worked out behind a screen that does not show it. */
+export function usePlanningLineList(q: PlanningLineListQuery, enabled = true) {
   const params = new URLSearchParams();
   if (q.src) params.set('src', q.src);
   if (q.search) params.set('search', q.search);
@@ -31,20 +35,28 @@ export function usePlanningSoList(q: PlanningSoListQuery = {}) {
   if (q.limit !== undefined) params.set('limit', String(q.limit));
   if (q.offset !== undefined) params.set('offset', String(q.offset));
   const qs = params.toString();
-  return useQuery<PlanningSoListResponse>({
-    queryKey: soPlanningKeys.list(qs),
-    queryFn: () => apiFetch<PlanningSoListResponse>(`/so-planning${qs ? `?${qs}` : ''}`),
-    refetchInterval: 60_000,
+  return useQuery<PlanningLineListResponse>({
+    queryKey: soPlanningKeys.lineList(qs),
+    queryFn: () => apiFetch<PlanningLineListResponse>(`/so-planning/lines${qs ? `?${qs}` : ''}`),
+    enabled,
+    refetchInterval: LIVE_FALLBACK_POLL_MS,
     refetchOnWindowFocus: true,
     placeholderData: (prev) => prev,
   });
 }
 
-// The ONE description of "fetch one SO's planning detail". Both the single-SO
-// hook and the many-SO search hook spread this, so they share one query key and
-// one fetch: a detail loaded for the search results is the same cache entry the
-// right pane reads when the user clicks that result — it opens instantly, and a
-// refetch from either side updates both.
+/** Open SOs + JWSOs to plan, one row per ORDER — the Create Plan form's picker,
+ *  which calls it with no query and gets every order. */
+export function usePlanningSoList() {
+  return useQuery<PlanningSoListResponse>({
+    queryKey: soPlanningKeys.list(),
+    queryFn: () => apiFetch<PlanningSoListResponse>('/so-planning'),
+    refetchInterval: LIVE_FALLBACK_POLL_MS,
+    refetchOnWindowFocus: true,
+  });
+}
+
+// The ONE description of "fetch one SO's planning detail".
 export function planningSoDetailQuery(soId: string) {
   return {
     queryKey: soPlanningKeys.detail(soId),
@@ -62,14 +74,6 @@ export function usePlanningSoDetail(soId: string | null) {
     queryKey: soPlanningKeys.detail(soId),
     enabled: !!soId,
   });
-}
-
-/** Details for several SOs at once — the Planning page's search-results view,
- *  which lists matching LINES across every SO the search hit. One query per SO
- *  (no bulk endpoint, none needed: the caller caps the list), each on the same
- *  key + fetch as `usePlanningSoDetail`, so nothing is fetched twice. */
-export function usePlanningSoDetails(soIds: string[]) {
-  return useQueries({ queries: soIds.map((id) => planningSoDetailQuery(id)) });
 }
 
 export function usePlanningBom(soId: string | null, soLineId: string | null) {

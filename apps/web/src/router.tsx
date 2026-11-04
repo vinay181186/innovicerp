@@ -140,6 +140,7 @@ import { soStatusDetailRoute } from './modules/so-status/routes/detail';
 import { soStatusIndexRoute } from './modules/so-status/routes/index';
 import { pendingSoValueRoute } from './modules/pending-so-value/routes/list';
 import { storeIssuesListRoute } from './modules/store-issues/routes/list';
+import { storeIssueNewRoute } from './modules/store-issues/routes/create';
 import { stockCountDetailRoute } from './modules/stock-counts/routes/detail';
 import { stockCountsListRoute } from './modules/stock-counts/routes/list';
 import { instrumentsListRoute } from './modules/instruments/routes/list';
@@ -147,9 +148,13 @@ import { storeInventoryRoute } from './modules/store-inventory/routes/list';
 import { reorderListRoute } from './modules/store-inventory/routes/reorder-list';
 import { partyMaterialsListRoute } from './modules/party-materials/routes/list';
 import { partyGrnListRoute } from './modules/party-grn/routes/list';
+import { partyGrnNewRoute } from './modules/party-grn/routes/create';
 import { customerMaterialReturnsListRoute } from './modules/customer-material-returns/routes/list';
+import { customerMaterialReturnNewRoute } from './modules/customer-material-returns/routes/create';
 import { partyStockLedgerListRoute } from './modules/party-stock-ledger/routes/list';
 import { jwDcListRoute } from './modules/jw-dc/routes/list';
+import { jwDcOutwardNewRoute } from './modules/jw-dc/routes/outward-create';
+import { jwDcInwardNewRoute } from './modules/jw-dc/routes/inward-create';
 import { jwDcOutwardDetailRoute } from './modules/jw-dc/routes/detail';
 import { designTrackerListRoute } from './modules/design-tracker/routes/list';
 import { designProjectsListRoute } from './modules/design-projects/routes/list';
@@ -220,6 +225,7 @@ const routeTree = rootRoute.addChildren([
     soStatusDetailRoute,
     pendingSoValueRoute,
     storeIssuesListRoute,
+    storeIssueNewRoute,
     stockCountsListRoute,
     stockCountDetailRoute,
     instrumentsListRoute,
@@ -227,9 +233,13 @@ const routeTree = rootRoute.addChildren([
     reorderListRoute,
     partyMaterialsListRoute,
     partyGrnListRoute,
+    partyGrnNewRoute,
     customerMaterialReturnsListRoute,
+    customerMaterialReturnNewRoute,
     partyStockLedgerListRoute,
     jwDcListRoute,
+    jwDcOutwardNewRoute,
+    jwDcInwardNewRoute,
     jwDcOutwardDetailRoute,
     designTrackerListRoute,
     designProjectsListRoute,

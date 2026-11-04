@@ -45,6 +45,7 @@ import { qcHistoryKeys } from '@/modules/qc-history/api';
 import { useQcUserOptions } from '@/modules/qc-users/api';
 import { NO_SERVER_SEARCH, qcSelectedLabel, toQcSearchOptions } from '@/modules/qc-users/options';
 import { tpiKeys } from '@/modules/tpi/api';
+import { useToast } from '@/ui/feedback';
 
 function todayIso(): string {
   return todayIst();
@@ -98,6 +99,7 @@ export function useQcCallInspect(props: {
   // different operation is a different save, so the key turns over with it.
   const saveKey = useSaveKey();
   useEffect(() => saveKey.rotate(), [saveKey, o.jcOpId]);
+  const toast = useToast();
   const submitQc = useSubmitQcLog(saveKey);
   const queryClient = useQueryClient();
   const session = useSession().data;
@@ -203,6 +205,7 @@ export function useQcCallInspect(props: {
     };
     try {
       const saved = await submitQc.mutateAsync(input);
+      toast.ok('QC Inspection saved');
       // useSubmitQcLog refreshes op-entry's own views but not this register's
       // feed, so the row used to linger in Pending until the 60 s poll. Refresh
       // the register (and the TPI tab, which reads the same operations) now,
@@ -421,7 +424,7 @@ export function QcCallInspectFormView(props: {
         </div>
       ) : null}
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 10 }}>
-        <button type="button" className="btn btn-ghost btn-sm" onClick={onCancel}>
+        <button type="button" className="btn btn-ghost btn-sm" data-modal-exit onClick={onCancel}>
           Cancel
         </button>
         <button

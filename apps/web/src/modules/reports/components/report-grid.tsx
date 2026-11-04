@@ -95,7 +95,7 @@ export function ReportGrid(props: ReportGridProps): React.JSX.Element {
   const visibleKeys = useVisibleColumnKeys(rootRef);
 
   const filtersOn = grid.showFilters && Object.values(grid.terms).some((t) => t.trim() !== '');
-  const emptyText = filtersOn ? 'No rows match the column filters' : 'No data for these filters';
+  const emptyText = filtersOn ? 'No rows match.' : 'No rows yet.';
   const updated = data?.generatedAt ? fmtTime(data.generatedAt) : undefined;
   const unfiltered = data?.unfilteredCount;
 

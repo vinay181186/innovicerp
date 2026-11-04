@@ -59,6 +59,7 @@ import {
   IdentSep,
   SearchableSelect,
 } from '@/ui/forms';
+import { useToast } from '@/ui/feedback';
 import { Modal } from './modal';
 
 interface Props {
@@ -189,9 +190,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
   );
 
   const [err, setErr] = useState<string | null>(null);
-  // ADR-202 — set when an edit to a LIVE plan is staged for approval instead of
-  // applied; a neutral notice shows it and the modal stays open to be read.
-  const [stagedNotice, setStagedNotice] = useState<string | null>(null);
+  const toast = useToast();
 
   const saveKey = useSaveKey();
   const update = useUpdatePlan(plan.id, saveKey);
@@ -488,7 +487,6 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
       return;
     }
     setErr(null);
-    setStagedNotice(null);
     try {
       const saved = await update.mutateAsync({
         ...buildPayload(),
@@ -496,15 +494,17 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
       });
       if (isStagedResult(saved)) {
         // Edit-approval gate is on and this plan is live: nothing changed on the
-        // plan — the edit is now waiting for approval. Say so and keep the modal
-        // open so the planner reads it (there is no detail page to land on here).
-        setStagedNotice('Sent for approval — your changes will apply once an approver signs off.');
+        // plan — the edit is now waiting for approval. Say so; the toast outlives
+        // the modal.
+        toast.ok('Sent for approval — your changes will apply once an approver signs off.');
+        onSaved();
         return;
       }
       // A failed Finalize leaves the modal open; the next Save must carry the
       // version our own save just wrote, not the one the modal opened with.
       opened.saved(saved.updatedAt);
       if (finalizeAfter) await finalize.mutateAsync(plan.id);
+      toast.ok(`Plan ${plan.code} saved`);
       onSaved();
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Could not save Plan. Try again.');
@@ -995,11 +995,19 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                             </span>
                           </td>
                           <td>
-                            <select
-                              className="innovic-select"
-                              value={op.operation}
-                              onChange={(e) => {
-                                const name = e.target.value;
+                            <SearchableSelect
+                              ariaLabel="QC Process"
+                              value={op.operation || null}
+                              valueLabel={op.operation || undefined}
+                              options={(qcProcesses.data?.items ?? []).map((p) => ({
+                                id: p.code,
+                                name: p.code,
+                              }))}
+                              loading={qcProcesses.isFetching}
+                              error={qcProcesses.error}
+                              placeholder="— Select QC Process —"
+                              onChange={(picked) => {
+                                const name = picked ?? '';
                                 const proc = (qcProcesses.data?.items ?? []).find(
                                   (p) => p.code === name,
                                 );
@@ -1010,14 +1018,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                                     : op.cycleTimeMin,
                                 });
                               }}
-                            >
-                              <option value="">— Select QC Process —</option>
-                              {(qcProcesses.data?.items ?? []).map((p) => (
-                                <option key={p.id} value={p.code}>
-                                  {p.code}
-                                </option>
-                              ))}
-                            </select>
+                            />
                           </td>
                           <td>
                             <input
@@ -1265,7 +1266,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
           <div className="form-grid">
             <div className="form-grp">
               <label className="form-label" style={{ color: 'var(--purple)' }}>
-                Vendor ★
+                Vendor<span className="req">★</span>
               </label>
               <SearchableSelect
                 id="plan-fo-vend"
@@ -1292,7 +1293,9 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
               />
             </div>
             <div className="form-grp form-full">
-              <label className="form-label">Process Description ★</label>
+              <label className="form-label">
+                Process Description<span className="req">★</span>
+              </label>
               <input
                 value={foProcess}
                 onChange={(e) => setFoProcess(e.target.value)}
@@ -1340,7 +1343,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
           <div className="form-grid">
             <div className="form-grp">
               <label className="form-label" style={{ color: 'var(--green2)' }}>
-                Vendor ★
+                Vendor<span className="req">★</span>
               </label>
               <SearchableSelect
                 id="plan-dp-vend"
@@ -1406,7 +1409,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
         <div>
           {requiredDocs.length === 0 ? (
             <div className="empty-state" style={{ padding: 14, fontSize: 12 }}>
-              — No document requirements. Click + Add Document.
+              No document requirements yet. Click + Add Document.
             </div>
           ) : (
             <>
@@ -1419,7 +1422,9 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                 <thead>
                   <tr style={{ background: 'var(--bg4)' }}>
                     <th style={{ width: 44, textAlign: 'center' }}>Sr No</th>
-                    <th>Document Name ★</th>
+                    <th>
+                      Document Name<span className="req">★</span>
+                    </th>
                     <th style={{ width: 180 }}>Requirement</th>
                     <th style={{ width: 56 }} />
                   </tr>
@@ -1503,21 +1508,6 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
           }}
         >
           {err}
-        </div>
-      ) : null}
-      {stagedNotice ? (
-        <div
-          style={{
-            marginTop: 12,
-            padding: 8,
-            borderRadius: 4,
-            background: 'var(--bg3)',
-            border: '1px solid var(--border2)',
-            color: 'var(--text2)',
-            fontSize: 12,
-          }}
-        >
-          {stagedNotice}
         </div>
       ) : null}
     </Modal>

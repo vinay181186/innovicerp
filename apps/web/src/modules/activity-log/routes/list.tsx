@@ -15,6 +15,7 @@ import {
   ActivityLogExpand,
   activityLogColumns,
 } from '../components/activity-log-columns';
+import { SearchableSelect } from '@/ui/forms';
 
 const searchSchema = z.object({
   search: z.string().optional(),
@@ -161,22 +162,20 @@ function ActivityLogListPage() {
                 </option>
               ))}
             </select>
-            <select
-              className="innovic-select"
-              aria-label="User"
-              title="User"
-              value={search.userId ?? ''}
-              onChange={(e) => setFilter('userId', e.target.value)}
-            >
-              <option value="">All Users</option>
-              {(data?.users ?? [])
-                .filter((u) => u.id !== null)
-                .map((u) => (
-                  <option key={u.id ?? u.name} value={u.id ?? ''}>
-                    {u.name}
-                  </option>
-                ))}
-            </select>
+            <SearchableSelect
+              ariaLabel="User"
+              style={{ width: 180 }}
+              clearable
+              placeholder="All Users"
+              value={search.userId ?? null}
+              valueLabel={
+                search.userId ? data?.users.find((u) => u.id === search.userId)?.name : undefined
+              }
+              options={(data?.users ?? []).flatMap((u) =>
+                u.id !== null ? [{ id: u.id, name: u.name }] : [],
+              )}
+              onChange={(id) => setFilter('userId', id ?? '')}
+            />
             <input
               type="date"
               className="innovic-input"
@@ -234,7 +233,7 @@ function ActivityLogListPage() {
               search.toDate ||
               sf.filtering
                 ? 'No entries match.'
-                : 'No activity yet.'
+                : 'No entries yet.'
             }
             renderExpanded={(e) => (expanded.has(e.id) ? <ActivityLogExpand entry={e} /> : null)}
             onToggleExpanded={(e) => toggleExpand(e.id)}

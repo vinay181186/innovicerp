@@ -33,9 +33,11 @@ import {
 } from '@innovic/shared';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Loader2 } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
 import { useMachineGroupLookup } from '../api';
 import { MachineGroupPicker } from './machine-group-picker';
+import { FormActions } from '@/ui/layout';
 
 const MACHINE_STATUSES = ['Idle', 'Running', 'Down', 'Maintenance'] as const;
 // Legacy <select id="fShifts"> offers exactly 1 / 2 / 3 (L13120).
@@ -43,6 +45,8 @@ const SHIFTS_PER_DAY = [1, 2, 3] as const;
 
 type CreateMode = {
   mode: 'create';
+  /** The title band of the form's panel; the form owns the panel so its button bar can sit outside it. */
+  panelHeader: ReactNode;
   defaultValues?: Partial<CreateMachineInput>;
   onSubmit: (values: CreateMachineInput) => Promise<void> | void;
   submitLabel?: string;
@@ -52,6 +56,8 @@ type CreateMode = {
 
 type EditMode = {
   mode: 'edit';
+  /** The title band of the form's panel; the form owns the panel so its button bar can sit outside it. */
+  panelHeader: ReactNode;
   machine: Machine;
   onSubmit: (values: UpdateMachineInput) => Promise<void> | void;
   submitLabel?: string;
@@ -142,131 +148,142 @@ function CreateMachineForm(props: CreateMode): React.JSX.Element {
         await props.onSubmit(values);
       })}
     >
-      <div className="form-grid">
-        {/* Picked from the Machine Group master (Machine Master → Machine
+      <div className="panel">
+        <div className="panel-hdr">{props.panelHeader}</div>
+        <div className="panel-body">
+          <div className="form-grid">
+            {/* Picked from the Machine Group master (Machine Master → Machine
             Groups tab), never typed — the shared type-to-search dropdown, per
             the `searchable-field` skill. Optional: existing machines have no
             group and must stay editable. */}
-        <div className="form-grp">
-          <label className="form-label" htmlFor="machineGroupId">
-            Machine Group
-          </label>
-          <MachineGroupPicker
-            id="machineGroupId"
-            valueId={machineGroupId}
-            valueText={machineGroupLabel}
-            // null, never undefined: on the edit form undefined means "leave
-            // this field alone", so clearing the group would silently do
-            // nothing. null is the explicit "no group".
-            onChange={(picked) => form.setValue('machineGroupId', picked, { shouldValidate: true })}
-          />
-        </div>
+            <div className="form-grp">
+              <label className="form-label" htmlFor="machineGroupId">
+                Machine Group
+              </label>
+              <MachineGroupPicker
+                id="machineGroupId"
+                valueId={machineGroupId}
+                valueText={machineGroupLabel}
+                // null, never undefined: on the edit form undefined means "leave
+                // this field alone", so clearing the group would silently do
+                // nothing. null is the explicit "no group".
+                onChange={(picked) =>
+                  form.setValue('machineGroupId', picked, { shouldValidate: true })
+                }
+              />
+            </div>
 
-        <div className="form-grp">
-          <label className="form-label" htmlFor="code">
-            Code<span className="req">★</span>
-          </label>
-          <input
-            id="code"
-            className="innovic-input"
-            autoFocus
-            autoComplete="off"
-            placeholder="CNC-01"
-            {...register('code')}
-          />
-          {errors.code?.message ? <div className="form-error">{errors.code.message}</div> : null}
-        </div>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="name">
-            Machine Name<span className="req">★</span>
-          </label>
-          <input
-            id="name"
-            className="innovic-input"
-            autoComplete="off"
-            placeholder="CNC Turning Centre"
-            {...register('name')}
-          />
-          {errors.name?.message ? <div className="form-error">{errors.name.message}</div> : null}
-        </div>
+            <div className="form-grp">
+              <label className="form-label" htmlFor="code">
+                Code<span className="req">★</span>
+              </label>
+              <input
+                id="code"
+                className="innovic-input"
+                autoFocus
+                autoComplete="off"
+                placeholder="CNC-01"
+                {...register('code')}
+              />
+              {errors.code?.message ? (
+                <div className="form-error">{errors.code.message}</div>
+              ) : null}
+            </div>
+            <div className="form-grp">
+              <label className="form-label" htmlFor="name">
+                Machine Name<span className="req">★</span>
+              </label>
+              <input
+                id="name"
+                className="innovic-input"
+                autoComplete="off"
+                placeholder="CNC Turning Centre"
+                {...register('name')}
+              />
+              {errors.name?.message ? (
+                <div className="form-error">{errors.name.message}</div>
+              ) : null}
+            </div>
 
-        <div className="form-grp">
-          <label className="form-label" htmlFor="productCode">
-            Product Code
-          </label>
-          <input
-            id="productCode"
-            className="innovic-input"
-            autoComplete="off"
-            {...register('productCode')}
-          />
-        </div>
+            <div className="form-grp">
+              <label className="form-label" htmlFor="productCode">
+                Product Code
+              </label>
+              <input
+                id="productCode"
+                className="innovic-input"
+                autoComplete="off"
+                {...register('productCode')}
+              />
+            </div>
 
-        <div className="form-grp form-full">
-          <label className="form-label" htmlFor="machineType">
-            Machine Type
-          </label>
-          <input
-            id="machineType"
-            className="innovic-input"
-            autoComplete="off"
-            placeholder="CNC Lathe, VMC, Grinding…"
-            {...register('machineType')}
-          />
-        </div>
+            <div className="form-grp form-full">
+              <label className="form-label" htmlFor="machineType">
+                Machine Type
+              </label>
+              <input
+                id="machineType"
+                className="innovic-input"
+                autoComplete="off"
+                placeholder="CNC Lathe, VMC, Grinding…"
+                {...register('machineType')}
+              />
+            </div>
 
-        <div className="form-grp">
-          <label className="form-label" htmlFor="capacityPerShift">
-            Hours per Shift
-          </label>
-          <input
-            id="capacityPerShift"
-            className="innovic-input"
-            type="number"
-            min={0}
-            autoComplete="off"
-            {...register('capacityPerShift', { setValueAs: blankToUndefined })}
-          />
-        </div>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="shiftsPerDay">
-            Shifts / Day
-          </label>
-          <select id="shiftsPerDay" className="innovic-select" {...register('shiftsPerDay')}>
-            {SHIFTS_PER_DAY.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-        </div>
+            <div className="form-grp">
+              <label className="form-label" htmlFor="capacityPerShift">
+                Hours per Shift
+              </label>
+              <input
+                id="capacityPerShift"
+                className="innovic-input"
+                type="number"
+                min={0}
+                autoComplete="off"
+                {...register('capacityPerShift', { setValueAs: blankToUndefined })}
+              />
+            </div>
+            <div className="form-grp">
+              <label className="form-label" htmlFor="shiftsPerDay">
+                Shifts / Day
+              </label>
+              <select id="shiftsPerDay" className="innovic-select" {...register('shiftsPerDay')}>
+                {SHIFTS_PER_DAY.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-        <div className="form-grp">
-          <label className="form-label green" htmlFor="hourRate">
-            Hour Rate (₹/hr)
-          </label>
-          <input
-            id="hourRate"
-            className="innovic-input"
-            type="number"
-            min={0}
-            step="0.01"
-            autoComplete="off"
-            {...register('hourRate', { setValueAs: blankToUndefined })}
-          />
-        </div>
+            <div className="form-grp">
+              <label className="form-label green" htmlFor="hourRate">
+                Hour Rate (₹/hr)
+              </label>
+              <input
+                id="hourRate"
+                className="innovic-input"
+                type="number"
+                min={0}
+                step="0.01"
+                autoComplete="off"
+                {...register('hourRate', { setValueAs: blankToUndefined })}
+              />
+            </div>
 
-        <div className="form-grp">
-          <label className="form-label" htmlFor="status">
-            Machine Status
-          </label>
-          <select id="status" className="innovic-select" {...register('status')}>
-            {MACHINE_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
+            <div className="form-grp">
+              <label className="form-label" htmlFor="status">
+                Machine Status
+              </label>
+              <select id="status" className="innovic-select" {...register('status')}>
+                {MACHINE_STATUSES.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -302,129 +319,138 @@ function EditMachineForm(props: EditMode): React.JSX.Element {
         await props.onSubmit(values);
       })}
     >
-      <div className="form-grid">
-        {/* Picked from the Machine Group master (Machine Master → Machine
+      <div className="panel">
+        <div className="panel-hdr">{props.panelHeader}</div>
+        <div className="panel-body">
+          <div className="form-grid">
+            {/* Picked from the Machine Group master (Machine Master → Machine
             Groups tab), never typed — the shared type-to-search dropdown, per
             the `searchable-field` skill. Optional: existing machines have no
             group and must stay editable. */}
-        <div className="form-grp">
-          <label className="form-label" htmlFor="machineGroupId">
-            Machine Group
-          </label>
-          <MachineGroupPicker
-            id="machineGroupId"
-            valueId={machineGroupId}
-            valueText={machineGroupLabel}
-            // null, never undefined: on the edit form undefined means "leave
-            // this field alone", so clearing the group would silently do
-            // nothing. null is the explicit "no group".
-            onChange={(picked) => form.setValue('machineGroupId', picked, { shouldValidate: true })}
-          />
-        </div>
+            <div className="form-grp">
+              <label className="form-label" htmlFor="machineGroupId">
+                Machine Group
+              </label>
+              <MachineGroupPicker
+                id="machineGroupId"
+                valueId={machineGroupId}
+                valueText={machineGroupLabel}
+                // null, never undefined: on the edit form undefined means "leave
+                // this field alone", so clearing the group would silently do
+                // nothing. null is the explicit "no group".
+                onChange={(picked) =>
+                  form.setValue('machineGroupId', picked, { shouldValidate: true })
+                }
+              />
+            </div>
 
-        <div className="form-grp">
-          <label className="form-label" htmlFor="code">
-            Code<span className="req">★</span>
-          </label>
-          <input
-            id="code"
-            className="innovic-input"
-            placeholder="CNC-01"
-            value={props.machine.code}
-            readOnly
-          />
-        </div>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="name">
-            Machine Name<span className="req">★</span>
-          </label>
-          <input
-            id="name"
-            className="innovic-input"
-            autoComplete="off"
-            placeholder="CNC Turning Centre"
-            {...register('name')}
-          />
-          {errors.name?.message ? <div className="form-error">{errors.name.message}</div> : null}
-        </div>
+            <div className="form-grp">
+              <label className="form-label" htmlFor="code">
+                Code<span className="req">★</span>
+              </label>
+              <input
+                id="code"
+                className="innovic-input"
+                placeholder="CNC-01"
+                value={props.machine.code}
+                readOnly
+              />
+            </div>
+            <div className="form-grp">
+              <label className="form-label" htmlFor="name">
+                Machine Name<span className="req">★</span>
+              </label>
+              <input
+                id="name"
+                className="innovic-input"
+                autoComplete="off"
+                placeholder="CNC Turning Centre"
+                {...register('name')}
+              />
+              {errors.name?.message ? (
+                <div className="form-error">{errors.name.message}</div>
+              ) : null}
+            </div>
 
-        <div className="form-grp">
-          <label className="form-label" htmlFor="productCode">
-            Product Code
-          </label>
-          <input
-            id="productCode"
-            className="innovic-input"
-            autoComplete="off"
-            {...register('productCode')}
-          />
-        </div>
+            <div className="form-grp">
+              <label className="form-label" htmlFor="productCode">
+                Product Code
+              </label>
+              <input
+                id="productCode"
+                className="innovic-input"
+                autoComplete="off"
+                {...register('productCode')}
+              />
+            </div>
 
-        <div className="form-grp form-full">
-          <label className="form-label" htmlFor="machineType">
-            Machine Type
-          </label>
-          <input
-            id="machineType"
-            className="innovic-input"
-            autoComplete="off"
-            placeholder="CNC Lathe, VMC, Grinding…"
-            {...register('machineType')}
-          />
-        </div>
+            <div className="form-grp form-full">
+              <label className="form-label" htmlFor="machineType">
+                Machine Type
+              </label>
+              <input
+                id="machineType"
+                className="innovic-input"
+                autoComplete="off"
+                placeholder="CNC Lathe, VMC, Grinding…"
+                {...register('machineType')}
+              />
+            </div>
 
-        <div className="form-grp">
-          <label className="form-label" htmlFor="capacityPerShift">
-            Hours per Shift
-          </label>
-          <input
-            id="capacityPerShift"
-            className="innovic-input"
-            type="number"
-            min={0}
-            autoComplete="off"
-            {...register('capacityPerShift', { setValueAs: blankToUndefined })}
-          />
-        </div>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="shiftsPerDay">
-            Shifts / Day
-          </label>
-          <select id="shiftsPerDay" className="innovic-select" {...register('shiftsPerDay')}>
-            {SHIFTS_PER_DAY.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-        </div>
+            <div className="form-grp">
+              <label className="form-label" htmlFor="capacityPerShift">
+                Hours per Shift
+              </label>
+              <input
+                id="capacityPerShift"
+                className="innovic-input"
+                type="number"
+                min={0}
+                autoComplete="off"
+                {...register('capacityPerShift', { setValueAs: blankToUndefined })}
+              />
+            </div>
+            <div className="form-grp">
+              <label className="form-label" htmlFor="shiftsPerDay">
+                Shifts / Day
+              </label>
+              <select id="shiftsPerDay" className="innovic-select" {...register('shiftsPerDay')}>
+                {SHIFTS_PER_DAY.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-        <div className="form-grp">
-          <label className="form-label green" htmlFor="hourRate">
-            Hour Rate (₹/hr)
-          </label>
-          <input
-            id="hourRate"
-            className="innovic-input"
-            type="number"
-            min={0}
-            step="0.01"
-            autoComplete="off"
-            {...register('hourRate', { setValueAs: blankToUndefined })}
-          />
-        </div>
+            <div className="form-grp">
+              <label className="form-label green" htmlFor="hourRate">
+                Hour Rate (₹/hr)
+              </label>
+              <input
+                id="hourRate"
+                className="innovic-input"
+                type="number"
+                min={0}
+                step="0.01"
+                autoComplete="off"
+                {...register('hourRate', { setValueAs: blankToUndefined })}
+              />
+            </div>
 
-        <div className="form-grp">
-          <label className="form-label" htmlFor="status">
-            Machine Status
-          </label>
-          <select id="status" className="innovic-select" {...register('status')}>
-            {MACHINE_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
+            <div className="form-grp">
+              <label className="form-label" htmlFor="status">
+                Machine Status
+              </label>
+              <select id="status" className="innovic-select" {...register('status')}>
+                {MACHINE_STATUSES.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -445,7 +471,7 @@ function FormFooter(props: {
   onCancel?: (() => void) | undefined;
 }): React.JSX.Element {
   return (
-    <div style={{ marginTop: 16 }}>
+    <>
       {props.submitError ? (
         <div
           style={{
@@ -461,7 +487,7 @@ function FormFooter(props: {
           {props.submitError}
         </div>
       ) : null}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
+      <FormActions>
         {props.onCancel ? (
           <button type="button" className="btn btn-ghost" onClick={props.onCancel}>
             Cancel
@@ -471,7 +497,7 @@ function FormFooter(props: {
           {props.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
           {props.isSubmitting ? 'Saving…' : props.submitLabel}
         </button>
-      </div>
-    </div>
+      </FormActions>
+    </>
   );
 }

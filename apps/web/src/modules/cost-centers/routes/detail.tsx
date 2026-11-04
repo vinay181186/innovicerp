@@ -1,25 +1,9 @@
-// Cost Centre detail page. Group-4 migration onto the primitives, following
-// the approved DETAIL exemplar (modules/vendors/routes/detail.tsx):
+// Cost Centre detail page.
 //
 //   ← Back to Cost Centre Master
-//   DetailHeader (code + name + Active chip + Edit/Delete) → ReadGrid
+//   DetailHeader (code + name + Active chip + Edit/Delete) → ClusterGrid facts
 //
-// A cost centre is a flat master — no line table, no related-document query —
-// so the composition stops at the header panel. Markup only: the hand-rolled
-// panel-hdr, the inline "Delete? [Confirm][Cancel]" swap and the hand-styled
-// red error box are gone. Route, query hooks, the `cc_create` permission
-// expression and the soft-delete call are untouched.
-//
-// FIELD SIZES — ReadGrid is the same 12-column grid as the edit form's
-// FormGrid, and each ReadField carries the size that field will have in
-// cost-center-form.tsx once that form is migrated:
-//
-//   Department lg · Cost Centre Type lg                 → 6 + 6 = 12
-//   Description full                                    → 12
-//
-// The old grid also printed a third "Active" cell in plain text next to the
-// chip the panel header already draws. One fact, drawn once: the chip in the
-// header is it, and dropping the cell is what closes the row at 6 + 6.
+// A flat master with no related documents and no History, so nothing to tab.
 
 import type { CostCenter, DocumentEditChange } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
@@ -33,7 +17,9 @@ import {
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Button, Icon, StatusBadge } from '@/ui/core';
 import { ConfirmDialog } from '@/ui/feedback';
-import { DetailHeader, PageState, ReadField, ReadGrid } from '@/ui/layout';
+import { PendingFact } from '@/modules/document-edits/components/pending-fact';
+import { Cluster, ClusterGrid } from '@/ui/forms';
+import { DetailHeader, PageState } from '@/ui/layout';
 import { useCostCenter, useSoftDeleteCostCenter } from '../api';
 
 export const costCenterDetailRoute = createRoute({
@@ -182,25 +168,25 @@ function CostCenterFacts(props: {
 }): React.JSX.Element {
   const { costCenter, pendingChanges: pc } = props;
   return (
-    <ReadGrid>
-      <ReadField
-        label="Department"
-        size="lg"
-        value={readWithChip(costCenter.department, pc, 'department')}
-      />
-      <ReadField
-        label="Cost Centre Type"
-        size="lg"
-        value={readWithChip(costCenter.type, pc, 'type')}
-      />
-
-      <ReadField
-        label="Description"
-        size="full"
-        pre
-        value={readWithChip(costCenter.description, pc, 'description')}
-      />
-    </ReadGrid>
+    <ClusterGrid stack>
+      <Cluster name="Details">
+        <PendingFact
+          label="Department"
+          value={costCenter.department}
+          changes={pc}
+          field="department"
+        />
+        <PendingFact label="Cost Centre Type" value={costCenter.type} changes={pc} field="type" />
+        <PendingFact
+          span={2}
+          wrap
+          label="Description"
+          value={costCenter.description}
+          changes={pc}
+          field="description"
+        />
+      </Cluster>
+    </ClusterGrid>
   );
 }
 
@@ -215,9 +201,9 @@ function Chip(props: {
   return c ? <PendingChangeChip after={c.after} /> : null;
 }
 
-/** Compose a ReadField value with its pending-change chip. When no edit is
- *  staged for `field`, the value is returned untouched so ReadField's own empty
- *  handling (em dash in --text3) still applies. When one is, the current value
+/** Compose a header value with its pending-change chip. When no edit is
+ *  staged for `field`, the value is returned untouched (blank stays blank). When one
+ *  is, the current value
  *  (or an em dash) is shown with the amber "→ after" chip after it. */
 function readWithChip(
   value: React.ReactNode,

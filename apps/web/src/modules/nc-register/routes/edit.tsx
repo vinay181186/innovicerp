@@ -9,7 +9,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { useEditConflict } from '@/lib/use-edit-conflict';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { Banner } from '@/ui/feedback';
+import { useToast } from '@/ui/feedback';
 import { useFetchNcRegister, useNcRegister, useUpdateNcRegister } from '../api';
 import { NcRegisterForm } from '../components/nc-register-form';
 
@@ -70,9 +70,7 @@ function NcRegisterEditPage(): React.JSX.Element {
     noun: 'NC',
   });
   const [submitError, setSubmitError] = useState<string | null>(null);
-  // ADR-202 — set when an edit to a LIVE NC is staged for approval instead of
-  // applied; the neutral "Sent for approval" banner shows it.
-  const [stagedNotice, setStagedNotice] = useState<string | null>(null);
+  const toast = useToast();
   const goBack = useCallback(
     () => void navigate({ to: '/nc-register/$id', params: { id } }),
     [navigate, id],
@@ -153,11 +151,6 @@ function NcRegisterEditPage(): React.JSX.Element {
   return (
     <div>
       {exit.dialog}
-      {stagedNotice ? (
-        <Banner tone="success" role="status">
-          {stagedNotice}
-        </Banner>
-      ) : null}
       <NcRegisterForm
         mode="edit"
         title={`Edit NC — ${detail.code}`}
@@ -181,14 +174,13 @@ function NcRegisterEditPage(): React.JSX.Element {
               // Edit-approval gate is on and this NC is live: nothing changed on
               // the NC — the edit is waiting for approval. Say so, then return to
               // the NC (its fields now carry the pending-change chip).
-              setStagedNotice(
-                'Sent for approval — your changes will apply once an approver signs off.',
-              );
+              toast.ok('Sent for approval — your changes will apply once an approver signs off.');
               exit.leave(
                 () => void navigate({ to: '/nc-register/$id', params: { id }, replace: true }),
               );
               return;
             }
+            toast.ok(`NC ${detail.code} saved`);
             exit.leave(goBack);
           } catch (e) {
             setSubmitError(e instanceof Error ? e.message : 'Could not save NC. Try again.');

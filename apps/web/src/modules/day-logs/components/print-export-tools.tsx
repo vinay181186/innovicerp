@@ -30,6 +30,7 @@ export function PrintExportTools({
         type="button"
         className="btn btn-ghost"
         disabled={off}
+        title={off ? 'Nothing to print' : undefined}
         onClick={() => {
           setErr(onPrint(company) ? null : 'The print window was blocked. Allow pop-ups.');
         }}

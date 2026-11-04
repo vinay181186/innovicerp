@@ -1,13 +1,17 @@
-// Design Work Log — Project Hours tab (ADR-203 frozen header). Chrome: the
-// Grand Total. The one-card-per-project list is ONE filled table, one row per
+// Design Work Log — Project Hours tab (ADR-203 frozen header). The Grand Total
+// sits in the ListFooter. The one-card-per-project list is ONE filled table, one row per
 // project (most hours first) with the same figures the card showed: total
 // hours, hours by Design Engineer and hours by category (each largest first).
 
 import { useMemo } from 'react';
+import { matchesSearchTerm } from '@/components/shared/search-match';
 import { DataTable, Panel } from '@/ui/data';
 import type { DataTableColumn } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
+import { ListFooter } from '@/ui/layout';
 import { useDesignProjectsList } from '../../design-projects/api';
 import { useDesignWorkLogList } from '../api';
+import { useReportCount, type TabListProps } from './work-log-shared';
 
 interface ProjectHoursRow {
   id: string;
@@ -69,7 +73,7 @@ const COLUMNS: DataTableColumn<ProjectHoursRow>[] = [
   },
 ];
 
-export function ProjectTab(): React.JSX.Element {
+export function ProjectTab({ term, onCount }: TabListProps): React.JSX.Element {
   const { data, isLoading } = useDesignWorkLogList({ limit: 2000, offset: 0 });
   const { data: projData } = useDesignProjectsList({ filter: 'all', limit: 200, offset: 0 });
 
@@ -93,25 +97,32 @@ export function ProjectTab(): React.JSX.Element {
   }, [data?.items, projData?.items]);
 
   const gt = projectData.reduce((s, p) => s + p.totalHrs, 0);
+  const shownRows = projectData.filter((p) =>
+    matchesSearchTerm(
+      [p.code, p.name, p.totalHrs.toFixed(1), ...Object.keys(p.byEng), ...Object.keys(p.byCat)],
+      term,
+    ),
+  );
+  useReportCount(onCount, isLoading ? undefined : shownRows.length);
 
   return (
     <>
-      <div
-        className="panel"
-        style={{ textAlign: 'center', padding: 14, marginBottom: 'var(--panel-gap)' }}
-      >
-        <div style={{ fontSize: 11, color: 'var(--text3)' }}>Grand Total</div>
-        <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--blue)' }}>{gt.toFixed(0)}h</div>
-      </div>
       <Panel fill bodyPadding="none">
         <DataTable<ProjectHoursRow>
+          tableKey={TABLE_KEYS.designWorkLogProjects}
           columns={COLUMNS}
-          rows={projectData}
+          rows={shownRows}
           rowKey={(p) => p.id}
           loading={isLoading}
-          emptyText="No work logged."
+          emptyText={term.trim() ? 'No projects match.' : 'No projects yet.'}
         />
       </Panel>
+      <ListFooter
+        total={projectData.length}
+        shown={shownRows.length}
+        noun="project"
+        summary={`Grand Total ${gt.toFixed(0)}h`}
+      />
     </>
   );
 }

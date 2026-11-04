@@ -1,14 +1,14 @@
 import type { PlanDetail } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { isStagedResult } from '@/modules/document-edits/api';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { useOpenedVersion } from '@/lib/use-opened-version';
 import { useSaveKey } from '@/lib/use-save-key';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { Banner } from '@/ui/feedback';
+import { useToast } from '@/ui/feedback';
 import { usePlan, useUpdatePlan } from '../api';
 import { PlanForm, type PlanFormValues, toCreateInput } from '../components/plan-form';
 import { STORED_LABEL } from '../lib/derived-status';
@@ -32,9 +32,7 @@ function PlanEditPage(): React.JSX.Element {
   const perms = effectiveFormPerms(eff, 'plan_create');
   // No Cancel button on this screen, so ESC → Exit falls back to history.
   const exit = useExitConfirm();
-  // ADR-202 — set when an edit to a LIVE plan is staged for approval instead of
-  // applied; the neutral "Sent for approval" banner shows it.
-  const [stagedNotice, setStagedNotice] = useState<string | null>(null);
+  const toast = useToast();
   // ONE stable object per loaded version of the plan. PlanForm resets its
   // values AND its RM "touched" flags whenever this prop's identity changes, so
   // building it inline (`toFormValues(plan)` in the JSX) meant ANY parent
@@ -121,12 +119,6 @@ function PlanEditPage(): React.JSX.Element {
         Edit Plan {plan.code}
       </div>
 
-      {stagedNotice ? (
-        <Banner tone="success" role="status">
-          {stagedNotice}
-        </Banner>
-      ) : null}
-
       <PlanForm
         initialValues={initialValues}
         isEdit
@@ -180,7 +172,7 @@ function PlanEditPage(): React.JSX.Element {
                   // changed on the plan — the edit is waiting for approval. Say
                   // so, then return to the plan (its fields now carry the
                   // pending-change chip).
-                  setStagedNotice(
+                  toast.ok(
                     'Sent for approval — your changes will apply once an approver signs off.',
                   );
                   exit.leave(
@@ -190,6 +182,7 @@ function PlanEditPage(): React.JSX.Element {
                   return;
                 }
                 opened.saved(saved.updatedAt);
+                toast.ok(`Plan ${plan.code} saved`);
                 exit.leave(() => void navigate({ to: '/plans/$id', params: { id: plan.id } }));
               },
             },

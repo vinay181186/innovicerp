@@ -20,19 +20,19 @@
 // Nothing about the data, the queries, the validation or the mutations changed.
 
 import type { PartyGrnListItem } from '@innovic/shared';
-import { createRoute } from '@tanstack/react-router';
+import { createRoute, Link } from '@tanstack/react-router';
 import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { usePartyGrnLines } from '../api';
-import { NewPartyGrnModal } from '../components/new-party-grn-modal';
 import { EditPartyGrnModal } from '../components/edit-party-grn-modal';
 import { isPartyGrnCancelled, partyGrnColumns } from '../components/party-grn-columns';
 import { PartyGrnExpand } from '../components/party-grn-expand';
@@ -40,12 +40,14 @@ import { PartyGrnQcModal } from '../components/party-grn-qc-modal';
 import { usePartyGrnPrint } from '../components/use-party-grn-print';
 import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
 import { PartyMaterialIssueView } from '@/modules/party-material-issues/components/party-material-issue-view';
+import { TabStrip } from '@/ui/navigation';
 
 // Deep-link seed for Global Search (no detail page here): `?tab=issue&search=
 // IN-PMI-26-0001` opens the Issue tab with its box pre-filled. Read ONCE into
 // the local state below — tab clicks and typing stay local, never navigate.
-// `?jw=<jwsoId>` (from the JWSO screens): opens the Receive tab's New Party
-// GRN modal with that JWSO already picked. A malformed id is ignored.
+// `?jw=<jwsoId>` (an old link; the JWSO screens now go straight to the page):
+// forwards to New Party GRN with that JWSO already picked. A malformed id is
+// ignored.
 // `?page=` is the Receive register's page (ADR-201: 25 rows a page, in the URL).
 const searchSchema = z.object({
   tab: z.enum(['receive', 'issue']).optional(),
@@ -98,10 +100,15 @@ function PartyGrnListPage(): React.JSX.Element {
     }, 300);
     return () => window.clearTimeout(id);
   }, [search, term, setPage]);
-  // A `?jw=` landing opens the New Party GRN modal straight away (Receive tab).
-  const [showModal, setShowModal] = useState(
-    () => Boolean(routeSearch.jw) && (routeSearch.tab ?? 'receive') === 'receive',
-  );
+  // A `?jw=` landing forwards to the New Party GRN page (Receive tab; Entry only,
+  // as the + button is). replace: Back must not bounce through here again.
+  const forwardJw =
+    canCreate && (routeSearch.tab ?? 'receive') === 'receive' ? routeSearch.jw : undefined;
+  useEffect(() => {
+    if (forwardJw) {
+      void navigate({ to: '/party-grn/new', search: { jw: forwardJw }, replace: true });
+    }
+  }, [forwardJw, navigate]);
   const [cancelRow, setCancelRow] = useState<PartyGrnListItem | null>(null);
   const [qcRow, setQcRow] = useState<PartyGrnListItem | null>(null);
   // No detail page and no ▸ (owner 2026-10-31) — Edit opens from the row ⋯.
@@ -159,53 +166,40 @@ function PartyGrnListPage(): React.JSX.Element {
     );
   }
 
+  // Receive (GRN) | Issue tabs (Issue is the former standalone Party Material
+  // Issue screen).
+  const tabBar = (
+    <TabStrip
+      label="Party GRN views"
+      tabs={[
+        { key: 'receive', label: 'Receive (Party GRN)' },
+        { key: 'issue', label: 'Issue' },
+      ]}
+      activeKey={tab}
+      onChange={(k) => setTab(k === 'issue' ? 'issue' : 'receive')}
+    />
+  );
+
   return (
     // `page-fill` (ADR-202): on the list tab the page fills the content area and the
     // TABLE is the only scrollbox, so the column header cannot ride off the top at the
     // last row. The Issue tab is its own screen and keeps today's page scroll.
     <div className={tab === 'issue' ? undefined : 'page-fill'}>
-      {/* Receive (GRN) | Issue tabs (Issue is the former standalone Party Material
-          Issue screen). */}
-      <div
-        style={{
-          display: 'flex',
-          gap: 4,
-          borderBottom: '1px solid var(--border)',
-          marginBottom: 12,
-        }}
-      >
-        {(['receive', 'issue'] as const).map((t) => (
-          <button
-            key={t}
-            type="button"
-            onClick={() => setTab(t)}
-            style={{
-              background: 'none',
-              border: 'none',
-              borderBottom: tab === t ? '2px solid var(--cyan)' : '2px solid transparent',
-              color: tab === t ? 'var(--cyan)' : 'var(--text3)',
-              fontSize: 12,
-              fontWeight: 700,
-              padding: '6px 12px',
-              cursor: 'pointer',
-              marginBottom: -1,
-            }}
-          >
-            {t === 'receive' ? 'Receive (Party GRN)' : 'Issue'}
-          </button>
-        ))}
-      </div>
-
       {tab === 'issue' ? (
         // key: a new ?search landing while already on this page remounts the
         // view so it re-seeds; nothing else changes the key.
-        <PartyMaterialIssueView key={routeSearch.search ?? ''} initialSearch={routeSearch.search} />
+        <PartyMaterialIssueView
+          key={routeSearch.search ?? ''}
+          initialSearch={routeSearch.search}
+          tabs={tabBar}
+        />
       ) : (
         <>
           {/* THE list header (ui/layout ListHeader): title · count · search ·
               + New Party GRN, with the read-only totals pinned inside the
               same band. */}
           <ListHeader
+            orderFilter={<OrderSfFilter sf={sf} field="jwCode" kind="jwso" />}
             title="Party GRN"
             icon="📥"
             count={data?.total}
@@ -215,16 +209,14 @@ function PartyGrnListPage(): React.JSX.Element {
             searchPlaceholder="Search JWSO, customer, material…"
             primary={
               canCreate ? (
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  onClick={() => setShowModal(true)}
-                >
+                <Link to="/party-grn/new" className="btn btn-primary">
                   <Plus size={14} /> New Party GRN
-                </button>
+                </Link>
               ) : null
             }
-          />
+          >
+            {tabBar}
+          </ListHeader>
 
           {isError ? (
             <PageState
@@ -323,9 +315,6 @@ function PartyGrnListPage(): React.JSX.Element {
             />
           ) : null}
 
-          {showModal && canCreate ? (
-            <NewPartyGrnModal initialJwId={routeSearch.jw} onClose={() => setShowModal(false)} />
-          ) : null}
           {cancelRow ? (
             <CancelDocDialog
               docType="party_grn"

@@ -293,27 +293,7 @@ span.dh-link {
   color: var(--text3);
 }
 
-/* ── tabs + chips ── */
-.dh-tabs {
-  display: flex;
-  gap: 2px;
-  padding: var(--sp-2) var(--sp-3) 0;
-  border-bottom: 1px solid var(--border);
-}
-.dh-tabs button {
-  font: inherit;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  background: none;
-  color: var(--text3);
-  padding: 6px 10px;
-  font-weight: 600;
-  cursor: pointer;
-}
-.dh-tabs button[aria-selected='true'] {
-  color: var(--blue);
-  border-bottom-color: var(--blue);
-}
+/* ── chips ── */
 .dh-chips {
   display: flex;
   flex-wrap: wrap;

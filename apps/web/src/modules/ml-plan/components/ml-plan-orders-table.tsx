@@ -81,7 +81,7 @@ export function MlPlanOrdersTable({ orders, nodes }: Props): React.JSX.Element {
       rowKey={(o) => `${o.kind}-${o.docId}`}
       density="compact"
       autoWidth
-      emptyText="No orders."
+      emptyText="No orders yet."
     />
   );
 }

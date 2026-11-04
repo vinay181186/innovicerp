@@ -12,7 +12,7 @@ import { useOpenedVersion } from '@/lib/use-opened-version';
 import { useSaveKey } from '@/lib/use-save-key';
 import { useItem } from '@/modules/items/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { Banner } from '@/ui/feedback';
+import { useToast } from '@/ui/feedback';
 import { useCreatePurchaseRequest, usePurchaseRequest, useUpdatePurchaseRequest } from '../api';
 import { PrStatusBadge } from '../components/pr-status-badge';
 import type { PrFormValues } from '../components/pr-form-values';
@@ -25,6 +25,8 @@ const newPrSearchSchema = z.object({
   itemId: z.string().uuid().optional(),
   qty: z.coerce.number().nonnegative().optional().catch(undefined),
 });
+
+const SAVED_LINK_MS = 10000;
 
 export const purchaseRequestNewRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -62,7 +64,7 @@ function PurchaseRequestNewPage(): React.JSX.Element {
   // Save & New: bumping `formKey` remounts a blank form; `keep` seeds it.
   const [formKey, setFormKey] = useState(0);
   const [keep, setKeep] = useState<PrKeepValues | null>(null);
-  const [savedCode, setSavedCode] = useState<{ id: string; code: string } | null>(null);
+  const toast = useToast();
 
   const initialValues = useMemo<Partial<PrFormValues>>(() => {
     if (keep) {
@@ -86,7 +88,16 @@ function PurchaseRequestNewPage(): React.JSX.Element {
     setSubmitError(null);
     try {
       const created = await create.mutateAsync(values);
-      setSavedCode({ id: created.id, code: created.code });
+      toast.ok(
+        <>
+          PR{' '}
+          <Link to="/purchase-requests/$id" params={{ id: created.id }}>
+            {created.code}
+          </Link>{' '}
+          saved — new blank PR ready
+        </>,
+        { durationMs: SAVED_LINK_MS },
+      );
       setKeep(next);
       setFormKey((k) => k + 1);
     } catch (err) {
@@ -98,6 +109,7 @@ function PurchaseRequestNewPage(): React.JSX.Element {
     setSubmitError(null);
     try {
       const created = await create.mutateAsync(values);
+      toast.ok(`PR ${created.code} saved`);
       exit.leave(
         () =>
           void navigate({
@@ -141,15 +153,6 @@ function PurchaseRequestNewPage(): React.JSX.Element {
   return (
     <div>
       {exit.dialog}
-      {savedCode ? (
-        <Banner tone="success" onDismiss={() => setSavedCode(null)}>
-          Saved{' '}
-          <Link to="/purchase-requests/$id" params={{ id: savedCode.id }} className="td-code">
-            {savedCode.code}
-          </Link>{' '}
-          · new blank PR ready.
-        </Banner>
-      ) : null}
       <PurchaseRequestForm
         key={formKey}
         mode="create"
@@ -173,6 +176,7 @@ function PurchaseRequestEditPage(): React.JSX.Element {
   const { data: detail, isLoading, error } = usePurchaseRequest(id);
   const saveKey = useSaveKey();
   const update = useUpdatePurchaseRequest(id, saveKey);
+  const toast = useToast();
   // R5 — the PR's version as it was when this edit form opened.
   const opened = useOpenedVersion(detail?.updatedAt);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -199,6 +203,7 @@ function PurchaseRequestEditPage(): React.JSX.Element {
       });
       // PRs have no approval (owner rule 2026-10-31): the edit saved directly.
       opened.saved(saved.updatedAt);
+      toast.ok(`PR ${saved.code} saved`);
       exit.leave(
         () => void navigate({ to: '/purchase-requests/$id', params: { id }, replace: true }),
       );

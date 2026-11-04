@@ -13,20 +13,18 @@
 // Every ACTION is in a ⋯ menu (planning-line-menu.ts), never a button here:
 // the line's own ⋯, and each item row's ⋯ (planChildMenu) for its plan.
 
-import type { PlanningLine, PlanningPlanSummary } from '@innovic/shared';
+import {
+  planOwnJc,
+  planPros,
+  planRouteCards,
+  type PlanningLine,
+  type PlanningPlanSummary,
+} from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
 import { RowMenu, type RowMenuItem } from '@/ui/data';
 import type { RenderLink } from '@/ui/layout';
 import { PrChip, planStatusOf } from './plan-chip';
-import {
-  DocCode,
-  DocCodes,
-  PendingText,
-  RcCodes,
-  planOwnJc,
-  planPros,
-  planRouteCards,
-} from './planning-doc-cells';
+import { DocCode, DocCodes, PendingText, RcCodes } from './planning-doc-cells';
 import { hasPartRows } from './planning-line-menu';
 import { lineStatusOf } from './planning-shared';
 

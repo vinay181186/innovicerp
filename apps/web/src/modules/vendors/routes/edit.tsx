@@ -9,7 +9,7 @@ import { useOpenedVersion } from '@/lib/use-opened-version';
 import { useSaveKey } from '@/lib/use-save-key';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { isStagedResult } from '@/modules/document-edits/api';
-import { Banner } from '@/ui/feedback';
+import { useToast } from '@/ui/feedback';
 import { type ServerFieldErrors, serverFieldErrorsOf } from '@/modules/settings/master-rules-ui';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateVendor, useUpdateVendor, useVendor } from '../api';
@@ -29,6 +29,7 @@ export const vendorEditRoute = createRoute({
 
 function VendorNewPage(): React.JSX.Element {
   const navigate = useNavigate();
+  const toast = useToast();
   const saveKey = useSaveKey();
   const create = useCreateVendor(saveKey);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -46,6 +47,7 @@ function VendorNewPage(): React.JSX.Element {
     setServerFieldErrors(null);
     try {
       const created = await create.mutateAsync(values);
+      toast.ok(`Vendor ${created.code} saved`);
       exit.leave(
         () => void navigate({ to: '/vendors/$id', params: { id: created.id }, replace: true }),
       );
@@ -71,22 +73,18 @@ function VendorNewPage(): React.JSX.Element {
       <Link to="/vendors" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
         <ArrowLeft size={14} /> Back to Vendor Master
       </Link>
-      <div className="panel">
-        <div className="panel-hdr">
+      <VendorForm
+        panelHeader={
           <div>
             <div className="panel-title">New Vendor</div>
           </div>
-        </div>
-        <div className="panel-body">
-          <VendorForm
-            mode="create"
-            onSubmit={onSubmit}
-            submitError={submitError}
-            serverFieldErrors={serverFieldErrors}
-            onCancel={() => exit.leave(goBack)}
-          />
-        </div>
-      </div>
+        }
+        mode="create"
+        onSubmit={onSubmit}
+        submitError={submitError}
+        serverFieldErrors={serverFieldErrors}
+        onCancel={() => exit.leave(goBack)}
+      />
     </div>
   );
 }
@@ -94,6 +92,7 @@ function VendorNewPage(): React.JSX.Element {
 function VendorEditPage(): React.JSX.Element {
   const { id } = vendorEditRoute.useParams();
   const navigate = useNavigate();
+  const toast = useToast();
   const { data: vendor, isLoading, isError, error } = useVendor(id);
   const saveKey = useSaveKey();
   const update = useUpdateVendor(id, saveKey);
@@ -102,9 +101,6 @@ function VendorEditPage(): React.JSX.Element {
   const opened = useOpenedVersion(vendor?.updatedAt);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [serverFieldErrors, setServerFieldErrors] = useState<ServerFieldErrors | null>(null);
-  // ADR-202 — set when an edit to a LIVE vendor is staged for approval instead of
-  // applied; the neutral "Sent for approval" banner shows it.
-  const [stagedNotice, setStagedNotice] = useState<string | null>(null);
   // Changing a saved record is `edit` on vendor_create (Purchase), so L2 Data
   // Entry (create-only) is correctly refused. Checked here too because the
   // route is reachable by URL, not just from the Edit button.
@@ -126,11 +122,12 @@ function VendorEditPage(): React.JSX.Element {
         // The edit-approval gate is on and this vendor is live: nothing was changed
         // on the vendor — the edit is now waiting for approval. Say so, then return
         // to the vendor (its fields now carry the pending-change chip).
-        setStagedNotice('Sent for approval — your changes will apply once an approver signs off.');
+        toast.ok('Sent for approval — your changes will apply once an approver signs off.');
         exit.leave(() => void navigate({ to: '/vendors/$id', params: { id }, replace: true }));
         return;
       }
       opened.saved(saved.updatedAt);
+      toast.ok(`Vendor ${vendor?.code ?? ''} saved`);
       exit.leave(() => void navigate({ to: '/vendors/$id', params: { id }, replace: true }));
     } catch (err) {
       setServerFieldErrors(serverFieldErrorsOf(err));
@@ -176,11 +173,6 @@ function VendorEditPage(): React.JSX.Element {
   return (
     <div>
       {exit.dialog}
-      {stagedNotice ? (
-        <Banner tone="success" role="status">
-          {stagedNotice}
-        </Banner>
-      ) : null}
       <Link
         to="/vendors/$id"
         params={{ id }}
@@ -189,8 +181,8 @@ function VendorEditPage(): React.JSX.Element {
       >
         <ArrowLeft size={14} /> Back to Vendor
       </Link>
-      <div className="panel">
-        <div className="panel-hdr">
+      <VendorForm
+        panelHeader={
           <div>
             <div
               className="td-code"
@@ -202,18 +194,14 @@ function VendorEditPage(): React.JSX.Element {
               Edit Vendor
             </div>
           </div>
-        </div>
-        <div className="panel-body">
-          <VendorForm
-            mode="edit"
-            vendor={vendor}
-            onSubmit={onSubmit}
-            submitError={submitError}
-            serverFieldErrors={serverFieldErrors}
-            onCancel={() => exit.leave(goBack)}
-          />
-        </div>
-      </div>
+        }
+        mode="edit"
+        vendor={vendor}
+        onSubmit={onSubmit}
+        submitError={submitError}
+        serverFieldErrors={serverFieldErrors}
+        onCancel={() => exit.leave(goBack)}
+      />
     </div>
   );
 }

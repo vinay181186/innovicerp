@@ -1211,7 +1211,7 @@ ADR-230 is the design; this section is how to apply it.
    | Create / edit layout   | `ClusterGrid`, `FormField`                                                                                                                                               |
    | File                   | `FileField`                                                                                                                                                              |
    | Confirm                | `ConfirmDialog`                                                                                                                                                          |
-   | Counts above a list    | `StatStrip` (`@/ui/data`)                                                                                                                                                |
+   | Counts for a list      | Status ▾ filter or `ListFooter` summary, no tile row (owner 2026-11-03); `StatStrip` on dashboards/reports                                                               |
    | Loading / empty / sync | `Skeleton`, `EmptyState`, `PageState`, `SyncDot`                                                                                                                         |
    | HTTP                   | `apiFetch` (`apps/web/src/lib/api.ts`) inside TanStack Query hooks                                                                                                       |
 

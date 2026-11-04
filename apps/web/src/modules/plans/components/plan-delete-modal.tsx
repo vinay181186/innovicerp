@@ -44,10 +44,8 @@ export function PlanDeleteModal({
     <Modal
       title={`Move Plan ${code} to Trash?`}
       size="sm"
-      onClose={() => {
-        if (!softDelete.isPending) onClose();
-      }}
-      closeOnOverlayClick={false}
+      onClose={onClose}
+      closeLocked={softDelete.isPending}
       footer={
         <>
           <button

@@ -23,19 +23,22 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDateTime } from '@/lib/date';
 import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
 import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useJwDcInwardLines } from '../api';
 import { inwardColumns, isJwDcInwardCancelled } from './inward-columns';
-import { NewInwardModal } from './new-inward-modal';
 
 const TABLE_KEY = TABLE_KEYS.jwDcInward;
 
 export function InwardView({
+  tabs,
   initialSearch,
 }: {
+  /** The page's tab strip, drawn under this view's header. */
+  tabs?: React.ReactNode;
   /** Seeded ONCE from the route's ?search (deep link); keystrokes stay local. */
   initialSearch?: string | undefined;
 }): React.JSX.Element {
@@ -66,7 +69,6 @@ export function InwardView({
   // time, so filtering only the loaded page would miss rows. Every change goes
   // back to page 1.
   const sf = useServerSortFilter(TABLE_KEY, () => setPage(1));
-  const [showModal, setShowModal] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const { data, isLoading, isError, error } = useJwDcInwardLines({
@@ -96,6 +98,7 @@ export function InwardView({
       {/* THE list header (ui/layout ListHeader): title · count · search ·
           + New Inward Entry. */}
       <ListHeader
+        orderFilter={<OrderSfFilter sf={sf} field="soCode" />}
         title="Inward Register"
         icon="📥"
         count={data?.total}
@@ -110,12 +113,14 @@ export function InwardView({
         searchPlaceholder="Search inward no, DC, vendor, vendor challan…"
         primary={
           canWrite ? (
-            <button type="button" className="btn btn-primary" onClick={() => setShowModal(true)}>
+            <Link to="/jw-dc/inward/new" className="btn btn-primary">
               <Plus size={14} /> New Inward Entry
-            </button>
+            </Link>
           ) : null
         }
-      />
+      >
+        {tabs}
+      </ListHeader>
 
       {isError ? (
         <PageState
@@ -133,7 +138,7 @@ export function InwardView({
             rows={data?.items ?? []}
             rowKey={(inv) => inv.lineId}
             loading={isLoading}
-            empty={term || sf.filtering ? 'No inward lines match.' : 'No inward entries yet.'}
+            empty={term || sf.filtering ? 'No inward lines match.' : 'No inward lines yet.'}
             // A receipt that had rejections at Incoming QC stands out red.
             rowClassName={(inv) =>
               isJwDcInwardCancelled(inv)
@@ -174,8 +179,6 @@ export function InwardView({
           onPage={(p) => setPage(Math.min(totalPages, Math.max(1, p)))}
         />
       ) : null}
-
-      {showModal && canWrite ? <NewInwardModal onClose={() => setShowModal(false)} /> : null}
 
       {cancelRow ? (
         <CancelDocDialog

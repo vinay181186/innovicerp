@@ -131,7 +131,7 @@ export function ToolHoldersView({ onOpen }: { onOpen: (id: string) => void }): R
           rowKey={(r) => r.toolIssueId}
           loading={isLoading}
           sortFilterServer={sf}
-          empty={sf.filtering ? 'No tools match.' : 'No tools are out.'}
+          empty={sf.filtering ? 'No tools match.' : 'No tools out yet.'}
           onRowClick={(r) => onOpen(r.toolIssueId)}
           rowClassName={(r) => (r.isOverdue ? ROW_TINT.late : undefined)}
           rowActionsWidth="1%"

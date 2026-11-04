@@ -7,7 +7,7 @@ import { fmtDate } from '@/lib/date';
 import { DataTable } from '@/ui/data';
 import type { DataTableColumn } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
-import { Modal } from '@/ui/feedback';
+import { Modal, useToast } from '@/ui/feedback';
 import { useAddHoliday, useHolidays, useRemoveHoliday } from '../api';
 import { errText } from '../lib/format';
 
@@ -38,6 +38,7 @@ export function HolidaysModal({ onClose }: { onClose: () => void }): React.JSX.E
   const q = useHolidays();
   const add = useAddHoliday();
   const remove = useRemoveHoliday();
+  const toast = useToast();
   const [date, setDate] = useState('');
   const [name, setName] = useState('');
   const [err, setErr] = useState<string | null>(null);
@@ -59,6 +60,8 @@ export function HolidaysModal({ onClose }: { onClose: () => void }): React.JSX.E
       title="Holidays"
       size="md"
       onClose={onClose}
+      // Only a half-typed new holiday can be lost; adding and removing save at once.
+      confirmExit={date !== '' || name.trim() !== ''}
       footer={
         <button type="button" className="btn btn-ghost" onClick={onClose}>
           Close
@@ -72,7 +75,7 @@ export function HolidaysModal({ onClose }: { onClose: () => void }): React.JSX.E
         rowKey={(h) => h.id}
         loading={q.isLoading}
         maxHeight={320}
-        empty={q.isError ? errText(q.error, 'Could not load the holidays.') : 'No holidays set.'}
+        empty={q.isError ? errText(q.error, 'Could not load the holidays.') : 'No holidays yet.'}
         rowMenuLabel={(h) => `Actions for ${h.name}`}
         rowMenu={(h) => [
           {
@@ -96,7 +99,7 @@ export function HolidaysModal({ onClose }: { onClose: () => void }): React.JSX.E
       >
         <div>
           <label className="form-label" htmlFor="hol-date">
-            Holiday Date <span className="req">*</span>
+            Holiday Date<span className="req">★</span>
           </label>
           <input
             id="hol-date"
@@ -109,7 +112,7 @@ export function HolidaysModal({ onClose }: { onClose: () => void }): React.JSX.E
         </div>
         <div style={{ flex: '1 1 200px' }}>
           <label className="form-label" htmlFor="hol-name">
-            Holiday <span className="req">*</span>
+            Holiday<span className="req">★</span>
           </label>
           <input
             id="hol-name"
@@ -123,9 +126,13 @@ export function HolidaysModal({ onClose }: { onClose: () => void }): React.JSX.E
           type="button"
           className="btn btn-primary"
           disabled={busy || !date || name.trim() === ''}
+          title={
+            !date ? 'Enter the Holiday Date' : name.trim() === '' ? 'Enter the Holiday' : undefined
+          }
           onClick={() => {
             void run(add.mutateAsync({ date, name: name.trim() })).then((ok) => {
               if (ok) {
+                toast.ok(`Holiday ${name.trim()} saved`);
                 setDate('');
                 setName('');
               }

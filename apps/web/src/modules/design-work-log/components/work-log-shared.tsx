@@ -2,7 +2,19 @@
 // by the five tabs. Split out of routes/list.tsx (was 1122 lines, ADR-203);
 // byte-for-byte the helpers that lived there.
 
+import { useEffect } from 'react';
 import { todayIst } from '@/lib/date';
+
+/** What every tab takes from the page: the header's search box and the count. */
+export interface TabListProps {
+  term: string;
+  onCount: (n: number | undefined) => void;
+}
+
+/** Report this tab's row count to the header (undefined while it loads). */
+export function useReportCount(onCount: TabListProps['onCount'], n: number | undefined): void {
+  useEffect(() => onCount(n), [onCount, n]);
+}
 
 // Legacy _dpWlEntry catColors (HTML L7975). Categories outside this map
 // ('Client Support', 'Testing/FEA', 'Other') fall back to --text3, as in legacy.

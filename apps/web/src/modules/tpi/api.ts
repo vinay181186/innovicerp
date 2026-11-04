@@ -18,6 +18,7 @@ export const tpiKeys = {
 function qs(q: ListTpiQuery): string {
   const sp = new URLSearchParams({ limit: String(q.limit), offset: String(q.offset) });
   if (q.search) sp.set('search', q.search);
+  if (q.orderCode) sp.set('orderCode', q.orderCode);
   return `?${sp.toString()}`;
 }
 

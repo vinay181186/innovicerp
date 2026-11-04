@@ -15,7 +15,8 @@ import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
 import { useSession } from '@/lib/session';
-import { ConfirmDialog } from '@/ui/feedback';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
+import { ConfirmDialog, useToast } from '@/ui/feedback';
 import { DataTable, Panel } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
@@ -26,7 +27,8 @@ import { buildRegisterColumns, REGISTER_DETAIL_IDS } from './register-columns';
 import { CATEGORY_LABEL } from './qc-doc-shared';
 import { UploadModal } from './upload-modal';
 
-export function RegisterView({ toggle }: { toggle: React.ReactNode }): React.JSX.Element {
+export function RegisterView({ tabs }: { tabs: React.ReactNode }): React.JSX.Element {
+  const toast = useToast();
   const search = qcDocumentsListRoute.useSearch();
   const navigate = qcDocumentsListRoute.useNavigate();
   // `me` is still needed for the company id the upload modal writes against.
@@ -73,7 +75,7 @@ export function RegisterView({ toggle }: { toggle: React.ReactNode }): React.JSX
       const url = await qcDocViewUrl(d.storagePath, d.soCodeText);
       window.open(url, '_blank', 'noopener');
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : 'Could not open file. Try again.');
+      toast.error(e instanceof Error ? e.message : 'Could not open file. Try again.');
     }
   }
   const [pendingDelete, setPendingDelete] = useState<QcDocument | null>(null);
@@ -101,6 +103,7 @@ export function RegisterView({ toggle }: { toggle: React.ReactNode }): React.JSX
         }}
         searchPlaceholder="Search doc type, file, JC, item, SO…"
         updating={isFetching && !isLoading}
+        orderFilter={<OrderSfFilter sf={sf} field="orderCode" columnField="soCode" />}
         filters={
           <select
             className="innovic-select"
@@ -135,7 +138,6 @@ export function RegisterView({ toggle }: { toggle: React.ReactNode }): React.JSX
           });
         }}
         filtersActive={!!search.category || term.trim() !== '' || sf.filtering}
-        tools={toggle}
         primary={
           perms.entry ? (
             <button type="button" className="btn btn-primary" onClick={() => setUploadOpen(true)}>
@@ -143,7 +145,9 @@ export function RegisterView({ toggle }: { toggle: React.ReactNode }): React.JSX
             </button>
           ) : null
         }
-      />
+      >
+        {tabs}
+      </ListHeader>
 
       {isError ? (
         <PageState

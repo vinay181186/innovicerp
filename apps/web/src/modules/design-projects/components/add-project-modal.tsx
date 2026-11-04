@@ -10,7 +10,7 @@ import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { SearchableSelect } from '@/ui/forms';
 import { todayIst } from '@/lib/date';
-import { Banner } from '@/ui/feedback';
+import { Banner, Modal, useToast } from '@/ui/feedback';
 import { soNoWithInternal } from '@/lib/so-number';
 import { useSalesOrdersList } from '../../sales-orders/api';
 import { useCreateDesignProject, useDesignProjectsList, useNextDesignProjectCode } from '../api';
@@ -38,6 +38,7 @@ export function AddProjectModal({ onClose }: { onClose: () => void }): React.JSX
     [soData, soId],
   );
   const mut = useCreateDesignProject();
+  const toast = useToast();
   const { data: next } = useNextDesignProjectCode();
 
   // One Design Project per SO (ADR-188): look up a project already on the
@@ -84,7 +85,10 @@ export function AddProjectModal({ onClose }: { onClose: () => void }): React.JSX
     if (lead.trim()) input.leadText = lead.trim();
     if (description.trim()) input.description = description.trim();
     mut.mutate(input, {
-      onSuccess: () => onClose(),
+      onSuccess: (saved) => {
+        toast.ok(`Design Project ${saved.code} saved`);
+        onClose();
+      },
       onError: (e) =>
         setErr(e instanceof Error ? e.message : 'Could not save Design Project. Try again.'),
     });
@@ -221,38 +225,6 @@ export function AddProjectModal({ onClose }: { onClose: () => void }): React.JSX
       </div>
       {err ? <ErrorBox message={err} /> : null}
     </Modal>
-  );
-}
-
-function Modal({
-  onClose,
-  title,
-  children,
-  footer,
-}: {
-  onClose: () => void;
-  title: string;
-  children: React.ReactNode;
-  footer: React.ReactNode;
-}): React.JSX.Element {
-  return (
-    <div
-      className="overlay"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className="modal">
-        <div className="modal-hdr">
-          <span className="modal-title">{title}</span>
-          <button type="button" className="btn btn-ghost btn-sm btn-icon" onClick={onClose}>
-            ✕
-          </button>
-        </div>
-        <div className="modal-body">{children}</div>
-        <div className="modal-footer">{footer}</div>
-      </div>
-    </div>
   );
 }
 

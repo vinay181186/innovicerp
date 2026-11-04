@@ -22,16 +22,17 @@
 // report attachment, the TPI branch and the OSP ladder all keep working exactly
 // as they did — this only gives that form a heading and a way to close.
 //
-// Shape follows stop-op-modal.tsx: same overlay, same `.panel` body, same
-// close button, so the two boxes an operator meets read as one thing.
+// Shell: the one shared Modal (closing rule, Esc, focus, scroll lock), the same
+// as stop-op-modal.tsx, so the two boxes an operator meets read as one thing.
 
 import type { JcOpEnriched } from '@innovic/shared';
 import { fmtOpSrNo, opSrNo } from '@innovic/shared';
 import { useNavigate } from '@tanstack/react-router';
-import { AlertTriangle, X } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 import { useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { Modal } from '@/ui/feedback';
 import { useRunningOps } from '../api';
 import { OpEntryForm } from './op-entry-form';
 
@@ -144,75 +145,81 @@ export function OpEntryModal({
         : '▶ Start Operation';
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={`${title} — ${op.jobCardCode} Op ${fmtOpSrNo(op.opSeq)}`}
-      onClick={onClose}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,.45)',
-        display: 'flex',
-        alignItems: 'flex-start',
-        justifyContent: 'center',
-        padding: '6vh 16px',
-        overflowY: 'auto',
-        zIndex: 60,
-      }}
+    <Modal
+      // The Machine Busy panel and the Start form are two different boxes: the
+      // key starts the form untouched, so pressing "Start on another machine"
+      // does not itself count as something typed.
+      key={showBusyPanel ? 'busy' : 'form'}
+      title={<span style={{ color: 'var(--cyan)' }}>{title}</span>}
+      onClose={onClose}
+      maxWidth="min(720px, 96vw)"
+      bodyStyle={{ padding: 0 }}
+      confirmExit={!showBusyPanel}
+      footer={
+        showBusyPanel && plannedBusy ? (
+          <>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
+              Close
+            </button>
+            {canStart ? (
+              <button
+                type="button"
+                className="btn btn-sm"
+                title="Open the Start form with the Actual Machine left blank, to pick a free one"
+                onClick={() => setStartElsewhere(true)}
+              >
+                ⚙ Start on another machine
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              title="Open the running operation to Complete or Stop it"
+              onClick={() => {
+                void navigate({
+                  to: '/op-entry',
+                  search: (prev) => ({
+                    ...prev,
+                    jc: plannedBusy.jobCardCode,
+                    op: plannedBusy.jcOpId,
+                    mode: 'complete',
+                    view: undefined,
+                  }),
+                });
+                onClose();
+              }}
+            >
+              ✚ Open Current Operation
+            </button>
+          </>
+        ) : undefined
+      }
     >
-      <div
-        className="panel"
-        onClick={(e) => e.stopPropagation()}
-        style={{ width: 'min(720px, 96vw)' }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            padding: '12px 16px',
-            borderBottom: '1px solid var(--border)',
-          }}
-        >
-          <div className="fw-700" style={{ color: 'var(--cyan)' }}>
-            {title}
-          </div>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            onClick={onClose}
-            aria-label="Close"
-          >
-            <X size={14} />
-          </button>
-        </div>
-
-        {/* WHICH JOB — the whole reason this box exists. It comes before every
+      {/* WHICH JOB — the whole reason this box exists. It comes before every
             field, not beside them, so the operation being logged is read before
             a single number is typed. */}
-        <div
-          style={{
-            margin: 16,
-            marginBottom: 0,
-            padding: 12,
-            background: 'var(--bg3)',
-            border: '1px solid var(--border)',
-            borderRadius: 8,
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))',
-            gap: 10,
-          }}
-        >
-          <div>
-            <div className="text3" style={{ fontSize: 11 }}>
-              JC No.
-            </div>
-            <div className="mono fw-700 cyan" style={{ fontSize: 13 }}>
-              {op.jobCardCode}
-            </div>
+      <div
+        style={{
+          margin: 16,
+          marginBottom: 0,
+          padding: 12,
+          background: 'var(--bg3)',
+          border: '1px solid var(--border)',
+          borderRadius: 8,
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))',
+          gap: 10,
+        }}
+      >
+        <div>
+          <div className="text3" style={{ fontSize: 11 }}>
+            JC No.
           </div>
-          {/* WHICH PART. The job card number above it says which JOB, and that is
+          <div className="mono fw-700 cyan" style={{ fontSize: 13 }}>
+            {op.jobCardCode}
+          </div>
+        </div>
+        {/* WHICH PART. The job card number above it says which JOB, and that is
               not the same question — an operator can read IN-JC-26-00017 back
               correctly and still be booking the wrong component, because the
               number carries no part in it. This is the box production is
@@ -224,55 +231,28 @@ export function OpEntryModal({
               minmax(110px, 1fr), so five facts still sit on one row on a
               shop-floor monitor (5 x 110 = 550 inside ~660px of content) and
               wrap by themselves on a phone. */}
-          {itemCode || op.itemName ? (
-            <div>
-              <div className="text3" style={{ fontSize: 11 }}>
-                Item Code
-              </div>
-              {/* POL — the line number printed on the CUSTOMER's own purchase
+        {itemCode || op.itemName ? (
+          <div>
+            <div className="text3" style={{ fontSize: 11 }}>
+              Item Code
+            </div>
+            {/* POL — the line number printed on the CUSTOMER's own purchase
                   order, immediately before the item code. Dropped when no sales
                   order sits behind the card, so a job-work job reads exactly as
                   this strip always has. */}
-              {op.clientPoLineNo ? (
-                <div className="mono text3" style={{ fontSize: 11 }}>
-                  POL{' '}
-                  <span style={{ color: 'var(--purple)', fontWeight: 700 }}>
-                    {op.clientPoLineNo}
-                  </span>
-                </div>
-              ) : null}
-              <div className="mono fw-700" style={{ fontSize: 13, color: 'var(--purple)' }}>
-                {itemCode}
+            {op.clientPoLineNo ? (
+              <div className="mono text3" style={{ fontSize: 11 }}>
+                POL{' '}
+                <span style={{ color: 'var(--purple)', fontWeight: 700 }}>{op.clientPoLineNo}</span>
               </div>
-              {/* The name is the only free-text value in the strip, so it is
+            ) : null}
+            <div className="mono fw-700" style={{ fontSize: 13, color: 'var(--purple)' }}>
+              {itemCode}
+            </div>
+            {/* The name is the only free-text value in the strip, so it is
                   held to one line with the whole of it on hover rather than
                   being allowed to make this fact three lines tall. */}
-              {op.itemName ? (
-                <div
-                  className="text3"
-                  style={{
-                    fontSize: 11,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                  title={op.itemName}
-                >
-                  {op.itemName}
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-          <Fact label="Operation" value={`Op ${fmtOpSrNo(op.opSeq)} · ${op.operation}`} />
-          <Fact label="Planned Machine" value={planned} />
-          <div>
-            <div className="text3" style={{ fontSize: 11 }}>
-              Actual Machine
-            </div>
-            <div className="fw-700" style={{ fontSize: 12 }}>
-              {actual}
-            </div>
-            {startedBy ? (
+            {op.itemName ? (
               <div
                 className="text3"
                 style={{
@@ -281,104 +261,93 @@ export function OpEntryModal({
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap',
                 }}
-                title={`Started by ${startedBy}`}
+                title={op.itemName}
               >
-                · started by {startedBy}
+                {op.itemName}
               </div>
             ) : null}
           </div>
-          <div>
-            <div className="text3" style={{ fontSize: 11 }}>
-              Available
+        ) : null}
+        <Fact label="Operation" value={`Op ${fmtOpSrNo(op.opSeq)} · ${op.operation}`} />
+        <Fact label="Planned Machine" value={planned} />
+        <div>
+          <div className="text3" style={{ fontSize: 11 }}>
+            Actual Machine
+          </div>
+          <div className="fw-700" style={{ fontSize: 12 }}>
+            {actual}
+          </div>
+          {startedBy ? (
+            <div
+              className="text3"
+              style={{
+                fontSize: 11,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+              title={`Started by ${startedBy}`}
+            >
+              · started by {startedBy}
             </div>
-            <div className="mono fw-700 amber" style={{ fontSize: 15 }}>
-              {op.available} pcs
+          ) : null}
+        </div>
+        <div>
+          <div className="text3" style={{ fontSize: 11 }}>
+            Available
+          </div>
+          <div className="mono fw-700 amber" style={{ fontSize: 15 }}>
+            {op.available} pcs
+          </div>
+        </div>
+      </div>
+
+      {showBusyPanel && plannedBusy ? (
+        /* MACHINE BUSY — shown INSTEAD of the Start form. Names the job and
+             operation holding the planned machine and offers the ways on. */
+        <div style={{ padding: 16 }}>
+          <div
+            style={{
+              display: 'flex',
+              gap: 12,
+              alignItems: 'flex-start',
+              padding: 14,
+              background: 'var(--bg3)',
+              border: '1px solid var(--amber)',
+              borderRadius: 8,
+            }}
+          >
+            <AlertTriangle size={22} className="amber" style={{ flex: 'none', marginTop: 2 }} />
+            <div style={{ fontSize: 13, lineHeight: 1.5 }}>
+              <b className="mono">{planned}</b> is currently running{' '}
+              <span className="mono fw-700 cyan">
+                {plannedBusy.jobCardCode} / Op {opSrNo(plannedBusy.opSeq)}
+              </span>
+              . This operation cannot start on it until that operation is completed or stopped — or
+              start it on another machine.
             </div>
           </div>
         </div>
-
-        {showBusyPanel && plannedBusy ? (
-          /* MACHINE BUSY — shown INSTEAD of the Start form. Names the job and
-             operation holding the planned machine and offers the ways on. */
-          <div style={{ padding: 16 }}>
-            <div
-              style={{
-                display: 'flex',
-                gap: 12,
-                alignItems: 'flex-start',
-                padding: 14,
-                background: 'var(--bg3)',
-                border: '1px solid var(--amber)',
-                borderRadius: 8,
-              }}
-            >
-              <AlertTriangle size={22} className="amber" style={{ flex: 'none', marginTop: 2 }} />
-              <div style={{ fontSize: 13, lineHeight: 1.5 }}>
-                <b className="mono">{planned}</b> is currently running{' '}
-                <span className="mono fw-700 cyan">
-                  {plannedBusy.jobCardCode} / Op {opSrNo(plannedBusy.opSeq)}
-                </span>
-                . This operation cannot start on it until that operation is completed or stopped —
-                or start it on another machine.
-              </div>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
-                Close
-              </button>
-              {canStart ? (
-                <button
-                  type="button"
-                  className="btn btn-sm"
-                  title="Open the Start form with the Actual Machine left blank, to pick a free one"
-                  onClick={() => setStartElsewhere(true)}
-                >
-                  ⚙ Start on another machine
-                </button>
-              ) : null}
-              <button
-                type="button"
-                className="btn btn-primary btn-sm"
-                title="Open the running operation to Complete or Stop it"
-                onClick={() => {
-                  void navigate({
-                    to: '/op-entry',
-                    search: (prev) => ({
-                      ...prev,
-                      jc: plannedBusy.jobCardCode,
-                      op: plannedBusy.jcOpId,
-                      mode: 'complete',
-                      view: undefined,
-                    }),
-                  });
-                  onClose();
-                }}
-              >
-                ✚ Open Current Operation
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div style={{ padding: 16 }}>
-            <OpEntryForm
-              onActualMachineChange={setPickedActual}
-              op={op}
-              activeRunningId={activeRunningId}
-              {...(onModeChange ? { onModeChange } : {})}
-              // Close once the entry has actually landed. Leaving the box open on
-              // a successful save invites a second identical submission, which on
-              // a shop floor is how a quantity gets booked twice.
-              onSubmitted={onClose}
-              onClose={onClose}
-              defaultMachineId={target.machineId ?? null}
-              // "Start on another machine": the plan is busy, so it must not be
-              // the pre-filled answer — the picker opens blank, in the plan's
-              // group, and the operator names the free machine.
-              startWithoutMachine={startElsewhere}
-            />
-          </div>
-        )}
-      </div>
-    </div>
+      ) : (
+        <div style={{ padding: 16 }}>
+          <OpEntryForm
+            onActualMachineChange={setPickedActual}
+            op={op}
+            activeRunningId={activeRunningId}
+            {...(onModeChange ? { onModeChange } : {})}
+            // Close once the entry has actually landed. Leaving the box open on
+            // a successful save invites a second identical submission, which on
+            // a shop floor is how a quantity gets booked twice.
+            onSubmitted={onClose}
+            onClose={onClose}
+            defaultMachineId={target.machineId ?? null}
+            // "Start on another machine": the plan is busy, so it must not be
+            // the pre-filled answer — the picker opens blank, in the plan's
+            // group, and the operator names the free machine.
+            startWithoutMachine={startElsewhere}
+          />
+        </div>
+      )}
+    </Modal>
   );
 }

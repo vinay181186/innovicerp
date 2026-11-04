@@ -39,6 +39,7 @@ import {
 import { usePendingEditIds } from '@/modules/document-edits/api';
 import { JwDispatchView } from '@/modules/jw-returns/components/jw-dispatch-view';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
@@ -52,6 +53,8 @@ import { dispatchListColumns } from '../components/dispatch-list-columns';
 import { DispatchRowActions } from '../components/dispatch-row-actions';
 import { exportDispatchRegister } from '../lib/export-excel';
 import { printCustomerDispatchRegister } from '../lib/print-register';
+import { TabStrip } from '@/ui/navigation';
+import { useToast } from '@/ui/feedback';
 
 // Deep-link seed for Global Search (this register has no detail page):
 // `?tab=so&search=DSP-0004` opens the right tab with the box pre-filled. The
@@ -82,6 +85,7 @@ async function fetchAllRegisterRows(
 }
 
 function CustomerDispatchListPage(): React.JSX.Element {
+  const toast = useToast();
   // JW Dispatch (jw-returns) folded in here as a tab — same job, two document
   // families: this one ships finished goods against an SO, that one returns
   // machined goods against a JWSO line. Its own hooks/mutations are unchanged.
@@ -102,7 +106,6 @@ function CustomerDispatchListPage(): React.JSX.Element {
     (routeSearch.tab ?? 'so') === 'so' ? (routeSearch.search ?? '') : '',
   );
   const [term, setTerm] = useState(() => normalizeSearchTerm(search));
-  const [soFilter, setSoFilter] = useState('');
   const [cancelling, setCancelling] = useState<{ dispatchId: string; code: string } | null>(null);
   const [exporting, setExporting] = useState(false);
 
@@ -126,10 +129,7 @@ function CustomerDispatchListPage(): React.JSX.Element {
   // Search covers every column on screen — dispatch no, date, SO, customer,
   // dispatched by, JC no, POL, item code, item name, UOM, Remarks — matched on
   // the server (register.ts lineMatch). Not the qty / stock numbers.
-  const filters = useMemo(
-    () => ({ search: term || undefined, soNo: soFilter || undefined, sf: sf.param }),
-    [term, soFilter, sf.param],
-  );
+  const filters = useMemo(() => ({ search: term || undefined, sf: sf.param }), [term, sf.param]);
   const { data, isLoading, isFetching, isError, error } = useDispatchLines({
     ...filters,
     limit: LIST_PAGE_SIZE,
@@ -138,7 +138,8 @@ function CustomerDispatchListPage(): React.JSX.Element {
   useClampPage(page, data?.total, gotoPage);
   const total = data?.total ?? 0;
   const rows = useMemo(() => data?.rows ?? [], [data]);
-  const soOptions = data?.soOptions ?? [];
+  const heldSo = sf.value.filters['soCode'];
+  const pickedSo = heldSo?.kind === 'values' ? heldSo.values.join(', ') : undefined;
   // ADR-202 — dispatch ids with a pending edit; their status cell reads "Draft".
   const draftIds = usePendingEditIds('Dispatch');
   const columns = useMemo(
@@ -154,46 +155,31 @@ function CustomerDispatchListPage(): React.JSX.Element {
     try {
       if (kind === 'excel') {
         const all = await fetchAllRegisterRows({ ...filters, search: undefined });
-        exportDispatchRegister(all, soFilter || undefined);
+        exportDispatchRegister(all, pickedSo);
       } else {
         const all = await fetchAllRegisterRows(filters);
         const active = all.filter((r) => r.status !== 'cancelled');
         if (!printCustomerDispatchRegister({ rows: active, company })) {
-          window.alert('Allow popups to print.');
+          toast.error('Allow popups to print.');
         }
       }
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : 'Could not load the register. Try again.');
+      toast.error(e instanceof Error ? e.message : 'Could not load the register. Try again.');
     } finally {
       setExporting(false);
     }
   }
 
   const tabBar = (
-    <div
-      style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border)', marginBottom: 14 }}
-    >
-      {(['so', 'jw'] as const).map((t) => (
-        <button
-          key={t}
-          type="button"
-          onClick={() => setTab(t)}
-          style={{
-            background: 'none',
-            border: 'none',
-            borderBottom: tab === t ? '2px solid var(--cyan)' : '2px solid transparent',
-            color: tab === t ? 'var(--cyan)' : 'var(--text3)',
-            fontSize: 12,
-            fontWeight: 700,
-            padding: '6px 12px',
-            cursor: 'pointer',
-            marginBottom: -1,
-          }}
-        >
-          {t === 'so' ? 'Customer Dispatch' : 'JW Return'}
-        </button>
-      ))}
-    </div>
+    <TabStrip
+      label="Dispatch type"
+      tabs={[
+        { key: 'so', label: 'Customer Dispatch' },
+        { key: 'jw', label: 'JW Return' },
+      ]}
+      activeKey={tab}
+      onChange={(k) => setTab(k === 'jw' ? 'jw' : 'so')}
+    />
   );
 
   if (eff && !perms.view) {
@@ -203,10 +189,13 @@ function CustomerDispatchListPage(): React.JSX.Element {
   if (tab === 'jw') {
     return (
       <div>
-        {tabBar}
         {/* key: a new ?search landing while already on this page remounts the
             view so it re-seeds; nothing else changes the key. */}
-        <JwDispatchView key={routeSearch.search ?? ''} initialSearch={routeSearch.search} />
+        <JwDispatchView
+          key={routeSearch.search ?? ''}
+          initialSearch={routeSearch.search}
+          tabs={tabBar}
+        />
       </div>
     );
   }
@@ -216,45 +205,25 @@ function CustomerDispatchListPage(): React.JSX.Element {
     // Log table is the only thing that scrolls, so its column header stays on
     // screen down to the last row.
     <div className="page-fill">
-      {tabBar}
       {/* The ONE list header (ui/layout ListHeader). Search / SO / ▾ run on
           the server; Export / Print fetch every filtered row. */}
       <ListHeader
+        orderFilter={<OrderSfFilter sf={sf} field="soCode" kind="so" />}
         title="Customer Dispatch"
         icon="🚚"
         count={total}
         noun="line"
-        filterNote={soFilter || undefined}
+        filterNote={pickedSo}
         search={search}
         onSearch={setSearch}
         searchPlaceholder="Search dispatch no., SO, JC, POL, item, customer, date…"
         updating={isFetching && !isLoading}
-        filters={
-          <select
-            className="innovic-select"
-            aria-label="SO No."
-            title="SO No."
-            value={soFilter}
-            onChange={(e) => {
-              setSoFilter(e.target.value);
-              gotoPage(1);
-            }}
-          >
-            <option value="">All SOs</option>
-            {soOptions.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-        }
         onClearFilters={() => {
           sf.clearFilters();
           setSearch('');
-          setSoFilter('');
           gotoPage(1);
         }}
-        filtersActive={sf.filtering || search !== '' || soFilter !== ''}
+        filtersActive={sf.filtering || search !== ''}
         tools={
           <>
             <ActionMenu
@@ -283,7 +252,9 @@ function CustomerDispatchListPage(): React.JSX.Element {
             </Link>
           ) : null
         }
-      />
+      >
+        {tabBar}
+      </ListHeader>
 
       {isError ? (
         <PageState
@@ -317,9 +288,7 @@ function CustomerDispatchListPage(): React.JSX.Element {
               rowKey={(r) => r.lineId}
               loading={isLoading}
               sortFilterServer={sf}
-              emptyText={
-                term || soFilter || sf.filtering ? 'No Dispatches match.' : 'No Dispatches yet.'
-              }
+              emptyText={term || sf.filtering ? 'No Dispatches match.' : 'No Dispatches yet.'}
               onRowClick={(r) =>
                 void navigate({ to: '/customer-dispatches/$id', params: { id: r.dispatchId } })
               }

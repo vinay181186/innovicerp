@@ -1,78 +1,32 @@
-// The Store screens' overlay box. Lifted out of routes/list.tsx unchanged so
-// the reservation drill-down can use the very same shell as ± Adjust, Min Qty
-// and Manual Receipt — one box, not a second hand-rolled one.
+// The Store screens' pop-up: the shared Modal (ui/feedback) at the width these
+// boxes have always been, shared by ± Adjust, Reorder, Manual Receipt and the
+// reservation drill-down.
 
-import { useEffect, useRef } from 'react';
-import { escapeBelongsToAnOpenPicker } from '@/lib/exit-guard';
+import { Modal } from '@/ui/feedback';
 
 export function ModalShell({
   onClose,
   title,
+  footer,
+  confirmExit = true,
   children,
-  width = 'min(1100px, 96vw)',
-  closeOnEscape = false,
 }: {
   onClose: () => void;
   title: string;
+  footer?: React.ReactNode;
+  /** Off for a read-only box, or once the form's work is already sent. */
+  confirmExit?: boolean;
   children: React.ReactNode;
-  /** Override only when the content genuinely needs a different box. */
-  width?: string;
-  /** Escape closes the box — read-only boxes only (the drill-down); a form box
-   *  keeps it off so a stray key never loses typed input. Same listener shape
-   *  as ui/feedback/Modal: document capture phase, and an open type-to-search
-   *  dropdown keeps the key (lib/exit-guard). */
-  closeOnEscape?: boolean;
 }): React.JSX.Element {
-  const onCloseRef = useRef(onClose);
-  const boxRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    onCloseRef.current = onClose;
-  }, [onClose]);
-  useEffect(() => {
-    if (!closeOnEscape) return;
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key !== 'Escape' || e.defaultPrevented) return;
-      if (escapeBelongsToAnOpenPicker(e.target)) return;
-      // A column ▾ menu / list open inside THIS box closes first — looked up in
-      // the box itself, so a menu elsewhere on the page never blocks Escape.
-      if (boxRef.current?.querySelector('[role="menu"], [role="listbox"]')) return;
-      e.preventDefault();
-      onCloseRef.current();
-    };
-    document.addEventListener('keydown', onKey, true);
-    return () => document.removeEventListener('keydown', onKey, true);
-  }, [closeOnEscape]);
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 100,
-      }}
-      onClick={onClose}
+    <Modal
+      title={title}
+      onClose={onClose}
+      footer={footer}
+      maxWidth="min(1100px, 96vw)"
+      confirmExit={confirmExit}
     >
-      <div
-        ref={boxRef}
-        style={{
-          background: 'var(--bg)',
-          border: '1px solid var(--border)',
-          borderRadius: 8,
-          padding: 20,
-          width,
-          maxHeight: '90vh',
-          overflowY: 'auto',
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="section-hdr" style={{ marginBottom: 14 }}>
-          {title}
-        </div>
-        {children}
-      </div>
-    </div>
+      {children}
+    </Modal>
   );
 }

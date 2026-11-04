@@ -30,6 +30,7 @@ import {
 import { qcHistoryKeys } from '@/modules/qc-history/api';
 import { tpiKeys } from '../api';
 import { TpiDetailsBox } from './tpi-details-box';
+import { useToast } from '@/ui/feedback';
 
 export function PendingTpi(props: {
   o: TpiPendingRow;
@@ -43,6 +44,7 @@ export function PendingTpi(props: {
   // different operation is a different save, so the key turns over with it.
   const saveKey = useSaveKey();
   useEffect(() => saveKey.rotate(), [saveKey, o.jcOpId]);
+  const toast = useToast();
   const submit = useSubmitQcLog(saveKey);
   const queryClient = useQueryClient();
   const companyId = useSession().data?.companyId ?? null;
@@ -105,6 +107,7 @@ export function PendingTpi(props: {
     };
     try {
       await submit.mutateAsync(input);
+      toast.ok('TPI Inspection saved');
       // useSubmitQcLog only refreshes the op-entry views. Refresh the TPI list
       // and the QC register too (as the QC popup does) so this card drops its
       // old QC Pending at once — otherwise the inspector thinks it failed and

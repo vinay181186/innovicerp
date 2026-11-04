@@ -73,7 +73,8 @@ import { useRecordWatch } from '@/lib/use-record-watch';
 import { useUpdateUser, useUser } from '@/modules/users/api';
 import { useFetchUserAccess, useSaveUserAccess, useUserAccess, useUserAccessList } from '../api';
 import { roleLabel } from '@/lib/role-label';
-import { Banner, ConfirmDialog, Modal, useToast } from '@/ui/feedback';
+import { Banner, Modal, useToast } from '@/ui/feedback';
+import { SearchableSelect } from '@/ui/forms';
 
 interface Props {
   userId: string;
@@ -268,7 +269,6 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
   // "Discard changes?" — asked when the box is closed by ESC / the dim
   // background / × after anything was touched. An admin who set five
   // department tiers must not lose them to one mis-click.
-  const [askDiscard, setAskDiscard] = useState(false);
 
   // Only the approval limit comes from the user record now — the role is
   // derived on save, never read back into an input.
@@ -642,6 +642,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
         }
       }
       watch.acknowledge(); // our own save rang the doorbell; swallow it
+      toast.ok(`${userName}'s access saved`);
       onClose();
     } catch (e) {
       // ADR-226 — someone else saved this person's access first. NOTHING was
@@ -714,13 +715,39 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
       departments,
       forms,
     }) !== loadedSnapshot;
-  function requestClose(): void {
-    if (dirty) setAskDiscard(true);
-    else onClose();
-  }
 
   return (
-    <Modal title="Access Control" onClose={requestClose} bodyStyle={{ padding: 0 }}>
+    <Modal
+      title="Access Control"
+      onClose={onClose}
+      // The Modal's own question, but only while the form really differs from
+      // what was loaded: opening a tab or undoing a tick is not a change.
+      confirmExit={dirty}
+      bodyStyle={{ padding: 0 }}
+      footer={
+        isLoading || isError ? undefined : (
+          <>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              disabled={save.isPending || updateUser.isPending}
+              onClick={() => void onSave(false)}
+            >
+              {save.isPending || updateUser.isPending ? (
+                <>
+                  <Loader2 className="inline h-3 w-3 animate-spin" /> Saving…
+                </>
+              ) : (
+                'Save Access'
+              )}
+            </button>
+          </>
+        )
+      }
+    >
       <div>
         {/* ── Header strip: user · role · home dept · PO limit · JSON clone ── */}
         <div
@@ -807,28 +834,28 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
             </label>
 
             <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-              <select
-                className="innovic-select"
-                aria-label="Copy access from another user"
+              <div
                 title="Load another user's saved access into this form. Nothing is saved until Save Access."
-                value={copyFromId ?? ''}
-                disabled={Boolean(copyFromId) && !copySource.isError}
-                onChange={(e) => {
-                  setCopiedFrom(null);
-                  setCopyFromId(e.target.value || null);
-                }}
-                style={{ fontSize: 12, width: 'auto', padding: '4px 8px' }}
+                style={{ width: 200 }}
               >
-                <option value="">{copyFromId ? 'Loading…' : 'Copy access from…'}</option>
-                {(userList.data?.items ?? [])
-                  .filter((u) => u.userId !== userId)
-                  .map((u) => (
-                    <option key={u.userId} value={u.userId}>
-                      {u.userName ?? u.userEmail}
-                      {u.isActive ? '' : ' (inactive)'}
-                    </option>
-                  ))}
-              </select>
+                <SearchableSelect
+                  ariaLabel="Copy access from another user"
+                  value={copyFromId}
+                  disabled={Boolean(copyFromId) && !copySource.isError}
+                  clearable
+                  placeholder="Copy access from…"
+                  options={(userList.data?.items ?? [])
+                    .filter((u) => u.userId !== userId)
+                    .map((u) => ({
+                      id: u.userId,
+                      name: `${u.userName ?? u.userEmail}${u.isActive ? '' : ' (inactive)'}`,
+                    }))}
+                  onChange={(id) => {
+                    setCopiedFrom(null);
+                    setCopyFromId(id);
+                  }}
+                />
+              </div>
               {copiedFrom ? (
                 <span className="badge b-amber" role="status">
                   Loaded from {copiedFrom} — Save to keep
@@ -908,6 +935,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                     className="btn btn-primary btn-sm"
                     onClick={handleApplyJson}
                     disabled={!importText.trim()}
+                    title={!importText.trim() ? 'Paste the access text first' : undefined}
                   >
                     Apply to editor
                   </button>
@@ -1427,53 +1455,9 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                 </Banner>
               </div>
             ) : null}
-
-            {/* Footer — helper + actions */}
-            <div
-              style={{
-                marginTop: 14,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                flexWrap: 'wrap',
-              }}
-            >
-              <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
-                <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-primary btn-sm"
-                  disabled={save.isPending || updateUser.isPending}
-                  onClick={() => void onSave(false)}
-                >
-                  {save.isPending || updateUser.isPending ? (
-                    <>
-                      <Loader2 className="inline h-3 w-3 animate-spin" /> Saving…
-                    </>
-                  ) : (
-                    'Save Access'
-                  )}
-                </button>
-              </div>
-            </div>
           </div>
         )}
       </div>
-      {askDiscard ? (
-        <ConfirmDialog
-          title="Discard changes?"
-          message={`The access changes made for ${userName} are not saved yet.`}
-          confirmLabel="Discard"
-          cancelLabel="Keep editing"
-          onConfirm={() => {
-            setAskDiscard(false);
-            onClose();
-          }}
-          onCancel={() => setAskDiscard(false)}
-        />
-      ) : null}
     </Modal>
   );
 }

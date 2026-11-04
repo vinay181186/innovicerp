@@ -18,6 +18,7 @@ import { DataTable, ROW_TINT, StatStrip, type DataTableColumn } from '@/ui/data'
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Badge } from './detail-shared';
 import { DcnFormModal, DcrFormModal } from './dcr-dcn-modals';
+import { TabStrip } from '@/ui/navigation';
 
 function dcrAge(d: DesignDcr): number {
   const ageMs = Date.now() - new Date(d.requestDate).getTime();
@@ -198,34 +199,25 @@ export function DcrDcnTab({ detail }: { detail: DesignProjectDetail }): React.JS
         />
       </div>
 
+      <TabStrip
+        label="DCR / DCN register"
+        tabs={[
+          { key: 'dcr', label: 'DCR Register', count: dcrs.length },
+          { key: 'dcn', label: 'DCN Register', count: dcns.length },
+        ]}
+        activeKey={subTab}
+        onChange={(k) => setSubTab(k === 'dcn' ? 'dcn' : 'dcr')}
+      />
       <div
         style={{
           display: 'flex',
-          justifyContent: 'space-between',
+          justifyContent: 'flex-end',
           alignItems: 'center',
           marginBottom: 12,
           flexWrap: 'wrap',
           gap: 8,
         }}
       >
-        <div style={{ display: 'flex', gap: 4 }}>
-          <button
-            type="button"
-            className={`btn btn-sm ${subTab === 'dcr' ? 'btn-primary' : 'btn-ghost'}`}
-            style={{ fontWeight: 700 }}
-            onClick={() => setSubTab('dcr')}
-          >
-            DCR Register ({dcrs.length})
-          </button>
-          <button
-            type="button"
-            className={`btn btn-sm ${subTab === 'dcn' ? 'btn-primary' : 'btn-ghost'}`}
-            style={{ fontWeight: 700 }}
-            onClick={() => setSubTab('dcn')}
-          >
-            DCN Register ({dcns.length})
-          </button>
-        </div>
         <div style={{ display: 'flex', gap: 6 }}>
           <select
             style={{

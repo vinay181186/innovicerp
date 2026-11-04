@@ -49,7 +49,7 @@ export function JcCreateDocsTable({
         {docs.length === 0 ? (
           <tr>
             <td colSpan={3} className="empty-state">
-              No QC documents.
+              No QC documents yet.
             </td>
           </tr>
         ) : (

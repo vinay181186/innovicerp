@@ -22,10 +22,11 @@ import { todayIst } from '@/lib/date';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { soNoWithInternal } from '@/lib/so-number';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { DataTable, Panel } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
-import { ConfirmDialog } from '@/ui/feedback';
+import { ConfirmDialog, useToast } from '@/ui/feedback';
 import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import {
@@ -117,6 +118,7 @@ function DesignTrackerListPage(): React.JSX.Element {
     row: DesignTrackerListItem;
     kind: 'submit' | 'approve';
   } | null>(null);
+  const toast = useToast();
   const submitMut = useSubmitDesignReview();
   const approveMut = useApproveDesign();
   const reviseMut = useReviseDesign();
@@ -124,7 +126,14 @@ function DesignTrackerListPage(): React.JSX.Element {
   const onRevise = (row: DesignTrackerListItem): void => {
     const reason = window.prompt('Revision reason:');
     if (reason && reason.trim()) {
-      void reviseMut.mutateAsync({ id: row.id, input: { reason: reason.trim() } });
+      void reviseMut
+        .mutateAsync({ id: row.id, input: { reason: reason.trim() } })
+        .then(() => toast.ok(`Design ${row.code} sent for revision`))
+        .catch((err: unknown) =>
+          toast.error(
+            err instanceof Error ? err.message : 'Could not send for revision. Try again.',
+          ),
+        );
     }
   };
 
@@ -173,6 +182,7 @@ function DesignTrackerListPage(): React.JSX.Element {
     // column header cannot ride off the top of the screen at the last row.
     <div className="page-fill">
       <ListHeader
+        orderFilter={<OrderSfFilter sf={sf} field="soCode" kind="so" />}
         title="Design Tracker"
         icon="🎨"
         count={data?.total}
@@ -285,6 +295,7 @@ function DesignTrackerListPage(): React.JSX.Element {
         onConfirm={async () => {
           if (!confirm) return;
           await submitMut.mutateAsync(confirm.row.id);
+          toast.ok(`Design ${confirm.row.code} sent for review`);
           setConfirm(null);
         }}
       />
@@ -298,6 +309,7 @@ function DesignTrackerListPage(): React.JSX.Element {
         onConfirm={async () => {
           if (!confirm) return;
           await approveMut.mutateAsync(confirm.row.id);
+          toast.ok(`Design ${confirm.row.code} approved`);
           setConfirm(null);
         }}
       />

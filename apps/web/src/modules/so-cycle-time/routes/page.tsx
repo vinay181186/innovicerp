@@ -24,6 +24,7 @@ import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { DataTable, Panel, ROW_TINT, StatStrip } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
@@ -32,6 +33,7 @@ import { ListFooter } from '@/ui/layout';
 import { fetchAllSoCycleTime, useSoCycleTime, type SoCycleTimeParams } from '../api';
 import { soCycleTimeColumns } from '../lib/columns';
 import { exportSoCycleTime } from '../lib/export';
+import { useToast } from '@/ui/feedback';
 
 const sctSearchSchema = z.object({
   show: z.enum(SO_CYCLE_TIME_SHOW).optional(),
@@ -60,6 +62,7 @@ const FILTERS: { value: SoCycleTimeShow; label: string }[] = [
 ];
 
 function SoCycleTimePage(): React.JSX.Element {
+  const toast = useToast();
   const urlSearch = soCycleTimeRoute.useSearch();
   const routeNavigate = soCycleTimeRoute.useNavigate();
   const navigate = useNavigate();
@@ -109,7 +112,7 @@ function SoCycleTimePage(): React.JSX.Element {
     void fetchAllSoCycleTime(params)
       .then((all) => exportSoCycleTime(all))
       .catch((e: unknown) =>
-        window.alert(e instanceof Error ? e.message : 'Could not export. Try again.'),
+        toast.error(e instanceof Error ? e.message : 'Could not export. Try again.'),
       )
       .finally(() => setExporting(false));
   };
@@ -155,6 +158,11 @@ function SoCycleTimePage(): React.JSX.Element {
               onChange={(e) => setSearch(e.target.value)}
             />
           </ReportFilter>
+          <ReportFilter label="SO No." size="lg">
+            <div>
+              <OrderSfFilter sf={sf} field="soNo" kind="so" />
+            </div>
+          </ReportFilter>
           <ReportFilter label="Show" htmlFor="sct-filter">
             <select
               id="sct-filter"
@@ -172,6 +180,7 @@ function SoCycleTimePage(): React.JSX.Element {
         </>
       }
       onClear={() => {
+        sf.clearFilters();
         setSearch('');
         void routeNavigate({ search: { page: 1 }, replace: true });
       }}

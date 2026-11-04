@@ -20,7 +20,12 @@
 // figures stay in the Available cell's tooltip, as before.
 
 import {
+  docText,
+  lineJcs,
+  linePros,
+  lineRouteCards,
   planningLineStatus,
+  rcText,
   type PlanningLineState,
   type PlanningDetailResponse,
   type PlanningLine,
@@ -29,22 +34,14 @@ import { fmtDate } from '@/lib/date';
 import { docDrawingRev, itemCodeWithRev } from '@/lib/item-code';
 import { createdByColumn, leadColumns, type DataTableColumn } from '@/ui/data';
 import { planChildItemOf, planStatusOf, prStatusOf } from './plan-chip';
-import {
-  DocCodes,
-  RcCodes,
-  docText,
-  lineJcs,
-  linePros,
-  lineRouteCards,
-  rcText,
-} from './planning-doc-cells';
+import { DocCodes, RcCodes } from './planning-doc-cells';
 import { lineStatusOf } from './planning-shared';
 
 /** The Plan Status ▾ tick list. A `badge` column filters on DISTINCT values, so
  *  it must offer the five states and not the on-screen label, which carries the
  *  pending qty ("Partly Planned (450 pending)") and would give one tick box per
  *  line. */
-const PLANNING_STATE_LABEL: Record<PlanningLineState, string> = {
+export const PLANNING_STATE_LABEL: Record<PlanningLineState, string> = {
   unplanned: 'Unplanned',
   partly_planned: 'Partly Planned',
   in_planning: 'In Planning',

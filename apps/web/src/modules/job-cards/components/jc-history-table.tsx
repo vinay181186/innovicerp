@@ -39,6 +39,7 @@ import { DocumentHistory } from '@/components/shared/document-history';
 import { useDocumentHistory } from '@/modules/activity-log/api';
 import { useJobCard, useJobCardStatusExtras } from '../api';
 import { fmtJcDate } from '../lib/fmt-jc-date';
+import { TabStrip } from '@/ui/navigation';
 
 type View = 'floor' | 'doc';
 
@@ -81,8 +82,8 @@ interface HistoryRow {
 
 const opNoOf = (seq: number | null): string => (seq != null ? fmtOpSrNo(seq) : '');
 
-/** One completion-log event → one table row. Texts follow the old feed's
- *  mapEvent (jc-view-tabs.tsx) word for word; only the layout changes. */
+/** One completion-log event → one table row. Texts follow the old History
+ *  feed word for word; only the layout changed. */
 function toRow(e: JobCardCompletionEvent): HistoryRow {
   const base = {
     id: e.id,
@@ -210,39 +211,22 @@ export function JcHistoryTable({ jobCardId }: { jobCardId: string }): React.JSX.
   const docCount = history?.rows.length ?? 0;
 
   const toggle = (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 'var(--sp-3)',
-        flexWrap: 'wrap',
-        marginBottom: 'var(--sp-2)',
-      }}
-    >
-      <div role="group" aria-label="History view" style={{ display: 'flex', gap: 'var(--sp-1)' }}>
-        <button
-          type="button"
-          className={`btn btn-sm ${view === 'floor' ? 'btn-primary' : 'btn-ghost'}`}
-          aria-pressed={view === 'floor'}
-          onClick={() => setView('floor')}
-        >
-          Floor entries ({feed.total})
-        </button>
-        <button
-          type="button"
-          className={`btn btn-sm ${view === 'doc' ? 'btn-primary' : 'btn-ghost'}`}
-          aria-pressed={view === 'doc'}
-          onClick={() => setView('doc')}
-        >
-          Document changes ({docCount})
-        </button>
-      </div>
+    <>
+      <TabStrip
+        label="History view"
+        tabs={[
+          { key: 'floor', label: 'Floor entries', count: feed.total },
+          { key: 'doc', label: 'Document changes', count: docCount },
+        ]}
+        activeKey={view}
+        onChange={(k) => setView(k === 'doc' ? 'doc' : 'floor')}
+      />
       {view === 'floor' ? (
-        <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
+        <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginBottom: 'var(--sp-2)' }}>
           Ops, NCs, OSP — newest first
-        </span>
+        </div>
       ) : null}
-    </div>
+    </>
   );
 
   if (view === 'doc') {

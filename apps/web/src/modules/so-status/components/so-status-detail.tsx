@@ -35,6 +35,7 @@ import { fmtDate, todayIst } from '@/lib/date';
 import { SoTimelineBody } from '@/modules/so-timeline/components/timeline-body';
 import { soStatusKeys, useSoStatus } from '../api';
 import { exportSoStatusExcel } from '../lib/export';
+import { TabStrip } from '@/ui/navigation';
 
 // Inline component-planning modal state — lets the planner create/plan
 // components straight from SO Status Review instead of bouncing to /planning.
@@ -240,35 +241,15 @@ function SoStatusDetailBody({ soId }: { soId: string }): React.JSX.Element {
       </div>
 
       {/* Status | Timeline tabs — Timeline is the former standalone SO Timeline screen. */}
-      <div
-        style={{
-          display: 'flex',
-          gap: 4,
-          borderBottom: '1px solid var(--border)',
-          marginBottom: 16,
-        }}
-      >
-        {(['status', 'timeline'] as const).map((t) => (
-          <button
-            key={t}
-            type="button"
-            onClick={() => setTab(t)}
-            style={{
-              background: 'none',
-              border: 'none',
-              borderBottom: tab === t ? '2px solid var(--cyan)' : '2px solid transparent',
-              color: tab === t ? 'var(--cyan)' : 'var(--text3)',
-              fontSize: 12,
-              fontWeight: 700,
-              padding: '6px 12px',
-              cursor: 'pointer',
-              marginBottom: -1,
-            }}
-          >
-            {t === 'status' ? 'Status' : 'Timeline'}
-          </button>
-        ))}
-      </div>
+      <TabStrip
+        label="SO Status views"
+        tabs={[
+          { key: 'status', label: 'Status' },
+          { key: 'timeline', label: 'Timeline' },
+        ]}
+        activeKey={tab}
+        onChange={(k) => setTab(k === 'timeline' ? 'timeline' : 'status')}
+      />
 
       {tab === 'status' ? (
         <>

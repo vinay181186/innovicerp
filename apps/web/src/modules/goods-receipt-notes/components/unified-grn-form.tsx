@@ -43,12 +43,13 @@ import { useCallback, useState } from 'react';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { useSaveKey } from '@/lib/use-save-key';
 import { FormField } from '@/ui/forms';
-import { PageHeader, useSaveShortcut } from '@/ui/layout';
+import { FormActions, PageHeader, useSaveShortcut } from '@/ui/layout';
 import { useCreateGoodsReceiptNote } from '../api';
 import { GrnAgainstDcForm } from './grn-against-dc-form';
 import { GrnAgainstNcForm } from './grn-against-nc-form';
 import { GrnAgainstPoForm } from './grn-against-po-form';
 import { GRN_CREATE_FORM_ID, type GrnFormStatus } from './grn-create-contract';
+import { useToast } from '@/ui/feedback';
 
 // Option text — the first two verbatim from legacy addGRN() L26533-26534.
 const TYPE_META: Record<GrnInwardType, { label: string }> = {
@@ -72,7 +73,7 @@ export function UnifiedGrnForm({
   // A `?poId=` preselect is always a buying PO, so the type starts (and stays
   // unless the user changes it) on Against PO.
   const [inwardType, setInwardType] = useState<GrnInwardType>('purchase');
-  // What the active type form last reported: drives the header's Save
+  // What the active type form last reported: drives FormActions' Save
   // button (disabled while saving / blocked) and the "Not saved" pill.
   const [status, setStatus] = useState<GrnFormStatus>(IDLE);
   // ONE exit guard for the whole inward screen, every type. Where Cancel goes
@@ -82,6 +83,7 @@ export function UnifiedGrnForm({
   // their save rather than a second guard.
   const goBack = useCallback(() => void navigate({ to: '/goods-receipt-notes' }), [navigate]);
   const exit = useExitConfirm({ onExit: goBack });
+  const toast = useToast();
 
   // Purchase branch — the existing create endpoint; the form is the new
   // PO-driven one (lines come from the PO, never typed by hand).
@@ -93,6 +95,7 @@ export function UnifiedGrnForm({
     setPurchaseErr(null);
     try {
       const created = await createPurchase.mutateAsync(values);
+      toast.ok(`GRN ${created.code} saved`);
       exit.leave(
         () =>
           void navigate({
@@ -106,7 +109,7 @@ export function UnifiedGrnForm({
     }
   };
 
-  // Save lives in the sticky header; the active type form owns the handler.
+  // Save lives in FormActions; the active type form owns the handler.
   // The button reaches it through the HTML `form` attribute, and Ctrl+S
   // submits the same form, so both paths run the form's own checks.
   const canSave = !status.submitting && !status.blocked;
@@ -146,34 +149,7 @@ export function UnifiedGrnForm({
   return (
     <div>
       {exit.dialog}
-      <PageHeader
-        sticky
-        title="New GRN"
-        backLabel="Back to GRN list"
-        onBack={goBack}
-        dirty={status.dirty}
-        actions={
-          <>
-            <button type="button" className="btn btn-ghost" onClick={() => exit.leave(goBack)}>
-              Cancel
-            </button>
-            <button
-              type="submit"
-              form={GRN_CREATE_FORM_ID}
-              className="btn btn-primary"
-              disabled={!canSave}
-            >
-              {status.submitting ? (
-                <>
-                  <Loader2 size={13} className="animate-spin" /> Saving…
-                </>
-              ) : (
-                'Save GRN'
-              )}
-            </button>
-          </>
-        }
-      />
+      <PageHeader title="New GRN" backLabel="Back to GRN list" onBack={goBack} />
 
       {/* Switching type unmounts the other form, so its picks and lines
           are dropped — no stale state crosses over. */}
@@ -192,6 +168,26 @@ export function UnifiedGrnForm({
       {inwardType === 'nc_return' ? (
         <GrnAgainstNcForm typeField={typeField} onStatusChange={setStatus} onLeave={exit.leave} />
       ) : null}
+      <FormActions dirty={status.dirty}>
+        <button type="button" className="btn btn-ghost" onClick={() => exit.leave(goBack)}>
+          Cancel
+        </button>
+        <button
+          type="submit"
+          form={GRN_CREATE_FORM_ID}
+          className="btn btn-primary"
+          disabled={!canSave}
+          title={status.blocked ? status.blockedReason : undefined}
+        >
+          {status.submitting ? (
+            <>
+              <Loader2 size={13} className="animate-spin" /> Saving…
+            </>
+          ) : (
+            'Save GRN'
+          )}
+        </button>
+      </FormActions>
     </div>
   );
 }

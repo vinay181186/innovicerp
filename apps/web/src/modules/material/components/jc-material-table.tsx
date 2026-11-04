@@ -48,7 +48,7 @@ export function JcMaterialTable({ data }: { data: JcMaterial }): React.JSX.Eleme
             <tr>
               <td colSpan={8} className="empty-state">
                 {data.planned
-                  ? 'Nothing issued yet.'
+                  ? 'No items issued yet.'
                   : 'No RM Item on this card’s Route Card — nothing is required, issues are not capped.'}
               </td>
             </tr>

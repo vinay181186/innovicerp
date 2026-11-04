@@ -19,7 +19,8 @@ import { itemCodeWithRev } from '@/lib/item-code';
 import { soNoWithInternal } from '@/lib/so-number';
 import { useSession } from '@/lib/session';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { ConfirmDialog } from '@/ui/feedback';
+import { ConfirmDialog, Modal, useToast } from '@/ui/feedback';
+import { SearchableSelect } from '@/ui/forms';
 import { uploadSoDocFile, useCreateSoDocument, useDeleteSoDocument, useSoDocDetail } from '../api';
 
 function fmtSize(bytes: number | null): string {
@@ -395,8 +396,13 @@ function UploadDialog({
   companyId: string | null;
   onClose: () => void;
 }): React.JSX.Element {
+  const toast = useToast();
   const createDoc = useCreateSoDocument();
   const [lineKey, setLineKey] = useState(''); // '' = SO level, else soLineId
+  const lineOptions = lines.map((l) => ({
+    id: l.soLineId,
+    name: `Line ${l.lineNo} · POL ${l.clientPoLineNo ?? '—'}: ${itemCodeWithRev(l.itemCode, l.itemRevision, '')} — ${l.itemName ?? ''}`,
+  }));
   const [category, setCategory] = useState<SoDocCategory>('other');
   const [docType, setDocType] = useState('');
   const [files, setFiles] = useState<File[]>([]);
@@ -439,6 +445,7 @@ function UploadDialog({
     }
     setBusy(false);
     if (fails.length === 0) {
+      toast.ok(`${ok} document${ok === 1 ? '' : 's'} uploaded to ${soCode}`);
       onClose();
     } else {
       setMsg(`Uploaded ${ok}/${files.length}. Failures: ${fails.slice(0, 3).join('; ')}`);
@@ -446,109 +453,81 @@ function UploadDialog({
   }
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'flex-start',
-        justifyContent: 'center',
-        zIndex: 50,
-        padding: 24,
-        overflowY: 'auto',
-      }}
-      onClick={busy ? undefined : onClose}
-    >
-      <div
-        className="panel"
-        style={{ width: 'min(1100px, 96vw)' }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="panel-hdr">
-          <span className="panel-title">
-            📤 Upload Documents to {soNoWithInternal(soCode, soInternalNo)}
-          </span>
-          <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={onClose}>
-            ✕
+    <Modal
+      title={`📤 Upload Documents to ${soNoWithInternal(soCode, soInternalNo)}`}
+      onClose={onClose}
+      closeLocked={busy}
+      bodyStyle={{ display: 'grid', gap: 12 }}
+      footer={
+        <>
+          <button type="button" className="btn btn-ghost" disabled={busy} onClick={onClose}>
+            Cancel
           </button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={busy}
+            onClick={() => void submit()}
+          >
+            {busy ? <Loader2 className="inline h-3 w-3 animate-spin" /> : <Upload size={14} />}{' '}
+            Upload
+          </button>
+        </>
+      }
+    >
+      <div>
+        <label className="form-label">Ln</label>
+        <SearchableSelect
+          ariaLabel="Ln"
+          value={lineKey || null}
+          onChange={(id) => setLineKey(id ?? '')}
+          options={lineOptions}
+          placeholder="SO Level (no specific line)"
+          clearable
+        />
+      </div>
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+        <div style={{ flex: 1, minWidth: 160 }}>
+          <label className="form-label">Category</label>
+          <select
+            className="innovic-select"
+            value={category}
+            onChange={(e) => setCategory(e.target.value as SoDocCategory)}
+            style={{ width: '100%' }}
+          >
+            {SO_DOC_CATEGORY_ORDER.map((c) => (
+              <option key={c} value={c}>
+                {SO_DOC_CATEGORY_LABELS[c]}
+              </option>
+            ))}
+          </select>
         </div>
-        <div className="panel-body" style={{ display: 'grid', gap: 12 }}>
-          <div>
-            <label className="form-label">Ln</label>
-            <select
-              className="innovic-select"
-              value={lineKey}
-              onChange={(e) => setLineKey(e.target.value)}
-              style={{ width: '100%' }}
-            >
-              <option value="">SO Level (no specific line)</option>
-              {lines.map((l) => (
-                <option key={l.soLineId} value={l.soLineId}>
-                  Line {l.lineNo} · POL {l.clientPoLineNo ?? '—'}:{' '}
-                  {itemCodeWithRev(l.itemCode, l.itemRevision, '')} — {l.itemName ?? ''}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            <div style={{ flex: 1, minWidth: 160 }}>
-              <label className="form-label">Category</label>
-              <select
-                className="innovic-select"
-                value={category}
-                onChange={(e) => setCategory(e.target.value as SoDocCategory)}
-                style={{ width: '100%' }}
-              >
-                {SO_DOC_CATEGORY_ORDER.map((c) => (
-                  <option key={c} value={c}>
-                    {SO_DOC_CATEGORY_LABELS[c]}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div style={{ flex: 1, minWidth: 160 }}>
-              <label className="form-label">Document Type</label>
-              <input
-                className="innovic-input"
-                value={docType}
-                placeholder="e.g. MIR, Material Cert, Drawing Rev3"
-                onChange={(e) => setDocType(e.target.value)}
-                style={{ width: '100%' }}
-              />
-            </div>
-          </div>
-          <div>
-            <label className="form-label">Files</label>
-            <input
-              type="file"
-              multiple
-              accept="image/*,.pdf,.doc,.docx,.xls,.xlsx"
-              onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
-            />
-            {files.length > 0 ? (
-              <div style={{ fontSize: 12, color: 'var(--green2)', fontWeight: 700, marginTop: 4 }}>
-                {files.length} file(s): {files.map((f) => f.name).join(', ')}
-              </div>
-            ) : null}
-          </div>
-          {msg ? <div style={{ fontSize: 12, color: 'var(--red2)' }}>{msg}</div> : null}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-            <button type="button" className="btn btn-ghost" disabled={busy} onClick={onClose}>
-              Cancel
-            </button>
-            <button
-              type="button"
-              className="btn btn-primary"
-              disabled={busy}
-              onClick={() => void submit()}
-            >
-              {busy ? <Loader2 className="inline h-3 w-3 animate-spin" /> : <Upload size={14} />}{' '}
-              Upload
-            </button>
-          </div>
+        <div style={{ flex: 1, minWidth: 160 }}>
+          <label className="form-label">Document Type</label>
+          <input
+            className="innovic-input"
+            value={docType}
+            placeholder="e.g. MIR, Material Cert, Drawing Rev3"
+            onChange={(e) => setDocType(e.target.value)}
+            style={{ width: '100%' }}
+          />
         </div>
       </div>
-    </div>
+      <div>
+        <label className="form-label">Files</label>
+        <input
+          type="file"
+          multiple
+          accept="image/*,.pdf,.doc,.docx,.xls,.xlsx"
+          onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
+        />
+        {files.length > 0 ? (
+          <div style={{ fontSize: 12, color: 'var(--green2)', fontWeight: 700, marginTop: 4 }}>
+            {files.length} file(s): {files.map((f) => f.name).join(', ')}
+          </div>
+        ) : null}
+      </div>
+      {msg ? <div style={{ fontSize: 12, color: 'var(--red2)' }}>{msg}</div> : null}
+    </Modal>
   );
 }

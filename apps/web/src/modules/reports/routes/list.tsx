@@ -97,9 +97,7 @@ function ReportsListPage() {
       <PageState
         state="empty"
         message={
-          term
-            ? 'No report in this department matches your search.'
-            : 'No reports for this department that you have access to.'
+          term ? 'No reports match.' : 'No reports for this department that you have access to.'
         }
       />
     ) : (
@@ -156,7 +154,7 @@ function Catalogue({ reports, term }: { reports: ReportDefinition[]; term: strin
       {groups.length === 0 ? (
         <PageState
           state="empty"
-          message={term ? 'No report matches your search.' : 'No reports you have access to.'}
+          message={term ? 'No reports match.' : 'No reports you have access to.'}
         />
       ) : (
         <DeptCards groups={groups} />

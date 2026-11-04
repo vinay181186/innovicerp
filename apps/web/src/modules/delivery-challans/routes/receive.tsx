@@ -17,9 +17,9 @@ import { useExitConfirm } from '@/lib/exit-guard';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSaveKey } from '@/lib/use-save-key';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { Banner } from '@/ui/feedback';
+import { Banner, useToast } from '@/ui/feedback';
 import { FormField, FormGrid } from '@/ui/forms';
-import { PageHeader, useSaveShortcut } from '@/ui/layout';
+import { FormActions, PageHeader, useSaveShortcut } from '@/ui/layout';
 import { useDeliveryChallan, useReceiveDeliveryChallan } from '../api';
 import { computeReceivedByLine } from '../lib/receipt-math';
 
@@ -58,6 +58,7 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
   const { id } = deliveryChallanReceiveRoute.useParams();
   const navigate = useNavigate();
   const { data: detail, isLoading, isError, error } = useDeliveryChallan(id);
+  const toast = useToast();
   // R2 — one idempotency key per open form, reused on a retry after a dropped save.
   const saveKey = useSaveKey();
   const receive = useReceiveDeliveryChallan(saveKey);
@@ -125,19 +126,24 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
     setLineDrafts((prev) => prev.map((d, i) => (i === idx ? { ...d, ...patch } : d)));
   };
 
-  const canSubmit = useMemo(() => {
-    if (!receiptDate) return false;
+  // Why Save stays off; null = nothing in the form is stopping it.
+  const saveBlock = useMemo((): string | null => {
+    if (!receiptDate) return 'Enter the Receipt Date';
     let anyQty = false;
     for (const d of lineDrafts) {
       const recv = Number(d.receivedQty || '0');
-      if (Number.isNaN(recv) || recv < 0) return false;
-      if (recv > d.remaining) return false;
+      if (Number.isNaN(recv) || recv < 0) return 'Enter a valid Receive Now quantity';
+      if (recv > d.remaining) return 'Receive Now cannot be more than Pending';
       // Decimals follow the unit (S9) — the server refuses 2.5 NOS too.
-      if (recv > 0 && qtyUomProblem(recv, d.uom) !== null) return false;
+      if (recv > 0) {
+        const problem = qtyUomProblem(recv, d.uom, 'Receive Now');
+        if (problem !== null) return problem;
+      }
       if (recv > 0) anyQty = true;
     }
-    return anyQty && !submitting;
-  }, [lineDrafts, receiptDate, submitting]);
+    return anyQty ? null : 'Enter a Receive Now quantity on at least one line';
+  }, [lineDrafts, receiptDate]);
+  const canSubmit = saveBlock === null && !submitting;
 
   const onSubmit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
@@ -158,7 +164,8 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
         remarks: remarks.trim() === '' ? null : remarks.trim(),
         lines: linesPayload,
       };
-      await receive.mutateAsync({ dcId: id, input });
+      const received = await receive.mutateAsync({ dcId: id, input });
+      toast.ok(`DC ${received.code} receipt saved`);
       exit.leave(() => void navigate({ to: '/delivery-challans/$id', params: { id } }));
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Could not save receipt. Try again.');
@@ -222,36 +229,11 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
     <div>
       {exit.dialog}
       <PageHeader
-        sticky
         title={`Receive against ${detail.vendorName ?? detail.vendorCodeText}`}
         subtitle={<span className="td-code">{detail.code}</span>}
         backLabel="Back to DC"
         onBack={goBack}
-        dirty={dirty}
-        actions={
-          <>
-            <button type="button" className="btn btn-ghost" onClick={() => exit.leave(goBack)}>
-              Cancel
-            </button>
-            <button
-              type="submit"
-              form={RECEIVE_FORM_ID}
-              className="btn btn-primary"
-              disabled={!canSubmit}
-            >
-              {submitting ? <Loader2 size={13} className="animate-spin" /> : null}
-              {submitting ? 'Saving…' : 'Save Receipt'}
-            </button>
-          </>
-        }
       />
-
-      {/* Save error right under the header's Save. */}
-      {submitError ? (
-        <Banner tone="error" role="alert">
-          {submitError}
-        </Banner>
-      ) : null}
 
       <form id={RECEIVE_FORM_ID} onSubmit={(e) => void onSubmit(e)}>
         <div className="panel">
@@ -364,6 +346,30 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
           </div>
         </div>
       </form>
+      <FormActions
+        dirty={dirty}
+        note={
+          submitError ? (
+            <Banner tone="error" role="alert" flush>
+              {submitError}
+            </Banner>
+          ) : undefined
+        }
+      >
+        <button type="button" className="btn btn-ghost" onClick={() => exit.leave(goBack)}>
+          Cancel
+        </button>
+        <button
+          type="submit"
+          form={RECEIVE_FORM_ID}
+          className="btn btn-primary"
+          disabled={!canSubmit}
+          title={saveBlock ?? undefined}
+        >
+          {submitting ? <Loader2 size={13} className="animate-spin" /> : null}
+          {submitting ? 'Saving…' : 'Save Receipt'}
+        </button>
+      </FormActions>
     </div>
   );
 }

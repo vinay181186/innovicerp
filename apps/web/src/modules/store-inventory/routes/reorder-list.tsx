@@ -15,10 +15,14 @@
 // Ticks are kept by item id ACROSS pages together with the ticked row itself
 // (its suggested qty / vendor / code), so "Raise PRs (n)" raises every ticked
 // item, not just the ones on screen. Select-all = this page.
+//
+// Search: the API has no search parameter, so the box narrows the rows of THIS
+// page only (column ▾ Sort & Filter still runs on the server over every page).
 import type { ReorderListRow, ReorderPrResult } from '@innovic/shared';
 import { createRoute, Link } from '@tanstack/react-router';
 import { useCallback, useMemo, useState } from 'react';
 import { z } from 'zod';
+import { matchesSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -63,6 +67,25 @@ function ReorderListPage(): React.JSX.Element {
   const [result, setResult] = useState<ReorderPrResult | null>(null);
 
   const rows = useMemo(() => data?.items ?? [], [data]);
+  const [term, setTerm] = useState('');
+  const shownRows = useMemo(
+    () =>
+      rows.filter((r) =>
+        matchesSearchTerm(
+          [
+            r.itemCode,
+            r.itemName,
+            r.uom,
+            r.itemType,
+            r.suggestedVendor?.code,
+            r.suggestedVendor?.name,
+            ...r.openPrs.map((p) => p.code),
+          ],
+          term,
+        ),
+      ),
+    [rows, term],
+  );
 
   const draftOf = useCallback(
     (r: ReorderListRow): Draft =>
@@ -165,6 +188,10 @@ function ReorderListPage(): React.JSX.Element {
         icon="🔁"
         count={isLoading ? undefined : total}
         noun="item below reorder"
+        nounPlural="items below reorder"
+        search={term}
+        onSearch={setTerm}
+        searchPlaceholder="Search this page: item, type, vendor, open PR…"
         updating={isFetching && !isLoading}
         onClearFilters={sf.clearFilters}
         filtersActive={sf.filtering}
@@ -207,12 +234,14 @@ function ReorderListPage(): React.JSX.Element {
           <DataTable
             tableKey={TABLE_KEYS.reorderList}
             columns={columns}
-            rows={rows}
+            rows={shownRows}
             loading={isLoading}
             rowKey={(r) => r.itemId}
             editable
             sortFilterServer={sf}
-            emptyText={sf.filtering ? 'No items match.' : 'Nothing is below its Reorder Level.'}
+            emptyText={
+              sf.filtering || term.trim() ? 'No items match.' : 'No items below reorder yet.'
+            }
             // A blocked row (has an open PR) is washed, as it was greyed before.
             rowClassName={(r) => (r.openPrs.length > 0 ? ROW_TINT.cancelled : undefined)}
             selectable
@@ -233,6 +262,7 @@ function ReorderListPage(): React.JSX.Element {
                   type="button"
                   className="btn btn-primary btn-sm"
                   disabled={raise.isPending || tickedCount === 0}
+                  title={tickedCount === 0 ? 'Tick at least one item' : undefined}
                   onClick={onRaise}
                 >
                   {raise.isPending ? 'Raising…' : `Raise PRs (${tickedCount})`}

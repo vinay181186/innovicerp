@@ -4,11 +4,11 @@
 // may hand-roll a title row.
 //
 //   ← Back to SO Master                      (optional, names where you return)
-//   📋 Create Sales Order                                  [Cancel] [Save SO]
+//   📋 Create Sales Order
 //   Line items are added after the header is saved.        (optional subtitle)
 //
-// The canonical create/edit page is: PageHeader (title + Save/Cancel) →
-// Panel(FormGrid) → Panel(line table) → ConfirmDialog exit guard.
+// The canonical create/edit page is: PageHeader (title) → Panel(FormGrid) →
+// Panel(line table) → FormActions (Cancel / Save, at the bottom) → exit guard.
 //
 // The band itself (sticky rule, title row, children slot) is HeaderBand, shared
 // with ListHeader so a form header and a list header cannot drift apart.
@@ -27,12 +27,11 @@ export interface PageHeaderProps {
   /** "Back to SO Master" — name the list you return to, never just "Back". */
   backLabel?: string | undefined;
   onBack?: (() => void) | undefined;
-  /** Page actions, right-aligned: Cancel (ghost) then the primary Save last. */
+  /** Page tools, right-aligned. A form's Cancel / Save go in FormActions instead. */
   actions?: ReactNode | undefined;
   /** Optional band under the title row — a TabStrip, Banner or filter row. */
   children?: ReactNode | undefined;
-  /** Pin the band while the page scrolls. Every create/edit form sets this so
-   *  Save never scrolls away (ERPNext keeps its page head pinned the same way). */
+  /** Pin the band while the page scrolls. */
   sticky?: boolean | undefined;
   /** The form has unsaved edits: shows an amber "Not saved" pill before the
    *  actions (ERPNext's "Not Saved" indicator). Pair with useSaveShortcut. */

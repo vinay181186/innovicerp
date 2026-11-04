@@ -23,7 +23,7 @@ import { LIST_PAGE_SIZE, useClampPage } from '@/lib/list-paging';
 import { useDocumentEdits } from '@/modules/document-edits/api';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
 import type { ServerSortFilter } from '@/ui/data/sort-filter/server-state';
-import { ConfirmDialog } from '@/ui/feedback';
+import { ConfirmDialog, useToast } from '@/ui/feedback';
 import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { MaterialRowModal } from './material-row-modal';
@@ -132,6 +132,7 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
   // Tier-driven, per department (rawmat_create sits in Production). Add/Import =
   // entry; Edit = edit; Del = Super Admin only (ADR-232).
   const { data: eff } = useMyAccess();
+  const toast = useToast();
   const perms = effectiveFormPerms(eff, 'rawmat_create');
   const canAdd = perms.entry;
   const canEdit = perms.edit;
@@ -144,8 +145,6 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
   const [modal, setModal] = useState<ModalState>({ kind: 'none' });
   // The row waiting on the Move-to-Trash confirm (app ConfirmDialog, not window.confirm).
   const [trashRow, setTrashRow] = useState<MaterialMasterRow | null>(null);
-  // ADR-202 — the neutral "Sent for approval" notice after a staged edit save.
-  const [savedNotice, setSavedNotice] = useState<string | null>(null);
 
   // ADR-202 — the ids of rows that have an edit waiting for approval, so each
   // such row shows an amber "edit pending" chip. One query for the whole master
@@ -314,26 +313,6 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
         </div>
       ) : null}
 
-      {/* ADR-202 — neutral confirmation after a live-row edit was staged. */}
-      {savedNotice ? (
-        <div className="panel" style={{ marginBottom: 12 }}>
-          <div
-            className="panel-body"
-            style={{ padding: '10px 14px', fontSize: 12, color: 'var(--amber2)' }}
-          >
-            {savedNotice}
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              style={{ marginLeft: 8, fontSize: 11 }}
-              onClick={() => setSavedNotice(null)}
-            >
-              ✕
-            </button>
-          </div>
-        </div>
-      ) : null}
-
       {isError ? (
         <PageState
           state="error"
@@ -444,14 +423,13 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
           {...(modal.kind === 'edit' ? { row: modal.row } : {})}
           saving={saving}
           onSave={async (input, id) => {
-            setSavedNotice(null);
             const res = await onSave(input, id);
-            // The modal closes itself on success; show the neutral notice after.
-            if (res.staged) {
-              setSavedNotice(
-                `${noun} edit sent for approval — your change will apply once an approver signs off.`,
-              );
-            }
+            // The modal closes itself on success; the toast outlives it.
+            toast.ok(
+              res.staged
+                ? `${noun} edit sent for approval — your change will apply once an approver signs off.`
+                : `${noun} ${input.name} saved`,
+            );
           }}
           onClose={() => setModal({ kind: 'none' })}
         />

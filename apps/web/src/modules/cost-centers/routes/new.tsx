@@ -8,6 +8,7 @@ import { useSaveKey } from '@/lib/use-save-key';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCostCentersList, useCreateCostCenter } from '../api';
 import { CostCenterForm } from '../components/cost-center-form';
+import { useToast } from '@/ui/feedback';
 
 export const costCenterNewRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -19,6 +20,7 @@ function CostCenterNewPage(): React.JSX.Element {
   const navigate = useNavigate();
   const saveKey = useSaveKey();
   const create = useCreateCostCenter(saveKey);
+  const toast = useToast();
   const [submitError, setSubmitError] = useState<string | null>(null);
   const goBack = useCallback(() => void navigate({ to: '/cost-centers' }), [navigate]);
   const exit = useExitConfirm({ onExit: goBack });
@@ -51,33 +53,28 @@ function CostCenterNewPage(): React.JSX.Element {
       <Link to="/cost-centers" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
         <ArrowLeft size={14} /> Back to Cost Centre Master
       </Link>
-      <div className="panel">
-        <div className="panel-hdr">
-          <div className="panel-title">New Cost Centre</div>
-        </div>
-        <div className="panel-body">
-          <CostCenterForm
-            mode="create"
-            suggestedCode={suggestedCode}
-            submitError={submitError}
-            submitLabel="Save Cost Centre"
-            onCancel={() => exit.leave(goBack)}
-            onSubmit={async (values: CreateCostCenterInput) => {
-              setSubmitError(null);
-              try {
-                const created = await create.mutateAsync(values);
-                exit.leave(
-                  () => void navigate({ to: '/cost-centers/$id', params: { id: created.id } }),
-                );
-              } catch (e) {
-                setSubmitError(
-                  e instanceof Error ? e.message : 'Could not save Cost Centre. Try again.',
-                );
-              }
-            }}
-          />
-        </div>
-      </div>
+      <CostCenterForm
+        panelHeader={<div className="panel-title">New Cost Centre</div>}
+        mode="create"
+        suggestedCode={suggestedCode}
+        submitError={submitError}
+        submitLabel="Save Cost Centre"
+        onCancel={() => exit.leave(goBack)}
+        onSubmit={async (values: CreateCostCenterInput) => {
+          setSubmitError(null);
+          try {
+            const created = await create.mutateAsync(values);
+            toast.ok(`Cost Centre ${created.code} saved`);
+            exit.leave(
+              () => void navigate({ to: '/cost-centers/$id', params: { id: created.id } }),
+            );
+          } catch (e) {
+            setSubmitError(
+              e instanceof Error ? e.message : 'Could not save Cost Centre. Try again.',
+            );
+          }
+        }}
+      />
     </div>
   );
 }

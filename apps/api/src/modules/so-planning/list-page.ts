@@ -37,7 +37,7 @@ export const PLANNING_LIST_SF_FIELDS: MemFieldMap<PlanningSoListItem> = {
 };
 
 /** ISO timestamp → its India-time calendar day (YYYY-MM-DD), as Created On shows it. */
-function istDay(v: string | null | undefined): string | null {
+export function istDay(v: string | null | undefined): string | null {
   if (!v) return null;
   const d = new Date(v);
   if (Number.isNaN(d.getTime())) return null;

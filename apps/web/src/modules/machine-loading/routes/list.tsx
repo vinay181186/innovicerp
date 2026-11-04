@@ -31,6 +31,7 @@ import {
   useClampPage,
 } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { DataTable, Panel } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
@@ -41,6 +42,7 @@ import { OpsExpanded, opRowTint, opsColumns } from '../components/machine-loadin
 import { useMyCompany } from '../../settings/api';
 import { fetchMachineLoading, useMachineLoading } from '../api';
 import { printMachineQueue } from '../lib/print-machine-queue';
+import { useToast } from '@/ui/feedback';
 
 const searchSchema = z.object({
   m: z.string().uuid().optional(),
@@ -64,6 +66,7 @@ export const machineLoadingRoute = createRoute({
 });
 
 function MachineLoadingPage(): React.JSX.Element {
+  const toast = useToast();
   const search = machineLoadingRoute.useSearch();
   const navigate = machineLoadingRoute.useNavigate();
   // ADR-234: a row opens its Job Card only for someone who may open Job Cards.
@@ -131,10 +134,10 @@ function MachineLoadingPage(): React.JSX.Element {
         return { items: res.ops, total: res.total ?? res.ops.length };
       });
       if (!printMachineQueue({ machines, ops, company, machineId })) {
-        window.alert('Allow popups to print.');
+        toast.error('Allow popups to print.');
       }
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : 'Could not load the queue to print.');
+      toast.error(e instanceof Error ? e.message : 'Could not load the queue to print.');
     } finally {
       setPrinting(false);
     }
@@ -178,6 +181,7 @@ function MachineLoadingPage(): React.JSX.Element {
     // is the only scrollbar and its column header never scrolls away.
     <div className="page-fill">
       <ListHeader
+        orderFilter={<OrderSfFilter sf={sf} field="soCode" />}
         title="Machine Loading"
         icon="▣"
         count={total}
@@ -220,7 +224,13 @@ function MachineLoadingPage(): React.JSX.Element {
               className="btn btn-ghost"
               onClick={() => void onPrintQueue(selMachineId)}
               disabled={machines.length === 0 || printing}
-              title={selMachineId ? 'Print this machine queue' : 'Print all machine queues'}
+              title={
+                machines.length === 0
+                  ? 'No machines to print'
+                  : selMachineId
+                    ? 'Print this machine queue'
+                    : 'Print all machine queues'
+              }
             >
               <Printer size={13} /> Print Queue
             </button>

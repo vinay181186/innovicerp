@@ -68,7 +68,7 @@ export async function listInvoiceLines(
   const searchFrag = pat
     ? sql`AND (
         invoices.code ILIKE ${pat} ESCAPE '\\'
-        OR COALESCE(invoices.so_code_text, '') ILIKE ${pat} ESCAPE '\\'
+        OR COALESCE(iso.code, invoices.so_code_text, '') ILIKE ${pat} ESCAPE '\\'
         OR COALESCE(iso.internal_so_no, '') ILIKE ${pat} ESCAPE '\\'
         OR COALESCE(invoices.client_name_text, '') ILIKE ${pat} ESCAPE '\\'
         OR COALESCE(il.item_code_text, '') ILIKE ${pat} ESCAPE '\\'
@@ -108,7 +108,7 @@ export async function listInvoiceLines(
         invoices.code AS invoice_code, invoices.invoice_date::text AS invoice_date,
         invoices.status AS invoice_status, invoices.due_date::text AS due_date,
         ${overdue} AS overdue,
-        invoices.client_name_text AS client_name, invoices.so_code_text AS so_code,
+        invoices.client_name_text AS client_name, COALESCE(iso.code, invoices.so_code_text) AS so_code,
         iso.internal_so_no AS so_internal_no,
         sol.client_po_line_no,
         COALESCE(il.created_at, invoices.created_at) AS created_at,

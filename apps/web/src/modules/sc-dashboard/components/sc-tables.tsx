@@ -73,8 +73,6 @@ export interface PendingState {
   setFltVendor: (v: string) => void;
   fltItem: string;
   setFltItem: (v: string) => void;
-  fltSo: string;
-  setFltSo: (v: string) => void;
   isFiltered: boolean;
   clearFilters: () => void;
 }
@@ -83,31 +81,25 @@ export interface PendingState {
 export function useScTables() {
   const [fltVendor, setFltVendor] = useState('');
   const [fltItem, setFltItem] = useState('');
-  const [fltSo, setFltSo] = useState('');
   const vendor = useDebounced(fltVendor);
   const item = useDebounced(fltItem);
-  const so = useDebounced(fltSo);
   const pendingT = useScTable<ScPendingPage>('pending', TABLE_KEYS.scDashboard, {
     vendor,
     item,
-    so,
   });
   const { onPage } = pendingT;
   // Any filter change → page 1.
-  useEffect(() => onPage(1), [vendor, item, so, onPage]);
+  useEffect(() => onPage(1), [vendor, item, onPage]);
   const pending: PendingState = {
     t: pendingT,
     fltVendor,
     setFltVendor,
     fltItem,
     setFltItem,
-    fltSo,
-    setFltSo,
-    isFiltered: Boolean(vendor || item || so || pendingT.sf.filtering),
+    isFiltered: Boolean(vendor || item || pendingT.sf.filtering),
     clearFilters: () => {
       setFltVendor('');
       setFltItem('');
-      setFltSo('');
       pendingT.sf.clearFilters();
     },
   };
@@ -163,14 +155,6 @@ export function PendingTracker({
             options={options.items}
             width={160}
           />
-          <FilterInput
-            label="SO / JWSO No."
-            listId="dlScSO"
-            value={p.fltSo}
-            onChange={p.setFltSo}
-            options={options.sos}
-            width={120}
-          />
           {isFiltered ? (
             <button
               type="button"
@@ -203,7 +187,7 @@ export function PendingTracker({
           rowKey={(r) => `${r.poId}:${r.lineNo}`}
           sortFilterServer={t.sf}
           emptyText={
-            errText(t) ?? (isFiltered ? 'No pending PO lines match.' : 'No pending PO lines.')
+            errText(t) ?? (isFiltered ? 'No pending PO lines match.' : 'No pending PO lines yet.')
           }
         />
       </Panel>
@@ -238,7 +222,7 @@ export function VendorSummary({
           // grouped apart, as before), so the row's place on the page keys it.
           rowKey={(v, i) => `${v.vendorId ?? ''}:${v.vendorCode ?? 'unknown'}:${t.page}:${i}`}
           sortFilterServer={t.sf}
-          emptyText={errText(t) ?? 'No open POs'}
+          emptyText={errText(t) ?? 'No open POs yet.'}
         />
       </Panel>
       <Footer t={t} noun="vendor" />
@@ -270,7 +254,7 @@ export function SoSummary({
           loading={t.isLoading}
           rowKey={(s) => s.soRefId ?? '_unlinked_'}
           sortFilterServer={t.sf}
-          emptyText={errText(t) ?? 'No open POs'}
+          emptyText={errText(t) ?? 'No open POs yet.'}
         />
       </Panel>
       <Footer t={t} noun="order" />

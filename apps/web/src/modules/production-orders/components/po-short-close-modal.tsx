@@ -15,7 +15,7 @@
 import type { ProductionOrderStatus } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
-import { Modal } from '@/ui/feedback';
+import { Modal, useToast } from '@/ui/feedback';
 import { useShortCloseProductionOrder } from '../api';
 
 export function PoShortCloseModal({
@@ -41,6 +41,7 @@ export function PoShortCloseModal({
   const [reason, setReason] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const shortClose = useShortCloseProductionOrder();
+  const toast = useToast();
   const trimmed = reason.trim();
   // ADR-233 `Short Closed Qty` once this is done = Order − Stock Received
   // (productionOrderShortClosedQty on a short_closed order).
@@ -58,7 +59,10 @@ export function PoShortCloseModal({
     shortClose.mutate(
       { id, input: { reason: trimmed } },
       {
-        onSuccess: () => onClose(),
+        onSuccess: () => {
+          toast.ok(`Production Order ${code} short closed`);
+          onClose();
+        },
         onError: (e) =>
           setErr(
             e instanceof Error
@@ -73,14 +77,8 @@ export function PoShortCloseModal({
     <Modal
       title={`Short Close ${code}`}
       size="sm"
-      onClose={() => {
-        // Always a function: `ModalProps.onClose` is required and handing it
-        // `undefined` breaks the build under exactOptionalPropertyTypes. The
-        // "cannot close mid-flight" rule lives inside instead, next to the
-        // disabled Cancel button and closeOnOverlayClick={false}.
-        if (!shortClose.isPending) onClose();
-      }}
-      closeOnOverlayClick={false}
+      onClose={onClose}
+      closeLocked={shortClose.isPending}
       footer={
         <>
           <button

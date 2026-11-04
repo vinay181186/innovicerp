@@ -5,42 +5,12 @@ import type { SoMaterial, SoMaterialLine } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { soNoWithInternal } from '@/lib/so-number';
+import { Modal, useToast } from '@/ui/feedback';
 import { useReleaseParts, useReserveParts } from '../api';
 
 const r3 = (v: number): number => Math.round(v * 1000) / 1000;
 const REASON_MIN = 10;
-
-function Shell({
-  title,
-  children,
-  footer,
-  onClose,
-}: {
-  title: string;
-  children: React.ReactNode;
-  footer: React.ReactNode;
-  onClose: () => void;
-}): React.JSX.Element {
-  return (
-    <div
-      className="overlay"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className="modal" style={{ maxWidth: 760, width: '96vw' }}>
-        <div className="modal-hdr">
-          <span className="modal-title">{title}</span>
-          <button type="button" className="btn btn-ghost btn-sm btn-icon" onClick={onClose}>
-            ✕
-          </button>
-        </div>
-        <div className="modal-body">{children}</div>
-        <div className="modal-footer">{footer}</div>
-      </div>
-    </div>
-  );
-}
+const WIDTH = 'min(760px, 96vw)';
 
 export function ReservePartsModal({
   data,
@@ -64,6 +34,7 @@ export function ReservePartsModal({
   );
   const [err, setErr] = useState<string | null>(null);
   const reserve = useReserveParts(data.salesOrderId);
+  const toast = useToast();
 
   const save = (): void => {
     setErr(null);
@@ -82,16 +53,20 @@ export function ReservePartsModal({
     reserve.mutate(
       { lines },
       {
-        onSuccess: () => onClose(),
+        onSuccess: () => {
+          toast.ok('Parts reserved');
+          onClose();
+        },
         onError: (e) => setErr(e instanceof Error ? e.message : 'Could not reserve. Try again.'),
       },
     );
   };
 
   return (
-    <Shell
+    <Modal
       title={`Reserve Parts — ${soNoWithInternal(data.soCode, data.soInternalNo)}`}
       onClose={onClose}
+      maxWidth={WIDTH}
       footer={
         <>
           <button type="button" className="btn btn-ghost" onClick={onClose}>
@@ -101,6 +76,7 @@ export function ReservePartsModal({
             type="button"
             className="btn btn-primary"
             disabled={reserve.isPending || rows.length === 0}
+            title={rows.length === 0 ? 'No part still needs reserving' : undefined}
             onClick={save}
           >
             {reserve.isPending ? (
@@ -157,7 +133,7 @@ export function ReservePartsModal({
         </div>
       )}
       {err ? <div style={{ color: 'var(--red2)', fontSize: 12, marginTop: 8 }}>{err}</div> : null}
-    </Shell>
+    </Modal>
   );
 }
 
@@ -174,6 +150,7 @@ export function ReleasePartModal({
   const [reason, setReason] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const release = useReleaseParts(salesOrderId);
+  const toast = useToast();
 
   const save = (): void => {
     setErr(null);
@@ -185,16 +162,20 @@ export function ReleasePartModal({
     release.mutate(
       { itemId: line.itemId, qty: q, reason: reason.trim() },
       {
-        onSuccess: () => onClose(),
+        onSuccess: () => {
+          toast.ok(`${line.itemCode} released`);
+          onClose();
+        },
         onError: (e) => setErr(e instanceof Error ? e.message : 'Could not release. Try again.'),
       },
     );
   };
 
   return (
-    <Shell
+    <Modal
       title={`Release ${line.itemCode}`}
       onClose={onClose}
+      maxWidth={WIDTH}
       footer={
         <>
           <button type="button" className="btn btn-ghost" onClick={onClose}>
@@ -216,7 +197,9 @@ export function ReleasePartModal({
       </div>
       <div className="form-grid">
         <div className="form-grp">
-          <label className="form-label">Release Qty ★</label>
+          <label className="form-label">
+            Release Qty<span className="req">★</span>
+          </label>
           <input
             type="number"
             min={0}
@@ -228,7 +211,9 @@ export function ReleasePartModal({
           />
         </div>
         <div className="form-grp">
-          <label className="form-label">Reason ★</label>
+          <label className="form-label">
+            Reason<span className="req">★</span>
+          </label>
           <input
             type="text"
             className="innovic-input"
@@ -239,6 +224,6 @@ export function ReleasePartModal({
         </div>
       </div>
       {err ? <div style={{ color: 'var(--red2)', fontSize: 12, marginTop: 8 }}>{err}</div> : null}
-    </Shell>
+    </Modal>
   );
 }

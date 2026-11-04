@@ -28,6 +28,7 @@ import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { usePendingEditIds } from '@/modules/document-edits/api';
 import { AssignTaskModal } from '@/modules/tasks/components/assign-task-modal';
 import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel, renderRowMenuLink } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
@@ -214,6 +215,7 @@ function SalesOrdersListPage(): React.JSX.Element {
         onSearch={setSearchInput}
         searchPlaceholder="Search SO no., Internal SO No., customer, client PO, part name, item code…"
         updating={isFetching && !isLoading}
+        orderFilter={<OrderSfFilter sf={sf} field="soCode" kind="so" />}
         filters={
           <>
             <select

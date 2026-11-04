@@ -48,6 +48,7 @@ export const REFRESH_POLICY: Readonly<Record<string, RefreshRule>> = {
   'purchase-orders': live('purchase_orders / lines'),
   'purchase-requests': live('purchase_requests'),
   'qc-command': live('jc_ops / op_log'),
+  'order-options': live('sales_orders; JWSOs are not live, so a new one shows on the next open'),
   'qc-documents': live('qc_documents (0227)'),
   'qc-history': live('op_log / GRN'),
   'route-cards': live('route_cards / route_card_ops (0227)'),
@@ -55,7 +56,7 @@ export const REFRESH_POLICY: Readonly<Record<string, RefreshRule>> = {
   'shop-floor': live('job_cards / jc_ops'),
   'so-documents': live('qc_documents (0227)'),
   'so-overview': live('sales orders + production'),
-  'so-planning': live('production_orders / route_cards'),
+  'so-planning': live('production_orders / route_cards / sales_order_lines / purchase_requests'),
   'so-status': live('sales orders + production'),
 
   // ── Poll (60 s safety refresh) ──

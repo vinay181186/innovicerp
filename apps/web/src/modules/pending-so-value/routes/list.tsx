@@ -25,6 +25,7 @@ import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { todayIst } from '@/lib/date';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { DataTable, Panel, StatStrip } from '@/ui/data';
 import { ReportFilter, ReportShell } from '@/ui/data/ReportShell';
 import { ListFooter } from '@/ui/layout';
@@ -119,6 +120,11 @@ function PendingSoValuePage(): React.JSX.Element {
                 </option>
               ))}
             </select>
+          </ReportFilter>
+          <ReportFilter label="SO No." size="lg">
+            <div>
+              <OrderSfFilter sf={sf} field="soCode" kind="so" />
+            </div>
           </ReportFilter>
           <ReportFilter label="Search" htmlFor="psv-search" size="lg">
             <input

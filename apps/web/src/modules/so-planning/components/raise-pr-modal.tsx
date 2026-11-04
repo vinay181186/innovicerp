@@ -15,6 +15,7 @@ import { docDrawingRev, itemCodeWithRev } from '@/lib/item-code';
 import { soNoWithInternal } from '@/lib/so-number';
 import { useRaisePlanningPr } from '../api';
 import { Modal } from './modal';
+import { useToast } from '@/ui/feedback';
 
 const tileStyle: React.CSSProperties = {
   textAlign: 'center',
@@ -38,6 +39,7 @@ export function RaisePrModal({ so, line, onClose, onRaised }: Props): JSX.Elemen
   const [requiredDate, setRequiredDate] = useState<string>(line.dueDate ?? '');
   const [remarks, setRemarks] = useState('');
   const [err, setErr] = useState<string | null>(null);
+  const toast = useToast();
   const raise = useRaisePlanningPr();
 
   const submit = async () => {
@@ -57,6 +59,7 @@ export function RaisePrModal({ so, line, onClose, onRaised }: Props): JSX.Elemen
         requiredDate: requiredDate === '' ? null : requiredDate,
         remarks: remarks.trim() === '' ? null : remarks.trim(),
       });
+      toast.ok(`PR ${res.prCode} raised`);
       onRaised(res.prCode);
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Could not raise PR. Try again.');
@@ -156,7 +159,7 @@ export function RaisePrModal({ so, line, onClose, onRaised }: Props): JSX.Elemen
             htmlFor="raise-pr-qty"
             style={{ color: 'var(--purple)', fontWeight: 700, fontSize: 14 }}
           >
-            PR Qty ★
+            PR Qty<span className="req">★</span>
           </label>
           <input
             id="raise-pr-qty"

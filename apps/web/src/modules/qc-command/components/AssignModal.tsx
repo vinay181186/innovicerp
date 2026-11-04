@@ -4,48 +4,9 @@
 import { type QcCommandQueueRow, type QcInspectorOption, opSrNo } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { Modal, useToast } from '@/ui/feedback';
+import { SearchableSelect } from '@/ui/forms';
 import { useAssignQc } from '../api';
-
-function Overlay({
-  title,
-  onClose,
-  children,
-}: {
-  title: string;
-  onClose: () => void;
-  children: React.ReactNode;
-}): React.JSX.Element {
-  return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'flex-start',
-        justifyContent: 'center',
-        zIndex: 50,
-        padding: 24,
-        overflowY: 'auto',
-      }}
-      onClick={onClose}
-    >
-      <div
-        className="panel"
-        style={{ width: 'min(1100px, 96vw)', maxWidth: 1100 }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="panel-hdr">
-          <span className="panel-title">{title}</span>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
-            ✕
-          </button>
-        </div>
-        <div className="panel-body">{children}</div>
-      </div>
-    </div>
-  );
-}
 
 export function AssignModal({
   row,
@@ -56,6 +17,7 @@ export function AssignModal({
   inspectors: QcInspectorOption[];
   onClose: () => void;
 }): React.JSX.Element {
+  const toast = useToast();
   const assign = useAssignQc();
   const [inspectorUserId, setInspectorUserId] = useState('');
   const [note, setNote] = useState('');
@@ -73,6 +35,7 @@ export function AssignModal({
         inspectorUserId,
         ...(note.trim() ? { note: note.trim() } : {}),
       });
+      toast.ok(`Inspector assigned — ${row.jcCode} Op ${opSrNo(row.opSeq)}`);
       onClose();
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Could not assign inspector. Try again.');
@@ -80,24 +43,38 @@ export function AssignModal({
   }
 
   return (
-    <Overlay title={`Assign Inspector — ${row.jcCode} Op ${opSrNo(row.opSeq)}`} onClose={onClose}>
+    <Modal
+      title={`Assign Inspector — ${row.jcCode} Op ${opSrNo(row.opSeq)}`}
+      onClose={onClose}
+      maxWidth="min(1100px, 96vw)"
+      footer={
+        <>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={assign.isPending}
+            onClick={() => void submit()}
+          >
+            {assign.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Assign
+          </button>
+        </>
+      }
+    >
       <div className="form-grid">
         <div className="form-grp form-full">
           <label className="form-label">
             Assign to Inspector<span className="req">★</span>
           </label>
-          <select
-            className="innovic-select"
-            value={inspectorUserId}
-            onChange={(e) => setInspectorUserId(e.target.value)}
-          >
-            <option value="">— Select —</option>
-            {inspectors.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.name} ({u.role})
-              </option>
-            ))}
-          </select>
+          <SearchableSelect
+            ariaLabel="Assign to Inspector"
+            value={inspectorUserId || null}
+            onChange={(id) => setInspectorUserId(id ?? '')}
+            options={inspectors.map((u) => ({ id: u.id, name: `${u.name} (${u.role})` }))}
+            placeholder="— Select —"
+          />
         </div>
         <div className="form-grp form-full">
           <label className="form-label">Note (optional)</label>
@@ -114,19 +91,6 @@ export function AssignModal({
           {err}
         </div>
       ) : null}
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
-        <button type="button" className="btn btn-ghost" onClick={onClose}>
-          Cancel
-        </button>
-        <button
-          type="button"
-          className="btn btn-primary"
-          disabled={assign.isPending}
-          onClick={() => void submit()}
-        >
-          {assign.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Assign
-        </button>
-      </div>
-    </Overlay>
+    </Modal>
   );
 }

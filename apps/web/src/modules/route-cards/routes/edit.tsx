@@ -71,12 +71,14 @@ function RouteCardEditPage(): React.JSX.Element {
         // The edit-approval gate is on: nothing was changed on the card — the
         // edit is now waiting for approval. Return to the card, whose
         // "waiting for approval" notice says so.
+        toast.ok('Sent for approval — your changes will apply once an approver signs off.');
         exit.leave(() => void navigate({ to: '/route-cards/$id', params: { id }, replace: true }));
         return;
       }
       opened.saved(updated.updatedAt);
       // ADR-253 — saving a REJECTED card sends it back to Pending Approval.
       if (detail?.approvalStatus === 'rejected') toast.ok('Saved — sent for approval again.');
+      else toast.ok(`Route Card ${updated.code} saved`);
       exit.leave(() => void navigate({ to: '/route-cards/$id', params: { id: updated.id } }));
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : 'Could not save Route Card. Try again.');

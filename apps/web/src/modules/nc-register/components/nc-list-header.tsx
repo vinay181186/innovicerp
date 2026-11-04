@@ -1,7 +1,7 @@
-// NC Register list toolbar — the ListHeader with its StatStrip, search box,
+// NC Register list toolbar — the ListHeader with its search box,
 // status + reason filters and the "Report NC" button. Split out of routes/list.tsx
 // so that file stays under the 400-line ceiling. Behaviour is unchanged: the
-// filters drive the same URL params, the StatStrip reads the same summary.
+// filters drive the same URL params.
 
 import {
   NC_REASON_CATEGORIES,
@@ -9,12 +9,10 @@ import {
   NC_REASON_CATEGORY_LABELS,
   NC_STATUS_LABELS,
   type NcReasonCategory,
-  type NcRegisterSummary,
   type NcStatus,
-  roundQty,
 } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
-import { StatStrip } from '@/components/shared/stat-strip';
+import type { ReactNode } from 'react';
 import { ListHeader } from '@/ui/layout';
 
 export interface NcListHeaderProps {
@@ -30,7 +28,9 @@ export interface NcListHeaderProps {
   /** A column ▾ filter is applied (Sort & Filter, ADR-200) — lights Clear. */
   columnFiltering: boolean;
   canReportNc: boolean;
-  summary: NcRegisterSummary | undefined;
+  orderFilter: ReactNode;
+  /** The page's tab strip, drawn under the header. */
+  tabs?: ReactNode;
 }
 
 export function NcListHeader({
@@ -45,11 +45,13 @@ export function NcListHeader({
   onClearFilters,
   columnFiltering,
   canReportNc,
-  summary,
+  orderFilter,
+  tabs,
 }: NcListHeaderProps): React.JSX.Element {
   return (
     <ListHeader
       title="NC Register"
+      orderFilter={orderFilter}
       icon="⚠️"
       count={count}
       noun="NC"
@@ -118,41 +120,7 @@ export function NcListHeader({
         ) : null
       }
     >
-      {/* Counts as ONE single-row strip (styling skill Rule 3 + SO Master).
-          Read-only metrics — no onClick, so each cell renders as a div. */}
-      <StatStrip
-        items={[
-          {
-            key: 'total',
-            label: 'NCs',
-            count: summary?.total == null ? '—' : Math.round(summary.total),
-            color: 'var(--red2)',
-          },
-          {
-            key: 'pending',
-            label: 'NC Raised',
-            count: summary?.pending == null ? '—' : Math.round(summary.pending),
-            color: 'var(--amber2)',
-          },
-          {
-            key: 'totalQty',
-            label: 'Deviated Qty',
-            count: summary?.totalQty == null ? '—' : roundQty(summary.totalQty),
-          },
-          {
-            key: 'rework',
-            label: 'Rework Qty',
-            count: summary?.reworkQty == null ? '—' : roundQty(summary.reworkQty),
-            color: 'var(--cyan)',
-          },
-          {
-            key: 'scrap',
-            label: 'Scrap Qty',
-            count: summary?.scrapQty == null ? '—' : roundQty(summary.scrapQty),
-            color: 'var(--red2)',
-          },
-        ]}
-      />
+      {tabs}
     </ListHeader>
   );
 }

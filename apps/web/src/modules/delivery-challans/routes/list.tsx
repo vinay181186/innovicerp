@@ -35,6 +35,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
 import { usePendingEditIds } from '@/modules/document-edits/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
+import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
@@ -46,6 +47,8 @@ import { useOspDcPrint } from '../components/use-ospdc-print';
 import { DC_STATUS_LABEL } from '../lib/dc-status-label';
 import { printDispatchRegister } from '../lib/print-dispatch-register';
 import { OspAtVendorRegister } from '@/modules/osp-wip/components/osp-at-vendor-register';
+import { TabStrip } from '@/ui/navigation';
+import { useToast } from '@/ui/feedback';
 
 const PAGE_SIZE = 25;
 
@@ -66,6 +69,7 @@ export const deliveryChallansListRoute = createRoute({
 });
 
 function DeliveryChallansListPage(): React.JSX.Element {
+  const toast = useToast();
   const search = deliveryChallansListRoute.useSearch();
   const navigate = deliveryChallansListRoute.useNavigate();
 
@@ -150,9 +154,9 @@ function DeliveryChallansListPage(): React.JSX.Element {
         filterLabel: bits.join(' · '),
         company,
       });
-      if (!ok) window.alert('Allow popups to print.');
+      if (!ok) toast.error('Allow popups to print.');
     } catch {
-      window.alert('Allow popups to print.');
+      toast.error('Allow popups to print.');
     }
   }
 
@@ -170,56 +174,39 @@ function DeliveryChallansListPage(): React.JSX.Element {
     );
   }
 
+  // Outward DC | At-Vendor Register tabs (the At-Vendor register is the former
+  // standalone /osp-wip screen).
+  const tabBar = (
+    <TabStrip
+      label="Outward DC views"
+      tabs={[
+        { key: 'outward', label: 'Outward DC' },
+        { key: 'at_vendor', label: 'At-Vendor Register' },
+      ]}
+      activeKey={tab}
+      onChange={(k) =>
+        void navigate({
+          search: (prev) => ({ ...prev, tab: k === 'at_vendor' ? 'at_vendor' : undefined }),
+          replace: true,
+        })
+      }
+    />
+  );
+
   return (
     // `page-fill` (ADR-202): both tabs fill the content area so the TABLE is
     // the only thing that scrolls — the At-Vendor register (osp-wip) now opts
     // its own Panel in with `fill`, so the page no longer has to scroll for it.
     <div className="page-fill">
-      {/* Outward DC | At-Vendor Register tabs (the At-Vendor register is the
-          former standalone /osp-wip screen). */}
-      <div
-        style={{
-          display: 'flex',
-          gap: 4,
-          borderBottom: '1px solid var(--border)',
-          marginBottom: 14,
-        }}
-      >
-        {(['outward', 'at_vendor'] as const).map((t) => (
-          <button
-            key={t}
-            type="button"
-            onClick={() =>
-              void navigate({
-                search: (prev) => ({ ...prev, tab: t === 'outward' ? undefined : 'at_vendor' }),
-                replace: true,
-              })
-            }
-            style={{
-              background: 'none',
-              border: 'none',
-              borderBottom: tab === t ? '2px solid var(--cyan)' : '2px solid transparent',
-              color: tab === t ? 'var(--cyan)' : 'var(--text3)',
-              fontSize: 12,
-              fontWeight: 700,
-              padding: '6px 12px',
-              cursor: 'pointer',
-              marginBottom: -1,
-            }}
-          >
-            {t === 'outward' ? 'Outward DC' : 'At-Vendor Register'}
-          </button>
-        ))}
-      </div>
-
       {tab === 'at_vendor' ? (
-        <OspAtVendorRegister />
+        <OspAtVendorRegister tabs={tabBar} />
       ) : (
         <>
           {/* THE list header (ui/layout ListHeader): title · count · Print
               Register · + New DC, then the filter bar (search · status ·
               Clear), with the read-only totals strip pinned inside the band. */}
           <ListHeader
+            orderFilter={<OrderSfFilter sf={sf} field="soCode" />}
             title="OSP Outward DC"
             icon="🚛"
             count={total}
@@ -283,7 +270,9 @@ function DeliveryChallansListPage(): React.JSX.Element {
                 </Link>
               ) : null
             }
-          />
+          >
+            {tabBar}
+          </ListHeader>
 
           {isError ? (
             <PageState

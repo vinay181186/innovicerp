@@ -6,7 +6,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { useEditConflict } from '@/lib/use-edit-conflict';
 import { isStagedResult } from '@/modules/document-edits/api';
-import { Banner } from '@/ui/feedback';
+import { useToast } from '@/ui/feedback';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCostCenter, useFetchCostCenter, useUpdateCostCenter } from '../api';
 import { CostCenterForm } from '../components/cost-center-form';
@@ -57,9 +57,7 @@ function CostCenterEditPage(): React.JSX.Element {
     noun: 'cost centre',
   });
   const [submitError, setSubmitError] = useState<string | null>(null);
-  // ADR-202 — set when an edit to a LIVE cost centre is staged for approval
-  // instead of applied; the neutral "Sent for approval" banner shows it.
-  const [stagedNotice, setStagedNotice] = useState<string | null>(null);
+  const toast = useToast();
   const goBack = useCallback(
     () => void navigate({ to: '/cost-centers/$id', params: { id } }),
     [navigate, id],
@@ -114,13 +112,8 @@ function CostCenterEditPage(): React.JSX.Element {
       >
         <ArrowLeft size={14} /> Back to {detail.code}
       </Link>
-      {stagedNotice ? (
-        <Banner tone="success" role="status">
-          {stagedNotice}
-        </Banner>
-      ) : null}
-      <div className="panel">
-        <div className="panel-hdr">
+      <CostCenterForm
+        panelHeader={
           <div>
             <div className="td-code fw-700" style={{ color: 'var(--cyan)', fontSize: 14 }}>
               {detail.code}
@@ -129,44 +122,38 @@ function CostCenterEditPage(): React.JSX.Element {
               Edit Cost Centre
             </div>
           </div>
-        </div>
-        <div className="panel-body">
-          <CostCenterForm
-            mode="edit"
-            detail={detail}
-            submitError={submitError}
-            submitLabel="Save Changes"
-            onCancel={() => exit.leave(goBack)}
-            onSubmit={async (values: UpdateCostCenterInput) => {
-              setSubmitError(null);
-              try {
-                // Only the fields that actually moved are sent; a 409 re-reads
-                // and retries onto the fresh row instead of overwriting someone
-                // else's change.
-                const result = await conflict.save(values, (payload, expectedUpdatedAt) =>
-                  update.mutateAsync({ ...payload, expectedUpdatedAt }),
-                );
-                // null = nothing actually changed; the user has been told and
-                // nothing was written. Stay on the form.
-                if (result === null) return;
-                if (isStagedResult(result)) {
-                  // Gate on and this cost centre is live: nothing was changed —
-                  // the edit is now waiting for approval. Say so, then return to
-                  // the record (its fields now carry the pending chip).
-                  setStagedNotice(
-                    'Sent for approval — your changes will apply once an approver signs off.',
-                  );
-                }
-                exit.leave(goBack);
-              } catch (e) {
-                setSubmitError(
-                  e instanceof Error ? e.message : 'Could not save changes. Try again.',
-                );
-              }
-            }}
-          />
-        </div>
-      </div>
+        }
+        mode="edit"
+        detail={detail}
+        submitError={submitError}
+        submitLabel="Save Changes"
+        onCancel={() => exit.leave(goBack)}
+        onSubmit={async (values: UpdateCostCenterInput) => {
+          setSubmitError(null);
+          try {
+            // Only the fields that actually moved are sent; a 409 re-reads
+            // and retries onto the fresh row instead of overwriting someone
+            // else's change.
+            const result = await conflict.save(values, (payload, expectedUpdatedAt) =>
+              update.mutateAsync({ ...payload, expectedUpdatedAt }),
+            );
+            // null = nothing actually changed; the user has been told and
+            // nothing was written. Stay on the form.
+            if (result === null) return;
+            if (isStagedResult(result)) {
+              // Gate on and this cost centre is live: nothing was changed —
+              // the edit is now waiting for approval. Say so, then return to
+              // the record (its fields now carry the pending chip).
+              toast.ok('Sent for approval — your changes will apply once an approver signs off.');
+            } else {
+              toast.ok(`Cost Centre ${detail.code} saved`);
+            }
+            exit.leave(goBack);
+          } catch (e) {
+            setSubmitError(e instanceof Error ? e.message : 'Could not save changes. Try again.');
+          }
+        }}
+      />
     </div>
   );
 }

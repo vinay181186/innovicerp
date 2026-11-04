@@ -22,7 +22,6 @@ import { fmtDate } from '@/lib/date';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { StatStrip } from '@/components/shared/stat-strip';
 import { ListFooter, ListHeader } from '@/ui/layout';
 import { DataTable, Panel } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
@@ -39,6 +38,8 @@ type ModalState =
   | { kind: 'edit'; capa: CapaRecord; readOnly: boolean };
 
 export function CapaView(props: {
+  /** The page's tab strip, drawn under this view's header. */
+  tabs?: React.ReactNode;
   title?: string;
   initialSearch?: string | undefined;
   /** Open the CAPA named by initialSearch in its 5-step edit (not read-only) —
@@ -79,10 +80,22 @@ export function CapaView(props: {
   const [assignCapa, setAssignCapa] = useState<CapaRecord | null>(null);
   // The fit table's ▸ is the row's one expand control (CAPA Date + Root Cause).
   const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(new Set());
-  const columns = useMemo(() => capaListColumns(pageOffset(page) + 1), [page]);
 
   const items = useMemo(() => data?.items ?? [], [data]);
   const counters = data?.counters;
+  const columns = useMemo(
+    () =>
+      capaListColumns(
+        pageOffset(page) + 1,
+        counters && {
+          Open: counters.open,
+          'In Progress': counters.inProgress,
+          Verified: counters.verified,
+          Closed: counters.closed,
+        },
+      ),
+    [page, counters],
+  );
 
   // A link that names one CAPA (NC chip, Global Search) opens that CAPA, not
   // just the filtered list. Once, when the list first arrives.
@@ -138,34 +151,7 @@ export function CapaView(props: {
           ) : null
         }
       >
-        {/* Counter cards — one strip */}
-        {counters ? (
-          <StatStrip
-            items={[
-              { key: 'total', label: 'Total', count: counters.total, color: 'var(--purple2)' },
-              { key: 'open', label: 'Open', count: counters.open, color: 'var(--blue)' },
-              {
-                key: 'inProgress',
-                label: 'In Progress',
-                count: counters.inProgress,
-                color: 'var(--amber2)',
-              },
-              {
-                key: 'verified',
-                label: 'Verified',
-                count: counters.verified,
-                color: 'var(--blue)',
-              },
-              { key: 'closed', label: 'Closed', count: counters.closed, color: 'var(--green2)' },
-              {
-                key: 'effectiveness',
-                label: 'Effectiveness',
-                count: `${counters.effectivenessPct}%`,
-                color: 'var(--green2)',
-              },
-            ]}
-          />
-        ) : null}
+        {props.tabs}
       </ListHeader>
 
       {isLoading ? (
@@ -254,6 +240,7 @@ export function CapaView(props: {
             page={page}
             pageSize={LIST_PAGE_SIZE}
             onPage={setPage}
+            summary={counters ? `All CAPA: Effectiveness ${counters.effectivenessPct}%` : undefined}
           />
         </>
       )}

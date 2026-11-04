@@ -15,19 +15,19 @@ import {
 } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { Banner } from '@/ui/feedback';
+import { Banner, useToast } from '@/ui/feedback';
 import { useMyCompany, useUpdateMyCompany } from '../api';
 import { useMasterRuleSettings } from '../master-rules-ui';
 
 export function MasterRulesPanel(props: { isAdmin: boolean }): React.JSX.Element | null {
   const { data: company } = useMyCompany();
   const current = useMasterRuleSettings();
+  const toast = useToast();
   const update = useUpdateMyCompany();
   const [mode, setMode] = useState<MasterRulesMode>(current.masterRulesMode);
   const [checkHsn, setCheckHsn] = useState(current.checkHsn);
   const [hsnMinDigits, setHsnMinDigits] = useState<number>(current.hsnMinDigits);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [submitOk, setSubmitOk] = useState(false);
 
   // Load (and re-load after a save) from the company row.
   useEffect(() => {
@@ -45,7 +45,6 @@ export function MasterRulesPanel(props: { isAdmin: boolean }): React.JSX.Element
 
   const onSave = async (): Promise<void> => {
     setSubmitError(null);
-    setSubmitOk(false);
     const payload: UpdateCompanyInput = {
       masterRulesMode: mode,
       checkHsn,
@@ -53,8 +52,7 @@ export function MasterRulesPanel(props: { isAdmin: boolean }): React.JSX.Element
     };
     try {
       await update.mutateAsync(payload);
-      setSubmitOk(true);
-      window.setTimeout(() => setSubmitOk(false), 3000);
+      toast.ok('Master Rules saved');
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : 'Could not save master rules. Try again.');
     }
@@ -144,16 +142,12 @@ export function MasterRulesPanel(props: { isAdmin: boolean }): React.JSX.Element
                   </Banner>
                 </div>
               ) : null}
-              {submitOk ? (
-                <div style={{ marginBottom: 10 }}>
-                  <Banner tone="success">Master rules saved.</Banner>
-                </div>
-              ) : null}
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
                 <button
                   type="button"
                   className="btn btn-primary"
                   disabled={!dirty || update.isPending}
+                  title={!dirty ? 'No changes to save' : undefined}
                   onClick={() => void onSave()}
                 >
                   {update.isPending ? <Loader2 size={13} className="animate-spin" /> : null}

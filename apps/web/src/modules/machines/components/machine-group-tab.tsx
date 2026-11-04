@@ -34,7 +34,7 @@ import { StatusBadge } from '@/ui/core';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
-import { ConfirmDialog } from '@/ui/feedback';
+import { ConfirmDialog, useToast } from '@/ui/feedback';
 import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import {
@@ -111,12 +111,11 @@ export function MachineGroupTab({ tabs }: { tabs: React.ReactNode }): React.JSX.
   const create = useCreateMachineGroup(saveKey);
   const update = useUpdateMachineGroup();
   const softDelete = useSoftDeleteMachineGroup();
+  const toast = useToast();
 
   const [modal, setModal] = useState<ModalState>({ kind: 'none' });
   // The row waiting on the Move-to-Trash confirm (app ConfirmDialog, not window.confirm).
   const [trashRow, setTrashRow] = useState<MachineGroup | null>(null);
-  // ADR-202 — the neutral "Sent for approval" notice after a staged edit save.
-  const [savedNotice, setSavedNotice] = useState<string | null>(null);
 
   const rows = useMemo(() => list.data?.groups ?? [], [list.data]);
   const total = list.data?.total ?? 0;
@@ -258,26 +257,6 @@ export function MachineGroupTab({ tabs }: { tabs: React.ReactNode }): React.JSX.
         </div>
       ) : null}
 
-      {/* ADR-202 — neutral confirmation after a live-group edit was staged. */}
-      {savedNotice ? (
-        <div className="panel" style={{ marginBottom: 12 }}>
-          <div
-            className="panel-body"
-            style={{ padding: '10px 14px', fontSize: 12, color: 'var(--amber2)' }}
-          >
-            {savedNotice}
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              style={{ marginLeft: 8, fontSize: 11 }}
-              onClick={() => setSavedNotice(null)}
-            >
-              ✕
-            </button>
-          </div>
-        </div>
-      ) : null}
-
       {list.isError ? (
         <PageState
           state="error"
@@ -362,7 +341,6 @@ export function MachineGroupTab({ tabs }: { tabs: React.ReactNode }): React.JSX.
           {...(modal.kind === 'edit' ? { row: modal.row } : {})}
           saving={create.isPending || update.isPending}
           onSave={async (input, id) => {
-            setSavedNotice(null);
             if (id) {
               // '' (not undefined) so clearing the box actually clears the
               // column. The group text itself is permanent — machines snapshot
@@ -372,19 +350,20 @@ export function MachineGroupTab({ tabs }: { tabs: React.ReactNode }): React.JSX.
                 input: { description: input.description ?? '', isActive: input.isActive },
               });
               // ADR-202 — gate on and this group is live: nothing changed, the
-              // edit is now waiting for approval. The modal closes itself; show
-              // the neutral notice after, and the row's "edit pending" chip.
-              if (isStagedResult(result)) {
-                setSavedNotice(
-                  'Machine Group edit sent for approval — your change will apply once an approver signs off.',
-                );
-              }
+              // edit is now waiting for approval. The modal closes itself; the
+              // toast says so, and the row carries its "edit pending" chip.
+              toast.ok(
+                isStagedResult(result)
+                  ? 'Machine Group edit sent for approval — your change will apply once an approver signs off.'
+                  : `Machine Group ${input.code} saved`,
+              );
             } else {
               await create.mutateAsync({
                 code: input.code,
                 isActive: input.isActive,
                 ...(input.description ? { description: input.description } : {}),
               });
+              toast.ok(`Machine Group ${input.code} saved`);
             }
           }}
           onClose={() => setModal({ kind: 'none' })}

@@ -215,6 +215,7 @@ export function NcDcPickTable({
           type="button"
           className="btn btn-primary btn-sm"
           disabled={picked.length === 0}
+          title={picked.length === 0 ? 'Tick at least one NC first' : undefined}
           onClick={() => onNext(picked)}
         >
           {picked.length === 1 ? 'Make DC for 1 NC' : `Make DC for ${picked.length} NCs`}

@@ -5,6 +5,7 @@ import { useSaveKey } from '@/lib/use-save-key';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreatePlan } from '../api';
 import { PlanCreateForm } from '../components/plan-create-form';
+import { useToast } from '@/ui/feedback';
 
 export const planNewRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -19,6 +20,7 @@ function PlanNewPage(): React.JSX.Element {
   const navigate = useNavigate();
   const saveKey = useSaveKey();
   const create = useCreatePlan(saveKey);
+  const toast = useToast();
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'plan_create');
   const goBack = (): void => void navigate({ to: '/plans' });
@@ -42,6 +44,7 @@ function PlanNewPage(): React.JSX.Element {
         onSave={(input) => {
           create.mutate(input, {
             onSuccess: (plan) => {
+              toast.ok(`Plan ${plan.code} saved`);
               // The plan detail offers "Create Production Order →" next.
               exit.leave(() => void navigate({ to: '/plans/$id', params: { id: plan.id } }));
             },

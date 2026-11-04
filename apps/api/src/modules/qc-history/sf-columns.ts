@@ -9,12 +9,12 @@ import { createdByNameSql } from '../../lib/created-by-sql';
 import type { SfColumnMap } from '../../lib/list-query';
 import { OP_LOG_QC_REMARKS } from '../../lib/op-log-qc-remarks';
 import { polSql } from '../../lib/pol';
-import { ITEM_CODE_REV, PEND_SINCE, istDaySql } from './sql';
+import { ITEM_CODE_REV, OP_ORDER_CODE, PEND_SINCE, istDaySql } from './sql';
 
 const LEAD: SfColumnMap = {
   jcCode: { sql: sql`jc.code`, type: 'text' },
   jcDate: { sql: sql`jc.jc_date`, type: 'date' },
-  soCode: { sql: sql`so.code`, type: 'text' },
+  soCode: { sql: OP_ORDER_CODE, type: 'text' },
   // ADR-207 — the Internal SO No., off the `so` join BOTH feeds make
   // (pendingFrom / logsFrom), so either table can sort and filter on it.
   soInternalNo: { sql: sql`so.internal_so_no`, type: 'text' },

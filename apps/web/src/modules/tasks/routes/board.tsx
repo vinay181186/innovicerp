@@ -28,7 +28,7 @@ import type {
   TaskStatus,
   TaskView,
 } from '@innovic/shared';
-import { DAY_LOG_VIEWS, TASK_VIEWS } from '@innovic/shared';
+import { DAY_LOG_VIEWS, TASK_VIEWS, TASK_VIEW_LABELS } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -41,6 +41,7 @@ import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader } from '@/ui/layout';
+import { TabStrip } from '@/ui/navigation';
 import { useMarkTasksViewed, useTaskList, useTaskUserOptions } from '../api';
 import { AssignTaskModal } from '../components/assign-task-modal';
 import {
@@ -50,7 +51,7 @@ import {
   UpdateStatusModal,
 } from '../components/task-action-modals';
 import { TaskDetailModal } from '../components/task-detail-modal';
-import { TaskFilters, TaskTabs } from '../components/board-filters';
+import { TaskFilters } from '../components/board-filters';
 import { TaskTable, type RowAction } from '../components/task-table';
 import { TodoModal } from '../components/todo-modal';
 import {
@@ -365,19 +366,24 @@ function TaskBoardPage(): React.JSX.Element {
           ) : undefined
         }
       >
-        <TaskTabs
-          tabs={tabs}
-          view={dayTab ? dayLogTabOf(dayTab) : tab}
-          countOf={tabCount}
-          onChange={setView}
-          extra={dayTabs}
-          onExtra={(t) =>
-            goDay({
-              view: isDayLogTab(t) ? t : 'daylog',
-              user: undefined,
-              line: undefined,
-            })
-          }
+        <TabStrip
+          label="Task Board views"
+          activeKey={dayTab ? dayLogTabOf(dayTab) : tab}
+          tabs={[
+            ...tabs.map((v) => ({
+              key: v,
+              label: TASK_VIEW_LABELS[v],
+              count: tabCount(v),
+              ...(v === 'all' ? { note: '(Admin)' } : {}),
+            })),
+            // Day Log tabs carry no count badge.
+            ...dayTabs,
+          ]}
+          onChange={(k) => {
+            const task = tabs.find((v) => v === k);
+            if (task) setView(task);
+            else goDay({ view: isDayLogTab(k) ? k : 'daylog', user: undefined, line: undefined });
+          }}
         />
       </ListHeader>
 

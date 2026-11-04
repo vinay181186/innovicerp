@@ -16,13 +16,17 @@ import {
 } from '@innovic/shared';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Loader2 } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { type Control, Controller, useForm } from 'react-hook-form';
 import { useTaskUserOptions } from '@/modules/tasks/api';
 import { useNextOperatorCode } from '../api';
+import { SearchableSelect } from '@/ui/forms';
+import { FormActions } from '@/ui/layout';
 
 type CreateMode = {
   mode: 'create';
+  /** The title band of the form's panel; the form owns the panel so its button bar can sit outside it. */
+  panelHeader: ReactNode;
   defaultValues?: Partial<CreateOperatorInput>;
   onSubmit: (values: CreateOperatorInput) => Promise<void> | void;
   submitLabel?: string;
@@ -32,6 +36,8 @@ type CreateMode = {
 
 type EditMode = {
   mode: 'edit';
+  /** The title band of the form's panel; the form owns the panel so its button bar can sit outside it. */
+  panelHeader: ReactNode;
   operator: Operator;
   onSubmit: (values: UpdateOperatorInput) => Promise<void> | void;
   submitLabel?: string;
@@ -70,36 +76,38 @@ export function OperatorForm(props: OperatorFormProps): React.JSX.Element {
 // Linked User: a dropdown of the company's active logins (the same list the
 // Task Board's assignee picker reads). It saves the user's id exactly as the
 // old free-text box did; '' = no linked login. A saved link to a user who is
-// no longer in the list (deactivated) keeps its own option, so re-saving the
-// form never silently drops it.
+// no longer in the list (deactivated) keeps its own label, so re-saving the
+// form never silently drops it. The login list is one fixed page, so the search
+// only filters what is loaded.
 function LinkedUserSelect(props: {
   control: Control<CreateOperatorInput> | Control<UpdateOperatorInput>;
 }): React.JSX.Element {
-  const { data, isLoading } = useTaskUserOptions();
-  const options = data?.options ?? [];
+  const { data, isLoading, error } = useTaskUserOptions();
+  const options = (data?.options ?? []).map((u) => ({
+    id: u.id,
+    name: u.role ? `${u.name} — ${u.role}` : u.name,
+  }));
   return (
     <Controller
       control={props.control as Control<CreateOperatorInput>}
       name="userId"
       render={({ field }) => {
         const value = field.value ?? '';
-        const known = value === '' || options.some((u) => u.id === value);
+        const picked = options.find((u) => u.id === value);
         return (
-          <select
+          <SearchableSelect
             id="userId"
-            className="innovic-select"
-            value={value}
-            onChange={(e) => field.onChange(e.target.value)}
-            onBlur={field.onBlur}
-          >
-            <option value="">{isLoading ? 'Loading users…' : '— No linked login —'}</option>
-            {!known ? <option value={value}>(user not in the active list)</option> : null}
-            {options.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.role ? `${u.name} — ${u.role}` : u.name}
-              </option>
-            ))}
-          </select>
+            value={value || null}
+            onChange={(id) => field.onChange(id ?? '')}
+            options={options}
+            loading={isLoading}
+            error={error}
+            clearable
+            placeholder={isLoading ? 'Loading users…' : '— No linked login —'}
+            valueLabel={
+              !value || isLoading ? undefined : (picked?.name ?? '(user not in the active list)')
+            }
+          />
         );
       }}
     />
@@ -139,69 +147,97 @@ function CreateOperatorForm(props: CreateMode): React.JSX.Element {
         await props.onSubmit(rest);
       })}
     >
-      <div className="form-grid">
-        <div className="form-grp">
-          <label className="form-label" htmlFor="code">
-            Code
-          </label>
-          <input
-            id="code"
-            className="innovic-input"
-            readOnly
-            autoComplete="off"
-            placeholder="Auto-generated on save"
-            {...register('code', {
-              // Read-only, auto-generated server-side. RHF reads the blank DOM
-              // value back as "" on submit, failing the schema's min(1); coerce
-              // blank → undefined so `code` is omitted (optional).
-              setValueAs: (v: string) => (typeof v === 'string' && v.trim() ? v.trim() : undefined),
-            })}
-          />
-          {errors.code?.message ? <div className="form-error">{errors.code.message}</div> : null}
-        </div>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="name">
-            Name<span className="req">★</span>
-          </label>
-          <input id="name" className="innovic-input" autoFocus autoComplete="off" {...register('name')} />
-          {errors.name?.message ? <div className="form-error">{errors.name.message}</div> : null}
-        </div>
+      <div className="panel">
+        <div className="panel-hdr">{props.panelHeader}</div>
+        <div className="panel-body">
+          <div className="form-grid">
+            <div className="form-grp">
+              <label className="form-label" htmlFor="code">
+                Code
+              </label>
+              <input
+                id="code"
+                className="innovic-input"
+                readOnly
+                autoComplete="off"
+                placeholder="Auto-generated on save"
+                {...register('code', {
+                  // Read-only, auto-generated server-side. RHF reads the blank DOM
+                  // value back as "" on submit, failing the schema's min(1); coerce
+                  // blank → undefined so `code` is omitted (optional).
+                  setValueAs: (v: string) =>
+                    typeof v === 'string' && v.trim() ? v.trim() : undefined,
+                })}
+              />
+              {errors.code?.message ? (
+                <div className="form-error">{errors.code.message}</div>
+              ) : null}
+            </div>
+            <div className="form-grp">
+              <label className="form-label" htmlFor="name">
+                Name<span className="req">★</span>
+              </label>
+              <input
+                id="name"
+                className="innovic-input"
+                autoFocus
+                autoComplete="off"
+                {...register('name')}
+              />
+              {errors.name?.message ? (
+                <div className="form-error">{errors.name.message}</div>
+              ) : null}
+            </div>
 
-        <div className="form-grp">
-          <label className="form-label" htmlFor="department">
-            Department
-          </label>
-          <input id="department" className="innovic-input" autoComplete="off" placeholder="CNC Turning, Grinding…" {...register('department')} />
-        </div>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="isActive">
-            Active
-          </label>
-          <select
-            id="isActive"
-            className="innovic-select"
-            {...register('isActive', {
-              setValueAs: (v: string | boolean) => (typeof v === 'string' ? v === 'true' : v),
-            })}
-          >
-            <option value="true">Active</option>
-            <option value="false">Inactive</option>
-          </select>
-        </div>
+            <div className="form-grp">
+              <label className="form-label" htmlFor="department">
+                Department
+              </label>
+              <input
+                id="department"
+                className="innovic-input"
+                autoComplete="off"
+                placeholder="CNC Turning, Grinding…"
+                {...register('department')}
+              />
+            </div>
+            <div className="form-grp">
+              <label className="form-label" htmlFor="isActive">
+                Active
+              </label>
+              <select
+                id="isActive"
+                className="innovic-select"
+                {...register('isActive', {
+                  setValueAs: (v: string | boolean) => (typeof v === 'string' ? v === 'true' : v),
+                })}
+              >
+                <option value="true">Active</option>
+                <option value="false">Inactive</option>
+              </select>
+            </div>
 
-        <div className="form-grp form-full">
-          <label className="form-label" htmlFor="skills">
-            Skills / Machines
-          </label>
-          <input id="skills" className="innovic-input" autoComplete="off" placeholder="CNC-01, VMC-01, GR-01…" {...register('skills')} />
-        </div>
+            <div className="form-grp form-full">
+              <label className="form-label" htmlFor="skills">
+                Skills / Machines
+              </label>
+              <input
+                id="skills"
+                className="innovic-input"
+                autoComplete="off"
+                placeholder="CNC-01, VMC-01, GR-01…"
+                {...register('skills')}
+              />
+            </div>
 
-        <div className="form-grp form-full">
-          <label className="form-label" htmlFor="userId">
-            Linked User (optional)
-          </label>
-          <LinkedUserSelect control={form.control} />
-          <div className="form-help">Leave blank for shop-floor-only operators.</div>
+            <div className="form-grp form-full">
+              <label className="form-label" htmlFor="userId">
+                Linked User (optional)
+              </label>
+              <LinkedUserSelect control={form.control} />
+              <div className="form-help">Leave blank for shop-floor-only operators.</div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -229,62 +265,76 @@ function EditOperatorForm(props: EditMode): React.JSX.Element {
         await props.onSubmit(values);
       })}
     >
-      <div className="form-grid">
-        <div className="form-grp">
-          <label className="form-label" htmlFor="code">
-            Code
-          </label>
-          <input id="code" className="innovic-input" value={props.operator.code} readOnly />
-          <div className="form-help">Code cannot be changed after creation.</div>
-        </div>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="name">
-            Name<span className="req">★</span>
-          </label>
-          <input
-            id="name"
-            className="innovic-input"
-            autoComplete="off"
-            {...register('name')}
-          />
-          {errors.name?.message ? <div className="form-error">{errors.name.message}</div> : null}
-        </div>
+      <div className="panel">
+        <div className="panel-hdr">{props.panelHeader}</div>
+        <div className="panel-body">
+          <div className="form-grid">
+            <div className="form-grp">
+              <label className="form-label" htmlFor="code">
+                Code
+              </label>
+              <input id="code" className="innovic-input" value={props.operator.code} readOnly />
+              <div className="form-help">Code cannot be changed after creation.</div>
+            </div>
+            <div className="form-grp">
+              <label className="form-label" htmlFor="name">
+                Name<span className="req">★</span>
+              </label>
+              <input id="name" className="innovic-input" autoComplete="off" {...register('name')} />
+              {errors.name?.message ? (
+                <div className="form-error">{errors.name.message}</div>
+              ) : null}
+            </div>
 
-        <div className="form-grp">
-          <label className="form-label" htmlFor="department">
-            Department
-          </label>
-          <input id="department" className="innovic-input" autoComplete="off" placeholder="CNC Turning, Grinding…" {...register('department')} />
-        </div>
-        <div className="form-grp">
-          <label className="form-label" htmlFor="isActive">
-            Active
-          </label>
-          <select
-            id="isActive"
-            className="innovic-select"
-            {...register('isActive', {
-              setValueAs: (v: string | boolean) => (typeof v === 'string' ? v === 'true' : v),
-            })}
-          >
-            <option value="true">Active</option>
-            <option value="false">Inactive</option>
-          </select>
-        </div>
+            <div className="form-grp">
+              <label className="form-label" htmlFor="department">
+                Department
+              </label>
+              <input
+                id="department"
+                className="innovic-input"
+                autoComplete="off"
+                placeholder="CNC Turning, Grinding…"
+                {...register('department')}
+              />
+            </div>
+            <div className="form-grp">
+              <label className="form-label" htmlFor="isActive">
+                Active
+              </label>
+              <select
+                id="isActive"
+                className="innovic-select"
+                {...register('isActive', {
+                  setValueAs: (v: string | boolean) => (typeof v === 'string' ? v === 'true' : v),
+                })}
+              >
+                <option value="true">Active</option>
+                <option value="false">Inactive</option>
+              </select>
+            </div>
 
-        <div className="form-grp form-full">
-          <label className="form-label" htmlFor="skills">
-            Skills / Machines
-          </label>
-          <input id="skills" className="innovic-input" autoComplete="off" placeholder="CNC-01, VMC-01, GR-01…" {...register('skills')} />
-        </div>
+            <div className="form-grp form-full">
+              <label className="form-label" htmlFor="skills">
+                Skills / Machines
+              </label>
+              <input
+                id="skills"
+                className="innovic-input"
+                autoComplete="off"
+                placeholder="CNC-01, VMC-01, GR-01…"
+                {...register('skills')}
+              />
+            </div>
 
-        <div className="form-grp form-full">
-          <label className="form-label" htmlFor="userId">
-            Linked User (optional)
-          </label>
-          <LinkedUserSelect control={form.control} />
-          <div className="form-help">Leave blank for shop-floor-only operators.</div>
+            <div className="form-grp form-full">
+              <label className="form-label" htmlFor="userId">
+                Linked User (optional)
+              </label>
+              <LinkedUserSelect control={form.control} />
+              <div className="form-help">Leave blank for shop-floor-only operators.</div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -305,7 +355,7 @@ function FormFooter(props: {
   onCancel?: (() => void) | undefined;
 }): React.JSX.Element {
   return (
-    <div style={{ marginTop: 16 }}>
+    <>
       {props.submitError ? (
         <div
           style={{
@@ -321,7 +371,7 @@ function FormFooter(props: {
           {props.submitError}
         </div>
       ) : null}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
+      <FormActions>
         {props.onCancel ? (
           <button type="button" className="btn btn-ghost" onClick={props.onCancel}>
             Cancel
@@ -331,7 +381,7 @@ function FormFooter(props: {
           {props.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
           {props.isSubmitting ? 'Saving…' : props.submitLabel}
         </button>
-      </div>
-    </div>
+      </FormActions>
+    </>
   );
 }

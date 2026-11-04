@@ -14,6 +14,8 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { useAddDesignIssueComment, useCreateDesignIssue, useUpdateDesignIssue } from '../api';
 import { Actions, Badge, ErrorBox, Field, Modal } from './detail-shared';
+import { useToast } from '@/ui/feedback';
+import { SearchableSelect } from '@/ui/forms';
 
 export function IssueFormModal({
   projectId,
@@ -38,6 +40,7 @@ export function IssueFormModal({
   const [description, setDescription] = useState(issue?.description ?? '');
   const [err, setErr] = useState<string | null>(null);
 
+  const toast = useToast();
   const createMut = useCreateDesignIssue();
   const updateMut = useUpdateDesignIssue();
 
@@ -61,7 +64,10 @@ export function IssueFormModal({
       createMut.mutate(
         { projectId, input },
         {
-          onSuccess: () => onClose(),
+          onSuccess: () => {
+            toast.ok('Issue saved');
+            onClose();
+          },
           onError: (e) => setErr(e instanceof Error ? e.message : 'Could not save. Try again.'),
         },
       );
@@ -80,7 +86,10 @@ export function IssueFormModal({
           },
         },
         {
-          onSuccess: () => onClose(),
+          onSuccess: () => {
+            toast.ok('Issue saved');
+            onClose();
+          },
           onError: (e) => setErr(e instanceof Error ? e.message : 'Could not save. Try again.'),
         },
       );
@@ -88,10 +97,27 @@ export function IssueFormModal({
   };
 
   return (
-    <Modal onClose={onClose} title={mode === 'add' ? 'Raise Issue' : 'Edit Issue'}>
+    <Modal
+      onClose={onClose}
+      title={mode === 'add' ? 'Raise Issue' : 'Edit Issue'}
+      footer={
+        <Actions
+          onClose={onClose}
+          onSave={onSave}
+          saving={createMut.isPending || updateMut.isPending}
+          label={mode === 'add' ? 'Save Issue' : 'Save Changes'}
+        />
+      }
+    >
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <div style={{ gridColumn: 'span 2' }}>
-          <Field label="Title ★">
+          <Field
+            label={
+              <>
+                Title<span className="req">★</span>
+              </>
+            }
+          >
             <input
               className="innovic-input"
               value={title}
@@ -100,18 +126,14 @@ export function IssueFormModal({
           </Field>
         </div>
         <Field label="Linked Task">
-          <select
-            className="innovic-select"
-            value={taskId}
-            onChange={(e) => setTaskId(e.target.value)}
-          >
-            <option value="">— None —</option>
-            {tasks.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.title}
-              </option>
-            ))}
-          </select>
+          <SearchableSelect
+            value={taskId || null}
+            onChange={(id) => setTaskId(id ?? '')}
+            options={tasks.map((t) => ({ id: t.id, name: t.title }))}
+            valueLabel={tasks.find((t) => t.id === taskId)?.title}
+            placeholder="— None —"
+            clearable
+          />
         </Field>
         <Field label="Item Name">
           <input className="innovic-input" value={part} onChange={(e) => setPart(e.target.value)} />
@@ -166,12 +188,6 @@ export function IssueFormModal({
         </div>
       </div>
       {err ? <ErrorBox message={err} /> : null}
-      <Actions
-        onClose={onClose}
-        onSave={onSave}
-        saving={createMut.isPending || updateMut.isPending}
-        label={mode === 'add' ? 'Save Issue' : 'Save Changes'}
-      />
     </Modal>
   );
 }
@@ -184,6 +200,7 @@ export function ViewIssueModal({
   onClose: () => void;
 }): React.JSX.Element {
   const [comment, setComment] = useState('');
+  const toast = useToast();
   const commentMut = useAddDesignIssueComment();
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'dsnissue_create');
@@ -193,7 +210,10 @@ export function ViewIssueModal({
     commentMut.mutate(
       { id: issue.id, input: { text: comment.trim() } },
       {
-        onSuccess: () => setComment(''),
+        onSuccess: () => {
+          setComment('');
+          toast.ok('Comment posted');
+        },
       },
     );
   };
@@ -202,7 +222,16 @@ export function ViewIssueModal({
   const ageDays = Math.max(0, Math.round(ageMs / 86400000));
 
   return (
-    <Modal onClose={onClose} title={issue.title}>
+    <Modal
+      onClose={onClose}
+      title={issue.title}
+      confirmExit={comment.trim() !== ''}
+      footer={
+        <button type="button" className="btn btn-ghost" onClick={onClose}>
+          Close
+        </button>
+      }
+    >
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
         <div>
           <div className="text3" style={{ fontSize: 11 }}>
@@ -297,11 +326,6 @@ export function ViewIssueModal({
             </button>
           </div>
         ) : null}
-      </div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
-        <button type="button" className="btn btn-ghost" onClick={onClose}>
-          Close
-        </button>
       </div>
     </Modal>
   );

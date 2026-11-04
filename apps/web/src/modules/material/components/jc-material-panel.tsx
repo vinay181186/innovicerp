@@ -44,8 +44,8 @@ export function JcMaterialPanel({
         </span>
         {canIssue ? (
           <Link
-            to="/issue-register"
-            search={{ tab: 'items', new: 'job_card', jobCardId }}
+            to="/issue-register/new"
+            search={{ issueAgainst: 'job_card', jobCardId }}
             className="btn btn-primary btn-sm"
             style={{ marginLeft: 'auto' }}
           >

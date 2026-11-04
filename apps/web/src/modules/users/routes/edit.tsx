@@ -20,9 +20,19 @@ import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { ACCESS_DEPTS } from '@innovic/shared';
 import { useUserAccessList } from '@/modules/access-control/api';
-import { useFetchUser, useSetUserPassword, useSoftDeleteUser, useUpdateUser, useUser } from '../api';
+import {
+  useFetchUser,
+  useSetUserPassword,
+  useSoftDeleteUser,
+  useUpdateUser,
+  useUser,
+} from '../api';
 import { roleLabel } from '@/lib/role-label';
-import { Banner, ConfirmDialog } from '@/ui/feedback';
+import { Banner, ConfirmDialog, useToast } from '@/ui/feedback';
+import { FormActions } from '@/ui/layout';
+
+/** The bottom bar sits outside the form's panel; `form=` keeps Save its submit button. */
+const FORM_ID = 'user-edit-form';
 
 function roleBadgeClass(role: string): string {
   if (role === 'admin') return 'b-red';
@@ -77,6 +87,7 @@ function UserEditPage(): React.JSX.Element {
   const { data: me } = useSession();
   const isAdmin = me?.role === 'admin';
   const { data: detail, isLoading, isError, error } = useUser(isAdmin ? id : undefined);
+  const toast = useToast();
   const update = useUpdateUser(id);
   const fetchUser = useFetchUser();
   // ADR-226 / §20.4 — sends only what changed, merges onto someone else's save
@@ -97,7 +108,7 @@ function UserEditPage(): React.JSX.Element {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [newPassword, setNewPassword] = useState('');
-  const [pwMsg, setPwMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  const [pwErr, setPwErr] = useState<string | null>(null);
   // Their department lives on the access row, not the user record.
   const { data: accessList } = useUserAccessList();
 
@@ -192,6 +203,7 @@ function UserEditPage(): React.JSX.Element {
       // null = nothing actually changed; the user has been told and nothing was
       // written. Stay on the form.
       if (saved === null) return;
+      toast.ok(`User ${detail.email} saved`);
       exit.leave(goBack);
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : 'Could not save user. Try again.');
@@ -207,23 +219,17 @@ function UserEditPage(): React.JSX.Element {
   };
 
   const onSetPassword = async (): Promise<void> => {
-    setPwMsg(null);
+    setPwErr(null);
     if (newPassword.length < 8) {
-      setPwMsg({ kind: 'err', text: 'Password must be at least 8 characters.' });
+      setPwErr('Password must be at least 8 characters.');
       return;
     }
     try {
       await setPassword.mutateAsync({ password: newPassword });
       setNewPassword('');
-      setPwMsg({
-        kind: 'ok',
-        text: `Password set for ${detail.email}. Hand it over directly — no email is sent.`,
-      });
+      toast.ok(`Password set for ${detail.email}. Hand it over directly — no email is sent.`);
     } catch (e) {
-      setPwMsg({
-        kind: 'err',
-        text: e instanceof Error ? e.message : 'Could not set password. Try again.',
-      });
+      setPwErr(e instanceof Error ? e.message : 'Could not set password. Try again.');
     }
   };
 
@@ -283,7 +289,7 @@ function UserEditPage(): React.JSX.Element {
           ) : null}
         </div>
         <div className="panel-body">
-          <form onSubmit={handleSubmit(onValid)}>
+          <form id={FORM_ID} onSubmit={handleSubmit(onValid)}>
             {/* Field order mirrors legacy BASIC INFO (L13484-13495): Name, Role, Email —
                 then this port's own fields (phone, status), then legacy's APPROVAL RIGHTS
                 limit (L13538) last. Kept identical to create.tsx, which is how legacy gets
@@ -348,44 +354,46 @@ function UserEditPage(): React.JSX.Element {
                   <span className={`badge ${roleBadgeClass(detail.role)}`}>
                     {roleLabel(detail.role)}
                   </span>
-                  <Link to="/access-control" search={{ configure: detail.id }} className="btn btn-ghost btn-sm">
+                  <Link
+                    to="/access-control"
+                    search={{ configure: detail.id }}
+                    className="btn btn-ghost btn-sm"
+                  >
                     <Lock size={13} /> Change in Access Control
                   </Link>
                 </div>
               </div>
             </div>
 
-            <div style={{ marginTop: 16 }}>
-              {submitError ? (
-                <div style={{ marginBottom: 10 }}>
-                  <Banner tone="error" role="alert">
-                    {submitError}
-                  </Banner>
-                </div>
-              ) : null}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  onClick={() => exit.leave(goBack)}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="btn btn-primary"
-                  disabled={formState.isSubmitting || update.isPending}
-                >
-                  {formState.isSubmitting || update.isPending ? (
-                    <Loader2 size={13} className="animate-spin" />
-                  ) : null}
-                  Save Changes
-                </button>
+            {submitError ? (
+              <div style={{ marginTop: 16 }}>
+                <Banner tone="error" role="alert">
+                  {submitError}
+                </Banner>
               </div>
-            </div>
+            ) : null}
           </form>
         </div>
       </div>
+
+      {/* Above the password panel on purpose: this Save does not set the password, which
+          has its own Set Password button. */}
+      <FormActions>
+        <button type="button" className="btn btn-ghost" onClick={() => exit.leave(goBack)}>
+          Cancel
+        </button>
+        <button
+          type="submit"
+          form={FORM_ID}
+          className="btn btn-primary"
+          disabled={formState.isSubmitting || update.isPending}
+        >
+          {formState.isSubmitting || update.isPending ? (
+            <Loader2 size={13} className="animate-spin" />
+          ) : null}
+          Save Changes
+        </button>
+      </FormActions>
 
       <div className="panel" style={{ marginTop: 12 }}>
         <div className="panel-hdr">
@@ -398,9 +406,9 @@ function UserEditPage(): React.JSX.Element {
           <div className="text3" style={{ fontSize: 12, marginBottom: 10 }}>
             No email is sent — give the new password to the user.
           </div>
-          {pwMsg ? (
+          {pwErr ? (
             <div style={{ marginBottom: 10 }}>
-              <Banner tone={pwMsg.kind === 'ok' ? 'success' : 'error'}>{pwMsg.text}</Banner>
+              <Banner tone="error">{pwErr}</Banner>
             </div>
           ) : null}
           <div style={{ display: 'flex', gap: 6, alignItems: 'flex-end', flexWrap: 'wrap' }}>
@@ -423,6 +431,7 @@ function UserEditPage(): React.JSX.Element {
               className="btn btn-primary"
               onClick={() => void onSetPassword()}
               disabled={setPassword.isPending || newPassword.length === 0}
+              title={newPassword.length === 0 ? 'Type the new password first' : undefined}
             >
               {setPassword.isPending ? <Loader2 size={13} className="animate-spin" /> : null}
               Set Password

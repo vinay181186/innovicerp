@@ -2,7 +2,7 @@
 // the approved DETAIL exemplar (modules/vendors/routes/detail.tsx):
 //
 //   ← Back to TPI Master
-//   DetailHeader (name + "🔍 TPI Inspector" + Active chip + Edit/Delete) → ReadGrid
+//   DetailHeader (name + "🔍 TPI Inspector" + Active chip + Edit/Delete) → ClusterGrid
 //
 // An inspector is a flat master — no line table, no related-document query —
 // so the composition stops at the header panel. Markup only: the hand-rolled
@@ -23,13 +23,6 @@
 // fault, and painting it red here would put the chip at odds with
 // tpi-masters/routes/list.tsx, which paints the same amber.
 //
-// FIELD SIZES — ReadGrid is the same 12-column grid as the edit form's
-// FormGrid, and each ReadField carries the size that field will have in
-// tpi-master-form.tsx once that form is migrated:
-//
-//   Organization md · Contact No. md · Email md         → 4+4+4 = 12
-//   Remarks full                                        → 12
-//
 // The old grid also printed an "Active" cell in plain text next to the chip
 // the panel header already draws. One fact, drawn once: the chip is it.
 
@@ -45,7 +38,9 @@ import {
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Button, Icon, StatusBadge } from '@/ui/core';
 import { ConfirmDialog } from '@/ui/feedback';
-import { DetailHeader, PageState, ReadField, ReadGrid } from '@/ui/layout';
+import { PendingFact } from '@/modules/document-edits/components/pending-fact';
+import { Cluster, ClusterGrid } from '@/ui/forms';
+import { DetailHeader, PageState } from '@/ui/layout';
 import { useSoftDeleteTpiMaster, useTpiMaster } from '../api';
 
 export const tpiMasterDetailRoute = createRoute({
@@ -192,27 +187,34 @@ function TpiMasterFacts(props: {
 }): React.JSX.Element {
   const { inspector, pendingChanges: pc } = props;
   return (
-    <ReadGrid>
-      <ReadField
-        label="Organisation"
-        size="md"
-        value={readWithChip(inspector.organization, pc, 'organization')}
-      />
-      <ReadField
-        label="Contact No."
-        size="md"
-        mono
-        value={readWithChip(inspector.contactNo, pc, 'contactNo')}
-      />
-      <ReadField label="Email" size="md" value={readWithChip(inspector.email, pc, 'email')} />
-
-      <ReadField
-        label="Remarks"
-        size="full"
-        pre
-        value={readWithChip(inspector.remarks, pc, 'remarks')}
-      />
-    </ReadGrid>
+    <ClusterGrid stack>
+      <Cluster name="Contact">
+        <PendingFact
+          label="Organisation"
+          value={inspector.organization}
+          changes={pc}
+          field="organization"
+        />
+        <PendingFact
+          num
+          label="Contact No."
+          value={inspector.contactNo}
+          changes={pc}
+          field="contactNo"
+        />
+        <PendingFact span={2} label="Email" value={inspector.email} changes={pc} field="email" />
+      </Cluster>
+      <Cluster name="Notes">
+        <PendingFact
+          span={4}
+          wrap
+          label="Remarks"
+          value={inspector.remarks}
+          changes={pc}
+          field="remarks"
+        />
+      </Cluster>
+    </ClusterGrid>
   );
 }
 
@@ -225,24 +227,4 @@ function Chip(props: {
 }): React.JSX.Element | null {
   const c = headerPendingChange(props.changes, props.field);
   return c ? <PendingChangeChip after={c.after} /> : null;
-}
-
-/** Compose a ReadField value with its pending-change chip. When no edit is
- *  staged for `field`, the value is returned untouched so ReadField's own empty
- *  handling (em dash in --text3) still applies. */
-function readWithChip(
-  value: React.ReactNode,
-  changes: readonly DocumentEditChange[],
-  field: string,
-): React.ReactNode {
-  const c = headerPendingChange(changes, field);
-  if (!c) return value;
-  const base =
-    value == null || value === '' ? <span style={{ color: 'var(--text3)' }}>—</span> : value;
-  return (
-    <>
-      {base}
-      <PendingChangeChip after={c.after} />
-    </>
-  );
 }

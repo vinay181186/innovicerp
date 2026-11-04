@@ -147,6 +147,12 @@
   --sig-neutral: #667085;
   --sig-neutral-bg: #f2f4f7;
   --sig-neutral-bd: #eaecf0;
+  /* The × beside the SO / JWSO dropdown (owner 2026-11-04: light red, black ×). */
+  --sig-clear-bg: #fee4e2;
+  --sig-clear-bd: #fda29b;
+  --sig-clear-bg-hover: #fecdca;
+  --sig-clear-bd-hover: #f97066;
+  --sig-clear-fg: #000;
 
   /* ─── Sheet (tbl-grid) cream row ──────────────────────────────
    * The alternating row colour of the ruled sheet table. Was a bare
