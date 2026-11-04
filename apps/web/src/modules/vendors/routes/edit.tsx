@@ -71,22 +71,18 @@ function VendorNewPage(): React.JSX.Element {
       <Link to="/vendors" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
         <ArrowLeft size={14} /> Back to Vendor Master
       </Link>
-      <div className="panel">
-        <div className="panel-hdr">
+      <VendorForm
+        panelHeader={
           <div>
             <div className="panel-title">New Vendor</div>
           </div>
-        </div>
-        <div className="panel-body">
-          <VendorForm
-            mode="create"
-            onSubmit={onSubmit}
-            submitError={submitError}
-            serverFieldErrors={serverFieldErrors}
-            onCancel={() => exit.leave(goBack)}
-          />
-        </div>
-      </div>
+        }
+        mode="create"
+        onSubmit={onSubmit}
+        submitError={submitError}
+        serverFieldErrors={serverFieldErrors}
+        onCancel={() => exit.leave(goBack)}
+      />
     </div>
   );
 }
@@ -189,8 +185,8 @@ function VendorEditPage(): React.JSX.Element {
       >
         <ArrowLeft size={14} /> Back to Vendor
       </Link>
-      <div className="panel">
-        <div className="panel-hdr">
+      <VendorForm
+        panelHeader={
           <div>
             <div
               className="td-code"
@@ -202,18 +198,14 @@ function VendorEditPage(): React.JSX.Element {
               Edit Vendor
             </div>
           </div>
-        </div>
-        <div className="panel-body">
-          <VendorForm
-            mode="edit"
-            vendor={vendor}
-            onSubmit={onSubmit}
-            submitError={submitError}
-            serverFieldErrors={serverFieldErrors}
-            onCancel={() => exit.leave(goBack)}
-          />
-        </div>
-      </div>
+        }
+        mode="edit"
+        vendor={vendor}
+        onSubmit={onSubmit}
+        submitError={submitError}
+        serverFieldErrors={serverFieldErrors}
+        onCancel={() => exit.leave(goBack)}
+      />
     </div>
   );
 }

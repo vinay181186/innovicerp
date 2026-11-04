@@ -1,5 +1,5 @@
-// Header Save wiring for +New DC (routes/create.tsx). Save lives in the sticky
-// page header, but the save handler belongs to whichever form body is mounted
+// Save wiring for +New DC (routes/create.tsx). Save lives in the page's bottom
+// bar, but the save handler belongs to whichever form body is mounted
 // (none while a picker is showing). The body reports its state here and keeps
 // `submitRef` pointed at its own save. Split out of create.tsx so the
 // return-to-vendor form body (components/nc-dc-form.tsx) can use it too.

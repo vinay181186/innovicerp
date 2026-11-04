@@ -1,8 +1,9 @@
 // NC create + light-edit form (UI-003-06).
 // Create: full fields. Edit: only date / reason / reportedBy (status='pending').
-// Create-page pattern: the form draws its own sticky PageHeader (Back · title ·
-// Cancel · blue Save), so Save never scrolls away; Ctrl+S saves; an amber
-// "Not saved" pill shows once a field is edited. No Save button at the bottom.
+// Create-page pattern: the form draws its own PageHeader (Back · title) and
+// FormActions (Cancel · blue Save), which stays in view at the bottom edge so
+// Save never scrolls away; Ctrl+S saves; an amber "Not saved" pill shows once a
+// field is edited.
 
 import {
   type CreateNcRegisterInput,
@@ -25,7 +26,7 @@ import { docDrawingRev, itemCodeWithRev } from '@/lib/item-code';
 import { useSalesOrdersList } from '@/modules/sales-orders/api';
 import { useJobCard, useJobCardsList } from '@/modules/job-cards/api';
 import { useJcOpsEnriched } from '@/modules/op-entry/api';
-import { PageHeader, useSaveShortcut } from '@/ui/layout';
+import { FormActions, PageHeader, useSaveShortcut } from '@/ui/layout';
 
 interface FormValues {
   code: string;
@@ -58,7 +59,7 @@ const DEFAULTS: FormValues = {
   reasonCategory: 'other',
 };
 
-/** The sticky page header the form draws above its fields. */
+/** The page header the form draws above its fields. */
 type HeaderProps = {
   title: string;
   subtitle?: React.ReactNode;
@@ -266,43 +267,11 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
   return (
     <form onSubmit={submit}>
       <PageHeader
-        sticky
         title={props.title}
         subtitle={props.subtitle}
         backLabel={props.backLabel}
         onBack={props.onBack}
-        dirty={formState.isDirty}
-        actions={
-          <>
-            {props.onCancel ? (
-              <button type="button" className="btn btn-ghost" onClick={props.onCancel}>
-                Cancel
-              </button>
-            ) : null}
-            <button type="submit" className="btn btn-primary" disabled={formState.isSubmitting}>
-              {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
-              {formState.isSubmitting
-                ? 'Saving…'
-                : (props.submitLabel ?? (isEdit ? 'Save Changes' : 'Save NC'))}
-            </button>
-          </>
-        }
       />
-      {props.submitError ? (
-        <div
-          style={{
-            color: 'var(--red2)',
-            background: 'var(--red3)',
-            border: '1px solid var(--red)',
-            borderRadius: 6,
-            padding: '6px 10px',
-            fontSize: 12,
-            marginBottom: 10,
-          }}
-        >
-          {props.submitError}
-        </div>
-      ) : null}
       <div className="panel">
         <div className="panel-body">
           <div className="form-grid">
@@ -552,6 +521,37 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
           </div>
         </div>
       </div>
+      <FormActions
+        dirty={formState.isDirty}
+        note={
+          props.submitError ? (
+            <div
+              style={{
+                color: 'var(--red2)',
+                background: 'var(--red3)',
+                border: '1px solid var(--red)',
+                borderRadius: 6,
+                padding: '6px 10px',
+                fontSize: 12,
+              }}
+            >
+              {props.submitError}
+            </div>
+          ) : undefined
+        }
+      >
+        {props.onCancel ? (
+          <button type="button" className="btn btn-ghost" onClick={props.onCancel}>
+            Cancel
+          </button>
+        ) : null}
+        <button type="submit" className="btn btn-primary" disabled={formState.isSubmitting}>
+          {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
+          {formState.isSubmitting
+            ? 'Saving…'
+            : (props.submitLabel ?? (isEdit ? 'Save Changes' : 'Save NC'))}
+        </button>
+      </FormActions>
     </form>
   );
 }

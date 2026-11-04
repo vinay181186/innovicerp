@@ -20,8 +20,8 @@
 //     enforces exactly that (`createPurchaseOrderInputSchema`), so ADR-138
 //     ("a PO is always raised against a Purchase Request") still holds.
 //
-// Styling is the app theme: sticky PageHeader (Cancel + Save, Ctrl+S) →
-// Panel(FormGrid) → Panel(line table) → Panel(taxes + totals). The old private
+// Styling is the app theme: PageHeader → Panel(FormGrid) → Panel(line table) →
+// Panel(taxes + totals) → FormActions (Cancel + Save, Ctrl+S). The old private
 // `.pof-` palette (po-form-css.ts) is gone.
 
 import {
@@ -54,7 +54,7 @@ import { useVendor, useVendorsList } from '@/modules/vendors/api';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
 import { FormField, FormGrid } from '@/ui/forms';
-import { PageHeader, useSaveShortcut } from '@/ui/layout';
+import { FormActions, PageHeader, useSaveShortcut } from '@/ui/layout';
 import { isStagedResult } from '@/modules/document-edits/api';
 import {
   OrderSupplyFormFields,
@@ -485,7 +485,7 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
       .map((x) => x.i + 1);
   }, [lines, prById, vendorId, vendorCode]);
 
-  // ── The ONE blocking message, shown under the header in amber. First problem wins,
+  // ── The ONE blocking message, shown beside Save in amber. First problem wins,
   //    so the buyer is told what to do next rather than handed a list.
   const blocking = useMemo((): string | null => {
     // ADR-227: nothing about the PO No. can block a save — it is not sent.
@@ -644,7 +644,7 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
   const firstWithoutPr = lines.findIndex((l) => !l.sourcePrId);
   const hintLineIdx = lines.length === 0 ? -1 : Math.max(firstWithoutPr, 0);
 
-  // Ctrl+S runs the same Save as the header button — and is off whenever that
+  // Ctrl+S runs the same Save as the Save button — and is off whenever that
   // button is disabled, so a held key can neither double-post nor bypass a block.
   useSaveShortcut(() => void handleSubmit(onValid)(), !disabled);
 
@@ -653,7 +653,6 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
       {exit.dialog}
 
       <PageHeader
-        sticky
         title={isEdit ? 'Edit Purchase Order' : 'New Purchase Order'}
         subtitle={
           props.mode === 'edit' ? (
@@ -662,45 +661,7 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
         }
         backLabel={isEdit ? 'Back to PO' : 'Back to Purchase Orders'}
         onBack={goBack}
-        dirty={formState.isDirty}
-        actions={
-          <>
-            <button type="button" className="btn btn-ghost" onClick={() => exit.leave(goBack)}>
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="btn btn-primary"
-              disabled={disabled}
-              title={blocking ?? 'Save (Ctrl+S)'}
-            >
-              {submitting ? (
-                <>
-                  <Loader2 size={13} className="animate-spin" /> Saving…
-                </>
-              ) : isEdit ? (
-                'Save Changes'
-              ) : (
-                'Save PO'
-              )}
-            </button>
-          </>
-        }
       />
-
-      {/* The ONE blocking message sits under the header, beside Save — first
-          problem wins, so the buyer is told what to do next. */}
-      {stagedNotice ? (
-        <Banner tone="success" role="status">
-          {stagedNotice}
-        </Banner>
-      ) : null}
-      {submitError ? (
-        <Banner tone="error" role="alert">
-          {submitError}
-        </Banner>
-      ) : null}
-      {blocking ? <Banner tone="warn">{blocking}</Banner> : null}
 
       <Panel title="PO Details">
         <FormGrid>
@@ -987,6 +948,53 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
           </span>
         </div>
       </Panel>
+
+      {/* The ONE blocking message sits beside Save — first problem wins, so the
+    buyer is told what to do next. */}
+      <FormActions
+        dirty={formState.isDirty}
+        note={
+          stagedNotice || submitError || blocking ? (
+            <div style={{ display: 'grid', gap: 'var(--sp-1)' }}>
+              {stagedNotice ? (
+                <Banner tone="success" role="status" flush>
+                  {stagedNotice}
+                </Banner>
+              ) : null}
+              {submitError ? (
+                <Banner tone="error" role="alert" flush>
+                  {submitError}
+                </Banner>
+              ) : null}
+              {blocking ? (
+                <Banner tone="warn" flush>
+                  {blocking}
+                </Banner>
+              ) : null}
+            </div>
+          ) : undefined
+        }
+      >
+        <button type="button" className="btn btn-ghost" onClick={() => exit.leave(goBack)}>
+          Cancel
+        </button>
+        <button
+          type="submit"
+          className="btn btn-primary"
+          disabled={disabled}
+          title={blocking ?? 'Save (Ctrl+S)'}
+        >
+          {submitting ? (
+            <>
+              <Loader2 size={13} className="animate-spin" /> Saving…
+            </>
+          ) : isEdit ? (
+            'Save Changes'
+          ) : (
+            'Save PO'
+          )}
+        </button>
+      </FormActions>
     </form>
   );
 }

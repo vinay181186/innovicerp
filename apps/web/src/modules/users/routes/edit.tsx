@@ -20,9 +20,19 @@ import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { ACCESS_DEPTS } from '@innovic/shared';
 import { useUserAccessList } from '@/modules/access-control/api';
-import { useFetchUser, useSetUserPassword, useSoftDeleteUser, useUpdateUser, useUser } from '../api';
+import {
+  useFetchUser,
+  useSetUserPassword,
+  useSoftDeleteUser,
+  useUpdateUser,
+  useUser,
+} from '../api';
 import { roleLabel } from '@/lib/role-label';
 import { Banner, ConfirmDialog } from '@/ui/feedback';
+import { FormActions } from '@/ui/layout';
+
+/** The bottom bar sits outside the form's panel; `form=` keeps Save its submit button. */
+const FORM_ID = 'user-edit-form';
 
 function roleBadgeClass(role: string): string {
   if (role === 'admin') return 'b-red';
@@ -283,7 +293,7 @@ function UserEditPage(): React.JSX.Element {
           ) : null}
         </div>
         <div className="panel-body">
-          <form onSubmit={handleSubmit(onValid)}>
+          <form id={FORM_ID} onSubmit={handleSubmit(onValid)}>
             {/* Field order mirrors legacy BASIC INFO (L13484-13495): Name, Role, Email —
                 then this port's own fields (phone, status), then legacy's APPROVAL RIGHTS
                 limit (L13538) last. Kept identical to create.tsx, which is how legacy gets
@@ -348,44 +358,46 @@ function UserEditPage(): React.JSX.Element {
                   <span className={`badge ${roleBadgeClass(detail.role)}`}>
                     {roleLabel(detail.role)}
                   </span>
-                  <Link to="/access-control" search={{ configure: detail.id }} className="btn btn-ghost btn-sm">
+                  <Link
+                    to="/access-control"
+                    search={{ configure: detail.id }}
+                    className="btn btn-ghost btn-sm"
+                  >
                     <Lock size={13} /> Change in Access Control
                   </Link>
                 </div>
               </div>
             </div>
 
-            <div style={{ marginTop: 16 }}>
-              {submitError ? (
-                <div style={{ marginBottom: 10 }}>
-                  <Banner tone="error" role="alert">
-                    {submitError}
-                  </Banner>
-                </div>
-              ) : null}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  onClick={() => exit.leave(goBack)}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="btn btn-primary"
-                  disabled={formState.isSubmitting || update.isPending}
-                >
-                  {formState.isSubmitting || update.isPending ? (
-                    <Loader2 size={13} className="animate-spin" />
-                  ) : null}
-                  Save Changes
-                </button>
+            {submitError ? (
+              <div style={{ marginTop: 16 }}>
+                <Banner tone="error" role="alert">
+                  {submitError}
+                </Banner>
               </div>
-            </div>
+            ) : null}
           </form>
         </div>
       </div>
+
+      {/* Above the password panel on purpose: this Save does not set the password, which
+          has its own Set Password button. */}
+      <FormActions>
+        <button type="button" className="btn btn-ghost" onClick={() => exit.leave(goBack)}>
+          Cancel
+        </button>
+        <button
+          type="submit"
+          form={FORM_ID}
+          className="btn btn-primary"
+          disabled={formState.isSubmitting || update.isPending}
+        >
+          {formState.isSubmitting || update.isPending ? (
+            <Loader2 size={13} className="animate-spin" />
+          ) : null}
+          Save Changes
+        </button>
+      </FormActions>
 
       <div className="panel" style={{ marginTop: 12 }}>
         <div className="panel-hdr">

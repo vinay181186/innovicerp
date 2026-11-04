@@ -59,34 +59,26 @@ function TpiMasterNewPage(): React.JSX.Element {
       <Link to="/tpi-masters" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
         <ArrowLeft size={14} /> Back to TPI Master
       </Link>
-      <div className="panel">
-        <div className="panel-hdr">
+      <TpiMasterForm
+        panelHeader={
           <div>
             <div className="panel-title">🔍 Add Inspector</div>
           </div>
-        </div>
-        <div className="panel-body">
-          <TpiMasterForm
-            mode="create"
-            submitError={submitError}
-            submitLabel="Save Inspector"
-            onCancel={() => exit.leave(goBack)}
-            onSubmit={async (values: CreateTpiMasterInput) => {
-              setSubmitError(null);
-              try {
-                const created = await create.mutateAsync(values);
-                exit.leave(
-                  () => void navigate({ to: '/tpi-masters/$id', params: { id: created.id } }),
-                );
-              } catch (e) {
-                setSubmitError(
-                  e instanceof Error ? e.message : 'Could not save Inspector. Try again.',
-                );
-              }
-            }}
-          />
-        </div>
-      </div>
+        }
+        mode="create"
+        submitError={submitError}
+        submitLabel="Save Inspector"
+        onCancel={() => exit.leave(goBack)}
+        onSubmit={async (values: CreateTpiMasterInput) => {
+          setSubmitError(null);
+          try {
+            const created = await create.mutateAsync(values);
+            exit.leave(() => void navigate({ to: '/tpi-masters/$id', params: { id: created.id } }));
+          } catch (e) {
+            setSubmitError(e instanceof Error ? e.message : 'Could not save Inspector. Try again.');
+          }
+        }}
+      />
     </div>
   );
 }

@@ -80,7 +80,7 @@ import { poStatusLabel } from '@/modules/purchase-orders/lib/po-labels';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Banner } from '@/ui/feedback';
 import { FormField, FormGrid, DocNumberInput } from '@/ui/forms';
-import { PageHeader, useSaveShortcut } from '@/ui/layout';
+import { FormActions, PageHeader, useSaveShortcut } from '@/ui/layout';
 import { useCreateDeliveryChallan, useDcSendable, useRtvCandidates } from '../api';
 import { JwpoDcPickerBody } from '../components/jwpo-dc-rtv-picker';
 import { NcDcFormBody } from '../components/nc-dc-form';
@@ -180,7 +180,7 @@ function DeliveryChallanNewPage(): React.JSX.Element {
     setSource('nc');
   }, []);
 
-  // Save lives in the sticky header, but the save handler belongs to whichever
+  // Save lives in FormActions, but the save handler belongs to whichever
   // form body is mounted (none while a picker is showing). The body reports its
   // state here and keeps `submitRef` pointed at its own save.
   const [save, setSave] = useState<DcSaveState>(NO_SAVE);
@@ -193,27 +193,9 @@ function DeliveryChallanNewPage(): React.JSX.Element {
     <div>
       {exit.dialog}
       <PageHeader
-        sticky
         title="New OSP Delivery Challan"
         backLabel="Back to Delivery Challans"
         onBack={goBack}
-        dirty={save.dirty}
-        actions={
-          <>
-            <button type="button" className="btn btn-ghost" onClick={() => exit.leave(goBack)}>
-              Cancel
-            </button>
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={runSave}
-              disabled={!save.canSave || save.saving}
-            >
-              {save.saving ? <Loader2 size={13} className="animate-spin" /> : null}
-              {save.saving ? 'Saving…' : 'Save DC'}
-            </button>
-          </>
-        }
       />
 
       <div className="panel" style={{ padding: 16 }}>
@@ -261,6 +243,21 @@ function DeliveryChallanNewPage(): React.JSX.Element {
           <RtvNcSection via="jwpo_dc" initialSearch={pickerSearch} exit={exit} saveCtl={saveCtl} />
         )}
       </div>
+
+      <FormActions dirty={save.dirty}>
+        <button type="button" className="btn btn-ghost" onClick={() => exit.leave(goBack)}>
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="btn btn-primary"
+          onClick={runSave}
+          disabled={!save.canSave || save.saving}
+        >
+          {save.saving ? <Loader2 size={13} className="animate-spin" /> : null}
+          {save.saving ? 'Saving…' : 'Save DC'}
+        </button>
+      </FormActions>
     </div>
   );
 }
@@ -849,7 +846,7 @@ function PoDcFormBody({
       setSubmitting(false);
     }
   };
-  // The page header's Save (and Ctrl+S) run this body's save.
+  // The page's Save (and Ctrl+S) run this body's save.
   saveCtl.submitRef.current = () => void onSubmit();
 
   const editedForSwitch =
@@ -875,7 +872,7 @@ function PoDcFormBody({
 
   return (
     <>
-      {/* Save error right under the header's Save. */}
+      {/* Save error at the top of the form body. */}
       {submitError ? (
         <Banner tone="error" role="alert">
           {submitError}

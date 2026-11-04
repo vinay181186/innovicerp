@@ -1,6 +1,6 @@
 // Multi-Level Plan create + edit form (ADR-225 phase 3). Same layout as the
-// Multi-Level BOM form: sticky PageHeader (Cancel + blue Save, Ctrl+S, "Not
-// saved") → one Panel with the ClusterGrid.
+// Multi-Level BOM form: PageHeader → one Panel with the ClusterGrid →
+// FormActions (Cancel + blue Save, Ctrl+S, "Not saved").
 //
 // Create: pick an SO line from the server's eligible-lines list (the server
 // decides which lines qualify — CLAUDE.md §20.5); Item / Order Qty / BOM No.
@@ -19,7 +19,7 @@ import {
   SearchableSelect,
   type SearchableOption,
 } from '@/ui/forms';
-import { PageHeader, useSaveShortcut } from '@/ui/layout';
+import { FormActions, PageHeader, useSaveShortcut } from '@/ui/layout';
 import { useMlPlanEligibleLines, useNextMlPlanNo } from '../api';
 
 /** What the form shows for the SO line — an eligible line on create, the
@@ -118,26 +118,7 @@ export function MlPlanForm(props: MlPlanFormProps): React.JSX.Element {
         void save();
       }}
     >
-      <PageHeader
-        sticky
-        title={mode === 'create' ? 'New Multi-Level Plan' : `Edit ${code}`}
-        dirty={isDirty}
-        actions={
-          <>
-            <button type="button" className="btn btn-ghost" onClick={props.onCancel}>
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="btn btn-primary"
-              disabled={Boolean(validationError) || submitting}
-              title={validationError ?? 'Save (Ctrl+S)'}
-            >
-              {submitting ? 'Saving…' : mode === 'create' ? 'Save Plan' : 'Save Changes'}
-            </button>
-          </>
-        }
-      />
+      <PageHeader title={mode === 'create' ? 'New Multi-Level Plan' : `Edit ${code}`} />
 
       {props.preselectMissing && !line ? (
         <Banner tone="warn">This SO line cannot have a Multi-Level Plan.</Banner>
@@ -262,6 +243,20 @@ export function MlPlanForm(props: MlPlanFormProps): React.JSX.Element {
           </Cluster>
         </ClusterGrid>
       </Panel>
+
+      <FormActions dirty={isDirty}>
+        <button type="button" className="btn btn-ghost" onClick={props.onCancel}>
+          Cancel
+        </button>
+        <button
+          type="submit"
+          className="btn btn-primary"
+          disabled={Boolean(validationError) || submitting}
+          title={validationError ?? 'Save (Ctrl+S)'}
+        >
+          {submitting ? 'Saving…' : mode === 'create' ? 'Save Plan' : 'Save Changes'}
+        </button>
+      </FormActions>
     </form>
   );
 }

@@ -46,7 +46,7 @@ function JobCardNewPage(): React.JSX.Element {
     );
   }
   // The form is the whole page: the Job Card detail page's layout with
-  // controls in it (header with Back · next JC No. · Cancel · Save, the fact
-  // block, and the Operations / QC Documents panel filling the screen).
+  // controls in it (header with Back · next JC No., the fact block, the
+  // Operations / QC Documents panel filling the screen, Cancel · Save below it).
   return <JobCardForm initialSourceLineId={sourceLineId} />;
 }

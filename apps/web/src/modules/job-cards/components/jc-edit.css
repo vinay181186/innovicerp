@@ -93,9 +93,9 @@
   color: var(--text);
 }
 
-/* Header: why Save is off — one line, the full text on hover. */
+/* FormActions' note: why Save is off — one line, the full text on hover. */
 .jc-edit .jc-edit-pend {
-  max-width: 360px;
+  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

@@ -23,9 +23,10 @@
 
 import type { CreateQcProcessInput, QcProcess, UpdateQcProcessInput } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
 import { useReportTypes } from '@/modules/report-types/api';
+import { FormActions } from '@/ui/layout';
 
 interface FormValues {
   code: string;
@@ -46,6 +47,8 @@ const DEFAULTS: FormValues = {
 
 type CreateMode = {
   mode: 'create';
+  /** The title band of the form's panel; the form owns the panel so its button bar can sit outside it. */
+  panelHeader: ReactNode;
   onSubmit: (values: CreateQcProcessInput) => Promise<void> | void;
   submitLabel?: string;
   submitError?: string | null;
@@ -54,6 +57,8 @@ type CreateMode = {
 
 type EditMode = {
   mode: 'edit';
+  /** The title band of the form's panel; the form owns the panel so its button bar can sit outside it. */
+  panelHeader: ReactNode;
   detail: QcProcess;
   onSubmit: (values: UpdateQcProcessInput) => Promise<void> | void;
   submitLabel?: string;
@@ -126,129 +131,134 @@ export function QcProcessForm(props: QcProcessFormProps): React.JSX.Element {
 
   return (
     <form onSubmit={handleSubmit(onValid)}>
-      <div className="form-grid">
-        <div className="form-grp form-full">
-          <label className="form-label" htmlFor="code">
-            QC Process Name{!isEdit ? <span className="req">★</span> : null}
-          </label>
-          <input
-            id="code"
-            className="innovic-input"
-            autoFocus={!isEdit}
-            autoComplete="off"
-            readOnly={isEdit}
-            {...(isEdit
-              ? {}
-              : { placeholder: 'e.g. Dimensional Check, Hardness Test, Visual Inspection' })}
-            {...register('code', {
-              required: !isEdit ? 'QC Process Name is required.' : false,
-              maxLength: { value: 64, message: 'Max 64 characters.' },
-            })}
-          />
-          {errors.code?.message ? <div className="form-error">{errors.code.message}</div> : null}
-        </div>
+      <div className="panel">
+        <div className="panel-hdr">{props.panelHeader}</div>
+        <div className="panel-body">
+          <div className="form-grid">
+            <div className="form-grp form-full">
+              <label className="form-label" htmlFor="code">
+                QC Process Name{!isEdit ? <span className="req">★</span> : null}
+              </label>
+              <input
+                id="code"
+                className="innovic-input"
+                autoFocus={!isEdit}
+                autoComplete="off"
+                readOnly={isEdit}
+                {...(isEdit
+                  ? {}
+                  : { placeholder: 'e.g. Dimensional Check, Hardness Test, Visual Inspection' })}
+                {...register('code', {
+                  required: !isEdit ? 'QC Process Name is required.' : false,
+                  maxLength: { value: 64, message: 'Max 64 characters.' },
+                })}
+              />
+              {errors.code?.message ? (
+                <div className="form-error">{errors.code.message}</div>
+              ) : null}
+            </div>
 
-        <div className="form-grp form-full">
-          <label className="form-label" htmlFor="description">
-            Description
-          </label>
-          <input
-            id="description"
-            className="innovic-input"
-            autoComplete="off"
-            {...register('description', {
-              maxLength: { value: 1000, message: 'Max 1000 characters.' },
-            })}
-          />
-          {errors.description?.message ? (
-            <div className="form-error">{errors.description.message}</div>
-          ) : null}
-        </div>
+            <div className="form-grp form-full">
+              <label className="form-label" htmlFor="description">
+                Description
+              </label>
+              <input
+                id="description"
+                className="innovic-input"
+                autoComplete="off"
+                {...register('description', {
+                  maxLength: { value: 1000, message: 'Max 1000 characters.' },
+                })}
+              />
+              {errors.description?.message ? (
+                <div className="form-error">{errors.description.message}</div>
+              ) : null}
+            </div>
 
-        <div className="form-grp">
-          <label className="form-label" htmlFor="defaultCycleTimeMin">
-            Default Cycle Time (min)
-          </label>
-          <input
-            id="defaultCycleTimeMin"
-            type="number"
-            step="0.01"
-            min={0}
-            className="innovic-input"
-            {...(isEdit ? {} : { placeholder: '15' })}
-            {...register('defaultCycleTimeMin', {
-              valueAsNumber: true,
-              min: { value: 0, message: 'Default Cycle Time (min) cannot be less than 0.' },
-            })}
-          />
-          {errors.defaultCycleTimeMin?.message ? (
-            <div className="form-error">{errors.defaultCycleTimeMin.message}</div>
-          ) : null}
-        </div>
+            <div className="form-grp">
+              <label className="form-label" htmlFor="defaultCycleTimeMin">
+                Default Cycle Time (min)
+              </label>
+              <input
+                id="defaultCycleTimeMin"
+                type="number"
+                step="0.01"
+                min={0}
+                className="innovic-input"
+                {...(isEdit ? {} : { placeholder: '15' })}
+                {...register('defaultCycleTimeMin', {
+                  valueAsNumber: true,
+                  min: { value: 0, message: 'Default Cycle Time (min) cannot be less than 0.' },
+                })}
+              />
+              {errors.defaultCycleTimeMin?.message ? (
+                <div className="form-error">{errors.defaultCycleTimeMin.message}</div>
+              ) : null}
+            </div>
 
-        <div className="form-grp">
-          <label className="form-label" htmlFor="isActive">
-            Active
-          </label>
-          <select
-            id="isActive"
-            className="innovic-select"
-            {...register('isActive', {
-              setValueAs: (v) => v === 'true' || v === true,
-            })}
-          >
-            <option value="true">Active</option>
-            <option value="false">Inactive</option>
-          </select>
-        </div>
+            <div className="form-grp">
+              <label className="form-label" htmlFor="isActive">
+                Active
+              </label>
+              <select
+                id="isActive"
+                className="innovic-select"
+                {...register('isActive', {
+                  setValueAs: (v) => v === 'true' || v === true,
+                })}
+              >
+                <option value="true">Active</option>
+                <option value="false">Inactive</option>
+              </select>
+            </div>
 
-        <div className="form-grp">
-          <label className="form-label" htmlFor="reportTypeId">
-            Report Type
-          </label>
-          <select id="reportTypeId" className="innovic-select" {...register('reportTypeId')}>
-            <option value="">{reportTypes.isLoading ? 'Loading…' : '— No report —'}</option>
-            {savedInactiveLabel ? (
-              <option value={savedReportTypeId}>{savedInactiveLabel}</option>
-            ) : null}
-            {reportOptions.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-                {t.defaultMandatory ? ' (Mandatory)' : ''}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      <div style={{ marginTop: 16 }}>
-        {props.submitError ? (
-          <div
-            style={{
-              color: 'var(--red2)',
-              background: 'var(--red3)',
-              border: '1px solid var(--red2)',
-              borderRadius: 6,
-              padding: '6px 10px',
-              fontSize: 12,
-              marginBottom: 10,
-            }}
-          >
-            {props.submitError}
+            <div className="form-grp">
+              <label className="form-label" htmlFor="reportTypeId">
+                Report Type
+              </label>
+              <select id="reportTypeId" className="innovic-select" {...register('reportTypeId')}>
+                <option value="">{reportTypes.isLoading ? 'Loading…' : '— No report —'}</option>
+                {savedInactiveLabel ? (
+                  <option value={savedReportTypeId}>{savedInactiveLabel}</option>
+                ) : null}
+                {reportOptions.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                    {t.defaultMandatory ? ' (Mandatory)' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
-        ) : null}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
-          {props.onCancel ? (
-            <button type="button" className="btn btn-ghost" onClick={props.onCancel}>
-              Cancel
-            </button>
-          ) : null}
-          <button type="submit" className="btn btn-primary" disabled={formState.isSubmitting}>
-            {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
-            {props.submitLabel ?? 'Save'}
-          </button>
         </div>
       </div>
+
+      {props.submitError ? (
+        <div
+          style={{
+            color: 'var(--red2)',
+            background: 'var(--red3)',
+            border: '1px solid var(--red2)',
+            borderRadius: 6,
+            padding: '6px 10px',
+            fontSize: 12,
+            marginBottom: 10,
+          }}
+        >
+          {props.submitError}
+        </div>
+      ) : null}
+      <FormActions>
+        {props.onCancel ? (
+          <button type="button" className="btn btn-ghost" onClick={props.onCancel}>
+            Cancel
+          </button>
+        ) : null}
+        <button type="submit" className="btn btn-primary" disabled={formState.isSubmitting}>
+          {formState.isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
+          {props.submitLabel ?? 'Save'}
+        </button>
+      </FormActions>
     </form>
   );
 }

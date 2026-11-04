@@ -23,7 +23,7 @@
 // A pending edit (ADR-202) shows as the orange "→ after" chip in its field's
 // cell, and Save is off while it waits: the server keeps ONE open edit per
 // document and refuses a second with "This document already has an edit
-// waiting for approval." — the one-line note in the header says so first.
+// waiting for approval." — the one-line note beside Save says so first.
 
 import type { ProductionOrderStatus } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
@@ -44,7 +44,7 @@ import { authenticatedRoute } from '@/routes/_authenticated';
 import { EmptyState, Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
 import { Cluster, ClusterGrid } from '@/ui/forms';
-import { DetailHeader, useSaveShortcut } from '@/ui/layout';
+import { DetailHeader, FormActions, useSaveShortcut } from '@/ui/layout';
 import { TabStrip } from '@/ui/navigation';
 import {
   type UpdateProductionOrderInput,
@@ -201,7 +201,7 @@ function ProductionOrderEditPage(): React.JSX.Element {
     e.preventDefault();
     await save();
   };
-  // Ctrl+S runs the same Save as the header button (off while it is disabled).
+  // Ctrl+S runs the same Save as the bottom button (off while it is disabled).
   useSaveShortcut(() => void save(), canSubmit && !update.isPending && !saveBlocked);
 
   if (isLoading) {
@@ -288,40 +288,6 @@ function ProductionOrderEditPage(): React.JSX.Element {
           <>
             <span className="panel-title">Edit Production Order</span>
             <PoStatusBadge status={detail.status} shortClosedQty={detail.shortClosedQty} />
-          </>
-        }
-        actions={
-          <>
-            {hasPendingEdit ? (
-              <span className="po-edit-pend" role="status" title={PENDING_EDIT_MESSAGE}>
-                {pendingNote}
-              </span>
-            ) : null}
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              onClick={() => exit.leave(goBack)}
-              disabled={update.isPending}
-            >
-              Cancel
-            </button>
-            {/* The wrapper carries the hover text: a disabled button gets none. */}
-            <span title={saveBlockedTitle}>
-              <button
-                type="submit"
-                className="btn btn-primary btn-sm"
-                disabled={!canSubmit || update.isPending || saveBlocked}
-                title={saveBlockedTitle}
-              >
-                {update.isPending ? (
-                  <>
-                    <Loader2 size={14} className="animate-spin" /> Saving…
-                  </>
-                ) : (
-                  <>Save Changes</>
-                )}
-              </button>
-            </span>
           </>
         }
       >
@@ -450,6 +416,42 @@ function ProductionOrderEditPage(): React.JSX.Element {
           <DocumentHistory entity="ProductionOrder" entityId={detail.id} refId={detail.code} />
         )}
       </Panel>
+
+      <FormActions
+        note={
+          hasPendingEdit ? (
+            <span className="po-edit-pend" role="status" title={PENDING_EDIT_MESSAGE}>
+              {pendingNote}
+            </span>
+          ) : undefined
+        }
+      >
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm"
+          onClick={() => exit.leave(goBack)}
+          disabled={update.isPending}
+        >
+          Cancel
+        </button>
+        {/* The wrapper carries the hover text: a disabled button gets none. */}
+        <span title={saveBlockedTitle}>
+          <button
+            type="submit"
+            className="btn btn-primary btn-sm"
+            disabled={!canSubmit || update.isPending || saveBlocked}
+            title={saveBlockedTitle}
+          >
+            {update.isPending ? (
+              <>
+                <Loader2 size={14} className="animate-spin" /> Saving…
+              </>
+            ) : (
+              <>Save Changes</>
+            )}
+          </button>
+        </span>
+      </FormActions>
     </form>
   );
 }

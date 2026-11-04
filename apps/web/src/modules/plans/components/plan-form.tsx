@@ -31,6 +31,7 @@ import {
 } from '@/modules/raw-material/components/raw-material-pickers';
 import { soNoWithInternal } from '@/lib/so-number';
 import { useCanOpen } from '@/components/shared/action-link';
+import { FormActions } from '@/ui/layout';
 import { useDefaultRouteOps, useNextPlanCode } from '../api';
 
 export interface PlanFormValues {
@@ -1008,7 +1009,7 @@ export function PlanForm({
         </div>
       </div>
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
+      <FormActions>
         <button
           type="submit"
           className="btn btn-primary"
@@ -1017,7 +1018,7 @@ export function PlanForm({
           {isSubmitting ? <Loader2 size={13} className="animate-spin" /> : null}
           {isSubmitting ? 'Saving…' : submitLabel}
         </button>
-      </div>
+      </FormActions>
     </form>
   );
 }

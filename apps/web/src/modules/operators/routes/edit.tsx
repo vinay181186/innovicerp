@@ -106,21 +106,17 @@ function OperatorNewPage(): React.JSX.Element {
       <Link to="/operators" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
         <ArrowLeft size={14} /> Back
       </Link>
-      <div className="panel">
-        <div className="panel-hdr">
+      <OperatorForm
+        panelHeader={
           <div>
             <div className="panel-title">+ Add Operator</div>
           </div>
-        </div>
-        <div className="panel-body">
-          <OperatorForm
-            mode="create"
-            onSubmit={onSubmit}
-            submitError={submitError}
-            onCancel={() => exit.leave(goBack)}
-          />
-        </div>
-      </div>
+        }
+        mode="create"
+        onSubmit={onSubmit}
+        submitError={submitError}
+        onCancel={() => exit.leave(goBack)}
+      />
     </div>
   );
 }
@@ -199,8 +195,8 @@ function OperatorEditPage(): React.JSX.Element {
             </Link>
           </div>
           <div className="empty-state" style={{ color: 'var(--amber2)' }}>
-            ⛔ You do not have edit access to Operator Master. Ask an admin for L3 Editor or above in
-            Production.
+            ⛔ You do not have edit access to Operator Master. Ask an admin for L3 Editor or above
+            in Production.
           </div>
         </div>
       </div>
@@ -248,8 +244,8 @@ function OperatorEditPage(): React.JSX.Element {
           {stagedNotice}
         </Banner>
       ) : null}
-      <div className="panel">
-        <div className="panel-hdr">
+      <OperatorForm
+        panelHeader={
           <div>
             <div
               className="td-code"
@@ -261,17 +257,13 @@ function OperatorEditPage(): React.JSX.Element {
               Edit Operator
             </div>
           </div>
-        </div>
-        <div className="panel-body">
-          <OperatorForm
-            mode="edit"
-            operator={operator}
-            onSubmit={onSubmit}
-            submitError={submitError}
-            onCancel={() => exit.leave(goBack)}
-          />
-        </div>
-      </div>
+        }
+        mode="edit"
+        operator={operator}
+        onSubmit={onSubmit}
+        submitError={submitError}
+        onCancel={() => exit.leave(goBack)}
+      />
     </div>
   );
 }

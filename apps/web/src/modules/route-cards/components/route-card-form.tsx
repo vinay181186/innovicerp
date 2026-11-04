@@ -4,9 +4,8 @@
 // frames 4 "Route Card — Create" and 5 "Route Card — Edit / Revise"): the whole
 // form fits one 1440×810 screen with no page scroll, in the detail page's
 // order so Create, Edit and View line up (screen-layout-method rule 8):
-//   header      ← Back · [code] · New / Edit Route Card · Rev N → N+1 badge …
-//               the first validation message (why Save is off) · Cancel · Save
-//   identity    RC No. · Item Code ★ (the one decision) · item name · the
+//   header      ← Back · [code] · New / Edit Route Card · Rev N → N+1 badge
+//   identity   RC No. · Item Code ★ (the one decision) · item name · the
 //               "prefilled from plan" note (DocIdent)
 //   facts       Route (Plan Type ★ · Operations split · Last Updated) ·
 //               Material (RM Item · RM Grade · RM Size · RM Qty per piece) ·
@@ -16,6 +15,7 @@
 //               + Inspection, + Add Operation; the one block that takes the
 //               height left (`page-fill rc-form` + <Panel fill>), its table
 //               scrolling inside with the header row and Total held.
+//   FormActions the first validation message (why Save is off) · Cancel · Save
 // Validation, save payloads, copy-ops, op numbering and every message are the
 // ADR-204 form's, unchanged. Tool No. / Tool Details are still NOT rendered
 // (owner, 2026-10-06 — "no Tool No. / Tool Details anywhere on the form"), and
@@ -59,7 +59,7 @@ import {
   IdentSep,
   SearchableSelect,
 } from '@/ui/forms';
-import { useSaveShortcut } from '@/ui/layout';
+import { FormActions, useSaveShortcut } from '@/ui/layout';
 import { useFetchRouteCard, useNextRouteCardCode, useRouteCardsList } from '../api';
 import { RcBlockingLink, RcDrawingRevFields, useRcItemRev } from './rc-form-drawing';
 import { RouteCardOpsEditor } from './rc-form-ops';
@@ -581,7 +581,7 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
     e.preventDefault();
     await save();
   };
-  // Ctrl+S runs the same Save as the header button (no-op while it is disabled).
+  // Ctrl+S runs the same Save as the bottom button (no-op while it is disabled).
   useSaveShortcut(() => void save(), !submitting);
 
   // Display-only totals under the operations table: how long the whole routing
@@ -610,8 +610,7 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
 
   return (
     <form className="page-fill rc-form" onSubmit={(e) => void submit(e)}>
-      {/* Header: which card, the revision this save creates, why Save is off,
-          and the next step (Save) as the one primary button. */}
+      {/* Header: which card and the revision this save creates. */}
       <div className="rc-form-hd">
         <button type="button" className="btn btn-ghost" onClick={onBack ?? onCancel}>
           <ArrowLeft size={14} /> Back
@@ -631,25 +630,6 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
             <span style={{ color: 'var(--green2)' }}>{routeCard.currentRevision + 1}</span>
           </span>
         ) : null}
-        <span className="rc-form-sp" />
-        {/* Why Save is disabled — on Save's own row, the same text as before.
-            Full text on hover when the row is too narrow for it. */}
-        {validationError ? (
-          <span className="form-error rc-why" title={validationError}>
-            {validationError}
-          </span>
-        ) : null}
-        <button type="button" className="btn btn-ghost" onClick={onCancel}>
-          Cancel
-        </button>
-        <button
-          type="submit"
-          className="btn btn-primary"
-          disabled={Boolean(validationError) || submitting}
-          title={validationError ?? undefined}
-        >
-          {submitting ? 'Saving…' : mode === 'create' ? 'Save Route Card' : 'Save Changes'}
-        </button>
       </div>
       {submitError ? (
         <Banner tone="error" role="alert">
@@ -1007,6 +987,30 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
           }}
         />
       ) : null}
+
+      {/* Why Save is disabled — on Save's own row, the same text as before.
+          Full text on hover when the row is too narrow for it. */}
+      <FormActions
+        note={
+          validationError ? (
+            <span className="form-error rc-why" title={validationError}>
+              {validationError}
+            </span>
+          ) : undefined
+        }
+      >
+        <button type="button" className="btn btn-ghost" onClick={onCancel}>
+          Cancel
+        </button>
+        <button
+          type="submit"
+          className="btn btn-primary"
+          disabled={Boolean(validationError) || submitting}
+          title={validationError ?? undefined}
+        >
+          {submitting ? 'Saving…' : mode === 'create' ? 'Save Route Card' : 'Save Changes'}
+        </button>
+      </FormActions>
     </form>
   );
 }

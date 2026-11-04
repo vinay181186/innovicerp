@@ -131,8 +131,8 @@ function TpiMasterEditPage(): React.JSX.Element {
       >
         <ArrowLeft size={14} /> Back to {detail.code}
       </Link>
-      <div className="panel">
-        <div className="panel-hdr">
+      <TpiMasterForm
+        panelHeader={
           <div>
             <div className="fw-700" style={{ color: 'var(--green2)', fontSize: 14 }}>
               {detail.code}
@@ -141,47 +141,41 @@ function TpiMasterEditPage(): React.JSX.Element {
               ✏ Edit Inspector
             </div>
           </div>
-        </div>
-        <div className="panel-body">
-          <TpiMasterForm
-            mode="edit"
-            detail={detail}
-            submitError={submitError}
-            submitLabel="Save Changes"
-            onCancel={() => exit.leave(goBack)}
-            onSubmit={async (values: UpdateTpiMasterInput) => {
-              setSubmitError(null);
-              try {
-                // Only the fields that actually moved are sent; a 409 re-reads
-                // and retries onto the fresh row instead of overwriting someone
-                // else's change.
-                const saved = await conflict.save(values, (payload, expectedUpdatedAt) =>
-                  update.mutateAsync({ ...payload, expectedUpdatedAt }),
-                );
-                // null = nothing actually changed; the user has been told and
-                // nothing was written. Stay on the form.
-                if (saved === null) return;
-                if (isStagedResult(saved)) {
-                  // The edit-approval gate is on and this inspector is live:
-                  // nothing was changed — the edit is now waiting for approval.
-                  // Say so, then return to the detail page (its fields carry the
-                  // pending-change chip).
-                  setStagedNotice(
-                    'Sent for approval — your changes will apply once an approver signs off.',
-                  );
-                  exit.leave(goBack);
-                  return;
-                }
-                exit.leave(goBack);
-              } catch (e) {
-                setSubmitError(
-                  e instanceof Error ? e.message : 'Could not save Inspector. Try again.',
-                );
-              }
-            }}
-          />
-        </div>
-      </div>
+        }
+        mode="edit"
+        detail={detail}
+        submitError={submitError}
+        submitLabel="Save Changes"
+        onCancel={() => exit.leave(goBack)}
+        onSubmit={async (values: UpdateTpiMasterInput) => {
+          setSubmitError(null);
+          try {
+            // Only the fields that actually moved are sent; a 409 re-reads
+            // and retries onto the fresh row instead of overwriting someone
+            // else's change.
+            const saved = await conflict.save(values, (payload, expectedUpdatedAt) =>
+              update.mutateAsync({ ...payload, expectedUpdatedAt }),
+            );
+            // null = nothing actually changed; the user has been told and
+            // nothing was written. Stay on the form.
+            if (saved === null) return;
+            if (isStagedResult(saved)) {
+              // The edit-approval gate is on and this inspector is live:
+              // nothing was changed — the edit is now waiting for approval.
+              // Say so, then return to the detail page (its fields carry the
+              // pending-change chip).
+              setStagedNotice(
+                'Sent for approval — your changes will apply once an approver signs off.',
+              );
+              exit.leave(goBack);
+              return;
+            }
+            exit.leave(goBack);
+          } catch (e) {
+            setSubmitError(e instanceof Error ? e.message : 'Could not save Inspector. Try again.');
+          }
+        }}
+      />
     </div>
   );
 }

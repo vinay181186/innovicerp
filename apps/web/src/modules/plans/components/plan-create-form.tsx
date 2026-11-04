@@ -27,7 +27,7 @@ import { usePlanningSoDetail, usePlanningSoList } from '@/modules/so-planning/ap
 import { soNoWithInternal } from '@/lib/so-number';
 import { Banner } from '@/ui/feedback';
 import { SearchableSelect } from '@/ui/forms';
-import { PageHeader, useSaveShortcut } from '@/ui/layout';
+import { FormActions, PageHeader, useSaveShortcut } from '@/ui/layout';
 import { useDefaultRouteOps } from '../api';
 import { PLAN_DEFAULT_SPAN_DAYS } from './plan-form';
 
@@ -117,7 +117,10 @@ export function PlanCreateForm({
   // what the server will copy onto this plan, so the same lookup that loads the
   // operations also supplies the two values SHOWN below. A different line is a
   // different item, so the lookup (and the display) follows the picked line.
-  const { data: defaultOps } = useDefaultRouteOps(line?.itemId ?? null, line?.itemRevisionId ?? null);
+  const { data: defaultOps } = useDefaultRouteOps(
+    line?.itemId ?? null,
+    line?.itemRevisionId ?? null,
+  );
   const hasRouteCard = !!defaultOps && defaultOps.ops.length > 0;
 
   const build = (): { input: CreatePlanInput } | { error: string } => {
@@ -184,29 +187,7 @@ export function PlanCreateForm({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <PageHeader
-        title="New Plan"
-        icon="📅"
-        backLabel="Back to Plans"
-        onBack={onCancel}
-        sticky
-        dirty={dirty}
-        actions={
-          <>
-            <button type="button" className="btn btn-ghost" onClick={onCancel}>
-              Cancel
-            </button>
-            <button
-              type="button"
-              className="btn btn-primary"
-              disabled={isSubmitting || Boolean(blocker) || !line}
-              onClick={save}
-            >
-              {isSubmitting ? 'Saving…' : 'Save Plan'}
-            </button>
-          </>
-        }
-      >
+      <PageHeader title="New Plan" icon="📅" backLabel="Back to Plans" onBack={onCancel}>
         {shownError ? (
           <Banner tone="error" role="alert" flush>
             {shownError}
@@ -408,6 +389,20 @@ export function PlanCreateForm({
           ) : null}
         </>
       ) : null}
+
+      <FormActions dirty={dirty}>
+        <button type="button" className="btn btn-ghost" onClick={onCancel}>
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="btn btn-primary"
+          disabled={isSubmitting || Boolean(blocker) || !line}
+          onClick={save}
+        >
+          {isSubmitting ? 'Saving…' : 'Save Plan'}
+        </button>
+      </FormActions>
     </div>
   );
 }

@@ -5,10 +5,9 @@
 // longer removes stock from the shelf, so the dispatch draws on this line's
 // reservation first and then on free stock.
 //
-// Create-page pattern (ERPNext gap report 2026-09-26): sticky PageHeader with
-// Cancel + Save top-right (Ctrl+S saves), the header on the 12-column grid, and
-// the shared line-item table. Errors show right under the header, where Save
-// is. "Add all pending lines" pre-fills one card per pending SO line (and runs
+// Create-page pattern (ERPNext gap report 2026-09-26): FormActions with Cancel +
+// Save at the foot (Ctrl+S saves), the header on the 12-column grid, and the
+// shared line-item table. Errors show beside Save. "Add all pending lines" pre-fills one card per pending SO line (and runs
 // once on arrival with ?so=). The payload and the mutation are unchanged; the qty cap moved
 // from "available" to "pending" with ADR-180 (see the validation block below).
 
@@ -26,7 +25,7 @@ import { todayIst } from '@/lib/date';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
 import { FormField, FormGrid, SearchableSelect } from '@/ui/forms';
-import { PageHeader, useSaveShortcut } from '@/ui/layout';
+import { FormActions, PageHeader, useSaveShortcut } from '@/ui/layout';
 import {
   useCreateDispatch,
   useDispatchableSo,
@@ -160,7 +159,7 @@ function CustomerDispatchNewPage(): React.JSX.Element {
     }
   }
 
-  // Ctrl+S runs the same Save as the header button, only while it is enabled.
+  // Ctrl+S runs the same Save as the Save button, only while it is enabled.
   const submitRef = useRef(submit);
   submitRef.current = submit;
   const runSave = useCallback(() => void submitRef.current(), []);
@@ -196,39 +195,10 @@ function CustomerDispatchNewPage(): React.JSX.Element {
     <div>
       {exit.dialog}
       <PageHeader
-        sticky
         title="New Customer Dispatch"
         backLabel="Back to Customer Dispatch"
         onBack={goBack}
-        dirty={dirty}
-        actions={
-          <>
-            <button type="button" className="btn btn-ghost" onClick={() => exit.leave(goBack)}>
-              Cancel
-            </button>
-            <button
-              type="button"
-              className="btn btn-primary"
-              disabled={!canSave}
-              title={
-                lineErrors.size > 0
-                  ? 'Fix the highlighted lines — Dispatch Qty cannot be more than Pending.'
-                  : undefined
-              }
-              onClick={() => void submit()}
-            >
-              {create.isPending ? 'Saving…' : 'Save Dispatch'}
-            </button>
-          </>
-        }
       />
-
-      {/* Save error right under the header's Save. */}
-      {err ? (
-        <Banner tone="error" role="alert">
-          {err}
-        </Banner>
-      ) : null}
 
       <Panel title="Dispatch Details">
         <FormGrid>
@@ -327,6 +297,33 @@ function CustomerDispatchNewPage(): React.JSX.Element {
           />
         </Panel>
       ) : null}
+      <FormActions
+        dirty={dirty}
+        note={
+          err ? (
+            <Banner tone="error" role="alert" flush>
+              {err}
+            </Banner>
+          ) : undefined
+        }
+      >
+        <button type="button" className="btn btn-ghost" onClick={() => exit.leave(goBack)}>
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="btn btn-primary"
+          disabled={!canSave}
+          title={
+            lineErrors.size > 0
+              ? 'Fix the highlighted lines — Dispatch Qty cannot be more than Pending.'
+              : undefined
+          }
+          onClick={() => void submit()}
+        >
+          {create.isPending ? 'Saving…' : 'Save Dispatch'}
+        </button>
+      </FormActions>
     </div>
   );
 }

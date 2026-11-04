@@ -19,7 +19,7 @@
   min-height: calc(var(--tbl-row-h) * 6 + var(--control-h-sm) + 2 * var(--sp-2) + 3px);
 }
 
-/* ── Header row: Back · code · title · Rev badge … reason · Cancel · Save ── */
+/* ── Header row: Back · code · title · Rev badge ─────────────────────────── */
 .rc-form-hd {
   display: flex;
   align-items: center;
@@ -27,16 +27,13 @@
   gap: var(--sp-2);
   margin-bottom: var(--panel-gap);
 }
-.rc-form-hd .rc-form-sp {
-  flex: 1;
-}
 /* Why Save is off — the first validation message, the same text as before,
-   on Save's own row. One line; the full text is on hover. Keeps the
-   `.form-error` class the e2e specs locate it by. */
-.rc-form-hd .rc-why {
+   on Save's own row (FormActions' note). One line; the full text is on hover.
+   Keeps the `.form-error` class the e2e specs locate it by. */
+.rc-form .rc-why {
+  display: block;
   margin: 0;
   min-width: 0;
-  flex: 0 1 auto;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

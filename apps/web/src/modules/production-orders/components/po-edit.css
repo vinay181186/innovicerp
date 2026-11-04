@@ -47,9 +47,9 @@
   white-space: nowrap;
   cursor: pointer;
 }
-/* Header: why Save is off — one line, the full server text in its title. */
+/* FormActions' note: why Save is off — one line, the full server text in its title. */
 .po-edit .po-edit-pend {
-  max-width: 360px;
+  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

@@ -23,10 +23,10 @@
 // Layout (owner-approved mock-up pro-routecard-create-edit-mockup.html, frame
 // "1 · Production Order — Create", 2026-10-06): the page fits one 1440×810
 // screen with no page scroll, on the SAME grid and cluster order as the
-// Production Order detail page — only the controls differ. Header (next no.,
-// Cancel, Save) → identity line filled from the Plan → Order · Quantity ·
-// Schedule · Material clusters → ONE read-only panel of the Route Card's
-// operations that takes the height left. The decision is WHICH PLAN: the Plan
+// Production Order detail page — only the controls differ. Header (next no.)
+// → identity line filled from the Plan → Order · Quantity · Schedule · Material
+// clusters → ONE read-only panel of the Route Card's operations that takes the
+// height left → FormActions (Cancel, Save). The decision is WHICH PLAN: the Plan
 // No. cell carries the blue rule and every other input is off until a plan is
 // picked. The Quantity row reads Plan Qty − Covered = Pending and ends on the
 // PRO Qty typed (green rule).
@@ -60,7 +60,7 @@ import {
   IdentCode,
   IdentSep,
 } from '@/ui/forms';
-import { DetailHeader, useSaveShortcut } from '@/ui/layout';
+import { DetailHeader, FormActions, useSaveShortcut } from '@/ui/layout';
 import {
   type PlanPickerItem,
   useCreateProductionOrder,
@@ -286,10 +286,10 @@ function ProductionOrderNewPage(): React.JSX.Element {
     e.preventDefault();
     await save();
   };
-  // Ctrl+S runs the same Save as the header button (off while it is disabled).
+  // Ctrl+S runs the same Save as the bottom button (off while it is disabled).
   useSaveShortcut(() => void save(), canSubmit && !create.isPending);
 
-  // Why Save is off — the header button's tooltip. The "Raw Material Available
+  // Why Save is off — the Save button's tooltip. The "Raw Material Available
   // is required" message used to be a red banner that showed the moment the
   // page opened; it is this tooltip now, in its turn after the fields above it.
   const saveBlockedReason = !plan
@@ -379,38 +379,8 @@ function ProductionOrderNewPage(): React.JSX.Element {
             <span className="panel-title">New Production Order</span>
           </>
         }
-        actions={
-          <>
-            <button
-              type="button"
-              className="btn btn-ghost"
-              onClick={() => exit.leave(goBack)}
-              disabled={create.isPending}
-            >
-              Cancel
-            </button>
-            {/* The wrapper carries the reason too: a disabled button gets no
-                hover in every browser. */}
-            <span title={saveBlockedReason}>
-              <button
-                type="submit"
-                className="btn btn-primary"
-                disabled={!canSubmit || create.isPending}
-                title={saveBlockedReason}
-              >
-                {create.isPending ? (
-                  <>
-                    <Loader2 size={14} className="animate-spin" /> Saving…
-                  </>
-                ) : (
-                  <>Save Production Order &amp; Create JC</>
-                )}
-              </button>
-            </span>
-          </>
-        }
       >
-        {/* What stops Save, under the header where the Save button is. */}
+        {/* What stops Save, under the header. */}
         {noRouteCard ? (
           <Banner tone="warn" role="alert">
             ⚠ No Route Card for {planRevLabel} —{' '}
@@ -753,6 +723,35 @@ function ProductionOrderNewPage(): React.JSX.Element {
         routeCardsLoading={Boolean(planItemId) && routeCards.isLoading}
         planRemarks={plan?.remarks ?? null}
       />
+
+      <FormActions>
+        <button
+          type="button"
+          className="btn btn-ghost"
+          onClick={() => exit.leave(goBack)}
+          disabled={create.isPending}
+        >
+          Cancel
+        </button>
+        {/* The wrapper carries the reason too: a disabled button gets no
+            hover in every browser. */}
+        <span title={saveBlockedReason}>
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={!canSubmit || create.isPending}
+            title={saveBlockedReason}
+          >
+            {create.isPending ? (
+              <>
+                <Loader2 size={14} className="animate-spin" /> Saving…
+              </>
+            ) : (
+              <>Save Production Order &amp; Create JC</>
+            )}
+          </button>
+        </span>
+      </FormActions>
     </form>
   );
 }

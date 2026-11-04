@@ -11,7 +11,7 @@ import { useExitConfirm } from '@/lib/exit-guard';
 import { useEditConflict } from '@/lib/use-edit-conflict';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Banner } from '@/ui/feedback';
-import { PageHeader, useSaveShortcut } from '@/ui/layout';
+import { FormActions, PageHeader, useSaveShortcut } from '@/ui/layout';
 import { useFetchGoodsReceiptNote, useGoodsReceiptNote, useUpdateGoodsReceiptNote } from '../api';
 import { GoodsReceiptNoteForm } from '../components/goods-receipt-note-form';
 import { grnLinesDigest } from '../lib/grn-lines-digest';
@@ -162,7 +162,7 @@ function GoodsReceiptNoteEditPage(): React.JSX.Element {
     [navigate, id],
   );
   const exit = useExitConfirm({ onExit: goBack });
-  // Save lives in the sticky header; the form reports whether it can submit.
+  // Save lives in FormActions; the form reports whether it can submit.
   const [formStatus, setFormStatus] = useState({
     submitting: false,
     canSubmit: true,
@@ -274,36 +274,13 @@ function GoodsReceiptNoteEditPage(): React.JSX.Element {
   return (
     <div>
       {exit.dialog}
-      {stagedNotice ? (
-        <Banner tone="success" role="status">
-          {stagedNotice}
-        </Banner>
-      ) : null}
       <PageHeader
-        sticky
         title="Edit GRN"
         /* No subtitle: the form's identity line carries the GRN No. (and the
            type, the source document and the vendor) — layout rule 7. One
            number, in one place. */
         backLabel="Back to GRN"
         onBack={goBack}
-        dirty={formStatus.dirty}
-        actions={
-          <>
-            <button type="button" className="btn btn-ghost" onClick={() => exit.leave(goBack)}>
-              Cancel
-            </button>
-            <button
-              type="submit"
-              form={GRN_EDIT_FORM_ID}
-              className="btn btn-primary"
-              disabled={!formStatus.canSubmit}
-            >
-              {formStatus.submitting ? <Loader2 size={13} className="animate-spin" /> : null}
-              Save Changes
-            </button>
-          </>
-        }
       />
       <GoodsReceiptNoteForm
         mode="edit"
@@ -314,6 +291,29 @@ function GoodsReceiptNoteEditPage(): React.JSX.Element {
         formId={GRN_EDIT_FORM_ID}
         onStatusChange={setFormStatus}
       />
+      <FormActions
+        dirty={formStatus.dirty}
+        note={
+          stagedNotice ? (
+            <Banner tone="success" role="status" flush>
+              {stagedNotice}
+            </Banner>
+          ) : undefined
+        }
+      >
+        <button type="button" className="btn btn-ghost" onClick={() => exit.leave(goBack)}>
+          Cancel
+        </button>
+        <button
+          type="submit"
+          form={GRN_EDIT_FORM_ID}
+          className="btn btn-primary"
+          disabled={!formStatus.canSubmit}
+        >
+          {formStatus.submitting ? <Loader2 size={13} className="animate-spin" /> : null}
+          Save Changes
+        </button>
+      </FormActions>
     </div>
   );
 }
