@@ -1,28 +1,19 @@
-// Job Card print — the shop-floor TRAVELLER (form PRD-F-004, reference doc
-// `04_Job_Card_Route_Card_Traveller.docx`), printed on the Innovic Sheet: the
-// same paper, Times New Roman, sizes and letterhead as the Purchase Order and
-// the challans (sheet-print.ts), so every printed document reads as one family.
+// Job Card print — the shop-floor TRAVELLER (form PRD-F-004), printed on the
+// Innovic Sheet: the same paper, Times New Roman and letterhead as the Purchase
+// Order (sheet-print.ts). Everything specific to the Job Card lives in THIS file;
+// the owner's rule (2026-11-04) is that this layout never reaches another print.
 //
-// What it prints, from the JC list row (`JobCardListItem`, v_jc_status) + its
-// enriched ops (`JcOpEnriched[]`, /op-entry/jc-ops) + the company:
-//   • Letterhead — logo + company name only (an internal document: no address,
-//     no GSTIN), the brand rule, the title JOB CARD.
-//   • Two columns of facts, each on its own full-width rule: JC No, Production
-//     Order No, SO No, SO line, POL, route card on the left (no client — user
-//     2026-09-16, it is a shop-floor sheet); date, due, qty, then Item Code
-//     directly above Item Name on the right (owner 2026-10-22). The last row
-//     of each column has no rule — the box closes it.
-//   • The operation table: Op · Operation · Plan Machine · Actual Machine ·
-//     Start · Finish · Accepted · Deviated · Created By.
-//     Plan is jc_ops.machine_id; Actual is who made the pieces (ADR-164).
-//     "Created By" is the SYSTEM user who booked the entries — the person
-//     accountable for the record. The shop-floor Operator is NOT printed
-//     (owner 2026-10-22); the JC screen and the ⬇ Excel export still carry it.
-//     Blank rows follow for hand entries.
-//   • Material / traceability and NCR / rework lines for hand entry — the
-//     grade, and (ADR-182) the ACTUAL SIZE the store really cut, passed in
-//     from the Production Order that built the card.
-//   • Prepared / Checked / QC release sign-off.
+// What it prints, from the JC row (`JobCardListItem`) + enriched ops
+// (`JcOpEnriched[]`) + the per-op quantities the JC screen shows (`OpFlowRow[]`)
+// + the company:
+//   • The top block, repeated on EVERY page (it sits in the <thead>, which the
+//     paginator clones per page): letterhead, then four columns read top to
+//     bottom — Item · Material · Job Card · Source — then Remarks and the note.
+//   • The operation table: Op · Operation · Planned Machine · Actual Machine ·
+//     Start · End · Accepted · Deviated · Reworked · Done By · Sign, then blank
+//     rows for hand entries. Quantities are the JC screen's own figures (ADR-212).
+//     The shop-floor Operator is NOT printed (owner 2026-10-22).
+//   • Prepared By / Checked / Approved By / QC Release.
 //
 // The production log is NOT printed (the ⬇ Excel export carries it).
 
@@ -31,38 +22,60 @@ import { opSrNo } from '@innovic/shared';
 import { resolveActualMachine } from '@/components/shared/machine-split';
 import { itemCodeWithRev, docDrawingRev } from '@/lib/item-code';
 import { fmtDate } from '@/lib/date';
+import { fmtQty } from '@/lib/qty-format';
 import { buildDocCompany } from '@/lib/print/company';
 import { esc } from '@/lib/print/doc-print';
 import { openSheetHtmlWindow, sheetLetterheadHtml } from '@/lib/print/sheet-print';
+import type { OpFlowRow } from '@/modules/flow-views/types';
 
-// The sheet's goods table spans 6 columns; every block row here spans the same
-// so the outer border and the letterhead line up exactly as on the PO.
+// The sheet's table spans 6 columns; every block row here spans the same so the
+// outer border and the letterhead line up exactly as on the PO.
 const COLS = 6;
-// Hand-entry rows under the system's own operations, so the traveller has
-// room on paper for a step added on the floor.
-const BLANK_OP_ROWS = 4;
-// Columns of the operation table (see its <thead>); a hand-entry row fills them.
-const OP_COLS = 9;
-// Widths of those columns; '' = Operation, which takes what is left.
-const OP_COL_WIDTHS = ['8mm', '', '17mm', '17mm', '20mm', '20mm', '15mm', '15mm', '24mm'];
+// Hand-entry rows under the system's own operations, so the traveller has room
+// on paper for a step added on the floor.
+const BLANK_OP_ROWS = 2;
+// Widths of the operation table's columns; '' = Operation, which takes the rest.
+const OP_COL_WIDTHS = [
+  '8mm',
+  '',
+  '15mm',
+  '15mm',
+  '18mm',
+  '18mm',
+  '16mm',
+  '16mm',
+  '18mm',
+  '15mm',
+  '11mm',
+];
+const OP_COLS = OP_COL_WIDTHS.length;
 
-// The one shared DD-MMM-YYYY format. Blank, not a dash, on the traveller: an
-// empty cell is where a hand writes the date.
+const PRIORITY_LABEL: Record<JobCardListItem['priority'], string> = {
+  normal: 'Normal',
+  high: 'High',
+};
+
+// Blank, not a dash, on the traveller: an empty cell is where a hand writes it.
 function fmt(d: string | null | undefined): string {
   return fmtDate(d, '');
 }
 
-/** One label / value row. The rule under it runs the full column width — from
- *  the box's outer border to the centre divider — which is what `.jf` does
- *  through the column's zero padding (see JC_STYLE). */
-function fact(label: string, value: string, opts?: { strong?: boolean; last?: boolean }): string {
-  const cls = ['jf', opts?.last ? 'last' : '', opts?.strong ? 'strong' : '']
-    .filter(Boolean)
-    .join(' ');
-  return `<div class="${cls}"><span class="lab">${esc(label)}</span><span class="val">${esc(value)}</span></div>`;
+/** A quantity cell's text: blank when nothing has been booked. */
+function qtyCell(n: number | undefined): string {
+  return n ? fmtQty(n) : '';
 }
 
-function opRow(o: JcOpEnriched): string {
+/** One label / value row of a header column. `key` = the few values a reader
+ *  looks for first; bold, same size. */
+function field(label: string, value: string | null | undefined, key = false): string {
+  return `<div class="jr"><span class="jl">${esc(label)}</span><span class="jv${key ? ' k' : ''}">${esc(value ?? '')}</span></div>`;
+}
+
+function column(title: string, labelWidth: string, rows: string[]): string {
+  return `<div class="jg" style="--jlw:${labelWidth}"><div class="jt">${esc(title)}</div>${rows.join('')}</div>`;
+}
+
+function opRow(o: JcOpEnriched, flow: OpFlowRow | undefined): string {
   const isQc = o.opType === 'qc';
   const isOsp = o.opType === 'outsource';
   const planned = isQc ? 'QC' : isOsp ? 'OSP' : (o.machineCode ?? o.machineCodeText ?? '');
@@ -76,20 +89,24 @@ function opRow(o: JcOpEnriched): string {
           activeRunningMachineCode: o.activeRunningMachineCode,
           machines: o.machines,
         });
-  const actualLabel = actual === '' ? '' : actual.label;
-  const actualCls = actual !== '' && actual.differs ? ' dev' : '';
-  const okQty = isQc ? o.qcAcceptedQty : o.completedQty;
-  const rej = isQc ? o.qcRejectedQty : 0;
+  const actualHtml =
+    actual === ''
+      ? ''
+      : actual.differs
+        ? `<span class="chg">${esc(actual.label)}</span>✱`
+        : esc(actual.label);
   return `<tr>
-    <td class="c b">${opSrNo(o.opSeq)}</td>
+    <td class="c">${opSrNo(o.opSeq)}</td>
     <td>${esc(o.operation)}${isQc ? ' (QC)' : ''}</td>
-    <td class="c b">${esc(planned)}</td>
-    <td class="c b${actualCls}">${esc(actualLabel)}</td>
-    <td class="c">${fmt(o.firstLogDate)}</td>
-    <td class="c">${fmt(o.lastLogDate)}</td>
-    <td class="c b">${okQty > 0 ? okQty : ''}</td>
-    <td class="c">${rej > 0 ? rej : ''}</td>
-    <td>${esc(o.entryDoneBy ?? '')}</td>
+    <td class="m b">${esc(planned)}</td>
+    <td class="m">${actualHtml}</td>
+    <td class="c d">${fmt(o.firstLogDate)}</td>
+    <td class="c d">${fmt(o.lastLogDate)}</td>
+    <td class="n b">${qtyCell(flow ? flow.acceptedQty : isQc ? o.qcAcceptedQty : o.completedQty)}</td>
+    <td class="n">${qtyCell(flow ? flow.deviatedQty : o.qcRejectedQty)}</td>
+    <td class="n">${qtyCell(flow?.reworkedQty)}</td>
+    <td class="by">${esc(o.entryDoneBy ?? '')}</td>
+    <td></td>
   </tr>`;
 }
 
@@ -97,48 +114,69 @@ function blankRow(seq: number): string {
   return `<tr class="hand"><td class="c">${opSrNo(seq)}</td>${'<td></td>'.repeat(OP_COLS - 1)}</tr>`;
 }
 
-// Everything the traveller needs beyond SHEET_STYLE. Sizes follow the sheet:
-// 9.5pt in the table, 10.5pt values, 9pt/8.5pt labels, Times throughout.
+// Everything the traveller needs beyond SHEET_STYLE. One label style and one
+// value style throughout (owner 2026-11-04): labels bold dark grey, values one
+// size in print black. The block is in a <th>, hence the explicit weight/align.
 const JC_STYLE = `
-  .jsplit{display:grid;grid-template-columns:1fr 1fr}
-  .jsplit > div{padding:0}
-  .jsplit > div:first-child{border-right:1px solid var(--paper-rule)}
-  .jf{display:flex;align-items:flex-end;gap:2mm;border-bottom:1px solid var(--paper-rule);
-      min-height:6.8mm;padding:0 3mm .6mm}
-  .jf.last{border-bottom:none}
-  .jf .lab{flex:0 0 32mm;font-family:var(--f-label);font-size:8.5pt;letter-spacing:.06em;
-           text-transform:uppercase;color:#3A3A3A}
-  .jf .val{flex:1;text-align:center;font-size:10.5pt}
-  .jf.strong .val{font-weight:700}
+  .jh{border:1px solid var(--paper-rule);margin:0 -.5px -.5px;text-align:left;font-weight:400}
+  .jcols{display:grid;grid-template-columns:50mm 39mm 53mm minmax(0,1fr)}
+  .jg{display:flex;flex-direction:column;border-left:1px solid var(--paper-rule);min-width:0}
+  .jg:first-child{border-left:none}
+  .jt{background:var(--paper-band);border-bottom:1px solid var(--paper-rule);padding:.9mm 1.6mm;
+      font-family:var(--f-label);font-weight:700;font-size:8.5pt;letter-spacing:.1em;
+      text-transform:uppercase;color:var(--paper-ink);line-height:1.1}
+  .jr{flex:1 1 auto;display:grid;grid-template-columns:var(--jlw) minmax(0,1fr);column-gap:1mm;
+      align-items:center;padding:.35mm 1.6mm;border-bottom:1px solid #D2D2D2;min-height:4.3mm;line-height:1.1}
+  .jr:last-child{border-bottom:none}
+  .jl{font-family:var(--f-label);font-weight:700;font-size:8pt;color:#3A3A3A;white-space:nowrap}
+  .jv{font-size:9pt;color:var(--paper-ink);overflow-wrap:anywhere}
+  .jv.k{font-weight:700}
+  .jrem{display:grid;grid-template-columns:16.5mm minmax(0,1fr);column-gap:1mm;align-items:center;
+        border-top:1px solid var(--paper-rule);padding:.7mm 1.6mm;min-height:4.6mm;line-height:1.15}
+  .jnote{border-top:1px solid var(--paper-rule);padding:.7mm 1.6mm;text-align:center;font-size:8.5pt;
+         color:#3A3A3A;line-height:1.15}
   table.ops{width:100%;border-collapse:collapse;font-size:9.5pt;table-layout:fixed}
   table.ops td{overflow-wrap:anywhere}
-  table.ops th{border:1px solid var(--paper-rule);border-top:none;padding:1.3mm 1.2mm;
-               font-family:var(--f-label);font-size:8pt;letter-spacing:.06em;text-align:center;
-               background:var(--paper-band)}
+  table.ops th{border:1px solid var(--paper-rule);border-top:none;padding:1.3mm 1mm;line-height:1.15;
+               font-family:var(--f-label);font-size:7.5pt;letter-spacing:0;text-align:center;
+               text-transform:uppercase;background:var(--paper-band)}
+  table.ops th.n{text-align:right}
+  table.ops th:nth-child(2){text-align:left}
   table.ops th:first-child,table.ops td:first-child{border-left:none}
   table.ops th:last-child,table.ops td:last-child{border-right:none}
-  table.ops td{border:1px solid var(--paper-rule);padding:1.4mm 1.2mm;height:9.5mm;vertical-align:middle}
+  table.ops td{border:1px solid var(--paper-rule);padding:1.1mm 1.4mm;height:6.6mm;vertical-align:middle}
   /* Each ops row is its own one-row table inside a sheet row whose border
      already draws the rule above and below — so the inner cells draw only the
      column dividers, or every rule would print double. */
   table.ops th,table.ops td{border-top:none;border-bottom:none}
   table.ops td.c{text-align:center;white-space:nowrap}
+  table.ops td.m{text-align:center}
+  table.ops td.by{font-size:8.5pt;padding-left:.8mm;padding-right:.8mm}
+  table.ops td.d{font-size:9pt;padding-left:.5mm;padding-right:.5mm}
+  table.ops td.n{text-align:right;font-variant-numeric:tabular-nums}
   table.ops td.b{font-weight:700}
-  table.ops td.dev{color:#a15c00}
-  table.ops tr.hand td{color:#3A3A3A}
-  .jsec{padding:1.3mm 3mm;font-family:var(--f-label);font-size:8.5pt;letter-spacing:.08em;
-        text-transform:uppercase;font-weight:700;color:#3A3A3A}
-  .jtrace{display:grid;grid-template-columns:1fr 1fr}
-  .jtrace > div{padding:1.5mm 3mm 1mm}
-  .jtrace .jf,.jsign .jf{border-bottom:none;min-height:0;padding:0;margin:0 0 2mm}
-  .jtrace .jf .val,.jsign .jf .val{border-bottom:1px solid var(--paper-rule);text-align:left;
-                                    min-height:5.2mm;padding:0 1mm .5mm}
-  .jsign{display:grid;grid-template-columns:1fr 1fr 1fr}
-  .jsign > div{padding:2.5mm 3mm 1.5mm}
-  .jsign > div + div{border-left:1px solid var(--paper-rule)}
-  .jsign .jf .lab{flex:0 0 27mm}
-  .jfoot{display:flex;justify-content:space-between;gap:6mm;padding:1.2mm 3mm;font-size:8pt;color:#3A3A3A}
+  table.ops .chg{font-weight:700;text-decoration:underline}
+  .jlegend{padding:1.4mm 1.6mm;font-size:8.5pt;color:#2A2A2A}
+  .signs > div{padding:1.6mm 1.6mm 11mm}
+  .signs .jsn{display:block;text-transform:none;letter-spacing:0;font-size:9pt;color:var(--paper-ink)}
 `;
+
+// The shared paginator writes "1 of N" into every [data-pgof]. This print repeats
+// that box on every page, so each page's number is corrected here, in this print
+// only. A MutationObserver runs straight after the paginator finishes, whichever
+// way it was started, and before anything can capture the page.
+const PAGE_NUMBER_SCRIPT = `<script>(function(){
+  var s=document.querySelector('.sheet');
+  if(!s||!window.MutationObserver)return;
+  new MutationObserver(function(_,o){
+    o.disconnect();
+    var p=s.querySelectorAll('.page');
+    for(var i=0;i<p.length;i++){
+      var c=p[i].querySelectorAll('[data-pgof]');
+      for(var j=0;j<c.length;j++)c[j].textContent=(i+1)+' of '+p.length;
+    }
+  }).observe(s,{childList:true});
+})();<${'/'}script>`;
 
 function sectionRow(html: string): string {
   return `<tr><td class="block" colspan="${COLS}">${html}</td></tr>`;
@@ -147,6 +185,10 @@ function sectionRow(html: string): string {
 export function printJobCard(args: {
   jc: JobCardListItem;
   ops: JcOpEnriched[];
+  /** The per-op quantities the JC screen shows (useOpFlow), so the print and the
+   *  screen can never disagree. Empty for a Cancelled card: its ops are stamped
+   *  deleted, so the flow read has no rows and the op's own figures print. */
+  flow: OpFlowRow[];
   company: Company | null | undefined;
   /** ADR-182 — the size really cut, off the Production Order that built this
    *  card. The Job Card wire shape does not carry it, so the caller reads the
@@ -167,46 +209,68 @@ export function printJobCard(args: {
   // Order by op_seq so the routing prints in process order (the enriched read
   // is not guaranteed ordered).
   const ops = [...args.ops].sort((a, b) => a.opSeq - b.opSeq);
+  const lastSeq = Math.max(0, ...ops.map((o) => o.opSeq));
+  const flowByOp = new Map(args.flow.map((f) => [f.jcOpId, f]));
 
-  const so = jc.sourceLink?.type === 'so' ? jc.sourceLink : null;
-  const soNo = jc.sourceLink?.code ?? '';
-  // Two different line numbers, never one. `Ln` is OUR line on the sales
-  // order; `POL` is the line number on the CUSTOMER'S purchase order, which
-  // does not have to match (our line 11 can be their line 20).
-  const soLine = so ? String(so.lineNo) : '';
-  const pol = jc.clientPoLineNo ?? '';
+  const link = jc.sourceLink;
+  // Two different line numbers, never one. `Ln` is OUR line on the sales order;
+  // `POL` is the line number on the CUSTOMER'S purchase order (our line 11 can
+  // be their line 20).
+  const lnPol = [link ? String(link.lineNo) : '', jc.clientPoLineNo ?? '']
+    .filter(Boolean)
+    .join(' / ');
   const routeCard = jc.routeCardCode
     ? `${jc.routeCardCode}${jc.routeCardRevision != null ? ` / ${jc.routeCardRevision}` : ''}`
     : '';
+  const drawingRev = docDrawingRev(jc);
 
-  const left = [
-    fact('JC No.', jc.code, { strong: true }),
-    fact('Production Order No.', args.productionOrderCode ?? '', { strong: true }),
-    fact(jc.sourceLink?.type === 'jw' ? 'JWSO No.' : 'SO No.', soNo, { strong: true }),
-    // ADR-207 — the Internal SO No. on its own labelled line, only when set.
-    so?.internalSoNo ? fact('Internal SO No.', so.internalSoNo, { strong: true }) : '',
-    fact('Ln', soLine),
-    fact('POL', pol),
-    fact('RC No. / Route Card Rev', routeCard, { last: true }),
+  const columns = [
+    column('Item', '16.5mm', [
+      field('Item Code', itemCodeWithRev(jc.itemCode, drawingRev), true),
+      field('Item Name', jc.itemName),
+      field('Drawing No.', jc.drawingNo),
+      field('Drawing Rev', drawingRev),
+      field('JC Qty', `${fmtQty(jc.orderQty)} pcs`, true),
+    ]),
+    column('Material', '15mm', [
+      field('RM Item', jc.rawMaterialItemCode),
+      field('RM Grade', jc.rawMaterialGradeText),
+      field('RM Size', jc.rawMaterialSizeText),
+      field('Actual Size', args.actualSize),
+    ]),
+    column('Job Card', '18mm', [
+      field('JC No.', jc.code, true),
+      // Dates run in time order: raised → due → goes to the customer.
+      field('JC Date', fmt(jc.jcDate)),
+      field('Due Date', fmt(jc.dueDate), true),
+      field('Dispatch Date', fmt(jc.customerDispatchDate)),
+      field('Priority', PRIORITY_LABEL[jc.priority]),
+      `<div class="jr"><span class="jl">Page</span><span class="jv" data-pgof>1</span></div>`,
+    ]),
+    column('Source', '20mm', [
+      field(link?.type === 'jw' ? 'JWSO No.' : 'SO No.', link?.code, true),
+      // A JWSO has no Internal SO No. (ADR-207).
+      link?.type === 'jw'
+        ? ''
+        : field('Internal SO No.', link?.type === 'so' ? link.internalSoNo : ''),
+      field('Ln / POL', lnPol),
+      field('PRO No.', args.productionOrderCode),
+      field('RC No. / Rev', routeCard),
+      jc.parentJobCardCode ? field('Parent JC', jc.parentJobCardCode) : '',
+      jc.parentNcCode ? field('NC No.', jc.parentNcCode) : '',
+    ]),
   ].join('');
-  const right = [
-    fact('JC Date', fmt(jc.jcDate)),
-    fact('Due Date', fmt(jc.dueDate)),
-    fact('JC Qty', `${jc.orderQty} pcs`, { strong: true }),
-    // The item code with the customer's revision from the SO / JWSO line,
-    // written CODE/REV like every other document (ADR-177). Printed ONCE: a
-    // second "CODE/REV" row used to repeat this exact value. Item Name sits
-    // directly under it (owner 2026-10-22: code first, then name).
-    fact('Item Code', itemCodeWithRev(jc.itemCode, docDrawingRev(jc)), { strong: true }),
-    fact('Item Name', jc.itemName, { last: true }),
-  ].join('');
+
+  const topBlock = `<div class="jh">
+    <div class="jcols">${columns}</div>
+    <div class="jrem"><span class="jl">Remarks</span><span class="jv">${esc(jc.remarks ?? '')}</span></div>
+    <div class="jnote">Use released drawing only &nbsp;·&nbsp; PRD-F-004 Rev 00</div>
+  </div>`;
 
   // Each operation is its OWN body row of the sheet (a one-row table inside),
-  // so the paginator can break the page between two operations. With the
-  // whole table in one row, a long route jumped to page 2 as a block and left
-  // page 1 empty under the header. Fixed column widths (`table-layout:fixed`
-  // + one <colgroup>) keep the separate tables' columns in line, and the
-  // heading row is marked to repeat at the top of every continuation page.
+  // so the paginator can break the page between two operations. Fixed column
+  // widths (`table-layout:fixed` + one <colgroup>) keep the separate tables'
+  // columns in line, and the heading row repeats on every continuation page.
   const colgroup = `<colgroup>${OP_COL_WIDTHS.map((w) => (w ? `<col style="width:${w}">` : '<col>')).join('')}</colgroup>`;
   const opsHead = `<table class="ops">${colgroup}
     <thead><tr>
@@ -216,14 +280,16 @@ export function printJobCard(args: {
       <th>Actual<br>Machine</th>
       <th>Start<br>Date</th>
       <th>End<br>Date</th>
-      <th>Accepted</th>
-      <th>Deviated</th>
-      <th>Created By</th>
+      <th class="n">Accepted</th>
+      <th class="n">Deviated</th>
+      <th class="n">Reworked</th>
+      <th>Done By</th>
+      <th>Sign</th>
     </tr></thead>
   </table>`;
   const opRows = [
-    ...ops.map(opRow),
-    ...Array.from({ length: BLANK_OP_ROWS }, (_, i) => blankRow(ops.length + i + 1)),
+    ...ops.map((o) => opRow(o, flowByOp.get(o.id))),
+    ...Array.from({ length: BLANK_OP_ROWS }, (_, i) => blankRow(lastSeq + i + 1)),
   ]
     .map(
       (r) =>
@@ -231,21 +297,11 @@ export function printJobCard(args: {
     )
     .join('');
 
-  const trace = `<div class="jsec">Material / Traceability &nbsp;·&nbsp; NC / Rework References</div>
-    <div class="jtrace">
-      <div>${fact('Material Grade', jc.rawMaterialGradeText ?? '')}${fact('Actual Size', args.actualSize ?? '')}${fact('Heat / Lot No.', '')}</div>
-      <div>${fact('NC No.', jc.parentNcCode ?? '')}</div>
-    </div>`;
-
-  const signs = `<div class="jsign">
-      <div>${fact('Prepared By', '')}${fact('Sign Date', '')}</div>
-      <div>${fact('Checked / Approved By', '')}${fact('Sign Date', '')}</div>
-      <div>${fact('QC Release', '')}${fact('Sign Date', '')}</div>
-    </div>`;
-
-  const foot = `<div class="jfoot">
-      <span>Use released drawing only.</span>
-      <span>Page <span data-pglast>1</span></span>
+  const legend = `<div class="jlegend">✱ underlined = run on a different machine from the plan. &nbsp;Blank rows = a step added on the floor.</div>`;
+  const signs = `<div class="signs" style="grid-template-columns:repeat(3,1fr)">
+      <div>Prepared By<span class="jsn">${esc(jc.createdByName ?? '')}</span></div>
+      <div>Checked / Approved By</div>
+      <div>QC Release</div>
     </div>`;
 
   const letterhead = sheetLetterheadHtml({
@@ -261,18 +317,16 @@ export function printJobCard(args: {
   </div>
   <article class="sheet${args.cancelled ? ' is-cancelled' : ''}">
     <table class="doc">
-      <thead><tr><th class="lh" colspan="${COLS}">${letterhead}</th></tr></thead>
+      <thead><tr><th class="lh" colspan="${COLS}">${letterhead}${topBlock}</th></tr></thead>
       <tfoot><tr><td class="pgfoot" colspan="${COLS}"><div></div></td></tr></tfoot>
       <tbody>
-        ${sectionRow(`<div class="jsplit"><div>${left}</div><div>${right}</div></div>`)}
         <tr data-head-for="ops"><td class="block" colspan="${COLS}">${opsHead}</td></tr>
         ${opRows}
-        ${sectionRow(trace)}
+        ${sectionRow(legend)}
         ${sectionRow(signs)}
-        ${sectionRow(foot)}
       </tbody>
     </table>
-  </article>`;
+  </article>${PAGE_NUMBER_SCRIPT}`;
 
   return openSheetHtmlWindow(`Job Card ${jc.code}`, html, JC_STYLE, undefined, jc.code);
 }
