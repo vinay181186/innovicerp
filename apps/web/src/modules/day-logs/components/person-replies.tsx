@@ -6,6 +6,7 @@
 // form owns one Idempotency-Key (useSaveKey, ADR-172); an edit carries the
 // reply's updatedAt (§20.4).
 
+import { Icon } from '@/ui/core';
 import type { DayLogAdminReply } from '@innovic/shared';
 import { useState } from 'react';
 import { useSaveKey } from '@/lib/use-save-key';
@@ -162,7 +163,7 @@ export function PersonReplies({
                   aria-label={`Edit reply ${i + 1}`}
                   onClick={() => setEditing(r.id)}
                 >
-                  ✎
+                  <Icon name="pencil" size={12} />
                 </button>
               </span>
               {r.body}

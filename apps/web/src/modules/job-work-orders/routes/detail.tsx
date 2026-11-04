@@ -1,5 +1,6 @@
 // JW detail page (UI-003-04).
 
+import { Icon, StatusBadge } from '@/ui/core';
 import {
   type DocumentEditChange,
   type JobWorkOrderDetail,
@@ -9,7 +10,7 @@ import {
   placeOfSupplyLabel,
 } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Loader2, Pencil } from 'lucide-react';
+import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { z } from 'zod';
 import { undecidedChangesOf, usePendingEditForDoc } from '@/modules/document-edits/api';
@@ -232,7 +233,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
                 params={{ id: detail.id }}
                 className="btn btn-ghost btn-sm"
               >
-                <Pencil size={13} /> Edit
+                <Icon name="pencil" size={13} /> Edit
               </Link>
             ) : null}
             {primaryStep ? (
@@ -244,7 +245,8 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
               items={[
                 { label: 'Preview', onClick: () => orderPrint.preview(printTarget, isDraft) },
                 {
-                  label: '⬇ Download PDF',
+                  label: 'Download PDF',
+                  icon: 'download',
                   onClick: () => void orderPrint.download(printTarget, isDraft),
                 },
                 ...nextSteps
@@ -800,19 +802,11 @@ function LineRow(props: {
         >
           <SoStatusBadge status={l.status} />
           {shortClosed ? (
-            <span
-              style={{
-                fontSize: 'var(--fs-xs)',
-                fontWeight: 700,
-                padding: '2px 6px',
-                borderRadius: 'var(--radius-sm)',
-                color: 'var(--amber2)',
-                background: 'rgba(245,158,11,0.12)',
-              }}
+            <StatusBadge
+              kind="doc"
+              status="short_closed"
               title={l.shortCloseReason ? `Short Closed: ${l.shortCloseReason}` : 'Short Closed'}
-            >
-              Short Closed
-            </span>
+            />
           ) : null}
         </div>
       </td>

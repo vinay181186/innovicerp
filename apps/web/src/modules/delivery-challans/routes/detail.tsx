@@ -12,9 +12,10 @@
 // totals row to the lines table. Receipts moved to components/dc-receipts-panel
 // to stay under the 400-line rule.
 
+import { Icon } from '@/ui/core';
 import type { DeliveryChallanLine, DeliveryChallanWithLines } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { ArrowLeft, Ban, Inbox, Loader2, Pencil } from 'lucide-react';
+import { ArrowLeft, Ban, Inbox, Loader2 } from 'lucide-react';
 import { Fragment, useMemo, useState } from 'react';
 import { useHistoryTab } from '@/components/shared/document-history';
 import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
@@ -226,7 +227,7 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
             <ActionMenu
               items={[
                 { label: 'Preview', onClick: onPrint },
-                { label: '⬇ Download PDF', onClick: () => void onDownload() },
+                { label: 'Download PDF', icon: 'download', onClick: () => void onDownload() },
               ]}
             />
             {canEdit ? (
@@ -236,7 +237,7 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
                 className="btn btn-ghost btn-sm"
                 title="Edit this DC"
               >
-                <Pencil size={13} /> Edit
+                <Icon name="pencil" size={13} /> Edit
               </Link>
             ) : null}
             {canReceive ? (

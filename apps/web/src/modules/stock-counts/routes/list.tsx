@@ -4,6 +4,7 @@
 // pinned first column, and the Columns / density toolbar comes for free. The
 // query (search + status + pagination), the status filter, the permission gate
 // and the row click to the detail page are unchanged.
+import { Icon } from '@/ui/core';
 import {
   STOCK_COUNT_PURPOSE_LABELS,
   STOCK_COUNT_STATUS_LABELS,
@@ -12,7 +13,6 @@ import {
   type StockCountStatus,
 } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
@@ -117,7 +117,7 @@ function StockCountsListPage(): React.JSX.Element {
             to="/stock-counts/$id"
             params={{ id: c.id }}
             className="td-code"
-            style={{ textDecoration: 'none' }}
+            style={{ color: 'var(--blue)', textDecoration: 'none' }}
             onClick={(e) => e.stopPropagation()}
           >
             {c.code}
@@ -240,7 +240,7 @@ function StockCountsListPage(): React.JSX.Element {
               className="btn btn-primary"
               onClick={() => void navigate({ to: '/stock-counts/$id', params: { id: 'new' } })}
             >
-              <Plus size={14} /> New Stock Count
+              <Icon name="plus" size={14} /> New Stock Count
             </button>
           ) : null
         }

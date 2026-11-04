@@ -178,7 +178,7 @@ function LineRows({
         <td className="td-ctr mono fw-700" style={{ color: 'var(--purple)' }}>
           {line.clientPoLineNo ?? '—'}
         </td>
-        <td className="td-code" style={{ color: 'var(--purple)' }}>
+        <td className="td-code" style={{ color: 'var(--text)' }}>
           {itemCodeWithRev(line.itemCode, line.itemRevision)}
         </td>
         <td style={{ fontSize: 'var(--fs-xs)' }}>{line.itemName}</td>

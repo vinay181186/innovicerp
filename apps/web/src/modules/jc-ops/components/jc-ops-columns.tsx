@@ -52,7 +52,7 @@ const OUTSOURCE_STATUS_COLOR: Record<string, string> = {
   pr_raised: 'var(--blue)',
   po_created: 'var(--blue)',
   sent: 'var(--amber)',
-  received: 'var(--cyan)',
+  received: 'var(--green)',
 };
 
 const isOutsource = (o: JcOpsBoardRow): boolean => o.opType === 'outsource';

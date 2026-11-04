@@ -373,7 +373,10 @@ function ProductionOrderClosePage(): React.JSX.Element {
                   </span>
                 </span>
               ) : null}
-              <span className="mono text3" style={{ fontSize: 'var(--fs-xs)' }}>
+              <span
+                className="mono fw-700"
+                style={{ fontSize: 'var(--fs-xs)', color: 'var(--text)' }}
+              >
                 · {itemCodeWithRev(po.itemCodeText, docDrawingRev(po))}
               </span>
             </div>

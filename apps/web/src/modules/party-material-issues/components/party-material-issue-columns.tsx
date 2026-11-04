@@ -96,7 +96,7 @@ export function partyMaterialIssueColumns(
       className: 'fw-700',
       render: (it) => (
         <>
-          <span style={{ color: 'var(--purple)' }}>{it.partyMaterialCodeText ?? '—'}</span>
+          <span style={{ color: 'var(--blue)' }}>{it.partyMaterialCodeText ?? '—'}</span>
           {it.partyMaterialName ? (
             <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
               {' '}

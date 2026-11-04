@@ -27,7 +27,7 @@ export function partyMaterialColumns(): DataTableColumn<PartyMaterialListItem>[]
       kind: 'code',
       nowrap: true,
       render: (pm) => (
-        <span className="td-code" style={{ color: 'var(--purple)' }}>
+        <span className="td-code" style={{ color: 'var(--blue)' }}>
           {pm.code}
         </span>
       ),

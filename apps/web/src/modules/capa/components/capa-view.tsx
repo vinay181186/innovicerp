@@ -146,7 +146,7 @@ export function CapaView(props: {
               className="btn btn-primary"
               onClick={() => setModal({ kind: 'new' })}
             >
-              ➕ New CAPA
+              + New CAPA
             </button>
           ) : null
         }

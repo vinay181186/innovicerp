@@ -9,6 +9,7 @@
 // quantity made is logged in the one action. The old
 // /shop-floor/running/:id/stop hook is gone.
 
+import { Icon } from '@/ui/core';
 import type { ShopFloorRunningRow, StopOpInput } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
@@ -62,7 +63,7 @@ export function ShopFloorView(): React.JSX.Element {
             {total} operation{total !== 1 ? 's' : ''} currently running
           </span>
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => void refetch()}>
-            ↻ Refresh
+            <Icon name="refresh-cw" size={13} /> Refresh
           </button>
         </div>
       </div>

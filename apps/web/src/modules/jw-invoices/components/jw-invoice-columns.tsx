@@ -147,7 +147,7 @@ export function jwInvoiceColumns(
           borderRadius: 'var(--radius-sm)',
           whiteSpace: 'nowrap',
           color: r.status === 'cancelled' ? 'var(--red2)' : 'var(--green2)',
-          background: r.status === 'cancelled' ? 'rgba(239,68,68,0.10)' : 'rgba(34,197,94,0.10)',
+          background: r.status === 'cancelled' ? 'var(--red3)' : 'var(--green3)',
         }}
         title={
           r.status === 'cancelled' && r.cancelReason ? `Cancelled: ${r.cancelReason}` : undefined

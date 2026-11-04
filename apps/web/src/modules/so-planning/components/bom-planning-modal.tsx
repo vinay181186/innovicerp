@@ -83,16 +83,14 @@ const PLAN_STATUS_LABEL: Record<PlanStatus, string> = {
   cancelled: 'Cancelled',
 };
 
-// Status colour for the "Plan Status" cell. The two legacy builders differ:
-// showBOMPlanning (assembly, L7137) has a 'PR Created' → purple branch;
-// showEquipBOMPlanning (L8867) omits it, so PR Created falls through to green.
-// Ported as-is rather than "corrected" — legacy is the spec.
-function bomPlanStColor(status: PlanStatus, mode: 'equipment' | 'assembly'): string {
-  if (status === 'in_planning') return 'var(--amber)';
+// Status colour for the "Plan Status" cell — same colour per state as
+// <StatusBadge kind="plan"> (owner 2026-11-04).
+function bomPlanStColor(status: PlanStatus): string {
+  if (status === 'in_planning') return 'var(--text3)';
   if (status === 'planned') return 'var(--blue)';
-  if (status === 'jc_created') return 'var(--cyan)';
-  if (status === 'pr_created' && mode === 'assembly') return 'var(--purple)';
-  return 'var(--green)';
+  if (status === 'complete') return 'var(--green)';
+  if (status === 'cancelled') return 'var(--red)';
+  return 'var(--amber)';
 }
 
 export function BomPlanningModal({
@@ -289,7 +287,7 @@ export function BomPlanningModal({
           style={{
             padding: 'var(--sp-2)',
             borderRadius: 'var(--radius-sm)',
-            background: 'rgba(239,68,68,0.1)',
+            background: 'var(--red3)',
             color: 'var(--red2)',
             fontSize: 'var(--fs-sm)',
           }}
@@ -388,7 +386,7 @@ function BomBody({
               <div>
                 <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>Equipment</span>
                 <br />
-                <b style={{ color: 'var(--purple)' }}>
+                <b className="mono" style={{ color: 'var(--text)' }}>
                   {data.parentClientPoLineNo ? `POL ${data.parentClientPoLineNo} · ` : ''}
                   {itemCodeWithRev(data.parentItemCode, data.parentItemRevision)}{' '}
                   {data.parentItemName}
@@ -417,7 +415,7 @@ function BomBody({
               <div>
                 <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>Assembly</span>
                 <br />
-                <b style={{ color: 'var(--purple)' }}>
+                <b className="mono" style={{ color: 'var(--text)' }}>
                   {data.parentClientPoLineNo ? `POL ${data.parentClientPoLineNo} · ` : ''}
                   {itemCodeWithRev(data.parentItemCode, data.parentItemRevision)}
                 </b>{' '}
@@ -521,7 +519,9 @@ function BomBody({
                   className={hasSufficient ? 'row-done' : undefined}
                 >
                   <td className="mono fw-700">{i + 1}</td>
-                  <td className="td-code">{c.childItemCode}</td>
+                  <td className="td-code" style={{ color: 'var(--text)' }}>
+                    {c.childItemCode}
+                  </td>
                   <td>{c.childItemName}</td>
                   <td className="td-num">{c.qtyPerSet}</td>
                   <td className="td-num fw-700">{c.totalNeed}</td>
@@ -546,7 +546,7 @@ function BomBody({
                         <span
                           style={{
                             fontWeight: 700,
-                            color: bomPlanStColor(c.existingPlan.planStatus, mode),
+                            color: bomPlanStColor(c.existingPlan.planStatus),
                           }}
                         >
                           {PLAN_STATUS_LABEL[c.existingPlan.planStatus]}
@@ -569,7 +569,7 @@ function BomBody({
                             {' '}
                             <span
                               className="mono"
-                              style={{ fontSize: 'var(--fs-xs)', color: 'var(--purple)' }}
+                              style={{ fontSize: 'var(--fs-xs)', color: 'var(--blue)' }}
                             >
                               {c.existingPlan.dpPrCode}
                             </span>
@@ -629,7 +629,11 @@ function BomBody({
                       <span
                         style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)', fontWeight: 700 }}
                       >
-                        ↳ {c.childItemCode} · {c.bomType === 'purchase' ? 'Buy from' : 'Send to'}
+                        ↳{' '}
+                        <span className="mono" style={{ color: 'var(--text)' }}>
+                          {c.childItemCode}
+                        </span>{' '}
+                        · {c.bomType === 'purchase' ? 'Buy from' : 'Send to'}
                       </span>
                       <div style={{ minWidth: 260 }}>
                         <SearchableSelect
@@ -733,7 +737,7 @@ function BomBody({
           style={{
             padding: 'var(--sp-2)',
             borderRadius: 'var(--radius-sm)',
-            background: 'rgba(239,68,68,0.1)',
+            background: 'var(--red3)',
             color: 'var(--red2)',
             fontSize: 'var(--fs-sm)',
           }}

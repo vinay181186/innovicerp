@@ -228,7 +228,7 @@ export function PendingTpi(props: {
         <div
           style={{
             padding: 14,
-            background: 'rgba(34,197,94,0.04)',
+            background: 'var(--green3)',
             borderTop: '2px solid var(--green)',
           }}
         >

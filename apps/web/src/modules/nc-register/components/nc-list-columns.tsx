@@ -251,7 +251,7 @@ export function NcExpanded({
               border: 'none',
               padding: 0,
               cursor: 'pointer',
-              color: 'var(--purple)',
+              color: 'var(--blue)',
               fontWeight: 700,
             }}
             title={`Open CAPA ${nc.linkedCapaCode}`}

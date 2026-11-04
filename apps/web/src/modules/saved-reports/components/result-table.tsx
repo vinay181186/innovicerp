@@ -2,8 +2,9 @@
 // table with CSV / Excel export. Shared by the run route and the builder live
 // preview. House panel + innovic-table look (was shadcn Card + Table).
 
+import { Icon } from '@/ui/core';
 import type { AdHocColumn, RunAdHocResponse } from '@innovic/shared';
-import { Download, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { fmtDate, fmtDateTime } from '@/lib/date';
 import { downloadCsv, rowsToCsv } from '../lib/csv';
 
@@ -115,7 +116,7 @@ export function ResultTable({
               disabled={!data || data.rowCount === 0}
               title={!data || data.rowCount === 0 ? 'No rows to export' : undefined}
             >
-              <Download size={13} /> Export CSV
+              <Icon name="download" size={13} /> Export CSV
             </button>
             {onExcel ? (
               <button
@@ -128,7 +129,7 @@ export function ResultTable({
                 {excelLoading ? (
                   <Loader2 size={13} className="animate-spin" />
                 ) : (
-                  <Download size={13} />
+                  <Icon name="download" size={13} />
                 )}{' '}
                 Export Excel
               </button>

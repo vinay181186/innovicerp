@@ -1,3 +1,9 @@
+/* Approved row wash — blue, as the Approved badge (owner 2026-11-04). */
+.innovic-table.tbl-grid tbody tr.row-approved {
+  --row-bg: var(--blue3);
+  background: var(--row-bg);
+}
+
 /* Fit engine (ADR-199, table standard) — styles for <DataTable tableKey="…">.
    Theme tokens only; every class is `dt-` prefixed. The sheet's own look
    (.innovic-table.tbl-grid in innovic-theme.css) is untouched; this file only

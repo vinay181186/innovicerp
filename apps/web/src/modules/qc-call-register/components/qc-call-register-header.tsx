@@ -7,6 +7,7 @@
 // Incoming QC screen (its own title, no Stage / Mine / Full History, and the
 // GRN Type choices narrowed to Direct Purchase + Party GRN).
 
+import { Icon } from '@/ui/core';
 import type { ReactNode } from 'react';
 import {
   INCOMING_QC_GRN_TYPES,
@@ -154,7 +155,7 @@ export function QcCallRegisterHeader(props: {
             title={`Export every ${view} call matching the filters to Excel`}
             onClick={props.onExport}
           >
-            ⬇ Export
+            <Icon name="download" size={13} /> Export
           </button>
         </>
       }

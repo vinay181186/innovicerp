@@ -230,13 +230,15 @@ function CustomerDispatchListPage(): React.JSX.Element {
               label="Export"
               items={[
                 {
-                  label: '📊 Export Excel',
+                  label: 'Export Excel',
+                  icon: 'download',
                   title: 'Export the current (SO-filtered) register to Excel',
                   disabled: exporting,
                   onClick: () => void runExport('excel'),
                 },
                 {
-                  label: '🖨 Print',
+                  label: 'Print',
+                  icon: 'printer',
                   title: 'Print the dispatch register',
                   disabled: isLoading || exporting,
                   onClick: () => void runExport('print'),

@@ -3,6 +3,7 @@
 // Files live in the `qc-docs` Storage bucket; metadata in the unified
 // file_registry. QC docs are surfaced read-only (source='qc').
 
+import { Icon } from '@/ui/core';
 import {
   SO_DOC_CATEGORIES,
   SO_DOC_CATEGORY_LABELS,
@@ -252,7 +253,7 @@ function LinePanel({
 
   return (
     <div className="panel" style={{ marginBottom: 'var(--sp-3)' }}>
-      <div className="panel-hdr" style={{ background: 'rgba(34,197,94,0.06)' }}>
+      <div className="panel-hdr" style={{ background: 'var(--green3)' }}>
         <span className="panel-title" style={{ color: 'var(--green2)' }}>
           {/* POL is the line number on the CUSTOMER'S OWN purchase order — an
               extra value beside our line number, never a substitute for it. */}
@@ -385,9 +386,11 @@ function FileRow({
             className="btn btn-danger btn-sm"
             style={{ fontSize: 'var(--fs-xs)', padding: '2px 6px' }}
             disabled={deleting}
+            title="Delete"
+            aria-label="Delete"
             onClick={() => onDelete(file)}
           >
-            ✕
+            <Icon name="x" size={12} />
           </button>
         ) : null}
       </div>

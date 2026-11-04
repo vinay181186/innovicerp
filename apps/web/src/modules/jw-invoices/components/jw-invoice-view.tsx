@@ -9,8 +9,8 @@
 // files so each clears the 400-line rule. The data, hooks, price gating,
 // permissions and modals are unchanged.
 
+import { Icon } from '@/ui/core';
 import { type ListJwInvoicesQuery } from '@innovic/shared';
-import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
@@ -144,7 +144,7 @@ export function JwInvoiceView({
         primary={
           canWrite ? (
             <button type="button" className="btn btn-primary" onClick={() => setShowModal(true)}>
-              <Plus size={14} /> New Invoice
+              <Icon name="plus" size={14} /> New Invoice
             </button>
           ) : null
         }

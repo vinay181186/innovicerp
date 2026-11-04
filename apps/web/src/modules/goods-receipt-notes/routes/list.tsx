@@ -12,6 +12,7 @@
 // receipt book grows every day, so the list stays a pager register (ListFooter
 // pager mode) rather than a one-fetch scroll.
 
+import { Icon } from '@/ui/core';
 import {
   GRN_QC_STATUSES,
   type GoodsReceiptNoteLineListItem,
@@ -19,7 +20,6 @@ import {
   type ListGoodsReceiptNotesQuery,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { Plus } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
@@ -272,7 +272,7 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
         primary={
           perms.entry ? (
             <Link to="/goods-receipt-notes/new" className="btn btn-primary">
-              <Plus size={14} /> New GRN
+              <Icon name="plus" size={14} /> New GRN
             </Link>
           ) : null
         }

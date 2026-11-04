@@ -4,8 +4,9 @@
 // "Approved by X on <date>" line. The server re-checks every decision; a 409
 // (already decided, no right …) is thrown and the dialog shows it as-is.
 
+import { Icon } from '@/ui/core';
 import type { RouteCardDetail } from '@innovic/shared';
-import { Check, X } from 'lucide-react';
+import { Check } from 'lucide-react';
 import { useState } from 'react';
 import { fmtDate } from '@/lib/date';
 import { Banner, ConfirmDialog } from '@/ui/feedback';
@@ -93,7 +94,7 @@ export function RcApprovalActions({
           setRejectOpen(true);
         }}
       >
-        <X size={13} /> Reject
+        <Icon name="x" size={13} /> Reject
       </button>
 
       <ConfirmDialog

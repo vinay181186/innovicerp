@@ -246,10 +246,7 @@ export function OpEntryModal({
                 <span style={{ color: 'var(--purple)', fontWeight: 700 }}>{op.clientPoLineNo}</span>
               </div>
             ) : null}
-            <div
-              className="mono fw-700"
-              style={{ fontSize: 'var(--fs-sm)', color: 'var(--purple)' }}
-            >
+            <div className="mono fw-700" style={{ fontSize: 'var(--fs-sm)', color: 'var(--text)' }}>
               {itemCode}
             </div>
             {/* The name is the only free-text value in the strip, so it is

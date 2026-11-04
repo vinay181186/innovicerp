@@ -24,6 +24,7 @@ import {
   renderRowMenuLink,
   ROW_TINT,
 } from '@/ui/data';
+import { StatusBadge } from '@/ui/core';
 import { RowActions } from '@/ui/layout';
 
 import { ospCanOrder } from '../lib/osp-band';
@@ -38,14 +39,6 @@ const PR_STATUS_OPTIONS = Object.entries(PR_STATUS_LABELS).map(([value, label]) 
   value,
   label,
 }));
-
-/** Token colour for the PR status label — same meanings the status badge carries
- *  elsewhere on these screens. */
-function statusColor(s: string): string {
-  if (s === 'po_created') return 'var(--green)';
-  if (s === 'approved' || s === 'open') return 'var(--blue)';
-  return 'var(--text3)';
-}
 
 /** Row background tint keyed to the REAL PR status enum (not the band): the
  *  buying is placed → green, the request was cancelled → grey. */
@@ -70,7 +63,7 @@ export function outsourceJobsColumns(
         kind: 'code',
         header: 'PR No.',
         className: 'mono fw-700',
-        render: (pr) => <span style={{ color: 'var(--purple)' }}>{pr.code}</span>,
+        render: (pr) => <span style={{ color: 'var(--blue)' }}>{pr.code}</span>,
       },
       soNo: (pr) => pr.soCode,
       internalSoNo: (pr) => pr.soInternalNo,
@@ -188,9 +181,7 @@ export function outsourceJobsColumns(
         const bal = prOrderBalance(pr);
         return (
           <span style={{ whiteSpace: 'nowrap' }}>
-            <span style={{ fontWeight: 700, color: statusColor(pr.status) }}>
-              {PR_STATUS_LABELS[pr.status]}
-            </span>
+            <StatusBadge kind="pr" status={pr.status} label={PR_STATUS_LABELS[pr.status]} />
             {bal.closed ? (
               <span className="badge b-grey" style={{ marginLeft: 'var(--sp-1)' }}>
                 Short Closed

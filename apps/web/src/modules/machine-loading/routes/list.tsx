@@ -16,10 +16,11 @@
 // of the Job Queue screen. There is now ONE queue screen — the "Job Queue →"
 // button opens /job-queue?machine=<code> for the picked machine (or all).
 
+import { Icon } from '@/ui/core';
 import { useCanOpen } from '@/components/shared/action-link';
 import type { MachineLoadCard, MachineLoadOp } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { Loader2, Printer } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
@@ -232,7 +233,7 @@ function MachineLoadingPage(): React.JSX.Element {
                     : 'Print all machine queues'
               }
             >
-              <Printer size={13} /> Print Queue
+              <Icon name="printer" size={13} /> Print Queue
             </button>
           </>
         }

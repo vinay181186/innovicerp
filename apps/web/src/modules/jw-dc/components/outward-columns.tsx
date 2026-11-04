@@ -45,7 +45,7 @@ export function outwardColumns(firstRowNo: number): DataTableColumn<JwDcOutwardL
             onClick={(e) => e.stopPropagation()}
             to="/jw-dc/$id"
             params={{ id: dc.docId }}
-            style={{ color: 'var(--purple)', textDecoration: 'underline dotted' }}
+            style={{ color: 'var(--blue)', textDecoration: 'underline dotted' }}
           >
             {dc.docCode}
           </Link>

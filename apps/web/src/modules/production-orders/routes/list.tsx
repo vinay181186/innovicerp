@@ -14,6 +14,7 @@
 // only the page on screen is loaded, and the column sort / filters (▾) run on
 // the SERVER over every order (ADR-200) — any change goes back to page 1.
 
+import { Icon } from '@/ui/core';
 import {
   PRODUCTION_ORDER_STATUSES,
   PRODUCTION_ORDER_STATUS_LABEL,
@@ -21,7 +22,6 @@ import {
   type ProductionOrderStatus,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
@@ -288,19 +288,22 @@ function ProductionOrdersListPage(): React.JSX.Element {
             label="Export"
             items={[
               {
-                label: '📊 Export Excel',
+                label: 'Export Excel',
+                icon: 'download',
                 title: 'Export every Production Order on this list to Excel',
                 disabled: exporting,
                 onClick: () => void runExport('excel'),
               },
               {
-                label: '🖨 Print',
+                label: 'Print',
+                icon: 'printer',
                 title: 'Print every Production Order on this list',
                 disabled: exporting,
                 onClick: () => void runExport('print'),
               },
               {
-                label: '⬇ Download PDF',
+                label: 'Download PDF',
+                icon: 'download',
                 title: 'Download every Production Order on this list as a PDF',
                 disabled: exporting,
                 onClick: () => void runExport('pdf'),
@@ -311,7 +314,7 @@ function ProductionOrdersListPage(): React.JSX.Element {
         primary={
           perms.entry ? (
             <Link to="/production-orders/new" className="btn btn-primary">
-              <Plus size={14} /> New Production Order
+              <Icon name="plus" size={14} /> New Production Order
             </Link>
           ) : null
         }

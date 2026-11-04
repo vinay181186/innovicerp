@@ -50,8 +50,8 @@ const BAR_PALETTE: Record<
   at_risk: { bg: 'var(--sig-critical-bg)', border: 'var(--sig-critical)', fg: 'var(--red2)' },
   // Running = green everywhere (R5 PR-N8). Solid fill so it still reads apart
   // from the pale-green "On schedule" bars.
-  running: { bg: 'var(--sig-ok)', border: 'var(--green2)', fg: '#fff' },
-  done: { bg: 'var(--sig-neutral)', border: 'var(--sig-neutral)', fg: '#fff' },
+  running: { bg: 'var(--sig-ok)', border: 'var(--green2)', fg: 'var(--bg2)' },
+  done: { bg: 'var(--sig-neutral)', border: 'var(--sig-neutral)', fg: 'var(--bg2)' },
 };
 
 // ISSUE-065: today's date in IST (not UTC, which reads as yesterday between

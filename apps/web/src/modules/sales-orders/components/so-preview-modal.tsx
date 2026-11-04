@@ -6,14 +6,14 @@
 
 import type { SalesOrderListItem } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
-import { Download, Loader2, Printer } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { fmtDate } from '@/lib/date';
 import { asDownload } from '@/lib/print/preview-host';
 import { soNoWithInternal } from '@/lib/so-number';
 import { useLevelMatrix } from '@/modules/flow-views/api';
 import { useMyCompany } from '@/modules/settings/api';
-import { StatusBadge } from '@/ui/core';
+import { Icon, StatusBadge } from '@/ui/core';
 import { Modal } from '@/ui/feedback';
 import { ReadField, ReadGrid } from '@/ui/layout';
 import { useSalesOrder } from '../api';
@@ -296,7 +296,7 @@ export function SoPreviewModal({
             title={!ready ? 'The order has not loaded yet' : undefined}
             onClick={onPrint}
           >
-            <Printer className="inline h-3 w-3" /> Print
+            <Icon name="printer" className="inline h-3 w-3" /> Print
           </button>
           <button
             type="button"
@@ -308,7 +308,7 @@ export function SoPreviewModal({
             {downloading ? (
               <Loader2 className="inline h-3 w-3 animate-spin" />
             ) : (
-              <Download className="inline h-3 w-3" />
+              <Icon name="download" className="inline h-3 w-3" />
             )}{' '}
             Download PDF
           </button>

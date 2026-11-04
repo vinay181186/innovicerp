@@ -10,6 +10,7 @@
 // page (useScTables) so a tab keeps its page / filters / Sort & Filter while
 // another tab is shown, and every tab label carries its table's server total.
 
+import { Icon } from '@/ui/core';
 import type {
   ScDashboardResponse,
   ScPendingPage,
@@ -162,7 +163,7 @@ export function PendingTracker({
               style={{ color: 'var(--red2)', fontSize: 'var(--fs-xs)' }}
               onClick={p.clearFilters}
             >
-              ✕ Clear Filters
+              <Icon name="x" size={13} /> Clear Filters
             </button>
           ) : null}
           {/* Line count + Pending Qty / Value: server figures over EVERY filtered line. */}

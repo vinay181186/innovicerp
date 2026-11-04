@@ -7,9 +7,10 @@
 // RUNBOOK). Restore / Factory Reset are deferred per ADR — not safe
 // to expose in-app without a typed-confirmation flow.
 
+import { Icon } from '@/ui/core';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { createRoute } from '@tanstack/react-router';
-import { Download, Loader2, Lock } from 'lucide-react';
+import { Loader2, Lock } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { todayIst } from '@/lib/date';
 import { useSession } from '@/lib/session';
@@ -143,7 +144,7 @@ function BackupPage(): React.JSX.Element {
               </>
             ) : (
               <>
-                <Download size={14} /> Download JSON Backup
+                <Icon name="download" size={14} /> Download JSON Backup
               </>
             )}
           </button>

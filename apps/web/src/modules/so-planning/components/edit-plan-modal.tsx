@@ -16,6 +16,7 @@
 // Once status is jc_created / pr_created / etc., the parent doesn't open
 // this modal (uses view-only navigation instead).
 
+import { Icon } from '@/ui/core';
 import type {
   PlanDetail,
   PlanOpInput,
@@ -897,10 +898,10 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                 type="button"
                 className="btn btn-sm"
                 style={{
-                  background: 'rgba(124,58,237,0.08)',
+                  background: 'var(--purple3)',
                   // --purple is exactly the #7c3aed that was hard-coded here.
                   color: 'var(--purple)',
-                  border: '1px solid rgba(124,58,237,0.25)',
+                  border: '1px solid var(--border2)',
                   fontSize: 'var(--fs-xs)',
                 }}
                 onClick={() => addOp('outsource')}
@@ -911,9 +912,9 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                 type="button"
                 className="btn btn-sm"
                 style={{
-                  background: 'rgba(34,197,94,0.08)',
+                  background: 'var(--green3)',
                   color: 'var(--green2)',
-                  border: '1px solid rgba(34,197,94,0.25)',
+                  border: '1px solid var(--sig-ok-bd)',
                   fontSize: 'var(--fs-xs)',
                 }}
                 onClick={() => addOp('qc')}
@@ -960,7 +961,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                         <tr
                           key={op.uid}
                           style={{
-                            background: 'rgba(34,197,94,0.06)',
+                            background: 'var(--green3)',
                             borderLeft: '3px solid var(--green)',
                           }}
                         >
@@ -974,8 +975,8 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                             {stepBadge(
                               '🔬 QC',
                               'var(--green)',
-                              'rgba(34,197,94,0.12)',
-                              'rgba(34,197,94,0.3)',
+                              'var(--green3)',
+                              'var(--sig-ok-bd)',
                             )}
                           </td>
                           {/* NA, not a dash: a QC step is never run on a machine
@@ -1040,9 +1041,11 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                             <button
                               type="button"
                               className="btn btn-danger btn-sm btn-icon"
+                              title="Remove"
+                              aria-label="Remove"
                               onClick={() => removeOp(op.uid)}
                             >
-                              ×
+                              <Icon name="x" size={12} />
                             </button>
                           </td>
                         </tr>
@@ -1068,12 +1071,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                         <td className="td-ctr mono fw-700">{opSrNo(i + 1)}</td>
                         <td>
                           {isOS ? (
-                            stepBadge(
-                              '🏭 OSP',
-                              'var(--purple)',
-                              'rgba(124,58,237,0.12)',
-                              'rgba(124,58,237,0.3)',
-                            )
+                            stepBadge('🏭 OSP', 'var(--purple)', 'var(--purple3)', 'var(--border2)')
                           ) : (
                             <MachineGroupPicker
                               id={`plan-mgrp-${op.uid}`}
@@ -1238,9 +1236,11 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                           <button
                             type="button"
                             className="btn btn-danger btn-sm btn-icon"
+                            title="Remove"
+                            aria-label="Remove"
                             onClick={() => removeOp(op.uid)}
                           >
-                            ×
+                            <Icon name="x" size={12} />
                           </button>
                         </td>
                       </tr>
@@ -1473,11 +1473,13 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                         <button
                           type="button"
                           className="btn btn-danger btn-sm btn-icon"
+                          title="Remove"
+                          aria-label="Remove"
                           onClick={() =>
                             setRequiredDocs((prev) => prev.filter((_, idx) => idx !== i))
                           }
                         >
-                          ×
+                          <Icon name="x" size={12} />
                         </button>
                       </td>
                     </tr>
@@ -1505,7 +1507,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
             marginTop: 'var(--sp-3)',
             padding: 'var(--sp-2)',
             borderRadius: 'var(--radius-sm)',
-            background: 'rgba(239,68,68,0.1)',
+            background: 'var(--red3)',
             color: 'var(--red2)',
             fontSize: 'var(--fs-sm)',
           }}

@@ -121,10 +121,10 @@ export function MachineCard({
           ) : null}
           {itemCode ? (
             <div
-              className="mono"
+              className="mono fw-700"
               style={{
                 fontSize: 'var(--fs-xs)',
-                color: 'var(--purple)',
+                color: 'var(--text)',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',

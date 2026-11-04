@@ -13,6 +13,7 @@
 // (POST /job-work-orders/rm-item). Lines already used downstream (`inUse`) lock
 // Item / UOM / BOM and cannot be removed — they are short-closed instead.
 
+import { Icon } from '@/ui/core';
 import {
   type CreateJobWorkOrderInput,
   type JobWorkOrderDetail,
@@ -30,7 +31,7 @@ import {
   type Uom,
   UOMS,
 } from '@innovic/shared';
-import { Loader2, Plus, Trash2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useFieldArray, useForm, type UseFormRegisterReturn } from 'react-hook-form';
 import { DocNumberInput, SearchableSelect } from '@/ui/forms';
@@ -1046,7 +1047,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                       textDecoration: 'underline',
                     }}
                   >
-                    ✕
+                    <Icon name="x" size={12} />
                   </button>
                 </span>
               ) : (
@@ -1113,7 +1114,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                       onClick={clearPoFile}
                       aria-label="Remove PO document"
                     >
-                      ✕
+                      <Icon name="x" size={12} />
                     </button>
                   </div>
                 ) : (
@@ -1122,7 +1123,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                     className="btn btn-ghost btn-sm"
                     onClick={() => poFileRef.current?.click()}
                   >
-                    📤 Upload PO Doc
+                    <Icon name="upload" size={13} /> Upload PO Doc
                   </button>
                 )}
                 {poFileError ? <div className="form-error">{poFileError}</div> : null}
@@ -1245,14 +1246,20 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
               disabled={templateBusy}
               onClick={() => void downloadTemplate()}
             >
-              {templateBusy ? 'Preparing…' : '⬇ Excel Template'}
+              {templateBusy ? (
+                'Preparing…'
+              ) : (
+                <>
+                  <Icon name="download" size={13} /> Excel Template
+                </>
+              )}
             </button>
             <button
               type="button"
               className="btn btn-ghost btn-sm"
               onClick={() => lineFileRef.current?.click()}
             >
-              📄 Import Excel
+              <Icon name="upload" size={13} /> Import Excel
             </button>
             <input
               ref={lineFileRef}
@@ -1273,7 +1280,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                 append({ ...NEW_LINE, ...(due ? { dueDate: due } : {}) });
               }}
             >
-              <Plus size={13} /> Add Line
+              <Icon name="plus" size={13} /> Add Line
             </button>
           </>
         }
@@ -1307,8 +1314,8 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                       ? {
                           padding: '8px 10px',
                           borderRadius: 'var(--radius)',
-                          background: 'rgba(245,158,11,0.10)',
-                          border: '1px solid rgba(245,158,11,0.35)',
+                          background: 'var(--amber3)',
+                          border: '1px solid var(--sig-warn-bd)',
                           color: 'var(--amber2)',
                         }
                       : {}),
@@ -1319,9 +1326,11 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                   <button
                     type="button"
                     className="btn btn-ghost btn-sm"
+                    title="Close"
+                    aria-label="Close"
                     onClick={() => setImportMsg(null)}
                   >
-                    ✕
+                    <Icon name="x" size={12} />
                   </button>
                 </div>
               );
@@ -1570,7 +1579,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                             onClick={() => remove(idx)}
                             aria-label={`Remove row ${idx + 1}`}
                           >
-                            <Trash2 size={12} />
+                            <Icon name="trash-2" size={12} />
                           </button>
                         </span>
                       </td>
@@ -1678,7 +1687,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
           border: '2px solid var(--green)',
           borderRadius: 'var(--radius2)',
           padding: '10px 16px',
-          background: 'rgba(34,197,94,0.03)',
+          background: 'var(--green3)',
         }}
       >
         {/* Money only for a user who may see prices; the count stays. */}

@@ -19,9 +19,9 @@
 //
 // Nothing about the data, the queries, the validation or the mutations changed.
 
+import { Icon } from '@/ui/core';
 import type { PartyGrnListItem } from '@innovic/shared';
 import { createRoute, Link } from '@tanstack/react-router';
-import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -210,7 +210,7 @@ function PartyGrnListPage(): React.JSX.Element {
             primary={
               canCreate ? (
                 <Link to="/party-grn/new" className="btn btn-primary">
-                  <Plus size={14} /> New Party GRN
+                  <Icon name="plus" size={14} /> New Party GRN
                 </Link>
               ) : null
             }

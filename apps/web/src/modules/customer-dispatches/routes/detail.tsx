@@ -6,6 +6,7 @@
 // The page body IS the challan: the same Innovic Sheet markup the print window
 // emits, previewed in an iframe (screen = print, as on the invoice detail).
 
+import { Icon } from '@/ui/core';
 import { itemRevLabel } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
@@ -120,7 +121,8 @@ function CustomerDispatchDetailPage(): React.JSX.Element {
               items={[
                 { label: 'Preview', onClick: () => printDispatchChallan(d, client, company) },
                 {
-                  label: '⬇ Download PDF',
+                  label: 'Download PDF',
+                  icon: 'download',
                   onClick: () =>
                     void runPrint('download', { title: 'Delivery Challan', fileName: d.code }, () =>
                       Promise.resolve(() => printDispatchChallan(d, client, company)),
@@ -135,7 +137,7 @@ function CustomerDispatchDetailPage(): React.JSX.Element {
                 className="btn btn-ghost"
                 title="Edit this dispatch"
               >
-                ✏️ Edit
+                <Icon name="pencil" size={13} /> Edit
               </Link>
             ) : null}
             {/* ADR-234 — shown only to an Invoice Entry holder. */}

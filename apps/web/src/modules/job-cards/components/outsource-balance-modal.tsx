@@ -147,8 +147,12 @@ export function OutsourceBalanceModal({
           Operation: <b>{operation}</b>
         </div>
         <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)', marginTop: 'var(--sp-0)' }}>
-          Item: {itemCodeWithRev(itemCode, itemRevision)} · Available:{' '}
-          <b style={{ color: 'var(--amber2)' }}>{available}</b> pcs. Raises an outsource PR.
+          Item:{' '}
+          <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+            {itemCodeWithRev(itemCode, itemRevision)}
+          </span>{' '}
+          · Available: <b style={{ color: 'var(--amber2)' }}>{available}</b> pcs. Raises an
+          outsource PR.
         </div>
       </div>
 

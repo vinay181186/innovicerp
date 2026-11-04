@@ -13,6 +13,7 @@
 // Tool No. / Tool Details are still NOT rendered (2026-10-03; owner kept that
 // on 2026-10-06) — they ride on the draft untouched, see RouteCardFormOpDraft.
 
+import { Icon } from '@/ui/core';
 import type { Machine, Vendor } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
 import { Fragment, useState } from 'react';
@@ -376,7 +377,7 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
             title="Remove operation"
             aria-label={`Remove operation ${opSrNo(idx + 1)}`}
           >
-            ✕
+            <Icon name="x" size={12} />
           </button>
         </td>
       </tr>

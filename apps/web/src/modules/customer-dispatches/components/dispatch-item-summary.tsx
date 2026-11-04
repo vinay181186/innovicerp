@@ -60,7 +60,7 @@ export function DispatchItemSummary({
               <tbody>
                 {summary.map((s) => (
                   <tr key={s.code + s.name}>
-                    <td className="td-code" style={{ color: 'var(--purple)' }}>
+                    <td className="td-code" style={{ color: 'var(--text)' }}>
                       {s.code}
                     </td>
                     <td className="fw-700">{s.name}</td>

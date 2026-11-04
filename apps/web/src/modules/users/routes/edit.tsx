@@ -9,9 +9,10 @@
 // there — an admin picks a DEPARTMENT and the role follows — so this screen
 // shows the department, with the derived role underneath it.
 
+import { Icon } from '@/ui/core';
 import type { UpdateUserInput } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, KeyRound, Loader2, Lock, Trash2 } from 'lucide-react';
+import { ArrowLeft, KeyRound, Loader2, Lock } from 'lucide-react';
 import { useCallback, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useExitConfirm } from '@/lib/exit-guard';
@@ -263,7 +264,7 @@ function UserEditPage(): React.JSX.Element {
                 setConfirmDelete(true);
               }}
             >
-              <Trash2 size={13} /> Delete
+              <Icon name="trash-2" size={13} /> Delete
             </button>
           ) : null}
           {confirmDelete ? (

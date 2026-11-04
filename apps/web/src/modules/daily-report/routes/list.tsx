@@ -5,6 +5,7 @@
 // group's Completed total are whole-day figures from the server. Both prints
 // fetch the WHOLE day (fetchFullDailyReport), never just the page.
 
+import { Icon } from '@/ui/core';
 import type { DailyReportResponse, DailyReportRow, OrderOption } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
@@ -162,7 +163,7 @@ function DailyReportPage(): React.JSX.Element {
           disabled={!data || data.groups.length === 0 || printing}
           title={data && data.groups.length === 0 ? noEntries : 'Print daily production report'}
         >
-          🖨 Print Full Report
+          <Icon name="printer" size={13} /> Print Full Report
         </button>
       }
       filters={
@@ -295,8 +296,9 @@ function DailyReportPage(): React.JSX.Element {
                   onClick={() => void onPrintMachine(g)}
                   disabled={printing}
                   title={`Print report for ${g.machineCode}`}
+                  aria-label={`Print report for ${g.machineCode}`}
                 >
-                  🖨
+                  <Icon name="printer" size={12} />
                 </button>
               </div>
             </div>

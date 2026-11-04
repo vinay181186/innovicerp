@@ -131,7 +131,7 @@ export function goodsReceiptNoteListColumns(
       render: (grn) => {
         const ref = grn.ncId ? (grn.ncCode ?? grn.poCodeText) : (grn.poCode ?? grn.poCodeText);
         return ref ? (
-          <span className="mono fw-700" style={{ color: 'var(--purple)' }}>
+          <span className="mono fw-700" style={{ color: 'var(--blue)' }}>
             {ref}
           </span>
         ) : (

@@ -15,8 +15,9 @@
 // the column ▾ Sort & Filter run on the server, and the dropdown counts are
 // server totals — the tab wrappers fetch; this panel only draws.
 
+import { Icon } from '@/ui/core';
 import type { DocumentEditEntity } from '@innovic/shared';
-import { Loader2, Plus } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, useClampPage } from '@/lib/list-paging';
@@ -289,7 +290,7 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
               className="btn btn-primary"
               onClick={() => setModal({ kind: 'new' })}
             >
-              <Plus size={14} /> Add {noun}
+              <Icon name="plus" size={14} /> Add {noun}
             </button>
           ) : null
         }
@@ -305,9 +306,11 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
               type="button"
               className="btn btn-ghost btn-sm"
               style={{ marginLeft: 'var(--sp-2)', fontSize: 'var(--fs-xs)' }}
+              title="Close"
+              aria-label="Close"
               onClick={() => setImportMsg(null)}
             >
-              ✕
+              <Icon name="x" size={12} />
             </button>
           </div>
         </div>
@@ -376,7 +379,7 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
                 style={{ fontSize: 'var(--fs-xs)' }}
                 onClick={onDownloadTemplate}
               >
-                ⬇ Download Excel Template
+                <Icon name="download" size={13} /> Download Excel Template
               </button>
               <button
                 type="button"

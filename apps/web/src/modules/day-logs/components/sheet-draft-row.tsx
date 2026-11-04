@@ -5,6 +5,7 @@
 // one (the sheet focuses the new row's Start); Enter in Working on is a
 // newline. "Row N: …" from the check / server shows under the row.
 
+import { Icon } from '@/ui/core';
 import { fmtDuration } from '@innovic/shared';
 import type { Draft } from '../lib/sheet';
 import { spanMinutes } from '../lib/sheet';
@@ -89,7 +90,7 @@ export function SheetDraftRow({
           disabled={saving}
           onClick={onDrop}
         >
-          ✕
+          <Icon name="x" size={12} />
         </button>
       </span>
       {error ? <RowError text={error} /> : null}

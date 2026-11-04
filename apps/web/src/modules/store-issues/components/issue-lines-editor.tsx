@@ -1,6 +1,6 @@
 // Item Issue — the slip's lines: one row per item, Issue Qty typed per row.
 // Rows come from the material table ("Fill To Issue") or the item picker.
-import { Trash2 } from 'lucide-react';
+import { Icon } from '@/ui/core';
 import { useMemo, useState } from 'react';
 import { SearchableSelect } from '@/ui/forms';
 import { useItemsList } from '../../items/api';
@@ -102,7 +102,7 @@ export function IssueLinesEditor({
                     onClick={() => remove(i)}
                     title="Remove this line"
                   >
-                    <Trash2 size={13} />
+                    <Icon name="trash-2" size={13} />
                   </button>
                 </td>
               </tr>

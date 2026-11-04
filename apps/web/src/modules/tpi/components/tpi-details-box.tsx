@@ -60,7 +60,7 @@ export function TpiDetailsBox(props: {
         borderRadius: 'var(--radius2)',
         padding: 'var(--sp-3)',
         marginBottom: 'var(--sp-3)',
-        background: 'rgba(139,92,246,0.04)',
+        background: 'var(--purple3)',
       }}
     >
       <div

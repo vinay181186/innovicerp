@@ -4,6 +4,7 @@
 // Read-only when nothing is allowed. Also the target of the Global Search
 // deep link (`?task=<uuid>`).
 
+import { Icon } from '@/ui/core';
 import { useState } from 'react';
 import { useCanWrite } from '@/components/shared/action-link';
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
@@ -60,7 +61,7 @@ export function TaskDetailModal({
       ) : null}
       {p?.canEdit && open ? (
         <button type="button" className="btn btn-ghost" onClick={() => setChild({ kind: 'edit' })}>
-          ✏ Edit
+          <Icon name="pencil" size={13} /> Edit
         </button>
       ) : null}
       {p?.canReassign && open ? (
@@ -78,7 +79,7 @@ export function TaskDetailModal({
           className="btn btn-ghost"
           onClick={() => setChild({ kind: 'cancel' })}
         >
-          ✖ Cancel Task
+          <Icon name="x" size={13} /> Cancel Task
         </button>
       ) : null}
       {p?.canUpdateStatus && t.status === 'todo' ? (

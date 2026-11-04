@@ -96,8 +96,8 @@ export function SoStatusView({ tabs }: { tabs: React.ReactNode }): React.JSX.Ele
           <div
             style={{
               padding: 14,
-              background: 'rgba(34,211,238,0.04)',
-              border: '1px solid rgba(34,211,238,0.15)',
+              background: 'var(--cyan3)',
+              border: '1px solid var(--sig-info-bd)',
               borderRadius: 'var(--radius)',
               marginBottom: 'var(--sp-4)',
               display: 'flex',

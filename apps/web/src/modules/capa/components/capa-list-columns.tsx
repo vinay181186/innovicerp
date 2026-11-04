@@ -12,17 +12,8 @@
 import { CAPA_STATUSES, type CapaRecord } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
 import type { DataTableColumn, RowMenuItem } from '@/ui/data';
+import { StatusBadge } from '@/ui/core';
 import { createdByColumn, leadColumns, ROW_TINT } from '@/ui/data';
-
-// App status colours: Open / Verified (waiting for the next step) = blue,
-// In Progress = amber, Closed = green.
-export function statusColor(s: string): string {
-  if (s === 'Open') return 'var(--blue)';
-  if (s === 'In Progress') return 'var(--amber)';
-  if (s === 'Verified') return 'var(--blue)';
-  if (s === 'Closed') return 'var(--green)';
-  return 'var(--text3)';
-}
 
 /** Whole-row wash: a CAPA past its target date and still open (server-computed
  *  `overdue`) gets the late (red) tint. Everything else: no wash. */
@@ -50,7 +41,7 @@ export function capaListColumns(
         header: 'CAPA No.',
         nowrap: true,
         render: (c) => (
-          <span className="mono fw-700" style={{ color: 'var(--purple)' }}>
+          <span className="mono fw-700" style={{ color: 'var(--blue)' }}>
             {c.code}
           </span>
         ),
@@ -162,9 +153,7 @@ export function capaListColumns(
       kind: 'badge',
       header: 'CAPA Status',
       nowrap: true,
-      render: (c) => (
-        <span style={{ fontWeight: 700, color: statusColor(c.status) }}>{c.status}</span>
-      ),
+      render: (c) => <StatusBadge kind="doc" status={c.status} label={c.status} />,
     },
     createdByColumn<CapaRecord>({
       createdByName: (c) => c.createdByName,

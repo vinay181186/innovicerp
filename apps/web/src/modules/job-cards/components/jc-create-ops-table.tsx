@@ -23,6 +23,7 @@
 // op status badge and the Completed / Pending / QC Pending tiles (every one
 // read "—" until the card is saved), and the started-op locks and the
 // "Outsource Available" (ADR-081) button, which need a saved, started op.
+import { Icon } from '@/ui/core';
 import type { Machine } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
 import { Fragment, useState } from 'react';
@@ -378,7 +379,7 @@ function OpRow({
             title="Remove"
             aria-label={`Remove operation ${sr}`}
           >
-            ✕
+            <Icon name="x" size={12} />
           </button>
         </td>
       </tr>

@@ -5,9 +5,9 @@
 // one row per issue LINE (ADR-261, GET /store-issues/lines); row click and ⋯
 // act on the slip. Remarks and the cancel reason are in the slip view.
 
+import { Icon } from '@/ui/core';
 import { ISSUE_AGAINST } from '@innovic/shared';
 import { createRoute, Link } from '@tanstack/react-router';
-import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { ToolIssueRegisterView } from '@/modules/tool-issues/components/tool-issue-register-view';
@@ -183,7 +183,7 @@ function StoreIssuesListPage(): React.JSX.Element {
             primary={
               perms.entry ? (
                 <Link to="/issue-register/new" className="btn btn-primary">
-                  <Plus size={14} /> New Issue
+                  <Icon name="plus" size={14} /> New Issue
                 </Link>
               ) : null
             }

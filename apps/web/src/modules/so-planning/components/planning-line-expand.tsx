@@ -232,7 +232,9 @@ export function PlanningLineExpand({
                 const linked = plan ? planLinkedCodes(plan) : [];
                 return (
                   <tr key={row.key} className={row.partShort ? 'row-pending' : undefined}>
-                    <td className="td-code">{code}</td>
+                    <td className="td-code" style={{ color: 'var(--text)' }}>
+                      {code}
+                    </td>
                     {showName ? <td>{name && name !== code ? name : ''}</td> : null}
                     {hasParts ? <td className="td-num">{part ? part.qtyPerSet : ''}</td> : null}
                     {hasParts ? (

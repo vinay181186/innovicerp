@@ -1,8 +1,8 @@
 // Stock Count lines table (ADR-193 phase 2): In Stock now, In Stock at count
 // (after Submit), Counted Qty, Difference, Reason. Counted Qty / Reason are
 // editable only while the count is a draft.
+import { Icon } from '@/ui/core';
 import type { StockCountLine, StockCountStatus } from '@innovic/shared';
-import { Trash2 } from 'lucide-react';
 import { type DraftLine, lineKey } from '../lib/draft-line';
 import { StockCountRevCell } from './rev-cell';
 
@@ -125,7 +125,7 @@ export function StockCountLinesTable(props: {
                       title="Remove line"
                       onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))}
                     >
-                      <Trash2 size={13} />
+                      <Icon name="trash-2" size={13} />
                     </button>
                   </td>
                 ) : null}

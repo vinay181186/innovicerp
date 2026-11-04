@@ -10,10 +10,11 @@
 //               page's own TabStrip.
 // Data, permissions, print and delete are unchanged.
 
+import { Icon } from '@/ui/core';
 import type { RouteCardDetail } from '@innovic/shared';
 import { itemRevLabel } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Loader2, Pencil } from 'lucide-react';
+import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -152,7 +153,7 @@ function RouteCardDetailPage(): React.JSX.Element {
               label="⋯"
               items={[
                 { label: 'Preview', onClick: onPrint },
-                { label: '⬇ Download PDF', onClick: onDownload },
+                { label: 'Download PDF', icon: 'download', onClick: onDownload },
                 {
                   label: 'Delete',
                   danger: true,
@@ -173,7 +174,7 @@ function RouteCardDetailPage(): React.JSX.Element {
                 params={{ id: detail.id }}
                 className="btn btn-primary"
               >
-                <Pencil size={13} /> Edit / Revise
+                <Icon name="pencil" size={13} /> Edit / Revise
               </Link>
             )}
           </>

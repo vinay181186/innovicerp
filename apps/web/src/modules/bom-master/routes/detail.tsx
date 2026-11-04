@@ -12,7 +12,7 @@
 // Documents are tabs, as on Sales Order detail.
 
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Loader2, Pencil } from 'lucide-react';
+import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { useCanOpen } from '@/components/shared/action-link';
 import { useHistoryTab } from '@/components/shared/document-history';
@@ -29,7 +29,7 @@ import {
   linePendingChange,
 } from '@/modules/document-edits/components/pending-change-chip';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { StatusBadge } from '@/ui/core';
+import { Icon, StatusBadge } from '@/ui/core';
 import { RowMenu } from '@/ui/data';
 import { Banner, ConfirmDialog, Modal } from '@/ui/feedback';
 import { Cluster, ClusterFact, ClusterGrid } from '@/ui/forms';
@@ -193,7 +193,7 @@ function BomMasterDetailPage(): React.JSX.Element {
                 params={{ id: detail.id }}
                 className="btn btn-primary"
               >
-                <Pencil size={13} /> Edit / Revise
+                <Icon name="pencil" size={13} /> Edit / Revise
               </Link>
             )}
             <ActionMenu

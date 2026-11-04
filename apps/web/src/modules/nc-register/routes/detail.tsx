@@ -10,6 +10,7 @@
 // 2026-11-04 (owner): DetailHeader + ClusterGrid facts; History and Related
 // Documents are tabs, as on Sales Order detail. The StatStrip stays.
 
+import { Icon } from '@/ui/core';
 import {
   type DisposeNcResult,
   type DocumentEditChange,
@@ -21,7 +22,7 @@ import {
   opSrNo,
 } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, CheckCircle2, Loader2, Pencil, Shield, Stamp, Trash2 } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Loader2, Shield, Stamp } from 'lucide-react';
 import { useState } from 'react';
 import { useCanOpen } from '@/components/shared/action-link';
 import { undecidedChangesOf, usePendingEditForDoc } from '@/modules/document-edits/api';
@@ -303,7 +304,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
                 className="mono"
                 style={{
                   fontSize: 'var(--fs-sm)',
-                  color: 'var(--purple)',
+                  color: 'var(--blue)',
                   fontWeight: 700,
                   textDecoration: 'none',
                 }}
@@ -334,7 +335,8 @@ function NcRegisterDetailPage(): React.JSX.Element {
                     void ncPrint('preview', { id: detail.id, code: detail.code, jcCode }, isDraft),
                 },
                 {
-                  label: '⬇ Download PDF',
+                  label: 'Download PDF',
+                  icon: 'download',
                   onClick: () =>
                     void ncPrint('download', { id: detail.id, code: detail.code, jcCode }, isDraft),
                 },
@@ -429,7 +431,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
                 params={{ id: detail.id }}
                 className="btn btn-ghost btn-sm"
               >
-                <Pencil size={13} /> Edit
+                <Icon name="pencil" size={13} /> Edit
               </Link>
             ) : null}
             {canDelete && isPending ? (
@@ -441,7 +443,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
                   setConfirmDelete(true);
                 }}
               >
-                <Trash2 size={13} /> Delete
+                <Icon name="trash-2" size={13} /> Delete
               </button>
             ) : null}
           </div>

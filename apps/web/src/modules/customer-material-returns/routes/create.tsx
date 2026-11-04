@@ -13,6 +13,7 @@
 // Picking a different JWSO clears every typed qty (they belonged to the old
 // JWSO's rows).
 
+import { Icon } from '@/ui/core';
 import type { CreateCustomerMaterialReturnInput, CustomerMaterialReturn } from '@innovic/shared';
 import { createRoute, useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
@@ -170,7 +171,7 @@ function CustomerMaterialReturnNewPage(): React.JSX.Element {
             }}
           >
             {printing === 'download' ? <Loader2 size={14} className="inline animate-spin" /> : null}{' '}
-            ⬇ Download PDF
+            <Icon name="download" size={13} /> Download PDF
           </button>
         </FormActions>
       </div>

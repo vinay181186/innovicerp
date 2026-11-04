@@ -84,7 +84,11 @@ export function DossierSummary({
         header: 'Item Code',
         nowrap: true,
         className: 'td-code mono fw-700',
-        render: (l) => itemCodeWithRev(l.itemCode, l.itemRevision),
+        render: (l) => (
+          <span style={{ color: 'var(--text)' }}>
+            {itemCodeWithRev(l.itemCode, l.itemRevision)}
+          </span>
+        ),
       },
       {
         id: 'item_name',

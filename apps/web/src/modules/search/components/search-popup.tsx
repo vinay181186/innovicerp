@@ -8,6 +8,7 @@
 // opens the document (openSearchResult) and closes the popup. Nothing is
 // autofocused and focus is not trapped: the header box keeps the keyboard.
 
+import { Icon } from '@/ui/core';
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from '@tanstack/react-router';
@@ -82,7 +83,7 @@ export function SearchPopup({
             title="Close"
             aria-label="Close search results"
           >
-            ✕
+            <Icon name="x" size={12} />
           </button>
         </div>
         <div className="modal-body">

@@ -278,7 +278,11 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
             <ActionMenu
               items={[
                 { label: 'Preview', onClick: () => void prPrint('preview', detail) },
-                { label: '⬇ Download PDF', onClick: () => void prPrint('download', detail) },
+                {
+                  label: 'Download PDF',
+                  icon: 'download',
+                  onClick: () => void prPrint('download', detail),
+                },
                 {
                   // Once a PO exists this PR is locked — surface the PO to view,
                   // and hide Edit below.

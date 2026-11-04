@@ -148,7 +148,7 @@ function BomPartsTable({ items }: { items: SoStatusBomItem[] }): React.JSX.Eleme
               }}
             >
               <td className="td-ctr mono fw-700">{idx + 1}</td>
-              <td className="td-code" style={{ color: 'var(--purple)' }}>
+              <td className="td-code" style={{ color: 'var(--text)' }}>
                 {c.childItemCode}
               </td>
               <td>{c.childItemName}</td>

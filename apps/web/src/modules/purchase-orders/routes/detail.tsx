@@ -41,10 +41,11 @@
 // header into the Vendor cluster, where its address and GSTIN already belonged.
 // Owner 2026-11-04: that block is the shared `<ClusterGrid stack>`.
 
+import { Icon } from '@/ui/core';
 import type { DocumentEditChange, PurchaseOrderLine } from '@innovic/shared';
 import { PO_SHORT_CLOSE_REASON_MIN, poLinePendingQty, poSendsMaterialOut } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Check, Inbox, Loader2, Send, X } from 'lucide-react';
+import { ArrowLeft, Check, Inbox, Loader2, Send } from 'lucide-react';
 import { useState } from 'react';
 import { useApprovalConfig } from '@/modules/approval-config/api';
 import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
@@ -365,7 +366,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
                   <Check size={13} /> Approve
                 </button>
                 <button type="button" className="btn btn-ghost" onClick={() => setRejectOpen(true)}>
-                  <X size={13} /> Reject
+                  <Icon name="x" size={13} /> Reject
                 </button>
               </>
             ) : null}
@@ -400,7 +401,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
             <ActionMenu
               items={[
                 { label: 'Preview', onClick: onPrint },
-                { label: '⬇ Download PDF', onClick: () => void onDownload() },
+                { label: 'Download PDF', icon: 'download', onClick: () => void onDownload() },
                 // ADR-232: Assign Task = the page's Advance right.
                 {
                   label: 'Assign Task',
@@ -753,7 +754,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
         >
           <div
             style={{
-              background: 'rgba(239,68,68,0.05)',
+              background: 'var(--red3)',
               padding: 'var(--sp-3)',
               border: '1px solid var(--red)',
               borderRadius: 'var(--radius2)',
@@ -781,8 +782,8 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
             <div
               style={{
                 padding: 'var(--sp-2) var(--sp-3)',
-                background: 'rgba(239,68,68,0.06)',
-                border: '1px solid rgba(239,68,68,0.3)',
+                background: 'var(--red3)',
+                border: '1px solid var(--sig-critical-bd)',
                 borderRadius: 'var(--radius)',
                 color: 'var(--red2)',
                 fontSize: 'var(--fs-sm)',
@@ -807,7 +808,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
 
 // Legacy L26336-26348. Numbers (Ln, qty, rate, amount, received, accepted,
 // pending) sit
-// RIGHT-aligned with `td-num` (house rule 2026-09-26), Item Code is `td-code` on the <td> in var(--purple) (a real
+// RIGHT-aligned with `td-num` (house rule 2026-09-26), Item Code is `td-code` on the <td> in var(--text) (a real
 // token with no utility class), Received is always green and Pending flips
 // blue/green on >0.
 function LineRow(props: {

@@ -31,6 +31,7 @@
 // A SECOND chain lives on this row: item code → item name from the Item Master,
 // which re-evaluates (and resets) when the code changes or is cleared.
 
+import { Icon } from '@/ui/core';
 import type { ListItemsResponse } from '@innovic/shared';
 import type { PurchaseRequestDetail } from '@innovic/shared';
 import { Fragment, useEffect, useId, useRef, useState } from 'react';
@@ -420,7 +421,7 @@ export function PoFormLine({
             title={canRemove ? 'Remove this line' : 'A PO needs at least one line'}
             aria-label={`Remove line ${idx + 1}`}
           >
-            ✕
+            <Icon name="x" size={12} />
           </button>
         </td>
       </tr>

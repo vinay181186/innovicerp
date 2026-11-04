@@ -4,6 +4,7 @@
 // insertion, last-5 revision rollback, test print.
 // See docs/PARITY/print-templates.md.
 
+import { Icon } from '@/ui/core';
 import {
   type EffectivePrintTemplate,
   PRINT_DOC_TYPES,
@@ -13,7 +14,7 @@ import {
   unknownTemplateVars,
 } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
-import { Loader2, Pencil, Printer } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { Fragment, useMemo, useRef, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
@@ -168,7 +169,7 @@ function PrintTemplatesPage(): React.JSX.Element {
     textAlign: 'right',
     fontFamily: PO_LABEL_FACE,
     fontWeight: 700,
-    fontSize: 11,
+    fontSize: 'var(--fs-xs)',
     letterSpacing: '.08em',
     textTransform: 'uppercase',
     color: '#3A3A3A',
@@ -248,9 +249,9 @@ function PrintTemplatesPage(): React.JSX.Element {
   if (eff && !canOpen) {
     return (
       <div style={{ padding: 40, textAlign: 'center', color: 'var(--sig-critical)' }}>
-        <div style={{ fontSize: 28, marginBottom: 10 }}>🔒</div>
+        <div style={{ fontSize: 'var(--fs-xl)', marginBottom: 10 }}>🔒</div>
         <div className="fw-700">No access</div>
-        <div className="text3" style={{ fontSize: 12, marginTop: 6 }}>
+        <div className="text3" style={{ fontSize: 'var(--fs-sm)', marginTop: 6 }}>
           Print Templates is not ticked for you in Access Control.
         </div>
       </div>
@@ -299,7 +300,7 @@ function PrintTemplatesPage(): React.JSX.Element {
             top: -9,
             left: 8,
             background: accent,
-            color: '#fff',
+            color: 'var(--bg2)',
             padding: '1px 8px',
             borderRadius: 3,
             fontSize: 9,
@@ -326,7 +327,7 @@ function PrintTemplatesPage(): React.JSX.Element {
                 border: '1px solid var(--border)',
                 borderRadius: 4,
                 fontFamily: 'var(--mono)',
-                fontSize: 13,
+                fontSize: 'var(--fs-sm)',
                 background: '#fff',
                 color: '#1e293b',
                 resize: 'vertical',
@@ -420,7 +421,7 @@ function PrintTemplatesPage(): React.JSX.Element {
                     onClick={() => startEdit(t)}
                     style={{ cursor: 'pointer', color: 'var(--cyan)' }}
                   >
-                    <Pencil size={11} className="inline" /> Edit
+                    <Icon name="pencil" size={11} className="inline" /> Edit
                   </span>
                 ) : null}
                 {t.revisionCount > 0 ? (
@@ -467,7 +468,7 @@ function PrintTemplatesPage(): React.JSX.Element {
         }}
       >
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <span className="text3" style={{ fontSize: 11 }}>
+          <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
             Document:
           </span>
           {PRINT_DOC_TYPES.map((d) => {
@@ -493,7 +494,7 @@ function PrintTemplatesPage(): React.JSX.Element {
                 }}
                 style={{
                   padding: '6px 14px',
-                  fontSize: 11,
+                  fontSize: 'var(--fs-xs)',
                   fontWeight: 700,
                   borderRadius: 5,
                   cursor: 'pointer',
@@ -526,7 +527,7 @@ function PrintTemplatesPage(): React.JSX.Element {
               if (!openTestPrint(doc, allTemplates)) toast.error('Allow popups to print.');
             }}
           >
-            <Printer size={13} /> Test Print
+            <Icon name="printer" size={13} /> Test Print
           </button>
         </div>
       </div>
@@ -614,7 +615,7 @@ function PrintTemplatesPage(): React.JSX.Element {
                       style={{
                         textAlign: 'center',
                         fontFamily: PO_LABEL_FACE,
-                        fontSize: 16,
+                        fontSize: 'var(--fs-md)',
                         fontWeight: 700,
                         letterSpacing: '.15em',
                         textTransform: 'uppercase',
@@ -665,7 +666,7 @@ function PrintTemplatesPage(): React.JSX.Element {
                             display: 'grid',
                             gridTemplateColumns: '104px 1fr',
                             gap: '5px 12px',
-                            fontSize: 12,
+                            fontSize: 'var(--fs-sm)',
                           }}
                         >
                           {fields.map((f) => (
@@ -705,7 +706,9 @@ function PrintTemplatesPage(): React.JSX.Element {
                   {/* 5-8. The goods table (NOT editable — system-generated):
                       column band, one row per line, the quantity total, then
                       the money rows. */}
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                  <table
+                    style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--fs-sm)' }}
+                  >
                     <thead>
                       <tr style={{ background: PO_BAND }}>
                         {(
@@ -725,7 +728,7 @@ function PrintTemplatesPage(): React.JSX.Element {
                               borderBottom: PO_RULE,
                               borderRight: i < 5 ? PO_RULE : 'none',
                               fontFamily: PO_LABEL_FACE,
-                              fontSize: 11,
+                              fontSize: 'var(--fs-xs)',
                               fontWeight: 700,
                               letterSpacing: '.08em',
                               textTransform: 'uppercase',
@@ -749,7 +752,7 @@ function PrintTemplatesPage(): React.JSX.Element {
                               style={{
                                 display: 'block',
                                 fontFamily: MONO,
-                                fontSize: 11,
+                                fontSize: 'var(--fs-xs)',
                                 color: '#3A3A3A',
                               }}
                             >
@@ -770,7 +773,7 @@ function PrintTemplatesPage(): React.JSX.Element {
                               <span
                                 style={{
                                   display: 'block',
-                                  fontSize: 11,
+                                  fontSize: 'var(--fs-xs)',
                                   lineHeight: 1.4,
                                   color: '#3A3A3A',
                                   marginTop: 2,
@@ -806,7 +809,10 @@ function PrintTemplatesPage(): React.JSX.Element {
                         </tr>
                       ))}
                       <tr style={{ background: PO_BAND }}>
-                        <td colSpan={3} style={{ ...poSumLabel, fontSize: 13, color: '#1A1A1A' }}>
+                        <td
+                          colSpan={3}
+                          style={{ ...poSumLabel, fontSize: 'var(--fs-sm)', color: '#1A1A1A' }}
+                        >
                           Total quantity &mdash; {PO_SAMPLE_LINES.length} line
                           {PO_SAMPLE_LINES.length === 1 ? '' : 's'}
                         </td>
@@ -838,7 +844,7 @@ function PrintTemplatesPage(): React.JSX.Element {
                             colSpan={5}
                             style={{
                               ...poSumLabel,
-                              ...(isGrand ? { fontSize: 13, color: '#1A1A1A' } : {}),
+                              ...(isGrand ? { fontSize: 'var(--fs-sm)', color: '#1A1A1A' } : {}),
                             }}
                           >
                             {sumLabel}
@@ -848,7 +854,7 @@ function PrintTemplatesPage(): React.JSX.Element {
                               ...poMoneyCell,
                               borderRight: 'none',
                               fontWeight: isGrand ? 700 : 400,
-                              ...(isGrand ? { fontSize: 13 } : {}),
+                              ...(isGrand ? { fontSize: 'var(--fs-sm)' } : {}),
                             }}
                           >
                             {value}
@@ -859,7 +865,9 @@ function PrintTemplatesPage(): React.JSX.Element {
                   </table>
 
                   {/* 9. Amount chargeable (in words). */}
-                  <div style={{ padding: '8px 14px', borderBottom: PO_RULE, fontSize: 11 }}>
+                  <div
+                    style={{ padding: '8px 14px', borderBottom: PO_RULE, fontSize: 'var(--fs-xs)' }}
+                  >
                     <b
                       style={{
                         fontFamily: PO_LABEL_FACE,
@@ -889,7 +897,7 @@ function PrintTemplatesPage(): React.JSX.Element {
                   >
                     <div
                       style={{
-                        fontSize: 28,
+                        fontSize: 'var(--fs-xl)',
                         fontWeight: 900,
                         color: '#1E4DB3',
                         marginRight: 18,
@@ -951,7 +959,7 @@ function PrintTemplatesPage(): React.JSX.Element {
                         style={{
                           padding: '10px 14px',
                           borderRight: '1px solid #999',
-                          fontSize: 11,
+                          fontSize: 'var(--fs-xs)',
                         }}
                       >
                         <b>GRN No.:</b> {sample.grnNo}
@@ -960,7 +968,7 @@ function PrintTemplatesPage(): React.JSX.Element {
                         <br />
                         <b>Vendor:</b> {sample.vendorName}
                       </div>
-                      <div style={{ padding: '10px 14px', fontSize: 11 }}>
+                      <div style={{ padding: '10px 14px', fontSize: 'var(--fs-xs)' }}>
                         <b>PO No.:</b> {sample.poNo}
                         <br />
                         <b>Vendor Challan No.:</b> {sample.dcNo}
@@ -980,7 +988,7 @@ function PrintTemplatesPage(): React.JSX.Element {
                         style={{
                           padding: '10px 14px',
                           borderRight: '1px solid #999',
-                          fontSize: 11,
+                          fontSize: 'var(--fs-xs)',
                         }}
                       >
                         <b>DC No.:</b> {sample.dcNo}
@@ -989,7 +997,7 @@ function PrintTemplatesPage(): React.JSX.Element {
                         <br />
                         <b>Purpose:</b> {sample.purpose}
                       </div>
-                      <div style={{ padding: '10px 14px', fontSize: 11 }}>
+                      <div style={{ padding: '10px 14px', fontSize: 'var(--fs-xs)' }}>
                         <b>Recipient:</b> {sample.recipientName}
                         <br />
                         <b>Vehicle No.:</b> {sample.vehicleNo}
@@ -1018,7 +1026,13 @@ function PrintTemplatesPage(): React.JSX.Element {
                       // Received / accepted / rejected — no Rate, no Amount, no
                       // money. Same seven columns, same order, same two sample
                       // lines the GRN test print puts on paper.
-                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                      <table
+                        style={{
+                          width: '100%',
+                          borderCollapse: 'collapse',
+                          fontSize: 'var(--fs-xs)',
+                        }}
+                      >
                         <thead>
                           <tr style={{ background: '#f1f5f9' }}>
                             <th
@@ -1192,7 +1206,13 @@ function PrintTemplatesPage(): React.JSX.Element {
                         </tbody>
                       </table>
                     ) : (
-                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                      <table
+                        style={{
+                          width: '100%',
+                          borderCollapse: 'collapse',
+                          fontSize: 'var(--fs-xs)',
+                        }}
+                      >
                         <thead>
                           <tr style={{ background: '#f1f5f9' }}>
                             <th
@@ -1359,7 +1379,7 @@ function PrintTemplatesPage(): React.JSX.Element {
           {/* RIGHT — variables panel */}
           <div style={{ position: 'sticky', top: 14 }}>
             <div className="panel" style={{ padding: 14 }}>
-              <div className="fw-700" style={{ fontSize: 12, marginBottom: 6 }}>
+              <div className="fw-700" style={{ fontSize: 'var(--fs-sm)', marginBottom: 6 }}>
                 Available Variables
               </div>
               {/* Legacy .pt-vars-panel / .pt-var-chip (L191-193) are not in our

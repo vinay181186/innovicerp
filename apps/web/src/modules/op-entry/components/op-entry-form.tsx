@@ -2,6 +2,7 @@
 // Logic unchanged from the shadcn version: QC sub-form vs production-complete
 // form, start/stop session, blocked-reason guard. T-040d QC path preserved.
 
+import { Icon } from '@/ui/core';
 import {
   type JcOpEnriched,
   type OpLog,
@@ -1356,7 +1357,7 @@ export function OpEntryForm({
                 onClick={() => setBusyDismissedFor(actualMachineId)}
                 style={{ padding: '2px 6px' }}
               >
-                ✕
+                <Icon name="x" size={12} />
               </button>
             </div>
           ) : null}

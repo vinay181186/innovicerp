@@ -1,8 +1,9 @@
 // Per-row ⬇ Excel action for the Job Cards list. Like PrintJcButton, it lazily
 // fetches the JC's enriched ops + full op_log on first click, then exports the
 // 3-sheet workbook (Job Card / Operations / Production Log — WITH the log).
+import { Icon } from '@/ui/core';
 import type { JobCardListItem } from '@innovic/shared';
-import { Download, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useJcOpsEnriched, useOpLog } from '@/modules/op-entry/api';
 import { exportJobCardExcel } from '../lib/export-job-card-excel';
@@ -92,7 +93,7 @@ export function ExcelJcButton({
   const icon = loading ? (
     <Loader2 size={13} className="inline animate-spin" />
   ) : (
-    <Download size={13} />
+    <Icon name="download" size={13} />
   );
 
   if (iconOnly) {

@@ -211,7 +211,7 @@ function InvoiceDetailPage(): React.JSX.Element {
     ? []
     : [
         { label: 'Grand Total', value: inr(inv.grandTotal ?? 0), color: 'var(--green2)' },
-        { label: 'Paid', value: inr(inv.totalPaid ?? 0), color: 'var(--cyan)' },
+        { label: 'Paid', value: inr(inv.totalPaid ?? 0), color: 'var(--green)' },
         ...((inv.totalTds ?? 0) > 0
           ? [{ label: 'TDS / Short', value: inr(inv.totalTds ?? 0), color: 'var(--purple)' }]
           : []),
@@ -250,7 +250,8 @@ function InvoiceDetailPage(): React.JSX.Element {
                   },
                 },
                 {
-                  label: '⬇ Download PDF',
+                  label: 'Download PDF',
+                  icon: 'download',
                   onClick: () =>
                     void runPrint(
                       'download',

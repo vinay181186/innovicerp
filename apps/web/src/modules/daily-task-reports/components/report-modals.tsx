@@ -2,6 +2,7 @@
 // Mirror of legacy _addDailyReport / _drFormHtml / _editDailyReport /
 // _viewDailyReport.
 
+import { Icon, StatusBadge } from '@/ui/core';
 import type { DailyReportLineStatus, UpsertDailyTaskReportInput } from '@innovic/shared';
 import {
   DAILY_REPORT_LINE_STATUS_LABELS,
@@ -224,10 +225,11 @@ function ReportEditor({
                       className="btn btn-danger btn-sm"
                       style={{ fontSize: 'var(--fs-sm)' }}
                       disabled={lines.length === 1}
-                      title={lines.length === 1 ? 'A report needs at least one line' : undefined}
+                      title={lines.length === 1 ? 'A report needs at least one line' : 'Remove'}
+                      aria-label="Remove"
                       onClick={() => setLines((ls) => ls.filter((_, idx) => idx !== i))}
                     >
-                      ×
+                      <Icon name="x" size={12} />
                     </button>
                   </td>
                 </tr>
@@ -330,17 +332,6 @@ export function EditReportModal({
   );
 }
 
-function lineStatusColor(s: DailyReportLineStatus): string {
-  // Done green, under way amber, blocked red, pending blue.
-  return s === 'completed'
-    ? 'var(--green2)'
-    : s === 'in_progress'
-      ? 'var(--amber2)'
-      : s === 'blocked'
-        ? 'var(--red2)'
-        : 'var(--blue)';
-}
-
 export function ViewReportModal({
   id,
   onClose,
@@ -409,9 +400,11 @@ export function ViewReportModal({
                   </td>
                   <td className="td-ctr mono fw-700">{l.hours.toFixed(1)}</td>
                   <td>
-                    <span style={{ fontWeight: 600, color: lineStatusColor(l.status) }}>
-                      {DAILY_REPORT_LINE_STATUS_LABELS[l.status]}
-                    </span>
+                    <StatusBadge
+                      kind="doc"
+                      status={l.status}
+                      label={DAILY_REPORT_LINE_STATUS_LABELS[l.status]}
+                    />
                   </td>
                   <td style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>
                     {l.remarks ?? ''}

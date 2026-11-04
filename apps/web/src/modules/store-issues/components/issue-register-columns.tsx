@@ -89,7 +89,7 @@ export function issueRegisterColumns(firstRowNo: number): DataTableColumn<StoreI
       header: 'Reference',
       className: 'mono',
       nowrap: true,
-      render: (r) => <span style={{ color: 'var(--purple)' }}>{reference(r)}</span>,
+      render: (r) => <span style={{ color: 'var(--blue)' }}>{reference(r)}</span>,
     },
     {
       id: 'issued_to',

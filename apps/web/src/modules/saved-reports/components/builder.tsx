@@ -11,6 +11,7 @@
 //   "FIELD:<key>"   — drag a field from the Available list
 //   "COL:<index>"   — drag a column chip to reorder
 
+import { Icon } from '@/ui/core';
 import type {
   AdHocFilter,
   AdHocSpec,
@@ -528,7 +529,7 @@ export function Builder(props: Props): JSX.Element {
                               style={CHIP_X}
                               aria-label={`Remove ${f.label}`}
                             >
-                              ×
+                              <Icon name="x" size={12} />
                             </button>
                           </div>
                         );
@@ -620,7 +621,7 @@ export function Builder(props: Props): JSX.Element {
                             style={{ ...CHIP_X, color: 'var(--red2)' }}
                             aria-label={`Remove ${fd ? fd.label : f.field} filter`}
                           >
-                            ✖
+                            <Icon name="x" size={12} />
                           </button>
                         </div>
                       );
@@ -687,7 +688,7 @@ export function Builder(props: Props): JSX.Element {
                               style={CHIP_X}
                               aria-label={`Remove ${f.label}`}
                             >
-                              ×
+                              <Icon name="x" size={12} />
                             </button>
                           </div>
                         );
@@ -787,7 +788,7 @@ export function Builder(props: Props): JSX.Element {
                 disabled={columns.length === 0 || excelLoading}
                 title={columns.length === 0 ? 'Add at least one column first' : undefined}
               >
-                📄 Generate Excel
+                <Icon name="download" size={13} /> Generate Excel
               </button>
             ) : null}
             {/* Legacy saves from the header via prompt() (_rbSaveTemplate L17673);

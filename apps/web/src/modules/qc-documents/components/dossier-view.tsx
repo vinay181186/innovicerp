@@ -9,6 +9,7 @@
 
 import type { QcDossierLine, QcDossierOrderKind } from '@innovic/shared';
 import { useMemo, useState } from 'react';
+import { Icon } from '@/ui/core';
 import { matchesSearchTerm, normalizeSearchTerm } from '@/components/shared/search-match';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
@@ -131,7 +132,7 @@ export function DossierView({ tabs }: { tabs: React.ReactNode }): React.JSX.Elem
     }
   }
   const zipLabel = (what: string): string =>
-    zip ? `Zipping ${zip.done}/${zip.total}…` : `⬇ ZIP (${what})`;
+    zip ? `Zipping ${zip.done}/${zip.total}…` : `ZIP (${what})`;
 
   const picker = (
     <OrderSelect
@@ -201,6 +202,7 @@ export function DossierView({ tabs }: { tabs: React.ReactNode }): React.JSX.Elem
               title="One ZIP with the folder tree below"
               onClick={() => void runZip()}
             >
+              {zip ? null : <Icon name="download" size={13} />}{' '}
               {zipLabel(dossier.order.kind === 'so' ? 'SO' : 'JWSO')}
             </button>
           ) : null}
@@ -312,6 +314,7 @@ export function DossierView({ tabs }: { tabs: React.ReactNode }): React.JSX.Elem
                           disabled={zip !== null}
                           onClick={() => void runZip(line)}
                         >
+                          {zip ? null : <Icon name="download" size={13} />}{' '}
                           {zipLabel(`POL ${polLabel(line)}`)}
                         </button>
                       ) : null

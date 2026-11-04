@@ -245,7 +245,7 @@ export function ManualReceiptModal({ onClose }: { onClose: () => void }): React.
           style={{
             marginTop: 'var(--sp-3)',
             padding: 'var(--sp-2)',
-            background: 'rgba(239,68,68,0.08)',
+            background: 'var(--red3)',
             color: 'var(--red2)',
             fontSize: 'var(--fs-sm)',
             borderRadius: 'var(--radius-sm)',

@@ -12,6 +12,7 @@
 // manufacture/assembly plans. Direct-purchase / full-outsource hide the
 // ops table.
 
+import { Icon } from '@/ui/core';
 import {
   type CreatePlanInput,
   type PlanType,
@@ -19,7 +20,7 @@ import {
   qcAfterOutsourceError,
 } from '@innovic/shared';
 import { Link, useParams } from '@tanstack/react-router';
-import { Loader2, Plus, Trash2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { addDaysLocal, todayLocal } from '@/lib/date';
 import { VendorPicker } from '@/components/shared/vendor-picker';
@@ -805,7 +806,7 @@ export function PlanForm({
                 </button>
               ) : null}
               <button type="button" className="btn btn-ghost btn-sm" onClick={addOp}>
-                <Plus size={13} /> Add Op
+                <Icon name="plus" size={13} /> Add Op
               </button>
             </div>
           </div>
@@ -966,7 +967,7 @@ export function PlanForm({
                           className="btn btn-ghost btn-sm"
                           onClick={() => removeOp(idx)}
                         >
-                          <Trash2 size={13} />
+                          <Icon name="trash-2" size={13} />
                         </button>
                       </td>
                     </tr>

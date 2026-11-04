@@ -11,6 +11,7 @@
 // Outsource Jobs tab. PRs have no approval (owner rule 2026-10-31): no
 // Approve / Reject; old 'approved' PRs keep their status as history.
 
+import { Icon } from '@/ui/core';
 import {
   type ListPurchaseRequestsQuery,
   PR_STATUSES,
@@ -18,7 +19,6 @@ import {
   type PurchaseRequestListItem,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
@@ -276,7 +276,7 @@ function PurchaseRequestsListPage(): React.JSX.Element {
             primary={
               perms.entry ? (
                 <Link to="/purchase-requests/new" className="btn btn-primary">
-                  <Plus size={14} /> New PR
+                  <Icon name="plus" size={14} /> New PR
                 </Link>
               ) : null
             }

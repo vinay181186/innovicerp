@@ -3,8 +3,8 @@
 // ClusterGrid → Lines panel → FormActions (Cancel + blue Save, Ctrl+S, "Not saved").
 // No Excel import (phase 2).
 
+import { Icon } from '@/ui/core';
 import { type MlBomLineInput, qtyUomProblem } from '@innovic/shared';
-import { Plus } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { cleanDrawingRev } from '@/modules/item-revisions/api';
 import { Panel } from '@/ui/data';
@@ -308,7 +308,7 @@ export function MlBomForm(props: MlBomFormProps): React.JSX.Element {
               className="btn btn-ghost btn-sm"
               onClick={() => setLines((prev) => [...prev, emptyMlBomLine()])}
             >
-              <Plus size={12} /> Add Line
+              <Icon name="plus" size={12} /> Add Line
             </button>
           </div>
         }

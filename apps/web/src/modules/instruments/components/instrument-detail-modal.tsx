@@ -151,7 +151,7 @@ export function InstrumentDetailModal({
               <Fact label="Held By">
                 {ins.heldBy || '—'}
                 {ins.toolIssueCode ? (
-                  <span className="mono" style={{ marginLeft: 6, color: 'var(--purple)' }}>
+                  <span className="mono" style={{ marginLeft: 6, color: 'var(--blue)' }}>
                     {ins.toolIssueCode}
                   </span>
                 ) : null}

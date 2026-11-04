@@ -24,10 +24,10 @@
 // Item Code · Item Name), then the DC's own facts. Row click / ⋯ still act on
 // the DC. The printed register reads the three line-grain totals.
 
+import { Icon } from '@/ui/core';
 import type { ListDeliveryChallansQuery } from '@innovic/shared';
 import { DC_STATUSES, type DcStatus } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { Plus, Printer } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
@@ -256,7 +256,7 @@ function DeliveryChallansListPage(): React.JSX.Element {
                   disabled={isLoading || !data}
                   title="Print the DC register for the current filter/page"
                 >
-                  <Printer size={14} /> Print Register
+                  <Icon name="printer" size={14} /> Print Register
                 </button>
               </>
             }
@@ -266,7 +266,7 @@ function DeliveryChallansListPage(): React.JSX.Element {
               // the PO.
               perms.entry ? (
                 <Link to="/delivery-challans/new" className="btn btn-primary">
-                  <Plus size={14} /> New DC (via PO)
+                  <Icon name="plus" size={14} /> New DC (via PO)
                 </Link>
               ) : null
             }

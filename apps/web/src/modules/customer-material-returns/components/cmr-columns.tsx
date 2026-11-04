@@ -117,7 +117,7 @@ export function cmrColumns(firstRowNo: number): DataTableColumn<Row>[] {
       header: 'Customer RM',
       className: 'td-code',
       nowrap: true,
-      render: (r) => r.rmItemCode ?? '—',
+      render: (r) => <span style={{ color: 'var(--text)' }}>{r.rmItemCode ?? '—'}</span>,
     },
     {
       id: 'status',

@@ -3,6 +3,7 @@
 // Split out of detail.tsx. The StatStrip, the sub-tab switch and the status
 // filter are all preserved.
 
+import { Icon } from '@/ui/core';
 import {
   DESIGN_DCN_STATUSES,
   DESIGN_DCR_STATUSES,
@@ -10,7 +11,6 @@ import {
   type DesignDcr,
   type DesignProjectDetail,
 } from '@innovic/shared';
-import { Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
@@ -147,7 +147,7 @@ export function DcrDcnTab({ detail }: { detail: DesignProjectDetail }): React.JS
         kind: 'code',
         className: 'mono fw-700',
         nowrap: true,
-        render: (d) => <span style={{ color: 'var(--purple)' }}>{d.code}</span>,
+        render: (d) => <span style={{ color: 'var(--blue)' }}>{d.code}</span>,
         title: (d) => d.code,
       },
       {
@@ -245,7 +245,7 @@ export function DcrDcnTab({ detail }: { detail: DesignProjectDetail }): React.JS
                 className="btn btn-primary btn-sm"
                 onClick={() => setShowAddDcr(true)}
               >
-                <Plus size={12} /> New DCR
+                <Icon name="plus" size={12} /> New DCR
               </button>
             ) : (
               <button
@@ -253,7 +253,7 @@ export function DcrDcnTab({ detail }: { detail: DesignProjectDetail }): React.JS
                 className="btn btn-primary btn-sm"
                 onClick={() => setShowAddDcn(true)}
               >
-                <Plus size={12} /> New DCN
+                <Icon name="plus" size={12} /> New DCN
               </button>
             )
           ) : null}

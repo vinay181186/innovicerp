@@ -11,10 +11,11 @@
 // Operations now has a panel of its own. Before this pass a plan's operations
 // were shown nowhere on the view page.
 
+import { Icon } from '@/ui/core';
 import type { DocumentEditChange, PlanStatus, PlanType } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, CheckCircle, Loader2, Pencil, Play, Trash2 } from 'lucide-react';
+import { ArrowLeft, CheckCircle, Loader2, Play } from 'lucide-react';
 import { useState } from 'react';
 import { undecidedChangesOf, usePendingEditForDoc } from '@/modules/document-edits/api';
 import {
@@ -272,7 +273,7 @@ function PlanDetailPage(): React.JSX.Element {
             ) : null}
             {perms.edit && isEditable ? (
               <Link to="/plans/$id/edit" params={{ id: plan.id }} className="btn btn-ghost btn-sm">
-                <Pencil size={13} /> Edit
+                <Icon name="pencil" size={13} /> Edit
               </Link>
             ) : null}
             {/* ADR-232: deleting any record is Super Admin only. */}
@@ -283,7 +284,7 @@ function PlanDetailPage(): React.JSX.Element {
                 onClick={() => setConfirmDelete(true)}
                 disabled={confirmDelete}
               >
-                <Trash2 size={13} /> Delete
+                <Icon name="trash-2" size={13} /> Delete
               </button>
             ) : null}
             {/* The one thing a Planned route-card plan exists for. Same

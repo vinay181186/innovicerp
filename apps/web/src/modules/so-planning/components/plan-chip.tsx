@@ -38,8 +38,8 @@ const PLAN_STATUS_COLOR: Record<PlanStatus, string> = {
   // Same colour per state as <StatusBadge kind="plan"> (wave 2).
   in_planning: 'var(--text3)',
   planned: 'var(--blue)',
-  jc_created: 'var(--cyan)',
-  pr_created: 'var(--cyan)',
+  jc_created: 'var(--amber)',
+  pr_created: 'var(--amber)',
   in_production: 'var(--amber)',
   complete: 'var(--green)',
   cancelled: 'var(--red)', // owner 2026-11-03: Cancelled red everywhere

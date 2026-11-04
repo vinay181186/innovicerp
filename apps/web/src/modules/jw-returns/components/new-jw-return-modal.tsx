@@ -298,7 +298,7 @@ export function NewJwReturnModal({ onClose }: { onClose: () => void }): React.JS
           style={{
             marginTop: 'var(--sp-3)',
             padding: 'var(--sp-2)',
-            background: 'rgba(239,68,68,0.08)',
+            background: 'var(--red3)',
             color: 'var(--red2)',
             borderRadius: 'var(--radius-sm)',
             fontSize: 'var(--fs-sm)',

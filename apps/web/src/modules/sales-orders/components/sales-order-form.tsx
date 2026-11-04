@@ -32,6 +32,7 @@
 // table with per-line Amount, SO totals (subtotal / GST / grand + item·pcs
 // count), delivery milestones, in-form Excel template/import, equipment BOM.
 
+import { Icon } from '@/ui/core';
 import {
   type CreateSalesOrderInput,
   INTERNAL_SO_NO_MAX,
@@ -55,7 +56,7 @@ import {
   type Uom,
 } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
-import { Loader2, Plus, Trash2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { Fragment, useEffect, useRef, useState } from 'react';
 import {
   useFieldArray,
@@ -858,7 +859,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
             onClick={clearPoFile}
             aria-label="Remove PO document"
           >
-            ✕
+            <Icon name="x" size={12} />
           </button>
         </span>
       ) : (
@@ -903,7 +904,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
             onClick={clearEmailFile}
             aria-label="Remove email reference"
           >
-            ✕
+            <Icon name="x" size={12} />
           </button>
         </span>
       ) : (
@@ -1306,7 +1307,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                   className="btn btn-primary btn-sm"
                   onClick={() => append({ ...NEW_LINE })}
                 >
-                  <Plus size={13} /> Add Line
+                  <Icon name="plus" size={13} /> Add Line
                 </button>
               </>
             }
@@ -1651,7 +1652,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                 className="btn btn-ghost btn-sm"
                 onClick={() => appendMs({ ...NEW_MILESTONE, lotNo: msFields.length + 1 })}
               >
-                <Plus size={13} /> Add Lot
+                <Icon name="plus" size={13} /> Add Lot
               </button>
             }
           >
@@ -1716,7 +1717,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                             onClick={() => removeMs(idx)}
                             aria-label={`Remove lot ${idx + 1}`}
                           >
-                            <Trash2 size={12} />
+                            <Icon name="trash-2" size={12} />
                           </button>
                         </td>
                       </tr>

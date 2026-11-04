@@ -245,7 +245,11 @@ function ExpandedLines({ bomId }: { bomId: string }): React.JSX.Element {
         className: 'td-code',
         nowrap: true,
         // Child part as Item + Drawing Rev — SHAFT/2 (owner rule 2026-11-02).
-        render: (l) => (l.childItemCode ? itemRevLabel(l.childItemCode, l.childDrawingRev) : '—'),
+        render: (l) => (
+          <span style={{ color: 'var(--text)' }}>
+            {l.childItemCode ? itemRevLabel(l.childItemCode, l.childDrawingRev) : '—'}
+          </span>
+        ),
       },
       {
         header: 'Item Name',

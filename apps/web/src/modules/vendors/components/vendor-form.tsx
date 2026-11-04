@@ -691,7 +691,7 @@ function FormFooter(props: {
           style={{
             color: 'var(--red2)',
             background: 'var(--red3)',
-            border: '1px solid #fca5a5',
+            border: '1px solid var(--sig-critical-bd)',
             borderRadius: 'var(--radius)',
             padding: '6px 10px',
             fontSize: 'var(--fs-sm)',

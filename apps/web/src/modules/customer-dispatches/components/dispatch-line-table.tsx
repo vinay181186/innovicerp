@@ -9,8 +9,8 @@
 // The wrapper is `overflow: visible` ON PURPOSE — the item picker's dropdown is
 // absolutely positioned and any `overflow: auto/hidden` here would clip it.
 
+import { Icon } from '@/ui/core';
 import type { DispatchableLine } from '@innovic/shared';
-import { X } from 'lucide-react';
 import { MasterItemNameNote } from '@/components/shared/master-item-name-note';
 import { SearchableSelect } from '@/ui/forms';
 import { fmtDate } from '@/lib/date';
@@ -265,7 +265,7 @@ export function DispatchLineTable(props: {
                         aria-label={`Remove line ${idx + 1}`}
                         onClick={() => props.onRemove(card.id)}
                       >
-                        <X size={12} />
+                        <Icon name="x" size={12} />
                       </button>
                     </td>
                   </tr>

@@ -5,6 +5,7 @@
 // `?dispatchId=` (Create Invoice button on the Dispatch Register) preselects the
 // dispatch's SO and prefills the lines from that dispatch.
 
+import { Icon } from '@/ui/core';
 import {
   type InvoiceTaxType,
   type InvoiceableLine,
@@ -12,7 +13,6 @@ import {
   placeOfSupplyLabel,
 } from '@innovic/shared';
 import { createRoute, useNavigate } from '@tanstack/react-router';
-import { Plus, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -433,7 +433,7 @@ function InvoiceNewPage(): React.JSX.Element {
           title="Items"
           actions={
             <button type="button" className="btn btn-ghost btn-sm" onClick={addLine}>
-              <Plus size={14} /> Add Line
+              <Icon name="plus" size={14} /> Add Line
             </button>
           }
         >
@@ -601,7 +601,7 @@ function InvoiceNewPage(): React.JSX.Element {
                   onClick={() => removeLine(card.id)}
                   style={{ color: 'var(--red2)' }}
                 >
-                  <X size={14} />
+                  <Icon name="x" size={14} />
                 </button>
                 {moreOpen ? (
                   <div

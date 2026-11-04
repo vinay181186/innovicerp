@@ -58,7 +58,7 @@ export function SoTimelineBody({ data }: { data: SoTimelineResponse }): React.JS
                 alignItems: 'center',
                 justifyContent: 'center',
                 fontSize: 'var(--fs-xs)',
-                color: '#fff',
+                color: 'var(--bg2)',
                 zIndex: 1,
                 border: '2px solid var(--bg)',
               }}

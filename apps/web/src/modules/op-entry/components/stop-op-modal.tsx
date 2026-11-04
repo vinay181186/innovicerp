@@ -295,7 +295,7 @@ export function StopOpModal({
               </>
             ) : null}
             Item{' '}
-            <b className="mono" style={{ color: 'var(--purple)' }}>
+            <b className="mono" style={{ color: 'var(--text)' }}>
               {itemCode}
             </b>
             {target.itemName ? <span className="text3"> — {target.itemName}</span> : null}

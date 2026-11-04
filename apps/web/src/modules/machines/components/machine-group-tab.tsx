@@ -24,13 +24,12 @@
 // whole-master query (limit 1000) and never shares this one.
 
 import type { ListMachineGroupsQuery, MachineGroup } from '@innovic/shared';
-import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
 import { useSaveKey } from '@/lib/use-save-key';
 import { isStagedResult, useDocumentEdits } from '@/modules/document-edits/api';
-import { StatusBadge } from '@/ui/core';
+import { Icon, StatusBadge } from '@/ui/core';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
@@ -236,7 +235,7 @@ export function MachineGroupTab({ tabs }: { tabs: React.ReactNode }): React.JSX.
                 setModal({ kind: 'new' });
               }}
             >
-              <Plus size={14} /> Add Machine Group
+              <Icon name="plus" size={14} /> Add Machine Group
             </button>
           ) : null
         }

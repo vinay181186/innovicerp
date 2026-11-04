@@ -1,8 +1,8 @@
 // Design Project — Issues tab. The register now renders on the shared FIT table
 // (DataTable, tableKey designProjectIssues). ADR-199. Split out of detail.tsx.
 
+import { Icon } from '@/ui/core';
 import { type DesignIssue, type DesignProjectDetail } from '@innovic/shared';
-import { Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
@@ -107,7 +107,7 @@ export function IssuesTab({ detail }: { detail: DesignProjectDetail }): React.JS
         <div className="section-hdr m-0">Design Issues</div>
         {canAdd ? (
           <button type="button" className="btn btn-primary btn-sm" onClick={() => setShowAdd(true)}>
-            <Plus size={12} /> Raise Issue
+            <Icon name="plus" size={12} /> Raise Issue
           </button>
         ) : null}
       </div>

@@ -265,7 +265,8 @@ function SalesOrderDetailPage(): React.JSX.Element {
               items={[
                 { label: 'Preview', onClick: () => orderPrint.preview(printTarget, isDraft) },
                 {
-                  label: '⬇ Download PDF',
+                  label: 'Download PDF',
+                  icon: 'download',
                   onClick: () => void orderPrint.download(printTarget, isDraft),
                 },
                 {

@@ -820,7 +820,7 @@ body.density-compact {
 }
 .td-code {
   font-family: var(--mono);
-  font-weight: 600;
+  font-weight: 700;
   font-size: var(--fs-sm);
 }
 .td-right {

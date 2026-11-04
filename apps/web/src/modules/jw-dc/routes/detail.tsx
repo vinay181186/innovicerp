@@ -133,7 +133,7 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
             <ActionMenu
               items={[
                 { label: 'Preview', onClick: onPrint },
-                { label: '⬇ Download PDF', onClick: () => void onDownload() },
+                { label: 'Download PDF', icon: 'download', onClick: () => void onDownload() },
               ]}
             />
             {canCancel ? (

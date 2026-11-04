@@ -167,7 +167,7 @@ export function ChangeMachineModal({
           style={{
             marginTop: 'var(--sp-3)',
             padding: '10px 12px',
-            background: 'rgba(239,68,68,0.08)',
+            background: 'var(--red3)',
             border: '1px solid var(--red)',
             color: 'var(--red2)',
             borderRadius: 'var(--radius)',

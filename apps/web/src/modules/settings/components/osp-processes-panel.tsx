@@ -4,9 +4,10 @@
 // _renderOspConfig L13231 / _addOspProcess L13249).
 // CRUD on `osp_processes`. Inline add modal. Manager/admin writes.
 
+import { Icon } from '@/ui/core';
 import type { OspProcess, OspProcessInput } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, Plus } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { SearchableSelect } from '@/ui/forms';
 import { apiFetch } from '@/lib/api';
@@ -286,7 +287,7 @@ export function OspProcessesPanel(): React.JSX.Element {
             onClick={openCreate}
             style={{ marginTop: 10 }}
           >
-            <Plus size={12} /> Add OSP Process
+            <Icon name="plus" size={12} /> Add OSP Process
           </button>
         ) : null}
       </div>

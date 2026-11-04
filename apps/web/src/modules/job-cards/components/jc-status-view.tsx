@@ -252,7 +252,8 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
                   onClick: () => runJcPrint('preview'),
                 },
                 {
-                  label: '⬇ Download PDF',
+                  label: 'Download PDF',
+                  icon: 'download',
                   disabled: opsLoading,
                   title: 'Download Job Card as PDF',
                   onClick: () => runJcPrint('download'),

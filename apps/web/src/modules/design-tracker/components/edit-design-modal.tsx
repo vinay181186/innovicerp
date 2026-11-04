@@ -83,7 +83,7 @@ export function EditDesignModal({
             className="innovic-input"
             value={itemCodeWithRev(row.itemCodeText, row.itemRevision, '')}
             readOnly
-            style={{ color: 'var(--purple)' }}
+            style={{ color: 'var(--text)', fontWeight: 700 }}
           />
         </Field>
         <Field label="Design Engineer">

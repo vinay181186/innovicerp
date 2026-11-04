@@ -5,9 +5,10 @@
 // matching severity colour. Read-only; no fixups (user reviews then fixes
 // the underlying records via the relevant module).
 
+import { Icon } from '@/ui/core';
 import type { IntegrityCheckResponse } from '@innovic/shared';
 import { useMutation } from '@tanstack/react-query';
-import { Loader2, Search } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { apiFetch } from '@/lib/api';
 import { fmtDateTime } from '@/lib/date';
@@ -58,7 +59,7 @@ export function DataIntegrityPanel(): React.JSX.Element {
               </>
             ) : (
               <>
-                <Search size={14} /> Run Integrity Check
+                <Icon name="search" size={14} /> Run Integrity Check
               </>
             )}
           </button>

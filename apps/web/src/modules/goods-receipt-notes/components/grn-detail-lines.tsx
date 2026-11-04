@@ -162,7 +162,9 @@ function LineRow(props: {
           {l.clientPoLineNo ?? '—'}
         </td>
         {/* Item code is THE main thing — strong; CODE/REV (ADR-177). */}
-        <td className="td-code">{itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.itemRevision)}</td>
+        <td className="td-code" style={{ color: 'var(--text)' }}>
+          {itemCodeWithRev(l.itemCode ?? l.itemCodeText, l.itemRevision)}
+        </td>
         {/* The item master's name; the saved copy is the print's (plan v3 Step 4). */}
         <td className="td-left">{l.masterItemName ?? l.itemName}</td>
         {/* UOM off the item master (A26); blank when the line has no item. */}

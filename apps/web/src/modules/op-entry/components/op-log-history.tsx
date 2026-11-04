@@ -16,8 +16,9 @@
 // Reverse on the Operation Log; negative qty / reject) reads "Reversal" with
 // its reason instead of the plain type label.
 
+import { Icon } from '@/ui/core';
 import { SHIFT_LABELS, type OpLog, type OpLogTimeChangeRequest } from '@innovic/shared';
-import { Check, Clock, Loader2, Pencil, X } from 'lucide-react';
+import { Check, Clock, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { fmtClock, fmtDate, fmtDateAndTime, fmtDateTime, todayIst } from '@/lib/date';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -291,7 +292,7 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
                             setRejectReason('');
                           }}
                         >
-                          <X className="h-3 w-3" />
+                          <Icon name="x" className="h-3 w-3" />
                         </button>
                       </span>
                     )
@@ -306,7 +307,7 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
                       onClick={() => beginEdit(l)}
                       title="Edit date/time (qty cannot be changed)"
                     >
-                      <Pencil className="h-3 w-3" />
+                      <Icon name="pencil" className="h-3 w-3" />
                     </button>
                   ) : null}
                 </div>
@@ -456,7 +457,7 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
                     disabled={busy}
                     title="Cancel"
                   >
-                    <X className="h-3 w-3" />
+                    <Icon name="x" className="h-3 w-3" />
                   </button>
                 </div>
               ) : null}
@@ -503,7 +504,7 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
                     disabled={busy}
                     onClick={() => setRejectingId(null)}
                   >
-                    <X className="h-3 w-3" />
+                    <Icon name="x" className="h-3 w-3" />
                   </button>
                 </div>
               ) : null}

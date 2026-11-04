@@ -3,7 +3,8 @@
 // (GET /import-templates/stock-count.xlsx) so its columns can carry real Excel
 // dropdowns, which SheetJS cannot write; a failed download is reported through
 // the screen's own message line (`onError`).
-import { Download, Upload } from 'lucide-react';
+import { Icon } from '@/ui/core';
+import { Upload } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
 import { apiDownload } from '@/lib/api';
 import { useItemsList } from '@/modules/items/api';
@@ -99,7 +100,7 @@ export function StockCountAddBar(props: {
         disabled={templateBusy}
         onClick={() => void downloadTemplate()}
       >
-        <Download size={13} /> {templateBusy ? 'Preparing…' : 'Excel Template'}
+        <Icon name="download" size={13} /> {templateBusy ? 'Preparing…' : 'Excel Template'}
       </button>
       <input
         ref={fileRef}

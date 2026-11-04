@@ -16,9 +16,10 @@
 // when its count > 0 — the engine's `isRowClickable` gate — and an urgent
 // (overdue / pending) alert with records carries the late row tint.
 
+import { Icon } from '@/ui/core';
 import type { ListAlertsResponse } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { Bell, BellOff, BellRing, Loader2, RefreshCw } from 'lucide-react';
+import { Bell, BellOff, BellRing, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
@@ -256,7 +257,8 @@ function AlertsDashboardPage() {
               }}
               disabled={isFetching}
             >
-              <RefreshCw size={13} className={isFetching ? 'animate-spin' : undefined} /> Refresh
+              <Icon name="refresh-cw" size={13} className={isFetching ? 'animate-spin' : ''} />{' '}
+              Refresh
             </button>
           </>
         }

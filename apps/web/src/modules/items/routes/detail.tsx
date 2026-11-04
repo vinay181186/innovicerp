@@ -29,6 +29,7 @@
 // Route Card table (L11799-11802) and Job Card History (L11803-11806) all need
 // route-card / job-card / running-op reads this page does not have.
 
+import { Icon } from '@/ui/core';
 import {
   ITEM_PROCUREMENT_TYPE_LABEL,
   type DocumentEditChange,
@@ -36,7 +37,7 @@ import {
   itemTypeLabel,
 } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Loader2, Package, Pencil, Trash2 } from 'lucide-react';
+import { ArrowLeft, Loader2, Package } from 'lucide-react';
 import { useState } from 'react';
 import { fmtDate } from '@/lib/date';
 import { useHistoryTab } from '@/components/shared/document-history';
@@ -180,7 +181,7 @@ function ItemDetailPage(): React.JSX.Element {
             ) : null}
             {canEdit ? (
               <Link to="/items/$id/edit" params={{ id: item.id }} className="btn btn-ghost btn-sm">
-                <Pencil size={13} /> Edit
+                <Icon name="pencil" size={13} /> Edit
               </Link>
             ) : null}
             {canDelete ? (
@@ -189,7 +190,7 @@ function ItemDetailPage(): React.JSX.Element {
                 className="btn btn-danger btn-sm"
                 onClick={() => setConfirmDelete(true)}
               >
-                <Trash2 size={13} /> Delete
+                <Icon name="trash-2" size={13} /> Delete
               </button>
             ) : null}
           </div>
@@ -315,7 +316,7 @@ function StockHistoryCard(props: { itemId: string }): React.JSX.Element {
                   <td className="text2" style={{ fontSize: 'var(--fs-xs)' }}>
                     {STORE_TXN_SOURCE_LABELS[r.sourceType]}
                   </td>
-                  <td className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--purple)' }}>
+                  <td className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--blue)' }}>
                     {r.sourceRef}
                   </td>
                   {/* Same +/− colours as the Stock Ledger tab. */}

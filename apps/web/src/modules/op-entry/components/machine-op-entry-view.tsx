@@ -243,7 +243,7 @@ export function MachineOpEntryView({
                       </span>
                     </div>
                   ) : null}
-                  <div className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                  <div className="mono fw-700" style={{ color: 'var(--text)' }}>
                     {runningItemCode}
                   </div>
                   {/* Clipped to the tile with the full name on hover — a

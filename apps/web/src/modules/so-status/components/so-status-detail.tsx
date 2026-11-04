@@ -4,6 +4,7 @@
 // type + due colour), Equipment-BOM banner, per-line panels (tracker chips +
 // OSP alerts + JC table + Create JC / Create PO), Equipment-BOM items table.
 
+import { Icon } from '@/ui/core';
 import {
   type PlanningLine,
   type SoStatusBomItem,
@@ -17,7 +18,7 @@ import {
 } from '@innovic/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
-import { Loader2, Plus } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
@@ -73,12 +74,12 @@ const LINE_STATUS_LABEL: Record<SoStatusLine['status'], string> = {
 // suffixed with an alpha — ISSUE-063).
 type ChipTint = { color: string; bg: string; border: string };
 const CHIP_TINT = {
-  cyan: { color: 'var(--cyan)', bg: 'rgba(0,136,187,0.03)', border: 'rgba(0,136,187,0.19)' },
-  purple: { color: 'var(--purple)', bg: 'rgba(124,58,237,0.03)', border: 'rgba(124,58,237,0.19)' },
-  blue: { color: 'var(--blue)', bg: 'rgba(37,99,235,0.03)', border: 'rgba(37,99,235,0.19)' },
-  green: { color: 'var(--green2)', bg: 'rgba(22,163,74,0.03)', border: 'rgba(22,163,74,0.19)' },
-  green2: { color: 'var(--green2)', bg: 'rgba(21,128,61,0.03)', border: 'rgba(21,128,61,0.19)' },
-  amber: { color: 'var(--amber2)', bg: 'rgba(196,122,0,0.03)', border: 'rgba(196,122,0,0.19)' },
+  cyan: { color: 'var(--cyan)', bg: 'var(--cyan3)', border: 'var(--sig-info-bd)' },
+  purple: { color: 'var(--purple)', bg: 'var(--purple3)', border: 'var(--border2)' },
+  blue: { color: 'var(--blue)', bg: 'var(--blue3)', border: 'var(--sig-info-bd)' },
+  green: { color: 'var(--green2)', bg: 'var(--green3)', border: 'var(--sig-ok-bd)' },
+  green2: { color: 'var(--green2)', bg: 'var(--green3)', border: 'var(--sig-ok-bd)' },
+  amber: { color: 'var(--amber2)', bg: 'var(--amber3)', border: 'var(--sig-warn-bd)' },
 } satisfies Record<string, ChipTint>;
 
 function todayStr(): string {
@@ -163,14 +164,14 @@ function SoStatusDetailBody({ soId }: { soId: string }): React.JSX.Element {
             type="button"
             className="btn btn-sm"
             style={{
-              background: 'rgba(34,197,94,0.1)',
+              background: 'var(--green3)',
               color: 'var(--green2)',
-              border: '1px solid rgba(34,197,94,0.3)',
+              border: '1px solid var(--sig-ok-bd)',
               fontSize: 'var(--fs-xs)',
             }}
             onClick={() => exportSoStatusExcel(data)}
           >
-            ⬇ Export
+            <Icon name="download" size={13} /> Export
           </button>
           <Link
             to="/sales-orders/$id"
@@ -445,8 +446,9 @@ function EquipmentBomBanner({
         <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
           Equipment
         </div>
-        <div style={{ fontWeight: 700, color: 'var(--purple)' }}>
-          {info.equipmentItemCode ?? '—'} {info.equipmentItemName ?? ''}
+        <div style={{ fontWeight: 700, color: 'var(--text)' }}>
+          <span className="mono">{info.equipmentItemCode ?? '—'}</span>{' '}
+          {info.equipmentItemName ?? ''}
         </div>
       </div>
       <div>
@@ -481,9 +483,9 @@ function EquipmentBomBanner({
                 onClick={onPlanBom}
                 className="btn btn-sm"
                 style={{
-                  background: 'rgba(34,211,238,0.08)',
+                  background: 'var(--cyan3)',
                   color: 'var(--cyan)',
-                  border: '1px solid rgba(34,211,238,0.3)',
+                  border: '1px solid var(--sig-info-bd)',
                   fontWeight: 700,
                   fontSize: 'var(--fs-xs)',
                 }}
@@ -496,9 +498,9 @@ function EquipmentBomBanner({
                 search={{ soId }}
                 className="btn btn-sm"
                 style={{
-                  background: 'rgba(34,211,238,0.08)',
+                  background: 'var(--cyan3)',
                   color: 'var(--cyan)',
-                  border: '1px solid rgba(34,211,238,0.3)',
+                  border: '1px solid var(--sig-info-bd)',
                   fontWeight: 700,
                   fontSize: 'var(--fs-xs)',
                 }}
@@ -578,11 +580,11 @@ function BomItemsTable({
                   : c.bomType === 'purchase'
                     ? 'var(--green)'
                     : 'var(--amber)';
-              const rowBg = c.shortfall > 0 ? 'rgba(239,68,68,0.03)' : 'rgba(34,197,94,0.03)';
+              const rowBg = c.shortfall > 0 ? 'var(--red3)' : 'var(--green3)';
               return (
                 <tr key={c.childItemId} style={{ background: rowBg }}>
                   <td className="td-ctr mono fw-700">{idx + 1}</td>
-                  <td className="td-code" style={{ color: 'var(--purple)' }}>
+                  <td className="td-code" style={{ color: 'var(--text)' }}>
                     {c.childItemCode}
                   </td>
                   <td>{c.childItemName}</td>
@@ -766,7 +768,11 @@ function LinePanel({
         header: 'Item Code',
         className: 'td-code',
         nowrap: true,
-        render: (jc) => itemCodeWithRev(jc.itemCode, jc.itemRevision),
+        render: (jc) => (
+          <span style={{ color: 'var(--text)' }}>
+            {itemCodeWithRev(jc.itemCode, jc.itemRevision)}
+          </span>
+        ),
       },
       {
         id: 'item_name',
@@ -942,7 +948,10 @@ function LinePanel({
               POL {line.clientPoLineNo}
             </span>
           ) : null}
-          <span style={{ fontWeight: 700, fontSize: 'var(--fs-sm)', color: 'var(--purple)' }}>
+          <span
+            className="mono"
+            style={{ fontWeight: 700, fontSize: 'var(--fs-sm)', color: 'var(--text)' }}
+          >
             {itemCodeWithRev(line.itemCode ?? line.itemCodeText, line.itemRevision, '')}
           </span>
           <span style={{ fontSize: 'var(--fs-sm)' }}>{line.partName ?? ''}</span>
@@ -1101,9 +1110,9 @@ function LinePanel({
             type="button"
             className="btn btn-sm"
             style={{
-              background: 'rgba(34,211,238,0.08)',
+              background: 'var(--cyan3)',
               color: 'var(--cyan)',
-              border: '1px solid rgba(34,211,238,0.3)',
+              border: '1px solid var(--sig-info-bd)',
               fontWeight: 700,
               fontSize: 'var(--fs-xs)',
             }}
@@ -1117,15 +1126,15 @@ function LinePanel({
             type="button"
             className="btn btn-sm"
             style={{
-              background: 'rgba(124,58,237,0.08)',
+              background: 'var(--purple3)',
               color: 'var(--purple)',
-              border: '1px solid rgba(124,58,237,0.25)',
+              border: '1px solid var(--border2)',
               fontWeight: 700,
               fontSize: 'var(--fs-xs)',
             }}
             onClick={onPlan}
           >
-            <Plus size={12} /> Plan {remainingToPlan} pcs
+            <Icon name="plus" size={12} /> Plan {remainingToPlan} pcs
           </button>
         ) : !showPlan && !showAssemblyBom && !isEquipmentLine ? (
           <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--green2)', fontWeight: 700 }}>
@@ -1267,7 +1276,7 @@ function OpChip({ op }: { op: SoStatusOp }): React.JSX.Element {
           borderRadius: 3,
           border: `1px solid ${ic}`,
           color: ic,
-          ...(isOS ? { background: 'rgba(255,176,32,0.06)' } : {}),
+          ...(isOS ? { background: 'var(--amber3)' } : {}),
         }}
       >
         {isOS ? '🏭' : ''}Op {opSrNo(op.opSeq)}

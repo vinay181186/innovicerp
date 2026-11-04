@@ -2,8 +2,8 @@
 // it was; the TABLE side now renders on the shared FIT table (DataTable,
 // tableKey designProjectTasks). ADR-199. Split out of detail.tsx.
 
+import { Icon } from '@/ui/core';
 import { DESIGN_TASK_STATUSES, type DesignProjectDetail, type DesignTask } from '@innovic/shared';
-import { Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate, todayIst } from '@/lib/date';
@@ -114,7 +114,7 @@ export function TasksTab({ detail }: { detail: DesignProjectDetail }): React.JSX
               className="btn btn-primary btn-sm"
               onClick={() => setShowAdd(true)}
             >
-              <Plus size={12} /> Add Task
+              <Icon name="plus" size={12} /> Add Task
             </button>
           ) : null}
         </div>

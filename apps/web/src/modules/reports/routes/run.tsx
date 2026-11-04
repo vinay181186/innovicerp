@@ -1,8 +1,8 @@
 // /reports/$slug — one report, laid out like an ERPNext Query Report:
 // breadcrumb + title ☆ + [Refresh] [Export ▾], an auto-applying filter bar,
 // a status line, then the grid. The URL search params ARE the filters.
+import { Icon } from '@/ui/core';
 import { Link, createRoute } from '@tanstack/react-router';
-import { RefreshCw } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { ApiError, apiDownload } from '@/lib/api';
@@ -166,7 +166,7 @@ function ReportRunPage() {
               onClick={() => void refetch()}
               disabled={isFetching}
             >
-              <RefreshCw size={14} className={isFetching ? 'rpt-spin' : undefined} />
+              <Icon name="refresh-cw" size={14} className={isFetching ? 'rpt-spin' : ''} />
               Refresh
             </button>
             {exportOff ? (

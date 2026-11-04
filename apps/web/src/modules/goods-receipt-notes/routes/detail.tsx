@@ -297,7 +297,8 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
                   title: templatesLoading ? 'Loading print templates…' : 'Preview this GRN',
                 },
                 {
-                  label: '⬇ Download PDF',
+                  label: 'Download PDF',
+                  icon: 'download',
                   onClick: () => void onDownload(),
                   disabled: templatesLoading,
                   title: templatesLoading

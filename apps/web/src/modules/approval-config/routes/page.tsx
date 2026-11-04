@@ -17,7 +17,7 @@ import { Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { PageHeader } from '@/ui/layout';
+import { FormActions, PageHeader } from '@/ui/layout';
 import { useUsersList } from '@/modules/users/api';
 import { useApprovalConfig, useSaveApprovalConfig } from '../api';
 import { ApprovalHistoryTable } from '../components/approval-history-table';
@@ -107,47 +107,7 @@ function ApprovalConfigPage(): React.JSX.Element {
 
   return (
     <div>
-      <PageHeader
-        sticky
-        title="Approval Rules"
-        icon="⚖"
-        dirty={Boolean(dirty)}
-        actions={
-          <>
-            <button
-              type="button"
-              className="btn btn-primary"
-              disabled={!dirty || save.isPending}
-              title={!dirty ? 'No changes to save' : undefined}
-              onClick={() => void onSave()}
-            >
-              {save.isPending ? (
-                <>
-                  <Loader2 className="inline h-3 w-3 animate-spin" /> Saving…
-                </>
-              ) : (
-                'Save Changes'
-              )}
-            </button>
-          </>
-        }
-      />
-
-      {submitError ? (
-        <div
-          style={{
-            marginBottom: 'var(--sp-3)',
-            padding: 'var(--sp-2) var(--sp-3)',
-            background: 'rgba(239,68,68,0.06)',
-            border: '1px solid rgba(239,68,68,0.3)',
-            borderRadius: 'var(--radius)',
-            color: 'var(--red2)',
-            fontSize: 'var(--fs-sm)',
-          }}
-        >
-          {submitError}
-        </div>
-      ) : null}
+      <PageHeader title="Approval Rules" icon="⚖" />
 
       {/* PO Approval block */}
       <div className="panel" style={{ padding: 'var(--sp-4)', marginBottom: 14 }}>
@@ -332,6 +292,34 @@ function ApprovalConfigPage(): React.JSX.Element {
           />
         </div>
       </div>
+
+      {/* Above Approval History: this Save is for the switches, not the history below. */}
+      <FormActions
+        dirty={Boolean(dirty)}
+        note={
+          submitError ? (
+            <span className="form-error" role="alert">
+              {submitError}
+            </span>
+          ) : undefined
+        }
+      >
+        <button
+          type="button"
+          className="btn btn-primary"
+          disabled={!dirty || save.isPending}
+          title={!dirty ? 'No changes to save' : undefined}
+          onClick={() => void onSave()}
+        >
+          {save.isPending ? (
+            <>
+              <Loader2 className="inline h-3 w-3 animate-spin" /> Saving…
+            </>
+          ) : (
+            'Save Changes'
+          )}
+        </button>
+      </FormActions>
 
       {/* Approval History — the one table on this page (ADR-199). */}
       <ApprovalHistoryTable />
