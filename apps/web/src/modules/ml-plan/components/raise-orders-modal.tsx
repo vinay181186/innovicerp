@@ -334,8 +334,7 @@ export function RaiseOrdersModal({ detail, onClose }: Props): React.JSX.Element 
       title={`Raise Orders — ${detail.code}`}
       size="lg"
       onClose={onClose}
-      closeOnOverlayClick={false}
-      closeOnEscape={!raise.isPending}
+      closeLocked={raise.isPending}
       footer={footer}
       bodyStyle={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)' }}
     >

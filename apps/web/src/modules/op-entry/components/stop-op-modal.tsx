@@ -32,16 +32,16 @@
 // and can still say no (QC pending, a lower client-material limit), and that
 // refusal is shown in the error box below the fields.
 //
-// Shape lifted from purchase-requests/components/close-balance-modal.tsx: same
-// overlay, same `.panel` body, same footer pair.
+// Shell: the one shared Modal (closing rule, Esc, focus, scroll lock).
 
 import { SHIFTS, SHIFT_LABELS, type Shift, type StopOpInput } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
-import { Loader2, X } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { todayIst } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useOperatorsList } from '@/modules/operators/api';
+import { Modal } from '@/ui/feedback';
 
 /** The one row being stopped, flattened so both tabs can build it from their
  *  own row type (RunningOp on the Table tab, ShopFloorRunningRow on By
@@ -212,318 +212,282 @@ export function StopOpModal({
   }
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      onClick={onCancel}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,.45)',
-        display: 'flex',
-        alignItems: 'flex-start',
-        justifyContent: 'center',
-        padding: '10vh 16px',
-        zIndex: 60,
-      }}
-    >
-      <div
-        className="panel"
-        onClick={(e) => e.stopPropagation()}
-        style={{ width: 'min(520px, 96vw)' }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            padding: '12px 16px',
-            borderBottom: '1px solid var(--border)',
-          }}
-        >
-          <div className="fw-700" style={{ color: 'var(--amber2)' }}>
-            ■ Stop Operation
-          </div>
+    <Modal
+      title={<span style={{ color: 'var(--amber2)' }}>■ Stop Operation</span>}
+      onClose={onCancel}
+      maxWidth="min(520px, 96vw)"
+      bodyStyle={{ display: 'grid', gap: 12 }}
+      footer={
+        <>
           <button type="button" className="btn btn-ghost btn-sm" onClick={onCancel}>
-            <X size={14} />
+            Cancel
           </button>
-        </div>
-
-        <div style={{ padding: 16, display: 'grid', gap: 12 }}>
-          {/* What is being stopped, so the operator can see it is the right row. */}
-          <div
-            style={{
-              background: 'var(--bg3)',
-              padding: 12,
-              border: '1px solid var(--border)',
-              borderRadius: 8,
-              fontSize: 12,
-              color: 'var(--text2)',
-              lineHeight: 1.5,
-            }}
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            disabled={!canSubmit}
+            onClick={handleStop}
           >
-            <div>
-              <b className="mono" style={{ color: 'var(--cyan)' }}>
-                {target.jobCardCode}
-              </b>{' '}
-              · Op <b className="mono">{opSrNo(target.opSeq)}</b> · {target.operation}
-            </div>
-            {/* The part, directly under the job card number, because "is this
+            {pending ? (
+              <>
+                <Loader2 className="inline h-3 w-3 animate-spin" /> Stopping…
+              </>
+            ) : (
+              'Stop Operation'
+            )}
+          </button>
+        </>
+      }
+    >
+      {/* What is being stopped, so the operator can see it is the right row. */}
+      <div
+        style={{
+          background: 'var(--bg3)',
+          padding: 12,
+          border: '1px solid var(--border)',
+          borderRadius: 8,
+          fontSize: 12,
+          color: 'var(--text2)',
+          lineHeight: 1.5,
+        }}
+      >
+        <div>
+          <b className="mono" style={{ color: 'var(--cyan)' }}>
+            {target.jobCardCode}
+          </b>{' '}
+          · Op <b className="mono">{opSrNo(target.opSeq)}</b> · {target.operation}
+        </div>
+        {/* The part, directly under the job card number, because "is this
                 the right row" is the question this whole box is here to let the
                 operator answer and the number alone does not answer it. One
                 line with the full text on hover: this box is 520px wide and a
                 wrapped part name would push the date field down. */}
-            {itemCode ? (
-              <div
-                style={{
-                  marginTop: 4,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}
-                title={`${target.clientPoLineNo ? `POL ${target.clientPoLineNo} · ` : ''}${target.itemName ? `${itemCode} — ${target.itemName}` : itemCode}`}
-              >
-                {/* POL first — the customer's own PO line number, the value the
+        {itemCode ? (
+          <div
+            style={{
+              marginTop: 4,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+            title={`${target.clientPoLineNo ? `POL ${target.clientPoLineNo} · ` : ''}${target.itemName ? `${itemCode} — ${target.itemName}` : itemCode}`}
+          >
+            {/* POL first — the customer's own PO line number, the value the
                     customer quotes when they ring about this part. */}
-                {target.clientPoLineNo ? (
-                  <>
-                    POL{' '}
-                    <b className="mono" style={{ color: 'var(--purple)' }}>
-                      {target.clientPoLineNo}
-                    </b>{' '}
-                    ·{' '}
-                  </>
-                ) : null}
-                Item{' '}
+            {target.clientPoLineNo ? (
+              <>
+                POL{' '}
                 <b className="mono" style={{ color: 'var(--purple)' }}>
-                  {itemCode}
-                </b>
-                {target.itemName ? <span className="text3"> — {target.itemName}</span> : null}
-              </div>
+                  {target.clientPoLineNo}
+                </b>{' '}
+                ·{' '}
+              </>
             ) : null}
-            {/* Planned · Actual (ADR-164). The actual turns amber only when
+            Item{' '}
+            <b className="mono" style={{ color: 'var(--purple)' }}>
+              {itemCode}
+            </b>
+            {target.itemName ? <span className="text3"> — {target.itemName}</span> : null}
+          </div>
+        ) : null}
+        {/* Planned · Actual (ADR-164). The actual turns amber only when
                 it is not the plan — the same rule as resolveActualMachine. */}
-            <div className="text3" style={{ marginTop: 4 }}>
-              {target.plannedMachineLabel !== undefined ? (
-                <>
-                  Planned <b className="mono">{target.plannedMachineLabel}</b> · Actual{' '}
-                  <b
-                    className="mono"
-                    style={{
-                      color:
-                        target.machineLabel.trim().toLowerCase() !==
-                        target.plannedMachineLabel.trim().toLowerCase()
-                          ? 'var(--amber)'
-                          : undefined,
-                    }}
-                  >
-                    {target.machineLabel}
-                  </b>
-                </>
-              ) : (
-                <>
-                  Machine <b className="mono">{target.machineLabel}</b>
-                </>
-              )}
-            </div>
-          </div>
-
-          {/* Date · Time · Shift on one wrapping row. Each form-grp carries an
-              explicit width because .innovic-input is width:100% and would
-              otherwise collapse in a flex row (same trick as op-entry-form). */}
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            <div className="form-grp" style={{ width: 150 }}>
-              <label className="form-label" htmlFor="stop-op-date">
-                Log Date <span className="req">★</span>
-              </label>
-              <input
-                id="stop-op-date"
-                className="innovic-input"
-                type="date"
-                max={maxLogDate}
-                required
-                value={logDate}
-                autoFocus
-                onChange={(e) => setLogDate(e.target.value)}
-              />
-            </div>
-            <div className="form-grp" style={{ width: 120 }}>
-              <label className="form-label" htmlFor="stop-op-time">
-                Time <span className="req">★</span>
-              </label>
-              <input
-                id="stop-op-time"
-                className="innovic-input"
-                type="time"
-                required
-                value={logTime}
-                onChange={(e) => setLogTime(e.target.value)}
-              />
-            </div>
-            <div className="form-grp" style={{ width: 140 }}>
-              <label className="form-label" htmlFor="stop-op-shift">
-                Shift <span className="req">★</span>
-              </label>
-              <select
-                id="stop-op-shift"
-                className="innovic-select"
-                required
-                value={shift}
-                onChange={(e) => setShift(e.target.value as Shift | '')}
+        <div className="text3" style={{ marginTop: 4 }}>
+          {target.plannedMachineLabel !== undefined ? (
+            <>
+              Planned <b className="mono">{target.plannedMachineLabel}</b> · Actual{' '}
+              <b
+                className="mono"
+                style={{
+                  color:
+                    target.machineLabel.trim().toLowerCase() !==
+                    target.plannedMachineLabel.trim().toLowerCase()
+                      ? 'var(--amber)'
+                      : undefined,
+                }}
               >
-                {/* First option is a placeholder, so nothing is pre-selected. */}
-                <option value="">Select shift</option>
-                {SHIFTS.map((s) => (
-                  <option key={s} value={s}>
-                    {SHIFT_LABELS[s]}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div className="form-grp" style={{ margin: 0 }}>
-            <label className="form-label" htmlFor="stop-op-operator">
-              Operator <span className="req">★</span>
-            </label>
-            <input
-              id="stop-op-operator"
-              className="innovic-input"
-              list="stop-op-operator-list"
-              required
-              value={operatorName}
-              onChange={(e) => handleOperatorNameChange(e.target.value)}
-              placeholder="Operator name"
-              autoComplete="off"
-            />
-            <datalist id="stop-op-operator-list">
-              {operators.map((o) => (
-                <option key={o.id} value={o.name}>
-                  {o.code}
-                  {o.department ? ` · ${o.department}` : ''}
-                </option>
-              ))}
-            </datalist>
-          </div>
-
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            <div className="form-grp" style={{ width: 150 }}>
-              <label className="form-label" htmlFor="stop-op-qty">
-                Completed <span className="req">★</span>
-              </label>
-              <input
-                id="stop-op-qty"
-                className="innovic-input"
-                type="number"
-                inputMode="numeric"
-                required
-                min={0}
-                max={target.availableQty}
-                value={qty}
-                onChange={(e) => setQty(e.target.value)}
-                placeholder="Enter qty"
-              />
-            </div>
-            <div className="form-grp" style={{ width: 150 }}>
-              <label className="form-label" htmlFor="stop-op-rej">
-                Deviated
-              </label>
-              <input
-                id="stop-op-rej"
-                className="innovic-input"
-                type="number"
-                inputMode="numeric"
-                min={0}
-                value={rejectQty}
-                onChange={(e) => setRejectQty(e.target.value)}
-                placeholder="Optional"
-              />
-            </div>
-          </div>
-
-          <div className="form-grp" style={{ margin: 0 }}>
-            <label className="form-label" htmlFor="stop-op-remarks">
-              Remarks
-            </label>
-            <input
-              id="stop-op-remarks"
-              className="innovic-input"
-              value={remarks}
-              maxLength={500}
-              onChange={(e) => setRemarks(e.target.value)}
-              placeholder="Optional — why the session stopped, tooling notes…"
-            />
-          </div>
-
-          <div style={{ fontSize: 11, color: 'var(--text3)' }}>
-            Max{' '}
-            <b className="mono" style={{ color: 'var(--cyan)' }}>
-              {target.availableQty}
-            </b>{' '}
-            pcs (Completed + Deviated). Enter <b className="mono">0</b> if nothing was made.
-          </div>
-
-          {overCap ? (
-            <div style={{ fontSize: 11, color: 'var(--red2)' }}>
-              Completed + Deviated ({totalNum}) cannot be more than Available ({target.availableQty}
-              ).
-            </div>
-          ) : null}
-          {dateInFuture ? (
-            <div style={{ fontSize: 11, color: 'var(--red2)' }}>
-              Log Date cannot be in the future.
-            </div>
-          ) : null}
-          {qtyIsJunk || rejIsJunk ? (
-            <div style={{ fontSize: 11, color: 'var(--red2)' }}>
-              Enter whole numbers (0 or more) in {qtyIsJunk ? 'Completed' : 'Deviated'}.
-            </div>
-          ) : null}
-          {/* Naming what is still empty, rather than just greying the button out
-              and leaving the operator to hunt for the reason. Hidden while every
-              box is still empty, i.e. on open. */}
-          {missing.length > 0 && missing.length < 5 ? (
-            <div style={{ fontSize: 11, color: 'var(--amber2)' }}>
-              Still to fill in: <b>{missing.join(', ')}</b>.
-            </div>
-          ) : null}
-
-          {errorText ? (
-            <div
-              style={{
-                padding: '8px 12px',
-                background: 'var(--red3)',
-                border: '1px solid var(--sig-critical-bd)',
-                borderRadius: 6,
-                color: 'var(--red2)',
-                fontSize: 12,
-              }}
-            >
-              {errorText}
-            </div>
-          ) : null}
-
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={onCancel}>
-              Cancel
-            </button>
-            <button
-              type="button"
-              className="btn btn-primary btn-sm"
-              disabled={!canSubmit}
-              onClick={handleStop}
-            >
-              {pending ? (
-                <>
-                  <Loader2 className="inline h-3 w-3 animate-spin" /> Stopping…
-                </>
-              ) : (
-                'Stop Operation'
-              )}
-            </button>
-          </div>
+                {target.machineLabel}
+              </b>
+            </>
+          ) : (
+            <>
+              Machine <b className="mono">{target.machineLabel}</b>
+            </>
+          )}
         </div>
       </div>
-    </div>
+
+      {/* Date · Time · Shift on one wrapping row. Each form-grp carries an
+              explicit width because .innovic-input is width:100% and would
+              otherwise collapse in a flex row (same trick as op-entry-form). */}
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+        <div className="form-grp" style={{ width: 150 }}>
+          <label className="form-label" htmlFor="stop-op-date">
+            Log Date <span className="req">★</span>
+          </label>
+          <input
+            id="stop-op-date"
+            className="innovic-input"
+            type="date"
+            max={maxLogDate}
+            required
+            value={logDate}
+            onChange={(e) => setLogDate(e.target.value)}
+          />
+        </div>
+        <div className="form-grp" style={{ width: 120 }}>
+          <label className="form-label" htmlFor="stop-op-time">
+            Time <span className="req">★</span>
+          </label>
+          <input
+            id="stop-op-time"
+            className="innovic-input"
+            type="time"
+            required
+            value={logTime}
+            onChange={(e) => setLogTime(e.target.value)}
+          />
+        </div>
+        <div className="form-grp" style={{ width: 140 }}>
+          <label className="form-label" htmlFor="stop-op-shift">
+            Shift <span className="req">★</span>
+          </label>
+          <select
+            id="stop-op-shift"
+            className="innovic-select"
+            required
+            value={shift}
+            onChange={(e) => setShift(e.target.value as Shift | '')}
+          >
+            {/* First option is a placeholder, so nothing is pre-selected. */}
+            <option value="">Select shift</option>
+            {SHIFTS.map((s) => (
+              <option key={s} value={s}>
+                {SHIFT_LABELS[s]}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div className="form-grp" style={{ margin: 0 }}>
+        <label className="form-label" htmlFor="stop-op-operator">
+          Operator <span className="req">★</span>
+        </label>
+        <input
+          id="stop-op-operator"
+          className="innovic-input"
+          list="stop-op-operator-list"
+          required
+          value={operatorName}
+          onChange={(e) => handleOperatorNameChange(e.target.value)}
+          placeholder="Operator name"
+          autoComplete="off"
+        />
+        <datalist id="stop-op-operator-list">
+          {operators.map((o) => (
+            <option key={o.id} value={o.name}>
+              {o.code}
+              {o.department ? ` · ${o.department}` : ''}
+            </option>
+          ))}
+        </datalist>
+      </div>
+
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+        <div className="form-grp" style={{ width: 150 }}>
+          <label className="form-label" htmlFor="stop-op-qty">
+            Completed <span className="req">★</span>
+          </label>
+          <input
+            id="stop-op-qty"
+            className="innovic-input"
+            type="number"
+            inputMode="numeric"
+            required
+            min={0}
+            max={target.availableQty}
+            value={qty}
+            onChange={(e) => setQty(e.target.value)}
+            placeholder="Enter qty"
+          />
+        </div>
+        <div className="form-grp" style={{ width: 150 }}>
+          <label className="form-label" htmlFor="stop-op-rej">
+            Deviated
+          </label>
+          <input
+            id="stop-op-rej"
+            className="innovic-input"
+            type="number"
+            inputMode="numeric"
+            min={0}
+            value={rejectQty}
+            onChange={(e) => setRejectQty(e.target.value)}
+            placeholder="Optional"
+          />
+        </div>
+      </div>
+
+      <div className="form-grp" style={{ margin: 0 }}>
+        <label className="form-label" htmlFor="stop-op-remarks">
+          Remarks
+        </label>
+        <input
+          id="stop-op-remarks"
+          className="innovic-input"
+          value={remarks}
+          maxLength={500}
+          onChange={(e) => setRemarks(e.target.value)}
+          placeholder="Optional — why the session stopped, tooling notes…"
+        />
+      </div>
+
+      <div style={{ fontSize: 11, color: 'var(--text3)' }}>
+        Max{' '}
+        <b className="mono" style={{ color: 'var(--cyan)' }}>
+          {target.availableQty}
+        </b>{' '}
+        pcs (Completed + Deviated). Enter <b className="mono">0</b> if nothing was made.
+      </div>
+
+      {overCap ? (
+        <div style={{ fontSize: 11, color: 'var(--red2)' }}>
+          Completed + Deviated ({totalNum}) cannot be more than Available ({target.availableQty}
+          ).
+        </div>
+      ) : null}
+      {dateInFuture ? (
+        <div style={{ fontSize: 11, color: 'var(--red2)' }}>Log Date cannot be in the future.</div>
+      ) : null}
+      {qtyIsJunk || rejIsJunk ? (
+        <div style={{ fontSize: 11, color: 'var(--red2)' }}>
+          Enter whole numbers (0 or more) in {qtyIsJunk ? 'Completed' : 'Deviated'}.
+        </div>
+      ) : null}
+      {/* Naming what is still empty, rather than just greying the button out
+              and leaving the operator to hunt for the reason. Hidden while every
+              box is still empty, i.e. on open. */}
+      {missing.length > 0 && missing.length < 5 ? (
+        <div style={{ fontSize: 11, color: 'var(--amber2)' }}>
+          Still to fill in: <b>{missing.join(', ')}</b>.
+        </div>
+      ) : null}
+
+      {errorText ? (
+        <div
+          style={{
+            padding: '8px 12px',
+            background: 'var(--red3)',
+            border: '1px solid var(--sig-critical-bd)',
+            borderRadius: 6,
+            color: 'var(--red2)',
+            fontSize: 12,
+          }}
+        >
+          {errorText}
+        </div>
+      ) : null}
+    </Modal>
   );
 }

@@ -89,6 +89,7 @@ export function JcOpPopup({
     <Modal
       size="lg"
       onClose={onClose}
+      confirmExit={false}
       title={
         <span className="jc-pop-title">
           <span className="mono jc-ops-opn">Op {fmtOpSrNo(op.opSeq)}</span>

@@ -5,10 +5,10 @@
 import type { CreateToolIssueInput, InstrumentListItem } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { Modal } from '@/ui/feedback';
 import { fmtDate, todayIst } from '@/lib/date';
 import { SearchableSelect } from '@/ui/forms';
 import { useInstrumentsList } from '../../instruments/api';
-import { useDiscardGuard } from '../../store-inventory/components/discard-guard';
 import { useItemsList } from '../../items/api';
 import { JobCardPicker, OperatorPicker } from '../../store-issues/components/issue-pickers';
 import { useCreateToolIssue } from '../api';
@@ -37,17 +37,6 @@ export function NewToolIssueModal({ onClose }: { onClose: () => void }): React.J
   const [remarks, setRemarks] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const createMut = useCreateToolIssue();
-  // Same "discard unsaved changes?" guard as the other Store pop-ups.
-  const dirty = Boolean(
-    itemId ||
-    qty.trim() ||
-    picked.length ||
-    issuedToText.trim() ||
-    purpose.trim() ||
-    remarks.trim(),
-  );
-  const guard = useDiscardGuard(dirty, onClose);
-
   const items = useItemsList({
     search: itemSearch.trim() || undefined,
     itemType: 'tool',
@@ -108,204 +97,13 @@ export function NewToolIssueModal({ onClose }: { onClose: () => void }): React.J
   };
 
   return (
-    <div
-      className="overlay"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) guard.requestClose();
-      }}
-    >
-      <div className="modal" style={{ maxWidth: 820, width: '96vw' }}>
-        <div className="modal-hdr">
-          <span className="modal-title">Issue Tool</span>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm btn-icon"
-            onClick={guard.requestClose}
-          >
-            ✕
-          </button>
-        </div>
-        <div className="modal-body">
-          {guard.dialog}
-          <div className="form-grid">
-            <div className="form-grp form-full">
-              <label className="form-label" htmlFor="ti-item">
-                Tool / Instrument <span className="req">★</span>
-              </label>
-              <SearchableSelect
-                id="ti-item"
-                value={itemId}
-                onChange={pickItem}
-                options={options}
-                valueLabel={item?.code}
-                onSearch={setItemSearch}
-                loading={items.isFetching}
-                placeholder="🔍 Tool item code or name…"
-                emptyText="No matching Tool / Instrument item"
-              />
-            </div>
-
-            <div className="form-grp">
-              <label className="form-label">
-                Issue Date <span className="req">★</span>
-              </label>
-              <input
-                type="date"
-                className="innovic-input"
-                value={issueDate}
-                onChange={(e) => setIssueDate(e.target.value)}
-              />
-            </div>
-            <div className="form-grp">
-              <label className="form-label">
-                Expected Return Date <span className="req">★</span>
-              </label>
-              <input
-                type="date"
-                className="innovic-input"
-                value={expected}
-                onChange={(e) => setExpected(e.target.value)}
-              />
-            </div>
-
-            {item && !serial ? (
-              <div className="form-grp">
-                <label className="form-label">
-                  Issue Qty <span className="req">★</span>
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  step="any"
-                  className="innovic-input mono fw-700"
-                  value={qty}
-                  onChange={(e) => setQty(e.target.value)}
-                  onWheel={(e) => e.currentTarget.blur()}
-                />
-              </div>
-            ) : null}
-
-            <div className="form-grp">
-              <label className="form-label" htmlFor="ti-op">
-                Issued To <span className="req">★</span>
-              </label>
-              <OperatorPicker id="ti-op" value={operatorId} onChange={setOperatorId} />
-              {!operatorId ? (
-                <input
-                  type="text"
-                  className="innovic-input"
-                  style={{ marginTop: 4 }}
-                  placeholder="…or type a name if not an operator"
-                  value={issuedToText}
-                  onChange={(e) => setIssuedToText(e.target.value)}
-                />
-              ) : null}
-            </div>
-            <div className="form-grp">
-              <label className="form-label" htmlFor="ti-jc">
-                Job Card
-              </label>
-              <JobCardPicker id="ti-jc" value={jobCardId} onChange={setJobCardId} />
-            </div>
-            <div className="form-grp">
-              <label className="form-label">
-                Purpose <span className="req">★</span>
-              </label>
-              <input
-                type="text"
-                className="innovic-input"
-                placeholder="e.g. inspection of IN-JC-26-00021"
-                value={purpose}
-                onChange={(e) => setPurpose(e.target.value)}
-              />
-            </div>
-            <div className="form-grp form-full">
-              <label className="form-label">Remarks</label>
-              <input
-                type="text"
-                className="innovic-input"
-                value={remarks}
-                onChange={(e) => setRemarks(e.target.value)}
-              />
-            </div>
-          </div>
-
-          {serial ? (
-            <div style={{ marginTop: 12 }}>
-              <div className="fw-700" style={{ fontSize: 12, marginBottom: 6 }}>
-                Instruments in store — tick the ones handed out
-              </div>
-              {instruments.isLoading ? (
-                <div className="text3" style={{ fontSize: 12 }}>
-                  <Loader2 size={14} className="inline animate-spin" /> Loading…
-                </div>
-              ) : (
-                <div className="tbl-wrap">
-                  <table className="innovic-table tbl-grid">
-                    <thead>
-                      <tr>
-                        <th></th>
-                        <th>Instrument Serial No.</th>
-                        <th>Calibration Due</th>
-                        <th>Location</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(instruments.data?.items ?? []).map((i) => {
-                        const blocked = blockedReason(i, issueDate);
-                        return (
-                          <tr key={i.id} style={{ opacity: blocked ? 0.55 : 1 }}>
-                            <td>
-                              <input
-                                type="checkbox"
-                                disabled={Boolean(blocked)}
-                                checked={picked.includes(i.id)}
-                                onChange={() => toggle(i.id)}
-                                aria-label={`Issue ${i.serialNo}`}
-                              />
-                            </td>
-                            <td className="mono fw-700" style={{ color: 'var(--text)' }}>
-                              {i.serialNo}
-                            </td>
-                            <td style={{ color: blocked ? 'var(--red2)' : undefined }}>
-                              {i.calibrationDueOn ? fmtDate(i.calibrationDueOn) : '—'}
-                              {blocked ? ` · ${blocked}` : ''}
-                            </td>
-                            <td className="text3">{i.location || '—'}</td>
-                          </tr>
-                        );
-                      })}
-                      {(instruments.data?.items ?? []).length === 0 ? (
-                        <tr>
-                          <td colSpan={4} className="empty-state">
-                            No instrument of this item is in store.
-                          </td>
-                        </tr>
-                      ) : null}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          ) : null}
-
-          {err ? (
-            <div
-              style={{
-                marginTop: 12,
-                padding: 8,
-                background: 'var(--red3)',
-                color: 'var(--red2)',
-                borderRadius: 4,
-                fontSize: 12,
-              }}
-            >
-              {err}
-            </div>
-          ) : null}
-        </div>
-        <div className="modal-footer">
-          <button type="button" className="btn btn-ghost" onClick={guard.requestClose}>
+    <Modal
+      title="Issue Tool"
+      onClose={onClose}
+      maxWidth="820px"
+      footer={
+        <>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>
             Cancel
           </button>
           <button
@@ -322,8 +120,185 @@ export function NewToolIssueModal({ onClose }: { onClose: () => void }): React.J
               'Issue Tool'
             )}
           </button>
+        </>
+      }
+    >
+      <div className="form-grid">
+        <div className="form-grp form-full">
+          <label className="form-label" htmlFor="ti-item">
+            Tool / Instrument <span className="req">★</span>
+          </label>
+          <SearchableSelect
+            id="ti-item"
+            value={itemId}
+            onChange={pickItem}
+            options={options}
+            valueLabel={item?.code}
+            onSearch={setItemSearch}
+            loading={items.isFetching}
+            placeholder="🔍 Tool item code or name…"
+            emptyText="No matching Tool / Instrument item"
+          />
+        </div>
+
+        <div className="form-grp">
+          <label className="form-label">
+            Issue Date <span className="req">★</span>
+          </label>
+          <input
+            type="date"
+            className="innovic-input"
+            value={issueDate}
+            onChange={(e) => setIssueDate(e.target.value)}
+          />
+        </div>
+        <div className="form-grp">
+          <label className="form-label">
+            Expected Return Date <span className="req">★</span>
+          </label>
+          <input
+            type="date"
+            className="innovic-input"
+            value={expected}
+            onChange={(e) => setExpected(e.target.value)}
+          />
+        </div>
+
+        {item && !serial ? (
+          <div className="form-grp">
+            <label className="form-label">
+              Issue Qty <span className="req">★</span>
+            </label>
+            <input
+              type="number"
+              min={0}
+              step="any"
+              className="innovic-input mono fw-700"
+              value={qty}
+              onChange={(e) => setQty(e.target.value)}
+              onWheel={(e) => e.currentTarget.blur()}
+            />
+          </div>
+        ) : null}
+
+        <div className="form-grp">
+          <label className="form-label" htmlFor="ti-op">
+            Issued To <span className="req">★</span>
+          </label>
+          <OperatorPicker id="ti-op" value={operatorId} onChange={setOperatorId} />
+          {!operatorId ? (
+            <input
+              type="text"
+              className="innovic-input"
+              style={{ marginTop: 4 }}
+              placeholder="…or type a name if not an operator"
+              value={issuedToText}
+              onChange={(e) => setIssuedToText(e.target.value)}
+            />
+          ) : null}
+        </div>
+        <div className="form-grp">
+          <label className="form-label" htmlFor="ti-jc">
+            Job Card
+          </label>
+          <JobCardPicker id="ti-jc" value={jobCardId} onChange={setJobCardId} />
+        </div>
+        <div className="form-grp">
+          <label className="form-label">
+            Purpose <span className="req">★</span>
+          </label>
+          <input
+            type="text"
+            className="innovic-input"
+            placeholder="e.g. inspection of IN-JC-26-00021"
+            value={purpose}
+            onChange={(e) => setPurpose(e.target.value)}
+          />
+        </div>
+        <div className="form-grp form-full">
+          <label className="form-label">Remarks</label>
+          <input
+            type="text"
+            className="innovic-input"
+            value={remarks}
+            onChange={(e) => setRemarks(e.target.value)}
+          />
         </div>
       </div>
-    </div>
+
+      {serial ? (
+        <div style={{ marginTop: 12 }}>
+          <div className="fw-700" style={{ fontSize: 12, marginBottom: 6 }}>
+            Instruments in store — tick the ones handed out
+          </div>
+          {instruments.isLoading ? (
+            <div className="text3" style={{ fontSize: 12 }}>
+              <Loader2 size={14} className="inline animate-spin" /> Loading…
+            </div>
+          ) : (
+            <div className="tbl-wrap">
+              <table className="innovic-table tbl-grid">
+                <thead>
+                  <tr>
+                    <th></th>
+                    <th>Instrument Serial No.</th>
+                    <th>Calibration Due</th>
+                    <th>Location</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(instruments.data?.items ?? []).map((i) => {
+                    const blocked = blockedReason(i, issueDate);
+                    return (
+                      <tr key={i.id} style={{ opacity: blocked ? 0.55 : 1 }}>
+                        <td>
+                          <input
+                            type="checkbox"
+                            disabled={Boolean(blocked)}
+                            checked={picked.includes(i.id)}
+                            onChange={() => toggle(i.id)}
+                            aria-label={`Issue ${i.serialNo}`}
+                          />
+                        </td>
+                        <td className="mono fw-700" style={{ color: 'var(--text)' }}>
+                          {i.serialNo}
+                        </td>
+                        <td style={{ color: blocked ? 'var(--red2)' : undefined }}>
+                          {i.calibrationDueOn ? fmtDate(i.calibrationDueOn) : '—'}
+                          {blocked ? ` · ${blocked}` : ''}
+                        </td>
+                        <td className="text3">{i.location || '—'}</td>
+                      </tr>
+                    );
+                  })}
+                  {(instruments.data?.items ?? []).length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="empty-state">
+                        No instrument of this item is in store.
+                      </td>
+                    </tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      ) : null}
+
+      {err ? (
+        <div
+          style={{
+            marginTop: 12,
+            padding: 8,
+            background: 'var(--red3)',
+            color: 'var(--red2)',
+            borderRadius: 4,
+            fontSize: 12,
+          }}
+        >
+          {err}
+        </div>
+      ) : null}
+    </Modal>
   );
 }

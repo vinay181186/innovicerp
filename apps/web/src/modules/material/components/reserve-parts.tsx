@@ -5,42 +5,12 @@ import type { SoMaterial, SoMaterialLine } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { soNoWithInternal } from '@/lib/so-number';
+import { Modal } from '@/ui/feedback';
 import { useReleaseParts, useReserveParts } from '../api';
 
 const r3 = (v: number): number => Math.round(v * 1000) / 1000;
 const REASON_MIN = 10;
-
-function Shell({
-  title,
-  children,
-  footer,
-  onClose,
-}: {
-  title: string;
-  children: React.ReactNode;
-  footer: React.ReactNode;
-  onClose: () => void;
-}): React.JSX.Element {
-  return (
-    <div
-      className="overlay"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className="modal" style={{ maxWidth: 760, width: '96vw' }}>
-        <div className="modal-hdr">
-          <span className="modal-title">{title}</span>
-          <button type="button" className="btn btn-ghost btn-sm btn-icon" onClick={onClose}>
-            ✕
-          </button>
-        </div>
-        <div className="modal-body">{children}</div>
-        <div className="modal-footer">{footer}</div>
-      </div>
-    </div>
-  );
-}
+const WIDTH = 'min(760px, 96vw)';
 
 export function ReservePartsModal({
   data,
@@ -89,9 +59,10 @@ export function ReservePartsModal({
   };
 
   return (
-    <Shell
+    <Modal
       title={`Reserve Parts — ${soNoWithInternal(data.soCode, data.soInternalNo)}`}
       onClose={onClose}
+      maxWidth={WIDTH}
       footer={
         <>
           <button type="button" className="btn btn-ghost" onClick={onClose}>
@@ -157,7 +128,7 @@ export function ReservePartsModal({
         </div>
       )}
       {err ? <div style={{ color: 'var(--red2)', fontSize: 12, marginTop: 8 }}>{err}</div> : null}
-    </Shell>
+    </Modal>
   );
 }
 
@@ -192,9 +163,10 @@ export function ReleasePartModal({
   };
 
   return (
-    <Shell
+    <Modal
       title={`Release ${line.itemCode}`}
       onClose={onClose}
+      maxWidth={WIDTH}
       footer={
         <>
           <button type="button" className="btn btn-ghost" onClick={onClose}>
@@ -239,6 +211,6 @@ export function ReleasePartModal({
         </div>
       </div>
       {err ? <div style={{ color: 'var(--red2)', fontSize: 12, marginTop: 8 }}>{err}</div> : null}
-    </Shell>
+    </Modal>
   );
 }

@@ -13,6 +13,7 @@ import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
+import { Modal } from '@/ui/feedback';
 import { ListFooter, PageState } from '@/ui/layout';
 import {
   useCreateReportType,
@@ -251,118 +252,96 @@ function ReportTypeModal(props: { row?: ReportType; onClose: () => void }): Reac
   const pending = create.isPending || update.isPending;
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'flex-start',
-        justifyContent: 'center',
-        zIndex: 50,
-        padding: 24,
-        overflowY: 'auto',
-      }}
-      onClick={onClose}
-    >
-      <div
-        className="panel"
-        style={{ width: 'min(1100px, 96vw)' }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="panel-hdr">
-          <span className="panel-title">{row ? '✏ Edit Report Type' : '📄 Add Report Type'}</span>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
-            ✕
+    <Modal
+      title={row ? '✏ Edit Report Type' : '📄 Add Report Type'}
+      onClose={onClose}
+      footer={
+        <>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>
+            Cancel
           </button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={pending}
+            onClick={() => void submit()}
+          >
+            {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Save
+          </button>
+        </>
+      }
+    >
+      <div className="form-grid">
+        <div className="form-grp form-full">
+          <label className="form-label">
+            Report / Document Name <span className="req">★</span>
+          </label>
+          <input
+            className="innovic-input"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. Dimensional Inspection Report"
+            autoFocus
+          />
         </div>
-        <div className="panel-body">
-          <div className="form-grid">
-            <div className="form-grp form-full">
-              <label className="form-label">
-                Report / Document Name <span className="req">★</span>
-              </label>
-              <input
-                className="innovic-input"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Dimensional Inspection Report"
-                autoFocus
-              />
-            </div>
-            <div className="form-grp form-full">
-              <label className="form-label">Description</label>
-              <input
-                className="innovic-input"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Brief description of when this document is needed"
-              />
-            </div>
-            <div className="form-grp">
-              <label className="form-label">Default Requirement</label>
-              <select
-                className="innovic-select"
-                value={defaultMandatory ? 'mandatory' : 'optional'}
-                onChange={(e) => setDefaultMandatory(e.target.value === 'mandatory')}
-              >
-                <option value="mandatory">★ Mandatory</option>
-                <option value="optional">Optional</option>
-              </select>
-            </div>
-            <div className="form-grp">
-              <label className="form-label" htmlFor="rt-last-stage">
-                Last Stage Only
-              </label>
-              <select
-                id="rt-last-stage"
-                className="innovic-select"
-                value={defaultMandatory && lastStageOnly ? 'yes' : 'no'}
-                onChange={(e) => setLastStageOnly(e.target.value === 'yes')}
-                disabled={!defaultMandatory}
-                title={
-                  defaultMandatory
-                    ? 'Yes = mandatory only on the job card’s last QC stage; optional on middle stages'
-                    : 'Set Default Requirement to Mandatory first'
-                }
-              >
-                <option value="no">No</option>
-                <option value="yes">Yes</option>
-              </select>
-            </div>
-            <div className="form-grp">
-              <label className="form-label">Active</label>
-              <select
-                className="innovic-select"
-                value={status}
-                onChange={(e) => setStatus(e.target.value as typeof status)}
-              >
-                {REPORT_TYPE_STATUSES.map((s) => (
-                  <option key={s}>{s}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-          {err ? (
-            <div role="alert" style={{ color: 'var(--red2)', fontSize: 12, marginTop: 8 }}>
-              {err}
-            </div>
-          ) : null}
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
-            <button type="button" className="btn btn-ghost" onClick={onClose}>
-              Cancel
-            </button>
-            <button
-              type="button"
-              className="btn btn-primary"
-              disabled={pending}
-              onClick={() => void submit()}
-            >
-              {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Save
-            </button>
-          </div>
+        <div className="form-grp form-full">
+          <label className="form-label">Description</label>
+          <input
+            className="innovic-input"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Brief description of when this document is needed"
+          />
+        </div>
+        <div className="form-grp">
+          <label className="form-label">Default Requirement</label>
+          <select
+            className="innovic-select"
+            value={defaultMandatory ? 'mandatory' : 'optional'}
+            onChange={(e) => setDefaultMandatory(e.target.value === 'mandatory')}
+          >
+            <option value="mandatory">★ Mandatory</option>
+            <option value="optional">Optional</option>
+          </select>
+        </div>
+        <div className="form-grp">
+          <label className="form-label" htmlFor="rt-last-stage">
+            Last Stage Only
+          </label>
+          <select
+            id="rt-last-stage"
+            className="innovic-select"
+            value={defaultMandatory && lastStageOnly ? 'yes' : 'no'}
+            onChange={(e) => setLastStageOnly(e.target.value === 'yes')}
+            disabled={!defaultMandatory}
+            title={
+              defaultMandatory
+                ? 'Yes = mandatory only on the job card’s last QC stage; optional on middle stages'
+                : 'Set Default Requirement to Mandatory first'
+            }
+          >
+            <option value="no">No</option>
+            <option value="yes">Yes</option>
+          </select>
+        </div>
+        <div className="form-grp">
+          <label className="form-label">Active</label>
+          <select
+            className="innovic-select"
+            value={status}
+            onChange={(e) => setStatus(e.target.value as typeof status)}
+          >
+            {REPORT_TYPE_STATUSES.map((s) => (
+              <option key={s}>{s}</option>
+            ))}
+          </select>
         </div>
       </div>
-    </div>
+      {err ? (
+        <div role="alert" style={{ color: 'var(--red2)', fontSize: 12, marginTop: 8 }}>
+          {err}
+        </div>
+      ) : null}
+    </Modal>
   );
 }

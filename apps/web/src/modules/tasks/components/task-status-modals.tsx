@@ -46,6 +46,7 @@ export function UpdateStatusModal({
       title="Update Status"
       size="sm"
       guard
+      elevated
       onClose={onClose}
       footer={
         <ActionFooter
@@ -145,6 +146,7 @@ export function CompleteModal({
       title="Complete Task"
       size="sm"
       guard
+      elevated
       onClose={onClose}
       footer={
         <ActionFooter

@@ -1,11 +1,9 @@
 // Shared modal bits for the JW DC create flows (split out of routes/list.tsx,
-// ADR-199 table-standard conversion). ModalShell mirrors legacy showModalLg
-// (L28032): .overlay > .modal.modal-lg with .modal-hdr / .modal-body /
-// .modal-footer, guarded by the shared exit-confirm when dirty.
+// ADR-199 table-standard conversion). ModalShell is the shared wide pop-up
+// (ui/feedback/Modal) with the Cancel + Save footer both forms use.
 
 import { Loader2 } from 'lucide-react';
-import { useState } from 'react';
-import { ExitConfirmDialog } from '@/lib/exit-guard';
+import { Modal } from '@/ui/feedback';
 
 export function ModalShell({
   onClose,
@@ -14,7 +12,6 @@ export function ModalShell({
   saving,
   saveLabel,
   saveDisabled = false,
-  dirty,
   children,
 }: {
   onClose: () => void;
@@ -26,45 +23,17 @@ export function ModalShell({
    *  phase 4: the "These are new pieces" tick is still unticked). Optional and
    *  false by default, so the New Inward modal is untouched. */
   saveDisabled?: boolean;
-  /** Something was typed or ticked. Then a click on the grey backdrop, the ✕
-   *  or Cancel asks "Are you sure you want to exit?" instead of throwing the
-   *  popup away (the shared exit guard, lib/exit-guard.tsx). */
-  dirty: boolean;
   children: React.ReactNode;
 }): React.JSX.Element {
-  const [askExit, setAskExit] = useState(false);
-  const requestClose = (): void => {
-    if (dirty) setAskExit(true);
-    else onClose();
-  };
   return (
-    <div
-      className="overlay"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) requestClose();
-      }}
-    >
-      {askExit ? (
-        <ExitConfirmDialog
-          onStay={() => setAskExit(false)}
-          onExit={() => {
-            setAskExit(false);
-            onClose();
-          }}
-        />
-      ) : null}
-      <div className="modal modal-lg">
-        <div className="modal-hdr">
-          <span className="modal-title">{title}</span>
-          <button type="button" className="btn btn-ghost btn-sm btn-icon" onClick={requestClose}>
-            ✕
-          </button>
-        </div>
-        <div className="modal-body" style={{ maxHeight: '75vh', overflowY: 'auto' }}>
-          {children}
-        </div>
-        <div className="modal-footer">
-          <button type="button" className="btn btn-ghost" onClick={requestClose}>
+    <Modal
+      size="lg"
+      title={title}
+      onClose={onClose}
+      bodyStyle={{ maxHeight: '75vh', overflowY: 'auto' }}
+      footer={
+        <>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>
             Cancel
           </button>
           <button
@@ -81,9 +50,11 @@ export function ModalShell({
               <>{saveLabel}</>
             )}
           </button>
-        </div>
-      </div>
-    </div>
+        </>
+      }
+    >
+      {children}
+    </Modal>
   );
 }
 

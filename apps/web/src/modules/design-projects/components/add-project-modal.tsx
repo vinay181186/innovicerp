@@ -10,7 +10,7 @@ import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { SearchableSelect } from '@/ui/forms';
 import { todayIst } from '@/lib/date';
-import { Banner } from '@/ui/feedback';
+import { Banner, Modal } from '@/ui/feedback';
 import { soNoWithInternal } from '@/lib/so-number';
 import { useSalesOrdersList } from '../../sales-orders/api';
 import { useCreateDesignProject, useDesignProjectsList, useNextDesignProjectCode } from '../api';
@@ -221,38 +221,6 @@ export function AddProjectModal({ onClose }: { onClose: () => void }): React.JSX
       </div>
       {err ? <ErrorBox message={err} /> : null}
     </Modal>
-  );
-}
-
-function Modal({
-  onClose,
-  title,
-  children,
-  footer,
-}: {
-  onClose: () => void;
-  title: string;
-  children: React.ReactNode;
-  footer: React.ReactNode;
-}): React.JSX.Element {
-  return (
-    <div
-      className="overlay"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className="modal">
-        <div className="modal-hdr">
-          <span className="modal-title">{title}</span>
-          <button type="button" className="btn btn-ghost btn-sm btn-icon" onClick={onClose}>
-            ✕
-          </button>
-        </div>
-        <div className="modal-body">{children}</div>
-        <div className="modal-footer">{footer}</div>
-      </div>
-    </div>
   );
 }
 

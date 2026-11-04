@@ -14,6 +14,7 @@ import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { SearchableSelect } from '@/ui/forms';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { Modal } from '@/ui/feedback';
 import { useOutsourceOpBalance } from '@/modules/jc-ops/api';
 import { useVendorsList } from '@/modules/vendors/api';
 import { jobCardsKeys } from '../api';
@@ -107,108 +108,12 @@ export function OutsourceBalanceModal({
   };
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 100,
-      }}
-      onClick={onClose}
-    >
-      <div
-        style={{
-          background: 'var(--bg)',
-          border: '1px solid var(--border)',
-          borderRadius: 8,
-          padding: 20,
-          width: 'min(480px, 96vw)',
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="section-hdr" style={{ marginBottom: 14 }}>
-          Outsource Available Qty — {jcCode} Op {opSrNo(opSeq)}
-        </div>
-        <div
-          style={{
-            background: 'var(--bg3)',
-            padding: '10px 14px',
-            borderRadius: 8,
-            marginBottom: 14,
-            border: '1px solid var(--border)',
-          }}
-        >
-          <div style={{ fontSize: 12, color: 'var(--text2)' }}>
-            Operation: <b>{operation}</b>
-          </div>
-          <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
-            Item: {itemCodeWithRev(itemCode, itemRevision)} · Available:{' '}
-            <b style={{ color: 'var(--amber2)' }}>{available}</b> pcs. Raises an outsource PR.
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          <div style={{ flex: '1 1 120px' }}>
-            <div
-              className="text3"
-              style={{
-                fontSize: 11,
-                marginBottom: 4,
-                color: 'var(--amber2)',
-              }}
-            >
-              Qty to Outsource <span className="req">★</span>
-            </div>
-            <input
-              type="number"
-              min={1}
-              max={available}
-              className="innovic-select"
-              value={qty}
-              onChange={(e) => setQty(Number(e.target.value))}
-              style={{ width: '100%', fontSize: 12 }}
-            />
-          </div>
-          <div style={{ flex: '1 1 200px' }}>
-            <div className="text3" style={{ fontSize: 11, marginBottom: 4 }}>
-              Vendor <span className="req">★</span>
-            </div>
-            <SearchableSelect
-              id="jcOutsourceBalanceVendor"
-              value={pickedVendor?.id ?? null}
-              onChange={(id) => {
-                const v = id ? vendorOptions.find((x) => x.id === id) : undefined;
-                setVendorCode(v?.code ?? '');
-                setVendorLabel(v ? `${v.code} — ${v.name}` : '');
-              }}
-              onSearch={setVendorSearch}
-              loading={vendorsFetching}
-              options={vendorOptions}
-              placeholder="🔍 Vendor code or name"
-              valueLabel={pickedLabel}
-              selectedLabel={(v) => (v.code ? `${v.code} — ${v.name}` : v.name)}
-            />
-          </div>
-        </div>
-
-        {err ? (
-          <div
-            style={{
-              marginTop: 12,
-              padding: 8,
-              background: 'var(--red3)',
-              color: 'var(--red2)',
-              borderRadius: 4,
-              fontSize: 12,
-            }}
-          >
-            {err}
-          </div>
-        ) : null}
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
+    <Modal
+      title={`Outsource Available Qty — ${jcCode} Op ${opSrNo(opSeq)}`}
+      onClose={onClose}
+      maxWidth="min(480px, 96vw)"
+      footer={
+        <>
           <button type="button" className="btn btn-ghost" onClick={onClose}>
             Cancel
           </button>
@@ -226,8 +131,85 @@ export function OutsourceBalanceModal({
               'Outsource Available'
             )}
           </button>
+        </>
+      }
+    >
+      <div
+        style={{
+          background: 'var(--bg3)',
+          padding: '10px 14px',
+          borderRadius: 8,
+          marginBottom: 14,
+          border: '1px solid var(--border)',
+        }}
+      >
+        <div style={{ fontSize: 12, color: 'var(--text2)' }}>
+          Operation: <b>{operation}</b>
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
+          Item: {itemCodeWithRev(itemCode, itemRevision)} · Available:{' '}
+          <b style={{ color: 'var(--amber2)' }}>{available}</b> pcs. Raises an outsource PR.
         </div>
       </div>
-    </div>
+
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        <div style={{ flex: '1 1 120px' }}>
+          <div
+            className="text3"
+            style={{
+              fontSize: 11,
+              marginBottom: 4,
+              color: 'var(--amber2)',
+            }}
+          >
+            Qty to Outsource <span className="req">★</span>
+          </div>
+          <input
+            type="number"
+            min={1}
+            max={available}
+            className="innovic-select"
+            value={qty}
+            onChange={(e) => setQty(Number(e.target.value))}
+            style={{ width: '100%', fontSize: 12 }}
+          />
+        </div>
+        <div style={{ flex: '1 1 200px' }}>
+          <div className="text3" style={{ fontSize: 11, marginBottom: 4 }}>
+            Vendor <span className="req">★</span>
+          </div>
+          <SearchableSelect
+            id="jcOutsourceBalanceVendor"
+            value={pickedVendor?.id ?? null}
+            onChange={(id) => {
+              const v = id ? vendorOptions.find((x) => x.id === id) : undefined;
+              setVendorCode(v?.code ?? '');
+              setVendorLabel(v ? `${v.code} — ${v.name}` : '');
+            }}
+            onSearch={setVendorSearch}
+            loading={vendorsFetching}
+            options={vendorOptions}
+            placeholder="🔍 Vendor code or name"
+            valueLabel={pickedLabel}
+            selectedLabel={(v) => (v.code ? `${v.code} — ${v.name}` : v.name)}
+          />
+        </div>
+      </div>
+
+      {err ? (
+        <div
+          style={{
+            marginTop: 12,
+            padding: 8,
+            background: 'var(--red3)',
+            color: 'var(--red2)',
+            borderRadius: 4,
+            fontSize: 12,
+          }}
+        >
+          {err}
+        </div>
+      ) : null}
+    </Modal>
   );
 }

@@ -12,6 +12,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { Modal } from '@/ui/feedback';
 // The system OSP PR path Op Entry uses — do not build a parallel one.
 import { useGenerateOspPr } from '@/modules/op-entry/api';
 import { useMachinesList } from '../../machines/api';
@@ -52,121 +53,12 @@ export function ChangeMachineModal({
   };
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 100,
-      }}
-      onClick={onClose}
-    >
-      <div
-        style={{
-          background: 'var(--bg)',
-          border: '1px solid var(--border)',
-          borderRadius: 8,
-          padding: 20,
-          width: 'min(1100px, 96vw)',
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="section-hdr" style={{ marginBottom: 14 }}>
-          Change Machine — {row.jcCode} Op {opSrNo(row.opSeq)}
-        </div>
-        <div
-          style={{
-            background: 'var(--bg3)',
-            padding: '10px 14px',
-            borderRadius: 8,
-            marginBottom: 14,
-            border: '1px solid var(--border)',
-          }}
-        >
-          <div style={{ fontSize: 12, color: 'var(--text2)' }}>
-            Operation: <b>{row.operation}</b> · Planned machine:{' '}
-            <b className="mono">{row.machineCode ?? '—'}</b>
-          </div>
-          {/* ADR-125 — this used to read "only ... operations that have not yet
-              started", which 0095 made false. Spell out what actually happens
-              instead: the switch routes the REMAINING qty only, and the pieces
-              already made keep their own machine on every report. */}
-          {row.machines.length > 1 ? (
-            // ADR-126 — after a second swap the completed total spans several
-            // machines, so naming only the current one would be a lie. List them.
-            <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
-              Already made:{' '}
-              {row.machines.map((m, i) => (
-                <span key={m.machineCode}>
-                  {i > 0 ? ' · ' : ''}
-                  <b style={{ color: 'var(--text2)' }}>{m.machineCode}</b>: {m.qty} pcs
-                </span>
-              ))}
-              . Each stays recorded against its own machine. The new machine takes the remaining{' '}
-              <b style={{ color: 'var(--amber2)' }}>{row.available}</b> pcs.
-            </div>
-          ) : row.completed > 0 ? (
-            <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
-              {row.completed} pcs already made stay recorded against{' '}
-              <b style={{ color: 'var(--text2)' }}>
-                {row.machines[0]?.machineCode ?? row.machineCode ?? 'the planned machine'}
-              </b>
-              . The new machine takes the remaining{' '}
-              <b style={{ color: 'var(--amber2)' }}>{row.available}</b> pcs.
-            </div>
-          ) : (
-            <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
-              Nothing logged yet — the new machine takes all{' '}
-              <b style={{ color: 'var(--amber2)' }}>{row.available}</b> pcs.
-            </div>
-          )}
-        </div>
-        <div>
-          <div className="text3" style={{ fontSize: 11, marginBottom: 4 }}>
-            Assign Machine <span className="req">★</span>
-          </div>
-          <select
-            className="innovic-select"
-            value={machineId}
-            onChange={(e) => setMachineId(e.target.value)}
-            style={{ width: '100%', fontSize: 12 }}
-          >
-            <option value="">— Select machine —</option>
-            {(machinesData?.machines ?? []).map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.code} — {m.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        {finished || err ? (
-          <div
-            style={{
-              marginTop: 12,
-              padding: '10px 12px',
-              background: 'rgba(239,68,68,0.08)',
-              border: '1px solid var(--red)',
-              color: 'var(--red2)',
-              borderRadius: 6,
-              fontSize: 12,
-              lineHeight: 1.5,
-              display: 'flex',
-              alignItems: 'flex-start',
-              gap: 8,
-            }}
-          >
-            <span aria-hidden="true" style={{ fontSize: 14, fontWeight: 700, lineHeight: 1.3 }}>
-              &#10007;
-            </span>
-            <span>
-              {err ?? 'This operation is Completed — nothing is left to run on another machine.'}
-            </span>
-          </div>
-        ) : null}
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
+    <Modal
+      title={`Change Machine — ${row.jcCode} Op ${opSrNo(row.opSeq)}`}
+      onClose={onClose}
+      maxWidth="min(1100px, 96vw)"
+      footer={
+        <>
           <button type="button" className="btn btn-ghost" onClick={onClose}>
             {finished ? 'Close' : 'Cancel'}
           </button>
@@ -184,9 +76,99 @@ export function ChangeMachineModal({
               'Save Changes'
             )}
           </button>
+        </>
+      }
+    >
+      <div
+        style={{
+          background: 'var(--bg3)',
+          padding: '10px 14px',
+          borderRadius: 8,
+          marginBottom: 14,
+          border: '1px solid var(--border)',
+        }}
+      >
+        <div style={{ fontSize: 12, color: 'var(--text2)' }}>
+          Operation: <b>{row.operation}</b> · Planned machine:{' '}
+          <b className="mono">{row.machineCode ?? '—'}</b>
         </div>
+        {/* ADR-125 — this used to read "only ... operations that have not yet
+              started", which 0095 made false. Spell out what actually happens
+              instead: the switch routes the REMAINING qty only, and the pieces
+              already made keep their own machine on every report. */}
+        {row.machines.length > 1 ? (
+          // ADR-126 — after a second swap the completed total spans several
+          // machines, so naming only the current one would be a lie. List them.
+          <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
+            Already made:{' '}
+            {row.machines.map((m, i) => (
+              <span key={m.machineCode}>
+                {i > 0 ? ' · ' : ''}
+                <b style={{ color: 'var(--text2)' }}>{m.machineCode}</b>: {m.qty} pcs
+              </span>
+            ))}
+            . Each stays recorded against its own machine. The new machine takes the remaining{' '}
+            <b style={{ color: 'var(--amber2)' }}>{row.available}</b> pcs.
+          </div>
+        ) : row.completed > 0 ? (
+          <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
+            {row.completed} pcs already made stay recorded against{' '}
+            <b style={{ color: 'var(--text2)' }}>
+              {row.machines[0]?.machineCode ?? row.machineCode ?? 'the planned machine'}
+            </b>
+            . The new machine takes the remaining{' '}
+            <b style={{ color: 'var(--amber2)' }}>{row.available}</b> pcs.
+          </div>
+        ) : (
+          <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
+            Nothing logged yet — the new machine takes all{' '}
+            <b style={{ color: 'var(--amber2)' }}>{row.available}</b> pcs.
+          </div>
+        )}
       </div>
-    </div>
+      <div>
+        <div className="text3" style={{ fontSize: 11, marginBottom: 4 }}>
+          Assign Machine <span className="req">★</span>
+        </div>
+        <select
+          className="innovic-select"
+          value={machineId}
+          onChange={(e) => setMachineId(e.target.value)}
+          style={{ width: '100%', fontSize: 12 }}
+        >
+          <option value="">— Select machine —</option>
+          {(machinesData?.machines ?? []).map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.code} — {m.name}
+            </option>
+          ))}
+        </select>
+      </div>
+      {finished || err ? (
+        <div
+          style={{
+            marginTop: 12,
+            padding: '10px 12px',
+            background: 'rgba(239,68,68,0.08)',
+            border: '1px solid var(--red)',
+            color: 'var(--red2)',
+            borderRadius: 6,
+            fontSize: 12,
+            lineHeight: 1.5,
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 8,
+          }}
+        >
+          <span aria-hidden="true" style={{ fontSize: 14, fontWeight: 700, lineHeight: 1.3 }}>
+            &#10007;
+          </span>
+          <span>
+            {err ?? 'This operation is Completed — nothing is left to run on another machine.'}
+          </span>
+        </div>
+      ) : null}
+    </Modal>
   );
 }
 
@@ -227,117 +209,14 @@ export function CreatePrModal({
   };
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 100,
-      }}
-      onClick={onClose}
-    >
-      <div
-        style={{
-          background: 'var(--bg)',
-          border: '1px solid var(--border)',
-          borderRadius: 8,
-          padding: 20,
-          width: 'min(560px, 96vw)',
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="section-hdr" style={{ marginBottom: 14 }}>
-          Create Purchase Request — {row.jcCode} Op {opSrNo(row.opSeq)}
-        </div>
-        <div
-          style={{
-            background: 'var(--bg3)',
-            padding: '10px 14px',
-            borderRadius: 8,
-            marginBottom: 14,
-            border: '1px solid var(--border)',
-          }}
-        >
-          <div style={{ fontSize: 12, color: 'var(--text2)' }}>
-            Operation: <b>{row.operation}</b> · Planned machine:{' '}
-            <b className="mono">{row.machineCode ?? '—'}</b>
-          </div>
-          <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
-            {/* POL — the CUSTOMER's own PO line number, ahead of the item code.
-                Omitted when there is no sales order behind this job card. */}
-            {row.clientPoLineNo ? (
-              <>
-                POL{' '}
-                <span className="mono" style={{ color: 'var(--purple)', fontWeight: 700 }}>
-                  {row.clientPoLineNo}
-                </span>{' '}
-                ·{' '}
-              </>
-            ) : null}
-            Item:{' '}
-            {/* The code carries weight even on a muted context line -- it is the
-                value someone checks before acting in this modal. */}
-            <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-              {itemCodeWithRev(row.jcItemCode, row.itemRevision)}
-            </span>{' '}
-            · PR Qty <b style={{ color: 'var(--text)' }}>{row.jcOrderQty}</b> (the Job Card&apos;s
-            Order Qty)
-          </div>
-        </div>
-
-        {result ? (
-          <div
-            role="status"
-            style={{
-              padding: '10px 12px',
-              background: 'var(--green3)',
-              border: '1px solid var(--green)',
-              color: 'var(--green2)',
-              borderRadius: 6,
-              fontSize: 12,
-            }}
-          >
-            PR <b className="mono">{result.prCode}</b> raised
-            {result.vendorName ? (
-              <>
-                {' '}
-                for <b>{result.vendorName}</b>
-              </>
-            ) : null}
-            {result.autoPoCreated && result.poCode ? (
-              <>
-                {' '}
-                · draft PO <b className="mono">{result.poCode}</b> created
-              </>
-            ) : null}
-            . It is on the Purchase Request list, ready for a PO.
-          </div>
-        ) : (
-          <div className="text3" style={{ fontSize: 12 }}>
-            The system numbers this request (IN-JWPR-#####), takes the vendor from System Settings →
-            OSP Processes for &ldquo;{row.operation}&rdquo;, and shows the number here once saved.
-          </div>
-        )}
-
-        {err ? (
-          <div
-            role="alert"
-            style={{
-              marginTop: 12,
-              padding: 8,
-              background: 'var(--red3)',
-              color: 'var(--red2)',
-              borderRadius: 4,
-              fontSize: 12,
-            }}
-          >
-            {err}
-          </div>
-        ) : null}
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
+    <Modal
+      title={`Create Purchase Request — ${row.jcCode} Op ${opSrNo(row.opSeq)}`}
+      onClose={onClose}
+      size="sm"
+      // Nothing to fill in: a confirm box that shows the number after.
+      confirmExit={false}
+      footer={
+        <>
           <button type="button" className="btn btn-ghost" onClick={onClose}>
             {result ? 'Close' : 'Cancel'}
           </button>
@@ -357,8 +236,94 @@ export function CreatePrModal({
               )}
             </button>
           )}
+        </>
+      }
+    >
+      <div
+        style={{
+          background: 'var(--bg3)',
+          padding: '10px 14px',
+          borderRadius: 8,
+          marginBottom: 14,
+          border: '1px solid var(--border)',
+        }}
+      >
+        <div style={{ fontSize: 12, color: 'var(--text2)' }}>
+          Operation: <b>{row.operation}</b> · Planned machine:{' '}
+          <b className="mono">{row.machineCode ?? '—'}</b>
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
+          {/* POL — the CUSTOMER's own PO line number, ahead of the item code.
+                Omitted when there is no sales order behind this job card. */}
+          {row.clientPoLineNo ? (
+            <>
+              POL{' '}
+              <span className="mono" style={{ color: 'var(--purple)', fontWeight: 700 }}>
+                {row.clientPoLineNo}
+              </span>{' '}
+              ·{' '}
+            </>
+          ) : null}
+          Item:{' '}
+          {/* The code carries weight even on a muted context line -- it is the
+                value someone checks before acting in this modal. */}
+          <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+            {itemCodeWithRev(row.jcItemCode, row.itemRevision)}
+          </span>{' '}
+          · PR Qty <b style={{ color: 'var(--text)' }}>{row.jcOrderQty}</b> (the Job Card&apos;s
+          Order Qty)
         </div>
       </div>
-    </div>
+
+      {result ? (
+        <div
+          role="status"
+          style={{
+            padding: '10px 12px',
+            background: 'var(--green3)',
+            border: '1px solid var(--green)',
+            color: 'var(--green2)',
+            borderRadius: 6,
+            fontSize: 12,
+          }}
+        >
+          PR <b className="mono">{result.prCode}</b> raised
+          {result.vendorName ? (
+            <>
+              {' '}
+              for <b>{result.vendorName}</b>
+            </>
+          ) : null}
+          {result.autoPoCreated && result.poCode ? (
+            <>
+              {' '}
+              · draft PO <b className="mono">{result.poCode}</b> created
+            </>
+          ) : null}
+          . It is on the Purchase Request list, ready for a PO.
+        </div>
+      ) : (
+        <div className="text3" style={{ fontSize: 12 }}>
+          The system numbers this request (IN-JWPR-#####), takes the vendor from System Settings →
+          OSP Processes for &ldquo;{row.operation}&rdquo;, and shows the number here once saved.
+        </div>
+      )}
+
+      {err ? (
+        <div
+          role="alert"
+          style={{
+            marginTop: 12,
+            padding: 8,
+            background: 'var(--red3)',
+            color: 'var(--red2)',
+            borderRadius: 4,
+            fontSize: 12,
+          }}
+        >
+          {err}
+        </div>
+      ) : null}
+    </Modal>
   );
 }

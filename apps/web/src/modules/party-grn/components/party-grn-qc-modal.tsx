@@ -18,12 +18,12 @@
 import type { PartyGrnListItem, PartyGrnQcInput } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { Modal } from '@/ui/feedback';
 import { useSaveKey } from '@/lib/use-save-key';
-import { useDiscardGuard } from '../../store-inventory/components/discard-guard';
 import { usePartyGrnDetail, useQcPartyGrn } from '../api';
 import { qcPendingQtyOf } from '../lib/qc-state';
 
-/** `seed` = the QC Pending the row was prefilled with (dirty compares to it). */
+/** `seed` = the QC Pending the row was prefilled with (isPristine compares to it). */
 type QcEntry = {
   accepted: string;
   rejected: string;
@@ -87,12 +87,6 @@ export function PartyGrnQcModal({
       return next;
     });
   }, [pending]);
-
-  const dirty = pending.some((l) => {
-    const e = entries[l.id];
-    return e ? !isPristine(e) : false;
-  });
-  const guard = useDiscardGuard(dirty, onClose);
 
   const setEntry = (id: string, patch: Partial<QcEntry>): void => {
     setEntries((prev) => {
@@ -173,174 +167,13 @@ export function PartyGrnQcModal({
   };
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 200,
-      }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) guard.requestClose();
-      }}
-    >
-      {guard.dialog}
-      <div
-        style={{
-          background: 'var(--bg)',
-          border: '1px solid var(--border)',
-          borderRadius: 8,
-          padding: 20,
-          width: 'min(1100px, 96vw)',
-          maxHeight: '90vh',
-          overflowY: 'auto',
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="section-hdr" style={{ marginBottom: 6 }}>
-          Incoming QC — {row.code}
-        </div>
-        <div className="text3" style={{ fontSize: 12, marginBottom: 12 }}>
-          JWSO <span className="mono fw-700">{row.jwCodeText ?? '—'}</span> ·{' '}
-          {row.clientName ?? row.clientCodeText ?? '—'}. Only the accepted qty enters customer
-          stock. Deviated pieces raise an NC automatically — QC Head decides Use As Is, Return to
-          Customer or Scrap in the NC Register.
-        </div>
-
-        {detailQ.isError ? (
-          <div className="empty-state" style={{ color: 'var(--red2)', padding: 8 }}>
-            Could not load lines. Try again.
-          </div>
-        ) : detailQ.isLoading ? (
-          <div className="text3" style={{ fontSize: 12 }}>
-            <Loader2 size={13} className="inline animate-spin" /> Loading lines…
-          </div>
-        ) : pending.length === 0 ? (
-          <div className="empty-state" style={{ padding: 14 }}>
-            No line has QC Pending.
-          </div>
-        ) : (
-          <div className="tbl-wrap">
-            <table className="innovic-table">
-              <thead>
-                <tr>
-                  <th className="th-num">Ln</th>
-                  <th>Customer RM</th>
-                  <th className="th-num">Received Qty</th>
-                  <th className="th-num">Inspected So Far</th>
-                  <th className="th-num">QC Pending</th>
-                  <th className="th-num">
-                    Accepted Qty<span className="req">★</span>
-                  </th>
-                  <th className="th-num">Deviated Qty</th>
-                  <th>Deviation Reason</th>
-                  <th>QC Remarks</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pending.map((l) => {
-                  const e = entries[l.id];
-                  const rejectedNum = Number(e?.rejected || '0');
-                  const qcPending = qcPendingQtyOf(l);
-                  return (
-                    <tr key={l.id}>
-                      <td className="td-num mono">{l.lineNo}</td>
-                      <td title={l.partyMaterialName ?? ''}>
-                        <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-                          {l.partyMaterialCodeText}
-                        </span>
-                      </td>
-                      <td className="td-num mono fw-700">{l.receivedQty}</td>
-                      <td
-                        className="td-num mono"
-                        title={`Accepted ${l.acceptedQty} / Deviated ${l.rejectedQty}`}
-                      >
-                        <span style={{ color: 'var(--green2)' }}>{l.acceptedQty}</span>
-                        {' / '}
-                        <span style={{ color: l.rejectedQty > 0 ? 'var(--red2)' : 'var(--text3)' }}>
-                          {l.rejectedQty}
-                        </span>
-                      </td>
-                      <td className="td-num mono fw-700">{qcPending}</td>
-                      <td className="td-num">
-                        <input
-                          type="number"
-                          min={0}
-                          step={1}
-                          className="innovic-input"
-                          aria-label={`Accepted Qty, line ${l.lineNo}`}
-                          value={e?.accepted ?? ''}
-                          // Deviated is never auto-filled: Accepted 6 on a 60 line
-                          // sends 6 + 0 and leaves 54 pending.
-                          onChange={(ev) => setEntry(l.id, { accepted: ev.target.value })}
-                          style={{ maxWidth: '12ch' }}
-                        />
-                      </td>
-                      <td className="td-num">
-                        <input
-                          type="number"
-                          min={0}
-                          step={1}
-                          className="innovic-input"
-                          aria-label={`Deviated Qty, line ${l.lineNo}`}
-                          value={e?.rejected ?? '0'}
-                          onChange={(ev) => setEntry(l.id, { rejected: ev.target.value })}
-                          style={{ maxWidth: '12ch' }}
-                        />
-                      </td>
-                      <td>
-                        <input
-                          type="text"
-                          className="innovic-input"
-                          aria-label={`Deviation Reason, line ${l.lineNo}`}
-                          autoComplete="off"
-                          disabled={!(rejectedNum > 0)}
-                          placeholder={rejectedNum > 0 ? 'Required' : ''}
-                          value={e?.reason ?? ''}
-                          onChange={(ev) => setEntry(l.id, { reason: ev.target.value })}
-                        />
-                      </td>
-                      <td>
-                        <input
-                          type="text"
-                          className="innovic-input"
-                          aria-label={`QC Remarks, line ${l.lineNo}`}
-                          autoComplete="off"
-                          maxLength={2000}
-                          placeholder="Observations…"
-                          value={e?.qcRemarks ?? ''}
-                          onChange={(ev) => setEntry(l.id, { qcRemarks: ev.target.value })}
-                        />
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {err ? (
-          <div
-            style={{
-              marginTop: 12,
-              color: 'var(--red2)',
-              background: 'var(--red3)',
-              border: '1px solid var(--red)',
-              borderRadius: 6,
-              padding: '6px 10px',
-              fontSize: 12,
-            }}
-          >
-            {err}
-          </div>
-        ) : null}
-
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
-          <button type="button" className="btn btn-ghost" onClick={guard.requestClose}>
+    <Modal
+      title={<>Incoming QC — {row.code}</>}
+      onClose={onClose}
+      maxWidth="min(1100px, 96vw)"
+      footer={
+        <>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>
             Cancel
           </button>
           <button
@@ -357,8 +190,144 @@ export function PartyGrnQcModal({
               'Save QC'
             )}
           </button>
-        </div>
+        </>
+      }
+    >
+      <div className="text3" style={{ fontSize: 12, marginBottom: 12 }}>
+        JWSO <span className="mono fw-700">{row.jwCodeText ?? '—'}</span> ·{' '}
+        {row.clientName ?? row.clientCodeText ?? '—'}. Only the accepted qty enters customer stock.
+        Deviated pieces raise an NC automatically — QC Head decides Use As Is, Return to Customer or
+        Scrap in the NC Register.
       </div>
-    </div>
+
+      {detailQ.isError ? (
+        <div className="empty-state" style={{ color: 'var(--red2)', padding: 8 }}>
+          Could not load lines. Try again.
+        </div>
+      ) : detailQ.isLoading ? (
+        <div className="text3" style={{ fontSize: 12 }}>
+          <Loader2 size={13} className="inline animate-spin" /> Loading lines…
+        </div>
+      ) : pending.length === 0 ? (
+        <div className="empty-state" style={{ padding: 14 }}>
+          No line has QC Pending.
+        </div>
+      ) : (
+        <div className="tbl-wrap">
+          <table className="innovic-table">
+            <thead>
+              <tr>
+                <th className="th-num">Ln</th>
+                <th>Customer RM</th>
+                <th className="th-num">Received Qty</th>
+                <th className="th-num">Inspected So Far</th>
+                <th className="th-num">QC Pending</th>
+                <th className="th-num">
+                  Accepted Qty<span className="req">★</span>
+                </th>
+                <th className="th-num">Deviated Qty</th>
+                <th>Deviation Reason</th>
+                <th>QC Remarks</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pending.map((l) => {
+                const e = entries[l.id];
+                const rejectedNum = Number(e?.rejected || '0');
+                const qcPending = qcPendingQtyOf(l);
+                return (
+                  <tr key={l.id}>
+                    <td className="td-num mono">{l.lineNo}</td>
+                    <td title={l.partyMaterialName ?? ''}>
+                      <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+                        {l.partyMaterialCodeText}
+                      </span>
+                    </td>
+                    <td className="td-num mono fw-700">{l.receivedQty}</td>
+                    <td
+                      className="td-num mono"
+                      title={`Accepted ${l.acceptedQty} / Deviated ${l.rejectedQty}`}
+                    >
+                      <span style={{ color: 'var(--green2)' }}>{l.acceptedQty}</span>
+                      {' / '}
+                      <span style={{ color: l.rejectedQty > 0 ? 'var(--red2)' : 'var(--text3)' }}>
+                        {l.rejectedQty}
+                      </span>
+                    </td>
+                    <td className="td-num mono fw-700">{qcPending}</td>
+                    <td className="td-num">
+                      <input
+                        type="number"
+                        min={0}
+                        step={1}
+                        className="innovic-input"
+                        aria-label={`Accepted Qty, line ${l.lineNo}`}
+                        value={e?.accepted ?? ''}
+                        // Deviated is never auto-filled: Accepted 6 on a 60 line
+                        // sends 6 + 0 and leaves 54 pending.
+                        onChange={(ev) => setEntry(l.id, { accepted: ev.target.value })}
+                        style={{ maxWidth: '12ch' }}
+                      />
+                    </td>
+                    <td className="td-num">
+                      <input
+                        type="number"
+                        min={0}
+                        step={1}
+                        className="innovic-input"
+                        aria-label={`Deviated Qty, line ${l.lineNo}`}
+                        value={e?.rejected ?? '0'}
+                        onChange={(ev) => setEntry(l.id, { rejected: ev.target.value })}
+                        style={{ maxWidth: '12ch' }}
+                      />
+                    </td>
+                    <td>
+                      <input
+                        type="text"
+                        className="innovic-input"
+                        aria-label={`Deviation Reason, line ${l.lineNo}`}
+                        autoComplete="off"
+                        disabled={!(rejectedNum > 0)}
+                        placeholder={rejectedNum > 0 ? 'Required' : ''}
+                        value={e?.reason ?? ''}
+                        onChange={(ev) => setEntry(l.id, { reason: ev.target.value })}
+                      />
+                    </td>
+                    <td>
+                      <input
+                        type="text"
+                        className="innovic-input"
+                        aria-label={`QC Remarks, line ${l.lineNo}`}
+                        autoComplete="off"
+                        maxLength={2000}
+                        placeholder="Observations…"
+                        value={e?.qcRemarks ?? ''}
+                        onChange={(ev) => setEntry(l.id, { qcRemarks: ev.target.value })}
+                      />
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {err ? (
+        <div
+          style={{
+            marginTop: 12,
+            color: 'var(--red2)',
+            background: 'var(--red3)',
+            border: '1px solid var(--red)',
+            borderRadius: 6,
+            padding: '6px 10px',
+            fontSize: 12,
+          }}
+        >
+          {err}
+        </div>
+      ) : null}
+    </Modal>
   );
 }

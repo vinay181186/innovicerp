@@ -1,15 +1,15 @@
 // In-app preview of a print sheet — the same box a drawing previews in
-// (file-preview-modal.tsx: .overlay / .modal.modal-lg), with 🖨 Print and
+// (file-preview-modal.tsx: the shared Modal, lg), with 🖨 Print and
 // ⬇ Download beside ✕. The sheet is built from data, so the preview is the
 // sheet itself in an iframe and Download makes the PDF at the click
 // (@/lib/print/sheet-pdf). The box opens at once; until the sheet is ready
 // it says "Loading preview…" (`html` null), exactly as a drawing does.
 // Every document print reaches it through lib/print/preview-host.tsx.
 
-import { Download, Loader2, Printer, X } from 'lucide-react';
+import { Download, Loader2, Printer } from 'lucide-react';
 import { useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { downloadHtmlPdf } from '@/lib/print/sheet-pdf';
+import { Modal } from '@/ui/feedback';
 
 export function SheetPreviewModal(props: {
   title: string;
@@ -40,70 +40,57 @@ export function SheetPreviewModal(props: {
     }
   };
 
-  return createPortal(
-    <div
-      className="overlay"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
+  return (
+    <Modal
+      title={`${title} — ${fileName}`}
+      size="lg"
+      onClose={onClose}
+      closeLabel="Close preview"
+      confirmExit={false}
+      elevated
+      bodyStyle={{ padding: 0, background: 'var(--bg1, var(--bg3))' }}
+      headerActions={
+        <>
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm"
+            disabled={!html}
+            onClick={() => frame.current?.contentWindow?.print()}
+          >
+            <Printer size={13} /> Print
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            onClick={() => void onDownload()}
+            disabled={!html || saving}
+          >
+            {saving ? (
+              <Loader2 size={13} className="inline animate-spin" />
+            ) : (
+              <Download size={13} />
+            )}{' '}
+            Download
+          </button>
+        </>
+      }
     >
-      <div className="modal modal-lg" onMouseDown={(e) => e.stopPropagation()}>
-        <div className="modal-hdr">
-          <div className="modal-title" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {title} — {fileName}
-          </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              disabled={!html}
-              onClick={() => frame.current?.contentWindow?.print()}
-            >
-              <Printer size={13} /> Print
-            </button>
-            <button
-              type="button"
-              className="btn btn-primary btn-sm"
-              onClick={() => void onDownload()}
-              disabled={!html || saving}
-            >
-              {saving ? (
-                <Loader2 size={13} className="inline animate-spin" />
-              ) : (
-                <Download size={13} />
-              )}{' '}
-              Download
-            </button>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm btn-icon"
-              onClick={onClose}
-              aria-label="Close preview"
-            >
-              <X size={14} />
-            </button>
-          </div>
+      {err ? (
+        <div className="empty-state" style={{ color: 'var(--red2)', padding: 40 }}>
+          {err}
         </div>
-        <div className="modal-body" style={{ padding: 0, background: 'var(--bg1, var(--bg3))' }}>
-          {err ? (
-            <div className="empty-state" style={{ color: 'var(--red2)', padding: 40 }}>
-              {err}
-            </div>
-          ) : !html ? (
-            <div className="empty-state" style={{ padding: 40 }}>
-              <Loader2 className="inline animate-spin" size={16} /> Loading preview…
-            </div>
-          ) : (
-            <iframe
-              ref={frame}
-              srcDoc={html}
-              title={`${title} ${fileName}`}
-              style={{ width: '100%', height: '78vh', border: 0, display: 'block' }}
-            />
-          )}
+      ) : !html ? (
+        <div className="empty-state" style={{ padding: 40 }}>
+          <Loader2 className="inline animate-spin" size={16} /> Loading preview…
         </div>
-      </div>
-    </div>,
-    document.body,
+      ) : (
+        <iframe
+          ref={frame}
+          srcDoc={html}
+          title={`${title} ${fileName}`}
+          style={{ width: '100%', height: '78vh', border: 0, display: 'block' }}
+        />
+      )}
+    </Modal>
   );
 }

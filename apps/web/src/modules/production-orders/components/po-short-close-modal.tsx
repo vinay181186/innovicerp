@@ -73,14 +73,8 @@ export function PoShortCloseModal({
     <Modal
       title={`Short Close ${code}`}
       size="sm"
-      onClose={() => {
-        // Always a function: `ModalProps.onClose` is required and handing it
-        // `undefined` breaks the build under exactOptionalPropertyTypes. The
-        // "cannot close mid-flight" rule lives inside instead, next to the
-        // disabled Cancel button and closeOnOverlayClick={false}.
-        if (!shortClose.isPending) onClose();
-      }}
-      closeOnOverlayClick={false}
+      onClose={onClose}
+      closeLocked={shortClose.isPending}
       footer={
         <>
           <button

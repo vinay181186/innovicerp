@@ -264,6 +264,7 @@ export function SoPreviewModal({
     <Modal
       size="lg"
       onClose={onClose}
+      confirmExit={false}
       title={
         <span style={{ display: 'inline-flex', gap: 10, alignItems: 'center' }}>
           <span className="mono fw-700">{soNoWithInternal(so.code, so.internalSoNo)}</span>

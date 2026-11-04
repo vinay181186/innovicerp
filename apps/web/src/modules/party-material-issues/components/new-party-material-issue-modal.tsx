@@ -10,13 +10,13 @@
 import { type CreatePartyMaterialIssueInput } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { Modal } from '@/ui/feedback';
 import { SearchableSelect } from '@/ui/forms';
 import { todayLocal } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useJobCardsList } from '@/modules/job-cards/api';
 import { useJobWorkOrder, useJobWorkOrdersList } from '@/modules/job-work-orders/api';
 import { usePartyMaterialsList } from '@/modules/party-materials/api';
-import { useDiscardGuard } from '@/modules/store-inventory/components/discard-guard';
 import { useCreatePartyMaterialIssue, usePartyMaterialIssuable } from '../api';
 import { Field } from './modal-field';
 
@@ -148,9 +148,6 @@ export function NewPartyMaterialIssueModal({
     jcItems,
   ]);
 
-  const dirty = Boolean(jobWorkOrderId || qty.trim() || remarks.trim());
-  const guard = useDiscardGuard(dirty, onClose);
-
   const createMut = useCreatePartyMaterialIssue();
 
   const onSave = (): void => {
@@ -216,229 +213,12 @@ export function NewPartyMaterialIssueModal({
   };
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 100,
-      }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) guard.requestClose();
-      }}
-    >
-      {guard.dialog}
-      <div
-        style={{
-          background: 'var(--bg)',
-          border: '1px solid var(--border)',
-          borderRadius: 8,
-          padding: 20,
-          width: 'min(680px, 96vw)',
-          maxHeight: '90vh',
-          overflowY: 'auto',
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="section-hdr" style={{ marginBottom: 14 }}>
-          New Customer Material Issue
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <Field label="Issue Date">
-            <input
-              type="date"
-              className="innovic-input"
-              value={issueDate}
-              onChange={(e) => setIssueDate(e.target.value)}
-              style={{ maxWidth: '18ch' }}
-            />
-          </Field>
-          <Field label="Issue Qty" required>
-            <input
-              type="number"
-              min={1}
-              step={1}
-              {...(issuable ? { max: Math.max(issuable.issuable, 0) } : {})}
-              className="innovic-input"
-              value={qty}
-              onChange={(e) => setQty(e.target.value)}
-              placeholder="0"
-              style={{
-                fontSize: 14,
-                fontWeight: 700,
-                border: '2px solid var(--green)',
-                borderRadius: 4,
-                maxWidth: '12ch',
-              }}
-            />
-          </Field>
-
-          <div style={{ gridColumn: 'span 2' }}>
-            <Field label="JWSO No." required>
-              <SearchableSelect
-                id="pmi-jwso"
-                value={jobWorkOrderId}
-                onChange={onJwChange}
-                valueLabel={pickedJw?.code}
-                onSearch={setJwSearch}
-                loading={jwQuery.isFetching}
-                error={jwQuery.error}
-                placeholder="🔍 Select JWSO — type number or customer…"
-                options={jwHeaders.map((j) => ({
-                  id: j.jwId,
-                  code: j.code,
-                  name: j.customerName ?? '',
-                }))}
-              />
-            </Field>
-          </div>
-
-          <div style={{ gridColumn: 'span 2' }}>
-            <Field label="JC No." required>
-              <SearchableSelect
-                id="pmi-jc"
-                value={jobCardId}
-                onChange={pickJc}
-                onSearch={setJcSearch}
-                loading={jcQuery.isFetching}
-                disabled={!jobWorkOrderId}
-                emptyText="No Job Card on this JWSO"
-                placeholder={
-                  jobWorkOrderId ? '🔍 Select Job Card of this JWSO…' : 'Pick the JWSO first'
-                }
-                options={jcItems.map((jc) => ({ id: jc.id, code: jc.code, name: jc.itemName }))}
-              />
-            </Field>
-          </div>
-
-          {needsLinePick ? (
-            <div style={{ gridColumn: 'span 2' }}>
-              <Field label="JWSO Line" required>
-                <select
-                  className="innovic-select"
-                  value={manualLineId}
-                  onChange={(e) => setManualLineId(e.target.value)}
-                >
-                  <option value="">Pick the line this Job Card is for…</option>
-                  {jwLines.map((l) => (
-                    <option key={l.id} value={l.id}>
-                      {`L${l.lineNo} · ${itemCodeWithRev(l.itemCodeText, l.revision)} · ${l.partName}`}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-            </div>
-          ) : null}
-
-          {/* Customer RM — read-only, from the Job Card's JWSO line. */}
-          <div style={{ gridColumn: 'span 2' }}>
-            <Field label="Customer RM">
-              <div
-                className="innovic-input"
-                style={{
-                  background: 'var(--bg4)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  minHeight: 32,
-                }}
-              >
-                {!jobCardId ? (
-                  <span className="text3">Pick the Job Card first</span>
-                ) : jwDetailQ.isLoading ? (
-                  <span className="text3">
-                    <Loader2 size={12} className="inline animate-spin" /> Loading…
-                  </span>
-                ) : jwDetailQ.isError ? (
-                  <span style={{ color: 'var(--red2)' }}>
-                    {jwDetailQ.error instanceof Error
-                      ? jwDetailQ.error.message
-                      : 'Could not load the JWSO lines.'}
-                  </span>
-                ) : !line ? (
-                  <span className="text3">—</span>
-                ) : !line.partyMaterialId ? (
-                  <span style={{ color: 'var(--amber2)' }}>
-                    No customer RM on JWSO line {line.lineNo} — save the JWSO first
-                  </span>
-                ) : (
-                  <>
-                    <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-                      {line.rmItemCode ?? line.partyMaterialCode}
-                    </span>
-                    {material ? (
-                      <span className="text3" style={{ fontSize: 11 }}>
-                        {material.code} · {material.name}
-                      </span>
-                    ) : null}
-                  </>
-                )}
-              </div>
-            </Field>
-            {jobCardId ? (
-              <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
-                {issuableQ.isError ? (
-                  <span style={{ color: 'var(--red2)' }}>Could not load the To Issue qty.</span>
-                ) : !issuable ? (
-                  <span>
-                    <Loader2 size={12} className="inline animate-spin" /> Checking To Issue qty…
-                  </span>
-                ) : (
-                  <>
-                    To Issue:{' '}
-                    <span
-                      style={{
-                        color: issuable.issuable > 0 ? 'var(--green2)' : 'var(--red2)',
-                        fontWeight: 700,
-                      }}
-                    >
-                      {issuable.issuable}
-                    </span>{' '}
-                    NOS{' '}
-                    <span style={{ fontSize: 10 }}>
-                      {issuable.blockedReason
-                        ? `— ${issuable.blockedReason}`
-                        : `(line has ${issuable.lineBalance} · JC needs ${issuable.jcRemaining})`}
-                    </span>
-                  </>
-                )}
-              </div>
-            ) : null}
-          </div>
-
-          <div style={{ gridColumn: 'span 2' }}>
-            <Field label="Remarks">
-              <input
-                type="text"
-                className="innovic-input"
-                value={remarks}
-                onChange={(e) => setRemarks(e.target.value)}
-                placeholder="Lot info, purpose, etc."
-              />
-            </Field>
-          </div>
-        </div>
-
-        {err ? (
-          <div
-            style={{
-              marginTop: 12,
-              padding: 8,
-              background: 'rgba(239,68,68,0.08)',
-              color: 'var(--red2)',
-              borderRadius: 4,
-              fontSize: 12,
-            }}
-          >
-            {err}
-          </div>
-        ) : null}
-
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+    <Modal
+      title="New Customer Material Issue"
+      onClose={onClose}
+      maxWidth="min(680px, 96vw)"
+      footer={
+        <>
           <button type="button" className="btn btn-ghost" onClick={onClose}>
             Cancel
           </button>
@@ -456,8 +236,199 @@ export function NewPartyMaterialIssueModal({
               'Save Issue'
             )}
           </button>
+        </>
+      }
+    >
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <Field label="Issue Date">
+          <input
+            type="date"
+            className="innovic-input"
+            value={issueDate}
+            onChange={(e) => setIssueDate(e.target.value)}
+            style={{ maxWidth: '18ch' }}
+          />
+        </Field>
+        <Field label="Issue Qty" required>
+          <input
+            type="number"
+            min={1}
+            step={1}
+            {...(issuable ? { max: Math.max(issuable.issuable, 0) } : {})}
+            className="innovic-input"
+            value={qty}
+            onChange={(e) => setQty(e.target.value)}
+            placeholder="0"
+            style={{
+              fontSize: 14,
+              fontWeight: 700,
+              border: '2px solid var(--green)',
+              borderRadius: 4,
+              maxWidth: '12ch',
+            }}
+          />
+        </Field>
+
+        <div style={{ gridColumn: 'span 2' }}>
+          <Field label="JWSO No." required>
+            <SearchableSelect
+              id="pmi-jwso"
+              value={jobWorkOrderId}
+              onChange={onJwChange}
+              valueLabel={pickedJw?.code}
+              onSearch={setJwSearch}
+              loading={jwQuery.isFetching}
+              error={jwQuery.error}
+              placeholder="🔍 Select JWSO — type number or customer…"
+              options={jwHeaders.map((j) => ({
+                id: j.jwId,
+                code: j.code,
+                name: j.customerName ?? '',
+              }))}
+            />
+          </Field>
+        </div>
+
+        <div style={{ gridColumn: 'span 2' }}>
+          <Field label="JC No." required>
+            <SearchableSelect
+              id="pmi-jc"
+              value={jobCardId}
+              onChange={pickJc}
+              onSearch={setJcSearch}
+              loading={jcQuery.isFetching}
+              disabled={!jobWorkOrderId}
+              emptyText="No Job Card on this JWSO"
+              placeholder={
+                jobWorkOrderId ? '🔍 Select Job Card of this JWSO…' : 'Pick the JWSO first'
+              }
+              options={jcItems.map((jc) => ({ id: jc.id, code: jc.code, name: jc.itemName }))}
+            />
+          </Field>
+        </div>
+
+        {needsLinePick ? (
+          <div style={{ gridColumn: 'span 2' }}>
+            <Field label="JWSO Line" required>
+              <select
+                className="innovic-select"
+                value={manualLineId}
+                onChange={(e) => setManualLineId(e.target.value)}
+              >
+                <option value="">Pick the line this Job Card is for…</option>
+                {jwLines.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {`L${l.lineNo} · ${itemCodeWithRev(l.itemCodeText, l.revision)} · ${l.partName}`}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
+        ) : null}
+
+        {/* Customer RM — read-only, from the Job Card's JWSO line. */}
+        <div style={{ gridColumn: 'span 2' }}>
+          <Field label="Customer RM">
+            <div
+              className="innovic-input"
+              style={{
+                background: 'var(--bg4)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                minHeight: 32,
+              }}
+            >
+              {!jobCardId ? (
+                <span className="text3">Pick the Job Card first</span>
+              ) : jwDetailQ.isLoading ? (
+                <span className="text3">
+                  <Loader2 size={12} className="inline animate-spin" /> Loading…
+                </span>
+              ) : jwDetailQ.isError ? (
+                <span style={{ color: 'var(--red2)' }}>
+                  {jwDetailQ.error instanceof Error
+                    ? jwDetailQ.error.message
+                    : 'Could not load the JWSO lines.'}
+                </span>
+              ) : !line ? (
+                <span className="text3">—</span>
+              ) : !line.partyMaterialId ? (
+                <span style={{ color: 'var(--amber2)' }}>
+                  No customer RM on JWSO line {line.lineNo} — save the JWSO first
+                </span>
+              ) : (
+                <>
+                  <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+                    {line.rmItemCode ?? line.partyMaterialCode}
+                  </span>
+                  {material ? (
+                    <span className="text3" style={{ fontSize: 11 }}>
+                      {material.code} · {material.name}
+                    </span>
+                  ) : null}
+                </>
+              )}
+            </div>
+          </Field>
+          {jobCardId ? (
+            <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
+              {issuableQ.isError ? (
+                <span style={{ color: 'var(--red2)' }}>Could not load the To Issue qty.</span>
+              ) : !issuable ? (
+                <span>
+                  <Loader2 size={12} className="inline animate-spin" /> Checking To Issue qty…
+                </span>
+              ) : (
+                <>
+                  To Issue:{' '}
+                  <span
+                    style={{
+                      color: issuable.issuable > 0 ? 'var(--green2)' : 'var(--red2)',
+                      fontWeight: 700,
+                    }}
+                  >
+                    {issuable.issuable}
+                  </span>{' '}
+                  NOS{' '}
+                  <span style={{ fontSize: 10 }}>
+                    {issuable.blockedReason
+                      ? `— ${issuable.blockedReason}`
+                      : `(line has ${issuable.lineBalance} · JC needs ${issuable.jcRemaining})`}
+                  </span>
+                </>
+              )}
+            </div>
+          ) : null}
+        </div>
+
+        <div style={{ gridColumn: 'span 2' }}>
+          <Field label="Remarks">
+            <input
+              type="text"
+              className="innovic-input"
+              value={remarks}
+              onChange={(e) => setRemarks(e.target.value)}
+              placeholder="Lot info, purpose, etc."
+            />
+          </Field>
         </div>
       </div>
-    </div>
+
+      {err ? (
+        <div
+          style={{
+            marginTop: 12,
+            padding: 8,
+            background: 'rgba(239,68,68,0.08)',
+            color: 'var(--red2)',
+            borderRadius: 4,
+            fontSize: 12,
+          }}
+        >
+          {err}
+        </div>
+      ) : null}
+    </Modal>
   );
 }

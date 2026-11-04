@@ -2,9 +2,10 @@
 // _pteShowRevisions (L14989): newest-first, max 5, click Restore to load that
 // version back into the editor (still needs an explicit Save to commit).
 
-import { Loader2, X } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { fmtDateTime } from '@/lib/date';
 import { RowMenu } from '@/ui/data';
+import { Modal } from '@/ui/feedback';
 import { usePrintTemplateRevisions } from '../api';
 
 interface Props {
@@ -27,98 +28,62 @@ export function RevisionsModal({
   const items = data?.items ?? [];
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      onClick={onClose}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,.45)',
-        display: 'flex',
-        alignItems: 'flex-start',
-        justifyContent: 'center',
-        padding: '6vh 16px',
-        zIndex: 60,
-      }}
-    >
-      <div
-        className="panel"
-        onClick={(e) => e.stopPropagation()}
-        style={{ width: 'min(1100px, 96vw)', maxHeight: '84vh', overflow: 'auto' }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            padding: '12px 16px',
-            borderBottom: '1px solid var(--border)',
-          }}
-        >
-          <div className="fw-700">🕐 Revision History — {blockName}</div>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
-            <X size={14} />
-          </button>
-        </div>
-        <div style={{ padding: 16 }}>
-          <div className="text3" style={{ fontSize: 11, marginBottom: 10 }}>
-            Restore loads that version into the editor — you still need to Save it.
-          </div>
-          {isLoading ? (
-            <div className="empty-state">
-              <Loader2 className="inline h-4 w-4 animate-spin" /> Loading…
-            </div>
-          ) : isError ? (
-            <div className="empty-state" style={{ color: 'var(--red2)' }}>
-              Could not load revisions. Try again.
-            </div>
-          ) : items.length === 0 ? (
-            <div className="empty-state">No revision history yet.</div>
-          ) : (
-            <table className="innovic-table">
-              <thead>
-                <tr>
-                  <th style={{ width: 30 }}>Sr No</th>
-                  <th style={{ width: 150 }}>Revision Date</th>
-                  <th style={{ width: 130 }}>Revised By</th>
-                  <th>Preview</th>
-                  <th style={{ width: 48 }} aria-label="Actions" />
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((r, i) => (
-                  <tr key={r.id}>
-                    <td className="text3">{i + 1}</td>
-                    <td style={{ fontSize: 11 }}>{fmtDateTime(r.createdAt)}</td>
-                    <td style={{ fontSize: 11 }}>{r.editedByName ?? '—'}</td>
-                    <td
-                      className="text2"
-                      style={{ fontSize: 11, whiteSpace: 'pre-wrap', lineHeight: 1.5 }}
-                    >
-                      {r.content.slice(0, 150)}
-                      {r.content.length > 150 ? '…' : ''}
-                    </td>
-                    <td className="td-ctr">
-                      <RowMenu
-                        items={[
-                          {
-                            key: 'restore',
-                            label: 'Restore',
-                            icon: 'refresh-cw',
-                            hidden: !canRestore,
-                            onSelect: () => onRestore(r.content),
-                          },
-                        ]}
-                      />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
+    <Modal title={`🕐 Revision History — ${blockName}`} onClose={onClose} confirmExit={false}>
+      <div className="text3" style={{ fontSize: 11, marginBottom: 10 }}>
+        Restore loads that version into the editor — you still need to Save it.
       </div>
-    </div>
+      {isLoading ? (
+        <div className="empty-state">
+          <Loader2 className="inline h-4 w-4 animate-spin" /> Loading…
+        </div>
+      ) : isError ? (
+        <div className="empty-state" style={{ color: 'var(--red2)' }}>
+          Could not load revisions. Try again.
+        </div>
+      ) : items.length === 0 ? (
+        <div className="empty-state">No revision history yet.</div>
+      ) : (
+        <table className="innovic-table">
+          <thead>
+            <tr>
+              <th style={{ width: 30 }}>Sr No</th>
+              <th style={{ width: 150 }}>Revision Date</th>
+              <th style={{ width: 130 }}>Revised By</th>
+              <th>Preview</th>
+              <th style={{ width: 48 }} aria-label="Actions" />
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((r, i) => (
+              <tr key={r.id}>
+                <td className="text3">{i + 1}</td>
+                <td style={{ fontSize: 11 }}>{fmtDateTime(r.createdAt)}</td>
+                <td style={{ fontSize: 11 }}>{r.editedByName ?? '—'}</td>
+                <td
+                  className="text2"
+                  style={{ fontSize: 11, whiteSpace: 'pre-wrap', lineHeight: 1.5 }}
+                >
+                  {r.content.slice(0, 150)}
+                  {r.content.length > 150 ? '…' : ''}
+                </td>
+                <td className="td-ctr">
+                  <RowMenu
+                    items={[
+                      {
+                        key: 'restore',
+                        label: 'Restore',
+                        icon: 'refresh-cw',
+                        hidden: !canRestore,
+                        onSelect: () => onRestore(r.content),
+                      },
+                    ]}
+                  />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </Modal>
   );
 }

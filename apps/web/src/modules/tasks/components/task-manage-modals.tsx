@@ -41,6 +41,7 @@ export function ReassignModal({
       title="Reassign Task"
       size="sm"
       guard
+      elevated
       onClose={onClose}
       footer={
         <ActionFooter
@@ -113,6 +114,8 @@ export function CancelModal({
     <Overlay
       title="Cancel Task"
       size="sm"
+      guard
+      elevated
       onClose={onClose}
       footer={
         <ActionFooter
@@ -191,6 +194,7 @@ export function EditTaskModal({
       title={`Edit ${task.code}`}
       size="md"
       guard
+      elevated
       onClose={onClose}
       footer={
         <ActionFooter

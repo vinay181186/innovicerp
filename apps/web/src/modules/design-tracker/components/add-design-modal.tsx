@@ -87,7 +87,13 @@ export function AddDesignModal({ onClose }: { onClose: () => void }): React.JSX.
   };
 
   return (
-    <ModalShell onClose={onClose} title="Assign Design">
+    <ModalShell
+      onClose={onClose}
+      title="Assign Design"
+      footer={
+        <Actions onClose={onClose} onSave={onSave} saving={mut.isPending} label="Save Design" />
+      }
+    >
       <div className="form-grid">
         <Field label="Design No.">
           <input
@@ -184,7 +190,6 @@ export function AddDesignModal({ onClose }: { onClose: () => void }): React.JSX.
         </Field>
       </div>
       {err ? <ErrorBox message={err} /> : null}
-      <Actions onClose={onClose} onSave={onSave} saving={mut.isPending} label="Save Design" />
     </ModalShell>
   );
 }

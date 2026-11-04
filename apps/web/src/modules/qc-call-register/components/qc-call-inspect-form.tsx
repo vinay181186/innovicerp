@@ -421,7 +421,7 @@ export function QcCallInspectFormView(props: {
         </div>
       ) : null}
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 10 }}>
-        <button type="button" className="btn btn-ghost btn-sm" onClick={onCancel}>
+        <button type="button" className="btn btn-ghost btn-sm" data-modal-exit onClick={onCancel}>
           Cancel
         </button>
         <button

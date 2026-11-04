@@ -59,6 +59,8 @@ export function HolidaysModal({ onClose }: { onClose: () => void }): React.JSX.E
       title="Holidays"
       size="md"
       onClose={onClose}
+      // Only a half-typed new holiday can be lost; adding and removing save at once.
+      confirmExit={date !== '' || name.trim() !== ''}
       footer={
         <button type="button" className="btn btn-ghost" onClick={onClose}>
           Close

@@ -24,17 +24,17 @@
 // Defaulting to the old behaviour is deliberate — a caller that forgets the prop
 // gets today's app, not a silently locked file.
 //
-// Styling is the existing .overlay / .modal.modal-lg / .modal-hdr theme —
-// nothing invented.
+// Built on the ONE shared Modal, view-only so it never asks before closing, and
+// always raised: it can open from a pop-up (Task Detail) and nothing opens on it.
 
 import type { DrawingSource } from '@innovic/shared';
-import { Download, Loader2, X } from 'lucide-react';
+import { Download, Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { canDownloadDrawings, useMyAccess } from '@/lib/access-control';
 import { drawingDownloadUrl, drawingViewUrl } from '@/lib/drawing-url';
 import { useSession } from '@/lib/session';
 import { signedUrl } from '@/lib/storage';
+import { Modal } from '@/ui/feedback';
 
 /** What we can render in-page. Driven by extension first (always present) and
  *  the registry's stored MIME type second (present for file_registry rows,
@@ -123,18 +123,6 @@ export function FilePreviewModal({
     };
   }, [storagePath, bucket, preview, isDrawing, source, refCode]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    document.body.style.overflow = 'hidden';
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      document.body.style.overflow = '';
-    };
-  }, [onClose]);
-
   /** The only path that writes to disk. A SECOND signed URL, minted with
    *  `download` so Supabase answers with an attachment disposition; the
    *  anchor click keeps the current page put instead of navigating away. */
@@ -167,95 +155,79 @@ export function FilePreviewModal({
     }
   }
 
-  return createPortal(
-    <div
-      className="overlay"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
+  return (
+    <Modal
+      title={`📎 ${name}`}
+      size="lg"
+      onClose={onClose}
+      closeLabel="Close preview"
+      confirmExit={false}
+      elevated
+      bodyStyle={{ padding: 0, background: 'var(--bg1, var(--bg3))' }}
+      headerActions={
+        // Absent, not disabled. A greyed-out Download reads as "ask someone and
+        // you can have it"; the owner asked for the button simply not to exist
+        // for people who may only look.
+        mayDownload ? (
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            onClick={() => void onDownload()}
+            disabled={saving}
+          >
+            {saving ? (
+              <Loader2 size={13} className="inline animate-spin" />
+            ) : (
+              <Download size={13} />
+            )}{' '}
+            Download
+          </button>
+        ) : null
+      }
     >
-      <div className="modal modal-lg" onMouseDown={(e) => e.stopPropagation()}>
-        <div className="modal-hdr">
-          <div className="modal-title" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            📎 {name}
-          </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            {/* Absent, not disabled. A greyed-out Download reads as "ask someone
-                and you can have it"; the owner asked for the button simply not
-                to exist for people who may only look. */}
-            {mayDownload ? (
-              <button
-                type="button"
-                className="btn btn-primary btn-sm"
-                onClick={() => void onDownload()}
-                disabled={saving}
-              >
-                {saving ? (
-                  <Loader2 size={13} className="inline animate-spin" />
-                ) : (
-                  <Download size={13} />
-                )}{' '}
-                Download
-              </button>
-            ) : null}
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm btn-icon"
-              onClick={onClose}
-              aria-label="Close preview"
-            >
-              <X size={14} />
-            </button>
+      {err ? (
+        <div className="empty-state" style={{ color: 'var(--red2)' }}>
+          {err}
+        </div>
+      ) : preview === 'none' ? (
+        // Nothing the browser renders in-page (.eml, .xlsx, .docx …).
+        // Say so plainly rather than silently downloading it.
+        <div className="empty-state" style={{ padding: 40, textAlign: 'center' }}>
+          <div style={{ fontSize: 30, marginBottom: 8 }}>📁</div>
+          <div className="text2">This file type cannot be previewed in the browser.</div>
+          <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
+            {mayDownload
+              ? 'Use Download above to save it and open it on your computer.'
+              : 'You can view drawings but not save them. Ask an administrator if you need a copy.'}
           </div>
         </div>
-
-        <div className="modal-body" style={{ padding: 0, background: 'var(--bg1, var(--bg3))' }}>
-          {err ? (
-            <div className="empty-state" style={{ color: 'var(--red2)' }}>
-              {err}
-            </div>
-          ) : preview === 'none' ? (
-            // Nothing the browser renders in-page (.eml, .xlsx, .docx …).
-            // Say so plainly rather than silently downloading it.
-            <div className="empty-state" style={{ padding: 40, textAlign: 'center' }}>
-              <div style={{ fontSize: 30, marginBottom: 8 }}>📁</div>
-              <div className="text2">This file type cannot be previewed in the browser.</div>
-              <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
-                {mayDownload
-                  ? 'Use Download above to save it and open it on your computer.'
-                  : 'You can view drawings but not save them. Ask an administrator if you need a copy.'}
-              </div>
-            </div>
-          ) : !url ? (
-            <div className="empty-state" style={{ padding: 40 }}>
-              <Loader2 className="inline animate-spin" size={16} /> Loading preview…
-            </div>
-          ) : preview === 'pdf' ? (
-            <iframe
-              src={url}
-              title={name}
-              style={{ width: '100%', height: '78vh', border: 0, display: 'block' }}
-            />
-          ) : (
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                minHeight: '60vh',
-                padding: 16,
-              }}
-            >
-              <img
-                src={url}
-                alt={name}
-                style={{ maxWidth: '100%', maxHeight: '78vh', objectFit: 'contain' }}
-              />
-            </div>
-          )}
+      ) : !url ? (
+        <div className="empty-state" style={{ padding: 40 }}>
+          <Loader2 className="inline animate-spin" size={16} /> Loading preview…
         </div>
-      </div>
-    </div>,
-    document.body,
+      ) : preview === 'pdf' ? (
+        <iframe
+          src={url}
+          title={name}
+          style={{ width: '100%', height: '78vh', border: 0, display: 'block' }}
+        />
+      ) : (
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            minHeight: '60vh',
+            padding: 16,
+          }}
+        >
+          <img
+            src={url}
+            alt={name}
+            style={{ maxWidth: '100%', maxHeight: '78vh', objectFit: 'contain' }}
+          />
+        </div>
+      )}
+    </Modal>
   );
 }

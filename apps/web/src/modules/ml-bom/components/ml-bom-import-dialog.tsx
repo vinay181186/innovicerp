@@ -292,8 +292,7 @@ export function MlBomImportDialog({ onClose }: MlBomImportDialogProps): React.JS
   // A revise held for approval or refused did not revise anything (ADR-249).
   const nRevise =
     shown?.boms.filter(
-      (b) =>
-        b.action === 'revise' && b.outcome !== 'sent_for_approval' && b.outcome !== 'not_sent',
+      (b) => b.action === 'revise' && b.outcome !== 'sent_for_approval' && b.outcome !== 'not_sent',
     ).length ?? 0;
   const nSentForApproval =
     finalResult?.sentForApprovalCount ??
@@ -419,7 +418,7 @@ export function MlBomImportDialog({ onClose }: MlBomImportDialogProps): React.JS
       title="Import Multi-Level BOM"
       {...(busy ? {} : { onClose })}
       size="lg"
-      closeOnOverlayClick={false}
+      confirmExit={step !== 'done'}
       footer={footer}
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)' }}>

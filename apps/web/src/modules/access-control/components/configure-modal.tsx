@@ -73,7 +73,7 @@ import { useRecordWatch } from '@/lib/use-record-watch';
 import { useUpdateUser, useUser } from '@/modules/users/api';
 import { useFetchUserAccess, useSaveUserAccess, useUserAccess, useUserAccessList } from '../api';
 import { roleLabel } from '@/lib/role-label';
-import { Banner, ConfirmDialog, Modal, useToast } from '@/ui/feedback';
+import { Banner, Modal, useToast } from '@/ui/feedback';
 
 interface Props {
   userId: string;
@@ -268,7 +268,6 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
   // "Discard changes?" — asked when the box is closed by ESC / the dim
   // background / × after anything was touched. An admin who set five
   // department tiers must not lose them to one mis-click.
-  const [askDiscard, setAskDiscard] = useState(false);
 
   // Only the approval limit comes from the user record now — the role is
   // derived on save, never read back into an input.
@@ -714,13 +713,39 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
       departments,
       forms,
     }) !== loadedSnapshot;
-  function requestClose(): void {
-    if (dirty) setAskDiscard(true);
-    else onClose();
-  }
 
   return (
-    <Modal title="Access Control" onClose={requestClose} bodyStyle={{ padding: 0 }}>
+    <Modal
+      title="Access Control"
+      onClose={onClose}
+      // The Modal's own question, but only while the form really differs from
+      // what was loaded: opening a tab or undoing a tick is not a change.
+      confirmExit={dirty}
+      bodyStyle={{ padding: 0 }}
+      footer={
+        isLoading || isError ? undefined : (
+          <>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              disabled={save.isPending || updateUser.isPending}
+              onClick={() => void onSave(false)}
+            >
+              {save.isPending || updateUser.isPending ? (
+                <>
+                  <Loader2 className="inline h-3 w-3 animate-spin" /> Saving…
+                </>
+              ) : (
+                'Save Access'
+              )}
+            </button>
+          </>
+        )
+      }
+    >
       <div>
         {/* ── Header strip: user · role · home dept · PO limit · JSON clone ── */}
         <div
@@ -1427,53 +1452,9 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                 </Banner>
               </div>
             ) : null}
-
-            {/* Footer — helper + actions */}
-            <div
-              style={{
-                marginTop: 14,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                flexWrap: 'wrap',
-              }}
-            >
-              <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
-                <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-primary btn-sm"
-                  disabled={save.isPending || updateUser.isPending}
-                  onClick={() => void onSave(false)}
-                >
-                  {save.isPending || updateUser.isPending ? (
-                    <>
-                      <Loader2 className="inline h-3 w-3 animate-spin" /> Saving…
-                    </>
-                  ) : (
-                    'Save Access'
-                  )}
-                </button>
-              </div>
-            </div>
           </div>
         )}
       </div>
-      {askDiscard ? (
-        <ConfirmDialog
-          title="Discard changes?"
-          message={`The access changes made for ${userName} are not saved yet.`}
-          confirmLabel="Discard"
-          cancelLabel="Keep editing"
-          onConfirm={() => {
-            setAskDiscard(false);
-            onClose();
-          }}
-          onCancel={() => setAskDiscard(false)}
-        />
-      ) : null}
     </Modal>
   );
 }

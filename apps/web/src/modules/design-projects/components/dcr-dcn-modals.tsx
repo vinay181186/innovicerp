@@ -94,6 +94,14 @@ export function DcrFormModal({
     <Modal
       onClose={onClose}
       title={mode === 'add' ? '📋 New DCR' : `✏ Edit DCR ${dcr?.code ?? ''}`}
+      footer={
+        <Actions
+          onClose={onClose}
+          onSave={onSave}
+          saving={createMut.isPending || updateMut.isPending}
+          label={mode === 'add' ? 'Save DCR' : 'Save Changes'}
+        />
+      }
     >
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <div style={{ gridColumn: 'span 2' }}>
@@ -174,12 +182,6 @@ export function DcrFormModal({
         </div>
       </div>
       {err ? <ErrorBox message={err} /> : null}
-      <Actions
-        onClose={onClose}
-        onSave={onSave}
-        saving={createMut.isPending || updateMut.isPending}
-        label={mode === 'add' ? 'Save DCR' : 'Save Changes'}
-      />
     </Modal>
   );
 }
@@ -247,6 +249,14 @@ export function DcnFormModal({
     <Modal
       onClose={onClose}
       title={mode === 'add' ? '📝 New DCN' : `✏ Edit DCN ${dcn?.code ?? ''}`}
+      footer={
+        <Actions
+          onClose={onClose}
+          onSave={onSave}
+          saving={createMut.isPending || updateMut.isPending}
+          label={mode === 'add' ? 'Save DCN' : 'Save Changes'}
+        />
+      }
     >
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <div style={{ gridColumn: 'span 2' }}>
@@ -297,12 +307,6 @@ export function DcnFormModal({
         </div>
       </div>
       {err ? <ErrorBox message={err} /> : null}
-      <Actions
-        onClose={onClose}
-        onSave={onSave}
-        saving={createMut.isPending || updateMut.isPending}
-        label={mode === 'add' ? 'Save DCN' : 'Save Changes'}
-      />
     </Modal>
   );
 }

@@ -105,13 +105,7 @@ export function TaskDetailModal({
 
   return (
     <>
-      <Overlay
-        title={t ? t.code : 'Task Detail'}
-        size="lg"
-        onClose={onClose}
-        escLocked={child.kind !== 'none'}
-        footer={footer}
-      >
+      <Overlay title={t ? t.code : 'Task Detail'} size="lg" onClose={onClose} footer={footer}>
         {isLoading ? (
           <div className="empty-state">Loading…</div>
         ) : isError || !t ? (

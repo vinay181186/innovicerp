@@ -157,6 +157,7 @@ export function ConfirmDialog({
 
   return (
     <Modal
+      confirmExit={false}
       open
       inline={inline}
       elevated={elevated}

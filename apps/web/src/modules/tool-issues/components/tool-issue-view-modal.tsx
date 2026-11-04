@@ -7,6 +7,7 @@
 import { type InstrumentReturnCondition, type ToolIssueDetail } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { Modal } from '@/ui/feedback';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { fmtDate } from '@/lib/date';
 import { CancelPendingBanner } from '@/modules/cancel-requests/components/cancel-pending-banner';
@@ -47,73 +48,17 @@ export function ToolIssueViewModal({
   // State, not permission: nothing returned yet and not already cancelled.
   const cancellable = t && !t.cancelledAt && t.returns.length === 0;
 
+  // Keyed on the mode: pressing Record Return is not a typed change, so the return
+  // form starts clean and asks before exit only once something is typed.
   return (
-    <div
-      className="overlay"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className="modal" style={{ maxWidth: 820, width: '96vw' }}>
-        <div className="modal-hdr">
-          <span className="modal-title">Tool Issue {t?.code ?? ''}</span>
-          <button type="button" className="btn btn-ghost btn-sm btn-icon" onClick={onClose}>
-            ✕
-          </button>
-        </div>
-        <div className="modal-body">
-          {isLoading ? (
-            <div className="text3" style={{ fontSize: 12 }}>
-              <Loader2 size={14} className="inline animate-spin" /> Loading…
-            </div>
-          ) : isError || !t ? (
-            <div style={{ color: 'var(--red2)', fontSize: 12 }}>
-              {error instanceof Error ? error.message : 'Could not load the tool issue.'}
-            </div>
-          ) : (
-            <>
-              <Facts t={t} />
-              {!t.cancelledAt ? (
-                <div style={{ marginTop: 8 }}>
-                  <CancelPendingBanner
-                    docType="tool_issue"
-                    docId={t.id}
-                    cancelled={false}
-                    {...(canCancelIssue ? { onOpen: () => onCancel(t) } : {})}
-                  />
-                </div>
-              ) : null}
-              {mode === 'return' ? (
-                <ReturnForm
-                  t={t}
-                  onDone={(m) => {
-                    setMode('view');
-                    setMsg(m);
-                  }}
-                  onError={setErr}
-                />
-              ) : (
-                <>
-                  <History t={t} />
-                  <div style={{ marginTop: 10 }}>
-                    <Panel title="History" bodyPadding="none">
-                      <DocumentHistory entity="ToolIssue" entityId={t.id} refId={t.code} />
-                    </Panel>
-                  </div>
-                </>
-              )}
-              {msg ? (
-                <div className="text2" style={{ marginTop: 10, fontSize: 12 }}>
-                  ✓ {msg}
-                </div>
-              ) : null}
-              {err ? (
-                <div style={{ color: 'var(--red2)', fontSize: 12, marginTop: 8 }}>{err}</div>
-              ) : null}
-            </>
-          )}
-        </div>
-        <div className="modal-footer">
+    <Modal
+      key={mode}
+      title={<>Tool Issue {t?.code ?? ''}</>}
+      onClose={onClose}
+      maxWidth="820px"
+      confirmExit={mode === 'return'}
+      footer={
+        <>
           {mode === 'view' ? (
             <>
               <button type="button" className="btn btn-ghost" onClick={onClose}>
@@ -148,9 +93,60 @@ export function ToolIssueViewModal({
               Back
             </button>
           )}
+        </>
+      }
+    >
+      {isLoading ? (
+        <div className="text3" style={{ fontSize: 12 }}>
+          <Loader2 size={14} className="inline animate-spin" /> Loading…
         </div>
-      </div>
-    </div>
+      ) : isError || !t ? (
+        <div style={{ color: 'var(--red2)', fontSize: 12 }}>
+          {error instanceof Error ? error.message : 'Could not load the tool issue.'}
+        </div>
+      ) : (
+        <>
+          <Facts t={t} />
+          {!t.cancelledAt ? (
+            <div style={{ marginTop: 8 }}>
+              <CancelPendingBanner
+                docType="tool_issue"
+                docId={t.id}
+                cancelled={false}
+                {...(canCancelIssue ? { onOpen: () => onCancel(t) } : {})}
+              />
+            </div>
+          ) : null}
+          {mode === 'return' ? (
+            <ReturnForm
+              t={t}
+              onDone={(m) => {
+                setMode('view');
+                setMsg(m);
+              }}
+              onError={setErr}
+            />
+          ) : (
+            <>
+              <History t={t} />
+              <div style={{ marginTop: 10 }}>
+                <Panel title="History" bodyPadding="none">
+                  <DocumentHistory entity="ToolIssue" entityId={t.id} refId={t.code} />
+                </Panel>
+              </div>
+            </>
+          )}
+          {msg ? (
+            <div className="text2" style={{ marginTop: 10, fontSize: 12 }}>
+              ✓ {msg}
+            </div>
+          ) : null}
+          {err ? (
+            <div style={{ color: 'var(--red2)', fontSize: 12, marginTop: 8 }}>{err}</div>
+          ) : null}
+        </>
+      )}
+    </Modal>
   );
 }
 

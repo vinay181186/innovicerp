@@ -118,7 +118,18 @@ export function EditPartyMaterialModal({
     : null;
 
   return (
-    <ModalShell onClose={onClose} title={`Edit Customer Material ${row.code}`}>
+    <ModalShell
+      onClose={onClose}
+      title={`Edit Customer Material ${row.code}`}
+      footer={
+        <ModalActions
+          onClose={onClose}
+          onSave={onSave}
+          saving={updateMut.isPending}
+          saveLabel="Save Changes"
+        />
+      }
+    >
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <Field label="Code">
           <input
@@ -225,13 +236,6 @@ export function EditPartyMaterialModal({
       </div>
 
       {err ? <ErrorBox message={err} /> : null}
-
-      <ModalActions
-        onClose={onClose}
-        onSave={onSave}
-        saving={updateMut.isPending}
-        saveLabel="Save Changes"
-      />
     </ModalShell>
   );
 }
