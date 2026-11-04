@@ -15164,7 +15164,9 @@ draft plans also read "Fully Planned" while its lines read "In Planning" (open s
 - The "Matching lines" tab is deleted: the list IS the lines, and search now covers every page.
 - RC / PRO / JC rule moved to `packages/shared/src/lib/planning-doc-codes.ts`, so the cells and the
   server's search + Sort & Filter read one rule. Plan loading is one batched helper
-  (`so-planning/plan-summaries.ts`) for SO detail, JWSO detail and the list.
+  (`so-planning/plan-summaries.ts`) for SO and JWSO detail. The list reads named columns only
+  (`list-lines-plans.ts`, same live-plan rule and RC join), one query for both sources, because it
+  runs for every open line on every page; `list-lines.test.ts` compares each plan with the detail.
 - JWSO order view fixed so it agrees with the list: a short-closed line reads To Plan 0 / Fully
   Planned, and a direct rework or repair Job Card is not cover (both already so on the SO path).
 - New table key `planningLineList`, so an old saved ▾ filter cannot ask for a dead field; each
@@ -15182,7 +15184,7 @@ draft plans also read "Fully Planned" while its lines read "In Planning" (open s
 
 ### Consequences
 
-- Positive: same figure on the list and in the order; 14 queries for a page however many orders.
+- Positive: same figure on the list and in the order; at most 8 queries for a page however many orders.
 - Negative: every page request reads every open line. Speed on PROD-size data not measured before
   release (PROD read not available to the session).
 - A plan or Job Card change reaches the list by the 60 s poll, not live: `plans` is not a live table,

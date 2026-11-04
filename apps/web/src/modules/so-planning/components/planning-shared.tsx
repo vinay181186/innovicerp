@@ -61,6 +61,7 @@ const LINE_STATE_COLOR: Record<PlanningLineState, string> = {
 //  - covered only by a plan-less direct JC → "In Production (no plan)"
 // Green must mean executed, NOT "a draft plan exists for the full qty".
 export function lineStatusOf(line: PlanningLineStatusInput): {
+  state: PlanningLineState;
   label: string;
   color: string;
   /** 0–100: covered qty (plans + in-production direct JCs) over order qty. */
@@ -68,5 +69,5 @@ export function lineStatusOf(line: PlanningLineStatusInput): {
   hasDirectJc: boolean;
 } {
   const { state, label, pct, hasDirectJc } = planningLineStatus(line);
-  return { label, color: LINE_STATE_COLOR[state], pct, hasDirectJc };
+  return { state, label, color: LINE_STATE_COLOR[state], pct, hasDirectJc };
 }

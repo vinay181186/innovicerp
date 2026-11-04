@@ -1,11 +1,11 @@
 // GET /so-planning/lines (ADR-268) — the Planning first screen: ONE ROW PER LINE
 // of every open SO, then every open JWSO, same line set as the order list and
 // the order detail. Every figure is built the way getPlanningSoDetail builds it,
-// from the same helpers (plan-summaries.ts, line-facts.ts) and the same shared
-// rules, so the list and the order can never disagree.
+// from the same helpers (list-lines-plans.ts, line-facts.ts) and the same shared
+// rules; list-lines.test.ts holds the list and the order together.
 //
-// Batched: a fixed number of queries however many orders are open — up to 14 with
-// no source chosen (SO 8, JW 6), one transaction. Never the detail in a loop.
+// Batched: a fixed number of queries however many orders are open — up to 8 with
+// no source chosen, one transaction. Never the detail in a loop.
 
 import { planningLineStatus, soLinePlanCoverage, toPlanningLineStatus } from '@innovic/shared';
 import type {

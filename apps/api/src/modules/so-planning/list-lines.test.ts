@@ -127,7 +127,23 @@ describe('every figure on a list row equals the same line on the order detail', 
     for (const row of rows) {
       const line = detail.lines.find((l) => l.soLineId === row.soLineId)!;
       for (const f of SHARED_FIELDS) expect(row[f], f).toEqual(line[f]);
-      expect(row.plans.map((p) => p.code)).toEqual(line.plans.map((p) => p.code));
+      expect(row.plans).toEqual(
+        line.plans.map((p) => ({
+          id: p.id,
+          code: p.code,
+          planStatus: p.planStatus,
+          planQty: p.planQty,
+          bomChildCode: p.bomChildCode,
+          routeCardCode: p.routeCardCode,
+          routeCardApprovalStatus: p.routeCardApprovalStatus,
+          productionOrders: p.productionOrders,
+          // The list never sends the older-build fallback; its full list is above.
+          productionOrderId: null,
+          productionOrderCode: null,
+          jcId: p.jcId,
+          jcCode: p.jcCode,
+        })),
+      );
       expect(rcText(lineRouteCards(row))).toBe(rcText(lineRouteCards(line)));
       expect(docText(linePros(row))).toBe(docText(linePros(line)));
       expect(docText(lineJcs(row))).toBe(docText(lineJcs(line)));

@@ -42,9 +42,9 @@ export async function loadListPlansByLine(
       jcId: plans.jcId,
       jcCode: jobCards.code,
       routeCardCode: sql<string | null>`plan_rc.code`.as('plan_rc_code'),
-      routeCardApprovalStatus: sql<
-        PlanningLineListPlan['routeCardApprovalStatus']
-      >`plan_rc.approval_status`.as('plan_rc_approval_status'),
+      routeCardApprovalStatus: sql<string | null>`plan_rc.approval_status`.as(
+        'plan_rc_approval_status',
+      ),
     })
     .from(plans)
     .leftJoin(jobCards, and(eq(jobCards.id, plans.jcId), isNull(jobCards.deletedAt)))
@@ -65,10 +65,7 @@ export async function loadListPlansByLine(
   );
   for (const r of rows) {
     bomMasterByPlan.set(r.id, r.bomMasterId);
-    const lineId = r.soLineId ?? r.jwLineId;
-    if (!lineId) continue;
-    const bucket = plansByLine.get(lineId) ?? [];
-    bucket.push({
+    const plan: PlanningLineListPlan = {
       id: r.id,
       code: r.code,
       planStatus: r.planStatus,
@@ -83,8 +80,15 @@ export async function loadListPlansByLine(
       productionOrderCode: null,
       jcId: r.jcId ?? null,
       jcCode: r.jcCode ?? null,
-    });
-    plansByLine.set(lineId, bucket);
+    };
+    // By each link, as the order view does: nothing in the database stops a plan
+    // carrying both, and it must not vanish from the JWSO line if one does.
+    for (const lineId of [r.soLineId, r.jwLineId]) {
+      if (!lineId) continue;
+      const bucket = plansByLine.get(lineId) ?? [];
+      bucket.push(plan);
+      plansByLine.set(lineId, bucket);
+    }
   }
   return { plansByLine, bomMasterByPlan };
 }

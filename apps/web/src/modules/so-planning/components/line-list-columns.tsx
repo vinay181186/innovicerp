@@ -219,11 +219,11 @@ export function lineListColumns(
       filterOptions: PLAN_STATE_OPTIONS,
       nowrap: true,
       render: (r) => {
-        // The state's name only: To Plan beside it already says how many are pending.
+        // The state's name only: the To Plan column carries how many are pending.
         const st = lineStatusOf(r);
         return (
           <span style={{ fontSize: 11, fontWeight: 700, color: st.color }}>
-            {PLANNING_STATE_LABEL[planningLineStatus(r).state]}
+            {PLANNING_STATE_LABEL[st.state]}
           </span>
         );
       },
