@@ -447,7 +447,7 @@
 .dash-link:focus-visible {
   /* outline, not border-color: it cannot be swallowed by the child's own border
      and it never removes the ring the browser would otherwise draw. */
-  outline: 2px solid var(--cyan);
+  outline: 2px solid var(--blue);
   outline-offset: 2px;
 }
 .dash-link:hover .dash-surface,
@@ -774,10 +774,18 @@ body.density-compact {
   border: 1px solid var(--border3);
   background: var(--bg2);
 }
+.innovic-table.tbl-grid .btn-sm:hover:where(:not(:disabled)) {
+  background: var(--bg3);
+  border-color: var(--border2);
+}
 .innovic-table.tbl-grid .btn-sm.btn-primary {
   background: var(--blue);
   border-color: var(--blue);
   color: #fff;
+}
+.innovic-table.tbl-grid .btn-sm.btn-primary:hover:where(:not(:disabled)) {
+  background: var(--blue2);
+  border-color: var(--blue2);
 }
 /* Green / red keep their colour in a cell too — else the white ✓ / ✗ on the
    Approvals Action column sit on the light sheet button and vanish. */
@@ -786,7 +794,7 @@ body.density-compact {
   border-color: var(--green2);
   color: #fff;
 }
-.innovic-table.tbl-grid .btn-sm.btn-success:hover {
+.innovic-table.tbl-grid .btn-sm.btn-success:hover:where(:not(:disabled)) {
   background: var(--green2-hover);
   border-color: var(--green2-hover);
 }
@@ -795,7 +803,7 @@ body.density-compact {
   border-color: var(--red2);
   color: #fff;
 }
-.innovic-table.tbl-grid .btn-sm.btn-danger:hover {
+.innovic-table.tbl-grid .btn-sm.btn-danger:hover:where(:not(:disabled)) {
   background: var(--red2-hover);
   border-color: var(--red2-hover);
 }
@@ -1220,7 +1228,7 @@ table.tbl-ctr td .innovic-select {
   background: var(--blue);
   color: #fff;
 }
-.btn-primary:hover {
+.btn-primary:hover:where(:not(:disabled)) {
   background: var(--blue2);
   color: #fff;
 }
@@ -1228,7 +1236,7 @@ table.tbl-ctr td .innovic-select {
   background: var(--green2);
   color: #fff;
 }
-.btn-success:hover {
+.btn-success:hover:where(:not(:disabled)) {
   background: var(--green2-hover);
   color: #fff;
 }
@@ -1236,7 +1244,7 @@ table.tbl-ctr td .innovic-select {
   background: var(--red2);
   color: #fff;
 }
-.btn-danger:hover {
+.btn-danger:hover:where(:not(:disabled)) {
   background: var(--red2-hover);
   color: #fff;
 }
@@ -1245,7 +1253,7 @@ table.tbl-ctr td .innovic-select {
   color: var(--text2);
   border: 1px solid var(--border);
 }
-.btn-ghost:hover {
+.btn-ghost:hover:where(:not(:disabled)) {
   background: var(--bg3);
   color: var(--text);
   border-color: var(--border2);
@@ -1263,6 +1271,38 @@ table.tbl-ctr td .innovic-select {
 .btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* ═══ ONE EFFECTS STANDARD (owner 2026-11-04) ═══
+   Hover darkens (the .btn-*:hover rules above), pressed goes a little darker,
+   disabled is 50% faded and does not react, keyboard focus is one blue ring.
+   Text fields keep their blue border + glow (.innovic-input:focus). */
+:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 1px;
+}
+/* Focus moved there by code (a pop-up taking focus), not something to Tab to. */
+[tabindex='-1']:focus-visible {
+  outline: none;
+}
+/* Inside the box, so a table's or menu's own edge cannot clip the ring. */
+tr:focus-visible,
+[role='tab']:focus-visible,
+[role='menuitem']:focus-visible,
+.action-menu-item:focus-visible,
+.row-menu-item:focus-visible {
+  outline-offset: -2px;
+}
+.btn:active:where(:not(:disabled)),
+.row-menu-btn:active {
+  filter: brightness(0.92);
+}
+.tab-strip-tab {
+  background: transparent;
+  transition: background var(--ease-fast);
+}
+.tab-strip-tab:hover:where([aria-selected='false']) {
+  background: var(--bg4);
 }
 
 /* ═══ FORMS ═══ */

@@ -371,6 +371,7 @@ export function NewPartyGrnModal({
                 <th className="th-num">Ln</th>
                 <th style={{ color: 'var(--purple)' }}>POL</th>
                 <th>Item Code</th>
+                <th>Item Name</th>
                 <th>Customer RM</th>
                 <th className="th-num">Order Qty</th>
                 <th className="th-num">Accepted</th>
@@ -386,20 +387,20 @@ export function NewPartyGrnModal({
             <tbody>
               {!jwId ? (
                 <tr>
-                  <td colSpan={11} className="empty-state" style={{ padding: 14 }}>
+                  <td colSpan={12} className="empty-state" style={{ padding: 14 }}>
                     Select Client PO No. / JWSO No.
                   </td>
                 </tr>
               ) : jwDetailQ.isLoading ? (
                 <tr>
-                  <td colSpan={11} className="empty-state" style={{ padding: 14 }}>
+                  <td colSpan={12} className="empty-state" style={{ padding: 14 }}>
                     <Loader2 size={13} className="inline animate-spin" /> Loading lines…
                   </td>
                 </tr>
               ) : jwDetailQ.isError ? (
                 <tr>
                   <td
-                    colSpan={11}
+                    colSpan={12}
                     className="empty-state"
                     style={{ color: 'var(--red2)', padding: 14 }}
                   >
@@ -412,7 +413,7 @@ export function NewPartyGrnModal({
                 <>
                   {nothingToReceive && jwDetail ? (
                     <tr>
-                      <td colSpan={11} className="empty-state" style={{ padding: 14 }}>
+                      <td colSpan={12} className="empty-state" style={{ padding: 14 }}>
                         Nothing left to receive on {jwDetail.code}. All customer material is
                         received or waiting QC.
                       </td>
@@ -420,7 +421,7 @@ export function NewPartyGrnModal({
                   ) : null}
                   {jwLines.length > 0 && visibleLines.length === 0 ? (
                     <tr>
-                      <td colSpan={11} className="empty-state" style={{ padding: 14 }}>
+                      <td colSpan={12} className="empty-state" style={{ padding: 14 }}>
                         All lines deleted — use Restore deleted lines.
                       </td>
                     </tr>
@@ -435,11 +436,12 @@ export function NewPartyGrnModal({
                         <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
                           {l.clientPoLineNo ?? '—'}
                         </td>
-                        <td title={l.partName}>
+                        <td>
                           <span className="mono fw-700" style={{ color: 'var(--text)' }}>
                             {itemCodeWithRev(l.itemCodeText, l.revision)}
                           </span>
                         </td>
+                        <td style={{ whiteSpace: 'normal' }}>{l.partName.trim() || '—'}</td>
                         <td>
                           {noRm ? (
                             <span className="text3" style={{ fontSize: 11 }}>
