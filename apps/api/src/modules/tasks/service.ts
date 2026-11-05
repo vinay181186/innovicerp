@@ -954,7 +954,7 @@ export async function addTaskAttachment(
 // ── Viewed / options ──────────────────────────────────────────────────────
 
 // Stamp viewed_at for the current user's unread open tasks (called when the
-// assignee opens their Inbox). Not a Day Log reply task (ADR-273): its dot follows
+// assignee opens their Inbox). Not a Day Log reply task (ADR-274): its dot follows
 // the reply, cleared by day-logs markRepliesSeen / markDayRepliesSeen.
 export async function markTasksViewed(user: AuthContext): Promise<{ updated: number }> {
   const companyId = requireCompany(user);

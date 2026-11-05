@@ -6979,7 +6979,7 @@ export const tasks = pgTable(
     index('tasks_company_creator_idx')
       .on(t.companyId, t.createdBy)
       .where(sql`${t.deletedAt} is null`),
-    // 0242 (ADR-273) — one OPEN task per Day Log entry / date per sender.
+    // 0242 (ADR-274) — one OPEN task per Day Log entry / date per sender.
     uniqueIndex('tasks_day_log_reply_open_uq')
       .on(t.companyId, t.linkedRefType, t.linkedRefId, t.createdBy)
       .where(

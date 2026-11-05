@@ -19,7 +19,7 @@ export { addEntries } from './sheet';
 export { markRepliesSeen, updateWork } from './text';
 export { editReply, sendReply } from './replies';
 export { editDayReply, markDayRepliesSeen, sendDayReply } from './day-replies';
-export { getMyPending, getPending } from './pending';
+export { getMyPending, getPending, getPendingCalendar } from './pending';
 export { getPersonDay } from './person-day';
 export { approveEntry, getApprovals, rejectEntry } from './approvals';
 export { getDay } from './manage';

@@ -31,7 +31,7 @@ type OnEdit = (
   key: SaveKey,
 ) => Promise<unknown>;
 
-/** The words beside Send reply. goesToInbox comes from the server (ADR-273, §20.5). */
+/** The words beside Send reply. goesToInbox comes from the server (ADR-274, §20.5). */
 function sendHint(first: string, goesToInbox: boolean, inboxTail = ''): string {
   return goesToInbox
     ? `${first} gets a 🔔 and a task in Inbox${inboxTail}.`

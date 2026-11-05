@@ -135,7 +135,7 @@ export async function getPersonDay(
     );
   }
 
-  // ADR-273 — asked only of a Super Admin who may reply; others pay nothing.
+  // ADR-274 — asked only of a Super Admin who may reply; others pay nothing.
   const replyGoesToInbox =
     canReply && (await dayTx((tx) => usableAssignee(tx, companyId, target.id))) !== null;
 

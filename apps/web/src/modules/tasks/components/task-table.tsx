@@ -9,7 +9,7 @@
 // The <Person> column is the OTHER party of the current view — who assigned it
 // (Inbox), who it went to (Outbox / All), "Me" on My To-Do.
 //
-// A Day Log reply task (ADR-273) also shows its latest reply in the Title cell
+// A Day Log reply task (ADR-274) also shows its latest reply in the Title cell
 // and, on Outbox / All Tasks, whether that reply was seen. The Title column's
 // sort / filter stays on the stored title.
 

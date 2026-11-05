@@ -1,4 +1,4 @@
-// ADR-273 — a Super Admin's reply reaches the person's Task Board Inbox and the
+// ADR-274 — a Super Admin's reply reaches the person's Task Board Inbox and the
 // sender's Outbox, TEST database. Registered by service.test.ts (replyTaskCases())
 // AFTER pendingCases(), whose file-level hooks set the company's first pending date
 // to 2040-01-02 for the whole file: the blank-date cases below rely on it.
@@ -96,7 +96,7 @@ async function withBoardHidden<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 export function replyTaskCases(): void {
-  describe('Day Log reply task — one per entry / date per sender (ADR-273)', () => {
+  describe('Day Log reply task — one per entry / date per sender (ADR-274)', () => {
     it('an entry reply raises one task with the fixed wording', async () => {
       const e = await saved();
       await sendEntry(e.id, 'first');
@@ -178,7 +178,7 @@ export function replyTaskCases(): void {
     });
   });
 
-  describe('Day Log reply task — the dot follows the reply (ADR-273)', () => {
+  describe('Day Log reply task — the dot follows the reply (ADR-274)', () => {
     it('seen on the entry stamps the reply and the task in one statement', async () => {
       const e = await saved();
       await sendEntry(e.id, 'one');
@@ -231,7 +231,7 @@ export function replyTaskCases(): void {
     });
   });
 
-  describe('Day Log reply task — its life (ADR-273)', () => {
+  describe('Day Log reply task — its life (ADR-274)', () => {
     it('complete, then reply: a new task; the old row keeps only its old replies', async () => {
       const e = await saved();
       await sendEntry(e.id, 'old life');
@@ -275,7 +275,7 @@ export function replyTaskCases(): void {
     });
   });
 
-  describe('Day Log reply task — who may do what (ADR-273)', () => {
+  describe('Day Log reply task — who may do what (ADR-274)', () => {
     it('the sender cannot complete, move, reassign or edit; the sender can cancel', async () => {
       const e = await saved();
       await sendEntry(e.id, 'one');
@@ -363,7 +363,7 @@ export function replyTaskCases(): void {
     });
   });
 
-  describe('Day Log reply task — the text stays private (ADR-255, ADR-273)', () => {
+  describe('Day Log reply task — the text stays private (ADR-255, ADR-274)', () => {
     it('no reply text in tasks, task_comments, task_history or the activity log', async () => {
       const entryText = `dl-private-entry-${Date.now()}`;
       const blankText = `dl-private-blank-${Date.now()}`;

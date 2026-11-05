@@ -166,7 +166,7 @@ export function useDecideApproval(rows: readonly WaitingApprovalRow[]) {
     lock([k], true);
     try {
       await rejectOne(r, reason);
-      toast.ok(`✕ ${r.docCode} ${r.kind === 'rc' ? 'returned to creator' : 'rejected'}`);
+      toast.ok(`✕ ${r.docCode} rejected`);
     } catch (e) {
       lock([k], false);
       toast.error(`${r.docCode}: ${decideErrText(e)}`);

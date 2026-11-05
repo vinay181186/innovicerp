@@ -1,4 +1,4 @@
-// ADR-273 — the Day Log replies a task shows, read LIVE from the reply tables: the
+// ADR-274 — the Day Log replies a task shows, read LIVE from the reply tables: the
 // text is never copied to tasks / task_comments / task_history (those are readable
 // company-wide; ADR-255 keeps it private). Whoever may see the task sees them.
 //

@@ -13,7 +13,7 @@
 //     lock sees the other's result (reply → 409, or the entry closes the task).
 //   - Edit: WHERE updated_at = what was loaded (replies.ts editReplyRow, §20.4).
 //   - Seen: WHERE seen_at IS NULL, so a repeat changes nothing. The owner's task
-//     dot clears in that same statement (ADR-273).
+//     dot clears in that same statement (ADR-274).
 
 import {
   DAY_LOG_DATE_REF,

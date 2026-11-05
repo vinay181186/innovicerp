@@ -94,7 +94,7 @@ export async function updateWork(
  * already seen is left alone, so a second call changes nothing). The day
  * header is bumped only when something changed, so the other screens
  * (the Super Admin's, the 🔔) refresh. The task's dot clears in the same
- * statement: one fact (ADR-273).
+ * statement: one fact (ADR-274).
  */
 export async function markRepliesSeen(
   entryId: string,

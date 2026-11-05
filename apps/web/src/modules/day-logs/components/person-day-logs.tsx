@@ -43,7 +43,7 @@ const REV_IDS = ['entryRevNo', 'entryRevDate', 'entryRevTime'];
 /** Shown to anyone but a Super Admin, in the Entry Rev columns' place. */
 const ORDER_ID = 'order';
 
-function columns(): DataTableColumn<Entry>[] {
+export function personDayColumns(): DataTableColumn<Entry>[] {
   const revAt = (r: Entry) => (r.entryRevNo ? istStamp(r.entryRevisedAt) : null);
   return [
     { id: 'srNo', header: 'Sr No', kind: 'code', className: 'mono', render: (r) => r.srNo },
@@ -205,7 +205,7 @@ export function PersonDayLogs({
         ),
       )
     : rows;
-  const cols = columns().filter((c) =>
+  const cols = personDayColumns().filter((c) =>
     p.isSuperAdmin ? c.id !== ORDER_ID : !REV_IDS.includes(c.id ?? ''),
   );
   const toggle = (id: string): void =>

@@ -211,7 +211,7 @@ export function TaskBody({
         ) : null}
       </div>
 
-      {/* ADR-273: a Day Log reply task's replies; Seen only for those it was not sent to. */}
+      {/* ADR-274: a Day Log reply task's replies; Seen only for those it was not sent to. */}
       {t.dayLogReplies ? (
         <>
           <SectionTitle>

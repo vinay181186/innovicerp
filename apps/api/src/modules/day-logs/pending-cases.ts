@@ -104,6 +104,23 @@ export function pendingCases(): void {
       ]);
     });
 
+    it('the calendar: red = the banner, green = saved, dot = replied; Super Admin only', async () => {
+      await entry(TUE);
+      await reply(MON);
+      const c = await service.getPendingCalendar(fx.ownerBase.id, superAdmin(), THU_CLOCK);
+      expect(c.pending).toEqual((await mine()).dates);
+      expect(c.pending).toEqual([MON, WED]);
+      expect(c.filled).toEqual([TUE]);
+      expect(c.replied).toEqual([MON]);
+      expect(c.firstMonth).toBe(MON.slice(0, 7));
+      await expect(service.getPendingCalendar(fx.ownerBase.id, owner(), THU_CLOCK)).rejects.toThrow(
+        'Only a Super Admin',
+      );
+      await expect(
+        service.getPendingCalendar('00000000-0000-4000-8000-000000000000', superAdmin(), THU_CLOCK),
+      ).rejects.toThrow('does not keep a Day Log');
+    });
+
     it('a part-filled day is not pending', async () => {
       await entry(MON);
       expect((await mine()).dates).toEqual([TUE, WED]);

@@ -1,5 +1,5 @@
 // ADR-253 — approval of a NEW Route Card, on its detail page: the Approve /
-// Return to Creator buttons (pending card + Approve tick on Route Card Master — the
+// Reject buttons (pending card + Approve tick on Route Card Master — the
 // creator included), their two dialogs, the pending / rejected banner and the
 // "Approved by X on <date>" line. The server re-checks every decision; a 409
 // (already decided, no right …) is thrown and the dialog shows it as-is.
@@ -18,13 +18,13 @@ const BOX_STYLE: React.CSSProperties = {
   marginTop: 'var(--sp-2)',
 };
 
-/** "Approved by X on <date>" / "Returned by X on <date> — <comment>". */
+/** "Approved by X on <date>" / "Rejected by X on <date> — <reason>". */
 export function rcApprovalLine(rc: RouteCardDetail): string {
   if (rc.approvalStatus === 'approved') {
     return `Approved by ${rc.approvedByName ?? '—'} on ${rc.approvedAt ? fmtDate(rc.approvedAt) : '—'}`;
   }
   if (rc.approvalStatus === 'rejected') {
-    const base = `Returned to creator by ${rc.rejectedByName ?? '—'} on ${rc.rejectedAt ? fmtDate(rc.rejectedAt) : '—'}`;
+    const base = `Rejected by ${rc.rejectedByName ?? '—'} on ${rc.rejectedAt ? fmtDate(rc.rejectedAt) : '—'}`;
     return rc.rejectionReason ? `${base} — ${rc.rejectionReason}` : base;
   }
   return 'Pending Approval';
@@ -46,8 +46,8 @@ export function RcApprovalBanner({
         </Banner>
       ) : (
         <Banner tone="error" role="status" flush>
-          Returned to creator{detail.rejectionReason ? ` — ${detail.rejectionReason}` : ''}. Correct
-          it and save to send it for approval again.
+          Rejected{detail.rejectionReason ? ` — ${detail.rejectionReason}` : ''}. Edit and save to
+          send it again.
         </Banner>
       )}
     </div>
@@ -94,7 +94,7 @@ export function RcApprovalActions({
           setRejectOpen(true);
         }}
       >
-        <Icon name="x" size={13} /> Return to Creator
+        <Icon name="x" size={13} /> Reject
       </button>
 
       <ConfirmDialog
@@ -132,15 +132,14 @@ export function RcApprovalActions({
 
       <ConfirmDialog
         open={rejectOpen}
-        title={`Return Route Card ${detail.code} to its creator?`}
+        title={`Reject Route Card ${detail.code}?`}
         message={
           <>
-            The creator gets a task with your comment. When he corrects and saves the card, it comes
-            back to you for approval.
+            The card can be edited and saved to send it for approval again.
             <textarea
               className="innovic-input"
-              aria-label="Return Comment"
-              placeholder="Return Comment — what to correct (required)"
+              aria-label="Rejection Reason"
+              placeholder="Rejection Reason (required)"
               rows={3}
               maxLength={500}
               value={reason}
@@ -149,13 +148,13 @@ export function RcApprovalActions({
             />
           </>
         }
-        confirmLabel="Return to Creator"
-        pendingLabel="Returning…"
+        confirmLabel="Reject"
+        pendingLabel="Rejecting…"
         onCancel={() => setRejectOpen(false)}
         onConfirm={async () => {
           const r = reason.trim();
           // Thrown, not returned: the dialog shows it and stays open.
-          if (!r) throw new Error('Enter a Return Comment.');
+          if (!r) throw new Error('Enter a Rejection Reason.');
           await rejectMut.mutateAsync({
             id: detail.id,
             reason: r,

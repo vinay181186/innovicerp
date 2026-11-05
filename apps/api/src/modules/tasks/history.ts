@@ -109,7 +109,7 @@ export function visibleTasksWhere(companyId: string, user: AuthContext): SQL {
  * every task write runs requireCanWrite first. Write paths call this only
  * after requireCanWrite passed, so they pass `true`.
  *
- * ADR-273 — a Day Log reply task: only the person it is for moves or completes
+ * ADR-274 — a Day Log reply task: only the person it is for moves or completes
  * it; nobody edits or reassigns it (its wording and link are fixed); the sender
  * or an admin may still cancel it.
  */
@@ -162,7 +162,7 @@ export const isoOrNull = (d: Date | null | undefined): string | null =>
 
 // ── Read model ────────────────────────────────────────────────────────────
 
-/** ADR-273 — a reply task's link per viewer: the person keeps the stored link (My
+/** ADR-274 — a reply task's link per viewer: the person keeps the stored link (My
  *  Day Log); anyone else opens that person's day. */
 function linkedNavPage(r: TaskRecord, viewerId: string): string {
   const stored = r.linkedRefNavPage ?? '';
@@ -189,7 +189,7 @@ export interface RowContext {
   commentCounts: Map<string, number>;
   /** lib/access canWrite(user), read before the transaction. */
   canWrite: boolean;
-  /** ADR-273 — day-log-replies.ts loadDayLogReplies over the same rows. */
+  /** ADR-274 — day-log-replies.ts loadDayLogReplies over the same rows. */
   dayLogReplies?: Map<string, TaskDayLogReply[]>;
 }
 

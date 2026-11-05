@@ -15309,7 +15309,32 @@ On PLN-0189 the Job Work Order row showed "—" under Name / Ref. Audit: a relat
 - Negative: more queries per panel open (one per tab, none per row); a client's SO list is longer with one row per item.
 - Risks: wide read-only change. The BOM, JW DC, Invoice and Assembly paths had no TEST data at build time.
 
-## ADR-273: Day Log replies reach Inbox and Outbox
+## ADR-273: Pending Entries, one row per person with a calendar pop-up
+
+**Date:** 2026-11-05
+**Status:** Accepted
+
+### Context
+
+Owner: Pending Entries should open per person on a calendar, green for filled and red for pending. Chosen from four mockups: Option D, one row per person, calendar in a pop-up.
+
+### Decision
+
+- The list groups the existing `GET /day-logs/pending` rows per person. Print and file stay one row per date.
+- New read `GET /day-logs/pending/:id/calendar`, Super Admin only. Red comes from `pendingOf`, so it cannot differ from the banner. An old Leave day is neither green nor red.
+- The pop-up reuses `Modal`, `usePersonDay`, `DayReplies` and `PersonReplies`. A green date replies under an entry, not on the whole day. Inbox behaviour is out of scope, another terminal owns it.
+
+### Alternatives Considered
+
+- Calendar under the row, or on its own page: rejected by the owner.
+- One reply box on a green date: needs reply and task rule changes that the other terminal owns.
+
+### Consequences
+
+- Positive: no database change; one pending rule for banner, list and calendar.
+- Negative: the person page's `from=pending` link is now unused. Left in place because it is read in `tasks/routes/board.tsx`; remove it when that work is done.
+
+## ADR-274: Day Log replies reach Inbox and Outbox
 
 **Date:** 2026-11-05. **Owner decided:** every Super Admin reply on a Day Log reaches the person's Task Board Inbox and the sender's Outbox. One task per entry (a further reply reuses it and reads New again). The person presses Complete. Mockup approved: https://claude.ai/artifact/3o9Yv7Mg88BPrJ3jiG3BoB
 

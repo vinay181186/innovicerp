@@ -1,4 +1,4 @@
-// ADR-273 (owner 2026-11-05) — the task a Super Admin's Day Log reply raises, on a
+// ADR-274 (owner 2026-11-05) — the task a Super Admin's Day Log reply raises, on a
 // saved entry (linked_ref_id = the line) or a blank date (= the day header). One
 // OPEN task per entry / date PER SENDER; further replies reuse it and make it read
 // New again. An entry task stays until the person presses Complete; a blank-date

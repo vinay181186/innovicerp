@@ -69,7 +69,7 @@ export function dayLogTabOf(v: DayLogViewKey, from?: 'pending'): DayLogTabKey {
 }
 
 /** The tabs to draw: Team / Pending Entries / Teams Config / Approvals only for
- *  whoever the server lets see them. Pending Entries carries its row count. Approvals carries its waiting count and is drawn
+ *  whoever the server lets see them. Pending Entries carries its people count. Approvals carries its waiting count and is drawn
  *  while that count is above 0 — and also while it is loading or failed (a
  *  failed read must never look like "nothing waiting"), and while the
  *  caller is ON it (`current`), so deciding the last edit does not pull the
@@ -85,6 +85,7 @@ export function useDayLogBoardTabs(
   const waiting = approvals.data?.rows.length ?? 0;
   const canSeePending = enabled && Boolean(access.data?.canSeePending);
   const pending = usePendingEntries(canSeePending);
+  const pendingPeople = pending.data ? new Set(pending.data.rows.map((r) => r.userId)).size : null;
   const shown: Record<DayLogTabKey, boolean> = {
     daylog: true,
     team: Boolean(access.data?.canSeeTeam),
@@ -101,7 +102,7 @@ export function useDayLogBoardTabs(
       key === 'approvals'
         ? `${LABELS[key]} (${approvals.isError ? '!' : approvals.isLoading ? '…' : waiting})`
         : LABELS[key],
-    ...(key === 'pending' ? { count: pending.data?.rows.length ?? null } : {}),
+    ...(key === 'pending' ? { count: pendingPeople } : {}),
   }));
 }
 
@@ -146,13 +147,7 @@ export function DayLogBoardBody({
   if (tab === 'approvals') return <DayLogApprovals />;
   if (tab === 'teams') return <TeamsConfig />;
   if (tab === 'pending') {
-    return (
-      <PendingEntriesTab
-        onOpen={(u, d) =>
-          onNav({ view: 'person', user: u, date: d, line: undefined, from: 'pending' })
-        }
-      />
-    );
+    return <PendingEntriesTab />;
   }
   if (tab === 'team' || tab === 'person') {
     return (

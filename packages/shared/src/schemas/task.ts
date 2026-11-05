@@ -33,7 +33,7 @@ export const taskLinkedRefSchema = z.object({
 });
 export type TaskLinkedRef = z.infer<typeof taskLinkedRefSchema>;
 
-// ADR-273 (owner 2026-11-05): a Super Admin's reply on a Day Log entry or on a
+// ADR-274 (owner 2026-11-05): a Super Admin's reply on a Day Log entry or on a
 // blank date raises a task, one open task per entry / date per sender. The reply
 // text is NOT copied to the task: it stays in the reply tables and the API reads
 // it into the row (dayLogReplies) for whoever may see the task.
@@ -245,7 +245,7 @@ export const taskRowSchema = z.object({
   createdAt: z.string(),
   updatedAt: z.string(), // "Last Update" column
   linkedRef: taskLinkedRefSchema.nullable(),
-  /** ADR-273 — oldest first. null = not a Day Log reply task. */
+  /** ADR-274 — oldest first. null = not a Day Log reply task. */
   dayLogReplies: z.array(taskDayLogReplySchema).nullable(),
   isUnread: z.boolean(), // unread by the requesting user (assignee, !viewed, open)
   attachmentCount: z.number().int().nonnegative(),

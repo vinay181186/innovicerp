@@ -96,7 +96,6 @@ import { findItemRevision, itemNeedsRev, resolveItemRevision } from '../../lib/i
 import { readCardDrawing, readRouteCardForItemRev } from './lookup';
 import { logger } from '../../lib/logger';
 import { emitActivityLog } from '../activity-log/service';
-import { autoCloseLinkedTasks } from '../tasks/auto-close';
 import {
   type RouteCardEditPayload,
   routingNotSentReason,
@@ -122,9 +121,6 @@ import type {
   RouteCardRevision,
   UpdateRouteCardInput,
 } from './schema';
-
-/** tasks.linked_ref_type of the creator's "Route Card returned" task. */
-export const RC_RETURN_TASK_REF = 'route_card_return';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -1085,7 +1081,12 @@ export async function createRouteCard(
         : null;
 
       // One live card per Item + Rev (old / Buy cards: one per item with no Rev).
-      const existing = await readRouteCardForItemRev(tx, companyId, input.itemId, rev?.id ?? null);
+      const existing = await readRouteCardForItemRev(
+        tx,
+        companyId,
+        input.itemId,
+        rev?.id ?? null,
+      );
       if (existing) {
         throw new ConflictError(
           rev
@@ -1587,20 +1588,6 @@ export async function updateRouteCardTx(
       updatedAt: new Date(),
     })
     .where(eq(routeCards.id, id));
-
-  // Return to Creator — the resubmit closes the creator's open task (ADR-190).
-  if (resubmit) {
-    await autoCloseLinkedTasks(
-      tx,
-      {
-        companyId,
-        refTypes: [RC_RETURN_TASK_REF],
-        refId: id,
-        doneLabel: `Route Card ${input.code} resubmitted for approval`,
-      },
-      user,
-    );
-  }
 
   // Ops swap + revision bump + snapshot live in ONE place
   // (replaceRouteCardOps) shared with the auto-save path below.

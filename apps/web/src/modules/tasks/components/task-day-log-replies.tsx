@@ -1,4 +1,4 @@
-// ADR-273: the Super Admin's Day Log replies on a task, oldest first — the same
+// ADR-274: the Super Admin's Day Log replies on a task, oldest first — the same
 // words as the Team Day Logs replies pane (day-logs/components/person-replies).
 // Used by the Task Board row's ▸ and the task detail. The Seen line is for the
 // sender's side only; the person the reply went to does not get it.

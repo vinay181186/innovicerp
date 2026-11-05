@@ -1,4 +1,4 @@
--- ADR-273 (owner 2026-11-05): every Super Admin reply on a Day Log (a saved entry
+-- ADR-274 (owner 2026-11-05): every Super Admin reply on a Day Log (a saved entry
 -- or a blank date) reaches the person's Task Board Inbox and the sender's Outbox.
 --
 --   tasks_day_log_reply_open_uq — one OPEN task per entry / date PER SENDER. The

@@ -12,6 +12,7 @@ import type {
   DayLogDetail,
   DayLogMyPending,
   DayLogOrderOption,
+  DayLogPendingCalendar,
   DayLogPendingResponse,
   DayLogPersonDay,
   Holiday,
@@ -66,6 +67,7 @@ export const dayLogKeys = {
   pendingMine: () => dayLogPendingKeys.all,
   /** Pending Entries tab (Super Admin). */
   pending: () => [...dayLogKeys.all, 'pending'] as const,
+  pendingCalendar: (userId: string) => [...dayLogKeys.all, 'pending-calendar', userId] as const,
 };
 
 /** The team table reads again every minute (Working / Idle move on). */
@@ -193,6 +195,15 @@ export function usePendingEntries(enabled = true) {
     queryFn: () => apiFetch<DayLogPendingResponse>('/day-logs/pending'),
     refetchOnWindowFocus: true,
     enabled,
+  });
+}
+
+/** Pending Entries › a person: the dates of their calendar pop-up. */
+export function usePendingCalendar(userId: string) {
+  return useQuery<DayLogPendingCalendar>({
+    queryKey: dayLogKeys.pendingCalendar(userId),
+    queryFn: () => apiFetch<DayLogPendingCalendar>(`/day-logs/pending/${userId}/calendar`),
+    refetchOnWindowFocus: true,
   });
 }
 

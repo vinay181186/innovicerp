@@ -258,7 +258,7 @@ function TaskBoardPage(): React.JSX.Element {
 
   const onRowAction = (action: RowAction, task: TaskRow): void => {
     if (action !== 'view') return setModal({ kind: 'row', action, task });
-    // ADR-273: an Inbox task from a Day Log reply, on an entry or on a blank date,
+    // ADR-274: an Inbox task from a Day Log reply, on an entry or on a blank date,
     // opens that date (and the entry), not the pop-up. Its row carries the link
     // (linkedRef). Only the person it was sent to: the sender's Outbox / All
     // Tasks keep the pop-up.

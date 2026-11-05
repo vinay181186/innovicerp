@@ -14,6 +14,7 @@
 import {
   DAY_LOG_RULES,
   type DayLogMyPending,
+  type DayLogPendingCalendar,
   type DayLogPendingResponse,
   type DayLogPendingRow,
   isWorkingDay,
@@ -21,7 +22,7 @@ import {
 import { type SQL, sql } from 'drizzle-orm';
 import { db } from '../../db/client';
 import type { AuthContext } from '../../db/with-user-context';
-import { AuthorizationError } from '../../lib/errors';
+import { AuthorizationError, NotFoundError } from '../../lib/errors';
 import {
   PENDING_START_SQL,
   type PersonAccess,
@@ -185,4 +186,54 @@ export async function getPending(
   );
   rows.sort((a, b) => a.date.localeCompare(b.date) || a.userName.localeCompare(b.userName));
   return { today: clock.today, rows };
+}
+
+/** GET /day-logs/pending/:id/calendar — Super Admin only; ONE statement. Red comes
+ *  from pendingOf, so it can never differ from the person's banner or the list.
+ *  Green reads from the first of the person's first month; an old Leave day is
+ *  neither green nor red. */
+export async function getPendingCalendar(
+  userId: string,
+  user: AuthContext,
+  clock: DayLogClock = istClock(), // tests only — routes never pass it
+): Promise<DayLogPendingCalendar> {
+  const companyId = requireCompany(user);
+  const firstDay = sql`date_trunc('month', (
+      SELECT ${PENDING_START_SQL} FROM public.users u WHERE u.id = ${userId}::uuid))::date`;
+  const days = sql`dr.company_id = ${companyId}::uuid AND dr.user_id = ${userId}::uuid
+    AND dr.deleted_at IS NULL AND dr.report_date <= ${clock.today}::date
+    AND dr.report_date >= ${firstDay}`;
+  const [r] = (await db.execute(sql`
+    SELECT ${accessJson(user.id, companyId)} AS access,
+      ${pendingColumns(companyId, clock, userId)},
+      ${holidaysJson(companyId, firstDay, clock.today)} AS calendar_holidays,
+      (SELECT COALESCE(json_agg(to_char(dr.report_date, 'YYYY-MM-DD') ORDER BY dr.report_date), '[]'::json)
+       FROM public.daily_reports dr
+       WHERE ${days} AND EXISTS (
+         SELECT 1 FROM public.daily_report_lines l
+         WHERE l.daily_report_id = dr.id AND l.deleted_at IS NULL)) AS filled,
+      (SELECT COALESCE(json_agg(to_char(dr.report_date, 'YYYY-MM-DD') ORDER BY dr.report_date), '[]'::json)
+       FROM public.daily_reports dr
+       WHERE ${days} AND (
+         EXISTS (SELECT 1 FROM public.daily_report_day_replies rp
+                 WHERE rp.daily_report_id = dr.id AND rp.deleted_at IS NULL)
+         OR EXISTS (SELECT 1 FROM public.daily_report_lines l
+                    JOIN public.daily_report_line_replies lr ON lr.line_id = l.id AND lr.deleted_at IS NULL
+                    WHERE l.daily_report_id = dr.id AND l.deleted_at IS NULL))) AS replied
+  `)) as unknown as Array<Record<string, unknown>>;
+  const v = viewerOf(user, await resolveAccess(user, r?.['access']));
+  if (!v.isSuper) throw new AuthorizationError('Only a Super Admin can see Pending Entries');
+  const one = pendingOf(r)[0];
+  if (!one) throw new NotFoundError('This person does not keep a Day Log');
+  return {
+    userId: one.person.id,
+    userName: one.person.name,
+    deptLabel: deptLabelOf(one.person.mainDept),
+    today: clock.today,
+    firstMonth: one.person.pendingStart.slice(0, 7),
+    filled: (r?.['filled'] ?? []) as string[],
+    pending: one.dates,
+    replied: (r?.['replied'] ?? []) as string[],
+    holidays: Object.keys((r?.['calendar_holidays'] ?? {}) as Record<string, string>),
+  };
 }

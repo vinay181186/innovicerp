@@ -3,7 +3,7 @@
 // / role admin — access.ts isSuper) may send or edit one; an Auditor never
 // (assertCanWrite); never on one's own entry. Editing resets seen_at, so the
 // owner is told again (Home Notifications, dashboard/personal/day-log-replies.ts).
-// ADR-273: a reply also raises the person's task, one open per entry per sender,
+// ADR-274: a reply also raises the person's task, one open per entry per sender,
 // and an edit makes it read New (tasks/day-log-task.ts). The text is not copied.
 //
 // §20: both run under the day header lock of the entry (lock.ts), the task in the
