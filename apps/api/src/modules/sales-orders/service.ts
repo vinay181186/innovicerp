@@ -43,6 +43,9 @@ import {
   soLineDrawingRevisions,
   soMilestones,
   users,
+  deliveryChallans,
+  ncRegister,
+  purchaseRequests,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice, requireDeleteRight, requireFormAccess } from '../../lib/access';
@@ -56,7 +59,14 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { readStockPositionLocked, reconcileLineReservations } from '../../lib/stock-reservation';
-import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
+import { loadRelatedItems } from '../../lib/related-items';
+import {
+  buildTimeline,
+  itemSection,
+  section,
+  toIsoDate,
+  type RelatedRow,
+} from '../../lib/traceability';
 import { softDeleteStamp } from '../../lib/audit-trail';
 import { assertActiveParty } from '../../lib/active-party';
 import { decideOrderTax, orderTotals } from '../../lib/order-totals';
@@ -98,7 +108,6 @@ import type {
   DocumentTraceability,
   ListSalesOrdersQuery,
   ListSalesOrdersResponse,
-  RelatedDoc,
   SalesOrder,
   SalesOrderDetail,
   SalesOrderLine,
@@ -1128,13 +1137,129 @@ export async function getSalesOrderRelated(
       )
       .orderBy(asc(assemblyUnits.unitNo));
 
+    // Purchase Requests raised against this SO's lines.
+    const prRows =
+      lineIds.length === 0
+        ? []
+        : await tx
+            .select({
+              id: purchaseRequests.id,
+              code: purchaseRequests.code,
+              status: purchaseRequests.status,
+              date: purchaseRequests.prDate,
+            })
+            .from(purchaseRequests)
+            .where(
+              and(
+                eq(purchaseRequests.companyId, companyId),
+                isNull(purchaseRequests.deletedAt),
+                inArray(purchaseRequests.sourceSoLineId, lineIds),
+              ),
+            )
+            .orderBy(desc(purchaseRequests.prDate));
+
+    // Delivery Challans raised against this SO's lines.
+    const dcRows =
+      lineIds.length === 0
+        ? []
+        : await tx
+            .select({
+              id: deliveryChallans.id,
+              code: deliveryChallans.code,
+              status: deliveryChallans.status,
+              date: deliveryChallans.dcDate,
+            })
+            .from(deliveryChallans)
+            .where(
+              and(
+                eq(deliveryChallans.companyId, companyId),
+                isNull(deliveryChallans.deletedAt),
+                inArray(deliveryChallans.salesOrderLineId, lineIds),
+              ),
+            )
+            .orderBy(desc(deliveryChallans.dcDate));
+
+    // NCs raised on this SO.
+    const ncRows = await tx
+      .select({
+        id: ncRegister.id,
+        code: ncRegister.code,
+        status: ncRegister.status,
+        date: ncRegister.ncDate,
+      })
+      .from(ncRegister)
+      .where(
+        and(
+          eq(ncRegister.soId, id),
+          eq(ncRegister.companyId, companyId),
+          isNull(ncRegister.deletedAt),
+        ),
+      )
+      .orderBy(desc(ncRegister.ncDate));
+
+    // Each row shows its own item, narrowed to the lines tied to this SO.
+    const soItems = (await loadRelatedItems(tx, 'so', [id])).get(id) ?? [];
+    const bomItems = await loadRelatedItems(
+      tx,
+      'bom',
+      bomRows.map((r) => r.id),
+    );
+    const planItems = await loadRelatedItems(
+      tx,
+      'plan',
+      planRows.map((r) => r.id),
+    );
+    const jobCardItems = await loadRelatedItems(
+      tx,
+      'jobCard',
+      jobCardRows.map((r) => r.id),
+    );
+    const prItems = await loadRelatedItems(
+      tx,
+      'purchaseRequest',
+      prRows.map((r) => r.id),
+    );
+    const poItems = await loadRelatedItems(
+      tx,
+      'purchaseOrder',
+      poRows.map((r) => r.id),
+      { column: 'source_so_line_id', ids: lineIds },
+    );
+    const dcItems = await loadRelatedItems(
+      tx,
+      'deliveryChallan',
+      dcRows.map((r) => r.id),
+    );
+    const ncItems = await loadRelatedItems(
+      tx,
+      'nc',
+      ncRows.map((r) => r.id),
+    );
+    const dispatchItems = await loadRelatedItems(
+      tx,
+      'customerDispatch',
+      dispatchRows.map((r) => r.id),
+      { column: 'sales_order_line_id', ids: lineIds },
+    );
+    const invoiceItems = await loadRelatedItems(
+      tx,
+      'invoice',
+      invoiceRows.map((r) => r.id),
+      { column: 'sales_order_line_id', ids: lineIds },
+    );
+    const assemblyItems = await loadRelatedItems(
+      tx,
+      'assemblyUnit',
+      assemblyRows.map((r) => r.id),
+    );
+
     const row = (
       id_: string,
       code: string,
       status: string | null,
       date: unknown,
       extra?: { linkId?: string; label?: string },
-    ): RelatedDoc => ({
+    ): RelatedRow => ({
       id: id_,
       code,
       status,
@@ -1150,13 +1275,16 @@ export async function getSalesOrderRelated(
       '👤',
       'client',
       client ? [row(client.id, client.code, null, null, { label: client.name })] : [],
+      { noItems: 'party', codeHeading: 'Customer Code', labelHeading: 'Customer' },
     );
+    const itemsSection = itemSection('item', 'Items', '📦', soItems);
     const bomSection = section(
       'bom-masters',
       'BOM Masters',
       '📐',
       'bom-master',
       bomRows.map((r) => row(r.id, r.code, r.status, r.date)),
+      { items: bomItems },
     );
 
     // ── Downstream sections (generated from this SO) ────────────────────────
@@ -1166,6 +1294,7 @@ export async function getSalesOrderRelated(
       '🗂',
       'plan',
       planRows.map((r) => row(r.id, r.code, r.status, r.date)),
+      { items: planItems },
     );
     const jobCardsSection = section(
       'job-cards',
@@ -1175,6 +1304,15 @@ export async function getSalesOrderRelated(
       // job_cards has no status column (computed from op progress); derive a
       // coarse closed/open from closed_at honestly.
       jobCardRows.map((r) => row(r.id, r.code, r.closedAt ? 'closed' : 'open', r.date)),
+      { items: jobCardItems },
+    );
+    const prSection = section(
+      'purchase-requests',
+      'Purchase Requests',
+      '📝',
+      'purchase-request',
+      prRows.map((r) => row(r.id, r.code, r.status, r.date)),
+      { items: prItems },
     );
     const poSection = section(
       'purchase-orders',
@@ -1182,6 +1320,23 @@ export async function getSalesOrderRelated(
       '🧾',
       'purchase-order',
       poRows.map((r) => row(r.id, r.code, r.status, r.date)),
+      { items: poItems },
+    );
+    const dcSection = section(
+      'delivery-challans',
+      'Delivery Challans',
+      '🚚',
+      'delivery-challan',
+      dcRows.map((r) => row(r.id, r.code, r.status, r.date)),
+      { items: dcItems },
+    );
+    const ncSection = section(
+      'nc',
+      'Non-Conformances',
+      '⚠',
+      'nc',
+      ncRows.map((r) => row(r.id, r.code, r.status, r.date)),
+      { items: ncItems },
     );
     const dispatchSection = section(
       'customer-dispatches',
@@ -1190,6 +1345,7 @@ export async function getSalesOrderRelated(
       // No customer-dispatch detail route exists — reference-only.
       null,
       dispatchRows.map((r) => row(r.id, r.code, r.status, r.date)),
+      { items: dispatchItems },
     );
     const invoiceSection = section(
       'invoices',
@@ -1197,6 +1353,7 @@ export async function getSalesOrderRelated(
       '💰',
       'invoice',
       invoiceRows.map((r) => row(r.id, r.code, r.status, r.date)),
+      { items: invoiceItems },
     );
     const assemblySection = section(
       'assembly-units',
@@ -1216,18 +1373,22 @@ export async function getSalesOrderRelated(
           },
         ),
       ),
+      { items: assemblyItems },
     );
 
     const downstream = [
       plansSection,
       jobCardsSection,
+      prSection,
       poSection,
+      dcSection,
+      ncSection,
       dispatchSection,
       invoiceSection,
       assemblySection,
     ];
 
-    const upstream = [clientSection, bomSection];
+    const upstream = [clientSection, itemsSection, bomSection];
     return {
       self: { module: 'sales-orders', code: header.code },
       upstream,
@@ -1241,6 +1402,7 @@ export async function getSalesOrderRelated(
           code: header.internalSoNo ? `${header.code} · ${header.internalSoNo}` : header.code,
           routeKind: 'sales-order',
           linkId: id,
+          items: soItems,
         },
         [...upstream, ...downstream],
       ),

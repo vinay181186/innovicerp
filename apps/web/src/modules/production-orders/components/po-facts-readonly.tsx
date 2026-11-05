@@ -26,8 +26,8 @@ export function PoIdentLine({ po }: { po: Po }): React.JSX.Element {
       <IdentCode>{po.code}</IdentCode>
       <IdentSep />
       {/* CODE/REV (ADR-177); bare code when the line has no revision. */}
-      <IdentCode>{itemCodeWithRev(po.itemCodeText, docDrawingRev(po))}</IdentCode>
-      {po.itemNameText ? <span>{po.itemNameText}</span> : null}
+      <IdentCode>{itemCodeWithRev(po.itemCode ?? po.itemCodeText, docDrawingRev(po))}</IdentCode>
+      {(po.itemName ?? po.itemNameText) ? <span>{po.itemName ?? po.itemNameText}</span> : null}
       {po.soCodeText ? (
         <>
           <IdentSep />

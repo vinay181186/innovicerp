@@ -15,9 +15,8 @@
 // Layout: the page SCROLLS, like Job Card detail (owner decision 2026-11-04;
 // replaces the fit-to-one-screen page of 2026-10-06). Header with the next step
 // as its primary button → identity line → one ClusterGrid read in the order the
-// work happens (Order → Quantity → Schedule → Material) → ONE tabbed panel
-// (Close Ledger | History). There is no /related endpoint for this document, so
-// History stays in this page's own TabStrip.
+// work happens (Order → Quantity → Schedule → Material) → the Close Ledger → the
+// Related Documents panel, which carries the History tab (as on Plan detail).
 // What moved: the Close form opens as a dialog from Close Qty…; Job Card
 // Progress became the JC Finished cell; the Short Closed / Closed panels became
 // a one-line banner where the Close button sits; "Cannot close yet" became the
@@ -29,8 +28,8 @@ import { useIsMutating } from '@tanstack/react-query';
 import { Link, createRoute } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useEffect, useId, useState } from 'react';
-import { DocumentHistory } from '@/components/shared/document-history';
-import { useDocumentHistory } from '@/modules/activity-log/api';
+import { useHistoryTab } from '@/components/shared/document-history';
+import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
 import { undecidedChangesOf, usePendingEditForDoc } from '@/modules/document-edits/api';
 import {
   PendingChangeChip,
@@ -85,8 +84,6 @@ function withPending(value: string, p: { title: string } | null): string {
   return p ? `${value} · ${p.title}` : value;
 }
 
-type TabKey = 'ledger' | 'history';
-
 function ProductionOrderDetailPage(): React.JSX.Element {
   const { id } = productionOrderDetailRoute.useParams();
   // ADR-233 — the ADR-230 safety refresh, as on the JC / SO / PO detail pages.
@@ -97,7 +94,6 @@ function ProductionOrderDetailPage(): React.JSX.Element {
   const [closeOpen, setCloseOpen] = useState(false);
   // ADR-235 — the ONE standard Cancel dialog (docType 'production_order').
   const [cancelOpen, setCancelOpen] = useState(false);
-  const [tab, setTab] = useState<TabKey>('ledger');
   const closeWhyId = useId();
 
   // Tier-driven (Production). Close is an EDIT on the order, not an entry.
@@ -111,9 +107,10 @@ function ProductionOrderDetailPage(): React.JSX.Element {
   // ADR-202 — any pending edit overlays grey "Draft" on the status chip.
   const isDraft = (pendingEdit.data?.rows?.length ?? 0) > 0;
 
-  // The History tab's count. Same arguments as <DocumentHistory> below, so it
-  // is the same query — one request, not two.
-  const history = useDocumentHistory({
+  // ADR-197 — every action on this order: create, partial closes, reversals, short
+  // close — who, when, qty, reason. Before the early returns (hooks rule); it waits
+  // for the id / code to arrive.
+  const historyTab = useHistoryTab({
     entity: 'ProductionOrder',
     entityId: data?.id,
     refId: data?.code,
@@ -374,11 +371,13 @@ function ProductionOrderDetailPage(): React.JSX.Element {
           <IdentCode>
             <ItemRevLink
               itemRevisionId={data.itemRevisionId}
-              label={itemCodeWithRev(data.itemCodeText, docDrawingRev(data))}
+              label={itemCodeWithRev(data.itemCode ?? data.itemCodeText, docDrawingRev(data))}
               className=""
             />
           </IdentCode>
-          {data.itemNameText ? <span>{data.itemNameText}</span> : null}
+          {(data.itemName ?? data.itemNameText) ? (
+            <span>{data.itemName ?? data.itemNameText}</span>
+          ) : null}
           {data.soCodeText ? (
             <>
               <IdentSep />
@@ -668,12 +667,8 @@ function ProductionOrderDetailPage(): React.JSX.Element {
       <div className="po-tabs">
         <TabStrip
           label="Production Order lists"
-          activeKey={tab}
-          onChange={(k) => setTab(k === 'history' ? 'history' : 'ledger')}
-          tabs={[
-            { key: 'ledger', label: 'Close Ledger', count: data.closes.length },
-            { key: 'history', label: 'History', count: history.data?.rows.length ?? null },
-          ]}
+          activeKey="ledger"
+          tabs={[{ key: 'ledger', label: 'Close Ledger', count: data.closes.length }]}
         />
         <span className="po-tabs-meta">
           <b>
@@ -683,20 +678,16 @@ function ProductionOrderDetailPage(): React.JSX.Element {
         </span>
       </div>
       <Panel bodyPadding="none">
-        {tab === 'ledger' ? (
-          data.closes.length === 0 ? (
-            <EmptyState>No closes yet.</EmptyState>
-          ) : (
-            // Close ledger — every partial close + reversal, newest first.
-            // ADR-182 — nothing may be reversed on a stopped order either.
-            <PoCloseLedger po={data} canReverse={perms.edit && !stopped && !cancelled} fill />
-          )
+        {data.closes.length === 0 ? (
+          <EmptyState>No closes yet.</EmptyState>
         ) : (
-          // ADR-197 — every action on this order: create, partial closes,
-          // reversals, short close — who, when, qty, reason.
-          <DocumentHistory entity="ProductionOrder" entityId={data.id} refId={data.code} />
+          // Close ledger — every partial close + reversal, newest first.
+          // ADR-182 — nothing may be reversed on a stopped order either.
+          <PoCloseLedger po={data} canReverse={perms.edit && !stopped && !cancelled} fill />
         )}
       </Panel>
+
+      <RelatedDocsTabs module="production-orders" id={data.id} extraTabs={[historyTab]} />
 
       {/* Close (progressive, ADR-179) — today's form, unchanged, in a dialog.
           Closes itself on success; the order refetches underneath. Kept open

@@ -54,7 +54,14 @@ import {
 import { lockDocSeries } from '../../lib/doc-series-lock';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { softDeleteStamp } from '../../lib/audit-trail';
-import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
+import { loadRelatedItems } from '../../lib/related-items';
+import {
+  buildTimeline,
+  itemSection,
+  type RelatedRow,
+  section,
+  toIsoDate,
+} from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
 import {
   ActivityAction,
@@ -66,7 +73,7 @@ import {
   qtyUomProblem,
   statusMoveRefusal,
 } from '@innovic/shared';
-import type { DocumentEditStagedResult, DocumentTraceability, RelatedDoc } from '@innovic/shared';
+import type { DocumentEditStagedResult, DocumentTraceability } from '@innovic/shared';
 import { type BomAuditLine, bomHeaderChanges, bomLineAuditRows } from './audit';
 import type {
   BomMaster,
@@ -497,20 +504,26 @@ export async function getBomMasterRelated(
     const header = headers[0];
     if (!header) throw new NotFoundError('BOM not found. It may have been moved to Trash.');
 
-    // ── Upstream: distinct component items referenced by this BOM's lines ────
-    const itemRows = await tx
-      .selectDistinct({ id: items.id, code: items.code, name: items.name })
-      .from(items)
-      .innerJoin(bomMasterLines, eq(bomMasterLines.childItemId, items.id))
+    // ── Upstream: the component items on this BOM's lines ────────────────────
+    // A deleted child keeps its code and name, with no link (lib/related-items).
+    const componentRows = await tx
+      .select({
+        lineId: bomMasterLines.id,
+        itemId: items.id,
+        code: items.code,
+        name: items.name,
+        itemDeletedAt: items.deletedAt,
+      })
+      .from(bomMasterLines)
+      .innerJoin(items, eq(items.id, bomMasterLines.childItemId))
       .where(
         and(
           eq(bomMasterLines.bomMasterId, id),
           isNull(bomMasterLines.deletedAt),
           eq(items.companyId, companyId),
-          isNull(items.deletedAt),
         ),
       )
-      .orderBy(asc(items.code));
+      .orderBy(asc(bomMasterLines.lineNo));
 
     // ── Downstream: distinct sales orders that source this BOM on any line ───
     const soRows = await tx
@@ -572,7 +585,7 @@ export async function getBomMasterRelated(
       status: string | null,
       date: unknown,
       extra?: { linkId?: string; label?: string },
-    ): RelatedDoc => ({
+    ): RelatedRow => ({
       id: id_,
       code,
       status,
@@ -582,12 +595,20 @@ export async function getBomMasterRelated(
     });
 
     // ── Upstream sections (what this BOM is built FROM) ──────────────────────
-    const itemSection = section(
+    const parentItems = (await loadRelatedItems(tx, 'bom', [id])).get(id) ?? [];
+    const parentTab = itemSection('parent-item', 'Parent Item', '📦', parentItems);
+    const componentTab = itemSection(
       'item',
       'Component Items',
       '📦',
-      'item',
-      itemRows.map((r) => row(r.id, r.code, null, null, { label: r.name })),
+      componentRows.map((r) => ({
+        lineId: r.lineId,
+        itemId: r.itemDeletedAt == null ? r.itemId : null,
+        itemCode: r.code,
+        itemRevision: null,
+        itemName: r.name,
+        clientPoLineNo: null,
+      })),
     );
 
     // ── Downstream sections (what consumes this BOM) ─────────────────────────
@@ -597,6 +618,14 @@ export async function getBomMasterRelated(
       '📄',
       'sales-order',
       soRows.map((r) => row(r.id, r.code, r.status, r.date)),
+      {
+        items: await loadRelatedItems(
+          tx,
+          'so',
+          soRows.map((r) => r.id),
+          { column: 'source_bom_master_id', ids: [id] },
+        ),
+      },
     );
     const plansSection = section(
       'plans',
@@ -604,6 +633,13 @@ export async function getBomMasterRelated(
       '🗂',
       'plan',
       planRows.map((r) => row(r.id, r.code, r.status, r.date)),
+      {
+        items: await loadRelatedItems(
+          tx,
+          'plan',
+          planRows.map((r) => r.id),
+        ),
+      },
     );
     const assemblySection = section(
       'assembly',
@@ -620,9 +656,16 @@ export async function getBomMasterRelated(
           { linkId: r.salesOrderId },
         ),
       ),
+      {
+        items: await loadRelatedItems(
+          tx,
+          'assemblyUnit',
+          assemblyRows.map((r) => r.id),
+        ),
+      },
     );
 
-    const upstream = [itemSection];
+    const upstream = [parentTab, componentTab];
     const downstream = [soSection, plansSection, assemblySection];
     return {
       self: { module: 'bom-masters', code: header.code },
@@ -636,6 +679,7 @@ export async function getBomMasterRelated(
           code: header.code,
           routeKind: 'bom-master',
           linkId: id,
+          items: parentItems,
         },
         [...upstream, ...downstream],
       ),

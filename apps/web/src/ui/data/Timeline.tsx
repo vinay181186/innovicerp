@@ -33,7 +33,8 @@ export interface TimelineEvent {
   /** ISO date, `YYYY-MM-DD HH:mm` or a timestamp — shown as DD-MMM-YYYY [HH:mm]. */
   date?: string | null | undefined;
   label: React.ReactNode;
-  /** The second line on a regular event card. Ignored when compact. */
+  /** The second line on a regular event card; after the code, on the same line,
+   *  when compact. */
   detail?: React.ReactNode | undefined;
   /** Dot + card accent, token only. Defaults to the muted text colour. */
   color?: string | undefined;
@@ -147,7 +148,14 @@ export function Timeline({
                 {compact ? null : e.icon}
               </div>
               {compact ? (
-                <div style={{ fontSize: 'var(--fs-sm)' }}>
+                <div
+                  style={{
+                    fontSize: 'var(--fs-sm)',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                >
                   <span
                     className="mono text2"
                     style={{ fontSize: 'var(--fs-xs)', marginRight: 'var(--sp-2)' }}
@@ -163,6 +171,7 @@ export function Timeline({
                       {e.code}
                     </span>
                   ) : null}
+                  {e.detail ? <span style={{ marginLeft: 'var(--sp-2)' }}>{e.detail}</span> : null}
                 </div>
               ) : (
                 <div

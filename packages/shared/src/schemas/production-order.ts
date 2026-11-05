@@ -50,6 +50,10 @@ export const productionOrderSchema = z.object({
    *  moved by a line Rev change only while the work is open. */
   itemRevisionId: z.string().uuid().nullable().default(null),
   drawingRev: z.string().nullable().default(null),
+  /** The live Item Master code and name; read these first, the Text copies are the
+   *  saved fallback (CLAUDE.md 18). */
+  itemCode: z.string().nullable().default(null),
+  itemName: z.string().nullable().default(null),
   itemCodeText: z.string(),
   itemNameText: z.string().nullable(),
   /** ADR-178: the SO / JWSO line's drawing revision, read live through the

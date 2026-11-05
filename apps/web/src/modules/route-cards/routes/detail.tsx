@@ -5,9 +5,8 @@
 //   header      ← Back · code · Route Card · Rev chip … ⋯ (Preview, PDF, Delete) · Edit / Revise
 //   identity    which item this route belongs to (DocIdent)
 //   facts       Route · Material · Notes (ClusterGrid stack — ADR-214 method)
-//   tab panel   Operation Sequence | Revision History | History. There is no
-//               /related endpoint for this document, so History stays in this
-//               page's own TabStrip.
+//   tab panel   Operation Sequence | Revision History
+//   related     the Related Documents panel, with the History tab (as on Plan detail)
 // Data, permissions, print and delete are unchanged.
 
 import { Icon } from '@/ui/core';
@@ -16,11 +15,11 @@ import { itemRevLabel } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useState } from 'react';
-import { DocumentHistory } from '@/components/shared/document-history';
+import { useHistoryTab } from '@/components/shared/document-history';
+import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { runPrint } from '@/lib/print/preview-host';
-import { useDocumentHistory } from '@/modules/activity-log/api';
 import { DrawingStatusLink, ItemRevLink } from '@/modules/item-revisions/components/item-rev-link';
 import { usePendingEditForDoc } from '@/modules/document-edits/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -48,7 +47,7 @@ export const routeCardDetailRoute = createRoute({
   component: RouteCardDetailPage,
 });
 
-type TabKey = 'ops' | 'revisions' | 'history';
+type TabKey = 'ops' | 'revisions';
 
 function RouteCardDetailPage(): React.JSX.Element {
   const { id } = routeCardDetailRoute.useParams();
@@ -58,9 +57,9 @@ function RouteCardDetailPage(): React.JSX.Element {
   const perms = effectiveFormPerms(eff, 'routecard_create');
   const { data: item } = useItem(detail?.itemId);
   const { data: company } = useMyCompany();
-  // The History tab's count. Same query key DocumentHistory reads, so the tab
-  // body and its count are ONE request.
-  const { data: history } = useDocumentHistory({
+  // ADR-197 — who did what to this card, with before → after and reasons. Before
+  // the early returns (hooks rule); it waits for the id / code to arrive.
+  const historyTab = useHistoryTab({
     entity: 'RouteCard',
     entityId: detail?.id,
     refId: detail?.code,
@@ -317,19 +316,15 @@ function RouteCardDetailPage(): React.JSX.Element {
         tabs={[
           { key: 'ops', label: 'Operation Sequence', count: detail.ops.length },
           { key: 'revisions', label: 'Revision History', count: detail.revisions.length },
-          // null while loading — a count still in flight is not a 0.
-          { key: 'history', label: 'History', count: history ? history.rows.length : null },
         ]}
       />
 
       <Panel bodyPadding="none">
         {tab === 'ops' ? <RouteCardOpsTable ops={detail.ops} /> : null}
         {tab === 'revisions' ? <RouteCardRevisionHistory revisions={detail.revisions} /> : null}
-        {/* ADR-197 — who did what to this card, with before → after and reasons. */}
-        {tab === 'history' ? (
-          <DocumentHistory entity="RouteCard" entityId={detail.id} refId={detail.code} />
-        ) : null}
       </Panel>
+
+      <RelatedDocsTabs module="route-cards" id={detail.id} extraTabs={[historyTab]} />
 
       <ConfirmDialog
         open={confirmDelete}

@@ -12,7 +12,7 @@
 // Filters live as conditional `sql\`\`` fragments. machineId / operatorId use
 // EXISTS sub-selects on jc_ops / op_log so we don't blow up the row set.
 
-import { and, asc, count, desc, eq, inArray, isNull, like, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, isNull, like, or, sql } from 'drizzle-orm';
 import {
   deliveryChallanLines,
   deliveryChallans,
@@ -30,6 +30,7 @@ import {
   materialSizes,
   ncRegister,
   plans,
+  productionOrders,
   purchaseOrderLines,
   purchaseOrders,
   purchaseRequests,
@@ -57,7 +58,14 @@ import {
   assertNoQcDirectlyAfterOutsource,
   grandfatheredOspQcPairs,
 } from '../../lib/jc-osp-qc-rule';
-import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
+import { loadRelatedItems } from '../../lib/related-items';
+import {
+  buildTimeline,
+  itemSection,
+  section,
+  toIsoDate,
+  type RelatedRow,
+} from '../../lib/traceability';
 import { diffFields, softDeleteStamp } from '../../lib/audit-trail';
 import { emitActivityLog } from '../activity-log/service';
 import {
@@ -94,7 +102,6 @@ import type {
   DocumentTraceability,
   JcRouteCardWriteBack,
   JobCardSaveResult,
-  RelatedDoc,
 } from '@innovic/shared';
 import type {
   JcOpInput,
@@ -4027,6 +4034,7 @@ export async function getJobCardRelated(
         code: jobCards.code,
         jcDate: jobCards.jcDate,
         itemId: jobCards.itemId,
+        productionOrderId: jobCards.productionOrderId,
         sourceSoLineId: jobCards.sourceSoLineId,
         sourceJwLineId: jobCards.sourceJwLineId,
         parentNcId: jobCards.parentNcId,
@@ -4053,7 +4061,7 @@ export async function getJobCardRelated(
       status: string | null,
       date: unknown,
       extra?: { linkId?: string; label?: string },
-    ): RelatedDoc => ({
+    ): RelatedRow => ({
       id: id_,
       code,
       status,
@@ -4071,6 +4079,29 @@ export async function getJobCardRelated(
       )
       .limit(1);
     const item = itemRows[0] ?? null;
+
+    // ── Upstream: the Production Order that raised this card ────────────────
+    const proRows = await tx
+      .select({
+        id: productionOrders.id,
+        code: productionOrders.code,
+        status: productionOrders.status,
+        date: sql<string>`(${productionOrders.createdAt} AT TIME ZONE 'Asia/Kolkata')::date::text`,
+      })
+      .from(productionOrders)
+      .where(
+        and(
+          eq(productionOrders.companyId, companyId),
+          isNull(productionOrders.deletedAt),
+          header.productionOrderId
+            ? or(
+                eq(productionOrders.jobCardId, id),
+                eq(productionOrders.id, header.productionOrderId),
+              )
+            : eq(productionOrders.jobCardId, id),
+        ),
+      )
+      .orderBy(desc(productionOrders.createdAt));
 
     // ── Upstream: source Sales Order (via source_so_line_id → line → header) ─
     const soRows = header.sourceSoLineId
@@ -4340,13 +4371,113 @@ export async function getJobCardRelated(
       )
       .orderBy(desc(goodsReceiptNotes.grnDate));
 
+    // The PO lines this card's ops are covered by: an OSP row names those lines,
+    // not everything else on that PO, DC or GRN.
+    const coveredPoLines = await tx
+      .select({ id: jcOpPoLines.purchaseOrderLineId })
+      .from(jcOpPoLines)
+      .innerJoin(jcOps, eq(jcOps.id, jcOpPoLines.jcOpId))
+      .where(
+        and(
+          eq(jcOps.jobCardId, id),
+          isNull(jcOps.deletedAt),
+          eq(jcOpPoLines.companyId, companyId),
+          isNull(jcOpPoLines.deletedAt),
+        ),
+      );
+    const coveredPoLineIds = coveredPoLines.map((r) => r.id);
+
+    // A cancelled card's own row is soft-deleted, so the lookup cannot see it:
+    // fall back to the item master so its Item tab does not go blank.
+    const jcItems =
+      (await loadRelatedItems(tx, 'jobCard', [id])).get(id) ??
+      (item
+        ? [
+            {
+              lineId: null,
+              itemId: item.id,
+              itemCode: item.code,
+              itemRevision: null,
+              itemName: item.name,
+              clientPoLineNo: null,
+            },
+          ]
+        : []);
+    const proItems = await loadRelatedItems(
+      tx,
+      'productionOrder',
+      proRows.map((r) => r.id),
+    );
+    const soItems = await loadRelatedItems(
+      tx,
+      'so',
+      soRows.map((r) => r.id),
+      { column: 'id', ids: [header.sourceSoLineId] },
+    );
+    const jwItems = await loadRelatedItems(
+      tx,
+      'jwo',
+      jwRows.map((r) => r.id),
+      { column: 'id', ids: [header.sourceJwLineId] },
+    );
+    const parentNcItems = await loadRelatedItems(
+      tx,
+      'nc',
+      parentNcRows.map((r) => r.id),
+    );
+    const parentJcItems = await loadRelatedItems(
+      tx,
+      'jobCard',
+      parentJcRows.map((r) => r.id),
+    );
+    const ncItems = await loadRelatedItems(
+      tx,
+      'nc',
+      ncRows.map((r) => r.id),
+    );
+    const childItems = await loadRelatedItems(
+      tx,
+      'jobCard',
+      childRows.map((r) => r.id),
+    );
+    const planItems = await loadRelatedItems(
+      tx,
+      'plan',
+      planRows.map((r) => r.id),
+    );
+    const prItems = await loadRelatedItems(
+      tx,
+      'purchaseRequest',
+      prRows.map((r) => r.id),
+    );
+    const poItems = await loadRelatedItems(
+      tx,
+      'purchaseOrder',
+      poRows.map((r) => r.id),
+      { column: 'id', ids: coveredPoLineIds },
+    );
+    const dcItems = await loadRelatedItems(
+      tx,
+      'deliveryChallan',
+      dcRows.map((r) => r.id),
+      { column: 'purchase_order_line_id', ids: coveredPoLineIds },
+    );
+    const grnItems = await loadRelatedItems(
+      tx,
+      'grn',
+      grnRows.map((r) => r.id),
+      { column: 'purchase_order_line_id', ids: coveredPoLineIds },
+    );
+
     // ── Upstream sections (what this JC was built FROM) ─────────────────────
-    const itemSection = section(
-      'item',
-      'Item',
-      '📦',
-      'item',
-      item ? [row(item.id, item.code, null, null, { label: item.name })] : [],
+    const itemTab = itemSection('item', 'Item', '📦', jcItems);
+    const proSection = section(
+      'production-order',
+      'Production Order',
+      '⚙',
+      'production-order',
+      proRows.map((r) => row(r.id, r.code, r.status, r.date)),
+      { items: proItems },
     );
     const soSection = section(
       'sales-order',
@@ -4365,6 +4496,7 @@ export async function getJobCardRelated(
             ),
           ]
         : [],
+      { items: soItems, labelHeading: 'Internal SO No.' },
     );
     const jwSection = section(
       'job-work-order',
@@ -4372,6 +4504,7 @@ export async function getJobCardRelated(
       '🛠',
       'job-work-order',
       jw ? [row(jw.id, jw.code, jw.status, jw.date)] : [],
+      { items: jwItems },
     );
     const parentNcSection = section(
       'parent-nc',
@@ -4379,6 +4512,7 @@ export async function getJobCardRelated(
       '⚠',
       'nc',
       parentNc ? [row(parentNc.id, parentNc.code, parentNc.status, parentNc.date)] : [],
+      { items: parentNcItems },
     );
     const parentJcSection = section(
       'parent-job-card',
@@ -4398,6 +4532,7 @@ export async function getJobCardRelated(
             ),
           ]
         : [],
+      { items: parentJcItems, labelHeading: 'Op' },
     );
 
     // ── Downstream sections (generated from this JC) ────────────────────────
@@ -4407,6 +4542,7 @@ export async function getJobCardRelated(
       '⚠',
       'nc',
       ncRows.map((r) => row(r.id, r.code, r.status, r.date)),
+      { items: ncItems },
     );
     const recoveryChildrenSection = section(
       'recovery-job-cards',
@@ -4419,6 +4555,7 @@ export async function getJobCardRelated(
           .join(' · ');
         return row(r.id, r.code, r.status, r.jcDate, label ? { label } : undefined);
       }),
+      { items: childItems, labelHeading: 'Detail' },
     );
     const plansSection = section(
       'plans',
@@ -4426,6 +4563,7 @@ export async function getJobCardRelated(
       '🗂',
       'plan',
       planRows.map((r) => row(r.id, r.code, r.status, r.date)),
+      { items: planItems },
     );
     const ospPrSection = section(
       'osp-pr',
@@ -4433,6 +4571,7 @@ export async function getJobCardRelated(
       '📝',
       'purchase-request',
       prRows.map((r) => row(r.id, r.code, r.status, r.date)),
+      { items: prItems },
     );
     const ospPoSection = section(
       'osp-po',
@@ -4440,6 +4579,7 @@ export async function getJobCardRelated(
       '🧾',
       'purchase-order',
       poRows.map((r) => row(r.id, r.code, r.status, r.date)),
+      { items: poItems },
     );
     const ospDcSection = section(
       'osp-dc',
@@ -4447,6 +4587,7 @@ export async function getJobCardRelated(
       '🚚',
       'delivery-challan',
       dcRows.map((r) => row(r.id, r.code, r.status, r.date)),
+      { items: dcItems },
     );
     const ospGrnSection = section(
       'osp-grn',
@@ -4454,9 +4595,10 @@ export async function getJobCardRelated(
       '📥',
       'grn',
       grnRows.map((r) => row(r.id, r.code, null, r.date)),
+      { items: grnItems },
     );
 
-    const upstream = [itemSection, soSection, jwSection, parentJcSection, parentNcSection];
+    const upstream = [itemTab, proSection, soSection, jwSection, parentJcSection, parentNcSection];
     // Document order, matching the real workflow: PR raised, PO issued, material
     // sent out on a DC, material received back on a GRN. A recovery child sits
     // right after the NC that raised it.
@@ -4481,6 +4623,7 @@ export async function getJobCardRelated(
           code: header.code,
           routeKind: 'job-card',
           linkId: id,
+          items: jcItems,
         },
         [...upstream, ...downstream],
       ),

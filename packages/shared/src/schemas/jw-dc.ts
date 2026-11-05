@@ -6,6 +6,7 @@
 // / JWIN-NNNN (inward, per legacy L24696).
 
 import { z } from 'zod';
+import { relatedItemSchema } from './traceability';
 
 import { sfRawParamSchema } from './list-query';
 
@@ -73,6 +74,8 @@ export const jwDcOutwardListItemSchema = jwDcOutwardSchema.extend({
    *  `vendorName ?? vendorNameText`; the saved copy stays for the print. */
   vendorName: z.string().nullable().default(null),
   linesCount: z.number().int().nonnegative(),
+  /** Every line's item, in the standard form: pickers name the DC by its items. */
+  lineItems: z.array(relatedItemSchema).default([]),
   totalSentQty: z.number().nonnegative(),
   totalReturnedQty: z.number().nonnegative(),
   pendingQty: z.number().nonnegative(),

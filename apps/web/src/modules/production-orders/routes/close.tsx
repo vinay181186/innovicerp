@@ -93,11 +93,12 @@ function ProductionOrderClosePage(): React.JSX.Element {
   const poRowLabel = (row: {
     code: string;
     clientPoLineNo: string | null;
+    itemCode: string | null;
     itemCodeText: string;
     itemRevision: string | null;
     planCodeText: string;
   }): string =>
-    `${row.code} — ${row.clientPoLineNo ? `POL ${row.clientPoLineNo} · ` : ''}${itemCodeWithRev(row.itemCodeText, docDrawingRev(row))} · ${row.planCodeText}`;
+    `${row.code} — ${row.clientPoLineNo ? `POL ${row.clientPoLineNo} · ` : ''}${itemCodeWithRev(row.itemCode ?? row.itemCodeText, docDrawingRev(row))} · ${row.planCodeText}`;
 
   /** Nothing identified yet. Clearing any one of the three lands here, because
    *  the three are one choice and a half-filled trio identifies no order. */
@@ -249,12 +250,12 @@ function ProductionOrderClosePage(): React.JSX.Element {
                   code: p.code,
                   // POL (the CUSTOMER's own PO line number) leads the label,
                   // ahead of the item code, and is searchable with it.
-                  name: `${p.clientPoLineNo ? `POL ${p.clientPoLineNo} · ` : ''}${itemCodeWithRev(p.itemCodeText, docDrawingRev(p))} · ${p.planCodeText} · PRO Qty ${p.orderQty}`,
+                  name: `${p.clientPoLineNo ? `POL ${p.clientPoLineNo} · ` : ''}${itemCodeWithRev(p.itemCode ?? p.itemCodeText, docDrawingRev(p))} · ${p.planCodeText} · PRO Qty ${p.orderQty}`,
                   searchText: [
                     p.jcCodeText,
                     p.soCodeText,
                     p.soInternalNo,
-                    p.itemNameText,
+                    p.itemName ?? p.itemNameText,
                     p.clientPoLineNo,
                   ]
                     .filter(Boolean)
@@ -282,13 +283,13 @@ function ProductionOrderClosePage(): React.JSX.Element {
                 options={jcOptions.map((row) => ({
                   id: row.jobCardId,
                   code: row.jcCodeText,
-                  name: `${row.clientPoLineNo ? `POL ${row.clientPoLineNo} · ` : ''}${itemCodeWithRev(row.itemCodeText, docDrawingRev(row))} · ${row.code}`,
+                  name: `${row.clientPoLineNo ? `POL ${row.clientPoLineNo} · ` : ''}${itemCodeWithRev(row.itemCode ?? row.itemCodeText, docDrawingRev(row))} · ${row.code}`,
                   searchText: [
                     row.code,
                     row.planCodeText,
                     row.soCodeText,
                     row.soInternalNo,
-                    row.itemNameText,
+                    row.itemName ?? row.itemNameText,
                   ]
                     .filter(Boolean)
                     .join(' '),
@@ -377,7 +378,7 @@ function ProductionOrderClosePage(): React.JSX.Element {
                 className="mono fw-700"
                 style={{ fontSize: 'var(--fs-xs)', color: 'var(--text)' }}
               >
-                · {itemCodeWithRev(po.itemCodeText, docDrawingRev(po))}
+                · {itemCodeWithRev(po.itemCode ?? po.itemCodeText, docDrawingRev(po))}
               </span>
             </div>
           ) : null}

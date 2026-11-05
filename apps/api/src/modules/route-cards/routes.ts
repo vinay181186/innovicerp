@@ -12,6 +12,7 @@ import {
   updateRouteCardInputSchema,
 } from './schema';
 import { approveRouteCard, rejectRouteCard } from './approval';
+import { getRouteCardRelated } from './related';
 import * as service from './service';
 
 const idParamSchema = z.object({ id: z.string().uuid() });
@@ -39,6 +40,12 @@ export async function routeCardRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
     return service.getRouteCard(id, req.user);
+  });
+
+  app.get('/route-cards/:id/related', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    return getRouteCardRelated(id, req.user);
   });
 
   app.post('/route-cards', async (req, reply) => {

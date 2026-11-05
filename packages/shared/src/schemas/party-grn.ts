@@ -221,9 +221,14 @@ export const partyGrnLineListRowSchema = z.object({
   createdByName: z.string().nullable(),
   /** Customer RM code received on this line. */
   itemCode: z.string().nullable(),
-  /** The JWSO line's drawing revision (null when blank). */
+  /** Always null: the JWSO line's Rev is the finished part's drawing, not this
+   *  material's. It rides on orderItemRevision (owner 2026-11-05). */
   itemRevision: z.string().nullable(),
   itemName: z.string().nullable(),
+  /** The finished part this material is for: the JWSO line's item. */
+  orderItemCode: z.string().nullable().default(null),
+  orderItemRevision: z.string().nullable().default(null),
+  orderItemName: z.string().nullable().default(null),
   customerName: z.string().nullable(),
   clientPoNo: z.string().nullable(),
   /** Customer Challan No. */

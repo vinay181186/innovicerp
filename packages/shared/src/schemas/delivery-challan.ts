@@ -11,6 +11,7 @@
 //     aggregates for the list view.
 
 import { z } from 'zod';
+import { relatedItemSchema } from './traceability';
 import { DC_STATUSES } from '../enums/dc-status';
 import { positiveQtySchema, qtyUomProblem } from '../lib/qty-rule';
 import { uomSchema } from './item';
@@ -154,6 +155,8 @@ export const deliveryChallanWithLinesSchema = deliveryChallanSchema.extend({
 export type DeliveryChallanWithLines = z.infer<typeof deliveryChallanWithLinesSchema>;
 
 export const deliveryChallanListItemSchema = deliveryChallanSchema.extend({
+  /** Every line's item, in the standard form: pickers name the DC by its items. */
+  lineItems: z.array(relatedItemSchema).default([]),
   vendorName: z.string().nullable(),
   poCode: z.string().nullable(),
   soCode: z.string().nullable(),

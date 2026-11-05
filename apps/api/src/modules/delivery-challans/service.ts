@@ -11,6 +11,7 @@ import {
   deliveryChallanReceiptLines,
   deliveryChallanReceipts,
   deliveryChallans,
+  goodsReceiptNotes,
   items,
   jcOps,
   jobCards,
@@ -37,7 +38,8 @@ import { polOf } from '../../lib/pol';
 import { assertProductionOrderNotShortClosedForPoLine } from '../../lib/production-order-stop';
 import { lockPoLinesForSend, sumSentOnPoLines } from '../../lib/po-line-sent';
 import { assertRowUpdated } from '../../lib/row-lock';
-import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
+import { loadRelatedItems } from '../../lib/related-items';
+import { buildTimeline, itemSection, section, toIsoDate } from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
 import { tryCascadeJcComplete } from '../op-entry/sales-cascade';
 import { onNcChallanCancelled, onNcChallanReceived } from '../nc-register/recovery';
@@ -2561,8 +2563,10 @@ export async function receiveAgainstDeliveryChallan(
 //   - delivery_challans.purchase_order_id      → purchase_orders (the OSP PO)
 //   - delivery_challans.vendor_id              → vendors (the receiving vendor)
 //   - delivery_challans.sales_order_line_id    → sales_order_lines → sales_orders
-//   - DISTINCT delivery_challan_lines.item_id  → items (the dispatched parts)
-// Downstream: none external — receipts are internal children of the DC.
+//   - delivery_challan_lines                   → the Item tab (free-text lines too)
+// Downstream:
+//   - goods_receipt_notes.delivery_challan_id  → the GRNs received against this DC
+// DC receipts stay internal children of the DC.
 export async function getDeliveryChallanRelated(
   id: string,
   user: AuthContext,
@@ -2649,21 +2653,54 @@ export async function getDeliveryChallanRelated(
           .limit(1)
       : [];
 
-    // ── Upstream: distinct dispatched items (master) ────────────────────────
-    const itemRows = await tx
-      .selectDistinct({ id: items.id, code: items.code, name: items.name })
-      .from(items)
-      .innerJoin(deliveryChallanLines, eq(deliveryChallanLines.itemId, items.id))
+    // ── Upstream: this DC's own lines ───────────────────────────────────────
+    const dcItems = (await loadRelatedItems(tx, 'deliveryChallan', [id])).get(id) ?? [];
+
+    // ── Downstream: GRNs received against this DC ───────────────────────────
+    const grnRows = await tx
+      .select({
+        id: goodsReceiptNotes.id,
+        code: goodsReceiptNotes.code,
+        date: goodsReceiptNotes.grnDate,
+      })
+      .from(goodsReceiptNotes)
+      .where(
+        and(
+          eq(goodsReceiptNotes.deliveryChallanId, id),
+          eq(goodsReceiptNotes.companyId, companyId),
+          isNull(goodsReceiptNotes.deletedAt),
+        ),
+      )
+      .orderBy(asc(goodsReceiptNotes.grnDate));
+
+    // The PO row names this DC's PO lines, the SO row this DC's SO line.
+    const dcPoLines = await tx
+      .select({ id: deliveryChallanLines.purchaseOrderLineId })
+      .from(deliveryChallanLines)
       .where(
         and(
           eq(deliveryChallanLines.deliveryChallanId, id),
           eq(deliveryChallanLines.companyId, companyId),
           isNull(deliveryChallanLines.deletedAt),
-          eq(items.companyId, companyId),
-          isNull(items.deletedAt),
         ),
-      )
-      .orderBy(asc(items.code));
+      );
+    const poItems = await loadRelatedItems(
+      tx,
+      'purchaseOrder',
+      poRows.map((r) => r.id),
+      { column: 'id', ids: dcPoLines.map((r) => r.id) },
+    );
+    const soItems = await loadRelatedItems(
+      tx,
+      'so',
+      soRows.map((r) => r.id),
+      { column: 'id', ids: [header.salesOrderLineId] },
+    );
+    const grnItems = await loadRelatedItems(
+      tx,
+      'grn',
+      grnRows.map((r) => r.id),
+    );
 
     const row = (
       id_: string,
@@ -2687,6 +2724,7 @@ export async function getDeliveryChallanRelated(
         '🧾',
         'purchase-order',
         poRows.map((r) => row(r.id, r.code, r.status, r.date)),
+        { items: poItems },
       ),
       section(
         'vendor',
@@ -2694,6 +2732,7 @@ export async function getDeliveryChallanRelated(
         '🏭',
         'vendor',
         vendorRows.map((r) => row(r.id, r.code, null, null, r.name)),
+        { noItems: 'party', codeHeading: 'Vendor Code', labelHeading: 'Vendor Name' },
       ),
       section(
         'sales-order',
@@ -2701,16 +2740,20 @@ export async function getDeliveryChallanRelated(
         '📄',
         'sales-order',
         soRows.map((r) => row(r.id, r.code, r.status, r.date, r.internalSoNo)),
+        { items: soItems, labelHeading: 'Internal SO No.' },
       ),
+      itemSection('item', 'Items', '📦', dcItems),
+    ];
+    const downstream = [
       section(
-        'item',
-        'Items',
-        '📦',
-        'item',
-        itemRows.map((r) => row(r.id, r.code, null, null, r.name)),
+        'grn',
+        'Goods Receipt Notes',
+        '📥',
+        'grn',
+        grnRows.map((r) => row(r.id, r.code, null, r.date)),
+        { items: grnItems },
       ),
     ];
-    const downstream: ReturnType<typeof section>[] = [];
 
     return {
       self: { module: 'delivery-challans', code: header.code },
@@ -2724,6 +2767,7 @@ export async function getDeliveryChallanRelated(
           code: header.code,
           routeKind: 'delivery-challan',
           linkId: id,
+          items: dcItems,
         },
         [...upstream, ...downstream],
       ),

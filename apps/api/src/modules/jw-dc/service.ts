@@ -18,7 +18,7 @@ import { emitActivityLog } from '../activity-log/service';
 import { assertNoPendingCancel } from '../cancel-requests/pending-guard';
 import { insertGrnForOspReceipt } from '../goods-receipt-notes/service';
 import { requireFormAccess } from '../../lib/access';
-import { and, asc, desc, eq, inArray, isNotNull, isNull, or, sql, type SQL } from 'drizzle-orm';
+import { and, desc, eq, isNotNull, isNull, or, sql, type SQL } from 'drizzle-orm';
 import type {
   CreateJwDcInwardInput,
   CreateJwDcOutwardInput,
@@ -33,9 +33,11 @@ import type {
   ListJwDcInwardResponse,
   ListJwDcOutwardQuery,
   ListJwDcOutwardResponse,
+  RelatedItem,
 } from '@innovic/shared';
 import { ActivityAction, poSendsMaterialOut } from '@innovic/shared';
 import {
+  goodsReceiptNotes,
   items,
   jwDcInward,
   jwDcInwardLines,
@@ -57,7 +59,8 @@ import { polSql } from '../../lib/pol';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { lockPoLinesForSend, poLineSentRaw, sumSentOnPoLines } from '../../lib/po-line-sent';
 import { postStockMove, roundQty } from '../../lib/stock-ledger';
-import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
+import { loadRelatedItems } from '../../lib/related-items';
+import { buildTimeline, itemSection, section, toIsoDate } from '../../lib/traceability';
 // ADR-217 phase 4 — the one return-to-vendor guard, shared with the OSP
 // outward challan (it lives beside its SQL in the delivery-challans module).
 import { assertNoRtvPending } from '../delivery-challans/rtv-candidates';
@@ -543,10 +546,20 @@ export async function getJwDcRelated(id: string, user: AuthContext): Promise<Doc
     const header = headers[0];
     if (!header) throw new NotFoundError('JW DC not found. Refresh the page.');
 
-    // Distinct items sent out on this DC's lines (upstream master link).
+    // This DC's lines (a Cancelled DC's lines went with it, ADR-235).
     const lineRows = await tx
-      .select({ itemId: jwDcOutwardLines.itemId })
+      .select({
+        lineId: jwDcOutwardLines.id,
+        itemId: jwDcOutwardLines.itemId,
+        itemCodeText: jwDcOutwardLines.itemCodeText,
+        itemNameText: jwDcOutwardLines.itemNameText,
+        purchaseOrderLineId: jwDcOutwardLines.purchaseOrderLineId,
+        masterCode: items.code,
+        masterName: items.name,
+        masterDeletedAt: items.deletedAt,
+      })
       .from(jwDcOutwardLines)
+      .leftJoin(items, eq(items.id, jwDcOutwardLines.itemId))
       .where(
         and(
           eq(jwDcOutwardLines.jwDcOutwardId, id),
@@ -555,9 +568,19 @@ export async function getJwDcRelated(id: string, user: AuthContext): Promise<Doc
             : isNull(jwDcOutwardLines.deletedAt),
         ),
       );
-    const itemIds = Array.from(
-      new Set(lineRows.map((r) => r.itemId).filter((v): v is string => Boolean(v))),
-    );
+    // loadRelatedItems reads live lines only, so a Cancelled DC's Item tab comes from
+    // the lines just read. Its POL and Rev are not looked up: the DC no longer stands.
+    const dcItems: RelatedItem[] =
+      header.deletedAt == null
+        ? ((await loadRelatedItems(tx, 'jwDcOutward', [id])).get(id) ?? [])
+        : lineRows.map((l) => ({
+            lineId: l.lineId,
+            itemId: l.masterDeletedAt == null ? l.itemId : null,
+            itemCode: l.masterCode ?? l.itemCodeText,
+            itemRevision: null,
+            itemName: l.masterName ?? l.itemNameText,
+            clientPoLineNo: null,
+          }));
 
     // ── Upstream: source purchase order (Job Work PO) ───────────────────────
     const poRows = header.purchaseOrderId
@@ -596,22 +619,6 @@ export async function getJwDcRelated(id: string, user: AuthContext): Promise<Doc
       : [];
     const vendor = vendorRows[0] ?? null;
 
-    // ── Upstream: distinct items on this DC's lines (master) ─────────────────
-    const itemRows =
-      itemIds.length === 0
-        ? []
-        : await tx
-            .select({ id: items.id, code: items.code, name: items.name })
-            .from(items)
-            .where(
-              and(
-                eq(items.companyId, companyId),
-                isNull(items.deletedAt),
-                inArray(items.id, itemIds),
-              ),
-            )
-            .orderBy(asc(items.code));
-
     // ── Downstream: inward returns against this outward DC ──────────────────
     const inwardRows = await tx
       .select({
@@ -628,6 +635,27 @@ export async function getJwDcRelated(id: string, user: AuthContext): Promise<Doc
         ),
       )
       .orderBy(desc(jwDcInward.inwardDate));
+
+    // ── Downstream: GRNs raised by those inward returns (0172) ──────────────
+    // goods_receipt_notes has no status column.
+    const grnRows = await tx
+      .selectDistinct({
+        id: goodsReceiptNotes.id,
+        code: goodsReceiptNotes.code,
+        date: goodsReceiptNotes.grnDate,
+      })
+      .from(jwDcInward)
+      .innerJoin(goodsReceiptNotes, eq(goodsReceiptNotes.id, jwDcInward.goodsReceiptNoteId))
+      .where(
+        and(
+          eq(jwDcInward.jwDcOutwardId, id),
+          eq(jwDcInward.companyId, companyId),
+          isNull(jwDcInward.deletedAt),
+          eq(goodsReceiptNotes.companyId, companyId),
+          isNull(goodsReceiptNotes.deletedAt),
+        ),
+      )
+      .orderBy(desc(goodsReceiptNotes.grnDate));
 
     // ── Upstream sections (what this DC was built FROM) ─────────────────────
     const poSection = section(
@@ -647,6 +675,12 @@ export async function getJwDcRelated(id: string, user: AuthContext): Promise<Doc
             },
           ]
         : [],
+      {
+        items: await loadRelatedItems(tx, 'purchaseOrder', [po?.id], {
+          column: 'id',
+          ids: lineRows.map((l) => l.purchaseOrderLineId),
+        }),
+      },
     );
     const vendorSection = section(
       'vendor',
@@ -665,21 +699,9 @@ export async function getJwDcRelated(id: string, user: AuthContext): Promise<Doc
             },
           ]
         : [],
+      { noItems: 'party', codeHeading: 'Vendor Code', labelHeading: 'Vendor Name' },
     );
-    const itemSection = section(
-      'item',
-      'Items',
-      '📦',
-      'item',
-      itemRows.map((r) => ({
-        id: r.id,
-        code: r.code,
-        status: null,
-        date: null,
-        linkId: null,
-        label: r.name,
-      })),
-    );
+    const itemTab = itemSection('item', 'Items', '📦', dcItems);
 
     // ── Downstream sections (generated from this DC) ────────────────────────
     // Inward returns have no standalone detail route → reference-only (routeKind null).
@@ -696,10 +718,38 @@ export async function getJwDcRelated(id: string, user: AuthContext): Promise<Doc
         linkId: null,
         label: null,
       })),
+      {
+        items: await loadRelatedItems(
+          tx,
+          'jwDcInward',
+          inwardRows.map((r) => r.id),
+        ),
+      },
+    );
+    const grnSection = section(
+      'grn',
+      'Goods Receipt Notes',
+      '📥',
+      'grn',
+      grnRows.map((r) => ({
+        id: r.id,
+        code: r.code,
+        status: null,
+        date: toIsoDate(r.date),
+        linkId: null,
+        label: null,
+      })),
+      {
+        items: await loadRelatedItems(
+          tx,
+          'grn',
+          grnRows.map((r) => r.id),
+        ),
+      },
     );
 
-    const upstream = [poSection, vendorSection, itemSection];
-    const downstream = [inwardSection];
+    const upstream = [poSection, vendorSection, itemTab];
+    const downstream = [inwardSection, grnSection];
 
     const selfEvent = {
       ts: toIsoDate(header.dcDate),
@@ -707,6 +757,7 @@ export async function getJwDcRelated(id: string, user: AuthContext): Promise<Doc
       code: header.code,
       routeKind: 'jw-dc' as const,
       linkId: null,
+      items: dcItems,
     };
 
     return {

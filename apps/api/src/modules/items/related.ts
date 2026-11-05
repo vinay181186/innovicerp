@@ -4,7 +4,7 @@
 //   purchase_order_lines.item_id → the PO                 → Purchase Orders
 //   goods_receipt_note_lines.item_id → the GRN            → GRNs
 // Each section lists the newest MASTER_RELATED_ROW_CAP rows; its count is the
-// full number.
+// full number. Every row is already about this item, so no section lists items.
 
 import type { DocumentTraceability } from '@innovic/shared';
 import { and, eq, isNull, sql } from 'drizzle-orm';
@@ -12,6 +12,8 @@ import { items } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
 import { buildTimeline, MASTER_RELATED_ROW_CAP, masterSection } from '../../lib/traceability';
+
+const NO_ITEMS = { noItems: 'page is already this item' } as const;
 
 export async function getItemRelated(id: string, user: AuthContext): Promise<DocumentTraceability> {
   const companyId = user.companyId;
@@ -27,7 +29,7 @@ export async function getItemRelated(id: string, user: AuthContext): Promise<Doc
 
     const prRaw = await tx.execute(sql`
       SELECT pr.id, pr.code, pr.status::text AS status, pr.pr_date AS date,
-             'PR Qty ' || trim_scale(pr.qty) AS label, count(*) OVER () AS total
+             trim_scale(pr.qty)::text AS label, count(*) OVER () AS total
       FROM public.purchase_requests pr
       WHERE pr.company_id = ${companyId}::uuid AND pr.deleted_at IS NULL
         AND pr.item_id = ${id}::uuid
@@ -71,9 +73,16 @@ export async function getItemRelated(id: string, user: AuthContext): Promise<Doc
         '\u{1F4DD}',
         'purchase-request',
         prRaw,
+        { ...NO_ITEMS, labelHeading: 'PR Qty' },
       ),
-      masterSection('purchase-order', 'Purchase Orders', '\u{1F6D2}', 'purchase-order', poRaw),
-      masterSection('grn', 'GRNs', '\u{1F4E5}', 'grn', grnRaw),
+      masterSection('purchase-order', 'Purchase Orders', '\u{1F6D2}', 'purchase-order', poRaw, {
+        ...NO_ITEMS,
+        labelHeading: 'Vendor Name',
+      }),
+      masterSection('grn', 'GRNs', '\u{1F4E5}', 'grn', grnRaw, {
+        ...NO_ITEMS,
+        labelHeading: 'Vendor Name',
+      }),
     ];
     return {
       self: { module: 'items', code: item.code },

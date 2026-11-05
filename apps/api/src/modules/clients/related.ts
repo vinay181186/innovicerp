@@ -13,7 +13,10 @@ import { clients } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice } from '../../lib/access';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
+import { loadRelatedItems } from '../../lib/related-items';
 import { buildTimeline, MASTER_RELATED_ROW_CAP, masterSection } from '../../lib/traceability';
+
+const rowIds = (raw: unknown): string[] => (raw as Array<{ id: string }>).map((r) => r.id);
 
 export async function getClientRelated(
   id: string,
@@ -56,7 +59,7 @@ export async function getClientRelated(
     // Outstanding = Grand Total − Paid − TDS (0171, as the invoices service);
     // named only to those who may see money.
     const dueLabel = showMoney
-      ? sql`'Due ' || to_char(inv.grand_total - inv.total_paid - COALESCE(inv.total_tds, 0), 'FM99,99,99,99,990.00')`
+      ? sql`to_char(inv.grand_total - inv.total_paid - COALESCE(inv.total_tds, 0), 'FM99,99,99,99,990.00')`
       : sql`NULL::text`;
     const invoiceRaw = await tx.execute(sql`
       SELECT inv.id, inv.code, inv.status::text AS status, inv.invoice_date AS date,
@@ -71,9 +74,19 @@ export async function getClientRelated(
     `);
 
     const downstream = [
-      masterSection('sales-order', 'Sales Orders', '\u{1F4CB}', 'sales-order', soRaw),
-      masterSection('customer-dispatch', 'Customer Dispatches', '\u{1F69A}', null, dispatchRaw),
-      masterSection('invoice', 'Invoices Outstanding', '\u{1F9FE}', 'invoice', invoiceRaw),
+      masterSection('sales-order', 'Sales Orders', '\u{1F4CB}', 'sales-order', soRaw, {
+        items: await loadRelatedItems(tx, 'so', rowIds(soRaw)),
+        labelHeading: 'Client PO No.',
+      }),
+      masterSection('customer-dispatch', 'Customer Dispatches', '\u{1F69A}', null, dispatchRaw, {
+        items: await loadRelatedItems(tx, 'customerDispatch', rowIds(dispatchRaw)),
+        labelHeading: 'SO No.',
+      }),
+      masterSection('invoice', 'Invoices Outstanding', '\u{1F9FE}', 'invoice', invoiceRaw, {
+        items: await loadRelatedItems(tx, 'invoice', rowIds(invoiceRaw)),
+        // No money right = no amount, so no such column.
+        ...(showMoney ? { labelHeading: 'Outstanding Amount' } : {}),
+      }),
     ];
     return {
       self: { module: 'clients', code: client.code },

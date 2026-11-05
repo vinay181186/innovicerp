@@ -21,11 +21,15 @@
 // is present in the payload, run the merge; if omitted, only the header is
 // updated (existing lines untouched).
 
-import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
+  deliveryChallans,
   goodsReceiptNoteLines,
   goodsReceiptNotes,
   items,
+  jwDcInward,
+  jwDcOutward,
+  ncRegister,
   purchaseOrderLines,
   purchaseOrders,
   vendors,
@@ -48,7 +52,14 @@ import { editConflicts, rowChangedByName } from '../../lib/row-changed-by';
 import { assertProductionOrderNotShortClosed } from '../../lib/production-order-stop';
 import { assertLineQtysFitUom } from '../../lib/qty-uom';
 import { type DiffField, diffFields, softDeleteStamp, valuesEqual } from '../../lib/audit-trail';
-import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
+import { loadRelatedItems } from '../../lib/related-items';
+import {
+  buildTimeline,
+  itemSection,
+  type RelatedRow,
+  section,
+  toIsoDate,
+} from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
 import { assertNoPendingCancel } from '../cancel-requests/pending-guard';
 import { grnSourceReceiptBlockers } from './cancel';
@@ -58,7 +69,6 @@ import {
   type DocumentEditStagedResult,
   type DocumentTraceability,
   poSendsMaterialOut,
-  type RelatedDoc,
 } from '@innovic/shared';
 import type {
   CreateGoodsReceiptNoteInput,
@@ -2180,14 +2190,20 @@ export async function softDeleteGoodsReceiptNote(
  * a single withUserContext transaction, an existence check that throws
  * NotFoundError, and company-scoped + soft-delete-filtered subqueries.
  *
- * A GRN is a leaf document — it credits stock via the append-only ledger
- * (store_transactions), which is not a navigable document — so downstream is
- * always empty.
+ * Stock credited by a GRN goes through the append-only ledger (store_transactions),
+ * which is not a navigable document. The one document a GRN raises is the NC its
+ * QC rejection opens.
  *
  * Upstream (source) relationships:
  *   - goods_receipt_notes.purchase_order_id      → purchase_orders (the source PO)
  *   - goods_receipt_notes.vendor_id              → vendors (master, nullable)
- *   - goods_receipt_note_lines.item_id → DISTINCT items (master, the received items)
+ *   - goods_receipt_note_lines                   → the items received, free text too
+ *   - goods_receipt_notes.delivery_challan_id    → delivery_challans (OSP return, 0075)
+ *   - jw_dc_inward.goods_receipt_note_id         → jw_dc_outward (JW DC receipt, 0172)
+ *   - goods_receipt_note_lines.nc_id / goods_receipt_notes.nc_id → the NC it settles
+ *
+ * Downstream:
+ *   - nc_register.grn_line_id ∈ this GRN's lines → the NC raised on it
  */
 export async function getGrnRelated(id: string, user: AuthContext): Promise<DocumentTraceability> {
   const companyId = requireCompany(user);
@@ -2201,6 +2217,8 @@ export async function getGrnRelated(id: string, user: AuthContext): Promise<Docu
         grnDate: goodsReceiptNotes.grnDate,
         purchaseOrderId: goodsReceiptNotes.purchaseOrderId,
         vendorId: goodsReceiptNotes.vendorId,
+        deliveryChallanId: goodsReceiptNotes.deliveryChallanId,
+        ncId: goodsReceiptNotes.ncId,
       })
       .from(goodsReceiptNotes)
       .where(
@@ -2213,6 +2231,22 @@ export async function getGrnRelated(id: string, user: AuthContext): Promise<Docu
       .limit(1);
     const header = headers[0];
     if (!header) throw new NotFoundError('GRN not found. It may have been moved to Trash.');
+
+    // The links this GRN's own lines carry.
+    const grnLines = await tx
+      .select({
+        id: goodsReceiptNoteLines.id,
+        purchaseOrderLineId: goodsReceiptNoteLines.purchaseOrderLineId,
+        ncId: goodsReceiptNoteLines.ncId,
+      })
+      .from(goodsReceiptNoteLines)
+      .where(
+        and(
+          eq(goodsReceiptNoteLines.goodsReceiptNoteId, id),
+          isNull(goodsReceiptNoteLines.deletedAt),
+        ),
+      );
+    const poLineIds = grnLines.map((l) => l.purchaseOrderLineId);
 
     // ── Upstream: source purchase order (plain header FK) ───────────────────
     const poRows = header.purchaseOrderId
@@ -2250,33 +2284,90 @@ export async function getGrnRelated(id: string, user: AuthContext): Promise<Docu
       : [];
     const vendor = vendorRows[0] ?? null;
 
-    // ── Upstream: distinct items received on this GRN's lines (master) ───────
-    const lineItemRows = await tx
-      .selectDistinct({ itemId: goodsReceiptNoteLines.itemId })
-      .from(goodsReceiptNoteLines)
+    // ── Upstream: the Delivery Challan this GRN received back (OSP return) ──
+    const dcRows = header.deliveryChallanId
+      ? await tx
+          .select({
+            id: deliveryChallans.id,
+            code: deliveryChallans.code,
+            status: deliveryChallans.status,
+            date: deliveryChallans.dcDate,
+          })
+          .from(deliveryChallans)
+          .where(
+            and(
+              eq(deliveryChallans.id, header.deliveryChallanId),
+              eq(deliveryChallans.companyId, companyId),
+              isNull(deliveryChallans.deletedAt),
+            ),
+          )
+          .limit(1)
+      : [];
+
+    // ── Upstream: the JW DC whose inward receipt raised this GRN ────────────
+    // jw_dc_outward has no status column.
+    const jwDcRows = await tx
+      .selectDistinct({
+        id: jwDcOutward.id,
+        code: jwDcOutward.code,
+        date: jwDcOutward.dcDate,
+      })
+      .from(jwDcInward)
+      .innerJoin(jwDcOutward, eq(jwDcOutward.id, jwDcInward.jwDcOutwardId))
       .where(
         and(
-          eq(goodsReceiptNoteLines.goodsReceiptNoteId, id),
-          isNull(goodsReceiptNoteLines.deletedAt),
+          eq(jwDcInward.goodsReceiptNoteId, id),
+          eq(jwDcInward.companyId, companyId),
+          isNull(jwDcInward.deletedAt),
+          eq(jwDcOutward.companyId, companyId),
+          isNull(jwDcOutward.deletedAt),
         ),
-      );
-    const itemIds = Array.from(
-      new Set(lineItemRows.map((r) => r.itemId).filter((v): v is string => Boolean(v))),
+      )
+      .orderBy(desc(jwDcOutward.dcDate));
+
+    // ── Upstream: the NC this GRN settles (a replacement receipt) ───────────
+    const settledNcIds = [...grnLines.map((l) => l.ncId), header.ncId].filter((v): v is string =>
+      Boolean(v),
     );
-    const itemRows =
-      itemIds.length === 0
+    const ncColumns = {
+      id: ncRegister.id,
+      code: ncRegister.code,
+      status: ncRegister.status,
+      date: ncRegister.ncDate,
+    };
+    const settledNcRows =
+      settledNcIds.length === 0
         ? []
         : await tx
-            .select({ id: items.id, code: items.code, name: items.name })
-            .from(items)
+            .select(ncColumns)
+            .from(ncRegister)
             .where(
               and(
-                eq(items.companyId, companyId),
-                isNull(items.deletedAt),
-                inArray(items.id, itemIds),
+                inArray(ncRegister.id, settledNcIds),
+                eq(ncRegister.companyId, companyId),
+                isNull(ncRegister.deletedAt),
               ),
             )
-            .orderBy(asc(items.code));
+            .orderBy(desc(ncRegister.ncDate));
+
+    // ── Downstream: the NC raised on this GRN's lines ───────────────────────
+    const raisedNcRows =
+      grnLines.length === 0
+        ? []
+        : await tx
+            .select(ncColumns)
+            .from(ncRegister)
+            .where(
+              and(
+                inArray(
+                  ncRegister.grnLineId,
+                  grnLines.map((l) => l.id),
+                ),
+                eq(ncRegister.companyId, companyId),
+                isNull(ncRegister.deletedAt),
+              ),
+            )
+            .orderBy(desc(ncRegister.ncDate));
 
     const row = (
       id_: string,
@@ -2284,7 +2375,7 @@ export async function getGrnRelated(id: string, user: AuthContext): Promise<Docu
       status: string | null,
       date: unknown,
       extra?: { linkId?: string; label?: string },
-    ): RelatedDoc => ({
+    ): RelatedRow => ({
       id: id_,
       code,
       status,
@@ -2300,6 +2391,14 @@ export async function getGrnRelated(id: string, user: AuthContext): Promise<Docu
       '🧾',
       'purchase-order',
       poRows.map((r) => row(r.id, r.code, r.status, r.date)),
+      {
+        items: await loadRelatedItems(
+          tx,
+          'purchaseOrder',
+          poRows.map((r) => r.id),
+          { column: 'id', ids: poLineIds },
+        ),
+      },
     );
     const vendorSection = section(
       'vendor',
@@ -2307,17 +2406,73 @@ export async function getGrnRelated(id: string, user: AuthContext): Promise<Docu
       '🏭',
       'vendor',
       vendor ? [row(vendor.id, vendor.code, null, null, { label: vendor.name })] : [],
+      { noItems: 'party', codeHeading: 'Vendor Code', labelHeading: 'Vendor Name' },
     );
-    const itemSection = section(
-      'item',
-      'Items',
+    const grnItems = (await loadRelatedItems(tx, 'grn', [id])).get(id) ?? [];
+    const itemTab = itemSection('item', 'Items', '📦', grnItems);
+    const dcSection = section(
+      'delivery-challan',
+      'Delivery Challan',
+      '🚚',
+      'delivery-challan',
+      dcRows.map((r) => row(r.id, r.code, r.status, r.date)),
+      {
+        items: await loadRelatedItems(
+          tx,
+          'deliveryChallan',
+          dcRows.map((r) => r.id),
+          { column: 'purchase_order_line_id', ids: poLineIds },
+        ),
+      },
+    );
+    const jwDcSection = section(
+      'jw-dc',
+      'JW DC Outward',
       '📦',
-      'item',
-      itemRows.map((r) => row(r.id, r.code, null, null, { label: r.name })),
+      'jw-dc',
+      jwDcRows.map((r) => row(r.id, r.code, null, r.date)),
+      {
+        items: await loadRelatedItems(
+          tx,
+          'jwDcOutward',
+          jwDcRows.map((r) => r.id),
+          { column: 'purchase_order_line_id', ids: poLineIds },
+        ),
+      },
+    );
+    const settledNcSection = section(
+      'nc-settled',
+      'NC Settled',
+      '🔁',
+      'nc',
+      settledNcRows.map((r) => row(r.id, r.code, r.status, r.date)),
+      {
+        items: await loadRelatedItems(
+          tx,
+          'nc',
+          settledNcRows.map((r) => r.id),
+        ),
+      },
     );
 
-    const upstream = [poSection, vendorSection, itemSection];
-    const downstream: DocumentTraceability['downstream'] = [];
+    // ── Downstream sections (raised from this GRN) ──────────────────────────
+    const raisedNcSection = section(
+      'nc-raised',
+      'NC Raised',
+      '⚠️',
+      'nc',
+      raisedNcRows.map((r) => row(r.id, r.code, r.status, r.date)),
+      {
+        items: await loadRelatedItems(
+          tx,
+          'nc',
+          raisedNcRows.map((r) => r.id),
+        ),
+      },
+    );
+
+    const upstream = [poSection, vendorSection, itemTab, dcSection, jwDcSection, settledNcSection];
+    const downstream = [raisedNcSection];
     return {
       self: { module: 'goods-receipt-notes', code: header.code },
       upstream,
@@ -2330,6 +2485,7 @@ export async function getGrnRelated(id: string, user: AuthContext): Promise<Docu
           code: header.code,
           routeKind: 'grn',
           linkId: id,
+          items: grnItems,
         },
         [...upstream, ...downstream],
       ),

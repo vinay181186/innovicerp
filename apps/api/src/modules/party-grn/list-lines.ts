@@ -10,10 +10,12 @@
 // the whole document exactly as before.
 //
 // Item on the row = what the line RECEIVED: the JWSO line's customer RM
-// (party_material_code_text / _name, snapshotted at gate-in), with the JWSO
-// line's drawing revision. JWSO No. / POL come from the GRN header and the
-// JWSO line (LEFT JOIN on the line's primary key — never multiplies rows; no
-// deleted_at filter, matching loadPartyGrnDetail).
+// (party_material_code_text / _name, snapshotted at gate-in). It has no Rev: the
+// JWSO line's Rev is the finished part's drawing, so it rides with the finished
+// part on orderItemCode / orderItemRevision / orderItemName (owner 2026-11-05).
+// JWSO No. / POL come from the GRN header and the JWSO line (LEFT JOIN on the
+// line's primary key — never multiplies rows; no deleted_at filter, matching
+// loadPartyGrnDetail).
 
 import { sql } from 'drizzle-orm';
 import type {
@@ -55,6 +57,7 @@ export async function listPartyGrnLines(
           OR c.name ILIKE ${term} ESCAPE '\\'
           OR pgl.party_material_code_text ILIKE ${term} ESCAPE '\\'
           OR pgl.party_material_name ILIKE ${term} ESCAPE '\\'
+          OR COALESCE(oi.code, jwl.item_code_text) ILIKE ${term} ESCAPE '\\'
           OR jwl.client_po_line_no ILIKE ${term} ESCAPE '\\'
         )`
       : sql``;
@@ -79,7 +82,8 @@ export async function listPartyGrnLines(
       FROM public.party_grn_lines pgl
       JOIN public.party_grn pg ON pg.id = pgl.party_grn_id
       LEFT JOIN public.clients c ON c.id = pg.client_id AND c.deleted_at IS NULL
-      LEFT JOIN public.job_work_order_lines jwl ON jwl.id = pgl.jw_line_id`;
+      LEFT JOIN public.job_work_order_lines jwl ON jwl.id = pgl.jw_line_id
+      LEFT JOIN public.items oi ON oi.id = jwl.item_id`;
     const where = sql`
       WHERE pg.company_id = ${companyId}::uuid
         AND pgl.company_id = ${companyId}::uuid
@@ -92,7 +96,9 @@ export async function listPartyGrnLines(
         pgl.id AS "lineId", pgl.line_no AS "lineNo",
         pgl.party_material_code_text AS "itemCode",
         pgl.party_material_name AS "itemName",
-        NULLIF(btrim(jwl.revision), '') AS "itemRevision",
+        COALESCE(oi.code, jwl.item_code_text) AS "orderItemCode",
+        NULLIF(btrim(jwl.revision), '') AS "orderItemRevision",
+        COALESCE(oi.name, jwl.part_name) AS "orderItemName",
         jwl.client_po_line_no AS "clientPoLineNo",
         COALESCE(pgl.created_at, pg.created_at) AS "lineCreatedAt",
         ${createdByNameSql(sql`COALESCE(pgl.created_by, pg.created_by)`)} AS "createdByName",
@@ -166,8 +172,11 @@ export async function listPartyGrnLines(
         createdAt: iso(r['lineCreatedAt']),
         createdByName: str(r['createdByName']),
         itemCode: (r['itemCode'] as string | null) ?? null,
-        itemRevision: (r['itemRevision'] as string | null) ?? null,
+        itemRevision: null,
         itemName: (r['itemName'] as string | null) ?? null,
+        orderItemCode: (r['orderItemCode'] as string | null) ?? null,
+        orderItemRevision: (r['orderItemRevision'] as string | null) ?? null,
+        orderItemName: (r['orderItemName'] as string | null) ?? null,
         customerName: header.clientName ?? header.clientCodeText,
         clientPoNo: header.clientPoNo,
         dcNo: header.dcNo,

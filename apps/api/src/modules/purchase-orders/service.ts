@@ -16,7 +16,7 @@
 // a PR may be covered by several — ADR-152 phase 2). Mirrors legacy `addPO()`
 // line 25728.
 
-import { and, asc, desc, eq, inArray, isNull, notInArray, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, notInArray, or, sql, type SQL } from 'drizzle-orm';
 import {
   approvalConfig,
   deliveryChallans,
@@ -40,6 +40,7 @@ import { type AuthContext, type DbTransaction, withUserContext } from '../../db/
 import { canSeeFormPrice, requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { assertActiveParty } from '../../lib/active-party';
+import { loadRelatedItems } from '../../lib/related-items';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { poLineBackRaw, poLineSentGroupedSql, poLineSentRaw } from '../../lib/po-line-sent';
 import { poLineAcceptedGroupedSql, poLineAcceptedSql } from '../../lib/po-accepted';
@@ -4078,6 +4079,7 @@ export async function getPurchaseOrderRelated(
         poDate: purchaseOrders.poDate,
         status: purchaseOrders.status,
         vendorId: purchaseOrders.vendorId,
+        prId: purchaseOrders.prId,
       })
       .from(purchaseOrders)
       .where(
@@ -4107,7 +4109,21 @@ export async function getPurchaseOrderRelated(
       : [];
     const vendor = vendorRows[0] ?? null;
 
-    // Upstream: source purchase requests (PR.po_id points back to this PO).
+    // The links this PO's own lines carry.
+    const poLines = await tx
+      .select({
+        sourcePrId: purchaseOrderLines.sourcePrId,
+        sourceSoLineId: purchaseOrderLines.sourceSoLineId,
+      })
+      .from(purchaseOrderLines)
+      .where(and(eq(purchaseOrderLines.purchaseOrderId, id), isNull(purchaseOrderLines.deletedAt)));
+    const sourcePrIds = [...poLines.map((l) => l.sourcePrId), header.prId].filter(
+      (v): v is string => Boolean(v),
+    );
+
+    // Upstream: source purchase requests. The real link is per line (source_pr_id,
+    // 0103). PR.po_id names only a PR's FIRST PO, so a PO that is a PR's 2nd is found
+    // only through its lines; po_id and the header pr_id cover old rows.
     const prRows = await tx
       .select({
         id: purchaseRequests.id,
@@ -4118,7 +4134,10 @@ export async function getPurchaseOrderRelated(
       .from(purchaseRequests)
       .where(
         and(
-          eq(purchaseRequests.poId, id),
+          or(
+            eq(purchaseRequests.poId, id),
+            sourcePrIds.length > 0 ? inArray(purchaseRequests.id, sourcePrIds) : undefined,
+          ),
           eq(purchaseRequests.companyId, companyId),
           isNull(purchaseRequests.deletedAt),
         ),
@@ -4241,6 +4260,7 @@ export async function getPurchaseOrderRelated(
             },
           ]
         : [],
+      { noItems: 'party', codeHeading: 'Vendor Code', labelHeading: 'Vendor Name' },
     );
     const prSection = section(
       'purchase-request',
@@ -4255,6 +4275,13 @@ export async function getPurchaseOrderRelated(
         linkId: null,
         label: null,
       })),
+      {
+        items: await loadRelatedItems(
+          tx,
+          'purchaseRequest',
+          prRows.map((r) => r.id),
+        ),
+      },
     );
     const soSection = section(
       'sales-order',
@@ -4269,6 +4296,15 @@ export async function getPurchaseOrderRelated(
         linkId: null,
         label: r.internalSoNo,
       })),
+      {
+        items: await loadRelatedItems(
+          tx,
+          'so',
+          soRows.map((r) => r.id),
+          { column: 'id', ids: poLines.map((l) => l.sourceSoLineId) },
+        ),
+        labelHeading: 'Internal SO No.',
+      },
     );
     const jcSection = section(
       'job-card',
@@ -4283,6 +4319,13 @@ export async function getPurchaseOrderRelated(
         linkId: null,
         label: null,
       })),
+      {
+        items: await loadRelatedItems(
+          tx,
+          'jobCard',
+          jcRows.map((r) => r.id),
+        ),
+      },
     );
 
     // Downstream sections (generated from this PO).
@@ -4299,6 +4342,13 @@ export async function getPurchaseOrderRelated(
         linkId: null,
         label: null,
       })),
+      {
+        items: await loadRelatedItems(
+          tx,
+          'grn',
+          grnRows.map((r) => r.id),
+        ),
+      },
     );
     const dcSection = section(
       'delivery-challans',
@@ -4313,6 +4363,13 @@ export async function getPurchaseOrderRelated(
         linkId: null,
         label: null,
       })),
+      {
+        items: await loadRelatedItems(
+          tx,
+          'deliveryChallan',
+          dcRows.map((r) => r.id),
+        ),
+      },
     );
     const jwDcSection = section(
       'jw-dc',
@@ -4327,6 +4384,13 @@ export async function getPurchaseOrderRelated(
         linkId: null,
         label: null,
       })),
+      {
+        items: await loadRelatedItems(
+          tx,
+          'jwDcOutward',
+          jwDcRows.map((r) => r.id),
+        ),
+      },
     );
 
     const upstream = [vendorSection, prSection, soSection, jcSection];
@@ -4343,6 +4407,7 @@ export async function getPurchaseOrderRelated(
           code: header.code,
           routeKind: 'purchase-order',
           linkId: id,
+          items: (await loadRelatedItems(tx, 'purchaseOrder', [id])).get(id) ?? [],
         },
         [...upstream, ...downstream],
       ),

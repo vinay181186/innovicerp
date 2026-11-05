@@ -110,9 +110,9 @@ export function poListColumns(
       internalSoNo: (po) => po.soInternalNo,
       pol: (po) => po.clientPoLineNo,
       createdOn: (po) => po.createdAt,
-      itemCode: (po) => po.itemCodeText,
+      itemCode: (po) => po.itemCode ?? po.itemCodeText,
       itemRev: (po) => docDrawingRev(po),
-      itemName: (po) => po.itemNameText,
+      itemName: (po) => po.itemName ?? po.itemNameText,
       overrides: {
         so_no: { sortFilterField: 'sourceCode' },
         so_internal_no: { sortFilterField: 'soInternalNo' },
@@ -125,7 +125,7 @@ export function poListColumns(
               {/* CODE/REV (ADR-177); bare code when the line has no revision. */}
               <ItemRevLink
                 itemRevisionId={po.itemRevisionId}
-                label={itemCodeWithRev(po.itemCodeText, docDrawingRev(po))}
+                label={itemCodeWithRev(po.itemCode ?? po.itemCodeText, docDrawingRev(po))}
                 className=""
               />
             </span>

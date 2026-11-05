@@ -3,8 +3,9 @@
 // file under the 400-line rule.
 //
 // Visible order: the lead block (GRN No. · JWSO No. · POL · Created On · Item
-// Code/Rev · Item Name — a JWSO-only list, so no Internal SO No.), then GRN
-// Date · Customer · Client PO No. · Customer Challan No. · Received Qty ·
+// Code/Rev · Item Name — a JWSO-only list, so no Internal SO No.), then Order
+// Item Code · Order Item Name (the finished part this material is for: the JWSO
+// line's item, first after the locked block, owner 2026-11-05) · GRN Date · Customer · Client PO No. · Customer Challan No. · Received Qty ·
 // Accepted Qty · QC Status. The item is what the line RECEIVED (the JWSO
 // line's customer RM) with the JWSO line's drawing revision. The GRN No. keeps
 // its --cyan identity colour (no detail route, so the code is not a link).
@@ -16,6 +17,7 @@
 
 import type { PartyGrnLineListRow, PartyGrnListItem } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
+import { itemCodeWithRev } from '@/lib/item-code';
 import { createdByColumn, type DataTableColumn, leadColumns } from '@/ui/data';
 import { PGRN_QC_BADGE, pgrnQcLabel, pgrnQcState } from '../lib/qc-state';
 
@@ -58,6 +60,29 @@ export function partyGrnColumns(firstRowNo: number): DataTableColumn<PartyGrnLin
         item_name: { sortFilterField: 'itemName' },
       },
     }),
+    {
+      id: 'order_item_code',
+      sortFilterField: 'orderItemCode',
+      header: 'Order Item Code',
+      kind: 'code',
+      className: 'mono fw-700',
+      nowrap: true,
+      render: (r) => (
+        <span style={{ color: 'var(--text)' }}>
+          {itemCodeWithRev(r.orderItemCode, r.orderItemRevision)}
+        </span>
+      ),
+    },
+    {
+      id: 'order_item_name',
+      header: 'Order Item Name',
+      kind: 'text',
+      align: 'left',
+      ellipsis: true,
+      filterable: false,
+      render: (r) => r.orderItemName ?? '—',
+      title: (r) => r.orderItemName ?? '',
+    },
     {
       id: 'grn_date',
       sortFilterField: 'grnDate',
