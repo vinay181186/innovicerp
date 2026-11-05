@@ -15274,7 +15274,7 @@ A person could skip a date and nothing showed it. The Super Admin wanted to see 
 ### Consequences
 
 - Positive: no second working-day rule, no new lock; a blank day with a reply still counts as blank.
-- Negative: a day header can exist with no lines (reply only). `day_log_pending_from` defaults to the IST date 0240 runs on, so PROD gets its release date with no hand-set value; TEST was set to 2026-11-02 by hand for testing.
+- Negative: a day header can exist with no lines (reply only). `day_log_pending_from` defaults to the IST date 0240 runs on. Owner then asked to count from 28-10-2026 (same day), so 0241 sets every existing company, PROD and TEST, to 2026-10-28. A login created later still starts on its creation date.
 - Risks: people who never log see the banner from release until Hide page is set.
 
 ## ADR-271: One item standard on Related Documents and document pickers
