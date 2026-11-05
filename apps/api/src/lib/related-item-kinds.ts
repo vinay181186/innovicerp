@@ -291,7 +291,5 @@ export const KINDS = {
 
 export type RelatedItemKind = keyof typeof KINDS;
 
-export type RelatedItemKind = keyof typeof KINDS;
-
 /** Every kind, so a test can cover a new one without being told about it. */
 export const RELATED_ITEM_KINDS = Object.keys(KINDS) as RelatedItemKind[];
