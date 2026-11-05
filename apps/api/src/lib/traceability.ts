@@ -17,7 +17,8 @@ import type {
  *  or null. Drizzle `date` columns already come back as strings (default mode),
  *  but `timestamp` columns come back as Date — this normalises both so timeline
  *  sorting (lexical string compare) is always safe. `Date#toISOString().slice(0,10)`
- *  is UTC-stable for date-only values (see postgres.js date-OID note). */
+ *  is UTC-stable for date-only values (see postgres.js date-OID note). A timestamp
+ *  would come out as its UTC day: select it `AT TIME ZONE 'Asia/Kolkata'` first. */
 export function toIsoDate(v: unknown): string | null {
   if (v == null) return null;
   if (v instanceof Date) return v.toISOString().slice(0, 10);

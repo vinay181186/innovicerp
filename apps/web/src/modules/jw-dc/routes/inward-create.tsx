@@ -64,7 +64,7 @@ function JwDcInwardNewPage(): React.JSX.Element {
 
   // Outward DCs with pending returns (filter client-side). Live DCs only — a
   // Cancelled DC (ADR-235) takes no return.
-  const { data: outData } = useJwDcOutwardList({ limit: 200, offset: 0, includeCancelled: false });
+  const { data: outData } = useJwDcOutwardList({ withLineItems: true, limit: 200, offset: 0, includeCancelled: false });
   const pendingDcs = useMemo(
     () => (outData?.items ?? []).filter((d) => d.pendingQty > 0),
     [outData],

@@ -151,9 +151,6 @@ export function Timeline({
                 <div
                   style={{
                     fontSize: 'var(--fs-sm)',
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
                   }}
                 >
                   <span

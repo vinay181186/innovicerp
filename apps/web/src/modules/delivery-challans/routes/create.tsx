@@ -398,7 +398,7 @@ function rtvPendingQty(p: { rtvAwaitingChallanQty?: number }): number {
 // browser; there is no server-side page to hide matching rows behind.)
 function PoPickerBody({ onSelect }: { onSelect: (poId: string) => void }): React.JSX.Element {
   const [search, setSearch] = useState('');
-  const { data, isLoading, isError } = usePurchaseOrdersList({ limit: 200, offset: 0 });
+  const { data, isLoading, isError } = usePurchaseOrdersList({ withLineItems: true, limit: 200, offset: 0 });
 
   const eligible = useMemo(() => {
     const rows = (data?.items ?? []).filter(

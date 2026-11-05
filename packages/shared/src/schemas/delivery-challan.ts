@@ -11,6 +11,7 @@
 //     aggregates for the list view.
 
 import { z } from 'zod';
+import { queryBoolean } from '../lib/query-boolean';
 import { relatedItemSchema } from './traceability';
 import { DC_STATUSES } from '../enums/dc-status';
 import { positiveQtySchema, qtyUomProblem } from '../lib/qty-rule';
@@ -172,6 +173,8 @@ export type DeliveryChallanListItem = z.infer<typeof deliveryChallanListItemSche
 // ─── Query filters ─────────────────────────────────────────────────────────
 
 export const listDeliveryChallansQuerySchema = z.object({
+  /** Only pickers ask: fills lineItems (ADR-270). */
+  withLineItems: queryBoolean().optional(),
   search: z.string().min(1).max(100).optional(), // matches code / po_code_text / vendor name
   status: dcStatusSchema.optional(),
   vendorId: z.string().uuid().optional(),

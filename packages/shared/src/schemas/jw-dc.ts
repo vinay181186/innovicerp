@@ -6,6 +6,7 @@
 // / JWIN-NNNN (inward, per legacy L24696).
 
 import { z } from 'zod';
+import { queryBoolean } from '../lib/query-boolean';
 import { relatedItemSchema } from './traceability';
 
 import { sfRawParamSchema } from './list-query';
@@ -87,7 +88,7 @@ export const jwDcOutwardListItemSchema = jwDcOutwardSchema.extend({
 });
 export type JwDcOutwardListItem = z.infer<typeof jwDcOutwardListItemSchema>;
 
-export const jwDcOutwardDetailSchema = jwDcOutwardListItemSchema.extend({
+export const jwDcOutwardDetailSchema = jwDcOutwardListItemSchema.omit({ lineItems: true }).extend({
   lines: z.array(
     jwDcOutwardLineSchema.extend({
       alreadyReturned: z.number().nonnegative(),
@@ -220,6 +221,8 @@ export type CreateJwDcInwardInput = z.infer<typeof createJwDcInwardInputSchema>;
 // ─── Query filters ─────────────────────────────────────────────────────────
 
 export const listJwDcOutwardQuerySchema = z.object({
+  /** Only pickers ask: fills lineItems (ADR-270). */
+  withLineItems: queryBoolean().optional(),
   search: z.string().min(1).max(100).optional(),
   vendorId: z.string().uuid().optional(),
   purchaseOrderId: z.string().uuid().optional(),

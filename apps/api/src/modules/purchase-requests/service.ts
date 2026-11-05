@@ -61,7 +61,7 @@ import { lockDocSeries } from '../../lib/doc-series-lock';
 import { assertNoPendingCancel } from '../cancel-requests/pending-guard';
 import { stagedEditMessage } from '../cancel-requests/messages';
 import { releaseSourceJcOps } from './pr-cancel-writer';
-import { PR_ITEM_CODE_REV, PR_ORDER_CODE, prSfColumns } from './sf-columns';
+import { PR_ITEM_CODE_REV, PR_ITEM_REV, PR_ORDER_CODE, prSfColumns } from './sf-columns';
 import type {
   ClosePurchaseRequestBalanceInput,
   CreatePurchaseRequestInput,
@@ -714,7 +714,8 @@ export async function listPurchaseRequests(
         -- raised against, through the SAME sol join the SO code below already
         -- uses; for a PR raised off a JWSO-sourced job card there is no SO
         -- line, so the job-work line the card came from is the fallback
-        -- (ADR-177 — a card has one source, never both). Deliberately not
+        -- (ADR-177 — a card has one source, never both). Only when that line is
+        -- for this PR's own item (PR_ITEM_REV). Deliberately not
         -- items.revision, which is a different column about the item master
         -- and would print a wrong revision on the card. Every join is LEFT, so
         -- a PR raised for stock with no SO or JW behind it correctly comes back
@@ -724,7 +725,7 @@ export async function listPurchaseRequests(
         -- column is only text on a database that has had migration 0119; on one
         -- that has not, it is still the old integer and would arrive here as a
         -- number wearing a string type. The cast is a no-op once 0119 is in.
-        COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
+        ${PR_ITEM_REV} AS "itemRevision",
         -- The customer's own PO line number, off the SAME sol / rev_jwl joins
         -- as the revision above: SO line first, else the JWSO line (ADR-236).
         ${polSql('sol', 'rev_jwl')} AS "clientPoLineNo",
@@ -935,14 +936,18 @@ export async function getPurchaseRequest(
         // The customer's drawing revision, taken off the SO line through the
         // salesOrderLines join below that already resolves soCode / soLineNo;
         // for a PR raised off a JWSO-sourced job card there is no SO line, so
-        // the job-work line the card came from is the fallback (ADR-177).
+        // the job-work line the card came from is the fallback (ADR-177), and
+        // only when that line is for this PR's own item (same as PR_ITEM_REV).
         // Cast to text: the contract types it as a string, and on a database
         // without migration 0119 the column is still the old integer, which
         // would arrive as a number wearing a string type. Never items.revision
         // -- that is a different column about the item master.
         itemRevision: sql<
           string | null
-        >`COALESCE(${salesOrderLines.revision}::text, ${jobWorkOrderLines.revision}::text)`,
+        >`COALESCE(
+          CASE WHEN ${salesOrderLines.itemId} = ${purchaseRequests.itemId} THEN ${salesOrderLines.revision}::text END,
+          CASE WHEN ${jobWorkOrderLines.itemId} = ${purchaseRequests.itemId} THEN ${jobWorkOrderLines.revision}::text END
+        )`,
         // The customer's own PO line number, off the SAME two line joins as
         // the revision above: SO line first, else the JWSO line (ADR-236).
         clientPoLineNo: polOf(salesOrderLines.clientPoLineNo, jobWorkOrderLines.clientPoLineNo),

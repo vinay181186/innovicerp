@@ -66,11 +66,11 @@ function JwDcOutwardNewPage(): React.JSX.Element {
   // picker). Two calls rather than one: the list query's `poType` filter takes a
   // single value, and dropping the filter to sort client-side would risk the
   // 200-row cap hiding job-work POs behind a wall of ordinary buys.
-  const { data: poDataJw } = usePurchaseOrdersList({ poType: 'job_work', limit: 200, offset: 0 });
-  const { data: poDataSvc } = usePurchaseOrdersList({ poType: 'service', limit: 200, offset: 0 });
+  const { data: poDataJw } = usePurchaseOrdersList({ withLineItems: true, poType: 'job_work', limit: 200, offset: 0 });
+  const { data: poDataSvc } = usePurchaseOrdersList({ withLineItems: true, poType: 'service', limit: 200, offset: 0 });
   // `?jw=` — the job-work / service POs carrying this JWSO's work.
   const { data: poDataForJw } = usePurchaseOrdersList(
-    { jobWorkOrderId: forJwId, limit: 200, offset: 0 },
+    { withLineItems: true, jobWorkOrderId: forJwId, limit: 200, offset: 0 },
     { enabled: Boolean(forJwId) },
   );
   const forJwPos = forJwId ? (poDataForJw?.items ?? null) : null;

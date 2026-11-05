@@ -40,7 +40,8 @@ import { type AuthContext, type DbTransaction, withUserContext } from '../../db/
 import { canSeeFormPrice, requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { assertActiveParty } from '../../lib/active-party';
-import { loadRelatedItems, ORDER_LINES_VIA_PO, orderLineRev } from '../../lib/related-items';
+import { ORDER_LINES_VIA_PO, jobCardRev } from '../../lib/related-item-kinds';
+import { loadRelatedItems } from '../../lib/related-items';
 import { codeRevSql } from '../qc-history/sql';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { poLineBackRaw, poLineSentGroupedSql, poLineSentRaw } from '../../lib/po-line-sent';
@@ -749,7 +750,7 @@ export async function listPurchaseOrders(
             SELECT 1
             FROM public.purchase_order_lines pol
             LEFT JOIN public.items it ON it.id = pol.item_id AND it.deleted_at IS NULL
-            -- The joins the row's lineItems read (lib/related-items): each is by
+            -- The joins the row's lineItems read (lib/related-item-kinds): each is by
             -- primary key, and this is an EXISTS, so no row can multiply.
             ${sql.raw(ORDER_LINES_VIA_PO)}
             LEFT JOIN public.sales_orders sso
@@ -770,7 +771,7 @@ export async function listPurchaseOrders(
                 -- What the dropdown label prints: ABC/1, the POL and the SO No.
                 OR ${codeRevSql(
                   sql`btrim(COALESCE(it.code, pol.item_code_text))`,
-                  sql.raw(orderLineRev('pol.item_id')),
+                  sql.raw(jobCardRev('pol.item_id')),
                 )} ILIKE ${term} ESCAPE '\\'
                 OR ${polSql('sol', 'jwl')} ILIKE ${term} ESCAPE '\\'
                 OR sso.code ILIKE ${term} ESCAPE '\\'
@@ -1008,12 +1009,15 @@ export async function listPurchaseOrders(
     );
 
     const rows = result as unknown as Array<Record<string, unknown>>;
-    const lineItems = await loadRelatedItems(
-      tx,
-      'purchaseOrder',
-      rows.map((r) => r['id'] as string),
-    );
-    const mapped = rows.map((r) => toListItem(r, lineItems.get(r['id'] as string) ?? []));
+    // Only the pickers ask (ADR-270): the list screens never print these.
+    const lineItems = input.withLineItems
+      ? await loadRelatedItems(
+          tx,
+          'purchaseOrder',
+          rows.map((r) => r['id'] as string),
+        )
+      : null;
+    const mapped = rows.map((r) => toListItem(r, lineItems?.get(r['id'] as string) ?? []));
     const rowsList = showMoney ? mapped : mapped.map(hidePoHeaderMoney);
     return { items: rowsList, total, limit: input.limit, offset: input.offset };
   });

@@ -4075,16 +4075,6 @@ export async function getJobCardRelated(
       label: extra?.label ?? null,
     });
 
-    // ── Upstream: item master this JC produces ──────────────────────────────
-    const itemRows = await tx
-      .select({ id: items.id, code: items.code, name: items.name })
-      .from(items)
-      .where(
-        and(eq(items.id, header.itemId), eq(items.companyId, companyId), isNull(items.deletedAt)),
-      )
-      .limit(1);
-    const item = itemRows[0] ?? null;
-
     // ── Upstream: the Production Order that raised this card ────────────────
     const proRows = await tx
       .select({
@@ -4392,22 +4382,7 @@ export async function getJobCardRelated(
       );
     const coveredPoLineIds = coveredPoLines.map((r) => r.id);
 
-    // A cancelled card's own row is soft-deleted, so the lookup cannot see it:
-    // fall back to the item master so its Item tab does not go blank.
-    const jcItems =
-      (await loadRelatedItems(tx, 'jobCard', [id])).get(id) ??
-      (item
-        ? [
-            {
-              lineId: null,
-              itemId: item.id,
-              itemCode: item.code,
-              itemRevision: null,
-              itemName: item.name,
-              clientPoLineNo: null,
-            },
-          ]
-        : []);
+    const jcItems = (await loadRelatedItems(tx, 'jobCard', [id])).get(id) ?? [];
     const proItems = await loadRelatedItems(
       tx,
       'productionOrder',

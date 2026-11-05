@@ -38,7 +38,6 @@ import type {
 import { ActivityAction, poSendsMaterialOut } from '@innovic/shared';
 import {
   goodsReceiptNotes,
-  items,
   jwDcInward,
   jwDcInwardLines,
   jwDcOutward,
@@ -278,12 +277,15 @@ export async function listJwDcOutward(
     const total = Number(totalRows[0]?.total ?? 0);
 
     const rows = result as unknown as Array<Record<string, unknown>>;
-    const lineItems = await loadRelatedItems(
-      tx,
-      'jwDcOutward',
-      rows.map((r) => r['id'] as string),
-    );
-    const itemsOut = rows.map((r) => toOutwardListItem(r, lineItems.get(r['id'] as string) ?? []));
+    // Only the pickers ask (ADR-270): the list screens never print these.
+    const lineItems = input.withLineItems
+      ? await loadRelatedItems(
+          tx,
+          'jwDcOutward',
+          rows.map((r) => r['id'] as string),
+        )
+      : null;
+    const itemsOut = rows.map((r) => toOutwardListItem(r, lineItems?.get(r['id'] as string) ?? []));
     return { items: itemsOut, total, limit: input.limit, offset: input.offset };
   });
 }
@@ -558,18 +560,8 @@ export async function getJwDcRelated(id: string, user: AuthContext): Promise<Doc
 
     // This DC's lines (a Cancelled DC's lines went with it, ADR-235).
     const lineRows = await tx
-      .select({
-        lineId: jwDcOutwardLines.id,
-        itemId: jwDcOutwardLines.itemId,
-        itemCodeText: jwDcOutwardLines.itemCodeText,
-        itemNameText: jwDcOutwardLines.itemNameText,
-        purchaseOrderLineId: jwDcOutwardLines.purchaseOrderLineId,
-        masterCode: items.code,
-        masterName: items.name,
-        masterDeletedAt: items.deletedAt,
-      })
+      .select({ purchaseOrderLineId: jwDcOutwardLines.purchaseOrderLineId })
       .from(jwDcOutwardLines)
-      .leftJoin(items, eq(items.id, jwDcOutwardLines.itemId))
       .where(
         and(
           eq(jwDcOutwardLines.jwDcOutwardId, id),
@@ -578,19 +570,7 @@ export async function getJwDcRelated(id: string, user: AuthContext): Promise<Doc
             : isNull(jwDcOutwardLines.deletedAt),
         ),
       );
-    // loadRelatedItems reads live lines only, so a Cancelled DC's Item tab comes from
-    // the lines just read. Its POL and Rev are not looked up: the DC no longer stands.
-    const dcItems: RelatedItem[] =
-      header.deletedAt == null
-        ? ((await loadRelatedItems(tx, 'jwDcOutward', [id])).get(id) ?? [])
-        : lineRows.map((l) => ({
-            lineId: l.lineId,
-            itemId: l.masterDeletedAt == null ? l.itemId : null,
-            itemCode: l.masterCode ?? l.itemCodeText,
-            itemRevision: null,
-            itemName: l.masterName ?? l.itemNameText,
-            clientPoLineNo: null,
-          }));
+    const dcItems = (await loadRelatedItems(tx, 'jwDcOutward', [id])).get(id) ?? [];
 
     // ── Upstream: source purchase order (Job Work PO) ───────────────────────
     const poRows = header.purchaseOrderId

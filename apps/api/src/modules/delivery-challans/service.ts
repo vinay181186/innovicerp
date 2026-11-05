@@ -365,12 +365,15 @@ export async function listDeliveryChallans(
     };
 
     const rows = result as unknown as Array<Record<string, unknown>>;
-    const lineItems = await loadRelatedItems(
-      tx,
-      'deliveryChallan',
-      rows.map((r) => r['id'] as string),
-    );
-    const items = rows.map((r) => toListItem(r, lineItems.get(r['id'] as string) ?? []));
+    // Only the pickers ask (ADR-270): the list screens never print these.
+    const lineItems = input.withLineItems
+      ? await loadRelatedItems(
+          tx,
+          'deliveryChallan',
+          rows.map((r) => r['id'] as string),
+        )
+      : null;
+    const items = rows.map((r) => toListItem(r, lineItems?.get(r['id'] as string) ?? []));
     return { items, total, limit: input.limit, offset: input.offset, summary };
   });
 }

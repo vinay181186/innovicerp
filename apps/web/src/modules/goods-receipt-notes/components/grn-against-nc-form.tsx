@@ -115,7 +115,7 @@ export function GrnAgainstNcForm({
   // but keeping ONLY the return-to-vendor rows (ncId set — the is-return flag).
   // One row per challan; a challan may carry several NCs of one SO. 200 is the API's max page
   // and is far above the number of issued-but-unreceived challans at any time.
-  const dcList = useDeliveryChallansList({ status: 'issued', limit: 200, offset: 0 });
+  const dcList = useDeliveryChallansList({ withLineItems: true, status: 'issued', limit: 200, offset: 0 });
   const ncRows = useMemo(
     () => (dcList.data?.items ?? []).filter((d) => d.ncId !== null),
     [dcList.data],

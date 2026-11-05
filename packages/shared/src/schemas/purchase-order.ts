@@ -26,6 +26,7 @@
 // status='po_created' atomically. Mirrors legacy `addPO()` line 25728.
 
 import { z } from 'zod';
+import { queryBoolean } from '../lib/query-boolean';
 import { relatedItemSchema } from './traceability';
 import { expectedUpdatedAtSchema } from '../lib/edit-conflict';
 import { servicePoTaxTypeSchema } from './service-po';
@@ -450,6 +451,8 @@ export type CreatePurchaseOrderFromPrBatchInput = z.infer<
 // ─── Query filters ─────────────────────────────────────────────────────────
 
 export const listPurchaseOrdersQuerySchema = z.object({
+  /** Only pickers ask: fills lineItems (ADR-270). */
+  withLineItems: queryBoolean().optional(),
   search: z.string().min(1).max(100).optional(), // matches code / pr_code_text / vendor_code_text
   status: poStatusSchema.optional(),
   poType: poTypeSchema.optional(),

@@ -999,9 +999,6 @@ export async function getProductionOrderRelated(
         planId: productionOrders.planId,
         routeCardId: productionOrders.routeCardId,
         jobCardId: productionOrders.jobCardId,
-        itemId: productionOrders.itemId,
-        itemCodeText: productionOrders.itemCodeText,
-        itemNameText: productionOrders.itemNameText,
       })
       .from(productionOrders)
       .where(
@@ -1063,18 +1060,7 @@ export async function getProductionOrderRelated(
       )
       .limit(1);
 
-    // A cancel soft-deletes the order, so the lookup cannot see its own row: fall
-    // back to the order's item so a Cancelled order's Item tab does not go blank.
-    const orderItems = (await loadRelatedItems(tx, 'productionOrder', [id])).get(id) ?? [
-      {
-        lineId: null,
-        itemId: header.itemId,
-        itemCode: header.itemCodeText,
-        itemRevision: null,
-        itemName: header.itemNameText,
-        clientPoLineNo: null,
-      },
-    ];
+    const orderItems = (await loadRelatedItems(tx, 'productionOrder', [id])).get(id) ?? [];
     const planItems = await loadRelatedItems(
       tx,
       'plan',

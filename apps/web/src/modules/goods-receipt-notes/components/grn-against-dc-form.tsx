@@ -131,7 +131,7 @@ export function GrnAgainstDcForm({
   // challan; one raised before it has none and appears only while no JW PO is
   // picked. A row with neither a PO nor an NC behind it is still dropped:
   // nothing on this screen could show what it belongs to.
-  const dcList = useDeliveryChallansList({ status: 'issued', limit: 200, offset: 0 });
+  const dcList = useDeliveryChallansList({ withLineItems: true, status: 'issued', limit: 200, offset: 0 });
   const eligibleDcs = useMemo(
     () => (dcList.data?.items ?? []).filter((d) => d.purchaseOrderId !== null || d.ncId !== null),
     [dcList.data],

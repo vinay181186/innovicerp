@@ -83,12 +83,14 @@ export function GrnAgainstPoForm({
   // for two poTypes). Material-out POs are dropped after the merge.
   const term = poSearch.trim();
   const openPos = usePurchaseOrdersList({
+    withLineItems: true,
     status: 'open',
     ...(term ? { search: term } : {}),
     limit: 100,
     offset: 0,
   });
   const partialPos = usePurchaseOrdersList({
+    withLineItems: true,
     status: 'partial',
     ...(term ? { search: term } : {}),
     limit: 100,
