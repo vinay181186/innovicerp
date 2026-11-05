@@ -1,20 +1,28 @@
 // Day Log — Pending Entries and replies on a blank day (owner 2026-11-05), TEST
 // database. Registered by service.test.ts (pendingCases()) so it shares that
-// file's fixture. Runs in January 2040 with its own `from`, so a login's real
-// creation date and real days never come into it; wipeOwnerDays clears 2040.
+// file's fixture. Runs in January 2040 with the company's day_log_pending_from set
+// there (restored after), so a login's real creation date and real days never come
+// into it; wipeOwnerDays clears 2040.
 import { sql } from 'drizzle-orm';
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
 import { AuthorizationError, ConflictError } from '../../lib/errors';
 import * as service from './service';
 import { type DayLogClock } from './rules';
-import { fx, owner, ownerAsSuper, sameDeptAdmin, superAdmin } from './test-fixture';
+import {
+  fx,
+  otherSuperAdmin,
+  owner,
+  ownerAsSuper,
+  sameDeptAdmin,
+  superAdmin,
+} from './test-fixture';
 
 // 02-Jan-2040 is a Monday; 07-Jan a Saturday; 08-Jan a Sunday.
 const MON = '2040-01-02';
 const TUE = '2040-01-03';
 const WED = '2040-01-04';
-const clock = (today: string): DayLogClock => ({ today, nowMin: 12 * 60, from: MON });
+const clock = (today: string): DayLogClock => ({ today, nowMin: 12 * 60 });
 const THU_CLOCK = clock('2040-01-05');
 
 const reply = (date: string, body = 'Please enter this day', as = superAdmin()) =>
@@ -54,12 +62,46 @@ const myRows = async (c: DayLogClock = THU_CLOCK) =>
 const personDay = (as: Parameters<typeof service.getPersonDay>[1], date: string) =>
   service.getPersonDay({ userId: fx.ownerBase.id, date }, as, THU_CLOCK);
 
+/** Set the company's first pending date; returns what it was. */
+async function setCompanyFrom(date: string): Promise<string> {
+  const [r] = (await db.execute(sql`
+    WITH old AS (
+      SELECT day_log_pending_from AS d FROM public.companies
+      WHERE id = ${fx.ownerBase.companyId}::uuid),
+    w AS (
+      UPDATE public.companies SET day_log_pending_from = ${date}::date
+      WHERE id = ${fx.ownerBase.companyId}::uuid)
+    SELECT to_char(old.d, 'YYYY-MM-DD') AS d FROM old
+  `)) as unknown as Array<{ d: string }>;
+  return r!.d;
+}
+
 export function pendingCases(): void {
+  let companyFrom = '';
+  beforeAll(async () => {
+    companyFrom = await setCompanyFrom(MON);
+  });
+  afterAll(async () => {
+    await setCompanyFrom(companyFrom);
+  });
+
   describe('Day Log — Pending Entries', () => {
     it('a blank working day before today is pending; today is not', async () => {
       expect((await mine()).dates).toEqual([MON, TUE, WED]);
       const row = (await myRows())[0]!;
       expect(row).toMatchObject({ date: MON, daysPending: 3, taskCode: null, replyCount: 0 });
+    });
+
+    it('Sunday is skipped; the result lists only blank dates, oldest first', async () => {
+      await entry(TUE, clock('2040-01-10'));
+      expect((await mine(clock('2040-01-10'))).dates).toEqual([
+        MON,
+        WED,
+        '2040-01-05',
+        '2040-01-06',
+        '2040-01-07',
+        '2040-01-09',
+      ]);
     });
 
     it('a part-filled day is not pending', async () => {
@@ -128,7 +170,7 @@ export function pendingCases(): void {
         status: 'todo',
         viewed: false,
         title: 'Day Log 02-01-2040 not entered',
-        description: 'first',
+        description: 'Enter your Day Log for 02-01-2040.',
       });
       expect((await myRows())[0]).toMatchObject({
         date: MON,
@@ -138,6 +180,14 @@ export function pendingCases(): void {
       });
       // A blank header is still a blank day.
       expect((await mine()).dates).toContain(MON);
+    });
+
+    it('canEdit: the author yes, anyone else no', async () => {
+      const r = await reply(MON);
+      expect(r.canEdit).toBe(true);
+      expect((await personDay(superAdmin(), MON)).dayReplies[0]!.canEdit).toBe(true);
+      const other = otherSuperAdmin();
+      if (other) expect((await personDay(other, MON)).dayReplies[0]!.canEdit).toBe(false);
     });
 
     it('two replies at once: both save, one task', async () => {
@@ -177,6 +227,26 @@ export function pendingCases(): void {
 
     it('nobody replies on their own day', async () => {
       await expect(reply(MON, 'x', ownerAsSuper())).rejects.toBeInstanceOf(AuthorizationError);
+    });
+
+    it('before the start date: refused, and no Reply box', async () => {
+      const friday = '2039-12-30';
+      await expect(reply(friday)).rejects.toThrow('Day Log start');
+      expect((await personDay(superAdmin(), friday)).canReplyDay).toBe(false);
+    });
+
+    it('an Auditor is never asked: refused, and no Reply box', async () => {
+      const setAuditor = (on: boolean) =>
+        db.execute(sql`
+          UPDATE public.user_access SET auditor = ${on}
+          WHERE user_id = ${fx.ownerBase.id}::uuid AND deleted_at IS NULL`);
+      await setAuditor(true);
+      try {
+        await expect(reply(MON)).rejects.toThrow('is not asked to keep a Day Log');
+        expect((await personDay(superAdmin(), MON)).canReplyDay).toBe(false);
+      } finally {
+        await setAuditor(false);
+      }
     });
 
     it('a future day and a Sunday are refused', async () => {
@@ -233,7 +303,7 @@ export function pendingCases(): void {
         ['Please enter this day', null],
       ]);
       const l = await personDay(sameDeptAdmin(), MON);
-      expect([l.canReplyDay, l.dayReplies]).toEqual([false, []]);
+      expect([l.canReplyDay, l.dayReplies, l.notEntered]).toEqual([false, [], false]);
       const own = await personDay(ownerAsSuper(), MON);
       expect(own.canReplyDay).toBe(false);
     });

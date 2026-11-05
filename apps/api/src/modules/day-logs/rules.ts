@@ -7,6 +7,7 @@ import {
   type DayLogSpan,
   fmt12,
   hhmmToMin,
+  isWorkingDay,
   overlapMin,
 } from '@innovic/shared';
 import { istDateOf } from '../dashboard/personal/util';
@@ -17,12 +18,7 @@ const DAY_END_MIN = 24 * 60;
 
 /** India-time "today" (YYYY-MM-DD) and minutes since midnight. Writes take an
  *  optional clock only so the DB tests run at a fixed time; routes never pass one. */
-export type DayLogClock = {
-  today: string;
-  nowMin: number;
-  /** Tests only: the first pending day instead of DAY_LOG_PENDING_FROM. */
-  from?: string;
-};
+export type DayLogClock = { today: string; nowMin: number };
 
 /** The server's India-time clock. */
 export function istClock(now: number = Date.now()): DayLogClock {
@@ -86,6 +82,17 @@ export function findOverlap(
   }
   return null;
 }
+
+/** The ONE rule for a pending date: a working day from the person's start up
+ *  to, not including, today that has no entry (a part-filled day has one) and
+ *  is not an old Leave day (`done`). pending.ts's SQL finds the candidates. */
+export const isPendingDate = (
+  date: string,
+  start: string,
+  today: string,
+  done: boolean,
+  holidays: readonly string[],
+): boolean => date >= start && date < today && !done && isWorkingDay(date, holidays);
 
 // ── Team Day Logs ───────────────────────────────────────────────────────────
 

@@ -68,6 +68,8 @@ export const dayLogAdminReplySchema = dayLogOwnReplySchema.omit({ unread: true }
   seenAt: z.string().nullable(),
   /** §20.4 — sent back by an edit. */
   updatedAt: z.string(),
+  /** §20.5 — only the author may edit; the screen shows ✎ only then. */
+  canEdit: z.boolean(),
 });
 export type DayLogAdminReply = z.infer<typeof dayLogAdminReplySchema>;
 
@@ -124,7 +126,7 @@ export const dayLogPersonDaySchema = z.object({
   dayReplies: z.array(dayLogAdminReplySchema),
   /** Super Admin on someone else's blank working day (today or earlier). */
   canReplyDay: z.boolean(),
-  /** Blank working day before today, from DAY_LOG_PENDING_FROM. */
+  /** Blank working day before today, from companies.day_log_pending_from. Super Admin only. */
   notEntered: z.boolean(),
 });
 export type DayLogPersonDay = z.infer<typeof dayLogPersonDaySchema>;

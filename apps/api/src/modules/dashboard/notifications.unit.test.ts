@@ -48,6 +48,14 @@ describe('bell read state', () => {
     });
   });
 
+  it('a Pending Entries note stays unread, whatever was marked', () => {
+    const notes = [note('dlp:me:2:2026-10-29', '2026-10-30T05:00:00.000Z')];
+    const key = notes[0]!.key;
+    const marked = applyReadState(notes, new Map([[key, true]]), '2026-10-31T05:00:00.000Z');
+    expect(marked[0]!.read).toBe(false);
+    expect(applyReadState(notes, new Map(), '2026-10-31T05:00:00.000Z')[0]!.read).toBe(false);
+  });
+
   it('never seen and no rows: everything unread', () => {
     expect(applyReadState(NOTES, new Map(), null).every((n) => !n.read)).toBe(true);
   });

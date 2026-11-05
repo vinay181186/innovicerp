@@ -8,13 +8,12 @@
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { tasks } from '../../db/schema';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
+import { fmtDate } from '../../lib/format-date';
 import { autoCloseLinkedTasks } from './auto-close';
 import { istToday, OPEN_STATUSES } from './history';
 import { insertAssignedTask, usableAssignee } from './service';
 
 const DAY_LOG_DATE_REF = 'day_log_date';
-
-const dmy = (d: string): string => `${d.slice(8, 10)}-${d.slice(5, 7)}-${d.slice(0, 4)}`;
 
 /** The open task of this day reads New again. ONE conditional UPDATE: a task
  *  already completed or cancelled is left alone. False = no open task. */
@@ -48,7 +47,6 @@ export async function ensureDayLogDateTask(
     dailyReportId: string;
     assigneeId: string;
     date: string;
-    body: string;
   },
   user: AuthContext,
 ): Promise<void> {
@@ -60,15 +58,16 @@ export async function ensureDayLogDateTask(
     input.companyId,
     assignee,
     {
-      title: `Day Log ${dmy(input.date)} not entered`,
-      description: input.body,
+      title: `Day Log ${fmtDate(input.date)} not entered`,
+      // Fixed: the reply can be edited or followed by another; the task must not go stale.
+      description: `Enter your Day Log for ${fmtDate(input.date)}.`,
       priority: 'medium',
       startDate: null,
       dueDate: istToday(),
       linkedRef: {
         type: DAY_LOG_DATE_REF,
         id: input.dailyReportId,
-        display: `Day Log ${dmy(input.date)}`,
+        display: `Day Log ${fmtDate(input.date)}`,
         navPage: `/task-board?view=daylog&date=${input.date}`,
       },
     },
@@ -88,7 +87,7 @@ export const closeDayLogDateTask = (
       companyId: input.companyId,
       refTypes: [DAY_LOG_DATE_REF],
       refId: input.dailyReportId,
-      doneLabel: `Day Log ${dmy(input.date)} entered`,
+      doneLabel: `Day Log ${fmtDate(input.date)} entered`,
     },
     user,
   );

@@ -1,5 +1,4 @@
 // Day Log pure helpers (rules.ts) — no database.
-import { dayLogPendingDates } from '@innovic/shared';
 import { describe, expect, it } from 'vitest';
 import type { DayLine } from './day';
 import {
@@ -8,6 +7,7 @@ import {
   entryMinutes,
   findOverlap,
   hm,
+  isPendingDate,
   istClock,
   latestWorkOf,
   spanEnd,
@@ -135,28 +135,33 @@ describe('Team current status', () => {
   });
 });
 
-describe('dayLogPendingDates', () => {
+describe('isPendingDate', () => {
   // 02-Nov-2026 is a Monday, 08-Nov a Sunday.
-  it('working days from `from` up to, not including, today; Sunday is never pending', () => {
-    expect(dayLogPendingDates('2026-11-06', '2026-11-10', new Set(), [])).toEqual([
-      '2026-11-06',
-      '2026-11-07',
-      '2026-11-09',
-    ]);
+  const START = '2026-11-02';
+  const TODAY = '2026-11-10';
+  const blank = (date: string, holidays: string[] = []) =>
+    isPendingDate(date, START, TODAY, false, holidays);
+
+  it('a blank working day from the start up to yesterday is pending', () => {
+    expect(blank(START)).toBe(true);
+    expect(blank('2026-11-09')).toBe(true);
+  });
+  it('Sunday is never pending; Saturday is a working day', () => {
+    expect(blank('2026-11-08')).toBe(false);
+    expect(blank('2026-11-07')).toBe(true);
   });
   it('a company holiday is not pending', () => {
-    expect(dayLogPendingDates('2026-11-02', '2026-11-05', new Set(), ['2026-11-03'])).toEqual([
-      '2026-11-02',
-      '2026-11-04',
-    ]);
+    expect(blank('2026-11-03', ['2026-11-03'])).toBe(false);
   });
-  it('today is excluded, however blank', () => {
-    expect(dayLogPendingDates('2026-11-05', '2026-11-05', new Set(), [])).toEqual([]);
-    expect(dayLogPendingDates('2026-11-06', '2026-11-05', new Set(), [])).toEqual([]);
+  it('today and later are excluded, however blank', () => {
+    expect(blank(TODAY)).toBe(false);
+    expect(blank('2026-11-11')).toBe(false);
   });
-  it('a day in done (a part-filled one counts) is not pending', () => {
-    expect(dayLogPendingDates('2026-11-02', '2026-11-04', new Set(['2026-11-02']), [])).toEqual([
-      '2026-11-03',
-    ]);
+  it('before the start is not pending', () => {
+    expect(blank('2026-11-01')).toBe(false);
+    expect(blank('2026-10-31')).toBe(false);
+  });
+  it('a done day (a part-filled one counts) is not pending', () => {
+    expect(isPendingDate(START, START, TODAY, true, [])).toBe(false);
   });
 });

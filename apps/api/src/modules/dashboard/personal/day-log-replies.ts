@@ -9,8 +9,7 @@
 // statement (the bell polls every 60 s): a reply on a blank day until that date
 // is opened; "N days not entered" for an eligible person; "N people have pending
 // entries" for a Super Admin. The last two stay until the days are entered: their
-// time is now, so a bell mark-all never clears them, and their key carries the
-// count, so a changed count is a new note.
+// key (PENDING_NOTE_PREFIX) always reads unread in the bell, and carries the count.
 
 import type { DashNote } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
@@ -71,12 +70,15 @@ export type DayLogDayReplyRow = Omit<DayLogReplyRow, 'lineId' | 'srNo'>;
 export const dayLogDayReplyNote = (r: DayLogDayReplyRow): DashNote =>
   replyNote(r, 'dlr:d', dmy(r.date), `/task-board?view=daylog&date=${r.date}`);
 
+/** Keys of the notes that stay unread while days are blank (notifications-service). */
+export const PENDING_NOTE_PREFIX = 'dlp:';
+
 /** An eligible person's pending dates (oldest first, at least one) → the note. */
 export function dayLogPendingNote(dates: readonly string[], now: string): DashNote {
   const n = dates.length;
   const oldest = dates[0]!;
   return {
-    key: `dlp:me:${n}:${oldest}`,
+    key: `${PENDING_NOTE_PREFIX}me:${n}:${oldest}`,
     ts: now,
     tone: 'late',
     text: [
@@ -90,7 +92,7 @@ export function dayLogPendingNote(dates: readonly string[], now: string): DashNo
 /** A Super Admin: how many people have pending dates (at least one) → the note. */
 export function dayLogTeamPendingNote(people: number, now: string): DashNote {
   return {
-    key: `dlp:team:${people}`,
+    key: `${PENDING_NOTE_PREFIX}team:${people}`,
     ts: now,
     tone: 'late',
     text: [
@@ -145,8 +147,7 @@ export async function readDayLogReplies(
 /**
  * The caller's Pending Entries notes, replies on blank days first — ONE
  * statement. A Super Admin reads everybody's pending dates (they count the
- * people); anyone else only their own. Each person's dates start at
- * DAY_LOG_PENDING_FROM, so the read stays small.
+ * people); anyone else only their own. The read returns only blank dates.
  */
 export async function readDayLogDayNotes(
   tx: DbTransaction,
@@ -183,7 +184,7 @@ export async function readDayLogDayNotes(
     }),
     actorName: d.author,
   }));
-  const pending = pendingOf(r, clock).filter((p) => p.dates.length > 0);
+  const pending = pendingOf(r).filter((p) => p.dates.length > 0);
   if (isSuper) {
     if (pending.length > 0) {
       notes.push({ ...dayLogTeamPendingNote(pending.length, now), actorName: null });

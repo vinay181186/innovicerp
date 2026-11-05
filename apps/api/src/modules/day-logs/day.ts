@@ -255,7 +255,7 @@ export function spansOf(lines: readonly DayLine[]): DayLogSpan[] {
 }
 
 /** Holidays in [from, to] as ONE json object { "YYYY-MM-DD": name } (a scalar sub-select). */
-export const holidaysJson = (companyId: string, from: string, to: string): SQL => sql`(
+export const holidaysJson = (companyId: string, from: string | SQL, to: string): SQL => sql`(
   SELECT COALESCE(json_object_agg(to_char(holiday_date, 'YYYY-MM-DD'), name), '{}'::json)
   FROM public.company_holidays
   WHERE company_id = ${companyId}::uuid AND deleted_at IS NULL

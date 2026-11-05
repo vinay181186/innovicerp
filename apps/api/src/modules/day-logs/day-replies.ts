@@ -26,8 +26,9 @@ import { sql } from 'drizzle-orm';
 import type { AuthContext } from '../../db/with-user-context';
 import { ConflictError, ValidationError } from '../../lib/errors';
 import { ensureDayLogDateTask, markDayLogDateTaskNew } from '../tasks/day-log-task';
-import { type DayPerson, personOpensDayLog, resolveAccess } from './access';
+import { type DayPerson, resolveAccess } from './access';
 import { dayTx, lockDayReplyDay, lockOwnDay, openTargetDayLocked } from './lock';
+import { isPendingEligible } from './pending';
 import { RETURN_COLS, editReplyRow, guardReplier, writeReply } from './replies';
 import { type DayLogClock, dmy, istClock } from './rules';
 import { readSnapshot } from './snapshot';
@@ -46,8 +47,9 @@ export function dayReplyBlock(
   clock: DayLogClock,
 ): string | null {
   if (!target || !target.isActive) return 'This person is not active';
-  if (!personOpensDayLog(target)) return `${target.name} cannot open Day Log`;
+  if (!isPendingEligible(target)) return `${target.name} is not asked to keep a Day Log`;
   if (date > clock.today) return `${dmy(date)} has not come yet`;
+  if (date < target.pendingStart) return `${dmy(date)} is before ${target.name}'s Day Log start`;
   if (!isWorkingDay(date, holidays)) return `${dmy(date)} is not a working day`;
   if (status === 'leave') return `${dmy(date)} is marked Leave`;
   return null;
@@ -98,7 +100,6 @@ export async function sendDayReply(
         dailyReportId: h.id,
         assigneeId: input.userId,
         date: h.date,
-        body,
       },
       user,
     );

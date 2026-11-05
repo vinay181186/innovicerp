@@ -125,7 +125,10 @@ export async function getPersonDay(
     }>;
     revs = byLine(x?.revs ?? []);
     replies = byLine(
-      (x?.replies ?? []).map((q) => ({ lineId: String(q['line_id']), reply: toAdminReply(q) })),
+      (x?.replies ?? []).map((q) => ({
+        lineId: String(q['line_id']),
+        reply: toAdminReply(q, user.id),
+      })),
     );
   }
 
@@ -164,13 +167,15 @@ export async function getPersonDay(
       };
     }),
     dayReplies: admin
-      ? ((r?.['day_replies'] ?? []) as Array<Record<string, unknown>>).map(toAdminReply)
+      ? ((r?.['day_replies'] ?? []) as Array<Record<string, unknown>>).map((q) =>
+          toAdminReply(q, user.id),
+        )
       : [],
     canReplyDay:
       canReply &&
       v.writer &&
       blank &&
       dayReplyBlock(person, date, status, holidays, clock) === null,
-    notEntered: isNotEntered(person!, date, !blank || status === 'leave', holidays, clock),
+    notEntered: admin && isNotEntered(person!, date, !blank || status === 'leave', holidays, clock),
   };
 }

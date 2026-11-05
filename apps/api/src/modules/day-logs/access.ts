@@ -123,15 +123,20 @@ export interface PersonAccess {
   auditor: boolean | null;
   departments: unknown;
   forms: unknown;
-  /** IST date of users.created_at — a login is never pending before it. */
-  createdOn: string;
+  /** The first date this person can be pending. */
+  pendingStart: string;
 }
+
+/** The first date a person (alias u) can be pending: the later of the company's
+ *  day_log_pending_from and the login's IST creation date. */
+export const PENDING_START_SQL = sql`GREATEST((u.created_at AT TIME ZONE 'Asia/Kolkata')::date,
+  (SELECT c.day_log_pending_from FROM public.companies c WHERE c.id = u.company_id))`;
 
 /** The json_build_object pairs a person row needs for `personOpensDayLog`
  *  (aliases: u = users, ua = user_access, LEFT JOINed). */
 export const personAccessJson = sql`'role', u.role, 'fullAccess', ua.full_access,
   'auditor', ua.auditor, 'forms', COALESCE(ua.forms, '{}'::jsonb),
-  'createdOn', to_char(u.created_at AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD')`;
+  'pendingStart', to_char(${PENDING_START_SQL}, 'YYYY-MM-DD')`;
 
 /** Super Admin read in bulk: the same two facts viewerOf reads for the caller
  *  (users.role = 'admin', or user_access.full_access). */
@@ -283,9 +288,13 @@ export interface DayUser {
 }
 
 /** One user of the company (active or not) as ONE json value (a scalar sub-select). */
-export const dayUserJson = (companyId: string, userId: string | SQL): SQL => sql`(
+export const dayUserJson = (
+  companyId: string,
+  userId: string | SQL,
+  more: SQL = sql``,
+): SQL => sql`(
   SELECT json_build_object('id', u.id::text, 'name', COALESCE(u.full_name, u.email),
-           'mainDept', ua.main_dept, 'departments', COALESCE(ua.departments, '{}'::jsonb))
+           'mainDept', ua.main_dept, 'departments', COALESCE(ua.departments, '{}'::jsonb) ${more})
   FROM public.users u
   LEFT JOIN public.user_access ua
     ON ua.user_id = u.id AND ua.company_id = ${companyId}::uuid AND ua.deleted_at IS NULL
@@ -298,15 +307,8 @@ export const toDayUser = (json: unknown): DayUser | null => (json ? (json as Day
 export type DayPerson = DayUser & PersonAccess & { isActive: boolean };
 
 /** dayUserJson + is_active + the person's access — ONE json value. */
-export const dayPersonJson = (companyId: string, userId: string | SQL): SQL => sql`(
-  SELECT json_build_object('id', u.id::text, 'name', COALESCE(u.full_name, u.email),
-           'mainDept', ua.main_dept, 'departments', COALESCE(ua.departments, '{}'::jsonb),
-           'isActive', u.is_active, ${personAccessJson})
-  FROM public.users u
-  LEFT JOIN public.user_access ua
-    ON ua.user_id = u.id AND ua.company_id = ${companyId}::uuid AND ua.deleted_at IS NULL
-  WHERE u.id = ${userId}::uuid AND u.company_id = ${companyId}::uuid AND u.deleted_at IS NULL
-  LIMIT 1)`;
+export const dayPersonJson = (companyId: string, userId: string | SQL): SQL =>
+  dayUserJson(companyId, userId, sql`, 'isActive', u.is_active, ${personAccessJson}`);
 
 export const toDayPerson = (json: unknown): DayPerson | null => (json ? (json as DayPerson) : null);
 

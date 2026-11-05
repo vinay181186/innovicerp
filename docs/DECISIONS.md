@@ -15264,7 +15264,7 @@ A person could skip a date and nothing showed it. The Super Admin wanted to see 
 
 ### Decision
 
-- A date is pending when it is a working day before today, on or after both DAY_LOG_PENDING_FROM and the login's creation date, with no entry. One rule: `dayLogPendingDates`. Part-filled days are not pending.
+- A date is pending when it is a working day before today, on or after both `companies.day_log_pending_from` (0240) and the login's creation date, with no entry. One rule: `isPendingDate`; SQL returns only the blank dates, and holidays drop through the shared `isWorkingDay`. Part-filled days are not pending.
 - Super Admins and Auditors are never pending. Hide page removes a person.
 - Orange banner in the shell header on every page, every date, no close, until entered. Mark Leave declined by the owner, so a leave date stays until something is entered.
 - Log Date + Log Time after Sr No = `daily_report_lines.created_at`, first save, for every viewer.
@@ -15274,7 +15274,7 @@ A person could skip a date and nothing showed it. The Super Admin wanted to see 
 ### Consequences
 
 - Positive: no second working-day rule, no new lock; a blank day with a reply still counts as blank.
-- Negative: a day header can exist with no lines (reply only). DAY_LOG_PENDING_FROM must be set to the PROD release date in the release commit.
+- Negative: a day header can exist with no lines (reply only). `day_log_pending_from` defaults to the IST date 0240 runs on, so PROD gets its release date with no hand-set value; TEST was set to 2026-11-02 by hand for testing.
 - Risks: people who never log see the banner from release until Hide page is set.
 
 ## ADR-271: One item standard on Related Documents and document pickers

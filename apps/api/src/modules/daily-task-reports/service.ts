@@ -21,7 +21,6 @@ import { AuthorizationError, NotFoundError } from '../../lib/errors';
 import { fmtDate } from '../../lib/format-date';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { emitActivityLog } from '../activity-log/service';
-import { closeDayLogDateTask } from '../tasks/day-log-task';
 import { DTR_SF_COLUMNS, DTR_SHIFT_LABEL } from './sf-columns';
 
 const requireCompany = (user: AuthContext): string => {
@@ -318,9 +317,6 @@ export async function updateDailyReport(
       .set({ deletedAt: now, deletedBy: user.id, updatedBy: user.id, updatedAt: now })
       .where(and(eq(dailyReportLines.dailyReportId, id), isNull(dailyReportLines.deletedAt)));
     await insertLines(tx, companyId, id, input, user);
-    // Pending Entries: this day now has lines (the header UPDATE above holds
-    // its row lock), so a task raised while it was blank closes with it.
-    await closeDayLogDateTask(tx, { companyId, dailyReportId: id, date: input.reportDate }, user);
 
     await emitActivityLog(
       tx,

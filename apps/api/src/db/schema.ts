@@ -173,6 +173,10 @@ export const companies = pgTable(
     checkHsn: boolean('check_hsn').notNull().default(false),
     // HSN Min Digits: 4 / 6 / 8 — CHECK companies_hsn_min_digits_check.
     hsnMinDigits: integer('hsn_min_digits').notNull().default(6),
+    // Day Log Pending Entries (0240): the first date that can be pending.
+    dayLogPendingFrom: date('day_log_pending_from')
+      .notNull()
+      .default(sql`((now() AT TIME ZONE 'Asia/Kolkata')::date)`),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()

@@ -28,9 +28,10 @@ export const ADMIN_REPLY_COLS = sql`
   ${ts('rp.sent_at')} AS sent_at,
   CASE WHEN rp.edited_at IS NULL THEN NULL ELSE ${ts('rp.edited_at')} END AS edited_at,
   CASE WHEN rp.seen_at IS NULL THEN NULL ELSE ${ts('rp.seen_at')} END AS seen_at,
-  ${ts('rp.updated_at')} AS updated_at`;
+  ${ts('rp.updated_at')} AS updated_at, rp.created_by::text AS created_by`;
 
-export const toAdminReply = (r: Record<string, unknown>): DayLogAdminReply => ({
+/** One ADMIN_REPLY_COLS row, as `callerId` sees it (only the author may edit). */
+export const toAdminReply = (r: Record<string, unknown>, callerId: string): DayLogAdminReply => ({
   id: String(r['id']),
   body: String(r['body']),
   authorName: String(r['author_name'] ?? ''),
@@ -38,6 +39,7 @@ export const toAdminReply = (r: Record<string, unknown>): DayLogAdminReply => ({
   editedAt: (r['edited_at'] as string | null) ?? null,
   seenAt: (r['seen_at'] as string | null) ?? null,
   updatedAt: String(r['updated_at']),
+  canEdit: r['created_by'] === callerId,
 });
 
 /** What a reply write returns into `w` (ADMIN_REPLY_COLS reads them). */
@@ -75,7 +77,7 @@ export async function writeReply(
     SELECT ${ADMIN_REPLY_COLS}, (SELECT count(*) FROM t)::int AS touched
     FROM w rp JOIN public.users au ON au.id = rp.created_by
   `)) as unknown as Array<Record<string, unknown>>;
-  return rows[0] ? toAdminReply(rows[0]) : null;
+  return rows[0] ? toAdminReply(rows[0], user.id) : null;
 }
 
 /** POST /day-logs/entries/:id/replies */

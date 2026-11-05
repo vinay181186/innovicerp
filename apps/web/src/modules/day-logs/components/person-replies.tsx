@@ -197,7 +197,7 @@ function RepliesPane({
                   Reply {i + 1} · {r.authorName} · {fmtStamp(r.sentAt)}
                   {r.editedAt ? ` · edited ${fmtStamp(r.editedAt)}` : ''}
                 </span>
-                {onEdit ? (
+                {onEdit && r.canEdit ? (
                   <button
                     type="button"
                     className="btn btn-ghost btn-sm dl-icon"
