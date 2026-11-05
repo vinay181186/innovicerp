@@ -66,7 +66,7 @@ export default defineConfig({
       // Pages build (the prod API blocks localhost by CORS). This project runs
       // everything it is not told to ignore, so without the second pattern a
       // plain `playwright test` would fire real documents into prod.
-      testIgnore: [/smoke\.spec\.ts/, /flow-.*\.spec\.ts/],
+      testIgnore: [/smoke\.spec\.ts/, /flow-.*\.spec\.ts/, /page-open\.spec\.ts/],
       use: { ...devices['Desktop Chrome'], storageState: STORAGE_STATE },
       dependencies: ['setup'],
     },

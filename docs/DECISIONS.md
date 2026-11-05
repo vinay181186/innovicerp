@@ -15224,3 +15224,31 @@ The same thing looked and behaved differently from page to page: pop-ups lost ty
 - Positive: one place to change each behaviour; a new screen cannot silently drift.
 - Negative: Playwright specs that used the old controls need updating, see TASKS.
 - Risks: wide visual change, checked by tests and partly in a browser.
+
+## ADR-270: A screen must never crash on opening
+
+**Date:** 2026-11-05
+**Status:** Accepted (owner)
+
+### Context
+
+UI standard batch 5 (3f66216c) put a `useState` below an early return in `day-log-tab.tsx`. My Day Log crashed on PROD with "Something went wrong!" (React #310). Lint had no rule for this, typecheck and build cannot see it, and the release script ran no code checks. CI runs after the push and does not hold the deploy.
+
+### Decision
+
+- `react-hooks/rules-of-hooks` is an error for `apps/web/src`.
+- `e2e/page-open.spec.ts` opens every fixed-address page on TEST and fails on the crash screen.
+- `release/release-prod.sh` runs both before any migration or merge, and stops if either fails.
+- CLAUDE.md §23 holds the rule.
+
+### Alternatives Considered
+
+- A CLAUDE.md note alone: rejected, nothing enforces it.
+- Checks in CI only: rejected, CI does not stop the deploy.
+- The plugin's full recommended set: rejected, only this rule is needed now.
+
+### Consequences
+
+- Positive: this mistake and any crash on opening a fixed-address page stop the release.
+- Negative: a release takes a few minutes longer, and adds one development-only package.
+- Risks: if TEST is down, the release stops until it is back. Pages with an id in the address are not opened by the check.

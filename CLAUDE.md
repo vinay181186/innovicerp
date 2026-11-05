@@ -937,7 +937,7 @@ Supabase Realtime on the tables in `LIVE_TABLES`; each maps to screen key roots 
 
 When you finish reading this file, your first response in the session must include:
 
-> "I've loaded project memory. CLAUDE.md sections read: 0–22. Last task per TASKS.md: <X> (or 'no TASKS.md yet — running First Session Bootstrap'). Ready to proceed with: <Y>."
+> "I've loaded project memory. CLAUDE.md sections read: 0–23. Last task per TASKS.md: <X> (or 'no TASKS.md yet — running First Session Bootstrap'). Ready to proceed with: <Y>."
 
 Do not skip this acknowledgment. It tells the user you have context.
 
@@ -1238,3 +1238,28 @@ newest end to end), **purchase-requests** (`modules/purchase-requests/api.ts`: k
 - It never ships in a module route.
 - Promoting a mockup = building the page through 22.2 from step 1, not wiring data into
   the mockup.
+
+---
+
+## Section 23 — A Screen Must Never Crash on Opening (owner rule 2026-11-05)
+
+_The bug:_ UI standard batch 5 put a `useState` below an early `return` in
+`day-log-tab.tsx`. My Day Log crashed on PROD with "Something went wrong!" (React #310).
+Typecheck, lint and build all passed. ADR-270.
+
+1. **Hooks go at the top of the component,** above every `return`, and never inside an `if`,
+   a loop or a callback. This means `useState`, `useEffect`, `useQuery` and any `useX`.
+   Replacing `window.confirm()` with `ConfirmDialog` adds a `useState`: put it at the top too.
+   For a list of queries use `useQueries`.
+2. **`react-hooks/rules-of-hooks` is an error.** Never switch it off, for a file or a line.
+3. **Passing typecheck, lint or build does not prove a screen opens.** Done = the screen was
+   opened on TEST.
+4. **A change across many screens:** open every changed screen on TEST, or run the page-open
+   check (below), before calling it done.
+5. **The release script stops on either check, before any migration or merge:**
+   - lint: `pnpm exec eslint src --quiet` in `apps/web`
+   - page-open: `pnpm exec playwright test -c playwright.page-open.config.ts` in `apps/web`
+     (always TEST, read-only, needs `E2E_EMAIL` / `E2E_PASSWORD`)
+
+   Fix what they find. Never work around them. The page-open check does not open pages with
+   an id in the address, so open those by hand when you change them.

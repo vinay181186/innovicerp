@@ -8,7 +8,13 @@ import type {
   ListItemsResponse,
   UpdateItemInput,
 } from '@innovic/shared';
-import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  type UseQueryOptions,
+  useMutation,
+  useQueries,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 import { activityLogKeys } from '@/modules/activity-log/api';
@@ -52,6 +58,16 @@ export function useItemsList(
     placeholderData: (prev) => prev,
     ...options,
   });
+}
+
+/** The `total` of several item lists, in the order given. Shares useItemsList's cache. */
+export function useItemsTotals(queries: readonly ListItemsQuery[]): number[] {
+  return useQueries({
+    queries: queries.map((query) => ({
+      queryKey: itemsKeys.list(query),
+      queryFn: () => fetchItemsList(query),
+    })),
+  }).map((r) => r.data?.total ?? 0);
 }
 
 export function useNextItemCode() {
