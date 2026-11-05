@@ -135,6 +135,12 @@ export async function dayLogsRoutes(app: FastifyInstance): Promise<void> {
     return service.getPending(req.user);
   });
 
+  app.get('/day-logs/pending/:id/calendar', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    return service.getPendingCalendar(id, req.user);
+  });
+
   // A saved row is never removed: no DELETE, no Stop (owner 2026-10-27).
   // An edit (PATCH above) waits for approval:
   app.get('/day-logs/approvals', async (req) => {

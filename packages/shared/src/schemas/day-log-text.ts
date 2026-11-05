@@ -159,3 +159,22 @@ export const dayLogPendingResponseSchema = z.object({
   rows: z.array(dayLogPendingRowSchema),
 });
 export type DayLogPendingResponse = z.infer<typeof dayLogPendingResponseSchema>;
+
+/** GET /day-logs/pending/:id/calendar — Super Admin only: one person's dates for
+ *  the Pending Entries calendar. Every list is 'YYYY-MM-DD', oldest first. */
+export const dayLogPendingCalendarSchema = z.object({
+  userId: z.string().uuid(),
+  userName: z.string(),
+  deptLabel: z.string().nullable(),
+  today: z.string(),
+  /** 'YYYY-MM': the earliest month the calendar opens (the person's start). */
+  firstMonth: z.string(),
+  /** Has a saved entry: green. */
+  filled: z.array(z.string()),
+  /** The same dates as this person's banner: red. */
+  pending: z.array(z.string()),
+  /** Has a Super Admin reply, on the day or on one of its entries. */
+  replied: z.array(z.string()),
+  holidays: z.array(z.string()),
+});
+export type DayLogPendingCalendar = z.infer<typeof dayLogPendingCalendarSchema>;

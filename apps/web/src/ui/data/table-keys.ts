@@ -142,7 +142,8 @@ export const TABLE_KEYS = {
   personDayLog: 'person-day-log',
   teamDayLogs: 'team-day-logs',
   /** Day Log: Task Board › Pending Entries (Super Admin). */
-  dayLogPending: 'day-log-pending',
+  dayLogPendingPeople: 'day-log-pending-people',
+  dayLogCalendarDay: 'day-log-calendar-day',
   /** Day Log: Task Board › Approvals · Day Log; the Holidays modal's list. */
   dayLogApprovals: 'day-log-approvals',
   dayLogHolidays: 'day-log-holidays',
