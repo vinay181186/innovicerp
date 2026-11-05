@@ -12,7 +12,7 @@
 // The All Tasks tab renders ONLY when the server says the caller is admin
 // (`isAdmin` on the list response) — never merely disabled — and the server
 // refuses view=all for anyone else regardless.
-// Day Log tabs (`?view=daylog|team|person|approvals`, `?date=`, `?user=`, `?line=`):
+// Day Log tabs (`?view=daylog|team|person|pending|approvals`, `?date=`, `?user=`, `?line=`, `?from=`):
 // see modules/day-logs/components/board-day-log.tsx.
 // Task Board and Day Log are two pages on this one route, each with its own
 // "Hide page" switch (taskboard_view / daylog_view, canOpenPage tells them
@@ -33,7 +33,7 @@ import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
-import { useCanOpen, useCanWrite } from '@/components/shared/action-link';
+import { hrefLink, useCanOpen, useCanWrite } from '@/components/shared/action-link';
 import { useMyAccess } from '@/lib/access-control';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -123,6 +123,7 @@ function TaskBoardPage(): React.JSX.Element {
           date: undefined,
           user: undefined,
           line: undefined,
+          from: undefined,
           page: 1,
         }),
         replace: true,
@@ -187,6 +188,7 @@ function TaskBoardPage(): React.JSX.Element {
         date: undefined,
         user: undefined,
         line: undefined,
+        from: undefined,
         page: 1,
       }),
       replace: true,
@@ -255,8 +257,16 @@ function TaskBoardPage(): React.JSX.Element {
   }, [markViewed, canTasks]);
 
   const onRowAction = (action: RowAction, task: TaskRow): void => {
-    if (action === 'view') setModal({ kind: 'view', id: task.id });
-    else setModal({ kind: 'row', action, task });
+    if (action !== 'view') return setModal({ kind: 'row', action, task });
+    // An Inbox task from a reply on a blank Day Log date opens that date, not the
+    // pop-up. Its row carries the link (linkedRef). Only the person it was sent
+    // to: the sender's Outbox / All Tasks keep the pop-up.
+    const ref = task.linkedRef;
+    if (view === 'inbox' && ref?.type === 'day_log_date' && canOpen(ref.navPage)) {
+      void navigate(hrefLink(ref.navPage) as never);
+      return;
+    }
+    setModal({ kind: 'view', id: task.id });
   };
 
   if (canTasks && isLoading) {
@@ -368,7 +378,7 @@ function TaskBoardPage(): React.JSX.Element {
       >
         <TabStrip
           label="Task Board views"
-          activeKey={dayTab ? dayLogTabOf(dayTab) : tab}
+          activeKey={dayTab ? dayLogTabOf(dayTab, routeSearch.from) : tab}
           tabs={[
             ...tabs.map((v) => ({
               key: v,
@@ -376,13 +386,19 @@ function TaskBoardPage(): React.JSX.Element {
               count: tabCount(v),
               ...(v === 'all' ? { note: '(Admin)' } : {}),
             })),
-            // Day Log tabs carry no count badge.
+            // Of the Day Log tabs only Pending Entries carries a count badge.
             ...dayTabs,
           ]}
           onChange={(k) => {
             const task = tabs.find((v) => v === k);
             if (task) setView(task);
-            else goDay({ view: isDayLogTab(k) ? k : 'daylog', user: undefined, line: undefined });
+            else
+              goDay({
+                view: isDayLogTab(k) ? k : 'daylog',
+                user: undefined,
+                line: undefined,
+                from: undefined,
+              });
           }}
         />
       </ListHeader>
@@ -393,6 +409,7 @@ function TaskBoardPage(): React.JSX.Element {
           date={routeSearch.date}
           user={routeSearch.user}
           line={routeSearch.line}
+          from={routeSearch.from}
           onNav={goDay}
         />
       ) : data ? (

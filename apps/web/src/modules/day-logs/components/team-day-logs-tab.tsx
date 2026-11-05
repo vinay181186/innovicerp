@@ -6,12 +6,13 @@
 // the FIT table (ADR-199) with the ADR-200 Sort & Filter ▾ and a User search,
 // both in the browser (the whole team for the day is loaded); a row click
 // opens the person page. No count strip, no Now / Late columns (owner
-// 2026-10-30). The table reads again every minute (api.ts).
+// 2026-10-30). The table reads again every minute (api.ts). A Super Admin sees a
+// blank past working day as an orange row with "Not entered" (server's notEntered).
 
 import type { TeamDayLogRow } from '@innovic/shared';
 import { useState } from 'react';
 import { matchesSearchTerm, normalizeSearchTerm } from '@/components/shared/search-match';
-import { DataTable } from '@/ui/data';
+import { DataTable, ROW_TINT } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Banner } from '@/ui/feedback';
 import { Input, SearchInput } from '@/ui/forms';
@@ -109,6 +110,7 @@ export function TeamDayLogsTab({
         columns={teamColumns()}
         rows={rows}
         rowKey={(r) => r.userId}
+        rowClassName={(r) => (r.notEntered ? ROW_TINT.notEntered : undefined)}
         empty={needle ? 'No users match.' : 'No one to show for this day.'}
         onRowClick={(r) => onOpenPerson(r.userId, team.date)}
       />

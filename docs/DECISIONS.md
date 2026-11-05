@@ -15253,6 +15253,30 @@ UI standard batch 5 (3f66216c) put a `useState` below an early return in `day-lo
 - Negative: a release takes a few minutes longer, and adds one development-only package.
 - Risks: if TEST is down, the release stops until it is back. Pages with an id in the address are not opened by the check.
 
+## ADR-272: Day Log pending entries, Log Date / Log Time, edit lines for Super Admin
+
+**Date:** 2026-11-05
+**Status:** Accepted (owner, mockup https://claude.ai/artifact/RzcSYKKJcnkqQyaXKTSG6r, Option I)
+
+### Context
+
+A person could skip a date and nothing showed it. The Super Admin wanted to see who skipped, reply on a date with no entry, and see when an entry was saved and edited.
+
+### Decision
+
+- A date is pending when it is a working day before today, on or after both `companies.day_log_pending_from` (0240) and the login's creation date, with no entry. One rule: `isPendingDate`; SQL returns only the blank dates, and holidays drop through the shared `isWorkingDay`. Part-filled days are not pending.
+- Super Admins and Auditors are never pending. Hide page removes a person.
+- Orange banner in the shell header on every page, every date, no close, until entered. Mark Leave declined by the owner, so a leave date stays until something is entered.
+- Log Date + Log Time after Sr No = `daily_report_lines.created_at`, first save, for every viewer.
+- Edit date and time are Super Admin only (Option I): ✎ count on the row, lines inside the opened Working On box. Never in Print / Export.
+- Pending Entries tab is Super Admin only. Replies on a blank date hang on the day header (`daily_report_day_replies`, 0239), under the existing day lock. One open task per date (`tasks_day_log_date_open_uq`), closed by `autoCloseLinkedTasks` in the same save as the entry.
+
+### Consequences
+
+- Positive: no second working-day rule, no new lock; a blank day with a reply still counts as blank.
+- Negative: a day header can exist with no lines (reply only). `day_log_pending_from` defaults to the IST date 0240 runs on, so PROD gets its release date with no hand-set value; TEST was set to 2026-11-02 by hand for testing.
+- Risks: people who never log see the banner from release until Hide page is set.
+
 ## ADR-271: One item standard on Related Documents and document pickers
 
 **Date:** 2026-11-05

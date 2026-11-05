@@ -48,7 +48,7 @@ export function ownerDetailAfter(
 ): DayLogDetail {
   if (!snap.target) throw new NotFoundError('User not found');
   return detailOf(
-    { header: h, lines: inTimeOrder(lines), holidays: snap.holidays },
+    { header: h, lines: inTimeOrder(lines), holidays: snap.holidays, dayReplies: snap.dayReplies },
     v,
     snap.target,
     h.date,

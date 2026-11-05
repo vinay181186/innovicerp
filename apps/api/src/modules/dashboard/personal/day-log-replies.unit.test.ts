@@ -5,7 +5,8 @@ import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../../db/client', () => ({ db: {} }));
 
-const { dayLogReplyNote } = await import('./day-log-replies');
+const { dayLogDayReplyNote, dayLogPendingNote, dayLogReplyNote, dayLogTeamPendingNote } =
+  await import('./day-log-replies');
 
 const base = {
   id: '11111111-1111-1111-1111-111111111111',
@@ -57,5 +58,47 @@ describe('Day Log reply note', () => {
     expect(dayLogReplyNote({ ...base, body: 'y'.repeat(60) }).text[2]).toEqual({
       text: ` — “${'y'.repeat(60)}”`,
     });
+  });
+});
+
+describe('Pending Entries notes', () => {
+  const NOW = '2026-11-05T06:00:00.000Z';
+
+  it('a reply on a blank day: same words, its own key, links to the date', () => {
+    const n = dayLogDayReplyNote({
+      id: 'r1',
+      date: '2026-11-03',
+      author: 'Jinal',
+      body: 'Please enter this',
+      sentAt: NOW,
+      editedAt: null,
+      updatedAt: NOW,
+    });
+    expect(n.key).toBe(`dlr:d:r1:${Date.parse(NOW)}`);
+    expect(n.text).toEqual([
+      { text: 'Jinal replied on your Day Log · ' },
+      { code: '03-11-2026', href: '/task-board?view=daylog&date=2026-11-03' },
+      { text: ' — “Please enter this”' },
+    ]);
+  });
+
+  it('a person: lists the dates, links to the oldest, key carries the count', () => {
+    const n = dayLogPendingNote(['2026-11-02', '2026-11-04'], NOW);
+    expect(n.key).toBe('dlp:me:2:2026-11-02');
+    expect(n.text).toEqual([
+      { text: 'Day Log — 2 days not entered · ' },
+      { code: '02-11-2026, 04-11-2026', href: '/task-board?view=daylog&date=2026-11-02' },
+    ]);
+    expect(dayLogPendingNote(['2026-11-02'], NOW).text[0]).toEqual({
+      text: 'Day Log — 1 day not entered · ',
+    });
+  });
+
+  it('a Super Admin: counts the people, key carries the count', () => {
+    const n = dayLogTeamPendingNote(3, NOW);
+    expect(n.key).toBe('dlp:team:3');
+    expect(n.text).toEqual([
+      { code: 'Day Log — 3 people have pending entries', href: '/task-board?view=pending' },
+    ]);
   });
 });

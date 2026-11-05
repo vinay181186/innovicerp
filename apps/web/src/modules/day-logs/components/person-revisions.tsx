@@ -5,11 +5,12 @@
 // (Start Time – Stop Time · SO / JWSO · Working On), and for n > 0 "Changed
 // from Entry Rev n-1:" listing only what changed — times compared on HH:MM,
 // SO / JWSO on id, Working On as a word diff (removed struck out, added
-// underlined).
+// underlined). WorkingOnBox is the box above the panes (Option I): the text, then
+// one "✎ date time — what changed" line per edit, newest first.
 
 import type { DayLogEntryRevision } from '@innovic/shared';
 import { fmt12 } from '@innovic/shared';
-import { istStamp } from '../lib/format';
+import { fmtStamp, istStamp } from '../lib/format';
 import { wordDiff } from '../lib/word-diff';
 
 function Diff({ before, after }: { before: string; after: string }): React.JSX.Element {
@@ -43,7 +44,7 @@ function orderText(o: DayLogEntryRevision['order']): string {
 }
 
 /** Start Time / Stop Time / SO / JWSO facts that differ, as "Label old → new". */
-function spanChanges(
+export function spanChanges(
   b: DayLogEntryRevision,
   a: DayLogEntryRevision,
 ): { label: string; from: string; to: string }[] {
@@ -88,6 +89,45 @@ function Changed({
       ) : null}
       {spans.length === 0 && !textChanged ? <div className="text3">No change.</div> : null}
     </div>
+  );
+}
+
+/** One line per edit, newest first (`revisions` come newest first). */
+function editLines(revisions: readonly DayLogEntryRevision[]): { no: number; text: string }[] {
+  return revisions.flatMap((r, i) => {
+    const prev = revisions[i + 1];
+    if (!prev || r.entryRevNo === 0) return [];
+    const parts = prev.description !== r.description ? ['Working On edited'] : [];
+    for (const c of spanChanges(prev, r)) parts.push(`${c.label} ${c.from} → ${c.to}`);
+    const what = parts.length
+      ? parts.join(' · ')
+      : prev.fromTime
+        ? 'No change'
+        : 'Times / SO not recorded';
+    return [{ no: r.entryRevNo, text: `✎ ${fmtStamp(r.savedAt)} — ${what}` }];
+  });
+}
+
+/** The opened row's Working On box, Super Admin only. */
+export function WorkingOnBox({
+  description,
+  revisions,
+}: {
+  description: string;
+  revisions: readonly DayLogEntryRevision[];
+}): React.JSX.Element {
+  return (
+    <>
+      <span className="dl-xl">Working On</span>
+      <div className="dl-textbox">
+        <div className="dl-full">{description}</div>
+        {editLines(revisions).map((l) => (
+          <span key={l.no} className="dl-editline">
+            {l.text}
+          </span>
+        ))}
+      </div>
+    </>
   );
 }
 

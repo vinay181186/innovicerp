@@ -12,7 +12,7 @@ import {
   type UpdateDayLogEntryInput,
   normalizeDeptsMap,
 } from '@innovic/shared';
-import { and, eq, isNotNull, ne, sql } from 'drizzle-orm';
+import { type SQL, and, eq, isNotNull, ne, sql } from 'drizzle-orm';
 import { db } from '../../db/client';
 import { userAccess, users } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
@@ -66,20 +66,32 @@ export const at = (date: string, hhmm: string): DayLogClock => {
 
 export async function wipeOwnerDays(): Promise<void> {
   const { today } = istClock();
+  // Pending Entries cases run in 2040 (after every login's creation date).
+  const when = (col: SQL): SQL => sql`(${col} < '2002-01-01'::date OR ${col} >= '2040-01-01'::date
+    OR ${col} = ${today}::date)`;
   // ADR-255/256 — the revisions / replies of those days first (their line FK
   // has no cascade), in the same statement.
   const days = sql`SELECT l.id FROM public.daily_report_lines l
     JOIN public.daily_reports dr ON dr.id = l.daily_report_id
-    WHERE dr.user_id = ${fx.ownerBase.id}::uuid
-      AND (dr.report_date < '2002-01-01'::date OR dr.report_date = ${today}::date)`;
+    WHERE dr.user_id = ${fx.ownerBase.id}::uuid AND ${when(sql`dr.report_date`)}`;
+  const headers = sql`SELECT dr.id FROM public.daily_reports dr
+    WHERE dr.user_id = ${fx.ownerBase.id}::uuid AND ${when(sql`dr.report_date`)}`;
+  const dayTasks = sql`SELECT t.id FROM public.tasks t
+    WHERE t.linked_ref_type = 'day_log_date'
+      AND t.linked_ref_id IN (SELECT id::text FROM (${headers}) h)`;
   await db.execute(sql`
     WITH a AS (DELETE FROM public.daily_report_line_revisions WHERE line_id IN (${days})),
-         b AS (DELETE FROM public.daily_report_line_replies WHERE line_id IN (${days}))
+         b AS (DELETE FROM public.daily_report_line_replies WHERE line_id IN (${days})),
+         c AS (DELETE FROM public.daily_report_day_replies WHERE daily_report_id IN (${headers})),
+         d AS (DELETE FROM public.task_history WHERE task_id IN (${dayTasks}))
     SELECT 1`);
   await db.execute(sql`
+    DELETE FROM public.tasks
+    WHERE linked_ref_type = 'day_log_date'
+      AND linked_ref_id IN (SELECT id::text FROM (${headers}) h)`);
+  await db.execute(sql`
     DELETE FROM public.daily_reports
-    WHERE user_id = ${fx.ownerBase.id}::uuid
-      AND (report_date < '2002-01-01'::date OR report_date = ${today}::date)
+    WHERE user_id = ${fx.ownerBase.id}::uuid AND ${when(sql`report_date`)}
   `);
 }
 
@@ -189,7 +201,13 @@ export async function setupFixture(): Promise<void> {
   };
 
   const others = await db
-    .select({ user: users, mainDept: userAccess.mainDept, departments: userAccess.departments })
+    .select({
+      user: users,
+      mainDept: userAccess.mainDept,
+      departments: userAccess.departments,
+      fullAccess: userAccess.fullAccess,
+      auditor: userAccess.auditor,
+    })
     .from(users)
     .innerJoin(userAccess, eq(userAccess.userId, users.id))
     .where(
@@ -212,7 +230,10 @@ export async function setupFixture(): Promise<void> {
         (o.departments ?? {}) as Parameters<typeof normalizeDeptsMap>[0],
       );
       const other = ACCESS_DEPTS.find((d) => !TEAM_TIERS.has(String(tiers[d.key] ?? '')));
-      const ok = TEAM_TIERS.has(String(tiers[o.mainDept ?? ''] ?? '')) && tiers['tasks'] != null;
+      // Pending Entries: the owner must be eligible (no Super Admin, no Auditor).
+      const eligible = o.user.role !== 'admin' && !o.fullAccess && !o.auditor;
+      const ok =
+        eligible && TEAM_TIERS.has(String(tiers[o.mainDept ?? ''] ?? '')) && tiers['tasks'] != null;
       return { o, ok, other };
     })
     .find((x) => x.ok && x.other);

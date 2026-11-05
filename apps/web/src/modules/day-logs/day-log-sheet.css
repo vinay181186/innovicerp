@@ -269,6 +269,37 @@
 .dl-green {
   color: var(--green2);
 }
+/* Option I: the Working On box in an opened row, and its edit lines. */
+.dl-textbox {
+  max-width: 110ch;
+  margin-bottom: 8px;
+  padding: 6px 8px;
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius);
+}
+.dl-editline {
+  display: block;
+  margin-top: 1px;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--blue);
+  white-space: normal;
+}
+.dl-editcount {
+  margin-right: 4px;
+}
+.dl-userbadge {
+  margin-left: 6px;
+}
+/* Replies on a day (not on an entry): their own bordered pane. */
+.dl-daypane {
+  margin: 8px 0;
+  padding: 10px 12px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
 .dl-rc {
   font-size: var(--fs-xs);
   color: var(--blue);

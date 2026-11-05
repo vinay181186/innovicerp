@@ -28,9 +28,10 @@ export const ADMIN_REPLY_COLS = sql`
   ${ts('rp.sent_at')} AS sent_at,
   CASE WHEN rp.edited_at IS NULL THEN NULL ELSE ${ts('rp.edited_at')} END AS edited_at,
   CASE WHEN rp.seen_at IS NULL THEN NULL ELSE ${ts('rp.seen_at')} END AS seen_at,
-  ${ts('rp.updated_at')} AS updated_at`;
+  ${ts('rp.updated_at')} AS updated_at, rp.created_by::text AS created_by`;
 
-export const toAdminReply = (r: Record<string, unknown>): DayLogAdminReply => ({
+/** One ADMIN_REPLY_COLS row, as `callerId` sees it (only the author may edit). */
+export const toAdminReply = (r: Record<string, unknown>, callerId: string): DayLogAdminReply => ({
   id: String(r['id']),
   body: String(r['body']),
   authorName: String(r['author_name'] ?? ''),
@@ -38,13 +39,14 @@ export const toAdminReply = (r: Record<string, unknown>): DayLogAdminReply => ({
   editedAt: (r['edited_at'] as string | null) ?? null,
   seenAt: (r['seen_at'] as string | null) ?? null,
   updatedAt: String(r['updated_at']),
+  canEdit: r['created_by'] === callerId,
 });
 
 /** What a reply write returns into `w` (ADMIN_REPLY_COLS reads them). */
-const RETURN_COLS = sql`id, body, sent_at, edited_at, seen_at, updated_at, created_by`;
+export const RETURN_COLS = sql`id, body, sent_at, edited_at, seen_at, updated_at, created_by`;
 
 /** The caller may reply on this person's entry: a Super Admin, not on their own. */
-async function guardReplier(
+export async function guardReplier(
   user: AuthContext,
   locked: Locked & { target: DayUser | null },
 ): Promise<{ h: DayHeader; target: DayUser }> {
@@ -62,7 +64,7 @@ async function guardReplier(
 }
 
 /** `change` (… RETURNING rp-like columns as `w`) + the header bump, ONE statement. */
-async function writeReply(
+export async function writeReply(
   tx: DbTransaction,
   h: DayHeader,
   user: AuthContext,
@@ -75,7 +77,7 @@ async function writeReply(
     SELECT ${ADMIN_REPLY_COLS}, (SELECT count(*) FROM t)::int AS touched
     FROM w rp JOIN public.users au ON au.id = rp.created_by
   `)) as unknown as Array<Record<string, unknown>>;
-  return rows[0] ? toAdminReply(rows[0]) : null;
+  return rows[0] ? toAdminReply(rows[0], user.id) : null;
 }
 
 /** POST /day-logs/entries/:id/replies */
@@ -105,6 +107,51 @@ export async function sendReply(
   });
 }
 
+/** A reply's new text, author only, over what was loaded (§20.4); seen_at back
+ *  to NULL. `table` = the line replies or the day replies: same columns. */
+export async function editReplyRow(
+  tx: DbTransaction,
+  h: DayHeader,
+  user: AuthContext,
+  companyId: string,
+  table: 'daily_report_line_replies' | 'daily_report_day_replies',
+  replyId: string,
+  input: EditDayLogReplyInput,
+): Promise<DayLogAdminReply> {
+  const t = sql.raw(`public.${table}`);
+  const body = input.body.trim();
+  const [cur] = (await tx.execute(sql`
+    SELECT rp.body, rp.updated_at, rp.created_by::text AS created_by
+    FROM ${t} rp
+    WHERE rp.id = ${replyId}::uuid AND rp.company_id = ${companyId}::uuid
+      AND rp.deleted_at IS NULL
+  `)) as unknown as Array<{ body: string; updated_at: unknown; created_by: string }>;
+  if (!cur) throw new NotFoundError('Reply not found');
+  if (cur.created_by !== user.id) {
+    throw new AuthorizationError('Only the person who sent this reply can edit it');
+  }
+  if (new Date(iso(cur.updated_at)!).getTime() !== new Date(input.updatedAt).getTime()) {
+    throw new ConflictError('This reply was changed — reload and redo your change');
+  }
+  if (cur.body === body) throw new ValidationError('Nothing changed');
+  // §20.4 — only over what was loaded.
+  const reply = await writeReply(
+    tx,
+    h,
+    user,
+    sql`
+    UPDATE ${t}
+    SET body = ${body}, edited_at = now(), seen_at = NULL,
+        updated_at = now(), updated_by = ${user.id}::uuid
+    WHERE id = ${replyId}::uuid AND company_id = ${companyId}::uuid AND deleted_at IS NULL
+      AND created_by = ${user.id}::uuid
+      AND date_trunc('milliseconds', updated_at) = date_trunc('milliseconds', ${input.updatedAt}::timestamptz)
+    RETURNING ${RETURN_COLS}`,
+  );
+  if (!reply) throw new ConflictError('This reply was changed — reload and redo your change');
+  return reply;
+}
+
 /** PATCH /day-logs/replies/:id — a new text; seen_at back to NULL. */
 export async function editReply(
   replyId: string,
@@ -112,40 +159,10 @@ export async function editReply(
   user: AuthContext,
 ): Promise<DayLogAdminReply> {
   const companyId = requireCompany(user);
-  const body = input.body.trim();
-  if (!body) throw new ValidationError('Write the reply');
+  if (!input.body.trim()) throw new ValidationError('Write the reply');
   return dayTx(async (tx) => {
     const locked = await lockReplyDay(tx, user, companyId, replyId);
     const { h } = await guardReplier(user, locked);
-    const [cur] = (await tx.execute(sql`
-      SELECT rp.body, rp.updated_at, rp.created_by::text AS created_by
-      FROM public.daily_report_line_replies rp
-      WHERE rp.id = ${replyId}::uuid AND rp.company_id = ${companyId}::uuid
-        AND rp.deleted_at IS NULL
-    `)) as unknown as Array<{ body: string; updated_at: unknown; created_by: string }>;
-    if (!cur) throw new NotFoundError('Reply not found');
-    if (cur.created_by !== user.id) {
-      throw new AuthorizationError('Only the person who sent this reply can edit it');
-    }
-    if (new Date(iso(cur.updated_at)!).getTime() !== new Date(input.updatedAt).getTime()) {
-      throw new ConflictError('This reply was changed — reload and redo your change');
-    }
-    if (cur.body === body) throw new ValidationError('Nothing changed');
-    // §20.4 — only over what was loaded.
-    const reply = await writeReply(
-      tx,
-      h,
-      user,
-      sql`
-      UPDATE public.daily_report_line_replies
-      SET body = ${body}, edited_at = now(), seen_at = NULL,
-          updated_at = now(), updated_by = ${user.id}::uuid
-      WHERE id = ${replyId}::uuid AND company_id = ${companyId}::uuid AND deleted_at IS NULL
-        AND created_by = ${user.id}::uuid
-        AND date_trunc('milliseconds', updated_at) = date_trunc('milliseconds', ${input.updatedAt}::timestamptz)
-      RETURNING ${RETURN_COLS}`,
-    );
-    if (!reply) throw new ConflictError('This reply was changed — reload and redo your change');
-    return reply;
+    return editReplyRow(tx, h, user, companyId, 'daily_report_line_replies', replyId, input);
   });
 }

@@ -18,7 +18,16 @@ export function teamColumns(): DataTableColumn<TeamDayLogRow>[] {
       className: 'fw-700',
       title: (r) => r.userName,
       filterValue: (r) => r.userName,
-      render: (r) => <span style={{ color: 'var(--blue)' }}>{r.userName}</span>,
+      render: (r) => (
+        <>
+          <span style={{ color: 'var(--blue)' }}>{r.userName}</span>
+          {r.notEntered ? (
+            <span className="badge b-orange dl-userbadge">
+              {r.dayReplyCount > 0 ? 'Not entered · replied' : 'Not entered'}
+            </span>
+          ) : null}
+        </>
+      ),
     },
     {
       id: 'firstStart',

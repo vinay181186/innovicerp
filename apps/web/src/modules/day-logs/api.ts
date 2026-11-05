@@ -8,19 +8,18 @@
 import type {
   AddDayLogEntriesInput,
   DayLogAccess,
-  DayLogAdminReply,
   DayLogApprovalsResponse,
   DayLogDetail,
+  DayLogMyPending,
   DayLogOrderOption,
+  DayLogPendingResponse,
   DayLogPersonDay,
-  EditDayLogReplyInput,
   Holiday,
   HolidayInput,
   DayLogRejectInput,
   DayLogTeamMatesResponse,
   DayLogTeamPeopleResponse,
   AddDayLogTeamMateInput,
-  SendDayLogReplyInput,
   TeamDayLogResponse,
   UpdateDayLogEntryInput,
   UpdateDayLogWorkInput,
@@ -28,12 +27,16 @@ import type {
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
-import { dashboardKeys } from '@/modules/dashboard/api';
+import { dashboardKeys, notificationKeys } from '@/modules/dashboard/api';
+import { taskKeys } from '@/modules/tasks/api';
 
 export interface DayQuery {
   date?: string | undefined;
   userId?: string | undefined;
 }
+
+/** The banner's own root (see pendingMine below). */
+export const dayLogPendingKeys = { all: ['day-log-pending-mine'] as const };
 
 export const dayLogKeys = {
   all: ['day-logs'] as const,
@@ -57,6 +60,12 @@ export const dayLogKeys = {
   orders: (search: string) => [...dayLogKeys.all, 'order-options', search] as const,
   holidays: () => [...dayLogKeys.all, 'holidays'] as const,
   approvals: () => [...dayLogKeys.all, 'approvals'] as const,
+  /** The banner on every page: the caller's days not entered. Its own root,
+   *  NOT under `all`: `all` re-reads on anyone's save, and the banner is open
+   *  in every browser. Only the person's own save changes these dates. */
+  pendingMine: () => dayLogPendingKeys.all,
+  /** Pending Entries tab (Super Admin). */
+  pending: () => [...dayLogKeys.all, 'pending'] as const,
 };
 
 /** The team table reads again every minute (Working / Idle move on). */
@@ -166,6 +175,27 @@ export function useDayLogTeamMates(userId: string | null) {
   });
 }
 
+/** The caller's days not entered — the banner on every page. Refreshed by the
+ *  caller's own save and on window focus (another tab, a new day, a holiday). */
+export function useMyPendingDays(enabled = true) {
+  return useQuery<DayLogMyPending>({
+    queryKey: dayLogKeys.pendingMine(),
+    queryFn: () => apiFetch<DayLogMyPending>('/day-logs/pending/mine'),
+    refetchOnWindowFocus: true,
+    enabled,
+  });
+}
+
+/** Pending Entries tab: everyone's days not entered (only when canSeePending). */
+export function usePendingEntries(enabled = true) {
+  return useQuery<DayLogPendingResponse>({
+    queryKey: dayLogKeys.pending(),
+    queryFn: () => apiFetch<DayLogPendingResponse>('/day-logs/pending'),
+    refetchOnWindowFocus: true,
+    enabled,
+  });
+}
+
 // ── Writes ──
 
 /** A write that answers the day: the answer replaces that day in the cache
@@ -187,6 +217,10 @@ function useDayWrite<TInput>(run: (input: TInput) => Promise<DayLogDetail>, q: D
       // home 🔔 lists Day Log replies (ADR-255).
       void qc.invalidateQueries({ queryKey: dashboardKeys.widgets() });
       void qc.invalidateQueries({ queryKey: dashboardKeys.home() });
+      void qc.invalidateQueries({ queryKey: dayLogKeys.pendingMine() });
+      // A saved entry closes that date's reply task and its notification.
+      void qc.invalidateQueries({ queryKey: taskKeys.all });
+      void qc.invalidateQueries({ queryKey: notificationKeys.all });
     },
   });
 }
@@ -234,59 +268,6 @@ export function useUpdateDayLogEntry(q: DayQuery) {
       apiFetch<DayLogDetail>(`/day-logs/entries/${id}`, { method: 'PATCH', json: input }),
     q,
   );
-}
-
-/** Refresh every Day Log screen and the home 🔔 after a reply write. */
-function useAfterReply(): () => void {
-  const qc = useQueryClient();
-  return () => {
-    void qc.invalidateQueries({ queryKey: dayLogKeys.all });
-    void qc.invalidateQueries({ queryKey: dashboardKeys.home() });
-  };
-}
-
-/** ADR-255 — the owner opened an entry with unread replies: they are seen
- *  (the row's 🔔 goes, the Super Admin sees "Seen by"). Idempotent. */
-export function useMarkDayLogRepliesSeen() {
-  const after = useAfterReply();
-  return useMutation<{ seen: number }, Error, string>({
-    mutationFn: (entryId) =>
-      apiFetch<{ seen: number }>(`/day-logs/entries/${entryId}/replies/seen`, { method: 'POST' }),
-    onSuccess: after,
-  });
-}
-
-/** ADR-255 — Super Admin replies on an entry; one click = one reply (saveKey). */
-export function useSendDayLogReply(saveKey?: SaveKey) {
-  const after = useAfterReply();
-  return useMutation<DayLogAdminReply, Error, { entryId: string } & SendDayLogReplyInput>({
-    mutationFn: ({ entryId, ...input }) =>
-      withSaveKey(saveKey, (headers) =>
-        apiFetch<DayLogAdminReply>(`/day-logs/entries/${entryId}/replies`, {
-          method: 'POST',
-          json: input,
-          ...(headers ? { headers } : {}),
-        }),
-      ),
-    onSuccess: after,
-  });
-}
-
-/** ADR-255 — Super Admin edits a reply (§20.4 updatedAt; the owner sees it
- *  as unread again). */
-export function useEditDayLogReply(saveKey?: SaveKey) {
-  const after = useAfterReply();
-  return useMutation<DayLogAdminReply, Error, { replyId: string } & EditDayLogReplyInput>({
-    mutationFn: ({ replyId, ...input }) =>
-      withSaveKey(saveKey, (headers) =>
-        apiFetch<DayLogAdminReply>(`/day-logs/replies/${replyId}`, {
-          method: 'PATCH',
-          json: input,
-          ...(headers ? { headers } : {}),
-        }),
-      ),
-    onSuccess: after,
-  });
 }
 
 /** Approve one staged edit (the new values apply). */

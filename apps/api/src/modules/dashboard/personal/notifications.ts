@@ -10,7 +10,8 @@
 // documents with no activity row come from work-notes.ts.
 //
 // ADR-255 — plus Day Log replies (day-log-replies.ts): first, for every
-// caller, until the entry is opened; outside the window and the cap.
+// caller, until the entry is opened; outside the window and the cap. Pending
+// Entries travel the same way (readDayLogDayNotes).
 //
 // The "seen" time is the caller's own user_ui_settings row; it only ever
 // moves forward (GREATEST in one statement) and never past the server's now.
@@ -19,7 +20,7 @@ import type { ApprovalInboxResponse, DashNote } from '@innovic/shared';
 import { type SQL, sql } from 'drizzle-orm';
 import type { DbTransaction } from '../../../db/with-user-context';
 import { type DashAccess, hasTick } from '../access';
-import { dayLogReplyNote, readDayLogReplies } from './day-log-replies';
+import { dayLogReplyNote, readDayLogDayNotes, readDayLogReplies } from './day-log-replies';
 import { decisionSources } from './decision-notes';
 import { APPROVAL_DEFS, type ListCtx, listDef } from './lists';
 import {
@@ -404,16 +405,18 @@ export async function readNoteCandidates(
   //    replies beside it on the same connection.
   // Owner 2026-10-30: Day Log hidden ("Hide page") → no Day Log reply notes.
   const events = rules.length ? activityReadSql(rules, c.cid, me, since, scan, seeAll) : null;
-  const [core, replies] = await Promise.all([
+  const dayLogOpen = hasTick(a, 'daylog_view', 'view');
+  const [core, replies, dayNotes] = await Promise.all([
     tx.execute(seenAndEventsSql(c.cid, me, events)) as unknown as Promise<
       Array<Record<string, unknown>>
     >,
-    hasTick(a, 'daylog_view', 'view') ? readDayLogReplies(tx, c.cid, me) : Promise.resolve([]),
+    dayLogOpen ? readDayLogReplies(tx, c.cid, me) : Promise.resolve([]),
+    dayLogOpen ? readDayLogDayNotes(tx, c.cid, me, c.today, seeAll) : Promise.resolve([]),
   ]);
-  const replyNotes: NoteWithActor[] = replies.map((r) => ({
-    ...dayLogReplyNote(r),
-    actorName: r.author,
-  }));
+  const replyNotes: NoteWithActor[] = [
+    ...dayNotes,
+    ...replies.map((r) => ({ ...dayLogReplyNote(r), actorName: r.author })),
+  ];
   const seenAt = seenOf(core[0]?.['seen']);
   if (rules.length === 0) return { replyNotes, extraNotes, cands: [], seenAt };
   const evs = eventsOf(core[0]?.['events']);

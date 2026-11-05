@@ -40,6 +40,7 @@ import {
   openSets,
   readNoteCandidates,
 } from './personal/notifications';
+import { PENDING_NOTE_PREFIX } from './personal/day-log-replies';
 import { type Open, seesAll } from './personal/note-rules';
 import { istToday } from './personal/util';
 
@@ -67,7 +68,10 @@ export function applyReadState(
       tone: n.tone,
       actorName: n.actorName,
       text: n.text,
-      read: explicit.get(n.key) ?? (!Number.isNaN(seenMs) && Date.parse(n.ts) <= seenMs),
+      // Pending Entries: unread while the days are blank, whatever was marked.
+      read:
+        !n.key.startsWith(PENDING_NOTE_PREFIX) &&
+        (explicit.get(n.key) ?? (!Number.isNaN(seenMs) && Date.parse(n.ts) <= seenMs)),
     }))
     .sort((x, y) => Date.parse(y.ts) - Date.parse(x.ts));
 }

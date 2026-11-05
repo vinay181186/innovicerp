@@ -10,7 +10,15 @@ import { type SQL, sql } from 'drizzle-orm';
 import { db } from '../../db/client';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { ConflictError, NotFoundError } from '../../lib/errors';
-import { type DayUser, accessJson, dayUserJson, toDayUser } from './access';
+import {
+  type DayPerson,
+  type DayUser,
+  accessJson,
+  dayPersonJson,
+  dayUserJson,
+  toDayPerson,
+  toDayUser,
+} from './access';
 import { type DayHeader, HEADER_COLS, toHeader } from './day';
 
 /** set_config of the caller's claims — the same value withUserContext sets. */
@@ -57,6 +65,59 @@ export async function openDayLocked(
   const r = rows[0];
   if (!r) throw new ConflictError('This day could not be opened — reload and try again');
   return { access: r['access'] ?? null, header: toHeader(r) };
+}
+
+/**
+ * Pending Entries — openDayLocked on SOMEONE ELSE's day: the Super Admin's
+ * reply opens (target, date), created_by = the caller, and locks it. Also
+ * returns the target person (one statement). No row = no such person in the
+ * company. Whether the caller may do this is judged after, on the same
+ * statement's access; a refusal throws, so the header rolls back with it.
+ */
+export async function openTargetDayLocked(
+  tx: DbTransaction,
+  user: AuthContext,
+  companyId: string,
+  targetId: string,
+  date: string,
+): Promise<Locked & { header: DayHeader; target: DayPerson | null }> {
+  const rows = (await tx.execute(sql`
+    INSERT INTO public.daily_reports AS dr (company_id, user_id, report_date, created_by, updated_by)
+    SELECT ${companyId}::uuid, ${targetId}::uuid, ${date}::date, ${user.id}::uuid, ${user.id}::uuid
+    FROM (SELECT ${claimsOf(user)} AS cfg) c
+    WHERE c.cfg IS NOT NULL AND EXISTS (
+      SELECT 1 FROM public.users u
+      WHERE u.id = ${targetId}::uuid AND u.company_id = ${companyId}::uuid AND u.deleted_at IS NULL)
+    ON CONFLICT (company_id, user_id, report_date) WHERE deleted_at IS NULL
+    DO UPDATE SET updated_at = dr.updated_at
+    RETURNING ${HEADER_COLS}, ${accessJson(user.id, companyId)} AS access,
+      ${dayPersonJson(companyId, targetId)} AS target
+  `)) as unknown as Array<Record<string, unknown>>;
+  const r = rows[0];
+  if (!r) throw new NotFoundError('Person not found');
+  return { access: r['access'] ?? null, header: toHeader(r), target: toDayPerson(r['target']) };
+}
+
+/** The caller's own day on `date`, locked FOR UPDATE; header null = no such day. */
+export async function lockOwnDay(
+  tx: DbTransaction,
+  user: AuthContext,
+  companyId: string,
+  date: string,
+): Promise<Locked> {
+  const rows = (await tx.execute(sql`
+    SELECT c.cfg, ${accessJson(user.id, companyId)} AS access, h.*
+    FROM (SELECT ${claimsOf(user)} AS cfg) c
+    LEFT JOIN (
+      SELECT ${HEADER_COLS}
+      FROM public.daily_reports dr
+      WHERE dr.company_id = ${companyId}::uuid AND dr.user_id = ${user.id}::uuid
+        AND dr.report_date = ${date}::date AND dr.deleted_at IS NULL
+      FOR UPDATE OF dr
+    ) h ON true
+  `)) as unknown as Array<Record<string, unknown>>;
+  const r = rows[0]!;
+  return { access: r['access'] ?? null, header: r['id'] ? toHeader(r) : null };
 }
 
 /** The day of the caller's own entry, locked FOR UPDATE (someone else's
@@ -114,11 +175,43 @@ export const lockReplyDay = (
            AND rp.deleted_at IS NULL)`,
   );
 
-async function lockLineDay(
+/** Pending Entries — the same lock, found from a reply on the day itself. */
+export const lockDayReplyDay = (
+  tx: DbTransaction,
+  user: AuthContext,
+  companyId: string,
+  replyId: string,
+): Promise<Locked & { target: DayUser | null }> =>
+  lockReportDay(
+    tx,
+    user,
+    companyId,
+    sql`(SELECT rp.daily_report_id FROM public.daily_report_day_replies rp
+         WHERE rp.id = ${replyId}::uuid AND rp.company_id = ${companyId}::uuid
+           AND rp.deleted_at IS NULL)`,
+  );
+
+function lockLineDay(
   tx: DbTransaction,
   user: AuthContext,
   companyId: string,
   lineId: SQL,
+): Promise<Locked & { target: DayUser | null }> {
+  return lockReportDay(
+    tx,
+    user,
+    companyId,
+    sql`(SELECT l.daily_report_id FROM public.daily_report_lines l
+         WHERE l.id = ${lineId} AND l.company_id = ${companyId}::uuid
+           AND l.deleted_at IS NULL)`,
+  );
+}
+
+async function lockReportDay(
+  tx: DbTransaction,
+  user: AuthContext,
+  companyId: string,
+  reportId: SQL,
 ): Promise<Locked & { target: DayUser | null }> {
   const rows = (await tx.execute(sql`
     SELECT c.cfg, ${accessJson(user.id, companyId)} AS access, h.*,
@@ -128,10 +221,7 @@ async function lockLineDay(
     LEFT JOIN (
       SELECT ${HEADER_COLS}
       FROM public.daily_reports dr
-      WHERE dr.id = (
-          SELECT l.daily_report_id FROM public.daily_report_lines l
-          WHERE l.id = ${lineId} AND l.company_id = ${companyId}::uuid
-            AND l.deleted_at IS NULL)
+      WHERE dr.id = ${reportId}
         AND dr.company_id = ${companyId}::uuid AND dr.deleted_at IS NULL
       FOR UPDATE OF dr
     ) h ON true

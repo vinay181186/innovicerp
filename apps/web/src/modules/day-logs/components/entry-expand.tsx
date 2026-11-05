@@ -6,7 +6,8 @@
 
 import type { DayLogEntry } from '@innovic/shared';
 import { useEffect, useRef } from 'react';
-import { useMarkDayLogRepliesSeen, type DayQuery } from '../api';
+import type { DayQuery } from '../api';
+import { useMarkDayLogRepliesSeen } from '../reply-api';
 import { fmtStamp, istStamp } from '../lib/format';
 import { spanText } from '../lib/sheet';
 import { EditTimesForm, EditWorkForm } from './entry-edit';

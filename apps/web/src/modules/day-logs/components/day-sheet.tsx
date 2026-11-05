@@ -26,6 +26,8 @@ import {
   toSheetRow,
   type Draft,
 } from '../lib/sheet';
+import { useReportDayDirty } from './day-dirty';
+import { MyDayReplies } from './my-day-replies';
 import { MyDayTable } from './my-day-table';
 import { SheetDraftRow, startInputId } from './sheet-draft-row';
 import '../day-log-sheet.css';
@@ -58,7 +60,6 @@ export function DaySheet({
   nowMin,
   canWrite,
   line,
-  onDirty,
 }: {
   day: DayLogDetail;
   q: DayQuery;
@@ -67,8 +68,6 @@ export function DaySheet({
   canWrite: boolean;
   /** ?line= — the entry to open and scroll to. */
   line: string | undefined;
-  /** Some draft has something typed in it. */
-  onDirty: (dirty: boolean) => void;
 }): React.JSX.Element {
   const saveKey = useSaveKey();
   const addRows = useAddDayLogEntries(q, saveKey);
@@ -87,7 +86,7 @@ export function DaySheet({
   const filled = drafts.filter(isFilled);
   const dirty = canWrite && filled.length > 0;
 
-  useEffect(() => onDirty(dirty), [dirty, onDirty]);
+  useReportDayDirty('new-rows', dirty);
   useEffect(() => {
     if (focusKey === null) return;
     document.getElementById(startInputId(focusKey))?.focus();
@@ -170,6 +169,7 @@ export function DaySheet({
   const showForm = canWrite && adding;
   return (
     <>
+      <MyDayReplies day={day} />
       <MyDayTable day={day} q={q} nowMin={nowMin} canWrite={canWrite} line={line} />
       {canWrite && !showForm ? (
         <div className="dl-addbar">
