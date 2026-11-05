@@ -8,6 +8,10 @@
 //
 // The <Person> column is the OTHER party of the current view — who assigned it
 // (Inbox), who it went to (Outbox / All), "Me" on My To-Do.
+//
+// A Day Log reply task (ADR-273) also shows its latest reply in the Title cell
+// and, on Outbox / All Tasks, whether that reply was seen. The Title column's
+// sort / filter stays on the stored title.
 
 import type { TaskRow, TaskView } from '@innovic/shared';
 import {
@@ -21,8 +25,10 @@ import { useCanWrite } from '@/components/shared/action-link';
 import { DataTable, Panel, ROW_TINT, type DataTableColumn } from '@/ui/data';
 import type { ServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
+import { firstName } from '@/modules/day-logs/lib/format';
 import { fmtTaskDate, fmtTaskDateTime, isOpenTask, priorityColor, statusPill } from '../lib/format';
 import { RelatedRefLink } from './related-ref-link';
+import { TaskDayLogReplies } from './task-day-log-replies';
 
 export const PERSON_LABEL: Record<TaskView, string> = {
   inbox: 'Assigned By',
@@ -56,6 +62,31 @@ function taskRowTint(t: TaskRow): string | undefined {
 const PRIORITY_OPTIONS = TASK_PRIORITIES.map((v) => ({ value: v, label: TASK_PRIORITY_LABELS[v] }));
 const STATUS_OPTIONS = TASK_STATUSES.map((v) => ({ value: v, label: TASK_STATUS_LABELS[v] }));
 
+/** Title cell: the title; a Day Log reply task adds the Seen word (not Inbox) and latest reply. */
+function ReplyTitle({ t, view }: { t: TaskRow; view: TaskView }): React.JSX.Element {
+  const replies = t.dayLogReplies ?? [];
+  const latest = replies.at(-1);
+  if (!latest) return <>{t.title}</>;
+  return (
+    <>
+      {view !== 'inbox' ? (
+        <span
+          style={{
+            fontSize: 'var(--fs-xs)',
+            color: latest.seenAt ? 'var(--green2)' : 'var(--amber2)',
+          }}
+        >
+          {latest.seenAt ? '✓ Seen' : '● Not seen yet'}{' '}
+        </span>
+      ) : null}
+      {t.title}{' '}
+      <span style={{ fontWeight: 400 }}>
+        “{latest.body}”{replies.length > 1 ? ` (${replies.length} replies)` : ''}
+      </span>
+    </>
+  );
+}
+
 function taskColumns(view: TaskView): DataTableColumn<TaskRow>[] {
   return [
     {
@@ -66,7 +97,12 @@ function taskColumns(view: TaskView): DataTableColumn<TaskRow>[] {
       nowrap: true,
       render: (t) => (
         <span className="td-code mono fw-700" style={{ color: 'var(--blue)' }}>
-          {t.isUnread ? <span className="task-unread" title="Unread — new task" /> : null}
+          {t.isUnread ? (
+            <span
+              className="task-unread"
+              title={t.dayLogReplies?.length ? 'Reply not opened yet' : 'Unread — new task'}
+            />
+          ) : null}
           {t.code}
         </span>
       ),
@@ -79,8 +115,11 @@ function taskColumns(view: TaskView): DataTableColumn<TaskRow>[] {
       align: 'left',
       className: 'fw-700',
       ellipsis: true,
-      render: (t) => t.title,
-      title: (t) => t.title,
+      render: (t) => <ReplyTitle t={t} view={view} />,
+      title: (t) => {
+        const latest = t.dayLogReplies?.at(-1);
+        return latest ? `${t.title} — ${latest.body}` : t.title;
+      },
     },
     {
       id: 'person',
@@ -155,8 +194,11 @@ function taskColumns(view: TaskView): DataTableColumn<TaskRow>[] {
   ];
 }
 
-/** The ▸ reveal: Last Update, the 📎 / 💬 counts and the task's remarks. */
-function TaskExpand({ t }: { t: TaskRow }): React.JSX.Element {
+/** The ▸ reveal: Last Update, the 📎 / 💬 counts and the task's remarks. A Day
+ *  Log reply task: Last Update, Description and the replies instead. */
+function TaskExpand({ t, view }: { t: TaskRow; view: TaskView }): React.JSX.Element {
+  const replies = t.dayLogReplies ?? [];
+  const isReply = replies.length > 0;
   return (
     <div style={{ padding: '10px 14px', fontSize: 'var(--fs-sm)', color: 'var(--text2)' }}>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--sp-5)', marginBottom: 6 }}>
@@ -164,14 +206,18 @@ function TaskExpand({ t }: { t: TaskRow }): React.JSX.Element {
           <span className="text3">Last Update: </span>
           <span className="mono">{fmtTaskDateTime(t.updatedAt)}</span>
         </span>
-        <span>
-          <span className="text3">Attachments: </span>
-          {t.attachmentCount > 0 ? `📎 ${t.attachmentCount}` : '—'}
-        </span>
-        <span>
-          <span className="text3">Remarks posted: </span>
-          {t.commentCount > 0 ? `💬 ${t.commentCount}` : '—'}
-        </span>
+        {isReply ? null : (
+          <>
+            <span>
+              <span className="text3">Attachments: </span>
+              {t.attachmentCount > 0 ? `📎 ${t.attachmentCount}` : '—'}
+            </span>
+            <span>
+              <span className="text3">Remarks posted: </span>
+              {t.commentCount > 0 ? `💬 ${t.commentCount}` : '—'}
+            </span>
+          </>
+        )}
       </div>
       {t.description ? (
         <div style={{ marginBottom: 'var(--sp-1)' }}>
@@ -179,13 +225,22 @@ function TaskExpand({ t }: { t: TaskRow }): React.JSX.Element {
           {t.description}
         </div>
       ) : null}
+      {isReply ? (
+        <TaskDayLogReplies
+          replies={replies}
+          first={firstName(t.assignedToName ?? '—')}
+          showSeen={view !== 'inbox'}
+        />
+      ) : null}
       {t.completionRemark ? (
         <div>
           <span className="text3">Completion Remark: </span>
           {t.completionRemark}
         </div>
       ) : null}
-      {!t.description && !t.completionRemark ? <div className="text3">No remarks.</div> : null}
+      {!isReply && !t.description && !t.completionRemark ? (
+        <div className="text3">No remarks.</div>
+      ) : null}
     </div>
   );
 }
@@ -226,7 +281,7 @@ export function TaskTable({
         sortFilterServer={sortFilterServer}
         rowClassName={(t) => taskRowTint(t)}
         onRowClick={(t) => onAction('view', t)}
-        renderExpanded={(t) => (expandedIds.has(t.id) ? <TaskExpand t={t} /> : null)}
+        renderExpanded={(t) => (expandedIds.has(t.id) ? <TaskExpand t={t} view={view} /> : null)}
         onToggleExpanded={(t) => toggleExpand(t.id)}
         empty={filtered ? 'No Tasks match.' : 'No Tasks yet.'}
         rowMenu={(t) => {

@@ -36,7 +36,8 @@ import type {
   UpdateTaskInput,
   UpdateTaskStatusInput,
 } from '@innovic/shared';
-import { and, asc, count, eq, inArray, isNull, like } from 'drizzle-orm';
+import { DAY_LOG_DATE_REF, DAY_LOG_ENTRY_REF } from '@innovic/shared';
+import { and, asc, count, eq, inArray, isNull, like, sql } from 'drizzle-orm';
 import { fileRegistry, taskComments, tasks, userAccess, users } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { canWrite, requireCanWrite } from '../../lib/access';
@@ -50,6 +51,7 @@ import {
 } from '../../lib/errors';
 import { type PersonAccessRow, personHolds } from '../access-control/users-with-right';
 import { emitActivityLog } from '../activity-log/service';
+import { loadDayLogReplies } from './day-log-replies';
 import {
   type NameMap,
   type RowContext,
@@ -261,7 +263,15 @@ async function getTaskInternal(
   const t = await loadVisibleTask(tx, id, companyId, user);
   const names = await loadUserNames(tx, companyId);
   const counts = await loadCounts(tx, companyId, [t.id]);
-  const row = rowToTask(t, { names, user, today: istToday(), ...counts, canWrite: writer });
+  const dayLogReplies = await loadDayLogReplies(tx, companyId, [t]);
+  const row = rowToTask(t, {
+    names,
+    user,
+    today: istToday(),
+    ...counts,
+    canWrite: writer,
+    dayLogReplies,
+  });
   // Sequential on purpose — one transaction, one connection.
   const comments = await loadComments(tx, t.id, names);
   const attachments = await loadAttachments(tx, companyId, t.id);
@@ -944,7 +954,8 @@ export async function addTaskAttachment(
 // ── Viewed / options ──────────────────────────────────────────────────────
 
 // Stamp viewed_at for the current user's unread open tasks (called when the
-// assignee opens their Inbox).
+// assignee opens their Inbox). Not a Day Log reply task (ADR-273): its dot follows
+// the reply, cleared by day-logs markRepliesSeen / markDayRepliesSeen.
 export async function markTasksViewed(user: AuthContext): Promise<{ updated: number }> {
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
@@ -957,6 +968,7 @@ export async function markTasksViewed(user: AuthContext): Promise<{ updated: num
           eq(tasks.assignedTo, user.id),
           isNull(tasks.viewedAt),
           isNull(tasks.deletedAt),
+          sql`COALESCE(${tasks.linkedRefType}, '') NOT IN (${DAY_LOG_ENTRY_REF}, ${DAY_LOG_DATE_REF})`,
         ),
       )
       .returning({ id: tasks.id });

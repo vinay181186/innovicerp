@@ -28,9 +28,30 @@ export const taskLinkedRefSchema = z.object({
   type: z.string().max(32),
   id: z.string().max(128),
   display: z.string().max(255),
-  navPage: z.string().max(64),
+  // 128: a Day Log reply link carries a date and a uuid (day_log_entry).
+  navPage: z.string().max(128),
 });
 export type TaskLinkedRef = z.infer<typeof taskLinkedRefSchema>;
+
+// ADR-273 (owner 2026-11-05): a Super Admin's reply on a Day Log entry or on a
+// blank date raises a task, one open task per entry / date per sender. The reply
+// text is NOT copied to the task: it stays in the reply tables and the API reads
+// it into the row (dayLogReplies) for whoever may see the task.
+export const DAY_LOG_ENTRY_REF = 'day_log_entry';
+export const DAY_LOG_DATE_REF = 'day_log_date';
+export const isDayLogReplyRef = (type: string | null | undefined): boolean =>
+  type === DAY_LOG_ENTRY_REF || type === DAY_LOG_DATE_REF;
+
+export const taskDayLogReplySchema = z.object({
+  id: z.string().uuid(),
+  body: z.string(),
+  authorName: z.string(),
+  sentAt: z.string(),
+  editedAt: z.string().nullable(),
+  /** When the person first opened it since it was sent / last edited. */
+  seenAt: z.string().nullable(),
+});
+export type TaskDayLogReply = z.infer<typeof taskDayLogReplySchema>;
 
 // A file already uploaded to Storage by the browser (lib/storage uploadFile),
 // registered against the task. Same shape SO / JWSO documents use.
@@ -224,6 +245,8 @@ export const taskRowSchema = z.object({
   createdAt: z.string(),
   updatedAt: z.string(), // "Last Update" column
   linkedRef: taskLinkedRefSchema.nullable(),
+  /** ADR-273 — oldest first. null = not a Day Log reply task. */
+  dayLogReplies: z.array(taskDayLogReplySchema).nullable(),
   isUnread: z.boolean(), // unread by the requesting user (assignee, !viewed, open)
   attachmentCount: z.number().int().nonnegative(),
   commentCount: z.number().int().nonnegative(),

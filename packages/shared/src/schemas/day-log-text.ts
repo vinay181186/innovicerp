@@ -126,6 +126,8 @@ export const dayLogPersonDaySchema = z.object({
   dayReplies: z.array(dayLogAdminReplySchema),
   /** Super Admin on someone else's blank working day (today or earlier). */
   canReplyDay: z.boolean(),
+  /** ADR-273 — a reply here raises a task: false when the person's Task Board is hidden. */
+  replyGoesToInbox: z.boolean(),
   /** Blank working day before today, from companies.day_log_pending_from. Super Admin only. */
   notEntered: z.boolean(),
 });

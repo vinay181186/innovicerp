@@ -15308,3 +15308,21 @@ On PLN-0189 the Job Work Order row showed "—" under Name / Ref. Audit: a relat
 - Positive: one place to change; a new tab cannot forget its item.
 - Negative: more queries per panel open (one per tab, none per row); a client's SO list is longer with one row per item.
 - Risks: wide read-only change. The BOM, JW DC, Invoice and Assembly paths had no TEST data at build time.
+
+## ADR-273: Day Log replies reach Inbox and Outbox
+
+**Date:** 2026-11-05. **Owner decided:** every Super Admin reply on a Day Log reaches the person's Task Board Inbox and the sender's Outbox. One task per entry (a further reply reuses it and reads New again). The person presses Complete. Mockup approved: https://claude.ai/artifact/3o9Yv7Mg88BPrJ3jiG3BoB
+
+**Before:** a reply on a saved entry raised no task. A reply on a blank date raised a task without the reply text, and a second Super Admin's reply never reached their own Outbox.
+
+**Decisions:**
+- One OPEN task per entry / blank date **per sender**, linked_ref_type `day_log_entry` (new) or `day_log_date`. Unique index `tasks_day_log_reply_open_uq` (0242) is the backstop under the day header lock. A blank-date task still closes when the day is entered; an entry task never closes by itself.
+- The reply text is never copied to `tasks`, `task_comments`, `task_history` or the activity log: those are readable company-wide and it would go stale on an edit (ADR-255 keeps it private). `tasks/day-log-replies.ts` reads it live into `TaskRow.dayLogReplies`. So Task Board search finds the title, not the reply text.
+- A task holds its own sender's replies from when it was raised until that sender's next task on the same entry / date. `sent_at` is `clock_timestamp()` under the day lock, so each reply falls in one task. The end is not `updated_at`, which comes from the API's clock.
+- The red dot on these tasks follows the reply: `markTasksViewed` skips them, and the seen statements clear `viewed_at` in the same statement.
+- On these tasks only the person moves or completes; nobody edits or reassigns (reassigning would show a private reply to someone else); the sender or an admin may cancel. Enforced in `permsFor`.
+- Related To opens the person's day for anyone but the person (`buildLinkedRef` per viewer).
+- The hint beside Send reply comes from the server (`replyGoesToInbox`): a person whose Task Board is hidden gets the 🔔 only, and the reply still saves.
+- Replies sent before this change raise no task; they stay in the 🔔.
+
+**Known limit:** Pending Entries shows one Task No. per date, so with two senders on one date it names only one of the two tasks.

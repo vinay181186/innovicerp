@@ -6979,11 +6979,11 @@ export const tasks = pgTable(
     index('tasks_company_creator_idx')
       .on(t.companyId, t.createdBy)
       .where(sql`${t.deletedAt} is null`),
-    // 0239 — one OPEN task per Day Log day for a Super Admin's blank-day replies.
-    uniqueIndex('tasks_day_log_date_open_uq')
-      .on(t.companyId, t.linkedRefId)
+    // 0242 (ADR-273) — one OPEN task per Day Log entry / date per sender.
+    uniqueIndex('tasks_day_log_reply_open_uq')
+      .on(t.companyId, t.linkedRefType, t.linkedRefId, t.createdBy)
       .where(
-        sql`${t.linkedRefType} = 'day_log_date' AND ${t.deletedAt} is null AND ${t.status} IN ('todo', 'in_progress')`,
+        sql`${t.linkedRefType} IN ('day_log_date', 'day_log_entry') AND ${t.deletedAt} is null AND ${t.status} IN ('todo', 'in_progress')`,
       ),
     pgPolicy('tasks_company_read', {
       for: 'select',

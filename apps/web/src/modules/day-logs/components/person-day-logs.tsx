@@ -151,7 +151,12 @@ function PersonExpand({ r, p }: { r: Entry; p: DayLogPersonDay }): React.JSX.Ele
       {p.canReply ? (
         <div className="dl-panes">
           <PersonRevisions revisions={r.revisions} />
-          <PersonReplies entryId={r.id} replies={r.replies} first={firstName(p.userName)} />
+          <PersonReplies
+            entryId={r.id}
+            replies={r.replies}
+            first={firstName(p.userName)}
+            goesToInbox={p.replyGoesToInbox}
+          />
         </div>
       ) : (
         <PersonRevisions revisions={r.revisions} />

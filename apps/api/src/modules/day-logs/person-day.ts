@@ -6,7 +6,8 @@
 // Pending Entries: dayReplies (the blank day's own replies, Super Admin only),
 // canReplyDay and notEntered.
 // Statements: 1 (access, person, lines, day facts) + 1 more for a Super Admin (every
-// revision and reply of the day's lines, two json aggregates) — no per-entry query.
+// revision and reply of the day's lines, two json aggregates) + 1 when they may
+// reply (replyGoesToInbox, the person's access) — no per-entry query.
 
 import type {
   DayLogAdminReply,
@@ -18,6 +19,7 @@ import type {
 import { sql } from 'drizzle-orm';
 import { db } from '../../db/client';
 import type { AuthContext } from '../../db/with-user-context';
+import { usableAssignee } from '../tasks/service';
 import {
   accessJson,
   dayPersonJson,
@@ -30,6 +32,7 @@ import {
 } from './access';
 import { holidaysJson, linesJson, toHolidays, toLines, ts } from './day';
 import { dayReplyBlock } from './day-replies';
+import { dayTx } from './lock';
 import { isNotEntered } from './pending';
 import { ADMIN_REPLY_COLS, toAdminReply } from './replies';
 import { type DayLogClock, entryMinutes, istClock } from './rules';
@@ -132,6 +135,10 @@ export async function getPersonDay(
     );
   }
 
+  // ADR-273 — asked only of a Super Admin who may reply; others pay nothing.
+  const replyGoesToInbox =
+    canReply && (await dayTx((tx) => usableAssignee(tx, companyId, target.id))) !== null;
+
   return {
     userId: target.id,
     userName: target.name,
@@ -176,6 +183,7 @@ export async function getPersonDay(
       v.writer &&
       blank &&
       dayReplyBlock(person, date, status, holidays, clock) === null,
+    replyGoesToInbox,
     notEntered: admin && isNotEntered(person!, date, !blank || status === 'leave', holidays, clock),
   };
 }

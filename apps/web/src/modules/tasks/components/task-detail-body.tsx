@@ -9,6 +9,7 @@ import { useMemo, useRef, useState } from 'react';
 import { useCanWrite } from '@/components/shared/action-link';
 import { useSession } from '@/lib/session';
 import { uploadFile } from '@/lib/storage';
+import { firstName } from '@/modules/day-logs/lib/format';
 import { useAddTaskAttachment, useAddTaskComment } from '../api';
 import {
   fmtTaskDate,
@@ -18,6 +19,7 @@ import {
   statusPill,
 } from '../lib/format';
 import { RelatedRefLink } from './related-ref-link';
+import { TaskDayLogReplies } from './task-day-log-replies';
 import { useToast } from '@/ui/feedback';
 
 function Fact({
@@ -171,13 +173,15 @@ export function TaskBody({
         <Fact label="Title" full>
           <b>{t.title}</b>
         </Fact>
-        <Fact label="Description" full>
-          {t.description ? (
-            <span style={{ whiteSpace: 'pre-wrap', color: 'var(--text2)' }}>{t.description}</span>
-          ) : (
-            <span className="text3">—</span>
-          )}
-        </Fact>
+        {t.dayLogReplies && !t.description ? null : (
+          <Fact label="Description" full>
+            {t.description ? (
+              <span style={{ whiteSpace: 'pre-wrap', color: 'var(--text2)' }}>{t.description}</span>
+            ) : (
+              <span className="text3">—</span>
+            )}
+          </Fact>
+        )}
         <Fact label="Created By">{t.createdByName ?? '—'}</Fact>
         <Fact label="Assigned To">{t.assignedToName ?? '—'}</Fact>
         <Fact label="Assigned By">{t.assignedByName ?? '—'}</Fact>
@@ -206,6 +210,26 @@ export function TaskBody({
           </Fact>
         ) : null}
       </div>
+
+      {/* ADR-273: a Day Log reply task's replies; Seen only for those it was not sent to. */}
+      {t.dayLogReplies ? (
+        <>
+          <SectionTitle>
+            <span>💬 Replies ({t.dayLogReplies.length})</span>
+          </SectionTitle>
+          {t.dayLogReplies.length === 0 ? (
+            <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
+              No reply yet.
+            </div>
+          ) : (
+            <TaskDayLogReplies
+              replies={t.dayLogReplies}
+              first={firstName(t.assignedToName ?? '—')}
+              showSeen={!!me && me.id !== t.assignedTo}
+            />
+          )}
+        </>
+      ) : null}
 
       {/* Attachments */}
       <SectionTitle>
