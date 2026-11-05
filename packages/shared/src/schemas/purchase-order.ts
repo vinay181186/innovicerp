@@ -451,7 +451,7 @@ export type CreatePurchaseOrderFromPrBatchInput = z.infer<
 // ─── Query filters ─────────────────────────────────────────────────────────
 
 export const listPurchaseOrdersQuerySchema = z.object({
-  /** Only pickers ask: fills lineItems (ADR-270). */
+  /** Only pickers ask: fills lineItems (ADR-271). */
   withLineItems: queryBoolean().optional(),
   search: z.string().min(1).max(100).optional(), // matches code / pr_code_text / vendor_code_text
   status: poStatusSchema.optional(),

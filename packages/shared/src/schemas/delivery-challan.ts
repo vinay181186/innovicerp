@@ -173,7 +173,7 @@ export type DeliveryChallanListItem = z.infer<typeof deliveryChallanListItemSche
 // ─── Query filters ─────────────────────────────────────────────────────────
 
 export const listDeliveryChallansQuerySchema = z.object({
-  /** Only pickers ask: fills lineItems (ADR-270). */
+  /** Only pickers ask: fills lineItems (ADR-271). */
   withLineItems: queryBoolean().optional(),
   search: z.string().min(1).max(100).optional(), // matches code / po_code_text / vendor name
   status: dcStatusSchema.optional(),

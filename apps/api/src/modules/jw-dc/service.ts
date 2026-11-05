@@ -277,7 +277,7 @@ export async function listJwDcOutward(
     const total = Number(totalRows[0]?.total ?? 0);
 
     const rows = result as unknown as Array<Record<string, unknown>>;
-    // Only the pickers ask (ADR-270): the list screens never print these.
+    // Only the pickers ask (ADR-271): the list screens never print these.
     const lineItems = input.withLineItems
       ? await loadRelatedItems(
           tx,
