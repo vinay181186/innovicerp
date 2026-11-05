@@ -109,7 +109,7 @@ export function IssueFormModal({
         />
       }
     >
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-3)' }}>
         <div style={{ gridColumn: 'span 2' }}>
           <Field
             label={
@@ -232,27 +232,34 @@ export function ViewIssueModal({
         </button>
       }
     >
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 1fr',
+          gap: 'var(--sp-3)',
+          marginBottom: 'var(--sp-3)',
+        }}
+      >
         <div>
-          <div className="text3" style={{ fontSize: 11 }}>
+          <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
             Severity
           </div>
           <Badge value={issue.severity} />
         </div>
         <div>
-          <div className="text3" style={{ fontSize: 11 }}>
+          <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
             Issue Status
           </div>
           <Badge value={issue.status} kind="status" />
         </div>
         <div>
-          <div className="text3" style={{ fontSize: 11 }}>
+          <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
             Assigned To
           </div>
           <div style={{ fontWeight: 600 }}>{issue.assignedToText ?? ''}</div>
         </div>
         <div>
-          <div className="text3" style={{ fontSize: 11 }}>
+          <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
             Raised Date
           </div>
           <div>
@@ -260,27 +267,37 @@ export function ViewIssueModal({
           </div>
         </div>
         <div>
-          <div className="text3" style={{ fontSize: 11 }}>
+          <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
             Resolved Date
           </div>
           <div>{fmtDate(issue.resolvedDate)}</div>
         </div>
       </div>
       <div>
-        <div className="text3" style={{ fontSize: 11 }}>
+        <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
           Description
         </div>
-        <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 2 }}>
+        <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text2)', marginTop: 'var(--sp-0)' }}>
           {issue.description ?? '—'}
         </div>
       </div>
 
       <div style={{ marginTop: 14, borderTop: '1px solid var(--border)', paddingTop: 10 }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 8 }}>
+        <div
+          style={{
+            fontSize: 'var(--fs-sm)',
+            fontWeight: 700,
+            color: 'var(--text2)',
+            marginBottom: 'var(--sp-2)',
+          }}
+        >
           💬 Discussion ({issue.discussions.length})
         </div>
         {issue.discussions.map((d, idx) => (
-          <div key={idx} style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+          <div
+            key={idx}
+            style={{ display: 'flex', gap: 'var(--sp-2)', marginBottom: 'var(--sp-2)' }}
+          >
             <div
               style={{
                 width: 28,
@@ -290,7 +307,7 @@ export function ViewIssueModal({
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                fontSize: 11,
+                fontSize: 'var(--fs-xs)',
                 fontWeight: 700,
                 color: 'var(--blue)',
                 flexShrink: 0,
@@ -299,16 +316,24 @@ export function ViewIssueModal({
               {(d.author || '?').charAt(0).toUpperCase()}
             </div>
             <div>
-              <div style={{ fontSize: 11, fontWeight: 700 }}>
+              <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 700 }}>
                 {d.author} <span className="text3">{fmtDate(d.date)}</span>
               </div>
-              <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 2 }}>{d.text}</div>
+              <div
+                style={{
+                  fontSize: 'var(--fs-sm)',
+                  color: 'var(--text2)',
+                  marginTop: 'var(--sp-0)',
+                }}
+              >
+                {d.text}
+              </div>
             </div>
           </div>
         ))}
         {/* ADR-231 — adding to the discussion moves the work on: dsnissue_create Advance. */}
         {perms.advance ? (
-          <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+          <div style={{ display: 'flex', gap: 6, marginTop: 'var(--sp-2)' }}>
             <input
               className="innovic-input"
               placeholder="Add comment…"

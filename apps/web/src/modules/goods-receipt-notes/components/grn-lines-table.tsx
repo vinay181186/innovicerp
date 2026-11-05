@@ -45,6 +45,7 @@
 // those lines mirror a challan or an NC line, so the item is not the
 // storekeeper's to retype.
 
+import { Icon } from '@/ui/core';
 import { Fragment, useState } from 'react';
 import { LineItemPicker } from '@/components/shared/line-item-picker';
 import { itemCodeWithRev } from '@/lib/item-code';
@@ -214,7 +215,7 @@ export function GrnLinesTable({
                       </td>
                     ) : (
                       <>
-                        <td className="td-code" title={code}>
+                        <td className="td-code" style={{ color: 'var(--text)' }} title={code}>
                           {code || '—'}
                         </td>
                         <td
@@ -296,7 +297,7 @@ export function GrnLinesTable({
                             onClick={() => onRemove(idx)}
                             aria-label={`Remove line ${idx + 1}`}
                           >
-                            ✕
+                            <Icon name="x" size={12} />
                           </button>
                         )}
                       </td>

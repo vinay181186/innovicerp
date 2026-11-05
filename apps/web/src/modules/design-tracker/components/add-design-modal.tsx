@@ -107,7 +107,7 @@ export function AddDesignModal({ onClose }: { onClose: () => void }): React.JSX.
             className="innovic-input"
             value={next?.code ?? '(auto on save)'}
             readOnly
-            style={{ color: 'var(--purple)', fontWeight: 700 }}
+            style={{ color: 'var(--blue)', fontWeight: 700 }}
           />
         </Field>
         <Field label="SO No." req full>

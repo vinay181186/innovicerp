@@ -193,9 +193,9 @@ export function FilePreviewModal({
         // Nothing the browser renders in-page (.eml, .xlsx, .docx …).
         // Say so plainly rather than silently downloading it.
         <div className="empty-state" style={{ padding: 40, textAlign: 'center' }}>
-          <div style={{ fontSize: 30, marginBottom: 8 }}>📁</div>
+          <div style={{ fontSize: 30, marginBottom: 'var(--sp-2)' }}>📁</div>
           <div className="text2">This file type cannot be previewed in the browser.</div>
-          <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
+          <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-1)' }}>
             {mayDownload
               ? 'Use Download above to save it and open it on your computer.'
               : 'You can view drawings but not save them. Ask an administrator if you need a copy.'}
@@ -218,7 +218,7 @@ export function FilePreviewModal({
             justifyContent: 'center',
             alignItems: 'center',
             minHeight: '60vh',
-            padding: 16,
+            padding: 'var(--sp-4)',
           }}
         >
           <img

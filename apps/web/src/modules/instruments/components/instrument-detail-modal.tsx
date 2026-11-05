@@ -65,7 +65,7 @@ export function InstrumentDetailModal({
           {hasPendingEdit ? (
             <span
               className="tag b-amber"
-              style={{ marginLeft: 8 }}
+              style={{ marginLeft: 'var(--sp-2)' }}
               title="An edit to this instrument is waiting for approval"
             >
               edit pending
@@ -112,18 +112,18 @@ export function InstrumentDetailModal({
       }
     >
       {isLoading ? (
-        <div className="text3" style={{ fontSize: 12 }}>
+        <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
           <Loader2 size={14} className="inline animate-spin" /> Loading…
         </div>
       ) : isError || !ins ? (
-        <div style={{ color: 'var(--red2)', fontSize: 12 }}>
+        <div style={{ color: 'var(--red2)', fontSize: 'var(--fs-sm)' }}>
           {error instanceof Error ? error.message : 'Could not load the instrument.'}
         </div>
       ) : (
         <>
           <div
             className="text2"
-            style={{ fontSize: 12, display: 'flex', gap: 18, flexWrap: 'wrap' }}
+            style={{ fontSize: 'var(--fs-sm)', display: 'flex', gap: 18, flexWrap: 'wrap' }}
           >
             <Fact label="Item Name">{ins.itemName || '—'}</Fact>
             <span>
@@ -151,7 +151,7 @@ export function InstrumentDetailModal({
               <Fact label="Held By">
                 {ins.heldBy || '—'}
                 {ins.toolIssueCode ? (
-                  <span className="mono" style={{ marginLeft: 6, color: 'var(--purple)' }}>
+                  <span className="mono" style={{ marginLeft: 6, color: 'var(--blue)' }}>
                     {ins.toolIssueCode}
                   </span>
                 ) : null}
@@ -159,12 +159,12 @@ export function InstrumentDetailModal({
             ) : null}
           </div>
           {ins.remarks ? (
-            <div className="text3" style={{ fontSize: 11, marginTop: 6 }}>
+            <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginTop: 6 }}>
               Remarks: {ins.remarks}
             </div>
           ) : null}
 
-          <div className="fw-700" style={{ fontSize: 12, margin: '14px 0 6px' }}>
+          <div className="fw-700" style={{ fontSize: 'var(--fs-sm)', margin: '14px 0 6px' }}>
             Calibration history
           </div>
           <div className="tbl-wrap">

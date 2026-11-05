@@ -167,7 +167,7 @@ export function ManualReceiptModal({ onClose }: { onClose: () => void }): React.
             emptyText="No matching item"
           />
           {picked ? (
-            <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
+            <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-1)' }}>
               In stock now{revOpts.required && revValue ? ' (this Drawing Rev)' : ''}:{' '}
               {inStockNow ?? '—'} {picked.uom ?? ''}
             </div>
@@ -200,7 +200,7 @@ export function ManualReceiptModal({ onClose }: { onClose: () => void }): React.
             onChange={(e) => setQty(e.target.value)}
             onWheel={(e) => e.currentTarget.blur()}
             placeholder="0"
-            style={{ fontSize: 16, fontWeight: 700 }}
+            style={{ fontSize: 'var(--fs-md)', fontWeight: 700 }}
           />
         </div>
         <div className="form-grp">
@@ -216,7 +216,7 @@ export function ManualReceiptModal({ onClose }: { onClose: () => void }): React.
               </option>
             ))}
           </select>
-          <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
+          <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-1)' }}>
             Bought material is received through a GRN (against its PO, with incoming QC) — not here.
           </div>
         </div>
@@ -243,12 +243,12 @@ export function ManualReceiptModal({ onClose }: { onClose: () => void }): React.
       {err ? (
         <div
           style={{
-            marginTop: 12,
-            padding: 8,
-            background: 'rgba(239,68,68,0.08)',
+            marginTop: 'var(--sp-3)',
+            padding: 'var(--sp-2)',
+            background: 'var(--red3)',
             color: 'var(--red2)',
-            fontSize: 12,
-            borderRadius: 4,
+            fontSize: 'var(--fs-sm)',
+            borderRadius: 'var(--radius-sm)',
           }}
         >
           {err}

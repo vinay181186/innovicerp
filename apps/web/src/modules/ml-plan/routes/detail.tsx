@@ -137,7 +137,8 @@ function MlPlanDetailPage(): React.JSX.Element {
                   onClick: () => mlPlanPrint.preview({ id: detail.id, code: detail.code, detail }),
                 },
                 {
-                  label: '⬇ Download PDF',
+                  label: 'Download PDF',
+                  icon: 'download',
                   onClick: () =>
                     void mlPlanPrint.download({ id: detail.id, code: detail.code, detail }),
                 },

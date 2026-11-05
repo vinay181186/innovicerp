@@ -10,11 +10,11 @@
 // sibling files so every file clears the 400-line rule (this one was 724). Data,
 // filters, the server-side search and the mutations are unchanged.
 
+import { Icon } from '@/ui/core';
 import {
   type ListPartyMaterialIssuesQuery,
   type PartyMaterialIssueListItem,
 } from '@innovic/shared';
-import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -145,7 +145,7 @@ export function PartyMaterialIssueView({
         primary={
           canIssue ? (
             <button type="button" className="btn btn-primary" onClick={() => setShowModal(true)}>
-              <Plus size={14} /> New Issue
+              <Icon name="plus" size={14} /> New Issue
             </button>
           ) : null
         }

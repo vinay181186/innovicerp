@@ -83,13 +83,20 @@ export function PendingOpsSection({
         background: 'var(--bg3)',
         border: '2px solid var(--border)',
         borderRadius: 10,
-        padding: 16,
+        padding: 'var(--sp-4)',
       }}
     >
-      <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--cyan)', marginBottom: 4 }}>
+      <div
+        style={{
+          fontSize: 'var(--fs-md)',
+          fontWeight: 800,
+          color: 'var(--cyan)',
+          marginBottom: 'var(--sp-1)',
+        }}
+      >
         {machineCode} — <span className="text3">⚪ Idle</span>
       </div>
-      <div className="text3" style={{ fontSize: 12, marginBottom: 14 }}>
+      <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginBottom: 14 }}>
         {machineName}
       </div>
       {isLoading ? (
@@ -98,7 +105,14 @@ export function PendingOpsSection({
         </div>
       ) : ops.length > 0 ? (
         <>
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--amber2)', marginBottom: 8 }}>
+          <div
+            style={{
+              fontSize: 'var(--fs-sm)',
+              fontWeight: 700,
+              color: 'var(--amber2)',
+              marginBottom: 'var(--sp-2)',
+            }}
+          >
             Pending Jobs for this Machine ({ops.length})
           </div>
           <DataTable
@@ -164,11 +178,11 @@ export function PendingOpsSection({
         <>
           <div
             style={{
-              fontSize: 12,
+              fontSize: 'var(--fs-sm)',
               fontWeight: 700,
               color: 'var(--green2)',
-              marginTop: 16,
-              marginBottom: 8,
+              marginTop: 'var(--sp-4)',
+              marginBottom: 'var(--sp-2)',
             }}
           >
             Made on this Machine ({producedOps.length})
@@ -190,7 +204,7 @@ export function PendingOpsSection({
         </>
       ) : null}
       {!isLoading && producedOps.length === 0 ? (
-        <div className="text3" style={{ fontSize: 11, marginTop: 12 }}>
+        <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-3)' }}>
           No production has been recorded on {machineCode} yet.
         </div>
       ) : null}

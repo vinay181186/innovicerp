@@ -138,17 +138,21 @@ export function OutsourceBalanceModal({
         style={{
           background: 'var(--bg3)',
           padding: '10px 14px',
-          borderRadius: 8,
+          borderRadius: 'var(--radius2)',
           marginBottom: 14,
           border: '1px solid var(--border)',
         }}
       >
-        <div style={{ fontSize: 12, color: 'var(--text2)' }}>
+        <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text2)' }}>
           Operation: <b>{operation}</b>
         </div>
-        <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2 }}>
-          Item: {itemCodeWithRev(itemCode, itemRevision)} · Available:{' '}
-          <b style={{ color: 'var(--amber2)' }}>{available}</b> pcs. Raises an outsource PR.
+        <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)', marginTop: 'var(--sp-0)' }}>
+          Item:{' '}
+          <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+            {itemCodeWithRev(itemCode, itemRevision)}
+          </span>{' '}
+          · Available: <b style={{ color: 'var(--amber2)' }}>{available}</b> pcs. Raises an
+          outsource PR.
         </div>
       </div>
 
@@ -157,8 +161,8 @@ export function OutsourceBalanceModal({
           <div
             className="text3"
             style={{
-              fontSize: 11,
-              marginBottom: 4,
+              fontSize: 'var(--fs-xs)',
+              marginBottom: 'var(--sp-1)',
               color: 'var(--amber2)',
             }}
           >
@@ -171,11 +175,11 @@ export function OutsourceBalanceModal({
             className="innovic-select"
             value={qty}
             onChange={(e) => setQty(Number(e.target.value))}
-            style={{ width: '100%', fontSize: 12 }}
+            style={{ width: '100%', fontSize: 'var(--fs-sm)' }}
           />
         </div>
         <div style={{ flex: '1 1 200px' }}>
-          <div className="text3" style={{ fontSize: 11, marginBottom: 4 }}>
+          <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginBottom: 'var(--sp-1)' }}>
             Vendor<span className="req">★</span>
           </div>
           <SearchableSelect
@@ -199,12 +203,12 @@ export function OutsourceBalanceModal({
       {err ? (
         <div
           style={{
-            marginTop: 12,
-            padding: 8,
+            marginTop: 'var(--sp-3)',
+            padding: 'var(--sp-2)',
             background: 'var(--red3)',
             color: 'var(--red2)',
-            borderRadius: 4,
-            fontSize: 12,
+            borderRadius: 'var(--radius-sm)',
+            fontSize: 'var(--fs-sm)',
           }}
         >
           {err}

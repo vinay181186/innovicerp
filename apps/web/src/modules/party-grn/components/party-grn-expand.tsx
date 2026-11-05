@@ -231,12 +231,12 @@ export function PartyGrnExpand({ g }: { g: PartyGrnListItem }): React.JSX.Elemen
           style={{
             display: 'flex',
             flexDirection: 'column',
-            gap: 4,
+            gap: 'var(--sp-1)',
             fontSize: 'var(--fs-xs)',
             margin: '0 0 var(--sp-2)',
             padding: 'var(--sp-2)',
             border: '1px solid var(--border)',
-            borderRadius: 6,
+            borderRadius: 'var(--radius)',
             background: 'var(--bg2)',
           }}
         >
@@ -286,13 +286,13 @@ export function PartyGrnExpand({ g }: { g: PartyGrnListItem }): React.JSX.Elemen
       ) : null}
 
       {detailQ.isError ? (
-        <div className="empty-state" style={{ color: 'var(--red2)', padding: 8 }}>
+        <div className="empty-state" style={{ color: 'var(--red2)', padding: 'var(--sp-2)' }}>
           {cancelled
             ? 'The lines of a Cancelled GRN could not be loaded.'
             : 'Could not load lines. Try again.'}
         </div>
       ) : detailQ.isLoading ? (
-        <div className="text3" style={{ fontSize: 12 }}>
+        <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
           <Loader2 size={13} className="inline animate-spin" /> Loading lines…
         </div>
       ) : (

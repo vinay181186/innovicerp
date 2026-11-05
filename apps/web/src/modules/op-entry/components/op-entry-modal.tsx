@@ -57,10 +57,10 @@ export interface OpEntryModalTarget {
 function Fact({ label, value }: { label: string; value: string }): React.JSX.Element {
   return (
     <div>
-      <div className="text3" style={{ fontSize: 11 }}>
+      <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
         {label}
       </div>
-      <div className="fw-700" style={{ fontSize: 12 }}>
+      <div className="fw-700" style={{ fontSize: 'var(--fs-sm)' }}>
         {value}
       </div>
     </div>
@@ -200,22 +200,22 @@ export function OpEntryModal({
             a single number is typed. */}
       <div
         style={{
-          margin: 16,
+          margin: 'var(--sp-4)',
           marginBottom: 0,
-          padding: 12,
+          padding: 'var(--sp-3)',
           background: 'var(--bg3)',
           border: '1px solid var(--border)',
-          borderRadius: 8,
+          borderRadius: 'var(--radius2)',
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))',
           gap: 10,
         }}
       >
         <div>
-          <div className="text3" style={{ fontSize: 11 }}>
+          <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
             JC No.
           </div>
-          <div className="mono fw-700 cyan" style={{ fontSize: 13 }}>
+          <div className="mono fw-700 cyan" style={{ fontSize: 'var(--fs-sm)' }}>
             {op.jobCardCode}
           </div>
         </div>
@@ -233,7 +233,7 @@ export function OpEntryModal({
               wrap by themselves on a phone. */}
         {itemCode || op.itemName ? (
           <div>
-            <div className="text3" style={{ fontSize: 11 }}>
+            <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
               Item Code
             </div>
             {/* POL — the line number printed on the CUSTOMER's own purchase
@@ -241,12 +241,12 @@ export function OpEntryModal({
                   order sits behind the card, so a job-work job reads exactly as
                   this strip always has. */}
             {op.clientPoLineNo ? (
-              <div className="mono text3" style={{ fontSize: 11 }}>
+              <div className="mono text3" style={{ fontSize: 'var(--fs-xs)' }}>
                 POL{' '}
                 <span style={{ color: 'var(--purple)', fontWeight: 700 }}>{op.clientPoLineNo}</span>
               </div>
             ) : null}
-            <div className="mono fw-700" style={{ fontSize: 13, color: 'var(--purple)' }}>
+            <div className="mono fw-700" style={{ fontSize: 'var(--fs-sm)', color: 'var(--text)' }}>
               {itemCode}
             </div>
             {/* The name is the only free-text value in the strip, so it is
@@ -256,7 +256,7 @@ export function OpEntryModal({
               <div
                 className="text3"
                 style={{
-                  fontSize: 11,
+                  fontSize: 'var(--fs-xs)',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap',
@@ -271,17 +271,17 @@ export function OpEntryModal({
         <Fact label="Operation" value={`Op ${fmtOpSrNo(op.opSeq)} · ${op.operation}`} />
         <Fact label="Planned Machine" value={planned} />
         <div>
-          <div className="text3" style={{ fontSize: 11 }}>
+          <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
             Actual Machine
           </div>
-          <div className="fw-700" style={{ fontSize: 12 }}>
+          <div className="fw-700" style={{ fontSize: 'var(--fs-sm)' }}>
             {actual}
           </div>
           {startedBy ? (
             <div
               className="text3"
               style={{
-                fontSize: 11,
+                fontSize: 'var(--fs-xs)',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',
@@ -293,10 +293,10 @@ export function OpEntryModal({
           ) : null}
         </div>
         <div>
-          <div className="text3" style={{ fontSize: 11 }}>
+          <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
             Available
           </div>
-          <div className="mono fw-700 amber" style={{ fontSize: 15 }}>
+          <div className="mono fw-700 amber" style={{ fontSize: 'var(--fs-sm)' }}>
             {op.available} pcs
           </div>
         </div>
@@ -305,20 +305,24 @@ export function OpEntryModal({
       {showBusyPanel && plannedBusy ? (
         /* MACHINE BUSY — shown INSTEAD of the Start form. Names the job and
              operation holding the planned machine and offers the ways on. */
-        <div style={{ padding: 16 }}>
+        <div style={{ padding: 'var(--sp-4)' }}>
           <div
             style={{
               display: 'flex',
-              gap: 12,
+              gap: 'var(--sp-3)',
               alignItems: 'flex-start',
               padding: 14,
               background: 'var(--bg3)',
               border: '1px solid var(--amber)',
-              borderRadius: 8,
+              borderRadius: 'var(--radius2)',
             }}
           >
-            <AlertTriangle size={22} className="amber" style={{ flex: 'none', marginTop: 2 }} />
-            <div style={{ fontSize: 13, lineHeight: 1.5 }}>
+            <AlertTriangle
+              size={22}
+              className="amber"
+              style={{ flex: 'none', marginTop: 'var(--sp-0)' }}
+            />
+            <div style={{ fontSize: 'var(--fs-sm)', lineHeight: 1.5 }}>
               <b className="mono">{planned}</b> is currently running{' '}
               <span className="mono fw-700 cyan">
                 {plannedBusy.jobCardCode} / Op {opSrNo(plannedBusy.opSeq)}
@@ -329,7 +333,7 @@ export function OpEntryModal({
           </div>
         </div>
       ) : (
-        <div style={{ padding: 16 }}>
+        <div style={{ padding: 'var(--sp-4)' }}>
           <OpEntryForm
             onActualMachineChange={setPickedActual}
             op={op}

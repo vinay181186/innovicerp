@@ -126,7 +126,7 @@ export function TeamsConfig(): React.JSX.Element {
 
   return (
     <div>
-      <div className="dl-addbar" style={{ alignItems: 'flex-end', gap: 16 }}>
+      <div className="dl-addbar" style={{ alignItems: 'flex-end', gap: 'var(--sp-4)' }}>
         <div>
           <label className="form-label" htmlFor="dl-teams-user">
             User<span className="req">★</span>
@@ -190,7 +190,7 @@ export function TeamsConfig(): React.JSX.Element {
           style={{
             color: 'var(--red2)',
             fontWeight: 600,
-            fontSize: 13,
+            fontSize: 'var(--fs-sm)',
             margin: '0 0 10px',
           }}
         >

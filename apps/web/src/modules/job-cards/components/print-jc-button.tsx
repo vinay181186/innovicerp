@@ -12,6 +12,7 @@
 import type { JobCardListItem } from '@innovic/shared';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { runPrint } from '@/lib/print/preview-host';
+import { useOpFlow } from '@/modules/flow-views/api';
 import { useJcOpsEnriched } from '@/modules/op-entry/api';
 import { useProductionOrderForJobCard } from '@/modules/production-orders/api';
 import { useMyCompany } from '@/modules/settings/api';
@@ -54,6 +55,10 @@ export function usePrintJc(
 
   const { data: company } = useMyCompany();
   const opsQuery = useJcOpsEnriched({ jobCardId: jc.id }, { enabled: armed });
+  // A Cancelled card has no flow rows (ADR-235 stamps its ops deleted): it prints
+  // the op figures, so the flow read is skipped, not awaited.
+  const cancelled = Boolean(jc.cancelledAt);
+  const flowQuery = useOpFlow(jc.id, armed && !cancelled);
   // ADR-182 — the traveller prints the `Actual Size` the store really cut,
   // which lives on the Production Order, not on the Job Card row. Fetched on
   // the same lazy `armed` switch as the ops, so an unclicked list row still
@@ -63,31 +68,55 @@ export function usePrintJc(
   useEffect(() => {
     const w = waitRef.current;
     if (!pending || !w) return;
-    if (opsQuery.isError) {
+    // Each click re-reads (see `start`): wait for THAT result, so a print never
+    // mixes old quantities with fresh operations.
+    if (opsQuery.isFetching || (!cancelled && flowQuery.isFetching)) return;
+    if (
+      (opsQuery.isError && !opsQuery.data) ||
+      (!cancelled && flowQuery.isError && !flowQuery.data)
+    ) {
       setPending(false);
       waitRef.current = null;
       w.fail(new Error('Could not load operations for this Job Card. Try again.'));
       return;
     }
-    if (!opsQuery.data) return; // still loading
+    if (!opsQuery.data || (!cancelled && !flowQuery.data)) return; // still loading
     if (orderLoading) return; // the Production Order's Actual Size is still on its way
     setPending(false);
     waitRef.current = null;
     const ops = opsQuery.data;
+    const flow = cancelled ? [] : (flowQuery.data?.ops ?? []);
     w.ready(() =>
       printJobCard({
         jc,
         ops,
+        flow,
         company,
         actualSize: order?.actualSize ?? null,
         productionOrderCode: order?.code ?? null,
         draft,
         // ADR-235 — a Cancelled card prints stamped CANCELLED.
-        cancelled: Boolean(jc.cancelledAt),
+        cancelled,
       }),
     );
-  }, [pending, opsQuery.data, opsQuery.isError, jc, company, order, orderLoading, draft]);
+  }, [
+    pending,
+    opsQuery.data,
+    opsQuery.isError,
+    opsQuery.isFetching,
+    flowQuery.data,
+    flowQuery.isError,
+    flowQuery.isFetching,
+    cancelled,
+    jc,
+    company,
+    order,
+    orderLoading,
+    draft,
+  ]);
 
+  const { refetch: refetchOps } = opsQuery;
+  const { refetch: refetchFlow } = flowQuery;
   const start = useCallback(
     (action: 'preview' | 'download'): Promise<void> => {
       if (waitRef.current) return waitRef.current.promise;
@@ -101,9 +130,11 @@ export function usePrintJc(
       waitRef.current = waiter;
       setArmed(true);
       setPending(true);
+      void refetchOps();
+      if (!cancelled) void refetchFlow();
       return waiter.promise;
     },
-    [jc.code],
+    [jc.code, cancelled, refetchOps, refetchFlow],
   );
 
   return {

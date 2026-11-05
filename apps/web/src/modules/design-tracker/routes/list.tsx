@@ -277,7 +277,7 @@ function DesignTrackerListPage(): React.JSX.Element {
           onPage={gotoPage}
         />
       ) : null}
-      <div className="text3" style={{ fontSize: 11, marginTop: 6 }}>
+      <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginTop: 6 }}>
         BOM creation for an Equipment SO is blocked until its design is Approved.
       </div>
 

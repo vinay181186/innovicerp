@@ -85,7 +85,7 @@ export function ReturnForm({
   };
 
   return (
-    <div style={{ marginTop: 12 }}>
+    <div style={{ marginTop: 'var(--sp-3)' }}>
       <div className="form-grid">
         <div className="form-grp">
           <label className="form-label">
@@ -100,7 +100,7 @@ export function ReturnForm({
         </div>
       </div>
       {serial ? (
-        <table className="innovic-table tbl-grid" style={{ marginTop: 8 }}>
+        <table className="innovic-table tbl-grid" style={{ marginTop: 'var(--sp-2)' }}>
           <thead>
             <tr>
               <th>Instrument Serial No.</th>
@@ -135,7 +135,7 @@ export function ReturnForm({
           </tbody>
         </table>
       ) : (
-        <div className="form-grid" style={{ marginTop: 8 }}>
+        <div className="form-grid" style={{ marginTop: 'var(--sp-2)' }}>
           {(
             [
               ['good', 'Good (back to stock)'],
@@ -159,7 +159,7 @@ export function ReturnForm({
           ))}
         </div>
       )}
-      <div className="form-grp form-full" style={{ marginTop: 8 }}>
+      <div className="form-grp form-full" style={{ marginTop: 'var(--sp-2)' }}>
         <label className="form-label">
           Reason{needsReason ? <span className="req">★</span> : null}
         </label>
@@ -171,7 +171,7 @@ export function ReturnForm({
           onChange={(e) => setReason(e.target.value)}
         />
       </div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 'var(--sp-2)' }}>
         <button type="button" className="btn btn-primary" disabled={busy} onClick={save}>
           {busy ? 'Saving…' : 'Save Return'}
         </button>

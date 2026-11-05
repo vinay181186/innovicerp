@@ -28,7 +28,7 @@ function statusClass(status: DesignTrackerListItem['status']): string {
 
 /**
  * Whole-row wash by status (ADR-199 ROW_TINT): overdue (past Due Date, not
- * Approved) → late (red, the old row background); Approved → done (green);
+ * Approved) → late (red, the old row background); Approved → approved (blue, as its badge);
  * otherwise no wash.
  */
 export function designTrackerRowTint(
@@ -36,7 +36,7 @@ export function designTrackerRowTint(
   today: string,
 ): string | undefined {
   if (isDesignOverdue(row, today)) return ROW_TINT.late;
-  if (row.status === 'Approved') return ROW_TINT.done;
+  if (row.status === 'Approved') return ROW_TINT.approved;
   return undefined;
 }
 
@@ -60,7 +60,7 @@ export function designTrackerColumns(opts: {
         header: 'Design No.',
         nowrap: true,
         render: (d) => (
-          <span className="td-code" style={{ color: 'var(--purple)' }}>
+          <span className="td-code" style={{ color: 'var(--blue)' }}>
             {d.code}
           </span>
         ),
@@ -164,7 +164,14 @@ export function designTrackerColumns(opts: {
 /** The ▸ detail content — Start Date, moved off the main row (brief). */
 export function DesignTrackerExpanded({ row }: { row: DesignTrackerListItem }): React.JSX.Element {
   return (
-    <div style={{ display: 'flex', gap: 'var(--sp-2)', fontSize: 12, padding: '4px 0' }}>
+    <div
+      style={{
+        display: 'flex',
+        gap: 'var(--sp-2)',
+        fontSize: 'var(--fs-sm)',
+        padding: 'var(--sp-1) 0',
+      }}
+    >
       <span style={{ color: 'var(--text3)', fontWeight: 700 }}>Start Date</span>
       <span className="mono text2">{fmtDate(row.startDate)}</span>
     </div>

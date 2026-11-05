@@ -42,7 +42,14 @@ export function StockCountRevCell({
   if (!editable) {
     if (line.itemRevisionId === undefined) return <span className="text3">—</span>;
     if (line.itemRevisionId === null)
-      return <span className="text3">{line.itemCode} · no Rev</span>;
+      return (
+        <span className="text3">
+          <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+            {line.itemCode}
+          </span>{' '}
+          · no Rev
+        </span>
+      );
     const opt = options.find((o) => o.id === line.itemRevisionId);
     return <span className="mono fw-700">{opt?.code ?? itemRevLabel(line.itemCode, null)}</span>;
   }

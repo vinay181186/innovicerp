@@ -314,7 +314,7 @@ function PartyGrnNewPage(): React.JSX.Element {
           ) : null
         }
       >
-        <div className="text3" style={{ fontSize: 11, marginBottom: 8 }}>
+        <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginBottom: 'var(--sp-2)' }}>
           Delete the lines not on this challan. Accepted / Deviated are entered later by Incoming
           QC.
         </div>

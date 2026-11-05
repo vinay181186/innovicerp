@@ -147,7 +147,7 @@ export function PoHeaderBand({
             empty={!detail.prCodeText}
             value={
               detail.prCodeText ? (
-                <span style={{ color: 'var(--purple)' }}>{detail.prCodeText}</span>
+                <span style={{ color: 'var(--blue)' }}>{detail.prCodeText}</span>
               ) : (
                 '—'
               )
@@ -164,7 +164,7 @@ export function PoHeaderBand({
             empty={!detail.soCode}
             value={
               detail.soCode ? (
-                <span style={{ color: 'var(--purple)' }}>
+                <span style={{ color: 'var(--blue)' }}>
                   {soNoWithInternal(detail.soCode, detail.soInternalNo)}
                   {detail.soLineNo ? <span className="text3"> · Ln {detail.soLineNo}</span> : null}
                 </span>

@@ -12,6 +12,7 @@
 // manufacture/assembly plans. Direct-purchase / full-outsource hide the
 // ops table.
 
+import { Icon } from '@/ui/core';
 import {
   type CreatePlanInput,
   type PlanType,
@@ -19,7 +20,7 @@ import {
   qcAfterOutsourceError,
 } from '@innovic/shared';
 import { Link, useParams } from '@tanstack/react-router';
-import { Loader2, Plus, Trash2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { addDaysLocal, todayLocal } from '@/lib/date';
 import { VendorPicker } from '@/components/shared/vendor-picker';
@@ -417,7 +418,7 @@ export function PlanForm({
         if (opsSeqError) return;
         onSubmit(values);
       }}
-      style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
+      style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)' }}
     >
       {submitError ? (
         <div
@@ -425,9 +426,9 @@ export function PlanForm({
             color: 'var(--red2)',
             background: 'var(--red3)',
             border: '1px solid var(--red2)',
-            borderRadius: 6,
+            borderRadius: 'var(--radius)',
             padding: '6px 10px',
-            fontSize: 12,
+            fontSize: 'var(--fs-sm)',
           }}
         >
           {submitError}
@@ -483,7 +484,7 @@ export function PlanForm({
                 </option>
               ))}
             </select>
-            <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
+            <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-0)' }}>
               {PLAN_TYPE_OPTIONS.find((o) => o.value === values.planType)?.help}
             </div>
           </Field>
@@ -613,7 +614,7 @@ export function PlanForm({
                 <MaterialValueDisplay value={values.rmQtyPerPiece} />
               </Field>
             </RawMaterialGroup>
-            <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
+            <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-1)' }}>
               {RM_SOURCE_HELP}
             </div>
           </div>
@@ -756,7 +757,7 @@ export function PlanForm({
       {hideOps && canOpen('/production-orders/new') ? (
         <div className="panel">
           <div className="panel-body">
-            <div className="text3" style={{ fontSize: 12 }}>
+            <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
               <Link
                 to="/production-orders/new"
                 // Open the form on THIS plan (same search the Plans list
@@ -781,7 +782,7 @@ export function PlanForm({
                   no route card" and "the lookup has not answered yet" looked
                   identical — the user saw a blank header either way. */}
               {values.itemId && !hasRouteCard && !routeCardFailed ? (
-                <span style={{ fontSize: 11, color: 'var(--text3)' }}>
+                <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>
                   {routeCardLoading ? (
                     'Loading…'
                   ) : (
@@ -805,7 +806,7 @@ export function PlanForm({
                 </button>
               ) : null}
               <button type="button" className="btn btn-ghost btn-sm" onClick={addOp}>
-                <Plus size={13} /> Add Op
+                <Icon name="plus" size={13} /> Add Op
               </button>
             </div>
           </div>
@@ -966,7 +967,7 @@ export function PlanForm({
                           className="btn btn-ghost btn-sm"
                           onClick={() => removeOp(idx)}
                         >
-                          <Trash2 size={13} />
+                          <Icon name="trash-2" size={13} />
                         </button>
                       </td>
                     </tr>
@@ -983,9 +984,9 @@ export function PlanForm({
                 color: 'var(--red2)',
                 background: 'var(--red3)',
                 border: '1px solid var(--red2)',
-                borderRadius: 6,
+                borderRadius: 'var(--radius)',
                 padding: '6px 10px',
-                fontSize: 12,
+                fontSize: 'var(--fs-sm)',
                 margin: '10px 12px 12px',
               }}
             >
@@ -1046,8 +1047,8 @@ function Field({
         className="text3"
         style={{
           display: 'block',
-          fontSize: 11,
-          marginBottom: 4,
+          fontSize: 'var(--fs-xs)',
+          marginBottom: 'var(--sp-1)',
         }}
       >
         {label}

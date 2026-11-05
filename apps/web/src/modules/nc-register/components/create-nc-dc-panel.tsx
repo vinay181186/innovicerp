@@ -126,7 +126,14 @@ export function CreateNcDcPanel(props: {
             </div>
           </div>
           {error ? <Note tone="red">{error}</Note> : null}
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginTop: 16 }}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'flex-end',
+              gap: 6,
+              marginTop: 'var(--sp-4)',
+            }}
+          >
             <button
               type="submit"
               className="btn btn-primary"

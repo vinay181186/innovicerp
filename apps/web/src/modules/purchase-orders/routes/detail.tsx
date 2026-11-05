@@ -41,10 +41,11 @@
 // header into the Vendor cluster, where its address and GSTIN already belonged.
 // Owner 2026-11-04: that block is the shared `<ClusterGrid stack>`.
 
+import { Icon } from '@/ui/core';
 import type { DocumentEditChange, PurchaseOrderLine } from '@innovic/shared';
 import { PO_SHORT_CLOSE_REASON_MIN, poLinePendingQty, poSendsMaterialOut } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Check, Inbox, Loader2, Send, X } from 'lucide-react';
+import { ArrowLeft, Check, Inbox, Loader2, Send } from 'lucide-react';
 import { useState } from 'react';
 import { useApprovalConfig } from '@/modules/approval-config/api';
 import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
@@ -144,7 +145,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
 
   if (isLoading) {
     return (
-      <div className="panel empty-state" style={{ padding: 24 }}>
+      <div className="panel empty-state" style={{ padding: 'var(--sp-5)' }}>
         <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
         Loading purchase order…
       </div>
@@ -154,7 +155,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
     return (
       <div className="panel">
         <div className="panel-body">
-          <div style={{ marginBottom: 8 }}>
+          <div style={{ marginBottom: 'var(--sp-2)' }}>
             <Link to="/purchase-orders" className="btn btn-ghost btn-sm">
               <ArrowLeft size={14} /> Back
             </Link>
@@ -334,7 +335,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
             <div
               className="td-code"
-              style={{ color: 'var(--blue)', fontSize: 16, fontWeight: 800 }}
+              style={{ color: 'var(--blue)', fontSize: 'var(--fs-md)', fontWeight: 800 }}
             >
               {detail.code}
             </div>
@@ -342,7 +343,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
             {detail.shortClosedAt ? (
               <span
                 className="text3"
-                style={{ fontSize: 12 }}
+                style={{ fontSize: 'var(--fs-xs)' }}
                 title={detail.shortCloseReason ?? ''}
               >
                 {/* A stopped-wholly / cancelled PO carries the same stamp. */}
@@ -365,7 +366,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
                   <Check size={13} /> Approve
                 </button>
                 <button type="button" className="btn btn-ghost" onClick={() => setRejectOpen(true)}>
-                  <X size={13} /> Reject
+                  <Icon name="x" size={13} /> Reject
                 </button>
               </>
             ) : null}
@@ -400,7 +401,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
             <ActionMenu
               items={[
                 { label: 'Preview', onClick: onPrint },
-                { label: '⬇ Download PDF', onClick: () => void onDownload() },
+                { label: 'Download PDF', icon: 'download', onClick: () => void onDownload() },
                 // ADR-232: Assign Task = the page's Advance right.
                 {
                   label: 'Assign Task',
@@ -555,7 +556,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
           title={`Move PO ${detail.code} to Trash?`}
           message={
             <>
-              <div style={{ marginBottom: 8 }}>You can restore it from Trash.</div>
+              <div style={{ marginBottom: 'var(--sp-2)' }}>You can restore it from Trash.</div>
               <div className="form-grp">
                 <label className="form-label">
                   Reason<span className="req">★</span>
@@ -593,7 +594,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
           title={<span style={{ color: 'var(--green2)' }}>Approve PO {detail.code}?</span>}
           onClose={() => setApproveOpen(false)}
           maxWidth="min(1100px, 96vw)"
-          bodyStyle={{ display: 'grid', gap: 12 }}
+          bodyStyle={{ display: 'grid', gap: 'var(--sp-3)' }}
           footer={
             <>
               <button
@@ -631,12 +632,12 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
           {actionError ? (
             <div
               style={{
-                padding: '8px 12px',
+                padding: 'var(--sp-2) var(--sp-3)',
                 background: 'var(--red3)',
                 border: '1px solid var(--red)',
-                borderRadius: 6,
+                borderRadius: 'var(--radius)',
                 color: 'var(--red2)',
-                fontSize: 12,
+                fontSize: 'var(--fs-sm)',
               }}
             >
               {actionError}
@@ -651,7 +652,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
           title={<span style={{ color: 'var(--red2)' }}>Reject PO {detail.code}?</span>}
           onClose={() => setRejectOpen(false)}
           maxWidth="min(1100px, 96vw)"
-          bodyStyle={{ display: 'grid', gap: 12 }}
+          bodyStyle={{ display: 'grid', gap: 'var(--sp-3)' }}
           footer={
             <>
               <button
@@ -681,10 +682,10 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
           <div
             style={{
               background: 'var(--red3)',
-              padding: 12,
+              padding: 'var(--sp-3)',
               border: '1px solid var(--red)',
-              borderRadius: 8,
-              fontSize: 11,
+              borderRadius: 'var(--radius2)',
+              fontSize: 'var(--fs-xs)',
               color: 'var(--text3)',
             }}
           >
@@ -704,12 +705,12 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
           {actionError ? (
             <div
               style={{
-                padding: '8px 12px',
+                padding: 'var(--sp-2) var(--sp-3)',
                 background: 'var(--red3)',
                 border: '1px solid var(--red)',
-                borderRadius: 6,
+                borderRadius: 'var(--radius)',
                 color: 'var(--red2)',
-                fontSize: 12,
+                fontSize: 'var(--fs-sm)',
               }}
             >
               {actionError}
@@ -724,7 +725,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
           title={<span style={{ color: 'var(--red2)' }}>⏹ Short Close PO — {detail.code}</span>}
           onClose={() => setScOpen(false)}
           maxWidth="min(1100px, 96vw)"
-          bodyStyle={{ display: 'grid', gap: 12 }}
+          bodyStyle={{ display: 'grid', gap: 'var(--sp-3)' }}
           footer={
             <>
               <button
@@ -753,11 +754,11 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
         >
           <div
             style={{
-              background: 'rgba(239,68,68,0.05)',
-              padding: 12,
+              background: 'var(--red3)',
+              padding: 'var(--sp-3)',
               border: '1px solid var(--red)',
-              borderRadius: 8,
-              fontSize: 11,
+              borderRadius: 'var(--radius2)',
+              fontSize: 'var(--fs-xs)',
               color: 'var(--text3)',
             }}
           >
@@ -780,12 +781,12 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
           {actionError ? (
             <div
               style={{
-                padding: '8px 12px',
-                background: 'rgba(239,68,68,0.06)',
-                border: '1px solid rgba(239,68,68,0.3)',
-                borderRadius: 6,
+                padding: 'var(--sp-2) var(--sp-3)',
+                background: 'var(--red3)',
+                border: '1px solid var(--sig-critical-bd)',
+                borderRadius: 'var(--radius)',
                 color: 'var(--red2)',
-                fontSize: 12,
+                fontSize: 'var(--fs-sm)',
               }}
             >
               {actionError}
@@ -807,7 +808,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
 
 // Legacy L26336-26348. Numbers (Ln, qty, rate, amount, received, accepted,
 // pending) sit
-// RIGHT-aligned with `td-num` (house rule 2026-09-26), Item Code is `td-code` on the <td> in var(--purple) (a real
+// RIGHT-aligned with `td-num` (house rule 2026-09-26), Item Code is `td-code` on the <td> in var(--text) (a real
 // token with no utility class), Received is always green and Pending flips
 // blue/green on >0.
 function LineRow(props: {
@@ -858,7 +859,7 @@ function LineRow(props: {
         {l.itemName}
         {itemNamePending ? <PendingChangeChip after={itemNamePending.after} /> : null}
       </td>
-      <td className="mono text2" style={{ fontSize: 11 }}>
+      <td className="mono text2" style={{ fontSize: 'var(--fs-xs)' }}>
         {l.sourceJcOpId ? 'JC Op' : '—'}
         {prPending ? <PendingChangeChip label="PR No." after={prPending.after} /> : null}
       </td>
@@ -868,7 +869,7 @@ function LineRow(props: {
       </td>
       {priceHidden ? null : (
         <>
-          <td className="td-num mono" style={{ fontSize: 11 }}>
+          <td className="td-num mono" style={{ fontSize: 'var(--fs-xs)' }}>
             {Number(l.rate) > 0 ? `₹${Number(l.rate).toFixed(2)}` : '—'}
             {ratePending ? <PendingChangeChip after={ratePending.after} /> : null}
           </td>
@@ -883,11 +884,11 @@ function LineRow(props: {
       >
         {pending}
       </td>
-      <td style={{ fontSize: 11 }}>
+      <td style={{ fontSize: 'var(--fs-xs)' }}>
         {fmtDate(l.dueDate)}
         {dueDatePending ? <PendingChangeChip after={dueDatePending.after} /> : null}
       </td>
-      <td className="text3" style={{ fontSize: 11 }}>
+      <td className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
         {l.lineRemarks ?? '—'}
         {lineRemarksPending ? (
           <PendingChangeChip label="Remarks" after={lineRemarksPending.after} />

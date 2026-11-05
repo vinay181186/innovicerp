@@ -3,6 +3,7 @@
 // Client PO No. is searchable but never shown. The × is a separate button
 // outside the box, so it can also clear typed text and a filter with no pick.
 
+import { Icon } from '@/ui/core';
 import type { OrderOption, QcDossierOrderKind } from '@innovic/shared';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { soNoWithInternal } from '@/lib/so-number';
@@ -130,7 +131,7 @@ export function OrderSelect({
         disabled={!canClear}
         onClick={clear}
       >
-        ×
+        <Icon name="x" size={12} />
       </button>
     </div>
   );

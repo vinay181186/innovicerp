@@ -1,6 +1,7 @@
 // Saved Report run page — house layout (section header + panels), was a
 // shadcn Card page. Data, routes and export calls are unchanged.
 
+import { Icon } from '@/ui/core';
 import { Link, createRoute } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useState } from 'react';
@@ -83,26 +84,26 @@ function SavedReportRunPage(): React.JSX.Element {
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'flex-start',
-              gap: 12,
-              marginBottom: 12,
+              gap: 'var(--sp-3)',
+              marginBottom: 'var(--sp-3)',
             }}
           >
             <div>
-              <div className="section-hdr" style={{ marginBottom: 2 }}>
+              <div className="section-hdr" style={{ marginBottom: 'var(--sp-0)' }}>
                 {report.name}
               </div>
               {report.description ? (
-                <div className="text2" style={{ fontSize: 12 }}>
+                <div className="text2" style={{ fontSize: 'var(--fs-sm)' }}>
                   {report.description}
                 </div>
               ) : null}
               <div
                 className="text3"
                 style={{
-                  fontSize: 11,
-                  marginTop: 4,
+                  fontSize: 'var(--fs-xs)',
+                  marginTop: 'var(--sp-1)',
                   display: 'flex',
-                  gap: 8,
+                  gap: 'var(--sp-2)',
                   alignItems: 'center',
                 }}
               >
@@ -116,7 +117,7 @@ function SavedReportRunPage(): React.JSX.Element {
             </div>
             {canEditReport(report.ownerId) ? (
               <Link to="/saved-reports/$id/edit" params={{ id }} className="btn btn-ghost btn-sm">
-                ✎ Edit
+                <Icon name="pencil" size={13} /> Edit
               </Link>
             ) : null}
           </div>

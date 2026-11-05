@@ -56,7 +56,7 @@ export function StatStrip({ items }: { items: StatStripItem[] }): React.JSX.Elem
           flex: '1 1 140px',
           minWidth: 120,
           textAlign: 'left',
-          padding: '8px 16px',
+          padding: 'var(--sp-2) var(--sp-4)',
           background: 'transparent',
           border: 'none',
           // The ONLY separator: a hairline between stats, none before the first.
@@ -71,7 +71,7 @@ export function StatStrip({ items }: { items: StatStripItem[] }): React.JSX.Elem
           <>
             <div
               style={{
-                fontSize: 11,
+                fontSize: 'var(--fs-xs)',
                 fontWeight: 700,
                 color: s.active ? (s.color ?? 'var(--cyan)') : 'var(--text3)',
               }}
@@ -80,12 +80,16 @@ export function StatStrip({ items }: { items: StatStripItem[] }): React.JSX.Elem
             </div>
             <div
               className="mono fw-700"
-              style={{ fontSize: 22, lineHeight: 1.15, color: s.color ?? 'var(--text)' }}
+              style={{
+                fontSize: 'var(--fs-lg)',
+                lineHeight: 1.15,
+                color: s.color ?? 'var(--text)',
+              }}
             >
               {s.count}
             </div>
             {s.sub ? (
-              <div className="text3" style={{ fontSize: 11 }}>
+              <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
                 {s.sub}
               </div>
             ) : null}

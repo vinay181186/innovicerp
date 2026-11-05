@@ -5,6 +5,7 @@
 // group's Completed total are whole-day figures from the server. Both prints
 // fetch the WHOLE day (fetchFullDailyReport), never just the page.
 
+import { Icon } from '@/ui/core';
 import type { DailyReportResponse, DailyReportRow, OrderOption } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
@@ -162,7 +163,7 @@ function DailyReportPage(): React.JSX.Element {
           disabled={!data || data.groups.length === 0 || printing}
           title={data && data.groups.length === 0 ? noEntries : 'Print daily production report'}
         >
-          🖨 Print Full Report
+          <Icon name="printer" size={13} /> Print Full Report
         </button>
       }
       filters={
@@ -265,20 +266,20 @@ function DailyReportPage(): React.JSX.Element {
           <div key={g.machineId ?? g.machineCode} className="panel" style={{ marginBottom: 14 }}>
             <div
               style={{
-                padding: '8px 12px',
+                padding: 'var(--sp-2) var(--sp-3)',
                 background: 'var(--bg4)',
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
               }}
             >
-              <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: 'var(--sp-3)', alignItems: 'center' }}>
                 <span className="mono fw-700" style={{ fontSize: 'var(--fs-md)' }}>
                   {g.machineCode}
                 </span>
                 <span className="text2">{g.machineName ?? ''}</span>
               </div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: 'var(--sp-2)', alignItems: 'center' }}>
                 <span
                   style={{
                     fontFamily: 'var(--mono)',
@@ -295,8 +296,9 @@ function DailyReportPage(): React.JSX.Element {
                   onClick={() => void onPrintMachine(g)}
                   disabled={printing}
                   title={`Print report for ${g.machineCode}`}
+                  aria-label={`Print report for ${g.machineCode}`}
                 >
-                  🖨
+                  <Icon name="printer" size={12} />
                 </button>
               </div>
             </div>

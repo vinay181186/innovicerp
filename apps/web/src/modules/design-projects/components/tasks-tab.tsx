@@ -2,8 +2,8 @@
 // it was; the TABLE side now renders on the shared FIT table (DataTable,
 // tableKey designProjectTasks). ADR-199. Split out of detail.tsx.
 
+import { Icon } from '@/ui/core';
 import { DESIGN_TASK_STATUSES, type DesignProjectDetail, type DesignTask } from '@innovic/shared';
-import { Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate, todayIst } from '@/lib/date';
@@ -103,7 +103,7 @@ export function TasksTab({ detail }: { detail: DesignProjectDetail }): React.JSX
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          marginBottom: 12,
+          marginBottom: 'var(--sp-3)',
         }}
       >
         <div className="section-hdr m-0">Task Board</div>
@@ -114,7 +114,7 @@ export function TasksTab({ detail }: { detail: DesignProjectDetail }): React.JSX
               className="btn btn-primary btn-sm"
               onClick={() => setShowAdd(true)}
             >
-              <Plus size={12} /> Add Task
+              <Icon name="plus" size={12} /> Add Task
             </button>
           ) : null}
         </div>
@@ -173,7 +173,7 @@ export function TasksTab({ detail }: { detail: DesignProjectDetail }): React.JSX
                 key={status}
                 style={{
                   background: 'var(--bg3)',
-                  borderRadius: 8,
+                  borderRadius: 'var(--radius2)',
                   border: '1px solid var(--border)',
                   minHeight: 120,
                 }}
@@ -182,7 +182,7 @@ export function TasksTab({ detail }: { detail: DesignProjectDetail }): React.JSX
                   style={{
                     padding: '10px 12px',
                     borderBottom: '1px solid var(--border)',
-                    fontSize: 11,
+                    fontSize: 'var(--fs-xs)',
                     fontWeight: 700,
                     color: colColor,
                     display: 'flex',
@@ -195,7 +195,7 @@ export function TasksTab({ detail }: { detail: DesignProjectDetail }): React.JSX
                       background: 'var(--bg4)',
                       padding: '1px 7px',
                       borderRadius: 10,
-                      fontSize: 11,
+                      fontSize: 'var(--fs-xs)',
                       color: 'var(--text3)',
                     }}
                   >
@@ -211,17 +211,24 @@ export function TasksTab({ detail }: { detail: DesignProjectDetail }): React.JSX
                         style={{
                           background: 'var(--bg2)',
                           border: '1px solid var(--border)',
-                          borderRadius: 6,
+                          borderRadius: 'var(--radius)',
                           padding: 10,
                           marginBottom: 6,
                           cursor: 'pointer',
                         }}
                         onClick={() => setViewTask(t)}
                       >
-                        <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6 }}>
+                        <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, marginBottom: 6 }}>
                           {t.title}
                         </div>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, fontSize: 11 }}>
+                        <div
+                          style={{
+                            display: 'flex',
+                            flexWrap: 'wrap',
+                            gap: 'var(--sp-1)',
+                            fontSize: 'var(--fs-xs)',
+                          }}
+                        >
                           <Badge value={t.priority} />
                           <span className="text3">👤 {t.assigneeText ?? ''}</span>
                           {t.dueDate ? (

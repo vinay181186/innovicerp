@@ -31,7 +31,7 @@ type PickerPos = { left: number; top: number } | { left: number; bottom: number 
 const BOX: React.CSSProperties = { width: '17ch', minWidth: 150 };
 const COL: React.CSSProperties = {
   display: 'grid',
-  gap: 2,
+  gap: 'var(--sp-0)',
   maxHeight: 190,
   overflowY: 'auto',
   border: '1px solid var(--border)',
@@ -102,7 +102,7 @@ const TimePicker = forwardRef<
         right: 'auto',
         width: PICKER_W,
         maxWidth: `calc(100vw - ${2 * EDGE}px)`,
-        padding: 8,
+        padding: 'var(--sp-2)',
         maxHeight: 'none',
       }}
     >
@@ -127,7 +127,7 @@ const TimePicker = forwardRef<
           </div>
         </div>
       </div>
-      <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+      <div style={{ display: 'flex', gap: 6, marginTop: 'var(--sp-2)' }}>
         {nowMin !== null ? (
           <button
             type="button"
@@ -270,7 +270,7 @@ export function TimeField({
           right: 2,
           top: '50%',
           transform: 'translateY(-50%)',
-          padding: '0 4px',
+          padding: '0 var(--sp-1)',
         }}
       >
         🕒

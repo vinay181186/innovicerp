@@ -754,7 +754,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 12,
+            gap: 'var(--sp-3)',
             flexWrap: 'wrap',
             padding: '10px 14px',
             borderBottom: '1px solid var(--border)',
@@ -764,8 +764,8 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
             zIndex: 8,
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span className="fw-700" style={{ fontSize: 13 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)' }}>
+            <span className="fw-700" style={{ fontSize: 'var(--fs-sm)' }}>
               {userName}
             </span>
             <span
@@ -780,7 +780,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: 12,
+              gap: 'var(--sp-3)',
               marginLeft: 'auto',
               flexWrap: 'wrap',
             }}
@@ -794,7 +794,12 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                 value={mainDept}
                 disabled={disabled}
                 onChange={(e) => changeMainDept(e.target.value)}
-                style={{ fontSize: 12, fontWeight: 700, width: 130, padding: '5px 8px' }}
+                style={{
+                  fontSize: 'var(--fs-sm)',
+                  fontWeight: 700,
+                  width: 130,
+                  padding: '5px 8px',
+                }}
               >
                 <option value="">— none —</option>
                 {ACCESS_DEPTS.map((d) => (
@@ -803,7 +808,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                   </option>
                 ))}
               </select>
-              <span className="text3" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
+              <span className="text3" style={{ fontSize: 'var(--fs-xs)', whiteSpace: 'nowrap' }}>
                 (sets L3)
               </span>
             </label>
@@ -829,7 +834,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                     ? 'Super Admin approves any amount.'
                     : 'Blank = use the company limit from System Settings → Approvals.'
                 }
-                style={{ fontSize: 12, width: 110, padding: '5px 8px' }}
+                style={{ fontSize: 'var(--fs-sm)', width: 110, padding: '5px 8px' }}
               />
             </label>
 
@@ -862,7 +867,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                 </span>
               ) : null}
               {copySource.isError && copyFromId ? (
-                <span style={{ fontSize: 11, color: 'var(--red2)' }}>
+                <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--red2)' }}>
                   Could not load that user&apos;s access. Try again.
                 </span>
               ) : null}
@@ -897,13 +902,13 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
               <div
                 style={{
                   marginBottom: 14,
-                  padding: 12,
+                  padding: 'var(--sp-3)',
                   background: 'var(--bg3)',
                   border: '1px solid var(--border)',
-                  borderRadius: 8,
+                  borderRadius: 'var(--radius2)',
                 }}
               >
-                <div className="text3" style={{ fontSize: 11, marginBottom: 6 }}>
+                <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginBottom: 6 }}>
                   Clone permissions from another user — copy there, paste here, then Save.
                 </div>
                 <textarea
@@ -912,14 +917,21 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                   onChange={(e) => setImportText(e.target.value)}
                   placeholder='{"fullAccess":false,"auditor":false,"mainDept":"design","departments":{"design":"L3"},"forms":{...}}'
                   rows={5}
-                  style={{ width: '100%', fontFamily: 'var(--mono)', fontSize: 11 }}
+                  style={{ width: '100%', fontFamily: 'var(--mono)', fontSize: 'var(--fs-xs)' }}
                 />
                 {importError ? (
-                  <div style={{ marginTop: 6, color: 'var(--red2)', fontSize: 11 }}>
+                  <div style={{ marginTop: 6, color: 'var(--red2)', fontSize: 'var(--fs-xs)' }}>
                     {importError}
                   </div>
                 ) : null}
-                <div style={{ marginTop: 8, display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
+                <div
+                  style={{
+                    marginTop: 'var(--sp-2)',
+                    display: 'flex',
+                    justifyContent: 'flex-end',
+                    gap: 6,
+                  }}
+                >
                   <button
                     type="button"
                     className="btn btn-ghost btn-sm"
@@ -948,7 +960,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: 12,
+                gap: 'var(--sp-3)',
                 flexWrap: 'wrap',
                 marginBottom: 14,
               }}
@@ -966,7 +978,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                   { value: 'auditor', label: 'L7 Auditor' },
                 ]}
               />
-              <span className="text3" style={{ fontSize: 11 }}>
+              <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
                 {standard
                   ? 'Set a tier per department below'
                   : fullAccess
@@ -975,7 +987,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
               </span>
               <span
                 className="text3"
-                style={{ fontSize: 11, marginLeft: 'auto', fontFamily: 'var(--mono)' }}
+                style={{ fontSize: 'var(--fs-xs)', marginLeft: 'auto', fontFamily: 'var(--mono)' }}
               >
                 {grantedCount} of {ACCESS_DEPTS.length} departments granted
               </span>
@@ -993,9 +1005,9 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                 alignItems: 'flex-start',
                 gap: 10,
                 marginBottom: 14,
-                padding: '8px 12px',
+                padding: 'var(--sp-2) var(--sp-3)',
                 border: '1px solid var(--border)',
-                borderRadius: 8,
+                borderRadius: 'var(--radius2)',
                 background: 'var(--bg3)',
               }}
             >
@@ -1005,20 +1017,23 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                 checked={fullAccess || drawingDownload}
                 disabled={fullAccess}
                 onChange={(e) => setDrawingDownload(e.target.checked)}
-                style={{ marginTop: 2 }}
+                style={{ marginTop: 'var(--sp-0)' }}
               />
               <div>
                 <label
                   htmlFor="ac-drawing-download"
                   style={{
-                    fontSize: 12,
+                    fontSize: 'var(--fs-sm)',
                     fontWeight: 700,
                     cursor: fullAccess ? 'default' : 'pointer',
                   }}
                 >
                   Can download drawing files
                 </label>
-                <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
+                <div
+                  className="text3"
+                  style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-0)' }}
+                >
                   {fullAccess
                     ? 'Included in L6 Super Admin — everyone at this level can save drawings.'
                     : 'Everyone can view drawings. Only ticked users can save a copy — every view and download is logged.'}
@@ -1030,7 +1045,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
             <div
               style={{
                 border: '1px solid var(--border)',
-                borderRadius: 8,
+                borderRadius: 'var(--radius2)',
                 overflow: 'hidden',
                 opacity: disabled ? 0.55 : 1,
               }}
@@ -1040,7 +1055,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                 style={{
                   display: 'flex',
                   alignItems: 'baseline',
-                  gap: 12,
+                  gap: 'var(--sp-3)',
                   padding: '6px 12px',
                   background: 'var(--bg3)',
                   borderBottom: '1px solid var(--border2)',
@@ -1049,7 +1064,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                 <span
                   className="mono"
                   style={{
-                    fontSize: 11,
+                    fontSize: 'var(--fs-xs)',
                     letterSpacing: '0.08em',
                     color: 'var(--text3)',
                     minWidth: 190,
@@ -1059,13 +1074,22 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                 </span>
                 <span
                   className="mono"
-                  style={{ fontSize: 11, letterSpacing: '0.06em', color: 'var(--text3)', flex: 1 }}
+                  style={{
+                    fontSize: 'var(--fs-xs)',
+                    letterSpacing: '0.06em',
+                    color: 'var(--text3)',
+                    flex: 1,
+                  }}
                 >
                   Tier — {tierLegend}
                 </span>
                 <span
                   className="mono"
-                  style={{ fontSize: 11, letterSpacing: '0.08em', color: 'var(--text3)' }}
+                  style={{
+                    fontSize: 'var(--fs-xs)',
+                    letterSpacing: '0.08em',
+                    color: 'var(--text3)',
+                  }}
                 >
                   Extra
                 </span>
@@ -1084,7 +1108,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                       style={{
                         display: 'flex',
                         alignItems: 'center',
-                        gap: 12,
+                        gap: 'var(--sp-3)',
                         padding: '7px 12px',
                         background: 'var(--bg2)',
                       }}
@@ -1111,7 +1135,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                         ) : (
                           <ChevronRight size={14} color="var(--text3)" />
                         )}
-                        <span style={{ color: d.color, fontWeight: 700, fontSize: 13 }}>
+                        <span style={{ color: d.color, fontWeight: 700, fontSize: 'var(--fs-sm)' }}>
                           {d.label}
                         </span>
                         {isMain ? (
@@ -1151,7 +1175,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                       <span
                         className="mono"
                         style={{
-                          fontSize: 11,
+                          fontSize: 'var(--fs-xs)',
                           fontWeight: 700,
                           minWidth: 26,
                           textAlign: 'right',
@@ -1178,7 +1202,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                         <div
                           style={{
                             padding: '5px 12px 5px 30px',
-                            fontSize: 11,
+                            fontSize: 'var(--fs-xs)',
                             color: 'var(--text3)',
                             borderBottom: '1px solid var(--border)',
                           }}
@@ -1221,7 +1245,11 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                         >
                           <span
                             className="mono"
-                            style={{ fontSize: 11, letterSpacing: '0.08em', color: 'var(--text3)' }}
+                            style={{
+                              fontSize: 'var(--fs-xs)',
+                              letterSpacing: '0.08em',
+                              color: 'var(--text3)',
+                            }}
                           >
                             Form / Feature
                           </span>
@@ -1231,7 +1259,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                               className="mono"
                               title={ACTION_HINT[a]}
                               style={{
-                                fontSize: 11,
+                                fontSize: 'var(--fs-xs)',
                                 letterSpacing: '0.06em',
                                 color: a === 'price' ? 'var(--orange2)' : 'var(--text3)',
                                 textAlign: 'center',
@@ -1243,7 +1271,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                                   See{' '}
                                   <span
                                     style={{
-                                      fontSize: 14,
+                                      fontSize: 'var(--fs-sm)',
                                       fontWeight: 800,
                                       color: 'var(--orange)',
                                       verticalAlign: 'middle',
@@ -1296,7 +1324,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                                 background: i % 2 ? 'var(--bg3)' : 'var(--bg2)',
                               }}
                             >
-                              <span style={{ fontSize: 12 }}>{f.label}</span>
+                              <span style={{ fontSize: 'var(--fs-sm)' }}>{f.label}</span>
                               {ACTIONS.map((action) => {
                                 const isPrice = action === 'price';
                                 // Does the department TIER grant this action?
@@ -1418,16 +1446,16 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
             {adminWarning ? (
               <div
                 style={{
-                  marginTop: 12,
+                  marginTop: 'var(--sp-3)',
                   padding: '10px 12px',
                   background: 'var(--bg3)',
                   border: '1px solid var(--amber)',
-                  borderRadius: 6,
+                  borderRadius: 'var(--radius)',
                   color: 'var(--amber2)',
-                  fontSize: 12,
+                  fontSize: 'var(--fs-sm)',
                 }}
               >
-                <div style={{ marginBottom: 8 }}>⚠ {adminWarning}</div>
+                <div style={{ marginBottom: 'var(--sp-2)' }}>⚠ {adminWarning}</div>
                 <div style={{ display: 'flex', gap: 6 }}>
                   <button
                     type="button"
@@ -1449,7 +1477,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
             ) : null}
 
             {submitError ? (
-              <div style={{ marginTop: 12 }}>
+              <div style={{ marginTop: 'var(--sp-3)' }}>
                 <Banner tone="error" role="alert">
                   {submitError}
                 </Banner>
@@ -1530,8 +1558,8 @@ function Seg({
             title={o.title}
             onClick={() => onChange(o.value)}
             style={{
-              padding: '4px 12px',
-              fontSize: 11,
+              padding: 'var(--sp-1) var(--sp-3)',
+              fontSize: 'var(--fs-xs)',
               fontWeight: 700,
               fontFamily: 'var(--mono)',
               border: 'none',

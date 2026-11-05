@@ -5,6 +5,7 @@
 // `?dispatchId=` (Create Invoice button on the Dispatch Register) preselects the
 // dispatch's SO and prefills the lines from that dispatch.
 
+import { Icon } from '@/ui/core';
 import {
   type InvoiceTaxType,
   type InvoiceableLine,
@@ -12,7 +13,6 @@ import {
   placeOfSupplyLabel,
 } from '@innovic/shared';
 import { createRoute, useNavigate } from '@tanstack/react-router';
-import { Plus, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -284,13 +284,13 @@ function InvoiceNewPage(): React.JSX.Element {
 
       <Panel title="Invoice Details">
         {fromDispatch && fromDispatch.status !== 'cancelled' ? (
-          <div style={{ marginBottom: 12 }}>
+          <div style={{ marginBottom: 'var(--sp-3)' }}>
             <span
               style={{
                 display: 'inline-block',
                 background: 'var(--bg3)',
                 border: '1px solid var(--border)',
-                borderRadius: 6,
+                borderRadius: 'var(--radius)',
                 padding: '4px 10px',
                 fontSize: 'var(--fs-xs)',
               }}
@@ -433,7 +433,7 @@ function InvoiceNewPage(): React.JSX.Element {
           title="Items"
           actions={
             <button type="button" className="btn btn-ghost btn-sm" onClick={addLine}>
-              <Plus size={14} /> Add Line
+              <Icon name="plus" size={14} /> Add Line
             </button>
           }
         >
@@ -442,7 +442,7 @@ function InvoiceNewPage(): React.JSX.Element {
               style={{
                 display: 'grid',
                 gridTemplateColumns: GRID,
-                gap: 8,
+                gap: 'var(--sp-2)',
                 padding: '0 10px 4px',
                 fontSize: 'var(--fs-xs)',
                 fontWeight: 700,
@@ -496,13 +496,13 @@ function InvoiceNewPage(): React.JSX.Element {
                 style={{
                   display: 'grid',
                   gridTemplateColumns: GRID,
-                  gap: 8,
+                  gap: 'var(--sp-2)',
                   alignItems: 'center',
                   background: 'var(--bg)',
                   border: '1px solid var(--border)',
-                  borderRadius: 8,
+                  borderRadius: 'var(--radius2)',
                   padding: 10,
-                  marginBottom: 8,
+                  marginBottom: 'var(--sp-2)',
                 }}
               >
                 <span
@@ -601,7 +601,7 @@ function InvoiceNewPage(): React.JSX.Element {
                   onClick={() => removeLine(card.id)}
                   style={{ color: 'var(--red2)' }}
                 >
-                  <X size={14} />
+                  <Icon name="x" size={14} />
                 </button>
                 {moreOpen ? (
                   <div

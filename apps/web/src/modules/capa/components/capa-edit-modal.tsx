@@ -25,7 +25,14 @@ import { useUpdateCapa } from '../api';
 function Step(props: { n: number; title: string; children: React.ReactNode }): React.JSX.Element {
   return (
     <div style={{ marginBottom: 14 }}>
-      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--purple)', marginBottom: 6 }}>
+      <div
+        style={{
+          fontSize: 'var(--fs-sm)',
+          fontWeight: 700,
+          color: 'var(--purple)',
+          marginBottom: 6,
+        }}
+      >
         Step {props.n}: {props.title}
       </div>
       {props.children}
@@ -128,11 +135,11 @@ export function EditCapaModal({
           background: 'var(--bg3)',
           border: '1px solid var(--border)',
           padding: 10,
-          borderRadius: 8,
+          borderRadius: 'var(--radius2)',
           marginBottom: 14,
-          fontSize: 12,
+          fontSize: 'var(--fs-sm)',
           display: 'flex',
-          gap: 16,
+          gap: 'var(--sp-4)',
           flexWrap: 'wrap',
           alignItems: 'center',
         }}
@@ -314,7 +321,10 @@ export function EditCapaModal({
       </fieldset>
 
       {err ? (
-        <div role="alert" style={{ color: 'var(--red2)', fontSize: 12, marginTop: 8 }}>
+        <div
+          role="alert"
+          style={{ color: 'var(--red2)', fontSize: 'var(--fs-sm)', marginTop: 'var(--sp-2)' }}
+        >
           {err}
         </div>
       ) : null}

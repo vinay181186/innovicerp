@@ -12,7 +12,7 @@
 // Documents are tabs, as on Sales Order detail.
 
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Loader2, Pencil } from 'lucide-react';
+import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { useCanOpen } from '@/components/shared/action-link';
 import { useHistoryTab } from '@/components/shared/document-history';
@@ -29,7 +29,7 @@ import {
   linePendingChange,
 } from '@/modules/document-edits/components/pending-change-chip';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { StatusBadge } from '@/ui/core';
+import { Icon, StatusBadge } from '@/ui/core';
 import { RowMenu } from '@/ui/data';
 import { Banner, ConfirmDialog, Modal } from '@/ui/feedback';
 import { Cluster, ClusterFact, ClusterGrid } from '@/ui/forms';
@@ -128,7 +128,7 @@ function BomMasterDetailPage(): React.JSX.Element {
     return (
       <div className="panel">
         <div className="panel-body">
-          <div style={{ marginBottom: 8 }}>
+          <div style={{ marginBottom: 'var(--sp-2)' }}>
             <Link to="/bom-masters" className="btn btn-ghost btn-sm">
               <ArrowLeft size={14} /> Back
             </Link>
@@ -175,7 +175,10 @@ function BomMasterDetailPage(): React.JSX.Element {
                 see ui/core/StatusBadge.tsx `bom`. */}
             <StatusBadge kind="bom" status={detail.status} />
             {statusPending ? <PendingChangeChip after={statusPending.after} /> : null}
-            <span className="mono" style={{ fontSize: 11, color: 'var(--cyan)', fontWeight: 700 }}>
+            <span
+              className="mono"
+              style={{ fontSize: 'var(--fs-xs)', color: 'var(--cyan)', fontWeight: 700 }}
+            >
               BOM Rev {detail.revision}
             </span>
           </>
@@ -190,7 +193,7 @@ function BomMasterDetailPage(): React.JSX.Element {
                 params={{ id: detail.id }}
                 className="btn btn-primary"
               >
-                <Pencil size={13} /> Edit / Revise
+                <Icon name="pencil" size={13} /> Edit / Revise
               </Link>
             )}
             <ActionMenu
@@ -341,21 +344,23 @@ function BomMasterDetailPage(): React.JSX.Element {
                         />
                       </td>
                       <td>{line.childItemName ?? '—'}</td>
-                      <td className="td-num mono fw-700" style={{ fontSize: 14 }}>
+                      <td className="td-num mono fw-700" style={{ fontSize: 'var(--fs-sm)' }}>
                         {Number(line.qtyPerSet)}
                         {qtyPending ? <PendingChangeChip after={qtyPending.after} /> : null}
                       </td>
                       <td>
-                        <span style={{ color: cfg.color, fontSize: 11, fontWeight: 700 }}>
+                        <span
+                          style={{ color: cfg.color, fontSize: 'var(--fs-xs)', fontWeight: 700 }}
+                        >
                           {cfg.label}
                         </span>
                         {bomTypePending ? <PendingChangeChip after={bomTypePending.after} /> : null}
                       </td>
-                      <td className="mono" style={{ fontSize: 11 }}>
+                      <td className="mono" style={{ fontSize: 'var(--fs-xs)' }}>
                         {line.rawMaterialGradeText ?? <span className="text3">—</span>}
                         {rmGradePending ? <PendingChangeChip after={rmGradePending.after} /> : null}
                       </td>
-                      <td className="mono" style={{ fontSize: 11 }}>
+                      <td className="mono" style={{ fontSize: 'var(--fs-xs)' }}>
                         {line.rawMaterialSizeText ?? <span className="text3">—</span>}
                         {rmSizePending ? <PendingChangeChip after={rmSizePending.after} /> : null}
                       </td>
@@ -391,21 +396,24 @@ function BomMasterDetailPage(): React.JSX.Element {
                     <td className="mono fw-700" style={{ color: 'var(--amber2)' }}>
                       {rev.revision}
                     </td>
-                    <td className="text2" style={{ fontSize: 11 }}>
+                    <td className="text2" style={{ fontSize: 'var(--fs-xs)' }}>
                       {fmtDate(rev.createdAt)}
                     </td>
                     <td>{rev.changedByText}</td>
-                    <td className="text2" style={{ fontSize: 11, whiteSpace: 'pre-wrap' }}>
+                    <td
+                      className="text2"
+                      style={{ fontSize: 'var(--fs-xs)', whiteSpace: 'pre-wrap' }}
+                    >
                       {rev.notes ?? '—'}
                     </td>
                     <td>
                       {rev.itemsSnapshot.length > 0 ? (
-                        <span style={{ fontSize: 11 }}>
+                        <span style={{ fontSize: 'var(--fs-xs)' }}>
                           {rev.itemsSnapshot.length} item
                           {rev.itemsSnapshot.length !== 1 ? 's' : ''}
                         </span>
                       ) : (
-                        <span className="text3" style={{ fontSize: 11 }}>
+                        <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
                           Current
                         </span>
                       )}
@@ -472,7 +480,9 @@ function BomMasterDetailPage(): React.JSX.Element {
                   </td>
                   <td>{lineNameById.get(it.childItemId) ?? '—'}</td>
                   <td className="td-num mono fw-700">{Number(it.qtyPerSet)}</td>
-                  <td style={{ fontSize: 11 }}>{BOM_TYPE_WORD[it.bomType] ?? it.bomType}</td>
+                  <td style={{ fontSize: 'var(--fs-xs)' }}>
+                    {BOM_TYPE_WORD[it.bomType] ?? it.bomType}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -538,15 +548,15 @@ function LinkedSoLinesModal({
       }
     >
       {isLoading ? (
-        <div className="text3" style={{ fontSize: 12 }}>
+        <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
           <Loader2 size={13} className="animate-spin" /> Loading…
         </div>
       ) : isError ? (
-        <div style={{ color: 'var(--red2)', fontSize: 12 }}>
+        <div style={{ color: 'var(--red2)', fontSize: 'var(--fs-sm)' }}>
           Could not load the linked SO lines. Try again.
         </div>
       ) : lines.length === 0 ? (
-        <div className="text3" style={{ fontSize: 12 }}>
+        <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
           No SO line is built from this BOM.
         </div>
       ) : (

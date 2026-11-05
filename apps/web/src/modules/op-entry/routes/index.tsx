@@ -257,11 +257,16 @@ function OpEntryPage() {
         <MachineOpEntryView initialMachineId={search.machineId ?? null} />
       ) : (
         <>
-          <div className="panel" style={{ marginBottom: 16 }}>
+          <div className="panel" style={{ marginBottom: 'var(--sp-4)' }}>
             <div className="panel-body">
               <form
                 onSubmit={handleJcSubmit}
-                style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}
+                style={{
+                  display: 'flex',
+                  gap: 'var(--sp-2)',
+                  alignItems: 'flex-end',
+                  flexWrap: 'wrap',
+                }}
               >
                 <div className="form-grp" style={{ marginBottom: 0, minWidth: 300 }}>
                   <label className="form-label" htmlFor="jc-input">
@@ -297,7 +302,7 @@ function OpEntryPage() {
                 style={{
                   display: 'flex',
                   alignItems: 'baseline',
-                  gap: 12,
+                  gap: 'var(--sp-3)',
                   marginBottom: 10,
                   flexWrap: 'wrap',
                 }}
@@ -315,13 +320,16 @@ function OpEntryPage() {
                     to="/job-cards/$id"
                     params={{ id: jcHead.jobCardId }}
                     className="mono fw-700"
-                    style={{ color: 'var(--cyan)', fontSize: 15 }}
+                    style={{ color: 'var(--cyan)', fontSize: 'var(--fs-sm)' }}
                     title="Open this job card"
                   >
                     {search.jc}
                   </ActionLink>
                 ) : (
-                  <span className="mono fw-700" style={{ color: 'var(--cyan)', fontSize: 15 }}>
+                  <span
+                    className="mono fw-700"
+                    style={{ color: 'var(--cyan)', fontSize: 'var(--fs-sm)' }}
+                  >
                     {search.jc}
                   </span>
                 )}
@@ -335,7 +343,7 @@ function OpEntryPage() {
                 order, ahead of the item code. Dropped entirely when the card
                 has no sales order behind it, like the chips around it. */}
                 {jcHead?.clientPoLineNo ? (
-                  <span style={{ fontSize: 13, fontFamily: 'var(--mono)' }}>
+                  <span style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--mono)' }}>
                     <span className="text3">POL: </span>
                     <span className="fw-700" style={{ color: 'var(--purple)' }}>
                       {jcHead.clientPoLineNo}
@@ -352,7 +360,7 @@ function OpEntryPage() {
                  name beside it was full-strength bold -- so the one value people
                  actually read was the hardest to. The "Item:" label stays quiet
                  and the code itself carries the weight. */
-                  <span style={{ fontSize: 13, fontFamily: 'var(--mono)' }}>
+                  <span style={{ fontSize: 'var(--fs-sm)', fontFamily: 'var(--mono)' }}>
                     <span className="text3">Item: </span>
                     <span className="fw-700" style={{ color: 'var(--text)' }}>
                       {itemCodeWithRev(jcHead.itemCode, jcHead.itemRevision)}
@@ -367,7 +375,7 @@ function OpEntryPage() {
                   <span
                     className="fw-700"
                     style={{
-                      fontSize: 13,
+                      fontSize: 'var(--fs-sm)',
                       maxWidth: 320,
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
@@ -380,12 +388,18 @@ function OpEntryPage() {
                 ) : null}
                 {jcHead?.soCode ? (
                   /* T27: surface the source SO/JW order on Op Entry too. */
-                  <span className="text3" style={{ fontSize: 12, fontFamily: 'var(--mono)' }}>
+                  <span
+                    className="text3"
+                    style={{ fontSize: 'var(--fs-xs)', fontFamily: 'var(--mono)' }}
+                  >
                     SO: {soNoWithInternal(jcHead.soCode, jcHead.soInternalNo)}
                   </span>
                 ) : null}
                 {ops.isFetching && !ops.isLoading ? (
-                  <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
+                  <span
+                    className="text3"
+                    style={{ fontSize: 'var(--fs-xs)', fontFamily: 'var(--mono)' }}
+                  >
                     <Loader2 className="inline h-3 w-3 animate-spin" /> Updating…
                   </span>
                 ) : null}
@@ -398,12 +412,15 @@ function OpEntryPage() {
               screen without the job it belongs to written above it.
               Row 2 = the Machine-wise output / Recent log tabs, unchanged,
               underneath. Applies to production AND QC inspection ops. */}
-              <div className="panel" style={{ marginBottom: 16 }}>
+              <div className="panel" style={{ marginBottom: 'var(--sp-4)' }}>
                 <div className="panel-hdr">
                   <span className="panel-title">Operations</span>
                 </div>
                 {ops.isError ? (
-                  <div className="panel-body" style={{ color: 'var(--red2)', fontSize: 13 }}>
+                  <div
+                    className="panel-body"
+                    style={{ color: 'var(--red2)', fontSize: 'var(--fs-sm)' }}
+                  >
                     {ops.error instanceof Error
                       ? ops.error.message
                       : 'Could not load operations. Try again.'}

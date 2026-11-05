@@ -13,6 +13,7 @@
 // Tool No. / Tool Details are still NOT rendered (2026-10-03; owner kept that
 // on 2026-10-06) — they ride on the draft untouched, see RouteCardFormOpDraft.
 
+import { Icon } from '@/ui/core';
 import type { Machine, Vendor } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
 import { Fragment, useState } from 'react';
@@ -204,14 +205,14 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
         </td>
         <td>
           {op.opType === 'qc' ? (
-            <span className="badge b-green" style={{ fontSize: 11 }}>
+            <span className="badge b-green" style={{ fontSize: 'var(--fs-xs)' }}>
               🔬 QC
             </span>
           ) : op.opType === 'outsource' ? (
             <span
               className="badge"
               style={{
-                fontSize: 11,
+                fontSize: 'var(--fs-xs)',
                 color: 'var(--purple)',
                 background: 'var(--purple3)',
                 border: '1px solid var(--purple)',
@@ -233,13 +234,16 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
             <>
               <RouteCardVendorCell id={`rc-vend-${idx}`} op={op} onChange={onVendorChange} />
               {vendorLabel ? (
-                <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
+                <div
+                  className="text3"
+                  style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-0)' }}
+                >
                   {vendorLabel}
                 </div>
               ) : null}
             </>
           ) : op.opType === 'qc' ? (
-            <span className="badge b-green" style={{ fontSize: 11 }}>
+            <span className="badge b-green" style={{ fontSize: 'var(--fs-xs)' }}>
               QC
             </span>
           ) : (
@@ -266,7 +270,10 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
                 selectedLabel={(o) => (o.code ? codeAndName(o.code, o.name) : o.name)}
               />
               {machineWarning ? (
-                <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
+                <div
+                  className="text3"
+                  style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-0)' }}
+                >
                   {machineWarning}
                 </div>
               ) : null}
@@ -370,7 +377,7 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
             title="Remove operation"
             aria-label={`Remove operation ${opSrNo(idx + 1)}`}
           >
-            ✕
+            <Icon name="x" size={12} />
           </button>
         </td>
       </tr>

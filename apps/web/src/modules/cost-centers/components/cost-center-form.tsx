@@ -224,10 +224,10 @@ export function CostCenterForm(props: CostCenterFormProps): React.JSX.Element {
           style={{
             color: 'var(--red2)',
             background: 'var(--red3)',
-            border: '1px solid #fca5a5',
-            borderRadius: 6,
+            border: '1px solid var(--sig-critical-bd)',
+            borderRadius: 'var(--radius)',
             padding: '6px 10px',
-            fontSize: 12,
+            fontSize: 'var(--fs-sm)',
             marginBottom: 10,
           }}
         >

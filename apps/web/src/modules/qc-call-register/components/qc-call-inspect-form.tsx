@@ -310,7 +310,7 @@ export function QcCallInspectFormView(props: {
       {/* The popup header above already names the JC, op and item. */}
       <div className="form-grid">
         <div className="form-grp">
-          <label className="form-label" style={{ fontSize: 11 }}>
+          <label className="form-label" style={{ fontSize: 'var(--fs-xs)' }}>
             QC Date
           </label>
           <input
@@ -321,7 +321,7 @@ export function QcCallInspectFormView(props: {
           />
         </div>
         <div className="form-grp">
-          <label className="form-label" style={{ fontSize: 11 }}>
+          <label className="form-label" style={{ fontSize: 'var(--fs-xs)' }}>
             Shift
           </label>
           <select
@@ -337,7 +337,7 @@ export function QcCallInspectFormView(props: {
           </select>
         </div>
         <div className="form-grp">
-          <label className="form-label" style={{ fontSize: 11 }}>
+          <label className="form-label" style={{ fontSize: 'var(--fs-xs)' }}>
             👤 Inspected By<span className="req">★</span>
           </label>
           {/* The whole QC list comes back in one small response, so the
@@ -356,7 +356,10 @@ export function QcCallInspectFormView(props: {
           />
         </div>
         <div className="form-grp">
-          <label className="form-label" style={{ fontSize: 11, color: 'var(--green2)' }}>
+          <label
+            className="form-label"
+            style={{ fontSize: 'var(--fs-xs)', color: 'var(--green2)' }}
+          >
             ✅ Accepted (max {o.qcPending})
           </label>
           <input
@@ -377,7 +380,7 @@ export function QcCallInspectFormView(props: {
           />
         </div>
         <div className="form-grp">
-          <label className="form-label" style={{ fontSize: 11, color: 'var(--red2)' }}>
+          <label className="form-label" style={{ fontSize: 'var(--fs-xs)', color: 'var(--red2)' }}>
             ❌ Deviated
           </label>
           <input
@@ -398,7 +401,7 @@ export function QcCallInspectFormView(props: {
           />
         </div>
         <div className="form-grp form-full">
-          <label className="form-label" style={{ fontSize: 11 }}>
+          <label className="form-label" style={{ fontSize: 'var(--fs-xs)' }}>
             Remarks
           </label>
           <input
@@ -419,11 +422,16 @@ export function QcCallInspectFormView(props: {
         </div>
       </div>
       {form.err ? (
-        <div role="alert" style={{ color: 'var(--red2)', fontSize: 12, marginTop: 8 }}>
+        <div
+          role="alert"
+          style={{ color: 'var(--red2)', fontSize: 'var(--fs-sm)', marginTop: 'var(--sp-2)' }}
+        >
           {form.err}
         </div>
       ) : null}
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 10 }}>
+      <div
+        style={{ display: 'flex', gap: 'var(--sp-2)', justifyContent: 'flex-end', marginTop: 10 }}
+      >
         <button type="button" className="btn btn-ghost btn-sm" data-modal-exit onClick={onCancel}>
           Cancel
         </button>

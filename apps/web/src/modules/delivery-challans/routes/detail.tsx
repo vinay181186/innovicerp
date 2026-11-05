@@ -12,9 +12,10 @@
 // totals row to the lines table. Receipts moved to components/dc-receipts-panel
 // to stay under the 400-line rule.
 
+import { Icon } from '@/ui/core';
 import type { DeliveryChallanLine, DeliveryChallanWithLines } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { ArrowLeft, Ban, Inbox, Loader2, Pencil } from 'lucide-react';
+import { ArrowLeft, Ban, Inbox, Loader2 } from 'lucide-react';
 import { Fragment, useMemo, useState } from 'react';
 import { useHistoryTab } from '@/components/shared/document-history';
 import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
@@ -130,7 +131,7 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
     // Same loading / error / empty chain as the SO Master pages — a bare
     // sentence with no panel around it read as a broken page.
     return (
-      <div className="panel empty-state" style={{ padding: 24 }}>
+      <div className="panel empty-state" style={{ padding: 'var(--sp-5)' }}>
         <Loader2 className="mr-2 inline h-4 w-4 animate-spin" />
         Loading DC…
       </div>
@@ -140,7 +141,7 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
     return (
       <div className="panel">
         <div className="panel-body">
-          <div style={{ marginBottom: 8 }}>
+          <div style={{ marginBottom: 'var(--sp-2)' }}>
             <Link to="/delivery-challans" className="btn btn-ghost btn-sm">
               <ArrowLeft size={14} /> Back
             </Link>
@@ -226,7 +227,7 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
             <ActionMenu
               items={[
                 { label: 'Preview', onClick: onPrint },
-                { label: '⬇ Download PDF', onClick: () => void onDownload() },
+                { label: 'Download PDF', icon: 'download', onClick: () => void onDownload() },
               ]}
             />
             {canEdit ? (
@@ -236,7 +237,7 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
                 className="btn btn-ghost btn-sm"
                 title="Edit this DC"
               >
-                <Pencil size={13} /> Edit
+                <Icon name="pencil" size={13} /> Edit
               </Link>
             ) : null}
             {canReceive ? (
@@ -268,7 +269,7 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
           <DocIdent>
             <div
               style={{
-                fontSize: 12,
+                fontSize: 'var(--fs-sm)',
                 color: 'var(--amber2)',
                 fontWeight: 700,
                 display: 'flex',
@@ -317,7 +318,7 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
       {cancelled ? (
         <div className="mb-2">
           <Banner tone="error" accent title="Cancelled — this DC is void">
-            <div className="text3" style={{ fontSize: 11 }}>
+            <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
               Nothing more can be received against it. The reason, who cancelled it and when are in
               History below.
             </div>
@@ -332,7 +333,9 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
           amber. Hidden entirely when nothing is pending. */}
       {pendingChanges.length > 0 ? (
         <Panel title="Changes awaiting approval">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}>
+          <div
+            style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 'var(--fs-sm)' }}
+          >
             {[
               { field: 'dcDate', label: 'DC Date' },
               { field: 'transport', label: 'Transporter' },
@@ -394,7 +397,7 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
       <div className="panel">
         <div className="panel-hdr">
           <div className="panel-title">Lines</div>
-          <span className="text3" style={{ fontSize: 11 }}>
+          <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
             {dc.lines.length} line{dc.lines.length === 1 ? '' : 's'}
           </span>
         </div>
@@ -557,7 +560,7 @@ function HeaderGrid(props: { dc: DeliveryChallanWithLines }): React.JSX.Element 
             label="NC No."
             value={
               // Every NC on this return DC, each a link to its NC.
-              <span style={{ display: 'inline-flex', gap: 4, flexWrap: 'wrap' }}>
+              <span style={{ display: 'inline-flex', gap: 'var(--sp-1)', flexWrap: 'wrap' }}>
                 {dcNcs(dc).map((n) => (
                   <Link
                     key={n.id}

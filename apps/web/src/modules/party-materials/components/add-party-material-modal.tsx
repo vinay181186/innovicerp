@@ -114,7 +114,7 @@ export function AddPartyMaterialModal({ onClose }: { onClose: () => void }): Rea
         />
       }
     >
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-3)' }}>
         {/* Code — assigned by the server on save. */}
         <Field label="Code">
           <input

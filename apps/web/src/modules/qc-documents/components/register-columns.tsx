@@ -47,7 +47,9 @@ export function buildRegisterColumns(firstRowNo: number): DataTableColumn<QcDocu
       header: 'Document Type',
       nowrap: true,
       className: 'fw-700',
-      render: (d) => <span style={{ color: 'var(--purple)', fontSize: 12 }}>{d.docType}</span>,
+      render: (d) => (
+        <span style={{ color: 'var(--purple)', fontSize: 'var(--fs-sm)' }}>{d.docType}</span>
+      ),
     },
     {
       id: 'file_name',
@@ -64,7 +66,7 @@ export function buildRegisterColumns(firstRowNo: number): DataTableColumn<QcDocu
       header: 'JC No.',
       nowrap: true,
       render: (d) => (
-        <span className="mono" style={{ fontSize: 11, color: 'var(--cyan)' }}>
+        <span className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--cyan)' }}>
           {d.jcCodeText ?? '—'}
         </span>
       ),

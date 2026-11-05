@@ -166,7 +166,7 @@ export function JcOpsTable({ ops, selectedOpId, onSelect, onOpenEntry }: Props):
                       <span
                         style={{
                           color: 'var(--amber2)',
-                          fontSize: 11,
+                          fontSize: 'var(--fs-xs)',
                           fontWeight: 700,
                           marginLeft: 3,
                         }}
@@ -183,14 +183,14 @@ export function JcOpsTable({ ops, selectedOpId, onSelect, onOpenEntry }: Props):
                       op carries no machine and an outsource op names its vendor
                       route as the plan, so those keep the plain label with a
                       dash for the actual. */}
-                  <td className="mono text3" style={{ fontSize: 11 }}>
+                  <td className="mono text3" style={{ fontSize: 'var(--fs-xs)' }}>
                     {op.opType === 'qc' || op.opType === 'outsource' ? (
                       machineLabel
                     ) : (
                       <PlannedMachineCell planned={machineLabel} />
                     )}
                   </td>
-                  <td className="mono text3" style={{ fontSize: 11 }}>
+                  <td className="mono text3" style={{ fontSize: 'var(--fs-xs)' }}>
                     {op.opType === 'qc' || op.opType === 'outsource' ? (
                       '—'
                     ) : (
@@ -201,7 +201,7 @@ export function JcOpsTable({ ops, selectedOpId, onSelect, onOpenEntry }: Props):
                       />
                     )}
                   </td>
-                  <td className="text3" style={{ fontSize: 11 }}>
+                  <td className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
                     {OP_TYPE_LABEL[op.opType] ?? op.opType}
                   </td>
                   {/* Completed count. A QC / qc_required step records its
@@ -220,7 +220,7 @@ export function JcOpsTable({ ops, selectedOpId, onSelect, onOpenEntry }: Props):
                           <span
                             style={{
                               color: 'var(--red2)',
-                              fontSize: 11,
+                              fontSize: 'var(--fs-xs)',
                               fontWeight: 700,
                               marginLeft: 3,
                             }}
@@ -240,7 +240,7 @@ export function JcOpsTable({ ops, selectedOpId, onSelect, onOpenEntry }: Props):
                         Job Queue show. On a qc-bearing op the workable qty is
                         qcPending (what the Inspect button uses); since 0196 a
                         QC op's `available` equals it. */}
-                    <span className="mono fw-700 amber" style={{ fontSize: 15 }}>
+                    <span className="mono fw-700 amber" style={{ fontSize: 'var(--fs-sm)' }}>
                       {op.opType === 'qc' || op.qcRequired ? op.qcPending : op.available}
                     </span>
                   </td>

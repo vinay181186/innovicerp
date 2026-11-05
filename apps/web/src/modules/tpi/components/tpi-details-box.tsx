@@ -57,18 +57,25 @@ export function TpiDetailsBox(props: {
     <div
       style={{
         border: '1px solid var(--purple)',
-        borderRadius: 8,
-        padding: 12,
-        marginBottom: 12,
-        background: 'rgba(139,92,246,0.04)',
+        borderRadius: 'var(--radius2)',
+        padding: 'var(--sp-3)',
+        marginBottom: 'var(--sp-3)',
+        background: 'var(--purple3)',
       }}
     >
-      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--purple)', marginBottom: 8 }}>
+      <div
+        style={{
+          fontSize: 'var(--fs-xs)',
+          fontWeight: 700,
+          color: 'var(--purple)',
+          marginBottom: 'var(--sp-2)',
+        }}
+      >
         🔍 TPI Details
       </div>
       <div className="form-grid" style={{ gap: 10 }}>
         <div className="form-grp">
-          <label className="form-label" style={{ fontSize: 11 }}>
+          <label className="form-label" style={{ fontSize: 'var(--fs-xs)' }}>
             Inspector Name<span className="req">★</span>
           </label>
           {/* What gets SAVED is unchanged: still the inspector's name as
@@ -95,7 +102,7 @@ export function TpiDetailsBox(props: {
           />
         </div>
         <div className="form-grp">
-          <label className="form-label" style={{ fontSize: 11 }}>
+          <label className="form-label" style={{ fontSize: 'var(--fs-xs)' }}>
             Organisation<span className="req">★</span>
           </label>
           <input
@@ -106,7 +113,7 @@ export function TpiDetailsBox(props: {
           />
         </div>
         <div className="form-grp">
-          <label className="form-label" style={{ fontSize: 11 }}>
+          <label className="form-label" style={{ fontSize: 'var(--fs-xs)' }}>
             TPI Certificate No.
           </label>
           <input
@@ -118,7 +125,7 @@ export function TpiDetailsBox(props: {
           />
         </div>
         <div className="form-grp">
-          <label className="form-label" style={{ fontSize: 11 }}>
+          <label className="form-label" style={{ fontSize: 'var(--fs-xs)' }}>
             Remarks
           </label>
           <input

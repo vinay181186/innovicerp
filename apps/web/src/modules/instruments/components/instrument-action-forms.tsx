@@ -149,9 +149,9 @@ export function InstrumentActionForm({ ins, mode, onBack, onDone }: Props): Reac
             : 'Edit';
 
   return (
-    <div className="panel" style={{ marginTop: 12 }}>
+    <div className="panel" style={{ marginTop: 'var(--sp-3)' }}>
       <div className="panel-body">
-        <div className="fw-700" style={{ fontSize: 12, marginBottom: 8 }}>
+        <div className="fw-700" style={{ fontSize: 'var(--fs-sm)', marginBottom: 'var(--sp-2)' }}>
           {title}
         </div>
         <div className="form-grid">
@@ -230,7 +230,7 @@ export function InstrumentActionForm({ ins, mode, onBack, onDone }: Props): Reac
                   />
                 </Field>
               ) : null}
-              <div className="form-grp form-full text3" style={{ fontSize: 11 }}>
+              <div className="form-grp form-full text3" style={{ fontSize: 'var(--fs-xs)' }}>
                 {result === 'pass'
                   ? 'Calibration Due blank = Calibrated On + Calibration Interval (days).'
                   : 'Fail keeps it blocked from issue until a Pass or Scrap.'}
@@ -259,7 +259,7 @@ export function InstrumentActionForm({ ins, mode, onBack, onDone }: Props): Reac
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
               />
-              <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
+              <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-1)' }}>
                 This does not {mode === 'missing' ? 'mark it Lost' : 'scrap it'} yet: it goes for
                 approval to the Store In-charge (not the person who recorded it). Until then it
                 shows Write-off pending and cannot be issued or sent for calibration. On approval it
@@ -317,11 +317,16 @@ export function InstrumentActionForm({ ins, mode, onBack, onDone }: Props): Reac
           ) : null}
         </div>
         {err ? (
-          <div role="alert" style={{ color: 'var(--red2)', fontSize: 12, marginTop: 8 }}>
+          <div
+            role="alert"
+            style={{ color: 'var(--red2)', fontSize: 'var(--fs-sm)', marginTop: 'var(--sp-2)' }}
+          >
             {err}
           </div>
         ) : null}
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 10 }}>
+        <div
+          style={{ display: 'flex', gap: 'var(--sp-2)', justifyContent: 'flex-end', marginTop: 10 }}
+        >
           <button type="button" className="btn btn-ghost" onClick={onBack}>
             Back
           </button>

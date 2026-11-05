@@ -50,8 +50,8 @@ const BAR_PALETTE: Record<
   at_risk: { bg: 'var(--sig-critical-bg)', border: 'var(--sig-critical)', fg: 'var(--red2)' },
   // Running = green everywhere (R5 PR-N8). Solid fill so it still reads apart
   // from the pale-green "On schedule" bars.
-  running: { bg: 'var(--sig-ok)', border: 'var(--green2)', fg: '#fff' },
-  done: { bg: 'var(--sig-neutral)', border: 'var(--sig-neutral)', fg: '#fff' },
+  running: { bg: 'var(--sig-ok)', border: 'var(--green2)', fg: 'var(--bg2)' },
+  done: { bg: 'var(--sig-neutral)', border: 'var(--sig-neutral)', fg: 'var(--bg2)' },
 };
 
 // ISSUE-065: today's date in IST (not UTC, which reads as yesterday between
@@ -224,7 +224,7 @@ function ProductionSchedulePage(): React.JSX.Element {
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
               aria-label="Window start date"
-              style={{ fontSize: 11, padding: '4px 8px' }}
+              style={{ fontSize: 'var(--fs-xs)', padding: 'var(--sp-1) var(--sp-2)' }}
             />
             <button type="button" className="btn btn-ghost btn-sm" onClick={() => navDate(1)}>
               ▶
@@ -259,11 +259,11 @@ function ProductionSchedulePage(): React.JSX.Element {
           display: 'flex',
           gap: 14,
           marginBottom: 10,
-          fontSize: 11,
+          fontSize: 'var(--fs-xs)',
           flexWrap: 'wrap',
           padding: '6px 10px',
           background: 'var(--bg3)',
-          borderRadius: 6,
+          borderRadius: 'var(--radius)',
         }}
       >
         <LegendDot kind="ok" label="On schedule" count={countOf(stats.onSchedule)} />
@@ -297,7 +297,7 @@ function ProductionSchedulePage(): React.JSX.Element {
               style={{
                 borderCollapse: 'collapse',
                 width: '100%',
-                fontSize: 11,
+                fontSize: 'var(--fs-xs)',
                 minWidth: 220 + 30 * COL_WIDTH,
               }}
             >
@@ -311,7 +311,7 @@ function ProductionSchedulePage(): React.JSX.Element {
                       background: 'var(--bg2)',
                       border: '1px solid var(--border)',
                       padding: '6px 8px',
-                      fontSize: 11,
+                      fontSize: 'var(--fs-xs)',
                       fontWeight: 700,
                       textAlign: 'left',
                       width: 200,
@@ -336,8 +336,8 @@ function ProductionSchedulePage(): React.JSX.Element {
                         key={d.iso}
                         style={{
                           border: '1px solid var(--border)',
-                          padding: '4px 2px',
-                          fontSize: 11,
+                          padding: 'var(--sp-1) var(--sp-0)',
+                          fontSize: 'var(--fs-xs)',
                           fontWeight: 600,
                           background: bg,
                           color: col,
@@ -346,7 +346,7 @@ function ProductionSchedulePage(): React.JSX.Element {
                         }}
                       >
                         <div>{d.day}</div>
-                        <div style={{ fontSize: 11, fontWeight: 700 }}>{d.dom}</div>
+                        <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 700 }}>{d.dom}</div>
                       </th>
                     );
                   })}
@@ -363,7 +363,7 @@ function ProductionSchedulePage(): React.JSX.Element {
                         background: 'var(--bg)',
                         border: '1px solid var(--border)',
                         padding: '6px 8px',
-                        fontSize: 11,
+                        fontSize: 'var(--fs-xs)',
                         fontWeight: 700,
                       }}
                     >
@@ -371,7 +371,13 @@ function ProductionSchedulePage(): React.JSX.Element {
                         {m.machineName ? `${m.machineCode} — ${m.machineName}` : m.machineCode}
                       </div>
                       {m.machineType ? (
-                        <div style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 400 }}>
+                        <div
+                          style={{
+                            fontSize: 'var(--fs-xs)',
+                            color: 'var(--text3)',
+                            fontWeight: 400,
+                          }}
+                        >
                           {m.machineType}
                         </div>
                       ) : null}
@@ -390,7 +396,7 @@ function ProductionSchedulePage(): React.JSX.Element {
                           onDrop={(e) => canWrite && onDrop(e, m.machineId, d.iso)}
                           style={{
                             border: '1px solid var(--border)',
-                            padding: 2,
+                            padding: 'var(--sp-0)',
                             height: ROW_HEIGHT,
                             verticalAlign: 'top',
                             background: bg,
@@ -469,12 +475,12 @@ function Bar({
         height: ROW_HEIGHT - 6,
         background: c.bg,
         border: `1.5px solid ${c.border}`,
-        borderRadius: 4,
+        borderRadius: 'var(--radius-sm)',
         padding: '3px 6px',
         cursor: canWrite ? 'grab' : 'pointer',
         overflow: 'hidden',
         color: c.fg,
-        fontSize: 11,
+        fontSize: 'var(--fs-xs)',
         lineHeight: 1.2,
         zIndex: 2 + colIdx,
       }}
@@ -482,7 +488,7 @@ function Bar({
       <div
         style={{
           fontWeight: 700,
-          fontSize: 11,
+          fontSize: 'var(--fs-xs)',
           whiteSpace: 'nowrap',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
@@ -492,7 +498,7 @@ function Bar({
       </div>
       <div
         style={{
-          fontSize: 11,
+          fontSize: 'var(--fs-xs)',
           whiteSpace: 'nowrap',
           overflow: 'hidden',
           textOverflow: 'ellipsis',

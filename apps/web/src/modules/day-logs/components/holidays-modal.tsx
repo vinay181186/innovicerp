@@ -143,7 +143,10 @@ export function HolidaysModal({ onClose }: { onClose: () => void }): React.JSX.E
         </button>
       </div>
       {err ? (
-        <p role="alert" style={{ color: 'var(--red2)', margin: '8px 0 0', fontSize: 13 }}>
+        <p
+          role="alert"
+          style={{ color: 'var(--red2)', margin: 'var(--sp-2) 0 0', fontSize: 'var(--fs-sm)' }}
+        >
           {err}
         </p>
       ) : null}

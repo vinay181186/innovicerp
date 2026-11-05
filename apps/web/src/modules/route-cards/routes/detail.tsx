@@ -10,10 +10,11 @@
 //               page's own TabStrip.
 // Data, permissions, print and delete are unchanged.
 
+import { Icon } from '@/ui/core';
 import type { RouteCardDetail } from '@innovic/shared';
 import { itemRevLabel } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Loader2, Pencil } from 'lucide-react';
+import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -109,7 +110,7 @@ function RouteCardDetailPage(): React.JSX.Element {
     return (
       <div className="panel">
         <div className="panel-body">
-          <div style={{ marginBottom: 8 }}>
+          <div style={{ marginBottom: 'var(--sp-2)' }}>
             <Link to="/route-cards" className="btn btn-ghost btn-sm">
               <ArrowLeft size={14} /> Back
             </Link>
@@ -152,7 +153,7 @@ function RouteCardDetailPage(): React.JSX.Element {
               label="⋯"
               items={[
                 { label: 'Preview', onClick: onPrint },
-                { label: '⬇ Download PDF', onClick: onDownload },
+                { label: 'Download PDF', icon: 'download', onClick: onDownload },
                 {
                   label: 'Delete',
                   danger: true,
@@ -173,7 +174,7 @@ function RouteCardDetailPage(): React.JSX.Element {
                 params={{ id: detail.id }}
                 className="btn btn-primary"
               >
-                <Pencil size={13} /> Edit / Revise
+                <Icon name="pencil" size={13} /> Edit / Revise
               </Link>
             )}
           </>
@@ -226,7 +227,11 @@ function RouteCardDetailPage(): React.JSX.Element {
                   {detail.ops.length > 0 ? (
                     <span
                       className="mono text3"
-                      style={{ fontSize: 'var(--fs-xs)', fontWeight: 400, marginLeft: 8 }}
+                      style={{
+                        fontSize: 'var(--fs-xs)',
+                        fontWeight: 400,
+                        marginLeft: 'var(--sp-2)',
+                      }}
                     >
                       {inHouse} in-house · {osp} OSP · {qc} QC
                     </span>
@@ -291,13 +296,13 @@ function RouteCardDetailPage(): React.JSX.Element {
         {notice ? (
           <div
             style={{
-              marginTop: 8,
+              marginTop: 'var(--sp-2)',
               color: 'var(--red2)',
               background: 'var(--red3)',
               border: '1px solid var(--red2)',
-              borderRadius: 6,
+              borderRadius: 'var(--radius)',
               padding: '6px 10px',
-              fontSize: 12,
+              fontSize: 'var(--fs-sm)',
             }}
           >
             {notice}
@@ -339,7 +344,7 @@ function RouteCardDetailPage(): React.JSX.Element {
               rows={2}
               value={deleteReason}
               onChange={(e) => setDeleteReason(e.target.value)}
-              style={{ display: 'block', width: '100%', marginTop: 8 }}
+              style={{ display: 'block', width: '100%', marginTop: 'var(--sp-2)' }}
             />
           </>
         }

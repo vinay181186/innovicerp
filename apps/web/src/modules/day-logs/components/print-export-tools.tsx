@@ -2,6 +2,7 @@
 // The caller hands over the table model (lib/export.ts) and a print function,
 // so both buttons show exactly what is on screen.
 
+import { Icon } from '@/ui/core';
 import { useState } from 'react';
 import { useMyCompany } from '@/modules/settings/api';
 import type { Company } from '@innovic/shared';
@@ -35,7 +36,7 @@ export function PrintExportTools({
           setErr(onPrint(company) ? null : 'The print window was blocked. Allow pop-ups.');
         }}
       >
-        🖨 Print
+        <Icon name="printer" size={13} /> Print
       </button>
       <ActionMenu
         label="Export"

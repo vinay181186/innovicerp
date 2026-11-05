@@ -14,12 +14,19 @@ export function ItemRevLink({
   label: string;
   className?: string;
 }): React.JSX.Element {
-  if (!itemRevisionId) return <span className={className}>{label}</span>;
+  // The item code is dark on every screen (owner 2026-11-04).
+  if (!itemRevisionId)
+    return (
+      <span className={className} style={{ color: 'var(--text)' }}>
+        {label}
+      </span>
+    );
   return (
     <Link
       to="/drawings/$itemRevisionId"
       params={{ itemRevisionId }}
       className={className}
+      style={{ color: 'var(--text)' }}
       title={`Open the drawing of ${label}`}
       // A row click must not also fire.
       onClick={(e) => e.stopPropagation()}

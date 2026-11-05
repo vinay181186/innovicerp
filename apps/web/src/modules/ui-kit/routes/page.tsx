@@ -1194,7 +1194,6 @@ function demoRowMenu(row: DemoRow): RowMenuItem[] {
 function DataSection() {
   const [sort, setSort] = useState<SortState>({ sortBy: 'doc', sortDir: 'asc' });
   const [activeStat, setActiveStat] = useState('open');
-  const [openImage, setOpenImage] = useState(false);
 
   const columns = useMemo<DataTableColumn<DemoRow>[]>(
     () => [
@@ -1372,23 +1371,13 @@ function DataSection() {
             <ItemBadge code="IN-IT-0102" showName={false} />
             <ItemBadge code="IN-IT-0102" name="End Cover" showImage={false} />
             <ItemBadge code={null} name="Off-master line" />
-            <ItemBadge
-              code="IN-IT-0103"
-              name="Bearing Sleeve"
-              onClick={() => undefined}
-              onOpenImage={() => setOpenImage(true)}
-            />
+            <ItemBadge code="IN-IT-0103" name="Bearing Sleeve" onClick={() => undefined} />
             <ItemBadge code="IN-IT-0103" name="Bearing Sleeve" size="card">
               <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>
                 Job Card IN-JC-00819 · JWSO IN-JW-0021
               </span>
             </ItemBadge>
           </Row>
-          {openImage ? (
-            <Banner tone="info" onDismiss={() => setOpenImage(false)}>
-              The picture click fired — a real screen opens the file preview here.
-            </Banner>
-          ) : null}
         </State>
         <State label="ItemThumbnailHeader + ItemThumbnailCell — the picture gets its own column">
           <table className="innovic-table">

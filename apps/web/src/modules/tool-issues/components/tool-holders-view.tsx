@@ -63,7 +63,7 @@ export function ToolHoldersView({ onOpen }: { onOpen: (id: string) => void }): R
               {r.itemCode}
             </span>
             {r.itemName ? (
-              <div className="text3" style={{ fontSize: 11 }}>
+              <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
                 {r.itemName}
               </div>
             ) : null}

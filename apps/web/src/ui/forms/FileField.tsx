@@ -30,6 +30,7 @@
 // takes its thumbnail through the `preview` slot precisely so the items module
 // can inject <ItemImageBox> without ui/ having to know about it.
 
+import { Icon } from '../core/Icon';
 import { useId, useRef } from 'react';
 import { FormField, type FormFieldSize } from './FormField';
 import { Input } from './Input';
@@ -147,7 +148,7 @@ export function FileField({
             style={{ fontSize: 'var(--fs-xs)' }}
             onClick={onRemove}
           >
-            × Remove
+            <Icon name="x" size={13} /> Remove
           </button>
         ) : null}
         {error ? (

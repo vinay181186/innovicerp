@@ -19,9 +19,9 @@ import { useToast } from '@/ui/feedback';
 
 const tileStyle: React.CSSProperties = {
   textAlign: 'center',
-  padding: '8px 16px',
+  padding: 'var(--sp-2) var(--sp-4)',
   background: 'var(--bg)',
-  borderRadius: 6,
+  borderRadius: 'var(--radius)',
   border: '1px solid var(--border)',
 };
 
@@ -99,52 +99,52 @@ export function RaisePrModal({ so, line, onClose, onRaised }: Props): JSX.Elemen
       <div
         style={{
           background: 'var(--bg3)',
-          padding: 12,
-          borderRadius: 8,
+          padding: 'var(--sp-3)',
+          borderRadius: 'var(--radius2)',
           border: '1px solid var(--border)',
           marginBottom: 14,
         }}
       >
-        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 'var(--sp-4)', flexWrap: 'wrap' }}>
           <div>
-            <span style={{ fontSize: 11, color: 'var(--text3)' }}>SO</span>
+            <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>SO</span>
             <br />
             <b className="mono">
               {soNoWithInternal(so.soCode, so.soInternalNo)} Ln {line.lineNo}
             </b>
           </div>
           <div>
-            <span style={{ fontSize: 11, color: 'var(--text3)' }}>ITEM</span>
+            <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>ITEM</span>
             <br />
             {/* Item code is the main thing: strong mono, darkest text. */}
             <b className="mono" style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}>
               {itemCodeWithRev(line.itemCode, docDrawingRev(line))}
             </b>
             {line.itemName ? (
-              <span className="text2" style={{ fontSize: 12, marginLeft: 6 }}>
+              <span className="text2" style={{ fontSize: 'var(--fs-sm)', marginLeft: 6 }}>
                 {line.itemName}
               </span>
             ) : null}
-            <span className="badge b-amber" style={{ marginLeft: 8 }}>
+            <span className="badge b-amber" style={{ marginLeft: 'var(--sp-2)' }}>
               Buy
             </span>
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 12, marginTop: 10, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 'var(--sp-3)', marginTop: 10, flexWrap: 'wrap' }}>
           <div style={tileStyle}>
-            <div style={{ fontSize: 11, color: 'var(--text3)' }}>Order Qty</div>
+            <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>Order Qty</div>
             <div className="mono fw-700" style={{ fontSize: 20 }}>
               {line.orderQty}
             </div>
           </div>
           <div style={tileStyle}>
-            <div style={{ fontSize: 11, color: 'var(--text3)' }}>Already Raised</div>
+            <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>Already Raised</div>
             <div className="mono fw-700" style={{ fontSize: 20, color: 'var(--purple)' }}>
               {line.prQty}
             </div>
           </div>
           <div style={{ ...tileStyle, border: '1px solid var(--green)' }}>
-            <div style={{ fontSize: 11, color: 'var(--text3)' }}>Pending</div>
+            <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>Pending</div>
             <div className="mono fw-700" style={{ fontSize: 20, color: 'var(--green2)' }}>
               {remaining}
             </div>
@@ -152,12 +152,12 @@ export function RaisePrModal({ so, line, onClose, onRaised }: Props): JSX.Elemen
         </div>
       </div>
 
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--sp-3)' }}>
         <div className="form-grp" style={{ flex: '0 1 180px', minWidth: 0 }}>
           <label
             className="form-label"
             htmlFor="raise-pr-qty"
-            style={{ color: 'var(--purple)', fontWeight: 700, fontSize: 14 }}
+            style={{ color: 'var(--purple)', fontWeight: 700, fontSize: 'var(--fs-sm)' }}
           >
             PR Qty<span className="req">★</span>
           </label>
@@ -169,7 +169,7 @@ export function RaisePrModal({ so, line, onClose, onRaised }: Props): JSX.Elemen
             value={qty}
             onChange={(e) => setQty(Number(e.target.value))}
             style={{
-              fontSize: 22,
+              fontSize: 'var(--fs-lg)',
               fontWeight: 800,
               textAlign: 'center',
               border: '2px solid var(--purple)',
@@ -178,7 +178,9 @@ export function RaisePrModal({ so, line, onClose, onRaised }: Props): JSX.Elemen
               width: '100%',
             }}
           />
-          <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>
+          <div
+            style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)', marginTop: 'var(--sp-1)' }}
+          >
             Max: {remaining} pcs
           </div>
         </div>
@@ -214,12 +216,12 @@ export function RaisePrModal({ so, line, onClose, onRaised }: Props): JSX.Elemen
         <div
           className="empty-state"
           style={{
-            marginTop: 12,
-            padding: 8,
-            borderRadius: 4,
+            marginTop: 'var(--sp-3)',
+            padding: 'var(--sp-2)',
+            borderRadius: 'var(--radius-sm)',
             background: 'var(--red3)',
             color: 'var(--red2)',
-            fontSize: 12,
+            fontSize: 'var(--fs-sm)',
           }}
         >
           {err}

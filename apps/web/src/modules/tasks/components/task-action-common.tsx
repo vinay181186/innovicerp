@@ -7,14 +7,14 @@ export function TaskHead({ task }: { task: TaskRow }): React.JSX.Element {
   return (
     <div
       style={{
-        marginBottom: 12,
+        marginBottom: 'var(--sp-3)',
         padding: '8px 10px',
         background: 'var(--bg3)',
         border: '1px solid var(--border)',
         borderRadius: 'var(--radius)',
       }}
     >
-      <span className="mono fw-700" style={{ color: 'var(--blue)', marginRight: 8 }}>
+      <span className="mono fw-700" style={{ color: 'var(--blue)', marginRight: 'var(--sp-2)' }}>
         {task.code}
       </span>
       <b>{task.title}</b>

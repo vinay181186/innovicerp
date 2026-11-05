@@ -94,7 +94,7 @@ function NcRegisterEditPage(): React.JSX.Element {
     return (
       <div className="panel">
         <div className="panel-body">
-          <div style={{ marginBottom: 8 }}>
+          <div style={{ marginBottom: 'var(--sp-2)' }}>
             <Link to="/nc-register/$id" params={{ id }} className="btn btn-ghost btn-sm">
               <ArrowLeft size={14} /> Back to NC
             </Link>
@@ -110,7 +110,7 @@ function NcRegisterEditPage(): React.JSX.Element {
     return (
       <div className="panel">
         <div className="panel-body">
-          <div style={{ marginBottom: 8 }}>
+          <div style={{ marginBottom: 'var(--sp-2)' }}>
             <Link to="/nc-register" className="btn btn-ghost btn-sm">
               <ArrowLeft size={14} /> Back
             </Link>
@@ -138,7 +138,7 @@ function NcRegisterEditPage(): React.JSX.Element {
           <div className="panel-hdr">
             <div>
               <div className="panel-title">Cannot edit a {NC_STATUS_LABELS[detail.status]} NC</div>
-              <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
+              <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-0)' }}>
                 Only NC Raised NCs can be edited.
               </div>
             </div>

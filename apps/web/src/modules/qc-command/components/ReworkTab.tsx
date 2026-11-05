@@ -71,7 +71,7 @@ function reworkColumns(firstRowNo: number): DataTableColumn<QcReworkRow>[] {
       render: (g) => (
         <span
           style={{
-            fontSize: 12,
+            fontSize: 'var(--fs-sm)',
             fontWeight: 700,
             padding: '2px 10px',
             borderRadius: 10,
@@ -145,7 +145,7 @@ export function ReworkTab({
         <div
           style={{
             padding: '10px 14px',
-            fontSize: 12,
+            fontSize: 'var(--fs-sm)',
             fontWeight: 700,
             borderBottom: '1px solid var(--border)',
             color: 'var(--text2)',

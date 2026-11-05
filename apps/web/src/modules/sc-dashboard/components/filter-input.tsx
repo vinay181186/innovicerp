@@ -18,8 +18,15 @@ export function FilterInput({
   width: number;
 }): React.JSX.Element {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-      <label style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 600, whiteSpace: 'nowrap' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-1)' }}>
+      <label
+        style={{
+          fontSize: 'var(--fs-xs)',
+          color: 'var(--text3)',
+          fontWeight: 600,
+          whiteSpace: 'nowrap',
+        }}
+      >
         {label}:
       </label>
       <datalist id={listId}>
@@ -33,7 +40,7 @@ export function FilterInput({
         value={value}
         placeholder="🔍 All"
         onChange={(e) => onChange(e.target.value)}
-        style={{ fontSize: 12, padding: '4px 8px', width }}
+        style={{ fontSize: 'var(--fs-sm)', padding: 'var(--sp-1) var(--sp-2)', width }}
       />
     </div>
   );

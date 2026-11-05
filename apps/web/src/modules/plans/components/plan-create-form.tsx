@@ -186,7 +186,7 @@ export function PlanCreateForm({
     };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)' }}>
       <PageHeader title="New Plan" icon="📅" backLabel="Back to Plans" onBack={onCancel}>
         {shownError ? (
           <Banner tone="error" role="alert" flush>
@@ -241,8 +241,8 @@ export function PlanCreateForm({
                 flexWrap: 'wrap',
                 background: 'var(--bg3)',
                 border: '1px solid var(--border)',
-                borderRadius: 8,
-                padding: 12,
+                borderRadius: 'var(--radius2)',
+                padding: 'var(--sp-3)',
               }}
             >
               <Fact label={so.source === 'jw' ? 'JWSO' : 'SO'}>
@@ -261,7 +261,7 @@ export function PlanCreateForm({
                   {itemCodeWithRev(line.itemCode, docDrawingRev(line))}
                 </b>
                 {line.itemName ? (
-                  <span className="text2" style={{ fontSize: 12, marginLeft: 6 }}>
+                  <span className="text2" style={{ fontSize: 'var(--fs-sm)', marginLeft: 6 }}>
                     {line.itemName}
                   </span>
                 ) : null}
@@ -324,7 +324,10 @@ export function PlanCreateForm({
                   value={planQty}
                   onChange={(e) => edit(setPlanQty)(Number(e.target.value))}
                 />
-                <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
+                <div
+                  className="text3"
+                  style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-0)' }}
+                >
                   Max {line.remaining}
                 </div>
               </Field>
@@ -363,7 +366,10 @@ export function PlanCreateForm({
                     <MaterialValueDisplay value={defaultOps?.rawMaterialSizeText} />
                   </Field>
                 </RawMaterialGroup>
-                <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
+                <div
+                  className="text3"
+                  style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-1)' }}
+                >
                   {RM_SOURCE_HELP}
                 </div>
               </div>
@@ -380,7 +386,7 @@ export function PlanCreateForm({
           </div>
           {defaultOps && !hasRouteCard ? (
             <div className="panel">
-              <div className="panel-body text3" style={{ fontSize: 12 }}>
+              <div className="panel-body text3" style={{ fontSize: 'var(--fs-xs)' }}>
                 <span style={{ color: 'var(--amber2)' }}>
                   This item has no Route Card yet — make one before the Production Order.
                 </span>
@@ -411,7 +417,7 @@ export function PlanCreateForm({
 function Fact({ label, children }: { label: string; children: React.ReactNode }): JSX.Element {
   return (
     <div>
-      <span style={{ fontSize: 11, color: 'var(--text3)' }}>{label}</span>
+      <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>{label}</span>
       <br />
       {children}
     </div>
@@ -431,7 +437,10 @@ function Field({
 }): React.JSX.Element {
   return (
     <div style={full ? { gridColumn: '1 / -1' } : undefined}>
-      <label className="text3" style={{ display: 'block', fontSize: 11, marginBottom: 4 }}>
+      <label
+        className="text3"
+        style={{ display: 'block', fontSize: 'var(--fs-xs)', marginBottom: 'var(--sp-1)' }}
+      >
         {label}
         {required ? <span className="req">★</span> : null}
       </label>

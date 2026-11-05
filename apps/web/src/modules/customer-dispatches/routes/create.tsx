@@ -11,9 +11,9 @@
 // once on arrival with ?so=). The payload and the mutation are unchanged; the qty cap moved
 // from "available" to "pending" with ADR-180 (see the validation block below).
 
+import { Icon } from '@/ui/core';
 import type { DispatchableLine } from '@innovic/shared';
 import { createRoute, useNavigate } from '@tanstack/react-router';
-import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -286,7 +286,7 @@ function CustomerDispatchNewPage(): React.JSX.Element {
                 Add all pending lines
               </button>
               <button type="button" className="btn btn-primary btn-sm" onClick={addLine}>
-                <Plus size={13} /> Add Line
+                <Icon name="plus" size={13} /> Add Line
               </button>
             </>
           }

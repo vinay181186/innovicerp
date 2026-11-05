@@ -58,9 +58,11 @@ export function accessListColumns(): DataTableColumn<UserAccessListItem>[] {
       render: (u) => {
         const dept = deptLabel(u.mainDept);
         return dept ? (
-          <span style={{ color: dept.color, fontWeight: 700, fontSize: 12 }}>{dept.label}</span>
+          <span style={{ color: dept.color, fontWeight: 700, fontSize: 'var(--fs-sm)' }}>
+            {dept.label}
+          </span>
         ) : (
-          <span className="text3" style={{ fontSize: 11 }}>
+          <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
             —
           </span>
         );
@@ -78,25 +80,25 @@ export function accessListColumns(): DataTableColumn<UserAccessListItem>[] {
       render: (u) => {
         if (u.fullAccess)
           return (
-            <span style={{ color: 'var(--green2)', fontWeight: 700, fontSize: 11 }}>
+            <span style={{ color: 'var(--green2)', fontWeight: 700, fontSize: 'var(--fs-xs)' }}>
               L6 Super Admin — everything
             </span>
           );
         if (u.auditor)
           return (
-            <span style={{ color: 'var(--amber2)', fontWeight: 700, fontSize: 11 }}>
+            <span style={{ color: 'var(--amber2)', fontWeight: 700, fontSize: 'var(--fs-xs)' }}>
               L7 Auditor — reads everything, writes nothing
             </span>
           );
-        if (u.tierSummary) return <span style={{ fontSize: 11 }}>{u.tierSummary}</span>;
+        if (u.tierSummary) return <span style={{ fontSize: 'var(--fs-xs)' }}>{u.tierSummary}</span>;
         if (u.role === 'admin')
           return (
-            <span style={{ color: 'var(--green2)', fontWeight: 700, fontSize: 11 }}>
+            <span style={{ color: 'var(--green2)', fontWeight: 700, fontSize: 'var(--fs-xs)' }}>
               Admin — full access
             </span>
           );
         return (
-          <span style={{ color: 'var(--red2)', fontWeight: 600, fontSize: 11 }}>
+          <span style={{ color: 'var(--red2)', fontWeight: 600, fontSize: 'var(--fs-xs)' }}>
             Not configured — this person can see nothing. Click Configure.
           </span>
         );
@@ -133,7 +135,7 @@ export function accessListColumns(): DataTableColumn<UserAccessListItem>[] {
           {u.fullAccess || u.drawingDownload ? (
             <div
               className="badge b-cyan"
-              style={{ fontSize: 11, marginTop: 3, display: 'inline-block' }}
+              style={{ fontSize: 'var(--fs-xs)', marginTop: 3, display: 'inline-block' }}
               title="Can download drawing files"
             >
               📐 Drawings
@@ -150,7 +152,7 @@ export function accessListColumns(): DataTableColumn<UserAccessListItem>[] {
       align: 'left',
       render: (u) =>
         accessRowStale(u) ? (
-          <span style={{ color: 'var(--amber2)', fontSize: 11 }}>
+          <span style={{ color: 'var(--amber2)', fontSize: 'var(--fs-xs)' }}>
             ⚠ still enforced as <b>{roleLabel(u.role)}</b> — open Configure and Save to apply
           </span>
         ) : (

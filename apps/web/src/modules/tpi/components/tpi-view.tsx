@@ -11,6 +11,7 @@
 // page 1; the counts are server totals; the Excel export fetches EVERY record
 // matching the search.
 
+import { Icon } from '@/ui/core';
 import type { ListTpiQuery, OrderOption } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -122,7 +123,7 @@ export function TpiView(props: { title?: string; tabs?: React.ReactNode }): Reac
             disabled={compTotal === 0}
             onClick={() => void onExport()}
           >
-            ⬇ Export
+            <Icon name="download" size={13} /> Export
           </button>
         }
       >
@@ -143,9 +144,9 @@ export function TpiView(props: { title?: string; tabs?: React.ReactNode }): Reac
         </div>
       ) : (
         <>
-          <div className="panel" style={{ marginBottom: 16 }}>
+          <div className="panel" style={{ marginBottom: 'var(--sp-4)' }}>
             <div style={STRIP}>
-              <span style={{ fontWeight: 700, fontSize: 13 }}>
+              <span style={{ fontWeight: 700, fontSize: 'var(--fs-sm)' }}>
                 <span style={{ color: 'var(--amber2)' }}>⏳</span> Pending TPI ({pendTotal})
               </span>
             </div>
@@ -177,7 +178,7 @@ export function TpiView(props: { title?: string; tabs?: React.ReactNode }): Reac
 
           <div className="panel">
             <div style={STRIP}>
-              <span style={{ fontWeight: 700, fontSize: 13 }}>
+              <span style={{ fontWeight: 700, fontSize: 'var(--fs-sm)' }}>
                 <span style={{ color: 'var(--green2)' }}>✅</span> Completed TPI ({compTotal})
               </span>
             </div>

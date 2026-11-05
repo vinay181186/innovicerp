@@ -11,10 +11,11 @@
 // Operations now has a panel of its own. Before this pass a plan's operations
 // were shown nowhere on the view page.
 
+import { Icon } from '@/ui/core';
 import type { DocumentEditChange, PlanStatus, PlanType } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, CheckCircle, Loader2, Pencil, Play, Trash2 } from 'lucide-react';
+import { ArrowLeft, CheckCircle, Loader2, Play } from 'lucide-react';
 import { useState } from 'react';
 import { undecidedChangesOf, usePendingEditForDoc } from '@/modules/document-edits/api';
 import {
@@ -107,7 +108,11 @@ function PlanDetailPage(): React.JSX.Element {
     return (
       <div className="panel">
         <div className="panel-body">
-          <Link to="/plans" className="btn btn-ghost btn-sm" style={{ marginBottom: 8 }}>
+          <Link
+            to="/plans"
+            className="btn btn-ghost btn-sm"
+            style={{ marginBottom: 'var(--sp-2)' }}
+          >
             <ArrowLeft size={14} /> Back
           </Link>
           <div className="empty-state" style={{ color: 'var(--red2)' }}>
@@ -186,13 +191,13 @@ function PlanDetailPage(): React.JSX.Element {
           <div>
             <div
               className="td-code"
-              style={{ color: 'var(--cyan)', fontSize: 16, fontWeight: 700 }}
+              style={{ color: 'var(--cyan)', fontSize: 'var(--fs-md)', fontWeight: 700 }}
             >
               {plan.code}
             </div>
             <div
               className="panel-title"
-              style={{ marginTop: 2, display: 'flex', alignItems: 'center', gap: 10 }}
+              style={{ marginTop: 'var(--sp-0)', display: 'flex', alignItems: 'center', gap: 10 }}
             >
               {/* Falls back to the item code only when neither name is known, and
                   when it does it must read `CODE/REV` like everywhere else — the
@@ -219,7 +224,7 @@ function PlanDetailPage(): React.JSX.Element {
                   {STATUS_LABEL[plan.planStatus]}
                 </span>
               )}
-              <span className="text3" style={{ fontSize: 12 }}>
+              <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
                 {TYPE_LABEL[plan.planType]}
               </span>
               <Chip changes={pendingChanges} field="planType" />
@@ -268,7 +273,7 @@ function PlanDetailPage(): React.JSX.Element {
             ) : null}
             {perms.edit && isEditable ? (
               <Link to="/plans/$id/edit" params={{ id: plan.id }} className="btn btn-ghost btn-sm">
-                <Pencil size={13} /> Edit
+                <Icon name="pencil" size={13} /> Edit
               </Link>
             ) : null}
             {/* ADR-232: deleting any record is Super Admin only. */}
@@ -279,7 +284,7 @@ function PlanDetailPage(): React.JSX.Element {
                 onClick={() => setConfirmDelete(true)}
                 disabled={confirmDelete}
               >
-                <Trash2 size={13} /> Delete
+                <Icon name="trash-2" size={13} /> Delete
               </button>
             ) : null}
             {/* The one thing a Planned route-card plan exists for. Same
@@ -317,9 +322,9 @@ function PlanDetailPage(): React.JSX.Element {
                 color: 'var(--red2)',
                 background: 'var(--red3)',
                 border: '1px solid var(--red2)',
-                borderRadius: 6,
+                borderRadius: 'var(--radius)',
                 padding: '6px 10px',
-                fontSize: 12,
+                fontSize: 'var(--fs-sm)',
                 marginBottom: 10,
               }}
             >
@@ -604,7 +609,7 @@ function PlanDetailPage(): React.JSX.Element {
         <div className="panel">
           <div className="panel-hdr">
             <div className="panel-title">Operations</div>
-            <span className="text3" style={{ fontSize: 12 }}>
+            <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
               {plan.ops.length} {plan.ops.length === 1 ? 'op' : 'ops'}
             </span>
           </div>

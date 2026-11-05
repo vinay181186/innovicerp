@@ -3,7 +3,8 @@
 // (the register ⋯ uses the same hook): the one return and its client are read
 // on the click; Preview opens the in-app box at once, Download saves the PDF.
 
-import { Download, Eye, Loader2 } from 'lucide-react';
+import { Eye, Loader2 } from 'lucide-react';
+import { Icon } from '@/ui/core';
 import { useState } from 'react';
 import { usePrintJwReturn } from './use-print-jw-return';
 
@@ -59,7 +60,7 @@ export function PrintJwReturnButton({
         {busy === 'download' ? (
           <Loader2 size={13} className="inline animate-spin" />
         ) : (
-          <Download size={13} />
+          <Icon name="download" size={13} />
         )}{' '}
         Download PDF
       </button>

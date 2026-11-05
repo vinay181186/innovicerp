@@ -204,7 +204,8 @@ function MlBomDetailPage(): React.JSX.Element {
               items={[
                 { label: 'Preview', onClick: () => onPrint('preview') },
                 {
-                  label: printing ? 'Preparing PDF…' : '⬇ Download PDF',
+                  label: printing ? 'Preparing PDF…' : 'Download PDF',
+                  icon: 'download',
                   disabled: printing,
                   onClick: () => onPrint('download'),
                 },

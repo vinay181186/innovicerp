@@ -65,7 +65,7 @@ export function QcReportRequiredNote({
   if (!rule.required) {
     if (!rule.optionalHere) return null;
     return (
-      <div className="form-label" style={{ color: 'var(--text3)', marginBottom: 4 }}>
+      <div className="form-label" style={{ color: 'var(--text3)', marginBottom: 'var(--sp-1)' }}>
         {rule.reportName ?? 'QC'} report — optional here (mandatory on the last QC stage)
         {hasReport ? ' ✓' : ''}
       </div>
@@ -74,7 +74,7 @@ export function QcReportRequiredNote({
   return (
     <div
       className="form-label"
-      style={{ color: hasReport ? 'var(--green2)' : 'var(--red2)', marginBottom: 4 }}
+      style={{ color: hasReport ? 'var(--green2)' : 'var(--red2)', marginBottom: 'var(--sp-1)' }}
     >
       {rule.reportName ?? 'QC'} report — mandatory{hasReport ? ' ✓' : ''}
     </div>

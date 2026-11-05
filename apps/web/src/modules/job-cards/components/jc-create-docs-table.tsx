@@ -3,6 +3,8 @@
 // the second tab of the one filling panel so the page fits one screen. Same
 // document types, same upload, same remove; the table is unchanged.
 
+import { Icon } from '@/ui/core';
+
 export const QC_DOC_TYPES = [
   'MIR',
   'MCR',
@@ -88,7 +90,7 @@ export function JcCreateDocsTable({
                   title="Remove"
                   aria-label={`Remove document ${i + 1}`}
                 >
-                  ✕
+                  <Icon name="x" size={12} />
                 </button>
               </td>
             </tr>

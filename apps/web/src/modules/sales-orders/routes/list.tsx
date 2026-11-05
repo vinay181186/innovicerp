@@ -7,6 +7,7 @@
 //
 // Column defs live in components/so-list-columns.tsx.
 
+import { Icon } from '@/ui/core';
 import {
   type ListSalesOrdersQuery,
   type SalesOrderLineListItem,
@@ -18,7 +19,7 @@ import {
   type SoType,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { Download, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -292,7 +293,7 @@ function SalesOrdersListPage(): React.JSX.Element {
             {exporting ? (
               <Loader2 className="inline h-3 w-3 animate-spin" />
             ) : (
-              <Download className="inline h-3 w-3" />
+              <Icon name="download" className="inline h-3 w-3" />
             )}{' '}
             Export
           </button>
@@ -309,16 +310,23 @@ function SalesOrdersListPage(): React.JSX.Element {
       {importMsg ? (
         <div
           className="panel"
-          style={{ marginBottom: 10, padding: '8px 12px', fontSize: 12, color: 'var(--text2)' }}
+          style={{
+            marginBottom: 10,
+            padding: 'var(--sp-2) var(--sp-3)',
+            fontSize: 'var(--fs-sm)',
+            color: 'var(--text2)',
+          }}
         >
           {importMsg}
           <button
             type="button"
             className="btn btn-ghost btn-sm"
-            style={{ marginLeft: 8, fontSize: 11 }}
+            style={{ marginLeft: 'var(--sp-2)', fontSize: 'var(--fs-xs)' }}
+            title="Close"
+            aria-label="Close"
             onClick={() => setImportMsg(null)}
           >
-            ✕
+            <Icon name="x" size={12} />
           </button>
         </div>
       ) : null}

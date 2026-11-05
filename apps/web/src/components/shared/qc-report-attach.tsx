@@ -77,15 +77,15 @@ export function QcReportAttach({
   }
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)', flexWrap: 'wrap' }}>
       <label
         style={{
           cursor: companyId && !busy ? 'pointer' : 'not-allowed',
           padding: '5px 12px',
           background: 'var(--bg4)',
           border: '1px solid var(--border)',
-          borderRadius: 6,
-          fontSize: 11,
+          borderRadius: 'var(--radius)',
+          fontSize: 'var(--fs-xs)',
           display: 'inline-flex',
           alignItems: 'center',
           gap: 5,
@@ -105,7 +105,7 @@ export function QcReportAttach({
         <button
           type="button"
           className="btn btn-ghost btn-sm"
-          style={{ fontSize: 11 }}
+          style={{ fontSize: 'var(--fs-xs)' }}
           onClick={() => {
             setErr(null);
             onClear();
@@ -114,7 +114,7 @@ export function QcReportAttach({
           × Remove
         </button>
       ) : null}
-      {err ? <span style={{ color: 'var(--red2)', fontSize: 11 }}>{err}</span> : null}
+      {err ? <span style={{ color: 'var(--red2)', fontSize: 'var(--fs-xs)' }}>{err}</span> : null}
     </div>
   );
 }
@@ -157,7 +157,7 @@ export function QcReportLink({
           padding: 0,
           cursor: 'pointer',
           color: 'var(--cyan)',
-          fontSize: 11,
+          fontSize: 'var(--fs-xs)',
           whiteSpace: 'nowrap',
         }}
       >

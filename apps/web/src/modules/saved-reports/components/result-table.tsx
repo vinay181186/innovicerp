@@ -2,8 +2,9 @@
 // table with CSV / Excel export. Shared by the run route and the builder live
 // preview. House panel + innovic-table look (was shadcn Card + Table).
 
+import { Icon } from '@/ui/core';
 import type { AdHocColumn, RunAdHocResponse } from '@innovic/shared';
-import { Download, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { fmtDate, fmtDateTime } from '@/lib/date';
 import { downloadCsv, rowsToCsv } from '../lib/csv';
 
@@ -50,11 +51,14 @@ export function ResultTable({
   return (
     <div>
       {data && data.summary.length > 0 ? (
-        <div className="panel" style={{ marginBottom: 12 }}>
+        <div className="panel" style={{ marginBottom: 'var(--sp-3)' }}>
           <div className="panel-hdr">
             <span className="panel-title">
               Summary
-              <span className="text3" style={{ fontSize: 11, fontWeight: 400, marginLeft: 8 }}>
+              <span
+                className="text3"
+                style={{ fontSize: 'var(--fs-xs)', fontWeight: 400, marginLeft: 'var(--sp-2)' }}
+              >
                 Count per group
                 {summaryColLabel ? ` + ${fnLabel(data.summaryFunction)} of ${summaryColLabel}` : ''}
               </span>
@@ -95,7 +99,10 @@ export function ResultTable({
         <div className="panel-hdr">
           <span className="panel-title">
             Results
-            <span className="text3" style={{ fontSize: 11, fontWeight: 400, marginLeft: 8 }}>
+            <span
+              className="text3"
+              style={{ fontSize: 'var(--fs-xs)', fontWeight: 400, marginLeft: 'var(--sp-2)' }}
+            >
               {data
                 ? `${data.rowCount} rows · refreshed ${fmtDateTime(data.generatedAt)}`
                 : 'No results yet.'}
@@ -109,7 +116,7 @@ export function ResultTable({
               disabled={!data || data.rowCount === 0}
               title={!data || data.rowCount === 0 ? 'No rows to export' : undefined}
             >
-              <Download size={13} /> Export CSV
+              <Icon name="download" size={13} /> Export CSV
             </button>
             {onExcel ? (
               <button
@@ -122,7 +129,7 @@ export function ResultTable({
                 {excelLoading ? (
                   <Loader2 size={13} className="animate-spin" />
                 ) : (
-                  <Download size={13} />
+                  <Icon name="download" size={13} />
                 )}{' '}
                 Export Excel
               </button>

@@ -132,9 +132,9 @@ export function LogTimeModal({
           marginBottom: 14,
           padding: 10,
           background: 'var(--bg3)',
-          borderRadius: 8,
+          borderRadius: 'var(--radius2)',
           border: '1px solid var(--border)',
-          fontSize: 12,
+          fontSize: 'var(--fs-sm)',
         }}
       >
         <b style={{ color: 'var(--cyan)' }}>
@@ -189,7 +189,14 @@ export function LogTimeModal({
 
       {previous.length > 0 ? (
         <>
-          <div style={{ marginTop: 12, fontSize: 12, fontWeight: 700, color: 'var(--text3)' }}>
+          <div
+            style={{
+              marginTop: 'var(--sp-3)',
+              fontSize: 'var(--fs-xs)',
+              fontWeight: 700,
+              color: 'var(--text3)',
+            }}
+          >
             Previous Entries
           </div>
           <DataTable<DesignTimeLogEntry>
@@ -203,7 +210,7 @@ export function LogTimeModal({
       ) : null}
 
       {dayWarn ? (
-        <div style={{ marginTop: 12 }}>
+        <div style={{ marginTop: 'var(--sp-3)' }}>
           <Banner tone="warn" flush>
             {dayWarn}
           </Banner>

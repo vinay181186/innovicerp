@@ -133,8 +133,8 @@ export function PendingTpi(props: {
     <div
       style={{
         border: `1px solid ${open ? 'var(--green)' : 'var(--border)'}`,
-        borderRadius: 8,
-        marginBottom: 8,
+        borderRadius: 'var(--radius2)',
+        marginBottom: 'var(--sp-2)',
         background: 'var(--bg2)',
         overflow: 'hidden',
       }}
@@ -150,18 +150,25 @@ export function PendingTpi(props: {
         onClick={onToggle}
       >
         <div>
-          <b className="cyan" style={{ fontSize: 13 }}>
+          <b className="cyan" style={{ fontSize: 'var(--fs-sm)' }}>
             {o.jcCode}
           </b>{' '}
-          <span className="text3" style={{ fontSize: 11 }}>
+          <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
             Op {opSrNo(o.opSeq)} — {o.operation}
           </span>
           {o.waitDays > 1 ? (
-            <span style={{ fontSize: 11, color: 'var(--red2)', fontWeight: 700, marginLeft: 8 }}>
+            <span
+              style={{
+                fontSize: 'var(--fs-xs)',
+                color: 'var(--red2)',
+                fontWeight: 700,
+                marginLeft: 'var(--sp-2)',
+              }}
+            >
               ⚠ Waiting {o.waitDays} days
             </span>
           ) : null}
-          <div className="text2" style={{ fontSize: 11 }}>
+          <div className="text2" style={{ fontSize: 'var(--fs-xs)' }}>
             {o.soCode ? soNoWithInternal(o.soCode, o.soInternalNo) : '—'} •{' '}
             {/* The item code is the value the inspector matches against the
                 drawing, so it is the darkest text token and bold. The rest of
@@ -200,14 +207,16 @@ export function PendingTpi(props: {
             • Order: {o.orderQty} pcs
           </div>
           {o.callDate ? (
-            <div style={{ fontSize: 11, color: 'var(--amber2)' }}>
+            <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--amber2)' }}>
               Called: {fmtDate(o.callDate)}
             </div>
           ) : null}
         </div>
         <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--amber2)' }}>{o.qcPending}</div>
-          <div className="text3" style={{ fontSize: 11 }}>
+          <div style={{ fontSize: 'var(--fs-lg)', fontWeight: 800, color: 'var(--amber2)' }}>
+            {o.qcPending}
+          </div>
+          <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
             QC Pending
           </div>
         </div>
@@ -219,18 +228,25 @@ export function PendingTpi(props: {
         <div
           style={{
             padding: 14,
-            background: 'rgba(34,197,94,0.04)',
+            background: 'var(--green3)',
             borderTop: '2px solid var(--green)',
           }}
         >
-          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--green2)', marginBottom: 12 }}>
+          <div
+            style={{
+              fontSize: 'var(--fs-sm)',
+              fontWeight: 700,
+              color: 'var(--green2)',
+              marginBottom: 'var(--sp-3)',
+            }}
+          >
             TPI Entry
           </div>
 
           {/* Legacy L21413-21416: Date | Shift */}
-          <div className="form-grid" style={{ gap: 10, marginBottom: 12 }}>
+          <div className="form-grid" style={{ gap: 10, marginBottom: 'var(--sp-3)' }}>
             <div className="form-grp">
-              <label className="form-label" style={{ fontSize: 11 }}>
+              <label className="form-label" style={{ fontSize: 'var(--fs-xs)' }}>
                 TPI Date
               </label>
               <input
@@ -241,7 +257,7 @@ export function PendingTpi(props: {
               />
             </div>
             <div className="form-grp">
-              <label className="form-label" style={{ fontSize: 11 }}>
+              <label className="form-label" style={{ fontSize: 'var(--fs-xs)' }}>
                 Shift
               </label>
               <select
@@ -259,9 +275,12 @@ export function PendingTpi(props: {
           </div>
 
           {/* Legacy L21417-21420: the big centred Accept / Reject qty inputs */}
-          <div className="form-grid" style={{ gap: 10, marginBottom: 12 }}>
+          <div className="form-grid" style={{ gap: 10, marginBottom: 'var(--sp-3)' }}>
             <div className="form-grp">
-              <label className="form-label" style={{ fontSize: 11, color: 'var(--green2)' }}>
+              <label
+                className="form-label"
+                style={{ fontSize: 'var(--fs-xs)', color: 'var(--green2)' }}
+              >
                 ✅ Accepted (max {o.qcPending})
               </label>
               <input
@@ -277,14 +296,17 @@ export function PendingTpi(props: {
                   fontWeight: 800,
                   color: 'var(--green2)',
                   textAlign: 'center',
-                  padding: 8,
+                  padding: 'var(--sp-2)',
                   border: '2px solid var(--green)',
                   background: 'var(--bg)',
                 }}
               />
             </div>
             <div className="form-grp">
-              <label className="form-label" style={{ fontSize: 11, color: 'var(--red2)' }}>
+              <label
+                className="form-label"
+                style={{ fontSize: 'var(--fs-xs)', color: 'var(--red2)' }}
+              >
                 ❌ Deviated
               </label>
               <input
@@ -300,7 +322,7 @@ export function PendingTpi(props: {
                   fontWeight: 800,
                   color: 'var(--red2)',
                   textAlign: 'center',
-                  padding: 8,
+                  padding: 'var(--sp-2)',
                   border: '2px solid var(--red)',
                   background: 'var(--bg)',
                 }}
@@ -322,7 +344,7 @@ export function PendingTpi(props: {
 
           {/* Legacy L21429-21433: attach row sits between the details box and the
               action buttons. QcReportAttach renders the same picker + × Remove. */}
-          <div style={{ marginBottom: 12 }}>
+          <div style={{ marginBottom: 'var(--sp-3)' }}>
             <QcReportRequiredNote rule={qcReportRule} hasReport={qcReportPath !== null} />
             <QcReportAttach
               companyId={companyId}
@@ -339,11 +361,18 @@ export function PendingTpi(props: {
           </div>
 
           {err ? (
-            <div role="alert" style={{ color: 'var(--red2)', fontSize: 12, marginBottom: 8 }}>
+            <div
+              role="alert"
+              style={{
+                color: 'var(--red2)',
+                fontSize: 'var(--fs-sm)',
+                marginBottom: 'var(--sp-2)',
+              }}
+            >
               {err}
             </div>
           ) : null}
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <div style={{ display: 'flex', gap: 'var(--sp-2)', justifyContent: 'flex-end' }}>
             <button type="button" className="btn btn-ghost btn-sm" onClick={onToggle}>
               Cancel
             </button>
@@ -352,8 +381,8 @@ export function PendingTpi(props: {
               className="btn btn-success"
               style={{
                 fontWeight: 700,
-                fontSize: 13,
-                padding: '8px 24px',
+                fontSize: 'var(--fs-sm)',
+                padding: 'var(--sp-2) var(--sp-5)',
               }}
               disabled={submit.isPending || qcReportMissing !== null}
               title={qcReportMissing ?? undefined}

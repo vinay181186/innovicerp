@@ -10,6 +10,7 @@
 // page (useScTables) so a tab keeps its page / filters / Sort & Filter while
 // another tab is shown, and every tab label carries its table's server total.
 
+import { Icon } from '@/ui/core';
 import type {
   ScDashboardResponse,
   ScPendingPage,
@@ -134,7 +135,7 @@ export function PendingTracker({
             background: 'var(--bg3)',
             borderBottom: '1px solid var(--border)',
             display: 'flex',
-            gap: 12,
+            gap: 'var(--sp-3)',
             flexWrap: 'wrap',
             alignItems: 'center',
           }}
@@ -159,14 +160,21 @@ export function PendingTracker({
             <button
               type="button"
               className="btn btn-ghost btn-sm"
-              style={{ color: 'var(--red2)', fontSize: 11 }}
+              style={{ color: 'var(--red2)', fontSize: 'var(--fs-xs)' }}
               onClick={p.clearFilters}
             >
-              ✕ Clear Filters
+              <Icon name="x" size={13} /> Clear Filters
             </button>
           ) : null}
           {/* Line count + Pending Qty / Value: server figures over EVERY filtered line. */}
-          <div style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 700, color: 'var(--text2)' }}>
+          <div
+            style={{
+              marginLeft: 'auto',
+              fontSize: 'var(--fs-sm)',
+              fontWeight: 700,
+              color: 'var(--text2)',
+            }}
+          >
             {isFiltered ? <span style={{ color: 'var(--amber2)' }}>Filtered: </span> : null}
             {total} line{total !== 1 ? 's' : ''} · Pending Qty:{' '}
             <span style={{ color: 'var(--red2)' }}>{t.data?.totalPendingQty ?? 0}</span>
@@ -208,7 +216,7 @@ export function VendorSummary({
       <Panel
         fill
         actions={
-          <span className="mono" style={{ fontSize: 12, color: 'var(--amber2)' }}>
+          <span className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--amber2)' }}>
             {t.data?.total ?? 0} vendors with open POs
           </span>
         }
@@ -242,7 +250,7 @@ export function SoSummary({
       <Panel
         fill
         actions={
-          <span className="mono" style={{ fontSize: 12, color: 'var(--cyan)' }}>
+          <span className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--cyan)' }}>
             {t.data?.total ?? 0} orders with open POs
           </span>
         }
@@ -274,7 +282,7 @@ export function PoSummary({
       <Panel
         fill
         actions={
-          <span className="mono" style={{ fontSize: 12, color: 'var(--green2)' }}>
+          <span className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--green2)' }}>
             {t.data?.total ?? 0} POs
             {/* Grand Total from the server, over every matching PO. */}
             {priceHidden ? '' : ` · Grand Total: ₹${inr(t.data?.grandTotal ?? 0)}`}

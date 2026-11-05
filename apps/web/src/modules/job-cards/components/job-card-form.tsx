@@ -32,6 +32,7 @@
 //
 // Legacy counterpart: addJC L6020 → jcModalBody(null) L5943.
 
+import { Icon } from '@/ui/core';
 import type {
   DefaultRouteOpsResponse,
   JcRouteCardWriteBack,
@@ -954,7 +955,7 @@ export function JobCardForm({
                         replaceLocalDrawing(null);
                       }}
                     >
-                      ✕
+                      <Icon name="x" size={12} />
                     </button>
                   ) : null}
                 </div>

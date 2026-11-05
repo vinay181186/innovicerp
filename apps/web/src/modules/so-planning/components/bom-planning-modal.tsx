@@ -83,16 +83,14 @@ const PLAN_STATUS_LABEL: Record<PlanStatus, string> = {
   cancelled: 'Cancelled',
 };
 
-// Status colour for the "Plan Status" cell. The two legacy builders differ:
-// showBOMPlanning (assembly, L7137) has a 'PR Created' → purple branch;
-// showEquipBOMPlanning (L8867) omits it, so PR Created falls through to green.
-// Ported as-is rather than "corrected" — legacy is the spec.
-function bomPlanStColor(status: PlanStatus, mode: 'equipment' | 'assembly'): string {
-  if (status === 'in_planning') return 'var(--amber)';
+// Status colour for the "Plan Status" cell — same colour per state as
+// <StatusBadge kind="plan"> (owner 2026-11-04).
+function bomPlanStColor(status: PlanStatus): string {
+  if (status === 'in_planning') return 'var(--text3)';
   if (status === 'planned') return 'var(--blue)';
-  if (status === 'jc_created') return 'var(--cyan)';
-  if (status === 'pr_created' && mode === 'assembly') return 'var(--purple)';
-  return 'var(--green)';
+  if (status === 'complete') return 'var(--green)';
+  if (status === 'cancelled') return 'var(--red)';
+  return 'var(--amber)';
 }
 
 export function BomPlanningModal({
@@ -287,11 +285,11 @@ export function BomPlanningModal({
       {error && (
         <div
           style={{
-            padding: 8,
-            borderRadius: 4,
-            background: 'rgba(239,68,68,0.1)',
+            padding: 'var(--sp-2)',
+            borderRadius: 'var(--radius-sm)',
+            background: 'var(--red3)',
             color: 'var(--red2)',
-            fontSize: 12,
+            fontSize: 'var(--fs-sm)',
           }}
         >
           {error instanceof Error ? error.message : 'Could not load BOM. Try again.'}
@@ -367,45 +365,47 @@ function BomBody({
       <div
         style={{
           background: 'var(--bg3)',
-          padding: 12,
-          borderRadius: 8,
+          padding: 'var(--sp-3)',
+          borderRadius: 'var(--radius2)',
           border: '1px solid var(--border)',
           marginBottom: 14,
         }}
       >
-        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 'var(--sp-4)', flexWrap: 'wrap' }}>
           {mode === 'equipment' ? (
             <>
               <div>
-                <span style={{ fontSize: 11, color: 'var(--text3)' }}>Equipment SO</span>
+                <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>
+                  Equipment SO
+                </span>
                 <br />
                 <b style={{ color: 'var(--cyan)' }}>
                   {soNoWithInternal(data.soCode, data.soInternalNo)}
                 </b>
               </div>
               <div>
-                <span style={{ fontSize: 11, color: 'var(--text3)' }}>Equipment</span>
+                <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>Equipment</span>
                 <br />
-                <b style={{ color: 'var(--purple)' }}>
+                <b className="mono" style={{ color: 'var(--text)' }}>
                   {data.parentClientPoLineNo ? `POL ${data.parentClientPoLineNo} · ` : ''}
                   {itemCodeWithRev(data.parentItemCode, data.parentItemRevision)}{' '}
                   {data.parentItemName}
                 </b>
               </div>
               <div>
-                <span style={{ fontSize: 11, color: 'var(--text3)' }}>Order Qty</span>
+                <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>Order Qty</span>
                 <br />
                 <b style={{ fontSize: 18 }}>{data.orderQty}</b>
               </div>
               <div>
-                <span style={{ fontSize: 11, color: 'var(--text3)' }}>BOM</span>
+                <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>BOM</span>
                 <br />
                 <b style={{ color: 'var(--green2)' }}>
                   {data.bomNo} BOM Rev {data.bomRev}
                 </b>
               </div>
               <div>
-                <span style={{ fontSize: 11, color: 'var(--text3)' }}>BOM Items</span>
+                <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>BOM Items</span>
                 <br />
                 <b style={{ fontSize: 18 }}>{data.children.length}</b>
               </div>
@@ -413,26 +413,26 @@ function BomBody({
           ) : (
             <>
               <div>
-                <span style={{ fontSize: 11, color: 'var(--text3)' }}>Assembly</span>
+                <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>Assembly</span>
                 <br />
-                <b style={{ color: 'var(--purple)' }}>
+                <b className="mono" style={{ color: 'var(--text)' }}>
                   {data.parentClientPoLineNo ? `POL ${data.parentClientPoLineNo} · ` : ''}
                   {itemCodeWithRev(data.parentItemCode, data.parentItemRevision)}
                 </b>{' '}
                 {data.parentItemName}
               </div>
               <div>
-                <span style={{ fontSize: 11, color: 'var(--text3)' }}>SO/JW</span>
+                <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>SO/JW</span>
                 <br />
                 <b className="mono">{soNoWithInternal(data.soCode, data.soInternalNo)}</b>
               </div>
               <div>
-                <span style={{ fontSize: 11, color: 'var(--text3)' }}>Order Qty</span>
+                <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>Order Qty</span>
                 <br />
                 <b style={{ fontSize: 18 }}>{data.orderQty}</b> units
               </div>
               <div>
-                <span style={{ fontSize: 11, color: 'var(--text3)' }}>BOM Items</span>
+                <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>BOM Items</span>
                 <br />
                 <b style={{ fontSize: 18 }}>{data.children.length}</b>
               </div>
@@ -443,10 +443,10 @@ function BomBody({
 
       <div
         style={{
-          fontSize: 12,
+          fontSize: 'var(--fs-sm)',
           fontWeight: 700,
           color: 'var(--cyan)',
-          marginBottom: 8,
+          marginBottom: 'var(--sp-2)',
         }}
       >
         {/* Equipment (L8899): "📦 BOM Explosion — N sets × BOM-NO".
@@ -464,7 +464,7 @@ function BomBody({
         style={{
           marginBottom: 14,
           border: '1px solid var(--border)',
-          borderRadius: 8,
+          borderRadius: 'var(--radius2)',
         }}
       >
         {/* The house table (ADR-199): the class supplies the header band, the
@@ -519,7 +519,9 @@ function BomBody({
                   className={hasSufficient ? 'row-done' : undefined}
                 >
                   <td className="mono fw-700">{i + 1}</td>
-                  <td className="td-code">{c.childItemCode}</td>
+                  <td className="td-code" style={{ color: 'var(--text)' }}>
+                    {c.childItemCode}
+                  </td>
                   <td>{c.childItemName}</td>
                   <td className="td-num">{c.qtyPerSet}</td>
                   <td className="td-num fw-700">{c.totalNeed}</td>
@@ -534,7 +536,7 @@ function BomBody({
                     {hasSufficient ? ' ✅' : ''}
                   </td>
                   <td>
-                    <span style={{ color: typeColor, fontSize: 11, fontWeight: 700 }}>
+                    <span style={{ color: typeColor, fontSize: 'var(--fs-xs)', fontWeight: 700 }}>
                       {typeIcon}
                     </span>
                   </td>
@@ -544,7 +546,7 @@ function BomBody({
                         <span
                           style={{
                             fontWeight: 700,
-                            color: bomPlanStColor(c.existingPlan.planStatus, mode),
+                            color: bomPlanStColor(c.existingPlan.planStatus),
                           }}
                         >
                           {PLAN_STATUS_LABEL[c.existingPlan.planStatus]}
@@ -552,7 +554,10 @@ function BomBody({
                         {c.existingPlan.jcCode ? (
                           <>
                             {' '}
-                            <span className="mono" style={{ fontSize: 11, color: 'var(--cyan)' }}>
+                            <span
+                              className="mono"
+                              style={{ fontSize: 'var(--fs-xs)', color: 'var(--cyan)' }}
+                            >
                               {c.existingPlan.jcCode}
                             </span>
                           </>
@@ -562,14 +567,19 @@ function BomBody({
                         {mode === 'assembly' && c.existingPlan.dpPrCode ? (
                           <>
                             {' '}
-                            <span className="mono" style={{ fontSize: 11, color: 'var(--purple)' }}>
+                            <span
+                              className="mono"
+                              style={{ fontSize: 'var(--fs-xs)', color: 'var(--blue)' }}
+                            >
                               {c.existingPlan.dpPrCode}
                             </span>
                           </>
                         ) : null}
                       </>
                     ) : (
-                      <span style={{ color: 'var(--text3)', fontSize: 11 }}>Not planned</span>
+                      <span style={{ color: 'var(--text3)', fontSize: 'var(--fs-xs)' }}>
+                        Not planned
+                      </span>
                     )}
                   </td>
                   <td>
@@ -592,7 +602,7 @@ function BomBody({
                       style={{
                         width: 70,
                         textAlign: 'center',
-                        fontSize: 12,
+                        fontSize: 'var(--fs-sm)',
                         fontWeight: 700,
                       }}
                     />
@@ -616,8 +626,14 @@ function BomBody({
                     <div
                       style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}
                     >
-                      <span style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 700 }}>
-                        ↳ {c.childItemCode} · {c.bomType === 'purchase' ? 'Buy from' : 'Send to'}
+                      <span
+                        style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)', fontWeight: 700 }}
+                      >
+                        ↳{' '}
+                        <span className="mono" style={{ color: 'var(--text)' }}>
+                          {c.childItemCode}
+                        </span>{' '}
+                        · {c.bomType === 'purchase' ? 'Buy from' : 'Send to'}
                       </span>
                       <div style={{ minWidth: 260 }}>
                         <SearchableSelect
@@ -642,14 +658,20 @@ function BomBody({
                       {needProcess ? (
                         <input
                           className="innovic-input"
-                          style={{ width: 220, fontSize: 12 }}
+                          style={{ width: 220, fontSize: 'var(--fs-sm)' }}
                           placeholder="Process (e.g. OUTSOURCE)"
                           value={s.process}
                           onChange={(e) => update(c.childItemCode, { process: e.target.value })}
                         />
                       ) : null}
                       {!s.vendorId ? (
-                        <span style={{ fontSize: 11, color: 'var(--amber2)', fontWeight: 700 }}>
+                        <span
+                          style={{
+                            fontSize: 'var(--fs-xs)',
+                            color: 'var(--amber2)',
+                            fontWeight: 700,
+                          }}
+                        >
                           vendor required
                         </span>
                       ) : null}
@@ -667,7 +689,7 @@ function BomBody({
           style={{
             padding: '10px 14px',
             background: 'var(--bg3)',
-            borderRadius: 8,
+            borderRadius: 'var(--radius2)',
             border: '1px solid var(--border)',
             marginBottom: 14,
           }}
@@ -687,14 +709,14 @@ function BomBody({
               onChange={(e) => setPlanAssembly(e.target.checked)}
               style={{ width: 16, height: 16, accentColor: 'var(--green)' }}
             />
-            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--green2)' }}>
+            <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 700, color: 'var(--green2)' }}>
               🛠 Final Assembly Job Card
             </span>
-            <span style={{ fontSize: 11, color: 'var(--text3)' }}>
+            <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>
               (created after child items are ready)
             </span>
             {data.hasAssemblyPlan ? (
-              <span style={{ fontWeight: 700, color: 'var(--cyan)', fontSize: 11 }}>
+              <span style={{ fontWeight: 700, color: 'var(--cyan)', fontSize: 'var(--fs-xs)' }}>
                 — already created
               </span>
             ) : null}
@@ -702,7 +724,7 @@ function BomBody({
         </div>
       )}
 
-      <div style={{ fontSize: 11, color: 'var(--text3)', marginBottom: 10 }}>
+      <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)', marginBottom: 10 }}>
         {/* The two modes have different footnotes in legacy — equipment L8901,
             assembly L7185. They are not interchangeable. */}
         {mode === 'equipment'
@@ -713,11 +735,11 @@ function BomBody({
       {submitErr ? (
         <div
           style={{
-            padding: 8,
-            borderRadius: 4,
-            background: 'rgba(239,68,68,0.1)',
+            padding: 'var(--sp-2)',
+            borderRadius: 'var(--radius-sm)',
+            background: 'var(--red3)',
             color: 'var(--red2)',
-            fontSize: 12,
+            fontSize: 'var(--fs-sm)',
           }}
         >
           {submitErr}

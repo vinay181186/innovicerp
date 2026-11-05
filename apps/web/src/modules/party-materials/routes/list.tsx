@@ -11,9 +11,9 @@
 // Edit modals moved to their own files so this route file stays under the
 // 400-line ceiling. No row click — there is no Customer Material detail page.
 
+import { Icon } from '@/ui/core';
 import { type PartyMaterialListItem } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
-import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
@@ -140,7 +140,7 @@ function PartyMaterialsListPage(): React.JSX.Element {
         primary={
           canAdd ? (
             <button type="button" className="btn btn-primary" onClick={() => setShowAdd(true)}>
-              <Plus size={14} /> Add Material
+              <Icon name="plus" size={14} /> Add Material
             </button>
           ) : null
         }

@@ -189,11 +189,11 @@ function Field({
     <div style={{ minWidth: 120 }}>
       <div
         className="text3"
-        style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}
+        style={{ fontSize: 'var(--fs-xs)', textTransform: 'uppercase', letterSpacing: '0.04em' }}
       >
         {label}
       </div>
-      <div style={{ fontSize: 13 }}>{children}</div>
+      <div style={{ fontSize: 'var(--fs-sm)' }}>{children}</div>
     </div>
   );
 }

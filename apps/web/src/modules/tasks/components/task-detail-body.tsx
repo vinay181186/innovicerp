@@ -31,10 +31,10 @@ function Fact({
 }): React.JSX.Element {
   return (
     <div style={full ? { gridColumn: '1 / -1' } : undefined}>
-      <div className="form-label" style={{ marginBottom: 2 }}>
+      <div className="form-label" style={{ marginBottom: 'var(--sp-0)' }}>
         {label}
       </div>
-      <div style={{ fontSize: 13, color: 'var(--text)' }}>{children}</div>
+      <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text)' }}>{children}</div>
     </div>
   );
 }
@@ -43,10 +43,10 @@ function SectionTitle({ children }: { children: React.ReactNode }): React.JSX.El
   return (
     <div
       style={{
-        fontSize: 12,
+        fontSize: 'var(--fs-sm)',
         fontWeight: 700,
         margin: '16px 0 6px',
-        paddingBottom: 4,
+        paddingBottom: 'var(--sp-1)',
         borderBottom: '1px solid var(--border)',
         display: 'flex',
         alignItems: 'center',
@@ -138,18 +138,20 @@ export function TaskBody({
           alignItems: 'center',
           gap: 10,
           flexWrap: 'wrap',
-          marginBottom: 12,
+          marginBottom: 'var(--sp-3)',
         }}
       >
-        <span className="mono fw-700" style={{ fontSize: 15, color: 'var(--blue)' }}>
+        <span className="mono fw-700" style={{ fontSize: 'var(--fs-sm)', color: 'var(--blue)' }}>
           {t.code}
         </span>
         <span className={pill.cls}>{pill.label}</span>
-        <span style={{ fontWeight: 700, fontSize: 12, color: priorityColor(t.priority) }}>
+        <span
+          style={{ fontWeight: 700, fontSize: 'var(--fs-sm)', color: priorityColor(t.priority) }}
+        >
           {TASK_PRIORITY_LABELS[t.priority]}
         </span>
         {t.taskType === 'personal' ? <span className="badge b-grey">My To-Do</span> : null}
-        <span className="text3" style={{ fontSize: 11, marginLeft: 'auto' }}>
+        <span className="text3" style={{ fontSize: 'var(--fs-xs)', marginLeft: 'auto' }}>
           Last update {fmtTaskDateTimeFull(t.updatedAt)}
         </span>
       </div>
@@ -160,7 +162,7 @@ export function TaskBody({
           display: 'grid',
           gridTemplateColumns: '1fr 1fr',
           gap: '10px 16px',
-          padding: 12,
+          padding: 'var(--sp-3)',
           background: 'var(--bg3)',
           border: '1px solid var(--border)',
           borderRadius: 'var(--radius2)',
@@ -229,7 +231,7 @@ export function TaskBody({
         ) : null}
       </SectionTitle>
       {t.attachments.length === 0 ? (
-        <div className="text3" style={{ fontSize: 11 }}>
+        <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
           No attachments
         </div>
       ) : (
@@ -253,17 +255,21 @@ export function TaskBody({
         <span>💬 Remarks ({t.comments.length})</span>
       </SectionTitle>
       {t.comments.length === 0 ? (
-        <div className="text3" style={{ fontSize: 11 }}>
+        <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
           No remarks
         </div>
       ) : (
         t.comments.map((c) => (
           <div
             key={c.id}
-            style={{ padding: '6px 0', borderBottom: '1px solid var(--border)', fontSize: 12 }}
+            style={{
+              padding: '6px 0',
+              borderBottom: '1px solid var(--border)',
+              fontSize: 'var(--fs-sm)',
+            }}
           >
             <b>{c.by}</b>{' '}
-            <span className="text3" style={{ fontSize: 11 }}>
+            <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
               {fmtTaskDateTimeFull(c.createdAt)}
             </span>
             <div style={{ whiteSpace: 'pre-wrap' }}>{c.text}</div>
@@ -271,7 +277,7 @@ export function TaskBody({
         ))
       )}
       {t.permissions.canComment && canWrite ? (
-        <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+        <div style={{ display: 'flex', gap: 6, marginTop: 'var(--sp-2)' }}>
           <input
             className="innovic-input"
             value={remark}
@@ -299,29 +305,29 @@ export function TaskBody({
         <span>🕒 Timeline ({history.length})</span>
       </SectionTitle>
       {history.length === 0 ? (
-        <div className="text3" style={{ fontSize: 11 }}>
+        <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
           No history
         </div>
       ) : (
-        <div style={{ fontSize: 12 }}>
+        <div style={{ fontSize: 'var(--fs-sm)' }}>
           {history.map((h) => (
             <div
               key={h.id}
               style={{
                 display: 'flex',
                 gap: 10,
-                padding: '4px 0',
+                padding: 'var(--sp-1) 0',
                 borderBottom: '1px solid var(--border)',
               }}
             >
               <span
                 className="mono text3"
-                style={{ fontSize: 11, whiteSpace: 'nowrap', minWidth: 130 }}
+                style={{ fontSize: 'var(--fs-xs)', whiteSpace: 'nowrap', minWidth: 130 }}
               >
                 {fmtTaskDateTimeFull(h.at)}
               </span>
               <span style={{ flex: 1 }}>{historyLine(h)}</span>
-              <span className="text3" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
+              <span className="text3" style={{ fontSize: 'var(--fs-xs)', whiteSpace: 'nowrap' }}>
                 by {h.by}
               </span>
             </div>
@@ -330,7 +336,7 @@ export function TaskBody({
       )}
 
       {msg ? (
-        <div role="alert" className="form-error" style={{ marginTop: 8 }}>
+        <div role="alert" className="form-error" style={{ marginTop: 'var(--sp-2)' }}>
           {msg}
         </div>
       ) : null}

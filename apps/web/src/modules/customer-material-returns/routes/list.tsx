@@ -12,9 +12,9 @@
 // and Back), mirrored by the box, debounced back with replace + page 1 — the
 // SO Master shape. No detail page, so a row is not clickable.
 
+import { Icon } from '@/ui/core';
 import type { CustomerMaterialReturnLineRow } from '@innovic/shared';
 import { createRoute, Link } from '@tanstack/react-router';
-import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
@@ -136,7 +136,7 @@ function CustomerMaterialReturnsListPage(): React.JSX.Element {
         primary={
           canCreate ? (
             <Link to="/customer-material-returns/new" className="btn btn-primary">
-              <Plus size={14} /> New Return
+              <Icon name="plus" size={14} /> New Return
             </Link>
           ) : null
         }

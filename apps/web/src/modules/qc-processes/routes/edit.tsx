@@ -86,7 +86,7 @@ function QcProcessEditPage(): React.JSX.Element {
     return (
       <div className="panel">
         <div className="panel-body">
-          <div style={{ marginBottom: 8 }}>
+          <div style={{ marginBottom: 'var(--sp-2)' }}>
             <Link to="/qc-processes" className="btn btn-ghost btn-sm">
               <ArrowLeft size={14} /> Back to QC Process Master
             </Link>
@@ -102,7 +102,7 @@ function QcProcessEditPage(): React.JSX.Element {
     return (
       <div className="panel">
         <div className="panel-body">
-          <div style={{ marginBottom: 8 }}>
+          <div style={{ marginBottom: 'var(--sp-2)' }}>
             <Link to="/qc-processes" className="btn btn-ghost btn-sm">
               <ArrowLeft size={14} /> Back
             </Link>
@@ -129,10 +129,10 @@ function QcProcessEditPage(): React.JSX.Element {
       <QcProcessForm
         panelHeader={
           <div>
-            <div className="fw-700" style={{ color: 'var(--green2)', fontSize: 14 }}>
+            <div className="fw-700" style={{ color: 'var(--green2)', fontSize: 'var(--fs-sm)' }}>
               {detail.code}
             </div>
-            <div className="panel-title" style={{ marginTop: 2 }}>
+            <div className="panel-title" style={{ marginTop: 'var(--sp-0)' }}>
               ✏ Edit QC Process
             </div>
           </div>

@@ -1,5 +1,6 @@
 // JW detail page (UI-003-04).
 
+import { Icon, StatusBadge } from '@/ui/core';
 import {
   type DocumentEditChange,
   type JobWorkOrderDetail,
@@ -9,7 +10,7 @@ import {
   placeOfSupplyLabel,
 } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, Loader2, Pencil } from 'lucide-react';
+import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { z } from 'zod';
 import { undecidedChangesOf, usePendingEditForDoc } from '@/modules/document-edits/api';
@@ -111,7 +112,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
     return (
       <div className="panel">
         <div className="panel-body">
-          <div style={{ marginBottom: 8 }}>
+          <div style={{ marginBottom: 'var(--sp-2)' }}>
             <Link to="/job-work-orders" className="btn btn-ghost btn-sm">
               <ArrowLeft size={14} /> Back
             </Link>
@@ -232,7 +233,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
                 params={{ id: detail.id }}
                 className="btn btn-ghost btn-sm"
               >
-                <Pencil size={13} /> Edit
+                <Icon name="pencil" size={13} /> Edit
               </Link>
             ) : null}
             {primaryStep ? (
@@ -244,7 +245,8 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
               items={[
                 { label: 'Preview', onClick: () => orderPrint.preview(printTarget, isDraft) },
                 {
-                  label: '⬇ Download PDF',
+                  label: 'Download PDF',
+                  icon: 'download',
                   onClick: () => void orderPrint.download(printTarget, isDraft),
                 },
                 ...nextSteps
@@ -339,7 +341,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
           <div className="panel-title" style={{ color: 'var(--blue)' }}>
             Line Items ({detail.lines.length})
           </div>
-          <span className="text3" style={{ fontSize: 11, fontFamily: 'var(--mono)' }}>
+          <span className="text3" style={{ fontSize: 'var(--fs-xs)', fontFamily: 'var(--mono)' }}>
             Total Qty <b style={{ color: 'var(--text)' }}>{totalQty}</b>
             {!priceHidden && lineValueTotal > 0 ? (
               <>
@@ -654,19 +656,19 @@ function DocRow(props: {
         <button
           type="button"
           className="btn btn-ghost btn-sm"
-          style={{ fontSize: 12 }}
+          style={{ fontSize: 'var(--fs-sm)' }}
           onClick={() => props.onView(f)}
         >
           📎 {f.fileName}
         </button>
       </td>
-      <td className="text3" style={{ fontSize: 11 }}>
+      <td className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
         {f.docType ?? '—'}
       </td>
-      <td style={{ fontSize: 11 }}>
+      <td style={{ fontSize: 'var(--fs-xs)' }}>
         {(SO_DOC_CATEGORY_LABELS as Record<string, string>)[f.category] ?? f.category}
       </td>
-      <td className="text3" style={{ fontSize: 11 }}>
+      <td className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
         {f.uploadedByText ?? '—'}
       </td>
       <td className="td-ctr">
@@ -750,7 +752,7 @@ function LineRow(props: {
       <td>
         <CustomerRmStatus value={l.customerRm} />
       </td>
-      <td className="text3" style={{ fontSize: 11 }}>
+      <td className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
         {l.material ?? '—'}
       </td>
       {/* Drawing No. No Rev here any more: it is the same value the Item cell
@@ -758,13 +760,13 @@ function LineRow(props: {
           as two facts that might disagree. The attached drawing file opens
           from the line ⋯ (Preview drawing); the shared preview modal fetches it.
           The small 📎 is only a marker that a file is attached — not clickable. */}
-      <td className="mono" style={{ fontSize: 11 }}>
+      <td className="mono" style={{ fontSize: 'var(--fs-xs)' }}>
         {l.drawingNo ?? '—'}
         {drawingFilePath ? (
           <span
             title="Drawing file attached — open it from the line ⋯"
             aria-label="Drawing file attached"
-            style={{ marginLeft: 4 }}
+            style={{ marginLeft: 'var(--sp-1)' }}
           >
             📎
           </span>
@@ -782,7 +784,7 @@ function LineRow(props: {
           </td>
         </>
       )}
-      <td className="text2" style={{ fontSize: 11 }}>
+      <td className="text2" style={{ fontSize: 'var(--fs-xs)' }}>
         {fmtDate(l.dueDate)}
       </td>
       {/* Long prose: one line, cut with "…", the full text on hover. */}
@@ -790,22 +792,21 @@ function LineRow(props: {
         {l.remarks ?? '—'}
       </td>
       <td>
-        <div style={{ display: 'flex', gap: 4, alignItems: 'center', justifyContent: 'center' }}>
+        <div
+          style={{
+            display: 'flex',
+            gap: 'var(--sp-1)',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
           <SoStatusBadge status={l.status} />
           {shortClosed ? (
-            <span
-              style={{
-                fontSize: 10,
-                fontWeight: 700,
-                padding: '2px 6px',
-                borderRadius: 4,
-                color: 'var(--amber2)',
-                background: 'rgba(245,158,11,0.12)',
-              }}
+            <StatusBadge
+              kind="doc"
+              status="short_closed"
               title={l.shortCloseReason ? `Short Closed: ${l.shortCloseReason}` : 'Short Closed'}
-            >
-              Short Closed
-            </span>
+            />
           ) : null}
         </div>
       </td>
@@ -859,10 +860,10 @@ function DetailGrid(props: {
     background: 'none',
     border: 'none',
     padding: 0,
-    marginLeft: 4,
+    marginLeft: 'var(--sp-1)',
     color: 'var(--blue)',
     cursor: 'pointer',
-    fontSize: 12,
+    fontSize: 'var(--fs-sm)',
     fontWeight: 600,
   };
   return (

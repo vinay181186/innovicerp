@@ -134,12 +134,12 @@ function ScTile({
         textAlign: 'center',
         padding: 10,
         background: bg,
-        borderRadius: 8,
+        borderRadius: 'var(--radius2)',
         border: `1px solid ${border}`,
       }}
     >
-      <div style={{ fontSize: 11, color: 'var(--text3)' }}>{label}</div>
-      <div className="mono fw-700" style={{ fontSize: 22, color }}>
+      <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>{label}</div>
+      <div className="mono fw-700" style={{ fontSize: 'var(--fs-lg)', color }}>
         {value}
       </div>
     </div>

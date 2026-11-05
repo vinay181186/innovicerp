@@ -61,7 +61,7 @@ export function DcEditLineTable(props: {
         style={{
           overflow: 'visible',
           border: '1px solid var(--border)',
-          borderRadius: 8,
+          borderRadius: 'var(--radius2)',
           borderBottomLeftRadius: 0,
           borderBottomRightRadius: 0,
           borderBottom: 'none',
@@ -149,10 +149,10 @@ export function DcEditLineTable(props: {
                         onChange={(e) => props.onPatch(card.id, { qty: e.target.value })}
                         style={{
                           width: '100%',
-                          fontSize: 12,
+                          fontSize: 'var(--fs-sm)',
                           fontWeight: 700,
                           color: err ? 'var(--red)' : 'var(--green)',
-                          padding: '4px 4px',
+                          padding: 'var(--sp-1) var(--sp-1)',
                           ...(err ? { borderColor: 'var(--red)' } : {}),
                         }}
                       />
@@ -207,11 +207,11 @@ export function DcEditLineTable(props: {
           flexWrap: 'wrap',
         }}
       >
-        <span style={{ fontSize: 12 }}>
+        <span style={{ fontSize: 'var(--fs-sm)' }}>
           <span className="green" style={{ fontWeight: 800 }}>
             Total Challan Qty{' '}
           </span>
-          <span className="mono fw-700 green" style={{ fontSize: 16 }}>
+          <span className="mono fw-700 green" style={{ fontSize: 'var(--fs-md)' }}>
             {totalQty}
           </span>
         </span>

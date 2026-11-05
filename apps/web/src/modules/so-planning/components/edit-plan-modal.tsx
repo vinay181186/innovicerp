@@ -16,6 +16,7 @@
 // Once status is jc_created / pr_created / etc., the parent doesn't open
 // this modal (uses view-only navigation instead).
 
+import { Icon } from '@/ui/core';
 import type {
   PlanDetail,
   PlanOpInput,
@@ -628,12 +629,12 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
       style={{
         display: 'inline-flex',
         alignItems: 'center',
-        gap: 4,
+        gap: 'var(--sp-1)',
         padding: '3px 8px',
         background: tint,
         border: `1px solid ${edge}`,
-        borderRadius: 4,
-        fontSize: 11,
+        borderRadius: 'var(--radius-sm)',
+        fontSize: 'var(--fs-xs)',
         fontWeight: 700,
         letterSpacing: '.04em',
         whiteSpace: 'nowrap',
@@ -647,7 +648,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
   // "Nothing to show here." Used by the QC row's OSP cell, which is deliberately
   // left as a dash — the QC row's Machine / Vendor cell says NA instead, because
   // there the field genuinely does not apply.
-  const naDash = <span style={{ color: 'var(--text3)', fontSize: 11 }}>—</span>;
+  const naDash = <span style={{ color: 'var(--text3)', fontSize: 'var(--fs-xs)' }}>—</span>;
 
   // The two item parts of the identity line below. Empty string, not a dash:
   // DocIdent leaves a part out entirely when the plan does not carry it.
@@ -847,7 +848,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                   loaded and a card that does not exist looked identical here.
                   Display only: the code and revision never enter the payload. */}
               {plan.itemId ? (
-                <div style={{ fontSize: 11, marginTop: 2 }}>
+                <div style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-0)' }}>
                   {defaultOpsQuery.isLoading ? (
                     <span style={{ color: 'var(--text3)' }}>Loading…</span>
                   ) : defaultOpsQuery.isError ? null : defaultOpsQuery.data?.routeCardCode ? (
@@ -857,7 +858,10 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                         {defaultOpsQuery.data.routeCardCode}
                       </span>
                       {defaultOpsQuery.data.routeCardRevision != null ? (
-                        <span className="badge b-blue" style={{ marginLeft: 4, fontSize: 11 }}>
+                        <span
+                          className="badge b-blue"
+                          style={{ marginLeft: 'var(--sp-1)', fontSize: 'var(--fs-xs)' }}
+                        >
                           Route Card Rev {defaultOpsQuery.data.routeCardRevision}
                         </span>
                       ) : null}
@@ -894,11 +898,11 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                 type="button"
                 className="btn btn-sm"
                 style={{
-                  background: 'rgba(124,58,237,0.08)',
+                  background: 'var(--purple3)',
                   // --purple is exactly the #7c3aed that was hard-coded here.
                   color: 'var(--purple)',
-                  border: '1px solid rgba(124,58,237,0.25)',
-                  fontSize: 11,
+                  border: '1px solid var(--border2)',
+                  fontSize: 'var(--fs-xs)',
                 }}
                 onClick={() => addOp('outsource')}
               >
@@ -908,10 +912,10 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                 type="button"
                 className="btn btn-sm"
                 style={{
-                  background: 'rgba(34,197,94,0.08)',
+                  background: 'var(--green3)',
                   color: 'var(--green2)',
-                  border: '1px solid rgba(34,197,94,0.25)',
-                  fontSize: 11,
+                  border: '1px solid var(--sig-ok-bd)',
+                  fontSize: 'var(--fs-xs)',
                 }}
                 onClick={() => addOp('qc')}
               >
@@ -921,7 +925,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
           </div>
           {ops.length === 0 ? (
             <div className="empty-state" style={{ padding: 20, textAlign: 'center' }}>
-              <div style={{ fontSize: 12 }}>No operations yet.</div>
+              <div style={{ fontSize: 'var(--fs-sm)' }}>No operations yet.</div>
             </div>
           ) : (
             // Seven columns is more than the 1320px modal has to spare on a small
@@ -957,7 +961,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                         <tr
                           key={op.uid}
                           style={{
-                            background: 'rgba(34,197,94,0.06)',
+                            background: 'var(--green3)',
                             borderLeft: '3px solid var(--green)',
                           }}
                         >
@@ -971,8 +975,8 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                             {stepBadge(
                               '🔬 QC',
                               'var(--green)',
-                              'rgba(34,197,94,0.12)',
-                              'rgba(34,197,94,0.3)',
+                              'var(--green3)',
+                              'var(--sig-ok-bd)',
                             )}
                           </td>
                           {/* NA, not a dash: a QC step is never run on a machine
@@ -986,7 +990,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                               className="mono fw-700"
                               style={{
                                 color: 'var(--text3)',
-                                fontSize: 11,
+                                fontSize: 'var(--fs-xs)',
                                 whiteSpace: 'nowrap',
                               }}
                               title="A QC step is not done on a machine or by a vendor"
@@ -1037,9 +1041,11 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                             <button
                               type="button"
                               className="btn btn-danger btn-sm btn-icon"
+                              title="Remove"
+                              aria-label="Remove"
                               onClick={() => removeOp(op.uid)}
                             >
-                              ×
+                              <Icon name="x" size={12} />
                             </button>
                           </td>
                         </tr>
@@ -1065,12 +1071,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                         <td className="td-ctr mono fw-700">{opSrNo(i + 1)}</td>
                         <td>
                           {isOS ? (
-                            stepBadge(
-                              '🏭 OSP',
-                              'var(--purple)',
-                              'rgba(124,58,237,0.12)',
-                              'rgba(124,58,237,0.3)',
-                            )
+                            stepBadge('🏭 OSP', 'var(--purple)', 'var(--purple3)', 'var(--border2)')
                           ) : (
                             <MachineGroupPicker
                               id={`plan-mgrp-${op.uid}`}
@@ -1163,7 +1164,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                               className="mono fw-700"
                               style={{
                                 color: 'var(--text3)',
-                                fontSize: 11,
+                                fontSize: 'var(--fs-xs)',
                                 whiteSpace: 'nowrap',
                               }}
                               title="Outsourced work has no in-house cycle time"
@@ -1189,7 +1190,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                               display: 'inline-flex',
                               alignItems: 'center',
                               gap: 6,
-                              fontSize: 11,
+                              fontSize: 'var(--fs-xs)',
                               fontWeight: 700,
                               // Legacy L9576: amber only while ticked, else text3.
                               color: isOS ? 'var(--amber)' : 'var(--text3)',
@@ -1235,9 +1236,11 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                           <button
                             type="button"
                             className="btn btn-danger btn-sm btn-icon"
+                            title="Remove"
+                            aria-label="Remove"
                             onClick={() => removeOp(op.uid)}
                           >
-                            ×
+                            <Icon name="x" size={12} />
                           </button>
                         </td>
                       </tr>
@@ -1289,7 +1292,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                 value={foRate ?? ''}
                 onChange={(e) => setFoRate(e.target.value === '' ? null : Number(e.target.value))}
                 placeholder="0.00"
-                style={{ fontSize: 14, color: 'var(--green2)', fontWeight: 700 }}
+                style={{ fontSize: 'var(--fs-sm)', color: 'var(--green2)', fontWeight: 700 }}
               />
             </div>
             <div className="form-grp form-full">
@@ -1319,7 +1322,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                 value={foCostCenter}
                 onChange={(e) => setFoCostCenter(e.target.value)}
                 placeholder="🔍 Cost center…"
-                style={{ fontSize: 12 }}
+                style={{ fontSize: 'var(--fs-sm)' }}
               />
             </div>
             <div className="form-grp form-full">
@@ -1365,7 +1368,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                 step="0.01"
                 value={dpCost ?? ''}
                 onChange={(e) => setDpCost(e.target.value === '' ? null : Number(e.target.value))}
-                style={{ fontSize: 14 }}
+                style={{ fontSize: 'var(--fs-sm)' }}
               />
             </div>
             <div className="form-grp form-full">
@@ -1408,7 +1411,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
         </div>
         <div>
           {requiredDocs.length === 0 ? (
-            <div className="empty-state" style={{ padding: 14, fontSize: 12 }}>
+            <div className="empty-state" style={{ padding: 14, fontSize: 'var(--fs-sm)' }}>
               No document requirements yet. Click + Add Document.
             </div>
           ) : (
@@ -1470,11 +1473,13 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                         <button
                           type="button"
                           className="btn btn-danger btn-sm btn-icon"
+                          title="Remove"
+                          aria-label="Remove"
                           onClick={() =>
                             setRequiredDocs((prev) => prev.filter((_, idx) => idx !== i))
                           }
                         >
-                          ×
+                          <Icon name="x" size={12} />
                         </button>
                       </td>
                     </tr>
@@ -1487,7 +1492,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
         <div
           style={{
             padding: '6px 12px',
-            fontSize: 11,
+            fontSize: 'var(--fs-xs)',
             color: 'var(--text3)',
             borderTop: '1px solid var(--border)',
           }}
@@ -1499,12 +1504,12 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
       {err ? (
         <div
           style={{
-            marginTop: 12,
-            padding: 8,
-            borderRadius: 4,
-            background: 'rgba(239,68,68,0.1)',
+            marginTop: 'var(--sp-3)',
+            padding: 'var(--sp-2)',
+            borderRadius: 'var(--radius-sm)',
+            background: 'var(--red3)',
             color: 'var(--red2)',
-            fontSize: 12,
+            fontSize: 'var(--fs-sm)',
           }}
         >
           {err}

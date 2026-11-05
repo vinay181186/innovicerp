@@ -11,6 +11,7 @@
 // Production Order). The Status column shows the DERIVED status for those plans
 // and the stored planStatus for old plans, exactly as before.
 
+import { Icon } from '@/ui/core';
 import {
   PLAN_EFFECTIVE_STATUSES,
   type PlanEffectiveStatus,
@@ -18,7 +19,6 @@ import {
   type PlanType,
 } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { Plus } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -327,7 +327,7 @@ function PlansListPage(): React.JSX.Element {
         primary={
           perms.entry ? (
             <Link to="/plans/new" className="btn btn-primary">
-              <Plus size={13} /> New Plan
+              <Icon name="plus" size={13} /> New Plan
             </Link>
           ) : null
         }

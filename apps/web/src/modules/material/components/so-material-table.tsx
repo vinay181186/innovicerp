@@ -27,7 +27,7 @@ export function SoMaterialTable({
   return (
     <div className="tbl-wrap">
       {!data.hasBom ? (
-        <div className="text3" style={{ fontSize: 12, marginBottom: 6 }}>
+        <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginBottom: 6 }}>
           This SO has no BOM now — the parts below are still out on its issues.
         </div>
       ) : null}
@@ -56,7 +56,9 @@ export function SoMaterialTable({
                   {l.itemCode}
                 </span>
                 {l.notInBom ? (
-                  <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--amber2)' }}>
+                  <div
+                    style={{ fontSize: 'var(--fs-xs)', fontWeight: 700, color: 'var(--amber2)' }}
+                  >
                     Not in BOM — return it
                   </div>
                 ) : null}
@@ -83,7 +85,7 @@ export function SoMaterialTable({
               >
                 {n(l.availableQty)}
                 {l.reservedForOthers.length ? (
-                  <div className="text3" style={{ fontSize: 10 }}>
+                  <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
                     reserved for others {n(l.reservedForOthers.reduce((s, b) => s + b.qty, 0))}
                   </div>
                 ) : null}

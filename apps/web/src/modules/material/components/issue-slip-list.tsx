@@ -6,8 +6,8 @@ import { fmtDate } from '@/lib/date';
 export function IssueSlipList({ issues }: { issues: JcMaterial['issues'] }): React.JSX.Element {
   if (issues.length === 0) return <></>;
   return (
-    <div style={{ marginTop: 12 }}>
-      <div className="fw-700" style={{ fontSize: 12, marginBottom: 6 }}>
+    <div style={{ marginTop: 'var(--sp-3)' }}>
+      <div className="fw-700" style={{ fontSize: 'var(--fs-sm)', marginBottom: 6 }}>
         Item Issues
       </div>
       <div className="tbl-wrap">
@@ -33,12 +33,12 @@ export function IssueSlipList({ issues }: { issues: JcMaterial['issues'] }): Rea
                     {i.code}
                   </Link>
                   {i.reversedAt ? (
-                    <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--red)' }}>
+                    <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 700, color: 'var(--red)' }}>
                       Cancelled
                     </div>
                   ) : null}
                 </td>
-                <td className="text2" style={{ fontSize: 11 }}>
+                <td className="text2" style={{ fontSize: 'var(--fs-xs)' }}>
                   {fmtDate(i.issueDate)}
                 </td>
                 <td

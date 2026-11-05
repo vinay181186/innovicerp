@@ -105,7 +105,7 @@ export function RevStockTable({
   const { data, isLoading, isError, error } = useItemRevStock(itemId);
   if (isLoading) {
     return (
-      <div className="text3" style={{ fontSize: 12, marginBottom: 10 }}>
+      <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginBottom: 10 }}>
         <Loader2 size={14} className="inline animate-spin" /> Loading stock per Drawing Rev…
       </div>
     );
@@ -128,7 +128,7 @@ export function RevStockTable({
   if (rows.length === 0) return null;
   return (
     <div style={{ marginBottom: 14 }}>
-      <div className="text3" style={{ fontSize: 11, marginBottom: 4 }}>
+      <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginBottom: 'var(--sp-1)' }}>
         Stock per Drawing Rev
       </div>
       <DataTable

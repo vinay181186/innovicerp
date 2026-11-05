@@ -1,7 +1,7 @@
 // Item badge — the ONE way an item is shown with its product image
 // (user decision 2026-09-21, mock-up JC-List-3D-Image-Mockup.html).
 //
-//   [ 3D render ]  CODE/REV          ← mono, bold; purple in lists, --text on the item page
+//   [ 3D render ]  CODE/REV          ← mono, bold, dark (--text) everywhere (owner 2026-11-04)
 //                  Item name         ← quiet, one line, ellipsis
 //
 // The picture is a fixed square so every row lines up: 40 px in table rows,
@@ -48,7 +48,7 @@ const SCALE: Record<ItemBadgeSize, { code: number; name: number; icon: number; r
 export interface ItemBadgeProps {
   code: string | null | undefined;
   name?: string | null;
-  imagePath: string | null | undefined;
+  imagePath?: string | null | undefined;
   /** The order line's drawing revision — rendered as `CODE/REV`. Omit for masters. */
   revision?: string | null;
   size?: ItemBadgeSize;
@@ -60,8 +60,8 @@ export interface ItemBadgeProps {
    *  in that column and the badge with `showImage={false}` beside it, so the
    *  code · name stay the shared badge. Default: shown. */
   showImage?: boolean;
-  /** Colour of the code text. Lists use purple (the JC list's code colour);
-   *  the item page passes `var(--text)`. */
+  /** Colour of the code text. Dark (`var(--text)`) by default — the item code
+   *  is the main thing on the row. */
   codeColor?: string;
   /** Widest the name may grow before it clips. Default 200 on rows, none on the page. */
   nameMaxWidth?: number | 'none';
@@ -87,7 +87,12 @@ export const THUMBNAIL_COL_WIDTH = '8%';
 export function ItemThumbnailHeader(): React.JSX.Element {
   return (
     <th
-      style={{ width: THUMBNAIL_COL_WIDTH, padding: '8px 2px', fontSize: 11, overflow: 'hidden' }}
+      style={{
+        width: THUMBNAIL_COL_WIDTH,
+        padding: 'var(--sp-2) var(--sp-0)',
+        fontSize: 'var(--fs-xs)',
+        overflow: 'hidden',
+      }}
       title="Product image"
     >
       Thumbnail
@@ -103,7 +108,7 @@ export function ItemThumbnailCell({
   imagePath,
   alt,
 }: {
-  imagePath: string | null | undefined;
+  imagePath?: string | null | undefined;
   alt?: string | null;
 }): React.JSX.Element {
   return (
@@ -125,7 +130,7 @@ export function ItemImageBox({
   onOpen,
   fill = false,
 }: {
-  imagePath: string | null | undefined;
+  imagePath?: string | null | undefined;
   size?: ItemBadgeSize;
   alt?: string;
   /** Override the click. Default opens the preview modal. */
@@ -248,7 +253,7 @@ export function ItemBadge({
   size = 'row',
   showName = true,
   showImage = true,
-  codeColor = 'var(--purple)',
+  codeColor = 'var(--text)',
   nameMaxWidth,
   onClick,
   renderCode,

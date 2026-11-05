@@ -8,13 +8,13 @@ export function Note(props: {
   return (
     <div
       style={{
-        marginTop: 12,
+        marginTop: 'var(--sp-3)',
         color: `var(--${t}2)`,
         background: `var(--${t}3)`,
         border: `1px solid var(--${t})`,
-        borderRadius: 6,
+        borderRadius: 'var(--radius)',
         padding: '6px 10px',
-        fontSize: 12,
+        fontSize: 'var(--fs-sm)',
       }}
     >
       {props.children}

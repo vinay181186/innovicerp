@@ -23,6 +23,7 @@ export const ROW_TINT = {
   done: 'row-done',
   pending: 'row-pending',
   cancelled: 'row-cancelled',
+  approved: 'row-approved',
 } as const;
 
 export function cx(...parts: Array<string | false | undefined | null>): string | undefined {

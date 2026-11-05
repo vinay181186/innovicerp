@@ -96,29 +96,31 @@ export function SoStatusView({ tabs }: { tabs: React.ReactNode }): React.JSX.Ele
           <div
             style={{
               padding: 14,
-              background: 'rgba(34,211,238,0.04)',
-              border: '1px solid rgba(34,211,238,0.15)',
+              background: 'var(--cyan3)',
+              border: '1px solid var(--sig-info-bd)',
               borderRadius: 'var(--radius)',
-              marginBottom: 16,
+              marginBottom: 'var(--sp-4)',
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
               flexWrap: 'wrap',
-              gap: 8,
+              gap: 'var(--sp-2)',
             }}
           >
             <div>
               <span className="mono fw-700" style={{ fontSize: 18, color: 'var(--cyan)' }}>
                 {soNoWithInternal(detail.data.so.code, detail.data.so.internalSoNo)}
               </span>
-              <span style={{ marginLeft: 12, fontSize: 14, fontWeight: 600 }}>
+              <span
+                style={{ marginLeft: 'var(--sp-3)', fontSize: 'var(--fs-sm)', fontWeight: 600 }}
+              >
                 {detail.data.so.customerName ?? '—'}
               </span>
-              <span style={{ marginLeft: 12 }}>
+              <span style={{ marginLeft: 'var(--sp-3)' }}>
                 <SoStatusBadge status={detail.data.so.status as SoStatus} />
               </span>
             </div>
-            <div className="text3" style={{ fontSize: 12 }}>
+            <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
               SO Date: {fmtDate(detail.data.so.soDate)}
               {detail.data.so.dueDate ? ` · Due: ${fmtDate(detail.data.so.dueDate)}` : ''}
               {detail.data.so.type ? ` · Type: ${detail.data.so.type}` : ''}
@@ -165,7 +167,7 @@ function SummaryStrip({ lines }: { lines: SoQcLine[] }): React.JSX.Element {
   const allDone = (done: number, total: number): string =>
     total > 0 && done >= total ? 'var(--green)' : 'var(--amber)';
   return (
-    <div style={{ marginBottom: 16 }}>
+    <div style={{ marginBottom: 'var(--sp-4)' }}>
       <StatStrip
         items={[
           {

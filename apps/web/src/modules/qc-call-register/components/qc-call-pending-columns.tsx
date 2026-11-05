@@ -260,7 +260,7 @@ export function pendingColumns(firstRowNo: number): DataTableColumn<PendingVM>[]
       header: 'Stage',
       nowrap: true,
       render: (vm) => (
-        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text2)' }}>
+        <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 700, color: 'var(--text2)' }}>
           {stageLabelOf(vm)}
         </span>
       ),

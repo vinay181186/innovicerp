@@ -38,8 +38,8 @@ const PLAN_STATUS_COLOR: Record<PlanStatus, string> = {
   // Same colour per state as <StatusBadge kind="plan"> (wave 2).
   in_planning: 'var(--text3)',
   planned: 'var(--blue)',
-  jc_created: 'var(--cyan)',
-  pr_created: 'var(--cyan)',
+  jc_created: 'var(--amber)',
+  pr_created: 'var(--amber)',
   in_production: 'var(--amber)',
   complete: 'var(--green)',
   cancelled: 'var(--red)', // owner 2026-11-03: Cancelled red everywhere
@@ -132,11 +132,11 @@ export function PrChip({ pr }: { pr: PlanningLine['prs'][number] }): JSX.Element
         flexWrap: 'wrap',
         gap: 6,
         padding: '3px 8px',
-        margin: '2px 0',
+        margin: 'var(--sp-0) 0',
         background: 'var(--bg)',
         border: '1px solid var(--border)',
-        borderRadius: 6,
-        fontSize: 11,
+        borderRadius: 'var(--radius)',
+        fontSize: 'var(--fs-xs)',
       }}
     >
       <span>🛒</span>
@@ -152,7 +152,9 @@ export function PrChip({ pr }: { pr: PlanningLine['prs'][number] }): JSX.Element
       <span className="text2">
         PR · <b>{pr.qty} pcs</b>
       </span>
-      <span style={{ fontWeight: 700, color: PR_STATUS_COLOR[pr.status], fontSize: 11 }}>
+      <span
+        style={{ fontWeight: 700, color: PR_STATUS_COLOR[pr.status], fontSize: 'var(--fs-xs)' }}
+      >
         {pr.status === 'po_created' && pr.poCode ? (
           <>
             PO <span className="mono">{pr.poCode}</span>

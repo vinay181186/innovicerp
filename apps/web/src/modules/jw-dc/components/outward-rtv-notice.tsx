@@ -163,7 +163,7 @@ export function OutwardRtvNotice({
       role="alert"
       title="These pieces from this PO are waiting to go back to the vendor:"
     >
-      <ul style={{ margin: '4px 0 8px', paddingLeft: 18 }}>
+      <ul style={{ margin: 'var(--sp-1) 0 var(--sp-2)', paddingLeft: 18 }}>
         {rows.map((r) => (
           <li key={r.ncId}>
             <b className="mono fw-700">{r.ncCode}</b> —{' '}

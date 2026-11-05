@@ -198,7 +198,7 @@ function ReorderListPage(): React.JSX.Element {
       />
       {result ? (
         <div className="panel" style={{ marginBottom: 10 }}>
-          <div className="panel-body" style={{ fontSize: 12 }}>
+          <div className="panel-body" style={{ fontSize: 'var(--fs-sm)' }}>
             {result.created.length > 0 ? (
               <div>
                 ✓ Raised:{' '}
@@ -222,7 +222,11 @@ function ReorderListPage(): React.JSX.Element {
         </div>
       ) : null}
       {err ? (
-        <div style={{ color: 'var(--red2)', fontSize: 12, marginBottom: 8 }}>{err}</div>
+        <div
+          style={{ color: 'var(--red2)', fontSize: 'var(--fs-sm)', marginBottom: 'var(--sp-2)' }}
+        >
+          {err}
+        </div>
       ) : null}
       {isError ? (
         <PageState

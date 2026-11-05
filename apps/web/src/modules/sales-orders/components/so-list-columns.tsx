@@ -191,7 +191,7 @@ export function soListColumns(opts: {
             <button
               type="button"
               className="btn btn-ghost btn-sm"
-              style={{ padding: '0 4px', lineHeight: 1 }}
+              style={{ padding: '0 var(--sp-1)', lineHeight: 1 }}
               title="Preview Client PO Document"
               onClick={(e) => {
                 e.stopPropagation();

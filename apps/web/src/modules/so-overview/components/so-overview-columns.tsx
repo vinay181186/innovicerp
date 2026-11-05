@@ -88,7 +88,7 @@ function ProgressCell({ row }: { row: SoOverviewRow }): React.JSX.Element {
       />
       <span
         className="mono fw-700"
-        style={{ fontSize: 11, color: barTextColor(row.overallStatus) }}
+        style={{ fontSize: 'var(--fs-xs)', color: barTextColor(row.overallStatus) }}
       >
         {row.overallPct}%
       </span>
@@ -104,7 +104,7 @@ function AlertFlags({ row }: { row: SoOverviewRow }): React.JSX.Element {
     flags.push(
       <span
         key="delayed"
-        style={{ color: 'var(--red2)', fontWeight: 700, fontSize: 11 }}
+        style={{ color: 'var(--red2)', fontWeight: 700, fontSize: 'var(--fs-xs)' }}
         title="Lines past due"
       >
         ⚠{row.alerts.delayedLines}
@@ -115,7 +115,7 @@ function AlertFlags({ row }: { row: SoOverviewRow }): React.JSX.Element {
     flags.push(
       <span
         key="atvendor"
-        style={{ color: 'var(--purple)', fontSize: 11 }}
+        style={{ color: 'var(--purple)', fontSize: 'var(--fs-xs)' }}
         title="Qty at outsource vendor"
       >
         🏭{row.alerts.atVendorQty}
@@ -124,26 +124,34 @@ function AlertFlags({ row }: { row: SoOverviewRow }): React.JSX.Element {
   }
   if (row.alerts.qcPendingOps > 0) {
     flags.push(
-      <span key="qcpend" style={{ color: 'var(--amber2)', fontSize: 11 }} title="Ops awaiting QC">
+      <span
+        key="qcpend"
+        style={{ color: 'var(--amber2)', fontSize: 'var(--fs-xs)' }}
+        title="Ops awaiting QC"
+      >
         🔬{row.alerts.qcPendingOps}
       </span>,
     );
   }
   if (row.stageCounts.hold > 0) {
     flags.push(
-      <span key="hold" style={{ color: 'var(--red2)', fontSize: 11 }} title="Blocked lines">
+      <span
+        key="hold"
+        style={{ color: 'var(--red2)', fontSize: 'var(--fs-xs)' }}
+        title="Blocked lines"
+      >
         🚫{row.stageCounts.hold}
       </span>,
     );
   }
   if (flags.length === 0) {
     return (
-      <span className="text3" style={{ fontSize: 11 }}>
+      <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
         —
       </span>
     );
   }
-  return <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>{flags}</div>;
+  return <div style={{ display: 'flex', gap: 'var(--sp-1)', flexWrap: 'wrap' }}>{flags}</div>;
 }
 
 // Sort & Filter tick lists (server mode): stored code + the label shown.
@@ -183,7 +191,7 @@ export function soOverviewColumns(
               to="/sales-orders/$id"
               params={{ id: row.id }}
               className="td-code"
-              style={{ color: 'var(--cyan)', fontSize: 13, fontWeight: 800 }}
+              style={{ color: 'var(--cyan)', fontSize: 'var(--fs-sm)', fontWeight: 800 }}
               onClick={(e) => e.stopPropagation()}
             >
               {row.code}
@@ -211,7 +219,7 @@ export function soOverviewColumns(
       filterOptions: SO_TYPE_OPTIONS,
       header: 'SO Type',
       nowrap: true,
-      render: (row) => <span style={{ fontSize: 11 }}>{soTypeLabel(row.type)}</span>,
+      render: (row) => <span style={{ fontSize: 'var(--fs-xs)' }}>{soTypeLabel(row.type)}</span>,
     },
     {
       id: 'progress_status',

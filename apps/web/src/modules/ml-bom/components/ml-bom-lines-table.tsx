@@ -4,6 +4,7 @@
 // A sub-assembly link is resolved by the SERVER on save (ADR-225); the edit
 // form only shows the link the server last returned.
 
+import { Icon } from '@/ui/core';
 import {
   BOM_LINE_TYPE_LABEL,
   BOM_LINE_TYPES,
@@ -13,7 +14,6 @@ import {
   qtyStepForUom,
 } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
-import { Trash2 } from 'lucide-react';
 import { ChildDrawingRevCell } from '@/modules/item-revisions/components/child-drawing-rev-cell';
 import { SearchableSelect } from '@/ui/forms';
 import {
@@ -141,7 +141,7 @@ export function MlBomLinesTable(props: Props): React.JSX.Element {
                         : {})}
                   />
                   {mode === 'edit' && line.childMlBomId && line.childMlBomCode ? (
-                    <div style={{ marginTop: 2 }}>
+                    <div style={{ marginTop: 'var(--sp-0)' }}>
                       <Link
                         to="/ml-boms/$id"
                         params={{ id: line.childMlBomId }}
@@ -258,7 +258,7 @@ export function MlBomLinesTable(props: Props): React.JSX.Element {
                     title="Remove line"
                     aria-label={`Remove line ${idx + 1}`}
                   >
-                    <Trash2 size={14} />
+                    <Icon name="trash-2" size={14} />
                   </button>
                 </td>
               </tr>

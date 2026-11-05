@@ -16,6 +16,7 @@
 
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
+import { Icon } from '@/ui/core';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -277,7 +278,12 @@ function OpLogListPage(): React.JSX.Element {
               }
               onClick={() => void onExport()}
             >
-              {exporting ? <Loader2 className="inline h-3 w-3 animate-spin" /> : '⬇'} Export
+              {exporting ? (
+                <Loader2 className="inline h-3 w-3 animate-spin" />
+              ) : (
+                <Icon name="download" size={13} />
+              )}{' '}
+              Export
             </button>
           </>
         }

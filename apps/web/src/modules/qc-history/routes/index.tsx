@@ -212,7 +212,8 @@ function QcHistoryPage(): React.JSX.Element {
         }
         tools={
           <ActionMenu
-            label="⬇ Export"
+            label="Export"
+            icon="download"
             items={[
               {
                 label: 'Completed Entries',

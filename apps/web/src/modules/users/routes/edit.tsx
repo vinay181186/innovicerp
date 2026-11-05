@@ -9,9 +9,10 @@
 // there — an admin picks a DEPARTMENT and the role follows — so this screen
 // shows the department, with the derived role underneath it.
 
+import { Icon } from '@/ui/core';
 import type { UpdateUserInput } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, KeyRound, Loader2, Lock, Trash2 } from 'lucide-react';
+import { ArrowLeft, KeyRound, Loader2, Lock } from 'lucide-react';
 import { useCallback, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useExitConfirm } from '@/lib/exit-guard';
@@ -158,7 +159,7 @@ function UserEditPage(): React.JSX.Element {
     return (
       <div className="panel">
         <div className="panel-body">
-          <div style={{ marginBottom: 8 }}>
+          <div style={{ marginBottom: 'var(--sp-2)' }}>
             <Link to="/users" className="btn btn-ghost btn-sm">
               <ArrowLeft size={14} /> Back
             </Link>
@@ -242,14 +243,14 @@ function UserEditPage(): React.JSX.Element {
       <div className="panel">
         <div className="panel-hdr">
           <div>
-            <div className="fw-700" style={{ color: 'var(--cyan)', fontSize: 14 }}>
+            <div className="fw-700" style={{ color: 'var(--cyan)', fontSize: 'var(--fs-sm)' }}>
               {detail.email}
             </div>
-            <div className="panel-title" style={{ marginTop: 2 }}>
+            <div className="panel-title" style={{ marginTop: 'var(--sp-0)' }}>
               Edit User{detail.fullName ? ` — ${detail.fullName}` : ''}
             </div>
             {isSelf ? (
-              <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
+              <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-0)' }}>
                 This is you — you cannot deactivate or delete yourself.
               </div>
             ) : null}
@@ -263,7 +264,7 @@ function UserEditPage(): React.JSX.Element {
                 setConfirmDelete(true);
               }}
             >
-              <Trash2 size={13} /> Delete
+              <Icon name="trash-2" size={13} /> Delete
             </button>
           ) : null}
           {confirmDelete ? (
@@ -345,7 +346,14 @@ function UserEditPage(): React.JSX.Element {
               </div>
               <div className="form-grp">
                 <label className="form-label">Department &amp; Access</label>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 4 }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 'var(--sp-2)',
+                    paddingTop: 'var(--sp-1)',
+                  }}
+                >
                   {dept ? (
                     <span style={{ color: dept.color, fontWeight: 700 }}>{dept.label}</span>
                   ) : (
@@ -366,7 +374,7 @@ function UserEditPage(): React.JSX.Element {
             </div>
 
             {submitError ? (
-              <div style={{ marginTop: 16 }}>
+              <div style={{ marginTop: 'var(--sp-4)' }}>
                 <Banner tone="error" role="alert">
                   {submitError}
                 </Banner>
@@ -395,15 +403,15 @@ function UserEditPage(): React.JSX.Element {
         </button>
       </FormActions>
 
-      <div className="panel" style={{ marginTop: 12 }}>
+      <div className="panel" style={{ marginTop: 'var(--sp-3)' }}>
         <div className="panel-hdr">
           <div className="panel-title">
-            <KeyRound size={14} style={{ display: 'inline', marginRight: 4 }} />
+            <KeyRound size={14} style={{ display: 'inline', marginRight: 'var(--sp-1)' }} />
             Set / Reset Password
           </div>
         </div>
         <div className="panel-body">
-          <div className="text3" style={{ fontSize: 12, marginBottom: 10 }}>
+          <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginBottom: 10 }}>
             No email is sent — give the new password to the user.
           </div>
           {pwErr ? (

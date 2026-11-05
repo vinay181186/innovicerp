@@ -7,9 +7,9 @@
 // washed by its return status (ROW_TINT). RowActions carries View as a real link
 // so ctrl-click still opens a new tab.
 
+import { Icon } from '@/ui/core';
 import { type JwDcOutwardLineRow } from '@innovic/shared';
 import { Link, useNavigate } from '@tanstack/react-router';
-import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
@@ -118,7 +118,7 @@ export function OutwardView({
         primary={
           canWrite ? (
             <Link to="/jw-dc/outward/new" className="btn btn-primary">
-              <Plus size={14} /> New Outward DC
+              <Icon name="plus" size={14} /> New Outward DC
             </Link>
           ) : null
         }

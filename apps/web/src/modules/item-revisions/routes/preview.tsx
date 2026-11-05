@@ -7,8 +7,9 @@
 // everyone else anyway. Below: the drawing's history and the documents that
 // name this Item + Rev, each linking to its own page.
 
+import { Icon } from '@/ui/core';
 import { createRoute, useRouter } from '@tanstack/react-router';
-import { ArrowLeft, Download, Printer } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import { useState } from 'react';
 import { fileNameFromPath } from '@/components/shared/file-preview-modal';
 import { canDownloadDrawings, useMyAccess } from '@/lib/access-control';
@@ -112,7 +113,7 @@ function DrawingPage(): React.JSX.Element {
           disabled={!path}
           title={path ? undefined : 'This Drawing Rev has no drawing file'}
         >
-          <Printer size={13} /> Print
+          <Icon name="printer" size={13} /> Print
         </button>
         {mayDownload && path ? (
           <button
@@ -121,7 +122,7 @@ function DrawingPage(): React.JSX.Element {
             onClick={() => void onDownload()}
             disabled={saving}
           >
-            <Download size={13} /> {saving ? 'Downloading…' : 'Download'}
+            <Icon name="download" size={13} /> {saving ? 'Downloading…' : 'Download'}
           </button>
         ) : null}
       </div>

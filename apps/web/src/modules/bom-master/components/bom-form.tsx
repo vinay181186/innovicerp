@@ -23,6 +23,7 @@
 //   • the two resolved Item Names (parent and child) were disabled inputs the
 //     user can never type in → read as values, not as empty boxes.
 
+import { Icon } from '@/ui/core';
 import {
   BOM_LINE_TYPE_LABEL,
   BOM_LINE_TYPES,
@@ -36,7 +37,7 @@ import {
   qtyUomProblem,
 } from '@innovic/shared';
 import { useQueries, useQueryClient } from '@tanstack/react-query';
-import { Copy, Download, Plus, Trash2, Upload } from 'lucide-react';
+import { Copy, Upload } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { apiDownload, apiFetch } from '@/lib/api';
 import { getCol, normalizeHeaderKey, readSheetRows } from '@/lib/xlsx-import';
@@ -1175,7 +1176,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
               title={parentLocked ? 'Pick the parent item first' : undefined}
               onClick={addLine}
             >
-              <Plus size={12} /> Add Child Item
+              <Icon name="plus" size={12} /> Add Child Item
             </button>
             {/* Template stays open even while locked — you may well want the
                 empty sheet before you have decided the parent. */}
@@ -1185,7 +1186,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
               disabled={templateBusy}
               onClick={() => void downloadTemplate()}
             >
-              <Download size={12} /> {templateBusy ? 'Preparing…' : 'Excel Template'}
+              <Icon name="download" size={12} /> {templateBusy ? 'Preparing…' : 'Excel Template'}
             </button>
             <button
               type="button"
@@ -1281,7 +1282,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
                           className="btn btn-ghost btn-sm"
                           onClick={downloadErrors}
                         >
-                          <Download size={12} /> CSV
+                          <Icon name="download" size={12} /> CSV
                         </button>
                       </>
                     ) : null}
@@ -1297,10 +1298,11 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
                         className="btn btn-ghost btn-sm"
                         onClick={() => void downloadMissingItemsSheet()}
                       >
-                        <Download size={12} /> Download {missingCodes.length} missing Item Code
+                        <Icon name="download" size={12} /> Download {missingCodes.length} missing
+                        Item Code
                         {missingCodes.length === 1 ? '' : 's'} for Item Master import
                       </button>
-                      <div style={{ marginTop: 4 }}>
+                      <div style={{ marginTop: 'var(--sp-1)' }}>
                         Import them on Item Master, then import this BOM again.
                       </div>
                     </div>
@@ -1498,7 +1500,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
                         title="Remove line"
                         aria-label={`Remove line ${idx + 1}`}
                       >
-                        <Trash2 size={14} />
+                        <Icon name="trash-2" size={14} />
                       </button>
                     </td>
                   </tr>

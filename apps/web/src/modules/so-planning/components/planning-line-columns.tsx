@@ -110,7 +110,7 @@ export function planningLineColumns(
                   Raise PR (buy). */}
               <span
                 className={`badge ${l.itemProcurementType === 'buy' ? 'b-amber' : 'b-grey'}`}
-                style={{ fontSize: 11, padding: '0 6px', marginLeft: 6 }}
+                style={{ fontSize: 'var(--fs-xs)', padding: '0 6px', marginLeft: 6 }}
                 title={
                   l.itemProcurementType === 'buy'
                     ? 'Bought-in item — raise a purchase request'
@@ -120,7 +120,10 @@ export function planningLineColumns(
                 {l.itemProcurementType === 'buy' ? 'Buy' : 'Make'}
               </span>
               {l.itemProcurementType === 'buy' && source === 'jw' ? (
-                <span className="text3" style={{ fontSize: 11, marginLeft: 4 }}>
+                <span
+                  className="text3"
+                  style={{ fontSize: 'var(--fs-xs)', marginLeft: 'var(--sp-1)' }}
+                >
                   Customer material
                 </span>
               ) : null}
@@ -261,7 +264,7 @@ export function planningLineColumns(
       render: (l) => {
         const st = lineStatusOf(l);
         return (
-          <span style={{ fontSize: 11, fontWeight: 700, color: st.color }}>
+          <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 700, color: st.color }}>
             {st.label} <span className="mono text3">· {st.pct}%</span>
           </span>
         );
@@ -290,7 +293,7 @@ export function planningLineColumns(
         // that is on the floor right now, so the Job Card stands in for it.
         if (l.plans.length === 0 && l.prs.length === 0 && l.directJcQty <= 0) {
           return (
-            <span className="text3" style={{ fontSize: 11 }}>
+            <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
               —
             </span>
           );
@@ -302,11 +305,16 @@ export function planningLineColumns(
             {l.prs.map((pr) => {
               const st = prStatusOf(pr);
               return (
-                <span key={pr.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                <span
+                  key={pr.id}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-1)' }}
+                >
                   <span className="mono fw-700" style={{ color: 'var(--blue)' }}>
                     {pr.code}
                   </span>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: st.color }}>{st.label}</span>
+                  <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 700, color: st.color }}>
+                    {st.label}
+                  </span>
                 </span>
               );
             })}
@@ -319,7 +327,10 @@ export function planningLineColumns(
               // name is in the ▸ panel and the cell's tooltip.
               const child = planChildItemOf(p);
               return (
-                <span key={p.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                <span
+                  key={p.id}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-1)' }}
+                >
                   <span className="mono fw-700" style={{ color: 'var(--blue)' }}>
                     {p.code}
                   </span>
@@ -328,16 +339,18 @@ export function planningLineColumns(
                       {child.code}
                     </span>
                   ) : null}
-                  <span style={{ fontSize: 11, fontWeight: 700, color: st.color }}>{st.label}</span>
+                  <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 700, color: st.color }}>
+                    {st.label}
+                  </span>
                 </span>
               );
             })}
             {l.directJcQty > 0 ? (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-1)' }}>
                 <span className="mono fw-700" style={{ color: 'var(--cyan)' }}>
                   {l.directJcCodes.join(', ') || 'Job Card'}
                 </span>
-                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--cyan)' }}>
+                <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 700, color: 'var(--cyan)' }}>
                   In Production (no plan)
                 </span>
               </span>

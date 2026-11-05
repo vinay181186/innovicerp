@@ -72,11 +72,17 @@ export function OutsourceInfo({
   const row = useOutsourceRow(jcCode, jcOpId);
   return (
     <>
-      <div style={{ fontSize: 11, color: 'var(--amber2)', fontWeight: 700 }}>🏭 Outsource</div>
+      <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--amber2)', fontWeight: 700 }}>
+        🏭 Outsource
+      </div>
       {row?.outsourceVendorName ? (
-        <div style={{ fontSize: 11, color: 'var(--text2)' }}>{row.outsourceVendorName}</div>
+        <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text2)' }}>
+          {row.outsourceVendorName}
+        </div>
       ) : null}
-      <div style={{ fontSize: 11, color: 'var(--text3)' }}>{OUTSOURCE_STATUS_LABEL[status]}</div>
+      <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>
+        {OUTSOURCE_STATUS_LABEL[status]}
+      </div>
     </>
   );
 }
@@ -230,11 +236,17 @@ export function OutsourceActionRefs({
   const status: OutsourceStatus = op.outsourceStatus ?? 'pending';
   const ref =
     status === 'pr_raised' && row?.outsourcePrCode ? (
-      <span style={{ fontSize: 11, color: 'var(--blue)' }}>PR: {row.outsourcePrCode}</span>
+      <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--blue)' }}>
+        PR: {row.outsourcePrCode}
+      </span>
     ) : status === 'po_created' && row?.outsourcePoCode ? (
-      <span style={{ fontSize: 11, color: 'var(--cyan)' }}>PO: {row.outsourcePoCode}</span>
+      <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--cyan)' }}>
+        PO: {row.outsourcePoCode}
+      </span>
     ) : (
-      <span style={{ fontSize: 11, color: 'var(--purple)' }}>{OUTSOURCE_STATUS_LABEL[status]}</span>
+      <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--purple)' }}>
+        {OUTSOURCE_STATUS_LABEL[status]}
+      </span>
     );
   return (
     <>
@@ -398,7 +410,7 @@ export function JcOpFooter({
         gap: 6,
         flexWrap: 'wrap',
         marginTop: 10,
-        paddingTop: 8,
+        paddingTop: 'var(--sp-2)',
         borderTop: '1px solid var(--border)',
       }}
     >
@@ -417,13 +429,13 @@ export function JcOpFooter({
           </button>
         ) : showQcText ? (
           op.computedStatus === 'complete' ? (
-            <span style={{ color: 'var(--green2)', fontSize: 12 }}>✓ QC Completed</span>
+            <span style={{ color: 'var(--green2)', fontSize: 'var(--fs-sm)' }}>✓ QC Completed</span>
           ) : (
-            <span style={{ fontSize: 11, color: 'var(--text3)' }}>Waiting</span>
+            <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>Waiting</span>
           )
         ) : null
       ) : showDone ? (
-        <span style={{ color: 'var(--green2)', fontSize: 12 }}>✓ Completed</span>
+        <span style={{ color: 'var(--green2)', fontSize: 'var(--fs-sm)' }}>✓ Completed</span>
       ) : showLog ? (
         /* T33: Log only while a session is actually running on this op. Start
            and Log are the two ends of one chain, so exactly one of them shows —

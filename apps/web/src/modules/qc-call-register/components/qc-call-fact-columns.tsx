@@ -65,7 +65,7 @@ export function factColumns<T extends QcRegisterFacts>(): DataTableColumn<T>[] {
             <div className="mono fw-700" style={{ color: 'var(--text)' }}>
               {s.plannedMachine ?? '—'}
             </div>
-            <div className="text3" style={{ fontSize: 11 }}>
+            <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
               {stepOpLabel(s)}
             </div>
           </div>

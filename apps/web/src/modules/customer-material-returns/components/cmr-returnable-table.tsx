@@ -50,7 +50,9 @@ export function CmrReturnableTable({
                 <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
                   {r.clientPoLineNo ?? '—'}
                 </td>
-                <td className="td-code">{r.partCode ?? '—'}</td>
+                <td className="td-code" style={{ color: 'var(--text)' }}>
+                  {r.partCode ?? '—'}
+                </td>
                 <td className="td-code" style={{ color: 'var(--text)' }}>
                   {r.rmItemCode ?? r.partyMaterialCode}
                 </td>

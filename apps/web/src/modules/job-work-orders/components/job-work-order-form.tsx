@@ -13,6 +13,7 @@
 // (POST /job-work-orders/rm-item). Lines already used downstream (`inUse`) lock
 // Item / UOM / BOM and cannot be removed — they are short-closed instead.
 
+import { Icon } from '@/ui/core';
 import {
   type CreateJobWorkOrderInput,
   type JobWorkOrderDetail,
@@ -30,7 +31,7 @@ import {
   type Uom,
   UOMS,
 } from '@innovic/shared';
-import { Loader2, Plus, Trash2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useFieldArray, useForm, type UseFormRegisterReturn } from 'react-hook-form';
 import { DocNumberInput, SearchableSelect } from '@/ui/forms';
@@ -188,13 +189,16 @@ function CustomerRmCell(props: { rm: RmState | undefined }): React.JSX.Element {
       <span
         role="alert"
         title={rm.message}
-        style={{ color: 'var(--red2)', fontSize: 11, whiteSpace: 'normal' }}
+        style={{ color: 'var(--red2)', fontSize: 'var(--fs-xs)', whiteSpace: 'normal' }}
       >
         {rm.message}
       </span>
     );
   return (
-    <span title={rm.code} style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+    <span
+      title={rm.code}
+      style={{ display: 'inline-flex', gap: 'var(--sp-1)', alignItems: 'center' }}
+    >
       <span className="mono fw-700" style={{ color: 'var(--text)' }}>
         {rm.code}
       </span>
@@ -295,7 +299,10 @@ function Section({
         ) : null}
       </div>
       {table ? (
-        <div className="tbl-wrap" style={{ border: '1px solid var(--border)', borderRadius: 8 }}>
+        <div
+          className="tbl-wrap"
+          style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius2)' }}
+        >
           {children}
         </div>
       ) : (
@@ -977,25 +984,27 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: 8,
+                gap: 'var(--sp-2)',
                 flexWrap: 'wrap',
-                marginBottom: 4,
+                marginBottom: 'var(--sp-1)',
               }}
             >
               <label className="form-label" htmlFor="clientPoNo" style={{ marginBottom: 0 }}>
                 Client PO No.
               </label>
               {canAttach ? (
-                <span style={{ fontSize: 11, color: 'var(--text3)', fontWeight: 600 }}>or</span>
+                <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)', fontWeight: 600 }}>
+                  or
+                </span>
               ) : null}
               {!canAttach ? null : emailFileName ? (
                 <span
                   style={{
-                    fontSize: 11,
+                    fontSize: 'var(--fs-xs)',
                     color: 'var(--green2)',
                     display: 'inline-flex',
                     alignItems: 'center',
-                    gap: 4,
+                    gap: 'var(--sp-1)',
                   }}
                 >
                   📧{' '}
@@ -1015,7 +1024,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                       onClick={() => window.open(emailFileUrl, '_blank', 'noopener')}
                       style={{
                         color: 'var(--blue)',
-                        fontSize: 11,
+                        fontSize: 'var(--fs-xs)',
                         background: 'none',
                         border: 'none',
                         cursor: 'pointer',
@@ -1031,22 +1040,22 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                     onClick={clearEmailFile}
                     style={{
                       color: 'var(--red2)',
-                      fontSize: 11,
+                      fontSize: 'var(--fs-xs)',
                       background: 'none',
                       border: 'none',
                       cursor: 'pointer',
                       textDecoration: 'underline',
                     }}
                   >
-                    ✕
+                    <Icon name="x" size={12} />
                   </button>
                 </span>
               ) : (
                 <label
                   style={{
-                    fontSize: 11,
-                    padding: '2px 8px',
-                    borderRadius: 4,
+                    fontSize: 'var(--fs-xs)',
+                    padding: 'var(--sp-0) var(--sp-2)',
+                    borderRadius: 'var(--radius-sm)',
                     border: '1px dashed var(--border)',
                     color: 'var(--text3)',
                     cursor: 'pointer',
@@ -1088,7 +1097,14 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                   onChange={onPickPoFile}
                 />
                 {poFileName ? (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      fontSize: 'var(--fs-sm)',
+                    }}
+                  >
                     <span className="mono" style={{ color: 'var(--blue)' }}>
                       📎 {poFileName}
                     </span>
@@ -1098,7 +1114,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                       onClick={clearPoFile}
                       aria-label="Remove PO document"
                     >
-                      ✕
+                      <Icon name="x" size={12} />
                     </button>
                   </div>
                 ) : (
@@ -1107,14 +1123,16 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                     className="btn btn-ghost btn-sm"
                     onClick={() => poFileRef.current?.click()}
                   >
-                    📤 Upload PO Doc
+                    <Icon name="upload" size={13} /> Upload PO Doc
                   </button>
                 )}
                 {poFileError ? <div className="form-error">{poFileError}</div> : null}
               </div>
             ) : null}
             {clientPoFieldError ? (
-              <div style={{ marginTop: 4, fontSize: 11, color: 'var(--red2)' }}>
+              <div
+                style={{ marginTop: 'var(--sp-1)', fontSize: 'var(--fs-xs)', color: 'var(--red2)' }}
+              >
                 ⚠ {clientPoFieldError}
               </div>
             ) : null}
@@ -1228,14 +1246,20 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
               disabled={templateBusy}
               onClick={() => void downloadTemplate()}
             >
-              {templateBusy ? 'Preparing…' : '⬇ Excel Template'}
+              {templateBusy ? (
+                'Preparing…'
+              ) : (
+                <>
+                  <Icon name="download" size={13} /> Excel Template
+                </>
+              )}
             </button>
             <button
               type="button"
               className="btn btn-ghost btn-sm"
               onClick={() => lineFileRef.current?.click()}
             >
-              📄 Import Excel
+              <Icon name="upload" size={13} /> Import Excel
             </button>
             <input
               ref={lineFileRef}
@@ -1256,7 +1280,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                 append({ ...NEW_LINE, ...(due ? { dueDate: due } : {}) });
               }}
             >
-              <Plus size={13} /> Add Line
+              <Icon name="plus" size={13} /> Add Line
             </button>
           </>
         }
@@ -1284,14 +1308,14 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                 <div
                   className={isWarn ? undefined : 'text3'}
                   style={{
-                    fontSize: 11,
+                    fontSize: 'var(--fs-xs)',
                     margin: 'var(--sp-2)',
                     ...(isWarn
                       ? {
                           padding: '8px 10px',
-                          borderRadius: 6,
-                          background: 'rgba(245,158,11,0.10)',
-                          border: '1px solid rgba(245,158,11,0.35)',
+                          borderRadius: 'var(--radius)',
+                          background: 'var(--amber3)',
+                          border: '1px solid var(--sig-warn-bd)',
                           color: 'var(--amber2)',
                         }
                       : {}),
@@ -1302,9 +1326,11 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                   <button
                     type="button"
                     className="btn btn-ghost btn-sm"
+                    title="Close"
+                    aria-label="Close"
                     onClick={() => setImportMsg(null)}
                   >
-                    ✕
+                    <Icon name="x" size={12} />
                   </button>
                 </div>
               );
@@ -1318,7 +1344,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
           readiness/return then follow the WEAKEST component rather than this
           line's own output. A BOM holding a bought part is refused
           server-side: job work runs on client-supplied material.) */}
-        <div className="text3" style={{ fontSize: 11, margin: 'var(--sp-2)' }}>
+        <div className="text3" style={{ fontSize: 'var(--fs-xs)', margin: 'var(--sp-2)' }}>
           Assembly BOM (under ▸ More) — leave blank unless the customer ships parts for you to
           assemble.
         </div>
@@ -1553,7 +1579,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                             onClick={() => remove(idx)}
                             aria-label={`Remove row ${idx + 1}`}
                           >
-                            <Trash2 size={12} />
+                            <Icon name="trash-2" size={12} />
                           </button>
                         </span>
                       </td>
@@ -1657,11 +1683,11 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
       {/* JWSO Totals (parity with the SO form) */}
       <div
         style={{
-          marginTop: 12,
+          marginTop: 'var(--sp-3)',
           border: '2px solid var(--green)',
-          borderRadius: 8,
+          borderRadius: 'var(--radius2)',
           padding: '10px 16px',
-          background: 'rgba(34,197,94,0.03)',
+          background: 'var(--green3)',
         }}
       >
         {/* Money only for a user who may see prices; the count stays. */}
@@ -1675,7 +1701,10 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
             <Tot label="Grand Total" value={money.grand} bold />
           </div>
         ) : null}
-        <div className="text3" style={{ fontSize: 11, textAlign: 'right', marginTop: 4 }}>
+        <div
+          className="text3"
+          style={{ fontSize: 'var(--fs-xs)', textAlign: 'right', marginTop: 'var(--sp-1)' }}
+        >
           {lineCount} item{lineCount === 1 ? '' : 's'} • {totalPcs} total pcs
         </div>
       </div>
@@ -1695,7 +1724,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
       ) : (
         // Route still wraps the form in its own panel (no page header slot):
         // keep the Save row at the foot, blue primary.
-        <div style={{ marginTop: 16 }}>
+        <div style={{ marginTop: 'var(--sp-4)' }}>
           {errorBanners}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
             {cancelButton}
@@ -1723,7 +1752,7 @@ function Tot({
 }): React.JSX.Element {
   return (
     <div style={{ textAlign: 'right' }}>
-      <div className="text3" style={{ fontSize: 11 }}>
+      <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
         {label}
       </div>
       <div

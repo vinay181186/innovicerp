@@ -30,9 +30,9 @@ export function JcStoppedBanner({
         background: 'var(--red3)',
         border: '1px solid var(--red)',
         borderLeft: '4px solid var(--red)',
-        borderRadius: 8,
-        padding: '8px 12px',
-        marginBottom: 12,
+        borderRadius: 'var(--radius2)',
+        padding: 'var(--sp-2) var(--sp-3)',
+        marginBottom: 'var(--sp-3)',
       }}
     >
       <div
@@ -42,7 +42,7 @@ export function JcStoppedBanner({
           alignItems: 'center',
           gap: 6,
           flexWrap: 'wrap',
-          fontSize: 13,
+          fontSize: 'var(--fs-sm)',
           color: 'var(--red2)',
         }}
       >
@@ -58,7 +58,7 @@ export function JcStoppedBanner({
         </span>
       </div>
       {order.shortClosedByName || order.shortCloseReason ? (
-        <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 2 }}>
+        <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text2)', marginTop: 'var(--sp-0)' }}>
           {[
             order.shortClosedByName ? `Stopped by ${order.shortClosedByName}.` : '',
             order.shortCloseReason ? `Reason: ${order.shortCloseReason}` : '',

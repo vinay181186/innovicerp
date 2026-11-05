@@ -97,7 +97,7 @@ export function activityLogColumns(
         <>
           {e.userFullName}
           {e.userId === null ? (
-            <span className="text3" style={{ marginLeft: 4 }}>
+            <span className="text3" style={{ marginLeft: 'var(--sp-1)' }}>
               (snapshot)
             </span>
           ) : null}
@@ -126,10 +126,17 @@ export function activityLogColumns(
 export function ActivityLogExpand({ entry }: { entry: ActivityLogEntry }): React.JSX.Element {
   return (
     <div style={{ padding: '10px 16px' }}>
-      <div className="text3" style={{ fontSize: 11, marginBottom: 4, textTransform: 'uppercase' }}>
+      <div
+        className="text3"
+        style={{
+          fontSize: 'var(--fs-xs)',
+          marginBottom: 'var(--sp-1)',
+          textTransform: 'uppercase',
+        }}
+      >
         Detail
       </div>
-      <div className="text2" style={{ fontSize: 12, whiteSpace: 'pre-wrap' }}>
+      <div className="text2" style={{ fontSize: 'var(--fs-sm)', whiteSpace: 'pre-wrap' }}>
         {entry.detail || '—'}
       </div>
     </div>

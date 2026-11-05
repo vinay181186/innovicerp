@@ -14,10 +14,10 @@ export function Field({
       <div
         className="text3"
         style={{
-          fontSize: 11,
+          fontSize: 'var(--fs-xs)',
           textTransform: 'uppercase',
           letterSpacing: '0.05em',
-          marginBottom: 4,
+          marginBottom: 'var(--sp-1)',
         }}
       >
         {label}
@@ -42,17 +42,17 @@ export function PreviewCell({
       <div
         className="text3"
         style={{
-          fontSize: 11,
+          fontSize: 'var(--fs-xs)',
           textTransform: 'uppercase',
           letterSpacing: '0.05em',
-          marginBottom: 4,
+          marginBottom: 'var(--sp-1)',
         }}
       >
         {label}
       </div>
       <div
         className="mono fw-700"
-        style={{ fontSize: 16, color: accent ? 'var(--green)' : 'var(--text)' }}
+        style={{ fontSize: 'var(--fs-md)', color: accent ? 'var(--green)' : 'var(--text)' }}
       >
         {value}
       </div>

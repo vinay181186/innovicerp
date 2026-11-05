@@ -167,7 +167,7 @@ export function EditPartyGrnModal({
           Could not load this GRN. Close and try again.
         </div>
       ) : detailQ.isLoading || !d ? (
-        <div className="text3" style={{ fontSize: 12, padding: 14 }}>
+        <div className="text3" style={{ fontSize: 'var(--fs-xs)', padding: 14 }}>
           <Loader2 size={13} className="inline animate-spin" /> Loading…
         </div>
       ) : (
@@ -283,14 +283,14 @@ export function EditPartyGrnModal({
           <div
             style={{
               margin: '14px 0 8px',
-              fontSize: 11,
+              fontSize: 'var(--fs-xs)',
               color: 'var(--cyan)',
               fontFamily: 'var(--mono)',
               fontWeight: 700,
             }}
           >
             Line Items
-            <span className="text3" style={{ fontWeight: 400, marginLeft: 8 }}>
+            <span className="text3" style={{ fontWeight: 400, marginLeft: 'var(--sp-2)' }}>
               Only lines not yet inspected can be changed. Lines already inspected (fully or partly)
               are shown read-only.
             </span>
@@ -386,13 +386,13 @@ export function EditPartyGrnModal({
       {err ? (
         <div
           style={{
-            marginTop: 12,
+            marginTop: 'var(--sp-3)',
             color: 'var(--red2)',
             background: 'var(--red3)',
             border: '1px solid var(--red)',
-            borderRadius: 6,
+            borderRadius: 'var(--radius)',
             padding: '6px 10px',
-            fontSize: 12,
+            fontSize: 'var(--fs-sm)',
           }}
         >
           {err}

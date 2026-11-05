@@ -92,7 +92,7 @@ function ChangePasswordPage(): React.JSX.Element {
 
   return (
     <div style={{ maxWidth: 440, margin: '0 auto' }}>
-      <div className="section-hdr" style={{ marginBottom: 12 }}>
+      <div className="section-hdr" style={{ marginBottom: 'var(--sp-3)' }}>
         <KeyRound size={16} style={{ verticalAlign: '-2px', marginRight: 6 }} />
         Change Password
       </div>
@@ -100,19 +100,22 @@ function ChangePasswordPage(): React.JSX.Element {
       {done ? (
         <div className="panel" style={{ padding: 28, textAlign: 'center' }}>
           <CheckCircle2 size={40} style={{ color: 'var(--green)', margin: '0 auto 8px' }} />
-          <div className="fw-700" style={{ fontSize: 16, marginBottom: 4 }}>
+          <div className="fw-700" style={{ fontSize: 'var(--fs-md)', marginBottom: 'var(--sp-1)' }}>
             Password updated
           </div>
-          <div className="text3" style={{ fontSize: 12 }}>
+          <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
             Your new password is active. Returning to the dashboard…
           </div>
         </div>
       ) : (
         <div className="panel" style={{ padding: 20 }}>
-          <div className="text2" style={{ fontSize: 12, marginBottom: 14 }}>
+          <div className="text2" style={{ fontSize: 'var(--fs-sm)', marginBottom: 14 }}>
             Signed in as <span className="fw-700">{me?.email ?? '—'}</span>.
           </div>
-          <form onSubmit={form.handleSubmit((v) => void onSubmit(v))} style={{ display: 'grid', gap: 14 }}>
+          <form
+            onSubmit={form.handleSubmit((v) => void onSubmit(v))}
+            style={{ display: 'grid', gap: 14 }}
+          >
             <Field
               label="Current password"
               id="currentPassword"
@@ -136,10 +139,17 @@ function ChangePasswordPage(): React.JSX.Element {
             />
 
             {error ? (
-              <div style={{ fontSize: 12, color: 'var(--red)' }}>{error}</div>
+              <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--red)' }}>{error}</div>
             ) : null}
 
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 2 }}>
+            <div
+              style={{
+                display: 'flex',
+                gap: 'var(--sp-2)',
+                alignItems: 'center',
+                marginTop: 'var(--sp-0)',
+              }}
+            >
               <button
                 type="submit"
                 className="btn btn-primary"
@@ -169,8 +179,12 @@ function Field(props: {
   error: string | undefined;
 }): React.JSX.Element {
   return (
-    <div style={{ display: 'grid', gap: 4 }}>
-      <label htmlFor={props.id} className="text2" style={{ fontSize: 12, fontWeight: 600 }}>
+    <div style={{ display: 'grid', gap: 'var(--sp-1)' }}>
+      <label
+        htmlFor={props.id}
+        className="text2"
+        style={{ fontSize: 'var(--fs-sm)', fontWeight: 600 }}
+      >
         {props.label}
       </label>
       <input
@@ -178,10 +192,12 @@ function Field(props: {
         type="password"
         autoComplete={props.autoComplete}
         className="innovic-input"
-        style={{ fontSize: 13 }}
+        style={{ fontSize: 'var(--fs-sm)' }}
         {...props.register}
       />
-      {props.error ? <span style={{ fontSize: 11, color: 'var(--red)' }}>{props.error}</span> : null}
+      {props.error ? (
+        <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--red)' }}>{props.error}</span>
+      ) : null}
     </div>
   );
 }

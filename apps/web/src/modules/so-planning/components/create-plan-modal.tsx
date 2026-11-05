@@ -319,7 +319,7 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
                           border: 'none',
                           padding: 0,
                           color: 'var(--cyan)',
-                          fontSize: 11,
+                          fontSize: 'var(--fs-xs)',
                           cursor: 'pointer',
                         }}
                       >
@@ -408,12 +408,12 @@ export function CreatePlanModal({ so, line, onClose, onCreated }: Props): JSX.El
           <div
             className="empty-state"
             style={{
-              marginTop: 12,
-              padding: 8,
-              borderRadius: 4,
+              marginTop: 'var(--sp-3)',
+              padding: 'var(--sp-2)',
+              borderRadius: 'var(--radius-sm)',
               background: 'var(--red3)',
               color: 'var(--red2)',
-              fontSize: 12,
+              fontSize: 'var(--fs-sm)',
             }}
           >
             {err}

@@ -9,6 +9,7 @@
 // quantity made is logged in the one action. The old
 // /shop-floor/running/:id/stop hook is gone.
 
+import { Icon } from '@/ui/core';
 import type { ShopFloorRunningRow, StopOpInput } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
@@ -57,12 +58,12 @@ export function ShopFloorView(): React.JSX.Element {
   return (
     <div>
       <div className="mb-3 flex items-center justify-end gap-3 flex-wrap">
-        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-          <span style={{ fontSize: 14, color: 'var(--amber2)', fontWeight: 700 }}>
+        <div style={{ display: 'flex', gap: 'var(--sp-3)', alignItems: 'center' }}>
+          <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--amber2)', fontWeight: 700 }}>
             {total} operation{total !== 1 ? 's' : ''} currently running
           </span>
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => void refetch()}>
-            ↻ Refresh
+            <Icon name="refresh-cw" size={13} /> Refresh
           </button>
         </div>
       </div>
@@ -71,9 +72,9 @@ export function ShopFloorView(): React.JSX.Element {
       <div
         style={{
           display: 'flex',
-          gap: 8,
+          gap: 'var(--sp-2)',
           flexWrap: 'wrap',
-          marginBottom: 16,
+          marginBottom: 'var(--sp-4)',
         }}
       >
         {(data?.machines ?? []).map((m) => (
@@ -84,7 +85,7 @@ export function ShopFloorView(): React.JSX.Element {
               flex: 1,
               minWidth: 120,
               padding: '10px 14px',
-              borderRadius: 8,
+              borderRadius: 'var(--radius2)',
               border: `1px solid ${m.runningCount > 0 ? 'var(--amber2)' : 'var(--border)'}`,
               background: m.runningCount > 0 ? 'var(--amber3)' : 'var(--bg3)',
               textAlign: 'center',
@@ -96,7 +97,7 @@ export function ShopFloorView(): React.JSX.Element {
             <div
               className="mono fw-700"
               style={{
-                fontSize: 14,
+                fontSize: 'var(--fs-sm)',
                 color: m.runningCount > 0 ? 'var(--amber)' : 'var(--text3)',
               }}
             >
@@ -104,7 +105,7 @@ export function ShopFloorView(): React.JSX.Element {
             </div>
             <div
               style={{
-                fontSize: 11,
+                fontSize: 'var(--fs-xs)',
                 color: m.runningCount > 0 ? 'var(--amber)' : 'var(--text3)',
               }}
             >
@@ -117,7 +118,7 @@ export function ShopFloorView(): React.JSX.Element {
       {isLoading ? (
         <div className="panel">
           <div className="panel-body">
-            <div className="text3" style={{ fontSize: 12 }}>
+            <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
               <Loader2 size={14} className="inline animate-spin" /> Loading…
             </div>
           </div>
@@ -136,7 +137,10 @@ export function ShopFloorView(): React.JSX.Element {
             <div className="empty-icon">🏭</div>
             <b>No running operations.</b>
             <br />
-            <span className="text3" style={{ fontSize: 12, marginTop: 8, display: 'block' }}>
+            <span
+              className="text3"
+              style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-2)', display: 'block' }}
+            >
               Use Op Entry → ▶ Start Operation to begin.
             </span>
           </div>
@@ -150,16 +154,19 @@ export function ShopFloorView(): React.JSX.Element {
               key={m.machineId}
               id={`sf_${m.machineId}`}
               className="panel"
-              style={{ marginBottom: 12 }}
+              style={{ marginBottom: 'var(--sp-3)' }}
             >
               <div className="panel-hdr" style={{ background: 'var(--bg4)' }}>
-                <span className="mono fw-700" style={{ fontSize: 16, color: 'var(--cyan)' }}>
+                <span
+                  className="mono fw-700"
+                  style={{ fontSize: 'var(--fs-md)', color: 'var(--cyan)' }}
+                >
                   {m.machineCode}
                 </span>
-                <span className="text3" style={{ fontSize: 12 }}>
+                <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
                   {m.machineName ?? ''}
                 </span>
-                <span style={{ fontSize: 11, color: 'var(--text3)' }}>⚫ Idle</span>
+                <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>⚫ Idle</span>
               </div>
             </div>
           ) : (
@@ -178,16 +185,19 @@ export function ShopFloorView(): React.JSX.Element {
                   borderBottom: '1px solid var(--amber2)',
                 }}
               >
-                <span className="mono fw-700" style={{ fontSize: 15, color: 'var(--amber2)' }}>
+                <span
+                  className="mono fw-700"
+                  style={{ fontSize: 'var(--fs-sm)', color: 'var(--amber2)' }}
+                >
                   {m.machineCode}
                 </span>
-                <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 1 }}>
+                <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)', marginTop: 1 }}>
                   {m.machineName ?? ''}
                 </div>
-                <span className="text2" style={{ fontSize: 12 }}>
+                <span className="text2" style={{ fontSize: 'var(--fs-sm)' }}>
                   {m.machineName ?? ''} · {m.machineType ?? ''}
                 </span>
-                <span style={{ color: 'var(--amber2)', fontWeight: 700, fontSize: 12 }}>
+                <span style={{ color: 'var(--amber2)', fontWeight: 700, fontSize: 'var(--fs-sm)' }}>
                   ▶ {m.runningCount} Running
                 </span>
               </div>
@@ -251,7 +261,11 @@ export function ShopFloorView(): React.JSX.Element {
                             m.machineCode.trim().toLowerCase() ? (
                             <div
                               className="text3"
-                              style={{ fontSize: 11, fontWeight: 400, whiteSpace: 'nowrap' }}
+                              style={{
+                                fontSize: 'var(--fs-xs)',
+                                fontWeight: 400,
+                                whiteSpace: 'nowrap',
+                              }}
                               title={`Planned for ${r.plannedMachineCode}, running on ${m.machineCode}`}
                             >
                               planned <span className="mono">{r.plannedMachineCode}</span>
@@ -269,7 +283,7 @@ export function ShopFloorView(): React.JSX.Element {
                           {itemCodeWithRev(r.itemCode, r.itemRevision)}
                         </td>
                         <td>{r.itemName ?? '—'}</td>
-                        <td className="mono text2" style={{ fontSize: 11 }}>
+                        <td className="mono text2" style={{ fontSize: 'var(--fs-xs)' }}>
                           {r.soCode ? soNoWithInternal(r.soCode, r.soInternalNo) : '—'}
                         </td>
                         <td className="td-ctr mono">{r.orderQty}</td>
@@ -283,11 +297,14 @@ export function ShopFloorView(): React.JSX.Element {
                             {r.priority === 'high' ? 'High' : 'Normal'}
                           </span>
                         </td>
-                        <td className="text2" style={{ fontSize: 11 }}>
+                        <td className="text2" style={{ fontSize: 'var(--fs-xs)' }}>
                           {fmtDate(r.dueDate)}
                         </td>
                         <td className="fw-700 amber">{r.operatorName ?? '—'}</td>
-                        <td className="text3" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
+                        <td
+                          className="text3"
+                          style={{ fontSize: 'var(--fs-xs)', whiteSpace: 'nowrap' }}
+                        >
                           {fmtDateAndTime(r.startDate, r.startTime)}
                         </td>
                         {/* Empty cell when the viewer may not stop (legacy L10327). */}

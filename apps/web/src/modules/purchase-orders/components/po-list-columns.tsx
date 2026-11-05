@@ -124,7 +124,7 @@ export function purchaseOrderListColumns({
       nowrap: true,
       render: (po) =>
         po.prCodeText ? (
-          <span className="mono fw-700" style={{ color: 'var(--purple)' }}>
+          <span className="mono fw-700" style={{ color: 'var(--blue)' }}>
             {po.prCodeText}
           </span>
         ) : (

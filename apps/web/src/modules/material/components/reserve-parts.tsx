@@ -132,7 +132,11 @@ export function ReservePartsModal({
           </table>
         </div>
       )}
-      {err ? <div style={{ color: 'var(--red2)', fontSize: 12, marginTop: 8 }}>{err}</div> : null}
+      {err ? (
+        <div style={{ color: 'var(--red2)', fontSize: 'var(--fs-sm)', marginTop: 'var(--sp-2)' }}>
+          {err}
+        </div>
+      ) : null}
     </Modal>
   );
 }
@@ -192,7 +196,7 @@ export function ReleasePartModal({
         </>
       }
     >
-      <div className="text2" style={{ fontSize: 12, marginBottom: 10 }}>
+      <div className="text2" style={{ fontSize: 'var(--fs-sm)', marginBottom: 10 }}>
         Gives this SO&apos;s reserved stock back to free stock, where any order can use it.
       </div>
       <div className="form-grid">
@@ -223,7 +227,11 @@ export function ReleasePartModal({
           />
         </div>
       </div>
-      {err ? <div style={{ color: 'var(--red2)', fontSize: 12, marginTop: 8 }}>{err}</div> : null}
+      {err ? (
+        <div style={{ color: 'var(--red2)', fontSize: 'var(--fs-sm)', marginTop: 'var(--sp-2)' }}>
+          {err}
+        </div>
+      ) : null}
     </Modal>
   );
 }

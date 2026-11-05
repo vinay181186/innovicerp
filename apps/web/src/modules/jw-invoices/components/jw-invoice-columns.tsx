@@ -40,7 +40,7 @@ export function jwInvoiceColumns(
         nowrap: true,
         sortFilterField: 'invoiceCode',
         render: (r) => (
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-1)' }}>
             <span className="td-code" style={{ color: 'var(--cyan)' }}>
               {r.code}
             </span>
@@ -51,7 +51,7 @@ export function jwInvoiceColumns(
             {r.status !== 'cancelled' && !r.placeOfSupply ? (
               <span
                 title={PLACE_OF_SUPPLY_UNKNOWN_NOTE}
-                style={{ color: 'var(--amber2)', fontSize: 11 }}
+                style={{ color: 'var(--amber2)', fontSize: 'var(--fs-xs)' }}
               >
                 ⚠
               </span>
@@ -141,13 +141,13 @@ export function jwInvoiceColumns(
     render: (r) => (
       <span
         style={{
-          fontSize: 11,
+          fontSize: 'var(--fs-xs)',
           fontWeight: 700,
           padding: '2px 6px',
-          borderRadius: 4,
+          borderRadius: 'var(--radius-sm)',
           whiteSpace: 'nowrap',
           color: r.status === 'cancelled' ? 'var(--red2)' : 'var(--green2)',
-          background: r.status === 'cancelled' ? 'rgba(239,68,68,0.10)' : 'rgba(34,197,94,0.10)',
+          background: r.status === 'cancelled' ? 'var(--red3)' : 'var(--green3)',
         }}
         title={
           r.status === 'cancelled' && r.cancelReason ? `Cancelled: ${r.cancelReason}` : undefined

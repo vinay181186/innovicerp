@@ -70,7 +70,7 @@ export function PoCloseLedger({
 
   if (po.closes.length === 0) {
     return (
-      <div className="empty-state" style={{ fontSize: 12 }}>
+      <div className="empty-state" style={{ fontSize: 'var(--fs-sm)' }}>
         No closes yet.
       </div>
     );
@@ -83,13 +83,13 @@ export function PoCloseLedger({
     <div
       className="mono"
       style={{
-        fontSize: 11,
+        fontSize: 'var(--fs-xs)',
         color: 'var(--text3)',
         display: 'flex',
         alignItems: 'center',
         gap: 6,
         flexWrap: 'wrap',
-        marginBottom: 8,
+        marginBottom: 'var(--sp-2)',
       }}
     >
       <span>

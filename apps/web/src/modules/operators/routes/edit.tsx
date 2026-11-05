@@ -88,7 +88,7 @@ function OperatorNewPage(): React.JSX.Element {
     return (
       <div className="panel">
         <div className="panel-body">
-          <div style={{ marginBottom: 8 }}>
+          <div style={{ marginBottom: 'var(--sp-2)' }}>
             <Link to="/operators" className="btn btn-ghost btn-sm">
               <ArrowLeft size={14} /> Back
             </Link>
@@ -191,7 +191,7 @@ function OperatorEditPage(): React.JSX.Element {
     return (
       <div className="panel">
         <div className="panel-body">
-          <div style={{ marginBottom: 8 }}>
+          <div style={{ marginBottom: 'var(--sp-2)' }}>
             <Link to="/operators" className="btn btn-ghost btn-sm">
               <ArrowLeft size={14} /> Back
             </Link>
@@ -217,7 +217,7 @@ function OperatorEditPage(): React.JSX.Element {
     return (
       <div className="panel">
         <div className="panel-body">
-          <div style={{ marginBottom: 8 }}>
+          <div style={{ marginBottom: 'var(--sp-2)' }}>
             <Link to="/operators" className="btn btn-ghost btn-sm">
               <ArrowLeft size={14} /> Back
             </Link>
@@ -246,11 +246,11 @@ function OperatorEditPage(): React.JSX.Element {
           <div>
             <div
               className="td-code"
-              style={{ color: 'var(--cyan)', fontSize: 14, fontWeight: 700 }}
+              style={{ color: 'var(--cyan)', fontSize: 'var(--fs-sm)', fontWeight: 700 }}
             >
               {operator.code}
             </div>
-            <div className="panel-title" style={{ marginTop: 2 }}>
+            <div className="panel-title" style={{ marginTop: 'var(--sp-0)' }}>
               Edit Operator
             </div>
           </div>

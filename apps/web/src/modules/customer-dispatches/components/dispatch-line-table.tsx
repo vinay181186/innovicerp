@@ -9,8 +9,8 @@
 // The wrapper is `overflow: visible` ON PURPOSE — the item picker's dropdown is
 // absolutely positioned and any `overflow: auto/hidden` here would clip it.
 
+import { Icon } from '@/ui/core';
 import type { DispatchableLine } from '@innovic/shared';
-import { X } from 'lucide-react';
 import { MasterItemNameNote } from '@/components/shared/master-item-name-note';
 import { SearchableSelect } from '@/ui/forms';
 import { fmtDate } from '@/lib/date';
@@ -57,7 +57,7 @@ export function DispatchLineTable(props: {
         style={{
           overflow: 'visible',
           border: '1px solid var(--border)',
-          borderRadius: 8,
+          borderRadius: 'var(--radius2)',
           borderBottomLeftRadius: 0,
           borderBottomRightRadius: 0,
           borderBottom: 'none',
@@ -233,10 +233,10 @@ export function DispatchLineTable(props: {
                         disabled={!line || cap <= 0}
                         onChange={(e) => props.onPatch(card.id, { qty: e.target.value })}
                         style={{
-                          fontSize: 12,
+                          fontSize: 'var(--fs-sm)',
                           fontWeight: 700,
                           color: err ? 'var(--red)' : 'var(--green)',
-                          padding: '4px 4px',
+                          padding: 'var(--sp-1) var(--sp-1)',
                           ...(err ? { borderColor: 'var(--red)' } : {}),
                         }}
                       />
@@ -265,7 +265,7 @@ export function DispatchLineTable(props: {
                         aria-label={`Remove line ${idx + 1}`}
                         onClick={() => props.onRemove(card.id)}
                       >
-                        <X size={12} />
+                        <Icon name="x" size={12} />
                       </button>
                     </td>
                   </tr>
@@ -291,14 +291,14 @@ export function DispatchLineTable(props: {
           flexWrap: 'wrap',
         }}
       >
-        <span className="text3" style={{ fontSize: 11 }}>
+        <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
           {pickedCount} item{pickedCount === 1 ? '' : 's'} picked
         </span>
-        <span style={{ fontSize: 12 }}>
+        <span style={{ fontSize: 'var(--fs-sm)' }}>
           <span className="green" style={{ fontWeight: 800 }}>
             Total Dispatch Qty{' '}
           </span>
-          <span className="mono fw-700 green" style={{ fontSize: 16 }}>
+          <span className="mono fw-700 green" style={{ fontSize: 'var(--fs-md)' }}>
             {totalQty}
           </span>
         </span>

@@ -6,8 +6,8 @@
 // Orders / Job Cards / PRs is refused by the server's preview, which lists what
 // to cancel first.
 
+import { Icon } from '@/ui/core';
 import type { PlanStatus } from '@innovic/shared';
-import { X } from 'lucide-react';
 import { useState } from 'react';
 import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
 import { CancelPendingBanner } from '@/modules/cancel-requests/components/cancel-pending-banner';
@@ -73,7 +73,7 @@ export function usePlanCancel(
   return {
     button: canCancel ? (
       <button type="button" className="btn btn-ghost btn-sm" onClick={onOpen}>
-        <X size={13} /> Cancel Plan
+        <Icon name="x" size={13} /> Cancel Plan
       </button>
     ) : null,
     banners: (

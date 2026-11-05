@@ -38,10 +38,10 @@ function HeaderField({
 }): JSX.Element {
   return (
     <div style={{ minWidth: 0 }}>
-      <div className="mono text3" style={{ fontSize: 11 }}>
+      <div className="mono text3" style={{ fontSize: 'var(--fs-xs)' }}>
         {label}
       </div>
-      <div style={{ fontSize: 13 }}>{children}</div>
+      <div style={{ fontSize: 'var(--fs-sm)' }}>{children}</div>
     </div>
   );
 }
@@ -100,7 +100,7 @@ export function OrderDetail({
     return (
       <>
         <div style={{ marginBottom: 14 }}>{backBtn}</div>
-        <div style={{ padding: 24 }}>
+        <div style={{ padding: 'var(--sp-5)' }}>
           <Loader2 className="inline-block animate-spin" /> Loading…
         </div>
       </>
@@ -180,7 +180,7 @@ export function OrderDetail({
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: 8,
+          gap: 'var(--sp-2)',
           flexWrap: 'wrap',
           marginBottom: 10,
         }}
@@ -197,7 +197,7 @@ export function OrderDetail({
           flexWrap: 'wrap',
           gap: '8px 28px',
           padding: '10px 14px',
-          marginBottom: 12,
+          marginBottom: 'var(--sp-3)',
         }}
       >
         <HeaderField label={so.source === 'jw' ? 'JWSO No.' : 'SO No.'}>
@@ -253,14 +253,14 @@ export function OrderDetail({
             flexWrap: 'wrap',
             gap: 14,
             padding: '8px 14px',
-            marginBottom: 12,
+            marginBottom: 'var(--sp-3)',
             borderColor: 'var(--green)',
           }}
         >
-          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--green2)' }}>
+          <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 700, color: 'var(--green2)' }}>
             ✓ {stockNote.what}
           </span>
-          <span className="text3" style={{ fontSize: 11 }}>
+          <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
             Physical{' '}
             <b className="mono" style={{ color: 'var(--cyan)' }}>
               {stockNote.physicalQty}

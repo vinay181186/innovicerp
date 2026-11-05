@@ -79,17 +79,17 @@ export function OutwardLineTable({
                 <td className="td-ctr mono fw-700" style={{ padding: 6, color: 'var(--purple)' }}>
                   {l.clientPoLineNo ?? '—'}
                 </td>
-                <td style={{ padding: 6, fontSize: 12 }}>
+                <td style={{ padding: 6, fontSize: 'var(--fs-sm)' }}>
                   <b>{itemCodeWithRev(l.itemCode, l.itemRevision)}</b>{' '}
                   <span style={{ color: 'var(--text3)' }}>{l.itemName}</span>
                 </td>
-                <td style={{ padding: 6, fontSize: 11, color: 'var(--purple)' }}>
+                <td style={{ padding: 6, fontSize: 'var(--fs-xs)', color: 'var(--purple)' }}>
                   {l.processText ?? '—'}
                 </td>
                 <td className="mono td-num" style={{ padding: 6 }}>
                   {l.poQty}
                 </td>
-                <td className="mono" style={{ padding: 6, fontSize: 11 }}>
+                <td className="mono" style={{ padding: 6, fontSize: 'var(--fs-xs)' }}>
                   {l.uom ?? 'NOS'}
                 </td>
                 <td className="mono td-num" style={{ padding: 6, color: 'var(--amber2)' }}>
@@ -114,12 +114,12 @@ export function OutwardLineTable({
                     }
                     style={{
                       width: 70,
-                      fontSize: 14,
+                      fontSize: 'var(--fs-sm)',
                       fontWeight: 700,
                       textAlign: 'right',
                       color: 'var(--cyan)',
                       border: '2px solid var(--cyan)',
-                      borderRadius: 4,
+                      borderRadius: 'var(--radius-sm)',
                     }}
                   />
                 </td>

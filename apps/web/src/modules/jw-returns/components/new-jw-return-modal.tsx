@@ -124,7 +124,7 @@ export function NewJwReturnModal({ onClose }: { onClose: () => void }): React.JS
           </>
         }
       >
-        <div style={{ fontSize: 13, marginBottom: 16 }}>
+        <div style={{ fontSize: 'var(--fs-sm)', marginBottom: 'var(--sp-4)' }}>
           <span className="mono fw-700">{saved.code}</span> — {saved.qty} pcs back to the customer
           on {saved.jwCodeText ?? 'the JWSO'}. Preview or download the challan to send with the
           goods.
@@ -160,7 +160,7 @@ export function NewJwReturnModal({ onClose }: { onClose: () => void }): React.JS
         </>
       }
     >
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-3)' }}>
         <Field label="Return Date">
           <input
             type="date"
@@ -251,11 +251,11 @@ export function NewJwReturnModal({ onClose }: { onClose: () => void }): React.JS
             style={{
               fontWeight: 700,
               border: '2px solid var(--green)',
-              borderRadius: 4,
+              borderRadius: 'var(--radius-sm)',
             }}
           />
           {pickedReturnable ? (
-            <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
+            <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-1)' }}>
               Returnable <b className="mono">{pickedReturnable.returnableQty}</b> · Ready{' '}
               {pickedReturnable.readyQty} · Returned {pickedReturnable.returnedQty} · Pending{' '}
               {pickedReturnable.pendingQty}
@@ -296,12 +296,12 @@ export function NewJwReturnModal({ onClose }: { onClose: () => void }): React.JS
       {err ? (
         <div
           style={{
-            marginTop: 12,
-            padding: 8,
-            background: 'rgba(239,68,68,0.08)',
+            marginTop: 'var(--sp-3)',
+            padding: 'var(--sp-2)',
+            background: 'var(--red3)',
             color: 'var(--red2)',
-            borderRadius: 4,
-            fontSize: 12,
+            borderRadius: 'var(--radius-sm)',
+            fontSize: 'var(--fs-sm)',
           }}
         >
           {err}
@@ -323,10 +323,10 @@ function Field({
       <div
         className="text3"
         style={{
-          fontSize: 11,
+          fontSize: 'var(--fs-xs)',
           textTransform: 'uppercase',
           letterSpacing: '0.05em',
-          marginBottom: 4,
+          marginBottom: 'var(--sp-1)',
         }}
       >
         {label}

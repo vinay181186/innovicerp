@@ -130,7 +130,7 @@ export function jobCardListColumns(
         item_code: {
           sortFilterField: 'itemCode',
           render: (jc) => (
-            <span className="mono fw-700" style={{ color: 'var(--purple)' }}>
+            <span className="mono fw-700" style={{ color: 'var(--text)' }}>
               {/* The card's OWN Drawing Rev (ABC/1), linked to its drawing page. */}
               <ItemRevLink
                 itemRevisionId={jc.itemRevisionId}

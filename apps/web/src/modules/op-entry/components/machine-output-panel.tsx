@@ -52,36 +52,39 @@ export function MachineOutputPanel({ rows, isLoading }: Props): React.JSX.Elemen
                 <tr key={`${r.jcOpId}:${r.machineId ?? r.machineCode}`}>
                   <td>
                     <div className="td-code cyan">{r.machineCode}</div>
-                    <div className="text3" style={{ fontSize: 11 }}>
+                    <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
                       {r.machineName ?? '—'}
                     </div>
                   </td>
-                  <td className="mono td-num" style={{ fontSize: 11 }}>
+                  <td className="mono td-num" style={{ fontSize: 'var(--fs-xs)' }}>
                     {r.entryCount}
                   </td>
                   <td className="td-num">
-                    <span className="mono fw-700" style={{ fontSize: 15, color: 'var(--green2)' }}>
+                    <span
+                      className="mono fw-700"
+                      style={{ fontSize: 'var(--fs-sm)', color: 'var(--green2)' }}
+                    >
                       {r.completedQty}
                     </span>
                   </td>
                   <td className="mono td-num" style={{ color: 'var(--red2)' }}>
                     {r.rejectQty || ''}
                   </td>
-                  <td className="mono" style={{ fontSize: 11 }}>
+                  <td className="mono" style={{ fontSize: 'var(--fs-xs)' }}>
                     {fmtDate(r.firstLogDate)}
                   </td>
-                  <td className="mono" style={{ fontSize: 11 }}>
+                  <td className="mono" style={{ fontSize: 'var(--fs-xs)' }}>
                     {fmtDate(r.lastLogDate)}
                   </td>
                 </tr>
               ))}
               <tr>
-                <td className="fw-700" style={{ fontSize: 12 }}>
+                <td className="fw-700" style={{ fontSize: 'var(--fs-sm)' }}>
                   Total
                 </td>
                 <td />
                 <td className="td-num">
-                  <span className="mono fw-700" style={{ fontSize: 15 }}>
+                  <span className="mono fw-700" style={{ fontSize: 'var(--fs-sm)' }}>
                     {totalQty}
                   </span>
                 </td>

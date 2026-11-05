@@ -7,6 +7,7 @@
 // Incoming QC screen (its own title, no Stage / Mine / Full History, and the
 // GRN Type choices narrowed to Direct Purchase + Party GRN).
 
+import { Icon } from '@/ui/core';
 import type { ReactNode } from 'react';
 import {
   INCOMING_QC_GRN_TYPES,
@@ -124,7 +125,7 @@ export function QcCallRegisterHeader(props: {
                 background: mineOnly ? 'var(--text)' : 'var(--bg2)',
                 color: mineOnly ? 'var(--bg2)' : 'var(--text)',
                 border: `1px solid ${mineOnly ? 'var(--text)' : 'var(--border2)'}`,
-                fontSize: 12,
+                fontSize: 'var(--fs-sm)',
               }}
             >
               👤 Mine
@@ -154,7 +155,7 @@ export function QcCallRegisterHeader(props: {
             title={`Export every ${view} call matching the filters to Excel`}
             onClick={props.onExport}
           >
-            ⬇ Export
+            <Icon name="download" size={13} /> Export
           </button>
         </>
       }
@@ -169,7 +170,7 @@ export function QcCallRegisterHeader(props: {
         activeKey={view}
         onChange={(k) => props.setView(k === 'completed' ? 'completed' : 'pending')}
       />
-      <div className="text3" style={{ fontSize: 12 }}>
+      <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
         {props.pendingCount} calls · {props.pcsPending} pcs QC Pending · {props.completeCount}{' '}
         completed
       </div>

@@ -41,7 +41,7 @@ export function CloseBalanceModal({
       title={<span style={{ color: 'var(--amber2)' }}>🚫 Short Close — {code}</span>}
       onClose={onCancel}
       size="sm"
-      bodyStyle={{ display: 'grid', gap: 12 }}
+      bodyStyle={{ display: 'grid', gap: 'var(--sp-3)' }}
       footer={
         <>
           <button type="button" className="btn btn-ghost btn-sm" onClick={onCancel}>
@@ -71,10 +71,10 @@ export function CloseBalanceModal({
       <div
         style={{
           background: 'var(--bg3)',
-          padding: 12,
+          padding: 'var(--sp-3)',
           border: '1px solid var(--border)',
-          borderRadius: 8,
-          fontSize: 12,
+          borderRadius: 'var(--radius2)',
+          fontSize: 'var(--fs-sm)',
           color: 'var(--text2)',
           lineHeight: 1.5,
         }}
@@ -102,12 +102,12 @@ export function CloseBalanceModal({
       {errorText ? (
         <div
           style={{
-            padding: '8px 12px',
+            padding: 'var(--sp-2) var(--sp-3)',
             background: 'var(--red3)',
             border: '1px solid var(--sig-critical-bd)',
-            borderRadius: 6,
+            borderRadius: 'var(--radius)',
             color: 'var(--red2)',
-            fontSize: 12,
+            fontSize: 'var(--fs-sm)',
           }}
         >
           {errorText}

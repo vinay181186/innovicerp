@@ -408,7 +408,7 @@ export function SearchableSelect({
         placeholder={placeholder}
         value={query}
         {...(clearable && query ? { title: query } : {})}
-        {...(showClear ? { style: { paddingRight: 24 } } : {})}
+        {...(showClear ? { style: { paddingRight: 'var(--sp-5)' } } : {})}
         onChange={handleInput}
         onFocus={(e) => {
           // A pop-up moving focus here on opening is not the user asking for the list.

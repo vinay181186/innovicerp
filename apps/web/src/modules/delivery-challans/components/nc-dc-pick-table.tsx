@@ -85,7 +85,10 @@ export function NcDcPickTable({
         return (
           // A disabled box swallows the hover in some browsers, so the reason
           // sits on the wrapper and the box lets the pointer through.
-          <span title={reason ?? undefined} style={{ display: 'inline-block', padding: 2 }}>
+          <span
+            title={reason ?? undefined}
+            style={{ display: 'inline-block', padding: 'var(--sp-0)' }}
+          >
             <input
               type="checkbox"
               className="dt-sel-box"
@@ -206,7 +209,7 @@ export function NcDcPickTable({
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: 12,
+          gap: 'var(--sp-3)',
           flexWrap: 'wrap',
           marginBottom: 10,
         }}
@@ -220,7 +223,7 @@ export function NcDcPickTable({
         >
           {picked.length === 1 ? 'Make DC for 1 NC' : `Make DC for ${picked.length} NCs`}
         </button>
-        <span className="text3" style={{ fontSize: 11 }}>
+        <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
           {first
             ? `Ticked: ${picked.length} · SO ${first.soLabel ?? '— (none, goes alone)'}${
                 vendorOfSet ? ` · ${vendorOfSet.vendorName ?? vendorOfSet.vendorCode ?? ''}` : ''

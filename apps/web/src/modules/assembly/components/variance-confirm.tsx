@@ -27,8 +27,8 @@ export function VarianceConfirm({
         margin: '6px 10px',
         padding: 10,
         border: '1px solid var(--amber2)',
-        borderRadius: 4,
-        fontSize: 12,
+        borderRadius: 'var(--radius-sm)',
+        fontSize: 'var(--fs-sm)',
       }}
     >
       <div className="fw-700" style={{ color: 'var(--amber2)' }}>

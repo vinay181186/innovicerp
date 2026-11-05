@@ -34,6 +34,7 @@ import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc
 import { CancelPendingBanner } from '@/modules/cancel-requests/components/cancel-pending-banner';
 import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
 import { useOpFlow } from '@/modules/flow-views/api';
+import type { OpFlowRow } from '@/modules/flow-views/types';
 import { ReworkTreePanel } from '@/modules/flow-views/components/jc-flow-panels';
 import { JcMaterialPanel } from '@/modules/material/components/jc-material-panel';
 import { runPrint } from '@/lib/print/preview-host';
@@ -178,15 +179,27 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
   const openOpEntry = (): void => void navigate({ to: '/op-entry', search: { jc: jc.code } });
   const openDrawing = (): void => setDrawingPreviewOpen(true);
   // Preview opens the in-app box; Download PDF runs the same build through runPrint.
-  const printJc = (): boolean =>
+  const printJc = (flow: OpFlowRow[]): boolean =>
     printJobCard({
       jc,
       ops,
+      flow,
       company,
       actualSize: productionOrder?.actualSize ?? null,
       productionOrderCode: productionOrder?.code ?? null,
       draft: isDraft,
       cancelled,
+    });
+
+  // Fresh quantities on every click. A Cancelled card has no flow rows (ADR-235
+  // stamps its ops deleted) and prints the op figures instead.
+  const runJcPrint = (action: 'preview' | 'download'): void =>
+    void runPrint(action, { title: 'Job Card', fileName: jc.code }, async () => {
+      if (cancelled) return () => printJc([]);
+      const fresh = await opFlow.refetch();
+      if (!fresh.data) throw new Error('Could not load quantities for this Job Card. Try again.');
+      const rows = fresh.data.ops;
+      return () => printJc(rows);
     });
 
   return (
@@ -236,16 +249,14 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
                   label: 'Preview',
                   disabled: opsLoading,
                   title: 'Preview Job Card',
-                  onClick: printJc,
+                  onClick: () => runJcPrint('preview'),
                 },
                 {
-                  label: '⬇ Download PDF',
+                  label: 'Download PDF',
+                  icon: 'download',
                   disabled: opsLoading,
                   title: 'Download Job Card as PDF',
-                  onClick: () =>
-                    void runPrint('download', { title: 'Job Card', fileName: jc.code }, () =>
-                      Promise.resolve(printJc),
-                    ),
+                  onClick: () => runJcPrint('download'),
                 },
                 {
                   label: 'Download Excel',

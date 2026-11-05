@@ -180,13 +180,13 @@ export function Timeline({
                       justifyContent: 'space-between',
                       alignItems: 'center',
                       gap: 'var(--sp-2)',
-                      marginBottom: 2,
+                      marginBottom: 'var(--sp-0)',
                     }}
                   >
                     <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 700, color }}>
                       {e.label}
                       {/* The document code is the main thing on the line: it
-                          stays `.td-code` mono/600 in the code blue, never the
+                          stays `.td-code` mono/700 in the code blue, never the
                           event's status colour inherited from this span. */}
                       {e.code ? (
                         <span

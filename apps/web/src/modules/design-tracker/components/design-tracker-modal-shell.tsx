@@ -79,12 +79,12 @@ export function ErrorBox({ message }: { message: string }): React.JSX.Element {
   return (
     <div
       style={{
-        marginTop: 12,
-        padding: 8,
+        marginTop: 'var(--sp-3)',
+        padding: 'var(--sp-2)',
         background: 'var(--red3)',
         color: 'var(--red2)',
-        borderRadius: 4,
-        fontSize: 12,
+        borderRadius: 'var(--radius-sm)',
+        fontSize: 'var(--fs-sm)',
       }}
     >
       {message}

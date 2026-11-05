@@ -10,6 +10,7 @@
 // 2026-11-04 (owner): DetailHeader + ClusterGrid facts; History and Related
 // Documents are tabs, as on Sales Order detail. The StatStrip stays.
 
+import { Icon } from '@/ui/core';
 import {
   type DisposeNcResult,
   type DocumentEditChange,
@@ -21,7 +22,7 @@ import {
   opSrNo,
 } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, CheckCircle2, Loader2, Pencil, Shield, Stamp, Trash2 } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Loader2, Shield, Stamp } from 'lucide-react';
 import { useState } from 'react';
 import { useCanOpen } from '@/components/shared/action-link';
 import { undecidedChangesOf, usePendingEditForDoc } from '@/modules/document-edits/api';
@@ -145,7 +146,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
     return (
       <div className="panel">
         <div className="panel-body">
-          <div style={{ marginBottom: 8 }}>
+          <div style={{ marginBottom: 'var(--sp-2)' }}>
             <Link to="/nc-register" className="btn btn-ghost btn-sm">
               <ArrowLeft size={14} /> Back
             </Link>
@@ -302,8 +303,8 @@ function NcRegisterDetailPage(): React.JSX.Element {
                 search={{ tab: 'capa', capa: detail.linkedCapaCode }}
                 className="mono"
                 style={{
-                  fontSize: 12,
-                  color: 'var(--purple)',
+                  fontSize: 'var(--fs-sm)',
+                  color: 'var(--blue)',
                   fontWeight: 700,
                   textDecoration: 'none',
                 }}
@@ -334,7 +335,8 @@ function NcRegisterDetailPage(): React.JSX.Element {
                     void ncPrint('preview', { id: detail.id, code: detail.code, jcCode }, isDraft),
                 },
                 {
-                  label: '⬇ Download PDF',
+                  label: 'Download PDF',
+                  icon: 'download',
                   onClick: () =>
                     void ncPrint('download', { id: detail.id, code: detail.code, jcCode }, isDraft),
                 },
@@ -353,7 +355,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
             ) : null}
             {isReworkDisposed && canAdvance ? (
               <>
-                <span className="text3" style={{ fontSize: 11 }}>
+                <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
                   Rework Completed Qty
                 </span>
                 <input
@@ -366,7 +368,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
                   onChange={(e) =>
                     setReworkDoneQty(e.target.value === '' ? '' : Number(e.target.value))
                   }
-                  style={{ width: 90, fontSize: 12 }}
+                  style={{ width: 90, fontSize: 'var(--fs-sm)' }}
                 />
                 <button
                   type="button"
@@ -386,7 +388,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
             {showClose ? (
               <>
                 {detail.closeBlockedReason ? (
-                  <span className="text3" style={{ fontSize: 11, maxWidth: 360 }}>
+                  <span className="text3" style={{ fontSize: 'var(--fs-xs)', maxWidth: 360 }}>
                     {detail.closeBlockedReason}
                   </span>
                 ) : null}
@@ -429,7 +431,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
                 params={{ id: detail.id }}
                 className="btn btn-ghost btn-sm"
               >
-                <Pencil size={13} /> Edit
+                <Icon name="pencil" size={13} /> Edit
               </Link>
             ) : null}
             {canDelete && isPending ? (
@@ -441,7 +443,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
                   setConfirmDelete(true);
                 }}
               >
-                <Trash2 size={13} /> Delete
+                <Icon name="trash-2" size={13} /> Delete
               </button>
             ) : null}
           </div>

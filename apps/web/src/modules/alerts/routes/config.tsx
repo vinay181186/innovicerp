@@ -147,7 +147,9 @@ function ConfigTable() {
                   </td>
                   <td style={{ fontWeight: 600, opacity: e.active ? 1 : 0.4 }}>
                     {e.name}
-                    <div style={{ fontSize: 11, fontWeight: 400, color: 'var(--text3)' }}>
+                    <div
+                      style={{ fontSize: 'var(--fs-xs)', fontWeight: 400, color: 'var(--text3)' }}
+                    >
                       {e.description}
                     </div>
                   </td>

@@ -3,6 +3,7 @@
 // Split out of detail.tsx. The StatStrip, the sub-tab switch and the status
 // filter are all preserved.
 
+import { Icon } from '@/ui/core';
 import {
   DESIGN_DCN_STATUSES,
   DESIGN_DCR_STATUSES,
@@ -10,7 +11,6 @@ import {
   type DesignDcr,
   type DesignProjectDetail,
 } from '@innovic/shared';
-import { Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
@@ -147,7 +147,7 @@ export function DcrDcnTab({ detail }: { detail: DesignProjectDetail }): React.JS
         kind: 'code',
         className: 'mono fw-700',
         nowrap: true,
-        render: (d) => <span style={{ color: 'var(--purple)' }}>{d.code}</span>,
+        render: (d) => <span style={{ color: 'var(--blue)' }}>{d.code}</span>,
         title: (d) => d.code,
       },
       {
@@ -188,7 +188,7 @@ export function DcrDcnTab({ detail }: { detail: DesignProjectDetail }): React.JS
 
   return (
     <div>
-      <div style={{ marginBottom: 16 }}>
+      <div style={{ marginBottom: 'var(--sp-4)' }}>
         <StatStrip
           items={[
             { key: 'dcrs', label: 'Total DCRs', count: dcrs.length },
@@ -213,19 +213,19 @@ export function DcrDcnTab({ detail }: { detail: DesignProjectDetail }): React.JS
           display: 'flex',
           justifyContent: 'flex-end',
           alignItems: 'center',
-          marginBottom: 12,
+          marginBottom: 'var(--sp-3)',
           flexWrap: 'wrap',
-          gap: 8,
+          gap: 'var(--sp-2)',
         }}
       >
         <div style={{ display: 'flex', gap: 6 }}>
           <select
             style={{
               padding: '5px 8px',
-              fontSize: 11,
+              fontSize: 'var(--fs-xs)',
               background: 'var(--bg3)',
               border: '1px solid var(--border)',
-              borderRadius: 6,
+              borderRadius: 'var(--radius)',
               color: 'var(--text)',
             }}
             value={statusFilter}
@@ -245,7 +245,7 @@ export function DcrDcnTab({ detail }: { detail: DesignProjectDetail }): React.JS
                 className="btn btn-primary btn-sm"
                 onClick={() => setShowAddDcr(true)}
               >
-                <Plus size={12} /> New DCR
+                <Icon name="plus" size={12} /> New DCR
               </button>
             ) : (
               <button
@@ -253,7 +253,7 @@ export function DcrDcnTab({ detail }: { detail: DesignProjectDetail }): React.JS
                 className="btn btn-primary btn-sm"
                 onClick={() => setShowAddDcn(true)}
               >
-                <Plus size={12} /> New DCN
+                <Icon name="plus" size={12} /> New DCN
               </button>
             )
           ) : null}

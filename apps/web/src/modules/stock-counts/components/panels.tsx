@@ -19,7 +19,7 @@ export function ConfirmBelowBookedPanel(props: {
 }): React.JSX.Element {
   const { short, reason, setReason, busy, onPost, onBack } = props;
   return (
-    <div className="panel" style={{ marginTop: 12, borderColor: 'var(--amber)' }}>
+    <div className="panel" style={{ marginTop: 'var(--sp-3)', borderColor: 'var(--amber)' }}>
       <div className="panel-body">
         <div className="fw-700" style={{ marginBottom: 6 }}>
           These items will hold less than is booked for customer SOs:
@@ -38,7 +38,7 @@ export function ConfirmBelowBookedPanel(props: {
           value={reason}
           onChange={(e) => setReason(e.target.value)}
         />
-        <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
+        <div style={{ marginTop: 'var(--sp-2)', display: 'flex', gap: 'var(--sp-2)' }}>
           <button
             type="button"
             className="btn btn-primary"

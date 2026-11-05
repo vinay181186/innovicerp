@@ -22,6 +22,7 @@
 // lock exactly: `Received` read-only and no ✕ (the server enforces it with a
 // ConflictError).
 
+import { Icon } from '@/ui/core';
 import {
   type CreateGoodsReceiptNoteInput,
   type GoodsReceiptNoteDetail,
@@ -30,7 +31,7 @@ import {
   isWholeNumberUom,
   roundQty,
 } from '@innovic/shared';
-import { Loader2, Plus } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
 import { VendorPicker } from '@/components/shared/vendor-picker';
@@ -682,7 +683,7 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
                       className="btn btn-ghost btn-sm"
                       onClick={() => append(newLine())}
                     >
-                      <Plus size={13} /> Add Line
+                      <Icon name="plus" size={13} /> Add Line
                     </button>
                   ) : null}
                 </>

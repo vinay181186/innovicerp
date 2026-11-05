@@ -86,7 +86,11 @@ function AssemblyDetailPage(): React.JSX.Element {
     return (
       <div className="panel">
         <div className="panel-body">
-          <Link to="/assemblies" className="btn btn-ghost btn-sm" style={{ marginBottom: 8 }}>
+          <Link
+            to="/assemblies"
+            className="btn btn-ghost btn-sm"
+            style={{ marginBottom: 'var(--sp-2)' }}
+          >
             <ArrowLeft size={14} /> Back
           </Link>
           <div className="empty-state" style={{ color: 'var(--red2)' }}>
@@ -181,9 +185,9 @@ function AssemblyDetailPage(): React.JSX.Element {
             color: 'var(--red2)',
             background: 'var(--red3)',
             border: '1px solid var(--sig-critical-bd)',
-            borderRadius: 6,
+            borderRadius: 'var(--radius)',
             padding: '6px 10px',
-            fontSize: 12,
+            fontSize: 'var(--fs-sm)',
             marginBottom: 10,
           }}
         >
@@ -199,7 +203,7 @@ function AssemblyDetailPage(): React.JSX.Element {
       />
 
       {/* ADR-193 3b — parts the store issued against this SO (read-only). */}
-      <div className="panel" style={{ marginBottom: 12 }}>
+      <div className="panel" style={{ marginBottom: 'var(--sp-3)' }}>
         <div className="panel-hdr">
           <div className="panel-title">Material</div>
         </div>
@@ -255,7 +259,7 @@ function AssemblyDetailPage(): React.JSX.Element {
         ) : null}
         <div className="panel-body" style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
           <div>
-            <label className="form-label" style={{ display: 'block', marginBottom: 4 }}>
+            <label className="form-label" style={{ display: 'block', marginBottom: 'var(--sp-1)' }}>
               Qty to Start<span className="req">★</span>
             </label>
             <input
@@ -275,7 +279,7 @@ function AssemblyDetailPage(): React.JSX.Element {
           <div style={{ width: 180 }}>
             <label
               className="form-label"
-              style={{ display: 'block', marginBottom: 4 }}
+              style={{ display: 'block', marginBottom: 'var(--sp-1)' }}
               htmlFor="as-by"
             >
               Assembled By
@@ -308,7 +312,7 @@ function AssemblyDetailPage(): React.JSX.Element {
                    bottom-aligned row puts this whole strip back out of line, the very
                    fault this slot was split out to fix. No effect at any normal width
                    (1280 leaves 133.7px of slack even with nobody picked). */
-                style={{ display: 'block', marginBottom: 4, whiteSpace: 'nowrap' }}
+                style={{ display: 'block', marginBottom: 'var(--sp-1)', whiteSpace: 'nowrap' }}
                 htmlFor="as-by-typed"
               >
                 …or type a name
@@ -325,7 +329,7 @@ function AssemblyDetailPage(): React.JSX.Element {
           ) : null}
           {/* Start date + Remarks — stamped on the in-progress batch. */}
           <div>
-            <label className="form-label" style={{ display: 'block', marginBottom: 4 }}>
+            <label className="form-label" style={{ display: 'block', marginBottom: 'var(--sp-1)' }}>
               Start Date
             </label>
             <input
@@ -337,7 +341,7 @@ function AssemblyDetailPage(): React.JSX.Element {
             />
           </div>
           <div>
-            <label className="form-label" style={{ display: 'block', marginBottom: 4 }}>
+            <label className="form-label" style={{ display: 'block', marginBottom: 'var(--sp-1)' }}>
               Remarks
             </label>
             <input
@@ -410,7 +414,7 @@ function AssemblyDetailPage(): React.JSX.Element {
             beside assemble/undo. Both target screens already exist here, so
             these are links, not new features. "Dispatch Register" points at
             Customer Dispatch — the new ERP's name for that register. */}
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+        <div style={{ display: 'flex', gap: 'var(--sp-2)', flexWrap: 'wrap', marginTop: 10 }}>
           <Link
             to="/planning"
             className="btn btn-ghost btn-sm"
@@ -494,7 +498,7 @@ function HeaderPanel({ data }: { data: AssemblyTrackerResponse }): React.JSX.Ele
       name={
         <>
           {header.bomName ?? '—'}{' '}
-          <span className="text3" style={{ fontWeight: 400, fontSize: 12 }}>
+          <span className="text3" style={{ fontWeight: 400, fontSize: 'var(--fs-xs)' }}>
             × {header.orderQty} nos
           </span>
         </>
@@ -504,10 +508,10 @@ function HeaderPanel({ data }: { data: AssemblyTrackerResponse }): React.JSX.Ele
       }
       actions={
         <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: 22, fontWeight: 700, color: countColor }}>
+          <div style={{ fontSize: 'var(--fs-lg)', fontWeight: 700, color: countColor }}>
             {rollup.assembledQty}/{rollup.orderQty}
           </div>
-          <div className="text3" style={{ fontSize: 11 }}>
+          <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
             assembled
           </div>
         </div>
@@ -684,14 +688,21 @@ function ComponentsPanel({
                     {c.childItemCode}
                   </div>
                   {c.childItemName ? (
-                    <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
+                    <div
+                      className="text3"
+                      style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-0)' }}
+                    >
                       {c.childItemName}
                     </div>
                   ) : null}
                 </td>
                 <td>
                   <span
-                    style={{ fontSize: 11, fontWeight: 700, color: TYPE_META[c.bomType].color }}
+                    style={{
+                      fontSize: 'var(--fs-xs)',
+                      fontWeight: 700,
+                      color: TYPE_META[c.bomType].color,
+                    }}
                   >
                     {TYPE_META[c.bomType].label}
                   </span>
@@ -861,7 +872,9 @@ function UnitsPanel({
         </div>
       </div>
       {error ? (
-        <div style={{ color: 'var(--red2)', padding: '6px 10px', fontSize: 12 }}>{error}</div>
+        <div style={{ color: 'var(--red2)', padding: '6px 10px', fontSize: 'var(--fs-sm)' }}>
+          {error}
+        </div>
       ) : null}
       {variance ? (
         <VarianceConfirm
@@ -894,7 +907,7 @@ function UnitsPanel({
               const wip = u.status === 'in_progress';
               return (
                 <tr key={u.id}>
-                  <td className="fw-700" style={{ fontSize: 16 }}>
+                  <td className="fw-700" style={{ fontSize: 'var(--fs-md)' }}>
                     {u.unitNo}
                   </td>
                   <td>
@@ -907,7 +920,7 @@ function UnitsPanel({
                   <td className="td-num fw-700">
                     {u.qty}
                     {wip ? (
-                      <span className="text3" style={{ fontSize: 11 }}>
+                      <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
                         {' '}
                         left
                       </span>
@@ -915,20 +928,20 @@ function UnitsPanel({
                   </td>
                   <td
                     className="mono"
-                    style={{ fontSize: 12, color: 'var(--cyan)', fontWeight: 700 }}
+                    style={{ fontSize: 'var(--fs-sm)', color: 'var(--cyan)', fontWeight: 700 }}
                   >
                     {u.serialNo ?? '—'}
                   </td>
-                  <td className="mono" style={{ fontSize: 12 }}>
+                  <td className="mono" style={{ fontSize: 'var(--fs-sm)' }}>
                     {fmtDate(u.assemblyDate)}
                   </td>
-                  <td style={{ fontSize: 12 }}>{u.assembledBy ?? '—'}</td>
-                  <td className="text3" style={{ fontSize: 12 }}>
+                  <td style={{ fontSize: 'var(--fs-sm)' }}>{u.assembledBy ?? '—'}</td>
+                  <td className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
                     {u.remarks ?? '—'}
                   </td>
                   <td>
                     {wip ? (
-                      <span className="text3" style={{ fontSize: 11 }}>
+                      <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
                         —
                       </span>
                     ) : u.dispatched ? (
@@ -954,7 +967,7 @@ function UnitsPanel({
                         title="Good qty to complete now"
                       />
                     ) : (
-                      <span className="text3" style={{ fontSize: 11 }}>
+                      <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
                         —
                       </span>
                     )}

@@ -79,24 +79,33 @@ export function RouteCardRevisionHistory({
                   <td className="mono fw-700" style={{ color: 'var(--amber2)' }}>
                     Route Card Rev {rev.revisionNo}
                   </td>
-                  <td className="text2" style={{ fontSize: 11 }}>
+                  <td className="text2" style={{ fontSize: 'var(--fs-xs)' }}>
                     {fmtDate(rev.createdAt)}
                   </td>
-                  <td className="text2" style={{ fontSize: 11 }}>
+                  <td className="text2" style={{ fontSize: 'var(--fs-xs)' }}>
                     {rev.createdByName ?? '—'}
                   </td>
-                  <td className="text2" style={{ fontSize: 11, whiteSpace: 'pre-wrap' }}>
+                  <td
+                    className="text2"
+                    style={{ fontSize: 'var(--fs-xs)', whiteSpace: 'pre-wrap' }}
+                  >
                     {rev.notes ?? '—'}
                   </td>
                   <td className="td-num mono">{rev.opsSnapshot.length}</td>
                 </tr>
                 {open ? (
                   <tr>
-                    <td colSpan={6} style={{ background: 'var(--bg3)', padding: '8px 12px 12px' }}>
+                    <td
+                      colSpan={6}
+                      style={{
+                        background: 'var(--bg3)',
+                        padding: 'var(--sp-2) var(--sp-3) var(--sp-3)',
+                      }}
+                    >
                       <div
                         className="text3"
                         style={{
-                          fontSize: 11,
+                          fontSize: 'var(--fs-xs)',
                           fontWeight: 700,
                           marginBottom: 6,
                         }}
@@ -136,7 +145,7 @@ export function RouteCardRevisionHistory({
                                       {OP_TYPE_LABEL[op.opType] ?? op.opType}
                                     </span>
                                   </td>
-                                  <td className="mono" style={{ fontSize: 12 }}>
+                                  <td className="mono" style={{ fontSize: 'var(--fs-sm)' }}>
                                     {op.opType === 'outsource'
                                       ? (op.ospVendorCode ?? '—')
                                       : (op.machineCode ?? '—')}
@@ -149,26 +158,26 @@ export function RouteCardRevisionHistory({
                                   </td>
                                   <td
                                     className="mono"
-                                    style={{ fontSize: 12, color: 'var(--blue)' }}
+                                    style={{ fontSize: 'var(--fs-sm)', color: 'var(--blue)' }}
                                   >
                                     {op.opType === 'outsource' ? '—' : (op.program ?? '—')}
                                   </td>
-                                  <td className="td-num mono" style={{ fontSize: 12 }}>
+                                  <td className="td-num mono" style={{ fontSize: 'var(--fs-sm)' }}>
                                     {op.opType === 'outsource' ? (op.ospLeadDays ?? '—') : '—'}
                                   </td>
                                   <td
                                     className="mono"
-                                    style={{ fontSize: 12, color: 'var(--cyan)' }}
+                                    style={{ fontSize: 'var(--fs-sm)', color: 'var(--cyan)' }}
                                   >
                                     {op.toolNo ?? '—'}
                                   </td>
-                                  <td className="text3" style={{ fontSize: 12 }}>
+                                  <td className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
                                     {op.toolDetails ?? '—'}
                                   </td>
                                   {/* Optional like qcRequired below: a snapshot
                                       written before migration 0195 carries no
                                       remarks key at all. */}
-                                  <td className="text2" style={{ fontSize: 12 }}>
+                                  <td className="text2" style={{ fontSize: 'var(--fs-sm)' }}>
                                     {op.remarks ?? '—'}
                                   </td>
                                   {/* undefined means this revision predates the

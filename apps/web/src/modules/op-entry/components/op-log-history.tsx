@@ -16,8 +16,9 @@
 // Reverse on the Operation Log; negative qty / reject) reads "Reversal" with
 // its reason instead of the plain type label.
 
+import { Icon } from '@/ui/core';
 import { SHIFT_LABELS, type OpLog, type OpLogTimeChangeRequest } from '@innovic/shared';
-import { Check, Clock, Loader2, Pencil, X } from 'lucide-react';
+import { Check, Clock, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { fmtClock, fmtDate, fmtDateAndTime, fmtDateTime, todayIst } from '@/lib/date';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -131,15 +132,18 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
   const busy = retime.isPending || decide.isPending;
 
   return (
-    <div className="panel-body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+    <div
+      className="panel-body"
+      style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-2)' }}
+    >
       {notice ? (
         <div
           style={{
             background: 'var(--bg3)',
             border: '1px solid var(--amber)',
-            borderRadius: 6,
+            borderRadius: 'var(--radius)',
             padding: '6px 10px',
-            fontSize: 11,
+            fontSize: 'var(--fs-xs)',
             color: 'var(--amber2)',
           }}
         >
@@ -181,7 +185,7 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'flex-start',
-                  gap: 8,
+                  gap: 'var(--sp-2)',
                   flexWrap: 'wrap',
                 }}
               >
@@ -198,7 +202,7 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
                     style={{
                       background: ts.bg,
                       color: ts.fg,
-                      fontSize: 11,
+                      fontSize: 'var(--fs-xs)',
                       fontWeight: 700,
                       padding: '2px 7px',
                       borderRadius: 999,
@@ -208,7 +212,7 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
                     {reversal ? 'Reversal' : TYPE_LABEL[l.logType]}
                   </span>
                   {editing ? (
-                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', gap: 'var(--sp-1)', flexWrap: 'wrap' }}>
                       <input
                         className="innovic-input"
                         type="date"
@@ -216,7 +220,11 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
                         max={todayIst()}
                         value={draftDate}
                         onChange={(e) => setDraftDate(e.target.value)}
-                        style={{ fontSize: 11, padding: '2px 4px', width: 130 }}
+                        style={{
+                          fontSize: 'var(--fs-xs)',
+                          padding: 'var(--sp-0) var(--sp-1)',
+                          width: 130,
+                        }}
                       />
                       <input
                         className="innovic-input"
@@ -224,21 +232,28 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
                         aria-label="Entry time"
                         value={draftTime}
                         onChange={(e) => setDraftTime(e.target.value)}
-                        style={{ fontSize: 11, padding: '2px 4px', width: 100 }}
+                        style={{
+                          fontSize: 'var(--fs-xs)',
+                          padding: 'var(--sp-0) var(--sp-1)',
+                          width: 100,
+                        }}
                       />
                     </div>
                   ) : (
-                    <span className="mono" style={{ fontSize: 12, fontWeight: 600 }}>
+                    <span className="mono" style={{ fontSize: 'var(--fs-sm)', fontWeight: 600 }}>
                       {fmtDate(l.logDate)}
                       {fmtClock(l.startTime) ? ` · ${fmtClock(l.startTime)}` : ''}
                     </span>
                   )}
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)' }}>
                   <span
                     className="mono"
-                    style={{ fontSize: 12, color: l.qty < 0 ? 'var(--red2)' : undefined }}
+                    style={{
+                      fontSize: 'var(--fs-sm)',
+                      color: l.qty < 0 ? 'var(--red2)' : undefined,
+                    }}
                     title="Completed / Deviated"
                   >
                     {l.qty}
@@ -250,7 +265,7 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
                       the table version. */}
                   {editing ? null : req && canApprove ? (
                     rejectingId === req.id ? null : (
-                      <span style={{ display: 'inline-flex', gap: 4 }}>
+                      <span style={{ display: 'inline-flex', gap: 'var(--sp-1)' }}>
                         <button
                           type="button"
                           className="btn btn-primary btn-sm"
@@ -277,12 +292,12 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
                             setRejectReason('');
                           }}
                         >
-                          <X className="h-3 w-3" />
+                          <Icon name="x" className="h-3 w-3" />
                         </button>
                       </span>
                     )
                   ) : req ? (
-                    <span className="text3" style={{ fontSize: 11 }}>
+                    <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
                       awaiting approval
                     </span>
                   ) : canEdit ? (
@@ -292,7 +307,7 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
                       onClick={() => beginEdit(l)}
                       title="Edit date/time (qty cannot be changed)"
                     >
-                      <Pencil className="h-3 w-3" />
+                      <Icon name="pencil" className="h-3 w-3" />
                     </button>
                   ) : null}
                 </div>
@@ -305,7 +320,7 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
               <div
                 className="text3"
                 style={{
-                  fontSize: 11,
+                  fontSize: 'var(--fs-xs)',
                   display: 'flex',
                   gap: 6,
                   flexWrap: 'wrap',
@@ -346,7 +361,13 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
               </div>
 
               {reversal && l.reversalReason ? (
-                <div style={{ fontSize: 11, color: 'var(--red2)', wordBreak: 'break-word' }}>
+                <div
+                  style={{
+                    fontSize: 'var(--fs-xs)',
+                    color: 'var(--red2)',
+                    wordBreak: 'break-word',
+                  }}
+                >
                   Reason: {l.reversalReason}
                 </div>
               ) : null}
@@ -355,13 +376,17 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
               {!editing && (l.remarks || l.timingEditedAt) ? (
                 <div
                   className="text3"
-                  style={{ fontSize: 11, whiteSpace: 'normal', wordBreak: 'break-word' }}
+                  style={{
+                    fontSize: 'var(--fs-xs)',
+                    whiteSpace: 'normal',
+                    wordBreak: 'break-word',
+                  }}
                 >
                   {l.remarks ?? ''}
                   {l.timingEditedAt ? (
                     <span
                       className="text3"
-                      style={{ fontSize: 11, marginLeft: 4 }}
+                      style={{ fontSize: 'var(--fs-xs)', marginLeft: 'var(--sp-1)' }}
                       title={`Date/time corrected on ${fmtDateTime(l.timingEditedAt)}. Qty unchanged.`}
                     >
                       (retimed)
@@ -373,7 +398,11 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
               {/* Pending-change line */}
               {!editing && req ? (
                 <div
-                  style={{ fontSize: 11, color: 'var(--amber2)', wordBreak: 'break-word' }}
+                  style={{
+                    fontSize: 'var(--fs-xs)',
+                    color: 'var(--amber2)',
+                    wordBreak: 'break-word',
+                  }}
                   title={req.reason ?? ''}
                 >
                   <Clock className="mr-1 inline h-3 w-3" />
@@ -395,7 +424,12 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
                     placeholder={canApprove ? 'Reason (optional)' : 'Why? (shown to approver)'}
                     value={reason}
                     onChange={(e) => setReason(e.target.value)}
-                    style={{ fontSize: 11, padding: '2px 6px', flex: '1 1 160px', minWidth: 120 }}
+                    style={{
+                      fontSize: 'var(--fs-xs)',
+                      padding: '2px 6px',
+                      flex: '1 1 160px',
+                      minWidth: 120,
+                    }}
                   />
                   <button
                     type="button"
@@ -423,7 +457,7 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
                     disabled={busy}
                     title="Cancel"
                   >
-                    <X className="h-3 w-3" />
+                    <Icon name="x" className="h-3 w-3" />
                   </button>
                 </div>
               ) : null}
@@ -438,7 +472,12 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
                     placeholder="Reason (required)"
                     value={rejectReason}
                     onChange={(e) => setRejectReason(e.target.value)}
-                    style={{ fontSize: 11, padding: '2px 6px', flex: '1 1 140px', minWidth: 120 }}
+                    style={{
+                      fontSize: 'var(--fs-xs)',
+                      padding: '2px 6px',
+                      flex: '1 1 140px',
+                      minWidth: 120,
+                    }}
                   />
                   <button
                     type="button"
@@ -465,7 +504,7 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
                     disabled={busy}
                     onClick={() => setRejectingId(null)}
                   >
-                    <X className="h-3 w-3" />
+                    <Icon name="x" className="h-3 w-3" />
                   </button>
                 </div>
               ) : null}
@@ -475,7 +514,7 @@ export function OpLogHistory({ logs, isLoading, jcOpId }: Props): React.JSX.Elem
       )}
 
       {retime.isError || decide.isError ? (
-        <div style={{ color: 'var(--red2)', fontSize: 11, padding: '6px 4px' }}>
+        <div style={{ color: 'var(--red2)', fontSize: 'var(--fs-xs)', padding: '6px 4px' }}>
           {(retime.error ?? decide.error)?.message}
         </div>
       ) : null}

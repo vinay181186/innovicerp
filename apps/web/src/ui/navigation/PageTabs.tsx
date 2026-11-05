@@ -41,6 +41,7 @@
 // markup contract with innovic-theme.css (:298-353), i.e. a redesign, not an
 // adherence fix. Deliberately left alone in Phase 3.
 
+import { Icon } from '../core/Icon';
 import type { RenderLinkArgs } from '../layout/link-slot';
 import { isPlainLeftClick } from '../is-plain-left-click';
 
@@ -130,7 +131,7 @@ export function PageTabs({
                 onClose?.(t.key);
               }}
             >
-              ×
+              <Icon name="x" size={12} />
             </button>
           </>
         );

@@ -104,12 +104,12 @@ const COLUMNS: DataTableColumn<GlobalSearchResult>[] = [
 /** The ▸ detail: every Particulars line on its own line, then the matched snippet. */
 function ParticularsDetail({ r }: { r: GlobalSearchResult }): React.JSX.Element {
   return (
-    <div style={{ padding: 'var(--sp-2) var(--sp-3)', fontSize: 13 }}>
+    <div style={{ padding: 'var(--sp-2) var(--sp-3)', fontSize: 'var(--fs-sm)' }}>
       {r.lines.map((l, i) => (
         <div key={i}>{l}</div>
       ))}
       {r.hit ? (
-        <div className="text3" style={{ fontSize: 12 }}>
+        <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
           matched: {r.hit}
         </div>
       ) : null}

@@ -102,13 +102,13 @@ export function PoShortCloseModal({
         </>
       }
     >
-      <div style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.6 }}>
+      <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text2)', lineHeight: 1.6 }}>
         This stops the order for good. Job Card{' '}
         <span className="mono fw-700" style={{ color: 'var(--text)' }}>
           {jcCode}
         </span>{' '}
         is frozen — no entry or edit is allowed on it afterwards.
-        <div style={{ marginTop: 8 }}>
+        <div style={{ marginTop: 'var(--sp-2)' }}>
           <b style={{ color: 'var(--orange2)' }}>
             {stopping} of {orderQty} will be short-closed
           </b>{' '}
@@ -135,7 +135,7 @@ export function PoShortCloseModal({
       </div>
 
       {err ? (
-        <div role="alert" className="form-error" style={{ marginTop: 8 }}>
+        <div role="alert" className="form-error" style={{ marginTop: 'var(--sp-2)' }}>
           {err}
         </div>
       ) : null}

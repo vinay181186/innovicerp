@@ -24,6 +24,7 @@
 // status, PO type, PO date and the item code / name on the lines, so the
 // placeholder names the columns rather than listing every matched field.
 
+import { Icon } from '@/ui/core';
 import {
   type ListPurchaseOrdersQuery,
   PO_STATUSES,
@@ -34,7 +35,6 @@ import {
   type PurchaseOrderLineListItem,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
@@ -346,7 +346,7 @@ function PurchaseOrdersListPage(): React.JSX.Element {
         primary={
           canAdd ? (
             <Link to="/purchase-orders/from-pr" className="btn btn-primary">
-              <Plus size={14} /> New PO
+              <Icon name="plus" size={14} /> New PO
             </Link>
           ) : null
         }

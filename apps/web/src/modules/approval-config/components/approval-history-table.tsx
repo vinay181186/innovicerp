@@ -147,7 +147,7 @@ export function ApprovalHistoryTable(): React.JSX.Element {
   const columns = useMemo(() => approvalHistoryColumns(), []);
 
   return (
-    <div className="panel" style={{ padding: 16 }}>
+    <div className="panel" style={{ padding: 'var(--sp-4)' }}>
       <div
         style={{
           display: 'flex',
@@ -157,7 +157,7 @@ export function ApprovalHistoryTable(): React.JSX.Element {
           marginBottom: 10,
         }}
       >
-        <div style={{ fontSize: 14, fontWeight: 700 }}>Approval Activity</div>
+        <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 700 }}>Approval Activity</div>
         <input
           className="innovic-input"
           style={{ maxWidth: 280 }}

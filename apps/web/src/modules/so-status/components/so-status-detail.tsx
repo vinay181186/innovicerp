@@ -4,6 +4,7 @@
 // type + due colour), Equipment-BOM banner, per-line panels (tracker chips +
 // OSP alerts + JC table + Create JC / Create PO), Equipment-BOM items table.
 
+import { Icon } from '@/ui/core';
 import {
   type PlanningLine,
   type SoStatusBomItem,
@@ -17,7 +18,7 @@ import {
 } from '@innovic/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
-import { Loader2, Plus } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { itemCodeWithRev } from '@/lib/item-code';
@@ -73,12 +74,12 @@ const LINE_STATUS_LABEL: Record<SoStatusLine['status'], string> = {
 // suffixed with an alpha — ISSUE-063).
 type ChipTint = { color: string; bg: string; border: string };
 const CHIP_TINT = {
-  cyan: { color: 'var(--cyan)', bg: 'rgba(0,136,187,0.03)', border: 'rgba(0,136,187,0.19)' },
-  purple: { color: 'var(--purple)', bg: 'rgba(124,58,237,0.03)', border: 'rgba(124,58,237,0.19)' },
-  blue: { color: 'var(--blue)', bg: 'rgba(37,99,235,0.03)', border: 'rgba(37,99,235,0.19)' },
-  green: { color: 'var(--green2)', bg: 'rgba(22,163,74,0.03)', border: 'rgba(22,163,74,0.19)' },
-  green2: { color: 'var(--green2)', bg: 'rgba(21,128,61,0.03)', border: 'rgba(21,128,61,0.19)' },
-  amber: { color: 'var(--amber2)', bg: 'rgba(196,122,0,0.03)', border: 'rgba(196,122,0,0.19)' },
+  cyan: { color: 'var(--cyan)', bg: 'var(--cyan3)', border: 'var(--sig-info-bd)' },
+  purple: { color: 'var(--purple)', bg: 'var(--purple3)', border: 'var(--border2)' },
+  blue: { color: 'var(--blue)', bg: 'var(--blue3)', border: 'var(--sig-info-bd)' },
+  green: { color: 'var(--green2)', bg: 'var(--green3)', border: 'var(--sig-ok-bd)' },
+  green2: { color: 'var(--green2)', bg: 'var(--green3)', border: 'var(--sig-ok-bd)' },
+  amber: { color: 'var(--amber2)', bg: 'var(--amber3)', border: 'var(--sig-warn-bd)' },
 } satisfies Record<string, ChipTint>;
 
 function todayStr(): string {
@@ -121,14 +122,14 @@ function SoStatusDetailBody({ soId }: { soId: string }): React.JSX.Element {
 
   if (isLoading) {
     return (
-      <div className="text3" style={{ fontSize: 12, padding: 16 }}>
+      <div className="text3" style={{ fontSize: 'var(--fs-xs)', padding: 'var(--sp-4)' }}>
         <Loader2 className="inline h-4 w-4 animate-spin" /> Loading SO status…
       </div>
     );
   }
   if (isError || !data) {
     return (
-      <div className="empty-state" style={{ color: 'var(--red2)', padding: 24 }}>
+      <div className="empty-state" style={{ color: 'var(--red2)', padding: 'var(--sp-5)' }}>
         {error instanceof Error ? error.message : 'Could not load SO status. Try again.'}
       </div>
     );
@@ -152,31 +153,31 @@ function SoStatusDetailBody({ soId }: { soId: string }): React.JSX.Element {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          marginBottom: 16,
+          marginBottom: 'var(--sp-4)',
           flexWrap: 'wrap',
-          gap: 8,
+          gap: 'var(--sp-2)',
         }}
       >
-        <div style={{ fontSize: 15, fontWeight: 700 }}>SO Status Detail</div>
+        <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 700 }}>SO Status Detail</div>
         <div style={{ display: 'flex', gap: 6 }}>
           <button
             type="button"
             className="btn btn-sm"
             style={{
-              background: 'rgba(34,197,94,0.1)',
+              background: 'var(--green3)',
               color: 'var(--green2)',
-              border: '1px solid rgba(34,197,94,0.3)',
-              fontSize: 11,
+              border: '1px solid var(--sig-ok-bd)',
+              fontSize: 'var(--fs-xs)',
             }}
             onClick={() => exportSoStatusExcel(data)}
           >
-            ⬇ Export
+            <Icon name="download" size={13} /> Export
           </button>
           <Link
             to="/sales-orders/$id"
             params={{ id: header.id }}
             className="btn btn-ghost btn-sm"
-            style={{ fontSize: 11 }}
+            style={{ fontSize: 'var(--fs-xs)' }}
           >
             Open SO
           </Link>
@@ -184,13 +185,26 @@ function SoStatusDetailBody({ soId }: { soId: string }): React.JSX.Element {
       </div>
 
       {/* SO header (legacy L4283-4310) — a bare bordered block, not a panel. */}
-      <div style={{ borderBottom: '1px solid var(--border)', paddingBottom: 14, marginBottom: 16 }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 24, flexWrap: 'wrap' }}>
+      <div
+        style={{
+          borderBottom: '1px solid var(--border)',
+          paddingBottom: 14,
+          marginBottom: 'var(--sp-4)',
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 'var(--sp-5)',
+            flexWrap: 'wrap',
+          }}
+        >
           <div>
             <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--cyan)' }}>
               {soNoWithInternal(header.code, header.internalSoNo)}
             </div>
-            <div className="text3" style={{ fontSize: 12, marginTop: 2 }}>
+            <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-0)' }}>
               {TYPE_LABEL[header.type] ?? header.type} · {lines.length} line
               {lines.length === 1 ? '' : 's'}
             </div>
@@ -215,10 +229,12 @@ function SoStatusDetailBody({ soId }: { soId: string }): React.JSX.Element {
           />
           {header.remarks ? (
             <div style={{ flex: 1 }}>
-              <div className="text3" style={{ fontSize: 11 }}>
+              <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
                 Remarks
               </div>
-              <div style={{ fontSize: 12, color: 'var(--text2)' }}>{header.remarks}</div>
+              <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text2)' }}>
+                {header.remarks}
+              </div>
             </div>
           ) : null}
           <div style={{ flexBasis: '100%' }}>
@@ -375,12 +391,12 @@ function HeaderFact({
 }): React.JSX.Element {
   return (
     <div>
-      <div className="text3" style={{ fontSize: 11 }}>
+      <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
         {label}
       </div>
-      <div style={{ fontSize: 13, fontWeight: bold ? 700 : 400, color }}>{value}</div>
+      <div style={{ fontSize: 'var(--fs-sm)', fontWeight: bold ? 700 : 400, color }}>{value}</div>
       {sub ? (
-        <div className="text3" style={{ fontSize: 11 }}>
+        <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
           {sub}
         </div>
       ) : null}
@@ -418,30 +434,31 @@ function EquipmentBomBanner({
       style={{
         marginTop: 10,
         display: 'flex',
-        gap: 16,
+        gap: 'var(--sp-4)',
         flexWrap: 'wrap',
-        padding: '8px 12px',
+        padding: 'var(--sp-2) var(--sp-3)',
         background: 'var(--bg3)',
-        borderRadius: 6,
+        borderRadius: 'var(--radius)',
         border: '1px solid var(--border)',
       }}
     >
       <div>
-        <div className="text3" style={{ fontSize: 11 }}>
+        <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
           Equipment
         </div>
-        <div style={{ fontWeight: 700, color: 'var(--purple)' }}>
-          {info.equipmentItemCode ?? '—'} {info.equipmentItemName ?? ''}
+        <div style={{ fontWeight: 700, color: 'var(--text)' }}>
+          <span className="mono">{info.equipmentItemCode ?? '—'}</span>{' '}
+          {info.equipmentItemName ?? ''}
         </div>
       </div>
       <div>
-        <div className="text3" style={{ fontSize: 11 }}>
+        <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
           Order Qty
         </div>
-        <div style={{ fontWeight: 700, fontSize: 16 }}>{info.equipmentQty}</div>
+        <div style={{ fontWeight: 700, fontSize: 'var(--fs-md)' }}>{info.equipmentQty}</div>
       </div>
       <div>
-        <div className="text3" style={{ fontSize: 11 }}>
+        <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
           BOM Status
         </div>
         <div style={{ fontWeight: 700, color: bomStatusColor }}>{bomStatus ?? 'BOM Pending'}</div>
@@ -449,13 +466,13 @@ function EquipmentBomBanner({
       {bomLinked && info.bomNo ? (
         <>
           <div>
-            <div className="text3" style={{ fontSize: 11 }}>
+            <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
               Linked BOM
             </div>
             <div style={{ fontWeight: 700, color: 'var(--green2)' }}>
               {info.bomNo} BOM Rev {info.bomRev ?? '—'}
             </div>
-            <div className="text3" style={{ fontSize: 11 }}>
+            <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
               {info.bomName} ({info.bomPartsCount} items)
             </div>
           </div>
@@ -466,11 +483,11 @@ function EquipmentBomBanner({
                 onClick={onPlanBom}
                 className="btn btn-sm"
                 style={{
-                  background: 'rgba(34,211,238,0.08)',
+                  background: 'var(--cyan3)',
                   color: 'var(--cyan)',
-                  border: '1px solid rgba(34,211,238,0.3)',
+                  border: '1px solid var(--sig-info-bd)',
                   fontWeight: 700,
-                  fontSize: 11,
+                  fontSize: 'var(--fs-xs)',
                 }}
               >
                 📦 Plan BOM Items
@@ -481,11 +498,11 @@ function EquipmentBomBanner({
                 search={{ soId }}
                 className="btn btn-sm"
                 style={{
-                  background: 'rgba(34,211,238,0.08)',
+                  background: 'var(--cyan3)',
                   color: 'var(--cyan)',
-                  border: '1px solid rgba(34,211,238,0.3)',
+                  border: '1px solid var(--sig-info-bd)',
                   fontWeight: 700,
-                  fontSize: 11,
+                  fontSize: 'var(--fs-xs)',
                 }}
               >
                 📦 Plan BOM Items
@@ -498,7 +515,7 @@ function EquipmentBomBanner({
           style={{
             flex: 1,
             color: 'var(--amber2)',
-            fontSize: 12,
+            fontSize: 'var(--fs-sm)',
             fontWeight: 600,
             alignSelf: 'center',
           }}
@@ -520,9 +537,12 @@ function BomItemsTable({
   items: SoStatusBomItem[];
 }): React.JSX.Element {
   return (
-    <div className="panel" style={{ marginTop: 16 }}>
-      <div className="panel-hdr" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--cyan)' }}>
+    <div className="panel" style={{ marginTop: 'var(--sp-4)' }}>
+      <div
+        className="panel-hdr"
+        style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-3)' }}
+      >
+        <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 700, color: 'var(--cyan)' }}>
           📦 BOM Items — {bomNo} × {equipmentQty} sets
         </span>
       </div>
@@ -560,20 +580,23 @@ function BomItemsTable({
                   : c.bomType === 'purchase'
                     ? 'var(--green)'
                     : 'var(--amber)';
-              const rowBg = c.shortfall > 0 ? 'rgba(239,68,68,0.03)' : 'rgba(34,197,94,0.03)';
+              const rowBg = c.shortfall > 0 ? 'var(--red3)' : 'var(--green3)';
               return (
                 <tr key={c.childItemId} style={{ background: rowBg }}>
                   <td className="td-ctr mono fw-700">{idx + 1}</td>
-                  <td className="td-code" style={{ color: 'var(--purple)' }}>
+                  <td className="td-code" style={{ color: 'var(--text)' }}>
                     {c.childItemCode}
                   </td>
                   <td>{c.childItemName}</td>
                   <td className="td-ctr mono fw-700">{c.qtyPerSet}</td>
-                  <td className="td-ctr mono fw-700" style={{ fontSize: 14, color: 'var(--cyan)' }}>
+                  <td
+                    className="td-ctr mono fw-700"
+                    style={{ fontSize: 'var(--fs-sm)', color: 'var(--cyan)' }}
+                  >
                     {c.totalNeed}
                   </td>
                   <td>
-                    <span style={{ color: typeColor, fontSize: 11, fontWeight: 700 }}>
+                    <span style={{ color: typeColor, fontSize: 'var(--fs-xs)', fontWeight: 700 }}>
                       {typeLabel}
                     </span>
                   </td>
@@ -613,7 +636,11 @@ function BomItemsTable({
                         {c.jcCode ? (
                           <span
                             className="mono"
-                            style={{ fontSize: 11, color: 'var(--cyan)', marginLeft: 6 }}
+                            style={{
+                              fontSize: 'var(--fs-xs)',
+                              color: 'var(--cyan)',
+                              marginLeft: 6,
+                            }}
                           >
                             {c.jcCode}
                           </span>
@@ -701,7 +728,7 @@ function LinePanel({
                 to="/job-cards/$id"
                 params={{ id: jc.id }}
                 style={{
-                  fontSize: 12,
+                  fontSize: 'var(--fs-sm)',
                   fontWeight: 700,
                   color: 'var(--cyan)',
                   textDecoration: 'underline dotted',
@@ -710,7 +737,13 @@ function LinePanel({
                 {jc.code}
               </Link>
               {runCount > 0 ? (
-                <span style={{ fontSize: 11, color: 'var(--amber2)', marginLeft: 4 }}>
+                <span
+                  style={{
+                    fontSize: 'var(--fs-xs)',
+                    color: 'var(--amber2)',
+                    marginLeft: 'var(--sp-1)',
+                  }}
+                >
                   ▶{runCount} running
                 </span>
               ) : null}
@@ -735,7 +768,11 @@ function LinePanel({
         header: 'Item Code',
         className: 'td-code',
         nowrap: true,
-        render: (jc) => itemCodeWithRev(jc.itemCode, jc.itemRevision),
+        render: (jc) => (
+          <span style={{ color: 'var(--text)' }}>
+            {itemCodeWithRev(jc.itemCode, jc.itemRevision)}
+          </span>
+        ),
       },
       {
         id: 'item_name',
@@ -761,7 +798,9 @@ function LinePanel({
           const jcColor = jc.status === 'complete' ? 'var(--green)' : 'var(--amber)';
           return (
             <>
-              <span style={{ fontSize: 13, fontWeight: 700, color: jcColor }}>{jc.doneQty}</span>
+              <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 700, color: jcColor }}>
+                {jc.doneQty}
+              </span>
               <span
                 style={{
                   display: 'inline-block',
@@ -783,7 +822,10 @@ function LinePanel({
                   }}
                 />
               </span>
-              <span className="text3" style={{ fontSize: 11, marginLeft: 4 }}>
+              <span
+                className="text3"
+                style={{ fontSize: 'var(--fs-xs)', marginLeft: 'var(--sp-1)' }}
+              >
                 {jc.completionPct}%
               </span>
             </>
@@ -838,7 +880,7 @@ function LinePanel({
                 <OpChip key={op.id} op={op} />
               ))}
               {jc.ops.length === 0 ? (
-                <span className="text3" style={{ fontSize: 11 }}>
+                <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
                   No operations
                 </span>
               ) : null}
@@ -894,22 +936,25 @@ function LinePanel({
   };
 
   return (
-    <div className="panel" style={{ marginBottom: 12 }}>
+    <div className="panel" style={{ marginBottom: 'var(--sp-3)' }}>
       {/* Line header (legacy L4438-4453) */}
-      <div className="panel-hdr" style={{ gap: 16, flexWrap: 'wrap' }}>
+      <div className="panel-hdr" style={{ gap: 'var(--sp-4)', flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span className="text3 mono" style={{ fontSize: 11, fontWeight: 700 }}>
+          <span className="text3 mono" style={{ fontSize: 'var(--fs-xs)', fontWeight: 700 }}>
             Ln {line.lineNo}
           </span>
           {line.clientPoLineNo ? (
-            <span style={{ fontSize: 11, color: 'var(--purple)', fontWeight: 700 }}>
+            <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--purple)', fontWeight: 700 }}>
               POL {line.clientPoLineNo}
             </span>
           ) : null}
-          <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--purple)' }}>
+          <span
+            className="mono"
+            style={{ fontWeight: 700, fontSize: 'var(--fs-sm)', color: 'var(--text)' }}
+          >
             {itemCodeWithRev(line.itemCode ?? line.itemCodeText, line.itemRevision, '')}
           </span>
-          <span style={{ fontSize: 13 }}>{line.partName ?? ''}</span>
+          <span style={{ fontSize: 'var(--fs-sm)' }}>{line.partName ?? ''}</span>
         </div>
         <div
           style={{
@@ -921,10 +966,10 @@ function LinePanel({
           }}
         >
           <div style={{ textAlign: 'center' }}>
-            <div className="text3" style={{ fontSize: 11 }}>
+            <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
               Order Qty
             </div>
-            <div style={{ fontWeight: 700, fontSize: 15 }}>{line.orderQty}</div>
+            <div style={{ fontWeight: 700, fontSize: 'var(--fs-sm)' }}>{line.orderQty}</div>
           </div>
           <div style={{ textAlign: 'center' }}>
             <div
@@ -932,7 +977,7 @@ function LinePanel({
                 width: 90,
                 height: 8,
                 background: 'var(--bg5)',
-                borderRadius: 4,
+                borderRadius: 'var(--radius-sm)',
                 margin: '4px auto 2px',
               }}
             >
@@ -941,11 +986,11 @@ function LinePanel({
                   width: `${line.completionPct}%`,
                   height: '100%',
                   background: statusColor,
-                  borderRadius: 4,
+                  borderRadius: 'var(--radius-sm)',
                 }}
               />
             </div>
-            <div className="text3" style={{ fontSize: 11 }}>
+            <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
               {line.completionPct}%
             </div>
           </div>
@@ -953,8 +998,8 @@ function LinePanel({
             <span
               style={{
                 padding: '3px 8px',
-                borderRadius: 4,
-                fontSize: 11,
+                borderRadius: 'var(--radius-sm)',
+                fontSize: 'var(--fs-xs)',
                 fontWeight: 700,
                 border: `1px solid ${statusColor}`,
                 color: statusColor,
@@ -1050,12 +1095,12 @@ function LinePanel({
           Planning (_soStatusCreateJC L4565-4569). */}
       <div
         style={{
-          padding: '8px 16px',
+          padding: 'var(--sp-2) var(--sp-4)',
           background: 'var(--bg)',
           borderTop: '1px solid var(--border)',
           display: 'flex',
           justifyContent: 'flex-end',
-          gap: 8,
+          gap: 'var(--sp-2)',
           alignItems: 'center',
           flexWrap: 'wrap',
         }}
@@ -1065,11 +1110,11 @@ function LinePanel({
             type="button"
             className="btn btn-sm"
             style={{
-              background: 'rgba(34,211,238,0.08)',
+              background: 'var(--cyan3)',
               color: 'var(--cyan)',
-              border: '1px solid rgba(34,211,238,0.3)',
+              border: '1px solid var(--sig-info-bd)',
               fontWeight: 700,
-              fontSize: 11,
+              fontSize: 'var(--fs-xs)',
             }}
             onClick={onAssemblyBom}
           >
@@ -1081,18 +1126,18 @@ function LinePanel({
             type="button"
             className="btn btn-sm"
             style={{
-              background: 'rgba(124,58,237,0.08)',
+              background: 'var(--purple3)',
               color: 'var(--purple)',
-              border: '1px solid rgba(124,58,237,0.25)',
+              border: '1px solid var(--border2)',
               fontWeight: 700,
-              fontSize: 11,
+              fontSize: 'var(--fs-xs)',
             }}
             onClick={onPlan}
           >
-            <Plus size={12} /> Plan {remainingToPlan} pcs
+            <Icon name="plus" size={12} /> Plan {remainingToPlan} pcs
           </button>
         ) : !showPlan && !showAssemblyBom && !isEquipmentLine ? (
-          <span style={{ fontSize: 11, color: 'var(--green2)', fontWeight: 700 }}>
+          <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--green2)', fontWeight: 700 }}>
             ✓ Fully Planned
           </span>
         ) : null}
@@ -1137,17 +1182,38 @@ function OutsourceAlertRows({
   return (
     <>
       {alert.atVendorOpCount > 0 ? (
-        <div style={{ marginTop: 6, fontSize: 11, color: 'var(--purple)', fontWeight: 600 }}>
+        <div
+          style={{
+            marginTop: 6,
+            fontSize: 'var(--fs-xs)',
+            color: 'var(--purple)',
+            fontWeight: 600,
+          }}
+        >
           🏭 At Vendor: {alert.atVendorQty} pcs across {alert.atVendorOpCount} outsource op(s)
         </div>
       ) : null}
       {alert.pendingPrCount > 0 ? (
-        <div style={{ marginTop: 4, fontSize: 11, color: 'var(--amber2)', fontWeight: 600 }}>
+        <div
+          style={{
+            marginTop: 'var(--sp-1)',
+            fontSize: 'var(--fs-xs)',
+            color: 'var(--amber2)',
+            fontWeight: 600,
+          }}
+        >
           📋 {alert.pendingPrCount} outsource op(s) awaiting Purchase Request
         </div>
       ) : null}
       {alert.prRaisedCount > 0 ? (
-        <div style={{ marginTop: 4, fontSize: 11, color: 'var(--blue)', fontWeight: 600 }}>
+        <div
+          style={{
+            marginTop: 'var(--sp-1)',
+            fontSize: 'var(--fs-xs)',
+            color: 'var(--blue)',
+            fontWeight: 600,
+          }}
+        >
           🛒 {alert.prRaisedCount} PR(s) raised, awaiting PO creation
         </div>
       ) : null}
@@ -1205,12 +1271,12 @@ function OpChip({ op }: { op: SoStatusOp }): React.JSX.Element {
         className="mono"
         title={title}
         style={{
-          fontSize: 11,
+          fontSize: 'var(--fs-xs)',
           padding: '1px 5px',
           borderRadius: 3,
           border: `1px solid ${ic}`,
           color: ic,
-          ...(isOS ? { background: 'rgba(255,176,32,0.06)' } : {}),
+          ...(isOS ? { background: 'var(--amber3)' } : {}),
         }}
       >
         {isOS ? '🏭' : ''}Op {opSrNo(op.opSeq)}
@@ -1275,7 +1341,7 @@ function Chip({
         padding: '8px 10px',
         background: filled ? tint.bg : 'var(--bg3)',
         border: `1px solid ${filled ? tint.border : 'var(--border)'}`,
-        borderRadius: 6,
+        borderRadius: 'var(--radius)',
       }}
     >
       <div
@@ -1283,18 +1349,22 @@ function Chip({
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          marginBottom: 4,
+          marginBottom: 'var(--sp-1)',
         }}
       >
-        <span className="text3" style={{ fontSize: 11, fontWeight: 600 }}>
+        <span className="text3" style={{ fontSize: 'var(--fs-xs)', fontWeight: 600 }}>
           {icon} {label}
         </span>
         <span
           className="mono"
-          style={{ fontSize: 13, fontWeight: 800, color: filled ? tint.color : 'var(--text3)' }}
+          style={{
+            fontSize: 'var(--fs-sm)',
+            fontWeight: 800,
+            color: filled ? tint.color : 'var(--text3)',
+          }}
         >
           {qty}
-          <span className="text3" style={{ fontSize: 11, fontWeight: 400 }}>
+          <span className="text3" style={{ fontSize: 'var(--fs-xs)', fontWeight: 400 }}>
             {' '}
             /{total}
           </span>

@@ -73,7 +73,7 @@ export function inwardColumns(firstRowNo: number): DataTableColumn<JwDcInwardLin
       header: 'DC No.',
       className: 'mono',
       nowrap: true,
-      render: (inv) => <span style={{ color: 'var(--purple)' }}>{inv.dcCodeText ?? '—'}</span>,
+      render: (inv) => <span style={{ color: 'var(--blue)' }}>{inv.dcCodeText ?? '—'}</span>,
     },
     {
       id: 'po_no',

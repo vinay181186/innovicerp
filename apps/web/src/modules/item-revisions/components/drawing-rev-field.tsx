@@ -19,6 +19,7 @@
 // The server enforces every one of these rules; this only stops the user from
 // building a save the server will refuse ("Drawing differs from ABC/1 …").
 
+import { Icon } from '@/ui/core';
 import type { DrawingSource, ItemRevision } from '@innovic/shared';
 import { itemRevLabel } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
@@ -157,7 +158,7 @@ export function DrawingRevField(props: DrawingRevFieldProps): React.JSX.Element 
             onChange(null);
           }}
         >
-          ✕
+          <Icon name="x" size={12} />
         </button>
       )}
     </span>

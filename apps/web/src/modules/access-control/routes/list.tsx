@@ -183,7 +183,7 @@ function AccessControlListPage(): React.JSX.Element {
         onPage={gotoPage}
       />
 
-      <div className="text3" style={{ fontSize: 11, marginTop: 8 }}>
+      <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-2)' }}>
         Admins always have full access.
       </div>
 

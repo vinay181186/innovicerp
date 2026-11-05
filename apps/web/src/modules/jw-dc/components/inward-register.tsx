@@ -15,9 +15,9 @@
 // grey and marked Cancelled, the reason in the ▸; a live row's ⋯ offers
 // "Cancel Receipt" (the ONE standard Cancel dialog, docType 'jw_dc_inward').
 
+import { Icon } from '@/ui/core';
 import { type JwDcInwardLineRow } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
-import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDateTime } from '@/lib/date';
@@ -114,7 +114,7 @@ export function InwardView({
         primary={
           canWrite ? (
             <Link to="/jw-dc/inward/new" className="btn btn-primary">
-              <Plus size={14} /> New Inward Entry
+              <Icon name="plus" size={14} /> New Inward Entry
             </Link>
           ) : null
         }

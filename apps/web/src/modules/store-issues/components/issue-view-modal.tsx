@@ -166,18 +166,18 @@ export function IssueViewModal({
       }
     >
       {isLoading ? (
-        <div className="text3" style={{ fontSize: 12 }}>
+        <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
           <Loader2 size={14} className="inline animate-spin" /> Loading…
         </div>
       ) : isError || !iss ? (
-        <div style={{ color: 'var(--red2)', fontSize: 12 }}>
+        <div style={{ color: 'var(--red2)', fontSize: 'var(--fs-sm)' }}>
           {error instanceof Error ? error.message : 'Could not load the issue.'}
         </div>
       ) : (
         <>
           <div
             className="text2"
-            style={{ fontSize: 12, display: 'flex', gap: 18, flexWrap: 'wrap' }}
+            style={{ fontSize: 'var(--fs-sm)', display: 'flex', gap: 18, flexWrap: 'wrap' }}
           >
             <span>
               Issue Date <b>{fmtDate(iss.issueDate)}</b>
@@ -196,11 +196,18 @@ export function IssueViewModal({
             </span>
           </div>
           {iss.reversedAt ? (
-            <div style={{ marginTop: 6, fontSize: 12, fontWeight: 700, color: 'var(--red)' }}>
+            <div
+              style={{
+                marginTop: 6,
+                fontSize: 'var(--fs-sm)',
+                fontWeight: 700,
+                color: 'var(--red)',
+              }}
+            >
               Cancelled {fmtDate(iss.reversedAt.slice(0, 10))} — {iss.reversalReason ?? ''}
             </div>
           ) : (
-            <div style={{ marginTop: 8 }}>
+            <div style={{ marginTop: 'var(--sp-2)' }}>
               <CancelPendingBanner
                 docType="store_issue"
                 docId={iss.id}
@@ -289,7 +296,11 @@ export function IssueViewModal({
             </div>
           )}
           {err ? (
-            <div style={{ color: 'var(--red2)', fontSize: 12, marginTop: 8 }}>{err}</div>
+            <div
+              style={{ color: 'var(--red2)', fontSize: 'var(--fs-sm)', marginTop: 'var(--sp-2)' }}
+            >
+              {err}
+            </div>
           ) : null}
         </>
       )}

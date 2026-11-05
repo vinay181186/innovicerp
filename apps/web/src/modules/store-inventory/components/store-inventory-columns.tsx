@@ -49,11 +49,7 @@ export function storeInventoryColumns(opts: {
       render: (row) =>
         row.itemRevisionId ? (
           <span className="td-code fw-700" style={{ color: 'var(--text)' }}>
-            <ItemRevLink
-              itemRevisionId={row.itemRevisionId}
-              label={row.itemLabel}
-              className=""
-            />
+            <ItemRevLink itemRevisionId={row.itemRevisionId} label={row.itemLabel} className="" />
           </span>
         ) : !canOpenItem ? (
           <span className="td-code fw-700" style={{ color: 'var(--text)' }}>
@@ -123,7 +119,7 @@ export function storeInventoryColumns(opts: {
         <span
           className="mono fw-700"
           style={{
-            fontSize: 15,
+            fontSize: 'var(--fs-sm)',
             color:
               row.inStock > 0 ? 'var(--green)' : row.inStock === 0 ? 'var(--red)' : 'var(--text3)',
           }}
@@ -160,7 +156,7 @@ export function storeInventoryColumns(opts: {
               background: 'none',
               border: 'none',
               padding: 0,
-              fontSize: 15,
+              fontSize: 'var(--fs-sm)',
               color: 'var(--purple)',
               textDecoration: 'underline',
               cursor: 'pointer',
@@ -189,7 +185,10 @@ export function storeInventoryColumns(opts: {
       render: (row) => (
         <span
           className="mono fw-700"
-          style={{ fontSize: 15, color: row.availableQty > 0 ? 'var(--cyan)' : 'var(--text3)' }}
+          style={{
+            fontSize: 'var(--fs-sm)',
+            color: row.availableQty > 0 ? 'var(--cyan)' : 'var(--text3)',
+          }}
         >
           {row.availableQty}
         </span>

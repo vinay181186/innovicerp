@@ -17,7 +17,7 @@ import { Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { PageHeader } from '@/ui/layout';
+import { FormActions, PageHeader } from '@/ui/layout';
 import { useUsersList } from '@/modules/users/api';
 import { useApprovalConfig, useSaveApprovalConfig } from '../api';
 import { ApprovalHistoryTable } from '../components/approval-history-table';
@@ -48,7 +48,7 @@ function ApprovalConfigPage(): React.JSX.Element {
   if (!isAdmin) {
     return (
       <div className="empty-state" style={{ color: 'var(--red2)' }}>
-        <div style={{ fontSize: 28, marginBottom: 10 }}>🔒</div>
+        <div style={{ fontSize: 'var(--fs-xl)', marginBottom: 10 }}>🔒</div>
         You do not have permission to open Approval Rules. Ask an admin.
       </div>
     );
@@ -107,61 +107,23 @@ function ApprovalConfigPage(): React.JSX.Element {
 
   return (
     <div>
-      <PageHeader
-        sticky
-        title="Approval Rules"
-        icon="⚖"
-        dirty={Boolean(dirty)}
-        actions={
-          <>
-            <button
-              type="button"
-              className="btn btn-primary"
-              disabled={!dirty || save.isPending}
-              title={!dirty ? 'No changes to save' : undefined}
-              onClick={() => void onSave()}
-            >
-              {save.isPending ? (
-                <>
-                  <Loader2 className="inline h-3 w-3 animate-spin" /> Saving…
-                </>
-              ) : (
-                'Save Changes'
-              )}
-            </button>
-          </>
-        }
-      />
-
-      {submitError ? (
-        <div
-          style={{
-            marginBottom: 12,
-            padding: '8px 12px',
-            background: 'rgba(239,68,68,0.06)',
-            border: '1px solid rgba(239,68,68,0.3)',
-            borderRadius: 6,
-            color: 'var(--red2)',
-            fontSize: 12,
-          }}
-        >
-          {submitError}
-        </div>
-      ) : null}
+      <PageHeader title="Approval Rules" icon="⚖" />
 
       {/* PO Approval block */}
-      <div className="panel" style={{ padding: 16, marginBottom: 14 }}>
+      <div className="panel" style={{ padding: 'var(--sp-4)', marginBottom: 14 }}>
         <div
           style={{
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
-            marginBottom: 12,
+            marginBottom: 'var(--sp-3)',
           }}
         >
           <div>
-            <span style={{ fontSize: 14, fontWeight: 700 }}>Purchase Order Approval</span>
-            <div className="text3" style={{ fontSize: 11 }}>
+            <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 700 }}>
+              Purchase Order Approval
+            </span>
+            <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
               {draft.poApproval
                 ? 'New POs start as Draft and open once an approver approves them.'
                 : 'PO approval is off. New POs open straight away.'}
@@ -176,14 +138,17 @@ function ApprovalConfigPage(): React.JSX.Element {
         <div
           style={{
             background: 'var(--bg3)',
-            borderRadius: 8,
-            padding: 12,
+            borderRadius: 'var(--radius2)',
+            padding: 'var(--sp-3)',
             border: '1px solid var(--border)',
           }}
         >
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-3)' }}>
             <div>
-              <label className="text3" style={{ fontSize: 11, display: 'block', marginBottom: 4 }}>
+              <label
+                className="text3"
+                style={{ fontSize: 'var(--fs-xs)', display: 'block', marginBottom: 'var(--sp-1)' }}
+              >
                 Manager PO Limit (₹)
               </label>
               <input
@@ -196,17 +161,17 @@ function ApprovalConfigPage(): React.JSX.Element {
                 }
                 style={{
                   width: '100%',
-                  fontSize: 16,
+                  fontSize: 'var(--fs-md)',
                   fontWeight: 700,
                   color: 'var(--amber2)',
-                  padding: 8,
+                  padding: 'var(--sp-2)',
                   border: '2px solid var(--amber)',
-                  borderRadius: 6,
+                  borderRadius: 'var(--radius)',
                   background: 'var(--bg)',
                   textAlign: 'right',
                 }}
               />
-              <div className="text3" style={{ fontSize: 11, marginTop: 4 }}>
+              <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-1)' }}>
                 Admin: no limit.
               </div>
             </div>
@@ -217,13 +182,20 @@ function ApprovalConfigPage(): React.JSX.Element {
         <div
           style={{
             background: 'var(--bg3)',
-            borderRadius: 8,
-            padding: 12,
+            borderRadius: 'var(--radius2)',
+            padding: 'var(--sp-3)',
             border: '1px solid var(--border)',
             marginTop: 10,
           }}
         >
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--purple)', marginBottom: 8 }}>
+          <div
+            style={{
+              fontSize: 'var(--fs-sm)',
+              fontWeight: 700,
+              color: 'var(--purple)',
+              marginBottom: 'var(--sp-2)',
+            }}
+          >
             PO Approvers
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
@@ -240,9 +212,9 @@ function ApprovalConfigPage(): React.JSX.Element {
                     padding: '6px 10px',
                     background: checked ? 'var(--green3)' : 'var(--bg)',
                     border: `1px solid ${checked ? 'var(--green)' : 'var(--border)'}`,
-                    borderRadius: 6,
+                    borderRadius: 'var(--radius)',
                     cursor: isAdm ? 'default' : 'pointer',
-                    fontSize: 12,
+                    fontSize: 'var(--fs-sm)',
                   }}
                 >
                   <input
@@ -262,7 +234,7 @@ function ApprovalConfigPage(): React.JSX.Element {
                   </span>
                   <span
                     style={{
-                      fontSize: 11,
+                      fontSize: 'var(--fs-xs)',
                       color: 'var(--text3)',
                       padding: '1px 5px',
                       background: 'var(--bg4)',
@@ -281,11 +253,13 @@ function ApprovalConfigPage(): React.JSX.Element {
       {/* Op Entry date/time edit approval (ADR-130). Read by the server — it
           decides whether an operator's correction applies on save or waits
           here. */}
-      <div className="panel" style={{ padding: 16, marginBottom: 14 }}>
+      <div className="panel" style={{ padding: 'var(--sp-4)', marginBottom: 14 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <span style={{ fontSize: 14, fontWeight: 700 }}>Op Entry Date/Time Changes</span>
-            <div className="text3" style={{ fontSize: 11 }}>
+            <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 700 }}>
+              Op Entry Date/Time Changes
+            </span>
+            <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
               Manager approves date/time corrections on Op Entry.
             </div>
           </div>
@@ -300,11 +274,13 @@ function ApprovalConfigPage(): React.JSX.Element {
           every edit to a saved enrolled document or master (DOCUMENT_EDIT_ENTITIES)
           is staged and goes for per-change approval. Off: edits save straight
           through — the instant rollback lever. */}
-      <div className="panel" style={{ padding: 16, marginBottom: 14 }}>
+      <div className="panel" style={{ padding: 'var(--sp-4)', marginBottom: 14 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <span style={{ fontSize: 14, fontWeight: 700 }}>Document Edit Approval</span>
-            <div className="text3" style={{ fontSize: 11 }}>
+            <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 700 }}>
+              Document Edit Approval
+            </span>
+            <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
               {draft.docEditApproval
                 ? 'Edits to a saved document or master wait in Settings → Approvals until approved.'
                 : 'Document edit approval is off. Edits to a saved document or master save straight away.'}
@@ -316,6 +292,34 @@ function ApprovalConfigPage(): React.JSX.Element {
           />
         </div>
       </div>
+
+      {/* Above Approval History: this Save is for the switches, not the history below. */}
+      <FormActions
+        dirty={Boolean(dirty)}
+        note={
+          submitError ? (
+            <span className="form-error" role="alert">
+              {submitError}
+            </span>
+          ) : undefined
+        }
+      >
+        <button
+          type="button"
+          className="btn btn-primary"
+          disabled={!dirty || save.isPending}
+          title={!dirty ? 'No changes to save' : undefined}
+          onClick={() => void onSave()}
+        >
+          {save.isPending ? (
+            <>
+              <Loader2 className="inline h-3 w-3 animate-spin" /> Saving…
+            </>
+          ) : (
+            'Save Changes'
+          )}
+        </button>
+      </FormActions>
 
       {/* Approval History — the one table on this page (ADR-199). */}
       <ApprovalHistoryTable />
@@ -329,7 +333,7 @@ function OnOffSwitch(props: {
   onChange: (next: boolean) => void;
 }): React.JSX.Element {
   return (
-    <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+    <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)', cursor: 'pointer' }}>
       <input
         type="checkbox"
         checked={props.checked}

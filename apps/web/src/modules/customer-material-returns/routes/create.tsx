@@ -13,6 +13,7 @@
 // Picking a different JWSO clears every typed qty (they belonged to the old
 // JWSO's rows).
 
+import { Icon } from '@/ui/core';
 import type { CreateCustomerMaterialReturnInput, CustomerMaterialReturn } from '@innovic/shared';
 import { createRoute, useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
@@ -138,7 +139,7 @@ function CustomerMaterialReturnNewPage(): React.JSX.Element {
           onBack={goBack}
         />
         <Panel>
-          <div style={{ fontSize: 13 }}>
+          <div style={{ fontSize: 'var(--fs-sm)' }}>
             <span className="mono fw-700">{saved.code}</span> — {saved.totalQty} pcs back to the
             customer on {saved.jwCode ?? 'the JWSO'}. Preview or download the return to send with
             the material.
@@ -170,7 +171,7 @@ function CustomerMaterialReturnNewPage(): React.JSX.Element {
             }}
           >
             {printing === 'download' ? <Loader2 size={14} className="inline animate-spin" /> : null}{' '}
-            ⬇ Download PDF
+            <Icon name="download" size={13} /> Download PDF
           </button>
         </FormActions>
       </div>
@@ -262,7 +263,7 @@ function CustomerMaterialReturnNewPage(): React.JSX.Element {
             Pick a JWSO first.
           </div>
         ) : returnableQ.isLoading ? (
-          <div className="text3" style={{ fontSize: 12, padding: 8 }}>
+          <div className="text3" style={{ fontSize: 'var(--fs-xs)', padding: 'var(--sp-2)' }}>
             <Loader2 size={13} className="inline animate-spin" /> Loading…
           </div>
         ) : returnableQ.isError ? (

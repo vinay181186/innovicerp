@@ -260,7 +260,9 @@ function jobCardColumns(orderCode: Map<string, string>): DataTableColumn<LevelJo
         j.ops.length === 0 ? (
           <span className="text3">No operations</span>
         ) : (
-          <span style={{ display: 'inline-flex', flexWrap: 'wrap', gap: '2px 12px' }}>
+          <span
+            style={{ display: 'inline-flex', flexWrap: 'wrap', gap: 'var(--sp-0) var(--sp-3)' }}
+          >
             {j.ops.map((o) => (
               <span key={o.opSeq} style={{ whiteSpace: 'nowrap' }} title={o.operation}>
                 <span className="mono fw-700">{fmtOpSrNo(o.opSeq)}</span>{' '}
@@ -280,7 +282,9 @@ function jobCardColumns(orderCode: Map<string, string>): DataTableColumn<LevelJo
         j.ospDocs.length === 0 ? (
           <span className="text3">—</span>
         ) : (
-          <span style={{ display: 'inline-flex', flexWrap: 'wrap', gap: '2px 12px' }}>
+          <span
+            style={{ display: 'inline-flex', flexWrap: 'wrap', gap: 'var(--sp-0) var(--sp-3)' }}
+          >
             {j.ospDocs.map((d) => (
               <span key={`${d.kind}-${d.id}`} style={{ whiteSpace: 'nowrap' }}>
                 <span className="text3">{OSP_LABEL[d.kind]}</span> <OspLink d={d} />{' '}
@@ -340,7 +344,11 @@ function LevelHeading({ children }: { children: React.ReactNode }): React.JSX.El
   return (
     <div
       className="fw-700"
-      style={{ fontSize: 12, color: 'var(--blue2)', margin: 'var(--sp-2) 0 var(--sp-1)' }}
+      style={{
+        fontSize: 'var(--fs-sm)',
+        color: 'var(--blue2)',
+        margin: 'var(--sp-2) 0 var(--sp-1)',
+      }}
     >
       {children}
     </div>
@@ -359,12 +367,22 @@ function LineLevels({ line }: { line: LevelSoLine }): React.JSX.Element {
   return (
     <div style={{ padding: 'var(--sp-1) var(--sp-3) var(--sp-3)' }}>
       <LevelHeading>Route Card</LevelHeading>
-      <div style={{ fontSize: 12, display: 'flex', flexWrap: 'wrap', gap: '4px 16px' }}>
+      <div
+        style={{
+          fontSize: 'var(--fs-sm)',
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: 'var(--sp-1) var(--sp-4)',
+        }}
+      >
         {line.routeCards.length === 0 ? (
           <span className="text3">Pending</span>
         ) : (
           line.routeCards.map((rc) => (
-            <span key={rc.id} style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
+            <span
+              key={rc.id}
+              style={{ display: 'inline-flex', gap: 'var(--sp-2)', alignItems: 'center' }}
+            >
               <Link
                 to="/route-cards/$id"
                 params={{ id: rc.id }}

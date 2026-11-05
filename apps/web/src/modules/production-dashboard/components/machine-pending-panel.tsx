@@ -152,7 +152,7 @@ const COLUMNS: DataTableColumn<PendingRow>[] = [
 function MachineHeading({ row }: { row: PendingRow }): React.JSX.Element {
   const { machine: m, groupCount: n, groupRunning } = row;
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-2)' }}>
       <span className="mono fw-700">{m.machineCode}</span>
       {m.name ? <span>· {m.name}</span> : null}
       <span>

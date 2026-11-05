@@ -29,9 +29,9 @@ const queueBtnStyle: React.CSSProperties = {
   background: 'none',
   border: '1px solid var(--border2)',
   borderRadius: 3,
-  padding: '0 4px',
+  padding: '0 var(--sp-1)',
   cursor: 'pointer',
-  fontSize: 11,
+  fontSize: 'var(--fs-xs)',
   color: 'var(--text2)',
   lineHeight: 1.6,
 };
@@ -97,7 +97,7 @@ export function machineLoad(pendingHrs: number): { label: string; cls: string } 
 export function MachineGroupHeading({ m }: { m: JobQueueMachine }): React.JSX.Element {
   const load = machineLoad(m.pendingHrs);
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--sp-2)' }}>
       <span className="mono fw-700">{m.machineCode}</span>
       {m.machineName ? <span>· {m.machineName}</span> : null}
       <span>
@@ -206,7 +206,12 @@ export function jobQueueColumns(opts: {
       className: 'mono fw-700',
       nowrap: true,
       render: (r) => (
-        <span style={{ fontSize: 15, color: isNextRow(r) ? 'var(--amber)' : 'var(--text3)' }}>
+        <span
+          style={{
+            fontSize: 'var(--fs-sm)',
+            color: isNextRow(r) ? 'var(--amber)' : 'var(--text3)',
+          }}
+        >
           {r.available}
         </span>
       ),
@@ -320,7 +325,14 @@ export function jobQueueRowActions(opts: {
   const showDown = canReorder && !searching && idx < m.pendingCount - 1;
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'center' }}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'center' }}>
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 'var(--sp-0)',
+          alignItems: 'center',
+        }}
+      >
         {showUp ? (
           <button
             type="button"

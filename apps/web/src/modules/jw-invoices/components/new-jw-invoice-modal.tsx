@@ -183,7 +183,7 @@ export function NewJwInvoiceModal({
         </>
       }
     >
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-3)' }}>
         <div style={{ gridColumn: 'span 2' }}>
           <Field
             label={
@@ -329,14 +329,14 @@ export function NewJwInvoiceModal({
       {/* Live preview — Taxable = qty × rate; GST from the JWSO header %. */}
       <div
         style={{
-          marginTop: 16,
+          marginTop: 'var(--sp-4)',
           border: '1px solid var(--border2)',
           borderRadius: 'var(--radius)',
-          padding: 12,
+          padding: 'var(--sp-3)',
           background: 'var(--bg3)',
           display: 'grid',
           gridTemplateColumns: `repeat(${taxCells.length + 3}, 1fr)`,
-          gap: 12,
+          gap: 'var(--sp-3)',
         }}
       >
         <PreviewCell label="Taxable" value={money(totals.subtotal)} />
@@ -345,7 +345,7 @@ export function NewJwInvoiceModal({
         ))}
         <PreviewCell label="Round-off" value={signedRoundOff(totals.roundOff)} />
         <PreviewCell label="Total" value={money(totals.grandTotal)} accent />
-        <div className="text3" style={{ fontSize: 11, gridColumn: '1 / -1' }}>
+        <div className="text3" style={{ fontSize: 'var(--fs-xs)', gridColumn: '1 / -1' }}>
           qty × rate = taxable · + GST from JWSO
           {previewTaxType ? null : ' · Split by customer state on save'}
         </div>
@@ -354,12 +354,12 @@ export function NewJwInvoiceModal({
       {err ? (
         <div
           style={{
-            marginTop: 12,
-            padding: 8,
-            background: 'rgba(239,68,68,0.08)',
+            marginTop: 'var(--sp-3)',
+            padding: 'var(--sp-2)',
+            background: 'var(--red3)',
             color: 'var(--red2)',
-            borderRadius: 4,
-            fontSize: 12,
+            borderRadius: 'var(--radius-sm)',
+            fontSize: 'var(--fs-sm)',
           }}
         >
           {err}

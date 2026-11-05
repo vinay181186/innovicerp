@@ -77,21 +77,24 @@ export function ReportLinesExpand({ id }: { id: string }): React.JSX.Element {
 
   if (isLoading) {
     return (
-      <div className="empty-state" style={{ padding: 16, fontSize: 12 }}>
+      <div className="empty-state" style={{ padding: 'var(--sp-4)', fontSize: 'var(--fs-sm)' }}>
         <Loader2 className="inline h-3 w-3 animate-spin" /> Loading…
       </div>
     );
   }
   if (isError || !data) {
     return (
-      <div className="empty-state" style={{ padding: 16, fontSize: 12, color: 'var(--red2)' }}>
+      <div
+        className="empty-state"
+        style={{ padding: 'var(--sp-4)', fontSize: 'var(--fs-sm)', color: 'var(--red2)' }}
+      >
         {error instanceof Error ? error.message : 'Could not load this report. Try again.'}
       </div>
     );
   }
 
   return (
-    <div style={{ padding: 8 }}>
+    <div style={{ padding: 'var(--sp-2)' }}>
       <DataTable<DailyTaskReportLine>
         columns={lineColumns}
         rows={data.lines}

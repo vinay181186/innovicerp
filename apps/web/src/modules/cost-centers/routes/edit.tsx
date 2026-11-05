@@ -88,7 +88,7 @@ function CostCenterEditPage(): React.JSX.Element {
     return (
       <div className="panel">
         <div className="panel-body">
-          <div style={{ marginBottom: 8 }}>
+          <div style={{ marginBottom: 'var(--sp-2)' }}>
             <Link to="/cost-centers" className="btn btn-ghost btn-sm">
               <ArrowLeft size={14} /> Back
             </Link>
@@ -115,10 +115,13 @@ function CostCenterEditPage(): React.JSX.Element {
       <CostCenterForm
         panelHeader={
           <div>
-            <div className="td-code fw-700" style={{ color: 'var(--cyan)', fontSize: 14 }}>
+            <div
+              className="td-code fw-700"
+              style={{ color: 'var(--cyan)', fontSize: 'var(--fs-sm)' }}
+            >
               {detail.code}
             </div>
-            <div className="panel-title" style={{ marginTop: 2 }}>
+            <div className="panel-title" style={{ marginTop: 'var(--sp-0)' }}>
               Edit Cost Centre
             </div>
           </div>

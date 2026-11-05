@@ -174,7 +174,7 @@ export function EntryTab({ term, onCount }: TabListProps): React.JSX.Element {
             if (prev && prev.logDate === l.logDate) return null;
             const h = dayHrs.get(l.logDate) ?? 0;
             return (
-              <span style={{ display: 'inline-flex', gap: 8 }}>
+              <span style={{ display: 'inline-flex', gap: 'var(--sp-2)' }}>
                 <span className="mono fw-700">{fmtDate(l.logDate)}</span>
                 <span>·</span>
                 <span className="mono fw-700" style={{ color: dayHrsColor(h) }}>

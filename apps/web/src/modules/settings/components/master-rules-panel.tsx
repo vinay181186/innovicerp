@@ -59,11 +59,11 @@ export function MasterRulesPanel(props: { isAdmin: boolean }): React.JSX.Element
   };
 
   return (
-    <div className="panel" style={{ marginTop: 16 }}>
+    <div className="panel" style={{ marginTop: 'var(--sp-4)' }}>
       <div className="panel-hdr">
         <div>
           <span className="panel-title">Master Rules</span>
-          <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
+          <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-0)' }}>
             {props.isAdmin
               ? 'GSTIN, State and HSN Code checks on Customers, Vendors and Items.'
               : 'You do not have permission to edit master rules. Ask an admin.'}
@@ -134,7 +134,7 @@ export function MasterRulesPanel(props: { isAdmin: boolean }): React.JSX.Element
           </div>
 
           {props.isAdmin ? (
-            <div style={{ marginTop: 16 }}>
+            <div style={{ marginTop: 'var(--sp-4)' }}>
               {submitError ? (
                 <div style={{ marginBottom: 10 }}>
                   <Banner tone="error" role="alert">

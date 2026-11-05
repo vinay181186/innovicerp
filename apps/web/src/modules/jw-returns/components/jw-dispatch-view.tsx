@@ -12,8 +12,8 @@
 // Split for the 400-line ceiling: the columns live in jw-returns-columns.tsx,
 // the create modal in new-jw-return-modal.tsx.
 
+import { Icon } from '@/ui/core';
 import { type JwReturnChallanListItem, type ListJwReturnChallansQuery } from '@innovic/shared';
-import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { fmtDateTime } from '@/lib/date';
@@ -133,7 +133,7 @@ export function JwDispatchView({
         primary={
           canCreate ? (
             <button type="button" className="btn btn-primary" onClick={() => setShowModal(true)}>
-              <Plus size={14} /> New Return
+              <Icon name="plus" size={14} /> New Return
             </button>
           ) : null
         }

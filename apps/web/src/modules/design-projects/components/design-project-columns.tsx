@@ -246,7 +246,9 @@ export function DesignProjectExpand({
 }): React.JSX.Element {
   return (
     <div style={{ display: 'grid', gap: 'var(--sp-2)', padding: 'var(--sp-2)' }}>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--sp-4)', fontSize: 12 }}>
+      <div
+        style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--sp-4)', fontSize: 'var(--fs-sm)' }}
+      >
         <span>
           <span className="text3">Start Date: </span>
           <span className="mono">{fmtDate(project.startDate)}</span>
@@ -256,7 +258,7 @@ export function DesignProjectExpand({
           <span>{project.engineers.length > 0 ? project.engineers.join(', ') : '—'}</span>
         </span>
       </div>
-      <div style={{ fontSize: 12 }}>
+      <div style={{ fontSize: 'var(--fs-sm)' }}>
         <span className="text3">Description: </span>
         <span className="text2">{project.description?.trim() || '—'}</span>
       </div>

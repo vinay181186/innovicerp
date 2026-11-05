@@ -137,7 +137,7 @@ export function MachineOpEntryView({
   return (
     <div>
       {machines.isLoading ? (
-        <div className="panel" style={{ marginBottom: 16 }}>
+        <div className="panel" style={{ marginBottom: 'var(--sp-4)' }}>
           <div className="empty-state">
             <Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Loading machines…
           </div>
@@ -148,7 +148,7 @@ export function MachineOpEntryView({
             display: 'grid',
             gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
             gap: 10,
-            marginBottom: 16,
+            marginBottom: 'var(--sp-4)',
           }}
         >
           {(machines.data?.machines ?? []).map((m) => (
@@ -170,7 +170,7 @@ export function MachineOpEntryView({
               background: 'var(--bg3)',
               border: '2px solid var(--green)',
               borderRadius: 10,
-              padding: 16,
+              padding: 'var(--sp-4)',
             }}
           >
             <div
@@ -178,13 +178,13 @@ export function MachineOpEntryView({
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
-                marginBottom: 12,
+                marginBottom: 'var(--sp-3)',
               }}
             >
-              <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--cyan)' }}>
+              <div style={{ fontSize: 'var(--fs-md)', fontWeight: 800, color: 'var(--cyan)' }}>
                 {selectedMachine.code} — <span style={{ color: 'var(--green2)' }}>🟢 Running</span>
               </div>
-              <div className="text3" style={{ fontSize: 11 }}>
+              <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
                 Started: {fmtDateAndTime(selectedRunning.startDate, selectedRunning.startTime)} by{' '}
                 {selectedRunning.operatorName ?? ''}
               </div>
@@ -201,11 +201,11 @@ export function MachineOpEntryView({
                 style={{
                   background: 'var(--bg)',
                   padding: '8px 10px',
-                  borderRadius: 6,
+                  borderRadius: 'var(--radius)',
                   border: '1px solid var(--border)',
                 }}
               >
-                <div className="text3" style={{ fontSize: 11 }}>
+                <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
                   JC No.
                 </div>
                 <div className="mono fw-700 cyan">{selectedRunning.jobCardCode}</div>
@@ -224,11 +224,11 @@ export function MachineOpEntryView({
                   style={{
                     background: 'var(--bg)',
                     padding: '8px 10px',
-                    borderRadius: 6,
+                    borderRadius: 'var(--radius)',
                     border: '1px solid var(--border)',
                   }}
                 >
-                  <div className="text3" style={{ fontSize: 11 }}>
+                  <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
                     Item Code
                   </div>
                   {/* POL — the line number printed on the CUSTOMER's own
@@ -236,14 +236,14 @@ export function MachineOpEntryView({
                       when no sales order sits behind the card, so a job-work
                       job reads exactly as this tile always has. */}
                   {selectedRunning.clientPoLineNo ? (
-                    <div className="mono text3" style={{ fontSize: 11 }}>
+                    <div className="mono text3" style={{ fontSize: 'var(--fs-xs)' }}>
                       POL{' '}
                       <span style={{ color: 'var(--purple)', fontWeight: 700 }}>
                         {selectedRunning.clientPoLineNo}
                       </span>
                     </div>
                   ) : null}
-                  <div className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                  <div className="mono fw-700" style={{ color: 'var(--text)' }}>
                     {runningItemCode}
                   </div>
                   {/* Clipped to the tile with the full name on hover — a
@@ -254,7 +254,7 @@ export function MachineOpEntryView({
                     <div
                       className="text3"
                       style={{
-                        fontSize: 11,
+                        fontSize: 'var(--fs-xs)',
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap',
@@ -270,11 +270,11 @@ export function MachineOpEntryView({
                 style={{
                   background: 'var(--bg)',
                   padding: '8px 10px',
-                  borderRadius: 6,
+                  borderRadius: 'var(--radius)',
                   border: '1px solid var(--border)',
                 }}
               >
-                <div className="text3" style={{ fontSize: 11 }}>
+                <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
                   Operation
                 </div>
                 <div className="fw-700">
@@ -285,11 +285,11 @@ export function MachineOpEntryView({
                 style={{
                   background: 'var(--bg)',
                   padding: '8px 10px',
-                  borderRadius: 6,
+                  borderRadius: 'var(--radius)',
                   border: '1px solid var(--border)',
                 }}
               >
-                <div className="text3" style={{ fontSize: 11 }}>
+                <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
                   Available
                 </div>
                 <div className="mono fw-700 amber" style={{ fontSize: 18 }}>
@@ -306,7 +306,7 @@ export function MachineOpEntryView({
                 its own Stop button whenever a session is open, which is why both
                 buttons ask for 'complete'. */}
             {canOpEntry ? (
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: 'var(--sp-2)', flexWrap: 'wrap' }}>
                 <button
                   type="button"
                   className="btn btn-primary btn-sm"
@@ -324,7 +324,7 @@ export function MachineOpEntryView({
             ) : null}
           </div>
         ) : selectedRunning ? (
-          <div className="text3" style={{ fontSize: 13 }}>
+          <div className="text3" style={{ fontSize: 'var(--fs-sm)' }}>
             Loading running op…
           </div>
         ) : (
@@ -353,7 +353,7 @@ export function MachineOpEntryView({
           <div className="empty-icon" style={{ fontSize: 24 }}>
             ⬅
           </div>
-          <div className="text3" style={{ fontSize: 14 }}>
+          <div className="text3" style={{ fontSize: 'var(--fs-sm)' }}>
             Select a machine.
           </div>
         </div>

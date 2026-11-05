@@ -208,6 +208,17 @@ type JcCustomerMaterial = NonNullable<JobCardListItem['customerMaterial']> & {
 
 // ─── Reads ────────────────────────────────────────────────────────────────
 
+// The printed Job Card's Drawing No.: the card's own Item + Drawing Rev record,
+// else the SO / JWSO line — only when that line is for THIS card's item (a BOM
+// child card sits on its parent's line, whose drawing is the assembly's) — else
+// the Item Master. Blank text counts as none.
+const JC_DRAWING_NO_SQL = sql`COALESCE(
+  NULLIF(jir.drawing_no, ''),
+  CASE WHEN sol.item_id = jc.item_id THEN NULLIF(sol.drawing_no, '') END,
+  CASE WHEN jwl.item_id = jc.item_id THEN NULLIF(jwl.drawing_no, '') END,
+  NULLIF(i.drawing_no, '')
+)`;
+
 export async function listJobCards(
   // includeCancelled optional for in-process callers (the route always parses it).
   input: Omit<ListJobCardsQuery, 'includeCancelled'> & { includeCancelled?: boolean },
@@ -251,6 +262,7 @@ export async function listJobCards(
         -- number wearing a string type. The cast is a no-op once 0119 is in.
         COALESCE(jir.rev, sol.revision::text, jwl.revision::text) AS "itemRevision",
         jc.item_revision_id AS "itemRevisionId", jir.rev AS "drawingRev",
+        ${JC_DRAWING_NO_SQL} AS "drawingNo",
         COALESCE(s.computed_status, 'no_ops') AS "computedStatus",
         -- ADR-235: a Cancelled card is not in v_jc_status; its op count is the
         -- ops cancelled with it (deleted_at equal to the card's).
@@ -417,6 +429,7 @@ export async function getJobCard(id: string, user: AuthContext): Promise<JobCard
         -- number wearing a string type. The cast is a no-op once 0119 is in.
         COALESCE(jir.rev, sol.revision::text, jwl.revision::text) AS "itemRevision",
         jc.item_revision_id AS "itemRevisionId", jir.rev AS "drawingRev",
+        ${JC_DRAWING_NO_SQL} AS "drawingNo",
         COALESCE(s.computed_status, 'no_ops') AS "computedStatus",
         -- ADR-235: a Cancelled card is not in v_jc_status; its op count is the
         -- ops cancelled with it (deleted_at equal to the card's).
@@ -641,6 +654,7 @@ function toListItem(r: Record<string, unknown>): JobCardListItem {
     // Drawing Rev register — the card's own Item + Rev (null = old card / Buy).
     itemRevisionId: (r['itemRevisionId'] as string | null) ?? null,
     drawingRev: (r['drawingRev'] as string | null) ?? null,
+    drawingNo: (r['drawingNo'] as string | null) ?? null,
     itemName: (r['itemName'] as string | null) ?? '',
     orderQty: Number(r['orderQty']),
     priority: r['priority'] as JobCardListItem['priority'],

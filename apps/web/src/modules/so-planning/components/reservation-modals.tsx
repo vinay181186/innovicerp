@@ -80,7 +80,7 @@ const tile: React.CSSProperties = {
   textAlign: 'center',
   padding: '6px 14px',
   background: 'var(--bg)',
-  borderRadius: 6,
+  borderRadius: 'var(--radius)',
   border: '1px solid var(--border)',
   minWidth: 88,
 };
@@ -98,7 +98,9 @@ function NumberTile({
 }): JSX.Element {
   return (
     <div style={tile} title={title}>
-      <div style={{ fontSize: 11, color: 'var(--text3)', whiteSpace: 'nowrap' }}>{label}</div>
+      <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)', whiteSpace: 'nowrap' }}>
+        {label}
+      </div>
       <div
         className="mono fw-700"
         style={{ fontSize: 18, color: color ?? 'var(--text)', whiteSpace: 'nowrap' }}
@@ -114,25 +116,25 @@ function LineIdentity({ f }: { f: StockLineFacts }): JSX.Element {
   return (
     <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', marginBottom: 10 }}>
       <div>
-        <div style={{ fontSize: 11, color: 'var(--text3)' }}>Item</div>
+        <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>Item</div>
         {/* The item code is the main thing: strong mono, darkest text. */}
         <b className="mono" style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}>
           {f.itemLabel}
         </b>
         {f.itemName ? (
-          <span className="text2" style={{ fontSize: 12, marginLeft: 6 }}>
+          <span className="text2" style={{ fontSize: 'var(--fs-sm)', marginLeft: 6 }}>
             {f.itemName}
           </span>
         ) : null}
       </div>
       <div>
-        <div style={{ fontSize: 11, color: 'var(--text3)' }}>SO</div>
+        <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>SO</div>
         <b className="mono" style={{ whiteSpace: 'nowrap' }}>
           {soNoWithInternal(f.soCode, f.soInternalNo)}
         </b>
       </div>
       <div>
-        <div style={{ fontSize: 11, color: 'var(--text3)' }}>Ln</div>
+        <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>Ln</div>
         <b className="mono">{f.lineNo}</b>
       </div>
     </div>
@@ -144,9 +146,9 @@ function ErrorBox({ message }: { message: string }): JSX.Element {
     <div
       className="empty-state"
       style={{
-        marginTop: 12,
-        padding: 8,
-        borderRadius: 4,
+        marginTop: 'var(--sp-3)',
+        padding: 'var(--sp-2)',
+        borderRadius: 'var(--radius-sm)',
         background: 'var(--red3)',
         color: 'var(--red2)',
       }}
@@ -248,7 +250,7 @@ export function AllocateStockModal({
   return (
     <Modal title={`Allocate Stock — ${facts.itemLabel}`} onClose={onClose} footer={footer}>
       <LineIdentity f={shown} />
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
+      <div style={{ display: 'flex', gap: 'var(--sp-2)', flexWrap: 'wrap', marginBottom: 14 }}>
         <NumberTile
           label="Available"
           value={shown.availableQty}
@@ -261,7 +263,7 @@ export function AllocateStockModal({
         />
       </div>
 
-      <div className="form-grp" style={{ marginBottom: 12 }}>
+      <div className="form-grp" style={{ marginBottom: 'var(--sp-3)' }}>
         <label
           className="form-label"
           htmlFor="allocate-qty"
@@ -282,9 +284,9 @@ export function AllocateStockModal({
             setTouched(true);
             setQty(e.target.value);
           }}
-          style={{ width: 160, fontSize: 16, fontWeight: 700 }}
+          style={{ width: 160, fontSize: 'var(--fs-md)', fontWeight: 700 }}
         />
-        <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>
+        <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)', marginTop: 'var(--sp-1)' }}>
           {cap > 0
             ? `Max ${cap}`
             : shown.availableQty <= 0
@@ -388,7 +390,7 @@ export function ReleaseStockModal({
       elevated={elevated}
     >
       <LineIdentity f={facts} />
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
+      <div style={{ display: 'flex', gap: 'var(--sp-2)', flexWrap: 'wrap', marginBottom: 14 }}>
         <NumberTile label="Physical" value={facts.physicalQty} color="var(--cyan)" />
         <NumberTile
           label="Reserved (This Line)"
@@ -402,7 +404,7 @@ export function ReleaseStockModal({
         />
       </div>
 
-      <div className="form-grp" style={{ marginBottom: 12 }}>
+      <div className="form-grp" style={{ marginBottom: 'var(--sp-3)' }}>
         <label
           className="form-label"
           htmlFor="release-qty"
@@ -420,9 +422,9 @@ export function ReleaseStockModal({
           value={qty}
           disabled={max <= 0}
           onChange={(e) => setQty(e.target.value)}
-          style={{ width: 160, fontSize: 16, fontWeight: 700 }}
+          style={{ width: 160, fontSize: 'var(--fs-md)', fontWeight: 700 }}
         />
-        <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4 }}>
+        <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text3)', marginTop: 'var(--sp-1)' }}>
           {max > 0 ? `Max ${max}` : 'Nothing is reserved to this line.'}
         </div>
       </div>

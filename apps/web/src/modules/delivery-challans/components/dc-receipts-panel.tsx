@@ -33,7 +33,7 @@ export function DcReceiptsPanel({
     <div className="panel">
       <div className="panel-hdr">
         <div className="panel-title">Receipts</div>
-        <span className="text3" style={{ fontSize: 11 }}>
+        <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
           {receipts.length} receipt{receipts.length === 1 ? '' : 's'}
         </span>
       </div>
@@ -53,7 +53,7 @@ export function DcReceiptsPanel({
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                <div style={{ fontSize: 12 }}>
+                <div style={{ fontSize: 'var(--fs-sm)' }}>
                   <span
                     className="mono"
                     style={cancelled ? { textDecoration: 'line-through' } : undefined}
@@ -70,7 +70,12 @@ export function DcReceiptsPanel({
                 </div>
                 <div
                   className="text3"
-                  style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 8 }}
+                  style={{
+                    fontSize: 'var(--fs-xs)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 'var(--sp-2)',
+                  }}
                 >
                   {cancelled ? (
                     <span
@@ -98,19 +103,19 @@ export function DcReceiptsPanel({
                 </div>
               </div>
               {rcpt.remarks ? (
-                <div className="text3" style={{ fontSize: 11, marginBottom: 6 }}>
+                <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginBottom: 6 }}>
                   {rcpt.remarks}
                 </div>
               ) : null}
               {/* `.tbl-wrap` so this nested table scrolls inside its own box
                 instead of widening the page (styling skill Rule 1). */}
               {cancelled ? (
-                <div className="text3" style={{ fontSize: 11 }}>
+                <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
                   Its lines were cancelled with it.
                 </div>
               ) : (
                 <div className="tbl-wrap">
-                  <table className="innovic-table" style={{ fontSize: 11 }}>
+                  <table className="innovic-table" style={{ fontSize: 'var(--fs-xs)' }}>
                     <thead>
                       <tr>
                         {/* POL = the CUSTOMER's own PO line number, read off the

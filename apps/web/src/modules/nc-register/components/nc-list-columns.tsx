@@ -210,8 +210,8 @@ export function NcExpanded({
         display: 'flex',
         flexWrap: 'wrap',
         gap: '6px 24px',
-        padding: '4px 2px',
-        fontSize: 12,
+        padding: 'var(--sp-1) var(--sp-0)',
+        fontSize: 'var(--fs-sm)',
       }}
     >
       <Field label="POL">
@@ -251,7 +251,7 @@ export function NcExpanded({
               border: 'none',
               padding: 0,
               cursor: 'pointer',
-              color: 'var(--purple)',
+              color: 'var(--blue)',
               fontWeight: 700,
             }}
             title={`Open CAPA ${nc.linkedCapaCode}`}

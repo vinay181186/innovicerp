@@ -113,7 +113,7 @@ function UserCreatePage(): React.JSX.Element {
                 PO-approver flag into this one window. This port splits them: dept / form
                 permissions live on Access Control and the approver flag on Approval Config,
                 so the tip must not promise them here (ISSUE-021, same rewording as the list). */}
-            <div className="text3" style={{ fontSize: 11, marginTop: 2 }}>
+            <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-0)' }}>
               New users start with no access — set it on the next screen.
             </div>
           </div>
@@ -224,7 +224,7 @@ function UserCreatePage(): React.JSX.Element {
             </div>
 
             {submitError ? (
-              <div style={{ marginTop: 16 }}>
+              <div style={{ marginTop: 'var(--sp-4)' }}>
                 <Banner tone="error" role="alert">
                   {submitError}
                 </Banner>

@@ -10,7 +10,7 @@ import type { QcDossierLine, QcDossierOrderKind } from '@innovic/shared';
 import { useMemo, useState } from 'react';
 import { fmtDateTime } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
-import { Badge } from '@/ui/core';
+import { Icon, Badge } from '@/ui/core';
 import { DataTable, type DataTableColumn } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ConfirmDialog, useToast } from '@/ui/feedback';
@@ -119,7 +119,7 @@ export function DossierLineHead({
               })
             }
           >
-            ＋ Upload {f.reportName}
+            <Icon name="plus" size={13} /> Upload {f.reportName}
           </button>
         ) : null}
         {zipButton}
@@ -291,7 +291,7 @@ export function DossierFileSheet({
                   title={`Upload ${r.reportName} report`}
                   onClick={() => onUpload({ opLogId: r.entry.opLogId, label: r.reportName })}
                 >
-                  ＋
+                  <Icon name="plus" size={12} />
                 </Sym>
               ) : null
             ) : (
@@ -317,7 +317,7 @@ export function DossierFileSheet({
                       )
                     }
                   >
-                    ⬇
+                    <Icon name="download" size={12} />
                   </Sym>
                 ) : null}
                 {r.entry &&
@@ -329,7 +329,7 @@ export function DossierFileSheet({
                     title="Replace — upload a newer file; this one stays as earlier"
                     onClick={() => onUpload({ opLogId: opLogIdOf(r), label: r.reportName })}
                   >
-                    ↻
+                    <Icon name="refresh-cw" size={12} />
                   </Sym>
                 ) : null}
                 {rights.canDelete && r.file.source === 'qc_document' && r.file.qcDocumentId ? (
@@ -339,7 +339,7 @@ export function DossierFileSheet({
                       setPendingDelete({ id: r.file.qcDocumentId ?? '', name: r.file.fileName })
                     }
                   >
-                    ✕
+                    <Icon name="x" size={12} />
                   </Sym>
                 ) : null}
               </>

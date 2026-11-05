@@ -85,7 +85,7 @@ const OP_FLOW_COLUMNS: DataTableColumn<OpFlowRow>[] = [
     render: (o) => (
       <div style={{ minWidth: 0 }}>
         <div style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.operation}</div>
-        <div className="text3" style={{ fontSize: 11 }}>
+        <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
           {doneIcon(o)} {doneLabel(o)}
         </div>
       </div>
@@ -277,7 +277,13 @@ function OpFlowNotes({
     }
   }
   return (
-    <div style={{ padding: 'var(--sp-2) var(--sp-3)', fontSize: 12, color: 'var(--text2)' }}>
+    <div
+      style={{
+        padding: 'var(--sp-2) var(--sp-3)',
+        fontSize: 'var(--fs-sm)',
+        color: 'var(--text2)',
+      }}
+    >
       {check ? (
         <div style={{ marginBottom: 'var(--sp-1)' }}>
           <b>Job Card check:</b> {check.ordered} ordered ={' '}
@@ -305,7 +311,7 @@ function OpFlowPanel({ jobCardId }: { jobCardId: string }): React.JSX.Element {
   const [open, setOpen] = useState(true);
   const { data, isLoading, isError, error } = useOpFlow(jobCardId, open);
   return (
-    <div className="panel" style={{ marginBottom: 12 }}>
+    <div className="panel" style={{ marginBottom: 'var(--sp-3)' }}>
       <SectionBar title="Op Qty Flow" open={open} onToggle={() => setOpen((v) => !v)} />
       {open ? (
         isError ? (
@@ -443,7 +449,7 @@ export function ReworkTreePanel({ jobCardId }: { jobCardId: string }): React.JSX
   if (nodes.length <= 1 && nodes.every((n) => n.ncs.length === 0)) return null;
   const children = nodes.length - 1;
   return (
-    <div className="panel" style={{ marginBottom: 12 }}>
+    <div className="panel" style={{ marginBottom: 'var(--sp-3)' }}>
       <SectionBar
         title={`Rework Tree${children > 0 ? ` (${children} rework / repair ${children === 1 ? 'card' : 'cards'})` : ''}`}
         open={open}

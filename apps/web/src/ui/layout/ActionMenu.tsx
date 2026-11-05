@@ -14,9 +14,12 @@
 //   ]} />
 
 import { useEffect, useId, useRef, useState } from 'react';
+import { Icon, type IconName } from '../core/Icon';
 
 export interface ActionMenuItem {
   label: string;
+  /** Drawn control icon before the words (Print, Download …). */
+  icon?: IconName | undefined;
   onClick: () => void;
   /** Destructive: rendered in red, under a divider, always last. */
   danger?: boolean | undefined;
@@ -31,11 +34,14 @@ export interface ActionMenuProps {
   items: ActionMenuItem[];
   /** Button label; defaults to "Actions". */
   label?: string | undefined;
+  /** Drawn control icon before the button label. */
+  icon?: IconName | undefined;
 }
 
 export function ActionMenu({
   items,
   label = 'Actions',
+  icon,
 }: ActionMenuProps): React.JSX.Element | null {
   const [open, setOpen] = useState(false);
   // Where the menu is drawn. `position: fixed` against the button's rectangle,
@@ -87,6 +93,11 @@ export function ActionMenu({
         i.onClick();
       }}
     >
+      {i.icon ? (
+        <>
+          <Icon name={i.icon} size={13} />{' '}
+        </>
+      ) : null}
       {i.label}
     </button>
   );
@@ -105,6 +116,11 @@ export function ActionMenu({
           setOpen((o) => !o);
         }}
       >
+        {icon ? (
+          <>
+            <Icon name={icon} size={13} />{' '}
+          </>
+        ) : null}
         {label} ▾
       </button>
       {open && at ? (

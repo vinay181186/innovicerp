@@ -80,7 +80,10 @@ export function ReturnToStoreModal({
         </>
       }
     >
-      <div className="text2" style={{ fontSize: 12, marginBottom: 12, lineHeight: 1.6 }}>
+      <div
+        className="text2"
+        style={{ fontSize: 'var(--fs-sm)', marginBottom: 'var(--sp-3)', lineHeight: 1.6 }}
+      >
         JC <span className="mono fw-700">{row.jcCodeText ?? '—'}</span> · Customer RM{' '}
         <span className="mono fw-700" style={{ color: 'var(--text)' }}>
           {row.partyMaterialCodeText ?? '—'}
@@ -95,7 +98,7 @@ export function ReturnToStoreModal({
         ) : null}
         . Pieces already used on the Job Card cannot come back.
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 'var(--sp-3)' }}>
         <Field label="Return Qty" required>
           <input
             type="number"
@@ -122,12 +125,12 @@ export function ReturnToStoreModal({
       {err ? (
         <div
           style={{
-            marginTop: 12,
-            padding: 8,
-            background: 'rgba(239,68,68,0.08)',
+            marginTop: 'var(--sp-3)',
+            padding: 'var(--sp-2)',
+            background: 'var(--red3)',
             color: 'var(--red2)',
-            borderRadius: 4,
-            fontSize: 12,
+            borderRadius: 'var(--radius-sm)',
+            fontSize: 'var(--fs-sm)',
           }}
         >
           {err}

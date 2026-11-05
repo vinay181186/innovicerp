@@ -29,7 +29,7 @@ export function RevisionsModal({
 
   return (
     <Modal title={`🕐 Revision History — ${blockName}`} onClose={onClose} confirmExit={false}>
-      <div className="text3" style={{ fontSize: 11, marginBottom: 10 }}>
+      <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginBottom: 10 }}>
         Restore loads that version into the editor — you still need to Save it.
       </div>
       {isLoading ? (
@@ -57,11 +57,11 @@ export function RevisionsModal({
             {items.map((r, i) => (
               <tr key={r.id}>
                 <td className="text3">{i + 1}</td>
-                <td style={{ fontSize: 11 }}>{fmtDateTime(r.createdAt)}</td>
-                <td style={{ fontSize: 11 }}>{r.editedByName ?? '—'}</td>
+                <td style={{ fontSize: 'var(--fs-xs)' }}>{fmtDateTime(r.createdAt)}</td>
+                <td style={{ fontSize: 'var(--fs-xs)' }}>{r.editedByName ?? '—'}</td>
                 <td
                   className="text2"
-                  style={{ fontSize: 11, whiteSpace: 'pre-wrap', lineHeight: 1.5 }}
+                  style={{ fontSize: 'var(--fs-xs)', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}
                 >
                   {r.content.slice(0, 150)}
                   {r.content.length > 150 ? '…' : ''}

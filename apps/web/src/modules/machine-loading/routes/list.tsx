@@ -16,10 +16,11 @@
 // of the Job Queue screen. There is now ONE queue screen — the "Job Queue →"
 // button opens /job-queue?machine=<code> for the picked machine (or all).
 
+import { Icon } from '@/ui/core';
 import { useCanOpen } from '@/components/shared/action-link';
 import type { MachineLoadCard, MachineLoadOp } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
-import { Loader2, Printer } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
@@ -232,7 +233,7 @@ function MachineLoadingPage(): React.JSX.Element {
                     : 'Print all machine queues'
               }
             >
-              <Printer size={13} /> Print Queue
+              <Icon name="printer" size={13} /> Print Queue
             </button>
           </>
         }
@@ -270,7 +271,7 @@ function MachineLoadingPage(): React.JSX.Element {
               display: 'grid',
               gridTemplateColumns: 'repeat(5, 1fr)',
               gap: 10,
-              marginBottom: 16,
+              marginBottom: 'var(--sp-4)',
             }}
           >
             {machines.map((m: MachineLoadCard) => (
@@ -282,13 +283,13 @@ function MachineLoadingPage(): React.JSX.Element {
               />
             ))}
             {machines.length === 0 ? (
-              <div className="text3" style={{ fontSize: 12 }}>
+              <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
                 No machines configured.
               </div>
             ) : null}
           </div>
           {machines.length > 0 ? (
-            <div className="text3" style={{ fontSize: 12 }}>
+            <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
               Click a machine to see its operations.
             </div>
           ) : null}
@@ -302,7 +303,7 @@ function MachineLoadingPage(): React.JSX.Element {
             fill
             title={selMachineCode ? `${selMachineCode} — Job Queue` : 'All Open Operations'}
             actions={
-              <span className="mono" style={{ color: 'var(--amber2)', fontSize: 12 }}>
+              <span className="mono" style={{ color: 'var(--amber2)', fontSize: 'var(--fs-sm)' }}>
                 {total ?? 0} ops
               </span>
             }
