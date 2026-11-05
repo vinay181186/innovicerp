@@ -35,6 +35,9 @@ export interface DayQuery {
   userId?: string | undefined;
 }
 
+/** The banner's own root (see pendingMine below). */
+export const dayLogPendingKeys = { all: ['day-log-pending-mine'] as const };
+
 export const dayLogKeys = {
   all: ['day-logs'] as const,
   access: () => [...dayLogKeys.all, 'access'] as const,
@@ -60,7 +63,7 @@ export const dayLogKeys = {
   /** The banner on every page: the caller's days not entered. Its own root,
    *  NOT under `all`: `all` re-reads on anyone's save, and the banner is open
    *  in every browser. Only the person's own save changes these dates. */
-  pendingMine: () => ['day-log-pending-mine'] as const,
+  pendingMine: () => dayLogPendingKeys.all,
   /** Pending Entries tab (Super Admin). */
   pending: () => [...dayLogKeys.all, 'pending'] as const,
 };
