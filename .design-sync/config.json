@@ -1,0 +1,227 @@
+{
+  "projectId": "44bf01a9-24fb-4b0b-b020-a8911036bde8",
+  "shape": "package",
+  "pkg": "@innovic/web",
+  "globalName": "InnovicUI",
+  "srcDir": "src/ui",
+  "tsconfig": "../../.design-sync/tsconfig.json",
+  "cssEntry": ".ds-dist/index.css",
+  "runtimeFontPrefixes": [
+    "Barlow",
+    "Source Code Pro",
+    "Public Sans",
+    "JetBrains Mono"
+  ],
+  "componentSrcMap": {
+    "Badge": "src/ui/core/Badge.tsx",
+    "Button": "src/ui/core/Button.tsx",
+    "Icon": "src/ui/core/Icon.tsx",
+    "IconButton": "src/ui/core/IconButton.tsx",
+    "PriorityText": "src/ui/core/StatusBadge.tsx",
+    "StatusBadge": "src/ui/core/StatusBadge.tsx",
+    "SyncDot": "src/ui/core/SyncDot.tsx",
+    "Tag": "src/ui/core/Tag.tsx",
+    "Banner": "src/ui/feedback/Banner.tsx",
+    "ConfirmDialog": "src/ui/feedback/ConfirmDialog.tsx",
+    "FilePreview": "src/ui/feedback/FilePreview.tsx",
+    "Modal": "src/ui/feedback/Modal.tsx",
+    "Toast": "src/ui/feedback/Toast.tsx",
+    "ToastProvider": "src/ui/feedback/Toast.tsx",
+    "FormGrid": "src/ui/forms/FormGrid.tsx",
+    "FormField": "src/ui/forms/FormField.tsx",
+    "Input": "src/ui/forms/Input.tsx",
+    "Textarea": "src/ui/forms/Textarea.tsx",
+    "Select": "src/ui/forms/Select.tsx",
+    "SearchInput": "src/ui/forms/SearchInput.tsx",
+    "CheckField": "src/ui/forms/CheckField.tsx",
+    "SearchableSelect": "src/ui/forms/SearchableSelect.tsx",
+    "DocNumberInputView": "src/ui/forms/DocNumberInput.tsx",
+    "LineItemPicker": "src/ui/forms/LineItemPicker.tsx",
+    "FileField": "src/ui/forms/FileField.tsx",
+    "Cluster": "src/ui/forms/ClusterGrid.tsx",
+    "ClusterFact": "src/ui/forms/ClusterGrid.tsx",
+    "ClusterGrid": "src/ui/forms/ClusterGrid.tsx",
+    "DocIdent": "src/ui/forms/ClusterGrid.tsx",
+    "FormActions": "src/ui/layout/FormActions.tsx",
+    "PageHeader": "src/ui/layout/PageHeader.tsx",
+    "ListHeader": "src/ui/layout/ListHeader.tsx",
+    "ListFooter": "src/ui/layout/ListFooter.tsx",
+    "RowActions": "src/ui/layout/RowActions.tsx",
+    "DetailHeader": "src/ui/layout/DetailHeader.tsx",
+    "ReadGrid": "src/ui/layout/DetailHeader.tsx",
+    "ReadField": "src/ui/layout/DetailHeader.tsx",
+    "DocCard": "src/ui/layout/DocCard.tsx",
+    "LinesPanel": "src/ui/layout/DocCard.tsx",
+    "WorkList": "src/ui/layout/WorkList.tsx",
+    "AttentionList": "src/ui/layout/WorkList.tsx",
+    "StatRow": "src/ui/layout/WorkList.tsx",
+    "QuickLinks": "src/ui/layout/WorkList.tsx",
+    "PageState": "src/ui/layout/PageState.tsx",
+    "StatusPills": "src/ui/layout/StatusPills.tsx",
+    "ViewToggle": "src/ui/layout/StatusPills.tsx",
+    "ActionMenu": "src/ui/layout/ActionMenu.tsx",
+    "PageTabs": "src/ui/navigation/PageTabs.tsx",
+    "Breadcrumbs": "src/ui/navigation/Breadcrumbs.tsx",
+    "TabStrip": "src/ui/navigation/TabStrip.tsx",
+    "FilterBar": "src/ui/navigation/FilterBar.tsx",
+    "DataTable": "src/ui/data/DataTable.tsx",
+    "EmptyState": "src/ui/data/EmptyState.tsx",
+    "ItemBadge": "src/ui/data/ItemBadge.tsx",
+    "MachineCard": "src/ui/data/MachineCard.tsx",
+    "Panel": "src/ui/data/Panel.tsx",
+    "ProgressBar": "src/ui/data/ProgressBar.tsx",
+    "QtyStrip": "src/ui/data/QtyStrip.tsx",
+    "RelatedDocs": "src/ui/data/RelatedDocs.tsx",
+    "Skeleton": "src/ui/data/Skeleton.tsx",
+    "SortHeader": "src/ui/data/SortHeader.tsx",
+    "StatStrip": "src/ui/data/StatStrip.tsx",
+    "Timeline": "src/ui/data/Timeline.tsx",
+    "RowMenu": "src/ui/data/RowMenu.tsx",
+    "HoverCard": "src/ui/data/HoverCard.tsx"
+  },
+  "buildCmd": "node .design-sync/prebuild.mjs",
+  "entry": "apps/web/.ds-dist/index.js",
+  "provider": {
+    "component": "DesignProvider"
+  },
+  "overrides": {
+    "DataTable": {
+      "cardMode": "column"
+    },
+    "RelatedDocs": {
+      "cardMode": "column"
+    },
+    "Panel": {
+      "cardMode": "column"
+    },
+    "StatStrip": {
+      "cardMode": "column"
+    },
+    "FilePreview": {
+      "cardMode": "column"
+    },
+    "Banner": {
+      "cardMode": "column"
+    },
+    "FormGrid": {
+      "cardMode": "column"
+    },
+    "FormField": {
+      "cardMode": "column"
+    },
+    "LineItemPicker": {
+      "cardMode": "column"
+    },
+    "Textarea": {
+      "cardMode": "column"
+    },
+    "Select": {
+      "cardMode": "column"
+    },
+    "FileField": {
+      "cardMode": "column"
+    },
+    "Modal": {
+      "cardMode": "column"
+    },
+    "ConfirmDialog": {
+      "cardMode": "column"
+    },
+    "Cluster": {
+      "cardMode": "column"
+    },
+    "ClusterFact": {
+      "cardMode": "column"
+    },
+    "ClusterGrid": {
+      "cardMode": "column"
+    },
+    "DocIdent": {
+      "cardMode": "column"
+    },
+    "DetailHeader": {
+      "cardMode": "column"
+    },
+    "DocCard": {
+      "cardMode": "column"
+    },
+    "LinesPanel": {
+      "cardMode": "column"
+    },
+    "WorkList": {
+      "cardMode": "column"
+    },
+    "FilterBar": {
+      "cardMode": "column"
+    },
+    "FormActions": {
+      "cardMode": "column"
+    },
+    "PageHeader": {
+      "cardMode": "column"
+    },
+    "ListHeader": {
+      "cardMode": "column"
+    },
+    "ReadGrid": {
+      "cardMode": "column"
+    },
+    "ReadField": {
+      "cardMode": "column"
+    },
+    "StatusPills": {
+      "cardMode": "column"
+    },
+    "ViewToggle": {
+      "cardMode": "column"
+    },
+    "TabStrip": {
+      "cardMode": "column"
+    },
+    "PageTabs": {
+      "cardMode": "column"
+    },
+    "SearchableSelect": {
+      "cardMode": "single",
+      "primaryStory": "OpenList",
+      "viewport": "640x420"
+    },
+    "RowMenu": {
+      "cardMode": "single",
+      "primaryStory": "OpenMenu",
+      "viewport": "480x360"
+    },
+    "HoverCard": {
+      "cardMode": "single",
+      "viewport": "480x360"
+    },
+    "ToastProvider": {
+      "cardMode": "single",
+      "viewport": "640x320"
+    },
+    "ActionMenu": {
+      "cardMode": "single",
+      "viewport": "480x360"
+    },
+    "RowActions": {
+      "cardMode": "single",
+      "viewport": "640x360"
+    },
+    "PriorityText": {
+      "cardMode": "column"
+    },
+    "MachineCard": {
+      "cardMode": "column"
+    },
+    "ProgressBar": {
+      "cardMode": "column"
+    },
+    "Skeleton": {
+      "cardMode": "column"
+    },
+    "Timeline": {
+      "cardMode": "column"
+    }
+  },
+  "readmeHeader": ".design-sync/conventions.md"
+}
