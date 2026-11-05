@@ -236,7 +236,6 @@ export function ApprovalsList({
                   busy={actions.busy.has(approvalKey(r))}
                   onApprove={() => approve([r])}
                   onReject={() => setRejecting(r)}
-                  {...(r.kind === 'rc' ? { rejectLabel: 'Return to Creator' } : {})}
                 />
               )
             }
@@ -246,13 +245,8 @@ export function ApprovalsList({
 
       {rejecting ? (
         <ApprovalRejectDialog
-          {...(rejecting.kind === 'rc'
-            ? {
-                title: `Return to Creator — ${rejecting.docCode}`,
-                prompt: 'What should the creator correct?',
-                confirmLabel: 'Return to Creator',
-              }
-            : { title: `Reject — ${rejecting.docCode}`, prompt: 'Why is this rejected?' })}
+          title={`Reject — ${rejecting.docCode}`}
+          prompt="Why is this rejected?"
           onCancel={() => setRejecting(null)}
           onReject={(reason) => {
             const r = rejecting;

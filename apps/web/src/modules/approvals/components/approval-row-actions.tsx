@@ -8,13 +8,10 @@ export function ApprovalRowActions({
   busy,
   onApprove,
   onReject,
-  rejectLabel = 'Reject',
 }: {
   busy: boolean;
   onApprove: () => void;
   onReject: () => void;
-  /** Tooltip of the ✗ — "Return to Creator" on a Route Card. */
-  rejectLabel?: string | undefined;
 }): React.JSX.Element {
   if (busy) {
     return (
@@ -40,8 +37,8 @@ export function ApprovalRowActions({
       <button
         type="button"
         className="btn btn-sm btn-danger"
-        title={rejectLabel}
-        aria-label={rejectLabel}
+        title="Reject"
+        aria-label="Reject"
         onClick={onReject}
       >
         <Icon name="x" size={14} />
