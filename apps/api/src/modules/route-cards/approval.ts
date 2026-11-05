@@ -28,13 +28,15 @@ import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { editConflicts, rowChangedByName } from '../../lib/row-changed-by';
 import { assertRowUpdated, changedByOtherError } from '../../lib/row-lock';
 import { emitActivityLog } from '../activity-log/service';
+import { insertAssignedTask, usableAssignee } from '../tasks/service';
+import { istToday } from '../tasks/history';
 import {
   backfillPlansFromRouteCard,
   lockBackfillCandidates,
   readRouteCardRawMaterial,
 } from '../plans/rm-backfill';
 import type { RouteCardDetail } from './schema';
-import { loadRouteCardDetail, loadUserNames, rcStatusChange } from './service';
+import { loadRouteCardDetail, loadUserNames, RC_RETURN_TASK_REF, rcStatusChange } from './service';
 
 type RcRow = typeof routeCards.$inferSelect;
 
@@ -189,11 +191,41 @@ export async function rejectRouteCard(
         refId: card.code,
         changes: [rcStatusChange('pending', 'rejected')],
         reason,
-        detail: `${card.code} rejected by ${user.fullName || user.email} — ${reason}`,
+        detail: `${card.code} returned to creator by ${user.fullName || user.email} — ${reason}`,
       },
       companyId,
       user,
     );
+
+    // "Return to Creator" (owner 2026-11-05): the creator gets a task with the
+    // comment. Closed by the resubmit save (RC_RETURN_TASK_REF, service.ts).
+    // A creator who returns his own card, or cannot open Task Board, gets none;
+    // the return still saves.
+    const creator =
+      card.createdBy && card.createdBy !== user.id
+        ? await usableAssignee(tx, companyId, card.createdBy)
+        : null;
+    if (creator) {
+      await insertAssignedTask(
+        tx,
+        companyId,
+        creator,
+        {
+          title: `Route Card ${card.code} returned — correct and resubmit`,
+          description: reason,
+          priority: 'medium',
+          startDate: null,
+          dueDate: istToday(),
+          linkedRef: {
+            type: RC_RETURN_TASK_REF,
+            id: card.id,
+            display: `Route Card ${card.code}`,
+            navPage: `/route-cards/${card.id}`,
+          },
+        },
+        user,
+      );
+    }
     return loadRouteCardDetail(tx, id, companyId);
   });
 }
