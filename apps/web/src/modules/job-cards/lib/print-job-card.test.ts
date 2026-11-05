@@ -69,7 +69,11 @@ const print = (j = jc()) =>
 const thead = () =>
   captured.html.slice(captured.html.indexOf('<thead>'), captured.html.indexOf('</thead>'));
 const body = () => captured.html.slice(captured.html.indexOf('<tbody>'));
-const text = (h: string) => h.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+const text = (h: string) =>
+  h
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/⁠/g, '')
+    .replace(/\s+/g, ' ');
 
 describe('printJobCard', () => {
   beforeEach(() => {
@@ -160,6 +164,36 @@ describe('printJobCard', () => {
     expect(t).toContain('40 Turning');
     expect(t).toContain('50');
     expect(t).toContain('60');
+  });
+
+  it('Page No. is in the footer script, not the header', () => {
+    print();
+    expect(thead()).not.toContain('Page');
+    expect(captured.html).toContain('jpgno');
+    expect(captured.html).toContain("' of '+p.length");
+  });
+
+  it('a machine code holds at its hyphen and keeps its ✱; a split op wraps between codes', () => {
+    const J = '\u2060';
+    printJobCard({
+      jc: jc(),
+      ops: [{ ...op, activeRunningMachineCode: 'VMC-09' } as JcOpEnriched],
+      flow,
+      company: null,
+    });
+    expect(body()).toContain(`VMC-${J}01`);
+    expect(body()).toContain(`<span class="chg">VMC-${J}09</span>${J}✱`);
+    printJobCard({
+      jc: jc(),
+      ops: [
+        { ...op, machines: [{ machineCode: 'CNC-01' }, { machineCode: 'CNC-02' }] } as JcOpEnriched,
+      ],
+      flow,
+      company: null,
+    });
+    expect(body()).toContain(
+      `<span class="chg">CNC-${J}01</span> + <span class="chg">CNC-${J}02</span>${J}✱`,
+    );
   });
 
   it('values are escaped', () => {

@@ -38,8 +38,8 @@ const BLANK_OP_ROWS = 2;
 const OP_COL_WIDTHS = [
   '8mm',
   '',
-  '15mm',
-  '15mm',
+  '16mm',
+  '16mm',
   '18mm',
   '18mm',
   '16mm',
@@ -49,6 +49,7 @@ const OP_COL_WIDTHS = [
   '11mm',
 ];
 const OP_COLS = OP_COL_WIDTHS.length;
+const WORD_JOINER = '\u2060';
 
 const PRIORITY_LABEL: Record<JobCardListItem['priority'], string> = {
   normal: 'Normal',
@@ -75,6 +76,18 @@ function column(title: string, labelWidth: string, rows: string[]): string {
   return `<div class="jg" style="--jlw:${labelWidth}"><div class="jt">${esc(title)}</div>${rows.join('')}</div>`;
 }
 
+/** Machine codes as cells print them. A word joiner (no width) after each hyphen
+ *  and before the ✱ stops the line breaking there, so VMC-01✱ stays whole when it
+ *  fits; a code too long for the column still breaks (overflow-wrap) rather than
+ *  running into the next one. A split op wraps between codes (CNC-01 + CNC-02). */
+function machineHtml(label: string, changed = false): string {
+  const codes = label
+    .split(' + ')
+    .map((code) => esc(code).replace(/-/g, `-${WORD_JOINER}`))
+    .map((code) => (changed ? `<span class="chg">${code}</span>` : code));
+  return codes.join(' + ') + (changed ? `${WORD_JOINER}✱` : '');
+}
+
 function opRow(o: JcOpEnriched, flow: OpFlowRow | undefined): string {
   const isQc = o.opType === 'qc';
   const isOsp = o.opType === 'outsource';
@@ -89,16 +102,11 @@ function opRow(o: JcOpEnriched, flow: OpFlowRow | undefined): string {
           activeRunningMachineCode: o.activeRunningMachineCode,
           machines: o.machines,
         });
-  const actualHtml =
-    actual === ''
-      ? ''
-      : actual.differs
-        ? `<span class="chg">${esc(actual.label)}</span>✱`
-        : esc(actual.label);
+  const actualHtml = actual === '' ? '' : machineHtml(actual.label, actual.differs);
   return `<tr>
     <td class="c">${opSrNo(o.opSeq)}</td>
     <td>${esc(o.operation)}${isQc ? ' (QC)' : ''}</td>
-    <td class="m b">${esc(planned)}</td>
+    <td class="m b">${machineHtml(planned)}</td>
     <td class="m">${actualHtml}</td>
     <td class="c d">${fmt(o.firstLogDate)}</td>
     <td class="c d">${fmt(o.lastLogDate)}</td>
@@ -119,7 +127,7 @@ function blankRow(seq: number): string {
 // size in print black. The block is in a <th>, hence the explicit weight/align.
 const JC_STYLE = `
   .jh{border:1px solid var(--paper-rule);margin:0 -.5px -.5px;text-align:left;font-weight:400}
-  .jcols{display:grid;grid-template-columns:50mm 39mm 53mm minmax(0,1fr)}
+  .jcols{display:grid;grid-template-columns:48mm 39mm 53mm minmax(0,1fr)}
   .jg{display:flex;flex-direction:column;border-left:1px solid var(--paper-rule);min-width:0}
   .jg:first-child{border-left:none}
   .jt{background:var(--paper-band);border-bottom:1px solid var(--paper-rule);padding:.9mm 1.6mm;
@@ -150,21 +158,27 @@ const JC_STYLE = `
      column dividers, or every rule would print double. */
   table.ops th,table.ops td{border-top:none;border-bottom:none}
   table.ops td.c{text-align:center;white-space:nowrap}
-  table.ops td.m{text-align:center}
+  table.ops td.m{text-align:center;padding-left:.5mm;padding-right:.5mm}
   table.ops td.by{font-size:8.5pt;padding-left:.8mm;padding-right:.8mm}
   table.ops td.d{font-size:9pt;padding-left:.5mm;padding-right:.5mm}
   table.ops td.n{text-align:right;font-variant-numeric:tabular-nums}
   table.ops td.b{font-weight:700}
-  table.ops .chg{font-weight:700;text-decoration:underline}
+  table.ops .chg{font-weight:700;font-size:9pt;text-decoration:underline}
+  .page{position:relative;box-sizing:border-box;min-height:279mm;padding-bottom:8mm}
+  .page + .page{padding-top:0;border-top:0}
+  @media print{.page{min-height:296mm;padding-bottom:9mm}}
+  .jpgno{position:absolute;right:0;bottom:3.5mm;font-size:9pt;line-height:1;color:var(--paper-ink)}
+  .jpgno b{font-family:var(--f-label);color:#3A3A3A}
   .jlegend{padding:1.4mm 1.6mm;font-size:8.5pt;color:#2A2A2A}
   .signs > div{padding:1.6mm 1.6mm 11mm}
   .signs .jsn{display:block;text-transform:none;letter-spacing:0;font-size:9pt;color:var(--paper-ink)}
 `;
 
-// The shared paginator writes "1 of N" into every [data-pgof]. This print repeats
-// that box on every page, so each page's number is corrected here, in this print
-// only. A MutationObserver runs straight after the paginator finishes, whichever
-// way it was started, and before anything can capture the page.
+// Page 1 of N at the end of every sheet (owner 2026-11-05), in this print only.
+// The paginator splits the document into one .page per sheet; a MutationObserver
+// runs straight after it finishes, whichever way it was started, and before
+// anything can capture the page. If the paginator gives up there is no .page and
+// the document simply prints without a number.
 const PAGE_NUMBER_SCRIPT = `<script>(function(){
   var s=document.querySelector('.sheet');
   if(!s||!window.MutationObserver)return;
@@ -172,8 +186,10 @@ const PAGE_NUMBER_SCRIPT = `<script>(function(){
     o.disconnect();
     var p=s.querySelectorAll('.page');
     for(var i=0;i<p.length;i++){
-      var c=p[i].querySelectorAll('[data-pgof]');
-      for(var j=0;j<c.length;j++)c[j].textContent=(i+1)+' of '+p.length;
+      var f=document.createElement('div');
+      f.className='jpgno';
+      f.innerHTML='<b>Page</b> '+(i+1)+' of '+p.length;
+      p[i].appendChild(f);
     }
   }).observe(s,{childList:true});
 })();<${'/'}script>`;
@@ -245,7 +261,6 @@ export function printJobCard(args: {
       field('Due Date', fmt(jc.dueDate), true),
       field('Dispatch Date', fmt(jc.customerDispatchDate)),
       field('Priority', PRIORITY_LABEL[jc.priority]),
-      `<div class="jr"><span class="jl">Page</span><span class="jv" data-pgof>1</span></div>`,
     ]),
     column('Source', '20mm', [
       field(link?.type === 'jw' ? 'JWSO No.' : 'SO No.', link?.code, true),
