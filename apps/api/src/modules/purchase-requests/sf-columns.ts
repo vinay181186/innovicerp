@@ -24,17 +24,17 @@ export const PR_ORDER_CODE = sql`COALESCE(
      JOIN public.sales_orders oso ON oso.id = osol.sales_order_id AND oso.deleted_at IS NULL
     WHERE osol.id = jc.source_so_line_id))`;
 
+/** CODE/REV as the cell prints it: itemCodeWithRev(itemCode ?? itemCodeText,
+ *  itemRevision) — the live master code, then the snapshot, then the customer's
+ *  drawing revision (SO line, else the JW line) after a slash. The list search
+ *  reads it too. */
+export const PR_ITEM_CODE_REV = sql`(btrim(COALESCE(i.code, pr.item_code_text)) || COALESCE('/' || NULLIF(btrim(COALESCE(sol.revision::text, rev_jwl.revision::text)), ''), ''))`;
+
 export function prSfColumns(orderedQty: SQL): SfColumnMap {
   return {
     prCode: { sql: sql`pr.code`, type: 'text' },
     prDate: { sql: sql`pr.pr_date`, type: 'date' },
-    // CODE/REV as the cell prints it: itemCodeWithRev(itemCode ?? itemCodeText,
-    // itemRevision) — the live master code, then the snapshot, then the
-    // customer's drawing revision (SO line, else the JW line) after a slash.
-    itemCode: {
-      sql: sql`(btrim(COALESCE(i.code, pr.item_code_text)) || COALESCE('/' || NULLIF(btrim(COALESCE(sol.revision::text, rev_jwl.revision::text)), ''), ''))`,
-      type: 'text',
-    },
+    itemCode: { sql: PR_ITEM_CODE_REV, type: 'text' },
     itemName: { sql: sql`pr.item_name`, type: 'text' },
     soCode: { sql: PR_ORDER_CODE, type: 'text' },
     // ADR-207 — the Internal SO No. of the order behind the PR, off the `so`

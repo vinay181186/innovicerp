@@ -364,7 +364,13 @@ export async function listDeliveryChallans(
       itemCount: Number(sumRow['item_count'] ?? 0),
     };
 
-    const items = (result as unknown as Array<Record<string, unknown>>).map(toListItem);
+    const rows = result as unknown as Array<Record<string, unknown>>;
+    const lineItems = await loadRelatedItems(
+      tx,
+      'deliveryChallan',
+      rows.map((r) => r['id'] as string),
+    );
+    const items = rows.map((r) => toListItem(r, lineItems.get(r['id'] as string) ?? []));
     return { items, total, limit: input.limit, offset: input.offset, summary };
   });
 }
@@ -389,8 +395,12 @@ function listNcs(r: Record<string, unknown>): Array<{ id: string; code: string }
   return ncs.map((x) => ({ id: x.id, code: x.code }));
 }
 
-function toListItem(r: Record<string, unknown>): DeliveryChallanListItem {
+function toListItem(
+  r: Record<string, unknown>,
+  lineItems: DeliveryChallanListItem['lineItems'],
+): DeliveryChallanListItem {
   return {
+    lineItems,
     id: r['id'] as string,
     companyId: r['companyId'] as string,
     code: r['code'] as string,

@@ -74,7 +74,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { ApiError } from '@/lib/api';
 import { fmtDate, todayIst } from '@/lib/date';
 import { type ExitConfirm, ExitConfirmDialog, useExitConfirm } from '@/lib/exit-guard';
-import { itemCodeWithRev } from '@/lib/item-code';
+import { docItemsSummary, itemCodeWithRev, itemLineLabel } from '@/lib/item-code';
 import { usePurchaseOrder, usePurchaseOrdersList } from '@/modules/purchase-orders/api';
 import { poStatusLabel } from '@/modules/purchase-orders/lib/po-labels';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -424,6 +424,7 @@ function PoPickerBody({ onSelect }: { onSelect: (poId: string) => void }): React
           p.poDate,
           p.vendorName,
           p.vendorCodeText,
+          docItemsSummary(p.lineItems).searchText,
           p.poType === 'service' ? 'Service' : 'Job Work',
           p.status,
           p.lineCount,
@@ -463,7 +464,7 @@ function PoPickerBody({ onSelect }: { onSelect: (poId: string) => void }): React
           className="innovic-input"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="PO no, vendor, type, status…"
+          placeholder="PO no, vendor, item, type, status…"
         />
       </div>
 
@@ -488,6 +489,7 @@ function PoPickerBody({ onSelect }: { onSelect: (poId: string) => void }): React
                 <th>PO No.</th>
                 <th>PO Date</th>
                 <th>Vendor</th>
+                <th>Items</th>
                 <th>PO Type</th>
                 <th>PO Status</th>
                 <th className="th-num">Lines</th>
@@ -510,6 +512,9 @@ function PoPickerBody({ onSelect }: { onSelect: (poId: string) => void }): React
                     </td>
                     <td className="mono">{fmtDate(p.poDate)}</td>
                     <td>{p.vendorName ?? p.vendorCodeText ?? '—'}</td>
+                    <td style={{ maxWidth: 320 }} title={(p.lineItems ?? []).map(itemLineLabel).join('\n')}>
+                      {docItemsSummary(p.lineItems).label || '—'}
+                    </td>
                     <td style={{ color: 'var(--purple)' }}>
                       {p.poType === 'service' ? 'Service' : 'Job Work'}
                     </td>

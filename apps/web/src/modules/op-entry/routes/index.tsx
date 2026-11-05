@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { SearchableSelect } from '@/ui/forms';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { itemCodeWithRev } from '@/lib/item-code';
+import { docDrawingRev, itemCodeWithRev, itemLineLabel } from '@/lib/item-code';
 import { soNoWithInternal } from '@/lib/so-number';
 import { useJobCardsList } from '@/modules/job-cards/api';
 import { useMachineGroupsList, useMachinesList } from '@/modules/machines/api';
@@ -78,7 +78,12 @@ function OpEntryPage() {
     offset: 0,
   });
   const jcOptions = useMemo(
-    () => (jcList.data?.items ?? []).map((j) => ({ id: j.id, code: j.code, name: j.itemName })),
+    () =>
+      (jcList.data?.items ?? []).map((j) => ({
+        id: j.id,
+        code: j.code,
+        name: itemLineLabel({ ...j, itemRevision: docDrawingRev(j) }),
+      })),
     [jcList.data],
   );
 

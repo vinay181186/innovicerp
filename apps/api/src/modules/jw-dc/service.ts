@@ -277,13 +277,23 @@ export async function listJwDcOutward(
     `)) as unknown as Array<{ total: number }>;
     const total = Number(totalRows[0]?.total ?? 0);
 
-    const itemsOut = (result as unknown as Array<Record<string, unknown>>).map(toOutwardListItem);
+    const rows = result as unknown as Array<Record<string, unknown>>;
+    const lineItems = await loadRelatedItems(
+      tx,
+      'jwDcOutward',
+      rows.map((r) => r['id'] as string),
+    );
+    const itemsOut = rows.map((r) => toOutwardListItem(r, lineItems.get(r['id'] as string) ?? []));
     return { items: itemsOut, total, limit: input.limit, offset: input.offset };
   });
 }
 
-function toOutwardListItem(r: Record<string, unknown>): JwDcOutwardListItem {
+function toOutwardListItem(
+  r: Record<string, unknown>,
+  lineItems: RelatedItem[],
+): JwDcOutwardListItem {
   return {
+    lineItems,
     id: r['id'] as string,
     companyId: r['companyId'] as string,
     code: r['code'] as string,

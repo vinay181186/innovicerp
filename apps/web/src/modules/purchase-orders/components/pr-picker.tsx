@@ -36,7 +36,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { type SearchableOption, SearchableSelect } from '@/ui/forms';
-import { itemCodeWithRev } from '@/lib/item-code';
+import { itemLineLabel } from '@/lib/item-code';
 import { usePurchaseRequestsList } from '@/modules/purchase-requests/api';
 import { prBalanceText } from '@/modules/purchase-requests/lib/pr-balance';
 import { prConvertible } from '@/modules/purchase-requests/lib/pr-convertible';
@@ -163,17 +163,13 @@ export function PrPicker({
   const excluded = new Set((excludeIds ?? []).filter((x) => x !== value));
   const convertible = rows.filter((pr) => prConvertible(pr) && !excluded.has(pr.id));
 
-  // "Shaft 50mm · 90 of 100 left" — the buyer is choosing how much to order, so
-  // the quantity STILL AVAILABLE is what the option has to say, not the PR's
-  // original qty on its own. <SearchableSelect> renders this after the code, so
-  // the row reads "IN-PR-00012 — Shaft 50mm · 90 of 100 left".
+  // "ABC/1 · Shaft 50mm · 90 of 100 left" — the buyer is choosing how much to
+  // order, so the quantity STILL AVAILABLE is what the option has to say, not the
+  // PR's original qty on its own. <SearchableSelect> renders this after the PR
+  // code. POL leads when the PR traces back to an SO line.
   const labelFor = (pr: (typeof convertible)[number]): string => {
-    // The name is what a buyer recognises, so it wins. Only when there is no
-    // name does the option fall back to the CODE — and a code carries the
-    // customer's drawing revision with it, `CODE/REV`, exactly as the PR card
-    // and the PO line do. The revision is never appended to a NAME.
-    const item = pr.itemName ?? itemCodeWithRev(pr.itemCodeText, pr.itemRevision, 'item');
-    return `${item} · ${prBalanceText(pr)}`;
+    const item = itemLineLabel({ ...pr, itemCode: pr.itemCode ?? pr.itemCodeText });
+    return `${item || 'item'} · ${prBalanceText(pr)}`;
   };
 
   const [label, setLabel] = useState(initialLabel);

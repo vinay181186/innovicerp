@@ -8,6 +8,7 @@ import { lockDocSeries } from '../../lib/doc-series-lock';
 import { NotFoundError } from '../../lib/errors';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { tsLike } from '../ml-bom/helpers';
+import { codeRevSql } from '../qc-history/sql';
 import { lineFactsFromSql, refusalSql } from './guards';
 import { raisesOf, readMlPlanOrders, readRaisedByNode } from './order-reads';
 import type {
@@ -268,7 +269,9 @@ export async function listEligibleLinesTx(
   const term = input.search ? `%${likeEscape(input.search)}%` : null;
   const searchFrag = term
     ? sql`AND (so.code ILIKE ${term} ESCAPE '\\' OR so.internal_so_no ILIKE ${term} ESCAPE '\\'
-        OR i.code ILIKE ${term} ESCAPE '\\' OR i.name ILIKE ${term} ESCAPE '\\')`
+        OR i.code ILIKE ${term} ESCAPE '\\' OR i.name ILIKE ${term} ESCAPE '\\'
+        OR ${codeRevSql(sql`i.code`, sql`sol.revision::text`)} ILIKE ${term} ESCAPE '\\'
+        OR sol.client_po_line_no ILIKE ${term} ESCAPE '\\')`
     : sql``;
   const soFrag = input.salesOrderId
     ? sql`AND sol.sales_order_id = ${input.salesOrderId}::uuid`

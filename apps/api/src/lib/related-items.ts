@@ -27,11 +27,14 @@ const sameItem = (line: string, item: string): string =>
   `CASE WHEN ${line}.item_id = ${item} THEN ${blank(`${line}.revision`)} END`;
 const ownRev = (col: string): string =>
   `(SELECT ir.rev FROM public.item_revisions ir WHERE ir.id = ${col})`;
-/** Rev from the order line, only when it is for the same item as this line. */
-const ORDER_LINE_REV = `COALESCE(${sameItem('sol', 'l.item_id')}, ${sameItem('jwl', 'l.item_id')})`;
+/** Rev from the order line (aliases sol, jwl), only when it is for the same item
+ *  as `itemCol`. The PO list's search reads it too, so it finds what a row prints. */
+export const orderLineRev = (itemCol: string): string =>
+  `COALESCE(${sameItem('sol', itemCol)}, ${sameItem('jwl', itemCol)})`;
+const ORDER_LINE_REV = orderLineRev('l.item_id');
 
 /** SO / JWSO lines reached through a PO line (pol): directly, or via the JC op. */
-const ORDER_LINES_VIA_PO = `
+export const ORDER_LINES_VIA_PO = `
   LEFT JOIN public.jc_ops ljo ON ljo.id = pol.source_jc_op_id AND ljo.deleted_at IS NULL
   LEFT JOIN public.job_cards ljc ON ljc.id = ljo.job_card_id AND ljc.deleted_at IS NULL
   LEFT JOIN public.sales_order_lines sol

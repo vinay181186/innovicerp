@@ -729,6 +729,7 @@ function toSourceOption(r: Record<string, unknown>): JobCardSourceOption {
     lineNo: Number(r['lineNo'] ?? 0),
     partName: (r['partName'] as string | null) ?? null,
     itemCode: (r['itemCode'] as string | null) ?? null,
+    itemRevision: (r['itemRevision'] as string | null) ?? null,
     itemId: (r['itemId'] as string | null) ?? null,
     customerName: (r['customerName'] as string | null) ?? null,
     orderQty,
@@ -755,6 +756,7 @@ async function resolveLinkedSource(
             so.internal_so_no AS "internalSoNo",
             sol.line_no AS "lineNo", sol.part_name AS "partName",
             COALESCE(i.code, sol.item_code_text) AS "itemCode",
+            sol.revision::text AS "itemRevision",
             sol.item_id AS "itemId",
             COALESCE(cli.name, so.customer_name) AS "customerName",
             sol.order_qty AS "orderQty", sol.due_date AS "dueDate",
@@ -776,6 +778,7 @@ async function resolveLinkedSource(
           SELECT 'jw' AS type, jw.id AS "orderId", jwl.id AS "lineId", jw.code,
             jwl.line_no AS "lineNo", jwl.part_name AS "partName",
             COALESCE(i.code, jwl.item_code_text) AS "itemCode",
+            jwl.revision::text AS "itemRevision",
             jwl.item_id AS "itemId",
             COALESCE(cli.name, jw.customer_name) AS "customerName",
             jwl.order_qty AS "orderQty", jwl.due_date AS "dueDate",
@@ -803,6 +806,7 @@ export async function listJobCardSourceOptions(user: AuthContext): Promise<JobCa
         so.internal_so_no AS "internalSoNo",
         sol.line_no AS "lineNo", sol.part_name AS "partName",
         COALESCE(i.code, sol.item_code_text) AS "itemCode",
+        sol.revision::text AS "itemRevision",
         COALESCE(cli.name, so.customer_name) AS "customerName",
         sol.order_qty AS "orderQty", sol.due_date AS "dueDate",
         sol.client_po_line_no AS "clientPoLineNo",
@@ -818,6 +822,7 @@ export async function listJobCardSourceOptions(user: AuthContext): Promise<JobCa
       UNION ALL
       SELECT 'jw' AS type, jw.id, jwl.id, jw.code, NULL, jwl.line_no, jwl.part_name,
         COALESCE(i2.code, jwl.item_code_text),
+        jwl.revision::text,
         COALESCE(cli2.name, jw.customer_name),
         jwl.order_qty, jwl.due_date, jwl.client_po_line_no, -- POL (ADR-236)
         COALESCE((SELECT SUM(jc.order_qty) FROM public.job_cards jc

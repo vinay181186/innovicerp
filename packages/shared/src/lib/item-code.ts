@@ -62,7 +62,8 @@ const ITEM_CODES_SHOWN = 2;
  *  "3 items: ABC/1, DEF/2 +1 more", and `searchText` keeps every line findable: a
  *  picker filters on it without showing it. */
 export function docItemsSummary(
-  lines: ReadonlyArray<Parameters<typeof itemLineLabel>[0]>,
+  // Default: the screen can go live minutes before the server that sends the lines.
+  lines: ReadonlyArray<Parameters<typeof itemLineLabel>[0]> = [],
 ): { label: string; searchText: string } {
   const searchText = lines.map(itemLineLabel).join(' ');
   if (lines.length <= 1) return { label: searchText, searchText };

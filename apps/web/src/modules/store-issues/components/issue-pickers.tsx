@@ -1,6 +1,7 @@
 // Pickers for the Item Issue slip — Job Card, Assembly (Equipment) SO and the
 // "Issued To" Production person — each a SearchableSelect.
 import { useMemo, useState } from 'react';
+import { docDrawingRev, itemLineLabel } from '@/lib/item-code';
 import { soNoWithInternal } from '@/lib/so-number';
 import { SearchableSelect } from '@/ui/forms';
 import { useProductionUserOptions } from '../../production-users/api';
@@ -29,7 +30,7 @@ export function JobCardPicker({ id, value, onChange, valueLabel }: PickerProps):
       (data?.items ?? []).map((jc) => ({
         id: jc.id,
         code: jc.code,
-        name: `${jc.itemCode} · ${jc.orderQty} pcs`,
+        name: `${itemLineLabel({ ...jc, itemRevision: docDrawingRev(jc) })} · ${jc.orderQty} pcs`,
       })),
     [data],
   );

@@ -61,7 +61,7 @@ import { lockDocSeries } from '../../lib/doc-series-lock';
 import { assertNoPendingCancel } from '../cancel-requests/pending-guard';
 import { stagedEditMessage } from '../cancel-requests/messages';
 import { releaseSourceJcOps } from './pr-cancel-writer';
-import { PR_ORDER_CODE, prSfColumns } from './sf-columns';
+import { PR_ITEM_CODE_REV, PR_ORDER_CODE, prSfColumns } from './sf-columns';
 import type {
   ClosePurchaseRequestBalanceInput,
   CreatePurchaseRequestInput,
@@ -602,6 +602,7 @@ export async function listPurchaseRequests(
           -- renamed after the PR was raised keeps the old text on the PR.
           OR pr.item_code_text ILIKE ${term} ESCAPE '\\'
           OR i.code ILIKE ${term} ESCAPE '\\'
+          OR ${PR_ITEM_CODE_REV} ILIKE ${term} ESCAPE '\\'
           OR pr.item_name ILIKE ${term} ESCAPE '\\'
           -- The card renders vendorName ?? vendorCodeText, and vendorName is
           -- COALESCE(v.name, vt.name) — both vendor joins below are matched.

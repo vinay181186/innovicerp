@@ -427,6 +427,8 @@ export const jobCardSourceOptionSchema = z.object({
   lineNo: z.number().int(),
   partName: z.string().nullable(),
   itemCode: z.string().nullable(),
+  /** The line's Drawing Rev; written with the code as CODE/REV. */
+  itemRevision: z.string().nullable().default(null),
   /** The line's master item id; null on a legacy text-only line (item_code_text
    *  only). The JC form locks the item only when this is set — the same rule
    *  the server's assertItemIsJwLineItem applies. */
