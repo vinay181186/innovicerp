@@ -10,6 +10,7 @@
 
 import type { MlPlanEligibleLine } from '@innovic/shared';
 import { useMemo, useRef, useState } from 'react';
+import { itemLineLabel } from '@/lib/item-code';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
 import {
@@ -26,7 +27,15 @@ import { useMlPlanEligibleLines, useNextMlPlanNo } from '../api';
  *  plan's own copy on edit. */
 export type MlPlanFormLine = Pick<
   MlPlanEligibleLine,
-  'soLineId' | 'soCode' | 'lineNo' | 'itemCode' | 'itemName' | 'orderQty' | 'mlBomCode'
+  | 'soLineId'
+  | 'soCode'
+  | 'lineNo'
+  | 'clientPoLineNo'
+  | 'itemCode'
+  | 'itemRevision'
+  | 'itemName'
+  | 'orderQty'
+  | 'mlBomCode'
 >;
 
 export interface MlPlanFormDraft {
@@ -34,8 +43,16 @@ export interface MlPlanFormDraft {
   remarks: string;
 }
 
-export function soLineLabel(l: Pick<MlPlanFormLine, 'soCode' | 'lineNo' | 'itemCode'>): string {
-  return `${l.soCode} · L${l.lineNo} · ${l.itemCode ?? '—'}`;
+export function soLineLabel(
+  l: Pick<MlPlanFormLine, 'soCode' | 'lineNo' | 'clientPoLineNo' | 'itemCode' | 'itemRevision'>,
+): string {
+  // The name is left out: the option's `name` and the Item Name box both say it.
+  const item = itemLineLabel({
+    clientPoLineNo: l.clientPoLineNo,
+    itemCode: l.itemCode,
+    itemRevision: l.itemRevision,
+  });
+  return `${l.soCode} · L${l.lineNo} · ${item || '—'}`;
 }
 
 interface MlPlanFormProps {

@@ -41,7 +41,6 @@ import type {
   ListAssembliesQuery,
   MarkUnitAssembledInput,
   MarkUnitDispatchedInput,
-  RelatedDoc,
   RelatedSection,
   SetReadinessOverrideInput,
   StartAssemblyInput,
@@ -61,7 +60,8 @@ import {
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
-import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
+import { loadRelatedItems } from '../../lib/related-items';
+import { buildTimeline, section, toIsoDate, type RelatedRow } from '../../lib/traceability';
 import {
   AuthorizationError,
   ConflictError,
@@ -239,6 +239,15 @@ export async function getAssemblyTracker(
         .limit(1);
       bomRow = r[0] ?? null;
     }
+    // The assembled item: the BOM's parent. A deleted item still names the unit.
+    const parentItemRows = bomRow?.parentItemId
+      ? await tx
+          .select({ code: items.code, name: items.name })
+          .from(items)
+          .where(and(eq(items.id, bomRow.parentItemId), eq(items.companyId, companyId)))
+          .limit(1)
+      : [];
+    const parentItem = parentItemRows[0] ?? null;
 
     // SO line for partNo / partName + first line's orderQty as the unit count.
     // Equipment SOs typically have 1 line whose orderQty is "units of the
@@ -425,6 +434,8 @@ export async function getAssemblyTracker(
         bomMasterId: so.bomMasterId,
         bomCode: bomRow?.bomNo ?? null,
         bomName: bomRow?.bomName ?? null,
+        parentItemCode: parentItem?.code ?? null,
+        parentItemName: parentItem?.name ?? null,
         partNoText: null, // legacy stores on the SO line; future enhancement
         partName: null,
         orderQty: unitsRequired,
@@ -1589,13 +1600,20 @@ export async function getAssemblyRelated(
             )
             .orderBy(asc(bomMasters.bomNo));
 
+    const soItems = await loadRelatedItems(tx, 'so', [header.id]);
+    const bomItems = await loadRelatedItems(
+      tx,
+      'bom',
+      bomRows.map((r) => r.id),
+    );
+
     const row = (
       id_: string,
       code: string,
       status: string | null,
       date: unknown,
       extra?: { linkId?: string; label?: string },
-    ): RelatedDoc => ({
+    ): RelatedRow => ({
       id: id_,
       code,
       status,
@@ -1607,15 +1625,21 @@ export async function getAssemblyRelated(
     // ── Upstream sections (what this assembly was built FROM) ────────────────
     // The anchor SO row itself — linkId null so the row's own id (= the SO id)
     // drives the /sales-orders/$id route.
-    const soSection = section('sales-order', 'Sales Order', '📄', 'sales-order', [
-      row(header.id, header.code, header.status, header.soDate),
-    ]);
+    const soSection = section(
+      'sales-order',
+      'Sales Order',
+      '📄',
+      'sales-order',
+      [row(header.id, header.code, header.status, header.soDate)],
+      { items: soItems },
+    );
     const bomSection = section(
       'bom-master',
       'BOM Masters',
       '📐',
       'bom-master',
       bomRows.map((r) => row(r.id, r.code, r.status, r.date)),
+      { items: bomItems },
     );
 
     const upstream = [soSection, bomSection];

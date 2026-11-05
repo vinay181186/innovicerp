@@ -15276,3 +15276,35 @@ A person could skip a date and nothing showed it. The Super Admin wanted to see 
 - Positive: no second working-day rule, no new lock; a blank day with a reply still counts as blank.
 - Negative: a day header can exist with no lines (reply only). DAY_LOG_PENDING_FROM must be set to the PROD release date in the release commit.
 - Risks: people who never log see the banner from release until Hide page is set.
+
+## ADR-271: One item standard on Related Documents and document pickers
+
+**Date:** 2026-11-05
+**Status:** Accepted (owner)
+
+### Context
+
+On PLN-0189 the Job Work Order row showed "—" under Name / Ref. Audit: a related row had one free `label` string and no item field; 49 of the 56 sales and production tabs named no item, purchase and master tabs the same. Job Card used a short panel with no label at all, and Production Order and Route Card had no panel.
+
+### Decision
+
+- A row carries `items: RelatedItem[]` (POL, code, Rev, name) from ONE lookup, `lib/related-items.ts`: master code and name first, the saved copy as fallback, the document's own Rev, else the order line's when it is for the same item. A cancelled document's soft-deleted lines still name its item.
+- `section()` requires `{items}` or `{noItems: reason}`, so a new tab cannot compile without answering.
+- A row names the lines linking it to the anchor: a Plan's SO row names the Plan's line. It shows the row's OWN item, so a BOM child JC's SO row shows the sold parent (owner).
+- A document with several items shows one row per item, number repeated; the tab count still counts documents (owner).
+- `Name / Ref` is gone: each tab heads its own extra column (§18).
+- Party GRN keeps the Customer RM as the item, drops the part's Rev from it, and adds Order Item Code / Name (owner). Day Log stays order-level (owner).
+- Pickers use `itemLineLabel` / `docItemsSummary`; every line of a many-line document stays searchable through `searchText`.
+- Also fixed: Production Order saved the item's internal id as its code (0238 repairs rows and writes History); PR <-> PO read only the first PO.
+
+### Alternatives Considered
+
+- Putting "code — name" in `label`: rejected, the field also holds vendor names, Op numbers and Internal SO No.
+- "A +2 more" on a many-item row: rejected by the owner, it hides detail.
+- Reading the `/lines` lists for picker rows: rejected, they page on lines, so a PO could be cut off.
+
+### Consequences
+
+- Positive: one place to change; a new tab cannot forget its item.
+- Negative: more queries per panel open (one per tab, none per row); a client's SO list is longer with one row per item.
+- Risks: wide read-only change. The BOM, JW DC, Invoice and Assembly paths had no TEST data at build time.

@@ -1,27 +1,10 @@
-// Generic "Related Documents" panel (new-ERP navigation enhancement).
-//
-// Drop <RelatedDocsPanel module="purchase-orders" id={id} /> onto any document
-// detail page. It fetches GET /<module>/:id/related (a read-only, FK-derived
-// payload — DocumentTraceability) and renders four parts: Upstream, Downstream,
-// Related, and a Document Timeline. Nothing is computed here; the server owns the
-// relationships. The whole panel hides while loading, on error, or when empty, so
-// this additive endpoint can never break the host page.
+// The routeKind registry of the Related Documents panel (<RelatedDocsTabs>).
 //
 // Clickability (rule #8 — no dead links): a row/event links to a detail route
 // ONLY when its `routeKind` is present in ROUTE_LINKS below. Every literal `to`
 // here is a real typed TanStack route; unknown/null kinds render as plain text.
 
-import type {
-  DocumentTraceability,
-  RelatedDoc,
-  RelatedSection,
-  RelatedTimelineEvent,
-} from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
-import { useQuery } from '@tanstack/react-query';
-import { apiFetch } from '@/lib/api';
-import { statusText } from '@/lib/status-text';
-import { fmtDate } from '@/lib/date';
 
 /** routeKind → how to render a linked code. The param id defaults to the row's
  *  own id but honours `linkId` when a route is scoped by a different key (e.g.
@@ -38,8 +21,14 @@ const ROUTE_LINKS: Record<string, (label: string, linkId: string) => React.JSX.E
       {t}
     </Link>
   ),
+  // An item code stays dark and bold, link or not (owner): never `.td-code` blue.
   item: (t, i) => (
-    <Link to="/items/$id" params={{ id: i }} className="td-code">
+    <Link
+      to="/items/$id"
+      params={{ id: i }}
+      className="mono fw-700"
+      style={{ color: 'var(--text)', textDecoration: 'none' }}
+    >
       {t}
     </Link>
   ),
@@ -75,6 +64,11 @@ const ROUTE_LINKS: Record<string, (label: string, linkId: string) => React.JSX.E
   ),
   'job-card': (t, i) => (
     <Link to="/job-cards/$id" params={{ id: i }} className="td-code">
+      {t}
+    </Link>
+  ),
+  'production-order': (t, i) => (
+    <Link to="/production-orders/$id" params={{ id: i }} className="td-code">
       {t}
     </Link>
   ),
@@ -141,265 +135,4 @@ export function renderCode(
   const render = routeKind ? ROUTE_LINKS[routeKind] : undefined;
   if (render) return render(code, linkId ?? id);
   return <span title="No detail page for this document type">{code}</span>;
-}
-
-// The round-5 status palette (same as ui/core/StatusBadge's `doc` map):
-// grey not started / short closed, blue open / pending, amber under way,
-// green finished, red cancelled / a fault (owner 2026-11-03).
-function statusBadgeClass(status: string | null): string {
-  switch (status) {
-    case 'open':
-    case 'pending':
-    case 'approved':
-      return 'b-blue';
-    case 'unpaid':
-    case 'in_progress':
-    case 'partial':
-    case 'partially_paid':
-    case 'sent':
-      return 'b-amber';
-    case 'completed':
-    case 'closed':
-    case 'paid':
-    case 'received':
-    case 'dispatched':
-    case 'accepted':
-    case 'assembled':
-      return 'b-green';
-    case 'rejected':
-    case 'overdue':
-    case 'cancelled':
-      return 'b-red';
-    default:
-      // draft, in_planning, short_closed …
-      return 'b-grey';
-  }
-}
-
-export function StatusBadge({
-  status,
-  kind,
-}: {
-  status: string | null;
-  kind?: string | null;
-}): React.JSX.Element | null {
-  if (!status) return null;
-  return <span className={`badge ${statusBadgeClass(status)}`}>{statusText(status, kind)}</span>;
-}
-
-function DocRow({
-  doc,
-  routeKind,
-}: {
-  doc: RelatedDoc;
-  routeKind: string | null;
-}): React.JSX.Element {
-  return (
-    <tr>
-      <td className="mono" style={{ fontSize: 'var(--fs-sm)' }}>
-        {renderCode(doc.code, routeKind, doc.id, doc.linkId)}
-        {doc.label ? (
-          <span className="text2" style={{ marginLeft: 'var(--sp-2)', fontSize: 'var(--fs-xs)' }}>
-            {doc.label}
-          </span>
-        ) : null}
-      </td>
-      <td>
-        <StatusBadge status={doc.status} kind={routeKind} />
-      </td>
-      <td className="text2" style={{ fontSize: 'var(--fs-xs)' }}>
-        {fmtDate(doc.date)}
-      </td>
-    </tr>
-  );
-}
-
-function Section({ section }: { section: RelatedSection }): React.JSX.Element {
-  return (
-    <div style={{ marginBottom: 14 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)', marginBottom: 6 }}>
-        <span style={{ fontWeight: 600, fontSize: 'var(--fs-sm)' }}>
-          {section.icon ? `${section.icon} ` : ''}
-          {section.title}
-        </span>
-        <span className="badge b-grey">{section.count}</span>
-      </div>
-      {section.count === 0 ? (
-        <div className="text3" style={{ fontSize: 'var(--fs-xs)', paddingLeft: 'var(--sp-1)' }}>
-          none
-        </div>
-      ) : (
-        <table className="innovic-table">
-          <thead>
-            <tr>
-              <th>Document No.</th>
-              <th>Document Status</th>
-              <th>Document Date</th>
-            </tr>
-          </thead>
-          <tbody>
-            {section.items.map((doc) => (
-              <DocRow key={doc.id} doc={doc} routeKind={section.routeKind} />
-            ))}
-          </tbody>
-        </table>
-      )}
-    </div>
-  );
-}
-
-function SectionBlock({
-  heading,
-  sections,
-}: {
-  heading: string;
-  sections: RelatedSection[];
-}): React.JSX.Element | null {
-  // Only render a block when at least one of its sections has rows.
-  const nonEmpty = sections.filter((s) => s.count > 0);
-  if (nonEmpty.length === 0) return null;
-  return (
-    <div style={{ marginBottom: 18 }}>
-      <div
-        className="text3"
-        style={{ fontSize: 'var(--fs-xs)', fontWeight: 700, marginBottom: 'var(--sp-2)' }}
-      >
-        {heading}
-      </div>
-      {nonEmpty.map((s) => (
-        <Section key={s.key} section={s} />
-      ))}
-    </div>
-  );
-}
-
-export function Timeline({ events }: { events: RelatedTimelineEvent[] }): React.JSX.Element | null {
-  if (events.length === 0) return null;
-  return (
-    <div>
-      <div
-        className="text3"
-        style={{ fontSize: 'var(--fs-xs)', fontWeight: 700, marginBottom: 'var(--sp-2)' }}
-      >
-        Document Timeline
-      </div>
-      <ul
-        style={{ listStyle: 'none', margin: 0, padding: 0, borderLeft: '2px solid var(--border)' }}
-      >
-        {events.map((e, idx) => (
-          <li
-            key={`${e.code ?? e.label}-${idx}`}
-            style={{ position: 'relative', padding: '4px 0 4px 14px' }}
-          >
-            <span
-              style={{
-                position: 'absolute',
-                left: -5,
-                top: 9,
-                width: 8,
-                height: 8,
-                borderRadius: '50%',
-                background: 'var(--text3)',
-              }}
-            />
-            <span
-              className="text2"
-              style={{ fontSize: 'var(--fs-xs)', marginRight: 'var(--sp-2)' }}
-            >
-              {fmtDate(e.ts)}
-            </span>
-            <span style={{ fontSize: 'var(--fs-sm)' }}>
-              {e.label}
-              {e.code ? (
-                <span style={{ marginLeft: 6 }}>
-                  {renderCode(e.code, e.routeKind, e.linkId ?? '', e.linkId)}
-                </span>
-              ) : null}
-            </span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-/** Compact variant: one line per document type, codes as clickable links only —
- *  no status, no date, no timeline. Purely for navigation. Used everywhere
- *  except the SO detail (which keeps the full traceability view). */
-function CompactList({ data }: { data: DocumentTraceability }): React.JSX.Element {
-  const sections = [...data.upstream, ...data.downstream, ...data.related].filter(
-    (s) => s.count > 0,
-  );
-  return (
-    <div className="panel-body" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      {sections.map((s) => (
-        <div
-          key={s.key}
-          style={{ display: 'flex', gap: 'var(--sp-2)', alignItems: 'baseline', flexWrap: 'wrap' }}
-        >
-          <span
-            className="text3"
-            style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, minWidth: 140 }}
-          >
-            {s.icon ? `${s.icon} ` : ''}
-            {s.title}
-          </span>
-          <span style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            {s.items.map((doc) => (
-              <span key={doc.id} className="mono" style={{ fontSize: 'var(--fs-sm)' }}>
-                {renderCode(doc.code, s.routeKind, doc.id, doc.linkId)}
-              </span>
-            ))}
-          </span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/** Fetch + render the Related Documents panel for one document. Self-contained:
- *  give it the module slug (the API route prefix) and the document id.
- *  `variant` defaults to 'compact' (a minimal, navigation-only doc list); the SO
- *  detail passes 'full' for the upstream/downstream/related + timeline view. */
-export function RelatedDocsPanel({
-  module,
-  id,
-  variant = 'compact',
-}: {
-  module: string;
-  id: string;
-  variant?: 'full' | 'compact';
-}): React.JSX.Element | null {
-  const { data, isLoading, isError } = useQuery<DocumentTraceability>({
-    queryKey: ['related-docs', module, id],
-    queryFn: () => apiFetch<DocumentTraceability>(`/${module}/${id}/related`),
-    enabled: Boolean(id),
-  });
-
-  if (isLoading || isError || !data) return null;
-
-  const hasAny =
-    data.upstream.some((s) => s.count > 0) ||
-    data.downstream.some((s) => s.count > 0) ||
-    data.related.some((s) => s.count > 0) ||
-    data.timeline.length > 0;
-  if (!hasAny) return null;
-
-  return (
-    <div className="panel" style={{ marginTop: 14 }}>
-      <div className="panel-hdr">
-        <div className="panel-title">🔗 Related Documents</div>
-      </div>
-      {variant === 'full' ? (
-        <div className="panel-body">
-          <SectionBlock heading="⬆ Upstream (source)" sections={data.upstream} />
-          <SectionBlock heading="⬇ Downstream (generated)" sections={data.downstream} />
-          <SectionBlock heading="↔ Related" sections={data.related} />
-          <Timeline events={data.timeline} />
-        </div>
-      ) : (
-        <CompactList data={data} />
-      )}
-    </div>
-  );
 }

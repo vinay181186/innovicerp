@@ -497,9 +497,13 @@ function HeaderPanel({ data }: { data: AssemblyTrackerResponse }): React.JSX.Ele
       code={soNoWithInternal(header.soCode, header.soInternalNo)}
       name={
         <>
-          {header.bomName ?? '—'}{' '}
+          {/* The assembled item, in the one standard form: dark bold code, its name. */}
+          <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+            {header.parentItemCode ?? '—'}
+          </span>{' '}
+          {header.parentItemName ?? '—'}{' '}
           <span className="text3" style={{ fontWeight: 400, fontSize: 'var(--fs-xs)' }}>
-            × {header.orderQty} nos
+            {header.bomName ?? '—'} × {header.orderQty} nos
           </span>
         </>
       }
@@ -603,7 +607,17 @@ function RollupFacts({ data }: { data: AssemblyTrackerResponse }): React.JSX.Ele
               num
               label="Bottleneck"
               value={
-                <span style={{ color: 'var(--red2)' }}>{rollup.bottleneck.childItemCode}</span>
+                <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+                  {rollup.bottleneck.childItemCode}
+                </span>
+              }
+              after={
+                <span
+                  style={{ color: 'var(--red2)' }}
+                  title={`Enough for ${rollup.bottleneck.enoughForUnits} of ${rollup.orderQty}`}
+                >
+                  ⚠
+                </span>
               }
             />
           ) : null}

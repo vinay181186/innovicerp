@@ -48,7 +48,7 @@ export function useSoDrawingHistory(salesOrderId: string) {
 }
 
 /** What happened to the drawing, in the badge shape used everywhere else
- *  (see StatusBadge in components/shared/related-docs-panel). */
+ *  (see ui/core/StatusBadge). */
 const ACTION_LABEL: Record<SoDrawingAction, string> = {
   added: 'Added',
   replaced: 'Replaced',

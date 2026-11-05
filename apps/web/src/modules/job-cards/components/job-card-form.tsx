@@ -49,6 +49,7 @@ import { todayLocal } from '@/lib/date';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { uploadFile } from '@/lib/storage';
 import { useSession } from '@/lib/session';
+import { itemLineLabel } from '@/lib/item-code';
 import { soNoWithInternal } from '@/lib/so-number';
 import { useItemsList } from '@/modules/items/api';
 import { useDefaultRouteOps } from '@/modules/plans/api';
@@ -146,11 +147,20 @@ const today = (): string => todayLocal();
 const DASH = '—';
 const IMAGE_RE = /\.(png|jpe?g|gif|webp|bmp|svg)$/i;
 
-function sourceLabel(o: JobCardSourceOption): string {
+function sourceCode(o: JobCardSourceOption): string {
   const tag = o.type === 'jw' ? '[JWSO]' : '[SO]';
   const ln = o.lineNo && o.lineNo !== 1 ? ` / L${o.lineNo}` : '';
-  const part = o.partName ? ` (${o.partName})` : '';
-  return `${tag} ${soNoWithInternal(o.code, o.internalSoNo)}${ln} — ${o.customerName ?? ''}${part} [Avail: ${o.remaining}]`;
+  return `${tag} ${soNoWithInternal(o.code, o.internalSoNo)}${ln}`;
+}
+
+function sourceName(o: JobCardSourceOption): string {
+  const item = itemLineLabel({ ...o, itemName: o.partName });
+  const named = [item, o.customerName].filter(Boolean).join(' · ');
+  return `${named} [Avail: ${o.remaining}]`;
+}
+
+function sourceLabel(o: JobCardSourceOption): string {
+  return `${sourceCode(o)} — ${sourceName(o)}`;
 }
 
 /** The quiet mono figure after a value ("Route Card Rev 3", "Required 12"). */
@@ -442,19 +452,9 @@ export function JobCardForm({
 
   // Source picker rows: the open-JWSO line list is already in memory, so the
   // shared SearchableSelect filters it client-side. The row reads
-  // "[JWSO] CODE / Ln — Customer (Part) [Avail: n]".
+  // "[JWSO] CODE / Ln — POL 20 · ABC/1 · Part · Customer [Avail: n]".
   const sourcePickerOptions = useMemo(
-    () =>
-      availableSources.map((o) => {
-        const tag = o.type === 'jw' ? '[JWSO]' : '[SO]';
-        const ln = o.lineNo && o.lineNo !== 1 ? ` / L${o.lineNo}` : '';
-        const part = o.partName ? ` (${o.partName})` : '';
-        return {
-          id: o.lineId,
-          code: `${tag} ${soNoWithInternal(o.code, o.internalSoNo)}${ln}`,
-          name: `${o.customerName ?? ''}${part} [Avail: ${o.remaining}]`,
-        };
-      }),
+    () => availableSources.map((o) => ({ id: o.lineId, code: sourceCode(o), name: sourceName(o) })),
     [availableSources],
   );
   const selectedSource = sourceLineId

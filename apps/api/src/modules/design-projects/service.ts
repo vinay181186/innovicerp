@@ -22,7 +22,6 @@ import type {
   DesignProjectListItem,
   DesignTask,
   DocumentTraceability,
-  RelatedDoc,
   ListDesignProjectsQuery,
   ListDesignProjectsResponse,
   ToggleDesignChecklistItemInput,
@@ -61,7 +60,8 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
-import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
+import { loadRelatedItems } from '../../lib/related-items';
+import { buildTimeline, section, toIsoDate, type RelatedRow } from '../../lib/traceability';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -1262,7 +1262,7 @@ export async function getDesignProjectRelated(
       status: string | null,
       date: unknown,
       extra?: { linkId?: string; label?: string },
-    ): RelatedDoc => ({
+    ): RelatedRow => ({
       id: id_,
       code,
       status,
@@ -1395,6 +1395,12 @@ export async function getDesignProjectRelated(
       )
       .orderBy(desc(designDcns.createdAt));
 
+    const soItems = await loadRelatedItems(
+      tx,
+      'so',
+      soRows.map((r) => r.id),
+    );
+
     // ── Upstream sections ────────────────────────────────────────────────────
     const soSection = section(
       'sales-order',
@@ -1402,6 +1408,7 @@ export async function getDesignProjectRelated(
       '📄',
       'sales-order',
       soRows.map((r) => row(r.id, r.code, r.status, r.date)),
+      { items: soItems },
     );
     const clientSection = section(
       'client',
@@ -1409,6 +1416,7 @@ export async function getDesignProjectRelated(
       '👤',
       'client',
       client ? [row(client.id, client.code, null, null, { label: client.name })] : [],
+      { noItems: 'party', codeHeading: 'Customer Code', labelHeading: 'Customer' },
     );
 
     // ── Downstream sections (all reference-only — no detail routes) ──────────
@@ -1418,6 +1426,7 @@ export async function getDesignProjectRelated(
       '📐',
       null,
       taskRows.map((r) => row(r.id, r.title, r.status, r.date)),
+      { noItems: 'free-text part, no item link', codeHeading: 'Task' },
     );
     const issuesSection = section(
       'design-issues',
@@ -1425,6 +1434,7 @@ export async function getDesignProjectRelated(
       '⚠',
       null,
       issueRows.map((r) => row(r.id, r.title, r.status, r.date)),
+      { noItems: 'free-text part, no item link', codeHeading: 'Issue' },
     );
     const workLogSection = section(
       'design-work-log',
@@ -1434,6 +1444,7 @@ export async function getDesignProjectRelated(
       workLogRows.map((r) =>
         row(r.id, r.taskText ?? r.engineerText, null, r.date, { label: r.engineerText }),
       ),
+      { noItems: 'free-text part, no item link', codeHeading: 'Task', labelHeading: 'Engineer' },
     );
     const dcrSection = section(
       'design-dcrs',
@@ -1441,6 +1452,7 @@ export async function getDesignProjectRelated(
       '📝',
       null,
       dcrRows.map((r) => row(r.id, r.code, r.status, r.date)),
+      { noItems: 'free-text part, no item link' },
     );
     const dcnSection = section(
       'design-dcns',
@@ -1448,6 +1460,7 @@ export async function getDesignProjectRelated(
       '📄',
       null,
       dcnRows.map((r) => row(r.id, r.code, r.status, r.date)),
+      { noItems: 'free-text part, no item link' },
     );
 
     const upstream = [soSection, clientSection];

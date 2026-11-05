@@ -99,6 +99,9 @@ export const assemblyHeaderSchema = z.object({
   bomMasterId: z.string().uuid().nullable(),
   bomCode: z.string().nullable(),
   bomName: z.string().nullable(),
+  /** The assembled item: the BOM's parent. */
+  parentItemCode: z.string().nullable().default(null),
+  parentItemName: z.string().nullable().default(null),
   partNoText: z.string().nullable(),
   partName: z.string().nullable(),
   orderQty: z.number().int().nonnegative(),

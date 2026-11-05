@@ -11,7 +11,10 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import { vendors } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
+import { loadRelatedItems } from '../../lib/related-items';
 import { buildTimeline, MASTER_RELATED_ROW_CAP, masterSection } from '../../lib/traceability';
+
+const rowIds = (raw: unknown): string[] => (raw as Array<{ id: string }>).map((r) => r.id);
 
 export async function getVendorRelated(
   id: string,
@@ -58,15 +61,24 @@ export async function getVendorRelated(
     `);
 
     const downstream = [
-      masterSection('purchase-order', 'Purchase Orders', '\u{1F6D2}', 'purchase-order', poRaw),
+      masterSection('purchase-order', 'Purchase Orders', '\u{1F6D2}', 'purchase-order', poRaw, {
+        items: await loadRelatedItems(tx, 'purchaseOrder', rowIds(poRaw)),
+      }),
       masterSection(
         'delivery-challan',
         'Delivery Challans Out',
         '\u{1F4E4}',
         'delivery-challan',
         dcRaw,
+        {
+          items: await loadRelatedItems(tx, 'deliveryChallan', rowIds(dcRaw)),
+          labelHeading: 'PO No.',
+        },
       ),
-      masterSection('grn', 'GRNs', '\u{1F4E5}', 'grn', grnRaw),
+      masterSection('grn', 'GRNs', '\u{1F4E5}', 'grn', grnRaw, {
+        items: await loadRelatedItems(tx, 'grn', rowIds(grnRaw)),
+        labelHeading: 'PO No.',
+      }),
     ];
     return {
       self: { module: 'vendors', code: vendor.code },

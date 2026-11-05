@@ -12,6 +12,15 @@ import { createdByNameSql } from '../../lib/created-by-sql';
 import type { SfColumnMap } from '../../lib/list-query';
 import { PRO_SHORT_CLOSED_QTY_SQL } from './short-closed-qty';
 
+/** The live Item Master code / name of the order's item (the same read as the
+ *  list's join). Correlated, so it is valid in the count query too. */
+export const PRO_ITEM_CODE_SQL = sql<string | null>`(
+  SELECT i.code FROM public.items i WHERE i.id = ${productionOrders.itemId} LIMIT 1
+)`;
+export const PRO_ITEM_NAME_SQL = sql<string | null>`(
+  SELECT i.name FROM public.items i WHERE i.id = ${productionOrders.itemId} LIMIT 1
+)`;
+
 export function productionOrderSfColumns(frags: {
   itemRevision: SQL;
   jcFinishedQty: SQL;
@@ -27,10 +36,13 @@ export function productionOrderSfColumns(frags: {
     createdBy: { sql: createdByNameSql(productionOrders.createdBy), type: 'text' },
     // CODE/REV as the cell prints it (itemCodeWithRev).
     itemCode: {
-      sql: sql`(${productionOrders.itemCodeText} || COALESCE('/' || NULLIF(btrim(${frags.itemRevision}), ''), ''))`,
+      sql: sql`(COALESCE(${PRO_ITEM_CODE_SQL}, ${productionOrders.itemCodeText}) || COALESCE('/' || NULLIF(btrim(${frags.itemRevision}), ''), ''))`,
       type: 'text',
     },
-    itemName: { sql: sql`${productionOrders.itemNameText}`, type: 'text' },
+    itemName: {
+      sql: sql`COALESCE(${PRO_ITEM_NAME_SQL}, ${productionOrders.itemNameText})`,
+      type: 'text',
+    },
     orderQty: { sql: sql`${productionOrders.orderQty}`, type: 'num' },
     jcFinishedQty: { sql: frags.jcFinishedQty, type: 'num' },
     // ADR-233 — `Stock Received` (the stored credited_qty), `Lost Qty`, and

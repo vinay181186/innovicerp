@@ -11,15 +11,15 @@ import { createdByNameSql } from '../../lib/created-by-sql';
 import type { SfColumnMap } from '../../lib/list-query';
 import { polSql } from '../../lib/pol';
 
+// CODE/REV as the cell prints it (itemCodeWithRev): the JC's own Drawing Rev
+// (jir, else the SO / JWSO line's revision), after a slash. The list search reads
+// it too (list-filters.ts).
+export const JC_ITEM_CODE_REV = sql`(i.code || COALESCE('/' || NULLIF(btrim(COALESCE(jir.rev, sol.revision::text, jwl.revision::text)), ''), ''))`;
+
 export const JC_SF_COLUMNS: SfColumnMap = {
   jcCode: { sql: sql`jc.code`, type: 'text' },
   clientPoLineNo: { sql: polSql('sol', 'jwl'), type: 'text' },
-  // CODE/REV as the cell prints it (itemCodeWithRev): the JC's own Drawing Rev
-  // (jir, else the SO / JWSO line's revision), after a slash.
-  itemCode: {
-    sql: sql`(i.code || COALESCE('/' || NULLIF(btrim(COALESCE(jir.rev, sol.revision::text, jwl.revision::text)), ''), ''))`,
-    type: 'text',
-  },
+  itemCode: { sql: JC_ITEM_CODE_REV, type: 'text' },
   itemName: { sql: sql`i.name`, type: 'text' },
   // SO / JWSO No. as printed: the line number after a slash unless it is line 1.
   sourceCode: {

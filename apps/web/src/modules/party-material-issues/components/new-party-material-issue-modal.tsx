@@ -13,7 +13,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Modal, useToast } from '@/ui/feedback';
 import { SearchableSelect } from '@/ui/forms';
 import { todayLocal } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
+import { docDrawingRev, itemCodeWithRev, itemLineLabel } from '@/lib/item-code';
 import { useJobCardsList } from '@/modules/job-cards/api';
 import { useJobWorkOrder, useJobWorkOrdersList } from '@/modules/job-work-orders/api';
 import { usePartyMaterialsList } from '@/modules/party-materials/api';
@@ -306,7 +306,11 @@ export function NewPartyMaterialIssueModal({
               placeholder={
                 jobWorkOrderId ? '🔍 Select Job Card of this JWSO…' : 'Pick the JWSO first'
               }
-              options={jcItems.map((jc) => ({ id: jc.id, code: jc.code, name: jc.itemName }))}
+              options={jcItems.map((jc) => ({
+                id: jc.id,
+                code: jc.code,
+                name: itemLineLabel({ ...jc, itemRevision: docDrawingRev(jc) }),
+              }))}
             />
           </Field>
         </div>

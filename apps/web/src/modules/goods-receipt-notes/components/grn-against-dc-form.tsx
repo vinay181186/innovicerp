@@ -35,13 +35,14 @@
 // No OK / Rejected split and no QC fields here: everything received lands on
 // the auto-GRN as pending and the accept/reject decision is made at Incoming QC.
 
-import type { CreateDeliveryChallanReceiptInput } from '@innovic/shared';
+import type { CreateDeliveryChallanReceiptInput, RelatedItem } from '@innovic/shared';
 import { isWholeNumberUom, roundQty } from '@innovic/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { matchesSearchTerm } from '@/components/shared/search-match';
 import { fmtDate, todayIst } from '@/lib/date';
+import { docItemsSummary, itemLineLabel, partyDocName } from '@/lib/item-code';
 import { useSaveKey } from '@/lib/use-save-key';
 import {
   useDeliveryChallan,
@@ -130,30 +131,46 @@ export function GrnAgainstDcForm({
   // challan; one raised before it has none and appears only while no JW PO is
   // picked. A row with neither a PO nor an NC behind it is still dropped:
   // nothing on this screen could show what it belongs to.
-  const dcList = useDeliveryChallansList({ status: 'issued', limit: 200, offset: 0 });
+  const dcList = useDeliveryChallansList({ withLineItems: true, status: 'issued', limit: 200, offset: 0 });
   const eligibleDcs = useMemo(
     () => (dcList.data?.items ?? []).filter((d) => d.purchaseOrderId !== null || d.ncId !== null),
     [dcList.data],
   );
 
-  const jwpoOptions = useMemo(() => {
-    const byPo = new Map<string, { id: string; code: string; name: string }>();
+  // One row per JW PO, naming the items of ALL its challans still out. Several
+  // challans can carry the same PO line, so a line counts once.
+  const allJwpos = useMemo(() => {
+    const byPo = new Map<
+      string,
+      { code: string; vendor: string; items: Map<string, RelatedItem> }
+    >();
     for (const d of eligibleDcs) {
       const id = d.purchaseOrderId;
-      if (!id || byPo.has(id)) continue;
-      byPo.set(id, {
-        id,
+      if (!id) continue;
+      const po = byPo.get(id) ?? {
         code: d.poCode ?? d.poCodeText,
-        name: d.vendorName ?? d.vendorCodeText,
-      });
+        vendor: d.vendorName ?? d.vendorCodeText,
+        items: new Map<string, RelatedItem>(),
+      };
+      for (const item of d.lineItems ?? []) po.items.set(itemLineLabel(item), item);
+      byPo.set(id, po);
     }
-    // Search is client-side: the whole eligible set is already in the browser.
-    // The composed "CODE — Vendor" label is matched too, because the picker
-    // re-sends its own selected label as the term when reopened.
-    return [...byPo.values()].filter((o) =>
-      matchesSearchTerm([o.code, o.name, `${o.code} — ${o.name}`], jwpoSearch),
-    );
-  }, [eligibleDcs, jwpoSearch]);
+    return [...byPo].map(([id, po]) => ({
+      id,
+      code: po.code,
+      ...partyDocName(po.vendor, [...po.items.values()]),
+    }));
+  }, [eligibleDcs]);
+  // Search is client-side: the whole eligible set is already in the browser.
+  // The composed "CODE — Name" label is matched too, because the picker
+  // re-sends its own selected label as the term when reopened.
+  const jwpoOptions = useMemo(
+    () =>
+      allJwpos.filter((o) =>
+        matchesSearchTerm([o.code, o.name, o.searchText, `${o.code} — ${o.name}`], jwpoSearch),
+      ),
+    [allJwpos, jwpoSearch],
+  );
 
   // DC options: with a JWPO picked, that JWPO's challans (short label, as
   // before); with none, EVERY eligible challan, labelled with its JWPO and
@@ -165,13 +182,14 @@ export function GrnAgainstDcForm({
     const pool = jwpoId ? eligibleDcs.filter((d) => d.purchaseOrderId === jwpoId) : eligibleDcs;
     return pool
       .map((d) => {
-        const vendor = d.vendorName ?? d.vendorCodeText;
+        const vendor = partyDocName(d.vendorName ?? d.vendorCodeText, d.lineItems);
+        const items = docItemsSummary(d.lineItems).label;
         // ADR-217 — a return is marked "Return to Vendor" in BOTH label forms.
         // Phase 2 is why the short one needs it too: a return with a purchase
         // order behind it now sits inside that order's challan list, where the
         // pool is narrowed by purchaseOrderId and the short label is used, and
         // it must still be impossible to mistake for an ordinary job-work send.
-        const short = `${d.ncId !== null ? `${RETURN_TAG} · ` : ''}${fmtDate(d.dcDate)} · ${d.lineCount} line${d.lineCount === 1 ? '' : 's'}`;
+        const short = `${d.ncId !== null ? `${RETURN_TAG} · ` : ''}${items ? `${items} · ` : ''}${fmtDate(d.dcDate)} · ${d.lineCount} line${d.lineCount === 1 ? '' : 's'}`;
         // The `poCodeText` fallback on the NC segment is ONLY legal while the
         // challan has no purchase order: that is the pre-ADR-217 shape where
         // the column was made to carry the NC code. Once a return HAS an order,
@@ -183,8 +201,8 @@ export function GrnAgainstDcForm({
         const ncLabel = allNcs || (d.purchaseOrderId === null ? d.poCodeText : null);
         const long =
           d.ncId !== null
-            ? `${RETURN_TAG} · NC ${ncLabel ?? '?'} · ${vendor} · ${fmtDate(d.dcDate)}`
-            : `${d.poCode ?? d.poCodeText} · ${vendor} · ${fmtDate(d.dcDate)}`;
+            ? `${RETURN_TAG} · NC ${ncLabel ?? '?'} · ${vendor.name} · ${fmtDate(d.dcDate)}`
+            : `${d.poCode ?? d.poCodeText} · ${vendor.name} · ${fmtDate(d.dcDate)}`;
         return {
           id: d.id,
           code: d.code,
@@ -192,7 +210,7 @@ export function GrnAgainstDcForm({
           // The NC No. rides in the hidden search text as well, so a return is
           // found by the NC number, by its own challan number, or by the word
           // "return" — whichever number the user happens to be holding.
-          searchText: `${d.code} — ${short} ${d.code} — ${long} ${ncLabel ?? ''}`,
+          searchText: `${d.code} — ${short} ${d.code} — ${long} ${ncLabel ?? ''} ${vendor.searchText}`,
         };
       })
       .filter((o) => matchesSearchTerm([o.code, o.name, o.searchText], dcSearch));
@@ -398,11 +416,9 @@ export function GrnAgainstDcForm({
 
   const jwpoValueLabel = useMemo(() => {
     if (!jwpoId) return undefined;
-    const row = eligibleDcs.find((d) => d.purchaseOrderId === jwpoId);
-    return row
-      ? `${row.poCode ?? row.poCodeText} — ${row.vendorName ?? row.vendorCodeText}`
-      : undefined;
-  }, [jwpoId, eligibleDcs]);
+    const row = allJwpos.find((o) => o.id === jwpoId);
+    return row ? `${row.code} — ${row.name}` : undefined;
+  }, [jwpoId, allJwpos]);
 
   const dcValueLabel = useMemo(() => {
     if (!dcId) return undefined;
@@ -445,7 +461,7 @@ export function GrnAgainstDcForm({
         onSearch={setJwpoSearch}
         loading={dcList.isFetching}
         placeholder={
-          returnWithoutPo ? '— none: return to vendor —' : '🔍 Type JW PO number or vendor…'
+          returnWithoutPo ? '— none: return to vendor —' : '🔍 Type JW PO number, vendor or item…'
         }
         valueLabel={jwpoValueLabel}
         emptyText="No JW PO has a challan awaiting receipt."
@@ -504,7 +520,9 @@ export function GrnAgainstDcForm({
                 onSearch={setDcSearch}
                 loading={dcList.isFetching}
                 placeholder={
-                  jwpoId ? '🔍 Pick a DC…' : '🔍 Type a DC No. or NC No. (or pick a JW PO first)…'
+                  jwpoId
+                    ? '🔍 Pick a DC…'
+                    : '🔍 Type a DC No., NC No. or item (or pick a JW PO first)…'
                 }
                 valueLabel={dcValueLabel}
                 emptyText={

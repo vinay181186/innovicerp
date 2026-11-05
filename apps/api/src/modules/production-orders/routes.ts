@@ -34,6 +34,12 @@ export async function productionOrdersRoutes(app: FastifyInstance): Promise<void
     return service.getProductionOrder(id, req.user);
   });
 
+  app.get('/production-orders/:id/related', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    return service.getProductionOrderRelated(id, req.user);
+  });
+
   app.post('/production-orders', async (req, reply) => {
     if (!req.user) throw new AuthenticationError();
     const body = createProductionOrderInputSchema.parse(req.body);

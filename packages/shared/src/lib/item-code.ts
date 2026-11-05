@@ -36,3 +36,44 @@ export function docDrawingRev(doc: {
 }): string | null {
   return doc.drawingRev?.trim() || doc.itemRevision?.trim() || null;
 }
+
+/** One line's item, as a picker row writes it: "POL 20 · ABC/1 · Shaft 50mm".
+ *  An empty part drops out, so there is never a bare "POL" or a trailing slash. */
+export function itemLineLabel(line: {
+  clientPoLineNo?: string | null | undefined;
+  itemCode?: string | null | undefined;
+  itemRevision?: string | null | undefined;
+  itemName?: string | null | undefined;
+}): string {
+  const pol = line.clientPoLineNo?.trim();
+  return [
+    pol ? `POL ${pol}` : '',
+    itemCodeWithRev(line.itemCode, line.itemRevision, ''),
+    line.itemName?.trim() ?? '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+/** The most item codes a many-line document's picker row spells out. */
+const ITEM_CODES_SHOWN = 2;
+
+/** How a picker row names a document's items. One item reads in full. Several read
+ *  "3 items: ABC/1, DEF/2 +1 more", and `searchText` keeps every line findable: a
+ *  picker filters on it without showing it. */
+export function docItemsSummary(
+  // Default: the screen can go live minutes before the server that sends the lines.
+  lines: ReadonlyArray<Parameters<typeof itemLineLabel>[0]> = [],
+): { label: string; searchText: string } {
+  const searchText = lines.map(itemLineLabel).join(' ');
+  if (lines.length <= 1) return { label: searchText, searchText };
+  const codes = lines
+    .slice(0, ITEM_CODES_SHOWN)
+    .map((l) => itemCodeWithRev(l.itemCode, l.itemRevision))
+    .join(', ');
+  const more = lines.length - ITEM_CODES_SHOWN;
+  return {
+    label: `${lines.length} items: ${codes}${more > 0 ? ` +${more} more` : ''}`,
+    searchText,
+  };
+}

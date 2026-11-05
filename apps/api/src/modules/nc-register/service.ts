@@ -13,7 +13,6 @@ import {
   ActivityAction,
   type DocumentEditStagedResult,
   type DocumentTraceability,
-  type RelatedDoc,
   NC_DISPOSITION_LABELS,
   NC_REASON_CATEGORY_LABELS,
   NC_STATUS_LABELS,
@@ -23,6 +22,8 @@ import {
 import {
   capaRecords,
   deliveryChallans,
+  goodsReceiptNoteLines,
+  goodsReceiptNotes,
   items,
   jcOps,
   jobCards,
@@ -36,7 +37,14 @@ import { type AuthContext, type DbTransaction, withUserContext } from '../../db/
 import { canSeeFormPrice, requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { createdByNameSql } from '../../lib/created-by-sql';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
-import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
+import { loadRelatedItems } from '../../lib/related-items';
+import {
+  buildTimeline,
+  itemSection,
+  section,
+  toIsoDate,
+  type RelatedRow,
+} from '../../lib/traceability';
 import {
   AuthorizationError,
   ConflictError,
@@ -1113,7 +1121,7 @@ export async function getNcRegisterRelated(
         jobCardId: ncRegister.jobCardId,
         jcOpId: ncRegister.jcOpId,
         opSeq: ncRegister.opSeq,
-        itemId: ncRegister.itemId,
+        grnLineId: ncRegister.grnLineId,
         childJobCardId: ncRegister.childJobCardId,
         deliveryChallanId: ncRegister.deliveryChallanId,
         splitFromNcId: ncRegister.splitFromNcId,
@@ -1266,21 +1274,54 @@ export async function getNcRegisterRelated(
       : [];
     const jc = jcRows[0] ?? null;
 
-    // ── Upstream: the source Item (master) ──────────────────────────────────
-    const itemRows = header.itemId
+    // ── Upstream: the NC's own item ─────────────────────────────────────────
+    const ncItems = (await loadRelatedItems(tx, 'nc', [id])).get(id) ?? [];
+
+    // ── Upstream: the GRN this NC was raised on ─────────────────────────────
+    const sourceGrnRows = header.grnLineId
       ? await tx
-          .select({ id: items.id, code: items.code, name: items.name })
-          .from(items)
+          .select({
+            id: goodsReceiptNotes.id,
+            code: goodsReceiptNotes.code,
+            date: goodsReceiptNotes.grnDate,
+          })
+          .from(goodsReceiptNoteLines)
+          .innerJoin(
+            goodsReceiptNotes,
+            eq(goodsReceiptNotes.id, goodsReceiptNoteLines.goodsReceiptNoteId),
+          )
           .where(
             and(
-              eq(items.id, header.itemId),
-              eq(items.companyId, companyId),
-              isNull(items.deletedAt),
+              eq(goodsReceiptNoteLines.id, header.grnLineId),
+              isNull(goodsReceiptNoteLines.deletedAt),
+              eq(goodsReceiptNotes.companyId, companyId),
+              isNull(goodsReceiptNotes.deletedAt),
             ),
           )
           .limit(1)
       : [];
-    const item = itemRows[0] ?? null;
+
+    // ── Downstream: replacement GRNs received against this NC ───────────────
+    // The link sits on the header, or on a line when one GRN answers several NCs.
+    const replacementGrnRows = await tx
+      .select({
+        id: goodsReceiptNotes.id,
+        code: goodsReceiptNotes.code,
+        date: goodsReceiptNotes.grnDate,
+      })
+      .from(goodsReceiptNotes)
+      .where(
+        and(
+          eq(goodsReceiptNotes.companyId, companyId),
+          isNull(goodsReceiptNotes.deletedAt),
+          sql`(${goodsReceiptNotes.ncId} = ${id}::uuid OR EXISTS (
+            SELECT 1 FROM public.goods_receipt_note_lines grl
+             WHERE grl.goods_receipt_note_id = ${goodsReceiptNotes.id}
+               AND grl.nc_id = ${id}::uuid
+               AND grl.deleted_at IS NULL))`,
+        ),
+      )
+      .orderBy(asc(goodsReceiptNotes.grnDate));
 
     // ── Downstream: rework / supplementary Job Cards created from this NC ────
     const reworkRows = await tx
@@ -1321,13 +1362,44 @@ export async function getNcRegisterRelated(
       )
       .orderBy(asc(capaRecords.code));
 
+    // Each NC-to-NC tab holds different rows, so one lookup over all of them.
+    const linkedNcItems = await loadRelatedItems(
+      tx,
+      'nc',
+      [...siblingRows, ...parentNcRows, ...continuationRows, ...followOnRows].map((r) => r.id),
+    );
+    // One lookup for the three Job Card tabs, same reason.
+    const jobCardItems = await loadRelatedItems(
+      tx,
+      'jobCard',
+      [...jcRows, ...childRows, ...reworkRows].map((r) => r.id),
+    );
+    const sourceGrnItems = await loadRelatedItems(
+      tx,
+      'grn',
+      sourceGrnRows.map((r) => r.id),
+      { column: 'id', ids: [header.grnLineId] },
+    );
+    const replacementGrnItems = await loadRelatedItems(
+      tx,
+      'grn',
+      replacementGrnRows.map((r) => r.id),
+      { column: 'nc_id', ids: [id] },
+    );
+    const dcItems = await loadRelatedItems(
+      tx,
+      'deliveryChallan',
+      dcRows.map((r) => r.id),
+      { column: 'nc_id', ids: [id] },
+    );
+
     const row = (
       id_: string,
       code: string,
       status: string | null,
       date: unknown,
       extra?: { linkId?: string; label?: string },
-    ): RelatedDoc => ({
+    ): RelatedRow => ({
       id: id_,
       code,
       status,
@@ -1355,13 +1427,16 @@ export async function getNcRegisterRelated(
             }),
           ]
         : [],
+      { items: jobCardItems, labelHeading: 'Op' },
     );
-    const itemSection = section(
-      'item',
-      'Item',
-      '📦',
-      'item',
-      item ? [row(item.id, item.code, null, null, { label: item.name })] : [],
+    const itemTab = itemSection('item', 'Item', '📦', ncItems);
+    const sourceGrnSection = section(
+      'source-grn',
+      'Goods Receipt Note',
+      '📥',
+      'grn',
+      sourceGrnRows.map((r) => row(r.id, r.code, null, r.date)),
+      { items: sourceGrnItems },
     );
     // G8: the NC whose pieces this row carries (second trip to the vendor).
     const parentNcSection = section(
@@ -1376,6 +1451,7 @@ export async function getNcRegisterRelated(
             }),
           ]
         : [],
+      { items: linkedNcItems, labelHeading: 'Detail' },
     );
 
     // ── Downstream sections ─────────────────────────────────────────────────
@@ -1388,6 +1464,7 @@ export async function getNcRegisterRelated(
       '🔧',
       'job-card',
       child ? [row(child.id, child.code, child.closedAt ? 'closed' : 'open', child.date)] : [],
+      { items: jobCardItems },
     );
     const reworkSection = section(
       'rework-jc',
@@ -1397,6 +1474,7 @@ export async function getNcRegisterRelated(
       reworkRows
         .filter((r) => r.id !== child?.id)
         .map((r) => row(r.id, r.code, r.closedAt ? 'closed' : 'open', r.date)),
+      { items: jobCardItems },
     );
     const dcSection = section(
       'return-dc',
@@ -1404,6 +1482,7 @@ export async function getNcRegisterRelated(
       '🚚',
       'delivery-challan',
       dc ? [row(dc.id, dc.code, dc.status, dc.date, { label: dc.vendorCodeText })] : [],
+      { items: dcItems, labelHeading: 'Vendor Code' },
     );
     const followOnSection = section(
       'follow-on-nc',
@@ -1413,6 +1492,15 @@ export async function getNcRegisterRelated(
       followOnRows.map((r) =>
         row(r.id, r.code, r.status, r.date, { label: `${r.rejectedQty} pcs` }),
       ),
+      { items: linkedNcItems, labelHeading: 'Deviated' },
+    );
+    const replacementGrnSection = section(
+      'replacement-grn',
+      'Replacement Goods Receipt Notes',
+      '📥',
+      'grn',
+      replacementGrnRows.map((r) => row(r.id, r.code, null, r.date)),
+      { items: replacementGrnItems },
     );
 
     // G8: NCs raised on the pieces this row sent back to the vendor.
@@ -1426,6 +1514,7 @@ export async function getNcRegisterRelated(
           label: `Follow-on NC ${r.code} — ${r.rejectedQty} pcs`,
         }),
       ),
+      { items: linkedNcItems, labelHeading: 'Detail' },
     );
 
     // ── Related sections (lateral soft links) ───────────────────────────────
@@ -1437,6 +1526,7 @@ export async function getNcRegisterRelated(
       siblingRows.map((r) =>
         row(r.id, r.code, r.status, r.date, { label: `${r.rejectedQty} pcs` }),
       ),
+      { items: linkedNcItems, labelHeading: 'Deviated' },
     );
     const capaSection = section(
       'capa',
@@ -1444,13 +1534,15 @@ export async function getNcRegisterRelated(
       '🛡',
       null,
       capaRows.map((r) => row(r.id, r.code, r.status, r.date)),
+      { noItems: 'CAPA holds free text only' },
     );
 
-    const upstream = [jobCardSection, itemSection, parentNcSection];
+    const upstream = [jobCardSection, itemTab, sourceGrnSection, parentNcSection];
     const downstream = [
       recoverySection,
       reworkSection,
       dcSection,
+      replacementGrnSection,
       followOnSection,
       continuationSection,
     ];
@@ -1467,6 +1559,7 @@ export async function getNcRegisterRelated(
           code: header.code,
           routeKind: 'nc',
           linkId: id,
+          items: ncItems,
         },
         [...upstream, ...downstream],
       ),

@@ -10,7 +10,7 @@ import { Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { todayLocal } from '@/lib/date';
 import { useExitConfirm } from '@/lib/exit-guard';
-import { itemCodeWithRev } from '@/lib/item-code';
+import { itemCodeWithRev, partyDocName } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Panel } from '@/ui/data';
 import { Banner, useToast } from '@/ui/feedback';
@@ -64,7 +64,7 @@ function JwDcInwardNewPage(): React.JSX.Element {
 
   // Outward DCs with pending returns (filter client-side). Live DCs only — a
   // Cancelled DC (ADR-235) takes no return.
-  const { data: outData } = useJwDcOutwardList({ limit: 200, offset: 0, includeCancelled: false });
+  const { data: outData } = useJwDcOutwardList({ withLineItems: true, limit: 200, offset: 0, includeCancelled: false });
   const pendingDcs = useMemo(
     () => (outData?.items ?? []).filter((d) => d.pendingQty > 0),
     [outData],
@@ -186,11 +186,18 @@ function JwDcInwardNewPage(): React.JSX.Element {
               id="jwdc-in-dc"
               value={dcId}
               onChange={setDcId}
-              options={pendingDcs.map((dc) => ({
-                id: dc.id,
-                code: dc.code,
-                name: `${dc.vendorName ?? dc.vendorNameText ?? dc.vendorCodeText ?? ''} (${dc.jwpoCodeText})`,
-              }))}
+              options={pendingDcs.map((dc) => {
+                const named = partyDocName(
+                  dc.vendorName ?? dc.vendorNameText ?? dc.vendorCodeText,
+                  dc.lineItems,
+                );
+                return {
+                  id: dc.id,
+                  code: dc.code,
+                  name: `${named.name} (${dc.jwpoCodeText})`,
+                  searchText: named.searchText,
+                };
+              })}
               placeholder="-- Select DC --"
             />
           </FormField>

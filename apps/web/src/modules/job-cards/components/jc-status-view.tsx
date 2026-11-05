@@ -26,7 +26,7 @@ import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useFactsCollapsed, useStickyBand } from '../lib/jc-detail-sticky';
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
-import { RelatedDocsPanel } from '@/components/shared/related-docs-panel';
+import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
 import { undecidedChangesOf, usePendingEditForDoc } from '@/modules/document-edits/api';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDateTime } from '@/lib/date';
@@ -386,7 +386,7 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
           </div>
         ) : tab === 'related' ? (
           <div className="jc-tab-pad">
-            <RelatedDocsPanel module="job-cards" id={jc.id} />
+            <RelatedDocsTabs module="job-cards" id={jc.id} />
           </div>
         ) : (
           <JcHistoryTable jobCardId={id} />

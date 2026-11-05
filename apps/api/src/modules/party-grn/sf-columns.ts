@@ -21,7 +21,8 @@ export const PARTY_GRN_SF_COLUMNS: SfColumnMap = {
 };
 
 // ADR-261 — the ONE-ROW-PER-LINE list (GET /party-grn/lines, ./list-lines.ts).
-// Aliases: `pg` header, `pgl` the row's line, `jwl` its JWSO line, `c` client.
+// Aliases: `pg` header, `pgl` the row's line, `jwl` its JWSO line, `oi` that
+// line's item, `c` client.
 // The lead columns sort / filter on the LINE; header fields on the header.
 export const PARTY_GRN_LINE_SF_COLUMNS: SfColumnMap = {
   jwCode: { sql: sql`pg.jw_code_text`, type: 'text' },
@@ -31,10 +32,11 @@ export const PARTY_GRN_LINE_SF_COLUMNS: SfColumnMap = {
     type: 'date',
   },
   createdBy: { sql: createdByNameSql(sql`COALESCE(pgl.created_by, pg.created_by)`), type: 'text' },
-  // CODE/REV as the cell prints it (itemCodeWithRev): RM code, then '/' + the
-  // JWSO line's drawing revision when it has one.
-  itemCode: {
-    sql: sql`(btrim(pgl.party_material_code_text) || COALESCE('/' || NULLIF(btrim(jwl.revision), ''), ''))`,
+  // The raw material has no Rev, so its code is the whole cell.
+  itemCode: { sql: sql`btrim(pgl.party_material_code_text)`, type: 'text' },
+  // The finished part, CODE/REV as the cell prints it (itemCodeWithRev).
+  orderItemCode: {
+    sql: sql`(btrim(COALESCE(oi.code, jwl.item_code_text)) || COALESCE('/' || NULLIF(btrim(jwl.revision), ''), ''))`,
     type: 'text',
   },
   itemName: { sql: sql`pgl.party_material_name`, type: 'text' },

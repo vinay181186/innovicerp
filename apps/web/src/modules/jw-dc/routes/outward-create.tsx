@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { todayLocal } from '@/lib/date';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { partyDocName } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Panel } from '@/ui/data';
 import { Banner, useToast } from '@/ui/feedback';
@@ -65,11 +66,11 @@ function JwDcOutwardNewPage(): React.JSX.Element {
   // picker). Two calls rather than one: the list query's `poType` filter takes a
   // single value, and dropping the filter to sort client-side would risk the
   // 200-row cap hiding job-work POs behind a wall of ordinary buys.
-  const { data: poDataJw } = usePurchaseOrdersList({ poType: 'job_work', limit: 200, offset: 0 });
-  const { data: poDataSvc } = usePurchaseOrdersList({ poType: 'service', limit: 200, offset: 0 });
+  const { data: poDataJw } = usePurchaseOrdersList({ withLineItems: true, poType: 'job_work', limit: 200, offset: 0 });
+  const { data: poDataSvc } = usePurchaseOrdersList({ withLineItems: true, poType: 'service', limit: 200, offset: 0 });
   // `?jw=` — the job-work / service POs carrying this JWSO's work.
   const { data: poDataForJw } = usePurchaseOrdersList(
-    { jobWorkOrderId: forJwId, limit: 200, offset: 0 },
+    { withLineItems: true, jobWorkOrderId: forJwId, limit: 200, offset: 0 },
     { enabled: Boolean(forJwId) },
   );
   const forJwPos = forJwId ? (poDataForJw?.items ?? null) : null;
@@ -92,6 +93,16 @@ function JwDcOutwardNewPage(): React.JSX.Element {
     if (sendable.length === 1 && sendable[0]) setPoId(sendable[0].id);
   }, [forJwPos, prePicked]);
   const selectedPo = useMemo(() => poData.items.find((p) => p.id === poId) ?? null, [poData, poId]);
+  const poOptions = useMemo(
+    () =>
+      poData.items.map((p) => ({
+        id: p.id,
+        code: p.code,
+        ...partyDocName(p.vendorName ?? p.vendorCodeText, p.lineItems),
+      })),
+    [poData],
+  );
+  const selectedPoOption = poOptions.find((o) => o.id === poId);
 
   const { data: poLines } = useJwDcPoLines(poId ?? undefined);
   // Seed the lines once per PO. A refetch of the SAME PO (window focus, a live
@@ -240,16 +251,10 @@ function JwDcOutwardNewPage(): React.JSX.Element {
                 rtv.reset();
                 setPoId(id);
               }}
-              options={poData.items.map((p) => ({
-                id: p.id,
-                code: p.code,
-                name: p.vendorName ?? p.vendorCodeText ?? '',
-              }))}
+              options={poOptions}
               // The `?jw=` deep link can pre-pick the PO without a click.
               valueLabel={
-                selectedPo
-                  ? `${selectedPo.code} — ${selectedPo.vendorName ?? selectedPo.vendorCodeText ?? ''}`
-                  : undefined
+                selectedPoOption ? `${selectedPoOption.code} — ${selectedPoOption.name}` : undefined
               }
               placeholder="-- Select PO --"
             />

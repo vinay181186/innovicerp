@@ -57,6 +57,20 @@ describe('one standard across the ERP', () => {
     expect(offenders(headerSave)).toEqual([]);
   });
 
+  it('the Related Documents panel names the item: no "Name / Ref" heading', () => {
+    expect(offenders(/Name \/ Ref/)).toEqual([]);
+  });
+
+  it('a Related Documents item code is dark and bold, never `.td-code` blue', () => {
+    const textOf = (rel: string): string => FILES.find((f) => f.rel === rel)?.text ?? '';
+    const tabs = textOf('components/shared/related-docs-tabs.tsx');
+    const registry = textOf('components/shared/related-docs-panel.tsx');
+    expect(tabs).toContain('itemCodeWithRev');
+    expect(tabs).not.toContain('td-code');
+    expect(registry).toMatch(/\bitem: \(t, i\) => \(\s*<Link[^>]*>/);
+    expect(registry).not.toMatch(/\bitem: \(t, i\) => \(\s*<Link[^>]*td-code/);
+  });
+
   it('new code does not type a font size that has a token', () => {
     expect(offenders(/\bfontSize: *'?(?:11|12|13|16|22|28)(?:px)?'?\s*[,}]/)).toEqual([]);
   });

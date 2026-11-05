@@ -60,11 +60,16 @@ import {
   PRODUCTION_ORDER_STATUS_LABEL,
   productionOrderShortClosedQty,
 } from '@innovic/shared';
-import type { DocumentEditStagedResult, ProductionOrderStatus } from '@innovic/shared';
+import type {
+  DocumentEditStagedResult,
+  DocumentTraceability,
+  ProductionOrderStatus,
+} from '@innovic/shared';
 import { and, asc, count, desc, eq, isNull, like, or, sql, type SQL } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import {
   activityLog,
+  items,
   jobCards,
   plans,
   productionOrderCloses,
@@ -82,7 +87,15 @@ import { createdByNameSql } from '../../lib/created-by-sql';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { polOf, polSql } from '../../lib/pol';
 import { drawingRevOf } from '../../lib/drawing-rev';
-import { productionOrderSfColumns } from './sf-columns';
+import { loadRelatedItems } from '../../lib/related-items';
+import {
+  buildTimeline,
+  itemSection,
+  section,
+  toIsoDate,
+  type RelatedRow,
+} from '../../lib/traceability';
+import { PRO_ITEM_CODE_SQL, PRO_ITEM_NAME_SQL, productionOrderSfColumns } from './sf-columns';
 import {
   buildCloseHistory,
   needsZeroCreditFinishShortRow,
@@ -474,6 +487,9 @@ const poColumns = {
   soCodeText: productionOrders.soCodeText,
   lineNo: productionOrders.lineNo,
   itemId: productionOrders.itemId,
+  // Live Item Master code / name; the snapshots stay as the fallback (CLAUDE.md §18).
+  itemCode: items.code,
+  itemName: items.name,
   itemCodeText: productionOrders.itemCodeText,
   itemNameText: productionOrders.itemNameText,
   routeCardId: productionOrders.routeCardId,
@@ -541,6 +557,8 @@ function toListItem(r: PoRow): ProductionOrderListItem {
     soInternalNo: r.soInternalNo ?? null,
     lineNo: r.lineNo,
     itemId: r.itemId,
+    itemCode: r.itemCode ?? null,
+    itemName: r.itemName ?? null,
     itemCodeText: r.itemCodeText,
     itemNameText: r.itemNameText,
     itemRevision: r.itemRevision ?? null,
@@ -782,12 +800,15 @@ async function readPlanFactsInTx(
   };
 }
 
+// The items join is by primary key, so one order stays one row. A deleted item
+// keeps its code.
 function baseQuery(tx: DbTransaction) {
   return tx
     .select(poColumns)
     .from(productionOrders)
     .leftJoin(jobCards, eq(jobCards.id, productionOrders.jobCardId))
     .leftJoin(plans, eq(plans.id, productionOrders.planId))
+    .leftJoin(items, eq(items.id, productionOrders.itemId))
     .leftJoin(closedByUser, eq(closedByUser.id, productionOrders.closedBy))
     .leftJoin(shortClosedByUser, eq(shortClosedByUser.id, productionOrders.shortClosedBy));
 }
@@ -896,14 +917,16 @@ export async function listProductionOrders(
     if (query.jobCardId) conditions.push(eq(productionOrders.jobCardId, query.jobCardId));
     if (query.search) {
       // Every code a user might have in hand for this order: the PO itself, the
-      // plan, the item (code or name), the Job Card, the SO / JWSO. All are
-      // snapshots on the row, so no join is needed to search them.
+      // plan, the item (code or name, live and snapshot), the Job Card, the SO /
+      // JWSO. Snapshots or correlated reads, so the count query needs no join.
       const term = `%${escapeLikeTerm(query.search)}%`;
       const s = or(
         sql`${productionOrders.code} ILIKE ${term}`,
         sql`${productionOrders.planCodeText} ILIKE ${term}`,
         sql`${productionOrders.itemCodeText} ILIKE ${term}`,
         sql`${productionOrders.itemNameText} ILIKE ${term}`,
+        sql`${PRO_ITEM_CODE_SQL} ILIKE ${term}`,
+        sql`${PRO_ITEM_NAME_SQL} ILIKE ${term}`,
         sql`${productionOrders.jcCodeText} ILIKE ${term}`,
         sql`${productionOrders.soCodeText} ILIKE ${term}`,
         sql`${SO_INTERNAL_NO_SQL} ILIKE ${term}`,
@@ -956,6 +979,166 @@ export async function getProductionOrder(
   return withUserContext(user, (tx) =>
     readDetailInTx(tx, id, companyId, { includeCancelled: true }),
   );
+}
+
+// GET /production-orders/:id/related: read-only, company-scoped, soft-delete
+// filtered, one transaction (same shape as getPlanRelated).
+//   Upstream:   production_orders.plan_id, .route_card_id, .item_id
+//   Downstream: production_orders.job_card_id
+export async function getProductionOrderRelated(
+  id: string,
+  user: AuthContext,
+): Promise<DocumentTraceability> {
+  await requireFormAccess(user, 'prodorder_create', 'view');
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => {
+    const headers = await tx
+      .select({
+        code: productionOrders.code,
+        createdOn: sql<string>`(${productionOrders.createdAt} AT TIME ZONE 'Asia/Kolkata')::date::text`,
+        planId: productionOrders.planId,
+        routeCardId: productionOrders.routeCardId,
+        jobCardId: productionOrders.jobCardId,
+      })
+      .from(productionOrders)
+      .where(
+        and(
+          eq(productionOrders.id, id),
+          eq(productionOrders.companyId, companyId),
+          // ADR-235 — a Cancelled order's detail page still shows its links.
+          sql`(${productionOrders.deletedAt} IS NULL OR ${productionOrders.cancelledAt} IS NOT NULL)`,
+        ),
+      )
+      .limit(1);
+    const header = headers[0];
+    if (!header) throw new NotFoundError('Production Order not found. Refresh the page.');
+
+    const planRows = await tx
+      .select({
+        id: plans.id,
+        code: plans.code,
+        status: plans.planStatus,
+        date: plans.planDate,
+      })
+      .from(plans)
+      .where(
+        and(eq(plans.id, header.planId), eq(plans.companyId, companyId), isNull(plans.deletedAt)),
+      )
+      .limit(1);
+
+    const routeCardRows = await tx
+      .select({
+        id: routeCards.id,
+        code: routeCards.code,
+        status: routeCards.approvalStatus,
+        date: sql<string>`(${routeCards.createdAt} AT TIME ZONE 'Asia/Kolkata')::date::text`,
+      })
+      .from(routeCards)
+      .where(
+        and(
+          eq(routeCards.id, header.routeCardId),
+          eq(routeCards.companyId, companyId),
+          isNull(routeCards.deletedAt),
+        ),
+      )
+      .limit(1);
+
+    const jobCardRows = await tx
+      .select({
+        id: jobCards.id,
+        code: jobCards.code,
+        closedAt: jobCards.closedAt,
+        date: jobCards.jcDate,
+      })
+      .from(jobCards)
+      .where(
+        and(
+          eq(jobCards.id, header.jobCardId),
+          eq(jobCards.companyId, companyId),
+          isNull(jobCards.deletedAt),
+        ),
+      )
+      .limit(1);
+
+    const orderItems = (await loadRelatedItems(tx, 'productionOrder', [id])).get(id) ?? [];
+    const planItems = await loadRelatedItems(
+      tx,
+      'plan',
+      planRows.map((r) => r.id),
+    );
+    const routeCardItems = await loadRelatedItems(
+      tx,
+      'routeCard',
+      routeCardRows.map((r) => r.id),
+    );
+    const jobCardItems = await loadRelatedItems(
+      tx,
+      'jobCard',
+      jobCardRows.map((r) => r.id),
+    );
+
+    const row = (
+      rowId: string,
+      code: string,
+      status: string | null,
+      date: unknown,
+    ): RelatedRow => ({
+      id: rowId,
+      code,
+      status,
+      date: toIsoDate(date),
+      linkId: null,
+      label: null,
+    });
+
+    const upstream = [
+      section(
+        'plan',
+        'Plan',
+        '🗂',
+        'plan',
+        planRows.map((r) => row(r.id, r.code, r.status, r.date)),
+        { items: planItems },
+      ),
+      section(
+        'route-card',
+        'Route Card',
+        '🧭',
+        'route-card',
+        routeCardRows.map((r) => row(r.id, r.code, r.status, r.date)),
+        { items: routeCardItems },
+      ),
+      itemSection('item', 'Item', '📦', orderItems),
+    ];
+    const downstream = [
+      section(
+        'job-card',
+        'Job Card',
+        '📋',
+        'job-card',
+        // job_cards has no status column — coarse closed/open from closed_at.
+        jobCardRows.map((r) => row(r.id, r.code, r.closedAt ? 'closed' : 'open', r.date)),
+        { items: jobCardItems },
+      ),
+    ];
+    return {
+      self: { module: 'production-orders', code: header.code },
+      upstream,
+      downstream,
+      related: [],
+      timeline: buildTimeline(
+        {
+          ts: header.createdOn,
+          label: 'Production Order created',
+          code: header.code,
+          routeKind: 'production-order',
+          linkId: id,
+          items: orderItems,
+        },
+        [...upstream, ...downstream],
+      ),
+    };
+  });
 }
 
 export async function getNextProductionOrderCode(
@@ -1285,7 +1468,13 @@ export async function createProductionOrder(
         );
       }
       const itemId = plan.itemId;
-      const itemLabel = plan.itemCodeText ?? itemId;
+      // The Item Master's code, never the internal id. item_code_text is NOT NULL.
+      const itemLabel = (await itemCodeFor(tx, itemId)) ?? plan.itemCodeText;
+      if (!itemLabel) {
+        throw new ValidationError(
+          `Plan ${plan.code} has no Item Code — pick the item from Item Master on the plan first`,
+        );
+      }
 
       // Route card: must be THE active card of the plan's item, with at least
       // one live operation. "No route card, no way forward."
@@ -1453,7 +1642,7 @@ export async function createProductionOrder(
           soCodeText: plan.soCodeText,
           lineNo: plan.lineNo,
           itemId,
-          itemCodeText: plan.itemCodeText ?? itemLabel,
+          itemCodeText: itemLabel,
           itemNameText: plan.itemNameText,
           // Drawing Rev register — the order is for the plan's Item + Rev.
           itemRevisionId: plan.itemRevisionId ?? null,
