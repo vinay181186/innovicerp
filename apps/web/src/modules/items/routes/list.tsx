@@ -67,7 +67,7 @@ import { itemListColumns } from '../components/item-list-columns';
 import { Select } from '@/ui/forms';
 import { Banner } from '@/ui/feedback';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
-import { useBulkCreateItems, useItemsList, useSoftDeleteItem } from '../api';
+import { useBulkCreateItems, useItemsList, useItemsTotals, useSoftDeleteItem } from '../api';
 import { TrashReasonDialog } from '../components/trash-reason-dialog';
 import { parseItemImportFile } from '../lib/import-export';
 
@@ -155,9 +155,8 @@ function ItemsListPage(): React.JSX.Element {
 
   // Item-type counts — whole-master totals, independent of the search box.
   const allCount = useItemsList(COUNT_ALL).data?.total ?? 0;
-  // Fixed-length list (one per type, a module constant), so the hook order
-  // never changes between renders.
-  const typeCounts = COUNT_BY_TYPE.map(([t, q]) => [t, useItemsList(q).data?.total ?? 0] as const);
+  const typeTotals = useItemsTotals(COUNT_BY_TYPE.map(([, q]) => q));
+  const typeCounts = COUNT_BY_TYPE.map(([t], i) => [t, typeTotals[i] ?? 0] as const);
 
   const setTypeFilter = useCallback(
     (next: ItemType | undefined): void => {

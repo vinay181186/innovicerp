@@ -1,5 +1,6 @@
 import js from '@eslint/js';
 import prettierConfig from 'eslint-config-prettier';
+import reactHooks from 'eslint-plugin-react-hooks';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
@@ -29,6 +30,12 @@ export default tseslint.config(
       '@typescript-eslint/no-explicit-any': 'warn',
       'no-console': ['error', { allow: ['warn', 'error'] }],
     },
+  },
+  // CLAUDE.md §23: a hook below an early return crashed My Day Log on PROD (React #310).
+  {
+    files: ['apps/web/src/**/*.{ts,tsx}'],
+    plugins: { 'react-hooks': reactHooks },
+    rules: { 'react-hooks/rules-of-hooks': 'error' },
   },
   // Operational CLI scripts (seeds, one-shot migrations, ops utilities) log human-readable
   // progress to a terminal — Pino is for the runtime API per CLAUDE.md §6.7, not for these.
