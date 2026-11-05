@@ -41,7 +41,7 @@ export function prSfColumns(orderedQty: SQL): SfColumnMap {
     prCode: { sql: sql`pr.code`, type: 'text' },
     prDate: { sql: sql`pr.pr_date`, type: 'date' },
     itemCode: { sql: PR_ITEM_CODE_REV, type: 'text' },
-    itemName: { sql: sql`pr.item_name`, type: 'text' },
+    itemName: { sql: sql`COALESCE(NULLIF(btrim(pr.item_name), ''), i.name)`, type: 'text' },
     soCode: { sql: PR_ORDER_CODE, type: 'text' },
     // ADR-207 — the Internal SO No. of the order behind the PR, off the `so`
     // join BOTH the list and the count query make (through pr.source_so_line_id).

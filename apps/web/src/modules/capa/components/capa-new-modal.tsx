@@ -161,7 +161,9 @@ export function NewCapaModal({
                   itemCode: nc.itemCode ?? nc.itemCodeText,
                   itemName: nc.itemName ?? nc.itemNameText,
                 }),
-                `${NC_REASON_CATEGORY_LABELS[nc.reasonCategory]} — ${nc.jcCode ?? ''}`,
+                [NC_REASON_CATEGORY_LABELS[nc.reasonCategory], nc.jcCode]
+                  .filter(Boolean)
+                  .join(' — '),
               ]
                 .filter(Boolean)
                 .join(' · '),

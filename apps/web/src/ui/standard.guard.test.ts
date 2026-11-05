@@ -26,6 +26,13 @@ function offenders(pattern: RegExp, allowed: readonly string[] = []): string[] {
 }
 
 describe('one standard across the ERP', () => {
+  it('a list hook sends withLineItems: a picker that asks for items must get them', () => {
+    for (const mod of ['purchase-orders', 'delivery-challans', 'jw-dc']) {
+      const api = readFileSync(join(SRC, 'modules', mod, 'api.ts'), 'utf8');
+      expect(api, mod).toContain("params.set('withLineItems', 'true')");
+    }
+  });
+
   it('every pop-up uses the shared Modal', () => {
     expect(
       offenders(/className="overlay"/, [

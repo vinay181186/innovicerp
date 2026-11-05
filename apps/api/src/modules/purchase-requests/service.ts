@@ -604,6 +604,7 @@ export async function listPurchaseRequests(
           OR i.code ILIKE ${term} ESCAPE '\\'
           OR ${PR_ITEM_CODE_REV} ILIKE ${term} ESCAPE '\\'
           OR pr.item_name ILIKE ${term} ESCAPE '\\'
+          OR i.name ILIKE ${term} ESCAPE '\\'
           -- The card renders vendorName ?? vendorCodeText, and vendorName is
           -- COALESCE(v.name, vt.name) — both vendor joins below are matched.
           OR pr.vendor_code_text ILIKE ${term} ESCAPE '\\'
@@ -693,7 +694,7 @@ export async function listPurchaseRequests(
         pr.pr_date AS "prDate", pr.status,
         pr.vendor_id AS "vendorId", pr.vendor_code_text AS "vendorCodeText",
         pr.item_id AS "itemId", pr.item_code_text AS "itemCodeText",
-        pr.item_name AS "itemName",
+        COALESCE(NULLIF(btrim(pr.item_name), ''), i.name) AS "itemName",
         pr.qty, pr.est_cost::text AS "estCost", pr.required_date AS "requiredDate",
         pr.source_jc_op_id AS "sourceJcOpId",
         pr.source_so_line_id AS "sourceSoLineId",
