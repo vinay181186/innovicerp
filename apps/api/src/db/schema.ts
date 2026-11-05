@@ -6975,6 +6975,12 @@ export const tasks = pgTable(
     index('tasks_company_creator_idx')
       .on(t.companyId, t.createdBy)
       .where(sql`${t.deletedAt} is null`),
+    // 0239 — one OPEN task per Day Log day for a Super Admin's blank-day replies.
+    uniqueIndex('tasks_day_log_date_open_uq')
+      .on(t.companyId, t.linkedRefId)
+      .where(
+        sql`${t.linkedRefType} = 'day_log_date' AND ${t.deletedAt} is null AND ${t.status} IN ('todo', 'in_progress')`,
+      ),
     pgPolicy('tasks_company_read', {
       for: 'select',
       to: 'authenticated',
@@ -7335,6 +7341,51 @@ export const dailyReportLineReplies = pgTable(
       .on(t.companyId, t.lineId)
       .where(sql`${t.seenAt} is null and ${t.deletedAt} is null`),
     pgPolicy('dl_replies_no_client_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`false`,
+    }),
+  ],
+).enableRLS();
+
+// A Super Admin's reply on a person's BLANK day (0239, Pending Entries): on the
+// day header, no line to hang it on. API only, like the line replies above.
+export const dailyReportDayReplies = pgTable(
+  'daily_report_day_replies',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    dailyReportId: uuid('daily_report_id')
+      .notNull()
+      .references(() => dailyReports.id),
+    body: text('body').notNull(),
+    sentAt: timestamp('sent_at', { withTimezone: true }).notNull().defaultNow(),
+    editedAt: timestamp('edited_at', { withTimezone: true }),
+    // When the owner first opened that date since it was sent / last edited.
+    seenAt: timestamp('seen_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    // The author (a Super Admin).
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
+  },
+  (t) => [
+    check('dl_day_replies_body_chk', sql`length(btrim(${t.body})) > 0`),
+    index('dl_day_replies_company_report_idx')
+      .on(t.companyId, t.dailyReportId, t.sentAt)
+      .where(sql`${t.deletedAt} is null`),
+    index('dl_day_replies_unseen_idx')
+      .on(t.companyId, t.dailyReportId)
+      .where(sql`${t.seenAt} is null and ${t.deletedAt} is null`),
+    pgPolicy('dl_day_replies_no_client_read', {
       for: 'select',
       to: 'authenticated',
       using: sql`false`,

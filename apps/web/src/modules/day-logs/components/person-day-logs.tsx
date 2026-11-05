@@ -1,8 +1,8 @@
 // Person page (Team Day Logs → a name, ADR-255): ONE person, ONE day.
-// Header: ← Team Day Logs, the name, the department, a date box (max today;
+// Header: ← Team Day Logs (← Pending Entries when opened from there), the name, the department, a date box (max today;
 // opens on the team date, else today) and Print / Export. Then the day's
-// entries on the FIT table: Sr No · Start Time · Stop Time · Working Hours ·
-// Entry Rev No · Entry Rev Date · Entry Rev Time · Working On (one line). The
+// entries on the FIT table: Sr No · Log Date · Log Time · Start Time · Stop Time
+// · Working Hours · Entry Rev No · Entry Rev Date · Entry Rev Time · Working On (one line). The
 // three Entry Rev columns are a Super Admin's only (the server sends them null
 // to anyone else). Anyone else (a Dept Admin, or a team mate a Super Admin
 // paired on Teams Config) sees SO / JWSO there instead, as on My Day Log
@@ -11,7 +11,9 @@
 // or SO / JWSO (ADR-256) — with what changed (LEFT) and the replies with
 // Send reply (RIGHT); for anyone else the full text only. Search (Working On, SO / JWSO — and every earlier
 // Entry Rev's Working On for a Super Admin) and the ADR-200 Sort & Filter ▾
-// run in the browser: the whole day is loaded.
+// run in the browser: the whole day is loaded. A Super Admin also gets, on a row,
+// a ✎ n badge and, when opened, the Working On box with one line per edit
+// (Option I). A blank day: "Not entered" and the replies on the day itself.
 
 import type { DayLogPersonDay, DayLogPersonDayEntry } from '@innovic/shared';
 import { fmt12, fmtDuration } from '@innovic/shared';
@@ -29,8 +31,9 @@ import { errText, firstName, istStamp } from '../lib/format';
 import { printPersonDay } from '../lib/print-day-log';
 import { sortEntries } from '../lib/sheet';
 import { EntrySearch } from './entry-search';
-import { PersonReplies } from './person-replies';
-import { PersonRevisions } from './person-revisions';
+import { logColumns } from './log-columns';
+import { DayReplies, PersonReplies } from './person-replies';
+import { PersonRevisions, WorkingOnBox } from './person-revisions';
 import { PrintExportTools } from './print-export-tools';
 import '../day-log-sheet.css';
 
@@ -44,6 +47,7 @@ function columns(): DataTableColumn<Entry>[] {
   const revAt = (r: Entry) => (r.entryRevNo ? istStamp(r.entryRevisedAt) : null);
   return [
     { id: 'srNo', header: 'Sr No', kind: 'code', className: 'mono', render: (r) => r.srNo },
+    ...logColumns<Entry>(),
     {
       id: 'start',
       header: 'Start Time',
@@ -119,6 +123,11 @@ function columns(): DataTableColumn<Entry>[] {
               💬{r.replies.length}{' '}
             </span>
           ) : null}
+          {r.entryRevNo ? (
+            <span className="badge b-blue dl-editcount" title={`Edited ${r.entryRevNo} times`}>
+              ✎ {r.entryRevNo}
+            </span>
+          ) : null}
           {r.description}
         </>
       ),
@@ -135,18 +144,18 @@ function PersonExpand({ r, p }: { r: Entry; p: DayLogPersonDay }): React.JSX.Ele
       </div>
     );
   }
-  // A Super Admin's own day: the versions only — nobody replies to themself.
-  if (!p.canReply) {
-    return (
-      <div className="dl-expand">
-        <PersonRevisions revisions={r.revisions} />
-      </div>
-    );
-  }
   return (
-    <div className="dl-expand dl-panes">
-      <PersonRevisions revisions={r.revisions} />
-      <PersonReplies entryId={r.id} replies={r.replies} first={firstName(p.userName)} />
+    <div className="dl-expand">
+      <WorkingOnBox description={r.description} revisions={r.revisions} />
+      {/* A Super Admin's own day: the versions only — nobody replies to themself. */}
+      {p.canReply ? (
+        <div className="dl-panes">
+          <PersonRevisions revisions={r.revisions} />
+          <PersonReplies entryId={r.id} replies={r.replies} first={firstName(p.userName)} />
+        </div>
+      ) : (
+        <PersonRevisions revisions={r.revisions} />
+      )}
     </div>
   );
 }
@@ -155,12 +164,15 @@ export function PersonDayLogs({
   userId,
   date,
   onDate,
+  backLabel,
   onBack,
 }: {
   userId: string;
   /** ?date= — the team date the page was opened from; none = today. */
   date: string | undefined;
   onDate: (d: string) => void;
+  /** The back button's words: where it goes. */
+  backLabel: string;
   onBack: () => void;
 }): React.JSX.Element {
   const query = usePersonDay(userId, date);
@@ -209,7 +221,7 @@ export function PersonDayLogs({
     <div>
       <div className="dl-toolbar">
         <button type="button" className="btn btn-ghost btn-sm" onClick={onBack}>
-          ← Team Day Logs
+          {backLabel}
         </button>
         <span className="section-hdr dl-name">{p.userName}</span>
         {p.deptLabel ? <span className="text3">{p.deptLabel}</span> : null}
@@ -222,6 +234,7 @@ export function PersonDayLogs({
           value={p.date}
           onChange={(e) => goDate(e.target.value)}
         />
+        {p.notEntered ? <span className="badge b-orange">Not entered</span> : null}
         <span style={{ flex: 1 }} />
         <PrintExportTools
           table={personDayTable(p)}
@@ -252,6 +265,11 @@ export function PersonDayLogs({
         onToggleExpanded={(r) => toggle(r.id)}
         renderExpanded={(r) => (open.has(r.id) ? <PersonExpand r={r} p={p} /> : null)}
       />
+      {p.canReplyDay || p.dayReplies.length > 0 ? (
+        <div className="dl-daypane">
+          <DayReplies key={p.date} p={p} />
+        </div>
+      ) : null}
     </div>
   );
 }

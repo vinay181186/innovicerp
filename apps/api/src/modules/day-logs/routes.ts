@@ -9,11 +9,13 @@ import {
   dayLogOrderOptionsQuerySchema,
   dayLogQuerySchema,
   dayLogApproveInputSchema,
+  dayLogDayRepliesSeenInputSchema,
   dayLogPersonDayQuerySchema,
   dayLogRejectInputSchema,
   dayLogTeamMatesQuerySchema,
   editDayLogReplyInputSchema,
   holidayInputSchema,
+  sendDayLogDayReplyInputSchema,
   sendDayLogReplyInputSchema,
   teamDayLogQuerySchema,
   updateDayLogEntryInputSchema,
@@ -99,6 +101,38 @@ export async function dayLogsRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);
     return service.markRepliesSeen(id, req.user);
+  });
+
+  // Pending Entries (owner 2026-11-05): a reply on a blank day, and who has one.
+  app.post('/day-logs/day-replies', async (req, reply) => {
+    if (!req.user) throw new AuthenticationError();
+    const result = await service.sendDayReply(
+      sendDayLogDayReplyInputSchema.parse(req.body),
+      req.user,
+    );
+    reply.code(201);
+    return result;
+  });
+
+  app.patch('/day-logs/day-replies/:id', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    return service.editDayReply(id, editDayLogReplyInputSchema.parse(req.body), req.user);
+  });
+
+  app.post('/day-logs/day-replies/seen', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    return service.markDayRepliesSeen(dayLogDayRepliesSeenInputSchema.parse(req.body), req.user);
+  });
+
+  app.get('/day-logs/pending/mine', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    return service.getMyPending(req.user);
+  });
+
+  app.get('/day-logs/pending', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    return service.getPending(req.user);
   });
 
   // A saved row is never removed: no DELETE, no Stop (owner 2026-10-27).

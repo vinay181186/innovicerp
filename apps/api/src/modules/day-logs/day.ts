@@ -52,6 +52,8 @@ export interface DayLine {
   /** First saved more than lateAfterMin after its Stop. */
   late: boolean;
   updatedAt: string;
+  /** daily_report_lines.created_at — when the entry was FIRST saved; an edit never moves it. */
+  loggedAt: string;
   /** Stored line_no. Absent only on a line that is not stored (a batch row being judged). */
   lineNo?: number;
   pending: PendingEdit | null;
@@ -113,7 +115,7 @@ export const lateSql = (reportDate: SQL, toTime: SQL, createdAt: SQL): SQL => sq
  * oldest first: a correlated sub-select inside linesJson, so a day's replies
  * ride in the same statement (no per-line query).
  */
-const repliesJson = sql`(
+const ownRepliesJson = (table: SQL, where: SQL): SQL => sql`(
   SELECT COALESCE(json_agg(json_build_object(
            'id', rp.id::text, 'body', rp.body,
            'authorName', COALESCE(au.full_name, au.email),
@@ -121,9 +123,25 @@ const repliesJson = sql`(
            'editedAt', CASE WHEN rp.edited_at IS NULL THEN NULL ELSE ${ts('rp.edited_at')} END,
            'unread', rp.seen_at IS NULL)
          ORDER BY rp.sent_at, rp.id), '[]'::json)
-  FROM public.daily_report_line_replies rp
+  FROM ${table} rp
   JOIN public.users au ON au.id = rp.created_by
-  WHERE rp.line_id = l.id AND rp.company_id = l.company_id AND rp.deleted_at IS NULL)`;
+  WHERE ${where})`;
+
+const repliesJson = ownRepliesJson(
+  sql`public.daily_report_line_replies`,
+  sql`rp.line_id = l.id AND rp.company_id = l.company_id AND rp.deleted_at IS NULL`,
+);
+
+/** Pending Entries — the replies on (user, date) itself as the OWNER sees them. */
+export const dayRepliesJson = (companyId: string, userId: string, date: string): SQL =>
+  ownRepliesJson(
+    sql`public.daily_report_day_replies`,
+    sql`rp.company_id = ${companyId}::uuid AND rp.deleted_at IS NULL
+      AND rp.daily_report_id = (
+        SELECT d.id FROM public.daily_reports d
+        WHERE d.company_id = ${companyId}::uuid AND d.user_id = ${userId}::uuid
+          AND d.report_date = ${date}::date AND d.deleted_at IS NULL)`,
+  );
 
 /** ADR-255 — the replies of `ids` (lines of one company) as ONE json object
  *  { lineId: [reply…] } — a Super Admin reading someone else's day. */
@@ -143,6 +161,7 @@ export const linesJson = (companyId: string, where: SQL, withReplies = false): S
            'kind', l.kind, 'from_time', to_char(l.from_time, 'HH24:MI'),
            'to_time', to_char(l.to_time, 'HH24:MI'), 'description', l.description,
            'remarks', l.remarks, 'updated_at', ${ts('l.updated_at')},
+           'logged_at', ${ts('l.created_at')},
            'so_id', so.id::text, 'so_code', so.code, 'jw_id', jw.id::text, 'jw_code', jw.code,
            'late', ${lateSql(sql`dr.report_date`, sql`l.to_time`, sql`l.created_at`)},
            'p_from', to_char(l.pending_from, 'HH24:MI'), 'p_to', to_char(l.pending_to, 'HH24:MI'),
@@ -179,6 +198,7 @@ export function toLine(r: Record<string, unknown>): DayLine {
     order: orderOf(r, ''),
     late: r['late'] === true,
     updatedAt: iso(r['updated_at'])!,
+    loggedAt: iso(r['logged_at'])!,
     lineNo: Number(r['line_no'] ?? 0),
     pending: r['p_at']
       ? {

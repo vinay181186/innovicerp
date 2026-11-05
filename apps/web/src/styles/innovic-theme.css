@@ -78,6 +78,54 @@
   padding-bottom: 6px;
 }
 
+/* Day Log "N days not entered" (modules/day-logs/components/pending-banner.tsx):
+   the last thing in the header, a box of its own lined up with the page. Its own
+   scroll past a third of the screen, so a long list never pushes the page out. */
+.pending-band {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 6px var(--content-pad) 0;
+  padding: 5px var(--sp-3);
+  max-height: 33vh;
+  overflow-y: auto;
+  border: 1px solid var(--orange);
+  border-radius: var(--radius);
+  background: var(--orange3);
+  color: var(--orange2);
+  font-size: var(--fs-sm);
+}
+.pending-band b {
+  font-weight: 700;
+  white-space: nowrap;
+}
+.pending-date {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--orange);
+  border-radius: var(--radius-sm);
+  background: var(--bg2);
+  color: var(--orange2);
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  white-space: nowrap;
+  text-decoration: none;
+}
+.pending-date:hover {
+  background: var(--orange3);
+  color: var(--orange2);
+}
+.pending-date.on,
+.pending-date.on:hover {
+  background: var(--orange2);
+  border-color: var(--orange2);
+  color: var(--bg2);
+}
+
 /* ── Header navigation (components/shared/top-nav.tsx) ──────────────────────
    One --topbar-height band: logo, Dashboard, the modules as dropdowns, then the
    right cluster (search, sync dot, password, sign out, avatar). Module
@@ -1051,6 +1099,10 @@ table.tbl-ctr td .innovic-select {
 }
 .innovic-table tbody tr.row-cancelled {
   --row-bg: var(--bg4);
+  background: var(--row-bg);
+}
+.innovic-table tbody tr.row-not-entered {
+  --row-bg: var(--orange3);
   background: var(--row-bg);
 }
 

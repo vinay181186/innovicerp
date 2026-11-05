@@ -4,10 +4,16 @@
 // CSV goes through the reports module's rowsToCsv / downloadCsv; Excel loads
 // SheetJS (xlsx, the existing dependency) only when asked, as op-log does.
 
-import type { DayLogDetail, DayLogPersonDay, TeamDayLogResponse } from '@innovic/shared';
+import type {
+  DayLogDetail,
+  DayLogPendingRow,
+  DayLogPersonDay,
+  TeamDayLogResponse,
+} from '@innovic/shared';
 import { fmt12, fmtDuration } from '@innovic/shared';
 import { downloadCsv, rowsToCsv } from '@/modules/reports/lib/csv';
-import { istStamp } from './format';
+import { fmtDate } from '@/lib/date';
+import { istStamp, weekday } from './format';
 import { sortEntries } from './sheet';
 
 export interface ExportTable {
@@ -17,10 +23,12 @@ export interface ExportTable {
   rows: Record<string, string>[];
 }
 
-/** My Day Log: Sr No · Start Time · Stop Time · Working Hours · SO / JWSO ·
- *  Working On (full text, never cut). */
+/** My Day Log: Sr No · Log Date · Log Time · Start Time · Stop Time · Working
+ *  Hours · SO / JWSO · Working On (full text, never cut). */
 export const DAY_COLUMNS = [
   { key: 'sr_no', label: 'Sr No' },
+  { key: 'log_date', label: 'Log Date' },
+  { key: 'log_time', label: 'Log Time' },
   { key: 'start_time', label: 'Start Time' },
   { key: 'stop_time', label: 'Stop Time' },
   { key: 'work_hours', label: 'Working Hours' },
@@ -34,6 +42,8 @@ export const DAY_NUM_KEYS = ['sr_no', 'work_hours', 'entry_rev_no'] as const;
 export function dayTable(day: DayLogDetail): ExportTable {
   const rows = sortEntries(day.entries).map((e, i) => ({
     sr_no: String(i + 1),
+    log_date: istStamp(e.loggedAt).date,
+    log_time: istStamp(e.loggedAt).time,
     start_time: fmt12(e.fromTime),
     stop_time: e.toTime ? fmt12(e.toTime) : '',
     work_hours: fmtDuration(e.minutes),
@@ -43,8 +53,8 @@ export function dayTable(day: DayLogDetail): ExportTable {
   return { columns: DAY_COLUMNS, rows };
 }
 
-/** Team Day Logs › a person, one day: Sr No · Start Time · Stop Time ·
- *  Working Hours · (Super Admin: Entry Rev No · Entry Rev Date · Entry
+/** Team Day Logs › a person, one day: Sr No · Log Date · Log Time · Start Time ·
+ *  Stop Time · Working Hours · (Super Admin: Entry Rev No · Entry Rev Date · Entry
  *  Rev Time ·) SO / JWSO · Working On. */
 export function personDayTable(p: DayLogPersonDay): ExportTable {
   const rev = p.isSuperAdmin
@@ -54,11 +64,14 @@ export function personDayTable(p: DayLogPersonDay): ExportTable {
         { key: 'entry_rev_time', label: 'Entry Rev Time' },
       ]
     : [];
-  const columns = [...DAY_COLUMNS.slice(0, 4), ...rev, ...DAY_COLUMNS.slice(4)];
+  const revAt = DAY_COLUMNS.findIndex((c) => c.key === 'order_code');
+  const columns = [...DAY_COLUMNS.slice(0, revAt), ...rev, ...DAY_COLUMNS.slice(revAt)];
   const rows = sortEntries(p.entries).map((e) => {
     const at = e.entryRevNo ? istStamp(e.entryRevisedAt) : null;
     return {
       sr_no: String(e.srNo),
+      log_date: istStamp(e.loggedAt).date,
+      log_time: istStamp(e.loggedAt).time,
       start_time: fmt12(e.fromTime),
       stop_time: e.toTime ? fmt12(e.toTime) : '',
       work_hours: fmtDuration(e.minutes),
@@ -91,6 +104,38 @@ export function teamTable(team: TeamDayLogResponse): ExportTable {
       last_stop: r.lastStop ? fmt12(r.lastStop) : '',
       work_hours: fmtDuration(r.workMin),
       entries: String(r.entryCount),
+    })),
+  };
+}
+
+/** Pending Entries' Reply Status: one wording for the screen, print and file. */
+export function replyStateText(r: DayLogPendingRow): string {
+  if (r.replyCount === 0) return 'Not replied';
+  return r.unseenCount > 0 ? 'Replied · Not seen' : 'Replied · Seen';
+}
+
+/** Pending Entries: the tab's columns, in the server's order (oldest first). */
+export function pendingTable(rows: readonly DayLogPendingRow[]): ExportTable {
+  return {
+    columns: [
+      { key: 'sr_no', label: 'Sr No' },
+      { key: 'user', label: 'User' },
+      { key: 'dept', label: 'Department' },
+      { key: 'pending_date', label: 'Pending Date' },
+      { key: 'week_day', label: 'Day' },
+      { key: 'days_pending', label: 'Days Pending' },
+      { key: 'task_no', label: 'Task No.' },
+      { key: 'reply_state', label: 'Reply Status' },
+    ],
+    rows: rows.map((r, i) => ({
+      sr_no: String(i + 1),
+      user: r.userName,
+      dept: r.deptLabel ?? '',
+      pending_date: fmtDate(r.date),
+      week_day: weekday(r.date),
+      days_pending: String(r.daysPending),
+      task_no: r.taskCode ?? '',
+      reply_state: replyStateText(r),
     })),
   };
 }

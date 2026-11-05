@@ -8,6 +8,7 @@ import { TopNav } from '@/components/shared/top-nav';
 import { useMyAccess } from '@/lib/access-control';
 import { LiveUpdatesProvider } from '@/lib/live-updates/live-updates-provider';
 import { useSession } from '@/lib/session';
+import { PendingBanner } from '@/modules/day-logs/components/pending-banner';
 import { supabase } from '@/lib/supabase';
 import { useUiSettings } from '@/lib/use-ui-settings';
 import { SortFilterScope } from '@/ui/data/sort-filter/scope';
@@ -85,6 +86,7 @@ function AuthenticatedLayout(): React.JSX.Element {
               <TopNav />
               <OpenTabsBar />
               <Breadcrumbs />
+              <PendingBanner />
             </header>
             <div id="content">
               <SortFilterScope>

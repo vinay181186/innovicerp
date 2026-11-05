@@ -17,7 +17,12 @@ const DAY_END_MIN = 24 * 60;
 
 /** India-time "today" (YYYY-MM-DD) and minutes since midnight. Writes take an
  *  optional clock only so the DB tests run at a fixed time; routes never pass one. */
-export type DayLogClock = { today: string; nowMin: number };
+export type DayLogClock = {
+  today: string;
+  nowMin: number;
+  /** Tests only: the first pending day instead of DAY_LOG_PENDING_FROM. */
+  from?: string;
+};
 
 /** The server's India-time clock. */
 export function istClock(now: number = Date.now()): DayLogClock {

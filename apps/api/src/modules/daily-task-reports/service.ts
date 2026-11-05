@@ -21,6 +21,7 @@ import { AuthorizationError, NotFoundError } from '../../lib/errors';
 import { fmtDate } from '../../lib/format-date';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { emitActivityLog } from '../activity-log/service';
+import { closeDayLogDateTask } from '../tasks/day-log-task';
 import { DTR_SF_COLUMNS, DTR_SHIFT_LABEL } from './sf-columns';
 
 const requireCompany = (user: AuthContext): string => {
@@ -70,6 +71,11 @@ export async function listDailyReports(
     else if (filters.userId) conds.push(sql`dr.user_id = ${filters.userId}`);
     if (filters.dateFrom) conds.push(sql`dr.report_date >= ${filters.dateFrom}::date`);
     if (filters.dateTo) conds.push(sql`dr.report_date <= ${filters.dateTo}::date`);
+    // Pending Entries: a Super Admin's reply opens a day with no line. That is
+    // not a filed report.
+    conds.push(sql`(agg.n > 0 OR NOT EXISTS (
+      SELECT 1 FROM public.daily_report_day_replies rp
+      WHERE rp.daily_report_id = dr.id AND rp.deleted_at IS NULL))`);
     const term = (filters.search ?? '').trim().replace(/\s+/g, ' ');
     if (term) {
       const pat = `%${likeEscape(term)}%`;
@@ -312,6 +318,9 @@ export async function updateDailyReport(
       .set({ deletedAt: now, deletedBy: user.id, updatedBy: user.id, updatedAt: now })
       .where(and(eq(dailyReportLines.dailyReportId, id), isNull(dailyReportLines.deletedAt)));
     await insertLines(tx, companyId, id, input, user);
+    // Pending Entries: this day now has lines (the header UPDATE above holds
+    // its row lock), so a task raised while it was blank closes with it.
+    await closeDayLogDateTask(tx, { companyId, dailyReportId: id, date: input.reportDate }, user);
 
     await emitActivityLog(
       tx,

@@ -7,7 +7,7 @@
 // A write reads it AFTER taking the day lock (lock.ts), in its own
 // statement, so the lines it validates are the ones under the lock (§20.3).
 
-import type { DayLogOrderType } from '@innovic/shared';
+import type { DayLogOrderType, DayLogOwnReply } from '@innovic/shared';
 import { type SQL, sql } from 'drizzle-orm';
 import type { DbTransaction } from '../../db/with-user-context';
 import { db } from '../../db/client';
@@ -16,6 +16,7 @@ import {
   type DayHeader,
   type DayLine,
   HEADER_COLS,
+  dayRepliesJson,
   holidaysJson,
   linesJson,
   toHeader,
@@ -31,6 +32,8 @@ export interface DaySnapshot {
   target: DayUser | null;
   header: DayHeader | null;
   lines: DayLine[];
+  /** Replies on the blank day itself, owner's view — only when `replies` was asked. */
+  dayReplies: DayLogOwnReply[];
   /** The holiday on `date` (0 or 1 entry). */
   holidays: Map<string, string>;
   /** Asked orders that are open: "so:<id>" / "jwso:<id>" → code. */
@@ -44,8 +47,8 @@ export interface SnapshotAsk {
   targetId: string;
   date: string;
   orders?: ReadonlyArray<{ type: DayLogOrderType; id: string }>;
-  /** ADR-255 — read each line's replies (only where they are shown: the
-   *  owner's own day and its write responses). Default: not read. */
+  /** ADR-255 — read each line's replies and the day's own replies (only where
+   *  they are shown: the owner's own day and its write responses). Default: not read. */
   replies?: boolean;
 }
 
@@ -74,6 +77,7 @@ export function snapshotSql(ask: SnapshotAsk): SQL {
          SELECT ${HEADER_COLS} FROM public.daily_reports dr
          WHERE ${day} AND dr.report_date = ${date}::date) h) AS header,
       ${linesJson(co, sql`${day} AND dr.report_date = ${date}::date`, ask.replies === true)} AS lines,
+      ${ask.replies === true ? dayRepliesJson(co, uid, date) : sql`'[]'::json`} AS day_replies,
       ${holidaysJson(co, date, date)} AS holidays,
       ${openOrdersSql('public.sales_orders', idsOf(ask, 'so'), co)} AS so_open,
       ${openOrdersSql('public.job_work_orders', idsOf(ask, 'jwso'), co)} AS jw_open
@@ -92,6 +96,7 @@ export function toSnapshot(r: Record<string, unknown>): DaySnapshot {
     target: toDayUser(r['target']),
     header: r['header'] ? toHeader(r['header'] as Record<string, unknown>) : null,
     lines: toLines(r['lines']),
+    dayReplies: (r['day_replies'] as DayLogOwnReply[] | null) ?? [],
     holidays: toHolidays(r['holidays']),
     openOrders,
   };

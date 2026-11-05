@@ -262,6 +262,39 @@ export function useExitConfirm(opts: ExitConfirmOptions = {}): ExitConfirm {
   return { leave, allow, dialog };
 }
 
+export interface LeaveGuardTarget {
+  pathname: string;
+  search: Record<string, unknown>;
+}
+
+/**
+ * The router half of this guard alone, for a screen that knows for itself what
+ * would be lost and asks its own question (My Day Log's "Leave this day?").
+ * useExitConfirm above guesses "changed" from any click and exits on ESC, which
+ * suits a form page but not a tab with a search box and a date picker.
+ * `loses(next)`: would going to `next` lose something? Every in-app way out goes
+ * through it (links, tabs, Back / Forward); closing or refreshing the tab gets
+ * the browser's own prompt while `armed` is true.
+ */
+export function useLeaveGuard(
+  armed: boolean,
+  loses: (next: LeaveGuardTarget) => boolean,
+): { asking: boolean; leave: () => void; stay: () => void } {
+  const check = useRef({ armed, loses });
+  useEffect(() => {
+    check.current = { armed, loses };
+  });
+  const shouldBlockFn = useCallback(
+    ({ next }: { next: LeaveGuardTarget }) => check.current.armed && check.current.loses(next),
+    [],
+  );
+  const enableBeforeUnload = useCallback(() => check.current.armed, []);
+  const blocker = useBlocker({ shouldBlockFn, enableBeforeUnload, withResolver: true });
+  return blocker.status === 'blocked'
+    ? { asking: true, leave: blocker.proceed, stay: blocker.reset }
+    : { asking: false, leave: () => undefined, stay: () => undefined };
+}
+
 function ExitGuardMount({
   mounted,
   open,

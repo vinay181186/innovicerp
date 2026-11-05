@@ -7,8 +7,14 @@
 // Every write follows the SERVER's canWrite, never useCanWrite(): a
 // view-only L1 user still logs their own day. Any day up to today takes
 // new rows, in any order (ADR-266).
+//
+// Typed work on this day — new rows or an open edit form (useReportDayDirty) —
+// is guarded by lib/exit-guard: EVERY way to another day or page (date box,
+// Today, the pending banner, Task Board tabs, menu links, Back) asks "Leave this
+// day?"; Cancel keeps it all. Moving within the same day (?line=) never asks.
 
 import { useCallback, useEffect, useState } from 'react';
+import { useLeaveGuard } from '@/lib/exit-guard';
 import { Banner, ConfirmDialog } from '@/ui/feedback';
 import { Input } from '@/ui/forms';
 import { PageState } from '@/ui/layout';
@@ -16,6 +22,7 @@ import { useDayLog, useDayLogAccess, type DayQuery } from '../api';
 import { dayTable, fileSlug } from '../lib/export';
 import { errText, liveNowMin } from '../lib/format';
 import { printDayLog } from '../lib/print-day-log';
+import { DayDirtyReport } from './day-dirty';
 import { DaySummaryStrip } from './day-header';
 import { DaySheet } from './day-sheet';
 import { HolidaysModal } from './holidays-modal';
@@ -35,10 +42,25 @@ export function DayLogTab({
   const query = useDayLog(q);
   const access = useDayLogAccess();
   const [holidays, setHolidays] = useState(false);
-  // The sheet has typed, unsaved rows — leaving the day asks first.
-  const [dirty, setDirty] = useState(false);
-  const onDirty = useCallback((d: boolean) => setDirty(d), []);
-  const [leaveTo, setLeaveTo] = useState<string | null>(null);
+  // What holds typed, unsaved work: the new rows, each open edit form.
+  const [dirtyParts, setDirtyParts] = useState<ReadonlySet<string>>(() => new Set());
+  const reportDirty = useCallback((part: string, isDirty: boolean) => {
+    setDirtyParts((s) => {
+      if (s.has(part) === isDirty) return s;
+      const next = new Set(s);
+      if (isDirty) next.add(part);
+      else next.delete(part);
+      return next;
+    });
+  }, []);
+  const shownDay = query.data;
+  const guard = useLeaveGuard(dirtyParts.size > 0, (next) => {
+    const stays =
+      next.pathname === '/task-board' &&
+      next.search.view === 'daylog' &&
+      (next.search.date ?? shownDay?.today) === shownDay?.date;
+    return !stays;
+  });
   // Re-draw every 30 s so the picker's "after now" limit and Now stay current.
   const [tick, setTick] = useState(() => Date.now());
   useEffect(() => {
@@ -63,22 +85,18 @@ export function DayLogTab({
   const goDate = (d: string): void => {
     // A cleared or future date is not a day to show.
     if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || d > day.today || d === day.date) return;
-    if (dirty) return setLeaveTo(d);
     onDate(d === day.today ? undefined : d);
   };
 
   return (
     <div>
       <ConfirmDialog
-        open={leaveTo !== null}
+        open={guard.asking}
         title="Leave this day?"
         message="You have rows that are not saved. Leave this day and lose them?"
         confirmLabel="Leave"
-        onCancel={() => setLeaveTo(null)}
-        onConfirm={() => {
-          if (leaveTo) onDate(leaveTo === day.today ? undefined : leaveTo);
-          setLeaveTo(null);
-        }}
+        onCancel={guard.stay}
+        onConfirm={guard.leave}
       />
       <div
         style={{
@@ -131,15 +149,9 @@ export function DayLogTab({
 
       {query.isError ? <Banner tone="error">{errText(query.error)}</Banner> : null}
 
-      <DaySheet
-        key={day.date}
-        day={day}
-        q={q}
-        nowMin={nowMin}
-        canWrite={canWrite}
-        line={line}
-        onDirty={onDirty}
-      />
+      <DayDirtyReport.Provider value={reportDirty}>
+        <DaySheet key={day.date} day={day} q={q} nowMin={nowMin} canWrite={canWrite} line={line} />
+      </DayDirtyReport.Provider>
 
       {holidays ? <HolidaysModal onClose={() => setHolidays(false)} /> : null}
     </div>

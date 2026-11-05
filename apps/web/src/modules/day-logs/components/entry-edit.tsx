@@ -17,6 +17,7 @@ import { useState } from 'react';
 import { useSaveKey } from '@/lib/use-save-key';
 import { useUpdateDayLogEntry, useUpdateDayLogWork, type DayQuery } from '../api';
 import { errText } from '../lib/format';
+import { useReportDayDirty } from './day-dirty';
 import { spanMinutes } from '../lib/sheet';
 import { OrderSelect } from './order-select';
 import { TimeField } from './time-field';
@@ -76,6 +77,7 @@ export function EditWorkForm({
   const [err, setErr] = useState<string | null>(null);
   const text = desc.trim();
   const off = !text || text === e.description.trim();
+  useReportDayDirty(`work-${e.id}`, text !== e.description.trim());
 
   async function send(): Promise<void> {
     if (save.isPending || off) return;
@@ -130,6 +132,12 @@ export function EditTimesForm({
   const [err, setErr] = useState<string | null>(null);
   const busy = update.isPending;
   const mins = spanMinutes(start, stop);
+  useReportDayDirty(
+    `times-${e.id}`,
+    start !== fmt12(e.fromTime) ||
+      stop !== (e.toTime ? fmt12(e.toTime) : '') ||
+      (order?.id ?? null) !== (e.order?.id ?? null),
+  );
 
   async function send(): Promise<void> {
     if (busy) return;

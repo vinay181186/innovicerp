@@ -31,6 +31,7 @@ export const REFRESH_POLICY: Readonly<Record<string, RefreshRule>> = {
   'customer-dispatches': live('customer_dispatches (0227)'),
   dashboard: live('home rows follow every document table'),
   'day-logs': live('daily_reports / day_log_team_mates'),
+  'day-log-pending-mine': onOpen('banner on every page; only the person's own save changes it'),
   'delivery-challans': live('delivery_challans (0227)'),
   'document-edits': live('document_edit_requests'),
   'goods-receipt-notes': live('goods_receipt_notes'),

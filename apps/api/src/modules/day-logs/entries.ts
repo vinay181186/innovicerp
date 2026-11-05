@@ -18,6 +18,7 @@ import {
 import { sql } from 'drizzle-orm';
 import type { AuthContext } from '../../db/with-user-context';
 import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
+import { closeDayLogDateTask } from '../tasks/day-log-task';
 import { assertCanWrite, resolveAccess, viewerOf } from './access';
 import {
   REV_COLS,
@@ -89,6 +90,8 @@ export async function addEntry(
       'CREATE',
       `added ${label(r)}${r.orderCode ? ` (${r.orderCode})` : ''}`,
     );
+    // Pending Entries: same transaction, still under the day lock.
+    await closeDayLogDateTask(tx, { companyId, dailyReportId: h.id, date: h.date }, user);
     const lines = [...snap.lines, lineOf(r, w!, h.id)];
     return ownerDetailAfter(snap, h, lines, viewerOf(user, eff), clock);
   });

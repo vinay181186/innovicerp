@@ -1,4 +1,5 @@
 // Day Log pure helpers (rules.ts) — no database.
+import { dayLogPendingDates } from '@innovic/shared';
 import { describe, expect, it } from 'vitest';
 import type { DayLine } from './day';
 import {
@@ -40,6 +41,7 @@ const line = (
   order: code ? { type: 'so', id: '00000000-0000-0000-0000-000000000000', code } : null,
   late: false,
   updatedAt: '',
+  loggedAt: '',
   pending: null,
   rejectReason: null,
 });
@@ -130,5 +132,31 @@ describe('Team current status', () => {
       ]),
     ).toEqual({ description: 'a', orderCode: 'IN-SO-1' });
     expect(latestWorkOf([])).toBeNull();
+  });
+});
+
+describe('dayLogPendingDates', () => {
+  // 02-Nov-2026 is a Monday, 08-Nov a Sunday.
+  it('working days from `from` up to, not including, today; Sunday is never pending', () => {
+    expect(dayLogPendingDates('2026-11-06', '2026-11-10', new Set(), [])).toEqual([
+      '2026-11-06',
+      '2026-11-07',
+      '2026-11-09',
+    ]);
+  });
+  it('a company holiday is not pending', () => {
+    expect(dayLogPendingDates('2026-11-02', '2026-11-05', new Set(), ['2026-11-03'])).toEqual([
+      '2026-11-02',
+      '2026-11-04',
+    ]);
+  });
+  it('today is excluded, however blank', () => {
+    expect(dayLogPendingDates('2026-11-05', '2026-11-05', new Set(), [])).toEqual([]);
+    expect(dayLogPendingDates('2026-11-06', '2026-11-05', new Set(), [])).toEqual([]);
+  });
+  it('a day in done (a part-filled one counts) is not pending', () => {
+    expect(dayLogPendingDates('2026-11-02', '2026-11-04', new Set(['2026-11-02']), [])).toEqual([
+      '2026-11-03',
+    ]);
   });
 });

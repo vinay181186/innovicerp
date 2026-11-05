@@ -156,6 +156,29 @@ export function isWorkingDay(date: string, holidays: readonly string[]): boolean
   return DAY_LOG_RULES.workingWeekdays.includes(wd) && !holidays.includes(date);
 }
 
+/** Pending Entries (owner 2026-11-05): days before this are never pending.
+ *  RELEASE STEP: set to the PROD release date in the commit that goes to main. */
+export const DAY_LOG_PENDING_FROM = '2026-11-02';
+
+/**
+ * The ONE rule for a pending date: a working day from `from` up to, not
+ * including, `today` that is not in `done` (has an entry, or an old Leave day).
+ * Part-filled days are in `done`. Dates are YYYY-MM-DD; oldest first.
+ */
+export function dayLogPendingDates(
+  from: string,
+  today: string,
+  done: ReadonlySet<string>,
+  holidays: readonly string[],
+): string[] {
+  const out: string[] = [];
+  for (let t = Date.parse(`${from}T00:00:00Z`); ; t += 86_400_000) {
+    const d = new Date(t).toISOString().slice(0, 10);
+    if (d >= today) return out;
+    if (!done.has(d) && isWorkingDay(d, holidays)) out.push(d);
+  }
+}
+
 export interface DayLogSpan {
   kind: DayLogEntryKind;
   fromTime: string;
@@ -380,6 +403,8 @@ export const dayLogEntrySchema = z.object({
   remarks: z.string().nullable(),
   late: z.boolean(),
   updatedAt: z.string(),
+  /** Log Date / Log Time: when the entry was FIRST saved. An edit never moves it. */
+  loggedAt: z.string(),
   /** ADR-255 — Super Admin replies, oldest first (owner's view). */
   replies: z.array(dayLogOwnReplySchema),
   /** An edit of Start / Stop / SO waiting for approval (the row still shows
@@ -482,6 +507,9 @@ export const dayLogDetailSchema = z.object({
   canManage: z.boolean(),
   /** Strict order: the only entry whose times may change / that may be removed. */
   lastEntryId: z.string().uuid().nullable(),
+  /** Super Admin replies on the day itself (sent while it had no entries),
+   *  oldest first. Only the owner's own view carries them. */
+  dayReplies: z.array(dayLogOwnReplySchema),
 });
 export type DayLogDetail = z.infer<typeof dayLogDetailSchema>;
 
@@ -508,6 +536,10 @@ export const teamDayLogRowSchema = z.object({
   entryCount: z.number().int(),
   lateCount: z.number().int(),
   lateInMin: z.number().int(),
+  /** A blank working day before today, from DAY_LOG_PENDING_FROM. Super Admin only (false otherwise). */
+  notEntered: z.boolean(),
+  /** Replies on this blank day. Super Admin only (0 otherwise). */
+  dayReplyCount: z.number().int(),
 });
 export type TeamDayLogRow = z.infer<typeof teamDayLogRowSchema>;
 
@@ -536,6 +568,8 @@ export const dayLogAccessSchema = z.object({
   canManageHolidays: z.boolean(),
   /** May set up Teams Config — who sees whose Day Log (Super Admin only). */
   canManageTeams: z.boolean(),
+  /** May open the Pending Entries tab (Super Admin only). */
+  canSeePending: z.boolean(),
 });
 export type DayLogAccess = z.infer<typeof dayLogAccessSchema>;
 
