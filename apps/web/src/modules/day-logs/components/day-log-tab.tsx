@@ -38,6 +38,7 @@ export function DayLogTab({
   // The sheet has typed, unsaved rows — leaving the day asks first.
   const [dirty, setDirty] = useState(false);
   const onDirty = useCallback((d: boolean) => setDirty(d), []);
+  const [leaveTo, setLeaveTo] = useState<string | null>(null);
   // Re-draw every 30 s so the picker's "after now" limit and Now stay current.
   const [tick, setTick] = useState(() => Date.now());
   useEffect(() => {
@@ -59,7 +60,6 @@ export function DayLogTab({
   // While another day is loading the old one stays on screen — no writes then.
   const canWrite = day.canWrite && !query.isPlaceholderData;
 
-  const [leaveTo, setLeaveTo] = useState<string | null>(null);
   const goDate = (d: string): void => {
     // A cleared or future date is not a day to show.
     if (!/^\d{4}-\d{2}-\d{2}$/.test(d) || d > day.today || d === day.date) return;
