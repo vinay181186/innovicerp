@@ -11,6 +11,7 @@
 import { type AddDayLogEntriesInput, type DayLogDetail } from '@innovic/shared';
 import type { AuthContext } from '../../db/with-user-context';
 import { AppError, ValidationError } from '../../lib/errors';
+import { closeDayLogDateTask } from '../tasks/day-log-task';
 import { assertCanWrite, resolveAccess, viewerOf } from './access';
 import type { DayLine } from './day';
 import {
@@ -42,6 +43,7 @@ const asLine = (r: Row, i: number, reportId: string): DayLine => ({
   order: null,
   late: false,
   updatedAt: '',
+  loggedAt: '',
   pending: null,
   rejectReason: null,
 });
@@ -96,6 +98,8 @@ export async function addEntries(
     );
     const names = rows.map((r) => `${label(r)}${r.orderCode ? ` (${r.orderCode})` : ''}`);
     await log(tx, companyId, user, h, 'CREATE', `added ${rows.length} rows: ${names.join('; ')}`);
+    // Pending Entries: same transaction, still under the day lock.
+    await closeDayLogDateTask(tx, { companyId, dailyReportId: h.id, date: h.date }, user);
     // RETURNING is ordered by line_no, the order the rows were given.
     const added = rows.map((r, i) => lineOf(r, written[i]!, h.id));
     return ownerDetailAfter(snap, h, [...lines, ...added], viewerOf(user, eff), clock);

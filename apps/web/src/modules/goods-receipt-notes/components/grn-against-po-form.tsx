@@ -18,6 +18,7 @@
 import { type CreateGoodsReceiptNoteInput, poSendsMaterialOut, roundQty } from '@innovic/shared';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { todayIst } from '@/lib/date';
+import { partyDocName } from '@/lib/item-code';
 import { usePurchaseOrder, usePurchaseOrdersList } from '@/modules/purchase-orders/api';
 import { poStatusLabel } from '@/modules/purchase-orders/lib/po-labels';
 import { Panel } from '@/ui/data';
@@ -82,22 +83,31 @@ export function GrnAgainstPoForm({
   // for two poTypes). Material-out POs are dropped after the merge.
   const term = poSearch.trim();
   const openPos = usePurchaseOrdersList({
+    withLineItems: true,
     status: 'open',
     ...(term ? { search: term } : {}),
     limit: 100,
     offset: 0,
   });
   const partialPos = usePurchaseOrdersList({
+    withLineItems: true,
     status: 'partial',
     ...(term ? { search: term } : {}),
     limit: 100,
     offset: 0,
   });
   const poOptions = useMemo(() => {
-    const merged = [...(openPos.data?.items ?? []), ...(partialPos.data?.items ?? [])];
-    return merged
+    // By id: a PO changing status between the two fetches can come back in both.
+    const merged = new Map(
+      [...(openPos.data?.items ?? []), ...(partialPos.data?.items ?? [])].map((p) => [p.id, p]),
+    );
+    return [...merged.values()]
       .filter((p) => !poSendsMaterialOut(p.poType))
-      .map((p) => ({ id: p.id, code: p.code, name: p.vendorName ?? p.vendorCodeText ?? '—' }));
+      .map((p) => ({
+        id: p.id,
+        code: p.code,
+        ...partyDocName(p.vendorName ?? p.vendorCodeText ?? '—', p.lineItems),
+      }));
   }, [openPos.data, partialPos.data]);
 
   const { data: poData } = usePurchaseOrder(poId ?? undefined);
@@ -172,7 +182,13 @@ export function GrnAgainstPoForm({
     if (!poId) return undefined;
     const opt = poOptions.find((o) => o.id === poId);
     if (opt) return `${opt.code} — ${opt.name}`;
-    if (po) return `${po.code} — ${po.vendorName ?? po.vendorCodeText ?? '—'}`;
+    if (po) {
+      const { name } = partyDocName(
+        po.vendorName ?? po.vendorCodeText ?? '—',
+        po.lines.map((l) => ({ ...l, itemCode: l.itemCode ?? l.itemCodeText })),
+      );
+      return `${po.code} — ${name}`;
+    }
     return undefined;
   }, [poId, poOptions, po]);
 
@@ -324,7 +340,7 @@ export function GrnAgainstPoForm({
                 options={poOptions}
                 onSearch={setPoSearch}
                 loading={listLoading}
-                placeholder="🔍 Type PO number or vendor…"
+                placeholder="🔍 Type PO number, vendor or item…"
                 valueLabel={poValueLabel}
                 emptyText="No open POs with pending qty."
               />

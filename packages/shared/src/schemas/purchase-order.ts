@@ -26,6 +26,8 @@
 // status='po_created' atomically. Mirrors legacy `addPO()` line 25728.
 
 import { z } from 'zod';
+import { queryBoolean } from '../lib/query-boolean';
+import { relatedItemSchema } from './traceability';
 import { expectedUpdatedAtSchema } from '../lib/edit-conflict';
 import { servicePoTaxTypeSchema } from './service-po';
 import { PO_STATUSES } from '../enums/po-status';
@@ -224,6 +226,8 @@ export const purchaseOrderListItemSchema = purchaseOrderSchema.extend({
   /** Live vendors.code by vendorId; null when the PO has no vendorId. */
   vendorCode: z.string().nullable().optional(),
   lineCount: z.number().int().nonnegative(),
+  /** Every line's item, in the standard form: pickers name the PO by its items. */
+  lineItems: z.array(relatedItemSchema).default([]),
   totalQty: z.number().nonnegative(),
   receivedQty: z.number().nonnegative(),
   /** ADR-222 — Σ per line of what the GRNs booked in. See the line field of the
@@ -447,6 +451,8 @@ export type CreatePurchaseOrderFromPrBatchInput = z.infer<
 // ─── Query filters ─────────────────────────────────────────────────────────
 
 export const listPurchaseOrdersQuerySchema = z.object({
+  /** Only pickers ask: fills lineItems (ADR-271). */
+  withLineItems: queryBoolean().optional(),
   search: z.string().min(1).max(100).optional(), // matches code / pr_code_text / vendor_code_text
   status: poStatusSchema.optional(),
   poType: poTypeSchema.optional(),

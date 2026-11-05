@@ -30,6 +30,7 @@ export const jwDcKeys = {
       q.returnStatus ?? null,
       q.sf ?? null,
       q.includeCancelled ?? false,
+      q.withLineItems ?? false,
       q.limit,
       q.offset,
     ] as const,
@@ -67,6 +68,7 @@ function buildOutwardSearch(q: ListJwDcOutwardQuery): string {
   // ADR-235 — the Outward Register shows Cancelled DCs too (other readers,
   // e.g. the New Inward picker, do not).
   if (q.includeCancelled) params.set('includeCancelled', 'true');
+  if (q.withLineItems) params.set('withLineItems', 'true');
   params.set('limit', String(q.limit));
   params.set('offset', String(q.offset));
   return params.toString();

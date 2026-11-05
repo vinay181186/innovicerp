@@ -17,7 +17,7 @@ import type { CreatePlanInput, PlanningDetailResponse, PlanningLine } from '@inn
 import { Link } from '@tanstack/react-router';
 import { useEffect, useMemo, useState } from 'react';
 import { addDaysLocal, todayLocal } from '@/lib/date';
-import { docDrawingRev, itemCodeWithRev } from '@/lib/item-code';
+import { docDrawingRev, itemCodeWithRev, itemLineLabel } from '@/lib/item-code';
 import {
   MaterialValueDisplay,
   RM_SOURCE_HELP,
@@ -97,7 +97,17 @@ export function PlanCreateForm({
       (so?.lines ?? []).map((l) => ({
         id: l.soLineId,
         code: `Ln ${l.lineNo}${l.clientPoLineNo ? ` · POL ${l.clientPoLineNo}` : ''}`,
-        name: `${itemCodeWithRev(l.itemCode, docDrawingRev(l), l.itemName ?? '')} · To Plan ${l.remaining}`,
+        // The POL is already in `code`, so it is not said twice.
+        name: [
+          itemLineLabel({
+            itemCode: l.itemCode,
+            itemRevision: docDrawingRev(l),
+            itemName: l.itemName,
+          }),
+          `To Plan ${l.remaining}`,
+        ]
+          .filter(Boolean)
+          .join(' · '),
       })),
     [so],
   );

@@ -24,6 +24,8 @@ export const ROW_TINT = {
   pending: 'row-pending',
   cancelled: 'row-cancelled',
   approved: 'row-approved',
+  /** Day Log: a working day with no entry (orange). */
+  notEntered: 'row-not-entered',
 } as const;
 
 export function cx(...parts: Array<string | false | undefined | null>): string | undefined {

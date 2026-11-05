@@ -123,6 +123,7 @@ export interface Written {
   id: string;
   lineNo: number;
   updatedAt: string;
+  loggedAt: string;
   late: boolean;
 }
 
@@ -151,13 +152,14 @@ export async function writeLines(
     id: String(r['id']),
     lineNo: Number(r['line_no']),
     updatedAt: String(r['updated_at']),
+    loggedAt: String(r['logged_at']),
     late: r['late'] === true,
   }));
 }
 
 /** The RETURNING list of a line write (late as linesJson judges it). */
 export const returning = (h: DayHeader): SQL => sql`
-  id::text AS id, line_no, ${ts('updated_at')} AS updated_at,
+  id::text AS id, line_no, ${ts('updated_at')} AS updated_at, ${ts('created_at')} AS logged_at,
   ${lateSql(sql`${h.date}::date`, sql`to_time`, sql`created_at`)} AS late`;
 
 export const orderOfRow = (r: Row): DayLogOrder | null =>
@@ -179,6 +181,7 @@ export const lineOf = (r: Row, w: Written, reportId: string): DayLine => ({
   order: orderOfRow(r),
   late: w.late,
   updatedAt: w.updatedAt,
+  loggedAt: w.loggedAt,
   lineNo: w.lineNo,
   pending: null,
   rejectReason: null,

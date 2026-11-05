@@ -33,7 +33,8 @@ import { type AuthContext, type DbTransaction, withUserContext } from '../../db/
 import { canSeeFormPrice, requireFormAccess } from '../../lib/access';
 import { assertActiveParty } from '../../lib/active-party';
 import { invoiceBalanceSql, invoiceOverdueSql } from '../../lib/invoice-overdue';
-import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
+import { loadRelatedItems } from '../../lib/related-items';
+import { buildTimeline, itemSection, section, toIsoDate } from '../../lib/traceability';
 import {
   AuthorizationError,
   ConflictError,
@@ -492,6 +493,25 @@ export async function getInvoiceRelated(
       : [];
     const client = clientRows[0] ?? null;
 
+    // The SO row names the SO lines this invoice bills, not the whole order.
+    const billedLines = await tx
+      .select({ id: invoiceLines.salesOrderLineId })
+      .from(invoiceLines)
+      .where(
+        and(
+          eq(invoiceLines.invoiceId, id),
+          eq(invoiceLines.companyId, companyId),
+          isNull(invoiceLines.deletedAt),
+        ),
+      );
+    const soItems = await loadRelatedItems(
+      tx,
+      'so',
+      soRows.map((r) => r.id),
+      { column: 'id', ids: billedLines.map((r) => r.id) },
+    );
+    const invoiceItems = (await loadRelatedItems(tx, 'invoice', [id])).get(id) ?? [];
+
     const soSection = section(
       'sales-order',
       'Sales Order',
@@ -509,6 +529,7 @@ export async function getInvoiceRelated(
             },
           ]
         : [],
+      { items: soItems },
     );
     const clientSection = section(
       'client',
@@ -527,9 +548,10 @@ export async function getInvoiceRelated(
             },
           ]
         : [],
+      { noItems: 'party', codeHeading: 'Customer Code', labelHeading: 'Customer' },
     );
 
-    const upstream = [soSection, clientSection];
+    const upstream = [soSection, clientSection, itemSection('item', 'Items', '📦', invoiceItems)];
     const downstream: DocumentTraceability['downstream'] = [];
     return {
       self: { module: 'invoices', code: header.code },
@@ -543,6 +565,7 @@ export async function getInvoiceRelated(
           code: header.code,
           routeKind: 'invoice',
           linkId: id,
+          items: invoiceItems,
         },
         [...upstream, ...downstream],
       ),

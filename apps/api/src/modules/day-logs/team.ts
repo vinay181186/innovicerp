@@ -29,6 +29,7 @@ import {
 } from './access';
 import { holidaysJson, linesByReport, linesJson, toHolidays, toLines, ts } from './day';
 import { summaryOf } from './detail';
+import { isNotEntered } from './pending';
 import { type DayLogClock, currentOf, istClock, latestWorkOf } from './rules';
 import { requireCompany } from './writes';
 
@@ -57,7 +58,10 @@ export async function getTeam(
        WHERE u.company_id = ${companyId}::uuid AND u.deleted_at IS NULL AND u.is_active) AS people,
       (SELECT COALESCE(json_agg(json_build_object(
                 'id', dr.id::text, 'user_id', dr.user_id::text, 'status', dr.day_status,
-                'submitted_at', ${ts('dr.submitted_at')})), '[]'::json)
+                'submitted_at', ${ts('dr.submitted_at')},
+                'day_reply_count', (SELECT count(*)::int FROM public.daily_report_day_replies rp
+                                    WHERE rp.daily_report_id = dr.id AND rp.deleted_at IS NULL))),
+              '[]'::json)
        FROM public.daily_reports dr
        WHERE dr.company_id = ${companyId}::uuid AND dr.report_date = ${date}::date
          AND dr.deleted_at IS NULL) AS headers,
@@ -98,6 +102,7 @@ export async function getTeam(
     user_id: string;
     status: DayLogStatus;
     submitted_at: string | null;
+    day_reply_count: number;
   }>;
   const byUser = new Map(headers.map((h) => [h.user_id, h]));
   const linesBy = linesByReport(toLines(r?.['lines']));
@@ -128,6 +133,11 @@ export async function getTeam(
       entryCount: s.entryCount,
       lateCount: s.lateCount,
       lateInMin: s.lateInMin,
+      // Pending Entries: a Super Admin's facts only.
+      notEntered:
+        v.isSuper &&
+        isNotEntered(p, date, lines.length > 0 || status === 'leave', [...hol.keys()], clock),
+      dayReplyCount: v.isSuper ? Number(h?.day_reply_count ?? 0) : 0,
     };
   });
 

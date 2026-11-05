@@ -16,7 +16,7 @@
 // a PR may be covered by several — ADR-152 phase 2). Mirrors legacy `addPO()`
 // line 25728.
 
-import { and, asc, desc, eq, inArray, isNull, notInArray, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, notInArray, or, sql, type SQL } from 'drizzle-orm';
 import {
   approvalConfig,
   deliveryChallans,
@@ -40,6 +40,9 @@ import { type AuthContext, type DbTransaction, withUserContext } from '../../db/
 import { canSeeFormPrice, requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { assertActiveParty } from '../../lib/active-party';
+import { ORDER_LINES_VIA_PO, jobCardRev } from '../../lib/related-item-kinds';
+import { loadRelatedItems } from '../../lib/related-items';
+import { codeRevSql } from '../qc-history/sql';
 import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
 import { poLineBackRaw, poLineSentGroupedSql, poLineSentRaw } from '../../lib/po-line-sent';
 import { poLineAcceptedGroupedSql, poLineAcceptedSql } from '../../lib/po-accepted';
@@ -55,7 +58,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
-import { polOf } from '../../lib/pol';
+import { polOf, polSql } from '../../lib/pol';
 import {
   decideVendorTax,
   splitGstPercent,
@@ -747,6 +750,13 @@ export async function listPurchaseOrders(
             SELECT 1
             FROM public.purchase_order_lines pol
             LEFT JOIN public.items it ON it.id = pol.item_id AND it.deleted_at IS NULL
+            -- The joins the row's lineItems read (lib/related-item-kinds): each is by
+            -- primary key, and this is an EXISTS, so no row can multiply.
+            ${sql.raw(ORDER_LINES_VIA_PO)}
+            LEFT JOIN public.sales_orders sso
+              ON sso.id = sol.sales_order_id AND sso.deleted_at IS NULL
+            LEFT JOIN public.job_work_orders sjw
+              ON sjw.id = jwl.job_work_order_id AND sjw.deleted_at IS NULL
             WHERE pol.purchase_order_id = po.id
               AND pol.deleted_at IS NULL
               AND (
@@ -758,6 +768,15 @@ export async function listPurchaseOrders(
                 OR it.code ILIKE ${term} ESCAPE '\\'
                 OR pol.item_name ILIKE ${term} ESCAPE '\\'
                 OR it.name ILIKE ${term} ESCAPE '\\'
+                -- What the dropdown label prints: ABC/1, the POL and the SO No.
+                OR ${codeRevSql(
+                  sql`btrim(COALESCE(it.code, pol.item_code_text))`,
+                  sql.raw(jobCardRev('pol.item_id')),
+                )} ILIKE ${term} ESCAPE '\\'
+                OR ${polSql('sol', 'jwl')} ILIKE ${term} ESCAPE '\\'
+                OR sso.code ILIKE ${term} ESCAPE '\\'
+                OR sso.internal_so_no ILIKE ${term} ESCAPE '\\'
+                OR sjw.code ILIKE ${term} ESCAPE '\\'
               )
           )
         )`
@@ -989,14 +1008,27 @@ export async function listPurchaseOrders(
       (totalRows as unknown as Array<Record<string, unknown>>)[0]?.['total'] ?? 0,
     );
 
-    const mapped = (result as unknown as Array<Record<string, unknown>>).map(toListItem);
+    const rows = result as unknown as Array<Record<string, unknown>>;
+    // Only the pickers ask (ADR-271): the list screens never print these.
+    const lineItems = input.withLineItems
+      ? await loadRelatedItems(
+          tx,
+          'purchaseOrder',
+          rows.map((r) => r['id'] as string),
+        )
+      : null;
+    const mapped = rows.map((r) => toListItem(r, lineItems?.get(r['id'] as string) ?? []));
     const rowsList = showMoney ? mapped : mapped.map(hidePoHeaderMoney);
     return { items: rowsList, total, limit: input.limit, offset: input.offset };
   });
 }
 
-function toListItem(r: Record<string, unknown>): PurchaseOrderListItem {
+function toListItem(
+  r: Record<string, unknown>,
+  lineItems: PurchaseOrderListItem['lineItems'],
+): PurchaseOrderListItem {
   return {
+    lineItems,
     id: r['id'] as string,
     companyId: r['companyId'] as string,
     code: r['code'] as string,
@@ -4078,6 +4110,7 @@ export async function getPurchaseOrderRelated(
         poDate: purchaseOrders.poDate,
         status: purchaseOrders.status,
         vendorId: purchaseOrders.vendorId,
+        prId: purchaseOrders.prId,
       })
       .from(purchaseOrders)
       .where(
@@ -4107,7 +4140,21 @@ export async function getPurchaseOrderRelated(
       : [];
     const vendor = vendorRows[0] ?? null;
 
-    // Upstream: source purchase requests (PR.po_id points back to this PO).
+    // The links this PO's own lines carry.
+    const poLines = await tx
+      .select({
+        sourcePrId: purchaseOrderLines.sourcePrId,
+        sourceSoLineId: purchaseOrderLines.sourceSoLineId,
+      })
+      .from(purchaseOrderLines)
+      .where(and(eq(purchaseOrderLines.purchaseOrderId, id), isNull(purchaseOrderLines.deletedAt)));
+    const sourcePrIds = [...poLines.map((l) => l.sourcePrId), header.prId].filter(
+      (v): v is string => Boolean(v),
+    );
+
+    // Upstream: source purchase requests. The real link is per line (source_pr_id,
+    // 0103). PR.po_id names only a PR's FIRST PO, so a PO that is a PR's 2nd is found
+    // only through its lines; po_id and the header pr_id cover old rows.
     const prRows = await tx
       .select({
         id: purchaseRequests.id,
@@ -4118,7 +4165,10 @@ export async function getPurchaseOrderRelated(
       .from(purchaseRequests)
       .where(
         and(
-          eq(purchaseRequests.poId, id),
+          or(
+            eq(purchaseRequests.poId, id),
+            sourcePrIds.length > 0 ? inArray(purchaseRequests.id, sourcePrIds) : undefined,
+          ),
           eq(purchaseRequests.companyId, companyId),
           isNull(purchaseRequests.deletedAt),
         ),
@@ -4241,6 +4291,7 @@ export async function getPurchaseOrderRelated(
             },
           ]
         : [],
+      { noItems: 'party', codeHeading: 'Vendor Code', labelHeading: 'Vendor Name' },
     );
     const prSection = section(
       'purchase-request',
@@ -4255,6 +4306,13 @@ export async function getPurchaseOrderRelated(
         linkId: null,
         label: null,
       })),
+      {
+        items: await loadRelatedItems(
+          tx,
+          'purchaseRequest',
+          prRows.map((r) => r.id),
+        ),
+      },
     );
     const soSection = section(
       'sales-order',
@@ -4269,6 +4327,15 @@ export async function getPurchaseOrderRelated(
         linkId: null,
         label: r.internalSoNo,
       })),
+      {
+        items: await loadRelatedItems(
+          tx,
+          'so',
+          soRows.map((r) => r.id),
+          { column: 'id', ids: poLines.map((l) => l.sourceSoLineId) },
+        ),
+        labelHeading: 'Internal SO No.',
+      },
     );
     const jcSection = section(
       'job-card',
@@ -4283,6 +4350,13 @@ export async function getPurchaseOrderRelated(
         linkId: null,
         label: null,
       })),
+      {
+        items: await loadRelatedItems(
+          tx,
+          'jobCard',
+          jcRows.map((r) => r.id),
+        ),
+      },
     );
 
     // Downstream sections (generated from this PO).
@@ -4299,6 +4373,13 @@ export async function getPurchaseOrderRelated(
         linkId: null,
         label: null,
       })),
+      {
+        items: await loadRelatedItems(
+          tx,
+          'grn',
+          grnRows.map((r) => r.id),
+        ),
+      },
     );
     const dcSection = section(
       'delivery-challans',
@@ -4313,6 +4394,13 @@ export async function getPurchaseOrderRelated(
         linkId: null,
         label: null,
       })),
+      {
+        items: await loadRelatedItems(
+          tx,
+          'deliveryChallan',
+          dcRows.map((r) => r.id),
+        ),
+      },
     );
     const jwDcSection = section(
       'jw-dc',
@@ -4327,6 +4415,13 @@ export async function getPurchaseOrderRelated(
         linkId: null,
         label: null,
       })),
+      {
+        items: await loadRelatedItems(
+          tx,
+          'jwDcOutward',
+          jwDcRows.map((r) => r.id),
+        ),
+      },
     );
 
     const upstream = [vendorSection, prSection, soSection, jcSection];
@@ -4343,6 +4438,7 @@ export async function getPurchaseOrderRelated(
           code: header.code,
           routeKind: 'purchase-order',
           linkId: id,
+          items: (await loadRelatedItems(tx, 'purchaseOrder', [id])).get(id) ?? [],
         },
         [...upstream, ...downstream],
       ),

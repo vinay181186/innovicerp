@@ -9,7 +9,7 @@ import { readSf, sfWhere } from '../../lib/list-query';
 import { polSql } from '../../lib/pol';
 import { displayRouteCardIdSql } from '../../lib/route-card-for-rev';
 import type { JcStatusCountsQuery, JcStatusCountsResponse, ListJobCardsQuery } from './schema';
-import { JC_SF_COLUMNS } from './sf-columns';
+import { JC_ITEM_CODE_REV, JC_SF_COLUMNS } from './sf-columns';
 
 /** Escape the ILIKE metacharacters in a user's search term. Without this a
  *  user typing "50%" or "a_b" in the Job Card search box gets a wildcard
@@ -89,6 +89,7 @@ export function jcListWhere(companyId: string, input: JcListFilterInput): SQL {
     ? sql`AND (
           jc.code ILIKE ${term} ESCAPE '\\'
           OR i.code ILIKE ${term} ESCAPE '\\'
+          OR ${JC_ITEM_CODE_REV} ILIKE ${term} ESCAPE '\\'
           OR i.name ILIKE ${term} ESCAPE '\\'
           OR so.code ILIKE ${term} ESCAPE '\\'
           OR so.internal_so_no ILIKE ${term} ESCAPE '\\'

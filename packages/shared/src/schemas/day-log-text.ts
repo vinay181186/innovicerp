@@ -41,6 +41,18 @@ export const editDayLogReplyInputSchema = z.object({
 });
 export type EditDayLogReplyInput = z.infer<typeof editDayLogReplyInputSchema>;
 
+/** POST /day-logs/day-replies — Super Admin, on a person's blank day. */
+export const sendDayLogDayReplyInputSchema = z.object({
+  userId: z.string().uuid(),
+  date: dateStr,
+  body: z.string().trim().min(1, 'Write the reply').max(2000),
+});
+export type SendDayLogDayReplyInput = z.infer<typeof sendDayLogDayReplyInputSchema>;
+
+/** POST /day-logs/day-replies/seen — the owner opened this date. */
+export const dayLogDayRepliesSeenInputSchema = z.object({ date: dateStr });
+export type DayLogDayRepliesSeenInput = z.infer<typeof dayLogDayRepliesSeenInputSchema>;
+
 /** GET /day-logs/person-day — Team Day Logs › a person, one day. */
 export const dayLogPersonDayQuerySchema = z.object({
   userId: z.string().uuid(),
@@ -56,6 +68,8 @@ export const dayLogAdminReplySchema = dayLogOwnReplySchema.omit({ unread: true }
   seenAt: z.string().nullable(),
   /** §20.4 — sent back by an edit. */
   updatedAt: z.string(),
+  /** §20.5 — only the author may edit; the screen shows ✎ only then. */
+  canEdit: z.boolean(),
 });
 export type DayLogAdminReply = z.infer<typeof dayLogAdminReplySchema>;
 
@@ -78,6 +92,8 @@ export const dayLogPersonDayEntrySchema = z.object({
   id: z.string().uuid(),
   /** Sr No — position by Start Time. */
   srNo: z.number().int().positive(),
+  /** Log Date / Log Time: when the entry was FIRST saved. */
+  loggedAt: z.string(),
   fromTime: z.string(),
   toTime: z.string().nullable(),
   minutes: z.number().int(),
@@ -106,5 +122,40 @@ export const dayLogPersonDaySchema = z.object({
   /** Super Admin on someone else's day: sees the replies and may reply. */
   canReply: z.boolean(),
   entries: z.array(dayLogPersonDayEntrySchema),
+  /** Replies on the day itself, oldest first. Empty unless Super Admin. */
+  dayReplies: z.array(dayLogAdminReplySchema),
+  /** Super Admin on someone else's blank working day (today or earlier). */
+  canReplyDay: z.boolean(),
+  /** Blank working day before today, from companies.day_log_pending_from. Super Admin only. */
+  notEntered: z.boolean(),
 });
 export type DayLogPersonDay = z.infer<typeof dayLogPersonDaySchema>;
+
+// ── Pending Entries (owner 2026-11-05) ──────────────────────────────────────
+
+/** GET /day-logs/pending/mine — drives the banner on every page. */
+export const dayLogMyPendingSchema = z.object({ dates: z.array(z.string()) });
+export type DayLogMyPending = z.infer<typeof dayLogMyPendingSchema>;
+
+/** One person + one pending date on the Pending Entries tab. */
+export const dayLogPendingRowSchema = z.object({
+  userId: z.string().uuid(),
+  userName: z.string(),
+  deptLabel: z.string().nullable(),
+  date: z.string(),
+  /** Calendar days from the date to today. */
+  daysPending: z.number().int().positive(),
+  /** The open task from a reply, else null. */
+  taskCode: z.string().nullable(),
+  replyCount: z.number().int().nonnegative(),
+  /** Replies the person has not opened. */
+  unseenCount: z.number().int().nonnegative(),
+});
+export type DayLogPendingRow = z.infer<typeof dayLogPendingRowSchema>;
+
+/** GET /day-logs/pending — Super Admin only; oldest date first. */
+export const dayLogPendingResponseSchema = z.object({
+  today: z.string(),
+  rows: z.array(dayLogPendingRowSchema),
+});
+export type DayLogPendingResponse = z.infer<typeof dayLogPendingResponseSchema>;

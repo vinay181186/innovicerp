@@ -166,18 +166,33 @@ function opensTaskBoard(r: PersonAccessRow): boolean {
   return personHolds(r, 'taskboard_view', 'view');
 }
 
-async function loadAssignee(
-  tx: DbTransaction,
-  companyId: string,
-  assignedTo: string,
-): Promise<{ id: string; name: string }> {
+async function readAssignee(tx: DbTransaction, companyId: string, assignedTo: string) {
   const rows = await tx
     .select({ id: users.id, name: users.fullName, isActive: users.isActive, ...accessCols })
     .from(users)
     .leftJoin(userAccess, userAccessJoin(companyId))
     .where(and(eq(users.id, assignedTo), eq(users.companyId, companyId), isNull(users.deletedAt)))
     .limit(1);
-  const u = rows[0];
+  return rows[0];
+}
+
+/** May this person be given a task? loadAssignee's rule without the refusal —
+ *  for a task raised as a side effect, which must not stop its cause. */
+export async function usableAssignee(
+  tx: DbTransaction,
+  companyId: string,
+  assignedTo: string,
+): Promise<{ id: string; name: string } | null> {
+  const u = await readAssignee(tx, companyId, assignedTo);
+  return u && u.isActive && opensTaskBoard(u) ? { id: u.id, name: u.name ?? '' } : null;
+}
+
+async function loadAssignee(
+  tx: DbTransaction,
+  companyId: string,
+  assignedTo: string,
+): Promise<{ id: string; name: string }> {
+  const u = await readAssignee(tx, companyId, assignedTo);
   if (!u || !u.isActive) throw new NotFoundError('Assignee not found in this company');
   if (!opensTaskBoard(u)) {
     throw new ValidationError(
@@ -337,67 +352,102 @@ export async function getNextTaskCode(
 // ADR-232 (owner D6): everyone set up works their own tasks; an L7 Auditor and
 // an unconfigured account write nothing (requireCanWrite).
 
+/** The fields of a new assigned task (createTask, day-log-task.ts). */
+export interface NewAssignedTask {
+  title: string;
+  description: string | null;
+  priority: CreateTaskInput['priority'];
+  startDate: string | null;
+  dueDate: string;
+  linkedRef: NonNullable<CreateTaskInput['linkedRef']> | null;
+}
+
+/** The ONE insert of an assigned task, in the caller's transaction: number
+ *  under the series lock, the row, its 'created' history and activity rows. */
+export async function insertAssignedTask(
+  tx: DbTransaction,
+  companyId: string,
+  assignee: { id: string; name: string },
+  input: NewAssignedTask,
+  user: AuthContext,
+): Promise<TaskRecord> {
+  // ADR-227: both prefixes share one table and one unique index, so they
+  // share one lock. Tasks is the series every user can add to, one row per
+  // job-card operation, and it had no protection at all until now.
+  await lockDocSeries(tx, companyId, 'tasks');
+  const code = await nextCode(tx, companyId, 'assigned');
+  const lr = input.linkedRef;
+  const inserted = await tx
+    .insert(tasks)
+    .values({
+      companyId,
+      code,
+      taskType: 'assigned',
+      title: input.title,
+      description: input.description,
+      assignedTo: assignee.id,
+      assignedBy: user.id,
+      priority: input.priority,
+      startDate: input.startDate,
+      dueDate: input.dueDate,
+      status: 'todo',
+      // You have seen the task you just wrote for yourself.
+      viewedAt: assignee.id === user.id ? new Date() : null,
+      linkedRefType: lr?.type ?? null,
+      linkedRefId: lr?.id ?? null,
+      linkedRefDisplay: lr?.display ?? null,
+      linkedRefNavPage: lr?.navPage ?? null,
+      createdBy: user.id,
+      updatedBy: user.id,
+    })
+    .returning();
+  const header = inserted[0];
+  if (!header) throw new Error('Insert failed');
+
+  await recordHistory(
+    tx,
+    companyId,
+    header.id,
+    { action: 'created', toValue: assignee.name },
+    user,
+  );
+  await emitActivityLog(
+    tx,
+    {
+      action: 'CREATE',
+      entity: 'Task',
+      detail: `Assigned ${code} to ${assignee.name}${lr ? ` [${lr.display}]` : ''}`,
+      refId: code,
+    },
+    companyId,
+    user,
+  );
+  return header;
+}
+
 export async function createTask(input: CreateTaskInput, user: AuthContext): Promise<TaskDetail> {
   await requireCanWrite(user);
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const assignee = await loadAssignee(tx, companyId, input.assignedTo);
-    // ADR-227: both prefixes share one table and one unique index, so they
-    // share one lock. Tasks is the series every user can add to, one row per
-    // job-card operation, and it had no protection at all until now.
-    await lockDocSeries(tx, companyId, 'tasks');
-    const code = await nextCode(tx, companyId, 'assigned');
-    const lr = input.linkedRef ?? null;
-    const inserted = await tx
-      .insert(tasks)
-      .values({
-        companyId,
-        code,
-        taskType: 'assigned',
+    const header = await insertAssignedTask(
+      tx,
+      companyId,
+      assignee,
+      {
         title: input.title,
         description: input.description ?? null,
-        assignedTo: assignee.id,
-        assignedBy: user.id,
         priority: input.priority,
         startDate: input.startDate ?? null,
         dueDate: input.dueDate,
-        status: 'todo',
-        // You have seen the task you just wrote for yourself.
-        viewedAt: assignee.id === user.id ? new Date() : null,
-        linkedRefType: lr?.type ?? null,
-        linkedRefId: lr?.id ?? null,
-        linkedRefDisplay: lr?.display ?? null,
-        linkedRefNavPage: lr?.navPage ?? null,
-        createdBy: user.id,
-        updatedBy: user.id,
-      })
-      .returning();
-    const header = inserted[0];
-    if (!header) throw new Error('Insert failed');
-
-    await recordHistory(
-      tx,
-      companyId,
-      header.id,
-      { action: 'created', toValue: assignee.name },
+        linkedRef: input.linkedRef ?? null,
+      },
       user,
     );
     const names = await loadUserNames(tx, companyId);
     for (const a of input.attachments ?? []) {
       await registerAttachment(tx, companyId, header, a, user, names);
     }
-
-    await emitActivityLog(
-      tx,
-      {
-        action: 'CREATE',
-        entity: 'Task',
-        detail: `Assigned ${code} to ${assignee.name}${lr ? ` [${lr.display}]` : ''}`,
-        refId: code,
-      },
-      companyId,
-      user,
-    );
     return getTaskInternal(tx, header.id, companyId, user);
   });
 }

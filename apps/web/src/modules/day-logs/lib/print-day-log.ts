@@ -1,18 +1,31 @@
 // Day Log print — on the Innovic Sheet (sheet-print.ts: letterhead, Times,
 // one table, no box-in-box): header rows User / Department / Date, the
-// entry table (the screen's columns: Sr No · Start Time · Stop Time · Working
-// Hours · SO / JWSO · Working On — full text), a totals row from the server's
+// entry table (the screen's columns: Sr No · Log Date · Log Time · Start Time ·
+// Stop Time · Working Hours · SO / JWSO · Working On — full text), a totals row from the server's
 // summary, and the "Logged by" / "Seen by (Department Admin)" line. The
-// person page (its own columns, Entry Rev ones for a Super Admin only) and the
-// Team Day Logs table print the same way.
+// person page (its own columns, Entry Rev ones for a Super Admin only), the Team
+// Day Logs table and Pending Entries print the same way.
 
-import type { Company, DayLogDetail, DayLogPersonDay, TeamDayLogResponse } from '@innovic/shared';
+import type {
+  Company,
+  DayLogDetail,
+  DayLogPendingResponse,
+  DayLogPersonDay,
+  TeamDayLogResponse,
+} from '@innovic/shared';
 import { fmt12, fmtDuration } from '@innovic/shared';
 import { fmtDate, fmtDateTime } from '@/lib/date';
 import { buildDocCompany } from '@/lib/print/company';
 import { esc } from '@/lib/print/doc-print';
 import { openSheetHtmlWindow, sheetLetterheadHtml } from '@/lib/print/sheet-print';
-import { DAY_NUM_KEYS, dayTable, personDayTable, teamTable, type ExportTable } from './export';
+import {
+  DAY_NUM_KEYS,
+  dayTable,
+  pendingTable,
+  personDayTable,
+  teamTable,
+  type ExportTable,
+} from './export';
 
 const DL_STYLE = `
   table.dl{width:100%;border-collapse:collapse;font-size:10pt}
@@ -80,7 +93,7 @@ export function printDayLog(day: DayLogDetail, company: Company | null | undefin
     span,
   );
   const table = grid(t, DAY_NUM_KEYS, ['order_code']);
-  // Working Hours is the 4th column: the label spans the three before it.
+  // The label spans every column before Working Hours.
   const hoursAt = t.columns.findIndex((c) => c.key === 'work_hours');
   const totals = `<tr><td colspan="${hoursAt}" class="b">Working hours</td>
     <td class="r b">${esc(fmtDuration(s.workMin))}</td>
@@ -109,6 +122,21 @@ export function printPersonDay(p: DayLogPersonDay, company: Company | null | und
     header + grid(t, DAY_NUM_KEYS, ['order_code']) + signRow(p.userName, span),
   );
   const name = `Day Log ${p.userName} ${p.date}`;
+  return openSheetHtmlWindow(name, html, DL_STYLE, undefined, name);
+}
+
+export function printPendingEntries(
+  data: DayLogPendingResponse,
+  company: Company | null | undefined,
+): boolean {
+  const t = pendingTable(data.rows);
+  const head = `<tr><td class="k">As on</td><td colspan="${t.columns.length - 1}">${esc(fmtDate(data.today))}</td></tr>`;
+  const html = wrap(
+    company,
+    'Pending Entries',
+    head + grid(t, ['sr_no', 'days_pending'], ['user']),
+  );
+  const name = `Pending Entries ${data.today}`;
   return openSheetHtmlWindow(name, html, DL_STYLE, undefined, name);
 }
 

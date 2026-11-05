@@ -12,7 +12,9 @@ import { expect, test } from '@playwright/test';
 const SRC = join(import.meta.dirname, '..', 'src');
 const NOT_A_SCREEN = /^\/?(login|auth\/|__ui-kit)/;
 // Screens chosen by ?view= rather than by path.
-const VIEWS = ['daylog', 'team', 'teams', 'approvals'].map((v) => `/task-board?view=${v}`);
+const VIEWS = ['daylog', 'team', 'pending', 'teams', 'approvals'].map(
+  (v) => `/task-board?view=${v}`,
+);
 
 function routePaths(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {

@@ -380,6 +380,8 @@ export const dayLogEntrySchema = z.object({
   remarks: z.string().nullable(),
   late: z.boolean(),
   updatedAt: z.string(),
+  /** Log Date / Log Time: when the entry was FIRST saved. An edit never moves it. */
+  loggedAt: z.string(),
   /** ADR-255 — Super Admin replies, oldest first (owner's view). */
   replies: z.array(dayLogOwnReplySchema),
   /** An edit of Start / Stop / SO waiting for approval (the row still shows
@@ -482,6 +484,9 @@ export const dayLogDetailSchema = z.object({
   canManage: z.boolean(),
   /** Strict order: the only entry whose times may change / that may be removed. */
   lastEntryId: z.string().uuid().nullable(),
+  /** Super Admin replies on the day itself (sent while it had no entries),
+   *  oldest first. Only the owner's own view carries them. */
+  dayReplies: z.array(dayLogOwnReplySchema),
 });
 export type DayLogDetail = z.infer<typeof dayLogDetailSchema>;
 
@@ -508,6 +513,10 @@ export const teamDayLogRowSchema = z.object({
   entryCount: z.number().int(),
   lateCount: z.number().int(),
   lateInMin: z.number().int(),
+  /** A blank working day before today, from companies.day_log_pending_from. Super Admin only (false otherwise). */
+  notEntered: z.boolean(),
+  /** Replies on this blank day. Super Admin only (0 otherwise). */
+  dayReplyCount: z.number().int(),
 });
 export type TeamDayLogRow = z.infer<typeof teamDayLogRowSchema>;
 
@@ -536,6 +545,8 @@ export const dayLogAccessSchema = z.object({
   canManageHolidays: z.boolean(),
   /** May set up Teams Config — who sees whose Day Log (Super Admin only). */
   canManageTeams: z.boolean(),
+  /** May open the Pending Entries tab (Super Admin only). */
+  canSeePending: z.boolean(),
 });
 export type DayLogAccess = z.infer<typeof dayLogAccessSchema>;
 

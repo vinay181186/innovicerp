@@ -12,6 +12,7 @@ import {
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { todayIst } from '@/lib/date';
+import { itemLineLabel } from '@/lib/item-code';
 import { useNcRegisterList } from '@/modules/nc-register/api';
 import { Modal, useToast } from '@/ui/feedback';
 import { useCapaList, useCreateCapa, useNextCapaCode } from '../api';
@@ -154,7 +155,18 @@ export function NewCapaModal({
             options={availableNcs.map((nc) => ({
               id: nc.code,
               code: nc.code,
-              name: `${NC_REASON_CATEGORY_LABELS[nc.reasonCategory]} — ${nc.jcCode ?? ''}`,
+              name: [
+                itemLineLabel({
+                  ...nc,
+                  itemCode: nc.itemCode ?? nc.itemCodeText,
+                  itemName: nc.itemName ?? nc.itemNameText,
+                }),
+                [NC_REASON_CATEGORY_LABELS[nc.reasonCategory], nc.jcCode]
+                  .filter(Boolean)
+                  .join(' — '),
+              ]
+                .filter(Boolean)
+                .join(' · '),
             }))}
           />
         </div>

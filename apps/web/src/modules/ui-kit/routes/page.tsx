@@ -52,6 +52,7 @@ import {
   Timeline,
   nextSort,
   type DataTableColumn,
+  type RelatedDocsSection,
   type RowMenuItem,
   type SortState,
 } from '@/ui/data';
@@ -1144,21 +1145,45 @@ const TIMELINE_EVENTS = [
   },
 ];
 
-const RELATED_SECTIONS = [
+const RELATED_SECTIONS: RelatedDocsSection[] = [
   {
     key: 'jc',
     title: 'Job Cards',
     icon: '▭',
+    mode: 'documents',
     items: [
-      { id: 'j1', code: 'IN-JC-00817', label: 'Shaft Housing', date: '2026-09-03' },
-      { id: 'j2', code: 'IN-JC-00818', label: 'End Cover', date: '2026-09-09' },
+      {
+        id: 'j1',
+        code: 'IN-JC-00817',
+        date: '2026-09-03',
+        items: [{ pol: '10', code: 'IN-IT-0101/A', name: 'Shaft Housing' }],
+      },
+      {
+        id: 'j2',
+        code: 'IN-JC-00818',
+        date: '2026-09-09',
+        items: [{ pol: '20', code: 'IN-IT-0102', name: 'End Cover' }],
+      },
     ],
   },
   {
     key: 'po',
     title: 'Purchase Orders',
     icon: '🧾',
-    items: [{ id: 'p1', code: 'IN-PO-00311', label: 'EN8 round bar', date: '2026-09-05' }],
+    mode: 'documents',
+    labelHeading: 'Vendor Name',
+    items: [
+      {
+        id: 'p1',
+        code: 'IN-PO-00311',
+        label: 'Acme Steels',
+        date: '2026-09-05',
+        items: [
+          { pol: '10', code: 'IN-IT-0201', name: 'EN8 round bar' },
+          { pol: '20', code: 'IN-IT-0202', name: 'EN24 round bar' },
+        ],
+      },
+    ],
   },
   { key: 'nc', title: 'NC Register', icon: '⚠', items: [] },
 ];

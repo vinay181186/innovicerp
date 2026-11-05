@@ -31,7 +31,6 @@ import type {
   PlanOpsSource,
   PlanRequiredDoc,
   PlanningDashboardResponse,
-  RelatedDoc,
   PlanStatus,
   ReleaseReservationInput,
   ReservationActionResult,
@@ -49,6 +48,7 @@ import {
   machines,
   planOps,
   plans,
+  productionOrders,
   purchaseRequests,
   routeCardOps,
   routeCards,
@@ -80,7 +80,14 @@ import {
 } from '../../lib/errors';
 import { lockDocSeries } from '../../lib/doc-series-lock';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
-import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
+import { loadRelatedItems } from '../../lib/related-items';
+import {
+  buildTimeline,
+  itemSection,
+  section,
+  toIsoDate,
+  type RelatedRow,
+} from '../../lib/traceability';
 import {
   createReservation,
   itemCodeFor,
@@ -3164,7 +3171,6 @@ export async function getPlanRelated(id: string, user: AuthContext): Promise<Doc
         soLineId: plans.soLineId,
         jwLineId: plans.jwLineId,
         bomMasterId: plans.bomMasterId,
-        itemId: plans.itemId,
         jcId: plans.jcId,
         dpPrId: plans.dpPrId,
         foPrId: plans.foPrId,
@@ -3183,7 +3189,7 @@ export async function getPlanRelated(id: string, user: AuthContext): Promise<Doc
       status: string | null,
       date: unknown,
       extra?: { linkId?: string; label?: string },
-    ): RelatedDoc => ({
+    ): RelatedRow => ({
       id: id_,
       code,
       status,
@@ -3256,20 +3262,8 @@ export async function getPlanRelated(id: string, user: AuthContext): Promise<Doc
           .limit(1)
       : [];
 
-    // ── Upstream: item under plan (master) ───────────────────────────────────
-    const itemRows = header.itemId
-      ? await tx
-          .select({ id: items.id, code: items.code, name: items.name })
-          .from(items)
-          .where(
-            and(
-              eq(items.id, header.itemId),
-              eq(items.companyId, companyId),
-              isNull(items.deletedAt),
-            ),
-          )
-          .limit(1)
-      : [];
+    // ── Upstream: item under plan ────────────────────────────────────────────
+    const planItems = (await loadRelatedItems(tx, 'plan', [id])).get(id) ?? [];
 
     // ── Downstream: generated Job Card ───────────────────────────────────────
     const jcRows = header.jcId
@@ -3324,6 +3318,58 @@ export async function getPlanRelated(id: string, user: AuthContext): Promise<Doc
             )
             .orderBy(desc(purchaseRequests.prDate));
 
+    // ── Downstream: Production Orders raised on this plan ────────────────────
+    const proRows = await tx
+      .select({
+        id: productionOrders.id,
+        code: productionOrders.code,
+        status: productionOrders.status,
+        date: sql<string>`(${productionOrders.createdAt} AT TIME ZONE 'Asia/Kolkata')::date::text`,
+      })
+      .from(productionOrders)
+      .where(
+        and(
+          eq(productionOrders.planId, id),
+          eq(productionOrders.companyId, companyId),
+          isNull(productionOrders.deletedAt),
+        ),
+      )
+      .orderBy(desc(productionOrders.createdAt));
+
+    // A row names the plan's own SO / JWSO line, not every line of that order.
+    const soItems = await loadRelatedItems(
+      tx,
+      'so',
+      soRows.map((r) => r.id),
+      { column: 'id', ids: [header.soLineId] },
+    );
+    const jwoItems = await loadRelatedItems(
+      tx,
+      'jwo',
+      jwoRows.map((r) => r.id),
+      { column: 'id', ids: [header.jwLineId] },
+    );
+    const bomItems = await loadRelatedItems(
+      tx,
+      'bom',
+      bomRows.map((r) => r.id),
+    );
+    const jcItems = await loadRelatedItems(
+      tx,
+      'jobCard',
+      jcRows.map((r) => r.id),
+    );
+    const prItems = await loadRelatedItems(
+      tx,
+      'purchaseRequest',
+      prRows.map((r) => r.id),
+    );
+    const proItems = await loadRelatedItems(
+      tx,
+      'productionOrder',
+      proRows.map((r) => r.id),
+    );
+
     // ── Upstream sections ────────────────────────────────────────────────────
     const soSection = section(
       'sales-order',
@@ -3331,6 +3377,7 @@ export async function getPlanRelated(id: string, user: AuthContext): Promise<Doc
       '📄',
       'sales-order',
       soRows.map((r) => row(r.id, r.code, r.status, r.date)),
+      { items: soItems },
     );
     const jwoSection = section(
       'job-work-order',
@@ -3338,6 +3385,7 @@ export async function getPlanRelated(id: string, user: AuthContext): Promise<Doc
       '🛠',
       'job-work-order',
       jwoRows.map((r) => row(r.id, r.code, r.status, r.date)),
+      { items: jwoItems },
     );
     const bomSection = section(
       'bom-master',
@@ -3345,22 +3393,26 @@ export async function getPlanRelated(id: string, user: AuthContext): Promise<Doc
       '📐',
       'bom-master',
       bomRows.map((r) => row(r.id, r.code, r.status, r.date)),
+      { items: bomItems },
     );
-    const itemSection = section(
-      'item',
-      'Item',
-      '📦',
-      'item',
-      itemRows.map((r) => row(r.id, r.code, null, null, { label: r.name })),
-    );
+    const itemTab = itemSection('item', 'Item', '📦', planItems);
 
     // ── Downstream sections ──────────────────────────────────────────────────
+    const proSection = section(
+      'production-orders',
+      'Production Orders',
+      '⚙',
+      'production-order',
+      proRows.map((r) => row(r.id, r.code, r.status, r.date)),
+      { items: proItems },
+    );
     const jcSection = section(
       'job-card',
       'Job Card',
       '📋',
       'job-card',
       jcRows.map((r) => row(r.id, r.code, null, r.date)),
+      { items: jcItems },
     );
     const prSection = section(
       'purchase-requests',
@@ -3368,10 +3420,11 @@ export async function getPlanRelated(id: string, user: AuthContext): Promise<Doc
       '📝',
       'purchase-request',
       prRows.map((r) => row(r.id, r.code, r.status, r.date)),
+      { items: prItems },
     );
 
-    const upstream = [soSection, jwoSection, bomSection, itemSection];
-    const downstream = [jcSection, prSection];
+    const upstream = [soSection, jwoSection, bomSection, itemTab];
+    const downstream = [proSection, jcSection, prSection];
     return {
       self: { module: 'plans', code: header.code },
       upstream,
@@ -3384,6 +3437,7 @@ export async function getPlanRelated(id: string, user: AuthContext): Promise<Doc
           code: header.code,
           routeKind: 'plan',
           linkId: id,
+          items: planItems,
         },
         [...upstream, ...downstream],
       ),

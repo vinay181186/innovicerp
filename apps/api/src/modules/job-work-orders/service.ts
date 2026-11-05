@@ -22,7 +22,6 @@ import type {
   EnsureJwRmItemInput,
   EnsureJwRmItemResponse,
   ItemType,
-  RelatedDoc,
 } from '@innovic/shared';
 import {
   ActivityAction,
@@ -67,7 +66,14 @@ import {
 } from '../../lib/errors';
 import { ensurePartyMaterial, ensureRmItemForOrderItem } from '../../lib/jw-rm';
 import { jwLineUsage, lockJwLine, recomputeJwHeaderStatus } from '../../lib/jw-line-state';
-import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
+import { loadRelatedItems } from '../../lib/related-items';
+import {
+  buildTimeline,
+  itemSection,
+  section,
+  toIsoDate,
+  type RelatedRow,
+} from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
 import { type LineRevResult, resolveLineRevision } from '../item-revisions/line-rev';
 import { assertNoPendingCancel } from '../cancel-requests/pending-guard';
@@ -677,15 +683,12 @@ export async function getJobWorkOrderRelated(
     const header = headers[0];
     if (!header) throw new NotFoundError('JWSO not found. It may have been moved to Trash.');
 
-    // JW lines drive the job-card / plan joins and the upstream item link.
+    // JW lines drive the job-card / plan joins and the Party GRN item scope.
     const lineRows = await tx
-      .select({ id: jobWorkOrderLines.id, itemId: jobWorkOrderLines.itemId })
+      .select({ id: jobWorkOrderLines.id })
       .from(jobWorkOrderLines)
       .where(and(eq(jobWorkOrderLines.jobWorkOrderId, id), isNull(jobWorkOrderLines.deletedAt)));
     const lineIds = lineRows.map((r) => r.id);
-    const itemIds = Array.from(
-      new Set(lineRows.map((r) => r.itemId).filter((v): v is string => Boolean(v))),
-    );
 
     // ── Upstream: client (source customer) ──────────────────────────────────
     const clientRows = header.clientId
@@ -703,21 +706,8 @@ export async function getJobWorkOrderRelated(
       : [];
     const client = clientRows[0] ?? null;
 
-    // ── Upstream: distinct master items referenced by this JWO's lines ──────
-    const itemRows =
-      itemIds.length === 0
-        ? []
-        : await tx
-            .select({ id: items.id, code: items.code, name: items.name })
-            .from(items)
-            .where(
-              and(
-                eq(items.companyId, companyId),
-                isNull(items.deletedAt),
-                inArray(items.id, itemIds),
-              ),
-            )
-            .orderBy(asc(items.code));
+    // ── Upstream: this JWO's own lines ──────────────────────────────────────
+    const jwoItems = (await loadRelatedItems(tx, 'jwo', [id])).get(id) ?? [];
 
     // ── Downstream: job cards generated from this JWO's lines ───────────────
     const jobCardRows =
@@ -779,13 +769,30 @@ export async function getJobWorkOrderRelated(
       )
       .orderBy(desc(partyGrn.grnDate));
 
+    const jobCardItems = await loadRelatedItems(
+      tx,
+      'jobCard',
+      jobCardRows.map((r) => r.id),
+    );
+    const planItems = await loadRelatedItems(
+      tx,
+      'plan',
+      planRows.map((r) => r.id),
+    );
+    const partyGrnItems = await loadRelatedItems(
+      tx,
+      'partyGrn',
+      partyGrnRows.map((r) => r.id),
+      { column: 'jw_line_id', ids: lineIds },
+    );
+
     const row = (
       id_: string,
       code: string,
       status: string | null,
       date: unknown,
       extra?: { linkId?: string; label?: string },
-    ): RelatedDoc => ({
+    ): RelatedRow => ({
       id: id_,
       code,
       status,
@@ -801,14 +808,9 @@ export async function getJobWorkOrderRelated(
       '👤',
       'client',
       client ? [row(client.id, client.code, null, null, { label: client.name })] : [],
+      { noItems: 'party', codeHeading: 'Customer Code', labelHeading: 'Customer' },
     );
-    const itemSection = section(
-      'item',
-      'Items',
-      '📦',
-      'item',
-      itemRows.map((r) => row(r.id, r.code, null, null, { label: r.name })),
-    );
+    const itemsSection = itemSection('item', 'Items', '📦', jwoItems);
 
     // ── Downstream sections (generated from this JWO) ───────────────────────
     const jobCardsSection = section(
@@ -818,6 +820,7 @@ export async function getJobWorkOrderRelated(
       'job-card',
       // job_cards has no status column — derive coarse closed/open from closed_at.
       jobCardRows.map((r) => row(r.id, r.code, r.closedAt ? 'closed' : 'open', r.date)),
+      { items: jobCardItems },
     );
     const plansSection = section(
       'plans',
@@ -825,6 +828,7 @@ export async function getJobWorkOrderRelated(
       '🗂',
       'plan',
       planRows.map((r) => row(r.id, r.code, r.status, r.date)),
+      { items: planItems },
     );
     const partyGrnSection = section(
       'party-grn',
@@ -833,9 +837,10 @@ export async function getJobWorkOrderRelated(
       // No party-GRN detail route exists — reference-only.
       null,
       partyGrnRows.map((r) => row(r.id, r.code, null, r.date)),
+      { items: partyGrnItems },
     );
 
-    const upstream = [clientSection, itemSection];
+    const upstream = [clientSection, itemsSection];
     const downstream = [jobCardsSection, plansSection, partyGrnSection];
     return {
       self: { module: 'job-work-orders', code: header.code },
@@ -849,6 +854,7 @@ export async function getJobWorkOrderRelated(
           code: header.code,
           routeKind: 'job-work-order',
           linkId: id,
+          items: jwoItems,
         },
         [...upstream, ...downstream],
       ),

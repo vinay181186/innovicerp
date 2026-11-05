@@ -6,7 +6,7 @@
 // cancelled). Only the basic field updates land here in T-036a; the approve
 // + create-PO actions ship in T-036b alongside the PO module.
 
-import { type SQL, type SQLWrapper, and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { type SQL, type SQLWrapper, and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import {
   ActivityAction,
@@ -14,7 +14,6 @@ import {
   type DocumentTraceability,
   ITEM_TYPE_RULES,
   type ItemType,
-  type RelatedDoc,
 } from '@innovic/shared';
 import {
   items,
@@ -23,6 +22,7 @@ import {
   jobWorkOrderLines,
   planOps,
   plans,
+  purchaseOrderLines,
   purchaseOrders,
   purchaseRequests,
   salesOrderLines,
@@ -46,7 +46,14 @@ import { type DiffField, diffFields, softDeleteStamp } from '../../lib/audit-tra
 import { assertLineQtysFitUom } from '../../lib/qty-uom';
 import { assertRowUpdated } from '../../lib/row-lock';
 import { assertSoAcceptsWork } from '../../lib/so-accepts-work';
-import { buildTimeline, section, toIsoDate } from '../../lib/traceability';
+import { loadRelatedItems } from '../../lib/related-items';
+import {
+  buildTimeline,
+  itemSection,
+  type RelatedRow,
+  section,
+  toIsoDate,
+} from '../../lib/traceability';
 import { emitActivityLog } from '../activity-log/service';
 import { assertMlNodeCapOnEdit, assertMlNodeItemUnchanged } from '../ml-plan/edit-cap';
 import { nextSeriesCode } from '../op-entry/osp-cascade';
@@ -54,7 +61,7 @@ import { lockDocSeries } from '../../lib/doc-series-lock';
 import { assertNoPendingCancel } from '../cancel-requests/pending-guard';
 import { stagedEditMessage } from '../cancel-requests/messages';
 import { releaseSourceJcOps } from './pr-cancel-writer';
-import { PR_ORDER_CODE, prSfColumns } from './sf-columns';
+import { PR_ITEM_CODE_REV, PR_ITEM_REV, PR_ORDER_CODE, prSfColumns } from './sf-columns';
 import type {
   ClosePurchaseRequestBalanceInput,
   CreatePurchaseRequestInput,
@@ -595,7 +602,9 @@ export async function listPurchaseRequests(
           -- renamed after the PR was raised keeps the old text on the PR.
           OR pr.item_code_text ILIKE ${term} ESCAPE '\\'
           OR i.code ILIKE ${term} ESCAPE '\\'
+          OR ${PR_ITEM_CODE_REV} ILIKE ${term} ESCAPE '\\'
           OR pr.item_name ILIKE ${term} ESCAPE '\\'
+          OR i.name ILIKE ${term} ESCAPE '\\'
           -- The card renders vendorName ?? vendorCodeText, and vendorName is
           -- COALESCE(v.name, vt.name) — both vendor joins below are matched.
           OR pr.vendor_code_text ILIKE ${term} ESCAPE '\\'
@@ -685,7 +694,7 @@ export async function listPurchaseRequests(
         pr.pr_date AS "prDate", pr.status,
         pr.vendor_id AS "vendorId", pr.vendor_code_text AS "vendorCodeText",
         pr.item_id AS "itemId", pr.item_code_text AS "itemCodeText",
-        pr.item_name AS "itemName",
+        COALESCE(NULLIF(btrim(pr.item_name), ''), i.name) AS "itemName",
         pr.qty, pr.est_cost::text AS "estCost", pr.required_date AS "requiredDate",
         pr.source_jc_op_id AS "sourceJcOpId",
         pr.source_so_line_id AS "sourceSoLineId",
@@ -706,7 +715,8 @@ export async function listPurchaseRequests(
         -- raised against, through the SAME sol join the SO code below already
         -- uses; for a PR raised off a JWSO-sourced job card there is no SO
         -- line, so the job-work line the card came from is the fallback
-        -- (ADR-177 — a card has one source, never both). Deliberately not
+        -- (ADR-177 — a card has one source, never both). Only when that line is
+        -- for this PR's own item (PR_ITEM_REV). Deliberately not
         -- items.revision, which is a different column about the item master
         -- and would print a wrong revision on the card. Every join is LEFT, so
         -- a PR raised for stock with no SO or JW behind it correctly comes back
@@ -716,7 +726,7 @@ export async function listPurchaseRequests(
         -- column is only text on a database that has had migration 0119; on one
         -- that has not, it is still the old integer and would arrive here as a
         -- number wearing a string type. The cast is a no-op once 0119 is in.
-        COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
+        ${PR_ITEM_REV} AS "itemRevision",
         -- The customer's own PO line number, off the SAME sol / rev_jwl joins
         -- as the revision above: SO line first, else the JWSO line (ADR-236).
         ${polSql('sol', 'rev_jwl')} AS "clientPoLineNo",
@@ -927,14 +937,18 @@ export async function getPurchaseRequest(
         // The customer's drawing revision, taken off the SO line through the
         // salesOrderLines join below that already resolves soCode / soLineNo;
         // for a PR raised off a JWSO-sourced job card there is no SO line, so
-        // the job-work line the card came from is the fallback (ADR-177).
+        // the job-work line the card came from is the fallback (ADR-177), and
+        // only when that line is for this PR's own item (same as PR_ITEM_REV).
         // Cast to text: the contract types it as a string, and on a database
         // without migration 0119 the column is still the old integer, which
         // would arrive as a number wearing a string type. Never items.revision
         // -- that is a different column about the item master.
         itemRevision: sql<
           string | null
-        >`COALESCE(${salesOrderLines.revision}::text, ${jobWorkOrderLines.revision}::text)`,
+        >`COALESCE(
+          CASE WHEN ${salesOrderLines.itemId} = ${purchaseRequests.itemId} THEN ${salesOrderLines.revision}::text END,
+          CASE WHEN ${jobWorkOrderLines.itemId} = ${purchaseRequests.itemId} THEN ${jobWorkOrderLines.revision}::text END
+        )`,
         // The customer's own PO line number, off the SAME two line joins as
         // the revision above: SO line first, else the JWSO line (ADR-236).
         clientPoLineNo: polOf(salesOrderLines.clientPoLineNo, jobWorkOrderLines.clientPoLineNo),
@@ -1671,7 +1685,6 @@ export async function getPurchaseRequestRelated(
         prDate: purchaseRequests.prDate,
         status: purchaseRequests.status,
         vendorId: purchaseRequests.vendorId,
-        itemId: purchaseRequests.itemId,
         sourceSoLineId: purchaseRequests.sourceSoLineId,
         sourceJcOpId: purchaseRequests.sourceJcOpId,
         poId: purchaseRequests.poId,
@@ -1703,22 +1716,6 @@ export async function getPurchaseRequestRelated(
           .limit(1)
       : [];
     const vendor = vendorRows[0] ?? null;
-
-    // ── Upstream: item ─────────────────────────────────────────────────────
-    const itemRows = header.itemId
-      ? await tx
-          .select({ id: items.id, code: items.code, name: items.name })
-          .from(items)
-          .where(
-            and(
-              eq(items.id, header.itemId),
-              eq(items.companyId, companyId),
-              isNull(items.deletedAt),
-            ),
-          )
-          .limit(1)
-      : [];
-    const item = itemRows[0] ?? null;
 
     // ── Upstream: source Sales Order (via SO line → header) ────────────────
     const soRows = header.sourceSoLineId
@@ -1762,26 +1759,41 @@ export async function getPurchaseRequestRelated(
       : [];
     const jc = jcRows[0] ?? null;
 
-    // ── Downstream: generated Purchase Order ───────────────────────────────
-    const poRows = header.poId
-      ? await tx
-          .select({
-            id: purchaseOrders.id,
-            code: purchaseOrders.code,
-            status: purchaseOrders.status,
-            date: purchaseOrders.poDate,
-          })
-          .from(purchaseOrders)
-          .where(
-            and(
-              eq(purchaseOrders.id, header.poId),
-              eq(purchaseOrders.companyId, companyId),
-              isNull(purchaseOrders.deletedAt),
+    // ── Downstream: generated Purchase Orders ──────────────────────────────
+    // The real link is per line (purchase_order_lines.source_pr_id, 0103), so a PR
+    // split across several POs lists them all. purchase_requests.po_id holds only
+    // the FIRST PO; it stays as the fallback for old rows with no line link.
+    const poRows = await tx
+      .select({
+        id: purchaseOrders.id,
+        code: purchaseOrders.code,
+        status: purchaseOrders.status,
+        date: purchaseOrders.poDate,
+      })
+      .from(purchaseOrders)
+      .where(
+        and(
+          eq(purchaseOrders.companyId, companyId),
+          isNull(purchaseOrders.deletedAt),
+          or(
+            inArray(
+              purchaseOrders.id,
+              tx
+                .select({ id: purchaseOrderLines.purchaseOrderId })
+                .from(purchaseOrderLines)
+                .where(
+                  and(
+                    eq(purchaseOrderLines.sourcePrId, id),
+                    eq(purchaseOrderLines.companyId, companyId),
+                    isNull(purchaseOrderLines.deletedAt),
+                  ),
+                ),
             ),
-          )
-          .limit(1)
-      : [];
-    const po = poRows[0] ?? null;
+            header.poId ? eq(purchaseOrders.id, header.poId) : undefined,
+          ),
+        ),
+      )
+      .orderBy(desc(purchaseOrders.poDate), desc(purchaseOrders.code));
 
     // ── Downstream: plans linked to this PR ────────────────────────────────
     // Header-level PR links (design-provisioned / fabrication-order / material).
@@ -1833,7 +1845,7 @@ export async function getPurchaseRequestRelated(
       status: string | null,
       date: unknown,
       extra?: { linkId?: string; label?: string },
-    ): RelatedDoc => ({
+    ): RelatedRow => ({
       id: id_,
       code,
       status,
@@ -1849,14 +1861,11 @@ export async function getPurchaseRequestRelated(
       '🏭',
       'vendor',
       vendor ? [row(vendor.id, vendor.code, null, null, { label: vendor.name })] : [],
+      { noItems: 'party', codeHeading: 'Vendor Code', labelHeading: 'Vendor Name' },
     );
-    const itemSection = section(
-      'item',
-      'Item',
-      '📦',
-      'item',
-      item ? [row(item.id, item.code, null, null, { label: item.name })] : [],
-    );
+    // Free-text PR included: the line carries the code and name, not only a master id.
+    const prItems = (await loadRelatedItems(tx, 'purchaseRequest', [id])).get(id) ?? [];
+    const itemTab = itemSection('item', 'Item', '📦', prItems);
     const soSection = section(
       'sales-order',
       'Source Sales Order',
@@ -1873,6 +1882,13 @@ export async function getPurchaseRequestRelated(
             ),
           ]
         : [],
+      {
+        items: await loadRelatedItems(tx, 'so', [so?.id], {
+          column: 'id',
+          ids: [header.sourceSoLineId],
+        }),
+        labelHeading: 'Internal SO No.',
+      },
     );
     const jcSection = section(
       'job-card',
@@ -1880,15 +1896,24 @@ export async function getPurchaseRequestRelated(
       '📋',
       'job-card',
       jc ? [row(jc.id, jc.code, null, jc.date)] : [],
+      { items: await loadRelatedItems(tx, 'jobCard', [jc?.id]) },
     );
 
     // ── Downstream sections (generated from this PR) ───────────────────────
     const poSection = section(
       'purchase-order',
-      'Purchase Order',
+      'Purchase Orders',
       '🧾',
       'purchase-order',
-      po ? [row(po.id, po.code, po.status, po.date)] : [],
+      poRows.map((p) => row(p.id, p.code, p.status, p.date)),
+      {
+        items: await loadRelatedItems(
+          tx,
+          'purchaseOrder',
+          poRows.map((p) => p.id),
+          { column: 'source_pr_id', ids: [id] },
+        ),
+      },
     );
     const plansSection = section(
       'plans',
@@ -1896,9 +1921,16 @@ export async function getPurchaseRequestRelated(
       '🗂',
       'plan',
       planRows.map((p) => row(p.id, p.code, p.status, p.date)),
+      {
+        items: await loadRelatedItems(
+          tx,
+          'plan',
+          planRows.map((p) => p.id),
+        ),
+      },
     );
 
-    const upstream = [vendorSection, itemSection, soSection, jcSection];
+    const upstream = [vendorSection, itemTab, soSection, jcSection];
     const downstream = [poSection, plansSection];
     return {
       self: { module: 'purchase-requests', code: header.code },
@@ -1912,6 +1944,7 @@ export async function getPurchaseRequestRelated(
           code: header.code,
           routeKind: 'purchase-request',
           linkId: id,
+          items: prItems,
         },
         [...upstream, ...downstream],
       ),

@@ -28,6 +28,7 @@ export function toEntry(l: DayLine, nowMin?: number, withReplies = false): DayLo
     remarks: l.remarks,
     late: l.late,
     updatedAt: l.updatedAt,
+    loggedAt: l.loggedAt,
     replies: withReplies ? (l.replies ?? []) : [],
     pending: l.pending,
     rejectReason: l.rejectReason,
@@ -56,7 +57,7 @@ export function summaryOf(
 /** The whole DayLogDetail for (target, date), as the viewer sees it, from
  *  a snapshot of that day (read, or brought up to date after a write). */
 export function detailOf(
-  snap: Pick<DaySnapshot, 'header' | 'lines' | 'holidays'>,
+  snap: Pick<DaySnapshot, 'header' | 'lines' | 'holidays' | 'dayReplies'>,
   v: Viewer,
   target: DayUser,
   date: string,
@@ -94,5 +95,7 @@ export function detailOf(
     // The viewer may approve this person's edits (never their own).
     canManage: canApproveUser(v, target),
     lastEntryId: null,
+    // Pending Entries — only the owner's own view carries them.
+    dayReplies: isOwner ? snap.dayReplies : [],
   };
 }

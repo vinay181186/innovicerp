@@ -9,6 +9,7 @@
 //   sheet.ts   — many new rows at once (one sheet)
 //   text.ts    — Working On edited directly + revisions, replies seen (ADR-255)
 //   replies.ts — Super Admin replies
+//   day-replies.ts — replies on a blank day          pending.ts — Pending Entries
 //   holidays.ts — holidays, tab access            access.ts — who sees and manages whose day
 //   team-mates.ts — Teams Config (who sees whose Day Log, one-way: User → mate)
 // Rules of the day itself live in packages/shared day-log.ts (summarizeDay…).
@@ -17,6 +18,8 @@ export { addEntry, updateEntry } from './entries';
 export { addEntries } from './sheet';
 export { markRepliesSeen, updateWork } from './text';
 export { editReply, sendReply } from './replies';
+export { editDayReply, markDayRepliesSeen, sendDayReply } from './day-replies';
+export { getMyPending, getPending } from './pending';
 export { getPersonDay } from './person-day';
 export { approveEntry, getApprovals, rejectEntry } from './approvals';
 export { getDay } from './manage';

@@ -41,6 +41,8 @@ function requireCompany(user: AuthContext): string {
 const PENDING = sql`${poLinePendingSql('pol', 'po')}::float8`;
 const ITEM_CODE = sql`COALESCE(i.code, pol.item_code_text)`;
 const REVISION = sql`COALESCE(sol.revision::text, rev_jwl.revision::text)`;
+// CODE/REV as the cell prints it (itemCodeWithRev).
+const ITEM_CODE_REV = sql`(btrim(${ITEM_CODE}) || COALESCE('/' || NULLIF(btrim(${REVISION}), ''), ''))`;
 
 /** Sort & Filter fields of the line list. Names the old per-PO list used keep
  *  their names (poCode, totalQty, totalAmount…) so a saved ▾ filter still reads. */
@@ -53,11 +55,7 @@ export const PO_LINE_SF_COLUMNS: SfColumnMap = {
     type: 'date',
   },
   createdBy: { sql: createdByNameSql(sql`COALESCE(pol.created_by, po.created_by)`), type: 'text' },
-  // CODE/REV as the cell prints it (itemCodeWithRev).
-  itemCode: {
-    sql: sql`(btrim(${ITEM_CODE}) || COALESCE('/' || NULLIF(btrim(${REVISION}), ''), ''))`,
-    type: 'text',
-  },
+  itemCode: { sql: ITEM_CODE_REV, type: 'text' },
   itemName: { sql: sql`COALESCE(pol.item_name, i.name)`, type: 'text' },
   poCode: { sql: sql`po.code`, type: 'text' },
   poDate: { sql: sql`po.po_date`, type: 'date' },
@@ -96,6 +94,7 @@ export async function listPurchaseOrderLines(
           OR po.po_date::text ILIKE ${term} ESCAPE '\\'
           OR pol.item_code_text ILIKE ${term} ESCAPE '\\'
           OR i.code ILIKE ${term} ESCAPE '\\'
+          OR ${ITEM_CODE_REV} ILIKE ${term} ESCAPE '\\'
           OR pol.item_name ILIKE ${term} ESCAPE '\\'
           OR i.name ILIKE ${term} ESCAPE '\\'
           OR so.code ILIKE ${term} ESCAPE '\\'

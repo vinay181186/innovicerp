@@ -41,6 +41,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { matchesSearchTerm } from '@/components/shared/search-match';
 import { todayIst } from '@/lib/date';
+import { partyDocName } from '@/lib/item-code';
 import { useSaveKey } from '@/lib/use-save-key';
 import {
   useDeliveryChallan,
@@ -114,7 +115,7 @@ export function GrnAgainstNcForm({
   // but keeping ONLY the return-to-vendor rows (ncId set — the is-return flag).
   // One row per challan; a challan may carry several NCs of one SO. 200 is the API's max page
   // and is far above the number of issued-but-unreceived challans at any time.
-  const dcList = useDeliveryChallansList({ status: 'issued', limit: 200, offset: 0 });
+  const dcList = useDeliveryChallansList({ withLineItems: true, status: 'issued', limit: 200, offset: 0 });
   const ncRows = useMemo(
     () => (dcList.data?.items ?? []).filter((d) => d.ncId !== null),
     [dcList.data],
@@ -156,11 +157,12 @@ export function GrnAgainstNcForm({
           // The job card is the header's = the FIRST NC's; named only when the
           // challan carries one NC, so it is never read as all of them.
           const jc = ncs.length === 1 ? (d.jobCardCode ?? '—') : `${ncs.length} NCs`;
+          const named = partyDocName(d.vendorName ?? d.vendorCodeText, d.lineItems);
           return {
             id: d.id,
             code: ncs.map((n) => n.code).join(', ') || d.poCodeText,
-            name: `${jc} · ${d.vendorName ?? d.vendorCodeText}`,
-            searchText: sentOnDc ? `${d.code} ${sentOnDc}` : d.code,
+            name: `${jc} · ${named.name}`,
+            searchText: `${d.code} ${sentOnDc} ${named.searchText}`,
           };
         })
         .filter((o) =>
@@ -411,7 +413,7 @@ export function GrnAgainstNcForm({
                 options={ncOptions}
                 onSearch={setNcSearch}
                 loading={dcList.isFetching}
-                placeholder="🔍 Type NC No., DC No., job card or vendor…"
+                placeholder="🔍 Type NC No., DC No., job card, vendor or item…"
                 valueLabel={ncValueLabel}
                 emptyText="No NC has a return challan awaiting receipt."
               />

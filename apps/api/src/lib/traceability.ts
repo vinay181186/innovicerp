@@ -5,13 +5,20 @@
 //
 // No business rule lives here — it is pure read-side shaping.
 
-import type { RelatedDoc, RelatedSection, RelatedTimelineEvent } from '@innovic/shared';
+import { itemCodeWithRev } from '@innovic/shared';
+import type {
+  RelatedDoc,
+  RelatedItem,
+  RelatedSection,
+  RelatedTimelineEvent,
+} from '@innovic/shared';
 
 /** Coerce any DB date/timestamp value to a bare ISO date string ('YYYY-MM-DD'),
  *  or null. Drizzle `date` columns already come back as strings (default mode),
  *  but `timestamp` columns come back as Date — this normalises both so timeline
  *  sorting (lexical string compare) is always safe. `Date#toISOString().slice(0,10)`
- *  is UTC-stable for date-only values (see postgres.js date-OID note). */
+ *  is UTC-stable for date-only values (see postgres.js date-OID note). A timestamp
+ *  would come out as its UTC day: select it `AT TIME ZONE 'Asia/Kolkata'` first. */
 export function toIsoDate(v: unknown): string | null {
   if (v == null) return null;
   if (v instanceof Date) return v.toISOString().slice(0, 10);
@@ -20,6 +27,20 @@ export function toIsoDate(v: unknown): string | null {
   return s.length >= 10 ? s.slice(0, 10) : s;
 }
 
+/** A row as a builder writes it. Its items come from the section's options. */
+export type RelatedRow = Omit<RelatedDoc, 'items'>;
+
+/** Every section states where its items come from, or why it has none. Required, so
+ *  a new tab cannot compile without answering (owner 2026-11-05: no missing item
+ *  detail). `items` is keyed by the row's id: see loadRelatedItems. */
+export type RelatedSectionOptions = (
+  | { items: ReadonlyMap<string, RelatedItem[]> }
+  | { noItems: string }
+) & {
+  labelHeading?: string;
+  codeHeading?: string;
+};
+
 /** Build one titled section. `routeKind` must match a key in the web
  *  RelatedDocsPanel ROUTE_LINKS registry to be clickable; null => reference-only. */
 export function section(
@@ -27,9 +48,60 @@ export function section(
   title: string,
   icon: string,
   routeKind: string | null,
-  rows: RelatedDoc[],
+  rows: RelatedRow[],
+  options: RelatedSectionOptions,
 ): RelatedSection {
-  return { key, title, icon, routeKind, count: rows.length, items: rows };
+  const itemsOf = 'items' in options ? options.items : null;
+  return {
+    key,
+    title,
+    icon,
+    routeKind,
+    count: rows.length,
+    itemMode: itemsOf ? 'documents' : 'none',
+    codeHeading: options.codeHeading ?? null,
+    labelHeading: options.labelHeading ?? null,
+    items: rows.map((r) => ({ ...r, items: itemsOf?.get(r.id) ?? [] })),
+  };
+}
+
+/** The Item tab: one row per distinct item + Rev, built from the document's lines
+ *  so a free-text line is listed too, not dropped. */
+export function itemSection(
+  key: string,
+  title: string,
+  icon: string,
+  lines: readonly RelatedItem[],
+): RelatedSection {
+  const seen = new Set<string>();
+  const rows: RelatedDoc[] = [];
+  for (const it of lines) {
+    const id = it.lineId ?? it.itemId;
+    if (!id) continue;
+    const k = `${it.itemId ?? it.itemCode ?? id}|${it.itemRevision ?? ''}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    rows.push({
+      id,
+      code: itemCodeWithRev(it.itemCode, it.itemRevision),
+      status: null,
+      date: null,
+      linkId: it.itemId,
+      label: it.itemName,
+      items: [it],
+    });
+  }
+  return {
+    key,
+    title,
+    icon,
+    routeKind: 'item',
+    count: rows.length,
+    itemMode: 'items',
+    codeHeading: null,
+    labelHeading: null,
+    items: rows,
+  };
 }
 
 /** Assemble a chronological timeline from the anchor document plus every dated
@@ -43,6 +115,8 @@ export function buildTimeline(
     code: string | null;
     routeKind: string | null;
     linkId: string | null;
+    /** The anchor document's own items, so its event names them too. */
+    items?: readonly RelatedItem[];
   } | null,
   sections: RelatedSection[],
 ): RelatedTimelineEvent[] {
@@ -54,6 +128,8 @@ export function buildTimeline(
       code: self.code,
       routeKind: self.routeKind,
       linkId: self.linkId,
+      item: self.items?.[0] ?? null,
+      moreItems: Math.max((self.items?.length ?? 0) - 1, 0),
     });
   }
   for (const s of sections) {
@@ -65,6 +141,8 @@ export function buildTimeline(
         code: d.code,
         routeKind: s.routeKind,
         linkId: d.linkId ?? d.id,
+        item: d.items[0] ?? null,
+        moreItems: Math.max(d.items.length - 1, 0),
       });
     }
   }
@@ -87,9 +165,10 @@ export function masterSection(
   icon: string,
   routeKind: string | null,
   raw: unknown,
+  options: RelatedSectionOptions,
 ): RelatedSection {
   const rows = raw as Array<Record<string, unknown>>;
-  const items: RelatedDoc[] = rows.map((r) => ({
+  const items: RelatedRow[] = rows.map((r) => ({
     id: String(r['id']),
     code: String(r['code'] ?? ''),
     status: r['status'] != null ? String(r['status']) : null,
@@ -97,7 +176,7 @@ export function masterSection(
     linkId: null,
     label: r['label'] != null ? String(r['label']) : null,
   }));
-  const s = section(key, title, icon, routeKind, items);
+  const s = section(key, title, icon, routeKind, items, options);
   const total = rows[0] ? Number(rows[0]['total'] ?? rows.length) : 0;
   return { ...s, count: Math.max(total, items.length) };
 }

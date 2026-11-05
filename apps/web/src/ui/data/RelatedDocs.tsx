@@ -16,6 +16,13 @@
 //
 // A module-specific panel that belongs in the strip (the SO's drawing trail,
 // say) comes in through `extraTabs` rather than being baked in here.
+//
+// The item reads ONE way in every tab (owner 2026-11-05): POL | Item Code | Item
+// Name, the code dark and bold, a document number blue, a missing value `—`.
+//   mode 'documents'  Document No. | POL | Item Code | Item Name | [label] | Status | Date
+//                     ONE ROW PER ITEM; the tab's count stays the document count.
+//   mode 'items'      Item Code | Item Name — the rows ARE items.
+//   mode 'none'       Document No. | [label] | Status | Date — no item columns.
 
 import { useState } from 'react';
 import { TabStrip, type TabStripTab } from '../navigation/TabStrip';
@@ -23,17 +30,30 @@ import { EmptyState } from './EmptyState';
 import { Panel } from './Panel';
 import { fmtDate } from '@/lib/date';
 
+/** One item a row concerns. The code is a ReactNode so a caller can link it. */
+export interface RelatedDocItem {
+  /** POL — the customer's PO line number. */
+  pol?: string | null | undefined;
+  /** CODE/REV. */
+  code: React.ReactNode;
+  name?: string | null | undefined;
+}
+
+export type RelatedDocsMode = 'documents' | 'items' | 'none';
+
 export interface RelatedDoc {
   /** Stable key — the document's id. */
   id?: string | undefined;
   /** The document number. ReactNode so the caller can wrap it in a <Link>. */
   code: React.ReactNode;
-  /** Item name, party name or whatever names this row. */
+  /** The one extra fact the section names in `labelHeading` — never the item. */
   label?: React.ReactNode | undefined;
   /** A <StatusBadge>, passed in — this component owns no status colours. */
   status?: React.ReactNode | undefined;
   /** ISO date. */
   date?: string | null | undefined;
+  /** The items this row concerns. Read by modes 'documents' and 'items'. */
+  items?: RelatedDocItem[] | undefined;
 }
 
 export interface RelatedDocsSection {
@@ -44,6 +64,12 @@ export interface RelatedDocsSection {
   items: RelatedDoc[];
   /** Overrides `items.length` on the tab's count badge. */
   count?: number | undefined;
+  /** How the tab reads. Default 'none'. */
+  mode?: RelatedDocsMode | undefined;
+  /** Heading of the first column. Default "Document No.". */
+  codeHeading?: string | null | undefined;
+  /** Heading of the `label` column. Unset = the tab has no such column. */
+  labelHeading?: string | null | undefined;
 }
 
 export interface RelatedDocsExtraTab {
@@ -68,6 +94,83 @@ export interface RelatedDocsProps {
   /** Goes under the table — normally <Timeline density="compact" …>. */
   children?: React.ReactNode | undefined;
   className?: string | undefined;
+}
+
+/** The chosen tab's ruled sheet. Pure: every value comes from the section. */
+function RelatedSheet({
+  section,
+  style,
+}: {
+  section: RelatedDocsSection;
+  style: React.CSSProperties;
+}): React.JSX.Element {
+  const mode = section.mode ?? 'none';
+  const { labelHeading } = section;
+  const docCols = mode !== 'items';
+  const itemCols = mode !== 'none';
+  // A tab with no item columns drops status + date when no row has either.
+  const statusCols =
+    mode === 'documents' || (mode === 'none' && section.items.some((d) => d.status || d.date));
+  // One row per item: a document with three items gives three rows, its number
+  // repeated; with none, one row of dashes. Row index in the key: a number repeats.
+  const rows = section.items.flatMap((doc, i) => {
+    const items: (RelatedDocItem | null)[] = itemCols && doc.items?.length ? doc.items : [null];
+    return items.map((item, j) => ({ key: `${doc.id ?? i}:${j}`, doc, item }));
+  });
+  return (
+    <table className="innovic-table tbl-grid tbl-compact" style={style}>
+      <thead>
+        <tr>
+          {docCols ? <th>{section.codeHeading ?? 'Document No.'}</th> : null}
+          {mode === 'documents' ? <th>POL</th> : null}
+          {itemCols ? <th>Item Code</th> : null}
+          {itemCols ? <th>Item Name</th> : null}
+          {docCols && labelHeading ? <th>{labelHeading}</th> : null}
+          {statusCols ? <th>Document Status</th> : null}
+          {statusCols ? <th>Document Date</th> : null}
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map(({ key, doc, item }) => (
+          <tr key={key}>
+            {/* The code is a `.td-code` span inside a `.mono` cell, as the
+                reference has it — the blue comes from
+                `.innovic-table.tbl-grid .td-code`, so no inline colour here to
+                fight a caller's own coloured node. */}
+            {docCols ? (
+              <td className="mono">
+                <span className="td-code">{doc.code}</span>
+              </td>
+            ) : null}
+            {mode === 'documents' ? (
+              <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                {item?.pol ?? '—'}
+              </td>
+            ) : null}
+            {/* The item code is the main thing: dark and bold, never `.td-code` blue. */}
+            {itemCols ? (
+              <td className="mono fw-700" style={{ color: 'var(--text)' }}>
+                {item?.code ?? '—'}
+              </td>
+            ) : null}
+            {/* Whole, on as many lines as it takes: never cut short. */}
+            {itemCols ? (
+              <td className="td-left" style={{ whiteSpace: 'normal' }}>
+                {item?.name ?? '—'}
+              </td>
+            ) : null}
+            {docCols && labelHeading ? <td className="text2 td-left">{doc.label ?? '—'}</td> : null}
+            {statusCols ? <td>{doc.status ?? '—'}</td> : null}
+            {statusCols ? (
+              <td className="mono text2" style={{ fontSize: 'var(--fs-xs)' }}>
+                {fmtDate(doc.date)}
+              </td>
+            ) : null}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
 }
 
 export function RelatedDocs({
@@ -148,37 +251,7 @@ export function RelatedDocs({
         active.items.length === 0 ? (
           <EmptyState inline>No documents in this category.</EmptyState>
         ) : (
-          <table
-            className="innovic-table tbl-grid tbl-compact"
-            style={{ marginBottom: children ? 'var(--sp-4)' : 0 }}
-          >
-            <thead>
-              <tr>
-                <th>Document No.</th>
-                <th>Name / Ref</th>
-                <th>Document Status</th>
-                <th>Document Date</th>
-              </tr>
-            </thead>
-            <tbody>
-              {active.items.map((d, i) => (
-                <tr key={d.id ?? i}>
-                  {/* The code is a `.td-code` span inside a `.mono` cell, as
-                      the reference has it — the blue comes from
-                      `.innovic-table.tbl-grid .td-code`, so no inline colour
-                      here to fight a caller's own coloured node. */}
-                  <td className="mono">
-                    <span className="td-code">{d.code}</span>
-                  </td>
-                  <td className="text2 td-left">{d.label ?? '—'}</td>
-                  <td>{d.status ?? '—'}</td>
-                  <td className="mono text2" style={{ fontSize: 'var(--fs-xs)' }}>
-                    {fmtDate(d.date)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <RelatedSheet section={active} style={{ marginBottom: children ? 'var(--sp-4)' : 0 }} />
         )
       ) : null}
 

@@ -98,7 +98,7 @@ export function PoCloseLedger({
       </span>
       <span>·</span>
       <span className="td-code" style={{ color: 'var(--text)' }}>
-        {itemCodeWithRev(po.itemCodeText, docDrawingRev(po))}
+        {itemCodeWithRev(po.itemCode ?? po.itemCodeText, docDrawingRev(po))}
       </span>
     </div>
   );

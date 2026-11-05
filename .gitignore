@@ -63,3 +63,11 @@ migration/export/
 migration/transform/
 # Load outputs (audit JSON of a one-time load, contains user emails / UUIDs).
 migration/load-output/
+
+.ds-sync/
+ds-bundle/
+.design-sync/.cache/
+.design-sync/learnings/
+.design-sync/node_modules
+
+apps/web/.ds-dist/

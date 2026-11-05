@@ -7,6 +7,7 @@ import {
   entryMinutes,
   findOverlap,
   hm,
+  isPendingDate,
   istClock,
   latestWorkOf,
   spanEnd,
@@ -40,6 +41,7 @@ const line = (
   order: code ? { type: 'so', id: '00000000-0000-0000-0000-000000000000', code } : null,
   late: false,
   updatedAt: '',
+  loggedAt: '',
   pending: null,
   rejectReason: null,
 });
@@ -130,5 +132,36 @@ describe('Team current status', () => {
       ]),
     ).toEqual({ description: 'a', orderCode: 'IN-SO-1' });
     expect(latestWorkOf([])).toBeNull();
+  });
+});
+
+describe('isPendingDate', () => {
+  // 02-Nov-2026 is a Monday, 08-Nov a Sunday.
+  const START = '2026-11-02';
+  const TODAY = '2026-11-10';
+  const blank = (date: string, holidays: string[] = []) =>
+    isPendingDate(date, START, TODAY, false, holidays);
+
+  it('a blank working day from the start up to yesterday is pending', () => {
+    expect(blank(START)).toBe(true);
+    expect(blank('2026-11-09')).toBe(true);
+  });
+  it('Sunday is never pending; Saturday is a working day', () => {
+    expect(blank('2026-11-08')).toBe(false);
+    expect(blank('2026-11-07')).toBe(true);
+  });
+  it('a company holiday is not pending', () => {
+    expect(blank('2026-11-03', ['2026-11-03'])).toBe(false);
+  });
+  it('today and later are excluded, however blank', () => {
+    expect(blank(TODAY)).toBe(false);
+    expect(blank('2026-11-11')).toBe(false);
+  });
+  it('before the start is not pending', () => {
+    expect(blank('2026-11-01')).toBe(false);
+    expect(blank('2026-10-31')).toBe(false);
+  });
+  it('a done day (a part-filled one counts) is not pending', () => {
+    expect(isPendingDate(START, START, TODAY, true, [])).toBe(false);
   });
 });

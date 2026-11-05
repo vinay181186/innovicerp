@@ -26,6 +26,13 @@ function offenders(pattern: RegExp, allowed: readonly string[] = []): string[] {
 }
 
 describe('one standard across the ERP', () => {
+  it('a list hook sends withLineItems: a picker that asks for items must get them', () => {
+    for (const mod of ['purchase-orders', 'delivery-challans', 'jw-dc']) {
+      const api = readFileSync(join(SRC, 'modules', mod, 'api.ts'), 'utf8');
+      expect(api, mod).toContain("params.set('withLineItems', 'true')");
+    }
+  });
+
   it('every pop-up uses the shared Modal', () => {
     expect(
       offenders(/className="overlay"/, [
@@ -55,6 +62,20 @@ describe('one standard across the ERP', () => {
     const headerSave =
       /<PageHeader\b(?:(?!\/>|<\/PageHeader>)[\s\S])*?actions=\{[\s\S]{0,400}?(?:Save|type="submit")/;
     expect(offenders(headerSave)).toEqual([]);
+  });
+
+  it('the Related Documents panel names the item: no "Name / Ref" heading', () => {
+    expect(offenders(/Name \/ Ref/)).toEqual([]);
+  });
+
+  it('a Related Documents item code is dark and bold, never `.td-code` blue', () => {
+    const textOf = (rel: string): string => FILES.find((f) => f.rel === rel)?.text ?? '';
+    const tabs = textOf('components/shared/related-docs-tabs.tsx');
+    const registry = textOf('components/shared/related-docs-panel.tsx');
+    expect(tabs).toContain('itemCodeWithRev');
+    expect(tabs).not.toContain('td-code');
+    expect(registry).toMatch(/\bitem: \(t, i\) => \(\s*<Link[^>]*>/);
+    expect(registry).not.toMatch(/\bitem: \(t, i\) => \(\s*<Link[^>]*td-code/);
   });
 
   it('new code does not type a font size that has a token', () => {
