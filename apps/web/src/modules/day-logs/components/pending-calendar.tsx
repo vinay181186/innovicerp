@@ -103,6 +103,7 @@ function PickedDay({
                       entryId={r.id}
                       replies={r.replies}
                       first={firstName(p.userName)}
+                      goesToInbox={p.replyGoesToInbox}
                     />
                   ) : null}
                 </div>
