@@ -72,26 +72,26 @@ function machineSection(machine: MachineLoadCard, ops: MachineLoadOp[]): string 
       (o, i) => `<tr>
       <td style="text-align:center;font-weight:700">${i + 1}</td>
       <td style="font-family:monospace;font-weight:700">${esc(o.jobCardCode)}</td>
-      <td style="color:#7c3aed;font-weight:700">${esc(o.clientPoLineNo ?? '—')}</td>
+      <td class="ctr" style="color:#7c3aed;font-weight:700">${esc(o.clientPoLineNo ?? '—')}</td>
       <td style="color:#7c3aed">${esc(itemCodeWithRev(o.itemCode, o.itemRevision))}</td>
       <td>${esc(o.itemName ?? '—')}</td>
       <td>${soCell(o)}</td>
       <td style="text-align:center">${opSrNo(o.opSeq)}</td>
       <td>${esc(o.operation)}</td>
-      <td>${priorityBadge(o.priority)}</td>
+      <td class="ctr">${priorityBadge(o.priority)}</td>
       <td style="text-align:center">${esc(challanDate(o.dueDate) || '—')}</td>
       <td style="text-align:center">${o.orderQty}</td>
       <td style="text-align:center;color:#16a34a;font-weight:700">${doneCell(o)}</td>
       <td style="text-align:center;font-weight:700;color:${o.available > 0 ? '#d97706' : '#9ca3af'}">${o.available}</td>
       <td style="text-align:center;font-weight:700;color:#dc2626">${o.pendingHrs}h</td>
-      <td>${statusBadge(o.computedStatus)}</td>
+      <td class="ctr">${statusBadge(o.computedStatus)}</td>
     </tr>`,
     )
     .join('');
   return `${head}<table><thead><tr>
-      <th>Sr No</th><th>JC No.</th><th>POL</th><th>Item Code</th><th>Item Name</th><th>SO No.</th>
-      <th>Op</th><th>Operation</th><th>Priority</th><th>Due Date</th>
-      <th>JC Qty</th><th>Completed</th><th>Available</th><th>Pending Hrs</th><th>Op Status</th>
+      <th class="ctr">Sr No</th><th>JC No.</th><th class="ctr">POL</th><th>Item Code</th><th>Item Name</th><th>SO No.</th>
+      <th class="ctr">Op</th><th>Operation</th><th class="ctr">Priority</th><th class="ctr">Due Date</th>
+      <th class="ctr">JC Qty</th><th class="ctr">Completed</th><th class="ctr">Available</th><th class="ctr">Pending Hrs</th><th class="ctr">Op Status</th>
     </tr></thead><tbody>${rows}</tbody></table>`;
 }
 

@@ -550,20 +550,25 @@ function BomItemsTable({
         <table className="innovic-table">
           <thead>
             <tr>
-              <th>Sr No</th>
+              <th className="th-ctr">Sr No</th>
               <th>Item Code</th>
               <th>Item Name</th>
-              <th>Qty per Set</th>
+              <th className="th-num">Qty per Set</th>
               <th
+                className="th-num"
                 style={{ color: 'var(--cyan)', fontWeight: 800 }}
                 title="Equipment Qty × Qty per Set"
               >
                 Total Need
               </th>
               <th>BOM Type</th>
-              <th style={{ color: 'var(--green2)' }}>Physical</th>
-              <th style={{ color: 'var(--red2)' }}>Short</th>
-              <th>Plan Status</th>
+              <th className="th-num" style={{ color: 'var(--green2)' }}>
+                Physical
+              </th>
+              <th className="th-num" style={{ color: 'var(--red2)' }}>
+                Short
+              </th>
+              <th className="th-ctr">Plan Status</th>
             </tr>
           </thead>
           <tbody>
@@ -588,9 +593,9 @@ function BomItemsTable({
                     {c.childItemCode}
                   </td>
                   <td>{c.childItemName}</td>
-                  <td className="td-ctr mono fw-700">{c.qtyPerSet}</td>
+                  <td className="td-num mono fw-700">{c.qtyPerSet}</td>
                   <td
-                    className="td-ctr mono fw-700"
+                    className="td-num mono fw-700"
                     style={{ fontSize: 'var(--fs-sm)', color: 'var(--cyan)' }}
                   >
                     {c.totalNeed}
@@ -601,19 +606,19 @@ function BomItemsTable({
                     </span>
                   </td>
                   <td
-                    className="td-ctr mono fw-700"
+                    className="td-num mono fw-700"
                     style={{ color: c.stockQty > 0 ? 'var(--green)' : 'var(--text3)' }}
                   >
                     {c.stockQty}
                   </td>
                   <td
-                    className="td-ctr mono fw-700"
+                    className="td-num mono fw-700"
                     style={{ color: c.shortfall > 0 ? 'var(--red)' : 'var(--green)' }}
                   >
                     {c.shortfall}
                     {c.shortfall <= 0 ? ' ✅' : ''}
                   </td>
-                  <td>
+                  <td className="td-ctr">
                     {c.planStatus ? (
                       <>
                         <span

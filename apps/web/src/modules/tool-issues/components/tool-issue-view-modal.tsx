@@ -203,8 +203,8 @@ function History({ t }: { t: ToolIssueDetail }): React.JSX.Element {
             <thead>
               <tr>
                 <th>Instrument Serial No.</th>
-                <th>Returned On</th>
-                <th>Return Condition</th>
+                <th className="th-ctr">Returned On</th>
+                <th className="th-ctr">Return Condition</th>
               </tr>
             </thead>
             <tbody>
@@ -213,8 +213,10 @@ function History({ t }: { t: ToolIssueDetail }): React.JSX.Element {
                   <td className="mono fw-700" style={{ color: 'var(--text)' }}>
                     {i.serialNo}
                   </td>
-                  <td>{i.returnedOn ? fmtDate(i.returnedOn) : '— still out'}</td>
-                  <td>{i.returnCondition ? CONDITION_LABELS[i.returnCondition] : '—'}</td>
+                  <td className="td-ctr">{i.returnedOn ? fmtDate(i.returnedOn) : '— still out'}</td>
+                  <td className="td-ctr">
+                    {i.returnCondition ? CONDITION_LABELS[i.returnCondition] : '—'}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -225,7 +227,7 @@ function History({ t }: { t: ToolIssueDetail }): React.JSX.Element {
         <table className="innovic-table tbl-grid">
           <thead>
             <tr>
-              <th>Return Date</th>
+              <th className="th-ctr">Return Date</th>
               <th className="th-num">Good</th>
               <th className="th-num">Damaged</th>
               <th className="th-num">Lost</th>
@@ -237,7 +239,7 @@ function History({ t }: { t: ToolIssueDetail }): React.JSX.Element {
           <tbody>
             {t.returns.map((r) => (
               <tr key={r.id}>
-                <td>{fmtDate(r.returnDate)}</td>
+                <td className="td-ctr">{fmtDate(r.returnDate)}</td>
                 <td className="mono td-num">{r3(r.goodQty)}</td>
                 <td className="mono td-num">{r3(r.damagedQty)}</td>
                 <td className="mono td-num">{r3(r.lostQty)}</td>

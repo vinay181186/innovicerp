@@ -503,9 +503,9 @@ function InvoiceDetailPage(): React.JSX.Element {
             <table className="innovic-table">
               <thead>
                 <tr>
-                  <th>Payment Date</th>
-                  <th className="th-num">Amount</th>
-                  <th className="th-num">TDS / Short</th>
+                  <th className="th-ctr">Payment Date</th>
+                  <th className="th-money">Amount</th>
+                  <th className="th-money">TDS / Short</th>
                   <th>Mode</th>
                   <th>Reference No.</th>
                   <th>Notes</th>
@@ -514,11 +514,13 @@ function InvoiceDetailPage(): React.JSX.Element {
               <tbody>
                 {inv.payments.map((p) => (
                   <tr key={p.id}>
-                    <td style={{ fontSize: 'var(--fs-xs)' }}>{fmtDate(p.paymentDate)}</td>
-                    <td className="mono fw-700 td-num" style={{ color: 'var(--green2)' }}>
+                    <td className="td-ctr" style={{ fontSize: 'var(--fs-xs)' }}>
+                      {fmtDate(p.paymentDate)}
+                    </td>
+                    <td className="mono fw-700 td-money" style={{ color: 'var(--green2)' }}>
                       {inr(p.amount ?? 0)}
                     </td>
-                    <td className="mono fw-700 td-num" style={{ color: 'var(--purple)' }}>
+                    <td className="mono fw-700 td-money" style={{ color: 'var(--purple)' }}>
                       {(p.tdsAmount ?? 0) > 0 ? inr(p.tdsAmount ?? 0) : '—'}
                     </td>
                     <td style={{ fontSize: 'var(--fs-xs)' }}>{p.mode}</td>

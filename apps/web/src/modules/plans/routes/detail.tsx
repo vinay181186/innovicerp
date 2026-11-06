@@ -617,14 +617,14 @@ function PlanDetailPage(): React.JSX.Element {
             <table className="innovic-table">
               <thead>
                 <tr>
-                  <th>Op</th>
+                  <th className="th-ctr">Op</th>
                   <th>Operation</th>
                   <th>Op Type</th>
                   <th>Planned Machine</th>
-                  <th>Cycle Time (min)</th>
-                  <th>QC Required</th>
+                  <th className="th-num">Cycle Time (min)</th>
+                  <th className="th-ctr">QC Required</th>
                   <th>OSP Vendor</th>
-                  {priceHidden ? null : <th>OSP Cost</th>}
+                  {priceHidden ? null : <th className="th-money">OSP Cost</th>}
                 </tr>
               </thead>
               <tbody>
@@ -638,14 +638,14 @@ function PlanDetailPage(): React.JSX.Element {
                   plan.ops.map((op) => (
                     <tr key={op.id}>
                       {/* 10, 20, 30 on screen — display rule, see opSrNo */}
-                      <td>{opSrNo(op.opSeq)}</td>
+                      <td className="td-ctr">{opSrNo(op.opSeq)}</td>
                       <td>{op.operation}</td>
                       <td>{OP_TYPE_LABEL[op.opType] ?? op.opType}</td>
                       <td>{op.machineCodeText ?? '—'}</td>
-                      <td>{op.cycleTimeMin}</td>
-                      <td>{op.qcRequired ? '✓' : ''}</td>
+                      <td className="td-num">{op.cycleTimeMin}</td>
+                      <td className="td-ctr">{op.qcRequired ? '✓' : ''}</td>
                       <td>{op.outsourceVendorText ?? '—'}</td>
-                      {priceHidden ? null : <td>{op.outsourceCost}</td>}
+                      {priceHidden ? null : <td className="td-money">{op.outsourceCost}</td>}
                     </tr>
                   ))
                 )}

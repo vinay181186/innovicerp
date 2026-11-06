@@ -82,3 +82,40 @@ describe('one standard across the ERP', () => {
     expect(offenders(/\bfontSize: *'?(?:11|12|13|16|22|28)(?:px)?'?\s*[,}]/)).toEqual([]);
   });
 });
+
+// The alignment rule (CLAUDE.md §24): text left, qty centre, money right. A list column
+// gets it from `columnAlign`; these hold the hand-built tables to the same rule.
+describe('one alignment across the ERP', () => {
+  const MONEY = 'Rate|Amount|Value|Price|Cost|Taxable|Subtotal|Grand Total';
+
+  it('a table cell never types its own alignment: use the classes', () => {
+    expect(
+      offenders(/<t[dh]\b[^>]*?textAlign/, [
+        'ui/data/DataTable.tsx', // the full-width expanded row, not a column
+        'modules/production-schedule/routes/list.tsx', // a calendar grid, not an innovic-table
+      ]),
+    ).toEqual([]);
+  });
+
+  it('a hand-built Qty heading is centred (`th-num`)', () => {
+    expect(offenders(/<th\b(?![^>]*\bth-num\b)[^>]*>\s*[^<{]*\bQty\b/)).toEqual([]);
+  });
+
+  it('a hand-built money heading is right-aligned (`th-money`)', () => {
+    const money = new RegExp(
+      `<th\\b(?![^>]*\\bth-money\\b)[^>]*>\\s*(?:[^<{]*\\s)?(?:${MONEY})\\s*<`,
+    );
+    expect(offenders(money)).toEqual([]);
+  });
+
+  it('a list column headed with a money word is numeric, so it aligns right', () => {
+    const heading = new RegExp(`header:\\s*'(?:[^']*\\s)?(?:${MONEY})'`, 'g');
+    const notNumeric = FILES.filter((f) =>
+      [...f.text.matchAll(heading)].some((m) => {
+        const rest = f.text.slice(m.index + m[0].length).split(/\bheader:/)[0] ?? '';
+        return !/kind: 'num'|align: 'right'|money: true/.test(rest);
+      }),
+    ).map((f) => f.rel);
+    expect(notNumeric).toEqual([]);
+  });
+});

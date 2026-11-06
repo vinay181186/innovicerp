@@ -28,8 +28,8 @@ export function MachineOutputPanel({ rows, isLoading }: Props): React.JSX.Elemen
             <th className="th-num">Entries</th>
             <th className="th-num">Completed</th>
             <th className="th-num">Deviated</th>
-            <th>From</th>
-            <th>To</th>
+            <th className="th-ctr">From</th>
+            <th className="th-ctr">To</th>
           </tr>
         </thead>
         <tbody>
@@ -70,10 +70,10 @@ export function MachineOutputPanel({ rows, isLoading }: Props): React.JSX.Elemen
                   <td className="mono td-num" style={{ color: 'var(--red2)' }}>
                     {r.rejectQty || ''}
                   </td>
-                  <td className="mono" style={{ fontSize: 'var(--fs-xs)' }}>
+                  <td className="td-ctr mono" style={{ fontSize: 'var(--fs-xs)' }}>
                     {fmtDate(r.firstLogDate)}
                   </td>
-                  <td className="mono" style={{ fontSize: 'var(--fs-xs)' }}>
+                  <td className="td-ctr mono" style={{ fontSize: 'var(--fs-xs)' }}>
                     {fmtDate(r.lastLogDate)}
                   </td>
                 </tr>

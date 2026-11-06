@@ -939,7 +939,9 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
               <table className="ops-routing" style={{ minWidth: 900 }}>
                 <thead>
                   <tr style={{ background: 'var(--bg4)' }}>
-                    <th style={{ width: 40, textAlign: 'center' }}>Op</th>
+                    <th className="th-ctr" style={{ width: 40 }}>
+                      Op
+                    </th>
                     {/* The Group column leads because it is the first thing the
                         planner decides — what KIND of step this is (a machine
                         family, an OSP hand-off, or a QC check). Everything to the
@@ -947,9 +949,13 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                     <th style={{ width: 190 }}>Group</th>
                     <th style={{ width: 210 }}>Machine / Vendor</th>
                     <th style={{ minWidth: 200 }}>Operation</th>
-                    <th style={{ width: 96 }}>Cycle Time (min)</th>
-                    <th style={{ width: 132, color: 'var(--amber2)' }}>OSP</th>
-                    <th style={{ width: 48 }} />
+                    <th className="th-num" style={{ width: 96 }}>
+                      Cycle Time (min)
+                    </th>
+                    <th className="th-ctr" style={{ width: 132, color: 'var(--amber2)' }}>
+                      OSP
+                    </th>
+                    <th className="th-ctr" style={{ width: 48 }} />
                   </tr>
                 </thead>
                 <tbody>
@@ -985,7 +991,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                               simply forgot to fill in, which invites a planner to
                               go looking for the missing machine. Same look as the
                               OSP row's "NA" cycle cell so both read as one idea. */}
-                          <td className="td-ctr">
+                          <td>
                             <span
                               className="mono fw-700"
                               style={{
@@ -1024,7 +1030,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                               }}
                             />
                           </td>
-                          <td>
+                          <td className="td-num">
                             <input
                               className="innovic-input"
                               type="number"
@@ -1033,11 +1039,10 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                               onChange={(e) =>
                                 updateOp(op.uid, { cycleTimeMin: Number(e.target.value) })
                               }
-                              style={{ textAlign: 'center' }}
                             />
                           </td>
                           <td className="td-ctr">{naDash}</td>
-                          <td>
+                          <td className="td-ctr">
                             <button
                               type="button"
                               className="btn btn-danger btn-sm btn-icon"
@@ -1155,7 +1160,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                             placeholder="Operation name"
                           />
                         </td>
-                        <td className="td-ctr">
+                        <td className="td-num">
                           {isOS ? (
                             // NA, not a blank or a dash: an outsourced step has no
                             // cycle time to enter, and saying so stops a planner
@@ -1180,11 +1185,10 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                               onChange={(e) =>
                                 updateOp(op.uid, { cycleTimeMin: Number(e.target.value) })
                               }
-                              style={{ textAlign: 'center' }}
                             />
                           )}
                         </td>
-                        <td>
+                        <td className="td-ctr">
                           <label
                             style={{
                               display: 'inline-flex',
@@ -1232,7 +1236,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                               loaded with. Dropping the input hides the field, it
                               does not blank a value already stored. */}
                         </td>
-                        <td>
+                        <td className="td-ctr">
                           <button
                             type="button"
                             className="btn btn-danger btn-sm btn-icon"
@@ -1424,12 +1428,14 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
               <table className="ops-routing">
                 <thead>
                   <tr style={{ background: 'var(--bg4)' }}>
-                    <th style={{ width: 44, textAlign: 'center' }}>Sr No</th>
+                    <th className="th-ctr" style={{ width: 44 }}>
+                      Sr No
+                    </th>
                     <th>
                       Document Name<span className="req">★</span>
                     </th>
                     <th style={{ width: 180 }}>Requirement</th>
-                    <th style={{ width: 56 }} />
+                    <th className="th-ctr" style={{ width: 56 }} />
                   </tr>
                 </thead>
                 <tbody>
@@ -1469,7 +1475,7 @@ export function EditPlanModal({ plan, onClose, onSaved }: Props): JSX.Element {
                           <option value="optional">Optional</option>
                         </select>
                       </td>
-                      <td>
+                      <td className="td-ctr">
                         <button
                           type="button"
                           className="btn btn-danger btn-sm btn-icon"

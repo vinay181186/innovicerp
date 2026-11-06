@@ -31,19 +31,25 @@ export function OutwardLineTable({
 }): React.JSX.Element {
   return (
     <div>
-      <table style={{ width: '100%' }}>
+      <table className="tbl-ctr" style={{ width: '100%' }}>
         <thead>
           <tr style={{ background: 'var(--bg4)' }}>
-            <th style={{ width: 30, padding: 6 }}>☑</th>
+            <th className="th-ctr" style={{ width: 30, padding: 6 }}>
+              ☑
+            </th>
             {/* POL — the CUSTOMER's own purchase-order line number, before the
                 item as on every other document. */}
-            <th style={{ padding: 6, color: 'var(--purple)' }}>POL</th>
+            <th className="th-ctr" style={{ padding: 6, color: 'var(--purple)' }}>
+              POL
+            </th>
             <th style={{ padding: 6 }}>Item Code · Name</th>
             <th style={{ color: 'var(--purple)', padding: 6 }}>Process</th>
             <th className="th-num" style={{ padding: 6 }}>
               PO Qty
             </th>
-            <th style={{ padding: 6 }}>UOM</th>
+            <th className="th-ctr" style={{ padding: 6 }}>
+              UOM
+            </th>
             {/* Sent on OSP DCs AND JW DCs together — the one figure. */}
             <th className="th-num" style={{ color: 'var(--amber2)', padding: 6 }}>
               Sent
@@ -89,7 +95,7 @@ export function OutwardLineTable({
                 <td className="mono td-num" style={{ padding: 6 }}>
                   {l.poQty}
                 </td>
-                <td className="mono" style={{ padding: 6, fontSize: 'var(--fs-xs)' }}>
+                <td className="td-ctr mono" style={{ padding: 6, fontSize: 'var(--fs-xs)' }}>
                   {l.uom ?? 'NOS'}
                 </td>
                 <td className="mono td-num" style={{ padding: 6, color: 'var(--amber2)' }}>
@@ -116,7 +122,7 @@ export function OutwardLineTable({
                       width: 70,
                       fontSize: 'var(--fs-sm)',
                       fontWeight: 700,
-                      textAlign: 'right',
+                      textAlign: 'center',
                       color: 'var(--cyan)',
                       border: '2px solid var(--cyan)',
                       borderRadius: 'var(--radius-sm)',

@@ -1345,7 +1345,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
           <table className="innovic-table tbl-grid tbl-edit">
             <thead>
               <tr>
-                <th className="th-num" style={{ width: 44 }}>
+                <th className="th-ctr" style={{ width: 44 }}>
                   Sr No
                 </th>
                 <th style={{ minWidth: 160 }}>
@@ -1362,7 +1362,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
                     part is bought, not cut), so neither carries a ★. */}
                 <th style={{ width: 150 }}>RM Grade</th>
                 <th style={{ width: 150 }}>RM Size</th>
-                <th style={{ width: 48 }} />
+                <th className="th-ctr" style={{ width: 48 }} />
               </tr>
             </thead>
             <tbody>
@@ -1393,7 +1393,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
                   : '';
                 return (
                   <tr key={idx} aria-disabled={parentLocked} style={inert}>
-                    <td className="td-num mono fw-700">{idx + 1}</td>
+                    <td className="td-ctr mono fw-700">{idx + 1}</td>
                     <td>
                       <SearchableSelect
                         id={`bom-item-${idx}`}
@@ -1491,7 +1491,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
                         }
                       />
                     </td>
-                    <td>
+                    <td className="td-ctr">
                       <button
                         type="button"
                         className="btn btn-ghost btn-sm"

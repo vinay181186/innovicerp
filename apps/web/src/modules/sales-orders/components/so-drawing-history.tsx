@@ -182,13 +182,21 @@ export function SoDrawingHistory({
                     the customer's revision. '#' is the change count; 'Rev' is what was
                     written on the paper. */}
                 <tr>
-                  <th style={{ width: '9%' }}>Change No.</th>
-                  <th style={{ width: '10%' }}>Drawing Rev</th>
-                  <th style={{ width: '12%' }}>Change</th>
+                  <th className="th-ctr" style={{ width: '9%' }}>
+                    Change No.
+                  </th>
+                  <th className="th-ctr" style={{ width: '10%' }}>
+                    Drawing Rev
+                  </th>
+                  <th className="th-ctr" style={{ width: '12%' }}>
+                    Change
+                  </th>
                   <th style={{ width: '31%' }}>File</th>
                   <th style={{ width: '16%' }}>Revised By</th>
-                  <th style={{ width: '18%' }}>Revised On</th>
-                  <th style={{ width: '4%' }} />
+                  <th className="th-ctr" style={{ width: '18%' }}>
+                    Revised On
+                  </th>
+                  <th className="th-ctr" style={{ width: '4%' }} />
                 </tr>
               </thead>
               <tbody>
@@ -210,7 +218,10 @@ export function SoDrawingHistory({
                             labelled "Rev": that is the mislabelling this column was
                             split to end. Newest first, so row 0 is the drawing on the
                             line today. */}
-                        <td className="mono" style={{ fontWeight: 700, color: 'var(--text3)' }}>
+                        <td
+                          className="td-ctr mono"
+                          style={{ fontWeight: 700, color: 'var(--text3)' }}
+                        >
                           #{r.revisionNo}
                           {i === 0 ? (
                             <span className="badge b-blue" style={{ marginLeft: 6 }}>
@@ -224,7 +235,7 @@ export function SoDrawingHistory({
                             it is left blank (the house's "no value" dash) and the hover
                             says why rather than inventing a number. */}
                         <td
-                          className="mono"
+                          className="td-ctr mono"
                           style={{ fontWeight: 700, color: 'var(--text2)' }}
                           title={
                             r.lineRevisionText === null
@@ -238,7 +249,7 @@ export function SoDrawingHistory({
                             r.lineRevisionText
                           )}
                         </td>
-                        <td>
+                        <td className="td-ctr">
                           <span className={`badge ${ACTION_CLASS[r.action]}`}>
                             {ACTION_LABEL[r.action]}
                           </span>
@@ -262,10 +273,10 @@ export function SoDrawingHistory({
                         <td className="text2" style={{ fontSize: 'var(--fs-sm)' }}>
                           {r.createdByName ?? '—'}
                         </td>
-                        <td className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
+                        <td className="td-ctr text3" style={{ fontSize: 'var(--fs-xs)' }}>
                           {fmtIstDateTime(r.createdAt)}
                         </td>
-                        <td>
+                        <td className="td-ctr">
                           {path ? (
                             <button
                               type="button"

@@ -276,8 +276,8 @@ function StockHistoryCard(props: { itemId: string }): React.JSX.Element {
         <table className="innovic-table">
           <thead>
             <tr>
-              <th>Movement Date</th>
-              <th>Movement Type</th>
+              <th className="th-ctr">Movement Date</th>
+              <th className="th-ctr">Movement Type</th>
               <th>Source</th>
               <th>Ref No.</th>
               <th className="th-num">Movement Qty</th>
@@ -307,10 +307,10 @@ function StockHistoryCard(props: { itemId: string }): React.JSX.Element {
             ) : (
               data!.items.map((r) => (
                 <tr key={r.id}>
-                  <td className="mono" style={{ fontSize: 'var(--fs-xs)' }}>
+                  <td className="td-ctr mono" style={{ fontSize: 'var(--fs-xs)' }}>
                     {fmtDate(r.txnDate)}
                   </td>
-                  <td>
+                  <td className="td-ctr">
                     <TxnTypeBadge type={r.txnType} />
                   </td>
                   <td className="text2" style={{ fontSize: 'var(--fs-xs)' }}>

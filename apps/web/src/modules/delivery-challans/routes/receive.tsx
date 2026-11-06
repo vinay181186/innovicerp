@@ -288,10 +288,12 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
             <table className="innovic-table">
               <thead>
                 <tr>
-                  <th>Ln</th>
+                  <th className="th-ctr">Ln</th>
                   {/* POL = the CUSTOMER's own PO line number off the SO line
                       behind this challan line. */}
-                  <th style={{ color: 'var(--purple)' }}>POL</th>
+                  <th className="th-ctr" style={{ color: 'var(--purple)' }}>
+                    POL
+                  </th>
                   <th>Item Code · Name</th>
                   <th className="th-num">Sent</th>
                   <th className="th-num">Received</th>
@@ -303,8 +305,8 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
               <tbody>
                 {lineDrafts.map((d, idx) => (
                   <tr key={d.dcLineId}>
-                    <td className="mono">{d.lineNo}</td>
-                    <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                    <td className="td-ctr mono">{d.lineNo}</td>
+                    <td className="td-ctr mono fw-700" style={{ color: 'var(--purple)' }}>
                       {d.clientPoLineNo ?? '—'}
                     </td>
                     <td>

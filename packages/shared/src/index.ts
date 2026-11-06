@@ -192,3 +192,4 @@ export * from './schemas/list-query';
 export * from './schemas/order-option';
 export * from './schemas/dashboard-registry';
 export * from './lib/page-access';
+export * from './lib/column-align';

@@ -36,7 +36,6 @@ export function FitFoot<T>(p: FitFootProps<T>): ReactElement {
         {p.visible.map((k) => {
           const c = p.byId.get(k);
           if (!c) return null;
-          const numeric = p.kinds[k] === 'num';
           const content: ReactNode =
             k === p.firstId
               ? p.totalsLabel
@@ -44,7 +43,7 @@ export function FitFoot<T>(p: FitFootProps<T>): ReactElement {
                 ? c.total(p.rows)
                 : (c.total ?? null);
           return (
-            <td key={k} className={tdClass(c, numeric ? 'td-num' : undefined)}>
+            <td key={k} className={tdClass(c)}>
               {content}
             </td>
           );

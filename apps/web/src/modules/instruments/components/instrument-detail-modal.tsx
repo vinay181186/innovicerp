@@ -171,26 +171,30 @@ export function InstrumentDetailModal({
             <table className="innovic-table tbl-grid">
               <thead>
                 <tr>
-                  <th>Calibrated On</th>
-                  <th>Calibration Result</th>
+                  <th className="th-ctr">Calibrated On</th>
+                  <th className="th-ctr">Calibration Result</th>
                   <th>Certificate No.</th>
                   <th>Agency</th>
-                  <th>Calibration Due</th>
+                  <th className="th-ctr">Calibration Due</th>
                   <th>Recorded By</th>
                 </tr>
               </thead>
               <tbody>
                 {ins.calibrations.map((c) => (
                   <tr key={c.id} title={c.remarks ?? ''}>
-                    <td style={{ whiteSpace: 'nowrap' }}>{fmtDate(c.calibratedOn)}</td>
-                    <td>
+                    <td className="td-ctr" style={{ whiteSpace: 'nowrap' }}>
+                      {fmtDate(c.calibratedOn)}
+                    </td>
+                    <td className="td-ctr">
                       <span className={`badge ${c.result === 'pass' ? 'b-green' : 'b-red'}`}>
                         {c.result === 'pass' ? 'Pass' : 'Fail'}
                       </span>
                     </td>
                     <td className="mono">{c.certificateNo || '—'}</td>
                     <td>{c.agency || '—'}</td>
-                    <td style={{ whiteSpace: 'nowrap' }}>{fmtDate(c.nextDueOn)}</td>
+                    <td className="td-ctr" style={{ whiteSpace: 'nowrap' }}>
+                      {fmtDate(c.nextDueOn)}
+                    </td>
                     <td>{c.recordedByName || '—'}</td>
                   </tr>
                 ))}

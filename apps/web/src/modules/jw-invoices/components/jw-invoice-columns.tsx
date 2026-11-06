@@ -118,6 +118,7 @@ export function jwInvoiceColumns(
         id: 'total',
         header: 'Total',
         kind: 'num',
+        money: true,
         align: 'right',
         headColor: 'var(--green)',
         nowrap: true,

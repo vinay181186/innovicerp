@@ -24,9 +24,11 @@ export function CmrReturnableTable({
       <table className="innovic-table">
         <thead>
           <tr>
-            <th>Return Kind</th>
-            <th>JWSO Line</th>
-            <th style={{ color: 'var(--purple)' }}>POL</th>
+            <th className="th-ctr">Return Kind</th>
+            <th className="th-ctr">JWSO Line</th>
+            <th className="th-ctr" style={{ color: 'var(--purple)' }}>
+              POL
+            </th>
             <th>Item Code</th>
             <th>Customer RM</th>
             <th>Party GRN No.</th>
@@ -39,15 +41,15 @@ export function CmrReturnableTable({
             const k = cmrRowKey(r);
             return (
               <tr key={k}>
-                <td>
+                <td className="td-ctr">
                   <span className={`badge ${r.kind === 'rejected' ? 'b-red' : 'b-green'}`}>
                     {CMR_KIND_LABEL[r.kind]}
                   </span>
                 </td>
-                <td className="mono" style={{ color: 'var(--purple)' }}>
+                <td className="td-ctr mono" style={{ color: 'var(--purple)' }}>
                   L{r.jwLineNo}
                 </td>
-                <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                <td className="td-ctr mono fw-700" style={{ color: 'var(--purple)' }}>
                   {r.clientPoLineNo ?? '—'}
                 </td>
                 <td className="td-code" style={{ color: 'var(--text)' }}>

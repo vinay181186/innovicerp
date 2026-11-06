@@ -36,8 +36,18 @@ export const DAY_COLUMNS = [
   { key: 'work', label: 'Working On' },
 ];
 
-/** Column keys the print right-aligns. */
-export const DAY_NUM_KEYS = ['sr_no', 'work_hours', 'entry_rev_no'] as const;
+/** Column keys the print centres (numbers, dates, times); the rest print left. */
+export const DAY_CENTRE_KEYS = [
+  'sr_no',
+  'log_date',
+  'log_time',
+  'start_time',
+  'stop_time',
+  'work_hours',
+  'entry_rev_no',
+  'entry_rev_date',
+  'entry_rev_time',
+] as const;
 
 export function dayTable(day: DayLogDetail): ExportTable {
   const rows = sortEntries(day.entries).map((e, i) => ({

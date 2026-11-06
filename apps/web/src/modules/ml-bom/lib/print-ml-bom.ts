@@ -12,24 +12,31 @@ import { esc } from '@/lib/print/doc-print';
 import { type MlSheetColumn, printMlSheet, sheetQty, sheetTreeCode } from './ml-sheet-print';
 
 const COLUMNS: MlSheetColumn<MlBomTreeNode>[] = [
-  { header: 'Level', align: 'right', width: '9mm', cell: (n) => String(n.depth) },
+  { header: 'Level', width: '9mm', cell: (n) => String(n.depth) },
   { header: 'Item Code', align: 'left', cell: (n) => sheetTreeCode(n.depth, n.itemCode) },
   { header: 'Item Name', align: 'left', cell: (n) => esc(n.itemName ?? '') },
   {
     header: 'Line Type',
     cell: (n) => (n.bomType ? esc(BOM_LINE_TYPE_LABEL[n.bomType]) : ''),
   },
-  { header: 'Qty per Set', align: 'right', cell: (n) => sheetQty(n.qtyPerSet) },
-  { header: 'Exploded Qty', align: 'right', bold: true, cell: (n) => sheetQty(n.explodedQty) },
+  { header: 'Qty per Set', cell: (n) => sheetQty(n.qtyPerSet) },
+  { header: 'Exploded Qty', bold: true, cell: (n) => sheetQty(n.explodedQty) },
   { header: 'UOM', cell: (n) => esc(n.uom ?? '') },
   {
     header: 'BOM No.',
+    align: 'left',
+    nowrap: true,
     bold: true,
     // The sub-assembly's own BOM (and the top row: this BOM).
     cell: (n) => esc(n.mlBomCode ?? ''),
   },
-  { header: 'RM Grade', cell: (n) => esc(n.rawMaterialGradeText ?? '') },
-  { header: 'RM Size', cell: (n) => esc(n.rawMaterialSizeText ?? '') },
+  {
+    header: 'RM Grade',
+    align: 'left',
+    nowrap: true,
+    cell: (n) => esc(n.rawMaterialGradeText ?? ''),
+  },
+  { header: 'RM Size', align: 'left', nowrap: true, cell: (n) => esc(n.rawMaterialSizeText ?? '') },
 ];
 
 /** Returns false when nothing could show it. */

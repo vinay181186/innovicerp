@@ -473,7 +473,7 @@ function BomBody({
         <table className="innovic-table tbl-grid tbl-edit">
           <thead>
             <tr>
-              <th>Sr No</th>
+              <th className="th-ctr">Sr No</th>
               <th>Item Code</th>
               <th>Item Name</th>
               <th className="th-num">Qty per Set</th>
@@ -483,8 +483,8 @@ function BomBody({
                 Short
               </th>
               <th>BOM Type</th>
-              <th>Plan Status</th>
-              <th>Select</th>
+              <th className="th-ctr">Plan Status</th>
+              <th className="th-ctr">Select</th>
               <th className="th-num">Plan Qty</th>
             </tr>
           </thead>
@@ -518,7 +518,7 @@ function BomBody({
                   // (ADR-199), not a colour written here.
                   className={hasSufficient ? 'row-done' : undefined}
                 >
-                  <td className="mono fw-700">{i + 1}</td>
+                  <td className="td-ctr mono fw-700">{i + 1}</td>
                   <td className="td-code" style={{ color: 'var(--text)' }}>
                     {c.childItemCode}
                   </td>
@@ -540,7 +540,7 @@ function BomBody({
                       {typeIcon}
                     </span>
                   </td>
-                  <td style={{ minWidth: 120 }}>
+                  <td className="td-ctr" style={{ minWidth: 120 }}>
                     {c.existingPlan ? (
                       <>
                         <span
@@ -582,7 +582,7 @@ function BomBody({
                       </span>
                     )}
                   </td>
-                  <td>
+                  <td className="td-ctr">
                     <input
                       type="checkbox"
                       disabled={!!c.existingPlan}

@@ -109,12 +109,14 @@ function EquipmentBomItems({ soId }: { soId: string }): React.JSX.Element | null
 /** The exploded BOM parts table — shared by the SO list ▸ expand and the SO detail
  *  panel (ADR-222). Markup moved here unchanged from EquipmentBomItems. */
 function BomPartsTable({ items }: { items: SoStatusBomItem[] }): React.JSX.Element {
-  // tbl-ctr — the table-alignment standard: data centred, headers untouched.
+  // tbl-ctr — the table-alignment standard (ADR-277): the classes below apply.
   return (
     <table className="innovic-table tbl-ctr" style={{ width: '100%', margin: 0 }}>
       <thead>
         <tr style={{ background: 'var(--bg4)' }}>
-          <th style={{ width: 36 }}>Sr No</th>
+          <th className="th-ctr" style={{ width: 36 }}>
+            Sr No
+          </th>
           <th>Item Code</th>
           <th>Item Name</th>
           <th className="th-num">Qty per Set</th>

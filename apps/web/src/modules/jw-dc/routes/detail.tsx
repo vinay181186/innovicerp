@@ -189,11 +189,13 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
           <table className="innovic-table">
             <thead>
               <tr>
-                <th>Ln</th>
+                <th className="th-ctr">Ln</th>
                 {/* POL — the CUSTOMER's own purchase-order line number off the
                     SO line behind this challan line; an em dash on a purely
                     job-work line, which has no sales order behind it. */}
-                <th style={{ color: 'var(--purple)' }}>POL</th>
+                <th className="th-ctr" style={{ color: 'var(--purple)' }}>
+                  POL
+                </th>
                 <th>Item Code</th>
                 <th>Item Name</th>
                 <th>Process</th>
@@ -213,8 +215,8 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
               ) : (
                 dc.lines.map((l) => (
                   <tr key={l.id}>
-                    <td className="mono">{l.lineNo}</td>
-                    <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                    <td className="td-ctr mono">{l.lineNo}</td>
+                    <td className="td-ctr mono fw-700" style={{ color: 'var(--purple)' }}>
                       {l.clientPoLineNo ?? '—'}
                     </td>
                     <td className="mono fw-700" style={{ color: 'var(--text)' }}>

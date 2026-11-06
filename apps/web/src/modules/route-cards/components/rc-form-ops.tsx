@@ -69,7 +69,7 @@ export function RouteCardOpsEditor(props: RouteCardOpsTableProps): React.JSX.Ele
       </colgroup>
       <thead>
         <tr>
-          <th>Op</th>
+          <th className="th-ctr">Op</th>
           {/* Group replaces the old Type dropdown. The KIND of a row is
               decided by which Add button raised it (Op / OSP / QC) and is
               shown by the row's tint and by the QC / OSP badge in this
@@ -84,7 +84,7 @@ export function RouteCardOpsEditor(props: RouteCardOpsTableProps): React.JSX.Ele
           <th className="th-num">Cycle Time (min)</th>
           <th>Program No.</th>
           <th className="th-num">Lead Days</th>
-          <th aria-label="Actions"></th>
+          <th className="th-ctr" aria-label="Actions"></th>
         </tr>
       </thead>
       <tbody>
@@ -115,9 +115,7 @@ export function RouteCardOpsEditor(props: RouteCardOpsTableProps): React.JSX.Ele
       {ops.length > 0 ? (
         <tfoot>
           <tr className="fw-700">
-            <td className="td-num" colSpan={4}>
-              Total
-            </td>
+            <td colSpan={4}>Total</td>
             <td className="td-num mono">{totalCycleMin || '—'}</td>
             <td />
             <td className="td-num mono">{totalLeadDays || '—'}</td>
@@ -200,7 +198,7 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
   return (
     <Fragment>
       <tr style={{ background: rowBg }}>
-        <td className="mono fw-700" style={{ color: accent }}>
+        <td className="td-ctr mono fw-700" style={{ color: accent }}>
           {opSrNo(idx + 1)}
         </td>
         <td>
@@ -360,7 +358,7 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
             </span>
           )}
         </td>
-        <td className="rc-op-act">
+        <td className="td-ctr rc-op-act">
           <button
             type="button"
             className="btn btn-ghost btn-sm"

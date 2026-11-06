@@ -70,20 +70,22 @@ export function GrnDetailLines(props: {
         <table className="innovic-table tbl-grid">
           <thead>
             <tr>
-              <th>Ln</th>
+              <th className="th-ctr">Ln</th>
               {/* POL = the CUSTOMER's own PO line number, carried down from the
                   Sales Order line behind this receipt. */}
-              <th style={{ color: 'var(--purple)' }}>POL</th>
+              <th className="th-ctr" style={{ color: 'var(--purple)' }}>
+                POL
+              </th>
               <th>Item Code</th>
               <th className="th-left">Item Name</th>
-              <th>UOM</th>
+              <th className="th-ctr">UOM</th>
               {againstPo ? <th className="th-num">PO Qty</th> : null}
               <th className="th-num">Received</th>
-              <th>QC Status</th>
+              <th className="th-ctr">QC Status</th>
               <th className="th-num">Accepted</th>
               <th className="th-num">Deviated</th>
-              <th>QC Date</th>
-              <th />
+              <th className="th-ctr">QC Date</th>
+              <th className="th-ctr" />
             </tr>
           </thead>
           <tbody>
@@ -156,9 +158,9 @@ function LineRow(props: {
   return (
     <>
       <tr>
-        <td className="mono">{l.lineNo}</td>
+        <td className="td-ctr mono">{l.lineNo}</td>
         {/* POL — the CUSTOMER's PO line number off the SO line behind this row. */}
-        <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+        <td className="td-ctr mono fw-700" style={{ color: 'var(--purple)' }}>
           {l.clientPoLineNo ?? '—'}
         </td>
         {/* Item code is THE main thing — strong; CODE/REV (ADR-177). */}
@@ -168,7 +170,7 @@ function LineRow(props: {
         {/* The item master's name; the saved copy is the print's (plan v3 Step 4). */}
         <td className="td-left">{l.masterItemName ?? l.itemName}</td>
         {/* UOM off the item master (A26); blank when the line has no item. */}
-        <td className="mono">{l.uom ?? '—'}</td>
+        <td className="td-ctr mono">{l.uom ?? '—'}</td>
         {/* Ordered qty on the PO line behind this row. Against PO only: on a
             challan or NC receipt the clerk's figure is the challan's Sent Qty,
             not this. */}
@@ -178,7 +180,7 @@ function LineRow(props: {
           </td>
         ) : null}
         <td className="mono td-num fw-700">{fmtQty(l.receivedQty)}</td>
-        <td>
+        <td className="td-ctr">
           <QcStatusBadge status={l.qcStatus} />
         </td>
         <td className="mono td-num" style={{ color: 'var(--green2)' }}>
@@ -187,8 +189,8 @@ function LineRow(props: {
         <td className="mono td-num" style={{ color: 'var(--red2)' }}>
           {fmtQty(l.qcRejectedQty)}
         </td>
-        <td className="mono">{fmtDate(l.qcDate)}</td>
-        <td>
+        <td className="td-ctr mono">{fmtDate(l.qcDate)}</td>
+        <td className="td-ctr">
           <button
             type="button"
             className="dt-exp"

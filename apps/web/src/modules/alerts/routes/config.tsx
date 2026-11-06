@@ -117,16 +117,18 @@ function ConfigTable() {
           <table className="innovic-table tbl-grid">
             <thead>
               <tr>
-                <th style={{ width: 40 }}>Active</th>
+                <th className="th-ctr" style={{ width: 40 }}>
+                  Active
+                </th>
                 <th>Department</th>
                 <th>Alert Name</th>
-                <th>Setting</th>
+                <th className="th-ctr">Setting</th>
               </tr>
             </thead>
             <tbody>
               {data.entries.map((e) => (
                 <tr key={e.code}>
-                  <td>
+                  <td className="td-ctr">
                     <input
                       type="checkbox"
                       checked={e.active}
@@ -153,7 +155,9 @@ function ConfigTable() {
                       {e.description}
                     </div>
                   </td>
-                  <td>{e.isOverridden ? <span className="badge b-amber">Changed</span> : null}</td>
+                  <td className="td-ctr">
+                    {e.isOverridden ? <span className="badge b-amber">Changed</span> : null}
+                  </td>
                 </tr>
               ))}
             </tbody>

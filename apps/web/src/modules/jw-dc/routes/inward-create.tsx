@@ -64,7 +64,12 @@ function JwDcInwardNewPage(): React.JSX.Element {
 
   // Outward DCs with pending returns (filter client-side). Live DCs only — a
   // Cancelled DC (ADR-235) takes no return.
-  const { data: outData } = useJwDcOutwardList({ withLineItems: true, limit: 200, offset: 0, includeCancelled: false });
+  const { data: outData } = useJwDcOutwardList({
+    withLineItems: true,
+    limit: 200,
+    offset: 0,
+    includeCancelled: false,
+  });
   const pendingDcs = useMemo(
     () => (outData?.items ?? []).filter((d) => d.pendingQty > 0),
     [outData],
@@ -235,10 +240,12 @@ function JwDcInwardNewPage(): React.JSX.Element {
 
       {lines.length > 0 ? (
         <Panel title="DC Lines" bodyPadding="none">
-          <table style={{ width: '100%' }}>
+          <table className="tbl-ctr" style={{ width: '100%' }}>
             <thead>
               <tr style={{ background: 'var(--bg4)' }}>
-                <th style={{ padding: 6, color: 'var(--purple)' }}>POL</th>
+                <th className="th-ctr" style={{ padding: 6, color: 'var(--purple)' }}>
+                  POL
+                </th>
                 <th style={{ padding: 6 }}>Item Code · Name</th>
                 <th style={{ padding: 6, color: 'var(--purple)' }}>Process</th>
                 <th className="th-num" style={{ padding: 6 }}>
@@ -307,7 +314,7 @@ function JwDcInwardNewPage(): React.JSX.Element {
                           width: 65,
                           fontSize: 'var(--fs-sm)',
                           fontWeight: 700,
-                          textAlign: 'right',
+                          textAlign: 'center',
                         }}
                       />
                     </td>

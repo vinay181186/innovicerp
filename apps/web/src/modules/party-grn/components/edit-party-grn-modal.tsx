@@ -300,13 +300,15 @@ export function EditPartyGrnModal({
             <table className="innovic-table">
               <thead>
                 <tr>
-                  <th className="th-num">Ln</th>
-                  <th>JWSO Line</th>
-                  <th style={{ color: 'var(--purple)' }}>POL</th>
+                  <th className="th-ctr">Ln</th>
+                  <th className="th-ctr">JWSO Line</th>
+                  <th className="th-ctr" style={{ color: 'var(--purple)' }}>
+                    POL
+                  </th>
                   <th>Customer RM</th>
                   <th className="th-num">Received Qty</th>
                   <th>Remarks</th>
-                  <th>QC Status</th>
+                  <th className="th-ctr">QC Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -322,13 +324,13 @@ export function EditPartyGrnModal({
                     const e = entries[l.id];
                     return (
                       <tr key={l.id} style={waiting ? undefined : { opacity: 0.6 }}>
-                        <td className="td-num mono">{l.lineNo}</td>
-                        <td>
+                        <td className="td-ctr mono">{l.lineNo}</td>
+                        <td className="td-ctr">
                           <span className="mono fw-700" style={{ color: 'var(--text)' }}>
                             {l.jwLineNoText ? `L${l.jwLineNoText}` : '—'}
                           </span>
                         </td>
-                        <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                        <td className="td-ctr mono fw-700" style={{ color: 'var(--purple)' }}>
                           {l.clientPoLineNo ?? '—'}
                         </td>
                         <td title={l.partyMaterialName ?? ''}>
@@ -366,7 +368,7 @@ export function EditPartyGrnModal({
                             <span className="text3">{l.remarks ?? '—'}</span>
                           )}
                         </td>
-                        <td>
+                        <td className="td-ctr">
                           {waiting ? (
                             <span className="badge b-amber">Waiting QC</span>
                           ) : (

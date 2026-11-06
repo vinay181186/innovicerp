@@ -122,12 +122,12 @@ function RelatedSheet({
       <thead>
         <tr>
           {docCols ? <th>{section.codeHeading ?? 'Document No.'}</th> : null}
-          {mode === 'documents' ? <th>POL</th> : null}
+          {mode === 'documents' ? <th className="th-ctr">POL</th> : null}
           {itemCols ? <th>Item Code</th> : null}
           {itemCols ? <th>Item Name</th> : null}
           {docCols && labelHeading ? <th>{labelHeading}</th> : null}
-          {statusCols ? <th>Document Status</th> : null}
-          {statusCols ? <th>Document Date</th> : null}
+          {statusCols ? <th className="th-ctr">Document Status</th> : null}
+          {statusCols ? <th className="th-ctr">Document Date</th> : null}
         </tr>
       </thead>
       <tbody>
@@ -143,7 +143,7 @@ function RelatedSheet({
               </td>
             ) : null}
             {mode === 'documents' ? (
-              <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+              <td className="td-ctr mono fw-700" style={{ color: 'var(--purple)' }}>
                 {item?.pol ?? '—'}
               </td>
             ) : null}
@@ -160,9 +160,9 @@ function RelatedSheet({
               </td>
             ) : null}
             {docCols && labelHeading ? <td className="text2 td-left">{doc.label ?? '—'}</td> : null}
-            {statusCols ? <td>{doc.status ?? '—'}</td> : null}
+            {statusCols ? <td className="td-ctr">{doc.status ?? '—'}</td> : null}
             {statusCols ? (
-              <td className="mono text2" style={{ fontSize: 'var(--fs-xs)' }}>
+              <td className="td-ctr mono text2" style={{ fontSize: 'var(--fs-xs)' }}>
                 {fmtDate(doc.date)}
               </td>
             ) : null}

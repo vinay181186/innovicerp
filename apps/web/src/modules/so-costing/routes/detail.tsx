@@ -133,10 +133,12 @@ function SoCostingDetailPage(): React.JSX.Element {
           <table className="innovic-table">
             <thead>
               <tr>
-                <th>Ln</th>
+                <th className="th-ctr">Ln</th>
                 {/* POL is the CUSTOMER's own purchase-order line number — an
                     ADDITIONAL value beside our "Ln", never a substitute. */}
-                <th style={{ color: 'var(--purple)' }}>POL</th>
+                <th className="th-ctr" style={{ color: 'var(--purple)' }}>
+                  POL
+                </th>
                 <th>Item Code</th>
                 <th>Item Name</th>
                 <th className="th-num">Order Qty</th>
@@ -144,7 +146,7 @@ function SoCostingDetailPage(): React.JSX.Element {
                 <th>Operation</th>
                 <th>Op Type</th>
                 {priceHidden ? null : (
-                  <th className="th-num" style={{ color: 'var(--green2)' }}>
+                  <th className="th-money" style={{ color: 'var(--green2)' }}>
                     Cost
                   </th>
                 )}
@@ -185,7 +187,7 @@ function LineRows({
         <td className="mono fw-700 td-num">{line.orderQty}</td>
         <td colSpan={3} />
         {priceHidden ? null : (
-          <td className="mono fw-700 td-num" style={{ color: 'var(--green2)' }}>
+          <td className="mono fw-700 td-money" style={{ color: 'var(--green2)' }}>
             {m2(line.lineTotal)}
           </td>
         )}
@@ -201,7 +203,7 @@ function LineRows({
           <td colSpan={3} style={{ fontSize: 'var(--fs-xs)', color: 'var(--blue)' }}>
             📦 Material POs
           </td>
-          <td className="mono td-num" style={{ fontSize: 'var(--fs-xs)', color: 'var(--blue)' }}>
+          <td className="mono td-money" style={{ fontSize: 'var(--fs-xs)', color: 'var(--blue)' }}>
             ₹{inrFormat(line.materialCost ?? 0)}
           </td>
         </tr>
@@ -242,7 +244,7 @@ function LineRows({
                 two separately coloured spans, not a sum. Kept that way: both are
                 server-owned, so nothing is added in the browser. */}
             {priceHidden ? null : (
-              <td className="mono td-num" style={{ fontSize: 'var(--fs-xs)' }}>
+              <td className="mono td-money" style={{ fontSize: 'var(--fs-xs)' }}>
                 {(op.outsourceCost ?? 0) > 0 ? (
                   <span style={{ color: 'var(--amber2)' }}>
                     ₹{inrFormat(op.outsourceCost ?? 0)}

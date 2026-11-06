@@ -150,13 +150,17 @@ function ReportEditor({
           <table className="innovic-table" style={{ minWidth: 640 }}>
             <thead>
               <tr>
-                <th style={{ width: 28 }}>Sr No</th>
+                <th className="th-ctr" style={{ width: 28 }}>
+                  Sr No
+                </th>
                 <th>Task Description</th>
                 <th style={{ width: 90 }}>SO No.</th>
-                <th style={{ width: 64 }}>Hours</th>
+                <th className="th-num" style={{ width: 64 }}>
+                  Hours
+                </th>
                 <th style={{ width: 140 }}>Task Status</th>
                 <th>Remarks</th>
-                <th style={{ width: 30 }} />
+                <th className="th-ctr" style={{ width: 30 }} />
               </tr>
             </thead>
             <tbody>
@@ -183,13 +187,13 @@ function ReportEditor({
                       onChange={(e) => setLine(i, { ref: e.target.value })}
                     />
                   </td>
-                  <td>
+                  <td className="td-num">
                     <input
                       type="number"
                       min={0}
                       step={0.5}
                       className="innovic-input"
-                      style={{ width: 56, textAlign: 'center', fontWeight: 700 }}
+                      style={{ width: 56, fontWeight: 700 }}
                       value={l.hours || ''}
                       onChange={(e) => setLine(i, { hours: Number(e.target.value) || 0 })}
                     />
@@ -219,7 +223,7 @@ function ReportEditor({
                       onChange={(e) => setLine(i, { remarks: e.target.value })}
                     />
                   </td>
-                  <td>
+                  <td className="td-ctr">
                     <button
                       type="button"
                       className="btn btn-danger btn-sm"
@@ -382,11 +386,11 @@ export function ViewReportModal({
           <table className="innovic-table">
             <thead>
               <tr>
-                <th>Sr No</th>
+                <th className="th-ctr">Sr No</th>
                 <th>Task Description</th>
                 <th>SO No.</th>
-                <th>Hours</th>
-                <th>Task Status</th>
+                <th className="th-num">Hours</th>
+                <th className="th-ctr">Task Status</th>
                 <th>Remarks</th>
               </tr>
             </thead>
@@ -398,8 +402,8 @@ export function ViewReportModal({
                   <td className="mono" style={{ fontSize: 'var(--fs-xs)', color: 'var(--cyan)' }}>
                     {l.ref || '—'}
                   </td>
-                  <td className="td-ctr mono fw-700">{l.hours.toFixed(1)}</td>
-                  <td>
+                  <td className="td-num mono fw-700">{l.hours.toFixed(1)}</td>
+                  <td className="td-ctr">
                     <StatusBadge
                       kind="doc"
                       status={l.status}

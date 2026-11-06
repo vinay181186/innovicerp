@@ -73,14 +73,20 @@ export function DcEditLineTable(props: {
         >
           <thead>
             <tr>
-              <th style={{ width: '4%' }}>Ln</th>
-              <th style={{ width: '5%', color: 'var(--purple)' }}>POL</th>
+              <th className="th-ctr" style={{ width: '4%' }}>
+                Ln
+              </th>
+              <th className="th-ctr" style={{ width: '5%', color: 'var(--purple)' }}>
+                POL
+              </th>
               <th style={{ width: '16%' }}>Item Code</th>
               <th style={{ width: '20%' }}>Item Name</th>
               <th style={{ width: '8%' }} className="th-num">
                 Current Qty
               </th>
-              <th style={{ width: '6%' }}>UOM</th>
+              <th className="th-ctr" style={{ width: '6%' }}>
+                UOM
+              </th>
               <th style={{ width: '11%' }} className="th-num">
                 Can Send Now
               </th>
@@ -126,7 +132,7 @@ export function DcEditLineTable(props: {
                     </td>
                     <td>{saved?.itemName ?? saved?.itemNameText ?? '—'}</td>
                     <td className="mono td-num">{current}</td>
-                    <td className="mono">{saved?.uom ?? '—'}</td>
+                    <td className="td-ctr mono">{saved?.uom ?? '—'}</td>
                     <td
                       className="mono td-num"
                       style={{ cursor: sl ? 'help' : undefined }}

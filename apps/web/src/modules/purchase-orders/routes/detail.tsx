@@ -493,18 +493,20 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
           <table className="innovic-table">
             <thead>
               <tr>
-                <th className="th-num">Ln</th>
+                <th className="th-ctr">Ln</th>
                 {/* POL = the customer's own PO line number, carried down from
                     the Sales Order line this PO line was raised against. */}
-                <th style={{ color: 'var(--purple)' }}>POL</th>
+                <th className="th-ctr" style={{ color: 'var(--purple)' }}>
+                  POL
+                </th>
                 <th>Item Code</th>
                 <th>Item Name</th>
                 <th>Source</th>
                 <th className="th-num">Qty</th>
                 {priceHidden ? null : (
                   <>
-                    <th className="th-num">Rate</th>
-                    <th className="th-num" style={{ color: 'var(--green2)' }}>
+                    <th className="th-money">Rate</th>
+                    <th className="th-money" style={{ color: 'var(--green2)' }}>
                       Amount
                     </th>
                   </>
@@ -522,7 +524,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
                 <th className="th-num" style={{ color: 'var(--blue)' }}>
                   Pending
                 </th>
-                <th>Due Date</th>
+                <th className="th-ctr">Due Date</th>
                 <th>Remarks</th>
               </tr>
             </thead>
@@ -806,9 +808,8 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
   );
 }
 
-// Legacy L26336-26348. Numbers (Ln, qty, rate, amount, received, accepted,
-// pending) sit
-// RIGHT-aligned with `td-num` (house rule 2026-09-26), Item Code is `td-code` on the <td> in var(--text) (a real
+// Legacy L26336-26348. Qty, received, accepted and pending sit centred with
+// `td-num`, rate and amount right with `td-money` (ADR-277), Item Code is `td-code` on the <td> in var(--text) (a real
 // token with no utility class), Received is always green and Pending flips
 // blue/green on >0.
 function LineRow(props: {
@@ -840,12 +841,12 @@ function LineRow(props: {
   const pending = poLinePendingQty(l.qty, l.qcAcceptedQty, poStatus);
   return (
     <tr>
-      <td className="td-num mono fw-700" style={{ color: 'var(--blue)' }}>
+      <td className="td-ctr mono fw-700" style={{ color: 'var(--blue)' }}>
         {l.lineNo}
       </td>
       {/* POL — the CUSTOMER's PO line number off the SO line behind this row.
           Not our line number above it; the two rarely match. */}
-      <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+      <td className="td-ctr mono fw-700" style={{ color: 'var(--purple)' }}>
         {l.clientPoLineNo ?? '—'}
       </td>
       {/* CODE/REV — the customer's drawing revision off the SO line THIS line
@@ -869,11 +870,11 @@ function LineRow(props: {
       </td>
       {priceHidden ? null : (
         <>
-          <td className="td-num mono" style={{ fontSize: 'var(--fs-xs)' }}>
+          <td className="td-money mono" style={{ fontSize: 'var(--fs-xs)' }}>
             {Number(l.rate) > 0 ? `₹${Number(l.rate).toFixed(2)}` : '—'}
             {ratePending ? <PendingChangeChip after={ratePending.after} /> : null}
           </td>
-          <td className="td-num mono green">{amount > 0 ? `₹${amount.toFixed(2)}` : '—'}</td>
+          <td className="td-money mono green">{amount > 0 ? `₹${amount.toFixed(2)}` : '—'}</td>
         </>
       )}
       <td className="td-num mono green fw-700">{l.grnReceivedQty}</td>
@@ -884,7 +885,7 @@ function LineRow(props: {
       >
         {pending}
       </td>
-      <td style={{ fontSize: 'var(--fs-xs)' }}>
+      <td className="td-ctr" style={{ fontSize: 'var(--fs-xs)' }}>
         {fmtDate(l.dueDate)}
         {dueDatePending ? <PendingChangeChip after={dueDatePending.after} /> : null}
       </td>

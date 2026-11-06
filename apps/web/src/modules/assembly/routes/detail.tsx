@@ -664,7 +664,7 @@ function ComponentsPanel({
         <table className="innovic-table">
           <thead>
             <tr>
-              <th>Sr No</th>
+              <th className="th-ctr">Sr No</th>
               <th>Item Code</th>
               <th>BOM Type</th>
               {/* Qty/Set + Stock have no legacy counterpart — kept (live system). */}
@@ -673,7 +673,7 @@ function ComponentsPanel({
               <th className="th-num">Stock</th>
               {/* Still Out (docs/NAMING.md §A — Issued − Returned − Fitted) is
                   the number Complete reads; `Stock` beside it is shelf stock
-                  and gates nothing. Marked th-num/td-num so it right-aligns
+                  and gates nothing. Marked th-num/td-num so it centres
                   like any number column (innovic-theme.css). */}
               <th
                 className="th-num"
@@ -687,7 +687,7 @@ function ComponentsPanel({
                 Pending
               </th>
               <th className="th-num">Enough For</th>
-              <th>Stock Status</th>
+              <th className="th-ctr">Stock Status</th>
             </tr>
           </thead>
           <tbody>
@@ -696,7 +696,7 @@ function ComponentsPanel({
                 key={c.childItemCode}
                 style={{ background: c.status === 'ready' ? 'var(--sig-ok-bg)' : undefined }}
               >
-                <td>{i + 1}</td>
+                <td className="td-ctr">{i + 1}</td>
                 <td>
                   <div className="td-code mono fw-700" style={{ color: 'var(--text)' }}>
                     {c.childItemCode}
@@ -765,7 +765,7 @@ function ComponentsPanel({
                     ? `${c.enoughForUnits} ✓`
                     : `${c.enoughForUnits} / ${orderQty}`}
                 </td>
-                <td>
+                <td className="td-ctr">
                   <ComponentStatusBadge status={c.status} />
                 </td>
               </tr>
@@ -904,15 +904,15 @@ function UnitsPanel({
           <thead>
             <tr>
               <th>Batch No.</th>
-              <th>Batch Status</th>
+              <th className="th-ctr">Batch Status</th>
               <th className="th-num">Batch Qty</th>
               <th>Serial No.</th>
-              <th>Assembly Date</th>
+              <th className="th-ctr">Assembly Date</th>
               <th>Assembled By</th>
               <th>Remarks</th>
-              <th>Dispatch</th>
+              <th className="th-ctr">Dispatch</th>
               <th className="th-num">Good Qty</th>
-              <th aria-label="Actions" />
+              <th className="th-ctr" aria-label="Actions" />
             </tr>
           </thead>
           <tbody>
@@ -924,7 +924,7 @@ function UnitsPanel({
                   <td className="fw-700" style={{ fontSize: 'var(--fs-md)' }}>
                     {u.unitNo}
                   </td>
-                  <td>
+                  <td className="td-ctr">
                     {wip ? (
                       <span className="badge b-amber">In Assembly</span>
                     ) : (
@@ -946,14 +946,14 @@ function UnitsPanel({
                   >
                     {u.serialNo ?? '—'}
                   </td>
-                  <td className="mono" style={{ fontSize: 'var(--fs-sm)' }}>
+                  <td className="td-ctr mono" style={{ fontSize: 'var(--fs-sm)' }}>
                     {fmtDate(u.assemblyDate)}
                   </td>
                   <td style={{ fontSize: 'var(--fs-sm)' }}>{u.assembledBy ?? '—'}</td>
                   <td className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
                     {u.remarks ?? '—'}
                   </td>
-                  <td>
+                  <td className="td-ctr">
                     {wip ? (
                       <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
                         —
@@ -986,7 +986,7 @@ function UnitsPanel({
                       </span>
                     )}
                   </td>
-                  <td onClick={(e) => e.stopPropagation()}>
+                  <td className="td-ctr" onClick={(e) => e.stopPropagation()}>
                     <RowMenu
                       renderLink={renderJcOpsLink}
                       items={[

@@ -406,7 +406,7 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
             <table className="innovic-table">
               <thead>
                 <tr>
-                  <th>Ln</th>
+                  <th className="th-ctr">Ln</th>
                   {/* A return DC carries one NC per line. */}
                   {dc.ncId ? <th>NC No.</th> : null}
                   {/* Each return line's own JW PO — NCs of one SO may come
@@ -414,7 +414,9 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
                   {dc.ncId ? <th>PO No.</th> : null}
                   {/* POL = the CUSTOMER's own PO line number off the SO line
                       behind this challan line. */}
-                  <th style={{ color: 'var(--purple)' }}>POL</th>
+                  <th className="th-ctr" style={{ color: 'var(--purple)' }}>
+                    POL
+                  </th>
                   <th>Item Code</th>
                   <th>Item Name</th>
                   <th className="th-num">Sent</th>
@@ -439,7 +441,7 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
                     const remaining = Math.max(0, ship - received - rejected);
                     return (
                       <tr key={line.id}>
-                        <td className="mono">{line.lineNo}</td>
+                        <td className="td-ctr mono">{line.lineNo}</td>
                         {dc.ncId ? (
                           <td className="mono fw-700">
                             {line.ncId ? (
@@ -461,7 +463,7 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
                         ) : null}
                         {/* POL — the customer's PO line number off the SO line
                             behind this row; '—' on a raw-material line. */}
-                        <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                        <td className="td-ctr mono fw-700" style={{ color: 'var(--purple)' }}>
                           {line.clientPoLineNo ?? '—'}
                         </td>
                         {/* SO document format: the code is its own strong-mono

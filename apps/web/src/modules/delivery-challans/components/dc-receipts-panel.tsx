@@ -120,7 +120,9 @@ export function DcReceiptsPanel({
                       <tr>
                         {/* POL = the CUSTOMER's own PO line number, read off the
                         challan line this receipt row books against. */}
-                        <th style={{ color: 'var(--purple)' }}>POL</th>
+                        <th className="th-ctr" style={{ color: 'var(--purple)' }}>
+                          POL
+                        </th>
                         <th>Item Code · Name</th>
                         <th className="th-num">Received</th>
                         <th className="th-num">Deviated</th>
@@ -132,7 +134,7 @@ export function DcReceiptsPanel({
                         const ll = lineLookup.get(rl.deliveryChallanLineId);
                         return (
                           <tr key={rl.id} className={cancelled ? 'row-cancelled' : undefined}>
-                            <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                            <td className="td-ctr mono fw-700" style={{ color: 'var(--purple)' }}>
                               {ll?.clientPoLineNo ?? '—'}
                             </td>
                             <td>

@@ -67,8 +67,10 @@ export function DispatchEditLineTable(props: {
         >
           <thead>
             <tr>
-              <th style={{ width: '4%' }}>Ln</th>
-              <th style={{ width: '5%', color: 'var(--purple)' }} className="td-ctr">
+              <th style={{ width: '4%' }} className="th-ctr">
+                Ln
+              </th>
+              <th style={{ width: '5%', color: 'var(--purple)' }} className="th-ctr">
                 POL
               </th>
               <th style={{ width: '22%' }}>Item Code</th>

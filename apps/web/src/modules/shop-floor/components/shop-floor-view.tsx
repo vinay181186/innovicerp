@@ -206,26 +206,28 @@ export function ShopFloorView(): React.JSX.Element {
                   <thead>
                     <tr>
                       <th>JC No.</th>
-                      <th className="td-ctr">Op</th>
+                      <th className="th-ctr">Op</th>
                       <th>Operation</th>
                       {/* POL — the line number printed on the CUSTOMER's own
                           purchase order; sits immediately before the item. */}
-                      <th style={{ color: 'var(--purple)' }}>POL</th>
+                      <th className="th-ctr" style={{ color: 'var(--purple)' }}>
+                        POL
+                      </th>
                       <th>Item Code</th>
                       <th>Item Name</th>
                       <th>SO No.</th>
-                      <th className="td-ctr">JC Qty</th>
-                      <th className="td-ctr" style={{ color: 'var(--green2)' }}>
+                      <th className="th-num">JC Qty</th>
+                      <th className="th-num" style={{ color: 'var(--green2)' }}>
                         Completed
                       </th>
-                      <th className="td-ctr" style={{ color: 'var(--amber2)' }}>
+                      <th className="th-num" style={{ color: 'var(--amber2)' }}>
                         Pending
                       </th>
-                      <th>Priority</th>
-                      <th>Due Date</th>
+                      <th className="th-ctr">Priority</th>
+                      <th className="th-ctr">Due Date</th>
                       <th>Operator</th>
-                      <th>Started</th>
-                      <th></th>
+                      <th className="th-ctr">Started</th>
+                      <th className="th-ctr"></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -273,7 +275,7 @@ export function ShopFloorView(): React.JSX.Element {
                           ) : null}
                         </td>
                         {/* POL — '—' when no sales order sits behind the card. */}
-                        <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                        <td className="td-ctr mono fw-700" style={{ color: 'var(--purple)' }}>
                           {r.clientPoLineNo ?? '—'}
                         </td>
                         <td
@@ -286,23 +288,23 @@ export function ShopFloorView(): React.JSX.Element {
                         <td className="mono text2" style={{ fontSize: 'var(--fs-xs)' }}>
                           {r.soCode ? soNoWithInternal(r.soCode, r.soInternalNo) : '—'}
                         </td>
-                        <td className="td-ctr mono">{r.orderQty}</td>
-                        <td className="td-ctr green mono fw-700">{r.doneQty}</td>
-                        <td className="td-ctr mono" style={{ color: 'var(--amber2)' }}>
+                        <td className="td-num mono">{r.orderQty}</td>
+                        <td className="td-num green mono fw-700">{r.doneQty}</td>
+                        <td className="td-num mono" style={{ color: 'var(--amber2)' }}>
                           {r.pendingQty}
                         </td>
-                        <td>
+                        <td className="td-ctr">
                           {/* Legacy badge() (L1959): High → b-amber, Normal → b-grey. */}
                           <span className={`badge ${r.priority === 'high' ? 'b-amber' : 'b-grey'}`}>
                             {r.priority === 'high' ? 'High' : 'Normal'}
                           </span>
                         </td>
-                        <td className="text2" style={{ fontSize: 'var(--fs-xs)' }}>
+                        <td className="td-ctr text2" style={{ fontSize: 'var(--fs-xs)' }}>
                           {fmtDate(r.dueDate)}
                         </td>
                         <td className="fw-700 amber">{r.operatorName ?? '—'}</td>
                         <td
-                          className="text3"
+                          className="td-ctr text3"
                           style={{ fontSize: 'var(--fs-xs)', whiteSpace: 'nowrap' }}
                         >
                           {fmtDateAndTime(r.startDate, r.startTime)}

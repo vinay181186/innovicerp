@@ -28,7 +28,7 @@ export const PRO_REGISTER_COLUMNS = [
   'JC No.',
 ] as const;
 
-/** Indexes of the number columns (right-aligned on the print). */
+/** Indexes of the number columns (centred on the print). */
 export const PRO_REGISTER_NUM_COLS = new Set([0, 5, 6, 7, 8]);
 
 /** The status word the list shows (ADR-235: a Cancelled order reads "Cancelled"). */

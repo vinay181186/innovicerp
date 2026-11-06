@@ -209,7 +209,7 @@ export function JcEditOpRow(props: JcEditOpRowProps): React.JSX.Element {
         ref={rowRef}
         className={cx(isQc && 'jc-ops-qc', isOut && 'jc-ops-osp', flash && 'jc-edit-flash')}
       >
-        <td className="jc-ops-exp">
+        <td className="td-ctr jc-ops-exp">
           <button
             type="button"
             aria-expanded={open}
@@ -222,7 +222,7 @@ export function JcEditOpRow(props: JcEditOpRowProps): React.JSX.Element {
             {open ? '▾' : '▸'}
           </button>
         </td>
-        <td className={`mono fw-700 jc-ops-opn jc-ops-k-${kind}`}>
+        <td className={`td-ctr mono fw-700 jc-ops-opn jc-ops-k-${kind}`}>
           {seqLabel == null ? (
             <span className="text3" title="This operation is numbered when you Save">
               —
@@ -378,7 +378,7 @@ export function JcEditOpRow(props: JcEditOpRowProps): React.JSX.Element {
             />
           )}
         </td>
-        <td>
+        <td className="td-ctr">
           {isQc ? (
             <span className="text3">—</span>
           ) : canOutsourceBalance && op.hasStarted && !isOut && op.available > 0 && op.id ? (
@@ -405,7 +405,7 @@ export function JcEditOpRow(props: JcEditOpRowProps): React.JSX.Element {
             </label>
           )}
         </td>
-        <td>
+        <td className="td-ctr">
           {st ? (
             <span className={`badge ${st.cls}`}>{st.label}</span>
           ) : (
@@ -414,7 +414,7 @@ export function JcEditOpRow(props: JcEditOpRowProps): React.JSX.Element {
             </span>
           )}
         </td>
-        <td>
+        <td className="td-ctr">
           <RowMenu
             label={menuLabel}
             items={[

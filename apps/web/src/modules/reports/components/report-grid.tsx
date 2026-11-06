@@ -9,7 +9,13 @@
 // column filters, the row count and the Total row are all worked out on the
 // SERVER over every row of the report (apps/api reports/grid.ts); this
 // component only shows the page it is handed and reports clicks back up.
-import type { ReportColumn, ReportRow, ReportRowLink, RunReportResponse } from '@innovic/shared';
+import {
+  isMoneyHeading,
+  type ReportColumn,
+  type ReportRow,
+  type ReportRowLink,
+  type RunReportResponse,
+} from '@innovic/shared';
 import { useNavigate } from '@tanstack/react-router';
 import { useMemo, useRef } from 'react';
 import { fmtTime } from '@/lib/date';
@@ -99,14 +105,21 @@ export function ReportGrid(props: ReportGridProps): React.JSX.Element {
   const updated = data?.generatedAt ? fmtTime(data.generatedAt) : undefined;
   const unfiltered = data?.unfilteredCount;
 
+  // Each total sits with its column: money right, qty centre (the same test the
+  // table's own cells use).
+  const totalClass = (k: string): string =>
+    isMoneyHeading(columns.find((c) => c.key === k)?.label ?? '') ? 'td-money mono' : 'td-num mono';
+
   const footer =
     totals.size > 0 && visibleKeys.length > 0 ? (
       <tr className="rpt-total">
         {visibleKeys.map((k) =>
           k === ROW_NO_ID ? (
-            <td key={k}>Total</td>
+            <td key={k} className="td-ctr">
+              Total
+            </td>
           ) : (
-            <td key={k} className={totals.has(k) ? 'td-num mono' : undefined}>
+            <td key={k} className={totals.has(k) ? totalClass(k) : undefined}>
               {totals.get(k) ?? ''}
             </td>
           ),

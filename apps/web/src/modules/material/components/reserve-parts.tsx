@@ -119,7 +119,7 @@ export function ReservePartsModal({
                       min={0}
                       step="any"
                       className="innovic-input mono fw-700"
-                      style={{ width: 100, textAlign: 'right' }}
+                      style={{ width: 100 }}
                       value={qty[l.itemId] ?? ''}
                       onChange={(e) => setQty((s) => ({ ...s, [l.itemId]: e.target.value }))}
                       onWheel={(e) => e.currentTarget.blur()}

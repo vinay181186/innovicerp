@@ -1,0 +1,46 @@
+/* An operation's Tool Details and Remarks under its row (rc-op-notes.tsx). The text
+   stops at a readable width and grows downward; the table never scrolls sideways. */
+.innovic-table > tbody > tr.rc-op-open > td {
+  border-bottom: none;
+}
+.innovic-table > tbody > tr.rc-op-notes-row > td {
+  height: auto;
+  padding-top: 2px;
+  padding-bottom: var(--sp-2);
+  white-space: normal;
+  overflow: visible;
+  text-align: left;
+}
+.innovic-table > tbody > tr.rc-op-notes-row > td:first-child {
+  padding: 0;
+}
+.rc-op-notes {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 720px);
+  column-gap: var(--sp-2);
+  row-gap: var(--sp-1);
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+  color: var(--text2);
+}
+.rc-op-notes-k {
+  color: var(--text3);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  line-height: 1.7;
+}
+.rc-op-notes-v {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.rc-op-toggle {
+  white-space: nowrap;
+}
+/* A long Operation name wraps, so it can never push the table wider than the screen. */
+.innovic-table td.rc-op-name {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
+  min-width: 140px;
+}

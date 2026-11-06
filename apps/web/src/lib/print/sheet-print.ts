@@ -311,7 +311,8 @@ export const SHEET_STYLE = `
   tbody td{padding:1.4mm 2.5mm}
   .num{text-align:center;font-variant-numeric:tabular-nums;font-family:var(--f-mono);font-size:9.5pt}
   .ctr{text-align:center}
-  .qty{text-align:right;font-weight:600;font-variant-numeric:tabular-nums;
+  .rgt{text-align:right}
+  .qty{text-align:center;font-weight:600;font-variant-numeric:tabular-nums;
        font-family:var(--f-mono);font-size:9.5pt}
   .money{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--f-mono);
          font-size:9.5pt;white-space:nowrap}
@@ -681,11 +682,11 @@ export function buildSheetHtml(model: SheetPrintModel): string {
       polHead +
       '<td class="colh">Item Code</td>' +
       '<td class="colh ctr" style="width:14mm">UOM</td>' +
-      (showHsnPo ? '<td class="colh ctr" style="width:19mm">HSN</td>' : '') +
+      (showHsnPo ? '<td class="colh" style="width:19mm">HSN</td>' : '') +
       '<td class="colh ctr" style="width:20mm">Qty</td>' +
       (priced
-        ? '<td class="colh ctr" style="width:26mm">Rate</td>' +
-          '<td class="colh ctr" style="width:30mm">Amount</td>'
+        ? '<td class="colh rgt" style="width:26mm">Rate</td>' +
+          '<td class="colh rgt" style="width:30mm">Amount</td>'
         : '')
     : grn
       ? '<td class="colh ctr" style="width:11mm">Sr No</td>' +
@@ -700,7 +701,7 @@ export function buildSheetHtml(model: SheetPrintModel): string {
         polHead +
         '<td class="colh">Item Code</td>' +
         '<td class="colh ctr" style="width:14mm">UOM</td>' +
-        (showHsn ? '<td class="colh ctr" style="width:19mm">HSN</td>' : '') +
+        (showHsn ? '<td class="colh" style="width:19mm">HSN</td>' : '') +
         '<td class="colh ctr" style="width:20mm">Qty</td>' +
         '<td class="colh" style="width:62mm">Remarks</td>';
 
@@ -715,7 +716,7 @@ export function buildSheetHtml(model: SheetPrintModel): string {
       if (po) {
         return (
           lead +
-          (showHsnPo ? `<td class="ctr">${esc(l.hsn ?? '')}</td>` : '') +
+          (showHsnPo ? `<td>${esc(l.hsn ?? '')}</td>` : '') +
           `<td class="qty">${esc(l.qty)}</td>` +
           (priced
             ? `<td class="money">${esc(l.rate ?? '')}</td>` +
@@ -736,7 +737,7 @@ export function buildSheetHtml(model: SheetPrintModel): string {
       const remarks = l.remarks ? nl2br(l.remarks) : '';
       return (
         lead +
-        (showHsn ? `<td class="ctr">${hsn}</td>` : '') +
+        (showHsn ? `<td>${hsn}</td>` : '') +
         `<td class="qty">${esc(l.qty)}</td>` +
         `<td class="rem">${remarks}</td></tr>`
       );

@@ -19,10 +19,13 @@ export interface MlSheetFact {
 /** One column of the tree table. `cell` returns ready HTML (escape inside). */
 export interface MlSheetColumn<T> {
   header: string;
-  /** right = a number column; centre otherwise; left for indented code / name. */
+  /** left = text and codes; right = money; centre otherwise (qty, short values).
+   *  The heading follows the column. */
   align?: 'left' | 'center' | 'right';
   width?: string;
   bold?: boolean;
+  /** Keep a left-aligned short value on one line. */
+  nowrap?: boolean;
   cell: (row: T) => string;
 }
 
@@ -59,9 +62,10 @@ const ML_STYLE = `
   table.mt td{border:1px solid var(--paper-rule);padding:1.1mm 1mm;vertical-align:middle;
               text-align:center}
   table.mt tr:last-child td{border-bottom:none}
-  table.mt td.l{text-align:left}
+  table.mt td.l,table.mt th.l{text-align:left}
+  table.mt th.r{text-align:right}
   table.mt td.r{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
-  table.mt td.nw{white-space:nowrap}
+  table.mt td.nw{white-space:nowrap;font-variant-numeric:tabular-nums}
   table.mt td.b{font-weight:700}
 `;
 
@@ -79,7 +83,10 @@ function factsHtml(facts: MlSheetFact[]): string {
 
 function tableHtml<T>(columns: MlSheetColumn<T>[], rows: T[]): string {
   const head = columns
-    .map((c) => `<th${c.width ? ` style="width:${c.width}"` : ''}>${esc(c.header)}</th>`)
+    .map((c) => {
+      const cls = c.align === 'left' ? ' class="l"' : c.align === 'right' ? ' class="r"' : '';
+      return `<th${cls}${c.width ? ` style="width:${c.width}"` : ''}>${esc(c.header)}</th>`;
+    })
     .join('');
   const body = rows
     .map(
@@ -88,6 +95,7 @@ function tableHtml<T>(columns: MlSheetColumn<T>[], rows: T[]): string {
           .map((c) => {
             const cls = [
               c.align === 'right' ? 'r' : c.align === 'left' ? 'l' : 'nw',
+              c.nowrap ? 'nw' : '',
               c.bold ? 'b' : '',
             ]
               .filter(Boolean)

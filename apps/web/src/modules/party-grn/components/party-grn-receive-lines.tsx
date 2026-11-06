@@ -56,8 +56,10 @@ export function PartyGrnReceiveLines({
       <table className="innovic-table">
         <thead>
           <tr>
-            <th className="th-num">Ln</th>
-            <th style={{ color: 'var(--purple)' }}>POL</th>
+            <th className="th-ctr">Ln</th>
+            <th className="th-ctr" style={{ color: 'var(--purple)' }}>
+              POL
+            </th>
             <th>Item Code</th>
             <th>Item Name</th>
             <th>Customer RM</th>
@@ -69,7 +71,7 @@ export function PartyGrnReceiveLines({
               Received Qty<span className="req">★</span>
             </th>
             <th>Remarks</th>
-            <th />
+            <th className="th-ctr" />
           </tr>
         </thead>
         <tbody>
@@ -100,8 +102,8 @@ export function PartyGrnReceiveLines({
                 const e = entries[l.id];
                 return (
                   <tr key={l.id} style={receivable ? undefined : { opacity: 0.55 }}>
-                    <td className="td-num mono">{l.lineNo}</td>
-                    <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                    <td className="td-ctr mono">{l.lineNo}</td>
+                    <td className="td-ctr mono fw-700" style={{ color: 'var(--purple)' }}>
                       {l.clientPoLineNo ?? '—'}
                     </td>
                     <td>
@@ -170,7 +172,7 @@ export function PartyGrnReceiveLines({
                         '—'
                       )}
                     </td>
-                    <td>
+                    <td className="td-ctr">
                       {receivable ? (
                         <button
                           type="button"

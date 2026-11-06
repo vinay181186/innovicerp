@@ -11,12 +11,12 @@
 //   ───────────────────────────────────────────────────────────── (sticky)
 //   [Field][Field][Field][Field]                    [Apply] [Clear]
 //   ┌ KPI strip (optional) ┐
-//   ┌ table — sticky header, right-aligned numbers, bold totals row ┐
+//   ┌ table — sticky header, centred qty, right-aligned money, bold totals row ┐
 //   Showing all N rows                                  (or the page's footer)
 //
 // The table itself is the page's `children` (a `.tbl-wrap > .innovic-table`),
-// because every report's cells differ. Numeric columns carry `th-num` /
-// `td-num`; a totals row sits in <tfoot> using `ReportTotalRow` below.
+// because every report's cells differ. Qty columns carry `th-num` / `td-num`,
+// money columns `th-money` / `td-money`; a totals row sits in <tfoot> using `ReportTotalRow` below.
 //
 // Not re-exported from ui/data/index.ts on purpose (that file is frozen for
 // this change); import it by path: `@/ui/data/ReportShell`.

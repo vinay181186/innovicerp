@@ -110,15 +110,17 @@ export function PoCloseLedger({
         <table className="innovic-table">
           <thead>
             <tr>
-              <th>Close Date &amp; Time</th>
+              <th className="th-ctr">Close Date &amp; Time</th>
               <th>Close Type</th>
               <th className="th-num">Stock Received</th>
               <th className="th-num">Short Closed Qty</th>
               <th className="th-num">Lost Qty</th>
               <th>Closed By</th>
               <th>Remarks</th>
-              <th>Reversed</th>
-              {canReverse ? <th style={{ width: 48 }} aria-label="Actions" /> : null}
+              <th className="th-ctr">Reversed</th>
+              {canReverse ? (
+                <th className="th-ctr" style={{ width: 48 }} aria-label="Actions" />
+              ) : null}
             </tr>
           </thead>
           <tbody>
@@ -141,7 +143,7 @@ export function PoCloseLedger({
                 // A header-built row carries the ORDER's id, so the key adds
                 // the kind to stay unique.
                 <tr key={`${c.id}:${c.kind}`}>
-                  <td className="mono">{fmtDateTime(c.closedAt)}</td>
+                  <td className="td-ctr mono">{fmtDateTime(c.closedAt)}</td>
                   <td>
                     <span className={`badge ${type.cls}`}>{type.label}</span>
                   </td>
@@ -161,7 +163,7 @@ export function PoCloseLedger({
                   <td style={{ maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     <span title={c.remarks ?? undefined}>{c.remarks ?? '—'}</span>
                   </td>
-                  <td>
+                  <td className="td-ctr">
                     {c.isReversal ? (
                       <span className="badge b-red" title="Reverses an earlier close">
                         Reversal
@@ -174,7 +176,7 @@ export function PoCloseLedger({
                     )}
                   </td>
                   {canReverse ? (
-                    <td>
+                    <td className="td-ctr">
                       <RowMenu
                         items={[
                           {

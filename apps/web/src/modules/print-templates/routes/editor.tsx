@@ -158,7 +158,6 @@ function PrintTemplatesPage(): React.JSX.Element {
   };
   const poMoneyCell: React.CSSProperties = {
     ...poCell,
-    textAlign: 'right',
     fontFamily: MONO,
     whiteSpace: 'nowrap',
   };
@@ -166,7 +165,6 @@ function PrintTemplatesPage(): React.JSX.Element {
     padding: '6px 9px',
     borderBottom: PO_RULE,
     borderRight: PO_RULE,
-    textAlign: 'right',
     fontFamily: PO_LABEL_FACE,
     fontWeight: 700,
     fontSize: 'var(--fs-xs)',
@@ -707,6 +705,7 @@ function PrintTemplatesPage(): React.JSX.Element {
                       column band, one row per line, the quantity total, then
                       the money rows. */}
                   <table
+                    className="tbl-ctr"
                     style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--fs-sm)' }}
                   >
                     <thead>
@@ -717,12 +716,21 @@ function PrintTemplatesPage(): React.JSX.Element {
                             ['Item detail', 0, 'left'],
                             ['UOM', 46, 'center'],
                             ['Qty', 58, 'center'],
-                            ['Rate', 78, 'center'],
-                            ['Amount', 92, 'center'],
-                          ] as [string, number, 'left' | 'center'][]
+                            ['Rate', 78, 'right'],
+                            ['Amount', 92, 'right'],
+                          ] as [string, number, 'left' | 'center' | 'right'][]
                         ).map(([colLabel, w, align], i) => (
                           <th
                             key={colLabel}
+                            className={
+                              align === 'left'
+                                ? undefined
+                                : align === 'right'
+                                  ? 'th-money'
+                                  : colLabel === 'Qty'
+                                    ? 'th-num'
+                                    : 'th-ctr'
+                            }
                             style={{
                               padding: '6px 9px',
                               borderBottom: PO_RULE,
@@ -732,7 +740,6 @@ function PrintTemplatesPage(): React.JSX.Element {
                               fontWeight: 700,
                               letterSpacing: '.08em',
                               textTransform: 'uppercase',
-                              textAlign: align,
                               ...(w ? { width: w } : {}),
                             }}
                           >
@@ -744,7 +751,7 @@ function PrintTemplatesPage(): React.JSX.Element {
                     <tbody>
                       {PO_SAMPLE_LINES.map((l, i) => (
                         <tr key={l.itemCode}>
-                          <td style={{ ...poCell, textAlign: 'center', fontFamily: MONO }}>
+                          <td className="td-ctr" style={{ ...poCell, fontFamily: MONO }}>
                             {i + 1}
                           </td>
                           <td style={poCell}>
@@ -793,23 +800,30 @@ function PrintTemplatesPage(): React.JSX.Element {
                               </span>
                             ) : null}
                           </td>
-                          <td style={{ ...poCell, textAlign: 'center' }}>{l.uom}</td>
+                          <td className="td-ctr" style={poCell}>
+                            {l.uom}
+                          </td>
                           <td
+                            className="td-num"
                             style={{
                               ...poCell,
-                              textAlign: 'right',
                               fontFamily: MONO,
                               fontWeight: 600,
                             }}
                           >
                             {l.qty}
                           </td>
-                          <td style={poMoneyCell}>{l.rate}</td>
-                          <td style={{ ...poMoneyCell, borderRight: 'none' }}>{l.amount}</td>
+                          <td className="td-money" style={poMoneyCell}>
+                            {l.rate}
+                          </td>
+                          <td className="td-money" style={{ ...poMoneyCell, borderRight: 'none' }}>
+                            {l.amount}
+                          </td>
                         </tr>
                       ))}
                       <tr style={{ background: PO_BAND }}>
                         <td
+                          className="td-money"
                           colSpan={3}
                           style={{ ...poSumLabel, fontSize: 'var(--fs-sm)', color: '#1A1A1A' }}
                         >
@@ -817,16 +831,16 @@ function PrintTemplatesPage(): React.JSX.Element {
                           {PO_SAMPLE_LINES.length === 1 ? '' : 's'}
                         </td>
                         <td
+                          className="td-num"
                           style={{
                             ...poCell,
-                            textAlign: 'right',
                             fontFamily: MONO,
                             fontWeight: 700,
                           }}
                         >
                           {sample.totalQty}
                         </td>
-                        <td style={{ ...poCell, textAlign: 'center', fontWeight: 700 }}>
+                        <td className="td-ctr" style={{ ...poCell, fontWeight: 700 }}>
                           {PO_SAMPLE_LINES[0]?.uom ?? 'NOS'}
                         </td>
                         <td style={{ ...poCell, borderRight: 'none' }} />
@@ -841,6 +855,7 @@ function PrintTemplatesPage(): React.JSX.Element {
                       ).map(([sumLabel, value, isGrand]) => (
                         <tr key={sumLabel} style={isGrand ? { background: PO_BAND } : undefined}>
                           <td
+                            className="td-money"
                             colSpan={5}
                             style={{
                               ...poSumLabel,
@@ -850,6 +865,7 @@ function PrintTemplatesPage(): React.JSX.Element {
                             {sumLabel}
                           </td>
                           <td
+                            className="td-money"
                             style={{
                               ...poMoneyCell,
                               borderRight: 'none',
@@ -1027,6 +1043,7 @@ function PrintTemplatesPage(): React.JSX.Element {
                       // money. Same seven columns, same order, same two sample
                       // lines the GRN test print puts on paper.
                       <table
+                        className="tbl-ctr"
                         style={{
                           width: '100%',
                           borderCollapse: 'collapse',
@@ -1036,10 +1053,10 @@ function PrintTemplatesPage(): React.JSX.Element {
                         <thead>
                           <tr style={{ background: '#f1f5f9' }}>
                             <th
+                              className="th-ctr"
                               style={{
                                 padding: 6,
                                 border: '1px solid #cbd5e1',
-                                textAlign: 'center',
                                 width: 44,
                               }}
                             >
@@ -1049,42 +1066,37 @@ function PrintTemplatesPage(): React.JSX.Element {
                               style={{
                                 padding: 6,
                                 border: '1px solid #cbd5e1',
-                                textAlign: 'left',
                                 width: 110,
                               }}
                             >
                               Item Code
                             </th>
+                            <th style={{ padding: 6, border: '1px solid #cbd5e1' }}>Item Name</th>
                             <th
-                              style={{ padding: 6, border: '1px solid #cbd5e1', textAlign: 'left' }}
-                            >
-                              Item Name
-                            </th>
-                            <th
+                              className="th-num"
                               style={{
                                 padding: 6,
                                 border: '1px solid #cbd5e1',
-                                textAlign: 'center',
                                 width: 78,
                               }}
                             >
                               Received
                             </th>
                             <th
+                              className="th-num"
                               style={{
                                 padding: 6,
                                 border: '1px solid #cbd5e1',
-                                textAlign: 'center',
                                 width: 78,
                               }}
                             >
                               Accepted
                             </th>
                             <th
+                              className="th-ctr"
                               style={{
                                 padding: 6,
                                 border: '1px solid #cbd5e1',
-                                textAlign: 'center',
                                 width: 78,
                               }}
                             >
@@ -1094,7 +1106,6 @@ function PrintTemplatesPage(): React.JSX.Element {
                               style={{
                                 padding: 6,
                                 border: '1px solid #cbd5e1',
-                                textAlign: 'left',
                                 width: 90,
                               }}
                             >
@@ -1106,10 +1117,10 @@ function PrintTemplatesPage(): React.JSX.Element {
                           {GRN_SAMPLE_LINES.map((l, i) => (
                             <tr key={l.itemCode}>
                               <td
+                                className="td-ctr"
                                 style={{
                                   padding: '5px 8px',
                                   border: '1px solid #cbd5e1',
-                                  textAlign: 'center',
                                 }}
                               >
                                 {i + 1}
@@ -1121,20 +1132,20 @@ function PrintTemplatesPage(): React.JSX.Element {
                                 {l.itemName}
                               </td>
                               <td
+                                className="td-num"
                                 style={{
                                   padding: '5px 8px',
                                   border: '1px solid #cbd5e1',
-                                  textAlign: 'center',
                                   fontWeight: 700,
                                 }}
                               >
                                 {l.receivedQty}
                               </td>
                               <td
+                                className="td-num"
                                 style={{
                                   padding: '5px 8px',
                                   border: '1px solid #cbd5e1',
-                                  textAlign: 'center',
                                   color: '#16a34a',
                                   fontWeight: 700,
                                 }}
@@ -1142,10 +1153,10 @@ function PrintTemplatesPage(): React.JSX.Element {
                                 {l.qcAcceptedQty}
                               </td>
                               <td
+                                className="td-num"
                                 style={{
                                   padding: '5px 8px',
                                   border: '1px solid #cbd5e1',
-                                  textAlign: 'center',
                                   color: '#d97706',
                                   fontWeight: 700,
                                 }}
@@ -1159,31 +1170,31 @@ function PrintTemplatesPage(): React.JSX.Element {
                           ))}
                           <tr style={{ background: '#f8fafc' }}>
                             <td
+                              className="td-money"
                               colSpan={3}
                               style={{
                                 padding: 6,
                                 border: '1px solid #cbd5e1',
-                                textAlign: 'right',
                                 fontWeight: 700,
                               }}
                             >
                               TOTAL
                             </td>
                             <td
+                              className="td-num"
                               style={{
                                 padding: 6,
                                 border: '1px solid #cbd5e1',
-                                textAlign: 'center',
                                 fontWeight: 800,
                               }}
                             >
                               {sample.totalReceived}
                             </td>
                             <td
+                              className="td-num"
                               style={{
                                 padding: 6,
                                 border: '1px solid #cbd5e1',
-                                textAlign: 'center',
                                 fontWeight: 800,
                                 color: '#16a34a',
                               }}
@@ -1191,10 +1202,10 @@ function PrintTemplatesPage(): React.JSX.Element {
                               {sample.totalAccepted}
                             </td>
                             <td
+                              className="td-num"
                               style={{
                                 padding: 6,
                                 border: '1px solid #cbd5e1',
-                                textAlign: 'center',
                                 fontWeight: 800,
                                 color: '#d97706',
                               }}
@@ -1207,6 +1218,7 @@ function PrintTemplatesPage(): React.JSX.Element {
                       </table>
                     ) : (
                       <table
+                        className="tbl-ctr"
                         style={{
                           width: '100%',
                           borderCollapse: 'collapse',
@@ -1216,10 +1228,10 @@ function PrintTemplatesPage(): React.JSX.Element {
                         <thead>
                           <tr style={{ background: '#f1f5f9' }}>
                             <th
+                              className="th-ctr"
                               style={{
                                 padding: 6,
                                 border: '1px solid #cbd5e1',
-                                textAlign: 'center',
                                 width: 44,
                               }}
                             >
@@ -1229,32 +1241,27 @@ function PrintTemplatesPage(): React.JSX.Element {
                               style={{
                                 padding: 6,
                                 border: '1px solid #cbd5e1',
-                                textAlign: 'left',
                                 width: 110,
                               }}
                             >
                               Item Code
                             </th>
+                            <th style={{ padding: 6, border: '1px solid #cbd5e1' }}>Item Name</th>
                             <th
-                              style={{ padding: 6, border: '1px solid #cbd5e1', textAlign: 'left' }}
-                            >
-                              Item Name
-                            </th>
-                            <th
+                              className="th-num"
                               style={{
                                 padding: 6,
                                 border: '1px solid #cbd5e1',
-                                textAlign: 'right',
                                 width: 60,
                               }}
                             >
                               Qty
                             </th>
                             <th
+                              className="th-ctr"
                               style={{
                                 padding: 6,
                                 border: '1px solid #cbd5e1',
-                                textAlign: 'left',
                                 width: 60,
                               }}
                             >
@@ -1265,10 +1272,10 @@ function PrintTemplatesPage(): React.JSX.Element {
                         <tbody>
                           <tr>
                             <td
+                              className="td-ctr"
                               style={{
                                 padding: '5px 8px',
                                 border: '1px solid #cbd5e1',
-                                textAlign: 'center',
                               }}
                             >
                               1
@@ -1280,22 +1287,30 @@ function PrintTemplatesPage(): React.JSX.Element {
                               Steel Plate 6mm
                             </td>
                             <td
+                              className="td-num"
                               style={{
                                 padding: '5px 8px',
                                 border: '1px solid #cbd5e1',
-                                textAlign: 'right',
                               }}
                             >
                               100
                             </td>
-                            <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>NOS</td>
-                          </tr>
-                          <tr>
                             <td
+                              className="td-ctr"
                               style={{
                                 padding: '5px 8px',
                                 border: '1px solid #cbd5e1',
-                                textAlign: 'center',
+                              }}
+                            >
+                              NOS
+                            </td>
+                          </tr>
+                          <tr>
+                            <td
+                              className="td-ctr"
+                              style={{
+                                padding: '5px 8px',
+                                border: '1px solid #cbd5e1',
                               }}
                             >
                               2
@@ -1307,33 +1322,41 @@ function PrintTemplatesPage(): React.JSX.Element {
                               Bearings 6203
                             </td>
                             <td
+                              className="td-num"
                               style={{
                                 padding: '5px 8px',
                                 border: '1px solid #cbd5e1',
-                                textAlign: 'right',
                               }}
                             >
                               100
                             </td>
-                            <td style={{ padding: '5px 8px', border: '1px solid #cbd5e1' }}>NOS</td>
+                            <td
+                              className="td-ctr"
+                              style={{
+                                padding: '5px 8px',
+                                border: '1px solid #cbd5e1',
+                              }}
+                            >
+                              NOS
+                            </td>
                           </tr>
                           <tr style={{ background: '#f8fafc' }}>
                             <td
+                              className="td-money"
                               colSpan={2}
                               style={{
                                 padding: 6,
                                 border: '1px solid #cbd5e1',
-                                textAlign: 'right',
                                 fontWeight: 700,
                               }}
                             >
                               TOTAL QTY
                             </td>
                             <td
+                              className="td-num"
                               style={{
                                 padding: 6,
                                 border: '1px solid #cbd5e1',
-                                textAlign: 'right',
                                 fontWeight: 800,
                               }}
                             >

@@ -118,7 +118,7 @@ export function MachineLoadCardView({
 // The Capacity Summary roll-up. One row per machine, on the shared DataTable —
 // no `tableKey`, so it keeps the ruled sheet look without a saved layout of its
 // own (the screen's ONE fit layout belongs to the open-operations table). Labels
-// per docs/NAMING.md; numbers right-aligned, text centred (ADR-199 alignment).
+// per docs/NAMING.md; text left, qty centre, money right (CLAUDE.md §24).
 function capacityColumns(): DataTableColumn<MachineLoadCard>[] {
   return [
     {

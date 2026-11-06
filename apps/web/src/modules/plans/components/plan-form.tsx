@@ -814,15 +814,15 @@ export function PlanForm({
             <table className="innovic-table">
               <thead>
                 <tr>
-                  <th>Op</th>
+                  <th className="th-ctr">Op</th>
                   <th>Operation</th>
                   <th>Op Type</th>
                   <th>Planned Machine</th>
-                  <th>Cycle Time (min)</th>
-                  <th>QC Required</th>
+                  <th className="th-num">Cycle Time (min)</th>
+                  <th className="th-ctr">QC Required</th>
                   <th>OSP Vendor</th>
-                  <th>OSP Cost</th>
-                  <th></th>
+                  <th className="th-money">OSP Cost</th>
+                  <th className="th-ctr"></th>
                 </tr>
               </thead>
               <tbody>
@@ -891,7 +891,7 @@ export function PlanForm({
                           }
                         />
                       </td>
-                      <td>
+                      <td className="td-num">
                         <input
                           type="number"
                           step="0.1"
@@ -908,7 +908,7 @@ export function PlanForm({
                           }
                         />
                       </td>
-                      <td>
+                      <td className="td-ctr">
                         <input
                           type="checkbox"
                           checked={op.qcRequired}
@@ -943,7 +943,7 @@ export function PlanForm({
                           }
                         />
                       </td>
-                      <td>
+                      <td className="td-money">
                         <input
                           type="number"
                           step="0.01"
@@ -961,7 +961,7 @@ export function PlanForm({
                           }
                         />
                       </td>
-                      <td>
+                      <td className="td-ctr">
                         <button
                           type="button"
                           className="btn btn-ghost btn-sm"

@@ -50,12 +50,12 @@ export function printDispatchRegister(args: {
     .map(
       (d) => `<tr>
       <td style="font-family:monospace;color:#0369a1;font-weight:700">${esc(d.docCode)}</td>
-      <td>${esc(fmtDate(d.docDate))}</td>
+      <td class="ctr">${esc(fmtDate(d.docDate))}</td>
       <td>${esc(d.vendorName ?? d.vendorCodeText ?? '—')}</td>
       <td style="font-family:monospace">${esc(d.poCode ?? d.poCodeText ?? '—')}</td>
       ${showSo ? `<td style="font-family:monospace;font-size:10px">${esc(soOf(d) ?? '—')}${d.soInternalNo ? `<div style="font-family:inherit;color:#64748b">Internal SO No. ${esc(d.soInternalNo)}</div>` : ''}${d.clientPoLineNo ? `<div style="font-family:inherit;color:#64748b">POL ${esc(d.clientPoLineNo)}</div>` : ''}</td>` : ''}
       <td style="font-family:monospace;font-weight:700">${esc(itemCodeWithRev(d.itemCode, d.itemRevision))}</td>
-      <td style="text-align:right;font-weight:700">${fmtQty(Number(d.qty))}</td>
+      <td style="text-align:center;font-weight:700">${fmtQty(Number(d.qty))}</td>
       <td style="text-align:center">${statusBadge(d.docStatus)}</td>
     </tr>`,
     )
@@ -75,7 +75,7 @@ export function printDispatchRegister(args: {
       <div class="info-box"><div class="info-lbl">DC Entries</div><div class="info-val">${summary.entryCount}</div></div>
       <div class="info-box"><div class="info-lbl">Items Sent</div><div class="info-val">${summary.itemCount}</div></div>
     </div>
-    <table><thead><tr><th>DC No.</th><th>DC Date</th><th>Vendor</th><th>PO No.</th>${showSo ? '<th>SO No.</th>' : ''}<th>Item Code</th><th>Sent Qty</th><th>DC Status</th></tr></thead>
+    <table><thead><tr><th>DC No.</th><th class="ctr">DC Date</th><th>Vendor</th><th>PO No.</th>${showSo ? '<th>SO No.</th>' : ''}<th>Item Code</th><th class="ctr">Sent Qty</th><th class="ctr">DC Status</th></tr></thead>
     <tbody>${tableRows || `<tr><td colspan="${showSo ? 8 : 7}" style="text-align:center;color:#aaa">No DC lines</td></tr>`}</tbody></table>
     <div class="sign-row">
       <div class="sign-box">Store In-Charge</div>

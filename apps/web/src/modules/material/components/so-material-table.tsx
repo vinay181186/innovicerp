@@ -45,7 +45,7 @@ export function SoMaterialTable({
             <th className="th-num">To Issue</th>
             <th className="th-num">Still Out</th>
             <th className="th-num">Available</th>
-            {showMenu ? <th aria-label="Actions" /> : null}
+            {showMenu ? <th className="th-ctr" aria-label="Actions" /> : null}
           </tr>
         </thead>
         <tbody>

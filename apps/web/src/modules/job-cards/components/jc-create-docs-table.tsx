@@ -44,7 +44,7 @@ export function JcCreateDocsTable({
         <tr>
           <th>Document Type</th>
           <th>Attached File</th>
-          <th aria-label="Actions" />
+          <th className="th-ctr" aria-label="Actions" />
         </tr>
       </thead>
       <tbody>
@@ -82,7 +82,7 @@ export function JcCreateDocsTable({
                   />
                 </label>
               </td>
-              <td>
+              <td className="td-ctr">
                 <button
                   type="button"
                   className="btn btn-danger btn-sm btn-icon"

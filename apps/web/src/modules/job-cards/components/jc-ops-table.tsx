@@ -97,16 +97,16 @@ export function JcOpsTable({
             {/* Group heads — jc-flow-panels.tsx OP_FLOW_GROUPS, L216-221 */}
             <tr className="dt-head-groups">
               <th colSpan={2} />
-              <th colSpan={7} className="vsep">
+              <th colSpan={7} className="th-ctr vsep">
                 At this operation
               </th>
-              <th colSpan={5} className="vsep jc-ops-gv">
+              <th colSpan={5} className="th-ctr vsep jc-ops-gv">
                 With vendor (outsource)
               </th>
               <th colSpan={4} className="vsep" />
             </tr>
             <tr>
-              <th>Op</th>
+              <th className="th-ctr">Op</th>
               <th>Operation · Machine / Vendor</th>
               <th className="th-num vsep">Input</th>
               <th className="th-num vsep">Done</th>
@@ -140,10 +140,10 @@ export function JcOpsTable({
                 <br />
                 Vendor
               </th>
-              <th className="vsep">Check</th>
-              <th>Op Status</th>
-              <th>Next Step</th>
-              <th aria-label="Actions" />
+              <th className="th-ctr vsep">Check</th>
+              <th className="th-ctr">Op Status</th>
+              <th className="th-ctr">Next Step</th>
+              <th className="th-ctr" aria-label="Actions" />
             </tr>
           </thead>
           <tbody>

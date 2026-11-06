@@ -4,7 +4,9 @@
 
 import type { CSSProperties, ReactNode } from 'react';
 
-import { cx } from './data-table-cells';
+import { columnAlign, type ColumnAlign } from '@innovic/shared';
+
+import { colKind, cx, nodeText } from './data-table-cells';
 import type { DataTableColumn } from './data-table-types';
 import { SortHeader, ariaSortValue, type SortDir } from './SortHeader';
 
@@ -14,17 +16,26 @@ export interface SortProps {
   onSort?: ((field: string) => void) | undefined;
 }
 
+/** THE alignment rule (ADR-277): the column's kind and heading decide, never the
+ *  screen. */
+function alignOf<T>(c: DataTableColumn<T>): ColumnAlign {
+  const kind = colKind(c);
+  return columnAlign({
+    heading: c.label ?? nodeText(c.header),
+    numeric: kind === 'num',
+    money: c.money === true,
+    fixed: kind === 'date' || kind === 'badge' || kind === 'actions' || kind === 'control',
+  });
+}
+
+const ALIGN_SUFFIX: Record<ColumnAlign, string> = { left: 'left', center: 'ctr', right: 'money' };
+
 export function thClass<T>(c: DataTableColumn<T>, extra?: string): string | undefined {
-  return cx(
-    c.align === 'left' && 'th-left',
-    c.align === 'right' && 'th-right',
-    c.headClassName,
-    extra,
-  );
+  return cx(`th-${ALIGN_SUFFIX[alignOf(c)]}`, c.headClassName, extra);
 }
 
 export function tdClass<T>(c: DataTableColumn<T>, extra?: string): string | undefined {
-  return cx(c.className, c.align === 'left' && 'td-left', c.align === 'right' && 'td-num', extra);
+  return cx(c.className, `td-${ALIGN_SUFFIX[alignOf(c)]}`, extra);
 }
 
 export function thStyle<T>(c: DataTableColumn<T>): CSSProperties | undefined {

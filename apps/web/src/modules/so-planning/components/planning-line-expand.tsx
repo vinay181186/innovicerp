@@ -210,14 +210,16 @@ export function PlanningLineExpand({
                 <th>Plan No.</th>
                 <th>Type</th>
                 <th className="th-num">Plan Qty</th>
-                <th>Planned Start</th>
-                <th>Planned End</th>
-                <th>Plan Status</th>
+                <th className="th-ctr">Planned Start</th>
+                <th className="th-ctr">Planned End</th>
+                <th className="th-ctr">Plan Status</th>
                 <th>RC No.</th>
                 <th>PRO No.</th>
                 <th>JC No.</th>
                 <th>Linked</th>
-                {showMenu ? <th style={{ width: 40 }} aria-label="Actions" /> : null}
+                {showMenu ? (
+                  <th className="th-ctr" style={{ width: 40 }} aria-label="Actions" />
+                ) : null}
               </tr>
             </thead>
             <tbody>
@@ -268,9 +270,11 @@ export function PlanningLineExpand({
                         <td className="td-code">{plan.code}</td>
                         <td>{planTypeLabel(plan)}</td>
                         <td className="td-num fw-700">{plan.planQty}</td>
-                        <td className="mono">{fmtDate(plan.plannedStartDate)}</td>
-                        <td className="mono">{fmtDate(plan.plannedEndDate)}</td>
-                        <td style={{ color: st?.color, fontWeight: 700 }}>{st?.label}</td>
+                        <td className="td-ctr mono">{fmtDate(plan.plannedStartDate)}</td>
+                        <td className="td-ctr mono">{fmtDate(plan.plannedEndDate)}</td>
+                        <td className="td-ctr" style={{ color: st?.color, fontWeight: 700 }}>
+                          {st?.label}
+                        </td>
                         <td>
                           <RcCodes rcs={planRouteCards(plan)} />
                         </td>
@@ -286,7 +290,7 @@ export function PlanningLineExpand({
                       </>
                     )}
                     {showMenu && rowMenu ? (
-                      <td style={{ textAlign: 'center' }}>
+                      <td className="td-ctr">
                         <RowMenu
                           items={rowMenu(plan, row.partShort)}
                           renderLink={renderLink}

@@ -561,17 +561,17 @@ export function MasterImportDialog({
             <table className="innovic-table">
               <thead>
                 <tr>
-                  <th>Sheet Row</th>
+                  <th className="th-ctr">Sheet Row</th>
                   <th>{codeLabel}</th>
                   <th>{nameLabel}</th>
-                  <th>Import Action</th>
+                  <th className="th-ctr">Import Action</th>
                   <th>Problems / Warnings</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((r) => (
                   <tr key={`${r.rowNum}-${r.action}`}>
-                    <td className="text3">{r.rowNum}</td>
+                    <td className="td-ctr text3">{r.rowNum}</td>
                     <td className="td-code">{r.code ?? (r.action === 'insert' ? 'auto' : '—')}</td>
                     <td
                       title={r.name}
@@ -579,7 +579,7 @@ export function MasterImportDialog({
                     >
                       {r.name || '—'}
                     </td>
-                    <td>
+                    <td className="td-ctr">
                       <Badge tone={ACTION_TONE[r.action]}>{ACTION_LABEL[r.action]}</Badge>
                     </td>
                     <td style={{ whiteSpace: 'normal', minWidth: 280 }}>
