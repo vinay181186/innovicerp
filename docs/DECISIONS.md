@@ -15373,3 +15373,25 @@ Owner: Pending Entries should open per person on a calendar, green for filled an
 **Known limits:**
 - Every write to the card moves Last Updated By: approving, returning, a new revision, and raw material filled in from a plan, not only the Save button. An edit that went through approval names the approver.
 - No migration.
+
+## ADR-276: SO started rule, vendor columns split, NC order number, one At Vendor, bulk Return to Vendor
+
+**Date:** 2026-11-06. **Owner decided:** all five, after the six-point plan. Reads only except bulk Return to Vendor, which reuses the single-NC route. No migration, no stored data changed.
+
+**Before, on real PROD data:** SO-517 (IN-SO-00005) read Not Started with 71 pieces completed on earlier operations and 296 at the vendor. IN-JC-26-00018 Op 3 read Sent 98 (62 new + 36 rework). All 10 NCs had a blank SO. IN-JC-26-00030 read At Vendor 30 on the Job Card and, by the old sum, 60 on SO Status.
+
+**Decisions:**
+- **SO started.** After Hold, Completed, Delayed and the unchanged On Track rule: any operation with work on it reads In Progress (`opHasStartedWork`). Work = pieces completed, QC accepted or rejected, machine rejects, running, physically sent or received. A PR or PO raised, a job card created, material issued, or a first-operation QC Pending with no work do not count. Overdue still reads Delayed. The port from the old ERP had dropped this condition.
+- **Vendor columns. Replaces the combined figure of ADR-212.** `Sent to Vendor` | `Received` | `Returned to Vendor` | `Re-received` | `At Vendor` on the Job Card, popup, At-Vendor Register and report. `vendorSentQty` is removed. `vendorReceivedQty` now counts first lots only (GRNs with no NC): with the gross figure the columns stop adding up when rework comes back (62 − 72 + 36 − 36 = −10; real answer 26). The name `Re-sent` stays banned.
+- **NC order number.** Owner's heading `SO No. / JWSO No.` on NC list, detail, print and two reports, one server definition `ncOrderCodeSql`, also used by sort, filter and search. **This differs from ADR-267**, where other mixed lists keep the heading `SO No.`: owner's call for the NC screens. JC No. comes from the server on detail and is a list column.
+- **One At Vendor.** `loadAtVendorByOp` is the only per-op definition; Job Card, SO Status and SO Overview read it. Deliberately not moved: the PO close check (excludes rework). `op-entry`, `production-orders` and `wip-by-operation` read the view without the part-outsourced top-up, so they differ only on a part-outsourced op with an open return.
+- **Bulk Return to Vendor.** Tick on the NC list, needs the NC Dispose Advance right, confirm popup lists each NC. Disposition only, full open quantity, one request per NC through `disposeNcCascade` (§20.1), the existing row lock and `WHERE status='pending'` apply (§20.2). A failure stays ticked with its server message, the rest stay saved. The DC stays a separate step.
+
+**Consequences:**
+- Identity: Sent to Vendor − Received + Returned to Vendor − Re-received = At Vendor. Checked: all 11 PROD vendor rows and all TEST rows, 0 breaks. It can drift if an NC closes with sent ≠ received, or an operation is over-received.
+- A wrong bulk Return to Vendor cannot be undone in the app (`status-moves.ts`), same as single.
+- Bulk leaves Sent on DC No. blank (ADR-217: asked, never guessed), so those NCs are traced by PO No. only. Single Dispose auto-fills when only one challan exists.
+- The Job Card table is 18 columns; a worst-case row may overrun 1440 wide by a few pixels.
+- Rework child job cards stay excluded from SO Status and SO Overview, so a child at the vendor shows on its own Job Card only.
+
+**Known limits, not touched:** Blocked status can never appear; a short-closed line can stop an SO reading Completed; the server's today is UTC and the screen's IST.
