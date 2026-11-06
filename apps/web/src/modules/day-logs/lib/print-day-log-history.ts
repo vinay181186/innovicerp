@@ -283,7 +283,7 @@ export function dayLogHistoryHtml(
 export function printDayLogHistory(h: DayLogHistory, company: Company | null | undefined): boolean {
   const fileName = `Day Log History ${h.userName} ${h.month ?? h.date ?? ''}`;
   return openSheetHtmlWindow(
-    'Day Log History',
+    'History',
     dayLogHistoryHtml(h, company),
     HISTORY_STYLE,
     undefined,

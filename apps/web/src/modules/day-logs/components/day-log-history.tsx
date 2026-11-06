@@ -116,7 +116,7 @@ export function DayLogHistoryModal({
   const generate = (): void => {
     void runPrint(
       'preview',
-      { title: 'Day Log History', fileName: `Day Log History ${userName} ${picked}` },
+      { title: 'History', fileName: `Day Log History ${userName} ${picked}` },
       async () => {
         // Read again at the click: the PDF is never older than the click.
         const [fresh, company] = await Promise.all([
