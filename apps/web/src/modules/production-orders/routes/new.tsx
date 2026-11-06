@@ -166,7 +166,11 @@ function ProductionOrderNewPage(): React.JSX.Element {
     rcLoaded && revRcItems.length > 0 && rcItems.length === 0 ? (revRcItems[0] ?? null) : null;
   const unapprovedRcText = unapprovedRc
     ? `Route Card ${unapprovedRc.code} ${
-        unapprovedRc.approvalStatus === 'rejected' ? 'was rejected' : 'is waiting for approval'
+        unapprovedRc.approvalStatus === 'rejected'
+          ? 'was rejected'
+          : unapprovedRc.approvalStatus === 'draft'
+            ? 'is still a Draft'
+            : 'is waiting for approval'
       }`
     : null;
 

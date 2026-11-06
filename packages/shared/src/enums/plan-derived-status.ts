@@ -30,7 +30,7 @@ export type PlanDerivedStatus = (typeof PLAN_DERIVED_STATUSES)[number];
 
 export const PLAN_DERIVED_STATUS_LABEL: Record<PlanDerivedStatus, string> = {
   route_card_pending: 'Route card pending',
-  route_card_approval_pending: 'Route card awaiting approval',
+  route_card_approval_pending: 'RC Not Approved',
   gen_production_order: 'Gen production order',
   in_production: 'In production',
   partly_in_production: 'Part Prod',

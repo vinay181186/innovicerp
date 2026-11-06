@@ -56,6 +56,28 @@ const fakeTx = (answer: (text: string) => Array<Record<string, unknown>>) => {
   return { seen, statements, tx: tx as never };
 };
 
+describe('Route Card Draft stays off the approvers bell (ADR-277)', () => {
+  const rc = (action: string) =>
+    notes.NOTE_RULES.find((r) => r.entity === 'RouteCard' && r.action === action)!;
+
+  it('CREATE and RESTORE exclude a row that left the card a Draft, and keep a row with no changes', () => {
+    for (const action of ['CREATE', 'RESTORE']) {
+      const q = render(rules.ruleCond(rc(action), 'c1', 'me'));
+      expect(q.sql).toMatch(/NOT COALESCE\(a\.changes @> \$\d+::jsonb, false\)/);
+      expect(q.params).toContain('[{"field":"approvalStatus","after":"Draft"}]');
+    }
+  });
+
+  it('a first submit and a resubmit read the same on the bell', () => {
+    const edit = ev({ entity: 'RouteCard', refId: 'IN-RC-9', action: 'EDIT', toPending: true });
+    const text = notes
+      .noteText(edit, rc('EDIT'), false)
+      .map((p) => ('text' in p ? p.text : p.code))
+      .join('');
+    expect(text).toContain('sent for approval IN-RC-9');
+  });
+});
+
 describe('raiser-only decision notes (PO / PR / RC / Stock Count / Day Log)', () => {
   it('a PO rejection reaches only the raiser, not every po_create entry holder', () => {
     const buyer = dash({ forms: { po_create: perms({ view: true, entry: true }) } });

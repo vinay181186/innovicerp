@@ -389,7 +389,7 @@ describe('route-card service — CRUD', () => {
     );
   });
 
-  it('updateRouteCard: Planning L3 with role operator passes the gate; L2 / auditor refused', async () => {
+  it('updateRouteCard: Planning L3 with role operator passes the gate; auditor refused; L2 (Entry) reaches the card', async () => {
     const UNKNOWN_ID = '00000000-0000-0000-0000-000000000000';
     const input = {
       code: `${TEST_PREFIX}GATE-UPD`,
@@ -410,8 +410,10 @@ describe('route-card service — CRUD', () => {
     await expect(service.updateRouteCard(UNKNOWN_ID, input, l3)).rejects.not.toBeInstanceOf(
       AuthorizationError,
     );
+    // ADR-277 — Entry may edit the user's own Draft / Rejected card, so L2 is
+    // decided on the card itself (approval.test.ts); no such card here.
     await expect(service.updateRouteCard(UNKNOWN_ID, input, l2)).rejects.toBeInstanceOf(
-      AuthorizationError,
+      NotFoundError,
     );
     await expect(service.updateRouteCard(UNKNOWN_ID, input, auditor)).rejects.toBeInstanceOf(
       AuthorizationError,
@@ -543,6 +545,12 @@ describe('route-card service — CRUD', () => {
       admin,
     );
     expect(created.currentRevision).toBe(0);
+    // ADR-277 — a Pending card is locked and a Draft keeps its Rev; bumping is
+    // what an approved card does.
+    await db
+      .update(routeCards)
+      .set({ approvalStatus: 'approved' })
+      .where(eq(routeCards.id, created.id));
 
     const updated = await service.updateRouteCard(
       created.id,
@@ -606,6 +614,10 @@ describe('route-card service — CRUD', () => {
       },
       admin,
     );
+    await db
+      .update(routeCards)
+      .set({ approvalStatus: 'approved' })
+      .where(eq(routeCards.id, created.id));
     const customNote = 'Updated per ECO-456';
     const updated = await service.updateRouteCard(
       created.id,
@@ -679,6 +691,7 @@ describe('route-card service — CRUD', () => {
       {
         code: `${TEST_PREFIX}MOVE-RC-B`,
         itemId: itB[0]!.id,
+        submitForApproval: false, // a Draft: editable, so the move check is reached
         ops: [
           {
             machineId: testMachineId,
@@ -794,6 +807,7 @@ describe('route-card service — CRUD', () => {
       {
         code: `${TEST_PREFIX}DEL-OK-1`,
         itemId: it[0]!.id,
+        submitForApproval: false, // a Pending card cannot be deleted (ADR-277)
         ops: [
           {
             machineId: testMachineId,

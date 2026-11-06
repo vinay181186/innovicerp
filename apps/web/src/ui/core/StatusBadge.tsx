@@ -309,7 +309,7 @@ const LABELS: Partial<Record<StatusKind, Record<string, string>>> = {
   // other screens that print it.
   planderived: {
     route_card_pending: 'RC Pending',
-    route_card_approval_pending: 'RC Awaiting Approval', // ADR-253
+    route_card_approval_pending: 'RC Not Approved', // ADR-253
     gen_production_order: 'Ready for Production Order',
     in_production: 'In Production',
     partly_in_production: 'Part Prod',

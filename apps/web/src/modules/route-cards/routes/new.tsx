@@ -7,6 +7,7 @@ import { useSaveKey } from '@/lib/use-save-key';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useToast } from '@/ui/feedback';
 import { useCreateRouteCard } from '../api';
+import { rcSavedMessage } from '../components/rc-approval-actions';
 import {
   RouteCardForm,
   type RouteCardFormHeaderDraft,
@@ -47,6 +48,8 @@ function RouteCardNewPage(): React.JSX.Element {
   const submit = async (
     header: RouteCardFormHeaderDraft,
     ops: RouteCardFormOpDraft[],
+    _revisionNote: string | null,
+    submitForApproval: boolean,
   ): Promise<void> => {
     setSubmitError(null);
     try {
@@ -62,9 +65,11 @@ function RouteCardNewPage(): React.JSX.Element {
         notes: header.notes.trim() || null,
         planType: header.planType,
         ops: opsToInput(ops),
+        submitForApproval,
       });
-      // ADR-253 — every new card starts Pending Approval.
-      toast.ok(`Route Card ${created.code} saved — sent for approval.`);
+      // ADR-277 — what the server says it did, not the button pressed: a
+      // retried save can replay an earlier result.
+      toast.ok(rcSavedMessage(created));
       exit.leave(() => void navigate({ to: '/route-cards/$id', params: { id: created.id } }));
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : 'Could not save Route Card. Try again.');

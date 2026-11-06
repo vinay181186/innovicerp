@@ -15373,3 +15373,20 @@ Owner: Pending Entries should open per person on a calendar, green for filled an
 **Known limits:**
 - Every write to the card moves Last Updated By: approving, returning, a new revision, and raw material filled in from a plan, not only the Save button. An edit that went through approval names the approver.
 - No migration.
+
+## ADR-277: Route Card Draft; a card with the approver is locked
+
+**Date:** 2026-11-06. **Owner decided:** a Route Card gets a new status, Draft. Save keeps it with the creator; Save & Submit sends it for approval. While Pending Approval nobody may edit or delete it until the approver decides.
+
+**Decisions:**
+- **Save / Save & Submit.** `submitForApproval` false = Save, true or left out = sent (a tab open across the release keeps today's rule). New card: `draft` / `pending`. Draft: stays / `pending`. Rejected: stays, reason and stamps kept / `pending`, stamps cleared. Approved: the flag is ignored. `POST /route-cards/:id/submit` does the same move from the detail page and the ⋯ menu.
+- **Locked while pending, for everybody, admins included.** `ROUTE_CARD_LOCKED_MESSAGE` (409) on save, on a form opened before the card was sent (checked ahead of the stale-form check) and on Move to Trash, each under the card's row lock. A Job Card / Plan auto-save already left a not-approved card alone.
+- **Rev 0 in Draft.** While the card is a Draft, also on the save that submits it, `current_revision` stays at its number and that revision's ops snapshot is overwritten. Each save is in the activity log with its op changes, with no Route Card Rev change. A Rejected or Approved card keeps the bump.
+- **Same checks for Save and Submit.** A Draft is validated as a submitted card is; Submit for Approval re-validates nothing, because the card on file already passed.
+- **Entry-only: own Draft / Rejected.** `canEditRouteCard` (shared) is the one rule: locked = nobody; otherwise the Edit right, or the Entry right on the user's own Draft / Rejected card. It applies under the row lock on save and submit. An approved card still needs Edit.
+- **Not usable, not on any list.** Usable stays approved only. A Draft is off the approver's list and off the bell: its CREATE / RESTORE activity row carries `RC Status → Draft`, and those two bell rules exclude that entry (`changesLacks`), so old rows keep their bell. The first submit fires the same "sent for approval" bell as a resubmit.
+- **Plan wording "RC Not Approved"** covers a Draft, Pending or Rejected card on a plan.
+- **Approved staged edit flow unchanged** (ADR-249). The engine's replay asks for no right of the replayer; it is refused only if the card is locked, which can only happen to a staged card trashed and restored.
+- **Trash:** a card deleted as a Draft comes back a Draft, with no bell. Every other card comes back Pending Approval as today (ADR-253).
+
+**Migration:** 0243 (CHECK only, no row changed, default stays `approved`).

@@ -48,6 +48,7 @@ import { assertClientPoNoFree } from '../../lib/client-po-unique';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { prCoverQtyRaw } from '../../lib/so-line-coverage';
 import { emitActivityLog } from '../activity-log/service';
+import { rcStatusChange } from '../route-cards/service';
 import { assertTreeSound, lockMlBomTree, reresolveOwnLinks } from '../ml-bom/guards';
 import { assertMlNodeCapOnEdit } from '../ml-plan/edit-cap';
 import type {
@@ -500,8 +501,19 @@ export async function restoreFromTrash(
     // ADR-253 — a restored Route Card comes back as Pending Approval, never
     // straight into use: it was out of the system, so it is approved again
     // before it may raise a Production Order or feed raw material. The old
-    // approve / reject stamps are cleared with it.
-    const routeCardReset = entity.type === 'Route Card';
+    // approve / reject stamps are cleared with it. ADR-277 — a card deleted as
+    // a Draft was never sent, so it comes back a Draft. Read here: the UPDATE
+    // above holds this row until the transaction ends.
+    const restoredDraft =
+      entity.type === 'Route Card' &&
+      (
+        await tx
+          .select({ approvalStatus: routeCards.approvalStatus })
+          .from(routeCards)
+          .where(and(eq(routeCards.id, input.id), eq(routeCards.companyId, companyId)))
+          .limit(1)
+      )[0]?.approvalStatus === 'draft';
+    const routeCardReset = entity.type === 'Route Card' && !restoredDraft;
     if (routeCardReset) {
       await tx
         .update(routeCards)
@@ -524,9 +536,11 @@ export async function restoreFromTrash(
         entity: ACTIVITY_ENTITY_BY_TYPE[input.type],
         entityId: input.id,
         refId: code ?? input.id,
+        changes: restoredDraft ? [rcStatusChange(null, 'draft')] : null,
         detail:
           `Restored ${typeLabel(input.type)}${code ? ` ${code}` : ''} from Trash` +
-          (routeCardReset ? ' — sent back for approval (Pending Approval)' : ''),
+          (routeCardReset ? ' — sent back for approval (Pending Approval)' : '') +
+          (restoredDraft ? ' — still a Draft' : ''),
       },
       companyId,
       user,

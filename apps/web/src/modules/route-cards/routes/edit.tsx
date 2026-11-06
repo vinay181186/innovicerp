@@ -1,14 +1,17 @@
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
+import { ROUTE_CARD_LOCKED_MESSAGE, canEditRouteCard, isRouteCardLocked } from '@innovic/shared';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useSession } from '@/lib/session';
 import { useOpenedVersion } from '@/lib/use-opened-version';
 import { useSaveKey } from '@/lib/use-save-key';
 import { isStagedResult } from '@/modules/document-edits/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useToast } from '@/ui/feedback';
 import { useRouteCard, useUpdateRouteCard } from '../api';
+import { rcSavedMessage } from '../components/rc-approval-actions';
 import {
   RouteCardForm,
   type RouteCardFormHeaderDraft,
@@ -35,7 +38,12 @@ function RouteCardEditPage(): React.JSX.Element {
   // edit is refused (409 edit_conflict) and its message shows in the banner.
   const opened = useOpenedVersion(detail?.updatedAt);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const { data: eff } = useMyAccess();
+  const { data: eff, isPending: effPending } = useMyAccess();
+  const { data: me, isPending: mePending } = useSession();
+  // ADR-277 — these checks decide whether the form OPENS. If the card is sent
+  // while the form is open, a live refresh must not wipe what is typed: the form
+  // stays and its Save gets the server's refusal.
+  const formOpened = useRef(false);
   const perms = effectiveFormPerms(eff, 'routecard_create');
   const toast = useToast();
   const goBack = useCallback(
@@ -53,6 +61,7 @@ function RouteCardEditPage(): React.JSX.Element {
     header: RouteCardFormHeaderDraft,
     ops: RouteCardFormOpDraft[],
     revisionNote: string | null,
+    submitForApproval: boolean,
   ): Promise<void> => {
     setSubmitError(null);
     try {
@@ -65,6 +74,7 @@ function RouteCardEditPage(): React.JSX.Element {
         planType: header.planType,
         ops: opsToInput(ops),
         revisionNote,
+        submitForApproval,
         expectedUpdatedAt: opened.expected(),
       });
       if (isStagedResult(updated)) {
@@ -76,24 +86,16 @@ function RouteCardEditPage(): React.JSX.Element {
         return;
       }
       opened.saved(updated.updatedAt);
-      // ADR-253 — saving a REJECTED card sends it back to Pending Approval.
-      if (detail?.approvalStatus === 'rejected') toast.ok('Saved — sent for approval again.');
-      else toast.ok(`Route Card ${updated.code} saved`);
+      // ADR-277 — what the server says it did, not the button pressed: a
+      // retried save can replay an earlier result.
+      toast.ok(rcSavedMessage(updated));
       exit.leave(() => void navigate({ to: '/route-cards/$id', params: { id: updated.id } }));
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : 'Could not save Route Card. Try again.');
     }
   };
 
-  if (eff && !perms.edit) {
-    return (
-      <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
-        You do not have permission to edit Route Cards. Ask an admin.
-      </div>
-    );
-  }
-
-  if (isLoading) {
+  if (isLoading || effPending || mePending) {
     return (
       <div>
         <Loader2 className="inline h-4 w-4 animate-spin" /> Loading route card…
@@ -117,6 +119,35 @@ function RouteCardEditPage(): React.JSX.Element {
     );
   }
 
+  // ADR-277 — not while our own save is settling: Save & Submit makes this very
+  // card locked a moment before the page navigates away from it.
+  if (!formOpened.current && !update.isPending && !update.isSuccess) {
+    if (isRouteCardLocked(detail.approvalStatus)) {
+      return (
+        <div className="panel">
+          <div className="panel-body">
+            <div style={{ marginBottom: 'var(--sp-2)' }}>
+              <Link to="/route-cards/$id" params={{ id }} className="btn btn-ghost btn-sm">
+                <ArrowLeft size={14} /> Back
+              </Link>
+            </div>
+            <div className="empty-state" style={{ color: 'var(--amber2)' }}>
+              {ROUTE_CARD_LOCKED_MESSAGE}
+            </div>
+          </div>
+        </div>
+      );
+    }
+    if (eff && !canEditRouteCard(detail, me?.id, perms)) {
+      return (
+        <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
+          You do not have permission to edit this Route Card. Ask an admin.
+        </div>
+      );
+    }
+  }
+
+  formOpened.current = true;
   return (
     <>
       {exit.dialog}

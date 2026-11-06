@@ -968,7 +968,7 @@ export const routeCards = pgTable(
     index('route_cards_item_revision_idx').on(t.itemRevisionId),
     check(
       'route_cards_approval_status_check',
-      sql`${t.approvalStatus} IN ('pending', 'approved', 'rejected')`,
+      sql`${t.approvalStatus} IN ('draft', 'pending', 'approved', 'rejected')`,
     ),
     check(
       'route_cards_rm_qty_per_piece_check',

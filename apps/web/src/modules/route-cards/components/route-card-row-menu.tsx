@@ -1,15 +1,18 @@
 // The Route Card sheet's ⋯ row menu (owner-approved spec 2026-10-01):
-//   Show operations · Edit · Preview · Download PDF · ─ · Move to Trash
+//   Show operations · Edit · Preview · Download PDF · Submit for Approval · ─ · Move to Trash
 // "Show operations" opens the op sequence under the row — it replaced the
 // row's ▸ (no ▸ on a list row, owner 2026-10-31).
 // No View — the row click already opens the card.
 //
-// ADR-232: the Access Control ticks alone decide — Edit shows with the
-// routecard_create Edit right, Move to Trash only for Super Admin (the caller
-// passes onDelete only then). Preview / Download PDF run usePrintRouteCard
+// ADR-232: the Access Control ticks alone decide — Edit shows per the shared
+// canEditRouteCard rule (ADR-277), Move to Trash only for Super Admin (the caller
+// passes onDelete only then), greyed on a card with the approver. Submit for
+// Approval: the caller passes onSubmitForApproval only when it is allowed.
+// Preview / Download PDF run usePrintRouteCard
 // (lazy fetch on the click); its Promise keeps the ⋯ busy until it fires.
 
 import type { RouteCardListItem } from '@innovic/shared';
+import { ROUTE_CARD_LOCKED_MESSAGE, isRouteCardLocked } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { RowActions } from '@/ui/layout';
 import { usePrintRouteCard } from './print-route-card-button';
@@ -19,6 +22,7 @@ export function RouteCardRowMenu({
   opsOpen,
   onToggleOps,
   canEdit,
+  onSubmitForApproval,
   onDelete,
   deleteDisabled,
 }: {
@@ -27,6 +31,8 @@ export function RouteCardRowMenu({
   opsOpen: boolean;
   onToggleOps: () => void;
   canEdit: boolean;
+  /** Opens the page's own confirm; undefined = not allowed on this row. */
+  onSubmitForApproval: (() => void) | undefined;
   /** Opens the page's own reason dialog; undefined = no delete right. */
   onDelete: (() => void) | undefined;
   deleteDisabled: boolean;
@@ -48,6 +54,14 @@ export function RouteCardRowMenu({
         { key: 'preview', label: 'Preview', icon: 'eye', onSelect: print.preview },
         { key: 'download', label: 'Download PDF', icon: 'download', onSelect: print.download },
         {
+          key: 'submit',
+          label: 'Submit for Approval',
+          icon: 'check',
+          group: 'workflow',
+          hidden: !onSubmitForApproval,
+          onSelect: onSubmitForApproval,
+        },
+        {
           // Caller-owned confirm (routes/list.tsx): it asks for the reason,
           // owns the wait, and keeps a failure on screen inside the dialog.
           key: 'delete',
@@ -55,7 +69,11 @@ export function RouteCardRowMenu({
           icon: 'trash-2',
           group: 'danger',
           hidden: !onDelete,
-          disabledReason: deleteDisabled ? 'Working…' : undefined,
+          disabledReason: isRouteCardLocked(rc.approvalStatus)
+            ? ROUTE_CARD_LOCKED_MESSAGE
+            : deleteDisabled
+              ? 'Working…'
+              : undefined,
           onSelect: onDelete,
         },
       ]}

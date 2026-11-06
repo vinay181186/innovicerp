@@ -322,7 +322,7 @@ export function OrderDetail({
             // ADR-253 — the item's card exists but is not approved; a
             // Production Order is refused until it is, so no Create PO here.
             <>
-              Route Card is waiting for approval
+              Route Card is not approved yet
               {canViewRouteCard ? (
                 <>
                   {' — '}

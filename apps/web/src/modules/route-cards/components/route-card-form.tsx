@@ -4,19 +4,25 @@
 // frames 4 "Route Card — Create" and 5 "Route Card — Edit / Revise"): the whole
 // form fits one 1440×810 screen with no page scroll, in the detail page's
 // order so Create, Edit and View line up (screen-layout-method rule 8):
-//   header      ← Back · [code] · New / Edit Route Card · Rev N → N+1 badge
+//   header      ← Back · [code] · New / Edit Route Card · Rev badge (Rev N → N+1,
+//               or plain Rev N on a Draft: a Draft save adds no revision)
 //   identity   RC No. · Item Code ★ (the one decision) · item name · the
 //               "prefilled from plan" note (DocIdent)
 //   facts       Route (Plan Type ★ · Operations split · Last Updated By ·
 //               Last Updated) ·
 //               Material (RM Item · RM Grade · RM Size · RM Qty per piece) ·
-//               Notes (Route Card Remarks, + Revision Note on Edit) — the
+//               Notes (Route Card Remarks, + Revision Note on Edit, not on a
+//               Draft) — the
 //               ClusterGrid, one line each, controls in place of values
 //   ops panel   "Operation Sequence (n)" — Copy ops… (Create), + Outsourced op,
 //               + Inspection, + Add Operation; the one block that takes the
 //               height left (`page-fill rc-form` + <Panel fill>), its table
 //               scrolling inside with the header row and Total held.
-//   FormActions the first validation message (why Save is off) · Cancel · Save
+//   FormActions the first validation message (why Save is off) · then, ADR-277:
+//               create or a Draft / Rejected card: Cancel · Save · Save & Submit
+//               an Approved card: Cancel · Save Changes
+//               Save is the one type="submit": Enter and Ctrl+S only ever Save,
+//               they never send a card for approval.
 // Validation, save payloads, copy-ops, op numbering and every message are the
 // ADR-204 form's, unchanged. Tool No. / Tool Details are still NOT rendered
 // (owner, 2026-10-06 — "no Tool No. / Tool Details anywhere on the form"), and
@@ -36,7 +42,7 @@ import type {
   RouteCardPlanType,
   Vendor,
 } from '@innovic/shared';
-import { opSrNo, qcAfterOutsourceError } from '@innovic/shared';
+import { canSubmitRouteCardStatus, opSrNo, qcAfterOutsourceError } from '@innovic/shared';
 import { ArrowLeft } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActionLink } from '@/components/shared/action-link';
@@ -149,6 +155,8 @@ interface RouteCardFormProps {
     header: RouteCardFormHeaderDraft,
     ops: RouteCardFormOpDraft[],
     revisionNote: string | null,
+    /** ADR-277 — true = Save & Submit, false = Save / Save Changes. */
+    submitForApproval: boolean,
   ) => Promise<void>;
   submitting: boolean;
   submitError: string | null;
@@ -278,6 +286,13 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
   const [header, setHeader] = useState<RouteCardFormHeaderDraft>(initialHeader);
   const [ops, setOps] = useState<RouteCardFormOpDraft[]>(initialOps);
   const [revisionNote, setRevisionNote] = useState('');
+  // ADR-277 — which button started the save in flight, for its "Saving…".
+  const [sendingForApproval, setSendingForApproval] = useState(false);
+  const isDraft = mode === 'edit' && routeCard?.approvalStatus === 'draft';
+  // A Draft save adds no revision, so there is nothing for a Revision Note to name.
+  const showRevisionNote = mode === 'edit' && !isDraft;
+  const offerSubmit =
+    mode === 'create' || (routeCard != null && canSubmitRouteCardStatus(routeCard.approvalStatus));
 
   // Master-only item picker, same as Create SO: type to search the server, the
   // dropdown lists "CODE — Name", the field shows the code once picked. Server
@@ -528,7 +543,7 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
     if (!header.itemId) return 'Item Code is required.';
     if (revError) return revError;
     if (blockingCard) {
-      return `${blockingCard.code} already exists for ${blockingCard.label} — open it to add a revision.`;
+      return `${blockingCard.code} already exists for ${blockingCard.label} — open that card.`;
     }
     if (ops.length === 0) return 'Add at least one operation.';
     for (let i = 0; i < ops.length; i++) {
@@ -570,20 +585,23 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
     return null;
   }, [header, ops, blockingCard, revError]);
 
-  const save = async (): Promise<void> => {
+  const save = async (submitForApproval: boolean): Promise<void> => {
     if (validationError || submitting) return;
+    setSendingForApproval(submitForApproval);
     await onSubmit(
       header,
       ops,
-      mode === 'edit' && revisionNote.trim() ? revisionNote.trim() : null,
+      showRevisionNote && revisionNote.trim() ? revisionNote.trim() : null,
+      submitForApproval,
     );
   };
   const submit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
-    await save();
+    await save(false);
   };
-  // Ctrl+S runs the same Save as the bottom button (no-op while it is disabled).
-  useSaveShortcut(() => void save(), !submitting);
+  // Ctrl+S runs the same Save as the bottom button (no-op while it is disabled);
+  // like Enter, it never sends the card for approval.
+  useSaveShortcut(() => void save(false), !submitting);
 
   // Display-only totals under the operations table: how long the whole routing
   // takes on the machines, and how many days it spends out at vendors. Summed
@@ -624,8 +642,11 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
         <h1 className="panel-title" style={{ margin: 0 }}>
           {mode === 'create' ? 'New Route Card' : 'Edit Route Card'}
         </h1>
-        {/* Every save of an existing card is a new revision — say which. */}
-        {mode === 'edit' && routeCard ? (
+        {/* A save of an existing card is a new revision — say which. Not on a
+            Draft: its saves add no revision (ADR-277). */}
+        {isDraft && routeCard ? (
+          <span className="badge b-grey">Route Card Rev {routeCard.currentRevision}</span>
+        ) : mode === 'edit' && routeCard ? (
           <span className="badge b-amber">
             Route Card Rev {routeCard.currentRevision} →{' '}
             <span style={{ color: 'var(--green2)' }}>{routeCard.currentRevision + 1}</span>
@@ -653,16 +674,16 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
             style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)', flexWrap: 'wrap' }}
           >
             <span style={{ flex: 1 }}>
-              An Item + Drawing Rev has one Route Card. Changes to its operations are saved as a new
-              revision of that card, not as a second card.
+              An Item + Drawing Rev has one Route Card, not a second card. Open it to see its status
+              and change it.
             </span>
-            {/* ADR-234 — only for a Route Card Edit holder. */}
+            {/* The card's own page: it says who may change it, and when. */}
             <ActionLink
-              to="/route-cards/$id/edit"
+              to="/route-cards/$id"
               params={{ id: blockingCard.id }}
               className="btn btn-primary btn-sm"
             >
-              Open {blockingCard.code} to add a revision
+              Open {blockingCard.code}
             </ActionLink>
           </div>
         </Banner>
@@ -876,7 +897,7 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
             <FormField
               label="Route Card Remarks"
               htmlFor="rc-remarks"
-              className={mode === 'edit' ? 'cl-span-2' : 'cl-span-4'}
+              className={showRevisionNote ? 'cl-span-2' : 'cl-span-4'}
             >
               {/* A one-row textarea, not an <input>: it looks like one line (so
                   the page stays on one screen) but Enter adds a line instead of
@@ -892,7 +913,7 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
                 placeholder="Optional manufacturing notes…"
               />
             </FormField>
-            {mode === 'edit' ? (
+            {showRevisionNote ? (
               <FormField label="Revision Note" htmlFor="rc-rev-note" className="cl-span-2">
                 <textarea
                   id="rc-rev-note"
@@ -1023,14 +1044,36 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
         <button type="button" className="btn btn-ghost" onClick={onCancel}>
           Cancel
         </button>
-        <button
-          type="submit"
-          className="btn btn-primary"
-          disabled={Boolean(validationError) || submitting}
-          title={validationError ?? undefined}
-        >
-          {submitting ? 'Saving…' : mode === 'create' ? 'Save Route Card' : 'Save Changes'}
-        </button>
+        {offerSubmit ? (
+          <>
+            <button
+              type="submit"
+              className="btn btn-ghost"
+              disabled={Boolean(validationError) || submitting}
+              title={validationError ?? 'Save without sending for approval'}
+            >
+              {submitting && !sendingForApproval ? 'Saving…' : 'Save'}
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={Boolean(validationError) || submitting}
+              title={validationError ?? 'Save and send for approval'}
+              onClick={() => void save(true)}
+            >
+              {submitting && sendingForApproval ? 'Saving…' : 'Save & Submit'}
+            </button>
+          </>
+        ) : (
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={Boolean(validationError) || submitting}
+            title={validationError ?? undefined}
+          >
+            {submitting ? 'Saving…' : 'Save Changes'}
+          </button>
+        )}
       </FormActions>
     </form>
   );

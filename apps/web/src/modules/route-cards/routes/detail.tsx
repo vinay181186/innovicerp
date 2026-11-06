@@ -10,7 +10,12 @@
 // Data, permissions, print and delete are unchanged.
 
 import { Icon } from '@/ui/core';
-import { itemRevLabel } from '@innovic/shared';
+import {
+  ROUTE_CARD_LOCKED_MESSAGE,
+  canEditRouteCard,
+  isRouteCardLocked,
+  itemRevLabel,
+} from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useState } from 'react';
@@ -19,6 +24,7 @@ import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDateTime } from '@/lib/date';
 import { runPrint } from '@/lib/print/preview-host';
+import { useSession } from '@/lib/session';
 import { DrawingStatusLink, ItemRevLink } from '@/modules/item-revisions/components/item-rev-link';
 import { usePendingEditForDoc } from '@/modules/document-edits/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -34,6 +40,7 @@ import { PlanTypeFact } from '../components/plan-type-fact';
 import {
   RcApprovalActions,
   RcApprovalBanner,
+  RcSubmitAction,
   rcApprovalLine,
 } from '../components/rc-approval-actions';
 import { RcApprovalBadge } from '../components/rc-approval-badge';
@@ -54,6 +61,7 @@ function RouteCardDetailPage(): React.JSX.Element {
   const navigate = useNavigate();
   const { data: detail, isLoading, isError, error } = useRouteCard(id);
   const { data: eff } = useMyAccess();
+  const { data: me } = useSession();
   const perms = effectiveFormPerms(eff, 'routecard_create');
   const { data: item } = useItem(detail?.itemId);
   const { data: company } = useMyCompany();
@@ -127,6 +135,8 @@ function RouteCardDetailPage(): React.JSX.Element {
   const inHouse = detail.ops.filter((o) => o.opType === 'process').length;
   const osp = detail.ops.filter((o) => o.opType === 'outsource').length;
   const qc = detail.ops.filter((o) => o.opType === 'qc').length;
+  // ADR-277 — sent for approval: no edit and no delete until the approver decides.
+  const locked = isRouteCardLocked(detail.approvalStatus);
 
   return (
     <div>
@@ -146,6 +156,8 @@ function RouteCardDetailPage(): React.JSX.Element {
         }
         actions={
           <>
+            {/* ADR-277 — a saved Draft / Rejected card goes for approval from here too. */}
+            <RcSubmitAction detail={detail} userId={me?.id} rights={perms} />
             {/* ADR-253 — Approve / Reject a pending card (Approve tick only). */}
             <RcApprovalActions detail={detail} canApprove={perms.approve} />
             <ActionMenu
@@ -158,8 +170,8 @@ function RouteCardDetailPage(): React.JSX.Element {
                   danger: true,
                   // ADR-232: deleting any record is Super Admin only.
                   hidden: !canDeleteRecords(eff),
-                  disabled: del.isPending,
-                  title: 'Move this Route Card to Trash',
+                  disabled: del.isPending || locked,
+                  title: locked ? ROUTE_CARD_LOCKED_MESSAGE : 'Move this Route Card to Trash',
                   onClick: () => {
                     setDeleteReason('');
                     setConfirmDelete(true);
@@ -167,7 +179,7 @@ function RouteCardDetailPage(): React.JSX.Element {
                 },
               ]}
             />
-            {perms.edit && (
+            {canEditRouteCard(detail, me?.id, perms) && (
               <Link
                 to="/route-cards/$id/edit"
                 params={{ id: detail.id }}
@@ -286,7 +298,7 @@ function RouteCardDetailPage(): React.JSX.Element {
           </Cluster>
 
           {/* ADR-253 — who decided this card, and when. */}
-          {detail.approvalStatus !== 'pending' ? (
+          {detail.approvalStatus === 'approved' || detail.approvalStatus === 'rejected' ? (
             <Cluster name="Approval">
               <ClusterFact span={4} wrap label="RC Status" value={rcApprovalLine(detail)} />
             </Cluster>

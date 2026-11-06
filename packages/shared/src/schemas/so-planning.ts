@@ -2,6 +2,7 @@
 // Per docs/PARITY/so-planning.md.
 
 import { z } from 'zod';
+import { ROUTE_CARD_APPROVAL_STATUSES } from '../enums/route-card-approval';
 import {
   RESERVATION_DETAIL_SOURCES,
   RESERVATION_SOURCES,
@@ -86,7 +87,7 @@ export const planningPlanSummarySchema = z.object({
   /** The plan item's live Route Card (null = none yet → "Pending") and its
    *  ADR-253 approval state. */
   routeCardCode: z.string().nullable().default(null),
-  routeCardApprovalStatus: z.enum(['pending', 'approved', 'rejected']).nullable().default(null),
+  routeCardApprovalStatus: z.enum(ROUTE_CARD_APPROVAL_STATUSES).nullable().default(null),
   /** EVERY live Production Order of this plan (oldest first) with its Job Card
    *  — a JC in Trash comes back as null. productionOrderCode above stays the newest. */
   productionOrders: z

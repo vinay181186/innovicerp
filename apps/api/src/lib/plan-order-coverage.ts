@@ -103,7 +103,7 @@ export const PLAN_LATEST_ORDER_STATUS_SQL = latestOrderField<string | null>('sta
 /** ADR-253 — the ONE route-card fact a plan's derived status hangs on, as a
  *  tri-state over the item's live (not deleted) Route Card:
  *    NULL  → no live card            ('route_card_pending')
- *    false → a live card, not yet approved — Pending Approval or Rejected
+ *    false → a live card, not yet approved — Draft, Pending Approval or Rejected
  *                                     ('route_card_approval_pending')
  *    true  → an APPROVED card         ('gen_production_order')
  *  Approval is read through routeCardUsableSql — never a hand-written check.

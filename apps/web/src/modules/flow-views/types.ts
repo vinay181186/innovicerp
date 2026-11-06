@@ -235,7 +235,7 @@ export interface LevelRouteCard {
   id: string;
   code: string;
   currentRevision: number;
-  approvalStatus: 'pending' | 'approved' | 'rejected';
+  approvalStatus: 'draft' | 'pending' | 'approved' | 'rejected';
 }
 
 /** A customer dispatch / tax invoice that carries this SO line. */

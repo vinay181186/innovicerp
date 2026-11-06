@@ -2,6 +2,7 @@ import {
   activityReasonSchema,
   approveRouteCardInputSchema,
   rejectRouteCardInputSchema,
+  submitRouteCardInputSchema,
 } from '@innovic/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -11,7 +12,7 @@ import {
   listRouteCardsQuerySchema,
   updateRouteCardInputSchema,
 } from './schema';
-import { approveRouteCard, rejectRouteCard } from './approval';
+import { approveRouteCard, rejectRouteCard, submitRouteCard } from './approval';
 import { getRouteCardRelated } from './related';
 import * as service from './service';
 
@@ -77,6 +78,14 @@ export async function routeCardRoutes(app: FastifyInstance): Promise<void> {
     const { id } = idParamSchema.parse(req.params);
     const input = rejectRouteCardInputSchema.parse(req.body ?? {});
     return rejectRouteCard(id, input, req.user);
+  });
+
+  // ADR-277 — Submit for Approval: a Draft or Rejected card → Pending Approval.
+  app.post('/route-cards/:id/submit', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    const input = submitRouteCardInputSchema.parse(req.body ?? {});
+    return submitRouteCard(id, input, req.user);
   });
 
   app.delete('/route-cards/:id', async (req) => {

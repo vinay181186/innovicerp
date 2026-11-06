@@ -9,7 +9,11 @@ import type {
   FixListStock,
   RouteCardApprovalStatus,
 } from '@innovic/shared';
-import { ROUTE_CARD_APPROVAL_LABEL } from '@innovic/shared';
+import {
+  ROUTE_CARD_APPROVAL_LABEL,
+  ROUTE_CARD_LOCKED_MESSAGE,
+  isRouteCardLocked,
+} from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { RcApprovalBadge } from '@/modules/route-cards/components/rc-approval-badge';
 import { createdByColumn, leadColumns, type DataTableColumn, type RowMenuItem } from '@/ui/data';
@@ -34,7 +38,8 @@ export function routeCardColumns(canEditRc: boolean): DataTableColumn<FixListRou
       kind: 'code',
       nowrap: true,
       render: (r) =>
-        canEditRc ? (
+        // ADR-277 — a card with the approver cannot be edited, so no link to the form.
+        canEditRc && !isRouteCardLocked(r.approvalStatus) ? (
           <Link
             to="/route-cards/$id/edit"
             params={{ id: r.routeCardId }}
@@ -89,6 +94,7 @@ export function routeCardRowMenu(r: FixListRouteCard, canEditRc: boolean): RowMe
       icon: 'pencil',
       to: `/route-cards/${r.routeCardId}/edit`,
       hidden: !canEditRc,
+      disabledReason: isRouteCardLocked(r.approvalStatus) ? ROUTE_CARD_LOCKED_MESSAGE : undefined,
     },
   ];
 }
