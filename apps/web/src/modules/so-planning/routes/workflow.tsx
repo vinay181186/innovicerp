@@ -16,7 +16,10 @@
 // Production Order is raised. Old plans (opsSource 'plan') keep their Edit /
 // Execute / View JC / PR links inside their chip.
 //
-// URL state: ?src=so|jw (absent = all), ?soId= (level 2), ?openPlan= (edit modal).
+// URL state: ?src=so|jw (absent = all), ?soId= (level 2), ?openPlan= (edit modal),
+// and from the Home check "Party GRN received, plan pending" (ADR-279):
+// ?grnPlanPending=1 (level 1 keeps only those lines), ?planLine= (level 2 opens the
+// Create Plan box for that line once, then the param is removed).
 //
 // ADR-201 (2026-10-02): level 1 shows 25 rows a page with Prev / Next (?page=).
 // The SO / JWSO source, the search and Sort & Filter run on the server over
@@ -50,6 +53,16 @@ const searchSchema = z.object({
   openPlan: z.string().uuid().optional(),
   /** Which lines level 1 lists. Survives reload / Back. Absent = 'all'. */
   src: z.enum(['all', 'so', 'jw']).optional(),
+  /** ADR-279 — the line whose Create Plan box opens on arrival (Home check). */
+  planLine: z.string().uuid().optional().catch(undefined),
+  /** ADR-279 — only lines with material received and To Plan above 0. A typed or
+   *  bookmarked `=1` reaches here as the NUMBER 1 (the router JSON-parses search
+   *  values), so it is coerced; anything else reads as off, never a crash. */
+  grnPlanPending: z.coerce
+    .string()
+    .pipe(z.enum(['1']))
+    .optional()
+    .catch(undefined),
   /** Level-1 page (ADR-201). */
   page: pageSearchParam,
 });
@@ -63,7 +76,14 @@ export const soPlanningWorkflowRoute = createRoute({
 
 function PlanningWorkflowPage(): JSX.Element {
   const navigate = useNavigate();
-  const { soId, openPlan, src: srcParam, page } = soPlanningWorkflowRoute.useSearch();
+  const {
+    soId,
+    openPlan,
+    src: srcParam,
+    planLine,
+    grnPlanPending,
+    page,
+  } = soPlanningWorkflowRoute.useSearch();
   const src: SourceFilter = srcParam ?? 'all';
   const qc = useQueryClient();
   // Page + write gate (plan_create, Planning dept). Writes on this page (create
@@ -85,6 +105,15 @@ function PlanningWorkflowPage(): JSX.Element {
     },
     [navigate],
   );
+  // The Create Plan box has opened (or the line was not eligible): out of the URL,
+  // so a refresh does not open it again.
+  const clearPlanLine = useCallback((): void => {
+    void navigate({
+      to: '/planning',
+      search: (prev) => ({ ...prev, planLine: undefined }),
+      replace: true,
+    });
+  }, [navigate]);
   const setSrc = (s: SourceFilter): void => {
     void navigate({
       to: '/planning',
@@ -101,7 +130,10 @@ function PlanningWorkflowPage(): JSX.Element {
     void navigate({ to: '/planning', search: (prev) => ({ ...prev, soId: id }) });
   };
   const backToList = (): void => {
-    void navigate({ to: '/planning', search: (prev) => ({ ...prev, soId: undefined }) });
+    void navigate({
+      to: '/planning',
+      search: (prev) => ({ ...prev, soId: undefined, planLine: undefined }),
+    });
   };
   const refreshPlanning = (): void => {
     void qc.invalidateQueries({ queryKey: soPlanningKeys.all });
@@ -127,6 +159,7 @@ function PlanningWorkflowPage(): JSX.Element {
       src: src === 'all' ? undefined : src,
       search: searchTerm || undefined,
       sf: sf.param,
+      grnPlanPending,
       limit: LIST_PAGE_SIZE,
       offset: pageOffset(page),
     },
@@ -157,6 +190,8 @@ function PlanningWorkflowPage(): JSX.Element {
           setModal={setModal}
           onBack={backToList}
           onChanged={refreshPlanning}
+          planLine={planLine}
+          onPlanLineUsed={clearPlanLine}
         />
       ) : (
         <>
@@ -180,29 +215,42 @@ function PlanningWorkflowPage(): JSX.Element {
             searchPlaceholder="Search SO / JWSO No., POL, item code or name, customer, RC, PRO, JC…"
             updating={lineList.isFetching && !lineList.isLoading}
             filters={
-              <select
-                className="innovic-select"
-                aria-label="Order source"
-                title="Order source"
-                value={src}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  setSrc(v === 'jw' ? 'jw' : v === 'so' ? 'so' : 'all');
-                }}
-              >
-                <option value="all">All</option>
-                <option value="so">SO</option>
-                <option value="jw">JWSO</option>
-              </select>
+              <>
+                <select
+                  className="innovic-select"
+                  aria-label="Order source"
+                  title="Order source"
+                  value={src}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setSrc(v === 'jw' ? 'jw' : v === 'so' ? 'so' : 'all');
+                  }}
+                >
+                  <option value="all">All</option>
+                  <option value="so">SO</option>
+                  <option value="jw">JWSO</option>
+                </select>
+                {grnPlanPending ? (
+                  <span
+                    className="text3"
+                    style={{ fontSize: 'var(--fs-xs)', whiteSpace: 'nowrap' }}
+                  >
+                    Party GRN received, plan pending
+                  </span>
+                ) : null}
+              </>
             }
             onClearFilters={() => {
               setSoSearch('');
               setSearchTerm('');
               sf.clearFilters();
-              if (src !== 'all') setSrc('all');
-              else gotoPage(1);
+              void navigate({
+                to: '/planning',
+                search: (prev) => ({ ...prev, src: undefined, grnPlanPending: undefined, page: 1 }),
+                replace: true,
+              });
             }}
-            filtersActive={soSearch !== '' || src !== 'all' || sf.filtering}
+            filtersActive={soSearch !== '' || src !== 'all' || !!grnPlanPending || sf.filtering}
           />
 
           <LineList
@@ -211,7 +259,7 @@ function PlanningWorkflowPage(): JSX.Element {
             firstRowNo={shownOffset.current + 1}
             loading={lineList.isLoading}
             error={lineList.error instanceof Error ? lineList.error.message : null}
-            searching={searchTerm !== ''}
+            searching={searchTerm !== '' || grnPlanPending !== undefined}
             onOpen={openOrder}
             sf={sf}
           />

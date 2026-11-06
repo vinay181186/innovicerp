@@ -197,7 +197,7 @@ export function ResultTable({
   );
 }
 
-/** ADR-279: money right, other numbers centre, dates centre, text left. A report
+/** ADR-280: money right, other numbers centre, dates centre, text left. A report
  *  column only says "number", so its heading decides whether it is money. */
 function colAlignClass(col: AdHocColumn, part: 'th' | 'td'): string {
   const numeric = col.type === 'number';

@@ -16,6 +16,7 @@ import { dashboardKeys } from '@/modules/dashboard/api';
 import { incomingQcKeys } from '@/modules/incoming-qc/api';
 import { jobWorkOrdersKeys } from '@/modules/job-work-orders/api';
 import { qcHistoryKeys } from '@/modules/qc-history/api';
+import { soPlanningKeys } from '@/modules/so-planning/api';
 
 export const partyGrnKeys = {
   all: ['party-grn'] as const,
@@ -124,6 +125,9 @@ export function useCreatePartyGrn(saveKey?: SaveKey) {
       void qc.invalidateQueries({ queryKey: ['party-materials'] });
       // OW-143: the JWSO's Customer RM Status moves.
       void qc.invalidateQueries({ queryKey: jobWorkOrdersKeys.all });
+      // ADR-279: Planning's Party GRN Status and the home check.
+      void qc.invalidateQueries({ queryKey: soPlanningKeys.all });
+      void qc.invalidateQueries({ queryKey: dashboardKeys.home() });
     },
   });
 }
@@ -181,6 +185,9 @@ export function useUpdatePartyGrn(id: string, saveKey?: SaveKey) {
       // A changed Received Qty moves party-material stocks.
       void qc.invalidateQueries({ queryKey: ['party-materials'] });
       void qc.invalidateQueries({ queryKey: jobWorkOrdersKeys.all });
+      // ADR-279: Planning's Party GRN Status and the home check.
+      void qc.invalidateQueries({ queryKey: soPlanningKeys.all });
+      void qc.invalidateQueries({ queryKey: dashboardKeys.home() });
     },
   });
 }
@@ -218,6 +225,8 @@ export function useQcPartyGrn(saveKey?: SaveKey) {
       void qc.invalidateQueries({ queryKey: incomingQcKeys.all });
       void qc.invalidateQueries({ queryKey: qcHistoryKeys.all });
       void qc.invalidateQueries({ queryKey: dashboardKeys.home() });
+      // ADR-279: Party GRN Status counts pieces sent back to the customer.
+      void qc.invalidateQueries({ queryKey: soPlanningKeys.all });
     },
   });
 }

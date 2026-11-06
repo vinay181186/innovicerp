@@ -49,6 +49,7 @@ import { productionOrdersKeys } from '@/modules/production-orders/api';
 import { purchaseOrdersKeys } from '@/modules/purchase-orders/api';
 import { purchaseRequestsKeys } from '@/modules/purchase-requests/api';
 import { salesOrdersKeys } from '@/modules/sales-orders/api';
+import { soPlanningKeys } from '@/modules/so-planning/api';
 import { stockCountKeys } from '@/modules/stock-counts/api';
 import { storeInventoryKeys } from '@/modules/store-inventory/api';
 import { storeIssuesKeys } from '@/modules/store-issues/api';
@@ -98,6 +99,8 @@ function invalidateAfterCancel(qc: QueryClient): void {
     goodsReceiptNotesKeys.all,
     jwDcKeys.all,
     plansKeys.all,
+    // ADR-279: a cancelled Party GRN moves Planning's Party GRN Status.
+    soPlanningKeys.all,
     stockReservationKeys.all,
     // Phase C part 2.
     jobCardsKeys.all,

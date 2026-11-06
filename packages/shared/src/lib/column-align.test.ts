@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { columnAlign, isMoneyHeading } from './column-align';
 
-describe('columnAlign (ADR-279)', () => {
+describe('columnAlign (ADR-280)', () => {
   it.each([
     'Item Name',
     'Item Code',

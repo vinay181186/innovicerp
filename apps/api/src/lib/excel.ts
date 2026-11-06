@@ -133,7 +133,7 @@ export async function buildWorkbookBuffer(input: BuildWorkbookInput): Promise<Bu
     row.font = { bold: true };
   }
 
-  // THE alignment rule (ADR-279) + number format.
+  // THE alignment rule (ADR-280) + number format.
   input.columns.forEach((c, i) => {
     const col = data.getColumn(i + 1);
     const isDate = c.type === 'date' || c.type === 'datetime';

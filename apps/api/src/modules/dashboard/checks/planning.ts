@@ -13,6 +13,13 @@
 //                       JWSO, lib/so-line-coverage.ts).
 //                       Qty = To Plan, date = the line's Due Date,
 //                       reference = Client PO No.
+//   plan_pgrn_received — ADR-279: the JWSO half of plan_so_unplanned, only the
+//                       lines whose customer material has come in (the Party
+//                       GRN receive cap's committed qty > 0, partyCommittedQtySql).
+//                       A subset of the check above, so it
+//                       stays out of the menu badge (service.ts). The Planning
+//                       list's grnPlanPending filter selects the same lines.
+//                       Qty = To Plan, x2 / x3 = committed / order qty.
 //   plan_rc_approval  — personal/rows-route-card.ts rcPendingSql (new Route
 //                       Cards Pending Approval); its date is the card's
 //                       Created On (IST day), the status reads its age.
@@ -26,10 +33,65 @@ import {
   soLineDirectJcRaw,
   soLinePlannedRaw,
 } from '../../../lib/so-line-coverage';
+import { partyCommittedQtySql } from '../../party-grn/service';
 import { rcPendingSql } from '../personal/rows-route-card';
 import { PLAN_RC_PENDING_CHECK } from './production';
 import { orderHref } from './sales';
 import type { CheckCtx, CheckDef } from './types';
+
+/** What a check adds to the JWSO to-plan line rule: its x2 / x3, one more join
+ *  and one more condition. */
+interface JwToPlanExtra {
+  x2x3: SQL;
+  join: SQL;
+  where: SQL;
+}
+
+const JW_TO_PLAN_PLAIN: JwToPlanExtra = {
+  x2x3: sql`NULL::text AS x2, NULL::text AS x3`,
+  join: sql``,
+  where: sql``,
+};
+
+/** JWSO lines not fully planned, one row per line — the JW half of
+ *  soLinesUnplannedSql; every check of these lines reads this one rule. */
+function jwLinesToPlanSql(c: CheckCtx, extra: JwToPlanExtra = JW_TO_PLAN_PLAIN): SQL {
+  return sql`
+    SELECT jwl.id::text AS row_key, jw.id, jw.code, 'jw'::text AS kind,
+           jw.jw_date::text AS doc_date, jwl.due_date::text AS due_date,
+           jwl.due_date::text AS sort_key,
+           COALESCE(cl.name, jw.customer_name)::text AS party,
+           COALESCE(i.code, jwl.item_code_text)::text AS item_code,
+           jwl.part_name::text AS item_name,
+           ln.to_plan::numeric AS qty, jwl.uom::text AS uom,
+           NULL::numeric AS amount, jw.created_by::text AS created_by,
+           (CASE WHEN jwl.due_date < ${c.today}::date THEN 1 ELSE 0 END)::int AS is_late,
+           NULLIF(btrim(jw.client_po_no), '')::text AS x1, ${extra.x2x3}
+    FROM public.job_work_order_lines jwl
+    JOIN public.job_work_orders jw
+      ON jw.id = jwl.job_work_order_id AND jw.deleted_at IS NULL AND jw.status = 'open'
+    CROSS JOIN LATERAL (SELECT ${sql.raw(jwLinePlannedRaw('jwl'))} AS planned,
+                               ${sql.raw(jwLineDirectJcRaw('jwl'))} AS direct) cov
+    CROSS JOIN LATERAL (SELECT GREATEST(jwl.order_qty
+             - LEAST((cov.planned + cov.direct)::numeric, jwl.order_qty), 0) AS to_plan) ln
+    ${extra.join}
+    LEFT JOIN public.items i ON i.id = jwl.item_id
+    LEFT JOIN public.clients cl ON cl.id = jw.client_id AND cl.deleted_at IS NULL
+    WHERE jw.company_id = ${c.cid}::uuid AND jwl.deleted_at IS NULL
+      AND jwl.status <> 'cancelled' AND jwl.short_closed_at IS NULL
+      AND ln.to_plan > 0 ${extra.where}`;
+}
+
+/** ADR-279 — JWSO lines not fully planned whose material has come in. Committed
+ *  is THE one rule (ADR-247), the same figure GRN Pending reads, so this and the
+ *  Planning list's Party GRN Status agree. */
+export function jwLinesGrnReceivedSql(c: CheckCtx): SQL {
+  return jwLinesToPlanSql(c, {
+    x2x3: sql`LEAST(cm.committed, jwl.order_qty)::text AS x2, jwl.order_qty::text AS x3`,
+    join: sql`CROSS JOIN LATERAL (SELECT ${partyCommittedQtySql(sql`jwl.id`)} AS committed) cm`,
+    where: sql`AND cm.committed > 0`,
+  });
+}
 
 export function soLinesUnplannedSql(c: CheckCtx): SQL {
   return sql`
@@ -56,28 +118,7 @@ export function soLinesUnplannedSql(c: CheckCtx): SQL {
       AND sol.status <> 'cancelled' AND sol.short_closed_at IS NULL
       AND ln.to_plan > 0
     UNION ALL
-    SELECT jwl.id::text AS row_key, jw.id, jw.code, 'jw'::text AS kind,
-           jw.jw_date::text AS doc_date, jwl.due_date::text AS due_date,
-           jwl.due_date::text AS sort_key,
-           COALESCE(cl.name, jw.customer_name)::text AS party,
-           COALESCE(i.code, jwl.item_code_text)::text AS item_code,
-           jwl.part_name::text AS item_name,
-           ln.to_plan::numeric AS qty, jwl.uom::text AS uom,
-           NULL::numeric AS amount, jw.created_by::text AS created_by,
-           (CASE WHEN jwl.due_date < ${c.today}::date THEN 1 ELSE 0 END)::int AS is_late,
-           NULLIF(btrim(jw.client_po_no), '')::text AS x1, NULL::text AS x2, NULL::text AS x3
-    FROM public.job_work_order_lines jwl
-    JOIN public.job_work_orders jw
-      ON jw.id = jwl.job_work_order_id AND jw.deleted_at IS NULL AND jw.status = 'open'
-    CROSS JOIN LATERAL (SELECT ${sql.raw(jwLinePlannedRaw('jwl'))} AS planned,
-                               ${sql.raw(jwLineDirectJcRaw('jwl'))} AS direct) cov
-    CROSS JOIN LATERAL (SELECT GREATEST(jwl.order_qty
-             - LEAST((cov.planned + cov.direct)::numeric, jwl.order_qty), 0) AS to_plan) ln
-    LEFT JOIN public.items i ON i.id = jwl.item_id
-    LEFT JOIN public.clients cl ON cl.id = jw.client_id AND cl.deleted_at IS NULL
-    WHERE jw.company_id = ${c.cid}::uuid AND jwl.deleted_at IS NULL
-      AND jwl.status <> 'cancelled' AND jwl.short_closed_at IS NULL
-      AND ln.to_plan > 0`;
+    ${jwLinesToPlanSql(c)}`;
 }
 
 export const PLANNING_CHECKS: readonly CheckDef[] = [
@@ -91,6 +132,18 @@ export const PLANNING_CHECKS: readonly CheckDef[] = [
     docHref: orderHref,
     refCode: (r) => r.x1,
     dated: true,
+  },
+  {
+    key: 'plan_pgrn_received',
+    dept: 'planning',
+    label: 'Party GRN received, plan pending',
+    head: ['JWSO No.', 'Client PO No.', 'Due Date'],
+    href: '/planning?src=jw&grnPlanPending=1',
+    query: jwLinesGrnReceivedSql,
+    docHref: (r) => `/planning?soId=${r.id}&planLine=${r.rowKey}`,
+    refCode: (r) => r.x1,
+    dated: true,
+    statusText: (r) => `Received ${r.x2} of ${r.x3}`,
   },
   {
     key: 'plan_rc_approval',

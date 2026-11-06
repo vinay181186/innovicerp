@@ -62,6 +62,7 @@ export const DASH_CHECK_KEYS = [
   'store_count_approval', // stock count submitted, waiting approval
   // Planning
   'plan_so_unplanned', // SO / JWSO lines not fully planned (so_to_plan rule)
+  'plan_pgrn_received', // JWSO lines with Party GRN received and To Plan > 0 (ADR-279)
   'plan_rc_approval', // Route Cards waiting approval (rc_pending rule)
   // QC (phase 2)
   'qc_incoming', // GRN + Party GRN lines with QC pending (grn_qc rule, both halves) — replaces store_party_qc

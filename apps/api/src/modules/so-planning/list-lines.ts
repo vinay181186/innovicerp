@@ -4,10 +4,15 @@
 // from the same helpers (list-lines-plans.ts, line-facts.ts) and the same shared
 // rules; list-lines.test.ts holds the list and the order together.
 //
-// Batched: a fixed number of queries however many orders are open — up to 8 with
+// Batched: a fixed number of queries however many orders are open — up to 9 with
 // no source chosen, one transaction. Never the detail in a loop.
 
-import { planningLineStatus, soLinePlanCoverage, toPlanningLineStatus } from '@innovic/shared';
+import {
+  partyGrnStatus,
+  planningLineStatus,
+  soLinePlanCoverage,
+  toPlanningLineStatus,
+} from '@innovic/shared';
 import type {
   PlanningLineListItem,
   PlanningLineListQuery,
@@ -36,6 +41,7 @@ import {
   UUID_RE,
 } from './line-facts';
 import { requireFormAccess } from '../../lib/access';
+import { customerRmByJw } from '../job-work-orders/customer-rm';
 import {
   type PlanningLinePageRow,
   pagePlanningLines,
@@ -73,7 +79,10 @@ interface LineFacts {
 function composeRow(
   r: LineFacts,
   source: 'so' | 'jw',
-  cover: Pick<PlanningLineListItem, 'plans' | 'prs' | 'prQty' | 'totalPlanned'> & {
+  cover: Pick<
+    PlanningLineListItem,
+    'plans' | 'prs' | 'prQty' | 'totalPlanned' | 'partyGrnStatus'
+  > & {
     directJc: { qty: number; codes: string[] } | undefined;
   },
 ): PlanningLinePageRow {
@@ -112,6 +121,7 @@ function composeRow(
       directJcCodes: cover.directJc?.codes ?? [],
       remaining,
       shortClosed,
+      partyGrnStatus: cover.partyGrnStatus,
       lineStatus: toPlanningLineStatus(
         planningLineStatus({
           orderQty,
@@ -263,6 +273,7 @@ async function composeSoRows(
       prQty: linePrs.prQty,
       totalPlanned,
       directJc: directJcByLine.get(l.id),
+      partyGrnStatus: 'none',
     });
   });
 }
@@ -313,13 +324,18 @@ function loadJwLines(tx: DbTransaction, companyId: string) {
 
 async function composeJwRows(
   tx: DbTransaction,
+  companyId: string,
   lines: Awaited<ReturnType<typeof loadJwLines>>,
   { plansByLine }: ListPlansOfLines,
 ): Promise<PlanningLinePageRow[]> {
   const directJcByLine = await loadDirectJcsByLine(tx, lines, 'jw');
+  // ADR-279 — the JWSO screens' own Customer RM figures, one statement.
+  const rmRows = await customerRmByJw(tx, companyId, [...new Set(lines.map((l) => l.soId))]);
+  const rmQtyByLine = new Map(rmRows.map((r) => [r.lineId, r.qty]));
 
   return lines.map((l) => {
     const plansOfLine = plansByLine.get(l.id) ?? [];
+    const rmQty = rmQtyByLine.get(l.id);
     return composeRow(
       // ADR-177: an empty Rev on a JW line reads null → bare item code. A JWSO
       // has no Internal SO No. (ADR-207) and its type is always job work.
@@ -332,6 +348,7 @@ async function composeJwRows(
         prQty: 0,
         totalPlanned: plansOfLine.reduce((s, p) => s + p.planQty, 0),
         directJc: directJcByLine.get(l.id),
+        partyGrnStatus: rmQty ? partyGrnStatus(rmQty) : 'none',
       },
     );
   });
@@ -355,7 +372,7 @@ export async function listPlanningLines(
     );
     return [
       ...(await composeSoRows(tx, companyId, soLines, planned)),
-      ...(await composeJwRows(tx, jwLines, planned)),
+      ...(await composeJwRows(tx, companyId, jwLines, planned)),
     ];
   });
   // Paged after the transaction: no connection held for in-memory work.

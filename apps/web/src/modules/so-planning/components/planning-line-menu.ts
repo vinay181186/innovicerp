@@ -169,6 +169,14 @@ function planItems(
   ];
 }
 
+/** May this line take a plan through the Create Plan box? The ONE rule: the ⋯
+ *  "Plan" item and the Home check's direct link (ADR-279) both ask here. */
+export function canCreatePlanForLine(line: PlanningLine, perms: { entry: boolean }): boolean {
+  return (
+    perms.entry && line.itemProcurementType !== 'buy' && !line.hasEquipmentBom && line.remaining > 0
+  );
+}
+
 export function planningLineMenu(args: PlanningLineMenuArgs): RowMenuItem[] {
   const { so, line, perms, setModal, canMlPlan, partsOpen, onToggleParts } = args;
   const cap = line.itemId ? allocateCap(lineFacts(so.soCode, line, so.soInternalNo)) : 0;
@@ -190,11 +198,7 @@ export function planningLineMenu(args: PlanningLineMenuArgs): RowMenuItem[] {
       label: `Plan ${line.remaining}`,
       icon: 'plus',
       group: 'workflow',
-      hidden:
-        !perms.entry ||
-        line.itemProcurementType === 'buy' ||
-        line.hasEquipmentBom ||
-        line.remaining <= 0,
+      hidden: !canCreatePlanForLine(line, perms),
       onSelect: () => setModal({ kind: 'create', soLineId: line.soLineId }),
     },
     {

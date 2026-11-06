@@ -24,7 +24,7 @@ export function alignSuffix(align: ColumnAlign, numeric: boolean): string {
   return 'left';
 }
 
-/** THE alignment rule (ADR-279): the column's kind and heading decide, never the
+/** THE alignment rule (ADR-280): the column's kind and heading decide, never the
  *  screen. An in-cell control is read from its heading: a Vendor picker is text. */
 function suffixOf<T>(c: DataTableColumn<T>): string {
   const kind = colKind(c);

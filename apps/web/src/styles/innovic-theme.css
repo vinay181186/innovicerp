@@ -606,7 +606,7 @@
        cell of a `.tbl-edit` table, keep overflow visible so the control is
        never clipped. Full-width colSpan cells (expanded detail rows, loading /
        empty / message rows) are not data cells and wrap normally.
-     - Alignment follows ADR-279: text left, qty centre, money right; codes never cut.
+     - Alignment follows ADR-280: text left, qty centre, money right; codes never cut.
      - Making the columns FIT the screen is the Phase 3 engine's job, not this
        stylesheet's; until then a wide table scrolls inside its .tbl-wrap.
      - Density: comfortable by default; `body.density-compact` tightens every
@@ -879,7 +879,7 @@ body.density-compact {
 .td-ctr {
   text-align: center;
 }
-/* ── TABLE-ALIGNMENT STANDARD (owner 2026-11-06, ADR-279) ────────────────────
+/* ── TABLE-ALIGNMENT STANDARD (owner 2026-11-06, ADR-280) ────────────────────
    Text and codes left, qty centre, money right, short fixed values centre; the
    heading sits with its values. Replaces "everything centred, numbers right".
    The fit table takes its classes from `columnAlign` (packages/shared). A

@@ -20,6 +20,7 @@ import { deliveryChallansKeys } from '@/modules/delivery-challans/api';
 import { jobCardsKeys } from '@/modules/job-cards/api';
 import { jobWorkOrdersKeys } from '@/modules/job-work-orders/api';
 import { opEntryKeys } from '@/modules/op-entry/api';
+import { soPlanningKeys } from '@/modules/so-planning/api';
 import { apiFetch } from '@/lib/api';
 import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 import { activityLogKeys } from '@/modules/activity-log/api';
@@ -238,6 +239,8 @@ function useInvalidateNcCascadeMany() {
     void qc.invalidateQueries({ queryKey: deliveryChallansKeys.all });
     // OW-143: a decided Party GRN deviation NC moves the JWSO's Customer RM Status.
     void qc.invalidateQueries({ queryKey: jobWorkOrdersKeys.all });
+    // ADR-279: and Planning's Party GRN Status.
+    void qc.invalidateQueries({ queryKey: soPlanningKeys.all });
   };
 }
 

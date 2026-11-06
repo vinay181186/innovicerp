@@ -1266,7 +1266,7 @@ Typecheck, lint and build all passed. ADR-270.
 
 ---
 
-## Section 24 — One Alignment Across the ERP (owner rule 2026-11-06, ADR-279)
+## Section 24 — One Alignment Across the ERP (owner rule 2026-11-06, ADR-280)
 
 Every table, entry grid, print and Excel export follows one rule. The heading aligns with
 its values.

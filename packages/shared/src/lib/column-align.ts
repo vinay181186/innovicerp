@@ -1,4 +1,4 @@
-// THE alignment rule (owner 2026-11-06, ADR-279) — one place for every table.
+// THE alignment rule (owner 2026-11-06, ADR-280) — one place for every table.
 //
 //   Text and codes          left     Item Name, Item Code, SO No., Client, Remarks
 //   Qty and other counts    centre   Order Qty, Pending, Lead Days, Ops
