@@ -16,7 +16,12 @@
 // transaction, CHECKS_PARALLEL at a time, guarded: one failing query drops only
 // that check (logged), never the page. Empty departments are omitted.
 
-import { DASH_CHECK_DEPTS, type DashCheck, type DashChecksResponse } from '@innovic/shared';
+import {
+  DASH_CHECK_DEPTS,
+  type DashCheck,
+  type DashCheckKey,
+  type DashChecksResponse,
+} from '@innovic/shared';
 import { type SQL, sql } from 'drizzle-orm';
 import { type AuthContext, withUserContext } from '../../../db/with-user-context';
 import { AuthorizationError } from '../../../lib/errors';
@@ -60,13 +65,19 @@ export function visibleChecks(a: DashAccess): CheckDef[] {
   return CHECK_DEFS.filter((d) => hasDept(a, d.dept));
 }
 
+/** Checks whose lines another check already counts (ADR-279): they show their
+ *  own count, but adding them to the menu badge would count a line twice. */
+const NOT_IN_DEPT_TOTAL: ReadonlySet<string> = new Set<DashCheckKey>(['plan_pgrn_received']);
+
 /** Group built checks into department blocks; departments with no check are
- *  left out. `total` = the sum of the department's counts (the menu badge). */
+ *  left out. `total` = the sum of the department's counts (the menu badge),
+ *  NOT_IN_DEPT_TOTAL left out. */
 export function toDeptBlocks(checks: readonly DashCheck[]): DashChecksResponse {
   return {
     depts: DASH_CHECK_DEPTS.map((dept) => {
       const mine = checks.filter((c) => c.dept === dept);
-      return { dept, total: mine.reduce((s, c) => s + c.count, 0), checks: mine };
+      const total = mine.reduce((s, c) => (NOT_IN_DEPT_TOTAL.has(c.key) ? s : s + c.count), 0);
+      return { dept, total, checks: mine };
     }).filter((b) => b.checks.length > 0),
   };
 }

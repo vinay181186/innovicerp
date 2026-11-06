@@ -12,7 +12,7 @@
 
 import { Link } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { PlanningLine, PlanningPlanSummary } from '@innovic/shared';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
@@ -26,7 +26,12 @@ import { usePlanningSoDetail } from '../api';
 import { OrderDetailModals, type SavedPlanNote, type StockNote } from './order-detail-modals';
 import { planningLineColumns } from './planning-line-columns';
 import { PlanningLineExpand } from './planning-line-expand';
-import { type PlanningLineMenuArgs, planChildMenu, planningLineMenu } from './planning-line-menu';
+import {
+  type PlanningLineMenuArgs,
+  canCreatePlanForLine,
+  planChildMenu,
+  planningLineMenu,
+} from './planning-line-menu';
 import { JwChip, type ModalState } from './planning-shared';
 
 function HeaderField({
@@ -53,6 +58,8 @@ export function OrderDetail({
   setModal,
   onBack,
   onChanged,
+  planLine,
+  onPlanLineUsed,
 }: {
   soId: string;
   perms: { view: boolean; entry: boolean; advance: boolean; edit: boolean };
@@ -61,6 +68,10 @@ export function OrderDetail({
   onBack: () => void;
   /** Invalidate every planning query (list + details) after a write. */
   onChanged: () => void;
+  /** ADR-279 — open the Create Plan box for this line on arrival (Home check). */
+  planLine: string | undefined;
+  /** The link has been acted on: take it out of the URL. */
+  onPlanLineUsed: () => void;
 }): JSX.Element {
   const detail = usePlanningSoDetail(soId);
   const executePlan = useExecutePlan();
@@ -89,6 +100,28 @@ export function OrderDetail({
   const canCreateRouteCard = rcPerms.entry;
   const canViewRouteCard = rcPerms.view;
   const canMlPlan = effectiveFormPerms(eff, 'mlplan_create').entry;
+
+  // ADR-279 — the Home check's link. Waits for the order AND for access (perms.entry
+  // reads false while access loads) and for any re-read of a cached order, so the
+  // line is judged on current figures. Used once either way: not eligible = this
+  // order screen, no box; the URL is cleared so a refresh never reopens it.
+  const usedPlanLine = useRef<string | null>(null);
+  useEffect(() => {
+    if (!planLine || !detail.data || detail.isFetching || !eff) return;
+    if (usedPlanLine.current === planLine) return;
+    usedPlanLine.current = planLine;
+    const line = detail.data.lines.find((l) => l.soLineId === planLine);
+    if (line && canCreatePlanForLine(line, perms)) {
+      setModal({ kind: 'create', soLineId: line.soLineId });
+    } else {
+      toast.info(
+        perms.entry
+          ? 'This line has no plan to create now. It may be fully planned already.'
+          : 'You can view this order, but you have no right to create a plan.',
+      );
+    }
+    onPlanLineUsed();
+  }, [planLine, detail.data, detail.isFetching, eff, perms, setModal, onPlanLineUsed, toast]);
 
   const backBtn = (
     <button type="button" className="btn btn-ghost btn-sm" onClick={onBack}>

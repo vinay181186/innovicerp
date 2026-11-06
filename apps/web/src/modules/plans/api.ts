@@ -22,6 +22,7 @@ import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@ta
 import { apiFetch } from '@/lib/api';
 import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 import { activityLogKeys } from '@/modules/activity-log/api';
+import { dashboardKeys } from '@/modules/dashboard/api';
 import { soPlanningKeys } from '@/modules/so-planning/api';
 
 export const plansKeys = {
@@ -133,6 +134,7 @@ export function useCreatePlansBatch(saveKey?: SaveKey) {
       ),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: plansKeys.all });
+      void qc.invalidateQueries({ queryKey: dashboardKeys.home() });
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
     },
   });
@@ -152,6 +154,8 @@ export function useCreatePlan(saveKey?: SaveKey) {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: plansKeys.all });
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
+      // ADR-279: the line leaves the home check "Party GRN received, plan pending".
+      void qc.invalidateQueries({ queryKey: dashboardKeys.home() });
     },
   });
 }
@@ -260,6 +264,7 @@ export function useUpdatePlan(id: string, saveKey?: SaveKey) {
       ),
     onSuccess: (updated) => {
       void qc.invalidateQueries({ queryKey: plansKeys.all });
+      void qc.invalidateQueries({ queryKey: dashboardKeys.home() });
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       if ('staged' in updated) {
         // Nothing changed on the plan itself — refresh so the detail page shows
@@ -305,6 +310,7 @@ export function useSoftDeletePlan() {
       apiFetch<{ ok: true }>(`/plans/${id}`, { method: 'DELETE', json: { reason } }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: plansKeys.all });
+      void qc.invalidateQueries({ queryKey: dashboardKeys.home() });
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
     },
   });

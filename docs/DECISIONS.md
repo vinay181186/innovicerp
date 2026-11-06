@@ -15430,3 +15430,21 @@ Owner: Pending Entries should open per person on a calendar, green for filled an
 - Download makes page pictures, as every ERP PDF does: text cannot be searched or copied.
 - A reply keeps only its latest text and the time it was edited.
 - A person who is not on the Team Day Logs list has no ⋯, so no History.
+
+## ADR-279: Party GRN received, plan pending — Home check and Planning column
+
+**Date:** 2026-11-06. **Owner decided:** Home > Planning lists the JWSO lines whose Party GRN is received and whose plan is pending; clicking one opens the Create Plan popup for that line. The Planning list shows Party GRN done or not done. A line with only part of the material received reads Part Done and still appears on the check (Way 1 of the plan; the owner replied "go" without naming a Way, so the recommended one was built).
+
+**Decisions:**
+- **One rule.** `partyGrnStatus` (shared, `customer-rm-status.ts`) follows `GRN Pending`: 0 = Done; below the required qty = Part Done; equal to it = Not Done; nothing to receive = —. Pieces QC rejected with no NC still pending do not count, because the customer must send them again. The Home check reads the same fact through `partyCommittedQtySql` (ADR-247). Nothing stored, no new sum.
+- **Receipt, not QC.** Material waiting Incoming QC counts as received; the owner said "received". Issue to JC still needs QC.
+- **No block.** Planning before a Party GRN stays allowed. The column only informs.
+- **JWSO lines only.** A Party GRN links only to a JWSO line; SO lines read —.
+- **Badge.** The check's lines are already in `SO lines not planned`, so `toDeptBlocks` leaves it out of the menu badge (`NOT_IN_DEPT_TOTAL`). Each check still shows its own count, and `SO lines not planned` is unchanged.
+- **The link.** `/planning?soId=&planLine=`. It waits for the order and the user's access, opens the existing Create Plan box when `canCreatePlanForLine` allows (the ⋯ menu's own rule, moved there), and always clears `planLine` so a refresh does not reopen it. Not eligible = the order screen, no box, and a message says why.
+- **View all.** `/planning?src=jw&grnPlanPending=1` filters on the server. The check is SQL and the list is code, because Plan Status is worked out in code; the two predicates are named in NAMING.md.
+- **First list only.** The order screen's line table is unchanged: it is already tight for width. The column is left out when the source is SO. The status word is not in the search box: "not" or "one" would match every Not Done line; use the column's ▾.
+
+**Refresh:** same PC: Party GRN create, edit, QC and Cancel, an NC decision and a JWSO line short close refresh Planning; plan create, batch create, edit and delete, Party GRN create and edit and a short close refresh Home. Other PCs: `nc_register` changes are live; the rest wait for the 60-second poll (`party_grn`, `plans` and JWSO lines are not live tables).
+
+**No migration.**

@@ -32,6 +32,7 @@ export function usePlanningLineList(q: PlanningLineListQuery, enabled = true) {
   if (q.src) params.set('src', q.src);
   if (q.search) params.set('search', q.search);
   if (q.sf) params.set('sf', q.sf);
+  if (q.grnPlanPending) params.set('grnPlanPending', q.grnPlanPending);
   if (q.limit !== undefined) params.set('limit', String(q.limit));
   if (q.offset !== undefined) params.set('offset', String(q.offset));
   const qs = params.toString();

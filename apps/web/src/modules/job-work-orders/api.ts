@@ -14,6 +14,8 @@ import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@ta
 import { apiFetch } from '@/lib/api';
 import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 import { activityLogKeys } from '@/modules/activity-log/api';
+import { dashboardKeys } from '@/modules/dashboard/api';
+import { soPlanningKeys } from '@/modules/so-planning/api';
 
 export const jobWorkOrdersKeys = {
   all: ['job-work-orders'] as const,
@@ -159,6 +161,9 @@ export function useShortCloseJobWorkOrderLine(jwId: string) {
       void qc.invalidateQueries({ queryKey: jobWorkOrdersKeys.lists() });
       qc.setQueryData(jobWorkOrdersKeys.detail(jwId), updated);
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
+      // ADR-279: a line closed short leaves Planning and the Home check.
+      void qc.invalidateQueries({ queryKey: soPlanningKeys.all });
+      void qc.invalidateQueries({ queryKey: dashboardKeys.home() });
     },
   });
 }

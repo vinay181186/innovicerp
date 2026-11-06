@@ -4,6 +4,7 @@ import {
   customerRmGrnPendingQty,
   customerRmStatus,
   customerRmTotal,
+  partyGrnStatus,
   sumCustomerRmQty,
   type CustomerRmQty,
 } from './customer-rm-status';
@@ -111,5 +112,26 @@ describe('customerRmStatus (OW-143)', () => {
     const total = customerRmTotal([lineA, lineB], false);
     expect(total.grnPendingQty).toBe(5);
     expect(total.status).toBe('partial');
+  });
+});
+
+describe('partyGrnStatus (ADR-279)', () => {
+  it('reads what has come in, whatever QC has done', () => {
+    expect(partyGrnStatus(q({ requiredQty: 0 }))).toBe('none');
+    expect(partyGrnStatus(q())).toBe('not_done');
+    expect(partyGrnStatus(q({ receivedQty: 6, qcPendingQty: 6 }))).toBe('part_done');
+    expect(partyGrnStatus(q({ receivedQty: 10, qcPendingQty: 10 }))).toBe('done');
+    expect(partyGrnStatus(q({ receivedQty: 10, acceptedQty: 10 }))).toBe('done');
+  });
+
+  it('rejected pieces are due again; a pending NC is not', () => {
+    expect(partyGrnStatus(q({ receivedQty: 10 }))).toBe('not_done');
+    expect(partyGrnStatus(q({ receivedQty: 10, acceptedQty: 8, deviatedQty: 2 }))).toBe('done');
+    expect(partyGrnStatus(q({ receivedQty: 10, acceptedQty: 8 }))).toBe('part_done');
+  });
+
+  it('a line closed short keeps its receipt, but wants nothing more', () => {
+    expect(partyGrnStatus(q({ requiredQty: 0, receivedQty: 4, acceptedQty: 4 }))).toBe('done');
+    expect(partyGrnStatus(q({ requiredQty: 0, receivedQty: 4 }))).toBe('none');
   });
 });

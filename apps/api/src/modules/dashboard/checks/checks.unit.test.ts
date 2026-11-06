@@ -72,6 +72,7 @@ describe('check access', () => {
         'prod_due_week',
         'prod_rc_pending',
         'plan_so_unplanned',
+        'plan_pgrn_received',
         'plan_rc_approval',
       ]),
     );
@@ -98,6 +99,27 @@ describe('check access', () => {
       ['sales', 5],
       ['store', 0],
     ]);
+  });
+
+  it('plan_pgrn_received keeps its own count but stays out of the menu badge', () => {
+    const check = (key: string, count: number) =>
+      ({
+        key,
+        dept: 'planning',
+        count,
+        label: '',
+        tone: 'ok',
+        head: ['', '', ''],
+        rows: [],
+        href: '',
+      }) as never;
+    const out = svc.toDeptBlocks([
+      check('plan_so_unplanned', 10),
+      check('plan_pgrn_received', 4),
+      check('plan_rc_approval', 2),
+    ]);
+    expect(out.depts[0]!.total).toBe(12);
+    expect(out.depts[0]!.checks.map((x) => x.count)).toEqual([10, 4, 2]);
   });
 });
 
@@ -238,7 +260,12 @@ describe('phase 2 departments', () => {
   it('prod_rc_pending moved to Planning, after plan_rc_approval', () => {
     expect(deptOf('prod_rc_pending')).toBe('planning');
     const plan = keys(dash({ departments: { planning: 'L1' } }));
-    expect(plan).toEqual(['plan_so_unplanned', 'plan_rc_approval', 'prod_rc_pending']);
+    expect(plan).toEqual([
+      'plan_so_unplanned',
+      'plan_pgrn_received',
+      'plan_rc_approval',
+      'prod_rc_pending',
+    ]);
     expect(keys(dash({ departments: { production: 'L3' } }))).not.toContain('prod_rc_pending');
   });
 
@@ -359,6 +386,29 @@ describe('phase 2 fragments render', () => {
       for (const col of ['row_key', 'is_late', 'x3']) expect(q).toContain(col);
       expect(q).not.toContain('CURRENT_DATE');
     }
+  });
+
+  it('plan_pgrn_received: the JW to-plan rule plus committed qty; the other check untouched', async () => {
+    const { soLinesUnplannedSql } = await import('./planning');
+    const q = render(find('plan_pgrn_received').query(c)).sql;
+    expect(q).toContain('jwl.short_closed_at IS NULL');
+    expect(q).toContain('ln.to_plan > 0');
+    expect(q).toContain('SELECT 0 AS committed) cm'); // the mock's value (line 13)
+    expect(q).toContain('AND cm.committed > 0');
+    expect(q).toContain('LEAST(cm.committed, jwl.order_qty)');
+    expect(q).not.toContain('sales_order_lines');
+    const plain = render(soLinesUnplannedSql(c)).sql;
+    expect(plain).toContain('job_work_order_lines');
+    expect(plain).not.toContain('party_grn');
+    expect(plain).toContain('NULL::text AS x2, NULL::text AS x3');
+  });
+
+  it('plan_pgrn_received: row reads Received x of y and opens the line in Planning', () => {
+    const d = find('plan_pgrn_received');
+    const r = raw({ id: 'jw-1', rowKey: 'ln-1', x1: 'CPO-1', x2: '6', x3: '10' });
+    expect(d.docHref(r)).toBe('/planning?soId=jw-1&planLine=ln-1');
+    expect(d.refCode?.(r)).toBe('CPO-1');
+    expect(d.statusText?.(r)).toBe('Received 6 of 10');
   });
 
   it('pur_osp_no_pr: no live PR (either link), no PO line, op not complete', async () => {
