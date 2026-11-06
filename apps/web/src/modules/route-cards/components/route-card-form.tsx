@@ -7,7 +7,8 @@
 //   header      ← Back · [code] · New / Edit Route Card · Rev N → N+1 badge
 //   identity   RC No. · Item Code ★ (the one decision) · item name · the
 //               "prefilled from plan" note (DocIdent)
-//   facts       Route (Plan Type ★ · Operations split · Last Updated) ·
+//   facts       Route (Plan Type ★ · Operations split · Last Updated By ·
+//               Last Updated) ·
 //               Material (RM Item · RM Grade · RM Size · RM Qty per piece) ·
 //               Notes (Route Card Remarks, + Revision Note on Edit) — the
 //               ClusterGrid, one line each, controls in place of values
@@ -40,7 +41,7 @@ import { ArrowLeft } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActionLink } from '@/components/shared/action-link';
 import { rmItemToInput } from '@/components/shared/rm-item-fields';
-import { fmtDate } from '@/lib/date';
+import { fmtDateTime } from '@/lib/date';
 import { useItemsList } from '@/modules/items/api';
 import { useMachineGroupsList, useMachinesList } from '@/modules/machines/api';
 import { usePlansList } from '@/modules/plans/api';
@@ -143,7 +144,7 @@ interface RouteCardFormProps {
   mode: 'create' | 'edit';
   initialHeader: RouteCardFormHeaderDraft;
   initialOps: RouteCardFormOpDraft[];
-  routeCard?: RouteCard | null; // edit-only: drives Rev N → N+1 indicator
+  routeCard?: RouteCardDetail | null; // edit-only: drives Rev N → N+1 indicator
   onSubmit: (
     header: RouteCardFormHeaderDraft,
     ops: RouteCardFormOpDraft[],
@@ -773,8 +774,13 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
               </select>
             </FormField>
             <ClusterFact
-              span={2}
               label="Operations"
+              // One cell now: a narrow screen can cut the split, so hover reads it.
+              title={
+                ops.length > 0
+                  ? `${ops.length} · ${inHouseCount} in-house · ${ospCount} OSP · ${qcCount} QC`
+                  : undefined
+              }
               value={
                 <>
                   <span className="mono fw-700">{ops.length}</span>
@@ -787,9 +793,20 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
               }
             />
             {mode === 'edit' && routeCard ? (
-              <ClusterFact num label="Last Updated" value={fmtDate(routeCard.updatedAt)} />
+              <>
+                <ClusterFact
+                  label="Last Updated By"
+                  empty={!routeCard.updatedByName}
+                  title={routeCard.updatedByName ?? undefined}
+                  value={routeCard.updatedByName ?? '—'}
+                />
+                <ClusterFact num label="Last Updated" value={fmtDateTime(routeCard.updatedAt)} />
+              </>
             ) : (
-              <ClusterFact empty label="Last Updated" value="— set on save" />
+              <>
+                <ClusterFact empty label="Last Updated By" value="— set on save" />
+                <ClusterFact empty label="Last Updated" value="— set on save" />
+              </>
             )}
           </Cluster>
 

@@ -2,7 +2,7 @@
 // workflows (legacy/InnovicERP_v82_12_3.html L10078) plus the revision
 // audit + one-active-RC-per-item guard that our schema enforces in DB.
 
-import { eq, like } from 'drizzle-orm';
+import { and, eq, like, ne } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
 import { activityLog, items, machines, routeCards, users, vendors } from '../../db/schema';
@@ -164,6 +164,57 @@ describe('route-card service — pure helpers', () => {
 });
 
 describe('route-card service — CRUD', () => {
+  it('names the creator on list + detail, and the last writer on detail (ADR-275)', async () => {
+    const created = await service.createRouteCard(
+      {
+        itemId: testItemId1,
+        ops: [
+          {
+            machineId: testMachineId,
+            operation: 'name check',
+            opType: 'process',
+            cycleTimeMin: 1,
+            qcRequired: false,
+          },
+        ],
+      },
+      admin,
+    );
+    const adminName = created.createdByName;
+    expect(adminName).toBeTruthy();
+    expect(created.updatedByName).toBe(adminName);
+
+    const others = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(and(eq(users.companyId, admin.companyId!), ne(users.id, admin.id)))
+      .limit(1);
+    const other = others[0];
+    if (!other) throw new Error('Needs a second user in the company');
+    await db.update(routeCards).set({ updatedBy: other.id }).where(eq(routeCards.id, created.id));
+
+    const after = await service.getRouteCard(created.id, admin);
+    expect(after.createdByName).toBe(adminName);
+    expect(after.updatedByName).toBeTruthy();
+    expect(after.updatedByName).not.toBe(adminName);
+
+    // Created By stays the creator on the list, and its sort runs in both the
+    // page query and the count query.
+    const list = await service.listRouteCards(
+      {
+        itemId: testItemId1,
+        sf: JSON.stringify({ sort: { field: 'createdBy', dir: 'asc' } }),
+        limit: 5,
+        offset: 0,
+      },
+      admin,
+    );
+    expect(list.items.map((r) => r.createdByName)).toEqual([adminName]);
+
+    await db.delete(activityLog).where(eq(activityLog.refId, created.code));
+    await db.delete(routeCards).where(eq(routeCards.id, created.id));
+  });
+
   it('createRouteCard auto-generates IN-RC-NNNNN when code omitted', async () => {
     const detail = await service.createRouteCard(
       {

@@ -8,9 +8,10 @@ import {
   type RouteCardListItem,
 } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
-import { fmtDate } from '@/lib/date';
+import { fmtDateTime } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import type { DataTableColumn } from '@/ui/data';
+import { createdByColumn } from '@/ui/data/lead-columns';
 import { ItemRevLink } from '@/modules/item-revisions/components/item-rev-link';
 import { RcApprovalBadge } from './rc-approval-badge';
 
@@ -155,7 +156,12 @@ export function routeCardListColumns(offset = 0): DataTableColumn<RouteCardListI
       header: 'Last Updated',
       className: 'mono text2',
       nowrap: true,
-      render: (rc) => fmtDate(rc.updatedAt),
+      render: (rc) => fmtDateTime(rc.updatedAt),
     },
+    // ADR-261 rev — Created By, the last data column.
+    createdByColumn({
+      createdByName: (r) => r.createdByName,
+      overrides: { sortFilterField: 'createdBy' },
+    }),
   ];
 }

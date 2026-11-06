@@ -15358,3 +15358,18 @@ Owner: Pending Entries should open per person on a calendar, green for filled an
 - Editing a reply of a completed task, while a newer task from the same sender is open, puts the dot on the newer task.
 - A blank-date task seen in the minutes between migration 0242 and the API deploy can keep its dot until completed.
 - The hint says Task Board is hidden also when the person's login is inactive.
+
+## ADR-275: Route Card header shows who last saved it; long op text wraps
+
+**Date:** 2026-11-06. **Owner decided:** the name in the Route Card header follows the last user who saved the card, Last Updated shows its time, Revision History gets a time column, and long Remarks / Tool Details wrap.
+
+**Decisions:**
+- Detail and edit pages, Route row: Plan Type · Operations · Last Updated By · Last Updated (date + time). Name and time come from the same write (`updated_by`, `updated_at`).
+- The owner called this name "Created By". It is labelled `Last Updated By` because `Created By` means the person who entered the record on every list (ADR-261 rev, §18).
+- Route Card Master list: new `Created By` column (the person who entered the card); Last Updated shows date + time and sorts by exact time; its filter stays by India-time day.
+- Revision History: new `Revision Time` column after Revision Date.
+- New opt-in cell class `td-prose`: the one exception to "one line per row" (ADR-199). Used on Remarks and Tool Details in the Route Card operation tables, which also appear on Create Production Order.
+
+**Known limits:**
+- Every write to the card moves Last Updated By: approving, returning, a new revision, and raw material filled in from a plan, not only the Save button. An edit that went through approval names the approver.
+- No migration.

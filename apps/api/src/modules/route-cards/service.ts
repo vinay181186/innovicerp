@@ -74,6 +74,7 @@ import {
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { hasFormAccess, requireDeleteRight, requireFormAccess } from '../../lib/access';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { assertActivePartiesBatch } from '../../lib/active-party';
 import { type DiffField, diffFields, softDeleteStamp } from '../../lib/audit-trail';
@@ -487,6 +488,7 @@ export async function listRouteCards(
            FROM public.users ru WHERE ru.id = rc.rejected_by) AS "rejectedByName",
         rc.rejection_reason AS "rejectionReason",
         rc.created_at AS "createdAt", rc.created_by AS "createdBy",
+        ${createdByNameSql(sql`rc.created_by`)} AS "createdByName",
         rc.updated_at AS "updatedAt", rc.updated_by AS "updatedBy",
         rc.deleted_at AS "deletedAt",
         i.code AS "itemCode", i.name AS "itemName",
@@ -537,6 +539,7 @@ function toListItem(r: Record<string, unknown>): RouteCardListItem {
     rejectionReason: (r['rejectionReason'] as string | null) ?? null,
     createdAt: tsLike(r['createdAt']),
     createdBy: r['createdBy'] as string,
+    createdByName: (r['createdByName'] as string | null) ?? null,
     updatedAt: tsLike(r['updatedAt']),
     updatedBy: r['updatedBy'] as string,
     deletedAt: maybeTsLike(r['deletedAt']),
@@ -581,8 +584,14 @@ export async function loadRouteCardDetail(
       )[0]?.code ?? null)
     : null;
 
-  // ADR-253 — who approved / rejected the card, for display.
-  const approvalNames = await loadUserNames(tx, [header.approvedBy, header.rejectedBy]);
+  // ADR-253 — who approved / rejected the card, and who entered and last saved
+  // it, for display. One lookup for all four.
+  const personNames = await loadUserNames(tx, [
+    header.approvedBy,
+    header.rejectedBy,
+    header.createdBy,
+    header.updatedBy,
+  ]);
   const drawing = await readCardDrawing(tx, header.itemRevisionId);
 
   // Ops with joined machine + machine group + vendor display.
@@ -637,11 +646,13 @@ export async function loadRouteCardDetail(
     rmQtyPerPiece: header.rmQtyPerPiece,
     notes: header.notes,
     planType: header.planType,
-    ...approvalFields(header, approvalNames),
+    ...approvalFields(header, personNames),
     createdAt: tsLike(header.createdAt),
     createdBy: header.createdBy,
+    createdByName: personNames.get(header.createdBy) ?? null,
     updatedAt: tsLike(header.updatedAt),
     updatedBy: header.updatedBy,
+    updatedByName: personNames.get(header.updatedBy) ?? null,
     deletedAt: maybeTsLike(header.deletedAt),
     itemCode: item?.code ?? null,
     itemName: item?.name ?? null,
@@ -1081,12 +1092,7 @@ export async function createRouteCard(
         : null;
 
       // One live card per Item + Rev (old / Buy cards: one per item with no Rev).
-      const existing = await readRouteCardForItemRev(
-        tx,
-        companyId,
-        input.itemId,
-        rev?.id ?? null,
-      );
+      const existing = await readRouteCardForItemRev(tx, companyId, input.itemId, rev?.id ?? null);
       if (existing) {
         throw new ConflictError(
           rev
@@ -1732,6 +1738,11 @@ export async function softDeleteRouteCard(
       user,
     );
 
+    const personNames = await loadUserNames(tx, [
+      header.approvedBy,
+      header.rejectedBy,
+      header.createdBy,
+    ]);
     return {
       id: header.id,
       companyId: header.companyId,
@@ -1748,9 +1759,10 @@ export async function softDeleteRouteCard(
       rmQtyPerPiece: header.rmQtyPerPiece,
       notes: header.notes,
       planType: header.planType,
-      ...approvalFields(header, await loadUserNames(tx, [header.approvedBy, header.rejectedBy])),
+      ...approvalFields(header, personNames),
       createdAt: tsLike(header.createdAt),
       createdBy: header.createdBy,
+      createdByName: personNames.get(header.createdBy) ?? null,
       updatedAt: tsLike(header.updatedAt),
       updatedBy: header.updatedBy,
       deletedAt: stamp.deletedAt.toISOString(),

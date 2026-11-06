@@ -87,6 +87,9 @@ export const routeCardSchema = z.object({
   rejectionReason: z.string().nullable().default(null),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
+  /** Who entered the card (full name, else the email's local part). Null when
+   *  the user row is gone. */
+  createdByName: z.string().nullable().default(null),
   updatedAt: z.string(),
   updatedBy: z.string().uuid(),
   deletedAt: z.string().nullable(),
@@ -176,6 +179,8 @@ export const routeCardRevisionSchema = z.object({
 export type RouteCardRevision = z.infer<typeof routeCardRevisionSchema>;
 
 export const routeCardDetailSchema = routeCardSchema.extend({
+  /** Who last wrote the card — the same write that set updatedAt. */
+  updatedByName: z.string().nullable().default(null),
   ops: z.array(routeCardOpSchema),
   revisions: z.array(routeCardRevisionSchema).default([]),
   itemCode: z.string().nullable().default(null),

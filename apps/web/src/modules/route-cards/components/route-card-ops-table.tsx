@@ -23,12 +23,12 @@ export function RouteCardOpsTable({ ops }: { ops: RouteCardOp[] }): React.JSX.El
             <th>Program No.</th>
             <th className="th-num">Lead Days</th>
             <th>Tool No.</th>
-            <th>Tool Details</th>
+            <th className="th-left">Tool Details</th>
             {/* Migration 0195 — what the operator or the vendor must know
-                about this ONE step. Long free text, so it ends in an
-                ellipsis and the shared cell-overflow helper gives the whole
-                sentence on hover. */}
-            <th>Remarks</th>
+                about this ONE step. Long free text, so it wraps inside the
+                cell (`td-prose`, ADR-275), keeps the user's line breaks and
+                reads in full without a hover. */}
+            <th className="th-left">Remarks</th>
           </tr>
         </thead>
         <tbody>
@@ -144,10 +144,10 @@ export function RouteCardOpsTable({ ops }: { ops: RouteCardOp[] }): React.JSX.El
                   <td className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--cyan)' }}>
                     {op.toolNo ?? '—'}
                   </td>
-                  <td className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
+                  <td className="td-prose text3" style={{ fontSize: 'var(--fs-xs)' }}>
                     {op.toolDetails ?? '—'}
                   </td>
-                  <td className="text2" style={{ fontSize: 'var(--fs-sm)' }}>
+                  <td className="td-prose text2" style={{ fontSize: 'var(--fs-sm)' }}>
                     {op.remarks ?? '—'}
                   </td>
                 </tr>

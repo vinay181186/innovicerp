@@ -10,7 +10,6 @@
 // Data, permissions, print and delete are unchanged.
 
 import { Icon } from '@/ui/core';
-import type { RouteCardDetail } from '@innovic/shared';
 import { itemRevLabel } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
@@ -18,7 +17,7 @@ import { useState } from 'react';
 import { useHistoryTab } from '@/components/shared/document-history';
 import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { fmtDate } from '@/lib/date';
+import { fmtDateTime } from '@/lib/date';
 import { runPrint } from '@/lib/print/preview-host';
 import { DrawingStatusLink, ItemRevLink } from '@/modules/item-revisions/components/item-rev-link';
 import { usePendingEditForDoc } from '@/modules/document-edits/api';
@@ -31,6 +30,7 @@ import { TabStrip } from '@/ui/navigation';
 import { useItem } from '../../items/api';
 import { useMyCompany } from '../../settings/api';
 import { useDeleteRouteCard, useRouteCard } from '../api';
+import { PlanTypeFact } from '../components/plan-type-fact';
 import {
   RcApprovalActions,
   RcApprovalBanner,
@@ -218,8 +218,13 @@ function RouteCardDetailPage(): React.JSX.Element {
           <Cluster name="Route">
             <PlanTypeFact planType={detail.planType} />
             <ClusterFact
-              span={2}
               label="Operations"
+              // One cell: a narrow screen can cut the split, so hover reads it.
+              title={
+                detail.ops.length > 0
+                  ? `${detail.ops.length} · ${inHouse} in-house · ${osp} OSP · ${qc} QC`
+                  : undefined
+              }
               value={
                 <>
                   <span className="mono fw-700">{detail.ops.length}</span>
@@ -238,7 +243,13 @@ function RouteCardDetailPage(): React.JSX.Element {
                 </>
               }
             />
-            <ClusterFact num label="Last Updated" value={fmtDate(detail.updatedAt)} />
+            <ClusterFact
+              label="Last Updated By"
+              empty={!detail.updatedByName}
+              title={detail.updatedByName ?? undefined}
+              value={detail.updatedByName ?? '—'}
+            />
+            <ClusterFact num label="Last Updated" value={fmtDateTime(detail.updatedAt)} />
           </Cluster>
 
           {/* WHAT the part is cut from — the same four cells, in the same
@@ -354,48 +365,6 @@ function RouteCardDetailPage(): React.JSX.Element {
           void navigate({ to: '/route-cards' });
         }}
       />
-    </div>
-  );
-}
-
-/** Plan Type is how the item is normally made — the same choice SO Planning
- *  asks per plan, so it reads in Planning's colours.
- *
- *  Built from ClusterFact's own classes rather than ClusterFact itself for ONE
- *  reason: an old Buy card carries a note under the value, and ClusterFact has
- *  no slot that can wrap — its value is one clipped line and its `after` chip
- *  never shrinks, so a 50-character note there would spill out of the cell.
- *  The third child takes the full cell width (the cell is `flex-wrap`) and
- *  wraps inside it. */
-function PlanTypeFact({ planType }: { planType: RouteCardDetail['planType'] }): React.JSX.Element {
-  const color =
-    planType === 'full_outsource'
-      ? 'var(--purple)'
-      : planType === 'direct_purchase'
-        ? 'var(--green)'
-        : 'var(--cyan)';
-  const label =
-    planType === 'full_outsource'
-      ? '📦 Full Outsource'
-      : planType === 'direct_purchase'
-        ? '🛒 Buy'
-        : '🏭 Manufacture';
-  return (
-    <div className="cl-fact">
-      <span className="cl-fact-k">Plan Type</span>
-      <span className="cl-fact-v" style={{ color, fontWeight: 700 }}>
-        {label}
-      </span>
-      {planType === 'direct_purchase' ? (
-        // ADR-171: the tile is gone from the form; the value survives on old
-        // cards so the user knows where the flag now lives.
-        <span
-          className="text3"
-          style={{ flexBasis: '100%', fontSize: 'var(--fs-xs)', textAlign: 'right' }}
-        >
-          Old setting — set the item&apos;s Source to Buy instead.
-        </span>
-      ) : null}
     </div>
   );
 }
