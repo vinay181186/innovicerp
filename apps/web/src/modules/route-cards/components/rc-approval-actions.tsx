@@ -1,7 +1,7 @@
 // ADR-253 / ADR-277 — approval of a NEW Route Card, on its detail page: Submit
-// for Approval (Draft / Rejected card, with the edit right), the Approve /
-// Reject buttons (pending card + Approve tick on Route Card Master — the
-// creator included), their dialogs, the draft / pending / rejected banner and
+// for Approval (Draft / Returned card, with the edit right), the Approve /
+// Return to Creator buttons (pending card + Approve tick on Route Card Master —
+// the creator included), their dialogs, the draft / pending / returned banner and
 // the "Approved by X on <date>" line. The server re-checks every decision; a
 // 409 (already decided, no right …) is thrown and the dialog shows it as-is.
 
@@ -9,6 +9,7 @@ import { Icon } from '@/ui/core';
 import type { RouteCard, RouteCardDetail } from '@innovic/shared';
 import {
   ROUTE_CARD_APPROVAL_LABEL,
+  ROUTE_CARD_RETURN_ACTION,
   canEditRouteCard,
   canSubmitRouteCardStatus,
 } from '@innovic/shared';
@@ -24,13 +25,13 @@ const BOX_STYLE: React.CSSProperties = {
   marginTop: 'var(--sp-2)',
 };
 
-/** "Approved by X on <date>" / "Rejected by X on <date> — <reason>". */
+/** "Approved by X on <date>" / "Returned to Creator by X on <date> — <reason>". */
 export function rcApprovalLine(rc: RouteCardDetail): string {
   if (rc.approvalStatus === 'approved') {
     return `Approved by ${rc.approvedByName ?? '—'} on ${rc.approvedAt ? fmtDate(rc.approvedAt) : '—'}`;
   }
   if (rc.approvalStatus === 'rejected') {
-    const base = `Rejected by ${rc.rejectedByName ?? '—'} on ${rc.rejectedAt ? fmtDate(rc.rejectedAt) : '—'}`;
+    const base = `${ROUTE_CARD_APPROVAL_LABEL.rejected} by ${rc.rejectedByName ?? '—'} on ${rc.rejectedAt ? fmtDate(rc.rejectedAt) : '—'}`;
     return rc.rejectionReason ? `${base} — ${rc.rejectionReason}` : base;
   }
   return ROUTE_CARD_APPROVAL_LABEL[rc.approvalStatus];
@@ -44,7 +45,7 @@ export function rcSavedMessage(rc: Pick<RouteCard, 'code' | 'approvalStatus'>): 
     case 'pending':
       return `Route Card ${rc.code} saved — sent for approval.`;
     case 'rejected':
-      return `Route Card ${rc.code} saved — still Rejected, not sent for approval.`;
+      return `Route Card ${rc.code} saved — still ${ROUTE_CARD_APPROVAL_LABEL.rejected}, not sent for approval.`;
     default:
       return `Route Card ${rc.code} saved`;
   }
@@ -59,7 +60,7 @@ export function canSubmitRouteCard(
   return canSubmitRouteCardStatus(card.approvalStatus) && canEditRouteCard(card, userId, rights);
 }
 
-/** The draft / pending / rejected notice under the header. Nothing for an approved card. */
+/** The draft / pending / returned notice under the header. Nothing for an approved card. */
 export function RcApprovalBanner({
   detail,
 }: {
@@ -80,8 +81,9 @@ export function RcApprovalBanner({
         </Banner>
       ) : (
         <Banner tone="error" role="status" flush>
-          Rejected{detail.rejectionReason ? ` — ${detail.rejectionReason}` : ''}. Correct it, then
-          press Save &amp; Submit.
+          {ROUTE_CARD_APPROVAL_LABEL.rejected}
+          {detail.rejectionReason ? ` — ${detail.rejectionReason}` : ''}. Correct it, then press
+          Save &amp; Submit.
         </Banner>
       )}
     </div>
@@ -185,7 +187,7 @@ export function RcApprovalActions({
           setRejectOpen(true);
         }}
       >
-        <Icon name="x" size={13} /> Reject
+        <Icon name="x" size={13} /> {ROUTE_CARD_RETURN_ACTION}
       </button>
 
       <ConfirmDialog
@@ -223,14 +225,14 @@ export function RcApprovalActions({
 
       <ConfirmDialog
         open={rejectOpen}
-        title={`Reject Route Card ${detail.code}?`}
+        title={`Return Route Card ${detail.code} to Creator?`}
         message={
           <>
             The card can be corrected, then sent again with Save &amp; Submit.
             <textarea
               className="innovic-input"
-              aria-label="Rejection Reason"
-              placeholder="Rejection Reason (required)"
+              aria-label="Return Reason"
+              placeholder="Return Reason (required)"
               rows={3}
               maxLength={500}
               value={reason}
@@ -239,13 +241,13 @@ export function RcApprovalActions({
             />
           </>
         }
-        confirmLabel="Reject"
-        pendingLabel="Rejecting…"
+        confirmLabel={ROUTE_CARD_RETURN_ACTION}
+        pendingLabel="Returning…"
         onCancel={() => setRejectOpen(false)}
         onConfirm={async () => {
           const r = reason.trim();
           // Thrown, not returned: the dialog shows it and stays open.
-          if (!r) throw new Error('Enter a Rejection Reason.');
+          if (!r) throw new Error('Enter a Return Reason.');
           await rejectMut.mutateAsync({
             id: detail.id,
             reason: r,

@@ -1,16 +1,16 @@
-// NC by SO/JC — group nc_register by the SO it belongs to, falling back to
-// the job-card code, then the literal 'Unknown'. Mirrors legacy `_rptNC`
+// NC by SO/JC — group nc_register by the order it belongs to (SO or JWSO),
+// falling back to the job-card code, then the literal 'Unknown'. Mirrors legacy `_rptNC`
 // second sub-table "NC by SO/JC" (HTML L20269–20280): columns
 // SO/JC / Count / Rejected Qty / Pending / Closed.
 //
 // Legacy groups by `nc.soNo || nc.jcNo || 'Unknown'` and splits each group's
 // count into Pending (status === 'Pending') vs Closed (everything else).
-// We mirror that with the live SO code (nc.so_id, 0184) → so_code_text →
-// job_cards.code → 'Unknown', and treat
+// We mirror that with the order code (ncOrderCodeSql, ADR-276) → job_cards.code
+// → 'Unknown', and treat
 // any non-'pending' status (disposed / rework_done / closed) as "closed".
 //
 // Deliberately carries NO Drawing Rev column. The grain here is one row per
-// SO/JC *group*, and the group key is an SO HEADER code (nc.so_code_text) —
+// SO/JC *group*, and the group key is an order HEADER code —
 // one header covers many SO lines, each of which may sit at a different
 // customer drawing revision, so there is no single revision to print. Adding
 // one would mean folding it into the group key, which splits each SO into one
@@ -18,6 +18,7 @@
 // give. The per-NC revision belongs on the line-level NC reports instead.
 
 import { sql } from 'drizzle-orm';
+import { ncOrderCodeSql, ncSoKeySql } from '../../nc-register/so-key';
 import type { RegisteredReport } from '../registry';
 
 export const ncBySoJcReport: RegisteredReport = {
@@ -25,7 +26,7 @@ export const ncBySoJcReport: RegisteredReport = {
     slug: 'nc-by-so-jc',
     title: 'NC by SO/JC',
     description:
-      'NCs grouped by Sales Order (falling back to Job Card) — count, deviated qty, pending vs closed. Pinpoints which orders are generating quality issues.',
+      'NCs grouped by Sales Order or JWSO (falling back to Job Card) — count, deviated qty, pending vs closed. Pinpoints which orders are generating quality issues.',
     group: 'Quality',
     dept: 'qc',
     filters: [
@@ -33,7 +34,7 @@ export const ncBySoJcReport: RegisteredReport = {
       { key: 'toDate', label: 'NC Date To', kind: 'date' },
     ],
     columns: [
-      { key: 'so_jc', label: 'SO No. / JC No.', type: 'text' },
+      { key: 'so_jc', label: 'SO No. / JWSO No. / JC No.', type: 'text' },
       { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
       { key: 'nc_count', label: 'NC Count', type: 'number' },
       { key: 'total_rejected_qty', label: 'Deviated', type: 'number' },
@@ -49,23 +50,29 @@ export const ncBySoJcReport: RegisteredReport = {
 
     const result = await tx.execute(sql`
       SELECT
-        COALESCE(so.code, NULLIF(nc.so_code_text, ''), jc.code, 'Unknown') AS so_jc,
+        g.so_jc,
         -- ADR-207 — live Internal SO No. of the group's SO (blank for a JC group).
-        MAX(so.internal_so_no) AS so_internal_no,
+        MAX(g.so_internal_no) AS so_internal_no,
         COUNT(*)::int AS nc_count,
         COALESCE(SUM(nc.rejected_qty), 0)::float AS total_rejected_qty,
         SUM(CASE WHEN nc.status = 'pending' THEN 1 ELSE 0 END)::int AS pending_count,
         SUM(CASE WHEN nc.status <> 'pending' THEN 1 ELSE 0 END)::int AS closed_count
       FROM public.nc_register nc
       LEFT JOIN public.job_cards jc ON jc.id = nc.job_card_id
-      -- 0184: the NC's live SO (so_id), before the typed snapshot.
-      LEFT JOIN public.sales_orders so ON so.id = nc.so_id
+      -- ADR-276: the group key, computed once. A LATERAL with no FROM returns
+      -- exactly one row per NC, so every SUM / COUNT above stays per NC.
+      CROSS JOIN LATERAL (
+        SELECT
+          COALESCE(${ncOrderCodeSql('nc')}, jc.code, 'Unknown') AS so_jc,
+          (SELECT nso.internal_so_no FROM public.sales_orders nso
+            WHERE nso.id = ${ncSoKeySql('nc')}) AS so_internal_no
+      ) g
       WHERE nc.company_id = ${companyId}::uuid
         AND nc.deleted_at IS NULL
         ${fromFrag}
         ${toFrag}
-      GROUP BY COALESCE(so.code, NULLIF(nc.so_code_text, ''), jc.code, 'Unknown')
-      ORDER BY nc_count DESC, so_jc
+      GROUP BY g.so_jc
+      ORDER BY nc_count DESC, g.so_jc
     `);
 
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({

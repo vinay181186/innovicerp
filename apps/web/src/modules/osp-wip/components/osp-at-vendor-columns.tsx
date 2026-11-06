@@ -7,6 +7,7 @@
 
 import { opSrNo, type OspWipRow } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
+import { fmtQty } from '@/lib/qty-format';
 import { createdByColumn, type DataTableColumn, leadColumns } from '@/ui/data';
 
 function qty(
@@ -14,20 +15,28 @@ function qty(
   header: string,
   pick: (r: OspWipRow) => number,
   color: string,
-  opts: { headColor?: string; title?: string; bold?: boolean; sf?: string } = {},
+  opts: {
+    headColor?: string;
+    title?: string;
+    bold?: boolean;
+    sf?: string;
+    /** The heading on two lines; `header` stays the Columns-menu name. */
+    head?: React.ReactNode;
+  } = {},
 ): DataTableColumn<OspWipRow> {
+  const shown = opts.head ?? header;
   return {
     id,
     sortFilterField: opts.sf,
     kind: 'num',
-    header: opts.title ? <span title={opts.title}>{header}</span> : header,
+    header: opts.title ? <span title={opts.title}>{shown}</span> : shown,
     label: header,
     align: 'right',
     headColor: opts.headColor,
     className: opts.bold ? 'mono fw-700' : 'mono',
     render: (r) => {
       const v = pick(r);
-      return <span style={{ color: v > 0 ? color : 'var(--text3)' }}>{v || '—'}</span>;
+      return <span style={{ color: v > 0 ? color : 'var(--text3)' }}>{v ? fmtQty(v) : '—'}</span>;
     },
   };
 }
@@ -101,11 +110,37 @@ export function ospAtVendorColumns(firstRowNo: number): DataTableColumn<OspWipRo
       className: 'mono',
       render: (r) => r.orderQty,
     },
-    qty('sent', 'Sent', (r) => r.sentQty, 'var(--text3)', { sf: 'sentQty' }),
+    qty('sent', 'Sent to Vendor', (r) => r.sentQty, 'var(--text3)', {
+      sf: 'sentQty',
+      head: (
+        <>
+          Sent to
+          <br />
+          Vendor
+        </>
+      ),
+    }),
+    qty('received', 'Received', (r) => r.returnedQty, 'var(--text3)', { sf: 'returnedQty' }),
+    qty('returned_to_vendor', 'Returned to Vendor', (r) => r.returnedToVendorQty, 'var(--text3)', {
+      sf: 'returnedToVendorQty',
+      title: 'Deviated pieces sent back to the vendor for rework',
+      head: (
+        <>
+          Returned
+          <br />
+          to Vendor
+        </>
+      ),
+    }),
+    qty('re_received', 'Re-received', (r) => r.reReceivedQty, 'var(--text3)', {
+      sf: 'reReceivedQty',
+      title: 'Of those, pieces the vendor sent back again',
+    }),
     qty('at_vendor', 'At Vendor', (r) => r.atVendorQty, 'var(--amber)', {
       sf: 'atVendorQty',
       headColor: 'var(--amber2)',
-      title: 'Physically out at the vendor (sent − returned)',
+      title:
+        'With the vendor right now: Sent to Vendor − Received + Returned to Vendor − Re-received',
       bold: true,
     }),
     qty('in_qc', 'In QC', (r) => r.inQcQty, 'var(--cyan)', {

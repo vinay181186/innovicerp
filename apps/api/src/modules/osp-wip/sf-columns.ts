@@ -7,6 +7,7 @@ import { sql } from 'drizzle-orm';
 import { createdByNameSql } from '../../lib/created-by-sql';
 import type { SfColumnMap } from '../../lib/list-query';
 import { soOrJwCodeSql } from '../../lib/order-code';
+import { ospRtvQtySql } from '../../lib/osp-rtv-qty';
 import { polSql } from '../../lib/pol';
 
 /** The SO No. cell and its filter: the SO's code, else the JWSO's (ADR-267).
@@ -34,6 +35,10 @@ export const OSP_WIP_SF_COLUMNS: SfColumnMap = {
   operation: { sql: sql`w.operation`, type: 'text' },
   orderQty: { sql: sql`w.order_qty`, type: 'num' },
   sentQty: { sql: sql`w.sent_qty`, type: 'num' },
+  returnedQty: { sql: sql`w.returned_qty`, type: 'num' },
+  // ADR-276 — scalars, so the page and its summary need no extra join.
+  returnedToVendorQty: { sql: ospRtvQtySql('rtv_sent_qty'), type: 'num' },
+  reReceivedQty: { sql: ospRtvQtySql('rtv_received_qty'), type: 'num' },
   atVendorQty: { sql: sql`w.at_vendor_qty`, type: 'num' },
   inQcQty: { sql: sql`w.in_qc_qty`, type: 'num' },
   acceptedQty: { sql: sql`w.accepted_qty`, type: 'num' },

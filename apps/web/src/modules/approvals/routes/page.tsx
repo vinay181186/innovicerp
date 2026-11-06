@@ -7,7 +7,7 @@
 //
 // ONE list, the same one the home Approvals view shows (ApprovalsList): only
 // the types with something waiting, decided in place. The Show select picks
-// Waiting (that list) or the Approved / Rejected history (ApprovalHistoryList).
+// Waiting (that list) or the Approved / Rejected / Returned history (ApprovalHistoryList).
 
 import { APPROVAL_DECISIONS, type ApprovalDecision } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
@@ -27,7 +27,7 @@ type ShowValue = 'waiting' | ApprovalDecision;
 const SHOW_OPTIONS: Array<{ value: ShowValue; label: string }> = [
   { value: 'waiting', label: 'Waiting' },
   { value: 'approved', label: 'Approved' },
-  { value: 'rejected', label: 'Rejected' },
+  { value: 'rejected', label: 'Rejected / Returned' },
 ];
 
 function isDecision(v: ShowValue): v is ApprovalDecision {

@@ -31,6 +31,8 @@ import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, PageState } from '@/ui/layout';
 import { CapaView } from '@/modules/capa/components/capa-view';
 import { useNcRegisterList, useNcRegisterSummary } from '../api';
+import { BulkRtvDialog } from '../components/bulk-rtv-dialog';
+import { useNcRtvSelection } from '../lib/use-nc-rtv-selection';
 import { NcListHeader } from '../components/nc-list-header';
 import { useNcPrint } from '../components/use-nc-print';
 import {
@@ -148,6 +150,10 @@ function NcRegisterListPage(): React.JSX.Element {
 
   // The NC whose ⋯ → Assign Task is open (one modal for the whole list).
   const [assignTarget, setAssignTarget] = useState<NcRegisterListItem | null>(null);
+
+  // Set Return to Vendor on many NCs: the ticks (survive paging) and its popup.
+  const rtvSel = useNcRtvSelection(data?.items);
+  const [rtvAsking, setRtvAsking] = useState(false);
 
   const openCapa = useCallback(
     (capaCode: string): void => {
@@ -286,6 +292,31 @@ function NcRegisterListPage(): React.JSX.Element {
                   expandedIds.has(nc.id) ? <NcExpanded nc={nc} onOpenCapa={openCapa} /> : null
                 }
                 onToggleExpanded={(nc) => toggleExpand(nc.id)}
+                selectable={canDispose}
+                selectedKeys={rtvSel.selectedKeys}
+                isRowSelectable={rtvSel.isRowSelectable}
+                onToggleRow={rtvSel.onToggleRow}
+                onToggleAll={rtvSel.onToggleAll}
+                selectionActions={() => (
+                  <>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={rtvSel.clear}
+                      disabled={rtvAsking}
+                    >
+                      Clear Ticks
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      onClick={() => setRtvAsking(true)}
+                      disabled={rtvAsking}
+                    >
+                      Set Return to Vendor ({rtvSel.ticks.length})
+                    </button>
+                  </>
+                )}
               />
             </Panel>
           )}
@@ -309,6 +340,14 @@ function NcRegisterListPage(): React.JSX.Element {
           />
         </>
       )}
+
+      {rtvAsking ? (
+        <BulkRtvDialog
+          ticks={rtvSel.ticks}
+          onSaved={rtvSel.untick}
+          onClose={() => setRtvAsking(false)}
+        />
+      ) : null}
 
       {assignTarget ? (
         <AssignTaskModal

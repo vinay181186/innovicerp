@@ -7,6 +7,7 @@
 import {
   ACTIVITY_ENTITY_META,
   activityActionLabel,
+  ROUTE_CARD_APPROVAL_LABEL,
   activityEntitySpellings,
   canonicalActivityEntity,
   hasDeptAccess,
@@ -125,7 +126,13 @@ export async function getActivityHistory(
         userFullName: r.userFullName ?? r.liveFullName ?? r.userName,
         operatorName: r.operatorName,
         action: r.action,
-        actionLabel: activityActionLabel(r.action),
+        // A Route Card sent back reads as its status does. Older entries (stored
+        // 'Rejected') and a refused staged edit keep the standard word.
+        actionLabel: readChanges(r.changes).some(
+          (c) => c.field === 'approvalStatus' && c.after === ROUTE_CARD_APPROVAL_LABEL.rejected,
+        )
+          ? ROUTE_CARD_APPROVAL_LABEL.rejected
+          : activityActionLabel(r.action),
         entity: r.entity,
         entityId: r.entityId,
         refId: r.refId,

@@ -4,8 +4,8 @@ import { ConflictError } from './errors';
 
 // ADR-253 — ONE rule for "may this Route Card drive work?": only an APPROVED
 // card may raise a Production Order or an ML-plan order, feed raw material to
-// plans, or make a plan read "Gen production order". A Draft, Pending Approval
-// or Rejected card exists but is not usable yet. Every reader uses this file —
+// plans, or make a plan read "Gen production order". A Draft, Pending Approval or
+// Returned to Creator card exists but is not usable yet. Every reader uses this file —
 // never a hand-written `approval_status = 'approved'`.
 
 /** SQL predicate on a route_cards alias already in the query, e.g.
@@ -30,7 +30,7 @@ export function routeCardUnusableMessage(card: {
     return `Route Card ${card.code} is a Draft. Submit it for approval before using it.`;
   }
   return card.approvalStatus === 'rejected'
-    ? `Route Card ${card.code} was rejected. Correct it and send it for approval again before using it.`
+    ? `Route Card ${card.code} was returned to creator. Correct it and send it for approval again before using it.`
     : `Route Card ${card.code} is waiting for approval. It can be used once it is approved.`;
 }
 

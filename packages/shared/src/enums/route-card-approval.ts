@@ -8,18 +8,22 @@
 //              decides. Not usable.
 //   approved — usable. Edits to an approved card follow the company
 //              Document Edit Approval switch (ADR-249 engine).
-//   rejected — refused with a reason; still not usable. Editable again; goes
-//              back to `pending` only when the creator submits it.
+//   rejected — "Returned to Creator" (owner 2026-11-06): sent back with a reason;
+//              still not usable. Editable again; goes back to `pending` only when
+//              the creator submits it. The stored value stays `rejected`.
 //
 // Always on — there is no switch for new-card approval (owner, 2026-10-24).
 export const ROUTE_CARD_APPROVAL_STATUSES = ['draft', 'pending', 'approved', 'rejected'] as const;
 export type RouteCardApprovalStatus = (typeof ROUTE_CARD_APPROVAL_STATUSES)[number];
 
+/** The approver's action that sends a card back (stored as `rejected`). */
+export const ROUTE_CARD_RETURN_ACTION = 'Return to Creator';
+
 export const ROUTE_CARD_APPROVAL_LABEL: Record<RouteCardApprovalStatus, string> = {
   draft: 'Draft',
   pending: 'Pending Approval',
   approved: 'Approved',
-  rejected: 'Rejected',
+  rejected: 'Returned to Creator',
 };
 
 /** ADR-277 — the one refusal for an edit or delete of a card with the approver. */

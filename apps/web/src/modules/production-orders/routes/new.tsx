@@ -167,7 +167,7 @@ function ProductionOrderNewPage(): React.JSX.Element {
   const unapprovedRcText = unapprovedRc
     ? `Route Card ${unapprovedRc.code} ${
         unapprovedRc.approvalStatus === 'rejected'
-          ? 'was rejected'
+          ? 'was returned to creator'
           : unapprovedRc.approvalStatus === 'draft'
             ? 'is still a Draft'
             : 'is waiting for approval'

@@ -324,7 +324,7 @@ describe('Route Card approval (ADR-253)', () => {
     const other = await newCard(approver());
     await rejectRouteCard(other.card.id, { reason: 'No' }, approver());
     await expect(approveRouteCard(other.card.id, {}, approver())).rejects.toThrow(
-      `was rejected by ${adminName}`,
+      `was returned to creator by ${adminName}`,
     );
   });
 

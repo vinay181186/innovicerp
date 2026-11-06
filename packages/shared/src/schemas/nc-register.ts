@@ -78,6 +78,14 @@ export const ncRegisterSchema = z.object({
    *  snapshot soCodeText is blank (an NC raised by Incoming QC). Show
    *  `soCode ?? soCodeText`. */
   soCode: z.string().nullable().default(null),
+  /** ADR-276 — "SO No. / JWSO No.": the order this NC belongs to. The SO, else the
+   *  JWSO of its job card, else the JWSO of its Party GRN, else the stored snapshot.
+   *  Blank only when no order stands behind the NC (bought material). Server
+   *  definition: ncOrderCodeSql (nc-register/so-key.ts). Every NC screen, print and
+   *  report reads this, never soCodeText. */
+  orderCode: z.string().nullable().default(null),
+  /** ADR-276 — the job card's number, read live; null when the NC has no job card. */
+  jcCode: z.string().nullable().default(null),
   machineCodeText: z.string().nullable(),
   operatorText: z.string().nullable(),
   rejectedQty: z.string(), // numeric stored as string
@@ -189,7 +197,6 @@ export type NcRegister = z.infer<typeof ncRegisterSchema>;
 export const ncRegisterListItemSchema = ncRegisterSchema.extend({
   /** Created By (ADR-261 rev): name of the user who entered the SAME record as createdAt (full name, else e-mail before @); null when unknown. */
   createdByName: z.string().nullable(),
-  jcCode: z.string().nullable(),
   jcOpSeqResolved: z.number().int().nullable(),
   jcOpOperation: z.string().nullable(),
   // itemCode / itemName now live on the base ncRegisterSchema (LEFT JOIN items).

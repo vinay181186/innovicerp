@@ -15,6 +15,7 @@
 import { NC_FILTER_STATUSES } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import { polSql } from '../../../lib/pol';
+import { ncOrderCodeSql, ncSoKeySql } from '../../nc-register/so-key';
 import type { RegisteredReport } from '../registry';
 import { REPORT_ROW_CAP } from './report-helpers';
 
@@ -44,12 +45,12 @@ export const ncRegisterAllReport: RegisteredReport = {
       },
     ],
     columns: [
-      // ADR-261 lead columns. SO No. = the NC's SO (live, else snapshot),
-      // else the JWSO of its Job Card; POL and the drawing rev (in Item Code)
-      // come from the JC's order line. Created On = the NC's created_at.
+      // ADR-261 lead columns. SO No. / JWSO No. = ncOrderCodeSql (ADR-276); POL
+      // and the drawing rev (in Item Code) come from the JC's order line.
+      // Created On = the NC's created_at.
       { key: 'nc_no', label: 'NC No.', type: 'text' },
       { key: 'nc_date', label: 'NC Date', type: 'date' },
-      { key: 'so_code', label: 'SO No.', type: 'text' },
+      { key: 'so_code', label: 'SO No. / JWSO No.', type: 'text' },
       { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
       { key: 'client_po_line_no', label: 'POL', type: 'text' },
       { key: 'created_on', label: 'Created On', type: 'date' },
@@ -83,9 +84,11 @@ export const ncRegisterAllReport: RegisteredReport = {
         nc.code                              AS nc_no,
         nc.nc_date                           AS nc_date,
         jc.code                              AS jc_code,
-        -- 0184: the live SO code, else the typed snapshot.
-        COALESCE(so.code, nc.so_code_text, jwo.code) AS so_code,
-        so.internal_so_no                    AS so_internal_no,
+        -- ADR-276: scalars off the NC's SO key, so an auto-raised NC (so_id NULL)
+        -- keeps its SO, and no join here can multiply the row.
+        ${ncOrderCodeSql('nc')}              AS so_code,
+        (SELECT nso.internal_so_no FROM public.sales_orders nso
+          WHERE nso.id = ${ncSoKeySql('nc')}) AS so_internal_no,
         ${polSql('sol', 'jwl')}              AS client_po_line_no,
         (nc.created_at AT TIME ZONE 'Asia/Kolkata')::date::text AS created_on,
         (nc.item_code_text
@@ -104,10 +107,8 @@ export const ncRegisterAllReport: RegisteredReport = {
         )                                    AS closed_date
       FROM public.nc_register nc
       LEFT JOIN public.job_cards jc ON jc.id = nc.job_card_id
-      LEFT JOIN public.sales_orders so ON so.id = nc.so_id
       LEFT JOIN public.sales_order_lines sol ON sol.id = jc.source_so_line_id
       LEFT JOIN public.job_work_order_lines jwl ON jwl.id = jc.source_jw_line_id
-      LEFT JOIN public.job_work_orders jwo ON jwo.id = jwl.job_work_order_id
       LEFT JOIN public.items it ON it.id = nc.item_id
       WHERE nc.company_id = ${companyId}::uuid
         AND nc.deleted_at IS NULL

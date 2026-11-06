@@ -52,11 +52,17 @@ export const ospWipRowSchema = z.object({
   sentQty: z.number().int(),
   /** Σ returned by the vendor (receipt lines). */
   returnedQty: z.number().int(),
+  /** ADR-276 — Returned to Vendor: Σ nc_register.rtv_sent_qty of return-to-vendor NCs
+   *  with a challan, closed NCs included. NOT the view's returned_to_vendor_qty, which is
+   *  the open NC quantity. */
+  returnedToVendorQty: z.number(),
+  /** ADR-276 — Re-received: Σ nc_register.rtv_received_qty, same NCs. */
+  reReceivedQty: z.number(),
   /** Σ rejected on receipt. */
   rejectedQty: z.number().int(),
   /** returned − rejected, floored at 0 (good pieces back). */
   acceptedQty: z.number().int(),
-  /** sent − returned, floored at 0 (still physically at the vendor). */
+  /** Still physically at the vendor: sent − returned floored at 0, plus return-to-vendor pieces out. */
   atVendorQty: z.number().int(),
   /** order − sent, floored at 0 (not yet even sent out). */
   notSentQty: z.number().int(),

@@ -60,7 +60,7 @@ export function NewCapaModal({
     const nc = availableNcs.find((x) => x.code === code);
     if (nc) {
       setJcNo(nc.jcCode ?? '');
-      setSoNo(nc.soCodeText ?? '');
+      setSoNo(nc.orderCode ?? '');
       setItemCode(nc.itemCode ?? nc.itemCodeText ?? '');
       setOperation(nc.jcOpOperation ?? nc.operationText ?? '');
     }

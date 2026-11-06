@@ -30,6 +30,7 @@ import { canonicalActivityAction, NC_DISPOSITION_LABELS } from '@innovic/shared'
 import { plans } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { hasFormAccess } from '../../lib/access';
+import { loadAtVendorByOp } from '../../lib/at-vendor';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
 import {
   PLAN_COVERED_QTY_SQL,
@@ -114,6 +115,7 @@ export async function getOpFlow(jobCardId: string, user: AuthContext): Promise<O
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const jc = await assertJobCard(tx, jobCardId, companyId);
+    const atVendorByOp = await loadAtVendorByOp(tx, companyId, [jobCardId]);
     const r = await rows(
       tx,
       sql`
@@ -157,11 +159,18 @@ export async function getOpFlow(jobCardId: string, user: AuthContext): Promise<O
           COALESCE(SUM(grl.qc_accepted_qty), 0) AS acc,
           COALESCE(SUM(grl.qc_rejected_qty), 0) AS rej,
           -- ADR-212: every receipt back from the vendor, incl. the GRN of a lot
-          -- re-sent for rework (return-to-vendor) — "Received" on the table.
-          COALESCE(SUM(grl.received_qty), 0) AS recv
+          -- re-sent for rework (return-to-vendor). Feeds Done on an outsource op.
+          COALESCE(SUM(grl.received_qty), 0) AS recv,
+          -- ADR-276: first-lot receipts only, the view's osp_ordinary_received_qty
+          -- (0196): a GRN against an NC is a Re-received lot. So on every row
+          -- Sent to Vendor − Received + Returned to Vendor − Re-received = At Vendor.
+          COALESCE(SUM(grl.received_qty) FILTER (WHERE grn.nc_id IS NULL), 0) AS recv_first
         FROM opl
         LEFT JOIN public.goods_receipt_note_lines grl
           ON grl.purchase_order_line_id = opl.pol AND grl.deleted_at IS NULL
+        -- On the header's primary key: one row per GRN line, so the SUMs do not double.
+        LEFT JOIN public.goods_receipt_notes grn
+          ON grn.id = grl.goods_receipt_note_id AND grn.deleted_at IS NULL
         GROUP BY opl.jc_op_id
       ),
       loss AS (
@@ -178,10 +187,6 @@ export async function getOpFlow(jobCardId: string, user: AuthContext): Promise<O
             WHERE nc.disposition = 'return_to_vendor' AND nc.delivery_challan_id IS NOT NULL), 0) AS rtv_sent,
           COALESCE(SUM(nc.rtv_received_qty) FILTER (
             WHERE nc.disposition = 'return_to_vendor' AND nc.delivery_challan_id IS NOT NULL), 0) AS rtv_received,
-          -- Same rule as v_jc_op_status returned_to_vendor.at_vendor_qty (open NCs).
-          GREATEST(0, COALESCE(SUM(nc.rtv_sent_qty - nc.rtv_received_qty) FILTER (
-            WHERE nc.disposition = 'return_to_vendor' AND nc.delivery_challan_id IS NOT NULL
-              AND nc.status <> 'closed'), 0)) AS rtv_at_vendor,
           -- ADR-212: deviated pieces an NC recovered and that were accepted
           -- (rework / repair / use as is / return to vendor) — "Reworked".
           COALESCE(SUM(nc.cleared_qty), 0) AS cleared,
@@ -216,19 +221,14 @@ export async function getOpFlow(jobCardId: string, user: AuthContext): Promise<O
         (ops.op_type = 'outsource' OR EXISTS (SELECT 1 FROM opl WHERE opl.jc_op_id = ops.id)
           OR ops.outsource_sent_qty > 0) AS has_osp,
         v.input_avail, v.completed_qty, v.qc_accepted_qty, v.available, v.qc_pending,
-        v.computed_status, v.at_vendor_qty, v.in_qc_qty, v.rework_pending_qty,
+        v.computed_status, v.in_qc_qty, v.rework_pending_qty,
         COALESCE(osp.recv, 0) AS osp_recv,
+        COALESCE(osp.recv_first, 0) AS osp_recv_first,
         COALESCE(loss.cleared, 0) AS cleared,
         COALESCE(loss.nc_open, 0) AS nc_open,
         COALESCE(loss.rtv_in_transit, 0) AS rtv_in_transit,
         COALESCE(loss.rtv_sent, 0) AS rtv_sent,
         COALESCE(loss.rtv_received, 0) AS rtv_received,
-        COALESCE(loss.rtv_at_vendor, 0) AS rtv_at_vendor,
-        -- v_jc_op_status counts return-to-vendor pieces in at_vendor_qty only on
-        -- outsource ops / ops with the legacy PO link; a dual-lane op linked
-        -- only through jc_op_po_lines gets them added here so At Vendor agrees
-        -- with Returned to Vendor - Re-received on every row.
-        (ops.op_type <> 'outsource' AND ops.outsource_po_line_id IS NULL) AS rtv_outside_view,
         COALESCE(lg.completed_raw, 0) AS completed_raw,
         COALESCE(lg.prod_rej, 0) AS prod_rej,
         COALESCE(lg.qc_rej, 0) AS qc_rej,
@@ -274,8 +274,7 @@ export async function getOpFlow(jobCardId: string, user: AuthContext): Promise<O
       const reworked = num(x['cleared']);
       const rejectedFinal = num(x['lost']);
       const deviatedOpen = Math.max(0, num(x['nc_open']) - num(x['rtv_in_transit']));
-      const atVendor =
-        num(x['at_vendor_qty']) + (x['rtv_outside_view'] === true ? num(x['rtv_at_vendor']) : 0);
+      const atVendor = atVendorByOp.get(String(x['id'])) ?? 0;
       const inQc = hasOsp ? num(x['in_qc_qty']) : 0;
       const qcWaiting = qcRequired && opType !== 'qc' ? num(x['qc_pending']) : 0;
       const pending =
@@ -327,8 +326,7 @@ export async function getOpFlow(jobCardId: string, user: AuthContext): Promise<O
         deviatedOpenQty: deviatedOpen,
         pendingQty: pending,
         inQcQty: inQc,
-        vendorSentQty: num(x['outsource_sent_qty']) + num(x['rtv_sent']),
-        vendorReceivedQty: num(x['osp_recv']),
+        vendorReceivedQty: num(x['osp_recv_first']),
         unaccountedQty: unaccounted,
         passedOnQty: passedOn,
         availableQty: num(x['available']),

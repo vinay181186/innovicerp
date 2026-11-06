@@ -7,7 +7,7 @@ import { type SQL, sql } from 'drizzle-orm';
 import { type KindMeta, opLines, pair, ref, soRef } from './kinds';
 
 /** ADR-253 — a Route Card's approval state in words (Pending Approval /
- *  Approved / Rejected), built from the shared label map so search shows and
+ *  Approved / Returned to Creator), built from the shared label map so search shows and
  *  matches the same words as the Route Card screens. */
 const ROUTE_CARD_APPROVAL_TEXT_SQL: SQL = sql`(${sql.join(
   [

@@ -100,7 +100,7 @@ export function JcOpsTable({
               <th colSpan={7} className="vsep">
                 At this operation
               </th>
-              <th colSpan={3} className="vsep jc-ops-gv">
+              <th colSpan={5} className="vsep jc-ops-gv">
                 With vendor (outsource)
               </th>
               <th colSpan={4} className="vsep" />
@@ -111,13 +111,35 @@ export function JcOpsTable({
               <th className="th-num vsep">Input</th>
               <th className="th-num vsep">Done</th>
               <th className="th-num jc-ops-h-good">Accepted</th>
-              <th className="th-num vsep jc-ops-h-warn">Deviated (NC)</th>
+              <th className="th-num vsep jc-ops-h-warn">
+                Deviated
+                <br />
+                (NC)
+              </th>
               <th className="th-num">Reworked</th>
               <th className="th-num jc-ops-h-bad">Rejected</th>
               <th className="th-num vsep">Pending</th>
-              <th className="th-num vsep">Sent</th>
+              <th className="th-num vsep">
+                Sent to
+                <br />
+                Vendor
+              </th>
               <th className="th-num">Received</th>
-              <th className="th-num">At Vendor</th>
+              <th className="th-num">
+                Returned
+                <br />
+                to Vendor
+              </th>
+              <th className="th-num">
+                Re-
+                <br />
+                received
+              </th>
+              <th className="th-num">
+                At
+                <br />
+                Vendor
+              </th>
               <th className="vsep">Check</th>
               <th>Op Status</th>
               <th>Next Step</th>

@@ -1,6 +1,6 @@
 // ADR-253 / ADR-277 — a Route Card's "RC Status" chip: Draft / Pending Approval /
-// Approved / Rejected. Words from the shared ROUTE_CARD_APPROVAL_LABEL; tone
-// follows the app palette — not sent = grey, waiting = amber, usable = green,
+// Approved / Returned to Creator. Words from the shared ROUTE_CARD_APPROVAL_LABEL;
+// tone follows the app palette — not sent = grey, waiting = amber, usable = green,
 // refused = red.
 
 import { ROUTE_CARD_APPROVAL_LABEL, type RouteCardApprovalStatus } from '@innovic/shared';

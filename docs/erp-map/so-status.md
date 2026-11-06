@@ -36,7 +36,7 @@ Uses `lib/calc-engine`: `enrichOps`, `rollupJC`, `rollupSoLine`.
 ## Business Logic
 - **6 chips per line:** jcIssued (Σ linked JC order_qty), poRaised (Σ PO-line qty on this SO line), grnReceived (Σ GRN received qty via PO line), qcAccepted (Σ GRN qc_accepted qty), produced (calc-engine doneQty), dispatched (Σ customer-DC line qty). Each chip is `{qty, total}` where total is the order qty (or upstream qty).
 - **Customer-dispatch filter:** DCs count only when `delivery_challans.purchase_order_id IS NULL` (OSP DCs carry a PO link and are excluded).
-- **Outsource alert per line:** over all `op_type='outsource'` ops of the line's JCs — `atVendorQty` (Σ inputAvail−completed for `outsource_at_vendor`/`outsource_po_created`), `atVendorOpCount`, `pendingPrCount` (status `outsource_pending`, each also emitted in `pendingOps[]` for the UI's inline "PR Op" buttons), `prRaisedCount` (`outsource_pr_raised`).
+- **Outsource alert per line:** `atVendorQty` (Σ over ALL ops of the line's JCs of `lib/at-vendor.ts` `loadAtVendorByOp`, the Job Card's At Vendor, ADR-276), `atVendorOpCount` (ops with a value above 0); over `op_type='outsource'` ops only — `pendingPrCount` (status `outsource_pending`, each also emitted in `pendingOps[]` for the UI's inline "PR Op" buttons), `prRaisedCount` (`outsource_pr_raised`).
 - **Overall %:** `min(100, round(totalDone/totalQty × 100))`.
 - **Equipment BOM items:** only when `type='equipment'` AND `bom_master_id` is a real UUID. Per BOM child: `totalNeed = qtyPerSet × equipmentQty`, `stockQty` from item_stock_balances, `shortfall = max(0, need−stock)`, plus existing non-cancelled, non-assembly plan status/code and JC code (bucketed by `bom_child_code`).
 - SO `dueDate` is surfaced as null at header level (due dates live on lines).

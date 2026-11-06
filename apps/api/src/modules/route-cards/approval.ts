@@ -62,7 +62,7 @@ async function cardStateText(tx: DbTransaction, card: RcRow): Promise<string> {
   const names = await loadUserNames(tx, [card.approvedBy, card.rejectedBy]);
   return card.approvalStatus === 'approved'
     ? `was already approved${card.approvedBy && names.get(card.approvedBy) ? ` by ${names.get(card.approvedBy)}` : ''}${card.approvedAt ? ` at ${fmtDateTime(card.approvedAt)}` : ''}`
-    : `was rejected${card.rejectedBy && names.get(card.rejectedBy) ? ` by ${names.get(card.rejectedBy)}` : ''}${card.rejectedAt ? ` at ${fmtDateTime(card.rejectedAt)}` : ''}`;
+    : `was returned to creator${card.rejectedBy && names.get(card.rejectedBy) ? ` by ${names.get(card.rejectedBy)}` : ''}${card.rejectedAt ? ` at ${fmtDateTime(card.rejectedAt)}` : ''}`;
 }
 
 /** Lock the item's backfill-candidate plans, then the card row (§20.3), and
@@ -97,7 +97,7 @@ async function lockPendingCard(
   if (card.itemId !== preItemId) throw changedByOtherError(`Route Card ${card.code}`);
   if (card.approvalStatus !== 'pending') {
     throw new ConflictError(
-      `Cannot ${verb} Route Card ${card.code}: it ${await cardStateText(tx, card)}. Reload the page.`,
+      `Cannot ${verb === 'reject' ? 'return' : verb} Route Card ${card.code}: it ${await cardStateText(tx, card)}. Reload the page.`,
     );
   }
   // §20.4 — a card edited after the approver opened it is refused with the
@@ -309,7 +309,7 @@ export async function rejectRouteCard(
         refId: card.code,
         changes: [rcStatusChange('pending', 'rejected')],
         reason,
-        detail: `${card.code} rejected by ${user.fullName || user.email} — ${reason}`,
+        detail: `${card.code} returned to creator by ${user.fullName || user.email} — ${reason}`,
       },
       companyId,
       user,
