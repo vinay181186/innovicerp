@@ -42,6 +42,7 @@ import {
   rollupJC,
   rollupSoLine,
 } from '../../lib/calc-engine';
+import { loadAtVendorByOp } from '../../lib/at-vendor';
 import { createdByNameSql } from '../../lib/created-by-sql';
 import { AuthorizationError } from '../../lib/errors';
 import { loadOpenReworkByOp } from '../../lib/open-rework';
@@ -208,13 +209,17 @@ export async function getSoOverview(
       else logsByOp.set(log.jcOpId, [log]);
     }
     const runningOpIds = new Set(runningRows.map((r) => r.jcOpId));
-    // G9c: what Incoming QC accepted off each outsource op's GRNs, so the op
-    // reads complete (and stops counting as at-vendor) once the vendor has
-    // returned everything.
-    const ospAcceptedByOp = await loadOspAcceptedByOp(tx, companyId, jcIds);
-    // Pieces still out on a rework/repair child per op — holds the op at
-    // in_progress exactly as v_jc_op_status does (gap 6).
-    const openReworkByOp = await loadOpenReworkByOp(tx, companyId, jcIds);
+    const [ospAcceptedByOp, openReworkByOp, atVendorByOp] = await Promise.all([
+      // G9c: what Incoming QC accepted off each outsource op's GRNs, so the op
+      // reads complete once the vendor has returned everything.
+      loadOspAcceptedByOp(tx, companyId, jcIds),
+      // Pieces still out on a rework/repair child per op — holds the op at
+      // in_progress exactly as v_jc_op_status does (gap 6).
+      loadOpenReworkByOp(tx, companyId, jcIds),
+      // ADR-276: the Job Card's At Vendor, every op (a part-outsourced in-house
+      // op counts too).
+      loadAtVendorByOp(tx, companyId, jcIds),
+    ]);
 
     // Build per-JC enriched rollups once. Keyed by JC id for the per-line walk.
     const rollupByJcId = new Map<string, JCRollup>();
@@ -308,9 +313,7 @@ export async function getSoOverview(
           for (const op of jc.ops) {
             if (opHasStartedWork(op)) workStarted = true;
             if (op.status === 'qc_pending') qcPendingOps += 1;
-            if (op.status === 'outsource_at_vendor' || op.status === 'outsource_po_created') {
-              atVendorQty += Math.max(0, op.inputAvail - op.completed);
-            }
+            atVendorQty += atVendorByOp.get(op.id) ?? 0;
           }
         }
       }
@@ -360,7 +363,8 @@ export async function getSoOverview(
         overallStatus,
         stageCounts,
         alerts: {
-          atVendorQty,
+          // Whole number in the contract; an op's figure can be a decimal.
+          atVendorQty: Math.round(atVendorQty),
           qcPendingOps,
           delayedLines,
         },

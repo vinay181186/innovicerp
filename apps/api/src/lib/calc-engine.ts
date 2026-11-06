@@ -336,8 +336,9 @@ function deriveOpStatus(s: StatusInput): OpStatus {
     // View (0130) next branch: qc_required AND qc_pending > 0 → 'qc_pending'.
     // Review R3: only once the pieces are BACK (stamp 'received', or the bar
     // already covers the whole input). A half-returned op (GRN 5 of 10, shop
-    // QC outstanding on those 5) must keep reading outsource_at_vendor so
-    // so-status / so-overview keep counting atVendorQty for the other 5.
+    // QC outstanding on those 5) must keep reading outsource_at_vendor, which
+    // keeps the line's stage on Outsourced. The At Vendor figure itself no longer
+    // comes from this status (ADR-276, lib/at-vendor.ts).
     if (
       s.qcRequired &&
       s.qcPending > 0 &&

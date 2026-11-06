@@ -46,6 +46,7 @@ import {
   rollupJC,
   rollupSoLine,
 } from '../../lib/calc-engine';
+import { loadAtVendorByOp } from '../../lib/at-vendor';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
 import { loadOpenReworkByOp } from '../../lib/open-rework';
 import { loadOspAcceptedByOp } from '../../lib/osp-accepted';
@@ -296,14 +297,18 @@ export async function getSoStatus(soId: string, user: AuthContext): Promise<SoSt
       else logsByOp.set(log.jcOpId, [log]);
     }
     const runningOpIds = new Set(runningRows.map((r) => r.jcOpId));
-    // G9c: what Incoming QC accepted off each outsource op's GRNs, so the op
-    // reads complete (and stops counting as at-vendor) once the vendor has
-    // returned everything.
-    const ospAcceptedByOp = await loadOspAcceptedByOp(tx, companyId, jcIds);
-    // Pieces still out on a rework/repair child per op — holds the op at
-    // in_progress exactly as v_jc_op_status does (QC-NC audit 2026-09-21,
-    // gap 6), so a line never reads "produced 10 of 10" while 2 are in rework.
-    const openReworkByOp = await loadOpenReworkByOp(tx, companyId, jcIds);
+    const [ospAcceptedByOp, openReworkByOp, atVendorByOp] = await Promise.all([
+      // G9c: what Incoming QC accepted off each outsource op's GRNs, so the op
+      // reads complete once the vendor has returned everything.
+      loadOspAcceptedByOp(tx, companyId, jcIds),
+      // Pieces still out on a rework/repair child per op — holds the op at
+      // in_progress exactly as v_jc_op_status does (QC-NC audit 2026-09-21,
+      // gap 6), so a line never reads "produced 10 of 10" while 2 are in rework.
+      loadOpenReworkByOp(tx, companyId, jcIds),
+      // ADR-276: the Job Card's At Vendor, every op (a part-outsourced in-house
+      // op counts too).
+      loadAtVendorByOp(tx, companyId, jcIds),
+    ]);
 
     // Build JC rollups via calc-engine.
     const rollupByJcId = new Map<string, { rollup: JCRollup; ops: EnrichedOp[] }>();
@@ -381,14 +386,19 @@ export async function getSoStatus(soId: string, user: AuthContext): Promise<SoSt
       );
       let atVendorQty = 0;
       let atVendorOpCount = 0;
+      for (const jc of jcsForLine) {
+        for (const op of rollupByJcId.get(jc.id)!.ops) {
+          const opAtVendor = atVendorByOp.get(op.id) ?? 0;
+          if (opAtVendor > 0) {
+            atVendorQty += opAtVendor;
+            atVendorOpCount += 1;
+          }
+        }
+      }
       let pendingPrCount = 0;
       let prRaisedCount = 0;
       const pendingOps: SoStatusPendingOsPrOp[] = [];
       for (const { op, jcId: opJcId, jcCode } of outsourceOps) {
-        if (op.status === 'outsource_at_vendor' || op.status === 'outsource_po_created') {
-          atVendorQty += Math.max(0, op.inputAvail - op.completed);
-          atVendorOpCount += 1;
-        }
         if (op.status === 'outsource_pending') {
           pendingPrCount += 1;
           pendingOps.push({
@@ -467,7 +477,8 @@ export async function getSoStatus(soId: string, user: AuthContext): Promise<SoSt
           dispatched: { qty: dispQty, total: line.orderQty },
         },
         outsourceAlert: {
-          atVendorQty,
+          // Whole number in the contract; an op's figure can be a decimal.
+          atVendorQty: Math.round(atVendorQty),
           atVendorOpCount,
           pendingPrCount,
           prRaisedCount,

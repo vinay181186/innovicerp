@@ -1190,7 +1190,7 @@ function OutsourceAlertRows({
             fontWeight: 600,
           }}
         >
-          🏭 At Vendor: {alert.atVendorQty} pcs across {alert.atVendorOpCount} outsource op(s)
+          🏭 At Vendor: {alert.atVendorQty} pcs across {alert.atVendorOpCount} op(s)
         </div>
       ) : null}
       {alert.pendingPrCount > 0 ? (
