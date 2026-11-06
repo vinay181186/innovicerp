@@ -113,6 +113,7 @@ export function teamCases(): void {
         canManageHolidays: false,
         canManageTeams: false,
         canSeePending: false,
+        canSeeHistory: false,
       });
       expect(await teamIds(plainAdmin())).toEqual([fx.ownerBase.id]);
 

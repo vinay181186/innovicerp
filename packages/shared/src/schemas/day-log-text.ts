@@ -14,7 +14,12 @@
 //   - Replies reach the owner through the Home 🔔 / Notifications panel.
 
 import { z } from 'zod';
-import { dayLogOrderSchema, dayLogOwnReplySchema } from './day-log';
+import {
+  DAY_LOG_ENTRY_KINDS,
+  dayLogEntrySchema,
+  dayLogOrderSchema,
+  dayLogOwnReplySchema,
+} from './day-log';
 
 const dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
@@ -180,3 +185,105 @@ export const dayLogPendingCalendarSchema = z.object({
   holidays: z.array(z.string()),
 });
 export type DayLogPendingCalendar = z.infer<typeof dayLogPendingCalendarSchema>;
+
+// ── Day Log History (owner 2026-11-06, ADR-278) ───────────────────────────────
+// Super Admin: one person's whole month or one date, for the History PDF. The
+// server decides every state and total; the screen and the PDF only draw them.
+
+export const dayLogHistoryQuerySchema = z
+  .object({
+    userId: z.string().uuid(),
+    /** YYYY-MM: the whole month, up to today. */
+    month: z
+      .string()
+      .regex(/^\d{4}-(0[1-9]|1[0-2])$/)
+      .optional(),
+    /** YYYY-MM-DD: one date. */
+    date: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .optional(),
+  })
+  .refine((q) => Boolean(q.month) !== Boolean(q.date), {
+    message: 'Pick a month or a date',
+  });
+export type DayLogHistoryQuery = z.infer<typeof dayLogHistoryQuerySchema>;
+
+/** One date's state. `filled` wins over Sunday / holiday when entries exist.
+ *  `not_counted`: a blank date the Not entered rule does not count (before the
+ *  start date, or a person who keeps no Day Log). */
+export const DAY_LOG_HISTORY_DAY_STATES = [
+  'filled',
+  'today',
+  'not_entered',
+  'not_counted',
+  'leave',
+  'sunday',
+  'holiday',
+] as const;
+export type DayLogHistoryDayState = (typeof DAY_LOG_HISTORY_DAY_STATES)[number];
+
+export const dayLogHistoryEntrySchema = dayLogPersonDayEntrySchema.extend({
+  /** Old rows may be break / leave (shown as Others); they never count as Working hours. */
+  kind: z.enum(DAY_LOG_ENTRY_KINDS),
+  /** An old edit still waiting for approval, else null. */
+  pending: dayLogEntrySchema.shape.pending,
+  /** The IST date it was first saved, when later than the date it is for; else null. */
+  savedLaterOn: z.string().nullable(),
+});
+export type DayLogHistoryEntry = z.infer<typeof dayLogHistoryEntrySchema>;
+
+export const dayLogHistoryDaySchema = z.object({
+  date: z.string(),
+  state: z.enum(DAY_LOG_HISTORY_DAY_STATES),
+  holidayName: z.string().nullable(),
+  firstStart: z.string().nullable(),
+  lastStop: z.string().nullable(),
+  /** The same reading as Team Day Logs (summaryOf). */
+  workMin: z.number().int(),
+  entryCount: z.number().int(),
+  /** Entry Revs after the first save, on this date's entries. */
+  edits: z.number().int(),
+  /** Replies on entries + on the blank date. */
+  replies: z.number().int(),
+  /** Entries first saved on a later date than this one. */
+  savedLater: z.number().int(),
+  entries: z.array(dayLogHistoryEntrySchema),
+  /** Replies on the blank date, oldest first. */
+  dayReplies: z.array(dayLogAdminReplySchema),
+});
+export type DayLogHistoryDay = z.infer<typeof dayLogHistoryDaySchema>;
+
+export const dayLogHistorySchema = z.object({
+  userId: z.string().uuid(),
+  userName: z.string(),
+  deptLabel: z.string().nullable(),
+  /** The period asked for: exactly one is set. */
+  month: z.string().nullable(),
+  date: z.string().nullable(),
+  /** Server's IST today (the pickers' max). */
+  today: z.string(),
+  /** In date order, never past today. */
+  days: z.array(dayLogHistoryDaySchema),
+  totals: z.object({
+    /** filledDays + notEntered. */
+    workingDays: z.number().int(),
+    filledDays: z.number().int(),
+    notEntered: z.number().int(),
+    /** Sunday / holiday dates with no entry. */
+    offDays: z.number().int(),
+    /** Old Leave dates with no entry. */
+    leaveDays: z.number().int(),
+    entries: z.number().int(),
+    workMin: z.number().int(),
+    breakMin: z.number().int(),
+    leaveMin: z.number().int(),
+    editedEntries: z.number().int(),
+    edits: z.number().int(),
+    replies: z.number().int(),
+    savedLater: z.number().int(),
+  }),
+  /** False: nothing to print, so no PDF (no working day, no old Leave day, no reply). */
+  hasContent: z.boolean(),
+});
+export type DayLogHistory = z.infer<typeof dayLogHistorySchema>;

@@ -12,6 +12,8 @@
 //   day-replies.ts — replies on a blank day          pending.ts — Pending Entries
 //   holidays.ts — holidays, tab access            access.ts — who sees and manages whose day
 //   team-mates.ts — Teams Config (who sees whose Day Log, one-way: User → mate)
+//   person-history.ts — a person's month or date (ADR-278)
+//   entry-facts.ts — Entry Revs and replies shared by person-day and History
 // Rules of the day itself live in packages/shared day-log.ts (summarizeDay…).
 
 export { addEntry, updateEntry } from './entries';
@@ -21,6 +23,7 @@ export { editReply, sendReply } from './replies';
 export { editDayReply, markDayRepliesSeen, sendDayReply } from './day-replies';
 export { getMyPending, getPending, getPendingCalendar } from './pending';
 export { getPersonDay } from './person-day';
+export { getPersonHistory } from './person-history';
 export { approveEntry, getApprovals, rejectEntry } from './approvals';
 export { getDay } from './manage';
 export { getTeam } from './team';

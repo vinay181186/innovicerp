@@ -8,6 +8,7 @@
 // opens the person page. No count strip, no Now / Late columns (owner
 // 2026-10-30). The table reads again every minute (api.ts). A Super Admin sees a
 // blank past working day as an orange row with "Not entered" (server's notEntered).
+// Row ⋯ › History (ADR-278): only when the server says canSeeHistory (Super Admin).
 
 import type { TeamDayLogRow } from '@innovic/shared';
 import { useState } from 'react';
@@ -17,10 +18,11 @@ import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Banner } from '@/ui/feedback';
 import { Input, SearchInput } from '@/ui/forms';
 import { PageState } from '@/ui/layout';
-import { useTeamDayLogs } from '../api';
+import { useDayLogAccess, useTeamDayLogs } from '../api';
 import { teamTable } from '../lib/export';
 import { errText } from '../lib/format';
 import { printTeamDayLogs } from '../lib/print-day-log';
+import { DayLogHistoryModal } from './day-log-history';
 import { PrintExportTools } from './print-export-tools';
 import { teamColumns } from './team-day-logs-columns';
 import '../day-log-sheet.css';
@@ -37,6 +39,8 @@ export function TeamDayLogsTab({
   const query = useTeamDayLogs(date);
   const team = query.data;
   const [term, setTerm] = useState('');
+  const canSeeHistory = Boolean(useDayLogAccess().data?.canSeeHistory);
+  const [historyOf, setHistoryOf] = useState<TeamDayLogRow | null>(null);
 
   if (!team) {
     return query.isError ? (
@@ -113,7 +117,26 @@ export function TeamDayLogsTab({
         rowClassName={(r) => (r.notEntered ? ROW_TINT.notEntered : undefined)}
         empty={needle ? 'No users match.' : 'No one to show for this day.'}
         onRowClick={(r) => onOpenPerson(r.userId, team.date)}
+        rowMenuLabel={(r) => `Actions for ${r.userName}`}
+        rowMenu={(r) => [
+          {
+            key: 'history',
+            label: 'History',
+            icon: 'activity',
+            hidden: !canSeeHistory,
+            onSelect: () => setHistoryOf(r),
+          },
+        ]}
       />
+      {historyOf ? (
+        <DayLogHistoryModal
+          userId={historyOf.userId}
+          userName={historyOf.userName}
+          deptLabel={historyOf.deptLabel}
+          today={team.today}
+          onClose={() => setHistoryOf(null)}
+        />
+      ) : null}
     </div>
   );
 }

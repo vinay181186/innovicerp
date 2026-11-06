@@ -10,6 +10,8 @@ import type {
   DayLogAccess,
   DayLogApprovalsResponse,
   DayLogDetail,
+  DayLogHistory,
+  DayLogHistoryQuery,
   DayLogMyPending,
   DayLogOrderOption,
   DayLogPendingCalendar,
@@ -68,6 +70,9 @@ export const dayLogKeys = {
   /** Pending Entries tab (Super Admin). */
   pending: () => [...dayLogKeys.all, 'pending'] as const,
   pendingCalendar: (userId: string) => [...dayLogKeys.all, 'pending-calendar', userId] as const,
+  /** Team Day Logs › ⋯ History: one person's month or date (ADR-278). */
+  history: (q: DayLogHistoryQuery) =>
+    [...dayLogKeys.all, 'person-history', q.userId, q.month ?? '', q.date ?? ''] as const,
 };
 
 /** The team table reads again every minute (Working / Idle move on). */
@@ -205,6 +210,23 @@ export function usePendingCalendar(userId: string) {
     queryFn: () => apiFetch<DayLogPendingCalendar>(`/day-logs/pending/${userId}/calendar`),
     refetchOnWindowFocus: true,
   });
+}
+
+/** One person's History (ADR-278), always read fresh. Shared by the pop-up's
+ *  count line and by Generate PDF's own read. */
+export function dayLogHistoryQuery(q: DayLogHistoryQuery) {
+  return {
+    queryKey: dayLogKeys.history(q),
+    queryFn: () =>
+      apiFetch<DayLogHistory>(
+        `/day-logs/person-history${qs({ userId: q.userId, month: q.month, date: q.date })}`,
+      ),
+    staleTime: 0,
+  };
+}
+
+export function useDayLogHistory(q: DayLogHistoryQuery, enabled: boolean) {
+  return useQuery<DayLogHistory>({ ...dayLogHistoryQuery(q), enabled });
 }
 
 // ── Writes ──

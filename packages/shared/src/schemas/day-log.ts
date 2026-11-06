@@ -547,6 +547,8 @@ export const dayLogAccessSchema = z.object({
   canManageTeams: z.boolean(),
   /** May open the Pending Entries tab (Super Admin only). */
   canSeePending: z.boolean(),
+  /** May open a person's History (Super Admin only, ADR-278). */
+  canSeeHistory: z.boolean(),
 });
 export type DayLogAccess = z.infer<typeof dayLogAccessSchema>;
 

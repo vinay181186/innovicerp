@@ -16,7 +16,7 @@ import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Modal } from '@/ui/feedback';
 import { PageState } from '@/ui/layout';
 import { usePendingCalendar, usePersonDay } from '../api';
-import { errText, firstName, shiftDate, weekday } from '../lib/format';
+import { errText, firstName, monthLabel, shiftDate, weekday } from '../lib/format';
 import { sortEntries } from '../lib/sheet';
 import { personDayColumns } from './person-day-logs';
 import { DayReplies, PersonReplies } from './person-replies';
@@ -30,13 +30,6 @@ function shiftMonth(month: string, n: number): string {
   const d = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 1 + n, 1));
   return d.toISOString().slice(0, 7);
 }
-
-const monthName = (month: string): string =>
-  new Date(`${month}-01T00:00:00Z`).toLocaleString('en-IN', {
-    month: 'long',
-    year: 'numeric',
-    timeZone: 'UTC',
-  });
 
 /** Text typed in a reply box and not sent yet. The boxes own their text and clear
  *  it on send, so the pop-up reads them at the moment it is about to throw them away. */
@@ -228,7 +221,7 @@ export function PendingCalendar({
             >
               ‹
             </button>
-            <span>{monthName(shown)}</span>
+            <span>{monthLabel(shown)}</span>
             <button
               type="button"
               className="btn btn-ghost btn-sm"
