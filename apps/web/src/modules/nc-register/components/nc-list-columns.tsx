@@ -71,7 +71,7 @@ export function ncRowTint(status: NcStatus): string | undefined {
 
 /** The item code with its drawing revision, or the typed snapshot as a fallback
  *  (read `itemCode ?? itemCodeText`, NAMING.md §A xxxText rule). */
-function ncItemCode(nc: NcRegisterListItem): string {
+export function ncItemCode(nc: NcRegisterListItem): string {
   return nc.itemCode ? itemCodeWithRev(nc.itemCode, nc.itemRevision) : (nc.itemCodeText ?? '');
 }
 

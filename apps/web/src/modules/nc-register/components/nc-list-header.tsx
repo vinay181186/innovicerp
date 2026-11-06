@@ -65,8 +65,8 @@ export function NcListHeader({
               .join(' · ')
           : undefined
       }
-      // Server-side search over code / reason / item (service.ts L215); it does
-      // NOT match JC, so the placeholder does not claim it.
+      // Server-side search (listNcRegister in the API's service.ts); it matches
+      // JC No. and SO / JWSO No. too, as the placeholder says.
       search={searchInput}
       onSearch={onSearch}
       searchPlaceholder="Search NC No., JC No., SO / JWSO No., item code, item name, reason…"
