@@ -3,7 +3,7 @@
 //
 // Covers: create → pending, no RM backfill while pending; approve → approved +
 // RM backfilled to a blank waiting plan; reject needs a reason (400); reject →
-// rejected, an edit sends it back to pending with the rejection cleared; two
+// rejected, a submit sends it back to pending with the rejection cleared; two
 // approvals at once → exactly one wins, the loser's 409 names the approver;
 // no Approve tick → 403; the creator may approve their own card; with Document
 // Edit Approval ON an approved card's edit is staged but a draft card's edit
@@ -284,7 +284,7 @@ describe('Route Card approval (ADR-253)', () => {
     expect(rejected.rejectedByName).toBe(adminName);
   });
 
-  it('saving a rejected card sends it back to pending and clears the rejection', async () => {
+  it('a save with no submitForApproval flag (a tab open across the release) sends a returned card to pending', async () => {
     const { itemId, card } = await newCard(approver());
     const rejected = await rejectRouteCard(card.id, { reason: 'Fix op' }, approver());
     const saved = await service.updateRouteCard(

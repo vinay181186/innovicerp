@@ -84,6 +84,16 @@ describe('ADR-234 page access table', () => {
         if (!need) continue;
         // Personal pages (saved reports) carry { canWrite } instead of a tick.
         if ('canWrite' in rule || 'superAdmin' in rule) continue;
+        // ADR-277 — Entry may also open the edit page, for the user's OWN Draft /
+        // Returned card; canEditRouteCard decides on the card itself.
+        if (path === '/route-cards/$id/edit') {
+          const ok2 =
+            'anyOf' in rule &&
+            rule.anyOf.some((t) => t.action === 'edit') &&
+            rule.anyOf.every((t) => t.action === 'edit' || t.action === 'entry');
+          if (!ok2) wrong.push(`${path} → ${JSON.stringify(rule)}`);
+          continue;
+        }
         const ok =
           'action' in rule
             ? rule.action === need
