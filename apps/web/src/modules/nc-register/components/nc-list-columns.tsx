@@ -2,9 +2,9 @@
 // menu for the shared FIT table (ADR-199: <DataTable tableKey=…>). Split out of
 // routes/list.tsx so that file stays under the 400-line ceiling.
 //
-// Columns: the locked lead block (SO No. · Internal SO No. · POL · Created On ·
-// Item Code · Item Name, owner rule 2026-10-31) then NC No. · NC Status ·
-// Disposition · Rejected · Reason · NC Date. Centred by the table standard;
+// Columns: the locked lead block (SO No. / JWSO No. · Internal SO No. · POL · Created On ·
+// Item Code · Item Name, owner rule 2026-10-31) then NC No. · JC No. · NC Date · NC Status ·
+// Disposition · Rejected · Reason. Centred by the table standard;
 // Rejected is the one number column (align 'right' -> the num kind); Item Name
 // is the one left-aligned text column that shares the spare width.
 //
@@ -116,7 +116,8 @@ export function ncListColumns(
           </Link>
         ),
       },
-      soNo: (nc) => nc.soCodeText,
+      so: 'mixed',
+      soNo: (nc) => nc.orderCode,
       internalSoNo: (nc) => nc.soInternalNo,
       pol: (nc) => nc.clientPoLineNo,
       createdOn: (nc) => nc.createdAt,
@@ -131,6 +132,15 @@ export function ncListColumns(
         item_name: { sortFilterField: 'itemName' },
       },
     }),
+    {
+      id: 'jc_no',
+      sortFilterField: 'jcCode',
+      kind: 'code',
+      header: 'JC No.',
+      className: 'td-code',
+      nowrap: true,
+      render: (nc) => <span style={{ color: 'var(--cyan)' }}>{nc.jcCode ?? '—'}</span>,
+    },
     {
       id: 'nc_date',
       sortFilterField: 'ncDate',

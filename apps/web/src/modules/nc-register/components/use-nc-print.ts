@@ -20,7 +20,7 @@ const companyQuery = {
 export interface NcPrintTarget {
   id: string;
   code: string;
-  /** The NC read shape has no JC code; the list row / detail page supply it. */
+  /** The list row's / detail page's `jcCode`. */
   jcCode?: string | null | undefined;
 }
 

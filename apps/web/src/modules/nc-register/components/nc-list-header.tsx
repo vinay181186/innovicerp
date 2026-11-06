@@ -69,7 +69,7 @@ export function NcListHeader({
       // NOT match JC, so the placeholder does not claim it.
       search={searchInput}
       onSearch={onSearch}
-      searchPlaceholder="Search NC No., item code, item name, reason…"
+      searchPlaceholder="Search NC No., JC No., SO / JWSO No., item code, item name, reason…"
       updating={updating}
       filters={
         <>

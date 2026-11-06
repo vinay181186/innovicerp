@@ -64,7 +64,7 @@ import { autoCloseLinkedTasks } from '../tasks/service';
 import { type DisposeNcContext, disposeNcCascade, nextNcCode, resolveNcSource } from './cascades';
 import { markNcClosed, ncCloseBlockedReason, ncOpenQty } from './recovery';
 import { NC_SF_COLUMNS } from './sf-columns';
-import { ncSoKeySql } from './so-key';
+import { ncOrderCodeSql, ncSoKeySql } from './so-key';
 import type {
   CloseNcReworkInput,
   CreateNcRegisterInput,
@@ -204,6 +204,9 @@ interface NcJoins {
   soCode?: string | null;
   // 0237: the NC's SO key (so-key.ts); falls back to the stored so_id.
   soId?: string | null;
+  // ADR-276: SO No. / JWSO No. (ncOrderCodeSql) and the job card's number, live.
+  orderCode?: string | null;
+  jcCode?: string | null;
   childJobCardCode?: string | null;
   deliveryChallanCode?: string | null;
   // G8: the NC this row continues (Incoming-QC reject on a GRN that came back
@@ -298,6 +301,8 @@ function toNcRegister(row: typeof ncRegister.$inferSelect, joins: NcJoins = {}):
     soCodeText: row.soCodeText,
     soInternalNo: joins.soInternalNo ?? null,
     soCode: joins.soCode ?? null,
+    orderCode: joins.orderCode ?? null,
+    jcCode: joins.jcCode ?? null,
     machineCodeText: row.machineCodeText,
     operatorText: row.operatorText,
     rejectedQty: row.rejectedQty,
@@ -540,6 +545,8 @@ export async function listNcRegister(
           WHERE nso.id = ${ncSoKeySql('nc')}) AS "soInternalNo",
         (SELECT nso.code FROM public.sales_orders nso
           WHERE nso.id = ${ncSoKeySql('nc')}) AS "soCode",
+        -- ADR-276: SO No. / JWSO No. Scalars, one row per NC.
+        ${ncOrderCodeSql('nc')} AS "orderCode",
         nc.machine_code_text AS "machineCodeText",
         nc.operator_text AS "operatorText",
         nc.rejected_qty::text AS "rejectedQty",
@@ -849,6 +856,7 @@ function toListItem(r: Record<string, unknown>): NcRegisterListItem {
     soCodeText: (r['soCodeText'] as string | null) ?? null,
     soInternalNo: (r['soInternalNo'] as string | null) ?? null,
     soCode: (r['soCode'] as string | null) ?? null,
+    orderCode: (r['orderCode'] as string | null) ?? null,
     machineCodeText: (r['machineCodeText'] as string | null) ?? null,
     operatorText: (r['operatorText'] as string | null) ?? null,
     rejectedQty: r['rejectedQty'] as string,
@@ -986,6 +994,15 @@ export async function readNc(
         SELECT nso.code FROM public.sales_orders nso
         WHERE nso.id = ${ncSoKeySql('nc_register')}
       )`,
+      // ADR-276: SO No. / JWSO No. (so-key.ts), and the job card's number with
+      // the list's own rule (live card only).
+      orderCode: ncOrderCodeSql('nc_register'),
+      jcCode: sql<string | null>`(
+        SELECT njc.code FROM public.job_cards njc
+        WHERE njc.id = ${ncRegister.jobCardId}
+          AND njc.company_id = ${ncRegister.companyId}
+          AND njc.deleted_at IS NULL
+      )`,
       // 0237: nc.so_id, else the card's source SO line's SO (so-key.ts).
       soKey: ncSoKeySql('nc_register'),
       // The ORIGINAL job-work order behind the deviation, through the shared
@@ -1062,6 +1079,8 @@ export async function readNc(
     dispositionByName: found.dispositionByName,
     soInternalNo: found.soInternalNo,
     soCode: found.soCode,
+    orderCode: found.orderCode,
+    jcCode: found.jcCode,
     soId: found.soKey,
     sourceVendorId: source.sourceVendorId,
     sourceVendorCode: source.sourceVendorCode,

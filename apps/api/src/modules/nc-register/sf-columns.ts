@@ -8,31 +8,20 @@ import { sql } from 'drizzle-orm';
 
 import { createdByNameSql } from '../../lib/created-by-sql';
 import type { SfColumnMap } from '../../lib/list-query';
-import { ncSoKeySql } from './so-key';
+import { ncOrderCodeSql, ncSoKeySql } from './so-key';
+
+/** ADR-276 — the SO No. / JWSO No. the cell prints. Scalars, so the count query
+ *  needs no extra join. */
+const NC_ORDER_CODE = ncOrderCodeSql('nc');
 
 export const NC_SF_COLUMNS: SfColumnMap = {
   ncCode: { sql: sql`nc.code`, type: 'text' },
-  // ADR-261 lead SO No. — the SO code the cell prints (nc.so_code_text).
-  soCode: { sql: sql`nc.so_code_text`, type: 'text' },
-  // ADR-267 — the bare order No. for the order dropdown: the NC's SO, else the JWSO
-  // of its job card, else the JWSO of its Party GRN (the row's sourceJwCode), the
-  // snapshot last. Scalars, so the count query needs no extra join.
-  orderCode: {
-    sql: sql`COALESCE(
-      (SELECT oso.code FROM public.sales_orders oso WHERE oso.id = ${ncSoKeySql('nc')}),
-      (SELECT ojw.code FROM public.job_cards ojc
-         JOIN public.job_work_order_lines ojwl ON ojwl.id = ojc.source_jw_line_id
-         JOIN public.job_work_orders ojw ON ojw.id = ojwl.job_work_order_id
-        WHERE ojc.id = nc.job_card_id AND ojc.company_id = nc.company_id LIMIT 1),
-      (SELECT COALESCE(ogjw.code, NULLIF(opg.jw_code_text, '')) FROM public.party_grn_lines opgl
-         JOIN public.party_grn opg ON opg.id = opgl.party_grn_id
-         LEFT JOIN public.job_work_orders ogjw
-           ON ogjw.id = opg.job_work_order_id AND ogjw.deleted_at IS NULL
-        WHERE opgl.id = nc.party_grn_line_id AND opgl.company_id = nc.company_id LIMIT 1),
-      NULLIF(nc.so_code_text, '')
-    )`,
-    type: 'text',
-  },
+  // ADR-261 lead column, sorted and filtered on what the cell prints (ADR-276).
+  soCode: { sql: NC_ORDER_CODE, type: 'text' },
+  // ADR-267 — the same value for the order dropdown.
+  orderCode: { sql: NC_ORDER_CODE, type: 'text' },
+  // ADR-276 — JC No.: the list AND its count both LEFT JOIN job_cards as jc.
+  jcCode: { sql: sql`jc.code`, type: 'text' },
   status: { sql: sql`nc.status`, type: 'list' },
   disposition: { sql: sql`nc.disposition`, type: 'list' },
   // CODE/REV as the cell prints it: the master code with the customer's drawing
