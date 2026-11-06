@@ -18,7 +18,7 @@
 // GRN stamps its header's deleted_at, so the header join drops it.
 
 import { sql } from 'drizzle-orm';
-import type { CustomerRmQty } from '@innovic/shared';
+import { partyGrnStatus, type CustomerRmQty, type PartyGrnStatus } from '@innovic/shared';
 import type { DbTransaction } from '../../db/with-user-context';
 import { QC_PENDING_QTY_SQL } from '../party-grn/qc-state';
 
@@ -26,6 +26,17 @@ export interface CustomerRmLineRow {
   jwId: string;
   lineId: string;
   qty: CustomerRmQty;
+}
+
+/** Party GRN Status (ADR-279) of every live line of the given JWSOs, by line id.
+ *  Both Planning line tables read it here. A line not in the map reads 'none'. */
+export async function partyGrnStatusByLine(
+  tx: DbTransaction,
+  companyId: string,
+  jwIds: readonly string[],
+): Promise<Map<string, PartyGrnStatus>> {
+  const rows = await customerRmByJw(tx, companyId, jwIds);
+  return new Map(rows.map((r) => [r.lineId, partyGrnStatus(r.qty)]));
 }
 
 /** Customer RM quantities for every live line of the given JWSOs. */

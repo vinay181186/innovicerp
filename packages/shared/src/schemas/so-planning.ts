@@ -275,6 +275,8 @@ export const planningLineSchema = z.object({
   bomMasterId: z.string().uuid().nullable(),
   bomNo: z.string().nullable(),
   bomPartsCount: z.number().int().nonnegative(),
+  /** ADR-279 — lib/customer-rm-status.ts partyGrnStatus; 'none' on an SO line. */
+  partyGrnStatus: z.enum(PARTY_GRN_STATUSES),
 });
 export type PlanningLine = z.infer<typeof planningLineSchema>;
 
@@ -330,6 +332,7 @@ export const planningLineListItemSchema = planningLineSchema
     remaining: true,
     shortClosed: true,
     lineStatus: true,
+    partyGrnStatus: true,
   })
   .extend({
     plans: z.array(planningLineListPlanSchema),
@@ -340,8 +343,6 @@ export const planningLineListItemSchema = planningLineSchema
     source: z.enum(['so', 'jw']),
     customerName: z.string().nullable(),
     soType: z.string(),
-    /** ADR-279 — lib/customer-rm-status.ts partyGrnStatus; 'none' on an SO line. */
-    partyGrnStatus: z.enum(PARTY_GRN_STATUSES),
   });
 export type PlanningLineListItem = z.infer<typeof planningLineListItemSchema>;
 

@@ -423,8 +423,12 @@ export function OrderDetail({
           columns={planningLineColumns(so)}
           rows={so.lines}
           rowKey={(l) => l.soLineId}
-          // The plan code must stay on screen however narrow the sheet is.
-          defaultPinned={['plans']}
+          // The plan code must stay on screen however narrow the sheet is. On a
+          // JWSO so must Party GRN Status (ADR-279), with Plan Status beside it,
+          // as on the first list; other columns leave first.
+          defaultPinned={
+            so.source === 'jw' ? ['plan_status', 'party_grn_status', 'plans'] : ['plans']
+          }
           renderExpanded={(l) =>
             expanded.has(l.soLineId) ? (
               <PlanningLineExpand

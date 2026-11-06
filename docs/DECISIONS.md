@@ -15464,3 +15464,17 @@ Owner: Pending Entries should open per person on a calendar, green for filled an
 - `columnAlign` reads headings, so a new money column under a heading with no money word needs `money: true`; the check catches money words, not plain headings. A report column that only says "number" uses the same heading test.
 - 545 `align:` props stay in the column files; they are harmless, and removing them now would collide with other open work.
 - Calendar grid on Production Schedule and the Create Invoice line grid are not tables and keep their own alignment.
+
+## ADR-281: Party GRN Status also on the lines inside a JWSO
+
+**Date:** 2026-11-06. **Owner decided:** a planner inside a JWSO must see whether Party GRN is done for each line. Supersedes the "First list only" point of ADR-279.
+
+**Decisions:**
+- **One field.** `partyGrnStatus` moves into `planningLineSchema`, so the first list and the order's lines carry the same field. `partyGrnStatusByLine` (`job-work-orders/customer-rm.ts`) is the one read both use; a line it does not return, and every SO line, reads —.
+- **One column.** `party-grn-status-column.tsx` serves both tables. The first list adds its server Sort & Filter on top.
+- **Width.** On a JWSO order Plan Status, Party GRN Status and Plans are pinned, as on the first list; other columns leave first. A user's saved layout still gets the new column, pinned (`use-table-layout` `normalize`). An SO order shows no column.
+- **Accepted limit.** SO and JWSO orders share one table key. Hiding the column on a JWSO and then changing columns on an SO order brings it back. Harmless, so not built around.
+
+**Refresh:** same as ADR-279; a JWSO edit now refreshes Planning on the same PC too. An edit approved from Approvals reaches Planning through the 60-second poll.
+
+**No migration.**

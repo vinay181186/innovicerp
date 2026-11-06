@@ -13,13 +13,13 @@
 import {
   PARTY_GRN_STATUS_LABEL,
   PLANNING_LINE_LIST_SF_FIELD as SF,
-  type PartyGrnStatus,
   type PlanningLineListItem,
 } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
 import { docDrawingRev } from '@/lib/item-code';
 import { soTypeLabel } from '@/modules/sales-orders/lib/so-status-label';
 import { ROW_TINT, createdByColumn, leadColumns, type DataTableColumn } from '@/ui/data';
+import { partyGrnStatusColumn } from './party-grn-status-column';
 import { PLANNING_STATE_LABEL } from './planning-line-columns';
 import { JwChip, lineStatusOf, type SourceFilter } from './planning-shared';
 
@@ -48,42 +48,6 @@ const PARTY_GRN_STATUS_OPTIONS = Object.entries(PARTY_GRN_STATUS_LABEL).map(([va
   value,
   label,
 }));
-const PARTY_GRN_STATUS_COLOR: Record<PartyGrnStatus, string> = {
-  done: 'var(--green)',
-  part_done: 'var(--amber)',
-  not_done: 'var(--red2)',
-  none: 'var(--text3)',
-};
-
-function partyGrnStatusColumn(): DataTableColumn<PlanningLineListItem> {
-  return {
-    id: 'party_grn_status',
-    header: (
-      <>
-        Party GRN
-        <br />
-        Status
-      </>
-    ),
-    label: 'Party GRN Status',
-    kind: 'badge',
-    sortFilterField: SF.partyGrnStatus,
-    filterOptions: PARTY_GRN_STATUS_OPTIONS,
-    nowrap: true,
-    render: (r) => (
-      <span
-        style={{
-          fontSize: 'var(--fs-xs)',
-          fontWeight: 700,
-          color: PARTY_GRN_STATUS_COLOR[r.partyGrnStatus],
-        }}
-      >
-        {PARTY_GRN_STATUS_LABEL[r.partyGrnStatus]}
-      </span>
-    ),
-  };
-}
-
 export function lineListColumns(
   src: SourceFilter,
   /** Sr No of this page's first row (server offset + 1). */
@@ -275,7 +239,15 @@ export function lineListColumns(
       },
     },
     // A Party GRN is only ever on a JWSO line: no column when only SOs are listed.
-    ...(src === 'so' ? [] : [partyGrnStatusColumn()]),
+    ...(src === 'so'
+      ? []
+      : [
+          {
+            ...partyGrnStatusColumn<PlanningLineListItem>(),
+            sortFilterField: SF.partyGrnStatus,
+            filterOptions: PARTY_GRN_STATUS_OPTIONS,
+          },
+        ]),
     createdByColumn<PlanningLineListItem>({
       createdByName: (r) => r.createdByName,
       overrides: {

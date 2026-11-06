@@ -63,6 +63,7 @@ import {
 import { readReservedByLine, readStockPositions } from '../../lib/stock-reservation';
 import { soLineCoveredRaw, soLineDirectJcRaw, soLinePlannedRaw } from '../../lib/so-line-coverage';
 import { emitActivityLog } from '../activity-log/service';
+import { partyGrnStatusByLine } from '../job-work-orders/customer-rm';
 import {
   liveJwCustomerName,
   liveSoCustomerName,
@@ -733,6 +734,8 @@ export async function getPlanningSoDetail(
         bomMasterId: activeBomId,
         bomNo: activeBomNo,
         bomPartsCount: activeBomParts,
+        // ADR-279 — a Party GRN is only ever on a JWSO line.
+        partyGrnStatus: 'none',
       };
     });
 
@@ -833,6 +836,9 @@ async function getJwPlanningDetail(
   // 6c. Reserved to each line (a JW line books against the same column).
   const reservedByLine = await readReservedByLine(tx, companyId, lineIds);
 
+  // 6d. ADR-279 — the same Customer RM read and rule as the first Planning list.
+  const grnStatusByLine = await partyGrnStatusByLine(tx, companyId, [jwId]);
+
   // 7. Compose lines. JW lines have no BOM master → BOM branches always off.
   const lines: PlanningLine[] = lineRows.map((r) => {
     const linePlans = plansByLine.get(r.line.id) ?? [];
@@ -860,6 +866,7 @@ async function getJwPlanningDetail(
 
     return {
       soLineId: r.line.id,
+      partyGrnStatus: grnStatusByLine.get(r.line.id) ?? 'none',
       itemRevisionId: r.drawingRev ? r.line.itemRevisionId : null,
       drawingRev: r.drawingRev ?? null,
       lineNo: r.line.lineNo,
