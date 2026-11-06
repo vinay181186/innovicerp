@@ -99,7 +99,7 @@ export function lineJcs(line: PlanningLineDocsInput): PlanningDocRef[] {
 
 /** The ADR-253 warning beside a card not yet approved; none once approved. */
 export function rcApprovalLabel(a: RcApproval): string | null {
-  return a === 'pending' || a === 'rejected' ? ROUTE_CARD_APPROVAL_LABEL[a] : null;
+  return a === 'draft' || a === 'pending' || a === 'rejected' ? ROUTE_CARD_APPROVAL_LABEL[a] : null;
 }
 
 /** Plain text — the cell's tooltip and what Sort & Filter reads. */

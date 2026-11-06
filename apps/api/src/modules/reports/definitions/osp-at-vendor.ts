@@ -5,6 +5,7 @@
 // / stock-ageing reports.
 
 import { sql } from 'drizzle-orm';
+import { ospRtvQtySql } from '../../../lib/osp-rtv-qty';
 import { polSql } from '../../../lib/pol';
 import type { RegisteredReport } from '../registry';
 import { dateCell as dateOrNull, likeFilter, REPORT_ROW_CAP } from './report-helpers';
@@ -30,13 +31,16 @@ export const ospAtVendorReport: RegisteredReport = {
       { key: 'item_code', label: 'Item Code', type: 'text' },
       { key: 'item_name', label: 'Item Name', type: 'text' },
       { key: 'vendor_name', label: 'Vendor', type: 'text' },
+      { key: 'sent_qty', label: 'Sent to Vendor', type: 'number' },
+      // ADR-276: Sent − Received + Returned to Vendor − Re-received = At Vendor.
+      { key: 'returned_qty', label: 'Received', type: 'number' },
+      { key: 'returned_to_vendor_qty', label: 'Returned to Vendor', type: 'number' },
+      { key: 're_received_qty', label: 'Re-received', type: 'number' },
+      { key: 'at_vendor_qty', label: 'At Vendor', type: 'number' },
       { key: 'dc_code', label: 'DC No.', type: 'text' },
       { key: 'dc_date', label: 'DC Date', type: 'date' },
       { key: 'op_seq', label: 'Op', type: 'number' },
       { key: 'operation', label: 'Operation', type: 'text' },
-      { key: 'sent_qty', label: 'Sent', type: 'number' },
-      { key: 'returned_qty', label: 'Returned', type: 'number' },
-      { key: 'at_vendor_qty', label: 'At Vendor', type: 'number' },
       { key: 'days_at_vendor', label: 'Days at Vendor', type: 'number' },
       { key: 'bucket_0_7', label: '0-7 Days', type: 'number' },
       { key: 'bucket_8_15', label: '8-15 Days', type: 'number' },
@@ -58,7 +62,8 @@ export const ospAtVendorReport: RegisteredReport = {
     const result = await tx.execute(sql`
       SELECT
         x.so_code, x.so_internal_no, x.client_po_line_no, x.created_on, x.item_code, x.item_name,
-        x.vendor_name, x.dc_code, x.dc_date, x.jc_code, x.op_seq, x.operation, x.sent_qty, x.returned_qty, x.at_vendor_qty,
+        x.vendor_name, x.dc_code, x.dc_date, x.jc_code, x.op_seq, x.operation, x.sent_qty, x.returned_qty,
+        x.returned_to_vendor_qty, x.re_received_qty, x.at_vendor_qty,
         x.days_at_vendor,
         CASE WHEN x.days_at_vendor BETWEEN 0 AND 7   THEN x.at_vendor_qty ELSE 0 END AS bucket_0_7,
         CASE WHEN x.days_at_vendor BETWEEN 8 AND 15  THEN x.at_vendor_qty ELSE 0 END AS bucket_8_15,
@@ -82,6 +87,10 @@ export const ospAtVendorReport: RegisteredReport = {
           (jo.created_at AT TIME ZONE 'Asia/Kolkata')::date::text AS created_on,
           w.sent_qty,
           w.returned_qty,
+          -- One row per op (the DC lateral below is LIMIT 1), so these op-level
+          -- figures appear once, however many DCs the op has.
+          ${ospRtvQtySql('rtv_sent_qty')}                        AS returned_to_vendor_qty,
+          ${ospRtvQtySql('rtv_received_qty')}                    AS re_received_qty,
           w.at_vendor_qty,
           GREATEST(0, CURRENT_DATE - COALESCE(d.dc_date, jo.outsource_sent_date, CURRENT_DATE))::int
                                                                  AS days_at_vendor
@@ -138,6 +147,8 @@ export const ospAtVendorReport: RegisteredReport = {
       operation: String(r['operation'] ?? ''),
       sent_qty: Number(r['sent_qty'] ?? 0),
       returned_qty: Number(r['returned_qty'] ?? 0),
+      returned_to_vendor_qty: Number(r['returned_to_vendor_qty'] ?? 0),
+      re_received_qty: Number(r['re_received_qty'] ?? 0),
       at_vendor_qty: Number(r['at_vendor_qty'] ?? 0),
       days_at_vendor: Number(r['days_at_vendor'] ?? 0),
       bucket_0_7: Number(r['bucket_0_7'] ?? 0),

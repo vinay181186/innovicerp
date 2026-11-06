@@ -17,7 +17,9 @@ import {
   type TaskPriority,
   type TaskRow,
   type TaskStatus,
+  type TaskDayLogReply,
   type TaskType,
+  isDayLogReplyRef,
 } from '@innovic/shared';
 import { and, asc, eq, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { taskHistory, tasks, users } from '../../db/schema';
@@ -106,9 +108,13 @@ export function visibleTasksWhere(companyId: string, user: AuthContext): SQL {
  * unconfigured account (ADR-232/234), and then every write flag is false —
  * every task write runs requireCanWrite first. Write paths call this only
  * after requireCanWrite passed, so they pass `true`.
+ *
+ * ADR-274 — a Day Log reply task: only the person it is for moves or completes
+ * it; nobody edits or reassigns it (its wording and link are fixed); the sender
+ * or an admin may still cancel it.
  */
 export function permsFor(
-  r: Pick<TaskRecord, 'createdBy' | 'assignedTo' | 'assignedBy'>,
+  r: Pick<TaskRecord, 'createdBy' | 'assignedTo' | 'assignedBy' | 'linkedRefType'>,
   user: AuthContext,
   canWrite: boolean,
 ): TaskPermissions {
@@ -116,14 +122,15 @@ export function permsFor(
   const creator = r.createdBy === user.id;
   const assignee = r.assignedTo === user.id;
   const view = canWrite && canViewTask(r, user);
-  const actor = view && (assignee || creator || admin);
+  const reply = isDayLogReplyRef(r.linkedRefType);
+  const actor = view && (assignee || (!reply && (creator || admin)));
   const owner = view && (creator || admin);
   return {
     canUpdateStatus: actor,
     canComplete: actor,
     canCancel: owner,
-    canReassign: owner,
-    canEdit: owner,
+    canReassign: owner && !reply,
+    canEdit: owner && !reply,
     canComment: view,
     canAttach: view,
   };
@@ -154,13 +161,22 @@ export const isoOrNull = (d: Date | null | undefined): string | null =>
 
 // ── Read model ────────────────────────────────────────────────────────────
 
-export function buildLinkedRef(r: TaskRecord): TaskLinkedRef | null {
+/** ADR-274 — a reply task's link per viewer: the person keeps the stored link (My
+ *  Day Log); anyone else opens that person's day. */
+function linkedNavPage(r: TaskRecord, viewerId: string): string {
+  const stored = r.linkedRefNavPage ?? '';
+  if (!isDayLogReplyRef(r.linkedRefType) || viewerId === r.assignedTo) return stored;
+  const date = /[?&]date=(\d{4}-\d{2}-\d{2})/.exec(stored)?.[1];
+  return date ? `/task-board?view=person&user=${r.assignedTo}&date=${date}` : stored;
+}
+
+export function buildLinkedRef(r: TaskRecord, viewerId: string): TaskLinkedRef | null {
   if (!r.linkedRefDisplay && !r.linkedRefType) return null;
   return {
     type: r.linkedRefType ?? '',
     id: r.linkedRefId ?? '',
     display: r.linkedRefDisplay ?? '',
-    navPage: r.linkedRefNavPage ?? '',
+    navPage: linkedNavPage(r, viewerId),
   };
 }
 
@@ -172,6 +188,8 @@ export interface RowContext {
   commentCounts: Map<string, number>;
   /** lib/access canWrite(user), read before the transaction. */
   canWrite: boolean;
+  /** ADR-274 — day-log-replies.ts loadDayLogReplies over the same rows. */
+  dayLogReplies?: Map<string, TaskDayLogReply[]>;
 }
 
 const asTaskType = (t: string): TaskType => (t === 'personal' ? 'personal' : 'assigned');
@@ -205,7 +223,8 @@ export function rowToTask(r: TaskRecord, ctx: RowContext): TaskRow {
     createdDate: r.createdAt.toISOString().slice(0, 10),
     createdAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString(),
-    linkedRef: buildLinkedRef(r),
+    linkedRef: buildLinkedRef(r, ctx.user.id),
+    dayLogReplies: isDayLogReplyRef(r.linkedRefType) ? (ctx.dayLogReplies?.get(r.id) ?? []) : null,
     isUnread: isUnreadRow(r, ctx.user.id),
     attachmentCount: ctx.attachmentCounts.get(r.id) ?? 0,
     commentCount: ctx.commentCounts.get(r.id) ?? 0,

@@ -148,7 +148,7 @@ export function OspAtVendorRegister({ tabs }: { tabs?: React.ReactNode }): React
               page={page}
               pageSize={LIST_PAGE_SIZE}
               onPage={setPage}
-              summary={`Total Sent ${data.summary.sentQty}`}
+              summary={`Total Sent to Vendor ${data.summary.sentQty}`}
               hint="Order Qty = Accepted + In QC + At Vendor + Not Sent."
             />
           ) : null}

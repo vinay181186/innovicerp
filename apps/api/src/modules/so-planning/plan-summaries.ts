@@ -96,11 +96,13 @@ export function routeCardPlanFields(r: {
   };
 }
 
-/** The contract's three approval states; anything else (no card) is null. */
+/** The contract's approval states; anything else (no card) is null. */
 export function toRouteCardApprovalStatus(
   raw: string | null | undefined,
 ): PlanningPlanSummary['routeCardApprovalStatus'] {
-  return raw === 'pending' || raw === 'approved' || raw === 'rejected' ? raw : null;
+  return raw === 'draft' || raw === 'pending' || raw === 'approved' || raw === 'rejected'
+    ? raw
+    : null;
 }
 
 // ADR-216 — WHICH item a plan is for. A plan raised from the BOM modal sits on

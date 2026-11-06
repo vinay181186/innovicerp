@@ -14,7 +14,7 @@
 // 0024_phase8_plans.sql. Both layers must agree; the service enforces friendly
 // errors, the DB catches anything that slips through.
 
-import { and, asc, count, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import type {
   CreatePlanInput,
   CreatePlansBatchInput,
@@ -2038,6 +2038,8 @@ export async function getDefaultRouteOpsForItem(
           eq(routeCards.companyId, companyId),
           eq(routeCards.itemId, itemId),
           isNull(routeCards.deletedAt),
+          // ADR-277 — a Draft stays with its creator, and its Rev 0 still changes.
+          ne(routeCards.approvalStatus, 'draft'),
           itemRevisionId
             ? sql`(${routeCards.itemRevisionId} = ${itemRevisionId}::uuid OR ${routeCards.itemRevisionId} IS NULL)`
             : undefined,

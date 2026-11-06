@@ -2,7 +2,7 @@
 // workflows (legacy/InnovicERP_v82_12_3.html L10078) plus the revision
 // audit + one-active-RC-per-item guard that our schema enforces in DB.
 
-import { eq, like } from 'drizzle-orm';
+import { and, eq, like, ne } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
 import { activityLog, items, machines, routeCards, users, vendors } from '../../db/schema';
@@ -164,6 +164,57 @@ describe('route-card service — pure helpers', () => {
 });
 
 describe('route-card service — CRUD', () => {
+  it('names the creator on list + detail, and the last writer on detail (ADR-275)', async () => {
+    const created = await service.createRouteCard(
+      {
+        itemId: testItemId1,
+        ops: [
+          {
+            machineId: testMachineId,
+            operation: 'name check',
+            opType: 'process',
+            cycleTimeMin: 1,
+            qcRequired: false,
+          },
+        ],
+      },
+      admin,
+    );
+    const adminName = created.createdByName;
+    expect(adminName).toBeTruthy();
+    expect(created.updatedByName).toBe(adminName);
+
+    const others = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(and(eq(users.companyId, admin.companyId!), ne(users.id, admin.id)))
+      .limit(1);
+    const other = others[0];
+    if (!other) throw new Error('Needs a second user in the company');
+    await db.update(routeCards).set({ updatedBy: other.id }).where(eq(routeCards.id, created.id));
+
+    const after = await service.getRouteCard(created.id, admin);
+    expect(after.createdByName).toBe(adminName);
+    expect(after.updatedByName).toBeTruthy();
+    expect(after.updatedByName).not.toBe(adminName);
+
+    // Created By stays the creator on the list, and its sort runs in both the
+    // page query and the count query.
+    const list = await service.listRouteCards(
+      {
+        itemId: testItemId1,
+        sf: JSON.stringify({ sort: { field: 'createdBy', dir: 'asc' } }),
+        limit: 5,
+        offset: 0,
+      },
+      admin,
+    );
+    expect(list.items.map((r) => r.createdByName)).toEqual([adminName]);
+
+    await db.delete(activityLog).where(eq(activityLog.refId, created.code));
+    await db.delete(routeCards).where(eq(routeCards.id, created.id));
+  });
+
   it('createRouteCard auto-generates IN-RC-NNNNN when code omitted', async () => {
     const detail = await service.createRouteCard(
       {
@@ -338,7 +389,7 @@ describe('route-card service — CRUD', () => {
     );
   });
 
-  it('updateRouteCard: Planning L3 with role operator passes the gate; L2 / auditor refused', async () => {
+  it('updateRouteCard: Planning L3 with role operator passes the gate; auditor refused; L2 (Entry) reaches the card', async () => {
     const UNKNOWN_ID = '00000000-0000-0000-0000-000000000000';
     const input = {
       code: `${TEST_PREFIX}GATE-UPD`,
@@ -359,8 +410,10 @@ describe('route-card service — CRUD', () => {
     await expect(service.updateRouteCard(UNKNOWN_ID, input, l3)).rejects.not.toBeInstanceOf(
       AuthorizationError,
     );
+    // ADR-277 — Entry may edit the user's own Draft / Rejected card, so L2 is
+    // decided on the card itself (approval.test.ts); no such card here.
     await expect(service.updateRouteCard(UNKNOWN_ID, input, l2)).rejects.toBeInstanceOf(
-      AuthorizationError,
+      NotFoundError,
     );
     await expect(service.updateRouteCard(UNKNOWN_ID, input, auditor)).rejects.toBeInstanceOf(
       AuthorizationError,
@@ -492,6 +545,12 @@ describe('route-card service — CRUD', () => {
       admin,
     );
     expect(created.currentRevision).toBe(0);
+    // ADR-277 — a Pending card is locked and a Draft keeps its Rev; bumping is
+    // what an approved card does.
+    await db
+      .update(routeCards)
+      .set({ approvalStatus: 'approved' })
+      .where(eq(routeCards.id, created.id));
 
     const updated = await service.updateRouteCard(
       created.id,
@@ -555,6 +614,10 @@ describe('route-card service — CRUD', () => {
       },
       admin,
     );
+    await db
+      .update(routeCards)
+      .set({ approvalStatus: 'approved' })
+      .where(eq(routeCards.id, created.id));
     const customNote = 'Updated per ECO-456';
     const updated = await service.updateRouteCard(
       created.id,
@@ -628,6 +691,7 @@ describe('route-card service — CRUD', () => {
       {
         code: `${TEST_PREFIX}MOVE-RC-B`,
         itemId: itB[0]!.id,
+        submitForApproval: false, // a Draft: editable, so the move check is reached
         ops: [
           {
             machineId: testMachineId,
@@ -743,6 +807,7 @@ describe('route-card service — CRUD', () => {
       {
         code: `${TEST_PREFIX}DEL-OK-1`,
         itemId: it[0]!.id,
+        submitForApproval: false, // a Pending card cannot be deleted (ADR-277)
         ops: [
           {
             machineId: testMachineId,

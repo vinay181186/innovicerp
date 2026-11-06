@@ -21,6 +21,7 @@ import { useWaitingApprovals } from '../api';
 import { approvalKey, useDecideApproval } from '../use-decide-approval';
 import '../approvals.css';
 import { ApprovalDocLink } from './approval-doc-link';
+import { ROUTE_CARD_RETURN_ACTION } from '@innovic/shared';
 import { ApprovalRejectDialog } from './approval-reject-dialog';
 import { ApprovalRowActions } from './approval-row-actions';
 import { ALL_TYPES, ApprovalTypeSelect, effectiveType } from './approval-type-select';
@@ -236,6 +237,7 @@ export function ApprovalsList({
                   busy={actions.busy.has(approvalKey(r))}
                   onApprove={() => approve([r])}
                   onReject={() => setRejecting(r)}
+                  rejectLabel={r.kind === 'rc' ? ROUTE_CARD_RETURN_ACTION : undefined}
                 />
               )
             }
@@ -245,8 +247,15 @@ export function ApprovalsList({
 
       {rejecting ? (
         <ApprovalRejectDialog
-          title={`Reject — ${rejecting.docCode}`}
-          prompt="Why is this rejected?"
+          {...(rejecting.kind === 'rc'
+            ? {
+                title: `${ROUTE_CARD_RETURN_ACTION} — ${rejecting.docCode}`,
+                prompt: 'Return Reason',
+                confirmLabel: ROUTE_CARD_RETURN_ACTION,
+                placeholder:
+                  'Shown to the creator. Saving the corrected card sends it for approval again.',
+              }
+            : { title: `Reject — ${rejecting.docCode}`, prompt: 'Why is this rejected?' })}
           onCancel={() => setRejecting(null)}
           onReject={(reason) => {
             const r = rejecting;

@@ -28,7 +28,7 @@ import type {
   TaskStatus,
   TaskView,
 } from '@innovic/shared';
-import { DAY_LOG_VIEWS, TASK_VIEWS, TASK_VIEW_LABELS } from '@innovic/shared';
+import { DAY_LOG_VIEWS, TASK_VIEWS, TASK_VIEW_LABELS, isDayLogReplyRef } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -258,11 +258,12 @@ function TaskBoardPage(): React.JSX.Element {
 
   const onRowAction = (action: RowAction, task: TaskRow): void => {
     if (action !== 'view') return setModal({ kind: 'row', action, task });
-    // An Inbox task from a reply on a blank Day Log date opens that date, not the
-    // pop-up. Its row carries the link (linkedRef). Only the person it was sent
-    // to: the sender's Outbox / All Tasks keep the pop-up.
+    // ADR-274: an Inbox task from a Day Log reply, on an entry or on a blank date,
+    // opens that date (and the entry), not the pop-up. Its row carries the link
+    // (linkedRef). Only the person it was sent to: the sender's Outbox / All
+    // Tasks keep the pop-up.
     const ref = task.linkedRef;
-    if (view === 'inbox' && ref?.type === 'day_log_date' && canOpen(ref.navPage)) {
+    if (view === 'inbox' && ref && isDayLogReplyRef(ref.type) && canOpen(ref.navPage)) {
       void navigate(hrefLink(ref.navPage) as never);
       return;
     }

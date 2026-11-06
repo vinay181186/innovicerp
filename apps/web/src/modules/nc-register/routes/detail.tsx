@@ -220,9 +220,8 @@ function NcRegisterDetailPage(): React.JSX.Element {
     .sort((a, b) => a.opSeq - b.opSeq)
     .map((o) => ({ opSeq: o.opSeq, operation: o.operation }));
 
-  // JC code for the CAPA snapshot — the NC read shape only carries jobCardId,
-  // so resolve the human code from the loaded JC ops (jobCardCode is joined).
-  const jcCode = (jcOps ?? [])[0]?.jobCardCode ?? null;
+  // The job card's number, read live by the server (ADR-276).
+  const jcCode = detail.jcCode;
 
   const siblings = (jcNcs?.items ?? []).filter((n) => n.splitFromNcId === detail.id);
 
@@ -234,7 +233,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
         type: 'Corrective',
         ncRefs: [detail.code],
         ...(jcCode ? { jcNo: jcCode } : {}),
-        ...(detail.soCodeText ? { soNo: detail.soCodeText } : {}),
+        ...(detail.orderCode ? { soNo: detail.orderCode } : {}),
         ...(detail.itemCodeText ? { itemCode: detail.itemCodeText } : {}),
         ...(operation ? { operation } : {}),
         problem: detail.reason ?? NC_REASON_CATEGORY_LABELS[detail.reasonCategory],
@@ -659,9 +658,10 @@ function DetailClusters(props: {
         <ClusterFact num label="JC No." empty={!jcCode} value={jcCode ?? '—'} />
         <ClusterFact
           num
-          label="SO No."
-          empty={!detail.soCodeText}
-          value={detail.soCodeText ? soNoWithInternal(detail.soCodeText, detail.soInternalNo) : '—'}
+          label="SO No. / JWSO No."
+          empty={!detail.orderCode}
+          // soInternalNo is read off the SO only, so a JWSO shows its number alone.
+          value={detail.orderCode ? soNoWithInternal(detail.orderCode, detail.soInternalNo) : '—'}
         />
         {/* POL — the CUSTOMER's own PO line number off the SO line behind this
             NC's job card. Not our SO line number; the two rarely match. */}

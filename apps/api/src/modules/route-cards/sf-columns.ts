@@ -4,6 +4,7 @@
 
 import { sql } from 'drizzle-orm';
 
+import { createdByNameSql } from '../../lib/created-by-sql';
 import type { SfColumnMap } from '../../lib/list-query';
 
 export const RC_SF_COLUMNS: SfColumnMap = {
@@ -19,7 +20,14 @@ export const RC_SF_COLUMNS: SfColumnMap = {
   },
   opCount: { sql: sql`COALESCE(op_agg.op_count, 0)`, type: 'num' },
   currentRevision: { sql: sql`rc.current_revision`, type: 'num' },
-  updatedOn: { sql: sql`(rc.updated_at AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
+  // The screen shows Last Updated with its time: sort by the exact moment, filter by IST day.
+  updatedOn: {
+    sql: sql`(rc.updated_at AT TIME ZONE 'Asia/Kolkata')::date`,
+    sortSql: sql`rc.updated_at`,
+    type: 'date',
+  },
+  // Created By: who entered the card (same row as rc.created_at).
+  createdBy: { sql: createdByNameSql(sql`rc.created_by`), type: 'text' },
   // ADR-253 — RC Status: pending / approved / rejected (stored values; the
   // screen shows ROUTE_CARD_APPROVAL_LABEL).
   approvalStatus: { sql: sql`rc.approval_status`, type: 'list' },

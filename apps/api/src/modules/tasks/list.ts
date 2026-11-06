@@ -25,6 +25,7 @@ import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { canWrite } from '../../lib/access';
 import { requireAdminRole } from '../../lib/auth';
 import { likeEscape, readSf, sfOrderBy, sfWhere, type SfColumnMap } from '../../lib/list-query';
+import { loadDayLogReplies } from './day-log-replies';
 import {
   OPEN_STATUSES,
   type RowContext,
@@ -203,7 +204,8 @@ export async function listTasks(
       companyId,
       rows.map((r) => r.id),
     );
-    const ctx: RowContext = { names, user, today, ...perTask, canWrite: writer };
+    const dayLogReplies = await loadDayLogReplies(tx, companyId, rows);
+    const ctx: RowContext = { names, user, today, ...perTask, canWrite: writer, dayLogReplies };
     const mapped: TaskRow[] = rows.map((r) => rowToTask(r, ctx));
 
     return {

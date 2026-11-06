@@ -30,7 +30,7 @@ export const STORED_BADGE: Record<PlanStatus, string> = {
 export const DERIVED_LABEL: Record<PlanDerivedStatus, string> = {
   route_card_pending: 'RC Pending',
   // ADR-253 — the item's Route Card exists but is not approved yet.
-  route_card_approval_pending: 'RC Awaiting Approval',
+  route_card_approval_pending: 'RC Not Approved',
   gen_production_order: 'RC Created',
   in_production: 'In Production',
   // Owner 2026-11-03: an order is open AND some plan qty is still Pending.

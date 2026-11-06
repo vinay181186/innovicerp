@@ -78,6 +78,9 @@ export interface NoteRule {
    *  A staged edit's APPROVE / REJECT (document-edits) is written on the same
    *  entity; this keeps it out — it has its own decision note. */
   changesHas?: string;
+  /** Only events whose `changes` do NOT contain this JSON (ADR-277: an old row
+   *  with no `changes` still passes). */
+  changesLacks?: string;
   /** Extra condition on the activity row `a` (company `cid`). */
   when?: (cid: string) => SQL;
   /** Owner rule 2 — delivered only to the document's raiser (see RaiserOf). */
@@ -96,6 +99,12 @@ export interface NoteRule {
  *  (route-cards/service.ts rcStatusChange('rejected', 'pending')). */
 export const RC_TO_PENDING_CHANGE = JSON.stringify([
   { field: 'approvalStatus', after: ROUTE_CARD_APPROVAL_LABEL.pending },
+]);
+
+/** ADR-277 — a Route Card CREATE / RESTORE row that left it a Draft (not on any
+ *  approver's list, so no bell). rcStatusChange(null, 'draft'). */
+const RC_TO_DRAFT_CHANGE = JSON.stringify([
+  { field: 'approvalStatus', after: ROUTE_CARD_APPROVAL_LABEL.draft },
 ]);
 
 /** approvePurchaseOrder / rejectPurchaseOrder: PO Status from Draft (the same
@@ -147,15 +156,16 @@ export const NOTE_RULES: readonly NoteRule[] = [
     verb: 'created',
     tail: ' — waiting for your approval',
     tone: 'due',
+    changesLacks: RC_TO_DRAFT_CHANGE,
   },
   {
-    // ADR-253 — a Rejected card corrected and saved again is back to Pending
-    // Approval: the approvers are told again.
+    // ADR-253 / ADR-277 — a Draft or Rejected card sent for approval: the
+    // approvers are told.
     entity: 'RouteCard',
     action: 'EDIT',
     right: ['routecard_create', 'approve'],
     open: 'approval_rc',
-    verb: 'sent again',
+    verb: 'sent for approval',
     tail: ' — waiting for your approval',
     tone: 'due',
     toPending: true,
@@ -169,6 +179,7 @@ export const NOTE_RULES: readonly NoteRule[] = [
     verb: 'restored',
     tail: ' — waiting for your approval',
     tone: 'due',
+    changesLacks: RC_TO_DRAFT_CHANGE,
   },
   {
     // Kept FIRST of the PO APPROVE rules (noteRuleFor answers this one).
@@ -339,7 +350,7 @@ export const NOTE_RULES: readonly NoteRule[] = [
     action: 'REJECT',
     right: ['routecard_create', 'view'],
     open: 'raiser_rc',
-    verb: 'rejected',
+    verb: 'returned',
     tail: ' — your Route Card',
     doneTail: ' — your Route Card',
     tone: 'late',
@@ -428,6 +439,7 @@ export function ruleCond(r: NoteRule, cid: string, me: string, seeAll = false): 
     parts.push(sql`COALESCE(a.changes @> ${RC_TO_PENDING_CHANGE}::jsonb, false)`);
   }
   if (r.changesHas) parts.push(sql`COALESCE(a.changes @> ${r.changesHas}::jsonb, false)`);
+  if (r.changesLacks) parts.push(sql`NOT COALESCE(a.changes @> ${r.changesLacks}::jsonb, false)`);
   if (r.when) parts.push(r.when(cid));
   if (r.raiser) {
     const owner = sql`rd.${sql.raw(r.raiser.owner)} = ${me}::uuid`;

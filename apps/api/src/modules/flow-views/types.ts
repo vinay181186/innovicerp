@@ -54,7 +54,7 @@ export interface OpFlowRow {
   returnedToVendorQty: number;
   /** Of those, pieces the vendor sent back again (NC rtv_received_qty). */
   reReceivedQty: number;
-  /** Pieces still with the vendor now (v_jc_op_status.at_vendor_qty). */
+  /** Pieces still with the vendor now (lib/at-vendor.ts). */
   atVendorQty: number;
   /** ADR-212 reconciled figures (one row per op; see flow-views getOpFlow). */
   /** Made (machine op) · inspected (QC op) · received back incl. re-sent lots (outsource). */
@@ -73,9 +73,9 @@ export interface OpFlowRow {
   pendingQty: number;
   /** Back from the vendor, waiting for incoming QC. */
   inQcQty: number;
-  /** Sent to the vendor incl. lots re-sent for rework (return to vendor). */
-  vendorSentQty: number;
-  /** Received back from the vendor incl. re-received lots. */
+  /** ADR-276 — Received: first lots back from the vendor (GRNs with nc_id NULL).
+   *  Rework lots are reReceivedQty. Sent to Vendor − Received + Returned to Vendor
+   *  − Re-received = At Vendor. */
   vendorReceivedQty: number;
   /** Input − (Accepted + Rejected + Deviated open + At vendor + In QC + Pending). 0 = ✓. */
   unaccountedQty: number;
@@ -235,7 +235,7 @@ export interface LevelRouteCard {
   id: string;
   code: string;
   currentRevision: number;
-  approvalStatus: 'pending' | 'approved' | 'rejected';
+  approvalStatus: 'draft' | 'pending' | 'approved' | 'rejected';
 }
 
 /** A customer dispatch / tax invoice that carries this SO line. */

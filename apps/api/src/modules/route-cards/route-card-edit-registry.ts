@@ -49,6 +49,7 @@ import {
   overwriteRouteCardFromSource,
   PLAN_TYPE_LABEL,
   rmHalvesToFill,
+  assertRouteCardEditable,
   updateRouteCardTx,
 } from './service';
 
@@ -175,10 +176,10 @@ export const routeCardEditRegistryEntry: DocEditRegistryEntry = {
       },
       updatedAt: rc.updatedAt,
       docCode: rc.code,
-      // ADR-253 — only an APPROVED card is live. A Pending Approval / Rejected
-      // card is not in use yet, so its edits are never staged: they fall
-      // through to the direct write in updateRouteCardOrStage (the edit tick
-      // still applies there). A gone card returned null above.
+      // ADR-253 — only an APPROVED card is live. A Draft / Pending Approval /
+      // Rejected card is not in use yet, so its edits are never staged: they
+      // fall through to the direct write in updateRouteCardOrStage (rights and
+      // the ADR-277 lock apply there). A gone card returned null above.
       isLive: isRouteCardUsable(rc.approvalStatus),
     };
   },
@@ -327,6 +328,9 @@ export const routeCardEditRegistryEntry: DocEditRegistryEntry = {
         .limit(1)
     )[0];
     if (!cur) throw new NotFoundError('Route Card not found. It may have been moved to Trash.');
+    // ADR-277 — also covers the source-document path below, which skips
+    // updateRouteCardTx (a staged card since trashed and restored is locked).
+    await assertRouteCardEditable(cur, user);
 
     // A routing change a Job Card / plan proposed is written by THE SAME path
     // that writes it with the gate off (overwriteRouteCardFromSource): same
@@ -402,6 +406,8 @@ export const routeCardEditRegistryEntry: DocEditRegistryEntry = {
       ...rm,
       ops,
       revisionNote: f.revisionNote,
+      // ADR-277 — only the creator sends a card for approval, never a replay.
+      submitForApproval: false,
       // The engine resolved per-box drift under this tx's lock, so the writer's
       // whole-row updated_at check must see the CURRENT token (a no-op match).
       expectedUpdatedAt: expectedUpdatedAt ?? undefined,

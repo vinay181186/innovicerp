@@ -10,16 +10,21 @@
 // Data, permissions, print and delete are unchanged.
 
 import { Icon } from '@/ui/core';
-import type { RouteCardDetail } from '@innovic/shared';
-import { itemRevLabel } from '@innovic/shared';
+import {
+  ROUTE_CARD_LOCKED_MESSAGE,
+  canEditRouteCard,
+  isRouteCardLocked,
+  itemRevLabel,
+} from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { useHistoryTab } from '@/components/shared/document-history';
 import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { fmtDate } from '@/lib/date';
+import { fmtDateTime } from '@/lib/date';
 import { runPrint } from '@/lib/print/preview-host';
+import { useSession } from '@/lib/session';
 import { DrawingStatusLink, ItemRevLink } from '@/modules/item-revisions/components/item-rev-link';
 import { usePendingEditForDoc } from '@/modules/document-edits/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -31,9 +36,11 @@ import { TabStrip } from '@/ui/navigation';
 import { useItem } from '../../items/api';
 import { useMyCompany } from '../../settings/api';
 import { useDeleteRouteCard, useRouteCard } from '../api';
+import { PlanTypeFact } from '../components/plan-type-fact';
 import {
   RcApprovalActions,
   RcApprovalBanner,
+  RcSubmitAction,
   rcApprovalLine,
 } from '../components/rc-approval-actions';
 import { RcApprovalBadge } from '../components/rc-approval-badge';
@@ -54,6 +61,7 @@ function RouteCardDetailPage(): React.JSX.Element {
   const navigate = useNavigate();
   const { data: detail, isLoading, isError, error } = useRouteCard(id);
   const { data: eff } = useMyAccess();
+  const { data: me } = useSession();
   const perms = effectiveFormPerms(eff, 'routecard_create');
   const { data: item } = useItem(detail?.itemId);
   const { data: company } = useMyCompany();
@@ -127,6 +135,8 @@ function RouteCardDetailPage(): React.JSX.Element {
   const inHouse = detail.ops.filter((o) => o.opType === 'process').length;
   const osp = detail.ops.filter((o) => o.opType === 'outsource').length;
   const qc = detail.ops.filter((o) => o.opType === 'qc').length;
+  // ADR-277 — sent for approval: no edit and no delete until the approver decides.
+  const locked = isRouteCardLocked(detail.approvalStatus);
 
   return (
     <div>
@@ -146,6 +156,8 @@ function RouteCardDetailPage(): React.JSX.Element {
         }
         actions={
           <>
+            {/* ADR-277 — a saved Draft / Rejected card goes for approval from here too. */}
+            <RcSubmitAction detail={detail} userId={me?.id} rights={perms} />
             {/* ADR-253 — Approve / Reject a pending card (Approve tick only). */}
             <RcApprovalActions detail={detail} canApprove={perms.approve} />
             <ActionMenu
@@ -158,8 +170,8 @@ function RouteCardDetailPage(): React.JSX.Element {
                   danger: true,
                   // ADR-232: deleting any record is Super Admin only.
                   hidden: !canDeleteRecords(eff),
-                  disabled: del.isPending,
-                  title: 'Move this Route Card to Trash',
+                  disabled: del.isPending || locked,
+                  title: locked ? ROUTE_CARD_LOCKED_MESSAGE : 'Move this Route Card to Trash',
                   onClick: () => {
                     setDeleteReason('');
                     setConfirmDelete(true);
@@ -167,7 +179,7 @@ function RouteCardDetailPage(): React.JSX.Element {
                 },
               ]}
             />
-            {perms.edit && (
+            {canEditRouteCard(detail, me?.id, perms) && (
               <Link
                 to="/route-cards/$id/edit"
                 params={{ id: detail.id }}
@@ -218,8 +230,13 @@ function RouteCardDetailPage(): React.JSX.Element {
           <Cluster name="Route">
             <PlanTypeFact planType={detail.planType} />
             <ClusterFact
-              span={2}
               label="Operations"
+              // One cell: a narrow screen can cut the split, so hover reads it.
+              title={
+                detail.ops.length > 0
+                  ? `${detail.ops.length} · ${inHouse} in-house · ${osp} OSP · ${qc} QC`
+                  : undefined
+              }
               value={
                 <>
                   <span className="mono fw-700">{detail.ops.length}</span>
@@ -238,7 +255,13 @@ function RouteCardDetailPage(): React.JSX.Element {
                 </>
               }
             />
-            <ClusterFact num label="Last Updated" value={fmtDate(detail.updatedAt)} />
+            <ClusterFact
+              label="Last Updated By"
+              empty={!detail.updatedByName}
+              title={detail.updatedByName ?? undefined}
+              value={detail.updatedByName ?? '—'}
+            />
+            <ClusterFact num label="Last Updated" value={fmtDateTime(detail.updatedAt)} />
           </Cluster>
 
           {/* WHAT the part is cut from — the same four cells, in the same
@@ -275,7 +298,7 @@ function RouteCardDetailPage(): React.JSX.Element {
           </Cluster>
 
           {/* ADR-253 — who decided this card, and when. */}
-          {detail.approvalStatus !== 'pending' ? (
+          {detail.approvalStatus === 'approved' || detail.approvalStatus === 'rejected' ? (
             <Cluster name="Approval">
               <ClusterFact span={4} wrap label="RC Status" value={rcApprovalLine(detail)} />
             </Cluster>
@@ -354,48 +377,6 @@ function RouteCardDetailPage(): React.JSX.Element {
           void navigate({ to: '/route-cards' });
         }}
       />
-    </div>
-  );
-}
-
-/** Plan Type is how the item is normally made — the same choice SO Planning
- *  asks per plan, so it reads in Planning's colours.
- *
- *  Built from ClusterFact's own classes rather than ClusterFact itself for ONE
- *  reason: an old Buy card carries a note under the value, and ClusterFact has
- *  no slot that can wrap — its value is one clipped line and its `after` chip
- *  never shrinks, so a 50-character note there would spill out of the cell.
- *  The third child takes the full cell width (the cell is `flex-wrap`) and
- *  wraps inside it. */
-function PlanTypeFact({ planType }: { planType: RouteCardDetail['planType'] }): React.JSX.Element {
-  const color =
-    planType === 'full_outsource'
-      ? 'var(--purple)'
-      : planType === 'direct_purchase'
-        ? 'var(--green)'
-        : 'var(--cyan)';
-  const label =
-    planType === 'full_outsource'
-      ? '📦 Full Outsource'
-      : planType === 'direct_purchase'
-        ? '🛒 Buy'
-        : '🏭 Manufacture';
-  return (
-    <div className="cl-fact">
-      <span className="cl-fact-k">Plan Type</span>
-      <span className="cl-fact-v" style={{ color, fontWeight: 700 }}>
-        {label}
-      </span>
-      {planType === 'direct_purchase' ? (
-        // ADR-171: the tile is gone from the form; the value survives on old
-        // cards so the user knows where the flag now lives.
-        <span
-          className="text3"
-          style={{ flexBasis: '100%', fontSize: 'var(--fs-xs)', textAlign: 'right' }}
-        >
-          Old setting — set the item&apos;s Source to Buy instead.
-        </span>
-      ) : null}
     </div>
   );
 }

@@ -111,7 +111,7 @@ export const PLAN_RC_PENDING_CHECK: CheckDef = {
   label: 'Plan available, RC pending',
   query: planRcPendingSql,
   statusText: (r) =>
-    r.kind === RC_WAITING ? 'RC waiting approval' : r.kind === RC_MISSING ? 'No Route Card' : null,
+    r.kind === RC_WAITING ? 'RC Not Approved' : r.kind === RC_MISSING ? 'No Route Card' : null,
 };
 
 const jcHref = (r: RawRow): string => docNavPage('job-card', r.id);

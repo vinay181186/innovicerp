@@ -255,6 +255,50 @@ export function useDisposeNcRegister(id: string) {
   });
 }
 
+/** One NC the server refused in a bulk Set Return to Vendor, in its own words. */
+export interface BulkRtvFailure {
+  id: string;
+  code: string;
+  message: string;
+}
+
+/** Set Return to Vendor on several NCs: the same POST as a single disposition,
+ *  one NC at a time, in order. Sends the Open Qty the user confirmed, so a quantity
+ *  changed since the tick is refused or split, never disposed unseen. No Sent on
+ *  DC No. (ADR-217: asked, never guessed). A refusal stays on that NC and
+ *  the next one still runs; what saved stays saved. Never rejects, so the cascade
+ *  runs once at the end even if every NC was refused (the list is then stale). */
+export function useBulkReturnToVendor() {
+  const invalidate = useInvalidateNcCascadeMany();
+  return useMutation<
+    { saved: Array<[string, NcRegister]>; failed: BulkRtvFailure[] },
+    Error,
+    ReadonlyArray<{ id: string; code: string; openQty: number }>
+  >({
+    mutationFn: async (targets) => {
+      const saved: Array<[string, NcRegister]> = [];
+      const failed: BulkRtvFailure[] = [];
+      for (const { id, code, openQty } of targets) {
+        try {
+          const resp = await apiFetch<DisposeNcResult>(`/nc-register/${id}/dispose`, {
+            method: 'POST',
+            json: { action: 'return_to_vendor', qty: openQty } satisfies DisposeNcInput,
+          });
+          saved.push([id, resp.nc]);
+        } catch (e) {
+          failed.push({
+            id,
+            code,
+            message: e instanceof Error ? e.message : 'Could not set this NC.',
+          });
+        }
+      }
+      return { saved, failed };
+    },
+    onSuccess: ({ saved }) => invalidate(saved),
+  });
+}
+
 /** Return-to-vendor challan raised straight from the NC (design §5). */
 export function useCreateNcDc(id: string, saveKey?: SaveKey) {
   const invalidate = useInvalidateNcCascade(id);

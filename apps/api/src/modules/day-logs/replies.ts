@@ -3,12 +3,21 @@
 // / role admin — access.ts isSuper) may send or edit one; an Auditor never
 // (assertCanWrite); never on one's own entry. Editing resets seen_at, so the
 // owner is told again (Home Notifications, dashboard/personal/day-log-replies.ts).
+// ADR-274: a reply also raises the person's task, one open per entry per sender,
+// and an edit makes it read New (tasks/day-log-task.ts). The text is not copied.
 //
-// §20: both run under the day header lock of the entry (lock.ts); an edit is
-// conditional on the reply's updatedAt as loaded (§20.4); each write bumps the
-// day header in the same statement so every screen refreshes (Realtime).
+// §20: both run under the day header lock of the entry (lock.ts), the task in the
+// same transaction after it; an edit is conditional on the reply's updatedAt as
+// loaded (§20.4); each write bumps the day header in the same statement so every
+// screen refreshes (Realtime). sent_at is clock_timestamp(), read under that lock,
+// so replies are in lock order and each falls in one task's life (day-log-replies.ts).
 
-import type { DayLogAdminReply, EditDayLogReplyInput, SendDayLogReplyInput } from '@innovic/shared';
+import {
+  DAY_LOG_ENTRY_REF,
+  type DayLogAdminReply,
+  type EditDayLogReplyInput,
+  type SendDayLogReplyInput,
+} from '@innovic/shared';
 import { type SQL, sql } from 'drizzle-orm';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import {
@@ -17,6 +26,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { ensureEntryReplyTask, markReplyTaskNew } from '../tasks/day-log-task';
 import { type DayUser, assertCanWrite, resolveAccess, viewerOf } from './access';
 import { type DayHeader, iso, ts } from './day';
 import { type Locked, dayTx, lockAnyEntryDay, lockReplyDay, requireHeader } from './lock';
@@ -91,18 +101,24 @@ export async function sendReply(
   if (!body) throw new ValidationError('Write the reply');
   return dayTx(async (tx) => {
     const locked = await lockAnyEntryDay(tx, user, companyId, entryId);
-    const { h } = await guardReplier(user, locked);
+    const { h, target } = await guardReplier(user, locked);
     const reply = await writeReply(
       tx,
       h,
       user,
       sql`
       INSERT INTO public.daily_report_line_replies
-        (company_id, line_id, body, created_by, updated_by)
-      VALUES (${companyId}::uuid, ${entryId}::uuid, ${body}, ${user.id}::uuid, ${user.id}::uuid)
+        (company_id, line_id, body, sent_at, created_by, updated_by)
+      VALUES (${companyId}::uuid, ${entryId}::uuid, ${body}, clock_timestamp(),
+              ${user.id}::uuid, ${user.id}::uuid)
       RETURNING ${RETURN_COLS}`,
     );
     if (!reply) throw new ConflictError('The reply could not be saved — reload and try again');
+    await ensureEntryReplyTask(
+      tx,
+      { companyId, entryId, assigneeId: target.id, date: h.date },
+      user,
+    );
     return reply;
   });
 }
@@ -163,6 +179,26 @@ export async function editReply(
   return dayTx(async (tx) => {
     const locked = await lockReplyDay(tx, user, companyId, replyId);
     const { h } = await guardReplier(user, locked);
-    return editReplyRow(tx, h, user, companyId, 'daily_report_line_replies', replyId, input);
+    const reply = await editReplyRow(
+      tx,
+      h,
+      user,
+      companyId,
+      'daily_report_line_replies',
+      replyId,
+      input,
+    );
+    const [line] = (await tx.execute(sql`
+      SELECT line_id::text AS line_id FROM public.daily_report_line_replies
+      WHERE id = ${replyId}::uuid AND company_id = ${companyId}::uuid
+    `)) as unknown as Array<{ line_id: string }>;
+    if (line) {
+      await markReplyTaskNew(
+        tx,
+        { companyId, refType: DAY_LOG_ENTRY_REF, refId: line.line_id },
+        user,
+      );
+    }
+    return reply;
   });
 }

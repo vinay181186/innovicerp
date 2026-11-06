@@ -2,7 +2,7 @@
 // 2026-11-05). The day has no line to hang a reply on, so it hangs on the day
 // header (daily_report_day_replies, 0239); a reply on a saved entry stays in
 // replies.ts. Who may send, edit: as replies.ts (guardReplier). The owner gets a
-// task (tasks/day-log-task.ts), closed when the day's entries are saved.
+// task per sender (tasks/day-log-task.ts), closed when the day's entries are saved.
 //
 // §20:
 //   - One writer of a day reply: this file, through replies.ts writeReply (the
@@ -12,9 +12,11 @@
 //     lock, so a save and a reply on one day cannot cross: the loser of the
 //     lock sees the other's result (reply → 409, or the entry closes the task).
 //   - Edit: WHERE updated_at = what was loaded (replies.ts editReplyRow, §20.4).
-//   - Seen: WHERE seen_at IS NULL, so a repeat changes nothing.
+//   - Seen: WHERE seen_at IS NULL, so a repeat changes nothing. The owner's task
+//     dot clears in that same statement (ADR-274).
 
 import {
+  DAY_LOG_DATE_REF,
   type DayLogAdminReply,
   type DayLogDayRepliesSeenInput,
   type DayLogStatus,
@@ -25,7 +27,7 @@ import {
 import { sql } from 'drizzle-orm';
 import type { AuthContext } from '../../db/with-user-context';
 import { ConflictError, ValidationError } from '../../lib/errors';
-import { ensureDayLogDateTask, markDayLogDateTaskNew } from '../tasks/day-log-task';
+import { ensureDateReplyTask, markReplyTaskNew } from '../tasks/day-log-task';
 import { type DayPerson, resolveAccess } from './access';
 import { dayTx, lockDayReplyDay, lockOwnDay, openTargetDayLocked } from './lock';
 import { isPendingEligible } from './pending';
@@ -88,12 +90,13 @@ export async function sendDayReply(
       user,
       sql`
       INSERT INTO public.daily_report_day_replies
-        (company_id, daily_report_id, body, created_by, updated_by)
-      VALUES (${companyId}::uuid, ${h.id}::uuid, ${body}, ${user.id}::uuid, ${user.id}::uuid)
+        (company_id, daily_report_id, body, sent_at, created_by, updated_by)
+      VALUES (${companyId}::uuid, ${h.id}::uuid, ${body}, clock_timestamp(),
+              ${user.id}::uuid, ${user.id}::uuid)
       RETURNING ${RETURN_COLS}`,
     );
     if (!reply) throw new ConflictError('The reply could not be saved — reload and try again');
-    await ensureDayLogDateTask(
+    await ensureDateReplyTask(
       tx,
       {
         companyId,
@@ -128,7 +131,7 @@ export async function editDayReply(
       replyId,
       input,
     );
-    await markDayLogDateTaskNew(tx, { companyId, dailyReportId: h.id }, user);
+    await markReplyTaskNew(tx, { companyId, refType: DAY_LOG_DATE_REF, refId: h.id }, user);
     return reply;
   });
 }
@@ -159,6 +162,13 @@ export async function markDayRepliesSeen(
       t AS (
         UPDATE public.daily_reports SET updated_at = now(), updated_by = ${user.id}::uuid
         WHERE id = ${h.id}::uuid AND EXISTS (SELECT 1 FROM s)
+        RETURNING 1),
+      v AS (
+        UPDATE public.tasks SET viewed_at = now()
+        WHERE company_id = ${companyId}::uuid AND assigned_to = ${user.id}::uuid
+          AND linked_ref_type = ${DAY_LOG_DATE_REF} AND linked_ref_id = ${h.id}
+          AND deleted_at IS NULL AND status IN ('todo', 'in_progress')
+          AND EXISTS (SELECT 1 FROM s)
         RETURNING 1)
       SELECT (SELECT count(*) FROM s)::int AS seen, (SELECT count(*) FROM t)::int AS touched
     `)) as unknown as Array<{ seen: number }>;

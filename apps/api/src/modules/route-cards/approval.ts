@@ -1,24 +1,29 @@
-// ADR-253 — approve / reject a NEW Route Card (POST /route-cards/:id/approve,
-// /route-cards/:id/reject). Same shape as approvePurchaseRequest /
+// ADR-253 / ADR-277 — submit, approve, reject a NEW Route Card (POST
+// /route-cards/:id/submit, /approve, /reject). Same shape as approvePurchaseRequest /
 // rejectPurchaseRequest: the Approve tick on Route Card Master decides (the
 // creator may approve their own card, like PR / PO), the row is locked, the
 // status moves with a conditional UPDATE … WHERE approval_status = 'pending'
 // (CLAUDE.md §20.2), and a loser is told who decided first.
 //
 // Approval is also where the card's raw material first reaches the waiting
-// plans (T2 plan-rm-backfill): a pending card is not usable, so createRouteCard
+// plans (T2 plan-rm-backfill): a draft or pending card is not usable, so createRouteCard
 // no longer runs the backfill — it runs here, inside the approval transaction.
 //
 // LOCK ORDER (§20.3) — plans BEFORE route_cards, as createRouteCard /
 // updateRouteCardTx / executePlan take them: lockBackfillCandidates first,
-// then the card row FOR UPDATE.
+// then the card row FOR UPDATE. Submit takes the card row only: nothing becomes
+// usable, so it touches no plan.
 
 import {
   ActivityAction,
   type ApproveRouteCardInput,
+  canSubmitRouteCardStatus,
+  opSrNo,
   type RejectRouteCardInput,
+  type RouteCardApprovalStatus,
+  type SubmitRouteCardInput,
 } from '@innovic/shared';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { routeCards } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
@@ -34,7 +39,13 @@ import {
   readRouteCardRawMaterial,
 } from '../plans/rm-backfill';
 import type { RouteCardDetail } from './schema';
-import { loadRouteCardDetail, loadUserNames, rcStatusChange } from './service';
+import {
+  assertRouteCardEditable,
+  loadRouteCardDetail,
+  loadUserNames,
+  rcStatusChange,
+  routeCardEditRights,
+} from './service';
 
 type RcRow = typeof routeCards.$inferSelect;
 
@@ -42,6 +53,17 @@ const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
   return user.companyId;
 };
+
+/** Why an approve / reject / submit cannot run on this card — its state in
+ *  words, naming who decided it. Follows "it". */
+async function cardStateText(tx: DbTransaction, card: RcRow): Promise<string> {
+  if (card.approvalStatus === 'draft') return 'has not been submitted for approval yet';
+  if (card.approvalStatus === 'pending') return 'is already waiting for approval';
+  const names = await loadUserNames(tx, [card.approvedBy, card.rejectedBy]);
+  return card.approvalStatus === 'approved'
+    ? `was already approved${card.approvedBy && names.get(card.approvedBy) ? ` by ${names.get(card.approvedBy)}` : ''}${card.approvedAt ? ` at ${fmtDateTime(card.approvedAt)}` : ''}`
+    : `was returned to creator${card.rejectedBy && names.get(card.rejectedBy) ? ` by ${names.get(card.rejectedBy)}` : ''}${card.rejectedAt ? ` at ${fmtDateTime(card.rejectedAt)}` : ''}`;
+}
 
 /** Lock the item's backfill-candidate plans, then the card row (§20.3), and
  *  refuse unless the card is still Pending Approval — naming who decided it —
@@ -74,13 +96,8 @@ async function lockPendingCard(
   // backfill plans this transaction never locked.
   if (card.itemId !== preItemId) throw changedByOtherError(`Route Card ${card.code}`);
   if (card.approvalStatus !== 'pending') {
-    const names = await loadUserNames(tx, [card.approvedBy, card.rejectedBy]);
-    const decided =
-      card.approvalStatus === 'approved'
-        ? `was already approved${card.approvedBy && names.get(card.approvedBy) ? ` by ${names.get(card.approvedBy)}` : ''}${card.approvedAt ? ` at ${fmtDateTime(card.approvedAt)}` : ''}`
-        : `was rejected${card.rejectedBy && names.get(card.rejectedBy) ? ` by ${names.get(card.rejectedBy)}` : ''}${card.rejectedAt ? ` at ${fmtDateTime(card.rejectedAt)}` : ''}`;
     throw new ConflictError(
-      `Cannot ${verb} Route Card ${card.code}: it ${decided}. Reload the page.`,
+      `Cannot ${verb === 'reject' ? 'return' : verb} Route Card ${card.code}: it ${await cardStateText(tx, card)}. Reload the page.`,
     );
   }
   // §20.4 — a card edited after the approver opened it is refused with the
@@ -94,6 +111,109 @@ async function lockPendingCard(
     );
   }
   return card;
+}
+
+/** ADR-277 — Submit for Approval: a Draft or Rejected card → Pending Approval,
+ *  any rejection stamp cleared. Same rights as saving the card. The `changes`
+ *  entry is what fires the approvers' bell (NoteRule.toPending). */
+export async function submitRouteCard(
+  id: string,
+  input: SubmitRouteCardInput,
+  user: AuthContext,
+): Promise<RouteCardDetail> {
+  const rights = await routeCardEditRights(user);
+  const companyId = requireCompany(user);
+
+  return withUserContext(user, async (tx) => {
+    const rows = await tx
+      .select()
+      .from(routeCards)
+      .where(
+        and(
+          eq(routeCards.id, id),
+          eq(routeCards.companyId, companyId),
+          isNull(routeCards.deletedAt),
+        ),
+      )
+      .limit(1)
+      .for('update');
+    const card = rows[0];
+    if (!card) throw new NotFoundError('Route Card not found. It may have been moved to Trash.');
+    if (!canSubmitRouteCardStatus(card.approvalStatus)) {
+      throw new ConflictError(
+        `Cannot submit Route Card ${card.code}: it ${await cardStateText(tx, card)}. Reload the page.`,
+      );
+    }
+    await assertRouteCardEditable(card, user, rights);
+    if (editConflicts(card.updatedAt, input.expectedUpdatedAt)) {
+      assertUnchangedSinceOpened(
+        card.updatedAt,
+        input.expectedUpdatedAt,
+        await rowChangedByName(tx, card.updatedBy),
+      );
+    }
+
+    await assertCardMastersLive(tx, card);
+
+    const oldStatus = card.approvalStatus as RouteCardApprovalStatus;
+    const updated = await tx
+      .update(routeCards)
+      .set({
+        approvalStatus: 'pending',
+        rejectedBy: null,
+        rejectedAt: null,
+        rejectionReason: null,
+        updatedBy: user.id,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(routeCards.id, id), eq(routeCards.approvalStatus, oldStatus)))
+      .returning({ id: routeCards.id });
+    assertRowUpdated(updated, `Route Card ${card.code}`);
+
+    await emitActivityLog(
+      tx,
+      {
+        action: ActivityAction.Edit,
+        entity: 'RouteCard',
+        entityId: card.id,
+        refId: card.code,
+        changes: [rcStatusChange(oldStatus, 'pending')],
+        detail: `${card.code} sent for approval${oldStatus === 'rejected' ? ' again' : ''}`,
+      },
+      companyId,
+      user,
+    );
+    return loadRouteCardDetail(tx, id, companyId);
+  });
+}
+
+/** ADR-277 — a card can wait a long time before Submit for Approval. Its item,
+ *  raw-material item, machines and vendors must still be in their masters, as a
+ *  save would require. */
+async function assertCardMastersLive(tx: DbTransaction, card: RcRow): Promise<void> {
+  const items = (await tx.execute(sql`
+    SELECT i.code FROM public.items i
+    WHERE i.id IN (${card.itemId}::uuid, ${card.rawMaterialItemId}::uuid)
+      AND i.deleted_at IS NOT NULL
+    LIMIT 1`)) as unknown as Array<{ code: string }>;
+  if (items[0]) {
+    throw new ConflictError(
+      `Route Card ${card.code}: item ${items[0].code} is no longer in Item Master. Edit the card first.`,
+    );
+  }
+  const ops = (await tx.execute(sql`
+    SELECT o.op_seq FROM public.route_card_ops o
+    LEFT JOIN public.machines m ON m.id = o.machine_id
+    LEFT JOIN public.vendors v ON v.id = o.osp_vendor_id
+    WHERE o.route_card_id = ${card.id}::uuid AND o.deleted_at IS NULL
+      AND (m.deleted_at IS NOT NULL OR v.deleted_at IS NOT NULL)
+    ORDER BY o.op_seq
+    LIMIT 1`)) as unknown as Array<{ op_seq: number }>;
+  if (ops[0]) {
+    throw new ConflictError(
+      `Route Card ${card.code}: Op ${opSrNo(ops[0].op_seq)} uses a machine or vendor no longer in its master. Edit the card first.`,
+    );
+  }
 }
 
 export async function approveRouteCard(
@@ -189,7 +309,7 @@ export async function rejectRouteCard(
         refId: card.code,
         changes: [rcStatusChange('pending', 'rejected')],
         reason,
-        detail: `${card.code} rejected by ${user.fullName || user.email} — ${reason}`,
+        detail: `${card.code} returned to creator by ${user.fullName || user.email} — ${reason}`,
       },
       companyId,
       user,

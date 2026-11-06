@@ -163,10 +163,10 @@ describe('ADR-253 — Production Order create needs an approved Route Card', () 
     expect(pos).toHaveLength(0);
   });
 
-  it('a Rejected card → 409 "was rejected"', async () => {
+  it('a Returned to Creator card → 409 "was returned to creator"', async () => {
     const attempt = raise('REJ');
     await expect(attempt).rejects.toBeInstanceOf(ConflictError);
-    await expect(attempt).rejects.toThrow(/was rejected/);
+    await expect(attempt).rejects.toThrow(/was returned to creator/);
   });
 
   it('an Approved card → the order is created', async () => {

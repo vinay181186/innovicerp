@@ -13,6 +13,7 @@ export function ApprovalRejectDialog({
   title,
   prompt,
   confirmLabel = 'Reject',
+  placeholder = 'The document is left unchanged and this reason is shown to the person who asked.',
   onReject,
   onCancel,
 }: {
@@ -22,6 +23,8 @@ export function ApprovalRejectDialog({
   prompt?: string | undefined;
   /** Text on the danger button. */
   confirmLabel?: string | undefined;
+  /** Hint inside the reason box. */
+  placeholder?: string | undefined;
   /** Fire with the typed reason (already trimmed). */
   onReject: (reason: string) => void;
   onCancel: () => void;
@@ -66,7 +69,7 @@ export function ApprovalRejectDialog({
           rows={3}
           autoFocus
           value={reason}
-          placeholder="The document is left unchanged and this reason is shown to the person who asked."
+          placeholder={placeholder}
           onChange={(e) => setReason(e.target.value)}
           style={{ resize: 'vertical' }}
         />

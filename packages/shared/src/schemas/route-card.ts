@@ -75,7 +75,7 @@ export const routeCardSchema = z.object({
    *  Purchase, the same choice SO Planning asks per plan. Defaults to
    *  manufacture; `assembly` is a planning-only value never stored here. */
   planType: planTypeSchema.default('manufacture'),
-  /** ADR-253 — Pending Approval / Approved / Rejected. Only `approved` may be
+  /** ADR-253 / ADR-277 — Draft / Pending Approval / Approved / Rejected. Only `approved` may be
    *  used to raise a Production Order or an ML-plan order. */
   approvalStatus: z.enum(ROUTE_CARD_APPROVAL_STATUSES).default('pending'),
   approvedBy: z.string().uuid().nullable().default(null),
@@ -87,6 +87,9 @@ export const routeCardSchema = z.object({
   rejectionReason: z.string().nullable().default(null),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
+  /** Who entered the card (full name, else the email's local part). Null when
+   *  the user row is gone. */
+  createdByName: z.string().nullable().default(null),
   updatedAt: z.string(),
   updatedBy: z.string().uuid(),
   deletedAt: z.string().nullable(),
@@ -176,6 +179,8 @@ export const routeCardRevisionSchema = z.object({
 export type RouteCardRevision = z.infer<typeof routeCardRevisionSchema>;
 
 export const routeCardDetailSchema = routeCardSchema.extend({
+  /** Who last wrote the card — the same write that set updatedAt. */
+  updatedByName: z.string().nullable().default(null),
   ops: z.array(routeCardOpSchema),
   revisions: z.array(routeCardRevisionSchema).default([]),
   itemCode: z.string().nullable().default(null),
@@ -277,6 +282,9 @@ export const createRouteCardInputSchema = z.object({
   notes: z.string().max(2000).nullable().optional(),
   planType: routeCardPlanTypeSchema.optional(),
   ops: z.array(createRouteCardOpInputSchema).min(1, 'Add at least one operation'),
+  /** ADR-277 — false = Save (stays with the creator); true or left out = sent
+   *  for approval (a browser tab open across the release keeps today's rule). */
+  submitForApproval: z.boolean().optional(),
 });
 export type CreateRouteCardInput = z.infer<typeof createRouteCardInputSchema>;
 
@@ -306,6 +314,9 @@ export const updateRouteCardInputSchema = z.object({
   planType: routeCardPlanTypeSchema.optional(),
   ops: z.array(createRouteCardOpInputSchema).min(1, 'Add at least one operation'),
   revisionNote: z.string().max(2000).nullable().optional(),
+  /** ADR-277 — false = Save (stays with the creator); true or left out = sent
+   *  for approval (a browser tab open across the release keeps today's rule). */
+  submitForApproval: z.boolean().optional(),
   expectedUpdatedAt: expectedUpdatedAtSchema,
 });
 export type UpdateRouteCardInput = z.infer<typeof updateRouteCardInputSchema>;
@@ -327,3 +338,9 @@ export const rejectRouteCardInputSchema = z.object({
   expectedUpdatedAt: expectedUpdatedAtSchema,
 });
 export type RejectRouteCardInput = z.infer<typeof rejectRouteCardInputSchema>;
+
+// ADR-277 — POST /route-cards/:id/submit: draft or rejected → pending.
+export const submitRouteCardInputSchema = z.object({
+  expectedUpdatedAt: expectedUpdatedAtSchema,
+});
+export type SubmitRouteCardInput = z.infer<typeof submitRouteCardInputSchema>;

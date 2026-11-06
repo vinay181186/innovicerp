@@ -162,23 +162,20 @@ const OP_FLOW_COLUMNS: DataTableColumn<OpFlowRow>[] = [
     render: (o) => <Qty v={o.pendingQty} tone="var(--amber2)" />,
   },
   {
-    header: 'Sent',
+    header: 'Sent to Vendor',
     align: 'right',
     nowrap: true,
     className: SEP,
     headClassName: SEP,
-    title: (o) =>
-      o.returnedToVendorQty > 0
-        ? `${o.vendorSentQty - o.returnedToVendorQty} on outward DCs + ${o.returnedToVendorQty} re-sent for rework`
-        : 'Sent on outward DCs',
-    render: (o) => <Qty v={o.vendorSentQty} na={!o.hasOsp} />,
+    title: () => 'First lot, sent on outward DCs',
+    render: (o) => <Qty v={o.sentToVendorQty} na={!o.hasOsp} />,
   },
   {
     header: 'Received',
     align: 'right',
     nowrap: true,
     title: (o) =>
-      `Received back incl. re-received lots${o.inQcQty > 0 ? ` · ${o.inQcQty} waiting incoming QC` : ''}`,
+      `First lot, received back${o.inQcQty > 0 ? ` · ${o.inQcQty} waiting incoming QC` : ''}`,
     render: (o) => <Qty v={o.vendorReceivedQty} na={!o.hasOsp} />,
   },
   {
@@ -247,10 +244,8 @@ function OpFlowNotes({
     if (o.returnedToVendorQty > 0) {
       notes.push(
         <li key={`rtv-${o.jcOpId}`}>
-          {op}: rework loop — sent {o.vendorSentQty - o.returnedToVendorQty}, {o.vendorRejectedQty}{' '}
-          deviated at incoming QC, {o.returnedToVendorQty} re-sent to the vendor, {o.reReceivedQty}{' '}
-          re-received · total sent {o.vendorSentQty}, received {o.vendorReceivedQty}, accepted{' '}
-          {o.acceptedQty}.
+          {op}: rework loop — {o.vendorRejectedQty} deviated at incoming QC, {o.returnedToVendorQty}{' '}
+          returned to the vendor, {o.reReceivedQty} re-received, accepted {o.acceptedQty}.
         </li>,
       );
     }

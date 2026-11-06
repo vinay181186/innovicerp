@@ -102,11 +102,43 @@ export interface EnrichedOp {
   completed: number;
   qcAccepted: number;
   qcRejected: number;
+  /** Net reject_qty on 'complete' logs: rejected at the machine. */
+  productionRejected: number;
+  /** jc_ops.outsource_sent_qty. Also set on a dual-lane in-house op (ADR-081). */
+  outsourceSentQty: number;
   inputAvail: number;
   available: number;
   qcPending: number;
   running: boolean;
   status: OpStatus;
+}
+
+/** Has real work been done on this op? Reversal rows carry the negative qty /
+ *  reject_qty, so a fully reversed entry nets to zero here. Paperwork is NOT work:
+ *  a PR or PO raised, a job card created, material issued. Neither is `qc_pending`
+ *  by itself: a first-op QC reads qc_pending with nothing inspected. */
+export function opHasStartedWork(
+  op: Pick<
+    EnrichedOp,
+    | 'completed'
+    | 'qcAccepted'
+    | 'qcRejected'
+    | 'productionRejected'
+    | 'running'
+    | 'status'
+    | 'outsourceSentQty'
+  >,
+): boolean {
+  return (
+    op.completed > 0 ||
+    op.qcAccepted > 0 ||
+    op.qcRejected > 0 ||
+    op.productionRejected > 0 ||
+    op.running ||
+    op.status === 'outsource_at_vendor' ||
+    op.status === 'outsource_received' ||
+    op.outsourceSentQty > 0
+  );
 }
 
 export interface JCRollup {
@@ -161,9 +193,11 @@ export function enrichOps(
     let completed = 0;
     let qcAccepted = 0;
     let qcRejected = 0;
+    let productionRejected = 0;
     for (const log of opLogs) {
       if (log.logType === 'complete') {
         completed += log.qty;
+        productionRejected += log.rejectQty;
       } else if (log.logType === 'qc') {
         qcAccepted += log.qty;
         qcRejected += log.rejectQty;
@@ -249,6 +283,8 @@ export function enrichOps(
       completed,
       qcAccepted,
       qcRejected,
+      productionRejected,
+      outsourceSentQty: Number(op.outsourceSentQty),
       inputAvail,
       available,
       qcPending,
@@ -300,8 +336,9 @@ function deriveOpStatus(s: StatusInput): OpStatus {
     // View (0130) next branch: qc_required AND qc_pending > 0 → 'qc_pending'.
     // Review R3: only once the pieces are BACK (stamp 'received', or the bar
     // already covers the whole input). A half-returned op (GRN 5 of 10, shop
-    // QC outstanding on those 5) must keep reading outsource_at_vendor so
-    // so-status / so-overview keep counting atVendorQty for the other 5.
+    // QC outstanding on those 5) must keep reading outsource_at_vendor, which
+    // keeps the line's stage on Outsourced. The At Vendor figure itself no longer
+    // comes from this status (ADR-276, lib/at-vendor.ts).
     if (
       s.qcRequired &&
       s.qcPending > 0 &&
@@ -467,11 +504,15 @@ interface OverallStatusInput {
   dueDate: string | null;
   /** Caller-provided "today" for testability. Defaults to runtime now. */
   today?: string;
+  /** Any op of the SO has real work on it (opHasStartedWork). */
+  workStarted: boolean;
 }
 
-/** Derive the 6-state overall SO status. Mirrors legacy decision tree:
- *  blocked > completed > delayed > on_track (in_progress + on schedule)
- *           > in_progress > not_started
+/** Derive the 6-state overall SO status. Built on the legacy decision tree:
+ *  blocked > completed > delayed
+ *    > something finished: on_track (on schedule) or in_progress
+ *    > work started but nothing finished: in_progress
+ *    > not_started
  */
 export function deriveOverallSoStatus(input: OverallStatusInput): SoOverallStatus {
   if (input.holdCount > 0) return 'blocked';
@@ -484,6 +525,8 @@ export function deriveOverallSoStatus(input: OverallStatusInput): SoOverallStatu
     if (input.dueDate && input.dueDate >= today) return 'on_track';
     return 'in_progress';
   }
+
+  if (input.workStarted) return 'in_progress';
 
   return 'not_started';
 }

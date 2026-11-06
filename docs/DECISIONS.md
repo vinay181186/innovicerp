@@ -15308,3 +15308,106 @@ On PLN-0189 the Job Work Order row showed "—" under Name / Ref. Audit: a relat
 - Positive: one place to change; a new tab cannot forget its item.
 - Negative: more queries per panel open (one per tab, none per row); a client's SO list is longer with one row per item.
 - Risks: wide read-only change. The BOM, JW DC, Invoice and Assembly paths had no TEST data at build time.
+
+## ADR-273: Pending Entries, one row per person with a calendar pop-up
+
+**Date:** 2026-11-05
+**Status:** Accepted
+
+### Context
+
+Owner: Pending Entries should open per person on a calendar, green for filled and red for pending. Chosen from four mockups: Option D, one row per person, calendar in a pop-up.
+
+### Decision
+
+- The list groups the existing `GET /day-logs/pending` rows per person. Print and file stay one row per date.
+- New read `GET /day-logs/pending/:id/calendar`, Super Admin only. Red comes from `pendingOf`, so it cannot differ from the banner. An old Leave day is neither green nor red.
+- The pop-up reuses `Modal`, `usePersonDay`, `DayReplies` and `PersonReplies`. A green date replies under an entry, not on the whole day. Inbox behaviour is out of scope, another terminal owns it.
+
+### Alternatives Considered
+
+- Calendar under the row, or on its own page: rejected by the owner.
+- One reply box on a green date: needs reply and task rule changes that the other terminal owns.
+
+### Consequences
+
+- Positive: no database change; one pending rule for banner, list and calendar.
+- Negative: the person page's `from=pending` link is now unused. Left in place because it is read in `tasks/routes/board.tsx`; remove it when that work is done.
+
+## ADR-274: Day Log replies reach Inbox and Outbox
+
+**Date:** 2026-11-05. **Owner decided:** every Super Admin reply on a Day Log reaches the person's Task Board Inbox and the sender's Outbox. One task per entry (a further reply reuses it and reads New again). The person presses Complete. Mockup approved: https://claude.ai/artifact/3o9Yv7Mg88BPrJ3jiG3BoB
+
+**Before:** a reply on a saved entry raised no task. A reply on a blank date raised a task without the reply text, and a second Super Admin's reply never reached their own Outbox.
+
+**Decisions:**
+- One OPEN task per entry / blank date **per sender**, linked_ref_type `day_log_entry` (new) or `day_log_date`. Unique index `tasks_day_log_reply_open_uq` (0242) is the backstop under the day header lock. A blank-date task still closes when the day is entered; an entry task never closes by itself.
+- The reply text is never copied to `tasks`, `task_comments`, `task_history` or the activity log: those are readable company-wide and it would go stale on an edit (ADR-255 keeps it private). `tasks/day-log-replies.ts` reads it live into `TaskRow.dayLogReplies`. So Task Board search finds the title, not the reply text.
+- A task holds its own sender's replies from when it was raised until that sender's next task on the same entry / date. `sent_at` is `clock_timestamp()` under the day lock, so each reply falls in one task. The end is not `updated_at`, which comes from the API's clock.
+- The red dot on these tasks follows the reply: `markTasksViewed` skips them, and the seen statements clear `viewed_at` in the same statement.
+- On these tasks only the person moves or completes; nobody edits or reassigns (reassigning would show a private reply to someone else); the sender or an admin may cancel. Enforced in `permsFor`.
+- Related To opens the person's day for anyone but the person (`buildLinkedRef` per viewer).
+- The hint beside Send reply comes from the server (`replyGoesToInbox`): a person whose Task Board is hidden gets the 🔔 only, and the reply still saves.
+- Replies sent before this change raise no task; they stay in the 🔔.
+
+- Complete on these tasks sends the `updatedAt` it loaded; a stale one gets a 409, so a reply that just arrived is not closed unread.
+- A blank-date task reassigned before this change shows no reply text to the new assignee.
+
+**Known limits:**
+- Pending Entries shows one Task No. per date, so with two senders on one date it names only one of the two tasks.
+- Editing a reply of a completed task, while a newer task from the same sender is open, puts the dot on the newer task.
+- A blank-date task seen in the minutes between migration 0242 and the API deploy can keep its dot until completed.
+- The hint says Task Board is hidden also when the person's login is inactive.
+
+## ADR-275: Route Card header shows who last saved it; long op text wraps
+
+**Date:** 2026-11-06. **Owner decided:** the name in the Route Card header follows the last user who saved the card, Last Updated shows its time, Revision History gets a time column, and long Remarks / Tool Details wrap.
+
+**Decisions:**
+- Detail and edit pages, Route row: Plan Type · Operations · Last Updated By · Last Updated (date + time). Name and time come from the same write (`updated_by`, `updated_at`).
+- The owner called this name "Created By". It is labelled `Last Updated By` because `Created By` means the person who entered the record on every list (ADR-261 rev, §18).
+- Route Card Master list: new `Created By` column (the person who entered the card); Last Updated shows date + time and sorts by exact time; its filter stays by India-time day.
+- Revision History: new `Revision Time` column after Revision Date.
+- New opt-in cell class `td-prose`: the one exception to "one line per row" (ADR-199). Used on Remarks and Tool Details in the Route Card operation tables, which also appear on Create Production Order.
+
+**Known limits:**
+- Every write to the card moves Last Updated By: approving, returning, a new revision, and raw material filled in from a plan, not only the Save button. An edit that went through approval names the approver.
+- No migration.
+
+## ADR-276: SO started rule, vendor columns split, NC order number, one At Vendor, bulk Return to Vendor
+
+**Date:** 2026-11-06. **Owner decided:** all five, after the six-point plan. Reads only except bulk Return to Vendor, which reuses the single-NC route. No migration, no stored data changed.
+
+**Before, on real PROD data:** SO-517 (IN-SO-00005) read Not Started with 71 pieces completed on earlier operations and 296 at the vendor. IN-JC-26-00018 Op 3 read Sent 98 (62 new + 36 rework). All 10 NCs had a blank SO. IN-JC-26-00030 read At Vendor 30 on the Job Card and, by the old sum, 60 on SO Status.
+
+**Decisions:**
+- **SO started.** After Hold, Completed, Delayed and the unchanged On Track rule: any operation with work on it reads In Progress (`opHasStartedWork`). Work = pieces completed, QC accepted or rejected, machine rejects, running, physically sent or received. A PR or PO raised, a job card created, material issued, or a first-operation QC Pending with no work do not count. Overdue still reads Delayed. The port from the old ERP had dropped this condition.
+- **Vendor columns. Replaces the combined figure of ADR-212.** `Sent to Vendor` | `Received` | `Returned to Vendor` | `Re-received` | `At Vendor` on the Job Card, popup, At-Vendor Register and report. `vendorSentQty` is removed. `vendorReceivedQty` now counts first lots only (GRNs with no NC): with the gross figure the columns stop adding up when rework comes back (62 − 72 + 36 − 36 = −10; real answer 26). The name `Re-sent` stays banned.
+- **NC order number.** Owner's heading `SO No. / JWSO No.` on NC list, detail, print and two reports, one server definition `ncOrderCodeSql`, also used by sort, filter and search. **This differs from ADR-267**, where other mixed lists keep the heading `SO No.`: owner's call for the NC screens. JC No. comes from the server on detail and is a list column.
+- **One At Vendor.** `loadAtVendorByOp` is the only per-op definition; Job Card, SO Status and SO Overview read it. Deliberately not moved: the PO close check (excludes rework). `op-entry`, `production-orders` and `wip-by-operation` read the view without the part-outsourced top-up, so they differ only on a part-outsourced op with an open return.
+- **Bulk Return to Vendor.** Tick on the NC list, needs the NC Dispose Advance right, confirm popup lists each NC. Disposition only, full open quantity, one request per NC through `disposeNcCascade` (§20.1), the existing row lock and `WHERE status='pending'` apply (§20.2). A failure stays ticked with its server message, the rest stay saved. The DC stays a separate step.
+
+**Consequences:**
+- Identity: Sent to Vendor − Received + Returned to Vendor − Re-received = At Vendor. Checked: all 11 PROD vendor rows and all TEST rows, 0 breaks. It can drift if an NC closes with sent ≠ received, or an operation is over-received.
+- A wrong bulk Return to Vendor cannot be undone in the app (`status-moves.ts`), same as single.
+- Bulk leaves Sent on DC No. blank (ADR-217: asked, never guessed), so those NCs are traced by PO No. only. Single Dispose auto-fills when only one challan exists.
+- The Job Card table is 18 columns; a worst-case row may overrun 1440 wide by a few pixels.
+- Rework child job cards stay excluded from SO Status and SO Overview, so a child at the vendor shows on its own Job Card only.
+
+**Known limits, not touched:** Blocked status can never appear; a short-closed line can stop an SO reading Completed; the server's today is UTC and the screen's IST.
+## ADR-277: Route Card Draft; a card with the approver is locked
+
+**Date:** 2026-11-06. **Owner decided:** a Route Card gets a new status, Draft. Save keeps it with the creator; Save & Submit sends it for approval. While Pending Approval nobody may edit or delete it until the approver decides.
+
+**Decisions:**
+- **Save / Save & Submit.** `submitForApproval` false = Save, true or left out = sent (a tab open across the release keeps today's rule). New card: `draft` / `pending`. Draft: stays / `pending`. Rejected: stays, reason and stamps kept / `pending`, stamps cleared. Approved: the flag is ignored. `POST /route-cards/:id/submit` does the same move from the detail page and the ⋯ menu.
+- **Locked while pending, for everybody, admins included.** `ROUTE_CARD_LOCKED_MESSAGE` (409) on save, on a form opened before the card was sent (checked ahead of the stale-form check) and on Move to Trash, each under the card's row lock. A Job Card / Plan auto-save already left a not-approved card alone.
+- **Rev 0 in Draft.** While the card is a Draft, also on the save that submits it, `current_revision` stays at its number and that revision's ops snapshot is overwritten. Each save is in the activity log with its op changes, with no Route Card Rev change. A Rejected or Approved card keeps the bump.
+- **Same checks for Save and Submit.** A Draft is validated as a submitted card is; Submit for Approval re-validates nothing, because the card on file already passed.
+- **Entry-only: own Draft / Rejected.** `canEditRouteCard` (shared) is the one rule: locked = nobody; otherwise the Edit right, or the Entry right on the user's own Draft / Rejected card. It applies under the row lock on save and submit. An approved card still needs Edit.
+- **Not usable, not on any list.** Usable stays approved only. A Draft is off the approver's list and off the bell: its CREATE / RESTORE activity row carries `RC Status → Draft`, and those two bell rules exclude that entry (`changesLacks`), so old rows keep their bell. The first submit fires the same "sent for approval" bell as a resubmit.
+- **Plan wording "RC Not Approved"** covers a Draft, Pending or Rejected card on a plan.
+- **Approved staged edit flow unchanged** (ADR-249). The engine's replay asks for no right of the replayer; it is refused only if the card is locked, which can only happen to a staged card trashed and restored.
+- **Trash:** a card deleted as a Draft comes back a Draft, with no bell. Every other card comes back Pending Approval as today (ADR-253).
+
+**Migration:** 0243 (CHECK only, no row changed, default stays `approved`).

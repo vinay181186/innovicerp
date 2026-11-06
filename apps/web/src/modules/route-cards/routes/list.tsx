@@ -40,13 +40,14 @@
 //     ever greyed out the row you clicked. It is mounted once here, so every
 //     row's Delete greys out while one is in flight — the reference behaviour.
 
-import { opSrNo } from '@innovic/shared';
+import { canEditRouteCard, opSrNo, type RouteCardListItem } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
+import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Icon, Tag } from '@/ui/core';
 import { DataTable, Panel } from '@/ui/data';
@@ -55,6 +56,7 @@ import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ConfirmDialog } from '@/ui/feedback';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useDeleteRouteCard, useRouteCard, useRouteCardsList } from '../api';
+import { RcSubmitDialog, canSubmitRouteCard } from '../components/rc-approval-actions';
 import { routeCardListColumns } from '../components/route-card-list-columns';
 import { RouteCardRowMenu } from '../components/route-card-row-menu';
 
@@ -118,6 +120,7 @@ function RouteCardsListPage(): React.JSX.Element {
     offset,
   });
   const { data: eff } = useMyAccess();
+  const { data: me } = useSession();
   const perms = effectiveFormPerms(eff, 'routecard_create');
   // Legacy delRouteCard (L10279): confirm, then remove.
   // ADR-232 (owner, 2026-10-15): deleting any record is Super Admin only.
@@ -127,6 +130,8 @@ function RouteCardsListPage(): React.JSX.Element {
   // page's own ConfirmDialog (RowActions' built-in one has no reason box).
   const [pendingDelete, setPendingDelete] = useState<{ id: string; code: string } | null>(null);
   const [deleteReason, setDeleteReason] = useState('');
+  // ADR-277 — the row whose Submit for Approval is being confirmed.
+  const [pendingSubmit, setPendingSubmit] = useState<RouteCardListItem | null>(null);
   const rows = useMemo(() => data?.items ?? [], [data?.items]);
   const total = data?.total ?? 0;
   useClampPage(page, data?.total, gotoPage);
@@ -200,13 +205,16 @@ function RouteCardsListPage(): React.JSX.Element {
             renderExpanded={(rc) => (expanded.has(rc.id) ? <ExpandedOps rcId={rc.id} /> : null)}
             rowActionsWidth="1%"
             rowActions={(rc) => (
-              // The ⋯ menu: Show operations · Edit · Print · ─ · Move to Trash
+              // The ⋯ menu: Show operations · Edit · Print · Submit for Approval · ─ · Move to Trash
               // (no View — the row click opens the card).
               <RouteCardRowMenu
                 rc={rc}
                 opsOpen={expanded.has(rc.id)}
                 onToggleOps={() => toggleExpand(rc.id)}
-                canEdit={perms.edit}
+                canEdit={canEditRouteCard(rc, me?.id, perms)}
+                onSubmitForApproval={
+                  canSubmitRouteCard(rc, me?.id, perms) ? () => setPendingSubmit(rc) : undefined
+                }
                 onDelete={
                   canDelete
                     ? (): void => {
@@ -251,6 +259,8 @@ function RouteCardsListPage(): React.JSX.Element {
           setPendingDelete(null);
         }}
       />
+
+      <RcSubmitDialog card={pendingSubmit} onClose={() => setPendingSubmit(null)} />
 
       <ListFooter
         total={total}

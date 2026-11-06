@@ -136,6 +136,9 @@ export const PAGE_ACCESS: Readonly<Record<string, PageRule>> = {
   ...crud('/plans', 'plan_create'),
   ...crud('/ml-plans', 'mlplan_create'),
   ...crud('/route-cards', 'routecard_create'),
+  // ADR-277 — Entry may reopen the user's OWN Draft / Rejected card; the screen
+  // and server apply canEditRouteCard to the card itself.
+  '/route-cards/$id/edit': { anyOf: [edit('routecard_create'), entry('routecard_create')] },
   // Drawing page (Item + Drawing Rev): opened from SO / JWSO / RC links; the
   // server checks each read, view/download is checked by /drawing-files/url.
   '/drawings/$itemRevisionId': OPEN,

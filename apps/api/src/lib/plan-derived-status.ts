@@ -32,7 +32,7 @@ export interface PlanDerivedStatusInput {
   /** True when the plan's item has an active (not deleted) route card. */
   hasRouteCard: boolean;
   /** ADR-253 — true when that live route card is APPROVED (may drive work).
-   *  A live card that is Pending Approval / Rejected gives false. */
+   *  A live card that is Draft / Pending Approval / Rejected gives false. */
   routeCardUsable: boolean;
   /** ADR-182 — how many LIVE, non-short-closed Production Orders the plan has.
    *  Kept for callers; since ADR-184 the status no longer branches on it. */

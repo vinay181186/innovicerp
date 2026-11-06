@@ -19,7 +19,7 @@ export const doneLabel = (o: OpFlowRow): string =>
   o.opType === 'qc'
     ? 'Done = inspected'
     : o.opType === 'outsource'
-      ? 'Done = received back'
+      ? 'Done = received back, re-received lots included'
       : 'Done = made';
 
 /** jc-flow-panels.tsx L67-71 — the row's sum, shown on hover over ✓. */
@@ -59,10 +59,9 @@ function opNotes(ops: OpFlowRow[]): React.ReactNode[] {
     if (o.returnedToVendorQty > 0) {
       notes.push(
         <span key={`rtv-${o.jcOpId}`} className="jc-ops-note">
-          <b>{op}</b>: rework loop — sent {o.vendorSentQty - o.returnedToVendorQty},{' '}
-          {o.vendorRejectedQty} deviated at incoming QC, {o.returnedToVendorQty} re-sent to the
-          vendor, {o.reReceivedQty} re-received · total sent {o.vendorSentQty}, received{' '}
-          {o.vendorReceivedQty}, accepted {o.acceptedQty}.
+          <b>{op}</b>: rework loop — {o.vendorRejectedQty} deviated at incoming QC,{' '}
+          {o.returnedToVendorQty} returned to the vendor, {o.reReceivedQty} re-received, accepted{' '}
+          {o.acceptedQty}.
         </span>,
       );
     }

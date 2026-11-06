@@ -7,6 +7,7 @@ import type {
   ListRouteCardsResponse,
   RouteCard,
   RouteCardDetail,
+  SubmitRouteCardInput,
   UpdateRouteCardInput,
 } from '@innovic/shared';
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -94,6 +95,7 @@ export function useCreateRouteCard(saveKey?: SaveKey) {
     onSuccess: (created) => {
       void qc.invalidateQueries({ queryKey: routeCardsKeys.lists() });
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
+      void qc.invalidateQueries({ queryKey: approvalsKeys.all });
       // ADR-224: start re-asking for the next number while this screen is
       // still mounted, so the next Create screen's FIRST PAINTED FRAME already
       // shows the fresh one. nextCode() is a SIBLING of lists(), not a child,
@@ -130,6 +132,7 @@ export function useUpdateRouteCard(id: string, saveKey?: SaveKey) {
     onSuccess: (updated) => {
       void qc.invalidateQueries({ queryKey: routeCardsKeys.lists() });
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
+      void qc.invalidateQueries({ queryKey: approvalsKeys.all });
       if ('staged' in updated) {
         // Nothing changed on the card itself — refresh so the detail page
         // shows the pending change, and the inbox picks up the request.
@@ -166,7 +169,7 @@ export function useDeleteRouteCard() {
 // can be used. Both answer with the card; a 409 (already decided, no right…)
 // throws with the server's words, which the caller shows as-is.
 function useRouteCardDecision<TVars extends { id: string }>(
-  action: 'approve' | 'reject',
+  action: 'approve' | 'reject' | 'submit',
   body: (v: TVars) => Record<string, unknown>,
 ) {
   const qc = useQueryClient();
@@ -184,6 +187,14 @@ function useRouteCardDecision<TVars extends { id: string }>(
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
     },
   });
+}
+
+// ADR-277 — Draft or Rejected → Pending Approval. A 409 (changed since, already
+// sent …) throws with the server's words, as above.
+export function useSubmitRouteCard() {
+  return useRouteCardDecision<{ id: string } & SubmitRouteCardInput>('submit', (v) => ({
+    expectedUpdatedAt: v.expectedUpdatedAt,
+  }));
 }
 
 // expectedUpdatedAt = the card's updatedAt as the approver saw it (§20.4); the

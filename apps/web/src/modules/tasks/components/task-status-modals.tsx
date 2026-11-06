@@ -135,6 +135,7 @@ export function CompleteModal({
       }
       await complete.mutateAsync({
         remark: remark.trim() || undefined,
+        updatedAt: task.updatedAt,
         attachments: attachments.length > 0 ? attachments : undefined,
       });
       toast.ok(`Task ${task.code} completed`);

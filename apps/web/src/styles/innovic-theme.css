@@ -599,7 +599,8 @@
      - Gridlines between every cell, both directions, in --border (the old
        sheet drew them in --border2; tokens.css now makes --border a real
        colour, so the workaround is gone).
-     - ONE line per row: a body cell never wraps — long text ends in an
+     - ONE line per row: a body cell never wraps (one exception: opt-in td-prose,
+       ADR-275) — long text ends in an
        ellipsis, and components/shared/cell-overflow-title.ts gives a cut cell
        its full text as a hover title. Cells holding a form control, and every
        cell of a `.tbl-edit` table, keep overflow visible so the control is
@@ -938,6 +939,17 @@ table.tbl-ctr td .innovic-select {
 .innovic-table th.th-left,
 .innovic-table td.td-left {
   text-align: left;
+}
+/* Long free text (Route Card op Remarks / Tool Details, ADR-275): the one
+   sanctioned exception to "one line per row". Wraps, keeps the user's line
+   breaks, reads left to right, never pushes the table sideways. */
+.innovic-table td.td-prose {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow: visible;
+  text-overflow: clip;
+  text-align: left;
+  min-width: 200px;
 }
 
 /* ── PINNED FIRST COLUMN (default inside .tbl-wrap, ADR-199) ────────────────

@@ -31,6 +31,13 @@ type OnEdit = (
   key: SaveKey,
 ) => Promise<unknown>;
 
+/** The words beside Send reply. goesToInbox comes from the server (ADR-274, §20.5). */
+function sendHint(first: string, goesToInbox: boolean, inboxTail = ''): string {
+  return goesToInbox
+    ? `${first} gets a 🔔 and a task in Inbox${inboxTail}.`
+    : `${first} gets a 🔔 only. Task Board is hidden for ${first}.`;
+}
+
 function ReplyEdit({
   r,
   onEdit,
@@ -235,12 +242,15 @@ export function PersonReplies({
   entryId,
   replies,
   first,
+  goesToInbox,
 }: {
   entryId: string;
   /** Oldest first. */
   replies: readonly DayLogAdminReply[];
   /** The person's first name. */
   first: string;
+  /** DayLogPersonDay.replyGoesToInbox. */
+  goesToInbox: boolean;
 }): React.JSX.Element {
   const send = useSendDayLogReply();
   const edit = useEditDayLogReply();
@@ -254,7 +264,7 @@ export function PersonReplies({
       send={{
         inputId: `dl-reply-${entryId}`,
         placeholder: `Write to ${first} about this entry…`,
-        hint: `${first} gets a 🔔 notification.`,
+        hint: sendHint(first, goesToInbox),
         onSend: (body, saveKey) => send.mutateAsync({ entryId, body, saveKey }),
       }}
     />
@@ -282,7 +292,7 @@ export function DayReplies({ p }: { p: DayLogPersonDay }): React.JSX.Element {
           ? {
               inputId: `dl-day-reply-${p.date}`,
               placeholder: `Write to ${first} about ${fmtDate(p.date)}…`,
-              hint: `${first} gets a notification and a task in Inbox.`,
+              hint: sendHint(first, p.replyGoesToInbox, ', closed when the day is entered'),
               onSend: (body, saveKey) =>
                 send.mutateAsync({ userId: p.userId, date: p.date, body, saveKey }),
             }

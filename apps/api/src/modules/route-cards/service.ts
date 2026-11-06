@@ -10,7 +10,9 @@
 //    Rev 1. updateRouteCard bumps current_revision by 1, snapshots
 //    the PRE-update ops, and auto-generates a diff note if the caller
 //    didn't provide one. Matches legacy revisionLog[] behaviour
-//    (saveRouteCardForItem L6929-6931).
+//    (saveRouteCardForItem L6929-6931). ADR-277: a Draft stays at its number —
+//    each save, and the save that submits it, overwrites that revision's ops
+//    snapshot instead of raising a new one.
 //
 // 2. One active route card per item (per company). Enforced at the
 //    DB layer via `route_cards_company_item_uniq` partial unique
@@ -52,11 +54,15 @@ import {
   type ActivityChange,
   type DocumentEditStagedResult,
   ActivityAction,
+  canEditRouteCard,
+  canSubmitRouteCardStatus,
+  isRouteCardLocked,
   itemRevLabel,
   normalizeRevision,
   type JcRouteCardWriteBack,
   opSrNo,
   ROUTE_CARD_APPROVAL_LABEL,
+  ROUTE_CARD_LOCKED_MESSAGE,
   type RouteCardApprovalStatus,
 } from '@innovic/shared';
 import { type AnyColumn, and, asc, desc, eq, inArray, isNull, type SQL, sql } from 'drizzle-orm';
@@ -74,6 +80,7 @@ import {
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { hasFormAccess, requireDeleteRight, requireFormAccess } from '../../lib/access';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { assertActivePartiesBatch } from '../../lib/active-party';
 import { type DiffField, diffFields, softDeleteStamp } from '../../lib/audit-trail';
@@ -91,6 +98,7 @@ import {
 import { lockDocSeries } from '../../lib/doc-series-lock';
 import { isRouteCardUsable } from '../../lib/route-card-usable';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
+import { assertRowUpdated } from '../../lib/row-lock';
 import { isUniqueViolation } from '../../lib/db-retry';
 import { findItemRevision, itemNeedsRev, resolveItemRevision } from '../../lib/item-revision';
 import { readCardDrawing, readRouteCardForItemRev } from './lookup';
@@ -487,6 +495,7 @@ export async function listRouteCards(
            FROM public.users ru WHERE ru.id = rc.rejected_by) AS "rejectedByName",
         rc.rejection_reason AS "rejectionReason",
         rc.created_at AS "createdAt", rc.created_by AS "createdBy",
+        ${createdByNameSql(sql`rc.created_by`)} AS "createdByName",
         rc.updated_at AS "updatedAt", rc.updated_by AS "updatedBy",
         rc.deleted_at AS "deletedAt",
         i.code AS "itemCode", i.name AS "itemName",
@@ -537,6 +546,7 @@ function toListItem(r: Record<string, unknown>): RouteCardListItem {
     rejectionReason: (r['rejectionReason'] as string | null) ?? null,
     createdAt: tsLike(r['createdAt']),
     createdBy: r['createdBy'] as string,
+    createdByName: (r['createdByName'] as string | null) ?? null,
     updatedAt: tsLike(r['updatedAt']),
     updatedBy: r['updatedBy'] as string,
     deletedAt: maybeTsLike(r['deletedAt']),
@@ -581,8 +591,14 @@ export async function loadRouteCardDetail(
       )[0]?.code ?? null)
     : null;
 
-  // ADR-253 — who approved / rejected the card, for display.
-  const approvalNames = await loadUserNames(tx, [header.approvedBy, header.rejectedBy]);
+  // ADR-253 — who approved / rejected the card, and who entered and last saved
+  // it, for display. One lookup for all four.
+  const personNames = await loadUserNames(tx, [
+    header.approvedBy,
+    header.rejectedBy,
+    header.createdBy,
+    header.updatedBy,
+  ]);
   const drawing = await readCardDrawing(tx, header.itemRevisionId);
 
   // Ops with joined machine + machine group + vendor display.
@@ -637,11 +653,13 @@ export async function loadRouteCardDetail(
     rmQtyPerPiece: header.rmQtyPerPiece,
     notes: header.notes,
     planType: header.planType,
-    ...approvalFields(header, approvalNames),
+    ...approvalFields(header, personNames),
     createdAt: tsLike(header.createdAt),
     createdBy: header.createdBy,
+    createdByName: personNames.get(header.createdBy) ?? null,
     updatedAt: tsLike(header.updatedAt),
     updatedBy: header.updatedBy,
+    updatedByName: personNames.get(header.updatedBy) ?? null,
     deletedAt: maybeTsLike(header.deletedAt),
     itemCode: item?.code ?? null,
     itemName: item?.name ?? null,
@@ -879,15 +897,16 @@ function revChange(before: number, after: number): ActivityChange {
 }
 
 /** ADR-253 — the approval-state move as the History tab shows it
- *  ("RC Status Pending Approval → Approved"). */
+ *  ("RC Status Pending Approval → Approved"). `before` null: a card created or
+ *  restored as a Draft (ADR-277), which the bell reads to stay silent. */
 export function rcStatusChange(
-  before: RouteCardApprovalStatus,
+  before: RouteCardApprovalStatus | null,
   after: RouteCardApprovalStatus,
 ): ActivityChange {
   return {
     field: 'approvalStatus',
     label: 'RC Status',
-    before: ROUTE_CARD_APPROVAL_LABEL[before],
+    before: before ? ROUTE_CARD_APPROVAL_LABEL[before] : null,
     after: ROUTE_CARD_APPROVAL_LABEL[after],
   };
 }
@@ -1081,12 +1100,7 @@ export async function createRouteCard(
         : null;
 
       // One live card per Item + Rev (old / Buy cards: one per item with no Rev).
-      const existing = await readRouteCardForItemRev(
-        tx,
-        companyId,
-        input.itemId,
-        rev?.id ?? null,
-      );
+      const existing = await readRouteCardForItemRev(tx, companyId, input.itemId, rev?.id ?? null);
       if (existing) {
         throw new ConflictError(
           rev
@@ -1096,6 +1110,9 @@ export async function createRouteCard(
       }
 
       const rawMaterial = await resolveRcRawMaterial(tx, companyId, input);
+
+      // ADR-277 — Save keeps it with the creator; absent = sent, as before.
+      const isDraft = input.submitForApproval === false;
 
       const inserted = await tx
         .insert(routeCards)
@@ -1108,9 +1125,8 @@ export async function createRouteCard(
           ...rawMaterial,
           notes: input.notes ?? null,
           planType: input.planType ?? 'manufacture',
-          // ADR-253 — every new card waits for approval (no switch). Written
-          // explicitly rather than left to the column default.
-          approvalStatus: 'pending',
+          // ADR-253 — written explicitly rather than left to the column default.
+          approvalStatus: isDraft ? 'draft' : 'pending',
           createdBy: user.id,
           updatedBy: user.id,
         })
@@ -1137,13 +1153,14 @@ export async function createRouteCard(
           entity: 'RouteCard',
           entityId: header.id,
           refId: header.code,
-          detail: `${rcDetailString(header.code, item.code)} — sent for approval`,
+          changes: isDraft ? [rcStatusChange(null, 'draft')] : null,
+          detail: `${rcDetailString(header.code, item.code)} — ${isDraft ? 'saved as Draft' : 'sent for approval'}`,
         },
         companyId,
         user,
       );
 
-      // ADR-253 — NO raw-material backfill here any more. A new card is
+      // ADR-253 — NO raw-material backfill here any more. A new card is Draft or
       // Pending Approval and not usable, so its raw material must not reach the
       // waiting plans yet; the T2 backfill (plan-rm-backfill) runs when the card
       // is APPROVED (approveRouteCard, ./approval.ts). The plans pre-lock above
@@ -1332,17 +1349,46 @@ export async function validateRouteCardEdit(
   return { item, machinesLookup, vendorsLookup, rawMaterial };
 }
 
+/** ADR-277 — the caller's two rights canEditRouteCard reads, taken before the
+ *  transaction opens. Neither right: the standard refusal, no row read. */
+export async function routeCardEditRights(
+  user: AuthContext,
+): Promise<{ entry: boolean; edit: boolean }> {
+  const rights = {
+    entry: await hasFormAccess(user, 'routecard_create', 'entry'),
+    edit: await hasFormAccess(user, 'routecard_create', 'edit'),
+  };
+  if (!rights.entry && !rights.edit) await requireFormAccess(user, 'routecard_create', 'edit');
+  return rights;
+}
+
+/** ADR-277 — call under the card's row lock. A card with the approver is locked
+ *  for everybody. `rights` absent = the edit-approval engine replaying an
+ *  approved edit, which the approver's Approve tick already decided, or a
+ *  delete, whose right is checked at its door. */
+export async function assertRouteCardEditable(
+  card: { approvalStatus: string; createdBy: string },
+  user: AuthContext,
+  rights?: { entry: boolean; edit: boolean },
+): Promise<void> {
+  if (isRouteCardLocked(card.approvalStatus)) throw new ConflictError(ROUTE_CARD_LOCKED_MESSAGE);
+  if (rights && !canEditRouteCard(card, user.id, rights)) {
+    await requireFormAccess(user, 'routecard_create', 'edit');
+  }
+}
+
 export async function updateRouteCard(
   id: string,
   input: UpdateRouteCardInput,
   user: AuthContext,
 ): Promise<RouteCardDetail> {
-  // The `edit` check lives HERE, not in updateRouteCardTx, so the edit-approval
-  // engine's applyEdit can replay an approved edit for an approver who holds
-  // `approve` but not `edit` (the same split as updateBomMaster).
-  await requireFormAccess(user, 'routecard_create', 'edit');
+  // The rights travel to updateRouteCardTx, which applies them under the row
+  // lock; it asks for none of its own, so the edit-approval engine's applyEdit
+  // can replay an approved edit for an approver who holds `approve` but not
+  // `edit` (the same split as updateBomMaster).
+  const rights = await routeCardEditRights(user);
   try {
-    return await withUserContext(user, (tx) => updateRouteCardTx(tx, id, input, user));
+    return await withUserContext(user, (tx) => updateRouteCardTx(tx, id, input, user, { rights }));
   } catch (e) {
     throw rcUniqueConflict(e) ?? e;
   }
@@ -1359,7 +1405,9 @@ export async function updateRouteCardOrStage(
   input: UpdateRouteCardInput,
   user: AuthContext,
 ): Promise<RouteCardDetail | DocumentEditStagedResult> {
-  await requireFormAccess(user, 'routecard_create', 'edit');
+  // An Entry-only user passes here for their own Draft / Rejected card. The
+  // engine asks for `edit` before staging a live card, updateRouteCard for the rest.
+  await routeCardEditRights(user);
   const companyId = requireCompany(user);
   // Imported dynamically: the engine's registry imports the Route Card entry,
   // which imports this file — a static import would be a cycle.
@@ -1404,8 +1452,9 @@ export async function updateRouteCardTx(
   input: UpdateRouteCardInput,
   user: AuthContext,
   /** `routingUnchanged`: see validateRouteCardEdit — set by the edit-approval
-   *  applyEdit when only header boxes were approved. */
-  opts?: { routingUnchanged?: boolean },
+   *  applyEdit when only header boxes were approved. `rights`: see
+   *  assertRouteCardEditable — set by a direct save, absent on a replay. */
+  opts?: { routingUnchanged?: boolean; rights?: { entry: boolean; edit: boolean } },
 ): Promise<RouteCardDetail> {
   const companyId = requireCompany(user);
   // LOCK ORDER — plans BEFORE route_cards (CLAUDE.md Section 20.3). This is
@@ -1439,6 +1488,9 @@ export async function updateRouteCardTx(
     .limit(1);
   const header = headers[0];
   if (!header) throw new NotFoundError('Route Card not found. It may have been moved to Trash.');
+  // ADR-277 — ahead of the stale-form check: a form opened before the card was
+  // submitted is told why it cannot save, not just to reload.
+  await assertRouteCardEditable(header, user, opts?.rights);
   // R5: refuse the save if someone else edited the Route Card after this form opened it.
   assertUnchangedSinceOpened(header.updatedAt, input.expectedUpdatedAt);
 
@@ -1567,12 +1619,14 @@ export async function updateRouteCardTx(
   // written, never merged — sending null (or leaving the field out) clears
   // the grade or size instead of keeping the old one.
   //
-  // ADR-253 — a REJECTED card that is saved again goes back for approval:
-  // status → pending and the rejection stamp is cleared. A pending card stays
-  // pending; an approved card (direct save with the gate off, or an approved
-  // edit replayed by the edit-approval engine) stays approved.
-  const resubmit = header.approvalStatus === 'rejected';
-  await tx
+  // ADR-277 — a Draft or Rejected card goes for approval unless this is a plain
+  // Save (status → pending, any rejection stamp cleared). An approved card
+  // (direct save with the gate off, or an approved edit replayed by the
+  // edit-approval engine) stays approved whatever the flag says.
+  const oldStatus = header.approvalStatus as RouteCardApprovalStatus;
+  const submit = input.submitForApproval !== false && canSubmitRouteCardStatus(oldStatus);
+  const isDraft = oldStatus === 'draft';
+  const headerUpdated = await tx
     .update(routeCards)
     .set({
       code: input.code,
@@ -1581,18 +1635,21 @@ export async function updateRouteCardTx(
       ...rawMaterial,
       notes: input.notes ?? null,
       planType: input.planType ?? header.planType,
-      ...(resubmit
+      ...(submit
         ? { approvalStatus: 'pending', rejectedBy: null, rejectedAt: null, rejectionReason: null }
         : {}),
       updatedBy: user.id,
       updatedAt: new Date(),
     })
-    .where(eq(routeCards.id, id));
+    .where(and(eq(routeCards.id, id), eq(routeCards.approvalStatus, oldStatus)))
+    .returning({ id: routeCards.id });
+  assertRowUpdated(headerUpdated, `Route Card ${header.code}`);
 
   // Ops swap + revision bump + snapshot live in ONE place
   // (replaceRouteCardOps) shared with the auto-save path below.
   // skipWhenUnchanged is false here: an explicit user save always
-  // records a revision, exactly as it did before this refactor.
+  // records a revision, exactly as it did before this refactor — except a
+  // Draft, which stays at its number (ADR-277).
   const replaced = await replaceRouteCardOps(
     tx,
     {
@@ -1604,12 +1661,13 @@ export async function updateRouteCardTx(
       vendorsLookup,
       note: input.revisionNote?.trim() || null,
       headerNote: headerChanges.length > 0 ? headerChanges.join(', ') : null,
+      keepRevision: isDraft,
     },
     user,
   );
 
-  // An explicit save always records a revision, so the header row always
-  // carries at least the Route Card Rev bump.
+  // Any save but a Draft's records a revision, so the header row carries at
+  // least the Route Card Rev bump. A Draft's logs only what changed.
   const revisionNote = input.revisionNote?.trim();
   await logRouteCardRevision(
     tx,
@@ -1619,12 +1677,12 @@ export async function updateRouteCardTx(
     [
       ...diffFields(beforeView, afterView, RC_HEADER_FIELDS),
       ...revChanges,
-      revChange(header.currentRevision, replaced.newRevision),
-      ...(resubmit ? [rcStatusChange('rejected', 'pending')] : []),
+      ...(isDraft ? [] : [revChange(header.currentRevision, replaced.newRevision)]),
+      ...(submit ? [rcStatusChange(oldStatus, 'pending')] : []),
     ],
     routeCardOpLogRows(replaced.oldOps, replaced.newOps),
     `Edited ${rcDetailString(input.code, item.code)}${revisionNote ? ` — ${revisionNote}` : ''}${
-      resubmit ? ' — sent for approval again' : ''
+      submit ? ` — sent for approval${isDraft ? '' : ' again'}` : ''
     }`,
   );
 
@@ -1654,7 +1712,7 @@ export async function updateRouteCardTx(
   // A re-pointed card fills B's plans the next time someone saves it with
   // the material B actually needs.
   //
-  // ADR-253 — and only from an APPROVED card. A pending / rejected card is not
+  // ADR-253 — and only from an APPROVED card. A draft / pending / rejected card is not
   // usable, so its raw material waits; approveRouteCard runs this same
   // backfill at approval time.
   if (input.itemId === header.itemId && isRouteCardUsable(header.approvalStatus)) {
@@ -1688,9 +1746,12 @@ export async function softDeleteRouteCard(
           isNull(routeCards.deletedAt),
         ),
       )
-      .limit(1);
+      .limit(1)
+      .for('update');
     const header = headers[0];
     if (!header) throw new NotFoundError('Route Card not found. It may have been moved to Trash.');
+    // ADR-277 — under the row lock, so a delete cannot pass a submit in flight.
+    await assertRouteCardEditable(header, user);
 
     // Look up the item for the activity-log label only; downstream
     // JC creation uses route_card_ops snapshots, so no link block.
@@ -1732,6 +1793,11 @@ export async function softDeleteRouteCard(
       user,
     );
 
+    const personNames = await loadUserNames(tx, [
+      header.approvedBy,
+      header.rejectedBy,
+      header.createdBy,
+    ]);
     return {
       id: header.id,
       companyId: header.companyId,
@@ -1748,9 +1814,10 @@ export async function softDeleteRouteCard(
       rmQtyPerPiece: header.rmQtyPerPiece,
       notes: header.notes,
       planType: header.planType,
-      ...approvalFields(header, await loadUserNames(tx, [header.approvedBy, header.rejectedBy])),
+      ...approvalFields(header, personNames),
       createdAt: tsLike(header.createdAt),
       createdBy: header.createdBy,
+      createdByName: personNames.get(header.createdBy) ?? null,
       updatedAt: tsLike(header.updatedAt),
       updatedBy: header.updatedBy,
       deletedAt: stamp.deletedAt.toISOString(),
@@ -1981,6 +2048,9 @@ interface ReplaceRouteCardOpsParams {
    *  incoming op supplies none. Set by the AUTO-SAVE only — see the comment at
    *  the use site for why an explicit card edit must not do this. */
   preserveRemarks?: boolean;
+  /** ADR-277 — a Draft: no bump and no new revision row; the current revision's
+   *  ops snapshot is overwritten with the new ops. */
+  keepRevision?: boolean;
 }
 
 /** The auto-save's remark carry-over (0195) — see the note at its use in
@@ -2112,7 +2182,7 @@ async function replaceRouteCardOps(
       and(eq(routeCardOps.routeCardId, p.routeCardId), eq(routeCardOps.companyId, p.companyId)),
     );
 
-  const newRevision = p.currentRevision + 1;
+  const newRevision = p.keepRevision ? p.currentRevision : p.currentRevision + 1;
 
   await tx
     .update(routeCards)
@@ -2123,14 +2193,31 @@ async function replaceRouteCardOps(
     .insert(routeCardOps)
     .values(assignOpValues(opsToWrite, p.routeCardId, p.companyId, user.id));
 
-  await tx.insert(routeCardRevisions).values({
-    companyId: p.companyId,
-    routeCardId: p.routeCardId,
-    revisionNo: newRevision,
-    notes: finalNote,
-    opsSnapshot: buildOpsSnapshot(opsToWrite, p.machinesLookup, p.vendorsLookup),
-    createdBy: user.id,
-  });
+  const opsSnapshot = buildOpsSnapshot(opsToWrite, p.machinesLookup, p.vendorsLookup);
+  if (p.keepRevision) {
+    const saved = await tx
+      .update(routeCardRevisions)
+      // Whoever saved these ops last; each earlier save stays in the activity log.
+      .set({ opsSnapshot, createdBy: user.id, createdAt: new Date() })
+      .where(
+        and(
+          eq(routeCardRevisions.routeCardId, p.routeCardId),
+          eq(routeCardRevisions.companyId, p.companyId),
+          eq(routeCardRevisions.revisionNo, p.currentRevision),
+        ),
+      )
+      .returning({ id: routeCardRevisions.id });
+    assertRowUpdated(saved, `Route Card Rev ${p.currentRevision}`);
+  } else {
+    await tx.insert(routeCardRevisions).values({
+      companyId: p.companyId,
+      routeCardId: p.routeCardId,
+      revisionNo: newRevision,
+      notes: finalNote,
+      opsSnapshot,
+      createdBy: user.id,
+    });
+  }
 
   return { newRevision, changed: true, oldOps: oldSnapshot, newOps: newSnapshot };
 }
@@ -2478,7 +2565,7 @@ export async function overwriteRouteCardFromSource(
  *      hand-raised job-work Job Card for an item that has no card is how that
  *      card is born, so this branch still writes material in full. The new
  *      card is Pending Approval (ADR-253) and feeds no plan until approved.
- *    - active card exists but is Pending Approval / Rejected (ADR-253) → left
+ *    - active card exists but is Draft / Pending Approval / Rejected (ADR-253) → left
  *      untouched; the write-back carries `notSentReason` saying so — but only
  *      when something was held back (routing differs, or a blank RM half this
  *      user may fill); an identical routing returns null, as on an approved card.
@@ -2610,7 +2697,7 @@ export async function saveRouteCardForItem(
     );
 
     if (!isRouteCardUsable(card.approvalStatus)) {
-      // ADR-253 — the item's card is still Pending Approval (or Rejected). It
+      // ADR-253 — the item's card is still Draft, Pending Approval or Rejected. It
       // is not in use, and the approver is looking at exactly what it holds
       // now: a Job Card / plan must not rewrite it under them, and there is
       // nothing to stage (the edit-approval engine only handles approved
@@ -2631,8 +2718,10 @@ export async function saveRouteCardForItem(
         created: false,
         notSentReason:
           card.approvalStatus === 'rejected'
-            ? `Route Card ${card.code} was rejected — correct it on the Route Card screen and send it for approval again. This routing was not copied to it.`
-            : `Route Card ${card.code} is waiting for approval — this routing was not copied to it.`,
+            ? `Route Card ${card.code} was returned to creator — correct it on the Route Card screen and send it for approval again. This routing was not copied to it.`
+            : card.approvalStatus === 'draft'
+              ? `Route Card ${card.code} is a Draft — this routing was not copied to it.`
+              : `Route Card ${card.code} is waiting for approval — this routing was not copied to it.`,
       };
     }
 

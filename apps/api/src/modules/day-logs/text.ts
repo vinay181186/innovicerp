@@ -11,7 +11,7 @@
 // the unique (line_id, entry_rev_no) index is the backstop. The text UPDATE is
 // conditional on the updatedAt the screen loaded (§20.4).
 
-import type { DayLogDetail, UpdateDayLogWorkInput } from '@innovic/shared';
+import { DAY_LOG_ENTRY_REF, type DayLogDetail, type UpdateDayLogWorkInput } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import type { AuthContext } from '../../db/with-user-context';
 import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
@@ -93,7 +93,8 @@ export async function updateWork(
  * reply not yet seen gets seen_at = now, ONE conditional statement (a reply
  * already seen is left alone, so a second call changes nothing). The day
  * header is bumped only when something changed, so the other screens
- * (the Super Admin's, the 🔔) refresh.
+ * (the Super Admin's, the 🔔) refresh. The task's dot clears in the same
+ * statement: one fact (ADR-274).
  */
 export async function markRepliesSeen(
   entryId: string,
@@ -115,6 +116,13 @@ export async function markRepliesSeen(
       t AS (
         UPDATE public.daily_reports SET updated_at = now(), updated_by = ${user.id}::uuid
         WHERE id = ${h.id}::uuid AND EXISTS (SELECT 1 FROM s)
+        RETURNING 1),
+      v AS (
+        UPDATE public.tasks SET viewed_at = now()
+        WHERE company_id = ${companyId}::uuid AND assigned_to = ${user.id}::uuid
+          AND linked_ref_type = ${DAY_LOG_ENTRY_REF} AND linked_ref_id = ${entryId}
+          AND deleted_at IS NULL AND status IN ('todo', 'in_progress')
+          AND EXISTS (SELECT 1 FROM s)
         RETURNING 1)
       SELECT (SELECT count(*) FROM s)::int AS seen, (SELECT count(*) FROM t)::int AS touched
     `)) as unknown as Array<{ seen: number }>;

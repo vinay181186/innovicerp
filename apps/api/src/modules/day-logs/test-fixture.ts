@@ -76,19 +76,18 @@ export async function wipeOwnerDays(): Promise<void> {
     WHERE dr.user_id = ${fx.ownerBase.id}::uuid AND ${when(sql`dr.report_date`)}`;
   const headers = sql`SELECT dr.id FROM public.daily_reports dr
     WHERE dr.user_id = ${fx.ownerBase.id}::uuid AND ${when(sql`dr.report_date`)}`;
-  const dayTasks = sql`SELECT t.id FROM public.tasks t
-    WHERE t.linked_ref_type = 'day_log_date'
-      AND t.linked_ref_id IN (SELECT id::text FROM (${headers}) h)`;
+  const taskOfDays = sql`((linked_ref_type = 'day_log_date'
+      AND linked_ref_id IN (SELECT id::text FROM (${headers}) h))
+    OR (linked_ref_type = 'day_log_entry'
+      AND linked_ref_id IN (SELECT id::text FROM (${days}) d)))`;
+  const dayTasks = sql`SELECT id FROM public.tasks WHERE ${taskOfDays}`;
   await db.execute(sql`
     WITH a AS (DELETE FROM public.daily_report_line_revisions WHERE line_id IN (${days})),
          b AS (DELETE FROM public.daily_report_line_replies WHERE line_id IN (${days})),
          c AS (DELETE FROM public.daily_report_day_replies WHERE daily_report_id IN (${headers})),
          d AS (DELETE FROM public.task_history WHERE task_id IN (${dayTasks}))
     SELECT 1`);
-  await db.execute(sql`
-    DELETE FROM public.tasks
-    WHERE linked_ref_type = 'day_log_date'
-      AND linked_ref_id IN (SELECT id::text FROM (${headers}) h)`);
+  await db.execute(sql`DELETE FROM public.tasks WHERE ${taskOfDays}`);
   await db.execute(sql`
     DELETE FROM public.daily_reports
     WHERE user_id = ${fx.ownerBase.id}::uuid AND ${when(sql`report_date`)}

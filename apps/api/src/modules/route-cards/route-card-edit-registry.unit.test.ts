@@ -15,6 +15,7 @@ import {
 
 const writer = vi.hoisted(() => ({ calls: [] as unknown[][], sourceCalls: [] as unknown[][] }));
 vi.mock('./service', () => ({
+  assertRouteCardEditable: vi.fn(() => Promise.resolve()),
   updateRouteCardTx: vi.fn((...args: unknown[]) => {
     writer.calls.push(args);
     return Promise.resolve({});

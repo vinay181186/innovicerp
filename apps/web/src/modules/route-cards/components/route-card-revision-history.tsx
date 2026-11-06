@@ -16,7 +16,7 @@ import type { RouteCardRevision } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { Fragment, useState } from 'react';
-import { fmtDate } from '@/lib/date';
+import { fmtDate, fmtTime12 } from '@/lib/date';
 
 // Group as the user reads it — never the raw code. The snapshot keeps no
 // machine group, so an in-house op reads "In-house" here.
@@ -51,6 +51,7 @@ export function RouteCardRevisionHistory({
             <th style={{ width: 28 }} />
             <th>Route Card Rev</th>
             <th>Revision Date</th>
+            <th>Revision Time</th>
             <th>Revised By</th>
             <th>Revision Note</th>
             <th className="th-num">Ops</th>
@@ -59,7 +60,7 @@ export function RouteCardRevisionHistory({
         <tbody>
           {revisions.length === 0 ? (
             <tr>
-              <td colSpan={6} className="empty-state">
+              <td colSpan={7} className="empty-state">
                 No revisions yet.
               </td>
             </tr>
@@ -83,6 +84,9 @@ export function RouteCardRevisionHistory({
                     {fmtDate(rev.createdAt)}
                   </td>
                   <td className="text2" style={{ fontSize: 'var(--fs-xs)' }}>
+                    {fmtTime12(rev.createdAt, '—')}
+                  </td>
+                  <td className="text2" style={{ fontSize: 'var(--fs-xs)' }}>
                     {rev.createdByName ?? '—'}
                   </td>
                   <td
@@ -96,7 +100,7 @@ export function RouteCardRevisionHistory({
                 {open ? (
                   <tr>
                     <td
-                      colSpan={6}
+                      colSpan={7}
                       style={{
                         background: 'var(--bg3)',
                         padding: 'var(--sp-2) var(--sp-3) var(--sp-3)',
@@ -124,8 +128,8 @@ export function RouteCardRevisionHistory({
                               <th>Program No.</th>
                               <th className="th-num">Lead Days</th>
                               <th>Tool No.</th>
-                              <th>Tool Details</th>
-                              <th>Remarks</th>
+                              <th className="th-left">Tool Details</th>
+                              <th className="th-left">Remarks</th>
                               <th>QC</th>
                             </tr>
                           </thead>
@@ -171,13 +175,19 @@ export function RouteCardRevisionHistory({
                                   >
                                     {op.toolNo ?? '—'}
                                   </td>
-                                  <td className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
+                                  <td
+                                    className="td-prose text3"
+                                    style={{ fontSize: 'var(--fs-xs)' }}
+                                  >
                                     {op.toolDetails ?? '—'}
                                   </td>
                                   {/* Optional like qcRequired below: a snapshot
                                       written before migration 0195 carries no
                                       remarks key at all. */}
-                                  <td className="text2" style={{ fontSize: 'var(--fs-sm)' }}>
+                                  <td
+                                    className="td-prose text2"
+                                    style={{ fontSize: 'var(--fs-sm)' }}
+                                  >
                                     {op.remarks ?? '—'}
                                   </td>
                                   {/* undefined means this revision predates the

@@ -21,7 +21,9 @@
 // JWSO-only lists: pass `so: 'jwso'` and no `internalSoNo` — the slot reads
 // JWSO No. and the Internal SO No. column is left out (owner, 2026-10-31).
 // Mixed SO + JWSO lists keep the label SO No. (NAMING.md) and show whichever
-// order number the row has. Rows that ARE the order (SO list …) pass no `doc`.
+// order number the row has; a list the owner has renamed passes `so: 'mixed'`
+// for the heading SO No. / JWSO No. (NC Register, ADR-276). Rows that ARE the
+// order (SO list …) pass no `doc`.
 //
 // Build every lead block through `leadColumns` — never hand-write one.
 
@@ -58,8 +60,9 @@ export interface LeadColumnSpec<T> {
    *  `id`. Leave out only where the row IS the SO / JWSO (SO list, SO Overview …)
    *  — there SO No. is the own number. The own DATE is an ordinary column. */
   doc?: DataTableColumn<T> | undefined;
-  /** 'so' (default) → header "SO No."; 'jwso' → "JWSO No." (JWSO-only lists). */
-  so?: 'so' | 'jwso';
+  /** 'so' (default) → header "SO No."; 'jwso' → "JWSO No." (JWSO-only lists);
+   *  'mixed' → "SO No. / JWSO No." (the row shows whichever order it has). */
+  so?: 'so' | 'jwso' | 'mixed';
   soNo: (row: T) => Text;
   /** Leave out on a JWSO-only list — that column is then not drawn. */
   internalSoNo?: ((row: T) => Text) | undefined;
@@ -109,7 +112,8 @@ export function leadColumns<T>(spec: LeadColumnSpec<T>): DataTableColumn<T>[] {
       {
         id: 'so_no',
         kind: 'code',
-        header: spec.so === 'jwso' ? 'JWSO No.' : 'SO No.',
+        header:
+          spec.so === 'mixed' ? 'SO No. / JWSO No.' : spec.so === 'jwso' ? 'JWSO No.' : 'SO No.',
         className: 'mono',
         nowrap: true,
         render: (r): ReactNode => (

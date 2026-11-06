@@ -6,6 +6,7 @@ import {
   derivePerLineStage,
   deriveOverallSoStatus,
   enrichOps,
+  opHasStartedWork,
   rollupJC,
   rollupSoLine,
 } from './calc-engine';
@@ -652,6 +653,7 @@ describe('deriveOverallSoStatus', () => {
         delayedCount: 0,
         lineCount: 2,
         dueDate: '2026-06-01',
+        workStarted: false,
       }),
     ).toBe('blocked');
   });
@@ -666,6 +668,7 @@ describe('deriveOverallSoStatus', () => {
         delayedCount: 0,
         lineCount: 3,
         dueDate: '2026-06-01',
+        workStarted: true,
       }),
     ).toBe('completed');
   });
@@ -680,6 +683,7 @@ describe('deriveOverallSoStatus', () => {
         delayedCount: 1,
         lineCount: 2,
         dueDate: '2025-01-01',
+        workStarted: true,
       }),
     ).toBe('completed');
   });
@@ -694,6 +698,7 @@ describe('deriveOverallSoStatus', () => {
         delayedCount: 1,
         lineCount: 2,
         dueDate: '2025-01-01',
+        workStarted: true,
       }),
     ).toBe('delayed');
   });
@@ -709,6 +714,7 @@ describe('deriveOverallSoStatus', () => {
         lineCount: 2,
         dueDate: '2099-12-31',
         today: '2026-05-21',
+        workStarted: true,
       }),
     ).toBe('on_track');
   });
@@ -725,6 +731,7 @@ describe('deriveOverallSoStatus', () => {
         lineCount: 2,
         dueDate: '2020-01-01',
         today: '2026-05-21',
+        workStarted: true,
       }),
     ).toBe('in_progress');
   });
@@ -739,6 +746,7 @@ describe('deriveOverallSoStatus', () => {
         delayedCount: 0,
         lineCount: 2,
         dueDate: '2099-12-31',
+        workStarted: false,
       }),
     ).toBe('not_started');
   });
@@ -753,7 +761,104 @@ describe('deriveOverallSoStatus', () => {
         delayedCount: 0,
         lineCount: 0,
         dueDate: null,
+        workStarted: false,
       }),
     ).toBe('not_started');
+  });
+
+  // The "started" rule, end to end from op rows: enrichOps → rollupJC →
+  // opHasStartedWork → deriveOverallSoStatus, as so-overview calls them.
+  describe('work started, nothing finished', () => {
+    function statusOf(
+      ops: JcOpRow[],
+      logs: OpLogRow[] = [],
+      over: { running?: Set<string>; delayedCount?: number; orderQty?: number } = {},
+    ) {
+      const order = jc({ orderQty: over.orderQty ?? 62 });
+      const enriched = enrichOps(order, ops, logs, over.running ?? new Set());
+      return deriveOverallSoStatus({
+        totalDoneQty: rollupJC(order, enriched).doneQty,
+        totalRequiredQty: order.orderQty,
+        holdCount: 0,
+        finishedCount: 0,
+        delayedCount: over.delayedCount ?? 0,
+        lineCount: 1,
+        dueDate: '2099-12-31',
+        today: '2026-11-06',
+        workStarted: enriched.some(opHasStartedWork),
+      });
+    }
+    const vendorOp = (outsourceStatus: JcOpRow['outsourceStatus'], outsourceSentQty = 0) =>
+      op({ id: 'o1', opSeq: 1, opType: 'outsource', outsourceStatus, outsourceSentQty });
+
+    it('job card created, nothing done → not_started', () => {
+      expect(statusOf([op({ id: 'o1', opSeq: 1 })])).toBe('not_started');
+    });
+
+    it('outsource PR raised only → not_started', () => {
+      expect(statusOf([vendorOp('pr_raised')])).toBe('not_started');
+    });
+
+    it('outsource PO raised only → not_started', () => {
+      expect(statusOf([vendorOp('po_created')])).toBe('not_started');
+    });
+
+    it('sent 62 to the vendor, nothing back → in_progress', () => {
+      expect(statusOf([vendorOp('sent', 62)])).toBe('in_progress');
+    });
+
+    it('dual-lane in-house op with pieces sent out → in_progress', () => {
+      const dual = op({ id: 'o1', opSeq: 1, outsourceSentQty: 20 });
+      expect(statusOf([dual])).toBe('in_progress');
+    });
+
+    it('op running, nothing logged yet → in_progress', () => {
+      const ops = [op({ id: 'o1', opSeq: 1 })];
+      expect(statusOf(ops, [], { running: new Set(['o1']) })).toBe('in_progress');
+    });
+
+    it('completed on the first op only → in_progress (done qty is still 0)', () => {
+      const ops = [op({ id: 'o1', opSeq: 1 }), op({ id: 'o2', opSeq: 2 })];
+      expect(statusOf(ops, [log('o1', 'complete', 10)])).toBe('in_progress');
+    });
+
+    it('only rejects at the machine → in_progress', () => {
+      const ops = [op({ id: 'o1', opSeq: 1 })];
+      expect(statusOf(ops, [log('o1', 'complete', 0, 3)])).toBe('in_progress');
+    });
+
+    it('only rejects at QC → in_progress', () => {
+      const ops = [op({ id: 'o1', opSeq: 1, opType: 'qc', qcRequired: true })];
+      expect(statusOf(ops, [log('o1', 'qc', 0, 3)])).toBe('in_progress');
+    });
+
+    it('entries fully reversed net to zero → not_started', () => {
+      const ops = [op({ id: 'o1', opSeq: 1 })];
+      const logs = [log('o1', 'complete', 10, 2), log('o1', 'complete', -10, -2)];
+      expect(statusOf(ops, logs)).toBe('not_started');
+    });
+
+    it('QC entry fully reversed nets to zero → not_started', () => {
+      const ops = [op({ id: 'o1', opSeq: 1, opType: 'qc', qcRequired: true })];
+      const logs = [log('o1', 'qc', 5, 1), log('o1', 'qc', -5, -1)];
+      expect(statusOf(ops, logs)).toBe('not_started');
+    });
+
+    it('first-op QC reading qc_pending with no work → not_started', () => {
+      const ops = [op({ id: 'o1', opSeq: 1, opType: 'qc', qcRequired: true })];
+      const order = jc({ orderQty: 62 });
+      expect(enrichOps(order, ops, [], new Set())[0]?.status).toBe('qc_pending');
+      expect(statusOf(ops)).toBe('not_started');
+    });
+
+    it('overdue with work → delayed', () => {
+      const ops = [op({ id: 'o1', opSeq: 1 })];
+      expect(statusOf(ops, [log('o1', 'complete', 10)], { delayedCount: 1 })).toBe('delayed');
+    });
+
+    it('started with done > 0 and a future due date → on_track, unchanged', () => {
+      const ops = [op({ id: 'o1', opSeq: 1 })];
+      expect(statusOf(ops, [log('o1', 'complete', 10)])).toBe('on_track');
+    });
   });
 });

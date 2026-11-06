@@ -38,8 +38,7 @@ function opt(fields: SheetField[], label: string, value: string | null | undefin
 export function printNcReport(args: {
   nc: NcRegister;
   company: Company | null | undefined;
-  /** The job card's number. The NC read shape carries only `jobCardId`, so the
-   *  caller supplies it (list row `jcCode`; detail page's joined JC ops). */
+  /** The job card's number (the caller's list row / detail `jcCode`). */
   jcCode?: string | null | undefined;
   /** ADR-202 — the NC has a pending edit; the sheet prints "Draft — awaiting approval". */
   draft?: boolean | undefined;
@@ -65,7 +64,7 @@ export function printNcReport(args: {
     opt(raisedAgainst, 'Source GRN No.', nc.sourceGrnCode, true);
     opt(raisedAgainst, 'Sent on DC No.', nc.sourceDeliveryChallanCode, true);
   }
-  opt(raisedAgainst, 'SO No.', nc.soCodeText, true);
+  opt(raisedAgainst, 'SO No. / JWSO No.', nc.orderCode, true);
   opt(raisedAgainst, 'Internal SO No.', nc.soInternalNo, true);
   if (raisedAgainst.length === 0) raisedAgainst.push({ label: 'JC No.', value: '' });
 
