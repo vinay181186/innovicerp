@@ -52,7 +52,12 @@ export async function loadDayLogReplies(
            AND n.linked_ref_id = tk.linked_ref_id AND n.created_by = tk.created_by
            AND n.deleted_at IS NULL AND n.created_at > tk.created_at) AS next_at
       FROM public.tasks tk
-      WHERE tk.company_id = ${companyId}::uuid AND tk.id = ANY(${sql.param(ids)}::uuid[]))
+      WHERE tk.company_id = ${companyId}::uuid AND tk.id = ANY(${sql.param(ids)}::uuid[])
+        -- A blank-date task reassigned before ADR-274 stopped that: not the day's own
+        -- person, so no private reply text.
+        AND (tk.linked_ref_type <> ${DAY_LOG_DATE_REF} OR EXISTS (
+          SELECT 1 FROM public.daily_reports dr
+          WHERE dr.id::text = tk.linked_ref_id AND dr.user_id = tk.assigned_to)))
     ${repliesOf('daily_report_line_replies', 'line_id', DAY_LOG_ENTRY_REF, companyId)}
     UNION ALL
     ${repliesOf('daily_report_day_replies', 'daily_report_id', DAY_LOG_DATE_REF, companyId)}

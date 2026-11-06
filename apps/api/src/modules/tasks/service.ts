@@ -36,7 +36,7 @@ import type {
   UpdateTaskInput,
   UpdateTaskStatusInput,
 } from '@innovic/shared';
-import { DAY_LOG_DATE_REF, DAY_LOG_ENTRY_REF } from '@innovic/shared';
+import { DAY_LOG_DATE_REF, DAY_LOG_ENTRY_REF, isDayLogReplyRef } from '@innovic/shared';
 import { and, asc, count, eq, inArray, isNull, like, sql } from 'drizzle-orm';
 import { fileRegistry, taskComments, tasks, userAccess, users } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
@@ -817,6 +817,14 @@ export async function completeTask(
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const t = await loadVisibleTask(tx, id, companyId, user, true);
+    // ADR-274, §20.4 — a new reply bumped updated_at after the screen loaded.
+    if (
+      input.updatedAt &&
+      isDayLogReplyRef(t.linkedRefType) &&
+      t.updatedAt.getTime() !== new Date(input.updatedAt).getTime()
+    ) {
+      throw new ConflictError(`${t.code} has changed, perhaps a new reply — reload and read it`);
+    }
     await transitionStatus(
       tx,
       t,

@@ -28,7 +28,7 @@ export function TaskDayLogReplies({
           {r.body}
           {showSeen ? (
             <span className={r.seenAt ? 'dl-seen dl-green' : 'dl-seen dl-orange'}>
-              {r.seenAt ? `✓ Seen by ${first} · ${fmtStamp(r.seenAt)}` : '● Not seen yet'}
+              {r.seenAt ? `✓ Seen${first ? ` by ${first}` : ''} · ${fmtStamp(r.seenAt)}` : '● Not seen yet'}
             </span>
           ) : null}
         </div>

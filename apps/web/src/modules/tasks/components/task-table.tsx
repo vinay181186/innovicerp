@@ -62,26 +62,28 @@ function taskRowTint(t: TaskRow): string | undefined {
 const PRIORITY_OPTIONS = TASK_PRIORITIES.map((v) => ({ value: v, label: TASK_PRIORITY_LABELS[v] }));
 const STATUS_OPTIONS = TASK_STATUSES.map((v) => ({ value: v, label: TASK_STATUS_LABELS[v] }));
 
-/** Title cell: the title; a Day Log reply task adds the Seen word (not Inbox) and latest reply. */
+/** Title cell: the title; a Day Log reply task adds the Seen word (not Inbox) and a reply:
+ *  the oldest one not seen yet (an edit un-sees an old reply), else the latest. */
 function ReplyTitle({ t, view }: { t: TaskRow; view: TaskView }): React.JSX.Element {
   const replies = t.dayLogReplies ?? [];
-  const latest = replies.at(-1);
-  if (!latest) return <>{t.title}</>;
+  const unseen = replies.find((r) => !r.seenAt);
+  const shown = unseen ?? replies.at(-1);
+  if (!shown) return <>{t.title}</>;
   return (
     <>
       {view !== 'inbox' ? (
         <span
           style={{
             fontSize: 'var(--fs-xs)',
-            color: latest.seenAt ? 'var(--green2)' : 'var(--amber2)',
+            color: unseen ? 'var(--amber2)' : 'var(--green2)',
           }}
         >
-          {latest.seenAt ? '✓ Seen' : '● Not seen yet'}{' '}
+          {unseen ? '● Not seen yet' : '✓ Seen'}{' '}
         </span>
       ) : null}
       {t.title}{' '}
       <span style={{ fontWeight: 400 }}>
-        “{latest.body}”{replies.length > 1 ? ` (${replies.length} replies)` : ''}
+        “{shown.body}”{replies.length > 1 ? ` (${replies.length} replies)` : ''}
       </span>
     </>
   );
@@ -117,8 +119,8 @@ function taskColumns(view: TaskView): DataTableColumn<TaskRow>[] {
       ellipsis: true,
       render: (t) => <ReplyTitle t={t} view={view} />,
       title: (t) => {
-        const latest = t.dayLogReplies?.at(-1);
-        return latest ? `${t.title} — ${latest.body}` : t.title;
+        const shown = t.dayLogReplies?.find((r) => !r.seenAt) ?? t.dayLogReplies?.at(-1);
+        return shown ? `${t.title} — ${shown.body}` : t.title;
       },
     },
     {
@@ -228,7 +230,7 @@ function TaskExpand({ t, view }: { t: TaskRow; view: TaskView }): React.JSX.Elem
       {isReply ? (
         <TaskDayLogReplies
           replies={replies}
-          first={firstName(t.assignedToName ?? '—')}
+          first={firstName(t.assignedToName ?? '')}
           showSeen={view !== 'inbox'}
         />
       ) : null}

@@ -15350,4 +15350,11 @@ Owner: Pending Entries should open per person on a calendar, green for filled an
 - The hint beside Send reply comes from the server (`replyGoesToInbox`): a person whose Task Board is hidden gets the 🔔 only, and the reply still saves.
 - Replies sent before this change raise no task; they stay in the 🔔.
 
-**Known limit:** Pending Entries shows one Task No. per date, so with two senders on one date it names only one of the two tasks.
+- Complete on these tasks sends the `updatedAt` it loaded; a stale one gets a 409, so a reply that just arrived is not closed unread.
+- A blank-date task reassigned before this change shows no reply text to the new assignee.
+
+**Known limits:**
+- Pending Entries shows one Task No. per date, so with two senders on one date it names only one of the two tasks.
+- Editing a reply of a completed task, while a newer task from the same sender is open, puts the dot on the newer task.
+- A blank-date task seen in the minutes between migration 0242 and the API deploy can keep its dot until completed.
+- The hint says Task Board is hidden also when the person's login is inactive.

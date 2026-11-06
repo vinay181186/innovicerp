@@ -29,10 +29,10 @@ const C = at(MON, '17:00');
 const BLANK = '2040-01-02';
 const THU: DayLogClock = { today: '2040-01-05', nowMin: 12 * 60 };
 
-const saved = async () => (await add(MON, C)).entries[0]!;
-const sendEntry = (entryId: string, body: string, as: AuthContext = superAdmin()) =>
+export const saved = async () => (await add(MON, C)).entries[0]!;
+export const sendEntry = (entryId: string, body: string, as: AuthContext = superAdmin()) =>
   service.sendReply(entryId, { body }, as);
-const sendBlank = (body: string, as: AuthContext = superAdmin()) =>
+export const sendBlank = (body: string, as: AuthContext = superAdmin()) =>
   service.sendDayReply({ userId: fx.ownerBase.id, date: BLANK, body }, as, THU);
 
 interface TaskFacts {
@@ -56,10 +56,10 @@ const tasksOn = (refType: string, refId: string) =>
       AND linked_ref_id = ${refId} AND deleted_at IS NULL
     ORDER BY created_at
   `) as unknown as Promise<TaskFacts[]>;
-const entryTasks = (entryId: string) => tasksOn(DAY_LOG_ENTRY_REF, entryId);
+export const entryTasks = (entryId: string) => tasksOn(DAY_LOG_ENTRY_REF, entryId);
 
 /** The blank day's tasks (the header is opened by the first reply). */
-async function blankTasks(): Promise<TaskFacts[]> {
+export async function blankTasks(): Promise<TaskFacts[]> {
   const [h] = (await db.execute(sql`
     SELECT id::text AS id FROM public.daily_reports
     WHERE user_id = ${fx.ownerBase.id}::uuid AND report_date = ${BLANK}::date
@@ -332,7 +332,10 @@ export function replyTaskCases(): void {
         canReassign: false,
         canEdit: false,
       });
-      for (const plain of [r, { ...r, linkedRefType: 'so' }]) {
+      for (const plain of [
+        { ...r, linkedRefType: null },
+        { ...r, linkedRefType: 'so' },
+      ]) {
         expect(permsFor(plain, admin, true)).toMatchObject({
           canUpdateStatus: true,
           canComplete: true,

@@ -114,8 +114,7 @@ export function visibleTasksWhere(companyId: string, user: AuthContext): SQL {
  * or an admin may still cancel it.
  */
 export function permsFor(
-  r: Pick<TaskRecord, 'createdBy' | 'assignedTo' | 'assignedBy'> &
-    Partial<Pick<TaskRecord, 'linkedRefType'>>,
+  r: Pick<TaskRecord, 'createdBy' | 'assignedTo' | 'assignedBy' | 'linkedRefType'>,
   user: AuthContext,
   canWrite: boolean,
 ): TaskPermissions {

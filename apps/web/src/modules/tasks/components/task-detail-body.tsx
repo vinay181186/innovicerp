@@ -224,7 +224,7 @@ export function TaskBody({
           ) : (
             <TaskDayLogReplies
               replies={t.dayLogReplies}
-              first={firstName(t.assignedToName ?? '—')}
+              first={firstName(t.assignedToName ?? '')}
               showSeen={!!me && me.id !== t.assignedTo}
             />
           )}

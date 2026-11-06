@@ -114,6 +114,9 @@ export type UpdateTaskStatusInput = z.infer<typeof updateTaskStatusInputSchema>;
 export const completeTaskInputSchema = z.object({
   remark: z.string().max(2000).optional(),
   attachments: z.array(taskAttachmentInputSchema).max(10).optional(),
+  /** ADR-274 — the task as the screen loaded it; a Day Log reply task refuses a
+   *  stale Complete, so a reply that just arrived is not closed unread. */
+  updatedAt: z.string().datetime().optional(),
 });
 export type CompleteTaskInput = z.infer<typeof completeTaskInputSchema>;
 
