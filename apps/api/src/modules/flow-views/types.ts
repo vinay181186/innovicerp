@@ -73,9 +73,9 @@ export interface OpFlowRow {
   pendingQty: number;
   /** Back from the vendor, waiting for incoming QC. */
   inQcQty: number;
-  /** Sent to the vendor incl. lots re-sent for rework (return to vendor). */
-  vendorSentQty: number;
-  /** Received back from the vendor incl. re-received lots. */
+  /** ADR-276 — Received: first lots back from the vendor (GRNs with nc_id NULL).
+   *  Rework lots are reReceivedQty. Sent to Vendor − Received + Returned to Vendor
+   *  − Re-received = At Vendor. */
   vendorReceivedQty: number;
   /** Input − (Accepted + Rejected + Deviated open + At vendor + In QC + Pending). 0 = ✓. */
   unaccountedQty: number;

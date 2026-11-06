@@ -10,6 +10,7 @@ import type { ListOspWipQuery, ListOspWipResponse, OspWipRow } from '@innovic/sh
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { createdByNameSql } from '../../lib/created-by-sql';
 import { AuthorizationError } from '../../lib/errors';
+import { ospRtvQtySql } from '../../lib/osp-rtv-qty';
 import { polSql } from '../../lib/pol';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { OSP_ORDER_CODE, OSP_WIP_SF_COLUMNS } from './sf-columns';
@@ -41,6 +42,8 @@ interface WipRawRow {
   order_qty: number;
   sent_qty: number;
   returned_qty: number;
+  returned_to_vendor_qty: number;
+  re_received_qty: number;
   rejected_qty: number;
   accepted_qty: number;
   at_vendor_qty: number;
@@ -114,6 +117,10 @@ export async function listOspWip(
         w.order_qty, w.sent_qty, w.returned_qty, w.rejected_qty,
         w.accepted_qty, w.at_vendor_qty, w.not_sent_qty, w.in_qc_qty,
         w.ready_to_send_qty,
+        -- ADR-276: cumulative challan quantities (lib/osp-rtv-qty.ts), never the
+        -- view's returned_to_vendor_qty, which is the open NC quantity.
+        ${ospRtvQtySql('rtv_sent_qty')} AS returned_to_vendor_qty,
+        ${ospRtvQtySql('rtv_received_qty')} AS re_received_qty,
         -- The customer's drawing revision. v_osp_wip resolves so_code through
         -- jc.source_so_line_id but does not carry the revision column, and
         -- widening the view would need a migration, so the two hops are made
@@ -161,7 +168,10 @@ export async function listOspWip(
       vendorCode: r.vendor_code,
       orderQty: Number(r.order_qty),
       sentQty: Number(r.sent_qty),
+      // First-lot receipts (GRNs with nc_id NULL) — the view's returned_qty.
       returnedQty: Number(r.returned_qty),
+      returnedToVendorQty: Number(r.returned_to_vendor_qty),
+      reReceivedQty: Number(r.re_received_qty),
       rejectedQty: Number(r.rejected_qty),
       acceptedQty: Number(r.accepted_qty),
       atVendorQty: Number(r.at_vendor_qty),

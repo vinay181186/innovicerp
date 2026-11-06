@@ -138,8 +138,10 @@ export function JcOpPopup({
         <Chip k="Pending" v={flow?.pendingQty} tone="jc-ops-q-warn" />
         {hasOsp ? (
           <>
-            <Chip k="Sent" v={flow?.vendorSentQty} />
+            <Chip k="Sent to Vendor" v={flow?.sentToVendorQty} />
             <Chip k="Received" v={flow?.vendorReceivedQty} />
+            <Chip k="Returned to Vendor" v={flow?.returnedToVendorQty} />
+            <Chip k="Re-received" v={flow?.reReceivedQty} />
             <Chip k="At Vendor" v={flow?.atVendorQty} />
           </>
         ) : null}

@@ -9,8 +9,8 @@
 //   outsource op Vendor, Outsource Status (with the PR / PO reference),
 //                PR · PO, Open DC, Ready to Send, Back from Vendor
 //   in-house op with an outsource lane (ADR-081, mock-up frame 3) — the split:
-//                Sent to Vendor + vendor, PR · PO, Open DC, Received Back,
-//                Accepted Back, At Vendor, Completed
+//                Sent to Vendor + vendor, PR · PO, Open DC, Received,
+//                Returned to Vendor, Re-received, Accepted Back, At Vendor, Completed
 //   every op     NC breakup, rework markers, Customer Material on the first
 //                op of a JW card, and the latest three log entries
 //
@@ -43,7 +43,8 @@ const NC_BREAKUP_ROWS: ReadonlyArray<{
   { key: 'underReworkQty', label: 'Under Rework', cls: 'jc-ops-warn' },
   { key: 'underRepairQty', label: 'Under Repair', cls: 'jc-ops-warn' },
   { key: 'rtvAwaitingChallanQty', label: 'Return Challan Pending', cls: 'jc-ops-warn' },
-  { key: 'sentToVendorQty', label: 'Sent to Vendor', cls: 'jc-ops-info' },
+  // Return-to-vendor pieces still out — NOT the popup's Sent to Vendor chip (first lot).
+  { key: 'sentToVendorQty', label: 'Returned to Vendor, still out', cls: 'jc-ops-info' },
   { key: 'receivedQcPendingQty', label: 'Received – QC Pending', cls: 'jc-ops-info' },
   { key: 'scrapQty', label: 'Scrap', cls: 'jc-ops-bad' },
   { key: 'ncClosedQty', label: 'NC Closed', cls: 'text3' },
@@ -273,13 +274,13 @@ export function JcOpsTableDetail({
         {hasOspLane && !isOut ? (
           <>
             <F k="Sent to Vendor" code>
-              {flow ? flow.vendorSentQty : '—'}
+              {flow ? flow.sentToVendorQty : '—'}
               {vendor ? <span className="jc-ops-sub"> to {vendor}</span> : null}
             </F>
             {prPo}
             {openDc}
             <F
-              k="Received Back"
+              k="Received"
               code
               title={flow && flow.inQcQty > 0 ? `${flow.inQcQty} waiting incoming QC` : undefined}
             >
@@ -287,6 +288,12 @@ export function JcOpsTableDetail({
               {flow && flow.inQcQty > 0 ? (
                 <span className="jc-ops-sub"> · {flow.inQcQty} in incoming QC</span>
               ) : null}
+            </F>
+            <F k="Returned to Vendor" code>
+              {flow ? flow.returnedToVendorQty : '—'}
+            </F>
+            <F k="Re-received" code>
+              {flow ? flow.reReceivedQty : '—'}
             </F>
             <F k="Accepted Back" code>
               {flow ? flow.vendorAcceptedQty : '—'}

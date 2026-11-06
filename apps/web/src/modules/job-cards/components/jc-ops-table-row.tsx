@@ -21,7 +21,7 @@ import { opActions, type OpAction, type OpActionTarget } from './jc-ops-table-ac
 import { JcOpPopup } from './jc-op-popup';
 import { checkText, doneLabel } from './jc-ops-table-notes';
 
-export const COLS = 16;
+export const COLS = 18;
 
 type Navigate = ReturnType<typeof useNavigate>;
 
@@ -249,26 +249,31 @@ export function OpRow({
           title={flow ? PENDING_TITLE(flow) : undefined}
         />
         {/* With vendor (outsource) — jc-flow-panels.tsx L164-190 */}
-        <QtyTd
-          v={flow?.vendorSentQty}
-          na={!hasOsp}
-          sep
-          title={
-            flow && flow.returnedToVendorQty > 0
-              ? `${flow.vendorSentQty - flow.returnedToVendorQty} on outward DCs + ${flow.returnedToVendorQty} re-sent for rework`
-              : 'Sent on outward DCs'
-          }
-        />
+        <QtyTd v={flow?.sentToVendorQty} na={!hasOsp} sep title="First lot, sent on outward DCs" />
         <QtyTd
           v={flow?.vendorReceivedQty}
           na={!hasOsp}
           title={
             flow
-              ? `Received back incl. re-received lots${flow.inQcQty > 0 ? ` · ${flow.inQcQty} waiting incoming QC` : ''}`
+              ? `First lot, received back${flow.inQcQty > 0 ? ` · ${flow.inQcQty} waiting incoming QC` : ''}`
               : undefined
           }
         />
-        <QtyTd v={flow?.atVendorQty} na={!hasOsp} title="Pieces with the vendor right now" />
+        <QtyTd
+          v={flow?.returnedToVendorQty}
+          na={!hasOsp}
+          title="Deviated pieces sent back to the vendor for rework"
+        />
+        <QtyTd
+          v={flow?.reReceivedQty}
+          na={!hasOsp}
+          title="Of those, pieces the vendor sent back again"
+        />
+        <QtyTd
+          v={flow?.atVendorQty}
+          na={!hasOsp}
+          title="Pieces with the vendor right now: Sent to Vendor − Received + Returned to Vendor − Re-received"
+        />
         {/* Check — jc-flow-panels.tsx L191-208 */}
         <td className="vsep" title={flow ? checkText(flow) : undefined}>
           {!flow ? (

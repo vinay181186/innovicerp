@@ -157,11 +157,18 @@ export async function getOpFlow(jobCardId: string, user: AuthContext): Promise<O
           COALESCE(SUM(grl.qc_accepted_qty), 0) AS acc,
           COALESCE(SUM(grl.qc_rejected_qty), 0) AS rej,
           -- ADR-212: every receipt back from the vendor, incl. the GRN of a lot
-          -- re-sent for rework (return-to-vendor) — "Received" on the table.
-          COALESCE(SUM(grl.received_qty), 0) AS recv
+          -- re-sent for rework (return-to-vendor). Feeds Done on an outsource op.
+          COALESCE(SUM(grl.received_qty), 0) AS recv,
+          -- ADR-276: first-lot receipts only, the view's osp_ordinary_received_qty
+          -- (0196): a GRN against an NC is a Re-received lot. So on every row
+          -- Sent to Vendor − Received + Returned to Vendor − Re-received = At Vendor.
+          COALESCE(SUM(grl.received_qty) FILTER (WHERE grn.nc_id IS NULL), 0) AS recv_first
         FROM opl
         LEFT JOIN public.goods_receipt_note_lines grl
           ON grl.purchase_order_line_id = opl.pol AND grl.deleted_at IS NULL
+        -- On the header's primary key: one row per GRN line, so the SUMs do not double.
+        LEFT JOIN public.goods_receipt_notes grn
+          ON grn.id = grl.goods_receipt_note_id AND grn.deleted_at IS NULL
         GROUP BY opl.jc_op_id
       ),
       loss AS (
@@ -218,6 +225,7 @@ export async function getOpFlow(jobCardId: string, user: AuthContext): Promise<O
         v.input_avail, v.completed_qty, v.qc_accepted_qty, v.available, v.qc_pending,
         v.computed_status, v.at_vendor_qty, v.in_qc_qty, v.rework_pending_qty,
         COALESCE(osp.recv, 0) AS osp_recv,
+        COALESCE(osp.recv_first, 0) AS osp_recv_first,
         COALESCE(loss.cleared, 0) AS cleared,
         COALESCE(loss.nc_open, 0) AS nc_open,
         COALESCE(loss.rtv_in_transit, 0) AS rtv_in_transit,
@@ -327,8 +335,7 @@ export async function getOpFlow(jobCardId: string, user: AuthContext): Promise<O
         deviatedOpenQty: deviatedOpen,
         pendingQty: pending,
         inQcQty: inQc,
-        vendorSentQty: num(x['outsource_sent_qty']) + num(x['rtv_sent']),
-        vendorReceivedQty: num(x['osp_recv']),
+        vendorReceivedQty: num(x['osp_recv_first']),
         unaccountedQty: unaccounted,
         passedOnQty: passedOn,
         availableQty: num(x['available']),
