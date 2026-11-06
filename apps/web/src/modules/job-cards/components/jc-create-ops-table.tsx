@@ -94,7 +94,7 @@ export function JcCreateOpsTable(props: JcCreateOpsTableProps): React.JSX.Elemen
       </colgroup>
       <thead>
         <tr>
-          <th>Op</th>
+          <th className="th-ctr">Op</th>
           <th>Group</th>
           <th>
             Machine / Vendor<span className="req">★</span>
@@ -104,9 +104,9 @@ export function JcCreateOpsTable(props: JcCreateOpsTableProps): React.JSX.Elemen
           </th>
           <th className="th-num">Cycle Time (min)</th>
           <th>Program No.</th>
-          <th>Outsource</th>
-          <th className="th-num">Cost/pc</th>
-          <th aria-label="Actions" />
+          <th className="th-ctr">Outsource</th>
+          <th className="th-money">Cost/pc</th>
+          <th className="th-ctr" aria-label="Actions" />
         </tr>
       </thead>
       <tbody>
@@ -186,7 +186,7 @@ function OpRow({
   return (
     <Fragment>
       <tr className={rowCls}>
-        <td className="mono fw-700 jcc-op-no">{sr}</td>
+        <td className="td-ctr mono fw-700 jcc-op-no">{sr}</td>
         <td>
           {isQc ? (
             <span className="badge b-green">🔬 QC</span>
@@ -306,7 +306,7 @@ function OpRow({
             />
           )}
         </td>
-        <td>
+        <td className="td-ctr">
           {isQc ? (
             dash('An inspection is not outsourced')
           ) : (
@@ -323,7 +323,7 @@ function OpRow({
             </label>
           )}
         </td>
-        <td className="td-num">
+        <td className="td-money">
           {/* null = money hidden for this viewer: the cost box is not drawn. */}
           {isOut && op.outsourceCost !== null ? (
             <input
@@ -340,7 +340,7 @@ function OpRow({
             dash('Cost/pc belongs to an outsourced operation')
           )}
         </td>
-        <td className="jcc-op-act">
+        <td className="td-ctr jcc-op-act">
           <button
             type="button"
             className="btn btn-ghost btn-sm btn-icon"

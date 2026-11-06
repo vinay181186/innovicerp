@@ -15,7 +15,7 @@ export function IssueSlipList({ issues }: { issues: JcMaterial['issues'] }): Rea
           <thead>
             <tr>
               <th>Issue No.</th>
-              <th>Issue Date</th>
+              <th className="th-ctr">Issue Date</th>
               <th>Items</th>
               <th>Issued To</th>
             </tr>
@@ -38,7 +38,7 @@ export function IssueSlipList({ issues }: { issues: JcMaterial['issues'] }): Rea
                     </div>
                   ) : null}
                 </td>
-                <td className="text2" style={{ fontSize: 'var(--fs-xs)' }}>
+                <td className="td-ctr text2" style={{ fontSize: 'var(--fs-xs)' }}>
                   {fmtDate(i.issueDate)}
                 </td>
                 <td

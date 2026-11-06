@@ -89,7 +89,7 @@ export function MlBomLinesTable(props: Props): React.JSX.Element {
       <table className="innovic-table tbl-grid tbl-edit">
         <thead>
           <tr>
-            <th className="th-num" style={{ width: 44 }}>
+            <th className="th-ctr" style={{ width: 44 }}>
               Sr No
             </th>
             <th style={{ minWidth: 160 }}>
@@ -97,7 +97,9 @@ export function MlBomLinesTable(props: Props): React.JSX.Element {
             </th>
             <th style={{ width: 110 }}>Drawing Rev</th>
             <th style={{ minWidth: 180 }}>Item Name</th>
-            <th style={{ width: 60 }}>UOM</th>
+            <th className="th-ctr" style={{ width: 60 }}>
+              UOM
+            </th>
             <th className="th-num" style={{ width: 100 }}>
               Qty per Set<span className="req">★</span>
             </th>
@@ -105,7 +107,7 @@ export function MlBomLinesTable(props: Props): React.JSX.Element {
             <th style={{ width: 150 }}>RM Grade</th>
             <th style={{ width: 150 }}>RM Size</th>
             <th style={{ minWidth: 160 }}>Remarks</th>
-            <th style={{ width: 48 }} aria-label="Remove" />
+            <th className="th-ctr" style={{ width: 48 }} aria-label="Remove" />
           </tr>
         </thead>
         <tbody>
@@ -122,7 +124,7 @@ export function MlBomLinesTable(props: Props): React.JSX.Element {
             const isMfg = line.bomType === 'manufacture';
             return (
               <tr key={line.rowKey}>
-                <td className="td-num mono fw-700">{idx + 1}</td>
+                <td className="td-ctr mono fw-700">{idx + 1}</td>
                 <td>
                   <SearchableSelect
                     id={`mlbom-item-${idx}`}
@@ -171,7 +173,7 @@ export function MlBomLinesTable(props: Props): React.JSX.Element {
                 >
                   {name || <span className="text3">—</span>}
                 </td>
-                <td className="mono">{item?.uom ?? <span className="text3">—</span>}</td>
+                <td className="td-ctr mono">{item?.uom ?? <span className="text3">—</span>}</td>
                 <td className="td-num">
                   <input
                     type="number"
@@ -249,7 +251,7 @@ export function MlBomLinesTable(props: Props): React.JSX.Element {
                     onChange={(e) => onChange(idx, { remarks: e.target.value })}
                   />
                 </td>
-                <td>
+                <td className="td-ctr">
                   <button
                     type="button"
                     className="btn btn-ghost btn-sm"

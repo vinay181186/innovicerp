@@ -365,37 +365,42 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
           <table className="innovic-table">
             <thead>
               <tr>
-                <th>Ln</th>
+                <th className="th-ctr">Ln</th>
                 {/* POL — the customer's PO line number (ADR-236), beside Ln as on
                     the SO detail. Purple, mono, bold. */}
-                <th style={{ color: 'var(--purple)' }}>POL</th>
+                <th className="th-ctr" style={{ color: 'var(--purple)' }}>
+                  POL
+                </th>
                 {/* Image · CODE/REV · Part name in one badge cell (user decision
                     2026-09-21) — the former separate Part name column folded in. */}
                 <th>Item</th>
                 {/* ADR-203 / OW-143: the line's customer RM and where it is. */}
                 <th>Customer RM</th>
-                <th title="Where this line's customer RM is — hover the word for the quantities">
+                <th
+                  className="th-ctr"
+                  title="Where this line's customer RM is — hover the word for the quantities"
+                >
                   Customer RM Status
                 </th>
                 <th>Material</th>
                 <th>Drawing</th>
                 <th className="th-num">Order Qty</th>
-                <th>UOM</th>
+                <th className="th-ctr">UOM</th>
                 {priceHidden ? null : (
                   <>
-                    <th className="th-num" style={{ color: 'var(--green2)' }}>
+                    <th className="th-money" style={{ color: 'var(--green2)' }}>
                       Rate (₹)
                     </th>
-                    <th className="th-num" style={{ color: 'var(--green2)' }}>
+                    <th className="th-money" style={{ color: 'var(--green2)' }}>
                       Amount
                     </th>
                   </>
                 )}
-                <th>Due Date</th>
+                <th className="th-ctr">Due Date</th>
                 {/* ADR-236: the LINE's own note (the order's is JWSO Remarks). */}
                 <th>Remarks</th>
-                <th>JWSO Status</th>
-                {showLineMenu ? <th aria-label="Actions" /> : null}
+                <th className="th-ctr">JWSO Status</th>
+                {showLineMenu ? <th className="th-ctr" aria-label="Actions" /> : null}
               </tr>
             </thead>
             <tbody>
@@ -588,7 +593,7 @@ function JwDocumentsPanel(props: {
               <th>Document Type</th>
               <th>Category</th>
               <th>Uploaded By</th>
-              <th aria-label="Actions" />
+              <th className="th-ctr" aria-label="Actions" />
             </tr>
           </thead>
           <tbody>
@@ -718,10 +723,10 @@ function LineRow(props: {
           : undefined;
   return (
     <tr>
-      <td className="mono" style={{ color: 'var(--blue)' }}>
+      <td className="td-ctr mono" style={{ color: 'var(--blue)' }}>
         {l.lineNo}
       </td>
-      <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+      <td className="td-ctr mono fw-700" style={{ color: 'var(--purple)' }}>
         {l.clientPoLineNo ?? '—'}
       </td>
       {/* Thumbnail · CODE/REV · part name, the same badge the Sales Order detail
@@ -749,7 +754,7 @@ function LineRow(props: {
           <span className="text3">—</span>
         )}
       </td>
-      <td>
+      <td className="td-ctr">
         <CustomerRmStatus value={l.customerRm} />
       </td>
       <td className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
@@ -773,25 +778,25 @@ function LineRow(props: {
         ) : null}
       </td>
       <td className="mono td-num">{l.orderQty}</td>
-      <td>{l.uom}</td>
+      <td className="td-ctr">{l.uom}</td>
       {priceHidden ? null : (
         <>
-          <td className="mono td-num" style={{ color: 'var(--green2)' }}>
+          <td className="mono td-money" style={{ color: 'var(--green2)' }}>
             {Number(l.rate ?? 0).toFixed(2)}
           </td>
-          <td className="mono fw-700 td-num" style={{ color: 'var(--green2)' }}>
+          <td className="mono fw-700 td-money" style={{ color: 'var(--green2)' }}>
             {inrFormat(l.orderQty * Number(l.rate ?? 0))}
           </td>
         </>
       )}
-      <td className="text2" style={{ fontSize: 'var(--fs-xs)' }}>
+      <td className="td-ctr text2" style={{ fontSize: 'var(--fs-xs)' }}>
         {fmtDate(l.dueDate)}
       </td>
       {/* Long prose: one line, cut with "…", the full text on hover. */}
       <td style={{ maxWidth: 240 }} title={l.remarks ?? undefined}>
         {l.remarks ?? '—'}
       </td>
-      <td>
+      <td className="td-ctr">
         <div
           style={{
             display: 'flex',

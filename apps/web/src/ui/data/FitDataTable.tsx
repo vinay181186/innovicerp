@@ -316,7 +316,6 @@ export function FitDataTable<T>(props: DataTableProps<T> & { tableKey: string })
               rows={rows}
               visible={visible}
               byId={byId}
-              kinds={kinds}
               firstId={firstId}
               totalsLabel={totalsLabel}
               selectable={selectable}

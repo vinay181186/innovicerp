@@ -15411,3 +15411,56 @@ Owner: Pending Entries should open per person on a calendar, green for filled an
 - **Trash:** a card deleted as a Draft comes back a Draft, with no bell. Every other card comes back Pending Approval as today (ADR-253).
 
 **Migration:** 0243 (CHECK only, no row changed, default stays `approved`).
+
+---
+
+## ADR-278: Day Log History PDF for a Super Admin
+
+**Date:** 2026-11-06. **Owner decided:** Team Day Logs › row ⋯ › History › Month or Particular Date › Generate PDF › Preview (Print, Download). Super Admin only. The PDF shows everything, including Working On and every edit, in a logical order. Mockup: https://claude.ai/artifact/DvrDUWBQ2rhEs4FTBEFDQ6 (Option A).
+
+**Decisions:**
+- One read, `GET /day-logs/person-history`, one month or one date, in ONE statement, so an edit in flight cannot give a half-old PDF. No migration. Nothing is written or logged.
+- The server decides every day state and total (`DayLogHistory`). Working hours, First start, Last stop and Entries read as Team Day Logs does (`summaryOf`); Not entered is `isNotEntered`. A blank date the rule does not count prints `Not counted`.
+- PDF order: Summary › Points to check › Date by date (more than one date) › Day detail › each edit and reply, oldest first, removed words struck out, added words underlined.
+- Break and Others show only for old rows; new entries are always Work.
+- The PDF is on the Innovic Sheet as one `table.doc`, so the paginator splits it. Earlier Day Log prints use `table.dl`, which it skips; those were left as they are.
+- Paginator additions are opt-in by attribute (several carried heading rows, keep with next, page break, page reference, page foot); a document without them splits as before.
+
+**Known limits:**
+- Download makes page pictures, as every ERP PDF does: text cannot be searched or copied.
+- A reply keeps only its latest text and the time it was edited.
+- A person who is not on the Team Day Logs list has no ⋯, so no History.
+
+## ADR-279: Party GRN received, plan pending — Home check and Planning column
+
+**Date:** 2026-11-06. **Owner decided:** Home > Planning lists the JWSO lines whose Party GRN is received and whose plan is pending; clicking one opens the Create Plan popup for that line. The Planning list shows Party GRN done or not done. A line with only part of the material received reads Part Done and still appears on the check (Way 1 of the plan; the owner replied "go" without naming a Way, so the recommended one was built).
+
+**Decisions:**
+- **One rule.** `partyGrnStatus` (shared, `customer-rm-status.ts`) follows `GRN Pending`: 0 = Done; below the required qty = Part Done; equal to it = Not Done; nothing to receive = —. Pieces QC rejected with no NC still pending do not count, because the customer must send them again. The Home check reads the same fact through `partyCommittedQtySql` (ADR-247). Nothing stored, no new sum.
+- **Receipt, not QC.** Material waiting Incoming QC counts as received; the owner said "received". Issue to JC still needs QC.
+- **No block.** Planning before a Party GRN stays allowed. The column only informs.
+- **JWSO lines only.** A Party GRN links only to a JWSO line; SO lines read —.
+- **Badge.** The check's lines are already in `SO lines not planned`, so `toDeptBlocks` leaves it out of the menu badge (`NOT_IN_DEPT_TOTAL`). Each check still shows its own count, and `SO lines not planned` is unchanged.
+- **The link.** `/planning?soId=&planLine=`. It waits for the order and the user's access, opens the existing Create Plan box when `canCreatePlanForLine` allows (the ⋯ menu's own rule, moved there), and always clears `planLine` so a refresh does not reopen it. Not eligible = the order screen, no box, and a message says why.
+- **View all.** `/planning?src=jw&grnPlanPending=1` filters on the server. The check is SQL and the list is code, because Plan Status is worked out in code; the two predicates are named in NAMING.md.
+- **First list only.** The order screen's line table is unchanged: it is already tight for width. The column is left out when the source is SO. The status word is not in the search box: "not" or "one" would match every Not Done line; use the column's ▾.
+
+**Refresh:** same PC: Party GRN create, edit, QC and Cancel, an NC decision and a JWSO line short close refresh Planning; plan create, batch create, edit and delete, Party GRN create and edit and a short close refresh Home. Other PCs: `nc_register` changes are live; the rest wait for the 60-second poll (`party_grn`, `plans` and JWSO lines are not live tables).
+
+**No migration.**
+## ADR-280: One alignment across the ERP; Route Card long text goes under the row
+
+**Date:** 2026-11-06. **Owner decided:** text left, Qty centre, across the system. Replaces "everything centred, numbers right" (2026-09-26). Mockup: Claude Design canvas "Innovic ERP - Alignment Rule Mockup".
+
+**Decisions:**
+- Owner accepted the recommended answers: money stays right, so rupees and paise line up; dates, statuses, UOM, Sr No, POL, Op, Rev and actions are centred; Excel and Job Card print follow the rule.
+- One rule, `columnAlign` in `packages/shared`, read by the fit table and by Excel. It reads the column's kind and heading, so 156 column files follow without being edited. `align` on a column no longer sets alignment; it still marks a column numeric when it has no `kind`.
+- New `money: true` on a column for money under a plain heading ("Total"). New classes `th-money` / `td-money`, `th-ctr` / `td-ctr`; `th-num` / `td-num` now mean centre.
+- CLAUDE.md §24 and `standard.guard.test.ts` hold the rule.
+- Route Card Operation Sequence and the routing kept with a revision: Tool Details and Remarks leave the table and sit under their row, in a 720 px column that grows downward, with Show / Hide per row and Show all / Hide all. A row with text opens by itself and Hide is not remembered. Operation names wrap, which was the real cause of the sideways scroll on RC-14. This replaces the `td-prose` columns of ADR-275 on those two tables.
+
+**Known limits:**
+- With Qty centred, digits no longer line up down a column (1250, 12.5, 8). The owner accepted this.
+- `columnAlign` reads headings, so a new money column under a heading with no money word needs `money: true`; the check catches money words, not plain headings. A report column that only says "number" uses the same heading test.
+- 545 `align:` props stay in the column files; they are harmless, and removing them now would collide with other open work.
+- Calendar grid on Production Schedule and the Create Invoice line grid are not tables and keep their own alignment.

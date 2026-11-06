@@ -42,13 +42,13 @@ export function ResultsTable({
         </colgroup>
         <thead>
           <tr>
-            <th>Document Date</th>
+            <th className="th-ctr">Document Date</th>
             <th>Document Type</th>
             <th>Document No.</th>
             <th>Customer / Vendor</th>
             <th>Particulars</th>
-            <th>Document Qty</th>
-            <th>Document Status</th>
+            <th className="th-num">Document Qty</th>
+            <th className="th-ctr">Document Status</th>
           </tr>
         </thead>
         <tbody>
@@ -63,7 +63,7 @@ export function ResultsTable({
                     title={landing ? 'Open in its register' : 'Open'}
                     onClick={() => onOpen(r)}
                   >
-                    <td className="mono">{fmtDate(r.date)}</td>
+                    <td className="td-ctr mono">{fmtDate(r.date)}</td>
                     <td className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
                       {GLOBAL_SEARCH_KIND_META[r.kind].label}
                     </td>
@@ -90,8 +90,8 @@ export function ResultsTable({
                       ) : null}
                       {r.lines.length === 0 && !r.hit ? '—' : null}
                     </td>
-                    <td className="mono">{r.qty ?? '—'}</td>
-                    <td>
+                    <td className="td-num mono">{r.qty ?? '—'}</td>
+                    <td className="td-ctr">
                       {r.status ? (
                         <span className="badge b-grey">{statusText(r.status, r.kind)}</span>
                       ) : (

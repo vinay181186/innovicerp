@@ -223,8 +223,8 @@ export function buildDocHtml(model: DocPrintModel): string {
     .join('');
 
   const itemHead = priced
-      ? '<th style="width:44px">Sr No.</th><th style="width:130px">Item Code</th><th>Item Name</th><th style="text-align:right">Qty</th><th>UOM</th><th style="text-align:right">Rate</th><th style="text-align:right">Amount</th>'
-      : '<th style="width:44px">Sr No.</th><th style="width:130px">Item Code</th><th>Item Name</th><th style="text-align:right">Qty</th><th>UOM</th>';
+      ? '<th style="width:44px;text-align:center">Sr No.</th><th style="width:130px">Item Code</th><th>Item Name</th><th style="text-align:center">Qty</th><th style="text-align:center">UOM</th><th style="text-align:right">Rate</th><th style="text-align:right">Amount</th>'
+      : '<th style="width:44px;text-align:center">Sr No.</th><th style="width:130px">Item Code</th><th>Item Name</th><th style="text-align:center">Qty</th><th style="text-align:center">UOM</th>';
 
   const legacyRows = lines
     .map((l, i) => {
@@ -235,7 +235,7 @@ export function buildDocHtml(model: DocPrintModel): string {
         `<tr><td style="text-align:center">${i + 1}</td>` +
         `<td>${esc(l.itemCode)}</td>` +
         `<td>${name}</td>` +
-        `<td style="text-align:right">${esc(l.qty)}</td>` +
+        `<td style="text-align:center">${esc(l.qty)}</td>` +
         `<td style="text-align:center">${esc(l.uom ?? 'NOS')}</td>`;
       return priced
         ? `${lead}<td style="text-align:right">${esc(l.rate ?? '')}</td><td style="text-align:right;font-weight:600">${esc(l.amount ?? '')}</td></tr>`

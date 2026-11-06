@@ -68,6 +68,30 @@ export function customerRmGrnPendingQty(q: CustomerRmQty): number {
   return Math.max(0, q.requiredQty - q.qcPendingQty - q.acceptedQty - q.deviatedQty);
 }
 
+/** Party GRN Status of a JWSO line, the Planning list's column (ADR-279). Asks one
+ *  thing: has the customer's material come in? It follows GRN Pending, the Party
+ *  GRN receive cap's own rule, so pieces QC rejected with no NC still pending do
+ *  not count as received: the customer must send them again. Waiting QC does
+ *  count. Done = nothing more due · Part Done = some in, more due · Not Done =
+ *  none in · none = nothing to receive (SO line, or no customer material). */
+export const PARTY_GRN_STATUSES = ['done', 'part_done', 'not_done', 'none'] as const;
+export type PartyGrnStatus = (typeof PARTY_GRN_STATUSES)[number];
+
+export const PARTY_GRN_STATUS_LABEL: Record<PartyGrnStatus, string> = {
+  done: 'Done',
+  part_done: 'Part Done',
+  not_done: 'Not Done',
+  none: '—',
+};
+
+export function partyGrnStatus(q: CustomerRmQty): PartyGrnStatus {
+  if (q.requiredQty === 0)
+    return q.qcPendingQty + q.acceptedQty + q.deviatedQty > 0 ? 'done' : 'none';
+  const pending = customerRmGrnPendingQty(q);
+  if (pending === 0) return 'done';
+  return pending < q.requiredQty ? 'part_done' : 'not_done';
+}
+
 /** The one word. The state that needs action comes first:
  *  Deviated → Inspection → Partial / Awaited → Accepted → Issuing → Issued. */
 export function customerRmStatus(

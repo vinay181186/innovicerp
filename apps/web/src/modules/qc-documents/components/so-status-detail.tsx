@@ -47,15 +47,17 @@ function GrnDetailTable({ l }: { l: SoQcLine }): React.JSX.Element {
         <thead>
           <tr>
             <th>GRN No.</th>
-            <th style={{ color: 'var(--purple)' }}>POL</th>
+            <th className="th-ctr" style={{ color: 'var(--purple)' }}>
+              POL
+            </th>
             <th>Item</th>
             <th>Vendor</th>
             <th className="th-num">Received</th>
             <th className="th-num">Accepted</th>
             <th className="th-num">Deviated</th>
             <th className="th-num">QC Pending</th>
-            <th>QC Status</th>
-            <th>Report</th>
+            <th className="th-ctr">QC Status</th>
+            <th className="th-ctr">Report</th>
           </tr>
         </thead>
         <tbody>
@@ -64,7 +66,7 @@ function GrnDetailTable({ l }: { l: SoQcLine }): React.JSX.Element {
               <td className="mono" style={{ color: 'var(--cyan)' }}>
                 {g.grnNo}
               </td>
-              <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+              <td className="td-ctr mono fw-700" style={{ color: 'var(--purple)' }}>
                 {g.clientPoLineNo ?? '—'}
               </td>
               {/* Item code is THE main thing — strong mono, CODE/REV (ADR-177). */}
@@ -88,12 +90,12 @@ function GrnDetailTable({ l }: { l: SoQcLine }): React.JSX.Element {
               >
                 {g.pending}
               </td>
-              <td>
+              <td className="td-ctr">
                 <span className={`badge ${g.status === 'done' ? 'b-green' : 'b-amber'}`}>
                   {g.status === 'done' ? '✅ Inspected' : '⏳ QC Pending'}
                 </span>
               </td>
-              <td>
+              <td className="td-ctr">
                 {g.qcReportPath ? (
                   <QcReportLink path={g.qcReportPath} name={g.qcReportName} label="Report" />
                 ) : (
@@ -116,14 +118,16 @@ function TpiDetailTable({ l }: { l: SoQcLine }): React.JSX.Element {
         <thead>
           <tr>
             <th>JC No.</th>
-            <th style={{ color: 'var(--purple)' }}>POL</th>
+            <th className="th-ctr" style={{ color: 'var(--purple)' }}>
+              POL
+            </th>
             <th>Organisation</th>
             <th>Inspector Name</th>
             <th className="th-num">Accepted</th>
             <th className="th-num">Deviated</th>
-            <th>TPI Date</th>
-            <th>TPI Status</th>
-            <th>Report</th>
+            <th className="th-ctr">TPI Date</th>
+            <th className="th-ctr">TPI Status</th>
+            <th className="th-ctr">Report</th>
           </tr>
         </thead>
         <tbody>
@@ -133,7 +137,7 @@ function TpiDetailTable({ l }: { l: SoQcLine }): React.JSX.Element {
                 {t.jcCode}
               </td>
               {/* POL comes off the SO line this TPI sub-table is nested under. */}
-              <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+              <td className="td-ctr mono fw-700" style={{ color: 'var(--purple)' }}>
                 {l.clientPoLineNo ?? '—'}
               </td>
               <td>{t.organization ?? '—'}</td>
@@ -147,13 +151,13 @@ function TpiDetailTable({ l }: { l: SoQcLine }): React.JSX.Element {
               >
                 {t.rejected}
               </td>
-              <td>{fmtDate(t.date)}</td>
-              <td>
+              <td className="td-ctr">{fmtDate(t.date)}</td>
+              <td className="td-ctr">
                 <span className={`badge ${t.status === 'passed' ? 'b-green' : 'b-amber'}`}>
                   {t.status === 'passed' ? '✅ Accepted' : '⚠ Partly Accepted'}
                 </span>
               </td>
-              <td>
+              <td className="td-ctr">
                 {t.qcReportPath ? (
                   <QcReportLink path={t.qcReportPath} name={t.qcReportName} label="Report" />
                 ) : (
@@ -178,7 +182,7 @@ function DocDetailTable({ l }: { l: SoQcLine }): React.JSX.Element {
             <th>JC No.</th>
             <th>Document Type</th>
             <th>File Name</th>
-            <th>Doc Status</th>
+            <th className="th-ctr">Doc Status</th>
           </tr>
         </thead>
         <tbody>
@@ -191,7 +195,7 @@ function DocDetailTable({ l }: { l: SoQcLine }): React.JSX.Element {
               <td className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
                 {d.fileName ?? '—'}
               </td>
-              <td>
+              <td className="td-ctr">
                 <span className={`badge ${d.uploaded ? 'b-green' : 'b-red'}`}>
                   {d.uploaded ? '✅ Uploaded' : '❌ Missing'}
                 </span>

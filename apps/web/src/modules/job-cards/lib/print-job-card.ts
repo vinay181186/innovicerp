@@ -148,8 +148,7 @@ const JC_STYLE = `
   table.ops th{border:1px solid var(--paper-rule);border-top:none;padding:1.3mm 1mm;line-height:1.15;
                font-family:var(--f-label);font-size:7.5pt;letter-spacing:0;text-align:center;
                text-transform:uppercase;background:var(--paper-band)}
-  table.ops th.n{text-align:right}
-  table.ops th:nth-child(2){text-align:left}
+  table.ops th.l{text-align:left}
   table.ops th:first-child,table.ops td:first-child{border-left:none}
   table.ops th:last-child,table.ops td:last-child{border-right:none}
   table.ops td{border:1px solid var(--paper-rule);padding:1.1mm 1.4mm;height:6.6mm;vertical-align:middle}
@@ -158,10 +157,10 @@ const JC_STYLE = `
      column dividers, or every rule would print double. */
   table.ops th,table.ops td{border-top:none;border-bottom:none}
   table.ops td.c{text-align:center;white-space:nowrap}
-  table.ops td.m{text-align:center;padding-left:.5mm;padding-right:.5mm}
+  table.ops td.m{padding-left:.5mm;padding-right:.5mm}
   table.ops td.by{font-size:8.5pt;padding-left:.8mm;padding-right:.8mm}
   table.ops td.d{font-size:9pt;padding-left:.5mm;padding-right:.5mm}
-  table.ops td.n{text-align:right;font-variant-numeric:tabular-nums}
+  table.ops td.n{text-align:center;font-variant-numeric:tabular-nums}
   table.ops td.b{font-weight:700}
   table.ops .chg{font-weight:700;font-size:9pt;text-decoration:underline}
   .page{position:relative;box-sizing:border-box;min-height:279mm;padding-bottom:8mm}
@@ -290,15 +289,15 @@ export function printJobCard(args: {
   const opsHead = `<table class="ops">${colgroup}
     <thead><tr>
       <th>Op</th>
-      <th>Operation</th>
-      <th>Planned<br>Machine</th>
-      <th>Actual<br>Machine</th>
+      <th class="l">Operation</th>
+      <th class="l">Planned<br>Machine</th>
+      <th class="l">Actual<br>Machine</th>
       <th>Start<br>Date</th>
       <th>End<br>Date</th>
-      <th class="n">Accepted</th>
-      <th class="n">Deviated</th>
-      <th class="n">Reworked</th>
-      <th>Done By</th>
+      <th>Accepted</th>
+      <th>Deviated</th>
+      <th>Reworked</th>
+      <th class="l">Done By</th>
       <th>Sign</th>
     </tr></thead>
   </table>`;

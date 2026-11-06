@@ -23,13 +23,12 @@ const num = (
   bold = false,
 ): MlSheetColumn<MlPlanNode> => ({
   header,
-  align: 'right',
   bold,
   cell: (n) => sheetQty(pick(n)),
 });
 
 const COLUMNS: MlSheetColumn<MlPlanNode>[] = [
-  { header: 'Level', align: 'right', width: '9mm', cell: (n) => String(n.depth) },
+  { header: 'Level', width: '9mm', cell: (n) => String(n.depth) },
   { header: 'Item Code', align: 'left', cell: (n) => sheetTreeCode(n.depth, n.itemCode) },
   { header: 'Item Name', align: 'left', cell: (n) => esc(n.itemName ?? '') },
   {

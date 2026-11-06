@@ -12,7 +12,7 @@ export function JcMaterialTable({ data }: { data: JcMaterial }): React.JSX.Eleme
           <tr>
             <th>Item Code</th>
             <th>Item Name</th>
-            <th>UOM</th>
+            <th className="th-ctr">UOM</th>
             <th className="th-num">Required</th>
             <th className="th-num">Issued</th>
             <th className="th-num">Returned</th>
@@ -29,7 +29,7 @@ export function JcMaterialTable({ data }: { data: JcMaterial }): React.JSX.Eleme
                 </span>
               </td>
               <td>{l.itemName || '—'}</td>
-              <td className="text3">{l.uom || '—'}</td>
+              <td className="td-ctr text3">{l.uom || '—'}</td>
               <td className="mono td-num">{n(l.requiredQty)}</td>
               <td className="mono td-num">{n(l.issuedQty)}</td>
               <td className="mono td-num">{n(l.returnedQty)}</td>

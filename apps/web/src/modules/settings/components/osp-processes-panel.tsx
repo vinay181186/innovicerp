@@ -219,9 +219,9 @@ export function OspProcessesPanel(): React.JSX.Element {
                 <tr>
                   <th>Process Name</th>
                   <th>Preferred Vendor</th>
-                  <th className="td-ctr">Auto PO</th>
-                  <th>Lead Time</th>
-                  <th style={{ width: 48 }} aria-label="Actions" />
+                  <th className="th-ctr">Auto PO</th>
+                  <th className="th-num">Lead Time</th>
+                  <th className="th-ctr" style={{ width: 48 }} aria-label="Actions" />
                 </tr>
               </thead>
               <tbody>
@@ -247,10 +247,10 @@ export function OspProcessesPanel(): React.JSX.Element {
                         <span className="text3">—</span>
                       )}
                     </td>
-                    <td className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
+                    <td className="td-num text3" style={{ fontSize: 'var(--fs-xs)' }}>
                       {p.leadDays} days
                     </td>
-                    <td>
+                    <td className="td-ctr">
                       {canWrite ? (
                         <RowMenu
                           label={`Actions for ${p.processName}`}

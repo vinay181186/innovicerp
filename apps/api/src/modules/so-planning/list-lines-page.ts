@@ -74,6 +74,7 @@ export const PLANNING_LINE_LIST_SF_FIELDS: MemFieldMap<PlanningLinePageRow> = {
   toPlan: { type: 'num', get: (r) => r.item.remaining },
   planningPct: { type: 'num', get: (r) => r.status.pct },
   planState: { type: 'list', get: (r) => r.status.state },
+  partyGrnStatus: { type: 'list', get: (r) => r.item.partyGrnStatus },
   createdBy: { type: 'text', get: (r) => r.item.createdByName },
 };
 
@@ -116,6 +117,15 @@ function matchesTerm(r: PlanningLinePageRow, needle: string): boolean {
   ].some((f) => f != null && String(f).toLowerCase().includes(needle));
 }
 
+/** ADR-279 — the lines of the home check "Party GRN received, plan pending"
+ *  (dashboard/checks/planning.ts jwLinesGrnReceivedSql): To Plan above 0 and
+ *  material received. Done / Part Done are exactly "received above 0". */
+function isGrnPlanPending({ item }: PlanningLinePageRow): boolean {
+  return (
+    item.remaining > 0 && (item.partyGrnStatus === 'done' || item.partyGrnStatus === 'part_done')
+  );
+}
+
 /** Every row (input order = the list's own) → the page the screen asked for. */
 export function pagePlanningLines(
   rows: PlanningLinePageRow[],
@@ -124,7 +134,8 @@ export function pagePlanningLines(
   const sf = readSf(query.sf);
   const needle = (query.search ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
   const bySource = query.src ? rows.filter((r) => r.item.source === query.src) : rows;
-  const searched = needle === '' ? bySource : bySource.filter((r) => matchesTerm(r, needle));
+  const pool = query.grnPlanPending === '1' ? bySource.filter(isGrnPlanPending) : bySource;
+  const searched = needle === '' ? pool : pool.filter((r) => matchesTerm(r, needle));
   const sorted = sfSortRows(
     sfFilterRows(searched, PLANNING_LINE_LIST_SF_FIELDS, sf),
     PLANNING_LINE_LIST_SF_FIELDS,

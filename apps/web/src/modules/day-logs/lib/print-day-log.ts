@@ -19,7 +19,7 @@ import { buildDocCompany } from '@/lib/print/company';
 import { esc } from '@/lib/print/doc-print';
 import { openSheetHtmlWindow, sheetLetterheadHtml } from '@/lib/print/sheet-print';
 import {
-  DAY_NUM_KEYS,
+  DAY_CENTRE_KEYS,
   dayTable,
   pendingTable,
   personDayTable,
@@ -32,20 +32,20 @@ const DL_STYLE = `
   table.dl th,table.dl td{border:1px solid var(--paper-rule);padding:1.3mm 2.2mm;vertical-align:top;text-align:left;white-space:pre-wrap;overflow-wrap:anywhere}
   table.dl th{font-family:var(--f-label);font-weight:700;background:var(--paper-band)}
   table.dl td.k{font-weight:700;width:18%}
-  table.dl .r{text-align:right;font-variant-numeric:tabular-nums}
+  table.dl .ctr{text-align:center;font-variant-numeric:tabular-nums}
   table.dl .b{font-weight:700}
   table.dl td.sign{height:18mm;vertical-align:bottom}
   p.dl-foot{margin:2mm 0 0;font-size:8.5pt}
 `;
 
-function grid(t: ExportTable, numKeys: readonly string[], boldKeys: readonly string[]): string {
+function grid(t: ExportTable, centreKeys: readonly string[], boldKeys: readonly string[]): string {
   const head = t.columns
-    .map((c) => `<th${numKeys.includes(c.key) ? ' class="r"' : ''}>${esc(c.label)}</th>`)
+    .map((c) => `<th${centreKeys.includes(c.key) ? ' class="ctr"' : ''}>${esc(c.label)}</th>`)
     .join('');
   const body = t.rows
     .map((r) => {
       const cells = t.columns.map((c) => {
-        const cls = [numKeys.includes(c.key) ? 'r' : '', boldKeys.includes(c.key) ? 'b' : '']
+        const cls = [centreKeys.includes(c.key) ? 'ctr' : '', boldKeys.includes(c.key) ? 'b' : '']
           .filter(Boolean)
           .join(' ');
         return `<td${cls ? ` class="${cls}"` : ''}>${esc(r[c.key] ?? '')}</td>`;
@@ -92,11 +92,11 @@ export function printDayLog(day: DayLogDetail, company: Company | null | undefin
     ],
     span,
   );
-  const table = grid(t, DAY_NUM_KEYS, ['order_code']);
+  const table = grid(t, DAY_CENTRE_KEYS, ['order_code']);
   // The label spans every column before Working Hours.
   const hoursAt = t.columns.findIndex((c) => c.key === 'work_hours');
   const totals = `<tr><td colspan="${hoursAt}" class="b">Working hours</td>
-    <td class="r b">${esc(fmtDuration(s.workMin))}</td>
+    <td class="ctr b">${esc(fmtDuration(s.workMin))}</td>
     <td colspan="${span - hoursAt - 1}">First start ${esc(fmt12(s.firstStart))} · Last stop ${esc(fmt12(s.lastStop))}</td></tr>`;
   const html = wrap(company, 'Day Log', header + table + totals + signRow(day.userName, span));
   const name = `Day Log ${day.userName} ${day.date}`;
@@ -119,7 +119,7 @@ export function printPersonDay(p: DayLogPersonDay, company: Company | null | und
   const html = wrap(
     company,
     'Day Log',
-    header + grid(t, DAY_NUM_KEYS, ['order_code']) + signRow(p.userName, span),
+    header + grid(t, DAY_CENTRE_KEYS, ['order_code']) + signRow(p.userName, span),
   );
   const name = `Day Log ${p.userName} ${p.date}`;
   return openSheetHtmlWindow(name, html, DL_STYLE, undefined, name);
@@ -134,7 +134,7 @@ export function printPendingEntries(
   const html = wrap(
     company,
     'Pending Entries',
-    head + grid(t, ['sr_no', 'days_pending'], ['user']),
+    head + grid(t, ['sr_no', 'pending_date', 'week_day', 'days_pending', 'reply_state'], ['user']),
   );
   const name = `Pending Entries ${data.today}`;
   return openSheetHtmlWindow(name, html, DL_STYLE, undefined, name);
@@ -146,7 +146,11 @@ export function printTeamDayLogs(
 ): boolean {
   const t = teamTable(team);
   const head = `<tr><td class="k">Date</td><td colspan="${t.columns.length - 1}">${esc(fmtDate(team.date))}</td></tr>`;
-  const html = wrap(company, 'Team Day Logs', head + grid(t, ['work_hours', 'entries'], ['user']));
+  const html = wrap(
+    company,
+    'Team Day Logs',
+    head + grid(t, ['first_start', 'last_stop', 'work_hours', 'entries'], ['user']),
+  );
   const name = `Team Day Logs ${team.date}`;
   return openSheetHtmlWindow(name, html, DL_STYLE, undefined, name);
 }

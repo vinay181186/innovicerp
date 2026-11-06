@@ -59,9 +59,9 @@ export function IssueLinesEditor({
             <tr>
               <th>Item Code</th>
               <th>Item Name</th>
-              <th>UOM</th>
+              <th className="th-ctr">UOM</th>
               <th className="th-num">Issue Qty</th>
-              <th></th>
+              <th className="th-ctr"></th>
             </tr>
           </thead>
           <tbody>
@@ -73,14 +73,14 @@ export function IssueLinesEditor({
                   </span>
                 </td>
                 <td>{l.itemName || '—'}</td>
-                <td className="text3">{l.uom || '—'}</td>
+                <td className="td-ctr text3">{l.uom || '—'}</td>
                 <td className="td-num">
                   <input
                     type="number"
                     min={0}
                     step="any"
                     className="innovic-input mono fw-700"
-                    style={{ width: 110, textAlign: 'right' }}
+                    style={{ width: 110 }}
                     value={l.qtyText}
                     onChange={(e) => setQty(i, e.target.value)}
                     onWheel={(e) => e.currentTarget.blur()}
@@ -95,7 +95,7 @@ export function IssueLinesEditor({
                     </div>
                   ) : null}
                 </td>
-                <td>
+                <td className="td-ctr">
                   <button
                     type="button"
                     className="btn btn-ghost btn-sm btn-icon"

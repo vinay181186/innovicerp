@@ -8,6 +8,7 @@
 // Returns a Node Buffer ready for `reply.send()`. Content-type is set
 // by the caller via reply.type().
 
+import { columnAlign } from '@innovic/shared';
 import ExcelJS from 'exceljs';
 import { excelDateValue, fmtDate, fmtDateTime, isIsoDateLike } from './format-date';
 
@@ -132,15 +133,15 @@ export async function buildWorkbookBuffer(input: BuildWorkbookInput): Promise<Bu
     row.font = { bold: true };
   }
 
-  // Right-align numeric columns + number format.
+  // THE alignment rule (ADR-280) + number format.
   input.columns.forEach((c, i) => {
-    if (c.type === 'number') {
-      const col = data.getColumn(i + 1);
-      col.alignment = { horizontal: 'right' };
-      col.numFmt = '#,##0.00';
-    } else if (c.type === 'date' || c.type === 'datetime') {
-      data.getColumn(i + 1).numFmt = c.type === 'date' ? DATE_CELL_FORMAT : DATETIME_CELL_FORMAT;
-    }
+    const col = data.getColumn(i + 1);
+    const isDate = c.type === 'date' || c.type === 'datetime';
+    col.alignment = {
+      horizontal: columnAlign({ heading: c.label, numeric: c.type === 'number', fixed: isDate }),
+    };
+    if (c.type === 'number') col.numFmt = '#,##0.00';
+    else if (isDate) col.numFmt = c.type === 'date' ? DATE_CELL_FORMAT : DATETIME_CELL_FORMAT;
   });
 
   // ─── Sheet 2: Summary (only when groupBy is set) ───────────────────────
@@ -174,10 +175,12 @@ export async function buildWorkbookBuffer(input: BuildWorkbookInput): Promise<Bu
     totalsRow.font = { bold: true };
 
     if (aggLabel) {
-      summary.getColumn(3).alignment = { horizontal: 'right' };
+      summary.getColumn(3).alignment = {
+        horizontal: columnAlign({ heading: aggLabel, numeric: true }),
+      };
       summary.getColumn(3).numFmt = '#,##0.00';
     }
-    summary.getColumn(2).alignment = { horizontal: 'right' };
+    summary.getColumn(2).alignment = { horizontal: 'center' };
   }
 
   // ─── Sheet 3: Report Info ──────────────────────────────────────────────

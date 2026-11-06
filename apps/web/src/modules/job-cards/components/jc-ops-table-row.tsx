@@ -179,7 +179,7 @@ export function OpRow({
   return (
     <>
       <tr className={trCls}>
-        <td className={`mono fw-700 jc-ops-opn jc-ops-k-${kind}`}>{fmtOpSrNo(op.opSeq)}</td>
+        <td className={`td-ctr mono fw-700 jc-ops-opn jc-ops-k-${kind}`}>{fmtOpSrNo(op.opSeq)}</td>
         <td
           className={`jc-ops-opc jc-ops-k-${kind}`}
           title={[op.operation, code, name].filter(Boolean).join(' · ')}
@@ -275,7 +275,7 @@ export function OpRow({
           title="Pieces with the vendor right now: Sent to Vendor − Received + Returned to Vendor − Re-received"
         />
         {/* Check — jc-flow-panels.tsx L191-208 */}
-        <td className="vsep" title={flow ? checkText(flow) : undefined}>
+        <td className="td-ctr vsep" title={flow ? checkText(flow) : undefined}>
           {!flow ? (
             <span className="text3">—</span>
           ) : flow.unaccountedQty === 0 ? (
@@ -284,9 +284,9 @@ export function OpRow({
             <span className="jc-ops-chk is-off mono">⚠ {flow.unaccountedQty}</span>
           )}
         </td>
-        <td>{statusBadge}</td>
-        <td>{nextStep}</td>
-        <td>
+        <td className="td-ctr">{statusBadge}</td>
+        <td className="td-ctr">{nextStep}</td>
+        <td className="td-ctr">
           <RowMenu
             label={`Op ${fmtOpSrNo(op.opSeq)} actions`}
             items={acts.more.map((a) => ({

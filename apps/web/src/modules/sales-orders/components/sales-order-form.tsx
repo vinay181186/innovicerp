@@ -1349,27 +1349,31 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
               >
                 <thead>
                   <tr>
-                    <th style={{ width: '4%' }}>Ln</th>
+                    <th className="th-ctr" style={{ width: '4%' }}>
+                      Ln
+                    </th>
                     <th style={{ width: '22%' }}>
                       Item Code<span className="req">★</span> · Drawing Rev{' '}
                       <span className="req">★</span>
                     </th>
                     <th style={{ width: '14%' }}>Item Name</th>
-                    <th style={{ width: '7%', color: 'var(--purple)' }}>
+                    <th className="th-ctr" style={{ width: '7%', color: 'var(--purple)' }}>
                       POL<span className="req">★</span>
                     </th>
-                    <th style={{ width: '5%' }}>UOM</th>
+                    <th className="th-ctr" style={{ width: '5%' }}>
+                      UOM
+                    </th>
                     <th className="th-num" style={{ width: '7%' }}>
                       Order Qty<span className="req">★</span>
                     </th>
-                    <th className="th-num" style={{ width: '8%' }}>
+                    <th className="th-money" style={{ width: '8%' }}>
                       Rate (₹)
                     </th>
-                    <th className="th-num" style={{ width: '9%' }}>
+                    <th className="th-money" style={{ width: '9%' }}>
                       Amount
                     </th>
                     <th style={{ width: '12%' }}>Remarks</th>
-                    <th style={{ width: '12%' }} />
+                    <th className="th-ctr" style={{ width: '12%' }} />
                   </tr>
                 </thead>
                 <tbody>
@@ -1387,7 +1391,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                       return (
                         <Fragment key={field.id}>
                           <tr>
-                            <td className="mono fw-700 cyan">{idx + 1}</td>
+                            <td className="td-ctr mono fw-700 cyan">{idx + 1}</td>
                             <td>
                               <div
                                 style={{
@@ -1441,22 +1445,27 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                                 {...register(`lines.${idx}.partName` as const)}
                               />
                             </td>
-                            <td>
+                            <td className="td-ctr">
                               <input
                                 className="innovic-input"
                                 autoComplete="off"
                                 placeholder="POL"
                                 aria-label={`POL, line ${idx + 1}`}
                                 maxLength={POL_MAX}
-                                style={{ color: 'var(--purple)', fontWeight: 600 }}
+                                style={{
+                                  color: 'var(--purple)',
+                                  fontWeight: 600,
+                                  textAlign: 'center',
+                                }}
                                 {...register(`lines.${idx}.clientPoLineNo` as const)}
                               />
                             </td>
-                            <td>
+                            <td className="td-ctr">
                               <input
                                 className="innovic-input"
                                 autoComplete="off"
                                 readOnly
+                                style={{ textAlign: 'center' }}
                                 {...register(`lines.${idx}.uom` as const)}
                               />
                             </td>
@@ -1471,7 +1480,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                                 })}
                               />
                             </td>
-                            <td className="td-num">
+                            <td className="td-money">
                               <input
                                 type="number"
                                 step="0.01"
@@ -1481,7 +1490,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                                 {...register(`lines.${idx}.rate` as const, { valueAsNumber: true })}
                               />
                             </td>
-                            <td className="td-num mono fw-700 green">
+                            <td className="td-money mono fw-700 green">
                               {amt > 0 ? `₹${inrFormat(amt)}` : '—'}
                             </td>
                             {/* ADR-236: this line's own note (optional). */}
@@ -1496,7 +1505,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                                 {...register(`lines.${idx}.remarks` as const)}
                               />
                             </td>
-                            <td>
+                            <td className="td-ctr">
                               <div
                                 style={{
                                   display: 'flex',
@@ -1602,36 +1611,36 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                     <td colSpan={5} className="text3">
                       {lineCount} items · {totalPcs} total pcs
                     </td>
-                    <td colSpan={2} className="td-num text3">
+                    <td colSpan={2} className="td-money text3">
                       Subtotal
                     </td>
-                    <td className="td-num mono fw-700">{money.subtotal}</td>
+                    <td className="td-money mono fw-700">{money.subtotal}</td>
                     <td colSpan={2} />
                   </tr>
                   {money.taxRows.map((r) => (
                     <tr key={r.label}>
                       <td colSpan={5} />
-                      <td colSpan={2} className="td-num text3">
+                      <td colSpan={2} className="td-money text3">
                         {r.label}
                       </td>
-                      <td className="td-num mono fw-700 amber">{r.value}</td>
+                      <td className="td-money mono fw-700 amber">{r.value}</td>
                       <td colSpan={2} />
                     </tr>
                   ))}
                   <tr>
                     <td colSpan={5} />
-                    <td colSpan={2} className="td-num text3">
+                    <td colSpan={2} className="td-money text3">
                       Round-off
                     </td>
-                    <td className="td-num mono fw-700">{money.roundOff}</td>
+                    <td className="td-money mono fw-700">{money.roundOff}</td>
                     <td colSpan={2} />
                   </tr>
                   <tr>
                     <td colSpan={5} />
-                    <td colSpan={2} className="td-num fw-700 green">
+                    <td colSpan={2} className="td-money fw-700 green">
                       Grand Total
                     </td>
-                    <td className="td-num mono fw-700 green" style={{ fontSize: 'var(--fs-md)' }}>
+                    <td className="td-money mono fw-700 green" style={{ fontSize: 'var(--fs-md)' }}>
                       {money.grand}
                     </td>
                     <td colSpan={2} />
@@ -1663,11 +1672,13 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                 <table className="innovic-table tbl-ctr">
                   <thead>
                     <tr>
-                      <th style={{ width: 80 }}>Lot No.</th>
+                      <th className="th-ctr" style={{ width: 80 }}>
+                        Lot No.
+                      </th>
                       <th className="th-num">Qty</th>
-                      <th>Due Date</th>
+                      <th className="th-ctr">Due Date</th>
                       <th>Remarks</th>
-                      <th style={{ width: 40 }} />
+                      <th className="th-ctr" style={{ width: 40 }} />
                     </tr>
                   </thead>
                   <tbody>
@@ -1675,7 +1686,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                       <tr key={field.id}>
                         {/* Legacy prints the row index here; ours keeps the editable
                             Lot # the save reads (`lotNo`) — feature retained. */}
-                        <td>
+                        <td className="td-ctr">
                           <input
                             type="number"
                             min={1}
@@ -1695,10 +1706,11 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                             {...register(`milestones.${idx}.qty` as const, { valueAsNumber: true })}
                           />
                         </td>
-                        <td>
+                        <td className="td-ctr">
                           <input
                             type="date"
                             className="innovic-input"
+                            style={{ textAlign: 'center' }}
                             {...register(`milestones.${idx}.dueDate` as const)}
                           />
                         </td>
@@ -1710,7 +1722,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                             {...register(`milestones.${idx}.remarks` as const)}
                           />
                         </td>
-                        <td>
+                        <td className="td-ctr">
                           <button
                             type="button"
                             className="btn btn-danger btn-sm btn-icon"

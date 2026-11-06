@@ -34,6 +34,7 @@ const PRINT_STYLE = `
   th{background:#1a3a6b;color:#fff;padding:5px 8px;text-align:left;font-size:11px}
   td{padding:5px 8px;border-bottom:1px solid #e5e7eb;font-size:11px;vertical-align:top}
   tr:nth-child(even) td{background:#f8fafc}
+  .ctr{text-align:center}
   .badge{display:inline-block;padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700}
   .b-green{background:#dcfce7;color:#16a34a}.b-amber{background:#fef3c7;color:#d97706}
   .b-blue{background:#dbeafe;color:#1d4ed8}.b-grey{background:#f3f4f6;color:#6b7280}

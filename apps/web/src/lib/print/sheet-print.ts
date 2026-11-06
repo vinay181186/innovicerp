@@ -311,7 +311,8 @@ export const SHEET_STYLE = `
   tbody td{padding:1.4mm 2.5mm}
   .num{text-align:center;font-variant-numeric:tabular-nums;font-family:var(--f-mono);font-size:9.5pt}
   .ctr{text-align:center}
-  .qty{text-align:right;font-weight:600;font-variant-numeric:tabular-nums;
+  .rgt{text-align:right}
+  .qty{text-align:center;font-weight:600;font-variant-numeric:tabular-nums;
        font-family:var(--f-mono);font-size:9.5pt}
   .money{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--f-mono);
          font-size:9.5pt;white-space:nowrap}
@@ -358,6 +359,15 @@ export const SHEET_STYLE = `
 
   /* One .page per printed sheet, built by the paginator. */
   .page + .page{margin-top:8mm;border-top:1px dashed #CDD4DD;padding-top:8mm}
+  /* ADR-278, opt-in: an article with data-page-foot gets a foot pinned to the
+     bottom of each A4 page. 279mm is the PDF's printable height (sheet-pdf.ts). */
+  .sheet[data-page-foot] .page{position:relative;min-height:279mm}
+  .sheet[data-page-foot] .page + .page{border-top:0;padding-top:0}
+  .page-foot{position:absolute;left:0;right:0;bottom:0;height:7mm;display:flex;gap:4mm;
+             align-items:flex-end;justify-content:space-between;overflow:hidden;
+             white-space:nowrap;font-size:8.5pt}
+  .page-foot span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis}
+  .page-foot span:last-child{flex:none}
 
   .test-banner{background:#fef3c7;border:2px dashed #d97706;padding:10px;text-align:center;
                margin:0 auto 14px;max-width:210mm;border-radius:6px;color:#92400e;font-weight:700}
@@ -388,6 +398,8 @@ export const SHEET_STYLE = `
                   margin-top:0;border-top:0;padding-top:0}
     /* the foot margin, on every page, now that there is no footer element */
     .page{padding-bottom:9mm}
+    .sheet[data-page-foot] .page{min-height:296mm}
+    .page-foot{bottom:9mm}
     /* The letterhead repeats; nothing splits mid-row. */
     tr{break-inside:avoid;page-break-inside:avoid}
     .split,.split > div,.terms,.signs,.kv,.lh-in{break-inside:avoid;page-break-inside:avoid}
@@ -454,26 +466,50 @@ const PAGINATE_SCRIPT = `
       }
       if (!hs.length) return;
 
-      var avail = PAGE_H - headH - footH;
+      // ADR-278, opt-in: data-page-foot reserves the height of the page's foot.
+      var pageFoot = art.getAttribute('data-page-foot');
+      var avail = PAGE_H - headH - footH - (pageFoot === null ? 0 : 8 * MM);
       if (!(avail > 0)) return;
 
       // Opt-in repeated heading (the Job Card operations, ADR-034): a row
       // marked data-carry-head="x" that starts a new page gets a copy of the
-      // row marked data-head-for="x" above it, so the columns stay named.
+      // rows marked data-head-for="x" above it, so the columns stay named.
+      // ADR-278: several rows may share a key, data-carry-head may name several
+      // keys (space separated), and a copied row with data-contd says "contd.".
       var heads = {};
       for (var hi=0; hi<rows.length; hi++){
         var hk = rows[hi].getAttribute('data-head-for');
-        if (hk) heads[hk] = { row: rows[hi], h: hs[hi] };
+        if (hk) (heads[hk] = heads[hk] || []).push({ row: rows[hi], h: hs[hi] });
       }
-      var pages = [[]], used = 0;
+      var pages = [[]], used = 0, chainEnd = -1;
       for (var k=0;k<rows.length;k++){
-        if (used > 0 && used + hs[k] > avail){
+        // ADR-278, opt-in: data-keep-next rows move with the row after them.
+        // Only the chain's first row asks, so a chain taller than a page still
+        // starts one new page and then simply fills it.
+        var need = hs[k];
+        if (k > chainEnd){
+          chainEnd = k;
+          while (chainEnd < rows.length-1 && rows[chainEnd].hasAttribute('data-keep-next')){
+            chainEnd++;
+            need += hs[chainEnd];
+          }
+        }
+        // ADR-278, opt-in: data-page-break always starts a new page.
+        if (used > 0 && (used + need > avail || rows[k].hasAttribute('data-page-break'))){
           pages.push([]); used = 0;
           var ck = rows[k].getAttribute('data-carry-head');
-          if (ck && heads[ck]){
-            pages[pages.length-1].push(heads[ck].row.cloneNode(true));
-            used += heads[ck].h;
-          }
+          (ck ? ck.split(' ') : []).forEach(function(key){
+            (heads[key] || []).forEach(function(head){
+              var copy = head.row.cloneNode(true);
+              if (copy.hasAttribute('data-contd') && copy.cells.length){
+                var at = copy.cells[copy.cells.length-1];
+                while (at.lastElementChild) at = at.lastElementChild;
+                at.appendChild(document.createTextNode(' · contd.'));
+              }
+              pages[pages.length-1].push(copy);
+              used += head.h;
+            });
+          });
         }
         pages[pages.length-1].push(rows[k]);
         used += hs[k];
@@ -481,10 +517,16 @@ const PAGINATE_SCRIPT = `
       var total = pages.length;
       if (tfoot && tfoot.parentNode) tfoot.parentNode.removeChild(tfoot);
 
+      // ADR-278: a document whose columns are set by its own <colgroup> keeps
+      // them on every page. Only the table's first child counts: the Job Card's
+      // nested tables have colgroups of their own.
+      var grid = table.firstElementChild;
+      if (grid && grid.tagName !== 'COLGROUP') grid = null;
       var frag = document.createDocumentFragment();
       for (var pi=0; pi<total; pi++){
         var t = document.createElement('table');
         t.className = 'doc';
+        if (grid) t.appendChild(grid.cloneNode(true));
         t.appendChild(thead.cloneNode(true));
         var tb = document.createElement('tbody');
         for (var ri=0; ri<pages[pi].length; ri++) tb.appendChild(pages[pi][ri]);
@@ -492,6 +534,17 @@ const PAGINATE_SCRIPT = `
         var pg = document.createElement('div');
         pg.className = 'page';
         pg.appendChild(t);
+        if (pageFoot !== null){
+          var foot = document.createElement('div');
+          foot.className = 'page-foot';
+          var parts = [pageFoot, 'Page ' + (pi+1) + ' of ' + total];
+          for (var fi=0; fi<parts.length; fi++){
+            var part = document.createElement('span');
+            part.textContent = parts[fi];
+            foot.appendChild(part);
+          }
+          pg.appendChild(foot);
+        }
         frag.appendChild(pg);
       }
       art.innerHTML = '';
@@ -506,6 +559,21 @@ const PAGINATE_SCRIPT = `
       // foot) is on the last page: "N of N".
       var lasts = document.querySelectorAll('[data-pglast]');
       for (var li=0; li<lasts.length; li++) lasts[li].textContent = total + ' of ' + total;
+      // ADR-278, opt-in: data-page-ref="k" shows the page holding data-page-anchor="k".
+      var refs = document.querySelectorAll('[data-page-ref]');
+      if (refs.length){
+        var anchors = {};
+        for (var ai=0; ai<total; ai++){
+          for (var aj=0; aj<pages[ai].length; aj++){
+            var ak = pages[ai][aj].getAttribute('data-page-anchor');
+            if (ak && !anchors[ak]) anchors[ak] = ai+1;
+          }
+        }
+        for (var rf=0; rf<refs.length; rf++){
+          var pageNo = anchors[refs[rf].getAttribute('data-page-ref')];
+          if (pageNo) refs[rf].textContent = String(pageNo);
+        }
+      }
     } catch(e) { /* un-paginated document stands */ }
   }
   if (document.readyState === 'complete') run();
@@ -609,17 +677,9 @@ export function sheetLetterheadHtml(args: {
   </div></div>`;
 }
 
-export function buildSheetHtml(model: SheetPrintModel): string {
-  const { blocks, data, company, lines } = model;
-  const po = model.columns === 'po';
-  const grn = model.columns === 'grn';
-  const sub = (key: string): string => nl2br(substituteTemplateVars(blocks[key] ?? '', data));
-
-  const specialNotes = sub('special_notes');
-  const terms = sub('terms');
-  const footer = sub('footer');
-  const signature = sub('signature');
-
+/** The <p> rows under the company name on a letterhead: address, contact,
+ *  GSTIN and PAN. One place, so every sheet that prints them prints the same. */
+export function sheetLetterheadLines(company: DocCompany): string[] {
   // The works address prints as ONE line on the letterhead (user, 2026-09-10).
   // The lines arrive split because that is how the business card and the
   // `companies` row both hold them; the letterhead joins them back with ", "
@@ -647,11 +707,24 @@ export function buildSheetHtml(model: SheetPrintModel): string {
   // (2026-09-09); the user has changed their mind and that branch is gone, so
   // there is one letterhead again rather than one per document.
   const idsHtml = ids.join(' &nbsp;&middot;&nbsp; ');
+  return [addressHtml, contactHtml, `<p class="co-ids">${idsHtml}</p>`];
+}
+
+export function buildSheetHtml(model: SheetPrintModel): string {
+  const { blocks, data, company, lines } = model;
+  const po = model.columns === 'po';
+  const grn = model.columns === 'grn';
+  const sub = (key: string): string => nl2br(substituteTemplateVars(blocks[key] ?? '', data));
+
+  const specialNotes = sub('special_notes');
+  const terms = sub('terms');
+  const footer = sub('footer');
+  const signature = sub('signature');
 
   const letterhead = sheetLetterheadHtml({
     name: company.name,
     title: model.title,
-    lines: [addressHtml, contactHtml, `<p class="co-ids">${idsHtml}</p>`],
+    lines: sheetLetterheadLines(company),
     draft: model.draft,
   });
 
@@ -681,11 +754,11 @@ export function buildSheetHtml(model: SheetPrintModel): string {
       polHead +
       '<td class="colh">Item Code</td>' +
       '<td class="colh ctr" style="width:14mm">UOM</td>' +
-      (showHsnPo ? '<td class="colh ctr" style="width:19mm">HSN</td>' : '') +
+      (showHsnPo ? '<td class="colh" style="width:19mm">HSN</td>' : '') +
       '<td class="colh ctr" style="width:20mm">Qty</td>' +
       (priced
-        ? '<td class="colh ctr" style="width:26mm">Rate</td>' +
-          '<td class="colh ctr" style="width:30mm">Amount</td>'
+        ? '<td class="colh rgt" style="width:26mm">Rate</td>' +
+          '<td class="colh rgt" style="width:30mm">Amount</td>'
         : '')
     : grn
       ? '<td class="colh ctr" style="width:11mm">Sr No</td>' +
@@ -700,7 +773,7 @@ export function buildSheetHtml(model: SheetPrintModel): string {
         polHead +
         '<td class="colh">Item Code</td>' +
         '<td class="colh ctr" style="width:14mm">UOM</td>' +
-        (showHsn ? '<td class="colh ctr" style="width:19mm">HSN</td>' : '') +
+        (showHsn ? '<td class="colh" style="width:19mm">HSN</td>' : '') +
         '<td class="colh ctr" style="width:20mm">Qty</td>' +
         '<td class="colh" style="width:62mm">Remarks</td>';
 
@@ -715,7 +788,7 @@ export function buildSheetHtml(model: SheetPrintModel): string {
       if (po) {
         return (
           lead +
-          (showHsnPo ? `<td class="ctr">${esc(l.hsn ?? '')}</td>` : '') +
+          (showHsnPo ? `<td>${esc(l.hsn ?? '')}</td>` : '') +
           `<td class="qty">${esc(l.qty)}</td>` +
           (priced
             ? `<td class="money">${esc(l.rate ?? '')}</td>` +
@@ -736,7 +809,7 @@ export function buildSheetHtml(model: SheetPrintModel): string {
       const remarks = l.remarks ? nl2br(l.remarks) : '';
       return (
         lead +
-        (showHsn ? `<td class="ctr">${hsn}</td>` : '') +
+        (showHsn ? `<td>${hsn}</td>` : '') +
         `<td class="qty">${esc(l.qty)}</td>` +
         `<td class="rem">${remarks}</td></tr>`
       );

@@ -14,6 +14,7 @@ import {
   planStatusSchema,
   planTypeSchema,
 } from './plan';
+import { PARTY_GRN_STATUSES } from '../lib/customer-rm-status';
 import { itemProcurementTypeSchema } from './item';
 import { PR_STATUSES } from '../enums/pr-status';
 import { sfRawParamSchema } from './list-query';
@@ -339,11 +340,17 @@ export const planningLineListItemSchema = planningLineSchema
     source: z.enum(['so', 'jw']),
     customerName: z.string().nullable(),
     soType: z.string(),
+    /** ADR-279 — lib/customer-rm-status.ts partyGrnStatus; 'none' on an SO line. */
+    partyGrnStatus: z.enum(PARTY_GRN_STATUSES),
   });
 export type PlanningLineListItem = z.infer<typeof planningLineListItemSchema>;
 
-/** Same params as the order list: source, search, Sort & Filter, a 25-row page. */
-export const planningLineListQuerySchema = planningSoListQuerySchema;
+/** Same params as the order list: source, search, Sort & Filter, a 25-row page.
+ *  grnPlanPending=1 (ADR-279) keeps only the lines of the home check "Party GRN
+ *  received, plan pending": material received and To Plan above 0. */
+export const planningLineListQuerySchema = planningSoListQuerySchema.extend({
+  grnPlanPending: z.enum(['1']).optional(),
+});
 export type PlanningLineListQuery = z.infer<typeof planningLineListQuerySchema>;
 
 export const planningLineListResponseSchema = z.object({
@@ -375,6 +382,7 @@ export const PLANNING_LINE_LIST_SF_FIELD = {
   toPlan: 'toPlan',
   planningPct: 'planningPct',
   planState: 'planState',
+  partyGrnStatus: 'partyGrnStatus',
   createdBy: 'createdBy',
 } as const;
 

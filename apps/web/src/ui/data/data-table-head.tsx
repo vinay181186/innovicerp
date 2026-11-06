@@ -4,7 +4,9 @@
 
 import type { CSSProperties, ReactNode } from 'react';
 
-import { cx } from './data-table-cells';
+import { columnAlign, isMoneyHeading, type ColumnAlign } from '@innovic/shared';
+
+import { colKind, cx, nodeText } from './data-table-cells';
 import type { DataTableColumn } from './data-table-types';
 import { SortHeader, ariaSortValue, type SortDir } from './SortHeader';
 
@@ -14,17 +16,35 @@ export interface SortProps {
   onSort?: ((field: string) => void) | undefined;
 }
 
+/** The class suffix for an alignment: `th-num` / `td-num` for a count, `-money`,
+ *  `-ctr`, `-left`. Report tables use it too, so one answer reaches every table. */
+export function alignSuffix(align: ColumnAlign, numeric: boolean): string {
+  if (align === 'right') return 'money';
+  if (align === 'center') return numeric ? 'num' : 'ctr';
+  return 'left';
+}
+
+/** THE alignment rule (ADR-280): the column's kind and heading decide, never the
+ *  screen. An in-cell control is read from its heading: a Vendor picker is text. */
+function suffixOf<T>(c: DataTableColumn<T>): string {
+  const kind = colKind(c);
+  const heading = c.label ?? nodeText(c.header);
+  const numeric = kind === 'num' || (kind === 'control' && isMoneyHeading(heading));
+  const align = columnAlign({
+    heading,
+    numeric,
+    money: c.money === true,
+    fixed: kind === 'date' || kind === 'badge' || kind === 'actions',
+  });
+  return alignSuffix(align, numeric);
+}
+
 export function thClass<T>(c: DataTableColumn<T>, extra?: string): string | undefined {
-  return cx(
-    c.align === 'left' && 'th-left',
-    c.align === 'right' && 'th-right',
-    c.headClassName,
-    extra,
-  );
+  return cx(`th-${suffixOf(c)}`, c.headClassName, extra);
 }
 
 export function tdClass<T>(c: DataTableColumn<T>, extra?: string): string | undefined {
-  return cx(c.className, c.align === 'left' && 'td-left', c.align === 'right' && 'td-num', extra);
+  return cx(c.className, `td-${suffixOf(c)}`, extra);
 }
 
 export function thStyle<T>(c: DataTableColumn<T>): CSSProperties | undefined {

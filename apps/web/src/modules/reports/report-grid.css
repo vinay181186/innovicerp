@@ -108,7 +108,6 @@
   border-right: 0;
 }
 .rpt-table .innovic-table > tfoot > tr.rpt-total > td:first-child {
-  text-align: right;
   color: var(--text);
 }
 .rpt-error {

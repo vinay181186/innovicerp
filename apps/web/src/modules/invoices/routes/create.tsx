@@ -449,14 +449,14 @@ function InvoiceNewPage(): React.JSX.Element {
                 color: 'var(--text3)',
               }}
             >
-              <span>Ln</span>
+              <span style={{ textAlign: 'center' }}>Ln</span>
               <span style={{ textAlign: 'center', color: 'var(--purple)' }}>POL</span>
               <span>
                 Item Code<span className="req">★</span>
               </span>
               <span>Item Name</span>
-              <span style={{ textAlign: 'right', color: 'var(--amber2)' }}>To Invoice</span>
-              <span style={{ textAlign: 'right', color: 'var(--green2)' }}>
+              <span style={{ textAlign: 'center', color: 'var(--amber2)' }}>To Invoice</span>
+              <span style={{ textAlign: 'center', color: 'var(--green2)' }}>
                 Invoice Qty<span className="req">★</span>
               </span>
               <span style={{ textAlign: 'right' }}>Rate</span>
@@ -544,7 +544,7 @@ function InvoiceNewPage(): React.JSX.Element {
                   value={line?.itemName ?? ''}
                   style={{ background: 'var(--bg2)', color: 'var(--text2)' }}
                 />
-                <span className="mono fw-700 amber" style={{ textAlign: 'right' }}>
+                <span className="mono fw-700 amber" style={{ textAlign: 'center' }}>
                   {line ? line.availableQty : '—'}
                 </span>
                 <input
@@ -565,7 +565,7 @@ function InvoiceNewPage(): React.JSX.Element {
                       qty: e.target.value.trim() === '' ? '' : String(clamped),
                     });
                   }}
-                  style={{ textAlign: 'right' }}
+                  style={{ textAlign: 'center' }}
                 />
                 <input
                   type="number"

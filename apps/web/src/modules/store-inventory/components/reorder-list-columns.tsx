@@ -146,7 +146,7 @@ export function reorderListColumns(opts: {
             min={0}
             step="any"
             className="innovic-input mono fw-700"
-            style={{ width: 100, textAlign: 'right' }}
+            style={{ width: 100 }}
             disabled={!canRaise || isBlocked(r)}
             value={d.qty}
             onChange={(e) => setDraft(r, { qty: e.target.value })}

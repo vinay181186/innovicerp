@@ -173,7 +173,7 @@ function BackupPage(): React.JSX.Element {
             <thead>
               <tr>
                 <th>Document</th>
-                <th className="td-ctr">Records</th>
+                <th className="th-num">Records</th>
               </tr>
             </thead>
             <tbody>
@@ -203,7 +203,7 @@ function BackupPage(): React.JSX.Element {
                         {c.label}
                       </span>
                     </td>
-                    <td className="td-ctr mono fw-700">{c.count.toLocaleString('en-IN')}</td>
+                    <td className="td-num mono fw-700">{c.count.toLocaleString('en-IN')}</td>
                   </tr>
                 ))
               )}
@@ -211,7 +211,7 @@ function BackupPage(): React.JSX.Element {
             <tfoot>
               <tr style={{ fontWeight: 700 }}>
                 <td style={TOTAL_LABEL_CELL}>Total</td>
-                <td className="td-ctr mono" style={TOTAL_CELL}>
+                <td className="td-num mono" style={TOTAL_CELL}>
                   {total.toLocaleString('en-IN')}
                 </td>
               </tr>

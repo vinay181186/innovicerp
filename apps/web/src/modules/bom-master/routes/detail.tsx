@@ -286,7 +286,7 @@ function BomMasterDetailPage(): React.JSX.Element {
           <table className="innovic-table">
             <thead>
               <tr>
-                <th className="th-num" style={{ width: 36 }}>
+                <th className="th-ctr" style={{ width: 36 }}>
                   Sr No
                 </th>
                 <th>Item Code</th>
@@ -334,7 +334,7 @@ function BomMasterDetailPage(): React.JSX.Element {
                   );
                   return (
                     <tr key={line.id}>
-                      <td className="td-num mono fw-700">{idx + 1}</td>
+                      <td className="td-ctr mono fw-700">{idx + 1}</td>
                       <td className="mono fw-700" style={{ color: 'var(--text)' }}>
                         {/* D2 — the child part as Item + Drawing Rev (SHAFT/2). */}
                         <ItemRevLink
@@ -382,21 +382,21 @@ function BomMasterDetailPage(): React.JSX.Element {
             <table className="innovic-table">
               <thead>
                 <tr>
-                  <th>BOM Rev</th>
-                  <th>Revision Date</th>
+                  <th className="th-ctr">BOM Rev</th>
+                  <th className="th-ctr">Revision Date</th>
                   <th>Revised By</th>
                   <th>Notes</th>
-                  <th>Items</th>
-                  <th style={{ width: 48 }} aria-label="Actions" />
+                  <th className="th-num">Items</th>
+                  <th className="th-ctr" style={{ width: 48 }} aria-label="Actions" />
                 </tr>
               </thead>
               <tbody>
                 {detail.revisions.map((rev) => (
                   <tr key={rev.id}>
-                    <td className="mono fw-700" style={{ color: 'var(--amber2)' }}>
+                    <td className="td-ctr mono fw-700" style={{ color: 'var(--amber2)' }}>
                       {rev.revision}
                     </td>
-                    <td className="text2" style={{ fontSize: 'var(--fs-xs)' }}>
+                    <td className="td-ctr text2" style={{ fontSize: 'var(--fs-xs)' }}>
                       {fmtDate(rev.createdAt)}
                     </td>
                     <td>{rev.changedByText}</td>
@@ -406,7 +406,7 @@ function BomMasterDetailPage(): React.JSX.Element {
                     >
                       {rev.notes ?? '—'}
                     </td>
-                    <td>
+                    <td className="td-num">
                       {rev.itemsSnapshot.length > 0 ? (
                         <span style={{ fontSize: 'var(--fs-xs)' }}>
                           {rev.itemsSnapshot.length} item
@@ -418,7 +418,7 @@ function BomMasterDetailPage(): React.JSX.Element {
                         </span>
                       )}
                     </td>
-                    <td>
+                    <td className="td-ctr">
                       <RowMenu
                         items={[
                           {
@@ -464,7 +464,7 @@ function BomMasterDetailPage(): React.JSX.Element {
           <table className="innovic-table">
             <thead>
               <tr>
-                <th className="th-num">Sr No</th>
+                <th className="th-ctr">Sr No</th>
                 <th>Item Code</th>
                 <th>Item Name</th>
                 <th className="th-num">Qty / Set</th>
@@ -474,7 +474,7 @@ function BomMasterDetailPage(): React.JSX.Element {
             <tbody>
               {openSnapshot.itemsSnapshot.map((it, i) => (
                 <tr key={`${it.childItemId}-${i}`}>
-                  <td className="td-num mono">{i + 1}</td>
+                  <td className="td-ctr mono">{i + 1}</td>
                   <td className="mono fw-700" style={{ color: 'var(--text)' }}>
                     {it.childItemCode ?? '—'}
                   </td>
@@ -564,12 +564,12 @@ function LinkedSoLinesModal({
           <thead>
             <tr>
               <th>SO No.</th>
-              <th>POL</th>
+              <th className="th-ctr">POL</th>
               <th>Item Code</th>
               <th>Item Name</th>
               <th className="th-num">Order Qty</th>
-              <th>Line Status</th>
-              <th>Due Date</th>
+              <th className="th-ctr">Line Status</th>
+              <th className="th-ctr">Due Date</th>
             </tr>
           </thead>
           <tbody>
@@ -588,16 +588,18 @@ function LinkedSoLinesModal({
                     <span className="td-code">{soNoWithInternal(l.soCode, l.soInternalNo)}</span>
                   )}
                 </td>
-                <td className="mono">{l.clientPoLineNo ?? '—'}</td>
+                <td className="td-ctr mono">{l.clientPoLineNo ?? '—'}</td>
                 <td className="mono fw-700" style={{ color: 'var(--text)', whiteSpace: 'nowrap' }}>
                   {itemCodeWithRev(l.itemCode, l.itemRevision)}
                 </td>
                 <td>{l.itemName ?? '—'}</td>
                 <td className="td-num mono fw-700">{l.orderQty}</td>
-                <td>
+                <td className="td-ctr">
                   <StatusBadge kind="so" status={l.lineStatus} />
                 </td>
-                <td style={{ whiteSpace: 'nowrap' }}>{fmtDate(l.dueDate)}</td>
+                <td className="td-ctr" style={{ whiteSpace: 'nowrap' }}>
+                  {fmtDate(l.dueDate)}
+                </td>
               </tr>
             ))}
           </tbody>

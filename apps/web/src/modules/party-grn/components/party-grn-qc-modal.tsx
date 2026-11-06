@@ -222,7 +222,7 @@ export function PartyGrnQcModal({
           <table className="innovic-table">
             <thead>
               <tr>
-                <th className="th-num">Ln</th>
+                <th className="th-ctr">Ln</th>
                 <th>Customer RM</th>
                 <th className="th-num">Received Qty</th>
                 <th className="th-num">Inspected So Far</th>
@@ -242,7 +242,7 @@ export function PartyGrnQcModal({
                 const qcPending = qcPendingQtyOf(l);
                 return (
                   <tr key={l.id}>
-                    <td className="td-num mono">{l.lineNo}</td>
+                    <td className="td-ctr mono">{l.lineNo}</td>
                     <td title={l.partyMaterialName ?? ''}>
                       <span className="mono fw-700" style={{ color: 'var(--text)' }}>
                         {l.partyMaterialCodeText}

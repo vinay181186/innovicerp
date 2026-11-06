@@ -46,18 +46,24 @@ export function RevisionsModal({
         <table className="innovic-table">
           <thead>
             <tr>
-              <th style={{ width: 30 }}>Sr No</th>
-              <th style={{ width: 150 }}>Revision Date</th>
+              <th className="th-ctr" style={{ width: 30 }}>
+                Sr No
+              </th>
+              <th className="th-ctr" style={{ width: 150 }}>
+                Revision Date
+              </th>
               <th style={{ width: 130 }}>Revised By</th>
               <th>Preview</th>
-              <th style={{ width: 48 }} aria-label="Actions" />
+              <th className="th-ctr" style={{ width: 48 }} aria-label="Actions" />
             </tr>
           </thead>
           <tbody>
             {items.map((r, i) => (
               <tr key={r.id}>
-                <td className="text3">{i + 1}</td>
-                <td style={{ fontSize: 'var(--fs-xs)' }}>{fmtDateTime(r.createdAt)}</td>
+                <td className="td-ctr text3">{i + 1}</td>
+                <td className="td-ctr" style={{ fontSize: 'var(--fs-xs)' }}>
+                  {fmtDateTime(r.createdAt)}
+                </td>
                 <td style={{ fontSize: 'var(--fs-xs)' }}>{r.editedByName ?? '—'}</td>
                 <td
                   className="text2"

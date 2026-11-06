@@ -77,7 +77,7 @@ function PartCell({ name, code }: { name: string | null; code: string }): React.
  *  row has no sales order behind it (a raw-material receipt). */
 function PolCell({ value }: { value: string | null }): React.JSX.Element {
   return (
-    <td style={{ ...TD, ...NOWRAP }}>
+    <td className="td-ctr" style={{ ...TD, ...NOWRAP }}>
       <span style={{ ...MONO_STRONG, fontSize: 'var(--fs-sm)', color: 'var(--purple)' }}>
         {value ?? '—'}
       </span>
@@ -163,7 +163,7 @@ export function PendingSheetRow(props: {
       <PartCell name={props.partName} code={props.itemCode} />
       <ContextCell line1={props.context} line2={props.contextLine2} />
       <NumCell value={props.qty} />
-      <td style={{ ...TD, ...NOWRAP }}>
+      <td className="td-ctr" style={{ ...TD, ...NOWRAP }}>
         <div style={{ ...MONO, fontSize: 'var(--fs-sm)' }}>{fmtDate(props.calledDate)}</div>
         {wait ? (
           <div
@@ -178,11 +178,11 @@ export function PendingSheetRow(props: {
           </div>
         ) : null}
       </td>
-      <td style={{ ...TD, ...NOWRAP }}>
+      <td className="td-ctr" style={{ ...TD, ...NOWRAP }}>
         <span style={CAPTION}>{stage?.label}</span>
       </td>
       {props.showAction === false ? null : (
-        <td style={{ ...TD, ...NOWRAP }}>
+        <td className="td-ctr" style={{ ...TD, ...NOWRAP }}>
           {/* No form to open (viewer without `entry` for this kind of call) →
               a dash instead of an "Inspect ▸" that opens nothing. */}
           {props.canInspect ? (

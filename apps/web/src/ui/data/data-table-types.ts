@@ -21,7 +21,7 @@ import type { ServerSortFilter } from './sort-filter/server-state';
  * What a column holds — drives the fit engine (ADR-199, `tableKey` tables):
  *   text    long prose; shares the spare width, cut with "…" + tooltip
  *   code    doc no. / item code — exact width, never cut
- *   num     qty / money — exact width, never cut, right-aligned
+ *   num     qty / money — exact width, never cut (qty centred, money right: ADR-280)
  *   date    exact width, never cut
  *   badge   status chip — exact width, never cut
  *   actions buttons — exact width, never cut
@@ -74,8 +74,11 @@ export interface DataTableColumn<T> {
   render?: ((row: T, index: number) => ReactNode) | undefined;
   /** % width. Widths should sum to 100 (fixed layout). Ignored when autoWidth or tableKey. */
   width?: string | undefined;
-  /** Cells are centred by default. left = names / free text, right = money. */
+  /** NOT the cell's alignment: `columnAlign` (ADR-280) decides that from the kind and
+   *  heading. `right` still marks the column numeric when it has no `kind`. */
   align?: 'left' | 'center' | 'right' | undefined;
+  /** Money under a heading that does not say so ("Total"): aligns right (ADR-280). */
+  money?: boolean | undefined;
   /** Extra td classes, e.g. `td-code`, `mono fw-700`. */
   className?: string | undefined;
   /** Extra th classes. */

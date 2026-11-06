@@ -606,7 +606,7 @@
        cell of a `.tbl-edit` table, keep overflow visible so the control is
        never clipped. Full-width colSpan cells (expanded detail rows, loading /
        empty / message rows) are not data cells and wrap normally.
-     - Text centred, numbers right (th-num / td-num); codes never cut.
+     - Alignment follows ADR-280: text left, qty centre, money right; codes never cut.
      - Making the columns FIT the screen is the Phase 3 engine's job, not this
        stylesheet's; until then a wide table scrolls inside its .tbl-wrap.
      - Density: comfortable by default; `body.density-compact` tightens every
@@ -742,9 +742,9 @@ body.density-compact {
   letter-spacing: 0.06em;
   line-height: 1.25;
   padding: var(--tbl-th-pad-y) var(--tbl-pad-x);
-  /* Table-alignment standard: the column name centres with its values so the
-     column reads as one line. See the block under `.td-ctr`. */
-  text-align: center;
+  /* Table-alignment standard: the column name aligns with its values. See the
+     block under `.td-ctr`. */
+  text-align: left;
   white-space: nowrap;
   border-right: 1px solid var(--border);
   border-bottom: 1px solid var(--blue2);
@@ -781,7 +781,8 @@ body.density-compact {
 .innovic-table td.td-ctl,
 .innovic-table td.td-code,
 .innovic-table td.mono,
-.innovic-table td.td-num {
+.innovic-table td.td-num,
+.innovic-table td.td-money {
   overflow: visible;
   text-overflow: clip;
 }
@@ -878,67 +879,97 @@ body.density-compact {
 .td-ctr {
   text-align: center;
 }
-/* ── TABLE-ALIGNMENT STANDARD ────────────────────────────────────────────────
-   Every table in the app centres BOTH rows: the column name and the values
-   under it share one centre line. Headers left over centred data was tried on
-   SO Master (2026-09-07) and rejected -- it left every value about 50px right
-   of its own column name, so nothing lined up.
-
-   Applied here once rather than per table. `table.tbl-ctr` stays in the list
-   for the handful of tables that carry neither shared class; the class is a
-   no-op on tables that already match one of the selectors above it.
-
-   This does NOT reach an inline style={{ textAlign }} written onto a cell, and
-   it does not reach `.td-right` / `.td-ctr` either way -- at (0,1,1) it already
-   outranks those (0,1,0) helpers. Inline ones have to be deleted from the
-   markup; there is no specificity that beats them. */
+/* ── TABLE-ALIGNMENT STANDARD (owner 2026-11-06, ADR-280) ────────────────────
+   Text and codes left, qty centre, money right, short fixed values centre; the
+   heading sits with its values. Replaces "everything centred, numbers right".
+   The fit table takes its classes from `columnAlign` (packages/shared). A
+   hand-built table uses:
+     (nothing)            text and codes: left is the default
+     th-num / td-num      qty and other counts: centre
+     th-money / td-money  money: right, fixed-width digits
+     th-ctr / td-ctr      dates, statuses, UOM, Sr No, POL, Op, Rev, actions
+   `td-right` / `th-right` are old names for money. No inline textAlign on a
+   table cell: no class can beat it. (0,2,1) outranks the default below. */
 .innovic-table th,
 .innovic-table td,
 .ops-routing th,
 .ops-routing td,
 table.tbl-ctr th,
 table.tbl-ctr td {
-  text-align: center;
+  text-align: left;
 }
-/* NUMBERS ARE THE EXCEPTION (decided 2026-09-26, ERPNext gap report): qty,
-   rate, amount, % and every other number sit RIGHT-aligned — header and value
-   together — with fixed-width digits, so decimals line up down the column the
-   way they do in ERPNext and on paper. Text columns stay centred.
-   Mark a numeric column with `th-num` on its <th> and `td-num` on its <td>
-   (`td-right` / `th-right` are accepted aliases). A number <input> inside a
-   table cell right-aligns on its own. (0,2,1) outranks the centring above. */
 .innovic-table th.th-num,
 .innovic-table td.td-num,
-.innovic-table th.th-right,
-.innovic-table td.td-right,
+.ops-routing th.th-num,
+.ops-routing td.td-num,
 table.tbl-ctr th.th-num,
 table.tbl-ctr td.td-num {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.innovic-table th.th-ctr,
+.innovic-table td.td-ctr,
+.ops-routing th.th-ctr,
+.ops-routing td.td-ctr,
+table.tbl-ctr th.th-ctr,
+table.tbl-ctr td.td-ctr {
+  text-align: center;
+}
+.innovic-table th.th-money,
+.innovic-table td.td-money,
+.innovic-table th.th-right,
+.innovic-table td.td-right,
+.ops-routing th.th-money,
+.ops-routing td.td-money,
+table.tbl-ctr th.th-money,
+table.tbl-ctr td.td-money {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
-.innovic-table td input.innovic-input[type='number'],
-.innovic-table td.td-num .innovic-input,
-.ops-routing td input.innovic-input[type='number'],
-table.tbl-ctr td input.innovic-input[type='number'] {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
+.innovic-table th.th-left,
+.innovic-table td.td-left {
+  text-align: left;
 }
-/* On form-style tables the value the user reads sits inside a full-width
-   <input>/<select> that fills the cell, so centring the cell alone moves
-   nothing on screen. An inline textAlign on the control still wins over this. */
+/* A "No lines yet" message row stays centred: it is a message, not a column. */
+.innovic-table td.empty-state,
+.ops-routing td.empty-state,
+table.tbl-ctr td.empty-state {
+  text-align: center;
+}
+/* Entry boxes follow the same rule: a typed value sits where the printed one
+   would. A text box or picker reads from the left; a number box is a qty unless
+   its cell says money. An inline textAlign on the control still wins. */
 .innovic-table td .innovic-input,
 .innovic-table td .innovic-select,
 .ops-routing td .innovic-input,
 .ops-routing td .innovic-select,
 table.tbl-ctr td .innovic-input,
 table.tbl-ctr td .innovic-select {
-  text-align: center;
-}
-/* Left for long prose, right for numbers — the only sanctioned escapes from
-   the centring. */
-.innovic-table th.th-left,
-.innovic-table td.td-left {
   text-align: left;
+}
+.innovic-table td.td-ctr .innovic-input,
+.innovic-table td.td-ctr .innovic-select,
+.ops-routing td.td-ctr .innovic-input,
+.ops-routing td.td-ctr .innovic-select,
+table.tbl-ctr td.td-ctr .innovic-input,
+table.tbl-ctr td.td-ctr .innovic-select,
+.innovic-table td input.innovic-input[type='number'],
+.innovic-table td.td-num .innovic-input,
+.ops-routing td input.innovic-input[type='number'],
+.ops-routing td.td-num .innovic-input,
+table.tbl-ctr td input.innovic-input[type='number'],
+table.tbl-ctr td.td-num .innovic-input {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.innovic-table td.td-money .innovic-input,
+.innovic-table td.td-money input.innovic-input[type='number'],
+.ops-routing td.td-money .innovic-input,
+.ops-routing td.td-money input.innovic-input[type='number'],
+table.tbl-ctr td.td-money .innovic-input,
+table.tbl-ctr td.td-money input.innovic-input[type='number'] {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 /* Long free text (Route Card op Remarks / Tool Details, ADR-275): the one
    sanctioned exception to "one line per row". Wraps, keeps the user's line
@@ -1183,7 +1214,6 @@ table.tbl-ctr td .innovic-select {
 }
 .ops-routing th {
   padding: var(--sp-1) var(--sp-2);
-  text-align: center;
   font-family: var(--mono);
   font-size: var(--fs-mono);
   text-transform: uppercase;
@@ -1196,11 +1226,6 @@ table.tbl-ctr td .innovic-select {
   padding: var(--sp-1) var(--sp-2);
   vertical-align: middle;
   border-top: 1px solid var(--border);
-  text-align: center;
-}
-.ops-routing td .innovic-input,
-.ops-routing td .innovic-select {
-  text-align: center;
 }
 
 /* ═══ BADGES ═══ */

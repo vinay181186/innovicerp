@@ -244,9 +244,9 @@ export function NewToolIssueModal({ onClose }: { onClose: () => void }): React.J
               <table className="innovic-table tbl-grid">
                 <thead>
                   <tr>
-                    <th></th>
+                    <th className="th-ctr"></th>
                     <th>Instrument Serial No.</th>
-                    <th>Calibration Due</th>
+                    <th className="th-ctr">Calibration Due</th>
                     <th>Location</th>
                   </tr>
                 </thead>
@@ -255,7 +255,7 @@ export function NewToolIssueModal({ onClose }: { onClose: () => void }): React.J
                     const blocked = blockedReason(i, issueDate);
                     return (
                       <tr key={i.id} style={{ opacity: blocked ? 0.55 : 1 }}>
-                        <td>
+                        <td className="td-ctr">
                           <input
                             type="checkbox"
                             disabled={Boolean(blocked)}
@@ -267,7 +267,10 @@ export function NewToolIssueModal({ onClose }: { onClose: () => void }): React.J
                         <td className="mono fw-700" style={{ color: 'var(--text)' }}>
                           {i.serialNo}
                         </td>
-                        <td style={{ color: blocked ? 'var(--red2)' : undefined }}>
+                        <td
+                          className="td-ctr"
+                          style={{ color: blocked ? 'var(--red2)' : undefined }}
+                        >
                           {i.calibrationDueOn ? fmtDate(i.calibrationDueOn) : '—'}
                           {blocked ? ` · ${blocked}` : ''}
                         </td>

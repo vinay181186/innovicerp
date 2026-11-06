@@ -293,7 +293,7 @@ export function PoFormLine({
   return (
     <Fragment>
       <tr>
-        <td className="td-num mono fw-700">{idx + 1}</td>
+        <td className="td-ctr mono fw-700">{idx + 1}</td>
         {/* 168, not 128. A real PR code is `IN-JWPR-00003` — 13 monospace
             characters, plus the input's padding and the dropdown caret — and at
             128px the last digit was cut off, which on a document number is the
@@ -377,7 +377,7 @@ export function PoFormLine({
             </div>
           ) : null}
         </td>
-        <td className="td-num" style={{ width: 108 }}>
+        <td className="td-money" style={{ width: 108 }}>
           <input
             type="number"
             step="0.01"
@@ -388,13 +388,13 @@ export function PoFormLine({
           />
         </td>
         {/* Derived, never typed — qty × rate. */}
-        <td className="td-num mono" style={{ width: 118 }} title="Qty × Rate">
+        <td className="td-money mono" style={{ width: 118 }} title="Qty × Rate">
           ₹{inrFormat(amount)}
         </td>
         {/* THIS LINE's due date. Nothing to do with the header's Due Date /
             Delivery Days pair: that promises one delivery for the whole PO, this
             one dates a single item. Neither writes to the other. */}
-        <td style={{ width: 138 }}>
+        <td className="td-ctr" style={{ width: 138 }}>
           <input
             type="date"
             className="innovic-input mono"
@@ -402,7 +402,7 @@ export function PoFormLine({
             {...register(`lines.${idx}.dueDate` as const)}
           />
         </td>
-        <td style={{ whiteSpace: 'nowrap' }}>
+        <td className="td-ctr" style={{ whiteSpace: 'nowrap' }}>
           <button
             type="button"
             className="btn btn-ghost btn-sm"

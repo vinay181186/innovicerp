@@ -1361,12 +1361,15 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
         >
           <thead>
             <tr>
-              <th style={{ width: '4%' }}>Ln</th>
+              <th className="th-ctr" style={{ width: '4%' }}>
+                Ln
+              </th>
               <th style={{ width: `${W.code}%` }}>
                 Item Code<span className="req">★</span>
               </th>
               <th style={{ width: `${W.name}%` }}>Item Name</th>
               <th
+                className="th-ctr"
                 style={{ width: '6%', color: 'var(--purple)' }}
                 title="POL — the customer's PO line number"
               >
@@ -1375,26 +1378,30 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
               <th style={{ width: `${W.rm}%` }} title="The customer's raw material for this item">
                 Customer RM
               </th>
-              <th style={{ width: '6%' }}>
+              <th className="th-ctr" style={{ width: '6%' }}>
                 Drawing Rev<span className="req">★</span>
               </th>
-              <th style={{ width: '6%' }}>UOM</th>
+              <th className="th-ctr" style={{ width: '6%' }}>
+                UOM
+              </th>
               <th className="th-num" style={{ width: '6%' }}>
                 Order Qty<span className="req">★</span>
               </th>
               {priceVisible ? (
                 <>
-                  <th className="th-num" style={{ width: '7%', color: 'var(--green2)' }}>
+                  <th className="th-money" style={{ width: '7%', color: 'var(--green2)' }}>
                     Rate (₹)
                   </th>
-                  <th className="th-num" style={{ width: '7%', color: 'var(--green2)' }}>
+                  <th className="th-money" style={{ width: '7%', color: 'var(--green2)' }}>
                     Amount
                   </th>
                 </>
               ) : null}
-              <th style={{ width: '10%' }}>Due Date</th>
-              <th style={{ width: '8%' }} />
-              <th style={{ width: '4%' }} />
+              <th className="th-ctr" style={{ width: '10%' }}>
+                Due Date
+              </th>
+              <th className="th-ctr" style={{ width: '8%' }} />
+              <th className="th-ctr" style={{ width: '4%' }} />
             </tr>
           </thead>
           <tbody>
@@ -1427,7 +1434,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                 return (
                   <Fragment key={field.id}>
                     <tr>
-                      <td className="mono fw-700" style={{ color: 'var(--cyan)' }}>
+                      <td className="td-ctr mono fw-700" style={{ color: 'var(--cyan)' }}>
                         {field.lineNo ?? '—'}
                       </td>
                       <td title={inUse ? IN_USE_TITLE : undefined}>
@@ -1470,7 +1477,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                       {/* ADR-236: the customer's PO line number. Never locked — not
                         even on a line in use — so an old line without one can be
                         filled in. Compulsory: onValid refuses a blank one. */}
-                      <td>
+                      <td className="td-ctr">
                         <input
                           className="innovic-input"
                           autoComplete="off"
@@ -1488,7 +1495,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                         their print ('A', 'B', 'R1', '0'). Independent of the Drawing
                         File (under ▸ More) in BOTH directions. Compulsory — onValid
                         refuses the save when it is blank. */}
-                      <td>
+                      <td className="td-ctr">
                         <input
                           className="innovic-input"
                           autoComplete="off"
@@ -1500,7 +1507,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                           {...upperCaseRevField(register(`lines.${idx}.revision` as const))}
                         />
                       </td>
-                      <td title={inUse ? IN_USE_TITLE : undefined}>
+                      <td className="td-ctr" title={inUse ? IN_USE_TITLE : undefined}>
                         {/* onValid sends the SAVED UOM for a line in use, so the
                           locked select can never change it. */}
                         <select
@@ -1530,7 +1537,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                       </td>
                       {priceVisible ? (
                         <>
-                          <td className="td-num">
+                          <td className="td-money">
                             <input
                               type="number"
                               step="0.01"
@@ -1542,14 +1549,14 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                             />
                           </td>
                           <td
-                            className="mono td-num"
+                            className="mono td-money"
                             style={{ color: 'var(--green2)', fontWeight: 700 }}
                           >
                             {amt > 0 ? `₹${inrFormat(amt)}` : '—'}
                           </td>
                         </>
                       ) : null}
-                      <td>
+                      <td className="td-ctr">
                         <input
                           type="date"
                           className="innovic-input"
@@ -1557,7 +1564,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                           {...register(`lines.${idx}.dueDate` as const)}
                         />
                       </td>
-                      <td>
+                      <td className="td-ctr">
                         <button
                           type="button"
                           className="btn btn-ghost btn-sm"
@@ -1568,7 +1575,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                           {isOpen ? '▾ Less' : `▸ More${filledMore ? ` (${filledMore})` : ''}`}
                         </button>
                       </td>
-                      <td>
+                      <td className="td-ctr">
                         {/* The wrapper carries the reason: a disabled button
                           shows no tooltip in every browser. */}
                         <span title={inUse ? IN_USE_TITLE : undefined}>

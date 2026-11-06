@@ -14,6 +14,9 @@ import { printWindow, printedMeta } from '@/lib/print/print-window';
 import { isProCancelled } from '../components/po-list-columns';
 import { PRO_REGISTER_COLUMNS, PRO_REGISTER_NUM_COLS, proRegisterRow } from './export-excel';
 
+/** Production Order Date, Status, Target Date, POL. */
+const SHORT_COLS = new Set([2, 9, 10, 14]);
+
 export function printProductionOrderRegister(args: {
   rows: ProductionOrderListItem[];
   company: Company | null | undefined;
@@ -33,10 +36,11 @@ export function printProductionOrderRegister(args: {
     ['Cancelled', rows.length - live.length],
   ];
 
-  // Numbers right-aligned; every short value stays on one line, only Item
-  // Name (index 4) may wrap so sixteen columns fit a landscape page.
+  // Quantities, Sr No and the short values (dates, status, POL) centred, text
+  // and codes left; every short value stays on one line, only Item Name
+  // (index 4) may wrap so sixteen columns fit a landscape page.
   const align = (i: number): string =>
-    ` style="${PRO_REGISTER_NUM_COLS.has(i) ? 'text-align:right;' : ''}${i === 4 ? '' : 'white-space:nowrap'}"`;
+    ` style="${PRO_REGISTER_NUM_COLS.has(i) || SHORT_COLS.has(i) ? 'text-align:center;' : ''}${i === 4 ? '' : 'white-space:nowrap'}"`;
   const head = PRO_REGISTER_COLUMNS.map((h, i) => `<th${align(i)}>${esc(h)}</th>`).join('');
   const body = rows
     .map(

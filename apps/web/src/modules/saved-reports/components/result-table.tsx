@@ -3,9 +3,15 @@
 // preview. House panel + innovic-table look (was shadcn Card + Table).
 
 import { Icon } from '@/ui/core';
-import type { AdHocColumn, RunAdHocResponse } from '@innovic/shared';
+import {
+  columnAlign,
+  isMoneyHeading,
+  type AdHocColumn,
+  type RunAdHocResponse,
+} from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { fmtDate, fmtDateTime } from '@/lib/date';
+import { alignSuffix } from '@/ui/data/data-table-head';
 import { downloadCsv, rowsToCsv } from '../lib/csv';
 
 interface Props {
@@ -69,9 +75,9 @@ export function ResultTable({
               <thead>
                 <tr>
                   <th>Group</th>
-                  <th className="td-right">Count</th>
+                  <th className="th-num">Count</th>
                   {summaryColLabel ? (
-                    <th className="td-right">
+                    <th className={isMoneyHeading(summaryColLabel) ? 'th-money' : 'th-num'}>
                       {fnLabel(data.summaryFunction)} of {summaryColLabel}
                     </th>
                   ) : null}
@@ -81,9 +87,11 @@ export function ResultTable({
                 {data.summary.map((row, i) => (
                   <tr key={`${row.group}-${i}`}>
                     <td className="fw-700">{row.group}</td>
-                    <td className="td-right mono">{row.count.toLocaleString('en-IN')}</td>
+                    <td className="td-num mono">{row.count.toLocaleString('en-IN')}</td>
                     {summaryColLabel ? (
-                      <td className="td-right mono">
+                      <td
+                        className={`${isMoneyHeading(summaryColLabel) ? 'td-money' : 'td-num'} mono`}
+                      >
                         {row.aggregate ? Number(row.aggregate).toLocaleString('en-IN') : '—'}
                       </td>
                     ) : null}
@@ -141,7 +149,7 @@ export function ResultTable({
             <thead>
               <tr>
                 {(data?.columns ?? []).map((col) => (
-                  <th key={col.key} className={col.type === 'number' ? 'td-right' : ''}>
+                  <th key={col.key} className={colAlignClass(col, 'th')}>
                     {col.label}
                   </th>
                 ))}
@@ -171,7 +179,10 @@ export function ResultTable({
                 data.rows.map((row, i) => (
                   <tr key={i}>
                     {data.columns.map((col) => (
-                      <td key={col.key} className={col.type === 'number' ? 'td-right mono' : ''}>
+                      <td
+                        key={col.key}
+                        className={`${colAlignClass(col, 'td')}${col.type === 'number' ? ' mono' : ''}`}
+                      >
                         {renderCell(col, row[col.key])}
                       </td>
                     ))}
@@ -184,6 +195,14 @@ export function ResultTable({
       </div>
     </div>
   );
+}
+
+/** ADR-280: money right, other numbers centre, dates centre, text left. A report
+ *  column only says "number", so its heading decides whether it is money. */
+function colAlignClass(col: AdHocColumn, part: 'th' | 'td'): string {
+  const numeric = col.type === 'number';
+  const fixed = col.type === 'date' || col.type === 'datetime';
+  return `${part}-${alignSuffix(columnAlign({ heading: col.label, numeric, fixed }), numeric)}`;
 }
 
 function renderCell(col: AdHocColumn, raw: unknown): JSX.Element {

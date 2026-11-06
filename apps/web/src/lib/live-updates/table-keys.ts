@@ -137,6 +137,7 @@ const DELIVERY_CHALLAN_VIEWS: readonly QueryKey[] = [
  *  came from, the QC screens and the home rows. */
 const NC_VIEWS: readonly QueryKey[] = [
   ncRegisterKeys.all,
+  soPlanningKeys.all,
   jobCardsKeys.all,
   opEntryKeys.all,
   qcCommandKeys.all,

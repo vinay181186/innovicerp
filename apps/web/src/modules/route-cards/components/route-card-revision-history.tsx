@@ -17,6 +17,7 @@ import { opSrNo } from '@innovic/shared';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { Fragment, useState } from 'react';
 import { fmtDate, fmtTime12 } from '@/lib/date';
+import { OpNotesAllToggle, OpNotesRow, OpNotesToggle, useOpNotes } from './rc-op-notes';
 
 // Group as the user reads it — never the raw code. The snapshot keeps no
 // machine group, so an in-house op reads "In-house" here.
@@ -48,10 +49,10 @@ export function RouteCardRevisionHistory({
       <table className="innovic-table">
         <thead>
           <tr>
-            <th style={{ width: 28 }} />
-            <th>Route Card Rev</th>
-            <th>Revision Date</th>
-            <th>Revision Time</th>
+            <th className="th-ctr" style={{ width: 28 }} />
+            <th className="th-ctr">Route Card Rev</th>
+            <th className="th-ctr">Revision Date</th>
+            <th className="th-ctr">Revision Time</th>
             <th>Revised By</th>
             <th>Revision Note</th>
             <th className="th-num">Ops</th>
@@ -74,16 +75,16 @@ export function RouteCardRevisionHistory({
                   style={{ cursor: 'pointer' }}
                   title={open ? 'Hide the operations' : 'Show the operations at this revision'}
                 >
-                  <td className="text3">
+                  <td className="td-ctr text3">
                     {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
                   </td>
-                  <td className="mono fw-700" style={{ color: 'var(--amber2)' }}>
+                  <td className="td-ctr mono fw-700" style={{ color: 'var(--amber2)' }}>
                     Route Card Rev {rev.revisionNo}
                   </td>
-                  <td className="text2" style={{ fontSize: 'var(--fs-xs)' }}>
+                  <td className="td-ctr text2" style={{ fontSize: 'var(--fs-xs)' }}>
                     {fmtDate(rev.createdAt)}
                   </td>
-                  <td className="text2" style={{ fontSize: 'var(--fs-xs)' }}>
+                  <td className="td-ctr text2" style={{ fontSize: 'var(--fs-xs)' }}>
                     {fmtTime12(rev.createdAt, '—')}
                   </td>
                   <td className="text2" style={{ fontSize: 'var(--fs-xs)' }}>
@@ -116,109 +117,113 @@ export function RouteCardRevisionHistory({
                       >
                         Routing at Route Card Rev {rev.revisionNo}
                       </div>
-                      <div className="tbl-wrap">
-                        <table className="innovic-table">
-                          <thead>
-                            <tr>
-                              <th>Op</th>
-                              <th>Group</th>
-                              <th>Machine / Vendor</th>
-                              <th>Operation</th>
-                              <th className="th-num">Cycle Time (min)</th>
-                              <th>Program No.</th>
-                              <th className="th-num">Lead Days</th>
-                              <th>Tool No.</th>
-                              <th className="th-left">Tool Details</th>
-                              <th className="th-left">Remarks</th>
-                              <th>QC</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {rev.opsSnapshot.map((op) => {
-                              const accent = opAccent(op.opType);
-                              return (
-                                <tr key={`${rev.id}-${op.opSeq}`}>
-                                  <td className="mono fw-700" style={{ color: accent }}>
-                                    {opSrNo(op.opSeq)}
-                                  </td>
-                                  <td>
-                                    <span
-                                      className="badge"
-                                      style={{ color: accent, fontWeight: 700 }}
-                                    >
-                                      {OP_TYPE_LABEL[op.opType] ?? op.opType}
-                                    </span>
-                                  </td>
-                                  <td className="mono" style={{ fontSize: 'var(--fs-sm)' }}>
-                                    {op.opType === 'outsource'
-                                      ? (op.ospVendorCode ?? '—')
-                                      : (op.machineCode ?? '—')}
-                                  </td>
-                                  <td className="fw-700">{op.operation}</td>
-                                  <td className="td-num mono">
-                                    {op.opType === 'outsource'
-                                      ? '—'
-                                      : Number(op.cycleTimeMin) || '—'}
-                                  </td>
-                                  <td
-                                    className="mono"
-                                    style={{ fontSize: 'var(--fs-sm)', color: 'var(--blue)' }}
-                                  >
-                                    {op.opType === 'outsource' ? '—' : (op.program ?? '—')}
-                                  </td>
-                                  <td className="td-num mono" style={{ fontSize: 'var(--fs-sm)' }}>
-                                    {op.opType === 'outsource' ? (op.ospLeadDays ?? '—') : '—'}
-                                  </td>
-                                  <td
-                                    className="mono"
-                                    style={{ fontSize: 'var(--fs-sm)', color: 'var(--cyan)' }}
-                                  >
-                                    {op.toolNo ?? '—'}
-                                  </td>
-                                  <td
-                                    className="td-prose text3"
-                                    style={{ fontSize: 'var(--fs-xs)' }}
-                                  >
-                                    {op.toolDetails ?? '—'}
-                                  </td>
-                                  {/* Optional like qcRequired below: a snapshot
-                                      written before migration 0195 carries no
-                                      remarks key at all. */}
-                                  <td
-                                    className="td-prose text2"
-                                    style={{ fontSize: 'var(--fs-sm)' }}
-                                  >
-                                    {op.remarks ?? '—'}
-                                  </td>
-                                  {/* undefined means this revision predates the
-                                      QC flag being snapshotted. Shown as "not
-                                      recorded" — never guessed as a No. */}
-                                  <td
-                                    style={{
-                                      color:
-                                        op.qcRequired === true ? 'var(--green)' : 'var(--text3)',
-                                    }}
-                                    title={
-                                      op.qcRequired === undefined
-                                        ? 'Not recorded — this revision predates QC being kept in the history'
-                                        : undefined
-                                    }
-                                  >
-                                    {op.qcRequired === undefined
-                                      ? '—'
-                                      : op.qcRequired
-                                        ? 'Yes'
-                                        : 'No'}
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
+                      <SnapshotOpsTable revision={rev} />
                     </td>
                   </tr>
                 ) : null}
+              </Fragment>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** The routing kept with one revision. Its own component so Show / Hide has its own
+ *  state for each opened revision. */
+function SnapshotOpsTable({ revision }: { revision: RouteCardRevision }): React.JSX.Element {
+  const noteOf = (op: RouteCardRevision['opsSnapshot'][number]) => ({
+    id: String(op.opSeq),
+    label: `operation ${opSrNo(op.opSeq)}`,
+    toolDetails: op.toolDetails,
+    // Optional like qcRequired below: a snapshot written before migration 0195
+    // carries no remarks key at all.
+    remarks: op.remarks,
+  });
+  const notes = useOpNotes(revision.opsSnapshot.map(noteOf));
+  const columns = notes.any ? 10 : 9;
+  return (
+    <div className="tbl-wrap">
+      <table className="innovic-table">
+        <thead>
+          <tr>
+            <th className="th-ctr">Op</th>
+            <th>Group</th>
+            <th>Machine / Vendor</th>
+            <th>Operation</th>
+            <th className="th-num">Cycle Time (min)</th>
+            <th>Program No.</th>
+            <th className="th-num">Lead Days</th>
+            <th>Tool No.</th>
+            <th className="th-ctr">QC</th>
+            {notes.any ? (
+              <th className="th-ctr">
+                <OpNotesAllToggle anyOpen={notes.anyOpen} onClick={notes.toggleAll} />
+              </th>
+            ) : null}
+          </tr>
+        </thead>
+        <tbody>
+          {revision.opsSnapshot.map((op) => {
+            const accent = opAccent(op.opType);
+            const note = noteOf(op);
+            const open = notes.isOpen(note);
+            return (
+              <Fragment key={op.opSeq}>
+                <tr className={open ? 'rc-op-open' : undefined}>
+                  <td className="td-ctr mono fw-700" style={{ color: accent }}>
+                    {opSrNo(op.opSeq)}
+                  </td>
+                  <td>
+                    <span className="badge" style={{ color: accent, fontWeight: 700 }}>
+                      {OP_TYPE_LABEL[op.opType] ?? op.opType}
+                    </span>
+                  </td>
+                  <td className="mono" style={{ fontSize: 'var(--fs-sm)' }}>
+                    {op.opType === 'outsource'
+                      ? (op.ospVendorCode ?? '—')
+                      : (op.machineCode ?? '—')}
+                  </td>
+                  <td className="rc-op-name fw-700">{op.operation}</td>
+                  <td className="td-num mono">
+                    {op.opType === 'outsource' ? '—' : Number(op.cycleTimeMin) || '—'}
+                  </td>
+                  <td className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--blue)' }}>
+                    {op.opType === 'outsource' ? '—' : (op.program ?? '—')}
+                  </td>
+                  <td className="td-num mono" style={{ fontSize: 'var(--fs-sm)' }}>
+                    {op.opType === 'outsource' ? (op.ospLeadDays ?? '—') : '—'}
+                  </td>
+                  <td className="mono" style={{ fontSize: 'var(--fs-sm)', color: 'var(--cyan)' }}>
+                    {op.toolNo ?? '—'}
+                  </td>
+                  {/* undefined means this revision predates the QC flag being
+                      snapshotted. Shown as "not recorded" — never guessed as a No. */}
+                  <td
+                    className="td-ctr"
+                    style={{ color: op.qcRequired === true ? 'var(--green)' : 'var(--text3)' }}
+                    title={
+                      op.qcRequired === undefined
+                        ? 'Not recorded — this revision predates QC being kept in the history'
+                        : undefined
+                    }
+                  >
+                    {op.qcRequired === undefined ? '—' : op.qcRequired ? 'Yes' : 'No'}
+                  </td>
+                  {notes.any ? (
+                    <td className="td-ctr">
+                      {notes.hasNotes(note) ? (
+                        <OpNotesToggle
+                          open={open}
+                          label={note.label}
+                          onClick={() => notes.toggle(note)}
+                        />
+                      ) : null}
+                    </td>
+                  ) : null}
+                </tr>
+                {open ? <OpNotesRow op={note} columns={columns} /> : null}
               </Fragment>
             );
           })}

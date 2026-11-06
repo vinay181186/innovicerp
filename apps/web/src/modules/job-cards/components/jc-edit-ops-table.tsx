@@ -171,8 +171,8 @@ export function JcEditOpsTable({
           </colgroup>
           <thead>
             <tr>
-              <th aria-label="Expand" />
-              <th>Op</th>
+              <th className="th-ctr" aria-label="Expand" />
+              <th className="th-ctr">Op</th>
               <th>
                 Operation<span className="req">★</span>
               </th>
@@ -182,9 +182,9 @@ export function JcEditOpsTable({
               </th>
               <th className="th-num">Cycle Time (min)</th>
               <th>Program</th>
-              <th>Outsource</th>
-              <th>Op Status</th>
-              <th aria-label="Actions" />
+              <th className="th-ctr">Outsource</th>
+              <th className="th-ctr">Op Status</th>
+              <th className="th-ctr" aria-label="Actions" />
             </tr>
           </thead>
           <tbody>

@@ -19,17 +19,17 @@ export function StockCountLinesTable(props: {
       <table className="innovic-table">
         <thead>
           <tr>
-            <th className="th-num">Sr No</th>
+            <th className="th-ctr">Sr No</th>
             <th>Item Code</th>
-            <th>Drawing Rev</th>
+            <th className="th-ctr">Drawing Rev</th>
             <th>Item Name</th>
-            <th>UOM</th>
+            <th className="th-ctr">UOM</th>
             <th className="th-num">In Stock now</th>
             {status !== 'draft' ? <th className="th-num">In Stock at count</th> : null}
             <th className="th-num">Counted Qty</th>
             <th className="th-num">Difference</th>
             <th>Reason</th>
-            {editable ? <th /> : null}
+            {editable ? <th className="th-ctr" /> : null}
           </tr>
         </thead>
         <tbody>
@@ -45,11 +45,11 @@ export function StockCountLinesTable(props: {
                 : null;
             return (
               <tr key={`${lineKey(l)}-${i}`}>
-                <td className="td-num mono">{i + 1}</td>
+                <td className="td-ctr mono">{i + 1}</td>
                 <td className="mono fw-700" style={{ whiteSpace: 'nowrap' }}>
                   {l.itemCode}
                 </td>
-                <td>
+                <td className="td-ctr">
                   <StockCountRevCell
                     line={l}
                     editable={editable}
@@ -63,7 +63,7 @@ export function StockCountLinesTable(props: {
                   />
                 </td>
                 <td>{l.itemName ?? '—'}</td>
-                <td>{l.uom ?? '—'}</td>
+                <td className="td-ctr">{l.uom ?? '—'}</td>
                 <td className="td-num mono">{saved?.systemQtyNow ?? l.inStock ?? '—'}</td>
                 {status !== 'draft' ? (
                   <td className="td-num mono">{saved?.systemQtyAtCount ?? '—'}</td>
@@ -72,7 +72,7 @@ export function StockCountLinesTable(props: {
                   {editable ? (
                     <input
                       className="innovic-input mono"
-                      style={{ width: 110, textAlign: 'right' }}
+                      style={{ width: 110 }}
                       type="number"
                       step="any"
                       min={0}
@@ -118,7 +118,7 @@ export function StockCountLinesTable(props: {
                   )}
                 </td>
                 {editable ? (
-                  <td>
+                  <td className="td-ctr">
                     <button
                       type="button"
                       className="btn btn-ghost btn-sm btn-icon"

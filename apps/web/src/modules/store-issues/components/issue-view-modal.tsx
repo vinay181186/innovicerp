@@ -223,7 +223,7 @@ export function IssueViewModal({
                 <tr>
                   <th>Item Code</th>
                   <th>Item Name</th>
-                  <th>UOM</th>
+                  <th className="th-ctr">UOM</th>
                   <th className="th-num">Issue Qty</th>
                   <th className="th-num">Returned</th>
                   <th className="th-num">Still Out</th>
@@ -241,7 +241,7 @@ export function IssueViewModal({
                         </span>
                       </td>
                       <td>{l.itemName || '—'}</td>
-                      <td className="text3">{l.uom || '—'}</td>
+                      <td className="td-ctr text3">{l.uom || '—'}</td>
                       <td
                         className="mono fw-700 td-num"
                         style={{
@@ -259,7 +259,7 @@ export function IssueViewModal({
                             min={0}
                             step="any"
                             className="innovic-input mono"
-                            style={{ width: 100, textAlign: 'right' }}
+                            style={{ width: 100 }}
                             disabled={unused <= 0}
                             value={retQty[l.id] ?? ''}
                             onChange={(e) => setRetQty((s) => ({ ...s, [l.id]: e.target.value }))}

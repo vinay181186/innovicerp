@@ -119,7 +119,7 @@ export function JcOpsTable({ ops, selectedOpId, onSelect, onOpenEntry }: Props):
       <table className="innovic-table">
         <thead>
           <tr>
-            <th>Op</th>
+            <th className="th-ctr">Op</th>
             <th>Operation</th>
             <th>Planned Machine</th>
             <th>Actual Machine</th>
@@ -130,8 +130,8 @@ export function JcOpsTable({ ops, selectedOpId, onSelect, onOpenEntry }: Props):
             <th className="th-num" style={{ color: 'var(--amber2)' }}>
               Available
             </th>
-            <th>Op Status</th>
-            <th aria-label="Actions" />
+            <th className="th-ctr">Op Status</th>
+            <th className="th-ctr" aria-label="Actions" />
           </tr>
         </thead>
         <tbody>
@@ -156,7 +156,7 @@ export function JcOpsTable({ ops, selectedOpId, onSelect, onOpenEntry }: Props):
                   }}
                   onClick={() => onSelect(op.id)}
                 >
-                  <td className="mono">{opSrNo(op.opSeq)}</td>
+                  <td className="td-ctr mono">{opSrNo(op.opSeq)}</td>
                   <td>
                     {op.operation}
                     {/* Rework STILL OWED (0088), not the running total ever
@@ -244,7 +244,7 @@ export function JcOpsTable({ ops, selectedOpId, onSelect, onOpenEntry }: Props):
                       {op.opType === 'qc' || op.qcRequired ? op.qcPending : op.available}
                     </span>
                   </td>
-                  <td>
+                  <td className="td-ctr">
                     <JcOpStatusBadge status={op.computedStatus} />
                   </td>
                   {/* The ⋯ cell stops the click so it never also fires the

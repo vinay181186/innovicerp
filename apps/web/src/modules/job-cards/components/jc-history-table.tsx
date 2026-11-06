@@ -251,13 +251,13 @@ export function JcHistoryTable({ jobCardId }: { jobCardId: string }): React.JSX.
         <table className="innovic-table">
           <thead>
             <tr>
-              <th>Log Date</th>
-              <th>Log Time</th>
+              <th className="th-ctr">Log Date</th>
+              <th className="th-ctr">Log Time</th>
               <th>Op</th>
-              <th>Action</th>
+              <th className="th-ctr">Action</th>
               <th>Machine</th>
               <th>User / Operator</th>
-              <th>Shift</th>
+              <th className="th-ctr">Shift</th>
               <th className="th-num">Activity Qty</th>
               <th>Detail</th>
             </tr>
@@ -277,8 +277,8 @@ export function JcHistoryTable({ jobCardId }: { jobCardId: string }): React.JSX.
                 const detailTitle = [r.detail, r.remarks].filter(Boolean).join(' • ');
                 return (
                   <tr key={r.id}>
-                    <td className="mono">{r.date ? fmtJcDate(r.date) : DASH}</td>
-                    <td className="mono">{r.time ?? DASH}</td>
+                    <td className="td-ctr mono">{r.date ? fmtJcDate(r.date) : DASH}</td>
+                    <td className="td-ctr mono">{r.time ?? DASH}</td>
                     <td title={opTitle}>
                       {r.opNo ? (
                         <>
@@ -303,12 +303,12 @@ export function JcHistoryTable({ jobCardId }: { jobCardId: string }): React.JSX.
                         DASH
                       )}
                     </td>
-                    <td>
+                    <td className="td-ctr">
                       <span className={`badge ${r.badge}`}>{r.action}</span>
                     </td>
                     <td className="mono">{r.machine || DASH}</td>
                     <td>{r.user || DASH}</td>
-                    <td>{r.shift || DASH}</td>
+                    <td className="td-ctr">{r.shift || DASH}</td>
                     <td className="mono fw-700 td-num">
                       {r.qtyKind === 'none' ? (
                         DASH

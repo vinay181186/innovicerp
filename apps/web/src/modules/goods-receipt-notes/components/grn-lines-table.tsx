@@ -133,11 +133,13 @@ export function GrnLinesTable({
       >
         <thead>
           <tr>
-            <th>Ln</th>
-            <th style={{ color: 'var(--purple)' }}>POL</th>
+            <th className="th-ctr">Ln</th>
+            <th className="th-ctr" style={{ color: 'var(--purple)' }}>
+              POL
+            </th>
             <th>Item Code</th>
             <th className="th-left">Item Name</th>
-            <th>UOM</th>
+            <th className="th-ctr">UOM</th>
             {showAccount ? (
               <>
                 <th className="th-num">{qtyLabel}</th>
@@ -153,9 +155,9 @@ export function GrnLinesTable({
                 passed) — so a line can be 3 short on the PO and have nothing
                 left to receive here. One fact, one name (NAMING.md). */}
             {showAccount ? <th className="th-num">To Receive</th> : null}
-            <th>QC Status</th>
-            <th aria-label="More" />
-            {onRemove ? <th aria-label="Remove" /> : null}
+            <th className="th-ctr">QC Status</th>
+            <th className="th-ctr" aria-label="More" />
+            {onRemove ? <th className="th-ctr" aria-label="Remove" /> : null}
           </tr>
         </thead>
         <tbody>
@@ -182,9 +184,9 @@ export function GrnLinesTable({
               return (
                 <Fragment key={l.key}>
                   <tr>
-                    <td className="mono fw-700">{idx + 1}</td>
+                    <td className="td-ctr mono fw-700">{idx + 1}</td>
                     {/* '—' when this line has no sales order behind it. */}
-                    <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                    <td className="td-ctr mono fw-700" style={{ color: 'var(--purple)' }}>
                       {l.clientPoLineNo ?? '—'}
                     </td>
                     {/* The picker renders Item Code AND Item Name as one unit
@@ -227,7 +229,7 @@ export function GrnLinesTable({
                         </td>
                       </>
                     )}
-                    <td>{l.uom ? l.uom : <span className="text3">—</span>}</td>
+                    <td className="td-ctr">{l.uom ? l.uom : <span className="text3">—</span>}</td>
                     {showAccount ? (
                       <>
                         <td className="mono td-num">
@@ -265,10 +267,10 @@ export function GrnLinesTable({
                     ) : null}
                     {/* The lock badge lives HERE, in the status cell, instead of
                         as a caption over the row (it was a card header before). */}
-                    <td>
+                    <td className="td-ctr">
                       <QcStatusBadge status={l.qcStatus ?? 'pending'} />
                     </td>
-                    <td>
+                    <td className="td-ctr">
                       <button
                         type="button"
                         className="btn btn-ghost btn-sm"
@@ -286,7 +288,7 @@ export function GrnLinesTable({
                       </button>
                     </td>
                     {onRemove ? (
-                      <td>
+                      <td className="td-ctr">
                         {/* A line Incoming QC has touched cannot be removed
                             (ADR-189) — the server refuses it, so the button is
                             not offered. */}

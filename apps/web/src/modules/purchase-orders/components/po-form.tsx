@@ -818,7 +818,7 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
           <table className="innovic-table tbl-grid tbl-edit">
             <thead>
               <tr>
-                <th className="th-num" style={{ width: 52 }}>
+                <th className="th-ctr" style={{ width: 52 }}>
                   Sr No.
                 </th>
                 <th>PR No.</th>
@@ -829,10 +829,10 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
                 <th className="th-num">
                   Qty<span className="req">★</span>
                 </th>
-                <th className="th-num">Rate (₹)</th>
-                <th className="th-num">Amount</th>
-                <th>Due Date</th>
-                <th />
+                <th className="th-money">Rate (₹)</th>
+                <th className="th-money">Amount</th>
+                <th className="th-ctr">Due Date</th>
+                <th className="th-ctr" />
               </tr>
             </thead>
             <tbody>

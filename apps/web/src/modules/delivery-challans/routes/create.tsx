@@ -487,17 +487,17 @@ function PoPickerBody({ onSelect }: { onSelect: (poId: string) => void }): React
             <thead>
               <tr>
                 <th>PO No.</th>
-                <th>PO Date</th>
+                <th className="th-ctr">PO Date</th>
                 <th>Vendor</th>
                 <th>Items</th>
                 <th>PO Type</th>
-                <th>PO Status</th>
+                <th className="th-ctr">PO Status</th>
                 <th className="th-num">Lines</th>
                 <th className="th-num">Sent / Order Qty</th>
                 {/* ADR-219 / NAMING §A — the SAME fact the Job Card op card
                     calls Return Challan Pending, summed per purchase order. */}
                 <th className="th-num">Return Challan Pending</th>
-                <th style={{ width: 110 }} />
+                <th className="th-ctr" style={{ width: 110 }} />
               </tr>
             </thead>
             <tbody>
@@ -510,7 +510,7 @@ function PoPickerBody({ onSelect }: { onSelect: (poId: string) => void }): React
                     <td className="mono fw-700" style={{ color: 'var(--blue)' }}>
                       {p.code}
                     </td>
-                    <td className="mono">{fmtDate(p.poDate)}</td>
+                    <td className="td-ctr mono">{fmtDate(p.poDate)}</td>
                     <td>{p.vendorName ?? p.vendorCodeText ?? '—'}</td>
                     <td style={{ maxWidth: 320 }} title={(p.lineItems ?? []).map(itemLineLabel).join('\n')}>
                       {docItemsSummary(p.lineItems).label || '—'}
@@ -518,7 +518,7 @@ function PoPickerBody({ onSelect }: { onSelect: (poId: string) => void }): React
                     <td style={{ color: 'var(--purple)' }}>
                       {p.poType === 'service' ? 'Service' : 'Job Work'}
                     </td>
-                    <td className="mono">{poStatusLabel(p.status)}</td>
+                    <td className="td-ctr mono">{poStatusLabel(p.status)}</td>
                     <td className="mono td-num">{p.lineCount}</td>
                     {/* Amber once something has gone out: this PO is part-way
                         through, and the challan being raised is a balance one. */}
@@ -541,7 +541,7 @@ function PoPickerBody({ onSelect }: { onSelect: (poId: string) => void }): React
                     >
                       {rtvPending > 0 ? rtvPending : ''}
                     </td>
-                    <td>
+                    <td className="td-ctr">
                       <button
                         type="button"
                         className="btn btn-primary btn-sm"
@@ -1102,16 +1102,22 @@ function PoDcFormBody({
         <table className="innovic-table" style={{ width: '100%', tableLayout: 'fixed' }}>
           <thead>
             <tr>
-              <th style={{ width: '5%' }}>Ln</th>
+              <th className="th-ctr" style={{ width: '5%' }}>
+                Ln
+              </th>
               {/* POL = the CUSTOMER's own PO line number off the SO line behind
                   this PO line. Widths below still total 100. */}
-              <th style={{ width: '5%', color: 'var(--purple)' }}>POL</th>
+              <th className="th-ctr" style={{ width: '5%', color: 'var(--purple)' }}>
+                POL
+              </th>
               <th style={{ width: '14%' }}>Item Code</th>
               <th style={{ width: '20%' }}>Item Name</th>
               <th className="th-num" style={{ width: '8%' }}>
                 PO Qty
               </th>
-              <th style={{ width: '6%' }}>UOM</th>
+              <th className="th-ctr" style={{ width: '6%' }}>
+                UOM
+              </th>
               <th className="th-num" style={{ width: '12%', color: 'var(--green2)' }}>
                 Send Now<span className="req">★</span>
               </th>
@@ -1134,12 +1140,12 @@ function PoDcFormBody({
               return (
                 <Fragment key={l.purchaseOrderLineId}>
                   <tr>
-                    <td className="mono fw-700" style={{ color: 'var(--blue)' }}>
+                    <td className="td-ctr mono fw-700" style={{ color: 'var(--blue)' }}>
                       {idx + 1}
                     </td>
                     {/* POL — the customer's PO line number; '—' on a line with
                         no sales order behind it (raw material, bought-in). */}
-                    <td className="mono fw-700" style={{ color: 'var(--purple)' }}>
+                    <td className="td-ctr mono fw-700" style={{ color: 'var(--purple)' }}>
                       {l.clientPoLineNo ?? '—'}
                     </td>
                     {/* CODE/REV while raising the challan, so this screen agrees
@@ -1154,7 +1160,7 @@ function PoDcFormBody({
                     <td>{l.itemNameText}</td>
                     <td className="mono td-num">{l.poLineQty}</td>
                     {/* Read-only: the unit comes from the PO line's item. */}
-                    <td className="mono">{l.uom}</td>
+                    <td className="td-ctr mono">{l.uom}</td>
                     <td className="td-num">
                       <input
                         type="number"
