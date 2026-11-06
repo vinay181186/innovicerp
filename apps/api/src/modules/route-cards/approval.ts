@@ -78,9 +78,9 @@ async function lockPendingCard(
     const decided =
       card.approvalStatus === 'approved'
         ? `was already approved${card.approvedBy && names.get(card.approvedBy) ? ` by ${names.get(card.approvedBy)}` : ''}${card.approvedAt ? ` at ${fmtDateTime(card.approvedAt)}` : ''}`
-        : `was rejected${card.rejectedBy && names.get(card.rejectedBy) ? ` by ${names.get(card.rejectedBy)}` : ''}${card.rejectedAt ? ` at ${fmtDateTime(card.rejectedAt)}` : ''}`;
+        : `was returned to creator${card.rejectedBy && names.get(card.rejectedBy) ? ` by ${names.get(card.rejectedBy)}` : ''}${card.rejectedAt ? ` at ${fmtDateTime(card.rejectedAt)}` : ''}`;
     throw new ConflictError(
-      `Cannot ${verb} Route Card ${card.code}: it ${decided}. Reload the page.`,
+      `Cannot ${verb === 'reject' ? 'return' : verb} Route Card ${card.code}: it ${decided}. Reload the page.`,
     );
   }
   // §20.4 — a card edited after the approver opened it is refused with the
@@ -189,7 +189,7 @@ export async function rejectRouteCard(
         refId: card.code,
         changes: [rcStatusChange('pending', 'rejected')],
         reason,
-        detail: `${card.code} rejected by ${user.fullName || user.email} — ${reason}`,
+        detail: `${card.code} returned to creator by ${user.fullName || user.email} — ${reason}`,
       },
       companyId,
       user,

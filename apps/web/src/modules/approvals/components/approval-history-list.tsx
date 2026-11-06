@@ -1,4 +1,4 @@
-// ADR-265 — Settings → Approvals, Show: Approved / Rejected. Past decisions on
+// ADR-265 — Settings → Approvals, Show: Approved / Rejected / Returned. Past decisions on
 // the approval types I may decide, 25 rows a page from the server
 // (GET /approvals/history), with search and the Approval Type filter.
 
@@ -163,7 +163,7 @@ export function ApprovalHistoryList({
                   ? 'No decisions match.'
                   : decision === 'approved'
                     ? 'No approved decisions yet.'
-                    : 'No rejected decisions yet.'
+                    : 'No rejected or returned decisions yet.'
               }
             />
           </Panel>

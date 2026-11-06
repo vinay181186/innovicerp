@@ -2643,7 +2643,7 @@ export async function saveRouteCardForItem(
         created: false,
         notSentReason:
           card.approvalStatus === 'rejected'
-            ? `Route Card ${card.code} was rejected — correct it on the Route Card screen and send it for approval again. This routing was not copied to it.`
+            ? `Route Card ${card.code} was returned to creator — correct it on the Route Card screen and send it for approval again. This routing was not copied to it.`
             : `Route Card ${card.code} is waiting for approval — this routing was not copied to it.`,
       };
     }

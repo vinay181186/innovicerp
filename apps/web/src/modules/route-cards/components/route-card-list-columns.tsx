@@ -142,7 +142,7 @@ export function routeCardListColumns(offset = 0): DataTableColumn<RouteCardListI
           status={rc.approvalStatus}
           title={
             rc.approvalStatus === 'rejected' && rc.rejectionReason
-              ? `Rejected: ${rc.rejectionReason}`
+              ? `${ROUTE_CARD_APPROVAL_LABEL.rejected}: ${rc.rejectionReason}`
               : undefined
           }
         />

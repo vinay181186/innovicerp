@@ -357,7 +357,7 @@ describe('Super Admin / Full Access see every decision (owner rule 1)', () => {
       raiserName: 'Parth',
     });
     expect(words(notes.noteText(rc, rule('raiser_rc'), true))).toBe(
-      "Rakesh rejected IN-RC-9 — Parth's Route Card · Wrong machine",
+      "Rakesh returned IN-RC-9 — Parth's Route Card · Wrong machine",
     );
   });
 

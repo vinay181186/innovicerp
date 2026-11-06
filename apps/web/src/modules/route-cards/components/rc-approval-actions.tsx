@@ -1,11 +1,15 @@
 // ADR-253 — approval of a NEW Route Card, on its detail page: the Approve /
-// Reject buttons (pending card + Approve tick on Route Card Master — the
-// creator included), their two dialogs, the pending / rejected banner and the
+// Return to Creator buttons (pending card + Approve tick on Route Card Master — the
+// creator included), their two dialogs, the pending / returned banner and the
 // "Approved by X on <date>" line. The server re-checks every decision; a 409
 // (already decided, no right …) is thrown and the dialog shows it as-is.
 
 import { Icon } from '@/ui/core';
-import type { RouteCardDetail } from '@innovic/shared';
+import {
+  ROUTE_CARD_APPROVAL_LABEL,
+  ROUTE_CARD_RETURN_ACTION,
+  type RouteCardDetail,
+} from '@innovic/shared';
 import { Check } from 'lucide-react';
 import { useState } from 'react';
 import { fmtDate } from '@/lib/date';
@@ -18,19 +22,19 @@ const BOX_STYLE: React.CSSProperties = {
   marginTop: 'var(--sp-2)',
 };
 
-/** "Approved by X on <date>" / "Rejected by X on <date> — <reason>". */
+/** "Approved by X on <date>" / "Returned to Creator by X on <date> — <reason>". */
 export function rcApprovalLine(rc: RouteCardDetail): string {
   if (rc.approvalStatus === 'approved') {
     return `Approved by ${rc.approvedByName ?? '—'} on ${rc.approvedAt ? fmtDate(rc.approvedAt) : '—'}`;
   }
   if (rc.approvalStatus === 'rejected') {
-    const base = `Rejected by ${rc.rejectedByName ?? '—'} on ${rc.rejectedAt ? fmtDate(rc.rejectedAt) : '—'}`;
+    const base = `${ROUTE_CARD_APPROVAL_LABEL.rejected} by ${rc.rejectedByName ?? '—'} on ${rc.rejectedAt ? fmtDate(rc.rejectedAt) : '—'}`;
     return rc.rejectionReason ? `${base} — ${rc.rejectionReason}` : base;
   }
   return 'Pending Approval';
 }
 
-/** The pending / rejected notice under the header. Nothing for an approved card. */
+/** The pending / returned notice under the header. Nothing for an approved card. */
 export function RcApprovalBanner({
   detail,
 }: {
@@ -46,8 +50,9 @@ export function RcApprovalBanner({
         </Banner>
       ) : (
         <Banner tone="error" role="status" flush>
-          Rejected{detail.rejectionReason ? ` — ${detail.rejectionReason}` : ''}. Edit and save to
-          send it again.
+          {ROUTE_CARD_APPROVAL_LABEL.rejected}
+          {detail.rejectionReason ? ` — ${detail.rejectionReason}` : ''}. Edit and save to send it
+          again.
         </Banner>
       )}
     </div>
@@ -94,7 +99,7 @@ export function RcApprovalActions({
           setRejectOpen(true);
         }}
       >
-        <Icon name="x" size={13} /> Reject
+        <Icon name="x" size={13} /> {ROUTE_CARD_RETURN_ACTION}
       </button>
 
       <ConfirmDialog
@@ -132,14 +137,14 @@ export function RcApprovalActions({
 
       <ConfirmDialog
         open={rejectOpen}
-        title={`Reject Route Card ${detail.code}?`}
+        title={`Return Route Card ${detail.code} to Creator?`}
         message={
           <>
             The card can be edited and saved to send it for approval again.
             <textarea
               className="innovic-input"
-              aria-label="Rejection Reason"
-              placeholder="Rejection Reason (required)"
+              aria-label="Return Reason"
+              placeholder="Return Reason (required)"
               rows={3}
               maxLength={500}
               value={reason}
@@ -148,13 +153,13 @@ export function RcApprovalActions({
             />
           </>
         }
-        confirmLabel="Reject"
-        pendingLabel="Rejecting…"
+        confirmLabel={ROUTE_CARD_RETURN_ACTION}
+        pendingLabel="Returning…"
         onCancel={() => setRejectOpen(false)}
         onConfirm={async () => {
           const r = reason.trim();
           // Thrown, not returned: the dialog shows it and stays open.
-          if (!r) throw new Error('Enter a Rejection Reason.');
+          if (!r) throw new Error('Enter a Return Reason.');
           await rejectMut.mutateAsync({
             id: detail.id,
             reason: r,

@@ -339,7 +339,7 @@ export const NOTE_RULES: readonly NoteRule[] = [
     action: 'REJECT',
     right: ['routecard_create', 'view'],
     open: 'raiser_rc',
-    verb: 'rejected',
+    verb: 'returned',
     tail: ' — your Route Card',
     doneTail: ' — your Route Card',
     tone: 'late',
