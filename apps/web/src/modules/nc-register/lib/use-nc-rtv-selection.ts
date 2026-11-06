@@ -7,15 +7,16 @@ import type { NcRegisterListItem } from '@innovic/shared';
 import { ncItemCode } from '../components/nc-list-columns';
 import { ncOpenQty } from '../nc-qty';
 
-/** May this NC take the tick? The same NCs dispose-nc-panel offers Return to
- *  Vendor on: still NC Raised, not customer material, a vendor behind it, and
- *  something open. A hint only: the server decides on every POST. */
+/** May this NC take the tick? The same NCs dispose-nc-panel accepts: still NC
+ *  Raised, not customer material, a vendor behind it, something open, and whole
+ *  pieces on a job-card NC. A hint only: the server decides on every POST. */
 export function canBulkRtv(nc: NcRegisterListItem): boolean {
   return (
     nc.status === 'pending' &&
     nc.partyGrnLineId == null &&
     nc.sourceVendorId != null &&
-    ncOpenQty(nc) > 0
+    ncOpenQty(nc) > 0 &&
+    (nc.jobCardId == null || Number.isInteger(ncOpenQty(nc)))
   );
 }
 

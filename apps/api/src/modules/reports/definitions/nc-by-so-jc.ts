@@ -34,7 +34,7 @@ export const ncBySoJcReport: RegisteredReport = {
       { key: 'toDate', label: 'NC Date To', kind: 'date' },
     ],
     columns: [
-      { key: 'so_jc', label: 'SO No. / JWSO No.', type: 'text' },
+      { key: 'so_jc', label: 'SO No. / JWSO No. / JC No.', type: 'text' },
       { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
       { key: 'nc_count', label: 'NC Count', type: 'number' },
       { key: 'total_rejected_qty', label: 'Deviated', type: 'number' },

@@ -263,8 +263,9 @@ export interface BulkRtvFailure {
 }
 
 /** Set Return to Vendor on several NCs: the same POST as a single disposition,
- *  one NC at a time, in order. No qty (the server takes all that is open) and no
- *  Sent on DC No. (ADR-217: asked, never guessed). A refusal stays on that NC and
+ *  one NC at a time, in order. Sends the Open Qty the user confirmed, so a quantity
+ *  changed since the tick is refused or split, never disposed unseen. No Sent on
+ *  DC No. (ADR-217: asked, never guessed). A refusal stays on that NC and
  *  the next one still runs; what saved stays saved. Never rejects, so the cascade
  *  runs once at the end even if every NC was refused (the list is then stale). */
 export function useBulkReturnToVendor() {
@@ -272,17 +273,16 @@ export function useBulkReturnToVendor() {
   return useMutation<
     { saved: Array<[string, NcRegister]>; failed: BulkRtvFailure[] },
     Error,
-    ReadonlyArray<{ id: string; code: string }>
+    ReadonlyArray<{ id: string; code: string; openQty: number }>
   >({
     mutationFn: async (targets) => {
-      const body: DisposeNcInput = { action: 'return_to_vendor' };
       const saved: Array<[string, NcRegister]> = [];
       const failed: BulkRtvFailure[] = [];
-      for (const { id, code } of targets) {
+      for (const { id, code, openQty } of targets) {
         try {
           const resp = await apiFetch<DisposeNcResult>(`/nc-register/${id}/dispose`, {
             method: 'POST',
-            json: body,
+            json: { action: 'return_to_vendor', qty: openQty } satisfies DisposeNcInput,
           });
           saved.push([id, resp.nc]);
         } catch (e) {

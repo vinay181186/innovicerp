@@ -35,7 +35,7 @@ export const ospAtVendorReport: RegisteredReport = {
       { key: 'dc_date', label: 'DC Date', type: 'date' },
       { key: 'op_seq', label: 'Op', type: 'number' },
       { key: 'operation', label: 'Operation', type: 'text' },
-      { key: 'sent_qty', label: 'Sent', type: 'number' },
+      { key: 'sent_qty', label: 'Sent to Vendor', type: 'number' },
       // ADR-276: Sent − Received + Returned to Vendor − Re-received = At Vendor.
       { key: 'returned_qty', label: 'Received', type: 'number' },
       { key: 'returned_to_vendor_qty', label: 'Returned to Vendor', type: 'number' },

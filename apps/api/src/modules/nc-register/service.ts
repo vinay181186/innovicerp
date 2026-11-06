@@ -1758,7 +1758,8 @@ export async function createNcRegister(
       companyId,
       user,
     );
-    return toNcRegister(row);
+    // ADR-276: the detail page is seeded from this, so it carries JC No. and order.
+    return readNc(tx, row.id, companyId);
   });
 }
 
@@ -1893,7 +1894,8 @@ export async function updateNcRegisterTx(
       user,
     );
   }
-  return toNcRegister(row);
+  // ADR-276: the detail page is seeded from this, so it carries JC No. and order.
+  return readNc(tx, row.id, companyId);
 }
 
 /**

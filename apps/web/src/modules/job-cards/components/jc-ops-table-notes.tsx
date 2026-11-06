@@ -19,7 +19,7 @@ export const doneLabel = (o: OpFlowRow): string =>
   o.opType === 'qc'
     ? 'Done = inspected'
     : o.opType === 'outsource'
-      ? 'Done = received back'
+      ? 'Done = received back, re-received lots included'
       : 'Done = made';
 
 /** jc-flow-panels.tsx L67-71 — the row's sum, shown on hover over ✓. */
