@@ -135,15 +135,13 @@ export async function buildWorkbookBuffer(input: BuildWorkbookInput): Promise<Bu
 
   // THE alignment rule (ADR-279) + number format.
   input.columns.forEach((c, i) => {
-    if (c.type === 'number') {
-      const col = data.getColumn(i + 1);
-      col.alignment = { horizontal: columnAlign({ heading: c.label, numeric: true }) };
-      col.numFmt = '#,##0.00';
-    } else if (c.type === 'date' || c.type === 'datetime') {
-      const col = data.getColumn(i + 1);
-      col.alignment = { horizontal: 'center' };
-      col.numFmt = c.type === 'date' ? DATE_CELL_FORMAT : DATETIME_CELL_FORMAT;
-    }
+    const col = data.getColumn(i + 1);
+    const isDate = c.type === 'date' || c.type === 'datetime';
+    col.alignment = {
+      horizontal: columnAlign({ heading: c.label, numeric: c.type === 'number', fixed: isDate }),
+    };
+    if (c.type === 'number') col.numFmt = '#,##0.00';
+    else if (isDate) col.numFmt = c.type === 'date' ? DATE_CELL_FORMAT : DATETIME_CELL_FORMAT;
   });
 
   // ─── Sheet 2: Summary (only when groupBy is set) ───────────────────────

@@ -254,6 +254,7 @@ export function psvColumns(
         sortFilterField: 'receivedValue',
         filterType: 'num',
         header: 'Received',
+        money: true,
         align: 'right',
         className: 'mono',
         nowrap: true,

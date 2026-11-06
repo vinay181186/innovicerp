@@ -54,7 +54,7 @@ const HISTORY_STYLE = `
     font-family:var(--f-head);font-weight:700;font-size:11pt;color:var(--brand)}
   .sect-note{font-family:var(--f-body);font-weight:400;font-size:8.5pt;color:var(--paper-ink);margin-left:3mm}
   tr.hd > td,td.k,tr.band > td,tr.tlh > td{font-weight:700;background:var(--paper-band)}
-  td.r{text-align:right;font-variant-numeric:tabular-nums}
+  td.r{text-align:center;font-variant-numeric:tabular-nums}
   td.b{font-weight:700}
   td.wo{white-space:pre-wrap}
   .facts{font-weight:400}

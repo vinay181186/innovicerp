@@ -4,6 +4,7 @@
 
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
+import { isMoneyHeading } from '@innovic/shared';
 import { describe, expect, it } from 'vitest';
 
 const SRC = join(__dirname, '..');
@@ -108,14 +109,47 @@ describe('one alignment across the ERP', () => {
     expect(offenders(money)).toEqual([]);
   });
 
+  /** The column object around a position: walks to its own braces, so a property
+   *  written before `header` counts and the next column's does not. */
+  function objectAround(text: string, at: number): string {
+    let open = at;
+    for (let depth = 0; open > 0; open--) {
+      const c = text[open - 1];
+      if (c === '}') depth++;
+      else if (c === '{' && depth-- === 0) break;
+    }
+    let close = at;
+    for (let depth = 0; close < text.length; close++) {
+      const c = text[close];
+      if (c === '{') depth++;
+      else if (c === '}' && depth-- === 0) break;
+    }
+    return text.slice(open, close);
+  }
+
+  const columnsWhere = (test: (heading: string, column: string) => boolean): string[] =>
+    FILES.flatMap((f) =>
+      [...f.text.matchAll(/header:\s*'([^']+)'/g)]
+        .filter((m) => test(m[1] ?? '', objectAround(f.text, m.index)))
+        .map((m) => `${f.rel}: ${m[1]}`),
+    );
+
   it('a list column headed with a money word is numeric, so it aligns right', () => {
-    const heading = new RegExp(`header:\\s*'(?:[^']*\\s)?(?:${MONEY})'`, 'g');
-    const notNumeric = FILES.filter((f) =>
-      [...f.text.matchAll(heading)].some((m) => {
-        const rest = f.text.slice(m.index + m[0].length).split(/\bheader:/)[0] ?? '';
-        return !/kind: 'num'|align: 'right'|money: true/.test(rest);
-      }),
-    ).map((f) => f.rel);
+    const notNumeric = columnsWhere(
+      (heading, column) =>
+        new RegExp(`(^|\\s)(${MONEY})$`).test(heading) &&
+        !/kind: 'num'|align: 'right'|money: true/.test(column),
+    );
     expect(notNumeric).toEqual([]);
+  });
+
+  it('a list column that renders rupees says money, whatever its heading', () => {
+    const plain = columnsWhere(
+      (heading, column) =>
+        /\b(inr|moneyCell|fmtInr|fmtINR|formatINR)\(/.test(column) &&
+        !isMoneyHeading(heading) &&
+        !/money: true/.test(column),
+    );
+    expect(plain).toEqual([]);
   });
 });

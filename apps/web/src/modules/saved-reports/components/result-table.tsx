@@ -3,9 +3,15 @@
 // preview. House panel + innovic-table look (was shadcn Card + Table).
 
 import { Icon } from '@/ui/core';
-import { isMoneyHeading, type AdHocColumn, type RunAdHocResponse } from '@innovic/shared';
+import {
+  columnAlign,
+  isMoneyHeading,
+  type AdHocColumn,
+  type RunAdHocResponse,
+} from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { fmtDate, fmtDateTime } from '@/lib/date';
+import { alignSuffix } from '@/ui/data/data-table-head';
 import { downloadCsv, rowsToCsv } from '../lib/csv';
 
 interface Props {
@@ -194,9 +200,9 @@ export function ResultTable({
 /** ADR-279: money right, other numbers centre, dates centre, text left. A report
  *  column only says "number", so its heading decides whether it is money. */
 function colAlignClass(col: AdHocColumn, part: 'th' | 'td'): string {
-  if (col.type === 'number') return `${part}-${isMoneyHeading(col.label) ? 'money' : 'num'}`;
-  if (col.type === 'date' || col.type === 'datetime') return `${part}-ctr`;
-  return '';
+  const numeric = col.type === 'number';
+  const fixed = col.type === 'date' || col.type === 'datetime';
+  return `${part}-${alignSuffix(columnAlign({ heading: col.label, numeric, fixed }), numeric)}`;
 }
 
 function renderCell(col: AdHocColumn, raw: unknown): JSX.Element {

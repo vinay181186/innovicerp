@@ -14,7 +14,10 @@ export type ColumnAlign = 'left' | 'center' | 'right';
 /** A money figure is a numeric column whose heading says money. "Rate Source" or
  *  "Cost Centre" hold text, so they never reach this test as numeric columns. */
 const MONEY_WORDS =
-  /\b(rate|amount|value|price|cost|subtotal|taxable|tax|gst|total cost|grand total)\b|₹/i;
+  /\b(rate|amount|value|price|cost|subtotal|taxable|tax|gst|cgst|sgst|igst|tds|paid|round.?off|invoice total|grand total|not due)\b|₹|^\d+-\d+$|^\d+\+$/i;
+
+/** A percentage is a count however it is named: GST %, Deviation Rate. */
+const PERCENT_WORDS = /%|\b(deviation|rejection|defect|pass|first.pass) rate\b/i;
 
 /** Always a count, even on a column that does not declare itself numeric. */
 const COUNT_WORDS = /\b(qty|days?|hours?|hrs)\b|%/i;
@@ -24,7 +27,7 @@ const SHORT_FIXED =
   /(^|\s)(date|time|due|status|uom|rev|action|created on|raised on|added on|decided on|changed at|uploaded at|deleted at|qc at)$|^(sr no\.?|sr|#|pol|ln|op|line no\.?)$/i;
 
 export function isMoneyHeading(heading: string): boolean {
-  return MONEY_WORDS.test(heading.trim());
+  return !PERCENT_WORDS.test(heading) && MONEY_WORDS.test(heading.trim());
 }
 
 export function columnAlign(input: {

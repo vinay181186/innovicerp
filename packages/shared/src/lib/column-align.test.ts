@@ -35,6 +35,16 @@ describe('columnAlign (ADR-279)', () => {
     'Tax',
     'Hour Rate (₹/hr)',
     'Outstanding Amount',
+    'CGST',
+    'SGST',
+    'IGST',
+    'TDS',
+    'Paid',
+    'Round-off',
+    'Invoice Total',
+    '0-30',
+    '90+',
+    'Not Due',
   ])('a numeric money column goes right: %s', (heading) =>
     expect(columnAlign({ heading, numeric: true })).toBe('right'),
   );
@@ -63,6 +73,11 @@ describe('columnAlign (ADR-279)', () => {
   it('a column can say it is money when its heading does not', () => {
     expect(columnAlign({ heading: 'Total', numeric: true })).toBe('center');
     expect(columnAlign({ heading: 'Total', numeric: true, money: true })).toBe('right');
+  });
+
+  it('a percentage is centred even with a money word in its heading', () => {
+    expect(columnAlign({ heading: 'GST %', numeric: true })).toBe('center');
+    expect(columnAlign({ heading: 'Deviation Rate', numeric: true })).toBe('center');
   });
 
   it('a heading that merely contains a money word is not money', () => {

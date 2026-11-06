@@ -8,7 +8,7 @@
 import type { ReactElement, ReactNode } from 'react';
 
 import { tdClass } from './data-table-head';
-import type { DataTableColumn, DataTableColumnKind } from './data-table-types';
+import type { DataTableColumn } from './data-table-types';
 
 export interface FitFootProps<T> {
   /** All loaded rows — handed to a `total` function so it can sum them. */
@@ -16,7 +16,6 @@ export interface FitFootProps<T> {
   /** The on-screen columns, in order, as the header drew them. */
   visible: string[];
   byId: Map<string, DataTableColumn<T>>;
-  kinds: Record<string, DataTableColumnKind>;
   firstId: string;
   /** Shown in the first column's cell (default "Total"). */
   totalsLabel: ReactNode;
