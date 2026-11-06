@@ -10,6 +10,7 @@ import {
   dayLogQuerySchema,
   dayLogApproveInputSchema,
   dayLogDayRepliesSeenInputSchema,
+  dayLogHistoryQuerySchema,
   dayLogPersonDayQuerySchema,
   dayLogRejectInputSchema,
   dayLogTeamMatesQuerySchema,
@@ -47,6 +48,12 @@ export async function dayLogsRoutes(app: FastifyInstance): Promise<void> {
   app.get('/day-logs/person-day', async (req) => {
     if (!req.user) throw new AuthenticationError();
     return service.getPersonDay(dayLogPersonDayQuerySchema.parse(req.query), req.user);
+  });
+
+  // ADR-278 — a person's whole month or one date, Super Admin only.
+  app.get('/day-logs/person-history', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    return service.getPersonHistory(dayLogHistoryQuerySchema.parse(req.query), req.user);
   });
 
   app.get('/day-logs/order-options', async (req) => {

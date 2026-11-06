@@ -18,6 +18,7 @@ export async function getAccess(user: AuthContext): Promise<DayLogAccess> {
     canManageHolidays: v.isSuper,
     canManageTeams: v.isSuper && !v.auditor,
     canSeePending: v.isSuper,
+    canSeeHistory: v.isSuper,
   };
 }
 

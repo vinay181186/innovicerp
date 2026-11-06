@@ -15411,3 +15411,22 @@ Owner: Pending Entries should open per person on a calendar, green for filled an
 - **Trash:** a card deleted as a Draft comes back a Draft, with no bell. Every other card comes back Pending Approval as today (ADR-253).
 
 **Migration:** 0243 (CHECK only, no row changed, default stays `approved`).
+
+---
+
+## ADR-278: Day Log History PDF for a Super Admin
+
+**Date:** 2026-11-06. **Owner decided:** Team Day Logs › row ⋯ › History › Month or Particular Date › Generate PDF › Preview (Print, Download). Super Admin only. The PDF shows everything, including Working On and every edit, in a logical order. Mockup: https://claude.ai/artifact/DvrDUWBQ2rhEs4FTBEFDQ6 (Option A).
+
+**Decisions:**
+- One read, `GET /day-logs/person-history`, one month or one date, in ONE statement, so an edit in flight cannot give a half-old PDF. No migration. Nothing is written or logged.
+- The server decides every day state and total (`DayLogHistory`). Working hours, First start, Last stop and Entries read as Team Day Logs does (`summaryOf`); Not entered is `isNotEntered`. A blank date the rule does not count prints `Not counted`.
+- PDF order: Summary › Points to check › Date by date (more than one date) › Day detail › each edit and reply, oldest first, removed words struck out, added words underlined.
+- Break and Others show only for old rows; new entries are always Work.
+- The PDF is on the Innovic Sheet as one `table.doc`, so the paginator splits it. Earlier Day Log prints use `table.dl`, which it skips; those were left as they are.
+- Paginator additions are opt-in by attribute (several carried heading rows, keep with next, page break, page reference, page foot); a document without them splits as before.
+
+**Known limits:**
+- Download makes page pictures, as every ERP PDF does: text cannot be searched or copied.
+- A reply keeps only its latest text and the time it was edited.
+- A person who is not on the Team Day Logs list has no ⋯, so no History.

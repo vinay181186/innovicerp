@@ -10,7 +10,7 @@
 
 import type { DayLogEntryRevision } from '@innovic/shared';
 import { fmt12 } from '@innovic/shared';
-import { fmtStamp, istStamp } from '../lib/format';
+import { fmtStamp, istStamp, orderText, spanChanges, stopText } from '../lib/format';
 import { wordDiff } from '../lib/word-diff';
 
 function Diff({ before, after }: { before: string; after: string }): React.JSX.Element {
@@ -27,40 +27,6 @@ function Diff({ before, after }: { before: string; after: string }): React.JSX.E
       )}
     </>
   );
-}
-
-/** "HH:MM" or "HH:MM:SS" → "HH:MM", so seconds alone are never a change. */
-function hm(t: string | null): string | null {
-  return t ? t.slice(0, 5) : null;
-}
-
-/** Stop Time as shown: none = still Open. */
-function stopText(t: string | null): string {
-  return t ? fmt12(t) : 'Open';
-}
-
-function orderText(o: DayLogEntryRevision['order']): string {
-  return o?.code ?? '—';
-}
-
-/** Start Time / Stop Time / SO / JWSO facts that differ, as "Label old → new". */
-export function spanChanges(
-  b: DayLogEntryRevision,
-  a: DayLogEntryRevision,
-): { label: string; from: string; to: string }[] {
-  const out: { label: string; from: string; to: string }[] = [];
-  // A version saved before ADR-256 never kept its times / SO — nothing to compare.
-  if (!b.fromTime) return out;
-  if (hm(b.fromTime) !== hm(a.fromTime)) {
-    out.push({ label: 'Start Time', from: fmt12(b.fromTime), to: fmt12(a.fromTime) });
-  }
-  if (hm(b.toTime) !== hm(a.toTime)) {
-    out.push({ label: 'Stop Time', from: stopText(b.toTime), to: stopText(a.toTime) });
-  }
-  if ((b.order?.id ?? null) !== (a.order?.id ?? null)) {
-    out.push({ label: 'SO / JWSO', from: orderText(b.order), to: orderText(a.order) });
-  }
-  return out;
 }
 
 function Changed({
