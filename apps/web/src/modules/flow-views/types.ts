@@ -54,7 +54,7 @@ export interface OpFlowRow {
   returnedToVendorQty: number;
   /** Of those, pieces the vendor sent back again (NC rtv_received_qty). */
   reReceivedQty: number;
-  /** Pieces still with the vendor now (v_jc_op_status.at_vendor_qty). */
+  /** Pieces still with the vendor now (lib/at-vendor.ts, ADR-276). */
   atVendorQty: number;
   /** ADR-212 reconciled figures (one row per op; see flow-views getOpFlow). */
   /** Made (machine op) · inspected (QC op) · received back incl. rework lots (outsource). */

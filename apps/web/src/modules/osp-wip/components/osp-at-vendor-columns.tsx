@@ -72,16 +72,6 @@ export function ospAtVendorColumns(firstRowNo: number): DataTableColumn<OspWipRo
       },
     }),
     {
-      id: 'jc_date',
-      sortFilterField: 'jcDate',
-      kind: 'date',
-      header: 'JC Date',
-      className: 'mono',
-      nowrap: true,
-      render: (r) => fmtDate(r.jcDate ?? null),
-      filterValue: (r) => r.jcDate ?? '',
-    },
-    {
       id: 'vendor',
       sortFilterField: 'vendorName',
       kind: 'text',
@@ -92,16 +82,6 @@ export function ospAtVendorColumns(firstRowNo: number): DataTableColumn<OspWipRo
       title: (r) => r.vendorName ?? '',
     },
     {
-      id: 'operation',
-      sortFilterField: 'operation',
-      kind: 'text',
-      header: 'Operation',
-      ellipsis: true,
-      className: 'text3',
-      render: (r) => r.operation ?? `Op ${opSrNo(r.opSeq)}`,
-      title: (r) => r.operation ?? '',
-    },
-    {
       id: 'order_qty',
       sortFilterField: 'orderQty',
       kind: 'num',
@@ -110,6 +90,7 @@ export function ospAtVendorColumns(firstRowNo: number): DataTableColumn<OspWipRo
       className: 'mono',
       render: (r) => r.orderQty,
     },
+    // The five vendor figures stay on screen at 1440 (ADR-276): the fit engine drops from the right.
     qty('sent', 'Sent to Vendor', (r) => r.sentQty, 'var(--text3)', {
       sf: 'sentQty',
       head: (
@@ -168,6 +149,26 @@ export function ospAtVendorColumns(firstRowNo: number): DataTableColumn<OspWipRo
       title: 'Cleared by the previous operation — what a challan accepts today',
       bold: true,
     }),
+    {
+      id: 'operation',
+      sortFilterField: 'operation',
+      kind: 'text',
+      header: 'Operation',
+      ellipsis: true,
+      className: 'text3',
+      render: (r) => r.operation ?? `Op ${opSrNo(r.opSeq)}`,
+      title: (r) => r.operation ?? '',
+    },
+    {
+      id: 'jc_date',
+      sortFilterField: 'jcDate',
+      kind: 'date',
+      header: 'JC Date',
+      className: 'mono',
+      nowrap: true,
+      render: (r) => fmtDate(r.jcDate ?? null),
+      filterValue: (r) => r.jcDate ?? '',
+    },
     // ADR-261 rev — Created By, the last data column.
     createdByColumn({
       createdByName: (r) => r.createdByName,
