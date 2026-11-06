@@ -100,32 +100,31 @@ export function useUpdateJobWorkOrder(id: string, saveKey?: SaveKey) {
   // ADR-202 — when the edit-approval gate is on and the JWSO is live, the PATCH
   // returns a DocumentEditStagedResult (the edit was staged for approval)
   // instead of the updated JWSO. The edit page reads the union to tell them apart.
-  return useMutation<
-    JobWorkOrderDetail | DocumentEditStagedResult,
-    Error,
-    UpdateJobWorkOrderInput
-  >({
-    mutationFn: (input) =>
-      withSaveKey(saveKey, (headers) =>
-        apiFetch<JobWorkOrderDetail | DocumentEditStagedResult>(`/job-work-orders/${id}`, {
-          method: 'PATCH',
-          json: input,
-          ...(headers ? { headers } : {}),
-        }),
-      ),
-    onSuccess: (updated) => {
-      void qc.invalidateQueries({ queryKey: jobWorkOrdersKeys.lists() });
-      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
-      if ('staged' in updated) {
-        // Nothing changed on the JWSO itself — just refresh so the detail page
-        // shows the new pending-change chips.
-        void qc.invalidateQueries({ queryKey: jobWorkOrdersKeys.detail(id) });
-        void qc.invalidateQueries({ queryKey: ['document-edits'] });
-        return;
-      }
-      qc.setQueryData(jobWorkOrdersKeys.detail(id), updated);
+  return useMutation<JobWorkOrderDetail | DocumentEditStagedResult, Error, UpdateJobWorkOrderInput>(
+    {
+      mutationFn: (input) =>
+        withSaveKey(saveKey, (headers) =>
+          apiFetch<JobWorkOrderDetail | DocumentEditStagedResult>(`/job-work-orders/${id}`, {
+            method: 'PATCH',
+            json: input,
+            ...(headers ? { headers } : {}),
+          }),
+        ),
+      onSuccess: (updated) => {
+        void qc.invalidateQueries({ queryKey: jobWorkOrdersKeys.lists() });
+        void qc.invalidateQueries({ queryKey: soPlanningKeys.all });
+        void qc.invalidateQueries({ queryKey: activityLogKeys.all });
+        if ('staged' in updated) {
+          // Nothing changed on the JWSO itself — just refresh so the detail page
+          // shows the new pending-change chips.
+          void qc.invalidateQueries({ queryKey: jobWorkOrdersKeys.detail(id) });
+          void qc.invalidateQueries({ queryKey: ['document-edits'] });
+          return;
+        }
+        qc.setQueryData(jobWorkOrdersKeys.detail(id), updated);
+      },
     },
-  });
+  );
 }
 
 /** ADR-203: find-or-create the customer RM (`<item code>-RM`) for an order

@@ -7,12 +7,7 @@
 // Batched: a fixed number of queries however many orders are open — up to 9 with
 // no source chosen, one transaction. Never the detail in a loop.
 
-import {
-  partyGrnStatus,
-  planningLineStatus,
-  soLinePlanCoverage,
-  toPlanningLineStatus,
-} from '@innovic/shared';
+import { planningLineStatus, soLinePlanCoverage, toPlanningLineStatus } from '@innovic/shared';
 import type {
   PlanningLineListItem,
   PlanningLineListQuery,
@@ -41,7 +36,7 @@ import {
   UUID_RE,
 } from './line-facts';
 import { requireFormAccess } from '../../lib/access';
-import { customerRmByJw } from '../job-work-orders/customer-rm';
+import { partyGrnStatusByLine } from '../job-work-orders/customer-rm';
 import {
   type PlanningLinePageRow,
   pagePlanningLines,
@@ -330,12 +325,12 @@ async function composeJwRows(
 ): Promise<PlanningLinePageRow[]> {
   const directJcByLine = await loadDirectJcsByLine(tx, lines, 'jw');
   // ADR-279 — the JWSO screens' own Customer RM figures, one statement.
-  const rmRows = await customerRmByJw(tx, companyId, [...new Set(lines.map((l) => l.soId))]);
-  const rmQtyByLine = new Map(rmRows.map((r) => [r.lineId, r.qty]));
+  const grnStatusByLine = await partyGrnStatusByLine(tx, companyId, [
+    ...new Set(lines.map((l) => l.soId)),
+  ]);
 
   return lines.map((l) => {
     const plansOfLine = plansByLine.get(l.id) ?? [];
-    const rmQty = rmQtyByLine.get(l.id);
     return composeRow(
       // ADR-177: an empty Rev on a JW line reads null → bare item code. A JWSO
       // has no Internal SO No. (ADR-207) and its type is always job work.
@@ -348,7 +343,7 @@ async function composeJwRows(
         prQty: 0,
         totalPlanned: plansOfLine.reduce((s, p) => s + p.planQty, 0),
         directJc: directJcByLine.get(l.id),
-        partyGrnStatus: rmQty ? partyGrnStatus(rmQty) : 'none',
+        partyGrnStatus: grnStatusByLine.get(l.id) ?? 'none',
       },
     );
   });

@@ -34,6 +34,7 @@ import { fmtDate } from '@/lib/date';
 import { docDrawingRev, itemCodeWithRev } from '@/lib/item-code';
 import { createdByColumn, leadColumns, type DataTableColumn } from '@/ui/data';
 import { planChildItemOf, planStatusOf, prStatusOf } from './plan-chip';
+import { partyGrnStatusColumn } from './party-grn-status-column';
 import { DocCodes, RcCodes } from './planning-doc-cells';
 import { lineStatusOf } from './planning-shared';
 
@@ -278,6 +279,7 @@ export function planningLineColumns(
       // a distinct option for every line on the order.
       filterValue: (l) => PLANNING_STATE_LABEL[planningLineStatus(l).state],
     },
+    ...(source === 'jw' ? [partyGrnStatusColumn<PlanningLine>()] : []),
     {
       // Pinned: the plan code is why a planner opens this screen, so it stays
       // on screen however narrow the sheet gets. Everything about a plan other

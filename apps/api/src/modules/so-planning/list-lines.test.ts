@@ -92,6 +92,7 @@ describe('one row per line', () => {
 
 describe('every figure on a list row equals the same line on the order detail', () => {
   const SHARED_FIELDS = [
+    'partyGrnStatus',
     'itemRevisionId',
     'drawingRev',
     'lineNo',
