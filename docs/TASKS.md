@@ -2,7 +2,7 @@
 
 > Update at start AND end of every work session.
 > Last updated: 2026-11-06 (**ADR-280 — one alignment across the ERP: text left, Qty centre, money right, on screens, prints and Excel; held by CLAUDE.md §24 and a test. Route Card long text under the row with Show / Hide.** No migration.)
-> Prior: 2026-11-06 (**ADR-280 — Home > Planning check "Party GRN received, plan pending" opens the Create Plan popup for the line; Planning list column Party GRN Status (Done / Part Done / Not Done).** No migration.)
+> Prior: 2026-11-06 (**ADR-279 — Home > Planning check "Party GRN received, plan pending" opens the Create Plan popup for the line; Planning list column Party GRN Status (Done / Part Done / Not Done).** No migration.)
 > Prior: 2026-11-06 (**ADR-277 — Route Card Draft: Save stays with the creator, Save & Submit goes for approval, a Pending card is locked for everybody; Draft stays Rev 0.** Migration 0243.)
 > Prior: 2026-11-06 (**ADR-275 — Route Card header shows Last Updated By and the time; Created By column and Last Updated time on the list; Revision Time column; long Remarks / Tool Details wrap.** No migration.)
 > Prior: 2026-11-05 (**ADR-271 — one item standard: every Related Documents row and document picker names POL, CODE/REV and Item Name. Migration 0238 repairs Production Orders that saved an internal id as the item code.**)
