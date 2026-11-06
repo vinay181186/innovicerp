@@ -38,6 +38,7 @@ import {
   derivePerLineStage,
   deriveOverallSoStatus,
   enrichOps,
+  opHasStartedWork,
   rollupJC,
   rollupSoLine,
 } from '../../lib/calc-engine';
@@ -257,6 +258,7 @@ export async function getSoOverview(
       let delayedLines = 0;
       let qcPendingOps = 0;
       let atVendorQty = 0;
+      let workStarted = false;
       const stageCounts = emptyStageCounts();
       let earliestDueDate: string | null = null;
 
@@ -304,6 +306,7 @@ export async function getSoOverview(
         // Alerts roll up per-op fields.
         for (const jc of jcRollups) {
           for (const op of jc.ops) {
+            if (opHasStartedWork(op)) workStarted = true;
             if (op.status === 'qc_pending') qcPendingOps += 1;
             if (op.status === 'outsource_at_vendor' || op.status === 'outsource_po_created') {
               atVendorQty += Math.max(0, op.inputAvail - op.completed);
@@ -326,6 +329,7 @@ export async function getSoOverview(
         lineCount: lines.length,
         dueDate: earliestDueDate,
         today,
+        workStarted,
       });
 
       // Equipment-SO name from the first line's partName. Component SOs leave
