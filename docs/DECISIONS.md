@@ -15430,3 +15430,20 @@ Owner: Pending Entries should open per person on a calendar, green for filled an
 - Download makes page pictures, as every ERP PDF does: text cannot be searched or copied.
 - A reply keeps only its latest text and the time it was edited.
 - A person who is not on the Team Day Logs list has no ⋯, so no History.
+
+## ADR-279: One alignment across the ERP; Route Card long text goes under the row
+
+**Date:** 2026-11-06. **Owner decided:** text left, Qty centre, across the system. Replaces "everything centred, numbers right" (2026-09-26). Mockup: Claude Design canvas "Innovic ERP - Alignment Rule Mockup".
+
+**Decisions:**
+- Owner accepted the recommended answers: money stays right, so rupees and paise line up; dates, statuses, UOM, Sr No, POL, Op, Rev and actions are centred; Excel and Job Card print follow the rule.
+- One rule, `columnAlign` in `packages/shared`, read by the fit table and by Excel. It reads the column's kind and heading, so 156 column files follow without being edited. `align` on a column no longer sets alignment; it still marks a column numeric when it has no `kind`.
+- New `money: true` on a column for money under a plain heading ("Total"). New classes `th-money` / `td-money`, `th-ctr` / `td-ctr`; `th-num` / `td-num` now mean centre.
+- CLAUDE.md §24 and `standard.guard.test.ts` hold the rule.
+- Route Card Operation Sequence and the routing kept with a revision: Tool Details and Remarks leave the table and sit under their row, in a 720 px column that grows downward, with Show / Hide per row and Show all / Hide all. A row with text opens by itself and Hide is not remembered. Operation names wrap, which was the real cause of the sideways scroll on RC-14. This replaces the `td-prose` columns of ADR-275 on those two tables.
+
+**Known limits:**
+- With Qty centred, digits no longer line up down a column (1250, 12.5, 8). The owner accepted this.
+- `columnAlign` reads headings, so a new money column under a heading with no money word needs `money: true`; the check catches money words, not plain headings. A report column that only says "number" uses the same heading test.
+- 545 `align:` props stay in the column files; they are harmless, and removing them now would collide with other open work.
+- Calendar grid on Production Schedule and the Create Invoice line grid are not tables and keep their own alignment.

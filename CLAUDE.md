@@ -1263,3 +1263,30 @@ Typecheck, lint and build all passed. ADR-270.
 
    Fix what they find. Never work around them. The page-open check does not open pages with
    an id in the address, so open those by hand when you change them.
+
+---
+
+## Section 24 — One Alignment Across the ERP (owner rule 2026-11-06, ADR-279)
+
+Every table, entry grid, print and Excel export follows one rule. The heading aligns with
+its values.
+
+| What the column holds | Alignment | Examples |
+| --- | --- | --- |
+| Text and codes | Left | Item Name, Item Code, SO No., Client, Remarks |
+| Qty and other counts | Centre | Order Qty, Pending, Lead Days, Hours, % |
+| Money | Right | Rate, Amount, Order Value, Total Cost |
+| Short fixed values | Centre | Dates, Status, UOM, Sr No, POL, Op, Rev, Action |
+
+1. **A list column does not choose.** `DataTable` asks `columnAlign`
+   (`packages/shared/src/lib/column-align.ts`) from the column's kind and heading. Excel asks
+   the same rule. `align` on a column does not set the alignment. Money under a heading that
+   does not say so ("Total") sets `money: true`.
+2. **A hand-built table uses classes:** nothing for text; `th-num` / `td-num` for Qty;
+   `th-money` / `td-money` for money; `th-ctr` / `td-ctr` for short fixed values. Never an
+   inline `textAlign` on a cell.
+3. **Entry boxes follow their column.** A Qty box is centred, a money box right, text left.
+4. **Prints:** `lib/print/sheet-print.ts` holds the classes (`.qty` and `.ctr` centre,
+   `.money` and `.rgt` right). A new column set follows the table above.
+5. **A test holds it:** `apps/web/src/ui/standard.guard.test.ts` fails CI and names the file. A
+   real exception goes on its list with its reason.

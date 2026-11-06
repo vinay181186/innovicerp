@@ -809,7 +809,7 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
 }
 
 // Legacy L26336-26348. Qty, received, accepted and pending sit centred with
-// `td-num`, rate and amount right with `td-money` (ADR-277), Item Code is `td-code` on the <td> in var(--text) (a real
+// `td-num`, rate and amount right with `td-money` (ADR-279), Item Code is `td-code` on the <td> in var(--text) (a real
 // token with no utility class), Received is always green and Pending flips
 // blue/green on >0.
 function LineRow(props: {

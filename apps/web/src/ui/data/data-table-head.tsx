@@ -16,7 +16,7 @@ export interface SortProps {
   onSort?: ((field: string) => void) | undefined;
 }
 
-/** THE alignment rule (ADR-277): the column's kind and heading decide, never the
+/** THE alignment rule (ADR-279): the column's kind and heading decide, never the
  *  screen. */
 function alignOf<T>(c: DataTableColumn<T>): ColumnAlign {
   const kind = colKind(c);
