@@ -451,6 +451,8 @@ export async function listNcRegister(
           OR nc.nc_date::text ILIKE ${term} ESCAPE '\\'
           -- JC No. column — jc is the job_cards join already in the SELECT.
           OR jc.code ILIKE ${term} ESCAPE '\\'
+          -- ADR-276: SO No. / JWSO No. column, the value the cell prints.
+          OR ${ncOrderCodeSql('nc')} ILIKE ${term} ESCAPE '\\'
           -- Operation column: "Op<seq>: <name>", name resolved in this order.
           OR jo.operation ILIKE ${term} ESCAPE '\\'
           OR nc.operation_text ILIKE ${term} ESCAPE '\\'
