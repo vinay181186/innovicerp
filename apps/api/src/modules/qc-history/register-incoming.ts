@@ -6,7 +6,12 @@
 // so a row reads the same on Incoming QC and here.
 
 import { type SQL, sql } from 'drizzle-orm';
-import type { IncomingQcCompletedRow, IncomingQcPendingRow, QcGrnType } from '@innovic/shared';
+import {
+  type IncomingQcCompletedRow,
+  type IncomingQcPendingRow,
+  QC_GRN_TYPE_LABELS,
+  type QcGrnType,
+} from '@innovic/shared';
 import { createdByNameSql } from '../../lib/created-by-sql';
 import { likeEscape } from '../../lib/list-query';
 import { polSql } from '../../lib/pol';
@@ -35,6 +40,18 @@ export function grnTypeSql(h: string): SQL {
 export const GRN_TYPE_SQL = grnTypeSql('h');
 
 const INC_GRN_TYPES: readonly IncGrnType[] = ['purchase', 'job_work_return', 'nc_return'];
+
+/** A GRN Type's shared label as a SQL literal. The words are constants from
+ *  QC_GRN_TYPE_LABELS, never user input. */
+export function grnTypeLabelSql(t: QcGrnType): SQL {
+  return sql.raw(`'${QC_GRN_TYPE_LABELS[t].replace(/'/g, "''")}'`);
+}
+
+/** ADR-284: the register's Operation text of a GRN line = its GRN Type label. */
+export const INC_OPERATION = sql`(CASE ${GRN_TYPE_SQL} ${sql.join(
+  INC_GRN_TYPES.map((t) => sql`WHEN ${sql.raw(`'${t}'`)} THEN ${grnTypeLabelSql(t)}`),
+  sql` `,
+)} END)`;
 
 /** A raw "grnType" value → the typed value (unknown reads as Direct Purchase). */
 export function toIncGrnType(v: unknown): IncGrnType {

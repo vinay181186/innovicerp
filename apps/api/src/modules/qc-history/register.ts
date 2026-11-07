@@ -20,6 +20,10 @@
 // (GRN_TYPE_SQL), the Party GRN half is on only for 'party_grn'. Incoming QC
 // is this register with grnType = purchase,party_grn.
 //
+// ADR-284: stage 'process' = every job-card call (In-Process and Final together);
+// `operation` narrows to the job-card calls of that operation, so both GRN halves
+// drop out. Its counts for the filter are in the summary (register-summary.ts).
+//
 // Sort & Filter (ADR-200): every union part also SELECTs one sf_* column per
 // field (register-sf.ts), and the page + count filter / sort on them. Each call
 // carries its QcRegisterFacts — Client PO No. and the source step's Planned /
@@ -84,6 +88,7 @@ import {
   PEND_IS_LAST,
   dateLike,
   logsFrom,
+  opOperationWhere,
   opSearchWhere,
   opStageWhere,
   overdueToday,
@@ -143,6 +148,11 @@ export async function listQcRegister(input: Input, user: AuthContext): Promise<Q
       incOn = incOn && incTypes.length > 0;
       pgrnOn = pgrnOn && input.grnType.includes('party_grn');
     }
+    // ADR-284 Operation: only job-card calls carry one.
+    if (input.operation !== undefined) {
+      incOn = false;
+      pgrnOn = false;
+    }
     if (one) {
       // The single-call read (?line= / ?op=) still honours the GRN Type.
       incOn = input.grnLineId !== undefined && (incTypes === null || incTypes.length > 0);
@@ -176,7 +186,7 @@ export async function listQcRegister(input: Input, user: AuthContext): Promise<Q
           NULL::text AS c_inc, jo.qc_call_date AS d_op, jc.code::text AS c_op, vos.op_seq::int AS s_op
           ${OP_PENDING_SF}
         ${pendingFrom(companyId)} ${opSearchWhere(input.search)}
-        ${opStageWhere(input.stage, PEND_IS_LAST)} ${mineWhere}
+        ${opStageWhere(input.stage, PEND_IS_LAST)} ${opOperationWhere(input.operation)} ${mineWhere}
         ${input.jcOpId ? sql`AND vos.jc_op_id = ${input.jcOpId}::uuid` : sql``}`;
       const pgrnPart = sql`
         SELECT 'pgrn'::text AS kind, pgl.id AS id, 0 AS k0, pg.grn_date AS d_inc, pg.code AS c_inc,
@@ -195,7 +205,7 @@ export async function listQcRegister(input: Input, user: AuthContext): Promise<Q
       const opPart = sql`
         SELECT 'op'::text AS kind, ol.id AS id, ol.created_at AS at ${OP_COMPLETED_SF}
         ${logsFrom(companyId)} ${opSearchWhere(input.search)}
-        ${opStageWhere(input.stage, LOG_IS_LAST)}`;
+        ${opStageWhere(input.stage, LOG_IS_LAST)} ${opOperationWhere(input.operation)}`;
       const pgrnPart = sql`
         SELECT 'pgrn'::text AS kind, pgl.id AS id, ${PGRN_DONE_AT} AS at ${PGRN_COMPLETED_SF}
         ${pgrnCompletedFrom(companyId)} ${pgrnSearchWhere(input.search)}`;

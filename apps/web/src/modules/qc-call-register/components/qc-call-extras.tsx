@@ -25,13 +25,14 @@ import { PartyGrnQcModal } from '@/modules/party-grn/components/party-grn-qc-mod
 import type { RaisedNc } from './qc-call-inspect-form';
 import type { CompletedVM } from './qc-call-completed-columns';
 import { factExportCells } from './qc-call-fact-columns';
+import { qcOperationText, qcPartyText } from './qc-call-operation';
 import { deviationReasonOf } from './qc-call-remark-columns';
 import { type PendingVM, pgrnMaterialOf, pgrnOrderOf } from './qc-call-pending-columns';
 import type { QcView } from './qc-sheet';
 
 // A Party GRN line (ADR-203) rides the export's incoming rows: its PGRN no.
-// fills the GRN No. column, the customer stands in the vendor slot ("Incoming ·
-// <customer>"), the JWSO line fills SO No. and the customer RM the Item Name.
+// fills the GRN No. column, the customer stands in the vendor slot, the JWSO
+// line fills SO No. and the customer RM the Item Name. Operation is the extras'.
 function pgrnAsPending(r: PartyGrnQcRow): IncomingQcPendingRow {
   return {
     grnLineId: r.partyGrnLineId,
@@ -91,10 +92,12 @@ function pgrnAsCompleted(r: PartyGrnQcRow): IncomingQcCompletedRow {
   };
 }
 
-/** Export every call matching the register query (search + stage + Mine +
- *  Sort & Filter), with the register's own facts (Planned / Actual Machine —
- *  not on Incoming QC — and Client PO No.) as the last columns; the Completed
- *  sheet ends with Deviation Reason (Party GRN lines only). */
+/** Export every call matching the register query (search + stage + operation +
+ *  GRN Type + Mine + Sort & Filter), with the register's own facts (Planned /
+ *  Actual Machine — not on Incoming QC — and Client PO No.) as the last columns;
+ *  the Completed sheet ends with Deviation Reason (Party GRN lines only). The
+ *  Operation key overrides the sheet's own Operation cell, in place, with the
+ *  words the screen shows (ADR-284). */
 export async function exportRegister(
   query: Omit<QcRegisterQuery, 'limit' | 'offset'>,
   view: QcView,
@@ -103,7 +106,11 @@ export async function exportRegister(
   const all = await fetchAllPages((limit, offset) => fetchQcRegister({ ...query, limit, offset }));
   const extras: QcExportExtras = { ops: [], inc: [] };
   const facts = (it: PendingVM | CompletedVM): void =>
-    void (it.kind === 'op' ? extras.ops : extras.inc).push(factExportCells(it, !incoming));
+    void (it.kind === 'op' ? extras.ops : extras.inc).push({
+      ...factExportCells(it, !incoming),
+      Operation: qcOperationText(it),
+      'Vendor / Customer': qcPartyText(it) ?? '',
+    });
   if (view === 'pending') {
     const ops: QcHistoryPendingRow[] = [];
     const inc: IncomingQcPendingRow[] = [];

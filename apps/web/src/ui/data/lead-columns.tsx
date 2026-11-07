@@ -7,16 +7,21 @@
 // page's own number (PO No., JC No. …) and the entry date (Created On =
 // <table>.created_at, set by the system at Save) close the block. The own
 // document date (PO Date, JC Date …) is NOT locked — it is an ordinary column
-// after the block. Created Time sits right after Created On, locked and always
-// shown (owner 2026-11-03), headings on two lines ("Created / On", "Created /
-// Time") so both columns stay narrow; the time is the India-time 12-hour clock
-// (02:35 PM), same size as the date, never a hover. Created By
-// (`createdByColumn`) goes at the END, shown by default, movable / hideable.
+// after the block. Created Time sits right after Created On (owner 2026-11-03),
+// headings on two lines ("Created / On", "Created / Time") so both columns stay
+// narrow; the time is the India-time 12-hour clock (02:35 PM), same size as the
+// date, never a hover. Created By (`createdByColumn`) goes at the END, shown by
+// default, movable / hideable.
 //
 // The table engine locks the block (`lead: true`): a user cannot move, hide or
 // slip a column between them, a new column a developer adds lands after the
 // block, and they never drop off the screen. The Drawing Rev is never its own
 // column — it rides in the Item Code cell.
+//
+// One exception (ADR-284, reverses "always shown" of 2026-11-03): Created On and
+// Created Time (`leadHideable: true`) are shown by default in their fixed place,
+// but each user may hide them in Columns ▾ (saved per user; Reset to default
+// brings them back). They still cannot be moved or pinned.
 //
 // JWSO-only lists: pass `so: 'jwso'` and no `internalSoNo` — the slot reads
 // JWSO No. and the Internal SO No. column is left out (owner, 2026-10-31).
@@ -204,6 +209,7 @@ export function leadColumns<T>(spec: LeadColumnSpec<T>): DataTableColumn<T>[] {
     col<T>(
       {
         id: 'created_on',
+        leadHideable: true,
         kind: 'date',
         // Two lines so the column is only as wide as "Created" (owner 2026-11-03).
         header: (
@@ -222,13 +228,15 @@ export function leadColumns<T>(spec: LeadColumnSpec<T>): DataTableColumn<T>[] {
       o.created_on,
     ),
   );
-  // Created Time: locked, always shown, right after Created On (owner
-  // 2026-11-03). Same created_at as Created On, as the India-time 12-hour clock.
+  // Created Time: fixed right after Created On (owner 2026-11-03), shown by
+  // default, the user may hide it (ADR-284). Same created_at as Created On, as
+  // the India-time 12-hour clock.
   // Sorted / filtered through Created On (same created_at) — no ▾ of its own.
   out.push(
     col<T>(
       {
         id: 'created_time',
+        leadHideable: true,
         kind: 'code',
         header: (
           <>

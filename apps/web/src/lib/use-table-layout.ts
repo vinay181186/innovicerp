@@ -39,6 +39,8 @@ export interface TableLayoutDefaults {
   hidden?: string[] | undefined;
   /** The locked lead block (ui/data/lead-columns.tsx), in code order. */
   locked?: string[] | undefined;
+  /** Locked columns the user may still hide (Created On / Created Time, ADR-284). */
+  hideable?: string[] | undefined;
 }
 
 export interface UseTableLayoutResult extends TableLayoutState {
@@ -68,14 +70,16 @@ function isStatus(e: unknown, status: number): boolean {
 
 /** Fit any layout onto the columns the code has today. The locked block
  *  (column 0, or the locked lead block) always comes first in code order and is
- *  never hidden. A column the code added since the user saved lands at its
+ *  never hidden, except a `hideable` one the user hid (ADR-284), which keeps its
+ *  slot in the order. A column the code added since the user saved lands at its
  *  CODE position (just after the column it follows), never at the end. */
-function normalize(
+export function normalize(
   state: TableLayoutState,
   ids: string[],
   defaults: TableLayoutDefaults,
 ): TableLayoutState {
   const locked = lockedOf(ids, defaults);
+  const hideable = defaults.hideable ?? [];
   const order = state.order.filter((k) => ids.includes(k) && !locked.includes(k));
   const added = ids.filter((k) => !locked.includes(k) && !order.includes(k));
   for (const k of added) {
@@ -95,7 +99,7 @@ function normalize(
   const hidden = [
     ...state.hidden.filter((k) => ids.includes(k)),
     ...added.filter((k) => defaults.hidden?.includes(k) ?? false),
-  ].filter((k) => !locked.includes(k));
+  ].filter((k) => !locked.includes(k) || hideable.includes(k));
   const pins = [
     ...state.pins.filter((k) => ids.includes(k)),
     ...added.filter((k) => defaults.pins?.includes(k) ?? false),
@@ -200,12 +204,13 @@ export function useTableLayout(
     queued.current = [];
   }, [tableKey, userId]);
 
+  const hideableKey = (defaults.hideable ?? []).join('|');
   const saved = query.data?.columns;
   const state = useMemo(() => {
     const base =
       local ?? (saved !== undefined && saved.length > 0 ? fromSaved(saved) : defaultState);
     return normalize(base, columnIds, defaults);
-  }, [local, saved, defaultState, idsKey]);
+  }, [local, saved, defaultState, idsKey, hideableKey]);
 
   const first = columnIds[0];
   const lockedIds = useMemo(
@@ -267,7 +272,10 @@ export function useTableLayout(
     queued.current = [];
     const base = saved !== undefined && saved.length > 0 ? fromSaved(saved) : defaultState;
     const replayed = normalize(
-      ops.reduce((st, op) => applyLayoutOp(st, op, lockedIds, defaultState), base),
+      ops.reduce(
+        (st, op) => applyLayoutOp(st, op, lockedIds, defaultState, defaults.hideable),
+        base,
+      ),
       columnIds,
       defaults,
     );
@@ -276,7 +284,7 @@ export function useTableLayout(
     setLocal(replayed);
     pending.current = resetLast ? { kind: 'delete' } : { kind: 'put', state: replayed };
     flush();
-  }, [loaded, saved, defaultState, lockedIds, idsKey, flush]);
+  }, [loaded, saved, defaultState, lockedIds, hideableKey, idsKey, flush]);
 
   useEffect(() => {
     if (canSave && pending.current && queued.current.length === 0) flush();
@@ -290,7 +298,7 @@ export function useTableLayout(
       seq.current += 1;
       if (!loadedRef.current) queued.current.push(op);
       const next = normalize(
-        applyLayoutOp(stateRef.current, op, lockedIds, defaultState),
+        applyLayoutOp(stateRef.current, op, lockedIds, defaultState, defaults.hideable),
         columnIds,
         defaults,
       );
@@ -306,7 +314,7 @@ export function useTableLayout(
       pending.current = { kind: 'put', state: next };
       timer.current = window.setTimeout(flush, SAVE_DELAY_MS);
     },
-    [lockedIds, defaultState, idsKey, flush],
+    [lockedIds, hideableKey, defaultState, idsKey, flush],
   );
 
   const retrySave = useCallback(() => {

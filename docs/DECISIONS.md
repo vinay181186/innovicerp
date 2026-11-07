@@ -15500,3 +15500,24 @@ Owner: Pending Entries should open per person on a calendar, green for filled an
 - A form open on the Job Card gets the normal changed-by-someone message after an approval moves its Rev.
 
 **Migration:** 0244.
+
+## ADR-284: QC Call Register shows Operation and two Stages; Created On and Created Time can be hidden
+
+**Date:** 2026-11-07. **Owner decided:** Created On and Created Time stay in their fixed place and are shown by default, and each user may hide them. On the QC Call Register, the GRN Type filter becomes an Operation filter, Called Date goes, Stage reads Incoming or In-Process, and Operation shows the short name. Amends ADR-261 (3-Nov "locked and always shown") and ADR-251.
+
+**Decisions:**
+- **Hideable lead columns.** `leadHideable` on `created_on` and `created_time`, every `leadColumns` list. They accept hide and show only; move and pin stay refused. Every other lead column stays fully locked.
+- **Stage.** Two values on screen. Every job-card call reads In-Process, including the last op and Final Inspection. New filter value `stage=process`; `inprocess` and `final` stay for the Home checks.
+- **Operation.** A job-card call shows `jc_ops.operation` as stored; hover keeps `Op 20 DIR`, because two DIRs on one card look the same in the cell. An incoming call shows its GRN Type label. The ▾ filter and the Excel Operation cell read the same words.
+- **Against JW PO / DC stays the name of an OSP return (D1).** "Against PO" was renamed Direct Purchase on 2026-10-23 because it did not say which PO.
+- **Operation filter.** Register only. Choices are the active QC Process master names plus any other name on a job-card QC call, matched ignoring capitals and outer spaces, then the four GRN Types as Stage allows. A master name with no calls shows (0).
+- **Incoming QC (D2).** Gets the Operation column, since Stage no longer names the type. Keeps its GRN Type filter. Called Date goes there too.
+- **Called Date.** No column on either table. The server keeps the `calledDate` Sort & Filter field, because a tab still sorted on it would otherwise get an error with no way to clear it.
+
+**Known limits:**
+- A user with a saved layout keeps their column order, so Operation and Stage may sit further right. Reset to default moves them.
+- With Created On hidden, the created date has no ▾ until it is ticked again, because Created Time has none of its own.
+- A filter or sort on Created On keeps applying after the column is hidden, as on any hidden column; Clear Filters removes it.
+- OSP return rows no longer show the JC No. on screen. The Excel export keeps JC No. and Op, and gains a Vendor / Customer column because its Operation cell no longer names the party.
+
+**Migration:** 0246. Saved `hidden` rows on Created On and Created Time were ignored while locked and would have taken effect, so they are set back to shown; so is Operation on all four QC tables and Stage on Completed, which were hidden by default. A saved hide of Stage on Pending stays. Left out: activity-log, party-materials, stock-counts and tool-issues, where Created On is an ordinary column hidden by default.

@@ -9,6 +9,9 @@
 // as its cell reads "—". The field names are the shared lists
 // (QC_REGISTER_PENDING_SF_FIELDS / QC_REGISTER_COMPLETED_SF_FIELDS), so the web's
 // `sortFilterField` and this map cannot drift.
+//
+// ADR-284: Operation = the stored operation name on a job-card call, the GRN Type
+// label on a GRN or Party GRN line (QC_GRN_TYPE_LABELS), on both tables.
 
 import { type SQL, sql } from 'drizzle-orm';
 import { QC_REGISTER_COMPLETED_SF_FIELDS, QC_REGISTER_PENDING_SF_FIELDS } from '@innovic/shared';
@@ -25,12 +28,14 @@ import {
 import {
   INC_CREATED_AT,
   INC_CREATED_BY_NAME,
+  INC_OPERATION,
   INC_PENDING_QTY,
   INC_SO_CODE,
   INC_SO_INTERNAL,
   ITEM_CODE,
   ITEM_REV,
   VENDOR,
+  grnTypeLabelSql,
 } from './register-incoming';
 import {
   CUSTOMER,
@@ -117,28 +122,21 @@ export function sfNulls(view: 'pending' | 'completed'): SQL {
 
 // ── What each kind's cells show ────────────────────────────────────────────
 
-const NO_JOB_CARD = sql`'No job card'`;
-
-// Job-card op (pendingFrom / logsFrom aliases). "Op 30 Turning" — opSrNo = seq × 10.
-const OP_OPERATION = sql`('Op ' || (jo.op_seq * 10)::text || ' ' || jo.operation)`;
+// Job-card op (pendingFrom / logsFrom aliases).
 const OP_SO_INTERNAL = sql`NULLIF(btrim(so.internal_so_no), '')`;
 
-// GRN line (incJoins aliases). Pending: "<JC> Op 30 · Turning", else "No job card".
+// GRN line (incJoins aliases).
 const INC_ITEM_CODE = codeRevSql(ITEM_CODE, ITEM_REV);
 const INC_ITEM_NAME = sql`COALESCE(i.name, l.item_name)`;
-const INC_PENDING_OPERATION = sql`(CASE WHEN NULLIF(jc.code, '') IS NULL THEN ${NO_JOB_CARD}
-  ELSE jc.code || COALESCE(' Op ' || (jco.op_seq * 10)::text, '')
-    || COALESCE(' · ' || NULLIF(jco.operation, ''), '') END)`;
 
-// Party GRN line (pgrnJoins aliases). Item Name = "Customer RM <code> · <name>";
-// Operation = "Party GRN · <JWSO> Ln <n>" (pgrnMaterialOf / pgrnOrderOf).
+// Party GRN line (pgrnJoins aliases). Item Name = "Customer RM <code> · <name>"
+// (pgrnMaterialOf); Operation = "Party GRN".
 const PGRN_ITEM_CODE = codeRevSql(PART_CODE, sql`jwl.revision::text`);
 const RM_NAME = sql`COALESCE(rm.name, pgl.party_material_name)`;
 const PGRN_ITEM_NAME = sql`('Customer RM ' || COALESCE(
   NULLIF(COALESCE(rm.code, ${PM_CODE}), '') || COALESCE(' · ' || NULLIF(${RM_NAME}, ''), ''),
   ${RM_NAME}, '—'))`;
-const PGRN_OPERATION = sql`('Party GRN · ' || COALESCE(
-  NULLIF(${JW_CODE}, '') || COALESCE(' Ln ' || jwl.line_no::text, ''), '—'))`;
+const PARTY_GRN_LABEL = grnTypeLabelSql('party_grn');
 const PGRN_POL = sql`jwl.client_po_line_no`;
 
 const POL = polSql('sol', 'rev_jwl');
@@ -162,7 +160,7 @@ export const OP_PENDING_SF = sfSelect(P, {
   soVendor: null,
   soInternalNo: OP_SO_INTERNAL,
   clientPoNo: CLIENT_PO_NO_SQL,
-  operation: OP_OPERATION,
+  operation: sql`jo.operation`,
   receivedQty: null,
   assignedTo: sql`qa.inspector_name`,
   plannedMachine: plannedMachineSql(sql`vos.jc_op_id`),
@@ -184,7 +182,7 @@ export const INC_PENDING_SF = sfSelect(P, {
   soVendor: VENDOR,
   soInternalNo: INC_SO_INTERNAL,
   clientPoNo: CLIENT_PO_NO_SQL,
-  operation: INC_PENDING_OPERATION,
+  operation: INC_OPERATION,
   receivedQty: sql`l.received_qty`,
   assignedTo: null,
   plannedMachine: null,
@@ -206,7 +204,7 @@ export const PGRN_PENDING_SF = sfSelect(P, {
   soVendor: CUSTOMER,
   soInternalNo: null,
   clientPoNo: PGRN_CLIENT_PO_NO,
-  operation: PGRN_OPERATION,
+  operation: PARTY_GRN_LABEL,
   receivedQty: sql`pgl.received_qty`,
   assignedTo: null,
   plannedMachine: null,
@@ -234,7 +232,7 @@ export const OP_COMPLETED_SF = sfSelect(C, {
   soVendor: null,
   soInternalNo: OP_SO_INTERNAL,
   clientPoNo: CLIENT_PO_NO_SQL,
-  operation: OP_OPERATION,
+  operation: sql`jo.operation`,
   calledDate: sql`jo.qc_call_date`,
   logNo: sql`ol.log_no`,
   remarks: OP_LOG_QC_REMARKS,
@@ -260,7 +258,7 @@ export const INC_COMPLETED_SF = sfSelect(C, {
   soVendor: VENDOR,
   soInternalNo: INC_SO_INTERNAL,
   clientPoNo: CLIENT_PO_NO_SQL,
-  operation: sql`('GRN ' || h.code)`,
+  operation: INC_OPERATION,
   calledDate: sql`h.grn_date`,
   logNo: null,
   remarks: sql`l.qc_remarks`,
@@ -286,7 +284,7 @@ export const PGRN_COMPLETED_SF = sfSelect(C, {
   soVendor: CUSTOMER,
   soInternalNo: null,
   clientPoNo: PGRN_CLIENT_PO_NO,
-  operation: PGRN_OPERATION,
+  operation: PARTY_GRN_LABEL,
   calledDate: sql`pg.grn_date`,
   logNo: null,
   // QC Remarks (0232) and the Deviation Reason are separate columns.

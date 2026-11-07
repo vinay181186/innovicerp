@@ -55,11 +55,17 @@ export interface DataTableColumn<T> {
   /** Column kind for the fit engine — see DataTableColumnKind. */
   kind?: DataTableColumnKind | undefined;
   /**
-   * One of the six locked lead columns (ui/data/lead-columns.tsx — build them
-   * with `leadColumns`, never by hand). The leading run of `lead` columns is
-   * fixed: it cannot be moved, hidden or crossed, and never drops off screen.
+   * One of the locked lead columns (ui/data/lead-columns.tsx — build them with
+   * `leadColumns`, never by hand). The leading run of `lead` columns is fixed:
+   * it cannot be moved, hidden or crossed, and never drops off screen.
    */
   lead?: boolean | undefined;
+  /**
+   * A `lead` column the user may still hide in Columns ▾ (Created On, Created
+   * Time — ADR-284). Shown by default, its place stays fixed, no pin. Set by
+   * `leadColumns` only.
+   */
+  leadHideable?: boolean | undefined;
   /** Off until the user ticks it in Columns ▾ (fit engine). Same as listing the
    *  id in the table's `defaultHidden`, but set once on the column itself —
    *  `auditColumns` uses it for Created Time (owner 2026-11-02). */

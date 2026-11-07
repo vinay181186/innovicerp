@@ -25,19 +25,26 @@ export function lockedList(locked: string | readonly string[] | undefined): read
 }
 
 /** Apply one operation. A locked column (column 0, or the lead block) can
- *  never move, hide or unpin, and no other column can move into the block. */
+ *  never move, pin or unpin, and no other column can move into the block. It
+ *  cannot hide either, unless it is listed in `hideable` (Created On / Created
+ *  Time, ADR-284): those take 'hide' and 'show' and nothing else. */
 export function applyLayoutOp(
   state: LayoutShape,
   op: LayoutOp,
   first: string | readonly string[] | undefined,
   defaults: LayoutShape,
+  hideable: readonly string[] = [],
 ): LayoutShape {
   if (op.type === 'reset') return defaults;
   const locked = lockedList(first);
-  if (locked.includes(op.id)) return state;
-  const floor = Math.max(1, locked.length);
+  const isLocked = locked.includes(op.id);
+  const canToggle = hideable.includes(op.id) && (op.type === 'hide' || op.type === 'show');
+  if (isLocked && !canToggle) return state;
   const shown = state.order.filter((k) => !state.hidden.includes(k));
   const hidden = state.order.filter((k) => state.hidden.includes(k));
+  // Only the locked columns on screen hold a place: a hidden one must not raise
+  // the floor, or the first movable column would be stuck.
+  const floor = Math.max(1, shown.filter((k) => locked.includes(k)).length);
   switch (op.type) {
     case 'move': {
       const i = shown.indexOf(op.id);
@@ -63,7 +70,9 @@ export function applyLayoutOp(
       // Back into its own slot (code order), never tacked on at the end.
       const rank = (k: string) => defaults.order.indexOf(k);
       const mine = rank(op.id);
-      let at = mine < 0 ? -1 : shown.findIndex((k, idx) => idx >= floor && rank(k) > mine);
+      // A locked column returns inside the block, so it searches from the start.
+      const from = isLocked ? 0 : floor;
+      let at = mine < 0 ? -1 : shown.findIndex((k, idx) => idx >= from && rank(k) > mine);
       if (at < 0) at = shown.length;
       return {
         ...state,

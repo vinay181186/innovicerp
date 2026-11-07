@@ -4,21 +4,21 @@
 // Party GRN reads as on Pending: Item Code = the finished part, Item Name = the
 // customer RM, SO No. = the JWSO, Vendor / Customer = the customer; QC Remarks = its qcRemarks and the
 // Deviation Reason (rejectReason, Party GRN only) has its own column.
-// Visible: the locked lead block (owner rule 2026-10-31), then Doc No. ·
-// Accepted · Deviated · QC
+// Visible: the locked lead block (owner rule 2026-10-31), then Doc No. · Doc Date ·
+// Operation · Stage · Accepted · Deviated · QC
 // Result · Attended · Inspected By · QC Remarks · Planned / Actual Machine ·
 // Client PO No. The rest starts hidden (COMPLETED_HIDDEN) in the ▸ detail row.
 
 import type { QcRegisterCompletedItem } from '@innovic/shared';
-import { opSrNo } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { QcReportLink } from '@/components/shared/qc-report-attach';
 import { fmtDate } from '@/lib/date';
 import { createdByColumn, leadColumns, type DataTableColumn } from '@/ui/data';
 import { factColumns } from './qc-call-fact-columns';
 import { remarkColumns } from './qc-call-remark-columns';
-import { incomingStageLabel, pgrnMaterialOf, pgrnOrderOf } from './qc-call-pending-columns';
-import { QC_STAGES, dayDiff, processStage } from './qc-sheet';
+import { operationColumn, stageColumn, qcPartyText } from './qc-call-operation';
+import { pgrnMaterialOf } from './qc-call-pending-columns';
+import { dayDiff } from './qc-sheet';
 
 /** One completed inspection, from either feed. The raw row is kept so the page
  *  can open the right document and the feed can be time-ordered. */
@@ -88,20 +88,10 @@ function inspectedByOf(vm: CompletedVM): string | null {
   if (vm.kind === 'pgrn') return vm.row.qcByName;
   return vm.kind === 'op' ? vm.row.inspector : vm.row.qcInspectedBy;
 }
-function calledOf(vm: CompletedVM): string | null {
-  return vm.kind === 'op' ? vm.row.qcCallDate : vm.row.grnDate;
-}
 function respDaysOf(vm: CompletedVM): number | null {
   if (vm.kind === 'inc') return vm.row.respDays;
   if (vm.kind === 'pgrn') return vm.row.qcDate ? dayDiff(vm.row.grnDate, vm.row.qcDate) : null;
   return vm.row.qcCallDate ? dayDiff(vm.row.qcCallDate, vm.row.logDate) : null;
-}
-/** The vendor (GRN line) or customer (Party GRN line) the call stands against;
- *  a job-card call has neither. */
-function vendorOf(vm: CompletedVM): string {
-  if (vm.kind === 'pgrn') return vm.row.customerName ?? '—';
-  if (vm.kind === 'op') return '—';
-  return vm.row.vendorName ?? '—';
 }
 /** Lead SO No.: the SO (job-card / GRN call), the JWSO (Party GRN call). */
 function soNoOf(vm: CompletedVM): string | null {
@@ -113,21 +103,6 @@ function soNoOf(vm: CompletedVM): string | null {
  *  a JWSO, which has none. */
 function soInternalNoOf(vm: CompletedVM): string | null {
   return vm.kind === 'pgrn' ? null : (vm.row.soInternalNo ?? null);
-}
-function operationOf(vm: CompletedVM): string {
-  if (vm.kind === 'pgrn') return `Party GRN · ${pgrnOrderOf(vm.row)}`;
-  return vm.kind === 'op'
-    ? `Op ${opSrNo(vm.row.opSeq)} ${vm.row.operation}`
-    : `GRN ${vm.row.grnNo}`;
-}
-/** ADR-251 — the Stage cell: process calls by stage, incoming ones by GRN Type
- *  ("Incoming · Direct Purchase"). */
-function stageLabelOf(vm: CompletedVM): string {
-  if (vm.kind === 'op') {
-    const k = processStage(vm.row.isLastOp);
-    return QC_STAGES.find((s) => s.key === k)?.label ?? '—';
-  }
-  return incomingStageLabel(vm.kind === 'pgrn' ? 'party_grn' : vm.grnType);
 }
 
 function qtyCell(value: number, red?: boolean): React.JSX.Element {
@@ -169,16 +144,7 @@ function respDisplay(vm: CompletedVM): string {
 }
 
 /** Columns that start hidden — the fit engine shows them in the ▸ detail row. */
-export const COMPLETED_HIDDEN = [
-  'stage',
-  'vendor',
-  'operation',
-  'called_date',
-  'response_days',
-  'log_no',
-  'deviation_reason',
-  'report',
-];
+export const COMPLETED_HIDDEN = ['vendor', 'response_days', 'log_no', 'deviation_reason', 'report'];
 
 export function completedColumns(firstRowNo: number): DataTableColumn<CompletedVM>[] {
   return [
@@ -264,6 +230,8 @@ export function completedColumns(firstRowNo: number): DataTableColumn<CompletedV
       render: (vm) => fmtDate(vm.docDate ?? null),
       filterValue: (vm) => vm.docDate ?? '',
     },
+    operationColumn<CompletedVM>(),
+    stageColumn<CompletedVM>(),
     {
       id: 'accepted',
       sortFilterField: 'accepted',
@@ -312,18 +280,6 @@ export function completedColumns(firstRowNo: number): DataTableColumn<CompletedV
     ...factColumns<CompletedVM>(),
     // ─── ▸ detail (hidden by default) ───────────────────────────────────────
     {
-      id: 'stage',
-      kind: 'badge',
-      header: 'Stage',
-      nowrap: true,
-      render: (vm) => (
-        <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 700, color: 'var(--text2)' }}>
-          {stageLabelOf(vm)}
-        </span>
-      ),
-      filterValue: (vm) => stageLabelOf(vm),
-    },
-    {
       // The party the call stands against when it is not a sales order: the
       // vendor of a GRN line, the customer of a Party GRN line. The order
       // number itself is the lead SO No. column (server field `soCode`);
@@ -333,26 +289,8 @@ export function completedColumns(firstRowNo: number): DataTableColumn<CompletedV
       header: 'Vendor / Customer',
       align: 'left',
       ellipsis: true,
-      render: (vm) => vendorOf(vm),
-      title: (vm) => vendorOf(vm),
-    },
-    {
-      id: 'operation',
-      sortFilterField: 'operation',
-      header: 'Operation',
-      align: 'left',
-      ellipsis: true,
-      render: (vm) => operationOf(vm),
-      title: (vm) => operationOf(vm),
-    },
-    {
-      id: 'called_date',
-      sortFilterField: 'calledDate',
-      kind: 'date',
-      header: 'Called Date',
-      className: 'mono',
-      nowrap: true,
-      render: (vm) => fmtDate(calledOf(vm)),
+      render: (vm) => qcPartyText(vm) ?? '—',
+      title: (vm) => qcPartyText(vm) ?? '—',
     },
     {
       id: 'response_days',

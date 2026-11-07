@@ -93,6 +93,11 @@ export function FitDataTable<T>(props: DataTableProps<T> & { tableKey: string })
     () => (columns[0]?.lead ? lockedLeadIds(columns, ids) : []),
     [columns, ids],
   );
+  // Created On / Created Time: in the block, but the user may hide them (ADR-284).
+  const hideableIds = useMemo(
+    () => leadIds.filter((id) => id !== firstId && byId.get(id)?.leadHideable),
+    [leadIds, firstId, byId],
+  );
   // Table-level defaultHidden plus any column that is off by default itself.
   const hiddenIds = useMemo(() => {
     const own = columns.flatMap((c, i) => (c.hiddenByDefault ? [ids[i] ?? `col-${i}`] : []));
@@ -102,6 +107,7 @@ export function FitDataTable<T>(props: DataTableProps<T> & { tableKey: string })
     pins: defaultPinned,
     hidden: hiddenIds,
     locked: leadIds,
+    hideable: hideableIds,
   });
   const { density, setDensity } = useTableDensity();
 
@@ -193,6 +199,7 @@ export function FitDataTable<T>(props: DataTableProps<T> & { tableKey: string })
     // unpinnable — the Columns menu treats it like the always-first column.
     control: kinds[id] === 'control',
     lead: leadIds.includes(id),
+    hideable: hideableIds.includes(id),
   }));
   const canPin = (id: string) => (fitInput ? canPinFn(fitInput, id) : true);
   // Pins the data first column just after the tick-box column (see the sticky
@@ -214,7 +221,7 @@ export function FitDataTable<T>(props: DataTableProps<T> & { tableKey: string })
         columns={pickerCols}
         layout={layout}
         firstId={firstId}
-        lockedCount={Math.max(1, leadIds.length)}
+        lockedCount={Math.max(1, leadIds.filter((k) => !layout.hidden.includes(k)).length)}
         dropped={dropped}
         warn={fit?.warn ?? false}
         canPin={canPin}
