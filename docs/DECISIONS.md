@@ -15614,10 +15614,12 @@ The saved Item + Drawing Rev record keeps the number from the first line that cr
 **Decisions:**
 - `GET /day-logs/person-history` takes `from` and `to`. `month` and `date` are gone; one date is the same date in both. A browser tab left open across the release answers an error until it is refreshed.
 - `dayLogHistoryRangeError` in `packages/shared` is the one rule, asked by the screen and the server. Longest range 92 days (`DAY_LOG_HISTORY_MAX_DAYS`): any 3 calendar months fit, and the PDF is page pictures, so a year would be too heavy.
-- The server sends `totals.avgDailyWorkMin` (Total Working Hours / Total Entry Days, to the minute, 0 with none) and `days[].editedEntries`. Not entered dates do not lower the average, by the owner's choice.
+- The server sends `totals.avgDailyWorkMin` (Total Working Hours / the dates with work, to the minute, 0 with none), `days[].editedEntries`, and each date's `breakMin` and `leaveMin`. Not entered dates do not lower the average, by the owner's choice. Total Entry Days is `filledDays`, so a date holding only an old Others or Break row counts there but not in the average; new entries are always Work.
 - Range PDF: header, one calendar per month touched (two side by side per row; one month takes the full width), Dates in this PDF, then one page per date. One date PDF: no calendar, no list.
 - The calendar and header are one row each of the one `table.doc`, as the Job Card header is, so the paginator still splits the document. History has its own copy of the style; the Job Card print is not touched.
 - The date header never carries `data-contd`: the paginator adds "contd." to the last text it finds, which would print "Saved Later 0 · contd.". A date running to a second page repeats the header without that word, and its Page field keeps the date's first page.
-- A row never splits. A full rewrite of a 2000 character Working On measured 957 px in the narrow column, taller than a page, so a timeline text over 2000 characters takes the full width on its own row.
+- A row never splits. A full rewrite of a 2000 character Working On measured 957 px in the narrow column, taller than a page, so a timeline text over 2000 characters takes the full width on its own row. Not covered: hundreds of very short lines in one text, which only a change to the shared paginator could split.
+- History has its own copy of the Job Card header style, against section 21.4, because the owner's rule of 2026-11-04 keeps the Job Card print separate from every other print.
+- A blank today gets no page. The pop-up reads once a date has settled for 400 ms, and an answer with nothing to print at the click shows the reason in the Preview, never an empty sheet.
 
 **Migration:** none. Nothing is written.

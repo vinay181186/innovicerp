@@ -36,7 +36,7 @@ export const lineAt = (d: DayLogDetail, from: string) =>
   d.entries.find((e) => e.fromTime === from)!;
 
 /** Change a stored line as an old row would have it. */
-const setLine = (id: string, set: SQL) =>
+export const setLine = (id: string, set: SQL) =>
   db.execute(sql`UPDATE public.daily_report_lines SET ${set} WHERE id = ${id}::uuid`);
 
 const dayReply = (date: string, body = 'Please enter this day') =>

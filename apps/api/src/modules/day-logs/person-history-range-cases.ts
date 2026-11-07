@@ -9,7 +9,20 @@ import type { AuthContext } from '../../db/with-user-context';
 import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
 import { asAccess } from '../../lib/test-access';
 import { errorHandlerPlugin } from '../../plugins/error-handler';
-import { C, JAN, MON, TODAY, TUE, WED, dayIn, history, lineAt, one } from './person-history-cases';
+import { sql } from 'drizzle-orm';
+import {
+  C,
+  JAN,
+  MON,
+  TODAY,
+  TUE,
+  WED,
+  dayIn,
+  history,
+  lineAt,
+  one,
+  setLine,
+} from './person-history-cases';
 import { dayLogsRoutes } from './routes';
 import * as service from './service';
 import { add, at, fx, owner, sameDeptAdmin, superAdmin, work } from './test-fixture';
@@ -86,6 +99,17 @@ export function personHistoryRangeCases(): void {
       // 185 / 3 = 61.67. Dividing by the working days as well would give far less.
       expect(totals).toMatchObject({ workMin: 185, filledDays: 3, avgDailyWorkMin: 62 });
       expect(totals.notEntered).toBeGreaterThan(0);
+    });
+
+    it('a date holding only an old Others or Break row does not lower avgDailyWorkMin; each date has its Break and Others', async () => {
+      await add(MON, C, { startTime: '09:00', stopTime: '10:00' });
+      const tue = await add(TUE, C, { startTime: '09:00', stopTime: '10:00' });
+      await setLine(lineAt(tue, '09:00').id, sql`kind = 'leave'`);
+
+      const h = await history(JAN);
+      expect(h.totals).toMatchObject({ workMin: 60, filledDays: 2, avgDailyWorkMin: 60 });
+      expect(dayIn(h, TUE)).toMatchObject({ workMin: 0, leaveMin: 60, breakMin: 0 });
+      expect(h.totals.leaveMin).toBe(60);
     });
 
     it('avgDailyWorkMin is 0 with no filled day', async () => {

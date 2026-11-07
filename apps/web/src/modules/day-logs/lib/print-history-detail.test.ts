@@ -1,7 +1,7 @@
 // Day Log History PDF (ADR-278): a text too tall for the narrow column.
 
 import { describe, expect, it } from 'vitest';
-import { build, day, entry, history } from './print-history-fixture';
+import { blank, build, day, entry, history } from './print-history-fixture';
 
 const rev = (entryRevNo: number, description: string, savedAt: string) => ({
   entryRevNo,
@@ -32,6 +32,31 @@ const edited = (before: string, after: string): string =>
       }),
     ]),
   );
+
+describe('Day Log History PDF: a date header', () => {
+  it('shows the date Break and Others only above 0', () => {
+    const none = build(history([day()]));
+    expect(none).not.toContain('>Break<');
+    expect(none).not.toContain('>Others<');
+    const old = build(history([day({ breakMin: 45, leaveMin: 60 })]));
+    expect(old).toContain('Break</span><span class="jv">0h 45m<');
+    expect(old).toContain('Others</span><span class="jv">1h 00m<');
+  });
+
+  it('gives a blank today no page, and a today with an entry one', () => {
+    const blankToday = { ...blank, date: '2026-10-23', state: 'today' as const };
+    const html = build(history([day(), day(blankToday)], { from: '2026-10-22', to: '2026-10-23' }));
+    expect(html).toContain('data-page-anchor="date-2026-10-22"');
+    expect(html).not.toContain('data-page-anchor="date-2026-10-23"');
+    const worked = build(
+      history([day(), day({ date: '2026-10-23', state: 'today' })], {
+        from: '2026-10-22',
+        to: '2026-10-23',
+      }),
+    );
+    expect(worked).toContain('data-page-anchor="date-2026-10-23"');
+  });
+});
 
 describe('Day Log History PDF: a long edit', () => {
   it('a full rewrite of a long text takes the full width on its own row', () => {

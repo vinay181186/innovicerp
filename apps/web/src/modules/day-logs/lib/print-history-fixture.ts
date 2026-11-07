@@ -44,6 +44,8 @@ export function day(over: Partial<DayLogHistoryDay> = {}): DayLogHistoryDay {
     firstStart: '09:00',
     lastStop: '11:00',
     workMin: 120,
+    breakMin: 0,
+    leaveMin: 0,
     entryCount: 1,
     editedEntries: 0,
     edits: 0,

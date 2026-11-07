@@ -73,6 +73,15 @@ const laterSave = (loggedAt: string, date: string): string | null => {
 const sum = <T>(rows: readonly T[], of: (r: T) => number): number =>
   rows.reduce((n, r) => n + of(r), 0);
 
+const minutesOf = (
+  entries: readonly { kind: DayLine['kind']; minutes: number }[],
+  kind: DayLine['kind'],
+): number =>
+  sum(
+    entries.filter((e) => e.kind === kind),
+    (e) => e.minutes,
+  );
+
 /** GET /day-logs/person-history */
 export async function getPersonHistory(
   query: DayLogHistoryQuery,
@@ -153,6 +162,8 @@ export async function getPersonHistory(
       firstStart: s.firstStart,
       lastStop: s.lastStop,
       workMin: s.workMin,
+      breakMin: minutesOf(entries, 'break'),
+      leaveMin: minutesOf(entries, 'leave'),
       entryCount: s.entryCount,
       editedEntries: entries.filter((e) => (e.entryRevNo ?? 0) > 0).length,
       edits: sum(entries, (e) => e.entryRevNo ?? 0),
@@ -163,15 +174,10 @@ export async function getPersonHistory(
     };
   });
 
-  const allEntries = days.flatMap((d) => d.entries);
-  const minutesOf = (kind: DayLine['kind']): number =>
-    sum(
-      allEntries.filter((e) => e.kind === kind),
-      (e) => e.minutes,
-    );
   const notEntered = days.filter((d) => d.state === 'not_entered').length;
   const workingDays = filledDays + notEntered;
   const workMin = sum(days, (d) => d.workMin);
+  const workedDays = days.filter((d) => d.workMin > 0).length;
   return {
     userId: person.id,
     userName: person.name,
@@ -188,9 +194,9 @@ export async function getPersonHistory(
       leaveDays: days.filter((d) => d.state === 'leave').length,
       entries: sum(days, (d) => d.entryCount),
       workMin,
-      avgDailyWorkMin: filledDays > 0 ? Math.round(workMin / filledDays) : 0,
-      breakMin: minutesOf('break'),
-      leaveMin: minutesOf('leave'),
+      avgDailyWorkMin: workedDays > 0 ? Math.round(workMin / workedDays) : 0,
+      breakMin: sum(days, (d) => d.breakMin),
+      leaveMin: sum(days, (d) => d.leaveMin),
       editedEntries: sum(days, (d) => d.editedEntries),
       edits: sum(days, (d) => d.edits),
       replies: sum(days, (d) => d.replies),

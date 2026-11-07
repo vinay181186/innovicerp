@@ -3,7 +3,7 @@
 // these only turn loaded data into chips, date labels and a ticking clock.
 
 import type { DayLogEntryRevision } from '@innovic/shared';
-import { fmt12, hhmmToMin } from '@innovic/shared';
+import { fmt12, hhmmToMin, sfPresetRange } from '@innovic/shared';
 import { fmtDate, fmtTime } from '@/lib/date';
 
 /** Calendar day ± n, "YYYY-MM-DD" (UTC arithmetic, so no DST/zone drift). */
@@ -16,13 +16,13 @@ export function shiftDate(date: string, n: number): string {
 /** History pop-up's quick buttons, each a From Date to To Date ending at the
  *  latest date it can (never past `today`). Strings and UTC, so no zone drift. */
 export function historyQuickRanges(today: string): { label: string; from: string; to: string }[] {
-  const monthStart = `${today.slice(0, 7)}-01`;
-  const lastMonthEnd = shiftDate(monthStart, -1);
+  const [monthStart] = sfPresetRange('thisMonth', today);
+  const [lastFrom, lastTo] = sfPresetRange('lastMonth', today);
   return [
     { label: 'Today', from: today, to: today },
-    { label: 'Last 15 Days', from: shiftDate(today, -14), to: today },
-    { label: 'This Month', from: monthStart, to: today },
-    { label: 'Last Month', from: `${lastMonthEnd.slice(0, 7)}-01`, to: lastMonthEnd },
+    { label: 'Last 15 days', from: shiftDate(today, -14), to: today },
+    { label: 'This month', from: monthStart, to: today },
+    { label: 'Last month', from: lastFrom, to: lastTo },
   ];
 }
 

@@ -260,6 +260,9 @@ export const dayLogHistoryDaySchema = z.object({
   lastStop: z.string().nullable(),
   /** The same reading as Team Day Logs (summaryOf). */
   workMin: z.number().int(),
+  /** Old rows only; never part of workMin. */
+  breakMin: z.number().int(),
+  leaveMin: z.number().int(),
   entryCount: z.number().int(),
   /** This date's entries with at least one edit. */
   editedEntries: z.number().int(),
@@ -297,7 +300,7 @@ export const dayLogHistorySchema = z.object({
     leaveDays: z.number().int(),
     entries: z.number().int(),
     workMin: z.number().int(),
-    /** workMin / filledDays to the minute; 0 with no filled day. */
+    /** workMin / the dates with work, to the minute; 0 with none. */
     avgDailyWorkMin: z.number().int(),
     breakMin: z.number().int(),
     leaveMin: z.number().int(),

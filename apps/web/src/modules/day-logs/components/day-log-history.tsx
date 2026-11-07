@@ -8,6 +8,7 @@ import { dayLogHistoryRangeError, fmtDuration } from '@innovic/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { apiFetch } from '@/lib/api';
+import { useDebounce } from '@/lib/use-debounce';
 import { fmtDate } from '@/lib/date';
 import { runPrint } from '@/lib/print/preview-host';
 import { companyKeys } from '@/modules/settings/api';
@@ -41,6 +42,8 @@ function Fact({ label, value }: { label: string; value: string | number }): Reac
   );
 }
 
+const READ_DELAY_MS = 400;
+
 function CountLine({ history }: { history: DayLogHistory }): React.JSX.Element {
   const t = history.totals;
   const day = history.days[0];
@@ -65,7 +68,7 @@ function CountLine({ history }: { history: DayLogHistory }): React.JSX.Element {
       ) : (
         <>
           <Fact label="Entries" value={t.entries} />
-          <Fact label="Working hours" value={fmtDuration(t.workMin)} />
+          <Fact label="Working Hours" value={fmtDuration(t.workMin)} />
         </>
       )}
     </div>
@@ -91,9 +94,15 @@ export function DayLogHistoryModal({
   const qc = useQueryClient();
 
   const pickError = dayLogHistoryRangeError(from, to, today);
+  // Typing a date passes through other valid dates: read only once it has settled.
+  const [readFrom = from, readTo = to] = useDebounce(`${from}|${to}`, READ_DELAY_MS).split('|');
+  const settled = readFrom === from && readTo === to;
   const q: DayLogHistoryQuery = { userId, from, to };
-  const history = useDayLogHistory(q, pickError === null);
-  const data = pickError === null ? history.data : undefined;
+  const history = useDayLogHistory(
+    { userId, from: readFrom, to: readTo },
+    pickError === null && settled,
+  );
+  const data = pickError === null && settled ? history.data : undefined;
   const reason = pickError ?? (data && !data.hasContent ? nothingReason(data) : null);
   const canGenerate = pickError === null && data?.hasContent === true && !history.isFetching;
 
@@ -110,6 +119,8 @@ export function DayLogHistoryModal({
             queryFn: () => apiFetch<Company>('/companies/me'),
           }),
         ]);
+        // Something may have gone since the screen last read; never an empty sheet.
+        if (!fresh.hasContent) throw new Error(nothingReason(fresh));
         return () => printDayLogHistory(fresh, company);
       },
     );

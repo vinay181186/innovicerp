@@ -93,9 +93,10 @@ export const dateAnchor = (date: string): string => `date-${date}`;
 
 export const editsOf = (e: DayLogHistoryEntry): number => e.entryRevNo ?? 0;
 
-/** The dates that get a page of their own. */
+/** The dates that get a page of their own. A blank today has nothing to show yet. */
 export function hasDetail(d: DayLogHistoryDay): boolean {
-  return !NO_DETAIL_STATES.includes(d.state) || d.entries.length > 0 || d.dayReplies.length > 0;
+  if (d.entries.length > 0 || d.dayReplies.length > 0) return true;
+  return !NO_DETAIL_STATES.includes(d.state) && d.state !== 'today';
 }
 
 export function statusText(d: DayLogHistoryDay): string {

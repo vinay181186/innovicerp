@@ -109,6 +109,8 @@ export function dateHeaderRow(
     field('Last Stop', has ? fmt12(d.lastStop) : ''),
     field('Entries', d.entryCount),
     field('Working Hours', fmtDuration(d.workMin), true),
+    ...(d.breakMin > 0 ? [field('Break', fmtDuration(d.breakMin))] : []),
+    ...(d.leaveMin > 0 ? [field('Others', fmtDuration(d.leaveMin))] : []),
   ]);
   const changes = column('Changes', '20mm', [
     field('Edited Entries', d.editedEntries),
