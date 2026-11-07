@@ -6,8 +6,8 @@
 //              ▶ Production Entry
 //   banners    short-closed Production Order stop (ADR-182) · rework / repair
 //              child note — both null on an ordinary card, both unchanged
-//   facts      picture frame (Photo | Drawing) + identity line + ClusterGrid:
-//              ORDER · QUANTITY · MATERIAL · NOTES (jc-fact-block.tsx)
+//   facts      picture frame (Photo | Drawing) + ClusterGrid:
+//              ITEM · ORDER · QUANTITY · MATERIAL · NOTES (jc-fact-block.tsx)
 //   tabs       ONE tab strip + ONE panel, "Current Op" at its right:
 //              Operations (JcOpsTable — the old op cards, Route / Operation
 //              Flow strip and Op Qty Flow panel in one table) · Documents &
@@ -334,6 +334,7 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
             jc={jc}
             productionOrder={productionOrder}
             check={opFlow.data?.jobCardCheck}
+            showJcNo={band.past}
             collapsed={collapsed}
             onShowDetails={() => setCollapsed(false)}
             onTop={band.toTop}

@@ -93,7 +93,7 @@ export function FitDataTable<T>(props: DataTableProps<T> & { tableKey: string })
     () => (columns[0]?.lead ? lockedLeadIds(columns, ids) : []),
     [columns, ids],
   );
-  // Created On / Created Time: in the block, but the user may hide them (ADR-285).
+  // Created On / Created Time: in the block, but the user may hide them (ADR-286).
   const hideableIds = useMemo(
     () => leadIds.filter((id) => id !== firstId && byId.get(id)?.leadHideable),
     [leadIds, firstId, byId],

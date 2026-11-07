@@ -4,7 +4,7 @@ import { operationStats } from './register-operations';
 
 const row = (opKey: string | null, spelling: string | null, n: number) => ({ opKey, spelling, n });
 
-describe('operationStats (ADR-285)', () => {
+describe('operationStats (ADR-286)', () => {
   it('dir and DIR are one choice, in the master spelling', () => {
     const out = operationStats(
       [row('dir', 'dir', 2), row('dir', 'DIR', 1)],

@@ -10,7 +10,7 @@
 // (QC_REGISTER_PENDING_SF_FIELDS / QC_REGISTER_COMPLETED_SF_FIELDS), so the web's
 // `sortFilterField` and this map cannot drift.
 //
-// ADR-285: Operation = the stored operation name on a job-card call, the GRN Type
+// ADR-286: Operation = the stored operation name on a job-card call, the GRN Type
 // label on a GRN or Party GRN line (QC_GRN_TYPE_LABELS), on both tables.
 
 import { type SQL, sql } from 'drizzle-orm';

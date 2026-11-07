@@ -5,7 +5,7 @@
 //
 // ADR-251: an 'incoming' mode for the Incoming QC screen (its own title, no Stage
 // / Mine / Full History, and a GRN Type filter of Direct Purchase + Party GRN).
-// ADR-285: the register filters on Stage (Incoming | In-Process) and on one
+// ADR-286: the register filters on Stage (Incoming | In-Process) and on one
 // "All Operations" select holding the operations and the four GRN Types.
 
 import { Icon } from '@/ui/core';

@@ -33,7 +33,7 @@ export interface QcCallData {
   stageStats: Record<QcStage, StageStat>;
   /** ADR-251: the Incoming stage split by GRN Type, for the GRN Type dropdown. */
   grnTypeStats: Record<QcGrnType, StageStat>;
-  /** ADR-285: the job-card calls by operation name, for the Operation dropdown. */
+  /** ADR-286: the job-card calls by operation name, for the Operation dropdown. */
   operationStats: QcOperationChoice[];
   pendingCount: number;
   completeCount: number;
@@ -85,7 +85,7 @@ function grnTypeStatsOf(
 export function useQcCallData(args: {
   view: QcView;
   stage: QcRegisterStageChoice | null;
-  /** ADR-285: only job-card calls of this operation; null = no narrowing. */
+  /** ADR-286: only job-card calls of this operation; null = no narrowing. */
   operation: string | null;
   /** Debounced search term ('' = none). */
   search: string;
@@ -125,7 +125,7 @@ export function useQcCallData(args: {
   const summary = data?.summary;
   const stageStats = useMemo(() => stageStatsOf(summary, view), [summary, view]);
   const grnTypeStats = useMemo(() => grnTypeStatsOf(summary, view), [summary, view]);
-  // `?? []`: an API build older than ADR-285 does not send it.
+  // `?? []`: an API build older than ADR-286 does not send it.
   const operationStats = useMemo(
     () =>
       (summary?.operations ?? []).map((o) => ({

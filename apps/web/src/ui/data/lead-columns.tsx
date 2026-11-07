@@ -18,7 +18,7 @@
 // block, and they never drop off the screen. The Drawing Rev is never its own
 // column — it rides in the Item Code cell.
 //
-// One exception (ADR-285, reverses "always shown" of 2026-11-03): Created On and
+// One exception (ADR-286, reverses "always shown" of 2026-11-03): Created On and
 // Created Time (`leadHideable: true`) are shown by default in their fixed place,
 // but each user may hide them in Columns ▾ (saved per user; Reset to default
 // brings them back). They still cannot be moved or pinned.
@@ -229,7 +229,7 @@ export function leadColumns<T>(spec: LeadColumnSpec<T>): DataTableColumn<T>[] {
     ),
   );
   // Created Time: fixed right after Created On (owner 2026-11-03), shown by
-  // default, the user may hide it (ADR-285). Same created_at as Created On, as
+  // default, the user may hide it (ADR-286). Same created_at as Created On, as
   // the India-time 12-hour clock.
   // Sorted / filtered through Created On (same created_at) — no ▾ of its own.
   out.push(

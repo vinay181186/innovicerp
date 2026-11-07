@@ -62,7 +62,7 @@ export interface DataTableColumn<T> {
   lead?: boolean | undefined;
   /**
    * A `lead` column the user may still hide in Columns ▾ (Created On, Created
-   * Time — ADR-285). Shown by default, its place stays fixed, no pin. Set by
+   * Time — ADR-286). Shown by default, its place stays fixed, no pin. Set by
    * `leadColumns` only.
    */
   leadHideable?: boolean | undefined;

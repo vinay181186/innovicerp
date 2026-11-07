@@ -39,7 +39,7 @@ export interface TableLayoutDefaults {
   hidden?: string[] | undefined;
   /** The locked lead block (ui/data/lead-columns.tsx), in code order. */
   locked?: string[] | undefined;
-  /** Locked columns the user may still hide (Created On / Created Time, ADR-285). */
+  /** Locked columns the user may still hide (Created On / Created Time, ADR-286). */
   hideable?: string[] | undefined;
 }
 
@@ -70,7 +70,7 @@ function isStatus(e: unknown, status: number): boolean {
 
 /** Fit any layout onto the columns the code has today. The locked block
  *  (column 0, or the locked lead block) always comes first in code order and is
- *  never hidden, except a `hideable` one the user hid (ADR-285), which keeps its
+ *  never hidden, except a `hideable` one the user hid (ADR-286), which keeps its
  *  slot in the order. A column the code added since the user saved lands at its
  *  CODE position (just after the column it follows), never at the end. */
 export function normalize(

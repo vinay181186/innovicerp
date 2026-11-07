@@ -47,7 +47,7 @@ export function grnTypeLabelSql(t: QcGrnType): SQL {
   return sql.raw(`'${QC_GRN_TYPE_LABELS[t].replace(/'/g, "''")}'`);
 }
 
-/** ADR-285: the register's Operation text of a GRN line = its GRN Type label. */
+/** ADR-286: the register's Operation text of a GRN line = its GRN Type label. */
 export const INC_OPERATION = sql`(CASE ${GRN_TYPE_SQL} ${sql.join(
   INC_GRN_TYPES.map((t) => sql`WHEN ${sql.raw(`'${t}'`)} THEN ${grnTypeLabelSql(t)}`),
   sql` `,
