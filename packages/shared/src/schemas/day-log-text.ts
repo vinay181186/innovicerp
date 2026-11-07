@@ -187,27 +187,46 @@ export const dayLogPendingCalendarSchema = z.object({
 export type DayLogPendingCalendar = z.infer<typeof dayLogPendingCalendarSchema>;
 
 // ── Day Log History (owner 2026-11-06, ADR-278) ───────────────────────────────
-// Super Admin: one person's whole month or one date, for the History PDF. The
+// Super Admin: one person's dates, From Date to To Date, for the History PDF. The
 // server decides every state and total; the screen and the PDF only draw them.
 
-export const dayLogHistoryQuerySchema = z
-  .object({
-    userId: z.string().uuid(),
-    /** YYYY-MM: the whole month, up to today. */
-    month: z
-      .string()
-      .regex(/^\d{4}-(0[1-9]|1[0-2])$/)
-      .optional(),
-    /** YYYY-MM-DD: one date. */
-    date: z
-      .string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/)
-      .optional(),
-  })
-  .refine((q) => Boolean(q.month) !== Boolean(q.date), {
-    message: 'Pick a month or a date',
-  });
+/** The longest History range in days: any 3 calendar months fit. */
+export const DAY_LOG_HISTORY_MAX_DAYS = 92;
+
+export const dayLogHistoryQuerySchema = z.object({
+  userId: z.string().uuid(),
+  /** YYYY-MM-DD: From Date. One date = the same date in both. */
+  from: dateStr,
+  /** YYYY-MM-DD: To Date. */
+  to: dateStr,
+});
 export type DayLogHistoryQuery = z.infer<typeof dayLogHistoryQuerySchema>;
+
+const DAY_MS = 86_400_000;
+
+/** Calendar days from one YYYY-MM-DD to another, both counted; NaN if not a date. */
+const daysInRange = (from: string, to: string): number =>
+  (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY_MS + 1;
+
+const isCalendarDate = (d: string): boolean => {
+  const t = Date.parse(`${d}T00:00:00Z`);
+  return !Number.isNaN(t) && new Date(t).toISOString().slice(0, 10) === d;
+};
+
+/** Why a History range cannot be read, else null. The screen and the server ask
+ *  this one rule. `today` is the server's IST date. */
+export function dayLogHistoryRangeError(from: string, to: string, today: string): string | null {
+  if (!isCalendarDate(from)) return 'Pick a real From Date.';
+  if (!isCalendarDate(to)) return 'Pick a real To Date.';
+  // A half-typed year (0002) is not a date the database can read.
+  if (from < '2000-01-01') return 'Pick a date from the year 2000 on.';
+  if (from > to) return 'From Date cannot be after To Date.';
+  if (to > today) return 'A date after today has no Day Log.';
+  if (daysInRange(from, to) > DAY_LOG_HISTORY_MAX_DAYS) {
+    return `Pick ${DAY_LOG_HISTORY_MAX_DAYS} days or less (about 3 months).`;
+  }
+  return null;
+}
 
 /** One date's state. `filled` wins over Sunday / holiday when entries exist.
  *  `not_counted`: a blank date the Not entered rule does not count (before the
@@ -242,6 +261,8 @@ export const dayLogHistoryDaySchema = z.object({
   /** The same reading as Team Day Logs (summaryOf). */
   workMin: z.number().int(),
   entryCount: z.number().int(),
+  /** This date's entries with at least one edit. */
+  editedEntries: z.number().int(),
   /** Entry Revs after the first save, on this date's entries. */
   edits: z.number().int(),
   /** Replies on entries + on the blank date. */
@@ -258,9 +279,9 @@ export const dayLogHistorySchema = z.object({
   userId: z.string().uuid(),
   userName: z.string(),
   deptLabel: z.string().nullable(),
-  /** The period asked for: exactly one is set. */
-  month: z.string().nullable(),
-  date: z.string().nullable(),
+  /** From Date and To Date as asked for; the same date for one date. */
+  from: z.string(),
+  to: z.string(),
   /** Server's IST today (the pickers' max). */
   today: z.string(),
   /** In date order, never past today. */
@@ -276,6 +297,8 @@ export const dayLogHistorySchema = z.object({
     leaveDays: z.number().int(),
     entries: z.number().int(),
     workMin: z.number().int(),
+    /** workMin / filledDays to the minute; 0 with no filled day. */
+    avgDailyWorkMin: z.number().int(),
     breakMin: z.number().int(),
     leaveMin: z.number().int(),
     editedEntries: z.number().int(),

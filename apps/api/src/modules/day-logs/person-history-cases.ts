@@ -2,62 +2,38 @@
 // (personHistoryCases()) so it shares that file's fixture. Runs in January 2040:
 // pendingCases() sets the company's day_log_pending_from to 02-Jan-2040 for the
 // whole file, and wipeOwnerDays clears 2040 before each test.
-import { type DayLogDetail, dayLogHistoryQuerySchema } from '@innovic/shared';
+import type { DayLogDetail } from '@innovic/shared';
 import { type SQL, sql } from 'drizzle-orm';
-import Fastify, { type FastifyInstance } from 'fastify';
 import { describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
 import type { AuthContext } from '../../db/with-user-context';
-import { AuthorizationError, NotFoundError, ValidationError } from '../../lib/errors';
-import { asAccess } from '../../lib/test-access';
-import { errorHandlerPlugin } from '../../plugins/error-handler';
-import { dayLogsRoutes } from './routes';
 import * as service from './service';
-
-async function appAs(user: AuthContext | null): Promise<FastifyInstance> {
-  const app = Fastify();
-  app.addHook('onRequest', async (req) => {
-    if (user) req.user = user;
-  });
-  await app.register(errorHandlerPlugin);
-  await app.register(dayLogsRoutes);
-  return app;
-}
-import {
-  add,
-  at,
-  fx,
-  owner,
-  ownerAsSuper,
-  sameDeptAdmin,
-  stagePending,
-  superAdmin,
-  teamRow,
-  work,
-} from './test-fixture';
+import { add, at, fx, ownerAsSuper, stagePending, superAdmin, teamRow, work } from './test-fixture';
 
 // 01-Jan-2040 is a Sunday; today is Tuesday 10-Jan, noon.
 const SUN1 = '2040-01-01';
-const MON = '2040-01-02';
-const TUE = '2040-01-03';
-const WED = '2040-01-04';
+export const MON = '2040-01-02';
+export const TUE = '2040-01-03';
+export const WED = '2040-01-04';
 const THU = '2040-01-05';
 const FRI = '2040-01-06';
 const SUN2 = '2040-01-08';
-const TODAY = '2040-01-10';
-const MONTH = '2040-01';
-const C = at(TODAY, '12:00');
+export const TODAY = '2040-01-10';
+export const C = at(TODAY, '12:00');
 
-const history = (
-  q: { month: string } | { date: string } = { month: MONTH },
-  as: AuthContext = superAdmin(),
-  clock = C,
-) => service.getPersonHistory({ userId: fx.ownerBase.id, ...q }, as, clock);
+type Range = { from: string; to: string };
+/** January so far: what a whole month reads up to today. */
+export const JAN: Range = { from: SUN1, to: TODAY };
+export const one = (date: string): Range => ({ from: date, to: date });
 
-const dayIn = (h: Awaited<ReturnType<typeof history>>, date: string) =>
+export const history = (q: Range = JAN, as: AuthContext = superAdmin(), clock = C) =>
+  service.getPersonHistory({ userId: fx.ownerBase.id, ...q }, as, clock);
+
+export const dayIn = (h: Awaited<ReturnType<typeof history>>, date: string) =>
   h.days.find((d) => d.date === date)!;
 
-const lineAt = (d: DayLogDetail, from: string) => d.entries.find((e) => e.fromTime === from)!;
+export const lineAt = (d: DayLogDetail, from: string) =>
+  d.entries.find((e) => e.fromTime === from)!;
 
 /** Change a stored line as an old row would have it. */
 const setLine = (id: string, set: SQL) =>
@@ -66,22 +42,16 @@ const setLine = (id: string, set: SQL) =>
 const dayReply = (date: string, body = 'Please enter this day') =>
   service.sendDayReply({ userId: fx.ownerBase.id, date, body }, superAdmin(), C);
 
-/** The seed admin's id as a plain viewer: no Full Access, no L5 anywhere. */
-const plainAdmin = (): AuthContext =>
-  asAccess(fx.admin, { departments: { [fx.otherDept]: 'L1', tasks: 'L1' } }, 'manager');
-const auditor = (): AuthContext =>
-  asAccess(fx.admin, { auditor: true, departments: { tasks: 'L1' } }, 'manager');
-
 export function personHistoryCases(): void {
   describe('Day Log — History figures', () => {
-    it('month totals are the sum of the days, and each day agrees with Team and the person page', async () => {
+    it('range totals are the sum of the days, and each day agrees with Team and the person page', async () => {
       await add(MON, C, { startTime: '14:00', stopTime: '14:30' });
       await add(MON, C, { startTime: '09:00', stopTime: '10:00' });
       await add(WED, C, { startTime: '09:00', stopTime: '11:00' });
       await add(TODAY, C, { startTime: '09:00', stopTime: '10:00' });
 
       const h = await history();
-      expect([h.userId, h.month, h.date, h.today]).toEqual([fx.ownerBase.id, MONTH, null, TODAY]);
+      expect([h.userId, h.from, h.to, h.today]).toEqual([fx.ownerBase.id, SUN1, TODAY, TODAY]);
       expect(h.days.map((d) => d.date)).toEqual(
         Array.from({ length: 10 }, (_, i) => `2040-01-${String(i + 1).padStart(2, '0')}`),
       );
@@ -105,6 +75,7 @@ export function personHistoryCases(): void {
         leaveDays: 0,
         entries: 4,
         workMin: 270,
+        avgDailyWorkMin: 90,
         breakMin: 0,
         leaveMin: 0,
         editedEntries: 0,
@@ -194,20 +165,20 @@ export function personHistoryCases(): void {
     });
 
     it('not entered from the start date; not counted before it or for a Super Admin', async () => {
-      const blank = await history({ date: TUE });
+      const blank = await history(one(TUE));
       expect(blank.days.map((d) => d.state)).toEqual(['not_entered']);
-      expect([blank.month, blank.date]).toEqual([null, TUE]);
+      expect([blank.from, blank.to]).toEqual([TUE, TUE]);
       expect(blank.totals).toMatchObject({ workingDays: 1, filledDays: 0, notEntered: 1 });
       expect(blank.hasContent).toBe(true);
 
       // A Friday before 02-Jan-2040.
-      const before = await history({ date: '2039-12-30' });
+      const before = await history(one('2039-12-30'));
       expect(before.days.map((d) => d.state)).toEqual(['not_counted']);
       expect(before.totals.workingDays).toBe(0);
       expect(before.hasContent).toBe(false);
 
       const keepsNone = await service.getPersonHistory(
-        { userId: fx.admin.id, date: TUE },
+        { userId: fx.admin.id, ...one(TUE) },
         superAdmin(),
         C,
       );
@@ -229,18 +200,18 @@ export function personHistoryCases(): void {
       // Blank before today, TUE now on leave: 02, 04, 05, 06, 07, 09.
       expect(h.totals).toMatchObject({ notEntered: 6, replies: 2, leaveDays: 1 });
       // Only the Leave date picked: its replies can still be printed.
-      expect((await history({ date: TUE })).hasContent).toBe(true);
+      expect((await history(one(TUE))).hasContent).toBe(true);
     });
 
     it('today: an open entry counts to now; a blank today is not filled', async () => {
-      const empty = await history({ date: TODAY });
+      const empty = await history(one(TODAY));
       expect(empty.days.map((d) => d.state)).toEqual(['today']);
       expect(empty.totals).toMatchObject({ filledDays: 0, workingDays: 0 });
       expect(empty.hasContent).toBe(false);
 
       const d = await add(TODAY, C, { startTime: '09:00', stopTime: '10:00' });
       await setLine(d.entries[0]!.id, sql`to_time = NULL`);
-      const h = await history({ date: TODAY });
+      const h = await history(one(TODAY));
       const day = h.days[0]!;
       expect([day.state, day.workMin, day.lastStop, day.entries[0]!.minutes]).toEqual([
         'today',
@@ -322,7 +293,7 @@ export function personHistoryCases(): void {
 
     it('own entries: revisions yes, replies none', async () => {
       await editedEntry();
-      const h = await history({ month: MONTH }, ownerAsSuper());
+      const h = await history(JAN, ownerAsSuper());
       const mon = dayIn(h, MON);
       expect(mon.entries[0]!.revisions.map((r) => r.entryRevNo)).toEqual([1, 0]);
       expect(mon.entries[0]!.replies).toEqual([]);
@@ -341,126 +312,6 @@ export function personHistoryCases(): void {
         order: null,
       });
       expect(entry.toTime).toBe('10:00');
-    });
-  });
-
-  describe('Day Log — History period and access', () => {
-    it('a future month or date is refused; an earlier month is whole', async () => {
-      for (const q of [{ month: '2040-02' }, { date: '2040-01-11' }]) {
-        await expect(history(q)).rejects.toBeInstanceOf(ValidationError);
-        await expect(history(q)).rejects.toThrow('has not come yet');
-      }
-      expect((await history({ month: '2039-12' })).days).toHaveLength(31);
-      // A leap February, from March.
-      expect(
-        (await history({ month: '2040-02' }, superAdmin(), at('2040-03-15', '12:00'))).days,
-      ).toHaveLength(29);
-    });
-
-    it('a date that is not on the calendar is refused', async () => {
-      for (const date of ['2026-02-31', '2039-13-01', '2039-04-31']) {
-        await expect(history({ date })).rejects.toBeInstanceOf(ValidationError);
-      }
-    });
-
-    it('an unknown person or one of another company is not found', async () => {
-      await expect(
-        service.getPersonHistory(
-          { userId: '00000000-0000-4000-8000-000000000000', month: MONTH },
-          superAdmin(),
-          C,
-        ),
-      ).rejects.toBeInstanceOf(NotFoundError);
-      const otherCompany = asAccess(
-        { ...fx.admin, companyId: '00000000-0000-4000-8000-000000000001' },
-        { fullAccess: true },
-        'manager',
-      );
-      await expect(history({ month: MONTH }, otherCompany)).rejects.toThrow('Day Log not found');
-    });
-
-    it('only a Super Admin: Auditor, Dept Admin, team mate and the person are refused', async () => {
-      const row = await service.addTeamMate(
-        { userId: fx.admin.id, mateId: fx.ownerBase.id },
-        superAdmin(),
-      );
-      try {
-        // The mate can see the day, but not its History.
-        await add(MON, C);
-        const seen = await service.getPersonDay(
-          { userId: fx.ownerBase.id, date: MON },
-          plainAdmin(),
-          C,
-        );
-        expect(seen.entries).toHaveLength(1);
-        await expect(history({ month: MONTH }, plainAdmin())).rejects.toThrow(
-          'Only a Super Admin can see Day Log History',
-        );
-      } finally {
-        await service.removeTeamMate(row.id, superAdmin());
-      }
-      for (const as of [auditor(), sameDeptAdmin(), owner()]) {
-        await expect(history({ month: MONTH }, as)).rejects.toBeInstanceOf(AuthorizationError);
-      }
-    });
-
-    it('canSeeHistory: true only for a Super Admin', async () => {
-      expect((await service.getAccess(superAdmin())).canSeeHistory).toBe(true);
-      expect((await service.getAccess(fx.admin)).canSeeHistory).toBe(true);
-      for (const as of [auditor(), sameDeptAdmin(), plainAdmin(), owner()]) {
-        expect((await service.getAccess(as)).canSeeHistory).toBe(false);
-      }
-    });
-  });
-}
-
-export function personHistoryRouteCases(): void {
-  describe('Day Log — History route and query (ADR-278)', () => {
-    const id = '00000000-0000-4000-8000-000000000000';
-    const url = (q: string): string => `/day-logs/person-history?${q}`;
-
-    it('the query takes exactly one of month and date', () => {
-      expect(dayLogHistoryQuerySchema.safeParse({ userId: id, month: '2026-10' }).success).toBe(
-        true,
-      );
-      expect(dayLogHistoryQuerySchema.safeParse({ userId: id, date: '2026-10-14' }).success).toBe(
-        true,
-      );
-      expect(dayLogHistoryQuerySchema.safeParse({ userId: id }).success).toBe(false);
-      expect(
-        dayLogHistoryQuerySchema.safeParse({ userId: id, month: '2026-10', date: '2026-10-14' })
-          .success,
-      ).toBe(false);
-      expect(dayLogHistoryQuerySchema.safeParse({ userId: id, month: '2026-13' }).success).toBe(
-        false,
-      );
-      expect(dayLogHistoryQuerySchema.safeParse({ userId: 'x', month: '2026-10' }).success).toBe(
-        false,
-      );
-    });
-
-    it('answers 200 for a Super Admin, 403 for a normal user, 401 with no login, 400 on a bad period', async () => {
-      const q = `userId=${fx.ownerBase.id}&month=2026-10`;
-      const asSuper = await appAs(fx.admin);
-      const ok = await asSuper.inject({ method: 'GET', url: url(q) });
-      expect(ok.statusCode).toBe(200);
-      expect(ok.json().userId).toBe(fx.ownerBase.id);
-      const both = await asSuper.inject({ method: 'GET', url: url(`${q}&date=2026-10-01`) });
-      expect(both.statusCode).toBe(400);
-      const halfTyped = await asSuper.inject({
-        method: 'GET',
-        url: url(`userId=${fx.ownerBase.id}&date=0002-10-14`),
-      });
-      expect(halfTyped.statusCode).toBe(400);
-      await asSuper.close();
-
-      const asOwner = await appAs(owner());
-      expect((await asOwner.inject({ method: 'GET', url: url(q) })).statusCode).toBe(403);
-      await asOwner.close();
-
-      const noLogin = await appAs(null);
-      expect((await noLogin.inject({ method: 'GET', url: url(q) })).statusCode).toBe(401);
-      await noLogin.close();
     });
   });
 }

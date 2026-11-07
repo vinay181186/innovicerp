@@ -1,25 +1,22 @@
-// Day Log History PDF (ADR-278): the Day detail part. One date: its band, its
-// entries in full, and under an entry what happened to it, oldest first.
+// Day Log History PDF (ADR-278): one date's part. Its header, its entries in full,
+// under an entry what happened to it, oldest first, and the sign row.
 
 import type { DayLogAdminReply, DayLogHistoryDay, DayLogHistoryEntry } from '@innovic/shared';
 import { fmt12, fmtDuration } from '@innovic/shared';
-import { fmtDate } from '@/lib/date';
 import { esc } from '@/lib/print/doc-print';
-import { fmtStamp, istStamp, orderText, spanChanges, stopText, weekdayName } from './format';
+import { fmtStamp, istStamp, orderText, spanChanges, stopText } from './format';
 import {
   cellsOn,
-  dateAnchor,
   editsOf,
-  entryAnchor,
   GRID,
   headRow,
   SPAN,
-  statusText,
   td,
   seenText,
   timesText,
   tr,
 } from './print-history-cells';
+import { dateHeaderRow, type HistoryPrintContext } from './print-history-header';
 import { wordDiff } from './word-diff';
 
 interface TimelineRow {
@@ -47,6 +44,9 @@ const changeLines = (
   b: Parameters<typeof spanChanges>[0],
   a: Parameters<typeof spanChanges>[1],
 ): string[] => spanChanges(b, a).map((c) => `${c.label} ${c.from} → ${c.to}`);
+
+/** Characters that still fit a page in the Working On column (limit 2000 per text). */
+const LONG_TEXT = 2000;
 
 const NOT_CHANGED = '<i>Working On not changed</i>';
 
@@ -111,18 +111,24 @@ function timelineRows(items: readonly TimelineRow[], dayKey: string, key: string
     cellsOn(spans, ['', 'Action', 'Date and time', 'What changed', 'Working On at that time']),
     { cls: 'tlh', keepNext: true, headFor: key, carry: dayKey },
   );
-  const rows = items.map((t) =>
-    tr(
-      cellsOn(spans, [
-        '',
-        esc(t.action),
-        esc(fmtStamp(t.at)),
-        t.changed.map(esc).join('<br>'),
-        [t.text, 'wo'],
-      ]),
-      { cls: 'tl', carry: `${dayKey} ${key}` },
-    ),
-  );
+  const carry = `${dayKey} ${key}`;
+  const rows = items.map((t) => {
+    // A row never splits, and a full rewrite in the narrow column is taller than
+    // a page and would be cut off: its text takes the full width on its own row.
+    const long = t.text.replace(/<[^>]+>/g, '').length > LONG_TEXT;
+    const facts = cellsOn(spans, [
+      '',
+      esc(t.action),
+      esc(fmtStamp(t.at)),
+      t.changed.map(esc).join('<br>'),
+      long ? 'Below' : [t.text, 'wo'],
+    ]);
+    const first = spans[0];
+    return long
+      ? tr(facts, { cls: 'tl', keepNext: true, carry }) +
+          tr(td(first, '') + td(GRID - first, t.text, 'wo'), { cls: 'tl', carry })
+      : tr(facts, { cls: 'tl', carry });
+  });
   return head + rows.join('');
 }
 
@@ -147,64 +153,49 @@ function entryRows(e: DayLogHistoryEntry, dayKey: string, person: string): strin
       cls: e.kind === 'work' ? undefined : 'nw',
       keepNext: timeline.length > 0,
       carry: dayKey,
-      anchor: entryAnchor(e.id),
     },
   );
   return row + (timeline.length ? timelineRows(timeline, dayKey, `tl-${e.id}`) : '');
 }
 
-export function dayRows(d: DayLogHistoryDay, person: string): string {
+export function dayRows(d: DayLogHistoryDay, ctx: HistoryPrintContext): string {
   const dayKey = `day-${d.date}`;
   const replies = d.dayReplies.length
     ? timelineRows(
-        d.dayReplies.map((r) => replyRow(r, person)),
+        d.dayReplies.map((r) => replyRow(r, ctx.person)),
         dayKey,
         `tl-${d.date}`,
       )
     : '';
-  const title = `${fmtDate(d.date)} · ${weekdayName(d.date)}`;
-  const opts = {
-    cls: 'band',
-    headFor: dayKey,
-    contd: true,
-    anchor: dateAnchor(d.date),
-  };
-  if (d.entries.length === 0) {
-    const band = tr(td(GRID, esc(`${title} · ${statusText(d)}`)), {
-      ...opts,
-      keepNext: replies !== '',
-    });
-    return band + replies;
-  }
-  const word = d.state === 'filled' ? '' : ` · ${statusText(d)}`;
-  const facts = [
-    `First start ${fmt12(d.firstStart)}`,
-    `Last stop ${fmt12(d.lastStop)}`,
-    `Working hours ${fmtDuration(d.workMin)}`,
-    `Entries ${d.entryCount}`,
-    ...(d.edits > 0 ? [`Edits ${d.edits}`] : []),
-    ...(d.replies > 0 ? [`Replies ${d.replies}`] : []),
-  ].join(' · ');
-  const band = tr(td(GRID, `${esc(title + word)}<div class="facts">${esc(facts)}</div>`), {
-    ...opts,
-    keepNext: true,
-  });
-  const head = tr(
-    headRow(
-      SPAN.day,
-      [
-        'Sr No',
-        'Start Time',
-        'Stop Time',
-        'Working Hours',
-        'SO / JWSO',
-        'Log Date',
-        'Log Time',
-        'Working On',
-      ],
-      ['Working Hours'],
-    ),
-    { cls: 'hd', keepNext: true, headFor: dayKey },
+  const head =
+    d.entries.length === 0
+      ? ''
+      : tr(
+          headRow(
+            SPAN.day,
+            [
+              'Sr No',
+              'Start Time',
+              'Stop Time',
+              'Working Hours',
+              'SO / JWSO',
+              'Log Date',
+              'Log Time',
+              'Working On',
+            ],
+            ['Working Hours'],
+          ),
+          { cls: 'hd', keepNext: true, headFor: dayKey },
+        );
+  const sign = tr(
+    td(GRID / 2, `Logged by: ${esc(ctx.person)}`) + td(GRID / 2, 'Seen by (Department Admin):'),
+    { cls: 'sign', carry: dayKey },
   );
-  return band + head + d.entries.map((e) => entryRows(e, dayKey, person)).join('') + replies;
+  return (
+    dateHeaderRow(d, dayKey, ctx) +
+    head +
+    d.entries.map((e) => entryRows(e, dayKey, ctx.person)).join('') +
+    replies +
+    sign
+  );
 }

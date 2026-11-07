@@ -11,15 +11,15 @@ export const GRID = 48;
 
 /** Colspans, each list adding up to GRID. */
 export const SPAN = {
-  kvKey: 7,
-  kvValue: 5,
-  points: [6, 6, 4, 29, 3],
   list: [6, 6, 5, 5, 5, 4, 3, 4, 7, 3],
   day: [2, 4, 4, 4, 7, 5, 4, 18],
   /** Blank · Action · Date and time · What changed · Working On at that time;
    *  the same edges as `day`. */
   timeline: [2, 8, 11, 9, 18],
 } as const;
+
+/** The range's first-page header repeats on any page that part runs to. */
+export const FIRST_KEY = 'first';
 
 export const NO_DETAIL_STATES: readonly DayLogHistoryDayState[] = [
   'not_counted',
@@ -33,7 +33,6 @@ interface RowOpts {
   pageBreak?: boolean | undefined;
   headFor?: string | undefined;
   carry?: string | undefined;
-  contd?: boolean | undefined;
   anchor?: string | undefined;
 }
 
@@ -44,7 +43,6 @@ export function tr(cells: string, o: RowOpts = {}): string {
     o.pageBreak ? 'data-page-break' : '',
     o.headFor ? `data-head-for="${esc(o.headFor)}"` : '',
     o.carry ? `data-carry-head="${esc(o.carry)}"` : '',
-    o.contd ? 'data-contd' : '',
     o.anchor ? `data-page-anchor="${esc(o.anchor)}"` : '',
   ].filter(Boolean);
   return `<tr${attrs.length ? ` ${attrs.join(' ')}` : ''}>${cells}</tr>`;
@@ -75,11 +73,12 @@ export function headRow(
   );
 }
 
-export const sectionRow = (title: string, pageBreak = false, note = ''): string =>
-  tr(td(GRID, `${esc(title)}${note ? ` <span class="sect-note">${note}</span>` : ''}`), {
-    cls: 'sect',
+/** A titled row on the range's first part; it moves with the row after it. */
+export const sectionRow = (title: string, note = '', cls = ''): string =>
+  tr(td(GRID, `${esc(title)}${note ? ` <span class="sect-note">${esc(note)}</span>` : ''}`), {
+    cls: cls ? `sect ${cls}` : 'sect',
     keepNext: true,
-    pageBreak,
+    carry: FIRST_KEY,
   });
 
 export const pageRef = (key: string): string => `<span data-page-ref="${esc(key)}">—</span>`;
@@ -91,11 +90,10 @@ export const seenText = (r: { seenAt: string | null }, person: string): string =
 export const timesText = (n: number): string => `${n} time${n === 1 ? '' : 's'}`;
 
 export const dateAnchor = (date: string): string => `date-${date}`;
-export const entryAnchor = (id: string): string => `entry-${id}`;
 
 export const editsOf = (e: DayLogHistoryEntry): number => e.entryRevNo ?? 0;
 
-/** The dates that get a Day detail part. */
+/** The dates that get a page of their own. */
 export function hasDetail(d: DayLogHistoryDay): boolean {
   return !NO_DETAIL_STATES.includes(d.state) || d.entries.length > 0 || d.dayReplies.length > 0;
 }

@@ -70,9 +70,9 @@ export const dayLogKeys = {
   /** Pending Entries tab (Super Admin). */
   pending: () => [...dayLogKeys.all, 'pending'] as const,
   pendingCalendar: (userId: string) => [...dayLogKeys.all, 'pending-calendar', userId] as const,
-  /** Team Day Logs › ⋯ History: one person's month or date (ADR-278). */
+  /** Team Day Logs › ⋯ History: one person, From Date to To Date (ADR-278). */
   history: (q: DayLogHistoryQuery) =>
-    [...dayLogKeys.all, 'person-history', q.userId, q.month ?? '', q.date ?? ''] as const,
+    [...dayLogKeys.all, 'person-history', q.userId, q.from, q.to] as const,
 };
 
 /** The team table reads again every minute (Working / Idle move on). */
@@ -219,7 +219,7 @@ export function dayLogHistoryQuery(q: DayLogHistoryQuery) {
     queryKey: dayLogKeys.history(q),
     queryFn: () =>
       apiFetch<DayLogHistory>(
-        `/day-logs/person-history${qs({ userId: q.userId, month: q.month, date: q.date })}`,
+        `/day-logs/person-history${qs({ userId: q.userId, from: q.from, to: q.to })}`,
       ),
     staleTime: 0,
   };

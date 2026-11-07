@@ -13,7 +13,20 @@ export function shiftDate(date: string, n: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+/** History pop-up's quick buttons, each a From Date to To Date ending at the
+ *  latest date it can (never past `today`). Strings and UTC, so no zone drift. */
+export function historyQuickRanges(today: string): { label: string; from: string; to: string }[] {
+  const monthStart = `${today.slice(0, 7)}-01`;
+  const lastMonthEnd = shiftDate(monthStart, -1);
+  return [
+    { label: 'Today', from: today, to: today },
+    { label: 'Last 15 Days', from: shiftDate(today, -14), to: today },
+    { label: 'This Month', from: monthStart, to: today },
+    { label: 'Last Month', from: `${lastMonthEnd.slice(0, 7)}-01`, to: lastMonthEnd },
+  ];
+}
+
+export const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 export function weekday(date: string): string {
   return WEEKDAYS[new Date(`${date}T00:00:00Z`).getUTCDay()] ?? '';

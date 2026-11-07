@@ -1,4 +1,4 @@
-// Day Log — History (ADR-278, owner 2026-11-06): one person's month or one date,
+// Day Log — History (ADR-278, owner 2026-11-06): one person's From-To range,
 // Super Admin only, for the History screen and PDF. ONE statement carries the
 // access, person, lines, day headers, holidays, revisions and replies, so an edit
 // in flight cannot give a half-old PDF; no per-day or per-line query. Nothing is
@@ -11,6 +11,7 @@ import {
   type DayLogHistoryDayState,
   type DayLogHistoryQuery,
   type DayLogStatus,
+  dayLogHistoryRangeError,
   isWorkingDay,
 } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
@@ -38,29 +39,15 @@ import {
 } from './entry-facts';
 import { isNotEntered } from './pending';
 import { toAdminReply } from './replies';
-import { type DayLogClock, dmy, istClock } from './rules';
+import { type DayLogClock, istClock } from './rules';
 import { requireCompany } from './writes';
 
-const isCalendarDate = (d: string): boolean => {
-  const t = Date.parse(`${d}T00:00:00Z`);
-  return !Number.isNaN(t) && new Date(t).toISOString().slice(0, 10) === d;
-};
-
-/** The period's dates in order, never past today. */
+/** Every date from From Date to To Date, in order. The screen asks the same rule. */
 function datesOf(q: DayLogHistoryQuery, today: string): string[] {
-  // A half-typed year (0002) is not a date the database can read.
-  if ((q.date ?? q.month!) < '2000') throw new ValidationError('Pick a date from the year 2000 on');
-  if (q.date) {
-    if (!isCalendarDate(q.date)) throw new ValidationError(`${q.date} is not a real date`);
-    if (q.date > today) throw new ValidationError(`${dmy(q.date)} has not come yet`);
-    return [q.date];
-  }
-  const month = q.month!;
-  if (month > today.slice(0, 7)) {
-    throw new ValidationError(`${month.slice(5)}-${month.slice(0, 4)} has not come yet`);
-  }
+  const refused = dayLogHistoryRangeError(q.from, q.to, today);
+  if (refused) throw new ValidationError(refused);
   const dates: string[] = [];
-  for (let d = `${month}-01`; d <= today && d.startsWith(month); d = addDays(d, 1)) dates.push(d);
+  for (let d = q.from; d <= q.to; d = addDays(d, 1)) dates.push(d);
   return dates;
 }
 
@@ -94,8 +81,7 @@ export async function getPersonHistory(
 ): Promise<DayLogHistory> {
   const companyId = requireCompany(user);
   const dates = datesOf(query, clock.today);
-  const from = dates[0]!;
-  const to = dates[dates.length - 1]!;
+  const { from, to } = query;
   const period = sql`dr.company_id = ${companyId}::uuid AND dr.user_id = ${query.userId}::uuid
     AND dr.report_date BETWEEN ${from}::date AND ${to}::date AND dr.deleted_at IS NULL`;
   const lineIds = sql`ARRAY(
@@ -168,6 +154,7 @@ export async function getPersonHistory(
       lastStop: s.lastStop,
       workMin: s.workMin,
       entryCount: s.entryCount,
+      editedEntries: entries.filter((e) => (e.entryRevNo ?? 0) > 0).length,
       edits: sum(entries, (e) => e.entryRevNo ?? 0),
       replies: sum(entries, (e) => e.replies.length) + dayReplies.length,
       savedLater: entries.filter((e) => e.savedLaterOn).length,
@@ -184,12 +171,13 @@ export async function getPersonHistory(
     );
   const notEntered = days.filter((d) => d.state === 'not_entered').length;
   const workingDays = filledDays + notEntered;
+  const workMin = sum(days, (d) => d.workMin);
   return {
     userId: person.id,
     userName: person.name,
     deptLabel: deptLabelOf(person.mainDept),
-    month: query.month ?? null,
-    date: query.date ?? null,
+    from,
+    to,
     today: clock.today,
     days,
     totals: {
@@ -199,10 +187,11 @@ export async function getPersonHistory(
       offDays: days.filter((d) => d.state === 'sunday' || d.state === 'holiday').length,
       leaveDays: days.filter((d) => d.state === 'leave').length,
       entries: sum(days, (d) => d.entryCount),
-      workMin: sum(days, (d) => d.workMin),
+      workMin,
+      avgDailyWorkMin: filledDays > 0 ? Math.round(workMin / filledDays) : 0,
       breakMin: minutesOf('break'),
       leaveMin: minutesOf('leave'),
-      editedEntries: allEntries.filter((e) => (e.entryRevNo ?? 0) > 0).length,
+      editedEntries: sum(days, (d) => d.editedEntries),
       edits: sum(days, (d) => d.edits),
       replies: sum(days, (d) => d.replies),
       savedLater: sum(days, (d) => d.savedLater),
