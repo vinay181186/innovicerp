@@ -14,9 +14,13 @@
 // run in the browser: the whole day is loaded. A Super Admin also gets, on a row,
 // a ✎ n badge and, when opened, the Working On box with one line per edit
 // (Option I). A blank day: "Not entered" and the replies on the day itself.
+// Print (ADR-288, owner 2026-11-07), read again at the click: a Super Admin gets the
+// History PDF of this date; anyone else the same layout without the edit history,
+// which only a Super Admin may read.
 
 import type { DayLogPersonDay, DayLogPersonDayEntry } from '@innovic/shared';
 import { fmt12, fmtDuration } from '@innovic/shared';
+import { type QueryClient, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { matchesSearchTerm, normalizeSearchTerm } from '@/components/shared/search-match';
 import { DataTable, type DataTableColumn } from '@/ui/data';
@@ -24,12 +28,14 @@ import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Banner } from '@/ui/feedback';
 import { Input } from '@/ui/forms';
 import { PageState } from '@/ui/layout';
-import { usePersonDay } from '../api';
+import { runPrint } from '@/lib/print/preview-host';
+import { dayLogDayQuery, usePersonDay } from '../api';
 import { personDayTable, fileSlug } from '../lib/export';
 import { fmtDate } from '@/lib/date';
 import { errText, firstName, istStamp } from '../lib/format';
-import { printPersonDay } from '../lib/print-day-log';
+import { dayLogFileName, printDayLog } from '../lib/print-my-day-log';
 import { sortEntries } from '../lib/sheet';
+import { printHistoryAtClick, readCompany } from './day-log-history';
 import { EntrySearch } from './entry-search';
 import { logColumns } from './log-columns';
 import { DayReplies, PersonReplies } from './person-replies';
@@ -165,6 +171,25 @@ function PersonExpand({ r, p }: { r: Entry; p: DayLogPersonDay }): React.JSX.Ele
   );
 }
 
+function printPerson(qc: QueryClient, p: DayLogPersonDay): boolean {
+  const { userId, userName, date } = p;
+  if (p.isSuperAdmin) {
+    printHistoryAtClick(qc, { userId, from: date, to: date }, userName);
+    return true;
+  }
+  const name = dayLogFileName(userName, date);
+  void runPrint('preview', { title: name, fileName: name }, async () => {
+    const [day, company] = await Promise.all([
+      qc.fetchQuery({ ...dayLogDayQuery({ userId, date }), staleTime: 0 }),
+      readCompany(qc),
+    ]);
+    // Something may have gone since the screen last read; never an empty sheet.
+    if (day.entries.length === 0) throw new Error(`Nothing logged on ${fmtDate(date)}.`);
+    return () => printDayLog(day, company);
+  });
+  return true;
+}
+
 export function PersonDayLogs({
   userId,
   date,
@@ -180,6 +205,7 @@ export function PersonDayLogs({
   backLabel: string;
   onBack: () => void;
 }): React.JSX.Element {
+  const qc = useQueryClient();
   const query = usePersonDay(userId, date);
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
   const [term, setTerm] = useState('');
@@ -245,7 +271,7 @@ export function PersonDayLogs({
           table={personDayTable(p)}
           fileName={`day-log-${fileSlug(p.userName)}-${p.date}`}
           sheetName="Day Log"
-          onPrint={(company) => printPersonDay(p, company)}
+          onPrint={() => printPerson(qc, p)}
         />
       </div>
       {query.isError ? <Banner tone="error">{errText(query.error)}</Banner> : null}

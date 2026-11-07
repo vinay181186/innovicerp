@@ -10,6 +10,7 @@ import {
   editsOf,
   GRID,
   headRow,
+  kindPrefix,
   SPAN,
   td,
   seenText,
@@ -136,7 +137,6 @@ function entryRows(e: DayLogHistoryEntry, dayKey: string, person: string): strin
   const logged = istStamp(e.loggedAt);
   const edits = editsOf(e);
   const flag = edits > 0 ? `<b>[Edited ${timesText(edits)}]</b> ` : '';
-  const others = e.kind === 'leave' ? 'Others · ' : e.kind === 'break' ? 'Break · ' : '';
   const timeline = edits > 0 || e.replies.length > 0 || e.pending ? timelineOf(e, person) : [];
   const row = tr(
     cellsOn(SPAN.day, [
@@ -147,7 +147,7 @@ function entryRows(e: DayLogHistoryEntry, dayKey: string, person: string): strin
       [esc(orderText(e.order)), 'b'],
       esc(logged.date),
       esc(logged.time),
-      [`${flag}${others}${esc(e.description)}`, 'wo'],
+      [`${flag}${kindPrefix(e.kind)}${esc(e.description)}`, 'wo'],
     ]),
     {
       cls: e.kind === 'work' ? undefined : 'nw',

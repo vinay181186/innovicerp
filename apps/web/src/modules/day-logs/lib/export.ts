@@ -44,9 +44,6 @@ export const DAY_CENTRE_KEYS = [
   'start_time',
   'stop_time',
   'work_hours',
-  'entry_rev_no',
-  'entry_rev_date',
-  'entry_rev_time',
 ] as const;
 
 export function dayTable(day: DayLogDetail): ExportTable {

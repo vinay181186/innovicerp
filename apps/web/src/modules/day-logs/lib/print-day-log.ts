@@ -1,31 +1,13 @@
-// Day Log print — on the Innovic Sheet (sheet-print.ts: letterhead, Times,
-// one table, no box-in-box): header rows User / Department / Date, the
-// entry table (the screen's columns: Sr No · Log Date · Log Time · Start Time ·
-// Stop Time · Working Hours · SO / JWSO · Working On — full text), a totals row from the server's
-// summary, and the "Logged by" / "Seen by (Department Admin)" line. The
-// person page (its own columns, Entry Rev ones for a Super Admin only), the Team
-// Day Logs table and Pending Entries print the same way.
+// Day Log list prints on the Innovic Sheet (sheet-print.ts: letterhead, Times, one
+// table, no box-in-box): the Team Day Logs table and Pending Entries. One person's
+// day prints in print-my-day-log.ts or print-day-log-history.ts (ADR-288).
 
-import type {
-  Company,
-  DayLogDetail,
-  DayLogPendingResponse,
-  DayLogPersonDay,
-  TeamDayLogResponse,
-} from '@innovic/shared';
-import { fmt12, fmtDuration } from '@innovic/shared';
+import type { Company, DayLogPendingResponse, TeamDayLogResponse } from '@innovic/shared';
 import { fmtDate, fmtDateTime } from '@/lib/date';
 import { buildDocCompany } from '@/lib/print/company';
 import { esc } from '@/lib/print/doc-print';
 import { openSheetHtmlWindow, sheetLetterheadHtml } from '@/lib/print/sheet-print';
-import {
-  DAY_CENTRE_KEYS,
-  dayTable,
-  pendingTable,
-  personDayTable,
-  teamTable,
-  type ExportTable,
-} from './export';
+import { pendingTable, teamTable, type ExportTable } from './export';
 
 const DL_STYLE = `
   table.dl{width:100%;border-collapse:collapse;font-size:10pt}
@@ -34,7 +16,6 @@ const DL_STYLE = `
   table.dl td.k{font-weight:700;width:18%}
   table.dl .ctr{text-align:center;font-variant-numeric:tabular-nums}
   table.dl .b{font-weight:700}
-  table.dl td.sign{height:18mm;vertical-align:bottom}
   p.dl-foot{margin:2mm 0 0;font-size:8.5pt}
 `;
 
@@ -62,67 +43,6 @@ function wrap(company: Company | null | undefined, title: string, rows: string):
     <table class="dl"><tbody>${rows}</tbody></table>
     <p class="dl-foot">Printed ${esc(fmtDateTime(new Date().toISOString()))} · Innovic ERP</p>
   </article>`;
-}
-
-/** User / Department / Date header rows over a table `span` columns wide. */
-function headerRows(rows: string[][], span: number): string {
-  const half = Math.floor(span / 2);
-  return rows
-    .map(
-      ([a, b, c, d]) =>
-        `<tr><td class="k">${esc(a ?? '')}</td><td colspan="${half - 1}">${esc(b ?? '')}</td><td class="k">${esc(c ?? '')}</td><td colspan="${span - half - 1}">${esc(d ?? '')}</td></tr>`,
-    )
-    .join('');
-}
-
-function signRow(userName: string, span: number): string {
-  const half = Math.floor(span / 2);
-  return `<tr><td colspan="${half}" class="sign">Logged by: ${esc(userName)}</td>
-    <td colspan="${span - half}" class="sign">Seen by (Department Admin):</td></tr>`;
-}
-
-export function printDayLog(day: DayLogDetail, company: Company | null | undefined): boolean {
-  const s = day.summary;
-  const t = dayTable(day);
-  const span = t.columns.length;
-  const header = headerRows(
-    [
-      ['User', day.userName, 'Date', fmtDate(day.date)],
-      ['Department', day.deptLabel ?? '—', 'Entries', String(s.entryCount)],
-    ],
-    span,
-  );
-  const table = grid(t, DAY_CENTRE_KEYS, ['order_code']);
-  // The label spans every column before Working Hours.
-  const hoursAt = t.columns.findIndex((c) => c.key === 'work_hours');
-  const totals = `<tr><td colspan="${hoursAt}" class="b">Working hours</td>
-    <td class="ctr b">${esc(fmtDuration(s.workMin))}</td>
-    <td colspan="${span - hoursAt - 1}">First start ${esc(fmt12(s.firstStart))} · Last stop ${esc(fmt12(s.lastStop))}</td></tr>`;
-  const html = wrap(company, 'Day Log', header + table + totals + signRow(day.userName, span));
-  const name = `Day Log ${day.userName} ${day.date}`;
-  return openSheetHtmlWindow(name, html, DL_STYLE, undefined, name);
-}
-
-export function printPersonDay(p: DayLogPersonDay, company: Company | null | undefined): boolean {
-  const t = personDayTable(p);
-  const span = t.columns.length;
-  // No day total here: person-day entries carry no kind, and only work rows
-  // count as Working hours (summarizeDay) — a sum of every row would disagree
-  // with My Day Log and Team Day Logs (code review, ADR-255).
-  const header = headerRows(
-    [
-      ['User', p.userName, 'Date', fmtDate(p.date)],
-      ['Department', p.deptLabel ?? '—', 'Entries', String(p.entries.length)],
-    ],
-    span,
-  );
-  const html = wrap(
-    company,
-    'Day Log',
-    header + grid(t, DAY_CENTRE_KEYS, ['order_code']) + signRow(p.userName, span),
-  );
-  const name = `Day Log ${p.userName} ${p.date}`;
-  return openSheetHtmlWindow(name, html, DL_STYLE, undefined, name);
 }
 
 export function printPendingEntries(

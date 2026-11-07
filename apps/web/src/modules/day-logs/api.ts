@@ -96,10 +96,17 @@ export function useDayLogAccess(enabled = true) {
   });
 }
 
-export function useDayLog(q: DayQuery, enabled = true) {
-  return useQuery<DayLogDetail>({
+/** One day; a print read at the click uses this too. */
+export function dayLogDayQuery(q: DayQuery) {
+  return {
     queryKey: dayLogKeys.day(q),
     queryFn: () => apiFetch<DayLogDetail>(`/day-logs/day${qs({ date: q.date, userId: q.userId })}`),
+  };
+}
+
+export function useDayLog(q: DayQuery, enabled = true) {
+  return useQuery<DayLogDetail>({
+    ...dayLogDayQuery(q),
     refetchOnWindowFocus: true,
     placeholderData: keepPreviousData,
     enabled,

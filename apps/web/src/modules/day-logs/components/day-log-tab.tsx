@@ -21,7 +21,7 @@ import { PageState } from '@/ui/layout';
 import { useDayLog, useDayLogAccess, type DayQuery } from '../api';
 import { dayTable, fileSlug } from '../lib/export';
 import { errText, liveNowMin } from '../lib/format';
-import { printDayLog } from '../lib/print-day-log';
+import { printDayLog } from '../lib/print-my-day-log';
 import { DayDirtyReport } from './day-dirty';
 import { DaySummaryStrip } from './day-header';
 import { DaySheet } from './day-sheet';
