@@ -164,7 +164,7 @@ describe('job-cards service', () => {
     }
   });
 
-  it('Drawing No. reads the order line first, only on the same item and Rev (ADR-284)', async () => {
+  it('Drawing No. reads the order line first, only on the same item and Rev (ADR-285)', async () => {
     const list = await service.listJobCards({ limit: 100, offset: 0 }, admin);
     const card = list.items.find((c) => c.sourceLink?.type === 'so' && c.itemRevisionId);
     if (card?.sourceLink?.type !== 'so' || !card.itemRevisionId) {

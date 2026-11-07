@@ -15553,7 +15553,7 @@ CLAUDE.md §25 is the rule for sessions.
 - Risks: the check reads patterns, so it cannot judge a screen. `release/release-prod.sh` is
   outside git, so its two added lines are undone by hand.
 
-## ADR-284: Job Card detail: labelled Item row, JC No. once, Drawing No. from the order line first
+## ADR-285: Job Card detail: labelled Item row, JC No. once, Drawing No. from the order line first
 
 **Date:** 2026-11-07
 **Status:** Accepted (owner-approved mockup)
