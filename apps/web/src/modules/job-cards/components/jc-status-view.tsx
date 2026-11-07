@@ -54,6 +54,7 @@ import { JcFactStrip } from './jc-fact-strip';
 import { JcHistoryTable } from './jc-history-table';
 import { JcOpsTable } from './jc-ops-table';
 import { RecoveryBanner } from './jc-recovery-banner';
+import { JcRouteCardNotice } from './jc-route-card-notice';
 import { JcStatusBadge } from './jc-status-badge';
 import { JcStoppedBanner } from './jc-stopped-banner';
 import { JcCurrentOpMeta } from './jc-view-summary';
@@ -302,6 +303,7 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
           </div>
         ) : null}
         <RecoveryBanner jc={jc} />
+        <JcRouteCardNotice jc={jc} canSendRight={canWrite && !frozen} />
         {!collapsed && (
           <JcFactBlock
             jc={jc}

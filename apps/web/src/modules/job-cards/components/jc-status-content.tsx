@@ -67,6 +67,7 @@ import {
 import { jcOpsDigest } from '../lib/jc-ops-digest';
 import { endsWithPinnedFinalQc, isPinnedFinalQcOp } from '../lib/jc-pinned-final-qc';
 import { useJcDrawing } from '../lib/jc-drawing';
+import { toastRouteCardWriteBack } from '../lib/jc-route-card-note';
 import { JcEditFactBlock, jcEditQtyRule } from './jc-edit-fact-block';
 import type { JcOpEditValues } from './jc-edit-op-row';
 import { JcEditOpsTable } from './jc-edit-ops-table';
@@ -866,7 +867,12 @@ function JcStatusEditForm({
       }
       void queryClient.invalidateQueries({ queryKey: jobCardsKeys.detail(id) });
       void queryClient.invalidateQueries({ queryKey: opEntryKeys.all });
-      toast.ok(`Job Card ${jc.code} saved`);
+      // ADR-282 — say what the save did to the Route Card, as New Job Card does.
+      if (saved.routeCardWriteBack) {
+        toastRouteCardWriteBack(toast, saved.routeCardWriteBack, `Job Card ${jc.code} saved.`);
+      } else {
+        toast.ok(`Job Card ${jc.code} saved`);
+      }
       exit.leave(goBack);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not save Job Card. Try again.');

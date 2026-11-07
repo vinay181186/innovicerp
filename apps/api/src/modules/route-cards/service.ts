@@ -94,6 +94,7 @@ import {
   ConflictError,
   NotFoundError,
   ValidationError,
+  isNothingToApprove,
 } from '../../lib/errors';
 import { lockDocSeries } from '../../lib/doc-series-lock';
 import { isRouteCardUsable } from '../../lib/route-card-usable';
@@ -109,7 +110,7 @@ import {
   routingNotSentReason,
   stagingFromSourceDoc,
 } from './route-card-edit-common';
-import { opInputFromRow } from './route-card-edit-lookups';
+import { loadCodes, opInputFromRow } from './route-card-edit-lookups';
 // T2 — push a new card's raw material onto that item's blank, waiting plans.
 // The lookup is shared with the plan side's T1 default (ONE route-card query).
 import {
@@ -1412,32 +1413,42 @@ export async function updateRouteCardOrStage(
   // Imported dynamically: the engine's registry imports the Route Card entry,
   // which imports this file — a static import would be a cycle.
   const { requestDocumentEdit } = await import('../document-edits/service');
-  const request = await requestDocumentEdit(
-    'RouteCard',
-    id,
-    input,
-    input.expectedUpdatedAt,
-    user,
-    async (tx, target) => {
-      // §20.3 — approving a move to item B would lock B's plans AFTER the
-      // route_cards row (the reverse of executePlan), so a re-point is not
-      // staged at all.
-      if (input.itemId !== target.doc['itemId']) {
-        throw new ConflictError(
-          'An approved Route Card cannot be moved to another item while Document Edit ' +
-            'Approval is on — create a Route Card for that item instead.',
+  let request: Awaited<ReturnType<typeof requestDocumentEdit>>;
+  try {
+    request = await requestDocumentEdit(
+      'RouteCard',
+      id,
+      input,
+      input.expectedUpdatedAt,
+      user,
+      async (tx, target) => {
+        // §20.3 — approving a move to item B would lock B's plans AFTER the
+        // route_cards row (the reverse of executePlan), so a re-point is not
+        // staged at all.
+        if (input.itemId !== target.doc['itemId']) {
+          throw new ConflictError(
+            'An approved Route Card cannot be moved to another item while Document Edit ' +
+              'Approval is on — create a Route Card for that item instead.',
+          );
+        }
+        // The writer's own checks, under the locks loadForDiff took.
+        await validateRouteCardEdit(
+          tx,
+          companyId,
+          id,
+          target.doc as unknown as typeof routeCards.$inferSelect,
+          input,
         );
-      }
-      // The writer's own checks, under the locks loadForDiff took.
-      await validateRouteCardEdit(
-        tx,
-        companyId,
-        id,
-        target.doc as unknown as typeof routeCards.$inferSelect,
-        input,
-      );
-    },
-  );
+      },
+    );
+  } catch (e) {
+    // ADR-282 — a save that changes nothing answers normally with the gate on too:
+    // nothing to approve, nothing written, no Rev.
+    if (isNothingToApprove(e)) {
+      return getRouteCard(id, user);
+    }
+    throw e;
+  }
   if (request) return { staged: true, request };
   return updateRouteCard(id, input, user);
 }
@@ -1556,7 +1567,7 @@ export async function updateRouteCardTx(
   if (nextPlanType !== header.planType) {
     headerChanges.push(`Plan type ${header.planType} → ${nextPlanType}`);
   }
-  if ((input.notes ?? null) !== (header.notes ?? null)) {
+  if (blankToNull(input.notes) !== blankToNull(header.notes)) {
     headerChanges.push(`Notes ${noteVal(header.notes)} → ${noteVal(input.notes)}`);
   }
 
@@ -1626,6 +1637,64 @@ export async function updateRouteCardTx(
   const oldStatus = header.approvalStatus as RouteCardApprovalStatus;
   const submit = input.submitForApproval !== false && canSubmitRouteCardStatus(oldStatus);
   const isDraft = oldStatus === 'draft';
+
+  // ADR-282 — a save that changes nothing is no revision: no Rev bump, no
+  // revision row, no History row. Remarks and Lead Days count here. A Draft keeps
+  // its own ADR-277 rule below. A Returned card saved for approval still goes for
+  // approval: the status moves, the Rev does not.
+  if (!isDraft && headerChanges.length === 0 && revChanges.length === 0) {
+    const storedOps = await tx
+      .select()
+      .from(routeCardOps)
+      .where(
+        and(
+          eq(routeCardOps.routeCardId, id),
+          eq(routeCardOps.companyId, companyId),
+          isNull(routeCardOps.deletedAt),
+        ),
+      )
+      .orderBy(asc(routeCardOps.opSeq));
+    const unchanged = await routingsMatch(
+      tx,
+      companyId,
+      storedOps.map(opInputFromRow),
+      input.ops,
+      'explicit',
+    );
+    if (unchanged) {
+      if (submit) {
+        const flipped = await tx
+          .update(routeCards)
+          .set({
+            approvalStatus: 'pending',
+            rejectedBy: null,
+            rejectedAt: null,
+            rejectionReason: null,
+            updatedBy: user.id,
+            updatedAt: new Date(),
+          })
+          .where(and(eq(routeCards.id, id), eq(routeCards.approvalStatus, oldStatus)))
+          .returning({ id: routeCards.id });
+        assertRowUpdated(flipped, `Route Card ${header.code}`);
+        await logRouteCardRevision(
+          tx,
+          companyId,
+          user,
+          { id, code: header.code },
+          [rcStatusChange(oldStatus, 'pending')],
+          [],
+          `${rcDetailString(header.code, item.code)} — sent for approval again`,
+        );
+      }
+      // The T2 backfill below still runs: a plan waiting on this card still fills.
+      if (isRouteCardUsable(header.approvalStatus)) {
+        const rcRm = await readRouteCardRawMaterial(tx, companyId, input.itemId, itemRevisionId);
+        if (rcRm) await backfillPlansFromRouteCard(tx, companyId, input.itemId, rcRm, user);
+      }
+      return loadRouteCardDetail(tx, id, companyId);
+    }
+  }
+
   const headerUpdated = await tx
     .update(routeCards)
     .set({
@@ -1647,9 +1716,9 @@ export async function updateRouteCardTx(
 
   // Ops swap + revision bump + snapshot live in ONE place
   // (replaceRouteCardOps) shared with the auto-save path below.
-  // skipWhenUnchanged is false here: an explicit user save always
-  // records a revision, exactly as it did before this refactor — except a
-  // Draft, which stays at its number (ADR-277).
+  // skipWhenUnchanged is false here: an unchanged save has already returned above
+  // (ADR-282), so this one records a revision — except a Draft, which stays at
+  // its number (ADR-277).
   const replaced = await replaceRouteCardOps(
     tx,
     {
@@ -1666,8 +1735,8 @@ export async function updateRouteCardTx(
     user,
   );
 
-  // Any save but a Draft's records a revision, so the header row carries at
-  // least the Route Card Rev bump. A Draft's logs only what changed.
+  // Any save that reaches here, but a Draft's, records a revision, so the header
+  // row carries at least the Route Card Rev bump. A Draft's logs only what changed.
   const revisionNote = input.revisionNote?.trim();
   await logRouteCardRevision(
     tx,
@@ -1959,67 +2028,132 @@ function buildOpsSnapshot(
 // (explicit user edit) and by saveRouteCardForItem (auto-save from a Job
 // Card / plan execute).
 
-/** A route card op reduced to the fields that are actually persisted, so two
- *  op lists can be compared for equality without caring about row ids. */
-interface ComparableOp {
-  opSeq: number;
-  machineId: string | null;
-  machineCodeText: string | null;
-  operation: string;
-  opType: string;
-  cycleTimeMin: number;
-  program: string | null;
-  toolNo: string | null;
-  toolDetails: string | null;
-  // remarks is deliberately NOT compared. This equality test is what lets the
-  // auto-save path (Job Card / plan execute) leave an unchanged routing's op
-  // rows alone. Those source documents carry no remarks, so comparing it would
-  // make every auto-save look like a change and blank the note out.
-  qcRequired: boolean;
-  ospVendorId: string | null;
-  ospVendorCodeText: string | null;
-  ospLeadDays: number | null;
+/** ADR-282 — how two routings are read against each other.
+ *  'source': a Job Card / plan against the card. Such a document cannot carry
+ *    remarks or Lead Days (carried first, see carryStepDetails), a machine on
+ *    anything but an in-house step, a vendor on anything but an OSP step, or a
+ *    QC step's own settings, so none of those can count as a change; and the
+ *    system's terminal QC op is taken off both sides.
+ *  'explicit': the Route Card form against the card. Every field counts. */
+type RoutingCompare = 'source' | 'explicit';
+
+const blankToNull = (v: string | null | undefined): string | null => {
+  const t = (v ?? '').trim();
+  return t === '' ? null : t;
+};
+
+/** Same machine / vendor: both ids given → the ids decide; otherwise the codes,
+ *  an id resolved to its code first. An old row holding id + 'cnc-1' and a form
+ *  holding the id alone are therefore one machine. */
+function sameIdentity(
+  aId: string | null | undefined,
+  aText: string | null | undefined,
+  bId: string | null | undefined,
+  bText: string | null | undefined,
+  codes: Map<string, string>,
+): boolean {
+  if (aId && bId) return aId === bId;
+  const code = (id: string | null | undefined, text: string | null | undefined): string | null =>
+    blankToNull((id ? codes.get(id) : null) ?? text)?.toUpperCase() ?? null;
+  return code(aId, aText) === code(bId, bText);
 }
 
-function comparableFromInput(o: CreateRouteCardOpInput, index: number): ComparableOp {
-  return {
-    opSeq: index + 1,
-    machineId: o.machineId ?? null,
-    machineCodeText: o.machineCodeText ?? null,
-    operation: o.operation,
-    opType: o.opType,
-    cycleTimeMin: Number(o.cycleTimeMin ?? 0),
-    program: o.program ?? null,
-    toolNo: o.toolNo ?? null,
-    toolDetails: o.toolDetails ?? null,
-    qcRequired: Boolean(o.qcRequired),
-    ospVendorId: o.ospVendorId ?? null,
-    ospVendorCodeText: o.ospVendorCodeText ?? null,
-    ospLeadDays: o.ospLeadDays ?? null,
-  };
+/** A QC step's machine text 'QC' is a placeholder, not a machine. */
+function machineTextOf(o: CreateRouteCardOpInput): string | null {
+  const text = blankToNull(o.machineCodeText);
+  return o.opType === 'qc' && text?.toUpperCase() === 'QC' ? null : text;
 }
 
-function comparableFromRow(r: typeof routeCardOps.$inferSelect): ComparableOp {
-  return {
-    opSeq: r.opSeq,
-    machineId: r.machineId ?? null,
-    machineCodeText: r.machineCodeText ?? null,
-    operation: r.operation,
-    opType: r.opType,
-    cycleTimeMin: Number(r.cycleTimeMin),
-    program: r.program ?? null,
-    toolNo: r.toolNo ?? null,
-    toolDetails: r.toolDetails ?? null,
-    qcRequired: Boolean(r.qcRequired),
-    ospVendorId: r.ospVendorId ?? null,
-    ospVendorCodeText: r.ospVendorCodeText ?? null,
-    ospLeadDays: r.ospLeadDays ?? null,
-  };
+function sameStep(
+  a: CreateRouteCardOpInput,
+  b: CreateRouteCardOpInput,
+  codes: { machines: Map<string, string>; vendors: Map<string, string> },
+  mode: RoutingCompare,
+): boolean {
+  const explicit = mode === 'explicit';
+  const cycle = (o: CreateRouteCardOpInput): number =>
+    Math.round(Number(o.cycleTimeMin ?? 0) * 100) / 100; // two decimals, as stored
+  return (
+    a.operation.trim() === b.operation.trim() &&
+    a.opType === b.opType &&
+    cycle(a) === cycle(b) &&
+    blankToNull(a.program) === blankToNull(b.program) &&
+    blankToNull(a.toolNo) === blankToNull(b.toolNo) &&
+    blankToNull(a.toolDetails) === blankToNull(b.toolDetails) &&
+    (a.ospLeadDays ?? null) === (b.ospLeadDays ?? null) &&
+    (!explicit && a.opType === 'qc' ? true : Boolean(a.qcRequired) === Boolean(b.qcRequired)) &&
+    (!explicit && a.opType !== 'process'
+      ? true
+      : sameIdentity(
+          a.machineId,
+          machineTextOf(a),
+          b.machineId,
+          machineTextOf(b),
+          codes.machines,
+        )) &&
+    (!explicit && a.opType !== 'outsource'
+      ? true
+      : sameIdentity(
+          a.ospVendorId,
+          a.ospVendorCodeText,
+          b.ospVendorId,
+          b.ospVendorCodeText,
+          codes.vendors,
+        )) &&
+    (!explicit || blankToNull(a.remarks) === blankToNull(b.remarks))
+  );
 }
 
-function opsAreIdentical(current: ComparableOp[], next: ComparableOp[]): boolean {
-  if (current.length !== next.length) return false;
-  return JSON.stringify(current) === JSON.stringify(next);
+/** ADR-282 — THE routing comparison; every caller comes through here. Steps are
+ *  compared by position, never by stored op_seq (an old card may have gaps). */
+async function routingsMatch(
+  tx: DbTransaction,
+  companyId: string,
+  stored: CreateRouteCardOpInput[],
+  next: CreateRouteCardOpInput[],
+  mode: RoutingCompare,
+): Promise<boolean> {
+  const current = mode === 'source' ? stripAutoTerminalQcOp(stored) : stored;
+  const proposed = mode === 'source' ? stripAutoTerminalQcOp(next) : next;
+  if (current.length !== proposed.length) return false;
+  const all = [...current, ...proposed];
+  const codes = await loadCodes(tx, companyId, {
+    items: [],
+    machines: all.map((o) => o.machineId),
+    vendors: all.map((o) => o.ospVendorId),
+  });
+  return current.every((o, i) => sameStep(o, proposed[i]!, codes, mode));
+}
+
+/** ADR-282 — does this source document's routing read the same as the card? The
+ *  Job Card detail's live check. Nothing to compare (no steps left once the
+ *  system's QC op is off) counts as the same. */
+export async function routingMatchesCard(
+  tx: DbTransaction,
+  companyId: string,
+  routeCardId: string,
+  ops: CreateRouteCardOpInput[],
+): Promise<boolean> {
+  const clean = stripAutoTerminalQcOp(ops);
+  if (clean.length === 0) return true;
+  const stored = await tx
+    .select()
+    .from(routeCardOps)
+    .where(
+      and(
+        eq(routeCardOps.routeCardId, routeCardId),
+        eq(routeCardOps.companyId, companyId),
+        isNull(routeCardOps.deletedAt),
+      ),
+    )
+    .orderBy(asc(routeCardOps.opSeq));
+  return routingsMatch(
+    tx,
+    companyId,
+    stored.map(opInputFromRow),
+    carryStepDetails(clean, stored),
+    'source',
+  );
 }
 
 interface ReplaceRouteCardOpsParams {
@@ -2044,42 +2178,65 @@ interface ReplaceRouteCardOpsParams {
    *  bump, no snapshot row. Used by the auto-save path so re-running the same
    *  routing does not inflate the revision history. */
   skipWhenUnchanged?: boolean;
-  /** Carry each step's existing `remarks` across the delete + re-insert when the
-   *  incoming op supplies none. Set by the AUTO-SAVE only — see the comment at
-   *  the use site for why an explicit card edit must not do this. */
+  /** Carry each step's existing Remarks and Lead Days across the delete +
+   *  re-insert when the incoming op supplies none (carryStepDetails). Set by the
+   *  AUTO-SAVE only — see the comment at the use site for why an explicit card
+   *  edit must not do this. */
   preserveRemarks?: boolean;
   /** ADR-277 — a Draft: no bump and no new revision row; the current revision's
    *  ops snapshot is overwritten with the new ops. */
   keepRevision?: boolean;
 }
 
-/** The auto-save's remark carry-over (0195) — see the note at its use in
- *  replaceRouteCardOps. One place, also used to build a staged routing change
- *  (ADR-249 Step B2) so the approver sees the remarks that would be kept. */
-function carryRemarksForward(
+/** ADR-282 — what a Job Card / plan cannot carry but the card holds: each step's
+ *  Remarks and Lead Days, kept on the incoming step when it has none. ONE helper
+ *  for the staged and the direct path. A step is the same step when:
+ *    - exactly one stored and one incoming step share its name + kind, wherever
+ *      it now sits (a line added above it does not lose its Remarks);
+ *    - with duplicates of that name + kind: same position + name + kind + machine
+ *      + vendor, so one DEBURR never takes another DEBURR's note;
+ *    - otherwise nothing is carried. */
+function carryStepDetails(
   ops: CreateRouteCardOpInput[],
-  prevOps: ReadonlyArray<{
-    opSeq: number;
+  stored: ReadonlyArray<{
     operation: string;
     opType: string;
     machineId: string | null;
     ospVendorId: string | null;
     remarks: string | null;
+    ospLeadDays: number | null;
   }>,
 ): CreateRouteCardOpInput[] {
+  const key = (o: { operation: string; opType: string }): string =>
+    `${o.operation.trim().toUpperCase()}|${o.opType}`;
+  const countOf = (list: ReadonlyArray<{ operation: string; opType: string }>) => {
+    const counts = new Map<string, number>();
+    for (const o of list) counts.set(key(o), (counts.get(key(o)) ?? 0) + 1);
+    return counts;
+  };
+  const storedCount = countOf(stored);
+  const incomingCount = countOf(ops);
   return ops.map((o, i) => {
-    if (o.remarks != null && o.remarks.trim() !== '') return o;
-    const prev = prevOps[i];
-    if (!prev?.remarks) return o;
-    if (prev.opSeq !== i + 1) return o;
-    if (prev.operation.trim().toUpperCase() !== o.operation.trim().toUpperCase()) return o;
-    if (prev.opType !== o.opType) return o;
-    // Name + position + kind are NOT enough: two DEBURR steps on different
-    // benches are routine, and deleting the first would move the first
-    // one's remark onto the second. The machine / vendor must match too.
-    if (prev.machineId !== (o.machineId ?? null)) return o;
-    if (prev.ospVendorId !== (o.ospVendorId ?? null)) return o;
-    return { ...o, remarks: prev.remarks };
+    const needRemarks = blankToNull(o.remarks) === null;
+    const needLeadDays = o.ospLeadDays == null;
+    if (!needRemarks && !needLeadDays) return o;
+    const k = key(o);
+    const atSamePlace = stored[i];
+    const prev =
+      storedCount.get(k) === 1 && incomingCount.get(k) === 1
+        ? stored.find((s) => key(s) === k)
+        : atSamePlace &&
+            key(atSamePlace) === k &&
+            atSamePlace.machineId === (o.machineId ?? null) &&
+            atSamePlace.ospVendorId === (o.ospVendorId ?? null)
+          ? atSamePlace
+          : undefined;
+    if (!prev) return o;
+    return {
+      ...o,
+      ...(needRemarks && prev.remarks ? { remarks: prev.remarks } : {}),
+      ...(needLeadDays && prev.ospLeadDays != null ? { ospLeadDays: prev.ospLeadDays } : {}),
+    };
   });
 }
 
@@ -2107,31 +2264,34 @@ async function replaceRouteCardOps(
     )
     .orderBy(asc(routeCardOps.opSeq));
 
-  if (
-    p.skipWhenUnchanged === true &&
-    opsAreIdentical(
-      oldOpRows.map((r) => comparableFromRow(r.op)),
-      p.ops.map(comparableFromInput),
-    )
-  ) {
-    return { newRevision: p.currentRevision, changed: false, oldOps: [], newOps: [] };
-  }
-
   // An auto-save from a Job Card / plan rewrites the routing from a document
-  // that carries no remarks of its own (they deliberately never reach jc_ops),
-  // so a plain re-insert would blank a note the planner typed here. Carry the
-  // old remark forward — but only onto a step that is unmistakably the same one:
-  // same position, same name, same kind. If the step moved or changed, the
-  // remark may no longer be true of it, so it is dropped rather than guessed.
+  // that carries no remarks or Lead Days of its own (they deliberately never
+  // reach jc_ops), so a plain re-insert would blank what the planner typed here.
+  // Carry them forward onto the same step, even one that moved — carryStepDetails
+  // says what counts as the same step. Carried first: the comparison below reads
+  // what would actually be written.
   // An EXPLICIT card edit never takes this path: there, an emptied box means the
   // user cleared it on purpose and it must clear.
   const opsToWrite: CreateRouteCardOpInput[] =
     p.preserveRemarks === true
-      ? carryRemarksForward(
+      ? carryStepDetails(
           p.ops,
           oldOpRows.map((r) => r.op),
         )
       : p.ops;
+
+  if (
+    p.skipWhenUnchanged === true &&
+    (await routingsMatch(
+      tx,
+      p.companyId,
+      oldOpRows.map((r) => opInputFromRow(r.op)),
+      opsToWrite,
+      'source',
+    ))
+  ) {
+    return { newRevision: p.currentRevision, changed: false, oldOps: [], newOps: [] };
+  }
 
   const oldSnapshot: DiffOp[] = oldOpRows.map((r) => ({
     opSeq: r.op.opSeq,
@@ -2261,6 +2421,8 @@ export function stripAutoTerminalQcOp(ops: CreateRouteCardOpInput[]): CreateRout
  *   'direct' — the gate is off (or the card is not live): the caller rewrites
  *              the card exactly as before;
  *   'staged' — a request is waiting for approval; the card is untouched;
+ *   'unchanged' — the engine found nothing to approve (the routing reads the
+ *              same): nothing is being held back, so nothing is reported;
  *   { notSentReason } — the request was refused (one already waiting,
  *              nothing to approve): the routing is kept as stored, a blank
  *              raw-material half may still be filled (the caller falls through
@@ -2293,13 +2455,13 @@ async function stageRoutingFromSourceDoc(
     notes: string | null;
     planType: RouteCard['planType'];
   },
-  storedOps: Array<typeof routeCardOps.$inferSelect>,
-  cleanOps: CreateRouteCardOpInput[],
+  incomingOps: CreateRouteCardOpInput[],
   rawMaterial: ResolvedRawMaterial,
   user: AuthContext,
   sourceCode: string,
   canWriteCard: () => Promise<boolean>,
-): Promise<'direct' | 'staged' | { notSentReason: string }> {
+  sourceJobCardId: string | null,
+): Promise<'direct' | 'staged' | 'unchanged' | { notSentReason: string }> {
   // The blank-RM fill rides along only when the proposer may fill it, exactly
   // as the gate-off write path asks (ADR-218 canWriteCard).
   const fillRm = await canWriteCard();
@@ -2319,12 +2481,15 @@ async function stageRoutingFromSourceDoc(
     // Left out = the writer keeps the stored plan type (the edit input cannot
     // carry 'assembly', which only the system sets).
     planType: card.planType === 'assembly' ? undefined : card.planType,
-    ops: carryRemarksForward(cleanOps, storedOps),
+    // Remarks and Lead Days already carried by the caller (saveRouteCardForItem).
+    ops: incomingOps,
     revisionNote: null,
     // Shown on the request's History row (the engine's request note).
     reason: `Routing changed on ${sourceCode}`,
     sourceCode,
     fillRm,
+    // ADR-282 — approving this stamps the new Rev on that Job Card.
+    sourceJobCardId,
   };
   try {
     const { requestDocumentEditInTx } = await import('../document-edits/service');
@@ -2348,6 +2513,9 @@ async function stageRoutingFromSourceDoc(
     );
     return request ? 'staged' : 'direct';
   } catch (e) {
+    // ADR-282 — "nothing to approve" is not a refusal: nothing differs, so the
+    // Job Card must not be marked as holding a change back.
+    if (isNothingToApprove(e)) return 'unchanged';
     // Never fail the Job Card / plan over its Route Card. A refusal the engine
     // or the card's checks raise is expected; anything else is logged.
     if (!(e instanceof AppError)) {
@@ -2618,6 +2786,10 @@ export async function saveRouteCardForItem(
    *  for the same reason as rawMaterial: given → the card of THAT Item + Rev
    *  (created with it when there is none); null → the item's old no-Rev card. */
   itemRevisionId: string | null,
+  /** ADR-282 — the Job Card this routing came from; a request staged here names
+   *  it, so approving the request stamps the new Rev on it. Every Job Card caller
+   *  passes it; null only when no Job Card exists. */
+  sourceJobCardId: string | null = null,
 ): Promise<JcRouteCardWriteBack | null> {
   // Returns what was written (null = the card was not touched) so the saving
   // screen can tell the user "Route Card IN-RC-… updated to Rev n" instead of
@@ -2691,9 +2863,16 @@ export async function saveRouteCardForItem(
         ),
       )
       .orderBy(asc(routeCardOps.opSeq));
-    const routingIdentical = opsAreIdentical(
-      storedOps.map(comparableFromRow),
-      cleanOps.map(comparableFromInput),
+    // ADR-282 — BEFORE comparing and before staging or writing: a source document
+    // carries no Remarks or Lead Days, so an unchanged routing must read as
+    // unchanged and an approved change must not blank them.
+    const incomingOps = carryStepDetails(cleanOps, storedOps);
+    const routingIdentical = await routingsMatch(
+      tx,
+      companyId,
+      storedOps.map(opInputFromRow),
+      incomingOps,
+      'source',
     );
 
     if (!isRouteCardUsable(card.approvalStatus)) {
@@ -2732,12 +2911,12 @@ export async function saveRouteCardForItem(
           companyId,
           itemId,
           card,
-          storedOps,
-          cleanOps,
+          incomingOps,
           rawMaterial,
           user,
           sourceCode,
           canWriteCard,
+          sourceJobCardId,
         );
     if (staging === 'staged') {
       // The card is unchanged (still at its current Rev); the saving screen
@@ -2751,15 +2930,17 @@ export async function saveRouteCardForItem(
       };
     }
     // The direct rewrite — the gate is off, the routing is unchanged, or the
-    // change could not be staged. When it could not, the STORED routing is
-    // resubmitted, so only a blank raw-material half can still be filled
-    // (ADR-218) — the routing itself is never rewritten behind the approval.
-    const notSent = staging === 'direct' ? null : staging.notSentReason;
+    // change could not be staged. Unless the gate is off and the routing differs,
+    // the STORED routing is resubmitted, so only a blank raw-material half can
+    // still be filled (ADR-218) — the routing itself is never rewritten behind
+    // the approval, and "the same" never rewrites the stored form of a step.
+    const notSent = staging === 'direct' || staging === 'unchanged' ? null : staging.notSentReason;
+    const keepStored = notSent !== null || routingIdentical || staging === 'unchanged';
     const written = await overwriteRouteCardFromSource(
       tx,
       companyId,
       card,
-      notSent ? storedOps.map(opInputFromRow) : cleanOps,
+      keepStored ? storedOps.map(opInputFromRow) : incomingOps,
       rawMaterial,
       user,
       sourceCode,

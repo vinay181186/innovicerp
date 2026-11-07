@@ -1205,9 +1205,20 @@ export const jobCards = pgTable(
     cancelledBy: uuid('cancelled_by').references((): AnyPgColumn => users.id),
     // Drawing Rev register (0232): the Item + Drawing Rev (ABC/1); null = old row / Buy item.
     itemRevisionId: uuid('item_revision_id').references((): AnyPgColumn => itemRevisions.id),
+    // ADR-282 (0244): the Route Card and Rev this Job Card is built on (NULL = never
+    // recorded, never guessed), and whether a routing change of its own is held back.
+    // One writer: job-cards/route-card-outcome.ts (line-rev.ts moves it with the PRO).
+    routeCardId: uuid('route_card_id').references((): AnyPgColumn => routeCards.id, {
+      onDelete: 'set null',
+    }),
+    routeCardRevision: integer('route_card_revision'),
+    routeCardNotSent: boolean('route_card_not_sent').notNull().default(false),
   },
   (t) => [
     index('job_cards_item_revision_idx').on(t.itemRevisionId),
+    index('job_cards_route_card_idx')
+      .on(t.routeCardId)
+      .where(sql`${t.routeCardId} is not null`),
     check(
       'job_cards_rm_qty_per_piece_check',
       sql`${t.rmQtyPerPiece} IS NULL OR ${t.rmQtyPerPiece} > 0`,

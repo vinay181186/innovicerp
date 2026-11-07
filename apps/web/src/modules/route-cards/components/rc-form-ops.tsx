@@ -12,16 +12,19 @@
 //   • the Total row is held at the foot of the scrolling table (rc-form.css).
 // Tool No. / Tool Details are still NOT rendered (2026-10-03; owner kept that
 // on 2026-10-06) — they ride on the draft untouched, see RouteCardFormOpDraft.
+// ADR-282: the row's ⋯ adds a line below it, moves it, or removes it; rows are
+// keyed by rowKey, so a row's state moves with it and the Op number (from its
+// position) renumbers by itself.
 
-import { Icon } from '@/ui/core';
 import type { Machine, Vendor } from '@innovic/shared';
 import { opSrNo } from '@innovic/shared';
 import { Fragment, useState } from 'react';
 import { QcProcessPicker } from '@/components/shared/qc-process-picker';
 import { MachineGroupPicker } from '@/modules/machines/components/machine-group-picker';
 import { useVendorsList } from '@/modules/vendors/api';
+import { RowMenu } from '@/ui/data';
 import { FormField, SearchableSelect } from '@/ui/forms';
-import type { RouteCardFormOpDraft } from './route-card-form';
+import type { RouteCardFormOpDraft, RouteCardOpType } from './route-card-form';
 
 /** Columns in the operations table: Op, Group, Machine / Vendor, Operation,
  *  Cycle Time (min), Program No., Lead Days, actions. The "▸ More" drawer row
@@ -38,6 +41,8 @@ interface RouteCardOpsTableProps {
   onMachineChange: (idx: number, code: string) => void;
   onGroupChange: (idx: number, groupId: string | null) => void;
   onVendorChange: (idx: number, vendor: Vendor | null) => void;
+  onInsertBelow: (idx: number, kind: RouteCardOpType) => void;
+  onMove: (idx: number, dir: -1 | 1) => void;
   onRemove: (idx: number) => void;
 }
 
@@ -52,6 +57,8 @@ export function RouteCardOpsEditor(props: RouteCardOpsTableProps): React.JSX.Ele
     onMachineChange,
     onGroupChange,
     onVendorChange,
+    onInsertBelow,
+    onMove,
     onRemove,
   } = props;
   return (
@@ -97,8 +104,9 @@ export function RouteCardOpsEditor(props: RouteCardOpsTableProps): React.JSX.Ele
         ) : (
           ops.map((op, idx) => (
             <RouteCardOpRow
-              key={idx}
+              key={op.rowKey}
               idx={idx}
+              isLast={idx === ops.length - 1}
               op={op}
               machinesList={machines}
               machineGroupCodeById={machineGroupCodeById}
@@ -106,6 +114,8 @@ export function RouteCardOpsEditor(props: RouteCardOpsTableProps): React.JSX.Ele
               onMachineChange={(code) => onMachineChange(idx, code)}
               onGroupChange={(gid) => onGroupChange(idx, gid)}
               onVendorChange={(v) => onVendorChange(idx, v)}
+              onInsertBelow={(kind) => onInsertBelow(idx, kind)}
+              onMove={(dir) => onMove(idx, dir)}
               onRemove={() => onRemove(idx)}
             />
           ))
@@ -129,6 +139,7 @@ export function RouteCardOpsEditor(props: RouteCardOpsTableProps): React.JSX.Ele
 
 interface RouteCardOpRowProps {
   idx: number;
+  isLast: boolean;
   op: RouteCardFormOpDraft;
   machinesList: Machine[];
   machineGroupCodeById: Map<string, string>;
@@ -136,6 +147,8 @@ interface RouteCardOpRowProps {
   onMachineChange: (code: string) => void;
   onGroupChange: (groupId: string | null) => void;
   onVendorChange: (vendor: Vendor | null) => void;
+  onInsertBelow: (kind: RouteCardOpType) => void;
+  onMove: (dir: -1 | 1) => void;
   onRemove: () => void;
 }
 
@@ -148,6 +161,7 @@ function codeAndName(code: string, name: string | null | undefined): string {
 function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
   const {
     idx,
+    isLast,
     op,
     machinesList,
     machineGroupCodeById,
@@ -155,6 +169,8 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
     onMachineChange,
     onGroupChange,
     onVendorChange,
+    onInsertBelow,
+    onMove,
     onRemove,
   } = props;
   // The machines this row may offer: the whole list until a group is chosen,
@@ -188,11 +204,9 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
   // row, including the rule that it opens by itself when the row already
   // carries a remark, so nothing the card holds is hidden on arrival.
   //
-  // DERIVED, not seeded. A lazy `useState(() => …)` initialiser runs only when
-  // the component for that INDEX first mounts, and these rows are keyed by
-  // index — so a card whose ops arrive later would never open its drawers.
-  // "Copy ops from Route Card…" is exactly that case. Null means "the user has
-  // not decided for this row", so until they click, the drawer follows the data.
+  // DERIVED, not seeded: until the user clicks (null), the drawer follows the
+  // data. The choice belongs to this row: rows are keyed by rowKey (ADR-282), so
+  // it moves with the row, and copied-in rows start fresh.
   const [userToggled, setUserToggled] = useState<boolean | null>(null);
   const moreOpen = userToggled ?? Boolean(op.remarks?.trim());
   return (
@@ -368,15 +382,47 @@ function RouteCardOpRow(props: RouteCardOpRowProps): React.JSX.Element {
           >
             {moreOpen ? '▾' : '▸'} More
           </button>{' '}
-          <button
-            type="button"
-            className="btn btn-danger btn-sm btn-icon"
-            onClick={onRemove}
-            title="Remove operation"
-            aria-label={`Remove operation ${opSrNo(idx + 1)}`}
-          >
-            <Icon name="x" size={12} />
-          </button>
+          {/* Names echo the bottom buttons (+ Add Operation, + Inspection,
+              + Outsourced op), which still add at the end. */}
+          <RowMenu
+            label={`Op ${opSrNo(idx + 1)} actions`}
+            items={[
+              {
+                key: 'add-op',
+                label: 'Add Operation Below',
+                onSelect: () => onInsertBelow('process'),
+              },
+              {
+                key: 'add-qc',
+                label: 'Add Inspection Below',
+                onSelect: () => onInsertBelow('qc'),
+              },
+              {
+                key: 'add-osp',
+                label: 'Add Outsourced Op Below',
+                onSelect: () => onInsertBelow('outsource'),
+              },
+              {
+                key: 'up',
+                label: 'Move Up',
+                onSelect: () => onMove(-1),
+                disabledReason: idx === 0 ? 'Already first' : undefined,
+              },
+              {
+                key: 'down',
+                label: 'Move Down',
+                onSelect: () => onMove(1),
+                disabledReason: isLast ? 'Already last' : undefined,
+              },
+              {
+                key: 'remove',
+                label: 'Remove',
+                icon: 'trash-2',
+                group: 'danger',
+                onSelect: onRemove,
+              },
+            ]}
+          />
         </td>
       </tr>
 

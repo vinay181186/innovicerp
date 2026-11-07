@@ -261,11 +261,32 @@ export async function applyLineRevChange(
         )}]`
       : sql`ARRAY[]::uuid[]`;
 
+  // The APPROVED Route Card of the new Item + Rev, if any: open PROs and their Job
+  // Cards move to it together, by this one rule, or both keep the old card.
+  const newRevCard = sql`
+    SELECT id, code, current_revision FROM public.route_cards
+     WHERE company_id = ${companyId}::uuid AND deleted_at IS NULL
+       AND item_revision_id = ${c.toId}::uuid AND approval_status = 'approved'
+     LIMIT 1`;
+
   const movedDocs: string[] = [];
   if (open.length > 0) {
+    // ADR-282 — the Job Card's stamp stays in step with its PRO. A change held back
+    // for the old card is not for the new one. A Job Card that never recorded a
+    // card stays blank (never guessed).
     await tx.execute(sql`
-      UPDATE public.job_cards SET item_revision_id = ${c.toId}::uuid
-       WHERE id IN (${sql.join(
+      WITH rc AS (${newRevCard})
+      UPDATE public.job_cards jc
+         SET item_revision_id = ${c.toId}::uuid,
+             route_card_id = CASE WHEN jc.route_card_id IS NULL THEN NULL
+               ELSE COALESCE((SELECT id FROM rc), jc.route_card_id) END,
+             route_card_revision = CASE WHEN jc.route_card_id IS NULL THEN NULL
+               ELSE COALESCE((SELECT current_revision FROM rc), jc.route_card_revision) END,
+             route_card_not_sent = CASE
+               WHEN jc.route_card_id IS DISTINCT FROM (SELECT id FROM rc)
+                AND EXISTS (SELECT 1 FROM rc) THEN false
+               ELSE jc.route_card_not_sent END
+       WHERE jc.id IN (${sql.join(
          open.map((j) => sql`${j.id}::uuid`),
          sql`, `,
        )})`);
@@ -286,12 +307,7 @@ export async function applyLineRevChange(
   // (route card id / code / revision snapshot together); otherwise it keeps
   // its old card (the screen then shows the card for the new Rev is missing).
   const pros = (await tx.execute(sql`
-    WITH rc AS (
-      SELECT id, code, current_revision FROM public.route_cards
-       WHERE company_id = ${companyId}::uuid AND deleted_at IS NULL
-         AND item_revision_id = ${c.toId}::uuid AND approval_status = 'approved'
-       LIMIT 1
-    )
+    WITH rc AS (${newRevCard})
     UPDATE public.production_orders po
        SET item_revision_id = ${c.toId}::uuid,
            route_card_id = COALESCE((SELECT id FROM rc), po.route_card_id),

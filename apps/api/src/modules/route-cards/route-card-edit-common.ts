@@ -117,6 +117,10 @@ export type RouteCardEditPayload = UpdateRouteCardInput & {
   /** Source-document proposals only: whether the proposer could fill blank
    *  raw material (ADR-218 canWriteCard) — the approval fills only then. */
   fillRm?: boolean;
+  /** ADR-282 — source-document proposals only: the Job Card that proposed this
+   *  routing. Approving it stamps the new Rev on that Job Card. Null when there is
+   *  none; absent on a request staged before ADR-282. */
+  sourceJobCardId?: string | null;
 };
 
 /** The plain sentence the saving screen shows when a different routing could

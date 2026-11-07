@@ -16,6 +16,11 @@ import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@ta
 import { useCallback } from 'react';
 import { apiFetch } from '@/lib/api';
 import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
+import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
+import { activityLogKeys } from '@/modules/activity-log/api';
+import { approvalsKeys } from '@/modules/approvals/api';
+import { documentEditsKeys } from '@/modules/document-edits/api';
+import { routeCardsKeys } from '@/modules/route-cards/api';
 
 /** ADR-235 — `includeCancelled` is optional for callers (the shared schema's
  *  parsed type makes it required). Only the Job Cards list screen sets it;
@@ -221,6 +226,31 @@ export function useUpdateJobCard(id: string) {
         return;
       }
       qc.setQueryData(jobCardsKeys.detail(id), updated);
+    },
+  });
+}
+
+/** ADR-282 — Send to Route Card: this Job Card's operations replace the Route
+ *  Card's (or go to the approver when approval is on). null = nothing to send.
+ *  A 409 throws with the server's words. */
+export function useSendJobCardToRouteCard(id: string, saveKey?: SaveKey) {
+  const qc = useQueryClient();
+  return useMutation<JobCardSaveResult, Error, void>({
+    mutationFn: () =>
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<JobCardSaveResult>(`/job-cards/${id}/send-to-route-card`, {
+          method: 'POST',
+          json: {},
+          ...(headers ? { headers } : {}),
+        }),
+      ),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: jobCardsKeys.detail(id) });
+      void qc.invalidateQueries({ queryKey: jobCardsKeys.lists() });
+      void qc.invalidateQueries({ queryKey: routeCardsKeys.all });
+      void qc.invalidateQueries({ queryKey: approvalsKeys.all });
+      void qc.invalidateQueries({ queryKey: documentEditsKeys.all });
+      void qc.invalidateQueries({ queryKey: activityLogKeys.all });
     },
   });
 }

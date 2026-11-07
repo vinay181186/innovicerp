@@ -34,6 +34,7 @@ import {
 import type { OpFlowResponse } from '@/modules/flow-views/types';
 import { ProgressBar } from '@/ui/data';
 import { Cluster, ClusterFact, ClusterGrid, DocIdent, IdentCode, IdentSep } from '@/ui/forms';
+import { jcRouteCardRevLabel } from '../lib/jc-route-card-note';
 import { JcItemThumb } from './jc-item-thumb';
 import type { JcDrawingRef } from './jc-view-summary';
 
@@ -127,8 +128,7 @@ export function JcFactBlock({
     ? `Customer Material on this Job Card (1 RM piece per part) · Needed ${cm.needed ?? DASH}. JWSO line totals — Accepted ${cm.received} · Issued ${cm.issued} · Returned to Customer ${cm.returned} · Register Balance ${cm.balance}`
     : undefined;
 
-  const routeCardRev =
-    jc.routeCardRevision != null ? `Route Card Rev ${jc.routeCardRevision}` : null;
+  const routeCardRev = jcRouteCardRevLabel(jc);
   const showNotes = Boolean(jc.remarks) || Boolean(pRemarks);
   // On a rework / repair child the parent card takes Plan No.'s cell (the plan
   // belongs to the parent's order).

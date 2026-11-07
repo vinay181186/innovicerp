@@ -235,7 +235,8 @@ export function printJobCard(args: {
     .filter(Boolean)
     .join(' / ');
   const routeCard = jc.routeCardCode
-    ? `${jc.routeCardCode}${jc.routeCardRevision != null ? ` / ${jc.routeCardRevision}` : ''}`
+    ? // ADR-282 — the Rev this Job Card was built on, not the card's Rev today.
+      `${jc.routeCardCode}${jc.routeCardBuiltRevision != null ? ` / ${jc.routeCardBuiltRevision}` : ''}`
     : '';
   const drawingRev = docDrawingRev(jc);
 

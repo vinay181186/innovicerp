@@ -15478,3 +15478,25 @@ Owner: Pending Entries should open per person on a calendar, green for filled an
 **Refresh:** same as ADR-279; a JWSO edit now refreshes Planning on the same PC too. An edit approved from Approvals reaches Planning through the 60-second poll.
 
 **No migration.**
+
+## ADR-282: Add a Route Card line anywhere; a Job Card keeps its Route Card Rev; write-back fixes
+
+**Date:** 2026-11-07. **Owner decided:** a line can be added between two operations and the series stays 10, 20, 30 (no 15, no 100 series). A Job Card routing change must reach the Route Card with the Route Card Rev kept the standard way, by approval. Change Machine and the schedule drag do not update the card.
+
+**Decisions:**
+- **Add and move.** Each row on the Route Card form has a ⋯ menu: Add Operation Below, Add Inspection Below, Add Outsourced Op Below, Move Up, Move Down, Remove. Op numbers come from position, so they renumber. Rows carry a browser-only `rowKey`.
+- **One comparison.** `routingsMatch` compares machine and vendor by identity (id, or code when one side is text only). A Job Card that changed nothing no longer reads as different.
+- **Lead Days and Remarks stay.** `carryStepDetails` keeps what a Job Card or plan cannot carry, before comparing, staging or writing. A step is matched by name + kind when unique; with duplicates, by position + name + kind + machine + vendor; otherwise nothing is carried.
+- **No Rev for no change.** Saving a card with nothing changed adds no Rev or History row. A Returned card sent with Save & Submit still goes to Pending at the same Rev. A Draft keeps ADR-277.
+- **A Job Card holds its own Rev.** `job_cards.route_card_id`, `route_card_revision`, `route_card_not_sent` (0244). Backfilled from the Production Order; old hand-made Job Cards stay blank, never guessed. Screens and print show this Rev, with "Card now Rev n" when the card has moved on. Approving a change names its source Job Card and moves that Job Card's Rev.
+- **Nothing is lost silently.** Every Job Card save says what happened to the Route Card. A change held back (card Draft / Pending / Returned, or a change already waiting) sets `route_card_not_sent`; the detail page shows Differs from Route Card and offers Send to Route Card when the card is free. A Job Card on an older Rev does not read as different. After Change Machine it does, with no Send button.
+
+**Known limits:**
+- Requests staged before this release name no Job Card, so approving one moves no Job Card's Rev.
+- If the Job Card row is locked at the moment of approval it stays on its older Rev (`SKIP LOCKED`, to avoid a deadlock). The approval still succeeds.
+- Plan Create and Edit Plan still add lines at the end only; not asked for.
+- A change the approver returned is not offered for Send again. Editing the Job Card's routing raises it again.
+- Send to Route Card on a card that has moved past the Job Card's Rev replaces those later changes; the dialog says so, and the server does not refuse it.
+- A form open on the Job Card gets the normal changed-by-someone message after an approval moves its Rev.
+
+**Migration:** 0244.

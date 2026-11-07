@@ -28,7 +28,12 @@ import { type AuthContext, type DbTransaction, withUserContext } from '../../db/
 import { canSeeFormPrice, primeAccess, requireFormAccess } from '../../lib/access';
 import { diffFields, valuesEqual } from '../../lib/audit-trail';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
-import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
+import {
+  ConflictError,
+  NOTHING_TO_APPROVE_MESSAGE,
+  NotFoundError,
+  ValidationError,
+} from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
 import { getEntry, maskPriceChanges, requireCompany, selectDocumentEditRows } from './helpers';
 import { isPriceField } from './price-field';
@@ -179,7 +184,7 @@ export async function requestDocumentEditIdInTx(
       ...c,
       id: c.field,
     }));
-    if (changes.length === 0) throw new ConflictError('Nothing changed to approve.');
+    if (changes.length === 0) throw new ConflictError(NOTHING_TO_APPROVE_MESSAGE);
 
     const expectedDate = expectedUpdatedAt
       ? new Date(expectedUpdatedAt)

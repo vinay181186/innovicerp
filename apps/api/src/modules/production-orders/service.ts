@@ -132,6 +132,7 @@ import { planIsMlAssembly } from '../../lib/ml-assembly';
 import { assertJwLineOpenForWork, lockJwLine } from '../../lib/jw-line-state';
 import { emitActivityLog } from '../activity-log/service';
 import { assertNoPendingCancel } from '../cancel-requests/pending-guard';
+import { recordRouteCardOutcome } from '../job-cards/route-card-outcome';
 import { buildJobCardFromOps, type JcBuildOp } from '../plans/service';
 import type {
   CloseProductionOrderInput,
@@ -1668,6 +1669,19 @@ export async function createProductionOrder(
         .update(jobCards)
         .set({ productionOrderId: po.id, updatedBy: user.id })
         .where(eq(jobCards.id, jc.id));
+      // ADR-282 — this Job Card is built on the card and Rev the order snapshots
+      // (read FOR SHARE above, inside the plan lock).
+      await recordRouteCardOutcome(
+        tx,
+        jc.id,
+        {
+          routeCardId: rc.id,
+          routeCardCode: rc.code,
+          routeCardRevision: rc.currentRevision,
+          created: false,
+        },
+        { companyId, itemId, itemRevisionId: plan.itemRevisionId ?? null, userId: user.id },
+      );
 
       await emitActivityLog(
         tx,

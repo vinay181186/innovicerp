@@ -38,6 +38,7 @@ import type { OpFlowResponse } from '@/modules/flow-views/types';
 import { ProgressBar } from '@/ui/data';
 import { Cluster, ClusterFact, ClusterGrid, DocIdent, IdentCode, IdentSep } from '@/ui/forms';
 import { cx } from '@/ui/forms/class-names';
+import { jcRouteCardRevLabel } from '../lib/jc-route-card-note';
 import { JcItemThumb } from './jc-item-thumb';
 import type { JcDrawingRef } from './jc-view-summary';
 
@@ -272,8 +273,7 @@ export function JcEditFactBlock({
   const cmTitle = cm
     ? `Customer Material on this Job Card (1 RM piece per part) · Needed ${cm.needed ?? DASH}. JWSO line totals — Accepted ${cm.received} · Issued ${cm.issued} · Returned to Customer ${cm.returned} · Register Balance ${cm.balance}`
     : undefined;
-  const routeCardRev =
-    jc.routeCardRevision != null ? `Route Card Rev ${jc.routeCardRevision}` : null;
+  const routeCardRev = jcRouteCardRevLabel(jc);
   const parentCell = Boolean(jc.parentJobCardId);
 
   return (

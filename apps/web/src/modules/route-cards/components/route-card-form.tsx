@@ -86,7 +86,15 @@ const RC_PLAN_TYPE_OPTIONS: Array<{ value: RouteCardPlanType; label: string }> =
   { value: 'direct_purchase', label: 'Buy' },
 ];
 
+// ADR-282 — stable row keys, so a row's "▸ More" state follows it on an insert or
+// a move. Display-only: opsToInput maps the op fields one by one, so it never
+// reaches the server, and the exit guard watches input events, not this value.
+let rcOpRowSeq = 0;
+const nextRcOpRowKey = (): string => `rc-op-${++rcOpRowSeq}`;
+
 export interface RouteCardFormOpDraft {
+  /** Client-only row identity (never sent). */
+  rowKey: string;
   // DISPLAY-ONLY, never sent: the machine group narrows the machine list for
   // this row, exactly as the GROUP column on SO Planning does. route_card_ops
   // has no group column — the machine carries its group in the master, so the
@@ -170,6 +178,7 @@ interface RouteCardFormProps {
  *  a copied row and an edited row can never disagree. */
 export function detailOpsToDrafts(ops: RouteCardDetail['ops']): RouteCardFormOpDraft[] {
   return ops.map((op) => ({
+    rowKey: nextRcOpRowKey(),
     // Group is display-only; the form reads it back off the machine master
     // once the machines list has loaded.
     machineGroupId: null,
@@ -235,6 +244,7 @@ function isOpRowTyped(o: RouteCardFormOpDraft): boolean {
 
 export function emptyProcessOp(): RouteCardFormOpDraft {
   return {
+    rowKey: nextRcOpRowKey(),
     machineGroupId: null,
     machineId: '',
     machineCodeText: '',
@@ -531,11 +541,26 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
     });
   };
 
+  const newOp = (kind: RouteCardOpType): RouteCardFormOpDraft =>
+    kind === 'qc' ? emptyQcOp() : kind === 'outsource' ? emptyOspOp() : emptyProcessOp();
   const addOp = (kind: RouteCardOpType): void => {
-    setOps((prev) => [
-      ...prev,
-      kind === 'qc' ? emptyQcOp() : kind === 'outsource' ? emptyOspOp() : emptyProcessOp(),
-    ]);
+    const row = newOp(kind);
+    setOps((prev) => [...prev, row]);
+  };
+  // ADR-282 — a new line between two. Op numbers come from position (opSrNo), so
+  // adding below 10 makes the new line 20 and the old 20 becomes 30.
+  const insertOpBelow = (idx: number, kind: RouteCardOpType): void => {
+    const row = newOp(kind);
+    setOps((prev) => [...prev.slice(0, idx + 1), row, ...prev.slice(idx + 1)]);
+  };
+  const moveOp = (idx: number, dir: -1 | 1): void => {
+    setOps((prev) => {
+      const to = idx + dir;
+      if (to < 0 || to >= prev.length) return prev;
+      const next = [...prev];
+      [next[idx], next[to]] = [next[to]!, next[idx]!];
+      return next;
+    });
   };
   const removeOp = (idx: number): void => setOps((prev) => prev.filter((_, i) => i !== idx));
 
@@ -1007,6 +1032,8 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
             onMachineChange={onOpMachineChange}
             onGroupChange={onOpGroupChange}
             onVendorChange={onOpVendorChange}
+            onInsertBelow={insertOpBelow}
+            onMove={moveOp}
             onRemove={removeOp}
           />
         </Panel>
