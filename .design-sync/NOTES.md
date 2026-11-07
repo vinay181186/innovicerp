@@ -17,3 +17,5 @@
 - Fonts load from Google Fonts at runtime.
 - DocNumberInput, ToastStack, IdentSep, IdentCode, LinkSlot are deliberately not shipped.
 - FileField `drawing` variant shows the browser's own file control: true to the app today, a small leftover against the one standard.
+- Don't run `package-validate.mjs --render-sample` by hand before looking at the sheets: it replaces the full contact sheets with the sample. Re-run validate without the flag to get them back.
+- A re-sync where only the kit's code or styles changed lists every component as unchanged and uploads the shared bundle and styles. Look at the contact sheets anyway: alignment and Save position live in that code.
