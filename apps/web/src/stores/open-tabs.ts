@@ -6,10 +6,14 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
 // Hard cap on open tabs so the bar always fits one row without horizontal
-// scrolling. When a NEW section would exceed this, the oldest (first) tab is
-// dropped to make room — the active page is always the new one being added, so
-// the evicted oldest is never the tab you are currently on.
+// scrolling. `tabs` stays in OPENING order (the bar sorts its own copy into menu
+// order), so the first entry is the oldest opened. When a NEW section would
+// exceed the cap, the oldest tab other than Home is dropped to make room: Home
+// is never closed automatically (the user can still close it with its ×). The
+// active page is always the new one being added, so the evicted tab is never
+// the one you are currently on.
 const MAX_TABS = 8;
+const HOME_BASE = '/';
 
 export interface OpenTab {
   /** Nav base route (e.g. "/job-work-orders") — the dedupe key and how the
@@ -49,9 +53,10 @@ export const useOpenTabs = create<OpenTabsState>()(
             next[i] = { ...next[i], ...tab };
             return { tabs: next };
           }
-          // New section — at the cap, drop the oldest (first) tab to make room.
-          const kept = s.tabs.length >= MAX_TABS ? s.tabs.slice(1) : s.tabs;
-          return { tabs: [...kept, tab] };
+          // New section — at the cap, drop the oldest tab that is not Home.
+          const evict =
+            s.tabs.length >= MAX_TABS ? s.tabs.findIndex((t) => t.base !== HOME_BASE) : -1;
+          return { tabs: [...s.tabs.filter((_, idx) => idx !== evict), tab] };
         }),
       closeTab: (base) => set((s) => ({ tabs: s.tabs.filter((t) => t.base !== base) })),
       clear: () => set({ tabs: [] }),

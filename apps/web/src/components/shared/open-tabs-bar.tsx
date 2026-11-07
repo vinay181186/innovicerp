@@ -9,6 +9,8 @@
 // lives in the persisted `useOpenTabs` store, so the tab set survives a reload.
 // The MAX_TABS = 8 cap lives in that store (stores/open-tabs.ts), not here:
 // the strip never scrolls, so the cap is what keeps it to one row.
+// The store keeps OPENING order (eviction needs it); the bar shows inMenuOrder():
+// Home, then top-menu order, then anything not in the menu.
 //
 // Phase 3: this file is now a thin ADAPTER. All the markup lives in the
 // primitive ui/navigation/PageTabs — this file keeps only the three things the
@@ -21,7 +23,7 @@ import { Link, useLocation, useNavigate } from '@tanstack/react-router';
 import { useEffect } from 'react';
 import { useOpenTabs } from '@/stores/open-tabs';
 import { PageTabs, type PageTab } from '@/ui/navigation';
-import { SECTIONS } from './nav-sections';
+import { ORDERED_SECTIONS, SECTIONS } from './nav-sections';
 
 // Flatten the nav once: every {to,label,icon}, longest `to` first so the base
 // match below prefers the most specific route (mirrors breadcrumbs' longest-
@@ -32,6 +34,25 @@ import { SECTIONS } from './nav-sections';
 const NAV_ITEMS = SECTIONS.flatMap((s) => s.groups.flatMap((g) => g.items))
   .filter((it) => !it.search)
   .sort((a, b) => b.to.length - a.to.length);
+
+// Each base's place in the top menu, Home first. A base listed twice (/plans is
+// in Planning and Production) keeps its first place. `search` items are skipped,
+// as in NAV_ITEMS.
+const MENU_RANK = new Map<string, number>([['/', 0]]);
+for (const sec of ORDERED_SECTIONS) {
+  for (const g of sec.groups) {
+    for (const it of g.items) {
+      if (!it.search && !MENU_RANK.has(it.to)) MENU_RANK.set(it.to, MENU_RANK.size);
+    }
+  }
+}
+
+/** A sorted copy: Home, then top-menu order. Bases not in the menu go last and
+ *  keep their opening order (MAX_SAFE_INTEGER, as Infinity - Infinity is NaN). */
+export function inMenuOrder<T extends { base: string }>(tabs: T[]): T[] {
+  const rank = (t: T): number => MENU_RANK.get(t.base) ?? Number.MAX_SAFE_INTEGER;
+  return [...tabs].sort((a, b) => rank(a) - rank(b));
+}
 
 function humanize(seg: string): string {
   return seg.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
@@ -66,17 +87,19 @@ export function OpenTabsBar(): React.JSX.Element | null {
 
   if (tabs.length === 0) return null;
 
+  const shown = inMenuOrder(tabs);
+
   // The × already did preventDefault + stopPropagation inside PageTabs, so
   // closing never also follows the tab's link.
   const onClose = (base: string): void => {
-    const idx = tabs.findIndex((t) => t.base === base);
+    const idx = shown.findIndex((t) => t.base === base);
     const wasActive = base === current.base;
     closeTab(base);
     // Closing the active tab must navigate away, else the effect above would
-    // immediately re-add it (we'd still be on its route). Fall to the left
-    // neighbour, then the first remaining tab, then the dashboard.
+    // immediately re-add it (we'd still be on its route). Fall to the tab visibly
+    // on its left, then the first remaining tab, then the dashboard.
     if (wasActive) {
-      const rest = tabs.filter((t) => t.base !== base);
+      const rest = shown.filter((t) => t.base !== base);
       const target = rest[idx - 1] ?? rest[0];
       void navigate({ to: target ? target.path : '/' });
     }
@@ -85,7 +108,7 @@ export function OpenTabsBar(): React.JSX.Element | null {
   // The store's tab shape → the primitive's. `base` is the identity (one tab
   // per nav section); `path` is the click target (the last URL visited under
   // that section), which is why they are two different fields.
-  const items: PageTab[] = tabs.map((t) => ({
+  const items: PageTab[] = shown.map((t) => ({
     key: t.base,
     label: t.label,
     icon: t.icon,
