@@ -38,8 +38,9 @@
 .jc-ops-table tr.jc-ops-cur > td:first-child {
   box-shadow: inset 3px 0 0 var(--blue);
 }
-/* The Operation · Machine / Vendor cell is the one control that opens the
-   operation popup (jc-op-popup.tsx); the rest of the row is not clickable. */
+/* The button in the Operation cell is the one control that opens the operation
+   popup (jc-op-popup.tsx); the rest of the row, Machine / Vendor included, is
+   not clickable. */
 .jc-ops-open {
   background: none;
   border: 0;
@@ -78,7 +79,7 @@
   color: var(--blue);
 }
 
-/* Op number + Operation · Machine / Vendor */
+/* Op number, Operation, Machine / Vendor */
 .jc-ops-opn {
   color: var(--text3);
 }
@@ -90,8 +91,19 @@
 .jc-ops-opc.jc-ops-k-osp i {
   color: var(--purple2);
 }
+/* Both cells wrap inside fixed widths, so the table fits its box at 1440 wide.
+   Detail page only: the edit page uses neither class. */
+.jc-ops-table .jc-ops-c-op {
+  width: 130px;
+  max-width: 130px;
+}
+.jc-ops-table .jc-ops-c-mv {
+  width: 150px;
+  max-width: 150px;
+}
 .jc-ops-table td.jc-ops-opc {
-  max-width: 300px;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .jc-ops-opc b {
   font-weight: 600;
@@ -103,10 +115,14 @@
   font-weight: 700;
   font-size: var(--fs-xs);
   color: var(--blue2);
-  margin-left: 4px;
+  white-space: nowrap;
+}
+.jc-ops-opc .jc-ops-sub {
+  display: block;
 }
 .jc-ops-opc .badge {
   margin-left: 4px;
+  white-space: normal;
 }
 
 /* Quantity tones — the colours today's Op Qty Flow uses; zero is muted. */

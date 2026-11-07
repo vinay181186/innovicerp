@@ -136,6 +136,8 @@ export const TABLE_KEYS = {
   designIssues: 'design-issues',
   designTracker: 'design-tracker',
   taskBoard: 'task-board',
+  /** All Tasks: its own column layout, it has two columns the other tabs lack (ADR-283). */
+  taskBoardAll: 'task-board-all',
   dailyTaskReports: 'daily-task-reports',
   /** Day Log (ADR-255): My Day Log's saved entries; Team Day Logs › a person. */
   myDayLog: 'my-day-log',

@@ -54,16 +54,15 @@ const overdueSql = (today: string): SQL =>
  * → "Me", Outbox / All → assigned to.
  */
 export function taskSfColumns(view: TaskView): SfColumnMap {
+  const assigner = sql`COALESCE(${nameSql(tasks.assignedBy)}, ${nameSql(tasks.createdBy)})`;
   const person =
-    view === 'inbox'
-      ? sql`COALESCE(${nameSql(tasks.assignedBy)}, ${nameSql(tasks.createdBy)})`
-      : view === 'todo'
-        ? sql`'Me'`
-        : nameSql(tasks.assignedTo);
+    view === 'inbox' ? assigner : view === 'todo' ? sql`'Me'` : nameSql(tasks.assignedTo);
   return {
     code: { sql: sql`${tasks.code}`, type: 'text' },
     title: { sql: sql`${tasks.title}`, type: 'text' },
     person: { sql: person, type: 'text' },
+    assignedBy: { sql: assigner, type: 'text' },
+    assignedAt: { sql: sql`(${tasks.assignedAt} AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
     related: { sql: sql`${tasks.linkedRefDisplay}`, type: 'text' },
     priority: { sql: sql`${tasks.priority}`, type: 'list' },
     dueDate: { sql: sql`${tasks.dueDate}`, type: 'date' },
@@ -175,7 +174,10 @@ export async function listTasks(
           : sql`${tasks.assignedTo} = ${query.person}`,
       );
     }
-    if (query.assignedBy) parts.push(sql`${tasks.assignedBy} = ${query.assignedBy}`);
+    // The same person the Assigned By column names: no assigner on record = the creator.
+    if (query.assignedBy) {
+      parts.push(sql`COALESCE(${tasks.assignedBy}, ${tasks.createdBy}) = ${query.assignedBy}`);
+    }
     if (query.due === 'today') parts.push(sql`${tasks.dueDate} = ${today}::date`);
     else if (query.due === 'week') {
       parts.push(sql`${tasks.dueDate} BETWEEN ${today}::date AND ${addDays(today, 6)}::date`);
