@@ -34,6 +34,7 @@ export function JcFactStrip({
   jc,
   productionOrder,
   check,
+  showJcNo,
   collapsed,
   onShowDetails,
   onTop,
@@ -41,6 +42,8 @@ export function JcFactStrip({
   jc: JobCardListItem;
   productionOrder: ProductionOrderListItem | null;
   check: JobCardCheck | undefined;
+  /** Only once the page has scrolled past the header's blue JC No. */
+  showJcNo: boolean;
   /** Collapsed: the end button is "▾ Show details"; else "↑ Top". */
   collapsed: boolean;
   onShowDetails: () => void;
@@ -51,11 +54,14 @@ export function JcFactStrip({
   const d = '—';
   return (
     <div className="jc-strip" role="group" aria-label="Job Card summary">
-      <b className="mono jc-strip-code">{jc.code}</b>
-      <b className="mono jc-strip-code">{codeRev}</b>
+      {showJcNo ? <Fig k="JC No." v={jc.code} /> : null}
+      <Fig k="Item Code" v={codeRev} />
       {jc.itemName ? (
-        <span className="jc-strip-name" title={jc.itemName}>
-          {jc.itemName}
+        <span className="jc-strip-f jc-strip-item">
+          <span className="jc-strip-k">Item Name</span>
+          <span className="jc-strip-name" title={jc.itemName}>
+            {jc.itemName}
+          </span>
         </span>
       ) : null}
       <span className="jc-strip-sep" />

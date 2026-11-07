@@ -72,8 +72,8 @@ export const jobCardListItemSchema = z.object({
    *  moved by a line Rev change only while the work is open. */
   itemRevisionId: z.string().uuid().nullable().default(null),
   drawingRev: z.string().nullable().default(null),
-  /** The drawing's number, for the printed Job Card: the card's Item + Drawing Rev
-   *  record, else the SO / JWSO line, else the Item Master. Null when none has one. */
+  /** The drawing's number, for the Job Card detail + print: the SO / JWSO line, else
+   *  the card's Item + Drawing Rev record, else the Item Master. Null when none has one. */
   drawingNo: z.string().nullable().default(null),
   itemCode: z.string(),
   /** The customer's drawing revision, read from the SO line this card was

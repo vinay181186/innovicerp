@@ -59,8 +59,17 @@
   white-space: nowrap;
   overflow: hidden;
 }
-.jc-detail .jc-strip-code {
-  color: var(--text);
+/* Short of room, the Item Name gives way first; the end button is never cut. */
+.jc-detail .jc-strip > .btn {
+  flex-shrink: 0;
+}
+.jc-detail .jc-strip-item {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+}
+.jc-detail .jc-strip-item > .jc-strip-k {
+  flex-shrink: 0;
 }
 .jc-detail .jc-strip-name {
   min-width: 0;
@@ -227,7 +236,8 @@
   color: var(--blue);
   text-decoration: none;
 }
-.jc-detail .cl-ident .jc-pol {
+.jc-detail .cl-ident .jc-pol,
+.jc-detail .cl-fact .jc-pol {
   font-family: var(--mono);
   font-weight: 700;
   color: var(--purple2);

@@ -1,9 +1,12 @@
 // Job Card detail — the fact block (jobcard-detail-mockup.html, frame 1,
 // approved 2026-10-06). One picture frame on the left; on the right the
-// identity line and the gutter-named ClusterGrid, read in the order the work
-// happens:
+// gutter-named ClusterGrid, read in the order the work happens. The JC No. is
+// the header's blue code and is not repeated here (owner-approved mockup
+// 2026-11-07):
 //
-//   identity   JC No. · CODE/REV name · SO / JWSO No. (+ Internal SO No.) Ln POL · customer
+//   ITEM       Item Code (CODE/REV) · Item Name · Drawing No. · Customer
+//              SO / JWSO No. · Internal SO No. · Ln · POL
+//              Child JC (only on a card that has one)
 //   ORDER      Production Order · Plan No. (Parent JC on a child) · Route Card + Route Card Rev · Drawing
 //              JC Date · Due Date · Customer Dispatch Date · Priority
 //   QUANTITY   Order Qty · Pending at Ops · At Vendor · Deviated (NC open)
@@ -26,14 +29,13 @@ import type { DocumentEditChange, JobCardListItem, ProductionOrderListItem } fro
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev, docDrawingRev } from '@/lib/item-code';
-import { soNoWithInternal } from '@/lib/so-number';
 import {
   PendingChangeChip,
   headerPendingChange,
 } from '@/modules/document-edits/components/pending-change-chip';
 import type { OpFlowResponse } from '@/modules/flow-views/types';
 import { ProgressBar } from '@/ui/data';
-import { Cluster, ClusterFact, ClusterGrid, DocIdent, IdentCode, IdentSep } from '@/ui/forms';
+import { Cluster, ClusterFact, ClusterGrid } from '@/ui/forms';
 import { jcRouteCardRevLabel } from '../lib/jc-route-card-note';
 import { JcItemThumb } from './jc-item-thumb';
 import type { JcDrawingRef } from './jc-view-summary';
@@ -143,77 +145,101 @@ export function JcFactBlock({
         itemLabel={`${codeRev} ${jc.itemName}`}
       />
       <div className="jc-facts-main">
-        {/* WHICH card this is — identity, not facts, so it heads the block. */}
-        <DocIdent>
-          <IdentCode>{jc.code}</IdentCode>
-          <IdentSep />
-          <IdentCode>{codeRev}</IdentCode>
-          {jc.itemName ? (
-            <span className="jc-ident-name" title={jc.itemName}>
-              {jc.itemName}
-            </span>
-          ) : null}
-          {pItem ? <span title={pItem.title}>{pItem.chip}</span> : null}
-          {src ? (
-            <>
-              <IdentSep />
-              {src.type === 'so' ? (
-                // ADR-207 — the system SO No. then the SO's own office number.
-                <Link
-                  to="/sales-orders/$id"
-                  params={{ id: src.salesOrderId }}
-                  className="cl-ident-code jc-ident-link"
-                >
-                  {soNoWithInternal(src.code, src.internalSoNo)}
-                </Link>
-              ) : (
-                <Link
-                  to="/job-work-orders/$id"
-                  params={{ id: src.jobWorkOrderId }}
-                  className="cl-ident-code jc-ident-link"
-                >
-                  {src.code}
-                </Link>
-              )}
-              {/* Ln is OUR order line number; POL is the line number on the
-                  CUSTOMER's own PO. Never the same fact. */}
-              <span>Ln {src.lineNo}</span>
-              {jc.clientPoLineNo ? (
-                <span>
-                  POL <b className="jc-pol">{jc.clientPoLineNo}</b>
-                </span>
-              ) : null}
-            </>
-          ) : null}
-          {jc.customerName ? (
-            <>
-              <IdentSep />
-              <span className="jc-ident-name" title={jc.customerName}>
-                {jc.customerName}
-              </span>
-            </>
-          ) : null}
+        <ClusterGrid stack>
+          {/* ── ITEM: WHICH part, for whom, off which order line ── */}
+          <Cluster name="Item" wide>
+            <ClusterFact
+              num
+              className={pItem ? 'jc-chip' : ''}
+              label="Item Code"
+              title={withPending(codeRev, pItem)}
+              value={codeRev}
+              after={pItem?.chip}
+            />
+            <ClusterFact
+              label="Item Name"
+              empty={!jc.itemName}
+              title={jc.itemName || undefined}
+              value={jc.itemName || DASH}
+            />
+            <ClusterFact
+              num
+              label="Drawing No."
+              empty={!jc.drawingNo}
+              title={jc.drawingNo ?? undefined}
+              value={jc.drawingNo ?? DASH}
+            />
+            <ClusterFact
+              label="Customer"
+              empty={!jc.customerName}
+              title={jc.customerName ?? undefined}
+              value={jc.customerName ?? DASH}
+            />
+            <ClusterFact
+              label={src?.type === 'jw' ? 'JWSO No.' : 'SO No.'}
+              empty={!src}
+              value={
+                src?.type === 'so' ? (
+                  <Link
+                    to="/sales-orders/$id"
+                    params={{ id: src.salesOrderId }}
+                    className="jc-code-link"
+                  >
+                    {src.code}
+                  </Link>
+                ) : src ? (
+                  <Link
+                    to="/job-work-orders/$id"
+                    params={{ id: src.jobWorkOrderId }}
+                    className="jc-code-link"
+                  >
+                    {src.code}
+                  </Link>
+                ) : (
+                  DASH
+                )
+              }
+            />
+            {/* ADR-207 — the SO's own office number. A JWSO has none. */}
+            <ClusterFact
+              num
+              label="Internal SO No."
+              empty={src?.type !== 'so' || !src.internalSoNo}
+              value={(src?.type === 'so' ? src.internalSoNo : null) ?? DASH}
+            />
+            {/* Ln is OUR order line number; POL is the line number on the
+                CUSTOMER's own PO. Never the same fact. */}
+            <ClusterFact num label="Ln" empty={!src} value={src ? src.lineNo : DASH} />
+            <ClusterFact
+              num
+              label="POL"
+              empty={!jc.clientPoLineNo}
+              value={jc.clientPoLineNo ? <span className="jc-pol">{jc.clientPoLineNo}</span> : DASH}
+            />
+          </Cluster>
           {/* A parent card names the rework / repair children raised off it. */}
           {childJobCards.length > 0 ? (
-            <>
-              <IdentSep />
-              <span>Child JC</span>
-              {childJobCards.map((c) => (
-                <Link
-                  key={c.id}
-                  to="/job-cards/$id"
-                  params={{ id: c.id }}
-                  className="cl-ident-code jc-ident-link"
-                  title={`Open the ${c.recoveryKind === 'repair' ? 'repair' : 'rework'} job card`}
-                >
-                  {c.code}
-                </Link>
-              ))}
-            </>
+            <Cluster name={null}>
+              <ClusterFact
+                span={4}
+                label="Child JC"
+                value={childJobCards.map((c, i) => (
+                  <span key={c.id}>
+                    {i > 0 ? ' · ' : ''}
+                    <Link
+                      to="/job-cards/$id"
+                      params={{ id: c.id }}
+                      className="jc-code-link"
+                      title={`Open the ${c.recoveryKind === 'repair' ? 'repair' : 'rework'} job card`}
+                    >
+                      {c.code}
+                    </Link>
+                  </span>
+                ))}
+              />
+            </Cluster>
           ) : null}
-        </DocIdent>
 
-        <ClusterGrid stack>
           {/* ── ORDER: where the card came from and what it is made to ── */}
           <Cluster name="Order" wide>
             <ClusterFact
@@ -300,7 +326,7 @@ export function JcFactBlock({
               }
             />
             {/* WHICH drawing (SO line / JWSO line / this card's upload) — the
-                label opens it. No drawing NUMBER: the card has none. */}
+                label opens it. Its number is Drawing No. in the Item row. */}
             <ClusterFact
               className={pDrawing ? 'jc-chip' : 'jc-one-line'}
               label="Drawing"
