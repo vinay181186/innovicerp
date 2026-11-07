@@ -90,6 +90,7 @@ export function JcFactBlock({
   checkError: boolean;
 }): React.JSX.Element {
   const src = jc.sourceLink;
+  const internalSoNo = src?.type === 'so' ? src.internalSoNo : null;
   const childJobCards = jc.childJobCards ?? [];
   const codeRev = itemCodeWithRev(jc.itemCode, docDrawingRev(jc));
 
@@ -172,12 +173,13 @@ export function JcFactBlock({
             <ClusterFact
               label="Customer"
               empty={!jc.customerName}
-              title={jc.customerName ?? undefined}
-              value={jc.customerName ?? DASH}
+              title={jc.customerName || undefined}
+              value={jc.customerName || DASH}
             />
             <ClusterFact
               label={src?.type === 'jw' ? 'JWSO No.' : 'SO No.'}
               empty={!src}
+              title={src?.code}
               value={
                 src?.type === 'so' ? (
                   <Link
@@ -204,8 +206,9 @@ export function JcFactBlock({
             <ClusterFact
               num
               label="Internal SO No."
-              empty={src?.type !== 'so' || !src.internalSoNo}
-              value={(src?.type === 'so' ? src.internalSoNo : null) ?? DASH}
+              empty={!internalSoNo}
+              title={internalSoNo || undefined}
+              value={internalSoNo || DASH}
             />
             {/* Ln is OUR order line number; POL is the line number on the
                 CUSTOMER's own PO. Never the same fact. */}
@@ -214,6 +217,7 @@ export function JcFactBlock({
               num
               label="POL"
               empty={!jc.clientPoLineNo}
+              title={jc.clientPoLineNo || undefined}
               value={jc.clientPoLineNo ? <span className="jc-pol">{jc.clientPoLineNo}</span> : DASH}
             />
           </Cluster>
@@ -222,6 +226,7 @@ export function JcFactBlock({
             <Cluster name={null}>
               <ClusterFact
                 span={4}
+                wrap
                 label="Child JC"
                 value={childJobCards.map((c, i) => (
                   <span key={c.id}>

@@ -59,14 +59,24 @@
   white-space: nowrap;
   overflow: hidden;
 }
-/* Short of room, the Item Name gives way first; the end button is never cut. */
+/* Short of room, the Item Name gives way first, then the figures at the end are
+   cut; the end button is outside them, so it never is. */
 .jc-detail .jc-strip > .btn {
   flex-shrink: 0;
+}
+.jc-detail .jc-strip-figs {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-width: 0;
+  overflow: hidden;
 }
 .jc-detail .jc-strip-item {
   display: flex;
   align-items: baseline;
   min-width: 0;
+  overflow: hidden;
 }
 .jc-detail .jc-strip-item > .jc-strip-k {
   flex-shrink: 0;
@@ -102,9 +112,6 @@
 }
 .jc-detail .jc-strip-f b.jc-yes {
   color: var(--green2);
-}
-.jc-detail .jc-strip-gap {
-  flex: 1;
 }
 
 .jc-detail .jc-tab-pad {

@@ -15552,3 +15552,36 @@ CLAUDE.md §25 is the rule for sessions.
 - Negative: another session's new bypass on `test` can stop a release until it is fixed.
 - Risks: the check reads patterns, so it cannot judge a screen. `release/release-prod.sh` is
   outside git, so its two added lines are undone by hand.
+
+## ADR-284: Job Card detail: labelled Item row, JC No. once, Drawing No. from the order line first
+
+**Date:** 2026-11-07
+**Status:** Accepted (owner-approved mockup)
+
+### Context
+
+The line under the Job Card's blue number repeated the JC No. and showed `559918172000/0`, the item name, `IN-SO-00011 · SO-519` and the customer with no label. The owner could not tell what they were. Drawing No. was on the print only. The owner asked for the number typed on the SO, beside Item Name.
+
+The saved Item + Drawing Rev record keeps the number from the first line that created it. A later SO line with the same Item + Rev keeps its own typed number, and the card read the Rev record first, so it could show another order's number.
+
+### Decision
+
+1. The identity line on the detail page becomes `<Cluster name="Item" wide>`: Item Code · Item Name · Drawing No. · Customer · SO / JWSO No. · Internal SO No. · Ln · POL. Child JC gets its own row, only on a card that has one.
+2. The JC No. stays in the blue header only. The one-line summary shows it only after the page has scrolled past that header. Item Code and Item Name get labels there too. Item Name shrinks first when the line is short of room.
+3. `JC_DRAWING_NO_SQL` reads the SO / JWSO line first (only when the line is for this card's item and on this card's Rev: a closed card stays on its old Rev when the line moves on), then the Item + Drawing Rev record, then the Item Master. Detail and print read this one value.
+4. Job Card only. Job Card Edit, Production Order, Route Card, GRN, Plan and Purchase Request wait until the owner has seen this on TEST.
+
+### Alternatives Considered
+
+- Drawing No. in the Order row: rejected by the owner, who wants it next to Item Name.
+- Child JC always shown with a dash: dropped because the Item row holds 8 facts without it.
+
+### Consequences
+
+- Positive: one fact per box, same row style as Order and Quantity, no new component, no migration.
+- Negative: on a screen under 1500 px of grid width the Item row takes two lines, so the header is taller. Hide details removes it.
+- Risks, none changed here:
+  - Replace Drawing writes the Rev's number onto every SO and JWSO line of that Rev (`item-revision.ts`). A new number reaches every card, which is right. A replace with no number overwrites a different number typed on a later line, with the Rev's.
+  - A line Rev change leaves a typed Drawing No. as it was, so moved open cards show the old number under the new Rev until someone updates the SO line. The SO shows the same number.
+  - The number and the file can disagree: a line may type a different number for the same Rev, while the file is one per Rev. Nothing warns at SO save.
+  - Live cards whose line and Rev numbers differ change on screen and print at release. Live data could not be read to count them.

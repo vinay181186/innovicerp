@@ -219,12 +219,15 @@ type JcCustomerMaterial = NonNullable<JobCardListItem['customerMaterial']> & {
 // The Job Card's Drawing No. (detail screen + print): the number typed on THIS
 // card's SO / JWSO line (owner 2026-11-07) — only when that line is for THIS
 // card's item (a BOM child card sits on its parent's line, whose drawing is the
-// assembly's) — else the card's Item + Drawing Rev record, else the Item Master.
+// assembly's) AND on THIS card's Rev (a closed card stays on its old Rev when the
+// line moves on) — else the card's Item + Drawing Rev record, else the Item Master.
 // The Rev record keeps the FIRST line's number, so it cannot come first: a later
 // SO with its own number would show the other order's. Blank text counts as none.
 const JC_DRAWING_NO_SQL = sql`COALESCE(
-  CASE WHEN sol.item_id = jc.item_id THEN NULLIF(sol.drawing_no, '') END,
-  CASE WHEN jwl.item_id = jc.item_id THEN NULLIF(jwl.drawing_no, '') END,
+  CASE WHEN sol.item_id = jc.item_id AND sol.item_revision_id IS NOT DISTINCT FROM jc.item_revision_id
+    THEN NULLIF(sol.drawing_no, '') END,
+  CASE WHEN jwl.item_id = jc.item_id AND jwl.item_revision_id IS NOT DISTINCT FROM jc.item_revision_id
+    THEN NULLIF(jwl.drawing_no, '') END,
   NULLIF(jir.drawing_no, ''),
   NULLIF(i.drawing_no, '')
 )`;

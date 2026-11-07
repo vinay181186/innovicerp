@@ -42,7 +42,7 @@ export function JcFactStrip({
   jc: JobCardListItem;
   productionOrder: ProductionOrderListItem | null;
   check: JobCardCheck | undefined;
-  /** Only once the page has scrolled past the header's blue JC No. */
+  /** Once the page has scrolled past the header, and its blue JC No. with it. */
   showJcNo: boolean;
   /** Collapsed: the end button is "▾ Show details"; else "↑ Top". */
   collapsed: boolean;
@@ -54,31 +54,34 @@ export function JcFactStrip({
   const d = '—';
   return (
     <div className="jc-strip" role="group" aria-label="Job Card summary">
-      {showJcNo ? <Fig k="JC No." v={jc.code} /> : null}
-      <Fig k="Item Code" v={codeRev} />
-      {jc.itemName ? (
-        <span className="jc-strip-f jc-strip-item">
-          <span className="jc-strip-k">Item Name</span>
-          <span className="jc-strip-name" title={jc.itemName}>
-            {jc.itemName}
+      {/* The figures give way on a narrow screen; the end button sits outside
+          them, because ▾ Show details is the only way back. */}
+      <div className="jc-strip-figs">
+        {showJcNo ? <Fig k="JC No." v={jc.code} /> : null}
+        <Fig k="Item Code" v={codeRev} />
+        {jc.itemName ? (
+          <span className="jc-strip-f jc-strip-item">
+            <span className="jc-strip-k">Item Name</span>
+            <span className="jc-strip-name" title={jc.itemName}>
+              {jc.itemName}
+            </span>
           </span>
-        </span>
-      ) : null}
-      <span className="jc-strip-sep" />
-      {productionOrder ? <Fig k="PRO" v={productionOrder.code} /> : null}
-      <Fig k="Due" v={jc.dueDate ? fmtDate(jc.dueDate) : d} />
-      <span className="jc-strip-sep" />
-      <Fig k="Order Qty" v={jc.orderQty} />
-      <Fig k="Pending at Ops" v={q ? q.pending : d} />
-      <Fig k="At Vendor" v={q ? q.atVendor : d} />
-      <Fig
-        k="Deviated (NC open)"
-        v={q ? q.deviatedOpen : d}
-        tone={q && q.deviatedOpen > 0 ? 'jc-amber' : ''}
-      />
-      <Fig k="Rejected" v={q ? q.rejected : d} tone={q && q.rejected > 0 ? 'jc-red' : ''} />
-      <Fig k="Completed" v={q ? q.finished : d} tone="jc-yes" />
-      <span className="jc-strip-gap" />
+        ) : null}
+        <span className="jc-strip-sep" />
+        {productionOrder ? <Fig k="PRO" v={productionOrder.code} /> : null}
+        <Fig k="Due" v={jc.dueDate ? fmtDate(jc.dueDate) : d} />
+        <span className="jc-strip-sep" />
+        <Fig k="Order Qty" v={jc.orderQty} />
+        <Fig k="Pending at Ops" v={q ? q.pending : d} />
+        <Fig k="At Vendor" v={q ? q.atVendor : d} />
+        <Fig
+          k="Deviated (NC open)"
+          v={q ? q.deviatedOpen : d}
+          tone={q && q.deviatedOpen > 0 ? 'jc-amber' : ''}
+        />
+        <Fig k="Rejected" v={q ? q.rejected : d} tone={q && q.rejected > 0 ? 'jc-red' : ''} />
+        <Fig k="Completed" v={q ? q.finished : d} tone="jc-yes" />
+      </div>
       {collapsed ? (
         <button type="button" className="btn btn-ghost btn-sm" onClick={onShowDetails}>
           ▾ Show details

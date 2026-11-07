@@ -3,10 +3,11 @@
 // source_so_line_id backfilled to SO-436 lines. Read-only — no test
 // fixtures inserted; we just assert the service exposes the data correctly.
 
-import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { and, eq, inArray, isNull, ne } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
 import {
+  itemRevisions,
   items,
   jcOps,
   jobCards,
@@ -16,6 +17,7 @@ import {
   opLog,
   purchaseRequests,
   runningOps,
+  salesOrderLines,
   users,
 } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
@@ -159,6 +161,71 @@ describe('job-cards service', () => {
       expect(model.linkedSourceOption?.remaining).toBeGreaterThanOrEqual(0);
     } else {
       expect(model.linkedSourceOption).toBeNull();
+    }
+  });
+
+  it('Drawing No. reads the order line first, only on the same item and Rev (ADR-284)', async () => {
+    const list = await service.listJobCards({ limit: 100, offset: 0 }, admin);
+    const card = list.items.find((c) => c.sourceLink?.type === 'so' && c.itemRevisionId);
+    if (card?.sourceLink?.type !== 'so' || !card.itemRevisionId) {
+      throw new Error('No SO Job Card with a Drawing Rev on this DB');
+    }
+    const lineId = card.sourceLink.salesOrderLineId;
+    const revId = card.itemRevisionId;
+    const [line] = await db
+      .select({
+        itemId: salesOrderLines.itemId,
+        drawingNo: salesOrderLines.drawingNo,
+        itemRevisionId: salesOrderLines.itemRevisionId,
+      })
+      .from(salesOrderLines)
+      .where(eq(salesOrderLines.id, lineId));
+    const [rev] = await db
+      .select({ drawingNo: itemRevisions.drawingNo })
+      .from(itemRevisions)
+      .where(eq(itemRevisions.id, revId));
+    const [otherItem] = await db
+      .select({ id: items.id })
+      .from(items)
+      .where(and(eq(items.companyId, admin.companyId!), ne(items.id, card.itemId)))
+      .limit(1);
+    if (!line || !rev || !otherItem) throw new Error('Job Card fixture incomplete');
+    const setLine = (patch: Partial<typeof salesOrderLines.$inferInsert>) =>
+      db.update(salesOrderLines).set(patch).where(eq(salesOrderLines.id, lineId));
+    const shown = async (): Promise<string | null> =>
+      (await service.getJobCard(card.id, admin)).drawingNo;
+
+    try {
+      await db
+        .update(itemRevisions)
+        .set({ drawingNo: 'ADR284-REV' })
+        .where(eq(itemRevisions.id, revId));
+
+      // The line's own typed number wins over the Rev record.
+      await setLine({ drawingNo: 'ADR284-LINE', itemRevisionId: revId, itemId: card.itemId });
+      expect(await shown()).toBe('ADR284-LINE');
+
+      // Blank on the line: the Rev record.
+      await setLine({ drawingNo: '' });
+      expect(await shown()).toBe('ADR284-REV');
+
+      // The line has moved to another Rev: the card keeps its own Rev's number.
+      await setLine({ drawingNo: 'ADR284-LINE', itemRevisionId: null });
+      expect(await shown()).toBe('ADR284-REV');
+
+      // BOM child: the line is the assembly's, never this card's number.
+      await setLine({ itemRevisionId: revId, itemId: otherItem.id });
+      expect(await shown()).toBe('ADR284-REV');
+    } finally {
+      await setLine({
+        itemId: line.itemId,
+        drawingNo: line.drawingNo,
+        itemRevisionId: line.itemRevisionId,
+      });
+      await db
+        .update(itemRevisions)
+        .set({ drawingNo: rev.drawingNo })
+        .where(eq(itemRevisions.id, revId));
     }
   });
 
