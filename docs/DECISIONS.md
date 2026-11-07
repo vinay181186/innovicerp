@@ -15521,3 +15521,34 @@ Owner: Pending Entries should open per person on a calendar, green for filled an
 **All Tasks layout and filters.** All Tasks keeps its own saved column layout (`task-board-all`), so admins' saved All Tasks layouts reset once. Sort & Filter on these two columns is removed on the other tabs. The toolbar Assigned By filter names the same person as the column.
 
 **Migration:** 0245.
+
+## ADR-284: The standard check stops a release; old bypasses frozen; Claude Design behind notice
+
+**Date:** 2026-11-07
+**Status:** Accepted
+
+### Context
+
+`standard.guard.test.ts` failed only in CI, and CI does not hold a deploy (ADR-270). It had no
+rule for hand-made tables, plain dropdowns, typed colours or typed spacing, so new code kept
+adding them. Nothing said when Claude Design fell behind.
+
+### Decision
+
+The release runs the check before any migration or merge. Four new rules count per file against
+`ui/standard-frozen.json`: over its count fails and names the file. A count only goes down.
+Prints and the kit's own table and dropdown are exempt. `.design-sync/check-behind.sh` compares
+what Claude Design shows with `.design-sync/last-sync-commit`, and the release prints the result.
+CLAUDE.md §25 is the rule for sessions.
+
+### Alternatives Considered
+
+- Fail on every existing bypass: rejected, about 1,100 old uses would stop every release.
+- Sync with no owner step: not available; the sync tool only runs when the owner starts it.
+
+### Consequences
+
+- Positive: new code cannot grow the bypass counts; the owner is told when to sync.
+- Negative: another session's new bypass on `test` can stop a release until it is fixed.
+- Risks: the check reads patterns, so it cannot judge a screen. `release/release-prod.sh` is
+  outside git, so its two added lines are undone by hand.
