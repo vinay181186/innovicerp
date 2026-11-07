@@ -27,7 +27,7 @@ export function lockedList(locked: string | readonly string[] | undefined): read
 /** Apply one operation. A locked column (column 0, or the lead block) can
  *  never move, pin or unpin, and no other column can move into the block. It
  *  cannot hide either, unless it is listed in `hideable` (Created On / Created
- *  Time, ADR-284): those take 'hide' and 'show' and nothing else. */
+ *  Time, ADR-285): those take 'hide' and 'show' and nothing else. */
 export function applyLayoutOp(
   state: LayoutShape,
   op: LayoutOp,

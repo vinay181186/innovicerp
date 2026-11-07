@@ -1,10 +1,10 @@
--- ADR-284 — keep the QC Call Register's Operation and Stage, and Created On and
+-- ADR-285 — keep the QC Call Register's Operation and Stage, and Created On and
 -- Created Time on every list, on screen for everybody once they can be hidden.
 --
 -- Those columns were locked or shown by default, and a saved `hidden = true` on
 -- them was ignored by the lock. Now they become hideable, an old saved row would
 -- take effect and the column would vanish with nobody having asked for that
--- today (owner, ADR-284). So those saved rows are set back to shown.
+-- today (owner, ADR-285). So those saved rows are set back to shown.
 --
 -- Operation (and Stage on Completed) were hidden by default, not by choice, and
 -- the owner wants them on screen. Stage on Pending was already shown by default,

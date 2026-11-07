@@ -29,7 +29,7 @@ function routeCardInput(avail: number): FitInput {
 
 const sum = (w: Record<string, number>) => Object.values(w).reduce((a, b) => a + b, 0);
 
-describe('fitColumns — hidden lead column (ADR-284)', () => {
+describe('fitColumns — hidden lead column (ADR-285)', () => {
   const input = (hidden: string[]): FitInput => ({
     ...routeCardInput(1000),
     hidden,

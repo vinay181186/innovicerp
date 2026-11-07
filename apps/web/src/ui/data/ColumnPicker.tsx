@@ -2,7 +2,7 @@
 // order with ▲▼ move, a show/hide tick and a 📌 pin; column 0 is "(always
 // first)" and cannot be moved, hidden or unpinned; the lead columns are "(fixed)"
 // the same way, except that Created On / Created Time keep a working tick
-// (ADR-284); the Action column is not listed (always shown, always last).
+// (ADR-285); the Action column is not listed (always shown, always last).
 // Ported from the prototype's renderPop().
 
 import { useEffect, useRef } from 'react';
@@ -21,7 +21,7 @@ export interface PickerColumn {
   control?: boolean | undefined;
   /** One of the locked lead columns — cannot move, hide or unpin. */
   lead?: boolean | undefined;
-  /** A lead column the user may hide (ADR-284): the tick works, ▲▼ and 📌 do not. */
+  /** A lead column the user may hide (ADR-285): the tick works, ▲▼ and 📌 do not. */
   hideable?: boolean | undefined;
 }
 
@@ -114,7 +114,7 @@ export function ColumnPicker({
     const lead = !first && (columns.find((c) => c.id === id)?.lead ?? false);
     // A control column is locked like the first one: never hidden, always pinned.
     // A lead column (SO No. … Item Name) is fixed in place and always shown;
-    // Created On / Created Time are fixed too, but the user may hide them (ADR-284).
+    // Created On / Created Time are fixed too, but the user may hide them (ADR-285).
     const locked = first || control || lead;
     const hideable = lead && (columns.find((c) => c.id === id)?.hideable ?? false);
     const pinned = (locked && !(hideable && isHidden)) || layout.pins.includes(id);

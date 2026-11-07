@@ -97,7 +97,7 @@ function pgrnAsCompleted(r: PartyGrnQcRow): IncomingQcCompletedRow {
  *  Actual Machine — not on Incoming QC — and Client PO No.) as the last columns;
  *  the Completed sheet ends with Deviation Reason (Party GRN lines only). The
  *  Operation key overrides the sheet's own Operation cell, in place, with the
- *  words the screen shows (ADR-284). */
+ *  words the screen shows (ADR-285). */
 export async function exportRegister(
   query: Omit<QcRegisterQuery, 'limit' | 'offset'>,
   view: QcView,

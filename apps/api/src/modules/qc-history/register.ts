@@ -20,7 +20,7 @@
 // (GRN_TYPE_SQL), the Party GRN half is on only for 'party_grn'. Incoming QC
 // is this register with grnType = purchase,party_grn.
 //
-// ADR-284: stage 'process' = every job-card call (In-Process and Final together);
+// ADR-285: stage 'process' = every job-card call (In-Process and Final together);
 // `operation` narrows to the job-card calls of that operation, so both GRN halves
 // drop out. Its counts for the filter are in the summary (register-summary.ts).
 //
@@ -148,7 +148,7 @@ export async function listQcRegister(input: Input, user: AuthContext): Promise<Q
       incOn = incOn && incTypes.length > 0;
       pgrnOn = pgrnOn && input.grnType.includes('party_grn');
     }
-    // ADR-284 Operation: only job-card calls carry one.
+    // ADR-285 Operation: only job-card calls carry one.
     if (input.operation !== undefined) {
       incOn = false;
       pgrnOn = false;

@@ -17,7 +17,7 @@ const ops = [{ name: 'DIR', count: 3 }];
 const values = (f: typeof NO_QC_FILTER): string[] =>
   qcChoiceOptions(f, ops, types).map((o) => o.value);
 
-describe('QC register filters (ADR-284)', () => {
+describe('QC register filters (ADR-285)', () => {
   it('reads the two stage names', () => {
     expect(QC_REGISTER_STAGE_LABELS).toEqual({ incoming: 'Incoming', process: 'In-Process' });
   });

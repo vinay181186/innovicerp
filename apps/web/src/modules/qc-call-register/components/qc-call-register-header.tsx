@@ -5,13 +5,14 @@
 //
 // ADR-251: an 'incoming' mode for the Incoming QC screen (its own title, no Stage
 // / Mine / Full History, and a GRN Type filter of Direct Purchase + Party GRN).
-// ADR-284: the register filters on Stage (Incoming | In-Process) and on one
+// ADR-285: the register filters on Stage (Incoming | In-Process) and on one
 // "All Operations" select holding the operations and the four GRN Types.
 
 import { Icon } from '@/ui/core';
-import type { ReactNode } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { INCOMING_QC_GRN_TYPES, QC_GRN_TYPE_LABELS, type QcGrnType } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
+import { SearchableSelect, Select } from '@/ui/forms';
 import { ListHeader } from '@/ui/layout';
 import {
   QC_REGISTER_STAGE_LABELS,
@@ -65,6 +66,20 @@ export function QcCallRegisterHeader(props: {
     incoming: stageStats.incoming.count,
     process: stageStats.inprocess.count + stageStats.final.count,
   };
+  // The picker keeps its own typed text: a choice changed from outside (Clear
+  // Filters, Stage) remounts it; a change it made itself must not, or typing over
+  // a picked name would lose the letters.
+  const choice = qcChoiceValue(filter);
+  const fromPicker = useRef(false);
+  const [boxKey, setBoxKey] = useState(0);
+  useEffect(() => {
+    if (fromPicker.current) fromPicker.current = false;
+    else setBoxKey((k) => k + 1);
+  }, [choice]);
+  const choices = qcChoiceOptions(filter, props.operationStats, grnTypeStats).map((o) => ({
+    id: o.value,
+    name: o.label,
+  }));
   return (
     <ListHeader
       title={incoming ? 'Incoming QC' : 'QC Call Register'}
@@ -84,32 +99,37 @@ export function QcCallRegisterHeader(props: {
       filters={
         <>
           {incoming ? (
-            <select
-              className="innovic-select"
+            <Select
               aria-label="GRN Type"
               title="GRN Type"
               value={filter.grnType ?? ''}
+              options={[
+                { value: '', label: `All GRN Types (${allTypesCount})` },
+                ...INCOMING_QC_GRN_TYPES.map((t) => ({
+                  value: t,
+                  label: `${QC_GRN_TYPE_LABELS[t]} (${grnTypeStats[t].count})`,
+                })),
+              ]}
               onChange={(e) =>
                 onFilter({
                   ...filter,
                   grnType: e.target.value === '' ? null : (e.target.value as QcGrnType),
                 })
               }
-            >
-              <option value="">{`All GRN Types (${allTypesCount})`}</option>
-              {INCOMING_QC_GRN_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {`${QC_GRN_TYPE_LABELS[t]} (${grnTypeStats[t].count})`}
-                </option>
-              ))}
-            </select>
+            />
           ) : (
             <>
-              <select
-                className="innovic-select"
+              <Select
                 aria-label="QC stage"
                 title="QC stage"
                 value={filter.stage ?? ''}
+                options={[
+                  { value: '', label: `All stages (${stageCount.incoming + stageCount.process})` },
+                  ...(['incoming', 'process'] as const).map((s) => ({
+                    value: s,
+                    label: `${QC_REGISTER_STAGE_LABELS[s]} (${stageCount[s]})`,
+                  })),
+                ]}
                 onChange={(e) =>
                   onFilter(
                     withStage(
@@ -118,31 +138,21 @@ export function QcCallRegisterHeader(props: {
                     ),
                   )
                 }
-              >
-                <option value="">
-                  {`All stages (${stageCount.incoming + stageCount.process})`}
-                </option>
-                {(['incoming', 'process'] as const).map((s) => (
-                  <option key={s} value={s}>
-                    {`${QC_REGISTER_STAGE_LABELS[s]} (${stageCount[s]})`}
-                  </option>
-                ))}
-              </select>
-              <select
-                className="innovic-select"
-                aria-label="Operation"
-                title="Operation"
-                value={qcChoiceValue(filter)}
-                onChange={(e) => onFilter(withChoice(filter, e.target.value))}
-              >
-                {/* "All" is no narrowing at all, so no count. */}
-                <option value="">All Operations</option>
-                {qcChoiceOptions(filter, props.operationStats, grnTypeStats).map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
+              />
+              {/* §25: QC Process master names, so the type-to-search picker. In-memory
+                  list, no server search. */}
+              <SearchableSelect
+                key={boxKey}
+                ariaLabel="Operation"
+                placeholder="All Operations"
+                value={choice || null}
+                valueLabel={choices.find((o) => o.id === choice)?.name}
+                options={[{ id: 'all', name: 'All Operations' }, ...choices]}
+                onChange={(id) => {
+                  fromPicker.current = true;
+                  onFilter(withChoice(filter, id ?? ''));
+                }}
+              />
             </>
           )}
           {view === 'pending' && !incoming ? (

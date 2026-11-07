@@ -42,7 +42,7 @@ export const LOG_IS_LAST = isLastLiveOpSql('jo');
 /** Stage narrowing of the op feeds (ADR-169): Final Inspection = the card's
  *  LAST live op, In-process = any other. `isLast` is PEND_IS_LAST (pending
  *  feed) or LOG_IS_LAST (QC log). The QC Call Register and the home's QC
- *  checks qc_inprocess / qc_final read it, so the two agree. ADR-284: 'process'
+ *  checks qc_inprocess / qc_final read it, so the two agree. ADR-285: 'process'
  *  = every job-card call, so it narrows nothing here. */
 export function opStageWhere(stage: QcRegisterStageFilter | undefined, isLast: SQL): SQL {
   if (stage === 'final') return sql`AND ${isLast}`;
@@ -50,7 +50,7 @@ export function opStageWhere(stage: QcRegisterStageFilter | undefined, isLast: S
   return sql``;
 }
 
-/** ADR-284: an operation name ignoring capitals and outer spaces (dir = DIR). The
+/** ADR-285: an operation name ignoring capitals and outer spaces (dir = DIR). The
  *  register's Operation filter and its summary counts both group on this. */
 export const OP_NAME_KEY = sql`lower(btrim(jo.operation))`;
 

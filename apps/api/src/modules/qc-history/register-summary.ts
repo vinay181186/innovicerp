@@ -1,7 +1,7 @@
 // QC Call Register — the whole-register summary (ADR-201 / ADR-251): stage
 // counts, pcs pending and completed entries over EVERY call, never narrowed by
 // search / stage / Mine / Sort & Filter. Split out of register.ts unchanged.
-// ADR-284: the job-card calls by operation name, for the Operation filter.
+// ADR-285: the job-card calls by operation name, for the Operation filter.
 
 import { sql } from 'drizzle-orm';
 import { QC_GRN_TYPES, type QcGrnType, type QcRegisterSummary } from '@innovic/shared';
@@ -23,7 +23,7 @@ const pcs = (v: number): number => Math.round(v * 1000) / 1000;
 
 /** Whole-register figures — stage counts, pcs pending, completed entries. */
 export async function registerSummary(tx: Tx, companyId: string): Promise<QcRegisterSummary> {
-  // ADR-284: one read per job-card feed gives the stage figures AND the Operation
+  // ADR-285: one read per job-card feed gives the stage figures AND the Operation
   // filter's counts (same rows the filter returns, grouped on OP_NAME_KEY).
   const opPending = rows(
     await tx.execute(sql`

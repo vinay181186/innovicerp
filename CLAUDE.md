@@ -1290,3 +1290,40 @@ its values.
    `.money` and `.rgt` right). A new column set follows the table above.
 5. **A test holds it:** `apps/web/src/ui/standard.guard.test.ts` fails CI and names the file. A
    real exception goes on its list with its reason.
+
+---
+
+## Section 25 — Everything Is Built From Shared Pieces (owner rule 2026-11-07, ADR-284)
+
+_The fault:_ the one standard was finished on 5-Nov, and new code kept adding hand-made
+tables and typed spacing, because only a few bypasses were checked and the check did not stop
+a release. Claude Design also fell behind and nobody was told.
+
+1. **A new feature uses what exists.** Look in `apps/web/src/ui/` first (§22.7). Never make a
+   screen's own copy of a table, dropdown, pop-up, button or layout.
+2. **A completely new kind of thing becomes a shared piece first.** Build it in `ui/`, use it
+   from the screen, then add it to `componentSrcMap` in `.design-sync/config.json` with a
+   preview card in `.design-sync/previews/`. Say so in the plan.
+3. **A new rule for how screens look** also goes in `.design-sync/conventions.md`, so Claude
+   Design follows it too.
+4. **The release stops on a new bypass.** `apps/web/src/ui/standard.guard.test.ts` names the
+   file. Old screens keep their counts in `ui/standard-frozen.json`, and no file may add more:
+
+   | Bypass | Use instead |
+   | --- | --- |
+   | `<table>` | `DataTable` or `FitRows` |
+   | `<select>` | `Select` for a short fixed list, `SearchableSelect` for a master or document |
+   | A typed colour | A colour from the theme |
+   | Typed padding, margin or gap | A spacing size from the theme |
+
+   Fix the code. Never raise a count to get past the check unless the owner approved it. A
+   printed sheet may have its own table and colours, and the kit in `ui/` builds the real table
+   and dropdown. After a clean-up, lower the counts:
+   `UPDATE_STANDARD_FREEZE=1 pnpm exec vitest run src/ui/standard.guard.test.ts` in `apps/web`.
+5. **Claude Design stays current.** `sh .design-sync/check-behind.sh` says whether it is behind,
+   and the release prints the same line. When it says BEHIND, tell the owner to type
+   `/design-sync`; only the owner can start it. Do the rest as `.design-sync/NOTES.md` says.
+   Never raise the Claude Design login unless a sync actually refuses for that reason.
+
+The check reads patterns only. It cannot judge a screen, and it cannot tell a master list
+passed to `Select`. Rules 1 to 3 and the code review cover those.

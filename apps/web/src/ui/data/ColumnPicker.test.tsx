@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { ColumnPicker, type PickerColumn } from './ColumnPicker';
 
-// ADR-284 — Created On / Created Time keep a working tick; ▲▼ and 📌 stay off.
+// ADR-285 — Created On / Created Time keep a working tick; ▲▼ and 📌 stay off.
 const COLUMNS: PickerColumn[] = [
   { id: 'sr_no', label: 'Sr No', lead: true },
   { id: 'so_no', label: 'SO No.', lead: true },
@@ -38,7 +38,7 @@ function open(hidden: string[], lockedCount: number) {
 const tick = (name: RegExp) => screen.getByRole<HTMLInputElement>('checkbox', { name });
 const button = (name: string) => screen.getByRole<HTMLButtonElement>('button', { name });
 
-describe('ColumnPicker — hideable lead columns (ADR-284)', () => {
+describe('ColumnPicker — hideable lead columns (ADR-285)', () => {
   it('the tick hides Created Time; ▲▼ and pin stay off; other lead ticks stay off', () => {
     const onOp = open([], 4);
     expect(tick(/Created Time/).disabled).toBe(false);

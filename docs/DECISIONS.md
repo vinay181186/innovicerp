@@ -15522,7 +15522,38 @@ Owner: Pending Entries should open per person on a calendar, green for filled an
 
 **Migration:** 0245.
 
-## ADR-284: QC Call Register shows Operation and two Stages; Created On and Created Time can be hidden
+## ADR-284: The standard check stops a release; old bypasses frozen; Claude Design behind notice
+
+**Date:** 2026-11-07
+**Status:** Accepted
+
+### Context
+
+`standard.guard.test.ts` failed only in CI, and CI does not hold a deploy (ADR-270). It had no
+rule for hand-made tables, plain dropdowns, typed colours or typed spacing, so new code kept
+adding them. Nothing said when Claude Design fell behind.
+
+### Decision
+
+The release runs the check before any migration or merge. Four new rules count per file against
+`ui/standard-frozen.json`: over its count fails and names the file. A count only goes down.
+Prints and the kit's own table and dropdown are exempt. `.design-sync/check-behind.sh` compares
+what Claude Design shows with `.design-sync/last-sync-commit`, and the release prints the result.
+CLAUDE.md §25 is the rule for sessions.
+
+### Alternatives Considered
+
+- Fail on every existing bypass: rejected, about 1,100 old uses would stop every release.
+- Sync with no owner step: not available; the sync tool only runs when the owner starts it.
+
+### Consequences
+
+- Positive: new code cannot grow the bypass counts; the owner is told when to sync.
+- Negative: another session's new bypass on `test` can stop a release until it is fixed.
+- Risks: the check reads patterns, so it cannot judge a screen. `release/release-prod.sh` is
+  outside git, so its two added lines are undone by hand.
+
+## ADR-285: QC Call Register shows Operation and two Stages; Created On and Created Time can be hidden
 
 **Date:** 2026-11-07. **Owner decided:** Created On and Created Time stay in their fixed place and are shown by default, and each user may hide them. On the QC Call Register, the GRN Type filter becomes an Operation filter, Called Date goes, Stage reads Incoming or In-Process, and Operation shows the short name. Amends ADR-261 (3-Nov "locked and always shown") and ADR-251.
 
@@ -15531,7 +15562,7 @@ Owner: Pending Entries should open per person on a calendar, green for filled an
 - **Stage.** Two values on screen. Every job-card call reads In-Process, including the last op and Final Inspection. New filter value `stage=process`; `inprocess` and `final` stay for the Home checks.
 - **Operation.** A job-card call shows `jc_ops.operation` as stored; hover keeps `Op 20 DIR`, because two DIRs on one card look the same in the cell. An incoming call shows its GRN Type label. The ▾ filter and the Excel Operation cell read the same words.
 - **Against JW PO / DC stays the name of an OSP return (D1).** "Against PO" was renamed Direct Purchase on 2026-10-23 because it did not say which PO.
-- **Operation filter.** Register only. Choices are the active QC Process master names plus any other name on a job-card QC call, matched ignoring capitals and outer spaces, then the four GRN Types as Stage allows. A master name with no calls shows (0).
+- **Operation filter.** Register only. The type-to-search picker (§25, it holds master names). Choices are the active QC Process master names plus any other name on a job-card QC call, matched ignoring capitals and outer spaces, then the four GRN Types as Stage allows. A master name with no calls shows (0).
 - **Incoming QC (D2).** Gets the Operation column, since Stage no longer names the type. Keeps its GRN Type filter. Called Date goes there too.
 - **Called Date.** No column on either table. The server keeps the `calledDate` Sort & Filter field, because a tab still sorted on it would otherwise get an error with no way to clear it.
 

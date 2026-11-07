@@ -184,7 +184,7 @@ export interface QcLogsListResponse {
 
 export const QC_REGISTER_STAGES = ['incoming', 'inprocess', 'final'] as const;
 export type QcRegisterStage = (typeof QC_REGISTER_STAGES)[number];
-/** ADR-284: the register's Stage filter. The screen shows two stages, Incoming
+/** ADR-285: the register's Stage filter. The screen shows two stages, Incoming
  *  and In-Process; 'process' = EVERY job-card QC call (inprocess + final). The
  *  old two values stay for the Home checks and old links. */
 export const QC_REGISTER_STAGE_FILTERS = [...QC_REGISTER_STAGES, 'process'] as const;
@@ -236,7 +236,7 @@ export const qcRegisterQuerySchema = z.object({
   grnLineId: z.string().uuid().optional(),
   /** ADR-251: only incoming calls of these GRN Types (job-card calls drop out). */
   grnType: grnTypeListParam,
-  /** ADR-284: only job-card QC calls of this operation (incoming calls drop out).
+  /** ADR-285: only job-card QC calls of this operation (incoming calls drop out).
    *  A name from summary.operations, sent as listed; the server compares it the way
    *  it groups the list (dir = DIR), so it is not trimmed here. */
   operation: z.string().min(1).max(500).optional(),
@@ -357,7 +357,7 @@ export const QC_REGISTER_PENDING_SF_FIELDS = [
   'itemCode',
   'itemName',
   'qcPending',
-  /** No column since ADR-284; kept so a tab still sorted on it does not fail. */
+  /** No column since ADR-285; kept so a tab still sorted on it does not fail. */
   'calledDate',
   'pol',
   'soVendor',
@@ -388,7 +388,7 @@ export const QC_REGISTER_COMPLETED_SF_FIELDS = [
   'soInternalNo',
   'clientPoNo',
   'operation',
-  /** No column since ADR-284; kept so a tab still sorted on it does not fail. */
+  /** No column since ADR-285; kept so a tab still sorted on it does not fail. */
   'calledDate',
   'logNo',
   'remarks',
@@ -407,7 +407,7 @@ export interface QcRegisterStageSummary {
   doneCount: number;
 }
 
-/** ADR-284: one choice of the register's Operation filter: an active QC Process
+/** ADR-285: one choice of the register's Operation filter: an active QC Process
  *  master name, or any other name a job-card QC call carries. Counts cover the
  *  whole register; a master name with no calls has zero counts. */
 export interface QcRegisterOperationStat {
@@ -422,7 +422,7 @@ export interface QcRegisterSummary {
   stages: Record<QcRegisterStage, QcRegisterStageSummary>;
   /** ADR-251: the Incoming stage split by GRN Type — the four add up to it. */
   grnTypes: Record<QcGrnType, QcRegisterStageSummary>;
-  /** ADR-284: the job-card QC calls by operation name, sorted by name. */
+  /** ADR-285: the job-card QC calls by operation name, sorted by name. */
   operations: QcRegisterOperationStat[];
   pendingCount: number;
   completeCount: number;

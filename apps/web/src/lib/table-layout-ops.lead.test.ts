@@ -19,7 +19,7 @@ vi.mock('./session', () => ({ useSession: vi.fn() }));
 // Item Code · Item Name · own No. · Created On · Created Time are one fixed
 // block at the front of every SO list; Created By is last. Created On and
 // Created Time are shown by default and each user may hide them, but they stay
-// in place: no move, no pin (ADR-284, reverses "always shown" of 2026-11-03).
+// in place: no move, no pin (ADR-285, reverses "always shown" of 2026-11-03).
 const LEAD = [...LEAD_COLUMN_IDS];
 const HIDEABLE = ['created_on', 'created_time'];
 const FULLY_LOCKED = LEAD.filter((id) => !HIDEABLE.includes(id));
