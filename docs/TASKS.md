@@ -1,7 +1,8 @@
 # TASKS.md — Project Task Tracker
 
 > Update at start AND end of every work session.
-> Last updated: 2026-11-07 (**ADR-282 — add a Route Card line anywhere with the series staying 10, 20, 30; a Job Card keeps its own Route Card Rev; Job Card write-back no longer loses Lead Days or raises false changes.** Migration 0244.)
+> Last updated: 2026-11-07 (**ADR-283 — open-page tabs open in fixed menu order with Home first, Home never drops at the cap; Job Card Operations has separate Operation and Machine / Vendor columns; All Tasks has Assigned By and Assigned Date.** Migration 0245.)
+> Prior: 2026-11-07 (**ADR-282 — add a Route Card line anywhere with the series staying 10, 20, 30; a Job Card keeps its own Route Card Rev; Job Card write-back no longer loses Lead Days or raises false changes.** Migration 0244.)
 > Prior: 2026-11-06 (**ADR-280 — one alignment across the ERP: text left, Qty centre, money right, on screens, prints and Excel; held by CLAUDE.md §24 and a test. Route Card long text under the row with Show / Hide.** No migration.)
 > Prior: 2026-11-06 (**ADR-281 — Party GRN Status also on the lines inside a JWSO in Planning.** No migration.)
 > Prior: 2026-11-06 (**ADR-279 — Home > Planning check "Party GRN received, plan pending" opens the Create Plan popup for the line; Planning list column Party GRN Status (Done / Part Done / Not Done).** No migration.)

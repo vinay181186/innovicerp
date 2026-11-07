@@ -15500,3 +15500,24 @@ Owner: Pending Entries should open per person on a calendar, green for filled an
 - A form open on the Job Card gets the normal changed-by-someone message after an approval moves its Rev.
 
 **Migration:** 0244.
+
+## ADR-283: Open-page tabs in fixed menu order; Job Card Operation and Machine / Vendor apart; All Tasks Assigned By + Assigned Date
+
+**Date:** 2026-11-07
+**Status:** Accepted
+
+**Owner:** "if i cancel home, again click on home then home tab must not open after jc tab. every page has its fixed logical sequencing." · "two separate things must come in separate column, do not mix it." · "all task - add column assigned by, assigned date."
+
+**Tabs.** A tab's place on the strip comes from the top menu: Home first, then the menu left to right and top to bottom inside each menu. A page in two menus takes its first place. A page in no menu goes last, in opening order. The store keeps opening order and only the display sorts, because the 8-tab cap removes the oldest opened. At the cap the oldest tab that is not Home goes; the user can still close Home with ×.
+
+**Job Card detail, Operations tab.** `Operation` and `Machine / Vendor` are two columns. Both wrap, and together they are narrower than the old single column, which also brings the table inside its box at 1440 wide. Only the Operation name opens the operation popup. "+ OSP" sits with Machine / Vendor; the ♻ rework count stays with Operation.
+
+**All Tasks.** `Assigned By` (last person who assigned; blank falls back to the creator, as Inbox does) and `Assigned Date`, on All Tasks only. Assigned Date is `tasks.assigned_at`: the column default at creation, moved only by Reassign, in the same UPDATE as Assigned To and Assigned By so the three cannot disagree. Shown and filtered as the India date.
+
+**Rejected:** Assigned Date = created date (no migration, but a reassigned task would show the new person with the old date). Reading the last `reassigned` history row at list time (no migration, but a sub-query for sort and filter plus a loader on both read paths: more code than one column).
+
+**Reassign locks the task row** while it checks and writes, as the status changes already do, so a Reassign can no longer overwrite a task someone has just completed or cancelled. When two people reassign at once, the second waits and then acts on the first one's result. Assigned To, Assigned By and Assigned Date stay matched.
+
+**All Tasks layout and filters.** All Tasks keeps its own saved column layout (`task-board-all`), so admins' saved All Tasks layouts reset once. Sort & Filter on these two columns is removed on the other tabs. The toolbar Assigned By filter names the same person as the column.
+
+**Migration:** 0245.

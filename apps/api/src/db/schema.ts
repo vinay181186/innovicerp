@@ -6944,6 +6944,8 @@ export const tasks = pgTable(
     description: text('description'),
     assignedTo: uuid('assigned_to').references(() => users.id),
     assignedBy: uuid('assigned_by').references(() => users.id),
+    // Migration 0245: when the task reached its current assignee — creation, else the last Reassign.
+    assignedAt: timestamp('assigned_at', { withTimezone: true }).notNull().defaultNow(),
     priority: taskPriorityEnum('priority').notNull().default('medium'),
     dueDate: date('due_date'),
     status: taskStatusEnum('status').notNull().default('todo'),

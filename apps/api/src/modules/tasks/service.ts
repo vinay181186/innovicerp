@@ -861,7 +861,7 @@ export async function reassignTask(
   await requireCanWrite(user);
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
-    const t = await loadVisibleTask(tx, id, companyId, user);
+    const t = await loadVisibleTask(tx, id, companyId, user, true);
     if (!permsFor(t, user, true).canReassign) {
       throw new AuthorizationError('Only the task creator or an admin can reassign this task');
     }
@@ -882,6 +882,7 @@ export async function reassignTask(
       .set({
         assignedTo: assignee.id,
         assignedBy: user.id,
+        assignedAt: new Date(),
         // The new assignee has not seen it yet — unless it is me.
         viewedAt: assignee.id === user.id ? new Date() : null,
         updatedBy: user.id,

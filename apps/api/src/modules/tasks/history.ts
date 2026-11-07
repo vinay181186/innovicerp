@@ -208,6 +208,7 @@ export function rowToTask(r: TaskRecord, ctx: RowContext): TaskRow {
     assignedToName: nameOf(names, r.assignedTo),
     assignedBy: r.assignedBy,
     assignedByName: nameOf(names, r.assignedBy),
+    assignedAt: r.assignedAt.toISOString(),
     priority: r.priority,
     startDate: r.startDate,
     dueDate: r.dueDate,
