@@ -232,6 +232,8 @@ export const taskRowSchema = z.object({
   assignedToName: z.string().nullable(),
   assignedBy: z.string().uuid().nullable(),
   assignedByName: z.string().nullable(),
+  /** When the task reached its current assignee: creation, else the last Reassign. */
+  assignedAt: z.string(),
   priority: z.enum(TASK_PRIORITIES),
   startDate: z.string().nullable(),
   dueDate: z.string().nullable(),

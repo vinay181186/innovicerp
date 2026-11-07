@@ -5,7 +5,7 @@
 // everywhere and a page's total is counted over the very rows it pages.
 
 import { type SQL, sql } from 'drizzle-orm';
-import type { QcHistoryLogRow, QcHistoryPendingRow, QcRegisterStage } from '@innovic/shared';
+import type { QcHistoryLogRow, QcHistoryPendingRow, QcRegisterStageFilter } from '@innovic/shared';
 import { createdByNameSql } from '../../lib/created-by-sql';
 import { isLastLiveOpSql } from '../../lib/jc-last-op-sql';
 import { likeEscape } from '../../lib/list-query';
@@ -42,11 +42,22 @@ export const LOG_IS_LAST = isLastLiveOpSql('jo');
 /** Stage narrowing of the op feeds (ADR-169): Final Inspection = the card's
  *  LAST live op, In-process = any other. `isLast` is PEND_IS_LAST (pending
  *  feed) or LOG_IS_LAST (QC log). The QC Call Register and the home's QC
- *  checks qc_inprocess / qc_final read it, so the two agree. */
-export function opStageWhere(stage: QcRegisterStage | undefined, isLast: SQL): SQL {
+ *  checks qc_inprocess / qc_final read it, so the two agree. ADR-286: 'process'
+ *  = every job-card call, so it narrows nothing here. */
+export function opStageWhere(stage: QcRegisterStageFilter | undefined, isLast: SQL): SQL {
   if (stage === 'final') return sql`AND ${isLast}`;
   if (stage === 'inprocess') return sql`AND NOT ${isLast}`;
   return sql``;
+}
+
+/** ADR-286: an operation name ignoring capitals and outer spaces (dir = DIR). The
+ *  register's Operation filter and its summary counts both group on this. */
+export const OP_NAME_KEY = sql`lower(btrim(jo.operation))`;
+
+/** The register's Operation filter over the jo alias (pendingFrom and logsFrom). */
+export function opOperationWhere(operation: string | undefined): SQL {
+  if (operation === undefined) return sql``;
+  return sql`AND ${OP_NAME_KEY} = lower(btrim(${operation}::text))`;
 }
 
 /** CODE/REV exactly as the Item Code cell prints it (itemCodeWithRev): the

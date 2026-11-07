@@ -15500,3 +15500,109 @@ Owner: Pending Entries should open per person on a calendar, green for filled an
 - A form open on the Job Card gets the normal changed-by-someone message after an approval moves its Rev.
 
 **Migration:** 0244.
+
+## ADR-283: Open-page tabs in fixed menu order; Job Card Operation and Machine / Vendor apart; All Tasks Assigned By + Assigned Date
+
+**Date:** 2026-11-07
+**Status:** Accepted
+
+**Owner:** "if i cancel home, again click on home then home tab must not open after jc tab. every page has its fixed logical sequencing." · "two separate things must come in separate column, do not mix it." · "all task - add column assigned by, assigned date."
+
+**Tabs.** A tab's place on the strip comes from the top menu: Home first, then the menu left to right and top to bottom inside each menu. A page in two menus takes its first place. A page in no menu goes last, in opening order. The store keeps opening order and only the display sorts, because the 8-tab cap removes the oldest opened. At the cap the oldest tab that is not Home goes; the user can still close Home with ×.
+
+**Job Card detail, Operations tab.** `Operation` and `Machine / Vendor` are two columns. Both wrap, and together they are narrower than the old single column, which also brings the table inside its box at 1440 wide. Only the Operation name opens the operation popup. "+ OSP" sits with Machine / Vendor; the ♻ rework count stays with Operation.
+
+**All Tasks.** `Assigned By` (last person who assigned; blank falls back to the creator, as Inbox does) and `Assigned Date`, on All Tasks only. Assigned Date is `tasks.assigned_at`: the column default at creation, moved only by Reassign, in the same UPDATE as Assigned To and Assigned By so the three cannot disagree. Shown and filtered as the India date.
+
+**Rejected:** Assigned Date = created date (no migration, but a reassigned task would show the new person with the old date). Reading the last `reassigned` history row at list time (no migration, but a sub-query for sort and filter plus a loader on both read paths: more code than one column).
+
+**Reassign locks the task row** while it checks and writes, as the status changes already do, so a Reassign can no longer overwrite a task someone has just completed or cancelled. When two people reassign at once, the second waits and then acts on the first one's result. Assigned To, Assigned By and Assigned Date stay matched.
+
+**All Tasks layout and filters.** All Tasks keeps its own saved column layout (`task-board-all`), so admins' saved All Tasks layouts reset once. Sort & Filter on these two columns is removed on the other tabs. The toolbar Assigned By filter names the same person as the column.
+
+**Migration:** 0245.
+
+## ADR-284: The standard check stops a release; old bypasses frozen; Claude Design behind notice
+
+**Date:** 2026-11-07
+**Status:** Accepted
+
+### Context
+
+`standard.guard.test.ts` failed only in CI, and CI does not hold a deploy (ADR-270). It had no
+rule for hand-made tables, plain dropdowns, typed colours or typed spacing, so new code kept
+adding them. Nothing said when Claude Design fell behind.
+
+### Decision
+
+The release runs the check before any migration or merge. Four new rules count per file against
+`ui/standard-frozen.json`: over its count fails and names the file. A count only goes down.
+Prints and the kit's own table and dropdown are exempt. `.design-sync/check-behind.sh` compares
+what Claude Design shows with `.design-sync/last-sync-commit`, and the release prints the result.
+CLAUDE.md §25 is the rule for sessions.
+
+### Alternatives Considered
+
+- Fail on every existing bypass: rejected, about 1,100 old uses would stop every release.
+- Sync with no owner step: not available; the sync tool only runs when the owner starts it.
+
+### Consequences
+
+- Positive: new code cannot grow the bypass counts; the owner is told when to sync.
+- Negative: another session's new bypass on `test` can stop a release until it is fixed.
+- Risks: the check reads patterns, so it cannot judge a screen. `release/release-prod.sh` is
+  outside git, so its two added lines are undone by hand.
+
+## ADR-285: Job Card detail: labelled Item row, JC No. once, Drawing No. from the order line first
+
+**Date:** 2026-11-07
+**Status:** Accepted (owner-approved mockup)
+
+### Context
+
+The line under the Job Card's blue number repeated the JC No. and showed `559918172000/0`, the item name, `IN-SO-00011 · SO-519` and the customer with no label. The owner could not tell what they were. Drawing No. was on the print only. The owner asked for the number typed on the SO, beside Item Name.
+
+The saved Item + Drawing Rev record keeps the number from the first line that created it. A later SO line with the same Item + Rev keeps its own typed number, and the card read the Rev record first, so it could show another order's number.
+
+### Decision
+
+1. The identity line on the detail page becomes `<Cluster name="Item" wide>`: Item Code · Item Name · Drawing No. · Customer · SO / JWSO No. · Internal SO No. · Ln · POL. Child JC gets its own row, only on a card that has one.
+2. The JC No. stays in the blue header only. The one-line summary shows it only after the page has scrolled past that header. Item Code and Item Name get labels there too. Item Name shrinks first when the line is short of room.
+3. `JC_DRAWING_NO_SQL` reads the SO / JWSO line first (only when the line is for this card's item and on this card's Rev: a closed card stays on its old Rev when the line moves on), then the Item + Drawing Rev record, then the Item Master. Detail and print read this one value.
+4. Job Card only. Job Card Edit, Production Order, Route Card, GRN, Plan and Purchase Request wait until the owner has seen this on TEST.
+
+### Alternatives Considered
+
+- Drawing No. in the Order row: rejected by the owner, who wants it next to Item Name.
+- Child JC always shown with a dash: dropped because the Item row holds 8 facts without it.
+
+### Consequences
+
+- Positive: one fact per box, same row style as Order and Quantity, no new component, no migration.
+- Negative: on a screen under 1500 px of grid width the Item row takes two lines, so the header is taller. Hide details removes it.
+- Risks, none changed here:
+  - Replace Drawing writes the Rev's number onto every SO and JWSO line of that Rev (`item-revision.ts`). A new number reaches every card, which is right. A replace with no number overwrites a different number typed on a later line, with the Rev's.
+  - A line Rev change leaves a typed Drawing No. as it was, so moved open cards show the old number under the new Rev until someone updates the SO line. The SO shows the same number.
+  - The number and the file can disagree: a line may type a different number for the same Rev, while the file is one per Rev. Nothing warns at SO save.
+  - Live cards whose line and Rev numbers differ change on screen and print at release. Live data could not be read to count them.
+
+## ADR-286: QC Call Register shows Operation and two Stages; Created On and Created Time can be hidden
+
+**Date:** 2026-11-07. **Owner decided:** Created On and Created Time stay in their fixed place and are shown by default, and each user may hide them. On the QC Call Register, the GRN Type filter becomes an Operation filter, Called Date goes, Stage reads Incoming or In-Process, and Operation shows the short name. Amends ADR-261 (3-Nov "locked and always shown") and ADR-251.
+
+**Decisions:**
+- **Hideable lead columns.** `leadHideable` on `created_on` and `created_time`, every `leadColumns` list. They accept hide and show only; move and pin stay refused. Every other lead column stays fully locked.
+- **Stage.** Two values on screen. Every job-card call reads In-Process, including the last op and Final Inspection. New filter value `stage=process`; `inprocess` and `final` stay for the Home checks.
+- **Operation.** A job-card call shows `jc_ops.operation` as stored; hover keeps `Op 20 DIR`, because two DIRs on one card look the same in the cell. An incoming call shows its GRN Type label. The ▾ filter and the Excel Operation cell read the same words.
+- **Against JW PO / DC stays the name of an OSP return (D1).** "Against PO" was renamed Direct Purchase on 2026-10-23 because it did not say which PO.
+- **Operation filter.** Register only. The type-to-search picker (§25, it holds master names). Choices are the active QC Process master names plus any other name on a job-card QC call, matched ignoring capitals and outer spaces, then the four GRN Types as Stage allows. A master name with no calls shows (0).
+- **Incoming QC (D2).** Gets the Operation column, since Stage no longer names the type. Keeps its GRN Type filter. Called Date goes there too.
+- **Called Date.** No column on either table. The server keeps the `calledDate` Sort & Filter field, because a tab still sorted on it would otherwise get an error with no way to clear it.
+
+**Known limits:**
+- A user with a saved layout keeps their column order, so Operation and Stage may sit further right. Reset to default moves them.
+- With Created On hidden, the created date has no ▾ until it is ticked again, because Created Time has none of its own.
+- A filter or sort on Created On keeps applying after the column is hidden, as on any hidden column; Clear Filters removes it.
+- OSP return rows no longer show the JC No. on screen. The Excel export keeps JC No. and Op, and gains a Vendor / Customer column because its Operation cell no longer names the party.
+
+**Migration:** 0246. Saved `hidden` rows on Created On and Created Time were ignored while locked and would have taken effect, so they are set back to shown; so is Operation on all four QC tables and Stage on Completed, which were hidden by default. A saved hide of Stage on Pending stays. Left out: activity-log, party-materials, stock-counts and tool-issues, where Created On is an ordinary column hidden by default.

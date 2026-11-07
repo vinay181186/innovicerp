@@ -9,6 +9,10 @@
 // The <Person> column is the OTHER party of the current view — who assigned it
 // (Inbox), who it went to (Outbox / All), "Me" on My To-Do.
 //
+// All Tasks only: Assigned By and Assigned Date follow that column, and All Tasks
+// keeps its own saved column layout, because a layout saved from a view without
+// them would retire their saved settings. The other three views stay as they are.
+//
 // A Day Log reply task (ADR-274) also shows its latest reply in the Title cell
 // and, on Outbox / All Tasks, whether that reply was seen. The Title column's
 // sort / filter stays on the stored title.
@@ -39,8 +43,13 @@ export const PERSON_LABEL: Record<TaskView, string> = {
 
 export type RowAction = 'view' | 'status' | 'complete' | 'reassign' | 'cancel';
 
+/** Who assigned the task; a task with no assigner on record falls back to its creator. */
+function assignedBy(t: TaskRow): string {
+  return t.assignedByName ?? t.createdByName ?? '—';
+}
+
 export function personName(t: TaskRow, view: TaskView): string {
-  if (view === 'inbox') return t.assignedByName ?? t.createdByName ?? '—';
+  if (view === 'inbox') return assignedBy(t);
   if (view === 'todo') return 'Me';
   return t.assignedToName ?? '—';
 }
@@ -89,6 +98,30 @@ function ReplyTitle({ t, view }: { t: TaskRow; view: TaskView }): React.JSX.Elem
   );
 }
 
+/** All Tasks only, right after Assigned To. */
+const ASSIGNED_COLUMNS: DataTableColumn<TaskRow>[] = [
+  {
+    id: 'assigned_by',
+    sortFilterField: 'assignedBy',
+    kind: 'text',
+    header: 'Assigned By',
+    align: 'left',
+    ellipsis: true,
+    render: assignedBy,
+    title: assignedBy,
+  },
+  {
+    id: 'assigned_date',
+    sortFilterField: 'assignedAt',
+    kind: 'date',
+    header: 'Assigned Date',
+    className: 'mono',
+    nowrap: true,
+    render: (t) => fmtTaskDate(t.assignedAt),
+    title: (t) => fmtTaskDateTime(t.assignedAt),
+  },
+];
+
 function taskColumns(view: TaskView): DataTableColumn<TaskRow>[] {
   return [
     {
@@ -133,6 +166,7 @@ function taskColumns(view: TaskView): DataTableColumn<TaskRow>[] {
       render: (t) => personName(t, view),
       title: (t) => personName(t, view),
     },
+    ...(view === 'all' ? ASSIGNED_COLUMNS : []),
     {
       id: 'related',
       sortFilterField: 'related',
@@ -277,7 +311,7 @@ export function TaskTable({
   return (
     <Panel bodyPadding="none" style={{ marginBottom: 0 }}>
       <DataTable<TaskRow>
-        tableKey={TABLE_KEYS.taskBoard}
+        tableKey={view === 'all' ? TABLE_KEYS.taskBoardAll : TABLE_KEYS.taskBoard}
         columns={taskColumns(view)}
         rows={rows}
         sortFilterServer={sortFilterServer}

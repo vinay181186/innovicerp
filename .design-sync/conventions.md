@@ -25,7 +25,8 @@ Style with CSS variables from `styles.css`, never typed values.
 ## Fixed looks
 - Status always through `StatusBadge`: Cancelled red, Pending and Approved blue, QC Pending orange, Short Closed grey.
 - Item codes dark, bold, monospace. Document numbers blue. Dates `03-11-2026`, times `02:35 PM`, whole quantities stay whole.
-- Pickers from a master or document list use `SearchableSelect`. Required mark is the red ★. Empty lists read "No SOs yet."; with a filter on, "No SOs match."
+- Columns: text and codes left, Qty and counts centre, money right; dates, status, UOM, Sr No, POL and Rev centre. The heading aligns with its values, and an entry box follows its column. `DataTable` does this itself; never set alignment on a column or cell.
+- Pickers from a master or document list use `SearchableSelect`; a short fixed list (status, type, UOM) uses `Select`. Required mark is the red ★. Empty lists read "No SOs yet."; with a filter on, "No SOs match."
 - Action buttons use the drawn `Icon`. Emoji only identifies a page or module in its title.
 
 ## Example

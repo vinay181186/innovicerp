@@ -29,6 +29,28 @@ function routeCardInput(avail: number): FitInput {
 
 const sum = (w: Record<string, number>) => Object.values(w).reduce((a, b) => a + b, 0);
 
+describe('fitColumns — hidden lead column (ADR-286)', () => {
+  const input = (hidden: string[]): FitInput => ({
+    ...routeCardInput(1000),
+    hidden,
+    locked: ['sr', 'rc', 'updated'],
+  });
+
+  it('draws no hidden lead column and reserves it no width', () => {
+    const r = fitColumns(input(['updated']));
+    expect(r.visible).not.toContain('updated');
+    expect(r.dropped).not.toContain('updated');
+    expect(r.w['updated']).toBeUndefined();
+    expect(sum(r.w) + r.fill).toBe(r.budget);
+  });
+
+  it('a lead column on screen still never drops; a hidden one is never named as dropped', () => {
+    const r = fitColumns({ ...input(['updated']), avail: 400 });
+    expect(r.visible).toEqual(expect.arrayContaining(['sr', 'rc']));
+    expect(r.dropped).not.toContain('updated');
+  });
+});
+
 describe('fitColumns — spare width', () => {
   it('never makes a column wider than its content; the rest is empty space after ⋯', () => {
     const r = fitColumns(routeCardInput(1870));

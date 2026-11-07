@@ -6,7 +6,7 @@
 import { type QcRegisterFacts, type QcSourceStep, opSrNo } from '@innovic/shared';
 import type { DataTableColumn } from '@/ui/data';
 
-/** "Op 20 Turning" — the same label the Operation column and the popup heading use. */
+/** "Op 20 Turning" — the same label the popup heading uses. */
 export function stepOpLabel(step: QcSourceStep): string {
   return `Op ${opSrNo(step.opSeq)}${step.operation ? ` ${step.operation}` : ''}`;
 }

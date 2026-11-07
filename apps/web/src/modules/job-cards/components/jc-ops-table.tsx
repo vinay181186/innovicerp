@@ -6,12 +6,12 @@
 // columns, same Check ✓ hover sum, same notes and Job Card check line, and the
 // SAME hook (useOpFlow) for every figure: nothing is recomputed here — plus:
 //
-//   Operation    its cell opens the operation popup (jc-op-popup.tsx): what today's op
-//                card body showed (jc-ops-table-detail.tsx), ‹ › to step
-//   Operation · Machine / Vendor
-//   Op Status    the op card's badge (lib/jc-op-labels.ts OP_STATUS)
-//   Next Step    the ONE action today's action strip led with
-//   ⋯            every other action that strip showed (RowMenu, ADR-199)
+//   Operation         its button opens the operation popup (jc-op-popup.tsx): what
+//                     today's op card body showed (jc-ops-table-detail.tsx), ‹ › to step
+//   Machine / Vendor  code, then name on its own line; not clickable
+//   Op Status         the op card's badge (lib/jc-op-labels.ts OP_STATUS)
+//   Next Step         the ONE action today's action strip led with
+//   ⋯                 every other action that strip showed (RowMenu, ADR-199)
 //
 // Which actions, under which gates, lives in jc-ops-table-actions.ts — each
 // gate copied verbatim from jc-op-actions.tsx with its source line.
@@ -96,7 +96,7 @@ export function JcOpsTable({
           <thead>
             {/* Group heads — jc-flow-panels.tsx OP_FLOW_GROUPS, L216-221 */}
             <tr className="dt-head-groups">
-              <th colSpan={2} />
+              <th colSpan={3} />
               <th colSpan={7} className="th-ctr vsep">
                 At this operation
               </th>
@@ -107,7 +107,8 @@ export function JcOpsTable({
             </tr>
             <tr>
               <th className="th-ctr">Op</th>
-              <th>Operation · Machine / Vendor</th>
+              <th className="jc-ops-c-op">Operation</th>
+              <th className="jc-ops-c-mv">Machine / Vendor</th>
               <th className="th-num vsep">Input</th>
               <th className="th-num vsep">Done</th>
               <th className="th-num jc-ops-h-good">Accepted</th>

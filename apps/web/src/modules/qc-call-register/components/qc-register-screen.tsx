@@ -3,24 +3,19 @@
 // secondary facts; ⋯ Inspect opens the entry popup (QcCallInspectModal /
 // IncomingQcInspectModal / PartyGrnQcModal — ADR-203); row click opens the doc.
 //
-// mode 'register' (QC Call Register): every call — incoming, in-process, final
-// — with the Stage and GRN Type filters, "Mine", Full History and the TPI tab.
+// mode 'register' (QC Call Register): every call — Incoming and In-Process —
+// with the Stage and Operation filters, "Mine", Full History and the TPI tab.
 // Page right: qc_submit · view.
 // mode 'incoming' (Incoming QC): only Direct Purchase GRNs and Party GRNs (the query
 // always carries grnType); no Stage / Mine / TPI / Full History, and no
-// Operation / Assigned To / Machine columns. Page right: qc_incoming · view; Inspect
+// Assigned To / Machine columns. Page right: qc_incoming · view; Inspect
 // needs qc_incoming · entry. OSP returns and NC returns stay on the register.
 //
 // ADR-201: 25 calls a page, paged + searched + filtered on the server (GET
 // /qc-history/register); counts are its whole-register figures; Export fetches
 // every match. Sort & Filter (ADR-200) runs on the server, one state per table.
 
-import {
-  INCOMING_QC_GRN_TYPES,
-  QC_GRN_TYPE_LABELS,
-  type PartyGrnQcRow,
-  type QcGrnType,
-} from '@innovic/shared';
+import { INCOMING_QC_GRN_TYPES, type PartyGrnQcRow } from '@innovic/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
@@ -36,7 +31,8 @@ import { TpiView } from '@/modules/tpi/components/tpi-view';
 import { IncomingQcInspectModal } from '@/modules/incoming-qc/components/incoming-qc-inspect-modal';
 import { QcCallInspectModal } from './qc-call-inspect-modal';
 import type { RaisedNc } from './qc-call-inspect-form';
-import { QC_STAGES, type QcStage, type QcView } from './qc-sheet';
+import type { QcView } from './qc-sheet';
+import { NO_QC_FILTER, type QcFilter, qcFilterNote } from './qc-call-operation';
 import { useQcCallData, useQcTableSf } from './qc-call-data';
 import { PgrnQcPopup, RaisedNcBanner, exportRegister } from './qc-call-extras';
 import { useQcInspect } from './use-qc-inspect';
@@ -69,7 +65,7 @@ export type QcScreenPatch = { page?: number | undefined; line?: undefined; op?: 
 
 /** Columns Incoming QC leaves out — no job-card op (so no step, no machine)
  *  stands behind a GRN / Party GRN call; QC Command assigns process calls only. */
-const INCOMING_DROPPED = new Set(['operation', 'assigned_to', 'planned_machine', 'actual_machine']);
+const INCOMING_DROPPED = new Set(['assigned_to', 'planned_machine', 'actual_machine']);
 const keepCol =
   (incoming: boolean) =>
   (c: { id?: string | undefined }): boolean =>
@@ -89,10 +85,8 @@ export function QcRegisterScreen(props: {
   const nav = useNavigate();
   // Pending | Completed toggle. Opens on Pending — the working queue.
   const [view, setView] = useState<QcView>('pending');
-  // Stage filter: null = every stage. The Incoming QC screen has none.
-  const [stage, setStage] = useState<QcStage | null>(null);
-  // ADR-251 GRN Type filter: null = every type this screen lists.
-  const [grnType, setGrnType] = useState<QcGrnType | null>(null);
+  // Stage + GRN Type + operation; null = no narrowing. Incoming QC has GRN Type only.
+  const [filter, setFilter] = useState<QcFilter>(NO_QC_FILTER);
   // One search box for whichever view is showing. ?search= only seeds it.
   const [search, setSearch] = useState(params.search ?? '');
   // TPI tab choice stays LOCAL — clicking a tab does not write to the URL.
@@ -133,10 +127,11 @@ export function QcRegisterScreen(props: {
   // always narrows to its own GRN Types (and the Incoming stage).
   const qc = useQcCallData({
     view,
-    stage: incoming ? 'incoming' : stage,
+    stage: incoming ? 'incoming' : filter.stage,
+    operation: filter.operation,
     search: q,
     mineOnly: !incoming && mineOnly,
-    grnType: grnType ? [grnType] : incoming ? INCOMING_QC_GRN_TYPES : undefined,
+    grnType: filter.grnType ? [filter.grnType] : incoming ? INCOMING_QC_GRN_TYPES : undefined,
     sf: sf.param,
     page,
   });
@@ -270,13 +265,7 @@ export function QcRegisterScreen(props: {
     );
   }
 
-  const stageLabel = stage ? (QC_STAGES.find((s) => s.key === stage)?.label ?? null) : null;
-  const typeLabel = grnType ? QC_GRN_TYPE_LABELS[grnType] : null;
-  const stageName = incoming
-    ? typeLabel
-    : stageLabel && typeLabel
-      ? `${stageLabel} · ${typeLabel}`
-      : stageLabel;
+  const stageName = qcFilterNote(filter);
   const narrowed = stageName !== null || q !== '' || sf.filtering;
   const pendingEmptyText =
     narrowed || mineOnly
@@ -300,21 +289,14 @@ export function QcRegisterScreen(props: {
           setView(v);
           gotoPage(1);
         }}
-        stage={stage}
-        setStage={(s) => {
-          setStage(s);
-          // A GRN Type only narrows Incoming calls.
-          if (s !== 'incoming') setGrnType(null);
+        filter={filter}
+        onFilter={(f) => {
+          setFilter(f);
           gotoPage(1);
         }}
         stageName={stageName}
-        grnType={grnType}
-        setGrnType={(t) => {
-          setGrnType(t);
-          if (t && !incoming) setStage('incoming');
-          gotoPage(1);
-        }}
         grnTypeStats={qc.grnTypeStats}
+        operationStats={qc.operationStats}
         mineOnly={mineOnly}
         onToggleMine={() => {
           setMineOnly((v) => !v);
@@ -326,8 +308,7 @@ export function QcRegisterScreen(props: {
         onClearFilters={() => {
           pendSf.clearFilters();
           compSf.clearFilters();
-          setStage(null);
-          setGrnType(null);
+          setFilter(NO_QC_FILTER);
           setMineOnly(false);
           setSearch('');
           setQ('');

@@ -1,7 +1,9 @@
 // "Columns ▾" popover of the fit engine (ADR-199). Columns in on-screen
 // order with ▲▼ move, a show/hide tick and a 📌 pin; column 0 is "(always
-// first)" and cannot be moved, hidden or unpinned; the Action column is not
-// listed (always shown, always last). Ported from the prototype's renderPop().
+// first)" and cannot be moved, hidden or unpinned; the lead columns are "(fixed)"
+// the same way, except that Created On / Created Time keep a working tick
+// (ADR-286); the Action column is not listed (always shown, always last).
+// Ported from the prototype's renderPop().
 
 import { useEffect, useRef } from 'react';
 import type { CSSProperties, ReactElement, RefObject } from 'react';
@@ -19,13 +21,16 @@ export interface PickerColumn {
   control?: boolean | undefined;
   /** One of the locked lead columns — cannot move, hide or unpin. */
   lead?: boolean | undefined;
+  /** A lead column the user may hide (ADR-286): the tick works, ▲▼ and 📌 do not. */
+  hideable?: boolean | undefined;
 }
 
 export interface ColumnPickerProps {
   columns: PickerColumn[];
   layout: LayoutState;
   firstId: string;
-  /** Size of the locked block at the front (1 = column 0 only). */
+  /** Locked columns on screen at the front (1 = column 0 only). A hidden
+   *  Created On / Created Time is not counted. */
   lockedCount?: number | undefined;
   dropped: string[];
   flash: string[];
@@ -108,20 +113,24 @@ export function ColumnPicker({
     const control = columns.find((c) => c.id === id)?.control ?? false;
     const lead = !first && (columns.find((c) => c.id === id)?.lead ?? false);
     // A control column is locked like the first one: never hidden, always pinned.
-    // A lead column (SO No. … Item Name) is fixed in place and always shown.
+    // A lead column (SO No. … Item Name) is fixed in place and always shown;
+    // Created On / Created Time are fixed too, but the user may hide them (ADR-286).
     const locked = first || control || lead;
-    const pinned = locked || layout.pins.includes(id);
+    const hideable = lead && (columns.find((c) => c.id === id)?.hideable ?? false);
+    const pinned = (locked && !(hideable && isHidden)) || layout.pins.includes(id);
     const drop = dropped.includes(id);
     const label = labelOf(id);
-    const pinTitle = pinned
-      ? first
-        ? 'Always first — never drops'
-        : control
-          ? 'Locked column — always shown, never drops'
-          : 'Pinned — never drops. Click to unpin'
-      : canPin(id)
-        ? 'Pin — never drop'
-        : 'No room — unpin another column first';
+    const pinTitle = hideable
+      ? 'Fixed column — cannot be pinned'
+      : pinned
+        ? first
+          ? 'Always first — never drops'
+          : control
+            ? 'Locked column — always shown, never drops'
+            : 'Pinned — never drops. Click to unpin'
+        : canPin(id)
+          ? 'Pin — never drop'
+          : 'No room — unpin another column first';
     return (
       <div
         key={id}
@@ -154,7 +163,7 @@ export function ColumnPicker({
             type="checkbox"
             data-f={`cb:${id}`}
             checked={!isHidden}
-            disabled={locked}
+            disabled={locked && !hideable}
             onChange={(e) => setShown(id, e.target.checked)}
           />
           <span className="dt-pick-label" title={label}>

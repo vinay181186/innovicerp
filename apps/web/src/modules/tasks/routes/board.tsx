@@ -85,6 +85,9 @@ type ModalState =
   | { kind: 'view'; id: string }
   | { kind: 'row'; action: Exclude<RowAction, 'view'>; task: TaskRow };
 
+/** Sort & Filter fields of the columns only All Tasks shows (task-table.tsx). */
+const ALL_TASKS_ONLY_SF = ['assignedBy', 'assignedAt'];
+
 function TaskBoardPage(): React.JSX.Element {
   const routeSearch = taskBoardRoute.useSearch();
   const navigate = taskBoardRoute.useNavigate();
@@ -174,6 +177,20 @@ function TaskBoardPage(): React.JSX.Element {
   const setDept = toFirst(setDeptRaw);
   const setDue = toFirst(setDueRaw);
   const sf = useServerSortFilter(TABLE_KEYS.taskBoard, () => gotoPage(1));
+  // A sort or filter on a column only All Tasks has must not act unseen on the
+  // other tabs, whichever way the person got there (tab click, link, reload).
+  const { value: sfValue, onChange: sfOnChange } = sf;
+  useEffect(() => {
+    if (view === 'all') return;
+    const sortGone = sfValue.sort !== null && ALL_TASKS_ONLY_SF.includes(sfValue.sort.id);
+    const filters = Object.fromEntries(
+      Object.entries(sfValue.filters).filter(([field]) => !ALL_TASKS_ONLY_SF.includes(field)),
+    );
+    const filterGone = Object.keys(filters).length !== Object.keys(sfValue.filters).length;
+    if (sortGone || filterGone) {
+      sfOnChange({ sort: sortGone ? null : sfValue.sort, filters });
+    }
+  }, [view, sfValue, sfOnChange]);
 
   const setView = (v: TaskView): void => {
     // The person filters mean something different on each tab — reset them.

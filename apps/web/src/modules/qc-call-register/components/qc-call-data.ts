@@ -17,6 +17,7 @@ import { LIST_PAGE_SIZE, pageOffset } from '@/lib/list-paging';
 import { useQcRegister } from '@/modules/qc-history/api';
 import { type ServerSortFilter, useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
+import type { QcOperationChoice, QcRegisterStageChoice } from './qc-call-operation';
 import type { QcStage, QcView, StageStat } from './qc-sheet';
 
 export interface QcCallData {
@@ -32,6 +33,8 @@ export interface QcCallData {
   stageStats: Record<QcStage, StageStat>;
   /** ADR-251: the Incoming stage split by GRN Type, for the GRN Type dropdown. */
   grnTypeStats: Record<QcGrnType, StageStat>;
+  /** ADR-286: the job-card calls by operation name, for the Operation dropdown. */
+  operationStats: QcOperationChoice[];
   pendingCount: number;
   completeCount: number;
   pcsPending: number;
@@ -81,7 +84,9 @@ function grnTypeStatsOf(
 
 export function useQcCallData(args: {
   view: QcView;
-  stage: QcStage | null;
+  stage: QcRegisterStageChoice | null;
+  /** ADR-286: only job-card calls of this operation; null = no narrowing. */
+  operation: string | null;
   /** Debounced search term ('' = none). */
   search: string;
   mineOnly: boolean;
@@ -92,13 +97,14 @@ export function useQcCallData(args: {
   /** 1-based page. */
   page: number;
 }): QcCallData {
-  const { view, stage, search, mineOnly, grnType, sf, page } = args;
+  const { view, stage, operation, search, mineOnly, grnType, sf, page } = args;
   // A stable key for the memo below — the caller may build a fresh array.
   const grnTypeKey = grnType?.join(',') ?? '';
   const query = useMemo(
     (): Omit<QcRegisterQuery, 'limit' | 'offset'> => ({
       view,
       stage: stage ?? undefined,
+      operation: operation ?? undefined,
       search: search || undefined,
       // "Mine" is a pending-queue filter: QC Command assigns open calls only.
       mine: view === 'pending' && mineOnly ? 'true' : undefined,
@@ -106,7 +112,7 @@ export function useQcCallData(args: {
       // In the query (not only the page read) so Export gets the same rows.
       sf,
     }),
-    [view, stage, search, mineOnly, grnTypeKey, sf],
+    [view, stage, operation, search, mineOnly, grnTypeKey, sf],
   );
   const res = useQcRegister({ ...query, limit: LIST_PAGE_SIZE, offset: pageOffset(page) });
   const data = res.data;
@@ -119,6 +125,15 @@ export function useQcCallData(args: {
   const summary = data?.summary;
   const stageStats = useMemo(() => stageStatsOf(summary, view), [summary, view]);
   const grnTypeStats = useMemo(() => grnTypeStatsOf(summary, view), [summary, view]);
+  // `?? []`: an API build older than ADR-286 does not send it.
+  const operationStats = useMemo(
+    () =>
+      (summary?.operations ?? []).map((o) => ({
+        name: o.name,
+        count: view === 'pending' ? o.pendingCount : o.doneCount,
+      })),
+    [summary, view],
+  );
   const incomingTotals = useMemo(() => {
     let pendingCount = 0;
     let completeCount = 0;
@@ -139,6 +154,7 @@ export function useQcCallData(args: {
     total: data?.total ?? 0,
     stageStats,
     grnTypeStats,
+    operationStats,
     pendingCount: summary?.pendingCount ?? 0,
     completeCount: summary?.completeCount ?? 0,
     pcsPending: summary?.pcsPending ?? 0,

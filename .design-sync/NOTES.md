@@ -6,6 +6,7 @@
 - esbuild on Windows fails reading a directory through tsconfig paths ("Incorrect function"), hence `.design-sync/tsconfig.json`.
 - `componentSrcMap` is the component list (no shipped .d.ts). New shared component: add it there.
 - `DesignProvider` (query cache) is what DataTable and ItemBadge need.
+- After a good upload, write the synced commit to `.design-sync/last-sync-commit` and commit it. `check-behind.sh` compares against it (CLAUDE.md §25).
 
 ## Known render warns
 - RowMenu: small PNG, the card is mostly one ⋯ button.
