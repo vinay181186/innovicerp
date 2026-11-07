@@ -177,8 +177,8 @@ function printPerson(qc: QueryClient, p: DayLogPersonDay): boolean {
     printHistoryAtClick(qc, { userId, from: date, to: date }, userName);
     return true;
   }
-  const name = dayLogFileName(userName, date);
-  void runPrint('preview', { title: name, fileName: name }, async () => {
+  const fileName = dayLogFileName(userName, date);
+  void runPrint('preview', { title: 'Day Log', fileName }, async () => {
     const [day, company] = await Promise.all([
       qc.fetchQuery({ ...dayLogDayQuery({ userId, date }), staleTime: 0 }),
       readCompany(qc),

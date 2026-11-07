@@ -115,6 +115,6 @@ export const dayLogFileName = (userName: string, date: string): string =>
   `Day Log ${userName} ${date}`;
 
 export function printDayLog(day: DayLogDetail, company: Company | null | undefined): boolean {
-  const name = dayLogFileName(day.userName, day.date);
-  return openSheetHtmlWindow(name, myDayLogHtml(day, company), STYLE, undefined, name);
+  const fileName = dayLogFileName(day.userName, day.date);
+  return openSheetHtmlWindow('Day Log', myDayLogHtml(day, company), STYLE, undefined, fileName);
 }
