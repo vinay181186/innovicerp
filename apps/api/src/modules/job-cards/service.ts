@@ -88,6 +88,8 @@ import {
 } from './jc-op-edit';
 import { nextSeriesCode } from '../op-entry/osp-cascade';
 import { saveRouteCardForItem } from '../route-cards/service';
+import { recordRouteCardOutcome } from './route-card-outcome';
+import { readRouteCardSync, sendToRouteCardTx, toRouteCardOps } from './route-card-sync';
 import {
   ActivityAction,
   type ActivityChange,
@@ -97,7 +99,6 @@ import {
   stripStaleGeneratedTerminalQc,
 } from '@innovic/shared';
 import type {
-  CreateRouteCardOpInput,
   DocumentEditStagedResult,
   DocumentTraceability,
   JcRouteCardWriteBack,
@@ -291,6 +292,9 @@ export async function listJobCards(
         COALESCE(cli_so.name, cli_jw.name, so.customer_name, jw.customer_name) AS "customerName",
         ${polSql('sol', 'jwl')} AS "clientPoLineNo",
         rc.code AS "routeCardCode", rc.current_revision AS "routeCardRevision",
+        -- ADR-282 — the Rev THIS card is built on, and whether a change is held back.
+        jc.route_card_revision AS "routeCardBuiltRevision",
+        jc.route_card_not_sent AS "routeCardNotSent",
         -- Raw material the JC was raised with. The TEXT snapshots are read, not
         -- the masters, so the header and the printed JC still show the grade and
         -- size the JC was raised with after a master row is renamed or removed.
@@ -410,6 +414,9 @@ export async function getJobCard(id: string, user: AuthContext): Promise<JobCard
 
     const result = await tx.execute(sql`
       SELECT
+        -- ADR-282 — the card itself, for the live routing check (detail only).
+        rc.id AS "routeCardId", rc.approval_status AS "routeCardApprovalStatus",
+        rc.item_revision_id AS "routeCardItemRevisionId",
         jc.id, jc.company_id AS "companyId", jc.code,
         jc.jc_date AS "jcDate", jc.item_id AS "itemId",
         jc.order_qty AS "orderQty", jc.priority,
@@ -458,6 +465,9 @@ export async function getJobCard(id: string, user: AuthContext): Promise<JobCard
         COALESCE(cli_so.name, cli_jw.name, so.customer_name, jw.customer_name) AS "customerName",
         ${polSql('sol', 'jwl')} AS "clientPoLineNo",
         rc.code AS "routeCardCode", rc.current_revision AS "routeCardRevision",
+        -- ADR-282 — the Rev THIS card is built on, and whether a change is held back.
+        jc.route_card_revision AS "routeCardBuiltRevision",
+        jc.route_card_not_sent AS "routeCardNotSent",
         -- Raw material the JC was raised with. The TEXT snapshots are read, not
         -- the masters, so the header and the printed JC still show the grade and
         -- size the JC was raised with after a master row is renamed or removed.
@@ -539,10 +549,11 @@ export async function getJobCard(id: string, user: AuthContext): Promise<JobCard
         ON pjc_po.id = pjc.production_order_id AND pjc_po.deleted_at IS NULL
       -- Drawing Rev register: an item may have one Route Card per Rev, so the
       -- card is picked, never joined on item (that would duplicate the row):
-      -- the card the Production Order was built from, else the card for the
-      -- JC's own Item + Rev, else the item's old no-Rev card.
+      -- the card this Job Card is built on (ADR-282), else the card the Production
+      -- Order was built from, else the card for the JC's own Item + Rev, else the
+      -- item's old no-Rev card.
       LEFT JOIN public.route_cards rc
-        ON rc.id = COALESCE(po.route_card_id, ${displayRouteCardIdSql(sql`jc.item_id`, sql`jc.item_revision_id`)})
+        ON rc.id = COALESCE((SELECT lc.id FROM public.route_cards lc WHERE lc.id = jc.route_card_id AND lc.deleted_at IS NULL), po.route_card_id, ${displayRouteCardIdSql(sql`jc.item_id`, sql`jc.item_revision_id`)})
        AND rc.deleted_at IS NULL
       -- The JC's own Item + Drawing Rev (ABC/1) — one row per card.
       LEFT JOIN public.item_revisions jir ON jir.id = jc.item_revision_id
@@ -562,8 +573,45 @@ export async function getJobCard(id: string, user: AuthContext): Promise<JobCard
     `);
     const row = (result as unknown as Array<Record<string, unknown>>)[0];
     if (!row) throw new NotFoundError('Job Card not found. It may have been moved to Trash.');
-    return toListItem(row);
+    const jc = toListItem(row);
+    const routeCardId = (row['routeCardId'] as string | null) ?? null;
+    const routeCardSync = await readRouteCardSync(
+      tx,
+      companyId,
+      user,
+      {
+        id,
+        builtRevision: jc.routeCardBuiltRevision,
+        notSent: jc.routeCardNotSent,
+        cancelled: jc.cancelledAt !== null,
+        itemRevisionId: jc.itemRevisionId,
+      },
+      routeCardId && jc.routeCardCode !== null && jc.routeCardRevision !== null
+        ? {
+            id: routeCardId,
+            code: jc.routeCardCode,
+            currentRevision: jc.routeCardRevision,
+            approvalStatus: row['routeCardApprovalStatus'] as string,
+            itemRevisionId: (row['routeCardItemRevisionId'] as string | null) ?? null,
+          }
+        : null,
+    );
+    return { ...jc, routeCardSync };
   });
+}
+
+/** ADR-282 — POST /job-cards/:id/send-to-route-card. The same right as saving a
+ *  Job Card edit, the same answer as PATCH: the card + the write-back. */
+export async function sendJobCardToRouteCard(
+  id: string,
+  user: AuthContext,
+): Promise<JobCardSaveResult> {
+  await requireFormAccess(user, 'jc_create', 'edit');
+  const companyId = requireCompany(user);
+  const routeCardWriteBack = await withUserContext(user, (tx) =>
+    sendToRouteCardTx(tx, id, companyId, user),
+  );
+  return { ...(await getJobCard(id, user)), routeCardWriteBack };
 }
 
 // ─── Mappers ──────────────────────────────────────────────────────────────
@@ -697,6 +745,9 @@ function toListItem(r: Record<string, unknown>): JobCardListItem {
     clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
     routeCardCode: (r['routeCardCode'] as string | null) ?? null,
     routeCardRevision: r['routeCardRevision'] != null ? Number(r['routeCardRevision']) : null,
+    routeCardBuiltRevision:
+      r['routeCardBuiltRevision'] != null ? Number(r['routeCardBuiltRevision']) : null,
+    routeCardNotSent: r['routeCardNotSent'] === true,
     rawMaterialGradeText: (r['rawMaterialGradeText'] as string | null) ?? null,
     rawMaterialSizeText: (r['rawMaterialSizeText'] as string | null) ?? null,
     rawMaterialItemId: (r['rawMaterialItemId'] as string | null) ?? null,
@@ -1898,40 +1949,6 @@ function buildOpRows(
   });
 }
 
-/** Translate this JC's ops into route-card ops for the auto-save (ADR-051's
- *  deferred write half). Same machine/vendor resolution buildOpRows does, so
- *  the saved route card carries live FKs where the codes resolved and the code
- *  text as fallback where they did not.
- *
- *  IMPORTANT: callers pass `input.ops` — the ops as the USER entered them, NOT
- *  the `withTerminalQcOp(input.ops)` result. The system-appended terminal QC op
- *  must never reach the route card, or the next plan would load it and get a
- *  second one appended on save (see stripAutoTerminalQcOp in route-cards). */
-function toRouteCardOps(
-  ops: JcOpInput[],
-  types: ResolvedOpType[],
-  machineMap: Map<string, string>,
-  vendorMap: Map<string, string>,
-): CreateRouteCardOpInput[] {
-  return ops.map((o, i) => {
-    const t = types[i]!;
-    return {
-      machineId: t === 'process' ? (machineMap.get(o.machineCode ?? '') ?? null) : null,
-      machineCodeText: t === 'process' ? (o.machineCode ?? null) : t === 'qc' ? 'QC' : null,
-      operation: o.operation,
-      opType: t,
-      cycleTimeMin: Number(o.cycleTimeMin || 0),
-      program: o.program ?? null,
-      toolNo: o.toolNo ?? null,
-      toolDetails: o.toolDetails ?? null,
-      qcRequired: t === 'qc' ? true : Boolean(o.qcRequired),
-      ospVendorId: t === 'outsource' ? (vendorMap.get(o.outsourceVendorCode ?? '') ?? null) : null,
-      ospVendorCodeText: t === 'outsource' ? (o.outsourceVendorCode ?? null) : null,
-      ospLeadDays: null,
-    };
-  });
-}
-
 async function registerQcDocs(
   tx: DbTransaction,
   input: JobCardWriteInput,
@@ -2186,7 +2203,15 @@ export async function createJobCard(
         rawMaterial,
         // Drawing Rev register — write back to THIS Item + Rev's card.
         itemRevisionId,
+        jobCardId,
       );
+      // ADR-282 — the card and Rev this Job Card is built on.
+      await recordRouteCardOutcome(tx, jobCardId, routeCardWriteBack, {
+        companyId,
+        itemId: item.id,
+        itemRevisionId,
+        userId: user.id,
+      });
     }
     await registerQcDocs(tx, input, { companyId, jobCardId, jcCode: code, userId: user.id });
 
@@ -3682,7 +3707,24 @@ export async function updateJobCardTx(
         : { ...rawMaterial, rawMaterialItemId: null, rmQtyPerPiece: null },
       // Drawing Rev register — write back to THIS Item + Rev's card.
       itemRevisionId,
+      id,
     );
+    // ADR-282 — here, not in the callers: the ADR-220 approval replay runs through
+    // this function and discards what it returns.
+    await recordRouteCardOutcome(tx, id, routeCardWriteBack, {
+      companyId,
+      itemId: item.id,
+      itemRevisionId,
+      userId: user.id,
+    });
+  } else if (item.id !== head.itemId) {
+    // A re-picked item with the same routing: the stamp named the old item's card.
+    await recordRouteCardOutcome(tx, id, null, {
+      companyId,
+      itemId: item.id,
+      itemRevisionId,
+      userId: user.id,
+    });
   }
 
   const changes: ActivityChange[] = [

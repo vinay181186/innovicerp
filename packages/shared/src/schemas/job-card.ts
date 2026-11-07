@@ -164,6 +164,25 @@ export const jobCardListItemSchema = z.object({
    *  current route card, shown as a reference on the Job Card. */
   routeCardCode: z.string().nullable(),
   routeCardRevision: z.number().int().nullable(),
+  /** ADR-282 — the Route Card Rev THIS Job Card is built on (job_cards.route_card_revision).
+   *  routeCardRevision above is the card's Rev today. Null = an old hand-made Job Card
+   *  that never recorded it; it is shown blank, never guessed. */
+  routeCardBuiltRevision: z.number().int().nullable(),
+  /** ADR-282 — this Job Card's routing change could not be sent to the Route Card
+   *  (card Draft / Pending / Returned, or a change already waiting). */
+  routeCardNotSent: z.boolean(),
+  /** ADR-282 — the live routing check. Filled by the Job Card detail read only. */
+  routeCardSync: z
+    .object({
+      /** On the card's current Rev, or held back, and the routing is not the card's. */
+      differs: z.boolean(),
+      /** Send to Route Card is available now. */
+      canSend: z.boolean(),
+      /** Why it cannot be sent yet; null when it can, or when nothing is held back. */
+      blockedReason: z.string().nullable(),
+    })
+    .nullable()
+    .optional(),
   /** Raw material this JC is cut from, carried down from the plan that
    *  created it (or typed on a hand-made JC). Text snapshots, so a JC still
    *  prints the grade/size it was raised with after the master row changes.

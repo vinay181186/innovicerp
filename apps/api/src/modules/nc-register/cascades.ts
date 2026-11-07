@@ -1136,6 +1136,9 @@ export async function disposeNcCascade(
       sourceJwLineId: origin.sourceJwLineId,
       // Drawing Rev register — same part, same Item + Rev as the origin card.
       itemRevisionId: origin.itemRevisionId ?? null,
+      // ADR-282 — same route, copied below: built on the origin's card and Rev.
+      routeCardId: origin.routeCardId,
+      routeCardRevision: origin.routeCardRevision,
       // Raw material (0106): the replacement is the SAME part as the JC it
       // replaces, so it is cut from the same stock — straight inheritance, id
       // and text both taken from the origin JC's own row. Not re-read from the

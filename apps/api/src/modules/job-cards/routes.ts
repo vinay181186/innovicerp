@@ -83,6 +83,13 @@ export async function jobCardsRoutes(app: FastifyInstance): Promise<void> {
     return service.updateJobCardOrStage(id, body, req.user);
   });
 
+  // ADR-282 — send a routing change this card held back to its Route Card.
+  app.post('/job-cards/:id/send-to-route-card', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParamSchema.parse(req.params);
+    return service.sendJobCardToRouteCard(id, req.user);
+  });
+
   app.delete('/job-cards/:id', async (req, reply) => {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParamSchema.parse(req.params);

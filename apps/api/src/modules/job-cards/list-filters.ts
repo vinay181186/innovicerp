@@ -38,10 +38,11 @@ export const JC_LIST_JOINS = sql`
         ON pjc_po.id = pjc.production_order_id AND pjc_po.deleted_at IS NULL
       -- Drawing Rev register: an item may have one Route Card per Rev, so the
       -- card is picked, never joined on item (that would duplicate the row):
-      -- the card the Production Order was built from, else the card for the
-      -- JC's own Item + Rev, else the item's old no-Rev card.
+      -- the card this Job Card is built on (ADR-282), else the card the Production
+      -- Order was built from, else the card for the JC's own Item + Rev, else the
+      -- item's old no-Rev card.
       LEFT JOIN public.route_cards rc
-        ON rc.id = COALESCE(po.route_card_id, ${displayRouteCardIdSql(sql`jc.item_id`, sql`jc.item_revision_id`)})
+        ON rc.id = COALESCE((SELECT lc.id FROM public.route_cards lc WHERE lc.id = jc.route_card_id AND lc.deleted_at IS NULL), po.route_card_id, ${displayRouteCardIdSql(sql`jc.item_id`, sql`jc.item_revision_id`)})
        AND rc.deleted_at IS NULL
       -- The JC's own Item + Drawing Rev (ABC/1) — one row per card.
       LEFT JOIN public.item_revisions jir ON jir.id = jc.item_revision_id

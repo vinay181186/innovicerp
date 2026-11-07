@@ -37,6 +37,7 @@ import {
 } from '@/modules/document-edits/components/pending-change-chip';
 import { JcOpFlowCards } from './jc-stat-tiles';
 import { fmtJcDate } from '../lib/fmt-jc-date';
+import { jcRouteCardRevLabel } from '../lib/jc-route-card-note';
 import { docDrawingRev } from '@/lib/item-code';
 
 /** ADR-202 — the amber "→ after" chip for a header field with a staged edit,
@@ -531,12 +532,12 @@ export function JcViewSummary({
                 >
                   {jc.routeCardCode}
                 </Link>
-                {jc.routeCardRevision != null ? (
+                {jcRouteCardRevLabel(jc) ? (
                   <span
                     className="badge b-grey"
                     style={{ fontSize: 'var(--fs-xs)', padding: '1px 7px' }}
                   >
-                    Route Card Rev {jc.routeCardRevision}
+                    {jcRouteCardRevLabel(jc)}
                   </span>
                 ) : null}
               </span>

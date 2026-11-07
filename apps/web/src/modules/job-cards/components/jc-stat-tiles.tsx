@@ -24,6 +24,7 @@ import { ItemBadge } from '@/components/shared/item-badge';
 import { resolveActualMachine } from '@/components/shared/machine-split';
 import { JcStatusBadge } from './jc-status-badge';
 import { OUTSOURCE_STATUS_LABEL } from '../lib/jc-op-labels';
+import { jcRouteCardRevLabel } from '../lib/jc-route-card-note';
 import { docDrawingRev } from '@/lib/item-code';
 
 const lblStyle: React.CSSProperties = {
@@ -162,12 +163,12 @@ export function JcStatTiles({
                 <span className="mono fw-700" style={{ color: 'var(--cyan)' }}>
                   {jc.routeCardCode}
                 </span>
-                {jc.routeCardRevision != null ? (
+                {jcRouteCardRevLabel(jc) ? (
                   <span
                     className="badge b-blue"
                     style={{ marginLeft: 'var(--sp-1)', fontSize: 'var(--fs-xs)' }}
                   >
-                    Route Card Rev {jc.routeCardRevision}
+                    {jcRouteCardRevLabel(jc)}
                   </span>
                 ) : null}
               </>

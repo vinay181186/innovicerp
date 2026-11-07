@@ -27,6 +27,7 @@ import type { DiffField } from '../../lib/audit-trail';
 import { NotFoundError } from '../../lib/errors';
 import { isRouteCardUsable } from '../../lib/route-card-usable';
 import type { DocEditRegistryEntry, DocEditTarget } from '../document-edits/registry';
+import { stampApprovedRouteCard } from '../job-cards/route-card-outcome';
 import { lockBackfillCandidates } from '../plans/rm-backfill';
 import {
   ROUTING_FIELD,
@@ -102,6 +103,8 @@ interface FilteredRcEdit {
   /** Set = a routing change proposed by a Job Card / plan (not the form). */
   sourceCode: string | null;
   fillRm: boolean;
+  /** ADR-282 — the Job Card that proposed it; stamped with the new Rev on approval. */
+  sourceJobCardId: string | null;
   /** Carried with an approved Drawing Rev / Drawing File box. */
   drawingNo: string | null | undefined;
 }
@@ -307,6 +310,7 @@ export const routeCardEditRegistryEntry: DocEditRegistryEntry = {
       revisionNote: ctx?.firstApply === false ? null : (p.revisionNote ?? null),
       sourceCode: p.sourceCode ?? null,
       fillRm: p.fillRm === true,
+      sourceJobCardId: p.sourceJobCardId ?? null,
       drawingNo: p.drawingNo,
     };
   },
@@ -340,7 +344,7 @@ export const routeCardEditRegistryEntry: DocEditRegistryEntry = {
     if (f.sourceCode) {
       if (!f.routing) return;
       const rm = f.routing.rm;
-      await overwriteRouteCardFromSource(
+      const written = await overwriteRouteCardFromSource(
         tx,
         companyId,
         cur,
@@ -357,6 +361,23 @@ export const routeCardEditRegistryEntry: DocEditRegistryEntry = {
         f.sourceCode,
         () => Promise.resolve(f.fillRm),
       );
+      // ADR-282 — the Job Card that proposed it is now on the Rev this approval
+      // made (no new Rev when the card already read the same). A missing or
+      // deleted Job Card never fails the approval.
+      if (f.sourceJobCardId) {
+        await stampApprovedRouteCard(
+          tx,
+          companyId,
+          f.sourceJobCardId,
+          {
+            routeCardId: cur.id,
+            routeCardCode: cur.code,
+            routeCardRevision: written?.routeCardRevision ?? cur.currentRevision,
+            created: false,
+          },
+          user.id,
+        );
+      }
       return;
     }
 

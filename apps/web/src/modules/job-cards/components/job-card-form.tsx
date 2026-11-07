@@ -78,6 +78,7 @@ import {
   grandfatheredOspQcPairs,
   opsSequenceError,
 } from '../lib/build-jc-write-input';
+import { routeCardWriteBackNote } from '../lib/jc-route-card-note';
 import { JcCreateDocsTable, type JcCreateDoc } from './jc-create-docs-table';
 import { JcCreateOpsTable, type JcCreateOp } from './jc-create-ops-table';
 import { JcItemThumb } from './jc-item-thumb';
@@ -1150,33 +1151,9 @@ export function JobCardForm({
             </>
           }
         >
-          {savedNote.rc.notSentReason ? (
-            // ADR-249 — the routing differed but could not be sent for
-            // approval: the card is unchanged, so no "updated" line.
-            <Banner tone="warn" flush>
-              {savedNote.rc.notSentReason}
-            </Banner>
-          ) : (
-            <Banner tone="info" flush>
-              {savedNote.rc.sentForApproval ? (
-                // ADR-249 — the routing change is waiting for approval; the
-                // Route Card itself has not moved.
-                <>Route Card change sent for approval — the card is unchanged until approved.</>
-              ) : savedNote.rc.created ? (
-                <>
-                  Route Card <span className="mono fw-700">{savedNote.rc.routeCardCode}</span>{' '}
-                  created (Rev {savedNote.rc.routeCardRevision}) from this Job Card&apos;s
-                  operations — waiting for approval before it can be used.
-                </>
-              ) : (
-                <>
-                  Route Card <span className="mono fw-700">{savedNote.rc.routeCardCode}</span>{' '}
-                  updated to Rev {savedNote.rc.routeCardRevision} — this Job Card&apos;s operations
-                  are now the item&apos;s standard routing.
-                </>
-              )}
-            </Banner>
-          )}
+          <Banner tone={routeCardWriteBackNote(savedNote.rc).tone} flush>
+            {routeCardWriteBackNote(savedNote.rc).text}
+          </Banner>
         </Modal>
       ) : null}
 

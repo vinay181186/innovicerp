@@ -58,3 +58,10 @@ export class ConflictError extends AppError {
     super(409, 'conflict', message, details);
   }
 }
+
+/** The edit-approval engine's answer when a proposal changes nothing. */
+export const NOTHING_TO_APPROVE_MESSAGE = 'Nothing changed to approve.';
+
+export function isNothingToApprove(e: unknown): boolean {
+  return e instanceof ConflictError && e.message === NOTHING_TO_APPROVE_MESSAGE;
+}

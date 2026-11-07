@@ -573,10 +573,14 @@ Production batch on the shop floor for a specific item and quantity. Header tabl
 | `source_legacy_ref`  | `text`          | nullable. Captures legacy `(soNo, soRefId, soLineNo, soPartName, clientPoLineNo)` as JSON-encoded text until Phase 4 backfills FKs |
 | `closed_at`          | `timestamptz`   | nullable. Set when JC manually closed (legacy `'Closed'` status path)                                                              |
 | `client_material_gate` | `boolean`     | not null, default `true` (migration 0083, ADR-103). `true` → the first op is capped at party material **issued** to this JC; `false` → legacy ADR-096/097 cap on material **received** for the part. All 26 JCs existing at cutover were set `false` so live work was not frozen. Read only for JWSO-sourced JCs |
+| `route_card_id` | `uuid` | nullable, FK → `route_cards(id)` on delete set null. The card this Job Card is built on (ADR-282, 0244). Backfilled from its Production Order; null on an old hand-made Job Card |
+| `route_card_revision` | `integer` | nullable. The Route Card Rev this Job Card is built on (ADR-282); moves when its own routing change is approved. Null = never recorded, shown blank |
+| `route_card_not_sent` | `boolean` | not null, default false. A routing change on this Job Card could not be sent to the card yet (ADR-282) |
 | audit + `deleted_at` | (audit pattern) |                                                                                                                                    |
 
 Indexes:
 
+- `job_cards_route_card_idx` on `(route_card_id)` where `route_card_id is not null`
 - `unique (company_id, code) where deleted_at is null`
 - `(company_id, item_id) where deleted_at is null`
 - `(company_id, due_date) where deleted_at is null and closed_at is null` — overdue JC reports
@@ -588,7 +592,7 @@ RLS: `job_cards_company_read` (any role) + `job_cards_manager_write` (admin/mana
 
 ### `jc_ops`
 
-Per-step routing of a job card. Snapshot copied from `route_card_ops` at JC creation; thereafter independent.
+Per-step routing of a job card. Copied from `route_card_ops` at JC creation. A later routing change made on the Job Card form goes back to the Route Card (`saveRouteCardForItem`; ADR-282), by approval when Document Edit Approval is on. `job_cards.route_card_id` + `route_card_revision` hold the card and Route Card Rev the Job Card is built on (null on an old hand-made Job Card); `route_card_not_sent` = its routing change could not be sent yet (0244).
 
 | Column                   | Type               | Notes                                                                                                                                                                                                        |
 | ------------------------ | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -1973,6 +1977,7 @@ A separate setup script `migration/seed-admin.ts` will be added in T-005 / T-008
 | 2026-10-26 | `0223_day_log_entries.sql` (hand-written, idempotent, additive) | **Day Log entries (approved design).** `daily_report_lines` += `sales_order_id` → sales_orders, `job_work_order_id` → job_work_orders (both ON DELETE SET NULL; CHECK only one set; partial indexes). `daily_report_lines_running_uq` replaced by `daily_report_lines_open_uq` — one Open entry (work or break, `to_time` NULL) per day. `remarks` holds the entry remark; LATE is derived (`updated_at` > report date + `to_time` IST + 60 min). `user_break_times` left in place, no longer used. Applied to TEST 2026-10-26. **Must run before the API deploy.** |
 | 2026-10-27 | `0224_day_log_leave.sql` / `0225_day_log_edit_approval.sql` | 0224: `day_log_entry_kind` += 'leave' (old Others rows). 0225: `daily_report_lines` += `pending_from`, `pending_to`, `pending_description`, `pending_sales_order_id`, `pending_job_work_order_id`, `pending_at`, `pending_by`, `reject_reason` + partial index on pending rows — an edit of a saved Day Log row waits here until a Department Admin approves (values copied over) or rejects. Applied to TEST. **Must run before the API deploy.** |
 | 2026-10-29 | `0228_day_log_text_revisions_replies.sql` (hand-written, idempotent, additive) | **ADR-255.** New `daily_report_line_text_revisions` (line_id → daily_report_lines, `text_rev_no` ≥ 0, `description`, `saved_at`, audit cols; partial UNIQUE (line_id, text_rev_no)) and `daily_report_line_replies` (line_id, `body`, `sent_at`, `edited_at`, `seen_at`, audit cols, created_by = author; partial index on unseen). Both: RLS ON with a deny-all client SELECT policy, NOT in `supabase_realtime`. Backfill: Text Rev 0 for every live entry; Rev 0/1 for approved text edits recovered from EDIT_APPROVED activity text (9 on PROD). Applied to TEST 2026-10-29 (7 Rev 0). **Must run before the API deploy.** Renamed by 0229 → `daily_report_line_revisions` (`entry_rev_no`). |
+| 2026-11-07 | `0244_job_card_route_card_rev.sql` (hand-written, idempotent, additive) | **ADR-282.** `job_cards` gains `route_card_id`, `route_card_revision`, `route_card_not_sent` and `job_cards_route_card_idx`. Backfill of the card and Rev from the live Production Order, with the `updated_at` trigger off so open forms get no false change message. |
 | 2026-11-06 | `0243_route_card_draft.sql` (hand-written, idempotent) | **ADR-277.** `route_cards_approval_status_check` also allows `draft`. No row changed; column default stays `approved` (see 0219). Applied to TEST 2026-11-06. **Must run before the API deploy.** |
 | 2026-11-05 | `0242_day_log_reply_tasks.sql` (hand-written, idempotent) | **ADR-274.** New unique index `tasks_day_log_reply_open_uq` (one open Day Log reply task per entry / date per sender) replaces `tasks_day_log_date_open_uq`. Data: open blank-date tasks whose replies are all seen get `viewed_at`, so their dot can clear. |
 | 2026-11-05 | `0241_day_log_pending_from_28oct.sql` (hand-written, data only, safe to re-run) | **ADR-272.** Sets `companies.day_log_pending_from` to 2026-10-28 for existing companies (owner: count from 28-10-2026). |

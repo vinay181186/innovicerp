@@ -128,6 +128,7 @@ import { assertLineFreeForPlan } from '../ml-plan/guards';
 import { diffFields, softDeleteStamp, type DiffField } from '../../lib/audit-trail';
 import { fmtDate } from '../../lib/format-date';
 import { nextJcCode } from '../job-cards/service';
+import { recordRouteCardOutcome } from '../job-cards/route-card-outcome';
 import { saveRouteCardForItem } from '../route-cards/service';
 import { nextSeriesCode } from '../op-entry/osp-cascade';
 // T1 — the one "raw material on this item's Route Card" lookup, shared with
@@ -2515,7 +2516,7 @@ async function executeManufacture(
     // ADR-218: the ROUTING is still remembered here, but the raw material is
     // NOT — this path can only fill a blank half on the card, never replace
     // what it already holds. The card is the author; this is not.
-    afterOpsInserted: async ({ machineIdByCode }) => {
+    afterOpsInserted: async ({ jc: builtJc, machineIdByCode }) => {
       const routeCardOpsFromPlan: CreateRouteCardOpInput[] = ops.map((op) => ({
         machineId:
           op.machineId ??
@@ -2549,7 +2550,15 @@ async function executeManufacture(
         },
         // Drawing Rev register — write back to THIS Item + Rev's card.
         plan.itemRevisionId ?? null,
+        builtJc.id,
       );
+      // ADR-282 — the card and Rev this Job Card is built on.
+      await recordRouteCardOutcome(tx, builtJc.id, writeBack, {
+        companyId: plan.companyId,
+        itemId,
+        itemRevisionId: plan.itemRevisionId ?? null,
+        userId: user.id,
+      });
       routeCardSentForApproval = writeBack?.sentForApproval === true;
       routeCardNotSentReason = writeBack?.notSentReason;
     },
