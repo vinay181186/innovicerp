@@ -3,7 +3,7 @@
 // these only turn loaded data into chips, date labels and a ticking clock.
 
 import type { DayLogEntryRevision } from '@innovic/shared';
-import { fmt12, hhmmToMin } from '@innovic/shared';
+import { fmt12, hhmmToMin, sfPresetRange } from '@innovic/shared';
 import { fmtDate, fmtTime } from '@/lib/date';
 
 /** Calendar day ± n, "YYYY-MM-DD" (UTC arithmetic, so no DST/zone drift). */
@@ -13,7 +13,20 @@ export function shiftDate(date: string, n: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+/** History pop-up's quick buttons, each a From Date to To Date ending at the
+ *  latest date it can (never past `today`). Strings and UTC, so no zone drift. */
+export function historyQuickRanges(today: string): { label: string; from: string; to: string }[] {
+  const [monthStart] = sfPresetRange('thisMonth', today);
+  const [lastFrom, lastTo] = sfPresetRange('lastMonth', today);
+  return [
+    { label: 'Today', from: today, to: today },
+    { label: 'Last 15 days', from: shiftDate(today, -14), to: today },
+    { label: 'This month', from: monthStart, to: today },
+    { label: 'Last month', from: lastFrom, to: lastTo },
+  ];
+}
+
+export const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 export function weekday(date: string): string {
   return WEEKDAYS[new Date(`${date}T00:00:00Z`).getUTCDay()] ?? '';

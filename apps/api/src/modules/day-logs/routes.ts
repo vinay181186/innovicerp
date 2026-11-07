@@ -50,7 +50,7 @@ export async function dayLogsRoutes(app: FastifyInstance): Promise<void> {
     return service.getPersonDay(dayLogPersonDayQuerySchema.parse(req.query), req.user);
   });
 
-  // ADR-278 — a person's whole month or one date, Super Admin only.
+  // ADR-278 — a person's From-To range, Super Admin only.
   app.get('/day-logs/person-history', async (req) => {
     if (!req.user) throw new AuthenticationError();
     return service.getPersonHistory(dayLogHistoryQuerySchema.parse(req.query), req.user);

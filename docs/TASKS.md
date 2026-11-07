@@ -1,7 +1,8 @@
 # TASKS.md — Project Task Tracker
 
 > Update at start AND end of every work session.
-> Last updated: 2026-11-07 (**ADR-286 — Created On and Created Time can be hidden per user; QC Call Register: Operation filter, no Called Date, Stage = Incoming / In-Process, Operation = short name.** Migration 0246.)
+> Last updated: 2026-11-07 (**ADR-287 — Day Log History reads any From-To range up to 92 days; name bar with Period, Work, Changes as on the Job Card header; calendar per month on the first page, none for one date; one page per date; Points to check removed; Total Entry Days, Total Working Hours, Avg Daily Working Hours.** No migration.)
+> Prior: 2026-11-07 (**ADR-286 — Created On and Created Time can be hidden per user; QC Call Register: Operation filter, no Called Date, Stage = Incoming / In-Process, Operation = short name.** Migration 0246.)
 > Prior: 2026-11-07 (**ADR-285 — Job Card detail: labelled Item row, JC No. once, Drawing No. beside Item Name, read from the SO / JWSO line first on screen and print. Other screens wait for the owner.** No migration.)
 > Prior: 2026-11-07 (**ADR-283 — open-page tabs open in fixed menu order with Home first, Home never drops at the cap; Job Card Operations has separate Operation and Machine / Vendor columns; All Tasks has Assigned By and Assigned Date.** Migration 0245.)
 > Prior: 2026-11-07 (**ADR-282 — add a Route Card line anywhere with the series staying 10, 20, 30; a Job Card keeps its own Route Card Rev; Job Card write-back no longer loses Lead Days or raises false changes.** Migration 0244.)
