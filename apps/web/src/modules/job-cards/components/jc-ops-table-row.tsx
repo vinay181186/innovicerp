@@ -1,5 +1,5 @@
-// Job Card Operations tab — one operation ROW (its Operation cell opens the popup,
-// jc-op-popup.tsx) of the
+// Job Card Operations tab — one operation ROW (the button in its Operation cell
+// opens the popup, jc-op-popup.tsx) of the
 // table in jc-ops-table.tsx. Split out to keep each file under the 400-line
 // rule; see jc-ops-table.tsx for what the table is and where each figure and
 // gate comes from.
@@ -21,7 +21,7 @@ import { opActions, type OpAction, type OpActionTarget } from './jc-ops-table-ac
 import { JcOpPopup } from './jc-op-popup';
 import { checkText, doneLabel } from './jc-ops-table-notes';
 
-export const COLS = 18;
+export const COLS = 19;
 
 type Navigate = ReturnType<typeof useNavigate>;
 
@@ -180,11 +180,8 @@ export function OpRow({
     <>
       <tr className={trCls}>
         <td className={`td-ctr mono fw-700 jc-ops-opn jc-ops-k-${kind}`}>{fmtOpSrNo(op.opSeq)}</td>
-        <td
-          className={`jc-ops-opc jc-ops-k-${kind}`}
-          title={[op.operation, code, name].filter(Boolean).join(' · ')}
-        >
-          {/* Owner 2026-11-02: only this cell opens the operation popup. */}
+        <td className="jc-ops-opc jc-ops-c-op" title={op.operation}>
+          {/* Owner 2026-11-02: only this button opens the operation popup. */}
           <button
             type="button"
             className="jc-ops-open"
@@ -192,20 +189,26 @@ export function OpRow({
             aria-haspopup="dialog"
             onClick={onOpen}
           >
-            <b>{op.operation}</b> <i>{code}</i>
-            {name ? <span className="jc-ops-sub"> {name}</span> : null}
+            <b>{op.operation}</b>
           </button>
-          {hasOspLane ? (
-            <span className="badge b-purple" title="In-house + OSP (outsource balance)">
-              + OSP{vendorCode ? ` ${vendorCode}` : ''}
-            </span>
-          ) : null}
           {op.reworkPendingQty > 0 ? (
             <span
               className="badge b-amber"
               title={`${op.reworkPendingQty} piece(s) sent back to this operation for rework.`}
             >
               ♻ {op.reworkPendingQty}
+            </span>
+          ) : null}
+        </td>
+        <td
+          className={`jc-ops-opc jc-ops-c-mv jc-ops-k-${kind}`}
+          title={[code, name, hasOspLane ? vendorCode : null].filter(Boolean).join(' · ')}
+        >
+          <i>{code}</i>
+          {name ? <span className="jc-ops-sub">{name}</span> : null}
+          {hasOspLane ? (
+            <span className="badge b-purple" title="In-house + OSP (outsource balance)">
+              + OSP{vendorCode ? ` ${vendorCode}` : ''}
             </span>
           ) : null}
         </td>
