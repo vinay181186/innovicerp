@@ -12,8 +12,8 @@ import { createRoute, useRouter } from '@tanstack/react-router';
 import { ArrowLeft } from 'lucide-react';
 import { useState } from 'react';
 import { fileNameFromPath } from '@/components/shared/file-preview-modal';
-import { canDownloadDrawings, useMyAccess } from '@/lib/access-control';
-import { saveDrawing } from '@/lib/drawing-url';
+import { canDownloadDrawings, canPrintDrawings, useMyAccess } from '@/lib/access-control';
+import { logDrawingPrint, saveDrawing } from '@/lib/drawing-url';
 import { useSession } from '@/lib/session';
 import { useMyCompany } from '@/modules/settings/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -43,11 +43,15 @@ function DrawingPage(): React.JSX.Element {
   const { data: me } = useSession();
   const { data: company } = useMyCompany();
   const mayDownload = canDownloadDrawings(eff, me?.role);
+  // ADR-289 — Print only for the "Can print drawings" switch; the server
+  // checks it again (and logs the print) before the window opens.
+  const mayPrint = canPrintDrawings(eff, me?.role);
   const path = rev?.drawingFilePath ?? null;
   const view = useDrawingViewUrl(path, rev?.label ?? '');
   const [tab, setTab] = useState<TabKey>('drawing');
   const [notice, setNotice] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [printing, setPrinting] = useState(false);
 
   if (isLoading) return <PageState state="loading" message="Loading drawing…" />;
   if (isError || !rev) {
@@ -59,8 +63,17 @@ function DrawingPage(): React.JSX.Element {
     );
   }
 
-  const onPrint = (): void => {
+  const onPrint = async (): Promise<void> => {
     setNotice(null);
+    setPrinting(true);
+    try {
+      await logDrawingPrint({ itemRevisionId: rev.id, ...(path ? { path } : {}) });
+    } catch (e) {
+      setNotice(e instanceof Error ? e.message : 'Could not print the drawing.');
+      return;
+    } finally {
+      setPrinting(false);
+    }
     const ok = printDrawing({
       revision: rev,
       company,
@@ -106,15 +119,17 @@ function DrawingPage(): React.JSX.Element {
         </span>
         <span className="panel-title">Drawing</span>
         <span style={{ flex: 1 }} />
-        <button
-          type="button"
-          className="btn btn-ghost"
-          onClick={onPrint}
-          disabled={!path}
-          title={path ? undefined : 'This Drawing Rev has no drawing file'}
-        >
-          <Icon name="printer" size={13} /> Print
-        </button>
+        {mayPrint ? (
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => void onPrint()}
+            disabled={!path || printing}
+            title={path ? undefined : 'This Drawing Rev has no drawing file'}
+          >
+            <Icon name="printer" size={13} /> {printing ? 'Printing…' : 'Print'}
+          </button>
+        ) : null}
         {mayDownload && path ? (
           <button
             type="button"

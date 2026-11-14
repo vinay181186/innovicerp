@@ -3,6 +3,7 @@
 // (v_osp_wip w + the sol / rev_jwl joins, shared by the page and its summary).
 
 import { sql } from 'drizzle-orm';
+import { drawingRevOf } from '../../lib/drawing-rev';
 
 import { createdByNameSql } from '../../lib/created-by-sql';
 import type { SfColumnMap } from '../../lib/list-query';
@@ -20,7 +21,7 @@ export const OSP_WIP_SF_COLUMNS: SfColumnMap = {
   clientPoLineNo: { sql: polSql('sol', 'rev_jwl'), type: 'text' },
   // CODE/REV as the cell prints it (itemCodeWithRev).
   itemCode: {
-    sql: sql`(w.item_code || COALESCE('/' || NULLIF(btrim(COALESCE(sol.revision::text, rev_jwl.revision::text)), ''), ''))`,
+    sql: sql`(w.item_code || COALESCE('/' || NULLIF(btrim(COALESCE(${drawingRevOf(sql`jc.item_revision_id`)}, sol.revision::text, rev_jwl.revision::text)), ''), ''))`,
     type: 'text',
   },
   itemName: { sql: sql`w.item_name`, type: 'text' },

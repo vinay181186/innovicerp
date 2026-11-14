@@ -34,6 +34,7 @@ const row = (fullAccess: boolean) => ({
   fullAccess,
   auditor: false,
   drawingDownload: false,
+  drawingPrint: false,
   departments: {},
   forms: { po: { view: true } },
 });
@@ -116,6 +117,7 @@ describe('getMyAccess — once per request (ADR-229)', () => {
       fullAccess: false,
       auditor: false,
       drawingDownload: false,
+      drawingPrint: false,
       departments: {},
       forms: {},
     });

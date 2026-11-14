@@ -258,9 +258,16 @@ describe('Item + Drawing Rev register', () => {
         itemId,
         fromId: r1!.id,
         toId: r3!.id,
+        // ADR-289 — the line has Job Cards, so the change needs a reason.
+        reason: 'Customer revised the drawing',
       }),
     );
     expect(res.movedDocs).toEqual([`${P}JC2`]);
+    const change = await db
+      .select({ reason: itemRevisionChanges.reason })
+      .from(itemRevisionChanges)
+      .where(eq(itemRevisionChanges.soLineId, line!.id));
+    expect(change.map((c) => c.reason)).toEqual(['Customer revised the drawing']);
     expect(res.keptDocs).toEqual([`${P}JC1`]);
     const jcs = await db
       .select({ code: jobCards.code, rev: jobCards.itemRevisionId })
@@ -381,6 +388,8 @@ describe('Item + Drawing Rev register', () => {
           itemId,
           fromId,
           toId,
+          // ADR-289 — the line has Job Cards / a Plan, so a reason is required.
+          reason: 'Drawing Rev moved for the test',
         }),
       );
     const pro = async () =>

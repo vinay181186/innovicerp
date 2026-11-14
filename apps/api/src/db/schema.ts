@@ -3233,6 +3233,9 @@ export const deliveryChallanLines = pgTable(
     // NCs of one SO; the header nc_id stays the FIRST and marks the DC as a
     // return DC. Null on an ordinary OSP line.
     ncId: uuid('nc_id').references((): AnyPgColumn => ncRegister.id, { onDelete: 'set null' }),
+    // ADR-289 (0247) — the Drawing Rev this challan line was made with (the
+    // Job Card's Rev, else the SO / JWSO line's at create). NULL on older rows.
+    itemRevisionId: uuid('item_revision_id').references((): AnyPgColumn => itemRevisions.id),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -3264,6 +3267,7 @@ export const deliveryChallanLines = pgTable(
       using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
       withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
     }),
+    index('delivery_challan_lines_item_revision_idx').on(t.itemRevisionId),
   ],
 ).enableRLS();
 
@@ -3486,7 +3490,9 @@ export const bomMasterLines = pgTable(
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
     // D2 (0232): the child part's Item + Drawing Rev (SHAFT/2); null = Buy part / old line.
-    childItemRevisionId: uuid('child_item_revision_id').references((): AnyPgColumn => itemRevisions.id),
+    childItemRevisionId: uuid('child_item_revision_id').references(
+      (): AnyPgColumn => itemRevisions.id,
+    ),
   },
   (t) => [
     index('bom_master_lines_child_item_revision_idx').on(t.childItemRevisionId),
@@ -3644,7 +3650,9 @@ export const mlBomLines = pgTable(
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
     // D2 (0232): the child part's Item + Drawing Rev (SHAFT/2); null = Buy part / old line.
-    childItemRevisionId: uuid('child_item_revision_id').references((): AnyPgColumn => itemRevisions.id),
+    childItemRevisionId: uuid('child_item_revision_id').references(
+      (): AnyPgColumn => itemRevisions.id,
+    ),
   },
   (t) => [
     index('ml_bom_lines_child_item_revision_idx').on(t.childItemRevisionId),
@@ -6159,6 +6167,72 @@ export const jwDcInwardLines = pgTable(
   ],
 ).enableRLS();
 
+// ADR-289 (0247) — every Rev bucket an un-named stock 'out' took (postStockMove
+// splits it across buckets), per Item Issue line / JW DC Outward line, so a
+// Return / Cancel / JW receipt puts stock back into the SAME buckets.
+// returned_qty is written only by lib/stock-out-parts.ts giveBackToParts.
+export const stockOutParts = pgTable(
+  'stock_out_parts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    storeIssueLineId: uuid('store_issue_line_id').references(() => storeIssueLines.id, {
+      onDelete: 'cascade',
+    }),
+    jwDcOutwardLineId: uuid('jw_dc_outward_line_id').references(
+      (): AnyPgColumn => jwDcOutwardLines.id,
+      { onDelete: 'cascade' },
+    ),
+    takeOrder: integer('take_order').notNull(),
+    storeTransactionId: uuid('store_transaction_id').references(
+      (): AnyPgColumn => storeTransactions.id,
+      { onDelete: 'set null' },
+    ),
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => items.id),
+    itemRevisionId: uuid('item_revision_id').references((): AnyPgColumn => itemRevisions.id),
+    qty: stockQty('qty').notNull(),
+    returnedQty: stockQty('returned_qty').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
+  },
+  (t) => [
+    check(
+      'stock_out_parts_one_source_check',
+      sql`(${t.storeIssueLineId} IS NULL) <> (${t.jwDcOutwardLineId} IS NULL)`,
+    ),
+    check('stock_out_parts_qty_check', sql`${t.qty} > 0`),
+    check(
+      'stock_out_parts_returned_check',
+      sql`${t.returnedQty} >= 0 AND ${t.returnedQty} <= ${t.qty}`,
+    ),
+    index('stock_out_parts_issue_line_idx')
+      .on(t.storeIssueLineId)
+      .where(sql`${t.deletedAt} is null`),
+    index('stock_out_parts_jw_line_idx')
+      .on(t.jwDcOutwardLineId)
+      .where(sql`${t.deletedAt} is null`),
+    index('stock_out_parts_item_revision_idx').on(t.itemRevisionId),
+    pgPolicy('stock_out_parts_company_all', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+      withCheck: sql`company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
 // ─── Design Section (migration 0033) — 8 tables ─────────────────────────
 // Mirrors legacy renderDesignTracker L7259 + renderDesignProjects L7570 +
 // renderDesignIssuesPage L7890 + renderDesignWorkLog L7935.
@@ -6718,6 +6792,9 @@ export const invoiceLines = pgTable(
     salesOrderLineId: uuid('sales_order_line_id').references(() => salesOrderLines.id, {
       onDelete: 'set null',
     }),
+    // ADR-289 (0247) — the Drawing Rev invoiced (the Rev the SO line was
+    // dispatched at, else the SO line's at create). NULL on older rows.
+    itemRevisionId: uuid('item_revision_id').references((): AnyPgColumn => itemRevisions.id),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -6747,6 +6824,7 @@ export const invoiceLines = pgTable(
       using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
       withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
     }),
+    index('invoice_lines_item_revision_idx').on(t.itemRevisionId),
   ],
 ).enableRLS();
 
@@ -8322,6 +8400,9 @@ export const userAccess = pgTable(
     // NOT — reading everything and being handed the company's drawings are two
     // different decisions.
     drawingDownload: boolean('drawing_download').notNull().default(false),
+    // ADR-289 (0247) — "Can print drawings": a print is a copy on paper, so it
+    // is its own right beside drawing_download (same bypass rules).
+    drawingPrint: boolean('drawing_print').notNull().default(false),
     // Which department this person belongs to (0101). Picking it seeds that
     // department's tier; changing it clears the old one and seeds the new.
     // Stored rather than derived because "main" and "extra" departments look
@@ -9002,8 +9083,14 @@ export const itemRevisionChanges = pgTable(
     toItemRevisionId: uuid('to_item_revision_id')
       .notNull()
       .references(() => itemRevisions.id),
-    movedDocs: text('moved_docs').array().notNull().default(sql`'{}'::text[]`),
-    keptDocs: text('kept_docs').array().notNull().default(sql`'{}'::text[]`),
+    movedDocs: text('moved_docs')
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    keptDocs: text('kept_docs')
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
     reason: text('reason'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')

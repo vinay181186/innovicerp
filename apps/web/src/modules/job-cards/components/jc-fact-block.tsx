@@ -30,6 +30,10 @@ import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev, docDrawingRev } from '@/lib/item-code';
 import {
+  DrawingRevMissingNote,
+  drawingRevMissing,
+} from '@/modules/item-revisions/components/drawing-rev-missing-note';
+import {
   PendingChangeChip,
   headerPendingChange,
 } from '@/modules/document-edits/components/pending-change-chip';
@@ -146,6 +150,7 @@ export function JcFactBlock({
         itemLabel={`${codeRev} ${jc.itemName}`}
       />
       <div className="jc-facts-main">
+        {drawingRevMissing(jc) ? <DrawingRevMissingNote /> : null}
         <ClusterGrid stack>
           {/* ── ITEM: WHICH part, for whom, off which order line ── */}
           <Cluster name="Item" wide>

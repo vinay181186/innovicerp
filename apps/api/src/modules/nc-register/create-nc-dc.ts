@@ -27,6 +27,7 @@ import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { assertActiveParty } from '../../lib/active-party';
 import { AuthorizationError, ConflictError, ValidationError } from '../../lib/errors';
+import { dcLineRevIdSql } from '../../lib/drawing-rev';
 import { lockPoLinesForSend } from '../../lib/po-line-sent';
 import { assertRowUpdated } from '../../lib/row-lock';
 import { emitActivityLog } from '../activity-log/service';
@@ -259,6 +260,8 @@ export async function createNcDcBatch(
         dcRemarks: input.remarks ? `${p.nc.code} — ${input.remarks}` : p.nc.code,
         purchaseOrderLineId: p.poLineId,
         ncId: p.nc.id,
+        // ADR-289 — the NC's Job Card Rev first, kept on the line.
+        itemRevisionId: dcLineRevIdSql(p.nc.itemId, p.poLineId, p.nc.jobCardId),
         createdBy: user.id,
         updatedBy: user.id,
       })),

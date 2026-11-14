@@ -9,6 +9,7 @@
 // leaves 'pending' — disposed/closed NCs are permanent records.
 
 import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
+import { drawingRevOf } from '../../lib/drawing-rev';
 import {
   ActivityAction,
   type DocumentEditStagedResult,
@@ -606,7 +607,7 @@ export async function listNcRegister(
         -- column is only text on a database that has had migration 0119. On one
         -- that has not it is still the old integer and would arrive here as a
         -- number wearing a string type. The cast is a no-op once 0119 is in.
-        COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
+        COALESCE(${drawingRevOf(sql`jc.item_revision_id`)}, sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
         -- The customer's own PO line number, off the SAME sol / rev_jwl joins
         -- as the revision above: SO line first, else the JWSO line (ADR-236).
         ${polSql('sol', 'rev_jwl')} AS "clientPoLineNo",
@@ -959,9 +960,11 @@ export async function readNc(
       // column is only text on a database that has had migration 0119. On one
       // that has not it is still the old integer and would arrive here as a
       // number wearing a string type. The cast is a no-op once 0119 is in.
-      itemRevision: sql<
-        string | null
-      >`COALESCE(${salesOrderLines.revision}::text, ${jobWorkOrderLines.revision}::text)`,
+      // ADR-289 — the Job Card's own Rev first (a split line can have JC-1 at
+      // ABC/1 and JC-2 at ABC/2); the line text only for a card with none.
+      itemRevision: sql<string | null>`COALESCE(
+        ${drawingRevOf(jobCards.itemRevisionId)},
+        ${salesOrderLines.revision}::text, ${jobWorkOrderLines.revision}::text)`,
       // The customer's own PO line number, off the SAME two line joins as the
       // revision above: SO line first, else the JWSO line (ADR-236).
       clientPoLineNo: polOf(salesOrderLines.clientPoLineNo, jobWorkOrderLines.clientPoLineNo),

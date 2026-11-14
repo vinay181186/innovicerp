@@ -16,6 +16,7 @@ import type {
   QcMatrixRow,
 } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
+import { drawingRevOf } from '../../lib/drawing-rev';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
@@ -132,7 +133,8 @@ export async function getQcMatrix(
           sol.line_no AS "lineNo",
           sol.client_po_line_no AS "clientPoLineNo",
           COALESCE(i.code, sol.item_code_text) AS "itemCode",
-          sol.revision::text AS "itemRevision",
+          -- ADR-289: the Job Card's own Rev first.
+          COALESCE(${drawingRevOf(sql`jc.item_revision_id`)}, sol.revision::text) AS "itemRevision",
           COALESCE(i.name, sol.part_name) AS "itemName",
           sol.order_qty AS "orderQty",
           jc.id AS "jobCardId", jc.code AS "jcCode",

@@ -977,7 +977,11 @@ async function getDispatchInternal(
       // shipped against. Cast to text because the contract types it as a string
       // and the column is only text on a database that has had migration 0119.
       // Never items.revision — a different column, about the item master.
-      itemRevision: sql<string | null>`${salesOrderLines.revision}::text`,
+      // ADR-289 — the Rev SHIPPED (stored on the line) first; the SO line's
+      // live text only for an old line with none.
+      itemRevision: sql<
+        string | null
+      >`COALESCE(${itemRevisions.rev}, ${salesOrderLines.revision}::text)`,
       itemCodeText: customerDispatchLines.itemCodeText,
       itemName: customerDispatchLines.itemName,
       // The item master's name — the detail screen notes it when the line's

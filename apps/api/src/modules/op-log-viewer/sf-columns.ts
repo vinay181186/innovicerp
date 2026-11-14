@@ -5,6 +5,7 @@
 // / "Reversed by …").
 
 import { sql } from 'drizzle-orm';
+import { drawingRevOf } from '../../lib/drawing-rev';
 import { alias } from 'drizzle-orm/pg-core';
 
 import {
@@ -37,7 +38,7 @@ export const OP_LOG_SF_COLUMNS: SfColumnMap = {
   // CODE/REV as the cell prints it (itemCodeWithRev): the customer's drawing
   // revision off the SO line, else the JW line, after a slash.
   itemCode: {
-    sql: sql`(btrim(${items.code}) || COALESCE('/' || NULLIF(btrim(COALESCE(${salesOrderLines.revision}::text, ${jobWorkOrderLines.revision}::text)), ''), ''))`,
+    sql: sql`(btrim(${items.code}) || COALESCE('/' || NULLIF(btrim(COALESCE(${drawingRevOf(jobCards.itemRevisionId)}, ${salesOrderLines.revision}::text, ${jobWorkOrderLines.revision}::text)), ''), ''))`,
     type: 'text',
   },
   itemName: { sql: sql`${items.name}`, type: 'text' },

@@ -5,6 +5,7 @@
 // derivation; joins jobs/items/machines/vendors for display.
 
 import { sql } from 'drizzle-orm';
+import { drawingRevOf } from '../../lib/drawing-rev';
 import type {
   ChangeJcOpMachineInput,
   JcOpsBoardRow,
@@ -103,7 +104,7 @@ export async function listJcOpsBoard(
         -- contract types it as a string, while a database that has not had
         -- migration 0119 still holds an integer in that column; the cast is a
         -- no-op once 0119 is applied.
-        COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
+        COALESCE(${drawingRevOf(sql`jc.item_revision_id`)}, sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
         -- POL = the line number printed on the CUSTOMER's own purchase order,
         -- off the same SO line as the revision above, else the Job Work SO
         -- line's POL for a JW-sourced op (ADR-236).

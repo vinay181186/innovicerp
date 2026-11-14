@@ -42,6 +42,7 @@ function access(over: Partial<EffectiveAccess>): EffectiveAccess {
     fullAccess: false,
     auditor: false,
     drawingDownload: false,
+    drawingPrint: false,
     departments: {},
     forms: {},
     ...over,

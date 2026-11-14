@@ -6,6 +6,7 @@
 // Nothing here mutates state.
 
 import { type SQL, sql } from 'drizzle-orm';
+import { drawingRevOf } from '../../lib/drawing-rev';
 import type { ListOspWipQuery, ListOspWipResponse, OspWipRow } from '@innovic/shared';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { createdByNameSql } from '../../lib/created-by-sql';
@@ -133,7 +134,7 @@ export async function listOspWip(
         -- column is only text on a database that has had migration 0119. On one
         -- that has not it is still the old integer and would arrive here as a
         -- number wearing a string type.
-        COALESCE(sol.revision::text, rev_jwl.revision::text) AS item_revision,
+        COALESCE(${drawingRevOf(sql`jc.item_revision_id`)}, sol.revision::text, rev_jwl.revision::text) AS item_revision,
         -- POL = the line number printed on the CUSTOMER's own purchase order,
         -- off the same SO line the revision above is read from, else the JWSO
         -- line's (ADR-236). Never sol.line_no, which is OUR line number.

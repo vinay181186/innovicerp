@@ -44,6 +44,11 @@ import { useClientPoCheck } from '@/lib/use-client-po-check';
 import { useClientsList } from '@/modules/clients/api';
 import { QuickAddClient } from '@/modules/clients/components/quick-add-client';
 import { useItemsList } from '@/modules/items/api';
+import {
+  drawingRevChanged,
+  revChangeReasonError,
+  RevChangeReasonInput,
+} from '@/modules/item-revisions/components/rev-change-reason';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
 import { FormActions, PageHeader, useSaveShortcut } from '@/ui/layout';
@@ -77,6 +82,9 @@ interface LineFormValue {
   revision: string;
   /** Path of the uploaded drawing in the private docs bucket, or null/absent. */
   drawingFilePath?: string | null | undefined;
+  /** ADR-289 — "Reason for Rev change", asked only when a saved line's Drawing
+   *  Rev differs from the Rev it was loaded with. */
+  revChangeReason?: string | undefined;
   uom: Uom;
   orderQty: number;
   rate: number;
@@ -760,6 +768,14 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
         setLineError(revisionBackwardsMessage(saved.lineNo, saved.revision, typed));
         return;
       }
+      // ADR-289: a changed Rev carries its reason.
+      if (drawingRevChanged(saved.revision, typed)) {
+        const msg = revChangeReasonError(saved.lineNo, l.revChangeReason);
+        if (msg) {
+          setLineError(msg);
+          return;
+        }
+      }
     }
     // ADR-236: POL (the customer's PO line number) is compulsory on every line,
     // in-use and short-closed lines included — same rule and words as the API
@@ -814,6 +830,11 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
         drawingNo: l.drawingNo?.trim() || null,
         // Always sent, and trimmed. The check above guarantees it is non-blank.
         revision: normalizeRevision(String(l.revision ?? '')),
+        // ADR-289: only when this saved line's Rev really changed.
+        ...(drawingRevChanged(saved?.revision, String(l.revision ?? '')) &&
+        l.revChangeReason?.trim()
+          ? { revChangeReason: l.revChangeReason.trim() }
+          : {}),
         // null, not undefined: JSON.stringify drops undefined keys, so clearing a
         // drawing would send nothing at all and the server would keep the old
         // file. An explicit null is what says the drawing was removed.
@@ -1506,6 +1527,16 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                           title={REV_INPUT_TITLE}
                           {...upperCaseRevField(register(`lines.${idx}.revision` as const))}
                         />
+                        {(() => {
+                          const savedRev = wl?.id ? savedLineById.get(wl.id)?.revision : undefined;
+                          return savedRev && drawingRevChanged(savedRev, wl?.revision) ? (
+                            <RevChangeReasonInput
+                              lineNo={idx + 1}
+                              savedRev={savedRev}
+                              {...register(`lines.${idx}.revChangeReason` as const)}
+                            />
+                          ) : null;
+                        })()}
                       </td>
                       <td className="td-ctr" title={inUse ? IN_USE_TITLE : undefined}>
                         {/* onValid sends the SAVED UOM for a line in use, so the

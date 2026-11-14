@@ -10,7 +10,12 @@
 //     Job Cards keep the old Rev; all Job Cards closed → refused. Same
 //     transaction as the line save, Job Cards locked FOR UPDATE first.
 
-import { ActivityAction, itemRevLabel, normalizeRevision } from '@innovic/shared';
+import {
+  ActivityAction,
+  REV_CHANGE_REASON_MIN,
+  itemRevLabel,
+  normalizeRevision,
+} from '@innovic/shared';
 import { inArray, sql } from 'drizzle-orm';
 import { itemRevisionChanges, itemRevisions, items } from '../../db/schema';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
@@ -43,6 +48,9 @@ export interface LineRevInput {
   sentDrawingNo: string | null | undefined;
   /** The stored line, or null for a new line. */
   stored: StoredLineRev | null;
+  /** ADR-289 — why the Rev changed; required once the line has a Plan / PRO /
+   *  Job Card (applyLineRevChange). */
+  revChangeReason?: string | null | undefined;
 }
 
 export interface LineRevResult {
@@ -192,6 +200,10 @@ export async function resolveLineRevision(
       itemId: input.itemId!,
       fromId: st.itemRevisionId,
       toId: r.id,
+      reason: input.revChangeReason ?? null,
+      // A first-time link of the same Rev text (old line, item_revision_id
+      // NULL) is not a Rev change: no reason asked.
+      revTextChanged: normalizeRevision(rev ?? '') !== normalizeRevision(st.revision ?? ''),
     });
   }
   return {
@@ -211,6 +223,11 @@ export interface LineRevChange {
   itemId: string;
   fromId: string | null;
   toId: string;
+  /** ADR-289 — the user's reason (stored in item_revision_changes.reason). */
+  reason?: string | null;
+  /** false = the Rev TEXT is the same (only the register link / file moved):
+   *  no reason is required. Default true. */
+  revTextChanged?: boolean;
 }
 
 /** D1 — move OPEN work of one line to the new Rev; closed Job Cards keep the
@@ -252,6 +269,21 @@ export async function applyLineRevChange(
       `Ln ${c.lineNo}: All Job Cards are closed — Rev and drawing locked. For a new Rev add a new line`,
     );
   }
+  // ADR-289 — once the line has any Plan / PRO / Job Card, a Rev change needs
+  // a reason (stored on the change row and in every moved document's log).
+  const reason = (c.reason ?? '').trim();
+  let hasWork = jcs.length > 0;
+  if (!hasWork) {
+    const pl = (await tx.execute(sql`
+      SELECT 1 FROM public.plans
+       WHERE company_id = ${companyId}::uuid AND deleted_at IS NULL
+         AND ${planLineCol} = ${c.lineId}::uuid
+       LIMIT 1`)) as unknown as unknown[];
+    hasWork = pl.length > 0;
+  }
+  if (c.revTextChanged !== false && hasWork && reason.length < REV_CHANGE_REASON_MIN) {
+    throw new ValidationError(`Ln ${c.lineNo}: give a reason for changing the Drawing Rev`);
+  }
   const closedIds = closed.map((j) => j.id);
   const closedArr =
     closedIds.length > 0
@@ -278,6 +310,7 @@ export async function applyLineRevChange(
       WITH rc AS (${newRevCard})
       UPDATE public.job_cards jc
          SET item_revision_id = ${c.toId}::uuid,
+             updated_by = ${user.id}::uuid,
              route_card_id = CASE WHEN jc.route_card_id IS NULL THEN NULL
                ELSE COALESCE((SELECT id FROM rc), jc.route_card_id) END,
              route_card_revision = CASE WHEN jc.route_card_id IS NULL THEN NULL
@@ -293,7 +326,7 @@ export async function applyLineRevChange(
     movedDocs.push(...open.map((j) => j.code));
   }
   const plans = (await tx.execute(sql`
-    UPDATE public.plans SET item_revision_id = ${c.toId}::uuid
+    UPDATE public.plans SET item_revision_id = ${c.toId}::uuid, updated_by = ${user.id}::uuid
      WHERE company_id = ${companyId}::uuid AND deleted_at IS NULL
        AND ${planLineCol} = ${c.lineId}::uuid AND item_id = ${c.itemId}::uuid
        AND (jc_id IS NULL OR NOT (jc_id = ANY(${closedArr})))
@@ -310,6 +343,7 @@ export async function applyLineRevChange(
     WITH rc AS (${newRevCard})
     UPDATE public.production_orders po
        SET item_revision_id = ${c.toId}::uuid,
+           updated_by = ${user.id}::uuid,
            route_card_id = COALESCE((SELECT id FROM rc), po.route_card_id),
            route_card_code_text = COALESCE((SELECT code FROM rc), po.route_card_code_text),
            route_card_revision = COALESCE((SELECT current_revision FROM rc), po.route_card_revision)
@@ -321,7 +355,7 @@ export async function applyLineRevChange(
        AND po.status NOT IN ('closed', 'short_closed')
        AND (po.job_card_id IS NULL OR NOT (po.job_card_id = ANY(${closedArr})))
        AND po.item_revision_id IS DISTINCT FROM ${c.toId}::uuid
-    RETURNING po.code`)) as unknown as Array<{ code: string }>;
+    RETURNING po.id, po.code`)) as unknown as Array<{ id: string; code: string }>;
   movedDocs.push(...pros.map((p) => p.code));
   const keptDocs = closed.map((j) => j.code);
 
@@ -333,6 +367,7 @@ export async function applyLineRevChange(
     toItemRevisionId: c.toId,
     movedDocs,
     keptDocs,
+    reason: reason || null,
     createdBy: user.id,
     updatedBy: user.id,
   });
@@ -362,9 +397,39 @@ export async function applyLineRevChange(
         `Drawing Rev ${lbl(c.fromId)} → ${lbl(c.toId)} on ${c.docCode} ln ${c.lineNo}` +
         (movedDocs.length > 0 ? ` — moved ${movedDocs.join(', ')}` : '') +
         (keptDocs.length > 0 ? ` — kept (closed) ${keptDocs.join(', ')}` : ''),
+      ...(reason ? { reason } : {}),
     },
     companyId,
     user,
   );
+  // ADR-289 — one row on EACH moved Job Card, PRO and Plan, so the change shows
+  // in that document's own History, not only on the SO / JWSO.
+  const revChange = {
+    field: 'drawingRev',
+    label: 'Drawing Rev',
+    before: lbl(c.fromId),
+    after: lbl(c.toId),
+  };
+  const moved: Array<{ entity: string; id: string; code: string }> = [
+    ...open.map((j) => ({ entity: 'JobCard', id: j.id, code: j.code })),
+    ...pros.map((p) => ({ entity: 'ProductionOrder', id: p.id, code: p.code })),
+    ...plans.map((p) => ({ entity: 'Plan', id: p.id, code: p.code })),
+  ];
+  for (const m of moved) {
+    await emitActivityLog(
+      tx,
+      {
+        action: ActivityAction.Edit,
+        entity: m.entity,
+        entityId: m.id,
+        refId: m.code,
+        changes: [revChange],
+        detail: `Drawing Rev ${lbl(c.fromId)} → ${lbl(c.toId)} — moved with ${c.docCode} ln ${c.lineNo}`,
+        ...(reason ? { reason } : {}),
+      },
+      companyId,
+      user,
+    );
+  }
   return { movedDocs, keptDocs };
 }

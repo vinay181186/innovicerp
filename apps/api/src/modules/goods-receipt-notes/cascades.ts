@@ -45,6 +45,7 @@ import type { DbTransaction } from '../../db/with-user-context';
 import { poLineAcceptedRaw } from '../../lib/po-accepted';
 import { isProductionOrderLinkedJc } from '../../lib/production-order-link';
 import { postStockMove, roundQty } from '../../lib/stock-ledger';
+import { giveBackToParts } from '../../lib/stock-out-parts';
 
 export async function recalcPoLineReceivedQty(
   tx: DbTransaction,
@@ -336,7 +337,11 @@ export async function creditGrnQcStock(args: {
   // A JW DC receipt puts back what its JW DC Outward took out of stock — it is
   // never Job Card WIP, so the two op-based skips below do not apply to it
   // (see isJwDcReceiptGrn). Same stock-in the old 'jw_in' path wrote.
-  if (!(await isJwDcReceiptGrn(tx, grnId))) {
+  const isJw = await isJwDcReceiptGrn(tx, grnId);
+  // ADR-289 — the Job Card whose OSP op this line returns (null on a plain
+  // purchase GRN and on a JW DC receipt): its Rev is the bucket credited.
+  let linkedJobCardId: string | null = null;
+  if (!isJw) {
     // ADR-092: mid-route OSP returns are WIP, not finished goods. Store is
     // credited once, by the JC's final QC op — not here.
     if (await isMidRouteOutsourceReturn(tx, grnLineId)) return;
@@ -346,7 +351,7 @@ export async function creditGrnQcStock(args: {
     // that resolves to no jc_op (a plain purchase GRN) has no JC to be linked
     // to, so it credits exactly as before; purchase_orders.po_type is never
     // consulted.
-    const linkedJobCardId = await resolveGrnLineJobCardId(tx, grnLineId);
+    linkedJobCardId = await resolveGrnLineJobCardId(tx, grnLineId);
     if (linkedJobCardId && (await isProductionOrderLinkedJc(tx, linkedJobCardId))) return;
   }
 
@@ -358,17 +363,76 @@ export async function creditGrnQcStock(args: {
     .limit(1);
   const grnCode = grnRows[0]?.code ?? grnId;
 
-  await postStockMove(tx, {
+  const move = {
     companyId,
     itemId,
-    txnType: 'in',
     qty,
-    sourceType: 'grn_qc',
+    sourceType: 'grn_qc' as const,
     sourceRef: `${grnCode} / ln ${grnLineId.slice(0, 8)}`,
     remarks: `GRN QC Accepted · ${qty} pcs`,
     txnDate: new Date().toISOString().slice(0, 10),
     userId: adminUserId,
     itemCodeText: null,
-    guard: 'none',
-  });
+    guard: 'none' as const,
+  };
+
+  // ADR-289 — a JW DC receipt puts the stock back into the Rev bucket(s) its
+  // JW DC Outward line(s) took (the outward lines of this receipt for the same
+  // PO line + item, in line order).
+  if (isJw) {
+    const outLines = (await tx.execute(sql`
+      SELECT DISTINCT jdol.id, jdol.line_no, jdol.store_transaction_id AS "txnId",
+             -- What this outward line sent minus what other live receipts
+             -- already brought back of it (pre-0247 lines: the cap per bucket).
+             (jdol.sent_qty - COALESCE((
+               SELECT SUM(ol.received_qty)
+                 FROM public.jw_dc_inward_lines ol
+                 JOIN public.jw_dc_inward oi
+                   ON oi.id = ol.jw_dc_inward_id AND oi.deleted_at IS NULL
+                WHERE ol.jw_dc_outward_line_id = jdol.id AND ol.deleted_at IS NULL
+                  AND oi.goods_receipt_note_id IS DISTINCT FROM ${grnId}::uuid), 0))::float AS room
+        FROM public.jw_dc_inward jdi
+        JOIN public.jw_dc_inward_lines jdil
+          ON jdil.jw_dc_inward_id = jdi.id AND jdil.deleted_at IS NULL
+        JOIN public.jw_dc_outward_lines jdol ON jdol.id = jdil.jw_dc_outward_line_id
+        JOIN public.goods_receipt_note_lines gl ON gl.id = ${grnLineId}::uuid
+       WHERE jdi.goods_receipt_note_id = ${grnId}::uuid AND jdi.deleted_at IS NULL
+         AND jdol.item_id = ${itemId}::uuid
+         AND jdol.purchase_order_line_id IS NOT DISTINCT FROM gl.purchase_order_line_id
+       ORDER BY jdol.line_no
+    `)) as unknown as Array<{
+      id: string;
+      line_no: number;
+      txnId: string | null;
+      room: number;
+    }>;
+    if (outLines.length > 0) {
+      await giveBackToParts(tx, {
+        sources: outLines.map((l) => ({ jwDcOutwardLineId: l.id })),
+        fallbackTxnId: null,
+        // Pre-0247 outward lines (no parts): each line's own bucket, in line
+        // order, up to what it sent minus what already came back.
+        fallbackLines: outLines.map((l) => ({ txnId: l.txnId, room: Number(l.room) })),
+        move,
+      });
+      return;
+    }
+  }
+
+  // ADR-289 — an OSP last-op return of a Job Card NOT built by a Production
+  // Order (those returned above) lands in that Job Card's own Rev bucket. Only
+  // when the GRN item IS the card's item; a plain purchase GRN (no Job Card)
+  // keeps the blank bucket, as before.
+  let itemRevisionId: string | null = null;
+  if (linkedJobCardId) {
+    const jc = (await tx.execute(sql`
+      SELECT jc.item_revision_id AS "revId"
+        FROM public.job_cards jc
+        JOIN public.item_revisions ir
+          ON ir.id = jc.item_revision_id AND ir.item_id = jc.item_id AND ir.deleted_at IS NULL
+       WHERE jc.id = ${linkedJobCardId}::uuid AND jc.item_id = ${itemId}::uuid
+    `)) as unknown as Array<{ revId: string | null }>;
+    itemRevisionId = jc[0]?.revId ?? null;
+  }
+  await postStockMove(tx, { ...move, txnType: 'in', itemRevisionId });
 }

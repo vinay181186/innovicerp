@@ -9,7 +9,7 @@
 // shown inside the dialog, so a 409 "changed by someone else" or a refused
 // right never closes it. Sends the record's updatedAt as loaded (§20.4).
 
-import type { ItemRevision } from '@innovic/shared';
+import { REV_CHANGE_REASON_MIN, type ItemRevision } from '@innovic/shared';
 import { useState } from 'react';
 import { useSession } from '@/lib/session';
 import { uploadFile } from '@/lib/storage';
@@ -19,7 +19,6 @@ import { useReplaceItemRevisionDrawing } from '../api';
 
 /** Storage folder every register drawing is filed under. */
 export const ITEM_REVISION_DRAWING_FOLDER = 'item-revision-drawings';
-const MIN_REASON = 5;
 
 export function ReplaceDrawingDialog({
   revision,
@@ -101,7 +100,7 @@ export function ReplaceDrawingDialog({
               className="innovic-input"
               rows={2}
               maxLength={500}
-              placeholder="Why the drawing is being replaced (at least 5 characters)"
+              placeholder={`Why the drawing is being replaced (at least ${REV_CHANGE_REASON_MIN} characters)`}
               value={reason}
               onChange={(e) => setReason(e.target.value)}
             />
@@ -113,8 +112,8 @@ export function ReplaceDrawingDialog({
         // Thrown, not returned: ConfirmDialog shows it and stays open.
         if (busy) throw new Error('Wait for the file to finish uploading.');
         if (!path) throw new Error('Choose the new drawing file.');
-        if (reason.trim().length < MIN_REASON) {
-          throw new Error('Reason is required (at least 5 characters).');
+        if (reason.trim().length < REV_CHANGE_REASON_MIN) {
+          throw new Error(`Reason is required (at least ${REV_CHANGE_REASON_MIN} characters).`);
         }
         await replace.mutateAsync({
           drawingFilePath: path,

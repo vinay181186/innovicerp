@@ -19,7 +19,8 @@ import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { lockSoRow } from '../../lib/assembly-parts';
 import { ConflictError, NotFoundError } from '../../lib/errors';
 import { assertRowUpdated } from '../../lib/row-lock';
-import { postStockMove, roundQty } from '../../lib/stock-ledger';
+import { roundQty } from '../../lib/stock-ledger';
+import { giveBackToParts } from '../../lib/stock-out-parts';
 import { emitActivityLog } from '../activity-log/service';
 import { blockerRefusal } from '../cancel-requests/messages';
 import { giveBackLineReservations, reverseFittedLines } from './assembly';
@@ -168,21 +169,28 @@ export async function cancelStoreIssueTx(
   const done: string[] = [];
   const byLine = new Map<string, string>();
   for (const line of [...lines].sort((a, b) => a.itemId.localeCompare(b.itemId))) {
-    const mv = await postStockMove(tx, {
-      companyId,
-      itemId: line.itemId,
-      txnType: 'in',
-      qty: line.qty,
-      sourceType: 'store_return',
-      sourceRef: `${iss.code} reversal · ${line.itemCodeText}`,
-      remarks: `Item Issue cancelled · ${reason}`,
-      txnDate: date,
-      userId: user.id,
-      itemCodeText: line.itemCodeText,
-      guard: 'none',
+    // ADR-289 — back into the Rev bucket(s) the line took (one 'in' per bucket).
+    const back = await giveBackToParts(tx, {
+      sources: [{ storeIssueLineId: line.id }],
+      fallbackTxnId: line.storeTransactionId,
+      move: {
+        companyId,
+        itemId: line.itemId,
+        qty: line.qty,
+        sourceType: 'store_return',
+        sourceRef: `${iss.code} reversal · ${line.itemCodeText}`,
+        remarks: `Item Issue cancelled · ${reason}`,
+        txnDate: date,
+        userId: user.id,
+        itemCodeText: line.itemCodeText,
+        guard: 'none',
+      },
     });
-    byLine.set(line.id, mv.id);
-    done.push(`${line.itemCodeText} × ${line.qty} (stock ${mv.stockBefore} → ${mv.stockAfter})`);
+    const first = back[0]!.mv;
+    byLine.set(line.id, first.id);
+    done.push(
+      `${line.itemCodeText} × ${line.qty} (stock ${first.stockBefore} → ${back[back.length - 1]!.mv.stockAfter})`,
+    );
   }
   const firstTxnId = byLine.get(lines[0]!.id) ?? null;
   // ADR-193 3c — what the slip used of the SO's reservation is held again.

@@ -161,6 +161,7 @@ async function resolveAssembledBy(
       auditor: u.auditor,
       // Irrelevant to who may make a Planning entry; stated, not defaulted.
       drawingDownload: false,
+      drawingPrint: false,
       departments: u.departments,
       forms: u.forms,
     });

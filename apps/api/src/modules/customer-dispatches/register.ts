@@ -15,6 +15,7 @@ import type {
   CustomerDispatchRegisterRow,
 } from '@innovic/shared';
 import { sql, type SQL } from 'drizzle-orm';
+import { drawingRevOf } from '../../lib/drawing-rev';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { withUserContext } from '../../db/with-user-context';
 import { createdByNameSql } from '../../lib/created-by-sql';
@@ -85,10 +86,12 @@ export const REGISTER_LINE_FROM = sql`
             l.item_name, l.qty,
             -- The customer's drawing revision off the SO line (never
             -- items.revision); text cast for databases before 0119.
-            sol.revision::text AS item_revision,
+            -- ADR-289: the Rev SHIPPED (stored on the line) first.
+            COALESCE(${drawingRevOf(sql`l.item_revision_id`)},
+                     sol.revision::text) AS item_revision,
             -- Drawing Rev Phase C: the Item + Rev actually shipped (null = old row).
             l.item_revision_id::text AS item_revision_id,
-            (SELECT ir.rev FROM public.item_revisions ir WHERE ir.id = l.item_revision_id) AS drawing_rev,
+            ${drawingRevOf(sql`l.item_revision_id`)} AS drawing_rev,
             sol.client_po_line_no, sol.uom::text AS uom,
             u.full_name AS dispatched_by,
             st.stock_before, st.stock_after,
@@ -136,7 +139,7 @@ export function lineMatch(search: string | undefined): SQL {
     OR ${like(sql`COALESCE(cso.code, h.so_code_text)`)} OR ${like(sql`cso.internal_so_no`)}
     OR ${like(sql`sol.client_po_line_no`)}
     OR ${like(sql`i.code`)} OR ${like(sql`l.item_code_text`)}
-    OR ${like(sql`(COALESCE(i.code, l.item_code_text) || COALESCE('/' || NULLIF(btrim(sol.revision::text), ''), ''))`)}
+    OR ${like(sql`(COALESCE(i.code, l.item_code_text) || COALESCE('/' || NULLIF(btrim(COALESCE(${drawingRevOf(sql`l.item_revision_id`)}, sol.revision::text)), ''), ''))`)}
     OR ${like(sql`l.item_name`)} OR ${like(sql`sol.uom`)}
     OR ${like(sql`COALESCE(cli.name, h.customer_text)`)} OR ${like(sql`u.full_name`)}
     OR ${like(sql`h.remarks`)}

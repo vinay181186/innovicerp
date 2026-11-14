@@ -2788,6 +2788,7 @@ async function mergeLines(
       sentFile: u.data.drawingFilePath,
       sentDrawingNo: u.data.drawingNo,
       stored: { ...stored, id: u.id },
+      revChangeReason: u.data.revChangeReason,
     });
     if (lr.touched) {
       lineUpdate['itemRevisionId'] = lr.itemRevisionId;

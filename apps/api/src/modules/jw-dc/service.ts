@@ -58,6 +58,7 @@ import { polSql } from '../../lib/pol';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { lockPoLinesForSend, poLineSentRaw, sumSentOnPoLines } from '../../lib/po-line-sent';
 import { postStockMove, roundQty } from '../../lib/stock-ledger';
+import { recordOutParts } from '../../lib/stock-out-parts';
 import { loadRelatedItems } from '../../lib/related-items';
 import { buildTimeline, itemSection, section, toIsoDate } from '../../lib/traceability';
 // ADR-217 phase 4 — the one return-to-vendor guard, shared with the OSP
@@ -1036,11 +1037,11 @@ export async function createJwDcOutward(
     for (const [idx, ln] of input.lines.entries()) {
       const pol = polById.get(ln.purchaseOrderLineId)!;
       let storeTxnId: string | null = null;
+      let moved: Awaited<ReturnType<typeof postStockMove>> | null = null;
 
       if (pol.itemId) {
         // ADR-193: via the single stock writer; Available (not just In Stock),
         // so material booked for a customer SO cannot be sent to a vendor.
-        let moved: Awaited<ReturnType<typeof postStockMove>>;
         try {
           moved = await postStockMove(tx, {
             companyId,
@@ -1063,24 +1064,38 @@ export async function createJwDcOutward(
           }
           throw e;
         }
-        storeTxnId = moved.id;
+        storeTxnId = moved?.id ?? null;
       }
 
-      await tx.insert(jwDcOutwardLines).values({
-        companyId,
-        jwDcOutwardId: header.id,
-        lineNo: idx + 1,
-        purchaseOrderLineId: pol.id,
-        itemId: pol.itemId ?? null,
-        itemCodeText: pol.itemCodeText ?? pol.itemName,
-        itemNameText: pol.itemName,
-        processText: pol.lineRemarks ?? null,
-        poQty: pol.qty,
-        sentQty: ln.sentQty,
-        storeTransactionId: storeTxnId,
-        createdBy: userId,
-        updatedBy: userId,
-      });
+      const insertedLine = await tx
+        .insert(jwDcOutwardLines)
+        .values({
+          companyId,
+          jwDcOutwardId: header.id,
+          lineNo: idx + 1,
+          purchaseOrderLineId: pol.id,
+          itemId: pol.itemId ?? null,
+          itemCodeText: pol.itemCodeText ?? pol.itemName,
+          itemNameText: pol.itemName,
+          processText: pol.lineRemarks ?? null,
+          poQty: pol.qty,
+          sentQty: ln.sentQty,
+          storeTransactionId: storeTxnId,
+          createdBy: userId,
+          updatedBy: userId,
+        })
+        .returning({ id: jwDcOutwardLines.id });
+      // ADR-289 — keep EVERY Rev bucket the send took, so a cancel or the JW
+      // DC receipt puts the stock back into the same buckets.
+      if (moved && pol.itemId) {
+        await recordOutParts(tx, {
+          companyId,
+          userId,
+          source: { jwDcOutwardLineId: insertedLine[0]!.id },
+          itemId: pol.itemId,
+          rows: moved.rows,
+        });
+      }
     }
 
     // ADR-197: issuing the challan IS the send — one SEND row on the challan,

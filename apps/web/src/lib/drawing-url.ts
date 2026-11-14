@@ -79,3 +79,15 @@ export async function saveDrawing(args: DrawingUrlArgs): Promise<void> {
   a.click();
   a.remove();
 }
+
+/** ADR-289 — asks the server's leave to PRINT a drawing, and has it written to
+ *  the activity log. `POST /drawing-files/print` answers 204, or 403 for anyone
+ *  without the "Can print drawings" switch (see canPrintDrawings). Call it
+ *  BEFORE opening the print window, and print only when it resolves — a
+ *  refusal throws an ApiError whose message is the server's reason. */
+export async function logDrawingPrint(args: {
+  itemRevisionId?: string;
+  path?: string;
+}): Promise<void> {
+  await apiFetch<void>('/drawing-files/print', { method: 'POST', json: args });
+}

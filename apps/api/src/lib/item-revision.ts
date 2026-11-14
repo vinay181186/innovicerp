@@ -15,6 +15,7 @@ import {
   ActivityAction,
   normalizeRevision,
   REVISION_PATTERN,
+  REV_CHANGE_REASON_MIN,
   itemRevLabel,
   type ItemRevisionSource,
 } from '@innovic/shared';
@@ -228,6 +229,17 @@ export async function replaceItemRevisionDrawing(
   id: string,
   args: ReplaceItemRevisionDrawingArgs,
 ): Promise<{ soLines: number; jwLines: number }> {
+  // ADR-289 lock order — the SO / JWSO lines on this Rev FIRST (id order), then
+  // the register row: the order a line save takes them (lines, then register),
+  // so a replace and a line save on the same Rev queue instead of deadlocking.
+  await tx.execute(sql`
+    SELECT id FROM public.sales_order_lines
+     WHERE company_id = ${companyId}::uuid AND item_revision_id = ${id}::uuid AND deleted_at IS NULL
+     ORDER BY id FOR UPDATE`);
+  await tx.execute(sql`
+    SELECT id FROM public.job_work_order_lines
+     WHERE company_id = ${companyId}::uuid AND item_revision_id = ${id}::uuid AND deleted_at IS NULL
+     ORDER BY id FOR UPDATE`);
   const [row] = await tx
     .select({
       id: itemRevisions.id,
@@ -261,7 +273,8 @@ export async function replaceItemRevisionDrawing(
   const label = itemRevLabel(row.itemCode, row.rev);
   const newPath = args.drawingFilePath.trim();
   const reason = args.reason.trim();
-  if (reason.length < 5) throw new ValidationError('Reason is required (at least 5 characters)');
+  if (reason.length < REV_CHANGE_REASON_MIN)
+    throw new ValidationError('Reason is required (at least 5 characters)');
   if (newPath === '') throw new ValidationError('Choose the new drawing file');
   if (newPath === row.drawingFilePath) {
     throw new ValidationError(`This file is already the drawing of ${label}`);
@@ -272,7 +285,16 @@ export async function replaceItemRevisionDrawing(
   const updated = await tx
     .update(itemRevisions)
     .set({ drawingFilePath: newPath, drawingNo: newNo, updatedBy: user.id })
-    .where(and(eq(itemRevisions.id, id), eq(itemRevisions.updatedAt, row.updatedAt)))
+    // ADR-289 — compared to the MILLISECOND on both sides: the column carries
+    // microseconds, the value read back through a JS Date only milliseconds, so
+    // a plain `=` matched 0 rows and refused every valid replace (as
+    // job-cards updateJobCardTx and lib/edit-conflict.ts do it).
+    .where(
+      and(
+        eq(itemRevisions.id, id),
+        sql`date_trunc('milliseconds', ${itemRevisions.updatedAt}) = date_trunc('milliseconds', ${row.updatedAt.toISOString()}::timestamptz)`,
+      ),
+    )
     .returning({ id: itemRevisions.id });
   if (updated.length === 0) {
     throw new ConflictError(`${label} was changed by someone else — reload and try again`);
@@ -293,6 +315,7 @@ export async function replaceItemRevisionDrawing(
 
   // SO line drawing history — one row per line whose copy really changes,
   // written BEFORE the copies move (IS DISTINCT FROM reads the old copy).
+  // MAX(revision_no) is read here, under the line locks taken above.
   await tx.execute(sql`
     INSERT INTO public.so_line_drawing_revisions
       (company_id, sales_order_id, so_line_id, revision_no, line_revision_text, action,

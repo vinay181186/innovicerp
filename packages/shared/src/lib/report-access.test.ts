@@ -7,6 +7,7 @@ const eff = (p: Partial<EffectiveAccess>): EffectiveAccess => ({
   fullAccess: false,
   auditor: false,
   drawingDownload: false,
+  drawingPrint: false,
   departments: {},
   forms: {},
   ...p,

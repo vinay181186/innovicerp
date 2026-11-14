@@ -36,6 +36,7 @@ const tasksL1 = (hidden: boolean): EffectiveAccess => ({
   fullAccess: false,
   auditor: false,
   drawingDownload: false,
+  drawingPrint: false,
   departments: { tasks: 'L1' },
   forms: hidden ? { activitylog_view: { ...NO_PERMS, viewOff: true } } : {},
 });

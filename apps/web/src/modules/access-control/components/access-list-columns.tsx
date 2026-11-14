@@ -141,6 +141,19 @@ export function accessListColumns(): DataTableColumn<UserAccessListItem>[] {
               📐 Drawings
             </div>
           ) : null}
+          {u.fullAccess || u.drawingPrint ? (
+            <div
+              className="badge b-cyan"
+              style={{
+                fontSize: 'var(--fs-xs)',
+                marginTop: 'var(--sp-0)',
+                display: 'inline-block',
+              }}
+              title="Sees the Print button on the drawing page (every print from it is logged)"
+            >
+              🖨 Drawing print
+            </div>
+          ) : null}
         </>
       ),
     },

@@ -51,6 +51,7 @@ export function personHolds(
     fullAccess: r.acFullAccess,
     auditor: r.acAuditor,
     drawingDownload: false,
+    drawingPrint: false,
     departments: r.acDepartments,
     forms: r.acForms,
   });

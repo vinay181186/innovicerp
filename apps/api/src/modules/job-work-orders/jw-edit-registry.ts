@@ -219,6 +219,9 @@ function applyLineAttr(row: JobWorkOrderLineInput, p: JobWorkOrderLineInput, att
   if (attr === 'codeRev') {
     r['itemId'] = p.itemId;
     if (p.revision !== undefined) r['revision'] = p.revision;
+    // ADR-289 — the requester's reason for the Rev change rides in the staged
+    // line, so the approved replay passes it to applyLineRevChange.
+    if (p.revChangeReason !== undefined) r['revChangeReason'] = p.revChangeReason;
     return;
   }
   const v = (p as Record<string, unknown>)[attr];

@@ -15651,3 +15651,34 @@ My Day Log's Print and Team Day Logs › a person › Print used a plain table t
 - Entries and Working Hours in the header are the server's work-only figures, as on Team Day Logs and History, so a day with old Break or Others rows has more rows than Entries; those rows say what they are. With an entry Open, Last Stop prints blank.
 - `GET /day-logs/day` already sends a waiting edit and a rejection reason to anyone who may see the day. The print shows neither. Since ADR-256 only edits staged before that date can still wait, so the read was left as it is.
 - Risks: the shared Download text fault (html2canvas baseline, recorded in the ADR-287 delivery) also shows on these prints until it is fixed.
+
+## ADR-289: Drawing Rev control, Step 1 — stock, documents and screens keep the right Rev
+
+**Date:** 2026-11-14
+**Status:** Accepted (owner approved the fix list "Innovic_ERP_Drawing_Rev_Problems_and_Fixes.pdf", points 9–17 and 13 as a warning)
+
+### Context
+
+SOP INN-ERP-SOP-ENG-001 (Draft 1.0) asks for exact revision traceability. A trace of origin/test found Rev lost or misread in several places: returns and cancels put stock back with no Rev, some receipts credited the blank bucket, DC and Invoice showed the SO line's current Rev, many screens showed the SO-line Rev instead of the Job Card's, print was ungated, a Job Card held a free drawing outside the register, a Rev change stored no reason, and Replace drawing refused valid saves (millisecond token vs microsecond column).
+
+### Decision
+
+- **Stock back to the same Rev.** New table `stock_out_parts` (0247): one row per Rev bucket an Item Issue line or JW DC Outward line took, with `returned_qty`. `lib/stock-out-parts.ts` `giveBackToParts` is the only writer of `returned_qty` (§20.1); return, cancel and the JW DC receipt GRN give back to those buckets. A non-PRO Job Card's OSP last-op GRN credits the Job Card's Rev. Old lines with no parts use their own ledger row's Rev. One `store_issue_returns` row per user Return stays.
+- **Documents keep their own Rev.** `delivery_challan_lines.item_revision_id` and `invoice_lines.item_revision_id` (0247), stamped at create from what was shipped; never guessed from the SO line's current Rev (NULL when the covered dispatches disagree).
+- **Screens show the Job Card's Rev first** through one helper, `drawingRevOf()` in `lib/drawing-rev.ts`.
+- **Print right.** `user_access.drawing_print` (switch "Drawing Print button"), `canPrintDrawings()` in shared, `POST /drawing-files/print` logs `drawing_print` / `drawing_print_refused`. Honest limit: a PDF printed from the browser's own viewer cannot be blocked.
+- **Job Card drawing** comes from its Item + Rev record; a direct new file on a Job Card with a Rev is refused.
+- **Reason for Rev change** (`revChangeReason`, min `REV_CHANGE_REASON_MIN` = 5) when the Rev text of a line with a Plan / PRO / Job Card changes; stored in `item_revision_changes.reason`, logged on each moved Job Card / PRO / Plan, carried through edit approval.
+- **Replace drawing** compares `date_trunc('milliseconds')` both sides and locks the SO / JWSO lines before the register row (same order as a line save).
+- **No Drawing Rev** shows as an orange warning (`drawingRevMissing`) on the Job Card; nothing is blocked yet (later step).
+- New data-integrity check DI-003R: Rev buckets add up to On Hand.
+
+### Alternatives Considered
+
+- jsonb list of parts on the issue line — rejected: §12 bans arrays in one column, and `returned_qty` must be updated per part under a row lock.
+
+### Consequences
+
+- Positive: stock per Rev stays right through returns and cancels; a printed DC or Invoice never changes later.
+- Negative: rows made before 0247 can only be given back to the Rev of their single linked ledger row.
+- Not yet done (later steps of the same fix list): release status, ECR / hold / split, wrong-Rev blocks at issue and dispatch, reports.

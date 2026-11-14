@@ -42,6 +42,7 @@ const salesAt = (tier: 'L1' | 'L2'): EffectiveAccess => ({
   fullAccess: false,
   auditor: false,
   drawingDownload: false,
+  drawingPrint: false,
   departments: { sales: tier },
   forms: {},
 });

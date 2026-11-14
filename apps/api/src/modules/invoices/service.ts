@@ -18,6 +18,7 @@ import type {
 } from '@innovic/shared';
 import { ActivityAction, computeGstTotals } from '@innovic/shared';
 import { and, asc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
+import { drawingRevOf } from '../../lib/drawing-rev';
 import { z } from 'zod';
 import {
   clients,
@@ -297,7 +298,11 @@ async function getInvoiceInternal(
       // that has not it is still the old integer, and a bare select would hand
       // the UI a number wearing a string type. The cast is a no-op once 0119 is
       // in.
-      itemRevision: sql<string | null>`${salesOrderLines.revision}::text`,
+      // ADR-289 — the Rev STORED on the invoice line first; the live SO line
+      // text only for a line made before 0247 that the backfill left NULL.
+      itemRevision: sql<string | null>`COALESCE(
+        ${drawingRevOf(invoiceLines.itemRevisionId)},
+        ${salesOrderLines.revision}::text)`,
       // POL — the line number printed on the CUSTOMER's own purchase order,
       // off the SAME SO line as the revision above. Not our SO line number.
       // Null when this invoice line has no SO line behind it.
@@ -897,6 +902,30 @@ export async function createInvoice(
         rate: String(l.rate),
         lineAmount: String(lineAmounts[i] ?? 0),
         salesOrderLineId: l.salesOrderLineId,
+        // ADR-289 — the Rev invoiced, kept on the line. An invoice line names no
+        // dispatch line, so it covers the SO line's dispatched pieces in
+        // dispatch order (first in, first billed): the window from what live
+        // invoices already billed (a.invoicedQty) up to that + this qty. The
+        // Rev those dispatch lines shipped when they are ONE Rev; otherwise
+        // NULL (same rule as the 0247 backfill) — never the SO line's Rev now.
+        itemRevisionId: sql<string | null>`(
+          SELECT CASE WHEN COUNT(*) > 0
+                       AND COUNT(*) FILTER (WHERE w.item_revision_id IS NULL) = 0
+                       AND COUNT(DISTINCT w.item_revision_id) = 1
+                      THEN MIN(w.item_revision_id::text)::uuid END
+            FROM (
+              SELECT cdl.item_revision_id,
+                     SUM(cdl.qty) OVER (ORDER BY cd.dispatch_date, cd.created_at, cd.code,
+                                                 cdl.line_no, cdl.id) AS upto,
+                     cdl.qty
+                FROM public.customer_dispatch_lines cdl
+                JOIN public.customer_dispatches cd
+                  ON cd.id = cdl.customer_dispatch_id AND cd.deleted_at IS NULL
+               WHERE cdl.company_id = ${companyId}::uuid
+                 AND cdl.sales_order_line_id = ${l.salesOrderLineId}::uuid
+                 AND cdl.deleted_at IS NULL) w
+           WHERE w.upto > ${a.invoicedQty}
+             AND w.upto - w.qty < ${a.invoicedQty + l.qty})`,
         createdBy: user.id,
         updatedBy: user.id,
       });

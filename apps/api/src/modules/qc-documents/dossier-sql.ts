@@ -100,7 +100,15 @@ export async function loadDossierRaw(
   const lines: DossierLineRow[] = rowsOf(
     await tx.execute(sql`
       SELECT l.id, l.line_no, l.client_po_line_no,
-             COALESCE(i.code, l.item_code_text) AS item_code, l.revision::text AS item_revision,
+             COALESCE(i.code, l.item_code_text) AS item_code,
+             -- ADR-289: the Rev the line's Job Cards are made at, when they all
+             -- agree on one; else the line's own Rev.
+             COALESCE((SELECT CASE WHEN COUNT(DISTINCT jc.item_revision_id) = 1
+                                   THEN MIN(jir.rev) END
+                         FROM public.job_cards jc
+                         JOIN public.item_revisions jir ON jir.id = jc.item_revision_id
+                        WHERE ${jcLine} = l.id AND jc.deleted_at IS NULL),
+                      l.revision::text) AS item_revision,
              COALESCE(i.name, l.part_name) AS item_name, l.order_qty
       FROM ${linesT} l
       LEFT JOIN public.items i ON i.id = l.item_id
