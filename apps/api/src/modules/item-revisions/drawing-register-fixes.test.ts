@@ -9,7 +9,8 @@
 //   5. POST /item-revisions (createDrawingRev): draft, note stored, 409 on a
 //      second add, Buy item refused;
 //   6. lookup names the latest released Rev only when it is newer;
-//   7. a correction decision is logged APPROVE / REJECT on DrawingCorrection
+//   7. a correction decision is logged APPROVE / REJECT on DrawingCorrection;
+//      the requester may withdraw (reject) but never approve their own;
 //      and reaches the requester and the Rev's creator (note rule).
 // Runs on TEST only, on its own (no global setup): prefix TDRF-.
 
@@ -27,7 +28,7 @@ import {
   users,
 } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
-import { ConflictError, ValidationError } from '../../lib/errors';
+import { AuthorizationError, ConflictError, ValidationError } from '../../lib/errors';
 import { replaceItemRevisionDrawing } from '../../lib/item-revision';
 import { supabaseAdmin } from '../../lib/supabase-admin';
 import { NOTE_RULES, ruleCond } from '../dashboard/personal/note-rules';
@@ -340,6 +341,25 @@ describe('ADR-290 Drawing Register fixes', () => {
     const r = await oldRev(item, '1', path1);
     await act(r, 'release');
     const res = await replace(r, path2);
+    // ADR-290 — the requester cannot approve their own correction.
+    const own = decideDrawingCorrection(res.correctionId!, { decision: 'approve' }, admin);
+    await expect(own).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(own).rejects.toThrow(
+      'You asked for this correction — another person with the Drawing Release button must approve it.',
+    );
+    const still = (
+      await db
+        .select({ status: drawingCorrections.status })
+        .from(drawingCorrections)
+        .where(eq(drawingCorrections.id, res.correctionId!))
+    )[0]!;
+    expect(still.status).toBe('pending');
+    expect((await revRow(r)).drawingFilePath).toBe(path1);
+    // Requested by someone else → admin may approve.
+    await db
+      .update(drawingCorrections)
+      .set({ requestedBy: otherUserId })
+      .where(eq(drawingCorrections.id, res.correctionId!));
     await decideDrawingCorrection(res.correctionId!, { decision: 'approve' }, admin);
     expect((await revRow(r)).drawingFilePath).toBe(path2);
     const rows = await db

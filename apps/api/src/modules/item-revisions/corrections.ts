@@ -112,6 +112,13 @@ export async function decideDrawingCorrection(
 
   // The new file is hashed before the transaction (a storage read is slow).
   const pre = await withUserContext(user, (tx) => readCorrection(tx, companyId, id));
+  // ADR-290 — a released file never changes without a second person. The
+  // requester may still reject (withdraw) their own request.
+  if (input.decision === 'approve' && pre.requestedBy === user.id) {
+    throw new AuthorizationError(
+      'You asked for this correction — another person with the Drawing Release button must approve it.',
+    );
+  }
   let fileHash: string | null = null;
   if (input.decision === 'approve') {
     fileHash = await hashDrawingFile(pre.drawingFilePath);
@@ -131,6 +138,7 @@ export async function decideDrawingCorrection(
              updated_by = ${user.id}::uuid
        WHERE id = ${id}::uuid AND company_id = ${companyId}::uuid AND deleted_at IS NULL
          AND status = 'pending'
+         ${input.decision === 'approve' ? sql`AND requested_by IS DISTINCT FROM ${user.id}::uuid` : sql``}
       RETURNING id`)) as unknown as Array<{ id: string }>;
     if (done.length === 0) {
       const now = await readCorrection(tx, companyId, id);

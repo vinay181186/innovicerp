@@ -225,9 +225,12 @@ async function readWorkable(
   return rows[0] ?? null;
 }
 
+/** "ECR IN-ECR-00001" once: a stored reason that already names the ECR is
+ *  shown as it is (old rows store "ECR <code>"), else the code leads. */
 function holdText(r: WorkableRow): string | null {
-  if (r.holdReason && r.ecrCode) return `${r.ecrCode}: ${r.holdReason}`;
-  return r.holdReason ?? r.ecrCode;
+  if (!r.ecrCode) return r.holdReason;
+  if (r.holdReason?.includes(r.ecrCode)) return r.holdReason;
+  return `ECR ${r.ecrCode}${r.holdReason ? `: ${r.holdReason}` : ''}`;
 }
 
 /**
@@ -364,10 +367,14 @@ export function opHoldReasonSql(op: string, jc: string): SQL<string | null> {
   const o = sql.raw(op);
   const j = sql.raw(jc);
   return sql<string | null>`(CASE
-    WHEN ${o}.hold_kind IS NOT NULL THEN COALESCE(
-      (SELECT e.code FROM public.engineering_changes e WHERE e.id = ${o}.hold_ecr_id)
-        || COALESCE(': ' || ${o}.hold_reason, ''),
-      ${o}.hold_reason, 'On hold')
+    WHEN ${o}.hold_kind IS NOT NULL THEN (
+      SELECT CASE
+        WHEN e.code IS NULL THEN COALESCE(${o}.hold_reason, 'On hold')
+        WHEN strpos(COALESCE(${o}.hold_reason, ''), e.code) > 0 THEN ${o}.hold_reason
+        ELSE 'ECR ' || e.code || COALESCE(': ' || ${o}.hold_reason, '')
+      END
+      FROM (SELECT 1) one
+      LEFT JOIN public.engineering_changes e ON e.id = ${o}.hold_ecr_id)
     ELSE (SELECT 'Drawing Rev ' || ir.rev || ' is ' || CASE ir.release_status ${REV_LABEL_CASE} END
             FROM public.item_revisions ir
            WHERE ir.id = ${j}.item_revision_id

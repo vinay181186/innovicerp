@@ -24,7 +24,7 @@ import {
 } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError, ConflictError, ValidationError } from '../../lib/errors';
-import { placeOpHolds } from '../../lib/jc-op-hold';
+import { assertJcOpWorkable, placeOpHolds, readOpHolds } from '../../lib/jc-op-hold';
 import { applyLineRevChange } from '../item-revisions/line-rev';
 import { startOp, stopOp, submitOpLog } from '../op-entry/service';
 import { reduceProductionOrderQty } from '../production-orders/reduce-qty';
@@ -366,6 +366,20 @@ describe('ADR-291 Engineering Change', () => {
     expect(sub.impacts.some((m) => m.docType === 'so_line')).toBe(true);
     // Op 1 has 4 left, op 2 has 6 to do → both held (QC op not complete either).
     expect(await heldOps(p.jcId)).toBeGreaterThanOrEqual(2);
+    // The hold names the ECR once: "… is on hold (ECR IN-ECR-00001) — release …".
+    const [heldOp] = (await db.execute(sql`
+      SELECT id FROM public.jc_ops WHERE job_card_id = ${p.jcId}::uuid AND hold_kind IS NOT NULL
+       ORDER BY op_seq LIMIT 1`)) as unknown as Array<{ id: string }>;
+    const holdErr = await withUserContext(admin, (tx) =>
+      assertJcOpWorkable(tx, companyId, heldOp!.id),
+    ).catch((e: Error) => e);
+    expect((holdErr as Error).message).toContain(
+      `is on hold (ECR ${draft.code}) — release the hold first.`,
+    );
+    const holdInfo = await withUserContext(admin, (tx) =>
+      readOpHolds(tx, companyId, [heldOp!.id]),
+    );
+    expect(holdInfo.get(heldOp!.id)?.holdReason).toBe(`ECR ${draft.code}`);
 
     // Self-approval refused.
     await expect(

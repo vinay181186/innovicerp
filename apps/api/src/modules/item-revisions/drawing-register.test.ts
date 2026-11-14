@@ -423,6 +423,11 @@ describe('ADR-290 Drawing Register', () => {
     const detail = await service.getItemRevision(r2, admin);
     expect(detail.corrections).toHaveLength(1);
     expect(detail.corrections[0]!.status).toBe('pending');
+    // ADR-290 — a second person approves: hand the request to another user.
+    await db.execute(sql`
+      UPDATE public.drawing_corrections SET requested_by = (
+        SELECT id FROM public.users WHERE company_id = ${companyId}::uuid AND id <> ${admin.id}::uuid
+         LIMIT 1) WHERE id = ${detail.corrections[0]!.id}::uuid`);
     await decideDrawingCorrection(detail.corrections[0]!.id, { decision: 'approve' }, admin);
     const after = await revRow(r2);
     expect(after.drawingFilePath).toBe(path1);
