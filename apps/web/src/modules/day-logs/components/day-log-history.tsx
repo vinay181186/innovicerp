@@ -5,7 +5,7 @@
 
 import type { Company, DayLogHistory, DayLogHistoryQuery } from '@innovic/shared';
 import { dayLogHistoryRangeError, fmtDuration } from '@innovic/shared';
-import { useQueryClient } from '@tanstack/react-query';
+import { type QueryClient, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { apiFetch } from '@/lib/api';
 import { useDebounce } from '@/lib/use-debounce';
@@ -17,6 +17,34 @@ import { FormField, Input } from '@/ui/forms';
 import { dayLogHistoryQuery, useDayLogHistory } from '../api';
 import { errText, historyQuickRanges, weekdayName } from '../lib/format';
 import { historyFileName, printDayLogHistory } from '../lib/print-day-log-history';
+
+/** The company of a print, read at the click. */
+export const readCompany = (qc: QueryClient): Promise<Company> =>
+  qc.fetchQuery({
+    queryKey: companyKeys.me(),
+    queryFn: () => apiFetch<Company>('/companies/me'),
+  });
+
+/** The History PDF, read again at the click: it is never older than the click. */
+export function printHistoryAtClick(
+  qc: QueryClient,
+  q: DayLogHistoryQuery,
+  userName: string,
+): void {
+  void runPrint(
+    'preview',
+    { title: 'History', fileName: historyFileName(userName, q.from, q.to) },
+    async () => {
+      const [fresh, company] = await Promise.all([
+        qc.fetchQuery(dayLogHistoryQuery(q)),
+        readCompany(qc),
+      ]);
+      // Something may have gone since the screen last read; never an empty sheet.
+      if (!fresh.hasContent) throw new Error(nothingReason(fresh));
+      return () => printDayLogHistory(fresh, company);
+    },
+  );
+}
 
 /** Why there is nothing to print, in the words the Generate button stands behind. */
 function nothingReason(h: DayLogHistory): string {
@@ -106,25 +134,7 @@ export function DayLogHistoryModal({
   const reason = pickError ?? (data && !data.hasContent ? nothingReason(data) : null);
   const canGenerate = pickError === null && data?.hasContent === true && !history.isFetching;
 
-  const generate = (): void => {
-    void runPrint(
-      'preview',
-      { title: 'History', fileName: historyFileName(userName, from, to) },
-      async () => {
-        // Read again at the click: the PDF is never older than the click.
-        const [fresh, company] = await Promise.all([
-          qc.fetchQuery(dayLogHistoryQuery(q)),
-          qc.fetchQuery({
-            queryKey: companyKeys.me(),
-            queryFn: () => apiFetch<Company>('/companies/me'),
-          }),
-        ]);
-        // Something may have gone since the screen last read; never an empty sheet.
-        if (!fresh.hasContent) throw new Error(nothingReason(fresh));
-        return () => printDayLogHistory(fresh, company);
-      },
-    );
-  };
+  const generate = (): void => printHistoryAtClick(qc, q, userName);
 
   return (
     <Modal

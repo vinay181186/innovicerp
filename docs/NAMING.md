@@ -439,8 +439,8 @@ with no live `xxx` to fall back from is a defect (C-13).
 | Whether a Day Log entry is still running | `Status` (`Open` / `Closed`) | derived: `toTime` null = Open | `daily_report_lines.to_time` | `Running`, `Work Status` |
 | Work or break, per Day Log entry | `Type` (`Work` / `Break`) | `kind` | `daily_report_lines.kind` | `Entry Type` |
 | The SO / JWSO a Day Log work entry is for | `Against SO / JWSO` (form) / `SO / JWSO` (list) | `order` {type, id, code} | `daily_report_lines.sales_order_id` / `job_work_order_id` (0223) | `Linked Task`, `Ref` |
-| Work minutes of a Day Log day (breaks left out) | `Working hours` (`Working Hours` as a heading on the History PDF) | `workMin` | sum of work entries | `Logged`, `Hours` |
-| Earliest Start / latest Stop of a Day Log day | `First start` / `Last stop` (`First Start` / `Last Stop` as headings on the History PDF) | `firstStart` / `lastStop` | the day's entries | `In time`, `Out time` |
+| Work minutes of a Day Log day (breaks left out) | `Working hours` (`Working Hours` as a heading on the History PDF and the My Day Log print) | `workMin` | sum of work entries | `Logged`, `Hours` |
+| Earliest Start / latest Stop of a Day Log day | `First start` / `Last stop` (`First Start` / `Last Stop` as headings on the History PDF and the My Day Log print) | `firstStart` / `lastStop` | the day's entries | `In time`, `Out time` |
 | A Day Log entry saved more than 60 min after its Stop time | `LATE` tag; count `Late entries` / `Late` | `late` / `lateCount` | derived: `created_at` vs report date + `to_time` (IST) | `Delayed`, `Backdated` |
 | What a person is doing now (Team Day Logs) | `Now` (`Working` / `On break` / `Idle` / `Not started` / `Submitted` / `Leave`) | `currentStatus` | derived from today's entries + day status | `Current Status`, `Activity` |
 | A person whose saved Day Log entries a User sees, read-only (ONE-WAY: User → Team Mate, set by a Super Admin; ADR-258, 0230/0231) | `Team Mate`; the setup tab `Teams Config` | `mateId` / `DayLogTeamMate` | `day_log_team_mates.mate_id` (row = `user_id` sees `mate_id`) | `Approval Day Log` (the tab it replaced), `Team Member`, `Buddy`, `Sees Each Other` |

@@ -93,6 +93,10 @@ export const dateAnchor = (date: string): string => `date-${date}`;
 
 export const editsOf = (e: DayLogHistoryEntry): number => e.entryRevNo ?? 0;
 
+/** Old rows only: their hours are not Working hours, so the row says what it is. */
+export const kindPrefix = (kind: DayLogHistoryEntry['kind']): string =>
+  kind === 'leave' ? 'Others · ' : kind === 'break' ? 'Break · ' : '';
+
 /** The dates that get a page of their own. A blank today has nothing to show yet. */
 export function hasDetail(d: DayLogHistoryDay): boolean {
   if (d.entries.length > 0 || d.dayReplies.length > 0) return true;

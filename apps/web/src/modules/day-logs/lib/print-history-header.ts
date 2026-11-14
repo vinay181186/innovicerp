@@ -47,19 +47,20 @@ export interface HistoryPrintContext {
 const rawField = (label: string, html: string, key = false): string =>
   `<div class="jr"><span class="jl">${esc(label)}</span><span class="jv${key ? ' k' : ''}">${html}</span></div>`;
 
-const field = (label: string, value: string | number, key = false): string =>
+export const field = (label: string, value: string | number, key = false): string =>
   rawField(label, esc(String(value)), key);
 
-const column = (title: string, labelWidth: string, rows: readonly string[]): string =>
+export const column = (title: string, labelWidth: string, rows: readonly string[]): string =>
   `<div class="jg" style="--jlw:${labelWidth}"><div class="jt">${esc(title)}</div>${rows.join('')}</div>`;
 
-function headerCell(ctx: HistoryPrintContext, columns: readonly string[], note = ''): string {
+/** The name bar over the titled columns; the My Day Log print uses it too. */
+export function nameAndColumns(ctx: HistoryPrintContext, columns: readonly string[]): string {
   const sub = `${ctx.dept ? `${ctx.dept} · ` : ''}Printed ${ctx.printed}`;
-  return td(
-    GRID,
-    `<div class="jnb"><span class="jnb-name">${esc(ctx.person)}</span><span class="jnb-sub">${esc(sub)}</span></div><div class="jcols">${columns.join('')}</div>${note}`,
-    'block',
-  );
+  return `<div class="jnb"><span class="jnb-name">${esc(ctx.person)}</span><span class="jnb-sub">${esc(sub)}</span></div><div class="jcols">${columns.join('')}</div>`;
+}
+
+function headerCell(ctx: HistoryPrintContext, columns: readonly string[], note = ''): string {
+  return td(GRID, `${nameAndColumns(ctx, columns)}${note}`, 'block');
 }
 
 /** The first page of a range. Later pages of this part repeat it (FIRST_KEY). */

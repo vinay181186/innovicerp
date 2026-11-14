@@ -15623,3 +15623,31 @@ The saved Item + Drawing Rev record keeps the number from the first line that cr
 - A blank today gets no page. The pop-up reads once a date has settled for 400 ms, and an answer with nothing to print at the click shows the reason in the Preview, never an empty sheet.
 
 **Migration:** none. Nothing is written.
+
+## ADR-288: One person's day prints in the Job Card layout; the person page's Print matches History
+
+**Date:** 2026-11-07
+**Status:** Accepted
+
+### Context
+
+My Day Log's Print and Team Day Logs › a person › Print used a plain table that the paginator skips, so a long day came out as one picture sliced into pages. The owner asked for My Day Log's data arranged as the Job Card print (Option A of mockup https://claude.ai/artifact/KoTxoa9g1Qmk7jYErwWavd), and for the person page's Print to have the layout of Team Day Logs › History › Generate PDF.
+
+### Decision
+
+- `print-my-day-log.ts`: letterhead, name bar, Day Log and Work columns in the thead, repeated on every page; the entry columns and rows are `dayTable`'s, so print and CSV / Excel agree. The total prints once, in the header. Old Break and Others rows say so, as on History. The Job Card print file is untouched.
+- Person page Print, read again at the click. A Super Admin gets the History PDF of that one date (`printDayLogHistory`). Anyone else reads `GET /day-logs/day` (same `visibleUser` rule as the person page) and gets `print-my-day-log.ts`: `/day-logs/person-history` stays Super Admin only, so no edit history or reply can print for them.
+- CSV and Excel on both screens, Team Day Logs Print and Pending Entries Print are unchanged.
+
+### Alternatives Considered
+
+- Open History to Department Admins and team mates for one date, with the edit facts removed by the server: rejected, a wider read on a private route for a print.
+- Keep the old print for anyone but a Super Admin: rejected, the owner asked for one layout.
+
+### Consequences
+
+- Positive: one renderer per case, no server or database change, a long day splits between rows.
+- Negative: a person who is not a Super Admin gets the header without Changes, and My Day Log's column order; the two layouts are alike but not identical.
+- Entries and Working Hours in the header are the server's work-only figures, as on Team Day Logs and History, so a day with old Break or Others rows has more rows than Entries; those rows say what they are. With an entry Open, Last Stop prints blank.
+- `GET /day-logs/day` already sends a waiting edit and a rejection reason to anyone who may see the day. The print shows neither. Since ADR-256 only edits staged before that date can still wait, so the read was left as it is.
+- Risks: the shared Download text fault (html2canvas baseline, recorded in the ADR-287 delivery) also shows on these prints until it is fixed.
