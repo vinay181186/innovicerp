@@ -19,7 +19,7 @@
 import { z } from 'zod';
 import { documentEditChangeSchema } from './document-edit';
 
-export const APPROVAL_KINDS = ['po', 'rc', 'logEntry', 'edit', 'cancel', 'dayLog'] as const;
+export const APPROVAL_KINDS = ['po', 'rc', 'logEntry', 'edit', 'cancel', 'dayLog', 'ecr'] as const;
 export type ApprovalKind = (typeof APPROVAL_KINDS)[number];
 
 /** `direct` = ✓ / ✗ on the row (and tickable for "✓ Approve N").

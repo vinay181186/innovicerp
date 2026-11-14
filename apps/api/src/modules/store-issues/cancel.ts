@@ -24,6 +24,7 @@ import { giveBackToParts } from '../../lib/stock-out-parts';
 import { emitActivityLog } from '../activity-log/service';
 import { blockerRefusal } from '../cancel-requests/messages';
 import { giveBackLineReservations, reverseFittedLines } from './assembly';
+import { giveBackIssueRevs } from './rev';
 import { readSlipLines, today } from './slip';
 
 /** Read the slip; `forUpdate` locks it (request / approve), the preview reads
@@ -186,6 +187,8 @@ export async function cancelStoreIssueTx(
         guard: 'none',
       },
     });
+    // ADR-292 — substituted pieces put back give the substitution back.
+    await giveBackIssueRevs(tx, companyId, user.id, line.id, back);
     const first = back[0]!.mv;
     byLine.set(line.id, first.id);
     done.push(

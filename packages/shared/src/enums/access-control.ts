@@ -105,6 +105,8 @@ export const ACCESS_FORMS = [
   { key: 'dsndcr_create', dept: 'design', label: 'Design DCR/DCN' },
   // ADR-290 — Drawing Register (Item + Drawing Rev release status).
   { key: 'drawingreg_create', dept: 'design', label: 'Drawing Register' },
+  // ADR-291 — Engineering Change (ECR) and approved Rev substitutions.
+  { key: 'ecr_create', dept: 'design', label: 'Engineering Change' },
   // Store
   { key: 'item_create', dept: 'store', label: 'Item Master' },
   { key: 'grn_create', dept: 'store', label: 'GRN' },

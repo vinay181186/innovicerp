@@ -4,6 +4,8 @@
 //   • two Set Revs racing on the same blank stock → exactly one wins, no bucket < 0;
 //   • a dispatch of 12 from ABC/1 (10 there) → 409; 8 ships; the cancel puts the
 //     8 back into ABC/1, not the blank bucket;
+//   • ABC/2 on the ABC/1 line ships only with an approved substitution
+//     (ADR-292) — refused with the mismatch sentence without one;
 //   • after every step: SUM(buckets) = the item total.
 //   0234 fixes:
 //   • an 'out' that names no Rev (Item Issue / JW DC / Tool Issue) takes blank
@@ -43,6 +45,7 @@ import {
 } from '../customer-dispatches/service';
 import { adjustStock } from '../store-inventory/service';
 import { listItemRevStock } from '../store-inventory/rev-stock';
+import { createRevSubstitution } from '../rev-substitutions/service';
 import { setStockRev } from './stock-set-rev';
 
 const ADMIN_EMAIL = 'innovic.technology@gmail.com';
@@ -55,6 +58,16 @@ let rev1: string;
 let rev2: string;
 let soId: string;
 let soLineId: string;
+let subId: string;
+
+/** qty_used of the ABC/2 → ABC/1 substitution. */
+async function subUsed(): Promise<number> {
+  const r = (await db.execute(sql`
+    SELECT qty_used::float8 AS u FROM public.rev_substitutions WHERE id = ${subId}::uuid`)) as unknown as Array<{
+    u: number;
+  }>;
+  return Number(r[0]?.u ?? -1);
+}
 
 async function cleanup(): Promise<void> {
   const its = await db
@@ -82,6 +95,15 @@ async function cleanup(): Promise<void> {
     }
   }
   if (ids.length > 0) {
+    // ADR-292 — the approved ABC/2 → ABC/1 substitution on the SO line.
+    await db.execute(sql`
+      DELETE FROM public.rev_substitution_uses WHERE substitution_id IN (
+        SELECT id FROM public.rev_substitutions WHERE item_id = ANY(${sql.param(ids)}::uuid[]))`);
+    await db.execute(sql`
+      DELETE FROM public.activity_log WHERE entity_id IN (
+        SELECT id FROM public.rev_substitutions WHERE item_id = ANY(${sql.param(ids)}::uuid[]))`);
+    await db.execute(sql`
+      DELETE FROM public.rev_substitutions WHERE item_id = ANY(${sql.param(ids)}::uuid[])`);
     await db.transaction(async (tx) => {
       await tx.execute(sql`select set_config('innovic.ledger_maintenance', 'on', true)`);
       await tx.delete(storeTransactions).where(inArray(storeTransactions.itemId, ids));
@@ -292,6 +314,40 @@ describe('Stock per Item + Drawing Rev', () => {
       ),
     ).rejects.toThrow(/listed twice/);
 
+    // ADR-292 — the line is on ABC/1: ABC/2 ships only with an approved
+    // substitution. Without one → refused with the mismatch sentence.
+    await expect(
+      createDispatch(
+        {
+          salesOrderId: soId,
+          dispatchDate: '2026-10-31',
+          lines: [{ salesOrderLineId: soLineId, itemRevisionId: rev2, qty: 1 }],
+        },
+        admin,
+      ),
+    ).rejects.toThrow(
+      `Revision mismatch with the order: ${P}ABC/2 is not the order's Drawing Rev (${P}ABC/1). ` +
+        'An Engineering-approved substitution is needed.',
+    );
+    // Engineering approves ABC/2 in place of ABC/1 on this line, up to 10
+    // (1 here, 9 in the 0234 dispatch test below).
+    subId = (
+      await createRevSubstitution(
+        {
+          itemId,
+          fromItemRevisionId: rev2,
+          toItemRevisionId: rev1,
+          salesOrderLineId: soLineId,
+          jobWorkOrderLineId: null,
+          jobCardId: null,
+          qtyAllowed: 10,
+          reason: `${P}customer accepts ABC/2`,
+          ecrId: null,
+        },
+        admin,
+      )
+    ).id;
+
     // One SO line, two Revs in one dispatch: 8 of ABC/1 + 1 of ABC/2.
     const d = await createDispatch(
       {
@@ -313,6 +369,7 @@ describe('Stock per Item + Drawing Rev', () => {
     expect(s.buckets.get(rev2)).toBe(8);
     expect(s.total).toBe(12);
     await expectBucketsSumToTotal();
+    expect(await subUsed()).toBe(1);
 
     await withUserContext(admin, (tx) => cancelDispatchTx(tx, companyId, d.id, `${P}test`, admin));
     s = await stock();
@@ -321,6 +378,7 @@ describe('Stock per Item + Drawing Rev', () => {
     expect(s.buckets.get('')).toBe(2);
     expect(s.total).toBe(21);
     await expectBucketsSumToTotal();
+    expect(await subUsed()).toBe(0); // the cancel gave the substituted 1 back
     const dl = await db
       .select({ rev: customerDispatchLines.itemRevisionId })
       .from(customerDispatchLines)
@@ -506,6 +564,7 @@ describe('0234 fixes — un-named outs, split bookings, dispatch release', () =>
     );
     let h = await heldByRev(soLineId);
     expect([h.get(rev1), h.get('')]).toEqual([10, 2]);
+    expect(await subUsed()).toBe(9); // ABC/2 on an ABC/1 line uses the substitution
     // 1 of ABC/1: consumes 1 ABC/1 booking; owed 10, held 11 → 1 released in ABC/1.
     const d2 = await createDispatch(
       {
@@ -537,5 +596,110 @@ describe('0234 fixes — un-named outs, split bookings, dispatch release', () =>
         .where(eq(salesOrderLines.id, soLineId))
     )[0]!;
     expect(Number(line.d)).toBe(0);
+  });
+});
+
+describe('ADR-292 — substitution give-back by use row (0251)', () => {
+  it('the SO line Rev changed between dispatch and cancel: the cancel still gives the substitution back', async () => {
+    const usedBefore = await subUsed();
+    const d = await createDispatch(
+      {
+        salesOrderId: soId,
+        dispatchDate: '2026-10-31',
+        lines: [{ salesOrderLineId: soLineId, itemRevisionId: rev2, qty: 2 }],
+      },
+      admin,
+    );
+    expect(await subUsed()).toBe(usedBefore + 2);
+    // The line moves to ABC/2 (an ECR) — the old cancel saw "ABC/2 = the line's
+    // Rev, not substituted" and gave nothing back.
+    await db.execute(
+      sql`UPDATE public.sales_order_lines SET item_revision_id = ${rev2}::uuid WHERE id = ${soLineId}::uuid`,
+    );
+    try {
+      await withUserContext(admin, (tx) =>
+        cancelDispatchTx(tx, companyId, d.id, `${P}test`, admin),
+      );
+    } finally {
+      await db.execute(
+        sql`UPDATE public.sales_order_lines SET item_revision_id = ${rev1}::uuid WHERE id = ${soLineId}::uuid`,
+      );
+    }
+    expect(await subUsed()).toBe(usedBefore);
+    const u = (await db.execute(sql`
+      SELECT qty::float8 AS q, returned_qty::float8 AS r FROM public.rev_substitution_uses
+       WHERE substitution_id = ${subId}::uuid AND source_type = 'dispatch_line'
+         AND source_id = ${d.lines[0]!.id}::uuid`)) as unknown as Array<{ q: number; r: number }>;
+    expect(u).toEqual([{ q: 2, r: 2 }]);
+  });
+});
+
+describe('ADR-292 — dispatch bucket when the row names no Rev', () => {
+  it('an old line with NO Drawing Rev takes the only bucket that fits; a line WITH a Rev never takes another', async () => {
+    // An old SO line on the same order, no Drawing Rev (not Rev-controlled).
+    const [old] = await db
+      .insert(salesOrderLines)
+      .values({
+        companyId,
+        salesOrderId: soId,
+        lineNo: 3,
+        itemId,
+        itemRevisionId: null,
+        partName: 'ABC',
+        orderQty: 20,
+        rate: '100',
+        status: 'open',
+        createdBy: admin.id,
+        updatedBy: admin.id,
+      })
+      .returning({ id: salesOrderLines.id });
+    const readyOf = async (lineId: string) =>
+      (await getDispatchableSo(soId, admin)).lines.find((l) => l.salesOrderLineId === lineId)!
+        .revBuckets;
+
+    // Line WITH Rev ABC/1: ship 5 of ABC/1 first, so its own bucket is smaller
+    // than ABC/2. A qty only ABC/2 covers is then refused — never auto-picked.
+    const d0 = await createDispatch(
+      {
+        salesOrderId: soId,
+        dispatchDate: '2026-10-31',
+        lines: [{ salesOrderLineId: soLineId, itemRevisionId: rev1, qty: 5 }],
+      },
+      admin,
+    );
+    const b1 = await readyOf(soLineId);
+    const own = b1.find((b) => b.itemRevisionId === rev1)?.readyQty ?? 0;
+    const other = Math.max(
+      0,
+      ...b1.filter((b) => b.itemRevisionId !== rev1).map((b) => b.readyQty),
+    );
+    expect(other).toBeGreaterThan(own); // the precondition this case needs
+    await expect(
+      createDispatch(
+        {
+          salesOrderId: soId,
+          dispatchDate: '2026-10-31',
+          lines: [{ salesOrderLineId: soLineId, qty: own + 1 }],
+        },
+        admin,
+      ),
+    ).rejects.toThrow(/choose which Drawing Rev to ship/);
+    await withUserContext(admin, (tx) => cancelDispatchTx(tx, companyId, d0.id, `${P}test`, admin));
+
+    // Old line: ship the largest Ready figure — exactly one bucket covers it.
+    const b0 = [...(await readyOf(old!.id))].sort((x, y) => y.readyQty - x.readyQty);
+    expect(b0[0]!.readyQty).toBeGreaterThan(b0[1]?.readyQty ?? 0); // one fit only
+    const d = await createDispatch(
+      {
+        salesOrderId: soId,
+        dispatchDate: '2026-10-31',
+        lines: [{ salesOrderLineId: old!.id, qty: b0[0]!.readyQty }],
+      },
+      admin,
+    );
+    expect(d.lines.map((l) => l.itemRevisionId)).toEqual([b0[0]!.itemRevisionId]);
+
+    await withUserContext(admin, (tx) => cancelDispatchTx(tx, companyId, d.id, `${P}test`, admin));
+    await expectBucketsSumToTotal();
   });
 });

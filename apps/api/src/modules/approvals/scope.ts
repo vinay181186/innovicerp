@@ -5,10 +5,12 @@
 //   logEntry decidableTimeChangeScope (decideOpLogTimeChange, ADR-232)
 //   edit     Approve on DOCUMENT_EDIT_FORM_KEY[entity] (decideDocumentEdit)
 //   cancel   typesWith(user, 'decide') (decideCancelRequest, cancelDeciderRight)
+//   ecr      decidableEcrRoles (decideEcr — L4 / L5 in the role's department)
 // Every check opens its own transaction: call these BEFORE / outside any
 // withUserContext transaction.
 
 import {
+  type EcrApproverRole,
   type AccessFormKey,
   type CancelDocType,
   DOCUMENT_EDIT_ENTITIES,
@@ -19,6 +21,7 @@ import type { SQL } from 'drizzle-orm';
 import type { AuthContext } from '../../db/with-user-context';
 import { hasFormAccess } from '../../lib/access';
 import { typesWith } from '../cancel-requests/list';
+import { decidableEcrRoles } from '../engineering-changes/workflow';
 import { decidableTimeChangeScope } from '../op-entry/time-change-page';
 import { loadPoInboxAccess } from '../purchase-orders/approval-inbox';
 import { loadRcInboxAccess } from '../route-cards/approval-inbox';
@@ -43,19 +46,22 @@ export interface ApproverScope {
   logScope: SQL | null;
   editEntities: DocumentEditEntity[];
   cancelTypes: CancelDocType[];
+  /** ADR-291 — the ECR sign-off roles the caller may give. */
+  ecrRoles: EcrApproverRole[];
 }
 
 /** Every type at once (history). The waiting list reads po / rc / logEntry
  *  through readApprovalInbox instead, which answers them on the way. */
 export async function loadApproverScope(user: AuthContext): Promise<ApproverScope> {
-  const [po, rc, opApprove, qcApprove, editEntities, cancelTypes] = await Promise.all([
+  const [po, rc, opApprove, qcApprove, editEntities, cancelTypes, ecrRoles] = await Promise.all([
     loadPoInboxAccess(user),
     loadRcInboxAccess(user),
     hasFormAccess(user, 'op_entry', 'approve'),
     hasFormAccess(user, 'qc_submit', 'approve'),
     approvableEditEntities(user),
     decidableCancelTypes(user),
+    decidableEcrRoles(user),
   ]);
   const logScope = opApprove || qcApprove ? await decidableTimeChangeScope(user) : null;
-  return { po: po.canApprove, rc: rc.canApprove, logScope, editEntities, cancelTypes };
+  return { po: po.canApprove, rc: rc.canApprove, logScope, editEntities, cancelTypes, ecrRoles };
 }

@@ -111,6 +111,9 @@ export function entityHref(entity: string, id: string | null, code: string | nul
     case 'DrawingCorrection':
       // ADR-290 — the Drawing Register opens on a search for "ABC/1".
       return code ? `/drawing-register?search=${encodeURIComponent(code)}` : '/drawing-register';
+    case 'EngineeringChange':
+      // ADR-291 — the ECR detail page.
+      return `/ecrs/${id}`;
     case 'PartyGrn':
       // Party GRN has no detail page: its list opens on a search for the
       // number (the same link the QC Call Register uses), so it needs the

@@ -5,10 +5,13 @@
 //   • resolveLineRevision — links the line to ABC/<rev> (lib/item-revision.ts
 //     resolveItemRevision, the one writer of the register) and says what the
 //     line's drawing copy should be.
-//   • D1 (owner 2026-10-31) — a Rev change on a line that already has work:
-//     OPEN Job Cards (and the line's plans / PROs) move to the new Rev; closed
-//     Job Cards keep the old Rev; all Job Cards closed → refused. Same
-//     transaction as the line save, Job Cards locked FOR UPDATE first.
+//   • ADR-291 Step 4 (replaces D1 "Rev change moves open Job Cards") — a Rev
+//     change on a line with an OPEN Job Card or OPEN Production Order is
+//     refused: the work moves only through an Engineering Change (ECR), which
+//     splits finished / started / not-started pieces. Plans with no PRO still
+//     move; all Job Cards closed → refused (add a new line). The ECR implement
+//     calls in with `ecrImplement` to record the line's change after it has
+//     moved the work itself. Job Cards locked FOR UPDATE first.
 
 import {
   ActivityAction,
@@ -233,12 +236,20 @@ export interface LineRevChange {
   /** false = the Rev TEXT is the same (only the register link / file moved):
    *  no reason is required. Default true. */
   revTextChanged?: boolean;
+  /** ADR-291 — internal, set only by the ECR implement (never from a user
+   *  request). Skips the work-in-progress refusal.
+   *    'split'    — the ECR already moved the not-started pieces to a new PRO /
+   *                 Job Card; open Job Cards / PROs keep the old Rev.
+   *    'move_all' — documentation-only change: open Job Cards / PROs of the
+   *                 line move to the new Rev (the old D1 move). */
+  ecrImplement?: 'split' | 'move_all';
 }
 
-/** D1 — move OPEN work of one line to the new Rev; closed Job Cards keep the
- *  old one; all closed → refuse. "Closed JC" = closed_at set, or v_jc_status
- *  'complete' / 'closed', or its PRO closed / short_closed. Cancelled JCs are
- *  soft-deleted (deleted_at) and so ignored. */
+/** ADR-291 — a line's Rev change. Open Job Card / open PRO → refused (raise
+ *  an ECR); plans with no PRO move to the new Rev; all Job Cards closed →
+ *  refused. "Closed JC" = closed_at set, or v_jc_status 'complete' / 'closed',
+ *  or its PRO closed / short_closed. Cancelled JCs are soft-deleted
+ *  (deleted_at) and so ignored. */
 export async function applyLineRevChange(
   tx: DbTransaction,
   user: AuthContext,
@@ -268,11 +279,47 @@ export async function applyLineRevChange(
      ORDER BY jc.code`)) as unknown as Array<{ id: string; code: string; closed: boolean }>;
 
   const closed = jcs.filter((j) => j.closed);
-  const open = jcs.filter((j) => !j.closed);
-  if (jcs.length > 0 && open.length === 0) {
+  // ADR-291 — with ecrImplement the ECR has already split the open work; the
+  // Job Cards themselves are not moved here.
+  const open = c.ecrImplement === 'split' ? [] : jcs.filter((j) => !j.closed);
+  if (jcs.length > 0 && jcs.every((j) => j.closed)) {
     throw new ValidationError(
       `Ln ${c.lineNo}: All Job Cards are closed — Rev and drawing locked. For a new Rev add a new line`,
     );
+  }
+
+  const revIds = [c.toId, ...(c.fromId ? [c.fromId] : [])];
+  const revRows = await tx
+    .select({ id: itemRevisions.id, rev: itemRevisions.rev, code: items.code })
+    .from(itemRevisions)
+    .innerJoin(items, sql`${items.id} = ${itemRevisions.itemId}`)
+    .where(inArray(itemRevisions.id, revIds));
+  const lbl = (id: string | null): string => {
+    const r = revRows.find((x) => x.id === id);
+    return r ? itemRevLabel(r.code, r.rev) : '—';
+  };
+
+  // ADR-291 Step 4 — work in progress moves only through an Engineering
+  // Change. Checked under the Job Card locks above; an open PRO counts even
+  // before its Job Card has a piece logged.
+  if (!c.ecrImplement) {
+    const openPros =
+      open.length > 0
+        ? []
+        : ((await tx.execute(sql`
+      SELECT po.id FROM public.production_orders po
+       WHERE po.company_id = ${companyId}::uuid AND po.deleted_at IS NULL
+         AND po.status NOT IN ('closed', 'short_closed')
+         AND po.plan_id IN (
+           SELECT p.id FROM public.plans p
+            WHERE p.company_id = ${companyId}::uuid AND p.deleted_at IS NULL
+              AND p.${planLineCol} = ${c.lineId}::uuid AND p.item_id = ${c.itemId}::uuid)
+       LIMIT 1`)) as unknown as unknown[]);
+    if (open.length > 0 || openPros.length > 0) {
+      throw new ValidationError(
+        `Ln ${c.lineNo}: ${lbl(c.fromId)} has work in progress — raise an Engineering Change (ECR) to move it to ${lbl(c.toId)}.`,
+      );
+    }
   }
   // ADR-289 — once the line has any Plan / PRO / Job Card, a Rev change needs
   // a reason (stored on the change row and in every moved document's log).
@@ -357,7 +404,10 @@ export async function applyLineRevChange(
   // Rev takes the APPROVED Route Card of the new Item + Rev when one exists
   // (route card id / code / revision snapshot together); otherwise it keeps
   // its old card (the screen then shows the card for the new Rev is missing).
-  const pros = (await tx.execute(sql`
+  const pros =
+    c.ecrImplement === 'split'
+      ? []
+      : ((await tx.execute(sql`
     WITH rc AS (${newRevCard})
     UPDATE public.production_orders po
        SET item_revision_id = ${c.toId}::uuid,
@@ -373,7 +423,7 @@ export async function applyLineRevChange(
        AND po.status NOT IN ('closed', 'short_closed')
        AND (po.job_card_id IS NULL OR NOT (po.job_card_id = ANY(${closedArr})))
        AND po.item_revision_id IS DISTINCT FROM ${c.toId}::uuid
-    RETURNING po.id, po.code`)) as unknown as Array<{ id: string; code: string }>;
+    RETURNING po.id, po.code`)) as unknown as Array<{ id: string; code: string }>);
   movedDocs.push(...pros.map((p) => p.code));
   const keptDocs = closed.map((j) => j.code);
 
@@ -390,16 +440,6 @@ export async function applyLineRevChange(
     updatedBy: user.id,
   });
 
-  const revIds = [c.toId, ...(c.fromId ? [c.fromId] : [])];
-  const revRows = await tx
-    .select({ id: itemRevisions.id, rev: itemRevisions.rev, code: items.code })
-    .from(itemRevisions)
-    .innerJoin(items, sql`${items.id} = ${itemRevisions.itemId}`)
-    .where(inArray(itemRevisions.id, revIds));
-  const lbl = (id: string | null): string => {
-    const r = revRows.find((x) => x.id === id);
-    return r ? itemRevLabel(r.code, r.rev) : '—';
-  };
   await emitActivityLog(
     tx,
     {

@@ -80,6 +80,7 @@ import {
 } from '../../lib/errors';
 import { lockDocSeries } from '../../lib/doc-series-lock';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
+import { assertMakeItemHasRev } from '../../lib/drawing-rev-strict';
 import { assertRevReleasedForWork } from '../../lib/item-revision';
 import { loadRelatedItems } from '../../lib/related-items';
 import {
@@ -2299,6 +2300,8 @@ export async function buildJobCardFromOps(
   // ADR-290 Step 3 — Execute (Manufacture) and a Production Order both build
   // their Job Card here: only on a Rev whose release status allows work.
   await assertRevReleasedForWork(tx, companyId, plan.itemRevisionId ?? null);
+  // ADR-292 — Drawing Rev strict switch: a MAKE item needs a Rev.
+  await assertMakeItemHasRev(tx, companyId, plan.itemId, plan.itemRevisionId ?? null);
   const today = todayIso();
   const jcCode = await nextJcCode(tx, companyId);
   // How many pieces THIS card is for — the Production Order's Order Qty since

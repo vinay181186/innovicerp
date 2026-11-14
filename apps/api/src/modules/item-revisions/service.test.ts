@@ -4,6 +4,8 @@
 //   • a different file for an ABC/1 that has one → 400;
 //   • Replace drawing with a stale updatedAt → 409 (§20.4);
 //   • D1: Rev change on a line whose Job Cards are ALL closed → 400;
+//   • ADR-291: an open Job Card on the line → 400 "raise an Engineering
+//     Change"; the ECR's documentation-only path still moves it;
 //   • 0234: clearing the Rev on a line with a Job Card → 400;
 //   • 0234: open PROs move by plan linkage and take the new Rev's APPROVED
 //     Route Card (else keep their card).
@@ -237,7 +239,10 @@ describe('Item + Drawing Rev register', () => {
     ).rejects.toThrow(/All Job Cards are closed/);
 
     // ADR-290 — the target Rev must be released before open work moves to it.
-    await db.update(itemRevisions).set({ releaseStatus: 'released' }).where(eq(itemRevisions.id, r3!.id));
+    await db
+      .update(itemRevisions)
+      .set({ releaseStatus: 'released' })
+      .where(eq(itemRevisions.id, r3!.id));
 
     // One OPEN Job Card beside the closed one → it moves, the closed one stays.
     await db.insert(jobCards).values({
@@ -251,6 +256,22 @@ describe('Item + Drawing Rev register', () => {
       createdBy: admin.id,
       updatedBy: admin.id,
     } as never);
+    // ADR-291 — open work moves only through an Engineering Change.
+    await expect(
+      withUserContext(admin, (tx) =>
+        applyLineRevChange(tx, admin, companyId, {
+          kind: 'so',
+          orderId: so!.id,
+          docCode: `${P}SO1`,
+          lineId: line!.id,
+          lineNo: 1,
+          itemId,
+          fromId: r1!.id,
+          toId: r3!.id,
+          reason: 'Customer revised the drawing',
+        }),
+      ),
+    ).rejects.toThrow(/has work in progress — raise an Engineering Change \(ECR\)/);
     const res = await withUserContext(admin, (tx) =>
       applyLineRevChange(tx, admin, companyId, {
         kind: 'so',
@@ -263,6 +284,8 @@ describe('Item + Drawing Rev register', () => {
         toId: r3!.id,
         // ADR-289 — the line has Job Cards, so the change needs a reason.
         reason: 'Customer revised the drawing',
+        // ADR-291 — the documentation-only ECR path keeps the old move.
+        ecrImplement: 'move_all',
       }),
     );
     expect(res.movedDocs).toEqual([`${P}JC2`]);
@@ -398,6 +421,9 @@ describe('Item + Drawing Rev register', () => {
           toId,
           // ADR-289 — the line has Job Cards / a Plan, so a reason is required.
           reason: 'Drawing Rev moved for the test',
+          // ADR-291 — open PRO / Job Card: only the documentation-only ECR
+          // path moves them (a plain change is refused).
+          ecrImplement: 'move_all',
         }),
       );
     const pro = async () =>

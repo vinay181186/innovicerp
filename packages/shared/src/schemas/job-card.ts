@@ -615,6 +615,11 @@ export const jobCardStatusOpExtraSchema = z.object({
    *  runs — so on a re-routed op it names a machine that may have produced
    *  nothing. See machineSplitSchema. */
   machines: machineSplitSchema,
+  /** ADR-291 — the op is on hold (no qty may move) until released. */
+  holdReason: z.string().nullable().default(null),
+  heldAt: z.string().nullable().default(null),
+  holdEcrCode: z.string().nullable().default(null),
+  holdEcrId: z.string().uuid().nullable().default(null),
 });
 export type JobCardStatusOpExtra = z.infer<typeof jobCardStatusOpExtraSchema>;
 

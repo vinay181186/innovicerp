@@ -180,6 +180,12 @@ export const TABLE_KEYS = {
   drawingCorrections: 'drawing-corrections',
   /** Item detail (ADR-290): the item's Drawing Revs. */
   itemDrawingRevs: 'item-drawing-revs',
+  /** ADR-291 — Engineering Change list, ECR Impact and ECR Approvals tables. */
+  ecrList: 'ecr-list',
+  ecrImpacts: 'ecr-impacts',
+  ecrApprovals: 'ecr-approvals',
+  /** ADR-292 — Rev Substitutions list (Design). */
+  revSubstitutions: 'rev-substitutions',
   /** Home (ADR-264): the documents under one opened department check. */
   dashCheck: 'dash-check',
   /** Home (ADR-264) Day Log view: today's entries. */

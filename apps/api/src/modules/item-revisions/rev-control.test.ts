@@ -1,6 +1,6 @@
 // ADR-289 — Drawing Rev control, step 1. Positive asserts on TEST:
-//   • A1: an Item Issue that took stock from several Rev buckets gives it back
-//     to THOSE buckets — a partial Return last-taken-first, a Cancel exactly;
+//   • A1: an Item Issue of a make item takes from the NAMED Rev bucket (ADR-292)
+//     and a partial Return / a Cancel give back to that same bucket;
 //   • A3: an OSP last-op GRN of a Job Card NOT built by a PRO credits the Job
 //     Card's own Rev bucket;
 //   • F: a Rev change on a line with a Job Card needs a reason; the reason is
@@ -42,6 +42,7 @@ import { postStockMove } from '../../lib/stock-ledger';
 import { creditGrnQcStock } from '../goods-receipt-notes/cascades';
 import { cancelStoreIssueTx } from '../store-issues/cancel';
 import { createStoreIssue, returnStoreIssue } from '../store-issues/service';
+import { createRevSubstitution } from '../rev-substitutions/service';
 import { applyLineRevChange } from './line-rev';
 
 const ADMIN_EMAIL = 'innovic.technology@gmail.com';
@@ -60,6 +61,15 @@ async function cleanup(): Promise<void> {
     .where(like(items.code, `${P}%`));
   const ids = its.map((r) => r.id);
   if (ids.length > 0) {
+    // ADR-292 — substitutions + their use rows (0251) first.
+    await db.execute(sql`
+      DELETE FROM public.rev_substitution_uses WHERE substitution_id IN (
+        SELECT id FROM public.rev_substitutions WHERE item_id = ANY(${sql.param(ids)}::uuid[]))`);
+    await db.execute(sql`
+      DELETE FROM public.activity_log WHERE entity_id IN (
+        SELECT id FROM public.rev_substitutions WHERE item_id = ANY(${sql.param(ids)}::uuid[]))`);
+    await db.execute(sql`
+      DELETE FROM public.rev_substitutions WHERE item_id = ANY(${sql.param(ids)}::uuid[])`);
     const lines = await db
       .select({ id: storeIssueLines.id, issueId: storeIssueLines.issueId })
       .from(storeIssueLines)
@@ -229,72 +239,167 @@ beforeAll(async () => {
 afterAll(cleanup);
 
 describe('ADR-289 Drawing Rev control', () => {
-  it('A1: Item Issue Return and Cancel put stock back into the buckets it was taken from', async () => {
+  it('A1: Item Issue takes from the named Rev bucket; Return and Cancel give back to it', async () => {
     await seed(3, null);
     await seed(5, rev1);
     await seed(2, rev2);
-    // Take 9: blank 3 first, then ABC/1 (5, largest), then ABC/2 (1).
-    const iss = await createStoreIssue(
-      {
-        issueDate: '2026-11-14',
-        issueAgainst: 'general',
-        issuedToText: 'Rev test',
-        department: 'Production',
-        purpose: 'ADR-289 test',
-        lines: [{ itemId, qty: 9 }],
-      } as never,
-      admin,
+    const slip = (qty: number, rev: string | undefined, purpose: string) =>
+      createStoreIssue(
+        {
+          issueDate: '2026-11-14',
+          issueAgainst: 'general',
+          issuedToText: 'Rev test',
+          department: 'Production',
+          purpose,
+          lines: [{ itemId, qty, ...(rev === undefined ? {} : { itemRevisionId: rev }) }],
+        } as never,
+        admin,
+      );
+    // ADR-292 — a make item with Rev stock must name its bucket.
+    await expect(slip(1, undefined, 'ADR-292 no Rev')).rejects.toThrow(
+      /Choose the Drawing Rev to issue/,
     );
-    expect(await buckets()).toMatchObject({ '': 0, [rev1]: 0, [rev2]: 1 });
+    expect(await buckets()).toMatchObject({ '': 3, [rev1]: 5, [rev2]: 2 });
+
+    // Take 4 from ABC/1 only — blank and ABC/2 are not touched.
+    const iss = await slip(4, rev1, 'ADR-289 test');
+    expect(await buckets()).toMatchObject({ '': 3, [rev1]: 1, [rev2]: 2 });
     const parts = await db
       .select({ rev: stockOutParts.itemRevisionId, qty: stockOutParts.qty })
       .from(stockOutParts)
       .where(eq(stockOutParts.storeIssueLineId, iss.lines[0]!.id))
       .orderBy(stockOutParts.takeOrder);
-    expect(parts).toEqual([
-      { rev: null, qty: 3 },
-      { rev: rev1, qty: 5 },
-      { rev: rev2, qty: 1 },
-    ]);
+    expect(parts.map((x) => ({ rev: x.rev, qty: Number(x.qty) }))).toEqual([{ rev: rev1, qty: 4 }]);
 
-    // Return 2: last taken first → ABC/2 gets 1, ABC/1 gets 1; blank nothing.
+    // Return 2 → back into ABC/1 (the bucket it came from), nowhere else.
     await returnStoreIssue(
       iss.id,
       { lines: [{ issueLineId: iss.lines[0]!.id, qty: 2 }], reason: 'ADR-289 partial return' },
       admin,
     );
-    expect(await buckets()).toMatchObject({ '': 0, [rev1]: 1, [rev2]: 2 });
+    expect(await buckets()).toMatchObject({ '': 3, [rev1]: 3, [rev2]: 2 });
     const rets = await db
       .select({ qty: storeIssueReturns.qty })
       .from(storeIssueReturns)
       .where(eq(storeIssueReturns.issueLineId, iss.lines[0]!.id));
-    // ONE return row per user Return; the bucket split is in the parts + ledger.
+    // ONE return row per user Return; the bucket is in the parts + ledger.
     expect(rets.map((r) => Number(r.qty))).toEqual([2]);
     const back = await db
-      .select({ ret: stockOutParts.returnedQty })
+      .select({ rev: stockOutParts.itemRevisionId, ret: stockOutParts.returnedQty })
       .from(stockOutParts)
       .where(eq(stockOutParts.storeIssueLineId, iss.lines[0]!.id))
       .orderBy(stockOutParts.takeOrder);
-    expect(back.map((b) => Number(b.ret))).toEqual([0, 1, 1]);
+    expect(back.map((x) => ({ rev: x.rev, ret: Number(x.ret) }))).toEqual([{ rev: rev1, ret: 2 }]);
+    // Returning more than is still out (4 − 2 = 2) is refused.
+    await expect(
+      returnStoreIssue(
+        iss.id,
+        { lines: [{ issueLineId: iss.lines[0]!.id, qty: 3 }], reason: 'ADR-289 over return' },
+        admin,
+      ),
+    ).rejects.toBeInstanceOf(AppError);
 
-    // A second issue of 3 (blank 0 → ABC/2 2 first, then ABC/1 1), then Cancel.
+    // A second issue of 2 from ABC/2, then Cancel → ABC/2 gets exactly 2 back.
     const before = await buckets();
-    const iss2 = await createStoreIssue(
-      {
-        issueDate: '2026-11-14',
-        issueAgainst: 'general',
-        issuedToText: 'Rev test',
-        department: 'Production',
-        purpose: 'ADR-289 test 2',
-        lines: [{ itemId, qty: 3 }],
-      } as never,
-      admin,
-    );
-    expect(await buckets()).toMatchObject({ [rev1]: 0, [rev2]: 0 });
+    const iss2 = await slip(2, rev2, 'ADR-289 test 2');
+    expect(await buckets()).toMatchObject({ '': 3, [rev1]: 3, [rev2]: 0 });
     await withUserContext(admin, (tx) =>
       cancelStoreIssueTx(tx, companyId, iss2.id, 'ADR-289 cancel test', admin),
     );
     expect(await buckets()).toMatchObject(before);
+    const back2 = await db
+      .select({
+        rev: stockOutParts.itemRevisionId,
+        qty: stockOutParts.qty,
+        ret: stockOutParts.returnedQty,
+      })
+      .from(stockOutParts)
+      .where(eq(stockOutParts.storeIssueLineId, iss2.lines[0]!.id));
+    expect(back2.map((x) => ({ rev: x.rev, qty: Number(x.qty), ret: Number(x.ret) }))).toEqual([
+      { rev: rev2, qty: 2, ret: 2 },
+    ]);
+  });
+
+  it('A1b: a Job Card Rev moved between issue and return still gives the substitution back', async () => {
+    // A Job Card on ABC/1; Store issues ABC/2 to it on an approved substitution.
+    const [jc] = await db
+      .insert(jobCards)
+      .values({
+        companyId,
+        code: `${P}JC-SUB`,
+        jcDate: '2026-11-14',
+        itemId,
+        orderQty: 2,
+        itemRevisionId: rev1,
+        createdBy: admin.id,
+        updatedBy: admin.id,
+      } as never)
+      .returning({ id: jobCards.id });
+    const issue = () =>
+      createStoreIssue(
+        {
+          issueDate: '2026-11-14',
+          issueAgainst: 'job_card',
+          jobCardId: jc!.id,
+          issuedToText: 'Rev test',
+          purpose: 'ADR-292 substitution',
+          confirmReason: 'ADR-292 test issue to card',
+          lines: [{ itemId, qty: 2, itemRevisionId: rev2 }],
+        } as never,
+        admin,
+      );
+    await expect(issue()).rejects.toThrow(/Revision mismatch with the Job Card/);
+    const sub = await createRevSubstitution(
+      {
+        itemId,
+        fromItemRevisionId: rev2,
+        toItemRevisionId: rev1,
+        salesOrderLineId: null,
+        jobWorkOrderLineId: null,
+        jobCardId: jc!.id,
+        qtyAllowed: 5,
+        reason: `${P}card takes ABC/2`,
+        ecrId: null,
+      },
+      admin,
+    );
+    const used = async () =>
+      Number(
+        (
+          (await db.execute(sql`
+            SELECT qty_used::float8 AS u FROM public.rev_substitutions WHERE id = ${sub.id}::uuid`)) as unknown as Array<{
+            u: number;
+          }>
+        )[0]!.u,
+      );
+    const iss = await issue();
+    expect(await used()).toBe(2);
+    const uses = (await db.execute(sql`
+      SELECT source_type AS t, source_id AS id, qty::float8 AS q FROM public.rev_substitution_uses
+       WHERE substitution_id = ${sub.id}::uuid`)) as unknown as Array<{
+      t: string;
+      id: string;
+      q: number;
+    }>;
+    expect(uses).toEqual([{ t: 'store_issue_line', id: iss.lines[0]!.id, q: 2 }]);
+
+    // The card moves to ABC/2 (an ECR) — the old code re-derived "substituted?"
+    // from the card's Rev and gave nothing back.
+    await db.execute(
+      sql`UPDATE public.job_cards SET item_revision_id = ${rev2}::uuid WHERE id = ${jc!.id}::uuid`,
+    );
+    await returnStoreIssue(
+      iss.id,
+      { lines: [{ issueLineId: iss.lines[0]!.id, qty: 1 }], reason: 'ADR-292 partial return' },
+      admin,
+    );
+    expect(await used()).toBe(1); // exactly the 1 that came back
+    await returnStoreIssue(
+      iss.id,
+      { lines: [{ issueLineId: iss.lines[0]!.id, qty: 1 }], reason: 'ADR-292 rest return' },
+      admin,
+    );
+    expect(await used()).toBe(0); // never below 0 — never more than was used
   });
 
   it('A3: an OSP last-op GRN of a Job Card not built by a PRO credits the Job Card Rev', async () => {
@@ -428,6 +533,26 @@ describe('ADR-289 Drawing Rev control', () => {
         updatedBy: admin.id,
       } as never)
       .returning({ id: jobCards.id });
+    // ADR-291 — an open Job Card on the line: a plain Rev change is refused
+    // (raise an ECR). The reason / release / log rules below are exercised
+    // through the documentation-only ECR path ('move_all'), which still moves.
+    const plain = await withUserContext(admin, (tx) =>
+      applyLineRevChange(tx, admin, companyId, {
+        kind: 'so',
+        orderId: so!.id,
+        docCode: `${P}SO1`,
+        lineId: line!.id,
+        lineNo: 1,
+        itemId,
+        fromId: rev1,
+        toId: rev2,
+        reason: 'Customer sent drawing rev 2',
+      }),
+    ).catch((e: unknown) => e);
+    expect(plain).toBeInstanceOf(ValidationError);
+    expect((plain as Error).message).toBe(
+      `Ln 1: ${P}PART/1 has work in progress — raise an Engineering Change (ECR) to move it to ${P}PART/2.`,
+    );
     const change = (reason?: string) =>
       withUserContext(admin, (tx) =>
         applyLineRevChange(tx, admin, companyId, {
@@ -439,6 +564,7 @@ describe('ADR-289 Drawing Rev control', () => {
           itemId,
           fromId: rev1,
           toId: rev2,
+          ecrImplement: 'move_all',
           ...(reason !== undefined ? { reason } : {}),
         }),
       );

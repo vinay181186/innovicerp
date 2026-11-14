@@ -255,7 +255,15 @@ export function ApprovalsList({
                 placeholder:
                   'Shown to the creator. Saving the corrected card sends it for approval again.',
               }
-            : { title: `Reject — ${rejecting.docCode}`, prompt: 'Why is this rejected?' })}
+            : rejecting.kind === 'ecr'
+              ? {
+                  // ADR-291 — one sign-off of an Engineering Change.
+                  title: `Reject — ${rejecting.docCode} · ${rejecting.typeLabel}`,
+                  prompt: 'Reject Reason',
+                  placeholder:
+                    'At least 5 characters. Rejecting lifts the holds this ECR put on the work.',
+                }
+              : { title: `Reject — ${rejecting.docCode}`, prompt: 'Why is this rejected?' })}
           onCancel={() => setRejecting(null)}
           onReject={(reason) => {
             const r = rejecting;

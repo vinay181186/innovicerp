@@ -55,6 +55,12 @@ import { hsnOutwardSummaryReport } from './definitions/hsn-outward-summary';
 import { masterCompletenessReport } from './definitions/master-completeness';
 import { mlBomExplodedReport } from './definitions/ml-bom-exploded';
 import { mlPlanToRaiseReport } from './definitions/ml-plan-to-raise';
+import { drawingRevRegisterReport } from './definitions/drawing-rev-register';
+import { openOrderRevMismatchReport } from './definitions/open-order-rev-mismatch';
+import { affectedWipOspStockReport } from './definitions/affected-wip-osp-stock';
+import { revTraceabilityReport } from './definitions/rev-traceability';
+import { pendingEcrReport } from './definitions/pending-ecr';
+import { drawingPrintDownloadHistoryReport } from './definitions/drawing-print-download-history';
 import type { ReportColumn, ReportDefinition, ReportRow } from './schema';
 
 export interface ReportRunContext {
@@ -126,6 +132,13 @@ export const REPORTS: Record<string, RegisteredReport> = {
   // ADR-225 phase 5 — Multi-Level BOM / Plan.
   [mlBomExplodedReport.definition.slug]: mlBomExplodedReport,
   [mlPlanToRaiseReport.definition.slug]: mlPlanToRaiseReport,
+  // ADR-292 — Drawing Rev control reports.
+  [drawingRevRegisterReport.definition.slug]: drawingRevRegisterReport,
+  [openOrderRevMismatchReport.definition.slug]: openOrderRevMismatchReport,
+  [affectedWipOspStockReport.definition.slug]: affectedWipOspStockReport,
+  [revTraceabilityReport.definition.slug]: revTraceabilityReport,
+  [pendingEcrReport.definition.slug]: pendingEcrReport,
+  [drawingPrintDownloadHistoryReport.definition.slug]: drawingPrintDownloadHistoryReport,
 };
 
 export function listReportDefinitions(): ReportDefinition[] {

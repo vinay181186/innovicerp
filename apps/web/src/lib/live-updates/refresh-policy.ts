@@ -71,6 +71,8 @@ export const REFRESH_POLICY: Readonly<Record<string, RefreshRule>> = {
   // ADR-290 — release status changes by other people (review, approve,
   // release, correction decisions); item_revisions is not in LIVE_TABLES.
   'drawing-register': poll('approvals by others; item_revisions is not published'),
+  // ADR-291 — sign-offs and holds change by other people; ecrs is not published.
+  ecrs: poll('approvals by others; ecrs is not published'),
   'design-work-log': poll('design tables are not published'),
   invoices: poll('invoices not published (amounts; changes rarely)'),
   'job-work-orders': poll('job_work_orders not published'),
@@ -113,6 +115,7 @@ export const REFRESH_POLICY: Readonly<Record<string, RefreshRule>> = {
   // form names Item + Rev, read when the drawing page opens; a Replace drawing
   // on this PC invalidates it. item_revisions is not in LIVE_TABLES.
   'item-revisions': onOpen(LOOKUP),
+  'rev-substitutions': onOpen('Engineering approvals, rarely changed; re-read when the page opens'),
   items: onOpen(MASTER),
   'jc-drawing': onOpen(LOOKUP),
   'jwso-documents': onOpen('JWSO documents tab, read on open'),

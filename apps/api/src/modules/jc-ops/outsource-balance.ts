@@ -27,6 +27,7 @@ import { items, jcOps, jobCards, purchaseRequests, runningOps, vendors } from '.
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { lockDocSeries } from '../../lib/doc-series-lock';
+import { assertJcOpWorkable } from '../../lib/jc-op-hold';
 import { liveOspPrForOpSql } from '../../lib/osp-pr';
 import {
   AuthorizationError,
@@ -129,9 +130,12 @@ export async function outsourceOpBalance(
       })
       .from(jcOps)
       .where(and(eq(jcOps.id, jcOpId), eq(jcOps.companyId, companyId), isNull(jcOps.deletedAt)))
-      .limit(1);
+      .limit(1)
+      // ADR-291 — row lock before the hold check (placeOpHolds takes the same).
+      .for('update');
     const op = opRows[0];
     if (!op) throw new NotFoundError('Operation not found. Refresh the page.');
+    await assertJcOpWorkable(tx, companyId, op.id); // ADR-291 hold / Rev not released
 
     // ADR-182 — the dual-lane action raises a jw_osp purchase request and
     // stamps a vendor on the op, so it is a write like any other: refused once

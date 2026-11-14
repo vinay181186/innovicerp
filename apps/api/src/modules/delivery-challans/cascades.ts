@@ -36,6 +36,7 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import { jcOpPoLines, jcOps, jobCards, purchaseOrderLines, purchaseOrders } from '../../db/schema';
 import type { DbTransaction } from '../../db/with-user-context';
 import { ValidationError } from '../../lib/errors';
+import { assertJcOpWorkable } from '../../lib/jc-op-hold';
 import { type MaterialCap, loadMaterialCap, materialCapMessage } from '../op-entry/service';
 
 export interface OutwardCascadeArgs {
@@ -276,6 +277,8 @@ export async function applyOutwardToJcOp(args: OutwardCascadeArgs): Promise<Outw
   const s = await loadOutwardSendable(tx, companyId, purchaseOrderLineId);
   if (s.kind === 'unlinked') return { fired: false };
   if (s.kind === 'job_work_unlinked') throw new ValidationError(jobWorkUnlinkedRefusal(s.poCode));
+  // ADR-291 — nothing goes out to a vendor for an op on hold / a Rev not released.
+  await assertJcOpWorkable(tx, companyId, s.op.id);
   // S9 — the challan line may carry 3 decimals (KGS / MTR), but a job-card
   // operation counts whole pieces (jc_ops.outsource_sent_qty is an integer).
   // Refuse a fraction here instead of silently rounding it onto the op.

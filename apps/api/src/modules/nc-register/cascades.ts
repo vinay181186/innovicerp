@@ -76,6 +76,7 @@ import { requireFormAccess } from '../../lib/access';
 import { nextNcCodeFrom } from '../../lib/nc-code';
 import { lockDocSeries } from '../../lib/doc-series-lock';
 import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
+import { lockAndAssertJcOpsWorkable } from '../../lib/jc-op-hold';
 import { jobCardOrderChainCte } from '../../lib/production-order-link';
 import { assertRowUpdated } from '../../lib/row-lock';
 import { labelOf } from '../../lib/status-labels';
@@ -477,6 +478,9 @@ export async function disposeNcCascade(
     .limit(1);
   const uomProblem = qtyUomProblem(qty, itemRows[0]?.uom ?? null, 'Disposition Qty');
   if (uomProblem) throw new ValidationError(uomProblem);
+  // ADR-291 — no disposition while the NC's op is on hold / its Job Card's Rev
+  // is not released (every disposition moves qty on or off that op).
+  if (loaded.jcOpId) await lockAndAssertJcOpsWorkable(tx, ctx.companyId, [loaded.jcOpId]);
   // ADR-247 — customer material is received, held and returned in whole pieces
   // (party_grn_lines quantities are integers), whatever the item's unit says.
   if (isCustomerMaterial && !Number.isInteger(qty)) {

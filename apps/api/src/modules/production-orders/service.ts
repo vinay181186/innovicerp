@@ -111,6 +111,7 @@ import { assertNoQcDirectlyAfterOutsource } from '../../lib/jc-osp-qc-rule';
 import { assertRouteCardUsable } from '../../lib/route-card-usable';
 import { assertRouteCardMatchesPlanRev } from '../../lib/route-card-for-rev';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
+import { assertMakeItemHasRev } from '../../lib/drawing-rev-strict';
 import { assertRevReleasedForWork } from '../../lib/item-revision';
 import { diffFields, type DiffField } from '../../lib/audit-trail';
 import { fmtDate } from '../../lib/format-date';
@@ -1361,353 +1362,366 @@ export async function createProductionOrder(
   // moment can both compute the same next IN-PRO-##### — the loser's whole
   // transaction (JC, ops, OSP PRs) rolls back and re-runs with the next number.
   return withUniqueRetry(() =>
-    withUserContext(user, async (tx) => {
-      // Row-lock the plan: two clicks on Create must not both read the same
-      // "covered" figure and each build a Job Card for the whole Pending qty.
-      // The second waits, re-reads the SUM below, and is refused if its qty no
-      // longer fits (ADR-182 — the unique index on plan_id is gone, this lock
-      // IS the cap's safety).
-      const planRows = await tx
-        .select()
-        .from(plans)
-        .where(
-          and(eq(plans.id, input.planId), eq(plans.companyId, companyId), isNull(plans.deletedAt)),
-        )
-        .limit(1)
-        .for('update');
-      const plan = planRows[0];
-      if (!plan) throw new NotFoundError('Plan not found. Refresh the page.');
-      // ADR-290 Step 3 — a PRO only on a released (or old, unverified) Rev,
-      // checked inside the plan lock.
-      await assertRevReleasedForWork(tx, companyId, plan.itemRevisionId ?? null);
-
-      if (plan.opsSource !== 'route_card') {
-        throw new ValidationError(
-          `Plan ${plan.code} cannot make a Production Order. Use Execute on the plan.`,
-        );
-      }
-      // ADR-196 — a plan whose SO line was closed short makes no new order.
-      // FOR SHARE on the line: the SO Close locks it FOR UPDATE before it
-      // looks for running orders, so the two cannot both pass.
-      if (plan.soLineId) {
-        const sc = (await tx.execute(sql`
-          SELECT sol.line_no AS "lineNo", so.code AS "soCode",
-                 sol.short_closed_at IS NOT NULL AS "shortClosed"
-          FROM public.sales_order_lines sol
-          JOIN public.sales_orders so ON so.id = sol.sales_order_id
-          WHERE sol.id = ${plan.soLineId}::uuid
-          FOR SHARE OF sol
-        `)) as unknown as Array<{ lineNo: number; soCode: string; shortClosed: boolean }>;
-        if (sc[0]?.shortClosed) {
-          throw new ValidationError(
-            `${sc[0].soCode} line ${sc[0].lineNo} was closed short — plan ${plan.code} makes no new Production Order.`,
-          );
-        }
-      }
-      // ADR-235 — a JWSO plan: lock its JW line (plan → line, as Execute does;
-      // the JWSO cancel never locks plans) and refuse a cancelled / closed line.
-      if (plan.jwLineId) {
-        assertJwLineOpenForWork(
-          await lockJwLine(tx, companyId, plan.jwLineId),
-          'make a Production Order',
-        );
-      }
-      // ADR-182 — the qty cap, read INSIDE the plan's row lock above so two
-      // concurrent creates can never both fit. ADR-184 — Covered is the ONE
-      // definition in lib/plan-order-coverage.ts: an open / partly closed order
-      // covers its Order Qty, a closed or short-closed one only what it
-      // credited, so the pieces a stopped order did not deliver are Pending.
-      //
-      // Checked BEFORE the plan-status guard below on purpose: a fully-covered
-      // plan is stamped 'jc_created' the moment its last order is created (see
-      // the write below), so for that exact plan the status guard would fire
-      // first and show the user an internal status name instead of the plain
-      // "fully covered" sentence this cap exists to give them. Every other
-      // refusal is unaffected — if the qty still fits, capError is null and the
-      // status guard fires next exactly as before.
-      const { coveredQty: covered } = await readPlanOrderCoverage(tx, plan.id);
-      const capError = productionOrderCapError(plan.code, plan.planQty, covered, input.orderQty);
-      if (capError) throw new ValidationError(capError);
-      const coverage = planCoverage(plan.planQty, covered + input.orderQty);
-
-      if (plan.planStatus !== 'planned') {
-        throw new ValidationError(
-          `Plan ${plan.code} is ${labelOf(PLAN_STATUS_LABEL, plan.planStatus)}. Only a Planned plan can make a Production Order.`,
-        );
-      }
-
-      // §6 rule 1 — the SERVER half of a rule the browser already enforces.
-      // The PLAN is the only source of raw material for this order: the order
-      // and its Job Card copy the Grade and Size off the plan, never off the
-      // route card (0106), so a plan naming neither makes a material-less Job
-      // Card and the "Raw Material Available" tick above confirms nothing. The
-      // screen refuses it (web production-orders/routes/new.tsx) but the
-      // browser is never the rule — an API caller walked straight past it.
-      // Read off the row already locked above, not a second query. Same
-      // sentence both sides so the two can never disagree.
-      const planHasRmGrade = Boolean(plan.rawMaterialGradeText?.trim() || plan.rawMaterialGradeId);
-      const planHasRmSize = Boolean(plan.rawMaterialSizeText?.trim() || plan.rawMaterialSizeId);
-      // ADR-225 phase 4 — a plan raised from a Multi-Level Plan node that has
-      // live children is a SUB-ASSEMBLY (or the top assembly): its material is
-      // its child parts, issued against its Job Card, not a raw-material bar.
-      // Only asked when the plan has no RM, so every other plan is untouched.
-      // Owner 2026-10-24: a JWSO-line plan needs no RM either — the customer
-      // supplies the material, so a Route Card without RM must not block it.
-      // The "Raw Material Available" tick above stays compulsory for it.
-      if (
-        !planHasRmGrade &&
-        !planHasRmSize &&
-        !plan.jwLineId &&
-        !(await planIsMlAssembly(tx, companyId, plan.id))
-      ) {
-        throw new ValidationError(
-          // ADR-218: the plan screens no longer set material, so name the two
-          // places that do and the re-save that pulls it through.
-          "This plan has no raw material — fill RM Grade and RM Size on the item's Route Card (or on its BOM line), then open the plan and save it again.",
-        );
-      }
-
-      if (!plan.itemId) {
-        throw new ValidationError(
-          `Plan ${plan.code} has no master item — pick the item from Item Master on the plan first`,
-        );
-      }
-      const itemId = plan.itemId;
-      // The Item Master's code, never the internal id. item_code_text is NOT NULL.
-      const itemLabel = (await itemCodeFor(tx, itemId)) ?? plan.itemCodeText;
-      if (!itemLabel) {
-        throw new ValidationError(
-          `Plan ${plan.code} has no Item Code — pick the item from Item Master on the plan first`,
-        );
-      }
-
-      // Route card: must be THE active card of the plan's item, with at least
-      // one live operation. "No route card, no way forward."
-      const rcRows = await tx
-        .select({
-          id: routeCards.id,
-          code: routeCards.code,
-          itemId: routeCards.itemId,
-          currentRevision: routeCards.currentRevision,
-          planType: routeCards.planType,
-          approvalStatus: routeCards.approvalStatus,
-          itemRevisionId: routeCards.itemRevisionId,
-        })
-        .from(routeCards)
-        .where(
-          and(
-            eq(routeCards.id, input.routeCardId),
-            eq(routeCards.companyId, companyId),
-            isNull(routeCards.deletedAt),
-          ),
-        )
-        .limit(1)
-        // ADR-253 / §20.3 — FOR SHARE so an Approve / Reject / edit-back-to-
-        // Pending of this card waits for this create to finish, and the
-        // approval status checked below is still the status when the order is
-        // inserted. Lock order stays plans → route_cards (plan locked above),
-        // the same order executePlan and updateRouteCard use.
-        .for('share');
-      const rc = rcRows[0];
-      if (!rc) {
-        // Say whether the ITEM has a card at all, so the message tells the user
-        // what to do next rather than only that the id was wrong.
-        const anyForItem = await tx
-          .select({ id: routeCards.id })
-          .from(routeCards)
-          .where(
-            and(
-              eq(routeCards.companyId, companyId),
-              eq(routeCards.itemId, itemId),
-              isNull(routeCards.deletedAt),
-            ),
-          )
-          .limit(1);
-        if (!anyForItem[0]) {
-          throw new ValidationError(
-            `No Route Card for item ${itemLabel}. Create the Route Card first.`,
-          );
-        }
-        throw new NotFoundError('Route Card not found or no longer active. Pick it again.');
-      }
-      if (rc.itemId !== itemId) {
-        throw new ValidationError(`Route Card ${rc.code} is not for item ${itemLabel}.`);
-      }
-      // Drawing Rev register (owner 2026-10-31) — one card per Item + Rev: the
-      // card must be the one for the PLAN's Rev. Inside the plan lock, card
-      // read FOR SHARE above (§20.3).
-      await assertRouteCardMatchesPlanRev(tx, companyId, {
-        itemId,
-        itemLabel,
-        planItemRevisionId: plan.itemRevisionId ?? null,
-        card: rc,
-      });
-      // ADR-253 — only an APPROVED Route Card may raise a Production Order. A
-      // Pending Approval / Rejected card is refused with a 409 naming it.
-      assertRouteCardUsable(rc);
-
-      const rcOps = await tx
-        .select()
-        .from(routeCardOps)
-        .where(and(eq(routeCardOps.routeCardId, rc.id), isNull(routeCardOps.deletedAt)))
-        .orderBy(asc(routeCardOps.opSeq));
-      if (rcOps.length === 0) {
-        throw new ValidationError(
-          `Route Card ${rc.code} has no operations. Add them on the Route Card first.`,
-        );
-      }
-      // Same routing rule Execute applies to a plan's ops: a QC op may not sit
-      // directly after an outsource op.
-      assertNoQcDirectlyAfterOutsource(rcOps);
-
-      // The route card decides HOW the item is made (`route_cards.plan_type`,
-      // migration 0123) — the plan only carries a copy. Re-stamp the plan from
-      // the card now, so the plan and the Job Card built from it agree with the
-      // card as it stands today, not as it stood when the plan was typed.
-      await tx
-        .update(plans)
-        .set({ planType: rc.planType, updatedAt: new Date(), updatedBy: user.id })
-        .where(eq(plans.id, plan.id));
-
-      if (rc.planType === 'direct_purchase') {
-        // A bought item has nothing to produce. What (if anything) a Production
-        // Order should do for it is still the user's call; until then the branch
-        // refuses in plain words rather than building a Job Card with no work.
-        throw new ValidationError(`Item ${itemLabel} is a Buy item — no Production Order.`);
-      }
-      if (rc.planType === 'full_outsource' && !rcOps.some((op) => op.opType === 'outsource')) {
-        // A full-outsource card is built by the same steps (the builder raises
-        // the IN-JWPR for each outsource op and adds no terminal QC, since the
-        // OSP return is inspected at Incoming QC) — but only if there IS an
-        // outsource op to raise it for.
-        throw new ValidationError(
-          'This Route Card is Full Outsource but has no OSP operation. Add one.',
-        );
-      }
-
-      // route_card_ops → the builder's op shape. Same field mapping as
-      // plans/service getDefaultRouteOpsForItem (osp_vendor_* → outsource_vendor_*,
-      // cost 0), kept as stored text so nothing is re-rounded.
-      const ops: JcBuildOp[] = rcOps.map((op) => ({
-        opSeq: op.opSeq,
-        machineId: op.machineId,
-        machineCodeText: op.machineCodeText,
-        operation: op.operation,
-        opType: op.opType,
-        cycleTimeMin: op.cycleTimeMin,
-        program: op.program,
-        toolNo: op.toolNo,
-        toolDetails: op.toolDetails,
-        qcRequired: op.qcRequired,
-        outsourceVendorId: op.ospVendorId,
-        outsourceVendorText: op.ospVendorCodeText,
-        outsourceCost: '0',
-      }));
-
-      // Build the Job Card by exactly the steps Execute uses (JC row, ops copied,
-      // default terminal QC, OSP PRs) — with the target date as the JC's due
-      // date and NO route-card write-back (the card is the source here).
-      const built = await buildJobCardFromOps(tx, {
-        plan: { ...plan, itemId },
-        ops,
-        user,
-        companyId,
-        dueDate: input.targetDate,
-        // ADR-182: the card is built for THIS order's qty, not for the whole
-        // plan — 20 of a 50 plan makes a 20-piece Job Card.
-        orderQty: input.orderQty,
-        actualSize,
-      });
-      const jc = built.jc;
-
-      // ADR-182 — the plan only leaves 'planned' once it is FULLY covered.
-      // `createProductionOrder` refuses a plan that is not 'planned', so
-      // stamping 'jc_created' on the first of several orders would lock the
-      // plan out of the very batching this ADR adds. Pending 0 means nothing
-      // more can be raised, so the old label is correct again there.
-      await tx
-        .update(plans)
-        .set({
-          ...(coverage.pendingQty === 0 ? { planStatus: 'jc_created' as const } : {}),
-          jcId: jc.id,
-          updatedAt: new Date(),
-          updatedBy: user.id,
-        })
-        .where(eq(plans.id, plan.id));
-
-      const code = await nextProductionOrderCode(tx, companyId);
-      const inserted = await tx
-        .insert(productionOrders)
-        .values({
-          companyId,
-          code,
-          status: 'open',
-          planId: plan.id,
-          planCodeText: plan.code,
-          soCodeText: plan.soCodeText,
-          lineNo: plan.lineNo,
-          itemId,
-          itemCodeText: itemLabel,
-          itemNameText: plan.itemNameText,
-          // Drawing Rev register — the order is for the plan's Item + Rev.
-          itemRevisionId: plan.itemRevisionId ?? null,
-          routeCardId: rc.id,
-          routeCardCodeText: rc.code,
-          routeCardRevision: rc.currentRevision,
-          jobCardId: jc.id,
-          jcCodeText: jc.code,
-          orderQty: input.orderQty,
-          targetDate: input.targetDate,
-          rawMaterialAvailable: true,
-          actualSize,
-          remarks: input.remarks ?? null,
-          createdBy: user.id,
-          updatedBy: user.id,
-        })
-        .returning({ id: productionOrders.id });
-      const po = inserted[0]!;
-
-      // The JC was inserted before the PO row existed, so the back-link — the
-      // OFF switch the stock cascades read — is set now.
-      await tx
-        .update(jobCards)
-        .set({ productionOrderId: po.id, updatedBy: user.id })
-        .where(eq(jobCards.id, jc.id));
-      // ADR-282 — this Job Card is built on the card and Rev the order snapshots
-      // (read FOR SHARE above, inside the plan lock).
-      await recordRouteCardOutcome(
-        tx,
-        jc.id,
-        {
-          routeCardId: rc.id,
-          routeCardCode: rc.code,
-          routeCardRevision: rc.currentRevision,
-          created: false,
-        },
-        { companyId, itemId, itemRevisionId: plan.itemRevisionId ?? null, userId: user.id },
-      );
-
-      await emitActivityLog(
-        tx,
-        {
-          action: ActivityAction.Create,
-          entity: 'ProductionOrder',
-          entityId: po.id,
-          qty: input.orderQty,
-          detail:
-            `${code} — ${plan.code} + ${rc.code} (Rev ${rc.currentRevision}) → JC ${jc.code}, ` +
-            `${ops.length} ops, Order Qty ${input.orderQty} ` +
-            `(plan ${plan.planQty}, covered ${coverage.coveredQty}, pending ${coverage.pendingQty})` +
-            (built.raisedPrCodes.length > 0 ? ` + OSP PR ${built.raisedPrCodes.join(', ')}` : ''),
-          refId: code,
-        },
-        companyId,
-        user,
-      );
-
-      return readDetailInTx(tx, po.id, companyId);
-    }),
+    withUserContext(user, (tx) => createProductionOrderTx(tx, input, user, companyId, actualSize)),
   );
+}
+
+/**
+ * The body of createProductionOrder inside a caller's transaction (ADR-291:
+ * the ECR implement builds the new-Rev order in its own transaction). The
+ * caller has done the access check and the Raw Material Available rule.
+ */
+export async function createProductionOrderTx(
+  tx: DbTransaction,
+  input: CreateProductionOrderInput,
+  user: AuthContext,
+  companyId: string,
+  actualSize: string | null,
+): Promise<ProductionOrderDetail> {
+  // Row-lock the plan: two clicks on Create must not both read the same
+  // "covered" figure and each build a Job Card for the whole Pending qty.
+  // The second waits, re-reads the SUM below, and is refused if its qty no
+  // longer fits (ADR-182 — the unique index on plan_id is gone, this lock
+  // IS the cap's safety).
+  const planRows = await tx
+    .select()
+    .from(plans)
+    .where(and(eq(plans.id, input.planId), eq(plans.companyId, companyId), isNull(plans.deletedAt)))
+    .limit(1)
+    .for('update');
+  const plan = planRows[0];
+  if (!plan) throw new NotFoundError('Plan not found. Refresh the page.');
+  // ADR-290 Step 3 — a PRO only on a released (or old, unverified) Rev,
+  // checked inside the plan lock.
+  await assertRevReleasedForWork(tx, companyId, plan.itemRevisionId ?? null);
+
+  if (plan.opsSource !== 'route_card') {
+    throw new ValidationError(
+      `Plan ${plan.code} cannot make a Production Order. Use Execute on the plan.`,
+    );
+  }
+  // ADR-196 — a plan whose SO line was closed short makes no new order.
+  // FOR SHARE on the line: the SO Close locks it FOR UPDATE before it
+  // looks for running orders, so the two cannot both pass.
+  if (plan.soLineId) {
+    const sc = (await tx.execute(sql`
+      SELECT sol.line_no AS "lineNo", so.code AS "soCode",
+             sol.short_closed_at IS NOT NULL AS "shortClosed"
+      FROM public.sales_order_lines sol
+      JOIN public.sales_orders so ON so.id = sol.sales_order_id
+      WHERE sol.id = ${plan.soLineId}::uuid
+      FOR SHARE OF sol
+    `)) as unknown as Array<{ lineNo: number; soCode: string; shortClosed: boolean }>;
+    if (sc[0]?.shortClosed) {
+      throw new ValidationError(
+        `${sc[0].soCode} line ${sc[0].lineNo} was closed short — plan ${plan.code} makes no new Production Order.`,
+      );
+    }
+  }
+  // ADR-235 — a JWSO plan: lock its JW line (plan → line, as Execute does;
+  // the JWSO cancel never locks plans) and refuse a cancelled / closed line.
+  if (plan.jwLineId) {
+    assertJwLineOpenForWork(
+      await lockJwLine(tx, companyId, plan.jwLineId),
+      'make a Production Order',
+    );
+  }
+  // ADR-182 — the qty cap, read INSIDE the plan's row lock above so two
+  // concurrent creates can never both fit. ADR-184 — Covered is the ONE
+  // definition in lib/plan-order-coverage.ts: an open / partly closed order
+  // covers its Order Qty, a closed or short-closed one only what it
+  // credited, so the pieces a stopped order did not deliver are Pending.
+  //
+  // Checked BEFORE the plan-status guard below on purpose: a fully-covered
+  // plan is stamped 'jc_created' the moment its last order is created (see
+  // the write below), so for that exact plan the status guard would fire
+  // first and show the user an internal status name instead of the plain
+  // "fully covered" sentence this cap exists to give them. Every other
+  // refusal is unaffected — if the qty still fits, capError is null and the
+  // status guard fires next exactly as before.
+  const { coveredQty: covered } = await readPlanOrderCoverage(tx, plan.id);
+  const capError = productionOrderCapError(plan.code, plan.planQty, covered, input.orderQty);
+  if (capError) throw new ValidationError(capError);
+  const coverage = planCoverage(plan.planQty, covered + input.orderQty);
+
+  if (plan.planStatus !== 'planned') {
+    throw new ValidationError(
+      `Plan ${plan.code} is ${labelOf(PLAN_STATUS_LABEL, plan.planStatus)}. Only a Planned plan can make a Production Order.`,
+    );
+  }
+
+  // §6 rule 1 — the SERVER half of a rule the browser already enforces.
+  // The PLAN is the only source of raw material for this order: the order
+  // and its Job Card copy the Grade and Size off the plan, never off the
+  // route card (0106), so a plan naming neither makes a material-less Job
+  // Card and the "Raw Material Available" tick above confirms nothing. The
+  // screen refuses it (web production-orders/routes/new.tsx) but the
+  // browser is never the rule — an API caller walked straight past it.
+  // Read off the row already locked above, not a second query. Same
+  // sentence both sides so the two can never disagree.
+  const planHasRmGrade = Boolean(plan.rawMaterialGradeText?.trim() || plan.rawMaterialGradeId);
+  const planHasRmSize = Boolean(plan.rawMaterialSizeText?.trim() || plan.rawMaterialSizeId);
+  // ADR-225 phase 4 — a plan raised from a Multi-Level Plan node that has
+  // live children is a SUB-ASSEMBLY (or the top assembly): its material is
+  // its child parts, issued against its Job Card, not a raw-material bar.
+  // Only asked when the plan has no RM, so every other plan is untouched.
+  // Owner 2026-10-24: a JWSO-line plan needs no RM either — the customer
+  // supplies the material, so a Route Card without RM must not block it.
+  // The "Raw Material Available" tick above stays compulsory for it.
+  if (
+    !planHasRmGrade &&
+    !planHasRmSize &&
+    !plan.jwLineId &&
+    !(await planIsMlAssembly(tx, companyId, plan.id))
+  ) {
+    throw new ValidationError(
+      // ADR-218: the plan screens no longer set material, so name the two
+      // places that do and the re-save that pulls it through.
+      "This plan has no raw material — fill RM Grade and RM Size on the item's Route Card (or on its BOM line), then open the plan and save it again.",
+    );
+  }
+
+  if (!plan.itemId) {
+    throw new ValidationError(
+      `Plan ${plan.code} has no master item — pick the item from Item Master on the plan first`,
+    );
+  }
+  const itemId = plan.itemId;
+  // ADR-292 — Drawing Rev strict switch: a MAKE item needs a Rev.
+  await assertMakeItemHasRev(tx, companyId, itemId, plan.itemRevisionId ?? null);
+  // The Item Master's code, never the internal id. item_code_text is NOT NULL.
+  const itemLabel = (await itemCodeFor(tx, itemId)) ?? plan.itemCodeText;
+  if (!itemLabel) {
+    throw new ValidationError(
+      `Plan ${plan.code} has no Item Code — pick the item from Item Master on the plan first`,
+    );
+  }
+
+  // Route card: must be THE active card of the plan's item, with at least
+  // one live operation. "No route card, no way forward."
+  const rcRows = await tx
+    .select({
+      id: routeCards.id,
+      code: routeCards.code,
+      itemId: routeCards.itemId,
+      currentRevision: routeCards.currentRevision,
+      planType: routeCards.planType,
+      approvalStatus: routeCards.approvalStatus,
+      itemRevisionId: routeCards.itemRevisionId,
+    })
+    .from(routeCards)
+    .where(
+      and(
+        eq(routeCards.id, input.routeCardId),
+        eq(routeCards.companyId, companyId),
+        isNull(routeCards.deletedAt),
+      ),
+    )
+    .limit(1)
+    // ADR-253 / §20.3 — FOR SHARE so an Approve / Reject / edit-back-to-
+    // Pending of this card waits for this create to finish, and the
+    // approval status checked below is still the status when the order is
+    // inserted. Lock order stays plans → route_cards (plan locked above),
+    // the same order executePlan and updateRouteCard use.
+    .for('share');
+  const rc = rcRows[0];
+  if (!rc) {
+    // Say whether the ITEM has a card at all, so the message tells the user
+    // what to do next rather than only that the id was wrong.
+    const anyForItem = await tx
+      .select({ id: routeCards.id })
+      .from(routeCards)
+      .where(
+        and(
+          eq(routeCards.companyId, companyId),
+          eq(routeCards.itemId, itemId),
+          isNull(routeCards.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (!anyForItem[0]) {
+      throw new ValidationError(
+        `No Route Card for item ${itemLabel}. Create the Route Card first.`,
+      );
+    }
+    throw new NotFoundError('Route Card not found or no longer active. Pick it again.');
+  }
+  if (rc.itemId !== itemId) {
+    throw new ValidationError(`Route Card ${rc.code} is not for item ${itemLabel}.`);
+  }
+  // Drawing Rev register (owner 2026-10-31) — one card per Item + Rev: the
+  // card must be the one for the PLAN's Rev. Inside the plan lock, card
+  // read FOR SHARE above (§20.3).
+  await assertRouteCardMatchesPlanRev(tx, companyId, {
+    itemId,
+    itemLabel,
+    planItemRevisionId: plan.itemRevisionId ?? null,
+    card: rc,
+  });
+  // ADR-253 — only an APPROVED Route Card may raise a Production Order. A
+  // Pending Approval / Rejected card is refused with a 409 naming it.
+  assertRouteCardUsable(rc);
+
+  const rcOps = await tx
+    .select()
+    .from(routeCardOps)
+    .where(and(eq(routeCardOps.routeCardId, rc.id), isNull(routeCardOps.deletedAt)))
+    .orderBy(asc(routeCardOps.opSeq));
+  if (rcOps.length === 0) {
+    throw new ValidationError(
+      `Route Card ${rc.code} has no operations. Add them on the Route Card first.`,
+    );
+  }
+  // Same routing rule Execute applies to a plan's ops: a QC op may not sit
+  // directly after an outsource op.
+  assertNoQcDirectlyAfterOutsource(rcOps);
+
+  // The route card decides HOW the item is made (`route_cards.plan_type`,
+  // migration 0123) — the plan only carries a copy. Re-stamp the plan from
+  // the card now, so the plan and the Job Card built from it agree with the
+  // card as it stands today, not as it stood when the plan was typed.
+  await tx
+    .update(plans)
+    .set({ planType: rc.planType, updatedAt: new Date(), updatedBy: user.id })
+    .where(eq(plans.id, plan.id));
+
+  if (rc.planType === 'direct_purchase') {
+    // A bought item has nothing to produce. What (if anything) a Production
+    // Order should do for it is still the user's call; until then the branch
+    // refuses in plain words rather than building a Job Card with no work.
+    throw new ValidationError(`Item ${itemLabel} is a Buy item — no Production Order.`);
+  }
+  if (rc.planType === 'full_outsource' && !rcOps.some((op) => op.opType === 'outsource')) {
+    // A full-outsource card is built by the same steps (the builder raises
+    // the IN-JWPR for each outsource op and adds no terminal QC, since the
+    // OSP return is inspected at Incoming QC) — but only if there IS an
+    // outsource op to raise it for.
+    throw new ValidationError(
+      'This Route Card is Full Outsource but has no OSP operation. Add one.',
+    );
+  }
+
+  // route_card_ops → the builder's op shape. Same field mapping as
+  // plans/service getDefaultRouteOpsForItem (osp_vendor_* → outsource_vendor_*,
+  // cost 0), kept as stored text so nothing is re-rounded.
+  const ops: JcBuildOp[] = rcOps.map((op) => ({
+    opSeq: op.opSeq,
+    machineId: op.machineId,
+    machineCodeText: op.machineCodeText,
+    operation: op.operation,
+    opType: op.opType,
+    cycleTimeMin: op.cycleTimeMin,
+    program: op.program,
+    toolNo: op.toolNo,
+    toolDetails: op.toolDetails,
+    qcRequired: op.qcRequired,
+    outsourceVendorId: op.ospVendorId,
+    outsourceVendorText: op.ospVendorCodeText,
+    outsourceCost: '0',
+  }));
+
+  // Build the Job Card by exactly the steps Execute uses (JC row, ops copied,
+  // default terminal QC, OSP PRs) — with the target date as the JC's due
+  // date and NO route-card write-back (the card is the source here).
+  const built = await buildJobCardFromOps(tx, {
+    plan: { ...plan, itemId },
+    ops,
+    user,
+    companyId,
+    dueDate: input.targetDate,
+    // ADR-182: the card is built for THIS order's qty, not for the whole
+    // plan — 20 of a 50 plan makes a 20-piece Job Card.
+    orderQty: input.orderQty,
+    actualSize,
+  });
+  const jc = built.jc;
+
+  // ADR-182 — the plan only leaves 'planned' once it is FULLY covered.
+  // `createProductionOrder` refuses a plan that is not 'planned', so
+  // stamping 'jc_created' on the first of several orders would lock the
+  // plan out of the very batching this ADR adds. Pending 0 means nothing
+  // more can be raised, so the old label is correct again there.
+  await tx
+    .update(plans)
+    .set({
+      ...(coverage.pendingQty === 0 ? { planStatus: 'jc_created' as const } : {}),
+      jcId: jc.id,
+      updatedAt: new Date(),
+      updatedBy: user.id,
+    })
+    .where(eq(plans.id, plan.id));
+
+  const code = await nextProductionOrderCode(tx, companyId);
+  const inserted = await tx
+    .insert(productionOrders)
+    .values({
+      companyId,
+      code,
+      status: 'open',
+      planId: plan.id,
+      planCodeText: plan.code,
+      soCodeText: plan.soCodeText,
+      lineNo: plan.lineNo,
+      itemId,
+      itemCodeText: itemLabel,
+      itemNameText: plan.itemNameText,
+      // Drawing Rev register — the order is for the plan's Item + Rev.
+      itemRevisionId: plan.itemRevisionId ?? null,
+      routeCardId: rc.id,
+      routeCardCodeText: rc.code,
+      routeCardRevision: rc.currentRevision,
+      jobCardId: jc.id,
+      jcCodeText: jc.code,
+      orderQty: input.orderQty,
+      targetDate: input.targetDate,
+      rawMaterialAvailable: true,
+      actualSize,
+      remarks: input.remarks ?? null,
+      createdBy: user.id,
+      updatedBy: user.id,
+    })
+    .returning({ id: productionOrders.id });
+  const po = inserted[0]!;
+
+  // The JC was inserted before the PO row existed, so the back-link — the
+  // OFF switch the stock cascades read — is set now.
+  await tx
+    .update(jobCards)
+    .set({ productionOrderId: po.id, updatedBy: user.id })
+    .where(eq(jobCards.id, jc.id));
+  // ADR-282 — this Job Card is built on the card and Rev the order snapshots
+  // (read FOR SHARE above, inside the plan lock).
+  await recordRouteCardOutcome(
+    tx,
+    jc.id,
+    {
+      routeCardId: rc.id,
+      routeCardCode: rc.code,
+      routeCardRevision: rc.currentRevision,
+      created: false,
+    },
+    { companyId, itemId, itemRevisionId: plan.itemRevisionId ?? null, userId: user.id },
+  );
+
+  await emitActivityLog(
+    tx,
+    {
+      action: ActivityAction.Create,
+      entity: 'ProductionOrder',
+      entityId: po.id,
+      qty: input.orderQty,
+      detail:
+        `${code} — ${plan.code} + ${rc.code} (Rev ${rc.currentRevision}) → JC ${jc.code}, ` +
+        `${ops.length} ops, Order Qty ${input.orderQty} ` +
+        `(plan ${plan.planQty}, covered ${coverage.coveredQty}, pending ${coverage.pendingQty})` +
+        (built.raisedPrCodes.length > 0 ? ` + OSP PR ${built.raisedPrCodes.join(', ')}` : ''),
+      refId: code,
+    },
+    companyId,
+    user,
+  );
+
+  return readDetailInTx(tx, po.id, companyId);
 }
 
 // ─── Close: credit stock as pieces finish (partial close, ADR-179) ─────────
@@ -1821,9 +1835,8 @@ async function autoReserveClosedStock(
   // thing that fails — it books what it can and no more.
   const free = (await readStockPosition(tx, args.companyId, args.itemId)).availableQty;
   // …and by what is free in the Rev bucket the close just credited.
-  const bucketFree = (
-    await readStockPosition(tx, args.companyId, args.itemId, args.itemRevisionId)
-  ).availableQty;
+  const bucketFree = (await readStockPosition(tx, args.companyId, args.itemId, args.itemRevisionId))
+    .availableQty;
   const qty = Math.min(args.qty, need, free, bucketFree);
   if (qty <= 0) return null;
 
@@ -2282,12 +2295,12 @@ export async function reverseProductionOrderClose(
     // Drawing Rev Phase C — take the pieces back out of the SAME bucket the
     // close credited (its own ledger row; a pre-0233 close = blank bucket).
     const creditRev = close.storeTxnId
-      ? (
+      ? ((
           (await tx.execute(sql`
             SELECT item_revision_id AS rev FROM public.store_transactions
              WHERE id = ${close.storeTxnId}::uuid
           `)) as unknown as Array<{ rev: string | null }>
-        )[0]?.rev ?? null
+        )[0]?.rev ?? null)
       : null;
     const storeTxnId = await writeCloseStockTxn(tx, {
       companyId,
@@ -2613,182 +2626,195 @@ export async function shortCloseProductionOrder(
   if (reasonError) throw new ValidationError(reasonError);
 
   return withUserContext(user, async (tx) => {
-    // Lock the order so a short close and a concurrent close cannot both win.
-    const locked = await tx
-      .select({
-        id: productionOrders.id,
-        code: productionOrders.code,
-        status: productionOrders.status,
-        orderQty: productionOrders.orderQty,
-        creditedQty: productionOrders.creditedQty,
-        lostQty: productionOrders.lostQty,
-        jobCardId: productionOrders.jobCardId,
-        jcCodeText: productionOrders.jcCodeText,
-        planId: productionOrders.planId,
-        planCodeText: productionOrders.planCodeText,
-      })
-      .from(productionOrders)
-      .where(
-        and(
-          eq(productionOrders.id, id),
-          eq(productionOrders.companyId, companyId),
-          isNull(productionOrders.deletedAt),
-        ),
-      )
-      .limit(1)
-      .for('update');
-    const po = locked[0];
-    if (!po) throw new NotFoundError('Production Order not found. Refresh the page.');
-    // ADR-235 — no short close while a Cancel Request waits on the order.
-    await assertNoPendingCancel(tx, 'production_order', id);
-    if (po.status === 'short_closed') {
-      throw new ConflictError(`Production Order ${po.code} is already short closed`);
-    }
-
-    const credited = po.creditedQty ?? 0;
-    // ADR-233 (G9) — a fully received order has nothing short to stop.
-    if (po.status === 'closed' && credited >= po.orderQty) {
-      throw new ConflictError(
-        `${po.code} is fully received into stock (${credited} of ${po.orderQty}) — nothing is short.`,
-      );
-    }
-    // Short Closed Qty before and after, by the shared rule (ADR-233).
-    const shortBefore = productionOrderShortClosedQty({
-      status: po.status as ProductionOrderStatus,
-      orderQty: po.orderQty,
-      creditedQty: po.creditedQty,
-    });
-    const shortAfter = productionOrderShortClosedQty({
-      status: 'short_closed',
-      orderQty: po.orderQty,
-      creditedQty: po.creditedQty,
-    });
-
-    // ADR-184 review — finished pieces that were never credited would be
-    // stranded for good: short close freezes the Job Card, caps dispatch at the
-    // credited qty and gives the rest back to the plan as Pending, so a remake
-    // would make them twice. Credit them first (an ordinary close), then stop.
-    const finishedRows = (await tx.execute(sql`
-      SELECT ${lastOpFinishedQtySql(sql`${po.jobCardId}::uuid`)} AS finished
-    `)) as unknown as Array<{ finished: number | null }>;
-    const finished = Math.max(0, Number(finishedRows[0]?.finished ?? 0));
-    if (finished > credited) {
-      throw new ConflictError(
-        `${po.code}: ${finished - credited} finished piece(s) on ${po.jcCodeText ?? 'the Job Card'} are not yet received into stock ` +
-          `(${finished} finished, ${credited} Stock Received). Close them first, then Short Close.`,
-      );
-    }
-
-    const lossRows = (await tx.execute(sql`
-      SELECT ROUND(${lossSql(sql`nc.job_card_id = ${po.jobCardId}::uuid`)})::int AS loss
-    `)) as unknown as Array<{ loss: number | null }>;
-    const ncLoss = Math.max(0, Number(lossRows[0]?.loss ?? 0));
-    const lost =
-      po.status === 'closed' && po.lostQty !== null
-        ? po.lostQty
-        : Math.min(ncLoss, Math.max(0, po.orderQty - credited));
-
-    const now = new Date();
-    const shift = await shiftPlanPending(
-      tx,
-      { planId: po.planId, companyId, poCode: po.code, how: 'short close', user },
-      async () => {
-        // §20.2 — conditional on the status read under the lock above.
-        const written = await tx
-          .update(productionOrders)
-          .set({
-            status: 'short_closed',
-            shortClosedAt: now,
-            shortClosedBy: user.id,
-            shortCloseReason: reason,
-            lostQty: lost,
-            updatedAt: now,
-            updatedBy: user.id,
-          })
-          .where(and(eq(productionOrders.id, id), eq(productionOrders.status, po.status)))
-          .returning({ id: productionOrders.id });
-        if (written.length === 0) throw statusChangedError(po.code);
-      },
-    );
-
-    // plans.jc_id points at "the plan's Job Card" and is what the plan screen
-    // links to. Re-point it at the newest LIVE order's card so it stops
-    // opening the frozen one; if the stopped order was the only one, leave it
-    // alone (the card still exists and is still the plan's history).
-    if (shift) {
-      const liveJc = (await tx.execute(sql`
-        SELECT po.job_card_id AS job_card_id
-        FROM public.production_orders po
-        WHERE po.plan_id = ${po.planId}::uuid
-          AND po.deleted_at IS NULL
-          AND po.status <> 'short_closed'
-        ORDER BY po.created_at DESC, po.code DESC
-        LIMIT 1
-      `)) as unknown as Array<{ job_card_id: string | null }>;
-      const newJcId = liveJc[0]?.job_card_id ?? null;
-      if (newJcId) {
-        await tx
-          .update(plans)
-          .set({ jcId: newJcId, updatedAt: now, updatedBy: user.id })
-          .where(and(eq(plans.id, po.planId), eq(plans.jcId, po.jobCardId)));
-      }
-    }
-
-    // ADR-184 — the order is final, so its card and every rework / repair
-    // descendant still open is closed now. One already closed keeps its time.
-    const closedJcs = (await tx.execute(sql`
-      ${jobCardDescendantsCte(po.jobCardId)}
-      UPDATE public.job_cards j
-         SET closed_at = ${now.toISOString()}::timestamptz,
-             updated_at = ${now.toISOString()}::timestamptz,
-             updated_by = ${user.id}::uuid
-       WHERE j.id IN (SELECT jc_tree.id FROM jc_tree)
-         AND j.company_id = ${companyId}::uuid
-         AND j.closed_at IS NULL
-      RETURNING j.code
-    `)) as unknown as Array<{ code: string }>;
-
-    const planCode = shift?.planCode ?? po.planCodeText;
-    // "returned" is read off the data (Pending after − before), so the log can
-    // never disagree with what the plan now shows.
-    const returned = shift ? shift.pendingAfter - shift.pendingBefore : 0;
-    await emitActivityLog(
-      tx,
-      {
-        action: ActivityAction.CloseShort,
-        entity: 'ProductionOrder',
-        entityId: id,
-        qty: lost,
-        reason,
-        changes: [
-          {
-            field: 'status',
-            label: 'Production Order Status',
-            before: labelOf(PRODUCTION_ORDER_STATUS_LABEL, po.status),
-            after: PRODUCTION_ORDER_STATUS_LABEL.short_closed,
-          },
-          { field: 'lostQty', label: 'Lost Qty', before: po.lostQty ?? null, after: lost },
-          // ADR-233 — the pieces this stop leaves short (Order − Stock Received).
-          {
-            field: 'shortClosedQty',
-            label: 'Short Closed Qty',
-            before: shortBefore,
-            after: shortAfter,
-          },
-        ],
-        detail:
-          `${po.code} Short Closed — JC ${po.jcCodeText}: Stock Received ${credited} of ${po.orderQty}, ` +
-          `Short Closed Qty ${shortAfter}, lost ${lost}, returned ${returned} to plan ${planCode}` +
-          (shift ? ` (Pending ${shift.pendingBefore} → ${shift.pendingAfter})` : '') +
-          (shift?.reopened ? ', plan re-opened for a new Production Order' : '') +
-          (closedJcs.length > 0 ? `; closed JC ${closedJcs.map((r) => r.code).join(', ')}` : '') +
-          `. Reason: ${reason}`,
-        refId: po.code,
-      },
-      companyId,
-      user,
-    );
-
+    await shortCloseProductionOrderTx(tx, id, reason, user, companyId);
     return readDetailInTx(tx, id, companyId);
   });
+}
+
+/** The in-transaction body of shortCloseProductionOrder — THE one writer of a
+ *  short close (§20.1). Also called by ECR implement (ADR-291) to stop an
+ *  untouched order whose every piece moves to the new Drawing Rev. The caller
+ *  has checked the rights and the reason. */
+export async function shortCloseProductionOrderTx(
+  tx: DbTransaction,
+  id: string,
+  reason: string,
+  user: AuthContext,
+  companyId: string,
+): Promise<void> {
+  // Lock the order so a short close and a concurrent close cannot both win.
+  const locked = await tx
+    .select({
+      id: productionOrders.id,
+      code: productionOrders.code,
+      status: productionOrders.status,
+      orderQty: productionOrders.orderQty,
+      creditedQty: productionOrders.creditedQty,
+      lostQty: productionOrders.lostQty,
+      jobCardId: productionOrders.jobCardId,
+      jcCodeText: productionOrders.jcCodeText,
+      planId: productionOrders.planId,
+      planCodeText: productionOrders.planCodeText,
+    })
+    .from(productionOrders)
+    .where(
+      and(
+        eq(productionOrders.id, id),
+        eq(productionOrders.companyId, companyId),
+        isNull(productionOrders.deletedAt),
+      ),
+    )
+    .limit(1)
+    .for('update');
+  const po = locked[0];
+  if (!po) throw new NotFoundError('Production Order not found. Refresh the page.');
+  // ADR-235 — no short close while a Cancel Request waits on the order.
+  await assertNoPendingCancel(tx, 'production_order', id);
+  if (po.status === 'short_closed') {
+    throw new ConflictError(`Production Order ${po.code} is already short closed`);
+  }
+
+  const credited = po.creditedQty ?? 0;
+  // ADR-233 (G9) — a fully received order has nothing short to stop.
+  if (po.status === 'closed' && credited >= po.orderQty) {
+    throw new ConflictError(
+      `${po.code} is fully received into stock (${credited} of ${po.orderQty}) — nothing is short.`,
+    );
+  }
+  // Short Closed Qty before and after, by the shared rule (ADR-233).
+  const shortBefore = productionOrderShortClosedQty({
+    status: po.status as ProductionOrderStatus,
+    orderQty: po.orderQty,
+    creditedQty: po.creditedQty,
+  });
+  const shortAfter = productionOrderShortClosedQty({
+    status: 'short_closed',
+    orderQty: po.orderQty,
+    creditedQty: po.creditedQty,
+  });
+
+  // ADR-184 review — finished pieces that were never credited would be
+  // stranded for good: short close freezes the Job Card, caps dispatch at the
+  // credited qty and gives the rest back to the plan as Pending, so a remake
+  // would make them twice. Credit them first (an ordinary close), then stop.
+  const finishedRows = (await tx.execute(sql`
+    SELECT ${lastOpFinishedQtySql(sql`${po.jobCardId}::uuid`)} AS finished
+  `)) as unknown as Array<{ finished: number | null }>;
+  const finished = Math.max(0, Number(finishedRows[0]?.finished ?? 0));
+  if (finished > credited) {
+    throw new ConflictError(
+      `${po.code}: ${finished - credited} finished piece(s) on ${po.jcCodeText ?? 'the Job Card'} are not yet received into stock ` +
+        `(${finished} finished, ${credited} Stock Received). Close them first, then Short Close.`,
+    );
+  }
+
+  const lossRows = (await tx.execute(sql`
+    SELECT ROUND(${lossSql(sql`nc.job_card_id = ${po.jobCardId}::uuid`)})::int AS loss
+  `)) as unknown as Array<{ loss: number | null }>;
+  const ncLoss = Math.max(0, Number(lossRows[0]?.loss ?? 0));
+  const lost =
+    po.status === 'closed' && po.lostQty !== null
+      ? po.lostQty
+      : Math.min(ncLoss, Math.max(0, po.orderQty - credited));
+
+  const now = new Date();
+  const shift = await shiftPlanPending(
+    tx,
+    { planId: po.planId, companyId, poCode: po.code, how: 'short close', user },
+    async () => {
+      // §20.2 — conditional on the status read under the lock above.
+      const written = await tx
+        .update(productionOrders)
+        .set({
+          status: 'short_closed',
+          shortClosedAt: now,
+          shortClosedBy: user.id,
+          shortCloseReason: reason,
+          lostQty: lost,
+          updatedAt: now,
+          updatedBy: user.id,
+        })
+        .where(and(eq(productionOrders.id, id), eq(productionOrders.status, po.status)))
+        .returning({ id: productionOrders.id });
+      if (written.length === 0) throw statusChangedError(po.code);
+    },
+  );
+
+  // plans.jc_id points at "the plan's Job Card" and is what the plan screen
+  // links to. Re-point it at the newest LIVE order's card so it stops
+  // opening the frozen one; if the stopped order was the only one, leave it
+  // alone (the card still exists and is still the plan's history).
+  if (shift) {
+    const liveJc = (await tx.execute(sql`
+      SELECT po.job_card_id AS job_card_id
+      FROM public.production_orders po
+      WHERE po.plan_id = ${po.planId}::uuid
+        AND po.deleted_at IS NULL
+        AND po.status <> 'short_closed'
+      ORDER BY po.created_at DESC, po.code DESC
+      LIMIT 1
+    `)) as unknown as Array<{ job_card_id: string | null }>;
+    const newJcId = liveJc[0]?.job_card_id ?? null;
+    if (newJcId) {
+      await tx
+        .update(plans)
+        .set({ jcId: newJcId, updatedAt: now, updatedBy: user.id })
+        .where(and(eq(plans.id, po.planId), eq(plans.jcId, po.jobCardId)));
+    }
+  }
+
+  // ADR-184 — the order is final, so its card and every rework / repair
+  // descendant still open is closed now. One already closed keeps its time.
+  const closedJcs = (await tx.execute(sql`
+    ${jobCardDescendantsCte(po.jobCardId)}
+    UPDATE public.job_cards j
+       SET closed_at = ${now.toISOString()}::timestamptz,
+           updated_at = ${now.toISOString()}::timestamptz,
+           updated_by = ${user.id}::uuid
+     WHERE j.id IN (SELECT jc_tree.id FROM jc_tree)
+       AND j.company_id = ${companyId}::uuid
+       AND j.closed_at IS NULL
+    RETURNING j.code
+  `)) as unknown as Array<{ code: string }>;
+
+  const planCode = shift?.planCode ?? po.planCodeText;
+  // "returned" is read off the data (Pending after − before), so the log can
+  // never disagree with what the plan now shows.
+  const returned = shift ? shift.pendingAfter - shift.pendingBefore : 0;
+  await emitActivityLog(
+    tx,
+    {
+      action: ActivityAction.CloseShort,
+      entity: 'ProductionOrder',
+      entityId: id,
+      qty: lost,
+      reason,
+      changes: [
+        {
+          field: 'status',
+          label: 'Production Order Status',
+          before: labelOf(PRODUCTION_ORDER_STATUS_LABEL, po.status),
+          after: PRODUCTION_ORDER_STATUS_LABEL.short_closed,
+        },
+        { field: 'lostQty', label: 'Lost Qty', before: po.lostQty ?? null, after: lost },
+        // ADR-233 — the pieces this stop leaves short (Order − Stock Received).
+        {
+          field: 'shortClosedQty',
+          label: 'Short Closed Qty',
+          before: shortBefore,
+          after: shortAfter,
+        },
+      ],
+      detail:
+        `${po.code} Short Closed — JC ${po.jcCodeText}: Stock Received ${credited} of ${po.orderQty}, ` +
+        `Short Closed Qty ${shortAfter}, lost ${lost}, returned ${returned} to plan ${planCode}` +
+        (shift ? ` (Pending ${shift.pendingBefore} → ${shift.pendingAfter})` : '') +
+        (shift?.reopened ? ', plan re-opened for a new Production Order' : '') +
+        (closedJcs.length > 0 ? `; closed JC ${closedJcs.map((r) => r.code).join(', ')}` : '') +
+        `. Reason: ${reason}`,
+      refId: po.code,
+    },
+    companyId,
+    user,
+  );
 }

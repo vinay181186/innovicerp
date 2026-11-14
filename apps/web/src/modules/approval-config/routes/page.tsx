@@ -78,6 +78,7 @@ function ApprovalConfigPage(): React.JSX.Element {
       cfg.invoiceApproval !== draft.invoiceApproval ||
       cfg.opEntryEditApproval !== draft.opEntryEditApproval ||
       cfg.docEditApproval !== draft.docEditApproval ||
+      cfg.drawingRevStrict !== draft.drawingRevStrict ||
       cfg.poApprovers.join(',') !== draft.poApprovers.join(','));
 
   function toggleApprover(userId: string, role: UserRole): void {
@@ -289,6 +290,24 @@ function ApprovalConfigPage(): React.JSX.Element {
           <OnOffSwitch
             checked={draft.docEditApproval}
             onChange={(v) => setDraft({ ...draft, docEditApproval: v })}
+          />
+        </div>
+      </div>
+
+      {/* Drawing Rev strict (ADR-292) — read by the server when a Production
+          Order or Job Card is raised for a make item. Default off. */}
+      <div className="panel" style={{ padding: 'var(--sp-4)', marginBottom: 'var(--sp-3)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 700 }}>Drawing Rev strict</span>
+            <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
+              On: a Production Order or Job Card for a make item with no Drawing Rev is refused.
+              Turn on only after the Drawing Rev Fix List is clean.
+            </div>
+          </div>
+          <OnOffSwitch
+            checked={draft.drawingRevStrict}
+            onChange={(v) => setDraft({ ...draft, drawingRevStrict: v })}
           />
         </div>
       </div>

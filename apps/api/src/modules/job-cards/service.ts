@@ -49,6 +49,8 @@ import {
 } from '../../lib/errors';
 import { lockDocSeries } from '../../lib/doc-series-lock';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
+import { assertMakeItemHasRev } from '../../lib/drawing-rev-strict';
+import { readOpHolds } from '../../lib/jc-op-hold';
 import { assertRevReleasedForWork } from '../../lib/item-revision';
 import { editConflicts, rowChangedByName } from '../../lib/row-changed-by';
 import { assertProductionOrderNotShortClosed } from '../../lib/production-order-stop';
@@ -1240,7 +1242,19 @@ export async function getJobCardStatusExtras(
       WHERE o.job_card_id = ${id}::uuid AND ${opScope}
       ORDER BY o.op_seq
     `)) as unknown as Array<Record<string, unknown>>;
+    // ADR-291 — hold state per op (lib/jc-op-hold.ts is the one reader/writer).
+    const holds = await readOpHolds(
+      tx,
+      companyId,
+      opRows.map((o) => o['jcOpId'] as string),
+    );
     const opExtras: JobCardStatusOpExtra[] = opRows.map((o) => ({
+      ...(holds.get(o['jcOpId'] as string) ?? {
+        holdReason: null,
+        heldAt: null,
+        holdEcrCode: null,
+        holdEcrId: null,
+      }),
       jcOpId: o['jcOpId'] as string,
       machineName: (o['machineName'] as string | null) ?? null,
       toolDetails: (o['toolDetails'] as string | null) ?? null,
@@ -2187,6 +2201,8 @@ export async function createJobCard(
     );
     // ADR-290 Step 3 — a new Job Card only on a released (or old) Rev.
     await assertRevReleasedForWork(tx, companyId, itemRevisionId);
+    // ADR-292 — Drawing Rev strict switch: a MAKE item needs a Rev.
+    await assertMakeItemHasRev(tx, companyId, item.id, itemRevisionId);
     await assertNoDirectJcDrawing(tx, itemRevisionId, item.code, input.drawingFilePath, null);
 
     const code = await nextJcCode(tx, companyId);

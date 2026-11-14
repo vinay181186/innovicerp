@@ -30,6 +30,8 @@ import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { closeReplacementPoForNc } from '../purchase-orders/service';
 import { lockDocSeries } from '../../lib/doc-series-lock';
 import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
+import { assertRevReleasedForWork } from '../../lib/item-revision';
+import { lockAndAssertJcOpsWorkable } from '../../lib/jc-op-hold';
 import { assertProductionOrderNotShortClosed } from '../../lib/production-order-stop';
 import { assertRowUpdated } from '../../lib/row-lock';
 import { labelOf } from '../../lib/status-labels';
@@ -235,6 +237,9 @@ export async function createRecoveryJobCard(
   // ADR-182 — a stopped order spawns no rework / repair child: the pieces it
   // would recover belong to work that has been abandoned.
   await assertProductionOrderNotShortClosed(tx, parent.id);
+  // ADR-291 — the child is made on the parent's Rev; refused while that Rev is
+  // not released (the op hold itself is checked by disposeNcCascade).
+  await assertRevReleasedForWork(tx, nc.companyId, parent.itemRevisionId);
 
   const code = await nextRecoveryJcCode(tx, nc.companyId, parent.id, parent.code, kind);
   const label = kind === 'rework' ? 'Rework' : 'Repair';
@@ -488,6 +493,9 @@ async function reinjectIntoOriginOp(
   user: AuthContext,
 ): Promise<void> {
   if (accepted <= 0 || !nc.jcOpId) return;
+  // ADR-291 — the recovered pieces land back on the origin op: refused while it
+  // is on hold / its Rev is not released.
+  await lockAndAssertJcOpsWorkable(tx, nc.companyId, [nc.jcOpId]);
   await tx.insert(opLog).values({
     companyId: nc.companyId,
     jcOpId: nc.jcOpId,

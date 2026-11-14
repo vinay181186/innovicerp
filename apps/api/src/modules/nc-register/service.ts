@@ -10,6 +10,7 @@
 
 import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
 import { drawingRevOf } from '../../lib/drawing-rev';
+import { lockAndAssertJcOpsWorkable } from '../../lib/jc-op-hold';
 import {
   ActivityAction,
   type DocumentEditStagedResult,
@@ -1667,6 +1668,8 @@ export async function createNcRegister(
     await assertProductionOrderNotShortClosed(tx, input.jobCardId);
     await assertItemExists(tx, input.itemId, companyId);
     if (input.jcOpId) await assertJcOpExists(tx, input.jcOpId, companyId, input.jobCardId);
+    // ADR-291 — no qty is booked against an op on hold / on a not-released Rev.
+    if (input.jcOpId) await lockAndAssertJcOpsWorkable(tx, companyId, [input.jcOpId]);
 
     // Snapshot itemCodeText from the items row so the durable text matches the
     // master at creation time. Same pattern as legacy auto-NC capture.

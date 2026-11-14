@@ -27,12 +27,14 @@ export function pendingLineCards(
       if (l.revBuckets.length === 0) {
         return [{ id: nextId(), soLineId: l.salesOrderLineId, qty: cap > 0 ? String(cap) : '' }];
       }
-      // Phase C — one row per Drawing Rev bucket, filled in order until the
-      // line's cap is used up; the user moves pieces between Revs by hand.
-      let left = cap;
+      // Phase C — one row per Drawing Rev bucket. ADR-292: the dispatch no
+      // longer picks a Rev for the user. With ONE bucket there is nothing to
+      // choose and it is pre-filled; with two or more every row starts blank
+      // and the user types the qty against the Rev they ship (the server
+      // refuses a Rev that does not match the order without a substitution).
+      const single = l.revBuckets.length === 1;
       return l.revBuckets.map((b) => {
-        const take = Math.max(0, Math.min(left, b.readyQty));
-        left -= take;
+        const take = single ? Math.max(0, Math.min(cap, b.readyQty)) : 0;
         return {
           id: nextId(),
           soLineId: l.salesOrderLineId,

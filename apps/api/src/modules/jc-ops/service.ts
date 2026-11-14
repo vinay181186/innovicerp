@@ -11,11 +11,13 @@ import type {
   JcOpsBoardRow,
   ListJcOpsBoardQuery,
   ListJcOpsBoardResponse,
+  ReleaseHoldInput,
 } from '@innovic/shared';
 import { ActivityAction, opSrNo } from '@innovic/shared';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { requireFormAccess } from '../../lib/access';
+import { requireAnyFormAccess, requireFormAccess } from '../../lib/access';
 import { createdByNameSql } from '../../lib/created-by-sql';
+import { opHoldReasonSql, releaseOpHolds } from '../../lib/jc-op-hold';
 import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { describeMachineSplit, loadMachineSplit } from '../../lib/machine-split';
@@ -118,6 +120,8 @@ export async function listJcOpsBoard(
         jc.order_qty AS "jcOrderQty",
         op.op_seq AS "opSeq",
         op.operation,
+        -- ADR-291 — stored hold, else the Job Card's Rev not released (live).
+        ${opHoldReasonSql('op', 'jc')} AS "holdReason",
         op.machine_id AS "machineId",
         COALESCE(m.code, op.machine_code_text) AS "machineCode",
         (COALESCE(op.cycle_time_min, 0) / 60.0)::numeric(10,3) AS "cycleTime",
@@ -208,6 +212,7 @@ export async function listJcOpsBoard(
         jcOrderQty: num(r['jcOrderQty']),
         opSeq: num(r['opSeq']),
         operation: String(r['operation'] ?? ''),
+        holdReason: (r['holdReason'] as string | null) ?? null,
         machineId: (r['machineId'] as string | null) ?? null,
         machineCode: (r['machineCode'] as string | null) ?? null,
         machines: (
@@ -444,5 +449,36 @@ export async function changeJcOpMachine(
     );
 
     return { ok: true };
+  });
+}
+
+/**
+ * ADR-291 — release a hold on Job Card operations by hand (Engineering Change
+ * or Job Card Approve tick). Only stored holds exist to release: "Rev not
+ * released" is read live and clears itself when Design releases the Rev.
+ * Conditional (releaseOpHolds clears only ops still held); 0 released = 409.
+ */
+export async function releaseJcOpHolds(
+  input: ReleaseHoldInput,
+  user: AuthContext,
+): Promise<{ released: number }> {
+  await requireAnyFormAccess(user, [
+    ['ecr_create', 'approve'],
+    ['jc_create', 'approve'],
+  ]);
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => {
+    const rows = await releaseOpHolds(tx, {
+      companyId,
+      jcOpIds: input.jcOpIds,
+      note: input.note,
+      userId: user.id,
+    });
+    if (rows.length === 0) {
+      throw new ConflictError(
+        'None of these operations is on hold any more — someone may have released it just now. Refresh the page.',
+      );
+    }
+    return { released: rows.length };
   });
 }

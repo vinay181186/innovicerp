@@ -6,6 +6,9 @@
 import {
   type ApprovalTypeCount,
   CANCEL_DOC_LABELS,
+  ECR_APPROVER_ROLE_LABELS,
+  ECR_APPROVER_ROLES,
+  type EcrApproverRole,
   type CancelDocType,
   DOCUMENT_EDIT_ENTITIES,
   DOCUMENT_EDIT_LABEL,
@@ -17,6 +20,9 @@ import { fmtClock, fmtDate } from '../../lib/format-date';
 /** typeKey of an edit request on one document type. */
 export const editTypeKey = (entity: DocumentEditEntity): string => `edit:${entity}`;
 
+/** typeKey of an Engineering Change sign-off for one role (ADR-291). */
+export const ecrTypeKey = (role: EcrApproverRole): string => `ecr:${role}`;
+
 /** Every Approval Type in menu order: po, rc, logEntry, edit:* (in
  *  DOCUMENT_EDIT_ENTITIES order), cancel, dayLog. */
 export const APPROVAL_TYPE_ORDER: readonly string[] = [
@@ -26,6 +32,8 @@ export const APPROVAL_TYPE_ORDER: readonly string[] = [
   ...DOCUMENT_EDIT_ENTITIES.map(editTypeKey),
   'cancel',
   'dayLog',
+  // ADR-291 — one Approval Type per ECR sign-off role.
+  ...ECR_APPROVER_ROLES.map((r) => ecrTypeKey(r)),
 ];
 
 const FIXED_LABELS: Readonly<Record<string, string>> = {
@@ -40,6 +48,10 @@ const FIXED_LABELS: Readonly<Record<string, string>> = {
 export function typeLabelOf(typeKey: string): string {
   const fixed = FIXED_LABELS[typeKey];
   if (fixed) return fixed;
+  if (typeKey.startsWith('ecr:')) {
+    const role = typeKey.slice(4) as EcrApproverRole;
+    return `Engineering Change (${ECR_APPROVER_ROLE_LABELS[role] ?? role})`;
+  }
   if (typeKey.startsWith('edit:')) {
     const entity = typeKey.slice(5) as DocumentEditEntity;
     // "PO Edit" / "PR Edit" already say Edit → "PO change", not "PO Edit change".

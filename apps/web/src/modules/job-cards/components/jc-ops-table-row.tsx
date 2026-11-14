@@ -17,6 +17,7 @@ import type { OpFlowRow } from '@/modules/flow-views/types';
 import { useJcOpsBoard } from '@/modules/jc-ops/api';
 import { RowMenu } from '@/ui/data';
 import { OP_STATUS } from '../lib/jc-op-labels';
+import { OpHoldBadge, RevNotReleasedBadge } from './jc-op-hold';
 import { opActions, type OpAction, type OpActionTarget } from './jc-ops-table-actions';
 import { JcOpPopup } from './jc-op-popup';
 import { checkText, doneLabel } from './jc-ops-table-notes';
@@ -99,6 +100,12 @@ export interface RowProps {
   machineName: string | null;
   toolDetails: string | null;
   rmAvailable: JobCardRmAvailable | null;
+  /** ADR-291 — the op is on hold until released. */
+  held: boolean;
+  holdReason: string | null;
+  holdEcrCode: string | null;
+  /** "Release hold…" — null when the user lacks the right. */
+  onReleaseHold: (() => void) | null;
 }
 
 /** An op with an outsource lane needs the jc-ops board row (vendor, PR / PO,
@@ -125,6 +132,10 @@ export function OpRow({
   machineName,
   toolDetails,
   rmAvailable,
+  held,
+  holdReason,
+  holdEcrCode,
+  onReleaseHold,
   row,
 }: RowProps & { row: JcOpsBoardRow | undefined }): React.JSX.Element {
   const navigate = useNavigate();
@@ -287,18 +298,38 @@ export function OpRow({
             <span className="jc-ops-chk is-off mono">⚠ {flow.unaccountedQty}</span>
           )}
         </td>
-        <td className="td-ctr">{statusBadge}</td>
+        <td className="td-ctr">
+          {statusBadge}
+          {held ? (
+            <OpHoldBadge reason={holdReason} ecrCode={holdEcrCode} />
+          ) : holdReason ? (
+            <RevNotReleasedBadge reason={holdReason} />
+          ) : null}
+        </td>
         <td className="td-ctr">{nextStep}</td>
         <td className="td-ctr">
           <RowMenu
             label={`Op ${fmtOpSrNo(op.opSeq)} actions`}
-            items={acts.more.map((a) => ({
-              key: a.key,
-              label: a.label,
-              icon: a.icon,
-              group: 'workflow' as const,
-              onSelect: () => go(navigate, a.target),
-            }))}
+            items={[
+              ...acts.more.map((a) => ({
+                key: a.key,
+                label: a.label,
+                icon: a.icon,
+                group: 'workflow' as const,
+                onSelect: () => go(navigate, a.target),
+              })),
+              ...(held && onReleaseHold
+                ? [
+                    {
+                      key: 'release-hold',
+                      label: 'Release hold…',
+                      icon: 'check' as const,
+                      group: 'workflow' as const,
+                      onSelect: onReleaseHold,
+                    },
+                  ]
+                : []),
+            ]}
           />
         </td>
       </tr>

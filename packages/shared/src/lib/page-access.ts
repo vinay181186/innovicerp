@@ -168,6 +168,9 @@ export const PAGE_ACCESS: Readonly<Record<string, PageRule>> = {
   ...crud('/ml-boms', 'mlbom_create'),
   // ADR-290 — Drawing Register (every Item + Drawing Rev and its release status).
   '/drawing-register': v('drawingreg_create'),
+  // ADR-291 — Engineering Change (ECR) + approved Rev substitutions.
+  ...crud('/ecrs', 'ecr_create'),
+  '/rev-substitutions': v('ecr_create'),
 
   // ── Quality ──
   '/qc-call-register': v('qc_submit'),

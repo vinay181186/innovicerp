@@ -15712,3 +15712,44 @@ SOP INN-ERP-SOP-ENG-001 §4: only a released revision may be used for new manufa
 
 - Positive: no new work on an unchecked drawing; a released file cannot change without a second person.
 - Negative: every old record is Unverified until Design verifies it; work continues on it with a warning.
+
+## ADR-291: Engineering Change (ECR) — a Rev change on running work is held, approved by three functions, and split
+
+**Date:** 2026-11-14
+**Status:** Accepted (owner approved the fix list, points 3, 4, 5 and new item 3; replaces the D1 rule of 2026-10-31 "a Rev change on a line moves its open Job Cards")
+
+### Context
+
+SOP §5–§6: no silent change to released Job Cards; hold, disposition, then split by revision. Under D1 a line Rev change moved every open Job Card, Plan and PRO at once, so pieces in progress were credited to the new Rev.
+
+### Decision
+
+- A line with an open Job Card or open PRO can no longer change its Drawing Rev directly: "Ln N: ABC/1 has work in progress — raise an Engineering Change (ECR) to move it to ABC/2." Plans with no PRO still move (with the reason rule).
+- New document Engineering Change, `IN-ECR-#####` (`engineering_changes`), page `/ecrs` (form key `ecr_create`, Design). Change Type: Documentation only / Interchangeable / Not interchangeable (new item code — records the Replacement Item, moves no work).
+- Submit builds the Impact list (open SO / JWSO lines, open Job Cards with Qty Done / WIP / Not Started, stock of the old Rev) and holds every unfinished operation of the affected Job Cards.
+- Hold: `jc_ops.hold_*`, one writer `lib/jc-op-hold.ts`. `assertJcOpWorkable` runs after the existing `jc_ops` lock at every writer that moves qty (Op Entry, QC / Final Inspection, start, OSP PR / PO / DC / balance, Incoming QC, NC create / dispose / recovery). It also refuses work on a Job Card whose Rev is not released (closes the BOM-cascade path of ADR-290). Receipts of goods physically back from a vendor are accepted and noted. Reverse of an entry stays allowed. Release: `POST /jc-ops/release-hold` with a note.
+- Three sign-offs — Design, Quality, Production — each by a person at L4+ of that department (or Full Access); the raiser cannot sign; one person signs one role only. Approvals page kind `ecr`. A reject lifts the holds.
+- Implement (To Rev released, customer approval not pending): per Job Card, Move Qty (≤ not started) goes to a new PRO + Job Card at the new Rev under the same plan — the new `reduceProductionOrderQty` lowers the old PRO / Job Card under the op-1 lock (§20.3), then the in-transaction `createProductionOrderTx` builds the new one. A Job Card with nothing started moves whole through the existing short close. Finished pieces stay on the old Rev. The line takes the new Rev. The ECR closes when no hold is left.
+
+### Alternatives Considered
+
+- Second Job Card under the same PRO — rejected: PRO ↔ Job Card is 1:1 (credit, short close and qty checks read `po.job_card_id`).
+- Short close + new plan — rejected: short close takes the whole order and would stop the 6 in progress.
+
+### Consequences
+
+- Positive: every piece keeps the Rev it was made to; nothing moves without three signatures.
+- Negative: OSP purchase requests already raised for the old Job Card are not reduced by the move (reduce or cancel by hand); a hand-made JW Job Card (no PRO) is moved by hand.
+
+## ADR-292: Wrong Drawing Rev blocked at Item Issue and Dispatch; approved substitutions; Drawing Rev strict; six reports
+
+**Date:** 2026-11-14
+**Status:** Accepted (owner approved the fix list, points 7, 8, 13 and new item 5)
+
+### Decision
+
+- Dispatch: no auto-pick of another Rev. Allowed Revs for an SO line = its own Rev, the Revs of Job Cards made for it, and approved substitutions. Anything else: "Revision mismatch with the order … An Engineering-approved substitution is needed."
+- Item Issue: a make item with Rev stock is issued from a named bucket; to a Job Card of another Rev it is refused unless a substitution covers it.
+- `rev_substitutions` (page Rev Substitutions, Engineering Change Approve tick): Stock Drawing Rev → Order Drawing Rev for one SO line, JWSO line or Job Card, Qty Allowed; `lib/rev-substitution.ts` `consumeSubstitution` is the one writer of Qty Used (§20.1/§20.3); dispatch cancel and issue return give it back.
+- `approval_config.drawing_rev_strict` (default off): when on, a PRO or Job Card for a make item with no Drawing Rev is refused. Turn on only after the Drawing Rev Fix List is clean.
+- Reports: Drawing Rev Register, Open Order Rev Mismatch, Affected WIP / OSP / Stock, Rev Traceability, Pending ECR, Drawing Print / Download History.

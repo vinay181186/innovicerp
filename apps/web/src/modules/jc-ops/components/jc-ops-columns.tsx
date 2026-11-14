@@ -277,7 +277,19 @@ export function jcOpsColumns(firstRowNo: number): DataTableColumn<JcOpsBoardRow>
       filterOptions: OP_STATUS_OPTIONS,
       kind: 'badge',
       header: 'Op Status',
-      render: (o) => <OpStatusBadge status={o.status} />,
+      // ADR-291 — the board row carries only holdReason (a stored hold OR the
+      // live "Drawing Rev not released"), so show the reason itself; release
+      // is offered on the Job Card, never here.
+      render: (o) => (
+        <>
+          <OpStatusBadge status={o.status} />
+          {o.holdReason ? (
+            <span className="badge b-orange" title={o.holdReason}>
+              {o.holdReason}
+            </span>
+          ) : null}
+        </>
+      ),
     },
     {
       // Legacy L11379 [OSP] tag + the outsource sub-status, in one column.

@@ -15,6 +15,7 @@ import { and, count, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { activityLog, approvalConfig, users } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireAdminRole } from '../../lib/auth';
+import { isDrawingRevStrict } from '../../lib/drawing-rev-strict';
 import { AuthorizationError } from '../../lib/errors';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { emitActivityLog } from '../activity-log/service';
@@ -25,15 +26,18 @@ const requireCompany = (user: AuthContext): string => {
   return user.companyId;
 };
 
-function toConfig(row: {
-  poApproval: boolean;
-  poManagerLimit: string;
-  prApproval: boolean;
-  invoiceApproval: boolean;
-  opEntryEditApproval: boolean;
-  docEditApproval: boolean;
-  poApprovers: unknown;
-}): ApprovalConfig {
+function toConfig(
+  row: {
+    poApproval: boolean;
+    poManagerLimit: string;
+    prApproval: boolean;
+    invoiceApproval: boolean;
+    opEntryEditApproval: boolean;
+    docEditApproval: boolean;
+    poApprovers: unknown;
+  },
+  drawingRevStrict: boolean,
+): ApprovalConfig {
   const approvers = Array.isArray(row.poApprovers) ? (row.poApprovers as string[]) : [];
   return {
     poApproval: row.poApproval,
@@ -42,6 +46,7 @@ function toConfig(row: {
     invoiceApproval: row.invoiceApproval,
     opEntryEditApproval: row.opEntryEditApproval,
     docEditApproval: row.docEditApproval,
+    drawingRevStrict,
     poApprovers: approvers.filter((s) => typeof s === 'string'),
   };
 }
@@ -56,7 +61,7 @@ export async function getApprovalConfig(user: AuthContext): Promise<ApprovalConf
       .limit(1);
     const row = rows[0];
     if (!row) return { ...APPROVAL_CONFIG_DEFAULTS };
-    return toConfig(row);
+    return toConfig(row, await isDrawingRevStrict(tx, companyId));
   });
 }
 
@@ -130,20 +135,26 @@ export async function saveApprovalConfig(
         .returning();
       saved = inserted[0]!;
     }
+    // ADR-292 — Drawing Rev strict (approval_config.drawing_rev_strict, 0250).
+    // Written by id on the row just saved; the same admin-only save.
+    const strict = input.drawingRevStrict === true;
+    await tx.execute(sql`
+      UPDATE public.approval_config SET drawing_rev_strict = ${strict}
+       WHERE id = ${saved.id}::uuid AND company_id = ${companyId}::uuid`);
 
     await emitActivityLog(
       tx,
       {
         action: 'CONFIG',
         entity: 'Approval Configuration',
-        detail: `PO Approval: ${input.poApproval ? 'On' : 'Off'} · Limit ₹${input.poManagerLimit} · Invoice Approval: ${input.invoiceApproval ? 'On' : 'Off'} · Op Entry Edit Approval: ${input.opEntryEditApproval ? 'On' : 'Off'} · Document Edit Approval: ${input.docEditApproval ? 'On' : 'Off'} · Approvers: ${validApproverIds.length}`,
+        detail: `PO Approval: ${input.poApproval ? 'On' : 'Off'} · Limit ₹${input.poManagerLimit} · Invoice Approval: ${input.invoiceApproval ? 'On' : 'Off'} · Op Entry Edit Approval: ${input.opEntryEditApproval ? 'On' : 'Off'} · Document Edit Approval: ${input.docEditApproval ? 'On' : 'Off'} · Drawing Rev strict: ${strict ? 'On' : 'Off'} · Approvers: ${validApproverIds.length}`,
         refId: null,
       },
       companyId,
       user,
     );
 
-    return toConfig(saved);
+    return toConfig(saved, strict);
   });
 }
 

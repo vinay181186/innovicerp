@@ -13,6 +13,7 @@ import { users } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
 import { asAccess } from '../../lib/test-access';
 import { listApprovalHistory } from './history';
+import { loadApproverScope } from './scope';
 import { getWaitingApprovals } from './waiting';
 
 const ADMIN_EMAIL = 'innovic.technology@gmail.com';
@@ -91,6 +92,50 @@ describe('approvals history (ADR-265)', () => {
     expect(one.total).toBe(first.n);
     expect(one.rows.every((r) => r.typeKey === first.typeKey)).toBe(true);
     expect(one.counts).toEqual(all.counts);
+  });
+
+  it('a caller who may only sign ECRs: the ecr branch is the first one and still works', async () => {
+    // L4 in Design only, the BOM edit approvals switched off ("No approve") →
+    // the Engineering ECR sign-off and nothing else.
+    const off = {
+      view: true,
+      entry: true,
+      advance: true,
+      edit: true,
+      approve: false,
+      price: false,
+      priceOff: false,
+      viewOff: false,
+      entryOff: false,
+      advanceOff: false,
+      editOff: false,
+      approveOff: true,
+    };
+    const ecrOnly = (): AuthContext =>
+      asAccess(
+        admin,
+        { departments: { design: 'L4' }, forms: { bom_create: off, mlbom_create: off } },
+        'operator',
+      );
+    const scope = await loadApproverScope(ecrOnly());
+    expect(scope).toMatchObject({
+      po: false,
+      rc: false,
+      logScope: null,
+      editEntities: [],
+      cancelTypes: [],
+    });
+    expect(scope.ecrRoles).toEqual(['design']);
+    for (const decision of ['approved', 'rejected'] as const) {
+      const res = approvalHistoryListResponseSchema.parse(
+        await listApprovalHistory({ decision, limit: 25, offset: 0 }, ecrOnly()),
+      );
+      expect(res.counts.every((c) => c.typeKey === 'ecr:design')).toBe(true);
+      expect(res.rows.every((r) => r.typeKey === 'ecr:design' && r.decision === decision)).toBe(
+        true,
+      );
+      expect(res.counts.reduce((sum, c) => sum + c.n, 0)).toBe(res.total);
+    }
   });
 
   it('a caller with no approve right sees no history', async () => {

@@ -60,7 +60,16 @@ export const createStoreIssueInputSchema = z
     purpose: z.string().trim().min(3, 'Enter the Purpose (at least 3 characters)').max(255),
     remarks: z.string().trim().max(500).optional(),
     lines: z
-      .array(z.object({ itemId: z.string().uuid(), qty }))
+      .array(
+        z.object({
+          itemId: z.string().uuid(),
+          qty,
+          /** ADR-292 — the Drawing Rev bucket to issue from (make items with
+           *  Rev stock). Omitted: the server uses the only bucket that fits the
+           *  target Job Card's Rev, else refuses and asks for it. */
+          itemRevisionId: z.string().uuid().nullable().optional(),
+        }),
+      )
       .min(1, 'Add at least one item')
       .max(200)
       .refine((ls) => new Set(ls.map((l) => l.itemId)).size === ls.length, {
@@ -200,6 +209,8 @@ export interface JcMaterialLine {
 export interface JcMaterial {
   jobCardId: string;
   jcCode: string;
+  /** ADR-292 — the Job Card's Drawing Rev (pre-selects the issue line's Rev). */
+  itemRevisionId?: string | null;
   orderQty: number;
   /** false = the card has no RM item on its Route Card: issues are not capped. */
   planned: boolean;

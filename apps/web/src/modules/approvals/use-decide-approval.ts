@@ -9,19 +9,22 @@
 //   cancel   useDecideCancel
 //   dayLog   useApprove/RejectDayLogEdit   (requestedAt = row.version)
 //   edit     useDecideDocumentEdit         (per change; Review panel)
+//   ecr      useDecideEcr                  (ADR-291; one row per sign-off role,
+//                                           role = typeKey 'ecr:<role>')
 //
 // A row locks the INSTANT it is clicked and stays locked until the refetch
 // drops it (no double tick); a refused row unlocks at once and shows the
 // server's words. Bulk "✓ Approve N" is one request per row, each reporting
 // its own outcome.
 
-import type { WaitingApprovalRow } from '@innovic/shared';
+import { ECR_APPROVER_ROLES, type EcrApproverRole, type WaitingApprovalRow } from '@innovic/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { cancelKeys, useDecideCancel } from '@/modules/cancel-requests/api';
 import { dashboardKeys, notificationKeys } from '@/modules/dashboard/api';
 import { dayLogKeys, useApproveDayLogEdit, useRejectDayLogEdit } from '@/modules/day-logs/api';
 import { documentEditsKeys, useDecideDocumentEdit } from '@/modules/document-edits/api';
+import { ecrKeys, invalidateEcrScreens, useDecideEcr } from '@/modules/engineering-changes/api';
 import { opEntryKeys, useDecideOpLogTimeChange } from '@/modules/op-entry/api';
 import {
   purchaseOrdersKeys,
@@ -32,7 +35,19 @@ import { routeCardsKeys, useApproveRouteCard, useRejectRouteCard } from '@/modul
 import { useToast } from '@/ui/feedback';
 import { approvalsKeys } from './api';
 
-export const approvalKey = (r: WaitingApprovalRow): string => `${r.kind}:${r.id}`;
+/** An ECR waits once per sign-off (Design / Quality / Production) under the
+ *  same id, so its rows are told apart by their typeKey too. */
+export const approvalKey = (r: WaitingApprovalRow): string =>
+  r.kind === 'ecr' ? `${r.kind}:${r.id}:${r.typeKey}` : `${r.kind}:${r.id}`;
+
+/** ADR-291 — the sign-off an ECR row asks for: typeKey `ecr:<role>`
+ *  (`ecr:design`, `ecr:qc`, `ecr:production`). */
+export function ecrRoleOf(r: WaitingApprovalRow): EcrApproverRole {
+  const role = r.typeKey.startsWith('ecr:') ? r.typeKey.slice(4) : '';
+  const hit = ECR_APPROVER_ROLES.find((x) => x === role);
+  if (!hit) throw new Error('Open the Engineering Change to decide this sign-off.');
+  return hit;
+}
 
 export const decideErrText = (e: unknown): string =>
   e instanceof Error ? e.message : 'Could not record the decision.';
@@ -44,6 +59,7 @@ const MODULE_ROOT = {
   cancel: cancelKeys.all,
   dayLog: dayLogKeys.all,
   edit: documentEditsKeys.all,
+  ecr: ecrKeys.all,
 } as const;
 
 /** `rows`: the waiting rows on screen now — a locked row that is gone
@@ -60,6 +76,7 @@ export function useDecideApproval(rows: readonly WaitingApprovalRow[]) {
   const approveDay = useApproveDayLogEdit();
   const rejectDay = useRejectDayLogEdit();
   const decideEdit = useDecideDocumentEdit();
+  const decideEcr = useDecideEcr();
   const [busy, setBusy] = useState<Set<string>>(new Set());
 
   const presentKeys = rows.map(approvalKey).join('|');
@@ -87,7 +104,10 @@ export function useDecideApproval(rows: readonly WaitingApprovalRow[]) {
     void qc.invalidateQueries({ queryKey: dashboardKeys.home() });
     // The bell: a decision changes what people are notified about.
     void qc.invalidateQueries({ queryKey: notificationKeys.all });
-    for (const k of new Set(kinds)) void qc.invalidateQueries({ queryKey: MODULE_ROOT[k] });
+    const set = new Set(kinds);
+    for (const k of set) void qc.invalidateQueries({ queryKey: MODULE_ROOT[k] });
+    // An ECR sign-off also changes holds (JC board, Job Cards) and the Revs.
+    if (set.has('ecr')) invalidateEcrScreens(qc);
   };
 
   async function approveOne(r: WaitingApprovalRow): Promise<void> {
@@ -107,6 +127,9 @@ export function useDecideApproval(rows: readonly WaitingApprovalRow[]) {
         return;
       case 'dayLog':
         await approveDay.mutateAsync({ id: r.id, requestedAt: v ?? '' });
+        return;
+      case 'ecr':
+        await decideEcr.mutateAsync({ id: r.id, role: ecrRoleOf(r), decision: 'approved' });
         return;
       case 'edit':
         // Change requests are decided field by field in the Review panel only.
@@ -131,6 +154,14 @@ export function useDecideApproval(rows: readonly WaitingApprovalRow[]) {
         return;
       case 'dayLog':
         await rejectDay.mutateAsync({ id: r.id, requestedAt: v ?? '', reason });
+        return;
+      case 'ecr':
+        await decideEcr.mutateAsync({
+          id: r.id,
+          role: ecrRoleOf(r),
+          decision: 'rejected',
+          note: reason,
+        });
         return;
       case 'edit':
         // Change requests are decided field by field in the Review panel only.

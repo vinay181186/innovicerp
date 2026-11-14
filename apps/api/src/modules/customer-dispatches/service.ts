@@ -57,6 +57,7 @@ import { emitActivityLog } from '../activity-log/service';
 import { blockerRefusal } from '../cancel-requests/messages';
 import { assertNoPendingCancel } from '../cancel-requests/pending-guard';
 import { billedStatusOf, loadBilledQtyByDispatch } from './billed';
+import { applyDispatchRev } from './rev-check';
 import { assertSoAcceptsWork } from '../../lib/so-accepts-work';
 import { clientCopyValues, loadClientForCopy, readClientCopy } from '../../lib/party-copy';
 import type { UpdateCustomerDispatchInput } from './schema';
@@ -216,6 +217,8 @@ async function dispatchLineOut(
   dispatchDate: string,
   lineNo: number,
   line: {
+    /** customer_dispatch_lines.id (ADR-292 — a substitution use is recorded on it). */
+    dispatchLineId: string;
     salesOrderLineId: string | null;
     itemId: string | null;
     qty: number;
@@ -224,6 +227,9 @@ async function dispatchLineOut(
   },
   customerDispatchId: string,
 ): Promise<void> {
+  // ADR-292 — only a Drawing Rev the order accepts ships; a Rev allowed by an
+  // approved substitution uses it up here (create and edit repost alike).
+  await applyDispatchRev(tx, companyId, user.id, line, 'out');
   if (line.salesOrderLineId) {
     // Maintain cumulative dispatched qty on the SO line (single writer).
     await tx
@@ -305,6 +311,8 @@ async function reverseDispatchLineStock(
   code: string,
   dispatchDate: string,
   line: {
+    /** customer_dispatch_lines.id — its substitution use is given back. */
+    dispatchLineId: string;
     salesOrderLineId: string | null;
     lineNo: number;
     itemId: string | null;
@@ -313,6 +321,8 @@ async function reverseDispatchLineStock(
     itemRevisionId: string | null;
   },
 ): Promise<void> {
+  // ADR-292 — a row shipped on an approved substitution gives back what it used.
+  await applyDispatchRev(tx, companyId, user.id, line, 'in');
   if (line.salesOrderLineId) {
     await tx
       .update(salesOrderLines)
@@ -1092,8 +1102,9 @@ function assertBucketReady(d: DispatchableLineX, itemRevisionId: string | null, 
 
 /** Drawing Rev Phase C — the bucket of every create row (index-aligned).
  *  Given (uuid / null) = that bucket; omitted = Buy / no buckets → blank, else
- *  the only bucket that can cover the row, preferring the SO line's own Rev;
- *  more than one → the user must choose. Same SO line + same Rev twice →
+ *  the SO line's own Rev bucket when it covers the row, otherwise the user
+ *  must choose (ADR-292 — no auto-pick of another Rev); a line with no Drawing
+ *  Rev takes the only bucket that covers the row. Same SO line + same Rev twice →
  *  refused. Each row is checked against its bucket's Ready. */
 async function resolveDispatchRevs(
   tx: DbTransaction,
@@ -1144,10 +1155,17 @@ async function resolveDispatchRevs(
     } else if (!d.makeItem || d.revBuckets.length === 0) {
       rev = null;
     } else {
+      // ADR-292 — a line WITH a Drawing Rev: no auto-pick of another Rev — its
+      // own Rev bucket when it covers the row, else the user chooses (the Rev
+      // check then applies). An old line with NO Drawing Rev is not
+      // Rev-controlled: the only bucket that covers the row is taken, as before.
       const fits = d.revBuckets.filter((b) => b.readyQty >= l.qty);
-      const own = fits.find((b) => b.itemRevisionId === d.lineItemRevisionId);
+      const own = d.lineItemRevisionId
+        ? fits.find((b) => b.itemRevisionId === d.lineItemRevisionId)
+        : fits.length === 1
+          ? fits[0]
+          : undefined;
       if (own) rev = own.itemRevisionId;
-      else if (fits.length === 1) rev = fits[0]!.itemRevisionId;
       else {
         throw new ValidationError(
           `Ln ${d.lineNo} (${d.itemCode ?? d.itemName}): choose which Drawing Rev to ship — ` +
@@ -1320,19 +1338,22 @@ export async function createDispatch(
       const d = byLine.get(l.salesOrderLineId)!;
       const itemId = itemIdByLine.get(l.salesOrderLineId) ?? null;
       const itemRevisionId = revByRow[rowIdx] ?? null;
-      await tx.insert(customerDispatchLines).values({
-        companyId,
-        customerDispatchId: header.id,
-        lineNo,
-        salesOrderLineId: l.salesOrderLineId,
-        itemId,
-        itemRevisionId,
-        itemCodeText: d.itemCode,
-        itemName: d.itemName,
-        qty: l.qty,
-        createdBy: user.id,
-        updatedBy: user.id,
-      });
+      const [dl] = await tx
+        .insert(customerDispatchLines)
+        .values({
+          companyId,
+          customerDispatchId: header.id,
+          lineNo,
+          salesOrderLineId: l.salesOrderLineId,
+          itemId,
+          itemRevisionId,
+          itemCodeText: d.itemCode,
+          itemName: d.itemName,
+          qty: l.qty,
+          createdBy: user.id,
+          updatedBy: user.id,
+        })
+        .returning({ id: customerDispatchLines.id });
       // Bump dispatched_qty, ship the booking, debit finished-goods stock. The
       // SO lines were locked FOR UPDATE above, so two dispatches on one line
       // cannot consume the same booking twice. For assembly / equipment lines the
@@ -1345,7 +1366,13 @@ export async function createDispatch(
         code,
         input.dispatchDate,
         lineNo,
-        { salesOrderLineId: l.salesOrderLineId, itemId, qty: l.qty, itemRevisionId },
+        {
+          dispatchLineId: dl!.id,
+          salesOrderLineId: l.salesOrderLineId,
+          itemId,
+          qty: l.qty,
+          itemRevisionId,
+        },
         header.id,
       );
     }
@@ -1581,6 +1608,7 @@ export async function cancelDispatchTx(
   // Reverse the dispatched-qty bump + add the stock back on each line.
   for (const l of lineRows) {
     await reverseDispatchLineStock(tx, companyId, user, h.code, h.dispatchDate, {
+      dispatchLineId: l.id,
       salesOrderLineId: l.salesOrderLineId,
       lineNo: l.lineNo,
       itemId: l.itemId,
@@ -1836,6 +1864,7 @@ export async function updateCustomerDispatchTx(
   // give the bookings back. The SO lines now read as if this dispatch never ran.
   for (const c of currentLines) {
     await reverseDispatchLineStock(tx, companyId, user, oldCode, h.dispatchDate, {
+      dispatchLineId: c.id,
       salesOrderLineId: c.salesOrderLineId,
       lineNo: c.lineNo,
       itemId: c.itemId,
@@ -1893,6 +1922,7 @@ export async function updateCustomerDispatchTx(
       newDispatchDate,
       c.lineNo,
       {
+        dispatchLineId: c.id,
         salesOrderLineId: c.salesOrderLineId,
         itemId: c.itemId,
         qty: newQty,

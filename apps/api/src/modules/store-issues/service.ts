@@ -36,6 +36,7 @@ import { emitActivityLog } from '../activity-log/service';
 import { assertNoPendingCancel } from '../cancel-requests/pending-guard';
 import { assertReturnWithinStillOut, checkAssemblyAllowance, useOwnReservation } from './assembly';
 import { enforceOverToIssue, resolveTargetAndCap } from './guard';
+import { consumeIssueSubstitution, giveBackIssueRevs, resolveIssueRevs } from './rev';
 import { lockSlip, nextStoreIssueCode, readSlipLines, resolveIssuedTo, today } from './slip';
 import { readStoreIssueDetail, requireCompany } from './read';
 
@@ -99,6 +100,15 @@ export async function createStoreIssue(
     const own = soId
       ? await checkAssemblyAllowance(tx, companyId, soId, input.lines, itemCodes)
       : null;
+    // ADR-292 — the Drawing Rev bucket of each line (make items); a Job Card
+    // of the wrong Rev is refused unless an approved substitution covers it.
+    const { revs, subs } = await resolveIssueRevs(
+      tx,
+      companyId,
+      input.lines,
+      target.jobCardId,
+      itemCodes,
+    );
 
     // One ISS- number at a time per company (same pattern as stock counts).
     await tx.execute(
@@ -148,6 +158,7 @@ export async function createStoreIssue(
         guard: 'available',
         allowance: own?.get(l.itemId) ?? 0,
         qtyLabel: 'Issue Qty',
+        ...(revs[idx] !== undefined ? { itemRevisionId: revs[idx] } : {}),
       });
       const lineRows = await tx
         .insert(storeIssueLines)
@@ -163,6 +174,8 @@ export async function createStoreIssue(
           updatedBy: userId,
         })
         .returning({ id: storeIssueLines.id });
+      // ADR-292 — a substituted line uses up its substitution, recorded on it.
+      await consumeIssueSubstitution(tx, companyId, userId, subs[idx] ?? null, lineRows[0]!.id);
       // ADR-289 — keep EVERY Rev bucket this issue took (mv.rows), so Return
       // and Cancel put the stock back into the same buckets.
       await recordOutParts(tx, {
@@ -290,6 +303,7 @@ export async function returnStoreIssue(
           qtyLabel: 'Return Qty',
         },
       });
+      await giveBackIssueRevs(tx, companyId, user.id, line.id, back);
       const first = back[0]!.mv;
       await tx.insert(storeIssueReturns).values({
         companyId,

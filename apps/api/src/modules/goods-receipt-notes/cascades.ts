@@ -218,13 +218,13 @@ function grnLineOpsCte(grnLineId: string) {
       WHERE l.id = ${grnLineId}::uuid
     ),
     op AS (
-      SELECT o.job_card_id, o.op_seq
+      SELECT o.id, o.job_card_id, o.op_seq
       FROM ln
       JOIN public.jc_ops o
         ON o.outsource_po_line_id = ln.purchase_order_line_id
       WHERE o.deleted_at IS NULL
       UNION
-      SELECT o.job_card_id, o.op_seq
+      SELECT o.id, o.job_card_id, o.op_seq
       FROM ln
       JOIN public.goods_receipt_notes g ON g.id = ln.goods_receipt_note_id
       JOIN public.purchase_orders po ON po.id = g.purchase_order_id
@@ -291,6 +291,19 @@ export async function resolveGrnLineJobCardId(
     LIMIT 1
   `)) as unknown as Array<{ job_card_id: string | null }>;
   return rows[0]?.job_card_id ?? null;
+}
+
+/** ADR-291 — the jc_op ids a GRN line returns pieces for (same two-path
+ *  lookup as resolveGrnLineJobCardId). Empty for a plain purchase GRN. */
+export async function resolveGrnLineJcOpIds(
+  tx: DbTransaction,
+  grnLineId: string,
+): Promise<string[]> {
+  const rows = (await tx.execute(sql`
+    ${grnLineOpsCte(grnLineId)}
+    SELECT op.id FROM op ORDER BY op.op_seq
+  `)) as unknown as Array<{ id: string }>;
+  return rows.map((r) => r.id);
 }
 
 /**

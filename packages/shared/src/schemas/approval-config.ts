@@ -21,6 +21,11 @@ export const approvalConfigSchema = z.object({
    *  straight through (today's behaviour) — the instant rollback lever.
    *  Consumed by document-edits/service.ts isDocEditApprovalOn. */
   docEditApproval: z.boolean(),
+  /** ADR-292 — Drawing Rev strict. On: a Production Order or Job Card for a
+   *  MAKE item with no Drawing Rev is refused (point 13 of the Drawing Rev fix
+   *  list). Off (default): it is allowed with the orange "No Drawing Rev"
+   *  warning. Turn on only after the Drawing Rev Fix List is clean. */
+  drawingRevStrict: z.boolean().default(false),
   poApprovers: z.array(z.string().uuid()),
 });
 export type ApprovalConfig = z.infer<typeof approvalConfigSchema>;
@@ -35,6 +40,7 @@ export const APPROVAL_CONFIG_DEFAULTS: ApprovalConfig = {
   invoiceApproval: false,
   opEntryEditApproval: true,
   docEditApproval: false,
+  drawingRevStrict: false,
   poApprovers: [],
 };
 

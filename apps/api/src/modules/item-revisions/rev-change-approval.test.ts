@@ -16,6 +16,7 @@ import {
   itemRevisions,
   items,
   jobCards,
+  plans,
   salesOrderLines,
   salesOrders,
   users,
@@ -50,6 +51,21 @@ async function cleanup(): Promise<void> {
     .from(jobCards)
     .where(inArray(jobCards.itemId, ids));
   const jcIds = jcs.map((j) => j.id);
+  const pls = await db.select({ id: plans.id }).from(plans).where(inArray(plans.itemId, ids));
+  if (pls.length > 0) {
+    await db.delete(activityLog).where(
+      inArray(
+        activityLog.entityId,
+        pls.map((x) => x.id),
+      ),
+    );
+    await db.delete(plans).where(
+      inArray(
+        plans.id,
+        pls.map((x) => x.id),
+      ),
+    );
+  }
   if (jcIds.length > 0) {
     await db.delete(activityLog).where(inArray(activityLog.entityId, jcIds));
     await db.delete(jobCards).where(inArray(jobCards.id, jcIds));
@@ -176,21 +192,25 @@ describe('ADR-289 Rev change through edit approval', () => {
         .where(eq(salesOrderLines.id, lineId))
     )[0]!.rev;
     expect(fromRev).toBeTruthy();
-    // A Job Card on the line → the SO is IN USE (edits go for approval).
+    // A Plan (no PRO) on the line → the SO is IN USE (edits go for approval).
+    // ADR-291 — an open Job Card / PRO would refuse the Rev change (ECR only);
+    // a plan with no PRO still moves.
     const [jc] = await db
-      .insert(jobCards)
+      .insert(plans)
       .values({
         companyId,
-        code: `${P}JC-${Date.now()}`,
-        jcDate: '2026-11-14',
+        code: `${P}PLN-${Date.now()}`,
+        planDate: '2026-11-14',
+        planType: 'manufacture',
+        soLineId: lineId,
         itemId,
         orderQty: 2,
-        sourceSoLineId: lineId,
+        planQty: 2,
         itemRevisionId: fromRev,
         createdBy: admin.id,
         updatedBy: admin.id,
       } as never)
-      .returning({ id: jobCards.id });
+      .returning({ id: plans.id });
 
     // ADR-290 — the line's open work moves to Rev 2, so Rev 2 must be released.
     await db.insert(itemRevisions).values({
@@ -237,10 +257,7 @@ describe('ADR-289 Rev change through edit approval', () => {
       .where(eq(itemRevisionChanges.soLineId, lineId));
     expect(changes).toEqual([{ reason, to: after.itemRevisionId }]);
     const jcRow = (
-      await db
-        .select({ rev: jobCards.itemRevisionId })
-        .from(jobCards)
-        .where(eq(jobCards.id, jc!.id))
+      await db.select({ rev: plans.itemRevisionId }).from(plans).where(eq(plans.id, jc!.id))
     )[0]!;
     expect(jcRow.rev).toBe(after.itemRevisionId);
   }, 180_000);

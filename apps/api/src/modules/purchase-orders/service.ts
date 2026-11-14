@@ -37,6 +37,7 @@ import {
   vendors,
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
+import { lockAndAssertJcOpsWorkable } from '../../lib/jc-op-hold';
 import { canSeeFormPrice, requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { assertActiveParty } from '../../lib/active-party';
@@ -1655,6 +1656,12 @@ export async function createPurchaseOrder(
     // purchase orders is reachable from BOTH. The legacy
     // jc_ops.outsource_po_line_id column keeps only the FIRST link -- a second
     // PO must not re-point the op and lose the first.
+    // ADR-291 — no PO for an OSP op on hold / on a not-released Rev.
+    await lockAndAssertJcOpsWorkable(
+      tx,
+      companyId,
+      insertedLines.map((l) => l.sourceJcOpId),
+    );
     for (const line of insertedLines) {
       if (!line.sourceJcOpId) continue;
       await linkJcOpToPoLine(tx, {
@@ -2773,6 +2780,12 @@ async function mergeLines(
     // Decimal Qty is for KGS / MTR items; a NOS / SET item stays whole (0172).
     await assertLineQtysFitUom(tx, companyId, values);
     const insertedLines = await tx.insert(purchaseOrderLines).values(values).returning();
+    // ADR-291 — no PO for an OSP op on hold / on a not-released Rev.
+    await lockAndAssertJcOpsWorkable(
+      tx,
+      companyId,
+      insertedLines.map((l) => l.sourceJcOpId),
+    );
     for (const line of insertedLines) {
       if (!line.sourceJcOpId) continue;
       await linkJcOpToPoLine(tx, {
@@ -3219,6 +3232,8 @@ export async function createPurchaseOrderFromPr(
     // second PO against the same OSP request re-pointed the op at the new line
     // and the first line's challan and receipt could never cascade back.
     if (pr.sourceJcOpId) {
+      // ADR-291 — no PO for an OSP op on hold / on a not-released Rev.
+      await lockAndAssertJcOpsWorkable(tx, companyId, [pr.sourceJcOpId]);
       await linkJcOpToPoLine(tx, {
         companyId,
         jcOpId: pr.sourceJcOpId,
@@ -3999,6 +4014,13 @@ export async function createPurchaseOrderFromPrBatch(
       companyId,
     );
     const insertedLines = await tx.insert(purchaseOrderLines).values(lineRows).returning();
+    // ADR-291 — no PO for an OSP op on hold / on a not-released Rev. All ops
+    // locked at once, in id order, so two batch converts cannot deadlock.
+    await lockAndAssertJcOpsWorkable(
+      tx,
+      companyId,
+      sortedPrs.map((p) => p.sourceJcOpId),
+    );
 
     // Stamp every PR + advance its linked outsource jc_op. lineRows/insertedLines
     // are built in sortedPrs order, so insertedLines[i] is pr[i]'s PO line.

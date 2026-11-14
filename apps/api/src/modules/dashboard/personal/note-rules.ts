@@ -35,6 +35,7 @@ export type Open =
   | 'raiser_rc'
   | 'raiser_rc_approved'
   | 'raiser_rev'
+  | 'raiser_ecr'
   | 'raiser_correction'
   | 'raiser_stock_count'
   | 'raiser_day_log'
@@ -120,6 +121,9 @@ const RC_TO_DRAFT_CHANGE = JSON.stringify([
 const PO_DECISION = JSON.stringify([{ field: 'status', before: 'Draft' }]);
 /** approveRouteCard / rejectRouteCard: RC Status change. */
 const RC_DECISION = JSON.stringify([{ field: 'approvalStatus' }]);
+/** ADR-291 — an ECR's final decision moves ECR Status (a role's sign-off
+ *  that is not the last one writes APPROVE with no status change). */
+const ECR_DECISION = JSON.stringify([{ field: 'status' }]);
 /** The retired PR reject wrote a status change; a staged PR edit's REJECT does not. */
 const PR_DECISION = JSON.stringify([{ field: 'status' }]);
 /** nc-register disposeNc — the disposition chosen was Return to Vendor. */
@@ -406,6 +410,28 @@ export const NOTE_RULES: readonly NoteRule[] = [
       ...(action === 'REJECT' ? { withReason: true as const } : {}),
     }),
   ),
+  // ADR-291 — an Engineering Change approved (all sign-offs) or rejected: its
+  // creator and the person who submitted it hear it (decision-notify rule).
+  ...(
+    [
+      ['APPROVE', 'approved', ' — Engineering Change, ready to implement', 'ok'],
+      ['REJECT', 'rejected', ' — Engineering Change', 'late'],
+    ] as const
+  ).map(
+    ([action, verb, tail, tone]): NoteRule => ({
+      entity: 'EngineeringChange',
+      action,
+      right: ['ecr_create', 'view'],
+      open: 'raiser_ecr',
+      verb,
+      tail,
+      doneTail: ' — Engineering Change',
+      tone,
+      changesHas: ECR_DECISION,
+      raiser: { table: 'public.engineering_changes', owner: 'created_by', orOwner: 'submitted_by' },
+      ...(action === 'REJECT' ? { withReason: true as const } : {}),
+    }),
+  ),
   // ADR-290 — a drawing correction decided: the person who asked for it and
   // the Rev's creator hear it (decision-notify rule). Logged by
   // item-revisions/corrections.ts on entity DrawingCorrection.
@@ -424,7 +450,11 @@ export const NOTE_RULES: readonly NoteRule[] = [
       tail,
       doneTail: ' — drawing correction',
       tone,
-      raiser: { table: DRAWING_CORRECTION_RAISER, owner: 'requested_by', orOwner: 'rev_created_by' },
+      raiser: {
+        table: DRAWING_CORRECTION_RAISER,
+        owner: 'requested_by',
+        orOwner: 'rev_created_by',
+      },
       ...(action === 'REJECT' ? { withReason: true as const } : {}),
     }),
   ),
@@ -569,6 +599,10 @@ export function openSql(
           ${mine('created_by')} ${idIn}`;
     case 'raiser_rev':
       return sql`SELECT d.id::text AS id FROM public.item_revisions d
+        WHERE d.company_id = ${cid}::uuid AND d.deleted_at IS NULL
+          ${seeAll ? sql`` : sql`AND (d.created_by = ${me}::uuid OR d.submitted_by = ${me}::uuid)`} ${idIn}`;
+    case 'raiser_ecr':
+      return sql`SELECT d.id::text AS id FROM public.engineering_changes d
         WHERE d.company_id = ${cid}::uuid AND d.deleted_at IS NULL
           ${seeAll ? sql`` : sql`AND (d.created_by = ${me}::uuid OR d.submitted_by = ${me}::uuid)`} ${idIn}`;
     case 'raiser_correction':

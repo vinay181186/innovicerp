@@ -45,6 +45,8 @@ export const jcOpsBoardRowSchema = z.object({
   jcOrderQty: z.number().int().nonnegative(),
   opSeq: z.number().int().positive(),
   operation: z.string(),
+  /** ADR-291 — the op is on hold (Engineering Change or Rev not released). */
+  holdReason: z.string().nullable().default(null),
   /** The machine the REMAINING qty runs on. Not who made `completed` — an op
    *  re-routed mid-flight has produced pieces on other machines (ADR-126). */
   machineId: z.string().uuid().nullable(),
