@@ -52,6 +52,7 @@ export function personHolds(
     auditor: r.acAuditor,
     drawingDownload: false,
     drawingPrint: false,
+    drawingRelease: false,
     departments: r.acDepartments,
     forms: r.acForms,
   });

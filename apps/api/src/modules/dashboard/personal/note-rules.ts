@@ -34,6 +34,8 @@ export type Open =
   | 'raiser_po_approved'
   | 'raiser_rc'
   | 'raiser_rc_approved'
+  | 'raiser_rev'
+  | 'raiser_correction'
   | 'raiser_stock_count'
   | 'raiser_day_log'
   | 'pr_to_po'
@@ -50,8 +52,14 @@ export type Open =
 /** The document a raiser rule's note belongs to: its table and the column
  *  naming its person (created_by, or the Day Log's owner). */
 interface RaiserOf {
+  /** A table, or a parenthesised SELECT with id / company_id / deleted_at
+   *  and the person columns (DRAWING_CORRECTION_RAISER). */
   table: string;
-  owner: 'created_by' | 'user_id';
+  owner: 'created_by' | 'user_id' | 'requested_by';
+  /** ADR-290 — a second person column who also hears the decision (the Drawing
+   *  Rev's submitter beside its creator; a correction's Rev creator beside
+   *  its requester). */
+  orOwner?: 'submitted_by' | 'rev_created_by';
   /** Still needs `right` (Day Log: no notes once the page is hidden — the
    *  same owner rule 2026-10-30 as the Day Log reply notes). */
   needsRight?: true;
@@ -118,6 +126,12 @@ const PR_DECISION = JSON.stringify([{ field: 'status' }]);
 const NC_TO_RTV = JSON.stringify([
   { field: 'disposition', after: NC_DISPOSITION_LABELS.return_to_vendor },
 ]);
+
+/** ADR-290 — a drawing correction with the person columns its decision
+ *  goes to: who asked for it, and who created the Rev. */
+const DRAWING_CORRECTION_RAISER = `(SELECT c.id, c.company_id, c.deleted_at, c.requested_by,
+    ir.created_by AS rev_created_by
+  FROM public.drawing_corrections c JOIN public.item_revisions ir ON ir.id = c.item_revision_id)`;
 
 /** PO types whose approval means material goes out (the po_to_dc list's rule). */
 const SEND_OUT_TYPES = PO_TYPES.filter((t) => poSendsMaterialOut(t));
@@ -370,6 +384,50 @@ export const NOTE_RULES: readonly NoteRule[] = [
     changesHas: RC_DECISION,
     raiser: { table: 'public.route_cards', owner: 'created_by' },
   },
+  // ADR-290 — a Drawing Rev decided in the Drawing Register: its creator and
+  // the person who sent it for review hear it (decision-notify rule).
+  ...(
+    [
+      ['APPROVE', 'approved', ' — Drawing Rev', 'ok'],
+      ['REJECT', 'rejected', ' — Drawing Rev', 'late'],
+      ['RELEASE', 'released', ' — Drawing Rev can be used now', 'ok'],
+    ] as const
+  ).map(
+    ([action, verb, tail, tone]): NoteRule => ({
+      entity: 'ItemRevision',
+      action,
+      right: ['drawingreg_create', 'view'],
+      open: 'raiser_rev',
+      verb,
+      tail,
+      doneTail: ' — Drawing Rev',
+      tone,
+      raiser: { table: 'public.item_revisions', owner: 'created_by', orOwner: 'submitted_by' },
+      ...(action === 'REJECT' ? { withReason: true as const } : {}),
+    }),
+  ),
+  // ADR-290 — a drawing correction decided: the person who asked for it and
+  // the Rev's creator hear it (decision-notify rule). Logged by
+  // item-revisions/corrections.ts on entity DrawingCorrection.
+  ...(
+    [
+      ['APPROVE', 'approved', ' — drawing correction, new file in use', 'ok'],
+      ['REJECT', 'rejected', ' — drawing correction', 'late'],
+    ] as const
+  ).map(
+    ([action, verb, tail, tone]): NoteRule => ({
+      entity: 'DrawingCorrection',
+      action,
+      right: ['drawingreg_create', 'view'],
+      open: 'raiser_correction',
+      verb,
+      tail,
+      doneTail: ' — drawing correction',
+      tone,
+      raiser: { table: DRAWING_CORRECTION_RAISER, owner: 'requested_by', orOwner: 'rev_created_by' },
+      ...(action === 'REJECT' ? { withReason: true as const } : {}),
+    }),
+  ),
   {
     // Stock count approved = posted (approveStockCount). It has no reject:
     // a count is withdrawn through a Cancel Request (decision-notes.ts).
@@ -442,7 +500,9 @@ export function ruleCond(r: NoteRule, cid: string, me: string, seeAll = false): 
   if (r.changesLacks) parts.push(sql`NOT COALESCE(a.changes @> ${r.changesLacks}::jsonb, false)`);
   if (r.when) parts.push(r.when(cid));
   if (r.raiser) {
-    const owner = sql`rd.${sql.raw(r.raiser.owner)} = ${me}::uuid`;
+    const owner = r.raiser.orOwner
+      ? sql`(rd.${sql.raw(r.raiser.owner)} = ${me}::uuid OR rd.${sql.raw(r.raiser.orOwner)} = ${me}::uuid)`
+      : sql`rd.${sql.raw(r.raiser.owner)} = ${me}::uuid`;
     parts.push(sql`EXISTS (
       SELECT 1 FROM ${sql.raw(r.raiser.table)} rd
       WHERE rd.id = a.entity_id AND rd.company_id = ${cid}::uuid AND rd.deleted_at IS NULL
@@ -507,6 +567,14 @@ export function openSql(
       return sql`SELECT d.id::text AS id FROM public.stock_counts d
         WHERE d.company_id = ${cid}::uuid AND d.deleted_at IS NULL
           ${mine('created_by')} ${idIn}`;
+    case 'raiser_rev':
+      return sql`SELECT d.id::text AS id FROM public.item_revisions d
+        WHERE d.company_id = ${cid}::uuid AND d.deleted_at IS NULL
+          ${seeAll ? sql`` : sql`AND (d.created_by = ${me}::uuid OR d.submitted_by = ${me}::uuid)`} ${idIn}`;
+    case 'raiser_correction':
+      return sql`SELECT d.id::text AS id FROM ${sql.raw(DRAWING_CORRECTION_RAISER)} d
+        WHERE d.company_id = ${cid}::uuid AND d.deleted_at IS NULL
+          ${seeAll ? sql`` : sql`AND (d.requested_by = ${me}::uuid OR d.rev_created_by = ${me}::uuid)`} ${idIn}`;
     case 'raiser_day_log':
       return sql`SELECT d.id::text AS id FROM public.daily_reports d
         WHERE d.company_id = ${cid}::uuid AND d.deleted_at IS NULL

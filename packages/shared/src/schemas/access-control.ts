@@ -127,6 +127,8 @@ export const userAccessSchema = z.object({
   drawingDownload: z.boolean().default(false),
   /** "Can print drawings" (Drawing Rev control, ADR-289). See canPrintDrawings. */
   drawingPrint: z.boolean().default(false),
+  /** "Can release drawings" (Drawing Register, ADR-290). See canReleaseDrawings. */
+  drawingRelease: z.boolean().default(false),
   // Which department this person belongs to. Seeds that department's tier and
   // is what the screens show in place of the old role dropdown. Null for L6 /
   // L7 accounts, which are not departmental, and for anyone not set up yet.
@@ -149,6 +151,8 @@ export const saveUserAccessInputSchema = z.object({
   drawingDownload: z.boolean().default(false),
   /** "Can print drawings" (Drawing Rev control, ADR-289). See canPrintDrawings. */
   drawingPrint: z.boolean().default(false),
+  /** "Can release drawings" (Drawing Register, ADR-290). See canReleaseDrawings. */
+  drawingRelease: z.boolean().default(false),
   mainDept: z.string().nullable().default(null),
   // Explicit intent to drop someone out of admin. The derived role makes it
   // possible to demote an admin by saving an empty box, which is a one-click
@@ -173,6 +177,8 @@ export const userAccessListItemSchema = z.object({
   drawingDownload: z.boolean().default(false),
   /** "Can print drawings" (Drawing Rev control, ADR-289). See canPrintDrawings. */
   drawingPrint: z.boolean().default(false),
+  /** "Can release drawings" (Drawing Register, ADR-290). See canReleaseDrawings. */
+  drawingRelease: z.boolean().default(false),
   mainDept: z.string().nullable().default(null),
   // What the access below WOULD derive to. `role` above is what is stored and
   // enforced right now; they differ for anyone whose access has never been
@@ -218,6 +224,8 @@ export const effectiveAccessSchema = z.object({
   drawingDownload: z.boolean().default(false),
   /** "Can print drawings" (Drawing Rev control, ADR-289). See canPrintDrawings. */
   drawingPrint: z.boolean().default(false),
+  /** "Can release drawings" (Drawing Register, ADR-290). See canReleaseDrawings. */
+  drawingRelease: z.boolean().default(false),
   departments: accessDeptsMapSchema,
   forms: accessFormsMapSchema,
 });
@@ -557,4 +565,17 @@ export function canPrintDrawings(
   if (!eff) return false;
   if (eff.fullAccess) return true;
   return eff.drawingPrint === true;
+}
+
+/** ADR-290 — who may RELEASE a Drawing Rev (approved → released) and approve a
+ *  drawing correction on a released Rev. Admin and L6 Full Access always;
+ *  everyone else only with the per-person "Drawing Release" switch. */
+export function canReleaseDrawings(
+  eff: Pick<EffectiveAccess, 'fullAccess' | 'drawingRelease'> | null | undefined,
+  role?: string | null,
+): boolean {
+  if (role === 'admin') return true;
+  if (!eff) return false;
+  if (eff.fullAccess) return true;
+  return eff.drawingRelease === true;
 }

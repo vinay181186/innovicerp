@@ -56,6 +56,7 @@ import { authenticatedRoute } from '@/routes/_authenticated';
 import { PendingFact } from '@/modules/document-edits/components/pending-fact';
 import { Cluster, ClusterGrid } from '@/ui/forms';
 import { useItem, useSoftDeleteItem } from '../api';
+import { ItemDrawingRevs } from '../components/item-drawing-revs';
 import { TrashReasonDialog } from '../components/trash-reason-dialog';
 
 // Rows pulled for the ledger sub-panel. The panel discloses the cap against the
@@ -199,6 +200,9 @@ function ItemDetailPage(): React.JSX.Element {
           <DetailGrid item={item} pendingChanges={pendingChanges} />
         </div>
       </div>
+
+      {/* ADR-290 — the item's Drawing Revs and their release status. */}
+      <ItemDrawingRevs itemId={item.id} />
 
       <StockHistoryCard itemId={item.id} />
 
@@ -378,6 +382,29 @@ function DetailGrid(props: {
       </Cluster>
       <Cluster name="Details">
         <PendingFact num label="HSN Code" value={item.hsnCode} changes={pc} field="hsnCode" />
+        <PendingFact
+          label="Customer Part No."
+          value={item.customerPartNo}
+          changes={pc}
+          field="customerPartNo"
+        />
+        <PendingFact
+          label="Replacement Item"
+          value={
+            item.replacementItemId ? (
+              <Link
+                to="/items/$id"
+                params={{ id: item.replacementItemId }}
+                className="mono fw-700"
+                style={{ color: 'var(--text)' }}
+              >
+                {item.replacementItemCode ?? 'Open item'}
+              </Link>
+            ) : null
+          }
+          changes={pc}
+          field="replacementItemId"
+        />
         <PendingFact
           span={3}
           wrap

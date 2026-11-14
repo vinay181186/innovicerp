@@ -30,6 +30,7 @@ import { useSession } from '@/lib/session';
 import { uploadFile } from '@/lib/storage';
 import { cleanDrawingRev, useItemRevisionLookup } from '../api';
 import { ITEM_REVISION_DRAWING_FOLDER, ReplaceDrawingDialog } from './replace-drawing-dialog';
+import { RevStatusBadge } from './rev-status-badge';
 
 export interface DrawingRevFieldProps {
   itemId: string | null | undefined;
@@ -48,10 +49,15 @@ export interface DrawingRevFieldProps {
    *  "Use as is / Upload new" choice when the Rev is changed. */
   savedRev?: string | null | undefined;
   savedPath?: string | null | undefined;
+  /** ADR-290 — the "Confirmed" tick under "Latest released drawing is …".
+   *  Owned by the form's useRevConfirmGate (so a collapsed line is still
+   *  checked at Save). Without it the note shows with no tick (Route Card). */
+  confirm?: { checked: boolean; onChange: (checked: boolean) => void } | undefined;
 }
 
 export function DrawingRevField(props: DrawingRevFieldProps): React.JSX.Element {
   const { itemId, itemCode, rev, value, onChange, source, refCode, savedRev, savedPath } = props;
+  const { confirm } = props;
   const { data: me } = useSession();
   const { data: eff } = useMyAccess();
   const canReplace = effectiveFormPerms(eff, 'routecard_create').edit;
@@ -76,6 +82,10 @@ export function DrawingRevField(props: DrawingRevFieldProps): React.JSX.Element 
 
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+
+  // ADR-290 — status of this Rev and the item's latest released Rev.
+  const release = data?.release;
+  const latestLabel = release?.latestReleasedLabel ?? null;
 
   useEffect(() => {
     if (!data) return;
@@ -277,6 +287,35 @@ export function DrawingRevField(props: DrawingRevFieldProps): React.JSX.Element 
           {note}
         </div>
       ) : null}
+      {release?.releaseStatus ? (
+        <div style={{ marginTop: 'var(--sp-0)' }}>
+          <RevStatusBadge
+            status={release.releaseStatus}
+            {...(release.releaseStatus === 'draft'
+              ? { text: 'Not released — Plan/PRO/Job Card wait for Design' }
+              : {})}
+          />
+        </div>
+      ) : null}
+      {latestLabel ? (
+        <div className="amber" style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-0)' }}>
+          <div style={{ whiteSpace: 'normal' }}>
+            Latest released drawing is <b className="mono">{latestLabel}</b>. This line specifies{' '}
+            <b className="mono">{label}</b>. Confirm with the customer.
+          </div>
+          {confirm ? (
+            <label style={{ display: 'inline-flex', gap: 'var(--sp-1)', alignItems: 'center' }}>
+              <input
+                type="checkbox"
+                checked={confirm.checked}
+                onChange={(e) => confirm.onChange(e.target.checked)}
+              />
+              <span className="fw-700">Confirmed</span>
+              <span className="red">*</span>
+            </label>
+          ) : null}
+        </div>
+      ) : null}
       {err ? <div className="form-error">{err}</div> : null}
       {preview ? (
         <FilePreviewModal
@@ -293,6 +332,9 @@ export function DrawingRevField(props: DrawingRevFieldProps): React.JSX.Element 
           onCancel={() => setReplacing(false)}
           onDone={(path) => {
             setReplacing(false);
+            // null = a correction was filed on a released Rev; the drawing has
+            // not changed, so the form keeps the file it holds.
+            if (!path) return;
             autoFilled.current = path;
             onChange(path);
           }}

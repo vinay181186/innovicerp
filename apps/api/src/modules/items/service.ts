@@ -49,6 +49,7 @@ import {
   markGone,
 } from '../../lib/master-import-approval';
 import { assertReorderSettable } from './reorder-check';
+import { assertReplacementItem, replacementCodes, withReplacementCodes } from './replacement';
 import { checkTypeAndSerialChange, SERIAL_ONLY_FOR_TOOLS, trackSerialForCreate } from './type-lock';
 import { createItemInputSchema, updateItemImportRowSchema } from './schema';
 import type {
@@ -117,6 +118,10 @@ export const ITEM_FIELDS: readonly DiffField[] = [
   { key: 'hsnCode', label: 'HSN Code' },
   { key: 'drawingFilePath', label: 'Old Drawing', format: fileName },
   { key: 'imagePath', label: 'Product image', format: fileName },
+  // ADR-290 — Replacement Item is diffed as its CODE (callers put the code
+  // under this key: updateItemTx, item-edit-registry snapshots).
+  { key: 'customerPartNo', label: 'Customer Part No.' },
+  { key: 'replacementItemId', label: 'Replacement Item' },
   // Store → Reorder (ADR-193 ph5) — staged like any Item edit (ADR-249 B2).
   { key: 'minStockQty', label: 'Reorder Level' },
   { key: 'reorderQty', label: 'Reorder Qty' },
@@ -158,6 +163,8 @@ export async function listItems(
         ilike(items.name, term),
         ilike(items.description, term),
         ilike(items.material, term),
+        // ADR-290 — the customer's own part number (Item Master column).
+        ilike(items.customerPartNo, term),
         sql`${items.uom}::text ILIKE ${term} ESCAPE '\\'`,
       );
       if (searchCondition) conditions.push(searchCondition);
@@ -203,7 +210,7 @@ export async function listItems(
     ]);
 
     return {
-      items: rows as unknown as Item[],
+      items: (await withReplacementCodes(tx, companyId, rows)) as unknown as Item[],
       total: totals[0]?.value ?? 0,
       limit: input.limit,
       offset: input.offset,
@@ -212,7 +219,7 @@ export async function listItems(
 }
 
 export async function getItem(id: string, user: AuthContext): Promise<Item> {
-  requireCompany(user);
+  const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
     const rows = await tx
       .select()
@@ -221,7 +228,8 @@ export async function getItem(id: string, user: AuthContext): Promise<Item> {
       .limit(1);
     const row = rows[0];
     if (!row) throw new NotFoundError('Item not found. It may have been moved to Trash.');
-    return row as unknown as Item;
+    const [withCode] = await withReplacementCodes(tx, companyId, [row]);
+    return withCode as unknown as Item;
   });
 }
 
@@ -298,6 +306,7 @@ export async function createItem(
         }
         throw new ConflictError(`Item Code "${code}" already exists.`);
       }
+      await assertReplacementItem(tx, companyId, null, input.replacementItemId);
 
       const inserted = await tx
         .insert(items)
@@ -316,11 +325,14 @@ export async function createItem(
           hsnCode: emptyToNull(input.hsnCode),
           drawingFilePath: input.drawingFilePath ?? null,
           imagePath: input.imagePath ?? null,
+          customerPartNo: emptyToNull(input.customerPartNo),
+          replacementItemId: input.replacementItemId ?? null,
           createdBy: user.id,
           updatedBy: user.id,
         })
         .returning();
-      const row = inserted[0] as unknown as Item;
+      const [withCode] = await withReplacementCodes(tx, companyId, inserted);
+      const row = withCode as unknown as Item;
       await emitActivityLog(
         tx,
         {
@@ -353,6 +365,7 @@ const ITEM_IMPORT_LABELS: Record<string, string> = {
   drawingNo: 'Drawing No.',
   revision: 'Item Master Rev',
   trackSerial: 'Track by Serial No.',
+  customerPartNo: 'Customer Part No.',
 };
 
 /**
@@ -485,6 +498,9 @@ export async function createItemsBulk(
           hsnCode: emptyToNull(it.hsnCode),
           drawingFilePath: it.drawingFilePath ?? null,
           imagePath: it.imagePath ?? null,
+          // ADR-290 — Customer Part No. imports; Replacement Item does not (it
+          // is picked on the item screen, where it is checked).
+          customerPartNo: emptyToNull(it.customerPartNo),
           createdBy: user.id,
           updatedBy: user.id,
         });
@@ -566,6 +582,7 @@ export async function createItemsBulk(
         const payload: Record<string, unknown> = { ...patch };
         delete payload.itemType;
         delete payload.trackSerial;
+        delete payload.replacementItemId;
         updates.push({ before, set, changes, row, payload });
       }
     }
@@ -659,6 +676,8 @@ function itemPlainUpdates(input: UpdateItemInput): Record<string, unknown> {
   if (input.drawingFilePath !== undefined) updates.drawingFilePath = input.drawingFilePath ?? null;
   // Product image: a string sets it, null clears it, undefined leaves it alone.
   if (input.imagePath !== undefined) updates.imagePath = input.imagePath ?? null;
+  // ADR-290 — Customer Part No.: null / blank clears it.
+  if (input.customerPartNo !== undefined) updates.customerPartNo = emptyToNull(input.customerPartNo);
   return updates;
 }
 
@@ -763,9 +782,29 @@ export async function updateItemTx(
     if (input.reorderQty !== undefined) updates.reorderQty = qty;
   }
 
-  const changes = diffFields(cur, updates, ITEM_FIELDS);
+  // ADR-290 — Replacement Item: never itself, never an item in Trash.
+  if (input.replacementItemId !== undefined) {
+    await assertReplacementItem(tx, companyId, id, input.replacementItemId);
+    updates.replacementItemId = input.replacementItemId ?? null;
+  }
+
+  // History shows the Replacement Item as its code, not its id.
+  const codes = await replacementCodes(tx, companyId, [
+    cur.replacementItemId,
+    updates.replacementItemId as string | null | undefined,
+  ]);
+  const codeOf = (v: unknown): string | null =>
+    typeof v === 'string' ? (codes.get(v) ?? v) : null;
+  const changes = diffFields(
+    { ...cur, replacementItemId: codeOf(cur.replacementItemId) },
+    'replacementItemId' in updates
+      ? { ...updates, replacementItemId: codeOf(updates.replacementItemId) }
+      : updates,
+    ITEM_FIELDS,
+  );
   const updated = await tx.update(items).set(updates).where(eq(items.id, id)).returning();
-  const row = updated[0] as unknown as Item;
+  const [withCode] = await withReplacementCodes(tx, companyId, updated);
+  const row = withCode as unknown as Item;
   if (changes.length > 0) {
     await emitActivityLog(
       tx,

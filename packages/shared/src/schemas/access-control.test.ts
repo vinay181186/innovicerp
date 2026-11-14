@@ -20,6 +20,7 @@ function access(over: Partial<EffectiveAccess> = {}): EffectiveAccess {
     auditor: false,
     drawingDownload: false,
     drawingPrint: false,
+    drawingRelease: false,
     departments: {},
     forms: {},
     ...over,

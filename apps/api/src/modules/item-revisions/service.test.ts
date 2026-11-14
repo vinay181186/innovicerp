@@ -236,6 +236,9 @@ describe('Item + Drawing Rev register', () => {
       ),
     ).rejects.toThrow(/All Job Cards are closed/);
 
+    // ADR-290 — the target Rev must be released before open work moves to it.
+    await db.update(itemRevisions).set({ releaseStatus: 'released' }).where(eq(itemRevisions.id, r3!.id));
+
     // One OPEN Job Card beside the closed one → it moves, the closed one stays.
     await db.insert(jobCards).values({
       companyId,
@@ -313,6 +316,11 @@ describe('Item + Drawing Rev register', () => {
   it('0234: open PRO moves by plan linkage and takes the APPROVED Route Card of the new Rev', async () => {
     const r2 = await resolve('2');
     const r3 = await resolve('3');
+    // ADR-290 — the PRO moves between Revs; both must be released.
+    await db
+      .update(itemRevisions)
+      .set({ releaseStatus: 'released' })
+      .where(inArray(itemRevisions.id, [r2!.id, r3!.id]));
     const ops = [
       { operation: 'Turning', opType: 'process' as const, machineCodeText: 'CNC', cycleTimeMin: 5 },
     ];
@@ -422,7 +430,16 @@ describe('Item + Drawing Rev register', () => {
     const two = list.items.find((r) => r.drawingRev === '2')!;
     expect(two.routeCardCode).toBeTruthy();
     const look = await svc.lookupItemRevision({ itemId, rev: '9' }, admin);
-    expect(look).toEqual({ revision: null, revRequired: true });
+    // ADR-290 — Rev 9 does not exist; the item's highest released Rev is 3.
+    expect(look).toEqual({
+      revision: null,
+      revRequired: true,
+      release: {
+        releaseStatus: null,
+        latestReleasedRev: '3',
+        latestReleasedLabel: `${P}SHAFT/3`,
+      },
+    });
     const three = list.items.find((r) => r.drawingRev === '3')!;
     const detail = await svc.getItemRevision(three.id, admin);
     expect(detail.linkedDocs.map((d) => d.docType)).toContain('job_card');

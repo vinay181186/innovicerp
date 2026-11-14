@@ -244,6 +244,8 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
   const [drawingDownload, setDrawingDownload] = useState(false);
   // ADR-289 — "Can print drawings": the same whole-account shape as download.
   const [drawingPrint, setDrawingPrint] = useState(false);
+  // ADR-290 — "Drawing Release button": same whole-account shape as print.
+  const [drawingRelease, setDrawingRelease] = useState(false);
   const [departments, setDepartments] = useState<DeptTiers>({});
   const [forms, setForms] = useState<Record<string, FormPerms>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -302,6 +304,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
     setAuditor(m.auditor);
     setDrawingDownload(m.drawingDownload);
     setDrawingPrint(m.drawingPrint);
+    setDrawingRelease(m.drawingRelease);
     setMainDept(m.mainDept ?? '');
     const tiers = loadDeptTiers(m.departments);
     setDepartments(tiers);
@@ -323,6 +326,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
     setAuditor(src.auditor);
     setDrawingDownload(src.drawingDownload);
     setDrawingPrint(src.drawingPrint);
+    setDrawingRelease(src.drawingRelease);
     setMainDept(src.mainDept ?? '');
     const tiers = loadDeptTiers(src.departments);
     setDepartments(tiers);
@@ -532,6 +536,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
       auditor,
       drawingDownload,
       drawingPrint,
+      drawingRelease,
       mainDept: mainDept || null,
       departments,
       forms,
@@ -578,6 +583,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
     setAuditor(m.auditor);
     setDrawingDownload(m.drawingDownload);
     setDrawingPrint(m.drawingPrint);
+    setDrawingRelease(m.drawingRelease);
     setMainDept(m.mainDept ?? '');
     const tiers = loadDeptTiers(m.departments);
     setDepartments(tiers);
@@ -615,6 +621,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
           auditor,
           drawingDownload,
           drawingPrint,
+          drawingRelease,
           mainDept: mainDept || null,
           confirmAdminChange,
           departments,
@@ -706,6 +713,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
             auditor: data.auditor,
             drawingDownload: data.drawingDownload,
             drawingPrint: data.drawingPrint,
+            drawingRelease: data.drawingRelease,
             departments: loadDeptTiers(data.departments),
             forms: fillForms(data.forms),
           })
@@ -721,6 +729,7 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
       auditor,
       drawingDownload,
       drawingPrint,
+      drawingRelease,
       departments,
       forms,
     }) !== loadedSnapshot;
@@ -1091,6 +1100,51 @@ export function ConfigureAccessModal({ userId, userName, onClose }: Props): Reac
                   {fullAccess
                     ? 'Included in L6 Super Admin — everyone at this level sees the Print button on the drawing page.'
                     : "Shows the Print button on the drawing page; every print from it is logged. A PDF opened in the browser can still be printed from the browser's own viewer."}
+                </div>
+              </div>
+            </div>
+
+            {/* ── Drawing release: one whole-account tick (ADR-290) ──
+                Same shape as the print tick above: locked on for L6, never
+                implied by L7 Auditor. */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: 'var(--sp-3)',
+                marginBottom: 'var(--sp-4)',
+                padding: 'var(--sp-2) var(--sp-3)',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--radius2)',
+                background: 'var(--bg3)',
+              }}
+            >
+              <input
+                id="ac-drawing-release"
+                type="checkbox"
+                checked={fullAccess || drawingRelease}
+                disabled={fullAccess}
+                onChange={(e) => setDrawingRelease(e.target.checked)}
+                style={{ marginTop: 'var(--sp-0)' }}
+              />
+              <div>
+                <label
+                  htmlFor="ac-drawing-release"
+                  style={{
+                    fontSize: 'var(--fs-sm)',
+                    fontWeight: 700,
+                    cursor: fullAccess ? 'default' : 'pointer',
+                  }}
+                >
+                  Drawing Release button
+                </label>
+                <div
+                  className="text3"
+                  style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-0)' }}
+                >
+                  {fullAccess
+                    ? 'Included in L6 Super Admin — everyone at this level may release a Drawing Rev.'
+                    : 'May release a Drawing Rev and approve a drawing correction on a released Rev.'}
                 </div>
               </div>
             </div>

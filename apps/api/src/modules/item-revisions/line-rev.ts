@@ -15,12 +15,17 @@ import {
   REV_CHANGE_REASON_MIN,
   itemRevLabel,
   normalizeRevision,
+  REV_RELEASE_STATUS_LABELS,
 } from '@innovic/shared';
 import { inArray, sql } from 'drizzle-orm';
 import { itemRevisionChanges, itemRevisions, items } from '../../db/schema';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { ValidationError } from '../../lib/errors';
-import { findItemRevision, resolveItemRevision } from '../../lib/item-revision';
+import {
+  assertRevReleasedForWork,
+  findItemRevision,
+  resolveItemRevision,
+} from '../../lib/item-revision';
 import { emitActivityLog } from '../activity-log/service';
 
 export type LineKind = 'so' | 'jw';
@@ -283,6 +288,19 @@ export async function applyLineRevChange(
   }
   if (c.revTextChanged !== false && hasWork && reason.length < REV_CHANGE_REASON_MIN) {
     throw new ValidationError(`Ln ${c.lineNo}: give a reason for changing the Drawing Rev`);
+  }
+  // ADR-290 Step 3 — open Plan / PRO / Job Card work moves to the new Rev, so
+  // the new Rev must allow work (released, superseded or old unverified).
+  if (hasWork) {
+    await assertRevReleasedForWork(
+      tx,
+      companyId,
+      c.toId,
+      // Names the Drawing Register, where the Rev is added (POST
+      // /item-revisions) and released — the way out of a refused save.
+      (label, status) =>
+        `${label} is ${REV_RELEASE_STATUS_LABELS[status]}. Add / release it in the Drawing Register first, then change the Rev on the line.`,
+    );
   }
   const closedIds = closed.map((j) => j.id);
   const closedArr =

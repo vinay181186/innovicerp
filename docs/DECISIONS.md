@@ -15682,3 +15682,33 @@ SOP INN-ERP-SOP-ENG-001 (Draft 1.0) asks for exact revision traceability. A trac
 - Positive: stock per Rev stays right through returns and cancels; a printed DC or Invoice never changes later.
 - Negative: rows made before 0247 can only be given back to the Rev of their single linked ledger row.
 - Not yet done (later steps of the same fix list): release status, ECR / hold / split, wrong-Rev blocks at issue and dispatch, reports.
+
+## ADR-290: Drawing Register — release status for every Item + Drawing Rev; work only on a released Rev
+
+**Date:** 2026-11-14
+**Status:** Accepted (owner approved the fix list, points 1, 2, 6 and new items 1, 2, 4; open choices D1, D3, D4, D7 taken as recommended)
+
+### Context
+
+SOP INN-ERP-SOP-ENG-001 §4: only a released revision may be used for new manufacturing, release is an Engineering decision, released files are never overwritten. Before this, typing a Rev on any line created a usable record at once, and Replace drawing swapped the file everywhere.
+
+### Decision
+
+- `item_revisions.release_status`: `unverified` (records made before 0248 — never guessed), `draft` (shown "Not released"; a Rev typed on an SO / JWSO / Route Card / BOM line, or added with "+ New Drawing Rev"), `under_review`, `approved`, `released`, `superseded`, `obsolete`, `rejected`. Actions Send for Review → Approve / Reject → Release, Mark Obsolete; each a conditional UPDATE (§20.2) with the loaded `updated_at` (§20.4). Approve / Reject / Obsolete = Drawing Register Approve tick (Design); Release = per-person "Drawing Release button" switch (`user_access.drawing_release`). "Verify & Release" takes an Unverified record with a file straight to Released.
+- Release stores the SHA-256 of the drawing (`file_hash`). At most one Released Rev per item: lower released Revs become Superseded; releasing a Rev older than one already released makes it Superseded at once; labels that cannot be compared — the newest release wins.
+- Plan, Execute, PRO and Job Card creation, and moving open work to another Rev, need a Rev in Released, Superseded or Unverified (`assertRevReleasedForWork`, one helper). The BOM cascade (inside the SO / JWSO save) and NC rework / make-fresh children are exempt here; their work is stopped by the Step 4 operation check instead.
+- A released (or superseded, or unverified-with-open-work) Rev's file is never swapped: Replace files a `drawing_corrections` row; the Drawing Release holder approves it ("Approve correction"), and only then the file changes through the same writer, with a new hash. Before release the direct replace with reason stays; Under Review / Approved go back to Not released.
+- History tables `item_revision_drawings`, `item_revision_changes`, `so_line_drawing_revisions` are append-only (trigger + insert-only policies).
+- Items gain `customer_part_no` and `replacement_item_id`. Item detail lists the item's Drawing Revs.
+- SO / JWSO line shows the Drawing Rev Status; when a newer released Rev exists, "Latest released drawing is ABC/2. This line specifies ABC/1." needs a Confirmed tick.
+- Approve / reject / release and correction decisions notify the submitter / requester and the creator (decision-notify rule).
+
+### Alternatives Considered
+
+- A separate `drawings` + `drawing_revisions` table pair as in the SOP's model — rejected (§21): `item_revisions` already is one record per Item + Rev with one drawing; status columns on it reach every screen that already reads it.
+- Block SO save on a not-released Rev — rejected: Sales would stop; the shop floor is protected at Plan / PRO / Job Card instead.
+
+### Consequences
+
+- Positive: no new work on an unchecked drawing; a released file cannot change without a second person.
+- Negative: every old record is Unverified until Design verifies it; work continues on it with a warning.

@@ -8,6 +8,12 @@
 // same way Route Card → Move to Trash asks for its reason). A thrown error is
 // shown inside the dialog, so a 409 "changed by someone else" or a refused
 // right never closes it. Sends the record's updatedAt as loaded (§20.4).
+//
+// ADR-290 — on a Released / Superseded Rev the file is never swapped here: the
+// server files a drawing correction for the Drawing Release approver and the
+// drawing stays as it is until that is approved (onDone gets null). On an
+// Under Review / Approved Rev the swap happens and the Rev goes back to Not
+// released.
 
 import { REV_CHANGE_REASON_MIN, type ItemRevision } from '@innovic/shared';
 import { useState } from 'react';
@@ -25,9 +31,10 @@ export function ReplaceDrawingDialog({
   onDone,
   onCancel,
 }: {
-  revision: ItemRevision;
-  /** Called with the new file path once the server accepted the replace. */
-  onDone: (path: string) => void;
+  revision: Pick<ItemRevision, 'id' | 'label' | 'drawingNo' | 'updatedAt' | 'releaseStatus'>;
+  /** Called with the new file path once the server swapped the file, or with
+   *  null when it filed a correction instead (the drawing has not changed). */
+  onDone: (path: string | null) => void;
   onCancel: () => void;
 }): React.JSX.Element {
   const { data: me } = useSession();
@@ -38,6 +45,10 @@ export function ReplaceDrawingDialog({
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const correction =
+    revision.releaseStatus === 'released' || revision.releaseStatus === 'superseded';
+  const resetsReview =
+    revision.releaseStatus === 'under_review' || revision.releaseStatus === 'approved';
 
   async function onPick(file: File | null): Promise<void> {
     if (!file) return;
@@ -61,10 +72,21 @@ export function ReplaceDrawingDialog({
     <ConfirmDialog
       title={`Replace drawing of ${revision.label}?`}
       tone="primary"
-      confirmLabel="Replace drawing"
-      pendingLabel="Replacing…"
+      confirmLabel={correction ? 'Send correction for approval' : 'Replace drawing'}
+      pendingLabel={correction ? 'Sending…' : 'Replacing…'}
       message={
         <div style={{ display: 'grid', gap: 'var(--sp-2)', marginTop: 'var(--sp-2)' }}>
+          {correction ? (
+            <span className="amber fw-700">
+              This Rev is released. Your file goes to the Drawing Release approver; the drawing does
+              not change until it is approved.
+            </span>
+          ) : null}
+          {resetsReview ? (
+            <span className="amber fw-700">
+              The Rev goes back to Not released and must be reviewed again.
+            </span>
+          ) : null}
           <span>
             The old file stays in this drawing&apos;s history. For a new revision of the drawing,
             use a new Drawing Rev instead.
@@ -121,8 +143,13 @@ export function ReplaceDrawingDialog({
           reason: reason.trim(),
           expectedUpdatedAt: revision.updatedAt,
         });
-        toast.ok('Drawing replaced');
-        onDone(path);
+        if (correction) {
+          toast.ok('Correction sent for approval');
+          onDone(null);
+        } else {
+          toast.ok('Drawing replaced');
+          onDone(path);
+        }
       }}
     />
   );

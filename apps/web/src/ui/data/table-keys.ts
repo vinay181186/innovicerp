@@ -174,6 +174,12 @@ export const TABLE_KEYS = {
   drawingRevFixLines: 'drawing-rev-fix-lines',
   /** Drawing Rev Fix List: old stock without a Drawing Rev. */
   drawingRevFixStock: 'drawing-rev-fix-stock',
+  /** Drawing Register (ADR-290): every Item + Drawing Rev and its release status. */
+  drawingRegister: 'drawing-register',
+  /** Drawing page (ADR-290): drawing corrections on a released Rev. */
+  drawingCorrections: 'drawing-corrections',
+  /** Item detail (ADR-290): the item's Drawing Revs. */
+  itemDrawingRevs: 'item-drawing-revs',
   /** Home (ADR-264): the documents under one opened department check. */
   dashCheck: 'dash-check',
   /** Home (ADR-264) Day Log view: today's entries. */

@@ -111,6 +111,7 @@ import { assertNoQcDirectlyAfterOutsource } from '../../lib/jc-osp-qc-rule';
 import { assertRouteCardUsable } from '../../lib/route-card-usable';
 import { assertRouteCardMatchesPlanRev } from '../../lib/route-card-for-rev';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
+import { assertRevReleasedForWork } from '../../lib/item-revision';
 import { diffFields, type DiffField } from '../../lib/audit-trail';
 import { fmtDate } from '../../lib/format-date';
 import {
@@ -1376,6 +1377,9 @@ export async function createProductionOrder(
         .for('update');
       const plan = planRows[0];
       if (!plan) throw new NotFoundError('Plan not found. Refresh the page.');
+      // ADR-290 Step 3 — a PRO only on a released (or old, unverified) Rev,
+      // checked inside the plan lock.
+      await assertRevReleasedForWork(tx, companyId, plan.itemRevisionId ?? null);
 
       if (plan.opsSource !== 'route_card') {
         throw new ValidationError(

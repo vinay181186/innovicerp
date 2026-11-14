@@ -162,6 +162,7 @@ async function resolveAssembledBy(
       // Irrelevant to who may make a Planning entry; stated, not defaulted.
       drawingDownload: false,
       drawingPrint: false,
+      drawingRelease: false,
       departments: u.departments,
       forms: u.forms,
     });

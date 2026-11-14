@@ -54,6 +54,10 @@ import { Banner } from '@/ui/feedback';
 import { FormActions, PageHeader, useSaveShortcut } from '@/ui/layout';
 import { useEnsureJwRmItem } from '../api';
 import { parseJwLineFile } from '../lib/import-export';
+import {
+  RevConfirmProbe,
+  useRevConfirmGate,
+} from '@/modules/item-revisions/components/rev-confirm-gate';
 import { JwLineDrawingCell } from './jw-line-drawing-cell';
 import {
   CustomerAddressField,
@@ -542,6 +546,8 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
   // so the user is told which row is wrong instead of meeting the API's raw
   // schema rejection. Mirrors the SO form.
   const [lineError, setLineError] = useState<string | null>(null);
+  // ADR-290 — "Confirmed" ticks for lines on an older Rev than the latest released.
+  const revConfirm = useRevConfirmGate();
 
   // The Excel Template is built by the API (GET /import-templates/jw-lines.xlsx)
   // so its columns can carry real Excel dropdowns — SheetJS, still used here
@@ -786,6 +792,18 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
         setLineError(`${lineRef(i)}: ${msg}`);
         return;
       }
+    }
+
+    // ADR-290: a line naming an older Rev than the latest released one needs
+    // its "Confirmed" tick (opened for the user if collapsed).
+    const revWait = revConfirm.firstPending(fields.map((f) => f.id));
+    if (revWait) {
+      const key = fields[revWait.index]?.id;
+      if (key) setOpenMore((prev) => new Set(prev).add(key));
+      setLineError(
+        `${lineRef(revWait.index)}: latest released drawing is ${revWait.latestLabel} — confirm with the customer and tick Confirmed.`,
+      );
+      return;
     }
 
     const h = values.header;
@@ -1527,6 +1545,12 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                           title={REV_INPUT_TITLE}
                           {...upperCaseRevField(register(`lines.${idx}.revision` as const))}
                         />
+                        <RevConfirmProbe
+                          gate={revConfirm}
+                          lineKey={field.id}
+                          itemId={wl?.itemId}
+                          rev={watch(`lines.${idx}.revision` as const)}
+                        />
                         {(() => {
                           const savedRev = wl?.id ? savedLineById.get(wl.id)?.revision : undefined;
                           return savedRev && drawingRevChanged(savedRev, wl?.revision) ? (
@@ -1656,6 +1680,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
                                 itemId={wl?.itemId}
                                 itemCode={wl?.itemCodeText}
                                 rev={watch(`lines.${idx}.revision` as const)}
+                                confirm={revConfirm.confirmFor(field.id)}
                                 {...(() => {
                                   const saved =
                                     props.mode === 'edit' && wl?.id

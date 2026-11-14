@@ -25,6 +25,7 @@ import {
   type AccessFormsMap,
   canDownloadDrawings,
   canPrintDrawings,
+  canReleaseDrawings,
   cascadeFormsMap,
   effectiveFormPerms,
   type EffectiveAccess,
@@ -68,6 +69,7 @@ function rowToUserAccess(r: {
   auditor: boolean;
   drawingDownload: boolean;
   drawingPrint: boolean;
+  drawingRelease: boolean;
   mainDept: string | null;
   departments: unknown;
   forms: unknown;
@@ -86,6 +88,8 @@ function rowToUserAccess(r: {
     drawingDownload: r.drawingDownload,
     // ADR-289 — "Can print drawings", stored raw like drawingDownload.
     drawingPrint: r.drawingPrint,
+    // ADR-290 — "Can release drawings", stored raw.
+    drawingRelease: r.drawingRelease,
     mainDept: r.mainDept,
     fullAccess: r.fullAccess,
     departments: asJsonMap<AccessDeptsMap>(r.departments),
@@ -185,6 +189,7 @@ export async function listUserAccess(
         acAuditor: userAccess.auditor,
         acDrawingDownload: userAccess.drawingDownload,
         acDrawingPrint: userAccess.drawingPrint,
+        acDrawingRelease: userAccess.drawingRelease,
         acMainDept: userAccess.mainDept,
         acDepartments: userAccess.departments,
         acForms: userAccess.forms,
@@ -228,6 +233,7 @@ export async function listUserAccess(
         // really do is canDownloadDrawings' answer, asked at the point of use.
         drawingDownload: r.acDrawingDownload ?? false,
         drawingPrint: r.acDrawingPrint ?? false,
+        drawingRelease: r.acDrawingRelease ?? false,
         mainDept: r.acMainDept ?? null,
         derivedRole: roleForAccess({ fullAccess, auditor, departments: normalizeDeptsMap(depts) }),
         deptCount: fullAccess || auditor ? totalDepts : countDepts(depts),
@@ -366,6 +372,7 @@ async function listDeptUserOptions(
         // Irrelevant to who may make an entry; stated, not defaulted.
         drawingDownload: false,
         drawingPrint: false,
+        drawingRelease: false,
         departments: r.acDepartments,
         forms: r.acForms,
       });
@@ -546,6 +553,7 @@ export async function getUserAccess(userId: string, user: AuthContext): Promise<
       // unticked, same as every other switch on this shape.
       drawingDownload: false,
       drawingPrint: false,
+      drawingRelease: false,
       mainDept: null,
       departments: {},
       forms: {},
@@ -579,6 +587,8 @@ export async function saveUserAccess(
   const drawingDownload = input.drawingDownload;
   // ADR-289 — "Can print drawings", stored exactly as ticked (same reason).
   const drawingPrint = input.drawingPrint;
+  // ADR-290 — "Can release drawings", stored exactly as ticked.
+  const drawingRelease = input.drawingRelease;
   // The main department has to be a real department that this person actually
   // holds a tier in. A stale value — the admin picked Design, then cleared the
   // Design row by hand — would leave the screen claiming a department the
@@ -715,6 +725,7 @@ export async function saveUserAccess(
           auditor,
           drawingDownload,
           drawingPrint,
+          drawingRelease,
           mainDept,
           departments: cleanDepts,
           forms: cleanForms,
@@ -734,6 +745,7 @@ export async function saveUserAccess(
           auditor,
           drawingDownload,
           drawingPrint,
+          drawingRelease,
           mainDept,
           departments: cleanDepts,
           forms: cleanForms,
@@ -771,6 +783,11 @@ export async function saveUserAccess(
           }` +
           `; drawing print ${
             canPrintDrawings({ fullAccess: input.fullAccess, drawingPrint }, derivedRole)
+              ? 'YES'
+              : 'no'
+          }` +
+          `; drawing release ${
+            canReleaseDrawings({ fullAccess: input.fullAccess, drawingRelease }, derivedRole)
               ? 'YES'
               : 'no'
           }` +

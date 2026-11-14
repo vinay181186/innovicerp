@@ -103,6 +103,8 @@ export const ACCESS_FORMS = [
   { key: 'dsnissue_create', dept: 'design', label: 'Design Issues' },
   { key: 'dsnworklog_create', dept: 'design', label: 'Design Work Log' },
   { key: 'dsndcr_create', dept: 'design', label: 'Design DCR/DCN' },
+  // ADR-290 — Drawing Register (Item + Drawing Rev release status).
+  { key: 'drawingreg_create', dept: 'design', label: 'Drawing Register' },
   // Store
   { key: 'item_create', dept: 'store', label: 'Item Master' },
   { key: 'grn_create', dept: 'store', label: 'GRN' },

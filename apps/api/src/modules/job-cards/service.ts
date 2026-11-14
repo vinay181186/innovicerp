@@ -49,6 +49,7 @@ import {
 } from '../../lib/errors';
 import { lockDocSeries } from '../../lib/doc-series-lock';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
+import { assertRevReleasedForWork } from '../../lib/item-revision';
 import { editConflicts, rowChangedByName } from '../../lib/row-changed-by';
 import { assertProductionOrderNotShortClosed } from '../../lib/production-order-stop';
 import { resolveRmItem } from '../../lib/rm-item';
@@ -2184,6 +2185,8 @@ export async function createJobCard(
       input.sourceJwLineId,
       item.id,
     );
+    // ADR-290 Step 3 — a new Job Card only on a released (or old) Rev.
+    await assertRevReleasedForWork(tx, companyId, itemRevisionId);
     await assertNoDirectJcDrawing(tx, itemRevisionId, item.code, input.drawingFilePath, null);
 
     const code = await nextJcCode(tx, companyId);
@@ -3643,6 +3646,9 @@ export async function updateJobCardTx(
           head.sourceJwLineId,
           item.id,
         );
+  // ADR-290 Step 3 — a re-picked item's Rev must allow work (the same item
+  // keeps the Rev the card already has).
+  if (item.id !== head.itemId) await assertRevReleasedForWork(tx, companyId, itemRevisionId);
   await assertNoDirectJcDrawing(
     tx,
     itemRevisionId,

@@ -192,6 +192,18 @@ describe('ADR-289 Rev change through edit approval', () => {
       } as never)
       .returning({ id: jobCards.id });
 
+    // ADR-290 — the line's open work moves to Rev 2, so Rev 2 must be released.
+    await db.insert(itemRevisions).values({
+      companyId,
+      itemId,
+      rev: '2',
+      sourceType: 'so_line',
+      sourceRef: `${P}test`,
+      releaseStatus: 'released',
+      createdBy: admin.id,
+      updatedBy: admin.id,
+    });
+
     const reason = 'Customer issued drawing Rev 2';
     const staged = (await updateSalesOrderOrStage(
       so.id,

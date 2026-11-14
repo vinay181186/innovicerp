@@ -155,6 +155,7 @@ export * from './schemas/ml-plan';
 export * from './schemas/ml-plan-orders';
 export * from './schemas/route-card';
 export * from './schemas/item-revision';
+export * from './schemas/drawing-register';
 export * from './schemas/qc-process';
 export * from './schemas/cost-center';
 export * from './schemas/print-template';

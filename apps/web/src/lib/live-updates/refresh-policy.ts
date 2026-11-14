@@ -68,6 +68,9 @@ export const REFRESH_POLICY: Readonly<Record<string, RefreshRule>> = {
   'design-issues': poll('design tables are not published'),
   'design-projects': poll('design tables are not published'),
   'design-tracker': poll('design tables are not published'),
+  // ADR-290 — release status changes by other people (review, approve,
+  // release, correction decisions); item_revisions is not in LIVE_TABLES.
+  'drawing-register': poll('approvals by others; item_revisions is not published'),
   'design-work-log': poll('design tables are not published'),
   invoices: poll('invoices not published (amounts; changes rarely)'),
   'job-work-orders': poll('job_work_orders not published'),

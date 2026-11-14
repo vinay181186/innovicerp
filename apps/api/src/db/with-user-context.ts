@@ -25,6 +25,7 @@ export type FrozenAccess = Readonly<{
   auditor: boolean;
   drawingDownload: boolean;
   drawingPrint: boolean;
+  drawingRelease: boolean;
   departments: Readonly<EffectiveAccess['departments']>;
   forms: Readonly<{
     [K in keyof EffectiveAccess['forms']]: Readonly<EffectiveAccess['forms'][K]>;

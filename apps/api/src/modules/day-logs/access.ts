@@ -55,6 +55,7 @@ export interface Viewer {
 export const accessJson = (userId: string, companyId: string): SQL => sql`(
   SELECT json_build_object('fullAccess', ua.full_access, 'auditor', ua.auditor,
            'drawingDownload', ua.drawing_download, 'drawingPrint', ua.drawing_print,
+           'drawingRelease', ua.drawing_release,
            'departments', ua.departments,
            'forms', ua.forms)
   FROM public.user_access ua
@@ -102,6 +103,7 @@ export async function resolveAccess(user: AuthContext, row: unknown): Promise<Fr
     auditor: (r['auditor'] as boolean | null) ?? null,
     drawingDownload: (r['drawingDownload'] as boolean | null) ?? null,
     drawingPrint: (r['drawingPrint'] as boolean | null) ?? null,
+    drawingRelease: (r['drawingRelease'] as boolean | null) ?? null,
     departments: r['departments'] ?? null,
     forms: r['forms'] ?? null,
   });

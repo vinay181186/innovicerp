@@ -21,6 +21,7 @@ const dash = (departments: EffectiveAccess['departments'], isAdmin = false) => (
     auditor: false,
     drawingDownload: false,
     drawingPrint: false,
+    drawingRelease: false,
     departments,
     forms: {},
   },

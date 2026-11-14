@@ -80,6 +80,7 @@ import {
 } from '../../lib/errors';
 import { lockDocSeries } from '../../lib/doc-series-lock';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
+import { assertRevReleasedForWork } from '../../lib/item-revision';
 import { loadRelatedItems } from '../../lib/related-items';
 import {
   buildTimeline,
@@ -1098,6 +1099,8 @@ export async function createPlanInTx(
   // is for: the SO/JWSO line's (same item), a BOM child plan's BOM line, or the
   // Multi-Level Plan node's. Ad-hoc plans: null.
   const itemRevisionId = await planItemRevisionId(tx, companyId, input, opts.mlPlanNodeId);
+  // ADR-290 Step 3 — a Plan only on a Rev Design has released (or old data).
+  await assertRevReleasedForWork(tx, companyId, itemRevisionId);
   let planType = input.planType;
   if (isRouteCardPlan) {
     if (!input.itemId) {
@@ -2293,6 +2296,9 @@ export async function buildJobCardFromOps(
   },
 ): Promise<JcBuildResult> {
   const { plan, ops, user, companyId } = opts;
+  // ADR-290 Step 3 — Execute (Manufacture) and a Production Order both build
+  // their Job Card here: only on a Rev whose release status allows work.
+  await assertRevReleasedForWork(tx, companyId, plan.itemRevisionId ?? null);
   const today = todayIso();
   const jcCode = await nextJcCode(tx, companyId);
   // How many pieces THIS card is for — the Production Order's Order Qty since
@@ -2670,6 +2676,8 @@ async function executeFullOutsource(
   if (!plan.foProcess) {
     throw new ValidationError('Process is required for a Full Outsource plan.');
   }
+  // ADR-290 Step 3 — the seeded Job Card is new work on the plan's Rev.
+  await assertRevReleasedForWork(tx, plan.companyId, plan.itemRevisionId ?? null);
   const today = todayIso();
 
   // Seed a Job Card with ONE default outsource op (the default OSP route), so a

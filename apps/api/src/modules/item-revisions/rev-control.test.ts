@@ -446,6 +446,14 @@ describe('ADR-289 Drawing Rev control', () => {
     expect(err).toBeInstanceOf(ValidationError);
     expect((err as Error).message).toBe('Ln 1: give a reason for changing the Drawing Rev');
     await expect(change('abc')).rejects.toBeInstanceOf(ValidationError);
+    // ADR-290 — open work may not move to a Rev that is not released.
+    await expect(change('Customer sent drawing rev 2')).rejects.toThrow(
+      `${P}PART/2 is Not released. Add / release it in the Drawing Register first, then change the Rev on the line.`,
+    );
+    await db
+      .update(itemRevisions)
+      .set({ releaseStatus: 'released' })
+      .where(eq(itemRevisions.id, rev2));
 
     const res = await change('Customer sent drawing rev 2');
     expect(res.movedDocs).toEqual([`${P}JC-F`]);

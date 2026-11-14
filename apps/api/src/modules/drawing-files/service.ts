@@ -23,6 +23,7 @@ import {
   type DrawingUrlQuery,
   type DrawingUrlResponse,
 } from '@innovic/shared';
+import { createHash } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
@@ -251,6 +252,19 @@ export async function getDrawingUrl(
   );
 
   return { url: data.signedUrl, expiresIn, mode: input.mode };
+}
+
+/**
+ * ADR-290 — SHA-256 (hex) of one drawing file, read from the drawings bucket
+ * with the service key. Stored on the Drawing Rev at release so a later swap of
+ * the stored file can be detected. Null when the file cannot be read — the
+ * caller refuses the release.
+ */
+export async function hashDrawingFile(path: string): Promise<string | null> {
+  const { data, error } = await supabaseAdmin.storage.from(DRAWING_BUCKET).download(path);
+  if (error || !data) return null;
+  const buf = Buffer.from(await data.arrayBuffer());
+  return createHash('sha256').update(buf).digest('hex');
 }
 
 /**

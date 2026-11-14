@@ -19,6 +19,7 @@ export function asAccess(
     auditor: false,
     drawingDownload: false,
     drawingPrint: false,
+    drawingRelease: false,
     departments: {},
     forms: {},
     ...access,

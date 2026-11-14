@@ -12,19 +12,18 @@
 //   • Rev only for MAKE items; Buy items / RM resolve to null.
 
 import {
-  ActivityAction,
   normalizeRevision,
   REVISION_PATTERN,
-  REV_CHANGE_REASON_MIN,
+  isRevWorkAllowed,
   itemRevLabel,
+  revNotReleasedMessage,
   type ItemRevisionSource,
+  type RevReleaseStatus,
 } from '@innovic/shared';
 import { and, eq, isNull, sql } from 'drizzle-orm';
-import { itemRevisionDrawings, itemRevisions, items, users } from '../db/schema';
+import { itemRevisionDrawings, itemRevisions, items } from '../db/schema';
 import type { AuthContext, DbTransaction } from '../db/with-user-context';
-import { emitActivityLog } from '../modules/activity-log/service';
-import { assertUnchangedSinceOpened } from './edit-conflict';
-import { ConflictError, NotFoundError, ValidationError } from './errors';
+import { ValidationError } from './errors';
 
 export interface ResolveItemRevisionInput {
   itemId: string | null | undefined;
@@ -37,6 +36,8 @@ export interface ResolveItemRevisionInput {
   sourceRef: string | null;
   /** True when the file is "Use as is" carried over from another Rev. */
   copiedFromOtherRev?: boolean;
+  /** ADR-290 — "what changed in this Rev", stored on a NEW row only. */
+  changeNote?: string | null | undefined;
 }
 
 export interface ResolvedItemRevision {
@@ -85,9 +86,12 @@ export async function resolveItemRevision(
     input.drawingFilePath === undefined ? undefined : input.drawingFilePath?.trim() || null;
   const offeredNo = input.drawingNo === undefined ? undefined : input.drawingNo?.trim() || null;
 
+  // ADR-290 — a Rev first named on a document is 'draft' ("Not released") until
+  // Design releases it in the Drawing Register. Only 'legacy' rows stay 'unverified'.
+  const releaseStatus = input.sourceType === 'legacy' ? 'unverified' : 'draft';
   const inserted = await tx.execute<{ id: string }>(sql`
-    INSERT INTO item_revisions (company_id, item_id, rev, drawing_file_path, drawing_no, source_type, source_ref, created_by, updated_by)
-    VALUES (${companyId}, ${input.itemId}, ${rev}, ${offered ?? null}, ${offeredNo ?? null}, ${input.sourceType}, ${input.sourceRef}, ${user.id}, ${user.id})
+    INSERT INTO item_revisions (company_id, item_id, rev, drawing_file_path, drawing_no, source_type, source_ref, release_status, change_note, created_by, updated_by)
+    VALUES (${companyId}, ${input.itemId}, ${rev}, ${offered ?? null}, ${offeredNo ?? null}, ${input.sourceType}, ${input.sourceRef}, ${releaseStatus}, ${input.changeNote?.trim() || null}, ${user.id}, ${user.id})
     ON CONFLICT (company_id, item_id, rev) WHERE deleted_at IS NULL DO NOTHING
     RETURNING id`);
   const insertedId = (inserted as unknown as { id: string }[])[0]?.id ?? null;
@@ -203,161 +207,36 @@ export async function findItemRevision(
   return row ?? null;
 }
 
-export interface ReplaceItemRevisionDrawingArgs {
-  drawingFilePath: string;
-  drawingNo?: string | null | undefined;
-  reason: string;
-  expectedUpdatedAt?: string | undefined;
-}
+// Replace drawing + drawing corrections live in item-revision-drawing.ts (size).
+export {
+  applyDrawingCorrection,
+  replaceItemRevisionDrawing,
+  type ReplaceItemRevisionDrawingArgs,
+} from './item-revision-drawing';
 
 /**
- * "Replace drawing" — the ONLY way to change the file of an Item + Rev that
- * already has one. The caller checks the Route Card Master edit right.
- *
- * §20.4: the row is locked FOR UPDATE and compared with the updatedAt the
- * screen loaded (409 naming who changed it), then written with
- * `WHERE id = ? AND updated_at = <locked value>` and the row count checked.
- * The new file goes into item_revision_drawings ('replaced', with the reason;
- * the earlier rows keep the old file); the SO / JWSO line copies
- * (drawing_file_path / drawing_no) follow, and every SO line whose copy
- * changes gets its so_line_drawing_revisions row, as a line save writes it.
+ * ADR-290 Step 3 — the Released-only rule, in ONE place. New Plan / PRO / Job
+ * Card work (and a line Rev change that moves open work) may only use a Rev
+ * whose release status allows work (REV_WORK_ALLOWED: released, superseded,
+ * unverified). No Rev (Buy item, blank) is not decided here. `refusal`
+ * replaces the standard sentence where a screen needs its own words.
  */
-export async function replaceItemRevisionDrawing(
+export async function assertRevReleasedForWork(
   tx: DbTransaction,
-  user: AuthContext,
   companyId: string,
-  id: string,
-  args: ReplaceItemRevisionDrawingArgs,
-): Promise<{ soLines: number; jwLines: number }> {
-  // ADR-289 lock order — the SO / JWSO lines on this Rev FIRST (id order), then
-  // the register row: the order a line save takes them (lines, then register),
-  // so a replace and a line save on the same Rev queue instead of deadlocking.
-  await tx.execute(sql`
-    SELECT id FROM public.sales_order_lines
-     WHERE company_id = ${companyId}::uuid AND item_revision_id = ${id}::uuid AND deleted_at IS NULL
-     ORDER BY id FOR UPDATE`);
-  await tx.execute(sql`
-    SELECT id FROM public.job_work_order_lines
-     WHERE company_id = ${companyId}::uuid AND item_revision_id = ${id}::uuid AND deleted_at IS NULL
-     ORDER BY id FOR UPDATE`);
+  itemRevisionId: string | null | undefined,
+  refusal?: (label: string, status: RevReleaseStatus) => string,
+): Promise<void> {
+  if (!itemRevisionId) return;
   const [row] = await tx
-    .select({
-      id: itemRevisions.id,
-      rev: itemRevisions.rev,
-      drawingFilePath: itemRevisions.drawingFilePath,
-      drawingNo: itemRevisions.drawingNo,
-      updatedAt: itemRevisions.updatedAt,
-      updatedBy: itemRevisions.updatedBy,
-      itemCode: items.code,
-    })
+    .select({ rev: itemRevisions.rev, status: itemRevisions.releaseStatus, itemCode: items.code })
     .from(itemRevisions)
     .innerJoin(items, eq(items.id, itemRevisions.itemId))
-    .where(
-      and(
-        eq(itemRevisions.id, id),
-        eq(itemRevisions.companyId, companyId),
-        isNull(itemRevisions.deletedAt),
-      ),
-    )
-    .for('update', { of: itemRevisions })
+    .where(and(eq(itemRevisions.id, itemRevisionId), eq(itemRevisions.companyId, companyId)))
     .limit(1);
-  if (!row) throw new NotFoundError('Drawing Rev not found');
-
-  const [by] = await tx
-    .select({ fullName: users.fullName })
-    .from(users)
-    .where(eq(users.id, row.updatedBy))
-    .limit(1);
-  assertUnchangedSinceOpened(row.updatedAt, args.expectedUpdatedAt, by?.fullName ?? null);
-
+  if (!row) return;
+  const status = row.status as RevReleaseStatus;
+  if (isRevWorkAllowed(status)) return;
   const label = itemRevLabel(row.itemCode, row.rev);
-  const newPath = args.drawingFilePath.trim();
-  const reason = args.reason.trim();
-  if (reason.length < REV_CHANGE_REASON_MIN)
-    throw new ValidationError('Reason is required (at least 5 characters)');
-  if (newPath === '') throw new ValidationError('Choose the new drawing file');
-  if (newPath === row.drawingFilePath) {
-    throw new ValidationError(`This file is already the drawing of ${label}`);
-  }
-  const newNo = args.drawingNo !== undefined ? args.drawingNo?.trim() || null : row.drawingNo;
-
-  // §20.4 — conditional on the updated_at read under the lock; 0 rows = 409.
-  const updated = await tx
-    .update(itemRevisions)
-    .set({ drawingFilePath: newPath, drawingNo: newNo, updatedBy: user.id })
-    // ADR-289 — compared to the MILLISECOND on both sides: the column carries
-    // microseconds, the value read back through a JS Date only milliseconds, so
-    // a plain `=` matched 0 rows and refused every valid replace (as
-    // job-cards updateJobCardTx and lib/edit-conflict.ts do it).
-    .where(
-      and(
-        eq(itemRevisions.id, id),
-        sql`date_trunc('milliseconds', ${itemRevisions.updatedAt}) = date_trunc('milliseconds', ${row.updatedAt.toISOString()}::timestamptz)`,
-      ),
-    )
-    .returning({ id: itemRevisions.id });
-  if (updated.length === 0) {
-    throw new ConflictError(`${label} was changed by someone else — reload and try again`);
-  }
-
-  await tx.insert(itemRevisionDrawings).values({
-    companyId,
-    itemRevisionId: id,
-    action: 'replaced',
-    drawingFilePath: newPath,
-    drawingNo: newNo,
-    reason,
-    sourceType: null,
-    sourceRef: null,
-    createdBy: user.id,
-    updatedBy: user.id,
-  });
-
-  // SO line drawing history — one row per line whose copy really changes,
-  // written BEFORE the copies move (IS DISTINCT FROM reads the old copy).
-  // MAX(revision_no) is read here, under the line locks taken above.
-  await tx.execute(sql`
-    INSERT INTO public.so_line_drawing_revisions
-      (company_id, sales_order_id, so_line_id, revision_no, line_revision_text, action,
-       drawing_file_path, drawing_no, item_code_text, created_by)
-    SELECT l.company_id, l.sales_order_id, l.id,
-           COALESCE((SELECT MAX(r.revision_no) FROM public.so_line_drawing_revisions r
-                      WHERE r.so_line_id = l.id), -1) + 1,
-           l.revision,
-           CASE WHEN NULLIF(btrim(l.drawing_file_path), '') IS NULL THEN 'added' ELSE 'replaced' END,
-           ${newPath}, ${newNo}, ${row.itemCode}, ${user.id}
-      FROM public.sales_order_lines l
-     WHERE l.company_id = ${companyId}::uuid
-       AND l.item_revision_id = ${id}::uuid
-       AND l.deleted_at IS NULL
-       AND l.drawing_file_path IS DISTINCT FROM ${newPath}`);
-
-  const so = (await tx.execute(sql`
-    UPDATE public.sales_order_lines
-       SET drawing_file_path = ${newPath}, drawing_no = ${newNo}, updated_by = ${user.id}
-     WHERE company_id = ${companyId}::uuid AND item_revision_id = ${id}::uuid AND deleted_at IS NULL
-    RETURNING id`)) as unknown as { id: string }[];
-  const jw = (await tx.execute(sql`
-    UPDATE public.job_work_order_lines
-       SET drawing_file_path = ${newPath}, drawing_no = ${newNo}, updated_by = ${user.id}
-     WHERE company_id = ${companyId}::uuid AND item_revision_id = ${id}::uuid AND deleted_at IS NULL
-    RETURNING id`)) as unknown as { id: string }[];
-
-  await emitActivityLog(
-    tx,
-    {
-      action: ActivityAction.Edit,
-      entity: 'ItemRevision',
-      entityId: id,
-      refId: label,
-      reason,
-      changes: [
-        { field: 'drawingFilePath', label: 'Drawing', before: row.drawingFilePath, after: newPath },
-      ],
-      detail: `Drawing replaced on ${label} — ${so.length} SO line(s), ${jw.length} JWSO line(s) updated`,
-    },
-    companyId,
-    user,
-  );
-  return { soLines: so.length, jwLines: jw.length };
+  throw new ValidationError(refusal ? refusal(label, status) : revNotReleasedMessage(label, status));
 }

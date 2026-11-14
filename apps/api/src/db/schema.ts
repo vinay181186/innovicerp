@@ -291,6 +291,12 @@ export const items = pgTable(
     minStockQty: stockQty('min_stock_qty').notNull().default(0),
     /** Reorder Qty (0160) — how much one reorder buys; 0 = buy the shortfall. */
     reorderQty: stockQty('reorder_qty').notNull().default(0),
+    /** ADR-290 (0248) — the customer's own part number for this item. */
+    customerPartNo: text('customer_part_no'),
+    /** ADR-290 (0248) — the item that replaces this one (never itself — CHECK). */
+    replacementItemId: uuid('replacement_item_id').references((): AnyPgColumn => items.id, {
+      onDelete: 'set null',
+    }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -322,6 +328,13 @@ export const items = pgTable(
       .where(sql`${t.deletedAt} is null`),
     index('items_company_type_idx')
       .on(t.companyId, t.itemType)
+      .where(sql`${t.deletedAt} is null`),
+    check(
+      'items_replacement_not_self_check',
+      sql`${t.replacementItemId} IS NULL OR ${t.replacementItemId} <> ${t.id}`,
+    ),
+    index('items_company_customer_part_no_idx')
+      .on(t.companyId, t.customerPartNo)
       .where(sql`${t.deletedAt} is null`),
     pgPolicy('items_company_read', {
       for: 'select',
@@ -8403,6 +8416,9 @@ export const userAccess = pgTable(
     // ADR-289 (0247) — "Can print drawings": a print is a copy on paper, so it
     // is its own right beside drawing_download (same bypass rules).
     drawingPrint: boolean('drawing_print').notNull().default(false),
+    // ADR-290 (0248) — "Can release drawings": approved → released in the
+    // Drawing Register, and approve a correction on a released Rev.
+    drawingRelease: boolean('drawing_release').notNull().default(false),
     // Which department this person belongs to (0101). Picking it seeds that
     // department's tier; changing it clears the old one and seeds the new.
     // Stored rather than derived because "main" and "extra" departments look
@@ -8977,6 +8993,24 @@ export const itemRevisions = pgTable(
     /** ITEM_REVISION_SOURCES (CHECK). */
     sourceType: text('source_type').notNull(),
     sourceRef: text('source_ref'),
+    /** ADR-290 (0248) — REV_RELEASE_STATUSES (CHECK). Old rows 'unverified';
+     *  rows made from a document 'draft'. Written only by item-revisions/release.ts. */
+    releaseStatus: text('release_status').notNull().default('unverified'),
+    changeNote: text('change_note'),
+    submittedAt: timestamp('submitted_at', { withTimezone: true }),
+    submittedBy: uuid('submitted_by').references((): AnyPgColumn => users.id),
+    approvedAt: timestamp('approved_at', { withTimezone: true }),
+    approvedBy: uuid('approved_by').references((): AnyPgColumn => users.id),
+    releasedAt: timestamp('released_at', { withTimezone: true }),
+    releasedBy: uuid('released_by').references((): AnyPgColumn => users.id),
+    rejectedAt: timestamp('rejected_at', { withTimezone: true }),
+    rejectedBy: uuid('rejected_by').references((): AnyPgColumn => users.id),
+    rejectReason: text('reject_reason'),
+    obsoletedAt: timestamp('obsoleted_at', { withTimezone: true }),
+    obsoletedBy: uuid('obsoleted_by').references((): AnyPgColumn => users.id),
+    supersededAt: timestamp('superseded_at', { withTimezone: true }),
+    /** SHA-256 of the drawing file, stored at release. */
+    fileHash: text('file_hash'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -8993,13 +9027,20 @@ export const itemRevisions = pgTable(
     check('item_revisions_rev_check', sql`${t.rev} ~ '^[A-Z0-9][A-Z0-9./-]{0,31}$'`),
     check(
       'item_revisions_source_type_check',
-      sql`${t.sourceType} IN ('so_line', 'jw_line', 'route_card', 'bom_line', 'ml_bom_line', 'legacy')`,
+      sql`${t.sourceType} IN ('so_line', 'jw_line', 'route_card', 'bom_line', 'ml_bom_line', 'legacy', 'register')`,
     ),
     // One live ABC/1 per company — a second first-namer gets 23505.
     uniqueIndex('item_revisions_company_item_rev_uniq')
       .on(t.companyId, t.itemId, t.rev)
       .where(sql`${t.deletedAt} is null`),
     index('item_revisions_item_idx').on(t.itemId),
+    check(
+      'item_revisions_release_status_check',
+      sql`${t.releaseStatus} IN ('unverified', 'draft', 'under_review', 'approved', 'released', 'superseded', 'obsolete', 'rejected')`,
+    ),
+    index('item_revisions_company_status_idx')
+      .on(t.companyId, t.releaseStatus)
+      .where(sql`${t.deletedAt} is null`),
     pgPolicy('item_revisions_company_read', {
       for: 'select',
       to: 'authenticated',
@@ -9051,7 +9092,7 @@ export const itemRevisionDrawings = pgTable(
     ),
     check(
       'item_revision_drawings_source_type_check',
-      sql`${t.sourceType} IS NULL OR ${t.sourceType} IN ('so_line', 'jw_line', 'route_card', 'bom_line', 'ml_bom_line', 'legacy')`,
+      sql`${t.sourceType} IS NULL OR ${t.sourceType} IN ('so_line', 'jw_line', 'route_card', 'bom_line', 'ml_bom_line', 'legacy', 'register')`,
     ),
     index('item_revision_drawings_rev_created_idx').on(t.itemRevisionId, t.createdAt),
     pgPolicy('item_revision_drawings_company_read', {
@@ -9059,10 +9100,10 @@ export const itemRevisionDrawings = pgTable(
       to: 'authenticated',
       using: sql`company_id = current_company_id()`,
     }),
-    pgPolicy('item_revision_drawings_manager_write', {
-      for: 'all',
+    // ADR-290 (0248) — append-only: INSERT only (trigger refuses UPDATE / DELETE).
+    pgPolicy('item_revision_drawings_manager_insert', {
+      for: 'insert',
       to: 'authenticated',
-      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
       withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
     }),
   ],
@@ -9111,11 +9152,62 @@ export const itemRevisionChanges = pgTable(
       to: 'authenticated',
       using: sql`company_id = current_company_id()`,
     }),
-    pgPolicy('item_revision_changes_manager_write', {
+    // ADR-290 (0248) — append-only: INSERT only (trigger refuses UPDATE / DELETE).
+    pgPolicy('item_revision_changes_manager_insert', {
+      for: 'insert',
+      to: 'authenticated',
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+/** ADR-290 (0248) — a drawing file change asked for on a released / superseded
+ *  Rev; the file changes only when someone with the release switch approves.
+ *  One pending per Rev (partial unique index). */
+export const drawingCorrections = pgTable(
+  'drawing_corrections',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    itemRevisionId: uuid('item_revision_id')
+      .notNull()
+      .references(() => itemRevisions.id),
+    drawingFilePath: text('drawing_file_path').notNull(),
+    drawingNo: text('drawing_no'),
+    reason: text('reason').notNull(),
+    /** DRAWING_CORRECTION_STATUSES (CHECK). */
+    status: text('status').notNull().default('pending'),
+    requestedBy: uuid('requested_by')
+      .notNull()
+      .references(() => users.id),
+    requestedAt: timestamp('requested_at', { withTimezone: true }).notNull().defaultNow(),
+    decidedBy: uuid('decided_by').references((): AnyPgColumn => users.id),
+    decidedAt: timestamp('decided_at', { withTimezone: true }),
+    decisionNote: text('decision_note'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
+  },
+  (t) => [
+    check('drawing_corrections_status_check', sql`${t.status} IN ('pending', 'approved', 'rejected')`),
+    uniqueIndex('drawing_corrections_one_pending_uniq')
+      .on(t.itemRevisionId)
+      .where(sql`${t.status} = 'pending' AND ${t.deletedAt} is null`),
+    index('drawing_corrections_rev_idx').on(t.itemRevisionId, t.requestedAt),
+    pgPolicy('drawing_corrections_company_all', {
       for: 'all',
       to: 'authenticated',
-      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
-      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      using: sql`company_id = current_company_id()`,
+      withCheck: sql`company_id = current_company_id()`,
     }),
   ],
 ).enableRLS();

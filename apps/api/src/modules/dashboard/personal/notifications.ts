@@ -55,6 +55,7 @@ const ONE_NOTE_PER_DOC: ReadonlySet<Open> = new Set<Open>([
   'approval_rc',
   'raiser_rc',
   'raiser_rc_approved',
+  'raiser_rev',
 ]);
 
 /** "<actor> raised " / "<actor> accepted 20 on " — the words before the number. */

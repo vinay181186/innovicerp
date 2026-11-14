@@ -86,6 +86,10 @@ import {
 } from '@/modules/item-revisions/components/rev-change-reason';
 import { parseSoLineFile } from '../lib/import-export';
 import { SO_TYPE_LABEL } from '../lib/so-status-label';
+import {
+  RevConfirmProbe,
+  useRevConfirmGate,
+} from '@/modules/item-revisions/components/rev-confirm-gate';
 import { SoLineDrawingCell } from './so-line-drawing-cell';
 import {
   CustomerAddressField,
@@ -450,6 +454,8 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
       : '— No BOM (BOM Pending) —';
 
   const [lineError, setLineError] = useState<string | null>(null);
+  // ADR-290 — "Confirmed" ticks for lines on an older Rev than the latest released.
+  const revConfirm = useRevConfirmGate();
   // At least one of Client PO No. / Email Ref must be provided (create form).
   const [poEmailError, setPoEmailError] = useState<string | null>(null);
   // Client-PO document (legacy _cpoFileSelected L12315) — captured here, the
@@ -719,6 +725,18 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
           setLineError(`Line ${i + 1}: ${msg}`);
           return;
         }
+      }
+
+      // ADR-290: a line naming an older Rev than the latest released one
+      // needs its "Confirmed" tick (opened for the user if collapsed).
+      const revWait = revConfirm.firstPending(fields.map((f) => f.id));
+      if (revWait) {
+        const key = fields[revWait.index]?.id;
+        if (key) setOpenLines((prev) => new Set(prev).add(key));
+        setLineError(
+          `Line ${revWait.index + 1}: latest released drawing is ${revWait.latestLabel} — confirm with the customer and tick Confirmed.`,
+        );
+        return;
       }
 
       const headerOut = {
@@ -1460,6 +1478,12 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                                   title={REV_INPUT_TITLE}
                                   {...upperCaseRevField(register(`lines.${idx}.revision` as const))}
                                 />
+                                <RevConfirmProbe
+                                  gate={revConfirm}
+                                  lineKey={field.id}
+                                  itemId={ln?.itemId}
+                                  rev={watch(`lines.${idx}.revision` as const)}
+                                />
                               </div>
                               {(() => {
                                 const savedRev =
@@ -1620,6 +1644,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                                       itemId={ln?.itemId}
                                       itemCode={ln?.itemCodeText}
                                       rev={watch(`lines.${idx}.revision` as const)}
+                                      confirm={revConfirm.confirmFor(field.id)}
                                       {...(() => {
                                         const saved =
                                           props.mode === 'edit' && ln?.id

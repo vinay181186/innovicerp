@@ -9,7 +9,10 @@
 // kind="drawing" previews: the link is minted by the server, which checks the
 // download permission and logs the access.
 
-import { DrawingRevField } from '@/modules/item-revisions/components/drawing-rev-field';
+import {
+  DrawingRevField,
+  type DrawingRevFieldProps,
+} from '@/modules/item-revisions/components/drawing-rev-field';
 
 export function JwLineDrawingCell({
   value,
@@ -20,6 +23,7 @@ export function JwLineDrawingCell({
   savedRev,
   savedPath,
   refCode,
+  confirm,
 }: {
   value: string | null | undefined;
   onChange: (path: string | undefined) => void;
@@ -32,6 +36,8 @@ export function JwLineDrawingCell({
   savedPath?: string | null | undefined;
   /** Access-log reference ("IN-JWSO-… L2"). */
   refCode?: string | undefined;
+  /** ADR-290 — the "Confirmed" tick, owned by the form's useRevConfirmGate. */
+  confirm?: DrawingRevFieldProps['confirm'];
 }): React.JSX.Element {
   return (
     <DrawingRevField
@@ -44,6 +50,7 @@ export function JwLineDrawingCell({
       refCode={refCode}
       savedRev={savedRev}
       savedPath={savedPath}
+      confirm={confirm}
     />
   );
 }
