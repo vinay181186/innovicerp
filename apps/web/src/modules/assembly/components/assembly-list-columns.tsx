@@ -81,6 +81,8 @@ export function assemblyListColumns(
       itemName: (row) => row.partName,
       overrides: {
         so_no: {
+          // The row opens the per-SO tracker, so SO No. is the opener (ADR-296).
+          opensRow: true,
           sortFilterField: 'soCode',
           // The per-SO tracker opens from the row; the link is the same target.
           render: (row) => (

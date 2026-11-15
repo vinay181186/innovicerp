@@ -353,7 +353,7 @@ function TpiMastersListPage(): React.JSX.Element {
         page={search.page}
         pageSize={LIST_PAGE_SIZE}
         onPage={gotoPage}
-        hint="Click a row to open it."
+        hint="Click the Inspector Name to open it."
       />
     </div>
   );

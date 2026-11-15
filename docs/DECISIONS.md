@@ -15823,3 +15823,39 @@ Party GRN was the one document list where a row click opened the GRN's details u
 - **Sr No on every full list**: added to ~40 lists that had none; moved to first on BOM, Multi-Level BOM and Route Card; reports' "#" and the Home check table's "Sr" read "Sr No". Paged lists count on from the page start (page 2 starts at 26). Small tables inside other screens (pickers, pop-ups, detail-page tabs, dashboard widgets) are left without one.
 - Built through `srNoColumn` / `createdOnColumn` in `apps/web/src/ui/data/lead-columns.tsx`; a hand-written "Created Time" header fails `lead-columns.guard.test.ts`.
 - Saved column layouts move to the new order by themselves. Where Sr No became column 0, the old first column's automatic pin (every save pinned column 0) is dropped (`normalize`, use-table-layout.ts). Lists with a hand-written Created On (ECR, Stock Counts, Tool Issues, Party Materials) put it after the own number by default; a user's saved order keeps their own position until Reset.
+
+## ADR-296: Only the document number opens a list row
+
+**Date:** 2026-11-15
+**Status:** Accepted (owner 2026-11-15)
+
+### Context
+
+Every list opened a record on a click anywhere on the row (`rowOpenProps` put the click on the whole
+`<tr>`). The owner wants only the document's own number to open it, e.g. the SO No. on SO Master List.
+
+### Decision
+
+- The shared table (`DataTable` classic renderer and `FitRows`) no longer puts the click on the row. One
+  cell per row opens it: the column marked `opensRow`, else the first code / text column after Sr No,
+  which is the own No. on every lead-block list (ADR-295) and the Code on a master.
+  `openerIndex` / `openCell` in `ui/data/data-table-cells.ts`.
+- The number shows blue and bold with **no underline** (owner choice). The hand cursor appears over the
+  number only. Tab reaches it and Enter opens it. A cell that already renders its own `<Link>` keeps it,
+  and an empty cell ("—") gets nothing to click.
+- Lists that open a pop-up instead of a page (CAPA, Tasks, Instruments, Store Issue, Tool Issue, Daily
+  Task Report) follow the same rule: the number opens the pop-up.
+- Rows whose click ticks or expands rather than opening a document keep the whole-row click through
+  `wholeRowClick`: My Day Log, Day Log pending calendar, Day Log person view, NC pick table on the DC screen.
+- The row ⋯, tick boxes, ▸ and in-cell controls are unchanged. Server-side access checks are unchanged.
+
+### Alternatives Considered
+
+- Edit all ~57 list screens to render their own link: rejected. 57 places to keep in step, against one
+  rule in the shared table (§21.4).
+- Underline the number, always or on hover: rejected by the owner.
+
+### Consequences
+
+- Positive: one place decides what opens a row; new lists get the rule without any code.
+- Negative: users used to clicking anywhere on the row must click the number.

@@ -51,6 +51,7 @@ const COLUMNS: DataTableColumn<GlobalSearchResult>[] = [
   },
   {
     id: 'doc_no',
+    opensRow: true,
     header: 'Document No.',
     kind: 'code',
     className: 'td-code',

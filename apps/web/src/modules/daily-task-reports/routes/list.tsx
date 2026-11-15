@@ -128,6 +128,7 @@ function DailyTaskReportsPage(): React.JSX.Element {
     srNoColumn<DailyTaskReportRow>(pageOffset(page) + 1),
     {
       id: 'report_date',
+      opensRow: true,
       sortFilterField: 'reportDate',
       kind: 'date',
       header: 'Report Date',

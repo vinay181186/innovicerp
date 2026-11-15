@@ -80,6 +80,7 @@ export function DossierSummary({
       },
       {
         id: 'item_code',
+        opensRow: true,
         kind: 'code',
         header: 'Item Code',
         nowrap: true,

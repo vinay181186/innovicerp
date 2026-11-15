@@ -85,6 +85,7 @@ function PickedDay({
             columns={ENTRY_COLUMNS}
             rows={sortEntries(p.entries)}
             empty="No timed entry on this date."
+            wholeRowClick
             onRowClick={(r) => toggle(r.id)}
             onToggleExpanded={(r) => toggle(r.id)}
             renderExpanded={(r) =>

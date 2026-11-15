@@ -1451,7 +1451,7 @@ function DataSection() {
             />
           )}
         />
-        <ListFooter total={3} noun="job card" hint="Click a row to open its detail page." />
+        <ListFooter total={3} noun="job card" hint="Click the number to open its detail page." />
       </Panel>
 
       <Panel title="DataTable — ⋯ row menu (rowMenu)">
@@ -2163,7 +2163,11 @@ function LayoutSection() {
 
       <Panel title="ListFooter — both modes">
         <State label="Scroll mode — all / capped / client-filtered / none">
-          <ListFooter total={23} noun="sales order" hint="Click a row to open its detail page." />
+          <ListFooter
+            total={23}
+            noun="sales order"
+            hint="Click the number to open its detail page."
+          />
           <ListFooter total={1240} limit={1000} noun="sales order" />
           <ListFooter total={42} shown={12} noun="vendor" />
           <ListFooter total={0} noun="GRN" />

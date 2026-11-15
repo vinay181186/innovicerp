@@ -3,10 +3,18 @@
 // trigger — a row click or a ⋯ item). No ▸ on any row (owner 2026-10-31).
 // Split out of FitDataTable.tsx.
 
-import { Fragment } from 'react';
+import { Fragment, useMemo } from 'react';
 import type { ReactElement, ReactNode } from 'react';
 
-import { cellTitle, cellValue, cx, rowOpenProps, stopRowClick } from './data-table-cells';
+import {
+  cellTitle,
+  cellValue,
+  cx,
+  openCell,
+  openerIndex,
+  rowOpenProps,
+  stopRowClick,
+} from './data-table-cells';
 import { tdClass } from './data-table-head';
 import type { DataTableColumn, DataTableColumnKind } from './data-table-types';
 import { RowCheckbox, type RowSelectionModel } from './FitSelection';
@@ -20,6 +28,8 @@ export interface FitRowsProps<T> {
   nCols: number;
   onRowClick?: ((row: T, index: number) => void) | undefined;
   isRowClickable?: ((row: T, index: number) => boolean) | undefined;
+  /** The whole row answers onRowClick (tick / expand rows only, ADR-296). */
+  wholeRowClick?: boolean | undefined;
   rowClassName?: ((row: T, index: number) => string | undefined) | undefined;
   groupRow?: ((row: T, index: number, prev: T | undefined) => ReactNode) | undefined;
   renderExpanded?: ((row: T, index: number) => ReactNode) | undefined;
@@ -33,12 +43,23 @@ export interface FitRowsProps<T> {
 }
 
 export function FitRows<T>(p: FitRowsProps<T>): ReactElement {
+  // ADR-296 — only this column's cell opens the row (the own No. / Code). Picked
+  // in the columns' defined order, so hiding or moving a column never moves it.
+  // Among the SHOWN columns only: a hidden opener would leave no cell to click.
+  const openKey = useMemo(() => {
+    const shown = new Set(p.visible);
+    const ids = [...p.byId.keys()].filter((k) => shown.has(k));
+    return ids[openerIndex(ids.map((k) => p.byId.get(k)))];
+  }, [p.byId, p.visible]);
+  // No column can open it: keep the whole-row click rather than a dead row.
+  const rowWide = !!p.wholeRowClick || openKey === undefined;
   return (
     <>
       {p.rows.map((row, ri) => {
         const rk = p.keyOf(row, ri);
         const extra = p.renderExpanded?.(row, ri);
         const clickable = !!p.onRowClick && (p.isRowClickable?.(row, ri) ?? true);
+        const open = (): void => p.onRowClick?.(row, ri);
         const selected = p.selectable && p.selection.isSelected(rk);
         const group = p.groupRow?.(row, ri, ri > 0 ? p.rows[ri - 1] : undefined);
         return (
@@ -54,7 +75,7 @@ export function FitRows<T>(p: FitRowsProps<T>): ReactElement {
                 selected && 'row-selected',
                 !!p.onRowClick && !clickable && 'dt-row-static',
               )}
-              {...rowOpenProps(clickable, () => p.onRowClick?.(row, ri))}
+              {...rowOpenProps(clickable && rowWide, open)}
             >
               {p.selectable ? (
                 <td className="dt-sel-col" onClick={stopRowClick}>
@@ -79,7 +100,9 @@ export function FitRows<T>(p: FitRowsProps<T>): ReactElement {
                     title={cellTitle(c, row)}
                     onClick={swallow ? stopRowClick : undefined}
                   >
-                    {cellValue(c, row, ri)}
+                    {clickable && !rowWide && k === openKey
+                      ? openCell(cellValue(c, row, ri), open)
+                      : cellValue(c, row, ri)}
                   </td>
                 );
               })}

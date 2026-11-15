@@ -170,6 +170,7 @@ export function MyDayTable({
         columns={COLUMNS}
         rows={shown}
         empty={needle ? 'No entries match.' : `Nothing logged on ${fmtDate(day.date)}.`}
+        wholeRowClick
         onRowClick={(r) => toggle(r.id)}
         onToggleExpanded={(r) => toggle(r.id)}
         renderExpanded={(r) =>

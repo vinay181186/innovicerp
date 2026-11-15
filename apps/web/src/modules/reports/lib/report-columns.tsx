@@ -123,6 +123,8 @@ export function buildReportColumns(input: ReportColumnsInput): DataTableColumn<R
         header: <span data-rpt-col={col.key}>{col.label}</span>,
         label: col.label,
         kind,
+        // The report's link column is the one that opens the row (ADR-296).
+        ...(rowLink?.column === col.key ? { opensRow: true } : {}),
         align: numeric && kind === 'num' ? 'right' : 'left',
         className: cellClass(col, kind),
         sortField: col.key,

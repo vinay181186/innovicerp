@@ -123,6 +123,13 @@ export interface DataTableColumn<T> {
   /** Cell holds controls — swallow the click so it never opens the row. */
   stopRowClick?: boolean | undefined;
   /**
+   * This column's cell is the one that opens the row (ADR-296, owner
+   * 2026-11-15: only the document number opens, never the whole row). Leave it
+   * off and the table picks the first code / text column after Sr No, which
+   * is the own No. on every lead-block list and the Code on a master.
+   */
+  opensRow?: boolean | undefined;
+  /**
    * This column's totals-row cell (fit engine, with `showTotals`). A node, or a
    * function given ALL loaded rows so it can sum them. Rendered in a `<tfoot>`
    * that follows the visible columns — a column not on screen simply does not
@@ -177,6 +184,12 @@ export interface DataTableProps<T> {
    * `onRowClick` is set; defaults to clickable.
    */
   isRowClickable?: ((row: T, index: number) => boolean) | undefined;
+  /**
+   * The whole row answers `onRowClick` (the pre-ADR-296 behaviour). Only for
+   * a row whose click ticks or expands it rather than opening a document —
+   * Day Log rows, the NC pick table. A table that opens a document never sets it.
+   */
+  wholeRowClick?: boolean | undefined;
   rowClassName?: ((row: T, index: number) => string | undefined) | undefined;
   /**
    * A group heading drawn as a full-width row BEFORE this row (ADR-203) —

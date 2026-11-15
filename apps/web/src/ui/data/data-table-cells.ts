@@ -1,8 +1,8 @@
 // Cell helpers shared by the classic DataTable renderer and the fit engine
 // (ADR-199). Pure functions — no React state.
 
-import { Children, isValidElement } from 'react';
-import type { HTMLAttributes, MouseEvent, ReactNode } from 'react';
+import { Children, createElement, isValidElement } from 'react';
+import type { HTMLAttributes, KeyboardEvent, MouseEvent, ReactNode } from 'react';
 
 import type { DataTableColumn, DataTableColumnKind } from './data-table-types';
 
@@ -95,7 +95,65 @@ export function colLabel<T>(col: DataTableColumn<T>, index: number): string {
   return text.length > 0 ? text : `Column ${index + 1}`;
 }
 
-/** The `<tr>` of a row that opens on click: a pointer, Tab reaches it, Enter opens it.
+/** ADR-296 — the column whose cell opens the row: the one marked `opensRow`,
+ *  else the first code / text column after Sr No (the own No., or a master's
+ *  Code). -1 when the table has none: the caller then falls back to the
+ *  whole-row click, so no list is ever left with rows that cannot open. */
+export function openerIndex<T>(cols: readonly (DataTableColumn<T> | undefined)[]): number {
+  const marked = cols.findIndex((c) => c?.opensRow === true);
+  if (marked >= 0) return marked;
+  return cols.findIndex((c, i) => {
+    if (!c || c.stopRowClick || isSrNo(c, i)) return false;
+    const k = colKind(c);
+    return k === 'code' || k === 'text';
+  });
+}
+
+/** The row counter, whatever a screen called its id (`sr_no`, `srNo`). */
+function isSrNo<T>(c: DataTableColumn<T>, i: number): boolean {
+  const id = colId(c, i).toLowerCase().replace(/_/g, '');
+  return id === 'srno' || c.label === 'Sr No' || c.header === 'Sr No';
+}
+
+/** The opener cell's content (ADR-296): the number itself is the link — blue,
+ *  bold, no underline, hand cursor on the number only; Tab reaches it, Enter
+ *  opens it. A cell that already renders its own link keeps it, and an empty
+ *  cell ("—") gets nothing to click. */
+export function openCell(content: ReactNode, open: () => void): ReactNode {
+  if (isValidElement(content)) {
+    const props = content.props as { to?: unknown; href?: unknown };
+    if (props.to !== undefined || props.href !== undefined) return content;
+  }
+  // Only a plain blank / dash is "no number". A component (<Cell value=…/>) has
+  // no text children to read, so it is never taken for empty.
+  if (content === null || content === undefined || content === false) return content;
+  if (typeof content === 'string' && (content.trim() === '' || content.trim() === '—')) {
+    return content;
+  }
+  return createElement(
+    'span',
+    {
+      className: 'dt-open',
+      role: 'link',
+      tabIndex: 0,
+      onClick: (e: MouseEvent) => {
+        e.stopPropagation();
+        // A link drawn inside the cell navigates by itself; open once, not twice.
+        if (e.target instanceof Element && e.target.closest('a')) return;
+        open();
+      },
+      onKeyDown: (e: KeyboardEvent) => {
+        // Only the number itself: Enter on a control inside it stays theirs.
+        if (e.key !== 'Enter' || e.target !== e.currentTarget) return;
+        e.preventDefault();
+        open();
+      },
+    },
+    content,
+  );
+}
+
+/** The `<tr>` of a row that opens on click (`wholeRowClick` only): a pointer, Tab reaches it, Enter opens it.
  *  Only the row itself takes Enter: on the ⋯ or a link inside, the key stays theirs. */
 export function rowOpenProps(
   clickable: boolean,

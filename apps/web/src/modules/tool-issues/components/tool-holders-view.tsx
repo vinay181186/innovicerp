@@ -92,6 +92,7 @@ export function ToolHoldersView({ onOpen }: { onOpen: (id: string) => void }): R
       },
       {
         id: 'issue_no',
+        opensRow: true,
         sortFilterField: 'code',
         kind: 'code',
         header: 'Issue No.',

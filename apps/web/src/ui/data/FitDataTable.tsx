@@ -44,6 +44,7 @@ export function FitDataTable<T>(props: DataTableProps<T> & { tableKey: string })
     editable = false,
     onRowClick,
     isRowClickable,
+    wholeRowClick,
     rowClassName,
     renderExpanded,
     maxHeight,
@@ -308,6 +309,7 @@ export function FitDataTable<T>(props: DataTableProps<T> & { tableKey: string })
                 nCols={nCols}
                 onRowClick={onRowClick}
                 isRowClickable={isRowClickable}
+                wholeRowClick={wholeRowClick}
                 rowClassName={rowClassName}
                 groupRow={props.groupRow}
                 renderExpanded={renderExpanded}

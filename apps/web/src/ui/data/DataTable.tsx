@@ -56,6 +56,8 @@ import {
   cellValue,
   cx,
   defaultRowKey,
+  openCell,
+  openerIndex,
   rowOpenProps,
   stopRowClick,
 } from './data-table-cells';
@@ -150,6 +152,7 @@ function ClassicDataTable<T>({
   autoWidth = false,
   onRowClick,
   isRowClickable,
+  wholeRowClick = false,
   rowClassName,
   groupRow,
   renderExpanded,
@@ -229,6 +232,10 @@ function ClassicDataTable<T>({
   const sort = { sortBy, sortDir, onSort };
   const spanCols = cols.length + (selectable ? 1 : 0);
 
+  // ADR-296 — only this column's cell opens the row (the own No. / Code).
+  const openAt = openerIndex(cols);
+  // No column can open it: keep the whole-row click rather than a dead row.
+  const rowWide = wholeRowClick || openAt < 0;
   return (
     <>
       {selectable && selectionActions ? (
@@ -306,6 +313,7 @@ function ClassicDataTable<T>({
               <PageState as="row" state="empty" message={empty ?? emptyText} colSpan={spanCols} />
             ) : (
               rows.map((row, ri) => {
+                const open = (): void => onRowClick?.(row, ri);
                 const expanded = renderExpanded?.(row, ri);
                 const clickable = !!onRowClick && (isRowClickable?.(row, ri) ?? true);
                 const rk = keyOf(row, ri);
@@ -324,7 +332,7 @@ function ClassicDataTable<T>({
                         selected && 'row-selected',
                         !!onRowClick && !clickable && 'dt-row-static',
                       )}
-                      {...rowOpenProps(clickable, () => onRowClick?.(row, ri))}
+                      {...rowOpenProps(clickable && rowWide, open)}
                     >
                       {selectable ? (
                         <td className="dt-sel-col" onClick={stopRowClick}>
@@ -353,7 +361,9 @@ function ClassicDataTable<T>({
                             title={cellTitle(c, row)}
                             onClick={c.stopRowClick ? stopRowClick : undefined}
                           >
-                            {cellValue(c, row, ri)}
+                            {clickable && !rowWide && ci === openAt
+                              ? openCell(cellValue(c, row, ri), open)
+                              : cellValue(c, row, ri)}
                           </td>
                         );
                       })}
