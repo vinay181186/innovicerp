@@ -113,9 +113,15 @@ function StoreInventoryPage(): React.JSX.Element {
 
   // ADR-234 — the Item Code opens the Item Master only for someone who may open it.
   const canOpenItem = useCanOpen()('/items/$id');
+  const firstRowNo = pageOffset(page) + 1;
   const columns = useMemo(
-    () => storeInventoryColumns({ onReservedClick: (row) => setReservedRow(row), canOpenItem }),
-    [canOpenItem],
+    () =>
+      storeInventoryColumns({
+        onReservedClick: (row) => setReservedRow(row),
+        canOpenItem,
+        firstRowNo,
+      }),
+    [canOpenItem, firstRowNo],
   );
 
   // Inventory | Stock Ledger tabs (Stock Ledger is the former standalone screen).

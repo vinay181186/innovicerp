@@ -10,7 +10,7 @@
 
 import type { PartyStockLedgerListItem, PartyStockMovement } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { fmtDate } from '@/lib/date';
@@ -18,6 +18,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import { srNoColumn } from '@/ui/data/lead-columns';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { usePartyStockLedgerList } from '../api';
@@ -173,11 +174,17 @@ function PartyStockLedgerListPage(): React.JSX.Element {
     return () => window.clearTimeout(id);
   }, [search, term, gotoPage]);
 
+  const offset = pageOffset(page);
   const { data, isLoading, isFetching, isError, error } = usePartyStockLedgerList({
     ...(term ? { search: term } : {}),
     limit: LIST_PAGE_SIZE,
-    offset: pageOffset(page),
+    offset,
   });
+  // Sr No leads (owner 2026-11-15) and continues across pages: offset + 1.
+  const columns = useMemo(
+    () => [srNoColumn<PartyStockLedgerListItem>(offset + 1), ...COLUMNS],
+    [offset],
+  );
   useClampPage(page, data?.total, gotoPage);
   const rows = data?.items ?? [];
   const total = data?.total ?? 0;
@@ -221,7 +228,7 @@ function PartyStockLedgerListPage(): React.JSX.Element {
               browser-side ▾ over one page of 25 would hide rows, so it stays off. */}
           <DataTable
             tableKey={TABLE_KEYS.partyStockLedger}
-            columns={COLUMNS}
+            columns={columns}
             rows={rows}
             loading={isLoading}
             rowKey={(r) => r.id}

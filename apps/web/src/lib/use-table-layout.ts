@@ -39,7 +39,7 @@ export interface TableLayoutDefaults {
   hidden?: string[] | undefined;
   /** The locked lead block (ui/data/lead-columns.tsx), in code order. */
   locked?: string[] | undefined;
-  /** Locked columns the user may still hide (Created On / Created Time, ADR-286). */
+  /** Locked columns the user may still hide (Created On, ADR-286). */
   hideable?: string[] | undefined;
 }
 
@@ -100,8 +100,18 @@ export function normalize(
     ...state.hidden.filter((k) => ids.includes(k)),
     ...added.filter((k) => defaults.hidden?.includes(k) ?? false),
   ].filter((k) => !locked.includes(k) || hideable.includes(k));
+  // A save always stores its column 0 as pinned (toSaveInput). When the code
+  // puts a new column first (Sr No, owner 2026-11-15), that old auto-pin is not
+  // a pin the user chose — drop it, unless the code itself pins that column.
+  const oldFirst = state.order[0];
+  const autoPin =
+    oldFirst !== undefined &&
+    !locked.includes(oldFirst) &&
+    !(defaults.pins ?? []).includes(oldFirst)
+      ? oldFirst
+      : undefined;
   const pins = [
-    ...state.pins.filter((k) => ids.includes(k)),
+    ...state.pins.filter((k) => ids.includes(k) && k !== autoPin),
     ...added.filter((k) => defaults.pins?.includes(k) ?? false),
   ].filter((k) => !locked.includes(k) && !hidden.includes(k));
   return { order: [...locked, ...order], pins: [...new Set(pins)], hidden: [...new Set(hidden)] };

@@ -8,6 +8,7 @@ import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { fmtDate } from '@/lib/date';
 import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
 import { DataTable, type DataTableColumn, Panel } from '@/ui/data';
+import { srNoColumn } from '@/ui/data/lead-columns';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useApprovalHistory } from '../api';
@@ -89,13 +90,16 @@ export function ApprovalHistoryList({
     return () => window.clearTimeout(id);
   }, [term, search]);
 
+  const offset = pageOffset(page);
   const q = useApprovalHistory({
     decision,
     ...(pickedType !== ALL_TYPES ? { type: pickedType } : {}),
     ...(search ? { search } : {}),
     limit: LIST_PAGE_SIZE,
-    offset: pageOffset(page),
+    offset,
   });
+  // Sr No leads (owner 2026-11-15) and continues across pages: offset + 1.
+  const columns = useMemo(() => [srNoColumn<ApprovalHistoryRow>(offset + 1), ...COLUMNS], [offset]);
   const counts = useMemo(() => q.data?.counts ?? [], [q.data?.counts]);
   const allCount = counts.reduce((s, c) => s + c.n, 0);
   const type = q.data ? effectiveType(pickedType, counts) : pickedType;
@@ -152,7 +156,7 @@ export function ApprovalHistoryList({
           <Panel fill bodyPadding="none">
             <DataTable
               tableKey={TABLE_KEYS.approvalsHistory}
-              columns={COLUMNS}
+              columns={columns}
               rows={q.data?.rows ?? []}
               rowKey={(r) => `${r.kind}:${r.id}`}
               loading={q.isLoading}

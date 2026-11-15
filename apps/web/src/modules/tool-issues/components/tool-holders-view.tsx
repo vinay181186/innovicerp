@@ -11,6 +11,7 @@ import { useMemo, useState } from 'react';
 import { fmtDate } from '@/lib/date';
 import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
 import { DataTable, type DataTableColumn, Panel, ROW_TINT } from '@/ui/data';
+import { srNoColumn } from '@/ui/data/lead-columns';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, PageState, RowActions } from '@/ui/layout';
@@ -40,8 +41,10 @@ export function ToolHoldersView({ onOpen }: { onOpen: (id: string) => void }): R
     return ids;
   }, [rows]);
 
+  const firstRowNo = pageOffset(page) + 1;
   const columns = useMemo<DataTableColumn<ToolHolderRow>[]>(
     () => [
+      srNoColumn<ToolHolderRow>(firstRowNo),
       {
         id: 'held_by',
         sortFilterField: 'issuedTo',
@@ -110,7 +113,7 @@ export function ToolHoldersView({ onOpen }: { onOpen: (id: string) => void }): R
         ),
       },
     ],
-    [firstOfGroup],
+    [firstOfGroup, firstRowNo],
   );
 
   if (isError)

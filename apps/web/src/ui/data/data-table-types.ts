@@ -68,7 +68,7 @@ export interface DataTableColumn<T> {
   leadHideable?: boolean | undefined;
   /** Off until the user ticks it in Columns ▾ (fit engine). Same as listing the
    *  id in the table's `defaultHidden`, but set once on the column itself —
-   *  `auditColumns` uses it for Created Time (owner 2026-11-02). */
+   *  e.g. a hand-written Created On a list keeps off by default. */
   hiddenByDefault?: boolean | undefined;
   /**
    * Floor in px for the measured width (fit engine only). For cells whose

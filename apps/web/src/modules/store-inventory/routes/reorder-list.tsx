@@ -112,9 +112,10 @@ function ReorderListPage(): React.JSX.Element {
     [],
   );
 
+  const firstRowNo = pageOffset(search.page) + 1;
   const columns = useMemo(
-    () => reorderListColumns({ draftOf, setDraft, canRaise }),
-    [draftOf, setDraft, canRaise],
+    () => reorderListColumns({ draftOf, setDraft, canRaise, firstRowNo }),
+    [draftOf, setDraft, canRaise, firstRowNo],
   );
 
   // A row can be ticked only when the user may raise PRs and it has no open PR.

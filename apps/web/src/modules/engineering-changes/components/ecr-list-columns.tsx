@@ -11,8 +11,7 @@ import {
   type EcrListRow,
 } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
-import { fmtDate } from '@/lib/date';
-import { createdByColumn, type DataTableColumn } from '@/ui/data';
+import { createdByColumn, createdOnColumn, srNoColumn, type DataTableColumn } from '@/ui/data';
 import { EcrStatusBadge } from './ecr-status-badge';
 
 const dash = <span className="text3">—</span>;
@@ -25,15 +24,7 @@ const TYPE_OPTIONS = ECR_CLASSIFICATIONS.map((v) => ({
 
 export function ecrListColumns(offset = 0): DataTableColumn<EcrListRow>[] {
   return [
-    {
-      id: 'sr_no',
-      kind: 'num',
-      header: 'Sr No',
-      className: 'mono',
-      nowrap: true,
-      filterable: false,
-      render: (_r, i) => offset + i + 1,
-    },
+    srNoColumn<EcrListRow>(offset + 1),
     {
       id: 'code',
       sortFilterField: 'code',
@@ -51,6 +42,7 @@ export function ecrListColumns(offset = 0): DataTableColumn<EcrListRow>[] {
         </Link>
       ),
     },
+    createdOnColumn<EcrListRow>((r) => r.createdAt, { sortFilterField: 'createdAt' }),
     {
       id: 'item_code',
       sortFilterField: 'itemCode',
@@ -122,14 +114,6 @@ export function ecrListColumns(offset = 0): DataTableColumn<EcrListRow>[] {
       className: 'mono',
       nowrap: true,
       render: (r) => r.heldOps,
-    },
-    {
-      id: 'created_on',
-      sortFilterField: 'createdAt',
-      kind: 'date',
-      header: 'Created On',
-      nowrap: true,
-      render: (r) => fmtDate(r.createdAt),
     },
     createdByColumn<EcrListRow>({
       createdByName: (r) => r.createdByName,

@@ -223,7 +223,7 @@ export function VendorSummary({
         bodyPadding="none"
       >
         <DataTable
-          columns={vendorColumns(priceHidden)}
+          columns={vendorColumns(pageOffset(t.page) + 1, priceHidden)}
           rows={t.data?.items ?? []}
           loading={t.isLoading}
           // One vendor can appear twice (a PO typed by code vs linked by id are
@@ -318,7 +318,7 @@ export function RecentGrn({ t }: { t: ScTable<ScRecentGrnPage> }): React.JSX.Ele
         bodyPadding="none"
       >
         <DataTable
-          columns={recentGrnColumns()}
+          columns={recentGrnColumns(pageOffset(t.page) + 1)}
           rows={t.data?.items ?? []}
           loading={t.isLoading}
           rowKey={(g) => g.grnNo}

@@ -16,7 +16,13 @@ import {
 } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { RcApprovalBadge } from '@/modules/route-cards/components/rc-approval-badge';
-import { createdByColumn, leadColumns, type DataTableColumn, type RowMenuItem } from '@/ui/data';
+import {
+  createdByColumn,
+  leadColumns,
+  srNoColumn,
+  type DataTableColumn,
+  type RowMenuItem,
+} from '@/ui/data';
 
 const dash = <span className="text3">—</span>;
 
@@ -32,6 +38,8 @@ function isRcStatus(s: string): s is RouteCardApprovalStatus {
 
 export function routeCardColumns(canEditRc: boolean): DataTableColumn<FixListRouteCard>[] {
   return [
+    // One unpaged list, so Sr No starts at 1.
+    srNoColumn<FixListRouteCard>(1),
     {
       id: 'rc_no',
       header: 'RC No.',
@@ -178,6 +186,7 @@ export function lineColumns(): DataTableColumn<FixListLine>[] {
 
 export function stockColumns(): DataTableColumn<FixListStock>[] {
   return [
+    srNoColumn<FixListStock>(1),
     { id: 'item_code', header: 'Item Code', nowrap: true, render: (r) => strong(r.itemCode) },
     {
       id: 'item_name',

@@ -1,7 +1,7 @@
 // Report columns → DataTable columns for the fit engine (ADR-199 Phase 4).
 // Owner rules for reports: text LEFT, numbers RIGHT; codes (`*_code`, `*_no`,
 // pol) and dates in mono; Item Code bold mono in the body colour; status and
-// type columns as pills with readable words; one '#' row-number column first.
+// type columns as pills with readable words; one 'Sr No' row-number column first.
 import type { ReportColumn, ReportRow, ReportRowLink } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
@@ -18,9 +18,9 @@ import {
   isTypeColumn,
 } from './report-format';
 
-/** Column id of the '#' row-number column (a code name, never a report key). */
+/** Column id of the 'Sr No' row-number column (a code name, never a report key). */
 export const ROW_NO_ID = 'rpt_rn';
-/** Floor for the '#' column so the Total row's label fits in it. */
+/** Floor for the 'Sr No' column so the Total row's label fits in it. */
 const ROW_NO_MIN_W = 56;
 /** Width per character of a mono 13px digit, plus the cell's padding — a
  *  floor so a total wider than every value in its column is never cut. */
@@ -101,8 +101,8 @@ export function buildReportColumns(input: ReportColumnsInput): DataTableColumn<R
   const { columns, numericKeys, rowLink, firstRowNo, totals } = input;
   const rowNo: DataTableColumn<ReportRow> = {
     id: ROW_NO_ID,
-    header: <span data-rpt-col={ROW_NO_ID}>#</span>,
-    label: '#',
+    header: <span data-rpt-col={ROW_NO_ID}>Sr No</span>,
+    label: 'Sr No',
     kind: 'num',
     align: 'right',
     className: 'mono rpt-rn',

@@ -76,6 +76,15 @@ describe('lead columns guard (ADR-261)', () => {
   });
 });
 
+describe('no Created Time column (owner 15-Nov: the time sits under Created On)', () => {
+  it('no list file hand-writes a Created Time header or label', () => {
+    const offenders = allFiles(MODULES)
+      .filter((f) => /(header|label):\s*['"]Created Time['"]/.test(readFileSync(f, 'utf8')))
+      .map((f) => relative(MODULES, f).replace(/\\/g, '/'));
+    expect(offenders).toEqual([]);
+  });
+});
+
 describe('Created By on every lead list (ADR-261 rev, owner 2-Nov)', () => {
   it('every file that builds leadColumns also adds createdByColumn', () => {
     const missing = allFiles(MODULES)

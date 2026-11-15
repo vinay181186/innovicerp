@@ -6,11 +6,15 @@
 // are hidden.
 
 import type { ScSoRow, ScVendorRow } from '@innovic/shared';
-import { createdByColumn, type DataTableColumn, leadColumns } from '@/ui/data';
+import { createdByColumn, type DataTableColumn, leadColumns, srNoColumn } from '@/ui/data';
 import { inr } from './sc-format';
 
-export function vendorColumns(priceHidden: boolean): DataTableColumn<ScVendorRow>[] {
+export function vendorColumns(
+  firstRowNo: number,
+  priceHidden: boolean,
+): DataTableColumn<ScVendorRow>[] {
   const cols: DataTableColumn<ScVendorRow>[] = [
+    srNoColumn<ScVendorRow>(firstRowNo),
     {
       id: 'vendor_name',
       sortFilterField: 'vendorName',

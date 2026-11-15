@@ -11,7 +11,7 @@ import { Link } from '@tanstack/react-router';
 import { fmtDateTime } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import type { DataTableColumn } from '@/ui/data';
-import { createdByColumn } from '@/ui/data/lead-columns';
+import { createdByColumn, srNoColumn } from '@/ui/data/lead-columns';
 import { ItemRevLink } from '@/modules/item-revisions/components/item-rev-link';
 import { RcApprovalBadge } from './rc-approval-badge';
 
@@ -28,6 +28,7 @@ const APPROVAL_STATUS_OPTIONS = ROUTE_CARD_APPROVAL_STATUSES.map((v) => ({
 // Sr No counts on from the page's offset (25 rows a page, ADR-201).
 export function routeCardListColumns(offset = 0): DataTableColumn<RouteCardListItem>[] {
   return [
+    srNoColumn<RouteCardListItem>(offset + 1, { width: '4%' }),
     {
       id: 'code',
       sortFilterField: 'code',
@@ -49,13 +50,6 @@ export function routeCardListColumns(offset = 0): DataTableColumn<RouteCardListI
           {rc.code}
         </Link>
       ),
-    },
-    {
-      id: 'sr_no',
-      header: 'Sr No',
-      width: '4%',
-      className: 'text3',
-      render: (_rc, i) => offset + i + 1,
     },
     {
       // Item + Drawing Rev register (2026-10-31): the customer Drawing Rev this

@@ -20,9 +20,10 @@ import type { DocumentEditEntity } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { LIST_PAGE_SIZE, useClampPage } from '@/lib/list-paging';
+import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
 import { useDocumentEdits } from '@/modules/document-edits/api';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import { srNoColumn } from '@/ui/data/lead-columns';
 import type { ServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { ConfirmDialog, useToast } from '@/ui/feedback';
 import { Select } from '@/ui/forms';
@@ -156,13 +157,16 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
     [pendingEdits.data],
   );
 
-  // The four master columns (first pinned = Code). Headers stay noun-qualified
+  // Sr No first (owner 2026-11-15; the same offset the paging hook sends + 1,
+  // so it continues across pages), then the four master columns. Headers stay noun-qualified
   // (Grade Code / Grade, Size Code / Size) so a joined label never reads as a
   // bare "Code" app-wide. Code is mono + cyan; the name is bold; the description
   // is long free text that shares the spare width and clips with "…"; Active is
   // a status badge.
+  const firstRowNo = pageOffset(page) + 1;
   const columns = useMemo<DataTableColumn<MaterialMasterRow>[]>(
     () => [
+      srNoColumn<MaterialMasterRow>(firstRowNo),
       {
         id: 'code',
         header: `${noun} Code`,
@@ -227,7 +231,7 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
         filterOptions: ACTIVE_OPTIONS,
       },
     ],
-    [noun, pendingIds],
+    [noun, pendingIds, firstRowNo],
   );
 
   // Excel import — the WHOLE sheet goes in one request, and the list reloads

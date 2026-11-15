@@ -30,6 +30,7 @@ import { fmtDate } from '@/lib/date';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel, dynamicColumns, type DataTableColumn } from '@/ui/data';
+import { srNoColumn } from '@/ui/data/lead-columns';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader } from '@/ui/layout';
 import { useAlert } from '../api';
@@ -53,28 +54,32 @@ function rowNavPage(row: AlertRow): string | null {
 // differs per alert type — so the ids are seeded off each column's stable `key`
 // via `dynamicColumns`. First column = the doc no (mono/bold cyan, opens the
 // document on the row click); number columns right-align; dates format.
-function buildColumns(cols: AlertColumn[]): DataTableColumn<AlertRow>[] {
-  return dynamicColumns<AlertColumn, AlertRow>('alertDrill', cols, (c, i) => ({
-    header: c.label,
-    idSeed: c.key,
-    key: c.key,
-    kind: i === 0 ? 'code' : c.type === 'number' ? 'num' : c.type === 'date' ? 'date' : 'text',
-    ...(c.type === 'number' ? { align: 'right' as const } : {}),
-    className: i === 0 ? 'mono fw-700' : c.type === 'number' ? 'mono' : undefined,
-    ...(i !== 0 && c.type !== 'number' && c.type !== 'date' ? { ellipsis: true } : {}),
-    render: (row: AlertRow) => {
-      const v = row[c.key];
-      const display =
-        v == null
-          ? ''
-          : c.type === 'number'
-            ? Number(v).toLocaleString()
-            : c.type === 'date'
-              ? fmtDate(String(v), '')
-              : String(v);
-      return i === 0 ? <span style={{ color: 'var(--cyan)' }}>{display}</span> : display;
-    },
-  }));
+// Sr No leads (owner 2026-11-15); `firstRowNo` = page offset + 1.
+function buildColumns(cols: AlertColumn[], firstRowNo: number): DataTableColumn<AlertRow>[] {
+  return [
+    srNoColumn<AlertRow>(firstRowNo),
+    ...dynamicColumns<AlertColumn, AlertRow>('alertDrill', cols, (c, i) => ({
+      header: c.label,
+      idSeed: c.key,
+      key: c.key,
+      kind: i === 0 ? 'code' : c.type === 'number' ? 'num' : c.type === 'date' ? 'date' : 'text',
+      ...(c.type === 'number' ? { align: 'right' as const } : {}),
+      className: i === 0 ? 'mono fw-700' : c.type === 'number' ? 'mono' : undefined,
+      ...(i !== 0 && c.type !== 'number' && c.type !== 'date' ? { ellipsis: true } : {}),
+      render: (row: AlertRow) => {
+        const v = row[c.key];
+        const display =
+          v == null
+            ? ''
+            : c.type === 'number'
+              ? Number(v).toLocaleString()
+              : c.type === 'date'
+                ? fmtDate(String(v), '')
+                : String(v);
+        return i === 0 ? <span style={{ color: 'var(--cyan)' }}>{display}</span> : display;
+      },
+    })),
+  ];
 }
 
 function AlertDrillPage() {
@@ -137,7 +142,7 @@ function AlertDrillPage() {
           <Panel fill bodyPadding="none">
             <DataTable
               tableKey={TABLE_KEYS.alertDrill}
-              columns={buildColumns(data.columns)}
+              columns={buildColumns(data.columns, offset + 1)}
               rows={data.alert.records.filter((row) =>
                 matchesSearchTerm(
                   data.columns.map((c) => {

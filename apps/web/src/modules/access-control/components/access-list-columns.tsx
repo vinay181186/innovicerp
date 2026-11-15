@@ -13,6 +13,7 @@ import { ACCESS_DEPTS, type UserAccessListItem } from '@innovic/shared';
 import { ROW_TINT, type DataTableColumn } from '@/ui/data';
 import type { RowMenuItem } from '@/ui/data/row-menu-logic';
 import { roleLabel } from '@/lib/role-label';
+import { srNoColumn } from '@/ui/data/lead-columns';
 
 export function deptLabel(key: string | null): { label: string; color: string } | null {
   if (!key) return null;
@@ -37,10 +38,12 @@ export function accessRowTint(u: UserAccessListItem): string | undefined {
 // Home Dept tick list for server Sort & Filter (ADR-200) — stored dept key + label.
 const HOME_DEPT_OPTIONS = ACCESS_DEPTS.map((d) => ({ value: d.key, label: d.label }));
 
-export function accessListColumns(): DataTableColumn<UserAccessListItem>[] {
+/** `firstRowNo` = this page's server offset + 1, so Sr No continues across pages. */
+export function accessListColumns(firstRowNo: number): DataTableColumn<UserAccessListItem>[] {
   return [
+    srNoColumn<UserAccessListItem>(firstRowNo),
     {
-      // First column — pinned by the table standard (ADR-199).
+      // First after Sr No (owner 2026-11-15).
       id: 'user',
       header: 'User',
       align: 'left',

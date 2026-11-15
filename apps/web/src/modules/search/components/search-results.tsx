@@ -190,7 +190,13 @@ export function SearchResults({
     <PageState state="error" message={rows.error.message} />
   ) : (
     <>
-      <ResultsFitTable items={items} loading={searching} empty={noResultsMsg} onOpen={onOpen} />
+      <ResultsFitTable
+        items={items}
+        loading={searching}
+        empty={noResultsMsg}
+        onOpen={onOpen}
+        firstRowNo={pageOffset(page) + 1}
+      />
       {pageTotal !== undefined && pageTotal > 0 ? (
         <ListFooter
           total={pageTotal}

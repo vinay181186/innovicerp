@@ -26,6 +26,7 @@ import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel, ROW_TINT, StatStrip, type DataTableColumn } from '@/ui/data';
+import { srNoColumn } from '@/ui/data/lead-columns';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader } from '@/ui/layout';
 import { alertsKeys, useAlertsPage, useMySubscriptions, useToggleSubscription } from '../api';
@@ -114,6 +115,7 @@ function AlertsDashboardPage() {
   // Columns — the alert/category first (always pinned), then department, the
   // record count (right-aligned number) and the email toggle.
   const columns: DataTableColumn<DashAlert>[] = [
+    srNoColumn<DashAlert>(offset + 1),
     {
       header: 'Alert Name',
       id: 'name',

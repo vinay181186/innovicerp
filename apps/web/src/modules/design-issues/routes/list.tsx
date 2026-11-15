@@ -26,6 +26,7 @@ import { AssignTaskModal } from '@/modules/tasks/components/assign-task-modal';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
 import type { DataTableColumn } from '@/ui/data';
+import { srNoColumn } from '@/ui/data/lead-columns';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Select } from '@/ui/forms';
@@ -128,6 +129,7 @@ function DesignIssuesAllPage(): React.JSX.Element {
 
   const rows = data?.items ?? [];
   const columns: DataTableColumn<DesignIssueListItem>[] = [
+    srNoColumn<DesignIssueListItem>(offset + 1),
     {
       id: 'issue',
       header: 'Issue',

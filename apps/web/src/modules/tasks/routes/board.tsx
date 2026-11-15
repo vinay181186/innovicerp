@@ -450,6 +450,7 @@ function TaskBoardPage(): React.JSX.Element {
           <TaskTable
             rows={data.tasks}
             view={view}
+            firstRowNo={pageOffset(page) + 1}
             filtered={Boolean(
               routeSearch.search ||
               status ||

@@ -7,6 +7,7 @@ import { useMemo, useState } from 'react';
 import { matchesSearchTerm } from '@/components/shared/search-match';
 import { fmtDate } from '@/lib/date';
 import { DataTable, Panel, dynamicColumns, type DataTableColumn } from '@/ui/data';
+import { srNoColumn } from '@/ui/data/lead-columns';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter } from '@/ui/layout';
 import { useDesignWorkLogList } from '../api';
@@ -31,6 +32,8 @@ function sumHours(rows: WeekRow[], hoursOf: (r: WeekRow) => number): number {
 
 function buildColumns(weekDates: string[]): DataTableColumn<WeekRow>[] {
   return [
+    // Every row is in the browser (unpaged), so Sr No starts at 1.
+    srNoColumn<WeekRow>(1),
     {
       id: 'engineer',
       header: 'Design Engineer',

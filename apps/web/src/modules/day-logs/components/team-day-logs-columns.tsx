@@ -6,9 +6,12 @@
 import type { TeamDayLogRow } from '@innovic/shared';
 import { fmt12, fmtDuration } from '@innovic/shared';
 import type { DataTableColumn } from '@/ui/data';
+import { srNoColumn } from '@/ui/data/lead-columns';
 
 export function teamColumns(): DataTableColumn<TeamDayLogRow>[] {
   return [
+    // One unpaged list (the whole team for the day), so Sr No starts at 1.
+    srNoColumn<TeamDayLogRow>(1),
     {
       id: 'user',
       header: 'User',

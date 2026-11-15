@@ -13,6 +13,7 @@ import type { ReorderListRow } from '@innovic/shared';
 import { useMemo, useState } from 'react';
 import { SearchableSelect } from '@/ui/forms';
 import type { DataTableColumn } from '@/ui/data';
+import { srNoColumn } from '@/ui/data/lead-columns';
 import { useVendorsList } from '../../vendors/api';
 
 export interface Draft {
@@ -60,10 +61,13 @@ export function reorderListColumns(opts: {
   draftOf: (r: ReorderListRow) => Draft;
   setDraft: (r: ReorderListRow, patch: Partial<Draft>) => void;
   canRaise: boolean;
+  /** Sr No of this page's first row (server offset + 1). */
+  firstRowNo: number;
 }): DataTableColumn<ReorderListRow>[] {
-  const { draftOf, setDraft, canRaise } = opts;
+  const { draftOf, setDraft, canRaise, firstRowNo } = opts;
   const isBlocked = (r: ReorderListRow): boolean => r.openPrs.length > 0;
   return [
+    srNoColumn<ReorderListRow>(firstRowNo),
     {
       id: 'item_code',
       sortFilterField: 'itemCode',

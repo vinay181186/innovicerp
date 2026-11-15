@@ -15,6 +15,7 @@ import { type ReactNode, useMemo, useState } from 'react';
 import { matchesSearchTerm } from '@/components/shared/search-match';
 import { fmtDate } from '@/lib/date';
 import { DataTable, type DataTableColumn, Panel } from '@/ui/data';
+import { srNoColumn } from '@/ui/data/lead-columns';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListHeader, PageState } from '@/ui/layout';
 import { useWaitingApprovals } from '../api';
@@ -29,7 +30,9 @@ import { ReviewPanel } from './review-panel';
 
 const EMPTY: WaitingApprovalRow[] = [];
 
+// Sr No leads (owner 2026-11-15); the waiting list is not paged → starts at 1.
 const COLUMNS: DataTableColumn<WaitingApprovalRow>[] = [
+  srNoColumn<WaitingApprovalRow>(1),
   {
     id: 'approval_type',
     header: 'Approval Type',

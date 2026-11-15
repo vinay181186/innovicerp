@@ -25,6 +25,7 @@ import { fmtDate } from '@/lib/date';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel, ROW_TINT, type DataTableColumn } from '@/ui/data';
+import { srNoColumn } from '@/ui/data/lead-columns';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Banner } from '@/ui/feedback';
@@ -98,6 +99,7 @@ function InstrumentsListPage(): React.JSX.Element {
   // filtering only the loaded page would miss instruments. Every change goes
   // back to page 1.
   const sf = useServerSortFilter(TABLE_KEYS.instruments, () => setPage(1));
+  const offset = pageOffset(page);
   const { data, isLoading, isError, error } = useInstrumentsList(
     {
       search: urlSearch.search,
@@ -105,7 +107,7 @@ function InstrumentsListPage(): React.JSX.Element {
       status: status || undefined,
       due: due || undefined,
       limit: LIST_PAGE_SIZE,
-      offset: pageOffset(page),
+      offset,
     },
     allowed,
   );
@@ -115,11 +117,12 @@ function InstrumentsListPage(): React.JSX.Element {
 
   const filtered = Boolean(search.trim() || status || due || sf.filtering);
 
-  // The ruled sheet's columns. Serial No. is the pinned first column (ADR-199
-  // #4). Instrument Status is a badge; Calibration Due keeps its amber/red
+  // The ruled sheet's columns. Sr No leads (owner 2026-11-15; offset + 1 so it
+  // continues across pages), then Serial No. (ADR-199 #4). Instrument Status is a badge; Calibration Due keeps its amber/red
   // colour and "· Overdue" tag; the long free-text columns clip with a tooltip.
   const columns = useMemo<DataTableColumn<InstrumentListItem>[]>(
     () => [
+      srNoColumn<InstrumentListItem>(offset + 1),
       {
         id: 'serial_no',
         sortFilterField: 'serialNo',
@@ -224,7 +227,7 @@ function InstrumentsListPage(): React.JSX.Element {
         ),
       },
     ],
-    [],
+    [offset],
   );
 
   if (!allowed) {

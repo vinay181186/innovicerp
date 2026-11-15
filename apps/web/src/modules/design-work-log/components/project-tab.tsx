@@ -7,6 +7,7 @@ import { useMemo } from 'react';
 import { matchesSearchTerm } from '@/components/shared/search-match';
 import { DataTable, Panel } from '@/ui/data';
 import type { DataTableColumn } from '@/ui/data';
+import { srNoColumn } from '@/ui/data/lead-columns';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter } from '@/ui/layout';
 import { useDesignProjectsList } from '../../design-projects/api';
@@ -45,6 +46,8 @@ function Breakdown({ by }: { by: Record<string, number> }): React.JSX.Element {
 }
 
 const COLUMNS: DataTableColumn<ProjectHoursRow>[] = [
+  // Every row is in the browser (unpaged), so Sr No starts at 1.
+  srNoColumn<ProjectHoursRow>(1),
   {
     id: 'project',
     header: 'Project',

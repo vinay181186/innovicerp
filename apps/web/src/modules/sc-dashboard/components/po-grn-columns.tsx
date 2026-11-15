@@ -9,7 +9,7 @@
 import type { ScPoSummaryRow, ScRecentGrn } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
-import { createdByColumn, type DataTableColumn, leadColumns } from '@/ui/data';
+import { createdByColumn, type DataTableColumn, leadColumns, srNoColumn } from '@/ui/data';
 import { inr, PO_STATUS_OPTIONS, statusBadge } from './sc-format';
 
 export function poSummaryColumns(
@@ -171,8 +171,9 @@ export function poSummaryColumns(
   return cols;
 }
 
-export function recentGrnColumns(): DataTableColumn<ScRecentGrn>[] {
+export function recentGrnColumns(firstRowNo: number): DataTableColumn<ScRecentGrn>[] {
   return [
+    srNoColumn<ScRecentGrn>(firstRowNo),
     {
       id: 'grn_no',
       sortFilterField: 'grnNo',

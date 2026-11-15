@@ -12,6 +12,7 @@ import { activityActionLabel as actionLabel } from '@innovic/shared';
 import type { ActivityLogEntry } from '@innovic/shared';
 import { fmtDate, fmtTime } from '@/lib/date';
 import type { DataTableColumn } from '@/ui/data';
+import { createdOnColumn, srNoColumn } from '@/ui/data/lead-columns';
 import { activityActionBadge } from '../lib/activity-entity';
 import { DocRefLink } from './doc-ref-link';
 
@@ -25,10 +26,12 @@ export const ACTIVITY_LOG_HIDDEN_COLUMNS = ['created_on'] as const;
  * (apps/api/src/modules/activity-log/sf-columns.ts, ADR-200).
  */
 export function activityLogColumns(
+  firstRowNo: number,
   actions: readonly string[] = [],
 ): DataTableColumn<ActivityLogEntry>[] {
   const actionOptions = actions.map((a) => ({ value: a, label: actionLabel(a) }));
   return [
+    srNoColumn<ActivityLogEntry>(firstRowNo),
     {
       id: 'log_date',
       sortFilterField: 'logDate',
@@ -106,17 +109,13 @@ export function activityLogColumns(
       title: (e) => e.userName,
       filterValue: (e) => e.userFullName,
     },
-    {
-      // When the log row was written (IST day) — Sort & Filter can pick a
-      // range of it (ADR-200). Off by default; Columns ▾ shows it.
-      id: 'created_on',
+    // When the log row was written (IST day, time under it) — Sort & Filter can
+    // pick a range of it (ADR-200). Off by default (ACTIVITY_LOG_HIDDEN_COLUMNS);
+    // Columns ▾ shows it.
+    createdOnColumn<ActivityLogEntry>((e) => e.createdAt, {
       sortFilterField: 'createdOn',
-      kind: 'date',
-      header: 'Created On',
       className: 'mono text3',
-      nowrap: true,
-      render: (e) => fmtDate(e.createdAt),
-    },
+    }),
   ];
 }
 

@@ -15812,3 +15812,14 @@ Party GRN was the one document list where a row click opened the GRN's details u
 
 - Positive: Party GRN behaves like every other document; every PGRN No. in the app can open it.
 - Negative / open: other documents without a page (CMR, JW Invoice, JW Return, Party Material Issue, JW DC Inward; pop-ups on Store / Tool Issue, CAPA, Daily Task Report) and 13 unreachable under-row panels are left for a separate owner decision (audit 2026-11-15).
+
+## ADR-295: Every list starts Sr No · own No. · Created On (time under the date)
+
+**Date:** 2026-11-15. **Owner decided** (mockup approved): every table starts with **Sr No**, then the page's own document number, then **Created On**, then the other columns; Created By stays last. Amends ADR-261 (2-Nov / 3-Nov order) and ADR-286.
+
+- SO-linked lists (`leadColumns`): Sr No · own No. · Created On · SO No. · Internal SO No. · POL · Item Code · Item Name. A list whose row IS the order: Sr No · SO No. · Created On · …
+- **No Created Time column.** The India-time 12-hour clock (02:35 PM) sits under the date in small grey text (`--fs-xs`, `--text3`); a date-only value shows the date alone. The time has no sort or filter of its own; Created On ▾ sorts and filters on the date.
+- Created On stays locked and user-hideable (ADR-286).
+- **Sr No on every full list**: added to ~40 lists that had none; moved to first on BOM, Multi-Level BOM and Route Card; reports' "#" and the Home check table's "Sr" read "Sr No". Paged lists count on from the page start (page 2 starts at 26). Small tables inside other screens (pickers, pop-ups, detail-page tabs, dashboard widgets) are left without one.
+- Built through `srNoColumn` / `createdOnColumn` in `apps/web/src/ui/data/lead-columns.tsx`; a hand-written "Created Time" header fails `lead-columns.guard.test.ts`.
+- Saved column layouts move to the new order by themselves. Where Sr No became column 0, the old first column's automatic pin (every save pinned column 0) is dropped (`normalize`, use-table-layout.ts). Lists with a hand-written Created On (ECR, Stock Counts, Tool Issues, Party Materials) put it after the own number by default; a user's saved order keeps their own position until Reset.

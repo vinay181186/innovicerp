@@ -45,6 +45,7 @@ import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Icon, StatusBadge } from '@/ui/core';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import { srNoColumn } from '@/ui/data/lead-columns';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Select } from '@/ui/forms';
@@ -118,6 +119,7 @@ function CostCentersListPage(): React.JSX.Element {
     void navigate({ search: (prev) => ({ ...prev, page: 1 }), replace: true });
   });
 
+  const offset = (search.page - 1) * PAGE_SIZE;
   const query: ListCostCentersQuery = useMemo(
     () => ({
       search: search.search,
@@ -126,9 +128,9 @@ function CostCentersListPage(): React.JSX.Element {
       type: search.type,
       sf: sf.param,
       limit: PAGE_SIZE,
-      offset: (search.page - 1) * PAGE_SIZE,
+      offset,
     }),
-    [search.search, search.isActive, search.department, search.type, sf.param, search.page],
+    [search.search, search.isActive, search.department, search.type, sf.param, offset],
   );
 
   const { data, isLoading, isFetching, isError, error } = useCostCentersList(query);
@@ -140,12 +142,14 @@ function CostCentersListPage(): React.JSX.Element {
 
   // The sheet's columns, unchanged from the hand-written <colgroup>: the widths
   // are `%` and must sum to 100 WITH the Action column (rowActionsWidth below):
-  // 5+11+22+12+10+20+10 = 90, + 10 = 100, so the table never scrolls sideways.
+  // 5+11+22+12+10+20+10 = 90, + 10 = 100, so the table never scrolls sideways
+  // (5% = Sr No, the first column of every list — owner 2026-11-15).
   // Centred by the standard; only Name is left-aligned (a name reads from its
   // left edge), and the long free-text columns ellipsize with the full value on
   // hover rather than wrapping the row taller.
   const columns = useMemo<DataTableColumn<CostCenter>[]>(
     () => [
+      srNoColumn<CostCenter>(offset + 1, { width: '5%' }),
       {
         id: 'code',
         sortFilterField: 'code',
@@ -173,7 +177,7 @@ function CostCentersListPage(): React.JSX.Element {
         id: 'name',
         sortFilterField: 'name',
         header: 'Cost Centre Name',
-        width: '27%',
+        width: '22%',
         align: 'left',
         className: 'fw-700',
         ellipsis: true,
@@ -223,7 +227,7 @@ function CostCentersListPage(): React.JSX.Element {
         render: (cc) => <StatusBadge kind="active" status={String(cc.isActive)} />,
       },
     ],
-    [],
+    [offset],
   );
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose

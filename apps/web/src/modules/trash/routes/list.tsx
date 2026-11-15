@@ -78,7 +78,7 @@ function TrashListPage(): React.JSX.Element {
   const [restoring, setRestoring] = useState<TrashListItem | null>(null);
 
   const items = data?.items ?? [];
-  const columns = useMemo(() => trashColumns(), []);
+  const columns = useMemo(() => trashColumns(pageOffset(search.page) + 1), [search.page]);
 
   // The box keeps what the user typed (a trailing space included); only the
   // normalised term goes to the URL, and a new term goes back to page 1.

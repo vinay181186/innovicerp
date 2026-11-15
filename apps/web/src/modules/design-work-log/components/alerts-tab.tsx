@@ -10,6 +10,7 @@ import { matchesSearchTerm } from '@/components/shared/search-match';
 import { fmtDate } from '@/lib/date';
 import { DataTable, Panel } from '@/ui/data';
 import type { DataTableColumn } from '@/ui/data';
+import { srNoColumn } from '@/ui/data/lead-columns';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter } from '@/ui/layout';
 import { TabStrip } from '@/ui/navigation/TabStrip';
@@ -33,6 +34,8 @@ interface UtilRow {
 }
 
 const DATE_COLS: DataTableColumn<DayRow>[] = [
+  // Every row is in the browser (unpaged), so Sr No starts at 1.
+  srNoColumn<DayRow>(1),
   {
     id: 'log_date',
     header: 'Log Date',
@@ -65,6 +68,7 @@ const LOW_COLS: DataTableColumn<DayRow>[] = [
 ];
 
 const UTIL_COLS: DataTableColumn<UtilRow>[] = [
+  srNoColumn<UtilRow>(1),
   {
     id: 'engineer',
     header: 'Design Engineer',

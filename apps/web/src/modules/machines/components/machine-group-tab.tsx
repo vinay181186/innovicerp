@@ -31,6 +31,7 @@ import { useSaveKey } from '@/lib/use-save-key';
 import { isStagedResult, useDocumentEdits } from '@/modules/document-edits/api';
 import { Icon, StatusBadge } from '@/ui/core';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import { srNoColumn } from '@/ui/data/lead-columns';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ConfirmDialog, useToast } from '@/ui/feedback';
@@ -86,14 +87,15 @@ export function MachineGroupTab({ tabs }: { tabs: React.ReactNode }): React.JSX.
     () => ({ ...(term ? { search: term } : {}), ...(sf.param ? { sf: sf.param } : {}) }),
     [term, sf.param],
   );
+  const offset = pageOffset(page);
   const query: ListMachineGroupsQuery = useMemo(
     () => ({
       ...base,
       ...(status === 'all' ? {} : { isActive: status === 'active' }),
       limit: LIST_PAGE_SIZE,
-      offset: pageOffset(page),
+      offset,
     }),
-    [base, status, page],
+    [base, status, offset],
   );
   const list = useMachineGroupsList(query);
   // Dropdown counts — server totals under the same search + ▾ filters.
@@ -135,11 +137,13 @@ export function MachineGroupTab({ tabs }: { tabs: React.ReactNode }): React.JSX.
     [pendingEdits.data],
   );
 
-  // The sheet's columns (first = Group Code, always pinned). No Name column:
+  // The sheet's columns (Sr No first — owner 2026-11-15, offset + 1 so it
+  // continues across pages — then Group Code). No Name column:
   // the master has no `name` — the code IS the group. Description shares the
   // spare width and clips with "…" + tooltip; the Active chip never clips.
   const columns = useMemo<DataTableColumn<MachineGroup>[]>(
     () => [
+      srNoColumn<MachineGroup>(offset + 1),
       {
         id: 'code',
         header: 'Group Code',
@@ -188,7 +192,7 @@ export function MachineGroupTab({ tabs }: { tabs: React.ReactNode }): React.JSX.
         filterOptions: ACTIVE_OPTIONS,
       },
     ],
-    [pendingIds],
+    [pendingIds, offset],
   );
 
   return (

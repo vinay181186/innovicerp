@@ -27,6 +27,7 @@ import {
 import { useState } from 'react';
 import { useCanWrite } from '@/components/shared/action-link';
 import { DataTable, Panel, ROW_TINT, type DataTableColumn } from '@/ui/data';
+import { srNoColumn } from '@/ui/data/lead-columns';
 import type { ServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { firstName } from '@/modules/day-logs/lib/format';
@@ -122,8 +123,9 @@ const ASSIGNED_COLUMNS: DataTableColumn<TaskRow>[] = [
   },
 ];
 
-function taskColumns(view: TaskView): DataTableColumn<TaskRow>[] {
+function taskColumns(view: TaskView, firstRowNo: number): DataTableColumn<TaskRow>[] {
   return [
+    srNoColumn<TaskRow>(firstRowNo),
     {
       id: 'task_no',
       sortFilterField: 'code',
@@ -287,9 +289,12 @@ export function TaskTable({
   filtered,
   sortFilterServer,
   onAction,
+  firstRowNo,
 }: {
   rows: TaskRow[];
   view: TaskView;
+  /** Sr No of this page's first row (server offset + 1). */
+  firstRowNo: number;
   /** Sort & Filter on the server (ADR-200) — the board pages at 25 rows. */
   sortFilterServer: ServerSortFilter;
   /** True when a search / filter is on — picks the empty-state wording. */
@@ -312,7 +317,7 @@ export function TaskTable({
     <Panel bodyPadding="none" style={{ marginBottom: 0 }}>
       <DataTable<TaskRow>
         tableKey={view === 'all' ? TABLE_KEYS.taskBoardAll : TABLE_KEYS.taskBoard}
-        columns={taskColumns(view)}
+        columns={taskColumns(view, firstRowNo)}
         rows={rows}
         sortFilterServer={sortFilterServer}
         rowClassName={(t) => taskRowTint(t)}

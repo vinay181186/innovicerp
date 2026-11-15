@@ -18,6 +18,7 @@ import { Link } from '@tanstack/react-router';
 import type { StoreInventoryRow } from '@innovic/shared';
 import { ItemRevLink } from '@/modules/item-revisions/components/item-rev-link';
 import type { DataTableColumn } from '@/ui/data';
+import { srNoColumn } from '@/ui/data/lead-columns';
 
 /** A header cell that carries a tooltip (the fit engine has no header-title prop). */
 function HeadWithHint({ label, hint }: { label: string; hint: string }): React.JSX.Element {
@@ -28,9 +29,12 @@ export function storeInventoryColumns(opts: {
   onReservedClick: (row: StoreInventoryRow) => void;
   /** ADR-234 — may this user open /items/$id? Otherwise the code is plain text. */
   canOpenItem: boolean;
+  /** Sr No of this page's first row (server offset + 1). */
+  firstRowNo: number;
 }): DataTableColumn<StoreInventoryRow>[] {
-  const { onReservedClick, canOpenItem } = opts;
+  const { onReservedClick, canOpenItem, firstRowNo } = opts;
   return [
+    srNoColumn<StoreInventoryRow>(firstRowNo),
     {
       id: 'item_code',
       sortFilterField: 'itemCode',

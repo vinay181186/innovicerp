@@ -8,6 +8,7 @@
 
 import { NC_REASON_CATEGORY_LABELS, type QcCommandPareto, type QcParetoRow } from '@innovic/shared';
 import { DataTable, type DataTableColumn } from '@/ui/data';
+import { srNoColumn } from '@/ui/data/lead-columns';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { type QcPager, TablePager, rowNo } from './TablePager';
 
@@ -24,13 +25,7 @@ function reasonLabel(reason: string): string {
 function paretoColumns(pager: QcPager): DataTableColumn<QcParetoRow>[] {
   const rank = (i: number): number => rowNo(pager, i) - 1;
   return [
-    {
-      id: 'sr_no',
-      header: 'Sr No',
-      nowrap: true,
-      className: 'mono fw-700',
-      render: (_r, i) => rowNo(pager, i),
-    },
+    srNoColumn<QcParetoRow>(rowNo(pager, 0)),
     {
       id: 'reason',
       header: 'Reason',

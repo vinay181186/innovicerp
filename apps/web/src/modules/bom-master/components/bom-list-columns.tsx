@@ -6,6 +6,7 @@ import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
 import { StatusBadge } from '@/ui/core';
 import type { DataTableColumn } from '@/ui/data';
+import { srNoColumn } from '@/ui/data/lead-columns';
 import { statusText } from '@/lib/status-text';
 
 const BOM_STATUS_OPTIONS = (['draft', 'active', 'obsolete'] as const).map((v) => ({
@@ -19,6 +20,7 @@ const BOM_STATUS_OPTIONS = (['draft', 'active', 'obsolete'] as const).map((v) =>
 // standard; BOM Name and Parent Item read from their left edge.
 export function bomListColumns(offset = 0): DataTableColumn<BomMasterListItem>[] {
   return [
+    srNoColumn<BomMasterListItem>(offset + 1, { width: '4%' }),
     {
       id: 'bom_no',
       sortFilterField: 'bomNo',
@@ -40,14 +42,6 @@ export function bomListColumns(offset = 0): DataTableColumn<BomMasterListItem>[]
           {b.bomNo}
         </Link>
       ),
-    },
-    {
-      id: 'sr_no',
-      header: 'Sr No',
-      width: '4%',
-      className: 'text3',
-      align: 'right',
-      render: (_b, i) => offset + i + 1,
     },
     {
       id: 'bom_name',
