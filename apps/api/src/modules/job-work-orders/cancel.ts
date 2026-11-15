@@ -63,7 +63,7 @@ export async function lockJobWorkOrderForCancel(
 const USAGE_DOC: Record<JwLineUsageKind, { label: string; href: (id: string) => string | null }> = {
   job_card: { label: 'Job Card', href: (id) => `/job-cards/${id}` },
   plan: { label: 'Plan', href: (id) => `/plans/${id}` },
-  party_grn: { label: 'Party GRN', href: () => '/party-grn' },
+  party_grn: { label: 'Party GRN', href: (id) => `/party-grn/${id}` }, // ADR-294
   party_material_issue: { label: 'Party Material Issue', href: () => null },
   jw_return: { label: 'JW Return', href: () => null },
   jw_invoice: { label: 'JW Invoice', href: () => null },

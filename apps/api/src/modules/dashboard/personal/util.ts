@@ -115,10 +115,8 @@ export function entityHref(entity: string, id: string | null, code: string | nul
       // ADR-291 — the ECR detail page.
       return `/ecrs/${id}`;
     case 'PartyGrn':
-      // Party GRN has no detail page: its list opens on a search for the
-      // number (the same link the QC Call Register uses), so it needs the
-      // code, not the id — the one kind docNavPage cannot express.
-      return code ? `/party-grn?search=${encodeURIComponent(code)}` : '/party-grn';
+      // ADR-294 — the Party GRN detail page.
+      return docNavPage('party-grn', id);
     default:
       return null;
   }

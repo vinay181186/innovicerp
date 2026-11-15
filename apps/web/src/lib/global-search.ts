@@ -67,6 +67,8 @@ const DETAIL_ROUTES: Partial<Record<GlobalSearchKind, string>> = {
   'route-card': '/route-cards/$id',
   'design-project': '/design-projects/$id',
   'jw-dc-outward': '/jw-dc/$id',
+  // ADR-294 — Party GRN has its own page now (was the list filtered to the code).
+  'party-grn': '/party-grn/$id',
   client: '/clients/$id',
   vendor: '/vendors/$id',
   item: '/items/$id',
@@ -91,7 +93,6 @@ const LANDINGS: Partial<Record<GlobalSearchKind, Landing>> = {
   capa: { to: '/nc-register', search: (r) => ({ tab: 'capa', capa: r.docNo }) },
   'store-issue': { to: '/issue-register', search: (r) => ({ tab: 'items', search: r.docNo }) },
   'tool-issue': { to: '/issue-register', search: (r) => ({ tab: 'tools', search: r.docNo }) },
-  'party-grn': { to: '/party-grn', search: (r) => ({ tab: 'receive', search: r.docNo }) },
   'party-material-issue': { to: '/party-grn', search: (r) => ({ tab: 'issue', search: r.docNo }) },
   'jw-dc-inward': { to: '/jw-dc', search: (r) => ({ tab: 'inward', search: r.docNo }) },
   task: { to: '/task-board', search: (r) => ({ task: r.id }) },

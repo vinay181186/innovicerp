@@ -11,6 +11,7 @@ import type {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
 import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
+import { relatedDocsKeys } from '@/components/shared/related-docs-tabs';
 import { activityLogKeys } from '@/modules/activity-log/api';
 import { dashboardKeys } from '@/modules/dashboard/api';
 import { incomingQcKeys } from '@/modules/incoming-qc/api';
@@ -91,11 +92,15 @@ export function usePartyGrnLines(query: ListPartyGrnQuery) {
   });
 }
 
-export function usePartyGrnDetail(id: string | undefined) {
+/** `poll`: the detail PAGE (ADR-294) refreshes every 60 s like the list
+ *  ('party-grn' is 'poll' in REFRESH_POLICY). The Edit / QC popups read the
+ *  SAME key, so the page turns `poll` off while one is open. */
+export function usePartyGrnDetail(id: string | undefined, opts?: { poll?: boolean }) {
   return useQuery<PartyGrnDetail>({
     queryKey: partyGrnKeys.detail(id ?? '__missing__'),
     queryFn: () => apiFetch<PartyGrnDetail>(`/party-grn/${id}`),
     enabled: Boolean(id),
+    ...(opts?.poll ? { refetchInterval: 60_000 } : {}),
   });
 }
 
@@ -175,7 +180,7 @@ export function useUpdatePartyGrn(id: string, saveKey?: SaveKey) {
       // ADR-197 — the receipt's History reads the activity log either way.
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       if ('staged' in updated) {
-        // Nothing changed on the GRN itself — refresh so the expand shows the
+        // Nothing changed on the GRN itself — refresh so the detail page shows the
         // new pending-change chips.
         void qc.invalidateQueries({ queryKey: partyGrnKeys.detail(id) });
         void qc.invalidateQueries({ queryKey: ['document-edits'] });
@@ -214,6 +219,8 @@ export function useQcPartyGrn(saveKey?: SaveKey) {
         }),
       ),
     onSuccess: () => {
+      // A deviated QC raises an NC — the page's Related Docs lists it (ADR-294).
+      void qc.invalidateQueries({ queryKey: relatedDocsKeys.all });
       void qc.invalidateQueries({ queryKey: partyGrnKeys.all });
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       // Accepted qty enters the register; JWSO lines show rmAcceptedQty.

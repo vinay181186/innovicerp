@@ -3,7 +3,7 @@
 // guard DOCUMENT_EDIT_LABEL / DOCUMENT_EDIT_FORM_KEY carry in @innovic/shared).
 //
 // Every `to` is a literal registered route (typed by the router). Types with a
-// detail page open it by id; the ones with no detail page (Party GRN, Machine
+// detail page open it by id; the ones with no detail page (Machine
 // Group, Material Grade / Size, Instrument — edited in a modal) open their
 // list, filtered to the code where that list reads `?search=`.
 
@@ -31,9 +31,7 @@ export const DOCUMENT_EDIT_LINK: Readonly<Record<DocumentEditEntity, LinkRender>
   JobCard: (r, p) => <Link to="/job-cards/$id" params={byId(r)} {...p} />,
   Dispatch: (r, p) => <Link to="/customer-dispatches/$id" params={byId(r)} {...p} />,
   DeliveryChallan: (r, p) => <Link to="/delivery-challans/$id" params={byId(r)} {...p} />,
-  PartyGrn: (r, p) => (
-    <Link to="/party-grn" search={{ tab: 'receive', search: r.docCode }} {...p} />
-  ),
+  PartyGrn: (r, p) => <Link to="/party-grn/$id" params={byId(r)} {...p} />,
   ProductionOrder: (r, p) => <Link to="/production-orders/$id" params={byId(r)} {...p} />,
   Item: (r, p) => <Link to="/items/$id" params={byId(r)} {...p} />,
   Vendor: (r, p) => <Link to="/vendors/$id" params={byId(r)} {...p} />,

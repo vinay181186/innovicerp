@@ -163,9 +163,9 @@ export function QcRegisterScreen(props: {
     else if (vm.kind === 'op') setInspect({ kind: 'op', jcOpId: vm.row.jcOpId });
     else setInspect({ kind: 'inc', grnLineId: vm.row.grnLineId });
   };
-  // Party GRN has no detail page — open its list searched on the PGRN no.
+  // ADR-294 — the Party GRN detail page, by the receipt id the row carries.
   const openPgrn = (row: PartyGrnQcRow): void =>
-    void nav({ to: '/party-grn', search: { search: row.partyGrnNo, page: 1 } });
+    void nav({ to: '/party-grn/$id', params: { id: row.partyGrnId } });
 
   // Row click opens the document the call sits on (ADR-199 standard).
   const onPendingRowClick = (vm: PendingVM): void =>

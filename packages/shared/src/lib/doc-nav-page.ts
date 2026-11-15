@@ -31,6 +31,8 @@ export const DOC_NAV_KINDS = [
   'production-order',
   'job-work-order',
   'delivery-challan',
+  // ADR-294 — Party GRN detail page.
+  'party-grn',
 ] as const;
 
 export type DocNavKind = (typeof DOC_NAV_KINDS)[number];
@@ -75,5 +77,7 @@ export function docNavPage(kind: DocNavKind, id: string): string {
       return `/job-work-orders/${id}`;
     case 'delivery-challan':
       return `/delivery-challans/${id}`;
+    case 'party-grn':
+      return `/party-grn/${id}`;
   }
 }

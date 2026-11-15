@@ -15785,3 +15785,30 @@ The owner wants to ask plain-English questions about live ERP data (SO, JWSO, Jo
 - Positive: every figure in an answer comes from the same code the screens use; the database itself refuses a write.
 - Negative: the chat can only answer what the tools and the 55 reports cover; a new kind of question needs a new tool or report.
 - Risks: Claude auto-reload must stay OFF in the Anthropic Console and the Gemini key's Google project must have no billing linked, or "no extra billing" does not hold. On the Gemini free tier Google may use the prompts and screenshots to improve its models — the owner accepted this (2026-11-15). In Chrome, Speak sends the audio to Google's speech service.
+
+## ADR-294: Party GRN opens a detail page; no details under the row
+
+**Date:** 2026-11-15
+**Status:** Accepted (owner approved, 2026-11-15)
+
+### Context
+
+Party GRN was the one document list where a row click opened the GRN's details under the row in the list (`PartyGrnExpand`), and the row ⋯ had "Show / Hide details". Every other document list opens a detail page. The "No detail page" note in the code was only a description of the state after the ▸ removal (owner 2026-10-31, "no ▸"), not a decision. Global search, Edit Approvals, the QC Call Register and the JWSO Related Docs therefore sent people to the list searched on the PGRN No., or showed it as plain text.
+
+### Decision
+
+- New page `/party-grn/$id` in the house style (copied from JW DC / GRN detail): facts, the lines with each line's QC split, Edit / Incoming QC / Preview / Download PDF / Cancel on the action menu under the same rules as the list ⋯, cancelled banner, pending-change chips, Related Docs + History tabs.
+- Page rule = the API's read rule: Party GRN view OR Incoming QC view, so a QC inspector opens it from the QC register.
+- New `GET /party-grn/:id/related` built with `traceability.section()` like GRN.
+- List row click opens the page; the under-row panel and ⋯ Show details are removed.
+- Links now open the page: global search, Edit Approvals, QC Call Register (Doc No. and row), JWSO Related Docs, NC detail Party GRN No. New `party-grn` kind in `DOC_NAV_KINDS`.
+
+### Alternatives Considered
+
+- Keep the under-row panel — rejected by the owner (one behaviour on every document list).
+- Pop-up instead of a page — rejected: a page can be linked from search, approvals and related docs.
+
+### Consequences
+
+- Positive: Party GRN behaves like every other document; every PGRN No. in the app can open it.
+- Negative / open: other documents without a page (CMR, JW Invoice, JW Return, Party Material Issue, JW DC Inward; pop-ups on Store / Tool Issue, CAPA, Daily Task Report) and 13 unreachable under-row panels are left for a separate owner decision (audit 2026-11-15).

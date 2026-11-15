@@ -742,7 +742,20 @@ function DetailClusters(props: {
               num
               label="Party GRN No."
               empty={!detail.sourcePartyGrnCode}
-              value={detail.sourcePartyGrnCode ?? '—'}
+              value={
+                // ADR-294 — the Party GRN's own page, when the receipt id is known.
+                detail.sourcePartyGrnId && detail.sourcePartyGrnCode ? (
+                  <Link
+                    to="/party-grn/$id"
+                    params={{ id: detail.sourcePartyGrnId }}
+                    className="fw-700"
+                  >
+                    {detail.sourcePartyGrnCode}
+                  </Link>
+                ) : (
+                  (detail.sourcePartyGrnCode ?? '—')
+                )
+              }
             />
           </>
         ) : detail.sourceVendorId ? (

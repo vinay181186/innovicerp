@@ -8,9 +8,9 @@
 // line's item, first after the locked block, owner 2026-11-05) · GRN Date · Customer · Client PO No. · Customer Challan No. · Received Qty ·
 // Accepted Qty · QC Status. The item is what the line RECEIVED (the JWSO
 // line's customer RM) with the JWSO line's drawing revision. The GRN No. keeps
-// its --cyan identity colour (no detail route, so the code is not a link).
-// Received By, Remarks, the full per-line QC split and History stay in the ▸
-// expand (party-grn-expand.tsx) — it is the GRN's only detail surface.
+// its --cyan identity colour; the whole row opens the detail page (ADR-294).
+// Received By, Remarks, the full per-line QC split and History are on the
+// detail page (routes/detail.tsx).
 //
 // Sort & Filter runs on the SERVER (ADR-200): `sortFilterField` names the field
 // in api party-grn/sf-columns.ts PARTY_GRN_LINE_SF_COLUMNS.

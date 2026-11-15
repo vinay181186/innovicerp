@@ -10,6 +10,7 @@ import { AuthenticationError } from '../../lib/errors';
 import { requestCancel } from '../cancel-requests/service';
 import { listPartyGrnLines } from './list-lines';
 import { qcPartyGrn } from './qc';
+import { getPartyGrnRelated } from './related';
 import { updatePartyGrnInputSchema } from './schema';
 import * as service from './service';
 
@@ -38,6 +39,13 @@ export async function partyGrnRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) throw new AuthenticationError();
     const { id } = idParam.parse(req.params);
     return service.getPartyGrnDetail(id, req.user);
+  });
+
+  // ADR-294 — Related Documents for the Party GRN detail page.
+  app.get('/party-grn/:id/related', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { id } = idParam.parse(req.params);
+    return getPartyGrnRelated(id, req.user);
   });
 
   app.post('/party-grn', async (req, reply) => {
