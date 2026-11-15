@@ -160,8 +160,8 @@ export function completedColumns(firstRowNo: number): DataTableColumn<CompletedV
         render: (vm) =>
           vm.kind === 'pgrn' ? (
             <Link
-              to="/party-grn"
-              search={{ search: vm.row.partyGrnNo, page: 1 }}
+              to="/party-grn/$id"
+              params={{ id: vm.row.partyGrnId }}
               className="td-code"
               style={{ color: 'var(--blue)', fontWeight: 800 }}
               title="Open this Party GRN"

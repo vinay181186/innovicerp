@@ -2,7 +2,7 @@
 // count · updated time · Column filters toggle), the optional column-filter
 // strip, then <DataTable tableKey="report-<slug>"> — one line per row, always
 // fits the width (text shrinks, then the rightmost unpinned columns move into
-// ▸), Columns ▾ saved per user per report, Comfortable / Compact, '#' first
+// ▸), Columns ▾ saved per user per report, Comfortable / Compact, 'Sr No' first
 // and pinned, a pinned Total row — and the shared ListFooter pager under it.
 //
 // ADR-201 (2026-10-02): 25 rows a page, and only that page is loaded. Sort,

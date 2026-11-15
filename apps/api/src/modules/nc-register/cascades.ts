@@ -125,6 +125,8 @@ export interface NcSource {
   // ─── ADR-247 customer material (Party GRN Incoming QC) ──────────────────────
   /** party_grn.code of the Party GRN line the NC was raised on. */
   sourcePartyGrnCode: string | null;
+  /** ADR-294 — party_grn.id behind that line, so the PGRN No. opens its page. */
+  sourcePartyGrnId: string | null;
   /** The JWSO the customer material came in against (live code, else snapshot). */
   sourceJwCode: string | null;
   /** The customer who owns the material (clients.name, else the JWSO's name). */
@@ -168,6 +170,7 @@ const EMPTY_NC_SOURCE: NcSource = {
   sourceGrnCode: null,
   isVendorSourced: false,
   sourcePartyGrnCode: null,
+  sourcePartyGrnId: null,
   sourceJwCode: null,
   sourceCustomerName: null,
   ...EMPTY_NC_DOC_LINKS,
@@ -257,7 +260,7 @@ export async function resolveNcSource(
   // still be shown as their source.
   if (nc.partyGrnLineId) {
     const rows = (await tx.execute(sql`
-      SELECT pg.code AS "partyGrnCode",
+      SELECT pg.code AS "partyGrnCode", pg.id AS "partyGrnId",
              COALESCE(jw.code, pg.jw_code_text) AS "jwCode",
              COALESCE(cl.name, jw.customer_name) AS "customerName"
       FROM public.party_grn_lines pgl
@@ -272,6 +275,7 @@ export async function resolveNcSource(
     return {
       ...EMPTY_NC_SOURCE,
       sourcePartyGrnCode: (r?.['partyGrnCode'] as string | null) ?? null,
+      sourcePartyGrnId: (r?.['partyGrnId'] as string | null) ?? null,
       sourceJwCode: (r?.['jwCode'] as string | null) ?? null,
       sourceCustomerName: (r?.['customerName'] as string | null) ?? null,
       ...links,
@@ -300,6 +304,7 @@ export async function resolveNcSource(
       sourceGrnCode: (r?.['grnCode'] as string | null) ?? null,
       isVendorSourced: true,
       sourcePartyGrnCode: null,
+      sourcePartyGrnId: null,
       sourceJwCode: null,
       sourceCustomerName: null,
       ...links,
@@ -332,6 +337,7 @@ export async function resolveNcSource(
         sourceGrnCode: null,
         isVendorSourced: true,
         sourcePartyGrnCode: null,
+        sourcePartyGrnId: null,
         sourceJwCode: null,
         sourceCustomerName: null,
         ...links,

@@ -102,6 +102,12 @@ const ROUTE_LINKS: Record<string, (label: string, linkId: string) => React.JSX.E
       {t}
     </Link>
   ),
+  // ADR-294 — Party GRN detail page.
+  'party-grn': (t, i) => (
+    <Link to="/party-grn/$id" params={{ id: i }} className="td-code">
+      {t}
+    </Link>
+  ),
   nc: (t, i) => (
     <Link to="/nc-register/$id" params={{ id: i }} className="td-code">
       {t}

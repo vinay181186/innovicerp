@@ -53,6 +53,7 @@ export function buildRegisterColumns(firstRowNo: number): DataTableColumn<QcDocu
     },
     {
       id: 'file_name',
+      opensRow: true,
       sortFilterField: 'fileName',
       header: 'File Name',
       align: 'left',

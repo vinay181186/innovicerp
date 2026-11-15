@@ -1,10 +1,12 @@
 // Create DC from an NC — the return-to-vendor challan (docs/QC-NC-HANDLING-
 // DESIGN.md §5). Shown on the NC detail while the NC is `return_to_vendor` +
-// `disposed` with no challan yet. Inline panel, like the dispose panel.
+// `disposed` with no challan yet. A pop-up opened from the page's Create DC
+// button, like the Dispose pop-up (owner 2026-11-15).
 
 import type { CreateNcDcInput, NcRegister } from '@innovic/shared';
 import { Loader2, Truck } from 'lucide-react';
 import { useState } from 'react';
+import { Modal } from '@/ui/feedback';
 import { todayIst } from '@/lib/date';
 import { VendorPicker } from '@/components/shared/vendor-picker';
 import { Note } from './nc-note';
@@ -12,13 +14,17 @@ import { Note } from './nc-note';
 // Return-to-vendor challan, raised from the NC (design §5). The DC date defaults
 // to today (like every other DC/receipt screen); the qty is not asked because
 // the challan line is the NC's full rejected qty by rule (interlock 4).
+/** The form lives in the pop-up body; its Save button sits in the footer. */
+const FORM_ID = 'create-nc-dc-form';
+
 export function CreateNcDcPanel(props: {
   nc: NcRegister;
   pending: boolean;
   error: string | null;
   onSubmit: (input: CreateNcDcInput) => Promise<void> | void;
+  onCancel: () => void;
 }): React.JSX.Element {
-  const { nc, pending, error, onSubmit } = props;
+  const { nc, pending, error, onSubmit, onCancel } = props;
   // Defaults to today, like every other DC / receipt screen (delivery-challans
   // create + receive, nc-register-form). It opened blank before, which left the
   // Save DC button disabled after a vendor was picked — a required ★ field the
@@ -51,103 +57,100 @@ export function CreateNcDcPanel(props: {
   };
 
   return (
-    <div className="panel">
-      <div className="panel-hdr">
-        <div className="panel-title">
-          <Truck size={14} style={{ verticalAlign: -2 }} /> Create DC — return{' '}
-          {Number(nc.rejectedQty)} pcs to vendor
-        </div>
-      </div>
-      <div className="panel-body">
-        <form onSubmit={submit}>
-          <div className="form-grid">
-            <div className="form-grp">
-              <label className="form-label" htmlFor="ncDcDate">
-                DC Date<span className="req">★</span>
-              </label>
-              <input
-                id="ncDcDate"
-                type="date"
-                className="innovic-input"
-                value={dcDate}
-                onChange={(e) => setDcDate(e.target.value)}
-                required
-              />
-            </div>
-            <VendorPicker
-              id="ncDcVendor"
-              value={vendorId}
-              initialLabel={
-                nc.sourceVendorId && nc.sourceVendorCode
-                  ? `${nc.sourceVendorCode}${nc.sourceVendorName ? ` — ${nc.sourceVendorName}` : ''}`
-                  : ''
-              }
-              onChange={(id, label) => {
-                setVendorId(id);
-                setVendorCodeText(id ? (label.split(' — ')[0] ?? label) : '');
-              }}
-            />
-            <div className="form-grp">
-              <label className="form-label" htmlFor="ncDcTransport">
-                Transport
-              </label>
-              <input
-                id="ncDcTransport"
-                className="innovic-input"
-                maxLength={200}
-                value={transport}
-                onChange={(e) => setTransport(e.target.value)}
-              />
-            </div>
-            <div className="form-grp">
-              <label className="form-label" htmlFor="ncDcVehicle">
-                Vehicle No.
-              </label>
-              <input
-                id="ncDcVehicle"
-                className="innovic-input"
-                maxLength={50}
-                value={vehicleNo}
-                onChange={(e) => setVehicleNo(e.target.value)}
-              />
-            </div>
-            <div className="form-grp form-full">
-              <label className="form-label" htmlFor="ncDcRemarks">
-                Remarks
-              </label>
-              <textarea
-                id="ncDcRemarks"
-                className="innovic-textarea"
-                rows={2}
-                maxLength={500}
-                value={remarks}
-                onChange={(e) => setRemarks(e.target.value)}
-              />
-            </div>
-          </div>
-          {error ? <Note tone="red">{error}</Note> : null}
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'flex-end',
-              gap: 6,
-              marginTop: 'var(--sp-4)',
-            }}
+    <Modal
+      title={`Create DC: return ${Number(nc.rejectedQty)} pcs to vendor`}
+      onClose={onCancel}
+      closeLocked={pending}
+      size="sm"
+      footer={
+        <>
+          <button type="button" className="btn btn-ghost" onClick={onCancel} disabled={pending}>
+            Cancel
+          </button>
+          <button
+            type="submit"
+            form={FORM_ID}
+            className="btn btn-primary"
+            disabled={pending || !canSubmit}
+            title={
+              canSubmit ? undefined : dcDate === '' ? 'DC Date is required' : 'Vendor is required'
+            }
           >
-            <button
-              type="submit"
-              className="btn btn-primary"
-              disabled={pending || !canSubmit}
-              title={
-                canSubmit ? undefined : dcDate === '' ? 'DC Date is required' : 'Vendor is required'
-              }
-            >
-              {pending ? <Loader2 size={13} className="animate-spin" /> : <Truck size={13} />}
-              {pending ? 'Saving…' : 'Save DC'}
-            </button>
+            {pending ? <Loader2 size={13} className="animate-spin" /> : <Truck size={13} />}
+            {pending ? 'Saving…' : 'Save DC'}
+          </button>
+        </>
+      }
+    >
+      <form id={FORM_ID} onSubmit={submit}>
+        {/* First, so a failed save is seen without scrolling the pop-up. */}
+        {error ? <Note tone="red">{error}</Note> : null}
+        <div className="form-grid">
+          <div className="form-grp">
+            <label className="form-label" htmlFor="ncDcDate">
+              DC Date<span className="req">★</span>
+            </label>
+            <input
+              id="ncDcDate"
+              type="date"
+              className="innovic-input"
+              value={dcDate}
+              onChange={(e) => setDcDate(e.target.value)}
+              required
+            />
           </div>
-        </form>
-      </div>
-    </div>
+          <VendorPicker
+            id="ncDcVendor"
+            value={vendorId}
+            initialLabel={
+              nc.sourceVendorId && nc.sourceVendorCode
+                ? `${nc.sourceVendorCode}${nc.sourceVendorName ? ` — ${nc.sourceVendorName}` : ''}`
+                : ''
+            }
+            onChange={(id, label) => {
+              setVendorId(id);
+              setVendorCodeText(id ? (label.split(' — ')[0] ?? label) : '');
+            }}
+          />
+          <div className="form-grp">
+            <label className="form-label" htmlFor="ncDcTransport">
+              Transport
+            </label>
+            <input
+              id="ncDcTransport"
+              className="innovic-input"
+              maxLength={200}
+              value={transport}
+              onChange={(e) => setTransport(e.target.value)}
+            />
+          </div>
+          <div className="form-grp">
+            <label className="form-label" htmlFor="ncDcVehicle">
+              Vehicle No.
+            </label>
+            <input
+              id="ncDcVehicle"
+              className="innovic-input"
+              maxLength={50}
+              value={vehicleNo}
+              onChange={(e) => setVehicleNo(e.target.value)}
+            />
+          </div>
+          <div className="form-grp form-full">
+            <label className="form-label" htmlFor="ncDcRemarks">
+              Remarks
+            </label>
+            <textarea
+              id="ncDcRemarks"
+              className="innovic-textarea"
+              rows={2}
+              maxLength={500}
+              value={remarks}
+              onChange={(e) => setRemarks(e.target.value)}
+            />
+          </div>
+        </div>
+      </form>
+    </Modal>
   );
 }

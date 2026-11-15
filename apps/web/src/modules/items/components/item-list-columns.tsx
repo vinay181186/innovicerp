@@ -67,6 +67,7 @@ export function itemListColumns(offset = 0): DataTableColumn<Item>[] {
     // No item-level revision, deliberately (see the header comment).
     {
       id: 'item_code',
+      opensRow: true,
       header: 'Item Code',
       width: '10%',
       sortFilterField: 'code',

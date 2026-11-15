@@ -18,6 +18,7 @@ import { fmtDate } from '@/lib/date';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, StatStrip, type DataTableColumn } from '@/ui/data';
+import { srNoColumn } from '@/ui/data/lead-columns';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ReportFilter, ReportShell } from '@/ui/data/ReportShell';
@@ -110,8 +111,9 @@ function StockValuationPage(): React.JSX.Element {
 
   const columns = useMemo<DataTableColumn<StockValuationRow>[]>(() => {
     const cols: DataTableColumn<StockValuationRow>[] = [
-      // Code first — it is the pinned column (owner rule, ADR-199). Item code
+      // Sr No first (owner 2026-11-15), then the Item Code (ADR-199). Item code
       // rendered strong (mono / bold / --text), never the faint --text3.
+      srNoColumn<StockValuationRow>(offset + 1),
       {
         header: 'Item Code',
         id: 'code',
@@ -207,7 +209,7 @@ function StockValuationPage(): React.JSX.Element {
       render: (r) => fmtDate(r.lastGrnDate),
     });
     return cols;
-  }, [priceHidden, filteredValue]);
+  }, [priceHidden, filteredValue, offset]);
 
   const shell = (body: React.ReactNode): React.JSX.Element => (
     <ReportShell title="Stock Valuation">{body}</ReportShell>

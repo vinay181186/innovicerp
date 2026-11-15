@@ -8,6 +8,7 @@
 
 import { fmtDateTime } from '@/lib/date';
 import type { DataTableColumn } from '@/ui/data';
+import { srNoColumn } from '@/ui/data/lead-columns';
 import type { TrashEntityType, TrashListItem } from '../api';
 
 export const TYPE_OPTIONS: readonly TrashEntityType[] = [
@@ -48,8 +49,10 @@ export function typeLabel(t: TrashEntityType): string {
 // Sort & Filter tick list (ADR-200): the stored type code + the word shown.
 const TYPE_FILTER_OPTIONS = TYPE_OPTIONS.map((t) => ({ value: t, label: typeLabel(t) }));
 
-export function trashColumns(): DataTableColumn<TrashListItem>[] {
+/** `firstRowNo` = this page's server offset + 1, so Sr No continues across pages. */
+export function trashColumns(firstRowNo: number): DataTableColumn<TrashListItem>[] {
   return [
+    srNoColumn<TrashListItem>(firstRowNo),
     {
       id: 'document',
       sortFilterField: 'document',

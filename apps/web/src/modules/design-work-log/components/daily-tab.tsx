@@ -11,6 +11,7 @@ import { matchesSearchTerm } from '@/components/shared/search-match';
 import { fmtDate } from '@/lib/date';
 import { DataTable, Panel } from '@/ui/data';
 import type { DataTableColumn } from '@/ui/data';
+import { srNoColumn } from '@/ui/data/lead-columns';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter } from '@/ui/layout';
 import { useDesignWorkLogList } from '../api';
@@ -26,6 +27,8 @@ import {
 import { SearchableSelect } from '@/ui/forms';
 
 const COLUMNS: DataTableColumn<DesignWorkLogEntry>[] = [
+  // Every row is in the browser (unpaged), so Sr No starts at 1.
+  srNoColumn<DesignWorkLogEntry>(1),
   {
     id: 'project',
     header: 'Project',

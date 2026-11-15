@@ -292,6 +292,7 @@ export function PersonDayLogs({
         columns={cols}
         rows={shown}
         empty={needle ? 'No entries match.' : `Nothing logged on ${fmtDate(p.date)}.`}
+        wholeRowClick
         onRowClick={(r) => toggle(r.id)}
         onToggleExpanded={(r) => toggle(r.id)}
         renderExpanded={(r) => (open.has(r.id) ? <PersonExpand r={r} p={p} /> : null)}

@@ -1,7 +1,7 @@
-// Preview / ⬇ Download PDF for one Party GRN from the list's row ⋯ (there is
-// no Party GRN detail page). The list row has no lines and no customer
+// Preview / ⬇ Download PDF for one Party GRN — the list row ⋯ and the detail
+// page (ADR-294). The list row has no lines and no customer
 // address, so the receipt is read fresh on the click (staleTime 0, the SAME
-// query key/fn as the ▸ expand's usePartyGrnDetail) with the company in
+// query key/fn as usePartyGrnDetail) with the company in
 // parallel, then the customer master. A customer the user may not read prints
 // the receipt's own customer name (print falls back), so that read never fails
 // the print.

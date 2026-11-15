@@ -4,9 +4,11 @@
 import type { MlBomListItem } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import type { DataTableColumn } from '@/ui/data';
+import { srNoColumn } from '@/ui/data/lead-columns';
 
 export function mlBomListColumns(offset = 0): DataTableColumn<MlBomListItem>[] {
   return [
+    srNoColumn<MlBomListItem>(offset + 1, { width: '4%' }),
     {
       id: 'code',
       sortFilterField: 'code',
@@ -22,14 +24,6 @@ export function mlBomListColumns(offset = 0): DataTableColumn<MlBomListItem>[] {
           {b.code}
         </Link>
       ),
-    },
-    {
-      id: 'sr_no',
-      header: 'Sr No',
-      width: '4%',
-      className: 'text3',
-      align: 'right',
-      render: (_b, i) => offset + i + 1,
     },
     {
       id: 'item_code',

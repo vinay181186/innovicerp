@@ -8,7 +8,7 @@
 // Edit-approval: when the gate is on and this receipt is live, the PATCH returns
 // a DocumentEditStagedResult instead of the updated detail — nothing changed, the
 // edit is waiting for approval. A "Sent for approval" toast says so and the modal
-// closes; the row-expand then carries the amber pending chips.
+// closes; the detail page (routes/detail.tsx) then carries the amber pending chips.
 
 import type { PartyGrnLine, PartyGrnListItem } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';

@@ -15,6 +15,7 @@ import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import { srNoColumn } from '@/ui/data/lead-columns';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader } from '@/ui/layout';
@@ -124,8 +125,10 @@ function DailyTaskReportsPage(): React.JSX.Element {
   const rows = data.reports;
 
   const columns: DataTableColumn<DailyTaskReportRow>[] = [
+    srNoColumn<DailyTaskReportRow>(pageOffset(page) + 1),
     {
       id: 'report_date',
+      opensRow: true,
       sortFilterField: 'reportDate',
       kind: 'date',
       header: 'Report Date',

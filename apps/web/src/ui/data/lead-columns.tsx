@@ -1,27 +1,26 @@
-// LEAD COLUMNS — the owner's fixed standard (ADR-261, revised 2026-11-02).
+// LEAD COLUMNS — the owner's fixed standard (ADR-261, revised 2026-11-15).
 // Every list that carries an SO / JWSO line starts with this LOCKED block:
 //
-//   Sr No · SO No. · Internal SO No. · POL · Item Code (CODE/REV) · Item Name · own No. · Created On · Created Time
+//   Sr No · own No. · Created On (time under it) · SO No. · Internal SO No. · POL · Item Code (CODE/REV) · Item Name
 //
 // Sr No is the row counter (1, 2, 3 … continuing across server pages). The
 // page's own number (PO No., JC No. …) and the entry date (Created On =
-// <table>.created_at, set by the system at Save) close the block. The own
+// <table>.created_at, set by the system at Save) come right after it; a list
+// whose row IS the order has no own No., so SO No. takes that slot. The own
 // document date (PO Date, JC Date …) is NOT locked — it is an ordinary column
-// after the block. Created Time sits right after Created On (owner 2026-11-03),
-// headings on two lines ("Created / On", "Created / Time") so both columns stay
-// narrow; the time is the India-time 12-hour clock (02:35 PM), same size as the
-// date, never a hover. Created By (`createdByColumn`) goes at the END, shown by
-// default, movable / hideable.
+// after the block. There is no Created Time column any more (owner 2026-11-15):
+// the India-time 12-hour clock (02:35 PM) sits under the date in small grey
+// text, never a hover, and has no sort of its own. Created By
+// (`createdByColumn`) goes at the END, shown by default, movable / hideable.
 //
 // The table engine locks the block (`lead: true`): a user cannot move, hide or
 // slip a column between them, a new column a developer adds lands after the
 // block, and they never drop off the screen. The Drawing Rev is never its own
 // column — it rides in the Item Code cell.
 //
-// One exception (ADR-286, reverses "always shown" of 2026-11-03): Created On and
-// Created Time (`leadHideable: true`) are shown by default in their fixed place,
-// but each user may hide them in Columns ▾ (saved per user; Reset to default
-// brings them back). They still cannot be moved or pinned.
+// One exception (ADR-286): Created On (`leadHideable: true`) is shown by default
+// in its fixed place, but each user may hide it in Columns ▾ (saved per user;
+// Reset to default brings it back). It still cannot be moved or pinned.
 //
 // JWSO-only lists: pass `so: 'jwso'` and no `internalSoNo` — the slot reads
 // JWSO No. and the Internal SO No. column is left out (owner, 2026-10-31).
@@ -42,17 +41,17 @@ import type { DataTableColumn } from './data-table-types';
 
 type Text = string | null | undefined;
 
-/** Stable layout ids of the built-in lead columns, in order (the own `doc`
- *  column keeps its own id and sits between item_name and created_on). */
+/** Stable layout ids of the built-in lead columns, in order for a list whose
+ *  row IS the order (no own No.). With an own `doc` column (its own id) the
+ *  order is sr_no · doc · created_on · so_no · …: SO No. steps after Created On. */
 export const LEAD_COLUMN_IDS = [
   'sr_no',
   'so_no',
+  'created_on',
   'so_internal_no',
   'client_po_line_no',
   'item_code',
   'item_name',
-  'created_on',
-  'created_time',
 ] as const;
 export type LeadColumnId = (typeof LEAD_COLUMN_IDS)[number];
 
@@ -61,9 +60,10 @@ export interface LeadColumnSpec<T> {
    *  so the counter continues across pages. */
   firstRowNo: number;
   /** The page's OWN document number column (Plan No., JC No., GRN No. …),
-   *  locked after Item Name, before Created On (owner 2026-11-02). Must carry an
-   *  `id`. Leave out only where the row IS the SO / JWSO (SO list, SO Overview …)
-   *  — there SO No. is the own number. The own DATE is an ordinary column. */
+   *  locked right after Sr No, before Created On (owner 2026-11-15). Must carry
+   *  an `id`. Leave out only where the row IS the SO / JWSO (SO list, SO
+   *  Overview …) — there SO No. is the own number and takes this slot. The own
+   *  DATE is an ordinary column. */
   doc?: DataTableColumn<T> | undefined;
   /** 'so' (default) → header "SO No."; 'jwso' → "JWSO No." (JWSO-only lists);
    *  'mixed' → "SO No. / JWSO No." (the row shows whichever order it has). */
@@ -91,44 +91,94 @@ function col<T>(
   return { ...base, ...extra, lead: true };
 }
 
-/** The locked lead block (Sr No · SO No. · [Internal SO No.] · [POL] · [Item Code] ·
- *  [Item Name] · [own No.] · Created On · Created Time). Spread it FIRST; spread
- *  `createdByColumn` LAST. */
+/** Sr No — the row counter, always the FIRST column of every list (owner
+ *  2026-11-15). `firstRowNo` = this page's first row (server offset + 1; 1 on
+ *  an unpaged list), so the count continues across pages. Build it here —
+ *  never hand-write one. */
+export function srNoColumn<T>(
+  firstRowNo: number,
+  extra?: Partial<DataTableColumn<T>>,
+): DataTableColumn<T> {
+  return {
+    id: 'sr_no',
+    kind: 'num',
+    header: 'Sr No',
+    className: 'mono',
+    nowrap: true,
+    filterable: false,
+    render: (_r, i) => firstRowNo + i,
+    ...extra,
+  };
+}
+
+/** The Created On cell: the date, and under it the India-time clock in small
+ *  grey text (owner 2026-11-15). A bare calendar date shows the date alone. */
+export function CreatedOnCell({ value }: { value: Text }): React.JSX.Element {
+  const time = fmtTime12(value ?? null, '');
+  return (
+    <span style={{ display: 'inline-block', lineHeight: 1.2 }}>
+      {fmtDate(value ?? null)}
+      {time ? (
+        <span style={{ display: 'block', fontSize: 'var(--fs-xs)', color: 'var(--text3)' }}>
+          {time}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+/** Created On — the date with the time under it. Sorted / filtered on the date
+ *  only; the time has no ▾ of its own. Build it here — never hand-write one. */
+export function createdOnColumn<T>(
+  createdOn: (row: T) => Text,
+  extra?: Partial<DataTableColumn<T>>,
+): DataTableColumn<T> {
+  return {
+    id: 'created_on',
+    kind: 'date',
+    // Two lines so the column is only as wide as "Created" (owner 2026-11-03).
+    header: (
+      <>
+        Created
+        <br />
+        On
+      </>
+    ),
+    label: 'Created On',
+    className: 'mono',
+    nowrap: true,
+    // Called as a function (not <CreatedOnCell/>) so the cell's text children are
+    // readable to the fit measure and Sort & Filter word reader.
+    render: (r) => CreatedOnCell({ value: createdOn(r) }),
+    filterValue: (r) => createdOn(r) ?? '',
+    ...extra,
+  };
+}
+
+/** The locked lead block (Sr No · [own No.] · Created On · SO No. · [Internal SO
+ *  No.] · [POL] · [Item Code] · [Item Name]; with no own No., SO No. comes before
+ *  Created On). Spread it FIRST; spread `createdByColumn` LAST. */
 export function leadColumns<T>(spec: LeadColumnSpec<T>): DataTableColumn<T>[] {
   const o = spec.overrides ?? {};
   const out: DataTableColumn<T>[] = [];
-  const firstRowNo = spec.firstRowNo;
-  out.push(
-    col<T>(
-      {
-        id: 'sr_no',
-        kind: 'num',
-        header: 'Sr No',
-        className: 'mono',
-        nowrap: true,
-        filterable: false,
-        render: (_r, i) => firstRowNo + i,
-      },
-      o.sr_no,
-    ),
+  out.push(col<T>(srNoColumn<T>(spec.firstRowNo), o.sr_no));
+  const soCol = col<T>(
+    {
+      id: 'so_no',
+      kind: 'code',
+      header:
+        spec.so === 'mixed' ? 'SO No. / JWSO No.' : spec.so === 'jwso' ? 'JWSO No.' : 'SO No.',
+      className: 'mono',
+      nowrap: true,
+      render: (r): ReactNode => <span style={{ color: 'var(--blue)' }}>{dash(spec.soNo(r))}</span>,
+      filterValue: (r) => spec.soNo(r) ?? '',
+    },
+    o.so_no,
   );
-  out.push(
-    col<T>(
-      {
-        id: 'so_no',
-        kind: 'code',
-        header:
-          spec.so === 'mixed' ? 'SO No. / JWSO No.' : spec.so === 'jwso' ? 'JWSO No.' : 'SO No.',
-        className: 'mono',
-        nowrap: true,
-        render: (r): ReactNode => (
-          <span style={{ color: 'var(--blue)' }}>{dash(spec.soNo(r))}</span>
-        ),
-        filterValue: (r) => spec.soNo(r) ?? '',
-      },
-      o.so_no,
-    ),
-  );
+  // The own number sits right after Sr No; where the row IS the order, SO No. does.
+  out.push(spec.doc ? { ...spec.doc, lead: true } : soCol);
+  out.push(col<T>(createdOnColumn<T>(spec.createdOn, { leadHideable: true }), o.created_on));
+  if (spec.doc) out.push(soCol);
   const internal = spec.internalSoNo;
   if (internal) {
     out.push(
@@ -204,56 +254,6 @@ export function leadColumns<T>(spec: LeadColumnSpec<T>): DataTableColumn<T>[] {
       ),
     );
   }
-  if (spec.doc) out.push({ ...spec.doc, lead: true });
-  out.push(
-    col<T>(
-      {
-        id: 'created_on',
-        leadHideable: true,
-        kind: 'date',
-        // Two lines so the column is only as wide as "Created" (owner 2026-11-03).
-        header: (
-          <>
-            Created
-            <br />
-            On
-          </>
-        ),
-        label: 'Created On',
-        className: 'mono',
-        nowrap: true,
-        render: (r) => fmtDate(spec.createdOn(r) ?? null),
-        filterValue: (r) => spec.createdOn(r) ?? '',
-      },
-      o.created_on,
-    ),
-  );
-  // Created Time: fixed right after Created On (owner 2026-11-03), shown by
-  // default, the user may hide it (ADR-286). Same created_at as Created On, as
-  // the India-time 12-hour clock.
-  // Sorted / filtered through Created On (same created_at) — no ▾ of its own.
-  out.push(
-    col<T>(
-      {
-        id: 'created_time',
-        leadHideable: true,
-        kind: 'code',
-        header: (
-          <>
-            Created
-            <br />
-            Time
-          </>
-        ),
-        label: 'Created Time',
-        className: 'mono',
-        nowrap: true,
-        filterable: false,
-        render: (r) => fmtTime12(spec.createdOn(r) ?? null, '—'),
-      },
-      o.created_time,
-    ),
-  );
   return out;
 }
 

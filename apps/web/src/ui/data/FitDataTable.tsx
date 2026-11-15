@@ -44,6 +44,7 @@ export function FitDataTable<T>(props: DataTableProps<T> & { tableKey: string })
     editable = false,
     onRowClick,
     isRowClickable,
+    wholeRowClick,
     rowClassName,
     renderExpanded,
     maxHeight,
@@ -93,7 +94,7 @@ export function FitDataTable<T>(props: DataTableProps<T> & { tableKey: string })
     () => (columns[0]?.lead ? lockedLeadIds(columns, ids) : []),
     [columns, ids],
   );
-  // Created On / Created Time: in the block, but the user may hide them (ADR-286).
+  // Created On: in the block, but the user may hide it (ADR-286).
   const hideableIds = useMemo(
     () => leadIds.filter((id) => id !== firstId && byId.get(id)?.leadHideable),
     [leadIds, firstId, byId],
@@ -308,6 +309,7 @@ export function FitDataTable<T>(props: DataTableProps<T> & { tableKey: string })
                 nCols={nCols}
                 onRowClick={onRowClick}
                 isRowClickable={isRowClickable}
+                wholeRowClick={wholeRowClick}
                 rowClassName={rowClassName}
                 groupRow={props.groupRow}
                 renderExpanded={renderExpanded}

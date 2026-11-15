@@ -205,6 +205,9 @@ export const PAGE_ACCESS: Readonly<Record<string, PageRule>> = {
   '/instruments': v('toolissue_create'),
   '/party-grn': v('party_create'),
   '/party-grn/new': entry('party_create'),
+  // ADR-294 — the detail page: the same two rights the API reads it with
+  // (requirePartyGrnRead), so a QC inspector opens it from the QC register.
+  '/party-grn/$id': { anyOf: [v('party_create'), v('qc_incoming')] },
   '/party-material': v('party_create'),
   '/party-stock-ledger': v('party_create'),
   '/customer-material-returns': v('party_create'),

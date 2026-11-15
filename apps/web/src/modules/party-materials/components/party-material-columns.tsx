@@ -1,7 +1,7 @@
 // Columns + ▸ detail for the Customer Material master sheet (ADR-199 table
 // standard, 2026-10-01). The master table runs on the shared FIT <DataTable>.
 //
-// Main columns (first pinned = Code): Code · Name · UOM · Customer · In Stock ·
+// Main columns: Sr No · Code · (Created On, hidden) · Name · UOM · Customer · In Stock ·
 // Issued. The ▸ detail row carries the fields the master line does not show:
 // Description, Grade, Recorded By / On — plus Total Received and Returned, kept
 // here so the conversion drops no data the old wide table used to show.
@@ -12,14 +12,17 @@
 import type { PartyMaterialListItem } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
 import type { DataTableColumn } from '@/ui/data';
+import { createdOnColumn, srNoColumn } from '@/ui/data/lead-columns';
 
 /** Columns off by default (DataTable `defaultHidden`); Columns ▾ shows them. */
 export const PARTY_MATERIAL_HIDDEN_COLUMNS = ['created_on'] as const;
 
-/** The six master columns (+ Created On, off by default). Code is column 0 and
- *  so always pinned. */
-export function partyMaterialColumns(): DataTableColumn<PartyMaterialListItem>[] {
+/** Sr No (owner 2026-11-15; `firstRowNo` = server offset + 1 so it continues
+ *  across pages), then the six master columns, with Created On (off by
+ *  default) right after Code. */
+export function partyMaterialColumns(firstRowNo: number): DataTableColumn<PartyMaterialListItem>[] {
   return [
+    srNoColumn<PartyMaterialListItem>(firstRowNo),
     {
       id: 'code',
       sortFilterField: 'code',
@@ -32,6 +35,11 @@ export function partyMaterialColumns(): DataTableColumn<PartyMaterialListItem>[]
         </span>
       ),
     },
+    // When the material was recorded (IST day, time under it). Off by default
+    // (PARTY_MATERIAL_HIDDEN_COLUMNS); Columns ▾ shows it.
+    createdOnColumn<PartyMaterialListItem>((pm) => pm.createdAt, {
+      sortFilterField: 'createdOn',
+    }),
     {
       id: 'name',
       sortFilterField: 'name',
@@ -96,16 +104,6 @@ export function partyMaterialColumns(): DataTableColumn<PartyMaterialListItem>[]
           {pm.issuedQty}
         </span>
       ),
-    },
-    {
-      // When the material was recorded (IST day). Off by default; Columns ▾
-      // shows it.
-      id: 'created_on',
-      sortFilterField: 'createdOn',
-      header: 'Created On',
-      kind: 'date',
-      nowrap: true,
-      render: (pm) => fmtDate(pm.createdAt),
     },
   ];
 }

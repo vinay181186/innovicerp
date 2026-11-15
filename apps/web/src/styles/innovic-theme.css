@@ -1162,6 +1162,19 @@ table.tbl-ctr td.td-money input.innovic-input[type='number'] {
   --pin-bg: var(--row-bg, var(--bg2));
 }
 
+/* ADR-296 (owner 2026-11-15) — only the document number opens the row: blue,
+   bold, no underline, the hand cursor on the number alone. */
+.innovic-table .dt-open {
+  color: var(--blue);
+  font-weight: 700;
+  cursor: pointer;
+}
+.innovic-table .dt-open:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 1px;
+  border-radius: 2px;
+}
+
 /* Ported verbatim from legacy L187-188 (main stylesheet). Task Board only.
    `--sig-*` already exist in tokens.css and are byte-identical to legacy's
    (L34/L37), so these are a clean copy. The port had approximated both:

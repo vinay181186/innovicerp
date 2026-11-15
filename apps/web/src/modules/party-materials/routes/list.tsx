@@ -90,17 +90,18 @@ function PartyMaterialsListPage(): React.JSX.Element {
   // to page 1.
   const sf = useServerSortFilter(TABLE_KEYS.partyMaterials, () => setPage(1));
 
+  const offset = pageOffset(page);
   const { data, isLoading, isError, error } = usePartyMaterialsList({
     search: urlSearch.search,
     sf: sf.param,
     limit: LIST_PAGE_SIZE,
-    offset: pageOffset(page),
+    offset,
   });
   useClampPage(page, data?.total, setPage);
 
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / LIST_PAGE_SIZE));
   const rows = useMemo(() => data?.items ?? [], [data?.items]);
-  const columns = useMemo(() => partyMaterialColumns(), []);
+  const columns = useMemo(() => partyMaterialColumns(offset + 1), [offset]);
 
   const toggleExpand = useCallback((id: string): void => {
     setExpanded((prev) => {

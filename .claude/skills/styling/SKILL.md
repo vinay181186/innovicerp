@@ -1,6 +1,6 @@
 ---
 name: styling
-description: Innovic ERP table/row + KPI styling rules. Use whenever building or editing any list/master table (SO list, Items, Vendors, GRN, etc.) or any row of count/status/KPI tiles above a list — keep short cell values like SO No., Date, codes, qty on ONE line (no wrapping), make data rows clickable to open the detail page, and NEVER put a count/KPI tile row above a list (owner 2026-11-03) — status counts go in the Status ▾ filter; tile strips are for dashboards/reports only.
+description: Innovic ERP table/row + KPI styling rules. Use whenever building or editing any list/master table (SO list, Items, Vendors, GRN, etc.) or any row of count/status/KPI tiles above a list — keep short cell values like SO No., Date, codes, qty on ONE line (no wrapping), make the document number (not the row) open the detail page, and NEVER put a count/KPI tile row above a list (owner 2026-11-03) — status counts go in the Status ▾ filter; tile strips are for dashboards/reports only.
 ---
 
 # Styling — Innovic ERP tables
@@ -54,56 +54,20 @@ value is clipped, not wrapped:
 So the difference: short values → plain `whiteSpace:'nowrap'` (let the column be as
 wide as it needs). Long values → `nowrap` + fixed `maxWidth` + ellipsis + `title`.
 
-## Rule 2 — Data rows are clickable (open the detail page)
+## Rule 2 — Only the document number opens the record (ADR-296, owner 2026-11-15)
 
-The whole `<tr>` is a click target that navigates to that record's detail page.
+A click on the row does NOT open the record. Only the document's own number does (SO No. on SO
+Master, JC No. on the JC list, PO No. …; the Code on a master). The shared `DataTable` does this by
+itself: pass `onRowClick` and the table makes ONE cell the link, the column marked `opensRow: true`,
+else the first code / text column after Sr No. Never put `onClick` on a `<tr>`.
 
-```tsx
-<tr
-  onClick={() => void navigate({ to: '/sales-orders/$id', params: { id: row.original.id } })}
-  style={{ cursor: 'pointer' }}
->
-  {row.getVisibleCells().map((cell) => (
-    <td key={cell.id}>{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>
-  ))}
-</tr>
-```
-
-`cursor: 'pointer'` is required so the hand cursor signals the row is clickable.
-
-### Stop the click on interactive children
-
-Any button, link, `<select>` filter, chevron, or 📎 icon INSIDE the row must call
-`e.stopPropagation()` in its own `onClick`, otherwise clicking it also fires the row
-navigation. Either on the control itself or on a wrapping element:
-
-```tsx
-// chevron / file / per-row action button:
-<button onClick={(e) => { e.stopPropagation(); toggleExpand(row.original.id); }}>…</button>
-
-// a group of actions — stop once on the wrapper:
-<div onClick={(e) => e.stopPropagation()}>
-  <Link to="/sales-orders/$id/edit" …>+ Line</Link>
-  <button onClick={() => onDeleteSo(row.original)}>Del</button>
-</div>
-
-// header-cell filter dropdown:
-<select onClick={(e) => e.stopPropagation()} onChange={…}>…</select>
-```
-
-A column rendered as a `<Link>` (e.g. the SO No.) already navigates on its own; it
-doesn't need `stopPropagation` because it goes to the same detail page, but actions
-that do something ELSE (edit, delete, expand, open file, change a filter) always do.
-
-### Tell the user it's clickable
-
-Keep the helper hint under the table so it's discoverable:
-
-```tsx
-<div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 6 }}>
-  💡 Click a row to open it. Click the chevron to expand line items inline.
-</div>
-```
+- The number is blue and bold, **no underline**. The hand cursor shows over the number only.
+- If the default column is the wrong one, set `opensRow: true` on the right column.
+- A cell that renders its own `<Link>` keeps it, and an empty cell ("—") has nothing to click.
+- A row whose click ticks or expands it (Day Log rows, a pick table) passes `wholeRowClick`. A list
+  that opens a document never does.
+- The ⋯ menu, tick boxes and in-cell controls already stop their own clicks. Nothing to add.
+- A footer hint says "Click the <No.> to open it.", never "Click a row".
 
 ## Rule 3 — NO tile row on any list (owner 2026-11-03); dashboards use ONE strip
 

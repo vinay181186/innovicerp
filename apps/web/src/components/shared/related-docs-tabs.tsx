@@ -115,6 +115,10 @@ function toSection(s: RelatedSection): RelatedDocsSection {
   };
 }
 
+/** Key root of every document's Related Docs read ('related-docs' is on-open
+ *  in REFRESH_POLICY); a save that adds a related document invalidates it. */
+export const relatedDocsKeys = { all: ['related-docs'] as const };
+
 export function RelatedDocsTabs({
   module,
   id,
@@ -125,7 +129,7 @@ export function RelatedDocsTabs({
   extraTabs?: RelatedDocsExtraTab[];
 }): React.JSX.Element | null {
   const { data } = useQuery<DocumentTraceability>({
-    queryKey: ['related-docs', module, id],
+    queryKey: [...relatedDocsKeys.all, module, id],
     queryFn: () => apiFetch<DocumentTraceability>(`/${module}/${id}/related`),
     enabled: Boolean(id),
   });

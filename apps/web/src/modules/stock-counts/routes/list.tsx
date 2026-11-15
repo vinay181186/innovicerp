@@ -21,6 +21,7 @@ import { fmtDate } from '@/lib/date';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import { createdOnColumn, srNoColumn } from '@/ui/data/lead-columns';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Select } from '@/ui/forms';
@@ -104,8 +105,10 @@ function StockCountsListPage(): React.JSX.Element {
   // The ruled sheet's columns. Count No. is the pinned first column; Items is a
   // right-aligned number; Count Status is a badge; Remarks is long free text
   // that clips with a tooltip.
+  const firstRowNo = pageOffset(page) + 1;
   const columns = useMemo<DataTableColumn<StockCount>[]>(
     () => [
+      srNoColumn<StockCount>(firstRowNo),
       {
         id: 'code',
         sortFilterField: 'code',
@@ -124,6 +127,8 @@ function StockCountsListPage(): React.JSX.Element {
           </Link>
         ),
       },
+      // When the count was entered (time under the date). Off by default; Columns ▾ shows it.
+      createdOnColumn<StockCount>((c) => c.createdAt, { sortFilterField: 'createdOn' }),
       {
         id: 'count_date',
         sortFilterField: 'countDate',
@@ -188,17 +193,8 @@ function StockCountsListPage(): React.JSX.Element {
         render: (c) => c.remarks ?? '—',
         title: (c) => c.remarks ?? '',
       },
-      {
-        // When the count was entered (IST day). Off by default; Columns ▾ shows it.
-        id: 'created_on',
-        sortFilterField: 'createdOn',
-        header: 'Created On',
-        kind: 'date',
-        nowrap: true,
-        render: (c) => fmtDate(c.createdAt),
-      },
     ],
-    [],
+    [firstRowNo],
   );
 
   return (

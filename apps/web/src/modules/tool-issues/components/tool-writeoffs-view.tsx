@@ -18,6 +18,7 @@ import { fmtDate } from '@/lib/date';
 import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
 import { useSession } from '@/lib/session';
 import { DataTable, type DataTableColumn, Panel, ROW_TINT } from '@/ui/data';
+import { srNoColumn } from '@/ui/data/lead-columns';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, PageState, RowActions } from '@/ui/layout';
@@ -54,8 +55,10 @@ export function ToolWriteoffsView({ canDecide }: { canDecide: boolean }): React.
   useClampPage(page, data?.total, onPage);
   const [deciding, setDeciding] = useState<ToolWriteoffRow | null>(null);
 
+  const firstRowNo = pageOffset(page) + 1;
   const columns = useMemo<DataTableColumn<ToolWriteoffRow>[]>(
     () => [
+      srNoColumn<ToolWriteoffRow>(firstRowNo),
       {
         id: 'kind',
         kind: 'text',
@@ -150,7 +153,7 @@ export function ToolWriteoffsView({ canDecide }: { canDecide: boolean }): React.
         ),
       },
     ],
-    [],
+    [firstRowNo],
   );
 
   return (

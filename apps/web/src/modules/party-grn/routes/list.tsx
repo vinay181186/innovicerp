@@ -35,14 +35,13 @@ import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { usePartyGrnLines } from '../api';
 import { EditPartyGrnModal } from '../components/edit-party-grn-modal';
 import { isPartyGrnCancelled, partyGrnColumns } from '../components/party-grn-columns';
-import { PartyGrnExpand } from '../components/party-grn-expand';
 import { PartyGrnQcModal } from '../components/party-grn-qc-modal';
 import { usePartyGrnPrint } from '../components/use-party-grn-print';
 import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
 import { PartyMaterialIssueView } from '@/modules/party-material-issues/components/party-material-issue-view';
 import { TabStrip } from '@/ui/navigation';
 
-// Deep-link seed for Global Search (no detail page here): `?tab=issue&search=
+// Deep-link seed (Global Search's Party Material Issue hits): `?tab=issue&search=
 // IN-PMI-26-0001` opens the Issue tab with its box pre-filled. Read ONCE into
 // the local state below — tab clicks and typing stay local, never navigate.
 // `?jw=<jwsoId>` (an old link; the JWSO screens now go straight to the page):
@@ -111,7 +110,7 @@ function PartyGrnListPage(): React.JSX.Element {
   }, [forwardJw, navigate]);
   const [cancelRow, setCancelRow] = useState<PartyGrnListItem | null>(null);
   const [qcRow, setQcRow] = useState<PartyGrnListItem | null>(null);
-  // No detail page and no ▸ (owner 2026-10-31) — Edit opens from the row ⋯.
+  // Edit opens from the row ⋯ (and on the detail page, ADR-294).
   // The id only: the modal reads the LIVE row, so a refetch (another user's QC
   // or Cancel) reaches it, as it did when Edit sat in the details panel.
   const [editId, setEditId] = useState<string | null>(null);
@@ -141,18 +140,6 @@ function PartyGrnListPage(): React.JSX.Element {
   const rows = data?.items ?? [];
   const columns = useMemo(() => partyGrnColumns(pageOffset(page) + 1), [page]);
   const editRow = editId ? (rows.find((r) => r.header.id === editId)?.header ?? null) : null;
-
-  // Row details (row click or ⋯ Show details) — the per-line QC split loads
-  // lazily inside PartyGrnExpand.
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const toggleExpand = useCallback((id: string): void => {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
   // VIEW was removed for this page sees the no-access panel, not the page. `eff`
@@ -227,9 +214,9 @@ function PartyGrnListPage(): React.JSX.Element {
             />
           ) : (
             // THE shared FIT table (ADR-199). First column (GRN No.) is pinned.
-            // There is no detail page for a party GRN: a row click (or ⋯ Show
-            // details) opens the per-line QC split, Received By / Remarks and the
-            // receipt's History; ⋯ Edit changes a line still waiting for QC. Cancelled GRNs are listed too (ADR-235,
+            // A row click opens the Party GRN detail page (ADR-294): the per-line
+            // QC split, Received By / Remarks and the receipt's History live
+            // there; ⋯ Edit changes a line still waiting for QC. Cancelled GRNs are listed too (ADR-235,
             // includeCancelled) under the cancelled wash; their ⋯ offers only
             // Preview / Download PDF. Live rows add Incoming QC (ADR-203,
             // qc_incoming entry, only while a line waits) and Cancel Party GRN.
@@ -243,22 +230,15 @@ function PartyGrnListPage(): React.JSX.Element {
                 loading={isLoading}
                 emptyText={term || sf.filtering ? 'No Party GRNs match.' : 'No Party GRNs yet.'}
                 rowClassName={(r) => (r.docStatus === 'cancelled' ? ROW_TINT.cancelled : undefined)}
-                // No detail page: a row click (or ⋯ Show details) opens the whole
-                // GRN (Received By, Remarks, every line's QC split, History).
-                renderExpanded={(r) =>
-                  expanded.has(r.lineId) ? <PartyGrnExpand g={r.header} /> : null
+                // ADR-294 — a row click opens the GRN's own page (owner: no more
+                // details opening below the line).
+                onRowClick={(r) =>
+                  void navigate({ to: '/party-grn/$id', params: { id: r.header.id } })
                 }
-                onRowClick={(r) => toggleExpand(r.lineId)}
                 // Every action acts on the whole GRN (r.header), as before.
                 rowMenu={(r) => {
                   const g = r.header;
                   return [
-                    {
-                      key: 'toggle-details',
-                      label: expanded.has(r.lineId) ? 'Hide details' : 'Show details',
-                      icon: 'chevron-down',
-                      onSelect: () => toggleExpand(r.lineId),
-                    },
                     {
                       // The Edit right, a line still waiting for Incoming QC, not
                       // Cancelled. The modal itself opens only lines nobody has

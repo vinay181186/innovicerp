@@ -30,7 +30,7 @@ export interface ListFooterProps {
   page?: number | undefined;
   pageSize?: number | undefined;
   onPage?: ((p: number) => void) | undefined;
-  /** Interaction hint, e.g. "Click a row to open its detail page." */
+  /** Interaction hint, e.g. "Click the number to open its detail page." */
   hint?: ReactNode | undefined;
   /** Totals for the list, e.g. "Scrap Qty 120". Lists have no tile row (owner
    *  2026-11-03), so a figure with no Status ▾ option to sit on goes here. */

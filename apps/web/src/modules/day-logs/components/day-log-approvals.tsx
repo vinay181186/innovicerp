@@ -13,6 +13,7 @@ import { useState } from 'react';
 import { matchesSearchTerm, normalizeSearchTerm } from '@/components/shared/search-match';
 import { DataTable } from '@/ui/data';
 import type { DataTableColumn } from '@/ui/data';
+import { srNoColumn } from '@/ui/data/lead-columns';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Banner, ConfirmDialog, useToast } from '@/ui/feedback';
 import { SearchInput } from '@/ui/forms';
@@ -27,7 +28,9 @@ function changeText(v: DayLogApprovalRow['current'] | DayLogApprovalRow['propose
   return [spanText(v.fromTime, v.toTime), v.orderCode, v.description].filter(Boolean).join(' · ');
 }
 
+// Every waiting edit is loaded at once (unpaged), so Sr No starts at 1.
 const COLUMNS: DataTableColumn<DayLogApprovalRow>[] = [
+  srNoColumn<DayLogApprovalRow>(1),
   {
     id: 'user',
     header: 'User',

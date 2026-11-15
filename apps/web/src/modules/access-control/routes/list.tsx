@@ -90,7 +90,7 @@ function AccessControlListPage(): React.JSX.Element {
   });
   useClampPage(page, data?.total, gotoPage);
 
-  const columns = useMemo(() => accessListColumns(), []);
+  const columns = useMemo(() => accessListColumns(offset + 1), [offset]);
 
   // Arriving from "create user" with ?configure=<id>: open that row's box as
   // soon as the list resolves, so the two screens read as one action. The

@@ -1,5 +1,5 @@
 // ADR-264 — the documents of one opened check, in THE table (DataTable, owner
-// rule: no hand-built tables). Columns: Sr · head[0] · head[1] · Item · Qty ·
+// rule: no hand-built tables). Columns: Sr No · head[0] · head[1] · Item · Qty ·
 // head[2] · Status. No per-row expand and no row actions (owner). Checks are
 // shown by department tier, so the caller may not be able to open every page:
 // document / reference codes and "View all N" render through
@@ -9,6 +9,7 @@
 import type { DashCheck, DashCheckRow } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
 import { DataTable, type DataTableColumn } from '@/ui/data';
+import { srNoColumn } from '@/ui/data/lead-columns';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { DocRef, linkProps } from './dash-text';
 import { ActionLink } from '@/components/shared/action-link';
@@ -16,7 +17,8 @@ import { fmtQty, StatusPill } from './dash-row';
 
 function columns(check: DashCheck): DataTableColumn<DashCheckRow>[] {
   return [
-    { id: 'sr', header: 'Sr', kind: 'num', align: 'right', render: (_r, i) => i + 1 },
+    // Unpaged — the check's documents come whole, so Sr No starts at 1.
+    srNoColumn<DashCheckRow>(1),
     {
       id: 'doc',
       header: check.head[0],

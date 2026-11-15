@@ -9,8 +9,9 @@
 
 import type { QcCommandFpy, QcFpyGroupRow, QcFpyItemRow } from '@innovic/shared';
 import { DataTable, type DataTableColumn } from '@/ui/data';
+import { srNoColumn } from '@/ui/data/lead-columns';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
-import { type QcPager, TablePager } from './TablePager';
+import { type QcPager, TablePager, rowNo } from './TablePager';
 
 function fpyColor(pct: number): string {
   if (pct >= 95) return 'var(--green)';
@@ -41,8 +42,13 @@ function SubHdr({ children }: { children: React.ReactNode }): React.JSX.Element 
 
 const fpyPctHeader = <span title={FPY_HELP}>First-Pass Yield %</span>;
 
-function groupColumns(label: string, nameWeight?: number): DataTableColumn<QcFpyGroupRow>[] {
+function groupColumns(
+  label: string,
+  firstRowNo: number,
+  nameWeight?: number,
+): DataTableColumn<QcFpyGroupRow>[] {
   return [
+    srNoColumn<QcFpyGroupRow>(firstRowNo),
     {
       id: 'name',
       header: label,
@@ -98,7 +104,7 @@ function GroupPanel({
     <div className="panel">
       <SubHdr>{title}</SubHdr>
       <DataTable
-        columns={groupColumns(label, nameWeight)}
+        columns={groupColumns(label, rowNo(pager, 0), nameWeight)}
         rows={rows}
         rowKey={(r) => r.name}
         emptyText="No QC data yet."
@@ -108,7 +114,9 @@ function GroupPanel({
   );
 }
 
+// Unpaged (the lowest-yield items come whole), so Sr No starts at 1.
 const itemColumns: DataTableColumn<QcFpyItemRow>[] = [
+  srNoColumn<QcFpyItemRow>(1),
   {
     id: 'code',
     header: 'Item Code',

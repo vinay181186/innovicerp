@@ -155,6 +155,7 @@ import { reorderListRoute } from './modules/store-inventory/routes/reorder-list'
 import { partyMaterialsListRoute } from './modules/party-materials/routes/list';
 import { partyGrnListRoute } from './modules/party-grn/routes/list';
 import { partyGrnNewRoute } from './modules/party-grn/routes/create';
+import { partyGrnDetailRoute } from './modules/party-grn/routes/detail';
 import { customerMaterialReturnsListRoute } from './modules/customer-material-returns/routes/list';
 import { customerMaterialReturnNewRoute } from './modules/customer-material-returns/routes/create';
 import { partyStockLedgerListRoute } from './modules/party-stock-ledger/routes/list';
@@ -240,6 +241,7 @@ const routeTree = rootRoute.addChildren([
     partyMaterialsListRoute,
     partyGrnListRoute,
     partyGrnNewRoute,
+    partyGrnDetailRoute,
     customerMaterialReturnsListRoute,
     customerMaterialReturnNewRoute,
     partyStockLedgerListRoute,

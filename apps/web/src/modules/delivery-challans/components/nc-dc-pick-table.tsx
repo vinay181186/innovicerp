@@ -241,6 +241,7 @@ export function NcDcPickTable({
           columns={columns}
           rows={rows}
           rowKey={(r) => r.ncId}
+          wholeRowClick
           onRowClick={toggle}
           isRowClickable={(r) => tickedSet.has(r.ncId) || pickBlockReason(r, picked) === null}
           rowClassName={(r) => (tickedSet.has(r.ncId) ? 'row-selected' : undefined)}

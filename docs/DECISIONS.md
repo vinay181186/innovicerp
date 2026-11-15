@@ -15785,3 +15785,77 @@ The owner wants to ask plain-English questions about live ERP data (SO, JWSO, Jo
 - Positive: every figure in an answer comes from the same code the screens use; the database itself refuses a write.
 - Negative: the chat can only answer what the tools and the 55 reports cover; a new kind of question needs a new tool or report.
 - Risks: Claude auto-reload must stay OFF in the Anthropic Console and the Gemini key's Google project must have no billing linked, or "no extra billing" does not hold. On the Gemini free tier Google may use the prompts and screenshots to improve its models — the owner accepted this (2026-11-15). In Chrome, Speak sends the audio to Google's speech service.
+
+## ADR-294: Party GRN opens a detail page; no details under the row
+
+**Date:** 2026-11-15
+**Status:** Accepted (owner approved, 2026-11-15)
+
+### Context
+
+Party GRN was the one document list where a row click opened the GRN's details under the row in the list (`PartyGrnExpand`), and the row ⋯ had "Show / Hide details". Every other document list opens a detail page. The "No detail page" note in the code was only a description of the state after the ▸ removal (owner 2026-10-31, "no ▸"), not a decision. Global search, Edit Approvals, the QC Call Register and the JWSO Related Docs therefore sent people to the list searched on the PGRN No., or showed it as plain text.
+
+### Decision
+
+- New page `/party-grn/$id` in the house style (copied from JW DC / GRN detail): facts, the lines with each line's QC split, Edit / Incoming QC / Preview / Download PDF / Cancel on the action menu under the same rules as the list ⋯, cancelled banner, pending-change chips, Related Docs + History tabs.
+- Page rule = the API's read rule: Party GRN view OR Incoming QC view, so a QC inspector opens it from the QC register.
+- New `GET /party-grn/:id/related` built with `traceability.section()` like GRN.
+- List row click opens the page; the under-row panel and ⋯ Show details are removed.
+- Links now open the page: global search, Edit Approvals, QC Call Register (Doc No. and row), JWSO Related Docs, NC detail Party GRN No. New `party-grn` kind in `DOC_NAV_KINDS`.
+
+### Alternatives Considered
+
+- Keep the under-row panel — rejected by the owner (one behaviour on every document list).
+- Pop-up instead of a page — rejected: a page can be linked from search, approvals and related docs.
+
+### Consequences
+
+- Positive: Party GRN behaves like every other document; every PGRN No. in the app can open it.
+- Negative / open: other documents without a page (CMR, JW Invoice, JW Return, Party Material Issue, JW DC Inward; pop-ups on Store / Tool Issue, CAPA, Daily Task Report) and 13 unreachable under-row panels are left for a separate owner decision (audit 2026-11-15).
+
+## ADR-295: Every list starts Sr No · own No. · Created On (time under the date)
+
+**Date:** 2026-11-15. **Owner decided** (mockup approved): every table starts with **Sr No**, then the page's own document number, then **Created On**, then the other columns; Created By stays last. Amends ADR-261 (2-Nov / 3-Nov order) and ADR-286.
+
+- SO-linked lists (`leadColumns`): Sr No · own No. · Created On · SO No. · Internal SO No. · POL · Item Code · Item Name. A list whose row IS the order: Sr No · SO No. · Created On · …
+- **No Created Time column.** The India-time 12-hour clock (02:35 PM) sits under the date in small grey text (`--fs-xs`, `--text3`); a date-only value shows the date alone. The time has no sort or filter of its own; Created On ▾ sorts and filters on the date.
+- Created On stays locked and user-hideable (ADR-286).
+- **Sr No on every full list**: added to ~40 lists that had none; moved to first on BOM, Multi-Level BOM and Route Card; reports' "#" and the Home check table's "Sr" read "Sr No". Paged lists count on from the page start (page 2 starts at 26). Small tables inside other screens (pickers, pop-ups, detail-page tabs, dashboard widgets) are left without one.
+- Built through `srNoColumn` / `createdOnColumn` in `apps/web/src/ui/data/lead-columns.tsx`; a hand-written "Created Time" header fails `lead-columns.guard.test.ts`.
+- Saved column layouts move to the new order by themselves. Where Sr No became column 0, the old first column's automatic pin (every save pinned column 0) is dropped (`normalize`, use-table-layout.ts). Lists with a hand-written Created On (ECR, Stock Counts, Tool Issues, Party Materials) put it after the own number by default; a user's saved order keeps their own position until Reset.
+
+## ADR-296: Only the document number opens a list row
+
+**Date:** 2026-11-15
+**Status:** Accepted (owner 2026-11-15)
+
+### Context
+
+Every list opened a record on a click anywhere on the row (`rowOpenProps` put the click on the whole
+`<tr>`). The owner wants only the document's own number to open it, e.g. the SO No. on SO Master List.
+
+### Decision
+
+- The shared table (`DataTable` classic renderer and `FitRows`) no longer puts the click on the row. One
+  cell per row opens it: the column marked `opensRow`, else the first code / text column after Sr No,
+  which is the own No. on every lead-block list (ADR-295) and the Code on a master.
+  `openerIndex` / `openCell` in `ui/data/data-table-cells.ts`.
+- The number shows blue and bold with **no underline** (owner choice). The hand cursor appears over the
+  number only. Tab reaches it and Enter opens it. A cell that already renders its own `<Link>` keeps it,
+  and an empty cell ("—") gets nothing to click.
+- Lists that open a pop-up instead of a page (CAPA, Tasks, Instruments, Store Issue, Tool Issue, Daily
+  Task Report) follow the same rule: the number opens the pop-up.
+- Rows whose click ticks or expands rather than opening a document keep the whole-row click through
+  `wholeRowClick`: My Day Log, Day Log pending calendar, Day Log person view, NC pick table on the DC screen.
+- The row ⋯, tick boxes, ▸ and in-cell controls are unchanged. Server-side access checks are unchanged.
+
+### Alternatives Considered
+
+- Edit all ~57 list screens to render their own link: rejected. 57 places to keep in step, against one
+  rule in the shared table (§21.4).
+- Underline the number, always or on hover: rejected by the owner.
+
+### Consequences
+
+- Positive: one place decides what opens a row; new lists get the rule without any code.
+- Negative: users used to clicking anywhere on the row must click the number.

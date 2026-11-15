@@ -11,6 +11,7 @@ import { useMemo, useState } from 'react';
 import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
+import { srNoColumn } from '@/ui/data/lead-columns';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ConfirmDialog, Modal, useToast } from '@/ui/feedback';
@@ -33,10 +34,11 @@ type ModalState = { kind: 'none' } | { kind: 'new' } | { kind: 'edit'; row: Repo
 export function ReportTypesPanel(): React.JSX.Element {
   const [page, setPage] = useState(1);
   const sf = useServerSortFilter(TABLE_KEYS.reportTypes, () => setPage(1));
+  const offset = pageOffset(page);
   const { data, isLoading, isFetching, isError, error } = useReportTypes({
     sf: sf.param,
     limit: LIST_PAGE_SIZE,
-    offset: pageOffset(page),
+    offset,
   });
   const total = data?.total ?? 0;
   useClampPage(page, data?.total, setPage);
@@ -56,12 +58,13 @@ export function ReportTypesPanel(): React.JSX.Element {
     setAskDelete(row);
   }
 
-  // The sheet's columns (first = the Report / Document Name, always pinned).
-  // Default requirement and Active both show as badges; Description shares the
-  // spare width and clips with "…" + tooltip. Sr No is dropped — the name is
-  // the identity, and the fit table pins it as column 0.
+  // The sheet's columns: Sr No first (owner 2026-11-15 — every list starts with
+  // it; offset + 1 so it continues across pages), then the Report / Document
+  // Name. Default requirement and Active both show as badges; Description
+  // shares the spare width and clips with "…" + tooltip.
   const columns = useMemo<DataTableColumn<ReportType>[]>(
     () => [
+      srNoColumn<ReportType>(offset + 1),
       {
         id: 'name',
         sortFilterField: 'name',
@@ -112,7 +115,7 @@ export function ReportTypesPanel(): React.JSX.Element {
         ),
       },
     ],
-    [],
+    [offset],
   );
 
   return (

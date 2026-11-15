@@ -7,6 +7,7 @@
 import { type ToolIssueListItem } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
 import type { DataTableColumn } from '@/ui/data';
+import { createdOnColumn, srNoColumn } from '@/ui/data/lead-columns';
 
 const r3 = (v: number): number => Math.round(v * 1000) / 1000;
 
@@ -30,8 +31,10 @@ function statusBadge(t: ToolIssueListItem): React.JSX.Element {
   return <span className="badge b-amber">Out</span>;
 }
 
-export function toolIssueColumns(): DataTableColumn<ToolIssueListItem>[] {
+/** `firstRowNo` = Sr No of this page's first row (server offset + 1). */
+export function toolIssueColumns(firstRowNo: number): DataTableColumn<ToolIssueListItem>[] {
   return [
+    srNoColumn<ToolIssueListItem>(firstRowNo),
     {
       id: 'issue_no',
       sortFilterField: 'code',
@@ -41,6 +44,11 @@ export function toolIssueColumns(): DataTableColumn<ToolIssueListItem>[] {
       nowrap: true,
       render: (t) => <span style={{ color: 'var(--cyan)' }}>{t.code}</span>,
     },
+    // When the issue was entered (time under the date). Off by default; Columns ▾ shows it.
+    createdOnColumn<ToolIssueListItem>((t) => t.createdAt, {
+      sortFilterField: 'createdOn',
+      className: 'mono text2',
+    }),
     {
       id: 'issue_date',
       sortFilterField: 'issueDate',
@@ -136,16 +144,6 @@ export function toolIssueColumns(): DataTableColumn<ToolIssueListItem>[] {
       kind: 'badge',
       header: 'Return Status',
       render: (t) => statusBadge(t),
-    },
-    {
-      // When the issue was entered (IST day). Off by default; Columns ▾ shows it.
-      id: 'created_on',
-      sortFilterField: 'createdOn',
-      kind: 'date',
-      header: 'Created On',
-      className: 'mono text2',
-      nowrap: true,
-      render: (t) => fmtDate(t.createdAt),
     },
   ];
 }

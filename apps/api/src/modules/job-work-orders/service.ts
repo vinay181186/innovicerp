@@ -751,7 +751,7 @@ export async function getJobWorkOrderRelated(
             )
             .orderBy(desc(plans.planDate));
 
-    // Party GRNs received against this JWO (no detail route — reference-only).
+    // Party GRNs received against this JWO (ADR-294: open /party-grn/$id).
     // party_grn has no status column, so status is null.
     const partyGrnRows = await tx
       .select({
@@ -834,9 +834,9 @@ export async function getJobWorkOrderRelated(
       'party-grn',
       'Party GRN',
       '📥',
-      // No party-GRN detail route exists — reference-only.
-      null,
-      partyGrnRows.map((r) => row(r.id, r.code, null, r.date)),
+      // ADR-294 — the Party GRN detail page.
+      'party-grn',
+      partyGrnRows.map((r) => row(r.id, r.code, null, r.date, { linkId: r.id })),
       { items: partyGrnItems },
     );
 

@@ -110,6 +110,8 @@ export const ncRegisterSchema = z.object({
    *  read from that line (Party GRN → JWSO → Customer). */
   partyGrnLineId: z.string().uuid().nullable().default(null),
   sourcePartyGrnCode: z.string().nullable().default(null),
+  /** ADR-294 — the source Party GRN's id, so its PGRN No. links to the detail page. */
+  sourcePartyGrnId: z.string().nullable().default(null),
   sourceJwCode: z.string().nullable().default(null),
   sourceCustomerName: z.string().nullable().default(null),
   /** SOURCE of the rejected material, derived on read (Tier A) so the NC and its

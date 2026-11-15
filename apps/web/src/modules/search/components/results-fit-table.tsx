@@ -13,12 +13,13 @@
 // toolbar) sit between that scroller and the flex column, so only this
 // full-page table moved onto the shared layout.
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { GLOBAL_SEARCH_KIND_META } from '@innovic/shared';
 import type { GlobalSearchResult } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
 import { statusText } from '@/lib/status-text';
 import { DataTable, type DataTableColumn, Panel } from '@/ui/data';
+import { srNoColumn } from '@/ui/data/lead-columns';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 
 const rowKey = (r: GlobalSearchResult): string => `${r.kind}:${r.id}`;
@@ -50,6 +51,7 @@ const COLUMNS: DataTableColumn<GlobalSearchResult>[] = [
   },
   {
     id: 'doc_no',
+    opensRow: true,
     header: 'Document No.',
     kind: 'code',
     className: 'td-code',
@@ -123,6 +125,7 @@ export function ResultsFitTable({
   loading,
   empty,
   onOpen,
+  firstRowNo = 1,
 }: {
   items: GlobalSearchResult[];
   /** True while a fetch is in flight — draws the table's own loading row. */
@@ -130,7 +133,14 @@ export function ResultsFitTable({
   /** The empty-row message when the search returned nothing. */
   empty: React.ReactNode;
   onOpen: (r: GlobalSearchResult) => void;
+  /** Sr No of the first row: the page's server offset + 1 (1 when unpaged). */
+  firstRowNo?: number;
 }): React.JSX.Element {
+  // Sr No leads (owner 2026-11-15) and continues across pages.
+  const columns = useMemo(
+    () => [srNoColumn<GlobalSearchResult>(firstRowNo), ...COLUMNS],
+    [firstRowNo],
+  );
   // Which rows have their ▸ detail open. Kept in sync with the fit engine's own
   // toggle via onToggleExpanded, so the ▸ opens both at once.
   const [open, setOpen] = useState<Set<string>>(() => new Set());
@@ -138,7 +148,7 @@ export function ResultsFitTable({
     <Panel bodyPadding="none">
       <DataTable<GlobalSearchResult>
         tableKey={TABLE_KEYS.globalSearch}
-        columns={COLUMNS}
+        columns={columns}
         rows={items}
         rowKey={rowKey}
         loading={loading}

@@ -227,6 +227,7 @@ interface NcJoins {
   // ADR-247 — customer material (Party GRN Incoming QC): the Party GRN, its
   // JWSO and the customer. Null on every other NC.
   sourcePartyGrnCode?: string | null;
+  sourcePartyGrnId?: string | null;
   sourceJwCode?: string | null;
   sourceCustomerName?: string | null;
   // ADR-217 — the two documents the NC points AT: the zero-value job-work order
@@ -334,6 +335,7 @@ function toNcRegister(row: typeof ncRegister.$inferSelect, joins: NcJoins = {}):
     // its Party GRN / JWSO / customer, resolved on read.
     partyGrnLineId: row.partyGrnLineId ?? null,
     sourcePartyGrnCode: joins.sourcePartyGrnCode ?? null,
+    sourcePartyGrnId: joins.sourcePartyGrnId ?? null,
     sourceJwCode: joins.sourceJwCode ?? null,
     sourceCustomerName: joins.sourceCustomerName ?? null,
     // ADR-217 — the outward challan the rejected pieces went out on: the id
@@ -622,6 +624,7 @@ export async function listNcRegister(
         -- ADR-247: the Party GRN, its JWSO and the customer for a customer-
         -- material NC. Mirrors resolveNcSource (0); all null on every other NC.
         ppg.code AS "sourcePartyGrnCode",
+        ppg.id AS "sourcePartyGrnId",
         COALESCE(pjw.code, ppg.jw_code_text) AS "sourceJwCode",
         COALESCE(pcl.name, pjw.customer_name) AS "sourceCustomerName",
         -- ADR-217: the zero-value job-work order this return raised, and the
@@ -884,6 +887,7 @@ function toListItem(r: Record<string, unknown>): NcRegisterListItem {
     // ADR-247 — from the party_grn joins above.
     partyGrnLineId: str('partyGrnLineId'),
     sourcePartyGrnCode: str('sourcePartyGrnCode'),
+    sourcePartyGrnId: str('sourcePartyGrnId'),
     sourceJwCode: str('sourceJwCode'),
     sourceCustomerName: str('sourceCustomerName'),
     // ADR-217 — the replacement order and the outward challan, from the joins
@@ -1094,6 +1098,7 @@ export async function readNc(
     sourcePoCode: source.sourcePoCode,
     sourceGrnCode: source.sourceGrnCode,
     sourcePartyGrnCode: source.sourcePartyGrnCode,
+    sourcePartyGrnId: source.sourcePartyGrnId,
     sourceJwCode: source.sourceJwCode,
     sourceCustomerName: source.sourceCustomerName,
     // ADR-217 document links.

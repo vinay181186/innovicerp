@@ -161,8 +161,8 @@ export function fmtTime(v: string | number | null | undefined, empty = ''): stri
 
 /** India-time clock on the 12-hour dial: `02:35 PM`, `12:15 AM` — the same as
  *  `fmtTime`, except a bare calendar date gives `empty` instead of inventing
- *  "05:30 AM" from it. Used by the locked Created Time column (owner
- *  2026-11-03). */
+ *  "05:30 AM" from it. Used for the time under every Created On date (owner
+ *  2026-11-15). */
 export function fmtTime12(v: string | number | null | undefined, empty = ''): string {
   if (typeof v === 'string' && PLAIN_DATE.test(v.trim())) return empty;
   return fmtTime(v, empty);

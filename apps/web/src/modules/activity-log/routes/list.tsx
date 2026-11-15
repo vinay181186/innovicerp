@@ -90,7 +90,7 @@ function ActivityLogListPage() {
   // The Action ▾ ticks the actions this company's log holds (the same list
   // the Action dropdown offers), shown by their standard label.
   const actions = data?.actions;
-  const columns = useMemo(() => activityLogColumns(actions ?? []), [actions]);
+  const columns = useMemo(() => activityLogColumns(offset + 1, actions ?? []), [offset, actions]);
 
   // ▸ reveal — the full Detail / remarks for a row. The caller owns the open set;
   // the fit engine's ▸ is the one toggle (onToggleExpanded).

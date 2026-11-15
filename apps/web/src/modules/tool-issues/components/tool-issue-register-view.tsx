@@ -68,7 +68,8 @@ export function ToolIssueRegisterView({
     offset: pageOffset(page),
   });
   useClampPage(page, data?.total, setPage);
-  const columns = useMemo(() => toolIssueColumns(), []);
+  const firstRowNo = pageOffset(page) + 1;
+  const columns = useMemo(() => toolIssueColumns(firstRowNo), [firstRowNo]);
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / LIST_PAGE_SIZE));
 
   if (eff && !perms.view) {

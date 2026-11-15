@@ -16,6 +16,7 @@ import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { fmtDateTime } from '@/lib/date';
 import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
 import { DataTable, type DataTableColumn } from '@/ui/data';
+import { srNoColumn } from '@/ui/data/lead-columns';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter } from '@/ui/layout';
@@ -62,10 +63,11 @@ function actionColor(action: string): string {
   return 'var(--cyan)';
 }
 
-function approvalHistoryColumns(): DataTableColumn<ApprovalHistoryItem>[] {
+/** `firstRowNo` = this page's server offset + 1, so Sr No continues across pages. */
+function approvalHistoryColumns(firstRowNo: number): DataTableColumn<ApprovalHistoryItem>[] {
   return [
+    srNoColumn<ApprovalHistoryItem>(firstRowNo),
     {
-      // First column.
       id: 'ts',
       kind: 'date',
       header: 'Action Date & Time',
@@ -134,17 +136,18 @@ export function ApprovalHistoryTable(): React.JSX.Element {
   }, [searchInput, search]);
   const sf = useServerSortFilter(TABLE_KEYS.approvalHistory, () => setPage(1));
 
+  const offset = pageOffset(page);
   const { data: history, isLoading } = useApprovalHistory({
     search,
     sf: sf.param,
     limit: LIST_PAGE_SIZE,
-    offset: pageOffset(page),
+    offset,
   });
   const rows = history?.items ?? [];
   const total = history?.total ?? 0;
   const onPage = useCallback((p: number) => setPage(p), []);
   useClampPage(page, history?.total, onPage);
-  const columns = useMemo(() => approvalHistoryColumns(), []);
+  const columns = useMemo(() => approvalHistoryColumns(offset + 1), [offset]);
 
   return (
     <div className="panel" style={{ padding: 'var(--sp-4)' }}>

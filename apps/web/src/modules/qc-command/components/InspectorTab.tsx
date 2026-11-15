@@ -7,9 +7,11 @@
 // (<DataTable tableKey={TABLE_KEYS.qcCommandInspector}>). Numbers right-aligned.
 
 import type { QcInspectorPerfRow } from '@innovic/shared';
+import { useMemo } from 'react';
 import { DataTable, type DataTableColumn } from '@/ui/data';
+import { srNoColumn } from '@/ui/data/lead-columns';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
-import { type QcPager, TablePager } from './TablePager';
+import { type QcPager, TablePager, rowNo } from './TablePager';
 
 function rejColor(pct: number): string {
   if (pct <= 5) return 'var(--green)';
@@ -17,69 +19,72 @@ function rejColor(pct: number): string {
   return 'var(--red)';
 }
 
-const columns: DataTableColumn<QcInspectorPerfRow>[] = [
-  {
-    id: 'name',
-    header: 'Inspected By',
-    align: 'left',
-    ellipsis: true,
-    className: 'fw-700',
-    render: (p) => p.name,
-    title: (p) => p.name,
-  },
-  {
-    id: 'inspections',
-    header: 'Inspections',
-    align: 'right',
-    nowrap: true,
-    className: 'mono fw-700',
-    render: (p) => <span style={{ color: 'var(--cyan)' }}>{p.inspections}</span>,
-  },
-  {
-    id: 'jcs',
-    header: 'JCs',
-    align: 'right',
-    nowrap: true,
-    className: 'mono',
-    render: (p) => p.jcs,
-  },
-  {
-    id: 'accepted',
-    header: 'Accepted',
-    align: 'right',
-    nowrap: true,
-    className: 'mono',
-    render: (p) => <span style={{ color: 'var(--green2)' }}>{p.accepted}</span>,
-  },
-  {
-    id: 'rejected',
-    header: 'Deviated',
-    align: 'right',
-    nowrap: true,
-    className: 'mono',
-    render: (p) => <span style={{ color: 'var(--red2)' }}>{p.rejected}</span>,
-  },
-  {
-    id: 'rejRate',
-    header: <span title="Green ≤ 5%, Amber 6–15%, Red > 15%">Deviation Rate</span>,
-    label: 'Deviation Rate',
-    align: 'right',
-    nowrap: true,
-    className: 'mono fw-700',
-    render: (p) => <span style={{ color: rejColor(p.rejRate) }}>{p.rejRate}%</span>,
-    filterValue: (p) => p.rejRate,
-  },
-  {
-    id: 'currentLoad',
-    header: <span title="Items now assigned to this inspector">Current Load</span>,
-    label: 'Current Load',
-    align: 'right',
-    nowrap: true,
-    className: 'mono fw-700',
-    render: (p) => <span style={{ color: 'var(--amber2)' }}>{p.currentLoad}</span>,
-    filterValue: (p) => p.currentLoad,
-  },
-];
+function inspectorColumns(firstRowNo: number): DataTableColumn<QcInspectorPerfRow>[] {
+  return [
+    srNoColumn<QcInspectorPerfRow>(firstRowNo),
+    {
+      id: 'name',
+      header: 'Inspected By',
+      align: 'left',
+      ellipsis: true,
+      className: 'fw-700',
+      render: (p) => p.name,
+      title: (p) => p.name,
+    },
+    {
+      id: 'inspections',
+      header: 'Inspections',
+      align: 'right',
+      nowrap: true,
+      className: 'mono fw-700',
+      render: (p) => <span style={{ color: 'var(--cyan)' }}>{p.inspections}</span>,
+    },
+    {
+      id: 'jcs',
+      header: 'JCs',
+      align: 'right',
+      nowrap: true,
+      className: 'mono',
+      render: (p) => p.jcs,
+    },
+    {
+      id: 'accepted',
+      header: 'Accepted',
+      align: 'right',
+      nowrap: true,
+      className: 'mono',
+      render: (p) => <span style={{ color: 'var(--green2)' }}>{p.accepted}</span>,
+    },
+    {
+      id: 'rejected',
+      header: 'Deviated',
+      align: 'right',
+      nowrap: true,
+      className: 'mono',
+      render: (p) => <span style={{ color: 'var(--red2)' }}>{p.rejected}</span>,
+    },
+    {
+      id: 'rejRate',
+      header: <span title="Green ≤ 5%, Amber 6–15%, Red > 15%">Deviation Rate</span>,
+      label: 'Deviation Rate',
+      align: 'right',
+      nowrap: true,
+      className: 'mono fw-700',
+      render: (p) => <span style={{ color: rejColor(p.rejRate) }}>{p.rejRate}%</span>,
+      filterValue: (p) => p.rejRate,
+    },
+    {
+      id: 'currentLoad',
+      header: <span title="Items now assigned to this inspector">Current Load</span>,
+      label: 'Current Load',
+      align: 'right',
+      nowrap: true,
+      className: 'mono fw-700',
+      render: (p) => <span style={{ color: 'var(--amber2)' }}>{p.currentLoad}</span>,
+      filterValue: (p) => p.currentLoad,
+    },
+  ];
+}
 
 export function InspectorTab({
   perf,
@@ -89,6 +94,8 @@ export function InspectorTab({
   perf: QcInspectorPerfRow[];
   pager: QcPager;
 }): React.JSX.Element {
+  const firstRowNo = rowNo(pager, 0);
+  const columns = useMemo(() => inspectorColumns(firstRowNo), [firstRowNo]);
   return (
     <div>
       <div className="panel">

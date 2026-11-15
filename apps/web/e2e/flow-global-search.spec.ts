@@ -37,7 +37,7 @@ const REGISTER_KINDS: Record<string, { to: string; params: (docNo: string, id: s
   capa: { to: '/nc-register', params: (d) => ({ tab: 'capa', capa: d }) },
   'store-issue': { to: '/issue-register', params: (d) => ({ tab: 'items', search: d }) },
   'tool-issue': { to: '/issue-register', params: (d) => ({ tab: 'tools', search: d }) },
-  'party-grn': { to: '/party-grn', params: (d) => ({ tab: 'receive', search: d }) },
+  // 'party-grn' has a detail page since ADR-294 — checked in test 6b.
   'party-material-issue': { to: '/party-grn', params: (d) => ({ tab: 'issue', search: d }) },
   'jw-dc-inward': { to: '/jw-dc', params: (d) => ({ tab: 'inward', search: d }) },
   task: { to: '/task-board', params: (_d, id) => ({ task: id }) },
@@ -416,6 +416,25 @@ test.describe('Global Search v3 — popup under the top bar', () => {
     await expect(page).toHaveURL(/\/vendors\/[0-9a-f-]{36}$/, { timeout: 20_000 });
     await expect(overlay(page)).toHaveCount(0);
     await expect(page.getByText(VENDOR_CODE).first()).toBeVisible({ timeout: 20_000 });
+    await expect(box(page)).toHaveValue('');
+  });
+
+  // ── 6b. Party GRN opens its detail page (ADR-294) ────────────────────────
+  test('6b. a Party GRN hit opens /party-grn/<id>; popup gone', async ({ page }) => {
+    let hit: Row | undefined;
+    for (const q of ['in', '00', 'e', 'a']) {
+      const r = await api(page, q, 'party-grn');
+      hit = r.json?.items[0];
+      if (hit) break;
+    }
+    test.skip(!hit, 'no Party GRN on the test DB');
+    await gotoPage(page, HOST_PAGE);
+    await openPopup(page, hit!.docNo);
+    await waitRows(modal(page));
+    await rowByDocNo(modal(page), hit!.docNo).first().click();
+    await expect(page).toHaveURL(new RegExp(`/party-grn/${hit!.id}$`), { timeout: 20_000 });
+    await expect(overlay(page)).toHaveCount(0);
+    await expect(page.getByText(hit!.docNo).first()).toBeVisible({ timeout: 20_000 });
     await expect(box(page)).toHaveValue('');
   });
 

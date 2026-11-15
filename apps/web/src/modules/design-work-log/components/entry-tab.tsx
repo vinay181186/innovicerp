@@ -14,6 +14,7 @@ import { fmtDate } from '@/lib/date';
 import { useSession } from '@/lib/session';
 import { DataTable, Panel } from '@/ui/data';
 import type { DataTableColumn } from '@/ui/data';
+import { srNoColumn } from '@/ui/data/lead-columns';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ConfirmDialog } from '@/ui/feedback';
 import { ListFooter } from '@/ui/layout';
@@ -29,6 +30,8 @@ import {
 } from './work-log-shared';
 
 const COLUMNS: DataTableColumn<DesignWorkLogEntry>[] = [
+  // Every row is in the browser (unpaged), so Sr No starts at 1.
+  srNoColumn<DesignWorkLogEntry>(1),
   {
     id: 'log_date',
     header: 'Log Date',
