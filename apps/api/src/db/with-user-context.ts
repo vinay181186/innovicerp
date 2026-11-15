@@ -48,6 +48,19 @@ export function requestScope(user: AuthContext): RequestScope | undefined {
 
 export type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
+// ADR-293 — the AI chat reads through the ordinary services with a copy of the
+// user marked READ_ONLY: every withUserContext transaction run with it is READ
+// ONLY with an 8 s statement cap, so a service that tried to write would fail.
+// Enumerable, so a service's own `{ ...user }` copy keeps the mark; the copy
+// carries the same request scope, so the ADR-229 access memo still works.
+const READ_ONLY = Symbol('innovic.readOnly');
+export function readOnlyUserContext<T extends AuthContext>(user: T): T {
+  const ro = { ...user, [READ_ONLY]: true } as T;
+  const scope = requestScope(user);
+  if (scope) Object.defineProperty(ro, REQUEST_SCOPE, { value: scope, enumerable: false });
+  return ro;
+}
+
 /**
  * Wraps a callback in a Drizzle transaction that injects the user's JWT claims
  * into the Postgres session via `set_config('request.jwt.claims', ..., true)`.
@@ -68,6 +81,10 @@ export async function withUserContext<T>(
     email: user.email,
   });
   return db.transaction(async (tx) => {
+    if ((user as AuthContext & { [READ_ONLY]?: true })[READ_ONLY]) {
+      await tx.execute(sql`set transaction read only`);
+      await tx.execute(sql`set local statement_timeout = '8s'`);
+    }
     await tx.execute(sql`select set_config('request.jwt.claims', ${claims}, true)`);
     return fn(tx);
   });

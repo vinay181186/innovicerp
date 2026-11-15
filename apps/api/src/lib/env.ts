@@ -94,6 +94,29 @@ const envSchema = z.object({
     .string()
     .optional()
     .transform((v) => (v && v.length > 0 ? v : undefined)),
+  // ADR-293 — AI chat (super admin, read-only). A missing key = that provider
+  // "not set up"; the api boots without either.
+  ANTHROPIC_API_KEY: z
+    .string()
+    .optional()
+    .transform((v) => (v && v.length > 0 ? v : undefined)),
+  GEMINI_API_KEY: z
+    .string()
+    .optional()
+    .transform((v) => (v && v.length > 0 ? v : undefined)),
+  AI_CLAUDE_MODEL: z
+    .string()
+    .optional()
+    .transform((v) => (v && v.length > 0 ? v : 'claude-sonnet-5-5')),
+  AI_GEMINI_MODEL: z
+    .string()
+    .optional()
+    .transform((v) => (v && v.length > 0 ? v : 'gemini-2.5-flash')),
+  AI_CHAT_DAILY_LIMIT: z
+    .string()
+    .optional()
+    .transform((v) => (v && v.length > 0 ? Number(v) : 100))
+    .pipe(z.number().int().positive()),
 });
 
 const parsed = envSchema.safeParse(process.env);

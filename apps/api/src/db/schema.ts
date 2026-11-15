@@ -9563,3 +9563,56 @@ export const revSubstitutionUses = pgTable(
     }),
   ],
 ).enableRLS();
+
+// ADR-293 (0252) — AI Chat log: one row per question the super-admin chat was
+// asked. The chat's only write; files hold name/type/bytes, never content.
+export const aiChatLog = pgTable(
+  'ai_chat_log',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+    askedAt: timestamp('asked_at', { withTimezone: true }).notNull().defaultNow(),
+    question: text('question').notNull(),
+    modelChoice: text('model_choice').notNull(),
+    providerUsed: text('provider_used'),
+    model: text('model'),
+    toolsUsed: jsonb('tools_used')
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    files: jsonb('files')
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    answer: text('answer'),
+    outcome: text('outcome').notNull(),
+    error: text('error'),
+    inputTokens: integer('input_tokens'),
+    outputTokens: integer('output_tokens'),
+    durationMs: integer('duration_ms'),
+    ...ecrAuditCols(),
+  },
+  (t) => [
+    check('ai_chat_log_model_choice_check', sql`${t.modelChoice} IN ('auto', 'claude', 'gemini')`),
+    check(
+      'ai_chat_log_provider_used_check',
+      sql`${t.providerUsed} IS NULL OR ${t.providerUsed} IN ('claude', 'gemini')`,
+    ),
+    check(
+      'ai_chat_log_outcome_check',
+      sql`${t.outcome} IN ('pending', 'ok', 'refused', 'no_credit', 'limit', 'error')`,
+    ),
+    index('ai_chat_log_company_user_asked_idx').on(t.companyId, t.userId, t.askedAt.desc()),
+    pgPolicy('ai_chat_log_admin_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id() AND current_user_role() = 'admin'`,
+    }),
+    pgPolicy('ai_chat_log_admin_insert', {
+      for: 'insert',
+      to: 'authenticated',
+      withCheck: sql`company_id = current_company_id() AND current_user_role() = 'admin'`,
+    }),
+  ],
+).enableRLS();

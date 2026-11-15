@@ -187,6 +187,7 @@ export * from './schemas/task';
 export * from './schemas/daily-task-report';
 export * from './schemas/day-log';
 export * from './schemas/day-log-text';
+export * from './schemas/ai-chat';
 export * from './schemas/dashboard-home';
 export * from './schemas/dashboard-checks';
 export * from './schemas/table-prefs';

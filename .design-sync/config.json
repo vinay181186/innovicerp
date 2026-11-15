@@ -24,6 +24,7 @@
     "Banner": "src/ui/feedback/Banner.tsx",
     "ConfirmDialog": "src/ui/feedback/ConfirmDialog.tsx",
     "FilePreview": "src/ui/feedback/FilePreview.tsx",
+    "FloatingPanel": "src/ui/feedback/FloatingPanel.tsx",
     "Modal": "src/ui/feedback/Modal.tsx",
     "Toast": "src/ui/feedback/Toast.tsx",
     "ToastProvider": "src/ui/feedback/Toast.tsx",
@@ -122,6 +123,9 @@
       "cardMode": "column"
     },
     "Modal": {
+      "cardMode": "column"
+    },
+    "FloatingPanel": {
       "cardMode": "column"
     },
     "ConfirmDialog": {

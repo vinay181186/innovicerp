@@ -15753,3 +15753,35 @@ SOP §5–§6: no silent change to released Job Cards; hold, disposition, then s
 - `rev_substitutions` (page Rev Substitutions, Engineering Change Approve tick): Stock Drawing Rev → Order Drawing Rev for one SO line, JWSO line or Job Card, Qty Allowed; `lib/rev-substitution.ts` `consumeSubstitution` is the one writer of Qty Used (§20.1/§20.3); dispatch cancel and issue return give it back.
 - `approval_config.drawing_rev_strict` (default off): when on, a PRO or Job Card for a make item with no Drawing Rev is refused. Turn on only after the Drawing Rev Fix List is clean.
 - Reports: Drawing Rev Register, Open Order Rev Mismatch, Affected WIP / OSP / Stock, Rev Traceability, Pending ECR, Drawing Print / Download History.
+
+## ADR-293: Ask ERP — a read-only AI chat for the L6 Super Admin
+
+**Date:** 2026-11-15
+**Status:** Accepted (owner approved the plan and the mockup, 2026-11-15)
+
+### Context
+
+The owner wants to ask plain-English questions about live ERP data (SO, JWSO, Job Cards, stock, POs, NC, parties, Production Orders) and get correct answers in real time, with a choice of Claude, Gemini or Auto, no extra billing, and no way for the chat to change ERP data.
+
+### Decision
+
+- Who: only the L6 Super Admin — `requireAdminRole` on the server, `useIsSuperAdmin` on the screen.
+- How it reads: the model never writes SQL. It may call seven tools in `modules/ai-chat/tools.ts` (search documents, list documents, get one document, item stock, list reports, run report) and each tool calls an EXISTING read service (`globalSearch`, the module list/get services, `getStockAvailability`, `runReport`). Rows are capped at 50 per tool.
+- Read only, enforced by Postgres: the API connects with a BYPASSRLS role (0180), so the chat runs every tool with a marked user context; `withUserContext` then opens the transaction with `SET TRANSACTION READ ONLY` and an 8 s statement timeout. Ordinary callers are unchanged.
+- Models: Claude (`AI_CLAUDE_MODEL`, default Sonnet 5.5) and Gemini free tier (`AI_GEMINI_MODEL`). Auto = Claude, and Gemini only when Claude's credit is finished. One HTTP attempt per call, no retry loop; at most 6 tool rounds; 60 s per question. Claude: no `temperature` (current models refuse it), thinking off on Sonnet 5.5 (`between_tools`), its own blocks sent back unchanged, 4,000 output tokens. "Credit finished" = Anthropic 402 `billing_error` (or a 400 naming the balance / spend limit) and Gemini's per-day quota; a 429 per-minute limit is "busy" and does NOT fall back.
+- Daily cap: 100 questions per person (`AI_CHAT_DAILY_LIMIT`). Checked and reserved in one transaction under a per-person advisory lock (§20.3): a `pending` log row is written first and completed when the answer is back.
+- Input: typed text, the browser's own speech-to-text (Chrome / Edge, en-IN; nothing recorded by the ERP), and up to 3 files sent to the model with the question: images up to 3.5 MB (Claude's 5 MB-per-image base64 limit), PDFs up to 5 MB, 12 MB in all (Gemini's ~20 MB inline request limit). Route-level body limit 22 MB on `POST /ai-chat` only.
+- Log: `ai_chat_log` (0252) keeps the question, model, tools called, answer, outcome, tokens and time; for files only name, type and size.
+- No new npm package: both providers are called with `fetch`.
+
+### Alternatives Considered
+
+- Let the model write SQL against a read-only role — rejected: no read-only DB role exists, it bypasses the price and access rules in the services, and a wrong join gives a confident wrong number.
+- Anthropic / Google SDKs — rejected: two new dependencies for two POST calls.
+- Server-side speech-to-text — rejected: paid, and the browser does it for free.
+
+### Consequences
+
+- Positive: every figure in an answer comes from the same code the screens use; the database itself refuses a write.
+- Negative: the chat can only answer what the tools and the 55 reports cover; a new kind of question needs a new tool or report.
+- Risks: Claude auto-reload must stay OFF in the Anthropic Console and the Gemini key's Google project must have no billing linked, or "no extra billing" does not hold. On the Gemini free tier Google may use the prompts and screenshots to improve its models — the owner accepted this (2026-11-15). In Chrome, Speak sends the audio to Google's speech service.
