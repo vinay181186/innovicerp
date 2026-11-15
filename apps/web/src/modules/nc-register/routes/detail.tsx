@@ -1,4 +1,4 @@
-// NC detail (UI-003-06). DisposeNcPanel inlined for the pending → disposed flow.
+// NC detail (UI-003-06). Dispose and Create DC open as pop-ups (owner 2026-11-15).
 //
 // QC–NC handling (docs/QC-NC-HANDLING-DESIGN.md §2–§5, §8): the page now
 // carries the qty strip (rejected / cleared / failed / open), the links a
@@ -22,7 +22,7 @@ import {
   opSrNo,
 } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { ArrowLeft, CheckCircle2, Loader2, Shield, Stamp } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Loader2, Shield, Stamp, Truck } from 'lucide-react';
 import { useState } from 'react';
 import { useCanOpen } from '@/components/shared/action-link';
 import { undecidedChangesOf, usePendingEditForDoc } from '@/modules/document-edits/api';
@@ -110,6 +110,9 @@ function NcRegisterDetailPage(): React.JSX.Element {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleteReason, setDeleteReason] = useState('');
   const [showDispose, setShowDispose] = useState(false);
+  // The NC version the Create DC pop-up was opened on: a refresh that changes
+  // the NC (someone else raised the DC) closes it, and it never reopens itself.
+  const [createDcOn, setCreateDcOn] = useState<string | null>(null);
   const [disposeResult, setDisposeResult] = useState<DisposeNcResult | null>(null);
   const [reworkDoneQty, setReworkDoneQty] = useState<number | ''>('');
   const [closeError, setCloseError] = useState<string | null>(null);
@@ -352,6 +355,15 @@ function NcRegisterDetailPage(): React.JSX.Element {
                 <Stamp size={13} /> Dispose
               </button>
             ) : null}
+            {awaitingDc && canCreateDc ? (
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={() => setCreateDcOn(detail.updatedAt)}
+              >
+                <Truck size={13} /> Create DC
+              </button>
+            ) : null}
             {isReworkDisposed && canAdvance ? (
               <>
                 <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
@@ -517,7 +529,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
         />
       </div>
 
-      {awaitingDc && canCreateDc ? (
+      {createDcOn === detail.updatedAt && awaitingDc && canCreateDc ? (
         <CreateNcDcPanel
           nc={detail}
           pending={createDc.isPending}
@@ -528,11 +540,17 @@ function NcRegisterDetailPage(): React.JSX.Element {
                 : 'Could not save DC. Try again.'
               : null
           }
+          onCancel={() => {
+            setCreateDcOn(null);
+            createDc.reset();
+          }}
           onSubmit={async (input) => {
             try {
               await createDc.mutateAsync(input);
+              // The green "DC saved" note below the facts says where it went.
+              setCreateDcOn(null);
             } catch {
-              /* inline error via panel */
+              /* error shown inside the pop-up */
             }
           }}
         />
@@ -585,7 +603,9 @@ function NcRegisterDetailPage(): React.JSX.Element {
         />
       ) : null}
 
-      {showDispose ? (
+      {/* Closes if someone else moved the NC on while it was open (§20); the
+          outcome of this user's own save still shows. */}
+      {showDispose && (isPending || disposeResult !== null || dispose.isPending) ? (
         <DisposeNcPanel
           nc={detail}
           canApprove={ncPerms.approve}

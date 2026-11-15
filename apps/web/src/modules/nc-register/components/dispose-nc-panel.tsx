@@ -1,5 +1,5 @@
-// Dispose-NC inline panel (UI-003-06). Mirrors legacy `_disposeNC` modal L22618.
-// Inline (not a modal) — project doesn't have a Dialog primitive yet.
+// Dispose-NC pop-up (UI-003-06). Mirrors legacy `_disposeNC` modal L22618, on
+// the shared Modal (owner 2026-11-15: no scrolling down to an inline panel).
 //
 // QC–NC handling (docs/QC-NC-HANDLING-DESIGN.md §1, §3, §8): a disposition now
 // covers a QTY (default = all open pieces; less splits the remainder into a
@@ -23,6 +23,7 @@ import {
 import { Link } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { Modal } from '@/ui/feedback';
 import { SearchableSelect, type SearchableOption } from '@/ui/forms';
 import { useCanOpen } from '@/components/shared/action-link';
 import { fmtDate } from '@/lib/date';
@@ -70,6 +71,9 @@ const ACTION_ORDER: readonly NcDisposition[] = [
   'use_as_is',
   'make_fresh',
 ];
+
+/** The form lives in the pop-up body; its Save button sits in the footer. */
+const FORM_ID = 'dispose-nc-form';
 
 /** ADR-247 — the client message when Scrap of customer material has no note. */
 const CUSTOMER_SCRAP_NOTE_MSG =
@@ -259,262 +263,262 @@ export function DisposeNcPanel(props: Props): React.JSX.Element {
     void onSubmit(payload);
   };
 
+  // The standard pop-up (owner 2026-11-15): the form opens over the page, so
+  // nobody scrolls down to it. Nothing closes while the save runs; after it,
+  // the outcome is read-only, so Esc / × close without asking.
+  const footer = result ? (
+    <button type="button" className="btn btn-ghost" onClick={onCancel}>
+      Done
+    </button>
+  ) : (
+    <>
+      <button type="button" className="btn btn-ghost" onClick={onCancel} disabled={pending}>
+        Cancel
+      </button>
+      <button
+        type="submit"
+        form={FORM_ID}
+        className="btn btn-primary"
+        disabled={pending || !action || !qtyValid}
+        title={
+          !action
+            ? 'Select the Disposition first'
+            : !qtyValid
+              ? needsWhole
+                ? `Enter a whole number from 1 to ${openQty}`
+                : `Enter a qty more than 0 and up to ${openQty}`
+              : undefined
+        }
+      >
+        {pending ? <Loader2 size={13} className="animate-spin" /> : null}
+        {pending ? 'Saving…' : 'Save Disposition'}
+      </button>
+    </>
+  );
+
   return (
-    <div className="panel">
-      <div className="panel-hdr">
-        <div className="panel-title">Disposition</div>
-      </div>
-      <div className="panel-body">
-        {result ? (
-          <DisposeOutcome result={result} onClose={onCancel} />
-        ) : (
-          <form onSubmit={submit}>
-            <div className="form-grid">
-              <div className="form-grp">
-                <label className="form-label" htmlFor="dispAction">
-                  Disposition<span className="req">★</span>
-                </label>
-                <select
-                  id="dispAction"
-                  className="innovic-select"
-                  value={action}
-                  onChange={(e) => setAction(e.target.value as NcDisposition | '')}
+    <Modal
+      title={`Dispose NC ${nc.code}`}
+      onClose={onCancel}
+      closeLocked={pending}
+      confirmExit={!result}
+      size="sm"
+      footer={footer}
+    >
+      {result ? (
+        <DisposeOutcome result={result} onClose={onCancel} />
+      ) : (
+        <form id={FORM_ID} onSubmit={submit}>
+          {/* First, so a failed save is seen without scrolling the pop-up. */}
+          {error ? <Note tone="red">{error}</Note> : null}
+          <div className="form-grid">
+            <div className="form-grp">
+              <label className="form-label" htmlFor="dispAction">
+                Disposition<span className="req">★</span>
+              </label>
+              <select
+                id="dispAction"
+                className="innovic-select"
+                value={action}
+                onChange={(e) => setAction(e.target.value as NcDisposition | '')}
+                required
+              >
+                <option value="">-- Select Disposition --</option>
+                {availableActions.map((a) => (
+                  <option key={a} value={a}>
+                    {NC_DISPOSITION_LABELS[a]}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="form-grp">
+              <label className="form-label" htmlFor="dispQty">
+                Disposition Qty<span className="req">★</span>
+              </label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)' }}>
+                <input
+                  id="dispQty"
+                  type="number"
+                  min={qtyStep}
+                  max={openQty}
+                  step={qtyStep}
+                  className="innovic-input"
+                  style={{ width: 110 }}
+                  value={qty === '' ? '' : qty}
+                  onChange={(e) => setQty(e.target.value === '' ? '' : Number(e.target.value))}
                   required
-                >
-                  <option value="">-- Select Disposition --</option>
-                  {availableActions.map((a) => (
-                    <option key={a} value={a}>
-                      {NC_DISPOSITION_LABELS[a]}
-                    </option>
-                  ))}
-                </select>
+                />
+                <span className="text3" style={{ fontSize: 'var(--fs-xs)', whiteSpace: 'nowrap' }}>
+                  of {openQty} open
+                </span>
               </div>
-
-              <div className="form-grp">
-                <label className="form-label" htmlFor="dispQty">
-                  Disposition Qty<span className="req">★</span>
-                </label>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)' }}>
-                  <input
-                    id="dispQty"
-                    type="number"
-                    min={qtyStep}
-                    max={openQty}
-                    step={qtyStep}
-                    className="innovic-input"
-                    style={{ width: 110 }}
-                    value={qty === '' ? '' : qty}
-                    onChange={(e) => setQty(e.target.value === '' ? '' : Number(e.target.value))}
-                    required
-                  />
-                  <span
-                    className="text3"
-                    style={{ fontSize: 'var(--fs-xs)', whiteSpace: 'nowrap' }}
-                  >
-                    of {openQty} open
-                  </span>
-                </div>
-                {qty !== '' && !qtyValid ? (
-                  <div className="form-error">
-                    {needsWhole
-                      ? `Enter a whole number from 1 to ${openQty} — this disposition works in whole pieces.`
-                      : `Enter a qty more than 0 and up to ${openQty} (at most 3 decimals).`}
-                  </div>
-                ) : null}
-                {qtyValid && remainder > 0 ? (
-                  <div className="form-help">New NC for the other {remainder} pcs.</div>
-                ) : null}
-              </div>
-
-              {action === 'rework' && isLegacyRework ? (
-                <div className="form-grp form-full">
-                  <label className="form-label" htmlFor="dispReworkOp">
-                    Rework to Operation
-                  </label>
-                  {reworkOps.length > 0 ? (
-                    <select
-                      id="dispReworkOp"
-                      className="innovic-select"
-                      value={reworkOpSeq === '' ? '' : String(reworkOpSeq)}
-                      onChange={(e) =>
-                        setReworkOpSeq(e.target.value === '' ? '' : Number(e.target.value))
-                      }
-                    >
-                      <option value="">
-                        {nc.opSeq != null
-                          ? `Defaults to Op ${opSrNo(nc.opSeq)}`
-                          : '-- Select Op --'}
-                      </option>
-                      {reworkOps.map((o) => (
-                        <option key={o.opSeq} value={o.opSeq}>
-                          Op {opSrNo(o.opSeq)}
-                          {o.operation ? `: ${o.operation}` : ''}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <input
-                      id="dispReworkOp"
-                      type="number"
-                      min={1}
-                      className="innovic-input"
-                      value={reworkOpSeq === '' ? '' : reworkOpSeq}
-                      onChange={(e) =>
-                        setReworkOpSeq(e.target.value === '' ? '' : Number(e.target.value))
-                      }
-                    />
-                  )}
+              {qty !== '' && !qtyValid ? (
+                <div className="form-error">
+                  {needsWhole
+                    ? `Enter a whole number from 1 to ${openQty} — this disposition works in whole pieces.`
+                    : `Enter a qty more than 0 and up to ${openQty} (at most 3 decimals).`}
                 </div>
               ) : null}
+              {qtyValid && remainder > 0 ? (
+                <div className="form-help">New NC for the other {remainder} pcs.</div>
+              ) : null}
+            </div>
 
-              {/* ADR-217 phase 3 — `Sent on DC No.` (docs/NAMING.md row 205).
+            {action === 'rework' && isLegacyRework ? (
+              <div className="form-grp form-full">
+                <label className="form-label" htmlFor="dispReworkOp">
+                  Rework to Operation
+                </label>
+                {reworkOps.length > 0 ? (
+                  <select
+                    id="dispReworkOp"
+                    className="innovic-select"
+                    value={reworkOpSeq === '' ? '' : String(reworkOpSeq)}
+                    onChange={(e) =>
+                      setReworkOpSeq(e.target.value === '' ? '' : Number(e.target.value))
+                    }
+                  >
+                    <option value="">
+                      {nc.opSeq != null ? `Defaults to Op ${opSrNo(nc.opSeq)}` : '-- Select Op --'}
+                    </option>
+                    {reworkOps.map((o) => (
+                      <option key={o.opSeq} value={o.opSeq}>
+                        Op {opSrNo(o.opSeq)}
+                        {o.operation ? `: ${o.operation}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    id="dispReworkOp"
+                    type="number"
+                    min={1}
+                    className="innovic-input"
+                    value={reworkOpSeq === '' ? '' : reworkOpSeq}
+                    onChange={(e) =>
+                      setReworkOpSeq(e.target.value === '' ? '' : Number(e.target.value))
+                    }
+                  />
+                )}
+              </div>
+            ) : null}
+
+            {/* ADR-217 phase 3 — `Sent on DC No.` (docs/NAMING.md row 205).
                   Rendered only for a return to vendor, and only when there is
                   at least one candidate: with none the field does not exist, so
                   it can never stand in the way of a disposition. Optional by
                   decision — a storekeeper who genuinely does not know which
                   challan carried the pieces must still be able to dispose. */}
-              {isRtv && sourceDcOptions.length > 0 ? (
-                <div className="form-grp form-full">
-                  <label className="form-label" htmlFor="dispSourceDc">
-                    Sent on DC No.
-                  </label>
-                  <SearchableSelect
-                    id="dispSourceDc"
-                    value={sourceDcId}
-                    onChange={(id) => {
-                      clearedByUser.current = id === null;
-                      setSourceDcId(id);
-                    }}
-                    options={sourceDcOptions}
-                    valueLabel={
-                      selectedDc
-                        ? selectedDc.code
-                          ? `${selectedDc.code} — ${selectedDc.name}`
-                          : selectedDc.name
-                        : undefined
-                    }
-                    onSearch={() => {}}
-                    loading={sourceDcQuery.isFetching}
-                    placeholder="Click to browse the outward challans…"
-                    emptyText="No outward challan matches"
-                  />
-                  <div className="form-help">
-                    {sourceDcOptions.length === 1
-                      ? 'The one outward challan behind this deviation — change it if the pieces went out on another.'
-                      : 'Nothing in the records says which of these challans carried the rejected pieces, so only you can. Leave it blank if you are not sure.'}
-                  </div>
-                </div>
-              ) : null}
-
-              {action === 'scrap' && canSeePrice ? (
-                <div className="form-grp form-full">
-                  <label className="form-label" htmlFor="dispScrapCost">
-                    Scrap Cost (₹)
-                  </label>
-                  <input
-                    id="dispScrapCost"
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    className="innovic-input"
-                    value={scrapCost === '' ? '' : scrapCost}
-                    onChange={(e) =>
-                      setScrapCost(e.target.value === '' ? '' : Number(e.target.value))
-                    }
-                  />
-                </div>
-              ) : null}
-
+            {isRtv && sourceDcOptions.length > 0 ? (
               <div className="form-grp form-full">
-                <label className="form-label" htmlFor="dispRemarks">
-                  {needsCustomerNote ? (
-                    <>
-                      Customer approval (who approved, how)<span className="req">★</span>
-                    </>
-                  ) : (
-                    'Remarks'
-                  )}
+                <label className="form-label" htmlFor="dispSourceDc">
+                  Sent on DC No.
                 </label>
-                <textarea
-                  id="dispRemarks"
-                  className="innovic-textarea"
-                  rows={2}
-                  value={remarks}
-                  placeholder={
-                    needsCustomerNote ? 'Customer approval (who approved, how)' : undefined
-                  }
-                  onChange={(e) => {
-                    setRemarks(e.target.value);
-                    setRemarksErr(null);
+                <SearchableSelect
+                  id="dispSourceDc"
+                  value={sourceDcId}
+                  onChange={(id) => {
+                    clearedByUser.current = id === null;
+                    setSourceDcId(id);
                   }}
-                />
-                {needsCustomerNote && remarksErr ? (
-                  <div className="form-error">{remarksErr}</div>
-                ) : null}
-              </div>
-            </div>
-
-            {/* What each choice will DO — the user reads this before Save. */}
-            {isRecovery && !isLegacyRework ? (
-              <Note tone="blue">
-                Creates a {action === 'rework' ? 'Rework' : 'Repair'} JC for {noteQty} pcs. Add its
-                operations there.
-              </Note>
-            ) : null}
-
-            {action === 'return_to_vendor' ? (
-              <Note tone="blue">
-                Next: raise the return challan from this deviation, to send the pieces back. (The
-                field above records the challan they originally went OUT on.)
-              </Note>
-            ) : null}
-
-            {action === 'return_to_customer' ? (
-              <Note tone="blue">
-                Send the pieces back with a Customer Material Return (IN-CMR). The NC closes when
-                they are returned.
-              </Note>
-            ) : null}
-
-            {action === 'make_fresh' ? (
-              <Note tone="blue">Creates a new JC for {noteQty} pcs on the same SO.</Note>
-            ) : null}
-
-            {error ? <Note tone="red">{error}</Note> : null}
-
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'flex-end',
-                gap: 6,
-                marginTop: 'var(--sp-4)',
-              }}
-            >
-              <button type="button" className="btn btn-ghost" onClick={onCancel} disabled={pending}>
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="btn btn-primary"
-                disabled={pending || !action || !qtyValid}
-                title={
-                  !action
-                    ? 'Select the Disposition first'
-                    : !qtyValid
-                      ? needsWhole
-                        ? `Enter a whole number from 1 to ${openQty}`
-                        : `Enter a qty more than 0 and up to ${openQty}`
+                  options={sourceDcOptions}
+                  valueLabel={
+                    selectedDc
+                      ? selectedDc.code
+                        ? `${selectedDc.code} — ${selectedDc.name}`
+                        : selectedDc.name
                       : undefined
+                  }
+                  onSearch={() => {}}
+                  loading={sourceDcQuery.isFetching}
+                  placeholder="Click to browse the outward challans…"
+                  emptyText="No outward challan matches"
+                />
+                <div className="form-help">
+                  {sourceDcOptions.length === 1
+                    ? 'The one outward challan behind this deviation — change it if the pieces went out on another.'
+                    : 'Nothing in the records says which of these challans carried the rejected pieces, so only you can. Leave it blank if you are not sure.'}
+                </div>
+              </div>
+            ) : null}
+
+            {action === 'scrap' && canSeePrice ? (
+              <div className="form-grp form-full">
+                <label className="form-label" htmlFor="dispScrapCost">
+                  Scrap Cost (₹)
+                </label>
+                <input
+                  id="dispScrapCost"
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  className="innovic-input"
+                  value={scrapCost === '' ? '' : scrapCost}
+                  onChange={(e) =>
+                    setScrapCost(e.target.value === '' ? '' : Number(e.target.value))
+                  }
+                />
+              </div>
+            ) : null}
+
+            <div className="form-grp form-full">
+              <label className="form-label" htmlFor="dispRemarks">
+                {needsCustomerNote ? (
+                  <>
+                    Customer approval (who approved, how)<span className="req">★</span>
+                  </>
+                ) : (
+                  'Remarks'
+                )}
+              </label>
+              <textarea
+                id="dispRemarks"
+                className="innovic-textarea"
+                rows={2}
+                value={remarks}
+                placeholder={
+                  needsCustomerNote ? 'Customer approval (who approved, how)' : undefined
                 }
-              >
-                {pending ? <Loader2 size={13} className="animate-spin" /> : null}
-                Save Disposition
-              </button>
+                onChange={(e) => {
+                  setRemarks(e.target.value);
+                  setRemarksErr(null);
+                }}
+              />
+              {needsCustomerNote && remarksErr ? (
+                <div className="form-error">{remarksErr}</div>
+              ) : null}
             </div>
-          </form>
-        )}
-      </div>
-    </div>
+          </div>
+
+          {/* What each choice will DO — the user reads this before Save. */}
+          {isRecovery && !isLegacyRework ? (
+            <Note tone="blue">
+              Creates a {action === 'rework' ? 'Rework' : 'Repair'} JC for {noteQty} pcs. Add its
+              operations there.
+            </Note>
+          ) : null}
+
+          {action === 'return_to_vendor' ? (
+            <Note tone="blue">
+              Next: raise the return challan from this deviation, to send the pieces back. (The
+              field above records the challan they originally went OUT on.)
+            </Note>
+          ) : null}
+
+          {action === 'return_to_customer' ? (
+            <Note tone="blue">
+              Send the pieces back with a Customer Material Return (IN-CMR). The NC closes when they
+              are returned.
+            </Note>
+          ) : null}
+
+          {action === 'make_fresh' ? (
+            <Note tone="blue">Creates a new JC for {noteQty} pcs on the same SO.</Note>
+          ) : null}
+        </form>
+      )}
+    </Modal>
   );
 }
 
@@ -543,6 +547,8 @@ function DisposeOutcome(props: {
           <Link
             to="/job-cards/$id"
             params={{ id: childJobCardId }}
+            // A greyed code is for reading: clicking it must not close the outcome.
+            {...(canOpenJc ? { onClick: onClose } : {})}
             disabled={!canOpenJc}
             className="mono fw-700"
             style={{ color: 'var(--cyan)', textDecoration: 'none' }}
@@ -557,6 +563,9 @@ function DisposeOutcome(props: {
           <Link
             to="/nc-register/$id"
             params={{ id: remainderNc.id }}
+            // Same route, new id: the detail page stays mounted, so the pop-up
+            // must close itself or it would sit over the remainder NC.
+            onClick={onClose}
             className="mono fw-700"
             style={{ color: 'var(--red2)', textDecoration: 'none' }}
           >
@@ -564,11 +573,6 @@ function DisposeOutcome(props: {
           </Link>
         </div>
       ) : null}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 'var(--sp-4)' }}>
-        <button type="button" className="btn btn-ghost" onClick={onClose}>
-          Done
-        </button>
-      </div>
     </div>
   );
 }
