@@ -30,3 +30,4 @@ export {
   type ToastStackProps,
   useToast,
 } from './Toast';
+export { FloatingPanel, type FloatingPanelProps } from './FloatingPanel';

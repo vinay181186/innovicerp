@@ -97,6 +97,7 @@ export const REFRESH_POLICY: Readonly<Record<string, RefreshRule>> = {
   // ── On open / focus ──
   'access-control': onOpen(MASTER),
   'activity-log': onOpen(REPORT),
+  'ai-chat': onOpen('per-person chat usage counter; nothing others change'),
   'approval-config': onOpen(MASTER),
   backup: onOpen('admin page, status read on open'),
   'bom-masters': onOpen(MASTER),

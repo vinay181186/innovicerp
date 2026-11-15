@@ -1,6 +1,7 @@
 # Design-sync notes (Innovic ERP)
 
 - Build: `node .design-sync/prebuild.mjs`, then the converter with `--node-modules apps/web/node_modules --entry apps/web/.ds-dist/index.js`. Run from the worktree root. Never `cd` into ds-bundle: Windows then refuses to remove it.
+- `.ds-sync/` also needs `npm i -D playwright` (and `npx playwright install chromium`), or validate stops with `[RENDER_SKIPPED]`.
 - Prebuild supplies placeholders for VITE_* (`lib/env.ts` throws at load); designs never call the API, so real addresses never ship.
 - Prebuild compiles the app's whole `src/index.css` with Tailwind: SearchableSelect's open list uses Tailwind classes and every card relies on its reset.
 - esbuild on Windows fails reading a directory through tsconfig paths ("Incorrect function"), hence `.design-sync/tsconfig.json`.

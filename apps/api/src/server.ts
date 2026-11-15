@@ -33,6 +33,7 @@ import { soCostingRoutes } from './modules/so-costing/routes';
 import { stockValuationRoutes } from './modules/stock-valuation/routes';
 import { trashRoutes } from './modules/trash/routes';
 import { globalSearchRoutes } from './modules/global-search/routes';
+import { aiChatRoutes } from './modules/ai-chat/routes';
 import { assemblyRoutes } from './modules/assembly/routes';
 import { alertsRoutes } from './modules/alerts/routes';
 import { startAlertsWorker, stopAlertsWorker } from './modules/alerts/worker-boot';
@@ -287,6 +288,8 @@ await app.register(ospProcessesRoutes);
 await app.register(dataIntegrityRoutes);
 await app.register(trashRoutes);
 await app.register(globalSearchRoutes);
+// ADR-293 — super-admin read-only AI chat.
+await app.register(aiChatRoutes);
 await app.register(backupRoutes);
 await app.register(scDashboardRoutes);
 await app.register(soCycleTimeRoutes);
