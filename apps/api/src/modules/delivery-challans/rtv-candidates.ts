@@ -19,6 +19,7 @@
 //     traces to rather than deriving it a second time.
 
 import { sql } from 'drizzle-orm';
+import { drawingRevOf } from '../../lib/drawing-rev';
 import {
   type ListRtvCandidatesQuery,
   type ListRtvCandidatesResponse,
@@ -118,7 +119,7 @@ export async function queryRtvCandidates(
       i.code AS "itemCode",
       nc.item_code_text AS "itemCodeText",
       -- Same revision / POL hops as the NC list (listNcRegister).
-      COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
+      COALESCE(${drawingRevOf(sql`jc.item_revision_id`)}, sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
       i.name AS "itemName",
       nc.item_name_text AS "itemNameText",
       nc.rejected_qty::text AS "rejectedQty",

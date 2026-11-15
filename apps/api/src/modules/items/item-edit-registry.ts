@@ -14,6 +14,7 @@ import { type AccessFormKey, roundQty, type UpdateItemInput } from '@innovic/sha
 import { items } from '../../db/schema';
 import type { DiffField } from '../../lib/audit-trail';
 import type { DocEditRegistryEntry, DocEditTarget } from '../document-edits/registry';
+import { replacementCodes } from './replacement';
 import { ITEM_FIELDS, updateItemTx } from './service';
 
 const ITEM_FORM_KEY: AccessFormKey = 'item_create';
@@ -34,8 +35,15 @@ export const itemEditRegistryEntry: DocEditRegistryEntry = {
       .for('update');
     const item = rows[0];
     if (!item) return null;
+    // ADR-290 — the Replacement Item is shown by its code in Before → After.
+    const codes = await replacementCodes(tx, companyId, [item.replacementItemId]);
     return {
-      doc: { ...item },
+      doc: {
+        ...item,
+        replacementItemCode: item.replacementItemId
+          ? (codes.get(item.replacementItemId) ?? item.replacementItemId)
+          : null,
+      },
       updatedAt: item.updatedAt,
       docCode: item.code,
       // A master is editable as long as it is not in Trash — there is no
@@ -61,10 +69,12 @@ export const itemEditRegistryEntry: DocEditRegistryEntry = {
       imagePath: d['imagePath'],
       minStockQty: d['minStockQty'],
       reorderQty: d['reorderQty'],
+      customerPartNo: d['customerPartNo'],
+      replacementItemId: d['replacementItemCode'],
     };
   },
 
-  afterSnapshot(_tx, _companyId, input) {
+  async afterSnapshot(tx, companyId, input) {
     const i = input as UpdateItemInput;
     const out: Record<string, unknown> = {};
     if (i.name !== undefined) out['name'] = i.name;
@@ -82,7 +92,14 @@ export const itemEditRegistryEntry: DocEditRegistryEntry = {
     // Absent = unchanged (the Item edit page never sends these two).
     if (i.minStockQty !== undefined) out['minStockQty'] = roundQty(i.minStockQty);
     if (i.reorderQty !== undefined) out['reorderQty'] = roundQty(i.reorderQty);
-    return Promise.resolve(out);
+    if (i.customerPartNo !== undefined) out['customerPartNo'] = i.customerPartNo?.trim() || null;
+    if (i.replacementItemId !== undefined) {
+      const id = i.replacementItemId;
+      out['replacementItemId'] = id
+        ? ((await replacementCodes(tx, companyId, [id])).get(id) ?? id)
+        : null;
+    }
+    return out;
   },
 
   buildFilteredInput(proposedPayload, approvedFields) {

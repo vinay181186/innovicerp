@@ -16,7 +16,15 @@ const dash = (departments: EffectiveAccess['departments'], isAdmin = false) => (
   role: isAdmin ? 'admin' : 'manager',
   isAdmin,
   isManager: !isAdmin,
-  eff: { fullAccess: false, auditor: false, drawingDownload: false, departments, forms: {} },
+  eff: {
+    fullAccess: false,
+    auditor: false,
+    drawingDownload: false,
+    drawingPrint: false,
+    drawingRelease: false,
+    departments,
+    forms: {},
+  },
 });
 
 describe('Cost Summary tile', () => {

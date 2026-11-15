@@ -21,6 +21,12 @@ import { routeCardNewRoute } from './modules/route-cards/routes/new';
 import { routeCardEditRoute } from './modules/route-cards/routes/edit';
 import { itemRevisionPreviewRoute } from './modules/item-revisions/routes/preview';
 import { drawingRevFixListRoute } from './modules/item-revisions/routes/fix-list';
+import { ecrListRoute } from './modules/engineering-changes/routes/list';
+import { ecrNewRoute } from './modules/engineering-changes/routes/new';
+import { ecrDetailRoute } from './modules/engineering-changes/routes/detail';
+import { ecrEditRoute } from './modules/engineering-changes/routes/edit';
+import { drawingRegisterRoute } from './modules/item-revisions/routes/register';
+import { revSubstitutionsRoute } from './modules/rev-substitutions/routes/list';
 import { qcProcessesListRoute } from './modules/qc-processes/routes/list';
 import { qcProcessDetailRoute } from './modules/qc-processes/routes/detail';
 import { qcProcessNewRoute } from './modules/qc-processes/routes/new';
@@ -342,6 +348,13 @@ const routeTree = rootRoute.addChildren([
     itemRevisionPreviewRoute,
     // Drawing Rev Fix List (Phase D hand-fix lists).
     drawingRevFixListRoute,
+    // ADR-291 — Engineering Change (ECR).
+    ecrListRoute,
+    ecrNewRoute,
+    ecrDetailRoute,
+    ecrEditRoute,
+    drawingRegisterRoute,
+    revSubstitutionsRoute,
     qcProcessesListRoute,
     qcProcessNewRoute,
     qcProcessDetailRoute,

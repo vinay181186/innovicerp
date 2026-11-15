@@ -8,6 +8,8 @@
 // company). Replace drawing: Route Card Master Edit.
 
 import {
+  compareRevision,
+  type DrawingCorrection,
   itemRevLabel,
   type ItemRevision,
   type ItemRevisionChange,
@@ -21,13 +23,16 @@ import {
   type LookupItemRevisionQuery,
   type LookupItemRevisionResponse,
   type ReplaceItemRevisionDrawingInput,
+  type RevReleaseInfo,
+  type RevReleaseStatus,
 } from '@innovic/shared';
 import { type SQL, sql } from 'drizzle-orm';
-import { type AuthContext, withUserContext } from '../../db/with-user-context';
+import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
 import { itemNeedsRev, replaceItemRevisionDrawing } from '../../lib/item-revision';
 import { likeEscape } from '../../lib/list-query';
+import { listRevCorrections } from './corrections';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -45,10 +50,15 @@ const REV_SELECT = sql`
          ir.drawing_file_path AS "drawingFilePath", ir.drawing_no AS "drawingNo",
          ir.source_type AS "sourceType", ir.source_ref AS "sourceRef",
          rc.id AS "routeCardId", rc.code AS "routeCardCode",
+         ir.release_status AS "releaseStatus", ir.change_note AS "changeNote",
+         ir.released_at AS "releasedAt", ir.released_by AS "releasedBy",
+         CASE WHEN ru.id IS NULL THEN NULL ELSE ${nameSql('ru')} END AS "releasedByName",
+         ir.file_hash AS "fileHash",
          ir.created_at AS "createdAt", ir.created_by AS "createdBy",
          ir.updated_at AS "updatedAt", ir.updated_by AS "updatedBy"
     FROM public.item_revisions ir
     JOIN public.items i ON i.id = ir.item_id
+    LEFT JOIN public.users ru ON ru.id = ir.released_by
     LEFT JOIN public.route_cards rc
       ON rc.item_revision_id = ir.id AND rc.company_id = ir.company_id AND rc.deleted_at IS NULL`;
 
@@ -68,6 +78,12 @@ function toItemRevision(r: Record<string, unknown>): ItemRevision {
     sourceRef: (r['sourceRef'] as string | null) ?? null,
     routeCardId: (r['routeCardId'] as string | null) ?? null,
     routeCardCode: (r['routeCardCode'] as string | null) ?? null,
+    releaseStatus: ((r['releaseStatus'] as string | null) ?? 'unverified') as RevReleaseStatus,
+    changeNote: (r['changeNote'] as string | null) ?? null,
+    releasedAt: r['releasedAt'] == null ? null : ts(r['releasedAt']),
+    releasedBy: (r['releasedBy'] as string | null) ?? null,
+    releasedByName: (r['releasedByName'] as string | null) ?? null,
+    fileHash: (r['fileHash'] as string | null) ?? null,
     createdAt: ts(r['createdAt']),
     createdBy: (r['createdBy'] as string | null) ?? null,
     updatedAt: ts(r['updatedAt']),
@@ -119,8 +135,53 @@ export async function lookupItemRevision(
       WHERE ir.company_id = ${companyId}::uuid AND ir.deleted_at IS NULL
         AND ir.item_id = ${q.itemId}::uuid AND ir.rev = ${q.rev}
       LIMIT 1`)) as unknown as Array<Record<string, unknown>>;
-    return { revision: rows[0] ? toItemRevision(rows[0]) : null, revRequired };
+    const revision = rows[0] ? toItemRevision(rows[0]) : null;
+    return {
+      revision,
+      revRequired,
+      release: await revReleaseInfo(tx, companyId, q.itemId, revision),
+    };
   });
+}
+
+/** ADR-290 — this Rev's status and the item's highest released Rev, when that
+ *  is newer than this one ("Latest released drawing is ABC/2"). */
+async function revReleaseInfo(
+  tx: DbTransaction,
+  companyId: string,
+  itemId: string,
+  revision: ItemRevision | null,
+): Promise<RevReleaseInfo> {
+  const released = (await tx.execute(sql`
+    SELECT ir.id, ir.rev, i.code FROM public.item_revisions ir
+      JOIN public.items i ON i.id = ir.item_id
+     WHERE ir.company_id = ${companyId}::uuid AND ir.item_id = ${itemId}::uuid
+       AND ir.deleted_at IS NULL AND ir.release_status = 'released'`)) as unknown as Array<{
+    id: string;
+    rev: string;
+    code: string;
+  }>;
+  // Highest by compareRevision; a Rev that cannot be compared keeps the first.
+  let top: { id: string; rev: string; code: string } | null = null;
+  for (const r of released) {
+    if (!top || (compareRevision(r.rev, top.rev) ?? 0) > 0) top = r;
+  }
+  // Named only when it is really newer: it compares HIGHER than this Rev, or
+  // this Rev is Superseded / Obsolete. A Rev newer than the latest released
+  // (ABC/3 typed while ABC/2 is released) gets no "latest released" note.
+  const newer =
+    top &&
+    top.id !== revision?.id &&
+    (!revision ||
+      revision.releaseStatus === 'superseded' ||
+      revision.releaseStatus === 'obsolete' ||
+      (compareRevision(top.rev, revision.drawingRev) ?? 0) > 0);
+  const other = newer ? top : null;
+  return {
+    releaseStatus: revision?.releaseStatus ?? null,
+    latestReleasedRev: other?.rev ?? null,
+    latestReleasedLabel: other ? itemRevLabel(other.code, other.rev) : null,
+  };
 }
 
 export async function getItemRevision(id: string, user: AuthContext): Promise<ItemRevisionDetail> {
@@ -194,7 +255,9 @@ export async function getItemRevision(id: string, user: AuthContext): Promise<It
       lineNo: d['lineNo'] == null ? null : Number(d['lineNo']),
       status: (d['status'] as string | null) ?? null,
     }));
-    return { ...head, history, linkedDocs };
+    // ADR-290 — drawing corrections, newest first (pending + decided).
+    const corrections = await listRevCorrections(tx, companyId, id);
+    return { ...head, history, linkedDocs, corrections };
   });
 }
 
@@ -202,10 +265,10 @@ export async function replaceDrawing(
   id: string,
   input: ReplaceItemRevisionDrawingInput,
   user: AuthContext,
-): Promise<ItemRevisionDetail> {
+): Promise<ItemRevisionDetail | { correction: DrawingCorrection }> {
   await requireFormAccess(user, 'routecard_create', 'edit');
   const companyId = requireCompany(user);
-  await withUserContext(user, (tx) =>
+  const res = await withUserContext(user, (tx) =>
     replaceItemRevisionDrawing(tx, user, companyId, id, {
       drawingFilePath: input.drawingFilePath,
       drawingNo: input.drawingNo,
@@ -213,6 +276,13 @@ export async function replaceDrawing(
       expectedUpdatedAt: input.expectedUpdatedAt,
     }),
   );
+  // ADR-290 — a Released / Superseded Rev: the file did not change; a
+  // correction waits for the release switch. The screen says so.
+  if (res.correctionId) {
+    const list = await withUserContext(user, (tx) => listRevCorrections(tx, companyId, id));
+    const correction = list.find((c) => c.id === res.correctionId);
+    if (correction) return { correction };
+  }
   return getItemRevision(id, user);
 }
 

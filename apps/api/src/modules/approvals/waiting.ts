@@ -9,10 +9,16 @@
 //                       prices hidden by maskPriceChanges (document-edits)
 //   cancel              typesWith(user, 'decide') + selectRows (cancel-requests)
 //   dayLog              readDayLogApprovals (day-logs — L5 head rule, never self)
+//   ecr                 readEcrApprovals: submitted ECRs, one row per sign-off role
+//                       the caller may give (decidableEcrRoles — the decide
+//                       endpoint's own check), not yet given, never the raiser
 // Access checks open their own transactions, so each source resolves its access
 // first and only then opens its read; the sources run side by side.
 
 import {
+  ECR_APPROVER_ROLE_LABELS,
+  type EcrApproverRole,
+  itemRevLabel,
   type DocumentEditEntity,
   type DocumentEditRow,
   type CancelDocType,
@@ -33,12 +39,14 @@ import { entityHref } from '../dashboard/personal/util';
 import { readDayLogApprovals } from '../day-logs/approvals';
 import { maskPriceChanges, selectDocumentEditRows } from '../document-edits/helpers';
 import { markStale } from '../document-edits/list';
+import { decidableEcrRoles } from '../engineering-changes/workflow';
 import { approvableEditEntities, decidableCancelTypes } from './scope';
 import { readApprovalInbox } from './service';
 import { fmtDate } from '../../lib/format-date';
 import {
   cancelRequestText,
   dayLogRequestText,
+  ecrTypeKey,
   editTypeKey,
   fieldsChangedText,
   timeChangeRequestText,
@@ -114,6 +122,50 @@ async function readDayLog(user: AuthContext): ReturnType<typeof readDayLogApprov
   }
 }
 
+interface EcrWaiting {
+  id: string;
+  code: string;
+  role: EcrApproverRole;
+  itemCode: string | null;
+  itemName: string | null;
+  fromRev: string;
+  toRev: string | null;
+  raisedByName: string | null;
+  raisedAt: unknown;
+  updatedAt: unknown;
+}
+
+/** ADR-291 — submitted ECRs the caller may still sign, one row per role. */
+async function readEcrApprovals(
+  user: AuthContext,
+  companyId: string,
+): Promise<{ roles: EcrApproverRole[]; rows: EcrWaiting[] }> {
+  const roles = await decidableEcrRoles(user);
+  if (roles.length === 0) return { roles, rows: [] };
+  const rows = await withUserContext(
+    user,
+    async (tx) =>
+      (await tx.execute(sql`
+      SELECT e.id, e.code, r.role, i.code AS "itemCode", i.name AS "itemName",
+             fr.rev AS "fromRev", tr.rev AS "toRev",
+             COALESCE(NULLIF(btrim(u.full_name), ''), split_part(u.email, '@', 1)) AS "raisedByName",
+             COALESCE(e.submitted_at, e.created_at) AS "raisedAt", e.updated_at AS "updatedAt"
+        FROM public.engineering_changes e
+        JOIN unnest(${sql.param(roles)}::text[]) AS r(role) ON TRUE
+        JOIN public.items i ON i.id = e.item_id
+        JOIN public.item_revisions fr ON fr.id = e.from_item_revision_id
+        LEFT JOIN public.item_revisions tr ON tr.id = e.to_item_revision_id
+        LEFT JOIN public.users u ON u.id = COALESCE(e.submitted_by, e.created_by)
+       WHERE e.company_id = ${companyId}::uuid AND e.deleted_at IS NULL AND e.status = 'submitted'
+         AND e.created_by <> ${user.id}::uuid
+         AND e.submitted_by IS DISTINCT FROM ${user.id}::uuid
+         AND NOT EXISTS (SELECT 1 FROM public.engineering_change_approvals a
+                          WHERE a.ecr_id = e.id AND a.role = r.role AND a.deleted_at IS NULL)
+       ORDER BY e.submitted_at, e.code, r.role`)) as unknown as EcrWaiting[],
+  );
+  return { roles, rows };
+}
+
 const base = {
   itemCode: null,
   itemName: null,
@@ -127,11 +179,12 @@ export async function getWaitingApprovals(user: AuthContext): Promise<WaitingApp
   const companyId = requireCompany(user);
   // Fill the per-request access memo once, before the sources ask in parallel.
   await primeAccess(user);
-  const [inbox, edits, cancels, dayLog] = await Promise.all([
+  const [inbox, edits, cancels, dayLog, ecrs] = await Promise.all([
     readApprovalInbox(user),
     readEdits(user, companyId),
     readCancels(user, companyId),
     readDayLog(user),
+    readEcrApprovals(user, companyId),
   ]);
 
   const rows: WaitingApprovalRow[] = [];
@@ -235,6 +288,29 @@ export async function getWaitingApprovals(user: AuthContext): Promise<WaitingApp
     });
   }
 
+  const ecrCount = new Map<string, number>();
+  for (const e of ecrs.rows) {
+    const typeKey = ecrTypeKey(e.role);
+    ecrCount.set(typeKey, (ecrCount.get(typeKey) ?? 0) + 1);
+    rows.push({
+      ...base,
+      kind: 'ecr',
+      id: e.id,
+      typeKey,
+      typeLabel: typeLabelOf(typeKey),
+      docCode: e.code,
+      docHref: entityHref('EngineeringChange', e.id, e.code),
+      request:
+        `${ECR_APPROVER_ROLE_LABELS[e.role]} sign-off · ${itemRevLabel(e.itemCode, e.fromRev)}` +
+        (e.toRev ? ` → ${itemRevLabel(e.itemCode, e.toRev)}` : ''),
+      itemCode: e.itemCode,
+      itemName: e.itemName,
+      raisedByName: e.raisedByName,
+      raisedAt: toIso(e.raisedAt),
+      version: toIso(e.updatedAt),
+    });
+  }
+
   const byType = new Map<string, number>([
     ['po', inbox.po.length],
     ['rc', inbox.rc.length],
@@ -243,6 +319,7 @@ export async function getWaitingApprovals(user: AuthContext): Promise<WaitingApp
     ...editCount,
     ['cancel', cancels.rows.length],
     ['dayLog', dayLog.response.rows.length],
+    ...ecrCount,
   ]);
   const counts = orderedCounts(byType);
   const total = counts.reduce((s, c) => s + c.n, 0);
@@ -254,7 +331,8 @@ export async function getWaitingApprovals(user: AuthContext): Promise<WaitingApp
     cancels.types.length > 0 ||
     // Day Log heads only while an old edit waits (ADR-256 makes no new ones),
     // so an L5 / Super Admin with no Approve tick gets no empty Approvals item.
-    dayLog.response.rows.length > 0;
+    dayLog.response.rows.length > 0 ||
+    ecrs.roles.length > 0;
 
   return {
     rows: sortOldestFirst(rows).slice(0, WAITING_APPROVALS_LIMIT),

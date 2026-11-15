@@ -15,7 +15,8 @@ import { jwDcOutward, jwDcOutwardLines } from '../../db/schema';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { softDeleteStamp } from '../../lib/audit-trail';
 import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
-import { postStockMove, roundQty } from '../../lib/stock-ledger';
+import { roundQty } from '../../lib/stock-ledger';
+import { giveBackToParts } from '../../lib/stock-out-parts';
 import { emitActivityLog } from '../activity-log/service';
 import { blockerRefusal } from '../cancel-requests/messages';
 
@@ -57,6 +58,8 @@ interface CancelLine {
   itemId: string | null;
   itemCodeText: string;
   sentQty: number;
+  /** The first ledger row the send wrote (ADR-289 fallback for pre-0247 lines). */
+  storeTransactionId: string | null;
 }
 
 /** The live lines a cancel reads (effects and the worker alike). */
@@ -71,7 +74,8 @@ async function readCancelLines(
            pol.line_no AS "poLineNo",
            COALESCE(po.code, jdo.jwpo_code_text) AS "poCode",
            jdol.item_id AS "itemId", jdol.item_code_text AS "itemCodeText",
-           jdol.sent_qty::float8 AS "sentQty"
+           jdol.sent_qty::float8 AS "sentQty",
+           jdol.store_transaction_id AS "storeTransactionId"
       FROM public.jw_dc_outward_lines jdol
       JOIN public.jw_dc_outward jdo ON jdo.id = jdol.jw_dc_outward_id
       LEFT JOIN public.purchase_order_lines pol ON pol.id = jdol.purchase_order_line_id
@@ -89,6 +93,7 @@ async function readCancelLines(
     itemId: (r['itemId'] as string | null) ?? null,
     itemCodeText: String(r['itemCodeText'] ?? ''),
     sentQty: Number(r['sentQty'] ?? 0),
+    storeTransactionId: (r['storeTransactionId'] as string | null) ?? null,
   }));
 }
 
@@ -217,20 +222,26 @@ export async function cancelJwDcOutwardTx(
     .filter((l) => l.itemId && l.sentQty > 0)
     .sort((a, b) => a.itemId!.localeCompare(b.itemId!) || a.lineNo - b.lineNo);
   for (const l of stocked) {
-    const mv = await postStockMove(tx, {
-      companyId,
-      itemId: l.itemId!,
-      txnType: 'in',
-      qty: l.sentQty,
-      sourceType: 'jw_out',
-      sourceRef: `${head.code} · ${l.itemCodeText} (cancel)`,
-      remarks: `JW DC Outward cancelled · ${trimmed}`,
-      txnDate: today,
-      userId: user.id,
-      itemCodeText: l.itemCodeText,
-      guard: 'none',
+    // ADR-289 — back into the Rev bucket(s) the send took (one 'in' per bucket).
+    const back = await giveBackToParts(tx, {
+      sources: [{ jwDcOutwardLineId: l.id }],
+      fallbackTxnId: l.storeTransactionId,
+      move: {
+        companyId,
+        itemId: l.itemId!,
+        qty: l.sentQty,
+        sourceType: 'jw_out',
+        sourceRef: `${head.code} · ${l.itemCodeText} (cancel)`,
+        remarks: `JW DC Outward cancelled · ${trimmed}`,
+        txnDate: today,
+        userId: user.id,
+        itemCodeText: l.itemCodeText,
+        guard: 'none',
+      },
     });
-    done.push(`${l.itemCodeText} × ${l.sentQty} (stock ${mv.stockBefore} → ${mv.stockAfter})`);
+    done.push(
+      `${l.itemCodeText} × ${l.sentQty} (stock ${back[0]!.mv.stockBefore} → ${back[back.length - 1]!.mv.stockAfter})`,
+    );
   }
 
   // ONE stamp for header and lines: a cancelled challan's own lines are exactly

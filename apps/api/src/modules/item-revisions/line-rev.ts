@@ -5,17 +5,30 @@
 //   • resolveLineRevision — links the line to ABC/<rev> (lib/item-revision.ts
 //     resolveItemRevision, the one writer of the register) and says what the
 //     line's drawing copy should be.
-//   • D1 (owner 2026-10-31) — a Rev change on a line that already has work:
-//     OPEN Job Cards (and the line's plans / PROs) move to the new Rev; closed
-//     Job Cards keep the old Rev; all Job Cards closed → refused. Same
-//     transaction as the line save, Job Cards locked FOR UPDATE first.
+//   • ADR-291 Step 4 (replaces D1 "Rev change moves open Job Cards") — a Rev
+//     change on a line with an OPEN Job Card or OPEN Production Order is
+//     refused: the work moves only through an Engineering Change (ECR), which
+//     splits finished / started / not-started pieces. Plans with no PRO still
+//     move; all Job Cards closed → refused (add a new line). The ECR implement
+//     calls in with `ecrImplement` to record the line's change after it has
+//     moved the work itself. Job Cards locked FOR UPDATE first.
 
-import { ActivityAction, itemRevLabel, normalizeRevision } from '@innovic/shared';
+import {
+  ActivityAction,
+  REV_CHANGE_REASON_MIN,
+  itemRevLabel,
+  normalizeRevision,
+  REV_RELEASE_STATUS_LABELS,
+} from '@innovic/shared';
 import { inArray, sql } from 'drizzle-orm';
 import { itemRevisionChanges, itemRevisions, items } from '../../db/schema';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { ValidationError } from '../../lib/errors';
-import { findItemRevision, resolveItemRevision } from '../../lib/item-revision';
+import {
+  assertRevReleasedForWork,
+  findItemRevision,
+  resolveItemRevision,
+} from '../../lib/item-revision';
 import { emitActivityLog } from '../activity-log/service';
 
 export type LineKind = 'so' | 'jw';
@@ -43,6 +56,9 @@ export interface LineRevInput {
   sentDrawingNo: string | null | undefined;
   /** The stored line, or null for a new line. */
   stored: StoredLineRev | null;
+  /** ADR-289 — why the Rev changed; required once the line has a Plan / PRO /
+   *  Job Card (applyLineRevChange). */
+  revChangeReason?: string | null | undefined;
 }
 
 export interface LineRevResult {
@@ -192,6 +208,10 @@ export async function resolveLineRevision(
       itemId: input.itemId!,
       fromId: st.itemRevisionId,
       toId: r.id,
+      reason: input.revChangeReason ?? null,
+      // A first-time link of the same Rev text (old line, item_revision_id
+      // NULL) is not a Rev change: no reason asked.
+      revTextChanged: normalizeRevision(rev ?? '') !== normalizeRevision(st.revision ?? ''),
     });
   }
   return {
@@ -211,12 +231,25 @@ export interface LineRevChange {
   itemId: string;
   fromId: string | null;
   toId: string;
+  /** ADR-289 — the user's reason (stored in item_revision_changes.reason). */
+  reason?: string | null;
+  /** false = the Rev TEXT is the same (only the register link / file moved):
+   *  no reason is required. Default true. */
+  revTextChanged?: boolean;
+  /** ADR-291 — internal, set only by the ECR implement (never from a user
+   *  request). Skips the work-in-progress refusal.
+   *    'split'    — the ECR already moved the not-started pieces to a new PRO /
+   *                 Job Card; open Job Cards / PROs keep the old Rev.
+   *    'move_all' — documentation-only change: open Job Cards / PROs of the
+   *                 line move to the new Rev (the old D1 move). */
+  ecrImplement?: 'split' | 'move_all';
 }
 
-/** D1 — move OPEN work of one line to the new Rev; closed Job Cards keep the
- *  old one; all closed → refuse. "Closed JC" = closed_at set, or v_jc_status
- *  'complete' / 'closed', or its PRO closed / short_closed. Cancelled JCs are
- *  soft-deleted (deleted_at) and so ignored. */
+/** ADR-291 — a line's Rev change. Open Job Card / open PRO → refused (raise
+ *  an ECR); plans with no PRO move to the new Rev; all Job Cards closed →
+ *  refused. "Closed JC" = closed_at set, or v_jc_status 'complete' / 'closed',
+ *  or its PRO closed / short_closed. Cancelled JCs are soft-deleted
+ *  (deleted_at) and so ignored. */
 export async function applyLineRevChange(
   tx: DbTransaction,
   user: AuthContext,
@@ -246,10 +279,74 @@ export async function applyLineRevChange(
      ORDER BY jc.code`)) as unknown as Array<{ id: string; code: string; closed: boolean }>;
 
   const closed = jcs.filter((j) => j.closed);
-  const open = jcs.filter((j) => !j.closed);
-  if (jcs.length > 0 && open.length === 0) {
+  // ADR-291 — with ecrImplement the ECR has already split the open work; the
+  // Job Cards themselves are not moved here.
+  const open = c.ecrImplement === 'split' ? [] : jcs.filter((j) => !j.closed);
+  if (jcs.length > 0 && jcs.every((j) => j.closed)) {
     throw new ValidationError(
       `Ln ${c.lineNo}: All Job Cards are closed — Rev and drawing locked. For a new Rev add a new line`,
+    );
+  }
+
+  const revIds = [c.toId, ...(c.fromId ? [c.fromId] : [])];
+  const revRows = await tx
+    .select({ id: itemRevisions.id, rev: itemRevisions.rev, code: items.code })
+    .from(itemRevisions)
+    .innerJoin(items, sql`${items.id} = ${itemRevisions.itemId}`)
+    .where(inArray(itemRevisions.id, revIds));
+  const lbl = (id: string | null): string => {
+    const r = revRows.find((x) => x.id === id);
+    return r ? itemRevLabel(r.code, r.rev) : '—';
+  };
+
+  // ADR-291 Step 4 — work in progress moves only through an Engineering
+  // Change. Checked under the Job Card locks above; an open PRO counts even
+  // before its Job Card has a piece logged.
+  if (!c.ecrImplement) {
+    const openPros =
+      open.length > 0
+        ? []
+        : ((await tx.execute(sql`
+      SELECT po.id FROM public.production_orders po
+       WHERE po.company_id = ${companyId}::uuid AND po.deleted_at IS NULL
+         AND po.status NOT IN ('closed', 'short_closed')
+         AND po.plan_id IN (
+           SELECT p.id FROM public.plans p
+            WHERE p.company_id = ${companyId}::uuid AND p.deleted_at IS NULL
+              AND p.${planLineCol} = ${c.lineId}::uuid AND p.item_id = ${c.itemId}::uuid)
+       LIMIT 1`)) as unknown as unknown[]);
+    if (open.length > 0 || openPros.length > 0) {
+      throw new ValidationError(
+        `Ln ${c.lineNo}: ${lbl(c.fromId)} has work in progress — raise an Engineering Change (ECR) to move it to ${lbl(c.toId)}.`,
+      );
+    }
+  }
+  // ADR-289 — once the line has any Plan / PRO / Job Card, a Rev change needs
+  // a reason (stored on the change row and in every moved document's log).
+  const reason = (c.reason ?? '').trim();
+  let hasWork = jcs.length > 0;
+  if (!hasWork) {
+    const pl = (await tx.execute(sql`
+      SELECT 1 FROM public.plans
+       WHERE company_id = ${companyId}::uuid AND deleted_at IS NULL
+         AND ${planLineCol} = ${c.lineId}::uuid
+       LIMIT 1`)) as unknown as unknown[];
+    hasWork = pl.length > 0;
+  }
+  if (c.revTextChanged !== false && hasWork && reason.length < REV_CHANGE_REASON_MIN) {
+    throw new ValidationError(`Ln ${c.lineNo}: give a reason for changing the Drawing Rev`);
+  }
+  // ADR-290 Step 3 — open Plan / PRO / Job Card work moves to the new Rev, so
+  // the new Rev must allow work (released, superseded or old unverified).
+  if (hasWork) {
+    await assertRevReleasedForWork(
+      tx,
+      companyId,
+      c.toId,
+      // Names the Drawing Register, where the Rev is added (POST
+      // /item-revisions) and released — the way out of a refused save.
+      (label, status) =>
+        `${label} is ${REV_RELEASE_STATUS_LABELS[status]}. Add / release it in the Drawing Register first, then change the Rev on the line.`,
     );
   }
   const closedIds = closed.map((j) => j.id);
@@ -278,6 +375,7 @@ export async function applyLineRevChange(
       WITH rc AS (${newRevCard})
       UPDATE public.job_cards jc
          SET item_revision_id = ${c.toId}::uuid,
+             updated_by = ${user.id}::uuid,
              route_card_id = CASE WHEN jc.route_card_id IS NULL THEN NULL
                ELSE COALESCE((SELECT id FROM rc), jc.route_card_id) END,
              route_card_revision = CASE WHEN jc.route_card_id IS NULL THEN NULL
@@ -293,7 +391,7 @@ export async function applyLineRevChange(
     movedDocs.push(...open.map((j) => j.code));
   }
   const plans = (await tx.execute(sql`
-    UPDATE public.plans SET item_revision_id = ${c.toId}::uuid
+    UPDATE public.plans SET item_revision_id = ${c.toId}::uuid, updated_by = ${user.id}::uuid
      WHERE company_id = ${companyId}::uuid AND deleted_at IS NULL
        AND ${planLineCol} = ${c.lineId}::uuid AND item_id = ${c.itemId}::uuid
        AND (jc_id IS NULL OR NOT (jc_id = ANY(${closedArr})))
@@ -306,10 +404,14 @@ export async function applyLineRevChange(
   // Rev takes the APPROVED Route Card of the new Item + Rev when one exists
   // (route card id / code / revision snapshot together); otherwise it keeps
   // its old card (the screen then shows the card for the new Rev is missing).
-  const pros = (await tx.execute(sql`
+  const pros =
+    c.ecrImplement === 'split'
+      ? []
+      : ((await tx.execute(sql`
     WITH rc AS (${newRevCard})
     UPDATE public.production_orders po
        SET item_revision_id = ${c.toId}::uuid,
+           updated_by = ${user.id}::uuid,
            route_card_id = COALESCE((SELECT id FROM rc), po.route_card_id),
            route_card_code_text = COALESCE((SELECT code FROM rc), po.route_card_code_text),
            route_card_revision = COALESCE((SELECT current_revision FROM rc), po.route_card_revision)
@@ -321,7 +423,7 @@ export async function applyLineRevChange(
        AND po.status NOT IN ('closed', 'short_closed')
        AND (po.job_card_id IS NULL OR NOT (po.job_card_id = ANY(${closedArr})))
        AND po.item_revision_id IS DISTINCT FROM ${c.toId}::uuid
-    RETURNING po.code`)) as unknown as Array<{ code: string }>;
+    RETURNING po.id, po.code`)) as unknown as Array<{ id: string; code: string }>);
   movedDocs.push(...pros.map((p) => p.code));
   const keptDocs = closed.map((j) => j.code);
 
@@ -333,20 +435,11 @@ export async function applyLineRevChange(
     toItemRevisionId: c.toId,
     movedDocs,
     keptDocs,
+    reason: reason || null,
     createdBy: user.id,
     updatedBy: user.id,
   });
 
-  const revIds = [c.toId, ...(c.fromId ? [c.fromId] : [])];
-  const revRows = await tx
-    .select({ id: itemRevisions.id, rev: itemRevisions.rev, code: items.code })
-    .from(itemRevisions)
-    .innerJoin(items, sql`${items.id} = ${itemRevisions.itemId}`)
-    .where(inArray(itemRevisions.id, revIds));
-  const lbl = (id: string | null): string => {
-    const r = revRows.find((x) => x.id === id);
-    return r ? itemRevLabel(r.code, r.rev) : '—';
-  };
   await emitActivityLog(
     tx,
     {
@@ -362,9 +455,39 @@ export async function applyLineRevChange(
         `Drawing Rev ${lbl(c.fromId)} → ${lbl(c.toId)} on ${c.docCode} ln ${c.lineNo}` +
         (movedDocs.length > 0 ? ` — moved ${movedDocs.join(', ')}` : '') +
         (keptDocs.length > 0 ? ` — kept (closed) ${keptDocs.join(', ')}` : ''),
+      ...(reason ? { reason } : {}),
     },
     companyId,
     user,
   );
+  // ADR-289 — one row on EACH moved Job Card, PRO and Plan, so the change shows
+  // in that document's own History, not only on the SO / JWSO.
+  const revChange = {
+    field: 'drawingRev',
+    label: 'Drawing Rev',
+    before: lbl(c.fromId),
+    after: lbl(c.toId),
+  };
+  const moved: Array<{ entity: string; id: string; code: string }> = [
+    ...open.map((j) => ({ entity: 'JobCard', id: j.id, code: j.code })),
+    ...pros.map((p) => ({ entity: 'ProductionOrder', id: p.id, code: p.code })),
+    ...plans.map((p) => ({ entity: 'Plan', id: p.id, code: p.code })),
+  ];
+  for (const m of moved) {
+    await emitActivityLog(
+      tx,
+      {
+        action: ActivityAction.Edit,
+        entity: m.entity,
+        entityId: m.id,
+        refId: m.code,
+        changes: [revChange],
+        detail: `Drawing Rev ${lbl(c.fromId)} → ${lbl(c.toId)} — moved with ${c.docCode} ln ${c.lineNo}`,
+        ...(reason ? { reason } : {}),
+      },
+      companyId,
+      user,
+    );
+  }
   return { movedDocs, keptDocs };
 }

@@ -5,6 +5,7 @@
 
 import { OP_TYPES } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
+import { drawingRevOf } from '../../../lib/drawing-rev';
 import type { RegisteredReport } from '../registry';
 import { polSql } from '../../../lib/pol';
 import {
@@ -78,7 +79,7 @@ export const wipByOperationReport: RegisteredReport = {
       SELECT
         jc.code                                      AS jc_code,
         (it.code
-          || COALESCE('/' || NULLIF(btrim(COALESCE(sol.revision::text, jwl.revision::text)), ''), ''))
+          || COALESCE('/' || NULLIF(btrim(COALESCE(${drawingRevOf(sql`jc.item_revision_id`)}, sol.revision::text, jwl.revision::text)), ''), ''))
                                                      AS item_code,
         it.name                                      AS item_name,
         ${polSql('sol', 'jwl')} AS client_po_line_no, -- ADR-236

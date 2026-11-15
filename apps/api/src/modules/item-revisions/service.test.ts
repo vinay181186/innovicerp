@@ -4,6 +4,8 @@
 //   • a different file for an ABC/1 that has one → 400;
 //   • Replace drawing with a stale updatedAt → 409 (§20.4);
 //   • D1: Rev change on a line whose Job Cards are ALL closed → 400;
+//   • ADR-291: an open Job Card on the line → 400 "raise an Engineering
+//     Change"; the ECR's documentation-only path still moves it;
 //   • 0234: clearing the Rev on a line with a Job Card → 400;
 //   • 0234: open PROs move by plan linkage and take the new Rev's APPROVED
 //     Route Card (else keep their card).
@@ -236,6 +238,12 @@ describe('Item + Drawing Rev register', () => {
       ),
     ).rejects.toThrow(/All Job Cards are closed/);
 
+    // ADR-290 — the target Rev must be released before open work moves to it.
+    await db
+      .update(itemRevisions)
+      .set({ releaseStatus: 'released' })
+      .where(eq(itemRevisions.id, r3!.id));
+
     // One OPEN Job Card beside the closed one → it moves, the closed one stays.
     await db.insert(jobCards).values({
       companyId,
@@ -248,6 +256,22 @@ describe('Item + Drawing Rev register', () => {
       createdBy: admin.id,
       updatedBy: admin.id,
     } as never);
+    // ADR-291 — open work moves only through an Engineering Change.
+    await expect(
+      withUserContext(admin, (tx) =>
+        applyLineRevChange(tx, admin, companyId, {
+          kind: 'so',
+          orderId: so!.id,
+          docCode: `${P}SO1`,
+          lineId: line!.id,
+          lineNo: 1,
+          itemId,
+          fromId: r1!.id,
+          toId: r3!.id,
+          reason: 'Customer revised the drawing',
+        }),
+      ),
+    ).rejects.toThrow(/has work in progress — raise an Engineering Change \(ECR\)/);
     const res = await withUserContext(admin, (tx) =>
       applyLineRevChange(tx, admin, companyId, {
         kind: 'so',
@@ -258,9 +282,18 @@ describe('Item + Drawing Rev register', () => {
         itemId,
         fromId: r1!.id,
         toId: r3!.id,
+        // ADR-289 — the line has Job Cards, so the change needs a reason.
+        reason: 'Customer revised the drawing',
+        // ADR-291 — the documentation-only ECR path keeps the old move.
+        ecrImplement: 'move_all',
       }),
     );
     expect(res.movedDocs).toEqual([`${P}JC2`]);
+    const change = await db
+      .select({ reason: itemRevisionChanges.reason })
+      .from(itemRevisionChanges)
+      .where(eq(itemRevisionChanges.soLineId, line!.id));
+    expect(change.map((c) => c.reason)).toEqual(['Customer revised the drawing']);
     expect(res.keptDocs).toEqual([`${P}JC1`]);
     const jcs = await db
       .select({ code: jobCards.code, rev: jobCards.itemRevisionId })
@@ -306,6 +339,11 @@ describe('Item + Drawing Rev register', () => {
   it('0234: open PRO moves by plan linkage and takes the APPROVED Route Card of the new Rev', async () => {
     const r2 = await resolve('2');
     const r3 = await resolve('3');
+    // ADR-290 — the PRO moves between Revs; both must be released.
+    await db
+      .update(itemRevisions)
+      .set({ releaseStatus: 'released' })
+      .where(inArray(itemRevisions.id, [r2!.id, r3!.id]));
     const ops = [
       { operation: 'Turning', opType: 'process' as const, machineCodeText: 'CNC', cycleTimeMin: 5 },
     ];
@@ -381,6 +419,11 @@ describe('Item + Drawing Rev register', () => {
           itemId,
           fromId,
           toId,
+          // ADR-289 — the line has Job Cards / a Plan, so a reason is required.
+          reason: 'Drawing Rev moved for the test',
+          // ADR-291 — open PRO / Job Card: only the documentation-only ECR
+          // path moves them (a plain change is refused).
+          ecrImplement: 'move_all',
         }),
       );
     const pro = async () =>
@@ -413,7 +456,16 @@ describe('Item + Drawing Rev register', () => {
     const two = list.items.find((r) => r.drawingRev === '2')!;
     expect(two.routeCardCode).toBeTruthy();
     const look = await svc.lookupItemRevision({ itemId, rev: '9' }, admin);
-    expect(look).toEqual({ revision: null, revRequired: true });
+    // ADR-290 — Rev 9 does not exist; the item's highest released Rev is 3.
+    expect(look).toEqual({
+      revision: null,
+      revRequired: true,
+      release: {
+        releaseStatus: null,
+        latestReleasedRev: '3',
+        latestReleasedLabel: `${P}SHAFT/3`,
+      },
+    });
     const three = list.items.find((r) => r.drawingRev === '3')!;
     const detail = await svc.getItemRevision(three.id, admin);
     expect(detail.linkedDocs.map((d) => d.docType)).toContain('job_card');

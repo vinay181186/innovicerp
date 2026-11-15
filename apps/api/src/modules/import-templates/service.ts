@@ -164,6 +164,8 @@ export const IMPORT_TEMPLATES: Record<string, ImportTemplateSpec> = {
         width: 14,
       },
       { label: 'HSN Code', samples: ['73269099'], width: 14 },
+      // ADR-290 — the customer's own part number.
+      { label: 'Customer Part No.', samples: ['CP-4410'], width: 18 },
     ],
   },
   clients: {

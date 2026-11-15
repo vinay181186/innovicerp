@@ -13,6 +13,7 @@
 // later, restore the action behind admin-only RLS.
 
 import { and, count, eq, gte, ilike, isNull, lte, type SQL, sql } from 'drizzle-orm';
+import { drawingRevOf } from '../../lib/drawing-rev';
 import {
   items,
   jcOps,
@@ -137,9 +138,11 @@ export async function listOpLog(
           // the log, with a null revision and the bare code. Never
           // items.revision — that column describes the item master and would
           // print a plausible-looking lie in the drawing's place.
-          itemRevision: sql<
-            string | null
-          >`COALESCE(${salesOrderLines.revision}::text, ${jobWorkOrderLines.revision}::text)`,
+          // ADR-289 — the Job Card's own Rev first; the line text only for a
+          // card made before the register.
+          itemRevision: sql<string | null>`COALESCE(
+            ${drawingRevOf(jobCards.itemRevisionId)},
+            ${salesOrderLines.revision}::text, ${jobWorkOrderLines.revision}::text)`,
           // POL — the line number printed on the CUSTOMER'S own purchase order,
           // off the same already-joined SO line as the revision above, else
           // the JW line (ADR-236); a standalone card is null.

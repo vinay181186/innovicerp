@@ -10,6 +10,8 @@
 //            approveRouteCard / rejectRouteCard (RC Status change) — the
 //            change filter keeps a staged edit's APPROVE row on the same
 //            document out (that one is in the edit branch already).
+//   ecr      engineering_change_approvals — one row per sign-off (ADR-291),
+//            on the roles the caller may give (decidableEcrRoles)
 // Day Log keeps no decision record, so it is not listed.
 // Every branch filters company_id; the request tables filter deleted_at (the
 // activity log has none). Newest first, paged with LIMIT / OFFSET; `counts` is
@@ -109,6 +111,22 @@ function branches(companyId: string, s: ApproverScope): SQL[] {
         AND r.status IN ('approved', 'rejected')
         ${s.logScope}`);
   }
+  if (s.ecrRoles.length > 0) {
+    out.push(sql`
+      -- Every column aliased: this branch is the FIRST one for a caller who
+      -- may only sign ECRs, and the outer query reads h.type_key / h.decision.
+      SELECT 'ecr' AS kind, a.id::text AS id, 'ecr:' || a.role AS type_key, e.code AS doc_code,
+        e.id::text AS doc_id, 'EngineeringChange'::text AS entity, NULL::text AS doc_type,
+        CASE a.role WHEN 'design' THEN 'Design' WHEN 'qc' THEN 'Quality' ELSE 'Production' END
+          || ' sign-off' AS request,
+        a.decision::text AS decision, ${nameOf('du')} AS decided_by_name,
+        a.decided_at AS decided_at, a.note AS reason
+      FROM public.engineering_change_approvals a
+      JOIN public.engineering_changes e ON e.id = a.ecr_id AND e.deleted_at IS NULL
+      LEFT JOIN public.users du ON du.id = a.decided_by
+      WHERE a.company_id = ${companyId}::uuid AND a.deleted_at IS NULL
+        AND a.role IN (${inList(s.ecrRoles)})`);
+  }
   const docs: SQL[] = [];
   if (s.po) {
     docs.push(sql`(al.entity = 'PurchaseOrder'
@@ -155,6 +173,8 @@ function hrefOf(r: Record<string, unknown>): string | null {
       return entityHref(String(r['entity'] ?? ''), docId, code);
     case 'cancel':
       return cancelDocHref(r['doc_type'] as CancelDocType, docId, code);
+    case 'ecr':
+      return entityHref('EngineeringChange', docId, code);
     default:
       return null;
   }

@@ -21,6 +21,7 @@
 import { z } from 'zod';
 import { REVISION_PATTERN } from '../lib/revision';
 import { expectedUpdatedAtSchema } from '../lib/edit-conflict';
+import { drawingCorrectionSchema, REV_RELEASE_STATUSES, type RevReleaseInfo } from './drawing-register';
 
 /** The Drawing Rev typed by a user: trimmed, upper-cased, same pattern as the
  *  SO line Rev (lib/revision.ts). */
@@ -40,7 +41,7 @@ export function itemRevLabel(itemCode: string | null | undefined, rev: string | 
 }
 
 /** Where a register record (or a drawing change) came from. */
-export const ITEM_REVISION_SOURCES = ['so_line', 'jw_line', 'route_card', 'bom_line', 'ml_bom_line', 'legacy'] as const;
+export const ITEM_REVISION_SOURCES = ['so_line', 'jw_line', 'route_card', 'bom_line', 'ml_bom_line', 'legacy', 'register'] as const;
 export type ItemRevisionSource = (typeof ITEM_REVISION_SOURCES)[number];
 
 /** Drawing history actions. `born` = first file; `adopted` = a record that had
@@ -67,6 +68,14 @@ export const itemRevisionSchema = z.object({
   /** The one Route Card for this Item + Rev, if created. */
   routeCardId: z.string().uuid().nullable().default(null),
   routeCardCode: z.string().nullable().default(null),
+  /** ADR-290 — release status (schemas/drawing-register.ts). */
+  releaseStatus: z.enum(REV_RELEASE_STATUSES).default('unverified'),
+  changeNote: z.string().nullable().default(null),
+  releasedAt: z.string().nullable().default(null),
+  releasedBy: z.string().uuid().nullable().default(null),
+  releasedByName: z.string().nullable().default(null),
+  /** SHA-256 of the drawing file, stored at release. */
+  fileHash: z.string().nullable().default(null),
   createdAt: z.string(),
   createdBy: z.string().uuid().nullable(),
   updatedAt: z.string(),
@@ -103,6 +112,8 @@ export type ItemRevisionLinkedDoc = z.infer<typeof itemRevisionLinkedDocSchema>;
 export const itemRevisionDetailSchema = itemRevisionSchema.extend({
   history: z.array(itemRevisionDrawingEventSchema).default([]),
   linkedDocs: z.array(itemRevisionLinkedDocSchema).default([]),
+  /** ADR-290 — drawing corrections on a released Rev, newest first. */
+  corrections: z.array(drawingCorrectionSchema).default([]),
 });
 export type ItemRevisionDetail = z.infer<typeof itemRevisionDetailSchema>;
 
@@ -137,6 +148,8 @@ export interface LookupItemRevisionResponse {
   revision: ItemRevision | null;
   /** Whether the item needs a Rev at all (procurement_type = 'make'). */
   revRequired: boolean;
+  /** ADR-290 — status of this Rev and the item's latest released Rev. */
+  release?: RevReleaseInfo;
 }
 
 // ─── Writes ────────────────────────────────────────────────────────────────

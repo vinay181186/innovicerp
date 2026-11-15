@@ -5,6 +5,7 @@
 // / stock-ageing reports.
 
 import { sql } from 'drizzle-orm';
+import { drawingRevOf } from '../../../lib/drawing-rev';
 import { ospRtvQtySql } from '../../../lib/osp-rtv-qty';
 import { polSql } from '../../../lib/pol';
 import type { RegisteredReport } from '../registry';
@@ -76,7 +77,7 @@ export const ospAtVendorReport: RegisteredReport = {
           COALESCE(d.dc_date, jo.outsource_sent_date)            AS dc_date,
           w.jc_code,
           (w.item_code
-            || COALESCE('/' || NULLIF(btrim(COALESCE(sol.revision::text, jwl.revision::text)), ''), ''))
+            || COALESCE('/' || NULLIF(btrim(COALESCE(${drawingRevOf(sql`jcs.item_revision_id`)}, sol.revision::text, jwl.revision::text)), ''), ''))
                                                                  AS item_code,
           it.name                                                AS item_name,
           w.op_seq,

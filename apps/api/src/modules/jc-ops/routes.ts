@@ -2,6 +2,7 @@ import {
   changeJcOpMachineInputSchema,
   listJcOpsBoardQuerySchema,
   outsourceOpBalanceInputSchema,
+  releaseHoldInputSchema,
 } from '@innovic/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -31,5 +32,12 @@ export async function jcOpsRoutes(app: FastifyInstance): Promise<void> {
     const { id } = idParam.parse(req.params);
     const input = outsourceOpBalanceInputSchema.parse(req.body);
     return outsourceOpBalance(id, input, req.user);
+  });
+
+  // ADR-291 — release a hold on Job Card operations (Engineering Change).
+  app.post('/jc-ops/release-hold', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const input = releaseHoldInputSchema.parse(req.body);
+    return service.releaseJcOpHolds(input, req.user);
   });
 }

@@ -291,6 +291,12 @@ export const items = pgTable(
     minStockQty: stockQty('min_stock_qty').notNull().default(0),
     /** Reorder Qty (0160) — how much one reorder buys; 0 = buy the shortfall. */
     reorderQty: stockQty('reorder_qty').notNull().default(0),
+    /** ADR-290 (0248) — the customer's own part number for this item. */
+    customerPartNo: text('customer_part_no'),
+    /** ADR-290 (0248) — the item that replaces this one (never itself — CHECK). */
+    replacementItemId: uuid('replacement_item_id').references((): AnyPgColumn => items.id, {
+      onDelete: 'set null',
+    }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -322,6 +328,13 @@ export const items = pgTable(
       .where(sql`${t.deletedAt} is null`),
     index('items_company_type_idx')
       .on(t.companyId, t.itemType)
+      .where(sql`${t.deletedAt} is null`),
+    check(
+      'items_replacement_not_self_check',
+      sql`${t.replacementItemId} IS NULL OR ${t.replacementItemId} <> ${t.id}`,
+    ),
+    index('items_company_customer_part_no_idx')
+      .on(t.companyId, t.customerPartNo)
       .where(sql`${t.deletedAt} is null`),
     pgPolicy('items_company_read', {
       for: 'select',
@@ -1307,6 +1320,13 @@ export const jcOps = pgTable(
     queuePosition: integer('queue_position'),
     plannedStart: date('planned_start'),
     plannedEnd: date('planned_end'),
+    // ADR-291 (0250) — an operation on hold refuses every writer
+    // (lib/jc-op-hold.ts). hold_kind: 'ecr' | 'rev_not_released' | 'manual'.
+    holdKind: text('hold_kind'),
+    holdReason: text('hold_reason'),
+    heldAt: timestamp('held_at', { withTimezone: true }),
+    heldBy: uuid('held_by').references((): AnyPgColumn => users.id),
+    holdEcrId: uuid('hold_ecr_id').references((): AnyPgColumn => engineeringChanges.id),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -1348,6 +1368,15 @@ export const jcOps = pgTable(
       using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
       withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
     }),
+    // ADR-291 (0250) — hold columns.
+    check(
+      'jc_ops_hold_kind_check',
+      sql`${t.holdKind} IS NULL OR ${t.holdKind} IN ('ecr', 'rev_not_released', 'manual')`,
+    ),
+    index('jc_ops_hold_ecr_idx').on(t.holdEcrId).where(sql`${t.holdEcrId} is not null`),
+    index('jc_ops_held_idx')
+      .on(t.companyId)
+      .where(sql`${t.holdKind} is not null AND ${t.deletedAt} is null`),
   ],
 ).enableRLS();
 
@@ -3233,6 +3262,9 @@ export const deliveryChallanLines = pgTable(
     // NCs of one SO; the header nc_id stays the FIRST and marks the DC as a
     // return DC. Null on an ordinary OSP line.
     ncId: uuid('nc_id').references((): AnyPgColumn => ncRegister.id, { onDelete: 'set null' }),
+    // ADR-289 (0247) — the Drawing Rev this challan line was made with (the
+    // Job Card's Rev, else the SO / JWSO line's at create). NULL on older rows.
+    itemRevisionId: uuid('item_revision_id').references((): AnyPgColumn => itemRevisions.id),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -3264,6 +3296,7 @@ export const deliveryChallanLines = pgTable(
       using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
       withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
     }),
+    index('delivery_challan_lines_item_revision_idx').on(t.itemRevisionId),
   ],
 ).enableRLS();
 
@@ -3486,7 +3519,9 @@ export const bomMasterLines = pgTable(
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
     // D2 (0232): the child part's Item + Drawing Rev (SHAFT/2); null = Buy part / old line.
-    childItemRevisionId: uuid('child_item_revision_id').references((): AnyPgColumn => itemRevisions.id),
+    childItemRevisionId: uuid('child_item_revision_id').references(
+      (): AnyPgColumn => itemRevisions.id,
+    ),
   },
   (t) => [
     index('bom_master_lines_child_item_revision_idx').on(t.childItemRevisionId),
@@ -3644,7 +3679,9 @@ export const mlBomLines = pgTable(
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
     // D2 (0232): the child part's Item + Drawing Rev (SHAFT/2); null = Buy part / old line.
-    childItemRevisionId: uuid('child_item_revision_id').references((): AnyPgColumn => itemRevisions.id),
+    childItemRevisionId: uuid('child_item_revision_id').references(
+      (): AnyPgColumn => itemRevisions.id,
+    ),
   },
   (t) => [
     index('ml_bom_lines_child_item_revision_idx').on(t.childItemRevisionId),
@@ -6159,6 +6196,72 @@ export const jwDcInwardLines = pgTable(
   ],
 ).enableRLS();
 
+// ADR-289 (0247) — every Rev bucket an un-named stock 'out' took (postStockMove
+// splits it across buckets), per Item Issue line / JW DC Outward line, so a
+// Return / Cancel / JW receipt puts stock back into the SAME buckets.
+// returned_qty is written only by lib/stock-out-parts.ts giveBackToParts.
+export const stockOutParts = pgTable(
+  'stock_out_parts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    storeIssueLineId: uuid('store_issue_line_id').references(() => storeIssueLines.id, {
+      onDelete: 'cascade',
+    }),
+    jwDcOutwardLineId: uuid('jw_dc_outward_line_id').references(
+      (): AnyPgColumn => jwDcOutwardLines.id,
+      { onDelete: 'cascade' },
+    ),
+    takeOrder: integer('take_order').notNull(),
+    storeTransactionId: uuid('store_transaction_id').references(
+      (): AnyPgColumn => storeTransactions.id,
+      { onDelete: 'set null' },
+    ),
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => items.id),
+    itemRevisionId: uuid('item_revision_id').references((): AnyPgColumn => itemRevisions.id),
+    qty: stockQty('qty').notNull(),
+    returnedQty: stockQty('returned_qty').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
+  },
+  (t) => [
+    check(
+      'stock_out_parts_one_source_check',
+      sql`(${t.storeIssueLineId} IS NULL) <> (${t.jwDcOutwardLineId} IS NULL)`,
+    ),
+    check('stock_out_parts_qty_check', sql`${t.qty} > 0`),
+    check(
+      'stock_out_parts_returned_check',
+      sql`${t.returnedQty} >= 0 AND ${t.returnedQty} <= ${t.qty}`,
+    ),
+    index('stock_out_parts_issue_line_idx')
+      .on(t.storeIssueLineId)
+      .where(sql`${t.deletedAt} is null`),
+    index('stock_out_parts_jw_line_idx')
+      .on(t.jwDcOutwardLineId)
+      .where(sql`${t.deletedAt} is null`),
+    index('stock_out_parts_item_revision_idx').on(t.itemRevisionId),
+    pgPolicy('stock_out_parts_company_all', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+      withCheck: sql`company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
 // ─── Design Section (migration 0033) — 8 tables ─────────────────────────
 // Mirrors legacy renderDesignTracker L7259 + renderDesignProjects L7570 +
 // renderDesignIssuesPage L7890 + renderDesignWorkLog L7935.
@@ -6718,6 +6821,9 @@ export const invoiceLines = pgTable(
     salesOrderLineId: uuid('sales_order_line_id').references(() => salesOrderLines.id, {
       onDelete: 'set null',
     }),
+    // ADR-289 (0247) — the Drawing Rev invoiced (the Rev the SO line was
+    // dispatched at, else the SO line's at create). NULL on older rows.
+    itemRevisionId: uuid('item_revision_id').references((): AnyPgColumn => itemRevisions.id),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -6747,6 +6853,7 @@ export const invoiceLines = pgTable(
       using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
       withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
     }),
+    index('invoice_lines_item_revision_idx').on(t.itemRevisionId),
   ],
 ).enableRLS();
 
@@ -8322,6 +8429,12 @@ export const userAccess = pgTable(
     // NOT — reading everything and being handed the company's drawings are two
     // different decisions.
     drawingDownload: boolean('drawing_download').notNull().default(false),
+    // ADR-289 (0247) — "Can print drawings": a print is a copy on paper, so it
+    // is its own right beside drawing_download (same bypass rules).
+    drawingPrint: boolean('drawing_print').notNull().default(false),
+    // ADR-290 (0248) — "Can release drawings": approved → released in the
+    // Drawing Register, and approve a correction on a released Rev.
+    drawingRelease: boolean('drawing_release').notNull().default(false),
     // Which department this person belongs to (0101). Picking it seeds that
     // department's tier; changing it clears the old one and seeds the new.
     // Stored rather than derived because "main" and "extra" departments look
@@ -8399,6 +8512,9 @@ export const approvalConfig = pgTable(
     // 0191 / ADR-202. On: an edit to a LIVE Purchase Order is staged and goes
     // for per-change approval (Phase 1). Off (default): edits apply on save.
     docEditApproval: boolean('doc_edit_approval').notNull().default(false),
+    // 0250 / ADR-291. On: a MAKE item needs a Drawing Rev on every Production
+    // Order / Job Card (lib/drawing-rev-strict.ts).
+    drawingRevStrict: boolean('drawing_rev_strict').notNull().default(false),
     poApprovers: jsonb('po_approvers').notNull().default([]),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
@@ -8896,6 +9012,24 @@ export const itemRevisions = pgTable(
     /** ITEM_REVISION_SOURCES (CHECK). */
     sourceType: text('source_type').notNull(),
     sourceRef: text('source_ref'),
+    /** ADR-290 (0248) — REV_RELEASE_STATUSES (CHECK). Old rows 'unverified';
+     *  rows made from a document 'draft'. Written only by item-revisions/release.ts. */
+    releaseStatus: text('release_status').notNull().default('unverified'),
+    changeNote: text('change_note'),
+    submittedAt: timestamp('submitted_at', { withTimezone: true }),
+    submittedBy: uuid('submitted_by').references((): AnyPgColumn => users.id),
+    approvedAt: timestamp('approved_at', { withTimezone: true }),
+    approvedBy: uuid('approved_by').references((): AnyPgColumn => users.id),
+    releasedAt: timestamp('released_at', { withTimezone: true }),
+    releasedBy: uuid('released_by').references((): AnyPgColumn => users.id),
+    rejectedAt: timestamp('rejected_at', { withTimezone: true }),
+    rejectedBy: uuid('rejected_by').references((): AnyPgColumn => users.id),
+    rejectReason: text('reject_reason'),
+    obsoletedAt: timestamp('obsoleted_at', { withTimezone: true }),
+    obsoletedBy: uuid('obsoleted_by').references((): AnyPgColumn => users.id),
+    supersededAt: timestamp('superseded_at', { withTimezone: true }),
+    /** SHA-256 of the drawing file, stored at release. */
+    fileHash: text('file_hash'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -8912,13 +9046,20 @@ export const itemRevisions = pgTable(
     check('item_revisions_rev_check', sql`${t.rev} ~ '^[A-Z0-9][A-Z0-9./-]{0,31}$'`),
     check(
       'item_revisions_source_type_check',
-      sql`${t.sourceType} IN ('so_line', 'jw_line', 'route_card', 'bom_line', 'ml_bom_line', 'legacy')`,
+      sql`${t.sourceType} IN ('so_line', 'jw_line', 'route_card', 'bom_line', 'ml_bom_line', 'legacy', 'register')`,
     ),
     // One live ABC/1 per company — a second first-namer gets 23505.
     uniqueIndex('item_revisions_company_item_rev_uniq')
       .on(t.companyId, t.itemId, t.rev)
       .where(sql`${t.deletedAt} is null`),
     index('item_revisions_item_idx').on(t.itemId),
+    check(
+      'item_revisions_release_status_check',
+      sql`${t.releaseStatus} IN ('unverified', 'draft', 'under_review', 'approved', 'released', 'superseded', 'obsolete', 'rejected')`,
+    ),
+    index('item_revisions_company_status_idx')
+      .on(t.companyId, t.releaseStatus)
+      .where(sql`${t.deletedAt} is null`),
     pgPolicy('item_revisions_company_read', {
       for: 'select',
       to: 'authenticated',
@@ -8970,7 +9111,7 @@ export const itemRevisionDrawings = pgTable(
     ),
     check(
       'item_revision_drawings_source_type_check',
-      sql`${t.sourceType} IS NULL OR ${t.sourceType} IN ('so_line', 'jw_line', 'route_card', 'bom_line', 'ml_bom_line', 'legacy')`,
+      sql`${t.sourceType} IS NULL OR ${t.sourceType} IN ('so_line', 'jw_line', 'route_card', 'bom_line', 'ml_bom_line', 'legacy', 'register')`,
     ),
     index('item_revision_drawings_rev_created_idx').on(t.itemRevisionId, t.createdAt),
     pgPolicy('item_revision_drawings_company_read', {
@@ -8978,10 +9119,10 @@ export const itemRevisionDrawings = pgTable(
       to: 'authenticated',
       using: sql`company_id = current_company_id()`,
     }),
-    pgPolicy('item_revision_drawings_manager_write', {
-      for: 'all',
+    // ADR-290 (0248) — append-only: INSERT only (trigger refuses UPDATE / DELETE).
+    pgPolicy('item_revision_drawings_manager_insert', {
+      for: 'insert',
       to: 'authenticated',
-      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
       withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
     }),
   ],
@@ -9002,8 +9143,14 @@ export const itemRevisionChanges = pgTable(
     toItemRevisionId: uuid('to_item_revision_id')
       .notNull()
       .references(() => itemRevisions.id),
-    movedDocs: text('moved_docs').array().notNull().default(sql`'{}'::text[]`),
-    keptDocs: text('kept_docs').array().notNull().default(sql`'{}'::text[]`),
+    movedDocs: text('moved_docs')
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    keptDocs: text('kept_docs')
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
     reason: text('reason'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
@@ -9024,11 +9171,65 @@ export const itemRevisionChanges = pgTable(
       to: 'authenticated',
       using: sql`company_id = current_company_id()`,
     }),
-    pgPolicy('item_revision_changes_manager_write', {
+    // ADR-290 (0248) — append-only: INSERT only (trigger refuses UPDATE / DELETE).
+    pgPolicy('item_revision_changes_manager_insert', {
+      for: 'insert',
+      to: 'authenticated',
+      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+/** ADR-290 (0248) — a drawing file change asked for on a released / superseded
+ *  Rev; the file changes only when someone with the release switch approves.
+ *  One pending per Rev (partial unique index). */
+export const drawingCorrections = pgTable(
+  'drawing_corrections',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    itemRevisionId: uuid('item_revision_id')
+      .notNull()
+      .references(() => itemRevisions.id),
+    drawingFilePath: text('drawing_file_path').notNull(),
+    drawingNo: text('drawing_no'),
+    reason: text('reason').notNull(),
+    /** DRAWING_CORRECTION_STATUSES (CHECK). */
+    status: text('status').notNull().default('pending'),
+    requestedBy: uuid('requested_by')
+      .notNull()
+      .references(() => users.id),
+    requestedAt: timestamp('requested_at', { withTimezone: true }).notNull().defaultNow(),
+    decidedBy: uuid('decided_by').references((): AnyPgColumn => users.id),
+    decidedAt: timestamp('decided_at', { withTimezone: true }),
+    decisionNote: text('decision_note'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
+  },
+  (t) => [
+    check(
+      'drawing_corrections_status_check',
+      sql`${t.status} IN ('pending', 'approved', 'rejected')`,
+    ),
+    uniqueIndex('drawing_corrections_one_pending_uniq')
+      .on(t.itemRevisionId)
+      .where(sql`${t.status} = 'pending' AND ${t.deletedAt} is null`),
+    index('drawing_corrections_rev_idx').on(t.itemRevisionId, t.requestedAt),
+    pgPolicy('drawing_corrections_company_all', {
       for: 'all',
       to: 'authenticated',
-      using: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
-      withCheck: sql`current_user_role() IN ('admin', 'manager') AND company_id = current_company_id()`,
+      using: sql`company_id = current_company_id()`,
+      withCheck: sql`company_id = current_company_id()`,
     }),
   ],
 ).enableRLS();
@@ -9069,5 +9270,296 @@ export const itemRevStockBalances = pgTable(
       using: sql`company_id = current_company_id()`,
     }),
     // No write policy — the SECURITY DEFINER trigger is the only writer.
+  ],
+).enableRLS();
+
+// ── ADR-291 (0250) — Engineering Change (ECR) ──────────────────────────
+// Contract: packages/shared/src/schemas/engineering-change.ts. Status /
+// classification / customer approval CHECKs mirror ECR_STATUSES etc.
+const ecrAuditCols = () => ({
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  createdBy: uuid('created_by')
+    .notNull()
+    .references(() => users.id),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedBy: uuid('updated_by')
+    .notNull()
+    .references(() => users.id),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
+});
+
+export const engineeringChanges = pgTable(
+  'engineering_changes',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    code: text('code').notNull(),
+    status: text('status').notNull().default('draft'),
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => items.id),
+    fromItemRevisionId: uuid('from_item_revision_id')
+      .notNull()
+      .references(() => itemRevisions.id),
+    toItemRevisionId: uuid('to_item_revision_id').references(() => itemRevisions.id),
+    replacementItemId: uuid('replacement_item_id').references(() => items.id),
+    classification: text('classification').notNull(),
+    description: text('description').notNull(),
+    customerApproval: text('customer_approval').notNull().default('not_required'),
+    customerApprovalRef: text('customer_approval_ref'),
+    submittedAt: timestamp('submitted_at', { withTimezone: true }),
+    submittedBy: uuid('submitted_by').references((): AnyPgColumn => users.id),
+    approvedAt: timestamp('approved_at', { withTimezone: true }),
+    rejectedAt: timestamp('rejected_at', { withTimezone: true }),
+    rejectedBy: uuid('rejected_by').references((): AnyPgColumn => users.id),
+    rejectReason: text('reject_reason'),
+    implementedAt: timestamp('implemented_at', { withTimezone: true }),
+    implementedBy: uuid('implemented_by').references((): AnyPgColumn => users.id),
+    closedAt: timestamp('closed_at', { withTimezone: true }),
+    closedBy: uuid('closed_by').references((): AnyPgColumn => users.id),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    cancelledBy: uuid('cancelled_by').references((): AnyPgColumn => users.id),
+    ...ecrAuditCols(),
+  },
+  (t) => [
+    check(
+      'engineering_changes_status_check',
+      sql`${t.status} IN ('draft', 'submitted', 'approved', 'rejected', 'implemented', 'closed', 'cancelled')`,
+    ),
+    check(
+      'engineering_changes_classification_check',
+      sql`${t.classification} IN ('documentation_only', 'interchangeable', 'non_interchangeable')`,
+    ),
+    check(
+      'engineering_changes_customer_approval_check',
+      sql`${t.customerApproval} IN ('not_required', 'pending', 'received')`,
+    ),
+    uniqueIndex('engineering_changes_company_code_uniq')
+      .on(t.companyId, t.code)
+      .where(sql`${t.deletedAt} is null`),
+    index('engineering_changes_company_status_idx')
+      .on(t.companyId, t.status)
+      .where(sql`${t.deletedAt} is null`),
+    index('engineering_changes_item_idx').on(t.itemId),
+    index('engineering_changes_from_rev_idx').on(t.fromItemRevisionId),
+    index('engineering_changes_to_rev_idx').on(t.toItemRevisionId),
+    index('engineering_changes_replacement_item_idx').on(t.replacementItemId),
+    pgPolicy('engineering_changes_company_all', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+      withCheck: sql`company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export const engineeringChangeImpacts = pgTable(
+  'engineering_change_impacts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    ecrId: uuid('ecr_id')
+      .notNull()
+      .references(() => engineeringChanges.id, { onDelete: 'cascade' }),
+    /** 'so_line' | 'jw_line' | 'job_card' | 'stock' (CHECK). */
+    docType: text('doc_type').notNull(),
+    soLineId: uuid('so_line_id').references(() => salesOrderLines.id),
+    jwLineId: uuid('jw_line_id').references(() => jobWorkOrderLines.id),
+    jobCardId: uuid('job_card_id').references(() => jobCards.id),
+    itemRevisionId: uuid('item_revision_id').references(() => itemRevisions.id),
+    label: text('label').notNull(),
+    qtyDone: stockQty('qty_done').notNull().default(0),
+    qtyWip: stockQty('qty_wip').notNull().default(0),
+    qtyNotStarted: stockQty('qty_not_started').notNull().default(0),
+    qtyStock: stockQty('qty_stock').notNull().default(0),
+    /** ECR_DISPOSITIONS (CHECK) or null. */
+    disposition: text('disposition'),
+    moveQty: stockQty('move_qty').notNull().default(0),
+    note: text('note'),
+    newProductionOrderId: uuid('new_production_order_id').references(
+      (): AnyPgColumn => productionOrders.id,
+    ),
+    newJobCardId: uuid('new_job_card_id').references(() => jobCards.id),
+    ...ecrAuditCols(),
+  },
+  (t) => [
+    check(
+      'engineering_change_impacts_doc_type_check',
+      sql`${t.docType} IN ('so_line', 'jw_line', 'job_card', 'stock')`,
+    ),
+    check(
+      'engineering_change_impacts_disposition_check',
+      sql`${t.disposition} IS NULL OR ${t.disposition} IN ('keep_old', 'move_new', 'decide_later')`,
+    ),
+    check('engineering_change_impacts_move_qty_check', sql`${t.moveQty} >= 0`),
+    index('engineering_change_impacts_ecr_idx')
+      .on(t.ecrId)
+      .where(sql`${t.deletedAt} is null`),
+    index('engineering_change_impacts_so_line_idx').on(t.soLineId),
+    index('engineering_change_impacts_jw_line_idx').on(t.jwLineId),
+    index('engineering_change_impacts_job_card_idx').on(t.jobCardId),
+    index('engineering_change_impacts_item_revision_idx').on(t.itemRevisionId),
+    index('engineering_change_impacts_new_po_idx').on(t.newProductionOrderId),
+    index('engineering_change_impacts_new_jc_idx').on(t.newJobCardId),
+    pgPolicy('engineering_change_impacts_company_all', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+      withCheck: sql`company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+export const engineeringChangeApprovals = pgTable(
+  'engineering_change_approvals',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    ecrId: uuid('ecr_id')
+      .notNull()
+      .references(() => engineeringChanges.id, { onDelete: 'cascade' }),
+    /** ECR_APPROVER_ROLES (CHECK). */
+    role: text('role').notNull(),
+    /** 'approved' | 'rejected' (CHECK). */
+    decision: text('decision').notNull(),
+    decidedBy: uuid('decided_by')
+      .notNull()
+      .references(() => users.id),
+    decidedAt: timestamp('decided_at', { withTimezone: true }).notNull().defaultNow(),
+    note: text('note'),
+    ...ecrAuditCols(),
+  },
+  (t) => [
+    check(
+      'engineering_change_approvals_role_check',
+      sql`${t.role} IN ('design', 'qc', 'production')`,
+    ),
+    check(
+      'engineering_change_approvals_decision_check',
+      sql`${t.decision} IN ('approved', 'rejected')`,
+    ),
+    // One decision per role — a second decider of the same role gets 23505.
+    uniqueIndex('engineering_change_approvals_ecr_role_uniq')
+      .on(t.ecrId, t.role)
+      .where(sql`${t.deletedAt} is null`),
+    index('engineering_change_approvals_decided_by_idx').on(t.decidedBy),
+    pgPolicy('engineering_change_approvals_company_all', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+      withCheck: sql`company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+// An approved use of Rev A stock where Rev B is asked for, on exactly one SO
+// line / JWSO line / Job Card, capped by qty_allowed (lib/rev-substitution.ts).
+export const revSubstitutions = pgTable(
+  'rev_substitutions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => items.id),
+    fromItemRevisionId: uuid('from_item_revision_id')
+      .notNull()
+      .references(() => itemRevisions.id),
+    toItemRevisionId: uuid('to_item_revision_id')
+      .notNull()
+      .references(() => itemRevisions.id),
+    salesOrderLineId: uuid('sales_order_line_id').references(() => salesOrderLines.id),
+    jwLineId: uuid('jw_line_id').references(() => jobWorkOrderLines.id),
+    jobCardId: uuid('job_card_id').references(() => jobCards.id),
+    qtyAllowed: stockQty('qty_allowed').notNull(),
+    qtyUsed: stockQty('qty_used').notNull().default(0),
+    reason: text('reason').notNull(),
+    ecrId: uuid('ecr_id').references(() => engineeringChanges.id),
+    approvedBy: uuid('approved_by')
+      .notNull()
+      .references(() => users.id),
+    approvedAt: timestamp('approved_at', { withTimezone: true }).notNull().defaultNow(),
+    ...ecrAuditCols(),
+  },
+  (t) => [
+    check('rev_substitutions_qty_allowed_check', sql`${t.qtyAllowed} > 0`),
+    check(
+      'rev_substitutions_qty_used_check',
+      sql`${t.qtyUsed} >= 0 AND ${t.qtyUsed} <= ${t.qtyAllowed}`,
+    ),
+    check(
+      'rev_substitutions_one_scope_check',
+      sql`(CASE WHEN ${t.salesOrderLineId} IS NULL THEN 0 ELSE 1 END) + (CASE WHEN ${t.jwLineId} IS NULL THEN 0 ELSE 1 END) + (CASE WHEN ${t.jobCardId} IS NULL THEN 0 ELSE 1 END) = 1`,
+    ),
+    check(
+      'rev_substitutions_revs_differ_check',
+      sql`${t.fromItemRevisionId} <> ${t.toItemRevisionId}`,
+    ),
+    index('rev_substitutions_item_idx')
+      .on(t.companyId, t.itemId)
+      .where(sql`${t.deletedAt} is null`),
+    index('rev_substitutions_from_rev_idx').on(t.fromItemRevisionId),
+    index('rev_substitutions_to_rev_idx').on(t.toItemRevisionId),
+    index('rev_substitutions_so_line_idx').on(t.salesOrderLineId),
+    index('rev_substitutions_jw_line_idx').on(t.jwLineId),
+    index('rev_substitutions_job_card_idx').on(t.jobCardId),
+    index('rev_substitutions_ecr_idx').on(t.ecrId),
+    pgPolicy('rev_substitutions_company_all', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+      withCheck: sql`company_id = current_company_id()`,
+    }),
+  ],
+).enableRLS();
+
+// ADR-292 (0251) — one row per use of an approved substitution by a dispatch
+// line / Item Issue line; a reversal gives back exactly these rows.
+export const revSubstitutionUses = pgTable(
+  'rev_substitution_uses',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    substitutionId: uuid('substitution_id')
+      .notNull()
+      .references(() => revSubstitutions.id),
+    sourceType: text('source_type').notNull(),
+    sourceId: uuid('source_id').notNull(),
+    qty: stockQty('qty').notNull(),
+    returnedQty: stockQty('returned_qty').notNull().default(0),
+    ...ecrAuditCols(),
+  },
+  (t) => [
+    check(
+      'rev_substitution_uses_source_type_check',
+      sql`${t.sourceType} IN ('dispatch_line', 'store_issue_line')`,
+    ),
+    check('rev_substitution_uses_qty_check', sql`${t.qty} > 0`),
+    check(
+      'rev_substitution_uses_returned_check',
+      sql`${t.returnedQty} >= 0 AND ${t.returnedQty} <= ${t.qty}`,
+    ),
+    index('rev_substitution_uses_source_idx')
+      .on(t.sourceType, t.sourceId)
+      .where(sql`${t.deletedAt} is null`),
+    index('rev_substitution_uses_substitution_idx').on(t.substitutionId),
+    index('rev_substitution_uses_company_idx').on(t.companyId),
+    pgPolicy('rev_substitution_uses_company_all', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id()`,
+      withCheck: sql`company_id = current_company_id()`,
+    }),
   ],
 ).enableRLS();

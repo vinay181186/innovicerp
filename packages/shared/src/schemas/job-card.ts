@@ -59,6 +59,8 @@ export const jobCardSourceLinkSchema = z.discriminatedUnion('type', [
 export type JobCardSourceLink = z.infer<typeof jobCardSourceLinkSchema>;
 
 export const jobCardListItemSchema = z.object({
+  /** ADR-289 — make item with no Drawing Rev (warning only, nothing blocked). */
+  drawingRevMissing: z.boolean().default(false),
   id: z.string().uuid(),
   companyId: z.string().uuid(),
   code: z.string(),
@@ -516,6 +518,8 @@ export const jobCardDocSchema = z.object({
 export type JobCardDoc = z.infer<typeof jobCardDocSchema>;
 
 export const jobCardEditModelSchema = z.object({
+  /** ADR-289 — make item with no Drawing Rev (warning only, nothing blocked). */
+  drawingRevMissing: z.boolean().default(false),
   id: z.string().uuid(),
   code: z.string(),
   /** §20.4 / ADR-226 — the version this form loaded, sent straight back as
@@ -611,6 +615,11 @@ export const jobCardStatusOpExtraSchema = z.object({
    *  runs — so on a re-routed op it names a machine that may have produced
    *  nothing. See machineSplitSchema. */
   machines: machineSplitSchema,
+  /** ADR-291 — the op is on hold (no qty may move) until released. */
+  holdReason: z.string().nullable().default(null),
+  heldAt: z.string().nullable().default(null),
+  holdEcrCode: z.string().nullable().default(null),
+  holdEcrId: z.string().uuid().nullable().default(null),
 });
 export type JobCardStatusOpExtra = z.infer<typeof jobCardStatusOpExtraSchema>;
 

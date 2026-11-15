@@ -95,6 +95,17 @@ export function itemListColumns(offset = 0): DataTableColumn<Item>[] {
       ellipsis: true,
       key: 'name',
     },
+    // ADR-290 — the customer's own number for the part.
+    {
+      id: 'customer_part_no',
+      header: 'Customer Part No.',
+      kind: 'code',
+      sortFilterField: 'customerPartNo',
+      width: '8%',
+      className: 'mono',
+      nowrap: true,
+      render: (it) => it.customerPartNo ?? '—',
+    },
     // Description / Material are free text — clip at the column edge rather
     // than wrap, full value on hover (styling skill Rule 1's exception).
     {

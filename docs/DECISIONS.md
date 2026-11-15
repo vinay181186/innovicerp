@@ -15651,3 +15651,105 @@ My Day Log's Print and Team Day Logs › a person › Print used a plain table t
 - Entries and Working Hours in the header are the server's work-only figures, as on Team Day Logs and History, so a day with old Break or Others rows has more rows than Entries; those rows say what they are. With an entry Open, Last Stop prints blank.
 - `GET /day-logs/day` already sends a waiting edit and a rejection reason to anyone who may see the day. The print shows neither. Since ADR-256 only edits staged before that date can still wait, so the read was left as it is.
 - Risks: the shared Download text fault (html2canvas baseline, recorded in the ADR-287 delivery) also shows on these prints until it is fixed.
+
+## ADR-289: Drawing Rev control, Step 1 — stock, documents and screens keep the right Rev
+
+**Date:** 2026-11-14
+**Status:** Accepted (owner approved the fix list "Innovic_ERP_Drawing_Rev_Problems_and_Fixes.pdf", points 9–17 and 13 as a warning)
+
+### Context
+
+SOP INN-ERP-SOP-ENG-001 (Draft 1.0) asks for exact revision traceability. A trace of origin/test found Rev lost or misread in several places: returns and cancels put stock back with no Rev, some receipts credited the blank bucket, DC and Invoice showed the SO line's current Rev, many screens showed the SO-line Rev instead of the Job Card's, print was ungated, a Job Card held a free drawing outside the register, a Rev change stored no reason, and Replace drawing refused valid saves (millisecond token vs microsecond column).
+
+### Decision
+
+- **Stock back to the same Rev.** New table `stock_out_parts` (0247): one row per Rev bucket an Item Issue line or JW DC Outward line took, with `returned_qty`. `lib/stock-out-parts.ts` `giveBackToParts` is the only writer of `returned_qty` (§20.1); return, cancel and the JW DC receipt GRN give back to those buckets. A non-PRO Job Card's OSP last-op GRN credits the Job Card's Rev. Old lines with no parts use their own ledger row's Rev. One `store_issue_returns` row per user Return stays.
+- **Documents keep their own Rev.** `delivery_challan_lines.item_revision_id` and `invoice_lines.item_revision_id` (0247), stamped at create from what was shipped; never guessed from the SO line's current Rev (NULL when the covered dispatches disagree).
+- **Screens show the Job Card's Rev first** through one helper, `drawingRevOf()` in `lib/drawing-rev.ts`.
+- **Print right.** `user_access.drawing_print` (switch "Drawing Print button"), `canPrintDrawings()` in shared, `POST /drawing-files/print` logs `drawing_print` / `drawing_print_refused`. Honest limit: a PDF printed from the browser's own viewer cannot be blocked.
+- **Job Card drawing** comes from its Item + Rev record; a direct new file on a Job Card with a Rev is refused.
+- **Reason for Rev change** (`revChangeReason`, min `REV_CHANGE_REASON_MIN` = 5) when the Rev text of a line with a Plan / PRO / Job Card changes; stored in `item_revision_changes.reason`, logged on each moved Job Card / PRO / Plan, carried through edit approval.
+- **Replace drawing** compares `date_trunc('milliseconds')` both sides and locks the SO / JWSO lines before the register row (same order as a line save).
+- **No Drawing Rev** shows as an orange warning (`drawingRevMissing`) on the Job Card; nothing is blocked yet (later step).
+- New data-integrity check DI-003R: Rev buckets add up to On Hand.
+
+### Alternatives Considered
+
+- jsonb list of parts on the issue line — rejected: §12 bans arrays in one column, and `returned_qty` must be updated per part under a row lock.
+
+### Consequences
+
+- Positive: stock per Rev stays right through returns and cancels; a printed DC or Invoice never changes later.
+- Negative: rows made before 0247 can only be given back to the Rev of their single linked ledger row.
+- Not yet done (later steps of the same fix list): release status, ECR / hold / split, wrong-Rev blocks at issue and dispatch, reports.
+
+## ADR-290: Drawing Register — release status for every Item + Drawing Rev; work only on a released Rev
+
+**Date:** 2026-11-14
+**Status:** Accepted (owner approved the fix list, points 1, 2, 6 and new items 1, 2, 4; open choices D1, D3, D4, D7 taken as recommended)
+
+### Context
+
+SOP INN-ERP-SOP-ENG-001 §4: only a released revision may be used for new manufacturing, release is an Engineering decision, released files are never overwritten. Before this, typing a Rev on any line created a usable record at once, and Replace drawing swapped the file everywhere.
+
+### Decision
+
+- `item_revisions.release_status`: `unverified` (records made before 0248 — never guessed), `draft` (shown "Not released"; a Rev typed on an SO / JWSO / Route Card / BOM line, or added with "+ New Drawing Rev"), `under_review`, `approved`, `released`, `superseded`, `obsolete`, `rejected`. Actions Send for Review → Approve / Reject → Release, Mark Obsolete; each a conditional UPDATE (§20.2) with the loaded `updated_at` (§20.4). Approve / Reject / Obsolete = Drawing Register Approve tick (Design); Release = per-person "Drawing Release button" switch (`user_access.drawing_release`). "Verify & Release" takes an Unverified record with a file straight to Released.
+- Release stores the SHA-256 of the drawing (`file_hash`). At most one Released Rev per item: lower released Revs become Superseded; releasing a Rev older than one already released makes it Superseded at once; labels that cannot be compared — the newest release wins.
+- Plan, Execute, PRO and Job Card creation, and moving open work to another Rev, need a Rev in Released, Superseded or Unverified (`assertRevReleasedForWork`, one helper). The BOM cascade (inside the SO / JWSO save) and NC rework / make-fresh children are exempt here; their work is stopped by the Step 4 operation check instead.
+- A released (or superseded, or unverified-with-open-work) Rev's file is never swapped: Replace files a `drawing_corrections` row; the Drawing Release holder approves it ("Approve correction"), and only then the file changes through the same writer, with a new hash. Before release the direct replace with reason stays; Under Review / Approved go back to Not released.
+- History tables `item_revision_drawings`, `item_revision_changes`, `so_line_drawing_revisions` are append-only (trigger + insert-only policies).
+- Items gain `customer_part_no` and `replacement_item_id`. Item detail lists the item's Drawing Revs.
+- SO / JWSO line shows the Drawing Rev Status; when a newer released Rev exists, "Latest released drawing is ABC/2. This line specifies ABC/1." needs a Confirmed tick.
+- Approve / reject / release and correction decisions notify the submitter / requester and the creator (decision-notify rule).
+
+### Alternatives Considered
+
+- A separate `drawings` + `drawing_revisions` table pair as in the SOP's model — rejected (§21): `item_revisions` already is one record per Item + Rev with one drawing; status columns on it reach every screen that already reads it.
+- Block SO save on a not-released Rev — rejected: Sales would stop; the shop floor is protected at Plan / PRO / Job Card instead.
+
+### Consequences
+
+- Positive: no new work on an unchecked drawing; a released file cannot change without a second person.
+- Negative: every old record is Unverified until Design verifies it; work continues on it with a warning.
+
+## ADR-291: Engineering Change (ECR) — a Rev change on running work is held, approved by three functions, and split
+
+**Date:** 2026-11-14
+**Status:** Accepted (owner approved the fix list, points 3, 4, 5 and new item 3; replaces the D1 rule of 2026-10-31 "a Rev change on a line moves its open Job Cards")
+
+### Context
+
+SOP §5–§6: no silent change to released Job Cards; hold, disposition, then split by revision. Under D1 a line Rev change moved every open Job Card, Plan and PRO at once, so pieces in progress were credited to the new Rev.
+
+### Decision
+
+- A line with an open Job Card or open PRO can no longer change its Drawing Rev directly: "Ln N: ABC/1 has work in progress — raise an Engineering Change (ECR) to move it to ABC/2." Plans with no PRO still move (with the reason rule).
+- New document Engineering Change, `IN-ECR-#####` (`engineering_changes`), page `/ecrs` (form key `ecr_create`, Design). Change Type: Documentation only / Interchangeable / Not interchangeable (new item code — records the Replacement Item, moves no work).
+- Submit builds the Impact list (open SO / JWSO lines, open Job Cards with Qty Done / WIP / Not Started, stock of the old Rev) and holds every unfinished operation of the affected Job Cards.
+- Hold: `jc_ops.hold_*`, one writer `lib/jc-op-hold.ts`. `assertJcOpWorkable` runs after the existing `jc_ops` lock at every writer that moves qty (Op Entry, QC / Final Inspection, start, OSP PR / PO / DC / balance, Incoming QC, NC create / dispose / recovery). It also refuses work on a Job Card whose Rev is not released (closes the BOM-cascade path of ADR-290). Receipts of goods physically back from a vendor are accepted and noted. Reverse of an entry stays allowed. Release: `POST /jc-ops/release-hold` with a note.
+- Three sign-offs — Design, Quality, Production — each by a person at L4+ of that department (or Full Access); the raiser cannot sign; one person signs one role only. Approvals page kind `ecr`. A reject lifts the holds.
+- Implement (To Rev released, customer approval not pending): per Job Card, Move Qty (≤ not started) goes to a new PRO + Job Card at the new Rev under the same plan — the new `reduceProductionOrderQty` lowers the old PRO / Job Card under the op-1 lock (§20.3), then the in-transaction `createProductionOrderTx` builds the new one. A Job Card with nothing started moves whole through the existing short close. Finished pieces stay on the old Rev. The line takes the new Rev. The ECR closes when no hold is left.
+
+### Alternatives Considered
+
+- Second Job Card under the same PRO — rejected: PRO ↔ Job Card is 1:1 (credit, short close and qty checks read `po.job_card_id`).
+- Short close + new plan — rejected: short close takes the whole order and would stop the 6 in progress.
+
+### Consequences
+
+- Positive: every piece keeps the Rev it was made to; nothing moves without three signatures.
+- Negative: OSP purchase requests already raised for the old Job Card are not reduced by the move (reduce or cancel by hand); a hand-made JW Job Card (no PRO) is moved by hand.
+
+## ADR-292: Wrong Drawing Rev blocked at Item Issue and Dispatch; approved substitutions; Drawing Rev strict; six reports
+
+**Date:** 2026-11-14
+**Status:** Accepted (owner approved the fix list, points 7, 8, 13 and new item 5)
+
+### Decision
+
+- Dispatch: no auto-pick of another Rev. Allowed Revs for an SO line = its own Rev, the Revs of Job Cards made for it, and approved substitutions. Anything else: "Revision mismatch with the order … An Engineering-approved substitution is needed."
+- Item Issue: a make item with Rev stock is issued from a named bucket; to a Job Card of another Rev it is refused unless a substitution covers it.
+- `rev_substitutions` (page Rev Substitutions, Engineering Change Approve tick): Stock Drawing Rev → Order Drawing Rev for one SO line, JWSO line or Job Card, Qty Allowed; `lib/rev-substitution.ts` `consumeSubstitution` is the one writer of Qty Used (§20.1/§20.3); dispatch cancel and issue return give it back.
+- `approval_config.drawing_rev_strict` (default off): when on, a PRO or Job Card for a make item with no Drawing Rev is refused. Turn on only after the Drawing Rev Fix List is clean.
+- Reports: Drawing Rev Register, Open Order Rev Mismatch, Affected WIP / OSP / Stock, Rev Traceability, Pending ECR, Drawing Print / Download History.

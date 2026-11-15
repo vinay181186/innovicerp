@@ -49,6 +49,9 @@ import {
 } from '../../lib/errors';
 import { lockDocSeries } from '../../lib/doc-series-lock';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
+import { assertMakeItemHasRev } from '../../lib/drawing-rev-strict';
+import { readOpHolds } from '../../lib/jc-op-hold';
+import { assertRevReleasedForWork } from '../../lib/item-revision';
 import { editConflicts, rowChangedByName } from '../../lib/row-changed-by';
 import { assertProductionOrderNotShortClosed } from '../../lib/production-order-stop';
 import { resolveRmItem } from '../../lib/rm-item';
@@ -253,6 +256,10 @@ export async function listJobCards(
         jc.jc_date AS "jcDate", jc.item_id AS "itemId",
         jc.order_qty AS "orderQty", jc.priority,
         COALESCE(jc.due_date, sol.due_date, jwl.due_date) AS "dueDate", jc.drawing_file_path AS "drawingFilePath",
+        -- ADR-289 (warning only): a MAKE item card with no Drawing Rev.
+        (jc.item_revision_id IS NULL AND EXISTS (
+          SELECT 1 FROM public.items mi
+          WHERE mi.id = jc.item_id AND mi.procurement_type = 'make')) AS "drawingRevMissing",
         jc.remarks AS "remarks", jc.closed_at AS "closedAt",
         jc.cancel_reason AS "cancelReason", jc.cancelled_at AS "cancelledAt",
         jc.created_at AS "createdAt", jc.created_by AS "createdBy",
@@ -426,6 +433,10 @@ export async function getJobCard(id: string, user: AuthContext): Promise<JobCard
         jc.jc_date AS "jcDate", jc.item_id AS "itemId",
         jc.order_qty AS "orderQty", jc.priority,
         COALESCE(jc.due_date, sol.due_date, jwl.due_date) AS "dueDate", jc.drawing_file_path AS "drawingFilePath",
+        -- ADR-289 (warning only): a MAKE item card with no Drawing Rev.
+        (jc.item_revision_id IS NULL AND EXISTS (
+          SELECT 1 FROM public.items mi
+          WHERE mi.id = jc.item_id AND mi.procurement_type = 'make')) AS "drawingRevMissing",
         jc.remarks AS "remarks", jc.closed_at AS "closedAt",
         jc.cancel_reason AS "cancelReason", jc.cancelled_at AS "cancelledAt",
         jc.created_at AS "createdAt", jc.created_by AS "createdBy",
@@ -720,6 +731,8 @@ function toListItem(r: Record<string, unknown>): JobCardListItem {
     priority: r['priority'] as JobCardListItem['priority'],
     dueDate: r['dueDate'] != null ? dateLike(r['dueDate']) : null,
     drawingFilePath: (r['drawingFilePath'] as string | null) ?? null,
+    // ADR-289 — warning only: a make item card with no Drawing Rev.
+    drawingRevMissing: r['drawingRevMissing'] === true,
     // Item Master product image (0136) — the thumbnail next to code · name.
     itemImagePath: (r['itemImagePath'] as string | null) ?? null,
     remarks: (r['remarks'] as string | null) ?? null,
@@ -922,6 +935,10 @@ export async function getJobCardEditModel(
         jc.source_so_line_id AS "sourceSoLineId", jc.source_jw_line_id AS "sourceJwLineId",
         jc.order_qty AS "orderQty", jc.priority, jc.due_date AS "dueDate",
         jc.drawing_file_path AS "drawingFilePath", jc.remarks AS "remarks", i.code AS "itemCode",
+        -- ADR-289 (warning only): a MAKE item card with no Drawing Rev.
+        (jc.item_revision_id IS NULL AND EXISTS (
+          SELECT 1 FROM public.items mi
+          WHERE mi.id = jc.item_id AND mi.procurement_type = 'make')) AS "drawingRevMissing",
         jc.raw_material_grade_id AS "rawMaterialGradeId",
         jc.raw_material_grade_text AS "rawMaterialGradeText",
         jc.raw_material_size_id AS "rawMaterialSizeId",
@@ -1078,6 +1095,8 @@ export async function getJobCardEditModel(
       priority: h['priority'] as JobCardEditModel['priority'],
       dueDate: h['dueDate'] != null ? dateLike(h['dueDate']) : null,
       drawingFilePath: (h['drawingFilePath'] as string | null) ?? null,
+      // ADR-289 — warning only: a make item card with no Drawing Rev.
+      drawingRevMissing: h['drawingRevMissing'] === true,
       // The order's drawing, live from the source line (see the joins above).
       // At most one of the two line paths is ever set; the screen picks the
       // order it prefers and labels which file it is showing.
@@ -1223,7 +1242,19 @@ export async function getJobCardStatusExtras(
       WHERE o.job_card_id = ${id}::uuid AND ${opScope}
       ORDER BY o.op_seq
     `)) as unknown as Array<Record<string, unknown>>;
+    // ADR-291 — hold state per op (lib/jc-op-hold.ts is the one reader/writer).
+    const holds = await readOpHolds(
+      tx,
+      companyId,
+      opRows.map((o) => o['jcOpId'] as string),
+    );
     const opExtras: JobCardStatusOpExtra[] = opRows.map((o) => ({
+      ...(holds.get(o['jcOpId'] as string) ?? {
+        holdReason: null,
+        heldAt: null,
+        holdEcrCode: null,
+        holdEcrId: null,
+      }),
       jcOpId: o['jcOpId'] as string,
       machineName: (o['machineName'] as string | null) ?? null,
       toolDetails: (o['toolDetails'] as string | null) ?? null,
@@ -2083,6 +2114,28 @@ async function sourceLineItemRevisionId(
   return rows[0]?.itemRevisionId ?? null;
 }
 
+/** ADR-289 — a Job Card that has a Drawing Rev reads its drawing from the Rev
+ *  record (getJobCardEditModel revisionDrawingFilePath), so a NEW, different
+ *  file may not be written onto the card itself. A null path (the create form
+ *  sends null for such a card) and the saved path sent back unchanged (the
+ *  edit form) are not uploads and pass. A card with no Rev is unchanged. */
+async function assertNoDirectJcDrawing(
+  tx: DbTransaction,
+  itemRevisionId: string | null,
+  itemCode: string,
+  newPath: string | null | undefined,
+  savedPath: string | null,
+): Promise<void> {
+  if (!itemRevisionId || !newPath || newPath === savedPath) return;
+  const rows = (await tx.execute(sql`
+    SELECT rev FROM public.item_revisions WHERE id = ${itemRevisionId}::uuid
+  `)) as unknown as Array<{ rev: string }>;
+  const label = itemRevLabel(itemCode, rows[0]?.rev ?? '');
+  throw new ValidationError(
+    `This Job Card's drawing comes from ${label}. Replace it from the Drawing Rev record.`,
+  );
+}
+
 export async function createJobCard(
   input: JobCardWriteInput,
   user: AuthContext,
@@ -2146,6 +2199,11 @@ export async function createJobCard(
       input.sourceJwLineId,
       item.id,
     );
+    // ADR-290 Step 3 — a new Job Card only on a released (or old) Rev.
+    await assertRevReleasedForWork(tx, companyId, itemRevisionId);
+    // ADR-292 — Drawing Rev strict switch: a MAKE item needs a Rev.
+    await assertMakeItemHasRev(tx, companyId, item.id, itemRevisionId);
+    await assertNoDirectJcDrawing(tx, itemRevisionId, item.code, input.drawingFilePath, null);
 
     const code = await nextJcCode(tx, companyId);
     const [jc] = await tx
@@ -3604,6 +3662,16 @@ export async function updateJobCardTx(
           head.sourceJwLineId,
           item.id,
         );
+  // ADR-290 Step 3 — a re-picked item's Rev must allow work (the same item
+  // keeps the Rev the card already has).
+  if (item.id !== head.itemId) await assertRevReleasedForWork(tx, companyId, itemRevisionId);
+  await assertNoDirectJcDrawing(
+    tx,
+    itemRevisionId,
+    item.code,
+    input.drawingFilePath,
+    head.drawingFilePath ?? null,
+  );
   // §20.2's shape, used here for §20.4: the version test rides ON the UPDATE's
   // WHERE instead of on a row lock, because this path must NOT lock job_cards
   // (the ADR-220 deadlock against Op Entry, explained at the head read above).

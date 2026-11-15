@@ -218,6 +218,12 @@ export const SECTIONS: readonly NavSection[] = [
           { to: '/bom-masters', label: 'BOM Master', icon: '📦' },
           { to: '/ml-boms', label: 'Multi-Level BOM', icon: '🧩' },
           { to: '/design-tracker', label: 'Design Tracker', icon: '🎨' },
+          // ADR-290 — release status of every Item + Drawing Rev.
+          { to: '/drawing-register', label: 'Drawing Register', icon: '📐' },
+          // ADR-291 — Engineering Change (ECR) on a customer Rev change.
+          { to: '/ecrs', label: 'Engineering Change', icon: '🔁' },
+          // ADR-292 — Engineering-approved use of one Drawing Rev for another.
+          { to: '/rev-substitutions', label: 'Rev Substitutions', icon: '🔀' },
           // Route Card Master moved to Planning > Master (ADR-205). It is
           // listed there and nowhere else — one page, one place in the menu.
         ],

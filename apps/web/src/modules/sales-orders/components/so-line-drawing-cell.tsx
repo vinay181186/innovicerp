@@ -8,7 +8,10 @@
 // is logged, and Download shows only for people who hold the drawing-download
 // tick.
 
-import { DrawingRevField } from '@/modules/item-revisions/components/drawing-rev-field';
+import {
+  DrawingRevField,
+  type DrawingRevFieldProps,
+} from '@/modules/item-revisions/components/drawing-rev-field';
 
 export function SoLineDrawingCell({
   value,
@@ -19,6 +22,7 @@ export function SoLineDrawingCell({
   rev,
   savedRev,
   savedPath,
+  confirm,
 }: {
   value: string | null | undefined;
   onChange: (path: string | undefined) => void;
@@ -33,6 +37,8 @@ export function SoLineDrawingCell({
   /** Saved line only: the Rev / file it was loaded with. */
   savedRev?: string | null | undefined;
   savedPath?: string | null | undefined;
+  /** ADR-290 — the "Confirmed" tick, owned by the form's useRevConfirmGate. */
+  confirm?: DrawingRevFieldProps['confirm'];
 }): React.JSX.Element {
   return (
     <DrawingRevField
@@ -45,6 +51,7 @@ export function SoLineDrawingCell({
       refCode={refCode}
       savedRev={savedRev}
       savedPath={savedPath}
+      confirm={confirm}
     />
   );
 }

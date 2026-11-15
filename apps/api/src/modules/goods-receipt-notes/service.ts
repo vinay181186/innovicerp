@@ -51,6 +51,7 @@ import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { editConflicts, rowChangedByName } from '../../lib/row-changed-by';
 import { assertProductionOrderNotShortClosed } from '../../lib/production-order-stop';
 import { assertLineQtysFitUom } from '../../lib/qty-uom';
+import { noteReceiptOnHeldOp } from '../../lib/jc-op-hold';
 import { type DiffField, diffFields, softDeleteStamp, valuesEqual } from '../../lib/audit-trail';
 import { loadRelatedItems } from '../../lib/related-items';
 import {
@@ -63,7 +64,12 @@ import {
 import { emitActivityLog } from '../activity-log/service';
 import { assertNoPendingCancel } from '../cancel-requests/pending-guard';
 import { grnSourceReceiptBlockers } from './cancel';
-import { recalcPoHeaderStatus, recalcPoLineReceivedQty, resolveGrnLineJobCardId } from './cascades';
+import {
+  recalcPoHeaderStatus,
+  recalcPoLineReceivedQty,
+  resolveGrnLineJcOpIds,
+  resolveGrnLineJobCardId,
+} from './cascades';
 import {
   ActivityAction,
   type DocumentEditStagedResult,
@@ -1328,6 +1334,11 @@ export async function createGoodsReceiptNote(
     for (const ln of insertedLines) {
       const guardJcId = await resolveGrnLineJobCardId(tx, ln.id);
       if (guardJcId) await assertProductionOrderNotShortClosed(tx, guardJcId);
+      // ADR-291 — an OSP return is goods already back from the vendor: a hold
+      // or a not-released Rev does NOT refuse it; the Job Card's history notes it.
+      for (const opId of await resolveGrnLineJcOpIds(tx, ln.id)) {
+        await noteReceiptOnHeldOp(tx, { companyId, jcOpId: opId, userId: user.id, docRef: code });
+      }
     }
 
     // Fire cascades for every newly-inserted line.

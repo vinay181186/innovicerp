@@ -19,15 +19,18 @@
 
 import {
   canDownloadDrawings,
+  canPrintDrawings,
   type DrawingUrlQuery,
   type DrawingUrlResponse,
 } from '@innovic/shared';
+import { createHash } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
 import { supabaseAdmin } from '../../lib/supabase-admin';
 import { appendActivityLog, emitActivityLogBatch } from '../activity-log/service';
 import { getMyAccess } from '../access-control/service';
+import type { DrawingPrintBody } from './schema';
 
 /** Every drawing in the system lives in this one private bucket (0039). */
 const DRAWING_BUCKET = 'qc-docs';
@@ -252,6 +255,19 @@ export async function getDrawingUrl(
 }
 
 /**
+ * ADR-290 — SHA-256 (hex) of one drawing file, read from the drawings bucket
+ * with the service key. Stored on the Drawing Rev at release so a later swap of
+ * the stored file can be detected. Null when the file cannot be read — the
+ * caller refuses the release.
+ */
+export async function hashDrawingFile(path: string): Promise<string | null> {
+  const { data, error } = await supabaseAdmin.storage.from(DRAWING_BUCKET).download(path);
+  if (error || !data) return null;
+  const buf = Buffer.from(await data.arrayBuffer());
+  return createHash('sha256').update(buf).digest('hex');
+}
+
+/**
  * ADR-252 — download links for a QC Dossier bulk download. The caller has
  * already proved every path is a file of that order's dossier (the dossier
  * is the ownership test here — it also covers op_log.qc_report_path, which
@@ -310,4 +326,64 @@ export async function signQcDossierFiles(
     );
   });
   return out;
+}
+
+/**
+ * ADR-289 — "Can print drawings". The screen calls this BEFORE it opens the
+ * print window. Same order as getDrawingUrl's download branch: the drawing
+ * must be one this company owns (else Not Found), canPrintDrawings decides
+ * (a refusal is logged as 'drawing_print_refused' and answered 403), and only
+ * a print that is allowed is logged as 'drawing_print'. Nothing is signed here
+ * — the screen already holds the view link it prints from.
+ */
+export async function logDrawingPrint(input: DrawingPrintBody, user: AuthContext): Promise<void> {
+  const companyId = requireCompany(user);
+  let path = input.path?.trim() ?? '';
+  let what = 'Drawing';
+  if (input.itemRevisionId) {
+    const rows = await withUserContext(
+      user,
+      async (tx) =>
+        (await tx.execute(sql`
+        SELECT ir.drawing_file_path AS path, i.code AS item_code, ir.rev
+        FROM public.item_revisions ir
+        JOIN public.items i ON i.id = ir.item_id
+        WHERE ir.id = ${input.itemRevisionId}::uuid
+          AND ir.company_id = ${companyId}::uuid AND ir.deleted_at IS NULL
+        LIMIT 1
+      `)) as unknown as Array<{ path: string | null; item_code: string; rev: string }>,
+    );
+    const r = rows[0];
+    if (!r) throw new NotFoundError('Drawing Rev not found');
+    if (!r.path) throw new NotFoundError('This Drawing Rev has no drawing to print.');
+    path = r.path;
+    what = `${SOURCE_LABEL['item_revision']} ${r.item_code}/${r.rev}`;
+  } else if (path === '' || !(await pathBelongsToCompany(user, companyId, path))) {
+    throw new NotFoundError('Drawing file not found');
+  }
+  const detail = `${what} — ${path.split('/').pop() || path}`;
+  const eff = await getMyAccess(user);
+  if (!canPrintDrawings(eff, user.role)) {
+    await appendActivityLog(
+      {
+        action: 'drawing_print_refused',
+        entity: input.itemRevisionId ? 'item_revision' : 'drawing',
+        detail: `Print refused (no drawing-print permission) — ${detail}`,
+        refId: input.itemRevisionId ?? null,
+      },
+      user,
+    );
+    throw new AuthorizationError(
+      'You do not have permission to print drawings. Ask an admin to enable it for you.',
+    );
+  }
+  await appendActivityLog(
+    {
+      action: 'drawing_print',
+      entity: input.itemRevisionId ? 'item_revision' : 'drawing',
+      detail,
+      refId: input.itemRevisionId ?? null,
+    },
+    user,
+  );
 }

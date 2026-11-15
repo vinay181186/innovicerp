@@ -61,7 +61,9 @@ export type DocSeries =
   | 'design_tracker'
   | 'design_projects'
   | 'design_dcrs'
-  | 'design_dcns';
+  | 'design_dcns'
+  // ADR-291 — Engineering Change, IN-ECR-#####.
+  | 'engineering_changes';
 
 /** Serialise number picking for one series of one company until this
  *  transaction ends. See the file header.

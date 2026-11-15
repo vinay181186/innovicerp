@@ -264,6 +264,10 @@ export const jobWorkOrderLineInputSchema = z.object({
     .refine((s) => s === '' || REVISION_PATTERN.test(s), 'Rev: letters, digits, . - / only')
     .optional(),
   drawingFilePath: z.string().max(512).nullable().optional(),
+  /** ADR-289 — why the Drawing Rev of this line changed. Required by the server
+   *  when the line already has a Plan / PRO / Job Card (min 5 characters);
+   *  ignored when the Rev does not change. */
+  revChangeReason: z.string().trim().max(500).optional(),
   // No default: a partial update that leaves `uom` out must not reset it.
   uom: uomSchema.optional(),
   orderQty: z.number().int().positive(), // CHECK > 0 in DB too

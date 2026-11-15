@@ -31,10 +31,12 @@ import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
 import { lockItemForStock, postStockMove, roundQty } from '../../lib/stock-ledger';
+import { giveBackToParts, recordOutParts } from '../../lib/stock-out-parts';
 import { emitActivityLog } from '../activity-log/service';
 import { assertNoPendingCancel } from '../cancel-requests/pending-guard';
 import { assertReturnWithinStillOut, checkAssemblyAllowance, useOwnReservation } from './assembly';
 import { enforceOverToIssue, resolveTargetAndCap } from './guard';
+import { consumeIssueSubstitution, giveBackIssueRevs, resolveIssueRevs } from './rev';
 import { lockSlip, nextStoreIssueCode, readSlipLines, resolveIssuedTo, today } from './slip';
 import { readStoreIssueDetail, requireCompany } from './read';
 
@@ -98,6 +100,15 @@ export async function createStoreIssue(
     const own = soId
       ? await checkAssemblyAllowance(tx, companyId, soId, input.lines, itemCodes)
       : null;
+    // ADR-292 — the Drawing Rev bucket of each line (make items); a Job Card
+    // of the wrong Rev is refused unless an approved substitution covers it.
+    const { revs, subs } = await resolveIssueRevs(
+      tx,
+      companyId,
+      input.lines,
+      target.jobCardId,
+      itemCodes,
+    );
 
     // One ISS- number at a time per company (same pattern as stock counts).
     await tx.execute(
@@ -147,6 +158,7 @@ export async function createStoreIssue(
         guard: 'available',
         allowance: own?.get(l.itemId) ?? 0,
         qtyLabel: 'Issue Qty',
+        ...(revs[idx] !== undefined ? { itemRevisionId: revs[idx] } : {}),
       });
       const lineRows = await tx
         .insert(storeIssueLines)
@@ -162,6 +174,17 @@ export async function createStoreIssue(
           updatedBy: userId,
         })
         .returning({ id: storeIssueLines.id });
+      // ADR-292 — a substituted line uses up its substitution, recorded on it.
+      await consumeIssueSubstitution(tx, companyId, userId, subs[idx] ?? null, lineRows[0]!.id);
+      // ADR-289 — keep EVERY Rev bucket this issue took (mv.rows), so Return
+      // and Cancel put the stock back into the same buckets.
+      await recordOutParts(tx, {
+        companyId,
+        userId,
+        source: { storeIssueLineId: lineRows[0]!.id },
+        itemId: l.itemId,
+        rows: mv.rows,
+      });
       if (soId && own?.get(l.itemId)) {
         await useOwnReservation(
           tx,
@@ -259,34 +282,44 @@ export async function returnStoreIssue(
     for (const lineId of order) {
       const line = byId.get(lineId)!;
       const qty = want.get(lineId)!;
-      const mv = await postStockMove(tx, {
-        companyId,
-        itemId: line.itemId,
-        txnType: 'in',
-        qty,
-        sourceType: 'store_return',
-        sourceRef: `${iss.code} return · ${line.itemCodeText}`,
-        remarks: `Item Issue return · ${reason}`,
-        txnDate: date,
-        userId: user.id,
-        itemCodeText: line.itemCodeText,
-        guard: 'none',
-        qtyLabel: 'Return Qty',
+      // ADR-289 — back into the Rev bucket(s) this line took, last taken
+      // first: one 'in' ledger row per bucket (stock_out_parts.returned_qty
+      // keeps the split). ONE return row per Return, as before — its
+      // storeTransactionId is the first ledger row.
+      const back = await giveBackToParts(tx, {
+        sources: [{ storeIssueLineId: line.id }],
+        fallbackTxnId: line.storeTransactionId,
+        move: {
+          companyId,
+          itemId: line.itemId,
+          qty,
+          sourceType: 'store_return',
+          sourceRef: `${iss.code} return · ${line.itemCodeText}`,
+          remarks: `Item Issue return · ${reason}`,
+          txnDate: date,
+          userId: user.id,
+          itemCodeText: line.itemCodeText,
+          guard: 'none',
+          qtyLabel: 'Return Qty',
+        },
       });
+      await giveBackIssueRevs(tx, companyId, user.id, line.id, back);
+      const first = back[0]!.mv;
       await tx.insert(storeIssueReturns).values({
         companyId,
         issueLineId: line.id,
         returnDate: date,
         qty,
         reason,
-        storeTransactionId: mv.id,
+        storeTransactionId: first.id,
         createdBy: user.id,
         updatedBy: user.id,
       });
+      const last = back[back.length - 1]!.mv;
       done.push({
         lineNo: line.lineNo,
         qty,
-        text: `${line.itemCodeText} × ${qty} (stock ${mv.stockBefore} → ${mv.stockAfter})`,
+        text: `${line.itemCodeText} × ${qty} (stock ${first.stockBefore} → ${last.stockAfter})`,
       });
     }
 

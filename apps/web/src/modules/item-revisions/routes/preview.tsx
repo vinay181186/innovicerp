@@ -6,14 +6,27 @@
 // canDownloadDrawings check the file preview uses); the server refuses it to
 // everyone else anyway. Below: the drawing's history and the documents that
 // name this Item + Rev, each linking to its own page.
+//
+// ADR-290: the Drawing Rev Status chip, change note, Released On / By and the
+// release "File check" (first 12 characters of the stored file hash); the
+// same release actions as the Drawing Register's row ⋯; and the drawing
+// corrections asked on a released Rev (Approve / Reject for the Drawing
+// Release switch).
 
+import type { RevStatusAction } from '@innovic/shared';
 import { Icon } from '@/ui/core';
 import { createRoute, useRouter } from '@tanstack/react-router';
 import { ArrowLeft } from 'lucide-react';
 import { useState } from 'react';
 import { fileNameFromPath } from '@/components/shared/file-preview-modal';
-import { canDownloadDrawings, useMyAccess } from '@/lib/access-control';
-import { saveDrawing } from '@/lib/drawing-url';
+import {
+  canDownloadDrawings,
+  canPrintDrawings,
+  canReleaseDrawings,
+  useMyAccess,
+} from '@/lib/access-control';
+import { fmtDateTime } from '@/lib/date';
+import { logDrawingPrint, saveDrawing } from '@/lib/drawing-url';
 import { useSession } from '@/lib/session';
 import { useMyCompany } from '@/modules/settings/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -23,8 +36,17 @@ import { DocIdent, IdentCode, IdentSep } from '@/ui/forms';
 import { PageState } from '@/ui/layout';
 import { TabStrip } from '@/ui/navigation';
 import { useItemRevision } from '../api';
+import { DrawingCorrectionsTable } from '../components/drawing-corrections-table';
 import { DrawingHistoryTable, LinkedDocsTable } from '../components/drawing-history-tables';
 import { DrawingViewer, drawingFileKind, useDrawingViewUrl } from '../components/drawing-viewer';
+import { ReplaceDrawingDialog } from '../components/replace-drawing-dialog';
+import { RevStatusBadge } from '../components/rev-status-badge';
+import {
+  RevActionDialog,
+  revActionsFor,
+  useRevActionRights,
+  type RevActionTarget,
+} from '../components/rev-status-actions';
 import { printDrawing } from '../lib/print-drawing';
 
 export const itemRevisionPreviewRoute = createRoute({
@@ -33,7 +55,7 @@ export const itemRevisionPreviewRoute = createRoute({
   component: DrawingPage,
 });
 
-type TabKey = 'drawing' | 'history' | 'linked';
+type TabKey = 'drawing' | 'history' | 'linked' | 'corrections';
 
 function DrawingPage(): React.JSX.Element {
   const { itemRevisionId } = itemRevisionPreviewRoute.useParams();
@@ -43,11 +65,19 @@ function DrawingPage(): React.JSX.Element {
   const { data: me } = useSession();
   const { data: company } = useMyCompany();
   const mayDownload = canDownloadDrawings(eff, me?.role);
+  // ADR-289 — Print only for the "Can print drawings" switch; the server
+  // checks it again (and logs the print) before the window opens.
+  const mayPrint = canPrintDrawings(eff, me?.role);
   const path = rev?.drawingFilePath ?? null;
   const view = useDrawingViewUrl(path, rev?.label ?? '');
   const [tab, setTab] = useState<TabKey>('drawing');
   const [notice, setNotice] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [printing, setPrinting] = useState(false);
+  const rights = useRevActionRights();
+  const mayRelease = canReleaseDrawings(eff, me?.role);
+  const [acting, setActing] = useState<RevStatusAction | null>(null);
+  const [replacing, setReplacing] = useState(false);
 
   if (isLoading) return <PageState state="loading" message="Loading drawing…" />;
   if (isError || !rev) {
@@ -59,8 +89,28 @@ function DrawingPage(): React.JSX.Element {
     );
   }
 
-  const onPrint = (): void => {
+  const target: RevActionTarget = {
+    id: rev.id,
+    label: rev.label,
+    releaseStatus: rev.releaseStatus,
+    updatedAt: rev.updatedAt,
+    hasFile: Boolean(path),
+  };
+  const actions = revActionsFor(target, rights);
+  const corrections = rev.corrections ?? [];
+  const mayReplace = rights.replace && Boolean(path) && rev.releaseStatus !== 'obsolete';
+
+  const onPrint = async (): Promise<void> => {
     setNotice(null);
+    setPrinting(true);
+    try {
+      await logDrawingPrint({ itemRevisionId: rev.id, ...(path ? { path } : {}) });
+    } catch (e) {
+      setNotice(e instanceof Error ? e.message : 'Could not print the drawing.');
+      return;
+    } finally {
+      setPrinting(false);
+    }
     const ok = printDrawing({
       revision: rev,
       company,
@@ -106,15 +156,38 @@ function DrawingPage(): React.JSX.Element {
         </span>
         <span className="panel-title">Drawing</span>
         <span style={{ flex: 1 }} />
-        <button
-          type="button"
-          className="btn btn-ghost"
-          onClick={onPrint}
-          disabled={!path}
-          title={path ? undefined : 'This Drawing Rev has no drawing file'}
-        >
-          <Icon name="printer" size={13} /> Print
-        </button>
+        {actions.map((a) => (
+          <button
+            key={a.action}
+            type="button"
+            className={
+              a.action === 'reject' || a.action === 'obsolete'
+                ? 'btn btn-ghost red'
+                : 'btn btn-ghost'
+            }
+            onClick={() => setActing(a.action)}
+            disabled={Boolean(a.disabledReason)}
+            title={a.disabledReason}
+          >
+            {a.label}
+          </button>
+        ))}
+        {mayReplace ? (
+          <button type="button" className="btn btn-ghost" onClick={() => setReplacing(true)}>
+            Replace drawing…
+          </button>
+        ) : null}
+        {mayPrint ? (
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => void onPrint()}
+            disabled={!path || printing}
+            title={path ? undefined : 'This Drawing Rev has no drawing file'}
+          >
+            <Icon name="printer" size={13} /> {printing ? 'Printing…' : 'Print'}
+          </button>
+        ) : null}
         {mayDownload && path ? (
           <button
             type="button"
@@ -145,6 +218,28 @@ function DrawingPage(): React.JSX.Element {
           <IdentSep />
           <span className="text3">Route Card</span>
           <span className="mono fw-700">{rev.routeCardCode ?? '—'}</span>
+          <IdentSep />
+          <span className="text3">Drawing Rev Status</span>
+          <RevStatusBadge status={rev.releaseStatus} />
+        </DocIdent>
+        <DocIdent>
+          <span className="text3">Released On</span>
+          <span className="mono">{fmtDateTime(rev.releasedAt)}</span>
+          <IdentSep />
+          <span className="text3">Released By</span>
+          <span>{rev.releasedByName ?? '—'}</span>
+          <IdentSep />
+          <span className="text3">File check</span>
+          <span className="mono" title={rev.fileHash ?? undefined}>
+            {rev.fileHash ? rev.fileHash.slice(0, 12) : '—'}
+          </span>
+          {rev.changeNote ? (
+            <>
+              <IdentSep />
+              <span className="text3">Change Note</span>
+              <span title={rev.changeNote}>{rev.changeNote}</span>
+            </>
+          ) : null}
         </DocIdent>
       </Panel>
 
@@ -156,6 +251,7 @@ function DrawingPage(): React.JSX.Element {
           { key: 'drawing', label: 'Drawing' },
           { key: 'history', label: 'Drawing History', count: rev.history.length },
           { key: 'linked', label: 'Linked Documents', count: rev.linkedDocs.length },
+          { key: 'corrections', label: 'Drawing corrections', count: corrections.length },
         ]}
       />
 
@@ -169,7 +265,21 @@ function DrawingPage(): React.JSX.Element {
         ) : null}
         {tab === 'history' ? <DrawingHistoryTable rows={rev.history} /> : null}
         {tab === 'linked' ? <LinkedDocsTable rows={rev.linkedDocs} /> : null}
+        {tab === 'corrections' ? (
+          <DrawingCorrectionsTable rows={corrections} label={rev.label} mayDecide={mayRelease} />
+        ) : null}
       </Panel>
+
+      {acting ? (
+        <RevActionDialog target={target} action={acting} onClose={() => setActing(null)} />
+      ) : null}
+      {replacing ? (
+        <ReplaceDrawingDialog
+          revision={rev}
+          onCancel={() => setReplacing(false)}
+          onDone={() => setReplacing(false)}
+        />
+      ) : null}
     </div>
   );
 }

@@ -40,6 +40,10 @@ export function toEffectiveAccess(row: {
   fullAccess: boolean | null;
   auditor: boolean | null;
   drawingDownload: boolean | null;
+  /** ADR-289 — "Can print drawings". */
+  drawingPrint: boolean | null;
+  /** ADR-290 — "Can release drawings". */
+  drawingRelease: boolean | null;
   departments: unknown;
   forms: unknown;
 }): EffectiveAccess {
@@ -47,6 +51,8 @@ export function toEffectiveAccess(row: {
     fullAccess: row.fullAccess ?? false,
     auditor: row.auditor ?? false,
     drawingDownload: row.drawingDownload ?? false,
+    drawingPrint: row.drawingPrint ?? false,
+    drawingRelease: row.drawingRelease ?? false,
     departments: normalizeDeptsMap(asJsonMap<AccessDeptsMap>(row.departments)),
     forms: cascadeFormsMap(asJsonMap<AccessFormsMap>(row.forms)),
   };
@@ -104,6 +110,8 @@ async function readMyAccess(user: AuthContext): Promise<FrozenAccess> {
           fullAccess: null,
           auditor: null,
           drawingDownload: null,
+          drawingPrint: null,
+          drawingRelease: null,
           departments: null,
           forms: null,
         });

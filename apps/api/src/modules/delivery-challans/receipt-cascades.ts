@@ -38,6 +38,7 @@ import {
 } from '../../db/schema';
 import type { DbTransaction } from '../../db/with-user-context';
 import { ValidationError } from '../../lib/errors';
+import { noteReceiptOnHeldOp } from '../../lib/jc-op-hold';
 
 /**
  * Σ received (+ rejected, legacy column) across every active receipt line on
@@ -185,6 +186,15 @@ export async function applyReceiveToJcOp(args: ReceiveCascadeArgs): Promise<Rece
     .limit(1);
   const op = rows[0];
   if (!op) return { fired: false };
+  // ADR-291 — goods back from the vendor are already in the building, so a
+  // hold / not-released Rev does NOT refuse the receipt; the Job Card's
+  // history records that it came back while held.
+  await noteReceiptOnHeldOp(tx, {
+    companyId,
+    jcOpId: op.id,
+    userId: adminUserId,
+    docRef: args.receiptCode,
+  });
 
   const jcRows = await tx
     .select({ code: jobCards.code })

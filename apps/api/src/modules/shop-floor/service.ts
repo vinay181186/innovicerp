@@ -5,6 +5,7 @@
 // associated JC + item + SO + completion qty.
 
 import { sql } from 'drizzle-orm';
+import { drawingRevOf } from '../../lib/drawing-rev';
 import type {
   ShopFloorMachine,
   ShopFloorResponse,
@@ -67,7 +68,7 @@ export async function getShopFloor(user: AuthContext): Promise<ShopFloorResponse
         -- JW-sourced or standalone card still appears on its machine with a null
         -- revision. Cast to text because the contract types this as a string and
         -- a database without migration 0119 still holds the old integer here.
-        COALESCE(sol.revision::text, jwl.revision::text) AS "itemRevision",
+        COALESCE(${drawingRevOf(sql`jc.item_revision_id`)}, sol.revision::text, jwl.revision::text) AS "itemRevision",
         -- POL = the line number printed on the CUSTOMER's own purchase order,
         -- off the same SO line as the revision above, else the Job Work SO
         -- line's POL for a JW-sourced card (ADR-236).

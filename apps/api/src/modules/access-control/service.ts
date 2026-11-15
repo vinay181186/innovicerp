@@ -24,6 +24,8 @@ import {
   type AccessFormKey,
   type AccessFormsMap,
   canDownloadDrawings,
+  canPrintDrawings,
+  canReleaseDrawings,
   cascadeFormsMap,
   effectiveFormPerms,
   type EffectiveAccess,
@@ -66,6 +68,8 @@ function rowToUserAccess(r: {
   fullAccess: boolean;
   auditor: boolean;
   drawingDownload: boolean;
+  drawingPrint: boolean;
+  drawingRelease: boolean;
   mainDept: string | null;
   departments: unknown;
   forms: unknown;
@@ -82,6 +86,10 @@ function rowToUserAccess(r: {
     // living in the per-form map. Reported raw — whether it actually GRANTS a
     // download is canDownloadDrawings' decision, made in one place.
     drawingDownload: r.drawingDownload,
+    // ADR-289 — "Can print drawings", stored raw like drawingDownload.
+    drawingPrint: r.drawingPrint,
+    // ADR-290 — "Can release drawings", stored raw.
+    drawingRelease: r.drawingRelease,
     mainDept: r.mainDept,
     fullAccess: r.fullAccess,
     departments: asJsonMap<AccessDeptsMap>(r.departments),
@@ -180,6 +188,8 @@ export async function listUserAccess(
         acFullAccess: userAccess.fullAccess,
         acAuditor: userAccess.auditor,
         acDrawingDownload: userAccess.drawingDownload,
+        acDrawingPrint: userAccess.drawingPrint,
+        acDrawingRelease: userAccess.drawingRelease,
         acMainDept: userAccess.mainDept,
         acDepartments: userAccess.departments,
         acForms: userAccess.forms,
@@ -222,6 +232,8 @@ export async function listUserAccess(
         // than pretending someone ticked a box nobody ticked. What a person may
         // really do is canDownloadDrawings' answer, asked at the point of use.
         drawingDownload: r.acDrawingDownload ?? false,
+        drawingPrint: r.acDrawingPrint ?? false,
+        drawingRelease: r.acDrawingRelease ?? false,
         mainDept: r.acMainDept ?? null,
         derivedRole: roleForAccess({ fullAccess, auditor, departments: normalizeDeptsMap(depts) }),
         deptCount: fullAccess || auditor ? totalDepts : countDepts(depts),
@@ -359,6 +371,8 @@ async function listDeptUserOptions(
         auditor: r.acAuditor,
         // Irrelevant to who may make an entry; stated, not defaulted.
         drawingDownload: false,
+        drawingPrint: false,
+        drawingRelease: false,
         departments: r.acDepartments,
         forms: r.acForms,
       });
@@ -538,6 +552,8 @@ export async function getUserAccess(userId: string, user: AuthContext): Promise<
       // Granted, never assumed — an un-configured account opens with the box
       // unticked, same as every other switch on this shape.
       drawingDownload: false,
+      drawingPrint: false,
+      drawingRelease: false,
       mainDept: null,
       departments: {},
       forms: {},
@@ -569,6 +585,10 @@ export async function saveUserAccess(
   // second copy of it into this row is how the two would come to disagree: an
   // account demoted out of L6 later would keep a tick nobody meant to give.
   const drawingDownload = input.drawingDownload;
+  // ADR-289 — "Can print drawings", stored exactly as ticked (same reason).
+  const drawingPrint = input.drawingPrint;
+  // ADR-290 — "Can release drawings", stored exactly as ticked.
+  const drawingRelease = input.drawingRelease;
   // The main department has to be a real department that this person actually
   // holds a tier in. A stale value — the admin picked Design, then cleared the
   // Design row by hand — would leave the screen claiming a department the
@@ -704,6 +724,8 @@ export async function saveUserAccess(
           fullAccess: input.fullAccess,
           auditor,
           drawingDownload,
+          drawingPrint,
+          drawingRelease,
           mainDept,
           departments: cleanDepts,
           forms: cleanForms,
@@ -722,6 +744,8 @@ export async function saveUserAccess(
           fullAccess: input.fullAccess,
           auditor,
           drawingDownload,
+          drawingPrint,
+          drawingRelease,
           mainDept,
           departments: cleanDepts,
           forms: cleanForms,
@@ -754,6 +778,16 @@ export async function saveUserAccess(
           // trail say "no" about someone who can. One rule, one place.
           `; drawing download ${
             canDownloadDrawings({ fullAccess: input.fullAccess, drawingDownload }, derivedRole)
+              ? 'YES'
+              : 'no'
+          }` +
+          `; drawing print ${
+            canPrintDrawings({ fullAccess: input.fullAccess, drawingPrint }, derivedRole)
+              ? 'YES'
+              : 'no'
+          }` +
+          `; drawing release ${
+            canReleaseDrawings({ fullAccess: input.fullAccess, drawingRelease }, derivedRole)
               ? 'YES'
               : 'no'
           }` +

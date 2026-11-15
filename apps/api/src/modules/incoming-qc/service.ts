@@ -35,6 +35,7 @@ import {
   isJwDcReceiptGrn,
   recalcPoHeaderStatus,
   recalcPoLineReceivedQty,
+  resolveGrnLineJcOpIds,
   resolveGrnLineJobCardId,
 } from '../goods-receipt-notes/cascades';
 import {
@@ -43,6 +44,7 @@ import {
 } from '../nc-register/cascades';
 import { onNcReplacementQc, onRecoveryJobCardQc } from '../nc-register/recovery';
 import { assertCompanyStoragePath } from '../../lib/storage-path';
+import { assertJcOpWorkable, lockAndAssertJcOpsWorkable } from '../../lib/jc-op-hold';
 import { recoveryChildCreditsStock, tryApplyQcStockCascade } from '../op-entry/qc-stock-cascade';
 import { tryCascadeJcComplete } from '../op-entry/sales-cascade';
 
@@ -103,6 +105,7 @@ async function creditOutsourceReturn(
   // OSP balance (it has a sent qty), not only whole op_type='outsource' ops.
   if (!op) return;
   if (op.opType !== 'outsource' && (op.sentQty ?? 0) <= 0) return;
+  await assertJcOpWorkable(tx, companyId, op.id); // ADR-291 hold / Rev not released
   const newReturned = (op.returnedQty ?? 0) + acceptedDelta;
   // The 'received' flip needs BOTH: the QC-accepted total covers the sent qty
   // AND the shared "every piece is back in the building" predicate agrees
@@ -398,6 +401,12 @@ export async function submitIncomingQc(
     const jwDcReceipt = await isJwDcReceiptGrn(tx, line.grnId);
     const guardJcId = jwDcReceipt ? null : await resolveGrnLineJobCardId(tx, grnLineId);
     if (guardJcId) await assertProductionOrderNotShortClosed(tx, guardJcId);
+    // ADR-291 — the goods are back (the GRN was allowed), but inspecting them
+    // moves qty on the op: refused while the op is on hold / its Rev is not
+    // released. Locks the op(s) first, as creditOutsourceReturn does below.
+    if (guardJcId) {
+      await lockAndAssertJcOpsWorkable(tx, companyId, await resolveGrnLineJcOpIds(tx, grnLineId));
+    }
 
     // Decimal on KGS / MTR receipts (0172) — every figure rounded to the
     // ledger's 3 places so 0.1 + 0.2 float drift cannot fake an over-inspection.

@@ -66,6 +66,7 @@ import {
 import { FormActions, PageHeader, useSaveShortcut } from '@/ui/layout';
 import { useNextItemCode } from '../api';
 import { ItemImageField } from './item-image-field';
+import { ItemPartFields } from './item-part-fields';
 
 /** What both modes take: the page chrome the route names, plus its handlers. */
 type CommonProps = {
@@ -112,6 +113,8 @@ const CREATE_DEFAULTS: Partial<CreateItemInput> = {
   procurementType: 'make',
   hsnCode: undefined,
   imagePath: null,
+  customerPartNo: null,
+  replacementItemId: null,
 };
 
 const ITEM_TYPE_OPTIONS = ITEM_TYPES.map((t) => ({ value: t, label: ITEM_TYPE_RULES[t].label }));
@@ -155,6 +158,8 @@ function itemToUpdateDefaults(item: Item): UpdateItemInput {
     trackSerial: item.trackSerial ?? false,
     hsnCode: item.hsnCode ?? undefined,
     imagePath: item.imagePath ?? null,
+    customerPartNo: item.customerPartNo ?? null,
+    replacementItemId: item.replacementItemId ?? null,
   };
 }
 
@@ -384,6 +389,13 @@ function CreateItemForm(props: CreateMode): React.JSX.Element {
             <Input id="hsnCode" mono autoComplete="off" {...register('hsnCode')} />
           </FormField>
 
+          <ItemPartFields
+            customerPartNo={watch('customerPartNo')}
+            onCustomerPartNo={(v) => setValue('customerPartNo', v, { shouldDirty: true })}
+            replacementItemId={watch('replacementItemId')}
+            onReplacementItem={(id) => setValue('replacementItemId', id, { shouldDirty: true })}
+          />
+
           {watch('itemType') === 'tool' ? (
             <TrackSerialField
               checked={!!watch('trackSerial')}
@@ -534,6 +546,15 @@ function EditItemForm(props: EditMode): React.JSX.Element {
           >
             <Input id="hsnCode" mono autoComplete="off" {...register('hsnCode')} />
           </FormField>
+
+          <ItemPartFields
+            customerPartNo={watch('customerPartNo')}
+            onCustomerPartNo={(v) => setValue('customerPartNo', v, { shouldDirty: true })}
+            replacementItemId={watch('replacementItemId')}
+            replacementItemCode={props.item.replacementItemCode}
+            onReplacementItem={(id) => setValue('replacementItemId', id, { shouldDirty: true })}
+            selfId={props.item.id}
+          />
 
           {watch('itemType') === 'tool' ? (
             <TrackSerialField

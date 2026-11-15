@@ -8,6 +8,7 @@
 // Derived on every read from lib/material-requirement.ts — the same numbers
 // the Item Issue guard caps against. Reversed slips never count.
 
+import { sql } from 'drizzle-orm';
 import type { JcMaterial, JcMaterialLine, SoMaterial, SoMaterialLine } from '@innovic/shared';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireAnyFormAccess, STORE_VIEW_FORMS } from '../../lib/access';
@@ -80,9 +81,16 @@ export async function getJcMaterial(jobCardId: string, user: AuthContext): Promi
       .sort((a, b) => a.itemCode.localeCompare(b.itemCode));
     lines.push(...others);
 
+    // ADR-292 — the card's Drawing Rev, so the issue line can pre-select it.
+    const rev = (await tx.execute(sql`
+      SELECT item_revision_id AS "revId" FROM public.job_cards
+       WHERE id = ${jc.id}::uuid AND company_id = ${companyId}::uuid`)) as unknown as Array<{
+      revId: string | null;
+    }>;
     return {
       jobCardId: jc.id,
       jcCode: jc.code,
+      itemRevisionId: rev[0]?.revId ?? null,
       orderQty: jc.orderQty,
       planned: reqs.length > 0,
       lines,

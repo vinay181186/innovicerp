@@ -40,6 +40,7 @@ import type {
   ListVendorsQuery,
   ListVendorsResponse,
 } from '@innovic/shared';
+import { itemRevLabel } from '@innovic/shared';
 import { useQueries } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
@@ -52,6 +53,10 @@ import { useSession } from '@/lib/session';
 import { itemLineLabel } from '@/lib/item-code';
 import { soNoWithInternal } from '@/lib/so-number';
 import { useItemsList } from '@/modules/items/api';
+import { FilePreviewModal, fileNameFromPath } from '@/components/shared/file-preview-modal';
+import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { useItemRevisionLookup } from '@/modules/item-revisions/api';
+import { ReplaceDrawingDialog } from '@/modules/item-revisions/components/replace-drawing-dialog';
 import { useDefaultRouteOps } from '@/modules/plans/api';
 import { useMachineGroupsList, useMachinesList } from '@/modules/machines/api';
 import {
@@ -462,6 +467,34 @@ export function JobCardForm({
     ? sourceOptions.find((o) => o.lineId === sourceLineId)
     : undefined;
 
+  // ADR-289 (point 15) — a card whose JWSO line names an Item + Drawing Rev
+  // (ABC/1) shows THAT record's drawing; the server refuses a direct upload on
+  // it. A wrong file is fixed only through the register's "Replace drawing…"
+  // (Route Card Master Edit holders — the same right DrawingRevField checks).
+  // A card with no Drawing Rev keeps its own Attach / Replace, unchanged.
+  const srcRev = selectedSource?.itemId ? (selectedSource.itemRevision ?? null) : null;
+  const revLookup = useItemRevisionLookup(srcRev ? pickedItemId : null, srcRev);
+  const { data: eff } = useMyAccess();
+  const canReplaceRevDrawing = effectiveFormPerms(eff, 'routecard_create').edit;
+  // True ONLY once the lookup has answered with a register record. While it
+  // loads, or when the line's Rev text has no record, the card behaves like one
+  // with no Drawing Rev (Attach allowed, nothing cleared) — the server refuses
+  // a direct upload only when the card really carries item_revision_id.
+  const jcRevision = srcRev && pickedItemId ? (revLookup.data?.revision ?? null) : null;
+  const jcHasRev = jcRevision != null;
+  const jcRevFile = jcRevision?.drawingFilePath ?? null;
+  const jcRevLabel = jcRevision?.label ?? itemRevLabel(itemCode.trim(), srcRev);
+  const [revPreviewOpen, setRevPreviewOpen] = useState(false);
+  const [revReplacing, setRevReplacing] = useState(false);
+  // Dependent-field sync: picking a line with a Drawing Rev drops a file
+  // attached by hand for the previous line, so it is never sent.
+  useEffect(() => {
+    if (!jcHasRev || !drawingFilePath) return;
+    setDrawingFilePath(null);
+    setDrawingName('');
+    replaceLocalDrawing(null);
+  }, [jcHasRev, drawingFilePath]);
+
   // Ops counter (legacy jcModalOpsHtml L5927); the plural follows the number
   // actually shown.
   const opCount = ops.filter((o) => o.opType !== 'qc').length;
@@ -754,14 +787,22 @@ export function JobCardForm({
   const noLineTitle = 'Pick a JWSO line — the figure comes from it';
   const handRaisedTitle =
     'A Job Card raised here by hand, off a JWSO line, has no Production Order or Plan';
-  const drawingRef: JcDrawingRef | null = drawingFilePath
-    ? {
-        label: 'Attached to this Job Card',
-        fileName: drawingName || 'drawing',
-        thumbUrl: localDrawing?.isImage ? localDrawing.url : null,
-      }
-    : null;
+  const drawingRef: JcDrawingRef | null = jcHasRev
+    ? jcRevFile
+      ? { label: jcRevLabel, fileName: fileNameFromPath(jcRevFile), thumbUrl: null }
+      : null
+    : drawingFilePath
+      ? {
+          label: 'Attached to this Job Card',
+          fileName: drawingName || 'drawing',
+          thumbUrl: localDrawing?.isImage ? localDrawing.url : null,
+        }
+      : null;
   const openDrawing = (): void => {
+    if (jcHasRev) {
+      if (jcRevFile) setRevPreviewOpen(true);
+      return;
+    }
     if (localDrawing) window.open(localDrawing.url, '_blank', 'noopener');
   };
   const remaining = selectedSource?.remaining;
@@ -769,6 +810,22 @@ export function JobCardForm({
   return (
     <div className="page-fill jc-detail jcc">
       {exit.dialog}
+      {revPreviewOpen && jcRevFile ? (
+        <FilePreviewModal
+          storagePath={jcRevFile}
+          kind="drawing"
+          source="item_revision"
+          refCode={jcRevLabel}
+          onClose={() => setRevPreviewOpen(false)}
+        />
+      ) : null}
+      {revReplacing && jcRevision ? (
+        <ReplaceDrawingDialog
+          revision={jcRevision}
+          onCancel={() => setRevReplacing(false)}
+          onDone={() => setRevReplacing(false)}
+        />
+      ) : null}
       <DetailHeader
         backLabel="Back"
         onBack={goBack}
@@ -925,41 +982,70 @@ export function JobCardForm({
                   }
                 />
                 {/* DRAWING ATTACHMENT (legacy jcModalBody L5996-6006) —
-                    optional, image or PDF. */}
-                <div className="form-grp jcc-in jcc-drawing">
-                  <span className="form-label">Drawing</span>
-                  <label
-                    className="btn btn-ghost btn-sm jcc-attach"
-                    title="Attach Drawing (optional — image or PDF)"
-                  >
-                    📎 {drawingFilePath ? 'Replace' : 'Attach'}
-                    <input
-                      type="file"
-                      accept="image/*,.pdf"
-                      hidden
-                      aria-label="Attach Drawing"
-                      onChange={(e) => void onDrawing(e.target.files?.[0])}
-                    />
-                  </label>
-                  <span className="jcc-file" title={drawingName || undefined}>
-                    {drawingName || 'No file attached'}
-                  </span>
-                  {drawingFilePath ? (
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm btn-icon"
-                      title="Remove the drawing"
-                      aria-label="Remove the drawing"
-                      onClick={() => {
-                        setDrawingFilePath(null);
-                        setDrawingName('');
-                        replaceLocalDrawing(null);
-                      }}
+                    optional, image or PDF. A line with a Drawing Rev shows the
+                    register's drawing instead (ADR-289). */}
+                {jcHasRev ? (
+                  <div className="form-grp jcc-in jcc-drawing">
+                    <span className="form-label">Drawing</span>
+                    {jcRevFile ? (
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        title={`Preview the drawing of ${jcRevLabel}`}
+                        onClick={() => setRevPreviewOpen(true)}
+                      >
+                        📎 view
+                      </button>
+                    ) : null}
+                    <span className="jcc-file" title={jcRevLabel}>
+                      {jcRevFile ? jcRevLabel : `No drawing on file for ${jcRevLabel}`}
+                    </span>
+                    {canReplaceRevDrawing && jcRevision && jcRevFile ? (
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => setRevReplacing(true)}
+                      >
+                        Replace drawing…
+                      </button>
+                    ) : null}
+                  </div>
+                ) : (
+                  <div className="form-grp jcc-in jcc-drawing">
+                    <span className="form-label">Drawing</span>
+                    <label
+                      className="btn btn-ghost btn-sm jcc-attach"
+                      title="Attach Drawing (optional — image or PDF)"
                     >
-                      <Icon name="x" size={12} />
-                    </button>
-                  ) : null}
-                </div>
+                      📎 {drawingFilePath ? 'Replace' : 'Attach'}
+                      <input
+                        type="file"
+                        accept="image/*,.pdf"
+                        hidden
+                        aria-label="Attach Drawing"
+                        onChange={(e) => void onDrawing(e.target.files?.[0])}
+                      />
+                    </label>
+                    <span className="jcc-file" title={drawingName || undefined}>
+                      {drawingName || 'No file attached'}
+                    </span>
+                    {drawingFilePath ? (
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm btn-icon"
+                        title="Remove the drawing"
+                        aria-label="Remove the drawing"
+                        onClick={() => {
+                          setDrawingFilePath(null);
+                          setDrawingName('');
+                          replaceLocalDrawing(null);
+                        }}
+                      >
+                        <Icon name="x" size={12} />
+                      </button>
+                    ) : null}
+                  </div>
+                )}
               </Cluster>
               <Cluster name={null}>
                 <FormField label="JC Date" htmlFor="jc-date" className="jcc-in">

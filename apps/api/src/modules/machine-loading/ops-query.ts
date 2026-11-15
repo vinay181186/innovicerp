@@ -5,6 +5,7 @@
 // LIMIT / OFFSET — and counts with the SAME WHERE.
 
 import { sql, type SQL } from 'drizzle-orm';
+import { drawingRevOf } from '../../lib/drawing-rev';
 import type { MachineLoadOp, MachineLoadingQuery } from '@innovic/shared';
 import type { DbTransaction } from '../../db/with-user-context';
 import { createdByNameSql } from '../../lib/created-by-sql';
@@ -13,7 +14,7 @@ import { soOrJwCodeSql } from '../../lib/order-code';
 import { polSql } from '../../lib/pol';
 
 /** CODE/REV exactly as the cell prints it (itemCodeWithRev). */
-const CODE_REV = sql`(i.code || COALESCE('/' || NULLIF(btrim(COALESCE(sol.revision::text, rev_jwl.revision::text)), ''), ''))`;
+const CODE_REV = sql`(i.code || COALESCE('/' || NULLIF(btrim(COALESCE(${drawingRevOf(sql`jc.item_revision_id`)}, sol.revision::text, rev_jwl.revision::text)), ''), ''))`;
 
 /** The SO No. cell and its filter: the SO's code, else the JWSO's (ADR-267). */
 const ORDER_CODE = soOrJwCodeSql('so', 'rev_jwl');
@@ -61,7 +62,7 @@ const SELECT_LIST = sql`
         -- ::text on purpose: the contract types this as a string, but a database
         -- without migration 0119 still holds an integer here and would hand the
         -- board a number. The cast is a no-op once 0119 is applied.
-        COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
+        COALESCE(${drawingRevOf(sql`jc.item_revision_id`)}, sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
         -- POL = the line number printed on the CUSTOMER's own purchase order,
         -- off the same SO line as the revision above, else the Job Work SO
         -- line's POL for a JW-sourced card (ADR-236).

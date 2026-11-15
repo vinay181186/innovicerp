@@ -9,6 +9,7 @@
 // submitQcLog (isTpi + tpi metadata). RLS via base tables. No migration here.
 
 import { type SQL, sql } from 'drizzle-orm';
+import { drawingRevOf } from '../../lib/drawing-rev';
 import type {
   ListTpiQuery,
   TpiCompletedListResponse,
@@ -82,7 +83,7 @@ function completedFrom(companyId: string): SQL {
 const PENDING_SELECT = sql`
   vos.jc_op_id AS "jcOpId", jc.code AS "jcCode", vos.op_seq AS "opSeq",
   ${ORDER_CODE} AS "soCode", so.internal_so_no AS "soInternalNo", i.code AS "itemCode",
-  COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
+  COALESCE(${drawingRevOf(sql`jc.item_revision_id`)}, sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
   ${polSql('sol', 'rev_jwl')} AS "clientPoLineNo", i.name AS "itemName",
   jo.operation, jc.order_qty AS "orderQty", vos.qc_pending AS "qcPending",
   jo.qc_call_date AS "callDate",
@@ -94,7 +95,7 @@ const COMPLETED_SELECT = sql`
   ol.id AS "logId", jc.code AS "jcCode", jo.op_seq AS "opSeq",
   to_char(jc.jc_date, 'YYYY-MM-DD') AS "jcDate",
   ${ORDER_CODE} AS "soCode", so.internal_so_no AS "soInternalNo", i.code AS "itemCode",
-  COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
+  COALESCE(${drawingRevOf(sql`jc.item_revision_id`)}, sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
   ${polSql('sol', 'rev_jwl')} AS "clientPoLineNo", i.name AS "itemName",
   jo.operation, ol.qty AS "accepted", ol.reject_qty AS "rejected",
   jo.qc_call_date AS "callDate", ol.log_date AS "attendedDate",
@@ -117,7 +118,7 @@ function searchWhere(term: string | undefined, completed: boolean): SQL {
     sql`so.internal_so_no`,
     polSql('sol', 'rev_jwl'),
     sql`i.code`,
-    sql`COALESCE(sol.revision::text, rev_jwl.revision::text)`,
+    sql`COALESCE(${drawingRevOf(sql`jc.item_revision_id`)}, sol.revision::text, rev_jwl.revision::text)`,
     sql`i.name`,
     sql`jo.operation`,
     ...(completed ? [sql`ol.tpi_inspector`, sql`ol.tpi_organization`, sql`ol.tpi_cert_no`] : []),

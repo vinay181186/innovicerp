@@ -17,6 +17,7 @@
 // gated by the access matrix, not by a role list — see the guards below.
 
 import { and, eq, isNull, sql } from 'drizzle-orm';
+import { drawingRevOf } from '../../lib/drawing-rev';
 import type {
   QcAssignInput,
   QcAssignmentResult,
@@ -153,7 +154,7 @@ export async function getQcCommand(
           -- column is only text on a database that has had migration 0119. On one
           -- that has not it is still the old integer and would arrive here as a
           -- number wearing a string type. The cast is a no-op once 0119 is in.
-          COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
+          COALESCE(${drawingRevOf(sql`jc.item_revision_id`)}, sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
           -- POL = the line number printed on the CUSTOMER's own purchase
           -- order, off the SAME sol / rev_jwl joins as the revision above: SO
           -- line first, else the JWSO line (ADR-236). Never sol.line_no,
@@ -199,7 +200,7 @@ export async function getQcCommand(
           -- pre-0119 database cannot hand the UI a number, null for cards with no
           -- SO behind them, and never items.revision. It reaches the Rework tab
           -- through the per-op group built from these rows.
-          COALESCE(sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
+          COALESCE(${drawingRevOf(sql`jc.item_revision_id`)}, sol.revision::text, rev_jwl.revision::text) AS "itemRevision",
           -- POL = the line number printed on the CUSTOMER's own purchase
           -- order, off the SAME sol / rev_jwl joins as the revision above: SO
           -- line first, else the JWSO line (ADR-236). Never sol.line_no,

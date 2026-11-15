@@ -29,6 +29,7 @@ import {
 } from '../../db/schema';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { lockDocSeries } from '../../lib/doc-series-lock';
+import { assertJcOpWorkable } from '../../lib/jc-op-hold';
 import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
 import { linkJcOpToPoLine } from '../job-cards/jc-op-po-links';
@@ -153,9 +154,14 @@ export async function generateOspPrForOp(
     })
     .from(jcOps)
     .where(and(eq(jcOps.id, jcOpId), eq(jcOps.companyId, companyId), isNull(jcOps.deletedAt)))
-    .limit(1);
+    .limit(1)
+    // ADR-291 — the op row is locked before the hold check, so a hold placed a
+    // moment earlier (placeOpHolds takes the same lock) is seen, and one placed
+    // a moment later waits for this PR to commit.
+    .for('update');
   const op = opRows[0];
   if (!op) throw new NotFoundError('Operation not found. Refresh the page.');
+  await assertJcOpWorkable(tx, companyId, op.id); // ADR-291 hold / Rev not released
 
   // 2. Match the operation name against configured OSP processes.
   const cfgRows = await tx

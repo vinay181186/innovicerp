@@ -21,12 +21,14 @@
 // row at full height and its two header rows stick under the page's sticky
 // band (summary strip + tabs, jc-detail.css --jc-sticky-h). Under the table:
 // the per-op NC notes only (legend + "Job Card check" line removed by owner).
-import type { JcOpEnriched, JobCardListItem, OpLog } from '@innovic/shared';
+import { fmtOpSrNo, type JcOpEnriched, type JobCardListItem, type OpLog } from '@innovic/shared';
 import { useCallback, useMemo, useState } from 'react';
 import { useMyAccess } from '@/lib/access-control';
 import { useOpFlow } from '@/modules/flow-views/api';
 import type { useProductionOrderForJobCard } from '@/modules/production-orders/api';
+import { Banner } from '@/ui/feedback';
 import { useJobCardStatusExtras } from '../api';
+import { canReleaseHold, ReleaseHoldDialog } from './jc-op-hold';
 import { JcOpsTableNotes } from './jc-ops-table-notes';
 import { COLS, OpRow, OpRowWithBoard, type RowProps } from './jc-ops-table-row';
 import { currentOp } from './jc-view-summary';
@@ -66,6 +68,16 @@ export function JcOpsTable({
     [extras?.opExtras],
   );
 
+  // ADR-291 — ops on hold, and who may release them.
+  const heldOps = ops.filter((o) => {
+    const x = opExtraById.get(o.id);
+    // Only a STORED hold (heldAt) can be released; holdReason alone is the
+    // live "Drawing Rev not released" state.
+    return Boolean(x?.heldAt);
+  });
+  const canRelease = canReleaseHold(eff) && !stopped;
+  const [release, setRelease] = useState<{ ids: string[]; what: string } | null>(null);
+
   const cur = currentOp(ops);
   const firstOpId = ops[0]?.id ?? null;
 
@@ -91,6 +103,35 @@ export function JcOpsTable({
 
   return (
     <>
+      {heldOps.length > 0 ? (
+        <Banner tone="warn" title={`${heldOps.length} operation(s) on hold`}>
+          No qty may move on a held operation until the hold is released.
+          {canRelease ? (
+            <>
+              {' '}
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() =>
+                  setRelease({
+                    ids: heldOps.map((o) => o.id),
+                    what: `${heldOps.length} held operation(s) of ${jc.code}`,
+                  })
+                }
+              >
+                Release all holds…
+              </button>
+            </>
+          ) : null}
+        </Banner>
+      ) : null}
+      {release ? (
+        <ReleaseHoldDialog
+          jcOpIds={release.ids}
+          what={release.what}
+          onClose={() => setRelease(null)}
+        />
+      ) : null}
       <div className="tbl-wrap jc-ops-wrap">
         <table className="innovic-table tbl-nofreeze jc-ops-table">
           <thead>
@@ -175,6 +216,16 @@ export function JcOpsTable({
                   logs: logsByOp.get(op.id) ?? [],
                   machineName: extra?.machineName ?? null,
                   toolDetails: extra?.toolDetails ?? null,
+                  held: Boolean(extra?.heldAt),
+                  holdReason: extra?.holdReason ?? null,
+                  holdEcrCode: extra?.holdEcrCode ?? null,
+                  onReleaseHold: canRelease
+                    ? () =>
+                        setRelease({
+                          ids: [op.id],
+                          what: `${jc.code} · Op ${fmtOpSrNo(op.opSeq)} ${op.operation}`,
+                        })
+                    : null,
                   // ADR-103 — the FIRST op only (jc-status-view.tsx L328-330).
                   rmAvailable: op.id === firstOpId ? (extras?.rmAvailable ?? null) : null,
                 };

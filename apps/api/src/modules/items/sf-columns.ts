@@ -15,4 +15,5 @@ export const ITEM_SF_COLUMNS: SfColumnMap = {
   material: { sql: sql`${items.material}`, type: 'text' },
   uom: { sql: sql`${items.uom}`, type: 'list' },
   procurementType: { sql: sql`${items.procurementType}`, type: 'list' },
+  customerPartNo: { sql: sql`${items.customerPartNo}`, type: 'text' },
 };

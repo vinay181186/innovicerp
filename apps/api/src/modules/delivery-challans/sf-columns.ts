@@ -7,9 +7,19 @@
 // DC_SF_JOINS, which the count and KPI-summary queries add when a filter is on.
 
 import { sql } from 'drizzle-orm';
+import { drawingRevOf } from '../../lib/drawing-rev';
 
 import { createdByNameSql } from '../../lib/created-by-sql';
 import type { SfColumnMap } from '../../lib/list-query';
+
+/** ADR-289 — the header Rev from the Revs STORED on the challan's lines (only
+ *  when they agree on one); NULL for a challan made before 0247, whose header
+ *  then falls back to the live SO / JWSO line text as before. */
+export const DC_STORED_REV_SQL = sql`(
+  SELECT CASE WHEN COUNT(DISTINCT sr.rev) = 1 THEN MIN(sr.rev) END
+    FROM public.delivery_challan_lines sl
+    JOIN public.item_revisions sr ON sr.id = sl.item_revision_id
+   WHERE sl.delivery_challan_id = dc.id AND sl.deleted_at IS NULL)`;
 
 export const DC_SF_COLUMNS: SfColumnMap = {
   dcCode: { sql: sql`dc.code`, type: 'text' },
@@ -39,7 +49,8 @@ export const DC_SF_COLUMNS: SfColumnMap = {
   status: { sql: sql`dc.status`, type: 'list' },
   jobCardCode: { sql: sql`njc.code`, type: 'text' },
   drawingRev: {
-    sql: sql`COALESCE(sol.revision::text, po_so.so_revision, njc_jwl.revision::text)`,
+    // ADR-289 — same expression as the page's "soLineRevision" column.
+    sql: sql`COALESCE(${DC_STORED_REV_SQL}, sol.revision::text, po_so.so_revision, njc_jwl.revision::text)`,
     type: 'text',
   },
   transport: { sql: sql`dc.transport`, type: 'text' },
@@ -122,7 +133,10 @@ export const DC_SF_JOINS = sql`
  *  line's, and only when that order line is for the SAME item as the challan
  *  line (the DC detail's rule — a raw-material bar never borrows the part's
  *  revision). ::text for the pre-0119 integer column. */
+// ADR-289 — the Rev STORED on the line at create first (0247); the live
+// order-line text only for a row made before it.
 export const DC_LINE_REV_SQL = sql`COALESCE(
+  ${drawingRevOf(sql`dcl.item_revision_id`)},
   CASE WHEN sol.item_id = dcl.item_id THEN sol.revision::text END,
   CASE WHEN jwl.item_id = dcl.item_id THEN jwl.revision::text END)`;
 

@@ -1,6 +1,7 @@
 import { drawingUrlQuerySchema } from '@innovic/shared';
 import type { FastifyInstance } from 'fastify';
 import { AuthenticationError } from '../../lib/errors';
+import { drawingPrintBodySchema } from './schema';
 import * as service from './service';
 
 export async function drawingFilesRoutes(app: FastifyInstance): Promise<void> {
@@ -11,5 +12,15 @@ export async function drawingFilesRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) throw new AuthenticationError();
     const query = drawingUrlQuerySchema.parse(req.query);
     return service.getDrawingUrl(query, req.user);
+  });
+
+  // ADR-289 — the screen asks leave BEFORE it prints a drawing: 204 when the
+  // caller may print (and the print is logged), 403 otherwise.
+  app.post('/drawing-files/print', async (req, reply) => {
+    if (!req.user) throw new AuthenticationError();
+    const body = drawingPrintBodySchema.parse(req.body ?? {});
+    await service.logDrawingPrint(body, req.user);
+    reply.code(204);
+    return null;
   });
 }

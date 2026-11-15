@@ -13,6 +13,7 @@ import { sql } from 'drizzle-orm';
 
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { createdByNameSql } from '../../lib/created-by-sql';
+import { drawingRevOf } from '../../lib/drawing-rev';
 import { invoiceBalanceSql, invoiceOverdueSql } from '../../lib/invoice-overdue';
 import { canSeeFormPrice } from '../../lib/access';
 import { AuthorizationError } from '../../lib/errors';
@@ -114,7 +115,8 @@ export async function listInvoiceLines(
         COALESCE(il.created_at, invoices.created_at) AS created_at,
         ${createdByNameSql(sql`COALESCE(il.created_by, invoices.created_by)`)} AS created_by_name,
         il.item_code_text AS item_code,
-        NULLIF(btrim(sol.revision::text), '') AS item_revision,
+        -- ADR-289: the Rev STORED on the invoice line first (0247).
+        NULLIF(btrim(COALESCE(${drawingRevOf(sql`il.item_revision_id`)}, sol.revision::text)), '') AS item_revision,
         il.item_name, il.qty, il.rate::text AS rate, il.line_amount::text AS line_amount
       ${fromWhere}
       ORDER BY ${order}

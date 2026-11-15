@@ -5,6 +5,7 @@
 // stored snapshot second. No money here: scrap cost is not a list column.
 
 import { sql } from 'drizzle-orm';
+import { drawingRevOf } from '../../lib/drawing-rev';
 
 import { createdByNameSql } from '../../lib/created-by-sql';
 import type { SfColumnMap } from '../../lib/list-query';
@@ -29,7 +30,7 @@ export const NC_SF_COLUMNS: SfColumnMap = {
   // sol / rev_jwl are joined by the list, and by its count when a filter is set.
   itemCode: {
     sql: sql`(CASE WHEN NULLIF(i.code, '') IS NOT NULL
-      THEN btrim(i.code) || COALESCE('/' || NULLIF(btrim(COALESCE(sol.revision::text, rev_jwl.revision::text)), ''), '')
+      THEN btrim(i.code) || COALESCE('/' || NULLIF(btrim(COALESCE(${drawingRevOf(sql`jc.item_revision_id`)}, sol.revision::text, rev_jwl.revision::text)), ''), '')
       ELSE nc.item_code_text END)`,
     type: 'text',
   },

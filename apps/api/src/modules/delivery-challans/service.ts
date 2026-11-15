@@ -34,6 +34,7 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { lockDocSeries } from '../../lib/doc-series-lock';
+import { dcLineRevIdSql, drawingRevOf } from '../../lib/drawing-rev';
 import { polOf } from '../../lib/pol';
 import { assertProductionOrderNotShortClosedForPoLine } from '../../lib/production-order-stop';
 import { lockPoLinesForSend, sumSentOnPoLines } from '../../lib/po-line-sent';
@@ -52,7 +53,7 @@ import {
   reverseOutwardFromJcOp,
 } from './cascades';
 import { applyReceiveToJcOp, dcHasActiveReceipts, isDcFullyReconciled } from './receipt-cascades';
-import { DC_SF_COLUMNS, DC_SF_JOINS } from './sf-columns';
+import { DC_SF_COLUMNS, DC_SF_JOINS, DC_STORED_REV_SQL } from './sf-columns';
 import { lineNcId, receivedQtyByNc, returnDcNcIds } from './rtv-nc-split';
 import { recalcPoHeaderStatus, recalcPoLineReceivedQty } from '../goods-receipt-notes/cascades';
 import { insertGrnForOspReceipt } from '../goods-receipt-notes/service';
@@ -288,7 +289,7 @@ export async function listDeliveryChallans(
         -- only text on a database that has had migration 0119; on one that has
         -- not it is still the old integer and a bare select would hand the UI a
         -- number. Never items.revision — a different column about the item.
-        COALESCE(sol.revision::text, po_so.so_revision, njc_jwl.revision::text) AS "soLineRevision",
+        COALESCE(${DC_STORED_REV_SQL}, sol.revision::text, po_so.so_revision, njc_jwl.revision::text) AS "soLineRevision",
         COALESCE(line_agg.line_count, 0)::int AS "lineCount",
         COALESCE(line_agg.total_qty, 0)::text AS "totalQty"
       FROM public.delivery_challans dc
@@ -483,7 +484,7 @@ async function loadDeliveryChallanWithLines(
         -- ::text because the contract types it as a string and the column is
         -- only text on a database that has had migration 0119. Never
         -- items.revision — a different column, about the item master.
-        COALESCE(sol.revision::text, po_so.so_revision, njc_jwl.revision::text) AS "soLineRevision"
+        COALESCE(${DC_STORED_REV_SQL}, sol.revision::text, po_so.so_revision, njc_jwl.revision::text) AS "soLineRevision"
       FROM public.delivery_challans dc
       LEFT JOIN public.vendors v ON v.id = dc.vendor_id AND v.deleted_at IS NULL
       LEFT JOIN public.purchase_orders po
@@ -547,9 +548,14 @@ async function loadDeliveryChallanWithLines(
       // is only text on a database that has had migration 0119; on one that
       // has not it is still the old integer. Never items.revision, which is a
       // different column, about the item master.
-      itemRevision: sql<
-        string | null
-      >`COALESCE(${salesOrderLines.revision}::text, ${jobWorkOrderLines.revision}::text)`,
+      // ADR-289 — the Rev STORED on the line at create first; only a row made
+      // before 0247 (still NULL) falls back to the Job Card's Rev, then the
+      // live SO / JWSO line text.
+      itemRevision: sql<string | null>`COALESCE(
+        ${drawingRevOf(deliveryChallanLines.itemRevisionId)},
+        CASE WHEN ${jobCards.itemId} = ${deliveryChallanLines.itemId}
+             THEN ${drawingRevOf(jobCards.itemRevisionId)} END,
+        ${salesOrderLines.revision}::text, ${jobWorkOrderLines.revision}::text)`,
       // The customer's own PO line number, off the SAME two line joins as the
       // revision above: SO line first, else the Job Work SO line (ADR-236).
       clientPoLineNo: polOf(salesOrderLines.clientPoLineNo, jobWorkOrderLines.clientPoLineNo),
@@ -1335,6 +1341,8 @@ export async function createDeliveryChallan(
       materialText: l.materialText ?? null,
       dcRemarks: l.dcRemarks ?? null,
       purchaseOrderLineId: l.purchaseOrderLineId ?? null,
+      // ADR-289 — the Rev this line is made with, kept on the line.
+      itemRevisionId: dcLineRevIdSql(l.itemId ?? null, l.purchaseOrderLineId ?? null),
       createdBy: user.id,
       updatedBy: user.id,
     }));

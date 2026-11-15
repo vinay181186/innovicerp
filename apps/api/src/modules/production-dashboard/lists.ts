@@ -5,6 +5,7 @@
 //   GET /production-dashboard/ready           Available Now (fit table, sf)
 
 import { type SQL, sql } from 'drizzle-orm';
+import { drawingRevOf } from '../../lib/drawing-rev';
 import type {
   ProductionDashboardJc,
   ProductionDashboardJcPage,
@@ -27,7 +28,7 @@ function requireCompany(user: AuthContext): string {
 // The customer's drawing revision for the card, read live off the SO line it
 // was raised against (else the JWSO line) — never items.revision. Cast to text:
 // the column is only text on a database that has had migration 0119.
-const REV = sql`COALESCE(sol.revision::text, rev_jwl.revision::text)`;
+const REV = sql`COALESCE(${drawingRevOf(sql`jc.item_revision_id`)}, sol.revision::text, rev_jwl.revision::text)`;
 // LEFT joins: a JW-sourced or standalone card has no SO line, and a row must
 // never fall off the board because its item / revision could not be resolved.
 const ITEM_JOINS = sql`

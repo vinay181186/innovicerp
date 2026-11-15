@@ -310,6 +310,10 @@ export const salesOrderLineInputSchema = z
     // (`undefined` cannot carry the second meaning: JSON.stringify drops the
     // key entirely, which is why clearing a drawing silently did nothing.)
     drawingFilePath: z.string().max(512).nullable().optional(),
+    /** ADR-289 — why the Drawing Rev of this line changed. Required by the server
+     *  when the line already has a Plan / PRO / Job Card (min 5 characters);
+     *  ignored when the Rev does not change. */
+    revChangeReason: z.string().trim().max(500).optional(),
     uom: uomSchema.default('NOS'),
     orderQty: z.number().int().positive(), // CHECK > 0 enforced in DB too
     rate: z.coerce.number().nonnegative().default(0),

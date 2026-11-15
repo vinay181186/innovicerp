@@ -70,6 +70,27 @@ const CHECKS: readonly CheckSpec[] = [
       ORDER BY isb.on_hand_qty ASC LIMIT 5`,
   },
   {
+    // ADR-289 — the Drawing Rev buckets of an item must add up to its stock
+    // (item_rev_stock_balances beside item_stock_balances, both kept by the
+    // 0233 trigger). A gap means a move reached one and not the other.
+    code: 'DI-003R',
+    label: 'Items whose Drawing Rev stock does not add up to On Hand',
+    buildQuery: (cid) => `
+      SELECT i.code || ' (On Hand ' || isb.on_hand_qty::float8 || ', Rev total ' ||
+             COALESCE(r.total, 0)::float8 || ')' AS sample
+      FROM item_stock_balances isb
+      JOIN items i ON i.id = isb.item_id
+      LEFT JOIN (
+        SELECT item_id, SUM(on_hand_qty) AS total
+        FROM item_rev_stock_balances
+        WHERE company_id = '${cid}'::uuid
+        GROUP BY item_id
+      ) r ON r.item_id = isb.item_id
+      WHERE isb.company_id = '${cid}'::uuid
+        AND isb.on_hand_qty <> COALESCE(r.total, 0)
+      ORDER BY i.code LIMIT 5`,
+  },
+  {
     code: 'DI-004',
     label: 'POs in Draft for more than 14 days',
     buildQuery: (cid) => `

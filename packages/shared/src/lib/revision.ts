@@ -71,3 +71,7 @@ export function revisionGoesBackwards(current: string, next: string): boolean {
 export function revisionBackwardsMessage(lineNo: number, current: string, next: string): string {
   return `Ln ${lineNo}: Drawing revision cannot go back from ${normalizeRevision(current)} to ${normalizeRevision(next)}.`;
 }
+
+/** ADR-289 — minimum length of the reason asked when a line's Drawing Rev
+ *  changes, and when a drawing is replaced. One place for form and server. */
+export const REV_CHANGE_REASON_MIN = 5;

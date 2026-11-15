@@ -42,6 +42,11 @@ export const itemSchema = z.object({
   /** Product image (3D render) — storage path in the private bucket, folder
    *  `item-images`. Shown as the fixed-size thumbnail next to code · name everywhere. */
   imagePath: z.string().nullable().default(null),
+  /** ADR-290 — the customer's own part number for this item (may differ from our code). */
+  customerPartNo: z.string().max(64).nullable().default(null),
+  /** ADR-290 — the item that replaces this one after a non-interchangeable change. */
+  replacementItemId: z.string().uuid().nullable().default(null),
+  replacementItemCode: z.string().nullable().default(null),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
   updatedAt: z.string(),
@@ -77,6 +82,10 @@ export const createItemInputSchema = z.object({
   drawingFilePath: z.string().optional(),
   /** null clears the image on update. */
   imagePath: z.string().max(512).nullable().optional(),
+  /** ADR-290 — null clears it on update. */
+  customerPartNo: z.string().trim().max(64).nullable().optional(),
+  /** ADR-290 — null clears it on update; never the item itself (server checks). */
+  replacementItemId: z.string().uuid().nullable().optional(),
 });
 export type CreateItemInput = z.infer<typeof createItemInputSchema>;
 

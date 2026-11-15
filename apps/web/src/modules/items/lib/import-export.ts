@@ -95,6 +95,12 @@ export async function parseItemImportFile(
     putIfFilled(payload, 'description', getCol(r, ['Description', 'desc', 'Desc']));
     putIfFilled(payload, 'material', getCol(r, ['Material', 'material']));
     putIfFilled(payload, 'hsnCode', getCol(r, ['HSN Code', 'HSN', 'hsn', 'HSN/SAC', 'hsn_code']));
+    // ADR-290 — the customer's own part number (blank keeps the current value).
+    putIfFilled(
+      payload,
+      'customerPartNo',
+      getCol(r, ['Customer Part No.', 'Customer Part No', 'customer_part_no']),
+    );
 
     // Q2 (ADR-193): the Item Type is chosen per item — a blank cell on a NEW
     // item is an error, never a silent 'component'.

@@ -44,6 +44,7 @@ import {
 import { diffFields } from '../../lib/audit-trail';
 import { createdByNameSql } from '../../lib/created-by-sql';
 import { isLastLiveOpSql } from '../../lib/jc-last-op-sql';
+import { assertJcOpWorkable } from '../../lib/jc-op-hold';
 import { polOf, polSql } from '../../lib/pol';
 import { drawingRevOf } from '../../lib/drawing-rev';
 import { loadQcProcessReport } from '../../lib/qc-process-report';
@@ -983,6 +984,9 @@ interface ProductionLogParams {
   /** Set by stopOp: the session was stopped by this same entry, so the one
    *  LOG row says so instead of a second "stopped" row (ADR-197). */
   stopNote?: string | undefined;
+  /** Set by stopOp: when the stopped session began. Pieces made in a session
+   *  started before the op was put on hold may still be recorded (ADR-291). */
+  sessionStartedAt?: Date | undefined;
 }
 
 async function writeProductionLog(
@@ -1020,6 +1024,11 @@ async function writeProductionLog(
   // over-producing past the planned qty.
   await lockLiveJcOp(tx, input.jcOpId);
   await assertJobCardNotPendingCancel(tx, op.jobCardId); // ADR-235
+  // ADR-291 hold / Rev not released. A Stop of a session started before the
+  // hold still records what was made; the Rev check always applies.
+  await assertJcOpWorkable(tx, companyId, input.jcOpId, {
+    sessionStartedAt: input.sessionStartedAt,
+  });
 
   const snapshot = await loadAvailability(tx, input.jcOpId);
   if (snapshot.computedStatus === 'qc_pending') {
@@ -1340,6 +1349,7 @@ export async function submitQcLog(input: SubmitQcLogInput, user: AuthContext): P
     // both try to update it (finishJc / cascade) — a deadlock (ADR-220).
     await lockLiveJcOp(tx, input.jcOpId);
     await assertJobCardNotPendingCancel(tx, op.jobCardId); // ADR-235
+    await assertJcOpWorkable(tx, companyId, input.jcOpId); // ADR-291 hold / Rev not released
 
     // ADR-252 — the report this QC step produces (QC Process Master -> Report
     // Type). A mandatory report must be attached before an entry that accepts
@@ -2315,6 +2325,7 @@ export async function startOp(input: StartOpInput, user: AuthContext): Promise<R
     // cancel's blocker re-check sees the running session.
     await lockLiveJcOp(tx, input.jcOpId);
     await assertJobCardNotPendingCancel(tx, op.jobCardId); // ADR-235
+    await assertJcOpWorkable(tx, companyId, input.jcOpId); // ADR-291 hold / Rev not released
     const snapshot = await loadAvailability(tx, input.jcOpId);
     if (snapshot.available <= 0) {
       throw new ValidationError(
@@ -2645,6 +2656,7 @@ export async function stopOp(
           operatorName: input.operatorName ?? null,
           remarks: input.remarks ?? null,
           stopNote: '; session stopped',
+          sessionStartedAt: row.createdAt,
         },
         companyId,
         user,

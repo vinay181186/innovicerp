@@ -29,6 +29,10 @@ import type { DocumentEditChange, JobCardListItem, ProductionOrderListItem } fro
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev, docDrawingRev } from '@/lib/item-code';
+import {
+  DrawingRevMissingNote,
+  drawingRevMissing,
+} from '@/modules/item-revisions/components/drawing-rev-missing-note';
 import { soNoWithInternal } from '@/lib/so-number';
 import {
   PendingChangeChip,
@@ -285,6 +289,7 @@ export function JcEditFactBlock({
         itemLabel={`${itemCodeWithRev(jc.itemCode, docDrawingRev(jc))} ${jc.itemName}`}
       />
       <div className="jc-facts-main">
+        {drawingRevMissing(jc) ? <DrawingRevMissingNote /> : null}
         <DocIdent>
           <IdentCode>{jc.code}</IdentCode>
           <IdentSep />

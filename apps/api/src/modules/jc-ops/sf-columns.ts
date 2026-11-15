@@ -5,6 +5,7 @@
 // from a per-op aggregate and are not here.
 
 import { sql } from 'drizzle-orm';
+import { drawingRevOf } from '../../lib/drawing-rev';
 
 import { createdByNameSql } from '../../lib/created-by-sql';
 import type { SfColumnMap } from '../../lib/list-query';
@@ -18,7 +19,7 @@ export const JC_OPS_SF_COLUMNS: SfColumnMap = {
   clientPoLineNo: { sql: polSql('sol', 'rev_jwl'), type: 'text' },
   // CODE/REV as the cell prints it (itemCodeWithRev).
   itemCode: {
-    sql: sql`(i.code || COALESCE('/' || NULLIF(btrim(COALESCE(sol.revision::text, rev_jwl.revision::text)), ''), ''))`,
+    sql: sql`(i.code || COALESCE('/' || NULLIF(btrim(COALESCE(${drawingRevOf(sql`jc.item_revision_id`)}, sol.revision::text, rev_jwl.revision::text)), ''), ''))`,
     type: 'text',
   },
   itemName: { sql: sql`i.name`, type: 'text' },

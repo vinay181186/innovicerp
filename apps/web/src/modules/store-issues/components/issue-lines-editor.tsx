@@ -2,8 +2,9 @@
 // Rows come from the material table ("Fill To Issue") or the item picker.
 import { Icon } from '@/ui/core';
 import { useMemo, useState } from 'react';
-import { SearchableSelect } from '@/ui/forms';
+import { SearchableSelect, Select } from '@/ui/forms';
 import { useItemsList } from '../../items/api';
+import { useItemRevStock } from '../../store-inventory/api';
 
 export interface DraftIssueLine {
   itemId: string;
@@ -13,6 +14,49 @@ export interface DraftIssueLine {
   qtyText: string;
   /** Hint beside the qty box, e.g. "To Issue 12 · Available 30". */
   hint?: string | undefined;
+  /** ADR-292 — the Drawing Rev bucket to issue from. undefined = not chosen
+   *  (the server takes the only bucket that fits the Job Card's Rev, else asks);
+   *  null = the blank "no Rev" bucket. */
+  itemRevisionId?: string | null | undefined;
+}
+
+const NO_REV = '__no_rev__';
+
+/** ADR-292 — the "Drawing Rev" choice of one line: shown only for an item that
+ *  holds stock under a Drawing Rev (a make item with Rev buckets). */
+function DrawingRevCell({
+  line,
+  onPick,
+}: {
+  line: DraftIssueLine;
+  onPick: (itemRevisionId: string | null | undefined) => void;
+}): React.JSX.Element {
+  const q = useItemRevStock(line.itemId);
+  const buckets = q.data ?? [];
+  if (q.isLoading) return <span className="text3">…</span>;
+  if (q.isError)
+    return (
+      <span className="text3" title={q.error.message}>
+        —
+      </span>
+    );
+  if (!buckets.some((b) => b.itemRevisionId)) return <span className="text3">—</span>;
+  const value = line.itemRevisionId === undefined ? '' : (line.itemRevisionId ?? NO_REV);
+  return (
+    <Select
+      aria-label={`Drawing Rev for ${line.itemCode}`}
+      placeholder="Choose Drawing Rev"
+      value={value}
+      onChange={(e) => {
+        const v = e.target.value;
+        onPick(v === '' ? undefined : v === NO_REV ? null : v);
+      }}
+      options={buckets.map((b) => ({
+        value: b.itemRevisionId ?? NO_REV,
+        label: `${b.itemRevisionId ? b.label : `${line.itemCode} · no Rev`} · free ${b.freeQty}`,
+      }))}
+    />
+  );
 }
 
 export function IssueLinesEditor({
@@ -49,6 +93,8 @@ export function IssueLinesEditor({
   };
   const setQty = (i: number, qtyText: string): void =>
     onChange(lines.map((l, j) => (j === i ? { ...l, qtyText } : l)));
+  const setRev = (i: number, itemRevisionId: string | null | undefined): void =>
+    onChange(lines.map((l, j) => (j === i ? { ...l, itemRevisionId } : l)));
   const remove = (i: number): void => onChange(lines.filter((_, j) => j !== i));
 
   return (
@@ -60,6 +106,7 @@ export function IssueLinesEditor({
               <th>Item Code</th>
               <th>Item Name</th>
               <th className="th-ctr">UOM</th>
+              <th className="th-ctr">Drawing Rev</th>
               <th className="th-num">Issue Qty</th>
               <th className="th-ctr"></th>
             </tr>
@@ -74,6 +121,9 @@ export function IssueLinesEditor({
                 </td>
                 <td>{l.itemName || '—'}</td>
                 <td className="td-ctr text3">{l.uom || '—'}</td>
+                <td className="td-ctr">
+                  <DrawingRevCell line={l} onPick={(rev) => setRev(i, rev)} />
+                </td>
                 <td className="td-num">
                   <input
                     type="number"
@@ -109,7 +159,7 @@ export function IssueLinesEditor({
             ))}
             {lines.length === 0 ? (
               <tr>
-                <td colSpan={5} className="empty-state">
+                <td colSpan={6} className="empty-state">
                   No items yet.
                 </td>
               </tr>
@@ -137,9 +187,11 @@ export function IssueLinesEditor({
 /** Lines → API lines; returns an error message instead when a qty is bad. */
 export function toIssueLines(
   lines: DraftIssueLine[],
-): { ok: true; lines: Array<{ itemId: string; qty: number }> } | { ok: false; error: string } {
+):
+  | { ok: true; lines: Array<{ itemId: string; qty: number; itemRevisionId?: string | null }> }
+  | { ok: false; error: string } {
   if (lines.length === 0) return { ok: false, error: 'Add at least one item.' };
-  const out: Array<{ itemId: string; qty: number }> = [];
+  const out: Array<{ itemId: string; qty: number; itemRevisionId?: string | null }> = [];
   for (const l of lines) {
     const q = Number(l.qtyText);
     if (!l.qtyText.trim() || !Number.isFinite(q) || q <= 0) {
@@ -148,7 +200,11 @@ export function toIssueLines(
     if (Math.round(q * 1000) / 1000 !== q) {
       return { ok: false, error: `${l.itemCode}: Issue Qty allows at most 3 decimals.` };
     }
-    out.push({ itemId: l.itemId, qty: q });
+    out.push({
+      itemId: l.itemId,
+      qty: q,
+      ...(l.itemRevisionId !== undefined ? { itemRevisionId: l.itemRevisionId } : {}),
+    });
   }
   return { ok: true, lines: out };
 }
