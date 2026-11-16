@@ -16066,14 +16066,17 @@ three forms, the two detail pages' "Value" chips, two prints).
 - Prints: `SheetPrintModel.moneyHeads` names the two money headings; SO / JWSO
   (`print-order.ts`) and PO (`print-po.ts`) pass the new words; the Tax Invoice and JW
   Invoice pass nothing and keep Rate / Amount.
-- Not changed: Excel import/export `Rate` column (old upload files keep working), field
-  names in code and the database.
+- Excel import (owner, same day): the SO lines and JW lines templates head the column
+  `Unit Value (Basic)`; the parser reads that heading and still reads `Rate`, so sheets
+  made before the rename keep working. The list Excel exports have no rate column.
+- Not changed: field names in code and the database.
 
 ### Alternatives Considered
 
 - Rename the shared print heading for every `po` sheet — rejected: the Tax Invoice and
   JW Invoice are tax documents the owner did not ask to change.
-- Rename the Excel `Rate` column — rejected: breaks files users already upload.
+- Rename the Excel `Rate` column outright — rejected: breaks files users already
+  upload; both headings are read instead.
 
 ### Consequences
 

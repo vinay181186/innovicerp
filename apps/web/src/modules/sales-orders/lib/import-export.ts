@@ -9,6 +9,7 @@ import {
   normalizeRevision,
   polError,
   SO_FULFILMENT_STATUS_LABEL,
+  UNIT_VALUE_BASIC_LABEL,
   type SalesOrderLineListItem,
 } from '@innovic/shared';
 import * as XLSX from 'xlsx';
@@ -183,7 +184,9 @@ export async function parseSoLineFile(
       // form box and the save names the limit, rather than losing text silently.
       remarks: String(r['Remarks'] ?? '').trim() || undefined,
       orderQty,
-      rate: Number(r['Rate']) || 0,
+      // ADR-302 — 'Unit Value (Basic)' is the template's heading; 'Rate' is
+      // what sheets made before the rename carry, so both are read.
+      rate: Number(r[UNIT_VALUE_BASIC_LABEL] ?? r['Rate']) || 0,
       dueDate: toDate(r['Due Date']),
     });
   });
