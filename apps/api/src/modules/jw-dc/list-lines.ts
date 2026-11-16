@@ -28,27 +28,20 @@ import { AuthorizationError } from '../../lib/errors';
 import { day, iso, str } from '../../lib/list-line-values';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { polSql } from '../../lib/pol';
-import { JW_DC_INWARD_LINES_SF_COLUMNS, JW_DC_OUTWARD_LINES_SF_COLUMNS } from './sf-columns';
+import {
+  JW_DC_INWARD_LINES_SF_COLUMNS,
+  JW_DC_OUTWARD_LINES_SF_COLUMNS,
+  ORDER_JOINS_SQL,
+} from './sf-columns';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
   return user.companyId;
 }
 
-/** The order hops off an outward line (alias jdol). Needs the line joined. */
-const ORDER_JOINS_SQL = sql.raw(`
-  LEFT JOIN public.items i ON i.id = jdol.item_id AND i.deleted_at IS NULL
-  LEFT JOIN public.purchase_order_lines pol
-    ON pol.id = jdol.purchase_order_line_id AND pol.deleted_at IS NULL
-  LEFT JOIN public.jc_ops jco ON jco.id = pol.source_jc_op_id AND jco.deleted_at IS NULL
-  LEFT JOIN public.job_cards jc ON jc.id = jco.job_card_id AND jc.deleted_at IS NULL
-  LEFT JOIN public.job_work_order_lines jwl
-    ON jwl.id = jc.source_jw_line_id AND jwl.deleted_at IS NULL
-  LEFT JOIN public.job_work_orders jwo ON jwo.id = jwl.job_work_order_id AND jwo.deleted_at IS NULL
-  LEFT JOIN public.sales_order_lines sol
-    ON sol.id = COALESCE(pol.source_so_line_id, jc.source_so_line_id) AND sol.deleted_at IS NULL
-  LEFT JOIN public.sales_orders so ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
-`);
+/** The order hops off an outward line (alias jdol) — defined in sf-columns.ts
+ *  (the document registers' first-line values read it too). */
+export { ORDER_JOINS_SQL };
 
 /** The six lead fields, off the joins above. `lineTs` = the row's created_at;
  *  `lineBy` = the created_by of that same record (ADR-261 rev Created By). */

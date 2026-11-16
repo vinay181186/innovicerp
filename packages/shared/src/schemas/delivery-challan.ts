@@ -167,6 +167,18 @@ export const deliveryChallanListItemSchema = deliveryChallanSchema.extend({
   soLineRevision: z.string().nullable().default(null),
   lineCount: z.number().int().nonnegative(),
   totalQty: z.string(), // sum of lines.qty as numeric string
+  /** ADR-303 — the one-row-per-DC list: the FIRST line's (by line no.) SO No.
+   *  (else JWSO No., else the DC's SO ref), its Internal SO No., and how many
+   *  MORE distinct orders the lines carry. `soCode` above is the older header
+   *  value (kept for the pickers); the list reads these. */
+  lineSoCode: z.string().nullable().default(null),
+  lineSoInternalNo: z.string().nullable().default(null),
+  soExtraCount: z.number().int().nonnegative().default(0),
+  /** The first line's Job Card No. and how many more distinct JCs the lines carry. */
+  lineJobCardCode: z.string().nullable().default(null),
+  jobCardExtraCount: z.number().int().nonnegative().default(0),
+  /** The ONE Created By name (full name, else e-mail before '@'). */
+  createdByName: z.string().nullable().default(null),
 });
 export type DeliveryChallanListItem = z.infer<typeof deliveryChallanListItemSchema>;
 

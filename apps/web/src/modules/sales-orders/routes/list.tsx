@@ -1,16 +1,15 @@
 // SO Master list (UI-003-05). THE Innovic fit table (ADR-199, table standard
-// 2026-10-01): one ruled sheet, no card / list toggle. ADR-261 (owner
-// 2026-10-31): ONE ROW PER SO LINE (GET /sales-orders/lines), opening with the
-// locked lead block; no ▸ (the lines are the rows now). Row click opens the SO
-// detail; Preview / Edit / Assign / Cancel / Delete live in the row's ⋯ and act
-// on the ORDER, as before.
+// 2026-10-01): one ruled sheet, no card / list toggle. ADR-303 (owner
+// 2026-11-16): ONE ROW PER ORDER again (GET /sales-orders), opening with the
+// locked lead block. The SO No. opens the SO detail (ADR-296); Preview / Edit /
+// Assign / Cancel / Delete live in the row's ⋯ and act on the ORDER. The Excel
+// Export stays ONE ROW PER LINE (GET /sales-orders/lines, owner choice).
 //
 // Column defs live in components/so-list-columns.tsx.
 
 import { Icon } from '@/ui/core';
 import {
   type ListSalesOrdersQuery,
-  type SalesOrderLineListItem,
   type SalesOrderListItem,
   SELECTABLE_SO_TYPES,
   SO_STATUSES,
@@ -37,7 +36,7 @@ import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ConfirmDialog } from '@/ui/feedback';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { REASON_REQUIRED_MESSAGE, ReasonField } from '../components/reason-field';
-import { soLineRowTint, soListColumns, soRowMenu } from '../components/so-list-columns';
+import { soListColumns, soRowMenu, soRowTint } from '../components/so-list-columns';
 import { useOrderPrint } from '../components/use-order-print';
 import { SoPreviewModal } from '../components/so-preview-modal';
 import { SO_STATUS_LABEL, SO_TYPE_LABEL } from '../lib/so-status-label';
@@ -45,14 +44,10 @@ import { exportSoListExcel } from '../lib/import-export';
 import { todayIst } from '@/lib/date';
 import { soNoWithInternal } from '@/lib/so-number';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
-import {
-  fetchSalesOrderLinesForExport,
-  useSalesOrderLinesList,
-  useSoftDeleteSalesOrder,
-} from '../api';
+import { fetchSalesOrderLinesForExport, useSalesOrdersList, useSoftDeleteSalesOrder } from '../api';
 
-// ADR-201: 25 rows per page from the SERVER — ADR-261: 25 LINES; search /
-// filters / Sort & Filter run there over ALL lines and reset to page 1.
+// ADR-201: 25 rows per page from the SERVER — ADR-303: 25 ORDERS; search /
+// filters / Sort & Filter run there over ALL orders and reset to page 1.
 
 const listSearchSchema = z.object({
   search: z.string().optional(),
@@ -111,7 +106,7 @@ function SalesOrdersListPage(): React.JSX.Element {
     [sf.param, search.search, search.status, search.type, offset],
   );
 
-  const { data, isLoading, isFetching, isError, error } = useSalesOrderLinesList(query, {
+  const { data, isLoading, isFetching, isError, error } = useSalesOrdersList(query, {
     refetchInterval: LIVE_FALLBACK_POLL_MS,
   });
   const gotoPage = useCallback(
@@ -154,7 +149,7 @@ function SalesOrdersListPage(): React.JSX.Element {
   const [importMsg, setImportMsg] = useState<string | null>(null);
 
   // Excel export: EVERY line row matching search / status / type / Sort &
-  // Filter (ADR-261 — one row per line, as the screen).
+  // Filter (ADR-303 — the export stays one row per LINE, owner choice).
   const [exporting, setExporting] = useState(false);
   // Client-PO document being previewed in-app (ADR-142).
   const [previewPath, setPreviewPath] = useState<string | null>(null);
@@ -189,8 +184,14 @@ function SalesOrdersListPage(): React.JSX.Element {
   const orderPrint = useOrderPrint();
   const columns = useMemo(
     () =>
-      soListColumns({ today, onPreviewClientPo: setPreviewPath, draftIds, firstRowNo: offset + 1 }),
-    [today, draftIds, offset],
+      soListColumns({
+        today,
+        onPreviewClientPo: setPreviewPath,
+        draftIds,
+        firstRowNo: offset + 1,
+        canSeePrice: perms.price,
+      }),
+    [today, draftIds, offset, perms.price],
   );
 
   // Hide-page: no VIEW → the no-access panel (not while access still loads).
@@ -210,7 +211,7 @@ function SalesOrdersListPage(): React.JSX.Element {
         title="SO Master"
         icon="📋"
         count={total}
-        noun="line"
+        noun="order"
         filterNote={search.status ? SO_STATUS_LABEL[search.status] : undefined}
         search={searchInput}
         onSearch={setSearchInput}
@@ -340,20 +341,19 @@ function SalesOrdersListPage(): React.JSX.Element {
         />
       ) : (
         <Panel fill bodyPadding="none">
-          <DataTable<SalesOrderLineListItem>
+          <DataTable<SalesOrderListItem>
             tableKey={TABLE_KEYS.soMaster}
             sortFilterServer={sf}
             columns={columns}
             rows={rows}
-            // A line-less SO's one row has no line id — its SO id is the key.
-            rowKey={(r) => r.lineId ?? r.id}
+            rowKey={(r) => r.id}
             loading={isLoading}
             empty={
               sf.filtering || search.search || search.status || search.type
                 ? 'No SOs match.'
                 : 'No SOs yet.'
             }
-            rowClassName={(r) => soLineRowTint(r, today)}
+            rowClassName={(r) => soRowTint(r, today)}
             onRowClick={(so) => void navigate({ to: '/sales-orders/$id', params: { id: so.id } })}
             rowMenu={(so) =>
               soRowMenu(so, {
@@ -386,7 +386,7 @@ function SalesOrdersListPage(): React.JSX.Element {
 
       <ListFooter
         total={total}
-        noun="line"
+        noun="sales order"
         page={search.page}
         pageSize={LIST_PAGE_SIZE}
         onPage={gotoPage}

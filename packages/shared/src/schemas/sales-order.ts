@@ -260,6 +260,14 @@ export const salesOrderListItemSchema = salesOrderSchema.extend({
   // Display name of the user who raised the SO (users.full_name joined on
   // created_by), null when unresolved. Shown as the "Raised By" column.
   createdByName: z.string().nullable().default(null),
+  /** ADR-303 — Total Value (Basic): Σ Order Qty × Rate over the order's
+   *  non-cancelled lines, before GST (= the detail's totals.subtotal). Filled
+   *  by GET /sales-orders only; null when the caller may not see prices. */
+  totalValueBasic: z.number().nullable().optional(),
+  /** ADR-303 — Value to Dispatch (NAMING.md): Σ (Order Qty − Dispatched −
+   *  Short-closed qty, floor 0) × Rate over non-cancelled lines, no GST.
+   *  GET /sales-orders only; null when prices are hidden. */
+  valueToDispatch: z.number().nullable().optional(),
 });
 export type SalesOrderListItem = z.infer<typeof salesOrderListItemSchema>;
 

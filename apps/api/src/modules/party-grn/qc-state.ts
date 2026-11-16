@@ -57,3 +57,15 @@ export function qcPendingQtyOf(l: {
 export function isQcOpen(l: { receivedQty: number; acceptedQty: number; rejectedQty: number }) {
   return qcPendingQtyOf(l) > 0;
 }
+
+/** ADR-303 — the receipt's ONE QC status from its lines (over `agg`): `done`
+ *  when every line is done, `pending` when no line is inspected yet (or there
+ *  are no lines), else `partly_done`. Mirrors pgrnQcState per line: a line
+ *  booked before QC existed (accepted = received, 0173) counts as done. A
+ *  Cancelled receipt has none: NULL (the cell reads "Cancelled"). */
+export const PARTY_GRN_DOC_QC_STATUS_SQL = sql`(CASE
+  WHEN pg.cancelled_at IS NOT NULL THEN NULL
+  WHEN COALESCE(agg.lines_count, 0) > 0
+   AND COALESCE(agg.qc_done_lines, 0) = COALESCE(agg.lines_count, 0) THEN 'done'
+  WHEN COALESCE(agg.qc_waiting_lines, 0) = COALESCE(agg.lines_count, 0) THEN 'pending'
+  ELSE 'partly_done' END)`;

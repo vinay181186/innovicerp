@@ -1,17 +1,20 @@
-// Purchase Order list columns (ADR-199 fit table). ADR-261 (2026-10-31): ONE
-// ROW PER PO LINE (GET /purchase-orders/lines), opening with PO No. and the
-// locked lead block — SO No. · Internal SO No. · POL · Item Code
-// (CODE/REV) · Item Name — then PO Date · PO Type · Vendor · PR No. · Qty · GRN
-// Received · Accepted · Pending · Value · PO Status. Qty / Received / Accepted
-// / Pending / Value are the LINE's own. Value keeps its price gate: the API
-// nulls `amount` when the viewer may not see prices, and that null renders "—".
+// Purchase Order list columns (ADR-199 fit table). ADR-303 (2026-11-16): ONE
+// ROW PER PO again (GET /purchase-orders), after ADR-261's one-row-per-line
+// spell. Lead block Sr No · PO No. · Created On · SO No. · Internal SO No. (no
+// POL / Item Code / Item Name — a PO has many), then PO Date · PO Type · Vendor
+// · PR No. · Lines · Qty · GRN Received · Accepted · Pending · Total Value
+// (Basic) · PO Status · Created By. Qty columns are the PO's Σ over its lines;
+// SO No. is the first line's order + a grey "+n" for the others. Total Value
+// (Basic) = the PO subtotal (before GST); the API nulls it when the viewer may
+// not see prices, and that null renders "—".
 
-import type { PurchaseOrderLineListItem } from '@innovic/shared';
+import { TOTAL_VALUE_BASIC_LABEL, type PurchaseOrderListItem } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
 import { Badge } from '@/ui/core';
 import { createdByColumn, type DataTableColumn, leadColumns } from '@/ui/data';
 import { PO_STATUS_CHOICES, PO_STATUS_LABELS, PO_TYPE_LABELS } from '../lib/po-labels';
+import { FirstPlusMore } from './first-plus-more';
 import { PoStatusBadge } from './po-status-badge';
 
 // Whole rupees, Indian grouping — the same shape the Invoices list uses.
@@ -43,9 +46,9 @@ export function purchaseOrderListColumns({
   canSeePrice: boolean;
   /** ADR-202 — PO ids with a pending edit; their status cell shows "Draft". */
   draftIds?: Set<string>;
-}): DataTableColumn<PurchaseOrderLineListItem>[] {
+}): DataTableColumn<PurchaseOrderListItem>[] {
   return [
-    ...leadColumns<PurchaseOrderLineListItem>({
+    ...leadColumns<PurchaseOrderListItem>({
       firstRowNo,
       doc: {
         id: 'po_code',
@@ -55,30 +58,26 @@ export function purchaseOrderListColumns({
         render: (po) => (
           <Link
             to="/purchase-orders/$id"
-            params={{ id: po.docId }}
+            params={{ id: po.id }}
             className="td-code"
             style={{ color: 'var(--blue)', fontWeight: 800 }}
             title="Open the PO detail page"
             onClick={(e) => e.stopPropagation()}
           >
-            {po.docCode}
+            {po.code}
           </Link>
         ),
       },
-      soNo: (l) => l.soCode,
-      internalSoNo: (l) => l.soInternalNo,
-      pol: (l) => l.clientPoLineNo,
-      createdOn: (l) => l.createdAt,
-      itemCode: (l) => l.itemCode,
-      itemRev: (l) => l.itemRevision,
-      itemName: (l) => l.itemName,
+      soNo: (po) => po.soCode,
+      internalSoNo: (po) => po.soInternalNo,
+      createdOn: (po) => po.createdAt,
       overrides: {
-        so_no: { sortFilterField: 'soCode' },
+        so_no: {
+          sortFilterField: 'soCode',
+          render: (po) => <FirstPlusMore value={po.soCode} more={po.soExtraCount} />,
+        },
         so_internal_no: { sortFilterField: 'soInternalNo' },
-        client_po_line_no: { sortFilterField: 'clientPoLineNo' },
         created_on: { sortFilterField: 'createdOn' },
-        item_code: { sortFilterField: 'itemCode' },
-        item_name: { sortFilterField: 'itemName' },
       },
     }),
     {
@@ -88,7 +87,7 @@ export function purchaseOrderListColumns({
       header: 'PO Date',
       className: 'mono',
       nowrap: true,
-      render: (po) => fmtDate(po.docDate),
+      render: (po) => fmtDate(po.poDate),
     },
     {
       id: 'po_type',
@@ -132,6 +131,15 @@ export function purchaseOrderListColumns({
         ),
     },
     {
+      id: 'line_count',
+      sortFilterField: 'lineCount',
+      filterType: 'num',
+      header: 'Lines',
+      nowrap: true,
+      className: 'mono',
+      render: (po) => po.lineCount,
+    },
+    {
       id: 'total_qty',
       sortFilterField: 'totalQty',
       filterType: 'num',
@@ -139,7 +147,7 @@ export function purchaseOrderListColumns({
       align: 'right',
       nowrap: true,
       className: 'mono fw-700',
-      render: (po) => po.qty,
+      render: (po) => po.totalQty,
     },
     {
       id: 'received_qty',
@@ -190,18 +198,19 @@ export function purchaseOrderListColumns({
       ),
     },
     {
-      id: 'value',
-      sortFilterField: canSeePrice ? 'totalAmount' : undefined,
+      id: 'total_value_basic',
+      sortFilterField: canSeePrice ? 'subtotal' : undefined,
       filterType: 'num',
-      header: 'Value',
+      header: TOTAL_VALUE_BASIC_LABEL,
+      money: true,
       align: 'right',
       nowrap: true,
       // null = prices hidden for this viewer (API-side gate) — keep the gate.
       render: (po) =>
-        po.amount == null ? (
+        po.subtotal == null ? (
           <span className="text3">—</span>
         ) : (
-          <span className="mono">{inr(po.amount)}</span>
+          <span className="mono">{inr(po.subtotal)}</span>
         ),
     },
     {
@@ -211,7 +220,7 @@ export function purchaseOrderListColumns({
       kind: 'badge',
       header: 'PO Status',
       nowrap: true,
-      render: (po) => <PoStatusBadge status={po.docStatus} draft={draftIds?.has(po.docId)} />,
+      render: (po) => <PoStatusBadge status={po.status} draft={draftIds?.has(po.id)} />,
     },
     // ADR-261 rev — Created By, the last data column.
     createdByColumn({

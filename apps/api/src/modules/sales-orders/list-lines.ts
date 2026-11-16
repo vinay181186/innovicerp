@@ -71,7 +71,8 @@ export async function listSalesOrderLines(
     const fromFrag = input.fromDate ? sql`AND so.so_date >= ${input.fromDate}::date` : sql``;
     const toFrag = input.toDate ? sql`AND so.so_date <= ${input.toDate}::date` : sql``;
     const sf = readSf(input.sf);
-    const sfFrag = sfWhere(SO_LINE_SF_COLUMNS, sf);
+    // ADR-303 — the two value fields are money (`price: true`).
+    const sfFrag = sfWhere(SO_LINE_SF_COLUMNS, sf, { canSeePrice: showMoney });
     // Newest order first (as GET /sales-orders), its lines in line order; the
     // line id closes the order so pages never skip / repeat a line.
     // so.id closes a line-less row (its l.id is null).
@@ -79,6 +80,7 @@ export async function listSalesOrderLines(
       SO_LINE_SF_COLUMNS,
       sf,
       sql`so.so_date DESC, so.code DESC, so.id DESC, l.line_no ASC, l.id ASC`,
+      { canSeePrice: showMoney },
     );
 
     // The ONE FROM (order LEFT JOIN its live lines) + scope + filter, used by

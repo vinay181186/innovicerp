@@ -44,10 +44,30 @@ const REVISION = sql`COALESCE(sol.revision::text, rev_jwl.revision::text)`;
 // CODE/REV as the cell prints it (itemCodeWithRev).
 const ITEM_CODE_REV = sql`(btrim(${ITEM_CODE}) || COALESCE('/' || NULLIF(btrim(${REVISION}), ''), ''))`;
 
+/** ADR-303 — the SO / JWSO a PO line `pol` belongs to (aliases sol, so,
+ *  rev_op, rev_jc, rev_jwl, jwo). Each hop is a single-row FK. Shared with the
+ *  one-row-per-PO list (service.ts) so its SO No. and SO dropdown agree with
+ *  this line list and its Excel export. */
+export const PO_LINE_ORDER_JOINS = sql`
+      LEFT JOIN public.sales_order_lines sol
+        ON sol.id = pol.source_so_line_id AND sol.deleted_at IS NULL
+      LEFT JOIN public.sales_orders so
+        ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
+      LEFT JOIN public.jc_ops rev_op
+        ON rev_op.id = pol.source_jc_op_id AND rev_op.deleted_at IS NULL
+      LEFT JOIN public.job_cards rev_jc
+        ON rev_jc.id = rev_op.job_card_id AND rev_jc.deleted_at IS NULL
+      LEFT JOIN public.job_work_order_lines rev_jwl
+        ON rev_jwl.id = rev_jc.source_jw_line_id AND rev_jwl.deleted_at IS NULL
+      LEFT JOIN public.job_work_orders jwo
+        ON jwo.id = rev_jwl.job_work_order_id AND jwo.deleted_at IS NULL`;
+/** The line's order number (SO, else JWSO), over PO_LINE_ORDER_JOINS. */
+export const PO_LINE_SO_CODE = sql`COALESCE(so.code, jwo.code)`;
+
 /** Sort & Filter fields of the line list. Names the old per-PO list used keep
  *  their names (poCode, totalQty, totalAmount…) so a saved ▾ filter still reads. */
 export const PO_LINE_SF_COLUMNS: SfColumnMap = {
-  soCode: { sql: sql`COALESCE(so.code, jwo.code)`, type: 'text' },
+  soCode: { sql: PO_LINE_SO_CODE, type: 'text' },
   soInternalNo: { sql: sql`so.internal_so_no`, type: 'text' },
   clientPoLineNo: { sql: polSql('sol', 'rev_jwl'), type: 'text' },
   createdOn: {
@@ -152,18 +172,7 @@ export async function listPurchaseOrderLines(
       LEFT JOIN public.items i ON i.id = pol.item_id AND i.deleted_at IS NULL
       LEFT JOIN public.purchase_requests spr
         ON spr.id = pol.source_pr_id AND spr.deleted_at IS NULL
-      LEFT JOIN public.sales_order_lines sol
-        ON sol.id = pol.source_so_line_id AND sol.deleted_at IS NULL
-      LEFT JOIN public.sales_orders so
-        ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
-      LEFT JOIN public.jc_ops rev_op
-        ON rev_op.id = pol.source_jc_op_id AND rev_op.deleted_at IS NULL
-      LEFT JOIN public.job_cards rev_jc
-        ON rev_jc.id = rev_op.job_card_id AND rev_jc.deleted_at IS NULL
-      LEFT JOIN public.job_work_order_lines rev_jwl
-        ON rev_jwl.id = rev_jc.source_jw_line_id AND rev_jwl.deleted_at IS NULL
-      LEFT JOIN public.job_work_orders jwo
-        ON jwo.id = rev_jwl.job_work_order_id AND jwo.deleted_at IS NULL
+      ${PO_LINE_ORDER_JOINS}
       ${extra}
       WHERE pol.company_id = ${companyId}::uuid
         AND po.company_id = ${companyId}::uuid

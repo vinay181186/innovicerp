@@ -1,7 +1,7 @@
 // Sort & Filter (ADR-200) — the Item Issue Register's sortable / filterable
 // fields. Each expression is the SAME one listStoreIssues SELECTs for that
-// column (same table aliases; valid in its count query too, which carries the
-// same joins), so what the user filters is what the row shows.
+// column (same table aliases; valid in its count query too, which uses the
+// same HEADER_FROM), so what the user filters is what the row shows.
 //   reference — the CASE mirrors the screen's reference(): JC code, Assembly
 //               SO code, else Department, else the legacy "type no".
 //   items     — every line's item code on the slip (the cell shows the first
@@ -40,14 +40,30 @@ export const STORE_ISSUE_SF_COLUMNS: SfColumnMap = {
     )`,
     type: 'text',
   },
-  // ADR-207 — the Internal SO No. of the slip's SO, off the `so` join BOTH the
-  // page and the count query make. The row carries it as
-  // `salesOrderInternalNo`; this is the Sort & Filter field name.
-  soInternalNo: { sql: sql`so.internal_so_no`, type: 'text' },
+  // ADR-303 — the register is one row per slip again (read.ts HEADER_FROM,
+  // shared by page AND count). SO No. / Internal SO No. are the ORDER the slip
+  // traces to (`oso` / `ojw`: own Assembly SO, else the Job Card's SO, else its
+  // JWSO) — one per slip, so a plain filter keeps each slip one row. The row
+  // carries them as `soCode` / `soInternalNo`.
+  soCode: { sql: sql`COALESCE(oso.code, ojw.code)`, type: 'text' },
+  soInternalNo: { sql: sql`oso.internal_so_no`, type: 'text' },
   issuedTo: { sql: sql`si.issued_to`, type: 'text' },
   purpose: { sql: sql`si.purpose`, type: 'text' },
   issuedBy: { sql: sql`u.full_name`, type: 'text' },
   createdOn: { sql: sql`(si.created_at AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
+  createdBy: { sql: createdByNameSql(sql`si.created_by`), type: 'text' },
+  // Lines = live lines (`ls` lateral); a pre-0157 slip without one counts 1.
+  lineCount: {
+    sql: sql`(CASE WHEN COALESCE(ls.line_count, 0) > 0 THEN ls.line_count
+                   WHEN si.item_code_text IS NOT NULL THEN 1 ELSE 0 END)`,
+    type: 'num',
+  },
+  // Issue Qty = sum of the live lines (`lq` lateral); pre-0157 slip: its own qty.
+  qty: {
+    sql: sql`(CASE WHEN COALESCE(ls.line_count, 0) > 0 THEN COALESCE(lq.total_qty, 0)
+                   WHEN si.item_code_text IS NOT NULL THEN COALESCE(si.qty, 0) ELSE 0 END)`,
+    type: 'num',
+  },
 };
 
 // ADR-261 — the line register (lines.ts, GET /store-issues/lines). Same fields
@@ -55,6 +71,10 @@ export const STORE_ISSUE_SF_COLUMNS: SfColumnMap = {
 // expression reads the aliases LINE_FROM joins (page AND count).
 export const STORE_ISSUE_LINE_SF_COLUMNS: SfColumnMap = {
   ...STORE_ISSUE_SF_COLUMNS,
+  // The line register's joins name the order `so` / `jw` (LINE_FROM).
+  soInternalNo: { sql: sql`so.internal_so_no`, type: 'text' },
+  // A line row is one line (the slip map's `ls` lateral is not joined here).
+  lineCount: { sql: sql`1`, type: 'num' },
   soCode: { sql: sql`COALESCE(so.code, jw.code)`, type: 'text' },
   clientPoLineNo: { sql: polSql('sol', 'jwl'), type: 'text' },
   createdOn: {

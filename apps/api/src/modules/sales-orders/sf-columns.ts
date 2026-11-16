@@ -15,6 +15,7 @@ import { sql } from 'drizzle-orm';
 import { createdByNameSql } from '../../lib/created-by-sql';
 import { jcEffectiveQtySql } from '../../lib/jc-effective-qty';
 import type { SfColumnMap } from '../../lib/list-query';
+import { SO_TOTAL_VALUE_BASIC_AGG, SO_VALUE_TO_DISPATCH_AGG } from './so-value-sql';
 
 /** One SO's live lines — the rows line_agg groups (same filters). */
 const soLines = sql`FROM public.sales_order_lines l
@@ -51,6 +52,20 @@ export const SO_SF_COLUMNS: SfColumnMap = {
   earliestDueDate: { sql: sql`(SELECT MIN(l.due_date) ${soLines})`, type: 'date' },
   status: { sql: sql`so.status`, type: 'list' },
   createdOn: { sql: sql`(so.created_at AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
+  // ADR-303 — one row per ORDER again: Created By, Lines and the two values
+  // (money: `price: true`, so the endpoint must pass canSeePrice).
+  createdBy: { sql: createdByNameSql(sql`so.created_by`), type: 'text' },
+  lineCount: { sql: sql`COALESCE((SELECT COUNT(*) ${soLines}), 0)::int`, type: 'num' },
+  totalValueBasic: {
+    sql: sql`(SELECT ${SO_TOTAL_VALUE_BASIC_AGG} ${soLines})`,
+    type: 'num',
+    price: true,
+  },
+  valueToDispatch: {
+    sql: sql`(SELECT ${SO_VALUE_TO_DISPATCH_AGG} ${soLines})`,
+    type: 'num',
+    price: true,
+  },
 };
 
 // ADR-261 — GET /sales-orders/lines (one row per SO LINE; aliases l = the
@@ -65,6 +80,11 @@ export const SO_LINE_SF_COLUMNS: SfColumnMap = {
   customerName: SO_SF_COLUMNS.customerName!,
   clientPoNo: SO_SF_COLUMNS.clientPoNo!,
   status: SO_SF_COLUMNS.status!,
+  // ADR-303 — the per-ORDER screen's fields, so its saved sort / filter still
+  // works on the line Excel Export (same tableKey): the ORDER's figures.
+  lineCount: SO_SF_COLUMNS.lineCount!,
+  totalValueBasic: SO_SF_COLUMNS.totalValueBasic!,
+  valueToDispatch: SO_SF_COLUMNS.valueToDispatch!,
   clientPoLineNo: { sql: sql`l.client_po_line_no`, type: 'text' },
   createdOn: {
     sql: sql`(COALESCE(l.created_at, so.created_at) AT TIME ZONE 'Asia/Kolkata')::date`,

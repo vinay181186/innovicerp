@@ -29,7 +29,7 @@ import { AuthorizationError } from '../../lib/errors';
 import { day, iso, str } from '../../lib/list-line-values';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { polSql } from '../../lib/pol';
-import { DC_LINE_REV_SQL, DC_LINE_SF_COLUMNS } from './sf-columns';
+import { DC_LINE_ORDER_JOINS, DC_LINE_REV_SQL, DC_LINE_SF_COLUMNS } from './sf-columns';
 
 /** The ONE FROM clause: page, count and summary all read it, so every
  *  DC_LINE_SF_COLUMNS alias is valid in all three. */
@@ -41,28 +41,7 @@ const DC_LINE_FROM = sql`
   LEFT JOIN public.items i ON i.id = dcl.item_id AND i.deleted_at IS NULL
   LEFT JOIN public.purchase_orders po
     ON po.id = dc.purchase_order_id AND po.deleted_at IS NULL
-  -- 0237 — the LINE's NC (one return DC may carry several), header as fallback.
-  LEFT JOIN public.nc_register nc
-    ON nc.id = COALESCE(dcl.nc_id, dc.nc_id) AND nc.deleted_at IS NULL
-  LEFT JOIN public.purchase_order_lines pol
-    ON pol.id = dcl.purchase_order_line_id AND pol.deleted_at IS NULL
-  LEFT JOIN public.jc_ops ljo ON ljo.id = pol.source_jc_op_id AND ljo.deleted_at IS NULL
-  LEFT JOIN public.job_cards ljc
-    ON ljc.id = COALESCE(ljo.job_card_id, nc.job_card_id, dc.job_card_id) AND ljc.deleted_at IS NULL
-  LEFT JOIN public.sales_order_lines sol
-    ON sol.id = COALESCE(pol.source_so_line_id, dc.sales_order_line_id, ljc.source_so_line_id)
-   AND sol.deleted_at IS NULL
-  LEFT JOIN public.sales_orders so ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
-  LEFT JOIN public.job_work_order_lines jwl
-    ON jwl.id = ljc.source_jw_line_id AND jwl.deleted_at IS NULL
-  LEFT JOIN public.job_work_orders jw
-    ON jw.id = jwl.job_work_order_id AND jw.deleted_at IS NULL
-  -- No SO / JWSO link: the SO a free-text so_ref_text names (code is unique per
-  -- company) — for its Internal SO No. (ADR-207).
-  LEFT JOIN public.sales_orders so_ref
-    ON so.id IS NULL AND jw.id IS NULL
-   AND so_ref.company_id = dc.company_id AND so_ref.code = dc.so_ref_text
-   AND so_ref.deleted_at IS NULL`;
+  ${DC_LINE_ORDER_JOINS}`;
 
 export async function listDeliveryChallanLines(
   input: ListDeliveryChallansQuery,

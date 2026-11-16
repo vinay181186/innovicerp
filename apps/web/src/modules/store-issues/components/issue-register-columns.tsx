@@ -1,13 +1,14 @@
-// Item Issue Register columns (ADR-199 fit table), one row per issue LINE
-// (ADR-261, GET /store-issues/lines). The slip's own Issue No. and the six
-// lead columns come first (SO No. · Internal SO No. · POL · Created On · Item
-// Code · Item Name), then Issue Date, Issue Against, Reference, Issued To, the line's
-// Issue Qty, Purpose and Issued By. A cancelled slip washes the row
+// Item Issue Register columns (ADR-199 fit table) — ONE ROW PER SLIP again
+// (ADR-303, GET /store-issues). The locked lead block (Sr No · Issue No. ·
+// Created On · SO No. · Internal SO No. — the order the slip traces to; no
+// POL / Item Code / Item Name on a document list), then Issue Date, Issue
+// Against, Reference, Issued To, Lines, Issue Qty (sum of the lines), Purpose,
+// Issued By and Created By last. A cancelled slip washes the row
 // (ROW_TINT.cancelled, set in the view). Sort & Filter runs on the SERVER
 // (ADR-200): `sortFilterField` names the field in the endpoint's column map
-// (api store-issues/sf-columns.ts STORE_ISSUE_LINE_SF_COLUMNS).
+// (api store-issues/sf-columns.ts STORE_ISSUE_SF_COLUMNS).
 
-import { ISSUE_AGAINST_LABELS, type StoreIssueLineRow } from '@innovic/shared';
+import { ISSUE_AGAINST_LABELS, type StoreIssueListItem } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
 import { createdByColumn, type DataTableColumn, leadColumns } from '@/ui/data';
 
@@ -16,15 +17,15 @@ const ISSUE_AGAINST_OPTIONS = Object.entries(ISSUE_AGAINST_LABELS).map(([value, 
   label,
 }));
 
-function reference(r: StoreIssueLineRow): string {
+function reference(r: StoreIssueListItem): string {
   if (r.issueAgainst === 'job_card') return r.jobCardCode ?? '—';
   if (r.issueAgainst === 'assembly_so') return r.salesOrderCode ?? '—';
   return r.department ?? r.legacyReference ?? '—';
 }
 
-export function issueRegisterColumns(firstRowNo: number): DataTableColumn<StoreIssueLineRow>[] {
+export function issueRegisterColumns(firstRowNo: number): DataTableColumn<StoreIssueListItem>[] {
   return [
-    ...leadColumns<StoreIssueLineRow>({
+    ...leadColumns<StoreIssueListItem>({
       firstRowNo,
       doc: {
         id: 'issue_no',
@@ -35,7 +36,7 @@ export function issueRegisterColumns(firstRowNo: number): DataTableColumn<StoreI
         nowrap: true,
         render: (r) => (
           <>
-            <span style={{ color: 'var(--cyan)' }}>{r.docCode}</span>
+            <span style={{ color: 'var(--cyan)' }}>{r.code}</span>
             {r.reversedAt ? (
               <div
                 style={{ fontSize: 'var(--fs-xs)', fontWeight: 700, color: 'var(--red)' }}
@@ -49,18 +50,11 @@ export function issueRegisterColumns(firstRowNo: number): DataTableColumn<StoreI
       },
       soNo: (r) => r.soCode,
       internalSoNo: (r) => r.soInternalNo,
-      pol: (r) => r.clientPoLineNo,
       createdOn: (r) => r.createdAt,
-      itemCode: (r) => r.itemCode,
-      itemRev: (r) => r.itemRevision,
-      itemName: (r) => r.itemName,
       overrides: {
         so_no: { sortFilterField: 'soCode' },
         so_internal_no: { sortFilterField: 'soInternalNo' },
-        client_po_line_no: { sortFilterField: 'clientPoLineNo' },
         created_on: { sortFilterField: 'createdOn' },
-        item_code: { sortFilterField: 'itemCode' },
-        item_name: { sortFilterField: 'itemName' },
       },
     }),
     {
@@ -70,7 +64,7 @@ export function issueRegisterColumns(firstRowNo: number): DataTableColumn<StoreI
       header: 'Issue Date',
       className: 'mono text2',
       nowrap: true,
-      render: (r) => fmtDate(r.docDate),
+      render: (r) => fmtDate(r.issueDate),
     },
     {
       id: 'issue_against',
@@ -99,6 +93,15 @@ export function issueRegisterColumns(firstRowNo: number): DataTableColumn<StoreI
       render: (r) => r.issuedTo || '—',
     },
     {
+      id: 'line_count',
+      sortFilterField: 'lineCount',
+      kind: 'num',
+      header: 'Lines',
+      className: 'mono',
+      nowrap: true,
+      render: (r) => r.lineCount,
+    },
+    {
       id: 'issue_qty',
       sortFilterField: 'qty',
       kind: 'num',
@@ -107,8 +110,7 @@ export function issueRegisterColumns(firstRowNo: number): DataTableColumn<StoreI
       nowrap: true,
       render: (r) => (
         <span style={{ textDecoration: r.reversedAt ? 'line-through' : undefined }}>
-          {r.qty}
-          {r.uom ? <span className="text3"> {r.uom}</span> : null}
+          {r.totalQty ?? 0}
         </span>
       ),
     },

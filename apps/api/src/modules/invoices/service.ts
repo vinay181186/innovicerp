@@ -44,8 +44,9 @@ import {
 } from '../../lib/errors';
 import { lockDocSeries } from '../../lib/doc-series-lock';
 import { changedByOtherError } from '../../lib/row-lock';
-import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
-import { INVOICE_SF_COLUMNS } from './sf-columns';
+import { liftLineFilters, likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { INVOICE_LINE_LIFT, INVOICE_SF_COLUMNS } from './sf-columns';
+import { readInvoiceListExtras } from './list-extras';
 import { emitActivityLog } from '../activity-log/service';
 import { blockerRefusal } from '../cancel-requests/messages';
 import { assertNoPendingCancel } from '../cancel-requests/pending-guard';
@@ -161,8 +162,11 @@ export async function listInvoices(
   const showMoney = await canSeeFormPrice(user, 'invoice_create');
   // ADR-201: search + Sort & Filter run here over EVERY invoice; the screen
   // asks for one 25-row page. No `limit` → every invoice (as before).
-  const sfq = readSf(input.sf);
+  const sfAll = readSf(input.sf);
   const sfOpts = { canSeePrice: showMoney };
+  // ADR-303 — SO No. / Internal SO No.: the invoice's own SO OR any live line's
+  // (one row per invoice).
+  const { docSf: sfq, lineFrag: soFrag } = liftLineFilters(sfAll, INVOICE_LINE_LIFT, sfOpts);
   const term = input.search?.trim();
   const pat = term ? `%${likeEscape(term)}%` : null;
   const where = and(
@@ -176,14 +180,21 @@ export async function listInvoices(
             WHERE iso.id = ${invoices.salesOrderId}
               AND iso.internal_so_no ILIKE ${pat} ESCAPE '\\'
           )
-          OR COALESCE(${invoices.clientNameText}, '') ILIKE ${pat} ESCAPE '\\')`
+          OR COALESCE(${invoices.clientNameText}, '') ILIKE ${pat} ESCAPE '\\'
+          -- ADR-303 — an item code / name on ANY live line finds the invoice.
+          OR EXISTS (
+            SELECT 1 FROM public.invoice_lines il_q
+            WHERE il_q.invoice_id = ${invoices.id} AND il_q.deleted_at IS NULL
+              AND (COALESCE(il_q.item_code_text, '') ILIKE ${pat} ESCAPE '\\'
+                OR il_q.item_name ILIKE ${pat} ESCAPE '\\')
+          ))`
       : undefined,
-    sql`TRUE ${sfWhere(INVOICE_SF_COLUMNS, sfq, sfOpts)}`,
+    sql`TRUE ${sfWhere(INVOICE_SF_COLUMNS, sfq, sfOpts)} ${soFrag}`,
   );
   // Ends on id so a page never skips / repeats an invoice.
   const order = sfOrderBy(
     INVOICE_SF_COLUMNS,
-    sfq,
+    sfAll,
     sql`${invoices.invoiceDate} DESC, ${invoices.createdAt} DESC, ${invoices.id} DESC`,
     sfOpts,
   );
@@ -205,10 +216,22 @@ export async function listInvoices(
           .where(inArray(salesOrders.id, soIds))
       : [];
     const internalBySo = new Map(internalRows.map((r) => [r.id, r.internal]));
-    const list = rows.map((r) => ({
-      ...rowToInvoice(r),
-      soInternalNo: internalBySo.get(r.salesOrderId) ?? null,
-    }));
+    // ADR-303 — Lines / Created By / "+n" other SOs, one read for the page.
+    const extras = await readInvoiceListExtras(
+      tx,
+      rows.map((r) => r.id),
+    );
+    const list = rows.map((r) => {
+      const x = extras.get(r.id);
+      return {
+        ...rowToInvoice(r),
+        soInternalNo: internalBySo.get(r.salesOrderId) ?? null,
+        lineCount: x?.lineCount ?? 0,
+        createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt),
+        createdByName: x?.createdByName ?? null,
+        extraSoCount: x?.extraSoCount ?? 0,
+      };
+    });
 
     // The strip and the total — one query over every matching invoice, with
     // the same rules as rowToInvoice (overdue = not paid and past due).

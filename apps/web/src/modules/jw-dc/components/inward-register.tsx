@@ -2,25 +2,23 @@
 // shared FIT DataTable (ADR-199, table standard 2026-10-01). Split out of
 // routes/list.tsx.
 //
-// ONE ROW PER RECEIPT LINE (ADR-261, GET /jw-dc/inward/lines); the ⋯ acts on
-// the receipt (docId) as before.
+// ONE ROW PER RECEIPT (ADR-303, GET /jw-dc/inward; /jw-dc/inward/lines stays
+// for other readers); the ⋯ acts on the receipt as before.
 //
 // There is no inward detail page (only the outward DC has one, /jw-dc/$id), so
-// an inward row is not clickable. The ▸ reveals Vendor Challan No., the GRN link
-// and Vehicle / Remarks — everything the list row already carries, so no extra
-// fetch. A receipt that had rejections at Incoming QC is washed red (ROW_TINT);
-// inward entries carry no return-status of their own.
+// an inward row is not clickable, and there is no under-row panel (ADR-294). A
+// receipt that had rejections at Incoming QC is washed red (ROW_TINT); inward
+// entries carry no return-status of their own.
 //
 // ADR-235 — Cancelled receipts stay on the register (includeCancelled), washed
-// grey and marked Cancelled, the reason in the ▸; a live row's ⋯ offers
-// "Cancel Receipt" (the ONE standard Cancel dialog, docType 'jw_dc_inward').
+// grey and marked Cancelled (the reason on the mark's hover); a live row's ⋯
+// offers "Cancel Receipt" (the ONE standard Cancel dialog, docType 'jw_dc_inward').
 
 import { Icon } from '@/ui/core';
-import { type JwDcInwardLineRow } from '@innovic/shared';
+import { type JwDcInwardListItem } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
-import { fmtDateTime } from '@/lib/date';
 import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
 import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
 import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
@@ -28,7 +26,7 @@ import { DataTable, Panel, ROW_TINT } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
-import { useJwDcInwardLines } from '../api';
+import { useJwDcInwardList } from '../api';
 import { inwardColumns, isJwDcInwardCancelled } from './inward-columns';
 
 const TABLE_KEY = TABLE_KEYS.jwDcInward;
@@ -50,7 +48,7 @@ export function InwardView({
   // sends a Cancel Request, Approve decides it; the dialog's server preview
   // says which of the two this user may press.
   const canCancel = perms.edit || perms.approve;
-  const [cancelRow, setCancelRow] = useState<JwDcInwardLineRow | null>(null);
+  const [cancelRow, setCancelRow] = useState<JwDcInwardListItem | null>(null);
   // Seeded once from ?search (deep link); keystrokes stay local after that.
   const [search, setSearch] = useState(() => initialSearch ?? '');
   const [page, setPage] = useState(1);
@@ -69,9 +67,8 @@ export function InwardView({
   // time, so filtering only the loaded page would miss rows. Every change goes
   // back to page 1.
   const sf = useServerSortFilter(TABLE_KEY, () => setPage(1));
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
-  const { data, isLoading, isError, error } = useJwDcInwardLines({
+  const { data, isLoading, isError, error } = useJwDcInwardList({
     search: term || undefined,
     sf: sf.param,
     // ADR-235 — Cancelled receipts stay on the register, washed and marked.
@@ -84,15 +81,6 @@ export function InwardView({
   const columns = useMemo(() => inwardColumns(pageOffset(page) + 1), [page]);
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / LIST_PAGE_SIZE));
 
-  const toggleExpand = useCallback((id: string): void => {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
-
   return (
     <div>
       {/* THE list header (ui/layout ListHeader): title · count · search ·
@@ -102,7 +90,7 @@ export function InwardView({
         title="Inward Register"
         icon="📥"
         count={data?.total}
-        noun="inward line"
+        noun="receipt"
         search={search}
         onSearch={setSearch}
         filtersActive={sf.filtering || search !== ''}
@@ -136,23 +124,19 @@ export function InwardView({
             sortFilterServer={sf}
             columns={columns}
             rows={data?.items ?? []}
-            rowKey={(inv) => inv.lineId}
+            rowKey={(inv) => inv.id}
             loading={isLoading}
-            empty={term || sf.filtering ? 'No inward lines match.' : 'No inward lines yet.'}
+            empty={term || sf.filtering ? 'No inward entries match.' : 'No inward entries yet.'}
             // A receipt that had rejections at Incoming QC stands out red.
             rowClassName={(inv) =>
               isJwDcInwardCancelled(inv)
                 ? ROW_TINT.cancelled
-                : inv.rejectedQty > 0
+                : inv.totalRejectedQty > 0
                   ? ROW_TINT.late
                   : undefined
             }
-            renderExpanded={(inv) =>
-              expanded.has(inv.lineId) ? <ExpandedInward inv={inv} /> : null
-            }
-            onToggleExpanded={(inv) => toggleExpand(inv.lineId)}
             rowActionsWidth="1%"
-            rowActions={(inv: JwDcInwardLineRow) => (
+            rowActions={(inv: JwDcInwardListItem) => (
               <RowActions
                 items={[
                   {
@@ -173,7 +157,7 @@ export function InwardView({
       {data ? (
         <ListFooter
           total={data.total}
-          noun="inward line"
+          noun="receipt"
           page={page}
           pageSize={LIST_PAGE_SIZE}
           onPage={(p) => setPage(Math.min(totalPages, Math.max(1, p)))}
@@ -183,58 +167,10 @@ export function InwardView({
       {cancelRow ? (
         <CancelDocDialog
           docType="jw_dc_inward"
-          docId={cancelRow.docId}
-          docCode={cancelRow.docCode}
+          docId={cancelRow.id}
+          docCode={cancelRow.code}
           onClose={() => setCancelRow(null)}
         />
-      ) : null}
-    </div>
-  );
-}
-
-/** Vendor Challan No., the GRN this receipt raised, and Vehicle / Remarks —
- *  all already on the list row, so this reveal needs no extra fetch. */
-function ExpandedInward({ inv }: { inv: JwDcInwardLineRow }): React.JSX.Element {
-  return (
-    <div
-      className="text3"
-      style={{
-        padding: 'var(--sp-2) var(--sp-3) var(--sp-3) var(--sp-6)',
-        fontSize: 'var(--fs-xs)',
-        display: 'flex',
-        flexWrap: 'wrap',
-        gap: 'var(--sp-4)',
-      }}
-    >
-      <span>
-        <b>Vendor Challan No.:</b> {inv.vendorChallanNo ?? '—'}
-      </span>
-      <span>
-        <b>GRN No.:</b>{' '}
-        {inv.goodsReceiptNoteId && inv.grnCode ? (
-          <Link
-            to="/goods-receipt-notes/$id"
-            params={{ id: inv.goodsReceiptNoteId }}
-            style={{ color: 'var(--blue)' }}
-          >
-            {inv.grnCode}
-          </Link>
-        ) : (
-          '—'
-        )}
-      </span>
-      <span>
-        <b>Vehicle No.:</b> {inv.vehicleNo ?? '—'}
-      </span>
-      <span>
-        <b>Remarks:</b> {inv.remarks ?? '—'}
-      </span>
-      {/* ADR-235 — why and when a Cancelled receipt was cancelled. */}
-      {isJwDcInwardCancelled(inv) ? (
-        <span style={{ color: 'var(--red2)' }}>
-          <b>Reason:</b> {inv.cancelReason ?? '—'}
-          {inv.cancelledAt ? ` · Cancelled ${fmtDateTime(inv.cancelledAt)}` : ''}
-        </span>
       ) : null}
     </div>
   );

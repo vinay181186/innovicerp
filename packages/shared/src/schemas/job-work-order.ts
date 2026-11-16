@@ -229,6 +229,13 @@ export const jobWorkOrderListItemSchema = z.object({
   rmRequiredQty: z.number().int().nonnegative().default(0),
   /** OW-143 — the JWSO's customer RM status (the rule on the sum of its lines). */
   customerRm: customerRmSchema.optional(),
+  /** ADR-303 — pieces still owed: Σ per line (Order Qty − Dispatched, floor 0),
+   *  0 for a line closed short or cancelled (the line list's rule). */
+  pendingQty: z.number().int().nonnegative().optional(),
+  /** ADR-303 — the JWSO's created_at (the list's Created On). */
+  createdAt: z.string().optional(),
+  /** ADR-303 — Created By of the JWSO (full name, else e-mail before @). */
+  createdByName: z.string().nullable().optional(),
 });
 export type JobWorkOrderListItem = z.infer<typeof jobWorkOrderListItemSchema>;
 

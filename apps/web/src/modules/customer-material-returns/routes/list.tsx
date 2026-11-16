@@ -5,15 +5,16 @@
 //
 // Built on the Party GRN list's pattern: ListHeader band, the shared FIT
 // DataTable (ADR-199) with server Sort & Filter (ADR-200), 25 rows a page from
-// the server (ADR-201), ▸ expand for Remarks + History, row ⋯ for Print and
-// Cancel. ADR-261: ONE ROW PER RETURN LINE (GET /customer-material-returns/lines);
-// the ⋯ menu acts on the line's RETURN (docId); the count is lines. The search
+// the server (ADR-201), row ⋯ for Print and Cancel. ADR-303: ONE ROW PER
+// RETURN (GET /customer-material-returns; the /lines endpoint stays for other
+// readers); no under-row panel (ADR-294) — Remarks and the lines are on the
+// return's print (⋯ Preview); the count is returns. The search
 // term lives in the `search` URL param (survives refresh
 // and Back), mirrored by the box, debounced back with replace + page 1 — the
 // SO Master shape. No detail page, so a row is not clickable.
 
 import { Icon } from '@/ui/core';
-import type { CustomerMaterialReturnLineRow } from '@innovic/shared';
+import type { CustomerMaterialReturn } from '@innovic/shared';
 import { createRoute, Link } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
@@ -26,13 +27,12 @@ import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filte
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
-import { useCustomerMaterialReturnLines } from '../api';
+import { useCustomerMaterialReturnsList } from '../api';
 import { cmrColumns } from '../components/cmr-columns';
-import { CmrExpand } from '../components/cmr-expand';
 import { usePrintCmr } from '../components/use-print-cmr';
 
 /** The fit table's saved-layout key (kebab-case, stable — never rename). */
-const CMR_TABLE_KEY = 'customer-material-returns';
+const CMR_TABLE_KEY = 'customer-material-returns-doc'; // ADR-303: new key, one row per document
 
 const searchSchema = z.object({
   search: z.string().optional(),
@@ -82,7 +82,7 @@ function CustomerMaterialReturnsListPage(): React.JSX.Element {
   // Sort & Filter on the SERVER (ADR-200); any change goes back to page 1.
   const sf = useServerSortFilter(CMR_TABLE_KEY, () => setPage(1));
 
-  const { data, isLoading, isFetching, isError, error } = useCustomerMaterialReturnLines({
+  const { data, isLoading, isFetching, isError, error } = useCustomerMaterialReturnsList({
     ...(routeSearch.search ? { search: routeSearch.search } : {}),
     ...(sf.param ? { sf: sf.param } : {}),
     limit: LIST_PAGE_SIZE,
@@ -94,18 +94,8 @@ function CustomerMaterialReturnsListPage(): React.JSX.Element {
   const rows = data?.items ?? [];
   const columns = useMemo(() => cmrColumns(pageOffset(page) + 1), [page]);
 
-  const [cancelRow, setCancelRow] = useState<CustomerMaterialReturnLineRow | null>(null);
+  const [cancelRow, setCancelRow] = useState<CustomerMaterialReturn | null>(null);
   const printCmr = usePrintCmr();
-
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const toggleExpand = useCallback((id: string): void => {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
 
   // "Hide page" (Access Control): once access has loaded, no VIEW → no page.
   if (eff && !perms.view) {
@@ -123,7 +113,7 @@ function CustomerMaterialReturnsListPage(): React.JSX.Element {
         title="Customer Material Return"
         icon="📤"
         count={data?.total}
-        noun="line"
+        noun="return"
         search={searchInput}
         onSearch={setSearchInput}
         searchPlaceholder="Search return no., JWSO, POL, item code, customer, vehicle no.…"
@@ -158,35 +148,33 @@ function CustomerMaterialReturnsListPage(): React.JSX.Element {
             sortFilterServer={sf}
             columns={columns}
             rows={rows}
-            rowKey={(r) => r.lineId}
+            rowKey={(r) => r.id}
             loading={isLoading}
             emptyText={
               routeSearch.search || sf.filtering
                 ? 'No Customer Material Returns match.'
                 : 'No Customer Material Returns yet.'
             }
-            rowClassName={(r) => (r.docStatus === 'cancelled' ? ROW_TINT.cancelled : undefined)}
-            renderExpanded={(r) => (expanded.has(r.lineId) ? <CmrExpand r={r} /> : null)}
-            onToggleExpanded={(r) => toggleExpand(r.lineId)}
+            rowClassName={(r) => (r.status === 'cancelled' ? ROW_TINT.cancelled : undefined)}
             rowMenu={(r) => [
               {
                 key: 'preview',
                 label: 'Preview',
                 icon: 'eye',
-                onSelect: () => printCmr.preview(r.docId, r.docCode),
+                onSelect: () => printCmr.preview(r.id, r.code),
               },
               {
                 key: 'download',
                 label: 'Download PDF',
                 icon: 'download',
-                onSelect: () => printCmr.download(r.docId, r.docCode),
+                onSelect: () => printCmr.download(r.id, r.code),
               },
               {
                 key: 'cancel',
                 label: 'Cancel Return',
                 icon: 'x',
                 group: 'danger',
-                hidden: !canCancel || r.docStatus === 'cancelled',
+                hidden: !canCancel || r.status === 'cancelled',
                 onSelect: () => setCancelRow(r),
               },
             ]}
@@ -197,7 +185,7 @@ function CustomerMaterialReturnsListPage(): React.JSX.Element {
       {data ? (
         <ListFooter
           total={data.total}
-          noun="line"
+          noun="return"
           page={page}
           pageSize={LIST_PAGE_SIZE}
           onPage={(p) => setPage(Math.min(totalPages, Math.max(1, p)))}
@@ -207,8 +195,8 @@ function CustomerMaterialReturnsListPage(): React.JSX.Element {
       {cancelRow ? (
         <CancelDocDialog
           docType="customer_material_return"
-          docId={cancelRow.docId}
-          docCode={cancelRow.docCode}
+          docId={cancelRow.id}
+          docCode={cancelRow.code}
           onClose={() => setCancelRow(null)}
         />
       ) : null}

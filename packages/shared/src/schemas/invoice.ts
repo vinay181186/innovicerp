@@ -186,6 +186,16 @@ export const invoiceRowSchema = z.object({
   status: z.enum(INVOICE_STATUSES),
   dueDate: z.string().nullable(),
   overdue: z.boolean(),
+  // ADR-303 — GET /invoices (one row per invoice) fills these four; other
+  // readers of the shape may leave them out.
+  /** Number of live (non-deleted) lines on the invoice. */
+  lineCount: z.number().int().nonnegative().optional(),
+  /** The invoice's created_at (the list's Created On). */
+  createdAt: z.string().optional(),
+  /** Created By (full name, else e-mail before @); null when unknown. */
+  createdByName: z.string().nullable().optional(),
+  /** How many OTHER SOs the invoice's lines come from (the grey "+n"). */
+  extraSoCount: z.number().int().nonnegative().optional(),
 });
 export type InvoiceRow = z.infer<typeof invoiceRowSchema>;
 

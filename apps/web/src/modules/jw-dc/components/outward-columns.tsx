@@ -1,17 +1,19 @@
-// Outward Register columns (ADR-199 fit table) — ONE ROW PER DC LINE (ADR-261).
-// DC No. and the locked lead block come first and are locked (SO No. · Internal SO No. ·
-// POL · Item Code · Item Name); SO No. shows the SO code, else the
-// JWSO code, and Internal SO No. only for an SO. Then DC Date · PO No.
-// · Vendor · Sent · Received · Pending · DC Status — all for THIS line, except
-// DC No. / Date / PO / Vendor which are the challan's. Vehicle / Remarks sit in
-// the ▸ detail row (see outward-register).
+// Outward Register columns (ADR-199 fit table) — ONE ROW PER DC again
+// (ADR-303, GET /jw-dc/outward). The locked lead block: Sr No · DC No. ·
+// Created On · SO No. · Internal SO No. — the order behind the DC's FIRST line
+// (SO code, else JWSO code) with a grey "+n" when its lines cover more orders;
+// no POL / Item Code / Item Name on a document list. Then DC Date · PO No. ·
+// Vendor · Lines · Sent · Received · Pending (sums of the lines) · DC Status
+// (one per DC, rolled up from its lines: all back = Returned, some = Partly
+// Returned, none = At Vendor) · Created By last. Vehicle / Remarks and the
+// lines are on the DC's own page (/jw-dc/$id).
 
-import { type JwDcOutwardLineRow } from '@innovic/shared';
+import { type JwDcOutwardListItem } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
 import { createdByColumn, type DataTableColumn, leadColumns } from '@/ui/data';
 
-function statusLabel(s: JwDcOutwardLineRow['returnStatus']): string {
+function statusLabel(s: JwDcOutwardListItem['returnStatus']): string {
   // Returned = done; Partly Returned / At Vendor = still under way.
   return s === 'fully_returned' ? 'Returned' : s === 'partial' ? 'Partly Returned' : 'At Vendor';
 }
@@ -28,9 +30,9 @@ export function isJwDcCancelled(dc: { cancelledAt: string | null }): boolean {
   return Boolean(dc.cancelledAt);
 }
 
-export function outwardColumns(firstRowNo: number): DataTableColumn<JwDcOutwardLineRow>[] {
+export function outwardColumns(firstRowNo: number): DataTableColumn<JwDcOutwardListItem>[] {
   return [
-    ...leadColumns<JwDcOutwardLineRow>({
+    ...leadColumns<JwDcOutwardListItem>({
       firstRowNo,
       doc: {
         id: 'dc_no',
@@ -44,27 +46,30 @@ export function outwardColumns(firstRowNo: number): DataTableColumn<JwDcOutwardL
           <Link
             onClick={(e) => e.stopPropagation()}
             to="/jw-dc/$id"
-            params={{ id: dc.docId }}
+            params={{ id: dc.id }}
             style={{ color: 'var(--blue)', textDecoration: 'underline dotted' }}
           >
-            {dc.docCode}
+            {dc.code}
           </Link>
         ),
       },
-      soNo: (r) => r.soCode ?? r.jwCode,
+      soNo: (r) => r.orderCode,
       internalSoNo: (r) => r.soInternalNo,
-      pol: (r) => r.clientPoLineNo,
       createdOn: (r) => r.createdAt,
-      itemCode: (r) => r.itemCode,
-      itemRev: (r) => r.itemRevision,
-      itemName: (r) => r.itemName,
       overrides: {
-        so_no: { sortFilterField: 'soCode', filterType: 'text' },
+        so_no: {
+          sortFilterField: 'soCode',
+          filterType: 'text',
+          // The first line's order + a grey "+n" for the other orders its lines cover.
+          render: (r) => (
+            <>
+              <span style={{ color: 'var(--blue)' }}>{r.orderCode ?? '—'}</span>
+              {r.orderExtraCount ? <span className="text3"> +{r.orderExtraCount}</span> : null}
+            </>
+          ),
+        },
         so_internal_no: { sortFilterField: 'soInternalNo', filterType: 'text' },
-        client_po_line_no: { sortFilterField: 'clientPoLineNo', filterType: 'text' },
         created_on: { sortFilterField: 'createdOn' },
-        item_code: { sortFilterField: 'itemCode', filterType: 'text' },
-        item_name: { sortFilterField: 'itemName', filterType: 'text' },
       },
     }),
     {
@@ -74,7 +79,7 @@ export function outwardColumns(firstRowNo: number): DataTableColumn<JwDcOutwardL
       header: 'DC Date',
       className: 'mono text2',
       nowrap: true,
-      render: (dc) => fmtDate(dc.docDate),
+      render: (dc) => fmtDate(dc.dcDate),
     },
     {
       id: 'po_no',
@@ -95,8 +100,16 @@ export function outwardColumns(firstRowNo: number): DataTableColumn<JwDcOutwardL
       align: 'left',
       ellipsis: true,
       className: 'fw-700',
-      render: (dc) => dc.vendorName ?? '—',
-      title: (dc) => dc.vendorName ?? '',
+      render: (dc) => dc.vendorName ?? dc.vendorNameText ?? dc.vendorCodeText ?? '—',
+      title: (dc) => dc.vendorName ?? dc.vendorNameText ?? '',
+    },
+    {
+      id: 'line_count',
+      sortFilterField: 'lineCount',
+      kind: 'num',
+      header: 'Lines',
+      className: 'mono',
+      render: (dc) => dc.linesCount,
     },
     {
       id: 'sent',
@@ -106,7 +119,7 @@ export function outwardColumns(firstRowNo: number): DataTableColumn<JwDcOutwardL
       align: 'right',
       headColor: 'var(--purple)',
       className: 'mono fw-700',
-      render: (dc) => <span style={{ color: 'var(--purple)' }}>{dc.sentQty}</span>,
+      render: (dc) => <span style={{ color: 'var(--purple)' }}>{dc.totalSentQty}</span>,
     },
     {
       id: 'received',
@@ -116,7 +129,7 @@ export function outwardColumns(firstRowNo: number): DataTableColumn<JwDcOutwardL
       align: 'right',
       headColor: 'var(--green2)',
       className: 'mono',
-      render: (dc) => <span style={{ color: 'var(--green2)' }}>{dc.receivedQty}</span>,
+      render: (dc) => <span style={{ color: 'var(--green2)' }}>{dc.totalReturnedQty}</span>,
     },
     {
       id: 'pending',

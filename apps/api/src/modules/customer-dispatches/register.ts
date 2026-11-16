@@ -10,6 +10,7 @@
 // matching row — the screen loads one page of 25 dispatches.
 
 import type {
+  CustomerDispatchRegisterDoc,
   CustomerDispatchRegisterQuery,
   CustomerDispatchRegisterResponse,
   CustomerDispatchRegisterRow,
@@ -20,9 +21,9 @@ import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { withUserContext } from '../../db/with-user-context';
 import { createdByNameSql } from '../../lib/created-by-sql';
 import { AuthorizationError } from '../../lib/errors';
-import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { liftLineFilters, likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { billedStatusOf, loadBilledQtyByDispatch } from './billed';
-import { DISPATCH_SF_COLUMNS } from './sf-columns';
+import { DISPATCH_LINE_LIFT, DISPATCH_SF_COLUMNS } from './sf-columns';
 
 const n = (s: string | number | null): number => Number(s ?? 0) || 0;
 
@@ -157,7 +158,10 @@ export async function listDispatchRegister(
 ): Promise<CustomerDispatchRegisterResponse> {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
   const companyId = user.companyId;
-  const sfq = readSf(input.sf);
+  const sfAll = readSf(input.sf);
+  // ADR-303 — SO No. / Internal SO No.: the dispatch's own SO OR any live
+  // line's (one row per dispatch).
+  const { docSf: sfq, lineFrag: soSfFrag } = liftLineFilters(sfAll, DISPATCH_LINE_LIFT);
   const match = lineMatch(input.search);
   const soNo = input.soNo?.trim() || undefined;
   const soFrag = soNo ? sql`AND h.so_code_text = ${soNo}` : sql``;
@@ -168,11 +172,11 @@ export async function listDispatchRegister(
       SELECT 1 FROM public.customer_dispatch_lines l ${LINE_JOINS}
       WHERE l.customer_dispatch_id = h.id AND l.deleted_at IS NULL AND ${match}
     )
-    ${sfWhere(DISPATCH_SF_COLUMNS, sfq)}`;
+    ${sfWhere(DISPATCH_SF_COLUMNS, sfq)} ${soSfFrag}`;
   // Ends on id so a page never skips / repeats a dispatch.
   const order = sfOrderBy(
     DISPATCH_SF_COLUMNS,
-    sfq,
+    sfAll,
     sql`h.dispatch_date DESC, h.created_at DESC, h.id DESC`,
   );
   const limitFrag = input.limit !== undefined ? sql`LIMIT ${input.limit}` : sql``;
@@ -180,18 +184,35 @@ export async function listDispatchRegister(
   return withUserContext(user, async (tx) => {
     const page = (await tx.execute(sql`
       SELECT h.id::text AS id,
-        (SELECT COALESCE(SUM(al.qty), 0)::int FROM public.customer_dispatch_lines al
-          WHERE al.customer_dispatch_id = h.id AND al.deleted_at IS NULL) AS all_qty
+        -- ADR-303 — the row's own facts over ALL its live lines, one pass:
+        -- [total qty, line count]. A scalar subquery, so the page rows only.
+        (SELECT ARRAY[COALESCE(SUM(al.qty), 0)::int, COUNT(*)::int]
+           FROM public.customer_dispatch_lines al
+          WHERE al.customer_dispatch_id = h.id AND al.deleted_at IS NULL) AS qty_lines,
+        (SELECT COUNT(DISTINCT xsol.sales_order_id)::int
+           FROM public.customer_dispatch_lines al
+           JOIN public.sales_order_lines xsol ON xsol.id = al.sales_order_line_id
+          WHERE al.customer_dispatch_id = h.id AND al.deleted_at IS NULL
+            AND xsol.sales_order_id <> h.sales_order_id) AS extra_so_count,
+        h.code AS dispatch_code, h.status, h.dispatch_date::text AS dispatch_date,
+        COALESCE(cso.code, h.so_code_text) AS so_no, cso.internal_so_no AS so_internal_no,
+        COALESCE(cli.name, h.customer_text) AS customer, u.full_name AS dispatched_by,
+        h.remarks, h.created_at,
+        ${createdByNameSql(sql`h.created_by`)} AS created_by_name
       FROM public.customer_dispatches h ${HEADER_JOINS}
       WHERE ${dispatchWhere}
       ORDER BY ${order}
       ${limitFrag} OFFSET ${input.offset ?? 0}
-    `)) as unknown as Array<{ id: string; all_qty: number }>;
+    `)) as unknown as DocPageRow[];
     const ids = page.map((p) => p.id);
     const rank = new Map(ids.map((id, i) => [id, i]));
+    const qtyOf = (p: DocPageRow): number => Number(p.qty_lines?.[0] ?? 0);
 
-    const lineRes = ids.length
-      ? ((await tx.execute(sql`
+    // ADR-303 — the LINE rows only when asked (Excel / Print): the list reads
+    // `docs` alone, so it never pays for the stock / JC line query.
+    const lineRes =
+      ids.length && input.withLines === true
+        ? ((await tx.execute(sql`
           ${REGISTER_LINE_FROM}
           WHERE h.id IN (${sql.join(
             ids.map((id) => sql`${id}::uuid`),
@@ -200,7 +221,7 @@ export async function listDispatchRegister(
             AND l.deleted_at IS NULL AND ${match}
           ORDER BY l.line_no, l.id
         `)) as unknown as RegisterRow[])
-      : [];
+        : [];
     // Page order (the dispatch order above), lines in line order within it.
     lineRes.sort((a, b) => (rank.get(a.dispatch_id) ?? 0) - (rank.get(b.dispatch_id) ?? 0));
 
@@ -210,7 +231,7 @@ export async function listDispatchRegister(
     const billed = ids.length
       ? await loadBilledQtyByDispatch(tx, companyId)
       : new Map<string, number>();
-    const allQty = new Map(page.map((p) => [p.id, Number(p.all_qty)]));
+    const allQty = new Map(page.map((p) => [p.id, qtyOf(p)]));
 
     return {
       rows: lineRes.map((r) =>
@@ -219,12 +240,54 @@ export async function listDispatchRegister(
           billedStatusOf(billed.get(r.dispatch_id) ?? 0, allQty.get(r.dispatch_id) ?? 0),
         ),
       ),
+      docs: page.map((p) => toRegisterDoc(p, billedStatusOf(billed.get(p.id) ?? 0, qtyOf(p)))),
       total: extras.dispatchTotal,
       summary: extras.summary,
       itemSummary: extras.itemSummary,
       soOptions: extras.soOptions,
     };
   });
+}
+
+/** ADR-303 — one page row of the per-dispatch list (register page query). */
+type DocPageRow = {
+  id: string;
+  /** [total qty, line count] over every live line. */
+  qty_lines: [number, number] | null;
+  extra_so_count: number;
+  dispatch_code: string;
+  status: 'dispatched' | 'cancelled';
+  dispatch_date: string;
+  so_no: string | null;
+  so_internal_no: string | null;
+  customer: string | null;
+  dispatched_by: string | null;
+  remarks: string | null;
+  created_at: string | Date;
+  created_by_name: string | null;
+};
+
+function toRegisterDoc(
+  p: DocPageRow,
+  billedStatus: CustomerDispatchRegisterDoc['billedStatus'],
+): CustomerDispatchRegisterDoc {
+  return {
+    dispatchId: p.id,
+    dispatchCode: p.dispatch_code,
+    status: p.status,
+    date: p.dispatch_date,
+    soNo: p.so_no,
+    soInternalNo: p.so_internal_no ?? null,
+    extraSoCount: Number(p.extra_so_count ?? 0),
+    customer: p.customer,
+    lineCount: Number(p.qty_lines?.[1] ?? 0),
+    totalQty: Math.round(n(p.qty_lines?.[0] ?? 0)),
+    billedStatus,
+    dispatchedBy: p.dispatched_by,
+    remarks: p.remarks,
+    createdAt: p.created_at instanceof Date ? p.created_at.toISOString() : String(p.created_at),
+    createdByName: p.created_by_name ?? null,
+  };
 }
 
 /** A RegisterRow as the API sends it. */

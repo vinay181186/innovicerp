@@ -3,6 +3,7 @@
 // Register that gates invoicing. Legacy dispatchLog / renderDispatchRegister.
 
 import { z } from 'zod';
+import { queryBoolean } from '../lib/query-boolean';
 import { sfRawParamSchema } from './list-query';
 import { clientCopySchema } from './party-copy';
 import { CUSTOMER_DISPATCH_STATUSES } from '../enums/customer-dispatch-status';
@@ -239,6 +240,9 @@ export const customerDispatchRegisterQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional(),
   offset: z.coerce.number().int().min(0).default(0),
   sf: sfRawParamSchema,
+  /** ADR-303 — also send the page's LINE rows (`rows`). Only Excel / Print
+   *  ask; the per-dispatch list reads `docs` alone, so without it `rows` is []. */
+  withLines: queryBoolean().optional(),
 });
 export type CustomerDispatchRegisterQuery = z.input<typeof customerDispatchRegisterQuerySchema>;
 
@@ -253,8 +257,39 @@ export const customerDispatchItemSummarySchema = z.object({
 });
 export type CustomerDispatchItemSummary = z.infer<typeof customerDispatchItemSummarySchema>;
 
+/** ADR-303 — ONE row per DISPATCH on the Customer Dispatch list: the page's
+ *  dispatches in page order, facts over ALL their live lines. */
+export const customerDispatchRegisterDocSchema = z.object({
+  dispatchId: z.string().uuid(),
+  dispatchCode: z.string(),
+  status: z.enum(CUSTOMER_DISPATCH_STATUSES),
+  /** Dispatch Date. */
+  date: z.string(),
+  /** The dispatch's SO (live code, else the snapshot). */
+  soNo: z.string().nullable(),
+  soInternalNo: z.string().nullable(),
+  /** How many OTHER SOs its lines ship against (the grey "+n"). */
+  extraSoCount: z.number().int().nonnegative(),
+  customer: z.string().nullable(),
+  /** Live (non-deleted) lines. */
+  lineCount: z.number().int().nonnegative(),
+  /** Dispatch Qty = Σ qty over the live lines. */
+  totalQty: z.number().int().nonnegative(),
+  billedStatus: z.enum(['none', 'partial', 'full']),
+  dispatchedBy: z.string().nullable(),
+  remarks: z.string().nullable(),
+  /** The dispatch's created_at (Created On). */
+  createdAt: z.string(),
+  /** Created By (full name, else e-mail before @). */
+  createdByName: z.string().nullable(),
+});
+export type CustomerDispatchRegisterDoc = z.infer<typeof customerDispatchRegisterDocSchema>;
+
 export const customerDispatchRegisterResponseSchema = z.object({
   rows: z.array(customerDispatchRegisterRowSchema),
+  /** ADR-303 — GET /customer-dispatches/register only: one entry per listed
+   *  dispatch, in page order (the per-dispatch list's rows). */
+  docs: z.array(customerDispatchRegisterDocSchema).optional(),
   /** Dispatches matching search + SO + sf (the pager's total). */
   total: z.number().int().nonnegative(),
   /** Over every matching ACTIVE (not cancelled) dispatch — never just the page. */

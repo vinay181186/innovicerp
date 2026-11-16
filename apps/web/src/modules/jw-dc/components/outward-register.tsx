@@ -1,16 +1,17 @@
 // Outward Register — JW DC material sent out to a vendor, on the shared FIT
 // DataTable (ADR-199, table standard 2026-10-01). Split out of routes/list.tsx.
 //
-// ONE ROW PER DC LINE (ADR-261, GET /jw-dc/outward/lines). Row click opens the
-// line's outward DC (/jw-dc/$id) and the ⋯ acts on that DC, as before; the ▸
-// reveals the DC's Vehicle / Remarks (and a Cancelled DC's reason) off the row. The whole row is
-// washed by its return status (ROW_TINT). RowActions carries View as a real link
-// so ctrl-click still opens a new tab.
+// ONE ROW PER DC (ADR-303, GET /jw-dc/outward; /jw-dc/outward/lines stays for
+// other readers). The DC No. opens the DC (/jw-dc/$id) and the ⋯ acts on it, as
+// before; no under-row panel (ADR-294) — Vehicle / Remarks, a Cancelled DC's
+// reason and the lines are on the DC's own page. The whole row is washed by its
+// DC Status (ROW_TINT). RowActions carries View as a real link so ctrl-click
+// still opens a new tab.
 
 import { Icon } from '@/ui/core';
-import { type JwDcOutwardLineRow } from '@innovic/shared';
+import { type JwDcOutwardListItem } from '@innovic/shared';
 import { Link, useNavigate } from '@tanstack/react-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
 import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
@@ -18,9 +19,8 @@ import { DataTable, Panel, ROW_TINT } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
-import { fmtDateTime } from '@/lib/date';
 import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
-import { useJwDcOutwardLines } from '../api';
+import { useJwDcOutwardList } from '../api';
 import { isJwDcCancelled, outwardColumns } from './outward-columns';
 import { useJwDcPrint } from './use-jwdc-print';
 
@@ -47,7 +47,7 @@ export function OutwardView({
   // sends a Cancel Request, Approve decides it; the dialog's server preview
   // says which buttons this user gets.
   const canCancel = perms.edit || perms.approve;
-  const [cancelRow, setCancelRow] = useState<JwDcOutwardLineRow | null>(null);
+  const [cancelRow, setCancelRow] = useState<JwDcOutwardListItem | null>(null);
   // Seeded once from ?search (deep link); keystrokes stay local after that.
   const [search, setSearch] = useState(() => initialSearch ?? '');
   const [page, setPage] = useState(1);
@@ -73,9 +73,8 @@ export function OutwardView({
       void navigate({ to: '/jw-dc/outward/new', search: { jw: forJwId }, replace: true });
     }
   }, [forJwId, canWrite, navigate]);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
-  const { data, isLoading, isError, error } = useJwDcOutwardLines({
+  const { data, isLoading, isError, error } = useJwDcOutwardList({
     search: term || undefined,
     sf: sf.param,
     // ADR-235 — Cancelled DCs stay on the register, washed and marked Cancelled.
@@ -88,15 +87,6 @@ export function OutwardView({
   const columns = useMemo(() => outwardColumns(pageOffset(page) + 1), [page]);
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / LIST_PAGE_SIZE));
 
-  const toggleExpand = useCallback((id: string): void => {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
-
   return (
     <div>
       {/* THE list header (ui/layout ListHeader): title · count · search ·
@@ -106,7 +96,7 @@ export function OutwardView({
         title="Outward Register"
         icon="📤"
         count={data?.total}
-        noun="DC line"
+        noun="DC"
         search={search}
         onSearch={setSearch}
         filtersActive={sf.filtering || search !== ''}
@@ -140,10 +130,10 @@ export function OutwardView({
             sortFilterServer={sf}
             columns={columns}
             rows={data?.items ?? []}
-            rowKey={(dc) => dc.lineId}
+            rowKey={(dc) => dc.id}
             loading={isLoading}
-            empty={term || sf.filtering ? 'No outward DC lines match.' : 'No outward DC lines yet.'}
-            onRowClick={(dc) => void navigate({ to: '/jw-dc/$id', params: { id: dc.docId } })}
+            empty={term || sf.filtering ? 'No outward DCs match.' : 'No outward DCs yet.'}
+            onRowClick={(dc) => void navigate({ to: '/jw-dc/$id', params: { id: dc.id } })}
             // Green when every unit is back, amber while a return is still
             // partial. A freshly-sent DC (nothing back yet) stays untinted.
             rowClassName={(dc) =>
@@ -155,13 +145,10 @@ export function OutwardView({
                     ? ROW_TINT.pending
                     : undefined
             }
-            // The fit table's ▸: the DC's Vehicle / Remarks, off the row.
-            renderExpanded={(dc) => (expanded.has(dc.lineId) ? <ExpandedOutward dc={dc} /> : null)}
-            onToggleExpanded={(dc) => toggleExpand(dc.lineId)}
             rowActionsWidth="1%"
-            rowActions={(dc: JwDcOutwardLineRow) => (
+            rowActions={(dc: JwDcOutwardListItem) => (
               <RowActions
-                viewTo={`/jw-dc/${dc.docId}`}
+                viewTo={`/jw-dc/${dc.id}`}
                 renderLink={(p) => <Link {...p} />}
                 items={[
                   {
@@ -170,8 +157,8 @@ export function OutwardView({
                     icon: 'eye',
                     onSelect: () =>
                       jwDcPrint('preview', {
-                        id: dc.docId,
-                        code: dc.docCode,
+                        id: dc.id,
+                        code: dc.code,
                         vendorId: dc.vendorId,
                       }),
                   },
@@ -181,8 +168,8 @@ export function OutwardView({
                     icon: 'download',
                     onSelect: () =>
                       jwDcPrint('download', {
-                        id: dc.docId,
-                        code: dc.docCode,
+                        id: dc.id,
+                        code: dc.code,
                         vendorId: dc.vendorId,
                       }),
                   },
@@ -205,7 +192,7 @@ export function OutwardView({
       {data ? (
         <ListFooter
           total={data.total}
-          noun="DC line"
+          noun="DC"
           page={page}
           pageSize={LIST_PAGE_SIZE}
           onPage={(p) => setPage(Math.min(totalPages, Math.max(1, p)))}
@@ -215,34 +202,10 @@ export function OutwardView({
       {cancelRow ? (
         <CancelDocDialog
           docType="jw_dc_outward"
-          docId={cancelRow.docId}
-          docCode={cancelRow.docCode}
+          docId={cancelRow.id}
+          docCode={cancelRow.code}
           onClose={() => setCancelRow(null)}
         />
-      ) : null}
-    </div>
-  );
-}
-
-/** The DC's Vehicle / Remarks (and a Cancelled DC's reason) under an opened
- *  row — all on the line row already, so no extra fetch. */
-function ExpandedOutward({ dc }: { dc: JwDcOutwardLineRow }): React.JSX.Element {
-  return (
-    <div
-      className="text3"
-      style={{
-        padding: 'var(--sp-2) var(--sp-3) var(--sp-3) var(--sp-6)',
-        fontSize: 'var(--fs-xs)',
-      }}
-    >
-      <b>Process:</b> {dc.processText ?? '—'} &nbsp;·&nbsp; <b>Vehicle No.:</b>{' '}
-      {dc.vehicleNo ?? '—'} &nbsp;·&nbsp; <b>Remarks:</b> {dc.remarks ?? '—'}
-      {/* ADR-235 — why and when a Cancelled DC was cancelled. */}
-      {isJwDcCancelled(dc) ? (
-        <div style={{ marginTop: 'var(--sp-1)' }}>
-          <b>Reason:</b> {dc.cancelReason ?? '—'}
-          {dc.cancelledAt ? ` · Cancelled ${fmtDateTime(dc.cancelledAt)}` : ''}
-        </div>
       ) : null}
     </div>
   );

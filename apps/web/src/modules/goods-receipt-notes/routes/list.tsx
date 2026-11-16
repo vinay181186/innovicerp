@@ -1,12 +1,10 @@
 // GRN list (UI-003-05). Ports legacy renderGRN L26444.
 //
 // ADR-199 table standard: ONE shared FIT table (<DataTable tableKey=…>).
-// ADR-261 (2026-10-31): ONE ROW PER GRN LINE, read from GET
-// /goods-receipt-notes/lines, opening with the locked lead block. The old ▸
-// (the GRN's lines + its vendor challan / invoice / remarks) is gone: the lines
-// are now the rows and the two vendor paper numbers are columns. Row click and
-// the ⋯ menu act on the line's GRN (docId). The QC-status dropdown counts stay
-// GRN (document) counts; the QC Status filter and cell read each LINE.
+// ADR-303 (2026-11-16): ONE ROW PER GRN again, read from GET
+// /goods-receipt-notes (ADR-261 had made it one row per line; /lines stays for
+// export). The QC-status dropdown counts are GRN counts; the QC Status cell is
+// the receipt's ONE status rolled up from its lines (server-side).
 //
 // Pagination is KEPT (unlike SO/WO masters): the GRN API is paginated and the
 // receipt book grows every day, so the list stays a pager register (ListFooter
@@ -14,9 +12,11 @@
 
 import { Icon } from '@/ui/core';
 import {
+  DOC_QC_STATUSES,
   GRN_QC_STATUSES,
-  type GoodsReceiptNoteLineListItem,
-  type GrnQcStatus,
+  type DocQcStatus,
+  type GoodsReceiptNoteListItem,
+  type GrnSummary,
   type ListGoodsReceiptNotesQuery,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
@@ -34,12 +34,13 @@ import { DataTable, Panel, ROW_TINT } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
-import { useGoodsReceiptNoteLinesList } from '../api';
+import { useGoodsReceiptNotesList } from '../api';
 import {
   goodsReceiptNoteListColumns,
   grnTypeLabel,
   isGrnCancelled,
 } from '../components/grn-list-columns';
+import { DOC_QC_LABELS } from '../components/doc-qc-badge';
 import { useGrnPrint } from '../components/use-grn-print';
 import { GRN_QC_STATUS_LABELS } from '../lib/grn-labels';
 
@@ -47,17 +48,19 @@ import { GRN_QC_STATUS_LABELS } from '../lib/grn-labels';
 // receipt book grows every day, so the whole list is not loaded in one go.
 const PAGE_SIZE = 25;
 
-// Card QC status → row tint (ADR-199 ROW_TINT). Real GrnQcStatus enum only:
-// QC Pending reads as pending work, QC Cleared is done; QC In Progress is the
-// active middle and stays untinted.
-const ROW_TINT_BY_QC: Record<GrnQcStatus, string | undefined> = {
+// The receipt's QC status → row tint (ADR-199 ROW_TINT): Pending reads as
+// pending work, Done is done; Partly done is the active middle, untinted.
+const ROW_TINT_BY_QC: Record<DocQcStatus, string | undefined> = {
   pending: ROW_TINT.pending,
-  in_progress: undefined,
-  completed: ROW_TINT.done,
+  partly_done: undefined,
+  done: ROW_TINT.done,
 };
 
 const listSearchSchema = z.object({
   search: z.string().optional(),
+  // ADR-303 — the QC Status dropdown: the receipt's ONE status (the column).
+  docQc: z.enum(DOC_QC_STATUSES).optional(),
+  // Old links / bookmarks (per-line QC values): still honoured by the server.
   qcStatus: z.enum(GRN_QC_STATUSES).optional(),
   page: z.coerce.number().int().positive().default(1),
 });
@@ -109,32 +112,21 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
     () => ({
       search: search.search,
       qcStatus: search.qcStatus,
+      docQcStatus: search.docQc,
       sf: sf.param,
       // ADR-235 — Cancelled GRNs stay on the list, washed and marked Cancelled.
       includeCancelled: true,
       limit: PAGE_SIZE,
       offset: (search.page - 1) * PAGE_SIZE,
     }),
-    [sf.param, search.search, search.qcStatus, search.page],
+    [sf.param, search.search, search.qcStatus, search.docQc, search.page],
   );
 
-  const { data, isLoading, isFetching, isError, error } = useGoodsReceiptNoteLinesList(query, {
+  const { data, isLoading, isFetching, isError, error } = useGoodsReceiptNotesList(query, {
     refetchInterval: LIVE_FALLBACK_POLL_MS,
   });
-  // The KPI summary has no "QC In Progress" count, so the QC-status dropdown's
-  // In Progress count is the GRN count (summary.total) of the same list
-  // filtered to in-progress lines. limit 1: only the summary is read.
-  const { data: inProgressData } = useGoodsReceiptNoteLinesList({
-    search: search.search,
-    qcStatus: 'in_progress',
-    // Same column filters, so this count agrees with the others in the dropdown.
-    sf: sf.param,
-    // A Cancelled GRN is never "in progress" — live rows only here.
-    includeCancelled: false,
-    limit: 1,
-    offset: 0,
-  });
-  const filtered = sf.filtering || Boolean(search.search) || search.qcStatus !== undefined;
+  const qcActive = search.docQc !== undefined || search.qcStatus !== undefined;
+  const filtered = sf.filtering || Boolean(search.search) || qcActive;
 
   const rows = data?.items ?? [];
 
@@ -150,19 +142,18 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
   // (qcPendingCount > 0). ADR-232: shown only to a user holding this page's
   // Advance right.
   const canAssign = perms.advance;
-  const [assignGrn, setAssignGrn] = useState<GoodsReceiptNoteLineListItem | null>(null);
+  const [assignGrn, setAssignGrn] = useState<GoodsReceiptNoteListItem | null>(null);
   // Cancel GRN -> Edit OR Approve (ADR-235, the ONE standard Cancel): Edit
   // sends a Cancel Request, Approve decides it. The dialog reads the server's
   // preview, which says which of the two this user may press. A Cancelled
   // GRN's ⋯ offers only Preview / Download PDF.
   const canCancel = perms.edit || perms.approve;
-  const [cancelGrn, setCancelGrn] = useState<GoodsReceiptNoteLineListItem | null>(null);
+  const [cancelGrn, setCancelGrn] = useState<GoodsReceiptNoteListItem | null>(null);
   // Preview / Download PDF print the same sheet the detail page does
   // (use-grn-print.ts) — on every row, since printing follows View.
   const grnPrint = useGrnPrint();
-  // Every action is on the line's GRN (docId).
-  const rowActions = (grn: GoodsReceiptNoteLineListItem): React.JSX.Element => {
-    const doc = { id: grn.docId, code: grn.docCode, vendorId: grn.vendorId };
+  const rowActions = (grn: GoodsReceiptNoteListItem): React.JSX.Element => {
+    const doc = { id: grn.id, code: grn.code, vendorId: grn.vendorId };
     return (
       <RowActions
         renderLink={(p) => <Link {...p} />}
@@ -184,7 +175,7 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
             label: 'Assign Task',
             icon: 'user-round',
             group: 'assign',
-            hidden: !(grn.docQcPendingCount > 0 && canAssign) || isGrnCancelled(grn),
+            hidden: !(grn.qcPendingCount > 0 && canAssign) || isGrnCancelled(grn),
             onSelect: () => setAssignGrn(grn),
           },
           {
@@ -226,36 +217,44 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
         title="GRN"
         icon="📥"
         count={total}
-        noun="GRN line"
-        filterNote={search.qcStatus ? GRN_QC_STATUS_LABELS[search.qcStatus] : undefined}
+        noun="GRN"
+        filterNote={
+          search.docQc
+            ? DOC_QC_LABELS[search.docQc]
+            : search.qcStatus
+              ? GRN_QC_STATUS_LABELS[search.qcStatus]
+              : undefined
+        }
         search={searchInput}
         onSearch={setSearchInput}
         searchPlaceholder="Search GRN no., PO, vendor, item, SO, DC, invoice…"
         updating={isFetching && !isLoading}
         filters={
-          // QC status, every GRN_QC_STATUSES value, with the summary counts
-          // the old pill row + KPI strip showed folded into the labels (owner
-          // decision 2026-09-26). Same `qcStatus` search param, same query.
+          // ADR-303 — QC status = the QC Status column (the receipt's ONE
+          // status, server-side), with the summary's live-GRN counts. An old
+          // `qcStatus` link is shown as "All" here but still filters.
           <select
             className="innovic-select"
             aria-label="QC status"
             title="QC status"
-            value={search.qcStatus ?? ''}
+            value={search.docQc ?? ''}
             onChange={(e) => {
-              const v = e.target.value as GrnQcStatus | '';
+              const v = e.target.value as DocQcStatus | '';
               void navigate({
-                search: (prev) => ({ ...prev, qcStatus: v === '' ? undefined : v, page: 1 }),
+                search: (prev) => ({
+                  ...prev,
+                  docQc: v === '' ? undefined : v,
+                  qcStatus: undefined,
+                  page: 1,
+                }),
                 replace: true,
               });
             }}
           >
             <option value="">{withCount('All', data?.summary?.total)}</option>
-            {GRN_QC_STATUSES.map((s) => (
+            {DOC_QC_STATUSES.map((s) => (
               <option key={s} value={s}>
-                {withCount(
-                  GRN_QC_STATUS_LABELS[s],
-                  qcCountFor(s, data?.summary, inProgressData?.summary.total),
-                )}
+                {withCount(DOC_QC_LABELS[s], qcCountFor(s, data?.summary))}
               </option>
             ))}
           </select>
@@ -264,11 +263,17 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
           sf.clearFilters();
           setSearchInput('');
           void navigate({
-            search: (prev) => ({ ...prev, search: undefined, qcStatus: undefined, page: 1 }),
+            search: (prev) => ({
+              ...prev,
+              search: undefined,
+              qcStatus: undefined,
+              docQc: undefined,
+              page: 1,
+            }),
             replace: true,
           });
         }}
-        filtersActive={sf.filtering || search.qcStatus !== undefined || searchInput !== ''}
+        filtersActive={sf.filtering || qcActive || searchInput !== ''}
         primary={
           perms.entry ? (
             <Link to="/goods-receipt-notes/new" className="btn btn-primary">
@@ -291,13 +296,17 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
             rows={rows}
             loading={isLoading}
             emptyText={filtered ? 'No GRNs match.' : 'No GRNs yet.'}
-            rowKey={(l) => l.lineId}
+            rowKey={(l) => l.id}
             sortFilterServer={sf}
             onRowClick={(l) =>
-              void navigate({ to: '/goods-receipt-notes/$id', params: { id: l.docId } })
+              void navigate({ to: '/goods-receipt-notes/$id', params: { id: l.id } })
             }
             rowClassName={(l) =>
-              isGrnCancelled(l) ? ROW_TINT.cancelled : ROW_TINT_BY_QC[l.lineQcStatus]
+              isGrnCancelled(l)
+                ? ROW_TINT.cancelled
+                : l.docQcStatus
+                  ? ROW_TINT_BY_QC[l.docQcStatus]
+                  : undefined
             }
             rowActions={(l) => rowActions(l)}
           />
@@ -308,7 +317,7 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
           Prev/Next pager (ListFooter pager mode) — an unbounded register. */}
       <ListFooter
         total={total}
-        noun="GRN line"
+        noun="GRN"
         page={search.page}
         pageSize={PAGE_SIZE}
         onPage={(p) =>
@@ -327,23 +336,23 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
         <AssignTaskModal
           linkedRef={{
             type: 'GRN',
-            id: assignGrn.docId,
-            display: assignGrn.docCode,
+            id: assignGrn.id,
+            display: assignGrn.code,
             // ADR-251: Incoming QC lists only GRNs Against PO; an OSP / NC
             // return is inspected on the QC Call Register.
             navPage: ['Against NC', 'Against JW PO / DC'].includes(grnTypeLabel(assignGrn) ?? '')
               ? '/qc-call-register'
               : '/incoming-qc',
           }}
-          suggestedTitle={`Inspect ${assignGrn.docCode}`}
+          suggestedTitle={`Inspect ${assignGrn.code}`}
           onClose={() => setAssignGrn(null)}
         />
       ) : null}
       {cancelGrn ? (
         <CancelDocDialog
           docType="grn"
-          docId={cancelGrn.docId}
-          docCode={cancelGrn.docCode}
+          docId={cancelGrn.id}
+          docCode={cancelGrn.code}
           onClose={() => setCancelGrn(null)}
         />
       ) : null}
@@ -356,28 +365,15 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
 // QC-status dropdown (2026-09-26 filter bar). "Today" never filtered; its
 // read-only tile was dropped 2026-11-03 (owner: no tile row above any list).
 
-interface GrnSummary {
-  total: number;
-  qcPending: number;
-  qcCleared: number;
-}
-
 /** "Label (N)" when a count is known, bare label otherwise. */
 function withCount(label: string, n: number | undefined): string {
   return n === undefined ? label : `${label} (${n})`;
 }
 
-/** The count behind one QC status — the same mapping the old KPI tiles used
- *  (QC Pending → pending, QC Cleared → completed). The summary has no
- *  In Progress count, so that one is the pager total of the in-progress list. */
-function qcCountFor(
-  s: GrnQcStatus,
-  summary: GrnSummary | undefined,
-  inProgressTotal: number | undefined,
-): number | undefined {
-  if (s === 'in_progress') return inProgressTotal;
+/** ADR-303 — the count behind one QC status: live GRNs with that ONE status. */
+function qcCountFor(s: DocQcStatus, summary: GrnSummary | undefined): number | undefined {
   if (!summary) return undefined;
-  if (s === 'pending') return summary.qcPending;
-  if (s === 'completed') return summary.qcCleared;
-  return undefined;
+  if (s === 'pending') return summary.docQcPending;
+  if (s === 'partly_done') return summary.docQcPartlyDone;
+  return summary.docQcDone;
 }

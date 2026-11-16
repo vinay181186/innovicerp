@@ -16084,3 +16084,44 @@ three forms, the two detail pages' "Value" chips, two prints).
   line's value.
 - Negative: the longer headings take two lines on the narrow print columns.
 
+
+## ADR-303: Document master lists show one row per document again
+
+**Status:** Accepted (owner, 2026-11-16 — Option 2 mockup approved; supersedes the
+"one row per line" part of ADR-261 phase 3, commit 3d350c6e)
+
+### Context
+
+Since 31-Oct the SO, JWSO, PO, OSP Outward DC, GRN, Party GRN, Invoice, Item Issue,
+Customer Dispatch, Customer Material Return and JW DC Outward / Inward lists showed one
+row per line item, so an SO with 5 items filled 5 rows. The owner asked for the earlier
+structure: one row per document.
+
+### Decision
+
+- The 11 lists read the per-document endpoints again (they never went away; pickers use
+  them). The `…/lines` endpoints stay for Excel Export, the DC print register, Rev
+  Substitutions and Ask ERP. **Excel Export stays one row per line** (owner choice).
+- No Item Code / Item Name / POL columns on these lists. New `Lines` column = number of
+  lines. Quantities are the document total.
+- SO Master drops its qty columns and shows `Total Value (Basic)` (Σ Qty × Rate, before
+  GST, cancelled lines out) and `Value to Dispatch` (Σ (Order − Dispatched − Short
+  closed) × Rate, before GST). Names from docs/NAMING.md. PO `Value` becomes
+  `Total Value (Basic)`.
+- GRN and Party GRN show one QC Status per document: Pending / Partly done / Done.
+- A document covering several SOs shows the first SO No. and a grey `+n`.
+- The SO dropdown filter (ADR-267) and item-code search match a document through an
+  EXISTS over its lines, so each document stays one row.
+- Lead block (ADR-295), number-opens-row (ADR-296), Sr No and Created By last unchanged.
+- Table keys get new values so saved column layouts reset cleanly.
+
+### Alternatives Considered
+
+- First item + "+4 more" in the item columns (Option 1) — rejected by the owner.
+- A group heading row above each document's lines — not offered; still one row per line.
+
+### Consequences
+
+- Positive: one row per document; the list count is the document count.
+- Negative: the list no longer shows which items a document holds; open the document or
+  search by item code.

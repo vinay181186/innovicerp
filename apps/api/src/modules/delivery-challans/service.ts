@@ -25,7 +25,7 @@ import {
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireAnyFormAccess, requireFormAccess } from '../../lib/access';
-import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { liftLineFilters, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { assertActiveParty } from '../../lib/active-party';
 import {
   AuthorizationError,
@@ -53,7 +53,19 @@ import {
   reverseOutwardFromJcOp,
 } from './cascades';
 import { applyReceiveToJcOp, dcHasActiveReceipts, isDcFullyReconciled } from './receipt-cascades';
-import { DC_SF_COLUMNS, DC_SF_JOINS, DC_STORED_REV_SQL } from './sf-columns';
+import { createdByNameSql } from '../../lib/created-by-sql';
+import {
+  DC_JC_EXTRA_COUNT,
+  DC_LINE_LIFT,
+  DC_LINE_ORDER_JOINS,
+  DC_SF_COLUMNS,
+  DC_SF_JOINS,
+  DC_SHOWN_JC_CODE,
+  DC_SHOWN_SO_CODE,
+  DC_SHOWN_SO_INTERNAL_NO,
+  DC_SO_EXTRA_COUNT,
+  DC_STORED_REV_SQL,
+} from './sf-columns';
 import { lineNcId, receivedQtyByNc, returnDcNcIds } from './rtv-nc-split';
 import { recalcPoHeaderStatus, recalcPoLineReceivedQty } from '../goods-receipt-notes/cascades';
 import { insertGrnForOspReceipt } from '../goods-receipt-notes/service';
@@ -228,6 +240,25 @@ export async function listDeliveryChallans(
               AND (sso2.code ILIKE ${term} ESCAPE '\\'
                 OR sso2.internal_so_no ILIKE ${term} ESCAPE '\\')
           )
+          -- ADR-303 — one row per DC: a DC is found by what ANY of its lines
+          -- carries (item code / name, SO / JWSO / Internal SO No., JC No.), as
+          -- the one-row-per-line list used to find it.
+          OR EXISTS (
+            SELECT 1
+            FROM public.delivery_challan_lines dcl
+            LEFT JOIN public.items i ON i.id = dcl.item_id AND i.deleted_at IS NULL
+            ${DC_LINE_ORDER_JOINS}
+            WHERE dcl.delivery_challan_id = dc.id
+              AND dcl.deleted_at IS NULL
+              AND (dcl.item_code_text ILIKE ${term} ESCAPE '\\'
+                OR i.code ILIKE ${term} ESCAPE '\\'
+                OR dcl.item_name_text ILIKE ${term} ESCAPE '\\'
+                OR i.name ILIKE ${term} ESCAPE '\\'
+                OR so.code ILIKE ${term} ESCAPE '\\'
+                OR so.internal_so_no ILIKE ${term} ESCAPE '\\'
+                OR jw.code ILIKE ${term} ESCAPE '\\'
+                OR ljc.code ILIKE ${term} ESCAPE '\\')
+          )
         )`
       : sql``;
     const statusFrag = input.status ? sql`AND dc.status = ${input.status}::dc_status` : sql``;
@@ -241,9 +272,13 @@ export async function listDeliveryChallans(
     // list's own field whitelist (sf-columns.ts). Applied to the list, the count
     // AND the KPI summary — the latter two add the page query's other joins
     // (DC_SF_JOINS, one row per DC) only while a filter needs them.
-    const sf = readSf(input.sf);
-    const sfFrag = sfWhere(DC_SF_COLUMNS, sf);
-    const sfJoins = sf && sf.filters.length > 0 ? DC_SF_JOINS : sql``;
+    // ADR-303 — SO No. / Internal SO No. / JC No. filters (the SO dropdown
+    // too, ADR-267) keep a DC when ANY live line matches: one row per DC.
+    // A DC is kept when its own SO / JC OR ANY live line matches.
+    const { docSf: sf, lineFrag, lifted } = liftLineFilters(readSf(input.sf), DC_LINE_LIFT);
+    const sfFrag = sql`${sfWhere(DC_SF_COLUMNS, sf)} ${lineFrag}`;
+    // The lifted filters read the header SO / JC (so, po_so, njc) too.
+    const sfJoins = (sf && sf.filters.length > 0) || lifted ? DC_SF_JOINS : sql``;
     const orderBy = sfOrderBy(DC_SF_COLUMNS, sf, sql`dc.dc_date DESC, dc.code DESC`);
 
     const result = await tx.execute(sql`
@@ -291,7 +326,15 @@ export async function listDeliveryChallans(
         -- number. Never items.revision — a different column about the item.
         COALESCE(${DC_STORED_REV_SQL}, sol.revision::text, po_so.so_revision, njc_jwl.revision::text) AS "soLineRevision",
         COALESCE(line_agg.line_count, 0)::int AS "lineCount",
-        COALESCE(line_agg.total_qty, 0)::text AS "totalQty"
+        COALESCE(line_agg.total_qty, 0)::text AS "totalQty",
+        -- ADR-303 — the first line's order / job card (else the DC's own) + how
+        -- many more: scalar subqueries, run for the page rows only.
+        ${DC_SHOWN_SO_CODE} AS "lineSoCode",
+        ${DC_SHOWN_SO_INTERNAL_NO} AS "lineSoInternalNo",
+        ${DC_SO_EXTRA_COUNT} AS "soExtraCount",
+        ${DC_SHOWN_JC_CODE} AS "lineJobCardCode",
+        ${DC_JC_EXTRA_COUNT} AS "jobCardExtraCount",
+        ${createdByNameSql(sql`dc.created_by`)} AS "createdByName"
       FROM public.delivery_challans dc
       LEFT JOIN public.vendors v ON v.id = dc.vendor_id AND v.deleted_at IS NULL
       -- PO / NC / job card / SO (direct, else through the PO's lines) and the
@@ -436,6 +479,12 @@ function toListItem(
     soLineRevision: (r['soLineRevision'] as string | null) ?? null,
     lineCount: Number(r['lineCount'] ?? 0),
     totalQty: r['totalQty'] as string,
+    lineSoCode: (r['lineSoCode'] as string | null) ?? null,
+    lineSoInternalNo: (r['lineSoInternalNo'] as string | null) ?? null,
+    soExtraCount: Number(r['soExtraCount'] ?? 0),
+    lineJobCardCode: (r['lineJobCardCode'] as string | null) ?? null,
+    jobCardExtraCount: Number(r['jobCardExtraCount'] ?? 0),
+    createdByName: (r['createdByName'] as string | null) ?? null,
   };
 }
 

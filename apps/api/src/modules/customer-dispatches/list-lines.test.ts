@@ -132,7 +132,7 @@ describe('listDispatchLines (ADR-261)', () => {
   });
 
   it('the register (refactored to share the line SELECT) still pages by dispatch', async () => {
-    const reg = await listDispatchRegister({ search: DSP_CODE, limit: 25, offset: 0 }, admin);
+    const reg = await listDispatchRegister({ search: DSP_CODE, limit: 25, offset: 0, withLines: true }, admin);
     expect(reg.total).toBe(1);
     expect(reg.rows.map((r) => r.qty)).toEqual([2, 3]);
     expect(reg.rows[0]?.clientPoLineNo).toBe('40');

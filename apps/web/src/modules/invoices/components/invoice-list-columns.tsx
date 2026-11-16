@@ -1,18 +1,19 @@
 // SO Invoices list columns (moved out of routes/list.tsx to keep it < 400).
 // ADR-201: sortFilterField = the server column map (api invoices/sf-columns.ts).
-// ADR-261 (owner 2026-10-31): ONE ROW PER INVOICE LINE (GET /invoices/lines).
-// Invoice No. and the locked lead block come first (SO No. · Internal SO No. ·
-// POL · Item Code (CODE/REV) · Item Name), then Invoice Date,
-// Customer, the line's Invoice Qty and Amount (price-gated), Invoice Status, Due
-// Date. Row click and ⋯ act on the INVOICE.
+// ADR-303 (owner 2026-11-16): ONE ROW PER INVOICE again (GET /invoices). The
+// locked lead block first (Sr No · Invoice No. · Created On · SO No. ·
+// Internal SO No.; no POL / Item Code / Item Name — an invoice has many lines),
+// then Invoice Date, Customer, Lines, Grand Total · Paid · Outstanding Amount
+// (price-gated), Invoice Status, Due Date and Created By. Labels per
+// docs/NAMING.md (bare "Outstanding" is banned there). The ⋯ acts on the invoice.
 
-import type { InvoiceListLineRow } from '@innovic/shared';
+import type { InvoiceRow } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
 import { StatusBadge } from '@/ui/core';
 import { createdByColumn, type DataTableColumn, leadColumns } from '@/ui/data';
 
-export type InvoiceListRow = InvoiceListLineRow;
+export type InvoiceListRow = InvoiceRow;
 
 const inr = (v: number): string => `₹${Math.round(v).toLocaleString('en-IN')}`;
 
@@ -46,14 +47,40 @@ export function invoiceListColumns(
     ? []
     : [
         {
-          id: 'line_amount',
-          header: 'Amount',
+          id: 'grand_total',
+          header: 'Grand Total',
           kind: 'num',
-          sortFilterField: 'lineAmount',
-          align: 'right',
+          money: true,
+          sortFilterField: 'grandTotal',
           className: 'mono fw-700',
           nowrap: true,
-          render: (r) => <span style={{ color: 'var(--green2)' }}>{inr(r.lineAmount ?? 0)}</span>,
+          render: (inv) => (
+            <span style={{ color: 'var(--green2)' }}>{inr(inv.grandTotal ?? 0)}</span>
+          ),
+        },
+        {
+          id: 'paid_amount',
+          header: 'Paid',
+          kind: 'num',
+          money: true,
+          sortFilterField: 'totalPaid',
+          className: 'mono fw-700',
+          nowrap: true,
+          render: (inv) => <span style={{ color: 'var(--cyan)' }}>{inr(inv.totalPaid ?? 0)}</span>,
+        },
+        {
+          id: 'outstanding_amount',
+          header: 'Outstanding Amount',
+          kind: 'num',
+          money: true,
+          sortFilterField: 'balance',
+          className: 'mono fw-700',
+          nowrap: true,
+          render: (inv) => (
+            <span style={{ color: (inv.balance ?? 0) > 0 ? 'var(--red)' : 'var(--green)' }}>
+              {inr(inv.balance ?? 0)}
+            </span>
+          ),
         },
       ];
 
@@ -71,28 +98,35 @@ export function invoiceListColumns(
         render: (r) => (
           <Link
             to="/invoices/$id"
-            params={{ id: r.invoiceId }}
+            params={{ id: r.id }}
             style={{ color: 'inherit', textDecoration: 'none' }}
             onClick={(e) => e.stopPropagation()}
           >
-            {r.invoiceCode}
+            {r.code}
           </Link>
         ),
       },
       soNo: (r) => r.soCode,
       internalSoNo: (r) => r.soInternalNo,
-      pol: (r) => r.clientPoLineNo,
       createdOn: (r) => r.createdAt,
-      itemCode: (r) => r.itemCode,
-      itemRev: (r) => r.itemRevision,
-      itemName: (r) => r.itemName,
       overrides: {
-        so_no: { sortFilterField: 'soCode' },
+        so_no: {
+          sortFilterField: 'soCode',
+          // ADR-303 — lines from more than one SO: the first SO No. + grey "+n".
+          render: (r) => (
+            <span style={{ whiteSpace: 'nowrap' }}>
+              <span style={{ color: 'var(--blue)' }}>{r.soCode?.trim() || '—'}</span>
+              {(r.extraSoCount ?? 0) > 0 ? (
+                <span className="text3" title="Lines from other SOs too">
+                  {' '}
+                  +{r.extraSoCount}
+                </span>
+              ) : null}
+            </span>
+          ),
+        },
         so_internal_no: { sortFilterField: 'soInternalNo' },
-        client_po_line_no: { sortFilterField: 'clientPoLineNo' },
         created_on: { sortFilterField: 'createdOn' },
-        item_code: { sortFilterField: 'itemCode' },
-        item_name: { sortFilterField: 'itemName' },
       },
     }),
     {
@@ -114,14 +148,14 @@ export function invoiceListColumns(
       title: (r) => r.clientName ?? '',
     },
     {
-      id: 'qty',
-      header: 'Invoice Qty',
+      id: 'line_count',
+      header: 'Lines',
       kind: 'num',
-      sortFilterField: 'qty',
-      align: 'right',
-      className: 'mono fw-700',
+      sortFilterField: 'lineCount',
+      filterType: 'num',
+      className: 'mono',
       nowrap: true,
-      render: (r) => r.qty,
+      render: (r) => r.lineCount ?? 0,
     },
     ...moneyColumns,
     {
@@ -145,8 +179,8 @@ export function invoiceListColumns(
             for the SAME invoice. One status, one colour, both screens. */}
           <StatusBadge
             kind="invoice"
-            status={r.invoiceStatus}
-            label={INVOICE_STATUS_LABEL[r.invoiceStatus] ?? r.invoiceStatus}
+            status={r.status}
+            label={INVOICE_STATUS_LABEL[r.status] ?? r.status}
           />
           {r.overdue ? <span className="badge b-red">Overdue</span> : null}
         </span>
@@ -164,7 +198,7 @@ export function invoiceListColumns(
         </span>
       ),
     },
-    // ADR-261 rev — Created By, the last data column.
+    // ADR-261 rev — Created By, the last data column (the invoice's creator).
     createdByColumn({
       createdByName: (r) => r.createdByName,
       overrides: { sortFilterField: 'createdBy' },

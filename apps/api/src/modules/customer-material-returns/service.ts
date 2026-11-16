@@ -39,6 +39,7 @@ import { ActivityAction, NC_STATUS_LABELS } from '@innovic/shared';
 import { customerMaterialReturnLines, customerMaterialReturns } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { lockDocSeries } from '../../lib/doc-series-lock';
 import { fmtDateTime } from '../../lib/format-date';
 import {
@@ -48,13 +49,16 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { type LockedJwLine, lockJwLine } from '../../lib/jw-line-state';
-import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { liftLineFilters, likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { postPartyStockMove } from '../../lib/party-stock-ledger';
 import { labelOf } from '../../lib/status-labels';
 import { emitActivityLog } from '../activity-log/service';
 import { blockerRefusal } from '../cancel-requests/messages';
 import { jwLineRegister } from '../party-material-issues/register';
-import { CUSTOMER_MATERIAL_RETURN_SF_COLUMNS } from './sf-columns';
+import {
+  CUSTOMER_MATERIAL_RETURN_LINE_LIFT,
+  CUSTOMER_MATERIAL_RETURN_SF_COLUMNS,
+} from './sf-columns';
 
 const ENTITY = 'CustomerMaterialReturn';
 const CODE_PREFIX = 'IN-CMR-';
@@ -223,7 +227,12 @@ const HEADER_FROM = sql`
   LEFT JOIN public.job_work_orders jw ON jw.id = r.job_work_order_id
   LEFT JOIN public.clients cl ON cl.id = r.client_id
   LEFT JOIN LATERAL (
-    SELECT SUM(l.qty)::int AS total_qty
+    -- ADR-303: Lines, the first line's kind and how many OTHER kinds the
+    -- return's live lines carry (the register shows "first +n").
+    SELECT SUM(l.qty)::int AS total_qty,
+           COUNT(*)::int AS line_count,
+           (array_agg(l.kind::text ORDER BY l.line_no, l.id))[1] AS first_kind,
+           COUNT(DISTINCT l.kind)::int AS kind_count
       FROM public.customer_material_return_lines l
      WHERE l.return_id = r.id AND l.deleted_at IS NULL
   ) agg ON true
@@ -236,6 +245,10 @@ const HEADER_COLUMNS = sql`
   r.vehicle_no AS "vehicleNo", r.remarks, r.status,
   r.cancel_reason AS "cancelReason", r.cancelled_at AS "cancelledAt",
   COALESCE(agg.total_qty, 0)::int AS "totalQty",
+  COALESCE(agg.line_count, 0)::int AS "lineCount",
+  agg.first_kind AS "firstKind",
+  GREATEST(COALESCE(agg.kind_count, 0) - 1, 0)::int AS "kindExtraCount",
+  ${createdByNameSql(sql`r.created_by`)} AS "createdByName",
   r.created_at AS "createdAt", r.created_by AS "createdBy"
 `;
 
@@ -256,6 +269,13 @@ function toHeader(r: Record<string, unknown>): CustomerMaterialReturn {
     totalQty: Number(r['totalQty'] ?? 0),
     createdAt: tsLike(r['createdAt']),
     createdBy: r['createdBy'] as string,
+    lineCount: Number(r['lineCount'] ?? 0),
+    firstKind:
+      r['firstKind'] === 'good' || r['firstKind'] === 'rejected'
+        ? (r['firstKind'] as CustomerMaterialReturnKind)
+        : null,
+    kindExtraCount: Number(r['kindExtraCount'] ?? 0),
+    createdByName: (r['createdByName'] as string | null) ?? null,
   };
 }
 
@@ -266,8 +286,10 @@ export async function listCustomerMaterialReturns(
   await requireFormAccess(user, 'party_create', 'view');
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
-    // Search: Return No., JWSO No., Customer, Vehicle No. No quantities (a
-    // digit would match nearly every row).
+    // Search: Return No., JWSO No., Customer, Vehicle No., and (ADR-303) a
+    // POL / part code / part name / customer RM code on ANY of the return's
+    // lines — EXISTS, so the return stays one row. No quantities (a digit
+    // would match nearly every row).
     const term = input.search ? `%${likeEscape(input.search)}%` : null;
     const searchFrag = term
       ? sql`AND (
@@ -275,13 +297,31 @@ export async function listCustomerMaterialReturns(
           OR jw.code ILIKE ${term} ESCAPE '\\'
           OR cl.name ILIKE ${term} ESCAPE '\\'
           OR r.vehicle_no ILIKE ${term} ESCAPE '\\'
+          OR EXISTS (
+            SELECT 1
+              FROM public.customer_material_return_lines sl
+              LEFT JOIN public.job_work_order_lines sjwl ON sjwl.id = sl.jw_line_id
+              LEFT JOIN public.items si ON si.id = sjwl.item_id
+              LEFT JOIN public.party_materials spm ON spm.id = sl.party_material_id
+              LEFT JOIN public.items sri ON sri.id = spm.item_id
+             WHERE sl.return_id = r.id AND sl.deleted_at IS NULL
+               AND (sjwl.client_po_line_no ILIKE ${term} ESCAPE '\\'
+                    OR sjwl.item_code_text ILIKE ${term} ESCAPE '\\'
+                    OR si.code ILIKE ${term} ESCAPE '\\'
+                    OR sjwl.part_name ILIKE ${term} ESCAPE '\\'
+                    OR sri.code ILIKE ${term} ESCAPE '\\'
+                    OR spm.item_code_text ILIKE ${term} ESCAPE '\\')
+          )
         )`
       : sql``;
     const jwFrag = input.jobWorkOrderId
       ? sql`AND r.job_work_order_id = ${input.jobWorkOrderId}::uuid`
       : sql``;
+    // ADR-303: Return Kind can differ per line — its filter matches a return
+    // with ANY line of that kind (EXISTS); its sort reads the first line's.
     const sf = readSf(input.sf);
-    const sfFrag = sfWhere(CUSTOMER_MATERIAL_RETURN_SF_COLUMNS, sf);
+    const kindSf = liftLineFilters(sf, CUSTOMER_MATERIAL_RETURN_LINE_LIFT);
+    const sfFrag = sql`${sfWhere(CUSTOMER_MATERIAL_RETURN_SF_COLUMNS, kindSf.docSf)} ${kindSf.lineFrag}`;
     const orderBy = sfOrderBy(
       CUSTOMER_MATERIAL_RETURN_SF_COLUMNS,
       sf,

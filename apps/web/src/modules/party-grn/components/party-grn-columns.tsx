@@ -1,25 +1,19 @@
-// Party Material GRN list columns (ADR-199 fit table; ADR-261 one row per
-// GRN LINE, GET /party-grn/lines). Split out of routes/list.tsx to keep that
-// file under the 400-line rule.
-//
-// Visible order: the lead block (GRN No. · JWSO No. · POL · Created On · Item
-// Code/Rev · Item Name — a JWSO-only list, so no Internal SO No.), then Order
-// Item Code · Order Item Name (the finished part this material is for: the JWSO
-// line's item, first after the locked block, owner 2026-11-05) · GRN Date · Customer · Client PO No. · Customer Challan No. · Received Qty ·
-// Accepted Qty · QC Status. The item is what the line RECEIVED (the JWSO
-// line's customer RM) with the JWSO line's drawing revision. The GRN No. keeps
-// its --cyan identity colour; the whole row opens the detail page (ADR-294).
-// Received By, Remarks, the full per-line QC split and History are on the
-// detail page (routes/detail.tsx).
+// Party Material GRN list columns (ADR-199 fit table). ADR-303 (2026-11-16):
+// ONE ROW PER PARTY GRN again (GET /party-grn); /party-grn/lines stays for
+// export. Lead block Sr No · GRN No. · Created On · JWSO No. (the GRN's one
+// JWSO; a JWSO-only list, so no Internal SO No.; no POL / Item columns). Then
+// GRN Date · Customer · Client PO No. · Customer Challan No. · Lines ·
+// Received Qty · Accepted Qty (Σ lines) · QC Status (ONE status rolled up from
+// the lines, server-side) · Created By. The GRN No. keeps its --cyan identity
+// colour and opens the detail page (ADR-294).
 //
 // Sort & Filter runs on the SERVER (ADR-200): `sortFilterField` names the field
-// in api party-grn/sf-columns.ts PARTY_GRN_LINE_SF_COLUMNS.
+// in api party-grn/sf-columns.ts PARTY_GRN_SF_COLUMNS.
 
-import type { PartyGrnLineListRow, PartyGrnListItem } from '@innovic/shared';
+import type { PartyGrnListItem } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
-import { itemCodeWithRev } from '@/lib/item-code';
+import { DOC_QC_OPTIONS, DocQcBadge } from '@/modules/goods-receipt-notes/components/doc-qc-badge';
 import { createdByColumn, type DataTableColumn, leadColumns } from '@/ui/data';
-import { PGRN_QC_BADGE, pgrnQcLabel, pgrnQcState } from '../lib/qc-state';
 
 /** ADR-235 — a Cancelled GRN (listed with includeCancelled). cancelledAt is
  *  the standard Cancel's stamp; deletedAt alone is a GRN cancelled before it. */
@@ -29,9 +23,9 @@ export function isPartyGrnCancelled(
   return Boolean(g.cancelledAt ?? g.deletedAt);
 }
 
-export function partyGrnColumns(firstRowNo: number): DataTableColumn<PartyGrnLineListRow>[] {
+export function partyGrnColumns(firstRowNo: number): DataTableColumn<PartyGrnListItem>[] {
   return [
-    ...leadColumns<PartyGrnLineListRow>({
+    ...leadColumns<PartyGrnListItem>({
       firstRowNo,
       doc: {
         id: 'grn_code',
@@ -41,48 +35,18 @@ export function partyGrnColumns(firstRowNo: number): DataTableColumn<PartyGrnLin
         nowrap: true,
         render: (r) => (
           <span className="td-code" style={{ color: 'var(--cyan)', fontWeight: 800 }}>
-            {r.docCode}
+            {r.code}
           </span>
         ),
       },
       so: 'jwso',
-      soNo: (r) => r.jwCode,
-      pol: (r) => r.clientPoLineNo,
+      soNo: (r) => r.jwCodeText,
       createdOn: (r) => r.createdAt,
-      itemCode: (r) => r.itemCode,
-      itemRev: (r) => r.itemRevision,
-      itemName: (r) => r.itemName,
       overrides: {
         so_no: { sortFilterField: 'jwCode' },
-        client_po_line_no: { sortFilterField: 'clientPoLineNo' },
         created_on: { sortFilterField: 'createdOn' },
-        item_code: { sortFilterField: 'itemCode' },
-        item_name: { sortFilterField: 'itemName' },
       },
     }),
-    {
-      id: 'order_item_code',
-      sortFilterField: 'orderItemCode',
-      header: 'Order Item Code',
-      kind: 'code',
-      className: 'mono fw-700',
-      nowrap: true,
-      render: (r) => (
-        <span style={{ color: 'var(--text)' }}>
-          {itemCodeWithRev(r.orderItemCode, r.orderItemRevision)}
-        </span>
-      ),
-    },
-    {
-      id: 'order_item_name',
-      header: 'Order Item Name',
-      kind: 'text',
-      align: 'left',
-      ellipsis: true,
-      filterable: false,
-      render: (r) => r.orderItemName ?? '—',
-      title: (r) => r.orderItemName ?? '',
-    },
     {
       id: 'grn_date',
       sortFilterField: 'grnDate',
@@ -90,7 +54,7 @@ export function partyGrnColumns(firstRowNo: number): DataTableColumn<PartyGrnLin
       kind: 'date',
       className: 'mono',
       nowrap: true,
-      render: (r) => fmtDate(r.docDate),
+      render: (r) => fmtDate(r.grnDate),
     },
     {
       id: 'customer',
@@ -99,8 +63,8 @@ export function partyGrnColumns(firstRowNo: number): DataTableColumn<PartyGrnLin
       align: 'left',
       ellipsis: true,
       className: 'fw-700',
-      render: (r) => r.customerName ?? '—',
-      title: (r) => r.customerName ?? '',
+      render: (r) => r.clientName ?? r.clientCodeText ?? '—',
+      title: (r) => r.clientName ?? r.clientCodeText ?? '',
     },
     {
       id: 'client_po_no',
@@ -119,6 +83,15 @@ export function partyGrnColumns(firstRowNo: number): DataTableColumn<PartyGrnLin
       render: (r) => <span className="mono text2">{r.dcNo ?? '—'}</span>,
     },
     {
+      id: 'line_count',
+      sortFilterField: 'linesCount',
+      header: 'Lines',
+      kind: 'num',
+      className: 'mono',
+      nowrap: true,
+      render: (r) => r.linesCount,
+    },
+    {
       id: 'received_qty',
       sortFilterField: 'receivedQty',
       header: 'Received Qty',
@@ -128,7 +101,7 @@ export function partyGrnColumns(firstRowNo: number): DataTableColumn<PartyGrnLin
       nowrap: true,
       render: (r) => (
         <span className="mono fw-700" style={{ color: 'var(--green2)' }}>
-          {r.receivedQty}
+          {r.totalReceivedQty}
         </span>
       ),
     },
@@ -143,28 +116,29 @@ export function partyGrnColumns(firstRowNo: number): DataTableColumn<PartyGrnLin
       nowrap: true,
       render: (r) => (
         <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-          {r.acceptedQty}
+          {r.totalAcceptedQty}
         </span>
       ),
     },
     {
-      // ADR-203 (owner D4): Incoming QC is a separate step after the receipt.
-      // ADR-235: a Cancelled GRN reads "Cancelled". Part QC (0233), per LINE:
-      // Waiting QC · Part QC · n pending · QC done (lib/qc-state.ts).
+      // ADR-303 — ONE status for the receipt, rolled up from its lines.
+      // ADR-235: a Cancelled GRN reads "Cancelled".
       id: 'qc_status',
+      sortFilterField: 'docQcStatus',
+      filterOptions: DOC_QC_OPTIONS,
+      kind: 'badge',
       header: 'QC Status',
       nowrap: true,
-      render: (r) => {
-        if (r.docStatus === 'cancelled') return <span className="badge b-red">Cancelled</span>;
-        const st = pgrnQcState(r);
-        return (
-          <span className={`badge ${PGRN_QC_BADGE[st]}`}>{pgrnQcLabel(st, r.qcPendingQty)}</span>
-        );
-      },
+      render: (r) =>
+        isPartyGrnCancelled(r) ? (
+          <span className="badge b-red">Cancelled</span>
+        ) : (
+          <DocQcBadge status={r.docQcStatus} />
+        ),
     },
     // ADR-261 rev — Created By, the last data column.
     createdByColumn({
-      createdByName: (r) => r.createdByName,
+      createdByName: (r) => r.createdByName ?? null,
       overrides: { sortFilterField: 'createdBy' },
     }),
   ];

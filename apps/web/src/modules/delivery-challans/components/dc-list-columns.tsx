@@ -1,19 +1,20 @@
-// OSP Outward DC list columns (ADR-199 fit table) — ONE ROW PER DC LINE
-// (ADR-261, GET /delivery-challans/lines). Split out of routes/list.tsx to keep
-// that file under the 400-line rule.
+// OSP Outward DC list columns (ADR-199 fit table). ADR-303 (2026-11-16): ONE
+// ROW PER DC again (GET /delivery-challans); the per-line read
+// (/delivery-challans/lines) stays for the Print Register.
 //
-// DC No. and the locked lead block come first and are locked (leadColumns): SO No. (the SO
-// code, else the JWSO code, else the DC's SO ref) · Internal SO No. · POL ·
-// Created On (the line's) · Item Code (CODE/REV — no separate Drawing Rev
-// column any more) · Item Name. Then DC Date · Vendor · PO No. ·
-// Sent Qty (the line's) · DC Status · JC No. · Transport. The PO chip keeps its
-// green (linked PO) / amber* (snapshot text) / red (NC return) meaning.
+// Lead block: Sr No · DC No. · Created On · SO No. (first line's SO / JWSO /
+// SO ref, grey "+n" for more) · Internal SO No. — no POL / Item Code / Item
+// Name (a DC has many lines). Then DC Date · Vendor · PO No. · Lines · Sent Qty
+// (Σ lines) · DC Status · JC No. (first + "+n") · Transport · Created By. The
+// PO chip keeps its green (linked PO) / amber* (snapshot text) / red (NC
+// return) meaning.
 
-import { DC_STATUSES, type DeliveryChallanListLine } from '@innovic/shared';
+import { DC_STATUSES, type DeliveryChallanListItem } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
 import { fmtQty } from '@/lib/qty-format';
 import { createdByColumn, type DataTableColumn, leadColumns } from '@/ui/data';
+import { FirstPlusMore } from '@/modules/purchase-orders/components/first-plus-more';
 import { DC_STATUS_LABEL } from '../lib/dc-status-label';
 import { DcStatusBadge } from './dc-status-badge';
 
@@ -23,15 +24,18 @@ const DC_STATUS_OPTIONS = DC_STATUSES.map((value) => ({ value, label: DC_STATUS_
 /** The PO this DC was issued against — same three-way chip the card drew:
  *  green = a real linked PO, amber + `*` = the issue-time text snapshot only,
  *  red (NC …) = a return-to-vendor challan raised from an NC (no PO). */
-function PoCell({ dc }: { dc: DeliveryChallanListLine }): React.JSX.Element {
+function PoCell({ dc }: { dc: DeliveryChallanListItem }): React.JSX.Element {
   if (dc.ncId) {
+    // 0237 — a return challan may carry several NCs: every one, line order.
+    const nc =
+      dc.ncs.length > 0 ? dc.ncs.map((n) => n.code).join(', ') : (dc.ncCode ?? dc.poCodeText);
     return (
       <span
         className="badge b-red"
-        title={`Return to vendor — NC ${dc.ncCode ?? dc.poCodeText}${dc.jobCardCode ? ` · JC ${dc.jobCardCode}` : ''}`}
+        title={`Return to vendor — NC ${nc}${dc.jobCardCode ? ` · JC ${dc.jobCardCode}` : ''}`}
         style={{ fontSize: 'var(--fs-xs)' }}
       >
-        NC {dc.ncCode ?? dc.poCodeText}
+        NC {nc}
       </span>
     );
   }
@@ -65,9 +69,9 @@ export function dcListColumns(
   firstRowNo: number,
   /** ADR-202 — DC ids with a pending edit; their status cell shows "Draft". */
   draftIds?: Set<string>,
-): DataTableColumn<DeliveryChallanListLine>[] {
+): DataTableColumn<DeliveryChallanListItem>[] {
   return [
-    ...leadColumns<DeliveryChallanListLine>({
+    ...leadColumns<DeliveryChallanListItem>({
       firstRowNo,
       doc: {
         id: 'dc_code',
@@ -77,29 +81,25 @@ export function dcListColumns(
         render: (dc) => (
           <Link
             to="/delivery-challans/$id"
-            params={{ id: dc.docId }}
+            params={{ id: dc.id }}
             className="td-code"
             style={{ color: 'var(--blue)', fontWeight: 800 }}
             onClick={(e) => e.stopPropagation()}
           >
-            {dc.docCode}
+            {dc.code}
           </Link>
         ),
       },
-      soNo: (r) => r.soCode ?? r.jwCode,
-      internalSoNo: (r) => r.soInternalNo,
-      pol: (r) => r.clientPoLineNo,
+      soNo: (r) => r.lineSoCode,
+      internalSoNo: (r) => r.lineSoInternalNo,
       createdOn: (r) => r.createdAt,
-      itemCode: (r) => r.itemCode,
-      itemRev: (r) => r.itemRevision,
-      itemName: (r) => r.itemName,
       overrides: {
-        so_no: { sortFilterField: 'soCode' },
+        so_no: {
+          sortFilterField: 'soCode',
+          render: (r) => <FirstPlusMore value={r.lineSoCode} more={r.soExtraCount} />,
+        },
         so_internal_no: { sortFilterField: 'soInternalNo' },
-        client_po_line_no: { sortFilterField: 'clientPoLineNo' },
         created_on: { sortFilterField: 'createdOn' },
-        item_code: { sortFilterField: 'itemCode' },
-        item_name: { sortFilterField: 'itemName' },
       },
     }),
     {
@@ -109,7 +109,7 @@ export function dcListColumns(
       header: 'DC Date',
       className: 'mono',
       nowrap: true,
-      render: (dc) => fmtDate(dc.docDate),
+      render: (dc) => fmtDate(dc.dcDate),
     },
     {
       id: 'vendor',
@@ -130,14 +130,23 @@ export function dcListColumns(
       render: (dc) => <PoCell dc={dc} />,
     },
     {
+      id: 'line_count',
+      sortFilterField: 'lineCount',
+      filterType: 'num',
+      header: 'Lines',
+      nowrap: true,
+      className: 'mono',
+      render: (dc) => dc.lineCount,
+    },
+    {
       id: 'sent_qty',
-      sortFilterField: 'qty',
+      sortFilterField: 'totalQty',
       filterType: 'num',
       header: 'Sent Qty',
       align: 'right',
       nowrap: true,
       // Whole pieces print whole (12, not 12.00); a real fraction keeps ≤3dp.
-      render: (dc) => <span className="mono fw-700">{fmtQty(dc.qty)}</span>,
+      render: (dc) => <span className="mono fw-700">{fmtQty(Number(dc.totalQty))}</span>,
     },
     {
       id: 'dc_status',
@@ -146,7 +155,7 @@ export function dcListColumns(
       kind: 'badge',
       header: 'DC Status',
       nowrap: true,
-      render: (dc) => <DcStatusBadge status={dc.docStatus} draft={draftIds?.has(dc.docId)} />,
+      render: (dc) => <DcStatusBadge status={dc.status} draft={draftIds?.has(dc.id)} />,
     },
     {
       id: 'jc_code',
@@ -154,12 +163,15 @@ export function dcListColumns(
       kind: 'code',
       header: 'JC No.',
       nowrap: true,
-      render: (dc) =>
-        dc.jobCardCode ? (
-          <span className="mono text2">{dc.jobCardCode}</span>
-        ) : (
-          <span className="text3">—</span>
-        ),
+      render: (dc) => (
+        <span className="mono">
+          <FirstPlusMore
+            value={dc.lineJobCardCode}
+            more={dc.jobCardExtraCount}
+            color="var(--text2)"
+          />
+        </span>
+      ),
     },
     {
       id: 'transport',

@@ -1,11 +1,11 @@
-// Inward Register columns (ADR-199 fit table) — ONE ROW PER RECEIPT LINE
-// (ADR-261). Inward No. and the six locked lead columns first (SO No. = the SO
-// code, else the JWSO code; Internal SO No. only for an SO), then Inward Date ·
-// DC No. · PO No. · Vendor · Received · Accepted · Deviated for THIS line.
-// Received / Accepted / Deviated are the line's qty and its incoming-QC outcome
-// (0172). Vendor Challan No. and the GRN link sit in the ▸ detail row.
+// Inward Register columns (ADR-199 fit table) — ONE ROW PER RECEIPT again
+// (ADR-303, GET /jw-dc/inward). The locked lead block: Sr No · Inward No. ·
+// Created On · SO No. (the first line's order + grey "+n"), then Inward Date ·
+// DC No. · PO No. · Vendor · Lines · Received · Accepted · Deviated (sums of
+// the lines; Accepted / Deviated are the receipt GRN's incoming-QC outcome,
+// 0172) · Created By last. No POL / Item Code / Item Name on a document list.
 
-import { type JwDcInwardLineRow } from '@innovic/shared';
+import { type JwDcInwardListItem } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
 import { createdByColumn, type DataTableColumn, leadColumns } from '@/ui/data';
 
@@ -15,9 +15,9 @@ export function isJwDcInwardCancelled(inv: { cancelledAt: string | null }): bool
   return Boolean(inv.cancelledAt);
 }
 
-export function inwardColumns(firstRowNo: number): DataTableColumn<JwDcInwardLineRow>[] {
+export function inwardColumns(firstRowNo: number): DataTableColumn<JwDcInwardListItem>[] {
   return [
-    ...leadColumns<JwDcInwardLineRow>({
+    ...leadColumns<JwDcInwardListItem>({
       firstRowNo,
       doc: {
         id: 'inward_no',
@@ -31,29 +31,31 @@ export function inwardColumns(firstRowNo: number): DataTableColumn<JwDcInwardLin
         render: (inv) =>
           isJwDcInwardCancelled(inv) ? (
             <>
-              <span style={{ color: 'var(--green2)' }}>{inv.docCode}</span>{' '}
+              <span style={{ color: 'var(--green2)' }}>{inv.code}</span>{' '}
               <span className="badge b-red" title={inv.cancelReason ?? undefined}>
                 Cancelled
               </span>
             </>
           ) : (
-            <span style={{ color: 'var(--green2)' }}>{inv.docCode}</span>
+            <span style={{ color: 'var(--green2)' }}>{inv.code}</span>
           ),
       },
-      soNo: (r) => r.soCode ?? r.jwCode,
-      internalSoNo: (r) => r.soInternalNo,
-      pol: (r) => r.clientPoLineNo,
+      // SO No. kept (the SO dropdown filters this list): the first line's order
+      // + a grey "+n"; no Internal SO No. / POL / Item columns on a document list.
+      soNo: (r) => r.orderCode,
       createdOn: (r) => r.createdAt,
-      itemCode: (r) => r.itemCode,
-      itemRev: (r) => r.itemRevision,
-      itemName: (r) => r.itemName,
       overrides: {
-        so_no: { sortFilterField: 'soCode', filterType: 'text' },
-        so_internal_no: { sortFilterField: 'soInternalNo', filterType: 'text' },
-        client_po_line_no: { sortFilterField: 'clientPoLineNo', filterType: 'text' },
+        so_no: {
+          sortFilterField: 'soCode',
+          filterType: 'text',
+          render: (r) => (
+            <>
+              <span style={{ color: 'var(--blue)' }}>{r.orderCode ?? '—'}</span>
+              {r.orderExtraCount ? <span className="text3"> +{r.orderExtraCount}</span> : null}
+            </>
+          ),
+        },
         created_on: { sortFilterField: 'createdOn' },
-        item_code: { sortFilterField: 'itemCode', filterType: 'text' },
-        item_name: { sortFilterField: 'itemName', filterType: 'text' },
       },
     }),
     {
@@ -63,7 +65,7 @@ export function inwardColumns(firstRowNo: number): DataTableColumn<JwDcInwardLin
       header: 'Inward Date',
       className: 'mono text2',
       nowrap: true,
-      render: (inv) => fmtDate(inv.docDate),
+      render: (inv) => fmtDate(inv.inwardDate),
     },
     {
       id: 'dc_no',
@@ -94,8 +96,16 @@ export function inwardColumns(firstRowNo: number): DataTableColumn<JwDcInwardLin
       align: 'left',
       ellipsis: true,
       className: 'fw-700',
-      render: (inv) => inv.vendorName ?? '—',
-      title: (inv) => inv.vendorName ?? '',
+      render: (inv) => inv.vendorName ?? inv.vendorNameText ?? '—',
+      title: (inv) => inv.vendorName ?? inv.vendorNameText ?? '',
+    },
+    {
+      id: 'line_count',
+      sortFilterField: 'lineCount',
+      kind: 'num',
+      header: 'Lines',
+      className: 'mono',
+      render: (inv) => inv.lineCount ?? 0,
     },
     {
       id: 'received',
@@ -104,7 +114,7 @@ export function inwardColumns(firstRowNo: number): DataTableColumn<JwDcInwardLin
       header: 'Received',
       align: 'right',
       className: 'mono fw-700',
-      render: (inv) => inv.receivedQty,
+      render: (inv) => inv.totalReceivedQty,
     },
     {
       id: 'accepted',
@@ -114,7 +124,7 @@ export function inwardColumns(firstRowNo: number): DataTableColumn<JwDcInwardLin
       align: 'right',
       headColor: 'var(--green2)',
       className: 'mono',
-      render: (inv) => <span style={{ color: 'var(--green2)' }}>{inv.okQty}</span>,
+      render: (inv) => <span style={{ color: 'var(--green2)' }}>{inv.totalOkQty}</span>,
     },
     {
       id: 'rejected',
@@ -125,7 +135,9 @@ export function inwardColumns(firstRowNo: number): DataTableColumn<JwDcInwardLin
       headColor: 'var(--red2)',
       className: 'mono',
       render: (inv) => (
-        <span style={{ color: 'var(--red2)' }}>{inv.rejectedQty > 0 ? inv.rejectedQty : '—'}</span>
+        <span style={{ color: 'var(--red2)' }}>
+          {inv.totalRejectedQty > 0 ? inv.totalRejectedQty : '—'}
+        </span>
       ),
     },
     // ADR-261 rev — Created By, the last data column.

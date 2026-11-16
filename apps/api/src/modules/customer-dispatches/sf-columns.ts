@@ -6,7 +6,7 @@
 import { sql } from 'drizzle-orm';
 
 import { createdByNameSql } from '../../lib/created-by-sql';
-import type { SfColumnMap } from '../../lib/list-query';
+import type { SfColumnMap, SfLiftSpec } from '../../lib/list-query';
 
 export const DISPATCH_SF_COLUMNS: SfColumnMap = {
   dispatchCode: { sql: sql`h.code`, type: 'text' },
@@ -26,6 +26,31 @@ export const DISPATCH_SF_COLUMNS: SfColumnMap = {
   },
   dispatchedBy: { sql: sql`u.full_name`, type: 'text' },
   status: { sql: sql`h.status`, type: 'list' },
+  // ADR-303 — one row per DISPATCH again: Lines, Created On, Created By.
+  lineCount: {
+    sql: sql`(SELECT COUNT(*)::int FROM public.customer_dispatch_lines sfc
+      WHERE sfc.customer_dispatch_id = h.id AND sfc.deleted_at IS NULL)`,
+    type: 'num',
+  },
+  createdOn: { sql: sql`(h.created_at AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
+  createdBy: { sql: createdByNameSql(sql`h.created_by`), type: 'text' },
+};
+
+/**
+ * ADR-303 / ADR-267 — SO No. / Internal SO No. filters (the SO dropdown too) on
+ * the per-DISPATCH list: judged over the dispatch's own SO (`cso`, HEADER_JOINS)
+ * AND the SO of every live line (lib/list-query liftLineFilters), so each
+ * dispatch stays one row.
+ */
+export const DISPATCH_LINE_LIFT: SfLiftSpec = {
+  fields: {
+    soCode: { header: sql`COALESCE(cso.code, h.so_code_text)`, line: sql`sso.code`, type: 'text' },
+    soInternalNo: { header: sql`cso.internal_so_no`, line: sql`sso.internal_so_no`, type: 'text' },
+  },
+  linesFrom: sql`FROM public.customer_dispatch_lines sl
+    JOIN public.sales_order_lines ssol ON ssol.id = sl.sales_order_line_id
+    JOIN public.sales_orders sso ON sso.id = ssol.sales_order_id
+    WHERE sl.customer_dispatch_id = h.id AND sl.deleted_at IS NULL`,
 };
 
 // ADR-261 — GET /customer-dispatches/lines (one row per DISPATCH LINE). Every

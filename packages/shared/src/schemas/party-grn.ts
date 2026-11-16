@@ -6,6 +6,7 @@
 // Numbering: PGRN-NNNNN.
 
 import { z } from 'zod';
+import { docQcStatusSchema } from './goods-receipt-note';
 import { sfRawParamSchema } from './list-query';
 
 // ─── Read shapes ───────────────────────────────────────────────────────────
@@ -91,6 +92,12 @@ export const partyGrnListItemSchema = partyGrnSchema.extend({
   totalQcPendingQty: z.number().int().nonnegative().default(0),
   /** Number of line items. */
   linesCount: z.number().int().nonnegative(),
+  /** ADR-303 — the list row only (GET /party-grn and /party-grn/lines' header):
+   *  ONE QC status for the receipt, rolled up from its lines (absent on the
+   *  detail read). */
+  docQcStatus: docQcStatusSchema.nullable().optional(),
+  /** ADR-303 — the list row only: the ONE Created By name of the receipt. */
+  createdByName: z.string().nullable().optional(),
 });
 export type PartyGrnListItem = z.infer<typeof partyGrnListItemSchema>;
 

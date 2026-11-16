@@ -7,7 +7,7 @@
 import { sql } from 'drizzle-orm';
 
 import { createdByNameSql } from '../../lib/created-by-sql';
-import type { SfColumnMap } from '../../lib/list-query';
+import type { SfColumnMap, SfLiftSpec } from '../../lib/list-query';
 
 export const CUSTOMER_MATERIAL_RETURN_SF_COLUMNS: SfColumnMap = {
   code: { sql: sql`r.code`, type: 'text' },
@@ -17,6 +17,24 @@ export const CUSTOMER_MATERIAL_RETURN_SF_COLUMNS: SfColumnMap = {
   vehicleNo: { sql: sql`r.vehicle_no`, type: 'text' },
   status: { sql: sql`r.status`, type: 'list' },
   totalQty: { sql: sql`COALESCE(agg.total_qty, 0)`, type: 'num' },
+  // ADR-303 — one row per return (the register again). The screen's Return
+  // Qty column asks `qty`; same figure as totalQty.
+  qty: { sql: sql`COALESCE(agg.total_qty, 0)`, type: 'num' },
+  lineCount: { sql: sql`COALESCE(agg.line_count, 0)`, type: 'num' },
+  // Sort only reads this (the first line's kind); a filter on `kind` is
+  // answered over every line by CUSTOMER_MATERIAL_RETURN_LINE_LIFT.
+  kind: { sql: sql`agg.first_kind`, type: 'list' },
+  createdOn: { sql: sql`(r.created_at AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
+  createdBy: { sql: createdByNameSql(sql`r.created_by`), type: 'text' },
+};
+
+/** ADR-303 — Return Kind can differ per line: its filter judges every live
+ *  line of the return `r` (lib/list-query liftLineFilters — e.g. "rejected"
+ *  keeps a return with ANY rejected line; (Blanks) one with none set). */
+export const CUSTOMER_MATERIAL_RETURN_LINE_LIFT: SfLiftSpec = {
+  fields: { kind: { line: sql`kl.kind`, type: 'list' } },
+  linesFrom: sql`FROM public.customer_material_return_lines kl
+    WHERE kl.return_id = r.id AND kl.deleted_at IS NULL`,
 };
 
 /** ADR-261 — the ONE-ROW-PER-LINE register (list-lines.ts). Aliases `l`
