@@ -3,12 +3,13 @@
 // the panel keeps it for this session; a reload clears it.
 //
 // Owner 2026-11-16: it was a button fixed at the bottom-right, where it sat on top of
-// every form's Save button and every list's Next page button. Now it is one small
-// symbol between the bell and the password key (TopNav), and the panel opens under
+// every form's Save button and every list's Next page button. Now it sits in the top
+// bar just before the search box — a coloured symbol + "Ask ERP", the bell's size
+// (the first, symbol-only version was too small to find) — and the panel opens under
 // the header and stops above the Save bar (FloatingPanel `top` / ABOVE_SAVE_BAR).
 
 import { type AiChatModel, aiChatModelSchema } from '@innovic/shared';
-import { MessageSquare } from 'lucide-react';
+import { MessageSquareText } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useSession } from '@/lib/session';
 import type { ChatExchange } from '../lib/chat-types';
@@ -77,14 +78,15 @@ export function AiChatLauncher(): React.JSX.Element | null {
       <button
         ref={buttonRef}
         type="button"
-        className={`btn btn-sm tn-iconbtn tn-ask ${open ? 'btn-primary' : 'btn-ghost'}`}
-        title={open ? 'Close Ask ERP (the chat is kept)' : 'Ask ERP'}
+        className={`btn tn-ask${open ? ' on' : ''}`}
+        title={open ? 'Close Ask ERP (the chat is kept)' : 'Ask ERP — ask about live ERP data'}
         aria-label={open ? 'Close Ask ERP' : 'Ask ERP'}
         aria-expanded={open}
         // Open: the panel's own close, so typed text still asks before it goes.
         onClick={() => (open ? closeRef.current?.() : setOpen(true))}
       >
-        <MessageSquare size={15} aria-hidden />
+        <MessageSquareText size={18} aria-hidden />
+        Ask ERP
       </button>
       {open ? (
         <AiChatPanel

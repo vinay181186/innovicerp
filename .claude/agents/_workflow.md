@@ -67,6 +67,10 @@ run at once. Exclusive folder ownership is what makes that safe.
 Each brief carries: the trace, the exact files, the named ADRs, the contract fields quoted from
 `packages/shared`, and a pointer to `_house-rules.md` — **not** a paste of the rules.
 
+Every brief starts with the 5-line task card from `_house-rules.md` → THE AGENT LOOP
+(`GOAL` · `FILES` · `WORKTREE` · `DONE TEST` · `LIMITS`). An agent given a brief without
+all five replies `TASK UNCLEAR` and does nothing.
+
 For multi-page frontend work, fan out one agent per `modules/<x>/` folder rather than splitting
 frontend from backend.
 

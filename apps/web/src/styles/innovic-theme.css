@@ -149,15 +149,6 @@
   position: relative;
   z-index: 60;
 }
-/* Owner 2026-11-16: the module menus, search, Ask ERP and the icons stay on ONE row
-   down to a 1366px laptop — the search box gives up width instead of the right
-   cluster dropping to a second row. The band keeps flex-wrap, so a still narrower
-   window wraps rather than overflows. */
-@media (max-width: 1350px) {
-  #topnav .innovic-input.gs-input {
-    width: 140px;
-  }
-}
 .tn-logo {
   display: flex;
   align-items: center;
@@ -271,11 +262,24 @@
   margin-left: auto;
   display: flex;
   align-items: center;
-  gap: var(--sp-2);
+  /* 6px (was 8): with Ask ERP the row is measured to the pixel. */
+  gap: calc(var(--sp-1) + var(--sp-0));
   flex-shrink: 0;
 }
+/* Owner 2026-11-16: the module menus, Ask ERP, search and the icons stay on ONE row
+   down to a 1366px laptop (measured in Chromium with Barlow: 1401px of 1440 and
+   1351px of 1366 for a Super Admin's twelve modules). The search box gives up width
+   instead of the right cluster dropping to a second row; the band keeps flex-wrap, so
+   a still narrower window wraps rather than overflows. The breakpoint sits AFTER the
+   base width on purpose — the old one above it never applied (same specificity) —
+   and at 1439px, so a 1401–1439px window keeps a safety gap too. */
 #topnav .innovic-input.gs-input {
-  width: 190px;
+  width: 170px;
+}
+@media (max-width: 1439px) {
+  #topnav .innovic-input.gs-input {
+    width: 120px;
+  }
 }
 .tn-sync {
   display: inline-flex;
@@ -286,10 +290,25 @@
   padding: 0 var(--sp-2);
   height: 32px;
 }
-/* Ask ERP (ADR-293): a symbol-only top-bar button; its blue icon marks it apart
-   from the grey key / sign-out icons. While the chat is open it is btn-primary. */
-.tn-ask.btn-ghost {
-  color: var(--blue);
+/* Ask ERP (ADR-293/300): a solid blue button with a symbol + name, before the search
+   box, the bell's size (32px, --radius-sm) — the blue of the approved mockup (owner
+   2026-11-16). While the chat is open it goes the darker blue. Worn with `btn`, so the
+   shared pressed / disabled / focus effects apply; hover darkens like every btn. */
+.btn.tn-ask {
+  height: 32px;
+  padding: 0 var(--sp-2);
+  gap: calc(var(--sp-1) + var(--sp-0));
+  border: 1px solid var(--blue);
+  border-radius: var(--radius-sm);
+  background: var(--blue);
+  color: #fff;
+  font-weight: 700;
+}
+.btn.tn-ask:hover:where(:not(:disabled)),
+.btn.tn-ask.on {
+  background: var(--blue2);
+  border-color: var(--blue2);
+  color: #fff;
 }
 .tn-avatar {
   width: 30px;
