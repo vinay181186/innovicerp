@@ -1373,7 +1373,9 @@ export const jcOps = pgTable(
       'jc_ops_hold_kind_check',
       sql`${t.holdKind} IS NULL OR ${t.holdKind} IN ('ecr', 'rev_not_released', 'manual')`,
     ),
-    index('jc_ops_hold_ecr_idx').on(t.holdEcrId).where(sql`${t.holdEcrId} is not null`),
+    index('jc_ops_hold_ecr_idx')
+      .on(t.holdEcrId)
+      .where(sql`${t.holdEcrId} is not null`),
     index('jc_ops_held_idx')
       .on(t.companyId)
       .where(sql`${t.holdKind} is not null AND ${t.deletedAt} is null`),
@@ -8279,6 +8281,8 @@ export const qcAssignments = pgTable(
     inspectorName: text('inspector_name').notNull(),
     note: text('note'),
     assignedByText: text('assigned_by_text'),
+    /** ADR-298 (0253): the Task Board task this assignment raised. */
+    taskId: uuid('task_id').references((): AnyPgColumn => tasks.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -8294,6 +8298,9 @@ export const qcAssignments = pgTable(
     uniqueIndex('qc_assignments_company_op_uq')
       .on(t.companyId, t.jcOpId)
       .where(sql`${t.deletedAt} is null`),
+    index('qc_assignments_task_idx')
+      .on(t.taskId)
+      .where(sql`${t.taskId} is not null`),
     index('qc_assignments_company_inspector_idx')
       .on(t.companyId, t.inspectorUserId)
       .where(sql`${t.deletedAt} is null`),

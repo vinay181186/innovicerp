@@ -30,12 +30,23 @@ export function AssignModal({
       return;
     }
     try {
-      await assign.mutateAsync({
+      const res = await assign.mutateAsync({
         jcOpId: row.jcOpId,
         inspectorUserId,
         ...(note.trim() ? { note: note.trim() } : {}),
       });
-      toast.ok(`Inspector assigned — ${row.jcCode} Op ${opSrNo(row.opSeq)}`);
+      const call = `${row.jcCode} Op ${opSrNo(row.opSeq)}`;
+      // ADR-298: say where the inspector will find it.
+      if (res.taskCode) {
+        toast.ok(
+          `Inspector assigned — ${call}. Task ${res.taskCode} is on ${res.inspectorName}'s Task Board.`,
+        );
+      } else {
+        toast.show(
+          `Inspector assigned — ${call}. No task raised: ${res.inspectorName} cannot open Task Board.`,
+          { kind: 'warn' },
+        );
+      }
       onClose();
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Could not assign inspector. Try again.');
