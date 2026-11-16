@@ -89,6 +89,48 @@ describe('items service', () => {
     ).rejects.toBeInstanceOf(ConflictError);
   });
 
+  // ADR-297 — capital/small letters are one code, at Save and in the live check.
+  it('createItem rejects the same code in other capital/small letters', async () => {
+    const code = `${TEST_PREFIX}case-a`;
+    const base = {
+      revision: 'A',
+      uom: 'NOS',
+      itemType: 'component',
+      procurementType: 'make',
+    } as const;
+    await service.createItem({ ...base, code, name: 'Lower' }, admin);
+    await expect(
+      service.createItem({ ...base, code: code.toUpperCase(), name: 'Upper' }, admin),
+    ).rejects.toThrow(/already exists \(Lower\)/);
+  });
+
+  it('checkItemCode says which item holds a code, ignoring capital/small letters', async () => {
+    const code = `${TEST_PREFIX}CHK-1`;
+    await service.createItem(
+      {
+        code,
+        name: 'Holder',
+        revision: 'A',
+        uom: 'NOS',
+        itemType: 'component',
+        procurementType: 'make',
+      },
+      admin,
+    );
+    expect(await service.checkItemCode({ code: code.toLowerCase() }, admin)).toEqual({
+      taken: true,
+      inTrash: false,
+      code,
+      name: 'Holder',
+    });
+    expect(await service.checkItemCode({ code: `${TEST_PREFIX}CHK-FREE` }, admin)).toEqual({
+      taken: false,
+      inTrash: false,
+      code: null,
+      name: null,
+    });
+  });
+
   it('getItem returns the row by id', async () => {
     const code = `${TEST_PREFIX}G1`;
     const created = await service.createItem(

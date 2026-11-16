@@ -15859,3 +15859,43 @@ Every list opened a record on a click anywhere on the row (`rowOpenProps` put th
 
 - Positive: one place decides what opens a row; new lists get the rule without any code.
 - Negative: users used to clicking anywhere on the row must click the number.
+
+## ADR-297: Item Code is checked while typing; capital/small letters are one code
+
+**Date:** 2026-11-16
+**Status:** Accepted
+
+### Context
+
+On Item Master › + New the owner typed an Item Code that already existed and was told only after
+pressing Save. A refused symbol (space, `/`, `&` …) was also only reported at Save, in technical
+wording. A second path gave the same Save error with no typing at all: after saving an item and
+pressing + New again, the form kept the code it had just used, because the cached "next code" was
+never cleared and a fresher one was not taken in.
+
+### Decision
+
+- `GET /items/code-check?code=` (item_create entry tier) answers taken / in Trash / holder code + name.
+  The browser asks 500 ms after typing stops (same shape as the Client PO No. check, ADR-245). Under the
+  box: `Already used by <code> · <name>`, or the Trash message, or `"/" not allowed in Item Code. Use
+  letters, numbers, . _ -`. Save (and Ctrl+S / Enter) stays greyed while one shows.
+- The symbol hint uses `itemCodeBadChars` in `packages/shared/src/schemas/item.ts`, next to the code
+  rule itself. The rule is unchanged: letters, numbers, `.`, `_`, `-`.
+- Save and the live check use one lookup, `findItemByCode`, comparing `lower(code)`: `ITM-5` and
+  `itm-5` are one code (owner 2026-11-16; the Excel import already compared this way). PROD had no two
+  live items differing only in capital letters when this shipped.
+- An untouched auto-filled code is sent blank, so the server assigns the next free ITM-#### (with
+  `withUniqueRetry`) instead of refusing when someone else took it first. After a save the cached next
+  code and code checks are removed.
+- The server check at Save stays the real guard; the live check never blocks Save when it fails.
+
+### Alternatives Considered
+
+- A case-insensitive unique index: not taken now (no migration in this change). Residual risk: two
+  people saving `ABC` and `abc` in the same second can both succeed.
+
+### Consequences
+
+- Positive: duplicates and bad symbols show before Save; the +New-twice error is gone.
+- Negative: if the auto code was taken meanwhile, the item saves under the next number (the toast says
+  which).

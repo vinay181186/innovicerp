@@ -4,6 +4,7 @@ import { AuthenticationError } from '../../lib/errors';
 import {
   bulkCreateItemsInputSchema,
   createItemInputSchema,
+  itemCodeCheckQuerySchema,
   listItemsQuerySchema,
   updateItemInputSchema,
   deleteItemInputSchema,
@@ -24,6 +25,12 @@ export async function itemsRoutes(app: FastifyInstance): Promise<void> {
   app.get('/items/next-code', async (req) => {
     if (!req.user) throw new AuthenticationError();
     return service.getNextItemCode(req.user);
+  });
+
+  // ADR-297 — live "already used" check for the Item Code box (before :id too).
+  app.get('/items/code-check', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    return service.checkItemCode(itemCodeCheckQuerySchema.parse(req.query), req.user);
   });
 
   // Related Documents panel for the master (ADR-190).

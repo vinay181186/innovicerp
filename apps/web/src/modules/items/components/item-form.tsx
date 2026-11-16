@@ -48,6 +48,7 @@ import {
   type UpdateItemInput,
   UOMS,
   createItemInputSchema,
+  itemCodeBadChars,
   updateItemInputSchema,
   withPartyMaterialSuffix,
 } from '@innovic/shared';
@@ -64,7 +65,7 @@ import {
   useItemHsnNote,
 } from '@/modules/settings/master-rules-ui';
 import { FormActions, PageHeader, useSaveShortcut } from '@/ui/layout';
-import { useNextItemCode } from '../api';
+import { useItemCodeCheck, useNextItemCode } from '../api';
 import { ItemImageField } from './item-image-field';
 import { ItemPartFields } from './item-part-fields';
 
@@ -192,6 +193,8 @@ function ItemFormHeader(props: {
 function ItemFormActions(props: {
   onCancel?: (() => void) | undefined;
   isSubmitting: boolean;
+  /** ADR-297: the Item Code box shows a live refusal — Save stays greyed. */
+  blocked?: boolean;
   submitLabel: string;
   /** Unsaved edits → the "Not saved" pill beside Save. */
   dirty: boolean;
@@ -203,7 +206,7 @@ function ItemFormActions(props: {
           Cancel
         </Button>
       ) : null}
-      <Button type="submit" variant="primary" loading={props.isSubmitting}>
+      <Button type="submit" variant="primary" loading={props.isSubmitting} disabled={props.blocked}>
         {props.isSubmitting ? 'Saving…' : props.submitLabel}
       </Button>
     </FormActions>
@@ -252,21 +255,53 @@ function CreateItemForm(props: CreateMode): React.JSX.Element {
       }
       return;
     }
-    // Already prefilled once: re-sync the suffix on an Item Type change, but only
-    // while the field still holds an auto value (the plain code or its -rm form).
+    // Already prefilled once: re-sync on an Item Type change (the -rm suffix) or
+    // on a fresher next code, but only while the field still holds an auto value
+    // (the plain code, its -rm form, or the last code we filled in).
     // A hand-typed or cleared code is never rewritten.
-    if ((current === base || current === withRm) && current !== desired) {
+    if (
+      (current === base || current === withRm || current === autoCodeRef.current) &&
+      current !== desired
+    ) {
       form.setValue('code', desired);
       autoCodeRef.current = desired;
     }
   }, [nextCode, itemType, form]);
 
+  // ADR-297 — live Item Code checks while typing (the server re-checks at Save).
+  // A code still holding our own auto value is not checked: Save sends it blank
+  // and the server assigns the next free number, so it can never clash.
+  const typedCode = (watch('code') ?? '').trim();
+  const isAutoCode = typedCode !== '' && typedCode === autoCodeRef.current;
+  const badChars = isAutoCode ? [] : itemCodeBadChars(typedCode);
+  const checkedCode =
+    isAutoCode || badChars.length > 0
+      ? ''
+      : itemType === 'party_supplied_material' && typedCode
+        ? withPartyMaterialSuffix(typedCode)
+        : typedCode;
+  const codeCheck = useItemCodeCheck(checkedCode);
+  const codeHint =
+    badChars.length > 0
+      ? `${badChars.map((c) => (c === 'space' ? 'Space' : `"${c}"`)).join(', ')} not allowed in Item Code. Use letters, numbers, . _ -`
+      : codeCheck.hit
+        ? codeCheck.hit.inTrash
+          ? `Item Code ${codeCheck.hit.code ?? ''} is in Trash. Restore it from Trash instead.`
+          : `Already used by ${codeCheck.hit.code ?? ''} · ${codeCheck.hit.name ?? ''}`
+        : undefined;
+  const codeBlocked = codeHint !== undefined;
+
   return (
     <form
       ref={formRef}
       onSubmit={form.handleSubmit(async (values) => {
+        if (codeBlocked) return; // Ctrl+S / Enter too, not only the greyed button
         // Track by Serial No. is sent only for a Tool / Instrument item.
-        const { trackSerial, ...rest } = values;
+        const { trackSerial, ...base } = values;
+        // Our own untouched auto code goes blank → the server assigns the next
+        // free ITM-#### (and -rm), retrying if someone else took it meanwhile.
+        const rest =
+          base.code && base.code === autoCodeRef.current ? { ...base, code: undefined } : base;
         // ADR-195 safety net mirroring the shared helper: a Party Supplied Material
         // code always ends with -rm on save, even if a hand-typed one slipped through.
         const withCode: CreateItemInput =
@@ -299,7 +334,7 @@ function CreateItemForm(props: CreateMode): React.JSX.Element {
             required
             size="md"
             htmlFor="code"
-            error={errors.code?.message}
+            error={codeHint ?? errors.code?.message}
           >
             {/* The item code is the main thing on this screen: mono 700 in
                 --text, never the faint --text3. */}
@@ -413,6 +448,7 @@ function CreateItemForm(props: CreateMode): React.JSX.Element {
       <ItemFormActions
         onCancel={props.onCancel}
         isSubmitting={formState.isSubmitting}
+        blocked={codeBlocked}
         dirty={formState.isDirty}
         submitLabel="Save Item"
       />

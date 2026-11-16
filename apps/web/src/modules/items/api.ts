@@ -4,6 +4,7 @@ import type {
   CreateItemInput,
   DocumentEditStagedResult,
   Item,
+  ItemCodeCheckResponse,
   ListItemsQuery,
   ListItemsResponse,
   UpdateItemInput,
@@ -16,6 +17,7 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { useDebounce } from '@/lib/use-debounce';
 import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 import { activityLogKeys } from '@/modules/activity-log/api';
 
@@ -78,6 +80,24 @@ export function useNextItemCode() {
   });
 }
 
+/** ADR-297 — live "already used" check for the Item Code box. Same shape as
+ *  use-client-po-check.ts: 500 ms debounce, key carries the lower-cased code,
+ *  and an answer is trusted only for the text in the box right now. A failed
+ *  check never blocks Save — the server's 409 at save is the real guard. */
+export function useItemCodeCheck(code: string | undefined): { hit: ItemCodeCheckResponse | null } {
+  const now = (code ?? '').trim().toLowerCase();
+  const debounced = useDebounce(now, 500);
+  const q = useQuery<ItemCodeCheckResponse>({
+    queryKey: [...itemsKeys.all, 'code-check', debounced],
+    queryFn: () =>
+      apiFetch<ItemCodeCheckResponse>(`/items/code-check?code=${encodeURIComponent(debounced)}`),
+    enabled: debounced !== '',
+    staleTime: 0,
+  });
+  const current = now !== '' && now === debounced;
+  return { hit: current && q.data?.taken ? q.data : null };
+}
+
 export function useItem(id: string | undefined) {
   return useQuery<Item>({
     queryKey: id ? itemsKeys.detail(id) : itemsKeys.detail('__missing__'),
@@ -96,6 +116,9 @@ export function useCreateItem(saveKey?: SaveKey) {
     onSuccess: (created) => {
       void qc.invalidateQueries({ queryKey: activityLogKeys.all });
       void qc.invalidateQueries({ queryKey: itemsKeys.lists() });
+      // The next + New must not prefill the code just used (or a stale "free").
+      qc.removeQueries({ queryKey: [...itemsKeys.all, 'next-code'] });
+      qc.removeQueries({ queryKey: [...itemsKeys.all, 'code-check'] });
       qc.setQueryData(itemsKeys.detail(created.id), created);
     },
   });

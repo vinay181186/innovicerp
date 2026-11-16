@@ -22,7 +22,11 @@ import {
   type MasterImportRowResult,
   withPartyMaterialSuffix,
 } from '@innovic/shared';
-import type { DocumentEditStagedResult } from '@innovic/shared';
+import type {
+  DocumentEditStagedResult,
+  ItemCodeCheckQuery,
+  ItemCodeCheckResponse,
+} from '@innovic/shared';
 import { items } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { primeAccess, requireDeleteRight, requireFormAccess } from '../../lib/access';
@@ -266,6 +270,42 @@ export async function getNextItemCode(user: AuthContext): Promise<{ code: string
   return withUserContext(user, async (tx) => ({ code: await nextItemCode(tx, companyId) }));
 }
 
+/** The item already holding `code`, compared ignoring capital/small letters
+ *  (owner 2026-11-16 — the Excel import already did). A live item wins over one
+ *  in Trash. Used by Save and by the live check, so both give one answer. */
+async function findItemByCode(
+  tx: DbTransaction,
+  companyId: string,
+  code: string,
+): Promise<{ code: string; name: string; deletedAt: Date | null } | undefined> {
+  const rows = await tx
+    .select({ code: items.code, name: items.name, deletedAt: items.deletedAt })
+    .from(items)
+    .where(and(eq(items.companyId, companyId), sql`lower(${items.code}) = lower(${code.trim()})`))
+    .orderBy(sql`${items.deletedAt} is not null`)
+    .limit(1);
+  return rows[0];
+}
+
+/** ADR-297 — the Item Code box's live "already used" check. Same tier as
+ *  creating an item; only says whether the code is taken and by which item. */
+export async function checkItemCode(
+  query: ItemCodeCheckQuery,
+  user: AuthContext,
+): Promise<ItemCodeCheckResponse> {
+  await requireFormAccess(user, 'item_create', 'entry');
+  const companyId = requireCompany(user);
+  return withUserContext(user, async (tx) => {
+    const hit = await findItemByCode(tx, companyId, query.code);
+    return {
+      taken: Boolean(hit),
+      inTrash: Boolean(hit?.deletedAt),
+      code: hit?.code ?? null,
+      name: hit?.name ?? null,
+    };
+  });
+}
+
 export async function createItem(
   input: CreateItemInput,
   user: AuthContext,
@@ -292,19 +332,14 @@ export async function createItem(
       const baseCode = input.code?.trim() || (await nextItemCode(tx, companyId));
       const code =
         input.itemType === 'party_supplied_material' ? withPartyMaterialSuffix(baseCode) : baseCode;
-      const existing = await tx
-        .select({ id: items.id, deletedAt: items.deletedAt })
-        .from(items)
-        .where(and(eq(items.companyId, companyId), eq(items.code, code)))
-        .limit(1);
-      const dup = existing[0];
+      const dup = await findItemByCode(tx, companyId, code);
       if (dup) {
         if (dup.deletedAt) {
           throw new ConflictError(
-            `Item Code "${code}" is in Trash. Restore it from Trash instead.`,
+            `Item Code "${dup.code}" is in Trash. Restore it from Trash instead.`,
           );
         }
-        throw new ConflictError(`Item Code "${code}" already exists.`);
+        throw new ConflictError(`Item Code "${dup.code}" already exists (${dup.name}).`);
       }
       await assertReplacementItem(tx, companyId, null, input.replacementItemId);
 
