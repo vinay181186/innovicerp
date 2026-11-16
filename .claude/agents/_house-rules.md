@@ -175,6 +175,82 @@ COULD NOT DO
 
 Silently doing less than you were asked is the one failure the user cannot see.
 
+## THE AGENT LOOP — every agent, every task (owner approved 2026-11-16)
+
+You work in a loop: look → decide → act → check the result → repeat or stop.
+This section says how to do each step. Plain guide for people:
+`C:/Innovic_projects/innovic-erp/agentic ai/agent loop.pdf`.
+
+### 1. Before the first action — check your task
+
+Your task must contain these 5 lines:
+
+    GOAL:      what to build or check, in one sentence
+    FILES:     the exact files you may change (or "read-only")
+    WORKTREE:  the folder you work in
+    DONE TEST: how to prove it works, with a real example
+    LIMITS:    what you must NOT touch
+
+- Any line missing or unclear → do not start. Reply only
+  `TASK UNCLEAR: <which line is missing and what you need>` and stop.
+- WORKTREE is `innovicerp`, or its branch is `main` → stop. Reply `WRONG WORKTREE`.
+- Work ONLY inside that WORKTREE.
+
+### 2. Before every action — decide
+
+- Write one line first: `Next: <action> because <reason>`.
+- Pick the smallest tool that does the job:
+  Grep / Glob = find · Read = look · Edit / Write = change · Bash = run checks only.
+- Read a file before you edit it. Never edit from memory.
+- Never guess a fact (a field name, a number, a status). Look it up in the code or
+  the TEST database.
+
+### 3. Act — one step at a time
+
+- One action, then look at its result before the next action.
+- Only the FILES your task names. Your folder only. No git. Never PROD.
+
+### 4. After every action — check the result
+
+- **OK** → continue.
+- **ERROR** → read the error text. Change your approach. Never repeat the same action
+  unchanged.
+- **UNEXPECTED** (file not where expected, data looks wrong, someone else's change) →
+  stop and report. Do not work around it.
+
+### 5. Repeat or stop
+
+STOP when any one is true:
+
+| Stop reason | When                                                            |
+| ----------- | --------------------------------------------------------------- |
+| DONE        | the DONE TEST passed, and you can show the proof                |
+| BLOCKED     | you need a forbidden file, PROD, or something that deletes data |
+| SAME ERROR  | the same error came back after 2 different tries                |
+| BUDGET      | 40 actions used and not done                                    |
+| UNCLEAR     | you found the task cannot be done as written                    |
+
+- Retry at most 2 times for the same failure, each time trying something different.
+- Exceptions already in force: `erp-test` keeps its own limit (same test fails 3 times →
+  stop); `erp-module-auditor` keeps its limit (2 tries per gap).
+- If the DONE TEST needs something you cannot do (for example, opening the screen in a
+  browser), do not call it DONE. Write `DONE TEST: not run — needs <who>`.
+
+### 6. Report — always the same last block
+
+Your report ends with this block, after COULD NOT DO:
+
+```
+LOOP
+  Actions used:   <number> of 40
+  Retries:        <number> — <what failed and what you changed>
+  Stopped:        DONE / BLOCKED / SAME ERROR / BUDGET / UNCLEAR
+  Proof:          <the DONE TEST result, or "not run — needs <who>">
+  New rule found: <any owner rule or decision you discovered, or "none">
+```
+
+"DONE" without proof is not done.
+
 ## SHARED-FILE COMMITS (main session only — sub-agents must not run git)
 
 - Before committing, run `git status` to see if any file you changed is also dirty
