@@ -233,7 +233,7 @@ function SoCycleTimePage(): React.JSX.Element {
         </>
       }
     >
-      <Panel bodyPadding="none">
+      <Panel fill bodyPadding="none">
         <DataTable<SoCycleTimeRow>
           tableKey={TABLE_KEYS.soCycleTime}
           columns={columns}

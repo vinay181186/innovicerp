@@ -16125,3 +16125,31 @@ structure: one row per document.
 - Positive: one row per document; the list count is the document count.
 - Negative: the list no longer shows which items a document holds; open the document or
   search by item code.
+
+## ADR-304: A list page is exactly the screen's height, so the column header stays put
+
+Date: 16-11-2026. Fixes ADR-202 (list fill).
+
+**Problem (owner, 16-11-2026):** "on every master list column header is not fixed, there are two
+scrolling bars." Reproduced on TEST at 1440x810 and 1366x768: on SO Master, Items, PO, GRN, Job Cards,
+NC Register, Route Cards, Planning, SO Overview, Store Inventory and 12 more lists the table grew to
+its full height, `#content` scrolled instead of the table and the header slid off the top.
+
+**Cause:** `.page-fill` asked for `min-height: 100%`. A flex column with only a minimum grows to fit
+its content, so with 25 rows the page was taller than `#content` and the table never got a height to
+scroll inside. ADR-202 worked only while a list had fewer rows than the screen.
+
+**Decision:**
+- `.page-fill` is `height: 100%` (one shared line, every list on `page-fill` + `<Panel fill>`).
+- `.page-fill > .panel--fill` gets a floor of six rows plus its chrome. `.panel` clips
+  (`overflow: hidden`), so without the floor a small screen (1024x600, 150% zoom) squeezed the table
+  to one row with nothing to scroll. With it the page overflows and `#content` scrolls, as ADR-202
+  intended for screens too small for the chrome.
+- `ReportShell` roots on `page-fill`; Pending SO Value, SO Cycle Time and Stock Valuation put their
+  table in `<Panel fill>`. Daily Report keeps the page scroll: it shows one table per machine.
+
+**Consequences:**
+- Positive: one scrollbar, inside the table; title, search, filters, header and the Prev/Next bar stay
+  on screen on every list.
+- Negative: on a screen too small for the chrome plus six rows there are two scrollbars again (page
+  and table), on purpose, so nothing is trapped.

@@ -156,8 +156,11 @@ export function ReportShell({
     )
   ) : null;
 
+  // `page-fill` (ADR-202, ADR-304): a report whose table sits in `<Panel fill>` gets
+  // the same fixed header as every list; a report with several tables (Daily
+  // Report) just overflows and the page scrolls as before.
   return (
-    <div>
+    <div className="page-fill">
       <PageHeader
         sticky
         title={title}

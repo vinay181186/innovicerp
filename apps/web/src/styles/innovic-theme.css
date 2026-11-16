@@ -684,13 +684,16 @@ body.density-compact {
    does not opt in keeps today's behaviour exactly, so this can land screen by
    screen. Tables inside a modal or a dashboard card keep their own capped
    `maxHeight` and must NOT take `fill`. */
-/* `#content` KEEPS its own `overflow-y: auto` (above) as the fallback, and
-   `.page-fill` asks for `min-height`, not `height`. In the ordinary case the
-   page is exactly as tall as `#content`, so `#content` has nothing to scroll —
-   one scrollbar, inside the table, and the header holds.
-   When the chrome above the table genuinely cannot fit — a banner that lists
-   every skipped row, a phone or 200% zoom where the module buttons wrap onto
-   several bands — the page grows past `#content` and `#content` scrolls again.
+/* `.page-fill` is EXACTLY as tall as `#content` (`height`, not `min-height`).
+   With `min-height` (2026-10-02 to 2026-11-16) a flex column grows to fit its
+   content, so a list of 25 rows pushed the page past `#content`, the table
+   never got its own scroll, `#content` scrolled instead and the header rode
+   away on every list — the owner's "two scrollbars" report (ADR-304).
+   `#content` KEEPS its own `overflow-y: auto` (above) as the fallback. When
+   the chrome above the table genuinely cannot fit — a banner that lists every
+   skipped row, a phone or 200% zoom where the module buttons wrap onto several
+   bands — the table stops at its six-row floor, the page's content overflows
+   `.page-fill` and `#content` scrolls again.
    The header then behaves as it did before this change, which is the right
    trade: an earlier draft set `overflow: hidden` here and killed that fallback,
    so a long banner could squeeze the table to nothing with no way to scroll to
@@ -700,7 +703,7 @@ body.density-compact {
 .page-fill {
   display: flex;
   flex-direction: column;
-  min-height: 100%;
+  height: 100%;
 }
 /* Title, count, search, filters, KPI strip: fixed chrome, natural height. */
 .page-fill > * {
@@ -708,7 +711,12 @@ body.density-compact {
 }
 .page-fill > .panel--fill {
   flex: 1;
-  min-height: 0;
+  /* The panel's floor, not 0. `.panel` is `overflow: hidden`, so a panel
+     squeezed below the table's six-row floor CLIPPED the rows and nothing was
+     left to scroll (1024x600, or 150% zoom on a laptop: one row on screen).
+     With this floor the page overflows instead and `#content` scrolls: room
+     for filters + toolbar + header + six rows. */
+  min-height: calc(var(--tbl-row-h) * 6 + 160px);
   display: flex;
   flex-direction: column;
   /* A filling panel is the page's last block, so its bottom gap would show as
