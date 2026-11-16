@@ -16011,3 +16011,5 @@ already wrapped to a second row.
   "Search anything…" without "(Ctrl+K)".
 - Risks: while "Live updates paused — reconnecting" shows, the right cluster wraps to a
   second row until the connection is back (it never overflows).
+- Amended 2026-11-16 (owner: "bg color blue as shown in mockup"): the button is solid
+  blue with white text, the darker blue while open (was blue border on pale blue).

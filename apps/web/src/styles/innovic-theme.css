@@ -290,28 +290,22 @@
   padding: 0 var(--sp-2);
   height: 32px;
 }
-/* Ask ERP (ADR-293/300): a coloured symbol + name before the search box, the bell's
-   size (32px, --radius-sm); solid blue while the chat is open. Worn with `btn`, so
-   the shared pressed / disabled / focus effects apply; hover darkens like every btn. */
+/* Ask ERP (ADR-293/300): a solid blue button with a symbol + name, before the search
+   box, the bell's size (32px, --radius-sm) — the blue of the approved mockup (owner
+   2026-11-16). While the chat is open it goes the darker blue. Worn with `btn`, so the
+   shared pressed / disabled / focus effects apply; hover darkens like every btn. */
 .btn.tn-ask {
   height: 32px;
   padding: 0 var(--sp-2);
   gap: calc(var(--sp-1) + var(--sp-0));
   border: 1px solid var(--blue);
   border-radius: var(--radius-sm);
-  background: var(--blue3);
-  color: var(--blue2);
-  font-weight: 700;
-}
-.btn.tn-ask:hover:where(:not(:disabled)) {
-  background: var(--bg5);
-  color: var(--blue2);
-}
-.btn.tn-ask.on {
   background: var(--blue);
   color: #fff;
+  font-weight: 700;
 }
-.btn.tn-ask.on:hover:where(:not(:disabled)) {
+.btn.tn-ask:hover:where(:not(:disabled)),
+.btn.tn-ask.on {
   background: var(--blue2);
   border-color: var(--blue2);
   color: #fff;
