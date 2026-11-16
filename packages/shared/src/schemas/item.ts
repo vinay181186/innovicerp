@@ -18,6 +18,26 @@ export const uomSchema = z.enum(UOMS);
 
 const codeRegex = /^[A-Za-z0-9._-]+$/;
 
+/** The Item Code box's live hint: each character the code rule refuses, once,
+ *  in typed order (a space shows as "space"). Same rule as `codeRegex`. */
+export function itemCodeBadChars(code: string): string[] {
+  const bad = [...new Set(code.trim().replace(/[A-Za-z0-9._-]/g, ''))];
+  return bad.map((c) => (/\s/.test(c) ? 'space' : c));
+}
+
+/** GET /items/code-check — is this Item Code already on an item? Compared
+ *  ignoring capital/small letters, the same as create (owner 2026-11-16). */
+export const itemCodeCheckQuerySchema = z.object({ code: z.string().trim().min(1).max(64) });
+export const itemCodeCheckResponseSchema = z.object({
+  taken: z.boolean(),
+  /** The holder is in Trash (restore it instead). */
+  inTrash: z.boolean(),
+  code: z.string().nullable(),
+  name: z.string().nullable(),
+});
+export type ItemCodeCheckQuery = z.infer<typeof itemCodeCheckQuerySchema>;
+export type ItemCodeCheckResponse = z.infer<typeof itemCodeCheckResponseSchema>;
+
 export const itemSchema = z.object({
   id: z.string().uuid(),
   companyId: z.string().uuid(),

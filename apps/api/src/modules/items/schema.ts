@@ -6,6 +6,7 @@ import { activityReasonSchema } from '@innovic/shared';
 export {
   bulkCreateItemsInputSchema,
   createItemInputSchema,
+  itemCodeCheckQuerySchema,
   itemSchema,
   listItemsQuerySchema,
   updateItemImportRowSchema,
