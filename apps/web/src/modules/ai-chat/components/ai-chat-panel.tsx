@@ -90,6 +90,12 @@ export interface AiChatPanelProps {
   exchanges: ChatExchange[];
   setExchanges: React.Dispatch<React.SetStateAction<ChatExchange[]>>;
   onClose: () => void;
+  /** Where the panel starts (px from the top): just under the app header. */
+  top: number;
+  /** The top-bar Ask ERP button that opens and closes it. */
+  toggleRef: React.RefObject<HTMLElement>;
+  /** Filled with the panel's close request, for that button. */
+  closeRef: React.MutableRefObject<(() => void) | null>;
 }
 
 export function AiChatPanel(p: AiChatPanelProps): React.JSX.Element {
@@ -190,6 +196,9 @@ export function AiChatPanel(p: AiChatPanelProps): React.JSX.Element {
       title="Ask ERP"
       subtitle="Live ERP data · read only · nothing is changed"
       onClose={p.onClose}
+      top={p.top}
+      toggleRef={p.toggleRef}
+      closeRef={p.closeRef}
       confirmExit={draft.trim() !== '' || files.length > 0}
       bodyRef={bodyRef}
       headerActions={

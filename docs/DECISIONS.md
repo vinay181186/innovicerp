@@ -15941,3 +15941,43 @@ renamed user lost their calls.
   (`job-cards/cancel.ts`). Reported to the owner.
 - `qc-command/routes.test.ts` still needs seed IN-JC-00002, absent on TEST (unchanged).
 
+## ADR-299: Ask ERP lives in the top bar, not over the page
+
+**Date:** 2026-11-16
+**Status:** Accepted (owner approved the mockup "Ask ERP Button Placement")
+
+### Context
+
+ADR-293 put the Ask ERP button fixed 16px from the bottom-right corner, above the page.
+Every create / edit form keeps its Save bar (FormActions) stuck to the bottom with the
+primary button on the right, and paged lists put Prev / Next there too — so the button
+sat on Save SO, Save PO … and Next. The open chat (460 × 660, same corner) hid more.
+
+### Decision
+
+- Ask ERP is one symbol-only button in TopNav's right cluster, after the bell
+  (`.tn-ask`, blue icon; btn-primary while open; name in the tooltip). Still role
+  admin only. Nothing floats over the page any more.
+- The chat (FloatingPanel `top`) opens just under `#app-header` and ends
+  `ABOVE_SAVE_BAR` (64px) off the bottom, so the Save bar and pager stay clickable.
+  The button toggles it: a press on it is not "a click outside" (`toggleRef`), and
+  closing goes through the panel's own close rule (`closeRef`), so typed text still asks.
+  Placed this way it stacks at 55: under the top bar's own drop-downs (bell, module
+  menus, search results) and above page chrome; it never shrinks below 320px.
+- One-row top bar (owner): module buttons 6px a side (was 8); at ≤1350px the search
+  box narrows to 140px instead of the right cluster dropping to a second row. The band
+  keeps flex-wrap, so a narrower window wraps rather than overflows.
+
+### Alternatives Considered
+
+- A smaller round button higher up the corner — rejected: still covers whatever a
+  page puts there (pager, totals) and moves with every page height.
+- Padding every page's bottom — rejected: touches every screen, and the open chat
+  would still cover the Save bar.
+
+### Consequences
+
+- Positive: no page control is ever covered; one place to find the chat.
+- Risks: a Super Admin sees twelve modules; at exactly 1366px the row is tight — if a
+  font renders wider, the right cluster wraps (as before), it never overflows.
+

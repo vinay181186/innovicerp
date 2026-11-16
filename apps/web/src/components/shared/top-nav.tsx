@@ -38,6 +38,7 @@ import { INNOVIC_LOGO_DATA_URI } from '@/lib/print/letterhead-logo';
 import { roleLabel } from '@/lib/role-label';
 import { LiveStatusMarker } from '@/lib/live-updates/live-status-marker';
 import { signOut, useSession } from '@/lib/session';
+import { AiChatLauncher } from '@/modules/ai-chat/components/ai-chat-launcher';
 import { useWaitingApprovals } from '@/modules/approvals/api';
 import { NotificationBell } from '@/modules/dashboard/components/notification-bell';
 import { Icon } from '@/ui/core';
@@ -227,6 +228,8 @@ export function TopNav(): React.JSX.Element {
         <GlobalSearch />
         {/* ADR-264 — the bell, on every page. */}
         {me ? <NotificationBell /> : null}
+        {/* ADR-293 — Ask ERP, L6 Super Admin only (renders nothing for anyone else). */}
+        <AiChatLauncher />
         <Link
           to="/change-password"
           className="btn btn-ghost btn-sm tn-iconbtn"
