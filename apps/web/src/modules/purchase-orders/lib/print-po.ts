@@ -30,7 +30,12 @@ import {
   challanDate,
   openSheetPrintWindow,
 } from '@/lib/print/sheet-print';
-import { TOTAL_VALUE_BASIC_LABEL, UNIT_VALUE_BASIC_LABEL, lineBasicValue } from '@innovic/shared';
+import {
+  TOTAL_VALUE_BASIC_LABEL,
+  UNIT_VALUE_BASIC_LABEL,
+  lineBasicValue,
+  linesBasicTotal,
+} from '@innovic/shared';
 
 // A purchase-order line has no uom column of its own; the detail read joins
 // the item master's unit (`uom`). NOS -- the unit the whole system assumes --
@@ -93,8 +98,8 @@ export function printPurchaseOrder(args: {
   // for every GST % the PO carries, which is exactly how the saved tax is
   // worked out (subtotal × (SGST + CGST + IGST) / 100). The line sum is only a
   // fallback for a PO whose roll-up was never stored.
-  const lineSubtotal = lines.reduce((s, l) => s + l.qty * Number(l.rate ?? 0), 0);
-  const subtotal = po.totals?.subtotal ?? po.subtotal ?? Number(lineSubtotal.toFixed(2));
+  const lineSubtotal = linesBasicTotal(lines); // ADR-302 one rule
+  const subtotal = po.totals?.subtotal ?? po.subtotal ?? lineSubtotal;
   const totalQty = lines.reduce((s, l) => s + l.qty, 0);
 
   const sgstPct = Number(po.sgstPct) || 0;
