@@ -189,7 +189,7 @@ export async function usableAssignee(
   return u && u.isActive && opensTaskBoard(u) ? { id: u.id, name: u.name ?? '' } : null;
 }
 
-async function loadAssignee(
+export async function loadAssignee(
   tx: DbTransaction,
   companyId: string,
   assignedTo: string,
@@ -853,6 +853,53 @@ export async function cancelTask(
 
 // ── Reassign (creator / admin) ────────────────────────────────────────────
 
+/** The ONE move of an open task to another assignee (Task Board Reassign,
+ *  QC Center's Assign Inspector — ADR-298), in the caller's transaction, the
+ *  task row already locked: assignee + Assigned By / Date, read New for the new
+ *  holder, 'reassigned' history, activity row. `description` replaces the
+ *  task's description when given. */
+export async function moveTaskTo(
+  tx: DbTransaction,
+  companyId: string,
+  t: { id: string; code: string },
+  assignee: { id: string; name: string },
+  opts: { fromName: string; note: string | null; description?: string | null },
+  user: AuthContext,
+): Promise<void> {
+  const now = new Date();
+  await tx
+    .update(tasks)
+    .set({
+      assignedTo: assignee.id,
+      assignedBy: user.id,
+      assignedAt: now,
+      // The new assignee has not seen it yet — unless it is me.
+      viewedAt: assignee.id === user.id ? now : null,
+      ...(opts.description !== undefined ? { description: opts.description } : {}),
+      updatedBy: user.id,
+      updatedAt: now,
+    })
+    .where(eq(tasks.id, t.id));
+  await recordHistory(
+    tx,
+    companyId,
+    t.id,
+    { action: 'reassigned', fromValue: opts.fromName, toValue: assignee.name, note: opts.note },
+    user,
+  );
+  await emitActivityLog(
+    tx,
+    {
+      action: 'UPDATE',
+      entity: 'Task',
+      detail: `${t.code} reassigned to ${assignee.name}`,
+      refId: t.code,
+    },
+    companyId,
+    user,
+  );
+}
+
 export async function reassignTask(
   id: string,
   input: ReassignTaskInput,
@@ -876,41 +923,12 @@ export async function reassignTask(
     }
     const assignee = await loadAssignee(tx, companyId, input.assignedTo);
     const names = await loadUserNames(tx, companyId);
-
-    await tx
-      .update(tasks)
-      .set({
-        assignedTo: assignee.id,
-        assignedBy: user.id,
-        assignedAt: new Date(),
-        // The new assignee has not seen it yet — unless it is me.
-        viewedAt: assignee.id === user.id ? new Date() : null,
-        updatedBy: user.id,
-        updatedAt: new Date(),
-      })
-      .where(eq(tasks.id, id));
-
-    await recordHistory(
+    await moveTaskTo(
       tx,
       companyId,
-      id,
-      {
-        action: 'reassigned',
-        fromValue: nameOf(names, t.assignedTo) ?? '—',
-        toValue: assignee.name,
-        note: input.note ?? null,
-      },
-      user,
-    );
-    await emitActivityLog(
-      tx,
-      {
-        action: 'UPDATE',
-        entity: 'Task',
-        detail: `${t.code} reassigned to ${assignee.name}`,
-        refId: t.code,
-      },
-      companyId,
+      t,
+      assignee,
+      { fromName: nameOf(names, t.assignedTo) ?? '—', note: input.note ?? null },
       user,
     );
     return getTaskInternal(tx, id, companyId, user);

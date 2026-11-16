@@ -8,12 +8,12 @@
 // Op 1) and are cleaned up by jc_op_id in afterAll.
 
 import { opSrNo } from '@innovic/shared';
-import { and, desc, eq, inArray, isNull, ne } from 'drizzle-orm';
+import { and, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
 import { jcOps, jobCards, qcAssignments, taskHistory, tasks, users } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
-import { AuthorizationError, NotFoundError } from '../../lib/errors';
+import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import { AUDITOR, asAccess } from '../../lib/test-access';
 import * as service from './service';
 
@@ -38,25 +38,24 @@ beforeAll(async () => {
     .innerJoin(jobCards, eq(jobCards.id, jcOps.jobCardId))
     .where(and(eq(jobCards.code, 'IN-JC-00002'), eq(jcOps.opSeq, 1)))
     .limit(1);
+  // Assign / Pick Up refuse a call with nothing left to inspect (ADR-298), so
+  // the fallback is a pending QC call with no assignment yet.
   const found = seed[0]
     ? seed
-    : await db
-        .select({ id: jcOps.id, jcCode: jobCards.code, opSeq: jcOps.opSeq })
-        .from(jcOps)
-        .innerJoin(jobCards, eq(jobCards.id, jcOps.jobCardId))
-        .leftJoin(qcAssignments, eq(qcAssignments.jcOpId, jcOps.id))
-        .where(
-          and(
-            eq(jcOps.companyId, u.companyId),
-            isNull(jcOps.deletedAt),
-            isNull(jobCards.deletedAt),
-            isNull(qcAssignments.id),
-          ),
-        )
-        .orderBy(desc(jobCards.code))
-        .limit(1);
-  if (!found[0]) throw new Error('No job-card operation on this database to test with');
-  testCall = `${found[0].jcCode} · Op ${opSrNo(found[0].opSeq)}`;
+    : ((await db.execute(sql`
+        SELECT vos.jc_op_id AS id, jc.code AS "jcCode", vos.op_seq AS "opSeq"
+        FROM public.v_jc_op_status vos
+        JOIN public.job_cards jc ON jc.id = vos.job_card_id AND jc.deleted_at IS NULL
+        WHERE vos.company_id = ${u.companyId}::uuid
+          AND (vos.qc_required OR vos.op_type = 'qc') AND vos.qc_pending > 0
+          AND NOT EXISTS (SELECT 1 FROM public.qc_assignments qa WHERE qa.jc_op_id = vos.jc_op_id)
+        ORDER BY jc.code DESC LIMIT 1`)) as unknown as Array<{
+        id: string;
+        jcCode: string;
+        opSeq: number;
+      }>);
+  if (!found[0]) throw new Error('No pending QC call on this database to test with');
+  testCall = `${found[0].jcCode} · Op ${opSrNo(Number(found[0].opSeq))}`;
   testOpId = found[0].id;
 });
 
@@ -356,6 +355,28 @@ describe('qc-command — the inspector gets a Task Board task (ADR-298)', () => 
     expect((await callTasks()).length).toBe(before + 1);
     const [t] = await db.select().from(tasks).where(eq(tasks.id, active[0]!.taskId!));
     expect(t!.assignedTo).toBe(active[0]!.inspector);
+  });
+
+  it('reassign carries the new Assign remark onto the task', async () => {
+    await service.assignQc({ jcOpId: testOpId, inspectorUserId: other.id, note: 'first' }, admin);
+    const res = await service.assignQc(
+      { jcOpId: testOpId, inspectorUserId: admin.id, note: 'customer witness 3 PM' },
+      admin,
+    );
+    const [t] = await db.select().from(tasks).where(eq(tasks.code, res.taskCode!));
+    expect(t!.description).toBe('customer witness 3 PM');
+  });
+
+  it('a call with nothing left to inspect is refused', async () => {
+    const rows = (await db.execute(sql`
+      SELECT vos.jc_op_id AS id FROM public.v_jc_op_status vos
+      WHERE vos.company_id = ${admin.companyId}::uuid
+        AND NOT ((vos.qc_required OR vos.op_type = 'qc') AND vos.qc_pending > 0)
+      LIMIT 1`)) as unknown as Array<{ id: string }>;
+    if (!rows[0]) return;
+    await expect(
+      service.assignQc({ jcOpId: rows[0].id, inspectorUserId: other.id }, admin),
+    ).rejects.toBeInstanceOf(ConflictError);
   });
 
   it('pick up puts the call in your own To-Do', async () => {

@@ -36,6 +36,7 @@ import {
   type QcRegisterResponse,
   type QcSourceStep,
   type qcRegisterQuerySchema,
+  shortName,
 } from '@innovic/shared';
 import type { z } from 'zod';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
@@ -118,6 +119,14 @@ function incTypeWhere(types: readonly IncGrnType[] | null): SQL {
 }
 
 /** The caller's full name + short form, lower-cased — "Mine" matches either. */
+async function myNames(tx: Tx, userId: string): Promise<string[]> {
+  const r = rows(
+    await tx.execute(sql`SELECT full_name FROM public.users WHERE id = ${userId}::uuid`),
+  );
+  const full = String(r[0]?.['full_name'] ?? '').trim();
+  return [...new Set([full.toLowerCase(), shortName(full).toLowerCase()].filter(Boolean))];
+}
+
 export async function listQcRegister(input: Input, user: AuthContext): Promise<QcRegisterResponse> {
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
@@ -151,8 +160,20 @@ export async function listQcRegister(input: Input, user: AuthContext): Promise<Q
       pgrnOn = false;
     }
     // "Mine" = the calls assigned to MY LOGIN (ADR-298). It matched the name
-    // before, so a renamed user lost their calls.
-    const mineWhere = mine ? sql`AND qa.inspector_user_id = ${user.id}::uuid` : sql``;
+    // before, so a renamed user lost their calls. A legacy row with no login on
+    // it (0040 migration) still matches by name.
+    let mineWhere = sql``;
+    if (mine) {
+      const names = await myNames(tx, user.id);
+      const byName =
+        names.length > 0
+          ? sql` OR (qa.inspector_user_id IS NULL AND lower(btrim(qa.inspector_name)) IN (${sql.join(
+              names.map((n) => sql`${n}`),
+              sql`, `,
+            )}))`
+          : sql``;
+      mineWhere = sql`AND (qa.inspector_user_id = ${user.id}::uuid${byName})`;
+    }
 
     let keys: SQL;
     // Applied on the SAME select as LIMIT / OFFSET — an ORDER BY inside a

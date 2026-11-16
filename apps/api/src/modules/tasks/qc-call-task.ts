@@ -13,11 +13,10 @@
 
 import { taskRelatedNavPage } from '@innovic/shared';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
-import { tasks } from '../../db/schema';
+import { tasks, users } from '../../db/schema';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
-import { emitActivityLog } from '../activity-log/service';
-import { OPEN_STATUSES, loadUserNames, nameOf, recordHistory } from './history';
-import { insertAssignedTask, usableAssignee } from './service';
+import { OPEN_STATUSES } from './history';
+import { insertAssignedTask, loadAssignee, moveTaskTo, usableAssignee } from './service';
 
 export interface QcCallTaskInput {
   companyId: string;
@@ -33,72 +32,59 @@ export interface QcCallTaskInput {
 }
 
 /** Raise or move the call's task. Returns the task the inspector now holds, or
- *  null when they cannot open the Task Board (the old task, if any, is left with
- *  its holder — the assignment itself still saves). */
+ *  null when they cannot open the Task Board and the call has no open task (the
+ *  assignment still saves; the screen says no task was raised). Moving an OPEN
+ *  task to someone who cannot open the Task Board is refused with Task Board's
+ *  own message, so the task never stays with the previous inspector. */
 export async function raiseOrMoveQcCallTask(
   tx: DbTransaction,
   input: QcCallTaskInput,
   user: AuthContext,
 ): Promise<{ id: string; code: string } | null> {
-  const assignee = await usableAssignee(tx, input.companyId, input.inspectorUserId);
-  if (!assignee) return null;
+  const current = input.currentTaskId
+    ? (
+        await tx
+          .select({ id: tasks.id, code: tasks.code, assignedTo: tasks.assignedTo })
+          .from(tasks)
+          .where(
+            and(
+              eq(tasks.id, input.currentTaskId),
+              eq(tasks.companyId, input.companyId),
+              isNull(tasks.deletedAt),
+              inArray(tasks.status, [...OPEN_STATUSES]),
+            ),
+          )
+          .for('update')
+      )[0]
+    : undefined;
 
-  if (input.currentTaskId) {
-    const [t] = await tx
-      .select({ id: tasks.id, code: tasks.code, assignedTo: tasks.assignedTo })
-      .from(tasks)
-      .where(
-        and(
-          eq(tasks.id, input.currentTaskId),
-          eq(tasks.companyId, input.companyId),
-          isNull(tasks.deletedAt),
-          inArray(tasks.status, [...OPEN_STATUSES]),
-        ),
-      )
-      .for('update');
-    if (t) {
-      if (t.assignedTo === assignee.id) return { id: t.id, code: t.code };
-      const now = new Date();
-      await tx
-        .update(tasks)
-        .set({
-          assignedTo: assignee.id,
-          assignedBy: user.id,
-          assignedAt: now,
-          viewedAt: assignee.id === user.id ? now : null,
-          updatedBy: user.id,
-          updatedAt: now,
-        })
-        .where(eq(tasks.id, t.id));
-      const names = await loadUserNames(tx, input.companyId);
-      await recordHistory(
-        tx,
-        input.companyId,
-        t.id,
-        {
-          action: 'reassigned',
-          fromValue: nameOf(names, t.assignedTo) ?? '—',
-          toValue: assignee.name,
-          note: 'Reassigned in QC Center',
-        },
-        user,
-      );
-      await emitActivityLog(
-        tx,
-        {
-          action: 'UPDATE',
-          entity: 'Task',
-          detail: `${t.code} reassigned to ${assignee.name} (QC Center)`,
-          refId: t.code,
-        },
-        input.companyId,
-        user,
-      );
-      return { id: t.id, code: t.code };
-    }
+  if (current) {
+    if (current.assignedTo === input.inspectorUserId) return { id: current.id, code: current.code };
+    const assignee = await loadAssignee(tx, input.companyId, input.inspectorUserId);
+    const [from] = await tx
+      .select({ name: users.fullName })
+      .from(users)
+      .where(eq(users.id, current.assignedTo ?? user.id))
+      .limit(1);
+    await moveTaskTo(
+      tx,
+      input.companyId,
+      current,
+      assignee,
+      {
+        fromName: (current.assignedTo && from?.name) || '—',
+        note: 'Reassigned in QC Center',
+        // The new Assign remark is what the new inspector must read.
+        ...(input.note !== null ? { description: input.note } : {}),
+      },
+      user,
+    );
+    return { id: current.id, code: current.code };
   }
 
   // No task yet, or the old one is closed: raise a new one.
+  const assignee = await usableAssignee(tx, input.companyId, input.inspectorUserId);
+  if (!assignee) return null;
   const header = await insertAssignedTask(
     tx,
     input.companyId,

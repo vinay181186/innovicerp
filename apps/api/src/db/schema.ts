@@ -1373,9 +1373,7 @@ export const jcOps = pgTable(
       'jc_ops_hold_kind_check',
       sql`${t.holdKind} IS NULL OR ${t.holdKind} IN ('ecr', 'rev_not_released', 'manual')`,
     ),
-    index('jc_ops_hold_ecr_idx')
-      .on(t.holdEcrId)
-      .where(sql`${t.holdEcrId} is not null`),
+    index('jc_ops_hold_ecr_idx').on(t.holdEcrId).where(sql`${t.holdEcrId} is not null`),
     index('jc_ops_held_idx')
       .on(t.companyId)
       .where(sql`${t.holdKind} is not null AND ${t.deletedAt} is null`),

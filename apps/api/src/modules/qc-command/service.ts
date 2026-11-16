@@ -38,7 +38,7 @@ import { qcAssignments } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { createdByNameSql } from '../../lib/created-by-sql';
-import { AuthorizationError, NotFoundError } from '../../lib/errors';
+import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import { soOrJwCodeSql } from '../../lib/order-code';
 import { raiseOrMoveQcCallTask } from '../tasks/qc-call-task';
 import { istToday } from '../tasks/history';
@@ -562,7 +562,9 @@ interface QcCall {
 async function lockQcCall(tx: DbTransaction, companyId: string, jcOpId: string): Promise<QcCall> {
   const rows = (await tx.execute(sql`
     SELECT jc.code AS "jcCode", jo.op_seq AS "opSeq", jo.operation,
-           to_char(jc.due_date, 'YYYY-MM-DD') AS "dueDate"
+           to_char(jc.due_date, 'YYYY-MM-DD') AS "dueDate",
+           (SELECT vos.qc_pending FROM public.v_jc_op_status vos
+             WHERE vos.jc_op_id = jo.id) AS "qcPending"
     FROM public.jc_ops jo
     JOIN public.job_cards jc ON jc.id = jo.job_card_id
     WHERE jo.id = ${jcOpId}::uuid AND jo.company_id = ${companyId}::uuid
@@ -573,9 +575,17 @@ async function lockQcCall(tx: DbTransaction, companyId: string, jcOpId: string):
     opSeq: number;
     operation: string | null;
     dueDate: string | null;
+    qcPending: number | string | null;
   }>;
   const r = rows[0];
   if (!r) throw new NotFoundError('Operation not found. Refresh the page.');
+  // An inspected call would raise a task that nothing ever closes (the ADR-190
+  // auto-close runs only when an inspection is logged).
+  if (Number(r.qcPending ?? 0) <= 0) {
+    throw new ConflictError(
+      `${r.jcCode} Op ${opSrNo(Number(r.opSeq))} has nothing left to inspect. Refresh the page.`,
+    );
+  }
   const today = istToday();
   return {
     label: `${r.jcCode} · Op ${opSrNo(Number(r.opSeq))}`,
