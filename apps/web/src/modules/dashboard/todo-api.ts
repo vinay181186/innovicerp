@@ -5,7 +5,6 @@
 // Create: "Me" → POST /tasks/personal; someone else → POST /tasks (Due Date
 // required). One Idempotency-Key per open form (useSaveKey, ADR-172), so a
 // double click or a resend makes ONE to-do.
-// Complete: POST /tasks/:id/complete — answers 409 when it is already done.
 
 import type { CreatePersonalTodoInput, CreateTaskInput, TaskDetail } from '@innovic/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -40,16 +39,5 @@ export function useCreateTodo(saveKey: SaveKey) {
         }),
       ),
     onSuccess: invalidate,
-  });
-}
-
-/** Tick a to-do done. A refusal (409 already done) refetches too, so the row
- *  shows what the server holds. */
-export function useCompleteTodo() {
-  const invalidate = useInvalidateTodo();
-  return useMutation<TaskDetail, Error, string>({
-    mutationFn: (taskId) =>
-      apiFetch<TaskDetail>(`/tasks/${taskId}/complete`, { method: 'POST', json: {} }),
-    onSettled: invalidate,
   });
 }

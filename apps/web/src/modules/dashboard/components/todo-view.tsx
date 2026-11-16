@@ -1,15 +1,14 @@
-// ADR-264 — My to-do: tabs Late · Today · Planned · Done. Tick a box →
-// POST /tasks/:id/complete; the row is locked while it saves, and a refusal
-// (409 already done) shows the server's words and refetches. Done = today's
-// done list, yesterday's under it. "Create to-do" opens the inline form.
+// ADR-264 — My to-do: tabs Late · Today · Planned · Done. No tick box (owner
+// 2026-11-16: one click must not complete a to-do): the to-do number opens the
+// task's detail on the Task Board (`?task=<id>`), where ✅ Complete lives with
+// its own rights and checks. Done = today's done list, yesterday's under it.
+// "Create to-do" opens the inline form.
 
 import type { DashTodoRow, HomeResponse } from '@innovic/shared';
 import { useState } from 'react';
 import { useCanWrite } from '@/components/shared/action-link';
 import { fmtDate, fmtTime } from '@/lib/date';
-import { useToast } from '@/ui/feedback';
 import { EmptyState } from '@/ui/data';
-import { useCompleteTodo } from '../todo-api';
 import { DashTextView, DocRef } from './dash-text';
 import { TodoCreate } from './todo-create';
 import { ViewHead } from './view-head';
@@ -34,31 +33,12 @@ const EMPTY: Record<Tab, string> = {
   done: 'Nothing done yet today.',
 };
 
-function TodoLine({
-  t,
-  tab,
-  busy,
-  canWrite,
-  onDone,
-}: {
-  t: DashTodoRow;
-  tab: Exclude<Tab, 'done'>;
-  busy: boolean;
-  canWrite: boolean;
-  onDone: () => void;
-}): React.JSX.Element {
+function TodoLine({ t, tab }: { t: DashTodoRow; tab: Exclude<Tab, 'done'> }): React.JSX.Element {
   return (
-    <div className={`dh-todo${t.unread ? ' dh-unread' : ''}`} aria-busy={busy}>
-      {canWrite ? (
-        <input
-          type="checkbox"
-          checked={busy}
-          disabled={busy}
-          aria-label={`Mark done: ${t.title}`}
-          onChange={onDone}
-        />
-      ) : null}
-      <span className="dh-todo-code">{t.taskCode}</span>
+    <div className={`dh-todo${t.unread ? ' dh-unread' : ''}`}>
+      <span className="dh-todo-code">
+        <DocRef code={t.taskCode} href={`/task-board?task=${t.taskId}`} />
+      </span>
       <span className="dh-todo-title" title={t.title}>
         {t.title}
         {t.ref ? (
@@ -104,10 +84,7 @@ function DoneLines({ done }: { done: HomeResponse['done'] }): React.JSX.Element 
 export function TodoView({ home }: { home: HomeResponse }): React.JSX.Element {
   const { todo, done } = home;
   const canWrite = useCanWrite();
-  const toast = useToast();
-  const complete = useCompleteTodo();
   const [creating, setCreating] = useState(false);
-  const [busyIds, setBusyIds] = useState<ReadonlySet<string>>(new Set());
   const [tab, setTab] = useState<Tab>(
     todo.late.length > 0
       ? 'late'
@@ -120,23 +97,6 @@ export function TodoView({ home }: { home: HomeResponse }): React.JSX.Element {
 
   const none = todo.late.length + todo.today.length + todo.planned.length === 0;
   const count = (k: Tab): number => (k === 'done' ? done.todayTotal : todo[k].length);
-
-  const markDone = (t: DashTodoRow): void => {
-    if (busyIds.has(t.taskId)) return;
-    setBusyIds((s) => new Set(s).add(t.taskId));
-    complete.mutate(t.taskId, {
-      // On success the row stays locked until the refetch takes it away.
-      onSuccess: () => void toast.ok('To-Do marked done'),
-      onError: (e) => {
-        toast.error(e.message);
-        setBusyIds((s) => {
-          const n = new Set(s);
-          n.delete(t.taskId);
-          return n;
-        });
-      },
-    });
-  };
 
   const openCreate = canWrite ? () => setCreating(true) : undefined;
 
@@ -164,21 +124,12 @@ export function TodoView({ home }: { home: HomeResponse }): React.JSX.Element {
     body = <div className="dh-emptytab">{EMPTY[tab]}</div>;
   } else {
     const rowsTab = tab;
-    body = todo[rowsTab].map((t) => (
-      <TodoLine
-        key={t.taskId}
-        t={t}
-        tab={rowsTab}
-        busy={busyIds.has(t.taskId)}
-        canWrite={canWrite}
-        onDone={() => markDone(t)}
-      />
-    ));
+    body = todo[rowsTab].map((t) => <TodoLine key={t.taskId} t={t} tab={rowsTab} />);
   }
 
   return (
     <>
-      <ViewHead title="My to-do" hint="Tick a box when it is done">
+      <ViewHead title="My to-do" hint="Click a to-do number to open it">
         {/* Hidden while the empty state shows its own big "Create to-do" button. */}
         {openCreate && !creating && !(none && tab !== 'done') ? (
           <button type="button" className="btn btn-primary btn-sm" onClick={openCreate}>

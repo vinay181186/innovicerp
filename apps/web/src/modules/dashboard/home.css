@@ -323,14 +323,6 @@ span.dh-link {
   padding: 8px var(--sp-4);
   border-bottom: 1px solid var(--bg3);
 }
-.dh-todo[aria-busy='true'] {
-  opacity: 0.6;
-}
-.dh-todo input[type='checkbox'] {
-  width: 16px;
-  height: 16px;
-  flex: none;
-}
 .dh-todo-code {
   font-family: var(--mono);
   font-size: var(--fs-sm);
