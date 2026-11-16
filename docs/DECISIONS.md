@@ -16141,15 +16141,22 @@ scroll inside. ADR-202 worked only while a list had fewer rows than the screen.
 
 **Decision:**
 - `.page-fill` is `height: 100%` (one shared line, every list on `page-fill` + `<Panel fill>`).
-- `.page-fill > .panel--fill` gets a floor of six rows plus its chrome. `.panel` clips
-  (`overflow: hidden`), so without the floor a small screen (1024x600, 150% zoom) squeezed the table
-  to one row with nothing to scroll. With it the page overflows and `#content` scrolls, as ADR-202
-  intended for screens too small for the chrome.
-- `ReportShell` roots on `page-fill`; Pending SO Value, SO Cycle Time and Stock Valuation put their
-  table in `<Panel fill>`. Daily Report keeps the page scroll: it shows one table per machine.
+- A fill panel that is a page root gets a floor: the table toolbar plus six rows (the sum rc-form.css
+  already measured). `.panel` clips (`overflow: hidden`), so without the floor a small screen
+  (1024x600, 150% zoom) squeezed the table to one row with nothing to scroll. With it the page
+  overflows and `#content` scrolls, as ADR-202 intended for screens too small for the chrome. Written
+  `:where(#content) > .page-fill > .panel--fill`, so a page's own floor (PO, JC, RC forms) still wins
+  and the Home board's Approvals view is not touched.
+- The local `.page-fill.X { height: 100% }` copies in po-detail, po-create, jc-detail and rc-form are
+  removed: those pages had already made this fix for themselves.
+- `ReportShell` takes `fill`; Pending SO Value, SO Cycle Time and Stock Valuation opt in and put their
+  table in `<Panel fill>`. Daily Report does not: it shows one table per machine and scrolls as a page.
 
 **Consequences:**
 - Positive: one scrollbar, inside the table; title, search, filters, header and the Prev/Next bar stay
   on screen on every list.
 - Negative: on a screen too small for the chrome plus six rows there are two scrollbars again (page
-  and table), on purpose, so nothing is trapped.
+  and table), on purpose, so nothing is trapped. In that case the sticky title band can leave the
+  screen once the page has scrolled one screen height (it is held inside `.page-fill`).
+- Negative: the three reports that opt in lose block margin collapsing (flex column), so their gaps
+  match the other list pages rather than the old report pages.

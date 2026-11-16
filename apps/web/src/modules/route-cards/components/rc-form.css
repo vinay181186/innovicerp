@@ -9,9 +9,6 @@
    never goes below six table rows, so when the chrome above genuinely cannot
    fit (a phone, 200% zoom, a long banner) the page outgrows the content area
    and #content scrolls instead. Tokens only. */
-.page-fill.rc-form {
-  height: 100%;
-}
 /* Floor = the panel's own bar + six rows. `.panel` is overflow: hidden, so a
    flex item's automatic floor is 0 and the theme's six-row floor on the table
    would be clipped instead of holding. */

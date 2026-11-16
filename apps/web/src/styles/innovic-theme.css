@@ -675,10 +675,11 @@ body.density-compact {
    scrolls. Everything above it becomes fixed chrome, so the title, the record
    count, the search box and the filters stop scrolling away as well.
 
-   `min-height: 0` on every link of the chain is load-bearing: a flex child
-   defaults to `min-height: auto` and refuses to shrink below its content, so
-   without it the inner scrollport never engages and nothing appears to
-   happen. `max-height: none` retires the 220px guess.
+   `min-height: 0` on every inner link of the chain is load-bearing: a flex
+   child defaults to `min-height: auto` and refuses to shrink below its
+   content, so without it the inner scrollport never engages and nothing
+   appears to happen. The one exception is the panel itself, which carries
+   the six-row floor (below, ADR-304). `max-height: none` retires the 220px guess.
 
    Opt in per page: `page-fill` on the page root + `<Panel fill>`. A page that
    does not opt in keeps today's behaviour exactly, so this can land screen by
@@ -711,17 +712,24 @@ body.density-compact {
 }
 .page-fill > .panel--fill {
   flex: 1;
-  /* The panel's floor, not 0. `.panel` is `overflow: hidden`, so a panel
-     squeezed below the table's six-row floor CLIPPED the rows and nothing was
-     left to scroll (1024x600, or 150% zoom on a laptop: one row on screen).
-     With this floor the page overflows instead and `#content` scrolls: room
-     for filters + toolbar + header + six rows. */
-  min-height: calc(var(--tbl-row-h) * 6 + 160px);
+  min-height: 0;
   display: flex;
   flex-direction: column;
   /* A filling panel is the page's last block, so its bottom gap would show as
      dead space under the table. */
   margin-bottom: 0;
+}
+/* The panel's floor on a PAGE root (ADR-304). `.panel` is `overflow: hidden`,
+   so a panel squeezed below the table's six-row floor CLIPPED the rows and
+   left nothing to scroll (1024x600, or 150% zoom on a laptop: one row on
+   screen). Floor = the table toolbar + six rows, the same sum rc-form.css
+   measured for its own panel; with it the page overflows and `#content`
+   scrolls instead. `:where(#content)` keeps the specificity of the rule
+   above, so a page's own floor (`.page-fill.po-detail > .panel--fill`) still
+   wins, and a page-fill that is not a page root (Home board Approvals) is
+   left alone. */
+:where(#content) > .page-fill > .panel--fill {
+  min-height: calc(var(--tbl-row-h) * 6 + var(--control-h-sm) + 2 * var(--sp-2) + 3px);
 }
 .panel--fill > .panel-hdr {
   flex-shrink: 0;

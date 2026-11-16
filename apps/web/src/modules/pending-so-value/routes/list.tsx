@@ -101,6 +101,7 @@ function PendingSoValuePage(): React.JSX.Element {
 
   return (
     <ReportShell
+      fill
       title="Pending SO Value"
       filters={
         <>

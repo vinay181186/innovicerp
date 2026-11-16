@@ -63,6 +63,10 @@ export interface ReportShellProps {
   rowNoun?: string | undefined;
   /** Replaces the default count line (e.g. a ListFooter in pager mode). */
   footer?: ReactNode | undefined;
+  /** The page fills the screen and its ONE `<Panel fill>` table is the only
+   *  thing that scrolls (ADR-202, ADR-304). Leave off for a report with
+   *  several tables (Daily Report): that page scrolls as a whole. */
+  fill?: boolean | undefined;
   children: ReactNode;
 }
 
@@ -83,6 +87,7 @@ export function ReportShell({
   rowCount,
   rowNoun = 'row',
   footer,
+  fill = false,
   children,
 }: ReportShellProps): React.JSX.Element {
   const exportItems = onExport
@@ -156,11 +161,8 @@ export function ReportShell({
     )
   ) : null;
 
-  // `page-fill` (ADR-202, ADR-304): a report whose table sits in `<Panel fill>` gets
-  // the same fixed header as every list; a report with several tables (Daily
-  // Report) just overflows and the page scrolls as before.
   return (
-    <div className="page-fill">
+    <div className={fill ? 'page-fill' : undefined}>
       <PageHeader
         sticky
         title={title}

@@ -12,9 +12,6 @@
    the page takes exactly the content area, the one fill panel gets what is
    left (never under six table rows), and its body scrolls. The detail page
    above no longer carries `page-fill`, so none of these touch it. */
-.page-fill.jc-detail {
-  height: 100%;
-}
 .page-fill.jc-detail > .panel--fill {
   min-height: calc(var(--tbl-row-h) * 6 + 2px);
 }

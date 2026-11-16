@@ -146,6 +146,7 @@ function SoCycleTimePage(): React.JSX.Element {
 
   return (
     <ReportShell
+      fill
       title={title}
       filters={
         <>

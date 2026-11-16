@@ -232,6 +232,7 @@ function StockValuationPage(): React.JSX.Element {
   // The value tiles also drop when money is hidden (priceHidden computed above).
   return (
     <ReportShell
+      fill
       title="Stock Valuation"
       filters={
         <>
