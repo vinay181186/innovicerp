@@ -149,17 +149,13 @@
   position: relative;
   z-index: 60;
 }
-/* Narrower than the ~1350px the twelve modules plus the search box need, the
-   right cluster drops to a second line rather than being pushed off the edge
-   with no scrollbar (#main clips). The search box gives up width first. */
+/* Owner 2026-11-16: the module menus, search, Ask ERP and the icons stay on ONE row
+   down to a 1366px laptop — the search box gives up width instead of the right
+   cluster dropping to a second row. The band keeps flex-wrap, so a still narrower
+   window wraps rather than overflows. */
 @media (max-width: 1350px) {
   #topnav .innovic-input.gs-input {
-    width: 150px;
-  }
-  .tn-right {
-    flex-basis: 100%;
-    justify-content: flex-end;
-    padding-bottom: 6px;
+    width: 140px;
   }
 }
 .tn-logo {
@@ -182,7 +178,8 @@
   align-items: center;
   gap: var(--sp-1);
   height: 32px;
-  padding: 0 var(--sp-2);
+  /* 6px a side (was 8): twelve module buttons + the right cluster fit one row. */
+  padding: 0 calc(var(--sp-1) + var(--sp-0));
   border: 0;
   background: transparent;
   border-radius: var(--radius);
@@ -288,6 +285,11 @@
 .tn-iconbtn {
   padding: 0 var(--sp-2);
   height: 32px;
+}
+/* Ask ERP (ADR-293): a symbol-only top-bar button; its blue icon marks it apart
+   from the grey key / sign-out icons. While the chat is open it is btn-primary. */
+.tn-ask.btn-ghost {
+  color: var(--blue);
 }
 .tn-avatar {
   width: 30px;

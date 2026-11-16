@@ -15,7 +15,6 @@ import { SortFilterScope } from '@/ui/data/sort-filter/scope';
 import { ToastProvider } from '@/ui/feedback';
 import { PageState } from '@/ui/layout/PageState';
 import { PrintPreviewHost } from '@/lib/print/preview-host';
-import { AiChatLauncher } from '@/modules/ai-chat/components/ai-chat-launcher';
 import { rootRoute } from './__root';
 
 export const authenticatedRoute = createRoute({
@@ -98,8 +97,6 @@ function AuthenticatedLayout(): React.JSX.Element {
         </div>
         {/* Every document print opens here (lib/print/preview-host.tsx). */}
         <PrintPreviewHost />
-        {/* Ask ERP chat, L6 Super Admin only (ADR-293). */}
-        <AiChatLauncher />
       </LiveUpdatesProvider>
     </ToastProvider>
   );

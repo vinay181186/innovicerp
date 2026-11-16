@@ -13,6 +13,12 @@
 //
 // Z-index: the overlay layer (Z_OVERLAY) — above the page, the top bar and drawers;
 // a Modal opened later portals after it and so stacks above; toasts stay on top.
+//
+// Placement: by default the bottom-right corner. With `top` (owner 2026-11-16, Ask ERP
+// opened from the top bar) it runs from `top` down to ABOVE_SAVE_BAR px off the
+// bottom, so a form's sticky Save bar and a list's pager stay clickable under it.
+// A `toggleRef` button (the opener that also closes it) is not "a click outside",
+// and `closeRef` hands that button the panel's own close — with its exit question.
 
 import { useEffect, useId, useRef } from 'react';
 import { createPortal } from 'react-dom';
@@ -48,8 +54,26 @@ export interface FloatingPanelProps {
   ariaLabel?: string | undefined;
   /** The scroll area, for a caller that keeps it scrolled to the newest line. */
   bodyRef?: React.RefObject<HTMLDivElement> | undefined;
+  /** Distance from the viewport top in px: the panel runs from here down to
+   *  ABOVE_SAVE_BAR off the bottom. Absent = the bottom-right corner. */
+  top?: number | undefined;
+  /** The opener button that toggles the panel: a press on it is not "outside". */
+  toggleRef?: React.RefObject<HTMLElement> | undefined;
+  /** Set to the panel's close request (Esc / × rule) while it is open. */
+  closeRef?: React.MutableRefObject<(() => void) | null> | undefined;
   children?: React.ReactNode;
 }
+
+/** Bottom clearance of a `top`-placed panel: a FormActions bar (28px buttons +
+ *  8px padding + borders) plus the page's 16px gutter, with room to spare. */
+export const ABOVE_SAVE_BAR = 64;
+/** A `top`-placed panel hangs under the top bar, so it stacks UNDER the top bar's
+ *  own drop-downs (#topnav 60, .tn-menu 70, the bell's pop-up) and above page
+ *  chrome (sticky bands 20, the Actions ▾ menu 50). Modals and portaled pickers
+ *  (Z_OVERLAY) still open above it. */
+const Z_UNDER_TOPBAR = 55;
+/** A short window or a tall header still leaves room to read and type. */
+const MIN_PANEL_HEIGHT = 320;
 
 const PANEL_STYLE: React.CSSProperties = {
   position: 'fixed',
@@ -86,6 +110,9 @@ export function FloatingPanel({
   inline = false,
   ariaLabel,
   bodyRef,
+  top,
+  toggleRef,
+  closeRef,
   children,
 }: FloatingPanelProps): React.JSX.Element | null {
   const titleId = useId();
@@ -151,6 +178,7 @@ export function FloatingPanel({
       const t = e.target;
       if (!(t instanceof Element)) return;
       if (rootRef.current?.contains(t)) return;
+      if (toggleRef?.current?.contains(t)) return;
       if (
         t.closest(
           '.overlay, [role="dialog"], [role="alertdialog"], [role="listbox"], [role="option"], [role="menu"]',
@@ -161,7 +189,16 @@ export function FloatingPanel({
     };
     document.addEventListener('mousedown', onDown, true);
     return () => document.removeEventListener('mousedown', onDown, true);
-  }, [armed, requestClose]);
+  }, [armed, requestClose, toggleRef]);
+
+  // The opener's own close goes through the same rule (asks when something is typed).
+  useEffect(() => {
+    if (!closeRef) return;
+    closeRef.current = armed ? requestClose : null;
+    return () => {
+      closeRef.current = null;
+    };
+  }, [closeRef, armed, requestClose]);
 
   if (!open) return null;
 
@@ -227,8 +264,21 @@ export function FloatingPanel({
 
   if (inline) return card;
 
+  const placed: React.CSSProperties =
+    top === undefined
+      ? PANEL_STYLE
+      : {
+          ...PANEL_STYLE,
+          top,
+          bottom: ABOVE_SAVE_BAR,
+          height: 'auto',
+          maxHeight: 'none',
+          minHeight: MIN_PANEL_HEIGHT,
+          zIndex: Z_UNDER_TOPBAR,
+        };
+
   return createPortal(
-    <div ref={rootRef} style={PANEL_STYLE}>
+    <div ref={rootRef} style={placed}>
       {card}
       {rule.question}
     </div>,
