@@ -38,8 +38,10 @@ import { qcAssignments } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
 import { createdByNameSql } from '../../lib/created-by-sql';
-import { AuthorizationError, NotFoundError } from '../../lib/errors';
+import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import { soOrJwCodeSql } from '../../lib/order-code';
+import { raiseOrMoveQcCallTask } from '../tasks/qc-call-task';
+import { istToday } from '../tasks/history';
 import { polSql } from '../../lib/pol';
 import { QC_COMMAND_ALL, pageOf, sortQueue } from './paging';
 
@@ -547,16 +549,49 @@ async function userName(tx: DbTransaction, userId: string): Promise<string> {
 }
 
 /** Verifies the jc_op exists in the caller's company; throws NotFound otherwise. */
-async function assertOpInCompany(
-  tx: DbTransaction,
-  companyId: string,
-  jcOpId: string,
-): Promise<void> {
+interface QcCall {
+  /** "JC-0123 · Op 20" */
+  label: string;
+  operation: string | null;
+  /** The JC's due date, or today when it is blank or already past. */
+  taskDue: string;
+}
+
+/** Lock the op row (two Assigns on one call take turns, §20.3) and read what
+ *  its task needs. 404 when the op is gone or in another company. */
+async function lockQcCall(tx: DbTransaction, companyId: string, jcOpId: string): Promise<QcCall> {
   const rows = (await tx.execute(sql`
-    SELECT 1 FROM public.jc_ops
-    WHERE id = ${jcOpId}::uuid AND company_id = ${companyId}::uuid AND deleted_at IS NULL
-  `)) as unknown as unknown[];
-  if (rows.length === 0) throw new NotFoundError('Operation not found. Refresh the page.');
+    SELECT jc.code AS "jcCode", jo.op_seq AS "opSeq", jo.operation,
+           to_char(jc.due_date, 'YYYY-MM-DD') AS "dueDate",
+           (SELECT vos.qc_pending FROM public.v_jc_op_status vos
+             WHERE vos.jc_op_id = jo.id) AS "qcPending"
+    FROM public.jc_ops jo
+    JOIN public.job_cards jc ON jc.id = jo.job_card_id
+    WHERE jo.id = ${jcOpId}::uuid AND jo.company_id = ${companyId}::uuid
+      AND jo.deleted_at IS NULL
+    FOR UPDATE OF jo
+  `)) as unknown as Array<{
+    jcCode: string;
+    opSeq: number;
+    operation: string | null;
+    dueDate: string | null;
+    qcPending: number | string | null;
+  }>;
+  const r = rows[0];
+  if (!r) throw new NotFoundError('Operation not found. Refresh the page.');
+  // An inspected call would raise a task that nothing ever closes (the ADR-190
+  // auto-close runs only when an inspection is logged).
+  if (Number(r.qcPending ?? 0) <= 0) {
+    throw new ConflictError(
+      `${r.jcCode} Op ${opSrNo(Number(r.opSeq))} has nothing left to inspect. Refresh the page.`,
+    );
+  }
+  const today = istToday();
+  return {
+    label: `${r.jcCode} · Op ${opSrNo(Number(r.opSeq))}`,
+    operation: r.operation,
+    taskDue: r.dueDate && r.dueDate >= today ? r.dueDate : today,
+  };
 }
 
 /** Upserts the single active assignment for an op (insert, or update if present). */
@@ -569,11 +604,12 @@ async function upsertAssignment(
     inspectorName: string;
     note: string | null;
     assignedByText: string | null;
-    userId: string;
+    call: QcCall;
   },
-): Promise<void> {
+  user: AuthContext,
+): Promise<string | null> {
   const existing = await tx
-    .select({ id: qcAssignments.id })
+    .select({ id: qcAssignments.id, taskId: qcAssignments.taskId })
     .from(qcAssignments)
     .where(
       and(
@@ -584,6 +620,25 @@ async function upsertAssignment(
     )
     .limit(1);
 
+  // ADR-298: the inspector's Task Board task — raised, or moved to them.
+  const task = await raiseOrMoveQcCallTask(
+    tx,
+    {
+      companyId: args.companyId,
+      jcOpId: args.jcOpId,
+      currentTaskId: existing[0]?.taskId ?? null,
+      inspectorUserId: args.inspectorUserId,
+      callLabel: args.call.label,
+      operation: args.call.operation,
+      dueDate: args.call.taskDue,
+      note: args.note,
+    },
+    user,
+  );
+  // An inspector without the Task Board keeps the old task id: that task was
+  // left with its holder, and a later Assign to someone who can moves it.
+  const taskId = task?.id ?? existing[0]?.taskId ?? null;
+
   if (existing.length > 0) {
     await tx
       .update(qcAssignments)
@@ -592,7 +647,8 @@ async function upsertAssignment(
         inspectorName: args.inspectorName,
         note: args.note,
         assignedByText: args.assignedByText,
-        updatedBy: args.userId,
+        taskId,
+        updatedBy: user.id,
         updatedAt: new Date(),
       })
       .where(eq(qcAssignments.id, existing[0]!.id));
@@ -604,10 +660,12 @@ async function upsertAssignment(
       inspectorName: args.inspectorName,
       note: args.note,
       assignedByText: args.assignedByText,
-      createdBy: args.userId,
-      updatedBy: args.userId,
+      taskId,
+      createdBy: user.id,
+      updatedBy: user.id,
     });
   }
+  return task?.code ?? null;
 }
 
 /** Pick Up — assign this op to the calling QC user. */
@@ -623,18 +681,22 @@ export async function pickUpQc(
   // Admins bypass inside requireFormAccess.
   await requireFormAccess(user, 'qc_submit', 'entry');
   return withUserContext(user, async (tx) => {
-    await assertOpInCompany(tx, companyId, input.jcOpId);
+    const call = await lockQcCall(tx, companyId, input.jcOpId);
     const me = await userName(tx, user.id);
-    await upsertAssignment(tx, {
-      companyId,
-      jcOpId: input.jcOpId,
-      inspectorUserId: user.id,
-      inspectorName: me,
-      note: null,
-      assignedByText: me,
-      userId: user.id,
-    });
-    return { jcOpId: input.jcOpId, inspectorName: me };
+    const taskCode = await upsertAssignment(
+      tx,
+      {
+        companyId,
+        jcOpId: input.jcOpId,
+        inspectorUserId: user.id,
+        inspectorName: me,
+        note: null,
+        assignedByText: me,
+        call,
+      },
+      user,
+    );
+    return { jcOpId: input.jcOpId, inspectorName: me, taskCode };
   });
 }
 
@@ -649,7 +711,7 @@ export async function assignQc(
   // (ADR-231).
   await requireFormAccess(user, 'qc_submit', 'advance');
   return withUserContext(user, async (tx) => {
-    await assertOpInCompany(tx, companyId, input.jcOpId);
+    const call = await lockQcCall(tx, companyId, input.jcOpId);
     const inspectorRows = (await tx.execute(sql`
       SELECT COALESCE(NULLIF(full_name, ''), email) AS "name"
       FROM public.users
@@ -661,15 +723,19 @@ export async function assignQc(
     // qc_assignments.inspector_name and what the performance table matches on.
     const inspectorName = shortName(inspectorRows[0]!.name) || 'Unknown';
     const assignedBy = await userName(tx, user.id);
-    await upsertAssignment(tx, {
-      companyId,
-      jcOpId: input.jcOpId,
-      inspectorUserId: input.inspectorUserId,
-      inspectorName,
-      note: input.note ?? null,
-      assignedByText: assignedBy,
-      userId: user.id,
-    });
-    return { jcOpId: input.jcOpId, inspectorName };
+    const taskCode = await upsertAssignment(
+      tx,
+      {
+        companyId,
+        jcOpId: input.jcOpId,
+        inspectorUserId: input.inspectorUserId,
+        inspectorName,
+        note: input.note ?? null,
+        assignedByText: assignedBy,
+        call,
+      },
+      user,
+    );
+    return { jcOpId: input.jcOpId, inspectorName, taskCode };
   });
 }

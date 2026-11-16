@@ -7,6 +7,8 @@ import type {
 } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { dashboardKeys } from '@/modules/dashboard/api';
+import { taskKeys } from '@/modules/tasks/api';
 
 export const qcCommandKeys = {
   all: ['qc-command'] as const,
@@ -26,12 +28,20 @@ export function useQcCommand(params: QcCommandQueryInput) {
   });
 }
 
+/** An assignment raises or moves the inspector's task (ADR-298): QC Center,
+ *  the Task Board and the home's My to-do all change. */
+function invalidateAssign(qc: ReturnType<typeof useQueryClient>): void {
+  void qc.invalidateQueries({ queryKey: qcCommandKeys.all });
+  void qc.invalidateQueries({ queryKey: taskKeys.all });
+  void qc.invalidateQueries({ queryKey: dashboardKeys.home() });
+}
+
 export function usePickUpQc() {
   const qc = useQueryClient();
   return useMutation<QcAssignmentResult, Error, QcPickUpInput>({
     mutationFn: (input) =>
       apiFetch<QcAssignmentResult>('/qc-command/pickup', { method: 'POST', json: input }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: qcCommandKeys.all }),
+    onSuccess: () => invalidateAssign(qc),
   });
 }
 
@@ -40,6 +50,6 @@ export function useAssignQc() {
   return useMutation<QcAssignmentResult, Error, QcAssignInput>({
     mutationFn: (input) =>
       apiFetch<QcAssignmentResult>('/qc-command/assign', { method: 'POST', json: input }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: qcCommandKeys.all }),
+    onSuccess: () => invalidateAssign(qc),
   });
 }

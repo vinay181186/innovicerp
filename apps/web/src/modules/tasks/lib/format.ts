@@ -2,8 +2,8 @@
 // display format in lib/date.ts: DD-MMM-YYYY, date + time as DD-MMM-YYYY HH:mm
 // IST), the priority / status colour ladders, and the Related-To → page map.
 
-import type { TaskPriority, TaskRelatedType, TaskRow, TaskStatus } from '@innovic/shared';
-import { TASK_STATUS_LABELS, attachmentSizeError } from '@innovic/shared';
+import type { TaskPriority, TaskRow, TaskStatus } from '@innovic/shared';
+import { TASK_STATUS_LABELS, attachmentSizeError, taskRelatedNavPage } from '@innovic/shared';
 import { fmtDate, fmtDateTime } from '@/lib/date';
 
 /** `2026-09-22` → `22-Sep-2026`; null/blank → `—`. */
@@ -83,22 +83,7 @@ export function isOpenTask(t: Pick<TaskRow, 'status'>): boolean {
 
 /** Where a picked Reference No. navigates. Stored on the task as
  *  `linkedRef.navPage` so the row / detail link works without a lookup. */
-export function relatedNavPage(type: TaskRelatedType, id: string): string {
-  switch (type) {
-    case 'sales_order':
-      return `/sales-orders/${id}`;
-    case 'job_card':
-      return `/job-cards/${id}`;
-    case 'purchase_order':
-      return `/purchase-orders/${id}`;
-    case 'nc':
-      return `/nc-register/${id}`;
-    case 'design_project':
-      return `/design-projects/${id}`;
-    case 'qc_call':
-      return `/qc-call-register?op=${id}`;
-  }
-}
+export const relatedNavPage = taskRelatedNavPage;
 
 /** Reject any file over the shared attachment limit (ATTACHMENT_MAX_BYTES);
  *  returns the message for the first offender, or null. */

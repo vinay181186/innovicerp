@@ -159,16 +159,20 @@ export async function listQcRegister(input: Input, user: AuthContext): Promise<Q
       opOn = input.jcOpId !== undefined && input.grnType === undefined;
       pgrnOn = false;
     }
+    // "Mine" = the calls assigned to MY LOGIN (ADR-298). It matched the name
+    // before, so a renamed user lost their calls. A legacy row with no login on
+    // it (0040 migration) still matches by name.
     let mineWhere = sql``;
     if (mine) {
       const names = await myNames(tx, user.id);
-      mineWhere =
+      const byName =
         names.length > 0
-          ? sql`AND lower(btrim(qa.inspector_name)) IN (${sql.join(
+          ? sql` OR (qa.inspector_user_id IS NULL AND lower(btrim(qa.inspector_name)) IN (${sql.join(
               names.map((n) => sql`${n}`),
               sql`, `,
-            )})`
-          : sql`AND FALSE`;
+            )}))`
+          : sql``;
+      mineWhere = sql`AND (qa.inspector_user_id = ${user.id}::uuid${byName})`;
     }
 
     let keys: SQL;

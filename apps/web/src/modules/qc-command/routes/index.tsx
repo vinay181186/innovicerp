@@ -23,6 +23,7 @@ import { ParetoTab } from '../components/ParetoTab';
 import { QueueTab } from '../components/QueueTab';
 import { ReworkTab } from '../components/ReworkTab';
 import { TabStrip } from '@/ui/navigation';
+import { useToast } from '@/ui/feedback';
 
 const searchSchema = z.object({
   tab: z.enum(['queue', 'fpy', 'pareto', 'inspector', 'rework']).optional(),
@@ -116,6 +117,7 @@ function QcCommandPage(): React.JSX.Element {
   useClampPage(pages.inspector, totals?.inspectorPerf, setPage('inspector'));
   useClampPage(pages.rework, totals?.rework, setPage('rework'));
   const pickUp = usePickUpQc();
+  const toast = useToast();
 
   // Tier-driven, per department (qc_submit sits in QC) — these were global role
   // checks (admin / manager / qc), which ignored the QC tier entirely.
@@ -143,7 +145,14 @@ function QcCommandPage(): React.JSX.Element {
       { jcOpId },
       {
         onSettled: () => setBusyId(null),
-        onSuccess: () => {
+        onError: (e) => void toast.error(e.message),
+        onSuccess: (res) => {
+          // ADR-298: no task when the picker cannot open the Task Board — say so.
+          if (!res.taskCode) {
+            toast.show('Picked up. No task raised: you cannot open Task Board.', {
+              kind: 'warn',
+            });
+          }
           void navigate({ to: '/qc-call-register', search: { op: jcOpId } });
         },
       },

@@ -7,12 +7,13 @@
 // The Pick-Up / Assign writes hang off a guaranteed-present op (IN-JC-00002
 // Op 1) and are cleaned up by jc_op_id in afterAll.
 
-import { and, eq } from 'drizzle-orm';
+import { opSrNo } from '@innovic/shared';
+import { and, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
-import { jcOps, jobCards, qcAssignments, users } from '../../db/schema';
+import { jcOps, jobCards, qcAssignments, taskHistory, tasks, users } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
-import { AuthorizationError, NotFoundError } from '../../lib/errors';
+import { AuthorizationError, ConflictError, NotFoundError } from '../../lib/errors';
 import { AUDITOR, asAccess } from '../../lib/test-access';
 import * as service from './service';
 
@@ -21,6 +22,7 @@ const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
 
 let admin: AuthContext;
 let testOpId: string;
+let testCall: string;
 
 beforeAll(async () => {
   const rows = await db.select().from(users).where(eq(users.email, ADMIN_EMAIL)).limit(1);
@@ -28,18 +30,63 @@ beforeAll(async () => {
   if (!u || !u.companyId) throw new Error('Seed admin missing — run pnpm --filter api seed');
   admin = { id: u.id, email: u.email, companyId: u.companyId, role: u.role, isActive: u.isActive };
 
-  const found = await db
-    .select({ id: jcOps.id })
+  // IN-JC-00002 Op 1 from the seed; on a database without it (TEST after the
+  // 2026-10 clean-up) any live op of the company with no QC assignment yet.
+  const seed = await db
+    .select({ id: jcOps.id, jcCode: jobCards.code, opSeq: jcOps.opSeq })
     .from(jcOps)
     .innerJoin(jobCards, eq(jobCards.id, jcOps.jobCardId))
     .where(and(eq(jobCards.code, 'IN-JC-00002'), eq(jcOps.opSeq, 1)))
     .limit(1);
-  if (!found[0]) throw new Error('Expected IN-JC-00002 Op 1 from seed migration');
+  // Assign / Pick Up refuse a call with nothing left to inspect (ADR-298), so
+  // the fallback is a pending QC call with no assignment yet.
+  const found = seed[0]
+    ? seed
+    : ((await db.execute(sql`
+        SELECT vos.jc_op_id AS id, jc.code AS "jcCode", vos.op_seq AS "opSeq"
+        FROM public.v_jc_op_status vos
+        JOIN public.job_cards jc ON jc.id = vos.job_card_id AND jc.deleted_at IS NULL
+        WHERE vos.company_id = ${u.companyId}::uuid
+          AND (vos.qc_required OR vos.op_type = 'qc') AND vos.qc_pending > 0
+          AND NOT EXISTS (SELECT 1 FROM public.qc_assignments qa WHERE qa.jc_op_id = vos.jc_op_id)
+        ORDER BY jc.code DESC LIMIT 1`)) as unknown as Array<{
+        id: string;
+        jcCode: string;
+        opSeq: number;
+      }>);
+  if (!found[0]) throw new Error('No pending QC call on this database to test with');
+  testCall = `${found[0].jcCode} · Op ${opSrNo(Number(found[0].opSeq))}`;
   testOpId = found[0].id;
 });
 
+/** Open tasks linked to the test op (ADR-298). */
+async function callTasks() {
+  return db
+    .select({ id: tasks.id, code: tasks.code, assignedTo: tasks.assignedTo, title: tasks.title })
+    .from(tasks)
+    .where(
+      and(
+        eq(tasks.linkedRefType, 'qc_call'),
+        eq(tasks.linkedRefId, testOpId),
+        inArray(tasks.status, ['todo', 'in_progress']),
+        isNull(tasks.deletedAt),
+      ),
+    );
+}
+
 afterAll(async () => {
   await db.delete(qcAssignments).where(eq(qcAssignments.jcOpId, testOpId));
+  // The tasks the assignments raised (ADR-298), with their trail.
+  const ids = (
+    await db
+      .select({ id: tasks.id })
+      .from(tasks)
+      .where(and(eq(tasks.linkedRefType, 'qc_call'), eq(tasks.linkedRefId, testOpId)))
+  ).map((t) => t.id);
+  if (ids.length > 0) {
+    await db.delete(taskHistory).where(inArray(taskHistory.taskId, ids));
+    await db.delete(tasks).where(inArray(tasks.id, ids));
+  }
 });
 
 describe('qc-command service — read', () => {
@@ -105,7 +152,9 @@ describe('qc-command service — pick up / assign', () => {
     const active = await db
       .select({ id: qcAssignments.id })
       .from(qcAssignments)
-      .where(and(eq(qcAssignments.jcOpId, testOpId), eq(qcAssignments.companyId, admin.companyId!)));
+      .where(
+        and(eq(qcAssignments.jcOpId, testOpId), eq(qcAssignments.companyId, admin.companyId!)),
+      );
     expect(active.length).toBe(1);
   });
 
@@ -187,5 +236,157 @@ describe('qc-command service — pick up / assign', () => {
     await expect(
       service.assignQc({ jcOpId: testOpId, inspectorUserId: ZERO_UUID }, admin),
     ).rejects.toBeInstanceOf(NotFoundError);
+  });
+});
+
+// ADR-298 — Assign Inspector / Pick Up raise the inspector's Task Board task.
+describe('qc-command — the inspector gets a Task Board task (ADR-298)', () => {
+  let other: AuthContext;
+
+  beforeAll(async () => {
+    await db.delete(qcAssignments).where(eq(qcAssignments.jcOpId, testOpId));
+    const rows = await db
+      .select({ id: users.id, email: users.email, role: users.role, isActive: users.isActive })
+      .from(users)
+      .where(
+        and(
+          eq(users.companyId, admin.companyId!),
+          ne(users.id, admin.id),
+          eq(users.isActive, true),
+          isNull(users.deletedAt),
+        ),
+      )
+      .limit(20);
+    // Someone who may open the Task Board: assign once and keep the first that gets a task.
+    for (const u of rows) {
+      const r = await service.assignQc({ jcOpId: testOpId, inspectorUserId: u.id }, admin);
+      if (r.taskCode) {
+        other = {
+          id: u.id,
+          email: u.email,
+          companyId: admin.companyId,
+          role: u.role,
+          isActive: true,
+        };
+        break;
+      }
+    }
+    if (!other) throw new Error('No TEST user who can open the Task Board');
+    await db.delete(qcAssignments).where(eq(qcAssignments.jcOpId, testOpId));
+  });
+
+  it('assign raises ONE task for the inspector, linked to the QC call', async () => {
+    const before = (await callTasks()).length;
+    const res = await service.assignQc(
+      { jcOpId: testOpId, inspectorUserId: other.id, note: 'check threads' },
+      admin,
+    );
+    expect(res.taskCode).toMatch(/^TSK-/);
+    const open = await callTasks();
+    expect(open.length).toBe(before + 1);
+    const t = open.find((x) => x.code === res.taskCode)!;
+    expect(t.assignedTo).toBe(other.id);
+    expect(t.title.startsWith(`QC inspection: ${testCall}`)).toBe(true);
+  });
+
+  it('assign again to the same person changes nothing', async () => {
+    const before = await callTasks();
+    const res = await service.assignQc({ jcOpId: testOpId, inspectorUserId: other.id }, admin);
+    const after = await callTasks();
+    expect(after.length).toBe(before.length);
+    expect(after.map((t) => t.code)).toContain(res.taskCode);
+  });
+
+  it('reassign MOVES the same task and records it', async () => {
+    const [a] = await db
+      .select({ taskId: qcAssignments.taskId })
+      .from(qcAssignments)
+      .where(and(eq(qcAssignments.jcOpId, testOpId), isNull(qcAssignments.deletedAt)));
+    const res = await service.assignQc({ jcOpId: testOpId, inspectorUserId: admin.id }, admin);
+    const [t] = await db.select().from(tasks).where(eq(tasks.id, a!.taskId!));
+    expect(t!.code).toBe(res.taskCode);
+    expect(t!.assignedTo).toBe(admin.id);
+    const h = await db
+      .select({ action: taskHistory.action })
+      .from(taskHistory)
+      .where(eq(taskHistory.taskId, t!.id));
+    expect(h.map((x) => x.action)).toContain('reassigned');
+  });
+
+  it('a task typed by hand for the same call is never moved', async () => {
+    const hand = await db
+      .insert(tasks)
+      .values({
+        companyId: admin.companyId!,
+        code: `TSK-T${Date.now() % 100000}`,
+        taskType: 'assigned',
+        title: 'hand-made QC call task',
+        assignedTo: other.id,
+        assignedBy: admin.id,
+        status: 'todo',
+        dueDate: '2099-01-01',
+        linkedRefType: 'qc_call',
+        linkedRefId: testOpId,
+        createdBy: admin.id,
+        updatedBy: admin.id,
+      })
+      .returning({ id: tasks.id });
+    await service.assignQc({ jcOpId: testOpId, inspectorUserId: other.id }, admin);
+    const [t] = await db.select().from(tasks).where(eq(tasks.id, hand[0]!.id));
+    expect(t!.assignedTo).toBe(other.id);
+    await service.assignQc({ jcOpId: testOpId, inspectorUserId: admin.id }, admin);
+    const [t2] = await db.select().from(tasks).where(eq(tasks.id, hand[0]!.id));
+    expect(t2!.assignedTo).toBe(other.id);
+  });
+
+  it('two Assigns at once on a fresh call: one assignment, one task (§20.3)', async () => {
+    await db.delete(qcAssignments).where(eq(qcAssignments.jcOpId, testOpId));
+    const before = (await callTasks()).length;
+    const results = await Promise.allSettled([
+      service.assignQc({ jcOpId: testOpId, inspectorUserId: other.id }, admin),
+      service.assignQc({ jcOpId: testOpId, inspectorUserId: admin.id }, admin),
+    ]);
+    expect(results.every((r) => r.status === 'fulfilled')).toBe(true);
+    const active = await db
+      .select({ taskId: qcAssignments.taskId, inspector: qcAssignments.inspectorUserId })
+      .from(qcAssignments)
+      .where(and(eq(qcAssignments.jcOpId, testOpId), isNull(qcAssignments.deletedAt)));
+    expect(active.length).toBe(1);
+    expect((await callTasks()).length).toBe(before + 1);
+    const [t] = await db.select().from(tasks).where(eq(tasks.id, active[0]!.taskId!));
+    expect(t!.assignedTo).toBe(active[0]!.inspector);
+  });
+
+  it('reassign carries the new Assign remark onto the task', async () => {
+    await service.assignQc({ jcOpId: testOpId, inspectorUserId: other.id, note: 'first' }, admin);
+    const res = await service.assignQc(
+      { jcOpId: testOpId, inspectorUserId: admin.id, note: 'customer witness 3 PM' },
+      admin,
+    );
+    const [t] = await db.select().from(tasks).where(eq(tasks.code, res.taskCode!));
+    expect(t!.description).toBe('customer witness 3 PM');
+  });
+
+  it('a call with nothing left to inspect is refused', async () => {
+    const rows = (await db.execute(sql`
+      SELECT vos.jc_op_id AS id FROM public.v_jc_op_status vos
+      WHERE vos.company_id = ${admin.companyId}::uuid
+        AND NOT ((vos.qc_required OR vos.op_type = 'qc') AND vos.qc_pending > 0)
+      LIMIT 1`)) as unknown as Array<{ id: string }>;
+    if (!rows[0]) return;
+    await expect(
+      service.assignQc({ jcOpId: rows[0].id, inspectorUserId: other.id }, admin),
+    ).rejects.toBeInstanceOf(ConflictError);
+  });
+
+  it('pick up puts the call in your own To-Do', async () => {
+    await db.delete(qcAssignments).where(eq(qcAssignments.jcOpId, testOpId));
+    const res = await service.pickUpQc(
+      { jcOpId: testOpId },
+      asAccess(other, { departments: { qc: 'L2' } }),
+    );
+    const [t] = await db.select().from(tasks).where(eq(tasks.code, res.taskCode!));
+    expect(t!.assignedTo).toBe(other.id);
+    expect(t!.createdBy).toBe(other.id);
   });
 });

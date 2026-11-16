@@ -207,4 +207,7 @@ export type QcAssignInput = z.infer<typeof qcAssignInputSchema>;
 export interface QcAssignmentResult {
   jcOpId: string;
   inspectorName: string;
+  /** ADR-298: the Task Board task the inspector now holds (TSK-####); null when
+   *  the inspector cannot open the Task Board, so no task was raised. */
+  taskCode: string | null;
 }

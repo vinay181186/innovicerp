@@ -15899,3 +15899,45 @@ never cleared and a fresher one was not taken in.
 - Positive: duplicates and bad symbols show before Save; the +New-twice error is gone.
 - Negative: if the auto code was taken meanwhile, the item saves under the next number (the toast says
   which).
+
+## ADR-298: QC Center's Assign Inspector raises the inspector's Task Board task
+
+**Date:** 2026-11-16
+**Status:** Accepted (owner "go", 2026-11-16)
+
+### Context
+
+Owner: "QC Center: if a user assigns a task, it is not in the Inbox." Assign Inspector and
+Pick Up wrote only `qc_assignments`. The inspector found out only through QC Center, the
+hidden Assigned To column or 👤 Mine on QC Call Register. 👤 Mine matched by NAME, so a
+renamed user lost their calls.
+
+### Decision
+
+- Assign / Pick Up create the same task Task Board's "+ Assign Task → Related To: QC Call"
+  creates (`insertAssignedTask`, link type `qc_call`, id = the jc_op). Title
+  `QC inspection: <JC> · Op <n> <operation>`; Due Date = the JC's due date, else today;
+  the Assign box's remark is the Description. Assign → the inspector's Inbox; Pick Up →
+  your own My To-Do. Both show on Home › My to-do.
+- `qc_assignments.task_id` (0253) names the task. Assign to someone else MOVES it (history
+  `reassigned`, note "Reassigned in QC Center"); the same person again changes nothing; a
+  task typed by hand for the call is never touched. One helper:
+  `tasks/qc-call-task.ts raiseOrMoveQcCallTask`.
+- The task closes itself when the call is fully inspected — the existing ADR-190 auto-close
+  (op-entry, `qc_call`).
+- Two Assigns at once: the jc_ops row is locked FOR UPDATE first (§20.3), so the second
+  becomes a reassign — one assignment, one task (service test).
+- An inspector who cannot open Task Board: the assignment saves, no task, and the screen
+  says so.
+- 👤 Mine matches `inspector_user_id`.
+- `taskRelatedNavPage` moved to `packages/shared` (server and Assign Task form build the
+  same link). The QC-call picker now shows the Op number as every QC screen does
+  (`opSrNo`: Op 10, not Op 1).
+
+### Not done
+
+- No backfill of assignments made before 0253.
+- There is still no way to remove an assignment, which blocks cancelling that JC
+  (`job-cards/cancel.ts`). Reported to the owner.
+- `qc-command/routes.test.ts` still needs seed IN-JC-00002, absent on TEST (unchanged).
+

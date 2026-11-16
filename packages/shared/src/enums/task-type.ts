@@ -50,6 +50,26 @@ export const TASK_RELATED_TYPE_LABELS: Record<TaskRelatedType, string> = {
   design_project: 'Design Project',
 };
 
+/** Where a task's "Related To" link opens — stored as linked_ref_nav_page.
+ *  One rule for the Assign Task form and for tasks the server raises itself
+ *  (QC Center's Assign Inspector, ADR-298). */
+export function taskRelatedNavPage(type: TaskRelatedType, id: string): string {
+  switch (type) {
+    case 'sales_order':
+      return `/sales-orders/${id}`;
+    case 'job_card':
+      return `/job-cards/${id}`;
+    case 'purchase_order':
+      return `/purchase-orders/${id}`;
+    case 'nc':
+      return `/nc-register/${id}`;
+    case 'design_project':
+      return `/design-projects/${id}`;
+    case 'qc_call':
+      return `/qc-call-register?op=${id}`;
+  }
+}
+
 // Append-only task_history.action vocabulary.
 export const TASK_HISTORY_ACTIONS = [
   'created',

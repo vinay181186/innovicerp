@@ -8,6 +8,7 @@
 // so this file only has to READ; nothing here mutates.
 
 import type { RelatedOptionsQuery, TaskRelatedOption } from '@innovic/shared';
+import { opSrNo } from '@innovic/shared';
 import { and, desc, eq, ilike, isNull, or, sql } from 'drizzle-orm';
 import {
   clients,
@@ -191,7 +192,7 @@ async function qcCallOptions(
   const rows = raw as unknown as Array<Record<string, unknown>>;
   return rows.map((r) => ({
     id: String(r['id']),
-    code: `${String(r['jcCode'])} · Op ${Number(r['opSeq'])}`,
+    code: `${String(r['jcCode'])} · Op ${opSrNo(Number(r['opSeq']))}`,
     hint: (r['operation'] as string | null) ?? null,
   }));
 }
