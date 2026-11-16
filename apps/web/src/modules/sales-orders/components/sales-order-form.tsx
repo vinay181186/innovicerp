@@ -54,6 +54,10 @@ import {
   type SoType,
   type UpdateSalesOrderInput,
   type Uom,
+  TOTAL_VALUE_BASIC_LABEL,
+  UNIT_VALUE_BASIC_LABEL,
+  lineBasicValue,
+  linesBasicTotal,
 } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
@@ -623,9 +627,9 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
   const lineCount = (watchedLines ?? []).length;
   const totalPcs = (watchedLines ?? []).reduce((s, l) => s + (Number(l.orderQty) || 0), 0);
   // A cancelled line adds nothing — the same rule as the server's SO totals.
-  const subtotal = (watchedLines ?? [])
-    .filter((l) => l.status !== 'cancelled')
-    .reduce((s, l) => s + (Number(l.orderQty) || 0) * (Number(l.rate) || 0), 0);
+  const subtotal = linesBasicTotal(
+    (watchedLines ?? []).map((l) => ({ qty: l.orderQty, rate: l.rate, status: l.status })),
+  );
   // ADR-243 — the same roll-up as the server (SGST + CGST or IGST, Round-off);
   // the tax type here is a preview from the chosen customer's State.
   const money = orderFormTotalRows({ subtotal, gstPercent, taxType: supply.taxType });
@@ -1222,7 +1226,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
             {/* No ★ — the server defaults this to 0; `setValueAs` turns a cleared
                 box into 0 instead of NaN (which went over the wire as null). */}
             <FormField
-              label="Rate (₹)"
+              label={`${UNIT_VALUE_BASIC_LABEL} (₹)`}
               size="sm"
               htmlFor="so-equip-rate"
               error={errors.lines?.[0]?.rate?.message}
@@ -1412,10 +1416,10 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                       Order Qty<span className="req">★</span>
                     </th>
                     <th className="th-money" style={{ width: '8%' }}>
-                      Rate (₹)
+                      {UNIT_VALUE_BASIC_LABEL} (₹)
                     </th>
                     <th className="th-money" style={{ width: '9%' }}>
-                      Amount
+                      {TOTAL_VALUE_BASIC_LABEL}
                     </th>
                     <th style={{ width: '12%' }}>Remarks</th>
                     <th className="th-ctr" style={{ width: '12%' }} />
@@ -1431,7 +1435,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                   ) : (
                     fields.map((field, idx) => {
                       const ln = watchedLines?.[idx];
-                      const amt = (Number(ln?.orderQty) || 0) * (Number(ln?.rate) || 0);
+                      const amt = lineBasicValue(ln?.orderQty, ln?.rate);
                       const open = openLines.has(field.id);
                       return (
                         <Fragment key={field.id}>

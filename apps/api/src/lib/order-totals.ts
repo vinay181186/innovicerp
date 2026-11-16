@@ -13,6 +13,7 @@ import {
   type SoTotals,
   computeGstTotals,
   halfGstRate,
+  linesBasicTotal,
   placeOfSupplyFor,
   taxTypeForSupply,
 } from '@innovic/shared';
@@ -132,16 +133,17 @@ export async function orderTotals(
     clientId: string | null;
   },
 ): Promise<SoTotals> {
-  const sub = args.lines
-    .filter((l) => l.status !== 'cancelled')
-    .reduce((sum, l) => sum + Number(l.orderQty) * Number(l.rate ?? 0), 0);
+  // ADR-302 — Σ Total Value (Basic), the one line rule (packages/shared).
+  const sub = linesBasicTotal(
+    args.lines.map((l) => ({ qty: l.orderQty, rate: l.rate, status: l.status })),
+  );
   let tax: OrderTax = {
     taxType: args.taxType === 'igst' || args.taxType === 'sgst_cgst' ? args.taxType : null,
     placeOfSupply: args.placeOfSupply,
   };
   if (!tax.taxType && args.clientId) tax = await decideOrderTax(tx, companyId, args.clientId);
   const t = computeGstTotals({
-    subtotal: Math.round(sub * 100) / 100,
+    subtotal: sub,
     gstPercent: Number(args.gstPercent ?? 0),
     taxType: tax.taxType,
   });

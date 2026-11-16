@@ -1,7 +1,8 @@
 # TASKS.md — Project Task Tracker
 
 > Update at start AND end of every work session.
-> Last updated: 2026-11-16 (**ADR-299 — Ask ERP moves into the top bar as one small symbol after the bell; the chat opens under the header and stops above the Save bar; the top bar stays one row down to a 1366px laptop.** No migration.)
+> Last updated: 2026-11-16 (**ADR-302 — SO, JWSO and PO: Rate reads Unit Value (Basic) and Amount reads Total Value (Basic) on the detail page, the create / edit form and the print; the SO detail gains the Total Value (Basic) column; one shared rule (`lib/line-value.ts`) for the line value and the Subtotal. Tax Invoice / JW Invoice prints and Excel import unchanged.** No migration.)
+> Prior: 2026-11-16 (**ADR-299 — Ask ERP moves into the top bar as one small symbol after the bell; the chat opens under the header and stops above the Save bar; the top bar stays one row down to a 1366px laptop.** No migration.)
 > Prior: 2026-11-15 (**ADR-294 — Party GRN opens a detail page (facts, lines with QC split, actions, Related Docs + History); the under-row details and ⋯ Show details are gone; search, Edit Approvals, QC register, JWSO Related Docs and NC link to it.** No migration.)
 > Prior: 2026-11-15 (**ADR-293 — Ask ERP: an AI chat for the L6 Super Admin that reads live ERP data through the ERP's own read services (Claude / Gemini / Auto), with Speak and screenshot / PDF attachments; never writes ERP data; every question logged.** Migration 0252 written, not applied.)
 > Prior: 2026-11-07 (**ADR-288 — My Day Log Print in the Job Card layout (name bar, Day Log and Work columns, repeated on every page); Team Day Logs › a person › Print: the History PDF of that date for a Super Admin, the same layout without edit history for anyone else.** No migration.)

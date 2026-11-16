@@ -7,6 +7,9 @@ import {
   type JobWorkOrderLine,
   type JwDocumentFile,
   SO_DOC_CATEGORY_LABELS,
+  TOTAL_VALUE_BASIC_LABEL,
+  UNIT_VALUE_BASIC_LABEL,
+  lineBasicValue,
   placeOfSupplyLabel,
 } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
@@ -191,9 +194,9 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
   // Told by the server, not inferred from a null money field: a null also means
   // "no value yet", so probing it hid money from users entitled to see it.
   const priceHidden = detail.priceVisible === false;
-  const lineValueTotal = detail.lines
-    .filter((l) => l.status !== 'cancelled')
-    .reduce((s, l) => s + l.orderQty * Number(l.rate ?? 0), 0);
+  // ADR-302 — the server's Subtotal (Σ Total Value (Basic), cancelled lines
+  // left out): the one figure, not a second sum here.
+  const lineValueTotal = detail.totals?.subtotal ?? 0;
 
   // The order this page already shows — printed as is (no refetch).
   const printTarget = {
@@ -346,7 +349,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
             {!priceHidden && lineValueTotal > 0 ? (
               <>
                 {' '}
-                · Value{' '}
+                · {TOTAL_VALUE_BASIC_LABEL}{' '}
                 <b style={{ color: 'var(--green2, var(--green))' }}>₹{inrFormat(lineValueTotal)}</b>
               </>
             ) : null}
@@ -389,10 +392,10 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
                 {priceHidden ? null : (
                   <>
                     <th className="th-money" style={{ color: 'var(--green2)' }}>
-                      Rate (₹)
+                      {UNIT_VALUE_BASIC_LABEL}
                     </th>
                     <th className="th-money" style={{ color: 'var(--green2)' }}>
-                      Amount
+                      {TOTAL_VALUE_BASIC_LABEL}
                     </th>
                   </>
                 )}
@@ -785,7 +788,8 @@ function LineRow(props: {
             {Number(l.rate ?? 0).toFixed(2)}
           </td>
           <td className="mono fw-700 td-money" style={{ color: 'var(--green2)' }}>
-            {inrFormat(l.orderQty * Number(l.rate ?? 0))}
+            {/* ADR-302 — a cancelled line is out of the Subtotal: "—". */}
+            {l.status === 'cancelled' ? '—' : inrFormat(lineBasicValue(l.orderQty, l.rate))}
           </td>
         </>
       )}

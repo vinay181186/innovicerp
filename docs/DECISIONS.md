@@ -16037,3 +16037,47 @@ a module menu stays open after a page pick (commit a4bb63bd).
 - Positive: the menu no longer covers the page just opened; parts show at once.
 - Negative: moving between pages of one module needs the menu reopened each time;
   an order with many part lines makes a longer page.
+
+## ADR-302: Unit Value (Basic) and Total Value (Basic) on the SO, JWSO and PO
+
+**Date:** 2026-11-16
+**Status:** Accepted (owner "go", 2026-11-16)
+
+### Context
+
+The SO detail line table showed only Rate (₹90,000 for Qty 2); the line's Qty × Rate
+appeared only on the edit form and the print, under "Amount". The owner asked for
+"Unit Value Basic" and "Total Value Basic", with no duplication, on the SO, JWSO and PO
+and their prints. The same Qty × Rate sum was worked out in seven places (two servers,
+three forms, the two detail pages' "Value" chips, two prints).
+
+### Decision
+
+- Labels: `Unit Value (Basic)` (the stored rate) and `Total Value (Basic)` (Qty × rate,
+  before GST), from `UNIT_VALUE_BASIC_LABEL` / `TOTAL_VALUE_BASIC_LABEL` in
+  `packages/shared/src/lib/line-value.ts`.
+- One rule: `lineBasicValue(qty, rate)` (paisa) for a line, `linesBasicTotal(lines)` for
+  the Subtotal (cancelled lines out; summed then rounded once, exactly as before, so no
+  stored PO total moves). Used by `orderTotals` (SO / JWSO), `computePoTotals` (PO), the
+  three forms, the detail pages and the prints.
+- SO detail: `rate` column renamed (id kept, so saved layouts apply), new `line_value`
+  column; a cancelled line reads "—". SO and JWSO "Value" chips now show the server's
+  `totals.subtotal` under `Total Value (Basic)`.
+- Prints: `SheetPrintModel.moneyHeads` names the two money headings; SO / JWSO
+  (`print-order.ts`) and PO (`print-po.ts`) pass the new words; the Tax Invoice and JW
+  Invoice pass nothing and keep Rate / Amount.
+- Not changed: Excel import/export `Rate` column (old upload files keep working), field
+  names in code and the database.
+
+### Alternatives Considered
+
+- Rename the shared print heading for every `po` sheet — rejected: the Tax Invoice and
+  JW Invoice are tax documents the owner did not ask to change.
+- Rename the Excel `Rate` column — rejected: breaks files users already upload.
+
+### Consequences
+
+- Positive: one place for the line value and its two names; the SO detail shows the
+  line's value.
+- Negative: the longer headings take two lines on the narrow print columns.
+

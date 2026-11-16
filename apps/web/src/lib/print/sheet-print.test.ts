@@ -53,6 +53,16 @@ describe('buildSheetHtml — hideMoney', () => {
     expect(html).toContain('colspan="8"');
   });
 
+  it('prints the SO / JWSO / PO money headings when given (ADR-302)', () => {
+    const html = buildSheetHtml(
+      model({ moneyHeads: { rate: 'Unit Value (Basic)', amount: 'Total Value (Basic)' } }),
+    );
+    expect(html).toContain('>Unit Value (Basic)</td>');
+    expect(html).toContain('>Total Value (Basic)</td>');
+    expect(html).not.toContain('>Rate</td>');
+    expect(headerCount(html)).toBe(8);
+  });
+
   it('drops the Rate / Amount columns, money rows and words when hidden', () => {
     const html = buildSheetHtml(model({ hideMoney: true }));
     expect(html).not.toContain('>Rate</td>');

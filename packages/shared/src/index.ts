@@ -17,6 +17,7 @@ export * from './lib/query-boolean';
 export * from './lib/gst';
 export * from './lib/place-of-supply';
 export * from './lib/gst-totals';
+export * from './lib/line-value';
 export * from './lib/master-rules';
 export * from './lib/qty-rule';
 export * from './lib/status-moves';

@@ -77,6 +77,7 @@ import {
   type PoType,
   bumpDocRevision,
   computeGstTotals,
+  linesBasicTotal,
   parseDocRevision,
   poCodePrefix,
   withDocRevision,
@@ -477,9 +478,9 @@ function computePoTotals(
   gstPercent: number,
   taxType: ServicePoTaxType | null,
 ): { subtotal: string; taxAmount: string; totalAmount: string } {
-  const rawSubtotal = lines.reduce((s, l) => s + Number(l.qty) * Number(l.rate), 0);
+  // ADR-302 — Σ Total Value (Basic), the one line rule (packages/shared).
   const t = computeGstTotals({
-    subtotal: Number(rawSubtotal.toFixed(2)),
+    subtotal: linesBasicTotal(lines),
     gstPercent,
     taxType,
   });

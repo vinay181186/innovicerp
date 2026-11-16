@@ -21,7 +21,7 @@ import type {
   SalesOrderDetail,
   SalesOrderLine,
 } from '@innovic/shared';
-import { SO_CLOSABLE_STATUSES } from '@innovic/shared';
+import { SO_CLOSABLE_STATUSES, TOTAL_VALUE_BASIC_LABEL } from '@innovic/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useRef, useState } from 'react';
@@ -204,9 +204,9 @@ function SalesOrderDetailPage(): React.JSX.Element {
   // Told by the server, not inferred from a null money field: a null also means
   // "no value yet", so probing it hid money from users entitled to see it.
   const priceHidden = detail.priceVisible === false;
-  const totalValue = detail.lines
-    .filter((l) => l.status !== 'cancelled')
-    .reduce((s, l) => s + l.orderQty * Number(l.rate ?? 0), 0);
+  // ADR-302 — the server's Subtotal (Σ Total Value (Basic), cancelled lines
+  // left out): the one figure, not a second sum here.
+  const totalValue = detail.totals?.subtotal ?? 0;
   // Still to ship = ordered − already dispatched, per line (never below zero);
   // a line closed short (ADR-196) ships nothing more. Drives whether
   // "Dispatch" is offered as the next step, and whether Close is.
@@ -379,7 +379,7 @@ function SalesOrderDetailPage(): React.JSX.Element {
             items={[
               { label: 'Total Qty', value: totalQty },
               ...(!priceHidden && totalValue > 0
-                ? [{ label: 'Value', value: `₹ ${inrFormat(totalValue)}` }]
+                ? [{ label: TOTAL_VALUE_BASIC_LABEL, value: `₹ ${inrFormat(totalValue)}` }]
                 : []),
             ]}
           />

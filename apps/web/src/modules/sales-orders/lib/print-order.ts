@@ -23,6 +23,7 @@ import { partyForPrint } from '@/lib/print/party-copy';
 import { type SheetField, type SheetPrintModel, challanDate } from '@/lib/print/sheet-print';
 import { gstTaxRows, signedRoundOff } from './gst-rows';
 import { SO_STATUS_LABEL, SO_TYPE_LABEL } from './so-status-label';
+import { TOTAL_VALUE_BASIC_LABEL, UNIT_VALUE_BASIC_LABEL, lineBasicValue } from '@innovic/shared';
 
 type OrderArgs = {
   client: Client | null | undefined;
@@ -180,13 +181,15 @@ function orderSheet(
       uom: l.uom,
       qty: String(l.orderQty),
       rate: money(Number(l.rate ?? 0)),
-      amount: money(l.orderQty * Number(l.rate ?? 0)),
+      amount: money(lineBasicValue(l.orderQty, l.rate)),
       description: l.remarks,
       descLabel: 'Remarks',
     })),
     totalQty: String(totalQty),
     totalUom: uoms.length === 1 ? (uoms[0] ?? '') : '',
     hideMoney: o.priceHidden,
+    // ADR-302 — the owner's words for the two money columns.
+    moneyHeads: { rate: UNIT_VALUE_BASIC_LABEL, amount: TOTAL_VALUE_BASIC_LABEL },
     ...(t
       ? {
           money: {

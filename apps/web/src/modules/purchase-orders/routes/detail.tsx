@@ -43,7 +43,14 @@
 
 import { Icon } from '@/ui/core';
 import type { DocumentEditChange, PurchaseOrderLine } from '@innovic/shared';
-import { PO_SHORT_CLOSE_REASON_MIN, poLinePendingQty, poSendsMaterialOut } from '@innovic/shared';
+import {
+  PO_SHORT_CLOSE_REASON_MIN,
+  TOTAL_VALUE_BASIC_LABEL,
+  UNIT_VALUE_BASIC_LABEL,
+  lineBasicValue,
+  poLinePendingQty,
+  poSendsMaterialOut,
+} from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Check, Inbox, Loader2, Send } from 'lucide-react';
 import { useState } from 'react';
@@ -505,9 +512,9 @@ function PurchaseOrderDetailPage(): React.JSX.Element {
                 <th className="th-num">Qty</th>
                 {priceHidden ? null : (
                   <>
-                    <th className="th-money">Rate</th>
+                    <th className="th-money">{UNIT_VALUE_BASIC_LABEL}</th>
                     <th className="th-money" style={{ color: 'var(--green2)' }}>
-                      Amount
+                      {TOTAL_VALUE_BASIC_LABEL}
                     </th>
                   </>
                 )}
@@ -834,7 +841,7 @@ function LineRow(props: {
   const lineRemarksPending = linePendingChange(pendingChanges, l.id, 'lineRemarks');
   // When the viewer may not see prices the Rate + Amount columns are dropped
   // from the table entirely (header + cells), not blanked.
-  const amount = l.qty * Number(l.rate ?? 0);
+  const amount = lineBasicValue(l.qty, l.rate); // ADR-302 Total Value (Basic)
   // ADR-189 — the one Pending rule: 0 once the PO is closed / short-closed.
   // Pending is Qty − Accepted (what passed QC), not Qty − Received: a piece
   // that failed QC is not work the vendor delivered, so it still reads as owed.

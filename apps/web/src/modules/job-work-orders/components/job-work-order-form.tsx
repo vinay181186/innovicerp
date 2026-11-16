@@ -30,6 +30,10 @@ import {
   type UpdateJobWorkOrderInput,
   type Uom,
   UOMS,
+  TOTAL_VALUE_BASIC_LABEL,
+  UNIT_VALUE_BASIC_LABEL,
+  lineBasicValue,
+  linesBasicTotal,
 } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
@@ -502,9 +506,9 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
     for (const itemId of lineItemIdsKey.split(',')) if (itemId) requestRm(itemId);
   }, [lineItemIdsKey]);
   // A cancelled line adds nothing — the same rule as the server's JWSO totals.
-  const subtotal = (watchedLines ?? [])
-    .filter((l) => l.status !== 'cancelled')
-    .reduce((s, l) => s + (Number(l.orderQty) || 0) * (Number(l.rate) || 0), 0);
+  const subtotal = linesBasicTotal(
+    (watchedLines ?? []).map((l) => ({ qty: l.orderQty, rate: l.rate, status: l.status })),
+  );
   // ADR-243 — the same roll-up as the server (SGST + CGST or IGST, Round-off);
   // the tax type here is a preview from the chosen customer's State.
   const money = orderFormTotalRows({ subtotal, gstPercent, taxType: supply.taxType });
@@ -1429,10 +1433,10 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
               {priceVisible ? (
                 <>
                   <th className="th-money" style={{ width: '7%', color: 'var(--green2)' }}>
-                    Rate (₹)
+                    {UNIT_VALUE_BASIC_LABEL} (₹)
                   </th>
                   <th className="th-money" style={{ width: '7%', color: 'var(--green2)' }}>
-                    Amount
+                    {TOTAL_VALUE_BASIC_LABEL}
                   </th>
                 </>
               ) : null}
@@ -1453,7 +1457,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
             ) : (
               fields.map((field, idx) => {
                 const wl = watchedLines?.[idx];
-                const amt = (Number(wl?.orderQty) || 0) * (Number(wl?.rate) || 0);
+                const amt = lineBasicValue(wl?.orderQty, wl?.rate);
                 // On-master item → name is derived + read-only; an older
                 // off-master line (code with no master link) keeps it editable
                 // until an item is picked.

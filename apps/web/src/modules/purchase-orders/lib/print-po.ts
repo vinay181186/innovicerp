@@ -30,6 +30,7 @@ import {
   challanDate,
   openSheetPrintWindow,
 } from '@/lib/print/sheet-print';
+import { TOTAL_VALUE_BASIC_LABEL, UNIT_VALUE_BASIC_LABEL, lineBasicValue } from '@innovic/shared';
 
 // A purchase-order line has no uom column of its own; the detail read joins
 // the item master's unit (`uom`). NOS -- the unit the whole system assumes --
@@ -269,7 +270,7 @@ export function printPurchaseOrder(args: {
       uom: uomOf(l.uom),
       qty: String(l.qty),
       rate: money(Number(l.rate ?? 0)),
-      amount: money(l.qty * Number(l.rate ?? 0)),
+      amount: money(lineBasicValue(l.qty, l.rate)),
       // Per-line remarks print under the item name; a line without remarks
       // prints nothing extra.
       description: l.lineRemarks,
@@ -279,6 +280,8 @@ export function printPurchaseOrder(args: {
     // Viewers who may not see prices get the qty-only PO — no Rate / Amount
     // columns, no money block, no amount-in-words.
     hideMoney: priceHidden,
+    // ADR-302 — the owner's words for the two money columns.
+    moneyHeads: { rate: UNIT_VALUE_BASIC_LABEL, amount: TOTAL_VALUE_BASIC_LABEL },
     ...(priceHidden
       ? {}
       : {
