@@ -16013,3 +16013,27 @@ already wrapped to a second row.
   second row until the connection is back (it never overflows).
 - Amended 2026-11-16 (owner: "bg color blue as shown in mockup"): the button is solid
   blue with white text, the darker blue while open (was blue border on pale blue).
+
+## ADR-301: Top menu closes on a page pick; Planning part lines open by default
+
+**Date:** 2026-11-16
+**Status:** Accepted (owner: "click on qc call register popup must then go"; "lines
+must already open, no need to click show parts"). Reverses the 2026-09-21 rule that
+a module menu stays open after a page pick (commit a4bb63bd).
+
+### Decision
+
+- Top menu (`top-nav.tsx`): picking a page closes the menu. It also closes on an
+  outside click, Escape, its own button again, or another module's button. The open
+  menu is no longer remembered across a reload (`innovic.topnav.open` is not read;
+  sign-out still clears any old value).
+- SO/JWSO Planning order page (`order-detail.tsx`): every line with BOM parts opens
+  when first seen. ⋯ › Hide parts still closes it, and it stays closed across
+  refreshes; a line added later with parts opens when it appears. BOM Master's own
+  Show parts is unchanged.
+
+### Consequences
+
+- Positive: the menu no longer covers the page just opened; parts show at once.
+- Negative: moving between pages of one module needs the menu reopened each time;
+  an order with many part lines makes a longer page.

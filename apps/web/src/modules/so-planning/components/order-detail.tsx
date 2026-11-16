@@ -29,6 +29,7 @@ import { PlanningLineExpand } from './planning-line-expand';
 import {
   type PlanningLineMenuArgs,
   canCreatePlanForLine,
+  hasPartRows,
   planChildMenu,
   planningLineMenu,
 } from './planning-line-menu';
@@ -80,6 +81,20 @@ export function OrderDetail({
   const [stockNote, setStockNote] = useState<StockNote | null>(null);
   // Which lines have their ▸ panel open (the fit table's one expand control).
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // ADR-301 (owner 2026-11-16): a line with parts arrives OPEN — no "Show
+  // parts" click. Each line is opened once, the first time it is seen, so a
+  // line the planner hid stays hidden across refreshes; a line added later
+  // with parts opens when it first appears.
+  const seenLines = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const lines = detail.data?.lines;
+    if (!lines) return;
+    const fresh = lines.filter((l) => !seenLines.current.has(l.soLineId));
+    if (fresh.length === 0) return;
+    for (const l of fresh) seenLines.current.add(l.soLineId);
+    const open = fresh.filter(hasPartRows).map((l) => l.soLineId);
+    if (open.length > 0) setExpanded((prev) => new Set([...prev, ...open]));
+  }, [detail.data?.lines]);
   // A failed "Create JC / Raise PR" from the row's ⋯. The menu itself only
   // logs a rejection, so the failure is caught here and named on screen with
   // the plan it belongs to.

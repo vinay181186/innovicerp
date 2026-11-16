@@ -22,10 +22,10 @@
 // and "Settings" on the button for the same reason — the dropdown heading and
 // the breadcrumb still say the full name.
 //
-// One dropdown open at a time. Picking a page navigates but LEAVES THE MENU
-// OPEN (user, 2026-09-21): the operator can move between a module's pages
-// from the same card without re-opening it, and the card closes when they
-// click anywhere outside it, press Escape, or open another module. The
+// One dropdown open at a time. Picking a page navigates AND CLOSES the menu
+// (ADR-301, owner 2026-11-16 — reverses the 2026-09-21 "stays open" rule);
+// it also closes on a click outside it, Escape, its own button again, or
+// opening another module. The
 // button for the module the current page lives in is highlighted whether or
 // not its menu is open, so the header always says where you are.
 
@@ -50,8 +50,6 @@ import {
   shouldShowSection,
   type NavItem,
 } from './nav-sections';
-
-const OPEN_KEY_STORAGE = 'innovic.topnav.open';
 
 /** What the module button says. Only two are shortened; every other module
  *  keeps its own name. */
@@ -84,29 +82,9 @@ export function TopNav(): React.JSX.Element {
   // and the Approvals page show, so the three numbers always match (ADR-265).
   const pendingApprovals = useWaitingApprovals({ enabled: !!me }).data?.total ?? 0;
 
-  // Which module's menu is open. Remembered in sessionStorage so it survives
-  // a page reload (user, 2026-09-21: pick a page, then pick "Create SO" from
-  // the same card — the exit guard / reload must not swallow the card). The
-  // tab's own storage, so a second browser tab starts closed.
-  const [openKey, setOpenKeyState] = useState<string | null>(() => {
-    try {
-      return window.sessionStorage.getItem(OPEN_KEY_STORAGE);
-    } catch {
-      return null;
-    }
-  });
-  const setOpenKey = (next: string | null | ((prev: string | null) => string | null)): void => {
-    setOpenKeyState((prev) => {
-      const v = typeof next === 'function' ? next(prev) : next;
-      try {
-        if (v) window.sessionStorage.setItem(OPEN_KEY_STORAGE, v);
-        else window.sessionStorage.removeItem(OPEN_KEY_STORAGE);
-      } catch {
-        // storage blocked: the menu still works for this render
-      }
-      return v;
-    });
-  };
+  // Which module's menu is open. Not remembered across a reload (ADR-301):
+  // a picked page closes the menu, so a reload starts closed too.
+  const [openKey, setOpenKey] = useState<string | null>(null);
   // Whether the open menu must anchor to its button's RIGHT edge: measured
   // when it opens, from where the button actually sits, so a menu near the
   // right of the screen opens leftwards and one near the left never does —
@@ -121,9 +99,9 @@ export function TopNav(): React.JSX.Element {
     const onDown = (e: MouseEvent): void => {
       const t = e.target as Element | null;
       if (!t || (navRef.current && navRef.current.contains(t))) return;
-      // A click inside a dialog (the exit-guard's "leave this page?" box, a
-      // confirm) is not the operator leaving the menu: they are answering a
-      // question the pick raised. The card stays until they click the page.
+      // A click inside a dialog (a confirm box) is not the operator leaving
+      // the menu: they are answering a question. The card stays until they
+      // click the page.
       if (t.closest('.overlay, [role="dialog"], [role="alertdialog"]')) return;
       setOpenKey(null);
     };
@@ -199,6 +177,9 @@ export function TopNav(): React.JSX.Element {
                           {...(it.search ? { search: it.search } : {})}
                           role="menuitem"
                           className={`tn-link${on ? ' on' : ''}`}
+                          // ADR-301: a page pick closes the menu (an exit-guard
+                          // "Stay" leaves it closed too; the form is untouched).
+                          onClick={() => setOpenKey(null)}
                         >
                           <span className="tn-link-icon" aria-hidden>
                             {it.icon}
