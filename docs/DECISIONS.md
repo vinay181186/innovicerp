@@ -15981,3 +15981,33 @@ sat on Save SO, Save PO … and Next. The open chat (460 × 660, same corner) hi
 - Risks: a Super Admin sees twelve modules; at exactly 1366px the row is tight — if a
   font renders wider, the right cluster wraps (as before), it never overflows.
 
+## ADR-300: Ask ERP is a coloured symbol + name, before the search box
+
+**Date:** 2026-11-16
+**Status:** Accepted (owner on the mockup: "little big with ask erp"). Supersedes the
+button shape and place, and the ≤1350px search rule, of ADR-299; the panel placement of
+ADR-299 stands.
+
+### Context
+
+The ADR-299 symbol-only button after the bell was too small to find. Measuring the real
+stylesheet in Chromium (Barlow) also showed that the ≤1350px search rule never applied:
+the base `width: 190px` came later at the same specificity, so at 1366 the right cluster
+already wrapped to a second row.
+
+### Decision
+
+- Ask ERP sits before the search box: `btn tn-ask`, 18px chat symbol + "Ask ERP", the
+  bell's size (32px, --radius-sm), blue border on pale blue; solid blue while open.
+  Accessible name "Ask ERP" / "Close Ask ERP".
+- One row: search 170px, 120px below 1440px (rule placed after the base width), right
+  cluster gap 6px. Measured for a Super Admin's twelve modules: 1401px of 1440 and
+  1351px of 1366.
+
+### Consequences
+
+- Positive: easy to find; one row on a 1366 laptop.
+- Negative: below 1440px the search box is 120px for every user, so its hint reads
+  "Search anything…" without "(Ctrl+K)".
+- Risks: while "Live updates paused — reconnecting" shows, the right cluster wraps to a
+  second row until the connection is back (it never overflows).

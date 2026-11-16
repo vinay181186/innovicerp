@@ -225,11 +225,12 @@ export function TopNav(): React.JSX.Element {
 
       <div className="tn-right">
         <LiveStatusMarker />
+        {/* ADR-293/299 — Ask ERP before the search box, L6 Super Admin only
+            (renders nothing for anyone else). */}
+        <AiChatLauncher />
         <GlobalSearch />
         {/* ADR-264 — the bell, on every page. */}
         {me ? <NotificationBell /> : null}
-        {/* ADR-293 — Ask ERP, L6 Super Admin only (renders nothing for anyone else). */}
-        <AiChatLauncher />
         <Link
           to="/change-password"
           className="btn btn-ghost btn-sm tn-iconbtn"
