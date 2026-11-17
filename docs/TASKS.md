@@ -1,7 +1,7 @@
 # TASKS.md — Project Task Tracker
 
 > Update at start AND end of every work session.
-> Last updated: 2026-11-17 (**ADR-305 — SO/JWSO Planning: the per-part plan table under an equipment / BOM line is the standard fit table (no side scroll, ▾ sort/filter); the line's Plans cell reads "n plans" for two or more part plans.** No migration.)
+> Last updated: 2026-11-17 (**ADR-308 — New SO: the Internal SO No. box shows only the digits, no "SO-"; Edit keeps the fixed "SO-".** No migration.)
 > Prior: 2026-11-16 (**ADR-302 — SO, JWSO and PO: Rate reads Unit Value (Basic) and Amount reads Total Value (Basic) on the detail page, the create / edit form and the print; the SO detail gains the Total Value (Basic) column; one shared rule (`lib/line-value.ts`) for the line value and the Subtotal. Tax Invoice / JW Invoice prints and Excel import unchanged.** No migration.)
 > Prior: 2026-11-16 (**ADR-299 — Ask ERP moves into the top bar as one small symbol after the bell; the chat opens under the header and stops above the Save bar; the top bar stays one row down to a 1366px laptop.** No migration.)
 > Prior: 2026-11-15 (**ADR-294 — Party GRN opens a detail page (facts, lines with QC split, actions, Related Docs + History); the under-row details and ⋯ Show details are gone; search, Edit Approvals, QC register, JWSO Related Docs and NC link to it.** No migration.)

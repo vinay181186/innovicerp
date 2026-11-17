@@ -16313,3 +16313,23 @@ can never be store-issued.
   `stock_qty`; the per-SO cap (`inStoreQty`) keeps each SO to its own pieces.
 - Open: NC register source panel shows no SO No. for an SO Party GRN NC (`NcSource` has no SO
   field); Party Material Issue list has no `salesOrderId` filter.
+
+## ADR-308: New SO — the Internal SO No. box shows no "SO-"
+
+**Date:** 2026-11-17
+**Status:** Accepted (owner, 17-11-2026: "i want internal sono filed. but so- this text hidden on
+so creation form only")
+**Amends:** ADR-306 (the fixed "SO-" in the box).
+
+### Decision
+
+- On **New SO** the Internal SO No. box shows only the digits typed, and starts empty. On
+  **Edit** the fixed "SO-" stays in front, as ADR-306 set it.
+- Nothing else changes: digits only (a pasted "SO-433" becomes 433), the read-only SO No. box
+  next to it previews SO-433 / the next IN-SO, and the saved SO No. is SO-433 everywhere.
+- One line in `sales-order-form.tsx` (`value`); no server, schema or migration change.
+
+### Consequences
+
+- Positive: a new SO opens with a truly empty box, so "Blank = next system number" reads right.
+- Negative: the box looks different on New and Edit (SO No. preview beside it shows the full number on both).
