@@ -56,6 +56,7 @@ import { emitActivityLog } from '../activity-log/service';
 import { createdByNameSql } from '../../lib/created-by-sql';
 import { PARTY_GRN_SF_COLUMNS } from './sf-columns';
 import { lockSoRow } from '../../lib/assembly-parts';
+import { readSoCustomerParts } from '../../lib/party-so-parts';
 import { createPartyGrnForSo, soGrnCancelBlockers } from './so-grn';
 
 export function requireCompany(user: AuthContext): string {
@@ -1342,6 +1343,18 @@ export async function updatePartyGrnTx(
 ): Promise<PartyGrnDetail> {
   const companyId = requireCompany(user);
 
+  // ADR-307: an Equipment-SO GRN takes the SO row FIRST (SO -> GRN, the order
+  // the SO GRN create / QC / cancel use), so the need cap below cannot move.
+  const soPre = (await tx.execute(sql`
+    SELECT sales_order_id AS "soId" FROM public.party_grn
+     WHERE id = ${id}::uuid AND company_id = ${companyId}::uuid
+  `)) as unknown as Array<{ soId: string | null }>;
+  const soId = soPre[0]?.soId ?? null;
+  if (soId) await lockSoRow(tx, companyId, soId);
+  // Customer parts of that SO, read once under the SO lock (lazily, on the
+  // first received-qty change).
+  let soParts: Awaited<ReturnType<typeof readSoCustomerParts>> | null = null;
+
   // Lock the header, then confirm it is live (not cancelled).
   const headRows = (await tx.execute(sql`
     SELECT id, code, grn_date AS "grnDate", dc_no AS "dcNo", remarks,
@@ -1428,7 +1441,39 @@ export async function updatePartyGrnTx(
       after['remarks'] = li.remarks ?? null;
     }
 
-    if (li.receivedQty !== undefined && li.receivedQty !== current.receivedQty) {
+    if (li.receivedQty !== undefined && li.receivedQty !== current.receivedQty && soId) {
+      // ADR-307: an Equipment-SO GRN line. SO row locked above.
+      const inspected = current.acceptedQty + current.rejectedQty;
+      if (li.receivedQty < inspected) {
+        throw new ConflictError(
+          `${at}: Received (${li.receivedQty}) cannot be less than the ${inspected} already inspected.`,
+        );
+      }
+      const pmRows = (await tx.execute(sql`
+        SELECT item_id AS "itemId" FROM public.party_materials
+         WHERE id = ${current.partyMaterialId}::uuid AND company_id = ${companyId}::uuid
+      `)) as unknown as Array<{ itemId: string | null }>;
+      const itemId = pmRows[0]?.itemId ?? null;
+      soParts ??= await readSoCustomerParts(tx, companyId, soId);
+      const part = itemId ? soParts.get(itemId) : undefined;
+      if (!part) {
+        throw new ConflictError(
+          `${at}: this material is no longer a customer part on the Sales Order's BOM — it cannot be edited.`,
+        );
+      }
+      // Head-room = still to come + what this line holds un-inspected now.
+      const waitingNow = Math.max(0, current.receivedQty - inspected);
+      const headRoom = part.figures.pendingQty + waitingNow;
+      if (li.receivedQty - inspected > headRoom) {
+        throw new ConflictError(
+          `${at}: Received (${li.receivedQty}) cannot be more than ${inspected + headRoom} — ` +
+            `${part.rmItemCode} need ${part.figures.needQty}, already received ` +
+            `${part.figures.receivedQty - current.receivedQty} on other lines (rejected pieces do not count).`,
+        );
+      }
+      lineSet['receivedQty'] = li.receivedQty;
+      after['receivedQty'] = li.receivedQty;
+    } else if (li.receivedQty !== undefined && li.receivedQty !== current.receivedQty) {
       if (!current.jwLineId) {
         throw new ConflictError(
           `${at} has no JWSO line — it was booked before ADR-203 and cannot be edited.`,

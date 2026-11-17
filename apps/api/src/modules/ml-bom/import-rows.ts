@@ -10,7 +10,7 @@ import { sql } from 'drizzle-orm';
 import {
   BOM_LINE_TYPE_LABEL,
   ML_BOM_LINE_TYPES,
-  type BomLineType,
+  type MlBomLineType,
   normalizeRevision,
   qtyUomProblem,
   REVISION_PATTERN,
@@ -51,7 +51,7 @@ export interface CheckedRow {
   /** Typed child code, trimmed (for messages when the item did not resolve). */
   childCode: string;
   qty: number | null;
-  bomType: BomLineType | null;
+  bomType: MlBomLineType | null;
   gradeId: string | null;
   sizeId: string | null;
   remarks: string | null;
@@ -61,14 +61,14 @@ export interface CheckedRow {
   warnings: string[];
 }
 
-const LINE_TYPE_WORDS: ReadonlyMap<string, BomLineType> = new Map([
+const LINE_TYPE_WORDS: ReadonlyMap<string, MlBomLineType> = new Map([
   ...ML_BOM_LINE_TYPES.map((t) => [t, t] as const),
   ...ML_BOM_LINE_TYPES.map((t) => [BOM_LINE_TYPE_LABEL[t].toLowerCase(), t] as const),
   ['make', 'manufacture'],
 ]);
 
 /** "Manufacture" / "Buy" / "Outsource", the stored code, or "Make" — any case. */
-export function parseLineType(s: string): BomLineType | null {
+export function parseLineType(s: string): MlBomLineType | null {
   return LINE_TYPE_WORDS.get(norm(s)) ?? null;
 }
 
@@ -211,7 +211,7 @@ export function checkRow(
     qty = q.qty;
   }
 
-  let bomType: BomLineType | null = null;
+  let bomType: MlBomLineType | null = null;
   if (!blank(row.lineType)) {
     bomType = parseLineType(row.lineType);
     if (!bomType) errors.push('Line Type must be Manufacture, Buy or Outsource');

@@ -70,6 +70,7 @@ export async function listPartyStockLedger(
           OR psl.balance_after::text ILIKE ${pat} ESCAPE '\\'
           OR ${SOURCE_DOC_LABEL_SQL} ILIKE ${pat} ESCAPE '\\'
           OR u.full_name ILIKE ${pat} ESCAPE '\\'
+          OR COALESCE(so.code, jw.code) ILIKE ${pat} ESCAPE '\\'
           OR to_char(psl.created_at AT TIME ZONE 'Asia/Kolkata', 'DD-MM-YYYY') ILIKE ${pat} ESCAPE '\\'
         )`
       : sql``;
@@ -79,6 +80,11 @@ export async function listPartyStockLedger(
       LEFT JOIN public.party_materials pm ON pm.id = psl.party_material_id
       LEFT JOIN public.items ri ON ri.id = pm.item_id
       LEFT JOIN public.users u ON u.id = psl.created_by
+      -- ADR-307: the order the move belongs to — SO No. else JWSO No. (via the
+      -- line). Each join is on a primary key, so no row inflation.
+      LEFT JOIN public.sales_orders so ON so.id = psl.sales_order_id
+      LEFT JOIN public.job_work_order_lines jwl ON jwl.id = psl.jw_line_id
+      LEFT JOIN public.job_work_orders jw ON jw.id = jwl.job_work_order_id
       WHERE psl.company_id = ${companyId}::uuid
         AND psl.deleted_at IS NULL
         ${pmFrag}
@@ -103,7 +109,8 @@ export async function listPartyStockLedger(
         pm.name AS "partyMaterialName",
         COALESCE(ri.code, pm.item_code_text) AS "rmItemCode",
         ri.name AS "rmItemName",
-        u.full_name AS "createdByName"
+        u.full_name AS "createdByName",
+        COALESCE(so.code, jw.code) AS "orderCode"
       ${fromWhere}
       ORDER BY psl.created_at DESC, psl.id DESC
       LIMIT ${input.limit} OFFSET ${input.offset}
@@ -142,5 +149,6 @@ function toListItem(r: Record<string, unknown>): PartyStockLedgerListItem {
     rmItemCode: (r['rmItemCode'] as string | null) ?? null,
     rmItemName: (r['rmItemName'] as string | null) ?? null,
     createdByName: (r['createdByName'] as string | null) ?? null,
+    orderCode: (r['orderCode'] as string | null) ?? null,
   };
 }

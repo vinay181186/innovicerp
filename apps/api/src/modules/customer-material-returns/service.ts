@@ -48,6 +48,7 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { lockSoRow } from '../../lib/assembly-parts';
 import { type LockedJwLine, lockJwLine } from '../../lib/jw-line-state';
 import { liftLineFilters, likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { postPartyStockMove } from '../../lib/party-stock-ledger';
@@ -55,6 +56,7 @@ import { labelOf } from '../../lib/status-labels';
 import { emitActivityLog } from '../activity-log/service';
 import { blockerRefusal } from '../cancel-requests/messages';
 import { jwLineRegister } from '../party-material-issues/register';
+import { createSoCustomerMaterialReturnTx, listSoCustomerMaterialReturnable } from './so-return';
 import {
   CUSTOMER_MATERIAL_RETURN_LINE_LIFT,
   CUSTOMER_MATERIAL_RETURN_SF_COLUMNS,
@@ -77,7 +79,19 @@ function tsLike(v: unknown): string {
   return v instanceof Date ? v.toISOString() : String(v);
 }
 
-async function nextReturnCode(tx: DbTransaction, companyId: string): Promise<string> {
+/** ADR-307: a return names exactly one of JWSO / Equipment SO. Returns the
+ *  JWSO id, or null when it is an SO return. */
+function exactlyOneOrder(o: {
+  jobWorkOrderId?: string | undefined;
+  salesOrderId?: string | undefined;
+}): string | null {
+  if (!!o.jobWorkOrderId === !!o.salesOrderId) {
+    throw new ValidationError('Pick either a JWSO or an Equipment SO (exactly one).');
+  }
+  return o.jobWorkOrderId ?? null;
+}
+
+export async function nextReturnCode(tx: DbTransaction, companyId: string): Promise<string> {
   // S2: queue behind any other save numbering this series (lib/doc-series-lock).
   await lockDocSeries(tx, companyId, 'customer_material_returns');
   const rows = (await tx.execute(sql`
@@ -100,7 +114,7 @@ async function nextReturnCode(tx: DbTransaction, companyId: string): Promise<str
  *  anything but Return to Customer / Use As Is (i.e. Scrap). Use As Is pieces
  *  have already left rejected_qty (party-grn/deviation.ts); Return to Customer
  *  pieces are exactly what a return sends. `pglIdSql` is the line id. */
-function ncHeldBackQtySql(pglIdSql: SQL): SQL {
+export function ncHeldBackQtySql(pglIdSql: SQL): SQL {
   return sql`(
     SELECT COALESCE(SUM(nb.rejected_qty), 0)
       FROM public.nc_register nb
@@ -113,7 +127,7 @@ function ncHeldBackQtySql(pglIdSql: SQL): SQL {
 /** Returnable deviated pieces on a Party GRN line (alias pgl):
  *  rejected − already returned − held back by an NC. Legacy deviated pieces
  *  with no NC stay returnable. */
-const HELD_RETURNABLE_SQL = sql`(pgl.rejected_qty - pgl.rejected_returned_qty - ${ncHeldBackQtySql(sql`pgl.id`)})`;
+export const HELD_RETURNABLE_SQL = sql`(pgl.rejected_qty - pgl.rejected_returned_qty - ${ncHeldBackQtySql(sql`pgl.id`)})`;
 
 /** ADR-247 — THE one writer of rtv_sent_qty / closed-ness on a Party GRN
  *  line's Return to Customer NCs, run after every IN-CMR create AND cancel so
@@ -132,7 +146,7 @@ const HELD_RETURNABLE_SQL = sql`(pgl.rejected_qty - pgl.rejected_returned_qty - 
  *  when an IN-CMR is cancelled) is a documented exception to NC_STATUS_MOVES:
  *  the close was this function's own bookkeeping, and the return it rested on
  *  no longer exists. Returns the codes of the NCs it changed. */
-async function rebalanceReturnToCustomerNcs(
+export async function rebalanceReturnToCustomerNcs(
   tx: DbTransaction,
   partyGrnLineId: string,
   cmrCode: string,
@@ -225,6 +239,8 @@ async function rebalanceReturnToCustomerNcs(
 const HEADER_FROM = sql`
   FROM public.customer_material_returns r
   LEFT JOIN public.job_work_orders jw ON jw.id = r.job_work_order_id
+  -- ADR-307: an Equipment SO return names the SO instead of a JWSO.
+  LEFT JOIN public.sales_orders so ON so.id = r.sales_order_id
   LEFT JOIN public.clients cl ON cl.id = r.client_id
   LEFT JOIN LATERAL (
     -- ADR-303: Lines, the first line's kind and how many OTHER kinds the
@@ -241,6 +257,7 @@ const HEADER_FROM = sql`
 const HEADER_COLUMNS = sql`
   r.id, r.code, r.return_date AS "returnDate",
   r.job_work_order_id AS "jobWorkOrderId", jw.code AS "jwCode",
+  r.sales_order_id AS "salesOrderId", so.code AS "soCode",
   r.client_id AS "clientId", cl.name AS "clientName",
   r.vehicle_no AS "vehicleNo", r.remarks, r.status,
   r.cancel_reason AS "cancelReason", r.cancelled_at AS "cancelledAt",
@@ -257,8 +274,10 @@ function toHeader(r: Record<string, unknown>): CustomerMaterialReturn {
     id: r['id'] as string,
     code: r['code'] as string,
     returnDate: dateLike(r['returnDate']),
-    jobWorkOrderId: r['jobWorkOrderId'] as string,
+    jobWorkOrderId: (r['jobWorkOrderId'] as string | null) ?? null,
     jwCode: (r['jwCode'] as string | null) ?? null,
+    salesOrderId: (r['salesOrderId'] as string | null) ?? null,
+    soCode: (r['soCode'] as string | null) ?? null,
     clientId: (r['clientId'] as string | null) ?? null,
     clientName: (r['clientName'] as string | null) ?? null,
     vehicleNo: (r['vehicleNo'] as string | null) ?? null,
@@ -294,7 +313,7 @@ export async function listCustomerMaterialReturns(
     const searchFrag = term
       ? sql`AND (
           r.code ILIKE ${term} ESCAPE '\\'
-          OR jw.code ILIKE ${term} ESCAPE '\\'
+          OR COALESCE(jw.code, so.code) ILIKE ${term} ESCAPE '\\'
           OR cl.name ILIKE ${term} ESCAPE '\\'
           OR r.vehicle_no ILIKE ${term} ESCAPE '\\'
           OR EXISTS (
@@ -317,6 +336,9 @@ export async function listCustomerMaterialReturns(
     const jwFrag = input.jobWorkOrderId
       ? sql`AND r.job_work_order_id = ${input.jobWorkOrderId}::uuid`
       : sql``;
+    const soFrag = input.salesOrderId
+      ? sql`AND r.sales_order_id = ${input.salesOrderId}::uuid`
+      : sql``;
     // ADR-303: Return Kind can differ per line — its filter matches a return
     // with ANY line of that kind (EXISTS); its sort reads the first line's.
     const sf = readSf(input.sf);
@@ -332,6 +354,7 @@ export async function listCustomerMaterialReturns(
         AND r.deleted_at IS NULL
         ${searchFrag}
         ${jwFrag}
+        ${soFrag}
         ${sfFrag}
     `;
 
@@ -358,7 +381,7 @@ export async function listCustomerMaterialReturns(
   });
 }
 
-async function loadDetail(
+export async function loadDetail(
   tx: DbTransaction,
   companyId: string,
   id: string,
@@ -400,7 +423,7 @@ async function loadDetail(
     id: r['id'] as string,
     lineNo: Number(r['lineNo']),
     kind: r['kind'] as CustomerMaterialReturnKind,
-    jwLineId: r['jwLineId'] as string,
+    jwLineId: (r['jwLineId'] as string | null) ?? null,
     jwLineNo: r['jwLineNo'] != null ? Number(r['jwLineNo']) : null,
     clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
     partCode: (r['partCode'] as string | null) ?? null,
@@ -429,12 +452,17 @@ export async function getCustomerMaterialReturnDetail(
  *  balance (also capped by the material's stock). rejected: one row per
  *  QC'd Party GRN line still holding rejected pieces. */
 export async function listCustomerMaterialReturnable(
-  jobWorkOrderId: string,
+  order: { jobWorkOrderId?: string | undefined; salesOrderId?: string | undefined },
   user: AuthContext,
 ): Promise<CustomerMaterialReturnableRow[]> {
   await requireFormAccess(user, 'party_create', 'view');
   const companyId = requireCompany(user);
+  const jobWorkOrderId = exactlyOneOrder(order);
   return withUserContext(user, async (tx) => {
+    // ADR-307: an Equipment SO's customer parts (so-return.ts).
+    if (!jobWorkOrderId) {
+      return listSoCustomerMaterialReturnable(tx, companyId, order.salesOrderId!);
+    }
     const jw = (await tx.execute(sql`
       SELECT id FROM public.job_work_orders
        WHERE id = ${jobWorkOrderId}::uuid AND company_id = ${companyId}::uuid AND deleted_at IS NULL
@@ -477,6 +505,7 @@ export async function listCustomerMaterialReturnable(
         kind: 'good',
         jwLineId: l.jwLineId,
         jwLineNo: Number(l.jwLineNo),
+        rmItemId: null,
         clientPoLineNo: l.clientPoLineNo ?? null,
         partCode: l.partCode ?? null,
         partyMaterialId: l.partyMaterialId,
@@ -525,6 +554,7 @@ export async function listCustomerMaterialReturnable(
         kind: 'rejected',
         jwLineId: r.jwLineId,
         jwLineNo: Number(r.jwLineNo),
+        rmItemId: null,
         clientPoLineNo: r.clientPoLineNo ?? null,
         partCode: r.partCode ?? null,
         partyMaterialId: r.partyMaterialId,
@@ -585,12 +615,25 @@ export async function createCustomerMaterialReturn(
   const companyId = requireCompany(user);
   const userId = user.id;
   if (input.lines.length === 0) throw new ValidationError('Add at least one row.');
+  const jobWorkOrderId = exactlyOneOrder(input);
+  if (!jobWorkOrderId) {
+    // ADR-307: Equipment SO return (so-return.ts).
+    return withUserContext(user, (tx) =>
+      createSoCustomerMaterialReturnTx(tx, companyId, input.salesOrderId!, input, user),
+    );
+  }
+  // JWSO path: every row names its JWSO line.
+  const jwLineIds: string[] = [];
+  for (const [idx, ln] of input.lines.entries()) {
+    if (!ln.jwLineId) throw new ValidationError(`Row #${idx + 1}: pick the JWSO line.`);
+    jwLineIds.push(ln.jwLineId);
+  }
 
   return withUserContext(user, async (tx) => {
     const jwRows = (await tx.execute(sql`
       SELECT id, code, client_id AS "clientId"
         FROM public.job_work_orders
-       WHERE id = ${input.jobWorkOrderId}::uuid
+       WHERE id = ${jobWorkOrderId}::uuid
          AND company_id = ${companyId}::uuid
          AND deleted_at IS NULL
     `)) as unknown as Array<{ id: string; code: string; clientId: string | null }>;
@@ -599,13 +642,9 @@ export async function createCustomerMaterialReturn(
 
     // Lock every JWSO line first (the parent of every cap below). NOT asserted
     // open — the customer's material may go back after a line closes.
-    const lines = await lockLines(
-      tx,
-      companyId,
-      input.lines.map((l) => l.jwLineId),
-    );
+    const lines = await lockLines(tx, companyId, jwLineIds);
     for (const [idx, ln] of input.lines.entries()) {
-      const line = lines.get(ln.jwLineId)!;
+      const line = lines.get(jwLineIds[idx]!)!;
       if (line.jobWorkOrderId !== jw.id) {
         throw new ValidationError(
           `Row #${idx + 1}: ${line.jwCode} Ln ${line.lineNo} is not a line of ${jw.code}.`,
@@ -650,7 +689,7 @@ export async function createCustomerMaterialReturn(
     const summary: string[] = [];
     let totalQty = 0;
     for (const [idx, ln] of input.lines.entries()) {
-      const line = lines.get(ln.jwLineId)!;
+      const line = lines.get(jwLineIds[idx]!)!;
       const partyMaterialId = line.partyMaterialId!;
       const where = `${line.jwCode} Ln ${line.lineNo}`;
 
@@ -843,7 +882,7 @@ export async function customerMaterialReturnCancelEffects(
     SELECT l.line_no AS "lineNo", l.kind, l.qty::int AS qty,
            -- Owner 2026-11-17: name the live -RM item code (PM-#### only as fallback).
            COALESCE(cri.code, pm.item_code_text, pm.code, 'customer material') AS "pmCode",
-           jw.code AS "jwCode", jwl.line_no AS "jwLineNo",
+           jw.code AS "jwCode", jwl.line_no AS "jwLineNo", so.code AS "soCode",
            pg.code AS "grnCode", pgl.line_no AS "grnLineNo",
            (SELECT string_agg(nc.code, ', ' ORDER BY nc.code)
               FROM public.nc_register nc
@@ -857,6 +896,7 @@ export async function customerMaterialReturnCancelEffects(
       LEFT JOIN public.items cri ON cri.id = pm.item_id
       LEFT JOIN public.job_work_order_lines jwl ON jwl.id = l.jw_line_id
       LEFT JOIN public.job_work_orders jw ON jw.id = jwl.job_work_order_id
+      LEFT JOIN public.sales_orders so ON so.id = r.sales_order_id
       LEFT JOIN public.party_grn_lines pgl ON pgl.id = l.party_grn_line_id
       LEFT JOIN public.party_grn pg ON pg.id = pgl.party_grn_id
      WHERE l.return_id = ${id}::uuid AND r.company_id = ${companyId}::uuid
@@ -869,6 +909,7 @@ export async function customerMaterialReturnCancelEffects(
     pmCode: string;
     jwCode: string | null;
     jwLineNo: number | null;
+    soCode: string | null;
     grnCode: string | null;
     grnLineNo: number | null;
     ncCodes: string | null;
@@ -877,7 +918,11 @@ export async function customerMaterialReturnCancelEffects(
   const ncs = new Set<string>();
   for (const r of rows) {
     const qty = Number(r.qty);
-    const jwAt = r.jwCode ? ` (${r.jwCode} Ln ${r.jwLineNo ?? '?'})` : '';
+    const jwAt = r.jwCode
+      ? ` (${r.jwCode} Ln ${r.jwLineNo ?? '?'})`
+      : r.soCode
+        ? ` (${r.soCode})`
+        : '';
     if (r.kind === 'good') {
       out.push({
         kind: 'stock',
@@ -919,6 +964,15 @@ export async function cancelCustomerMaterialReturnTx(
   const trimmed = (reason ?? '').trim();
   if (!trimmed)
     throw new ValidationError('Reason is required to cancel a Customer Material Return.');
+
+  // ADR-307: an Equipment SO return takes the SO row lock FIRST (§20.3 — the
+  // same parent every SO customer-part writer locks), before the flip.
+  const soRows = (await tx.execute(sql`
+    SELECT sales_order_id AS "soId" FROM public.customer_material_returns
+     WHERE id = ${id}::uuid AND company_id = ${companyId}::uuid AND deleted_at IS NULL
+  `)) as unknown as Array<{ soId: string | null }>;
+  const soId = soRows[0]?.soId ?? null;
+  if (soId) await lockSoRow(tx, companyId, soId);
 
   // §20.2: the status flip IS the guard — 0 rows means it is not 'issued'.
   const flipped = (await tx.execute(sql`
@@ -967,17 +1021,18 @@ export async function cancelCustomerMaterialReturnTx(
   `)) as unknown as Array<{
     id: string;
     kind: string;
-    jwLineId: string;
+    jwLineId: string | null;
     partyMaterialId: string;
     partyGrnLineId: string | null;
     qty: number;
     pmCode: string | null;
   }>;
 
+  // JWSO lines only — an SO return's lines carry no JWSO line (locked above).
   await lockLines(
     tx,
     companyId,
-    lineRows.map((l) => l.jwLineId),
+    lineRows.flatMap((l) => (l.jwLineId ? [l.jwLineId] : [])),
   );
 
   // The refusal rule (none today — see customerMaterialReturnCancelBlockers),
@@ -995,6 +1050,7 @@ export async function cancelCustomerMaterialReturnTx(
         companyId,
         partyMaterialId: l.partyMaterialId,
         jwLineId: l.jwLineId,
+        salesOrderId: soId,
         movement: 'reversal',
         direction: 'in',
         qty,

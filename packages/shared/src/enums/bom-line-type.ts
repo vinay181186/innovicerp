@@ -30,3 +30,4 @@ export const isOwnSourcedBomLineType = (t: BomLineType): boolean => t !== 'party
 /** ADR-307: the Multi-Level BOM keeps the three own-sourced types — a
  *  customer-supplied part is handled on the single-level Equipment SO BOM only. */
 export const ML_BOM_LINE_TYPES = ['manufacture', 'purchase', 'outsource'] as const;
+export type MlBomLineType = (typeof ML_BOM_LINE_TYPES)[number];

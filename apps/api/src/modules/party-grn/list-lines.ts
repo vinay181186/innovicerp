@@ -51,6 +51,7 @@ export async function listPartyGrnLines(
       ? sql`AND (
           pg.code ILIKE ${term} ESCAPE '\\'
           OR pg.jw_code_text ILIKE ${term} ESCAPE '\\'
+          OR lso.code ILIKE ${term} ESCAPE '\\'
           OR pg.client_code_text ILIKE ${term} ESCAPE '\\'
           OR pg.client_po_no ILIKE ${term} ESCAPE '\\'
           OR pg.dc_no ILIKE ${term} ESCAPE '\\'
@@ -65,6 +66,10 @@ export async function listPartyGrnLines(
       : sql``;
     const jwFrag = input.jobWorkOrderId
       ? sql`AND pg.job_work_order_id = ${input.jobWorkOrderId}::uuid`
+      : sql``;
+    // ADR-307: lines of GRNs received against one Equipment SO.
+    const soFrag = input.salesOrderId
+      ? sql`AND pg.sales_order_id = ${input.salesOrderId}::uuid`
       : sql``;
     const clientFrag = input.clientId ? sql`AND pg.client_id = ${input.clientId}::uuid` : sql``;
     const fromFrag = input.fromDate ? sql`AND pg.grn_date >= ${input.fromDate}::date` : sql``;
@@ -89,13 +94,15 @@ export async function listPartyGrnLines(
       -- Owner 2026-11-17: the line's live -RM item, via the register row (PK joins,
       -- never multiply the line). The PM-#### register code is never shown.
       LEFT JOIN public.party_materials lpm ON lpm.id = pgl.party_material_id
-      LEFT JOIN public.items lri ON lri.id = lpm.item_id`;
+      LEFT JOIN public.items lri ON lri.id = lpm.item_id
+      -- ADR-307: the Equipment SO the GRN was received against (PK join).
+      LEFT JOIN public.sales_orders lso ON lso.id = pg.sales_order_id`;
     const where = sql`
       WHERE pg.company_id = ${companyId}::uuid
         AND pgl.company_id = ${companyId}::uuid
         AND ${scopeFrag}
         AND ${PGL_OF_HEADER_SQL}
-        ${searchFrag} ${jwFrag} ${clientFrag} ${fromFrag} ${toFrag} ${sfFrag}`;
+        ${searchFrag} ${jwFrag} ${soFrag} ${clientFrag} ${fromFrag} ${toFrag} ${sfFrag}`;
 
     const result = (await tx.execute(sql`
       SELECT
@@ -117,6 +124,8 @@ export async function listPartyGrnLines(
         pg.grn_date AS "grnDate",
         pg.job_work_order_id AS "jobWorkOrderId",
         pg.jw_code_text AS "jwCodeText",
+        pg.sales_order_id AS "salesOrderId",
+        lso.code AS "soCode",
         pg.client_id AS "clientId",
         pg.client_code_text AS "clientCodeText",
         pg.client_po_no AS "clientPoNo",
@@ -176,6 +185,7 @@ export async function listPartyGrnLines(
         docStatus: cancelled ? 'cancelled' : 'live',
         lineNo: Number(r['lineNo']),
         jwCode: header.jwCodeText,
+        soCode: (r['soCode'] as string | null) ?? null,
         clientPoLineNo: (r['clientPoLineNo'] as string | null) ?? null,
         createdAt: iso(r['lineCreatedAt']),
         createdByName: str(r['createdByName']),

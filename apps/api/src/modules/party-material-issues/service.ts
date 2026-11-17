@@ -55,6 +55,7 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { lockDocSeries } from '../../lib/doc-series-lock';
+import { lockSoRow, readPartsOut } from '../../lib/assembly-parts';
 import { assertJwLineOpenForWork, lockJwLine } from '../../lib/jw-line-state';
 import { postPartyStockMove } from '../../lib/party-stock-ledger';
 import { emitActivityLog } from '../activity-log/service';
@@ -136,6 +137,15 @@ export function issueRmCodeSql() {
   )`;
 }
 
+/** ADR-307: the Equipment SO No. of a party_material_issues row (list select
+ *  and search share it). */
+function issueSoCodeSql() {
+  return sql<string | null>`(
+    SELECT so.code FROM public.sales_orders so
+     WHERE so.id = ${partyMaterialIssues.salesOrderId}
+  )`;
+}
+
 /** Plain read (no lock) of one register row's -RM item code/name. */
 async function rmItemOf(
   tx: DbTransaction,
@@ -153,10 +163,44 @@ async function rmItemOf(
   return r ? { rmItemCode: r.rmItemCode ?? null, rmItemName: r.rmItemName ?? null } : NO_RM_ITEM;
 }
 
+/** Plain read of an SO's code (null when the issue has no SO). */
+async function soCodeOf(
+  tx: DbTransaction,
+  companyId: string,
+  soId: string | null,
+): Promise<string | null> {
+  if (!soId) return null;
+  const rows = (await tx.execute(sql`
+    SELECT code FROM public.sales_orders
+     WHERE id = ${soId}::uuid AND company_id = ${companyId}::uuid
+  `)) as unknown as Array<{ code: string }>;
+  return rows[0]?.code ?? null;
+}
+
+/** ADR-307: pieces of this issue's customer part still on the SO's assembly
+ *  bench (issued - returned to store - fitted, lib/assembly-parts readPartsOut).
+ *  Read under the SO row lock the caller already holds (lockIssue). */
+async function soBenchStillOut(
+  tx: DbTransaction,
+  companyId: string,
+  iss: { salesOrderId: string | null; partyMaterialId: string },
+): Promise<number> {
+  if (!iss.salesOrderId) return 0;
+  const pm = (await tx.execute(sql`
+    SELECT item_id AS "itemId" FROM public.party_materials
+     WHERE id = ${iss.partyMaterialId}::uuid AND company_id = ${companyId}::uuid
+  `)) as unknown as Array<{ itemId: string | null }>;
+  const itemId = pm[0]?.itemId;
+  if (!itemId) return 0;
+  const out = await readPartsOut(tx, companyId, iss.salesOrderId);
+  return Math.max(0, out.get(itemId)?.stillOut ?? 0);
+}
+
 function rowToIssue(
   row: typeof partyMaterialIssues.$inferSelect,
   jcItem: JcProducedItem = NO_JC_ITEM,
   rm: RmItem = NO_RM_ITEM,
+  soCode: string | null = null,
 ): PartyMaterialIssue {
   return {
     id: row.id,
@@ -167,6 +211,9 @@ function rowToIssue(
     jwCodeText: row.jwCodeText,
     jobCardId: row.jobCardId,
     jcCodeText: row.jcCodeText,
+    // ADR-307: an assembly customer-part issue names its Equipment SO instead.
+    salesOrderId: row.salesOrderId ?? null,
+    soCode,
     // OUR produced part (what the card makes) — kept next to the job card
     // fields it belongs to, and deliberately above the partyMaterial* fields,
     // which are the CLIENT'S material this issue debits.
@@ -453,13 +500,17 @@ async function lockIssue(
   id: string,
 ): Promise<typeof partyMaterialIssues.$inferSelect> {
   const pre = (await tx.execute(sql`
-    SELECT mi.jw_line_id AS "jwLineId", jc.source_jw_line_id AS "jcLineId"
+    SELECT mi.jw_line_id AS "jwLineId", jc.source_jw_line_id AS "jcLineId",
+           mi.sales_order_id AS "soId"
       FROM public.party_material_issues mi
       LEFT JOIN public.job_cards jc ON jc.id = mi.job_card_id
      WHERE mi.id = ${id}::uuid AND mi.company_id = ${companyId}::uuid AND mi.deleted_at IS NULL
-  `)) as unknown as Array<{ jwLineId: string | null; jcLineId: string | null }>;
+  `)) as unknown as Array<{ jwLineId: string | null; jcLineId: string | null; soId: string | null }>;
   const p = pre[0];
   if (!p) throw new NotFoundError('Customer Material Issue not found. Refresh the page.');
+  // ADR-307: an assembly customer-part issue - the SO row first (the parent of
+  // Still Out; fitting and the Issue Customer Part cap take it too).
+  if (p.soId) await lockSoRow(tx, companyId, p.soId);
   const lineId = p.jwLineId ?? p.jcLineId;
   if (lineId) await lockJwLine(tx, companyId, lineId);
 
@@ -507,12 +558,20 @@ export async function lockPartyMaterialIssueForCancel(
 ): Promise<typeof partyMaterialIssues.$inferSelect | null> {
   if (forUpdate) {
     const pre = (await tx.execute(sql`
-      SELECT COALESCE(mi.jw_line_id, jc.source_jw_line_id) AS "lineId"
+      SELECT COALESCE(mi.jw_line_id, jc.source_jw_line_id) AS "lineId",
+             mi.sales_order_id AS "soId"
         FROM public.party_material_issues mi
         LEFT JOIN public.job_cards jc ON jc.id = mi.job_card_id
        WHERE mi.id = ${id}::uuid AND mi.company_id = ${companyId}::uuid
-    `)) as unknown as Array<{ lineId: string | null }>;
+    `)) as unknown as Array<{ lineId: string | null; soId: string | null }>;
     if (!pre[0]) return null;
+    // ADR-307: SO row first, same order as lockIssue (plain lock - a reject /
+    // withdraw must not fail on a closed or trashed SO).
+    if (pre[0].soId) {
+      await tx.execute(sql`
+        SELECT 1 FROM public.sales_orders WHERE id = ${pre[0].soId}::uuid FOR NO KEY UPDATE
+      `);
+    }
     const lineId = pre[0].lineId;
     // Plain row lock (not lockJwLine): a reject / withdraw on an old issue must
     // not fail because its JWSO line is gone.
@@ -554,6 +613,22 @@ export async function partyMaterialIssueCancelBlockers(
         `${iss.returnedToStoreQty} piece(s) of it were already returned to store — ` +
         `use Return to store for the rest instead`,
     });
+  }
+  if (iss.salesOrderId) {
+    // ADR-307: pieces already fitted into the assembly cannot be un-issued.
+    const remaining = iss.qty - iss.returnedToStoreQty;
+    const stillOut = await soBenchStillOut(tx, companyId, iss);
+    if (remaining > stillOut) {
+      const rm = await rmItemOf(tx, companyId, iss.partyMaterialId);
+      out.push({
+        docLabel: 'Sales Order',
+        docNo: (await soCodeOf(tx, companyId, iss.salesOrderId)) ?? 'Sales Order',
+        href: null,
+        reason:
+          `${rm.rmItemCode ?? iss.partyMaterialCodeText ?? 'Customer part'}: only ${stillOut} still on ` +
+          `the assembly bench — the rest is fitted; return the unfitted pieces to store instead`,
+      });
+    }
   }
   if (iss.jobCardId) {
     const jcm = await jcMaterial(tx, companyId, iss.jobCardId);
@@ -633,6 +708,7 @@ export async function cancelPartyMaterialIssueTx(
     companyId,
     partyMaterialId: iss.partyMaterialId,
     jwLineId: iss.jwLineId,
+    salesOrderId: iss.salesOrderId ?? null,
     movement: 'reversal',
     direction: 'in',
     qty: iss.qty,
@@ -718,6 +794,18 @@ export async function returnPartyMaterialIssueToStore(
               `Issued ${iss.qty}, already returned to store ${iss.returnedToStoreQty}.`,
       );
     }
+    // ADR-307: an assembly customer-part issue - only pieces still on the
+    // bench (not fitted) can go back. SO row already locked by lockIssue.
+    const soCode = await soCodeOf(tx, companyId, iss.salesOrderId);
+    const fromWhere = soCode ? `${soCode} assembly` : (iss.jcCodeText ?? 'JC');
+    if (iss.salesOrderId) {
+      const stillOut = await soBenchStillOut(tx, companyId, iss);
+      if (input.qty > stillOut) {
+        throw new ValidationError(
+          `${rmLabel ?? iss.code}: only ${stillOut} still on the assembly bench — the rest is fitted.`,
+        );
+      }
+    }
     if (iss.jobCardId) {
       const jcm = await jcMaterial(tx, companyId, iss.jobCardId, { lockFirstOp: true });
       const onJc = jcm.netIssued - jcm.used;
@@ -735,12 +823,13 @@ export async function returnPartyMaterialIssueToStore(
       companyId,
       partyMaterialId: iss.partyMaterialId,
       jwLineId: iss.jwLineId,
+      salesOrderId: iss.salesOrderId ?? null,
       movement: 'reversal',
       direction: 'in',
       qty: input.qty,
       sourceDocType: 'party_material_issue_return',
       sourceDocId: iss.id,
-      remarks: `${iss.code} · returned to store from ${iss.jcCodeText ?? 'JC'}: ${reason}`,
+      remarks: `${iss.code} · returned to store from ${fromWhere}: ${reason}`,
       userId: user.id,
       qtyLabel: 'Return Qty',
     });
@@ -789,13 +878,13 @@ export async function returnPartyMaterialIssueToStore(
         ],
         detail:
           `${iss.code} — ${input.qty} of ${rmLabel ?? 'material'} returned to store ` +
-          `from ${iss.jcCodeText ?? 'JC'}`,
+          `from ${fromWhere}`,
       },
       companyId,
       user,
     );
 
-    return rowToIssue(row, NO_JC_ITEM, rm);
+    return rowToIssue(row, NO_JC_ITEM, rm, soCode);
   });
 }
 
@@ -857,6 +946,8 @@ export async function listPartyMaterialIssues(
         ilike(partyMaterialIssues.partyMaterialCodeText, term),
         // Owner 2026-11-17: the live -RM item code the register now shows.
         sql`${issueRmCodeSql()} ILIKE ${term}`,
+        // ADR-307: the Equipment SO No. of an assembly customer-part issue.
+        sql`${issueSoCodeSql()} ILIKE ${term}`,
         ilike(partyMaterialIssues.partyMaterialName, term),
         ilike(partyMaterialIssues.remarks, term),
       );
@@ -897,6 +988,8 @@ export async function listPartyMaterialIssues(
           jcItemRevision: sql<
             string | null
           >`COALESCE(${salesOrderLines.revision}::text, ${jobWorkOrderLines.revision}::text)`,
+          // ADR-307: the Equipment SO No. of an assembly customer-part issue.
+          soCode: issueSoCodeSql(),
           // ADR-261 rev — Created By: who entered this issue (its created_at is Created On).
           createdByName: createdByNameSql(partyMaterialIssues.createdBy),
         })
@@ -959,6 +1052,7 @@ export async function listPartyMaterialIssues(
             jcItemName: r.jcItemName ?? null,
           },
           { rmItemCode: r.rmItemCode ?? null, rmItemName: r.rmItemName ?? null },
+          r.soCode ?? null,
         ),
         materialStockQty: r.materialStockQty ?? null,
         createdByName: r.createdByName ?? null,
