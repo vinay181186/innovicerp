@@ -64,7 +64,6 @@
     "modules/so-costing/routes/detail.tsx": 1,
     "modules/so-planning/components/bom-planning-modal.tsx": 1,
     "modules/so-planning/components/edit-plan-modal.tsx": 2,
-    "modules/so-planning/components/planning-line-expand.tsx": 1,
     "modules/so-status/components/so-status-detail.tsx": 1,
     "modules/stock-counts/components/lines-table.tsx": 1,
     "modules/store-issues/components/issue-lines-editor.tsx": 1,

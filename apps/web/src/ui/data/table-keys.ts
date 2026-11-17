@@ -88,6 +88,8 @@ export const TABLE_KEYS = {
   stockValuation: 'stock-valuation',
   /** Level 2 of SO/JWSO Planning: the lines of ONE order. */
   planningLines: 'planning-lines',
+  /** The per-item (BOM part / plan) table under one Planning line (ADR-305). */
+  planningParts: 'planning-parts',
 
   // ADR-199 conversions — Production (batch PR)
   productionOrders: 'production-orders',

@@ -36,6 +36,7 @@ import { createdByColumn, leadColumns, type DataTableColumn } from '@/ui/data';
 import { planChildItemOf, planStatusOf, prStatusOf } from './plan-chip';
 import { partyGrnStatusColumn } from './party-grn-status-column';
 import { DocCodes, RcCodes } from './planning-doc-cells';
+import { hasPartRows } from './planning-line-menu';
 import { lineStatusOf } from './planning-shared';
 
 /** The Plan Status ▾ tick list. A `badge` column filters on DISTINCT values, so
@@ -297,6 +298,16 @@ export function planningLineColumns(
           return (
             <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
               —
+            </span>
+          );
+        }
+        // ADR-305: a BOM line's plans (one per part) do not fit side by side in
+        // one cell — say how many; each is a row of the parts table under the
+        // line (open by default, ADR-301), and the full list is the tooltip.
+        if (hasPartRows(l) && l.plans.length > 1) {
+          return (
+            <span className="mono fw-700" style={{ color: 'var(--blue)' }}>
+              {l.plans.length} plans
             </span>
           );
         }
