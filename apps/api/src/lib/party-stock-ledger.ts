@@ -73,7 +73,7 @@ async function lockPartyMaterial(
   if (!row) {
     throw new NotFoundError('Selected Party Material was not found. Please select it again.');
   }
-  return { code: row.code, rmCode: row.rmCode ?? row.code, balance: Number(row.balance) };
+  return { code: row.code, rmCode: row.rmCode, balance: Number(row.balance) };
 }
 
 export async function postPartyStockMove(

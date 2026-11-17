@@ -396,7 +396,7 @@ export async function createPartyMaterialIssue(
       })
       .returning();
     const row = inserted[0];
-    if (!row) throw new ValidationError('Could not save Party Material Issue. Try again.');
+    if (!row) throw new ValidationError('Could not save Customer Material Issue. Try again.');
 
     // 8) Draw down the register. The ledger writer owns stock_qty and refuses
     // an 'out' beyond the material's balance; this service keeps issued_qty.
@@ -459,7 +459,7 @@ async function lockIssue(
      WHERE mi.id = ${id}::uuid AND mi.company_id = ${companyId}::uuid AND mi.deleted_at IS NULL
   `)) as unknown as Array<{ jwLineId: string | null; jcLineId: string | null }>;
   const p = pre[0];
-  if (!p) throw new NotFoundError('Party Material Issue not found. Refresh the page.');
+  if (!p) throw new NotFoundError('Customer Material Issue not found. Refresh the page.');
   const lineId = p.jwLineId ?? p.jcLineId;
   if (lineId) await lockJwLine(tx, companyId, lineId);
 
@@ -472,7 +472,7 @@ async function lockIssue(
     .where(and(eq(partyMaterialIssues.id, id), eq(partyMaterialIssues.companyId, companyId)))
     .limit(1);
   const iss = rows[0];
-  if (!iss) throw new NotFoundError('Party Material Issue not found. Refresh the page.');
+  if (!iss) throw new NotFoundError('Customer Material Issue not found. Refresh the page.');
   if (iss.deletedAt) {
     throw new ConflictError(
       `${iss.code} has just been cancelled by someone else. Refresh the page.`,
@@ -547,7 +547,7 @@ export async function partyMaterialIssueCancelBlockers(
   const out: CancelBlocker[] = [];
   if (iss.returnedToStoreQty > 0) {
     out.push({
-      docLabel: 'Party Material Issue',
+      docLabel: 'Customer Material Issue',
       docNo: iss.code,
       href: null,
       reason:

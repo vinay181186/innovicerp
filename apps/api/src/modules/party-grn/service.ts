@@ -947,7 +947,7 @@ export async function partyGrnCancelBlockers(
     `)) as unknown as Array<{ code: string; qty: number }>;
     for (const mi of issues) {
       out.push({
-        docLabel: 'Party Material Issue',
+        docLabel: 'Customer Material Issue',
         docNo: mi.code,
         href: null,
         reason: `issued ${Number(mi.net)} of ${need.code} (${where}) to ${mi.jcCode ?? 'a Job Card'} ${tail}`,

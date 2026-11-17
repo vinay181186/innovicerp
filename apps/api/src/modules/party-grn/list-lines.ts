@@ -101,7 +101,7 @@ export async function listPartyGrnLines(
       SELECT
         pgl.id AS "lineId", pgl.line_no AS "lineNo",
         COALESCE(lri.code, lpm.item_code_text, pgl.party_material_code_text) AS "itemCode",
-        pgl.party_material_name AS "itemName",
+        COALESCE(lri.name, pgl.party_material_name) AS "itemName",
         COALESCE(oi.code, jwl.item_code_text) AS "orderItemCode",
         NULLIF(btrim(jwl.revision), '') AS "orderItemRevision",
         COALESCE(oi.name, jwl.part_name) AS "orderItemName",
