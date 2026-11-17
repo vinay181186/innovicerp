@@ -221,7 +221,7 @@ export async function cascadeBomToSoLine(
       .where(eq(bomMasters.id, bomMasterId))
       .limit(1);
     throw new ValidationError(
-      `${bom[0]?.bomNo ?? 'This BOM'} has Party Supplied parts (${partyCodes.join(', ')}) — customer parts are received only against an Equipment SO.`,
+      `${bom[0]?.bomNo ?? 'This BOM'} has Party Supplied parts (${partyCodes.join(', ')}) — customer parts are received only against an Equipment SO's own BOM (the SO header), not a BOM on an SO line.`,
     );
   }
 
