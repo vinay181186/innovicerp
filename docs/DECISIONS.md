@@ -16258,3 +16258,58 @@ second column. CLAUDE.md §18 says live series are never renumbered — the owne
 - Rollback: before anyone renames by hand, `UPDATE sales_orders SET internal_so_no = code,
   code = split_part(legacy_code,' ',1) WHERE legacy_code IS NOT NULL` (the trigger moves the
   copies back), then drop the trigger, both functions and `legacy_code`.
+
+## ADR-307: Customer-supplied BOM parts on an Equipment SO
+
+**Date:** 2026-11-17
+**Status:** Accepted (owner approved the plan and the user-steps PDF 17-11-2026: D1 BOM line,
+D2 separate `-RM` code, D3 compulsory Incoming QC)
+
+### Context
+
+On an Equipment SO the customer can send some BOM child parts. Before this, the ERP could not
+receive them (Party GRN was JWSO-only), showed them Short from company stock, pre-ticked them
+for planning / purchase, and the Assembly Tracker refused Complete because a party-owned item
+can never be store-issued.
+
+### Decision
+
+- BOM line type `party_supplied` ("Party Supplied"); its child must be a Party Supplied Material
+  item (`<code>-RM`) and vice versa. A type flip is refused while a live SO on the BOM has a
+  receipt or plan for that child. Multi-Level BOM keeps the three own-sourced types
+  (`ML_BOM_LINE_TYPES`).
+- Never planned, never bought: the SO-create cascade skips it; `createPlanInTx` refuses it
+  (covers every plan / PR path); BOM Planning greys it as "Customer supplies".
+- Received on a Party GRN **Against Equipment SO** (`party_grn.sales_order_id`, exactly one of
+  JWSO / SO). Incoming QC, NC Use As Is / Return to Customer, Cancel as for JWSO.
+- Kept in the existing zero-value party store; every movement carries
+  `party_stock_ledger.sales_order_id`.
+- Issued to the SO's assembly from the Assembly Tracker (`POST /assemblies/:soId/customer-part-
+  issues`, `party_material_issues.sales_order_id`). `readPartsOutMany` counts these issues, so
+  assembly Complete fits customer parts exactly like store-issued parts
+  (`assembly_unit_consumptions`). No separate `consume` ledger row: the register balance already
+  dropped at issue (same model as JWSO issue to JC).
+- Put back / cancel an assembly issue only for pieces still on the bench (Still Out).
+- Customer Material Return against an Equipment SO for spare good parts and held deviated pieces.
+- ONE figures source, `lib/party-so-parts.ts` (`soCustomerPartRowsSql` + `readSoCustomerParts`):
+  Need, Received, Waiting QC, Accepted, Issued, Fitted, Returned, In Store, Pending, Short, Party
+  GRN Status. Used by SO Status, SO parts panel, BOM Planning, Assembly Tracker, Party GRN cap,
+  issue cap, CMR returnable and the Store Home check `store_so_customer_parts`.
+- Locks: SO row (`lockSoRow`) first, then `party_materials` — on create, QC, Use As Is, cancel,
+  issue, put back, return.
+
+### Alternatives considered
+
+- Flag per SO (D1 b) — rejected by owner: needs an override table and a screen.
+- Keep the normal item code in the party store (D2 a) — owner chose a separate `-RM` code so
+  ownership can never mix with company stock.
+- A `consume` ledger row at assembly Complete — rejected: it would count the pieces out twice.
+
+### Consequences
+
+- Positive: receive → QC → issue → fit → dispatch → return traced per SO; nothing customer-owned
+  enters company stock or value.
+- Negative: the register row is per customer + RM item, so two SOs of one customer share its
+  `stock_qty`; the per-SO cap (`inStoreQty`) keeps each SO to its own pieces.
+- Open: NC register source panel shows no SO No. for an SO Party GRN NC (`NcSource` has no SO
+  field); Party Material Issue list has no `salesOrderId` filter.
