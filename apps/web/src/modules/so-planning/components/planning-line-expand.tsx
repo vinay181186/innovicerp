@@ -14,14 +14,18 @@
 // the line's own ⋯, and each item row's ⋯ (planChildMenu) for its plan.
 
 import {
+  docText,
+  planJcs,
   planOwnJc,
   planPros,
   planRouteCards,
+  rcText,
   type PlanningLine,
   type PlanningPlanSummary,
 } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
-import { RowMenu, type RowMenuItem } from '@/ui/data';
+import { DataTable, type DataTableColumn, type RowMenuItem } from '@/ui/data';
+import { TABLE_KEYS } from '@/ui/data/table-keys';
 import type { RenderLink } from '@/ui/layout';
 import { PrChip, planStatusOf } from './plan-chip';
 import { DocCode, DocCodes, PendingText, RcCodes } from './planning-doc-cells';
@@ -109,6 +113,188 @@ function PlanJcCell({ plan }: { plan: PlanningPlanSummary }): JSX.Element {
   );
 }
 
+/** A part's own code when the row belongs to one, else the plan's own item
+ *  (`itemCode ?? itemCodeText`, live over snapshot — the house pattern). */
+function itemCodeOf(r: ItemRow): string {
+  return r.part?.childItemCode ?? r.plan?.itemCode ?? r.plan?.itemCodeText ?? '—';
+}
+function itemNameOf(r: ItemRow): string {
+  const name = r.part ? r.part.childItemName : (r.plan?.itemName ?? r.plan?.itemNameText);
+  return name && name !== itemCodeOf(r) ? name : '';
+}
+
+/** A plan cell; empty on a part with no plan yet (Plan No. says so in words). */
+function planCell(
+  r: ItemRow,
+  draw: (plan: PlanningPlanSummary) => React.ReactNode,
+): React.ReactNode {
+  return r.plan ? draw(r.plan) : null;
+}
+
+/** The per-item table's columns. The three part columns only on a line that
+ *  has BOM parts; Item Name only when some name differs from its code. */
+function partColumns(hasParts: boolean, showName: boolean): DataTableColumn<ItemRow>[] {
+  const cols: DataTableColumn<ItemRow>[] = [
+    {
+      id: 'item_code',
+      header: 'Item Code',
+      kind: 'code',
+      className: 'td-code',
+      render: (r) => <span style={{ color: 'var(--text)' }}>{itemCodeOf(r)}</span>,
+      filterValue: (r) => itemCodeOf(r),
+    },
+  ];
+  if (showName) {
+    cols.push({
+      id: 'item_name',
+      header: 'Item Name',
+      kind: 'text',
+      align: 'left',
+      ellipsis: true,
+      render: (r) => itemNameOf(r),
+      title: (r) => itemNameOf(r),
+      filterValue: (r) => itemNameOf(r),
+    });
+  }
+  if (hasParts) {
+    // A part's requirement is printed on its FIRST row only, so a part with
+    // two plans does not read as double.
+    cols.push(
+      {
+        id: 'qty_per_set',
+        header: 'Qty per Set',
+        kind: 'num',
+        render: (r) => (r.part ? r.part.qtyPerSet : ''),
+        filterValue: (r) => r.part?.qtyPerSet ?? null,
+      },
+      {
+        id: 'required',
+        header: 'Required',
+        kind: 'num',
+        className: 'fw-700',
+        render: (r) => (r.part ? r.part.requiredQty : ''),
+        filterValue: (r) => r.part?.requiredQty ?? null,
+      },
+      {
+        id: 'planned',
+        header: 'Planned',
+        kind: 'num',
+        className: 'fw-700',
+        render: (r) =>
+          r.part ? (
+            <span style={r.partShort ? { color: 'var(--amber2)' } : undefined}>
+              {r.part.plannedQty}
+              {r.partShort ? ' ⚠' : ''}
+            </span>
+          ) : (
+            ''
+          ),
+        title: (r) =>
+          r.part && r.partShort
+            ? `${r.part.requiredQty - r.part.plannedQty} of ${r.part.requiredQty} still to plan for this part`
+            : '',
+        filterValue: (r) => r.part?.plannedQty ?? null,
+      },
+    );
+  }
+  cols.push(
+    {
+      id: 'plan_no',
+      header: 'Plan No.',
+      kind: 'code',
+      className: 'td-code',
+      render: (r) => (r.plan ? r.plan.code : <span className="text3">No plan yet</span>),
+      filterValue: (r) => r.plan?.code ?? 'No plan yet',
+    },
+    {
+      id: 'type',
+      header: 'Type',
+      kind: 'badge',
+      render: (r) => planCell(r, planTypeLabel),
+      filterValue: (r) => (r.plan ? planTypeLabel(r.plan) : ''),
+    },
+    {
+      id: 'plan_qty',
+      header: 'Plan Qty',
+      kind: 'num',
+      className: 'fw-700',
+      render: (r) => planCell(r, (p) => p.planQty),
+      filterValue: (r) => r.plan?.planQty ?? null,
+    },
+    {
+      id: 'planned_start',
+      header: 'Planned Start',
+      kind: 'date',
+      className: 'mono',
+      render: (r) => planCell(r, (p) => fmtDate(p.plannedStartDate)),
+      filterValue: (r) => r.plan?.plannedStartDate ?? null,
+    },
+    {
+      id: 'planned_end',
+      header: 'Planned End',
+      kind: 'date',
+      className: 'mono',
+      render: (r) => planCell(r, (p) => fmtDate(p.plannedEndDate)),
+      filterValue: (r) => r.plan?.plannedEndDate ?? null,
+    },
+    {
+      id: 'plan_status',
+      header: 'Plan Status',
+      kind: 'badge',
+      render: (r) =>
+        planCell(r, (p) => {
+          const st = planStatusOf(p);
+          return <span style={{ color: st.color, fontWeight: 700 }}>{st.label}</span>;
+        }),
+      filterValue: (r) => (r.plan ? planStatusOf(r.plan).label : ''),
+    },
+    {
+      id: 'rc_no',
+      header: 'RC No.',
+      kind: 'text',
+      align: 'left',
+      ellipsis: true,
+      render: (r) => planCell(r, (p) => <RcCodes rcs={planRouteCards(p)} />),
+      title: (r) => (r.plan ? rcText(planRouteCards(r.plan)) : ''),
+      filterValue: (r) => (r.plan ? rcText(planRouteCards(r.plan)) : ''),
+    },
+    {
+      id: 'pro_no',
+      header: 'PRO No.',
+      kind: 'text',
+      align: 'left',
+      render: (r) => planCell(r, (p) => <DocCodes docs={planPros(p)} kind="pro" stacked />),
+      title: (r) => (r.plan ? docText(planPros(r.plan)) : ''),
+      filterValue: (r) => (r.plan ? docText(planPros(r.plan)) : ''),
+    },
+    {
+      id: 'jc_no',
+      header: 'JC No.',
+      kind: 'text',
+      align: 'left',
+      render: (r) => planCell(r, (p) => <PlanJcCell plan={p} />),
+      title: (r) => (r.plan ? docText(planJcs(r.plan)) : ''),
+      filterValue: (r) => (r.plan ? docText(planJcs(r.plan)) : ''),
+    },
+    {
+      id: 'linked',
+      header: 'Linked',
+      kind: 'text',
+      align: 'left',
+      ellipsis: true,
+      className: 'mono',
+      render: (r) => {
+        if (!r.plan) return null;
+        const linked = planLinkedCodes(r.plan);
+        return linked.length > 0 ? linked.join(', ') : '—';
+      },
+      title: (r) => (r.plan ? planLinkedCodes(r.plan).join(', ') : ''),
+      filterValue: (r) => (r.plan ? planLinkedCodes(r.plan).join(', ') : ''),
+    },
+  );
+  return cols;
+}
+
 function Fact({ label, children }: { label: string; children: React.ReactNode }): JSX.Element {
   return (
     <span>
@@ -141,11 +327,7 @@ export function PlanningLineExpand({
   // A column of dashes is worse than no column: on data where the item's name
   // IS its code (and it is, on several masters) every cell would repeat the
   // code. Show the column only when some row actually adds something.
-  const showName = itemRows.some((r) => {
-    const code = r.part?.childItemCode ?? r.plan?.itemCode ?? r.plan?.itemCodeText ?? '';
-    const name = r.part ? r.part.childItemName : (r.plan?.itemName ?? r.plan?.itemNameText);
-    return Boolean(name) && name !== code;
-  });
+  const showName = itemRows.some((r) => itemNameOf(r) !== '');
   return (
     <div style={{ padding: 'var(--sp-2) var(--sp-3) var(--sp-3) var(--sp-6)' }}>
       <div
@@ -188,122 +370,29 @@ export function PlanningLineExpand({
       {/* ADR-216 — one row per item. A plan and the part it is for are the same
           subject, so they are one row, not a parts table above a run of chips.
           The part columns appear only on a line that HAS parts; an ordinary
-          line gets the same table listing its plans. House table (ADR-199) in
-          its nested `tbl-compact` density: codes mono, numbers right. */}
+          line gets the same table listing its plans. The shared FIT table
+          (ADR-199) in its nested `compact` density, as BOM Master's part list:
+          columns that do not fit leave the screen by name, never a side
+          scroll, and every header gets its ▾ (ADR-200). */}
       {itemRows.length > 0 ? (
-        <div
-          className="tbl-wrap"
-          style={{
-            marginBottom: 'var(--sp-2)',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--radius2)',
-          }}
-        >
-          <table className="innovic-table tbl-grid tbl-compact">
-            <thead>
-              <tr>
-                <th>Item Code</th>
-                {showName ? <th>Item Name</th> : null}
-                {hasParts ? <th className="th-num">Qty per Set</th> : null}
-                {hasParts ? <th className="th-num">Required</th> : null}
-                {hasParts ? <th className="th-num">Planned</th> : null}
-                <th>Plan No.</th>
-                <th>Type</th>
-                <th className="th-num">Plan Qty</th>
-                <th className="th-ctr">Planned Start</th>
-                <th className="th-ctr">Planned End</th>
-                <th className="th-ctr">Plan Status</th>
-                <th>RC No.</th>
-                <th>PRO No.</th>
-                <th>JC No.</th>
-                <th>Linked</th>
-                {showMenu ? (
-                  <th className="th-ctr" style={{ width: 40 }} aria-label="Actions" />
-                ) : null}
-              </tr>
-            </thead>
-            <tbody>
-              {itemRows.map((row) => {
-                const { part, plan } = row;
-                // A part's own code when the row belongs to one, else the
-                // plan's own item (`itemCode ?? itemCodeText`, live over
-                // snapshot — the house pattern).
-                const code = part?.childItemCode ?? plan?.itemCode ?? plan?.itemCodeText ?? '—';
-                const name = part ? part.childItemName : (plan?.itemName ?? plan?.itemNameText);
-                const st = plan ? planStatusOf(plan) : null;
-                const linked = plan ? planLinkedCodes(plan) : [];
-                return (
-                  <tr key={row.key} className={row.partShort ? 'row-pending' : undefined}>
-                    <td className="td-code" style={{ color: 'var(--text)' }}>
-                      {code}
-                    </td>
-                    {showName ? <td>{name && name !== code ? name : ''}</td> : null}
-                    {hasParts ? <td className="td-num">{part ? part.qtyPerSet : ''}</td> : null}
-                    {hasParts ? (
-                      <td className="td-num fw-700">{part ? part.requiredQty : ''}</td>
-                    ) : null}
-                    {hasParts ? (
-                      <td
-                        className="td-num fw-700"
-                        style={part && row.partShort ? { color: 'var(--amber2)' } : undefined}
-                        title={
-                          part && row.partShort
-                            ? `${part.requiredQty - part.plannedQty} of ${part.requiredQty} still to plan for this part`
-                            : undefined
-                        }
-                      >
-                        {part ? part.plannedQty : ''}
-                        {part && row.partShort ? ' ⚠' : ''}
-                      </td>
-                    ) : null}
-                    {/* No plan against this part yet — the gap this table exists
-                        to show. Said in words, not left as an empty row. */}
-                    {plan === null ? (
-                      // 10 = Plan No. + Type + Plan Qty + Planned Start +
-                      // Planned End + Plan Status + RC No. + PRO No. +
-                      // JC No. + Linked.
-                      <td className="text3" colSpan={10}>
-                        No plan yet
-                      </td>
-                    ) : (
-                      <>
-                        <td className="td-code">{plan.code}</td>
-                        <td>{planTypeLabel(plan)}</td>
-                        <td className="td-num fw-700">{plan.planQty}</td>
-                        <td className="td-ctr mono">{fmtDate(plan.plannedStartDate)}</td>
-                        <td className="td-ctr mono">{fmtDate(plan.plannedEndDate)}</td>
-                        <td className="td-ctr" style={{ color: st?.color, fontWeight: 700 }}>
-                          {st?.label}
-                        </td>
-                        <td>
-                          <RcCodes rcs={planRouteCards(plan)} />
-                        </td>
-                        <td>
-                          <DocCodes docs={planPros(plan)} kind="pro" stacked />
-                        </td>
-                        <td>
-                          <PlanJcCell plan={plan} />
-                        </td>
-                        <td className="mono" title={linked.join(', ')}>
-                          {linked.length > 0 ? linked.join(', ') : '—'}
-                        </td>
-                      </>
-                    )}
-                    {showMenu && rowMenu ? (
-                      <td className="td-ctr">
-                        <RowMenu
-                          items={rowMenu(plan, row.partShort)}
-                          renderLink={renderLink}
-                          label={`Actions for ${plan?.code ?? code}`}
-                        />
-                      </td>
-                    ) : null}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <DataTable<ItemRow>
+          tableKey={TABLE_KEYS.planningParts}
+          columns={partColumns(hasParts, showName)}
+          rows={itemRows}
+          rowKey={(r) => r.key}
+          density="compact"
+          sortFilter
+          defaultPinned={['plan_no']}
+          rowClassName={(r) => (r.partShort ? 'row-pending' : undefined)}
+          {...(showMenu && rowMenu
+            ? {
+                rowMenu: (r: ItemRow) => rowMenu(r.plan, r.partShort),
+                rowMenuLabel: (r: ItemRow) => `Actions for ${r.plan?.code ?? itemCodeOf(r)}`,
+                renderLink,
+              }
+            : {})}
+          emptyText="No plans yet."
+        />
       ) : null}
 
       {line.prs.map((pr) => (

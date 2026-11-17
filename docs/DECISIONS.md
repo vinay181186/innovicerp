@@ -16163,3 +16163,29 @@ scroll inside. ADR-202 worked only while a list had fewer rows than the screen.
   screen once the page has scrolled one screen height (it is held inside `.page-fill`).
 - Negative: the three reports that opt in lose block margin collapsing (flex column), so their gaps
   match the other list pages rather than the old report pages.
+
+## ADR-305: Planning's per-part table under a line is the standard table
+
+**Date:** 2026-11-17
+**Status:** Accepted
+
+**Problem (owner, 17-11-2026):** on SO/JWSO Planning › an equipment SO, the plan table under the
+line "is horizontal, not the standard table". Since ADR-301 it opens by default.
+
+**Cause:** the table (ADR-216, 5-Oct) was hand-written to look like the standard table two days
+after the line sheet moved onto it (ADR-208). It had no fit engine, so its 15 columns ran off the
+screen into a side scroll, and no ▾ sort/filter or Columns button. Separately, the line's Plans cell
+put every part's plan side by side, cut off with "…".
+
+**Decision:**
+- `planning-line-expand.tsx` draws the per-item rows on the shared `DataTable` (fit engine,
+  `TABLE_KEYS.planningParts`, nested `compact` density, ▾ on), as BOM Master's part list. Same columns
+  and names; a part with no plan reads "No plan yet" in Plan No. (was a 10-column span); the part's
+  qty still prints on its first row only; the ⚠ short warning and each row's ⋯ menu stay.
+- The Plans cell of a BOM line with two or more plans reads "n plans"; the full list is its tooltip
+  and the rows are in the table under it. An ordinary line (no parts table) is unchanged.
+- `standard-frozen.json`: the file's hand-made table allowance is removed.
+
+**Consequences:** no side scroll; extra columns go behind "n columns not on screen". Sorting the
+table can move a part's second plan away from the row carrying the part's qty (Item Code is on
+every row). No server change.
