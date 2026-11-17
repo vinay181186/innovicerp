@@ -1081,10 +1081,11 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
 
           <OrderSupplyFormFields preview={supply} />
 
-          {/* ADR-306 — the Internal SO No. box: "SO-" is fixed in front (it is put
-              back on every keystroke, so it cannot be erased) and only digits go
-              in. Typed, the SO No. becomes SO-<digits>; blank on a new SO, the
-              next IN-SO-#####. Checked live against every SO, live or deleted. */}
+          {/* ADR-306 — the Internal SO No. box: only digits go in. On Edit "SO-" is
+              fixed in front (put back on every keystroke, cannot be erased); on a
+              new SO the box shows the digits alone (ADR-308). Typed, the SO No.
+              becomes SO-<digits>; blank on a new SO, the next IN-SO-#####.
+              Checked live against every SO, live or deleted. */}
           <FormField
             label="Internal SO No."
             size="sm"
@@ -1099,7 +1100,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
               autoComplete="off"
               inputMode="numeric"
               maxLength={INTERNAL_SO_NO_PREFIX.length + INTERNAL_SO_NO_MAX_DIGITS}
-              value={`${INTERNAL_SO_NO_PREFIX}${typedSoNo}`}
+              value={isCreate ? typedSoNo : `${INTERNAL_SO_NO_PREFIX}${typedSoNo}`}
               // name + onBlur only: no ref, so the form library never writes the
               // bare digits into the box and drops the fixed "SO-".
               name={internalSoNoField.name}
