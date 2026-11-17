@@ -10,6 +10,8 @@
 // types verbatim — kept as string literal unions to stay framework-agnostic.
 
 import { z } from 'zod';
+import { BOM_LINE_TYPES } from '../enums/bom-line-type';
+import { soCustomerPartFiguresSchema } from './so-customer-part';
 import { SO_STATUSES } from '../enums/so-status';
 
 // Op status (from calc-engine OpStatus union)
@@ -224,7 +226,10 @@ export const soStatusBomItemSchema = z.object({
   totalNeed: z.number().nonnegative(),
   stockQty: z.number().nonnegative(),
   shortfall: z.number().nonnegative(),
-  bomType: z.enum(['manufacture', 'purchase', 'outsource']),
+  bomType: z.enum(BOM_LINE_TYPES),
+  /** ADR-307: set only on a party_supplied row; then `stockQty` = figures.inStoreQty
+   *  and `shortfall` = figures.shortQty (company stock ignored). */
+  customerPart: soCustomerPartFiguresSchema.nullable().default(null),
   /** Plan-status label + linked JC code, if a plan covers this child. */
   planStatus: z.string().nullable(),
   planCode: z.string().nullable(),
