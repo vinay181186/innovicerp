@@ -1162,8 +1162,10 @@ export async function getPlanningBom(
       const stockQty = isCustomer
         ? (customerPart?.inStoreQty ?? 0)
         : (stockMap.get(c.bml.childItemId) ?? 0);
+      // BOM Planning is per SO LINE, the customer-part figures per SO: cap the
+      // SO-wide short at this row's own need so Short never exceeds Need.
       const shortfall = isCustomer
-        ? (customerPart?.shortQty ?? totalNeed)
+        ? Math.min(customerPart?.shortQty ?? totalNeed, totalNeed)
         : Math.max(0, totalNeed - stockQty);
       const existingPlan = isCustomer ? null : (planByChildCode.get(c.childCode) ?? null);
       return {

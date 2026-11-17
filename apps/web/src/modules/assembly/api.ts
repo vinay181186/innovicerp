@@ -140,7 +140,7 @@ export function useSetReadinessOverride(soId: string) {
   });
 }
 
-/** ADR-307 — Assembly Tracker › "Issue Customer Part →": issue a customer-
+/** ADR-307 — Assembly Tracker › "Issue Customer RM →": issue a customer-
  *  supplied BOM part from the customer store to this Equipment SO's assembly.
  *  The server caps the qty (in-store and need − issued) under its locks. */
 export function useIssueCustomerPart(soId: string, saveKey?: SaveKey) {

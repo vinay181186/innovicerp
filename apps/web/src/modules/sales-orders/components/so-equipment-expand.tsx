@@ -127,7 +127,7 @@ function BomPartsTable({ items }: { items: SoStatusBomItem[] }): React.JSX.Eleme
           <th>BOM Type</th>
           {/* ADR-307 — customer-supplied parts only; '—' on every other row. */}
           <th>Party GRN Status</th>
-          <th className="th-num">Received</th>
+          <th className="th-num">Accepted</th>
           <th className="th-num" style={{ color: 'var(--green2)' }}>
             Physical
           </th>

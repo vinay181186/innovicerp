@@ -63,6 +63,9 @@ export const partyGrnKeys = {
     [...partyGrnKeys.all, 'waiting-qc', jobWorkOrderId] as const,
   /** ADR-307 — open Equipment SOs with customer-supplied BOM parts. */
   receivableSos: () => [...partyGrnKeys.all, 'receivable-sos'] as const,
+  /** ADR-307 — Customer Material Return picker: also CLOSED SOs still
+   *  holding customer pieces (?forReturn=true). */
+  receivableSosForReturn: () => [...partyGrnKeys.all, 'receivable-sos', 'return'] as const,
   /** ADR-307 — one Equipment SO's customer parts with the server's figures. */
   soReceivable: (salesOrderId: string) =>
     [...partyGrnKeys.all, 'so-receivable', salesOrderId] as const,
@@ -127,11 +130,17 @@ export function useNextPartyGrnCode() {
 
 /** ADR-307 — the "Against Equipment SO" picker (Party GRN and Customer
  *  Material Return create). Every open Equipment SO whose BOM has a
- *  customer-supplied part; pendingQty 0 = nothing left to receive. */
-export function useReceivableSos(enabled = true) {
+ *  customer-supplied part; pendingQty 0 = nothing left to receive.
+ *  forReturn (Customer Material Return) also lists CLOSED SOs that still
+ *  hold customer pieces. */
+export function useReceivableSos(enabled = true, opts: { forReturn?: boolean } = {}) {
+  const forReturn = opts.forReturn ?? false;
   return useQuery<SoWithCustomerParts[]>({
-    queryKey: partyGrnKeys.receivableSos(),
-    queryFn: () => apiFetch<SoWithCustomerParts[]>('/party-grn/receivable-sos'),
+    queryKey: forReturn ? partyGrnKeys.receivableSosForReturn() : partyGrnKeys.receivableSos(),
+    queryFn: () =>
+      apiFetch<SoWithCustomerParts[]>(
+        forReturn ? '/party-grn/receivable-sos?forReturn=true' : '/party-grn/receivable-sos',
+      ),
     enabled,
     staleTime: 0,
   });

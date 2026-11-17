@@ -638,7 +638,7 @@ const TYPE_META: Record<AssemblyComponentRow['bomType'], { label: string; color:
   manufacture: { label: '🏭 Mfg', color: 'var(--cyan)' },
   purchase: { label: '🛒 Buy', color: 'var(--green2)' },
   outsource: { label: '🔧 JW', color: 'var(--amber2)' },
-  // ADR-307 — the customer sends this part; issued with "Issue Customer Part →".
+  // ADR-307 — the customer sends this part; issued with "Issue Customer RM →".
   party_supplied: { label: 'Party Supplied', color: 'var(--purple)' },
 };
 
@@ -679,7 +679,7 @@ function ComponentsPanel({
         <div className="panel-title">Components ({components.length})</div>
         {canIssueCustomerPart ? (
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => setIssueOpen(true)}>
-            Issue Customer Part →
+            Issue Customer RM →
           </button>
         ) : null}
       </div>

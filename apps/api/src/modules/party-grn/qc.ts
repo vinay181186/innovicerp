@@ -182,7 +182,8 @@ export async function qcPartyGrn(
     for (const q of ordered) {
       const l = byId.get(q.lineId)!;
       // §20.3 lock order: header (above) → JWSO line → the Party GRN line.
-      // ADR-307: an Equipment SO GRN takes the SO row lock instead.
+      // ADR-307: an Equipment SO GRN takes the SO row lock instead (header →
+      // SO → line → register — the SO-GRN lock order, see so-grn.ts header).
       const jwLine = head.salesOrderId ? null : await lockJwLine(tx, companyId, l.jwLineId!);
       if (head.salesOrderId) await lockSoRow(tx, companyId, head.salesOrderId);
       const parentLabel = jwLine ? `${jwLine.jwCode} Ln ${jwLine.lineNo}` : (head.soCode ?? 'SO');

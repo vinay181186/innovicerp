@@ -249,32 +249,28 @@ function assertPartySuppliedLinesMatchItems(
   }
 }
 
-// ADR-307: once a live Equipment SO on this BOM has started on a customer
-// part (a Party GRN receipt) or on an own part (a live plan), the line's type
-// may no longer flip to / from Party Supplied — the receipts or plans would be
-// orphaned against a line that now says the opposite.
-async function assertPartyTypeFlipAllowed(
+// ADR-307 (code review): a party_supplied line's type is tied to its child
+// item's type (assertPartySuppliedLinesMatchItems), so a type flip cannot
+// happen. What CAN orphan a customer receipt is the line LEAVING the BOM —
+// removed, its child item swapped, or the whole BOM deleted — while a live
+// (not closed / cancelled) Equipment SO on this BOM has already received that
+// part on a Party GRN. Refused here, under the BOM row lock the caller holds.
+// (No plan check: createPlanInTx refuses a party_supplied part, so a plan for
+// one cannot exist.)
+async function assertPartyLinesMayLeave(
   tx: DbTransaction,
   companyId: string,
   bomId: string,
-  oldLines: ReadonlyArray<{ childItemId: string; bomType: string }>,
-  newLines: ReadonlyArray<{ childItemId: string; bomType: string }>,
-  lookup: ItemsLookup,
+  leaving: ReadonlyArray<{ childItemId: string; code: string | null }>,
 ): Promise<void> {
-  const oldType = new Map(oldLines.map((l) => [l.childItemId, l.bomType]));
-  const flipped = newLines.filter((l) => {
-    const was = oldType.get(l.childItemId);
-    return (
-      was !== undefined && was !== l.bomType && (was === 'party_supplied' || l.bomType === 'party_supplied')
-    );
-  });
-  if (flipped.length === 0) return;
+  if (leaving.length === 0) return;
   const sos = (await tx.execute(sql`
     SELECT so.id, so.code
       FROM public.sales_orders so
      WHERE so.company_id = ${companyId}::uuid AND so.deleted_at IS NULL
        AND so.bom_master_id = ${bomId}::uuid
        AND so.status NOT IN ('closed', 'cancelled')
+     ORDER BY so.code
   `)) as unknown as Array<{ id: string; code: string }>;
   if (sos.length === 0) return;
   const parts = await readSoCustomerPartsMany(
@@ -282,31 +278,14 @@ async function assertPartyTypeFlipAllowed(
     companyId,
     sos.map((r) => r.id),
   );
-  for (const l of flipped) {
-    const code = lookup.byId.get(l.childItemId)?.code ?? 'this part';
+  for (const l of leaving) {
     for (const so of sos) {
       const received = parts.get(so.id)?.get(l.childItemId)?.figures.receivedQty ?? 0;
       if (received > 0) {
         throw new ConflictError(
-          `${code}: SO ${so.code} has already received this part on a Party GRN — its BOM Type cannot change.`,
+          `${l.code ?? 'This part'}: SO ${so.code} has already received this part from the customer — it cannot leave the BOM.`,
         );
       }
-    }
-    const planned = (await tx.execute(sql`
-      SELECT so.code
-        FROM public.plans p
-        JOIN public.sales_order_lines sol ON sol.id = p.so_line_id AND sol.deleted_at IS NULL
-        JOIN public.sales_orders so ON so.id = sol.sales_order_id
-       WHERE p.company_id = ${companyId}::uuid AND p.deleted_at IS NULL
-         AND p.plan_status <> 'cancelled'
-         AND p.bom_child_code = ${code}
-         AND so.id = ANY(${sql.param(sos.map((r) => r.id))}::uuid[])
-       LIMIT 1
-    `)) as unknown as Array<{ code: string }>;
-    if (planned[0]) {
-      throw new ConflictError(
-        `${code}: SO ${planned[0].code} already has a plan for this part — its BOM Type cannot change.`,
-      );
     }
   }
 }
@@ -1117,13 +1096,20 @@ export async function updateBomMasterTx(
       bomType: r.line.bomType,
     }));
     assertPartySuppliedLinesMatchItems(input.lines, itemsLookup);
-    await assertPartyTypeFlipAllowed(
+    // ADR-307: a Party Supplied line removed (or its child item swapped — the
+    // old child leaves) while an SO on this BOM has received it is refused.
+    const keptPartyChildIds = new Set(
+      input.lines.filter((l) => l.bomType === 'party_supplied').map((l) => l.childItemId),
+    );
+    await assertPartyLinesMayLeave(
       tx,
       companyId,
       id,
-      oldLineRows.map((r) => r.line),
-      input.lines,
-      itemsLookup,
+      oldLineRows
+        .filter(
+          (r) => r.line.bomType === 'party_supplied' && !keptPartyChildIds.has(r.line.childItemId),
+        )
+        .map((r) => ({ childItemId: r.line.childItemId, code: r.itemCode })),
     );
 
     const newSnapshot: DiffLine[] = input.lines.map((l) => ({
@@ -1294,9 +1280,25 @@ export async function softDeleteBomMaster(
           isNull(bomMasters.deletedAt),
         ),
       )
+      .for('update')
       .limit(1);
     const header = headers[0];
     if (!header) throw new NotFoundError('BOM not found. It may have been moved to Trash.');
+
+    // ADR-307: every Party Supplied line leaves with the BOM — refused while a
+    // live SO on this BOM has received one of those parts from the customer.
+    const partyLines = await tx
+      .select({ childItemId: bomMasterLines.childItemId, code: items.code })
+      .from(bomMasterLines)
+      .leftJoin(items, eq(items.id, bomMasterLines.childItemId))
+      .where(
+        and(
+          eq(bomMasterLines.bomMasterId, id),
+          isNull(bomMasterLines.deletedAt),
+          eq(bomMasterLines.bomType, 'party_supplied'),
+        ),
+      );
+    await assertPartyLinesMayLeave(tx, companyId, id, partyLines);
 
     // Block if any non-cancelled SO line links this BOM (BOM-8 cascade).
     const links = await tx

@@ -1,4 +1,4 @@
-// ADR-307 — Assembly Tracker › "Issue Customer Part →". Issues a customer-
+// ADR-307 — Assembly Tracker › "Issue Customer RM →". Issues a customer-
 // supplied BOM part (a Party Supplied BOM child, `<code>-RM`) from this SO's
 // customer store to its assembly. The figures come from the tracker rows the
 // page already loads (CLAUDE.md §20.5); the server re-checks every cap.
@@ -62,7 +62,7 @@ export function CustomerPartIssueModal({
   async function onSave(): Promise<void> {
     setErr(null);
     const n = Number(qty);
-    if (!picked || !rmItemId) return setErr('Pick the Customer Part.');
+    if (!picked || !rmItemId) return setErr('Pick the Customer RM.');
     if (!issueDate) return setErr('Issue Date is required.');
     if (!Number.isInteger(n) || n <= 0) return setErr('Issue Qty must be a whole number above 0.');
     if (n > max) return setErr(`Issue Qty cannot be more than ${max} for ${picked.childItemCode}.`);
@@ -82,7 +82,7 @@ export function CustomerPartIssueModal({
 
   return (
     <Modal
-      title="Issue Customer Part"
+      title="Issue Customer RM"
       onClose={onClose}
       closeLocked={issue.isPending}
       size="md"
@@ -103,7 +103,7 @@ export function CustomerPartIssueModal({
                 <Loader2 size={13} className="animate-spin" /> Saving…
               </>
             ) : (
-              'Issue Customer Part'
+              'Issue Customer RM'
             )}
           </button>
         </>
@@ -119,7 +119,7 @@ export function CustomerPartIssueModal({
         }}
       >
         {err ? <Banner tone="error">{err}</Banner> : null}
-        <FormField label="Customer Part" required htmlFor={`${formId}-part`}>
+        <FormField label="Customer RM" required htmlFor={`${formId}-part`}>
           <SearchableSelect
             id={`${formId}-part`}
             value={rmItemId}

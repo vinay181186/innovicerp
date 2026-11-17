@@ -1121,6 +1121,11 @@ export async function cancelPartyGrnTx(
      FOR UPDATE OF nc
   `)) as unknown as Array<{ id: string; code: string; status: string; rejectedQty: number }>;
 
+  // ADR-307: an SO GRN locks its SO BEFORE the lines (the one SO-GRN lock
+  // order, see so-grn.ts header) — no issue / return can move the SO's customer
+  // store between the refusal rule and the reversal.
+  if (head.salesOrderId) await lockSoRow(tx, companyId, head.salesOrderId);
+
   // Code review fix: lock the lines — a Customer Material Return taking their
   // rejected pieces locks the same rows, so the two serialise.
   await tx
@@ -1138,9 +1143,6 @@ export async function cancelPartyGrnTx(
     new Set(toReverse.flatMap((l) => (l.jwLineId ? [l.jwLineId] : []))),
   ).sort();
   for (const lineId of jwLineIds) await lockJwLine(tx, companyId, lineId);
-  // ADR-307: an SO GRN locks its SO instead (no issue / return can move the
-  // SO's customer store between the refusal rule and the reversal).
-  if (head.salesOrderId) await lockSoRow(tx, companyId, head.salesOrderId);
 
   // The refusal rule, under the locks — before anything moves.
   const blockers = await partyGrnCancelBlockers(tx, companyId, id);
@@ -1343,22 +1345,10 @@ export async function updatePartyGrnTx(
 ): Promise<PartyGrnDetail> {
   const companyId = requireCompany(user);
 
-  // ADR-307: an Equipment-SO GRN takes the SO row FIRST (SO -> GRN, the order
-  // the SO GRN create / QC / cancel use), so the need cap below cannot move.
-  const soPre = (await tx.execute(sql`
-    SELECT sales_order_id AS "soId" FROM public.party_grn
-     WHERE id = ${id}::uuid AND company_id = ${companyId}::uuid
-  `)) as unknown as Array<{ soId: string | null }>;
-  const soId = soPre[0]?.soId ?? null;
-  if (soId) await lockSoRow(tx, companyId, soId);
-  // Customer parts of that SO, read once under the SO lock (lazily, on the
-  // first received-qty change).
-  let soParts: Awaited<ReturnType<typeof readSoCustomerParts>> | null = null;
-
   // Lock the header, then confirm it is live (not cancelled).
   const headRows = (await tx.execute(sql`
     SELECT id, code, grn_date AS "grnDate", dc_no AS "dcNo", remarks,
-           client_id AS "clientId",
+           client_id AS "clientId", sales_order_id AS "salesOrderId",
            received_by_text AS "receivedByText", deleted_at AS "deletedAt"
       FROM public.party_grn
      WHERE id = ${id}::uuid AND company_id = ${companyId}::uuid
@@ -1370,6 +1360,7 @@ export async function updatePartyGrnTx(
     dcNo: string | null;
     remarks: string | null;
     clientId: string | null;
+    salesOrderId: string | null;
     receivedByText: string | null;
     deletedAt: unknown;
   }>;
@@ -1378,6 +1369,15 @@ export async function updatePartyGrnTx(
   if (head.deletedAt != null) {
     throw new ConflictError(`${head.code} is cancelled — it cannot be edited.`);
   }
+
+  // ADR-307: an Equipment-SO GRN then takes the SO row (header -> SO -> lines,
+  // the one SO-GRN lock order, see so-grn.ts header), so the need cap below
+  // cannot move.
+  const soId = head.salesOrderId;
+  if (soId) await lockSoRow(tx, companyId, soId);
+  // Customer parts of that SO, read once under the SO lock (lazily, on the
+  // first received-qty change).
+  let soParts: Awaited<ReturnType<typeof readSoCustomerParts>> | null = null;
   // ADR-235 — no edit while a cancel request waits (this body is also the
   // edit-approval engine's replay of an approved edit).
   await assertNoPendingCancel(tx, 'party_grn', head.id);

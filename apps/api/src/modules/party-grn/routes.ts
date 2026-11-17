@@ -35,7 +35,12 @@ export async function partyGrnRoutes(app: FastifyInstance): Promise<void> {
   // = the Party GRN list's, requirePartyGrnRead). Declared before /:id.
   app.get('/party-grn/receivable-sos', async (req) => {
     if (!req.user) throw new AuthenticationError();
-    return listReceivableSos(req.user);
+    // ?forReturn=true — the Customer Material Return picker (closed SOs too,
+    // only those with a part in store or a held deviated piece).
+    const { forReturn } = z
+      .object({ forReturn: z.enum(['true', 'false']).optional() })
+      .parse(req.query);
+    return listReceivableSos(req.user, { forReturn: forReturn === 'true' });
   });
 
   app.get('/party-grn/so-receivable', async (req) => {

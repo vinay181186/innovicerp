@@ -59,7 +59,8 @@ export async function applyPartyGrnUseAsIs(
   }
 
   // 2) §20.3 — the JWSO line lock, then the Party GRN line.
-  // ADR-307: SO GRN → the SO row lock instead (SO → GRN line → party material).
+  // ADR-307: SO GRN → the SO row lock instead (NC → SO → GRN line → party
+  // material; the header is never locked here — SO-GRN lock order, so-grn.ts).
   const jwLine = jwLineId ? await lockJwLine(tx, companyId, jwLineId) : null;
   if (!jwLine && salesOrderId) await lockSoRow(tx, companyId, salesOrderId);
   const rows = (await tx.execute(sql`

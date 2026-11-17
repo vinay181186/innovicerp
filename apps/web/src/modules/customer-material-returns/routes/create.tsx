@@ -15,7 +15,7 @@
 //
 // ADR-307: "Against" picks JWSO (default — unchanged) or Equipment SO. The SO
 // picker lists every open Equipment SO with customer-supplied BOM parts
-// (GET /party-grn/receivable-sos); returnable?salesOrderId= gives good rows
+// (GET /party-grn/receivable-sos?forReturn=true); returnable?salesOrderId= gives good rows
 // (rmItemId, in-store qty) and rejected rows (partyGrnLineId). Switching
 // Against clears the order and every typed qty.
 
@@ -87,7 +87,7 @@ function CustomerMaterialReturnNewPage(): React.JSX.Element {
   const jwDetail = jwDetailQ.data && jwDetailQ.data.id === jwId ? jwDetailQ.data : null;
   const picked = jwHeaders.find((j) => j.jwId === jwId) ?? null;
   // ADR-307 — the Equipment SO picker (idle on the JWSO path).
-  const soListQ = useReceivableSos(isSo);
+  const soListQ = useReceivableSos(isSo, { forReturn: true });
   const soOptions = useMemo(() => soListQ.data ?? [], [soListQ.data]);
   const pickedSo = soOptions.find((o) => o.salesOrderId === soId) ?? null;
   const customerName = isSo

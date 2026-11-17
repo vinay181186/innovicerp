@@ -28,7 +28,6 @@ import {
 } from '../../lib/errors';
 import {
   balanceOf,
-  readBomParts,
   readBookedForOthers,
   readIssuedReturned,
   readItemInfo,
@@ -37,6 +36,7 @@ import {
 } from '../../lib/material-requirement';
 import { assertQtyFitsUom, lockItemForStock, roundQty } from '../../lib/stock-ledger';
 import { readStockPositions } from '../../lib/stock-reservation';
+import { customerPartRefusal, readCompanyBomParts } from '../store-issues/guard';
 import { emitActivityLog } from '../activity-log/service';
 import { getSoMaterial } from './service';
 
@@ -88,12 +88,19 @@ export async function reserveAssemblyParts(
 
   await withUserContext(user, async (tx) => {
     const so = await readOpenAssemblySo(tx, companyId, soId);
-    const parts = await readBomParts(tx, companyId, so.bomId, so.units);
+    // ADR-307: customer parts are never reserved from the company store.
+    const { parts, customerPartIds } = await readCompanyBomParts(
+      tx,
+      companyId,
+      so.bomId,
+      so.units,
+    );
     const itemIds = input.lines.map((l) => l.itemId);
     const info = await readItemInfo(tx, companyId, itemIds);
     for (const l of input.lines) {
       const it = info.get(l.itemId);
       if (!it) throw new NotFoundError('A part on this reservation was not found. Pick it again.');
+      if (customerPartIds.has(l.itemId)) throw new ValidationError(customerPartRefusal(it.code));
       if (!parts.has(l.itemId)) {
         throw new ValidationError(`${it.code} is not a BOM part of ${so.code}`);
       }

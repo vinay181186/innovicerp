@@ -1,9 +1,26 @@
 // ADR-307 — Party GRN against an Equipment SO (customer-supplied BOM parts).
 //
 // The JWSO path in service.ts is untouched; createPartyGrn hands over here
-// when the input names salesOrderId. Lock order: SO row (lockOpenEquipmentSo)
-// → figures read (readSoCustomerParts, AFTER the lock — §20.3) → register row
-// (ensurePartyMaterial's advisory lock) → challan lock → insert.
+// when the input names salesOrderId.
+//
+// ── SO-GRN LOCK ORDER (§20.3) — every writer of an Equipment-SO Party GRN ──
+//   1. party_grn header        (only if the path locks it: edit, QC, cancel;
+//                                the Cancel Request handler's lock() takes it
+//                                first, then cancelPartyGrnTx re-takes it)
+//      nc_register             (cancel locks its NCs here, after the header;
+//                                NC Use As Is starts here — it never locks the
+//                                header)
+//   2. sales_orders row        (lockSoRow / lockOpenEquipmentSo)
+//   3. party_grn_lines         (FOR UPDATE)
+//   4. party_materials         (register row — postPartyStockMove /
+//                                ensurePartyMaterial)
+// Figures (readSoCustomerParts) are read AFTER step 2. Never lock the header
+// after the SO row, nor the SO row after a GRN line.
+//   create   : SO → figures → register row → challan lock → insert   (here)
+//   edit     : header → SO → lines                (service.ts updatePartyGrnTx)
+//   QC       : header → SO → line → register      (qc.ts qcPartyGrn)
+//   Use As Is: NC → SO → line → register          (deviation.ts)
+//   cancel   : header → NCs → SO → lines → register (service.ts cancelPartyGrnTx)
 
 import {
   ActivityAction,
@@ -156,8 +173,14 @@ export async function createPartyGrnForSo(
 }
 
 /** GET /party-grn/receivable-sos — open Equipment SOs whose BOM has a
- *  party_supplied line. */
-export async function listReceivableSos(user: AuthContext): Promise<SoWithCustomerParts[]> {
+ *  party_supplied line. `forReturn` (Customer Material Return picker): closed
+ *  SOs too (never cancelled / deleted), and only SOs with a part still in the
+ *  customer store (inStoreQty > 0) or a held deviated piece (deviatedHeldQty > 0). */
+export async function listReceivableSos(
+  user: AuthContext,
+  opts: { forReturn?: boolean } = {},
+): Promise<SoWithCustomerParts[]> {
+  const forReturn = opts.forReturn === true;
   await requirePartyGrnRead(user);
   const companyId = requireCompany(user);
   return withUserContext(user, async (tx) => {
@@ -167,7 +190,8 @@ export async function listReceivableSos(user: AuthContext): Promise<SoWithCustom
         FROM public.sales_orders so
         LEFT JOIN public.clients c ON c.id = so.client_id
        WHERE so.company_id = ${companyId}::uuid AND so.deleted_at IS NULL
-         AND so.type = 'equipment' AND so.status NOT IN ('closed', 'cancelled')
+         AND so.type = 'equipment'
+         AND ${forReturn ? sql`so.status <> 'cancelled'` : sql`so.status NOT IN ('closed', 'cancelled')`}
          AND EXISTS (
            SELECT 1 FROM public.bom_masters bm
              JOIN public.bom_master_lines bml
@@ -187,7 +211,14 @@ export async function listReceivableSos(user: AuthContext): Promise<SoWithCustom
       companyId,
       rows.map((r) => r.id),
     );
-    return rows.map((r) => ({
+    const kept = forReturn
+      ? rows.filter((r) =>
+          Array.from(figs.get(r.id)?.values() ?? []).some(
+            (p) => p.figures.inStoreQty > 0 || p.figures.deviatedHeldQty > 0,
+          ),
+        )
+      : rows;
+    return kept.map((r) => ({
       salesOrderId: r.id,
       soCode: r.code,
       clientId: r.clientId,

@@ -194,7 +194,7 @@ export async function cascadeBomToSoLine(
 
   // 3. Load BOM lines (+ the child item's unit, for the PR rounding rule).
   const bomLineRows = await tx
-    .select({ line: bomMasterLines, uom: items.uom })
+    .select({ line: bomMasterLines, uom: items.uom, childCode: items.code })
     .from(bomMasterLines)
     .leftJoin(items, eq(items.id, bomMasterLines.childItemId))
     .where(
@@ -206,6 +206,25 @@ export async function cascadeBomToSoLine(
     )
     .orderBy(asc(bomMasterLines.lineNo));
 
+  // ADR-307 (code review): a LINE-level BOM with Party Supplied parts is
+  // refused, not skipped — customer parts are received only against an
+  // Equipment SO's header BOM (sales_orders.bom_master_id), so skipping them
+  // here would leave parts nobody plans, buys or receives. This runs inside
+  // the SO save's transaction, so the whole SO save rolls back.
+  const partyCodes = bomLineRows
+    .filter((r) => r.line.bomType === 'party_supplied')
+    .map((r) => r.childCode ?? r.line.childItemId);
+  if (partyCodes.length > 0) {
+    const bom = await tx
+      .select({ bomNo: bomMasters.bomNo })
+      .from(bomMasters)
+      .where(eq(bomMasters.id, bomMasterId))
+      .limit(1);
+    throw new ValidationError(
+      `${bom[0]?.bomNo ?? 'This BOM'} has Party Supplied parts (${partyCodes.join(', ')}) — customer parts are received only against an Equipment SO.`,
+    );
+  }
+
   // 4. Walk each BOM line and spawn the appropriate child.
   const createdJobCardCodes: string[] = [];
   const createdPrCodes: string[] = [];
@@ -213,8 +232,8 @@ export async function cascadeBomToSoLine(
   const today = new Date().toISOString().slice(0, 10);
 
   for (const { line: bl, uom } of bomLineRows) {
-    // ADR-307: the customer sends a party_supplied part — no JC, no PR. It is
-    // received on a Party GRN against the Equipment SO instead.
+    // ADR-307: party_supplied lines were refused above; kept as a belt-and-
+    // braces guard so no JC / PR is ever spawned for a customer part.
     if (!isOwnSourcedBomLineType(bl.bomType)) continue;
     const perSet = Number(bl.qtyPerSet);
     const childQty =
