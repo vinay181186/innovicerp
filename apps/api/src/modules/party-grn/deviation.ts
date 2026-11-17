@@ -185,7 +185,9 @@ export async function bookPartyAccepted(
       SELECT item_id AS "itemId" FROM public.party_materials WHERE id = ${partyMaterialId}::uuid
     `)) as unknown as Array<{ itemId: string | null }>;
     const itemId = pmRow[0]?.itemId ?? null;
-    const part = itemId ? (await readSoCustomerParts(tx, companyId, salesOrderId)).get(itemId) : null;
+    const part = itemId
+      ? (await readSoCustomerParts(tx, companyId, salesOrderId)).get(itemId)
+      : null;
     if (!part) {
       throw new ConflictError(
         'This customer part is no longer on the BOM of the SO as Party Supplied — it cannot be accepted.',
@@ -198,16 +200,16 @@ export async function bookPartyAccepted(
       );
     }
   } else {
-  const acc = (await tx.execute(sql`
+    const acc = (await tx.execute(sql`
     SELECT COALESCE(SUM(pgl.accepted_qty), 0)::int AS accepted
       FROM public.party_grn_lines pgl
       JOIN public.party_grn pg ON pg.id = pgl.party_grn_id AND pg.deleted_at IS NULL
      WHERE pgl.jw_line_id = ${jwLine.id}::uuid AND pgl.deleted_at IS NULL
   `)) as unknown as Array<{ accepted: number }>;
-  const accepted = Number(acc[0]?.accepted ?? 0);
-  if (accepted > jwLine.orderQty) {
-    throw new ConflictError(input.overCapMessage(accepted));
-  }
+    const accepted = Number(acc[0]?.accepted ?? 0);
+    if (accepted > jwLine.orderQty) {
+      throw new ConflictError(input.overCapMessage(accepted));
+    }
   }
   if (qty <= 0) return;
 

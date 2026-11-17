@@ -505,7 +505,11 @@ async function lockIssue(
       FROM public.party_material_issues mi
       LEFT JOIN public.job_cards jc ON jc.id = mi.job_card_id
      WHERE mi.id = ${id}::uuid AND mi.company_id = ${companyId}::uuid AND mi.deleted_at IS NULL
-  `)) as unknown as Array<{ jwLineId: string | null; jcLineId: string | null; soId: string | null }>;
+  `)) as unknown as Array<{
+    jwLineId: string | null;
+    jcLineId: string | null;
+    soId: string | null;
+  }>;
   const p = pre[0];
   if (!p) throw new NotFoundError('Customer Material Issue not found. Refresh the page.');
   // ADR-307: an assembly customer-part issue - the SO row first (the parent of

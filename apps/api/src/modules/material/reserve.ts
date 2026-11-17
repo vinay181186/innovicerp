@@ -89,12 +89,7 @@ export async function reserveAssemblyParts(
   await withUserContext(user, async (tx) => {
     const so = await readOpenAssemblySo(tx, companyId, soId);
     // ADR-307: customer parts are never reserved from the company store.
-    const { parts, customerPartIds } = await readCompanyBomParts(
-      tx,
-      companyId,
-      so.bomId,
-      so.units,
-    );
+    const { parts, customerPartIds } = await readCompanyBomParts(tx, companyId, so.bomId, so.units);
     const itemIds = input.lines.map((l) => l.itemId);
     const info = await readItemInfo(tx, companyId, itemIds);
     for (const l of input.lines) {

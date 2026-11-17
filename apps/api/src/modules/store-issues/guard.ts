@@ -143,12 +143,7 @@ export async function resolveTargetAndCap(
     if (!so.isEquipment || !so.bomId) {
       throw new ValidationError('Issue against an Assembly SO needs an Equipment SO with a BOM');
     }
-    const { parts, customerPartIds } = await readCompanyBomParts(
-      tx,
-      companyId,
-      so.bomId,
-      so.units,
-    );
+    const { parts, customerPartIds } = await readCompanyBomParts(tx, companyId, so.bomId, so.units);
     for (const l of input.lines) {
       if (customerPartIds.has(l.itemId)) {
         throw new ValidationError(customerPartRefusal(itemCodes.get(l.itemId) ?? 'This item'));
