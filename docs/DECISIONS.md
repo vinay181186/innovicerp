@@ -16125,6 +16125,9 @@ structure: one row per document.
 - Positive: one row per document; the list count is the document count.
 - Negative: the list no longer shows which items a document holds; open the document or
   search by item code.
+- Amendment 2026-11-17 (owner): on the SO Master list ONLY, the two value columns are headed
+  `Total SO Value` and `Pending SO Value`. The figures are unchanged (Total Value (Basic) / Value
+  to Dispatch, no GST); detail, form and print keep the NAMING.md names.
 
 ## ADR-304: A list page is exactly the screen's height, so the column header stays put
 
