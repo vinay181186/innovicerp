@@ -16,10 +16,10 @@ import {
   ITEM_TYPE_RULES,
   type ItemType,
   deriveSoFulfilmentStatus,
-  internalSoNoError,
-  internalSoNoTakenMessage,
-  normaliseInternalSoNo,
   normalizeRevision,
+  soNoFromInternal,
+  type SoNoCheckQuery,
+  type SoNoCheckResponse,
   revisionBackwardsMessage,
   revisionGoesBackwards,
   soFulfilmentFactsFromLines,
@@ -49,7 +49,9 @@ import {
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { canSeeFormPrice, requireDeleteRight, requireFormAccess } from '../../lib/access';
-import { isUniqueViolation, withUniqueRetry } from '../../lib/db-retry';
+import { withUniqueRetry } from '../../lib/db-retry';
+import { lockDocSeries } from '../../lib/doc-series-lock';
+import { assertTypedSoNoFree, checkSoNo, nextSystemSoNo } from './so-number';
 import { assertClientPoNoFree, checkClientPoNo } from '../../lib/client-po-unique';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import {
@@ -498,7 +500,9 @@ export async function listSalesOrders(
     const searchFrag = term
       ? sql`AND (
           so.code ILIKE ${term} ESCAPE '\\'
-          -- ADR-207 — the user-typed Internal SO No. (e.g. SO-2401).
+          -- ADR-306 — the old IN-SO number (papers printed before 0254)
+          -- still finds the order; internal_so_no for an SO 0254 left alone.
+          OR so.legacy_code ILIKE ${term} ESCAPE '\\'
           OR so.internal_so_no ILIKE ${term} ESCAPE '\\'
           OR so.customer_name ILIKE ${term} ESCAPE '\\'
           OR so.client_po_no ILIKE ${term} ESCAPE '\\'
@@ -1667,67 +1671,6 @@ async function readClientPoFilePath(
 
 // ─── Writes ───────────────────────────────────────────────────────────────
 
-// ─── Internal SO No. (ADR-207) ─────────────────────────────────────────────
-
-/** The 0197 partial unique index on (company_id, lower(internal_so_no)). */
-const INTERNAL_SO_NO_UNIQ = 'sales_orders_company_internal_so_no_uniq';
-
-/** True when `e` is a 23505 raised by the Internal SO No. index (the race the
- *  pre-check cannot see: two saves of the same number at the same moment). */
-export function isInternalSoNoViolation(e: unknown): boolean {
-  // A driver wrapper may carry the Postgres error as `cause`.
-  const raw = isUniqueViolation(e) ? e : (e as { cause?: unknown } | null)?.cause;
-  if (!isUniqueViolation(raw)) return false;
-  const pg = raw as { constraint_name?: unknown; constraint?: unknown };
-  return (pg.constraint_name ?? pg.constraint) === INTERNAL_SO_NO_UNIQ;
-}
-
-/** 400 when an Internal SO No. breaks the shared format rule. The schema
- *  already checks it; this is the server backstop for callers that skip the
- *  schema (the edit-approval replay, internal callers). */
-function assertInternalSoNoValid(internalSoNo: string): void {
-  const err = internalSoNoError(internalSoNo);
-  if (err) throw new ValidationError(err);
-}
-
-/** 409 when another live SO of the company already uses this Internal SO No.
- *  (compared case-insensitively — same rule as the index). `excludeId` is the
- *  SO being edited, so re-saving its own number is fine. */
-async function assertInternalSoNoFree(
-  tx: DbTransaction,
-  companyId: string,
-  internalSoNo: string,
-  excludeId?: string,
-): Promise<void> {
-  const hit = await tx
-    .select({ id: salesOrders.id })
-    .from(salesOrders)
-    .where(
-      and(
-        eq(salesOrders.companyId, companyId),
-        isNull(salesOrders.deletedAt),
-        sql`lower(${salesOrders.internalSoNo}) = lower(${internalSoNo})`,
-        excludeId ? ne(salesOrders.id, excludeId) : undefined,
-      ),
-    )
-    .limit(1);
-  if (hit.length > 0) throw new ConflictError(internalSoNoTakenMessage(internalSoNo));
-}
-
-/** Next IN-SO-##### code in the company series (mirrors nextJwCode). */
-async function nextSoCode(tx: DbTransaction, companyId: string): Promise<string> {
-  const rows = await tx
-    .select({ code: salesOrders.code })
-    .from(salesOrders)
-    .where(eq(salesOrders.companyId, companyId));
-  let max = 0;
-  for (const r of rows) {
-    const m = (r.code || '').match(/IN-SO-(\d+)\s*$/i);
-    if (m) max = Math.max(max, Number(m[1]));
-  }
-  return `IN-SO-${String(max + 1).padStart(5, '0')}`;
-}
-
 /** ADR-245 — the live Client PO No. check the SO form runs while typing.
  *  Read-only; the save re-checks under the lock. */
 export async function checkSoClientPoNo(
@@ -1739,11 +1682,23 @@ export async function checkSoClientPoNo(
   return withUserContext(user, (tx) => checkClientPoNo(tx, 'so', companyId, query));
 }
 
-/** The next suggested SO code (MAX+1 after the highest IN-SO-#####). Surfaced to
- *  the create form so it can prefill an editable, overridable suggestion. */
+/** The next system SO No. (IN-SO-#####, ADR-306), shown on the create form
+ *  while no Internal SO No. is typed. No lock: the saved number is later if
+ *  someone else saves first. */
 export async function getNextSoCode(user: AuthContext): Promise<{ code: string }> {
   const companyId = requireCompany(user);
-  return withUserContext(user, async (tx) => ({ code: await nextSoCode(tx, companyId) }));
+  return withUserContext(user, async (tx) => ({ code: await nextSystemSoNo(tx, companyId) }));
+}
+
+/** ADR-306 — the live "is this Internal SO No. free?" check the SO form runs
+ *  while typing. Read-only; the save checks again under the series lock. */
+export async function checkSalesOrderSoNo(
+  query: SoNoCheckQuery,
+  user: AuthContext,
+): Promise<SoNoCheckResponse> {
+  await requireFormAccess(user, 'so_create', 'view');
+  const companyId = requireCompany(user);
+  return withUserContext(user, (tx) => checkSoNo(tx, companyId, query));
 }
 
 export async function createSalesOrder(
@@ -1753,25 +1708,12 @@ export async function createSalesOrder(
   await requireFormAccess(user, 'so_create', 'entry');
   const companyId = requireCompany(user);
 
-  // ADR-207 — the SO No. is SYSTEM ONLY: always the next IN-SO-#####, never a
-  // client-sent code (the create schema no longer carries one). withUniqueRetry
-  // re-runs in a fresh transaction if two concurrent creates collide on
-  // sales_orders_company_code_uniq (23505). The user's own number is the
-  // Internal SO No.: required (schema), unique per company case-insensitively.
-  // A 23505 from ITS index is not a series race, so it becomes the 409 below
-  // (a ConflictError, which withUniqueRetry does not retry).
-  const internalSoNo = normaliseInternalSoNo(input.header.internalSoNo);
-  assertInternalSoNoValid(internalSoNo);
-  return withUniqueRetry(async () => {
-    try {
-      return await createSalesOrderOnce(input, user, companyId, internalSoNo);
-    } catch (e) {
-      if (isInternalSoNoViolation(e)) {
-        throw new ConflictError(internalSoNoTakenMessage(internalSoNo));
-      }
-      throw e;
-    }
-  });
+  // ADR-306 — the SO No. is SO-<typed Internal SO No.>, or the next
+  // IN-SO-##### when none is typed. lockDocSeries serialises every number pick
+  // of the company; withUniqueRetry re-runs in a fresh transaction should a
+  // 23505 on sales_orders_company_code_uniq still slip through (the re-run's
+  // free-check then answers 409 for a typed number).
+  return withUniqueRetry(() => createSalesOrderOnce(input, user, companyId));
 }
 
 /** One create attempt in its own transaction (createSalesOrder retries it). */
@@ -1779,11 +1721,13 @@ function createSalesOrderOnce(
   input: CreateSalesOrderInput,
   user: AuthContext,
   companyId: string,
-  internalSoNo: string,
 ): Promise<SalesOrderDetail> {
   return withUserContext(user, async (tx) => {
-    const code = await nextSoCode(tx, companyId);
-    await assertInternalSoNoFree(tx, companyId, internalSoNo);
+    await lockDocSeries(tx, companyId, 'sales_orders');
+    const code =
+      input.header.internalSoNo !== undefined
+        ? await assertTypedSoNoFree(tx, companyId, input.header.internalSoNo)
+        : await nextSystemSoNo(tx, companyId);
 
     // Client PO No. is unique per customer within the SO list (ADR-245).
     await assertClientPoNoFree(tx, 'so', companyId, input.header.clientId, input.header.clientPoNo);
@@ -1826,7 +1770,6 @@ function createSalesOrderOnce(
       .values({
         companyId,
         code,
-        internalSoNo,
         soDate: input.header.soDate,
         clientId: input.header.clientId ?? null,
         customerName: clientName ?? input.header.customerName ?? null,
@@ -2011,19 +1954,7 @@ export async function updateSalesOrder(
   // can replay an approved edit for an approver who holds `approve` but not
   // `edit`.
   await requireFormAccess(user, 'so_create', 'edit');
-  try {
-    return await withUserContext(user, (tx) =>
-      updateSalesOrderTx(tx, id, input, user, reason, opts),
-    );
-  } catch (e) {
-    // ADR-207 — two saves taking the same Internal SO No. at the same moment.
-    if (isInternalSoNoViolation(e) && input.header.internalSoNo) {
-      throw new ConflictError(
-        internalSoNoTakenMessage(normaliseInternalSoNo(input.header.internalSoNo)),
-      );
-    }
-    throw e;
-  }
+  return withUserContext(user, (tx) => updateSalesOrderTx(tx, id, input, user, reason, opts));
 }
 
 /** How a caller runs the SO edit body (updateSalesOrderTx). */
@@ -2171,19 +2102,12 @@ export async function updateSalesOrderTx(
       );
     }
     if (h.clientPoNo !== undefined) updates['clientPoNo'] = h.clientPoNo ?? null;
-    // ADR-207 — Internal SO No.: absent = unchanged (an old SO without one is
-    // never forced to get one). A changed number must be free among the other
-    // live SOs (case-insensitive); the History row comes from logSoEdit
-    // (SO_HEADER_FIELDS carries internalSoNo).
-    if (h.internalSoNo !== undefined) {
-      const nextInternal = normaliseInternalSoNo(h.internalSoNo);
-      if (nextInternal !== existingHdr.internalSoNo) {
-        assertInternalSoNoValid(nextInternal);
-        if (nextInternal.toLowerCase() !== (existingHdr.internalSoNo ?? '').toLowerCase()) {
-          await assertInternalSoNoFree(tx, companyId, nextInternal, id);
-        }
-        updates['internalSoNo'] = nextInternal;
-      }
+    // ADR-306 — a changed Internal SO No. renames the SO No.; the 0254 trigger
+    // rewrites every saved copy and keeps the old number for search, in this
+    // same transaction. Never cleared (the schema has no blank value).
+    if (h.internalSoNo !== undefined && soNoFromInternal(h.internalSoNo) !== existingHdr.code) {
+      await lockDocSeries(tx, companyId, 'sales_orders');
+      updates['code'] = await assertTypedSoNoFree(tx, companyId, h.internalSoNo, id);
     }
     if (h.type !== undefined) {
       // ADR-225 phase 3 — the SO Type decides Multi-Level Plan eligibility.
@@ -2374,19 +2298,9 @@ export async function updateSalesOrderOrStage(
     async (tx, target) => {
       // ADR-235 — nothing is staged while a Cancel Request waits on the SO.
       await assertNoPendingCancel(tx, 'sales_order', id);
-      try {
-        await rehearseInSavepoint(tx, (sp) =>
-          updateSalesOrderTx(sp, id, input, user, note, { returnDetail: false }),
-        );
-      } catch (e) {
-        // ADR-207 — a taken Internal SO No. is a 409 with its sentence.
-        if (isInternalSoNoViolation(e) && input.header.internalSoNo) {
-          throw new ConflictError(
-            internalSoNoTakenMessage(normaliseInternalSoNo(input.header.internalSoNo)),
-          );
-        }
-        throw e;
-      }
+      await rehearseInSavepoint(tx, (sp) =>
+        updateSalesOrderTx(sp, id, input, user, note, { returnDetail: false }),
+      );
       // Freeze each line item's CODE with the payload, so the `line:add:<n>`
       // box can name its item ("Add line · ABC-12 × 20 · POL 10") and the
       // snapshots never resolve them again; and the line / lot ids the request

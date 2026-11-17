@@ -66,7 +66,6 @@ function reservationColumns(
     ...leadColumns<ReservationDetail>({
       firstRowNo: 1,
       soNo: (row) => row.soCodeText,
-      internalSoNo: (row) => row.soInternalNo,
       pol: (row) => row.clientPoLineNo,
       createdOn: (row) => row.reservedAt,
       itemCode: (row) => row.itemCode ?? itemCode,

@@ -7,10 +7,12 @@ import type {
   ListSalesOrdersResponse,
   SalesOrderDetail,
   ShortCloseSalesOrderLineInput,
+  SoNoCheckResponse,
   UpdateSalesOrderInput,
 } from '@innovic/shared';
 import { type UseQueryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { useDebounce } from '@/lib/use-debounce';
 import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
 import { activityLogKeys } from '@/modules/activity-log/api';
 
@@ -108,8 +110,8 @@ export function useSalesOrder(
 // <RelatedDocsTabs module="sales-orders" id={...} /> component, which fetches
 // GET /sales-orders/:id/related itself — no module-specific hook needed.
 
-/** Next suggested SO No. (MAX+1 after the highest IN-SO-#####). Used to prefill
- *  the create form with an editable, overridable suggestion. */
+/** The next system SO No. (IN-SO-#####, ADR-306), shown on the create form
+ *  while no Internal SO No. is typed. The server gives the real number on Save. */
 export function useNextSoCode(enabled = true) {
   return useQuery<{ code: string }>({
     queryKey: [...salesOrdersKeys.all, 'next-code'],
@@ -117,6 +119,30 @@ export function useNextSoCode(enabled = true) {
     enabled,
     staleTime: 0,
   });
+}
+
+/** ADR-306 — the live check of a typed Internal SO No. (digits) while the
+ *  person types: debounced 500 ms; only an answer for the digits now in the box
+ *  counts. Warns only — the server's 409 at save is the real guard. */
+export function useSoNoCheck(digits: string, excludeId?: string) {
+  const now = digits.trim();
+  const debounced = useDebounce(now, 500);
+  const q = useQuery<SoNoCheckResponse>({
+    queryKey: [...salesOrdersKeys.all, 'so-no-check', debounced, excludeId ?? null],
+    queryFn: () => {
+      const params = new URLSearchParams({ internalSoNo: debounced });
+      if (excludeId) params.set('excludeId', excludeId);
+      return apiFetch<SoNoCheckResponse>(`/sales-orders/so-no-check?${params.toString()}`);
+    },
+    enabled: debounced !== '',
+    staleTime: 0,
+  });
+  const current = now !== '' && now === debounced;
+  return {
+    checking: now !== '' && (now !== debounced || q.isFetching),
+    taken: current && q.data?.taken === true,
+    usedBy: current ? (q.data?.usedBy ?? null) : null,
+  };
 }
 
 export function useCreateSalesOrder(saveKey?: SaveKey) {

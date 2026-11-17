@@ -91,7 +91,6 @@ const COLUMNS: DataTableColumn<PendingRow>[] = [
       ),
     },
     soNo: ({ op }) => op.soCode,
-    internalSoNo: ({ op }) => op.soInternalNo,
     pol: ({ op }) => op.clientPoLineNo,
     createdOn: ({ op }) => op.createdAt,
     itemCode: ({ op }) => op.itemCode,

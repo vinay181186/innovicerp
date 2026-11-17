@@ -33,7 +33,6 @@ export function mlPlanListColumns(offset = 0): DataTableColumn<MlPlanListItem>[]
         ),
       },
       soNo: (p) => p.soCode,
-      internalSoNo: (p) => p.soInternalNo,
       pol: (p) => p.clientPoLineNo,
       createdOn: (p) => p.createdAt,
       itemCode: (p) => p.itemCode,

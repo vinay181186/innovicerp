@@ -51,7 +51,6 @@ function qcLeadColumns<T extends QcRowBase>(firstRowNo: number): DataTableColumn
         render: (o) => o.jcCode,
       },
       soNo: (o) => o.soCode,
-      internalSoNo: (o) => o.soInternalNo,
       pol: (o) => o.clientPoLineNo,
       createdOn: (o) => o.createdAt,
       itemCode: (o) => o.itemCode,
@@ -59,7 +58,6 @@ function qcLeadColumns<T extends QcRowBase>(firstRowNo: number): DataTableColumn
       itemName: (o) => o.itemName,
       overrides: {
         so_no: { sortFilterField: 'soCode' },
-        so_internal_no: { sortFilterField: 'soInternalNo' },
         client_po_line_no: { sortFilterField: 'clientPoLineNo' },
         item_code: { sortFilterField: 'itemCode' },
         item_name: { sortFilterField: 'itemName' },

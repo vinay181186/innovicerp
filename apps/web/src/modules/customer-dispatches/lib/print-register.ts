@@ -1,7 +1,7 @@
 // Customer Dispatch Register print — mirror of legacy `printDispatchRegister`
 // (`legacy/InnovicERP_v82_12_3_DataLossFix_29-04-2026.html` L10789): info-grid
 // (Total Dispatched / Dispatch Entries / Items Dispatched) + per-line table
-// (Date / SO No. / Internal SO No. / POL / Item Code / Item Name / Qty / UOM /
+// (Date / SO No. / POL / Item Code / Item Name / Qty / UOM /
 // Customer / Dispatched By / Remarks) + 3-cell signature row. Unlike the header-grain
 // OSP/JW DC register print, this one IS line-grain — same as legacy.
 
@@ -26,7 +26,6 @@ export function printCustomerDispatchRegister(args: {
       (r) => `<tr>
       <td class="ctr">${esc(fmtDate(r.date))}</td>
       <td style="font-family:monospace;font-size:10px">${esc(r.soNo || '—')}</td>
-      <td style="font-family:monospace;font-size:10px">${esc(r.soInternalNo || '—')}</td>
       <td class="ctr" style="color:#7c3aed;font-weight:700">${esc(r.clientPoLineNo ?? '—')}</td>
       <td style="color:#7c3aed;font-family:monospace">${esc(itemCodeWithRev(r.itemCode ?? r.itemCodeText, docDrawingRev(r)))}</td>
       <td>${esc(r.itemName)}</td>
@@ -46,8 +45,8 @@ export function printCustomerDispatchRegister(args: {
       <div class="info-box"><div class="info-lbl">Dispatch Entries</div><div class="info-val">${rows.length}</div></div>
       <div class="info-box"><div class="info-lbl">Items Dispatched</div><div class="info-val">${itemCount}</div></div>
     </div>
-    <table><thead><tr><th class="ctr">Dispatch Date</th><th>SO No.</th><th>Internal SO No.</th><th class="ctr">POL</th><th>Item Code</th><th>Item Name</th><th class="ctr">Dispatch Qty</th><th class="ctr">UOM</th><th>Customer</th><th>Dispatched By</th><th>Remarks</th></tr></thead>
-    <tbody>${tableRows || '<tr><td colspan="11" style="text-align:center;color:#aaa">No dispatch records</td></tr>'}</tbody></table>
+    <table><thead><tr><th class="ctr">Dispatch Date</th><th>SO No.</th><th class="ctr">POL</th><th>Item Code</th><th>Item Name</th><th class="ctr">Dispatch Qty</th><th class="ctr">UOM</th><th>Customer</th><th>Dispatched By</th><th>Remarks</th></tr></thead>
+    <tbody>${tableRows || '<tr><td colspan="10" style="text-align:center;color:#aaa">No dispatch records</td></tr>'}</tbody></table>
     <div class="sign-row">
       <div class="sign-box">Store In-Charge</div>
       <div class="sign-box">Dispatch Manager</div>

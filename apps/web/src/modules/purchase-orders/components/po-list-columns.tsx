@@ -69,14 +69,12 @@ export function purchaseOrderListColumns({
         ),
       },
       soNo: (po) => po.soCode,
-      internalSoNo: (po) => po.soInternalNo,
       createdOn: (po) => po.createdAt,
       overrides: {
         so_no: {
           sortFilterField: 'soCode',
           render: (po) => <FirstPlusMore value={po.soCode} more={po.soExtraCount} />,
         },
-        so_internal_no: { sortFilterField: 'soInternalNo' },
         created_on: { sortFilterField: 'createdOn' },
       },
     }),

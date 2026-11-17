@@ -32,6 +32,7 @@ export async function listOrderOptions(
     if (input.kind !== 'jwso') {
       const soMatch = term
         ? sql`AND (o.code ILIKE ${term} ESCAPE '\\' OR o.internal_so_no ILIKE ${term} ESCAPE '\\'
+                   OR o.legacy_code ILIKE ${term} ESCAPE '\\'
                    OR (o.code || ' · ' || o.internal_so_no) ILIKE ${term} ESCAPE '\\'
                    OR o.client_po_no ILIKE ${term} ESCAPE '\\' OR c.name ILIKE ${term} ESCAPE '\\' OR o.customer_name ILIKE ${term} ESCAPE '\\')`
         : sql``;

@@ -30,7 +30,6 @@ export const jcAgeingReport: RegisteredReport = {
       { key: 'jc_code', label: 'JC No.', type: 'text' },
       { key: 'jc_date', label: 'JC Date', type: 'date' },
       { key: 'so_code', label: 'SO No.', type: 'text' },
-      { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
       { key: 'client_po_line_no', label: 'POL', type: 'text' },
       { key: 'created_on', label: 'Created On', type: 'date' },
       { key: 'item_code', label: 'Item Code', type: 'text' },

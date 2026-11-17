@@ -127,7 +127,6 @@ export function jcOpsColumns(firstRowNo: number): DataTableColumn<JcOpsBoardRow>
           ),
       },
       soNo: (o) => o.soCode,
-      internalSoNo: (o) => o.soInternalNo,
       pol: (o) => o.clientPoLineNo,
       createdOn: (o) => o.createdAt,
       itemCode: (o) => o.jcItemCode,
@@ -135,7 +134,6 @@ export function jcOpsColumns(firstRowNo: number): DataTableColumn<JcOpsBoardRow>
       itemName: (o) => o.jcItemName,
       overrides: {
         so_no: { sortFilterField: 'soCode' },
-        so_internal_no: { sortFilterField: 'soInternalNo' },
         client_po_line_no: { sortFilterField: 'clientPoLineNo' },
         created_on: { sortFilterField: 'createdOn' },
         item_code: { sortFilterField: 'itemCode' },

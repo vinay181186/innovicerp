@@ -57,7 +57,6 @@ export function dispatchListColumns(
         ),
       },
       soNo: (r) => r.soNo,
-      internalSoNo: (r) => r.soInternalNo,
       createdOn: (r) => r.createdAt,
       overrides: {
         so_no: {
@@ -75,7 +74,6 @@ export function dispatchListColumns(
             </span>
           ),
         },
-        so_internal_no: { sortFilterField: 'soInternalNo' },
         created_on: { sortFilterField: 'createdOn' },
       },
     }),

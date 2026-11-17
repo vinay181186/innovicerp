@@ -68,13 +68,13 @@ afterAll(async () => {
   const testHeaders = await db
     .select({ id: salesOrders.id })
     .from(salesOrders)
-    .where(like(salesOrders.internalSoNo, `SO-${TEST_PREFIX}%`));
+    .where(like(salesOrders.costCenter, `SO-${TEST_PREFIX}%`));
   const ids = testHeaders.map((h) => h.id);
   if (ids.length > 0) {
     for (const id of ids) {
       await db.delete(salesOrderLines).where(eq(salesOrderLines.salesOrderId, id));
     }
-    await db.delete(salesOrders).where(like(salesOrders.internalSoNo, `SO-${TEST_PREFIX}%`));
+    await db.delete(salesOrders).where(like(salesOrders.costCenter, `SO-${TEST_PREFIX}%`));
   }
   await db.delete(clients).where(like(clients.code, `${TEST_PREFIX}%`));
 });
@@ -111,7 +111,7 @@ describe('sales-orders routes', () => {
       headers: { 'content-type': 'application/json' },
       payload: {
         header: {
-          internalSoNo: code,
+          costCenter: code,
           soDate: '2026-05-02',
           clientId: testClientId,
           type: 'component_manufacturing',
@@ -133,7 +133,7 @@ describe('sales-orders routes', () => {
     });
     expect(res.statusCode).toBe(201);
     const body = res.json();
-    expect(body.internalSoNo).toBe(code);
+    expect(body.costCenter).toBe(code);
     expect(body.lines).toHaveLength(1);
   });
 
@@ -145,7 +145,7 @@ describe('sales-orders routes', () => {
       headers: { 'content-type': 'application/json' },
       payload: {
         header: {
-          internalSoNo: `SO-${TEST_PREFIX}BAD`,
+          costCenter: `SO-${TEST_PREFIX}BAD`,
           soDate: '2026-05-02',
           type: 'component_manufacturing',
           status: 'open',
@@ -178,7 +178,7 @@ describe('sales-orders routes', () => {
       headers: { 'content-type': 'application/json' },
       payload: {
         header: {
-          internalSoNo: `SO-${TEST_PREFIX}V`,
+          costCenter: `SO-${TEST_PREFIX}V`,
           soDate: '2026-05-02',
           clientId: testClientId,
           type: 'component_manufacturing',
@@ -210,7 +210,7 @@ describe('sales-orders routes', () => {
       headers: { 'content-type': 'application/json' },
       payload: {
         header: {
-          internalSoNo: `SO-${TEST_PREFIX}${suffix}`,
+          costCenter: `SO-${TEST_PREFIX}${suffix}`,
           soDate: '2026-05-02',
           clientId: testClientId,
           type: 'component_manufacturing',

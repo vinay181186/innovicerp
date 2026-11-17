@@ -24,7 +24,6 @@ export function buildRegisterColumns(firstRowNo: number): DataTableColumn<QcDocu
     ...leadColumns<QcDocument>({
       firstRowNo,
       soNo: (d) => d.soCodeText,
-      internalSoNo: (d) => d.soInternalNo,
       pol: (d) => d.clientPoLineNo,
       createdOn: (d) => d.createdAt,
       itemCode: (d) => d.itemCode,
@@ -34,7 +33,6 @@ export function buildRegisterColumns(firstRowNo: number): DataTableColumn<QcDocu
       itemName: (d) => d.itemName,
       overrides: {
         so_no: { sortFilterField: 'soCode' },
-        so_internal_no: { sortFilterField: 'soInternalNo' },
         client_po_line_no: { sortFilterField: 'clientPoLineNo' },
         created_on: { sortFilterField: 'createdOn' },
         item_code: { sortFilterField: 'itemCode' },

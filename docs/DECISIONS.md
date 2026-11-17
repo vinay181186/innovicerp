@@ -16189,3 +16189,72 @@ put every part's plan side by side, cut off with "…".
 **Consequences:** no side scroll; extra columns go behind "n columns not on screen". Sorting the
 table can move a part's second plan away from the row carrying the part's qty (Item Code is on
 every row). No server change.
+
+## ADR-306: One SO number — a typed Internal SO No. becomes the SO No.
+
+**Date:** 2026-11-17
+**Status:** Accepted (owner, 17-11-2026, in steps: "i want one column for sono … replace system
+generated sono with internal sono"; "keep field internal sono — if user type internal sono that
+make system generated sono as internal sono; if user donot type … keep in-so-001 series";
+"only digit"; "yes user can edit sono once it is saved — and it must be reflected in upstream
+downstream doc"; "as u recommend. make sure user cannot type duplicate number"; existing data
+answers 1a, 2 yes, SO-519 to the live order)
+**Supersedes:** the two-number part of ADR-207 and the two-column split (2026-10-05).
+
+### Context
+
+Every SO carried two numbers: the system SO No. (`IN-SO-00013`) and the typed Internal SO No.
+(`SO-433`). Everyone works by the second; the first cluttered 33 lists, prints and exports with a
+second column. CLAUDE.md §18 says live series are never renumbered — the owner chose to replace
+`IN-SO` numbers by the typed ones explicitly; this ADR is that approval. JWSO is unchanged.
+
+### Decision
+
+- **One SO No. (`sales_orders.code`).** The form keeps a box labelled **Internal SO No.** with a
+  fixed `SO-` the user cannot erase; only digits go in (max 9, leading zeros dropped).
+  Typed `433` → SO No. `SO-433`. Left blank on a new SO → the next `IN-SO-#####` (the existing
+  series). Lists, prints, exports, alerts and reports show ONE column, SO No.
+- **No duplicate, ever.** A typed number is refused (409, and live while typing via
+  `GET /sales-orders/so-no-check`, which also blocks Save) when any SO of the company — live or
+  deleted — has it now or had it before (`legacy_code`). Number picks take
+  `lockDocSeries('sales_orders')` (CLAUDE.md §20), so two people typing the same number at the
+  same second: one wins, the other gets the 409. `withUniqueRetry` stays for the IN-SO path.
+- **Editable after save, everywhere at once.** Retyping the number renames the SO No. Migration
+  0254's `BEFORE UPDATE OF code` trigger (`sales_orders_code_change`) appends the old number to
+  `legacy_code` and calls `so_rewrite_text_copies`, which rewrites every saved text copy (exact:
+  `so_code_text` on 12 tables, `so_ref_text`, `so_no_text`, `capa_records.so_no`, edit/cancel
+  request `doc_code`, `activity_log.ref_id`; whole token: task / revision / drawing / store /
+  reservation refs, change-impact labels) in the same transaction. Every other screen reads the
+  number live by id. The box cannot be emptied once the SO has an SO- number; an IN-SO order can
+  be given a typed number later. A live SO's number change goes through edit approval like any
+  other header edit (History: "SO No. SO-433 → SO-434").
+- **Existing data (0254, one transaction, stops on any clash):** every live SO with an Internal SO
+  No. takes it as its SO No.; `internal_so_no` is cleared, so every old `IN-SO · SO` join shows
+  the one number. A deleted SO only when no other SO shares its number (PROD: deleted
+  `IN-SO-00001` shares `SO-519` with live `IN-SO-00011` and keeps its code). An SO without one
+  keeps `IN-SO-#####`.
+- **Old numbers still found.** SO list, its Excel export, the SO picker and global search
+  ("Old SO No.") match `legacy_code`.
+- **Left as written:** activity detail text, reasons, remarks, task descriptions (history and
+  people's own words); assembly unit serials (`IN-SO-00013-U5`, printed on the unit).
+
+### Alternatives considered
+
+- SO-<next> for every new SO (no IN-SO series) — the first build; replaced by the owner's rule
+  that a blank box keeps the IN-SO series.
+- Rewrite copies in application code — rejected (§21: one place): a trigger covers the
+  migration, the edit form and the edit-approval replay alike, and cannot be skipped.
+- Hide one column but keep two numbers — rejected: the owner wants one number.
+
+### Consequences
+
+- Positive: one SO No. on every screen, print and export; the office types its own number; a
+  changed number follows into every document.
+- Negative: `updated_at` moves on every row a rename touches.
+- Negative: `DOC_NUMBER_FORMATS.sales_order` (IN-SO, 5 digits) describes only the blank-box path;
+  the form uses `/sales-orders/next-code` and `/so-no-check`.
+- Risk: a Playwright flow that types the old `SO-…` text into the box needs its spec updated
+  (owner's say before editing specs).
+- Rollback: before anyone renames by hand, `UPDATE sales_orders SET internal_so_no = code,
+  code = split_part(legacy_code,' ',1) WHERE legacy_code IS NOT NULL` (the trigger moves the
+  copies back), then drop the trigger, both functions and `legacy_code`.

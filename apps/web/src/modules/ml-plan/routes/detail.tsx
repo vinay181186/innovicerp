@@ -198,13 +198,7 @@ function MlPlanDetailPage(): React.JSX.Element {
             />
             <ClusterFact
               num
-              label="Internal SO No."
-              empty={!detail.soInternalNo}
-              value={detail.soInternalNo ?? '—'}
-            />
-            <ClusterFact
-              num
-              span={2}
+              span={3}
               label="POL"
               empty={!detail.clientPoLineNo}
               value={detail.clientPoLineNo ?? '—'}

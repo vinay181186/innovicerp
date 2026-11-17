@@ -99,11 +99,6 @@ function soNoOf(vm: CompletedVM): string | null {
   // A GRN line: its job card's SO, else the PO line's source SO (ADR-261).
   return vm.row.soCode ?? null;
 }
-/** ADR-207 — the office's own Internal SO No. A Party GRN line stands against
- *  a JWSO, which has none. */
-function soInternalNoOf(vm: CompletedVM): string | null {
-  return vm.kind === 'pgrn' ? null : (vm.row.soInternalNo ?? null);
-}
 
 function qtyCell(value: number, red?: boolean): React.JSX.Element {
   return (
@@ -205,7 +200,6 @@ export function completedColumns(firstRowNo: number): DataTableColumn<CompletedV
           ),
       },
       soNo: soNoOf,
-      internalSoNo: soInternalNoOf,
       pol: polOf,
       createdOn: (vm) => vm.row.createdAt ?? null,
       itemCode: itemCodeOf,
@@ -213,7 +207,6 @@ export function completedColumns(firstRowNo: number): DataTableColumn<CompletedV
       itemName: itemNameOf,
       overrides: {
         so_no: { sortFilterField: 'soCode' },
-        so_internal_no: { sortFilterField: 'soInternalNo' },
         client_po_line_no: { sortFilterField: 'pol' },
         item_code: { sortFilterField: 'itemCode' },
         item_name: { sortFilterField: 'itemName' },

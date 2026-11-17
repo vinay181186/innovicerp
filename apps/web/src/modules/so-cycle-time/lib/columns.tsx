@@ -54,7 +54,6 @@ export function soCycleTimeColumns(
     ...leadColumns<SoCycleTimeRow>({
       firstRowNo,
       soNo: (r) => r.soNo,
-      internalSoNo: (r) => r.internalSoNo,
       createdOn: (r) => r.createdAt,
       overrides: {
         so_no: {
@@ -71,7 +70,6 @@ export function soCycleTimeColumns(
             </Link>
           ),
         },
-        so_internal_no: { sortFilterField: 'internalSoNo' },
         created_on: { sortFilterField: 'createdOn' },
       },
     }),

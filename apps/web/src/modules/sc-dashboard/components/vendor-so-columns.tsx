@@ -115,7 +115,6 @@ export function soColumns(firstRowNo: number, priceHidden: boolean): DataTableCo
     ...leadColumns<ScSoRow>({
       firstRowNo,
       soNo: (s) => s.soCode,
-      internalSoNo: (s) => s.soInternalNo,
       createdOn: (s) => s.createdAt,
       overrides: {
         so_no: {
@@ -127,7 +126,6 @@ export function soColumns(firstRowNo: number, priceHidden: boolean): DataTableCo
               <span className="text3">No SO linked</span>
             ),
         },
-        so_internal_no: { sortFilterField: 'soInternalNo' },
         created_on: { sortFilterField: 'createdOn' },
       },
     }),

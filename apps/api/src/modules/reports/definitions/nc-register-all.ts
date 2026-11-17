@@ -51,7 +51,6 @@ export const ncRegisterAllReport: RegisteredReport = {
       { key: 'nc_no', label: 'NC No.', type: 'text' },
       { key: 'nc_date', label: 'NC Date', type: 'date' },
       { key: 'so_code', label: 'SO No. / JWSO No.', type: 'text' },
-      { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
       { key: 'client_po_line_no', label: 'POL', type: 'text' },
       { key: 'created_on', label: 'Created On', type: 'date' },
       { key: 'item_code', label: 'Item Code', type: 'text' },

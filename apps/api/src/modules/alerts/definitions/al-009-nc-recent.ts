@@ -14,12 +14,11 @@ export const al009NcRecent: RegisteredAlert = {
     name: 'NCs Raised (Last 3 Days)',
     description: 'NCs filed within the last 3 days.',
     columns: [
-      // ADR-261 lead columns: SO No. · Internal SO No. · POL · Created On ·
+      // ADR-261 lead columns: SO No. · POL · Created On ·
       // Item Code (CODE/REV) · Item Name, then the rest.
       { key: 'nc_code', label: 'NC No.', type: 'text' },
       { key: 'nc_date', label: 'NC Date', type: 'date' },
       { key: 'so_code', label: 'SO No.', type: 'text' },
-      { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
       { key: 'client_po_line_no', label: 'POL', type: 'text' },
       { key: 'created_on', label: 'Created On', type: 'date' },
       { key: 'item_code', label: 'Item Code', type: 'text' },
@@ -34,7 +33,6 @@ export const al009NcRecent: RegisteredAlert = {
     const result = await tx.execute(sql`
       SELECT nc.id AS nav_id,
              COALESCE(so.code, nc.so_code_text, jwo.code) AS so_code,
-             so.internal_so_no AS so_internal_no,
              ${polSql('sol', 'jwl')} AS client_po_line_no,
              (nc.created_at AT TIME ZONE 'Asia/Kolkata')::date::text AS created_on,
              (COALESCE(nc.item_code_text, '')
@@ -57,7 +55,6 @@ export const al009NcRecent: RegisteredAlert = {
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({
       navPage: docNavPage('nc', String(r['nav_id'])),
       so_code: (r['so_code'] as string | null) ?? '',
-      so_internal_no: (r['so_internal_no'] as string | null) ?? '',
       client_po_line_no: (r['client_po_line_no'] as string | null) ?? '',
       created_on: String(r['created_on'] ?? ''),
       item_code: (r['item_code'] as string | null) ?? '',

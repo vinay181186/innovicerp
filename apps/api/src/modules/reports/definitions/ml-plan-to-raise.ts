@@ -26,7 +26,6 @@ const columns: ReportColumn[] = [
   // ADR-261 lead columns. Created On = the plan row's (node's) created_at.
   { key: 'mlp_code', label: 'MLP No.', type: 'text' },
   { key: 'so_code', label: 'SO No.', type: 'text' },
-  { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
   { key: 'client_po_line_no', label: 'POL', type: 'text' },
   { key: 'created_on', label: 'Created On', type: 'date' },
   { key: 'item_code', label: 'Item Code', type: 'text' },
@@ -55,7 +54,7 @@ export const mlPlanToRaiseReport: RegisteredReport = {
     showsMoney: false,
     filters: [
       { key: 'mlpNo', label: 'MLP No.', kind: 'text', placeholder: 'IN-MLP-00001' },
-      { key: 'soNo', label: 'SO No.', kind: 'text', placeholder: 'SO No. or Internal SO No.' },
+      { key: 'soNo', label: 'SO No.', kind: 'text', placeholder: 'SO No.' },
       {
         key: 'lineType',
         label: 'Line Type',

@@ -112,7 +112,6 @@ export function soListColumns(opts: {
     ...leadColumns<SalesOrderListItem>({
       firstRowNo,
       soNo: (r) => r.code,
-      internalSoNo: (r) => r.internalSoNo,
       createdOn: (r) => r.createdAt,
       overrides: {
         so_no: {
@@ -131,7 +130,6 @@ export function soListColumns(opts: {
             </Link>
           ),
         },
-        so_internal_no: { sortFilterField: 'internalSoNo' },
         created_on: { sortFilterField: 'createdOn' },
       },
     }),

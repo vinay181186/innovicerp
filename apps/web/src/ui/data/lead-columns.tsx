@@ -1,7 +1,7 @@
 // LEAD COLUMNS — the owner's fixed standard (ADR-261, revised 2026-11-15).
 // Every list that carries an SO / JWSO line starts with this LOCKED block:
 //
-//   Sr No · own No. · Created On (time under it) · SO No. · Internal SO No. · POL · Item Code (CODE/REV) · Item Name
+//   Sr No · own No. · Created On (time under it) · SO No. · POL · Item Code (CODE/REV) · Item Name
 //
 // Sr No is the row counter (1, 2, 3 … continuing across server pages). The
 // page's own number (PO No., JC No. …) and the entry date (Created On =
@@ -22,8 +22,9 @@
 // in its fixed place, but each user may hide it in Columns ▾ (saved per user;
 // Reset to default brings it back). It still cannot be moved or pinned.
 //
-// JWSO-only lists: pass `so: 'jwso'` and no `internalSoNo` — the slot reads
-// JWSO No. and the Internal SO No. column is left out (owner, 2026-10-31).
+// ONE SO number (ADR-306, owner 17-11-2026): the Internal SO No. column is gone;
+// the office's own number IS the SO No. now.
+// JWSO-only lists: pass `so: 'jwso'` — the slot reads JWSO No.
 // Mixed SO + JWSO lists keep the label SO No. (NAMING.md) and show whichever
 // order number the row has; a list the owner has renamed passes `so: 'mixed'`
 // for the heading SO No. / JWSO No. (NC Register, ADR-276). Rows that ARE the
@@ -48,7 +49,6 @@ export const LEAD_COLUMN_IDS = [
   'sr_no',
   'so_no',
   'created_on',
-  'so_internal_no',
   'client_po_line_no',
   'item_code',
   'item_name',
@@ -69,8 +69,6 @@ export interface LeadColumnSpec<T> {
    *  'mixed' → "SO No. / JWSO No." (the row shows whichever order it has). */
   so?: 'so' | 'jwso' | 'mixed';
   soNo: (row: T) => Text;
-  /** Leave out on a JWSO-only list — that column is then not drawn. */
-  internalSoNo?: ((row: T) => Text) | undefined;
   /** Leave out ONLY on a one-row-per-order summary (SO Overview, SO Costing…):
    *  an order has many POLs/items, so those columns are then not drawn. */
   pol?: ((row: T) => Text) | undefined;
@@ -155,8 +153,7 @@ export function createdOnColumn<T>(
   };
 }
 
-/** The locked lead block (Sr No · [own No.] · Created On · SO No. · [Internal SO
- *  No.] · [POL] · [Item Code] · [Item Name]; with no own No., SO No. comes before
+/** The locked lead block (Sr No · [own No.] · Created On · SO No. · [POL] · [Item Code] · [Item Name]; with no own No., SO No. comes before
  *  Created On). Spread it FIRST; spread `createdByColumn` LAST. */
 export function leadColumns<T>(spec: LeadColumnSpec<T>): DataTableColumn<T>[] {
   const o = spec.overrides ?? {};
@@ -179,25 +176,6 @@ export function leadColumns<T>(spec: LeadColumnSpec<T>): DataTableColumn<T>[] {
   out.push(spec.doc ? { ...spec.doc, lead: true } : soCol);
   out.push(col<T>(createdOnColumn<T>(spec.createdOn, { leadHideable: true }), o.created_on));
   if (spec.doc) out.push(soCol);
-  const internal = spec.internalSoNo;
-  if (internal) {
-    out.push(
-      col<T>(
-        {
-          id: 'so_internal_no',
-          kind: 'code',
-          header: 'Internal SO No.',
-          className: 'mono fw-700',
-          nowrap: true,
-          render: (r): ReactNode => (
-            <span style={{ color: 'var(--text)' }}>{dash(internal(r))}</span>
-          ),
-          filterValue: (r) => internal(r) ?? '',
-        },
-        o.so_internal_no,
-      ),
-    );
-  }
   const { pol, itemCode, itemName } = spec;
   if (pol) {
     out.push(

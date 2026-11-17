@@ -47,7 +47,6 @@ export const unplannedSoLinesReport: RegisteredReport = {
       // ADR-261 lead columns: SO No. is the SO or JWSO code the line has;
       // Created On is the order line's created_at; rev rides in Item Code.
       { key: 'so_code', label: 'SO No.', type: 'text' },
-      { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
       { key: 'client_po_line_no', label: 'POL', type: 'text' },
       { key: 'created_on', label: 'Created On', type: 'date' },
       { key: 'item_code', label: 'Item Code', type: 'text' },

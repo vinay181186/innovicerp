@@ -64,7 +64,6 @@ function identityColumns(
     firstRowNo,
     doc,
     soNo: (r) => r.soCode,
-    internalSoNo: (r) => r.soInternalNo,
     pol: (r) => r.clientPoLineNo,
     createdOn: (r) => r.createdAt,
     itemCode: (r) => r.itemCode,
@@ -74,7 +73,6 @@ function identityColumns(
       ? {
           overrides: {
             so_no: { sortFilterField: 'soCode' },
-            so_internal_no: { sortFilterField: 'soInternalNo' },
             client_po_line_no: { sortFilterField: 'clientPoLineNo' },
             created_on: { sortFilterField: 'createdOn' },
             item_code: { sortFilterField: 'itemCode' },

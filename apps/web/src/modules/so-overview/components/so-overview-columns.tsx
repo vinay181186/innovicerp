@@ -180,7 +180,6 @@ export function soOverviewColumns(
     ...leadColumns<SoOverviewRow>({
       firstRowNo,
       soNo: (row) => row.code,
-      internalSoNo: (row) => row.internalSoNo,
       createdOn: (row) => row.createdAt,
       overrides: {
         so_no: {
@@ -198,7 +197,6 @@ export function soOverviewColumns(
             </Link>
           ),
         },
-        so_internal_no: { sortFilterField: 'internalSoNo' },
         created_on: { sortFilterField: 'createdOn' },
       },
     }),

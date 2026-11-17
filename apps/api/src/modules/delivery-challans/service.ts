@@ -2810,7 +2810,7 @@ export async function getDeliveryChallanRelated(
         '📄',
         'sales-order',
         soRows.map((r) => row(r.id, r.code, r.status, r.date, r.internalSoNo)),
-        { items: soItems, labelHeading: 'Internal SO No.' },
+        { items: soItems },
       ),
       itemSection('item', 'Items', '📦', dcItems),
     ];

@@ -7,8 +7,7 @@
 //
 // DATA-MODEL (ADR-261, 2026-10-31): the list is now ONE ROW PER DC LINE, so
 // the register prints the line rows the list page loaded for the CURRENT
-// filter/page (no extra fetch) — DC no / date / vendor / PO / SO (+ Internal SO
-// No. + POL) / item code (CODE/REV) / sent qty / status — and the page's
+// filter/page (no extra fetch) — DC no / date / vendor / PO / SO (+ POL) / item code (CODE/REV) / sent qty / status — and the page's
 // `summary` for the KPI tiles.
 
 import type { Company, DcStatus, DeliveryChallanListLine, DispatchSummary } from '@innovic/shared';
@@ -43,7 +42,7 @@ export function printDispatchRegister(args: {
 
   // The SO No. column prints only when at least one row has an SO / JWSO —
   // an OSP DC often has none, and a column of "—" on every row is noise.
-  // ADR-207: the Internal SO No. (and the POL) ride under the order number.
+  // The POL rides under the order number.
   const soOf = (d: DeliveryChallanListLine): string | null => d.soCode ?? d.jwCode;
   const showSo = rows.some((d) => Boolean(soOf(d)));
   const tableRows = rows
@@ -53,7 +52,7 @@ export function printDispatchRegister(args: {
       <td class="ctr">${esc(fmtDate(d.docDate))}</td>
       <td>${esc(d.vendorName ?? d.vendorCodeText ?? '—')}</td>
       <td style="font-family:monospace">${esc(d.poCode ?? d.poCodeText ?? '—')}</td>
-      ${showSo ? `<td style="font-family:monospace;font-size:10px">${esc(soOf(d) ?? '—')}${d.soInternalNo ? `<div style="font-family:inherit;color:#64748b">Internal SO No. ${esc(d.soInternalNo)}</div>` : ''}${d.clientPoLineNo ? `<div style="font-family:inherit;color:#64748b">POL ${esc(d.clientPoLineNo)}</div>` : ''}</td>` : ''}
+      ${showSo ? `<td style="font-family:monospace;font-size:10px">${esc(soOf(d) ?? '—')}${d.clientPoLineNo ? `<div style="font-family:inherit;color:#64748b">POL ${esc(d.clientPoLineNo)}</div>` : ''}</td>` : ''}
       <td style="font-family:monospace;font-weight:700">${esc(itemCodeWithRev(d.itemCode, d.itemRevision))}</td>
       <td style="text-align:center;font-weight:700">${fmtQty(Number(d.qty))}</td>
       <td style="text-align:center">${statusBadge(d.docStatus)}</td>

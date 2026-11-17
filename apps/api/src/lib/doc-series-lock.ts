@@ -32,6 +32,7 @@ import type { DbTransaction } from '../db/with-user-context';
 /** The number series that are locked through this helper. One entry per
  *  table that holds a document code (the unique index's table). */
 export type DocSeries =
+  | 'sales_orders'
   | 'purchase_orders'
   | 'purchase_requests'
   | 'plans'

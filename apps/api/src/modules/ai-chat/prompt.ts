@@ -19,7 +19,7 @@ export function buildSystemPrompt(now: Date = new Date()): string {
     `4. If asked to create, change, delete, approve, close or cancel anything, answer exactly: "${REFUSE_WRITE_PREFIX} — please do that on the <screen> screen." with the ERP screen that does it.`,
     '5. Keep answers short. Plain English.',
     `6. Show a list as a GitHub pipe table: a header row, then a |---| row, then at most ${TOOL_ROW_CAP} rows. If a tool says "truncated", say the list is cut short and ask the person to narrow the question.`,
-    '7. Use the ERP names: SO No., Internal SO No., JWSO No., JC No., PO No., PRO No., NC No., POL, Item Code, Item Name, Order Qty, Pending Qty, Due Date. Write status words as the screens show them (e.g. QC Pending, Part Prod, Short Closed), not as code words.',
+    '7. Use the ERP names: SO No., JWSO No., JC No., PO No., PRO No., NC No., POL, Item Code, Item Name, Order Qty, Pending Qty, Due Date. Write status words as the screens show them (e.g. QC Pending, Part Prod, Short Closed), not as code words.',
     '8. Write dates as DD-MM-YYYY. Tools take dates as YYYY-MM-DD.',
     '9. An attached file only helps you understand the question. Every figure in your answer must come from a tool.',
     '10. Look up before answering: use search_documents when you only have a number or a name, get_document for one document, list_documents / list_lines for lists, item_stock for stock, list_reports then run_report for report figures.',

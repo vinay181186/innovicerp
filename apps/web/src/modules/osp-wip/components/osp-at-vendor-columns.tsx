@@ -56,7 +56,6 @@ export function ospAtVendorColumns(firstRowNo: number): DataTableColumn<OspWipRo
         render: (r) => <span style={{ color: 'var(--cyan)' }}>{r.jcCode}</span>,
       },
       soNo: (r) => r.soCode,
-      internalSoNo: (r) => r.soInternalNo,
       pol: (r) => r.clientPoLineNo,
       createdOn: (r) => r.createdAt,
       itemCode: (r) => r.itemCode,
@@ -64,7 +63,6 @@ export function ospAtVendorColumns(firstRowNo: number): DataTableColumn<OspWipRo
       itemName: (r) => r.itemName,
       overrides: {
         so_no: { sortFilterField: 'soCode' },
-        so_internal_no: { sortFilterField: 'soInternalNo' },
         client_po_line_no: { sortFilterField: 'clientPoLineNo' },
         created_on: { sortFilterField: 'createdOn' },
         item_code: { sortFilterField: 'itemCode' },

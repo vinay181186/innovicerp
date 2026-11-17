@@ -54,7 +54,6 @@ export function outwardColumns(firstRowNo: number): DataTableColumn<JwDcOutwardL
         ),
       },
       soNo: (r) => r.orderCode,
-      internalSoNo: (r) => r.soInternalNo,
       createdOn: (r) => r.createdAt,
       overrides: {
         so_no: {
@@ -68,7 +67,6 @@ export function outwardColumns(firstRowNo: number): DataTableColumn<JwDcOutwardL
             </>
           ),
         },
-        so_internal_no: { sortFilterField: 'soInternalNo', filterType: 'text' },
         created_on: { sortFilterField: 'createdOn' },
       },
     }),

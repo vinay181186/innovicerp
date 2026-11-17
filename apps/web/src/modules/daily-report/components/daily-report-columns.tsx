@@ -40,7 +40,6 @@ function dailyReportColumns(firstRowNo: number): DataTableColumn<DailyReportRow>
         render: (r) => <span style={{ color: 'var(--cyan)' }}>{r.jcCode}</span>,
       },
       soNo: (r) => r.soCode,
-      internalSoNo: (r) => r.soInternalNo,
       pol: (r) => r.clientPoLineNo,
       createdOn: (r) => r.createdAt,
       itemCode: (r) => r.itemCode,

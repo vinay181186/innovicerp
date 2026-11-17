@@ -170,7 +170,7 @@ function SoOverviewPage(): React.JSX.Element {
           <SearchInput
             debounceMs={300}
             resetKey={clearKey}
-            placeholder="Search SO No., Internal SO No., customer, Client PO No.…"
+            placeholder="Search SO No., customer, Client PO No.…"
             value={searchInput}
             onChange={setSearchInput}
           />

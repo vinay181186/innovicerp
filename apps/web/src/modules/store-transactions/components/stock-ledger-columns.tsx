@@ -55,7 +55,6 @@ export function stockLedgerColumns(
         render: (r) => r.sourceRef,
       },
       soNo: (r) => r.soCode,
-      internalSoNo: (r) => r.soInternalNo,
       pol: (r) => r.clientPoLineNo,
       createdOn: (r) => r.createdAt,
       itemCode: (r) => r.itemCode ?? r.itemCodeText,

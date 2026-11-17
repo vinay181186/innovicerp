@@ -60,7 +60,6 @@ function soCostingColumns(
     ...leadColumns<SoCostingRow>({
       firstRowNo,
       soNo: (r) => r.soNo,
-      internalSoNo: (r) => r.soInternalNo,
       createdOn: (r) => r.createdAt,
       overrides: {
         so_no: {
@@ -78,7 +77,6 @@ function soCostingColumns(
             </Link>
           ),
         },
-        so_internal_no: { sortFilterField: 'soInternalNo' },
         created_on: { sortFilterField: 'createdOn' },
       },
     }),
@@ -259,7 +257,7 @@ function SoCostingListPage(): React.JSX.Element {
       noun="SO"
       search={search}
       onSearch={setSearch}
-      searchPlaceholder="Search SO No., Internal SO No., customer, cost centre…"
+      searchPlaceholder="Search SO No., customer, cost centre…"
       updating={isFetching && !isLoading}
     />
   );

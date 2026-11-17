@@ -5,7 +5,7 @@
 // 2026-11-07):
 //
 //   ITEM       Item Code (CODE/REV) · Item Name · Drawing No. · Customer
-//              SO / JWSO No. · Internal SO No. · Ln · POL
+//              SO / JWSO No. · Ln · POL
 //              Child JC (only on a card that has one)
 //   ORDER      Production Order · Plan No. (Parent JC on a child) · Route Card + Route Card Rev · Drawing
 //              JC Date · Due Date · Customer Dispatch Date · Priority
@@ -94,7 +94,6 @@ export function JcFactBlock({
   checkError: boolean;
 }): React.JSX.Element {
   const src = jc.sourceLink;
-  const internalSoNo = src?.type === 'so' ? src.internalSoNo : null;
   const childJobCards = jc.childJobCards ?? [];
   const codeRev = itemCodeWithRev(jc.itemCode, docDrawingRev(jc));
 
@@ -206,14 +205,6 @@ export function JcFactBlock({
                   DASH
                 )
               }
-            />
-            {/* ADR-207 — the SO's own office number. A JWSO has none. */}
-            <ClusterFact
-              num
-              label="Internal SO No."
-              empty={!internalSoNo}
-              title={internalSoNo || undefined}
-              value={internalSoNo || DASH}
             />
             {/* Ln is OUR order line number; POL is the line number on the
                 CUSTOMER's own PO. Never the same fact. */}

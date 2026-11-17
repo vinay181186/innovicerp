@@ -58,7 +58,6 @@ export function lineListColumns(
       firstRowNo,
       so: src === 'jw' ? 'jwso' : 'so',
       soNo: (r) => r.soCode,
-      internalSoNo: src === 'jw' ? undefined : (r) => r.soInternalNo,
       pol: (r) => r.clientPoLineNo,
       createdOn: (r) => r.createdAt,
       itemCode: (r) => r.itemCode,
@@ -78,7 +77,6 @@ export function lineListColumns(
             </span>
           ),
         },
-        so_internal_no: { sortFilterField: SF.soInternalNo },
         client_po_line_no: { sortFilterField: SF.pol },
         item_code: { sortFilterField: SF.itemCode },
         item_name: { sortFilterField: SF.itemName },

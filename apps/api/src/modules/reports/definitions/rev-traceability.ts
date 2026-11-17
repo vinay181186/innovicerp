@@ -17,7 +17,7 @@ export const revTraceabilityReport: RegisteredReport = {
     dept: 'design',
     filters: [
       { key: 'item', label: 'Item', kind: 'text', placeholder: 'Item code or name' },
-      { key: 'so', label: 'SO No.', kind: 'text', placeholder: 'SO No. or Internal SO No.' },
+      { key: 'so', label: 'SO No.', kind: 'text', placeholder: 'SO No.' },
     ],
     columns: [
       { key: 'customer', label: 'Customer', type: 'text' },

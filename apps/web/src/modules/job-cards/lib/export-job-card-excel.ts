@@ -84,8 +84,6 @@ export function exportJobCardExcel(args: {
     ['Item Code', itemCodeWithRev(jc.itemCode, docDrawingRev(jc))],
     ['Item Name', jc.itemName || ''],
     ['SO / JWSO No.', jc.sourceLink?.code ?? ''],
-    // ADR-207 — the SO's Internal SO No. in its own cell (blank on a JWSO card).
-    ['Internal SO No.', jc.sourceLink?.type === 'so' ? (jc.sourceLink.internalSoNo ?? '') : ''],
     ['Ln', jc.sourceLink?.lineNo ?? ''],
     ['POL', jc.clientPoLineNo ?? ''],
     ['Order Qty', jc.orderQty],

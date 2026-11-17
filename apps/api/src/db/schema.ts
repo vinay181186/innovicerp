@@ -1823,10 +1823,12 @@ export const salesOrders = pgTable(
       .notNull()
       .references(() => companies.id),
     code: text('code').notNull(),
-    // 0197 / ADR-207 — "Internal SO No.": the user-typed office number
-    // (e.g. SO-2401), required on create by the service, unique per company
-    // case-insensitively among live SOs. NULL on SOs made before 0197.
+    // 0197 / ADR-207 — the old typed "Internal SO No.". Retired by ADR-306:
+    // 0254 moved it into `code` and cleared it; new SOs leave it NULL.
     internalSoNo: text('internal_so_no'),
+    /** ADR-306 (0254) — the old IN-SO-##### number of an SO renamed to its
+     *  internal number. Search only; never shown. */
+    legacyCode: text('legacy_code'),
     soDate: date('so_date').notNull(),
     clientId: uuid('client_id').references(() => clients.id),
     customerName: text('customer_name'),
@@ -1865,6 +1867,9 @@ export const salesOrders = pgTable(
     uniqueIndex('sales_orders_company_code_uniq')
       .on(t.companyId, t.code)
       .where(sql`${t.deletedAt} is null`),
+    index('sales_orders_company_legacy_code_idx')
+      .on(t.companyId, t.legacyCode)
+      .where(sql`${t.legacyCode} is not null`),
     uniqueIndex('sales_orders_company_internal_so_no_uniq')
       .on(t.companyId, sql`lower(${t.internalSoNo})`)
       .where(sql`${t.deletedAt} is null and ${t.internalSoNo} is not null`),

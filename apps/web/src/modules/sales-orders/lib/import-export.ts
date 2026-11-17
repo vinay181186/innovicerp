@@ -38,7 +38,6 @@ const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.s
 export async function exportSoListExcel(rows: SalesOrderLineListItem[]): Promise<void> {
   const header = [
     'SO No.',
-    'Internal SO No.',
     'POL',
     'Created On',
     'Item Code',
@@ -57,7 +56,6 @@ export async function exportSoListExcel(rows: SalesOrderLineListItem[]): Promise
   ];
   const body = rows.map((r) => [
     r.code,
-    r.internalSoNo ?? '',
     r.clientPoLineNo ?? '',
     fmtDate(r.lineCreatedAt, ''),
     itemCodeWithRev(r.itemCode, r.itemRevision, ''),

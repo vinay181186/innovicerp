@@ -153,7 +153,6 @@ export function jobQueueColumns(opts: {
         ),
       },
       soNo: (r) => r.soCode,
-      internalSoNo: (r) => r.soInternalNo,
       pol: (r) => r.clientPoLineNo,
       createdOn: (r) => r.createdAt,
       itemCode: (r) => r.itemCode,

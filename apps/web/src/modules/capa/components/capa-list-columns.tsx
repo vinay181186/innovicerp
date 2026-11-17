@@ -47,7 +47,6 @@ export function capaListColumns(
         ),
       },
       soNo: (c) => c.soNo,
-      internalSoNo: (c) => c.soInternalNo,
       pol: (c) => c.clientPoLineNo,
       createdOn: (c) => c.createdAt,
       itemCode: (c) => c.itemCode,
@@ -55,7 +54,6 @@ export function capaListColumns(
       itemName: (c) => c.itemName,
       overrides: {
         so_no: { sortFilterField: 'soNo', filterType: 'text' },
-        so_internal_no: { sortFilterField: 'soInternalNo', filterType: 'text' },
         created_on: { sortFilterField: 'createdOn' },
         item_code: { sortFilterField: 'itemCode', filterType: 'text' },
         item_name: { sortFilterField: 'itemName', filterType: 'text' },

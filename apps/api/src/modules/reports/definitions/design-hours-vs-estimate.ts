@@ -38,7 +38,6 @@ export const designHoursVsEstimateReport: RegisteredReport = {
       // SO header, never to one SO line, so there is no customer PO line.
       { key: 'tracker_code', label: 'DSN No.', type: 'text' },
       { key: 'so_code', label: 'SO No.', type: 'text' },
-      { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
       { key: 'created_on', label: 'Created On', type: 'date' },
       { key: 'item_code', label: 'Item Code', type: 'text' },
       { key: 'item_name', label: 'Item Name', type: 'text' },
