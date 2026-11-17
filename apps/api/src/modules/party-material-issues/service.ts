@@ -116,9 +116,47 @@ const NO_JC_ITEM: JcProducedItem = {
   jcItemName: null,
 };
 
+/** Owner 2026-11-17: the customer material is shown by its live -RM item
+ *  code/name (register row → items). The PM-#### register code is never shown;
+ *  the snapshot party_material_code_text is only the legacy fallback. */
+interface RmItem {
+  rmItemCode: string | null;
+  rmItemName: string | null;
+}
+const NO_RM_ITEM: RmItem = { rmItemCode: null, rmItemName: null };
+
+/** The -RM item code expression for a party_material_issues row (list select,
+ *  search and the customerMaterial ▾ filter share it). */
+export function issueRmCodeSql() {
+  return sql<string | null>`(
+    SELECT COALESCE(ri.code, rpm.item_code_text)
+      FROM public.party_materials rpm
+      LEFT JOIN public.items ri ON ri.id = rpm.item_id
+     WHERE rpm.id = ${partyMaterialIssues.partyMaterialId}
+  )`;
+}
+
+/** Plain read (no lock) of one register row's -RM item code/name. */
+async function rmItemOf(
+  tx: DbTransaction,
+  companyId: string,
+  partyMaterialId: string | null,
+): Promise<RmItem> {
+  if (!partyMaterialId) return NO_RM_ITEM;
+  const rows = (await tx.execute(sql`
+    SELECT COALESCE(ri.code, pm.item_code_text) AS "rmItemCode", ri.name AS "rmItemName"
+      FROM public.party_materials pm
+      LEFT JOIN public.items ri ON ri.id = pm.item_id
+     WHERE pm.id = ${partyMaterialId}::uuid AND pm.company_id = ${companyId}::uuid
+  `)) as unknown as Array<{ rmItemCode: string | null; rmItemName: string | null }>;
+  const r = rows[0];
+  return r ? { rmItemCode: r.rmItemCode ?? null, rmItemName: r.rmItemName ?? null } : NO_RM_ITEM;
+}
+
 function rowToIssue(
   row: typeof partyMaterialIssues.$inferSelect,
   jcItem: JcProducedItem = NO_JC_ITEM,
+  rm: RmItem = NO_RM_ITEM,
 ): PartyMaterialIssue {
   return {
     id: row.id,
@@ -138,6 +176,8 @@ function rowToIssue(
     partyMaterialId: row.partyMaterialId,
     partyMaterialCodeText: row.partyMaterialCodeText,
     partyMaterialName: row.partyMaterialName,
+    rmItemCode: rm.rmItemCode,
+    rmItemName: rm.rmItemName,
     qty: row.qty,
     // ADR-203: the JWSO line drawn on + pieces put back into the register.
     jwLineId: row.jwLineId,
@@ -262,6 +302,13 @@ export async function createPartyMaterialIssue(
       .select({
         id: partyMaterials.id,
         code: partyMaterials.code,
+        // Owner 2026-11-17: the -RM item code/name for messages + the response.
+        rmItemCode: sql<string | null>`COALESCE(
+          (SELECT ri.code FROM public.items ri WHERE ri.id = ${partyMaterials.itemId}),
+          ${partyMaterials.itemCodeText})`,
+        rmItemName: sql<
+          string | null
+        >`(SELECT ri.name FROM public.items ri WHERE ri.id = ${partyMaterials.itemId})`,
         name: partyMaterials.name,
         clientId: partyMaterials.clientId,
       })
@@ -280,14 +327,15 @@ export async function createPartyMaterialIssue(
         `The customer RM of ${where} was not found. Open and save the JWSO again.`,
       );
     }
+    const pmLabel = pm.rmItemCode ?? pm.code;
     if (input.partyMaterialId && input.partyMaterialId !== pm.id) {
       throw new ValidationError(
-        `${where} uses customer material ${pm.code} — only that material can be issued to ${jc.code}.`,
+        `${where} uses customer material ${pmLabel} — only that material can be issued to ${jc.code}.`,
       );
     }
     if (pm.clientId != null && jw.clientId != null && pm.clientId !== jw.clientId) {
       throw new ValidationError(
-        `${pm.code} belongs to another Customer than ${jw.code}. ` +
+        `${pmLabel} belongs to another Customer than ${jw.code}. ` +
           `Customer material can only be issued against its own Customer's order.`,
       );
     }
@@ -348,7 +396,7 @@ export async function createPartyMaterialIssue(
       })
       .returning();
     const row = inserted[0];
-    if (!row) throw new ValidationError('Could not save Party Material Issue. Try again.');
+    if (!row) throw new ValidationError('Could not save Customer Material Issue. Try again.');
 
     // 8) Draw down the register. The ledger writer owns stock_qty and refuses
     // an 'out' beyond the material's balance; this service keeps issued_qty.
@@ -383,13 +431,16 @@ export async function createPartyMaterialIssue(
         refId: code,
         lineRef: `${line.jwCode} Ln ${line.lineNo}`,
         qty: input.qty,
-        detail: `${code} — issued ${input.qty} of ${pm.code} to ${jc.code} (${jw.code} Ln ${line.lineNo})`,
+        detail: `${code} — issued ${input.qty} of ${pmLabel} to ${jc.code} (${jw.code} Ln ${line.lineNo})`,
       },
       companyId,
       user,
     );
 
-    return rowToIssue(row);
+    return rowToIssue(row, NO_JC_ITEM, {
+      rmItemCode: pm.rmItemCode ?? null,
+      rmItemName: pm.rmItemName ?? null,
+    });
   });
 }
 
@@ -408,7 +459,7 @@ async function lockIssue(
      WHERE mi.id = ${id}::uuid AND mi.company_id = ${companyId}::uuid AND mi.deleted_at IS NULL
   `)) as unknown as Array<{ jwLineId: string | null; jcLineId: string | null }>;
   const p = pre[0];
-  if (!p) throw new NotFoundError('Party Material Issue not found. Refresh the page.');
+  if (!p) throw new NotFoundError('Customer Material Issue not found. Refresh the page.');
   const lineId = p.jwLineId ?? p.jcLineId;
   if (lineId) await lockJwLine(tx, companyId, lineId);
 
@@ -421,7 +472,7 @@ async function lockIssue(
     .where(and(eq(partyMaterialIssues.id, id), eq(partyMaterialIssues.companyId, companyId)))
     .limit(1);
   const iss = rows[0];
-  if (!iss) throw new NotFoundError('Party Material Issue not found. Refresh the page.');
+  if (!iss) throw new NotFoundError('Customer Material Issue not found. Refresh the page.');
   if (iss.deletedAt) {
     throw new ConflictError(
       `${iss.code} has just been cancelled by someone else. Refresh the page.`,
@@ -496,7 +547,7 @@ export async function partyMaterialIssueCancelBlockers(
   const out: CancelBlocker[] = [];
   if (iss.returnedToStoreQty > 0) {
     out.push({
-      docLabel: 'Party Material Issue',
+      docLabel: 'Customer Material Issue',
       docNo: iss.code,
       href: null,
       reason:
@@ -530,7 +581,8 @@ export async function partyMaterialIssueCancelEffects(
 ): Promise<CancelEffect[]> {
   const iss = await lockPartyMaterialIssueForCancel(tx, companyId, id, false);
   if (!iss || iss.deletedAt) return [];
-  const material = iss.partyMaterialCodeText ?? 'customer material';
+  const rm = await rmItemOf(tx, companyId, iss.partyMaterialId);
+  const material = rm.rmItemCode ?? iss.partyMaterialCodeText ?? 'customer material';
   const out: CancelEffect[] = [
     {
       kind: 'stock',
@@ -571,6 +623,9 @@ export async function cancelPartyMaterialIssueTx(
   if (blockers.length > 0) {
     throw new ConflictError(blockerRefusal(iss.code, blockers), { blockers });
   }
+  // Owner 2026-11-17: messages name the -RM item code (plain read, no lock).
+  const rmLabel =
+    (await rmItemOf(tx, companyId, iss.partyMaterialId)).rmItemCode ?? iss.partyMaterialCodeText;
 
   // The ledger writer puts the qty back into the register (a 'reversal'/'in'
   // row on the same JWSO line) and raises stock_qty; issued_qty comes down.
@@ -587,13 +642,7 @@ export async function cancelPartyMaterialIssueTx(
     userId: user.id,
     qtyLabel: 'Reversal Qty',
   });
-  await lowerIssuedQty(
-    tx,
-    iss.partyMaterialId,
-    iss.qty,
-    user.id,
-    iss.partyMaterialCodeText ?? iss.code,
-  );
+  await lowerIssuedQty(tx, iss.partyMaterialId, iss.qty, user.id, rmLabel ?? iss.code);
 
   // deleted_at keeps every live reader skipping it; cancelled_at is the same
   // instant (ADR-235, 0218).
@@ -627,7 +676,7 @@ export async function cancelPartyMaterialIssueTx(
       reason: trimmed,
       detail:
         `${iss.code} cancelled — returned ${iss.qty} of ` +
-        `${iss.partyMaterialCodeText ?? 'material'} to party stock`,
+        `${rmLabel ?? 'material'} to party stock`,
     },
     companyId,
     user,
@@ -654,6 +703,9 @@ export async function returnPartyMaterialIssueToStore(
 
   return withUserContext(user, async (tx) => {
     const iss = await lockIssue(tx, companyId, id);
+    // Owner 2026-11-17: the -RM item code for messages + the response (plain read).
+    const rm = await rmItemOf(tx, companyId, iss.partyMaterialId);
+    const rmLabel = rm.rmItemCode ?? iss.partyMaterialCodeText;
     // ADR-235 — a return changes what a cancel would reverse; not while one waits.
     await assertNoPendingCancel(tx, 'party_material_issue', iss.id);
 
@@ -716,13 +768,7 @@ export async function returnPartyMaterialIssueToStore(
         `${iss.code} was changed by someone else just now. Refresh the page.`,
       );
     }
-    await lowerIssuedQty(
-      tx,
-      iss.partyMaterialId,
-      input.qty,
-      user.id,
-      iss.partyMaterialCodeText ?? iss.code,
-    );
+    await lowerIssuedQty(tx, iss.partyMaterialId, input.qty, user.id, rmLabel ?? iss.code);
 
     await emitActivityLog(
       tx,
@@ -742,14 +788,14 @@ export async function returnPartyMaterialIssueToStore(
           },
         ],
         detail:
-          `${iss.code} — ${input.qty} of ${iss.partyMaterialCodeText ?? 'material'} returned to store ` +
+          `${iss.code} — ${input.qty} of ${rmLabel ?? 'material'} returned to store ` +
           `from ${iss.jcCodeText ?? 'JC'}`,
       },
       companyId,
       user,
     );
 
-    return rowToIssue(row);
+    return rowToIssue(row, NO_JC_ITEM, rm);
   });
 }
 
@@ -809,6 +855,8 @@ export async function listPartyMaterialIssues(
         ilike(items.code, term),
         ilike(items.name, term),
         ilike(partyMaterialIssues.partyMaterialCodeText, term),
+        // Owner 2026-11-17: the live -RM item code the register now shows.
+        sql`${issueRmCodeSql()} ILIKE ${term}`,
         ilike(partyMaterialIssues.partyMaterialName, term),
         ilike(partyMaterialIssues.remarks, term),
       );
@@ -826,6 +874,13 @@ export async function listPartyMaterialIssues(
         .select({
           issue: partyMaterialIssues,
           materialStockQty: partyMaterials.stockQty,
+          // Owner 2026-11-17: the customer material's live -RM item code/name.
+          rmItemCode: sql<string | null>`COALESCE(
+            (SELECT ri.code FROM public.items ri WHERE ri.id = ${partyMaterials.itemId}),
+            ${partyMaterials.itemCodeText})`,
+          rmItemName: sql<
+            string | null
+          >`(SELECT ri.name FROM public.items ri WHERE ri.id = ${partyMaterials.itemId})`,
           // WHAT THE JOB CARD MAKES. The register printed a job-card number and
           // no produced part, and a JC number says WHICH JOB, not WHICH PART.
           // These are NOT the party material columns already on the row: those
@@ -896,11 +951,15 @@ export async function listPartyMaterialIssues(
 
     return {
       items: rows.map((r) => ({
-        ...rowToIssue(r.issue, {
-          jcItemCode: r.jcItemCode ?? null,
-          jcItemRevision: r.jcItemRevision ?? null,
-          jcItemName: r.jcItemName ?? null,
-        }),
+        ...rowToIssue(
+          r.issue,
+          {
+            jcItemCode: r.jcItemCode ?? null,
+            jcItemRevision: r.jcItemRevision ?? null,
+            jcItemName: r.jcItemName ?? null,
+          },
+          { rmItemCode: r.rmItemCode ?? null, rmItemName: r.rmItemName ?? null },
+        ),
         materialStockQty: r.materialStockQty ?? null,
         createdByName: r.createdByName ?? null,
       })),

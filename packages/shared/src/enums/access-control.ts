@@ -113,7 +113,7 @@ export const ACCESS_FORMS = [
   { key: 'issue_create', dept: 'store', label: 'Item Issue Register' },
   { key: 'toolissue_create', dept: 'store', label: 'Tool Issue Register' },
   { key: 'stockcount_create', dept: 'store', label: 'Stock Count' },
-  { key: 'party_create', dept: 'store', label: 'Party Material' },
+  { key: 'party_create', dept: 'store', label: 'Customer Material' },
   // QC
   { key: 'qc_submit', dept: 'qc', label: 'QC Call Register' },
   { key: 'qc_incoming', dept: 'qc', label: 'Incoming QC' },

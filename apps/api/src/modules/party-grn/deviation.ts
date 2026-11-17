@@ -60,6 +60,12 @@ export async function applyPartyGrnUseAsIs(
     SELECT pgl.id, pgl.line_no AS "lineNo", pgl.jw_line_id AS "jwLineId",
            pgl.party_material_id AS "partyMaterialId",
            pgl.party_material_code_text AS "partyMaterialCodeText",
+           -- Owner 2026-11-17: the remarks name the live -RM item code.
+           COALESCE((SELECT COALESCE(ri.code, pm.item_code_text)
+                       FROM public.party_materials pm
+                       LEFT JOIN public.items ri ON ri.id = pm.item_id
+                      WHERE pm.id = pgl.party_material_id),
+                    pgl.party_material_code_text) AS "rmCode",
            pg.id AS "partyGrnId", pg.code AS "partyGrnCode"
       FROM public.party_grn_lines pgl
       JOIN public.party_grn pg ON pg.id = pgl.party_grn_id AND pg.deleted_at IS NULL
@@ -73,6 +79,7 @@ export async function applyPartyGrnUseAsIs(
     jwLineId: string | null;
     partyMaterialId: string | null;
     partyMaterialCodeText: string;
+    rmCode: string;
     partyGrnId: string;
     partyGrnCode: string;
   }>;
@@ -114,7 +121,7 @@ export async function applyPartyGrnUseAsIs(
     partyMaterialId: l.partyMaterialId,
     partyGrnId: l.partyGrnId,
     qty,
-    remarks: `${at} · ${l.partyMaterialCodeText} used as is (${ncCode})`,
+    remarks: `${at} · ${l.rmCode} used as is (${ncCode})`,
     userId: user.id,
     overCapMessage: () =>
       `Using these ${qty} pcs would exceed Order Qty ${jwLine.orderQty} on ${jwLine.jwCode} Ln ${jwLine.lineNo} — ` +

@@ -197,10 +197,19 @@ export const REGISTER_KINDS: readonly KindMeta[] = [
     text: [sql`t.client_po_no`, sql`t.remarks`],
     refs: [ref('JWSO', sql`COALESCE(t.jw_code_text, jw.code)`), ref('Client DC', sql`t.dc_no`)],
     lines: {
-      from: sql`public.party_grn_lines l`,
+      // Owner 2026-11-17: show the live -RM item code (PM-#### only as the
+      // legacy fallback); search finds either.
+      from: sql`public.party_grn_lines l
+        LEFT JOIN public.party_materials lpm ON lpm.id = l.party_material_id
+        LEFT JOIN public.items lri ON lri.id = lpm.item_id`,
       fk: sql`l.party_grn_id`,
-      display: pair(sql`l.party_material_code_text`, sql`l.party_material_name`),
+      display: pair(
+        sql`COALESCE(lri.code, lpm.item_code_text, l.party_material_code_text)`,
+        sql`l.party_material_name`,
+      ),
       match: [
+        sql`lri.code`,
+        sql`lpm.item_code_text`,
         sql`l.party_material_code_text`,
         sql`l.party_material_name`,
         sql`l.jw_line_no_text`,
@@ -217,17 +226,29 @@ export const REGISTER_KINDS: readonly KindMeta[] = [
     from: sql`public.party_material_issues t
       LEFT JOIN public.job_work_orders jw ON jw.id = t.job_work_order_id
       LEFT JOIN public.clients c ON c.id = jw.client_id
-      LEFT JOIN public.job_cards jc ON jc.id = t.job_card_id`,
+      LEFT JOIN public.job_cards jc ON jc.id = t.job_card_id
+      LEFT JOIN public.party_materials ipm ON ipm.id = t.party_material_id
+      LEFT JOIN public.items iri ON iri.id = ipm.item_id`,
     docNo: sql`t.code`,
     date: sql`t.issue_date::date`,
     party: sql`COALESCE(c.name, jw.customer_name)`,
     text: [sql`t.remarks`],
-    shown: [sql`t.party_material_code_text`, sql`t.party_material_name`],
+    // Owner 2026-11-17: the live -RM item code is shown; search finds it and PM-####.
+    shown: [
+      sql`COALESCE(iri.code, ipm.item_code_text, t.party_material_code_text)`,
+      sql`t.party_material_code_text`,
+      sql`t.party_material_name`,
+    ],
     refs: [
       ref('JWSO', sql`COALESCE(t.jw_code_text, jw.code)`),
       ref('JC', sql`COALESCE(t.jc_code_text, jc.code)`),
     ],
-    flatLines: [pair(sql`t.party_material_code_text`, sql`t.party_material_name`)],
+    flatLines: [
+      pair(
+        sql`COALESCE(iri.code, ipm.item_code_text, t.party_material_code_text)`,
+        sql`t.party_material_name`,
+      ),
+    ],
     qty: sql`t.qty`,
     status: null,
   },

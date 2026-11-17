@@ -47,6 +47,8 @@ export interface PartyStockMoveResult {
   balanceBefore: number;
   balanceAfter: number;
   partyMaterialCode: string;
+  /** Owner 2026-11-17: the live -RM item code for messages (PM-#### fallback). */
+  rmCode: string;
 }
 
 /** Lock the LIVE party material row and return its code + current balance
@@ -55,19 +57,23 @@ async function lockPartyMaterial(
   tx: DbTransaction,
   companyId: string,
   partyMaterialId: string,
-): Promise<{ code: string; balance: number }> {
+): Promise<{ code: string; rmCode: string; balance: number }> {
+  // The -RM item code is a scalar sub-select (not a join), so FOR UPDATE still
+  // locks only the party_materials row — lock order unchanged.
   const rows = (await tx.execute(sql`
-    SELECT code, stock_qty::int AS balance
+    SELECT code, stock_qty::int AS balance,
+           COALESCE((SELECT ri.code FROM public.items ri WHERE ri.id = party_materials.item_id),
+                    item_code_text, code) AS "rmCode"
     FROM public.party_materials
     WHERE id = ${partyMaterialId}::uuid AND company_id = ${companyId}::uuid
       AND deleted_at IS NULL
     FOR UPDATE
-  `)) as unknown as Array<{ code: string; balance: number }>;
+  `)) as unknown as Array<{ code: string; rmCode: string; balance: number }>;
   const row = rows[0];
   if (!row) {
     throw new NotFoundError('Selected Party Material was not found. Please select it again.');
   }
-  return { code: row.code, balance: Number(row.balance) };
+  return { code: row.code, rmCode: row.rmCode, balance: Number(row.balance) };
 }
 
 export async function postPartyStockMove(
@@ -81,11 +87,15 @@ export async function postPartyStockMove(
     throw new ValidationError(`${label} must be a whole number greater than 0.`);
   }
 
-  const { code, balance } = await lockPartyMaterial(tx, input.companyId, input.partyMaterialId);
+  const { code, rmCode, balance } = await lockPartyMaterial(
+    tx,
+    input.companyId,
+    input.partyMaterialId,
+  );
 
   if (input.direction === 'out' && qty > balance) {
     throw new ConflictError(
-      `${code}: ${label} (${qty}) cannot be more than the party-store balance (${balance}).`,
+      `${rmCode}: ${label} (${qty}) cannot be more than the party-store balance (${balance}).`,
     );
   }
 
@@ -119,5 +129,6 @@ export async function postPartyStockMove(
     balanceBefore: balance,
     balanceAfter,
     partyMaterialCode: code,
+    rmCode,
   };
 }

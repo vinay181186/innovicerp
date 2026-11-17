@@ -77,6 +77,14 @@ export async function qcPartyGrn(
         jwLineId: partyGrnLines.jwLineId,
         partyMaterialId: partyGrnLines.partyMaterialId,
         partyMaterialCodeText: partyGrnLines.partyMaterialCodeText,
+        // Owner 2026-11-17: messages / remarks name the live -RM item code
+        // (PM-#### snapshot only as the legacy fallback). Display only.
+        rmCode: sql<string>`COALESCE(
+          (SELECT COALESCE(ri.code, pm.item_code_text)
+             FROM public.party_materials pm
+             LEFT JOIN public.items ri ON ri.id = pm.item_id
+            WHERE pm.id = ${partyGrnLines.partyMaterialId}),
+          ${partyGrnLines.partyMaterialCodeText})`,
         receivedQty: partyGrnLines.receivedQty,
         acceptedQty: partyGrnLines.acceptedQty,
         rejectedQty: partyGrnLines.rejectedQty,
@@ -154,7 +162,7 @@ export async function qcPartyGrn(
       if (!ncItemByLine.has(lineId)) {
         const l = byId.get(lineId)!;
         throw new ValidationError(
-          `${head.code} Ln ${l.lineNo}: its customer material (${l.partyMaterialCodeText}) has no item, so ` +
+          `${head.code} Ln ${l.lineNo}: its customer material (${l.rmCode}) has no item, so ` +
             `the deviated pieces cannot be raised as an NC. Open and save the JWSO, then QC again.`,
         );
       }
@@ -226,7 +234,7 @@ export async function qcPartyGrn(
         partyMaterialId: l.partyMaterialId!,
         partyGrnId: head.id,
         qty: q.acceptedQty,
-        remarks: `${head.code} Ln ${l.lineNo} · ${l.partyMaterialCodeText} accepted at Incoming QC`,
+        remarks: `${head.code} Ln ${l.lineNo} · ${l.rmCode} accepted at Incoming QC`,
         userId,
         overCapMessage: (accepted) =>
           `${at}: accepting ${q.acceptedQty} would take ${jwLine.jwCode} Ln ${jwLine.lineNo} to ` +
@@ -267,7 +275,7 @@ export async function qcPartyGrn(
           lineRef: `Line ${l.lineNo}`,
           qty: q.acceptedQty,
           detail:
-            `${l.partyMaterialCodeText} (${jwLine.jwCode} Ln ${jwLine.lineNo}) — received ${after.receivedQty}, ` +
+            `${l.rmCode} (${jwLine.jwCode} Ln ${jwLine.lineNo}) — received ${after.receivedQty}, ` +
             `inspected ${inspected} (${q.acceptedQty} accepted, ${q.rejectedQty} deviated` +
             (q.rejectedQty > 0 ? `: ${rejectReason}` : '') +
             `), QC Pending ${pendingAfter}` +

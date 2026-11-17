@@ -65,7 +65,7 @@ export function PartyGrnPendingChanges({
             {qc ? (
               <div>
                 <span className="text3">
-                  Ln {l.lineNo} · {l.partyMaterialCodeText} — Received Qty:
+                  Ln {l.lineNo} · {l.rmItemCode ?? l.partyMaterialCodeText} — Received Qty:
                 </span>{' '}
                 <span className="mono">{l.receivedQty}</span>
                 <PendingChangeChip after={qc.after} />

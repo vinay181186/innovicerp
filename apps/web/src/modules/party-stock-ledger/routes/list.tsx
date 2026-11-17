@@ -64,17 +64,17 @@ const COLUMNS: DataTableColumn<PartyStockLedgerListItem>[] = [
   },
   {
     id: 'customer_material',
-    header: 'Customer Material',
+    header: 'Customer RM',
     kind: 'text',
-    title: (r) => r.partyMaterialName ?? r.partyMaterialCode ?? '',
+    title: (r) => r.rmItemName ?? r.partyMaterialName ?? r.rmItemCode ?? r.partyMaterialCode ?? '',
     render: (r) => (
       <>
         <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-          {r.partyMaterialCode ?? '—'}
+          {r.rmItemCode ?? r.partyMaterialCode ?? '—'}
         </span>
-        {r.partyMaterialName ? (
+        {(r.rmItemName ?? r.partyMaterialName) ? (
           <span className="text3" style={{ fontSize: 'var(--fs-xs)', marginLeft: 6 }}>
-            {r.partyMaterialName}
+            {r.rmItemName ?? r.partyMaterialName}
           </span>
         ) : null}
       </>

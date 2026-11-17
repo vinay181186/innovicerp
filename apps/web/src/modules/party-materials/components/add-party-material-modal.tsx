@@ -93,7 +93,9 @@ export function AddPartyMaterialModal({ onClose }: { onClose: () => void }): Rea
     if (autoMaterial.trim()) input.material = autoMaterial.trim();
     createMut.mutate(input, {
       onSuccess: (created) => {
-        toast.ok(`Customer Material ${created.code} saved`);
+        toast.ok(
+          `Customer Material ${created.itemCode ?? created.itemCodeText ?? created.code} saved`,
+        );
         onClose();
       },
       onError: (e) =>

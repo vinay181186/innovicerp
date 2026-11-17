@@ -95,7 +95,8 @@ export function NewPartyMaterialIssueModal({
   const issuableQ = usePartyMaterialIssuable(jobCardId);
   const issuable = issuableQ.data && !issuableQ.isFetching ? issuableQ.data : null;
 
-  // The material's code/name (the customer's materials, one fetch).
+  // The material name (the customer's materials, one fetch). The PM-#### register
+  // code is never shown (owner 2026-11-17) — the line's `<item>-RM` code is.
   const { data: pmData } = usePartyMaterialsList(
     {
       search: undefined,
@@ -370,7 +371,7 @@ export function NewPartyMaterialIssueModal({
                   </span>
                   {material ? (
                     <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
-                      {material.code} · {material.name}
+                      {material.name}
                     </span>
                   ) : null}
                 </>

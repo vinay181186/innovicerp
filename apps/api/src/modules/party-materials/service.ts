@@ -103,6 +103,9 @@ export async function listPartyMaterials(
     const searchFrag = term
       ? sql`AND (
           pm.code ILIKE ${term}
+          -- Owner 2026-11-17: the live -RM item code (what the screen shows) finds it.
+          OR i.code ILIKE ${term}
+          OR pm.item_code_text ILIKE ${term}
           OR pm.name ILIKE ${term}
           OR pm.material ILIKE ${term}
           OR pm.description ILIKE ${term}
@@ -114,7 +117,11 @@ export async function listPartyMaterials(
     // list's own field whitelist (sf-columns.ts). Applied to list AND count.
     const sf = readSf(input.sf);
     const sfFrag = sfWhere(PARTY_MATERIAL_SF_COLUMNS, sf);
-    const orderBy = sfOrderBy(PARTY_MATERIAL_SF_COLUMNS, sf, sql`pm.code ASC`);
+    const orderBy = sfOrderBy(
+      PARTY_MATERIAL_SF_COLUMNS,
+      sf,
+      sql`COALESCE(i.code, pm.item_code_text, pm.code) ASC`,
+    );
     const fromWhere = sql`
       FROM public.party_materials pm
       LEFT JOIN public.clients c ON c.id = pm.client_id AND c.deleted_at IS NULL
@@ -213,7 +220,8 @@ export async function getPartyMaterial(id: string, user: AuthContext): Promise<P
       )
       .limit(1);
     const row = rows[0];
-    if (!row) throw new NotFoundError('Party Material not found. It may have been moved to Trash.');
+    if (!row)
+      throw new NotFoundError('Customer Material not found. It may have been moved to Trash.');
     return rowToPartyMaterial(row.pm, { itemCode: row.itemCode, itemName: row.itemName });
   });
 }
@@ -286,8 +294,7 @@ async function assertOnePerItemClient(
   `)) as unknown as Array<{ code: string }>;
   if (dup[0]) {
     throw new ConflictError(
-      `${dup[0].code} is already the customer material for ${itemCode} and ${clientCode}. ` +
-        `Use ${dup[0].code} — there is one per item and customer.`,
+      `${itemCode} is already a customer material for ${clientCode} — there is one per item and customer.`,
     );
   }
 }
@@ -355,15 +362,15 @@ export async function createPartyMaterial(
       })
       .returning();
     const row = inserted[0];
-    if (!row) throw new ValidationError('Could not save Party Material. Try again.');
+    if (!row) throw new ValidationError('Could not save Customer Material. Try again.');
     await emitActivityLog(
       tx,
       {
         action: ActivityAction.Create,
         entity: 'PartyMaterial',
         entityId: row.id,
-        refId: row.code,
-        detail: `${row.code} — ${row.name}`,
+        refId: row.itemCodeText ?? row.code,
+        detail: `${row.itemCodeText ?? row.code} — ${row.name}`,
       },
       companyId,
       user,
@@ -389,7 +396,7 @@ export async function updatePartyMaterial(
        FOR UPDATE
     `)) as unknown as Array<{ id: string }>;
     if (!lockedRows[0]) {
-      throw new NotFoundError('Party Material not found. It may have been moved to Trash.');
+      throw new NotFoundError('Customer Material not found. It may have been moved to Trash.');
     }
     const existing = (
       await tx.select().from(partyMaterials).where(eq(partyMaterials.id, id)).limit(1)
@@ -408,7 +415,7 @@ export async function updatePartyMaterial(
         .filter(Boolean)
         .join(', ');
       throw new ConflictError(
-        `${existing.code} is already used (JWSO lines, Party GRNs or register movements) — its ${what} cannot be changed.`,
+        `${existing.itemCodeText ?? existing.code} is already used (JWSO lines, Party GRNs or register movements) — its ${what} cannot be changed.`,
       );
     }
 
@@ -479,9 +486,9 @@ export async function updatePartyMaterial(
           action: ActivityAction.Edit,
           entity: 'PartyMaterial',
           entityId: row.id,
-          refId: row.code,
+          refId: row.itemCodeText ?? row.code,
           changes,
-          detail: `Edited ${row.code} — ${row.name}`,
+          detail: `Edited ${row.itemCodeText ?? row.code} — ${row.name}`,
         },
         companyId,
         user,
@@ -504,14 +511,16 @@ export async function softDeletePartyMaterial(
   await withUserContext(user, async (tx) => {
     // Lock the row so a receipt or issue cannot land between the check and the delete.
     const rows = (await tx.execute(sql`
-      SELECT id, code, stock_qty::int AS "stockQty"
+      SELECT id, COALESCE((SELECT ri.code FROM public.items ri WHERE ri.id = party_materials.item_id),
+                          item_code_text, code) AS code,
+             stock_qty::int AS "stockQty"
         FROM public.party_materials
        WHERE id = ${id}::uuid AND company_id = ${companyId}::uuid AND deleted_at IS NULL
        FOR UPDATE
     `)) as unknown as Array<{ id: string; code: string; stockQty: number }>;
     const existing = rows[0];
     if (!existing) {
-      throw new NotFoundError('Party Material not found. It may have been moved to Trash.');
+      throw new NotFoundError('Customer Material not found. It may have been moved to Trash.');
     }
     if (Number(existing.stockQty) > 0) {
       throw new ConflictError(

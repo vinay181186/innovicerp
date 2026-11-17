@@ -35,7 +35,8 @@ export function jwsoToReceiveSql(c: CheckCtx): SQL {
            jw.jw_date::text AS doc_date, jwl.due_date::text AS due_date,
            COALESCE(jwl.due_date, jw.jw_date)::text AS sort_key,
            COALESCE(cl.name, jw.customer_name)::text AS party,
-           COALESCE(pm.code, jwl.item_code_text)::text AS item_code,
+           -- Owner 2026-11-17: the live -RM item code; PM-#### only as fallback.
+           COALESCE(ri.code, pm.item_code_text, pm.code, jwl.item_code_text)::text AS item_code,
            COALESCE(pm.name, jwl.part_name)::text AS item_name,
            (jwl.order_qty - cm.committed)::numeric AS qty,
            COALESCE(pm.uom, jwl.uom::text)::text AS uom,
@@ -46,6 +47,7 @@ export function jwsoToReceiveSql(c: CheckCtx): SQL {
     JOIN public.job_work_orders jw
       ON jw.id = jwl.job_work_order_id AND jw.deleted_at IS NULL AND jw.status = 'open'
     LEFT JOIN public.party_materials pm ON pm.id = jwl.party_material_id
+    LEFT JOIN public.items ri ON ri.id = pm.item_id
     LEFT JOIN public.clients cl ON cl.id = jw.client_id AND cl.deleted_at IS NULL
     CROSS JOIN LATERAL (SELECT ${partyCommittedQtySql(sql`jwl.id`)} AS committed) cm
     WHERE jw.company_id = ${c.cid}::uuid AND jwl.deleted_at IS NULL

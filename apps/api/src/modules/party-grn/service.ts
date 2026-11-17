@@ -184,6 +184,13 @@ export async function listPartyGrn(
               AND ${PGL_OF_HEADER_SQL}
               AND (pgl.party_material_code_text ILIKE ${term}
                    OR pgl.party_material_name ILIKE ${term}
+                   -- Owner 2026-11-17: the live -RM item code finds it too.
+                   OR EXISTS (
+                     SELECT 1 FROM public.party_materials spm
+                     LEFT JOIN public.items sri ON sri.id = spm.item_id
+                     WHERE spm.id = pgl.party_material_id
+                       AND (sri.code ILIKE ${term} OR spm.item_code_text ILIKE ${term})
+                   )
                    OR COALESCE(oi.code, jwl.item_code_text) ILIKE ${term}
                    OR jwl.client_po_line_no ILIKE ${term})
           )
@@ -370,7 +377,24 @@ export async function loadPartyGrnDetail(
   // so it can never multiply the GRN lines; no deleted_at filter, matching the
   // QC register's read of the same line (qc-history/register-party.ts).
   const joined = await tx
-    .select({ line: partyGrnLines, clientPoLineNo: jobWorkOrderLines.clientPoLineNo })
+    .select({
+      line: partyGrnLines,
+      clientPoLineNo: jobWorkOrderLines.clientPoLineNo,
+      // Owner 2026-11-17: the live -RM item code/name, via the register row.
+      // The PM-#### register code is never shown.
+      rmItemCode: sql<string | null>`(
+        SELECT COALESCE(ri.code, pm.item_code_text)
+          FROM public.party_materials pm
+          LEFT JOIN public.items ri ON ri.id = pm.item_id
+         WHERE pm.id = ${partyGrnLines.partyMaterialId} AND pm.company_id = ${companyId}::uuid
+      )`,
+      rmItemName: sql<string | null>`(
+        SELECT ri.name
+          FROM public.party_materials pm
+          LEFT JOIN public.items ri ON ri.id = pm.item_id
+         WHERE pm.id = ${partyGrnLines.partyMaterialId} AND pm.company_id = ${companyId}::uuid
+      )`,
+    })
     .from(partyGrnLines)
     .leftJoin(jobWorkOrderLines, eq(jobWorkOrderLines.id, partyGrnLines.jwLineId))
     .where(
@@ -389,7 +413,10 @@ export async function loadPartyGrnDetail(
   // A cancelled GRN waits for nothing: its lines show no QC Pending Qty.
   const open = joined.filter((r) => !isCancelled && isQcOpen(r.line)).length;
   const lines: PartyGrnLine[] = joined.map((r) => {
-    const l = rowToLine(r.line, r.clientPoLineNo ?? null);
+    const l = rowToLine(r.line, r.clientPoLineNo ?? null, {
+      rmItemCode: r.rmItemCode ?? null,
+      rmItemName: r.rmItemName ?? null,
+    });
     return isCancelled ? { ...l, qcPendingQty: 0 } : l;
   });
   return {
@@ -414,6 +441,7 @@ export async function getPartyGrnDetail(id: string, user: AuthContext): Promise<
 function rowToLine(
   row: typeof partyGrnLines.$inferSelect,
   clientPoLineNo: string | null,
+  rm: { rmItemCode: string | null; rmItemName: string | null },
 ): PartyGrnLine {
   return {
     id: row.id,
@@ -423,6 +451,8 @@ function rowToLine(
     partyMaterialId: row.partyMaterialId,
     partyMaterialCodeText: row.partyMaterialCodeText,
     partyMaterialName: row.partyMaterialName,
+    rmItemCode: rm.rmItemCode,
+    rmItemName: rm.rmItemName,
     receivedQty: row.receivedQty,
     jwLineNoText: row.jwLineNoText,
     // R2 + R4 (ADR-194): real FK to the JWSO line + incoming-QC split.
@@ -554,7 +584,7 @@ export async function createPartyGrn(
     // 3) The customer material of each line (the line's own -RM party material).
     const pmById = new Map<
       string,
-      { id: string; code: string; name: string; clientId: string | null }
+      { id: string; code: string; rmCode: string; name: string; clientId: string | null }
     >();
     for (const line of lockedById.values()) {
       const pmId = line.partyMaterialId!;
@@ -563,6 +593,10 @@ export async function createPartyGrn(
         .select({
           id: partyMaterials.id,
           code: partyMaterials.code,
+          // Owner 2026-11-17: the -RM item code for messages (PM-#### fallback).
+          rmCode: sql<string>`COALESCE(
+            (SELECT ri.code FROM public.items ri WHERE ri.id = ${partyMaterials.itemId}),
+            ${partyMaterials.itemCodeText}, ${partyMaterials.code})`,
           name: partyMaterials.name,
           clientId: partyMaterials.clientId,
         })
@@ -585,7 +619,7 @@ export async function createPartyGrn(
       // customer's order.
       if (pm.clientId !== jw.clientId) {
         throw new ConflictError(
-          `${pm.code} belongs to another Customer than ${jw.code}. ` +
+          `${pm.rmCode} belongs to another Customer than ${jw.code}. ` +
             `Customer material can only be received against its own Customer's order.`,
         );
       }
@@ -761,6 +795,14 @@ async function partyGrnCancelLines(tx: DbTransaction, companyId: string, id: str
       jwLineId: partyGrnLines.jwLineId,
       partyMaterialId: partyGrnLines.partyMaterialId,
       partyMaterialCodeText: partyGrnLines.partyMaterialCodeText,
+      // Owner 2026-11-17: messages name the live -RM item code (PM-#### only
+      // as the legacy fallback). Display only — nothing is written from it.
+      rmCode: sql<string>`COALESCE(
+        (SELECT COALESCE(ri.code, pm.item_code_text)
+           FROM public.party_materials pm
+           LEFT JOIN public.items ri ON ri.id = pm.item_id
+          WHERE pm.id = ${partyGrnLines.partyMaterialId}),
+        ${partyGrnLines.partyMaterialCodeText})`,
       receivedQty: partyGrnLines.receivedQty,
       acceptedQty: partyGrnLines.acceptedQty,
       rejectedQty: partyGrnLines.rejectedQty,
@@ -799,7 +841,7 @@ function needByJwLine(
       jwLineId: l.jwLineId,
       qty: (prev?.qty ?? 0) + l.acceptedQty,
       pmId: l.partyMaterialId!,
-      code: l.partyMaterialCodeText,
+      code: l.rmCode,
     });
   }
   return out;
@@ -905,7 +947,7 @@ export async function partyGrnCancelBlockers(
     `)) as unknown as Array<{ code: string; qty: number }>;
     for (const mi of issues) {
       out.push({
-        docLabel: 'Party Material Issue',
+        docLabel: 'Customer Material Issue',
         docNo: mi.code,
         href: null,
         reason: `issued ${Number(mi.net)} of ${need.code} (${where}) to ${mi.jcCode ?? 'a Job Card'} ${tail}`,
@@ -971,7 +1013,7 @@ export async function partyGrnCancelEffects(
 
   const out: CancelEffect[] = [];
   for (const l of lines) {
-    const at = `Ln ${l.lineNo} ${l.partyMaterialCodeText}`;
+    const at = `Ln ${l.lineNo} ${l.rmCode}`;
     if (l.acceptedQty > 0 && l.partyMaterialId != null) {
       out.push({
         kind: 'stock',

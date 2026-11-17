@@ -57,6 +57,8 @@ export async function listPartyGrnLines(
           OR c.name ILIKE ${term} ESCAPE '\\'
           OR pgl.party_material_code_text ILIKE ${term} ESCAPE '\\'
           OR pgl.party_material_name ILIKE ${term} ESCAPE '\\'
+          OR lri.code ILIKE ${term} ESCAPE '\\'
+          OR lpm.item_code_text ILIKE ${term} ESCAPE '\\'
           OR COALESCE(oi.code, jwl.item_code_text) ILIKE ${term} ESCAPE '\\'
           OR jwl.client_po_line_no ILIKE ${term} ESCAPE '\\'
         )`
@@ -83,7 +85,11 @@ export async function listPartyGrnLines(
       JOIN public.party_grn pg ON pg.id = pgl.party_grn_id
       LEFT JOIN public.clients c ON c.id = pg.client_id AND c.deleted_at IS NULL
       LEFT JOIN public.job_work_order_lines jwl ON jwl.id = pgl.jw_line_id
-      LEFT JOIN public.items oi ON oi.id = jwl.item_id`;
+      LEFT JOIN public.items oi ON oi.id = jwl.item_id
+      -- Owner 2026-11-17: the line's live -RM item, via the register row (PK joins,
+      -- never multiply the line). The PM-#### register code is never shown.
+      LEFT JOIN public.party_materials lpm ON lpm.id = pgl.party_material_id
+      LEFT JOIN public.items lri ON lri.id = lpm.item_id`;
     const where = sql`
       WHERE pg.company_id = ${companyId}::uuid
         AND pgl.company_id = ${companyId}::uuid
@@ -94,8 +100,8 @@ export async function listPartyGrnLines(
     const result = (await tx.execute(sql`
       SELECT
         pgl.id AS "lineId", pgl.line_no AS "lineNo",
-        pgl.party_material_code_text AS "itemCode",
-        pgl.party_material_name AS "itemName",
+        COALESCE(lri.code, lpm.item_code_text, pgl.party_material_code_text) AS "itemCode",
+        COALESCE(lri.name, pgl.party_material_name) AS "itemName",
         COALESCE(oi.code, jwl.item_code_text) AS "orderItemCode",
         NULLIF(btrim(jwl.revision), '') AS "orderItemRevision",
         COALESCE(oi.name, jwl.part_name) AS "orderItemName",

@@ -79,11 +79,12 @@ export function printPartyGrn(args: {
     const st = pgrnQcState(l);
     const waiting = st === 'waiting';
     return {
-      // Customer RM code; Party GRN lines carry no revision of their own.
-      itemCode: itemCodeWithRev(l.partyMaterialCodeText, null, ''),
+      // Customer RM = the JWSO line's `<item>-RM` item code (never the PM-#### register
+      // code, owner 2026-11-17); Party GRN lines carry no revision of their own.
+      itemCode: itemCodeWithRev(l.rmItemCode ?? l.partyMaterialCodeText, null, ''),
       // The customer's PO line number on the JWSO line (ADR-236).
       pol: l.clientPoLineNo,
-      itemName: l.partyMaterialName,
+      itemName: l.rmItemName ?? l.partyMaterialName,
       uom: PARTY_GRN_UOM,
       qty: String(l.receivedQty),
       // ADR-203: 0 until Incoming QC — print a dash, not a false zero.

@@ -6,8 +6,8 @@
 // note on partyMaterialIssueSchema in packages/shared):
 //   · "Item Code" / "Item Name" = OUR produced part off the job card
 //     (jcItemCode / REV / jcItemName).
-//   · "Customer Material" = the CLIENT'S supplied stock this issue debits
-//     (partyMaterialCodeText / partyMaterialName).
+//   · "Customer RM" = the CLIENT'S supplied stock this issue debits
+//     (rmItemCode ?? partyMaterialCodeText — the <item>-RM code, never PM-####).
 // Both are kept visible so no fact the old table showed is lost; the fit engine
 // drops the rightmost into ▸ when the screen is narrow. Remarks lives in the ▸
 // expand (party-material-issue-expand.tsx).
@@ -90,23 +90,27 @@ export function partyMaterialIssueColumns(
       // The CLIENT'S supplied material this issue debits — NOT the produced part.
       id: 'customer_material',
       sortFilterField: 'customerMaterial',
-      header: 'Customer Material',
+      header: 'Customer RM',
       align: 'left',
       ellipsis: true,
       className: 'fw-700',
       render: (it) => (
         <>
-          <span style={{ color: 'var(--blue)' }}>{it.partyMaterialCodeText ?? '—'}</span>
-          {it.partyMaterialName ? (
+          <span className="mono" style={{ color: 'var(--text)' }}>
+            {it.rmItemCode ?? it.partyMaterialCodeText ?? '—'}
+          </span>
+          {(it.rmItemName ?? it.partyMaterialName) ? (
             <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
               {' '}
-              — {it.partyMaterialName}
+              — {it.rmItemName ?? it.partyMaterialName}
             </span>
           ) : null}
         </>
       ),
       title: (it) =>
-        [it.partyMaterialCodeText, it.partyMaterialName].filter(Boolean).join(' — ') || '',
+        [it.rmItemCode ?? it.partyMaterialCodeText, it.rmItemName ?? it.partyMaterialName]
+          .filter(Boolean)
+          .join(' — ') || '',
     },
     {
       id: 'issue_qty',

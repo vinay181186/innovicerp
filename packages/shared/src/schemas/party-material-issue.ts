@@ -45,6 +45,12 @@ export const partyMaterialIssueSchema = z.object({
    *  is what the issue debits off party stock, NOT what the job card makes. */
   partyMaterialCodeText: z.string().nullable(),
   partyMaterialName: z.string().nullable(),
+  /** Customer RM shown to users (owner 2026-11-17): the live `<order item>-RM`
+   *  item code/name via the register row (party_materials.item_id → items).
+   *  The PM-#### register code above is never shown; screens fall back to it
+   *  only when no RM item exists (legacy rows). */
+  rmItemCode: z.string().nullable().default(null),
+  rmItemName: z.string().nullable().default(null),
   qty: z.number().int().positive(),
   /** ADR-203: the JWSO line this issue draws on (= the Job Card's source line). */
   jwLineId: z.string().uuid().nullable().default(null),

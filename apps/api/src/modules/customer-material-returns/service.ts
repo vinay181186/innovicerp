@@ -697,7 +697,7 @@ export async function createCustomerMaterialReturn(
              SET returned_qty = returned_qty + ${ln.qty}, updated_at = now(), updated_by = ${userId}::uuid
            WHERE id = ${partyMaterialId}::uuid
         `);
-        summary.push(`${where} good ${ln.qty} of ${move.partyMaterialCode}`);
+        summary.push(`${where} good ${ln.qty} of ${move.rmCode}`);
       } else {
         const grnRows = (await tx.execute(sql`
           SELECT pgl.id, pgl.jw_line_id AS "jwLineId", pgl.qc_at AS "qcAt",
@@ -841,7 +841,8 @@ export async function customerMaterialReturnCancelEffects(
 ): Promise<CancelEffect[]> {
   const rows = (await tx.execute(sql`
     SELECT l.line_no AS "lineNo", l.kind, l.qty::int AS qty,
-           COALESCE(pm.code, 'customer material') AS "pmCode",
+           -- Owner 2026-11-17: name the live -RM item code (PM-#### only as fallback).
+           COALESCE(cri.code, pm.item_code_text, pm.code, 'customer material') AS "pmCode",
            jw.code AS "jwCode", jwl.line_no AS "jwLineNo",
            pg.code AS "grnCode", pgl.line_no AS "grnLineNo",
            (SELECT string_agg(nc.code, ', ' ORDER BY nc.code)
@@ -853,6 +854,7 @@ export async function customerMaterialReturnCancelEffects(
       FROM public.customer_material_return_lines l
       JOIN public.customer_material_returns r ON r.id = l.return_id
       LEFT JOIN public.party_materials pm ON pm.id = l.party_material_id
+      LEFT JOIN public.items cri ON cri.id = pm.item_id
       LEFT JOIN public.job_work_order_lines jwl ON jwl.id = l.jw_line_id
       LEFT JOIN public.job_work_orders jw ON jw.id = jwl.job_work_order_id
       LEFT JOIN public.party_grn_lines pgl ON pgl.id = l.party_grn_line_id
@@ -954,9 +956,12 @@ export async function cancelCustomerMaterialReturnTx(
 
   const lineRows = (await tx.execute(sql`
     SELECT l.id, l.kind, l.jw_line_id AS "jwLineId", l.party_material_id AS "partyMaterialId",
-           l.party_grn_line_id AS "partyGrnLineId", l.qty::int AS qty, pm.code AS "pmCode"
+           l.party_grn_line_id AS "partyGrnLineId", l.qty::int AS qty,
+           -- Owner 2026-11-17: messages name the live -RM item code.
+           COALESCE(cri.code, pm.item_code_text, pm.code) AS "pmCode"
       FROM public.customer_material_return_lines l
       LEFT JOIN public.party_materials pm ON pm.id = l.party_material_id
+      LEFT JOIN public.items cri ON cri.id = pm.item_id
      WHERE l.return_id = ${id}::uuid AND l.deleted_at IS NULL
      ORDER BY l.line_no
   `)) as unknown as Array<{

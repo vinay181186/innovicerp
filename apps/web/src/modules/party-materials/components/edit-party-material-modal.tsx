@@ -68,6 +68,9 @@ export function EditPartyMaterialModal({
     },
     { enabled: !hasMovement },
   );
+  // The `<item>-RM` code names this material to users — never the PM-#### register
+  // code (owner 2026-11-17); `code` only for a legacy row with no RM item.
+  const rmCode = row.itemCode ?? row.itemCodeText ?? row.code;
   const itemLabel = useMemo(() => {
     if (itemId === row.itemId) {
       const code = row.itemCode ?? row.itemCodeText;
@@ -109,7 +112,7 @@ export function EditPartyMaterialModal({
       { id: row.id, input },
       {
         onSuccess: () => {
-          toast.ok(`Customer Material ${row.code} saved`);
+          toast.ok(`Customer Material ${rmCode} saved`);
           onClose();
         },
         onError: (e) =>
@@ -125,7 +128,7 @@ export function EditPartyMaterialModal({
   return (
     <ModalShell
       onClose={onClose}
-      title={`Edit Customer Material ${row.code}`}
+      title={`Edit Customer Material ${rmCode}`}
       footer={
         <ModalActions
           onClose={onClose}
@@ -136,15 +139,6 @@ export function EditPartyMaterialModal({
       }
     >
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--sp-3)' }}>
-        <Field label="Code">
-          <input
-            type="text"
-            className="innovic-input"
-            value={row.code}
-            readOnly
-            style={{ background: 'var(--bg4)', color: 'var(--text3)', maxWidth: '14ch' }}
-          />
-        </Field>
         <Field label="UOM">
           <input
             type="text"

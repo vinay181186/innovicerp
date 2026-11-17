@@ -371,13 +371,13 @@ export const ACTIVITY_ENTITY_META: Record<ActivityEntity, ActivityEntityMeta> = 
     viewForm: 'party_create',
   },
   PartyMaterial: {
-    label: 'Party Material',
+    label: 'Customer Material',
     aliases: ['Party Material'],
     searchKind: null,
     viewForm: 'party_create',
   },
   PartyMaterialIssue: {
-    label: 'Party Issue',
+    label: 'Customer Material Issue',
     aliases: [],
     searchKind: 'party-material-issue',
     viewForm: 'party_create',

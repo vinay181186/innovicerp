@@ -333,9 +333,9 @@ export function EditPartyGrnModal({
                         <td className="td-ctr mono fw-700" style={{ color: 'var(--purple)' }}>
                           {l.clientPoLineNo ?? '—'}
                         </td>
-                        <td title={l.partyMaterialName ?? ''}>
+                        <td title={l.rmItemName ?? l.partyMaterialName ?? ''}>
                           <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-                            {l.partyMaterialCodeText}
+                            {l.rmItemCode ?? l.partyMaterialCodeText}
                           </span>
                         </td>
                         <td className="td-num">

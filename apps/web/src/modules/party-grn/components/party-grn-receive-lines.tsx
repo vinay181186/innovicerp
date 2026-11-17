@@ -118,11 +118,7 @@ export function PartyGrnReceiveLines({
                           No customer RM — save the JWSO first
                         </span>
                       ) : (
-                        <span
-                          className="mono fw-700"
-                          style={{ color: 'var(--text)' }}
-                          title={l.partyMaterialCode ?? ''}
-                        >
+                        <span className="mono fw-700" style={{ color: 'var(--text)' }}>
                           {l.rmItemCode ?? l.partyMaterialCode ?? '—'}
                         </span>
                       )}
