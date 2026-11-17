@@ -1,7 +1,7 @@
 // Columns + ▸ detail for the Customer Material master sheet (ADR-199 table
 // standard, 2026-10-01). The master table runs on the shared FIT <DataTable>.
 //
-// Main columns: Sr No · Code · (Created On, hidden) · Name · UOM · Customer · In Stock ·
+// Main columns: Sr No · Customer RM · (Created On, hidden) · Name · UOM · Customer · In Stock ·
 // Issued. The ▸ detail row carries the fields the master line does not show:
 // Description, Grade, Recorded By / On — plus Total Received and Returned, kept
 // here so the conversion drops no data the old wide table used to show.
@@ -19,19 +19,21 @@ export const PARTY_MATERIAL_HIDDEN_COLUMNS = ['created_on'] as const;
 
 /** Sr No (owner 2026-11-15; `firstRowNo` = server offset + 1 so it continues
  *  across pages), then the six master columns, with Created On (off by
- *  default) right after Code. */
+ *  default) right after Customer RM. */
 export function partyMaterialColumns(firstRowNo: number): DataTableColumn<PartyMaterialListItem>[] {
   return [
     srNoColumn<PartyMaterialListItem>(firstRowNo),
     {
       id: 'code',
       sortFilterField: 'code',
-      header: 'Code',
+      header: 'Customer RM',
       kind: 'code',
       nowrap: true,
+      // The `<item>-RM` item code, never the PM-#### register code (owner 2026-11-17);
+      // `code` only for a legacy row with no RM item.
       render: (pm) => (
-        <span className="td-code" style={{ color: 'var(--blue)' }}>
-          {pm.code}
+        <span className="td-code" style={{ color: 'var(--text)' }}>
+          {pm.itemCode ?? pm.itemCodeText ?? pm.code}
         </span>
       ),
     },

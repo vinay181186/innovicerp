@@ -64,7 +64,7 @@ const USAGE_DOC: Record<JwLineUsageKind, { label: string; href: (id: string) => 
   job_card: { label: 'Job Card', href: (id) => `/job-cards/${id}` },
   plan: { label: 'Plan', href: (id) => `/plans/${id}` },
   party_grn: { label: 'Party GRN', href: (id) => `/party-grn/${id}` }, // ADR-294
-  party_material_issue: { label: 'Party Material Issue', href: () => null },
+  party_material_issue: { label: 'Customer Material Issue', href: () => null },
   jw_return: { label: 'JW Return', href: () => null },
   jw_invoice: { label: 'JW Invoice', href: () => null },
   customer_material_return: {

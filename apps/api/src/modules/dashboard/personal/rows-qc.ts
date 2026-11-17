@@ -54,7 +54,9 @@ export function grnQcSql(cid: string, f: ListFilter): SQL {
     SELECT p.id::text AS row_key, p.id, p.code, 'party_grn'::text AS kind,
            p.grn_date::text AS doc_date, NULL::text AS due_date, p.grn_date::text AS sort_key,
            COALESCE(c.name, p.client_code_text)::text AS party,
-           (ARRAY_AGG(pgl.party_material_code_text ORDER BY pgl.line_no))[1]::text AS item_code,
+           -- Owner 2026-11-17: the first line's live -RM item code (PM-#### fallback).
+           (ARRAY_AGG(COALESCE(ri.code, pm.item_code_text, pgl.party_material_code_text)
+                      ORDER BY pgl.line_no))[1]::text AS item_code,
            (ARRAY_AGG(pgl.party_material_name ORDER BY pgl.line_no))[1]::text AS item_name,
            COALESCE(SUM(${QC_PENDING_QTY_SQL}), 0)::numeric AS qty,
            NULL::text AS uom,
@@ -65,6 +67,8 @@ export function grnQcSql(cid: string, f: ListFilter): SQL {
     FROM public.party_grn p
     JOIN public.party_grn_lines pgl
       ON pgl.party_grn_id = p.id AND pgl.deleted_at IS NULL AND ${QC_OPEN_SQL}
+    LEFT JOIN public.party_materials pm ON pm.id = pgl.party_material_id
+    LEFT JOIN public.items ri ON ri.id = pm.item_id
     LEFT JOIN public.clients c ON c.id = p.client_id
     LEFT JOIN public.job_work_orders jw ON jw.id = p.job_work_order_id AND jw.deleted_at IS NULL
     WHERE p.company_id = ${cid}::uuid AND p.deleted_at IS NULL

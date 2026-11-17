@@ -137,7 +137,7 @@ function PartyMaterialsListPage(): React.JSX.Element {
         noun="material"
         search={search}
         onSearch={setSearch}
-        searchPlaceholder="Search code, material, customer…"
+        searchPlaceholder="Search Customer RM, material, customer…"
         primary={
           canAdd ? (
             <button type="button" className="btn btn-primary" onClick={() => setShowAdd(true)}>
@@ -213,7 +213,7 @@ function PartyMaterialsListPage(): React.JSX.Element {
       {deleteRow ? (
         <DeletePartyMaterialModal
           id={deleteRow.id}
-          code={deleteRow.code}
+          code={deleteRow.itemCode ?? deleteRow.itemCodeText ?? deleteRow.code}
           name={deleteRow.name}
           onClose={() => setDeleteRow(null)}
         />

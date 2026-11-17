@@ -35,18 +35,18 @@ export function partyGrnLineColumns(): DataTableColumn<PartyGrnLine>[] {
       nowrap: true,
       render: (l) => (
         <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-          {l.partyMaterialCodeText}
+          {l.rmItemCode ?? l.partyMaterialCodeText}
         </span>
       ),
     },
     {
       id: 'party_material_name',
-      header: 'Customer Material Name',
+      header: 'Customer RM Name',
       align: 'left',
       ellipsis: true,
       className: 'text2',
-      render: (l) => l.partyMaterialName ?? '—',
-      title: (l) => l.partyMaterialName ?? '',
+      render: (l) => l.rmItemName ?? l.partyMaterialName ?? '—',
+      title: (l) => l.rmItemName ?? l.partyMaterialName ?? '',
     },
     {
       id: 'jwso_line',

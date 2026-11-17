@@ -103,6 +103,9 @@ export async function listPartyMaterials(
     const searchFrag = term
       ? sql`AND (
           pm.code ILIKE ${term}
+          -- Owner 2026-11-17: the live -RM item code (what the screen shows) finds it.
+          OR i.code ILIKE ${term}
+          OR pm.item_code_text ILIKE ${term}
           OR pm.name ILIKE ${term}
           OR pm.material ILIKE ${term}
           OR pm.description ILIKE ${term}

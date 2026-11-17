@@ -19,6 +19,12 @@ export const partyGrnLineSchema = z.object({
   partyMaterialId: z.string().uuid().nullable(),
   partyMaterialCodeText: z.string(),
   partyMaterialName: z.string().nullable(),
+  /** Customer RM shown to users (owner 2026-11-17): the live `<order item>-RM`
+   *  item code/name via the register row (party_materials.item_id → items).
+   *  The PM-#### register code above is never shown; screens fall back to it
+   *  only when no RM item exists (legacy rows). */
+  rmItemCode: z.string().nullable().default(null),
+  rmItemName: z.string().nullable().default(null),
   receivedQty: z.number().int().positive(),
   jwLineNoText: z.string().nullable(),
   // R4 (ADR-194): real FK to the JWSO line (backfilled from jwLineNoText).

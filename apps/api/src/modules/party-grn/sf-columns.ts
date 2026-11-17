@@ -39,7 +39,12 @@ export const PARTY_GRN_LINE_SF_COLUMNS: SfColumnMap = {
   },
   createdBy: { sql: createdByNameSql(sql`COALESCE(pgl.created_by, pg.created_by)`), type: 'text' },
   // The raw material has no Rev, so its code is the whole cell.
-  itemCode: { sql: sql`btrim(pgl.party_material_code_text)`, type: 'text' },
+  // Owner 2026-11-17: the live -RM item code (lpm/lri joined in list-lines.ts),
+  // PM-#### only as the legacy fallback — the same expression the cell shows.
+  itemCode: {
+    sql: sql`btrim(COALESCE(lri.code, lpm.item_code_text, pgl.party_material_code_text))`,
+    type: 'text',
+  },
   // The finished part, CODE/REV as the cell prints it (itemCodeWithRev).
   orderItemCode: {
     sql: sql`(btrim(COALESCE(oi.code, jwl.item_code_text)) || COALESCE('/' || NULLIF(btrim(jwl.revision), ''), ''))`,

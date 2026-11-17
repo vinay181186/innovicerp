@@ -367,7 +367,7 @@ export async function jobCardCancelBlockers(
     `,
   )) {
     out.push({
-      docLabel: 'Party Material Issue',
+      docLabel: 'Customer Material Issue',
       docNo: r.code,
       href: `/party-material?search=${encodeURIComponent(r.code)}`,
       reason: 'customer material is on this card — return it to store or cancel the issue first',

@@ -53,7 +53,7 @@ export const CANCEL_DOC_LABELS: Record<CancelDocType, string> = {
   jw_return: 'JW Return',
   customer_material_return: 'Customer Material Return',
   party_grn: 'Party GRN',
-  party_material_issue: 'Party Material Issue',
+  party_material_issue: 'Customer Material Issue',
   delivery_challan: 'Delivery Challan',
   store_issue: 'Item Issue',
   stock_count: 'Stock Count',

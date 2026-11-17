@@ -86,7 +86,7 @@ export function ReturnToStoreModal({
       >
         JC <span className="mono fw-700">{row.jcCodeText ?? '—'}</span> · Customer RM{' '}
         <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-          {row.partyMaterialCodeText ?? '—'}
+          {row.rmItemCode ?? row.partyMaterialCodeText ?? '—'}
         </span>
         <br />
         Issued <b>{row.qty}</b>

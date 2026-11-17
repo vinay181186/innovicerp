@@ -62,6 +62,8 @@ export async function listPartyStockLedger(
     const searchFrag = pat
       ? sql`AND (
           pm.code ILIKE ${pat} ESCAPE '\\' OR pm.name ILIKE ${pat} ESCAPE '\\'
+          -- Owner 2026-11-17: the live -RM item code the ledger now shows.
+          OR ri.code ILIKE ${pat} ESCAPE '\\' OR pm.item_code_text ILIKE ${pat} ESCAPE '\\'
           OR ${MOVEMENT_LABEL_SQL} ILIKE ${pat} ESCAPE '\\'
           OR psl.direction::text ILIKE ${pat} ESCAPE '\\'
           OR psl.qty::text ILIKE ${pat} ESCAPE '\\'
@@ -75,6 +77,7 @@ export async function listPartyStockLedger(
     const fromWhere = sql`
       FROM public.party_stock_ledger psl
       LEFT JOIN public.party_materials pm ON pm.id = psl.party_material_id
+      LEFT JOIN public.items ri ON ri.id = pm.item_id
       LEFT JOIN public.users u ON u.id = psl.created_by
       WHERE psl.company_id = ${companyId}::uuid
         AND psl.deleted_at IS NULL
@@ -98,6 +101,8 @@ export async function listPartyStockLedger(
         psl.deleted_at AS "deletedAt",
         pm.code AS "partyMaterialCode",
         pm.name AS "partyMaterialName",
+        COALESCE(ri.code, pm.item_code_text) AS "rmItemCode",
+        ri.name AS "rmItemName",
         u.full_name AS "createdByName"
       ${fromWhere}
       ORDER BY psl.created_at DESC, psl.id DESC
@@ -134,6 +139,8 @@ function toListItem(r: Record<string, unknown>): PartyStockLedgerListItem {
     deletedAt: r['deletedAt'] != null ? tsLike(r['deletedAt']) : null,
     partyMaterialCode: (r['partyMaterialCode'] as string | null) ?? null,
     partyMaterialName: (r['partyMaterialName'] as string | null) ?? null,
+    rmItemCode: (r['rmItemCode'] as string | null) ?? null,
+    rmItemName: (r['rmItemName'] as string | null) ?? null,
     createdByName: (r['createdByName'] as string | null) ?? null,
   };
 }

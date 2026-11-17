@@ -142,7 +142,7 @@ export const SECTIONS: readonly NavSection[] = [
         label: 'Master',
         items: [
           { to: '/items', label: 'Item Master', icon: '◉' },
-          { to: '/party-material', label: 'Party Material Master', icon: '🏭' },
+          { to: '/party-material', label: 'Customer Material Master', icon: '🏭' },
         ],
       },
       {
@@ -150,7 +150,7 @@ export const SECTIONS: readonly NavSection[] = [
         items: [
           { to: '/store-inventory', label: 'Store Inventory', icon: '📦' },
           { to: '/reorder-list', label: 'Reorder List', icon: '🔁' },
-          { to: '/party-stock-ledger', label: 'Party Stock Ledger', icon: '📒' },
+          { to: '/party-stock-ledger', label: 'Customer Material Stock Ledger', icon: '📒' },
           { to: '/reports', search: { group: 'Store' }, label: 'Reports', icon: '📊' },
         ],
       },
