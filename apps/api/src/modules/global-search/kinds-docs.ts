@@ -28,10 +28,10 @@ export const DOC_KINDS: readonly KindMeta[] = [
     date: sql`t.so_date::date`,
     party: sql`COALESCE(c.name, t.customer_name)`,
     text: [sql`t.client_po_no`, sql`t.remarks`, sql`t.cost_center`],
-    // ADR-207 — the Internal SO No. is the first particular ("Internal SO No. SO-2401")
-    // and is matched, so typing it finds the order. doc_no stays the system SO No.
-    // (activity-log links match a result by its exact doc_no).
-    refs: [ref('Internal SO No.', sql`t.internal_so_no`)],
+    // ADR-306 — the SO No. (t.code) is the one number. The old IN-SO number of an
+    // order 0254 renamed is a particular ("Old SO No. IN-SO-00013") and is matched,
+    // so a paper printed before the change still finds the order.
+    refs: [ref('Old SO No.', sql`t.legacy_code`)],
     lines: {
       from: sql`public.sales_order_lines l`,
       fk: sql`l.sales_order_id`,

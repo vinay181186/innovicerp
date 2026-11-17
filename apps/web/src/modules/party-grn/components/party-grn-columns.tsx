@@ -1,7 +1,9 @@
 // Party Material GRN list columns (ADR-199 fit table). ADR-303 (2026-11-16):
 // ONE ROW PER PARTY GRN again (GET /party-grn); /party-grn/lines stays for
-// export. Lead block Sr No · GRN No. · Created On · JWSO No. (the GRN's one
-// JWSO; a JWSO-only list, so no Internal SO No.; no POL / Item columns). Then
+// export. Lead block Sr No · GRN No. · Created On · SO No. (the GRN's one
+// order: ADR-307 GRNs against an Equipment SO show the SO No., the rest the
+// JWSO No. — NAMING.md "SO No." on a list carrying both; no Internal SO No.;
+// no POL / Item columns). Then
 // GRN Date · Customer · Client PO No. · Customer Challan No. · Lines ·
 // Received Qty · Accepted Qty (Σ lines) · QC Status (ONE status rolled up from
 // the lines, server-side) · Created By. The GRN No. keeps its --cyan identity
@@ -39,8 +41,10 @@ export function partyGrnColumns(firstRowNo: number): DataTableColumn<PartyGrnLis
           </span>
         ),
       },
-      so: 'jwso',
-      soNo: (r) => r.jwCodeText,
+      // ADR-307 — one order column: the SO No. of an Equipment SO GRN, else
+      // the JWSO No. (NAMING.md: a list with both keeps the heading SO No.).
+      so: 'so',
+      soNo: (r) => r.soCode ?? r.jwCodeText,
       createdOn: (r) => r.createdAt,
       overrides: {
         so_no: { sortFilterField: 'jwCode' },

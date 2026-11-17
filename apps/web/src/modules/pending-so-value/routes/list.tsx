@@ -132,7 +132,7 @@ function PendingSoValuePage(): React.JSX.Element {
               id="psv-search"
               type="text"
               className="innovic-input"
-              placeholder="Search SO No., Internal SO No., customer…"
+              placeholder="Search SO No., customer…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />

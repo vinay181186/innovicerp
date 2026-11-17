@@ -19,12 +19,20 @@
 //   store_count_approval — stock counts submitted, waiting approval. A count
 //                    has no location (stock_counts carries none), so the
 //                    reference column is empty.
+//   store_so_customer_parts — ADR-307: open Equipment SOs (not closed /
+//                    cancelled / deleted) with a customer-supplied BOM part
+//                    still to receive. One row per SO × part, Qty = pendingQty.
+//                    The figure rule is lib/party-so-parts.ts (THE source);
+//                    this runner takes SQL only, so the same CTEs and the same
+//                    pending = max(0, need − accepted − waitingQc) are written
+//                    here. Change one → change both.
 // (store_party_qc moved out in phase 2: its rows are in QC's qc_incoming.)
 
 import { docNavPage } from '@innovic/shared';
 import { type SQL, sql } from 'drizzle-orm';
 import { PO_OPEN_STATUSES, poLinePendingSql } from '../../../lib/po-pending';
 import { partyCommittedQtySql } from '../../party-grn/service';
+import { soCustomerPartRowsSql } from '../../../lib/party-so-parts';
 import { ISSUE_SELECT, TOOL_STILL_OUT } from '../../tool-issues/common';
 import { poToDcSql } from '../personal/rows-purchase';
 import type { CheckCtx, CheckDef } from './types';
@@ -54,6 +62,28 @@ export function jwsoToReceiveSql(c: CheckCtx): SQL {
       AND jwl.status = 'open' AND jwl.short_closed_at IS NULL
       AND jwl.party_material_id IS NOT NULL
       AND jwl.order_qty > cm.committed`;
+}
+
+export function soCustomerPartsToReceiveSql(c: CheckCtx): SQL {
+  // ADR-307 — the pending rule lives once, in lib/party-so-parts.ts.
+  return sql`
+    SELECT (so.id::text || ':' || f.item_id::text) AS row_key, so.id, so.code,
+           'so'::text AS kind, so.so_date::text AS doc_date, NULL::text AS due_date,
+           so.so_date::text AS sort_key,
+           COALESCE(cl.name, so.customer_name)::text AS party,
+           f.item_code::text AS item_code, f.item_name::text AS item_name,
+           f.pending_qty::numeric AS qty,
+           i.uom::text AS uom, NULL::numeric AS amount, so.created_by::text AS created_by,
+           0::int AS is_late,
+           NULLIF(btrim(so.client_po_no), '')::text AS x1, NULL::text AS x2, NULL::text AS x3
+      FROM (${soCustomerPartRowsSql(
+        c.cid,
+        sql`so.type = 'equipment' AND so.status NOT IN ('closed', 'cancelled')`,
+      )}) f
+      JOIN public.sales_orders so ON so.id = f.so_id
+      JOIN public.items i ON i.id = f.item_id
+      LEFT JOIN public.clients cl ON cl.id = so.client_id AND cl.deleted_at IS NULL
+     WHERE f.pending_qty > 0`;
 }
 
 export function poLinesToReceiveSql(c: CheckCtx): SQL {
@@ -121,6 +151,18 @@ export const STORE_CHECKS: readonly CheckDef[] = [
     docHref: (r) => docNavPage('job-work-order', r.id),
     refCode: (r) => r.x1,
     dated: true,
+  },
+  {
+    // ADR-307 — same rights as store_jwso_grn (Store department tier).
+    key: 'store_so_customer_parts',
+    dept: 'store',
+    label: 'Customer parts to receive against Equipment SO',
+    head: ['SO No.', 'Client PO No.', 'SO Date'],
+    href: '/party-grn',
+    query: soCustomerPartsToReceiveSql,
+    docHref: (r) => docNavPage('sales-order', r.id),
+    refCode: (r) => r.x1,
+    dated: false,
   },
   {
     key: 'store_po_grn',

@@ -7,8 +7,8 @@
 import { Icon } from '@/ui/core';
 import {
   BOM_LINE_TYPE_LABEL,
-  BOM_LINE_TYPES,
-  type BomLineType,
+  ML_BOM_LINE_TYPES,
+  type MlBomLineType,
   type Item,
   QTY_STEP,
   qtyStepForUom,
@@ -31,7 +31,7 @@ export interface MlBomFormLineDraft {
    *  blank for a Buy part. Cleared when the part changes. */
   childDrawingRev: string;
   qtyPerSet: string;
-  bomType: BomLineType;
+  bomType: MlBomLineType;
   rawMaterialGradeId: string | null;
   rawMaterialGradeText: string | null;
   rawMaterialSizeId: string | null;
@@ -67,7 +67,7 @@ export function emptyMlBomLine(): MlBomFormLineDraft {
   };
 }
 
-const LINE_TYPES = BOM_LINE_TYPES.map((value) => ({ value, label: BOM_LINE_TYPE_LABEL[value] }));
+const LINE_TYPES = ML_BOM_LINE_TYPES.map((value) => ({ value, label: BOM_LINE_TYPE_LABEL[value] }));
 const COLS = 11;
 
 interface Props {
@@ -191,7 +191,7 @@ export function MlBomLinesTable(props: Props): React.JSX.Element {
                     aria-label={`Line Type, line ${idx + 1}`}
                     value={line.bomType}
                     onChange={(e) => {
-                      const bomType = e.target.value as BomLineType;
+                      const bomType = e.target.value as MlBomLineType;
                       // Raw material and the sub-assembly link belong to a
                       // Manufacture line only — the server drops the link on a
                       // Buy / Outsource line, so the screen must not show it.

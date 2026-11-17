@@ -69,6 +69,7 @@ import {
   ValidationError,
 } from '../../lib/errors';
 import { lockSoRow, readPartsOutMany } from '../../lib/assembly-parts';
+import { readSoCustomerParts, type SoCustomerPart } from '../../lib/party-so-parts';
 import { restoreStamp } from '../../lib/audit-trail';
 import { toEffectiveAccess } from '../access-control/my-access';
 import { emitActivityLog } from '../activity-log/service';
@@ -356,12 +357,24 @@ export async function getAssemblyTracker(
 
       const overrideMap = await fetchOverrideMap(tx, companyId, soId);
       const outMap = (await readPartsOutMany(tx, companyId, [soId])).get(soId);
+      // ADR-307 — a party_supplied part's store is the customer store of THIS
+      // SO (company stock is meaningless for it). One read for the SO.
+      const customerParts = childRows.some((r) => r.line.bomType === 'party_supplied')
+        ? await readSoCustomerParts(tx, companyId, soId)
+        : new Map<string, SoCustomerPart>();
 
       for (const r of childRows) {
         const childCode = r.itemCode ?? '—';
         const qtyPerSet = Number(r.line.qtyPerSet);
         const totalNeed = roundQty(qtyPerSet * unitsRequired); // S9: 0.25/set must not round to 0
-        const stockQty = Math.max(0, Math.floor(stockMap.get(r.line.childItemId) ?? 0));
+        const customerPart =
+          r.line.bomType === 'party_supplied'
+            ? (customerParts.get(r.line.childItemId)?.figures ?? null)
+            : null;
+        const stockQty =
+          r.line.bomType === 'party_supplied'
+            ? (customerPart?.inStoreQty ?? 0)
+            : Math.max(0, Math.floor(stockMap.get(r.line.childItemId) ?? 0));
         // P30 — parts out on the bench for this SO, not store stock.
         const stillOut = Math.max(0, outMap?.get(r.line.childItemId)?.stillOut ?? 0);
         const autoReadyQty = Math.min(stillOut, totalNeed);
@@ -378,6 +391,7 @@ export async function getAssemblyTracker(
           childItemCode: childCode,
           childItemName: r.itemName,
           bomType: r.line.bomType,
+          customerPart,
           qtyPerSet,
           totalNeed,
           stockQty,

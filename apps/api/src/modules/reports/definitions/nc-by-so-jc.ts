@@ -35,7 +35,6 @@ export const ncBySoJcReport: RegisteredReport = {
     ],
     columns: [
       { key: 'so_jc', label: 'SO No. / JWSO No. / JC No.', type: 'text' },
-      { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
       { key: 'nc_count', label: 'NC Count', type: 'number' },
       { key: 'total_rejected_qty', label: 'Deviated', type: 'number' },
       { key: 'pending_count', label: 'Pending NCs', type: 'number' },

@@ -22,7 +22,8 @@ export const customerMaterialReturnLineSchema = z.object({
   id: z.string().uuid(),
   lineNo: z.number().int().positive(),
   kind: customerMaterialReturnKindSchema,
-  jwLineId: z.string().uuid(),
+  /** Null on an Equipment SO return (ADR-307). */
+  jwLineId: z.string().uuid().nullable(),
   /** JWSO line no. + the finished part's code, for display. */
   jwLineNo: z.number().int().positive().nullable(),
   /** POL — the JWSO line's customer PO line number (ADR-236); null on
@@ -44,8 +45,12 @@ export const customerMaterialReturnSchema = z.object({
   id: z.string().uuid(),
   code: z.string(),
   returnDate: z.string(),
-  jobWorkOrderId: z.string().uuid(),
+  /** Exactly one of jobWorkOrderId / salesOrderId (ADR-307: Equipment SO
+   *  customer-supplied BOM parts). */
+  jobWorkOrderId: z.string().uuid().nullable(),
   jwCode: z.string().nullable(),
+  salesOrderId: z.string().uuid().nullable().default(null),
+  soCode: z.string().nullable().default(null),
   clientId: z.string().uuid().nullable(),
   clientName: z.string().nullable(),
   vehicleNo: z.string().nullable(),
@@ -74,11 +79,15 @@ export const customerMaterialReturnDetailSchema = customerMaterialReturnSchema.e
 });
 export type CustomerMaterialReturnDetail = z.infer<typeof customerMaterialReturnDetailSchema>;
 
-/** What can still go back for one JWSO — feeds the create modal. */
+/** What can still go back for one JWSO — or (ADR-307) one Equipment SO —
+ *  feeds the create modal. good on an SO = that SO's in-store qty
+ *  (soCustomerPartFigures.inStoreQty). */
 export const customerMaterialReturnableRowSchema = z.object({
   kind: customerMaterialReturnKindSchema,
-  jwLineId: z.string().uuid(),
-  jwLineNo: z.number().int().positive(),
+  /** Null on an Equipment SO row (ADR-307): the part is rmItemId instead. */
+  jwLineId: z.string().uuid().nullable(),
+  jwLineNo: z.number().int().positive().nullable(),
+  rmItemId: z.string().uuid().nullable().default(null),
   /** POL — the JWSO line's customer PO line number (ADR-236); null on
    *  lines saved before migration 0210. */
   clientPoLineNo: z.string().nullable().default(null),
@@ -97,14 +106,18 @@ export type CustomerMaterialReturnableRow = z.infer<typeof customerMaterialRetur
 
 export const createCustomerMaterialReturnInputSchema = z.object({
   returnDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  jobWorkOrderId: z.string().uuid(),
+  /** Exactly one of the two (server-checked; ADR-307 adds salesOrderId). */
+  jobWorkOrderId: z.string().uuid().optional(),
+  salesOrderId: z.string().uuid().optional(),
   vehicleNo: z.string().trim().max(32).optional(),
   remarks: z.string().trim().max(500).optional(),
   lines: z
     .array(
       z.object({
         kind: customerMaterialReturnKindSchema,
-        jwLineId: z.string().uuid(),
+        /** JWSO return: required. Equipment SO return: absent — send rmItemId. */
+        jwLineId: z.string().uuid().optional(),
+        rmItemId: z.string().uuid().optional(),
         /** Required for kind 'rejected'. */
         partyGrnLineId: z.string().uuid().optional(),
         qty: z.number().int().positive(),
@@ -126,6 +139,7 @@ export type CancelCustomerMaterialReturnInput = z.infer<
 export const listCustomerMaterialReturnsQuerySchema = z.object({
   search: z.string().min(1).max(100).optional(),
   jobWorkOrderId: z.string().uuid().optional(),
+  salesOrderId: z.string().uuid().optional(),
   sf: sfRawParamSchema,
   limit: z.coerce.number().int().positive().max(200).default(25),
   offset: z.coerce.number().int().nonnegative().default(0),
@@ -157,8 +171,10 @@ export const customerMaterialReturnLineRowSchema = z.object({
   clientId: z.string().uuid().nullable(),
   clientName: z.string().nullable(),
   vehicleNo: z.string().nullable(),
-  jobWorkOrderId: z.string().uuid(),
+  jobWorkOrderId: z.string().uuid().nullable(),
   jwCode: z.string().nullable(),
+  /** ADR-307: SO No. on an Equipment SO return (jobWorkOrderId null). */
+  soCode: z.string().nullable().default(null),
   /** POL — the JWSO line's customer PO line number (ADR-236). */
   clientPoLineNo: z.string().nullable(),
   /** The return LINE's created_at, else its return's. ISO timestamp. */

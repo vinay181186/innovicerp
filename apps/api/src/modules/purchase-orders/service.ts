@@ -4377,7 +4377,6 @@ export async function getPurchaseOrderRelated(
           soRows.map((r) => r.id),
           { column: 'id', ids: poLines.map((l) => l.sourceSoLineId) },
         ),
-        labelHeading: 'Internal SO No.',
       },
     );
     const jcSection = section(

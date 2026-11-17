@@ -71,7 +71,6 @@ function stuckColumns(
     ...leadColumns<StuckItem>({
       firstRowNo,
       soNo: (it) => it.soNo,
-      internalSoNo: (it) => it.soInternalNo,
       createdOn: (it) => it.createdAt,
       overrides: {
         so_no: {
@@ -88,7 +87,6 @@ function stuckColumns(
             </Link>
           ),
         },
-        so_internal_no: { sortFilterField: 'soInternalNo' },
         created_on: { sortFilterField: 'createdOn' },
       },
     }),

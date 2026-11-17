@@ -89,11 +89,6 @@ function soNoOf(vm: PendingVM): string | null {
   if (vm.kind === 'pgrn') return vm.row.jwCode;
   return vm.row.soCode;
 }
-/** ADR-207 — the office's own Internal SO No. A Party GRN line stands against
- *  a JWSO, which has none. */
-function soInternalNoOf(vm: PendingVM): string | null {
-  return vm.kind === 'pgrn' ? null : vm.row.soInternalNo;
-}
 
 /** The waiting cell: "Today" at 0, else "N days", red when the call is overdue. */
 function waitDisplay(vm: PendingVM): React.JSX.Element {
@@ -161,7 +156,6 @@ export function pendingColumns(firstRowNo: number): DataTableColumn<PendingVM>[]
           ),
       },
       soNo: soNoOf,
-      internalSoNo: soInternalNoOf,
       pol: polOf,
       createdOn: (vm) => vm.row.createdAt ?? null,
       itemCode: itemCodeOf,
@@ -169,7 +163,6 @@ export function pendingColumns(firstRowNo: number): DataTableColumn<PendingVM>[]
       itemName: itemNameOf,
       overrides: {
         so_no: { sortFilterField: 'soCode' },
-        so_internal_no: { sortFilterField: 'soInternalNo' },
         client_po_line_no: { sortFilterField: 'pol' },
         item_code: { sortFilterField: 'itemCode' },
         item_name: { sortFilterField: 'itemName' },

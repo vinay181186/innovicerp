@@ -107,7 +107,6 @@ export function invoiceListColumns(
         ),
       },
       soNo: (r) => r.soCode,
-      internalSoNo: (r) => r.soInternalNo,
       createdOn: (r) => r.createdAt,
       overrides: {
         so_no: {
@@ -125,7 +124,6 @@ export function invoiceListColumns(
             </span>
           ),
         },
-        so_internal_no: { sortFilterField: 'soInternalNo' },
         created_on: { sortFilterField: 'createdOn' },
       },
     }),

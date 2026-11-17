@@ -53,13 +53,9 @@ function doneCell(op: MachineLoadOp): string {
   return `${op.completedQty}<div style="font-size:9px;font-weight:400">${parts}</div>`;
 }
 
-// SO No. cell (ADR-207): the system SO No., plus a second labelled line with
-// the Internal SO No. when the order has one. JW-sourced rows: code only.
+// SO No. cell — one SO number (ADR-306). JW-sourced rows: code only.
 function soCell(op: MachineLoadOp): string {
-  const code = esc(op.soCode ?? '—');
-  const internal = op.soInternalNo?.trim();
-  if (!internal) return code;
-  return `${code}<div style="font-size:9px">Internal SO No.: ${esc(internal)}</div>`;
+  return esc(op.soCode ?? '—');
 }
 
 function machineSection(machine: MachineLoadCard, ops: MachineLoadOp[]): string {

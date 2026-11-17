@@ -7,6 +7,8 @@ import type {
   PartyGrn,
   PartyGrnDetail,
   PartyGrnQcInput,
+  SoReceivablePart,
+  SoWithCustomerParts,
 } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
@@ -16,8 +18,11 @@ import { activityLogKeys } from '@/modules/activity-log/api';
 import { dashboardKeys } from '@/modules/dashboard/api';
 import { incomingQcKeys } from '@/modules/incoming-qc/api';
 import { jobWorkOrdersKeys } from '@/modules/job-work-orders/api';
+import { assemblyKeys } from '@/modules/assembly/api';
 import { qcHistoryKeys } from '@/modules/qc-history/api';
+import { salesOrdersKeys } from '@/modules/sales-orders/api';
 import { soPlanningKeys } from '@/modules/so-planning/api';
+import { soStatusKeys } from '@/modules/so-status/api';
 
 export const partyGrnKeys = {
   all: ['party-grn'] as const,
@@ -27,6 +32,7 @@ export const partyGrnKeys = {
       'list',
       q.search ?? null,
       q.jobWorkOrderId ?? null,
+      q.salesOrderId ?? null,
       q.clientId ?? null,
       q.fromDate ?? null,
       q.toDate ?? null,
@@ -42,6 +48,7 @@ export const partyGrnKeys = {
       'lines',
       q.search ?? null,
       q.jobWorkOrderId ?? null,
+      q.salesOrderId ?? null,
       q.clientId ?? null,
       q.fromDate ?? null,
       q.toDate ?? null,
@@ -54,12 +61,21 @@ export const partyGrnKeys = {
   nextCode: () => [...partyGrnKeys.all, 'next-code'] as const,
   waitingQc: (jobWorkOrderId: string) =>
     [...partyGrnKeys.all, 'waiting-qc', jobWorkOrderId] as const,
+  /** ADR-307 — open Equipment SOs with customer-supplied BOM parts. */
+  receivableSos: () => [...partyGrnKeys.all, 'receivable-sos'] as const,
+  /** ADR-307 — Customer Material Return picker: also CLOSED SOs still
+   *  holding customer pieces (?forReturn=true). */
+  receivableSosForReturn: () => [...partyGrnKeys.all, 'receivable-sos', 'return'] as const,
+  /** ADR-307 — one Equipment SO's customer parts with the server's figures. */
+  soReceivable: (salesOrderId: string) =>
+    [...partyGrnKeys.all, 'so-receivable', salesOrderId] as const,
 };
 
 function buildSearch(q: ListPartyGrnQuery): string {
   const params = new URLSearchParams();
   if (q.search) params.set('search', q.search);
   if (q.jobWorkOrderId) params.set('jobWorkOrderId', q.jobWorkOrderId);
+  if (q.salesOrderId) params.set('salesOrderId', q.salesOrderId);
   if (q.clientId) params.set('clientId', q.clientId);
   if (q.fromDate) params.set('fromDate', q.fromDate);
   if (q.toDate) params.set('toDate', q.toDate);
@@ -112,6 +128,46 @@ export function useNextPartyGrnCode() {
   });
 }
 
+/** ADR-307 — the "Against Equipment SO" picker (Party GRN and Customer
+ *  Material Return create). Every open Equipment SO whose BOM has a
+ *  customer-supplied part; pendingQty 0 = nothing left to receive.
+ *  forReturn (Customer Material Return) also lists CLOSED SOs that still
+ *  hold customer pieces. */
+export function useReceivableSos(enabled = true, opts: { forReturn?: boolean } = {}) {
+  const forReturn = opts.forReturn ?? false;
+  return useQuery<SoWithCustomerParts[]>({
+    queryKey: forReturn ? partyGrnKeys.receivableSosForReturn() : partyGrnKeys.receivableSos(),
+    queryFn: () =>
+      apiFetch<SoWithCustomerParts[]>(
+        forReturn ? '/party-grn/receivable-sos?forReturn=true' : '/party-grn/receivable-sos',
+      ),
+    enabled,
+    staleTime: 0,
+  });
+}
+
+/** ADR-307 — the picked Equipment SO's customer parts; figures.pendingQty is
+ *  the server's receipt cap (one server function, never recomputed here). */
+export function useSoReceivableParts(salesOrderId: string | null | undefined) {
+  return useQuery<SoReceivablePart[]>({
+    queryKey: partyGrnKeys.soReceivable(salesOrderId ?? '__missing__'),
+    queryFn: () =>
+      apiFetch<SoReceivablePart[]>(
+        `/party-grn/so-receivable?salesOrderId=${encodeURIComponent(salesOrderId ?? '')}`,
+      ),
+    enabled: Boolean(salesOrderId),
+    staleTime: 0,
+  });
+}
+
+/** ADR-307 — an Equipment SO receipt moves the SO's customer-part figures
+ *  (SO parts panel, SO Status, Assembly Tracker). */
+function invalidateSoCustomerParts(qc: ReturnType<typeof useQueryClient>): void {
+  void qc.invalidateQueries({ queryKey: salesOrdersKeys.all });
+  void qc.invalidateQueries({ queryKey: soStatusKeys.all });
+  void qc.invalidateQueries({ queryKey: assemblyKeys.all });
+}
+
 export function useCreatePartyGrn(saveKey?: SaveKey) {
   const qc = useQueryClient();
   return useMutation<PartyGrn, Error, CreatePartyGrnInput>({
@@ -133,6 +189,7 @@ export function useCreatePartyGrn(saveKey?: SaveKey) {
       // ADR-279: Planning's Party GRN Status and the home check.
       void qc.invalidateQueries({ queryKey: soPlanningKeys.all });
       void qc.invalidateQueries({ queryKey: dashboardKeys.home() });
+      invalidateSoCustomerParts(qc);
     },
   });
 }
@@ -234,6 +291,8 @@ export function useQcPartyGrn(saveKey?: SaveKey) {
       void qc.invalidateQueries({ queryKey: dashboardKeys.home() });
       // ADR-279: Party GRN Status counts pieces sent back to the customer.
       void qc.invalidateQueries({ queryKey: soPlanningKeys.all });
+      // ADR-307: an Equipment SO line's Accepted / Waiting QC moves too.
+      invalidateSoCustomerParts(qc);
     },
   });
 }

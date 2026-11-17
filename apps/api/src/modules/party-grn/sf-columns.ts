@@ -9,11 +9,17 @@ import { createdByNameSql } from '../../lib/created-by-sql';
 import type { SfColumnMap } from '../../lib/list-query';
 import { PARTY_GRN_DOC_QC_STATUS_SQL } from './qc-state';
 
+/** The order a Party GRN was received against: JWSO No. else the Equipment SO
+ *  No. (ADR-307). A subquery so it needs no extra join on either list. */
+const PARTY_GRN_ORDER_CODE_SQL = sql`COALESCE(pg.jw_code_text,
+  (SELECT so.code FROM public.sales_orders so WHERE so.id = pg.sales_order_id))`;
+
 export const PARTY_GRN_SF_COLUMNS: SfColumnMap = {
   code: { sql: sql`pg.code`, type: 'text' },
   grnDate: { sql: sql`pg.grn_date`, type: 'date' },
   customer: { sql: sql`COALESCE(c.name, pg.client_code_text)`, type: 'text' },
-  jwCode: { sql: sql`pg.jw_code_text`, type: 'text' },
+  // ADR-307: an SO GRN has no JWSO — its order column shows the SO No.
+  jwCode: { sql: PARTY_GRN_ORDER_CODE_SQL, type: 'text' },
   clientPoNo: { sql: sql`pg.client_po_no`, type: 'text' },
   dcNo: { sql: sql`pg.dc_no`, type: 'text' },
   receivedQty: { sql: sql`COALESCE(agg.total_received, 0)`, type: 'num' },
@@ -31,7 +37,8 @@ export const PARTY_GRN_SF_COLUMNS: SfColumnMap = {
 // line's item, `c` client.
 // The lead columns sort / filter on the LINE; header fields on the header.
 export const PARTY_GRN_LINE_SF_COLUMNS: SfColumnMap = {
-  jwCode: { sql: sql`pg.jw_code_text`, type: 'text' },
+  // ADR-307: an SO GRN has no JWSO — its order column shows the SO No.
+  jwCode: { sql: PARTY_GRN_ORDER_CODE_SQL, type: 'text' },
   clientPoLineNo: { sql: sql`jwl.client_po_line_no`, type: 'text' },
   createdOn: {
     sql: sql`(COALESCE(pgl.created_at, pg.created_at) AT TIME ZONE 'Asia/Kolkata')::date`,

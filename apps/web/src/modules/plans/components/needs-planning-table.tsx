@@ -58,16 +58,15 @@ export function NeedsPlanningTable(): React.JSX.Element {
   const { data: eff } = useMyAccess();
   const canPlan = effectiveFormPerms(eff, 'plan_create').entry;
 
-  // Widths are `%` (10+7+5+7+12+12+4+6+6+6+8+9 = 92); the fit engine sizes the
-  // ⋯ column itself. The 7% for Internal SO No. came out of the two widest
-  // text columns (Item Name 16→12, Customer 12→9), never off a code/date/qty.
+  // Widths are `%` (10+5+7+12+16+4+6+6+6+8+12 = 92); the fit engine sizes the
+  // ⋯ column itself. ADR-306: the 7% the old Internal SO No. column took went
+  // back to Item Name (12→16) and Customer (9→12).
   const columns = useMemo<DataTableColumn<UnplannedOrderRow>[]>(
     () => [
       // Owner rule 2026-10-31 — the locked lead block first; Ln comes after Item Name.
       ...leadColumns<UnplannedOrderRow>({
         firstRowNo: pageOffset(page) + 1,
         soNo: (r) => r.soCode,
-        internalSoNo: (r) => r.soInternalNo,
         pol: (r) => r.clientPoLineNo,
         createdOn: (r) => r.createdAt,
         itemCode: (r) => r.itemCode,
@@ -84,7 +83,6 @@ export function NeedsPlanningTable(): React.JSX.Element {
               </Link>
             ),
           },
-          so_internal_no: { sortFilterField: 'soInternalNo', width: '7%' },
           client_po_line_no: {
             sortFilterField: 'clientPoLineNo',
             filterType: 'text',
@@ -92,7 +90,7 @@ export function NeedsPlanningTable(): React.JSX.Element {
           },
           created_on: { sortFilterField: 'createdOn', width: '7%' },
           item_code: { sortFilterField: 'itemCode', filterType: 'text', width: '12%' },
-          item_name: { sortFilterField: 'partName', filterType: 'text', width: '12%' },
+          item_name: { sortFilterField: 'partName', filterType: 'text', width: '16%' },
         },
       }),
       {
@@ -153,7 +151,7 @@ export function NeedsPlanningTable(): React.JSX.Element {
         sortFilterField: 'customerName',
         filterType: 'text',
         header: 'Customer',
-        width: '9%',
+        width: '12%',
         align: 'left',
         ellipsis: true,
         render: (r) => r.customerName ?? '—',

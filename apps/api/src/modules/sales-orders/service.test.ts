@@ -25,8 +25,8 @@ import { AUDITOR, asAccess } from '../../lib/test-access';
 import { decideDocumentEdit } from '../document-edits/service';
 import * as service from './service';
 
-// ADR-207 — every test Internal SO No. must start with "SO-"; the cleanup
-// LIKE patterns below match on this prefix.
+// ADR-306 — a test SO is tagged by its Cost Centre (the SO No. is the
+// system's own); the cleanup LIKE patterns below match on this prefix.
 const TEST_PREFIX = 'SO-T030-';
 const ADMIN_EMAIL = 'innovic.technology@gmail.com';
 
@@ -74,7 +74,7 @@ afterAll(async () => {
   const testHeaders = await db
     .select({ id: salesOrders.id })
     .from(salesOrders)
-    .where(like(salesOrders.internalSoNo, `${TEST_PREFIX}%`));
+    .where(like(salesOrders.costCenter, `${TEST_PREFIX}%`));
   const ids = testHeaders.map((h) => h.id);
   if (ids.length > 0) {
     for (const id of ids) {
@@ -83,7 +83,7 @@ afterAll(async () => {
     // Audit-log entries the SO emitter wrote for these test rows (refId is the
     // system SO No., so match on the row id).
     await db.delete(activityLog).where(inArray(activityLog.entityId, ids));
-    await db.delete(salesOrders).where(like(salesOrders.internalSoNo, `${TEST_PREFIX}%`));
+    await db.delete(salesOrders).where(like(salesOrders.costCenter, `${TEST_PREFIX}%`));
   }
 });
 
@@ -93,7 +93,7 @@ describe('sales-orders service', () => {
     const detail = await service.createSalesOrder(
       {
         header: {
-          internalSoNo: code,
+          costCenter: code,
           soDate: '2026-05-02',
           customerName: 'Acme Customer',
           type: 'component_manufacturing',
@@ -124,7 +124,8 @@ describe('sales-orders service', () => {
       admin,
     );
     expect(detail.code).toMatch(/^IN-SO-\d{5}$/);
-    expect(detail.internalSoNo).toBe(code);
+    expect(detail.internalSoNo).toBeNull();
+    expect(detail.costCenter).toBe(code);
     expect(detail.companyId).toBe(admin.companyId);
     expect(detail.createdBy).toBe(admin.id);
     expect(detail.gstPercent).toBe('18.00');
@@ -143,7 +144,7 @@ describe('sales-orders service', () => {
     const created = await service.createSalesOrder(
       {
         header: {
-          internalSoNo: `${TEST_PREFIX}ITEMCODE`,
+          costCenter: `${TEST_PREFIX}ITEMCODE`,
           soDate: '2026-05-02',
           customerName: 'ItemCode Co',
           type: 'component_manufacturing',
@@ -172,13 +173,13 @@ describe('sales-orders service', () => {
     expect(detail.lines[0]?.itemCode).toBe(firstItemCode);
   });
 
-  it('createSalesOrder auto-generates distinct sequential IN-SO codes (bug 2)', async () => {
+  it('createSalesOrder auto-generates distinct sequential IN-SO codes when no Internal SO No. is typed (bug 2, ADR-306)', async () => {
     let autoSeq = 0;
     const mk = () =>
       service.createSalesOrder(
         {
           header: {
-            internalSoNo: `${TEST_PREFIX}AUTO-${(autoSeq += 1)}`,
+            costCenter: `${TEST_PREFIX}AUTO-${(autoSeq += 1)}`,
             soDate: '2026-05-02',
             customerName: 'Auto SO Co',
             type: 'component_manufacturing',
@@ -215,58 +216,125 @@ describe('sales-orders service', () => {
     }
   });
 
-  it('createSalesOrder rejects a duplicate Internal SO No. in the same company', async () => {
-    const code = `${TEST_PREFIX}DUP`;
-    await service.createSalesOrder(
-      {
-        header: {
-          internalSoNo: code,
-          soDate: '2026-05-02',
-          customerName: 'Dup Co',
-          type: 'component_manufacturing',
-          status: 'open',
-          gstPercent: 18,
-        },
-        lines: [
-          {
-            partName: 'X',
-            clientPoLineNo: '1',
-            revision: 'A',
-            itemId: firstItemId,
-            uom: 'NOS',
-            orderQty: 1,
-            rate: 0,
+  it('two SO saves at the same moment get two different, sequential numbers (ADR-306, CLAUDE.md 20)', async () => {
+    const mk = (n: number) =>
+      service.createSalesOrder(
+        {
+          header: {
+            costCenter: `${TEST_PREFIX}RACE-${n}`,
+            soDate: '2026-05-02',
+            customerName: 'Race Co',
+            type: 'component_manufacturing',
+            status: 'open',
+            gstPercent: 18,
           },
-        ],
-      },
-      admin,
-    );
-    const dup = service.createSalesOrder(
-      {
-        header: {
-          internalSoNo: code,
-          soDate: '2026-05-02',
-          customerName: 'Dup Co',
-          type: 'component_manufacturing',
-          status: 'open',
-          gstPercent: 18,
+          lines: [
+            {
+              partName: 'X',
+              clientPoLineNo: '1',
+              revision: 'A',
+              itemId: firstItemId,
+              uom: 'NOS',
+              orderQty: 1,
+              rate: 0,
+            },
+          ],
         },
-        lines: [
-          {
-            partName: 'X',
-            clientPoLineNo: '1',
-            revision: 'A',
-            itemId: firstItemId,
-            uom: 'NOS',
-            orderQty: 1,
-            rate: 0,
+        admin,
+      );
+    const [a, b] = await Promise.all([mk(1), mk(2)]);
+    const nums = [Number(a.code.slice(-5)), Number(b.code.slice(-5))].sort((x, y) => x - y);
+    expect(nums[1]).toBe(nums[0]! + 1);
+  });
+
+  describe('typed Internal SO No. (ADR-306)', () => {
+    // A number no real order uses: 9 digits from the clock.
+    const fresh = () =>
+      String(100_000_000 + (Date.now() % 800_000_000) + Math.floor(Math.random() * 1000));
+    const mk = (tag: string, internalSoNo?: string) =>
+      service.createSalesOrder(
+        {
+          header: {
+            costCenter: `${TEST_PREFIX}TYPED-${tag}`,
+            ...(internalSoNo !== undefined ? { internalSoNo } : {}),
+            soDate: '2026-05-02',
+            customerName: 'Typed No Co',
+            type: 'component_manufacturing',
+            status: 'open',
+            gstPercent: 18,
           },
-        ],
-      },
-      admin,
-    );
-    await expect(dup).rejects.toBeInstanceOf(ConflictError);
-    await expect(dup).rejects.toThrow(/Internal SO No\. .* already exists/);
+          lines: [
+            {
+              partName: 'X',
+              clientPoLineNo: '1',
+              revision: 'A',
+              itemId: firstItemId,
+              uom: 'NOS',
+              orderQty: 1,
+              rate: 0,
+            },
+          ],
+        },
+        admin,
+      );
+
+    it('typed digits give SO No. SO-<digits>; leading zeros are dropped', async () => {
+      const n = fresh();
+      const so = await mk('A', `00${n}`);
+      expect(so.code).toBe(`SO-${n}`);
+      expect(so.internalSoNo).toBeNull();
+    });
+
+    it('a number another SO has is refused (409), also when typed at the same moment', async () => {
+      const n = fresh();
+      await mk('B1', n);
+      await expect(mk('B2', n)).rejects.toBeInstanceOf(ConflictError);
+      const m = fresh();
+      const both = await Promise.allSettled([mk('C1', m), mk('C2', m)]);
+      expect(both.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+      const lost = both.find((r) => r.status === 'rejected') as PromiseRejectedResult;
+      expect(lost.reason).toBeInstanceOf(ConflictError);
+    });
+
+    it("a deleted SO's number and an SO's earlier number are never given again", async () => {
+      const n = fresh();
+      const del = await mk('D', n);
+      await db.update(salesOrders).set({ deletedAt: new Date() }).where(eq(salesOrders.id, del.id));
+      await expect(mk('D2', n)).rejects.toBeInstanceOf(ConflictError);
+    });
+
+    it('retyping the number renames the SO No.; saved copies follow and the old one stays searchable', async () => {
+      const n1 = fresh();
+      const so = await mk('E', n1);
+      const n2 = String(Number(n1) + 1);
+      await service.updateSalesOrder(
+        so.id,
+        { header: { internalSoNo: n2 } } as Parameters<typeof service.updateSalesOrder>[1],
+        admin,
+      );
+      const after = (
+        await db
+          .select({ code: salesOrders.code, legacyCode: salesOrders.legacyCode })
+          .from(salesOrders)
+          .where(eq(salesOrders.id, so.id))
+      )[0]!;
+      expect(after.code).toBe(`SO-${n2}`);
+      expect(after.legacyCode).toBe(`SO-${n1}`);
+      // The create wrote an activity-log row with refId = the SO No.: it follows.
+      const refs = await db
+        .select({ refId: activityLog.refId })
+        .from(activityLog)
+        .where(eq(activityLog.entityId, so.id));
+      expect(refs.length).toBeGreaterThan(0);
+      expect(refs.every((r) => r.refId === `SO-${n2}`)).toBe(true);
+      // The old number still finds the order, and cannot be typed again.
+      const found = await service.listSalesOrders(
+        { search: `SO-${n1}`, limit: 50, offset: 0 },
+        admin,
+      );
+      expect(found.items.map((i) => i.id)).toContain(so.id);
+      await expect(mk('E2', n1)).rejects.toBeInstanceOf(ConflictError);
+    });
   });
 
   it('createSalesOrder rejects invalid clientId with ValidationError (not raw FK)', async () => {
@@ -274,7 +342,7 @@ describe('sales-orders service', () => {
       service.createSalesOrder(
         {
           header: {
-            internalSoNo: `${TEST_PREFIX}BADCLI`,
+            costCenter: `${TEST_PREFIX}BADCLI`,
             soDate: '2026-05-02',
             clientId: '00000000-0000-0000-0000-000000000000',
             type: 'component_manufacturing',
@@ -303,7 +371,7 @@ describe('sales-orders service', () => {
     const created = await service.createSalesOrder(
       {
         header: {
-          internalSoNo: code,
+          costCenter: code,
           soDate: '2026-05-02',
           customerName: 'Gettable',
           type: 'component_manufacturing',
@@ -339,6 +407,38 @@ describe('sales-orders service', () => {
     expect(fetched.lines[0]?.partName).toBe('Line One');
   });
 
+  it('the SO list search finds an order by its old IN-SO number (ADR-306 legacy_code)', async () => {
+    const created = await service.createSalesOrder(
+      {
+        header: {
+          costCenter: `${TEST_PREFIX}OLDNO`,
+          soDate: '2026-05-02',
+          customerName: 'Old Number Co',
+          type: 'component_manufacturing',
+          status: 'open',
+          gstPercent: 18,
+        },
+        lines: [
+          {
+            partName: 'X',
+            clientPoLineNo: '1',
+            revision: 'A',
+            itemId: firstItemId,
+            uom: 'NOS',
+            orderQty: 1,
+            rate: 0,
+          },
+        ],
+      },
+      admin,
+    );
+    // What 0254 does to a renamed order: the old number moves to legacy_code.
+    const oldNo = `IN-SO-T030${Date.now()}`;
+    await db.update(salesOrders).set({ legacyCode: oldNo }).where(eq(salesOrders.id, created.id));
+    const result = await service.listSalesOrders({ search: oldNo, limit: 50, offset: 0 }, admin);
+    expect(result.items.map((s) => s.code)).toEqual([created.code]);
+  });
+
   it('getSalesOrder throws NotFoundError for unknown id', async () => {
     await expect(
       service.getSalesOrder('00000000-0000-0000-0000-000000000000', admin),
@@ -350,7 +450,10 @@ describe('sales-orders service', () => {
     await service.createSalesOrder(
       {
         header: {
-          internalSoNo: code,
+          costCenter: code,
+          // The list search reads SO Remarks (not Cost Centre), so the tag
+          // rides there too for the search below to find this order.
+          remarks: code,
           soDate: '2026-05-02',
           customerName: 'Listable',
           type: 'equipment',
@@ -385,7 +488,7 @@ describe('sales-orders service', () => {
       admin,
     );
     expect(result.items.length).toBeGreaterThanOrEqual(1);
-    const found = result.items.find((s) => s.internalSoNo === code);
+    const found = result.items.find((s) => s.costCenter === code);
     expect(found?.lineCount).toBe(2);
     expect(found?.totalQty).toBe(10);
     expect(found?.jcQty).toBe(0);
@@ -397,7 +500,7 @@ describe('sales-orders service', () => {
     const created = await service.createSalesOrder(
       {
         header: {
-          internalSoNo: code,
+          costCenter: code,
           soDate: '2026-05-02',
           customerName: 'Before',
           type: 'component_manufacturing',
@@ -435,7 +538,7 @@ describe('sales-orders service', () => {
     const created = await service.createSalesOrder(
       {
         header: {
-          internalSoNo: code,
+          costCenter: code,
           soDate: '2026-05-02',
           customerName: 'Merge',
           type: 'component_manufacturing',
@@ -524,7 +627,7 @@ describe('sales-orders service', () => {
     const created = await service.createSalesOrder(
       {
         header: {
-          internalSoNo: code,
+          costCenter: code,
           soDate: '2026-05-02',
           customerName: 'Goner',
           type: 'component_manufacturing',
@@ -568,7 +671,7 @@ describe('sales-orders service', () => {
     const created = await service.createSalesOrder(
       {
         header: {
-          internalSoNo: code,
+          costCenter: code,
           soDate: '2026-05-02',
           customerName: 'Audit Customer',
           type: 'component_manufacturing',
@@ -618,7 +721,7 @@ describe('sales-orders service', () => {
       service.createSalesOrder(
         {
           header: {
-            internalSoNo: `${TEST_PREFIX}NOC`,
+            costCenter: `${TEST_PREFIX}NOC`,
             soDate: '2026-05-02',
             customerName: 'X',
             type: 'component_manufacturing',
@@ -647,7 +750,7 @@ describe('sales-orders service', () => {
     const created = await service.createSalesOrder(
       {
         header: {
-          internalSoNo: code,
+          costCenter: code,
           soDate: '2026-05-02',
           customerName: 'Traceability Customer',
           type: 'component_manufacturing',
@@ -743,8 +846,8 @@ describe('updateSalesOrder (owner D1: no longer admin-only) — ticks decide (AD
 
 // ADR-236: POL is compulsory on every SO line; the line Remarks is optional and
 // is the SO line's own note. The header note is now labelled "SO Remarks".
-const soHeader = (internalSoNo: string) => ({
-  internalSoNo,
+const soHeader = (tag: string) => ({
+  costCenter: tag,
   soDate: '2026-05-02',
   customerName: 'POL Customer',
   type: 'component_manufacturing' as const,
@@ -903,7 +1006,7 @@ describe('SO edit-approval — in-use rule + line / lot boxes', () => {
       await db
         .select({ id: salesOrders.id })
         .from(salesOrders)
-        .where(like(salesOrders.internalSoNo, `${TEST_PREFIX}LA%`))
+        .where(like(salesOrders.costCenter, `${TEST_PREFIX}LA%`))
     ).map((r) => r.id);
     if (ids.length > 0) {
       await db.delete(documentEditRequests).where(inArray(documentEditRequests.entityId, ids));

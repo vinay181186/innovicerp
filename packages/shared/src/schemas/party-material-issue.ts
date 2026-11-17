@@ -15,6 +15,10 @@ export const partyMaterialIssueSchema = z.object({
   issueDate: z.string(),
   jobWorkOrderId: z.string().uuid().nullable(),
   jwCodeText: z.string().nullable(),
+  /** ADR-307: set (and jobWorkOrderId/jobCardId null) when customer-supplied
+   *  BOM parts were issued to an Equipment SO's assembly. */
+  salesOrderId: z.string().uuid().nullable().default(null),
+  soCode: z.string().nullable().default(null),
   jobCardId: z.string().uuid().nullable(),
   jcCodeText: z.string().nullable(),
   /** THE PART THE JOB CARD MAKES — our produced component, joined from
@@ -96,6 +100,21 @@ export const createPartyMaterialIssueInputSchema = z.object({
   remarks: z.string().trim().max(500).optional(),
 });
 export type CreatePartyMaterialIssueInput = z.infer<typeof createPartyMaterialIssueInputSchema>;
+
+/** ADR-307: Assembly Tracker › "Issue Customer Part →". Issues a customer-
+ *  supplied BOM part (party_supplied BOM child, `<code>-RM`) from the
+ *  customer store to the Equipment SO's assembly. Server caps qty at this
+ *  SO's in-store qty AND at need − (issued − fitted already counted), under
+ *  the SO row lock then the register row lock. POST /assemblies/:soId/customer-part-issues */
+export const createAssemblyCustomerPartIssueInputSchema = z.object({
+  issueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  rmItemId: z.string().uuid(),
+  qty: z.number().int().positive(),
+  remarks: z.string().trim().max(500).optional(),
+});
+export type CreateAssemblyCustomerPartIssueInput = z.infer<
+  typeof createAssemblyCustomerPartIssueInputSchema
+>;
 
 /** ADR-203: put unused customer material back from a Job Card into the
  *  customer-material register. Capped at what is still physically on the JC

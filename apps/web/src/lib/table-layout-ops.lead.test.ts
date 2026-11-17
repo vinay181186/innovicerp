@@ -20,7 +20,8 @@ vi.mock('./api', () => ({ ApiError: class {}, apiFetch: vi.fn() }));
 vi.mock('./session', () => ({ useSession: vi.fn() }));
 
 // ADR-261 rev 3 (owner 2026-11-15) — Sr No · own No. · Created On (time under
-// it) · SO No. · Internal SO No. · POL · Item Code · Item Name are one fixed
+// it) · SO No. · POL · Item Code · Item Name are one fixed (ADR-306: no separate
+// Internal SO No. — the SO No. is the one number)
 // block at the front of every SO list (a row that IS the order: Sr No · SO No. ·
 // Created On · …); Created By is last. No Created Time column. Created On is
 // shown by default and each user may hide it, but it stays in place: no move,
@@ -83,7 +84,6 @@ describe('leadColumns builder', () => {
   const spec = {
     firstRowNo: 26,
     soNo: (r: Row) => r.so,
-    internalSoNo: () => null,
     pol: () => '10',
     createdOn: (r: Row) => r.cr,
     itemCode: (r: Row) => r.code,
@@ -104,7 +104,6 @@ describe('leadColumns builder', () => {
       'Sr No',
       'SO No.',
       'Created On',
-      'Internal SO No.',
       'POL',
       'Item Code',
       'Item Name',
@@ -123,7 +122,6 @@ describe('leadColumns builder', () => {
       'plan_no',
       'created_on',
       'so_no',
-      'so_internal_no',
       'client_po_line_no',
       'item_code',
       'item_name',
@@ -191,7 +189,7 @@ describe('leadColumns builder', () => {
   });
 
   it('normalize: list with an own No. — doc in the block, saved old order lands on the new one', () => {
-    const block = ['sr_no', 'jc_no', 'created_on', 'so_no', 'so_internal_no', 'item_code'];
+    const block = ['sr_no', 'jc_no', 'created_on', 'so_no', 'item_code'];
     const ids = [...block, 'qty', 'status'];
     const d = { locked: block, hideable: HIDEABLE };
     const n = normalize(
@@ -200,7 +198,6 @@ describe('leadColumns builder', () => {
         order: [
           'sr_no',
           'so_no',
-          'so_internal_no',
           'item_code',
           'jc_no',
           'created_on',
@@ -255,8 +252,8 @@ describe('leadColumns builder', () => {
     expect(cellText('2026-11-02')).toBe('02-11-2026|'); // date only: no invented time
   });
 
-  it('JWSO list: JWSO No. and no Internal SO No. column', () => {
-    const jw = { ...spec, so: 'jwso' as const, internalSoNo: undefined };
+  it('JWSO list: JWSO No. in the SO slot', () => {
+    const jw = { ...spec, so: 'jwso' as const };
     const cols = leadColumns<Row>(jw);
     expect(cols.map((c, i) => colLabel(c, i))).toEqual([
       'Sr No',

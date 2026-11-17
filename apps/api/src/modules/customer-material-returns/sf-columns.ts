@@ -1,6 +1,6 @@
 // Sort & Filter (ADR-200) — the Customer Material Return list's fields.
 // Each expression is the SAME one listCustomerMaterialReturns SELECTs for that
-// column (aliases `r`, `jw`, `cl`, `agg`; its count query carries the same
+// column (aliases `r`, `jw`, `so`, `cl`, `agg`; its count query carries the same
 // joins and the same `agg` lateral), so what the user filters is what the row
 // shows. No money on this document.
 
@@ -12,7 +12,8 @@ import type { SfColumnMap, SfLiftSpec } from '../../lib/list-query';
 export const CUSTOMER_MATERIAL_RETURN_SF_COLUMNS: SfColumnMap = {
   code: { sql: sql`r.code`, type: 'text' },
   returnDate: { sql: sql`r.return_date`, type: 'date' },
-  jwCode: { sql: sql`jw.code`, type: 'text' },
+  // ADR-307: the order column — JWSO No., else the Equipment SO No.
+  jwCode: { sql: sql`COALESCE(jw.code, so.code)`, type: 'text' },
   customer: { sql: sql`cl.name`, type: 'text' },
   vehicleNo: { sql: sql`r.vehicle_no`, type: 'text' },
   status: { sql: sql`r.status`, type: 'list' },
@@ -41,7 +42,8 @@ export const CUSTOMER_MATERIAL_RETURN_LINE_LIFT: SfLiftSpec = {
  *  (return line), `r`, `jw`, `cl`, `jwl` (JWSO line), `i` (its item),
  *  `pm` / `ri` (the customer RM) — all joined by BOTH its page and its count. */
 export const CUSTOMER_MATERIAL_RETURN_LINE_SF_COLUMNS: SfColumnMap = {
-  jwCode: { sql: sql`jw.code`, type: 'text' },
+  // ADR-307: the order column — JWSO No., else the Equipment SO No.
+  jwCode: { sql: sql`COALESCE(jw.code, so.code)`, type: 'text' },
   clientPoLineNo: { sql: sql`jwl.client_po_line_no`, type: 'text' },
   createdOn: {
     sql: sql`(COALESCE(l.created_at, r.created_at) AT TIME ZONE 'Asia/Kolkata')::date`,

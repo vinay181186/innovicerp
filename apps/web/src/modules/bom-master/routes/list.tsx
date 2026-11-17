@@ -300,6 +300,7 @@ function BomTypeBadge({ type }: { type: string }): React.JSX.Element {
     manufacture: { label: '🏭 Manufacture', color: 'var(--cyan)' },
     purchase: { label: '🛒 Buy', color: 'var(--green2)' },
     outsource: { label: '🏭 Outsource', color: 'var(--amber2)' },
+    party_supplied: { label: 'Party Supplied', color: 'var(--purple)' },
   }[type] ?? { label: type, color: 'var(--text3)' };
   return (
     <span className="fw-700" style={{ color: cfg.color, fontSize: 'var(--fs-xs)' }}>

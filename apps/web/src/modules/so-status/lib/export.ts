@@ -26,7 +26,6 @@ export function exportSoStatusExcel(data: SoStatusResponse): void {
 
   const lineRows = lines.map((l) => ({
     'SO No.': header.code,
-    'Internal SO No.': header.internalSoNo ?? '',
     Ln: l.lineNo,
     // POL — the line number on the CUSTOMER'S OWN purchase order, an extra
     // column beside our `Line`, never a replacement for it.
@@ -56,7 +55,6 @@ export function exportSoStatusExcel(data: SoStatusResponse): void {
   const jcRows = lines.flatMap((l) =>
     l.jobCards.map((jc) => ({
       'SO No.': header.code,
-      'Internal SO No.': header.internalSoNo ?? '',
       Ln: l.lineNo,
       POL: jc.clientPoLineNo ?? l.clientPoLineNo ?? '',
       'JC No.': jc.code,
@@ -88,7 +86,6 @@ export function exportSoStatusExcel(data: SoStatusResponse): void {
         : [
             {
               'SO No.': header.code,
-              'Internal SO No.': header.internalSoNo ?? '',
               Note: 'No job cards',
             },
           ],

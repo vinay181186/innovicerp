@@ -11,7 +11,7 @@
 // integers) all the way down and rounded to 3 decimals once, at output.
 
 import {
-  type BomLineType,
+  type MlBomLineType,
   ML_BOM_MAX_LEVELS,
   type MlBomImportTreeRow,
   type MlBomTreeResponse,
@@ -52,7 +52,7 @@ export function fmt3(d: Dec): string {
 export interface TreeLine {
   child: ImportItem;
   qty: number;
-  bomType: BomLineType;
+  bomType: MlBomLineType;
 }
 
 export interface TreeInput {

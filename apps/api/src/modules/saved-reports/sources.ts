@@ -46,14 +46,6 @@ const salesOrdersSource: RegisteredSource = {
     group: 'Sales',
     fields: [
       { key: 'so_code', label: 'SO No.', type: 'text', filterable: true, groupable: true },
-      // ADR-207 — the office's own SO number, read live off sales_orders.
-      {
-        key: 'so_internal_no',
-        label: 'Internal SO No.',
-        type: 'text',
-        filterable: true,
-        groupable: true,
-      },
       { key: 'so_date', label: 'SO Date', type: 'date', filterable: true, groupable: true },
       {
         key: 'client_code',
@@ -250,13 +242,6 @@ const jobCardsSource: RegisteredSource = {
       {
         key: 'source_so_code',
         label: 'SO No.',
-        type: 'text',
-        filterable: true,
-        groupable: true,
-      },
-      {
-        key: 'source_so_internal_no',
-        label: 'Internal SO No.',
         type: 'text',
         filterable: true,
         groupable: true,

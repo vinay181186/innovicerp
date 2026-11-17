@@ -181,7 +181,6 @@ export function buildSoStatusColumns(order: SoStatusOrder | null): DataTableColu
       // One SO's lines, unpaged — counted from 1.
       firstRowNo: 1,
       soNo: () => order?.code ?? null,
-      internalSoNo: () => order?.internalSoNo ?? null,
       pol: (l) => l.clientPoLineNo,
       createdOn: (l) => l.createdAt,
       itemCode: (l) => l.itemCode,

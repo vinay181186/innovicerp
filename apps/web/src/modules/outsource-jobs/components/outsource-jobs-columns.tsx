@@ -66,7 +66,6 @@ export function outsourceJobsColumns(
         render: (pr) => <span style={{ color: 'var(--blue)' }}>{pr.code}</span>,
       },
       soNo: (pr) => pr.soCode,
-      internalSoNo: (pr) => pr.soInternalNo,
       pol: (pr) => pr.clientPoLineNo,
       createdOn: (pr) => pr.createdAt,
       // CODE/REV — the drawing revision off the SO line behind this request;
@@ -75,7 +74,6 @@ export function outsourceJobsColumns(
       itemRev: (pr) => pr.itemRevision,
       itemName: (pr) => pr.itemName,
       overrides: {
-        so_internal_no: { sortFilterField: 'soInternalNo' },
         created_on: { sortFilterField: 'createdOn' },
         item_code: { sortFilterField: 'itemCode' },
         item_name: { sortFilterField: 'itemName' },

@@ -13,6 +13,7 @@
 // lib/material-requirement.ts — the same ones the Material view shows.
 
 import { ISSUE_AGAINST_LABELS, type CreateStoreIssueInput } from '@innovic/shared';
+import { sql } from 'drizzle-orm';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { hasFormAccess } from '../../lib/access';
 import {
@@ -23,6 +24,7 @@ import {
 } from '../../lib/errors';
 import {
   balanceOf,
+  type BomPart,
   jcRequirements,
   readBomParts,
   readIssuedReturned,
@@ -32,6 +34,34 @@ import {
 import { roundQty } from '../../lib/stock-ledger';
 import { assertProductionOrderNotShortClosed } from '../../lib/production-order-stop';
 import { lockLiveJobCardForShare } from '../job-cards/cancel';
+
+/** ADR-307 — the refusal for a customer (party_supplied) BOM part offered to
+ *  a company-store path (Item Issue against an Assembly SO, assembly reserve). */
+export function customerPartRefusal(code: string): string {
+  return `${code} is a customer part — use Issue Customer RM on the Assembly Tracker`;
+}
+
+/** ADR-307 — the BOM parts the COMPANY store supplies: readBomParts minus the
+ *  party_supplied children (those are issued from the customer store via Issue
+ *  Customer RM; postStockMove refuses a party-owned item anyway). Filtered here
+ *  at the company-store call sites — readBomParts itself stays whole because
+ *  assembly fitting must keep counting customer parts. */
+export async function readCompanyBomParts(
+  tx: DbTransaction,
+  companyId: string,
+  bomId: string,
+  units: number,
+): Promise<{ parts: Map<string, BomPart>; customerPartIds: Set<string> }> {
+  const all = await readBomParts(tx, companyId, bomId, units);
+  const rows = (await tx.execute(sql`
+    SELECT DISTINCT child_item_id FROM public.bom_master_lines
+     WHERE bom_master_id = ${bomId}::uuid AND company_id = ${companyId}::uuid
+       AND deleted_at IS NULL AND bom_type = 'party_supplied'
+  `)) as unknown as Array<{ child_item_id: string }>;
+  const customerPartIds = new Set(rows.map((r) => r.child_item_id));
+  for (const id of customerPartIds) all.delete(id);
+  return { parts: all, customerPartIds };
+}
 
 export interface IssueTarget {
   jobCardId: string | null;
@@ -113,8 +143,11 @@ export async function resolveTargetAndCap(
     if (!so.isEquipment || !so.bomId) {
       throw new ValidationError('Issue against an Assembly SO needs an Equipment SO with a BOM');
     }
-    const parts = await readBomParts(tx, companyId, so.bomId, so.units);
+    const { parts, customerPartIds } = await readCompanyBomParts(tx, companyId, so.bomId, so.units);
     for (const l of input.lines) {
+      if (customerPartIds.has(l.itemId)) {
+        throw new ValidationError(customerPartRefusal(itemCodes.get(l.itemId) ?? 'This item'));
+      }
       if (!parts.has(l.itemId)) {
         throw new ValidationError(
           `${itemCodes.get(l.itemId) ?? 'This item'} is not a BOM part of ${so.code} — issue it as General`,

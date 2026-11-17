@@ -36,7 +36,6 @@ export const reservedStockReport: RegisteredReport = {
     ],
     columns: [
       { key: 'so_code', label: 'SO No.', type: 'text' },
-      { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
       { key: 'client_po_line_no', label: 'POL', type: 'text' },
       // ADR-261 — Created On is the reservation's created_at (it replaces the
       // old Reserved On column: one fact, one name). The SO line's drawing rev

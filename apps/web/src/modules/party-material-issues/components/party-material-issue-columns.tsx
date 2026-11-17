@@ -28,8 +28,8 @@ export function partyMaterialIssueColumns(
   firstRowNo: number,
 ): DataTableColumn<PartyMaterialIssueListItem>[] {
   return [
-    // Owner rule 2026-10-31 — Issue No. then the lead columns first (JWSO-only
-    // list: JWSO No., no Internal SO No.). Item Code / Item Name =
+    // Owner rule 2026-10-31 — Issue No. then the lead columns first (no
+    // Internal SO No.; SO No. = the JWSO No., or the SO No. on ADR-307 issues). Item Code / Item Name =
     // OUR produced part. The row carries no POL yet (needs API).
     ...leadColumns<PartyMaterialIssueListItem>({
       firstRowNo,
@@ -55,8 +55,10 @@ export function partyMaterialIssueColumns(
           </>
         ),
       },
-      so: 'jwso',
-      soNo: (it) => it.jwCodeText,
+      // ADR-307 — assembly issues of an Equipment SO carry no JWSO / JC: the
+      // one order column shows the SO No. there (NAMING.md: heading SO No.).
+      so: 'so',
+      soNo: (it) => it.soCode ?? it.jwCodeText,
       pol: () => null,
       createdOn: (it) => it.createdAt,
       itemCode: (it) => it.jcItemCode,

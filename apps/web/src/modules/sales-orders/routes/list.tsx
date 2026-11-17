@@ -215,7 +215,7 @@ function SalesOrdersListPage(): React.JSX.Element {
         filterNote={search.status ? SO_STATUS_LABEL[search.status] : undefined}
         search={searchInput}
         onSearch={setSearchInput}
-        searchPlaceholder="Search SO no., Internal SO No., customer, client PO, part name, item code…"
+        searchPlaceholder="Search SO no., customer, client PO, part name, item code…"
         updating={isFetching && !isLoading}
         orderFilter={<OrderSfFilter sf={sf} field="soCode" kind="so" />}
         filters={

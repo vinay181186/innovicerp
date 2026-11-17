@@ -91,14 +91,12 @@ export function dcListColumns(
         ),
       },
       soNo: (r) => r.lineSoCode,
-      internalSoNo: (r) => r.lineSoInternalNo,
       createdOn: (r) => r.createdAt,
       overrides: {
         so_no: {
           sortFilterField: 'soCode',
           render: (r) => <FirstPlusMore value={r.lineSoCode} more={r.soExtraCount} />,
         },
-        so_internal_no: { sortFilterField: 'soInternalNo' },
         created_on: { sortFilterField: 'createdOn' },
       },
     }),

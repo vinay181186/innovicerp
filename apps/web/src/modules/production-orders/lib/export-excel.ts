@@ -23,7 +23,6 @@ export const PRO_REGISTER_COLUMNS = [
   'PRO Target Date',
   'Plan No.',
   'SO / JWSO No.',
-  'Internal SO No.',
   'POL',
   'JC No.',
 ] as const;
@@ -53,7 +52,6 @@ export function proRegisterRow(po: ProductionOrderListItem, srNo: number): (stri
     fmtDate(po.targetDate, ''),
     po.planCodeText,
     po.soCodeText ? `${po.soCodeText}${po.lineNo ? `/${po.lineNo}` : ''}` : '',
-    po.soInternalNo?.trim() ?? '',
     po.clientPoLineNo ?? '',
     po.jcCodeText,
   ];

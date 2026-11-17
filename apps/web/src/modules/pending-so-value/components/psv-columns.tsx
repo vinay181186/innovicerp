@@ -84,7 +84,6 @@ export function psvColumns(
     ...leadColumns<PendingSoValueRow>({
       firstRowNo,
       soNo: (r) => r.soCode,
-      internalSoNo: (r) => r.soInternalNo,
       createdOn: (r) => r.createdAt,
       overrides: {
         so_no: {
@@ -104,7 +103,6 @@ export function psvColumns(
             </Link>
           ),
         },
-        so_internal_no: { sortFilterField: 'soInternalNo', filterType: 'text' },
         created_on: { sortFilterField: 'createdOn' },
       },
     }),

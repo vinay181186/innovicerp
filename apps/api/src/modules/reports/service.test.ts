@@ -96,14 +96,13 @@ describe('reports service', () => {
     const result = await service.runReport('daily-op-log', {}, admin);
     expect(result.slug).toBe('daily-op-log');
     // ADR-261: the row's own number (Log No.) and own date (Log Date)
-    // first, then the six lead columns (SO No. … Item Name; Drawing Rev now
+    // first, then the five lead columns (ADR-306: no Internal SO No.) (SO No. … Item Name; Drawing Rev now
     // rides in Item Code) + Log Type … QC Remarks (9).
-    expect(result.columns.length).toBe(17);
-    expect(result.columns.slice(0, 8).map((c) => c.label)).toEqual([
+    expect(result.columns.length).toBe(16);
+    expect(result.columns.slice(0, 7).map((c) => c.label)).toEqual([
       'Log No.',
       'Log Date',
       'SO No.',
-      'Internal SO No.',
       'POL',
       'Created On',
       'Item Code',

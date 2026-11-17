@@ -35,8 +35,9 @@ function toRow(r: Record<string, unknown>): CustomerMaterialReturnLineRow {
     clientId: str(r['clientId']),
     clientName: str(r['clientName']),
     vehicleNo: str(r['vehicleNo']),
-    jobWorkOrderId: String(r['jobWorkOrderId']),
+    jobWorkOrderId: str(r['jobWorkOrderId']),
     jwCode: str(r['jwCode']),
+    soCode: str(r['soCode']),
     clientPoLineNo: str(r['clientPoLineNo']),
     createdAt: iso(r['createdAt']),
     createdByName: str(r['createdByName']),
@@ -64,7 +65,7 @@ export async function listCustomerMaterialReturnLines(
     const searchFrag = term
       ? sql`AND (
           r.code ILIKE ${term} ESCAPE '\\'
-          OR jw.code ILIKE ${term} ESCAPE '\\'
+          OR COALESCE(jw.code, so.code) ILIKE ${term} ESCAPE '\\'
           OR cl.name ILIKE ${term} ESCAPE '\\'
           OR r.vehicle_no ILIKE ${term} ESCAPE '\\'
           OR jwl.client_po_line_no ILIKE ${term} ESCAPE '\\'
@@ -76,6 +77,9 @@ export async function listCustomerMaterialReturnLines(
       : sql``;
     const jwFrag = input.jobWorkOrderId
       ? sql`AND r.job_work_order_id = ${input.jobWorkOrderId}::uuid`
+      : sql``;
+    const soFrag = input.salesOrderId
+      ? sql`AND r.sales_order_id = ${input.salesOrderId}::uuid`
       : sql``;
     const sf = readSf(input.sf);
     const sfFrag = sfWhere(CUSTOMER_MATERIAL_RETURN_LINE_SF_COLUMNS, sf);
@@ -91,6 +95,8 @@ export async function listCustomerMaterialReturnLines(
       JOIN public.customer_material_returns r
         ON r.id = l.return_id AND r.deleted_at IS NULL
       LEFT JOIN public.job_work_orders jw ON jw.id = r.job_work_order_id
+      -- ADR-307: an Equipment SO return names the SO instead of a JWSO.
+      LEFT JOIN public.sales_orders so ON so.id = r.sales_order_id
       LEFT JOIN public.clients cl ON cl.id = r.client_id
       LEFT JOIN public.job_work_order_lines jwl ON jwl.id = l.jw_line_id
       LEFT JOIN public.items i ON i.id = jwl.item_id
@@ -103,6 +109,7 @@ export async function listCustomerMaterialReturnLines(
         AND l.deleted_at IS NULL
         ${searchFrag}
         ${jwFrag}
+        ${soFrag}
         ${sfFrag}
     `;
 
@@ -114,6 +121,7 @@ export async function listCustomerMaterialReturnLines(
         r.client_id AS "clientId", cl.name AS "clientName",
         r.vehicle_no AS "vehicleNo",
         r.job_work_order_id AS "jobWorkOrderId", jw.code AS "jwCode",
+        so.code AS "soCode",
         jwl.client_po_line_no AS "clientPoLineNo",
         COALESCE(l.created_at, r.created_at) AS "createdAt",
         ${createdByNameSql(sql`COALESCE(l.created_by, r.created_by)`)} AS "createdByName",

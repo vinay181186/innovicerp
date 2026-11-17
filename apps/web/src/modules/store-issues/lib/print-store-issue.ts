@@ -31,12 +31,6 @@ export function printStoreIssue(args: {
     issuedFor.push({ label: 'JC No.', value: issue.jobCardCode ?? '', variant: 'mono' });
   } else if (issue.issueAgainst === 'assembly_so') {
     issuedFor.push({ label: 'SO No.', value: issue.salesOrderCode ?? '', variant: 'mono' });
-    if (issue.salesOrderInternalNo)
-      issuedFor.push({
-        label: 'Internal SO No.',
-        value: issue.salesOrderInternalNo,
-        variant: 'mono',
-      });
   }
   if (issue.department) issuedFor.push({ label: 'Department', value: issue.department });
   // Pre-0157 slips: the typed "Reference Type + No." is all they carry.

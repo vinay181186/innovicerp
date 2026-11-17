@@ -74,7 +74,6 @@ export function opsColumns(firstRowNo: number): DataTableColumn<MachineLoadOp>[]
         ),
       },
       soNo: (op) => op.soCode,
-      internalSoNo: (op) => op.soInternalNo,
       pol: (op) => op.clientPoLineNo,
       createdOn: (op) => op.createdAt,
       // `CODE/REV` — the customer's drawing revision from the SO line this card
@@ -84,7 +83,6 @@ export function opsColumns(firstRowNo: number): DataTableColumn<MachineLoadOp>[]
       itemName: (op) => op.itemName,
       overrides: {
         so_no: { sortFilterField: 'soCode' },
-        so_internal_no: { sortFilterField: 'soInternalNo' },
         client_po_line_no: { sortFilterField: 'clientPoLineNo' },
         created_on: { sortFilterField: 'createdOn' },
         item_code: { sortFilterField: 'itemCode' },

@@ -54,7 +54,6 @@ function identityColumns<T>(
     firstRowNo,
     doc,
     soNo: (row) => pick(row).soCode,
-    internalSoNo: (row) => pick(row).soInternalNo,
     pol: (row) => pick(row).clientPoLineNo,
     createdOn: (row) => pick(row).createdAt,
     itemCode: (row) => pick(row).itemCode,

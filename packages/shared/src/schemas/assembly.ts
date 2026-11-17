@@ -7,6 +7,8 @@
 import { z } from 'zod';
 import { sfRawParamSchema } from './list-query';
 import { SO_STATUSES } from '../enums/so-status';
+import { BOM_LINE_TYPES } from '../enums/bom-line-type';
+import { soCustomerPartFiguresSchema } from './so-customer-part';
 
 export const assemblyComponentStatusEnum = z.enum(['ready', 'enough_for_some', 'shortage']);
 export type AssemblyComponentStatus = z.infer<typeof assemblyComponentStatusEnum>;
@@ -15,7 +17,10 @@ export const assemblyComponentRowSchema = z.object({
   childItemId: z.string().uuid().nullable(),
   childItemCode: z.string(),
   childItemName: z.string().nullable(),
-  bomType: z.enum(['manufacture', 'purchase', 'outsource']),
+  bomType: z.enum(BOM_LINE_TYPES),
+  /** ADR-307: set only on a party_supplied row. Then `stockQty` = figures.inStoreQty
+   *  (this SO's customer store), and Still Out counts customer-part issues too. */
+  customerPart: soCustomerPartFiguresSchema.nullable().default(null),
   qtyPerSet: z.number(),
   totalNeed: z.number().int().nonnegative(),
   stockQty: z.number().int().nonnegative(),

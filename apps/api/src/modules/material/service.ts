@@ -17,7 +17,6 @@ import {
   balanceOf,
   type BomPart,
   jcRequirements,
-  readBomParts,
   readBookedForOthers,
   readIssuedReturned,
   readItemInfo,
@@ -28,6 +27,7 @@ import {
 import { readOwnAssemblyReserved, readPartsOut } from '../../lib/assembly-parts';
 import { roundQty } from '../../lib/stock-ledger';
 import { readStockPositions } from '../../lib/stock-reservation';
+import { readCompanyBomParts } from '../store-issues/guard';
 
 const MATERIAL_VIEW_FORMS = [
   ...STORE_VIEW_FORMS,
@@ -116,8 +116,10 @@ export async function getSoMaterial(salesOrderId: string, user: AuthContext): Pr
     // No (longer a) BOM: nothing is required, but parts still out on its
     // slips stay listed as "not in BOM" so the store can take them back.
     const hasBom = so.isEquipment && so.bomId != null;
+    // ADR-307: customer (party_supplied) parts are left out — they come from
+    // the customer store (Issue Customer RM on the Assembly Tracker).
     const parts = hasBom
-      ? await readBomParts(tx, companyId, so.bomId!, so.units)
+      ? (await readCompanyBomParts(tx, companyId, so.bomId!, so.units)).parts
       : new Map<string, BomPart>();
     const got = await readIssuedReturned(tx, companyId, { salesOrderId: so.id });
     const partsOut = await readPartsOut(tx, companyId, so.id);

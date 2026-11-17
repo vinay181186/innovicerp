@@ -90,7 +90,6 @@ export function planningLineColumns(
     ...leadColumns<PlanningLine>({
       firstRowNo: 1,
       soNo: () => order.soCode,
-      internalSoNo: () => order.soInternalNo,
       pol: (l) => l.clientPoLineNo,
       // The line's own created_at (ADR-261).
       createdOn: (l) => l.createdAt,

@@ -274,6 +274,7 @@ describe('phase 2 departments', () => {
     expect(deptOf('qc_incoming')).toBe('qc');
     expect(keys(dash({ departments: { store: 'L1' } }))).toEqual([
       'store_jwso_grn',
+      'store_so_customer_parts',
       'store_po_grn',
       'store_po_dc',
       'store_tools_out',

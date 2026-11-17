@@ -35,13 +35,15 @@
 import { Icon } from '@/ui/core';
 import {
   type CreateSalesOrderInput,
-  INTERNAL_SO_NO_MAX,
+  INTERNAL_SO_NO_MAX_DIGITS,
   INTERNAL_SO_NO_PREFIX,
   internalSoNoError,
+  internalSoNoOfCode,
+  internalSoNoTakenMessage,
   LINE_REMARKS_MAX,
   type ListItemsResponse,
-  normaliseInternalSoNo,
   normalizeRevision,
+  soNoFromInternal,
   POL_MAX,
   polError,
   revisionBackwardsMessage,
@@ -88,6 +90,7 @@ import {
   revChangeReasonError,
   RevChangeReasonInput,
 } from '@/modules/item-revisions/components/rev-change-reason';
+import { useNextSoCode, useSoNoCheck } from '../api';
 import { parseSoLineFile } from '../lib/import-export';
 import { SO_TYPE_LABEL } from '../lib/so-status-label';
 import {
@@ -142,9 +145,11 @@ interface MilestoneFormValue {
 
 interface FormValues {
   header: {
-    /** Display only — the SO No. is system-generated (ADR-207), never sent. */
+    /** Display only — the saved SO No. (ADR-306), never sent as such. */
     code: string;
-    /** ADR-207 — the user-typed Internal SO No. (e.g. SO-2401). */
+    /** ADR-306 — the typed Internal SO No.: DIGITS only (433). "SO-" is shown
+     *  in front and cannot be erased; the SO No. becomes SO-433. Blank on a
+     *  new SO = the next IN-SO-#####. */
     internalSoNo: string;
     soDate: string;
     type: SoType;
@@ -166,7 +171,7 @@ interface FormValues {
 
 const HEADER_DEFAULTS: FormValues['header'] = {
   code: '',
-  internalSoNo: INTERNAL_SO_NO_PREFIX,
+  internalSoNo: '',
   soDate: todayLocal(),
   type: 'component_manufacturing',
   status: 'open',
@@ -314,12 +319,32 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
   // A draft being edited: the primary button releases it, so it says so.
   const isDraft = watch('header.status') === 'draft';
 
-  // ── SO No. is system-only (ADR-207): shown read-only, never sent. The user's
-  // own number is the Internal SO No. — required on create; on an old SO that
-  // never had one, it may stay blank (only a typed value is checked + sent).
+  // ── SO No. is system-only (ADR-306): the ONE SO number, SO-<next>. The
+  // create form previews the next number; the server gives it on Save.
   const isCreate = !isEdit;
-  const savedInternalSoNo = isEdit ? (props.detail.internalSoNo ?? null) : null;
-  const internalSoNoOptional = isEdit && !savedInternalSoNo;
+  const nextSoCode = useNextSoCode(isCreate);
+  const typedSoNo = watch('header.internalSoNo') ?? '';
+  // An SO that already has a typed number (SO-433) must keep one: the box may
+  // be changed, never emptied (owner 17-11-2026).
+  const savedTyped = isEdit ? internalSoNoOfCode(props.detail.code) : '';
+  const soNoCheck = useSoNoCheck(
+    internalSoNoError(typedSoNo) === null ? typedSoNo : '',
+    isEdit ? props.detail.id : undefined,
+  );
+  const internalSoNoField = register('header.internalSoNo', {
+    validate: (v) => {
+      const t = (v ?? '').trim();
+      if (t === '') {
+        return savedTyped === ''
+          ? true
+          : 'Internal SO No. cannot be emptied — type the new number.';
+      }
+      return internalSoNoError(t) ?? true;
+    },
+  });
+  const soNoTakenMsg = soNoCheck.taken
+    ? internalSoNoTakenMessage(soNoFromInternal(typedSoNo), soNoCheck.usedBy)
+    : null;
   const selectedClientId = watch('header.clientId') ?? null;
   const selectedClient = clients.find((c) => c.id === selectedClientId);
   const supply = useOrderSupplyPreview(selectedClientId);
@@ -664,8 +689,6 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
         setPoEmailError('Enter a Client PO No. or attach an Email Ref — at least one is required.');
         return;
       }
-      // Internal SO No. format is checked by its field (shared rule); its
-      // uniqueness by the server (409, shown in the error strip + on the field).
       const equip = values.header.type === 'equipment';
       // SO-level due date applied to every line (the field lives at the top now).
       const soDue = values.header.dueDate?.trim() || undefined;
@@ -826,22 +849,25 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
               remarks: m.remarks?.trim() || undefined,
             }));
 
-      // The SO No. (`code`) is never sent — the server numbers the order.
-      const { code: _drop, internalSoNo: typedInternal, ...headerBase } = headerOut;
+      // The SO No. (`code`) is never sent: the server sets SO-<typed digits>, or
+      // the next IN-SO-##### when none is typed (ADR-306). On edit the number
+      // is sent only when it changed.
+      const { code: _drop, internalSoNo: typed, ...headerBase } = headerOut;
       void _drop;
-      const internalSoNo = normaliseInternalSoNo(typedInternal);
+      const digits = typed.trim();
+      // Compared with what the box was loaded with, so an old SO-0433 is never
+      // renamed by a save that did not touch the box.
+      const sendTyped = digits !== '' && (!isEdit || digits !== savedTyped);
+      const typedPart = sendTyped ? { internalSoNo: digits } : {};
       if (isEdit) {
-        // Blank / bare "SO-" on an old SO that never had one = leave it unset.
-        const sendInternal =
-          internalSoNo !== '' && internalSoNo !== INTERNAL_SO_NO_PREFIX ? { internalSoNo } : {};
         await props.onSubmit({
-          header: { ...headerBase, ...sendInternal },
+          header: { ...headerBase, ...typedPart },
           lines: linesOut,
           milestones: milestonesOut,
         });
       } else {
         await props.onSubmit({
-          header: { ...headerBase, internalSoNo },
+          header: { ...headerBase, ...typedPart },
           lines: linesOut,
           milestones: milestonesOut,
         } as CreateSalesOrderInput);
@@ -853,15 +879,12 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
   // what blocked the save where the Save button is. ──
   // A Client PO No. already on another SO of this customer blocks Save (not a
   // check still in flight — the server's 409 stays the real guard).
-  const saveDisabled = formState.isSubmitting || clientPoCheck.duplicate;
-  const draftDisabled = formState.isSubmitting || clientPoCheck.duplicate;
+  // ADR-306 — a typed Internal SO No. another order already has blocks Save too.
+  const saveDisabled = formState.isSubmitting || clientPoCheck.duplicate || soNoCheck.taken;
+  const draftDisabled = formState.isSubmitting || clientPoCheck.duplicate || soNoCheck.taken;
   const isDirty = formState.isDirty || poFileName !== null || emailFileName !== null;
   useSaveShortcut(() => void handleSubmit(onValid(false))(), !saveDisabled);
 
-  // The server's 409 for a taken Internal SO No. is also pinned on the field.
-  const internalSoNoServerError = props.submitError?.startsWith('Internal SO No.')
-    ? props.submitError
-    : undefined;
   // The server's 409 at save shows in the summary; under the field the live
   // check speaks, so a corrected number clears at once.
   const clientPoFieldError =
@@ -976,7 +999,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
 
       {/* Header — customer first, then the document no. / dates / type, then
           remarks. Row 1: Customer 6 + Customer Address 6; then Client PO 4 + GST 2
-          + Place of Supply / Tax Type, SO No. + Internal SO No. + SO Date +
+          + Place of Supply / Tax Type, SO No. + SO Date +
           Due Date + SO Type; Remarks full width. */}
       <Panel title="Order Details" actions={canAttach ? attachButtons : undefined}>
         <FormGrid>
@@ -1058,40 +1081,61 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
 
           <OrderSupplyFormFields preview={supply} />
 
-          {/* ADR-207 — SO No. is system-only: "Auto on save" on create, the
-              saved number on edit. Never editable, never sent. */}
-          <FormField label="SO No." size="sm" htmlFor="soCode">
+          {/* ADR-306 — the Internal SO No. box: "SO-" is fixed in front (it is put
+              back on every keystroke, so it cannot be erased) and only digits go
+              in. Typed, the SO No. becomes SO-<digits>; blank on a new SO, the
+              next IN-SO-#####. Checked live against every SO, live or deleted. */}
+          <FormField
+            label="Internal SO No."
+            size="sm"
+            htmlFor="internalSoNo"
+            required={savedTyped !== ''}
+            error={errors.header?.internalSoNo?.message ?? soNoTakenMsg ?? undefined}
+            help={isCreate && typedSoNo === '' ? 'Blank = next system number' : undefined}
+          >
+            <input
+              id="internalSoNo"
+              className="innovic-input mono fw-700"
+              autoComplete="off"
+              inputMode="numeric"
+              maxLength={INTERNAL_SO_NO_PREFIX.length + INTERNAL_SO_NO_MAX_DIGITS}
+              value={`${INTERNAL_SO_NO_PREFIX}${typedSoNo}`}
+              // name + onBlur only: no ref, so the form library never writes the
+              // bare digits into the box and drops the fixed "SO-".
+              name={internalSoNoField.name}
+              onBlur={internalSoNoField.onBlur}
+              onChange={(e) => {
+                const digits = e.target.value
+                  .replace(/^so-?/i, '')
+                  .replace(/\D/g, '')
+                  .slice(0, INTERNAL_SO_NO_MAX_DIGITS);
+                setValue('header.internalSoNo', digits, {
+                  shouldDirty: true,
+                  shouldValidate: Boolean(errors.header?.internalSoNo),
+                });
+              }}
+            />
+          </FormField>
+          {/* The SO No. the order gets — read-only, never sent. */}
+          <FormField
+            label="SO No."
+            size="sm"
+            htmlFor="soCode"
+            help={isCreate ? 'Given on Save' : undefined}
+          >
             <input
               id="soCode"
               className="innovic-input mono fw-700"
               readOnly
               tabIndex={-1}
               placeholder="Auto on save"
-              value={isEdit ? watch('header.code') : ''}
-            />
-          </FormField>
-          <FormField
-            label="Internal SO No."
-            required={!internalSoNoOptional}
-            size="sm"
-            htmlFor="internalSoNo"
-            error={errors.header?.internalSoNo?.message ?? internalSoNoServerError}
-          >
-            <input
-              id="internalSoNo"
-              className="innovic-input mono fw-700"
-              autoComplete="off"
-              maxLength={INTERNAL_SO_NO_MAX}
-              placeholder="SO-2401"
-              {...register('header.internalSoNo', {
-                validate: (v) => {
-                  const t = normaliseInternalSoNo(v ?? '');
-                  if (internalSoNoOptional && (t === '' || t === INTERNAL_SO_NO_PREFIX)) {
-                    return true;
-                  }
-                  return internalSoNoError(t) ?? true;
-                },
-              })}
+              value={
+                typedSoNo !== ''
+                  ? soNoFromInternal(typedSoNo)
+                  : isEdit
+                    ? watch('header.code')
+                    : (nextSoCode.data?.code ?? '')
+              }
             />
           </FormField>
           <FormField
@@ -1927,8 +1971,8 @@ function detailToFormValues(detail: SalesOrderDetail): FormValues {
   return {
     header: {
       code: detail.code,
-      // An old SO without one shows blank (not "SO-") so nothing looks typed.
-      internalSoNo: detail.internalSoNo ?? '',
+      // ADR-306 — SO-433 fills the box with 433; a system number leaves it blank.
+      internalSoNo: internalSoNoOfCode(detail.code),
       soDate: detail.soDate,
       type: detail.type,
       status: detail.status,

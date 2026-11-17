@@ -67,7 +67,6 @@ export function designTrackerColumns(opts: {
         sortFilterField: 'code',
       },
       soNo: (d) => d.soCodeText,
-      internalSoNo: (d) => d.soInternalNo,
       pol: (d) => d.clientPoLineNo,
       createdOn: (d) => d.createdAt,
       itemCode: (d) => d.itemCodeText,
@@ -75,7 +74,6 @@ export function designTrackerColumns(opts: {
       itemName: (d) => d.itemNameText,
       overrides: {
         so_no: { sortFilterField: 'soCode' },
-        so_internal_no: { sortFilterField: 'soInternalNo' },
         client_po_line_no: { sortFilterField: 'clientPoLineNo' },
         item_code: { sortFilterField: 'itemCode' },
         item_name: { sortFilterField: 'itemName' },

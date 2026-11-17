@@ -83,7 +83,6 @@ export function opLogColumns(firstRowNo: number): DataTableColumn<OpLogListItem>
         render: (r) => jcLink(r, r.logNo),
       },
       soNo: (r) => r.soCode,
-      internalSoNo: (r) => r.soInternalNo,
       pol: (r) => r.clientPoLineNo,
       createdOn: (r) => r.createdAt,
       itemCode: (r) => r.itemCode,
@@ -91,7 +90,6 @@ export function opLogColumns(firstRowNo: number): DataTableColumn<OpLogListItem>
       itemName: (r) => r.itemName,
       overrides: {
         so_no: { sortFilterField: 'soCode' },
-        so_internal_no: { sortFilterField: 'soInternalNo' },
         client_po_line_no: { sortFilterField: 'clientPoLineNo' },
         created_on: { sortFilterField: 'createdOn' },
         item_code: { sortFilterField: 'itemCode' },

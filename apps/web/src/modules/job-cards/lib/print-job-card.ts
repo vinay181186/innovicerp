@@ -264,10 +264,6 @@ export function printJobCard(args: {
     ]),
     column('Source', '20mm', [
       field(link?.type === 'jw' ? 'JWSO No.' : 'SO No.', link?.code, true),
-      // A JWSO has no Internal SO No. (ADR-207).
-      link?.type === 'jw'
-        ? ''
-        : field('Internal SO No.', link?.type === 'so' ? link.internalSoNo : ''),
       field('Ln / POL', lnPol),
       field('PRO No.', args.productionOrderCode),
       field('RC No. / Rev', routeCard),

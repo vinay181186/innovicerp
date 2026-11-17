@@ -155,24 +155,42 @@ function PartyGrnDetailPage(): React.JSX.Element {
           <Cluster name="Receipt">
             <ClusterFact num label="GRN No." value={g.code} />
             <ClusterFact num label="GRN Date" value={fmtDate(g.grnDate)} />
-            <ClusterFact
-              num
-              label="JWSO No."
-              empty={!g.jwCodeText}
-              value={
-                g.jobWorkOrderId && g.jwCodeText ? (
-                  <Link
-                    to="/job-work-orders/$id"
-                    params={{ id: g.jobWorkOrderId }}
-                    className="fw-700"
-                  >
-                    {g.jwCodeText}
-                  </Link>
-                ) : (
-                  (g.jwCodeText ?? '—')
-                )
-              }
-            />
+            {g.salesOrderId ? (
+              // ADR-307 — received against an Equipment SO.
+              <ClusterFact
+                num
+                label="SO No."
+                empty={!g.soCode}
+                value={
+                  g.soCode ? (
+                    <Link to="/sales-orders/$id" params={{ id: g.salesOrderId }} className="fw-700">
+                      {g.soCode}
+                    </Link>
+                  ) : (
+                    '—'
+                  )
+                }
+              />
+            ) : (
+              <ClusterFact
+                num
+                label="JWSO No."
+                empty={!g.jwCodeText}
+                value={
+                  g.jobWorkOrderId && g.jwCodeText ? (
+                    <Link
+                      to="/job-work-orders/$id"
+                      params={{ id: g.jobWorkOrderId }}
+                      className="fw-700"
+                    >
+                      {g.jwCodeText}
+                    </Link>
+                  ) : (
+                    (g.jwCodeText ?? '—')
+                  )
+                }
+              />
+            )}
             <ClusterFact label="Customer" title={customer} value={customer} />
           </Cluster>
           <Cluster name="Customer Papers">

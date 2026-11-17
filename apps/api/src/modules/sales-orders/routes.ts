@@ -1,4 +1,8 @@
-import { activityReasonSchema, clientPoCheckQuerySchema } from '@innovic/shared';
+import {
+  activityReasonSchema,
+  clientPoCheckQuerySchema,
+  soNoCheckQuerySchema,
+} from '@innovic/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
@@ -39,6 +43,12 @@ export async function salesOrdersRoutes(app: FastifyInstance): Promise<void> {
   app.get('/sales-orders/client-po-check', async (req) => {
     if (!req.user) throw new AuthenticationError();
     return service.checkSoClientPoNo(clientPoCheckQuerySchema.parse(req.query), req.user);
+  });
+
+  // ADR-306 — live check of a typed Internal SO No. (free / already used).
+  app.get('/sales-orders/so-no-check', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    return service.checkSalesOrderSoNo(soNoCheckQuerySchema.parse(req.query), req.user);
   });
 
   app.get('/sales-orders/next-code', async (req) => {

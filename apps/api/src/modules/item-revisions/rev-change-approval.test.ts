@@ -173,7 +173,7 @@ describe('ADR-289 Rev change through edit approval', () => {
     const so = await createSalesOrder(
       {
         header: {
-          internalSoNo: `SO-${P}${Date.now()}`,
+          costCenter: `SO-${P}${Date.now()}`,
           soDate: '2026-11-14',
           customerName: 'Rev approval customer',
           type: 'component_manufacturing',

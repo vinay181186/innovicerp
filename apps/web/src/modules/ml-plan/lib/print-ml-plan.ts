@@ -59,7 +59,6 @@ export function printMlPlan(args: {
     facts: [
       { label: 'MLP No.', value: detail.code, strong: true },
       { label: 'SO No.', value: detail.soCode, strong: true },
-      { label: 'Internal SO No.', value: detail.soInternalNo ?? '', strong: true },
       { label: 'POL', value: detail.clientPoLineNo ?? '' },
       { label: 'Item Code', value: detail.itemCode ?? '', strong: true },
       { label: 'Item Name', value: detail.itemName ?? '' },

@@ -36,17 +36,14 @@ export function lineColumns(opts: {
   /** Carried down only so the drawing access log reads "IN-SO-26-00521 L3"
    *  instead of a storage path nobody recognises. */
   soCode: string;
-  /** ADR-207 — the order's Internal SO No. (lead column 2). */
-  internalSoNo: string | null;
   onPreview: (file: DrawingPreview) => void;
 }): DataTableColumn<SalesOrderLine>[] {
-  const { priceHidden, soCode, internalSoNo, onPreview } = opts;
+  const { priceHidden, soCode, onPreview } = opts;
   return [
     // Every line of the order on one unpaged table, so Sr No starts at 1.
     ...leadColumns<SalesOrderLine>({
       firstRowNo: 1,
       soNo: () => soCode,
-      internalSoNo: () => internalSoNo,
       pol: (l) => l.clientPoLineNo,
       createdOn: (l) => l.createdAt,
       itemCode: (l) => l.itemCode ?? l.itemCodeText,

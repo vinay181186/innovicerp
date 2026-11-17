@@ -45,6 +45,45 @@ export async function lockSoRow(tx: DbTransaction, companyId: string, soId: stri
   if (rows.length === 0) throw new NotFoundError('Sales Order not found. Refresh the page.');
 }
 
+/** ADR-307: lock the SO row, then refuse unless it is a live, open Equipment SO.
+ *  Every write against a customer-supplied BOM part starts here (SO → party
+ *  material lock order). `forWhat` words the refusal. `requireOpen` false =
+ *  a closed SO still passes (QC, put back, return to customer, reversals). */
+export async function lockOpenEquipmentSo(
+  tx: DbTransaction,
+  companyId: string,
+  soId: string,
+  forWhat: string,
+  requireOpen = true,
+): Promise<{ id: string; code: string; clientId: string | null; clientPoNo: string | null }> {
+  await lockSoRow(tx, companyId, soId);
+  const rows = (await tx.execute(sql`
+    SELECT id, code, client_id AS "clientId", client_po_no AS "clientPoNo",
+           type::text AS type, status::text AS status, deleted_at AS "deletedAt"
+    FROM public.sales_orders
+    WHERE id = ${soId}::uuid AND company_id = ${companyId}::uuid
+  `)) as unknown as Array<{
+    id: string;
+    code: string;
+    clientId: string | null;
+    clientPoNo: string | null;
+    type: string;
+    status: string;
+    deletedAt: unknown;
+  }>;
+  const so = rows[0];
+  if (!so || so.deletedAt != null) {
+    throw new NotFoundError('Sales Order not found. Refresh the page.');
+  }
+  if (so.type !== 'equipment') {
+    throw new ConflictError(`${so.code} is not an Equipment SO — cannot ${forWhat}.`);
+  }
+  if (requireOpen && (so.status === 'closed' || so.status === 'cancelled')) {
+    throw new ConflictError(`${so.code} is ${so.status} — cannot ${forWhat}.`);
+  }
+  return { id: so.id, code: so.code, clientId: so.clientId, clientPoNo: so.clientPoNo };
+}
+
 /** Parts out per SO per item, for many assembly SOs at once. */
 export async function readPartsOutMany(
   tx: DbTransaction,
@@ -55,7 +94,7 @@ export async function readPartsOutMany(
   if (soIds.length === 0) return out;
   const ids = sql.param(soIds as string[]);
   const rows = (await tx.execute(sql`
-    WITH iss AS (
+    WITH iss_all AS (
       SELECT si.sales_order_id AS so_id, l.item_id,
              SUM(l.qty) AS issued, SUM(COALESCE(r.ret, 0)) AS returned
       FROM public.store_issue_lines l
@@ -68,6 +107,19 @@ export async function readPartsOutMany(
         AND si.deleted_at IS NULL AND si.reversed_at IS NULL AND l.deleted_at IS NULL
         AND si.sales_order_id = ANY(${ids}::uuid[])
       GROUP BY si.sales_order_id, l.item_id
+      -- ADR-307: customer-supplied BOM parts issued from the party store to
+      -- the SO's assembly count like any issued part (item = the -RM item).
+      UNION ALL
+      SELECT pmi.sales_order_id AS so_id, pm.item_id,
+             SUM(pmi.qty) AS issued, SUM(pmi.returned_to_store_qty) AS returned
+      FROM public.party_material_issues pmi
+      JOIN public.party_materials pm ON pm.id = pmi.party_material_id
+      WHERE pmi.company_id = ${companyId}::uuid AND pmi.deleted_at IS NULL
+        AND pmi.sales_order_id = ANY(${ids}::uuid[])
+      GROUP BY pmi.sales_order_id, pm.item_id
+    ), iss AS (
+      SELECT so_id, item_id, SUM(issued) AS issued, SUM(returned) AS returned
+      FROM iss_all GROUP BY so_id, item_id
     ), fit AS (
       SELECT c.sales_order_id AS so_id, c.item_id, SUM(c.qty) AS fitted
       FROM public.assembly_unit_consumptions c

@@ -4591,7 +4591,7 @@ export async function getJobCardRelated(
             ),
           ]
         : [],
-      { items: soItems, labelHeading: 'Internal SO No.' },
+      { items: soItems },
     );
     const jwSection = section(
       'job-work-order',

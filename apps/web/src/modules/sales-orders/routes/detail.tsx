@@ -39,7 +39,6 @@ import { ActionLink } from '@/components/shared/action-link';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
 import { fmtDate } from '@/lib/date';
-import { soNoWithInternal } from '@/lib/so-number';
 import { inrFormat } from '@/lib/print/doc-print';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
@@ -226,7 +225,7 @@ function SalesOrderDetailPage(): React.JSX.Element {
         backTo="/sales-orders"
         backLabel="Back to Sales Orders"
         renderLink={(p) => <Link {...p} />}
-        code={soNoWithInternal(detail.code, detail.internalSoNo)}
+        code={detail.code}
         name={
           <>
             {detail.customerName ?? 'Untitled customer'}
@@ -390,7 +389,6 @@ function SalesOrderDetailPage(): React.JSX.Element {
           columns={lineColumns({
             priceHidden,
             soCode: detail.code,
-            internalSoNo: detail.internalSoNo ?? null,
             onPreview: setPreview,
           })}
           rows={detail.lines}
@@ -717,14 +715,6 @@ function SoReadGrid(props: {
   return (
     <ClusterGrid stack>
       <Cluster name="Order">
-        {/* ADR-207 — the user-typed number; blank on SOs made before it. */}
-        <ClusterFact
-          num
-          label="Internal SO No."
-          empty={!detail.internalSoNo}
-          value={detail.internalSoNo ?? '—'}
-          after={<Chip changes={pendingChanges} field="internalSoNo" />}
-        />
         <ClusterFact
           label="SO Type"
           value={SO_TYPE_LABEL[detail.type]}

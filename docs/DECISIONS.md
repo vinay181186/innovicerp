@@ -16189,3 +16189,127 @@ put every part's plan side by side, cut off with "…".
 **Consequences:** no side scroll; extra columns go behind "n columns not on screen". Sorting the
 table can move a part's second plan away from the row carrying the part's qty (Item Code is on
 every row). No server change.
+
+## ADR-306: One SO number — a typed Internal SO No. becomes the SO No.
+
+**Date:** 2026-11-17
+**Status:** Accepted (owner, 17-11-2026, in steps: "i want one column for sono … replace system
+generated sono with internal sono"; "keep field internal sono — if user type internal sono that
+make system generated sono as internal sono; if user donot type … keep in-so-001 series";
+"only digit"; "yes user can edit sono once it is saved — and it must be reflected in upstream
+downstream doc"; "as u recommend. make sure user cannot type duplicate number"; existing data
+answers 1a, 2 yes, SO-519 to the live order)
+**Supersedes:** the two-number part of ADR-207 and the two-column split (2026-10-05).
+
+### Context
+
+Every SO carried two numbers: the system SO No. (`IN-SO-00013`) and the typed Internal SO No.
+(`SO-433`). Everyone works by the second; the first cluttered 33 lists, prints and exports with a
+second column. CLAUDE.md §18 says live series are never renumbered — the owner chose to replace
+`IN-SO` numbers by the typed ones explicitly; this ADR is that approval. JWSO is unchanged.
+
+### Decision
+
+- **One SO No. (`sales_orders.code`).** The form keeps a box labelled **Internal SO No.** with a
+  fixed `SO-` the user cannot erase; only digits go in (max 9, leading zeros dropped).
+  Typed `433` → SO No. `SO-433`. Left blank on a new SO → the next `IN-SO-#####` (the existing
+  series). Lists, prints, exports, alerts and reports show ONE column, SO No.
+- **No duplicate, ever.** A typed number is refused (409, and live while typing via
+  `GET /sales-orders/so-no-check`, which also blocks Save) when any SO of the company — live or
+  deleted — has it now or had it before (`legacy_code`). Number picks take
+  `lockDocSeries('sales_orders')` (CLAUDE.md §20), so two people typing the same number at the
+  same second: one wins, the other gets the 409. `withUniqueRetry` stays for the IN-SO path.
+- **Editable after save, everywhere at once.** Retyping the number renames the SO No. Migration
+  0254's `BEFORE UPDATE OF code` trigger (`sales_orders_code_change`) appends the old number to
+  `legacy_code` and calls `so_rewrite_text_copies`, which rewrites every saved text copy (exact:
+  `so_code_text` on 12 tables, `so_ref_text`, `so_no_text`, `capa_records.so_no`, edit/cancel
+  request `doc_code`, `activity_log.ref_id`; whole token: task / revision / drawing / store /
+  reservation refs, change-impact labels) in the same transaction. Every other screen reads the
+  number live by id. The box cannot be emptied once the SO has an SO- number; an IN-SO order can
+  be given a typed number later. A live SO's number change goes through edit approval like any
+  other header edit (History: "SO No. SO-433 → SO-434").
+- **Existing data (0254, one transaction, stops on any clash):** every live SO with an Internal SO
+  No. takes it as its SO No.; `internal_so_no` is cleared, so every old `IN-SO · SO` join shows
+  the one number. A deleted SO only when no other SO shares its number (PROD: deleted
+  `IN-SO-00001` shares `SO-519` with live `IN-SO-00011` and keeps its code). An SO without one
+  keeps `IN-SO-#####`.
+- **Old numbers still found.** SO list, its Excel export, the SO picker and global search
+  ("Old SO No.") match `legacy_code`.
+- **Left as written:** activity detail text, reasons, remarks, task descriptions (history and
+  people's own words); assembly unit serials (`IN-SO-00013-U5`, printed on the unit).
+
+### Alternatives considered
+
+- SO-<next> for every new SO (no IN-SO series) — the first build; replaced by the owner's rule
+  that a blank box keeps the IN-SO series.
+- Rewrite copies in application code — rejected (§21: one place): a trigger covers the
+  migration, the edit form and the edit-approval replay alike, and cannot be skipped.
+- Hide one column but keep two numbers — rejected: the owner wants one number.
+
+### Consequences
+
+- Positive: one SO No. on every screen, print and export; the office types its own number; a
+  changed number follows into every document.
+- Negative: `updated_at` moves on every row a rename touches.
+- Negative: `DOC_NUMBER_FORMATS.sales_order` (IN-SO, 5 digits) describes only the blank-box path;
+  the form uses `/sales-orders/next-code` and `/so-no-check`.
+- Risk: a Playwright flow that types the old `SO-…` text into the box needs its spec updated
+  (owner's say before editing specs).
+- Rollback: before anyone renames by hand, `UPDATE sales_orders SET internal_so_no = code,
+  code = split_part(legacy_code,' ',1) WHERE legacy_code IS NOT NULL` (the trigger moves the
+  copies back), then drop the trigger, both functions and `legacy_code`.
+
+## ADR-307: Customer-supplied BOM parts on an Equipment SO
+
+**Date:** 2026-11-17
+**Status:** Accepted (owner approved the plan and the user-steps PDF 17-11-2026: D1 BOM line,
+D2 separate `-RM` code, D3 compulsory Incoming QC)
+
+### Context
+
+On an Equipment SO the customer can send some BOM child parts. Before this, the ERP could not
+receive them (Party GRN was JWSO-only), showed them Short from company stock, pre-ticked them
+for planning / purchase, and the Assembly Tracker refused Complete because a party-owned item
+can never be store-issued.
+
+### Decision
+
+- BOM line type `party_supplied` ("Party Supplied"); its child must be a Party Supplied Material
+  item (`<code>-RM`) and vice versa. A type flip is refused while a live SO on the BOM has a
+  receipt or plan for that child. Multi-Level BOM keeps the three own-sourced types
+  (`ML_BOM_LINE_TYPES`).
+- Never planned, never bought: the SO-create cascade skips it; `createPlanInTx` refuses it
+  (covers every plan / PR path); BOM Planning greys it as "Customer supplies".
+- Received on a Party GRN **Against Equipment SO** (`party_grn.sales_order_id`, exactly one of
+  JWSO / SO). Incoming QC, NC Use As Is / Return to Customer, Cancel as for JWSO.
+- Kept in the existing zero-value party store; every movement carries
+  `party_stock_ledger.sales_order_id`.
+- Issued to the SO's assembly from the Assembly Tracker (`POST /assemblies/:soId/customer-part-
+  issues`, `party_material_issues.sales_order_id`). `readPartsOutMany` counts these issues, so
+  assembly Complete fits customer parts exactly like store-issued parts
+  (`assembly_unit_consumptions`). No separate `consume` ledger row: the register balance already
+  dropped at issue (same model as JWSO issue to JC).
+- Put back / cancel an assembly issue only for pieces still on the bench (Still Out).
+- Customer Material Return against an Equipment SO for spare good parts and held deviated pieces.
+- ONE figures source, `lib/party-so-parts.ts` (`soCustomerPartRowsSql` + `readSoCustomerParts`):
+  Need, Received, Waiting QC, Accepted, Issued, Fitted, Returned, In Store, Pending, Short, Party
+  GRN Status. Used by SO Status, SO parts panel, BOM Planning, Assembly Tracker, Party GRN cap,
+  issue cap, CMR returnable and the Store Home check `store_so_customer_parts`.
+- Locks: SO row (`lockSoRow`) first, then `party_materials` — on create, QC, Use As Is, cancel,
+  issue, put back, return.
+
+### Alternatives considered
+
+- Flag per SO (D1 b) — rejected by owner: needs an override table and a screen.
+- Keep the normal item code in the party store (D2 a) — owner chose a separate `-RM` code so
+  ownership can never mix with company stock.
+- A `consume` ledger row at assembly Complete — rejected: it would count the pieces out twice.
+
+### Consequences
+
+- Positive: receive → QC → issue → fit → dispatch → return traced per SO; nothing customer-owned
+  enters company stock or value.
+- Negative: the register row is per customer + RM item, so two SOs of one customer share its
+  `stock_qty`; the per-SO cap (`inStoreQty`) keeps each SO to its own pieces.
+- Open: NC register source panel shows no SO No. for an SO Party GRN NC (`NcSource` has no SO
+  field); Party Material Issue list has no `salesOrderId` filter.

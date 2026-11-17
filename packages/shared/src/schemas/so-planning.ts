@@ -2,6 +2,8 @@
 // Per docs/PARITY/so-planning.md.
 
 import { z } from 'zod';
+import { BOM_LINE_TYPES } from '../enums/bom-line-type';
+import { soCustomerPartFiguresSchema } from './so-customer-part';
 import { ROUTE_CARD_APPROVAL_STATUSES } from '../enums/route-card-approval';
 import {
   RESERVATION_DETAIL_SOURCES,
@@ -229,6 +231,8 @@ export const planningLineSchema = z.object({
         requiredQty: z.number().nonnegative(),
         /** Sum of non-cancelled plan_qty for this child on this line. */
         plannedQty: z.number().nonnegative(),
+        /** ADR-307: 'party_supplied' = the customer sends it — never planned. */
+        bomType: z.enum(BOM_LINE_TYPES).default('manufacture'),
       }),
     )
     .default([]),
@@ -415,8 +419,11 @@ export const planningBomChildSchema = z.object({
   stockQty: z.number().nonnegative(),
   /** max(0, totalNeed - stockQty). */
   shortfall: z.number().nonnegative(),
-  /** Plan-type implied by the BOM line type (purchase → direct_purchase; else manufacture). */
-  bomType: z.enum(['manufacture', 'purchase', 'outsource']),
+  /** Plan-type implied by the BOM line type (purchase → direct_purchase; else manufacture).
+   *  ADR-307: 'party_supplied' = the customer sends it — never plannable;
+   *  `shortfall` is then figures.shortQty (company stock ignored). */
+  bomType: z.enum(BOM_LINE_TYPES),
+  customerPart: soCustomerPartFiguresSchema.nullable().default(null),
   /** Existing plan for this (so_line × child) cell, if one was already created. */
   existingPlan: planningPlanSummarySchema.nullable(),
 });

@@ -1,4 +1,5 @@
 import {
+  createAssemblyCustomerPartIssueInputSchema,
   listAssembliesQuerySchema,
   markUnitAssembledInputSchema,
   markUnitDispatchedInputSchema,
@@ -9,6 +10,7 @@ import {
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AuthenticationError } from '../../lib/errors';
+import { issueCustomerPartToAssembly } from './customer-part-issue';
 import * as service from './service';
 
 const soParamsSchema = z.object({ soId: z.string().uuid() });
@@ -37,6 +39,17 @@ export async function assemblyRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) throw new AuthenticationError();
     const { soId } = soParamsSchema.parse(req.params);
     return service.getAssemblyRelated(soId, req.user);
+  });
+
+  // ADR-307 - issue a customer-supplied BOM part from the party store to the
+  // SO's assembly (gate: party_create entry, as POST /party-material-issues).
+  app.post('/assemblies/:soId/customer-part-issues', async (req, reply) => {
+    if (!req.user) throw new AuthenticationError();
+    const { soId } = soParamsSchema.parse(req.params);
+    const input = createAssemblyCustomerPartIssueInputSchema.parse(req.body);
+    const result = await issueCustomerPartToAssembly(soId, input, req.user);
+    reply.code(201);
+    return result;
   });
 
   app.post('/assemblies/:soId/units', async (req, reply) => {

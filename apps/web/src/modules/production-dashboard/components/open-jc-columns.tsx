@@ -43,7 +43,6 @@ export function openJcColumns(firstRowNo: number): DataTableColumn<ProductionDas
         ),
       },
       soNo: (jc) => jc.soCode,
-      internalSoNo: (jc) => jc.soInternalNo,
       pol: (jc) => jc.clientPoLineNo,
       createdOn: (jc) => jc.createdAt,
       itemCode: (jc) => jc.itemCode,

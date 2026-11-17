@@ -16,7 +16,6 @@ export async function exportTpiRecords(rows: TpiCompletedRow[]): Promise<void> {
       'JC No.',
       'Op',
       'SO No.',
-      'Internal SO No.',
       // POL — the CUSTOMER's own purchase-order line number, its own column
       // immediately before the item code, as on every other export.
       'POL',
@@ -45,7 +44,6 @@ export async function exportTpiRecords(rows: TpiCompletedRow[]): Promise<void> {
       l.jcCode,
       `Op ${opSrNo(l.opSeq)}`,
       l.soCode ?? '',
-      l.soInternalNo ?? '',
       l.clientPoLineNo ?? '',
       l.itemCode ?? '',
       l.itemRevision ?? '',

@@ -118,7 +118,6 @@ export function ncListColumns(
       },
       so: 'mixed',
       soNo: (nc) => nc.orderCode,
-      internalSoNo: (nc) => nc.soInternalNo,
       pol: (nc) => nc.clientPoLineNo,
       createdOn: (nc) => nc.createdAt,
       itemCode: (nc) => nc.itemCode ?? nc.itemCodeText,
@@ -126,7 +125,6 @@ export function ncListColumns(
       itemName: (nc) => ncItemName(nc),
       overrides: {
         so_no: { sortFilterField: 'soCode' },
-        so_internal_no: { sortFilterField: 'soInternalNo' },
         created_on: { sortFilterField: 'createdOn' },
         item_code: { sortFilterField: 'itemCode', filterValue: (nc) => ncItemCode(nc) },
         item_name: { sortFilterField: 'itemName' },

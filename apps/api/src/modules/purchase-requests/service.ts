@@ -1887,7 +1887,6 @@ export async function getPurchaseRequestRelated(
           column: 'id',
           ids: [header.sourceSoLineId],
         }),
-        labelHeading: 'Internal SO No.',
       },
     );
     const jcSection = section(

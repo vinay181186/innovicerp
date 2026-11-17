@@ -92,7 +92,6 @@ export function QueueTab({
         ),
       },
       soNo: (it) => it.soCode,
-      internalSoNo: (it) => it.soInternalNo,
       pol: (it) => it.clientPoLineNo,
       createdOn: (it) => it.createdAt ?? null,
       itemCode: (it) => it.itemCode,

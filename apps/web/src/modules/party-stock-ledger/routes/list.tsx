@@ -121,6 +121,15 @@ const COLUMNS: DataTableColumn<PartyStockLedgerListItem>[] = [
     render: (r) => r.balanceAfter,
   },
   {
+    // ADR-307 — the order the movement belongs to: SO No., else the JWSO No.
+    // (NAMING.md: a list carrying both shows the JWSO code under SO No., ADR-267).
+    id: 'order_code',
+    header: 'SO No.',
+    kind: 'code',
+    nowrap: true,
+    render: (r) => r.orderCode ?? '—',
+  },
+  {
     id: 'source_doc',
     header: 'Source Doc',
     kind: 'code',

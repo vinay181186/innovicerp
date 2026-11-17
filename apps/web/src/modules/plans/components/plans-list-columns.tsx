@@ -131,7 +131,6 @@ export function plansListColumns(
         ),
       },
       soNo: (row) => row.soCodeText,
-      internalSoNo: (row) => row.soInternalNo,
       pol: (row) => row.clientPoLineNo,
       createdOn: (row) => row.createdAt,
       itemCode: (row) => (row.itemCode ?? row.itemCodeText) as string | null,
@@ -139,7 +138,6 @@ export function plansListColumns(
       itemName: (row) => row.itemName ?? row.itemNameText,
       overrides: {
         so_no: { sortFilterField: 'soCodeText' },
-        so_internal_no: { sortFilterField: 'soInternalNo' },
         item_code: {
           sortFilterField: 'itemCode',
           // `CODE/REV` — the customer's drawing revision from the SO line this plan

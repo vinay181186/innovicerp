@@ -11,7 +11,11 @@ import { listCustomerMaterialReturnLines } from './list-lines';
 import * as service from './service';
 
 const idParam = z.object({ id: z.string().uuid() });
-const returnableQuery = z.object({ jobWorkOrderId: z.string().uuid() });
+// ADR-307: exactly one of the two (the service refuses none / both with 400).
+const returnableQuery = z.object({
+  jobWorkOrderId: z.string().uuid().optional(),
+  salesOrderId: z.string().uuid().optional(),
+});
 
 // ADR-203 (owner D3) — Customer Material Return, IN-CMR-#####.
 export async function customerMaterialReturnsRoutes(app: FastifyInstance): Promise<void> {
@@ -31,8 +35,8 @@ export async function customerMaterialReturnsRoutes(app: FastifyInstance): Promi
   // Registered before /:id so "returnable" is never read as an id.
   app.get('/customer-material-returns/returnable', async (req) => {
     if (!req.user) throw new AuthenticationError();
-    const { jobWorkOrderId } = returnableQuery.parse(req.query);
-    return service.listCustomerMaterialReturnable(jobWorkOrderId, req.user);
+    const order = returnableQuery.parse(req.query);
+    return service.listCustomerMaterialReturnable(order, req.user);
   });
 
   app.get('/customer-material-returns/:id', async (req) => {

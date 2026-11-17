@@ -40,7 +40,11 @@ const isPristine = (e: QcEntry): boolean =>
 export type PartyGrnQcHeader = Pick<
   PartyGrnListItem,
   'id' | 'code' | 'jwCodeText' | 'clientName' | 'clientCodeText'
->;
+> & {
+  /** ADR-307 — SO No. of an Equipment SO receipt; optional (the QC Call
+   *  Register does not send it — the loaded detail fills it then). */
+  soCode?: string | null | undefined;
+};
 
 export function PartyGrnQcModal({
   row,
@@ -55,6 +59,7 @@ export function PartyGrnQcModal({
 }): React.JSX.Element {
   const toast = useToast();
   const detailQ = usePartyGrnDetail(row.id);
+  const soCode = row.soCode ?? detailQ.data?.soCode ?? null;
   const pending = useMemo(
     () =>
       (detailQ.data?.lines ?? [])
@@ -199,7 +204,8 @@ export function PartyGrnQcModal({
       }
     >
       <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginBottom: 'var(--sp-3)' }}>
-        JWSO <span className="mono fw-700">{row.jwCodeText ?? '—'}</span> ·{' '}
+        {soCode ? 'SO' : 'JWSO'}{' '}
+        <span className="mono fw-700">{soCode ?? row.jwCodeText ?? '—'}</span> ·{' '}
         {row.clientName ?? row.clientCodeText ?? '—'}. Only the accepted qty enters customer stock.
         Deviated pieces raise an NC automatically — QC Head decides Use As Is, Return to Customer or
         Scrap in the NC Register.

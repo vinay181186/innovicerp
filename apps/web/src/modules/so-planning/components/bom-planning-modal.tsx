@@ -8,6 +8,7 @@
 // call / ONE transaction; a Make child is a Route-Card plan like "+ Plan".
 // Existing plans are shown disabled.
 
+import { isOwnSourcedBomLineType } from '@innovic/shared';
 import type {
   PlanStatus,
   PlanningBomChild,
@@ -59,7 +60,9 @@ type RowState = {
 //
 // `outsource` used to fall into the manufacture branch, so a BOM line marked
 // Outsource quietly became an in-house job card — the type had no effect at all.
-function planTypeFor(bomType: PlanningBomChild['bomType']): CreatePlanInput['planType'] {
+//   party_supplied -> the CUSTOMER sends it (ADR-307): never planned — null.
+function planTypeFor(bomType: PlanningBomChild['bomType']): CreatePlanInput['planType'] | null {
+  if (!isOwnSourcedBomLineType(bomType)) return null;
   if (bomType === 'purchase') return 'direct_purchase';
   if (bomType === 'outsource') return 'full_outsource';
   return 'manufacture';
@@ -116,7 +119,8 @@ export function BomPlanningModal({
     for (const c of data.children) {
       const hasShortfall = c.shortfall > 0;
       next.set(c.childItemCode, {
-        checked: !c.existingPlan && hasShortfall,
+        // ADR-307: a customer part is never pre-ticked — it is not plannable.
+        checked: !c.existingPlan && hasShortfall && isOwnSourcedBomLineType(c.bomType),
         qty: c.shortfall,
         vendorId: null,
         vendorCode: '',
@@ -133,7 +137,7 @@ export function BomPlanningModal({
   // "dpVendorId: direct_purchase plan requires a vendor".
   const missing: string[] = [];
   for (const c of data?.children ?? []) {
-    if (c.existingPlan) continue;
+    if (c.existingPlan || !isOwnSourcedBomLineType(c.bomType)) continue;
     const s = rowState.get(c.childItemCode);
     if (!s || !s.checked || s.qty <= 0) continue;
     if (NEEDS_VENDOR.has(c.bomType) && !s.vendorId) {
@@ -169,6 +173,8 @@ export function BomPlanningModal({
       if (!s || !s.checked || s.qty <= 0) continue;
       const qty = Math.min(s.qty, c.totalNeed);
       const planType = planTypeFor(c.bomType);
+      // ADR-307: a customer-supplied part is never sent, whatever the state says.
+      if (planType === null) continue;
       plansToSave.push({
         // code omitted → server assigns the next sequential PLN-NNNN.
         planDate: start,
@@ -238,7 +244,7 @@ export function BomPlanningModal({
   // plus the assembly plan when it is ticked.
   const saveCount =
     (data?.children.filter((c) => {
-      if (c.existingPlan) return false;
+      if (c.existingPlan || !isOwnSourcedBomLineType(c.bomType)) return false;
       const s = rowState.get(c.childItemCode);
       return Boolean(s && s.checked && s.qty > 0);
     }).length ?? 0) +
@@ -499,24 +505,36 @@ function BomBody({
                 process: '',
               };
               const hasSufficient = c.shortfall === 0;
+              // ADR-307: the customer sends this part — shown, never plannable.
+              const isCustomerPart = !isOwnSourcedBomLineType(c.bomType);
               const typeIcon =
                 c.bomType === 'manufacture'
                   ? '🏭 Mfg'
                   : c.bomType === 'purchase'
                     ? '🛒 Buy'
-                    : '🏭 Outsrc';
+                    : isCustomerPart
+                      ? 'Customer supplies'
+                      : '🏭 Outsrc';
               const typeColor =
                 c.bomType === 'manufacture'
                   ? 'var(--cyan)'
                   : c.bomType === 'purchase'
                     ? 'var(--green)'
-                    : 'var(--amber)';
+                    : isCustomerPart
+                      ? 'var(--text3)'
+                      : 'var(--amber)';
               return (
                 <tr
                   key={c.childItemCode}
                   // Enough stock on the shelf — the theme's own "done" row wash
-                  // (ADR-199), not a colour written here.
+                  // (ADR-199), not a colour written here. A customer part is greyed.
                   className={hasSufficient ? 'row-done' : undefined}
+                  style={isCustomerPart ? { opacity: 0.6 } : undefined}
+                  title={
+                    isCustomerPart
+                      ? 'The customer supplies this part — not planned here'
+                      : undefined
+                  }
                 >
                   <td className="td-ctr mono fw-700">{i + 1}</td>
                   <td className="td-code" style={{ color: 'var(--text)' }}>
@@ -541,7 +559,11 @@ function BomBody({
                     </span>
                   </td>
                   <td className="td-ctr" style={{ minWidth: 120 }}>
-                    {c.existingPlan ? (
+                    {isCustomerPart ? (
+                      <span style={{ color: 'var(--text3)', fontSize: 'var(--fs-xs)' }}>
+                        Customer supplies
+                      </span>
+                    ) : c.existingPlan ? (
                       <>
                         <span
                           style={{
@@ -585,8 +607,8 @@ function BomBody({
                   <td className="td-ctr">
                     <input
                       type="checkbox"
-                      disabled={!!c.existingPlan}
-                      checked={c.existingPlan ? true : s.checked}
+                      disabled={!!c.existingPlan || isCustomerPart}
+                      checked={c.existingPlan ? true : isCustomerPart ? false : s.checked}
                       onChange={(e) => update(c.childItemCode, { checked: e.target.checked })}
                       style={{ width: 16, height: 16, accentColor: 'var(--cyan)' }}
                     />
@@ -596,7 +618,7 @@ function BomBody({
                       type="number"
                       min={0}
                       max={c.totalNeed}
-                      disabled={!!c.existingPlan}
+                      disabled={!!c.existingPlan || isCustomerPart}
                       value={c.existingPlan ? c.existingPlan.planQty : s.qty}
                       onChange={(e) => update(c.childItemCode, { qty: Number(e.target.value) })}
                       style={{

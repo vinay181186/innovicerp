@@ -5,7 +5,7 @@
 //
 //   Left box  "Raised Against" — where the deviation came from: JC No., the
 //             operation, machine / operator, the source vendor + its PO / GRN /
-//             outward challan (OSP and incoming NCs), SO No. / Internal SO No.
+//             outward challan (OSP and incoming NCs), SO No.
 //   Right box "NC" — NC No. FIRST (it names the PDF), then the NC facts and the
 //             disposition outcome (rework JC, return DC, replacement PO, CAPA).
 //   Line      the deviated item: code/rev, name, Qty = rejectedQty, the defect
@@ -65,7 +65,6 @@ export function printNcReport(args: {
     opt(raisedAgainst, 'Sent on DC No.', nc.sourceDeliveryChallanCode, true);
   }
   opt(raisedAgainst, 'SO No. / JWSO No.', nc.orderCode, true);
-  opt(raisedAgainst, 'Internal SO No.', nc.soInternalNo, true);
   if (raisedAgainst.length === 0) raisedAgainst.push({ label: 'JC No.', value: '' });
 
   const ncFields: SheetField[] = [

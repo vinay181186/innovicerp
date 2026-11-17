@@ -26,7 +26,6 @@ export function tpiCompletedColumns(firstRowNo: number): DataTableColumn<TpiComp
         render: (l) => l.jcCode,
       },
       soNo: (l) => l.soCode,
-      internalSoNo: (l) => l.soInternalNo,
       pol: (l) => l.clientPoLineNo,
       createdOn: (l) => l.createdAt,
       itemCode: (l) => l.itemCode,

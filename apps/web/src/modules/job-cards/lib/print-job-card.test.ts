@@ -39,8 +39,8 @@ const jc = (over: Partial<JobCardListItem> = {}): JobCardListItem =>
     sourceLink: {
       type: 'so',
       salesOrderLineId: 'x',
-      code: 'IN-SO-00077',
-      internalSoNo: 'SO-1188',
+      // ADR-306: one SO number — the SO No. itself reads SO-<n>.
+      code: 'SO-1188',
       lineNo: 11,
       partName: null,
     },
@@ -120,6 +120,13 @@ describe('printJobCard', () => {
     expect(thead()).not.toContain('Parent JC');
     print(jc({ parentJobCardCode: 'IN-JC-26-00001', parentNcCode: 'NC-00001' }));
     expect(text(thead())).toContain('Parent JC IN-JC-26-00001 NC No. NC-00001');
+  });
+
+  it('an SO card shows one SO No. and no Internal SO No. (ADR-306)', () => {
+    print();
+    const t = text(thead());
+    expect(t).toContain('SO No. SO-1188');
+    expect(t).not.toContain('Internal SO No.');
   });
 
   it('a JWSO card says JWSO No. and has no Internal SO No.', () => {

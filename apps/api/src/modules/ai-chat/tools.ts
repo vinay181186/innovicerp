@@ -151,7 +151,7 @@ export const AI_TOOLS = {
     spec: {
       name: 'get_document',
       description:
-        'Open ONE document by its number (e.g. IN-SO-00012, an Internal SO No., a JC No.) and return its full detail with lines.',
+        'Open ONE document by its number (e.g. SO-566, a JC No.) and return its full detail with lines.',
       parameters: {
         type: 'object',
         properties: {

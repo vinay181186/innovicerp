@@ -49,11 +49,9 @@ export function issueRegisterColumns(firstRowNo: number): DataTableColumn<StoreI
         ),
       },
       soNo: (r) => r.soCode,
-      internalSoNo: (r) => r.soInternalNo,
       createdOn: (r) => r.createdAt,
       overrides: {
         so_no: { sortFilterField: 'soCode' },
-        so_internal_no: { sortFilterField: 'soInternalNo' },
         created_on: { sortFilterField: 'createdOn' },
       },
     }),

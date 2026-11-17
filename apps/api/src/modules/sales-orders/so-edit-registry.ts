@@ -32,14 +32,12 @@ import {
   type SalesOrderLineInput,
   type SalesOrderMilestoneInput,
   type UpdateSalesOrderInput,
-  internalSoNoTakenMessage,
-  normaliseInternalSoNo,
+  soNoFromInternal,
 } from '@innovic/shared';
 import { clients, salesOrderLines, salesOrders, soMilestones } from '../../db/schema';
 import type { DbTransaction } from '../../db/with-user-context';
 import { canSeeFormPrice } from '../../lib/access';
 import type { DiffField } from '../../lib/audit-trail';
-import { ConflictError } from '../../lib/errors';
 import {
   type ChildBoxSpec,
   type CurrentChild,
@@ -65,7 +63,7 @@ import {
   SO_MONEY_LINE_FIELDS,
   day,
 } from './edit-log';
-import { isInternalSoNoViolation, resolveItemCodesById, updateSalesOrderTx } from './service';
+import { resolveItemCodesById, updateSalesOrderTx } from './service';
 
 const SO_FORM_KEY: AccessFormKey = 'so_create';
 const LINE_PREFIX = 'line';
@@ -394,7 +392,7 @@ export const soEditRegistryEntry: DocEditRegistryEntry = {
     const d = target.doc;
     const p = proposedPayload as SoStagedPayload | undefined;
     return {
-      internalSoNo: d['internalSoNo'] ?? null,
+      code: d['code'],
       soDate: d['soDate'],
       customerName: d['customerName'] ?? null,
       clientPoNo: d['clientPoNo'],
@@ -423,8 +421,8 @@ export const soEditRegistryEntry: DocEditRegistryEntry = {
     const h = i.header ?? {};
     const showMoney = opts?.allPrices || (await canSeeFormPrice(user, SO_FORM_KEY));
     const out: Record<string, unknown> = {};
-    // ADR-207 — the schema already normalised it (trim + upper-case "SO-").
-    if (h.internalSoNo !== undefined) out['internalSoNo'] = h.internalSoNo;
+    // ADR-306 — a retyped Internal SO No. shows as the SO No. it gives.
+    if (h.internalSoNo !== undefined) out['code'] = soNoFromInternal(h.internalSoNo);
     if (h.soDate !== undefined) out['soDate'] = h.soDate;
     if (h.clientPoNo !== undefined) out['clientPoNo'] = h.clientPoNo ?? null;
     if (h.type !== undefined) out['type'] = h.type;
@@ -489,6 +487,9 @@ export const soEditRegistryEntry: DocEditRegistryEntry = {
         // The customer fact travels as clientId (+ its snapshot name).
         copy('clientId');
         copy('customerName');
+      } else if (field === 'code') {
+        // ADR-306 — the SO No. box travels as the typed Internal SO No.
+        copy('internalSoNo');
       } else {
         copy(field);
       }
@@ -578,26 +579,15 @@ export const soEditRegistryEntry: DocEditRegistryEntry = {
       );
     }
 
-    try {
-      await updateSalesOrderTx(
-        tx,
-        id,
-        payload,
-        user,
-        // Never a cancel; the reason is the requester's edit note, written on
-        // the EDIT history row.
-        filtered.reason ?? null,
-      );
-    } catch (e) {
-      // ADR-207 — another SO took this Internal SO No. between staging and
-      // approval (race past assertInternalSoNoFree): a 409, not a 500.
-      if (isInternalSoNoViolation(e) && typeof header.internalSoNo === 'string') {
-        throw new ConflictError(
-          internalSoNoTakenMessage(normaliseInternalSoNo(header.internalSoNo)),
-        );
-      }
-      throw e;
-    }
+    await updateSalesOrderTx(
+      tx,
+      id,
+      payload,
+      user,
+      // Never a cancel; the reason is the requester's edit note, written on
+      // the EDIT history row.
+      filtered.reason ?? null,
+    );
   },
 
   async loadUpdatedAts(tx, companyId, ids) {

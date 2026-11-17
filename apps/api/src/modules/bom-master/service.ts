@@ -89,6 +89,7 @@ import type {
 } from './schema';
 import { resolveBomChildRevs } from '../../lib/bom-child-rev';
 import { drawingRevOf } from '../../lib/drawing-rev';
+import { readSoCustomerPartsMany } from '../../lib/party-so-parts';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -111,7 +112,7 @@ function maybeTsLike(v: unknown): string | null {
 }
 
 interface ItemsLookup {
-  byId: Map<string, { code: string; name: string; uom: string }>;
+  byId: Map<string, { code: string; name: string; uom: string; itemType: string }>;
 }
 
 /** Screen words for BOM Status (docs/NAMING.md). */
@@ -130,10 +131,17 @@ async function loadItemsByIds(
   const unique = Array.from(new Set(ids));
   if (unique.length === 0) return out;
   const rows = await tx
-    .select({ id: items.id, code: items.code, name: items.name, uom: items.uom })
+    .select({
+      id: items.id,
+      code: items.code,
+      name: items.name,
+      uom: items.uom,
+      itemType: items.itemType,
+    })
     .from(items)
     .where(and(eq(items.companyId, companyId), inArray(items.id, unique), isNull(items.deletedAt)));
-  for (const r of rows) out.byId.set(r.id, { code: r.code, name: r.name, uom: r.uom });
+  for (const r of rows)
+    out.byId.set(r.id, { code: r.code, name: r.name, uom: r.uom, itemType: r.itemType });
   return out;
 }
 
@@ -214,6 +222,72 @@ function assertQtyPerSetFitsUom(
       throw new ValidationError(`Line ${i + 1} (${it?.code ?? 'item'}): ${problem}`);
     }
   });
+}
+
+// ADR-307: BOM Type 'party_supplied' <=> the child is a Party Supplied
+// Material item (`<code>-RM`). Either side alone is refused — a customer part
+// typed Manufacture would spawn a JC / PR for material the customer sends, and
+// Party Supplied on an own item would never be planned or bought.
+function assertPartySuppliedLinesMatchItems(
+  lines: ReadonlyArray<{ childItemId: string; bomType: string }>,
+  lookup: ItemsLookup,
+): void {
+  for (const l of lines) {
+    const it = lookup.byId.get(l.childItemId);
+    if (!it) continue;
+    const psm = it.itemType === 'party_supplied_material';
+    if (psm && l.bomType !== 'party_supplied') {
+      throw new ValidationError(
+        `${it.code} is a Party Supplied Material — set BOM Type to Party Supplied`,
+      );
+    }
+    if (!psm && l.bomType === 'party_supplied') {
+      throw new ValidationError(
+        `${it.code}: Party Supplied needs a Party Supplied Material item (code ending -RM)`,
+      );
+    }
+  }
+}
+
+// ADR-307 (code review): a party_supplied line's type is tied to its child
+// item's type (assertPartySuppliedLinesMatchItems), so a type flip cannot
+// happen. What CAN orphan a customer receipt is the line LEAVING the BOM —
+// removed, its child item swapped, or the whole BOM deleted — while a live
+// (not closed / cancelled) Equipment SO on this BOM has already received that
+// part on a Party GRN. Refused here, under the BOM row lock the caller holds.
+// (No plan check: createPlanInTx refuses a party_supplied part, so a plan for
+// one cannot exist.)
+async function assertPartyLinesMayLeave(
+  tx: DbTransaction,
+  companyId: string,
+  bomId: string,
+  leaving: ReadonlyArray<{ childItemId: string; code: string | null }>,
+): Promise<void> {
+  if (leaving.length === 0) return;
+  const sos = (await tx.execute(sql`
+    SELECT so.id, so.code
+      FROM public.sales_orders so
+     WHERE so.company_id = ${companyId}::uuid AND so.deleted_at IS NULL
+       AND so.bom_master_id = ${bomId}::uuid
+       AND so.status NOT IN ('closed', 'cancelled')
+     ORDER BY so.code
+  `)) as unknown as Array<{ id: string; code: string }>;
+  if (sos.length === 0) return;
+  const parts = await readSoCustomerPartsMany(
+    tx,
+    companyId,
+    sos.map((r) => r.id),
+  );
+  for (const l of leaving) {
+    for (const so of sos) {
+      const received = parts.get(so.id)?.get(l.childItemId)?.figures.receivedQty ?? 0;
+      if (received > 0) {
+        throw new ConflictError(
+          `${l.code ?? 'This part'}: SO ${so.code} has already received this part from the customer — it cannot leave the BOM.`,
+        );
+      }
+    }
+  }
 }
 
 // Generate next BOM-NNNN per company. Mirrors legacy _nextBOMNo helper —
@@ -757,6 +831,7 @@ export async function createBomMaster(
     assertParentIsUsable(input.parentItemId, input.lines, itemsLookup);
     assertNoDuplicateChildItems(input.lines, itemsLookup);
     assertQtyPerSetFitsUom(input.lines, itemsLookup);
+    assertPartySuppliedLinesMatchItems(input.lines, itemsLookup);
 
     // ADR-223 — every new BOM is Active, decided HERE and not sent by the
     // caller, so an Excel import or a direct API call cannot make a Draft
@@ -1020,6 +1095,22 @@ export async function updateBomMasterTx(
       qtyPerSet: r.line.qtyPerSet,
       bomType: r.line.bomType,
     }));
+    assertPartySuppliedLinesMatchItems(input.lines, itemsLookup);
+    // ADR-307: a Party Supplied line removed (or its child item swapped — the
+    // old child leaves) while an SO on this BOM has received it is refused.
+    const keptPartyChildIds = new Set(
+      input.lines.filter((l) => l.bomType === 'party_supplied').map((l) => l.childItemId),
+    );
+    await assertPartyLinesMayLeave(
+      tx,
+      companyId,
+      id,
+      oldLineRows
+        .filter(
+          (r) => r.line.bomType === 'party_supplied' && !keptPartyChildIds.has(r.line.childItemId),
+        )
+        .map((r) => ({ childItemId: r.line.childItemId, code: r.itemCode })),
+    );
 
     const newSnapshot: DiffLine[] = input.lines.map((l) => ({
       childItemId: l.childItemId,
@@ -1189,9 +1280,25 @@ export async function softDeleteBomMaster(
           isNull(bomMasters.deletedAt),
         ),
       )
+      .for('update')
       .limit(1);
     const header = headers[0];
     if (!header) throw new NotFoundError('BOM not found. It may have been moved to Trash.');
+
+    // ADR-307: every Party Supplied line leaves with the BOM — refused while a
+    // live SO on this BOM has received one of those parts from the customer.
+    const partyLines = await tx
+      .select({ childItemId: bomMasterLines.childItemId, code: items.code })
+      .from(bomMasterLines)
+      .leftJoin(items, eq(items.id, bomMasterLines.childItemId))
+      .where(
+        and(
+          eq(bomMasterLines.bomMasterId, id),
+          isNull(bomMasterLines.deletedAt),
+          eq(bomMasterLines.bomType, 'party_supplied'),
+        ),
+      );
+    await assertPartyLinesMayLeave(tx, companyId, id, partyLines);
 
     // Block if any non-cancelled SO line links this BOM (BOM-8 cascade).
     const links = await tx

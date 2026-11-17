@@ -12,10 +12,9 @@ export const al005SoOverdue: RegisteredAlert = {
     name: 'Overdue SO Delivery',
     description: 'Open SO lines whose Due Date has passed.',
     columns: [
-      // ADR-261 lead columns: SO No. · Internal SO No. · POL · Created On ·
+      // ADR-261 lead columns: SO No. · POL · Created On ·
       // Item Code (CODE/REV) · Item Name, then the rest.
       { key: 'so_code', label: 'SO No.', type: 'text' },
-      { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
       { key: 'client_po_line_no', label: 'POL', type: 'text' },
       { key: 'created_on', label: 'Created On', type: 'date' },
       { key: 'item_code', label: 'Item Code', type: 'text' },
@@ -30,7 +29,7 @@ export const al005SoOverdue: RegisteredAlert = {
   async run({ tx, companyId }) {
     const result = await tx.execute(sql`
       SELECT so.id AS nav_id,
-             so.code AS so_code, so.internal_so_no AS so_internal_no,
+             so.code AS so_code,
              sol.client_po_line_no,
              (sol.created_at AT TIME ZONE 'Asia/Kolkata')::date::text AS created_on,
              (COALESCE(i.code, sol.item_code_text, '')
@@ -54,7 +53,6 @@ export const al005SoOverdue: RegisteredAlert = {
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({
       navPage: docNavPage('sales-order', String(r['nav_id'])),
       so_code: (r['so_code'] as string | null) ?? '',
-      so_internal_no: (r['so_internal_no'] as string | null) ?? '',
       client_po_line_no: (r['client_po_line_no'] as string | null) ?? '',
       created_on: String(r['created_on'] ?? ''),
       item_code: (r['item_code'] as string | null) ?? '',

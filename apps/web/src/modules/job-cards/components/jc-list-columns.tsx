@@ -97,7 +97,6 @@ export function jobCardListColumns(
         ),
       },
       soNo: (jc) => jc.sourceLink?.code,
-      internalSoNo: (jc) => (jc.sourceLink?.type === 'so' ? jc.sourceLink.internalSoNo : null),
       pol: (jc) => jc.clientPoLineNo,
       createdOn: (jc) => jc.createdAt,
       itemCode: (jc) => jc.itemCode,
@@ -124,7 +123,6 @@ export function jobCardListColumns(
             );
           },
         },
-        so_internal_no: { sortFilterField: 'soInternalNo' },
         client_po_line_no: { sortFilterField: 'clientPoLineNo' },
         created_on: { sortFilterField: 'createdOn' },
         item_code: {

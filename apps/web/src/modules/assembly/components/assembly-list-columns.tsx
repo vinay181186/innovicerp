@@ -74,7 +74,6 @@ export function assemblyListColumns(
         ),
       },
       soNo: (row) => row.soCode,
-      internalSoNo: (row) => row.soInternalNo,
       createdOn: (row) => row.createdAt,
       itemCode: (row) => row.partNoText,
       itemRev: (row) => row.itemRevision,
@@ -97,7 +96,6 @@ export function assemblyListColumns(
             </Link>
           ),
         },
-        so_internal_no: { sortFilterField: 'soInternalNo' },
         created_on: { sortFilterField: 'createdOn' },
         item_code: { sortFilterField: 'itemCode' },
         item_name: { sortFilterField: 'itemName' },

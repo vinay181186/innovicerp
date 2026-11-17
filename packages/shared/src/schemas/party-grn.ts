@@ -66,6 +66,11 @@ export const partyGrnSchema = z.object({
   grnDate: z.string(),
   jobWorkOrderId: z.string().uuid().nullable(),
   jwCodeText: z.string().nullable(),
+  /** ADR-307: set instead of jobWorkOrderId when the GRN receives customer-
+   *  supplied BOM parts of an Equipment SO. Exactly one of the two is set. */
+  salesOrderId: z.string().uuid().nullable().default(null),
+  /** Live SO No. of salesOrderId (null on a JWSO GRN). */
+  soCode: z.string().nullable().default(null),
   clientId: z.string().uuid().nullable(),
   clientCodeText: z.string().nullable(),
   clientPoNo: z.string().nullable(),
@@ -117,8 +122,13 @@ export type PartyGrnDetail = z.infer<typeof partyGrnDetailSchema>;
 export const createPartyGrnLineInputSchema = z.object({
   /** ADR-203: the JWSO line this material is for (real id). The customer
    *  material itself comes from that line (its `<item>-RM` party material) —
-   *  it is not picked separately, so it can never mismatch the part. */
-  jwLineId: z.string().uuid(),
+   *  it is not picked separately, so it can never mismatch the part.
+   *  Required on a JWSO GRN; absent on an Equipment SO GRN. */
+  jwLineId: z.string().uuid().optional(),
+  /** ADR-307: on an Equipment SO GRN — the party_supplied BOM child item
+   *  (`<code>-RM`) of the SO's BOM. The server finds/creates the register row
+   *  for (item, SO customer). Absent on a JWSO GRN. */
+  rmItemId: z.string().uuid().optional(),
   receivedQty: z.number().int().positive(),
   remarks: z.string().trim().max(500).optional(),
 });
@@ -158,15 +168,45 @@ export const cancelPartyGrnInputSchema = z.object({
 });
 export type CancelPartyGrnInput = z.infer<typeof cancelPartyGrnInputSchema>;
 
-export const createPartyGrnInputSchema = z.object({
-  grnDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  jobWorkOrderId: z.string().uuid(),
-  /** The customer's challan number — required, and not already on another live
-   *  Party GRN of the same customer (server check; a cancelled GRN frees it). */
-  dcNo: z.string().trim().min(1, 'Customer Challan No. is required.').max(64),
-  remarks: z.string().trim().max(500).optional(),
-  lines: z.array(createPartyGrnLineInputSchema).min(1),
-});
+export const createPartyGrnInputSchema = z
+  .object({
+    grnDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    /** Against a JWSO (every line has jwLineId) … */
+    jobWorkOrderId: z.string().uuid().optional(),
+    /** … or ADR-307: against an Equipment SO (every line has rmItemId). */
+    salesOrderId: z.string().uuid().optional(),
+    /** The customer's challan number — required, and not already on another live
+     *  Party GRN of the same customer (server check; a cancelled GRN frees it). */
+    dcNo: z.string().trim().min(1, 'Customer Challan No. is required.').max(64),
+    remarks: z.string().trim().max(500).optional(),
+    lines: z.array(createPartyGrnLineInputSchema).min(1),
+  })
+  .superRefine((v, ctx) => {
+    const jw = !!v.jobWorkOrderId;
+    const so = !!v.salesOrderId;
+    if (jw === so) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Pick either a JWSO or an Equipment SO.',
+        path: ['jobWorkOrderId'],
+      });
+      return;
+    }
+    v.lines.forEach((l, i) => {
+      if (jw && (!l.jwLineId || l.rmItemId))
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Each line must name its JWSO line.',
+          path: ['lines', i, 'jwLineId'],
+        });
+      if (so && (!l.rmItemId || l.jwLineId))
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Each line must name the customer part.',
+          path: ['lines', i, 'rmItemId'],
+        });
+    });
+  });
 export type CreatePartyGrnInput = z.infer<typeof createPartyGrnInputSchema>;
 
 // ─── Query filters ─────────────────────────────────────────────────────────
@@ -174,6 +214,8 @@ export type CreatePartyGrnInput = z.infer<typeof createPartyGrnInputSchema>;
 export const listPartyGrnQuerySchema = z.object({
   search: z.string().min(1).max(100).optional(),
   jobWorkOrderId: z.string().uuid().optional(),
+  /** ADR-307: GRNs received against this Equipment SO. */
+  salesOrderId: z.string().uuid().optional(),
   clientId: z.string().uuid().optional(),
   fromDate: z
     .string()
@@ -226,6 +268,8 @@ export const partyGrnLineListRowSchema = z.object({
   lineNo: z.number().int().positive(),
   /** JWSO code the GRN was received against. */
   jwCode: z.string().nullable(),
+  /** ADR-307: SO No. when the GRN was received against an Equipment SO. */
+  soCode: z.string().nullable().default(null),
   /** POL — the JWSO line's customer PO line number (ADR-236). */
   clientPoLineNo: z.string().nullable(),
   /** The line's own created_at (falls back to the GRN's). */

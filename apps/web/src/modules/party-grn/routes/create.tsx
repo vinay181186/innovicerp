@@ -15,6 +15,12 @@
 // is Deleted from the list (same button as SO creation) and can be restored.
 //
 // `?jw=<jwsoId>` (from the JWSO screens) opens with that JWSO already picked.
+//
+// ADR-307: "Against" picks JWSO (default — the screen above, unchanged) or
+// Equipment SO — customer-supplied BOM parts of an open Equipment SO. The SO
+// path lists the SO's parts with the server's figures (Need · Accepted ·
+// Waiting QC · Pending); a part left blank is not sent; the server caps each
+// Received Qty at Pending. `?so=<salesOrderId>` opens on that SO.
 
 import type { CreatePartyGrnInput, CreatePartyGrnLineInput } from '@innovic/shared';
 import { createRoute, useNavigate } from '@tanstack/react-router';
@@ -27,15 +33,28 @@ import { useSaveKey } from '@/lib/use-save-key';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Panel } from '@/ui/data';
 import { Banner, useToast } from '@/ui/feedback';
-import { FormField, FormGrid, SearchableSelect } from '@/ui/forms';
+import { FormField, FormGrid, SearchableSelect, Select } from '@/ui/forms';
 import { FormActions, PageHeader, useSaveShortcut } from '@/ui/layout';
 import { useJobWorkOrder, useJobWorkOrdersList } from '../../job-work-orders/api';
-import { useCreatePartyGrn, useNextPartyGrnCode } from '../api';
+import {
+  useCreatePartyGrn,
+  useNextPartyGrnCode,
+  useReceivableSos,
+  useSoReceivableParts,
+} from '../api';
 import { type LineEntry, PartyGrnReceiveLines } from '../components/party-grn-receive-lines';
+
+type Against = 'jwso' | 'so';
+const AGAINST_OPTIONS = [
+  { value: 'jwso', label: 'JWSO' },
+  { value: 'so', label: 'Equipment SO' },
+];
 
 const searchSchema = z.object({
   // A malformed id is ignored.
   jw: z.string().uuid().optional().catch(undefined),
+  /** ADR-307 — open Against Equipment SO with this SO picked. */
+  so: z.string().uuid().optional().catch(undefined),
 });
 
 export const partyGrnNewRoute = createRoute({
@@ -46,7 +65,7 @@ export const partyGrnNewRoute = createRoute({
 });
 
 function PartyGrnNewPage(): React.JSX.Element {
-  const { jw: initialJwId } = partyGrnNewRoute.useSearch();
+  const { jw: initialJwId, so: initialSoId } = partyGrnNewRoute.useSearch();
   const navigate = useNavigate();
   const goBack = useCallback(() => void navigate({ to: '/party-grn' }), [navigate]);
   const exit = useExitConfirm({ onExit: goBack });
@@ -54,7 +73,13 @@ function PartyGrnNewPage(): React.JSX.Element {
   const [date, setDate] = useState(todayLocal());
   const toast = useToast();
   const [jwSearch, setJwSearch] = useState('');
+  const initialAgainst: Against = initialSoId && !initialJwId ? 'so' : 'jwso';
+  const [against, setAgainst] = useState<Against>(initialAgainst);
   const [jwId, setJwId] = useState<string | null>(initialJwId ?? null);
+  const [soId, setSoId] = useState<string | null>(
+    initialAgainst === 'so' ? (initialSoId ?? null) : null,
+  );
+  const isSo = against === 'so';
   const [dcNo, setDcNo] = useState('');
   const [remarks, setRemarks] = useState('');
   const [entries, setEntries] = useState<Record<string, LineEntry>>({});
@@ -71,6 +96,15 @@ function PartyGrnNewPage(): React.JSX.Element {
     limit: 50,
     offset: 0,
   });
+  // ADR-307 — the Equipment SO path (both reads idle on the JWSO path).
+  const soListQ = useReceivableSos(isSo);
+  const soOptions = useMemo(() => soListQ.data ?? [], [soListQ.data]);
+  const selectedSo = useMemo(
+    () => soOptions.find((o) => o.salesOrderId === soId) ?? null,
+    [soOptions, soId],
+  );
+  const soPartsQ = useSoReceivableParts(isSo ? soId : null);
+  const soParts = useMemo(() => (isSo ? (soPartsQ.data ?? []) : []), [isSo, soPartsQ.data]);
   const jwHeaders = jwQuery.data?.items ?? [];
   const selectedJw = useMemo(
     () => jwHeaders.find((j) => j.jwId === jwId) ?? null,
@@ -106,7 +140,9 @@ function PartyGrnNewPage(): React.JSX.Element {
     partyMaterialId: string | null;
   }): boolean => Boolean(l.partyMaterialId) && pendingOf(l) > 0;
   const receivableCount = jwLines.filter(canReceive).length;
-  const nothingToReceive = jwDetail !== null && receivableCount === 0;
+  const nothingToReceive = isSo
+    ? soPartsQ.isSuccess && soParts.every((p) => p.figures.pendingQty <= 0)
+    : jwDetail !== null && receivableCount === 0;
   const visibleLines = jwLines.filter((l) => !removed.has(l.id));
 
   // R2 — one idempotency key per open form, reused on a retry after a dropped save.
@@ -118,6 +154,22 @@ function PartyGrnNewPage(): React.JSX.Element {
     // The typed quantities belong to the old JWSO's lines — never carry them over.
     setEntries({});
     setRemoved(new Set());
+  };
+
+  const onAgainstChange = (v: Against): void => {
+    setAgainst(v);
+    setErr(null);
+    // A JWSO's lines and an SO's parts never carry across.
+    setJwId(null);
+    setSoId(null);
+    setEntries({});
+    setRemoved(new Set());
+  };
+
+  const onSoChange = (id: string | null): void => {
+    setSoId(id);
+    // The typed quantities belong to the old SO's parts.
+    setEntries({});
   };
 
   const onDeleteLine = (lineId: string): void => {
@@ -133,8 +185,68 @@ function PartyGrnNewPage(): React.JSX.Element {
     });
   };
 
+  const onSaveSo = (): void => {
+    if (!soId) {
+      setErr('SO No. is required.');
+      return;
+    }
+    if (!dcNo.trim()) {
+      setErr('Customer Challan No. is required.');
+      return;
+    }
+    const validLines: CreatePartyGrnLineInput[] = [];
+    for (const p of soParts) {
+      const e = entries[p.rmItemId];
+      const raw = e?.receivedQty.trim() ?? '';
+      // A part not on this challan is left blank and not sent.
+      if (!raw) continue;
+      const q = Number(raw);
+      if (!Number.isInteger(q) || q <= 0) {
+        setErr(`${p.rmItemCode}: Received Qty must be a whole number, 1 or more.`);
+        return;
+      }
+      const pending = p.figures.pendingQty;
+      if (q > pending) {
+        setErr(
+          `${p.rmItemCode}: Received Qty ${q} is more than Pending ${pending} ` +
+            `(Need ${p.figures.needQty} − Accepted ${p.figures.acceptedQty} − Waiting QC ${p.figures.waitingQcQty}).`,
+        );
+        return;
+      }
+      const ln: CreatePartyGrnLineInput = { rmItemId: p.rmItemId, receivedQty: q };
+      if (e?.remarks.trim()) ln.remarks = e.remarks.trim();
+      validLines.push(ln);
+    }
+    if (validLines.length === 0) {
+      setErr('Enter a Received Qty on at least one part.');
+      return;
+    }
+    const input: CreatePartyGrnInput = {
+      grnDate: date,
+      salesOrderId: soId,
+      dcNo: dcNo.trim(),
+      lines: validLines,
+    };
+    if (remarks.trim()) input.remarks = remarks.trim();
+    createMut.mutate(input, {
+      onSuccess: (created) => {
+        toast.ok(`Party GRN ${created.code} saved`);
+        exit.leave(goBack);
+      },
+      // The server's own refusal text (e.g. over Pending, duplicate challan).
+      onError: (e) =>
+        setErr(
+          e instanceof Error ? e.message : 'Could not save GRN. Check the lines and try again.',
+        ),
+    });
+  };
+
   const onSave = (): void => {
     setErr(null);
+    if (isSo) {
+      onSaveSo();
+      return;
+    }
     if (!jwId) {
       setErr('JWSO No. is required.');
       return;
@@ -192,6 +304,8 @@ function PartyGrnNewPage(): React.JSX.Element {
   useSaveShortcut(onSave, !createMut.isPending && !nothingToReceive);
 
   const dirty =
+    against !== initialAgainst ||
+    soId !== (initialAgainst === 'so' ? (initialSoId ?? null) : null) ||
     jwId !== (initialJwId ?? null) ||
     dcNo !== '' ||
     remarks !== '' ||
@@ -205,6 +319,15 @@ function PartyGrnNewPage(): React.JSX.Element {
 
       <Panel>
         <FormGrid>
+          <FormField label="Against" required size="sm" htmlFor="pgrn-against">
+            <Select
+              id="pgrn-against"
+              fieldWidth="sm"
+              options={AGAINST_OPTIONS}
+              value={against}
+              onChange={(e) => onAgainstChange(e.target.value === 'so' ? 'so' : 'jwso')}
+            />
+          </FormField>
           <FormField label="GRN No." size="sm" htmlFor="pgrn-code">
             <input
               id="pgrn-code"
@@ -224,30 +347,42 @@ function PartyGrnNewPage(): React.JSX.Element {
               onChange={(e) => setDate(e.target.value)}
             />
           </FormField>
-          <FormField label="Client PO No." size="sm" htmlFor="pgrn-cpo">
-            {/* A second way to pick the SAME JWSO: by the customer's PO. Both
+          {isSo ? (
+            <FormField label="Client PO No." size="sm" htmlFor="pgrn-cpo">
+              <input
+                id="pgrn-cpo"
+                type="text"
+                className="innovic-input"
+                readOnly
+                value={selectedSo?.clientPoNo ?? ''}
+              />
+            </FormField>
+          ) : (
+            <FormField label="Client PO No." size="sm" htmlFor="pgrn-cpo">
+              {/* A second way to pick the SAME JWSO: by the customer's PO. Both
                 boxes set jwId, so they can never disagree; the shared search
                 already matches Client PO No. on the server. A JWSO with no
                 Client PO is left out here but stays in the JWSO No. picker. */}
-            <SearchableSelect
-              id="pgrn-cpo"
-              value={jwId}
-              onChange={onJwChange}
-              onSearch={setJwSearch}
-              loading={jwQuery.isFetching}
-              error={jwQuery.error}
-              placeholder="🔍 Select Client PO No.…"
-              options={jwHeaders
-                .filter((j) => (j.clientPoNo ?? '').trim() !== '')
-                .map((j) => ({
-                  id: j.jwId,
-                  code: j.clientPoNo,
-                  name: `${j.code} · ${j.customerName ?? ''}`,
-                }))}
-              selectedLabel={(o) => o.code ?? o.name}
-              valueLabel={jwClientPoNo || undefined}
-            />
-          </FormField>
+              <SearchableSelect
+                id="pgrn-cpo"
+                value={jwId}
+                onChange={onJwChange}
+                onSearch={setJwSearch}
+                loading={jwQuery.isFetching}
+                error={jwQuery.error}
+                placeholder="🔍 Select Client PO No.…"
+                options={jwHeaders
+                  .filter((j) => (j.clientPoNo ?? '').trim() !== '')
+                  .map((j) => ({
+                    id: j.jwId,
+                    code: j.clientPoNo,
+                    name: `${j.code} · ${j.customerName ?? ''}`,
+                  }))}
+                selectedLabel={(o) => o.code ?? o.name}
+                valueLabel={jwClientPoNo || undefined}
+              />
+            </FormField>
+          )}
           <FormField label="Customer Challan No." required size="sm" htmlFor="pgrn-dc">
             <input
               id="pgrn-dc"
@@ -259,32 +394,59 @@ function PartyGrnNewPage(): React.JSX.Element {
               onChange={(e) => setDcNo(e.target.value)}
             />
           </FormField>
-          <FormField label="JWSO No." required size="lg" htmlFor="pgrn-jwso">
-            <SearchableSelect
-              id="pgrn-jwso"
-              value={jwId}
-              onChange={onJwChange}
-              onSearch={setJwSearch}
-              loading={jwQuery.isFetching}
-              error={jwQuery.error}
-              placeholder="🔍 Select JWSO — type number or customer…"
-              options={jwHeaders.map((j) => ({
-                id: j.jwId,
-                code: j.code,
-                name: j.customerName ?? '',
-              }))}
-              valueLabel={
-                jwDetail ? `${jwDetail.code} — ${jwDetail.customerName ?? ''}` : undefined
-              }
-            />
-          </FormField>
+          {isSo ? (
+            <FormField label="SO No." required size="lg" htmlFor="pgrn-so">
+              <SearchableSelect
+                id="pgrn-so"
+                value={soId}
+                onChange={onSoChange}
+                loading={soListQ.isFetching}
+                error={soListQ.error}
+                placeholder="🔍 Select Equipment SO — type SO No., customer or Client PO No.…"
+                options={soOptions.map((o) => ({
+                  id: o.salesOrderId,
+                  code: o.soCode,
+                  name: [
+                    o.clientName ?? '',
+                    o.clientPoNo ? `Client PO No. ${o.clientPoNo}` : '',
+                    `Pending ${o.pendingQty}`,
+                  ]
+                    .filter(Boolean)
+                    .join(' · '),
+                }))}
+                valueLabel={
+                  selectedSo ? `${selectedSo.soCode} — ${selectedSo.clientName ?? ''}` : undefined
+                }
+              />
+            </FormField>
+          ) : (
+            <FormField label="JWSO No." required size="lg" htmlFor="pgrn-jwso">
+              <SearchableSelect
+                id="pgrn-jwso"
+                value={jwId}
+                onChange={onJwChange}
+                onSearch={setJwSearch}
+                loading={jwQuery.isFetching}
+                error={jwQuery.error}
+                placeholder="🔍 Select JWSO — type number or customer…"
+                options={jwHeaders.map((j) => ({
+                  id: j.jwId,
+                  code: j.code,
+                  name: j.customerName ?? '',
+                }))}
+                valueLabel={
+                  jwDetail ? `${jwDetail.code} — ${jwDetail.customerName ?? ''}` : undefined
+                }
+              />
+            </FormField>
+          )}
           <FormField label="Customer" size="lg" htmlFor="pgrn-client">
             <input
               id="pgrn-client"
               type="text"
               className="innovic-input"
               readOnly
-              value={jwCustomerName}
+              value={isSo ? (selectedSo?.clientName ?? '') : jwCustomerName}
             />
           </FormField>
           <FormField label="GRN Remarks" size="full" htmlFor="pgrn-remarks">
@@ -315,10 +477,26 @@ function PartyGrnNewPage(): React.JSX.Element {
         }
       >
         <div className="text3" style={{ fontSize: 'var(--fs-xs)', marginBottom: 'var(--sp-2)' }}>
-          Delete the lines not on this challan. Accepted / Deviated are entered later by Incoming
-          QC.
+          {isSo
+            ? 'Enter the Received Qty of each part on this challan; leave the others blank. Accepted / Deviated are entered later by Incoming QC.'
+            : 'Delete the lines not on this challan. Accepted / Deviated are entered later by Incoming QC.'}
         </div>
         <PartyGrnReceiveLines
+          so={
+            isSo
+              ? {
+                  salesOrderId: soId,
+                  soCode: selectedSo?.soCode ?? null,
+                  loading: soPartsQ.isLoading,
+                  loadError: soPartsQ.isError
+                    ? soPartsQ.error instanceof Error
+                      ? soPartsQ.error.message
+                      : 'Could not load the SO customer parts.'
+                    : null,
+                  parts: soParts,
+                }
+              : undefined
+          }
           jwId={jwId}
           loading={jwDetailQ.isLoading}
           loadError={
@@ -358,7 +536,13 @@ function PartyGrnNewPage(): React.JSX.Element {
           type="button"
           className="btn btn-primary"
           disabled={createMut.isPending || nothingToReceive}
-          title={nothingToReceive ? 'Nothing left to receive on this JWSO' : undefined}
+          title={
+            nothingToReceive
+              ? isSo
+                ? 'Nothing left to receive on this SO'
+                : 'Nothing left to receive on this JWSO'
+              : undefined
+          }
           onClick={onSave}
         >
           {createMut.isPending ? (

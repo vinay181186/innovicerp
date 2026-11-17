@@ -80,14 +80,12 @@ export function goodsReceiptNoteListColumns(
         ),
       },
       soNo: (g) => g.soCode,
-      internalSoNo: (g) => g.soInternalNo,
       createdOn: (g) => g.createdAt,
       overrides: {
         so_no: {
           sortFilterField: 'soCode',
           render: (g) => <FirstPlusMore value={g.soCode} more={g.soExtraCount} />,
         },
-        so_internal_no: { sortFilterField: 'soInternalNo' },
         created_on: { sortFilterField: 'createdOn' },
       },
     }),

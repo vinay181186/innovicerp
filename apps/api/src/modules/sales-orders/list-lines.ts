@@ -47,6 +47,8 @@ export async function listSalesOrderLines(
       ? sql`AND (
           so.code ILIKE ${term} ESCAPE '\\'
           OR so.internal_so_no ILIKE ${term} ESCAPE '\\'
+          -- ADR-306 — the old IN-SO number, same as the SO list.
+          OR so.legacy_code ILIKE ${term} ESCAPE '\\'
           OR so.customer_name ILIKE ${term} ESCAPE '\\'
           OR so.client_po_no ILIKE ${term} ESCAPE '\\'
           OR so.remarks ILIKE ${term} ESCAPE '\\'

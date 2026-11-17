@@ -56,6 +56,7 @@ export const DASH_CHECK_KEYS = [
   'pur_rtv_challan', // NC disposed Return to Vendor, no live DC (rtv-predicates)
   // Store
   'store_jwso_grn', // JWSO party material not yet received on a Party GRN
+  'store_so_customer_parts', // ADR-307: Equipment SO customer-supplied BOM parts still pending (figures.pendingQty > 0)
   'store_po_grn', // PO lines with qty still to receive (all, not only late)
   'store_po_dc', // approved PO with material still to send out (po_to_dc rule)
   'store_tools_out', // tool issued, not fully returned, by Expected Return

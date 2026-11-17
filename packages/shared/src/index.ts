@@ -144,6 +144,7 @@ export * from './schemas/plan';
 export * from './schemas/production-order';
 export * from './schemas/so-planning';
 export * from './schemas/assembly';
+export * from './schemas/so-customer-part';
 export * from './schemas/report';
 export * from './schemas/saved-report';
 export * from './schemas/activity-log';

@@ -107,7 +107,6 @@ export function poListColumns(
         ),
       },
       soNo: (po) => po.soCodeText,
-      internalSoNo: (po) => po.soInternalNo,
       pol: (po) => po.clientPoLineNo,
       createdOn: (po) => po.createdAt,
       itemCode: (po) => po.itemCode ?? po.itemCodeText,
@@ -115,7 +114,6 @@ export function poListColumns(
       itemName: (po) => po.itemName ?? po.itemNameText,
       overrides: {
         so_no: { sortFilterField: 'sourceCode' },
-        so_internal_no: { sortFilterField: 'soInternalNo' },
         client_po_line_no: { sortFilterField: 'clientPoLineNo' },
         created_on: { sortFilterField: 'createdOn' },
         item_code: {

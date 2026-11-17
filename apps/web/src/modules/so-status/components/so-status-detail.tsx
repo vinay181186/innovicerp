@@ -15,6 +15,7 @@ import {
   type SoStatusOutsourceAlert,
   type SoStatusPendingOsPrOp,
   opSrNo,
+  CUSTOMER_PART_GRN_STATUS_LABEL,
 } from '@innovic/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
@@ -562,6 +563,9 @@ function BomItemsTable({
                 Total Need
               </th>
               <th>BOM Type</th>
+              {/* ADR-307 — customer-supplied parts only; '—' on every other row. */}
+              <th>Party GRN Status</th>
+              <th className="th-num">Accepted</th>
               <th className="th-num" style={{ color: 'var(--green2)' }}>
                 Physical
               </th>
@@ -578,13 +582,18 @@ function BomItemsTable({
                   ? 'Make'
                   : c.bomType === 'purchase'
                     ? 'Buy'
-                    : 'Outsource';
+                    : c.bomType === 'party_supplied'
+                      ? 'Party Supplied'
+                      : 'Outsource';
               const typeColor =
                 c.bomType === 'manufacture'
                   ? 'var(--cyan)'
                   : c.bomType === 'purchase'
                     ? 'var(--green)'
-                    : 'var(--amber)';
+                    : c.bomType === 'party_supplied'
+                      ? 'var(--purple)'
+                      : 'var(--amber)';
+              const cp = c.customerPart;
               const rowBg = c.shortfall > 0 ? 'var(--red3)' : 'var(--green3)';
               return (
                 <tr key={c.childItemId} style={{ background: rowBg }}>
@@ -605,6 +614,10 @@ function BomItemsTable({
                       {typeLabel}
                     </span>
                   </td>
+                  <td className="td-ctr">
+                    {cp ? CUSTOMER_PART_GRN_STATUS_LABEL[cp.partyGrnStatus] : '—'}
+                  </td>
+                  <td className="td-num mono fw-700">{cp ? cp.acceptedQty : '—'}</td>
                   <td
                     className="td-num mono fw-700"
                     style={{ color: c.stockQty > 0 ? 'var(--green)' : 'var(--text3)' }}
@@ -619,7 +632,9 @@ function BomItemsTable({
                     {c.shortfall <= 0 ? ' ✅' : ''}
                   </td>
                   <td className="td-ctr">
-                    {c.planStatus ? (
+                    {c.bomType === 'party_supplied' ? (
+                      <span className="text3">Customer supplies</span>
+                    ) : c.planStatus ? (
                       <>
                         <span
                           style={{

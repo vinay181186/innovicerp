@@ -20,6 +20,8 @@ import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
 import { type LockedJwLine, lockJwLine } from '../../lib/jw-line-state';
 import { postPartyStockMove } from '../../lib/party-stock-ledger';
+import { lockSoRow } from '../../lib/assembly-parts';
+import { readSoCustomerParts } from '../../lib/party-so-parts';
 import { emitActivityLog } from '../activity-log/service';
 import { assertNoPendingCancel } from '../cancel-requests/pending-guard';
 
@@ -35,27 +37,32 @@ export async function applyPartyGrnUseAsIs(
 
   // 1) Which JWSO line — read without a lock, so the JWSO line can be locked first.
   const peek = (await tx.execute(sql`
-    SELECT pgl.jw_line_id AS "jwLineId"
+    SELECT pgl.jw_line_id AS "jwLineId", pg.sales_order_id AS "salesOrderId"
       FROM public.party_grn_lines pgl
       JOIN public.party_grn pg ON pg.id = pgl.party_grn_id AND pg.deleted_at IS NULL
      WHERE pgl.id = ${partyGrnLineId}::uuid
        AND pgl.company_id = ${companyId}::uuid
        AND pgl.deleted_at IS NULL
-  `)) as unknown as Array<{ jwLineId: string | null }>;
+  `)) as unknown as Array<{ jwLineId: string | null; salesOrderId: string | null }>;
   const jwLineId = peek[0]?.jwLineId;
+  // ADR-307: an Equipment SO GRN line has no JWSO line — its SO is the parent.
+  const salesOrderId = peek[0]?.salesOrderId ?? null;
   if (!peek[0]) {
     throw new NotFoundError(
       `${ncCode}: its Party GRN line was not found — the Party GRN may have been cancelled. Refresh the page.`,
     );
   }
-  if (!jwLineId) {
+  if (!jwLineId && !salesOrderId) {
     throw new ConflictError(
       `${ncCode}: its Party GRN line has no JWSO line — it cannot be used as is.`,
     );
   }
 
   // 2) §20.3 — the JWSO line lock, then the Party GRN line.
-  const jwLine = await lockJwLine(tx, companyId, jwLineId);
+  // ADR-307: SO GRN → the SO row lock instead (NC → SO → GRN line → party
+  // material; the header is never locked here — SO-GRN lock order, so-grn.ts).
+  const jwLine = jwLineId ? await lockJwLine(tx, companyId, jwLineId) : null;
+  if (!jwLine && salesOrderId) await lockSoRow(tx, companyId, salesOrderId);
   const rows = (await tx.execute(sql`
     SELECT pgl.id, pgl.line_no AS "lineNo", pgl.jw_line_id AS "jwLineId",
            pgl.party_material_id AS "partyMaterialId",
@@ -84,7 +91,7 @@ export async function applyPartyGrnUseAsIs(
     partyGrnCode: string;
   }>;
   const l = rows[0];
-  if (!l || l.jwLineId !== jwLine.id) {
+  if (!l || l.jwLineId !== (jwLine?.id ?? null)) {
     throw new ConflictError(
       `${ncCode}: its Party GRN line changed a moment ago. Refresh the page.`,
     );
@@ -118,13 +125,14 @@ export async function applyPartyGrnUseAsIs(
   await bookPartyAccepted(tx, {
     companyId,
     jwLine,
+    salesOrderId,
     partyMaterialId: l.partyMaterialId,
     partyGrnId: l.partyGrnId,
     qty,
     remarks: `${at} · ${l.rmCode} used as is (${ncCode})`,
     userId: user.id,
     overCapMessage: () =>
-      `Using these ${qty} pcs would exceed Order Qty ${jwLine.orderQty} on ${jwLine.jwCode} Ln ${jwLine.lineNo} — ` +
+      `Using these ${qty} pcs would exceed Order Qty ${jwLine?.orderQty} on ${jwLine?.jwCode} Ln ${jwLine?.lineNo} — ` +
       `the customer has already sent replacements. Return or scrap them instead.`,
   });
 
@@ -156,7 +164,10 @@ export async function bookPartyAccepted(
   tx: DbTransaction,
   input: {
     companyId: string;
-    jwLine: LockedJwLine;
+    /** Null on an Equipment SO GRN (ADR-307) — then salesOrderId is set and
+     *  the caller holds lockSoRow instead of lockJwLine. */
+    jwLine: LockedJwLine | null;
+    salesOrderId?: string | null;
     partyMaterialId: string;
     partyGrnId: string;
     qty: number;
@@ -166,22 +177,47 @@ export async function bookPartyAccepted(
   },
 ): Promise<void> {
   const { companyId, jwLine, partyMaterialId, qty, userId } = input;
-  const acc = (await tx.execute(sql`
+  const salesOrderId = input.salesOrderId ?? null;
+  if (!jwLine) {
+    // ADR-307: cap Σ accepted for this customer part on the SO at its need.
+    if (!salesOrderId) throw new ConflictError('This Party GRN line has no JWSO or SO.');
+    const pmRow = (await tx.execute(sql`
+      SELECT item_id AS "itemId" FROM public.party_materials WHERE id = ${partyMaterialId}::uuid
+    `)) as unknown as Array<{ itemId: string | null }>;
+    const itemId = pmRow[0]?.itemId ?? null;
+    const part = itemId
+      ? (await readSoCustomerParts(tx, companyId, salesOrderId)).get(itemId)
+      : null;
+    if (!part) {
+      throw new ConflictError(
+        'This customer part is no longer on the BOM of the SO as Party Supplied — it cannot be accepted.',
+      );
+    }
+    if (part.figures.acceptedQty > part.figures.needQty) {
+      throw new ConflictError(
+        `${part.rmItemCode}: accepting ${qty} would take the SO to ${part.figures.acceptedQty} accepted ` +
+          `against a need of ${part.figures.needQty}. Mark the extra pieces Deviated.`,
+      );
+    }
+  } else {
+    const acc = (await tx.execute(sql`
     SELECT COALESCE(SUM(pgl.accepted_qty), 0)::int AS accepted
       FROM public.party_grn_lines pgl
       JOIN public.party_grn pg ON pg.id = pgl.party_grn_id AND pg.deleted_at IS NULL
      WHERE pgl.jw_line_id = ${jwLine.id}::uuid AND pgl.deleted_at IS NULL
   `)) as unknown as Array<{ accepted: number }>;
-  const accepted = Number(acc[0]?.accepted ?? 0);
-  if (accepted > jwLine.orderQty) {
-    throw new ConflictError(input.overCapMessage(accepted));
+    const accepted = Number(acc[0]?.accepted ?? 0);
+    if (accepted > jwLine.orderQty) {
+      throw new ConflictError(input.overCapMessage(accepted));
+    }
   }
   if (qty <= 0) return;
 
   await postPartyStockMove(tx, {
     companyId,
     partyMaterialId,
-    jwLineId: jwLine.id,
+    jwLineId: jwLine?.id ?? null,
+    salesOrderId,
     movement: 'receive',
     direction: 'in',
     qty,

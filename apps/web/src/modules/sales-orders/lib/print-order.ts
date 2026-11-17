@@ -52,9 +52,6 @@ export function salesOrderSheet(args: OrderArgs & { so: SalesOrderDetail }): She
     lines: so.lines.filter((l) => l.status !== 'cancelled'),
     fields: [
       { label: 'SO No.', value: so.code, variant: 'mono', strong: true },
-      ...(so.internalSoNo
-        ? [{ label: 'Internal SO No.', value: so.internalSoNo, variant: 'mono' } as const]
-        : []),
       { label: 'SO Type', value: SO_TYPE_LABEL[so.type] ?? so.type },
       { label: 'Client PO No.', value: so.clientPoNo ?? '', variant: 'mono' },
       { label: 'SO Date', value: challanDate(so.soDate), variant: 'mono' },

@@ -29,7 +29,7 @@ import { expectedUpdatedAtSchema } from '../lib/edit-conflict';
 import { REVISION_PATTERN } from '../lib/revision';
 import { polInputSchema } from '../lib/pol';
 import { lineRemarksInputSchema } from '../lib/line-remarks';
-import { internalSoNoError, normaliseInternalSoNo } from '../lib/internal-so-no';
+import { internalSoNoDigits, internalSoNoError } from '../lib/internal-so-no';
 import { SO_FULFILMENT_STATUSES } from '../enums/so-fulfilment-status';
 import { sfRawParamSchema } from './list-query';
 import { servicePoTaxTypeSchema } from './service-po';
@@ -42,15 +42,35 @@ export const soStatusSchema = z.enum(SO_STATUSES);
 /** ADR-196 — read-time, ERPNext-style (enums/so-fulfilment-status.ts). */
 export const soFulfilmentStatusSchema = z.enum(SO_FULFILMENT_STATUSES);
 
-/** ADR-207 — Internal SO No. on the way in: normalised (trimmed, "SO-" prefix
- *  upper-cased) then checked against the shared rule (lib/internal-so-no.ts). */
+/** ADR-306 — the typed Internal SO No. on the way in: digits only (a pasted
+ *  "SO-433" is accepted), cleaned to its digits ("0433" -> "433"). Blank is
+ *  never sent — leave the key out instead (lib/internal-so-no.ts). */
 const internalSoNoInputSchema = z
   .string()
-  .transform(normaliseInternalSoNo)
   .superRefine((v, ctx) => {
-    const err = internalSoNoError(v);
+    const err =
+      internalSoNoError(v) ?? (internalSoNoDigits(v) === '' ? 'Internal SO No. is empty.' : null);
     if (err) ctx.addIssue({ code: z.ZodIssueCode.custom, message: err });
-  });
+  })
+  .transform(internalSoNoDigits);
+
+/** ADR-306 — the live "is this number free?" check the SO form runs while
+ *  typing. `excludeId` is the SO being edited (its own number is fine). */
+export const soNoCheckQuerySchema = z.object({
+  internalSoNo: z.string().min(1).max(40),
+  excludeId: z.string().uuid().optional(),
+});
+export type SoNoCheckQuery = z.infer<typeof soNoCheckQuerySchema>;
+export const soNoCheckResponseSchema = z.object({
+  /** The SO No. the typed number gives ("SO-433"), null when not valid. */
+  soNo: z.string().nullable(),
+  /** The format problem, null when the number is well-formed. */
+  error: z.string().nullable(),
+  taken: z.boolean(),
+  /** The order that holds (or once held) the number. */
+  usedBy: z.string().nullable(),
+});
+export type SoNoCheckResponse = z.infer<typeof soNoCheckResponseSchema>;
 
 // ─── Read shapes ───────────────────────────────────────────────────────────
 
@@ -145,8 +165,9 @@ export const salesOrderSchema = z.object({
   id: z.string().uuid(),
   companyId: z.string().uuid(),
   code: z.string().min(1),
-  /** ADR-207 — the user-typed office number (e.g. SO-2401). Null on SOs made
-   *  before 0197. Show it with the SO No. via the web helper soNoWithInternal. */
+  /** ADR-207 column, retired by ADR-306 — the typed number now lives in
+   *  `code` (SO-433). NULL on every SO since 0254, except one deleted order
+   *  whose number was reused. Never shown on its own. */
   internalSoNo: z.string().nullable().default(null),
   soDate: z.string(), // ISO date
   clientId: z.string().uuid().nullable(),
@@ -359,9 +380,8 @@ export const salesOrderMilestoneInputSchema = z.object({
 });
 export type SalesOrderMilestoneInput = z.infer<typeof salesOrderMilestoneInputSchema>;
 
-// ADR-207 — the SO No. (`code`, IN-SO-#####) is SYSTEM ONLY: it is not part of
-// any write input; the server always generates it. Users type the Internal SO
-// No. instead (required on create, optional on update).
+// The SO No. (`code`) is never sent as such (ADR-306): the server sets it to
+// SO-<typed Internal SO No.>, or to the next IN-SO-##### when none is typed.
 const _soHeaderInputBase = z.object({
   soDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'soDate must be YYYY-MM-DD'),
   clientId: z.string().uuid().optional(),
@@ -389,8 +409,10 @@ export const createSalesOrderInputSchema = z
     // Client master link is mandatory (supersedes ADR-012 #9 for SO): an SO
     // must reference a real client; the free-text customerName fallback is
     // removed. The server snapshots customerName from the client master.
+    // ADR-306: the typed Internal SO No. (digits) gives SO No. SO-<digits>;
+    // left out, the server gives the next IN-SO-#####.
     header: _soHeaderInputBase
-      .extend({ internalSoNo: internalSoNoInputSchema })
+      .extend({ internalSoNo: internalSoNoInputSchema.optional() })
       .refine((h) => Boolean(h.clientId), {
         message: 'A client (from the client master) is required for a Sales Order.',
       }),
@@ -402,9 +424,8 @@ export const createSalesOrderInputSchema = z
   });
 export type CreateSalesOrderInput = z.infer<typeof createSalesOrderInputSchema>;
 
-/** UPDATE — same shape as create. `code` is never accepted (system-only).
- *  `internalSoNo` is optional: absent = unchanged (an old SO with none is not
- *  forced to get one); when sent it must pass the same rule as create. Lines use the
+/** UPDATE — same shape as create. `code` is never accepted; the SO No. moves
+ *  only through `internalSoNo` (ADR-306). Lines use the
  *  legacy `_editFullSO` merge semantics: id-matched lines are updated, new
  *  lines are inserted, existing lines absent from input are soft-deleted. */
 export const updateSalesOrderInputSchema = z.object({
@@ -414,6 +435,9 @@ export const updateSalesOrderInputSchema = z.object({
   // The server re-snapshots customerName from the chosen client.
   header: _soHeaderInputBase
     .partial()
+    // ADR-306: a new typed number renames the SO No. (and every saved copy of
+    // it); left out = unchanged. Blank is not a value — a number cannot be
+    // cleared back to IN-SO.
     .extend({ internalSoNo: internalSoNoInputSchema.optional() })
     .refine((h) => Boolean(h.clientId), {
       message: 'A client (from the client master) is required for a Sales Order.',

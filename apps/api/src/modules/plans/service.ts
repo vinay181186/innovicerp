@@ -1036,6 +1036,46 @@ async function planItemRevisionId(
   return rows[0]?.itemRevisionId ?? null;
 }
 
+// ADR-307 — a customer-supplied part is never planned (no plan, no JC, no PR
+// from a plan). Refused two ways: the item itself is a Party Supplied Material,
+// or the plan targets a BOM child whose BOM line is typed Party Supplied. Every
+// plan writer (POST /plans, /plans/batch, BOM Planning, the ADR-305 parts
+// table, Multi-Level Plan) goes through createPlanInTx, so this one check
+// covers them all.
+async function assertNotCustomerSuppliedPart(
+  tx: DbTransaction,
+  companyId: string,
+  input: Pick<CreatePlanInput, 'itemId' | 'bomMasterId' | 'bomChildCode' | 'itemCodeText'>,
+): Promise<void> {
+  const refuse = (code: string): never => {
+    throw new ValidationError(
+      `${code}: the customer supplies this part — receive it on a Party GRN`,
+    );
+  };
+  if (input.itemId) {
+    const r = (await tx.execute(sql`
+      SELECT i.code FROM public.items i
+       WHERE i.id = ${input.itemId}::uuid AND i.company_id = ${companyId}::uuid
+         AND i.item_type = 'party_supplied_material'
+       LIMIT 1
+    `)) as unknown as Array<{ code: string }>;
+    if (r[0]) refuse(r[0].code);
+  }
+  if (input.bomMasterId && input.bomChildCode) {
+    const r = (await tx.execute(sql`
+      SELECT i.code FROM public.bom_master_lines bml
+        JOIN public.items i ON i.id = bml.child_item_id
+       WHERE bml.bom_master_id = ${input.bomMasterId}::uuid
+         AND bml.company_id = ${companyId}::uuid
+         AND bml.deleted_at IS NULL
+         AND bml.bom_type = 'party_supplied'
+         AND i.code = ${input.bomChildCode}
+       LIMIT 1
+    `)) as unknown as Array<{ code: string }>;
+    if (r[0]) refuse(r[0].code);
+  }
+}
+
 export async function createPlanInTx(
   tx: DbTransaction,
   companyId: string,
@@ -1063,6 +1103,8 @@ export async function createPlanInTx(
   if (dup.length > 0) {
     throw new ConflictError(`Plan code "${code}" already exists`);
   }
+
+  await assertNotCustomerSuppliedPart(tx, companyId, input);
 
   // ADR-171 — a bought SO line is not planned; it gets "+ PR" on SO Planning.
   // Only a BOM child marked Purchase (BOM Planning) still makes a Buy plan

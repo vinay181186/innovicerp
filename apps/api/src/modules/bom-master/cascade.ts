@@ -30,7 +30,7 @@
 //   • Purchase Request (qty is numeric(14,3)) → keep the decimals (roundQty),
 //     rounded UP only when the child's unit is a whole-number one (NOS / SET …).
 
-import { and, asc, count, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, count, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   bomMasterLines,
   bomMasters,
@@ -45,7 +45,12 @@ import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { lockDocSeries } from '../../lib/doc-series-lock';
 import { NotFoundError, ValidationError } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
-import { ActivityAction, isWholeNumberUom, roundQty } from '@innovic/shared';
+import {
+  ActivityAction,
+  isOwnSourcedBomLineType,
+  isWholeNumberUom,
+  roundQty,
+} from '@innovic/shared';
 
 /** Child qty for a Job Card — whole pieces, rounded UP (see header comment). */
 function jobCardChildQty(parentQty: number, qtyPerSet: number): number {
@@ -189,7 +194,7 @@ export async function cascadeBomToSoLine(
 
   // 3. Load BOM lines (+ the child item's unit, for the PR rounding rule).
   const bomLineRows = await tx
-    .select({ line: bomMasterLines, uom: items.uom })
+    .select({ line: bomMasterLines, uom: items.uom, childCode: items.code })
     .from(bomMasterLines)
     .leftJoin(items, eq(items.id, bomMasterLines.childItemId))
     .where(
@@ -201,6 +206,25 @@ export async function cascadeBomToSoLine(
     )
     .orderBy(asc(bomMasterLines.lineNo));
 
+  // ADR-307 (code review): a LINE-level BOM with Party Supplied parts is
+  // refused, not skipped — customer parts are received only against an
+  // Equipment SO's header BOM (sales_orders.bom_master_id), so skipping them
+  // here would leave parts nobody plans, buys or receives. This runs inside
+  // the SO save's transaction, so the whole SO save rolls back.
+  const partyCodes = bomLineRows
+    .filter((r) => r.line.bomType === 'party_supplied')
+    .map((r) => r.childCode ?? r.line.childItemId);
+  if (partyCodes.length > 0) {
+    const bom = await tx
+      .select({ bomNo: bomMasters.bomNo })
+      .from(bomMasters)
+      .where(eq(bomMasters.id, bomMasterId))
+      .limit(1);
+    throw new ValidationError(
+      `${bom[0]?.bomNo ?? 'This BOM'} has Party Supplied parts (${partyCodes.join(', ')}) — customer parts are received only against an Equipment SO.`,
+    );
+  }
+
   // 4. Walk each BOM line and spawn the appropriate child.
   const createdJobCardCodes: string[] = [];
   const createdPrCodes: string[] = [];
@@ -208,6 +232,9 @@ export async function cascadeBomToSoLine(
   const today = new Date().toISOString().slice(0, 10);
 
   for (const { line: bl, uom } of bomLineRows) {
+    // ADR-307: party_supplied lines were refused above; kept as a belt-and-
+    // braces guard so no JC / PR is ever spawned for a customer part.
+    if (!isOwnSourcedBomLineType(bl.bomType)) continue;
     const perSet = Number(bl.qtyPerSet);
     const childQty =
       bl.bomType === 'manufacture'
@@ -369,14 +396,16 @@ export async function assertBomUsableForJobWork(
   companyId: string,
 ): Promise<void> {
   const offenders = await tx
-    .select({ code: items.code, name: items.name })
+    .select({ code: items.code, name: items.name, bomType: bomMasterLines.bomType })
     .from(bomMasterLines)
     .innerJoin(items, eq(items.id, bomMasterLines.childItemId))
     .where(
       and(
         eq(bomMasterLines.bomMasterId, bomMasterId),
         eq(bomMasterLines.companyId, companyId),
-        eq(bomMasterLines.bomType, 'purchase'),
+        // ADR-307: a party_supplied line is refused too — customer material
+        // on job work goes through the JWSO's own RM line, not the BOM.
+        inArray(bomMasterLines.bomType, ['purchase', 'party_supplied']),
         isNull(bomMasterLines.deletedAt),
       ),
     )
@@ -389,12 +418,24 @@ export async function assertBomUsableForJobWork(
     .where(eq(bomMasters.id, bomMasterId))
     .limit(1);
   const bomNo = bomRows[0]?.bomNo ?? 'That BOM';
-  const list = offenders.map((o) => o.code ?? o.name).join(', ');
-  const many = offenders.length > 1;
+  const bought = offenders.filter((o) => o.bomType === 'purchase');
+  const party = offenders.filter((o) => o.bomType === 'party_supplied');
+  if (bought.length > 0) {
+    const list = bought.map((o) => o.code ?? o.name).join(', ');
+    const many = bought.length > 1;
+    throw new ValidationError(
+      `${bomNo} can't be used on a job work order — ${list} ${many ? 'are bought parts' : 'is a bought part'}. ` +
+        `Job work runs on material the client supplies, so only machined and outsourced parts are allowed. ` +
+        `Change ${many ? 'them' : 'it'} to Manufacture or Outsource in the BOM, or pick a different BOM.`,
+    );
+  }
+  // ADR-307: customer material on job work is the JWSO's own RM line.
+  const list = party.map((o) => o.code ?? o.name).join(', ');
+  const many = party.length > 1;
   throw new ValidationError(
-    `${bomNo} can't be used on a job work order — ${list} ${many ? 'are bought parts' : 'is a bought part'}. ` +
-      `Job work runs on material the client supplies, so only machined and outsourced parts are allowed. ` +
-      `Change ${many ? 'them' : 'it'} to Manufacture or Outsource in the BOM, or pick a different BOM.`,
+    `${bomNo} can't be used on a job work order — ${list} ${many ? 'are Party Supplied parts' : 'is a Party Supplied part'}. ` +
+      `On job work the customer's material is received against the JWSO's own RM line, not a BOM line. ` +
+      `Pick a BOM without Party Supplied lines.`,
   );
 }
 
@@ -456,6 +497,8 @@ export async function cascadeBomToJwLine(
   const today = new Date().toISOString().slice(0, 10);
 
   for (const bl of bomLines) {
+    // ADR-307 backstop — assertBomUsableForJobWork already refuses these.
+    if (!isOwnSourcedBomLineType(bl.bomType)) continue;
     // Every JW child is a Job Card → whole pieces, rounded up (header comment).
     const childQty = jobCardChildQty(jwLine.orderQty, Number(bl.qtyPerSet));
     if (!(childQty > 0)) continue;

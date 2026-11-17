@@ -37,7 +37,6 @@ export function pendingColumns(
         ),
       },
       soNo: (p) => p.soCode,
-      internalSoNo: (p) => p.soInternalNo,
       pol: (p) => p.clientPoLineNo,
       createdOn: (p) => p.createdAt,
       itemCode: (p) => p.itemCode,
@@ -45,7 +44,6 @@ export function pendingColumns(
       itemName: (p) => p.itemName,
       overrides: {
         so_no: { sortFilterField: 'soCode' },
-        so_internal_no: { sortFilterField: 'soInternalNo' },
         client_po_line_no: { sortFilterField: 'clientPoLineNo' },
         created_on: { sortFilterField: 'createdOn' },
         item_code: { sortFilterField: 'itemCode' },

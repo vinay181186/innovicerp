@@ -20,12 +20,11 @@ export const al015OspPrsPendingPo: RegisteredAlert = {
     name: 'OSP PRs Pending PO',
     description: 'OSP PRs (raised from a JC operation) that are Open or Approved with no PO yet.',
     columns: [
-      // ADR-261 lead columns: SO No. · Internal SO No. · POL · Created On ·
+      // ADR-261 lead columns: SO No. · POL · Created On ·
       // Item Code (CODE/REV) · Item Name, then the rest.
       { key: 'pr_code', label: 'PR No.', type: 'text' },
       { key: 'pr_date', label: 'PR Date', type: 'date' },
       { key: 'so_code', label: 'SO No.', type: 'text' },
-      { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
       { key: 'client_po_line_no', label: 'POL', type: 'text' },
       { key: 'created_on', label: 'Created On', type: 'date' },
       { key: 'item_code', label: 'Item Code', type: 'text' },
@@ -40,7 +39,7 @@ export const al015OspPrsPendingPo: RegisteredAlert = {
   async run({ tx, companyId }) {
     const result = await tx.execute(sql`
       SELECT pr.id AS nav_id,
-             COALESCE(so.code, jwo.code) AS so_code, so.internal_so_no AS so_internal_no,
+             COALESCE(so.code, jwo.code) AS so_code,
              ${polSql('sol', 'jwl')} AS client_po_line_no,
              (pr.created_at AT TIME ZONE 'Asia/Kolkata')::date::text AS created_on,
              (COALESCE(i.code, pr.item_code_text, '')
@@ -69,7 +68,6 @@ export const al015OspPrsPendingPo: RegisteredAlert = {
     const rows = (result as unknown as Array<Record<string, unknown>>).map((r) => ({
       navPage: docNavPage('purchase-request', String(r['nav_id'])),
       so_code: (r['so_code'] as string | null) ?? '',
-      so_internal_no: (r['so_internal_no'] as string | null) ?? '',
       client_po_line_no: (r['client_po_line_no'] as string | null) ?? '',
       created_on: String(r['created_on'] ?? ''),
       item_code: (r['item_code'] as string | null) ?? '',

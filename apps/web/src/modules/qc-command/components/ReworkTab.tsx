@@ -38,7 +38,6 @@ function reworkColumns(firstRowNo: number): DataTableColumn<QcReworkRow>[] {
         ),
       },
       soNo: (g) => g.soCode,
-      internalSoNo: (g) => g.soInternalNo,
       pol: (g) => g.clientPoLineNo,
       createdOn: (g) => g.createdAt ?? null,
       itemCode: (g) => g.itemCode,

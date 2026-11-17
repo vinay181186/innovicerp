@@ -30,6 +30,9 @@ export interface PartyStockMoveInput {
   /** The JWSO line this movement belongs to, when known — feeds the JC
    *  customer-material roll-up (R1). Null for movements not tied to a line. */
   jwLineId?: string | null;
+  /** ADR-307: the Equipment SO this movement belongs to (customer-supplied
+   *  BOM part). Null on JWSO movements. */
+  salesOrderId?: string | null;
   movement: PartyStockMovement;
   direction: PartyStockDirection;
   /** Always a positive whole number (the ledger CHECK enforces qty > 0). */
@@ -107,6 +110,7 @@ export async function postPartyStockMove(
       companyId: input.companyId,
       partyMaterialId: input.partyMaterialId,
       jwLineId: input.jwLineId ?? null,
+      salesOrderId: input.salesOrderId ?? null,
       movement: input.movement,
       direction: input.direction,
       qty,

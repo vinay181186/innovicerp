@@ -73,7 +73,6 @@ export function prodReadyColumns(
         ),
       },
       soNo: (op) => op.soCode,
-      internalSoNo: (op) => op.soInternalNo,
       pol: (op) => op.clientPoLineNo,
       createdOn: (op) => op.createdAt,
       itemCode: (op) => op.itemCode,
@@ -81,7 +80,6 @@ export function prodReadyColumns(
       itemName: (op) => op.itemName,
       overrides: {
         so_no: { sortFilterField: 'soCode' },
-        so_internal_no: { sortFilterField: 'soInternalNo' },
         client_po_line_no: { sortFilterField: 'clientPoLineNo' },
         created_on: { sortFilterField: 'createdOn' },
         item_code: { sortFilterField: 'itemCode' },

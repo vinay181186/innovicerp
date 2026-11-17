@@ -121,7 +121,6 @@ export function lineColumns(): DataTableColumn<FixListLine>[] {
     ...leadColumns<FixListLine>({
       firstRowNo: 1,
       soNo: (r) => r.docCode,
-      internalSoNo: (r) => r.soInternalNo,
       pol: (r) => r.clientPoLineNo,
       createdOn: (r) => r.createdAt,
       itemCode: (r) => r.itemCode,

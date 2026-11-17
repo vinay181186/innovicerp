@@ -47,7 +47,6 @@ export const productionOrdersReport: RegisteredReport = {
       // line; Created On = the Production Order's created_at.
       { key: 'po_code', label: 'Production Order No', type: 'text' },
       { key: 'so_code', label: 'SO No.', type: 'text' },
-      { key: 'so_internal_no', label: 'Internal SO No.', type: 'text' },
       { key: 'client_po_line_no', label: 'POL', type: 'text' },
       { key: 'created_on', label: 'Created On', type: 'date' },
       { key: 'item_code', label: 'Item Code', type: 'text' },

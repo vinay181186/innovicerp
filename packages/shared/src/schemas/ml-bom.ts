@@ -20,7 +20,7 @@
 import { z } from 'zod';
 import { sfRawParamSchema } from './list-query';
 import { expectedUpdatedAtSchema } from '../lib/edit-conflict';
-import { BOM_LINE_TYPES } from '../enums/bom-line-type';
+import { ML_BOM_LINE_TYPES } from '../enums/bom-line-type';
 import { activityReasonSchema } from '../enums/activity';
 import { positiveQtySchema } from '../lib/qty-rule';
 import { drawingRevInputSchema } from './item-revision';
@@ -28,7 +28,7 @@ import { drawingRevInputSchema } from './item-revision';
 /** Deepest allowed tree, counting the top item as level 0. */
 export const ML_BOM_MAX_LEVELS = 10;
 
-export const mlBomLineTypeSchema = z.enum(BOM_LINE_TYPES);
+export const mlBomLineTypeSchema = z.enum(ML_BOM_LINE_TYPES);
 
 // ─── Read shapes ───────────────────────────────────────────────────────────
 
