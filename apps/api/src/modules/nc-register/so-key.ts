@@ -27,7 +27,8 @@ export function ncSoKeySql(ncAlias = 'nc'): SQL<string | null> {
 }
 
 /** ADR-276 — "SO No. / JWSO No.": scalar SQL, the order an NC belongs to. Its SO
- *  (ncSoKeySql), else the JWSO of its job card, else the JWSO of its Party GRN,
+ *  (ncSoKeySql), else the JWSO of its job card, else the JWSO (or, ADR-307, the
+ *  Equipment SO) of its Party GRN,
  *  the stored snapshot last. NULL only when no order stands behind the NC (bought
  *  material). `ncAlias` as ncSoKeySql. Scalars only, so it cannot multiply a row
  *  and needs no join in a count query. The ONE definition: the list, the detail,
@@ -40,10 +41,12 @@ export function ncOrderCodeSql(ncAlias = 'nc'): SQL<string | null> {
        JOIN public.job_work_order_lines ojwl ON ojwl.id = ojc.source_jw_line_id
        JOIN public.job_work_orders ojw ON ojw.id = ojwl.job_work_order_id
       WHERE ojc.id = ${nc}.job_card_id AND ojc.company_id = ${nc}.company_id LIMIT 1),
-    (SELECT COALESCE(ogjw.code, NULLIF(opg.jw_code_text, '')) FROM public.party_grn_lines opgl
+    (SELECT COALESCE(ogjw.code, ogso.code, NULLIF(opg.jw_code_text, '')) FROM public.party_grn_lines opgl
        JOIN public.party_grn opg ON opg.id = opgl.party_grn_id
        LEFT JOIN public.job_work_orders ogjw
          ON ogjw.id = opg.job_work_order_id AND ogjw.deleted_at IS NULL
+       -- ADR-307: a Party GRN against an Equipment SO (customer-supplied BOM part)
+       LEFT JOIN public.sales_orders ogso ON ogso.id = opg.sales_order_id
       WHERE opgl.id = ${nc}.party_grn_line_id AND opgl.company_id = ${nc}.company_id LIMIT 1),
     NULLIF(${nc}.so_code_text, '')
   )`;

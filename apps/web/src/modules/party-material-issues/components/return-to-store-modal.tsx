@@ -101,7 +101,10 @@ export function ReturnToStoreModal({
             · already returned <b>{row.returnedToStoreQty}</b>
           </>
         ) : null}
-        . Pieces already used on the Job Card cannot come back.
+        .{' '}
+        {row.salesOrderId
+          ? 'Pieces already fitted in the assembly cannot come back.'
+          : 'Pieces already used on the Job Card cannot come back.'}
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 'var(--sp-3)' }}>
         <Field label="Return Qty" required>
