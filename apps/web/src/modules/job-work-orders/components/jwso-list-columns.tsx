@@ -1,11 +1,12 @@
-// JWSO Master list columns (ADR-199 fit table). ADR-261 (owner 2026-10-31):
-// ONE ROW PER JWSO LINE, opening with the locked lead block (leadColumns,
-// so:'jwso' — JWSO No. · POL · Item Code/Rev · Item Name; no
-// Internal SO No. on a JWSO-only list). Then: JWSO Date · Customer · Client PO
-// No. · Order Qty · JC Qty · Dispatched · Pending · Customer Material · Due ·
-// JWSO Status — the line's own figures, the JWSO's header facts.
+// JWSO Master list columns (ADR-199 fit table). ADR-303 (owner 2026-11-16):
+// ONE ROW PER JWSO again (GET /job-work-orders), opening with the locked lead
+// block (leadColumns, so:'jwso' — Sr No · JWSO No. · Created On; no Internal SO
+// No. on a JWSO-only list, no POL / Item Code / Item Name: a JWSO has many).
+// Then: JWSO Date · Customer · Client PO No. · Lines · Order Qty · JC Qty ·
+// Dispatched · Pending · Customer Material · Due Date · JWSO Status · Created By
+// — the JWSO's sums over its lines.
 
-import type { JobWorkOrderLineListRow } from '@innovic/shared';
+import type { JobWorkOrderListItem } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
 import { createdByColumn, type DataTableColumn, leadColumns } from '@/ui/data';
 import { SoStatusBadge } from '@/modules/sales-orders/components/so-status-badge';
@@ -18,46 +19,34 @@ const STATUS_OPTIONS = Object.entries(SO_STATUS_LABEL).map(([value, label]) => (
   label,
 }));
 
-/** A line still open (on an open JWSO) past its own due date is late. */
-export function jwLineOverdue(jw: JobWorkOrderLineListRow, today: string): boolean {
-  return (
-    jw.dueDate != null && jw.dueDate < today && jw.lineStatus === 'open' && jw.docStatus === 'open'
-  );
+/** An open JWSO past its earliest line due date is late. */
+export function jwOverdue(jw: JobWorkOrderListItem, today: string): boolean {
+  return jw.earliestDueDate != null && jw.earliestDueDate < today && jw.status === 'open';
 }
 
-/** Pieces still owed on the LINE (NAMING.md "Pending"): ordered − dispatched;
- *  nothing once the line is closed short (ADR-196) or cancelled — the same rule
- *  as soLinePendingQty and the server's pendingQty Sort & Filter column. */
-export function jwLinePendingQty(jw: JobWorkOrderLineListRow): number {
-  if (jw.lineShortClosedAt || jw.lineStatus === 'cancelled') return 0;
-  return Math.max(0, jw.orderQty - jw.dispatchedQty);
+/** Pieces still owed on the JWSO (NAMING.md "Pending"): the server's per-line
+ *  sum — 0 for a line closed short (ADR-196) or cancelled, never below zero. */
+export function jwPendingQty(jw: JobWorkOrderListItem): number {
+  return jw.pendingQty ?? Math.max(0, jw.totalQty - jw.dispatchedQty);
 }
 
-/** `today` (IST) drives the overdue colour on the Due column — a JWSO line still open
- *  past its own due date is late. */
+/** `today` (IST) drives the overdue colour on the Due Date column. */
 export function jwsoListColumns(
   /** Sr No of the page's first row (offset + 1) — ADR-261 rev. */
   firstRowNo: number,
   today: string,
   /** ADR-202 — JWSO ids with a pending edit; their status cell shows "Draft". */
   draftIds?: Set<string>,
-): DataTableColumn<JobWorkOrderLineListRow>[] {
+): DataTableColumn<JobWorkOrderListItem>[] {
   return [
-    ...leadColumns<JobWorkOrderLineListRow>({
+    ...leadColumns<JobWorkOrderListItem>({
       firstRowNo,
       so: 'jwso',
-      soNo: (r) => r.docCode,
-      pol: (r) => r.clientPoLineNo,
+      soNo: (r) => r.code,
       createdOn: (r) => r.createdAt,
-      itemCode: (r) => r.itemCode,
-      itemRev: (r) => r.itemRevision,
-      itemName: (r) => r.itemName,
       overrides: {
         so_no: { sortFilterField: 'code' },
-        client_po_line_no: { sortFilterField: 'clientPoLineNo' },
         created_on: { sortFilterField: 'createdOn' },
-        item_code: { sortFilterField: 'itemCode' },
-        item_name: { sortFilterField: 'itemName' },
       },
     }),
     {
@@ -67,7 +56,7 @@ export function jwsoListColumns(
       header: 'JWSO Date',
       className: 'mono',
       nowrap: true,
-      render: (jw) => fmtDate(jw.docDate),
+      render: (jw) => fmtDate(jw.jwDate),
     },
     {
       id: 'customer',
@@ -95,6 +84,16 @@ export function jwsoListColumns(
         ),
     },
     {
+      id: 'line_count',
+      sortFilterField: 'lineCount',
+      filterType: 'num',
+      kind: 'num',
+      header: 'Lines',
+      className: 'mono',
+      nowrap: true,
+      render: (jw) => jw.lineCount,
+    },
+    {
       id: 'order_qty',
       sortFilterField: 'totalQty',
       filterType: 'num',
@@ -102,7 +101,7 @@ export function jwsoListColumns(
       align: 'right',
       nowrap: true,
       className: 'mono fw-700',
-      render: (jw) => jw.orderQty,
+      render: (jw) => jw.totalQty,
     },
     {
       id: 'jc_qty',
@@ -116,7 +115,7 @@ export function jwsoListColumns(
           className="mono fw-700"
           style={{
             color:
-              jw.jcQty >= jw.orderQty && jw.orderQty > 0
+              jw.jcQty >= jw.totalQty && jw.totalQty > 0
                 ? 'var(--green)'
                 : jw.jcQty > 0
                   ? 'var(--amber)'
@@ -153,7 +152,7 @@ export function jwsoListColumns(
       align: 'right',
       nowrap: true,
       render: (jw) => {
-        const pending = jwLinePendingQty(jw);
+        const pending = jwPendingQty(jw);
         return (
           <span
             className="mono fw-700"
@@ -174,11 +173,11 @@ export function jwsoListColumns(
       id: 'due',
       sortFilterField: 'earliestDueDate',
       kind: 'date',
-      header: 'Due',
+      header: 'Due Date',
       nowrap: true,
       render: (jw) => {
-        const overdue = jwLineOverdue(jw, today);
-        if (!jw.dueDate) return <span className="text3">—</span>;
+        const overdue = jwOverdue(jw, today);
+        if (!jw.earliestDueDate) return <span className="text3">—</span>;
         return (
           <span
             className="mono"
@@ -187,7 +186,7 @@ export function jwsoListColumns(
               fontWeight: overdue ? 700 : undefined,
             }}
           >
-            {fmtDate(jw.dueDate)}
+            {fmtDate(jw.earliestDueDate)}
             {overdue ? ' ⚠' : ''}
           </span>
         );
@@ -204,16 +203,16 @@ export function jwsoListColumns(
       render: (jw) => (
         <span
           title={
-            jw.docStatus === 'cancelled' && jw.cancelReason
+            jw.status === 'cancelled' && jw.cancelReason
               ? `Cancelled: ${jw.cancelReason}`
               : undefined
           }
         >
-          <SoStatusBadge status={jw.docStatus} draft={draftIds?.has(jw.docId)} />
+          <SoStatusBadge status={jw.status} draft={draftIds?.has(jw.jwId)} />
         </span>
       ),
     },
-    // ADR-261 rev — Created By, the last data column.
+    // ADR-261 rev — Created By, the last data column (the JWSO's creator).
     createdByColumn({
       createdByName: (r) => r.createdByName,
       overrides: { sortFilterField: 'createdBy' },

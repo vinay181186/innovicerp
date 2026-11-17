@@ -91,6 +91,7 @@ import type {
   ShortCloseJobWorkOrderLineInput,
   UpdateJobWorkOrderInput,
 } from './schema';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { jcEffectiveQtySql } from '../../lib/jc-effective-qty';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { JWSO_SF_COLUMNS } from './sf-columns';
@@ -445,7 +446,11 @@ export async function listJobWorkOrders(
       LEFT JOIN (
         SELECT job_work_order_id,
           COUNT(*) AS line_count, SUM(order_qty) AS total_qty,
-          SUM(returned_qty) AS dispatched_qty, MIN(due_date) AS earliest_due
+          SUM(returned_qty) AS dispatched_qty, MIN(due_date) AS earliest_due,
+          -- ADR-303 — Pending per line, as the line list: 0 once closed short
+          -- or cancelled, never below zero.
+          SUM(CASE WHEN short_closed_at IS NOT NULL OR status = 'cancelled' THEN 0
+                   ELSE GREATEST(0, order_qty - COALESCE(returned_qty, 0)) END) AS pending_qty
         FROM public.job_work_order_lines
         WHERE company_id = ${companyId}::uuid AND deleted_at IS NULL
         GROUP BY job_work_order_id
@@ -475,7 +480,10 @@ export async function listJobWorkOrders(
         COALESCE(jca.jc_qty, 0)::int AS "jcQty",
         agg.earliest_due::text AS "earliestDueDate",
         jw.status, jw.cancel_reason AS "cancelReason", jw.remarks,
-        jw.client_material_qty::text AS "clientMaterialQty"
+        jw.client_material_qty::text AS "clientMaterialQty",
+        COALESCE(agg.pending_qty, 0)::int AS "pendingQty",
+        jw.created_at AS "createdAt",
+        ${createdByNameSql(sql`jw.created_by`)} AS "createdByName"
       ${fromWhere}
       ORDER BY ${orderBy}
       LIMIT ${input.limit} OFFSET ${input.offset}
@@ -526,6 +534,11 @@ function toListItem(r: Record<string, unknown>): JobWorkOrderListItem {
     // OW-143: both filled from customerRm after the page read (0 for the picker).
     partyReceivedQty: Number(r['partyReceivedQty'] ?? 0),
     rmRequiredQty: Number(r['rmRequiredQty'] ?? 0),
+    // ADR-303 — the per-JWSO list's Pending / Created On / Created By.
+    pendingQty: Number(r['pendingQty'] ?? 0),
+    createdAt:
+      r['createdAt'] instanceof Date ? r['createdAt'].toISOString() : String(r['createdAt'] ?? ''),
+    createdByName: (r['createdByName'] as string | null) ?? null,
   };
 }
 

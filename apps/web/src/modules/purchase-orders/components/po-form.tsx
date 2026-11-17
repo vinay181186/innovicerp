@@ -36,6 +36,10 @@ import {
   SO_GST_PERCENTS,
   taxTypeForSupply,
   type UpdatePurchaseOrderInput,
+  TOTAL_VALUE_BASIC_LABEL,
+  UNIT_VALUE_BASIC_LABEL,
+  lineBasicValue,
+  linesBasicTotal,
 } from '@innovic/shared';
 import { useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
@@ -305,7 +309,7 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
 
   // ── Live money. Subtotal is the sum of the LINES, not the source PR.
   const lines = watch('lines') ?? [];
-  const subtotal = lines.reduce((s, l) => s + (Number(l.qty) || 0) * (Number(l.rate) || 0), 0);
+  const subtotal = linesBasicTotal(lines.map((l) => ({ qty: l.qty, rate: l.rate })));
   // 3 places: line qtys may be decimal (KGS / MTR, 0172) — no 0.1 + 0.2 drift.
   const totalQty = Math.round(lines.reduce((s, l) => s + (Number(l.qty) || 0), 0) * 1000) / 1000;
   const gstPercent = Number(watch('header.gstPercent')) || 0;
@@ -829,8 +833,8 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
                 <th className="th-num">
                   Qty<span className="req">★</span>
                 </th>
-                <th className="th-money">Rate (₹)</th>
-                <th className="th-money">Amount</th>
+                <th className="th-money">{UNIT_VALUE_BASIC_LABEL} (₹)</th>
+                <th className="th-money">{TOTAL_VALUE_BASIC_LABEL}</th>
                 <th className="th-ctr">Due Date</th>
                 <th className="th-ctr" />
               </tr>

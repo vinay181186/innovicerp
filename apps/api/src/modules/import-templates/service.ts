@@ -22,6 +22,7 @@ import {
   ITEM_PROCUREMENT_TYPES,
   ITEM_TYPES,
   itemTypeLabel,
+  UNIT_VALUE_BASIC_LABEL,
   UOMS,
 } from '@innovic/shared';
 import { type AuthContext } from '../../db/with-user-context';
@@ -103,7 +104,8 @@ export const IMPORT_TEMPLATES: Record<string, ImportTemplateSpec> = {
       { label: 'Drawing Rev', samples: ['A'], width: 12 },
       { label: 'POL', samples: ['1'], width: 10 },
       { label: 'Order Qty', samples: ['100'], width: 12 },
-      { label: 'Rate', samples: ['250'], width: 12 },
+      // ADR-302 — the owner's name; the parser still reads an old 'Rate' sheet.
+      { label: UNIT_VALUE_BASIC_LABEL, samples: ['250'], width: 18 },
       { label: 'Due Date', samples: ['2026-07-01'], width: 14 },
       // ADR-236: optional note about this one line.
       { label: 'Remarks', samples: ['Urgent'], width: 30 },
@@ -121,7 +123,7 @@ export const IMPORT_TEMPLATES: Record<string, ImportTemplateSpec> = {
       // ADR-236: the customer's PO line number — compulsory on a JWSO line.
       { label: 'POL', samples: ['1'], width: 10 },
       { label: 'Order Qty', samples: ['10'], width: 12 },
-      { label: 'Rate', samples: ['35.50'], width: 12 },
+      { label: UNIT_VALUE_BASIC_LABEL, samples: ['35.50'], width: 18 },
       { label: 'Due Date', samples: ['2026-07-01'], width: 14 },
       // ADR-236: optional note about this one line.
       { label: 'Remarks', samples: ['Urgent'], width: 30 },

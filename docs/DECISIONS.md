@@ -16013,3 +16013,150 @@ already wrapped to a second row.
   second row until the connection is back (it never overflows).
 - Amended 2026-11-16 (owner: "bg color blue as shown in mockup"): the button is solid
   blue with white text, the darker blue while open (was blue border on pale blue).
+
+## ADR-301: Top menu closes on a page pick; Planning part lines open by default
+
+**Date:** 2026-11-16
+**Status:** Accepted (owner: "click on qc call register popup must then go"; "lines
+must already open, no need to click show parts"). Reverses the 2026-09-21 rule that
+a module menu stays open after a page pick (commit a4bb63bd).
+
+### Decision
+
+- Top menu (`top-nav.tsx`): picking a page closes the menu. It also closes on an
+  outside click, Escape, its own button again, or another module's button. The open
+  menu is no longer remembered across a reload (`innovic.topnav.open` is not read;
+  sign-out still clears any old value).
+- SO/JWSO Planning order page (`order-detail.tsx`): every line with BOM parts opens
+  when first seen. ⋯ › Hide parts still closes it, and it stays closed across
+  refreshes; a line added later with parts opens when it appears. BOM Master's own
+  Show parts is unchanged.
+
+### Consequences
+
+- Positive: the menu no longer covers the page just opened; parts show at once.
+- Negative: moving between pages of one module needs the menu reopened each time;
+  an order with many part lines makes a longer page.
+
+## ADR-302: Unit Value (Basic) and Total Value (Basic) on the SO, JWSO and PO
+
+**Date:** 2026-11-16
+**Status:** Accepted (owner "go", 2026-11-16)
+
+### Context
+
+The SO detail line table showed only Rate (₹90,000 for Qty 2); the line's Qty × Rate
+appeared only on the edit form and the print, under "Amount". The owner asked for
+"Unit Value Basic" and "Total Value Basic", with no duplication, on the SO, JWSO and PO
+and their prints. The same Qty × Rate sum was worked out in seven places (two servers,
+three forms, the two detail pages' "Value" chips, two prints).
+
+### Decision
+
+- Labels: `Unit Value (Basic)` (the stored rate) and `Total Value (Basic)` (Qty × rate,
+  before GST), from `UNIT_VALUE_BASIC_LABEL` / `TOTAL_VALUE_BASIC_LABEL` in
+  `packages/shared/src/lib/line-value.ts`.
+- One rule: `lineBasicValue(qty, rate)` (paisa) for a line, `linesBasicTotal(lines)` for
+  the Subtotal (cancelled lines out; summed then rounded once, exactly as before, so no
+  stored PO total moves). Used by `orderTotals` (SO / JWSO), `computePoTotals` (PO), the
+  three forms, the detail pages and the prints.
+- SO detail: `rate` column renamed (id kept, so saved layouts apply), new `line_value`
+  column; a cancelled line reads "—". SO and JWSO "Value" chips now show the server's
+  `totals.subtotal` under `Total Value (Basic)`.
+- Prints: `SheetPrintModel.moneyHeads` names the two money headings; SO / JWSO
+  (`print-order.ts`) and PO (`print-po.ts`) pass the new words; the Tax Invoice and JW
+  Invoice pass nothing and keep Rate / Amount.
+- Excel import (owner, same day): the SO lines and JW lines templates head the column
+  `Unit Value (Basic)`; the parser reads that heading and still reads `Rate`, so sheets
+  made before the rename keep working. The list Excel exports have no rate column.
+- Not changed: field names in code and the database.
+
+### Alternatives Considered
+
+- Rename the shared print heading for every `po` sheet — rejected: the Tax Invoice and
+  JW Invoice are tax documents the owner did not ask to change.
+- Rename the Excel `Rate` column outright — rejected: breaks files users already
+  upload; both headings are read instead.
+
+### Consequences
+
+- Positive: one place for the line value and its two names; the SO detail shows the
+  line's value.
+- Negative: the longer headings take two lines on the narrow print columns.
+
+
+## ADR-303: Document master lists show one row per document again
+
+**Status:** Accepted (owner, 2026-11-16 — Option 2 mockup approved; supersedes the
+"one row per line" part of ADR-261 phase 3, commit 3d350c6e)
+
+### Context
+
+Since 31-Oct the SO, JWSO, PO, OSP Outward DC, GRN, Party GRN, Invoice, Item Issue,
+Customer Dispatch, Customer Material Return and JW DC Outward / Inward lists showed one
+row per line item, so an SO with 5 items filled 5 rows. The owner asked for the earlier
+structure: one row per document.
+
+### Decision
+
+- The 11 lists read the per-document endpoints again (they never went away; pickers use
+  them). The `…/lines` endpoints stay for Excel Export, the DC print register, Rev
+  Substitutions and Ask ERP. **Excel Export stays one row per line** (owner choice).
+- No Item Code / Item Name / POL columns on these lists. New `Lines` column = number of
+  lines. Quantities are the document total.
+- SO Master drops its qty columns and shows `Total Value (Basic)` (Σ Qty × Rate, before
+  GST, cancelled lines out) and `Value to Dispatch` (Σ (Order − Dispatched − Short
+  closed) × Rate, before GST). Names from docs/NAMING.md. PO `Value` becomes
+  `Total Value (Basic)`.
+- GRN and Party GRN show one QC Status per document: Pending / Partly done / Done.
+- A document covering several SOs shows the first SO No. and a grey `+n`.
+- The SO dropdown filter (ADR-267) and item-code search match a document through an
+  EXISTS over its lines, so each document stays one row.
+- Lead block (ADR-295), number-opens-row (ADR-296), Sr No and Created By last unchanged.
+- Table keys get new values so saved column layouts reset cleanly.
+
+### Alternatives Considered
+
+- First item + "+4 more" in the item columns (Option 1) — rejected by the owner.
+- A group heading row above each document's lines — not offered; still one row per line.
+
+### Consequences
+
+- Positive: one row per document; the list count is the document count.
+- Negative: the list no longer shows which items a document holds; open the document or
+  search by item code.
+
+## ADR-304: A list page is exactly the screen's height, so the column header stays put
+
+Date: 16-11-2026. Fixes ADR-202 (list fill).
+
+**Problem (owner, 16-11-2026):** "on every master list column header is not fixed, there are two
+scrolling bars." Reproduced on TEST at 1440x810 and 1366x768: on SO Master, Items, PO, GRN, Job Cards,
+NC Register, Route Cards, Planning, SO Overview, Store Inventory and 12 more lists the table grew to
+its full height, `#content` scrolled instead of the table and the header slid off the top.
+
+**Cause:** `.page-fill` asked for `min-height: 100%`. A flex column with only a minimum grows to fit
+its content, so with 25 rows the page was taller than `#content` and the table never got a height to
+scroll inside. ADR-202 worked only while a list had fewer rows than the screen.
+
+**Decision:**
+- `.page-fill` is `height: 100%` (one shared line, every list on `page-fill` + `<Panel fill>`).
+- A fill panel that is a page root gets a floor: the table toolbar plus six rows (the sum rc-form.css
+  already measured). `.panel` clips (`overflow: hidden`), so without the floor a small screen
+  (1024x600, 150% zoom) squeezed the table to one row with nothing to scroll. With it the page
+  overflows and `#content` scrolls, as ADR-202 intended for screens too small for the chrome. Written
+  `:where(#content) > .page-fill > .panel--fill`, so a page's own floor (PO, JC, RC forms) still wins
+  and the Home board's Approvals view is not touched.
+- The local `.page-fill.X { height: 100% }` copies in po-detail, po-create, jc-detail and rc-form are
+  removed: those pages had already made this fix for themselves.
+- `ReportShell` takes `fill`; Pending SO Value, SO Cycle Time and Stock Valuation opt in and put their
+  table in `<Panel fill>`. Daily Report does not: it shows one table per machine and scrolls as a page.
+
+**Consequences:**
+- Positive: one scrollbar, inside the table; title, search, filters, header and the Prev/Next bar stay
+  on screen on every list.
+- Negative: on a screen too small for the chrome plus six rows there are two scrollbars again (page
+  and table), on purpose, so nothing is trapped. In that case the sticky title band can leave the
+  screen once the page has scrolled one screen height (it is held inside `.page-fill`).
+- Negative: the three reports that opt in lose block margin collapsing (flex column), so their gaps
+  match the other list pages rather than the old report pages.

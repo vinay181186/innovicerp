@@ -4,13 +4,83 @@
 // query (which is also the pager count) joins `v`, `po` and `line_agg` too, so
 // every one is valid there. There is no money on this list.
 //
-// Not here: Source (a badge the screen picks from which link the GRN carries)
-// and QC Status (worked out per row in the browser, with its own filter) —
-// neither is a stored value.
+// ADR-303 (one row per GRN): GRN Type and QC Status are here now, each as the
+// SAME expression the SELECT returns (grnType / docQcStatus).
 
-import { sql } from 'drizzle-orm';
+import { sql, type SQL } from 'drizzle-orm';
 
-import type { SfColumnMap } from '../../lib/list-query';
+import { createdByNameSql } from '../../lib/created-by-sql';
+import {
+  sfExtraDistinct,
+  sfFirstLine,
+  type SfColumnMap,
+  type SfLiftSpec,
+} from '../../lib/list-query';
+import { GRN_LINE_ORDER_JOINS, GRN_LINE_SO_CODE } from './list-lines';
+
+/** GRN Type — which paper the receipt is against; same order as the web's
+ *  grnTypeLabel (NC first: an NC-return GRN also carries a DC). */
+export const GRN_TYPE_SQL = sql`(CASE WHEN grn.nc_id IS NOT NULL THEN 'nc'
+  WHEN grn.delivery_challan_id IS NOT NULL THEN 'dc'
+  WHEN grn.purchase_order_id IS NOT NULL THEN 'po' END)`;
+
+/** ADR-303 — the receipt's ONE QC status from three line counts: `done` when
+ *  no line waits (ADR-189 rule — a line with nothing left to inspect is done),
+ *  `pending` when every line waits and none is part-inspected (a GRN with no
+ *  lines too), else `partly_done`. A Cancelled GRN (deleted_at set) waits for
+ *  nothing and is not done either: NULL, the cell reads "Cancelled". */
+export function grnDocQcStatusOf(lineCount: SQL, pendingCount: SQL, touchedCount: SQL): SQL {
+  return sql`(CASE
+  WHEN grn.deleted_at IS NOT NULL THEN NULL
+  WHEN COALESCE(${lineCount}, 0) > 0 AND COALESCE(${pendingCount}, 0) = 0 THEN 'done'
+  WHEN COALESCE(${pendingCount}, 0) = COALESCE(${lineCount}, 0)
+   AND COALESCE(${touchedCount}, 0) = 0 THEN 'pending'
+  ELSE 'partly_done' END)`;
+}
+
+/** Over the list query's `line_agg` (the cell and its ▾ filter). */
+export const GRN_DOC_QC_STATUS_SQL = grnDocQcStatusOf(
+  sql`line_agg.line_count`,
+  sql`line_agg.qc_pending_count`,
+  sql`line_agg.qc_touched_count`,
+);
+
+/** The SAME status, self-contained (its own subquery over the live lines) —
+ *  for the QC Status dropdown's filter and counts, which run in the summary
+ *  query too (no line_agg there). */
+export const GRN_DOC_QC_STATUS_SUB = sql`(SELECT ${grnDocQcStatusOf(
+  sql`q.lc`,
+  sql`q.pc`,
+  sql`q.tc`,
+)} FROM (
+    SELECT COUNT(*) AS lc,
+      COUNT(*) FILTER (WHERE qgl.received_qty - qgl.qc_accepted_qty - qgl.qc_rejected_qty > 0) AS pc,
+      COUNT(*) FILTER (WHERE qgl.qc_accepted_qty + qgl.qc_rejected_qty > 0) AS tc
+    FROM public.goods_receipt_note_lines qgl
+    WHERE qgl.goods_receipt_note_id = grn.id AND qgl.deleted_at IS NULL) q)`;
+
+/** ADR-303 — the lines of GRN `grn` (live, plus those cancelled WITH a
+ *  Cancelled GRN), with their order (GRN_LINE_ORDER_JOINS). */
+const GRN_LINES_OF = sql`FROM public.goods_receipt_note_lines gl
+  ${GRN_LINE_ORDER_JOINS}
+  WHERE gl.goods_receipt_note_id = grn.id
+    AND (gl.deleted_at IS NULL OR gl.deleted_at = grn.deleted_at)`;
+const GRN_LINE_ORDER = sql`gl.line_no, gl.id`;
+/** The first line's SO (else JWSO) No. / Internal SO No. / how many more —
+ *  scalar subqueries, run for the page rows only. */
+export const GRN_FIRST_SO_CODE = sfFirstLine(
+  GRN_LINES_OF,
+  GRN_LINE_SO_CODE,
+  GRN_LINE_SO_CODE,
+  GRN_LINE_ORDER,
+);
+export const GRN_FIRST_SO_INTERNAL_NO = sfFirstLine(
+  GRN_LINES_OF,
+  sql`so.internal_so_no`,
+  GRN_LINE_SO_CODE,
+  GRN_LINE_ORDER,
+);
+export const GRN_SO_EXTRA_COUNT = sfExtraDistinct(GRN_LINES_OF, GRN_LINE_SO_CODE);
 
 /** 0237 — every NC a replacement GRN's lines settle (line NC, header as
  *  old-row fallback), in line order, as one "IN-NC-1, IN-NC-2" string; NULL on
@@ -48,4 +118,25 @@ export const GRN_SF_COLUMNS: SfColumnMap = {
   totalQcAcceptedQty: { sql: sql`COALESCE(line_agg.qc_accepted_qty, 0)::float8`, type: 'num' },
   totalQcRejectedQty: { sql: sql`COALESCE(line_agg.qc_rejected_qty, 0)::float8`, type: 'num' },
   createdOn: { sql: sql`(grn.created_at AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
+  // ADR-303 — one row per GRN. SO No. / Internal SO No. SORT on the first
+  // line's order (scalar subqueries — ORDER BY never reaches the summary);
+  // their FILTERS go through liftLineFilters over GRN_LINE_LIFT.
+  soCode: { sql: GRN_FIRST_SO_CODE, type: 'text' },
+  soInternalNo: { sql: GRN_FIRST_SO_INTERNAL_NO, type: 'text' },
+  createdBy: { sql: createdByNameSql(sql`grn.created_by`), type: 'text' },
+  lineCount: { sql: sql`COALESCE(line_agg.line_count, 0)::int`, type: 'num' },
+  grnType: { sql: GRN_TYPE_SQL, type: 'list' },
+  dcNo: { sql: sql`grn.dc_no`, type: 'text' },
+  invoiceNo: { sql: sql`grn.invoice_no`, type: 'text' },
+  docQcStatus: { sql: GRN_DOC_QC_STATUS_SQL, type: 'list' },
+};
+
+/** ADR-303 — the LINE facts the one-row-per-GRN list filters on, judged over
+ *  every line (lib/list-query liftLineFilters). The GRN header has no SO. */
+export const GRN_LINE_LIFT: SfLiftSpec = {
+  fields: {
+    soCode: { line: GRN_LINE_SO_CODE, type: 'text' },
+    soInternalNo: { line: sql`so.internal_so_no`, type: 'text' },
+  },
+  linesFrom: GRN_LINES_OF,
 };

@@ -15,7 +15,7 @@
 // mismatch between the sheet and the master with no way to tell which won.
 // Old sheets that still carry the column import fine; it's ignored.
 
-import { normalizeRevision, polError } from '@innovic/shared';
+import { UNIT_VALUE_BASIC_LABEL, normalizeRevision, polError } from '@innovic/shared';
 import * as XLSX from 'xlsx';
 
 export interface JwLineImportRow {
@@ -35,7 +35,9 @@ export interface JwLineImportRow {
 function toDate(v: unknown): string | undefined {
   if (v == null || v === '') return undefined;
   if (v instanceof Date) return v.toISOString().slice(0, 10);
-  const m = String(v).trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+  const m = String(v)
+    .trim()
+    .match(/^(\d{4})-(\d{2})-(\d{2})/);
   return m ? m[0] : undefined;
 }
 
@@ -45,7 +47,9 @@ function toDate(v: unknown): string | undefined {
 // Headers renamed 2026-09-26 (Drawing No → Drawing No., Rev → Drawing Rev,
 // Qty → Order Qty); the parser still reads the old names so an older sheet imports.
 
-export async function parseJwLineFile(file: File): Promise<{ rows: JwLineImportRow[]; errors: string[] }> {
+export async function parseJwLineFile(
+  file: File,
+): Promise<{ rows: JwLineImportRow[]; errors: string[] }> {
   const buf = await file.arrayBuffer();
   const wb = XLSX.read(buf, { cellDates: true });
   const ws = wb.Sheets[wb.SheetNames[0]!];
@@ -83,7 +87,9 @@ export async function parseJwLineFile(file: File): Promise<{ rows: JwLineImportR
       clientPoLineNo,
       remarks: String(r['Remarks'] ?? '').trim() || undefined,
       orderQty,
-      rate: Number(r['Rate']) || 0,
+      // ADR-302 — 'Unit Value (Basic)' is the template's heading; 'Rate' is
+      // what sheets made before the rename carry, so both are read.
+      rate: Number(r[UNIT_VALUE_BASIC_LABEL] ?? r['Rate']) || 0,
       dueDate: toDate(r['Due Date']),
     });
   });

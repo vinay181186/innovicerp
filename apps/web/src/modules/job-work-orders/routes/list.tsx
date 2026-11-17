@@ -1,11 +1,11 @@
-// JWSO Master list — ONE ROW PER JWSO LINE (ADR-261, GET /job-work-orders/lines)
-// on the shared FIT table (ADR-199: <DataTable tableKey=…>). Row click and the
-// ⋯ menu act on the JWSO the line belongs to. The old ▸ (the JWSO's line items)
-// is gone — every line is its own row now.
+// JWSO Master list — ONE ROW PER JWSO (ADR-303, owner 2026-11-16; GET
+// /job-work-orders) on the shared FIT table (ADR-199: <DataTable tableKey=…>).
+// The JWSO No. opens the JWSO (ADR-296); the ⋯ menu acts on it.
 //
-// Columns: lead block (JWSO No. · POL · Item Code/Rev · Item Name)
-// then JWSO Date · Customer · Client PO No. · Order Qty · JC Qty · Dispatched ·
-// Pending · Customer Material · Due · JWSO Status — components/jwso-list-columns.tsx.
+// Columns: lead block (Sr No · JWSO No. · Created On) then JWSO Date ·
+// Customer · Client PO No. · Lines · Order Qty · JC Qty · Dispatched · Pending ·
+// Customer Material · Due Date · JWSO Status · Created By —
+// components/jwso-list-columns.tsx.
 //
 // Row actions (RowActions prop): Edit (edit tier) · Delete (edit+approve tier).
 // Delete reuses the reason-required DeleteJwsoModal (ADR-197) unchanged.
@@ -18,7 +18,7 @@
 // (SO does), so the link would need a DB column + upload route (ISSUE-031).
 
 import {
-  type JobWorkOrderLineListRow,
+  type JobWorkOrderListItem,
   type ListJobWorkOrdersQuery,
   SO_STATUSES,
   type SoStatus,
@@ -43,21 +43,21 @@ import {
   type OrderPrintTarget,
   useOrderPrint,
 } from '@/modules/sales-orders/components/use-order-print';
-import { useJobWorkOrderLinesList } from '../api';
+import { useJobWorkOrdersList } from '../api';
 import { DeleteJwsoModal } from '../components/delete-jwso-modal';
 import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
-import { jwLineOverdue, jwsoListColumns } from '../components/jwso-list-columns';
+import { jwOverdue, jwsoListColumns } from '../components/jwso-list-columns';
 
 // 25 rows a page (ADR-201): only the page on screen is loaded; search, the
 // status filter and Sort & Filter (▾) run on the server over every JWSO.
 
-// JWSO status / overdue → row tint (ADR-199 ROW_TINT). Overdue (an open line
-// past its own due date) reads as late and wins; closed and dispatched are done;
-// cancelled is cancelled; draft and open stay untinted.
-function rowTint(jw: JobWorkOrderLineListRow, today: string): string | undefined {
-  if (jwLineOverdue(jw, today)) return ROW_TINT.late;
-  if (jw.docStatus === 'closed' || jw.docStatus === 'dispatched') return ROW_TINT.done;
-  if (jw.docStatus === 'cancelled') return ROW_TINT.cancelled;
+// JWSO status / overdue → row tint (ADR-199 ROW_TINT). Overdue (an open JWSO
+// past its earliest due date) reads as late and wins; closed and dispatched are
+// done; cancelled is cancelled; draft and open stay untinted.
+function rowTint(jw: JobWorkOrderListItem, today: string): string | undefined {
+  if (jwOverdue(jw, today)) return ROW_TINT.late;
+  if (jw.status === 'closed' || jw.status === 'dispatched') return ROW_TINT.done;
+  if (jw.status === 'cancelled') return ROW_TINT.cancelled;
   return undefined;
 }
 
@@ -117,7 +117,7 @@ function JobWorkOrdersListPage(): React.JSX.Element {
     [search.search, search.status, sf.param, offset],
   );
 
-  const { data, isLoading, isFetching, isError, error } = useJobWorkOrderLinesList(query, {
+  const { data, isLoading, isFetching, isError, error } = useJobWorkOrdersList(query, {
     // Not a live table (CLAUDE.md §22): the safety refresh keeps the list current.
     refetchInterval: LIVE_FALLBACK_POLL_MS,
   });
@@ -158,25 +158,23 @@ function JobWorkOrdersListPage(): React.JSX.Element {
   // Row actions — Edit · Delete, with the gates the retired card used, unchanged.
   // No View button: the row click opens the JWSO. Delete reuses the
   // reason-required DeleteJwsoModal (ADR-197), so onDelete just opens it.
-  const rowActions = (jw: JobWorkOrderLineListRow): React.JSX.Element => (
+  const rowActions = (jw: JobWorkOrderListItem): React.JSX.Element => (
     <RowActions
-      editTo={
-        canEdit && jw.docStatus !== 'cancelled' ? `/job-work-orders/${jw.docId}/edit` : undefined
-      }
+      editTo={canEdit && jw.status !== 'cancelled' ? `/job-work-orders/${jw.jwId}/edit` : undefined}
       renderLink={(p) => <Link {...p} />}
-      onDelete={canDelete ? () => setTrashTarget({ id: jw.docId, code: jw.docCode }) : undefined}
+      onDelete={canDelete ? () => setTrashTarget({ id: jw.jwId, code: jw.code }) : undefined}
       items={[
         {
           key: 'preview',
           label: 'Preview',
           icon: 'eye',
-          onSelect: () => orderPrint.preview(jwPrintTarget(jw), draftIds.has(jw.docId)),
+          onSelect: () => orderPrint.preview(jwPrintTarget(jw), draftIds.has(jw.jwId)),
         },
         {
           key: 'download',
           label: 'Download PDF',
           icon: 'download',
-          onSelect: () => orderPrint.download(jwPrintTarget(jw), draftIds.has(jw.docId)),
+          onSelect: () => orderPrint.download(jwPrintTarget(jw), draftIds.has(jw.jwId)),
         },
         {
           key: 'cancel',
@@ -185,10 +183,10 @@ function JobWorkOrdersListPage(): React.JSX.Element {
           group: 'danger',
           hidden:
             !canCancel ||
-            jw.docStatus === 'closed' ||
-            jw.docStatus === 'dispatched' ||
-            jw.docStatus === 'cancelled',
-          onSelect: () => setCancelTarget({ id: jw.docId, code: jw.docCode }),
+            jw.status === 'closed' ||
+            jw.status === 'dispatched' ||
+            jw.status === 'cancelled',
+          onSelect: () => setCancelTarget({ id: jw.jwId, code: jw.code }),
         },
       ]}
     />
@@ -216,7 +214,7 @@ function JobWorkOrdersListPage(): React.JSX.Element {
         title="JWSO Master"
         icon="🔧"
         count={total}
-        noun="line"
+        noun="JWSO"
         filterNote={search.status ? SO_STATUS_LABEL[search.status] : undefined}
         search={searchInput}
         onSearch={setSearchInput}
@@ -278,9 +276,9 @@ function JobWorkOrdersListPage(): React.JSX.Element {
             loading={isLoading}
             sortFilterServer={sf}
             emptyText={emptyText}
-            rowKey={(jw) => jw.lineId}
+            rowKey={(jw) => jw.jwId}
             onRowClick={(jw) =>
-              void navigate({ to: '/job-work-orders/$id', params: { id: jw.docId } })
+              void navigate({ to: '/job-work-orders/$id', params: { id: jw.jwId } })
             }
             rowClassName={(jw) => rowTint(jw, today)}
             rowActions={(jw) => rowActions(jw)}
@@ -290,7 +288,7 @@ function JobWorkOrdersListPage(): React.JSX.Element {
 
       <ListFooter
         total={total}
-        noun="line"
+        noun="JWSO"
         page={search.page}
         pageSize={LIST_PAGE_SIZE}
         onPage={gotoPage}
@@ -320,6 +318,6 @@ function JobWorkOrdersListPage(): React.JSX.Element {
 
 /** A JWSO list row as a print target (use-order-print.tsx): the clientId lets
  *  the customer load alongside the order instead of after it. */
-function jwPrintTarget(jw: JobWorkOrderLineListRow): OrderPrintTarget {
-  return { kind: 'jwso', id: jw.docId, code: jw.docCode, clientId: jw.clientId };
+function jwPrintTarget(jw: JobWorkOrderListItem): OrderPrintTarget {
+  return { kind: 'jwso', id: jw.jwId, code: jw.code, clientId: jw.clientId };
 }

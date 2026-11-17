@@ -1,21 +1,20 @@
 // Customer Dispatch list columns (ADR-199 FIT table).
-// ADR-261 (owner 2026-10-31): ONE ROW PER DISPATCH LINE
-// (GET /customer-dispatches/lines). Dispatch No. and the locked lead block come
-// first (SO No. · Internal SO No. · POL · Item Code (CODE/REV) ·
-// Item Name), then Dispatch Date, Customer, the line's Dispatch Qty, Billed
-// Status, Dispatched By — and the facts the retired ▸ showed (JC No., UOM,
-// Stock Before → After, Remarks). Row click and ⋯ act on the DISPATCH.
-// `sortFilterField` = the server column map (sf-columns.ts).
+// ADR-303 (owner 2026-11-16): ONE ROW PER DISPATCH again — the `docs` of
+// GET /customer-dispatches/register (paged by dispatch). The locked lead block
+// first (Sr No · Dispatch No. · Created On · SO No. · Internal SO No.; no POL /
+// Item Code / Item Name — a dispatch has many lines), then Dispatch Date,
+// Customer, Lines, Dispatch Qty (all its lines), Billed Status, Dispatched By
+// and Created By. The ⋯ acts on the DISPATCH. `sortFilterField` = the server
+// column map (sf-columns.ts). Excel / Print stay one row per LINE (register rows).
 
 import { Link } from '@tanstack/react-router';
-import { docDrawingRev } from '@/lib/item-code';
 import { fmtDate } from '@/lib/date';
 import { createdByColumn, type DataTableColumn, leadColumns } from '@/ui/data';
-import type { CustomerDispatchLineListRow, CustomerDispatchRow } from '@innovic/shared';
+import type { CustomerDispatchRegisterDoc } from '@innovic/shared';
 
 /** ADR-190 — how far the dispatch is invoiced. Labels per docs/NAMING.md. */
 const BILLED_BADGE: Record<
-  NonNullable<CustomerDispatchRow['billedStatus']>,
+  CustomerDispatchRegisterDoc['billedStatus'],
   { label: string; className: string }
 > = {
   none: { label: 'To Bill', className: 'badge b-amber' },
@@ -29,7 +28,7 @@ const DISPATCH_STATUS_OPTIONS = [
   { value: 'cancelled', label: 'Cancelled' },
 ];
 
-type Row = CustomerDispatchLineListRow;
+type Row = CustomerDispatchRegisterDoc;
 
 export function dispatchListColumns(
   /** Sr No of the page's first row (offset + 1) — ADR-261 rev. */
@@ -59,19 +58,25 @@ export function dispatchListColumns(
       },
       soNo: (r) => r.soNo,
       internalSoNo: (r) => r.soInternalNo,
-      pol: (r) => r.clientPoLineNo,
       createdOn: (r) => r.createdAt,
-      itemCode: (r) => r.itemCode ?? r.itemCodeText,
-      // The Rev actually shipped (Drawing Rev Phase C), else the SO line's.
-      itemRev: (r) => docDrawingRev(r),
-      itemName: (r) => r.itemName,
       overrides: {
-        so_no: { sortFilterField: 'soCode' },
+        so_no: {
+          sortFilterField: 'soCode',
+          // ADR-303 — lines from more than one SO: the first SO No. + grey "+n".
+          render: (r) => (
+            <span style={{ whiteSpace: 'nowrap' }}>
+              <span style={{ color: 'var(--blue)' }}>{r.soNo?.trim() || '—'}</span>
+              {r.extraSoCount > 0 ? (
+                <span className="text3" title="Lines from other SOs too">
+                  {' '}
+                  +{r.extraSoCount}
+                </span>
+              ) : null}
+            </span>
+          ),
+        },
         so_internal_no: { sortFilterField: 'soInternalNo' },
-        client_po_line_no: { sortFilterField: 'clientPoLineNo' },
         created_on: { sortFilterField: 'createdOn' },
-        item_code: { sortFilterField: 'itemCode' },
-        item_name: { sortFilterField: 'itemName' },
       },
     }),
     {
@@ -94,15 +99,25 @@ export function dispatchListColumns(
       title: (r) => r.customer ?? '',
     },
     {
+      id: 'line_count',
+      sortFilterField: 'lineCount',
+      filterType: 'num',
+      kind: 'num',
+      header: 'Lines',
+      className: 'mono',
+      nowrap: true,
+      render: (r) => r.lineCount,
+    },
+    {
       id: 'dispatch_qty',
-      sortFilterField: 'qty',
+      sortFilterField: 'totalQty',
+      filterType: 'num',
       kind: 'num',
       header: 'Dispatch Qty',
-      align: 'right',
       nowrap: true,
       render: (r) => (
         <span className="mono fw-700" style={{ color: 'var(--green2)' }}>
-          {r.qty}
+          {r.totalQty}
         </span>
       ),
     },
@@ -125,12 +140,8 @@ export function dispatchListColumns(
             </span>
           );
         if (r.status === 'cancelled') return <span className="badge b-red">Cancelled</span>;
-        const billed = r.billedStatus;
-        return billed ? (
-          <span className={BILLED_BADGE[billed].className}>{BILLED_BADGE[billed].label}</span>
-        ) : (
-          <span className="text3">—</span>
-        );
+        const billed = BILLED_BADGE[r.billedStatus];
+        return <span className={billed.className}>{billed.label}</span>;
       },
     },
     {
@@ -143,37 +154,7 @@ export function dispatchListColumns(
       render: (r) => r.dispatchedBy ?? '—',
       title: (r) => r.dispatchedBy ?? '',
     },
-    {
-      id: 'jc_no',
-      header: 'JC No.',
-      className: 'td-code',
-      nowrap: true,
-      render: (r) => r.jcNo ?? <span className="text3">—</span>,
-    },
-    {
-      id: 'uom',
-      header: 'UOM',
-      nowrap: true,
-      render: (r) => <span className="badge b-grey">{r.uom ?? 'NOS'}</span>,
-    },
-    {
-      id: 'stock_before_after',
-      header: 'Stock Before → After',
-      align: 'right',
-      className: 'mono text3',
-      nowrap: true,
-      render: (r) => `${r.stockBefore ?? '—'}→${r.stockAfter ?? '—'}`,
-    },
-    {
-      id: 'remarks',
-      header: 'Remarks',
-      align: 'left',
-      ellipsis: true,
-      className: 'text2',
-      render: (r) => r.remarks?.trim() || '—',
-      title: (r) => r.remarks ?? '',
-    },
-    // ADR-261 rev — Created By, the last data column.
+    // ADR-261 rev — Created By, the last data column (the dispatch's creator).
     createdByColumn({
       createdByName: (r) => r.createdByName,
       overrides: { sortFilterField: 'createdBy' },

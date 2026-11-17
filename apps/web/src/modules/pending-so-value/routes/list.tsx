@@ -101,6 +101,7 @@ function PendingSoValuePage(): React.JSX.Element {
 
   return (
     <ReportShell
+      fill
       title="Pending SO Value"
       filters={
         <>
@@ -169,7 +170,7 @@ function PendingSoValuePage(): React.JSX.Element {
           </div>
         </div>
       ) : (
-        <Panel bodyPadding="none">
+        <Panel fill bodyPadding="none">
           <DataTable<PendingSoValueRow>
             tableKey={TABLE_KEYS.pendingSoValue}
             columns={columns}

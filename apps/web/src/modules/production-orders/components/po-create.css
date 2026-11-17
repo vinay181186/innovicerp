@@ -6,15 +6,10 @@
    Everything here is scoped to `.po-create` and uses tokens only. */
 
 /* ── Fit to one screen ───────────────────────────────────────────────────────
-   Same fix as po-detail.css: `page-fill` asks for min-height: 100%, which would
-   let the operations table grow the page. Here the page takes exactly the
-   content area, so the operations panel gets what is left and its table is the
-   only thing that scrolls. The panel never goes below six table rows, so when
+   `page-fill` takes exactly the content area (ADR-304), so the operations
+   panel gets what is left and its table is the only thing that scrolls. The panel never goes below six table rows, so when
    the chrome above genuinely cannot fit (a phone, 200% zoom, three banners at
    once) the page outgrows the content area and that scrolls instead. */
-.page-fill.po-create {
-  height: 100%;
-}
 .page-fill.po-create > .panel--fill {
   min-height: calc(var(--tbl-row-h) * 6 + 2px);
 }

@@ -32,6 +32,7 @@ function toQueryString(q: ListGoodsReceiptNotesQuery): string {
   if (q.vendorId) params.set('vendorId', q.vendorId);
   if (q.purchaseOrderId) params.set('purchaseOrderId', q.purchaseOrderId);
   if (q.qcStatus) params.set('qcStatus', q.qcStatus);
+  if (q.docQcStatus) params.set('docQcStatus', q.docQcStatus);
   if (q.fromDate) params.set('fromDate', q.fromDate);
   if (q.toDate) params.set('toDate', q.toDate);
   if (q.sf) params.set('sf', q.sf);

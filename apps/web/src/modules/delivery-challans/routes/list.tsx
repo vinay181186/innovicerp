@@ -19,10 +19,10 @@
 // and a card list has no column headers to click — the same trade ADR-120
 // recorded for the PR list.
 //
-// ADR-261 (2026-10-31): ONE ROW PER DC LINE (GET /delivery-challans/lines) —
-// the locked lead block first (SO No. · Internal SO No. · POL · Created On ·
-// Item Code · Item Name), then the DC's own facts. Row click / ⋯ still act on
-// the DC. The printed register reads the three line-grain totals.
+// ADR-303 (2026-11-16): ONE ROW PER DC again (GET /delivery-challans), after
+// ADR-261's one-row-per-line spell. The Print Register stays one row per LINE
+// (owner): it reads GET /delivery-challans/lines for exactly the DCs on this
+// page (a dcCode tick filter) and prints those lines and their totals.
 
 import { Icon } from '@/ui/core';
 import type { ListDeliveryChallansQuery } from '@innovic/shared';
@@ -41,7 +41,7 @@ import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useMyCompany } from '@/modules/settings/api';
-import { useDeliveryChallanLinesList } from '../api';
+import { useDeliveryChallanLinesList, useDeliveryChallansList } from '../api';
 import { dcListColumns } from '../components/dc-list-columns';
 import { useOspDcPrint } from '../components/use-ospdc-print';
 import { DC_STATUS_LABEL } from '../lib/dc-status-label';
@@ -112,7 +112,23 @@ function DeliveryChallansListPage(): React.JSX.Element {
     [sf.param, search.search, search.status, search.page],
   );
 
-  const { data, isLoading, isFetching, isError, error } = useDeliveryChallanLinesList(query);
+  const { data, isLoading, isFetching, isError, error } = useDeliveryChallansList(query);
+  // The Print Register's line rows: the lines of the DCs on this page only.
+  const pageCodes = useMemo(() => (data?.items ?? []).map((dc) => dc.code), [data]);
+  const registerQuery: ListDeliveryChallansQuery = useMemo(
+    () => ({
+      sf: JSON.stringify({
+        sort: null,
+        filters: [{ field: 'dcCode', kind: 'values', values: pageCodes }],
+      }),
+      limit: 200,
+      offset: 0,
+    }),
+    [pageCodes],
+  );
+  const { data: registerLines } = useDeliveryChallanLinesList(registerQuery, {
+    enabled: pageCodes.length > 0,
+  });
   const { data: company } = useMyCompany();
   // Tier-driven, per department (ospdc_create sits in Purchase). Raising a DC is
   // `entry`, so L2 Data Entry and up; an L1 Viewer no longer sees the button.
@@ -139,7 +155,7 @@ function DeliveryChallansListPage(): React.JSX.Element {
   const ospDcPrint = useOspDcPrint();
 
   function onPrintRegister(): void {
-    if (!data) return;
+    if (!data || !registerLines) return;
     const bits: string[] = [];
     if (search.search) bits.push(`search "${search.search}"`);
     if (search.status) bits.push(DC_STATUS_LABEL[search.status]);
@@ -149,8 +165,8 @@ function DeliveryChallansListPage(): React.JSX.Element {
     // nothing either.
     try {
       const ok = printDispatchRegister({
-        rows: data.items,
-        summary: data.summary,
+        rows: registerLines.items,
+        summary: registerLines.summary,
         filterLabel: bits.join(' · '),
         company,
       });
@@ -210,7 +226,7 @@ function DeliveryChallansListPage(): React.JSX.Element {
             title="OSP Outward DC"
             icon="🚛"
             count={total}
-            noun="line"
+            noun="DC"
             filterNote={search.status ? DC_STATUS_LABEL[search.status] : undefined}
             search={searchInput}
             onSearch={setSearchInput}
@@ -253,7 +269,7 @@ function DeliveryChallansListPage(): React.JSX.Element {
                   type="button"
                   className="btn btn-ghost"
                   onClick={onPrintRegister}
-                  disabled={isLoading || !data}
+                  disabled={isLoading || !data || !registerLines}
                   title="Print the DC register for the current filter/page"
                 >
                   <Icon name="printer" size={14} /> Print Register
@@ -280,7 +296,7 @@ function DeliveryChallansListPage(): React.JSX.Element {
               message={error instanceof Error ? error.message : 'Could not load DCs. Try again.'}
             />
           ) : (
-            // THE shared FIT table (ADR-199), one row per DC line; the locked lead
+            // THE shared FIT table (ADR-199), one row per DC (ADR-303); the lead
             // block are locked first. Rows tint by DC status, the row click
             // opens the DC, and Receive shows only while the DC is still out at
             // the vendor (status === 'issued') — the same gate the card carried.
@@ -294,21 +310,21 @@ function DeliveryChallansListPage(): React.JSX.Element {
                 emptyText={
                   sf.filtering || search.search || search.status ? 'No DCs match.' : 'No DCs yet.'
                 }
-                rowKey={(dc) => dc.lineId}
+                rowKey={(dc) => dc.id}
                 onRowClick={(dc) =>
-                  void navigate({ to: '/delivery-challans/$id', params: { id: dc.docId } })
+                  void navigate({ to: '/delivery-challans/$id', params: { id: dc.id } })
                 }
                 rowClassName={(dc) =>
-                  dc.docStatus === 'received'
+                  dc.status === 'received'
                     ? ROW_TINT.done
-                    : dc.docStatus === 'cancelled'
+                    : dc.status === 'cancelled'
                       ? ROW_TINT.cancelled
                       : ROW_TINT.pending
                 }
                 rowActionsWidth="1%"
                 rowActions={(dc) => (
                   <RowActions
-                    viewTo={`/delivery-challans/${dc.docId}`}
+                    viewTo={`/delivery-challans/${dc.id}`}
                     renderLink={(p) => <Link {...p} />}
                     items={[
                       {
@@ -317,10 +333,10 @@ function DeliveryChallansListPage(): React.JSX.Element {
                         icon: 'eye',
                         onSelect: () =>
                           ospDcPrint('preview', {
-                            id: dc.docId,
-                            code: dc.docCode,
+                            id: dc.id,
+                            code: dc.code,
                             vendorId: dc.vendorId,
-                            draft: draftIds.has(dc.docId),
+                            draft: draftIds.has(dc.id),
                           }),
                       },
                       {
@@ -329,10 +345,10 @@ function DeliveryChallansListPage(): React.JSX.Element {
                         icon: 'download',
                         onSelect: () =>
                           ospDcPrint('download', {
-                            id: dc.docId,
-                            code: dc.docCode,
+                            id: dc.id,
+                            code: dc.code,
                             vendorId: dc.vendorId,
-                            draft: draftIds.has(dc.docId),
+                            draft: draftIds.has(dc.id),
                           }),
                       },
                       {
@@ -343,16 +359,16 @@ function DeliveryChallansListPage(): React.JSX.Element {
                         label: 'Receive',
                         icon: 'package',
                         group: 'workflow',
-                        to: `/delivery-challans/${dc.docId}/receive`,
-                        hidden: dc.docStatus !== 'issued' || !canReceive,
+                        to: `/delivery-challans/${dc.id}/receive`,
+                        hidden: dc.status !== 'issued' || !canReceive,
                       },
                       {
                         key: 'cancel',
                         label: 'Cancel DC',
                         icon: 'x',
                         group: 'danger',
-                        hidden: !canCancel || dc.docStatus === 'cancelled',
-                        onSelect: () => setCancelling({ id: dc.docId, code: dc.docCode }),
+                        hidden: !canCancel || dc.status === 'cancelled',
+                        onSelect: () => setCancelling({ id: dc.id, code: dc.code }),
                       },
                     ]}
                   />
@@ -363,7 +379,7 @@ function DeliveryChallansListPage(): React.JSX.Element {
 
           <ListFooter
             total={total}
-            noun="line"
+            noun="DC"
             page={currentPage}
             pageSize={PAGE_SIZE}
             onPage={(p) =>

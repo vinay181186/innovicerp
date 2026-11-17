@@ -142,6 +142,10 @@ export interface SheetPrintModel {
    *  false`). The Rate and Amount columns, the money rows and the amount in
    *  words are left off the sheet altogether — never printed as dashes. */
   hideMoney?: boolean;
+  /** ADR-302 — the two money headings of the 'po' column set. SO, JWSO and
+   *  PO print Unit Value (Basic) / Total Value (Basic); left out (the Tax
+   *  Invoice, the JW Invoice) → Rate / Amount as before. */
+  moneyHeads?: { rate: string; amount: string };
   /** GRN only — the accepted / rejected columns of the total row. */
   totalAccepted?: string;
   totalRejected?: string;
@@ -757,8 +761,8 @@ export function buildSheetHtml(model: SheetPrintModel): string {
       (showHsnPo ? '<td class="colh" style="width:19mm">HSN</td>' : '') +
       '<td class="colh ctr" style="width:20mm">Qty</td>' +
       (priced
-        ? '<td class="colh rgt" style="width:26mm">Rate</td>' +
-          '<td class="colh rgt" style="width:30mm">Amount</td>'
+        ? `<td class="colh rgt" style="width:26mm">${esc(model.moneyHeads?.rate ?? 'Rate')}</td>` +
+          `<td class="colh rgt" style="width:30mm">${esc(model.moneyHeads?.amount ?? 'Amount')}</td>`
         : '')
     : grn
       ? '<td class="colh ctr" style="width:11mm">Sr No</td>' +

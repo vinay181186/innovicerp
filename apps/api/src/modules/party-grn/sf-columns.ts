@@ -7,6 +7,7 @@ import { sql } from 'drizzle-orm';
 
 import { createdByNameSql } from '../../lib/created-by-sql';
 import type { SfColumnMap } from '../../lib/list-query';
+import { PARTY_GRN_DOC_QC_STATUS_SQL } from './qc-state';
 
 export const PARTY_GRN_SF_COLUMNS: SfColumnMap = {
   code: { sql: sql`pg.code`, type: 'text' },
@@ -18,6 +19,11 @@ export const PARTY_GRN_SF_COLUMNS: SfColumnMap = {
   receivedQty: { sql: sql`COALESCE(agg.total_received, 0)`, type: 'num' },
   linesCount: { sql: sql`COALESCE(agg.lines_count, 0)`, type: 'num' },
   createdOn: { sql: sql`(pg.created_at AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
+  // ADR-303 — one row per Party GRN. Its JWSO is the HEADER's (one per GRN),
+  // so the JWSO dropdown (`jwCode`, ADR-267) already keeps each GRN once.
+  createdBy: { sql: createdByNameSql(sql`pg.created_by`), type: 'text' },
+  acceptedQty: { sql: sql`COALESCE(agg.total_accepted, 0)`, type: 'num' },
+  docQcStatus: { sql: PARTY_GRN_DOC_QC_STATUS_SQL, type: 'list' },
 };
 
 // ADR-261 — the ONE-ROW-PER-LINE list (GET /party-grn/lines, ./list-lines.ts).

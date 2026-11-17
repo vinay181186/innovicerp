@@ -92,6 +92,7 @@ import { jcEffectiveQtySql } from '../../lib/jc-effective-qty';
 import { createdByNameSql } from '../../lib/created-by-sql';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { SO_SF_COLUMNS } from './sf-columns';
+import { SO_TOTAL_VALUE_BASIC_AGG, SO_VALUE_TO_DISPATCH_AGG } from './so-value-sql';
 import { logSoEdit } from './edit-log';
 import {
   assertBomLinkable,
@@ -546,8 +547,11 @@ export async function listSalesOrders(
     // Sort & Filter (ADR-200): the screen's column filters + sort, through the
     // list's own field whitelist (sf-columns.ts). Applied to list AND count.
     const sf = readSf(input.sf);
-    const sfFrag = sfWhere(SO_SF_COLUMNS, sf);
-    const orderBy = sfOrderBy(SO_SF_COLUMNS, sf, sql`so.so_date DESC, so.code DESC`);
+    // ADR-303 — no price right → no sort / filter on the two value columns.
+    const sfFrag = sfWhere(SO_SF_COLUMNS, sf, { canSeePrice: showMoney });
+    const orderBy = sfOrderBy(SO_SF_COLUMNS, sf, sql`so.so_date DESC, so.code DESC`, {
+      canSeePrice: showMoney,
+    });
 
     // Single query: headers LEFT JOIN line totals LEFT JOIN JC totals,
     // pagination + ordering inlined. jc_qty is the sum of order_qty across
@@ -578,7 +582,10 @@ export async function listSalesOrders(
         COALESCE(line_agg.all_short_closed, false) AS "allShortClosed",
         line_agg.earliest_due_date::text      AS "earliestDueDate",
         COALESCE(jc_agg.jc_qty, 0)::int       AS "jcQty",
-        cpo_file.storage_path                 AS "clientPoFilePath"
+        cpo_file.storage_path                 AS "clientPoFilePath",
+        -- ADR-303 — Total Value (Basic) / Value to Dispatch (no GST).
+        COALESCE(line_agg.total_value_basic, 0)::text AS "totalValueBasic",
+        COALESCE(line_agg.value_to_dispatch, 0)::text AS "valueToDispatch"
       FROM public.sales_orders so
       LEFT JOIN public.users cu ON cu.id = so.created_by
       LEFT JOIN (
@@ -599,7 +606,10 @@ export async function listSalesOrders(
                BOOL_OR(l.status <> 'cancelled'
                        AND COALESCE(b.billed, 0) < l.dispatched_qty) AS any_to_bill,
                BOOL_AND(l.short_closed_at IS NOT NULL)
-                 FILTER (WHERE l.status <> 'cancelled') AS all_short_closed
+                 FILTER (WHERE l.status <> 'cancelled') AS all_short_closed,
+               -- ADR-303 — the money columns, from the SQL twins below.
+               ${SO_TOTAL_VALUE_BASIC_AGG} AS total_value_basic,
+               ${SO_VALUE_TO_DISPATCH_AGG} AS value_to_dispatch
         FROM public.sales_order_lines l
         -- Billed = Σ live invoice-line qty per SO line (the detail's billedQty).
         LEFT JOIN (
@@ -686,7 +696,14 @@ export async function listSalesOrders(
     );
 
     const mapped = (result as unknown as Array<Record<string, unknown>>).map(toListItem);
-    const items = showMoney ? mapped : mapped.map(hideSoHeaderMoney);
+    // ADR-303 — the two value columns are money: nulled with the rest.
+    const items = showMoney
+      ? mapped
+      : mapped.map((m) => ({
+          ...hideSoHeaderMoney(m),
+          totalValueBasic: null,
+          valueToDispatch: null,
+        }));
     return { items, total, limit: input.limit, offset: input.offset };
   });
 }
@@ -732,6 +749,9 @@ export function toListItem(r: Record<string, unknown>): SalesOrderListItem {
     jcQty: Number(r['jcQty'] ?? 0),
     earliestDueDate: (r['earliestDueDate'] as string | null) ?? null,
     clientPoFilePath: (r['clientPoFilePath'] as string | null) ?? null,
+    // ADR-303 — only GET /sales-orders selects these; other readers get null.
+    totalValueBasic: r['totalValueBasic'] != null ? Number(r['totalValueBasic']) : null,
+    valueToDispatch: r['valueToDispatch'] != null ? Number(r['valueToDispatch']) : null,
   };
 }
 

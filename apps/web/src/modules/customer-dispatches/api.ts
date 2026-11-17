@@ -93,6 +93,7 @@ function registerQs(q: CustomerDispatchRegisterQuery): string {
   if (q.limit !== undefined) params.set('limit', String(q.limit));
   if (q.offset) params.set('offset', String(q.offset));
   if (q.sf) params.set('sf', q.sf);
+  if (q.withLines) params.set('withLines', 'true');
   return params.toString();
 }
 

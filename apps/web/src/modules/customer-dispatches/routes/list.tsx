@@ -21,6 +21,11 @@
 //
 // 2026-11-03 (owner): no tile row above a list, like SO Master — the Total
 // Dispatched / Dispatch Entries strip is gone (plain totals, no status filter).
+//
+// 2026-11-16 (ADR-303): ONE ROW PER DISPATCH again — the `docs` of
+// GET /customer-dispatches/register (25 DISPATCHES a page). The Dispatch No.
+// opens the dispatch (ADR-296); ⋯ acts on it. Excel / Print stay one row per
+// LINE (the register's rows, every page).
 
 import type { CustomerDispatchRegisterQuery, CustomerDispatchRegisterRow } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
@@ -45,7 +50,7 @@ import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ActionMenu, ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useMyCompany } from '@/modules/settings/api';
-import { fetchDispatchRegister, useDispatchLines } from '../api';
+import { fetchDispatchRegister, useDispatchRegister } from '../api';
 import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
 import { groupByDispatch } from '../components/dispatch-group';
 import { DispatchItemSummary } from '../components/dispatch-item-summary';
@@ -78,7 +83,8 @@ async function fetchAllRegisterRows(
   q: Omit<CustomerDispatchRegisterQuery, 'limit' | 'offset'>,
 ): Promise<CustomerDispatchRegisterRow[]> {
   const groups = await fetchAllPages(async (limit, offset) => {
-    const res = await fetchDispatchRegister({ ...q, limit, offset });
+    // ADR-303 — the line rows are opt-in; Excel / Print need them.
+    const res = await fetchDispatchRegister({ ...q, limit, offset, withLines: true });
     return { items: groupByDispatch(res.rows), total: res.total };
   });
   return groups.flatMap((g) => g.lines);
@@ -130,14 +136,14 @@ function CustomerDispatchListPage(): React.JSX.Element {
   // dispatched by, JC no, POL, item code, item name, UOM, Remarks — matched on
   // the server (register.ts lineMatch). Not the qty / stock numbers.
   const filters = useMemo(() => ({ search: term || undefined, sf: sf.param }), [term, sf.param]);
-  const { data, isLoading, isFetching, isError, error } = useDispatchLines({
+  const { data, isLoading, isFetching, isError, error } = useDispatchRegister({
     ...filters,
     limit: LIST_PAGE_SIZE,
     offset: pageOffset(page),
   });
   useClampPage(page, data?.total, gotoPage);
   const total = data?.total ?? 0;
-  const rows = useMemo(() => data?.rows ?? [], [data]);
+  const rows = useMemo(() => data?.docs ?? [], [data]);
   const heldSo = sf.value.filters['soCode'];
   const pickedSo = heldSo?.kind === 'values' ? heldSo.values.join(', ') : undefined;
   // ADR-202 — dispatch ids with a pending edit; their status cell reads "Draft".
@@ -212,7 +218,8 @@ function CustomerDispatchListPage(): React.JSX.Element {
         title="Customer Dispatch"
         icon="🚚"
         count={total}
-        noun="line"
+        noun="dispatch"
+        nounPlural="dispatches"
         filterNote={pickedSo}
         search={search}
         onSearch={setSearch}
@@ -279,15 +286,14 @@ function CustomerDispatchListPage(): React.JSX.Element {
             Dispatch Log
           </div>
 
-          {/* THE shared FIT table (ADR-199), one row per dispatch line
-              (ADR-261); the row click opens the dispatch; rows tint by status
-              (cancelled → grey). */}
+          {/* THE shared FIT table (ADR-199), one row per dispatch (ADR-303);
+              the row click opens the dispatch; rows tint by status. */}
           <Panel fill bodyPadding="none">
             <DataTable
               tableKey={TABLE_KEYS.customerDispatches}
               columns={columns}
               rows={rows}
-              rowKey={(r) => r.lineId}
+              rowKey={(r) => r.dispatchId}
               loading={isLoading}
               sortFilterServer={sf}
               emptyText={term || sf.filtering ? 'No Dispatches match.' : 'No Dispatches yet.'}
@@ -312,7 +318,8 @@ function CustomerDispatchListPage(): React.JSX.Element {
           </Panel>
           <ListFooter
             total={total}
-            noun="line"
+            noun="dispatch"
+            nounPlural="dispatches"
             page={page}
             pageSize={LIST_PAGE_SIZE}
             onPage={gotoPage}

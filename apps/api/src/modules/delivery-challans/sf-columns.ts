@@ -10,7 +10,12 @@ import { sql } from 'drizzle-orm';
 import { drawingRevOf } from '../../lib/drawing-rev';
 
 import { createdByNameSql } from '../../lib/created-by-sql';
-import type { SfColumnMap } from '../../lib/list-query';
+import {
+  sfExtraDistinct,
+  sfFirstLine,
+  type SfColumnMap,
+  type SfLiftSpec,
+} from '../../lib/list-query';
 
 /** ADR-289 — the header Rev from the Revs STORED on the challan's lines (only
  *  when they agree on one); NULL for a challan made before 0247, whose header
@@ -20,6 +25,90 @@ export const DC_STORED_REV_SQL = sql`(
     FROM public.delivery_challan_lines sl
     JOIN public.item_revisions sr ON sr.id = sl.item_revision_id
    WHERE sl.delivery_challan_id = dc.id AND sl.deleted_at IS NULL)`;
+
+/** ADR-261 / ADR-303 — which order and job card a DC line `dcl` (of challan
+ *  `dc`) belongs to; each hop a single-row FK, so no line is multiplied:
+ *    SO line  = the PO line's source_so_line_id, else the DC's own
+ *               sales_order_line_id, else the job card's source_so_line_id;
+ *    job card = PO line → JC op → job card, else the line's NC's job card,
+ *               else the DC's own job card (NC return);
+ *    JWSO     = that job card's source_jw_line_id;
+ *    no link  → the DC's free-text so_ref_text (so_ref, for its Internal SO No.).
+ *  Aliases: nc, pol, ljo, ljc, sol, so, jwl, jw, so_ref. The ONE copy — the
+ *  line list (list-lines.ts) and the per-DC first-line values (DC_SHOWN_*) both
+ *  read it, so the list, its SO dropdown and the Excel export agree. */
+export const DC_LINE_ORDER_JOINS = sql`
+  -- 0237 — the LINE's NC (one return DC may carry several), header as fallback.
+  LEFT JOIN public.nc_register nc
+    ON nc.id = COALESCE(dcl.nc_id, dc.nc_id) AND nc.deleted_at IS NULL
+  LEFT JOIN public.purchase_order_lines pol
+    ON pol.id = dcl.purchase_order_line_id AND pol.deleted_at IS NULL
+  LEFT JOIN public.jc_ops ljo ON ljo.id = pol.source_jc_op_id AND ljo.deleted_at IS NULL
+  LEFT JOIN public.job_cards ljc
+    ON ljc.id = COALESCE(ljo.job_card_id, nc.job_card_id, dc.job_card_id) AND ljc.deleted_at IS NULL
+  LEFT JOIN public.sales_order_lines sol
+    ON sol.id = COALESCE(pol.source_so_line_id, dc.sales_order_line_id, ljc.source_so_line_id)
+   AND sol.deleted_at IS NULL
+  LEFT JOIN public.sales_orders so ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
+  LEFT JOIN public.job_work_order_lines jwl
+    ON jwl.id = ljc.source_jw_line_id AND jwl.deleted_at IS NULL
+  LEFT JOIN public.job_work_orders jw
+    ON jw.id = jwl.job_work_order_id AND jw.deleted_at IS NULL
+  -- No SO / JWSO link: the SO a free-text so_ref_text names (code is unique per
+  -- company) — for its Internal SO No. (ADR-207).
+  LEFT JOIN public.sales_orders so_ref
+    ON so.id IS NULL AND jw.id IS NULL
+   AND so_ref.company_id = dc.company_id AND so_ref.code = dc.so_ref_text
+   AND so_ref.deleted_at IS NULL`;
+
+/** A DC line's order No. as the SO No. cell prints it (SO, else JWSO, else the
+ *  DC's SO ref), over DC_LINE_ORDER_JOINS. */
+export const DC_LINE_SO_CODE = sql`COALESCE(so.code, jw.code, dc.so_ref_text)`;
+export const DC_LINE_SO_INTERNAL_NO = sql`COALESCE(so.internal_so_no, so_ref.internal_so_no)`;
+
+/** ADR-303 — the live lines of challan `dc`, with their order (above). */
+const DC_LINES_OF = sql`FROM public.delivery_challan_lines dcl
+  ${DC_LINE_ORDER_JOINS}
+  WHERE dcl.delivery_challan_id = dc.id AND dcl.deleted_at IS NULL`;
+const DC_LINE_ORDER = sql`dcl.line_no, dcl.id`;
+
+/** The DC's OWN (header) SO — its SO line, else the PO's SO(s), else the
+ *  free-text so_ref_text — and that SO's Internal SO No. (ADR-207). Aliases of
+ *  DC_SF_JOINS (so, po_so, so_ref). A legacy / NC-return DC whose lines carry
+ *  no PO line still has this one. */
+const DC_HEADER_SO_CODE = sql`COALESCE(so.code, po_so.so_code, dc.so_ref_text)`;
+const DC_HEADER_SO_INTERNAL_NO = sql`(CASE WHEN so.id IS NOT NULL THEN so.internal_so_no
+  WHEN po_so.so_code IS NOT NULL THEN po_so.so_internal_no
+  ELSE so_ref.internal_so_no END)`;
+
+const DC_FIRST_SO_CODE = sfFirstLine(DC_LINES_OF, DC_LINE_SO_CODE, DC_LINE_SO_CODE, DC_LINE_ORDER);
+const DC_FIRST_JC_CODE = sfFirstLine(DC_LINES_OF, sql`ljc.code`, sql`ljc.code`, DC_LINE_ORDER);
+/** What the SO No. / Internal SO No. / JC No. cells show (and sort on): the
+ *  first line's value, else the header's. Scalar subqueries — run for the page
+ *  rows (or the sort) only. Need DC_SF_JOINS. */
+export const DC_SHOWN_SO_CODE = sql`COALESCE(${DC_FIRST_SO_CODE}, ${DC_HEADER_SO_CODE})`;
+export const DC_SHOWN_SO_INTERNAL_NO = sql`(CASE WHEN ${DC_FIRST_SO_CODE} IS NOT NULL
+  THEN ${sfFirstLine(DC_LINES_OF, DC_LINE_SO_INTERNAL_NO, DC_LINE_SO_CODE, DC_LINE_ORDER)}
+  ELSE ${DC_HEADER_SO_INTERNAL_NO} END)`;
+export const DC_SO_EXTRA_COUNT = sfExtraDistinct(DC_LINES_OF, DC_LINE_SO_CODE);
+export const DC_SHOWN_JC_CODE = sql`COALESCE(${DC_FIRST_JC_CODE}, njc.code)`;
+export const DC_JC_EXTRA_COUNT = sfExtraDistinct(DC_LINES_OF, sql`ljc.code`);
+
+/** ADR-303 — the line facts the one-row-per-DC list filters on: the DC's own
+ *  (header) value OR any live line (lib/list-query liftLineFilters). The
+ *  header expressions need DC_SF_JOINS in every query the filter reaches. */
+export const DC_LINE_LIFT: SfLiftSpec = {
+  fields: {
+    soCode: { line: DC_LINE_SO_CODE, header: DC_HEADER_SO_CODE, type: 'text' },
+    soInternalNo: {
+      line: DC_LINE_SO_INTERNAL_NO,
+      header: DC_HEADER_SO_INTERNAL_NO,
+      type: 'text',
+    },
+    jobCardCode: { line: sql`ljc.code`, header: sql`njc.code`, type: 'text' },
+  },
+  linesFrom: DC_LINES_OF,
+};
 
 export const DC_SF_COLUMNS: SfColumnMap = {
   dcCode: { sql: sql`dc.code`, type: 'text' },
@@ -33,21 +122,17 @@ export const DC_SF_COLUMNS: SfColumnMap = {
                    ELSE COALESCE(po.code, dc.po_code_text) END)`,
     type: 'text',
   },
-  soCode: { sql: sql`COALESCE(so.code, po_so.so_code, dc.so_ref_text)`, type: 'text' },
-  // ADR-207 — the Internal SO No. exactly as the cell shows it: read off the
-  // SAME SO as soCode above (the DC's own SO line, else the PO's single SO,
-  // else the SO a free-text so_ref_text names). All three aliases come from
-  // DC_SF_JOINS, which the count / KPI queries add while a filter is on.
-  soInternalNo: {
-    sql: sql`(CASE WHEN so.id IS NOT NULL THEN so.internal_so_no
-                   WHEN po_so.so_code IS NOT NULL THEN po_so.so_internal_no
-                   ELSE so_ref.internal_so_no END)`,
-    type: 'text',
-  },
+  // ADR-303 — one row per DC: SO No. / Internal SO No. / JC No. show the FIRST
+  // line's value, else the DC's own (header) one, and SORT on it (scalar
+  // subqueries, DC_SHOWN_*). Their FILTERS (the SO dropdown included) never
+  // reach this map: liftLineFilters (lib/list-query) answers them over
+  // DC_LINE_LIFT — the header value OR any line.
+  soCode: { sql: DC_SHOWN_SO_CODE, type: 'text' },
+  soInternalNo: { sql: DC_SHOWN_SO_INTERNAL_NO, type: 'text' },
   totalQty: { sql: sql`COALESCE(line_agg.total_qty, 0)`, type: 'num' },
   lineCount: { sql: sql`COALESCE(line_agg.line_count, 0)::int`, type: 'num' },
   status: { sql: sql`dc.status`, type: 'list' },
-  jobCardCode: { sql: sql`njc.code`, type: 'text' },
+  jobCardCode: { sql: DC_SHOWN_JC_CODE, type: 'text' },
   drawingRev: {
     // ADR-289 — same expression as the page's "soLineRevision" column.
     sql: sql`COALESCE(${DC_STORED_REV_SQL}, sol.revision::text, po_so.so_revision, njc_jwl.revision::text)`,
@@ -55,6 +140,7 @@ export const DC_SF_COLUMNS: SfColumnMap = {
   },
   transport: { sql: sql`dc.transport`, type: 'text' },
   createdOn: { sql: sql`(dc.created_at AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
+  createdBy: { sql: createdByNameSql(sql`dc.created_by`), type: 'text' },
 };
 
 /**

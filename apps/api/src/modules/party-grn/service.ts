@@ -53,6 +53,7 @@ import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { postPartyStockMove } from '../../lib/party-stock-ledger';
 import { labelOf } from '../../lib/status-labels';
 import { emitActivityLog } from '../activity-log/service';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { PARTY_GRN_SF_COLUMNS } from './sf-columns';
 
 export function requireCompany(user: AuthContext): string {
@@ -72,6 +73,7 @@ export async function requirePartyGrnRead(user: AuthContext): Promise<void> {
 // Partial Incoming QC (0233): the two line predicates live in ./qc-state.ts —
 // QC untouched (edit / stage gate only) and QC open (QC Pending Qty > 0).
 import {
+  PARTY_GRN_DOC_QC_STATUS_SQL,
   QC_OPEN_SQL,
   QC_PENDING_QTY_SQL,
   isQcOpen,
@@ -138,7 +140,14 @@ export const LINE_AGG_SQL = sql`
              AS qc_pending_lines,
            COALESCE(SUM(${QC_PENDING_QTY_SQL}) FILTER (WHERE pgl.deleted_at IS NULL), 0)::int
              AS total_qc_pending,
-           COUNT(*)::int AS lines_count
+           COUNT(*)::int AS lines_count,
+           -- ADR-303 — the QC roll-up, by the web's line rule (lib/qc-state):
+           -- waiting = nothing inspected yet; done = inspected, nothing pending.
+           COUNT(*) FILTER (WHERE pgl.qc_at IS NULL AND pgl.accepted_qty = 0
+                              AND pgl.rejected_qty = 0)::int AS qc_waiting_lines,
+           COUNT(*) FILTER (WHERE NOT (pgl.qc_at IS NULL AND pgl.accepted_qty = 0
+                                       AND pgl.rejected_qty = 0)
+                              AND ${QC_PENDING_QTY_SQL} <= 0)::int AS qc_done_lines
     FROM public.party_grn_lines pgl
     WHERE pgl.party_grn_id = pg.id AND ${PGL_OF_HEADER_SQL}
   ) agg ON true`;
@@ -165,12 +174,18 @@ export async function listPartyGrn(
           OR pg.client_code_text ILIKE ${term}
           OR pg.client_po_no ILIKE ${term}
           OR c.name ILIKE ${term}
+          OR pg.dc_no ILIKE ${term}
           OR EXISTS (
             SELECT 1 FROM public.party_grn_lines pgl
+            -- ADR-303: the finished part / POL on any line finds the receipt too.
+            LEFT JOIN public.job_work_order_lines jwl ON jwl.id = pgl.jw_line_id
+            LEFT JOIN public.items oi ON oi.id = jwl.item_id
             WHERE pgl.party_grn_id = pg.id
               AND ${PGL_OF_HEADER_SQL}
               AND (pgl.party_material_code_text ILIKE ${term}
-                   OR pgl.party_material_name ILIKE ${term})
+                   OR pgl.party_material_name ILIKE ${term}
+                   OR COALESCE(oi.code, jwl.item_code_text) ILIKE ${term}
+                   OR jwl.client_po_line_no ILIKE ${term})
           )
         )`
       : sql``;
@@ -209,7 +224,9 @@ export async function listPartyGrn(
         COALESCE(agg.total_accepted, 0)::int AS "totalAcceptedQty",
         COALESCE(agg.qc_pending_lines, 0)::int AS "qcPendingLines",
         COALESCE(agg.total_qc_pending, 0)::int AS "totalQcPendingQty",
-        COALESCE(agg.lines_count, 0)::int AS "linesCount"
+        COALESCE(agg.lines_count, 0)::int AS "linesCount",
+        ${PARTY_GRN_DOC_QC_STATUS_SQL} AS "docQcStatus",
+        ${createdByNameSql(sql`pg.created_by`)} AS "docCreatedByName"
       FROM public.party_grn pg
       LEFT JOIN public.clients c ON c.id = pg.client_id AND c.deleted_at IS NULL
       ${LINE_AGG_SQL}
@@ -292,6 +309,21 @@ export function toListItem(r: Record<string, unknown>): PartyGrnListItem {
     qcPendingLines: Number(r['qcPendingLines'] ?? 0),
     totalQcPendingQty: Number(r['totalQcPendingQty'] ?? 0),
     linesCount: Number(r['linesCount'] ?? 0),
+    // ADR-303 — list reads only (the detail read selects neither).
+    // NULL on a Cancelled receipt (ADR-235) — never "Done".
+    ...(r['docQcStatus'] !== undefined
+      ? {
+          docQcStatus:
+            r['docQcStatus'] === 'done' ||
+            r['docQcStatus'] === 'partly_done' ||
+            r['docQcStatus'] === 'pending'
+              ? r['docQcStatus']
+              : null,
+        }
+      : {}),
+    ...(r['docCreatedByName'] !== undefined
+      ? { createdByName: (r['docCreatedByName'] as string | null) ?? null }
+      : {}),
   };
 }
 

@@ -37,7 +37,7 @@ import {
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { assertPoLinesStillOrderable } from '../../lib/po-line-sent';
 import { requireDeleteRight, requireFormAccess } from '../../lib/access';
-import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { liftLineFilters, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { assertActiveParty } from '../../lib/active-party';
 import {
   AuthorizationError,
@@ -76,6 +76,7 @@ import {
   type DocumentTraceability,
   poSendsMaterialOut,
 } from '@innovic/shared';
+import type { DocQcStatus } from '@innovic/shared';
 import type {
   CreateGoodsReceiptNoteInput,
   GoodsReceiptNoteDetail,
@@ -86,7 +87,19 @@ import type {
   ListGoodsReceiptNotesResponse,
   UpdateGoodsReceiptNoteInput,
 } from './schema';
-import { GRN_NC_CODES_SQL, GRN_SF_COLUMNS } from './sf-columns';
+import { createdByNameSql } from '../../lib/created-by-sql';
+import { GRN_LINE_ORDER_JOINS } from './list-lines';
+import {
+  GRN_DOC_QC_STATUS_SQL,
+  GRN_DOC_QC_STATUS_SUB,
+  GRN_FIRST_SO_CODE,
+  GRN_FIRST_SO_INTERNAL_NO,
+  GRN_LINE_LIFT,
+  GRN_SO_EXTRA_COUNT,
+  grnDocQcStatusOf,
+  GRN_NC_CODES_SQL,
+  GRN_SF_COLUMNS,
+} from './sf-columns';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -552,8 +565,9 @@ export async function listGoodsReceiptNotes(
     //    PO), and this module's prices are gated by `canSeeFormPrice` — a
     //    searchable amount would let a user without that right confirm a value
     //    by guessing it.
-    //  - line item code / item name: the register has no item column (it shows
-    //    a line COUNT), so there is nothing on screen for them to match.
+    //  (ADR-303: line item code / name and the lines' SO / JWSO / Internal SO
+    //  No. ARE searched now, via EXISTS — the list is one row per GRN, and a
+    //  user looks a receipt up by the part or the order it was for.)
     //  - remarks: not on the list screen.
     const term = input.search ? `%${escapeLikeTerm(input.search)}%` : null;
     const searchFrag = term
@@ -605,32 +619,49 @@ export async function listGoodsReceiptNotes(
             WHERE sgl.goods_receipt_note_id = grn.id
               AND sgl.deleted_at IS NULL
           ) ILIKE ${term} ESCAPE '\\'
+          OR EXISTS (
+            SELECT 1
+            FROM public.goods_receipt_note_lines gl
+            LEFT JOIN public.items i ON i.id = gl.item_id AND i.deleted_at IS NULL
+            ${GRN_LINE_ORDER_JOINS}
+            WHERE gl.goods_receipt_note_id = grn.id
+              AND (gl.deleted_at IS NULL OR gl.deleted_at = grn.deleted_at)
+              AND (gl.item_code_text ILIKE ${term} ESCAPE '\\'
+                OR i.code ILIKE ${term} ESCAPE '\\'
+                OR gl.item_name ILIKE ${term} ESCAPE '\\'
+                OR i.name ILIKE ${term} ESCAPE '\\'
+                OR so.code ILIKE ${term} ESCAPE '\\'
+                OR so.internal_so_no ILIKE ${term} ESCAPE '\\'
+                OR jwo.code ILIKE ${term} ESCAPE '\\')
+          )
         )`
       : sql``;
     const vendorFrag = input.vendorId ? sql`AND grn.vendor_id = ${input.vendorId}::uuid` : sql``;
     const poFrag = input.purchaseOrderId
       ? sql`AND grn.purchase_order_id = ${input.purchaseOrderId}::uuid`
       : sql``;
-    // ADR-189 — ONE QC-pending rule for the tile, this filter, the per-GRN
-    // count and Incoming QC: a line is waiting while received − accepted −
-    // rejected > 0. 'pending' = any line waiting (what the tile counts);
-    // 'in_progress' = a line part inspected and still waiting; 'completed' =
-    // no line waiting.
-    const waiting = sql.raw('(gnl.received_qty - gnl.qc_accepted_qty - gnl.qc_rejected_qty) > 0');
-    const qcStatusFrag =
-      input.qcStatus === 'pending'
-        ? sql`AND EXISTS (SELECT 1 FROM public.goods_receipt_note_lines gnl
-            WHERE gnl.goods_receipt_note_id = grn.id AND gnl.deleted_at IS NULL AND ${waiting})`
+    // ADR-189 — a line is waiting while received − accepted − rejected > 0 (the
+    // tile, the per-GRN count and Incoming QC use the same rule).
+    // ADR-303 — the list is one row per GRN: the QC filter reads the
+    // receipt's ONE status (GRN_DOC_QC_STATUS_SUB, the QC Status column's
+    // rule). `docQcStatus` is the dropdown; an old `qcStatus` link still works:
+    // pending → pending or partly done, in_progress → partly done,
+    // completed → done.
+    const qcWanted: readonly DocQcStatus[] | null = input.docQcStatus
+      ? [input.docQcStatus]
+      : input.qcStatus === 'pending'
+        ? ['pending', 'partly_done']
         : input.qcStatus === 'in_progress'
-          ? sql`AND EXISTS (SELECT 1 FROM public.goods_receipt_note_lines gnl
-              WHERE gnl.goods_receipt_note_id = grn.id AND gnl.deleted_at IS NULL AND ${waiting}
-                AND (gnl.qc_accepted_qty + gnl.qc_rejected_qty) > 0)`
+          ? ['partly_done']
           : input.qcStatus === 'completed'
-            ? sql`AND EXISTS (SELECT 1 FROM public.goods_receipt_note_lines gnl
-                WHERE gnl.goods_receipt_note_id = grn.id AND gnl.deleted_at IS NULL)
-              AND NOT EXISTS (SELECT 1 FROM public.goods_receipt_note_lines gnl
-                WHERE gnl.goods_receipt_note_id = grn.id AND gnl.deleted_at IS NULL AND ${waiting})`
-            : sql``;
+            ? ['done']
+            : null;
+    const qcStatusFrag = qcWanted
+      ? sql`AND ${GRN_DOC_QC_STATUS_SUB} IN (${sql.join(
+          qcWanted.map((v) => sql`${v}`),
+          sql`, `,
+        )})`
+      : sql``;
     const fromFrag = input.fromDate ? sql`AND grn.grn_date >= ${input.fromDate}::date` : sql``;
     const toFrag = input.toDate ? sql`AND grn.grn_date <= ${input.toDate}::date` : sql``;
     // Per-GRN line totals. One row per GRN, so the summary (= pager count)
@@ -654,7 +685,9 @@ export async function listGoodsReceiptNotes(
                SUM(gl.qc_rejected_qty) AS qc_rejected_qty,
                SUM(CASE WHEN gh.deleted_at IS NULL
                          AND gl.received_qty - gl.qc_accepted_qty - gl.qc_rejected_qty > 0
-                        THEN 1 ELSE 0 END) AS qc_pending_count
+                        THEN 1 ELSE 0 END) AS qc_pending_count,
+               SUM(CASE WHEN gl.qc_accepted_qty + gl.qc_rejected_qty > 0
+                        THEN 1 ELSE 0 END) AS qc_touched_count
         FROM public.goods_receipt_note_lines gl
         JOIN public.goods_receipt_notes gh ON gh.id = gl.goods_receipt_note_id
         WHERE gh.company_id = ${companyId}::uuid
@@ -669,7 +702,10 @@ export async function listGoodsReceiptNotes(
                SUM(qc_accepted_qty) AS qc_accepted_qty,
                SUM(qc_rejected_qty) AS qc_rejected_qty,
                SUM(CASE WHEN received_qty - qc_accepted_qty - qc_rejected_qty > 0
-                        THEN 1 ELSE 0 END) AS qc_pending_count
+                        THEN 1 ELSE 0 END) AS qc_pending_count,
+               -- ADR-303 — lines with any piece inspected (the QC roll-up).
+               SUM(CASE WHEN qc_accepted_qty + qc_rejected_qty > 0
+                        THEN 1 ELSE 0 END) AS qc_touched_count
         FROM public.goods_receipt_note_lines
         WHERE deleted_at IS NULL
         GROUP BY goods_receipt_note_id
@@ -681,8 +717,10 @@ export async function listGoodsReceiptNotes(
     // Sort & Filter (ADR-200): the screen's column filters + sort, through the
     // list's own field whitelist (sf-columns.ts). Applied to the list AND the
     // summary, so the pager total and the QC counts follow the filters too.
-    const sf = readSf(input.sf);
-    const sfFrag = sfWhere(GRN_SF_COLUMNS, sf);
+    // ADR-303 — SO No. / Internal SO No. filters (the SO dropdown too,
+    // ADR-267) keep a GRN when ANY of its lines matches: one row per GRN.
+    const { docSf: sf, lineFrag } = liftLineFilters(readSf(input.sf), GRN_LINE_LIFT);
+    const sfFrag = sql`${sfWhere(GRN_SF_COLUMNS, sf)} ${lineFrag}`;
     // The summary needs the line totals only when a ▾ filter reads them — an
     // unfiltered summary must not aggregate every GRN line a second time.
     const summaryLineAgg = sf && sf.filters.length > 0 ? lineAggJoin : sql``;
@@ -729,7 +767,13 @@ export async function listGoodsReceiptNotes(
                 - COALESCE(line_agg.qc_accepted_qty, 0)
                 - COALESCE(line_agg.qc_rejected_qty, 0) <= 0
           THEN 'close' ELSE 'pending'
-        END AS "grnStatus"
+        END AS "grnStatus",
+        -- ADR-303 — one QC status for the receipt, rolled up from its lines.
+        ${GRN_DOC_QC_STATUS_SQL} AS "docQcStatus",
+        ${GRN_FIRST_SO_CODE} AS "soCode",
+        ${GRN_FIRST_SO_INTERNAL_NO} AS "soInternalNo",
+        ${GRN_SO_EXTRA_COUNT} AS "soExtraCount",
+        ${createdByNameSql(sql`grn.created_by`)} AS "createdByName"
       FROM public.goods_receipt_notes grn
       LEFT JOIN public.vendors v ON v.id = grn.vendor_id AND v.deleted_at IS NULL
       LEFT JOIN public.purchase_orders po
@@ -761,6 +805,12 @@ export async function listGoodsReceiptNotes(
       LIMIT ${input.limit} OFFSET ${input.offset}
     `);
 
+    // ADR-303 — the receipt's ONE QC status over the summary's per_grn counts.
+    const PER_GRN_QC = grnDocQcStatusOf(
+      sql`per_grn.line_count`,
+      sql`per_grn.pending_count`,
+      sql`per_grn.touched_count`,
+    );
     // PL-GRN-1b — KPI summary across the SAME filter set (no LIMIT). Mirrors
     // legacy renderGRN L26483–26488 four-tile strip. A GRN counts as
     // QC-pending if any line still has qty waiting (received − accepted −
@@ -781,13 +831,21 @@ export async function listGoodsReceiptNotes(
         COUNT(*) FILTER (
           WHERE grn.deleted_at IS NULL
             AND grn.grn_date = (NOW() AT TIME ZONE 'Asia/Kolkata')::date
-        )::int AS today
+        )::int AS today,
+        -- ADR-303 — the QC Status dropdown's counts: the receipt's ONE status
+        -- (same rule as the column; NULL on a Cancelled GRN, so not counted).
+        COUNT(*) FILTER (WHERE ${PER_GRN_QC} = 'pending')::int AS doc_qc_pending,
+        COUNT(*) FILTER (WHERE ${PER_GRN_QC} = 'partly_done')::int AS doc_qc_partly_done,
+        COUNT(*) FILTER (WHERE ${PER_GRN_QC} = 'done')::int AS doc_qc_done
       FROM public.goods_receipt_notes grn
       LEFT JOIN public.vendors v ON v.id = grn.vendor_id AND v.deleted_at IS NULL
       LEFT JOIN LATERAL (
         SELECT
           COUNT(*) AS line_count,
-          BOOL_OR(received_qty - qc_accepted_qty - qc_rejected_qty > 0) AS has_pending
+          BOOL_OR(received_qty - qc_accepted_qty - qc_rejected_qty > 0) AS has_pending,
+          COUNT(*) FILTER (WHERE received_qty - qc_accepted_qty - qc_rejected_qty > 0)
+            AS pending_count,
+          COUNT(*) FILTER (WHERE qc_accepted_qty + qc_rejected_qty > 0) AS touched_count
         FROM public.goods_receipt_note_lines gnl
         WHERE gnl.goods_receipt_note_id = grn.id
           AND gnl.deleted_at IS NULL
@@ -813,6 +871,9 @@ export async function listGoodsReceiptNotes(
       qcPending: Number(sumRow['qc_pending'] ?? 0),
       qcCleared: Number(sumRow['qc_cleared'] ?? 0),
       today: Number(sumRow['today'] ?? 0),
+      docQcPending: Number(sumRow['doc_qc_pending'] ?? 0),
+      docQcPartlyDone: Number(sumRow['doc_qc_partly_done'] ?? 0),
+      docQcDone: Number(sumRow['doc_qc_done'] ?? 0),
     };
 
     // Pager total comes from the summary above, which already runs the SAME
@@ -862,6 +923,17 @@ function toListItem(r: Record<string, unknown>): GoodsReceiptNoteListItem {
     totalQcRejectedQty: Number(r['totalQcRejectedQty'] ?? 0),
     qcPendingCount: Number(r['qcPendingCount'] ?? 0),
     grnStatus: r['grnStatus'] === 'close' ? 'close' : 'pending',
+    soCode: (r['soCode'] as string | null) ?? null,
+    soInternalNo: (r['soInternalNo'] as string | null) ?? null,
+    soExtraCount: Number(r['soExtraCount'] ?? 0),
+    // ADR-303 — NULL on a Cancelled GRN (shown as "Cancelled", never "Done").
+    docQcStatus:
+      r['docQcStatus'] === 'done' ||
+      r['docQcStatus'] === 'partly_done' ||
+      r['docQcStatus'] === 'pending'
+        ? r['docQcStatus']
+        : null,
+    createdByName: (r['createdByName'] as string | null) ?? null,
   };
 }
 

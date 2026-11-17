@@ -53,9 +53,10 @@ import {
   NotFoundError,
   ValidationError,
 } from '../../lib/errors';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { lockDocSeries } from '../../lib/doc-series-lock';
 import { polSql } from '../../lib/pol';
-import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { liftLineFilters, likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { lockPoLinesForSend, poLineSentRaw, sumSentOnPoLines } from '../../lib/po-line-sent';
 import { postStockMove, roundQty } from '../../lib/stock-ledger';
 import { recordOutParts } from '../../lib/stock-out-parts';
@@ -64,7 +65,20 @@ import { buildTimeline, itemSection, section, toIsoDate } from '../../lib/tracea
 // ADR-217 phase 4 — the one return-to-vendor guard, shared with the OSP
 // outward challan (it lives beside its SQL in the delivery-challans module).
 import { assertNoRtvPending } from '../delivery-challans/rtv-candidates';
-import { JW_DC_INWARD_SF_COLUMNS, JW_DC_OUTWARD_SF_COLUMNS } from './sf-columns';
+import {
+  INWARD_LINES_FROM,
+  JDOL_OF_HEADER_SQL,
+  JW_DC_INWARD_FIRST_ORDER,
+  JW_DC_INWARD_LINE_LIFT,
+  JW_DC_INWARD_ORDER_EXTRA,
+  JW_DC_INWARD_SF_COLUMNS,
+  JW_DC_OUTWARD_FIRST_ORDER,
+  JW_DC_OUTWARD_FIRST_SO_INTERNAL_NO,
+  JW_DC_OUTWARD_LINE_LIFT,
+  JW_DC_OUTWARD_ORDER_EXTRA,
+  JW_DC_OUTWARD_SF_COLUMNS,
+  OUTWARD_LINES_FROM,
+} from './sf-columns';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -152,11 +166,15 @@ function headerScopeSql(includeCancelled: boolean): SQL {
     : sql`jdo.deleted_at IS NULL`;
 }
 
-/** A challan's own lines (alias jdol, header jdoh): live ones, or — on a
- *  Cancelled challan — those cancelled with it (the header's deleted_at). For
- *  a live header this is exactly `jdol.deleted_at IS NULL`. */
-const JDOL_OF_HEADER_SQL =
-  '(jdol.deleted_at IS NULL OR (jdoh.deleted_at IS NOT NULL AND jdol.deleted_at = jdoh.deleted_at))';
+/** The search's EXISTS: the outer DC's own lines. */
+const OUTWARD_LINES_SCOPE = sql`jdol.jw_dc_outward_id = jdo.id AND ${sql.raw(JDOL_OF_HEADER_SQL)}`;
+
+/** The search's EXISTS over INWARD_LINES_FROM: the outer receipt's (jdi) own
+ *  lines — live ones, or on a Cancelled receipt those cancelled with it (the
+ *  same rule as its totals). */
+const INWARD_LINES_SCOPE = sql`jdil.jw_dc_inward_id = jdi.id
+  AND (jdil.deleted_at IS NULL
+       OR (jdi.cancelled_at IS NOT NULL AND jdil.deleted_at = jdi.deleted_at))`;
 
 export async function listJwDcOutward(
   input: ListJwDcOutwardQuery,
@@ -172,6 +190,15 @@ export async function listJwDcOutward(
           OR jdo.vendor_name_text ILIKE ${term}
           OR jdo.vendor_code_text ILIKE ${term}
           OR v.name ILIKE ${term}
+          -- ADR-303: an item / order on ANY of the DC's lines (the DC stays one row).
+          OR EXISTS (
+            SELECT 1 ${OUTWARD_LINES_FROM}
+            WHERE ${OUTWARD_LINES_SCOPE}
+              AND (i.code ILIKE ${term} OR jdol.item_code_text ILIKE ${term}
+                   OR i.name ILIKE ${term} OR jdol.item_name_text ILIKE ${term}
+                   OR so.code ILIKE ${term} OR so.internal_so_no ILIKE ${term}
+                   OR jwo.code ILIKE ${term})
+          )
         )`
       : sql``;
     const vendorFrag = input.vendorId ? sql`AND jdo.vendor_id = ${input.vendorId}::uuid` : sql``;
@@ -185,8 +212,11 @@ export async function listJwDcOutward(
       : sql``;
     // Sort & Filter (ADR-200) on the derived row `z` — the same WHERE feeds the
     // page and its count, so the total follows the search + every filter.
+    // ADR-267/303: the SO dropdown (`soCode`) keeps a DC with ANY line of that
+    // order — EXISTS on z.id, so the DC is still one row.
     const sf = readSf(input.sf);
-    const outerWhere = sql`TRUE ${statusFrag} ${sfWhere(JW_DC_OUTWARD_SF_COLUMNS, sf)}`;
+    const soSf = liftLineFilters(sf, JW_DC_OUTWARD_LINE_LIFT);
+    const outerWhere = sql`TRUE ${statusFrag} ${sfWhere(JW_DC_OUTWARD_SF_COLUMNS, soSf.docSf)} ${soSf.lineFrag}`;
     const orderBy = sfOrderBy(
       JW_DC_OUTWARD_SF_COLUMNS,
       sf,
@@ -199,7 +229,12 @@ export async function listJwDcOutward(
           jdol.jw_dc_outward_id AS dc_id,
           SUM(jdol.sent_qty)::float8 AS total_sent,
           COUNT(*)::int AS lines_count,
-          COALESCE(SUM(rl.returned_qty)::float8, 0) AS total_returned
+          COALESCE(SUM(rl.returned_qty)::float8, 0) AS total_returned,
+          -- ADR-303 roll-up (the returnStatus CASE): lines fully back / any back.
+          COUNT(*) FILTER (
+            WHERE jdol.sent_qty > 0 AND COALESCE(rl.returned_qty, 0) >= jdol.sent_qty
+          )::int AS lines_returned,
+          COUNT(*) FILTER (WHERE COALESCE(rl.returned_qty, 0) > 0)::int AS lines_touched
         FROM public.jw_dc_outward_lines jdol
         JOIN public.jw_dc_outward jdoh ON jdoh.id = jdol.jw_dc_outward_id
         LEFT JOIN LATERAL (
@@ -235,14 +270,18 @@ export async function listJwDcOutward(
         CASE WHEN jdo.cancelled_at IS NOT NULL THEN 0
              ELSE GREATEST(0, COALESCE(rs.total_sent, 0) - COALESCE(rs.total_returned, 0))
         END::float8 AS "pendingQty",
+        -- ADR-303 — ONE status per DC from its lines' own statuses (the line
+        -- register's rule): every line back = fully_returned, some = partial,
+        -- none = out. A DC with no lines is out.
         CASE
           WHEN jdo.cancelled_at IS NOT NULL THEN 'fully_returned'
-          WHEN COALESCE(rs.total_sent, 0) > 0
-            AND COALESCE(rs.total_returned, 0) >= COALESCE(rs.total_sent, 0) THEN 'fully_returned'
-          WHEN COALESCE(rs.total_returned, 0) > 0 THEN 'partial'
+          WHEN COALESCE(rs.lines_count, 0) > 0
+            AND rs.lines_returned = rs.lines_count THEN 'fully_returned'
+          WHEN COALESCE(rs.lines_touched, 0) > 0 THEN 'partial'
           ELSE 'out'
         END AS "returnStatus",
-        so_resolved.so_code AS "soCode"
+        so_resolved.so_code AS "soCode",
+        ${createdByNameSql(sql`jdo.created_by`)} AS "createdByName"
       FROM public.jw_dc_outward jdo
       LEFT JOIN public.vendors v ON v.id = jdo.vendor_id AND v.deleted_at IS NULL
       LEFT JOIN return_stats rs ON rs.dc_id = jdo.id
@@ -267,7 +306,14 @@ export async function listJwDcOutward(
     `;
 
     const result = await tx.execute(sql`
-      SELECT * FROM (${base}) z
+      -- ADR-303 — the first line's order / Internal SO No. / how many more:
+      -- scalar subqueries in the OUTER select, so only the page rows run them
+      -- (and never the count below).
+      SELECT z.*,
+        ${JW_DC_OUTWARD_FIRST_ORDER} AS "orderCode",
+        ${JW_DC_OUTWARD_ORDER_EXTRA} AS "orderExtraCount",
+        ${JW_DC_OUTWARD_FIRST_SO_INTERNAL_NO} AS "soInternalNo"
+      FROM (${base}) z
       WHERE ${outerWhere}
       ORDER BY ${orderBy}
       LIMIT ${input.limit} OFFSET ${input.offset}
@@ -322,6 +368,10 @@ function toOutwardListItem(
     pendingQty: Number(r['pendingQty'] ?? 0),
     returnStatus: (r['returnStatus'] as 'out' | 'partial' | 'fully_returned') ?? 'out',
     soCode: (r['soCode'] as string | null) ?? null,
+    orderCode: (r['orderCode'] as string | null) ?? null,
+    orderExtraCount: Number(r['orderExtraCount'] ?? 0),
+    soInternalNo: (r['soInternalNo'] as string | null) ?? null,
+    createdByName: (r['createdByName'] as string | null) ?? null,
   };
 }
 
@@ -1155,7 +1205,17 @@ export async function listJwDcInward(
           OR jdi.dc_code_text ILIKE ${term}
           OR jdi.vendor_challan_no ILIKE ${term}
           OR jdo.vendor_name_text ILIKE ${term}
+          OR jdo.jwpo_code_text ILIKE ${term}
           OR v.name ILIKE ${term}
+          -- ADR-303: an item / order on ANY of the receipt's lines (one row each).
+          OR EXISTS (
+            SELECT 1 ${INWARD_LINES_FROM}
+            WHERE ${INWARD_LINES_SCOPE}
+              AND (i.code ILIKE ${term} OR jdil.item_code_text ILIKE ${term}
+                   OR i.name ILIKE ${term} OR jdil.item_name_text ILIKE ${term}
+                   OR so.code ILIKE ${term} OR so.internal_so_no ILIKE ${term}
+                   OR jwo.code ILIKE ${term})
+          )
         )`
       : sql``;
     const outFrag = input.jwDcOutwardId
@@ -1163,8 +1223,11 @@ export async function listJwDcInward(
       : sql``;
     // Sort & Filter (ADR-200) on the derived row `z` — the same WHERE feeds the
     // page and its count, so the total follows the search + every filter.
+    // ADR-267/303: the SO dropdown (`soCode`) keeps a receipt with ANY line of
+    // that order — EXISTS inside `base` (on jdi), so it stays one row.
     const sf = readSf(input.sf);
-    const outerWhere = sql`TRUE ${sfWhere(JW_DC_INWARD_SF_COLUMNS, sf)}`;
+    const soSf = liftLineFilters(sf, JW_DC_INWARD_LINE_LIFT);
+    const outerWhere = sql`TRUE ${sfWhere(JW_DC_INWARD_SF_COLUMNS, soSf.docSf)} ${soSf.lineFrag}`;
     const orderBy = sfOrderBy(
       JW_DC_INWARD_SF_COLUMNS,
       sf,
@@ -1186,6 +1249,9 @@ export async function listJwDcInward(
         jdi.cancel_reason AS "cancelReason", jdi.cancelled_at AS "cancelledAt",
         jdo.vendor_name_text AS "vendorNameText",
         v.name AS "vendorName",
+        jdo.jwpo_code_text AS "jwpoCodeText",
+        COALESCE(agg.line_count, 0)::int AS "lineCount",
+        ${createdByNameSql(sql`jdi.created_by`)} AS "createdByName",
         jdi.goods_receipt_note_id AS "goodsReceiptNoteId",
         g.code AS "grnCode",
         COALESCE(agg.total_received, 0)::float8 AS "totalReceivedQty",
@@ -1208,6 +1274,7 @@ export async function listJwDcInward(
       ) gq ON true
       LEFT JOIN LATERAL (
         SELECT
+          COUNT(*)::int AS line_count,
           SUM(received_qty)::float8 AS total_received,
           SUM(ok_qty)::float8 AS total_ok,
           SUM(rejected_qty)::float8 AS total_rej
@@ -1230,7 +1297,11 @@ export async function listJwDcInward(
     `;
 
     const result = await tx.execute(sql`
-      SELECT * FROM (${base}) z
+      -- ADR-303 — first line's order + how many more: page rows only.
+      SELECT z.*,
+        ${JW_DC_INWARD_FIRST_ORDER} AS "orderCode",
+        ${JW_DC_INWARD_ORDER_EXTRA} AS "orderExtraCount"
+      FROM (${base}) z
       WHERE ${outerWhere}
       ORDER BY ${orderBy}
       LIMIT ${input.limit} OFFSET ${input.offset}
@@ -1265,6 +1336,11 @@ export async function listJwDcInward(
         totalReceivedQty: Number(r['totalReceivedQty'] ?? 0),
         totalOkQty: Number(r['totalOkQty'] ?? 0),
         totalRejectedQty: Number(r['totalRejectedQty'] ?? 0),
+        jwpoCodeText: (r['jwpoCodeText'] as string | null) ?? null,
+        lineCount: Number(r['lineCount'] ?? 0),
+        orderCode: (r['orderCode'] as string | null) ?? null,
+        orderExtraCount: Number(r['orderExtraCount'] ?? 0),
+        createdByName: (r['createdByName'] as string | null) ?? null,
       }),
     );
     return { items: itemsOut, total, limit: input.limit, offset: input.offset };

@@ -2,17 +2,19 @@
 // standard 2026-10-01). Split out of routes/list.tsx so that file stays small
 // and the sheet is defined in one place.
 //
-// ADR-261 (owner 2026-10-31): ONE ROW PER SO LINE (GET /sales-orders/lines).
-// The locked lead block (SO No. · Internal SO No. · POL · Created On · Item
-// Code (CODE/REV) · Item Name) come first via leadColumns; then SO Date, SO
-// Type, Customer, Client PO No., the LINE's Order Qty / JC Qty / Dispatched /
-// Pending / Due Date, SO Status and Fulfilment (the order's). The row ⋯, row
-// click and dialogs still act on the ORDER (each row carries the order's list
-// item). Labels per docs/NAMING.md.
+// ADR-303 (owner 2026-11-16): ONE ROW PER ORDER again (GET /sales-orders). The
+// locked lead block (Sr No · SO No. · Created On · Internal SO No.) comes first
+// via leadColumns — no POL / Item Code / Item Name (an order has many); then SO
+// Date, SO Type, Customer, Client PO No., Lines, Total Value (Basic), Value to
+// Dispatch, Due Date (earliest line), SO Status, Fulfilment and Created By. No
+// qty columns. Labels per docs/NAMING.md (lines 138 and 304). The Excel Export
+// stays one row per line (GET /sales-orders/lines) — soLinePendingQty below is
+// its Pending.
 
 import {
   SO_STATUSES,
   SO_TYPES,
+  TOTAL_VALUE_BASIC_LABEL,
   type SalesOrderLineListItem,
   type SalesOrderListItem,
 } from '@innovic/shared';
@@ -28,46 +30,41 @@ import { SoFulfilmentBadge } from './so-fulfilment-badge';
 const SO_TYPE_OPTIONS = SO_TYPES.map((value) => ({ value, label: SO_TYPE_LABEL[value] }));
 const SO_STATUS_OPTIONS = SO_STATUSES.map((value) => ({ value, label: SO_STATUS_LABEL[value] }));
 
-/** Pieces still owed on the LINE (NAMING.md "Pending"): ordered − dispatched;
- *  nothing once the line is closed short (ADR-196) or cancelled. */
+/** ₹ with Indian grouping, to the paise (as the SO totals strip). */
+function fmtInr(n: number): string {
+  return `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+/** Pieces still owed on ONE LINE (NAMING.md "Pending") — the line Excel
+ *  export's column: ordered − dispatched; nothing once the line is closed short
+ *  (ADR-196) or cancelled. */
 export function soLinePendingQty(r: SalesOrderLineListItem): number {
   if (r.lineShortClosedAt || r.lineStatus === 'cancelled') return 0;
   return Math.max(0, r.lineOrderQty - r.lineDispatchedQty);
 }
 
+/** The order is open and its earliest line Due Date has passed. */
+function soOverdue(so: SalesOrderListItem, today: string): boolean {
+  return so.earliestDueDate != null && so.earliestDueDate < today && so.status === 'open';
+}
+
 /**
- * Whole-row wash by the REAL status enums only (ADR-199 ROW_TINT), per line:
- *   order or line cancelled → cancelled (grey)
- *   draft order             → pending   (amber)
- *   open order + line past its Due Date with pieces still owed → late (red)
- *   order closed / dispatched, or nothing owed on the line → done (green)
- *   everything else → no wash
+ * Whole-row wash by the REAL status + fulfilment enums only (ADR-199 ROW_TINT):
+ *   cancelled              → cancelled
+ *   draft                  → pending   (orange)
+ *   open + past earliest Due Date → late (red)
+ *   closed / dispatched, or fulfilment Completed / Closed → done (green)
+ *   everything else (open, in progress) → no wash
  * `today` is the IST yyyy-mm-dd the route computes once, so the wash and the
  * Due Date column agree on "late".
  */
-export function soLineRowTint(r: SalesOrderLineListItem, today: string): string | undefined {
-  if (r.status === 'cancelled' || r.lineStatus === 'cancelled') return ROW_TINT.cancelled;
-  if (r.status === 'draft') return ROW_TINT.pending;
-  // A line-less SO (one row, no line) owes nothing on a line: no wash.
-  if (r.lineId == null) return undefined;
-  if (lineOverdue(r, today)) return ROW_TINT.late;
-  if (r.status === 'closed' || r.status === 'dispatched') return ROW_TINT.done;
-  if (soLinePendingQty(r) === 0) return ROW_TINT.done;
+export function soRowTint(so: SalesOrderListItem, today: string): string | undefined {
+  if (so.status === 'cancelled') return ROW_TINT.cancelled;
+  if (so.status === 'draft') return ROW_TINT.pending;
+  if (soOverdue(so, today)) return ROW_TINT.late;
+  if (so.status === 'closed' || so.status === 'dispatched') return ROW_TINT.done;
+  if (so.fulfilmentStatus === 'completed' || so.fulfilmentStatus === 'closed') return ROW_TINT.done;
   return undefined;
-}
-
-function lineOverdue(r: SalesOrderLineListItem, today: string): boolean {
-  return (
-    r.lineDueDate != null && r.lineDueDate < today && r.status === 'open' && soLinePendingQty(r) > 0
-  );
-}
-
-/** JC Qty colour: green once every piece has a job card, amber while some do,
- *  quiet while none do — the rule the card and the old sheet both used. */
-function jcColor(r: SalesOrderLineListItem): string {
-  if (r.lineJcQty >= r.lineOrderQty && r.lineOrderQty > 0) return 'var(--green)';
-  if (r.lineJcQty > 0) return 'var(--amber)';
-  return 'var(--text3)';
 }
 
 export function soListColumns(opts: {
@@ -79,19 +76,43 @@ export function soListColumns(opts: {
   draftIds?: Set<string>;
   /** Sr No of this page's first row (server offset + 1). */
   firstRowNo: number;
-}): DataTableColumn<SalesOrderLineListItem>[] {
-  const { today, onPreviewClientPo, draftIds, firstRowNo } = opts;
+  /** The caller's price right (so_create): without it the two value columns
+   *  are not drawn (the server also nulls them and refuses their ▾). */
+  canSeePrice: boolean;
+}): DataTableColumn<SalesOrderListItem>[] {
+  const { today, onPreviewClientPo, draftIds, firstRowNo, canSeePrice } = opts;
+  const money = (v: number | null | undefined): React.JSX.Element =>
+    v == null ? <span className="text3">—</span> : <span className="mono">{fmtInr(v)}</span>;
+  const valueCols: DataTableColumn<SalesOrderListItem>[] = canSeePrice
+    ? [
+        {
+          id: 'total_value_basic',
+          sortFilterField: 'totalValueBasic',
+          filterType: 'num',
+          kind: 'num',
+          money: true,
+          header: TOTAL_VALUE_BASIC_LABEL,
+          nowrap: true,
+          render: (so) => money(so.totalValueBasic),
+        },
+        {
+          id: 'value_to_dispatch',
+          sortFilterField: 'valueToDispatch',
+          filterType: 'num',
+          kind: 'num',
+          money: true,
+          header: 'Value to Dispatch',
+          nowrap: true,
+          render: (so) => money(so.valueToDispatch),
+        },
+      ]
+    : [];
   return [
-    ...leadColumns<SalesOrderLineListItem>({
+    ...leadColumns<SalesOrderListItem>({
       firstRowNo,
       soNo: (r) => r.code,
       internalSoNo: (r) => r.internalSoNo,
-      pol: (r) => r.clientPoLineNo,
-      createdOn: (r) => r.lineCreatedAt,
-      itemCode: (r) => r.itemCode,
-      itemRev: (r) => r.itemRevision,
-      // A line-less SO's row has no Item Name → '—'.
-      itemName: (r) => r.itemName || '—',
+      createdOn: (r) => r.createdAt,
       overrides: {
         so_no: {
           sortFilterField: 'soCode',
@@ -110,10 +131,7 @@ export function soListColumns(opts: {
           ),
         },
         so_internal_no: { sortFilterField: 'internalSoNo' },
-        client_po_line_no: { sortFilterField: 'clientPoLineNo' },
         created_on: { sortFilterField: 'createdOn' },
-        item_code: { sortFilterField: 'itemCode' },
-        item_name: { sortFilterField: 'itemName' },
       },
     }),
     {
@@ -205,57 +223,27 @@ export function soListColumns(opts: {
       ),
     },
     {
-      id: 'order_qty',
-      sortFilterField: 'totalQty',
+      id: 'line_count',
+      sortFilterField: 'lineCount',
       filterType: 'num',
-      header: 'Order Qty',
-      align: 'right',
-      className: 'mono fw-700',
+      kind: 'num',
+      header: 'Lines',
+      className: 'mono',
       nowrap: true,
-      render: (r) => r.lineOrderQty,
+      render: (so) => so.lineCount,
     },
-    {
-      id: 'jc_qty',
-      sortFilterField: 'jcQty',
-      filterType: 'num',
-      header: 'JC Qty',
-      align: 'right',
-      className: 'mono fw-700',
-      nowrap: true,
-      render: (r) => <span style={{ color: jcColor(r) }}>{r.lineJcQty}</span>,
-    },
-    {
-      id: 'dispatched_qty',
-      sortFilterField: 'dispatchedQty',
-      filterType: 'num',
-      header: 'Dispatched',
-      align: 'right',
-      className: 'mono fw-700',
-      headColor: 'var(--green)',
-      nowrap: true,
-      render: (r) => <span style={{ color: 'var(--green2)' }}>{r.lineDispatchedQty}</span>,
-    },
-    {
-      id: 'pending_qty',
-      header: 'Pending',
-      align: 'right',
-      className: 'mono fw-700',
-      headColor: 'var(--red)',
-      nowrap: true,
-      // ADR-196 — a line closed short owes nothing.
-      render: (r) => <span style={{ color: 'var(--red2)' }}>{soLinePendingQty(r)}</span>,
-    },
+    ...valueCols,
     {
       id: 'due_date',
-      // The LINE's own Due Date.
+      // The EARLIEST line Due Date of the order.
       sortFilterField: 'earliestDueDate',
       kind: 'date',
       header: 'Due Date',
       className: 'mono',
       nowrap: true,
-      render: (r) => {
-        const overdue = lineOverdue(r, today);
-        if (!r.lineDueDate) return <span className="text2">—</span>;
+      render: (so) => {
+        const overdue = soOverdue(so, today);
+        if (!so.earliestDueDate) return <span className="text2">—</span>;
         return (
           <span
             style={{
@@ -263,7 +251,7 @@ export function soListColumns(opts: {
               fontWeight: overdue ? 700 : undefined,
             }}
           >
-            {fmtDate(r.lineDueDate)}
+            {fmtDate(so.earliestDueDate)}
             {overdue ? ' ⚠' : ''}
           </span>
         );
@@ -292,9 +280,9 @@ export function soListColumns(opts: {
           <span className="text3">—</span>
         ),
     },
-    // Created By of the SAME record as Created On (the line, else the order).
-    createdByColumn<SalesOrderLineListItem>({
-      createdByName: (r) => r.lineCreatedByName,
+    // Created By of the SAME record as Created On (the order).
+    createdByColumn<SalesOrderListItem>({
+      createdByName: (r) => r.createdByName,
       overrides: { sortFilterField: 'createdBy' },
     }),
   ];

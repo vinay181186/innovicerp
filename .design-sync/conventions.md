@@ -17,7 +17,7 @@ Style with CSS variables from `styles.css`, never typed values.
 - Existing classes: `.btn .btn-primary .btn-ghost .btn-sm`, `.panel`, `.innovic-input`, `.form-label`, `.req` (the red ★).
 
 ## Page patterns (one standard, every screen)
-- **List:** `ListHeader` (title, count, search) → `Panel` + `DataTable` → `ListFooter`. No row of count or money tiles above a list; counts go in the Status filter or the footer's `summary`. Every row action sits in the ⋯ `RowMenu`. A row does not open on a click: only the document number (a master's Code) opens it, blue and bold with no underline. `DataTable` does this when given `onRowClick` (ADR-296).
+- **List:** `ListHeader` (title, count, search) → `Panel` + `DataTable` → `ListFooter`. No row of count or money tiles above a list; counts go in the Status filter or the footer's `summary`. Every row action sits in the ⋯ `RowMenu`. A row does not open on a click: only the document number (a master's Code) opens it, blue and bold with no underline. `DataTable` does this when given `onRowClick` (ADR-296). A document list (SO, PO, DC, GRN, Invoice…) shows ONE ROW PER DOCUMENT, with a `Lines` count and no Item Code / Item Name columns (ADR-303).
 - **Create / edit:** `PageHeader` (title, Back) → `Panel` with fields → `FormActions` as the page's last element, Cancel first and Save last. Save is ALWAYS at the bottom. A form with line items is a page; a small entry is a `Modal`.
 - **Detail:** `DetailHeader` → `ClusterGrid stack` + `Cluster` + `ClusterFact` (label above value) → line table → `RelatedDocs` and History as tabs (`TabStrip`). The page scrolls. Print sits in the ⋯ menu.
 - **Pop-up:** only `Modal`; a question is `ConfirmDialog`. Saved message = `useToast`, a lasting condition = `Banner`.

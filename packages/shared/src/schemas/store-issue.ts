@@ -146,6 +146,17 @@ export interface StoreIssueListItem {
   reversalReason: string | null;
   createdAt: string;
   createdBy: string;
+  // ADR-303 — the register is one row per slip again. Optional: only the
+  // list read fills them (the detail read shares the shape).
+  /** The order the slip traces to: its own SO (Assembly SO), else the Job
+   *  Card's source SO, else that card's JWSO (code only). One per slip. */
+  soCode?: string | null;
+  /** That SO's Internal SO No. (null for a JWSO / none). */
+  soInternalNo?: string | null;
+  /** Sum of the slip's live lines' qty (the pre-0157 single qty as fallback). */
+  totalQty?: number;
+  /** Created By (ADR-261 rev): who saved the slip (full name, else e-mail before @). */
+  createdByName?: string | null;
 }
 
 export interface StoreIssueDetail extends StoreIssueListItem {

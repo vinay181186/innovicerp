@@ -226,6 +226,13 @@ export const purchaseOrderListItemSchema = purchaseOrderSchema.extend({
   /** Live vendors.code by vendorId; null when the PO has no vendorId. */
   vendorCode: z.string().nullable().optional(),
   lineCount: z.number().int().nonnegative(),
+  /** ADR-303 — the first line's SO No. (else JWSO No.), by line no.; null when
+   *  no line traces to an order. The PO list prints it with "+soExtraCount". */
+  soCode: z.string().nullable().default(null),
+  /** Internal SO No. of that first order (null for a JWSO). */
+  soInternalNo: z.string().nullable().default(null),
+  /** How many MORE distinct orders the PO's lines cover (0 = one or none). */
+  soExtraCount: z.number().int().nonnegative().default(0),
   /** Every line's item, in the standard form: pickers name the PO by its items. */
   lineItems: z.array(relatedItemSchema).default([]),
   totalQty: z.number().nonnegative(),

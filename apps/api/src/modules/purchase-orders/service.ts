@@ -39,7 +39,8 @@ import {
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { lockAndAssertJcOpsWorkable } from '../../lib/jc-op-hold';
 import { canSeeFormPrice, requireDeleteRight, requireFormAccess } from '../../lib/access';
-import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { liftLineFilters, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
+import { createdByNameSql } from '../../lib/created-by-sql';
 import { assertActiveParty } from '../../lib/active-party';
 import { ORDER_LINES_VIA_PO, jobCardRev } from '../../lib/related-item-kinds';
 import { loadRelatedItems } from '../../lib/related-items';
@@ -77,6 +78,7 @@ import {
   type PoType,
   bumpDocRevision,
   computeGstTotals,
+  linesBasicTotal,
   parseDocRevision,
   poCodePrefix,
   withDocRevision,
@@ -105,7 +107,13 @@ import type {
 import { assertNoPendingCancel } from '../cancel-requests/pending-guard';
 import { assertPrsHaveNoPendingCancel } from '../purchase-requests/cancel';
 import { markPoCancelledTx, releaseJcOpsForCancelledPo } from './po-cancel-writer';
-import { PO_SF_COLUMNS } from './sf-columns';
+import {
+  PO_FIRST_SO_CODE,
+  PO_FIRST_SO_INTERNAL_NO,
+  PO_LINE_LIFT,
+  PO_SF_COLUMNS,
+  PO_SO_EXTRA_COUNT,
+} from './sf-columns';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -477,9 +485,9 @@ function computePoTotals(
   gstPercent: number,
   taxType: ServicePoTaxType | null,
 ): { subtotal: string; taxAmount: string; totalAmount: string } {
-  const rawSubtotal = lines.reduce((s, l) => s + Number(l.qty) * Number(l.rate), 0);
+  // ADR-302 — Σ Total Value (Basic), the one line rule (packages/shared).
   const t = computeGstTotals({
-    subtotal: Number(rawSubtotal.toFixed(2)),
+    subtotal: linesBasicTotal(lines),
     gstPercent,
     taxType,
   });
@@ -847,8 +855,13 @@ export async function listPurchaseOrders(
     // Sort & Filter (ADR-200): the screen's column filters + sort, through the
     // list's own field whitelist (sf-columns.ts). Applied to list AND count;
     // Value is sortable / filterable only by a user who may see PO prices.
-    const sf = readSf(input.sf);
-    const sfFrag = sfWhere(PO_SF_COLUMNS, sf, { canSeePrice: showMoney });
+    const rawSf = readSf(input.sf);
+    // ADR-303 — SO No. / Internal SO No. filters (incl. the SO dropdown,
+    // ADR-267) keep a PO when ANY live line matches, so the PO stays one row.
+    const { docSf: sf, lineFrag } = liftLineFilters(rawSf, PO_LINE_LIFT, {
+      canSeePrice: showMoney,
+    });
+    const sfFrag = sql`${sfWhere(PO_SF_COLUMNS, sf, { canSeePrice: showMoney })} ${lineFrag}`;
     // The count needs the line totals only when a ▾ filter reads them — an
     // unfiltered count must not aggregate every PO line a second time.
     const countLineAgg = sf && sf.filters.length > 0 ? lineAggJoin : sql``;
@@ -881,8 +894,14 @@ export async function listPurchaseOrders(
         po.deleted_at AS "deletedAt",
         v.name AS "vendorName",
         v.code AS "vendorCode",
-        cu.full_name AS "createdByName",
+        -- The ONE Created By name (lib/created-by-sql) — same as its ▾ field.
+        ${createdByNameSql(sql`po.created_by`)} AS "createdByName",
         COALESCE(line_agg.line_count, 0)::int  AS "lineCount",
+        -- ADR-303 — the first line's SO / JWSO and how many more orders the
+        -- lines cover (the list prints "SO-1 +2").
+        ${PO_FIRST_SO_CODE} AS "soCode",
+        ${PO_FIRST_SO_INTERNAL_NO} AS "soInternalNo",
+        ${PO_SO_EXTRA_COUNT} AS "soExtraCount",
         COALESCE(line_agg.total_qty, 0)::float8   AS "totalQty",
         COALESCE(line_agg.received_qty, 0)::float8 AS "receivedQty",
         -- ADR-222 — Σ per line of what the GRNs actually BOOKED IN (the one GRN
@@ -909,7 +928,6 @@ export async function listPurchaseOrders(
         COALESCE(rtv_agg.awaiting_qty, 0)::float8 AS "rtvAwaitingChallanQty"
       FROM public.purchase_orders po
       LEFT JOIN public.vendors v ON v.id = po.vendor_id AND v.deleted_at IS NULL
-      LEFT JOIN public.users cu ON cu.id = po.created_by
       ${lineAggJoin}
       -- What has already gone OUT against this PO's lines — the ONE sent
       -- figure (OSP DCs + JW DC Outwards, lib/po-line-sent.ts) the per-line
@@ -1066,6 +1084,9 @@ function toListItem(
     vendorName: (r['vendorName'] as string | null) ?? null,
     vendorCode: (r['vendorCode'] as string | null) ?? null,
     lineCount: Number(r['lineCount'] ?? 0),
+    soCode: (r['soCode'] as string | null) ?? null,
+    soInternalNo: (r['soInternalNo'] as string | null) ?? null,
+    soExtraCount: Number(r['soExtraCount'] ?? 0),
     totalQty: Number(r['totalQty'] ?? 0),
     receivedQty: Number(r['receivedQty'] ?? 0),
     grnReceivedQty: Number(r['grnReceivedQty'] ?? 0),

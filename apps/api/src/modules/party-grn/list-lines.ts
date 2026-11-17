@@ -27,7 +27,7 @@ import { withUserContext, type AuthContext } from '../../db/with-user-context';
 import { createdByNameSql } from '../../lib/created-by-sql';
 import { day, iso, str } from '../../lib/list-line-values';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
-import { QC_PENDING_QTY_SQL } from './qc-state';
+import { PARTY_GRN_DOC_QC_STATUS_SQL, QC_PENDING_QTY_SQL } from './qc-state';
 import {
   LINE_AGG_SQL,
   PGL_OF_HEADER_SQL,
@@ -126,7 +126,9 @@ export async function listPartyGrnLines(
         COALESCE(agg.total_accepted, 0)::int AS "totalAcceptedQty",
         COALESCE(agg.qc_pending_lines, 0)::int AS "qcPendingLines",
         COALESCE(agg.total_qc_pending, 0)::int AS "totalQcPendingQty",
-        COALESCE(agg.lines_count, 0)::int AS "linesCount"
+        COALESCE(agg.lines_count, 0)::int AS "linesCount",
+        ${PARTY_GRN_DOC_QC_STATUS_SQL} AS "docQcStatus",
+        ${createdByNameSql(sql`pg.created_by`)} AS "docCreatedByName"
       ${joins}
       ${LINE_AGG_SQL}
       ${where}

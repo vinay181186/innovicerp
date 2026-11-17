@@ -1,14 +1,14 @@
 // Purchase Orders list (UI-003-04).
 //
 // ADR-199 table standard: ONE shared FIT table (<DataTable tableKey=…>).
-// ADR-261 (2026-10-31): ONE ROW PER PO LINE, read from GET /purchase-orders/lines;
-// the old ▸ (which only listed the lines) is gone. Row click and the ⋯ menu act
-// on the line's PO (docId), exactly as before.
+// ADR-303 (2026-11-16): ONE ROW PER PO again, read from GET /purchase-orders
+// (ADR-261 had made it one row per line via /purchase-orders/lines, which is
+// kept for Excel export). The ⋯ menu acts on the row's PO.
 //
-// Columns: the locked lead block (SO No. · Internal SO No. · POL · Created On ·
-// Item Code · Item Name), then PO No. · PO Date · PO Type · Vendor · PR No. ·
-// Qty · GRN Received · Accepted · Pending · Value · PO Status — see
-// components/po-list-columns.tsx. Value keeps its price gate (API nulls it).
+// Columns: Sr No · PO No. · Created On · SO No. (+n) · Internal SO No., then PO
+// Date · PO Type · Vendor · PR No. · Lines · Qty · GRN Received · Accepted ·
+// Pending · Total Value (Basic) · PO Status · Created By — see
+// components/po-list-columns.tsx. The money column keeps its price gate.
 //
 // Row ⋯ menu (RowActions items): Edit (edit tier, not closed) · Create DC
 // (Job Work / Service; DC entry rights, the server's rule; greyed with the
@@ -32,7 +32,7 @@ import {
   poSendsMaterialOut,
   type PoStatus,
   type PoType,
-  type PurchaseOrderLineListItem,
+  type PurchaseOrderListItem,
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -50,7 +50,7 @@ import { DataTable, Panel, ROW_TINT, renderRowMenuLink } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
-import { usePurchaseOrderLinesList } from '../api';
+import { usePurchaseOrdersList } from '../api';
 import { purchaseOrderListColumns } from '../components/po-list-columns';
 import { usePoPrint } from '../components/use-po-print';
 import { PO_STATUS_CHOICES, PO_STATUS_LABELS, PO_TYPE_LABELS } from '../lib/po-labels';
@@ -131,7 +131,7 @@ function PurchaseOrdersListPage(): React.JSX.Element {
     [sf.param, search.search, search.status, search.poType, offset],
   );
 
-  const { data, isLoading, isFetching, isError, error } = usePurchaseOrderLinesList(query, {
+  const { data, isLoading, isFetching, isError, error } = usePurchaseOrdersList(query, {
     refetchInterval: LIVE_FALLBACK_POLL_MS,
   });
   const gotoPage = useCallback(
@@ -155,11 +155,11 @@ function PurchaseOrdersListPage(): React.JSX.Element {
   const canCreateDc = effectiveFormPerms(eff, 'ospdc_create').entry;
   // ADR-232: Assign Task = this page's Advance right.
   const canAssign = perms.advance;
-  const [assignPo, setAssignPo] = useState<PurchaseOrderLineListItem | null>(null);
+  const [assignPo, setAssignPo] = useState<PurchaseOrderListItem | null>(null);
   // ADR-235 — Cancel PO: the Edit tick raises the request, the Approve tick
   // decides it. The row whose standard Cancel dialog is open.
   const canCancel = perms.edit || perms.approve;
-  const [cancelPo, setCancelPo] = useState<PurchaseOrderLineListItem | null>(null);
+  const [cancelPo, setCancelPo] = useState<PurchaseOrderListItem | null>(null);
 
   const total = data?.total ?? 0;
   const rows = data?.items ?? [];
@@ -175,10 +175,9 @@ function PurchaseOrdersListPage(): React.JSX.Element {
   // View: the row click opens the PO. Preview / Download print the same sheet
   // the detail page does (use-po-print.ts).
   const poPrint = usePoPrint();
-  // Every action is on the line's PO (docId) — print target, Edit, DC, Cancel.
-  const rowActions = (line: PurchaseOrderLineListItem): React.JSX.Element => {
-    const po = { id: line.docId, code: line.docCode, vendorId: line.vendorId };
-    const status = line.docStatus;
+  const rowActions = (line: PurchaseOrderListItem): React.JSX.Element => {
+    const po = { id: line.id, code: line.code, vendorId: line.vendorId };
+    const status = line.status;
     return (
       <RowActions
         editTo={canEdit && status !== 'closed' ? `/purchase-orders/${po.id}/edit` : undefined}
@@ -264,7 +263,7 @@ function PurchaseOrdersListPage(): React.JSX.Element {
         title="Purchase Orders"
         icon="📋"
         count={total}
-        noun="PO line"
+        noun="PO"
         filterNote={
           [
             search.status ? PO_STATUS_LABELS[search.status] : null,
@@ -367,12 +366,10 @@ function PurchaseOrdersListPage(): React.JSX.Element {
             rows={rows}
             loading={isLoading}
             emptyText={emptyText}
-            rowKey={(l) => l.lineId}
+            rowKey={(l) => l.id}
             sortFilterServer={sf}
-            onRowClick={(l) =>
-              void navigate({ to: '/purchase-orders/$id', params: { id: l.docId } })
-            }
-            rowClassName={(l) => ROW_TINT_BY_STATUS[l.docStatus]}
+            onRowClick={(l) => void navigate({ to: '/purchase-orders/$id', params: { id: l.id } })}
+            rowClassName={(l) => ROW_TINT_BY_STATUS[l.status]}
             rowActions={(l) => rowActions(l)}
           />
         </Panel>
@@ -380,7 +377,7 @@ function PurchaseOrdersListPage(): React.JSX.Element {
 
       <ListFooter
         total={total}
-        noun="PO line"
+        noun="PO"
         page={search.page}
         pageSize={LIST_PAGE_SIZE}
         onPage={gotoPage}
@@ -389,19 +386,19 @@ function PurchaseOrdersListPage(): React.JSX.Element {
         <AssignTaskModal
           linkedRef={{
             type: 'purchase_order',
-            id: assignPo.docId,
-            display: `PO ${assignPo.docCode}`,
-            navPage: `/purchase-orders/${assignPo.docId}`,
+            id: assignPo.id,
+            display: `PO ${assignPo.code}`,
+            navPage: `/purchase-orders/${assignPo.id}`,
           }}
-          suggestedTitle={`Follow up ${assignPo.docCode}`}
+          suggestedTitle={`Follow up ${assignPo.code}`}
           onClose={() => setAssignPo(null)}
         />
       ) : null}
       {cancelPo ? (
         <CancelDocDialog
           docType="purchase_order"
-          docId={cancelPo.docId}
-          docCode={cancelPo.docCode}
+          docId={cancelPo.id}
+          docCode={cancelPo.code}
           onClose={() => setCancelPo(null)}
         />
       ) : null}

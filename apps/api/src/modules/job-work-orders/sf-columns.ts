@@ -17,13 +17,15 @@ export const JWSO_SF_COLUMNS: SfColumnMap = {
   totalQty: { sql: sql`COALESCE(agg.total_qty, 0)::int`, type: 'num' },
   jcQty: { sql: sql`COALESCE(jca.jc_qty, 0)::int`, type: 'num' },
   dispatchedQty: { sql: sql`COALESCE(agg.dispatched_qty, 0)::int`, type: 'num' },
-  // Pending as the cell prints it: never below zero.
-  pendingQty: {
-    sql: sql`GREATEST(0, COALESCE(agg.total_qty, 0)::int - COALESCE(agg.dispatched_qty, 0)::int)`,
-    type: 'num',
-  },
+  // ADR-303 — Pending as the cell prints it: per line, 0 once closed short /
+  // cancelled, never below zero (agg.pending_qty).
+  pendingQty: { sql: sql`COALESCE(agg.pending_qty, 0)::int`, type: 'num' },
   earliestDueDate: { sql: sql`agg.earliest_due`, type: 'date' },
   status: { sql: sql`jw.status`, type: 'list' },
+  // ADR-303 — one row per JWSO again: Lines, Created On, Created By.
+  lineCount: { sql: sql`COALESCE(agg.line_count, 0)::int`, type: 'num' },
+  createdOn: { sql: sql`(jw.created_at AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
+  createdBy: { sql: createdByNameSql(sql`jw.created_by`), type: 'text' },
 };
 
 // ADR-261 — the JWSO list ONE ROW PER LINE (list-lines.ts, aliases l / jw / i /
@@ -58,4 +60,10 @@ export const JWSO_LINE_SF_COLUMNS: SfColumnMap = {
   },
   earliestDueDate: { sql: sql`l.due_date`, type: 'date' },
   status: { sql: sql`jw.status`, type: 'list' },
+  // ADR-303 — the per-JWSO screen's Lines (same tableKey): the JWSO's count.
+  lineCount: {
+    sql: sql`(SELECT COUNT(*)::int FROM public.job_work_order_lines lc
+              WHERE lc.job_work_order_id = jw.id AND lc.deleted_at IS NULL)`,
+    type: 'num',
+  },
 };

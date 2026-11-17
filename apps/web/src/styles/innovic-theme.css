@@ -675,22 +675,26 @@ body.density-compact {
    scrolls. Everything above it becomes fixed chrome, so the title, the record
    count, the search box and the filters stop scrolling away as well.
 
-   `min-height: 0` on every link of the chain is load-bearing: a flex child
-   defaults to `min-height: auto` and refuses to shrink below its content, so
-   without it the inner scrollport never engages and nothing appears to
-   happen. `max-height: none` retires the 220px guess.
+   `min-height: 0` on every inner link of the chain is load-bearing: a flex
+   child defaults to `min-height: auto` and refuses to shrink below its
+   content, so without it the inner scrollport never engages and nothing
+   appears to happen. The one exception is the panel itself, which carries
+   the six-row floor (below, ADR-304). `max-height: none` retires the 220px guess.
 
    Opt in per page: `page-fill` on the page root + `<Panel fill>`. A page that
    does not opt in keeps today's behaviour exactly, so this can land screen by
    screen. Tables inside a modal or a dashboard card keep their own capped
    `maxHeight` and must NOT take `fill`. */
-/* `#content` KEEPS its own `overflow-y: auto` (above) as the fallback, and
-   `.page-fill` asks for `min-height`, not `height`. In the ordinary case the
-   page is exactly as tall as `#content`, so `#content` has nothing to scroll —
-   one scrollbar, inside the table, and the header holds.
-   When the chrome above the table genuinely cannot fit — a banner that lists
-   every skipped row, a phone or 200% zoom where the module buttons wrap onto
-   several bands — the page grows past `#content` and `#content` scrolls again.
+/* `.page-fill` is EXACTLY as tall as `#content` (`height`, not `min-height`).
+   With `min-height` (2026-10-02 to 2026-11-16) a flex column grows to fit its
+   content, so a list of 25 rows pushed the page past `#content`, the table
+   never got its own scroll, `#content` scrolled instead and the header rode
+   away on every list — the owner's "two scrollbars" report (ADR-304).
+   `#content` KEEPS its own `overflow-y: auto` (above) as the fallback. When
+   the chrome above the table genuinely cannot fit — a banner that lists every
+   skipped row, a phone or 200% zoom where the module buttons wrap onto several
+   bands — the table stops at its six-row floor, the page's content overflows
+   `.page-fill` and `#content` scrolls again.
    The header then behaves as it did before this change, which is the right
    trade: an earlier draft set `overflow: hidden` here and killed that fallback,
    so a long banner could squeeze the table to nothing with no way to scroll to
@@ -700,7 +704,7 @@ body.density-compact {
 .page-fill {
   display: flex;
   flex-direction: column;
-  min-height: 100%;
+  height: 100%;
 }
 /* Title, count, search, filters, KPI strip: fixed chrome, natural height. */
 .page-fill > * {
@@ -714,6 +718,18 @@ body.density-compact {
   /* A filling panel is the page's last block, so its bottom gap would show as
      dead space under the table. */
   margin-bottom: 0;
+}
+/* The panel's floor on a PAGE root (ADR-304). `.panel` is `overflow: hidden`,
+   so a panel squeezed below the table's six-row floor CLIPPED the rows and
+   left nothing to scroll (1024x600, or 150% zoom on a laptop: one row on
+   screen). Floor = the table toolbar + six rows, the same sum rc-form.css
+   measured for its own panel; with it the page overflows and `#content`
+   scrolls instead. `:where(#content)` keeps the specificity of the rule
+   above, so a page's own floor (`.page-fill.po-detail > .panel--fill`) still
+   wins, and a page-fill that is not a page root (Home board Approvals) is
+   left alone. */
+:where(#content) > .page-fill > .panel--fill {
+  min-height: calc(var(--tbl-row-h) * 6 + var(--control-h-sm) + 2 * var(--sp-2) + 3px);
 }
 .panel--fill > .panel-hdr {
   flex-shrink: 0;

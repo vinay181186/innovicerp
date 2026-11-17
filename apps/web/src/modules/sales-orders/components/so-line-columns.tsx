@@ -5,6 +5,7 @@
 // Name), then Ln and Image; Drawing and SO Status draw their parts side by side.
 
 import type { DrawingSource, SalesOrderDetail, SalesOrderLine, SoStatus } from '@innovic/shared';
+import { TOTAL_VALUE_BASIC_LABEL, UNIT_VALUE_BASIC_LABEL, lineBasicValue } from '@innovic/shared';
 import { ItemImageBox } from '@/components/shared/item-badge';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
@@ -28,7 +29,7 @@ export interface DrawingPreview {
    Built as a column list rather than hand-written <tr>/<td>, so the ruled
    sheet, the sticky header, the centring and the empty row all come from
    <DataTable>. Widths are % and sum to 100 — `table-layout: fixed` needs them
-   to, and dropping the Rate column hands its share to the Item cell. */
+   to, and dropping the two money columns hands their share to the Item cell. */
 
 export function lineColumns(opts: {
   priceHidden: boolean;
@@ -126,7 +127,7 @@ export function lineColumns(opts: {
     {
       id: 'drawing',
       header: 'Drawing',
-      width: '8%',
+      width: '7%',
       className: 'mono',
       render: (l) => {
         const drawingFilePath = l.drawingFilePath ?? null;
@@ -216,14 +217,33 @@ export function lineColumns(opts: {
       ? []
       : [
           {
+            // ADR-302 — the stored rate under the owner's name. Id stays
+            // 'rate' so a saved column layout still applies to it.
             id: 'rate',
-            header: 'Rate',
+            header: UNIT_VALUE_BASIC_LABEL,
             width: '7%',
             align: 'right' as const,
             className: 'mono',
             nowrap: true,
             render: (l: SalesOrderLine) =>
               Number(l.rate) > 0 ? `₹ ${inrFormat(Number(l.rate))}` : '—',
+          },
+          {
+            // ADR-302 — Order Qty × Unit Value (Basic). A cancelled line is
+            // left out of the Subtotal, so it reads "—" and the column adds
+            // up to the Subtotal.
+            id: 'line_value',
+            header: TOTAL_VALUE_BASIC_LABEL,
+            width: '8%',
+            align: 'right' as const,
+            className: 'mono',
+            nowrap: true,
+            render: (l: SalesOrderLine) => {
+              const v = l.status === 'cancelled' ? 0 : lineBasicValue(l.orderQty, l.rate);
+              return v > 0 ? `₹ ${inrFormat(v)}` : '—';
+            },
+            filterValue: (l: SalesOrderLine) =>
+              l.status === 'cancelled' ? 0 : lineBasicValue(l.orderQty, l.rate),
           },
         ]),
     {
@@ -240,7 +260,7 @@ export function lineColumns(opts: {
       // Long prose: one line, cut with "…", the full text on hover.
       id: 'remarks',
       header: 'Remarks',
-      width: '6%',
+      width: '5%',
       align: 'left',
       ellipsis: true,
       render: (l) => l.remarks ?? '—',

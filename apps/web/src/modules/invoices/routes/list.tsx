@@ -10,9 +10,9 @@
 // the same `invoice_create` access gate, the same ?tab / ?search deep link, the
 // same "money hidden for L1 viewers" column drop, the same row targets.
 //
-// ADR-261 (owner 2026-10-31): ONE ROW PER INVOICE LINE (GET /invoices/lines),
-// locked lead block first. The status counts still count INVOICES; the row
-// click and ⋯ act on the invoice.
+// ADR-303 (owner 2026-11-16): ONE ROW PER INVOICE again (GET /invoices),
+// locked lead block first. The status counts count INVOICES; the Invoice No.
+// opens the invoice (ADR-296) and the ⋯ acts on it.
 
 import type { ListInvoicesQuery } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
@@ -29,7 +29,7 @@ import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { TabStrip } from '@/ui/navigation';
-import { useInvoiceLineList } from '../api';
+import { useInvoiceList } from '../api';
 import { invoiceListColumns, type InvoiceStatusCounts } from '../components/invoice-list-columns';
 import { useInvoicePrint } from '../components/use-invoice-print';
 import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
@@ -95,7 +95,7 @@ function InvoiceListPage(): React.JSX.Element {
     }),
     [term, sf.param, page],
   );
-  const { data, isLoading, isFetching, isError, error } = useInvoiceLineList(query);
+  const { data, isLoading, isFetching, isError, error } = useInvoiceList(query);
   // Status counts for the Invoice Status ▾ tick list. While a status is ticked,
   // the counts come from the same list WITHOUT that filter (limit 1: only the
   // summary is read), so ticking "Unpaid" does not turn the others into "(0)".
@@ -108,7 +108,7 @@ function InvoiceListPage(): React.JSX.Element {
         : query,
     [statusFiltered, term, sf, query],
   );
-  const { data: countData } = useInvoiceLineList(countQuery);
+  const { data: countData } = useInvoiceList(countQuery);
   useClampPage(page, data?.total, gotoPage);
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'invoice_create');
@@ -170,7 +170,7 @@ function InvoiceListPage(): React.JSX.Element {
         orderFilter={<OrderSfFilter sf={sf} field="soCode" kind="so" />}
         title="Invoices"
         count={data ? data.total : undefined}
-        noun="line"
+        noun="invoice"
         updating={!isLoading && isFetching}
         search={searchInput}
         onSearch={setSearchInput}
@@ -206,10 +206,10 @@ function InvoiceListPage(): React.JSX.Element {
             <DataTable
               tableKey={TABLE_KEYS.invoicesList}
               columns={columns}
-              rows={data?.rows ?? []}
+              rows={data?.invoices ?? []}
               loading={isLoading}
-              rowKey={(r) => r.lineId}
-              onRowClick={(r) => openInvoice(r.invoiceId)}
+              rowKey={(r) => r.id}
+              onRowClick={(r) => openInvoice(r.id)}
               sortFilterServer={sf}
               empty={sf.filtering || term ? 'No Invoices match.' : 'No Invoices yet.'}
               // Row click opens the invoice (ERPNext list); the Invoice No.
@@ -221,29 +221,28 @@ function InvoiceListPage(): React.JSX.Element {
                   key: 'preview',
                   label: 'Preview',
                   icon: 'eye',
-                  onSelect: () => invoicePrint('preview', { id: r.invoiceId, code: r.invoiceCode }),
+                  onSelect: () => invoicePrint('preview', { id: r.id, code: r.code }),
                 },
                 {
                   key: 'download',
                   label: 'Download PDF',
                   icon: 'download',
-                  onSelect: () =>
-                    invoicePrint('download', { id: r.invoiceId, code: r.invoiceCode }),
+                  onSelect: () => invoicePrint('download', { id: r.id, code: r.code }),
                 },
                 {
                   key: 'add-payment',
                   label: 'Add Payment',
-                  to: `/invoices/${r.invoiceId}`,
+                  to: `/invoices/${r.id}`,
                   hidden: !perms.entry,
-                  disabledReason: r.invoiceStatus === 'paid' ? 'Already Paid' : undefined,
+                  disabledReason: r.status === 'paid' ? 'Already Paid' : undefined,
                 },
                 {
                   key: 'cancel',
                   label: 'Cancel Invoice',
                   icon: 'x',
                   group: 'danger',
-                  hidden: !canCancel || r.invoiceStatus === 'cancelled',
-                  onSelect: () => setCancelTarget({ id: r.invoiceId, code: r.invoiceCode }),
+                  hidden: !canCancel || r.status === 'cancelled',
+                  onSelect: () => setCancelTarget({ id: r.id, code: r.code }),
                 },
               ]}
             />
@@ -251,7 +250,7 @@ function InvoiceListPage(): React.JSX.Element {
           {data ? (
             <ListFooter
               total={data.total}
-              noun="line"
+              noun="invoice"
               page={page}
               pageSize={LIST_PAGE_SIZE}
               onPage={gotoPage}

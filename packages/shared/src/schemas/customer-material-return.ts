@@ -56,6 +56,16 @@ export const customerMaterialReturnSchema = z.object({
   totalQty: z.number().int().nonnegative(),
   createdAt: z.string(),
   createdBy: z.string().uuid(),
+  // ADR-303 — the register is one row per return again. Optional: only the
+  // list read fills them.
+  /** Live (non-deleted) lines on the return. */
+  lineCount: z.number().int().nonnegative().optional(),
+  /** The first line's kind; `kindExtraCount` = how many OTHER kinds the
+   *  return's lines carry (0 or 1), shown as a grey "+n". */
+  firstKind: customerMaterialReturnKindSchema.nullable().optional(),
+  kindExtraCount: z.number().int().nonnegative().optional(),
+  /** Created By (ADR-261 rev): who saved the return. */
+  createdByName: z.string().nullable().optional(),
 });
 export type CustomerMaterialReturn = z.infer<typeof customerMaterialReturnSchema>;
 

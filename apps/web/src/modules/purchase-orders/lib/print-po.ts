@@ -30,6 +30,12 @@ import {
   challanDate,
   openSheetPrintWindow,
 } from '@/lib/print/sheet-print';
+import {
+  TOTAL_VALUE_BASIC_LABEL,
+  UNIT_VALUE_BASIC_LABEL,
+  lineBasicValue,
+  linesBasicTotal,
+} from '@innovic/shared';
 
 // A purchase-order line has no uom column of its own; the detail read joins
 // the item master's unit (`uom`). NOS -- the unit the whole system assumes --
@@ -92,8 +98,8 @@ export function printPurchaseOrder(args: {
   // for every GST % the PO carries, which is exactly how the saved tax is
   // worked out (subtotal × (SGST + CGST + IGST) / 100). The line sum is only a
   // fallback for a PO whose roll-up was never stored.
-  const lineSubtotal = lines.reduce((s, l) => s + l.qty * Number(l.rate ?? 0), 0);
-  const subtotal = po.totals?.subtotal ?? po.subtotal ?? Number(lineSubtotal.toFixed(2));
+  const lineSubtotal = linesBasicTotal(lines); // ADR-302 one rule
+  const subtotal = po.totals?.subtotal ?? po.subtotal ?? lineSubtotal;
   const totalQty = lines.reduce((s, l) => s + l.qty, 0);
 
   const sgstPct = Number(po.sgstPct) || 0;
@@ -269,7 +275,7 @@ export function printPurchaseOrder(args: {
       uom: uomOf(l.uom),
       qty: String(l.qty),
       rate: money(Number(l.rate ?? 0)),
-      amount: money(l.qty * Number(l.rate ?? 0)),
+      amount: money(lineBasicValue(l.qty, l.rate)),
       // Per-line remarks print under the item name; a line without remarks
       // prints nothing extra.
       description: l.lineRemarks,
@@ -279,6 +285,8 @@ export function printPurchaseOrder(args: {
     // Viewers who may not see prices get the qty-only PO — no Rate / Amount
     // columns, no money block, no amount-in-words.
     hideMoney: priceHidden,
+    // ADR-302 — the owner's words for the two money columns.
+    moneyHeads: { rate: UNIT_VALUE_BASIC_LABEL, amount: TOTAL_VALUE_BASIC_LABEL },
     ...(priceHidden
       ? {}
       : {

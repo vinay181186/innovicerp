@@ -85,6 +85,17 @@ export const jwDcOutwardListItemSchema = jwDcOutwardSchema.extend({
   /** SO code(s) resolved via the JWPO's lines (source_so_line_id →
    *  sales_orders). Null when the source JC came from a JWSO, not an SO. */
   soCode: z.string().nullable(),
+  // ADR-303 — the register is one row per DC again. Optional: only the list
+  // read fills them (the detail schema extends this one).
+  /** The order behind the DC's FIRST line (SO code, else JWSO code) — the
+   *  register's SO No.; `orderExtraCount` = how many OTHER orders its lines
+   *  cover, shown as a grey "+n". */
+  orderCode: z.string().nullable().optional(),
+  orderExtraCount: z.number().int().nonnegative().optional(),
+  /** Internal SO No. of that first order (null for a JWSO). */
+  soInternalNo: z.string().nullable().optional(),
+  /** Created By (ADR-261 rev): who saved the DC. */
+  createdByName: z.string().nullable().optional(),
 });
 export type JwDcOutwardListItem = z.infer<typeof jwDcOutwardListItemSchema>;
 
@@ -192,6 +203,18 @@ export const jwDcInwardListItemSchema = jwDcInwardSchema.extend({
   totalReceivedQty: z.number().nonnegative(),
   totalOkQty: z.number().nonnegative(),
   totalRejectedQty: z.number().nonnegative(),
+  // ADR-303 — the register is one row per receipt again. Optional: only the
+  // list read fills them.
+  /** The outward DC's JW PO No. (snapshot on the DC). */
+  jwpoCodeText: z.string().nullable().optional(),
+  /** Lines on the receipt (live, or those cancelled with a Cancelled one). */
+  lineCount: z.number().int().nonnegative().optional(),
+  /** The order behind the receipt's FIRST line (SO, else JWSO code) and how
+   *  many OTHER orders its lines cover (grey "+n"). */
+  orderCode: z.string().nullable().optional(),
+  orderExtraCount: z.number().int().nonnegative().optional(),
+  /** Created By (ADR-261 rev): who saved the receipt. */
+  createdByName: z.string().nullable().optional(),
 });
 export type JwDcInwardListItem = z.infer<typeof jwDcInwardListItemSchema>;
 

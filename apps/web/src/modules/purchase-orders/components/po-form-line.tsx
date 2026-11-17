@@ -34,6 +34,7 @@
 import { Icon } from '@/ui/core';
 import type { ListItemsResponse } from '@innovic/shared';
 import type { PurchaseRequestDetail } from '@innovic/shared';
+import { lineBasicValue } from '@innovic/shared';
 import { Fragment, useEffect, useId, useRef, useState } from 'react';
 import type { Path, PathValue, SetValueConfig, UseFormReturn } from 'react-hook-form';
 import { inrFormat } from '@/lib/print/doc-print';
@@ -261,7 +262,7 @@ export function PoFormLine({
   const prCodeKey = useRef('unset');
   if (line?.sourcePrCode) prCodeKey.current = line.sourcePrCode;
 
-  const amount = (Number(line?.qty) || 0) * (Number(line?.rate) || 0);
+  const amount = lineBasicValue(line?.qty, line?.rate); // ADR-302 Total Value (Basic)
   // An edit-mode line that already carries a PR shows it as a read-only code:
   // the link is this document's history and swapping it would silently move
   // quantity between two requests. (Note the reason is NOT "the PR is closed"

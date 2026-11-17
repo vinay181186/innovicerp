@@ -25,7 +25,7 @@ export const TABLE_KEYS = {
 
   // Transactions
   jobCardsList: 'job-cards-list',
-  invoicesList: 'invoices-list',
+  invoicesList: 'invoices-list-doc', // ADR-303: new key, one row per document (old per-line layout dropped)
   plansNeedsPlanning: 'plans-needs-planning',
   soDetailLines: 'so-detail-lines',
   soDetailMilestones: 'so-detail-milestones',
@@ -42,10 +42,10 @@ export const TABLE_KEYS = {
   // ADR-199 conversions — Purchase (batch P)
   prList: 'pr-list',
   outsourceJobs: 'outsource-jobs',
-  poList: 'po-list',
-  ospOutwardDc: 'osp-outward-dc',
-  jwDcOutward: 'jw-dc-outward',
-  jwDcInward: 'jw-dc-inward',
+  poList: 'po-list-doc', // ADR-303: new key, one row per document (old per-line layout dropped)
+  ospOutwardDc: 'osp-outward-dc-doc', // ADR-303: new key, one row per document (old per-line layout dropped)
+  jwDcOutward: 'jw-dc-outward-doc', // ADR-303: new key, one row per document (old per-line layout dropped)
+  jwDcInward: 'jw-dc-inward-doc', // ADR-303: new key, one row per document (old per-line layout dropped)
   /** ADR-265 — THE list of approvals waiting for me (home + Settings → Approvals). */
   approvalsWaiting: 'approvals-waiting',
   /** ADR-265 — Settings → Approvals, Show: Approved / Rejected. */
@@ -54,15 +54,15 @@ export const TABLE_KEYS = {
   approvalsReview: 'approvals-review',
 
   // ADR-199 conversions — Store (batch S)
-  grnList: 'grn-list',
-  partyGrn: 'party-grn',
+  grnList: 'grn-list-doc', // ADR-303: new key, one row per document (old per-line layout dropped)
+  partyGrn: 'party-grn-doc', // ADR-303: new key, one row per document (old per-line layout dropped)
   partyMaterialIssues: 'party-material-issues',
   partyMaterials: 'party-materials',
   storeInventory: 'store-inventory',
   reorderList: 'reorder-list',
   reservationDrilldown: 'reservation-drilldown',
   stockLedger: 'stock-ledger',
-  issueRegister: 'issue-register',
+  issueRegister: 'issue-register-doc', // ADR-303: new key, one row per document (old per-line layout dropped)
   toolIssues: 'tool-issues',
   toolHolders: 'tool-holders',
   toolWriteoffs: 'tool-writeoffs',
@@ -70,9 +70,9 @@ export const TABLE_KEYS = {
   instruments: 'instruments',
 
   // ADR-199 conversions — Sales (batch SA)
-  soMaster: 'so-master',
-  jwsoList: 'jwso-list',
-  customerDispatches: 'customer-dispatches',
+  soMaster: 'so-master-doc', // ADR-303: new key, one row per document (old per-line layout dropped)
+  jwsoList: 'jwso-list-doc', // ADR-303: new key, one row per document (old per-line layout dropped)
+  customerDispatches: 'customer-dispatches-doc', // ADR-303: new key, one row per document (old per-line layout dropped)
   jwReturns: 'jw-returns',
   soOverview: 'so-overview',
   assemblies: 'assemblies',

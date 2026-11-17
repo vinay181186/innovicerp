@@ -2,8 +2,9 @@
 // issued against a Job Card, an Assembly SO or for General use. Click a row to
 // see its lines and Return leftovers or Cancel it (the ONE standard Cancel,
 // ADR-235). On the shared FIT DataTable (ADR-199, table standard 2026-10-01):
-// one row per issue LINE (ADR-261, GET /store-issues/lines); row click and ⋯
-// act on the slip. Remarks and the cancel reason are in the slip view.
+// ONE ROW PER SLIP (ADR-303, GET /store-issues — the line endpoint
+// /store-issues/lines stays for other readers); the Issue No. and ⋯ open the
+// slip view. Remarks and the cancel reason are in the slip view.
 
 import { Icon } from '@/ui/core';
 import { ISSUE_AGAINST } from '@innovic/shared';
@@ -20,7 +21,7 @@ import { DataTable, Panel, ROW_TINT } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
-import { useStoreIssueLines } from '../api';
+import { useStoreIssuesList } from '../api';
 import { issueRegisterColumns } from '../components/issue-register-columns';
 import { IssueViewModal } from '../components/issue-view-modal';
 import { useStoreIssuePrint } from '../components/use-store-issue-print';
@@ -114,7 +115,7 @@ function StoreIssuesListPage(): React.JSX.Element {
   // page 1.
   const sf = useServerSortFilter(TABLE_KEYS.issueRegister, () => setPage(1));
 
-  const { data, isLoading, isError, error } = useStoreIssueLines(
+  const { data, isLoading, isError, error } = useStoreIssuesList(
     {
       search: term || undefined,
       sf: sf.param,
@@ -176,7 +177,7 @@ function StoreIssuesListPage(): React.JSX.Element {
             title="Item Issue Register"
             icon="📋"
             count={data?.total}
-            noun="issue line"
+            noun="issue"
             search={search}
             onSearch={setSearch}
             searchPlaceholder="Search issue, item, JC, SO, name…"
@@ -203,37 +204,36 @@ function StoreIssuesListPage(): React.JSX.Element {
                 sortFilterServer={sf}
                 columns={columns}
                 rows={data?.items ?? []}
-                rowKey={(ln) => ln.lineId}
+                rowKey={(iss) => iss.id}
                 loading={isLoading}
                 empty={term || sf.filtering ? 'No issues match.' : 'No issues yet.'}
-                onRowClick={(ln) => setViewId(ln.docId)}
+                onRowClick={(iss) => setViewId(iss.id)}
                 // A cancelled (reversed) slip washes the whole row and strikes its qty.
-                rowClassName={(ln) => (ln.reversedAt ? ROW_TINT.cancelled : undefined)}
+                rowClassName={(iss) => (iss.reversedAt ? ROW_TINT.cancelled : undefined)}
                 rowActionsWidth="1%"
-                rowActions={(ln) => (
+                rowActions={(iss) => (
                   <RowActions
-                    onView={() => setViewId(ln.docId)}
+                    onView={() => setViewId(iss.id)}
                     items={[
                       {
                         key: 'preview',
                         label: 'Preview',
                         icon: 'eye',
-                        onSelect: () =>
-                          void issuePrint('preview', { id: ln.docId, code: ln.docCode }),
+                        onSelect: () => void issuePrint('preview', { id: iss.id, code: iss.code }),
                       },
                       {
                         key: 'download',
                         label: 'Download PDF',
                         icon: 'download',
-                        onSelect: () => issuePrint('download', { id: ln.docId, code: ln.docCode }),
+                        onSelect: () => issuePrint('download', { id: iss.id, code: iss.code }),
                       },
                       {
                         key: 'cancel',
                         label: 'Cancel Issue',
                         icon: 'x',
                         group: 'danger',
-                        hidden: !canCancel || Boolean(ln.reversedAt),
-                        onSelect: () => setCancelTarget({ id: ln.docId, code: ln.docCode }),
+                        hidden: !canCancel || Boolean(iss.reversedAt),
+                        onSelect: () => setCancelTarget({ id: iss.id, code: iss.code }),
                       },
                     ]}
                   />
@@ -245,7 +245,7 @@ function StoreIssuesListPage(): React.JSX.Element {
           {data ? (
             <ListFooter
               total={data.total}
-              noun="issue line"
+              noun="issue"
               page={page}
               pageSize={LIST_PAGE_SIZE}
               onPage={(p) => setPage(Math.min(totalPages, Math.max(1, p)))}

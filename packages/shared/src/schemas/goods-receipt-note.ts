@@ -192,6 +192,14 @@ export const goodsReceiptNoteDetailSchema = goodsReceiptNoteSchema.extend({
 });
 export type GoodsReceiptNoteDetail = z.infer<typeof goodsReceiptNoteDetailSchema>;
 
+/** ADR-303 — a receiving document's QC status rolled up from its lines (GRN
+ *  and Party GRN lists): `pending` = no line inspected yet, `partly_done` =
+ *  some lines done or part-inspected, `done` = every line done. A line that
+ *  needs no QC (nothing left to inspect) counts as done. */
+export const DOC_QC_STATUSES = ['pending', 'partly_done', 'done'] as const;
+export const docQcStatusSchema = z.enum(DOC_QC_STATUSES);
+export type DocQcStatus = z.infer<typeof docQcStatusSchema>;
+
 /** List row: header + line aggregates + vendor/PO joins. */
 export const goodsReceiptNoteListItemSchema = goodsReceiptNoteSchema.extend({
   /** ADR-217 — the NC this receipt answers, resolved from `ncId`.
@@ -217,6 +225,16 @@ export const goodsReceiptNoteListItemSchema = goodsReceiptNoteSchema.extend({
   /** 'close' once every line is fully QC-inspected; 'pending' while any line
    *  still has QC qty remaining (incl. a partially-approved line). */
   grnStatus: z.enum(['pending', 'close']),
+  /** ADR-303 — the first line's (by line no.) SO No. (else JWSO No.), its
+   *  Internal SO No., and how many MORE distinct orders the lines cover. */
+  soCode: z.string().nullable().default(null),
+  soInternalNo: z.string().nullable().default(null),
+  soExtraCount: z.number().int().nonnegative().default(0),
+  /** ADR-303 — ONE QC status for the receipt, rolled up from its lines; null
+   *  on a Cancelled GRN (it waits for nothing and is not done either). */
+  docQcStatus: docQcStatusSchema.nullable().default(null),
+  /** The ONE Created By name (full name, else e-mail before '@'). */
+  createdByName: z.string().nullable().default(null),
 });
 export type GoodsReceiptNoteListItem = z.infer<typeof goodsReceiptNoteListItemSchema>;
 
@@ -328,8 +346,14 @@ export const listGoodsReceiptNotesQuerySchema = z.object({
   search: z.string().min(1).max(100).optional(),
   vendorId: z.string().uuid().optional(),
   purchaseOrderId: z.string().uuid().optional(),
-  /** Filter to GRNs with at least one line in this QC status. */
+  /** Filter to GRNs with at least one line in this QC status. On GET
+   *  /goods-receipt-notes (one row per GRN, ADR-303) the old values are read
+   *  through the receipt's ONE status: pending → pending or partly done,
+   *  in_progress → partly done, completed → done. */
   qcStatus: grnQcStatusSchema.optional(),
+  /** ADR-303 — the receipt's ONE QC status (the QC Status column): the QC
+   *  Status dropdown of the one-row-per-GRN list. Wins over `qcStatus`. */
+  docQcStatus: docQcStatusSchema.optional(),
   fromDate: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -359,6 +383,11 @@ export const grnSummarySchema = z.object({
   qcPending: z.number().int().nonnegative(),
   qcCleared: z.number().int().nonnegative(),
   today: z.number().int().nonnegative(),
+  /** ADR-303 — live GRNs per ONE QC status (the QC Status dropdown's counts;
+   *  GET /goods-receipt-notes only). */
+  docQcPending: z.number().int().nonnegative().optional(),
+  docQcPartlyDone: z.number().int().nonnegative().optional(),
+  docQcDone: z.number().int().nonnegative().optional(),
 });
 export type GrnSummary = z.infer<typeof grnSummarySchema>;
 

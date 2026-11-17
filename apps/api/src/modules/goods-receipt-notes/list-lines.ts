@@ -29,6 +29,7 @@ import { AuthorizationError } from '../../lib/errors';
 import { day, iso, str } from '../../lib/list-line-values';
 import { likeEscape, readSf, sfOrderBy, sfWhere, type SfColumnMap } from '../../lib/list-query';
 import { polSql } from '../../lib/pol';
+import { PO_LINE_ORDER_JOINS, PO_LINE_SO_CODE } from '../purchase-orders/list-lines';
 import type { ListGoodsReceiptNotesQuery } from './schema';
 
 function requireCompany(user: AuthContext): string {
@@ -41,11 +42,23 @@ const REVISION = sql`COALESCE(sol.revision::text, rev_jwl.revision::text)`;
 /** ADR-189 — this line still waits for QC. */
 const WAITING = sql`(gl.received_qty - gl.qc_accepted_qty - gl.qc_rejected_qty) > 0`;
 
+/** ADR-303 — the SO / JWSO a GRN line `gl` belongs to, through its PO line
+ *  (aliases pol, sol, so, rev_op, rev_jc, rev_jwl, jwo); each hop a single-row
+ *  FK — the PO line's chain (PO_LINE_ORDER_JOINS) behind the GRN line's PO
+ *  line. The ONE copy: this line list (and its Excel export) and the one-row-per-
+ *  GRN list's SO No. / SO dropdown read it, so they agree. */
+export const GRN_LINE_ORDER_JOINS = sql`
+      LEFT JOIN public.purchase_order_lines pol
+        ON pol.id = gl.purchase_order_line_id AND pol.deleted_at IS NULL
+      ${PO_LINE_ORDER_JOINS}`;
+/** The line's order No. (SO, else JWSO) — the PO line's rule. */
+export const GRN_LINE_SO_CODE = PO_LINE_SO_CODE;
+
 /** Sort & Filter fields of the line list. The old per-GRN names (grnCode,
  *  totalReceivedQty…) are kept so a saved ▾ filter still reads; on this list
  *  the quantities are the LINE's own. */
 export const GRN_LINE_SF_COLUMNS: SfColumnMap = {
-  soCode: { sql: sql`COALESCE(so.code, jwo.code)`, type: 'text' },
+  soCode: { sql: GRN_LINE_SO_CODE, type: 'text' },
   soInternalNo: { sql: sql`so.internal_so_no`, type: 'text' },
   clientPoLineNo: { sql: polSql('sol', 'rev_jwl'), type: 'text' },
   createdOn: {
@@ -148,20 +161,7 @@ export async function listGoodsReceiptNoteLines(
       LEFT JOIN public.nc_register nc
         ON nc.id = COALESCE(gl.nc_id, grn.nc_id) AND nc.deleted_at IS NULL
       LEFT JOIN public.items i ON i.id = gl.item_id AND i.deleted_at IS NULL
-      LEFT JOIN public.purchase_order_lines pol
-        ON pol.id = gl.purchase_order_line_id AND pol.deleted_at IS NULL
-      LEFT JOIN public.sales_order_lines sol
-        ON sol.id = pol.source_so_line_id AND sol.deleted_at IS NULL
-      LEFT JOIN public.sales_orders so
-        ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
-      LEFT JOIN public.jc_ops rev_op
-        ON rev_op.id = pol.source_jc_op_id AND rev_op.deleted_at IS NULL
-      LEFT JOIN public.job_cards rev_jc
-        ON rev_jc.id = rev_op.job_card_id AND rev_jc.deleted_at IS NULL
-      LEFT JOIN public.job_work_order_lines rev_jwl
-        ON rev_jwl.id = rev_jc.source_jw_line_id AND rev_jwl.deleted_at IS NULL
-      LEFT JOIN public.job_work_orders jwo
-        ON jwo.id = rev_jwl.job_work_order_id AND jwo.deleted_at IS NULL
+      ${GRN_LINE_ORDER_JOINS}
       WHERE gl.company_id = ${companyId}::uuid
         AND grn.company_id = ${companyId}::uuid
         AND ${scopeFrag}

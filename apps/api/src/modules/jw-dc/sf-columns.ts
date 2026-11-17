@@ -6,7 +6,106 @@
 
 import { sql } from 'drizzle-orm';
 
-import type { SfColumnMap } from '../../lib/list-query';
+import {
+  sfExtraDistinct,
+  sfFirstLine,
+  type SfColumnMap,
+  type SfLiftSpec,
+} from '../../lib/list-query';
+
+/** The order hops off an outward line (alias jdol). Needs the line joined.
+ *  Also read by the document registers (service.ts, ADR-303) and the
+ *  first-line values below. */
+export const ORDER_JOINS_SQL = sql.raw(`
+  LEFT JOIN public.items i ON i.id = jdol.item_id AND i.deleted_at IS NULL
+  LEFT JOIN public.purchase_order_lines pol
+    ON pol.id = jdol.purchase_order_line_id AND pol.deleted_at IS NULL
+  LEFT JOIN public.jc_ops jco ON jco.id = pol.source_jc_op_id AND jco.deleted_at IS NULL
+  LEFT JOIN public.job_cards jc ON jc.id = jco.job_card_id AND jc.deleted_at IS NULL
+  LEFT JOIN public.job_work_order_lines jwl
+    ON jwl.id = jc.source_jw_line_id AND jwl.deleted_at IS NULL
+  LEFT JOIN public.job_work_orders jwo ON jwo.id = jwl.job_work_order_id AND jwo.deleted_at IS NULL
+  LEFT JOIN public.sales_order_lines sol
+    ON sol.id = COALESCE(pol.source_so_line_id, jc.source_so_line_id) AND sol.deleted_at IS NULL
+  LEFT JOIN public.sales_orders so ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
+`);
+
+/** A challan's own lines (alias jdol, header jdoh): live ones, or — on a
+ *  Cancelled challan — those cancelled with it (the header's deleted_at). For
+ *  a live header this is exactly `jdol.deleted_at IS NULL`. */
+export const JDOL_OF_HEADER_SQL =
+  '(jdol.deleted_at IS NULL OR (jdoh.deleted_at IS NOT NULL AND jdol.deleted_at = jdoh.deleted_at))';
+
+/** ADR-303 — an outward DC's lines with the order hops (aliases jdol, jdoh +
+ *  ORDER_JOINS_SQL's i / so / jwo …). Scope with JDOL_OF_HEADER_SQL. */
+export const OUTWARD_LINES_FROM = sql`
+  FROM public.jw_dc_outward_lines jdol
+  JOIN public.jw_dc_outward jdoh ON jdoh.id = jdol.jw_dc_outward_id
+  ${ORDER_JOINS_SQL}`;
+/** ADR-303 — an inward receipt's lines with the order hops (aliases jdil,
+ *  jdol + ORDER_JOINS_SQL). */
+export const INWARD_LINES_FROM = sql`
+  FROM public.jw_dc_inward_lines jdil
+  JOIN public.jw_dc_outward_lines jdol ON jdol.id = jdil.jw_dc_outward_line_id
+  ${ORDER_JOINS_SQL}`;
+
+/** The order behind ONE line: the SO code, else the JWSO code. */
+const LINE_ORDER_CODE = sql`COALESCE(so.code, jwo.code)`;
+
+/** The lines of the register row `z` (its derived-table alias): live ones, or
+ *  on a Cancelled document those cancelled with it. */
+const OUTWARD_LINES_OF_Z = sql`${OUTWARD_LINES_FROM}
+  WHERE jdol.jw_dc_outward_id = z.id AND ${sql.raw(JDOL_OF_HEADER_SQL)}`;
+const INWARD_LINES_OF_Z = sql`${INWARD_LINES_FROM}
+  WHERE jdil.jw_dc_inward_id = z.id
+    AND (jdil.deleted_at IS NULL
+         OR (z."cancelledAt" IS NOT NULL AND jdil.deleted_at = z."deletedAt"))`;
+const OUT_ORDER = sql`jdol.line_no, jdol.id`;
+const IN_ORDER = sql`jdol.line_no, jdil.id`;
+
+/** ADR-303 — the first line's order (SO, else JWSO) / its Internal SO No. /
+ *  how many more orders: scalar subqueries over `z`, put in the OUTER page
+ *  SELECT, so they run for the page rows only (never in the count). */
+export const JW_DC_OUTWARD_FIRST_ORDER = sfFirstLine(
+  OUTWARD_LINES_OF_Z,
+  LINE_ORDER_CODE,
+  LINE_ORDER_CODE,
+  OUT_ORDER,
+);
+export const JW_DC_OUTWARD_FIRST_SO_INTERNAL_NO = sfFirstLine(
+  OUTWARD_LINES_OF_Z,
+  sql`so.internal_so_no`,
+  LINE_ORDER_CODE,
+  OUT_ORDER,
+);
+export const JW_DC_OUTWARD_ORDER_EXTRA = sfExtraDistinct(OUTWARD_LINES_OF_Z, LINE_ORDER_CODE);
+export const JW_DC_INWARD_FIRST_ORDER = sfFirstLine(
+  INWARD_LINES_OF_Z,
+  LINE_ORDER_CODE,
+  LINE_ORDER_CODE,
+  IN_ORDER,
+);
+export const JW_DC_INWARD_ORDER_EXTRA = sfExtraDistinct(INWARD_LINES_OF_Z, LINE_ORDER_CODE);
+
+/** ADR-303 — SO No. / Internal SO No. filters (the SO dropdown, ADR-267) on
+ *  the one-row-per-document registers: judged over every line of `z`
+ *  (lib/list-query liftLineFilters), so a document whose lines cover several
+ *  SOs is found by any of them and still shows once. Internal SO No. is lifted
+ *  exactly like SO No. */
+export const JW_DC_OUTWARD_LINE_LIFT: SfLiftSpec = {
+  fields: {
+    soCode: { line: LINE_ORDER_CODE, type: 'text' },
+    soInternalNo: { line: sql`so.internal_so_no`, type: 'text' },
+  },
+  linesFrom: OUTWARD_LINES_OF_Z,
+};
+export const JW_DC_INWARD_LINE_LIFT: SfLiftSpec = {
+  fields: {
+    soCode: { line: LINE_ORDER_CODE, type: 'text' },
+    soInternalNo: { line: sql`so.internal_so_no`, type: 'text' },
+  },
+  linesFrom: INWARD_LINES_OF_Z,
+};
 
 export const JW_DC_OUTWARD_SF_COLUMNS: SfColumnMap = {
   code: { sql: sql`z.code`, type: 'text' },
@@ -22,6 +121,13 @@ export const JW_DC_OUTWARD_SF_COLUMNS: SfColumnMap = {
   receivedQty: { sql: sql`z."totalReturnedQty"`, type: 'num' },
   pendingQty: { sql: sql`z."pendingQty"`, type: 'num' },
   returnStatus: { sql: sql`z."returnStatus"`, type: 'list' },
+  // ADR-303 — one row per DC. SO No. / Internal SO No. sort by the FIRST
+  // line's order; their filters go through JW_DC_OUTWARD_LINE_LIFT.
+  soCode: { sql: JW_DC_OUTWARD_FIRST_ORDER, type: 'text' },
+  soInternalNo: { sql: JW_DC_OUTWARD_FIRST_SO_INTERNAL_NO, type: 'text' },
+  lineCount: { sql: sql`z."linesCount"`, type: 'num' },
+  createdOn: { sql: sql`(z."createdAt" AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
+  createdBy: { sql: sql`z."createdByName"`, type: 'text' },
 };
 
 export const JW_DC_INWARD_SF_COLUMNS: SfColumnMap = {
@@ -32,6 +138,13 @@ export const JW_DC_INWARD_SF_COLUMNS: SfColumnMap = {
   receivedQty: { sql: sql`z."totalReceivedQty"`, type: 'num' },
   acceptedQty: { sql: sql`z."totalOkQty"`, type: 'num' },
   rejectedQty: { sql: sql`z."totalRejectedQty"`, type: 'num' },
+  // ADR-303 — one row per receipt.
+  poNo: { sql: sql`z."jwpoCodeText"`, type: 'text' },
+  lineCount: { sql: sql`z."lineCount"`, type: 'num' },
+  createdOn: { sql: sql`(z."createdAt" AT TIME ZONE 'Asia/Kolkata')::date`, type: 'date' },
+  createdBy: { sql: sql`z."createdByName"`, type: 'text' },
+  // Sort on the first line's order; the filter goes through JW_DC_INWARD_LINE_LIFT.
+  soCode: { sql: JW_DC_INWARD_FIRST_ORDER, type: 'text' },
 };
 
 // ADR-261 — the one-row-per-LINE registers (list-lines.ts). Same derived-row

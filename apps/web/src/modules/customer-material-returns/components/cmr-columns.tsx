@@ -1,17 +1,19 @@
-// Customer Material Return register columns — ONE ROW PER RETURN LINE (ADR-261,
-// GET /customer-material-returns/lines). ADR-199 fit table, ADR-200 server
+// Customer Material Return register columns — ONE ROW PER RETURN again
+// (ADR-303, GET /customer-material-returns). ADR-199 fit table, ADR-200 server
 // Sort & Filter.
 //
-// The lead block comes first and is locked (leadColumns, JWSO-only list: no
-// Internal SO No.): Return No. · JWSO No. · POL · Item Code/Rev ·
-// Item Name — the JWSO line the material belongs to. Then Return Date ·
-// Customer · Return Qty · Return Kind · Customer RM · Return Status ·
-// Vehicle No. Remarks, the cancel reason and History live in the ▸ row.
+// The locked lead block (leadColumns, JWSO-only list: no Internal SO No., and
+// no POL / Item Code / Item Name on a document list): Sr No · Return No. ·
+// Created On · JWSO No. Then Return Date · Customer · Return Kind (the first
+// line's kind + a grey "+n" when the lines carry both) · Lines · Return Qty
+// (sum of the lines) · Return Status · Vehicle No. · Created By last. Remarks,
+// the cancel reason and the lines are on the return's print (⋯ Preview).
 //
 // `sortFilterField` names the field in the API's
-// CUSTOMER_MATERIAL_RETURN_LINE_SF_COLUMNS map.
+// CUSTOMER_MATERIAL_RETURN_SF_COLUMNS map (a Return Kind filter matches a
+// return with ANY line of that kind).
 
-import type { CustomerMaterialReturnKind, CustomerMaterialReturnLineRow } from '@innovic/shared';
+import type { CustomerMaterialReturn, CustomerMaterialReturnKind } from '@innovic/shared';
 import { fmtDate } from '@/lib/date';
 import { statusText } from '@/lib/status-text';
 import { createdByColumn, type DataTableColumn, leadColumns } from '@/ui/data';
@@ -32,7 +34,7 @@ const KIND_OPTIONS = [
   { value: 'rejected', label: CMR_KIND_LABEL.rejected },
 ];
 
-type Row = CustomerMaterialReturnLineRow;
+type Row = CustomerMaterialReturn;
 
 export function cmrColumns(firstRowNo: number): DataTableColumn<Row>[] {
   return [
@@ -46,23 +48,16 @@ export function cmrColumns(firstRowNo: number): DataTableColumn<Row>[] {
         nowrap: true,
         render: (r) => (
           <span className="td-code" style={{ color: 'var(--text)', fontWeight: 800 }}>
-            {r.docCode}
+            {r.code}
           </span>
         ),
       },
       so: 'jwso',
       soNo: (r) => r.jwCode,
-      pol: (r) => r.clientPoLineNo,
       createdOn: (r) => r.createdAt,
-      itemCode: (r) => r.itemCode,
-      itemRev: (r) => r.itemRevision,
-      itemName: (r) => r.itemName,
       overrides: {
         so_no: { sortFilterField: 'jwCode' },
-        client_po_line_no: { sortFilterField: 'clientPoLineNo' },
         created_on: { sortFilterField: 'createdOn' },
-        item_code: { sortFilterField: 'itemCode' },
-        item_name: { sortFilterField: 'itemName' },
       },
     }),
     {
@@ -72,7 +67,7 @@ export function cmrColumns(firstRowNo: number): DataTableColumn<Row>[] {
       header: 'Return Date',
       className: 'mono text2',
       nowrap: true,
-      render: (r) => fmtDate(r.docDate),
+      render: (r) => fmtDate(r.returnDate),
     },
     {
       id: 'customer',
@@ -86,6 +81,35 @@ export function cmrColumns(firstRowNo: number): DataTableColumn<Row>[] {
       title: (r) => r.clientName ?? '',
     },
     {
+      id: 'kind',
+      sortFilterField: 'kind',
+      filterType: 'list',
+      filterOptions: KIND_OPTIONS,
+      kind: 'badge',
+      header: 'Return Kind',
+      nowrap: true,
+      render: (r) =>
+        r.firstKind ? (
+          <>
+            <span className={`badge ${r.firstKind === 'rejected' ? 'b-red' : 'b-green'}`}>
+              {CMR_KIND_LABEL[r.firstKind]}
+            </span>
+            {r.kindExtraCount ? <span className="text3"> +{r.kindExtraCount}</span> : null}
+          </>
+        ) : (
+          '—'
+        ),
+    },
+    {
+      id: 'line_count',
+      sortFilterField: 'lineCount',
+      kind: 'num',
+      header: 'Lines',
+      className: 'mono',
+      nowrap: true,
+      render: (r) => r.lineCount ?? 0,
+    },
+    {
       id: 'qty',
       sortFilterField: 'qty',
       kind: 'num',
@@ -94,30 +118,7 @@ export function cmrColumns(firstRowNo: number): DataTableColumn<Row>[] {
       headColor: 'var(--green2)',
       className: 'mono fw-700',
       nowrap: true,
-      render: (r) => <span style={{ color: 'var(--green2)' }}>{r.qty}</span>,
-    },
-    {
-      id: 'kind',
-      sortFilterField: 'kind',
-      filterType: 'list',
-      filterOptions: KIND_OPTIONS,
-      kind: 'badge',
-      header: 'Return Kind',
-      nowrap: true,
-      render: (r) => (
-        <span className={`badge ${r.kind === 'rejected' ? 'b-red' : 'b-green'}`}>
-          {CMR_KIND_LABEL[r.kind]}
-        </span>
-      ),
-    },
-    {
-      id: 'rm_code',
-      sortFilterField: 'rmItemCode',
-      kind: 'code',
-      header: 'Customer RM',
-      className: 'td-code',
-      nowrap: true,
-      render: (r) => <span style={{ color: 'var(--text)' }}>{r.rmItemCode ?? '—'}</span>,
+      render: (r) => <span style={{ color: 'var(--green2)' }}>{r.totalQty}</span>,
     },
     {
       id: 'status',
@@ -127,8 +128,8 @@ export function cmrColumns(firstRowNo: number): DataTableColumn<Row>[] {
       kind: 'badge',
       header: 'Return Status',
       render: (r) => (
-        <span className={`badge ${r.docStatus === 'cancelled' ? 'b-red' : 'b-green'}`}>
-          {statusText(r.docStatus)}
+        <span className={`badge ${r.status === 'cancelled' ? 'b-red' : 'b-green'}`}>
+          {statusText(r.status)}
         </span>
       ),
     },

@@ -17,7 +17,7 @@ import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { fmtDate } from '@/lib/date';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
-import { DataTable, StatStrip, type DataTableColumn } from '@/ui/data';
+import { DataTable, Panel, StatStrip, type DataTableColumn } from '@/ui/data';
 import { srNoColumn } from '@/ui/data/lead-columns';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
@@ -232,6 +232,7 @@ function StockValuationPage(): React.JSX.Element {
   // The value tiles also drop when money is hidden (priceHidden computed above).
   return (
     <ReportShell
+      fill
       title="Stock Valuation"
       filters={
         <>
@@ -308,7 +309,7 @@ function StockValuationPage(): React.JSX.Element {
         />
       }
     >
-      <div className="panel">
+      <Panel fill bodyPadding="none">
         {/* Shared FIT table (ADR-199). The totals row is drawn by the engine
             (showTotals + the Stock Value column's `total`), so it follows the
             visible columns — no hand-written tfoot. No row tint: a valuation row
@@ -327,7 +328,7 @@ function StockValuationPage(): React.JSX.Element {
               : 'No items yet.'
           }
         />
-      </div>
+      </Panel>
     </ReportShell>
   );
 }

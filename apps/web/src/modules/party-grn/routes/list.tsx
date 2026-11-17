@@ -32,7 +32,7 @@ import { DataTable, Panel, ROW_TINT } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
-import { usePartyGrnLines } from '../api';
+import { usePartyGrnList } from '../api';
 import { EditPartyGrnModal } from '../components/edit-party-grn-modal';
 import { isPartyGrnCancelled, partyGrnColumns } from '../components/party-grn-columns';
 import { PartyGrnQcModal } from '../components/party-grn-qc-modal';
@@ -125,8 +125,8 @@ function PartyGrnListPage(): React.JSX.Element {
   // page 1.
   const sf = useServerSortFilter(TABLE_KEYS.partyGrn, () => setPage(1));
 
-  // ADR-261 — ONE ROW PER GRN LINE (GET /party-grn/lines).
-  const { data, isLoading, isError, error } = usePartyGrnLines({
+  // ADR-303 — ONE ROW PER PARTY GRN again (GET /party-grn).
+  const { data, isLoading, isError, error } = usePartyGrnList({
     search: term || undefined,
     sf: sf.param,
     // ADR-235 — Cancelled GRNs stay on the list, washed and marked Cancelled.
@@ -139,7 +139,7 @@ function PartyGrnListPage(): React.JSX.Element {
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / LIST_PAGE_SIZE));
   const rows = data?.items ?? [];
   const columns = useMemo(() => partyGrnColumns(pageOffset(page) + 1), [page]);
-  const editRow = editId ? (rows.find((r) => r.header.id === editId)?.header ?? null) : null;
+  const editRow = editId ? (rows.find((r) => r.id === editId) ?? null) : null;
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
   // VIEW was removed for this page sees the no-access panel, not the page. `eff`
@@ -190,7 +190,7 @@ function PartyGrnListPage(): React.JSX.Element {
             title="Party GRN"
             icon="📥"
             count={data?.total}
-            noun="line"
+            noun="Party GRN"
             search={search}
             onSearch={setSearch}
             searchPlaceholder="Search JWSO, customer, material…"
@@ -226,18 +226,15 @@ function PartyGrnListPage(): React.JSX.Element {
                 sortFilterServer={sf}
                 columns={columns}
                 rows={rows}
-                rowKey={(r) => r.lineId}
+                rowKey={(r) => r.id}
                 loading={isLoading}
                 emptyText={term || sf.filtering ? 'No Party GRNs match.' : 'No Party GRNs yet.'}
-                rowClassName={(r) => (r.docStatus === 'cancelled' ? ROW_TINT.cancelled : undefined)}
+                rowClassName={(r) => (isPartyGrnCancelled(r) ? ROW_TINT.cancelled : undefined)}
                 // ADR-294 — a row click opens the GRN's own page (owner: no more
                 // details opening below the line).
-                onRowClick={(r) =>
-                  void navigate({ to: '/party-grn/$id', params: { id: r.header.id } })
-                }
-                // Every action acts on the whole GRN (r.header), as before.
-                rowMenu={(r) => {
-                  const g = r.header;
+                onRowClick={(r) => void navigate({ to: '/party-grn/$id', params: { id: r.id } })}
+                // Every action acts on the whole GRN (the row), as before.
+                rowMenu={(g) => {
                   return [
                     {
                       // The Edit right, a line still waiting for Incoming QC, not
@@ -288,7 +285,7 @@ function PartyGrnListPage(): React.JSX.Element {
           {data ? (
             <ListFooter
               total={data.total}
-              noun="line"
+              noun="Party GRN"
               page={page}
               pageSize={LIST_PAGE_SIZE}
               onPage={(p) => setPage(Math.min(totalPages, Math.max(1, p)))}
