@@ -48,7 +48,10 @@ export function printCustomerMaterialReturn(
   const documentFields: SheetField[] = [
     { label: 'Return No.', value: r.code, variant: 'mono', strong: true },
     { label: 'Return Date', value: challanDate(r.returnDate), variant: 'mono' },
-    { label: 'JWSO No.', value: r.jwCode ?? '', variant: 'mono' },
+    // ADR-307 — an Equipment SO return names its SO instead.
+    r.soCode
+      ? { label: 'SO No.', value: r.soCode, variant: 'mono' }
+      : { label: 'JWSO No.', value: r.jwCode ?? '', variant: 'mono' },
     { label: 'Vehicle No.', value: r.vehicleNo ?? '', variant: 'mono' },
   ];
   if (r.remarks) documentFields.push({ label: 'Remarks', value: r.remarks });

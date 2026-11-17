@@ -76,7 +76,7 @@ function dateLike(v: unknown): string {
   return v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 10);
 }
 
-async function nextIssueCode(tx: DbTransaction, companyId: string): Promise<string> {
+export async function nextIssueCode(tx: DbTransaction, companyId: string): Promise<string> {
   // S2: queue behind any other save numbering this series (lib/doc-series-lock).
   await lockDocSeries(tx, companyId, 'party_material_issues');
   const prefix = 'IN-PMI-';

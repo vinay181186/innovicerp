@@ -128,7 +128,7 @@ const ERROR_KIND_LABEL: Record<ExcelRowErrorKind, string> = {
   parent_as_child: 'Parent item cannot be its own part',
   duplicate: 'Same item listed more than once',
   bad_qty: 'Qty / Set must be greater than 0',
-  bad_type: 'BOM Type must be manufacture, purchase or outsource',
+  bad_type: 'BOM Type must be Manufacture, Buy, Outsource or Party Supplied',
 };
 
 interface ExcelRowError {
@@ -160,7 +160,7 @@ const BOM_TYPES: ReadonlyArray<{ value: BomLineType; label: string }> = BOM_LINE
   (value) => ({ value, label: BOM_LINE_TYPE_LABEL[value] }),
 );
 
-const VALID_BOM_TYPES = new Set<BomLineType>(['manufacture', 'purchase', 'outsource']);
+const VALID_BOM_TYPES = new Set<BomLineType>(BOM_LINE_TYPES);
 /** The tab the Excel Template keeps its dropdown values on (built by
  *  apps/api/src/lib/excel-template.ts; the browser-built master templates use
  *  the same name). Never a sheet of rows to import. */
@@ -380,10 +380,19 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
     const picked = itemById.get(id) ?? (itemPage?.items ?? []).find((i) => i.id === id);
     // A new part never keeps the previous part's Drawing Rev.
     const same = lines[idx]?.childItemId === id;
+    // ADR-307: a Party Supplied Material (-RM) child is a customer part — its
+    // BOM Type follows the item. Moving off such an item drops the type back.
+    const isCustomerItem = picked?.itemType === 'party_supplied_material';
+    const prevType = lines[idx]?.bomType;
     updateLine(idx, {
       childItemId: id,
       childItemCodeText: picked?.code ?? '',
       ...(same ? {} : { childDrawingRev: '' }),
+      ...(isCustomerItem
+        ? { bomType: 'party_supplied' as const }
+        : prevType === 'party_supplied' && picked
+          ? { bomType: 'manufacture' as const }
+          : {}),
     });
   };
 
@@ -740,7 +749,7 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
             rowIndex: idx,
             itemCode,
             kind: 'bad_type',
-            reason: 'BOM Type must be Manufacture, Buy or Outsource.',
+            reason: 'BOM Type must be Manufacture, Buy, Outsource or Party Supplied.',
           });
           return;
         }

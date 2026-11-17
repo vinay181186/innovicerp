@@ -41,6 +41,10 @@ import { DetailHeader } from '@/ui/layout';
 import { useAssemblyTracker, useStartAssembly, useStopAssembly, useUndoLastUnit } from '../api';
 import { PlanningUserPicker } from '../components/planning-user-picker';
 import { VarianceConfirm } from '../components/variance-confirm';
+import {
+  CustomerPartIssueModal,
+  issuableCustomerParts,
+} from '../components/customer-part-issue-modal';
 
 export const assemblyDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -196,6 +200,8 @@ function AssemblyDetailPage(): React.JSX.Element {
       ) : null}
 
       <ComponentsPanel
+        soId={soId}
+        canIssue={canIssue}
         components={data.components}
         orderQty={data.rollup.orderQty}
         assembledQty={data.rollup.assembledQty}
@@ -632,19 +638,31 @@ const TYPE_META: Record<AssemblyComponentRow['bomType'], { label: string; color:
   manufacture: { label: '🏭 Mfg', color: 'var(--cyan)' },
   purchase: { label: '🛒 Buy', color: 'var(--green2)' },
   outsource: { label: '🔧 JW', color: 'var(--amber2)' },
+  // ADR-307 — the customer sends this part; issued with "Issue Customer Part →".
+  party_supplied: { label: 'Party Supplied', color: 'var(--purple)' },
 };
 
 function ComponentsPanel({
+  soId,
+  canIssue,
   components,
   orderQty,
   assembledQty,
   inProgressQty,
 }: {
+  soId: string;
+  /** ADR-234 — Item Issue Entry, the same right as "Issue from Store →". */
+  canIssue: boolean;
   components: AssemblyComponentRow[];
   orderQty: number;
   assembledQty: number;
   inProgressQty: number;
 }): React.JSX.Element {
+  // Hooks above every return (CLAUDE.md §23).
+  const [issueOpen, setIssueOpen] = useState(false);
+  // ADR-307 — offered only when a customer part has something in this SO's
+  // customer store; the pop-up's cap is read off these same rows.
+  const canIssueCustomerPart = canIssue && issuableCustomerParts(components).length > 0;
   if (components.length === 0) {
     return (
       <div className="panel">
@@ -659,7 +677,19 @@ function ComponentsPanel({
     <div className="panel">
       <div className="panel-hdr">
         <div className="panel-title">Components ({components.length})</div>
+        {canIssueCustomerPart ? (
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setIssueOpen(true)}>
+            Issue Customer Part →
+          </button>
+        ) : null}
       </div>
+      {issueOpen ? (
+        <CustomerPartIssueModal
+          soId={soId}
+          components={components}
+          onClose={() => setIssueOpen(false)}
+        />
+      ) : null}
       <div className="tbl-wrap">
         <table className="innovic-table">
           <thead>
@@ -724,7 +754,8 @@ function ComponentsPanel({
                 <td className="td-num">{c.qtyPerSet}</td>
                 <td className="td-num fw-700">{c.totalNeed}</td>
                 <td className="td-num" style={{ color: 'var(--green2)' }}>
-                  {c.stockQty}
+                  {/* ADR-307 — a customer part's stock is this SO's customer store. */}
+                  {c.customerPart ? `${c.stockQty} (customer)` : c.stockQty}
                 </td>
                 {/* Still Out — what is actually out of the store for this order
                     and not yet fitted, the raw registered fact. NOT

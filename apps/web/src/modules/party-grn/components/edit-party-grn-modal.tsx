@@ -201,14 +201,14 @@ export function EditPartyGrnModal({
             </div>
             <div className="form-grp form-full">
               <label className="form-label" htmlFor="epgrn-jwso">
-                JWSO No.
+                {d.soCode ? 'SO No.' : 'JWSO No.'}
               </label>
               <input
                 id="epgrn-jwso"
                 type="text"
                 className="innovic-input"
                 readOnly
-                value={d.jwCodeText ?? '—'}
+                value={d.soCode ?? d.jwCodeText ?? '—'}
               />
             </div>
             <div className="form-grp">

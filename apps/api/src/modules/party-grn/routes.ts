@@ -13,6 +13,7 @@ import { qcPartyGrn } from './qc';
 import { getPartyGrnRelated } from './related';
 import { updatePartyGrnInputSchema } from './schema';
 import * as service from './service';
+import { listReceivableSos, listSoReceivableParts } from './so-grn';
 
 const idParam = z.object({ id: z.string().uuid() });
 
@@ -28,6 +29,19 @@ export async function partyGrnRoutes(app: FastifyInstance): Promise<void> {
     if (!req.user) throw new AuthenticationError();
     const query = listPartyGrnQuerySchema.parse(req.query);
     return listPartyGrnLines(query, req.user);
+  });
+
+  // ADR-307 - "Against Equipment SO" picker + its customer parts (read gate
+  // = the Party GRN list's, requirePartyGrnRead). Declared before /:id.
+  app.get('/party-grn/receivable-sos', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    return listReceivableSos(req.user);
+  });
+
+  app.get('/party-grn/so-receivable', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const { salesOrderId } = z.object({ salesOrderId: z.string().uuid() }).parse(req.query);
+    return listSoReceivableParts(salesOrderId, req.user);
   });
 
   app.get('/party-grn/next-code', async (req) => {

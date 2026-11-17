@@ -12,6 +12,12 @@
 //
 // Picking a different JWSO clears every typed qty (they belonged to the old
 // JWSO's rows).
+//
+// ADR-307: "Against" picks JWSO (default — unchanged) or Equipment SO. The SO
+// picker lists every open Equipment SO with customer-supplied BOM parts
+// (GET /party-grn/receivable-sos); returnable?salesOrderId= gives good rows
+// (rmItemId, in-store qty) and rejected rows (partyGrnLineId). Switching
+// Against clears the order and every typed qty.
 
 import { Icon } from '@/ui/core';
 import type { CreateCustomerMaterialReturnInput, CustomerMaterialReturn } from '@innovic/shared';
@@ -24,13 +30,23 @@ import { useSaveKey } from '@/lib/use-save-key';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
-import { FormField, FormGrid, SearchableSelect } from '@/ui/forms';
+import { FormField, FormGrid, SearchableSelect, Select } from '@/ui/forms';
 import { FormActions, PageHeader, useSaveShortcut } from '@/ui/layout';
 import { useJobWorkOrder, useJobWorkOrdersList } from '../../job-work-orders/api';
-import { useCreateCustomerMaterialReturn, useCustomerMaterialReturnable } from '../api';
+import { useReceivableSos } from '../../party-grn/api';
+import {
+  type CmrAgainst,
+  useCreateCustomerMaterialReturn,
+  useCustomerMaterialReturnable,
+} from '../api';
 import { CMR_KIND_LABEL } from '../components/cmr-columns';
 import { CmrReturnableTable, cmrRowKey } from '../components/cmr-returnable-table';
 import { usePrintCmr } from '../components/use-print-cmr';
+
+const AGAINST_OPTIONS = [
+  { value: 'jwso', label: 'JWSO' },
+  { value: 'so', label: 'Equipment SO' },
+];
 
 export const customerMaterialReturnNewRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -48,7 +64,10 @@ function CustomerMaterialReturnNewPage(): React.JSX.Element {
 
   const [returnDate, setReturnDate] = useState(todayLocal());
   const [jwSearch, setJwSearch] = useState('');
+  const [against, setAgainst] = useState<CmrAgainst>('jwso');
+  const isSo = against === 'so';
   const [jwId, setJwId] = useState<string | null>(null);
+  const [soId, setSoId] = useState<string | null>(null);
   const [vehicleNo, setVehicleNo] = useState('');
   const [remarks, setRemarks] = useState('');
   /** Typed Return Qty per returnable row (cmrRowKey → text). */
@@ -67,9 +86,16 @@ function CustomerMaterialReturnNewPage(): React.JSX.Element {
   const jwDetailQ = useJobWorkOrder(jwId ?? undefined);
   const jwDetail = jwDetailQ.data && jwDetailQ.data.id === jwId ? jwDetailQ.data : null;
   const picked = jwHeaders.find((j) => j.jwId === jwId) ?? null;
-  const customerName = picked?.customerName ?? jwDetail?.customerName ?? '';
+  // ADR-307 — the Equipment SO picker (idle on the JWSO path).
+  const soListQ = useReceivableSos(isSo);
+  const soOptions = useMemo(() => soListQ.data ?? [], [soListQ.data]);
+  const pickedSo = soOptions.find((o) => o.salesOrderId === soId) ?? null;
+  const customerName = isSo
+    ? (pickedSo?.clientName ?? '')
+    : (picked?.customerName ?? jwDetail?.customerName ?? '');
+  const orderId = isSo ? soId : jwId;
 
-  const returnableQ = useCustomerMaterialReturnable(jwId ?? undefined);
+  const returnableQ = useCustomerMaterialReturnable(against, orderId);
   const rows = useMemo(
     () => (returnableQ.data ?? []).filter((r) => r.returnableQty > 0),
     [returnableQ.data],
@@ -84,10 +110,24 @@ function CustomerMaterialReturnNewPage(): React.JSX.Element {
     setErr(null);
   };
 
+  const onPickSo = (id: string | null): void => {
+    setSoId(id);
+    setQtys({});
+    setErr(null);
+  };
+
+  const onAgainstChange = (v: CmrAgainst): void => {
+    setAgainst(v);
+    setJwId(null);
+    setSoId(null);
+    setQtys({});
+    setErr(null);
+  };
+
   const onSave = (): void => {
     setErr(null);
-    if (!jwId) {
-      setErr('JWSO No. is required.');
+    if (!orderId) {
+      setErr(isSo ? 'SO No. is required.' : 'JWSO No. is required.');
       return;
     }
     const lines: CreateCustomerMaterialReturnInput['lines'] = [];
@@ -95,7 +135,9 @@ function CustomerMaterialReturnNewPage(): React.JSX.Element {
       const raw = (qtys[cmrRowKey(r)] ?? '').trim();
       if (!raw) continue;
       const q = Number(raw);
-      const label = `JWSO L${r.jwLineNo} (${CMR_KIND_LABEL[r.kind]})`;
+      const where =
+        r.jwLineNo != null ? `JWSO L${r.jwLineNo}` : (r.rmItemCode ?? r.partyMaterialCode);
+      const label = `${where} (${CMR_KIND_LABEL[r.kind]})`;
       if (!Number.isInteger(q) || q <= 0) {
         setErr(`${label}: Return Qty must be a whole number, 1 or more.`);
         return;
@@ -106,7 +148,10 @@ function CustomerMaterialReturnNewPage(): React.JSX.Element {
       }
       lines.push({
         kind: r.kind,
-        jwLineId: r.jwLineId,
+        // JWSO rows name their JWSO line; ADR-307 Equipment SO good rows name
+        // the customer part (rmItemId), rejected rows the Party GRN line.
+        ...(r.jwLineId ? { jwLineId: r.jwLineId } : {}),
+        ...(isSo && r.kind === 'good' && r.rmItemId ? { rmItemId: r.rmItemId } : {}),
         ...(r.kind === 'rejected' && r.partyGrnLineId ? { partyGrnLineId: r.partyGrnLineId } : {}),
         qty: q,
       });
@@ -115,7 +160,9 @@ function CustomerMaterialReturnNewPage(): React.JSX.Element {
       setErr('Type a Return Qty on at least one row.');
       return;
     }
-    const input: CreateCustomerMaterialReturnInput = { returnDate, jobWorkOrderId: jwId, lines };
+    const input: CreateCustomerMaterialReturnInput = isSo
+      ? { returnDate, salesOrderId: orderId, lines }
+      : { returnDate, jobWorkOrderId: orderId, lines };
     if (vehicleNo.trim()) input.vehicleNo = vehicleNo.trim();
     if (remarks.trim()) input.remarks = remarks.trim();
 
@@ -125,7 +172,7 @@ function CustomerMaterialReturnNewPage(): React.JSX.Element {
         setErr(e instanceof Error ? e.message : 'Could not save the return. Try again.'),
     });
   };
-  const canSave = !createMut.isPending && Boolean(jwId) && rows.length > 0;
+  const canSave = !createMut.isPending && Boolean(orderId) && rows.length > 0;
   useSaveShortcut(onSave, canSave && saved === null);
 
   // After Save: say so and offer the paper that goes with the material.
@@ -141,8 +188,8 @@ function CustomerMaterialReturnNewPage(): React.JSX.Element {
         <Panel>
           <div style={{ fontSize: 'var(--fs-sm)' }}>
             <span className="mono fw-700">{saved.code}</span> — {saved.totalQty} pcs back to the
-            customer on {saved.jwCode ?? 'the JWSO'}. Preview or download the return to send with
-            the material.
+            customer on {saved.soCode ?? saved.jwCode ?? (isSo ? 'the SO' : 'the JWSO')}. Preview or
+            download the return to send with the material.
           </div>
         </Panel>
         <FormActions>
@@ -179,6 +226,8 @@ function CustomerMaterialReturnNewPage(): React.JSX.Element {
   }
 
   const dirty =
+    against !== 'jwso' ||
+    soId !== null ||
     jwId !== null ||
     vehicleNo !== '' ||
     remarks !== '' ||
@@ -195,6 +244,15 @@ function CustomerMaterialReturnNewPage(): React.JSX.Element {
 
       <Panel>
         <FormGrid>
+          <FormField label="Against" required size="sm" htmlFor="cmr-against">
+            <Select
+              id="cmr-against"
+              fieldWidth="sm"
+              options={AGAINST_OPTIONS}
+              value={against}
+              onChange={(e) => onAgainstChange(e.target.value === 'so' ? 'so' : 'jwso')}
+            />
+          </FormField>
           <FormField label="Return Date" required size="sm" htmlFor="cmr-date">
             <input
               id="cmr-date"
@@ -204,25 +262,48 @@ function CustomerMaterialReturnNewPage(): React.JSX.Element {
               onChange={(e) => setReturnDate(e.target.value)}
             />
           </FormField>
-          <FormField label="JWSO No." required size="lg" htmlFor="cmr-jwso">
-            <SearchableSelect
-              id="cmr-jwso"
-              value={jwId}
-              onChange={onPickJw}
-              onSearch={setJwSearch}
-              loading={jwQuery.isFetching}
-              error={jwQuery.error}
-              placeholder="🔍 Select JWSO — type number or customer…"
-              options={jwHeaders.map((j) => ({
-                id: j.jwId,
-                code: j.code,
-                name: j.customerName ?? '',
-              }))}
-              valueLabel={
-                jwDetail ? `${jwDetail.code} — ${jwDetail.customerName ?? ''}` : undefined
-              }
-            />
-          </FormField>
+          {isSo ? (
+            <FormField label="SO No." required size="lg" htmlFor="cmr-so">
+              <SearchableSelect
+                id="cmr-so"
+                value={soId}
+                onChange={onPickSo}
+                loading={soListQ.isFetching}
+                error={soListQ.error}
+                placeholder="🔍 Select Equipment SO — type SO No., customer or Client PO No.…"
+                options={soOptions.map((o) => ({
+                  id: o.salesOrderId,
+                  code: o.soCode,
+                  name: [o.clientName ?? '', o.clientPoNo ? `Client PO No. ${o.clientPoNo}` : '']
+                    .filter(Boolean)
+                    .join(' · '),
+                }))}
+                valueLabel={
+                  pickedSo ? `${pickedSo.soCode} — ${pickedSo.clientName ?? ''}` : undefined
+                }
+              />
+            </FormField>
+          ) : (
+            <FormField label="JWSO No." required size="lg" htmlFor="cmr-jwso">
+              <SearchableSelect
+                id="cmr-jwso"
+                value={jwId}
+                onChange={onPickJw}
+                onSearch={setJwSearch}
+                loading={jwQuery.isFetching}
+                error={jwQuery.error}
+                placeholder="🔍 Select JWSO — type number or customer…"
+                options={jwHeaders.map((j) => ({
+                  id: j.jwId,
+                  code: j.code,
+                  name: j.customerName ?? '',
+                }))}
+                valueLabel={
+                  jwDetail ? `${jwDetail.code} — ${jwDetail.customerName ?? ''}` : undefined
+                }
+              />
+            </FormField>
+          )}
           <FormField label="Vehicle No." size="sm" htmlFor="cmr-vehicle">
             <input
               id="cmr-vehicle"
@@ -258,9 +339,9 @@ function CustomerMaterialReturnNewPage(): React.JSX.Element {
       </Panel>
 
       <Panel title="Material that can go back">
-        {!jwId ? (
+        {!orderId ? (
           <div className="empty-state" style={{ padding: 14 }}>
-            Pick a JWSO first.
+            {isSo ? 'Pick an SO first.' : 'Pick a JWSO first.'}
           </div>
         ) : returnableQ.isLoading ? (
           <div className="text3" style={{ fontSize: 'var(--fs-xs)', padding: 'var(--sp-2)' }}>
@@ -274,10 +355,12 @@ function CustomerMaterialReturnNewPage(): React.JSX.Element {
           </div>
         ) : rows.length === 0 ? (
           <div className="empty-state" style={{ padding: 14 }}>
-            Nothing of this customer&apos;s material is left to return on this JWSO.
+            Nothing of this customer&apos;s material is left to return on this{' '}
+            {isSo ? 'SO' : 'JWSO'}.
           </div>
         ) : (
           <CmrReturnableTable
+            isSo={isSo}
             rows={rows}
             qtys={qtys}
             onQtyChange={(k, v) => setQtys((prev) => ({ ...prev, [k]: v }))}
@@ -303,12 +386,16 @@ function CustomerMaterialReturnNewPage(): React.JSX.Element {
           className="btn btn-primary"
           disabled={!canSave}
           title={
-            !jwId
-              ? 'Pick the JWSO No. first'
+            !orderId
+              ? isSo
+                ? 'Pick the SO No. first'
+                : 'Pick the JWSO No. first'
               : rows.length === 0
                 ? returnableQ.isLoading
                   ? 'Loading what can be returned…'
-                  : 'Nothing on this JWSO can be returned'
+                  : isSo
+                    ? 'Nothing on this SO can be returned'
+                    : 'Nothing on this JWSO can be returned'
                 : undefined
           }
           onClick={onSave}

@@ -3,6 +3,7 @@
 // split). Read-only: Edit / Delete are the row's ⋯ (they were duplicates here)
 // and Plan BOM Items moved into the row's ⋯ Workflow (equipment SO with a BOM).
 
+import { CUSTOMER_PART_GRN_STATUS_LABEL } from '@innovic/shared';
 import type { SalesOrderDetail, SoStatusBomItem } from '@innovic/shared';
 import { Panel } from '@/ui/data';
 import { fmtDate } from '@/lib/date';
@@ -124,6 +125,9 @@ function BomPartsTable({ items }: { items: SoStatusBomItem[] }): React.JSX.Eleme
             Total Need
           </th>
           <th>BOM Type</th>
+          {/* ADR-307 — customer-supplied parts only; '—' on every other row. */}
+          <th>Party GRN Status</th>
+          <th className="th-num">Received</th>
           <th className="th-num" style={{ color: 'var(--green2)' }}>
             Physical
           </th>
@@ -135,13 +139,22 @@ function BomPartsTable({ items }: { items: SoStatusBomItem[] }): React.JSX.Eleme
       <tbody>
         {items.map((c, idx) => {
           const typeLabel =
-            c.bomType === 'manufacture' ? 'Make' : c.bomType === 'purchase' ? 'Buy' : 'Outsource';
+            c.bomType === 'manufacture'
+              ? 'Make'
+              : c.bomType === 'purchase'
+                ? 'Buy'
+                : c.bomType === 'party_supplied'
+                  ? 'Party Supplied'
+                  : 'Outsource';
           const typeColor =
             c.bomType === 'manufacture'
               ? 'var(--cyan)'
               : c.bomType === 'purchase'
                 ? 'var(--green)'
-                : 'var(--amber)';
+                : c.bomType === 'party_supplied'
+                  ? 'var(--purple)'
+                  : 'var(--amber)';
+          const cp = c.customerPart;
           return (
             <tr
               key={c.childItemId}
@@ -166,6 +179,10 @@ function BomPartsTable({ items }: { items: SoStatusBomItem[] }): React.JSX.Eleme
                   {typeLabel}
                 </span>
               </td>
+              <td className="td-ctr">
+                {cp ? CUSTOMER_PART_GRN_STATUS_LABEL[cp.partyGrnStatus] : '—'}
+              </td>
+              <td className="td-num mono fw-700">{cp ? cp.acceptedQty : '—'}</td>
               <td
                 className="td-num mono fw-700"
                 style={{ color: c.stockQty > 0 ? 'var(--green)' : 'var(--text3)' }}

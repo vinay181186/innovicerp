@@ -4,16 +4,20 @@
 import type { CustomerMaterialReturnableRow } from '@innovic/shared';
 import { CMR_KIND_LABEL } from './cmr-columns';
 
-/** One returnable row's identity: kind + JWSO line (+ Party GRN line). */
+/** One returnable row's identity: kind + JWSO line — or, on an Equipment SO
+ *  row (ADR-307), the customer part — (+ Party GRN line). */
 export function cmrRowKey(r: CustomerMaterialReturnableRow): string {
-  return `${r.kind}:${r.jwLineId}:${r.partyGrnLineId ?? ''}`;
+  return `${r.kind}:${r.jwLineId ?? r.rmItemId ?? r.partyMaterialId}:${r.partyGrnLineId ?? ''}`;
 }
 
 export function CmrReturnableTable({
   rows,
   qtys,
   onQtyChange,
+  isSo = false,
 }: {
+  /** ADR-307 — Equipment SO rows have no JWSO line / POL: those columns go. */
+  isSo?: boolean;
   rows: CustomerMaterialReturnableRow[];
   /** Typed Return Qty per returnable row (cmrRowKey → text). */
   qtys: Record<string, string>;
@@ -25,10 +29,14 @@ export function CmrReturnableTable({
         <thead>
           <tr>
             <th className="th-ctr">Return Kind</th>
-            <th className="th-ctr">JWSO Line</th>
-            <th className="th-ctr" style={{ color: 'var(--purple)' }}>
-              POL
-            </th>
+            {isSo ? null : (
+              <>
+                <th className="th-ctr">JWSO Line</th>
+                <th className="th-ctr" style={{ color: 'var(--purple)' }}>
+                  POL
+                </th>
+              </>
+            )}
             <th>Item Code</th>
             <th>Customer RM</th>
             <th>Party GRN No.</th>
@@ -46,12 +54,16 @@ export function CmrReturnableTable({
                     {CMR_KIND_LABEL[r.kind]}
                   </span>
                 </td>
-                <td className="td-ctr mono" style={{ color: 'var(--purple)' }}>
-                  L{r.jwLineNo}
-                </td>
-                <td className="td-ctr mono fw-700" style={{ color: 'var(--purple)' }}>
-                  {r.clientPoLineNo ?? '—'}
-                </td>
+                {isSo ? null : (
+                  <>
+                    <td className="td-ctr mono" style={{ color: 'var(--purple)' }}>
+                      {r.jwLineNo != null ? `L${r.jwLineNo}` : '—'}
+                    </td>
+                    <td className="td-ctr mono fw-700" style={{ color: 'var(--purple)' }}>
+                      {r.clientPoLineNo ?? '—'}
+                    </td>
+                  </>
+                )}
                 <td className="td-code" style={{ color: 'var(--text)' }}>
                   {r.partCode ?? '—'}
                 </td>
@@ -67,7 +79,11 @@ export function CmrReturnableTable({
                     max={r.returnableQty}
                     step={1}
                     className="innovic-input"
-                    aria-label={`Return Qty for JWSO L${r.jwLineNo} ${CMR_KIND_LABEL[r.kind]}`}
+                    aria-label={`Return Qty for ${
+                      r.jwLineNo != null
+                        ? `JWSO L${r.jwLineNo}`
+                        : (r.rmItemCode ?? r.partyMaterialCode)
+                    } ${CMR_KIND_LABEL[r.kind]}`}
                     placeholder="—"
                     value={qtys[k] ?? ''}
                     onChange={(e) => onQtyChange(k, e.target.value)}

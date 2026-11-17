@@ -23,8 +23,82 @@
 // transaction AFTER lockSoRow (lib/assembly-parts.ts) — §20.3.
 
 import type { CustomerPartGrnStatus, SoCustomerPartFigures } from '@innovic/shared';
-import { sql } from 'drizzle-orm';
+import { type SQL, sql } from 'drizzle-orm';
 import type { DbTransaction } from '../db/with-user-context';
+
+/** THE customer-part SQL (one row per SO × customer part, raw sums + need,
+ *  waiting_qc_qty and pending_qty). Used by readSoCustomerPartsMany below and
+ *  by the Store Home check (dashboard/checks/store.ts), whose runner takes SQL
+ *  only — so the rule lives here once. `soWhere` filters sales_orders `so`. */
+export function soCustomerPartRowsSql(cid: string | SQL, soWhere: SQL): SQL {
+  return sql`
+    WITH parts AS (
+      SELECT so.id AS so_id, bml.child_item_id AS item_id,
+             SUM(bml.qty_per_set)::numeric AS qty_per_set
+        FROM public.sales_orders so
+        JOIN public.bom_masters bm ON bm.id = so.bom_master_id AND bm.deleted_at IS NULL
+        JOIN public.bom_master_lines bml ON bml.bom_master_id = bm.id AND bml.deleted_at IS NULL
+       WHERE so.company_id = ${cid}::uuid AND so.deleted_at IS NULL AND ${soWhere}
+         AND bml.bom_type = 'party_supplied'
+       GROUP BY so.id, bml.child_item_id
+    ), sets AS (
+      SELECT sol.sales_order_id AS so_id, SUM(sol.order_qty)::numeric AS order_qty
+        FROM public.sales_order_lines sol
+       WHERE sol.company_id = ${cid}::uuid AND sol.deleted_at IS NULL
+         AND sol.sales_order_id IN (SELECT so_id FROM parts)
+       GROUP BY sol.sales_order_id
+    ), grn AS (
+      SELECT g.sales_order_id AS so_id, pm.item_id,
+             SUM(l.received_qty) AS received, SUM(l.accepted_qty) AS accepted,
+             SUM(l.rejected_qty) AS rejected, SUM(l.rejected_returned_qty) AS rej_returned
+        FROM public.party_grn_lines l
+        JOIN public.party_grn g ON g.id = l.party_grn_id AND g.deleted_at IS NULL
+        JOIN public.party_materials pm ON pm.id = l.party_material_id
+       WHERE g.company_id = ${cid}::uuid AND l.deleted_at IS NULL
+         AND g.sales_order_id IN (SELECT so_id FROM parts)
+       GROUP BY g.sales_order_id, pm.item_id
+    ), iss AS (
+      SELECT i.sales_order_id AS so_id, pm.item_id,
+             SUM(i.qty - i.returned_to_store_qty) AS issued
+        FROM public.party_material_issues i
+        JOIN public.party_materials pm ON pm.id = i.party_material_id
+       WHERE i.company_id = ${cid}::uuid AND i.deleted_at IS NULL
+         AND i.sales_order_id IN (SELECT so_id FROM parts)
+       GROUP BY i.sales_order_id, pm.item_id
+    ), fit AS (
+      SELECT c.sales_order_id AS so_id, c.item_id, SUM(c.qty) AS fitted
+        FROM public.assembly_unit_consumptions c
+       WHERE c.company_id = ${cid}::uuid AND c.deleted_at IS NULL
+         AND c.sales_order_id IN (SELECT so_id FROM parts)
+       GROUP BY c.sales_order_id, c.item_id
+    ), ret AS (
+      SELECT r.sales_order_id AS so_id, pm.item_id, SUM(rl.qty) AS returned
+        FROM public.customer_material_return_lines rl
+        JOIN public.customer_material_returns r ON r.id = rl.return_id
+        JOIN public.party_materials pm ON pm.id = rl.party_material_id
+       WHERE r.company_id = ${cid}::uuid AND r.deleted_at IS NULL
+         AND r.status = 'issued' AND rl.deleted_at IS NULL AND rl.kind = 'good'
+         AND r.sales_order_id IN (SELECT so_id FROM parts)
+       GROUP BY r.sales_order_id, pm.item_id
+    )
+    SELECT p.so_id, p.item_id, i.code AS item_code, i.name AS item_name,
+           p.qty_per_set, COALESCE(s.order_qty, 0) AS order_qty,
+           COALESCE(g.received, 0) AS received, COALESCE(g.accepted, 0) AS accepted,
+           COALESCE(g.rejected, 0) AS rejected, COALESCE(g.rej_returned, 0) AS rej_returned,
+           COALESCE(x.issued, 0) AS issued, COALESCE(f.fitted, 0) AS fitted,
+           COALESCE(r.returned, 0) AS returned,
+           GREATEST(CEIL(p.qty_per_set * COALESCE(s.order_qty, 0)), 0) AS need_qty,
+           GREATEST(COALESCE(g.received, 0) - COALESCE(g.accepted, 0) - COALESCE(g.rejected, 0), 0) AS waiting_qc_qty,
+           GREATEST(CEIL(p.qty_per_set * COALESCE(s.order_qty, 0)) - COALESCE(g.received, 0) + COALESCE(g.rejected, 0), 0) AS pending_qty
+      FROM parts p
+      JOIN public.items i ON i.id = p.item_id
+      LEFT JOIN sets s ON s.so_id = p.so_id
+      LEFT JOIN grn g ON g.so_id = p.so_id AND g.item_id = p.item_id
+      LEFT JOIN iss x ON x.so_id = p.so_id AND x.item_id = p.item_id
+      LEFT JOIN fit f ON f.so_id = p.so_id AND f.item_id = p.item_id
+      LEFT JOIN ret r ON r.so_id = p.so_id AND r.item_id = p.item_id
+  `;
+}
 
 export interface SoCustomerPart {
   rmItemId: string;
@@ -53,78 +127,17 @@ export async function readSoCustomerPartsMany(
   if (soIds.length === 0) return out;
   const ids = sql.param(soIds as string[]);
   const rows = (await tx.execute(sql`
-    WITH parts AS (
-      SELECT so.id AS so_id, bml.child_item_id AS item_id,
-             SUM(bml.qty_per_set)::numeric AS qty_per_set
-        FROM public.sales_orders so
-        JOIN public.bom_masters bm ON bm.id = so.bom_master_id AND bm.deleted_at IS NULL
-        JOIN public.bom_master_lines bml ON bml.bom_master_id = bm.id AND bml.deleted_at IS NULL
-       WHERE so.company_id = ${companyId}::uuid AND so.id = ANY(${ids}::uuid[])
-         AND bml.bom_type = 'party_supplied'
-       GROUP BY so.id, bml.child_item_id
-    ), sets AS (
-      SELECT sol.sales_order_id AS so_id, SUM(sol.order_qty)::numeric AS order_qty
-        FROM public.sales_order_lines sol
-       WHERE sol.company_id = ${companyId}::uuid AND sol.deleted_at IS NULL
-         AND sol.sales_order_id = ANY(${ids}::uuid[])
-       GROUP BY sol.sales_order_id
-    ), grn AS (
-      SELECT g.sales_order_id AS so_id, pm.item_id,
-             SUM(l.received_qty) AS received, SUM(l.accepted_qty) AS accepted,
-             SUM(l.rejected_qty) AS rejected, SUM(l.rejected_returned_qty) AS rej_returned
-        FROM public.party_grn_lines l
-        JOIN public.party_grn g ON g.id = l.party_grn_id AND g.deleted_at IS NULL
-        JOIN public.party_materials pm ON pm.id = l.party_material_id
-       WHERE g.company_id = ${companyId}::uuid AND l.deleted_at IS NULL
-         AND g.sales_order_id = ANY(${ids}::uuid[])
-       GROUP BY g.sales_order_id, pm.item_id
-    ), iss AS (
-      SELECT i.sales_order_id AS so_id, pm.item_id,
-             SUM(i.qty - i.returned_to_store_qty) AS issued
-        FROM public.party_material_issues i
-        JOIN public.party_materials pm ON pm.id = i.party_material_id
-       WHERE i.company_id = ${companyId}::uuid AND i.deleted_at IS NULL
-         AND i.sales_order_id = ANY(${ids}::uuid[])
-       GROUP BY i.sales_order_id, pm.item_id
-    ), fit AS (
-      SELECT c.sales_order_id AS so_id, c.item_id, SUM(c.qty) AS fitted
-        FROM public.assembly_unit_consumptions c
-       WHERE c.company_id = ${companyId}::uuid AND c.deleted_at IS NULL
-         AND c.sales_order_id = ANY(${ids}::uuid[])
-       GROUP BY c.sales_order_id, c.item_id
-    ), ret AS (
-      SELECT r.sales_order_id AS so_id, pm.item_id, SUM(rl.qty) AS returned
-        FROM public.customer_material_return_lines rl
-        JOIN public.customer_material_returns r ON r.id = rl.return_id
-        JOIN public.party_materials pm ON pm.id = rl.party_material_id
-       WHERE r.company_id = ${companyId}::uuid AND r.deleted_at IS NULL
-         AND r.status = 'issued' AND rl.deleted_at IS NULL AND rl.kind = 'good'
-         AND r.sales_order_id = ANY(${ids}::uuid[])
-       GROUP BY r.sales_order_id, pm.item_id
-    )
-    SELECT p.so_id, p.item_id, i.code AS item_code, i.name AS item_name,
-           p.qty_per_set, COALESCE(s.order_qty, 0) AS order_qty,
-           COALESCE(g.received, 0) AS received, COALESCE(g.accepted, 0) AS accepted,
-           COALESCE(g.rejected, 0) AS rejected, COALESCE(g.rej_returned, 0) AS rej_returned,
-           COALESCE(x.issued, 0) AS issued, COALESCE(f.fitted, 0) AS fitted,
-           COALESCE(r.returned, 0) AS returned
-      FROM parts p
-      JOIN public.items i ON i.id = p.item_id
-      LEFT JOIN sets s ON s.so_id = p.so_id
-      LEFT JOIN grn g ON g.so_id = p.so_id AND g.item_id = p.item_id
-      LEFT JOIN iss x ON x.so_id = p.so_id AND x.item_id = p.item_id
-      LEFT JOIN fit f ON f.so_id = p.so_id AND f.item_id = p.item_id
-      LEFT JOIN ret r ON r.so_id = p.so_id AND r.item_id = p.item_id
-     ORDER BY i.code
+    SELECT * FROM (${soCustomerPartRowsSql(companyId, sql`so.id = ANY(${ids}::uuid[])`)}) x
+     ORDER BY x.item_code
   `)) as unknown as Array<Record<string, unknown>>;
 
   for (const r of rows) {
     const qtyPerSet = Number(r.qty_per_set ?? 0);
-    const needQty = n(Math.ceil(qtyPerSet * Number(r.order_qty ?? 0)));
+    const needQty = n(r.need_qty);
     const receivedQty = n(r.received);
     const acceptedQty = n(r.accepted);
     const rejected = n(r.rejected);
-    const waitingQcQty = n(receivedQty - acceptedQty - rejected);
+    const waitingQcQty = n(r.waiting_qc_qty);
     const issuedQty = n(r.issued);
     const returnedQty = n(r.returned);
     const figures: SoCustomerPartFigures = {
@@ -137,7 +150,7 @@ export async function readSoCustomerPartsMany(
       fittedQty: n(r.fitted),
       returnedQty,
       inStoreQty: n(acceptedQty - issuedQty - returnedQty),
-      pendingQty: n(needQty - acceptedQty - waitingQcQty),
+      pendingQty: n(r.pending_qty),
       shortQty: n(needQty - acceptedQty),
       partyGrnStatus: grnStatus(acceptedQty, needQty),
     };

@@ -89,6 +89,7 @@ import type {
 } from './schema';
 import { resolveBomChildRevs } from '../../lib/bom-child-rev';
 import { drawingRevOf } from '../../lib/drawing-rev';
+import { readSoCustomerPartsMany } from '../../lib/party-so-parts';
 
 const requireCompany = (user: AuthContext): string => {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -111,7 +112,7 @@ function maybeTsLike(v: unknown): string | null {
 }
 
 interface ItemsLookup {
-  byId: Map<string, { code: string; name: string; uom: string }>;
+  byId: Map<string, { code: string; name: string; uom: string; itemType: string }>;
 }
 
 /** Screen words for BOM Status (docs/NAMING.md). */
@@ -130,10 +131,17 @@ async function loadItemsByIds(
   const unique = Array.from(new Set(ids));
   if (unique.length === 0) return out;
   const rows = await tx
-    .select({ id: items.id, code: items.code, name: items.name, uom: items.uom })
+    .select({
+      id: items.id,
+      code: items.code,
+      name: items.name,
+      uom: items.uom,
+      itemType: items.itemType,
+    })
     .from(items)
     .where(and(eq(items.companyId, companyId), inArray(items.id, unique), isNull(items.deletedAt)));
-  for (const r of rows) out.byId.set(r.id, { code: r.code, name: r.name, uom: r.uom });
+  for (const r of rows)
+    out.byId.set(r.id, { code: r.code, name: r.name, uom: r.uom, itemType: r.itemType });
   return out;
 }
 
@@ -214,6 +222,93 @@ function assertQtyPerSetFitsUom(
       throw new ValidationError(`Line ${i + 1} (${it?.code ?? 'item'}): ${problem}`);
     }
   });
+}
+
+// ADR-307: BOM Type 'party_supplied' <=> the child is a Party Supplied
+// Material item (`<code>-RM`). Either side alone is refused — a customer part
+// typed Manufacture would spawn a JC / PR for material the customer sends, and
+// Party Supplied on an own item would never be planned or bought.
+function assertPartySuppliedLinesMatchItems(
+  lines: ReadonlyArray<{ childItemId: string; bomType: string }>,
+  lookup: ItemsLookup,
+): void {
+  for (const l of lines) {
+    const it = lookup.byId.get(l.childItemId);
+    if (!it) continue;
+    const psm = it.itemType === 'party_supplied_material';
+    if (psm && l.bomType !== 'party_supplied') {
+      throw new ValidationError(
+        `${it.code} is a Party Supplied Material — set BOM Type to Party Supplied`,
+      );
+    }
+    if (!psm && l.bomType === 'party_supplied') {
+      throw new ValidationError(
+        `${it.code}: Party Supplied needs a Party Supplied Material item (code ending -RM)`,
+      );
+    }
+  }
+}
+
+// ADR-307: once a live Equipment SO on this BOM has started on a customer
+// part (a Party GRN receipt) or on an own part (a live plan), the line's type
+// may no longer flip to / from Party Supplied — the receipts or plans would be
+// orphaned against a line that now says the opposite.
+async function assertPartyTypeFlipAllowed(
+  tx: DbTransaction,
+  companyId: string,
+  bomId: string,
+  oldLines: ReadonlyArray<{ childItemId: string; bomType: string }>,
+  newLines: ReadonlyArray<{ childItemId: string; bomType: string }>,
+  lookup: ItemsLookup,
+): Promise<void> {
+  const oldType = new Map(oldLines.map((l) => [l.childItemId, l.bomType]));
+  const flipped = newLines.filter((l) => {
+    const was = oldType.get(l.childItemId);
+    return (
+      was !== undefined && was !== l.bomType && (was === 'party_supplied' || l.bomType === 'party_supplied')
+    );
+  });
+  if (flipped.length === 0) return;
+  const sos = (await tx.execute(sql`
+    SELECT so.id, so.code
+      FROM public.sales_orders so
+     WHERE so.company_id = ${companyId}::uuid AND so.deleted_at IS NULL
+       AND so.bom_master_id = ${bomId}::uuid
+       AND so.status NOT IN ('closed', 'cancelled')
+  `)) as unknown as Array<{ id: string; code: string }>;
+  if (sos.length === 0) return;
+  const parts = await readSoCustomerPartsMany(
+    tx,
+    companyId,
+    sos.map((r) => r.id),
+  );
+  for (const l of flipped) {
+    const code = lookup.byId.get(l.childItemId)?.code ?? 'this part';
+    for (const so of sos) {
+      const received = parts.get(so.id)?.get(l.childItemId)?.figures.receivedQty ?? 0;
+      if (received > 0) {
+        throw new ConflictError(
+          `${code}: SO ${so.code} has already received this part on a Party GRN — its BOM Type cannot change.`,
+        );
+      }
+    }
+    const planned = (await tx.execute(sql`
+      SELECT so.code
+        FROM public.plans p
+        JOIN public.sales_order_lines sol ON sol.id = p.so_line_id AND sol.deleted_at IS NULL
+        JOIN public.sales_orders so ON so.id = sol.sales_order_id
+       WHERE p.company_id = ${companyId}::uuid AND p.deleted_at IS NULL
+         AND p.plan_status <> 'cancelled'
+         AND p.bom_child_code = ${code}
+         AND so.id = ANY(${sql.param(sos.map((r) => r.id))}::uuid[])
+       LIMIT 1
+    `)) as unknown as Array<{ code: string }>;
+    if (planned[0]) {
+      throw new ConflictError(
+        `${code}: SO ${planned[0].code} already has a plan for this part — its BOM Type cannot change.`,
+      );
+    }
+  }
 }
 
 // Generate next BOM-NNNN per company. Mirrors legacy _nextBOMNo helper —
@@ -757,6 +852,7 @@ export async function createBomMaster(
     assertParentIsUsable(input.parentItemId, input.lines, itemsLookup);
     assertNoDuplicateChildItems(input.lines, itemsLookup);
     assertQtyPerSetFitsUom(input.lines, itemsLookup);
+    assertPartySuppliedLinesMatchItems(input.lines, itemsLookup);
 
     // ADR-223 — every new BOM is Active, decided HERE and not sent by the
     // caller, so an Excel import or a direct API call cannot make a Draft
@@ -1020,6 +1116,15 @@ export async function updateBomMasterTx(
       qtyPerSet: r.line.qtyPerSet,
       bomType: r.line.bomType,
     }));
+    assertPartySuppliedLinesMatchItems(input.lines, itemsLookup);
+    await assertPartyTypeFlipAllowed(
+      tx,
+      companyId,
+      id,
+      oldLineRows.map((r) => r.line),
+      input.lines,
+      itemsLookup,
+    );
 
     const newSnapshot: DiffLine[] = input.lines.map((l) => ({
       childItemId: l.childItemId,

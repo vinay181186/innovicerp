@@ -30,7 +30,7 @@
 //   • Purchase Request (qty is numeric(14,3)) → keep the decimals (roundQty),
 //     rounded UP only when the child's unit is a whole-number one (NOS / SET …).
 
-import { and, asc, count, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, count, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   bomMasterLines,
   bomMasters,
@@ -45,7 +45,12 @@ import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { lockDocSeries } from '../../lib/doc-series-lock';
 import { NotFoundError, ValidationError } from '../../lib/errors';
 import { emitActivityLog } from '../activity-log/service';
-import { ActivityAction, isWholeNumberUom, roundQty } from '@innovic/shared';
+import {
+  ActivityAction,
+  isOwnSourcedBomLineType,
+  isWholeNumberUom,
+  roundQty,
+} from '@innovic/shared';
 
 /** Child qty for a Job Card — whole pieces, rounded UP (see header comment). */
 function jobCardChildQty(parentQty: number, qtyPerSet: number): number {
@@ -208,6 +213,9 @@ export async function cascadeBomToSoLine(
   const today = new Date().toISOString().slice(0, 10);
 
   for (const { line: bl, uom } of bomLineRows) {
+    // ADR-307: the customer sends a party_supplied part — no JC, no PR. It is
+    // received on a Party GRN against the Equipment SO instead.
+    if (!isOwnSourcedBomLineType(bl.bomType)) continue;
     const perSet = Number(bl.qtyPerSet);
     const childQty =
       bl.bomType === 'manufacture'
@@ -369,14 +377,16 @@ export async function assertBomUsableForJobWork(
   companyId: string,
 ): Promise<void> {
   const offenders = await tx
-    .select({ code: items.code, name: items.name })
+    .select({ code: items.code, name: items.name, bomType: bomMasterLines.bomType })
     .from(bomMasterLines)
     .innerJoin(items, eq(items.id, bomMasterLines.childItemId))
     .where(
       and(
         eq(bomMasterLines.bomMasterId, bomMasterId),
         eq(bomMasterLines.companyId, companyId),
-        eq(bomMasterLines.bomType, 'purchase'),
+        // ADR-307: a party_supplied line is refused too — customer material
+        // on job work goes through the JWSO's own RM line, not the BOM.
+        inArray(bomMasterLines.bomType, ['purchase', 'party_supplied']),
         isNull(bomMasterLines.deletedAt),
       ),
     )
@@ -389,12 +399,24 @@ export async function assertBomUsableForJobWork(
     .where(eq(bomMasters.id, bomMasterId))
     .limit(1);
   const bomNo = bomRows[0]?.bomNo ?? 'That BOM';
-  const list = offenders.map((o) => o.code ?? o.name).join(', ');
-  const many = offenders.length > 1;
+  const bought = offenders.filter((o) => o.bomType === 'purchase');
+  const party = offenders.filter((o) => o.bomType === 'party_supplied');
+  if (bought.length > 0) {
+    const list = bought.map((o) => o.code ?? o.name).join(', ');
+    const many = bought.length > 1;
+    throw new ValidationError(
+      `${bomNo} can't be used on a job work order — ${list} ${many ? 'are bought parts' : 'is a bought part'}. ` +
+        `Job work runs on material the client supplies, so only machined and outsourced parts are allowed. ` +
+        `Change ${many ? 'them' : 'it'} to Manufacture or Outsource in the BOM, or pick a different BOM.`,
+    );
+  }
+  // ADR-307: customer material on job work is the JWSO's own RM line.
+  const list = party.map((o) => o.code ?? o.name).join(', ');
+  const many = party.length > 1;
   throw new ValidationError(
-    `${bomNo} can't be used on a job work order — ${list} ${many ? 'are bought parts' : 'is a bought part'}. ` +
-      `Job work runs on material the client supplies, so only machined and outsourced parts are allowed. ` +
-      `Change ${many ? 'them' : 'it'} to Manufacture or Outsource in the BOM, or pick a different BOM.`,
+    `${bomNo} can't be used on a job work order — ${list} ${many ? 'are Party Supplied parts' : 'is a Party Supplied part'}. ` +
+      `On job work the customer's material is received against the JWSO's own RM line, not a BOM line. ` +
+      `Pick a BOM without Party Supplied lines.`,
   );
 }
 
@@ -456,6 +478,8 @@ export async function cascadeBomToJwLine(
   const today = new Date().toISOString().slice(0, 10);
 
   for (const bl of bomLines) {
+    // ADR-307 backstop — assertBomUsableForJobWork already refuses these.
+    if (!isOwnSourcedBomLineType(bl.bomType)) continue;
     // Every JW child is a Job Card → whole pieces, rounded up (header comment).
     const childQty = jobCardChildQty(jwLine.orderQty, Number(bl.qtyPerSet));
     if (!(childQty > 0)) continue;

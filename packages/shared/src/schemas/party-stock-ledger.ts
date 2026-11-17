@@ -50,6 +50,9 @@ export const partyStockLedgerListItemSchema = partyStockLedgerEntrySchema.extend
   rmItemCode: z.string().nullable().default(null),
   rmItemName: z.string().nullable().default(null),
   createdByName: z.string().nullable(),
+  /** ADR-307: the order the movement belongs to — SO No. (party_stock_ledger.
+   *  sales_order_id) else the JWSO No. (via jw_line_id); null when neither. */
+  orderCode: z.string().nullable().default(null),
 });
 export type PartyStockLedgerListItem = z.infer<typeof partyStockLedgerListItemSchema>;
 

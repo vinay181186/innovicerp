@@ -9,7 +9,7 @@
 import { sql } from 'drizzle-orm';
 import {
   BOM_LINE_TYPE_LABEL,
-  BOM_LINE_TYPES,
+  ML_BOM_LINE_TYPES,
   type BomLineType,
   normalizeRevision,
   qtyUomProblem,
@@ -62,8 +62,8 @@ export interface CheckedRow {
 }
 
 const LINE_TYPE_WORDS: ReadonlyMap<string, BomLineType> = new Map([
-  ...BOM_LINE_TYPES.map((t) => [t, t] as const),
-  ...BOM_LINE_TYPES.map((t) => [BOM_LINE_TYPE_LABEL[t].toLowerCase(), t] as const),
+  ...ML_BOM_LINE_TYPES.map((t) => [t, t] as const),
+  ...ML_BOM_LINE_TYPES.map((t) => [BOM_LINE_TYPE_LABEL[t].toLowerCase(), t] as const),
   ['make', 'manufacture'],
 ]);
 

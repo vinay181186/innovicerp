@@ -48,12 +48,14 @@ const BOM_TYPE_DISPLAY: Record<string, { label: string; color: string }> = {
   manufacture: { label: '🏭 Manufacture', color: 'var(--cyan)' },
   purchase: { label: '🛒 Buy', color: 'var(--green2)' },
   outsource: { label: '🏭 Outsource', color: 'var(--amber2)' },
+  party_supplied: { label: 'Party Supplied', color: 'var(--purple)' },
 };
 
 const BOM_TYPE_WORD: Record<string, string> = {
   manufacture: 'Manufacture',
   purchase: 'Buy',
   outsource: 'Outsource',
+  party_supplied: 'Party Supplied',
 };
 
 function BomMasterDetailPage(): React.JSX.Element {

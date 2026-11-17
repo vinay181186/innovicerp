@@ -31,6 +31,7 @@ import { type AuthContext, type DbTransaction, withUserContext } from '../../db/
 import { requireFormAccess } from '../../lib/access';
 import { ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
 import { lockJwLine } from '../../lib/jw-line-state';
+import { lockSoRow } from '../../lib/assembly-parts';
 import { emitActivityLog } from '../activity-log/service';
 import { assertNoPendingCancel } from '../cancel-requests/pending-guard';
 import { autoCreatePartyGrnMaterialNc } from '../nc-register/cascades';
@@ -57,11 +58,18 @@ export async function qcPartyGrn(
     // Lock the header (same order as cancel: header, then JWSO lines, then the
     // material) so a QC and a cancel of one GRN queue instead of crossing.
     const headRows = (await tx.execute(sql`
-      SELECT id, code, deleted_at AS "deletedAt"
+      SELECT id, code, deleted_at AS "deletedAt", sales_order_id AS "salesOrderId",
+             (SELECT so.code FROM public.sales_orders so WHERE so.id = party_grn.sales_order_id) AS "soCode"
         FROM public.party_grn
        WHERE id = ${id}::uuid AND company_id = ${companyId}::uuid
        FOR UPDATE
-    `)) as unknown as Array<{ id: string; code: string; deletedAt: unknown }>;
+    `)) as unknown as Array<{
+      id: string;
+      code: string;
+      deletedAt: unknown;
+      salesOrderId: string | null;
+      soCode: string | null;
+    }>;
     const head = headRows[0];
     if (!head) throw new NotFoundError('Party GRN not found. Refresh the page.');
     if (head.deletedAt != null) {
@@ -117,7 +125,7 @@ export async function qcPartyGrn(
           `${at}: give a deviation reason for the ${q.rejectedQty} deviated.`,
         );
       }
-      if (!l.jwLineId || !l.partyMaterialId) {
+      if ((!head.salesOrderId && !l.jwLineId) || !l.partyMaterialId) {
         throw new ValidationError(
           `${at} has no JWSO line or customer material — it was booked before ADR-203 and cannot be QC'd here.`,
         );
@@ -126,8 +134,8 @@ export async function qcPartyGrn(
 
     // Book the lines in JWSO-line order (deadlock-free with create/cancel).
     const ordered = [...input.lines].sort((a, b) => {
-      const la = byId.get(a.lineId)!.jwLineId!;
-      const lb = byId.get(b.lineId)!.jwLineId!;
+      const la = byId.get(a.lineId)!.jwLineId ?? a.lineId;
+      const lb = byId.get(b.lineId)!.jwLineId ?? b.lineId;
       return la < lb ? -1 : la > lb ? 1 : 0;
     });
 
@@ -174,7 +182,10 @@ export async function qcPartyGrn(
     for (const q of ordered) {
       const l = byId.get(q.lineId)!;
       // §20.3 lock order: header (above) → JWSO line → the Party GRN line.
-      const jwLine = await lockJwLine(tx, companyId, l.jwLineId!);
+      // ADR-307: an Equipment SO GRN takes the SO row lock instead.
+      const jwLine = head.salesOrderId ? null : await lockJwLine(tx, companyId, l.jwLineId!);
+      if (head.salesOrderId) await lockSoRow(tx, companyId, head.salesOrderId);
+      const parentLabel = jwLine ? `${jwLine.jwCode} Ln ${jwLine.lineNo}` : (head.soCode ?? 'SO');
       const at = `${head.code} Ln ${l.lineNo}`;
       const locked = (
         await tx
@@ -231,14 +242,15 @@ export async function qcPartyGrn(
       await bookPartyAccepted(tx, {
         companyId,
         jwLine,
+        salesOrderId: head.salesOrderId,
         partyMaterialId: l.partyMaterialId!,
         partyGrnId: head.id,
         qty: q.acceptedQty,
         remarks: `${head.code} Ln ${l.lineNo} · ${l.rmCode} accepted at Incoming QC`,
         userId,
         overCapMessage: (accepted) =>
-          `${at}: accepting ${q.acceptedQty} would take ${jwLine.jwCode} Ln ${jwLine.lineNo} to ` +
-          `${accepted} accepted against an Order Qty of ${jwLine.orderQty}. Mark the extra pieces Deviated.`,
+          `${at}: accepting ${q.acceptedQty} would take ${parentLabel} to ` +
+          `${accepted} accepted against an Order Qty of ${jwLine?.orderQty ?? 0}. Mark the extra pieces Deviated.`,
       });
 
       // ADR-247: this inspection's deviated pieces → one material NC.
@@ -275,7 +287,7 @@ export async function qcPartyGrn(
           lineRef: `Line ${l.lineNo}`,
           qty: q.acceptedQty,
           detail:
-            `${l.rmCode} (${jwLine.jwCode} Ln ${jwLine.lineNo}) — received ${after.receivedQty}, ` +
+            `${l.rmCode} (${parentLabel}) — received ${after.receivedQty}, ` +
             `inspected ${inspected} (${q.acceptedQty} accepted, ${q.rejectedQty} deviated` +
             (q.rejectedQty > 0 ? `: ${rejectReason}` : '') +
             `), QC Pending ${pendingAfter}` +

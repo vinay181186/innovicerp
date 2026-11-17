@@ -2,6 +2,7 @@ import type {
   AssemblyListResponse,
   AssemblyTrackerResponse,
   AssemblyUnitRow,
+  CreateAssemblyCustomerPartIssueInput,
   ListAssembliesQuery,
   MarkUnitAssembledInput,
   MarkUnitDispatchedInput,
@@ -11,6 +12,9 @@ import type {
 } from '@innovic/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api';
+import { type SaveKey, withSaveKey } from '@/lib/use-save-key';
+import { partyMaterialIssuesKeys } from '@/modules/party-material-issues/api';
+import { soStatusKeys } from '@/modules/so-status/api';
 
 export const assemblyKeys = {
   all: ['assemblies'] as const,
@@ -132,6 +136,28 @@ export function useSetReadinessOverride(soId: string) {
       }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: assemblyKeys.all });
+    },
+  });
+}
+
+/** ADR-307 — Assembly Tracker › "Issue Customer Part →": issue a customer-
+ *  supplied BOM part from the customer store to this Equipment SO's assembly.
+ *  The server caps the qty (in-store and need − issued) under its locks. */
+export function useIssueCustomerPart(soId: string, saveKey?: SaveKey) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateAssemblyCustomerPartIssueInput) =>
+      withSaveKey(saveKey, (headers) =>
+        apiFetch<{ id: string; code: string }>(`/assemblies/${soId}/customer-part-issues`, {
+          method: 'POST',
+          json: input,
+          ...(headers ? { headers } : {}),
+        }),
+      ),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: assemblyKeys.all });
+      void qc.invalidateQueries({ queryKey: soStatusKeys.all });
+      void qc.invalidateQueries({ queryKey: partyMaterialIssuesKeys.all });
     },
   });
 }

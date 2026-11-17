@@ -55,6 +55,8 @@ import { labelOf } from '../../lib/status-labels';
 import { emitActivityLog } from '../activity-log/service';
 import { createdByNameSql } from '../../lib/created-by-sql';
 import { PARTY_GRN_SF_COLUMNS } from './sf-columns';
+import { lockSoRow } from '../../lib/assembly-parts';
+import { createPartyGrnForSo, soGrnCancelBlockers } from './so-grn';
 
 export function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -95,7 +97,7 @@ function tsLike(v: unknown): string {
 const CODE_PREFIX = 'PGRN-';
 const CODE_PAD = 5;
 
-async function nextPartyGrnCode(tx: DbTransaction, companyId: string): Promise<string> {
+export async function nextPartyGrnCode(tx: DbTransaction, companyId: string): Promise<string> {
   // S2: queue behind any other save numbering this series (lib/doc-series-lock).
   await lockDocSeries(tx, companyId, 'party_grn');
   const rows = (await tx.execute(sql`
@@ -199,6 +201,10 @@ export async function listPartyGrn(
     const jwFrag = input.jobWorkOrderId
       ? sql`AND pg.job_work_order_id = ${input.jobWorkOrderId}::uuid`
       : sql``;
+    // ADR-307: GRNs received against one Equipment SO.
+    const soOnly = input.salesOrderId
+      ? sql`AND pg.sales_order_id = ${input.salesOrderId}::uuid`
+      : sql``;
     const clientFrag = input.clientId ? sql`AND pg.client_id = ${input.clientId}::uuid` : sql``;
     const fromFrag = input.fromDate ? sql`AND pg.grn_date >= ${input.fromDate}::date` : sql``;
     const toFrag = input.toDate ? sql`AND pg.grn_date <= ${input.toDate}::date` : sql``;
@@ -216,6 +222,8 @@ export async function listPartyGrn(
         pg.grn_date AS "grnDate",
         pg.job_work_order_id AS "jobWorkOrderId",
         pg.jw_code_text AS "jwCodeText",
+        pg.sales_order_id AS "salesOrderId",
+        (SELECT so.code FROM public.sales_orders so WHERE so.id = pg.sales_order_id) AS "soCode",
         pg.client_id AS "clientId",
         pg.client_code_text AS "clientCodeText",
         pg.client_po_no AS "clientPoNo",
@@ -240,7 +248,7 @@ export async function listPartyGrn(
       WHERE pg.company_id = ${companyId}::uuid
         AND ${scopeFrag}
         ${searchFrag}
-        ${jwFrag}
+        ${jwFrag} ${soOnly}
         ${clientFrag}
         ${fromFrag}
         ${toFrag}
@@ -270,7 +278,7 @@ export async function listPartyGrn(
       WHERE pg.company_id = ${companyId}::uuid
         AND ${scopeFrag}
         ${searchFrag}
-        ${jwFrag}
+        ${jwFrag} ${soOnly}
         ${clientFrag}
         ${fromFrag}
         ${toFrag}
@@ -297,6 +305,8 @@ export function toListItem(r: Record<string, unknown>): PartyGrnListItem {
     grnDate: dateLike(r['grnDate']),
     jobWorkOrderId: (r['jobWorkOrderId'] as string | null) ?? null,
     jwCodeText: (r['jwCodeText'] as string | null) ?? null,
+    salesOrderId: (r['salesOrderId'] as string | null) ?? null,
+    soCode: (r['soCode'] as string | null) ?? null,
     clientId: (r['clientId'] as string | null) ?? null,
     clientCodeText: (r['clientCodeText'] as string | null) ?? null,
     clientPoNo: (r['clientPoNo'] as string | null) ?? null,
@@ -350,6 +360,8 @@ export async function loadPartyGrnDetail(
       pg.grn_date AS "grnDate",
       pg.job_work_order_id AS "jobWorkOrderId",
       pg.jw_code_text AS "jwCodeText",
+      pg.sales_order_id AS "salesOrderId",
+      (SELECT so.code FROM public.sales_orders so WHERE so.id = pg.sales_order_id) AS "soCode",
       pg.client_id AS "clientId",
       pg.client_code_text AS "clientCodeText",
       pg.client_po_no AS "clientPoNo",
@@ -523,12 +535,22 @@ export async function createPartyGrn(
   user: AuthContext,
 ): Promise<PartyGrn> {
   // Tier gate. Booking client material in is a create, so L2 Data Entry and up.
+  // ADR-307: against an Equipment SO — its own path (so-grn.ts).
+  if (input.salesOrderId) {
+    return createPartyGrnForSo({ ...input, salesOrderId: input.salesOrderId }, user);
+  }
   await requireFormAccess(user, 'party_create', 'entry');
   const companyId = requireCompany(user);
   const userId = user.id;
   if (input.lines.length === 0) {
     throw new ValidationError('Add at least one row.');
   }
+  const jobWorkOrderId = input.jobWorkOrderId;
+  if (!jobWorkOrderId) throw new ValidationError('Pick either a JWSO or an Equipment SO.');
+  const jwInputLines = input.lines.map((l) => {
+    if (!l.jwLineId) throw new ValidationError('Each row must name a JWSO line.');
+    return { ...l, jwLineId: l.jwLineId };
+  });
 
   return withUserContext(user, async (tx) => {
     // 1) The JWSO (header) — must be live in this company.
@@ -542,7 +564,7 @@ export async function createPartyGrn(
       .from(jobWorkOrders)
       .where(
         and(
-          eq(jobWorkOrders.id, input.jobWorkOrderId),
+          eq(jobWorkOrders.id, jobWorkOrderId),
           eq(jobWorkOrders.companyId, companyId),
           isNull(jobWorkOrders.deletedAt),
         ),
@@ -563,7 +585,7 @@ export async function createPartyGrn(
 
     // 2) Lock every JWSO line named on the receipt, in id order so two receipts
     //    naming the same lines can never deadlock, BEFORE summing anything.
-    const lineIds = Array.from(new Set(input.lines.map((l) => l.jwLineId))).sort();
+    const lineIds = Array.from(new Set(jwInputLines.map((l) => l.jwLineId))).sort();
     const lockedById = new Map<string, LockedJwLine>();
     for (const lineId of lineIds) {
       const line = await lockJwLine(tx, companyId, lineId);
@@ -629,7 +651,7 @@ export async function createPartyGrn(
     // 4) Cap per line, under the line lock: Σ accepted + Σ waiting-for-QC
     //    received + this receipt ≤ order qty.
     const thisReceipt = new Map<string, number>();
-    for (const ln of input.lines) {
+    for (const ln of jwInputLines) {
       thisReceipt.set(ln.jwLineId, (thisReceipt.get(ln.jwLineId) ?? 0) + ln.receivedQty);
     }
     for (const [lineId, qty] of thisReceipt) {
@@ -671,7 +693,7 @@ export async function createPartyGrn(
     if (!header) throw new ValidationError('Could not save Party GRN. Try again.');
 
     // 6) Lines — waiting for Incoming QC. Nothing is posted to the register.
-    for (const [idx, ln] of input.lines.entries()) {
+    for (const [idx, ln] of jwInputLines.entries()) {
       const line = lockedById.get(ln.jwLineId)!;
       const pm = pmById.get(line.partyMaterialId!)!;
       await tx.insert(partyGrnLines).values({
@@ -776,13 +798,21 @@ export async function lockPartyGrnForCancel(
   code: string;
   deletedAt: unknown;
   cancelledAt: unknown;
+  salesOrderId: string | null;
 } | null> {
   const rows = (await tx.execute(sql`
-    SELECT id, code, deleted_at AS "deletedAt", cancelled_at AS "cancelledAt"
+    SELECT id, code, deleted_at AS "deletedAt", cancelled_at AS "cancelledAt",
+           sales_order_id AS "salesOrderId"
       FROM public.party_grn
      WHERE id = ${id}::uuid AND company_id = ${companyId}::uuid
      ${forUpdate ? sql`FOR UPDATE` : sql``}
-  `)) as unknown as Array<{ id: string; code: string; deletedAt: unknown; cancelledAt: unknown }>;
+  `)) as unknown as Array<{
+    id: string;
+    code: string;
+    deletedAt: unknown;
+    cancelledAt: unknown;
+    salesOrderId: string | null;
+  }>;
   return rows[0] ?? null;
 }
 
@@ -973,6 +1003,14 @@ export async function partyGrnCancelBlockers(
       });
     }
   }
+  // 3) ADR-307: an Equipment SO GRN — what it accepted must still be in the
+  //    SO's customer store (not issued to assembly / returned).
+  const soHead = (await tx.execute(sql`
+    SELECT sales_order_id AS "salesOrderId" FROM public.party_grn
+     WHERE id = ${id}::uuid AND company_id = ${companyId}::uuid
+  `)) as unknown as Array<{ salesOrderId: string | null }>;
+  const soId = soHead[0]?.salesOrderId;
+  if (soId) out.push(...(await soGrnCancelBlockers(tx, companyId, id, soId)));
   return out;
 }
 
@@ -1099,6 +1137,9 @@ export async function cancelPartyGrnTx(
     new Set(toReverse.flatMap((l) => (l.jwLineId ? [l.jwLineId] : []))),
   ).sort();
   for (const lineId of jwLineIds) await lockJwLine(tx, companyId, lineId);
+  // ADR-307: an SO GRN locks its SO instead (no issue / return can move the
+  // SO's customer store between the refusal rule and the reversal).
+  if (head.salesOrderId) await lockSoRow(tx, companyId, head.salesOrderId);
 
   // The refusal rule, under the locks — before anything moves.
   const blockers = await partyGrnCancelBlockers(tx, companyId, id);
@@ -1115,6 +1156,7 @@ export async function cancelPartyGrnTx(
       companyId,
       partyMaterialId: l.partyMaterialId!,
       jwLineId: l.jwLineId,
+      salesOrderId: head.salesOrderId,
       movement: 'reversal',
       direction: 'out',
       qty: l.acceptedQty,
@@ -1598,7 +1640,7 @@ export async function updatePartyGrnOrStage(
   return updatePartyGrn(id, input, user);
 }
 
-function rowToPartyGrn(row: typeof partyGrn.$inferSelect): PartyGrn {
+export function rowToPartyGrn(row: typeof partyGrn.$inferSelect): PartyGrn {
   return {
     id: row.id,
     companyId: row.companyId,
@@ -1606,6 +1648,8 @@ function rowToPartyGrn(row: typeof partyGrn.$inferSelect): PartyGrn {
     grnDate: dateLike(row.grnDate),
     jobWorkOrderId: row.jobWorkOrderId,
     jwCodeText: row.jwCodeText,
+    salesOrderId: row.salesOrderId ?? null,
+    soCode: null,
     clientId: row.clientId,
     clientCodeText: row.clientCodeText,
     clientPoNo: row.clientPoNo,

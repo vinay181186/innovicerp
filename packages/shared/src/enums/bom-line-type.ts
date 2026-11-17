@@ -26,3 +26,7 @@ export const BOM_LINE_TYPE_LABEL: Record<BomLineType, string> = {
 /** ADR-307: the BOM line types we make or buy — everything except a
  *  customer-supplied part. Planning, the BOM cascade and PR raising use only these. */
 export const isOwnSourcedBomLineType = (t: BomLineType): boolean => t !== 'party_supplied';
+
+/** ADR-307: the Multi-Level BOM keeps the three own-sourced types — a
+ *  customer-supplied part is handled on the single-level Equipment SO BOM only. */
+export const ML_BOM_LINE_TYPES = ['manufacture', 'purchase', 'outsource'] as const;

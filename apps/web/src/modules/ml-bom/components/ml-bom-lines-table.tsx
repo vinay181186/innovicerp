@@ -7,7 +7,7 @@
 import { Icon } from '@/ui/core';
 import {
   BOM_LINE_TYPE_LABEL,
-  BOM_LINE_TYPES,
+  ML_BOM_LINE_TYPES,
   type BomLineType,
   type Item,
   QTY_STEP,
@@ -67,7 +67,7 @@ export function emptyMlBomLine(): MlBomFormLineDraft {
   };
 }
 
-const LINE_TYPES = BOM_LINE_TYPES.map((value) => ({ value, label: BOM_LINE_TYPE_LABEL[value] }));
+const LINE_TYPES = ML_BOM_LINE_TYPES.map((value) => ({ value, label: BOM_LINE_TYPE_LABEL[value] }));
 const COLS = 11;
 
 interface Props {

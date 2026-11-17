@@ -60,6 +60,8 @@ interface ItemRow {
   part: PlanningLine['bomChildren'][number] | null;
   partShort: boolean;
   plan: PlanningPlanSummary | null;
+  /** ADR-307: the customer supplies this part — never planned, no ⋯ actions. */
+  customer: boolean;
 }
 
 function buildItemRows(line: PlanningLine): ItemRow[] {
@@ -67,14 +69,21 @@ function buildItemRows(line: PlanningLine): ItemRow[] {
   const claimed = new Set<string>();
   for (const c of line.bomChildren) {
     claimed.add(c.childItemCode);
-    const short = c.plannedQty < c.requiredQty;
+    const customer = c.bomType === 'party_supplied';
+    const short = !customer && c.plannedQty < c.requiredQty;
     const forPart = line.plans.filter((p) => p.bomChildCode === c.childItemCode);
     if (forPart.length === 0) {
-      rows.push({ key: `part-${c.childItemCode}`, part: c, partShort: short, plan: null });
+      rows.push({
+        key: `part-${c.childItemCode}`,
+        part: c,
+        partShort: short,
+        plan: null,
+        customer,
+      });
       continue;
     }
     forPart.forEach((plan, i) => {
-      rows.push({ key: plan.id, part: i === 0 ? c : null, partShort: short, plan });
+      rows.push({ key: plan.id, part: i === 0 ? c : null, partShort: short, plan, customer });
     });
   }
   // Plans that answer to no part of this BOM: an ordinary line's plans, an
@@ -82,7 +91,7 @@ function buildItemRows(line: PlanningLine): ItemRow[] {
   // lists. None may be dropped.
   for (const plan of line.plans) {
     if (plan.bomChildCode && claimed.has(plan.bomChildCode)) continue;
-    rows.push({ key: plan.id, part: null, partShort: false, plan });
+    rows.push({ key: plan.id, part: null, partShort: false, plan, customer: false });
   }
   return rows;
 }
@@ -203,15 +212,21 @@ function partColumns(hasParts: boolean, showName: boolean): DataTableColumn<Item
       header: 'Plan No.',
       kind: 'code',
       className: 'td-code',
-      render: (r) => (r.plan ? r.plan.code : <span className="text3">No plan yet</span>),
-      filterValue: (r) => r.plan?.code ?? 'No plan yet',
+      render: (r) =>
+        r.plan ? r.plan.code : r.customer ? '—' : <span className="text3">No plan yet</span>,
+      filterValue: (r) => r.plan?.code ?? (r.customer ? '' : 'No plan yet'),
     },
     {
       id: 'type',
       header: 'Type',
       kind: 'badge',
-      render: (r) => planCell(r, planTypeLabel),
-      filterValue: (r) => (r.plan ? planTypeLabel(r.plan) : ''),
+      render: (r) =>
+        r.customer && !r.plan ? (
+          <span className="text3">Customer supplies</span>
+        ) : (
+          planCell(r, planTypeLabel)
+        ),
+      filterValue: (r) => (r.plan ? planTypeLabel(r.plan) : r.customer ? 'Customer supplies' : ''),
     },
     {
       id: 'plan_qty',
@@ -386,7 +401,8 @@ export function PlanningLineExpand({
           rowClassName={(r) => (r.partShort ? 'row-pending' : undefined)}
           {...(showMenu && rowMenu
             ? {
-                rowMenu: (r: ItemRow) => rowMenu(r.plan, r.partShort),
+                // ADR-307: a customer part offers no Plan / Raise PR action.
+                rowMenu: (r: ItemRow) => (r.customer ? [] : rowMenu(r.plan, r.partShort)),
                 rowMenuLabel: (r: ItemRow) => `Actions for ${r.plan?.code ?? itemCodeOf(r)}`,
                 renderLink,
               }

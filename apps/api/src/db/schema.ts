@@ -5401,6 +5401,10 @@ export const partyGrn = pgTable(
       onDelete: 'set null',
     }),
     jwCodeText: text('jw_code_text'),
+    // ADR-307 (0255): Equipment SO whose customer-supplied BOM parts this row is about.
+    salesOrderId: uuid('sales_order_id').references((): AnyPgColumn => salesOrders.id, {
+      onDelete: 'restrict',
+    }),
     clientId: uuid('client_id').references(() => clients.id, { onDelete: 'set null' }),
     clientCodeText: text('client_code_text'),
     clientPoNo: text('client_po_no'),
@@ -5546,6 +5550,10 @@ export const partyStockLedger = pgTable(
     jwLineId: uuid('jw_line_id').references((): AnyPgColumn => jobWorkOrderLines.id, {
       onDelete: 'restrict',
     }),
+    // ADR-307 (0255): Equipment SO whose customer-supplied BOM parts this row is about.
+    salesOrderId: uuid('sales_order_id').references((): AnyPgColumn => salesOrders.id, {
+      onDelete: 'restrict',
+    }),
     movement: text('movement').notNull(),
     direction: text('direction').notNull(),
     qty: integer('qty').notNull(),
@@ -5618,6 +5626,10 @@ export const partyMaterialIssues = pgTable(
     jwCodeText: text('jw_code_text'),
     jobCardId: uuid('job_card_id').references(() => jobCards.id, { onDelete: 'set null' }),
     jcCodeText: text('jc_code_text'),
+    // ADR-307 (0255): Equipment SO whose customer-supplied BOM parts this row is about.
+    salesOrderId: uuid('sales_order_id').references((): AnyPgColumn => salesOrders.id, {
+      onDelete: 'restrict',
+    }),
     // ADR-203: the JWSO line this issue draws on (the JC's source line).
     jwLineId: uuid('jw_line_id').references((): AnyPgColumn => jobWorkOrderLines.id, {
       onDelete: 'restrict',
@@ -5689,9 +5701,14 @@ export const customerMaterialReturns = pgTable(
       .references(() => companies.id),
     code: text('code').notNull(),
     returnDate: date('return_date').notNull(),
-    jobWorkOrderId: uuid('job_work_order_id')
-      .notNull()
-      .references(() => jobWorkOrders.id, { onDelete: 'restrict' }),
+    // ADR-307 (0255): nullable — exactly one of job_work_order_id / sales_order_id.
+    jobWorkOrderId: uuid('job_work_order_id').references(() => jobWorkOrders.id, {
+      onDelete: 'restrict',
+    }),
+    // ADR-307 (0255): Equipment SO whose customer-supplied BOM parts this row is about.
+    salesOrderId: uuid('sales_order_id').references((): AnyPgColumn => salesOrders.id, {
+      onDelete: 'restrict',
+    }),
     clientId: uuid('client_id').references(() => clients.id, { onDelete: 'restrict' }),
     vehicleNo: text('vehicle_no'),
     remarks: text('remarks'),
@@ -5744,9 +5761,10 @@ export const customerMaterialReturnLines = pgTable(
       .references((): AnyPgColumn => customerMaterialReturns.id, { onDelete: 'restrict' }),
     lineNo: integer('line_no').notNull(),
     kind: text('kind').notNull(),
-    jwLineId: uuid('jw_line_id')
-      .notNull()
-      .references((): AnyPgColumn => jobWorkOrderLines.id, { onDelete: 'restrict' }),
+    // ADR-307 (0255): null on an Equipment SO return line.
+    jwLineId: uuid('jw_line_id').references((): AnyPgColumn => jobWorkOrderLines.id, {
+      onDelete: 'restrict',
+    }),
     partyMaterialId: uuid('party_material_id')
       .notNull()
       .references((): AnyPgColumn => partyMaterials.id, { onDelete: 'restrict' }),

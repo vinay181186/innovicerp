@@ -84,7 +84,12 @@ export function ReturnToStoreModal({
         className="text2"
         style={{ fontSize: 'var(--fs-sm)', marginBottom: 'var(--sp-3)', lineHeight: 1.6 }}
       >
-        JC <span className="mono fw-700">{row.jcCodeText ?? '—'}</span> · Customer RM{' '}
+        {/* ADR-307 — an assembly issue of an Equipment SO has no JC: name the SO. */}
+        {row.soCode && !row.jcCodeText ? 'SO' : 'JC'}{' '}
+        <span className="mono fw-700">
+          {row.soCode && !row.jcCodeText ? row.soCode : (row.jcCodeText ?? '—')}
+        </span>{' '}
+        · Customer RM{' '}
         <span className="mono fw-700" style={{ color: 'var(--text)' }}>
           {row.rmItemCode ?? row.partyMaterialCodeText ?? '—'}
         </span>

@@ -22,6 +22,7 @@ import {
 } from '@innovic/shared';
 import { and, asc, count, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type {
+  BomLineType,
   PlanningBomChild,
   PlanningBomResponse,
   PlanningDetailResponse,
@@ -64,6 +65,7 @@ import { readReservedByLine, readStockPositions } from '../../lib/stock-reservat
 import { soLineCoveredRaw, soLineDirectJcRaw, soLinePlannedRaw } from '../../lib/so-line-coverage';
 import { emitActivityLog } from '../activity-log/service';
 import { partyGrnStatusByLine } from '../job-work-orders/customer-rm';
+import { readSoCustomerParts, type SoCustomerPart } from '../../lib/party-so-parts';
 import {
   liveJwCustomerName,
   liveSoCustomerName,
@@ -473,6 +475,7 @@ export async function getPlanningSoDetail(
               childCode: items.code,
               childName: items.name,
               qtyPerSet: bomMasterLines.qtyPerSet,
+              bomType: bomMasterLines.bomType,
             })
             .from(bomMasterLines)
             .innerJoin(items, eq(items.id, bomMasterLines.childItemId))
@@ -485,11 +488,16 @@ export async function getPlanningSoDetail(
             .orderBy(asc(bomMasterLines.lineNo));
     const childBomLinesByBom = new Map<
       string,
-      Array<{ code: string; name: string | null; qtyPerSet: number }>
+      Array<{ code: string; name: string | null; qtyPerSet: number; bomType: BomLineType }>
     >();
     for (const b of childBomLineRows) {
       const bucket = childBomLinesByBom.get(b.bomMasterId) ?? [];
-      bucket.push({ code: b.childCode, name: b.childName ?? null, qtyPerSet: Number(b.qtyPerSet) });
+      bucket.push({
+        code: b.childCode,
+        name: b.childName ?? null,
+        qtyPerSet: Number(b.qtyPerSet),
+        bomType: b.bomType,
+      });
       childBomLinesByBom.set(b.bomMasterId, bucket);
     }
 
@@ -516,6 +524,7 @@ export async function getPlanningSoDetail(
           // the server's create-time cap state the same requirement.
           requiredQty: Math.ceil(b.qtyPerSet * lineOrderQty),
           plannedQty: childPlannedByKey.get(`${lr.line.id}|${b.code}`) ?? 0,
+          bomType: b.bomType,
         })),
       );
     }
@@ -1136,13 +1145,29 @@ export async function getPlanningBom(
     }
 
     const orderQty = row.line.orderQty;
+    // ADR-307 — a party_supplied child is the customer's: its stock is what is
+    // in the customer store for THIS SO, its shortfall is what the SO is still
+    // short of, and it is never planned. ONE read for the whole BOM.
+    const customerParts = childRows.some((c) => c.bml.bomType === 'party_supplied')
+      ? await readSoCustomerParts(tx, companyId, row.line.salesOrderId)
+      : new Map<string, SoCustomerPart>();
     const children: PlanningBomChild[] = childRows.map((c) => {
       const qtyPerSet = Number(c.bml.qtyPerSet);
       const totalNeed = qtyPerSet * orderQty;
-      const stockQty = stockMap.get(c.bml.childItemId) ?? 0;
-      const shortfall = Math.max(0, totalNeed - stockQty);
-      const existingPlan = planByChildCode.get(c.childCode) ?? null;
+      const customerPart =
+        c.bml.bomType === 'party_supplied'
+          ? (customerParts.get(c.bml.childItemId)?.figures ?? null)
+          : null;
+      const isCustomer = c.bml.bomType === 'party_supplied';
+      const stockQty = isCustomer
+        ? (customerPart?.inStoreQty ?? 0)
+        : (stockMap.get(c.bml.childItemId) ?? 0);
+      const shortfall = isCustomer
+        ? (customerPart?.shortQty ?? totalNeed)
+        : Math.max(0, totalNeed - stockQty);
+      const existingPlan = isCustomer ? null : (planByChildCode.get(c.childCode) ?? null);
       return {
+        customerPart,
         childItemId: c.bml.childItemId,
         childItemCode: c.childCode,
         childItemName: c.childName,

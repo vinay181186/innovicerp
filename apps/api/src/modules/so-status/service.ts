@@ -47,6 +47,7 @@ import {
   rollupSoLine,
 } from '../../lib/calc-engine';
 import { loadAtVendorByOp } from '../../lib/at-vendor';
+import { readSoCustomerParts, type SoCustomerPart } from '../../lib/party-so-parts';
 import { AuthorizationError, NotFoundError } from '../../lib/errors';
 import { loadOpenReworkByOp } from '../../lib/open-rework';
 import { loadOspAcceptedByOp } from '../../lib/osp-accepted';
@@ -607,13 +608,28 @@ export async function getSoStatus(soId: string, user: AuthContext): Promise<SoSt
             });
           }
 
+          // ADR-307 — customer-supplied children read their figures from the
+          // one source (lib/party-so-parts.ts), once for the whole SO.
+          const customerParts = bomLineRows.some((c) => c.bml.bomType === 'party_supplied')
+            ? await readSoCustomerParts(tx, companyId, header.id)
+            : new Map<string, SoCustomerPart>();
+
           bomItems = bomLineRows.map((c) => {
             const qtyPerSet = Number(c.bml.qtyPerSet);
             const totalNeed = qtyPerSet * equipmentQty;
-            const stockQty = stockMap.get(c.bml.childItemId) ?? 0;
-            const shortfall = Math.max(0, totalNeed - stockQty);
-            const existing = planByChildCode.get(c.childCode);
+            const isCustomer = c.bml.bomType === 'party_supplied';
+            const customerPart = isCustomer
+              ? (customerParts.get(c.bml.childItemId)?.figures ?? null)
+              : null;
+            const stockQty = isCustomer
+              ? (customerPart?.inStoreQty ?? 0)
+              : (stockMap.get(c.bml.childItemId) ?? 0);
+            const shortfall = isCustomer
+              ? (customerPart?.shortQty ?? totalNeed)
+              : Math.max(0, totalNeed - stockQty);
+            const existing = isCustomer ? undefined : planByChildCode.get(c.childCode);
             return {
+              customerPart,
               childItemId: c.bml.childItemId,
               childItemCode: c.childCode,
               childItemName: c.childName,

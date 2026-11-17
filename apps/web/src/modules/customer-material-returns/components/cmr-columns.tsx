@@ -4,7 +4,7 @@
 //
 // The locked lead block (leadColumns, JWSO-only list: no Internal SO No., and
 // no POL / Item Code / Item Name on a document list): Sr No · Return No. ·
-// Created On · JWSO No. Then Return Date · Customer · Return Kind (the first
+// Created On · SO No. (the JWSO No., or ADR-307 the SO No.). Then Return Date · Customer · Return Kind (the first
 // line's kind + a grey "+n" when the lines carry both) · Lines · Return Qty
 // (sum of the lines) · Return Status · Vehicle No. · Created By last. Remarks,
 // the cancel reason and the lines are on the return's print (⋯ Preview).
@@ -52,8 +52,10 @@ export function cmrColumns(firstRowNo: number): DataTableColumn<Row>[] {
           </span>
         ),
       },
-      so: 'jwso',
-      soNo: (r) => r.jwCode,
+      // ADR-307 — one order column: SO No. of an Equipment SO return, else the
+      // JWSO No. (NAMING.md: a list carrying both keeps the heading SO No.).
+      so: 'so',
+      soNo: (r) => r.soCode ?? r.jwCode,
       createdOn: (r) => r.createdAt,
       overrides: {
         so_no: { sortFilterField: 'jwCode' },

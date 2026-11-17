@@ -231,6 +231,8 @@ export const planningLineSchema = z.object({
         requiredQty: z.number().nonnegative(),
         /** Sum of non-cancelled plan_qty for this child on this line. */
         plannedQty: z.number().nonnegative(),
+        /** ADR-307: 'party_supplied' = the customer sends it — never planned. */
+        bomType: z.enum(BOM_LINE_TYPES).default('manufacture'),
       }),
     )
     .default([]),

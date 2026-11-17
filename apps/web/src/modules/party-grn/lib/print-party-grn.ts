@@ -56,7 +56,10 @@ export function printPartyGrn(args: {
   const documentFields: SheetField[] = [
     { label: 'GRN No.', value: grn.code, variant: 'mono', strong: true },
     { label: 'GRN Date', value: challanDate(grn.grnDate), variant: 'mono' },
-    { label: 'JWSO No.', value: grn.jwCodeText ?? '', variant: 'mono' },
+    // ADR-307 — an Equipment SO receipt names its SO instead.
+    grn.soCode
+      ? { label: 'SO No.', value: grn.soCode, variant: 'mono' }
+      : { label: 'JWSO No.', value: grn.jwCodeText ?? '', variant: 'mono' },
   ];
   if (grn.clientPoNo)
     documentFields.push({ label: 'Client PO No.', value: grn.clientPoNo, variant: 'mono' });

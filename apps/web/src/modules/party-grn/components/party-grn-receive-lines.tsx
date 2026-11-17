@@ -2,7 +2,7 @@
 // JWSO line, with its Customer RM, the server's Pending cap and the typed
 // Received Qty. Greyed rows cannot be received; the reason sits in their cells.
 
-import { LINE_REMARKS_MAX, type JobWorkOrderDetail } from '@innovic/shared';
+import { LINE_REMARKS_MAX, type JobWorkOrderDetail, type SoReceivablePart } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { itemCodeWithRev } from '@/lib/item-code';
 
@@ -10,6 +10,17 @@ import { itemCodeWithRev } from '@/lib/item-code';
 export type LineEntry = { receivedQty: string; remarks: string };
 
 type JwLine = JobWorkOrderDetail['lines'][number];
+
+/** ADR-307 — Against Equipment SO: one row per customer-supplied BOM part of
+ *  the picked SO, with the server's figures. Entries are keyed by rmItemId.
+ *  Rows with Pending 0 are greyed; a row left blank is simply not sent. */
+export type SoReceiveSpec = {
+  salesOrderId: string | null;
+  soCode: string | null;
+  loading: boolean;
+  loadError: string | null;
+  parts: SoReceivablePart[];
+};
 
 export function PartyGrnReceiveLines({
   jwId,
@@ -25,7 +36,11 @@ export function PartyGrnReceiveLines({
   pendingOf,
   setEntry,
   onDeleteLine,
+  so,
 }: {
+  /** ADR-307 — set when the GRN is Against an Equipment SO; the JWSO props
+   *  are then ignored. */
+  so?: SoReceiveSpec | undefined;
   jwId: string | null;
   loading: boolean;
   /** The JWSO load's failure message, or null. */
@@ -54,138 +69,233 @@ export function PartyGrnReceiveLines({
   return (
     <div className="tbl-wrap">
       <table className="innovic-table">
-        <thead>
-          <tr>
-            <th className="th-ctr">Ln</th>
-            <th className="th-ctr" style={{ color: 'var(--purple)' }}>
-              POL
-            </th>
-            <th>Item Code</th>
-            <th>Item Name</th>
-            <th>Customer RM</th>
-            <th className="th-num">Order Qty</th>
-            <th className="th-num">Accepted</th>
-            <th className="th-num">Waiting QC</th>
-            <th className="th-num">Pending</th>
-            <th className="th-num">
-              Received Qty<span className="req">★</span>
-            </th>
-            <th>Remarks</th>
-            <th className="th-ctr" />
-          </tr>
-        </thead>
-        <tbody>
-          {!jwId ? (
-            message('Select Client PO No. / JWSO No.')
-          ) : loading ? (
-            message(
-              <>
-                <Loader2 size={13} className="inline animate-spin" /> Loading lines…
-              </>,
-            )
-          ) : loadError ? (
-            message(loadError, 'var(--red2)')
-          ) : (
-            <>
-              {nothingToReceive && jwCode
-                ? message(
-                    <>
-                      Nothing left to receive on {jwCode}. All customer material is received or
-                      waiting QC.
-                    </>,
-                  )
-                : null}
-              {allDeleted ? message('All lines deleted — use Restore deleted lines.') : null}
-              {lines.map((l) => {
-                const noRm = !l.partyMaterialId;
-                const receivable = canReceive(l);
-                const e = entries[l.id];
-                return (
-                  <tr key={l.id} style={receivable ? undefined : { opacity: 0.55 }}>
-                    <td className="td-ctr mono">{l.lineNo}</td>
-                    <td className="td-ctr mono fw-700" style={{ color: 'var(--purple)' }}>
-                      {l.clientPoLineNo ?? '—'}
-                    </td>
-                    <td>
-                      <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-                        {itemCodeWithRev(l.itemCodeText, l.revision)}
-                      </span>
-                    </td>
-                    <td style={{ whiteSpace: 'normal' }}>{l.partName.trim() || '—'}</td>
-                    <td>
-                      {noRm ? (
-                        <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
-                          No customer RM — save the JWSO first
-                        </span>
-                      ) : (
-                        <span className="mono fw-700" style={{ color: 'var(--text)' }}>
-                          {l.rmItemCode ?? l.partyMaterialCode ?? '—'}
-                        </span>
-                      )}
-                    </td>
-                    <td className="td-num mono">
-                      {l.orderQty} {l.uom}
-                    </td>
-                    <td className="td-num mono">{l.rmAcceptedQty}</td>
-                    <td className="td-num mono">{waitingOf(l.id)}</td>
-                    <td className="td-num mono fw-700">{pendingOf(l)}</td>
-                    <td className="td-num">
-                      {receivable ? (
-                        <input
-                          type="number"
-                          min={1}
-                          step={1}
-                          max={pendingOf(l)}
-                          className="innovic-input"
-                          aria-label={`Received Qty, line ${l.lineNo}`}
-                          value={e?.receivedQty ?? ''}
-                          onChange={(ev) => setEntry(l.id, { receivedQty: ev.target.value })}
-                          placeholder="—"
-                          style={{ maxWidth: '12ch' }}
-                        />
-                      ) : noRm ? (
-                        '—'
-                      ) : (
-                        <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
-                          {waitingOf(l.id) > 0 ? 'Waiting QC' : 'Fully received'}
-                        </span>
-                      )}
-                    </td>
-                    <td>
-                      {receivable ? (
-                        <input
-                          type="text"
-                          className="innovic-input"
-                          aria-label={`Remarks, line ${l.lineNo}`}
-                          autoComplete="off"
-                          placeholder="Remarks"
-                          maxLength={LINE_REMARKS_MAX}
-                          title={e?.remarks || undefined}
-                          value={e?.remarks ?? ''}
-                          onChange={(ev) => setEntry(l.id, { remarks: ev.target.value })}
-                        />
-                      ) : (
-                        '—'
-                      )}
-                    </td>
-                    <td className="td-ctr">
-                      {receivable ? (
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-sm red"
-                          onClick={() => onDeleteLine(l.id)}
-                          aria-label={`Remove line ${l.lineNo}`}
-                        >
-                          Delete
-                        </button>
-                      ) : null}
-                    </td>
-                  </tr>
-                );
-              })}
-            </>
-          )}
-        </tbody>
+        {so ? (
+          <>
+            <thead>
+              <tr>
+                <th>Item Code</th>
+                <th>Item Name</th>
+                <th className="th-num">Need</th>
+                <th className="th-num">Accepted</th>
+                <th className="th-num">Waiting QC</th>
+                <th className="th-num">Pending</th>
+                <th className="th-num">Received Qty</th>
+                <th>Remarks</th>
+              </tr>
+            </thead>
+            <tbody>
+              {!so.salesOrderId
+                ? message('Select SO No.')
+                : so.loading
+                  ? message(
+                      <>
+                        <Loader2 size={13} className="inline animate-spin" /> Loading customer
+                        parts…
+                      </>,
+                    )
+                  : so.loadError
+                    ? message(so.loadError, 'var(--red2)')
+                    : so.parts.length === 0
+                      ? message('This SO has no customer-supplied BOM parts.')
+                      : so.parts.map((p) => {
+                          const f = p.figures;
+                          const receivable = f.pendingQty > 0;
+                          const e = entries[p.rmItemId];
+                          return (
+                            <tr key={p.rmItemId} style={receivable ? undefined : { opacity: 0.55 }}>
+                              <td>
+                                <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+                                  {p.rmItemCode}
+                                </span>
+                              </td>
+                              <td style={{ whiteSpace: 'normal' }}>{p.rmItemName.trim() || '—'}</td>
+                              <td className="td-num mono">{f.needQty}</td>
+                              <td className="td-num mono">{f.acceptedQty}</td>
+                              <td className="td-num mono">{f.waitingQcQty}</td>
+                              <td className="td-num mono fw-700">{f.pendingQty}</td>
+                              <td className="td-num">
+                                {receivable ? (
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    step={1}
+                                    max={f.pendingQty}
+                                    className="innovic-input"
+                                    aria-label={`Received Qty, ${p.rmItemCode}`}
+                                    value={e?.receivedQty ?? ''}
+                                    onChange={(ev) =>
+                                      setEntry(p.rmItemId, { receivedQty: ev.target.value })
+                                    }
+                                    onWheel={(ev) => ev.currentTarget.blur()}
+                                    placeholder="—"
+                                    style={{ maxWidth: '12ch' }}
+                                  />
+                                ) : (
+                                  <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
+                                    {f.waitingQcQty > 0 ? 'Waiting QC' : 'Fully received'}
+                                  </span>
+                                )}
+                              </td>
+                              <td>
+                                {receivable ? (
+                                  <input
+                                    type="text"
+                                    className="innovic-input"
+                                    aria-label={`Remarks, ${p.rmItemCode}`}
+                                    autoComplete="off"
+                                    placeholder="Remarks"
+                                    maxLength={LINE_REMARKS_MAX}
+                                    title={e?.remarks || undefined}
+                                    value={e?.remarks ?? ''}
+                                    onChange={(ev) =>
+                                      setEntry(p.rmItemId, { remarks: ev.target.value })
+                                    }
+                                  />
+                                ) : (
+                                  '—'
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+            </tbody>
+          </>
+        ) : (
+          <>
+            <thead>
+              <tr>
+                <th className="th-ctr">Ln</th>
+                <th className="th-ctr" style={{ color: 'var(--purple)' }}>
+                  POL
+                </th>
+                <th>Item Code</th>
+                <th>Item Name</th>
+                <th>Customer RM</th>
+                <th className="th-num">Order Qty</th>
+                <th className="th-num">Accepted</th>
+                <th className="th-num">Waiting QC</th>
+                <th className="th-num">Pending</th>
+                <th className="th-num">
+                  Received Qty<span className="req">★</span>
+                </th>
+                <th>Remarks</th>
+                <th className="th-ctr" />
+              </tr>
+            </thead>
+            <tbody>
+              {!jwId ? (
+                message('Select Client PO No. / JWSO No.')
+              ) : loading ? (
+                message(
+                  <>
+                    <Loader2 size={13} className="inline animate-spin" /> Loading lines…
+                  </>,
+                )
+              ) : loadError ? (
+                message(loadError, 'var(--red2)')
+              ) : (
+                <>
+                  {nothingToReceive && jwCode
+                    ? message(
+                        <>
+                          Nothing left to receive on {jwCode}. All customer material is received or
+                          waiting QC.
+                        </>,
+                      )
+                    : null}
+                  {allDeleted ? message('All lines deleted — use Restore deleted lines.') : null}
+                  {lines.map((l) => {
+                    const noRm = !l.partyMaterialId;
+                    const receivable = canReceive(l);
+                    const e = entries[l.id];
+                    return (
+                      <tr key={l.id} style={receivable ? undefined : { opacity: 0.55 }}>
+                        <td className="td-ctr mono">{l.lineNo}</td>
+                        <td className="td-ctr mono fw-700" style={{ color: 'var(--purple)' }}>
+                          {l.clientPoLineNo ?? '—'}
+                        </td>
+                        <td>
+                          <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+                            {itemCodeWithRev(l.itemCodeText, l.revision)}
+                          </span>
+                        </td>
+                        <td style={{ whiteSpace: 'normal' }}>{l.partName.trim() || '—'}</td>
+                        <td>
+                          {noRm ? (
+                            <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
+                              No customer RM — save the JWSO first
+                            </span>
+                          ) : (
+                            <span className="mono fw-700" style={{ color: 'var(--text)' }}>
+                              {l.rmItemCode ?? l.partyMaterialCode ?? '—'}
+                            </span>
+                          )}
+                        </td>
+                        <td className="td-num mono">
+                          {l.orderQty} {l.uom}
+                        </td>
+                        <td className="td-num mono">{l.rmAcceptedQty}</td>
+                        <td className="td-num mono">{waitingOf(l.id)}</td>
+                        <td className="td-num mono fw-700">{pendingOf(l)}</td>
+                        <td className="td-num">
+                          {receivable ? (
+                            <input
+                              type="number"
+                              min={1}
+                              step={1}
+                              max={pendingOf(l)}
+                              className="innovic-input"
+                              aria-label={`Received Qty, line ${l.lineNo}`}
+                              value={e?.receivedQty ?? ''}
+                              onChange={(ev) => setEntry(l.id, { receivedQty: ev.target.value })}
+                              placeholder="—"
+                              style={{ maxWidth: '12ch' }}
+                            />
+                          ) : noRm ? (
+                            '—'
+                          ) : (
+                            <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
+                              {waitingOf(l.id) > 0 ? 'Waiting QC' : 'Fully received'}
+                            </span>
+                          )}
+                        </td>
+                        <td>
+                          {receivable ? (
+                            <input
+                              type="text"
+                              className="innovic-input"
+                              aria-label={`Remarks, line ${l.lineNo}`}
+                              autoComplete="off"
+                              placeholder="Remarks"
+                              maxLength={LINE_REMARKS_MAX}
+                              title={e?.remarks || undefined}
+                              value={e?.remarks ?? ''}
+                              onChange={(ev) => setEntry(l.id, { remarks: ev.target.value })}
+                            />
+                          ) : (
+                            '—'
+                          )}
+                        </td>
+                        <td className="td-ctr">
+                          {receivable ? (
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm red"
+                              onClick={() => onDeleteLine(l.id)}
+                              aria-label={`Remove line ${l.lineNo}`}
+                            >
+                              Delete
+                            </button>
+                          ) : null}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </>
+              )}
+            </tbody>
+          </>
+        )}
       </table>
     </div>
   );
