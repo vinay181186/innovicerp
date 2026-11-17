@@ -5,16 +5,17 @@
 // ADR-303 (owner 2026-11-16): ONE ROW PER ORDER again (GET /sales-orders). The
 // locked lead block (Sr No · SO No. · Created On · Internal SO No.) comes first
 // via leadColumns — no POL / Item Code / Item Name (an order has many); then SO
-// Date, SO Type, Customer, Client PO No., Lines, Total Value (Basic), Value to
-// Dispatch, Due Date (earliest line), SO Status, Fulfilment and Created By. No
-// qty columns. Labels per docs/NAMING.md (lines 138 and 304). The Excel Export
+// Date, SO Type, Customer, Client PO No., Lines, Total SO Value, Pending SO
+// Value, Due Date (earliest line), SO Status, Fulfilment and Created By. No
+// qty columns. The two value headers are the owner's words (2026-11-17), on
+// this list ONLY — the figures are Total Value (Basic) / Value to Dispatch
+// (docs/NAMING.md); detail, form and print keep those names. The Excel Export
 // stays one row per line (GET /sales-orders/lines) — soLinePendingQty below is
 // its Pending.
 
 import {
   SO_STATUSES,
   SO_TYPES,
-  TOTAL_VALUE_BASIC_LABEL,
   type SalesOrderLineListItem,
   type SalesOrderListItem,
 } from '@innovic/shared';
@@ -91,7 +92,7 @@ export function soListColumns(opts: {
           filterType: 'num',
           kind: 'num',
           money: true,
-          header: TOTAL_VALUE_BASIC_LABEL,
+          header: 'Total SO Value',
           nowrap: true,
           render: (so) => money(so.totalValueBasic),
         },
@@ -101,7 +102,7 @@ export function soListColumns(opts: {
           filterType: 'num',
           kind: 'num',
           money: true,
-          header: 'Value to Dispatch',
+          header: 'Pending SO Value',
           nowrap: true,
           render: (so) => money(so.valueToDispatch),
         },
