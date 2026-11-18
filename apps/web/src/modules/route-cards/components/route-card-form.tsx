@@ -71,6 +71,8 @@ import { useFetchRouteCard, useNextRouteCardCode, useRouteCardsList } from '../a
 import { RcBlockingLink, RcDrawingRevFields, useRcItemRev } from './rc-form-drawing';
 import { RouteCardOpsEditor } from './rc-form-ops';
 import { RouteCardRmItemField } from './rc-form-rm-item';
+import { RcFormStrip } from './rc-form-strip';
+import { useRcHeaderCollapsed } from '../lib/rc-form-collapsed';
 import './rc-form.css';
 
 export type RouteCardOpType = 'process' | 'qc' | 'outsource';
@@ -652,6 +654,11 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
   const ospCount = ops.filter((o) => o.opType === 'outsource').length;
   const qcCount = ops.filter((o) => o.opType === 'qc').length;
 
+  // ▴ Hide details folds the header into one line so the Operation Sequence
+  // gets the room (owner mock-up 2026-11-17). The header is HIDDEN, not
+  // unmounted, so every picker keeps what was typed in it.
+  const [headerCollapsed, setHeaderCollapsed] = useRcHeaderCollapsed();
+
   return (
     <form className="page-fill rc-form" onSubmit={(e) => void submit(e)}>
       {/* Header: which card and the revision this save creates. */}
@@ -677,6 +684,16 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
             <span style={{ color: 'var(--green2)' }}>{routeCard.currentRevision + 1}</span>
           </span>
         ) : null}
+        {headerCollapsed ? null : (
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm rc-hd-toggle"
+            title="Fold the header into one line — more room for operations"
+            onClick={() => setHeaderCollapsed(true)}
+          >
+            ▴ Hide details
+          </button>
+        )}
       </div>
       {submitError ? (
         <Banner tone="error" role="alert">
@@ -714,7 +731,29 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
         </Banner>
       ) : null}
 
-      <Panel>
+      {headerCollapsed ? (
+        <RcFormStrip
+          code={header.code}
+          itemCode={header.itemCodeText}
+          drawingRev={header.drawingRev}
+          itemName={header.itemName}
+          planTypeLabel={
+            RC_PLAN_TYPE_OPTIONS.find((o) => o.value === header.planType)?.label ?? header.planType
+          }
+          opCount={ops.length}
+          inHouseCount={inHouseCount}
+          ospCount={ospCount}
+          qcCount={qcCount}
+          rmItemCode={header.rawMaterialItemCode}
+          rmGrade={header.rawMaterialGradeText}
+          rmSize={header.rawMaterialSizeText}
+          rmQtyPerPiece={header.rmQtyPerPiece}
+          itemMissing={!header.itemId}
+          revBad={Boolean(revError)}
+          onShowDetails={() => setHeaderCollapsed(false)}
+        />
+      ) : null}
+      <Panel className={headerCollapsed ? 'rc-hd-folded' : undefined}>
         {/* WHICH item this route is for — the one decision on this screen. The
             same place the detail page shows RC No. and the item. */}
         <DocIdent>

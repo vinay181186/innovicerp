@@ -14,7 +14,12 @@
 // Legacy rows (before ADR-197) have no before → after list; their one-line
 // `detail` is shown in that column instead, so old documents still read.
 
-import type { ActivityChange, ActivityChangeValue, ActivityHistoryRow } from '@innovic/shared';
+import {
+  shortName,
+  type ActivityChange,
+  type ActivityChangeValue,
+  type ActivityHistoryRow,
+} from '@innovic/shared';
 import type { RelatedDocsExtraTab } from '@/components/shared/related-docs-tabs';
 import { fmtDate, fmtDateTime, fmtTime } from '@/lib/date';
 import { useDocumentHistory, type DocumentHistoryTarget } from '@/modules/activity-log/api';
@@ -73,10 +78,14 @@ const COLUMNS: DataTableColumn<ActivityHistoryRow>[] = [
     header: 'User',
     width: '16%',
     align: 'left',
+    // Short form ("Jinal R."), the same rule as Created By on the lists; the
+    // full name shows on hover (owner 17-11-2026).
     render: (r) => (
       <div>
-        <div className="fw-700">{r.userFullName}</div>
-        {r.operatorName && r.operatorName !== r.userFullName ? (
+        <div className="fw-700" title={r.userFullName}>
+          {shortName(r.userFullName)}
+        </div>
+        {r.operatorName && shortName(r.operatorName) !== shortName(r.userFullName) ? (
           <div className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
             Operator: {r.operatorName}
           </div>

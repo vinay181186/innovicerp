@@ -163,3 +163,92 @@
   padding-top: 4px;
   padding-bottom: 4px;
 }
+
+/* ── Collapsible header (owner mock-up 2026-11-17) ─────────────────────────
+   ▴ Hide details sits at the right end of the header row. Folded, the header
+   panel is hidden (kept mounted, so pickers keep their text) and the one-line
+   strip (rc-form-strip.tsx) takes its place; the Operation Sequence panel
+   takes the height that frees. Same look as the Job Card strip. */
+.rc-form .rc-hd-toggle {
+  margin-left: auto;
+}
+.rc-form > .panel.rc-hd-folded {
+  display: none;
+}
+.rc-form .rc-strip {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-1) var(--sp-3);
+  margin-bottom: var(--panel-gap);
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius2);
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  flex: none;
+}
+/* Short of room, the Item Name gives way first, then the figures at the end
+   are cut; the end button is outside them, so it never is. */
+.rc-form .rc-strip > .btn {
+  flex-shrink: 0;
+}
+.rc-form .rc-strip-figs {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-width: 0;
+  overflow: hidden;
+}
+.rc-form .rc-strip-f {
+  display: inline-flex;
+  align-items: baseline;
+}
+.rc-form .rc-strip-item {
+  min-width: 0;
+  overflow: hidden;
+}
+.rc-form .rc-strip-item > .rc-strip-k {
+  flex-shrink: 0;
+}
+.rc-form .rc-strip-name {
+  min-width: 0;
+  max-width: 28ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text2);
+  font-weight: 600;
+}
+.rc-form .rc-strip-sep {
+  flex-shrink: 0;
+  width: 1px;
+  height: 16px;
+  background: var(--border);
+}
+.rc-form .rc-strip-k {
+  margin-right: var(--sp-1);
+  color: var(--text3);
+  font-size: var(--fs-xs);
+}
+.rc-form .rc-strip-f b {
+  font-family: var(--mono);
+  font-weight: 700;
+  color: var(--text);
+}
+.rc-form .rc-strip-f b.rc-strip-dim {
+  color: var(--text2);
+}
+.rc-form .rc-strip-f b.rc-strip-bad {
+  color: var(--red2);
+}
+.rc-form .rc-strip-txt {
+  font-weight: 600;
+}
+.rc-form .rc-strip-split {
+  margin-left: var(--sp-1);
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+  color: var(--text3);
+}
