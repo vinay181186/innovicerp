@@ -21,6 +21,7 @@ import { tasks } from '../../db/schema';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { emitActivityLog } from '../activity-log/service';
 import { istToday, OPEN_STATUSES, recordHistory, statusLabel } from './history';
+import { recordTaskNotices } from './notices';
 
 export interface AutoCloseLinkedTasksInput {
   companyId: string;
@@ -59,7 +60,10 @@ export async function autoCloseLinkedTasks(
   const remark = `Closed automatically: ${input.doneLabel}`;
   const now = new Date();
   const today = istToday();
-  await tx
+  // ADR-309 / §20.2: conditional on the task still being open, and only the
+  // rows this UPDATE actually closed get history, activity and notices — a
+  // task someone else ended in the same second is left alone.
+  const closed = await tx
     .update(tasks)
     .set({
       status: 'completed',
@@ -71,13 +75,25 @@ export async function autoCloseLinkedTasks(
       updatedAt: now,
     })
     .where(
-      inArray(
-        tasks.id,
-        open.map((t) => t.id),
+      and(
+        inArray(
+          tasks.id,
+          open.map((t) => t.id),
+        ),
+        inArray(tasks.status, [...OPEN_STATUSES]),
       ),
-    );
+    )
+    .returning({
+      id: tasks.id,
+      assignedTo: tasks.assignedTo,
+      assignedBy: tasks.assignedBy,
+      createdBy: tasks.createdBy,
+    });
+  const closedById = new Map(closed.map((c) => [c.id, c]));
 
   for (const t of open) {
+    const row = closedById.get(t.id);
+    if (!row) continue;
     await recordHistory(
       tx,
       input.companyId,
@@ -102,6 +118,17 @@ export async function autoCloseLinkedTasks(
       input.companyId,
       user,
     );
+    await recordTaskNotices(
+      tx,
+      {
+        companyId: input.companyId,
+        task: row,
+        kind: 'task_completed',
+        actorId: user.id,
+        eventAt: now,
+      },
+      user,
+    );
   }
-  return open.length;
+  return closed.length;
 }

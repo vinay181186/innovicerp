@@ -44,6 +44,8 @@ import { importTemplateRoutes } from './modules/import-templates/routes';
 import { clientsRoutes } from './modules/clients/routes';
 import { dashboardRoutes } from './modules/dashboard/routes';
 import { userPrefsRoutes } from './modules/user-prefs/routes';
+import { pushRoutes } from './modules/push/routes';
+import { startPushSender, stopPushSender } from './modules/push/sender';
 import { deliveryChallansRoutes } from './modules/delivery-challans/routes';
 import { itemsRoutes } from './modules/items/routes';
 import { jobCardsRoutes } from './modules/job-cards/routes';
@@ -244,6 +246,7 @@ await app.register(ncRegisterRoutes);
 await app.register(deliveryChallansRoutes);
 await app.register(dashboardRoutes);
 await app.register(userPrefsRoutes);
+await app.register(pushRoutes);
 await app.register(incomingQcRoutes);
 await app.register(qcHistoryRoutes);
 await app.register(capaRoutes);
@@ -321,11 +324,22 @@ try {
   logger.error({ err }, 'alerts worker failed to start; api stays up');
 }
 
+// ADR-309 task pop-up sender (Web Push). Never under test; without VAPID keys
+// it only marks pending notices 'off'.
+if (env.NODE_ENV !== 'test') {
+  try {
+    startPushSender(logger);
+  } catch (err) {
+    logger.error({ err }, 'task pop-up sender failed to start; api stays up');
+  }
+}
+
 process.on('SIGTERM', () => {
   void (async () => {
     logger.info('SIGTERM received — shutting down alerts worker + http server');
     try {
       await stopAlertsWorker();
+      stopPushSender();
       await app.close();
     } finally {
       process.exit(0);

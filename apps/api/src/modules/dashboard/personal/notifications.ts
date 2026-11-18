@@ -39,6 +39,7 @@ import {
 } from './note-rules';
 import { addDays, codePart, str } from './util';
 import { type ExtraNote, readSources } from './note-sources';
+import { taskSources } from './task-notes';
 import { workSources } from './work-notes';
 
 export const NOTIFICATIONS_SEEN_KEY = 'notifications_seen_at';
@@ -401,6 +402,9 @@ export async function readNoteCandidates(
     await readSources(tx, [
       ...decisionSources(c.cid, me, since, seeAll),
       ...workSources(a, c.cid, me, since, seeAll),
+      // ADR-309: the caller's own task notices (personal — no seeAll);
+      // ADR-257: none when their Task Board is hidden.
+      ...(hasTick(a, 'taskboard_view', 'view') ? taskSources(c.cid, me, since) : []),
     ])
   ).sort((x, y) => Date.parse(y.ts) - Date.parse(x.ts));
   // 2. Seen time + activity events in ONE statement, with the Day Log

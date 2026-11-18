@@ -187,6 +187,7 @@ export * from './schemas/so-costing';
 export * from './schemas/stock-valuation';
 export * from './schemas/task';
 export * from './schemas/daily-task-report';
+export * from './schemas/task-notices';
 export * from './schemas/day-log';
 export * from './schemas/day-log-text';
 export * from './schemas/ai-chat';

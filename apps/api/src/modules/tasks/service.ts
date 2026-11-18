@@ -52,6 +52,7 @@ import {
 import { type PersonAccessRow, personHolds } from '../access-control/users-with-right';
 import { emitActivityLog } from '../activity-log/service';
 import { loadDayLogReplies } from './day-log-replies';
+import { recordTaskNotices } from './notices';
 import {
   type NameMap,
   type RowContext,
@@ -421,6 +422,12 @@ export async function insertAssignedTask(
     { action: 'created', toValue: assignee.name },
     user,
   );
+  // ADR-309: the assignee's bell + pop-up (none when assigning to yourself).
+  await recordTaskNotices(
+    tx,
+    { companyId, task: header, kind: 'task_assigned', actorId: user.id, eventAt: header.createdAt },
+    user,
+  );
   await emitActivityLog(
     tx,
     {
@@ -749,6 +756,21 @@ async function transitionStatus(
     .where(and(eq(tasks.id, t.id), eq(tasks.companyId, companyId), fromCond))
     .returning({ id: tasks.id });
   if (changed.length === 0) throw await statusConflict(tx, t.id, t.code, companyId);
+  // ADR-309: Complete tells who assigned / created it, Cancel tells the
+  // assignee — only for the update that actually ended the task.
+  if (target === 'completed' || target === 'cancelled') {
+    await recordTaskNotices(
+      tx,
+      {
+        companyId,
+        task: t,
+        kind: target === 'completed' ? 'task_completed' : 'task_cancelled',
+        actorId: user.id,
+        eventAt: now,
+      },
+      user,
+    );
+  }
 
   await recordHistory(
     tx,
@@ -867,7 +889,7 @@ export async function moveTaskTo(
   user: AuthContext,
 ): Promise<void> {
   const now = new Date();
-  await tx
+  const moved = await tx
     .update(tasks)
     .set({
       assignedTo: assignee.id,
@@ -879,7 +901,22 @@ export async function moveTaskTo(
       updatedBy: user.id,
       updatedAt: now,
     })
-    .where(eq(tasks.id, t.id));
+    .where(eq(tasks.id, t.id))
+    .returning({
+      id: tasks.id,
+      assignedTo: tasks.assignedTo,
+      assignedBy: tasks.assignedBy,
+      createdBy: tasks.createdBy,
+    });
+  // ADR-309: the new holder's bell + pop-up (none when it is me).
+  const row = moved[0];
+  if (row) {
+    await recordTaskNotices(
+      tx,
+      { companyId, task: row, kind: 'task_assigned', actorId: user.id, eventAt: now },
+      user,
+    );
+  }
   await recordHistory(
     tx,
     companyId,

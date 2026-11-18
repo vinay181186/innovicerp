@@ -112,6 +112,22 @@ const envSchema = z.object({
     .string()
     .optional()
     .transform((v) => (v && v.length > 0 ? v : 'gemini-2.5-flash')),
+  // ADR-309 — task pop-ups (Web Push). All three optional; any missing =
+  // pop-ups off (GET /me/push says enabled=false, notices are marked 'off').
+  // Generate once with `npx web-push generate-vapid-keys`; SUBJECT is a
+  // mailto: or https: contact URL.
+  VAPID_PUBLIC_KEY: z
+    .string()
+    .optional()
+    .transform((v) => (v && v.length > 0 ? v : undefined)),
+  VAPID_PRIVATE_KEY: z
+    .string()
+    .optional()
+    .transform((v) => (v && v.length > 0 ? v : undefined)),
+  VAPID_SUBJECT: z
+    .string()
+    .optional()
+    .transform((v) => (v && v.length > 0 ? v : undefined)),
   AI_CHAT_DAILY_LIMIT: z
     .string()
     .optional()
