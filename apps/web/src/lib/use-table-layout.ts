@@ -178,10 +178,19 @@ export function useTableLayoutReader(): (tableKey: string) => TableLayout | null
     (tableKey: string) =>
       userId === undefined
         ? undefined
-        : qc.getQueryData<TableLayout | null>(tableLayoutQueryKey(userId, tableKey)),
+        : (shownLayouts.get(shownKey(userId, tableKey)) ??
+          qc.getQueryData<TableLayout | null>(tableLayoutQueryKey(userId, tableKey))),
     [qc, userId],
   );
 }
+
+/**
+ * The layout ON SCREEN while its save is still waiting (debounce + request):
+ * the Export reads this first, so a column hidden a second ago is already
+ * left out. Dropped once the save lands and the cache holds the same thing.
+ */
+const shownLayouts = new Map<string, TableLayout>();
+const shownKey = (userId: string, tableKey: string): string => `${userId}|${tableKey}`;
 
 type Pending = { kind: 'put'; state: TableLayoutState } | { kind: 'delete' };
 
@@ -286,6 +295,7 @@ export function useTableLayout(
           else throw e;
         }
         if (mySeq !== seq.current) return;
+        if (userId !== undefined) shownLayouts.delete(shownKey(userId, tableKey));
         setSaveFailed(false);
         qc.setQueryData<TableLayout | null>(queryKey, {
           tableKey,
@@ -349,6 +359,13 @@ export function useTableLayout(
         defaults,
       );
       setLocal(next);
+      if (tableKey !== undefined && userId !== undefined) {
+        shownLayouts.set(shownKey(userId, tableKey), {
+          tableKey,
+          columns: op.type === 'reset' ? [] : toSaveInput(next, first).columns,
+          updatedAt: null,
+        });
+      }
       if (timer.current !== undefined) window.clearTimeout(timer.current);
       timer.current = undefined;
       if (op.type === 'reset') {
@@ -360,7 +377,7 @@ export function useTableLayout(
       pending.current = { kind: 'put', state: next };
       timer.current = window.setTimeout(flush, SAVE_DELAY_MS);
     },
-    [lockedIds, hideableKey, defaultState, idsKey, flush],
+    [lockedIds, hideableKey, defaultState, idsKey, flush, tableKey, userId, first],
   );
 
   const retrySave = useCallback(() => {

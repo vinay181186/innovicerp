@@ -48,7 +48,7 @@ export function safeSheetName(name: string, taken: ReadonlySet<string> = new Set
   return out;
 }
 
-/** The file name the user sees: "<list title> <DD-MM-YYYY>.xlsx". */
+/** The file name the user sees: "<list title> <YYYY-MM-DD>.xlsx". */
 export function exportFileName(fileName: string): string {
   const clean =
     fileName

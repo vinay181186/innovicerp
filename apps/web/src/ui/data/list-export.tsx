@@ -5,7 +5,7 @@
 // filters / sort (never just the 25 on screen), writes the columns the user
 // SEES in their order (Columns ▾ — hidden ones left out, action / control
 // columns left out, money left out for a no-price user), and saves
-// "<list title> <DD-MM-YYYY>.xlsx". A document list may add a second "Lines"
+// "<list title> <YYYY-MM-DD>.xlsx". A document list may add a second "Lines"
 // sheet holding the lines of exactly the documents on the first sheet.
 // After the file is made, one Activity Log row (action EXPORT) is sent.
 //
@@ -222,6 +222,14 @@ export function useListExport<T, L>(
       setProgress({ done, total: Math.min(total, LIST_EXPORT_CAP) });
     try {
       const chunk = spec.pageSize ?? 200;
+      // The lines are read at the same time as the documents (two round trips
+      // in parallel, not one after the other); kept to the sheet-1 docs below.
+      const ls = spec.linesSheet;
+      const linesP = ls
+        ? fetchAllPagesCounted(ls.fetchPage, chunk, undefined, LIST_EXPORT_CAP)
+        : undefined;
+      // Never leave it unhandled if the documents read fails first.
+      linesP?.catch(() => undefined);
       let rows: T[];
       let total: number;
       if (spec.fetchPage) {
@@ -249,9 +257,8 @@ export function useListExport<T, L>(
 
       let lineCount: number | undefined;
       let linesCapped = false;
-      const ls = spec.linesSheet;
-      if (ls) {
-        const res = await fetchAllPagesCounted(ls.fetchPage, chunk, onProgress, LIST_EXPORT_CAP);
+      if (ls && linesP) {
+        const res = await linesP;
         const docOrder = new Map(rows.map((r, i) => [ls.docKey(r), i] as const));
         const lines = linesForDocs(res.items, docOrder, ls.lineDocKey, ls.lineOrder);
         linesCapped = res.total > LIST_EXPORT_CAP;
