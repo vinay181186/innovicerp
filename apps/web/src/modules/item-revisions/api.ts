@@ -85,18 +85,24 @@ function invalidateReleaseViews(qc: ReturnType<typeof useQueryClient>): void {
 }
 
 /** GET /item-revisions/register — 25 a page, server search + Sort & Filter. */
+/** One page of GET /item-revisions/register — the Drawing Register hook's
+ *  fetcher, also used by the shared Export (ADR-310). */
+export function fetchDrawingRegisterPage(
+  q: Partial<ListDrawingRegisterQuery>,
+): Promise<ListDrawingRegisterResponse> {
+  const p = new URLSearchParams();
+  if (q.search) p.set('search', q.search);
+  if (q.status) p.set('status', q.status);
+  if (q.sf) p.set('sf', q.sf);
+  p.set('limit', String(q.limit ?? 25));
+  p.set('offset', String(q.offset ?? 0));
+  return apiFetch<ListDrawingRegisterResponse>(`/item-revisions/register?${p.toString()}`);
+}
+
 export function useDrawingRegister(q: Partial<ListDrawingRegisterQuery>) {
   return useQuery<ListDrawingRegisterResponse>({
     queryKey: drawingRegisterKeys.list(q),
-    queryFn: () => {
-      const p = new URLSearchParams();
-      if (q.search) p.set('search', q.search);
-      if (q.status) p.set('status', q.status);
-      if (q.sf) p.set('sf', q.sf);
-      p.set('limit', String(q.limit ?? 25));
-      p.set('offset', String(q.offset ?? 0));
-      return apiFetch<ListDrawingRegisterResponse>(`/item-revisions/register?${p.toString()}`);
-    },
+    queryFn: () => fetchDrawingRegisterPage(q),
     placeholderData: (prev) => prev,
     refetchInterval: LIVE_FALLBACK_POLL_MS,
   });

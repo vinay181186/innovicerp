@@ -23,6 +23,7 @@ import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useDeleteSavedReport, useSavedReportsList, useSourceCatalog } from '../api';
+import { savedReportsExportSpec } from '../lib/export';
 
 const SHARED_OPTIONS = [
   { value: 'true', label: 'Shared' },
@@ -167,6 +168,17 @@ function SavedReportsListPage(): React.JSX.Element {
     ],
     [sourceLabel, sourceOptions, offset],
   );
+  // ADR-310 — the shared Export: every row matching the search / filters / ▾.
+  const exportSpec = useMemo(
+    () =>
+      savedReportsExportSpec({
+        columns,
+        tableKey: TABLE_KEYS.savedReportsList,
+        search,
+        sfParam: sf.param,
+      }),
+    [columns, search, sf.param],
+  );
 
   return (
     // `page-fill` (ADR-202): the page fills the content area and the TABLE is
@@ -175,6 +187,7 @@ function SavedReportsListPage(): React.JSX.Element {
     <div className="page-fill">
       <ListHeader
         title="Saved Reports"
+        exportSpec={exportSpec}
         icon="✨"
         count={data ? total : undefined}
         noun="saved report"

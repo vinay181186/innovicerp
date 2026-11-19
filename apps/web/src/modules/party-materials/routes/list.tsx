@@ -25,6 +25,7 @@ import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { usePartyMaterialsList } from '../api';
+import { partyMaterialsExportSpec } from '../lib/export';
 import { AddPartyMaterialModal } from '../components/add-party-material-modal';
 import {
   PARTY_MATERIAL_HIDDEN_COLUMNS,
@@ -103,6 +104,18 @@ function PartyMaterialsListPage(): React.JSX.Element {
   const rows = useMemo(() => data?.items ?? [], [data?.items]);
   const columns = useMemo(() => partyMaterialColumns(offset + 1), [offset]);
 
+  // ADR-310 — the shared Export: every row matching the search / filters / ▾.
+  const exportSpec = useMemo(
+    () =>
+      partyMaterialsExportSpec({
+        columns,
+        tableKey: TABLE_KEYS.partyMaterials,
+        defaultHidden: [...PARTY_MATERIAL_HIDDEN_COLUMNS],
+        search: urlSearch.search,
+        sfParam: sf.param,
+      }),
+    [columns, urlSearch.search, sf.param],
+  );
   const toggleExpand = useCallback((id: string): void => {
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -132,6 +145,7 @@ function PartyMaterialsListPage(): React.JSX.Element {
           + Add Material. */}
       <ListHeader
         title="Customer Material Master"
+        exportSpec={exportSpec}
         icon="🏭"
         count={data?.total}
         noun="material"

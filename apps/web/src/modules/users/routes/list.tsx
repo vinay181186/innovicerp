@@ -59,6 +59,7 @@ import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useApprovalConfig } from '@/modules/approval-config/api';
 import { useUserAccessList } from '@/modules/access-control/api';
 import { useUsersList } from '../api';
+import { usersExportSpec, withUserExportValues } from '../lib/export';
 import { ROLE_LABEL } from '@/lib/role-label';
 
 const PAGE_SIZE = 25;
@@ -308,6 +309,19 @@ function UsersListPage(): React.JSX.Element {
     ],
     [accessByUser, approverSet, currentPage],
   );
+  // ADR-310 — the shared Export: every row matching the search / filters / ▾.
+  const exportSpec = useMemo(
+    () =>
+      usersExportSpec({
+        columns: withUserExportValues(columns, accessByUser),
+        tableKey: TABLE_KEYS.usersList,
+        search: search.search,
+        role: search.role,
+        isActive: search.isActive,
+        sfParam: sf.param,
+      }),
+    [columns, accessByUser, search.search, search.role, search.isActive, sf.param],
+  );
 
   // Admin-only screen. Its own wording, not PageState's generic no-access
   // sentence: this page is hidden by ROLE, not by an Access Control switch,
@@ -330,6 +344,7 @@ function UsersListPage(): React.JSX.Element {
           primary action stay put while the rows scroll underneath. */}
       <ListHeader
         title="User Management"
+        exportSpec={exportSpec}
         count={total}
         noun="user"
         filterNote={filterNote}

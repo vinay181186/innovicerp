@@ -23,6 +23,7 @@ import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { qcDocViewUrl, useDeleteQcDocument, useQcDocuments } from '../api';
 import { qcDocumentsListRoute } from '../routes/list';
+import { qcRegisterExportSpec } from '../lib/export';
 import { buildRegisterColumns, REGISTER_DETAIL_IDS } from './register-columns';
 import { CATEGORY_LABEL } from './qc-doc-shared';
 import { UploadModal } from './upload-modal';
@@ -69,6 +70,20 @@ export function RegisterView({ tabs }: { tabs: React.ReactNode }): React.JSX.Ele
   const total = data?.total;
   useClampPage(search.page, total, gotoPage);
   const columns = useMemo(() => buildRegisterColumns(pageOffset(search.page) + 1), [search.page]);
+  // ADR-310 — the shared Export: every document matching Category / search / column filters.
+  const exportSpec = useMemo(
+    () =>
+      qcRegisterExportSpec({
+        columns,
+        tableKey: TABLE_KEYS.qcDocsRegister,
+        defaultHidden: REGISTER_DETAIL_IDS,
+        category: search.category,
+        categoryLabel: search.category ? CATEGORY_LABEL[search.category] : undefined,
+        search: search.search,
+        sfParam: sf.param,
+      }),
+    [columns, search.category, search.search, sf.param],
+  );
 
   async function openFile(d: QcDocument): Promise<void> {
     try {
@@ -102,6 +117,7 @@ export function RegisterView({ tabs }: { tabs: React.ReactNode }): React.JSX.Ele
           });
         }}
         searchPlaceholder="Search doc type, file, JC, item, SO…"
+        exportSpec={exportSpec}
         updating={isFetching && !isLoading}
         orderFilter={<OrderSfFilter sf={sf} field="orderCode" columnField="soCode" />}
         filters={

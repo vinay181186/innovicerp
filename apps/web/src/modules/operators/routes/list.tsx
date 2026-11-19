@@ -49,6 +49,7 @@ import { Select } from '@/ui/forms';
 import { Banner } from '@/ui/feedback';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useBulkCreateOperators, useOperatorsList, useSoftDeleteOperator } from '../api';
+import { operatorExportSpec } from '../lib/export';
 import { parseOperatorImportFile } from '../lib/import-export';
 
 const PAGE_SIZE = 25;
@@ -178,6 +179,12 @@ function OperatorsListPage(): React.JSX.Element {
   // VIEW was removed for this page sees the no-access panel, not the page. `eff`
   // is undefined only while access loads — don't block then, or every legitimate
   // user flashes this panel on cold load.
+  // ADR-310 — the shared Export: every row matching the search / filters / ▾.
+  const exportSpec = useMemo(
+    () => operatorExportSpec({ columns, tableKey: TABLE_KEYS.operatorsList, query }),
+    [columns, query],
+  );
+
   if (eff && !perms.view) {
     return <PageState as="page" state="noaccess" />;
   }
@@ -190,6 +197,7 @@ function OperatorsListPage(): React.JSX.Element {
       {/* The frozen header band: title, count, search, the status filter and
           the primary action stay put while the rows scroll underneath. */}
       <ListHeader
+        exportSpec={exportSpec}
         title="Operator Master"
         icon="👷"
         // Count comes from the list response's `total` — the only aggregate

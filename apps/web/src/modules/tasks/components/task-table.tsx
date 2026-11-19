@@ -123,7 +123,7 @@ const ASSIGNED_COLUMNS: DataTableColumn<TaskRow>[] = [
   },
 ];
 
-function taskColumns(view: TaskView, firstRowNo: number): DataTableColumn<TaskRow>[] {
+export function taskColumns(view: TaskView, firstRowNo: number): DataTableColumn<TaskRow>[] {
   return [
     srNoColumn<TaskRow>(firstRowNo),
     {

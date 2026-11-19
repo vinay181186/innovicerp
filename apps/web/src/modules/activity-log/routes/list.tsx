@@ -15,6 +15,7 @@ import {
   ActivityLogExpand,
   activityLogColumns,
 } from '../components/activity-log-columns';
+import { activityLogExportSpec, withActivityLogExportValues } from '../lib/export';
 import { SearchableSelect } from '@/ui/forms';
 
 const searchSchema = z.object({
@@ -90,7 +91,30 @@ function ActivityLogListPage() {
   // The Action ▾ ticks the actions this company's log holds (the same list
   // the Action dropdown offers), shown by their standard label.
   const actions = data?.actions;
-  const columns = useMemo(() => activityLogColumns(offset + 1, actions ?? []), [offset, actions]);
+  const columns = useMemo(
+    () => withActivityLogExportValues(activityLogColumns(offset + 1, actions ?? [])),
+    [offset, actions],
+  );
+  // ADR-310 — the shared Export: every entry matching the search / filters.
+  const userName = search.userId
+    ? data?.users.find((u) => u.id === search.userId)?.name
+    : undefined;
+  const exportSpec = useMemo(
+    () =>
+      activityLogExportSpec({
+        columns,
+        tableKey: TABLE_KEYS.activityLog,
+        defaultHidden: [...ACTIVITY_LOG_HIDDEN_COLUMNS],
+        search: search.search,
+        action: search.action,
+        userId: search.userId,
+        userName,
+        fromDate: search.fromDate,
+        toDate: search.toDate,
+        sfParam: sf.param,
+      }),
+    [columns, search, userName, sf.param],
+  );
 
   // ▸ reveal — the full Detail / remarks for a row. The caller owns the open set;
   // the fit engine's ▸ is the one toggle (onToggleExpanded).
@@ -146,6 +170,7 @@ function ActivityLogListPage() {
         onSearch={setPendingSearch}
         searchPlaceholder="Search action, document type, detail, document no., user…"
         updating={isFetching && !isLoading}
+        exportSpec={exportSpec}
         filters={
           <>
             <select

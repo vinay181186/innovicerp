@@ -27,7 +27,7 @@ export const soPlanningKeys = {
  *  Sends source + search + Sort & Filter + a 25-row page and gets that page plus
  *  the matching total. `enabled` is off while one order is open, so the list is
  *  not re-worked out behind a screen that does not show it. */
-export function usePlanningLineList(q: PlanningLineListQuery, enabled = true) {
+function planningLineListQs(q: PlanningLineListQuery): string {
   const params = new URLSearchParams();
   if (q.src) params.set('src', q.src);
   if (q.search) params.set('search', q.search);
@@ -35,10 +35,21 @@ export function usePlanningLineList(q: PlanningLineListQuery, enabled = true) {
   if (q.grnPlanPending) params.set('grnPlanPending', q.grnPlanPending);
   if (q.limit !== undefined) params.set('limit', String(q.limit));
   if (q.offset !== undefined) params.set('offset', String(q.offset));
-  const qs = params.toString();
+  return params.toString();
+}
+
+/** One page of the Level-1 line list — the list's query and the shared Export
+ *  (ADR-310) both call this, so they send the same URL. */
+export function fetchPlanningLinePage(q: PlanningLineListQuery): Promise<PlanningLineListResponse> {
+  const qs = planningLineListQs(q);
+  return apiFetch<PlanningLineListResponse>(`/so-planning/lines${qs ? `?${qs}` : ''}`);
+}
+
+export function usePlanningLineList(q: PlanningLineListQuery, enabled = true) {
+  const qs = planningLineListQs(q);
   return useQuery<PlanningLineListResponse>({
     queryKey: soPlanningKeys.lineList(qs),
-    queryFn: () => apiFetch<PlanningLineListResponse>(`/so-planning/lines${qs ? `?${qs}` : ''}`),
+    queryFn: () => fetchPlanningLinePage(q),
     enabled,
     refetchInterval: LIVE_FALLBACK_POLL_MS,
     refetchOnWindowFocus: true,

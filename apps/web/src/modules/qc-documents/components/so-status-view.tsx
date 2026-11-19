@@ -18,6 +18,7 @@ import { useSoQcStatus } from '@/modules/so-qc-status/api';
 import { DataTable, Panel, ROW_TINT } from '@/ui/data';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListHeader, PageState } from '@/ui/layout';
+import { soStatusExportSpec, withSoStatusExportValues } from '../lib/export';
 import { buildSoStatusColumns, SO_STATUS_DETAIL_IDS } from './so-status-columns';
 import { SoStatusExpanded } from './so-status-detail';
 
@@ -45,12 +46,28 @@ export function SoStatusView({ tabs }: { tabs: React.ReactNode }): React.JSX.Ele
     });
   }, []);
 
-  const lines = detail.data?.lines ?? [];
+  const lines = useMemo(() => detail.data?.lines ?? [], [detail.data]);
   const order = detail.data?.so ?? null;
   const columns = useMemo(
     () =>
-      buildSoStatusColumns(order ? { code: order.code, internalSoNo: order.internalSoNo } : null),
+      withSoStatusExportValues(
+        buildSoStatusColumns(order ? { code: order.code, internalSoNo: order.internalSoNo } : null),
+      ),
     [order],
+  );
+  // ADR-310 — the shared Export: the chosen SO's lines, as loaded on screen.
+  const exportSpec = useMemo(
+    () =>
+      selectedSo
+        ? soStatusExportSpec({
+            columns,
+            tableKey: TABLE_KEYS.qcDocsStatus,
+            defaultHidden: SO_STATUS_DETAIL_IDS,
+            soCode: selectedSo.code,
+            rows: lines,
+          })
+        : undefined,
+    [columns, selectedSo, lines],
   );
 
   return (
@@ -61,6 +78,7 @@ export function SoStatusView({ tabs }: { tabs: React.ReactNode }): React.JSX.Ele
       <ListHeader
         title="QC Documents"
         icon="🗃"
+        exportSpec={exportSpec}
         searchSlot={
           <OrderSelect
             id="so-qc-select"

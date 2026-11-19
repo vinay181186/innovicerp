@@ -13,6 +13,7 @@ import {
 } from '../api';
 import { downloadMaterialSizeTemplate, parseMaterialSizeImportFile } from '../lib/import-export';
 import { fmtImportList } from '../lib/import-message';
+import { sizeExportPage } from '../lib/export';
 import { MaterialMasterPanel } from './material-master-panel';
 import { useMaterialMasterPaging } from './use-material-master-paging';
 
@@ -52,6 +53,7 @@ export function SizeTab({
       noun="Size"
       entity="MaterialSize"
       tableKey={TABLE_KEYS.rawMaterialSize}
+      exportFetchPage={sizeExportPage(paging.pageQuery)}
       rows={list.data?.sizes ?? []}
       total={list.data?.total}
       counts={{ all: allCount, active: activeCount, inactive: inactiveCount }}

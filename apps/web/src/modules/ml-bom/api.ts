@@ -46,13 +46,18 @@ function toQueryString(q: ListMlBomsQuery): string {
   return params.toString();
 }
 
+/** One page of the list — the hook below and the list's Export (ADR-310) both call it. */
+export function fetchMlBomsPage(query: ListMlBomsQuery): Promise<ListMlBomsResponse> {
+  return apiFetch<ListMlBomsResponse>(`/ml-boms?${toQueryString(query)}`);
+}
+
 export function useMlBomsList(
   query: ListMlBomsQuery,
   options?: Omit<UseQueryOptions<ListMlBomsResponse>, 'queryKey' | 'queryFn'>,
 ) {
   return useQuery<ListMlBomsResponse>({
     queryKey: mlBomsKeys.list(query),
-    queryFn: () => apiFetch<ListMlBomsResponse>(`/ml-boms?${toQueryString(query)}`),
+    queryFn: () => fetchMlBomsPage(query),
     placeholderData: (prev) => prev,
     ...options,
   });

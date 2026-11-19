@@ -22,6 +22,7 @@ import { srNoColumn } from '@/ui/data/lead-columns';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { usePartyStockLedgerList } from '../api';
+import { partyStockLedgerExportSpec } from '../lib/export';
 
 const MOVEMENT_LABELS: Record<PartyStockMovement, string> = {
   receive: 'Receive',
@@ -195,6 +196,16 @@ function PartyStockLedgerListPage(): React.JSX.Element {
     [offset],
   );
   useClampPage(page, data?.total, gotoPage);
+  // ADR-310 — the shared Export: every movement matching the search.
+  const exportSpec = useMemo(
+    () =>
+      partyStockLedgerExportSpec({
+        columns,
+        tableKey: TABLE_KEYS.partyStockLedger,
+        search: term || undefined,
+      }),
+    [columns, term],
+  );
   const rows = data?.items ?? [];
   const total = data?.total ?? 0;
 
@@ -220,6 +231,7 @@ function PartyStockLedgerListPage(): React.JSX.Element {
         onSearch={setSearch}
         searchPlaceholder="Search material, movement, source doc, by…"
         updating={isFetching && !isLoading}
+        exportSpec={exportSpec}
       />
 
       {isError ? (

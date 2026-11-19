@@ -36,10 +36,18 @@ function toQuery(q: ListQcDocumentsQuery): string {
   return s ? `?${s}` : '';
 }
 
+/** One page of the QC Documents register — the list's query and the shared
+ *  Export (ADR-310) both call this, so they send the same URL. */
+export function fetchQcDocumentsPage(
+  query: ListQcDocumentsQuery,
+): Promise<ListQcDocumentsResponse> {
+  return apiFetch<ListQcDocumentsResponse>(`/qc-documents${toQuery(query)}`);
+}
+
 export function useQcDocuments(query: ListQcDocumentsQuery) {
   return useQuery<ListQcDocumentsResponse>({
     queryKey: qcDocumentsKeys.list(query),
-    queryFn: () => apiFetch<ListQcDocumentsResponse>(`/qc-documents${toQuery(query)}`),
+    queryFn: () => fetchQcDocumentsPage(query),
     placeholderData: (prev) => prev,
   });
 }

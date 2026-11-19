@@ -13,6 +13,7 @@ import {
 } from '../api';
 import { downloadMaterialGradeTemplate, parseMaterialGradeImportFile } from '../lib/import-export';
 import { fmtImportList } from '../lib/import-message';
+import { gradeExportPage } from '../lib/export';
 import { MaterialMasterPanel } from './material-master-panel';
 import { useMaterialMasterPaging } from './use-material-master-paging';
 
@@ -52,6 +53,7 @@ export function GradeTab({
       noun="Grade"
       entity="MaterialGrade"
       tableKey={TABLE_KEYS.rawMaterialGrade}
+      exportFetchPage={gradeExportPage(paging.pageQuery)}
       rows={list.data?.grades ?? []}
       total={list.data?.total}
       counts={{ all: allCount, active: activeCount, inactive: inactiveCount }}

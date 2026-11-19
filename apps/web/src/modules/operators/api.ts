@@ -31,13 +31,18 @@ function toQueryString(q: ListOperatorsQuery): string {
   return params.toString();
 }
 
+/** One page of the list — the hook below and the list's Export (ADR-310) both call it. */
+export function fetchOperatorsPage(query: ListOperatorsQuery): Promise<ListOperatorsResponse> {
+  return apiFetch<ListOperatorsResponse>(`/operators?${toQueryString(query)}`);
+}
+
 export function useOperatorsList(
   query: ListOperatorsQuery,
   options?: Omit<UseQueryOptions<ListOperatorsResponse>, 'queryKey' | 'queryFn'>,
 ) {
   return useQuery<ListOperatorsResponse>({
     queryKey: operatorsKeys.list(query),
-    queryFn: () => apiFetch<ListOperatorsResponse>(`/operators?${toQueryString(query)}`),
+    queryFn: () => fetchOperatorsPage(query),
     placeholderData: (prev) => prev,
     ...options,
   });

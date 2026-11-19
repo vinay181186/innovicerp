@@ -35,6 +35,7 @@ import {
 } from '../components/design-project-columns';
 import { AddProjectModal } from '../components/add-project-modal';
 import { useDesignProjectsList } from '../api';
+import { designProjectExportSpec, withDesignProjectExportValues } from '../lib/export';
 
 type FilterKey = 'all' | 'active' | 'released' | 'hold';
 
@@ -112,7 +113,19 @@ function DesignProjectsListPage(): React.JSX.Element {
   const today = todayIst();
   const rows = data?.items ?? [];
   const total = data?.total ?? 0;
-  const columns = designProjectColumns({ today, firstRowNo: pageOffset(page) + 1 });
+  const columns = withDesignProjectExportValues(
+    designProjectColumns({ today, firstRowNo: pageOffset(page) + 1 }),
+  );
+  // ADR-310 — the shared Export: every project matching the search / filter
+  // (the same query as the list).
+  const exportSpec = designProjectExportSpec({
+    columns,
+    tableKey: TABLE_KEYS.designProjects,
+    search: term,
+    filter,
+    filterLabel: filter === 'all' ? undefined : FILTER_LABEL[filter],
+    sfParam: sf.param,
+  });
 
   // "Hide page" (Access Control → Config): a user whose VIEW was removed for
   // this page sees the no-access panel, not the list. `eff` undefined only while
@@ -135,6 +148,7 @@ function DesignProjectsListPage(): React.JSX.Element {
         orderFilter={<OrderSfFilter sf={sf} field="soCode" kind="so" />}
         title="Design Projects"
         icon="📋"
+        exportSpec={exportSpec}
         count={total}
         noun="project"
         filterNote={filter === 'all' ? undefined : FILTER_LABEL[filter]}

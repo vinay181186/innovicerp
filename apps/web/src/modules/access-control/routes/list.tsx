@@ -36,6 +36,7 @@ import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader } from '@/ui/layout';
 import { useUserAccessList, useUserAccessPage } from '../api';
+import { accessExportSpec } from '../lib/export';
 import { ConfigureAccessModal } from '../components/configure-modal';
 import { accessListColumns, accessRowMenu, accessRowTint } from '../components/access-list-columns';
 
@@ -91,6 +92,17 @@ function AccessControlListPage(): React.JSX.Element {
   useClampPage(page, data?.total, gotoPage);
 
   const columns = useMemo(() => accessListColumns(offset + 1), [offset]);
+  // ADR-310 — the shared Export: every row matching the search / filters / ▾.
+  const exportSpec = useMemo(
+    () =>
+      accessExportSpec({
+        columns,
+        tableKey: TABLE_KEYS.accessControlList,
+        search,
+        sfParam: sf.param,
+      }),
+    [columns, search, sf.param],
+  );
 
   // Arriving from "create user" with ?configure=<id>: open that row's box as
   // soon as the list resolves, so the two screens read as one action. The
@@ -133,6 +145,7 @@ function AccessControlListPage(): React.JSX.Element {
     // column header cannot ride off the top of the screen at the last row.
     <div className="page-fill">
       <ListHeader
+        exportSpec={exportSpec}
         title="Access Control"
         icon="🔒"
         count={data ? total : undefined}

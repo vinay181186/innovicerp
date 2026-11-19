@@ -17,10 +17,16 @@ function buildSearch(q: ListOspWipQuery): string {
   return params.toString();
 }
 
+/** One page of the At-Vendor Register — the list's query and the shared
+ *  Export (ADR-310) both call this, so they send the same URL. */
+export function fetchOspWipPage(query: ListOspWipQuery): Promise<ListOspWipResponse> {
+  return apiFetch<ListOspWipResponse>(`/osp-wip?${buildSearch(query)}`);
+}
+
 export function useOspWip(query: ListOspWipQuery) {
   return useQuery<ListOspWipResponse>({
     queryKey: ospWipKeys.list(query),
-    queryFn: () => apiFetch<ListOspWipResponse>(`/osp-wip?${buildSearch(query)}`),
+    queryFn: () => fetchOspWipPage(query),
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
     placeholderData: (prev) => prev,

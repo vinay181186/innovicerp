@@ -30,6 +30,7 @@ import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useStoreTransactionsList } from '../api';
 import { STORE_TXN_SOURCE_LABELS, STORE_TXN_TYPE_LABELS } from '../lib/txn-labels';
 import { STOCK_LEDGER_HIDDEN_COLUMNS, stockLedgerColumns } from './stock-ledger-columns';
+import { stockLedgerExportSpec, withStockLedgerExportValues } from '../lib/export';
 
 export function StockLedger({ tabs }: { tabs?: React.ReactNode }): React.JSX.Element {
   const [searchInput, setSearchInput] = useState('');
@@ -67,7 +68,21 @@ export function StockLedger({ tabs }: { tabs?: React.ReactNode }): React.JSX.Ele
 
   const { data, isLoading, isFetching, isError, error } = useStoreTransactionsList(query);
 
-  const columns = useMemo(() => stockLedgerColumns(pageOffset(page) + 1), [page]);
+  const columns = useMemo(
+    () => withStockLedgerExportValues(stockLedgerColumns(pageOffset(page) + 1)),
+    [page],
+  );
+  // ADR-310 — the shared Export: every movement matching search / Type / Source / column filters.
+  const exportSpec = useMemo(
+    () =>
+      stockLedgerExportSpec({
+        columns,
+        tableKey: TABLE_KEYS.stockLedger,
+        defaultHidden: [...STOCK_LEDGER_HIDDEN_COLUMNS],
+        query: { search, txnType, sourceType, sf: sf.param },
+      }),
+    [columns, search, txnType, sourceType, sf.param],
+  );
   const rows = data?.items ?? [];
 
   const total = data?.total ?? 0;
@@ -81,6 +96,7 @@ export function StockLedger({ tabs }: { tabs?: React.ReactNode }): React.JSX.Ele
       <ListHeader
         orderFilter={<OrderSfFilter sf={sf} field="soCode" />}
         title="Stock Ledger"
+        exportSpec={exportSpec}
         icon="📦"
         count={data ? total : undefined}
         noun="movement"

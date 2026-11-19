@@ -33,13 +33,19 @@ function toQueryString(q: ListVendorsQuery): string {
   return params.toString();
 }
 
+/** One page of the list — the list hook's fetcher, also used by the shared
+ *  Export (ADR-310). */
+export function fetchVendorsPage(q: ListVendorsQuery): Promise<ListVendorsResponse> {
+  return apiFetch<ListVendorsResponse>(`/vendors?${toQueryString(q)}`);
+}
+
 export function useVendorsList(
   query: ListVendorsQuery,
   options?: Omit<UseQueryOptions<ListVendorsResponse>, 'queryKey' | 'queryFn'>,
 ) {
   return useQuery<ListVendorsResponse>({
     queryKey: vendorsKeys.list(query),
-    queryFn: () => apiFetch<ListVendorsResponse>(`/vendors?${toQueryString(query)}`),
+    queryFn: () => fetchVendorsPage(query),
     placeholderData: (prev) => prev,
     ...options,
   });

@@ -33,13 +33,18 @@ function toQueryString(q: ListClientsQuery): string {
   return params.toString();
 }
 
+/** One page of the list — the hook below and the list's Export (ADR-310) both call it. */
+export function fetchClientsPage(query: ListClientsQuery): Promise<ListClientsResponse> {
+  return apiFetch<ListClientsResponse>(`/clients?${toQueryString(query)}`);
+}
+
 export function useClientsList(
   query: ListClientsQuery,
   options?: Omit<UseQueryOptions<ListClientsResponse>, 'queryKey' | 'queryFn'>,
 ) {
   return useQuery<ListClientsResponse>({
     queryKey: clientsKeys.list(query),
-    queryFn: () => apiFetch<ListClientsResponse>(`/clients?${toQueryString(query)}`),
+    queryFn: () => fetchClientsPage(query),
     placeholderData: (prev) => prev,
     ...options,
   });

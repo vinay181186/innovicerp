@@ -31,11 +31,18 @@ function buildSearch(q: ListPartyStockLedgerQuery): string {
   return params.toString();
 }
 
+/** One page of the Customer Material Stock Ledger — the list's query and the
+ *  shared Export (ADR-310) both call this, so they send the same URL. */
+export function fetchPartyStockLedgerPage(
+  query: ListPartyStockLedgerQuery,
+): Promise<ListPartyStockLedgerResponse> {
+  return apiFetch<ListPartyStockLedgerResponse>(`/party-stock-ledger?${buildSearch(query)}`);
+}
+
 export function usePartyStockLedgerList(query: ListPartyStockLedgerQuery) {
   return useQuery<ListPartyStockLedgerResponse>({
     queryKey: partyStockLedgerKeys.list(query),
-    queryFn: () =>
-      apiFetch<ListPartyStockLedgerResponse>(`/party-stock-ledger?${buildSearch(query)}`),
+    queryFn: () => fetchPartyStockLedgerPage(query),
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
     placeholderData: (prev) => prev,

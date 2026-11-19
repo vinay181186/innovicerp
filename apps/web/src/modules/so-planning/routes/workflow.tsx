@@ -31,7 +31,7 @@
 
 import { useQueryClient } from '@tanstack/react-query';
 import { createRoute, useNavigate } from '@tanstack/react-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -45,6 +45,8 @@ import { usePlan } from '@/modules/plans/api';
 import { soPlanningKeys, usePlanningLineList } from '../api';
 import { EditPlanModal } from '../components/edit-plan-modal';
 import { LineList } from '../components/line-list';
+import { lineListColumns } from '../components/line-list-columns';
+import { planningLineExportSpec, withPlanningLineExportValues } from '../lib/export';
 import { OrderDetail } from '../components/order-detail';
 import { type ModalState, type SourceFilter, sourceNoun } from '../components/planning-shared';
 
@@ -171,6 +173,25 @@ function PlanningWorkflowPage(): JSX.Element {
   const shownOffset = useRef(pageOffset(page));
   if (!lineList.isPlaceholderData) shownOffset.current = pageOffset(page);
   const total = lineList.data?.total ?? 0;
+  // ADR-310 — the shared Export: every open line matching source / search /
+  // column filters (the same query the list sends). Only while the list shows.
+  const exportSpec = useMemo(
+    () =>
+      soId
+        ? undefined
+        : planningLineExportSpec({
+            columns: withPlanningLineExportValues(lineListColumns(src, 1)),
+            tableKey: TABLE_KEYS.planningLineList,
+            query: {
+              src: src === 'all' ? undefined : src,
+              search: searchTerm || undefined,
+              sf: sf.param,
+              grnPlanPending,
+            },
+            sourceLabel: src === 'all' ? undefined : src === 'jw' ? 'JWSO' : 'SO',
+          }),
+    [soId, src, searchTerm, sf.param, grnPlanPending],
+  );
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
   // VIEW was removed sees the no-access panel, not the page. `eff` is undefined
@@ -214,6 +235,7 @@ function PlanningWorkflowPage(): JSX.Element {
             onSearch={setSoSearch}
             searchPlaceholder="Search SO / JWSO No., POL, item code or name, customer, RC, PRO, JC…"
             updating={lineList.isFetching && !lineList.isLoading}
+            exportSpec={exportSpec}
             filters={
               <>
                 <select

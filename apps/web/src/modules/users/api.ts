@@ -29,13 +29,19 @@ function toQueryString(q: ListUsersQuery): string {
   return params.toString();
 }
 
+/** One page of the list — the list hook's fetcher, also used by the shared
+ *  Export (ADR-310). */
+export function fetchUsersPage(q: ListUsersQuery): Promise<ListUsersResponse> {
+  return apiFetch<ListUsersResponse>(`/users?${toQueryString(q)}`);
+}
+
 export function useUsersList(
   query: ListUsersQuery,
   options?: Omit<UseQueryOptions<ListUsersResponse>, 'queryKey' | 'queryFn'>,
 ) {
   return useQuery<ListUsersResponse>({
     queryKey: usersKeys.list(query),
-    queryFn: () => apiFetch<ListUsersResponse>(`/users?${toQueryString(query)}`),
+    queryFn: () => fetchUsersPage(query),
     placeholderData: (prev) => prev,
     ...options,
   });

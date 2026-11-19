@@ -61,11 +61,17 @@ function toQuery(q: ListTasksQuery): string {
 
 // ── Reads ──
 
+/** One page of the Task Board — the list's query and the shared Export
+ *  (ADR-310) both call this, so they send the same URL. */
+export function fetchTasksPage(query: ListTasksQuery): Promise<ListTasksResponse> {
+  return apiFetch<ListTasksResponse>(`/tasks${toQuery(query)}`);
+}
+
 export function useTaskList(query: ListTasksQuery, enabled = true) {
   return useQuery<ListTasksResponse>({
     enabled,
     queryKey: taskKeys.list(query),
-    queryFn: () => apiFetch<ListTasksResponse>(`/tasks${toQuery(query)}`),
+    queryFn: () => fetchTasksPage(query),
     staleTime: 15_000,
     refetchInterval: LIVE_FALLBACK_POLL_MS,
     // Switching a tab or a filter keeps the board on screen (with the

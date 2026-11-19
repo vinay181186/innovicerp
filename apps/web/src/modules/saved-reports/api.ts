@@ -34,17 +34,21 @@ export function useSourceCatalog() {
 }
 
 /** One page of Saved Reports (ADR-201): search + Sort & Filter on the server. */
+/** One page of the list — the list hook's fetcher, also used by the shared
+ *  Export (ADR-310). */
+export function fetchSavedReportsPage(q: ListSavedReportsQuery): Promise<ListSavedReportsResponse> {
+  const params = new URLSearchParams();
+  if (q.search) params.set('search', q.search);
+  if (q.sf) params.set('sf', q.sf);
+  if (q.limit !== undefined) params.set('limit', String(q.limit));
+  if (q.offset !== undefined) params.set('offset', String(q.offset));
+  return apiFetch<ListSavedReportsResponse>(`/saved-reports?${params.toString()}`);
+}
+
 export function useSavedReportsList(q: ListSavedReportsQuery) {
   return useQuery<ListSavedReportsResponse>({
     queryKey: savedReportsKeys.page(q),
-    queryFn: () => {
-      const params = new URLSearchParams();
-      if (q.search) params.set('search', q.search);
-      if (q.sf) params.set('sf', q.sf);
-      if (q.limit !== undefined) params.set('limit', String(q.limit));
-      if (q.offset !== undefined) params.set('offset', String(q.offset));
-      return apiFetch<ListSavedReportsResponse>(`/saved-reports?${params.toString()}`);
-    },
+    queryFn: () => fetchSavedReportsPage(q),
     placeholderData: (prev) => prev,
   });
 }

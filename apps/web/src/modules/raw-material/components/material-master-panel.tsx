@@ -29,6 +29,7 @@ import { ConfirmDialog, useToast } from '@/ui/feedback';
 import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { MaterialRowModal } from './material-row-modal';
+import { materialExportSpec, type MaterialExportFetcher } from '../lib/export';
 import type { MaterialStatusFilter } from './use-material-master-paging';
 
 const ACTIVE_OPTIONS = [
@@ -95,6 +96,8 @@ export interface MaterialMasterPanelProps {
   onDownloadTemplate: () => void;
   /** Parses + posts the whole sheet in ONE request; resolves to the status line. */
   onImportFile: (file: File) => Promise<string>;
+  /** ADR-310 — one page of this tab's list under the SAME query (lib/export.ts). */
+  exportFetchPage: MaterialExportFetcher;
   /** The page's Grade | Size tab strip, drawn inside the one header band. */
   tabs?: React.ReactNode;
 }
@@ -233,6 +236,20 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
     ],
     [noun, pendingIds, firstRowNo],
   );
+  // ADR-310 — the shared Export: every row matching the search / filters / ▾.
+  const exportSpec = useMemo(
+    () =>
+      materialExportSpec({
+        noun,
+        columns,
+        tableKey,
+        search: searchInput.trim(),
+        status,
+        sfParam: sf.param,
+        fetchPage: props.exportFetchPage,
+      }),
+    [noun, columns, tableKey, searchInput, status, sf.param, props.exportFetchPage],
+  );
 
   // Excel import — the WHOLE sheet goes in one request, and the list reloads
   // once at the end (never a per-row loop; that ran at ~1 row/second live).
@@ -260,6 +277,7 @@ export function MaterialMasterPanel(props: MaterialMasterPanelProps): React.JSX.
           Grade | Size tabs in the band. */}
       <ListHeader
         title="Raw Material Master"
+        exportSpec={exportSpec}
         icon="▬"
         count={total}
         noun={noun.toLowerCase()}

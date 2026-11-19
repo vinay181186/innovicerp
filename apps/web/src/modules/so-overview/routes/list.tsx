@@ -32,6 +32,7 @@ import {
   soOverviewColumns,
   soRowTint,
 } from '../components/so-overview-columns';
+import { soOverviewExportSpec, withSoOverviewExportValues } from '../lib/export';
 
 const searchSchema = z.object({
   search: z.string().optional(),
@@ -131,7 +132,21 @@ function SoOverviewPage(): React.JSX.Element {
   const rows = data?.rows ?? [];
   const total = data?.total ?? 0;
   const firstRowNo = pageOffset(page) + 1;
-  const columns = useMemo(() => soOverviewColumns(firstRowNo), [firstRowNo]);
+  const columns = useMemo(
+    () => withSoOverviewExportValues(soOverviewColumns(firstRowNo)),
+    [firstRowNo],
+  );
+  // ADR-310 — the shared Export: every SO matching the search / status / column filters.
+  const exportSpec = useMemo(
+    () =>
+      soOverviewExportSpec({
+        columns,
+        tableKey: TABLE_KEYS.soOverview,
+        defaultHidden: SO_OVERVIEW_DEFAULT_HIDDEN,
+        query: { search, status, overall, sf: sf.param },
+      }),
+    [columns, search, status, overall, sf.param],
+  );
   const setOverall = (next: OverallStatusFilter): void => {
     void routeNavigate({
       search: (prev) => ({
@@ -154,6 +169,7 @@ function SoOverviewPage(): React.JSX.Element {
           in the filter bar. */}
       <ListHeader
         orderFilter={<OrderSfFilter sf={sf} field="code" kind="so" />}
+        exportSpec={exportSpec}
         title="SO Overview"
         icon="📊"
         count={data ? total : undefined}

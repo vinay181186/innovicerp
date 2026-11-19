@@ -32,6 +32,11 @@ import {
   stockRowMenu,
 } from '../components/fix-list-columns';
 import { SetStockRevDialog } from '../components/set-stock-rev-dialog';
+import {
+  fixListExportSpec,
+  withFixLineExportValues,
+  withFixRouteCardExportValues,
+} from '../lib/export';
 
 export const drawingRevFixListRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -80,6 +85,38 @@ function DrawingRevFixListPage(): React.JSX.Element {
   }
 
   const total = routeCards.length + lines.length + stock.length;
+  // ADR-310 — the shared Export: the open tab's rows after the search box (the
+  // fix list is one unpaged read). Same columns + tableKey as that tab's table.
+  const rcCols = withFixRouteCardExportValues(routeCardColumns(canEditRc));
+  const lineCols = withFixLineExportValues(lineColumns());
+  const stockCols = stockColumns();
+  const exportSpec =
+    tab === 'route-cards'
+      ? fixListExportSpec({
+          tabLabel: 'Route Cards without Drawing Rev',
+          tableKey: TABLE_KEYS.drawingRevFixRouteCards,
+          columns: rcCols,
+          rows: shown(routeCards),
+          rowKey: (r) => r.routeCardId,
+          search: term,
+        })
+      : tab === 'lines'
+        ? fixListExportSpec({
+            tabLabel: 'Order Lines to check',
+            tableKey: TABLE_KEYS.drawingRevFixLines,
+            columns: lineCols,
+            rows: shown(lines),
+            rowKey: (r) => r.lineId,
+            search: term,
+          })
+        : fixListExportSpec({
+            tabLabel: 'Old Stock without Drawing Rev',
+            tableKey: TABLE_KEYS.drawingRevFixStock,
+            columns: stockCols,
+            rows: shown(stock),
+            rowKey: (r) => r.itemId,
+            search: term,
+          });
 
   return (
     <div className="page-fill">
@@ -93,6 +130,7 @@ function DrawingRevFixListPage(): React.JSX.Element {
         onSearch={setTerm}
         searchPlaceholder="Search this tab: RC No., item, SO, customer, Drawing Rev…"
         updating={isFetching && !isLoading}
+        exportSpec={exportSpec}
       />
       <TabStrip
         label="Drawing Rev Fix List"
@@ -112,7 +150,7 @@ function DrawingRevFixListPage(): React.JSX.Element {
         {tab === 'route-cards' ? (
           <DataTable
             tableKey={TABLE_KEYS.drawingRevFixRouteCards}
-            columns={routeCardColumns(canEditRc)}
+            columns={rcCols}
             rows={shown(routeCards)}
             loading={isLoading}
             rowKey={(r) => r.routeCardId}
@@ -125,7 +163,7 @@ function DrawingRevFixListPage(): React.JSX.Element {
         ) : tab === 'lines' ? (
           <DataTable
             tableKey={TABLE_KEYS.drawingRevFixLines}
-            columns={lineColumns()}
+            columns={lineCols}
             rows={shown(lines)}
             loading={isLoading}
             rowKey={(r) => r.lineId}
@@ -138,7 +176,7 @@ function DrawingRevFixListPage(): React.JSX.Element {
         ) : (
           <DataTable
             tableKey={TABLE_KEYS.drawingRevFixStock}
-            columns={stockColumns()}
+            columns={stockCols}
             rows={shown(stock)}
             loading={isLoading}
             rowKey={(r) => r.itemId}

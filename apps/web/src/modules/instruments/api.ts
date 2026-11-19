@@ -47,10 +47,17 @@ function buildSearch(q: ListInstrumentsQuery): string {
   return p.toString();
 }
 
+/** One page of the list — the hook below and the list's Export (ADR-310) both call it. */
+export function fetchInstrumentsPage(
+  query: ListInstrumentsQuery,
+): Promise<ListInstrumentsResponse> {
+  return apiFetch<ListInstrumentsResponse>(`/instruments?${buildSearch(query)}`);
+}
+
 export function useInstrumentsList(query: ListInstrumentsQuery, enabled = true) {
   return useQuery<ListInstrumentsResponse>({
     queryKey: instrumentsKeys.list(query),
-    queryFn: () => apiFetch<ListInstrumentsResponse>(`/instruments?${buildSearch(query)}`),
+    queryFn: () => fetchInstrumentsPage(query),
     placeholderData: (prev) => prev,
     enabled,
   });

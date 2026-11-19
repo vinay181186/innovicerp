@@ -21,6 +21,7 @@ import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Banner, ConfirmDialog, useToast } from '@/ui/feedback';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useDeleteMlBom, useMakeDefaultMlBom, useMlBomsList } from '../api';
+import { mlBomExportSpec } from '../lib/export';
 import { downloadMlBomTemplate } from '../components/ml-bom-import-template';
 import { mlBomListColumns } from '../components/ml-bom-list-columns';
 import { useMlBomPrint } from '../components/use-ml-bom-print';
@@ -99,6 +100,11 @@ function MlBomsListPage(): React.JSX.Element {
   const [templateBusy, setTemplateBusy] = useState(false);
 
   const columns = useMemo(() => mlBomListColumns(offset), [offset]);
+  // ADR-310 — the shared Export: every row matching the search / filters / ▾.
+  const exportSpec = useMemo(
+    () => mlBomExportSpec({ columns, tableKey: TABLE_KEYS.mlBomList, search, sfParam: sf.param }),
+    [columns, search, sf.param],
+  );
 
   if (eff && !perms.view) {
     return (
@@ -149,6 +155,7 @@ function MlBomsListPage(): React.JSX.Element {
   return (
     <div className="page-fill">
       <ListHeader
+        exportSpec={exportSpec}
         title="Multi-Level BOM"
         count={total}
         noun="BOM"

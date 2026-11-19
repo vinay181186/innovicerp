@@ -32,6 +32,7 @@ import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useDesignIssuesAll } from '../api';
+import { designIssueExportSpec, withDesignIssueExportValues } from '../lib/export';
 
 type FilterKey = 'all' | 'open' | 'resolved' | 'critical';
 
@@ -128,7 +129,7 @@ function DesignIssuesAllPage(): React.JSX.Element {
   }
 
   const rows = data?.items ?? [];
-  const columns: DataTableColumn<DesignIssueListItem>[] = [
+  const columns: DataTableColumn<DesignIssueListItem>[] = withDesignIssueExportValues([
     srNoColumn<DesignIssueListItem>(offset + 1),
     {
       id: 'issue',
@@ -215,7 +216,17 @@ function DesignIssuesAllPage(): React.JSX.Element {
         return <span style={{ color: stale ? 'var(--red)' : 'var(--text3)' }}>{i.ageDays}d</span>;
       },
     },
-  ];
+  ]);
+  // ADR-310 — the shared Export: every issue matching the search / filter
+  // (the same query as the list). Built after the access return, no hook.
+  const exportSpec = designIssueExportSpec({
+    columns,
+    tableKey: TABLE_KEYS.designIssues,
+    search: term,
+    filter,
+    filterLabel: filter === 'all' ? undefined : FILTER_LABEL[filter],
+    sfParam: sf.param,
+  });
 
   return (
     // `page-fill` (ADR-202): the TABLE is this page's only scrollbar, so the
@@ -231,6 +242,7 @@ function DesignIssuesAllPage(): React.JSX.Element {
         onSearch={setSearch}
         searchPlaceholder="Search issue, part, assigned to, project…"
         updating={isFetching && !isLoading}
+        exportSpec={exportSpec}
         filters={
           <Select
             aria-label="Issue filter"

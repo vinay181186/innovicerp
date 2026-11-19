@@ -40,10 +40,18 @@ function buildQs(q: ListDesignTrackerQuery): string {
   return params.toString();
 }
 
+/** One page of GET /design-tracker — the list hook's fetcher, also used by
+ *  the shared Export (ADR-310). */
+export function fetchDesignTrackerPage(
+  query: ListDesignTrackerQuery,
+): Promise<ListDesignTrackerResponse> {
+  return apiFetch<ListDesignTrackerResponse>(`/design-tracker?${buildQs(query)}`);
+}
+
 export function useDesignTrackerList(query: ListDesignTrackerQuery) {
   return useQuery<ListDesignTrackerResponse>({
     queryKey: designTrackerKeys.list(query),
-    queryFn: () => apiFetch<ListDesignTrackerResponse>(`/design-tracker?${buildQs(query)}`),
+    queryFn: () => fetchDesignTrackerPage(query),
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
     placeholderData: (prev) => prev,

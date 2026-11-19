@@ -51,6 +51,7 @@ import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useCostCentersList, useSoftDeleteCostCenter } from '../api';
+import { ccExportSpec } from '../lib/export';
 
 const PAGE_SIZE = 25;
 
@@ -233,6 +234,12 @@ function CostCentersListPage(): React.JSX.Element {
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
   // VIEW was removed sees the no-access panel, not the page. `eff` is undefined
   // only while access is still loading — don't block then.
+  // ADR-310 — the shared Export: every row matching the search / filters / ▾.
+  const exportSpec = useMemo(
+    () => ccExportSpec({ columns, tableKey: TABLE_KEYS.costCentersList, query }),
+    [columns, query],
+  );
+
   if (eff && !perms.view) {
     return <PageState as="page" state="noaccess" />;
   }
@@ -245,6 +252,7 @@ function CostCentersListPage(): React.JSX.Element {
           filter bar (search, the three filters, Clear), stay put while the
           rows scroll underneath. */}
       <ListHeader
+        exportSpec={exportSpec}
         title="Cost Centre Master"
         // Count comes from the list response's `total` — the only aggregate
         // GET /cost-centers returns.

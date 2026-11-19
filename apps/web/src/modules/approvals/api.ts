@@ -36,16 +36,20 @@ export function useWaitingApprovals(opts: { enabled?: boolean } = {}) {
 }
 
 /** Past decisions (Approved / Rejected), one 25-row page from the server. */
+export function fetchApprovalHistoryPage(
+  q: ApprovalHistoryListQuery,
+): Promise<ApprovalHistoryListResponse> {
+  const p = new URLSearchParams();
+  for (const [k, v] of Object.entries(q)) {
+    if (v !== undefined && v !== '') p.set(k, String(v));
+  }
+  return apiFetch<ApprovalHistoryListResponse>(`/approvals/history?${p.toString()}`);
+}
+
 export function useApprovalHistory(q: ApprovalHistoryListQuery) {
   return useQuery<ApprovalHistoryListResponse>({
     queryKey: approvalsKeys.history(q),
-    queryFn: () => {
-      const p = new URLSearchParams();
-      for (const [k, v] of Object.entries(q)) {
-        if (v !== undefined && v !== '') p.set(k, String(v));
-      }
-      return apiFetch<ApprovalHistoryListResponse>(`/approvals/history?${p.toString()}`);
-    },
+    queryFn: () => fetchApprovalHistoryPage(q),
     placeholderData: (prev) => prev,
     refetchInterval: LIVE_FALLBACK_POLL_MS,
   });

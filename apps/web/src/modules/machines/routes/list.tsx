@@ -60,6 +60,7 @@ import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { TabStrip } from '@/ui/navigation';
 import { useMachineGroupLookup, useMachinesList } from '../api';
+import { machineExportSpec } from '../lib/export';
 import { MachineGroupTab } from '../components/machine-group-tab';
 
 const PAGE_SIZE = 25;
@@ -319,6 +320,17 @@ function MachinesTab({ tabs }: { tabs: React.ReactNode }): React.JSX.Element {
     ],
     [currentPage, priceHidden, priceSortable, groupLookup],
   );
+  // ADR-310 — the shared Export: every row matching the search / filters / ▾.
+  const exportSpec = useMemo(
+    () =>
+      machineExportSpec({
+        columns,
+        tableKey: TABLE_KEYS.machinesList,
+        query,
+        hideMoney: priceHidden || !perms.price,
+      }),
+    [columns, query, priceHidden, perms.price],
+  );
 
   // The page title, the tab strip and the "Hide page" access gate all come from
   // the shell above; the title sits in this band so the page keeps ONE header.
@@ -330,6 +342,7 @@ function MachinesTab({ tabs }: { tabs: React.ReactNode }): React.JSX.Element {
       {/* The frozen header band: title, count, search, the status filter and
           the primary action stay put while the rows scroll underneath. */}
       <ListHeader
+        exportSpec={exportSpec}
         title="Machine Master"
         icon="⚙"
         // Count comes from the list response's `total` — the only aggregate

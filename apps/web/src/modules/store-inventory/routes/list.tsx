@@ -37,6 +37,7 @@ import { ManualReceiptModal } from '../components/manual-receipt-modal';
 import { ReorderModal } from '../components/reorder-modal';
 import { ReservationDrilldown } from '../components/reservation-drilldown';
 import { storeInventoryColumns } from '../components/store-inventory-columns';
+import { storeInventoryExportSpec, withStoreInventoryExportValues } from '../lib/export';
 import { StockLedger } from '@/modules/store-transactions/components/stock-ledger';
 import { TabStrip } from '@/ui/navigation';
 
@@ -116,12 +117,29 @@ function StoreInventoryPage(): React.JSX.Element {
   const firstRowNo = pageOffset(page) + 1;
   const columns = useMemo(
     () =>
-      storeInventoryColumns({
-        onReservedClick: (row) => setReservedRow(row),
-        canOpenItem,
-        firstRowNo,
-      }),
+      withStoreInventoryExportValues(
+        storeInventoryColumns({
+          onReservedClick: (row) => setReservedRow(row),
+          canOpenItem,
+          firstRowNo,
+        }),
+      ),
     [canOpenItem, firstRowNo],
+  );
+  // ADR-310 — the shared Export: every row matching Stock filter / search / column filters.
+  const exportSpec = useMemo(
+    () =>
+      storeInventoryExportSpec({
+        columns,
+        tableKey: TABLE_KEYS.storeInventory,
+        defaultHidden: ['material'],
+        filter,
+        filterLabel:
+          filter === 'below' ? 'below reorder' : filter === 'zero' ? 'zero stock' : undefined,
+        search: term,
+        sfParam: sf.param,
+      }),
+    [columns, filter, term, sf.param],
   );
 
   // Inventory | Stock Ledger tabs (Stock Ledger is the former standalone screen).
@@ -150,6 +168,7 @@ function StoreInventoryPage(): React.JSX.Element {
               Receipt, then the filter bar (search · stock filter with counts ·
               Clear). No tile row (owner 2026-11-03). */}
           <ListHeader
+            exportSpec={exportSpec}
             title="Store Inventory"
             icon="📦"
             // One row per Item + Drawing Rev bucket, so the total counts
