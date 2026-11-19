@@ -6,6 +6,10 @@ import { statusText } from '@/lib/status-text';
 import type { DataTableColumn, ListExportSpec } from '@/ui/data';
 import { fetchStockCountsPage } from '../api';
 
+/** Columns the Stock Count table hides until the user shows them (one list for
+ *  the table and its Export). */
+export const STOCK_COUNT_HIDDEN_COLUMNS = ['created_on'];
+
 export interface StockCountExportArgs {
   columns: DataTableColumn<StockCount>[];
   tableKey: string;
@@ -22,6 +26,7 @@ export function stockCountExportSpec(a: StockCountExportArgs): ListExportSpec<St
     a.sfParam ? 'column sort / filter applied' : null,
   ].filter((w): w is string => w !== null);
   return {
+    defaultHidden: STOCK_COUNT_HIDDEN_COLUMNS,
     fileName: 'Stock Count',
     tableKey: a.tableKey,
     columns: a.columns,

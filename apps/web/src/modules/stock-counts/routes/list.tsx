@@ -27,7 +27,7 @@ import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useStockCounts } from '../api';
-import { stockCountExportSpec } from '../lib/export';
+import { STOCK_COUNT_HIDDEN_COLUMNS, stockCountExportSpec } from '../lib/export';
 
 // Sort & Filter tick lists (ADR-200): the stored code + the label shown.
 const PURPOSE_OPTIONS = Object.entries(STOCK_COUNT_PURPOSE_LABELS).map(([value, label]) => ({
@@ -267,7 +267,7 @@ function StockCountsListPage(): React.JSX.Element {
           <DataTable
             tableKey={TABLE_KEYS.stockCounts}
             sortFilterServer={sf}
-            defaultHidden={['created_on']}
+            defaultHidden={STOCK_COUNT_HIDDEN_COLUMNS}
             columns={columns}
             rows={rows}
             loading={isLoading}

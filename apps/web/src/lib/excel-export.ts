@@ -112,7 +112,12 @@ export async function postExportLog(
   input: Omit<ListExportLogInput, 'capped'> & { capped?: boolean },
 ): Promise<void> {
   try {
-    await apiFetch('/activity-log/export', { method: 'POST', json: { capped: false, ...input } });
+    await apiFetch('/activity-log/export', {
+      method: 'POST',
+      json: { capped: false, ...input },
+      // The file is made; the user may leave the page at once — still send it.
+      keepalive: true,
+    });
   } catch {
     // The file is already with the user; a lost log line is not their problem.
   }
