@@ -1,5 +1,6 @@
 import type { EffectiveAccess, UserRole } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
+import { withAfterCommit } from './after-commit';
 import { db } from './client';
 
 export interface AuthContext {
@@ -80,12 +81,23 @@ export async function withUserContext<T>(
     role: user.role,
     email: user.email,
   });
-  return db.transaction(async (tx) => {
-    if ((user as AuthContext & { [READ_ONLY]?: true })[READ_ONLY]) {
-      await tx.execute(sql`set transaction read only`);
-      await tx.execute(sql`set local statement_timeout = '8s'`);
-    }
-    await tx.execute(sql`select set_config('request.jwt.claims', ${claims}, true)`);
-    return fn(tx);
-  });
+  return withAfterCommit(
+    () =>
+      db.transaction(async (tx) => {
+        if ((user as AuthContext & { [READ_ONLY]?: true })[READ_ONLY]) {
+          await tx.execute(sql`set transaction read only`);
+          await tx.execute(sql`set local statement_timeout = '8s'`);
+        }
+        await tx.execute(sql`select set_config('request.jwt.claims', ${claims}, true)`);
+        return fn(tx);
+      }),
+    afterCommitError,
+  );
+}
+
+/** Lazy logger import: with-user-context must stay loadable without env. */
+function afterCommitError(err: unknown): void {
+  void import('../lib/logger').then(({ logger }) =>
+    logger.warn({ err }, 'after-commit callback failed'),
+  );
 }

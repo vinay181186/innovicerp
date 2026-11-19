@@ -21,6 +21,7 @@
 import type { TaskNoticeKind } from '@innovic/shared';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { taskNotices, userAccess, users } from '../../db/schema';
+import { afterCommit } from '../../db/after-commit';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { personHolds } from '../access-control/users-with-right';
 import { kickPushSender } from '../push/kick';
@@ -148,8 +149,8 @@ export async function recordTaskNotices(
       where: sql`deleted_at IS NULL`,
     })
     .returning({ id: taskNotices.id });
-  // Debounced (~1 s) in the sender; the retry tick covers a kick that fires
-  // before this transaction commits.
-  if (written.length > 0) kickPushSender();
+  // Wake the sender once this transaction has committed, so it sees the rows
+  // (savepoints and Day Log writes included; the 10 s tick is the backstop).
+  if (written.length > 0) afterCommit(kickPushSender);
   return written.length;
 }

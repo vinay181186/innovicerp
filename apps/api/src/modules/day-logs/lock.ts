@@ -7,6 +7,7 @@
 // so they are the lines under the lock.
 
 import { type SQL, sql } from 'drizzle-orm';
+import { withAfterCommit } from '../../db/after-commit';
 import { db } from '../../db/client';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
 import { ConflictError, NotFoundError } from '../../lib/errors';
@@ -34,7 +35,8 @@ function claimsOf(user: AuthContext): SQL {
 
 /** The write transaction. Its first statement must be openDayLocked or
  *  lockEntryDay (they carry the claims). */
-export const dayTx = <T>(fn: (tx: DbTransaction) => Promise<T>): Promise<T> => db.transaction(fn);
+export const dayTx = <T>(fn: (tx: DbTransaction) => Promise<T>): Promise<T> =>
+  withAfterCommit(() => db.transaction(fn));
 
 export interface Locked {
   /** The caller's raw access row (resolveAccess). */
