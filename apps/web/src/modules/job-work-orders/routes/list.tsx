@@ -47,6 +47,7 @@ import { useJobWorkOrdersList } from '../api';
 import { DeleteJwsoModal } from '../components/delete-jwso-modal';
 import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
 import { jwOverdue, jwsoListColumns } from '../components/jwso-list-columns';
+import { jwsoExportSpec, withJwsoExportValues } from '../lib/export-lines';
 
 // 25 rows a page (ADR-201): only the page on screen is loaded; search, the
 // status filter and Sort & Filter (▾) run on the server over every JWSO.
@@ -141,8 +142,22 @@ function JobWorkOrdersListPage(): React.JSX.Element {
   const draftIds = usePendingEditIds('JobWorkOrder');
   const orderPrint = useOrderPrint();
   const columns = useMemo(
-    () => jwsoListColumns(offset + 1, today, draftIds),
+    () => withJwsoExportValues(jwsoListColumns(offset + 1, today, draftIds), draftIds),
     [offset, today, draftIds],
+  );
+  // ADR-310 — the shared Export: every JWSO matching the search / status /
+  // Sort & Filter, the columns the user sees, plus a JWSO Lines sheet.
+  const exportSpec = useMemo(
+    () =>
+      jwsoExportSpec({
+        columns,
+        tableKey: TABLE_KEYS.jwsoList,
+        search: search.search,
+        status: search.status,
+        sfParam: sf.param,
+        hideMoney: !perms.price,
+      }),
+    [columns, search.search, search.status, sf.param, perms.price],
   );
 
   const total = data?.total ?? 0;
@@ -220,6 +235,7 @@ function JobWorkOrdersListPage(): React.JSX.Element {
         onSearch={setSearchInput}
         searchPlaceholder="Search JWSO no., customer, client PO, part, item code…"
         updating={isFetching && !isLoading}
+        exportSpec={exportSpec}
         filters={
           <select
             className="innovic-select"

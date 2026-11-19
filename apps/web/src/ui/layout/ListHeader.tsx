@@ -27,6 +27,7 @@ import type { ReactNode } from 'react';
 import { SearchInput } from '../forms/SearchInput';
 import { useSfSnapshot, useSfStore } from '../data/sort-filter/scope';
 import { HeldFiltersClear } from '../data/sort-filter/HeldFiltersClear';
+import { type AnyListExportSpec, ListExportButton } from '../data/list-export';
 import { HeaderBand } from './header-band';
 
 export interface ListHeaderProps {
@@ -53,6 +54,9 @@ export interface ListHeaderProps {
   updating?: boolean | undefined;
   /** Title-row controls: view toggle, Export, secondary buttons. NOT filters. */
   tools?: ReactNode | undefined;
+  /** ADR-310 — the shared Export: drawn first in the tools slot. A list that
+   *  still passes its own Export button in `tools` must not pass this too. */
+  exportSpec?: AnyListExportSpec | undefined;
   /** Filter-bar controls after the search box: Selects and date boxes. Each
    *  gets the same width (`.list-filterbar` in innovic-theme.css). */
   filters?: ReactNode | undefined;
@@ -82,6 +86,7 @@ export function ListHeader({
   orderFilter,
   updating = false,
   tools,
+  exportSpec,
   filters,
   onClearFilters,
   filtersActive = true,
@@ -127,6 +132,7 @@ export function ListHeader({
       }
       actions={
         <>
+          {exportSpec ? <ListExportButton spec={exportSpec} /> : null}
           {tools}
           {updating ? (
             <span

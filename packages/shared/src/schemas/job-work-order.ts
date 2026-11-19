@@ -430,6 +430,8 @@ export const jobWorkOrderLineListRowSchema = z.object({
   /** The JWSO line's drawing revision (rides in the Item Code cell). */
   itemRevision: z.string().nullable(),
   itemName: z.string().nullable(),
+  /** ADR-310: the line's Customer RM — the `<item>-RM` item code (null when none). */
+  rmItemCode: z.string().nullable().default(null),
   orderQty: z.number().int().nonnegative(),
   /** Σ effective JC qty of this line's Job Cards (lib/jc-effective-qty). */
   jcQty: z.number().int().nonnegative(),

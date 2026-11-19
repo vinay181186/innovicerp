@@ -3,6 +3,7 @@ import { listSavedReportsQuerySchema } from '@innovic/shared';
 import { z } from 'zod';
 import { buildWorkbookBuffer, XLSX_CONTENT_TYPE, xlsxFilename } from '../../lib/excel';
 import { AuthenticationError } from '../../lib/errors';
+import { logExportSafely } from '../activity-log/export-log';
 import {
   adHocSpecSchema,
   createSavedReportInputSchema,
@@ -77,6 +78,12 @@ export async function savedReportsRoutes(app: FastifyInstance): Promise<void> {
       generatedBy: req.user.email,
       generatedAt: result.generatedAt,
     });
+    // ADR-310 — one EXPORT row; never blocks or fails the download.
+    void logExportSafely(
+      { listTitle: result.title, rowCount: result.rows.length },
+      req.user,
+      req.log,
+    );
     reply
       .type(XLSX_CONTENT_TYPE)
       .header(
@@ -101,6 +108,12 @@ export async function savedReportsRoutes(app: FastifyInstance): Promise<void> {
       generatedBy: req.user.email,
       generatedAt: result.generatedAt,
     });
+    // ADR-310 — one EXPORT row; never blocks or fails the download.
+    void logExportSafely(
+      { listTitle: `Report Preview · ${result.sourceKey}`, rowCount: result.rows.length },
+      req.user,
+      req.log,
+    );
     reply
       .type(XLSX_CONTENT_TYPE)
       .header(

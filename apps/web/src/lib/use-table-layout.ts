@@ -147,6 +147,42 @@ function toSaveInput(state: TableLayoutState, first: string | undefined): SaveTa
   };
 }
 
+/**
+ * The columns the user SEES on a table, in their order (ADR-310, the shared
+ * list Export): the saved layout (or the code's defaults when never saved)
+ * fitted onto today's columns, minus the hidden ones. Not the fit engine's
+ * on-screen set — a column that only fell off for want of width still counts.
+ */
+export function visibleColumnIds(
+  saved: TableLayout | null | undefined,
+  ids: string[],
+  defaults: TableLayoutDefaults,
+): string[] {
+  const base: TableLayoutState =
+    saved && saved.columns.length > 0
+      ? fromSaved(saved.columns)
+      : { order: ids, pins: defaults.pins ?? [], hidden: defaults.hidden ?? [] };
+  const state = normalize(base, ids, defaults);
+  return state.order.filter((k) => !state.hidden.includes(k));
+}
+
+/**
+ * Read-only: a function that returns the logged-in user's saved layout for a
+ * table from the cache the table itself filled (no request, never writes).
+ * `undefined` = not read yet / nobody signed in; `null` = layouts API absent.
+ */
+export function useTableLayoutReader(): (tableKey: string) => TableLayout | null | undefined {
+  const qc = useQueryClient();
+  const userId = useSession().data?.id;
+  return useCallback(
+    (tableKey: string) =>
+      userId === undefined
+        ? undefined
+        : qc.getQueryData<TableLayout | null>(tableLayoutQueryKey(userId, tableKey)),
+    [qc, userId],
+  );
+}
+
 type Pending = { kind: 'put'; state: TableLayoutState } | { kind: 'delete' };
 
 export function useTableLayout(

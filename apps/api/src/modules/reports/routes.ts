@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { buildWorkbookBuffer, XLSX_CONTENT_TYPE, xlsxFilename } from '../../lib/excel';
 import { AuthenticationError } from '../../lib/errors';
+import { logExportSafely, reportFilterSummary } from '../activity-log/export-log';
 import * as service from './service';
 
 const slugParamSchema = z.object({ slug: z.string().min(1).max(64) });
@@ -44,6 +45,16 @@ export async function reportsRoutes(app: FastifyInstance): Promise<void> {
       generatedBy: req.user.email,
       generatedAt: result.generatedAt,
     });
+    // ADR-310 — one EXPORT row; never blocks or fails the download.
+    void logExportSafely(
+      {
+        listTitle: result.title,
+        rowCount: result.rows.length,
+        filterSummary: reportFilterSummary(result.filters),
+      },
+      req.user,
+      req.log,
+    );
     reply
       .type(XLSX_CONTENT_TYPE)
       .header(

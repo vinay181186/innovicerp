@@ -63,6 +63,8 @@ export const ActivityAction = {
   Payment: 'PAYMENT',
   /** A counted / drafted figure posted to the books (stock count). */
   Post: 'POST',
+  /** ADR-310: a list or report downloaded to Excel (read-only; who took what). */
+  Export: 'EXPORT',
 } as const;
 export type ActivityAction = (typeof ActivityAction)[keyof typeof ActivityAction];
 export const ACTIVITY_ACTIONS = Object.values(ActivityAction) as ActivityAction[];
@@ -95,6 +97,7 @@ export const ACTIVITY_ACTION_LABEL: Record<ActivityAction, string> = {
   SPLIT: 'Split',
   PAYMENT: 'Payment recorded',
   POST: 'Posted',
+  EXPORT: 'Exported',
 };
 
 /** Actions that are refused without a reason (requirement §3.1 "Why"). */
