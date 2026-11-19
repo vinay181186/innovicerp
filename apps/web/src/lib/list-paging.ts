@@ -58,11 +58,28 @@ export async function fetchAllPages<T>(
   fetchPage: (limit: number, offset: number) => Promise<{ items: T[]; total: number }>,
   chunk = 200,
 ): Promise<T[]> {
+  return (await fetchAllPagesCounted(fetchPage, chunk)).items;
+}
+
+/**
+ * fetchAllPages plus the server's own total (rows matching the filter, before
+ * the cap) and a progress callback after every page — for the shared list
+ * Export (ADR-310), which says "first 10,000 of N" and counts up on its button.
+ */
+export async function fetchAllPagesCounted<T>(
+  fetchPage: (limit: number, offset: number) => Promise<{ items: T[]; total: number }>,
+  chunk = 200,
+  onProgress?: (fetched: number, total: number) => void,
+  cap = EXPORT_CAP,
+): Promise<{ items: T[]; total: number }> {
   const out: T[] = [];
-  for (let offset = 0; offset < EXPORT_CAP; offset += chunk) {
+  let total = 0;
+  for (let offset = 0; offset < cap; offset += chunk) {
     const res = await fetchPage(chunk, offset);
+    total = res.total;
     out.push(...res.items);
+    onProgress?.(Math.min(out.length, cap), total);
     if (res.items.length < chunk || out.length >= res.total) break;
   }
-  return out.slice(0, EXPORT_CAP);
+  return { items: out.slice(0, cap), total: Math.max(total, out.length) };
 }

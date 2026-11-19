@@ -108,6 +108,14 @@ export interface DataTableColumn<T> {
    * rendered text). Give it where the shown text is not the useful value.
    */
   filterValue?: ((row: T) => string | number | Date | null | undefined) | undefined;
+  /**
+   * The shared list Export (ADR-310): this cell in the Excel file. Without it
+   * the export writes what the cell SHOWS (`cellText`: filterValue → key →
+   * rendered words → title). Give it where that comes out blank or wrong — a
+   * component cell (status word in a HoverCard), a figure with a ⚠ suffix.
+   * A number stays a number in Excel; null = empty cell.
+   */
+  exportValue?: ((row: T) => string | number | null) | undefined;
   /** Sort & Filter: `false` = this column has no ▾ (e.g. a picture). */
   filterable?: boolean | undefined;
   /**

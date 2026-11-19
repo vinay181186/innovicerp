@@ -3,10 +3,10 @@
 // succeeds, the other gets 409 "Already completed by <name> at <time>".
 // Also: a personal to-do keeps its linked document (ADR-264 Create to-do).
 // Runs against the TEST database only (the main vitest config refuses PROD).
-import { eq } from 'drizzle-orm';
+import { and, eq, ne } from 'drizzle-orm';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
-import { users } from '../../db/schema';
+import { taskNotices, users } from '../../db/schema';
 import type { AuthContext } from '../../db/with-user-context';
 import { ConflictError } from '../../lib/errors';
 import * as service from './service';
@@ -86,5 +86,46 @@ describe('task status changes are conditional (§20.2)', () => {
     expect(todo.linkedRef).toMatchObject({ type: 'sales_order', display: 'IN-SO-TEST' });
     expect(todo.assignedTo).toBe(admin.id);
     await service.cancelTask(todo.id, { reason: 'test cleanup' }, admin);
+  });
+
+  // ADR-309: a notice is written only by the update that actually ended the
+  // task. Two cancels at once (admin = creator) -> the assignee gets exactly
+  // one task_cancelled notice, plus the one task_assigned from the create.
+  it('two cancels at once: exactly one cancelled notice for the assignee', async () => {
+    const others = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(
+        and(
+          eq(users.companyId, admin.companyId!),
+          eq(users.isActive, true),
+          ne(users.id, admin.id),
+        ),
+      )
+      .limit(1);
+    const assignee = others[0];
+    if (!assignee) return; // TEST has one login only: nothing to notify
+    const task = await service.createTask(
+      {
+        title: 'adr309 race - cancel twice',
+        assignedTo: assignee.id,
+        priority: 'low',
+        dueDate: '2099-12-31',
+      },
+      admin,
+    );
+    const results = await Promise.allSettled([
+      service.cancelTask(task.id, { reason: 'race 1' }, admin),
+      service.cancelTask(task.id, { reason: 'race 2' }, admin),
+    ]);
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    const notices = await db
+      .select({ kind: taskNotices.kind, recipientId: taskNotices.recipientId })
+      .from(taskNotices)
+      .where(eq(taskNotices.taskId, task.id));
+    expect(notices.filter((n) => n.kind === 'task_cancelled')).toEqual([
+      { kind: 'task_cancelled', recipientId: assignee.id },
+    ]);
+    expect(notices.filter((n) => n.kind === 'task_assigned')).toHaveLength(1);
   });
 });

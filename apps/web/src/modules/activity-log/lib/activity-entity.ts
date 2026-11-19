@@ -63,6 +63,7 @@ const ACTION_BADGE: Record<ActivityAction, string> = {
   SPLIT: 'b-grey',
   PAYMENT: 'b-green',
   POST: 'b-blue',
+  EXPORT: 'b-grey',
 };
 
 /** Legacy names with no standard equivalent that already had a colour on the

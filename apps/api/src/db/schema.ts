@@ -9644,3 +9644,120 @@ export const aiChatLog = pgTable(
     }),
   ],
 ).enableRLS();
+
+// task_notices (0257, ADR-309): one row per person per task event (assigned /
+// completed / cancelled). Feeds the bell AND the Windows pop-up (Web Push).
+// Private to the recipient (self-read RLS, not live — ADR-254). Written only
+// by tasks/notices.ts; push_status moved only by push/sender.ts.
+export const taskNotices = pgTable(
+  'task_notices',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    recipientId: uuid('recipient_id')
+      .notNull()
+      .references(() => users.id),
+    taskId: uuid('task_id')
+      .notNull()
+      .references(() => tasks.id),
+    kind: text('kind').notNull(),
+    actorId: uuid('actor_id').references((): AnyPgColumn => users.id),
+    eventAt: timestamp('event_at', { withTimezone: true }).notNull(),
+    pushStatus: text('push_status').notNull().default('pending'),
+    pushAttempts: integer('push_attempts').notNull().default(0),
+    sentAt: timestamp('sent_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
+  },
+  (t) => [
+    uniqueIndex('task_notices_event_uq')
+      .on(t.taskId, t.kind, t.recipientId, t.eventAt)
+      .where(sql`${t.deletedAt} is null`),
+    index('task_notices_company_recipient_event_idx')
+      .on(t.companyId, t.recipientId, t.eventAt.desc())
+      .where(sql`${t.deletedAt} is null`),
+    index('task_notices_pending_idx')
+      .on(t.eventAt)
+      .where(sql`${t.pushStatus} = 'pending' and ${t.deletedAt} is null`),
+    check(
+      'task_notices_kind_chk',
+      sql`${t.kind} IN ('task_assigned', 'task_completed', 'task_cancelled')`,
+    ),
+    check(
+      'task_notices_push_status_chk',
+      sql`${t.pushStatus} IN ('pending', 'sent', 'failed', 'off')`,
+    ),
+    check('task_notices_push_attempts_chk', sql`${t.pushAttempts} >= 0`),
+    pgPolicy('task_notices_self_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id() AND recipient_id = current_user_id()`,
+    }),
+  ],
+).enableRLS();
+
+// push_subscriptions (0257, ADR-309): one row per browser that switched task
+// pop-ups on. An endpoint belongs to one person at a time. Private (self RLS).
+export const pushSubscriptions = pgTable(
+  'push_subscriptions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id),
+    endpoint: text('endpoint').notNull(),
+    p256dh: text('p256dh').notNull(),
+    auth: text('auth').notNull(),
+    userAgent: text('user_agent'),
+    lastSuccessAt: timestamp('last_success_at', { withTimezone: true }),
+    // 0258: the push service said this endpoint is dead (404/410); a re-save
+    // of the same endpoint is refused (410) so the browser subscribes fresh.
+    goneAt: timestamp('gone_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid('updated_by')
+      .notNull()
+      .references(() => users.id),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedBy: uuid('deleted_by').references((): AnyPgColumn => users.id),
+  },
+  (t) => [
+    uniqueIndex('push_subscriptions_endpoint_uq')
+      .on(t.endpoint)
+      .where(sql`${t.deletedAt} is null`),
+    index('push_subscriptions_company_user_idx')
+      .on(t.companyId, t.userId)
+      .where(sql`${t.deletedAt} is null`),
+    index('push_subscriptions_gone_endpoint_idx')
+      .on(t.endpoint)
+      .where(sql`${t.goneAt} is not null`),
+    check('push_subscriptions_endpoint_len', sql`char_length(${t.endpoint}) between 1 and 1000`),
+    pgPolicy('push_subscriptions_self_read', {
+      for: 'select',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id() AND user_id = current_user_id()`,
+    }),
+    pgPolicy('push_subscriptions_self_write', {
+      for: 'all',
+      to: 'authenticated',
+      using: sql`company_id = current_company_id() AND user_id = current_user_id()`,
+      withCheck: sql`company_id = current_company_id() AND user_id = current_user_id() AND updated_by = current_user_id() AND (deleted_by IS NULL OR deleted_by = current_user_id())`,
+    }),
+  ],
+).enableRLS();

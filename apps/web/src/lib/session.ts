@@ -2,6 +2,7 @@ import type { MeResponse } from '@innovic/shared';
 import { type QueryClient, useQuery } from '@tanstack/react-query';
 import type { AnyRouter } from '@tanstack/react-router';
 import { apiFetch } from './api';
+import { dropSubscriptionOnSignOut } from './push/browser';
 import { setSentryUser } from './sentry';
 import { supabase } from './supabase';
 
@@ -29,6 +30,9 @@ export function useSession() {
 }
 
 export async function signOut() {
+  // ADR-309 — stop this laptop's task pop-ups for the person leaving, while
+  // their token still works. Best effort, capped at 2 s, never throws.
+  await dropSubscriptionOnSignOut();
   await supabase.auth.signOut();
   // The onAuthStateChange listener (registered in main.tsx) invalidates both
   // the session query and the router, which re-runs the _authenticated route's

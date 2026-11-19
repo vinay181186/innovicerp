@@ -42,13 +42,28 @@ function toQueryString(q: ListJobWorkOrdersQuery): string {
   return params.toString();
 }
 
+/** One page of GET /job-work-orders — the list hook's fetcher, also used by
+ *  the shared Export (ADR-310) to page through every matching JWSO. */
+export function fetchJobWorkOrdersPage(
+  query: ListJobWorkOrdersQuery,
+): Promise<ListJobWorkOrdersResponse> {
+  return apiFetch<ListJobWorkOrdersResponse>(`/job-work-orders?${toQueryString(query)}`);
+}
+
+/** One page of GET /job-work-orders/lines (one row per JWSO line). */
+export function fetchJobWorkOrderLinesPage(
+  query: ListJobWorkOrdersQuery,
+): Promise<ListJobWorkOrderLinesResponse> {
+  return apiFetch<ListJobWorkOrderLinesResponse>(`/job-work-orders/lines?${toQueryString(query)}`);
+}
+
 export function useJobWorkOrdersList(
   query: ListJobWorkOrdersQuery,
   options?: Omit<UseQueryOptions<ListJobWorkOrdersResponse>, 'queryKey' | 'queryFn'>,
 ) {
   return useQuery<ListJobWorkOrdersResponse>({
     queryKey: jobWorkOrdersKeys.list(query),
-    queryFn: () => apiFetch<ListJobWorkOrdersResponse>(`/job-work-orders?${toQueryString(query)}`),
+    queryFn: () => fetchJobWorkOrdersPage(query),
     placeholderData: (prev) => prev,
     ...options,
   });
@@ -61,8 +76,7 @@ export function useJobWorkOrderLinesList(
 ) {
   return useQuery<ListJobWorkOrderLinesResponse>({
     queryKey: jobWorkOrdersKeys.lineList(query),
-    queryFn: () =>
-      apiFetch<ListJobWorkOrderLinesResponse>(`/job-work-orders/lines?${toQueryString(query)}`),
+    queryFn: () => fetchJobWorkOrderLinesPage(query),
     placeholderData: (prev) => prev,
     ...options,
   });

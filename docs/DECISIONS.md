@@ -16333,3 +16333,47 @@ so creation form only")
 
 - Positive: a new SO opens with a truly empty box, so "Blank = next system number" reads right.
 - Negative: the box looks different on New and Edit (SO No. preview beside it shows the full number on both).
+
+## ADR-309: Task pop-ups on the laptop (Web Push)
+
+**Date:** 2026-11-18
+**Status:** Accepted (owner, 18-11-2026: plan + mockups https://claude.ai/artifact/Apisxix7xPHBK99qdpv6MW
+and https://claude.ai/artifact/7xgSsfQoATmGyeo1XkwxJU; "even if my erp screen is not open" → option A;
+cancelled = yes; completed → assigner and creator both; Day Log re-ping = no pop-up)
+
+### Context
+
+The owner wants a Windows pop-up when a task is assigned to them or a task they gave is completed,
+also when the ERP tab is closed. Before this, task assign / complete did not even reach the bell, and
+`tasks` stays off Realtime (private to-dos, ADR-254).
+
+### Decision
+
+- **One record per person per event:** `task_notices` (migration 0257). It feeds the bell (key
+  `task:<id>`) AND the pop-up, so they never disagree. Written in the same transaction as the task
+  change, from the four writers: `insertAssignedTask`, `moveTaskTo`, `transitionStatus`
+  (completed / cancelled), `autoCloseLinkedTasks`. Unique (task, kind, recipient, event time).
+- **Who:** assigned → new assignee; completed (by hand or automatically) → assigned_by and created_by;
+  cancelled → assignee. Never the person who did it; never a private to-do; no notice for a Day Log
+  reply on an already-open task.
+- **Delivery:** Web Push (VAPID, `web-push` library) from the API after commit, retried every 60 s up
+  to 3 times, dropped after 24 h. A failed push never fails the task action. Keys come from Railway
+  env (`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`); without them pop-ups are off and the
+  bell still works.
+- **Browser:** `apps/web/public/sw.js` shows the pop-up and opens `/task-board?view=…&task=<id>` on
+  click. It has no fetch handler and caches nothing. Each laptop switches on from the bell
+  ("Desktop pop-ups" › Turn on); `push_subscriptions` holds one row per browser. Sign-out removes it.
+
+### Alternatives Considered
+
+- In-tab `new Notification()` from the bell's 60 s poll — rejected: nothing when the ERP tab is
+  closed, which is what the owner asked for.
+- Making `tasks` live — rejected: Realtime sends whole rows company-wide (ADR-254 privacy).
+
+### Consequences
+
+- Positive: pop-up within seconds with the ERP closed (Chrome / Edge still running); task events now
+  also on the bell.
+- Negative: one new dependency and two env keys per stack (owner approved). Browser fully quit or
+  Windows Do Not Disturb → no pop-up (bell / Windows notification centre keep it).
+- No backfill: only events after release make notices.

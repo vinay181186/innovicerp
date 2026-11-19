@@ -101,6 +101,33 @@
   flex: 1;
   font-size: var(--fs-lg);
 }
+/* ADR-309 — the Desktop pop-ups switch row under the heading. */
+.nb-push {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0 var(--sp-3) var(--sp-2);
+  padding: var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg3);
+}
+.nb-push-text {
+  flex: 1;
+  min-width: 0;
+}
+.nb-push-title {
+  font-weight: 700;
+  font-size: var(--fs-sm);
+}
+.nb-push-note {
+  font-size: var(--fs-xs);
+  color: var(--text3);
+}
+.nb-push-link {
+  font-size: var(--fs-xs);
+  padding: 0;
+}
 .nb-chips {
   padding: 0 var(--sp-3) var(--sp-2);
 }

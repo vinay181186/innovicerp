@@ -129,6 +129,7 @@ export const REFRESH_POLICY: Readonly<Record<string, RefreshRule>> = {
   'op-log': onOpen('history report; Op Entry is the live screen'),
   operators: onOpen(MASTER),
   'print-templates': onOpen(MASTER),
+  push: onOpen("ADR-309 pop-up switch: server set-up + this laptop's own subscription"),
   'qc-processes': onOpen(MASTER),
   'related-docs': onOpen(LOOKUP),
   'report-types': onOpen(MASTER),

@@ -13,9 +13,11 @@
 import { NOTIFICATION_POPOVER_LIMIT, type NotificationFilter } from '@innovic/shared';
 import { useNavigate } from '@tanstack/react-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { PushSync } from '@/lib/push/push-sync';
 import { useMarkAllNotificationsRead, useNotifications } from '../api';
 import '../home.css';
 import '../notifications.css';
+import { DesktopPopupsRow } from './desktop-popups-row';
 import { NotificationRow, useOpenNotification } from './notification-row';
 
 /** The newest event in the bell's own list (filter All) — what "Mark all as
@@ -101,6 +103,8 @@ export function NotificationBell(): React.JSX.Element {
 
   return (
     <div className="nb">
+      {/* ADR-309 — the bell is mounted once, on every signed-in page. */}
+      <PushSync />
       <button
         ref={btnRef}
         type="button"
@@ -138,6 +142,7 @@ export function NotificationBell(): React.JSX.Element {
               Mark all as read
             </button>
           </div>
+          <DesktopPopupsRow />
           <div className="dh-chips nb-chips" role="group" aria-label="Filter notifications">
             <button
               type="button"
