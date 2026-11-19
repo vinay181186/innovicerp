@@ -126,6 +126,34 @@
   color: var(--bg2);
 }
 
+/* ADR-309 "Desktop pop-ups are off" (modules/dashboard/components/
+   desktop-popups-banner.tsx): same box as the Day Log band, info blue; red when
+   the browser has blocked pop-ups. No close button. */
+.popups-band {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 6px var(--content-pad) 0;
+  padding: 5px var(--sp-3);
+  border: 1px solid var(--sig-info-bd);
+  border-radius: var(--radius);
+  background: var(--sig-info-bg);
+  color: var(--blue2);
+  font-size: var(--fs-sm);
+}
+.popups-band b {
+  font-weight: 700;
+}
+.popups-band-btn {
+  margin-left: auto;
+}
+.popups-band-blocked {
+  border-color: var(--red);
+  background: var(--red3);
+  color: var(--red2);
+}
+
 /* ── Header navigation (components/shared/top-nav.tsx) ──────────────────────
    One --topbar-height band: logo, Dashboard, the modules as dropdowns, then the
    right cluster (search, sync dot, password, sign out, avatar). Module

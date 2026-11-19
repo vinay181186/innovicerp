@@ -16420,3 +16420,15 @@ was recorded anywhere.
 - Positive: every list exports the same way; every export is traceable.
 - Negative: Excel cells carry no alignment (community xlsx build has no styles, §24 gap).
 - Risk: the lines sheet's 10,000 cap counts all lines of that status, not only sheet-1 docs.
+
+## ADR-309 addendum: near-instant pop-ups + every-page band
+
+**Date:** 2026-11-19 (owner). (1) The send now waits for the save to commit (`db/after-commit.ts`, used by
+`withUserContext` and the Day Log `dayTx`), so a pop-up follows the save in about a second; what remains is the
+save itself (≈3–4 s on TEST). (2) A blue band on every page, under the Day Log band, "Desktop pop-ups are off on
+this computer. … Turn on", no close button, shown until pop-ups are On in that browser, also after a deliberate
+Turn off ("should come back"). Generic wording, not task-specific. Red "blocked" variant with the browser fix
+steps; "No box? Click the 🔔 …" hint when the Allow box got no answer (also in the bell row). Hidden for people
+without Task Board access, browsers that cannot show pop-ups, and a server without keys. Mockup
+https://claude.ai/artifact/XCBvQjZpJSMK12ZMqkMZc1. A browser never lets a site switch pop-ups on without the
+person's click, so "on by default" is this band.
