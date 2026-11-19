@@ -8,10 +8,10 @@ import type {
   RemovePushSubscriptionInput,
   SavePushSubscriptionInput,
 } from '@innovic/shared';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNotNull, isNull } from 'drizzle-orm';
 import { pushSubscriptions } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
-import { AuthorizationError } from '../../lib/errors';
+import { AppError, AuthorizationError } from '../../lib/errors';
 import { logger } from '../../lib/logger';
 import { applySendResults, sendToSubscriptions, testPayload, vapid } from './sender';
 
@@ -22,6 +22,16 @@ const requireCompany = (user: AuthContext): string => {
 
 const USER_AGENT_MAX = 300;
 
+/** 0258: the push service said this endpoint is dead. The web unsubscribes
+ *  and subscribes fresh (a new endpoint) when it gets this. */
+export const PUSH_SUBSCRIPTION_GONE_MESSAGE =
+  "This laptop's pop-up link has expired — switching it on again.";
+export class PushSubscriptionGoneError extends AppError {
+  constructor() {
+    super(410, 'push_subscription_gone', PUSH_SUBSCRIPTION_GONE_MESSAGE);
+  }
+}
+
 /** GET /me/push — is pop-up delivery set up, and the public key. */
 export function getPushConfig(): PushConfigResponse {
   const keys = vapid();
@@ -30,7 +40,9 @@ export function getPushConfig(): PushConfigResponse {
 
 /** POST /me/push/subscription — save this browser for the caller. One
  *  endpoint belongs to one person: the same laptop under a new login moves
- *  to the new user (in one statement, so two saves cannot make two rows). */
+ *  to the new user (in one statement, so two saves cannot make two rows).
+ *  An endpoint the push service already called dead (gone_at, 0258) is
+ *  refused with 410 and never re-created. */
 export async function savePushSubscription(
   input: SavePushSubscriptionInput,
   userAgent: string | null,
@@ -39,6 +51,14 @@ export async function savePushSubscription(
   const companyId = requireCompany(user);
   const ua = userAgent ? userAgent.slice(0, USER_AGENT_MAX) : null;
   await withUserContext(user, async (tx) => {
+    const dead = await tx
+      .select({ id: pushSubscriptions.id })
+      .from(pushSubscriptions)
+      .where(
+        and(eq(pushSubscriptions.endpoint, input.endpoint), isNotNull(pushSubscriptions.goneAt)),
+      )
+      .limit(1);
+    if (dead.length > 0) throw new PushSubscriptionGoneError();
     await tx
       .insert(pushSubscriptions)
       .values({
@@ -97,8 +117,10 @@ export async function sendTestPush(user: AuthContext): Promise<PushTestResponse>
   const companyId = requireCompany(user);
   const keys = vapid();
   if (!keys) return { sent: 0 };
-  return withUserContext(user, async (tx) => {
-    const subs = await tx
+  // Read in the user's context; send and record OUTSIDE it (no network call
+  // inside a transaction).
+  const subs = await withUserContext(user, async (tx) =>
+    tx
       .select({
         id: pushSubscriptions.id,
         userId: pushSubscriptions.userId,
@@ -113,10 +135,10 @@ export async function sendTestPush(user: AuthContext): Promise<PushTestResponse>
           eq(pushSubscriptions.userId, user.id),
           isNull(pushSubscriptions.deletedAt),
         ),
-      );
-    if (subs.length === 0) return { sent: 0 };
-    const results = await sendToSubscriptions(subs, testPayload(), keys, logger);
-    await applySendResults(tx, subs, results);
-    return { sent: [...results.values()].filter((v) => v === 'ok').length };
-  });
+      ),
+  );
+  if (subs.length === 0) return { sent: 0 };
+  const results = await sendToSubscriptions(subs, testPayload(), keys, logger);
+  await applySendResults(subs, results);
+  return { sent: [...results.values()].filter((v) => v === 'ok').length };
 }

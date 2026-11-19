@@ -8,7 +8,7 @@ import { useRouter } from '@tanstack/react-router';
 import { useEffect } from 'react';
 import { notificationKeys } from '@/modules/dashboard/api';
 import { taskKeys } from '@/modules/tasks/api';
-import { currentSubscription, pushSupported, saveSubscription } from './browser';
+import { currentSubscription, pushSupported, saveOrRenewSubscription } from './browser';
 
 let resynced = false;
 
@@ -18,15 +18,22 @@ export function PushSync(): null {
 
   useEffect(() => {
     if (!pushSupported()) return undefined;
+    const resave = (): void => {
+      if (Notification.permission !== 'granted') return;
+      void currentSubscription()
+        .then((sub) => (sub ? saveOrRenewSubscription(sub) : undefined))
+        .catch(() => undefined);
+    };
     if (!resynced && Notification.permission === 'granted') {
       resynced = true;
-      void currentSubscription()
-        .then((sub) => (sub ? saveSubscription(sub) : undefined))
-        .catch(() => undefined);
+      resave();
     }
     const onMessage = (e: MessageEvent): void => {
       const msg = e.data as { type?: string; href?: unknown } | null;
-      if (msg?.type === 'task-notice') {
+      if (msg?.type === 'push-resync') {
+        // the browser rotated the subscription — tie the new one to this person
+        resave();
+      } else if (msg?.type === 'task-notice') {
         void qc.invalidateQueries({ queryKey: notificationKeys.all });
         void qc.invalidateQueries({ queryKey: taskKeys.all });
       } else if (msg?.type === 'open' && typeof msg.href === 'string' && msg.href.startsWith('/')) {

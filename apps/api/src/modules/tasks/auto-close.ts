@@ -118,17 +118,18 @@ export async function autoCloseLinkedTasks(
       input.companyId,
       user,
     );
-    await recordTaskNotices(
-      tx,
-      {
-        companyId: input.companyId,
-        task: row,
-        kind: 'task_completed',
-        actorId: user.id,
-        eventAt: now,
-      },
-      user,
-    );
   }
+  // ADR-309: every closed task's notices in ONE insert (no per-task query).
+  await recordTaskNotices(
+    tx,
+    closed.map((row) => ({
+      companyId: input.companyId,
+      task: row,
+      kind: 'task_completed' as const,
+      actorId: user.id,
+      eventAt: now,
+    })),
+    user,
+  );
   return closed.length;
 }

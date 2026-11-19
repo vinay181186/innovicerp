@@ -2,7 +2,7 @@
 // is public/sw.js; it only shows pop-ups and never caches anything.
 
 import type { SavePushSubscriptionInput } from '@innovic/shared';
-import { apiFetch } from '@/lib/api';
+import { ApiError, apiFetch } from '@/lib/api';
 
 export const SW_URL = '/sw.js';
 
@@ -45,6 +45,30 @@ export function saveSubscription(sub: PushSubscription): Promise<unknown> {
   return apiFetch('/me/push/subscription', { method: 'POST', json: toSaveInput(sub) });
 }
 
+/** Save; if the server answers 410 (the push service reported this endpoint
+ *  gone), drop it in the browser, subscribe once more with the same key (a new
+ *  endpoint) and save that. Retries exactly once — a second 410 is thrown. */
+export async function saveOrRenewSubscription(
+  sub: PushSubscription,
+  reg?: ServiceWorkerRegistration,
+): Promise<void> {
+  try {
+    await saveSubscription(sub);
+    return;
+  } catch (err) {
+    if (!(err instanceof ApiError) || err.status !== 410) throw err;
+  }
+  const key = sub.options.applicationServerKey;
+  await sub.unsubscribe();
+  const registration = reg ?? (await navigator.serviceWorker.getRegistration(SW_URL));
+  if (!key || !registration) return;
+  const fresh = await registration.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: key,
+  });
+  await saveSubscription(fresh);
+}
+
 export function removeSubscription(endpoint: string): Promise<unknown> {
   return apiFetch('/me/push/subscription', { method: 'DELETE', json: { endpoint } });
 }
@@ -71,7 +95,7 @@ export async function subscribeThisBrowser(publicKey: string): Promise<void> {
     userVisibleOnly: true,
     applicationServerKey: key as BufferSource,
   });
-  await saveSubscription(sub);
+  await saveOrRenewSubscription(sub, reg);
 }
 
 /** Switch off on this laptop: forget it on the server, then in the browser. */

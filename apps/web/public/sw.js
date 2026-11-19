@@ -51,6 +51,30 @@ self.addEventListener('push', (event) => {
   );
 });
 
+/* The browser rotated (or dropped) the subscription. Re-subscribe with the same
+ * key when we know it, then tell open tabs to re-save — the worker has no
+ * sign-in token, so it never calls the API itself. */
+self.addEventListener('pushsubscriptionchange', (event) => {
+  const old = event.oldSubscription;
+  const key = old && old.options ? old.options.applicationServerKey : null;
+  event.waitUntil(
+    (async () => {
+      if (!event.newSubscription && key) {
+        try {
+          await self.registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: key,
+          });
+        } catch (_e) {
+          // the tab's re-save will find no subscription; Turn on fixes it
+        }
+      }
+      const list = await windowClients();
+      for (const c of list) c.postMessage({ type: 'push-resync' });
+    })(),
+  );
+});
+
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const href = safeHref(event.notification.data && event.notification.data.href);

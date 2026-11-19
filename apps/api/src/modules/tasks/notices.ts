@@ -8,14 +8,21 @@
 //   task_assigned  → the assignee
 //   task_completed → assigned_by AND created_by (deduped)
 //   task_cancelled → the assignee
-//   never the person who did it; never a private to-do (isPrivateTodo).
+//   never the person who did it; never a private to-do (isPrivateTodo) for
+//   completed / cancelled. Not applied to task_assigned: the actor rule
+//   already drops self-assign and own to-dos, and a task reassigned BACK to
+//   its creator looks like a private to-do but is not one.
+//   Never someone whose Task Board is hidden (ADR-257) — the same
+//   personHolds('taskboard_view', 'view') rule the bell applies, checked
+//   here once so bell and pop-up always agree.
 // A duplicate (same task, kind, recipient, event time) is ignored
 // (ON CONFLICT DO NOTHING on task_notices_event_uq).
 
 import type { TaskNoticeKind } from '@innovic/shared';
-import { sql } from 'drizzle-orm';
-import { taskNotices } from '../../db/schema';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { taskNotices, userAccess, users } from '../../db/schema';
 import type { AuthContext, DbTransaction } from '../../db/with-user-context';
+import { personHolds } from '../access-control/users-with-right';
 import { kickPushSender } from '../push/kick';
 import { isPrivateTodo } from './history';
 
@@ -27,9 +34,15 @@ export interface TaskNoticeParties {
   actorId: string | null;
 }
 
-/** Who is told about one task event. Pure. */
+/** Who is told about one task event. Pure (the Task Board check is the
+ *  caller's — recordTaskNotices). */
 export function taskNoticeRecipients(p: TaskNoticeParties): string[] {
-  if (isPrivateTodo({ createdBy: p.createdBy ?? '', assignedTo: p.assignedTo })) return [];
+  if (
+    p.kind !== 'task_assigned' &&
+    isPrivateTodo({ createdBy: p.createdBy ?? '', assignedTo: p.assignedTo })
+  ) {
+    return [];
+  }
   const raw = p.kind === 'task_completed' ? [p.assignedBy, p.createdBy] : [p.assignedTo];
   const out: string[] = [];
   for (const id of raw) {
@@ -52,32 +65,80 @@ export interface RecordTaskNoticesInput {
   eventAt: Date;
 }
 
-/** Insert the event's notices in the caller's transaction (none for a
- *  private to-do or when only the actor is involved), then wake the push
- *  sender. Returns how many rows were written. */
+/** Of these people, the ones whose Task Board opens — ONE query for all. */
+async function withTaskBoard(
+  tx: DbTransaction,
+  companyId: string,
+  ids: readonly string[],
+): Promise<Set<string>> {
+  if (ids.length === 0) return new Set();
+  const rows = await tx
+    .select({
+      id: users.id,
+      role: users.role,
+      acFullAccess: userAccess.fullAccess,
+      acAuditor: userAccess.auditor,
+      acDepartments: userAccess.departments,
+      acForms: userAccess.forms,
+    })
+    .from(users)
+    .leftJoin(
+      userAccess,
+      and(
+        eq(userAccess.userId, users.id),
+        eq(userAccess.companyId, companyId),
+        isNull(userAccess.deletedAt),
+      ),
+    )
+    .where(
+      and(inArray(users.id, [...ids]), eq(users.companyId, companyId), isNull(users.deletedAt)),
+    );
+  return new Set(rows.filter((r) => personHolds(r, 'taskboard_view', 'view')).map((r) => r.id));
+}
+
+/** Insert the notices for one or many task events in the caller's
+ *  transaction — one recipient read and ONE multi-row INSERT for all of them
+ *  — then wake the push sender. Returns how many rows were written. */
 export async function recordTaskNotices(
   tx: DbTransaction,
-  input: RecordTaskNoticesInput,
+  input: RecordTaskNoticesInput | readonly RecordTaskNoticesInput[],
   user: AuthContext,
 ): Promise<number> {
-  const recipients = taskNoticeRecipients({
-    kind: input.kind,
-    assignedTo: input.task.assignedTo,
-    assignedBy: input.task.assignedBy,
-    createdBy: input.task.createdBy,
-    actorId: input.actorId,
-  });
-  if (recipients.length === 0) return 0;
+  const events: readonly RecordTaskNoticesInput[] = Array.isArray(input)
+    ? input
+    : [input as RecordTaskNoticesInput];
+  const planned = events.flatMap((e) =>
+    taskNoticeRecipients({
+      kind: e.kind,
+      assignedTo: e.task.assignedTo,
+      assignedBy: e.task.assignedBy,
+      createdBy: e.task.createdBy,
+      actorId: e.actorId,
+    }).map((recipientId) => ({ e, recipientId })),
+  );
+  if (planned.length === 0) return 0;
+
+  // Callers pass one company; group anyway so the access read stays exact.
+  const open = new Set<string>();
+  for (const cid of new Set(planned.map((p) => p.e.companyId))) {
+    const ids = [
+      ...new Set(planned.filter((p) => p.e.companyId === cid).map((p) => p.recipientId)),
+    ];
+    for (const id of await withTaskBoard(tx, cid, ids)) open.add(`${cid}:${id}`);
+  }
+  const rows = planned.filter((p) => open.has(`${p.e.companyId}:${p.recipientId}`));
+  if (rows.length === 0) return 0;
+
   const written = await tx
     .insert(taskNotices)
     .values(
-      recipients.map((recipientId) => ({
-        companyId: input.companyId,
+      rows.map(({ e, recipientId }) => ({
+        companyId: e.companyId,
         recipientId,
-        taskId: input.task.id,
-        kind: input.kind,
-        actorId: input.actorId,
-        eventAt: input.eventAt,
+        taskId: e.task.id,
+        kind: e.kind,
+        actorId: e.actorId,
+        eventAt: e.eventAt,
         createdBy: user.id,
         updatedBy: user.id,
       })),
@@ -87,7 +148,8 @@ export async function recordTaskNotices(
       where: sql`deleted_at IS NULL`,
     })
     .returning({ id: taskNotices.id });
-  // Debounced (~1 s) in the sender, so the flush runs after this commits.
+  // Debounced (~1 s) in the sender; the retry tick covers a kick that fires
+  // before this transaction commits.
   if (written.length > 0) kickPushSender();
   return written.length;
 }

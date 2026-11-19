@@ -25,8 +25,10 @@ export type PushStatus = (typeof PUSH_STATUSES)[number];
 export const PUSH_MAX_ATTEMPTS = 3;
 /** A push still pending after this long is dropped (no stale pop-ups). */
 export const PUSH_MAX_AGE_HOURS = 24;
-/** The API retry tick. */
-export const PUSH_RETRY_INTERVAL_MS = 60_000;
+/** The API sender tick: picks up anything pending (a missed kick, a retry). */
+export const PUSH_RETRY_INTERVAL_MS = 10_000;
+/** A failed send is tried again no sooner than this after its last try. */
+export const PUSH_RETRY_BACKOFF_MS = 15_000;
 
 /** What the service worker receives and shows. Built only by the API. */
 export const taskPushPayloadSchema = z.object({

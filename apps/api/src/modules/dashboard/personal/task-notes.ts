@@ -19,6 +19,8 @@ export interface TaskNoteRow {
   id: string;
   kind: TaskNoticeKind;
   taskId: string;
+  /** The caller created the task (decides the completed link, ADR-309). */
+  recipientIsCreator: boolean;
   code: string;
   title: string;
   actor: string;
@@ -47,7 +49,7 @@ export function taskNote(r: TaskNoteRow): ExtraNote {
     unseen: false,
     text: [
       { text: `${r.actor} ${VERB[r.kind]} ` },
-      codePart(r.code, taskNoticeHref(r.kind, r.taskId)),
+      codePart(r.code, taskNoticeHref(r.kind, r.taskId, r.recipientIsCreator)),
       ...(r.title ? [{ text: ` · ${r.title}` }] : []),
     ],
   };
@@ -61,6 +63,7 @@ export function taskSources(cid: string, me: string, since: SQL): NoteSource[] {
     {
       source: 'task:notices',
       query: sql`SELECT n.id::text AS id, n.kind, n.task_id::text AS task_id, t.code, t.title,
+          (t.created_by = n.recipient_id) AS recipient_is_creator,
           COALESCE(NULLIF(btrim(u.full_name), ''), u.email, 'Someone') AS actor,
           n.event_at AS ts
         FROM public.task_notices n
@@ -76,6 +79,7 @@ export function taskSources(cid: string, me: string, since: SQL): NoteSource[] {
             id: String(r['id']),
             kind: String(r['kind']) as TaskNoticeKind,
             taskId: String(r['task_id']),
+            recipientIsCreator: r['recipient_is_creator'] === true,
             code: String(r['code'] ?? ''),
             title: String(r['title'] ?? ''),
             actor: String(r['actor'] ?? 'Someone'),

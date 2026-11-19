@@ -9723,6 +9723,9 @@ export const pushSubscriptions = pgTable(
     auth: text('auth').notNull(),
     userAgent: text('user_agent'),
     lastSuccessAt: timestamp('last_success_at', { withTimezone: true }),
+    // 0258: the push service said this endpoint is dead (404/410); a re-save
+    // of the same endpoint is refused (410) so the browser subscribes fresh.
+    goneAt: timestamp('gone_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by')
       .notNull()
@@ -9741,6 +9744,9 @@ export const pushSubscriptions = pgTable(
     index('push_subscriptions_company_user_idx')
       .on(t.companyId, t.userId)
       .where(sql`${t.deletedAt} is null`),
+    index('push_subscriptions_gone_endpoint_idx')
+      .on(t.endpoint)
+      .where(sql`${t.goneAt} is not null`),
     check('push_subscriptions_endpoint_len', sql`char_length(${t.endpoint}) between 1 and 1000`),
     pgPolicy('push_subscriptions_self_read', {
       for: 'select',

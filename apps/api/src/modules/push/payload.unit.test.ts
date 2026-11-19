@@ -1,13 +1,25 @@
 // ADR-309 — pop-up words, link, VAPID switch and per-row decision. No DB.
+import { PgDialect } from 'drizzle-orm/pg-core';
+import webpush from 'web-push';
 import { describe, expect, it } from 'vitest';
 import { taskNote } from '../dashboard/personal/task-notes';
-import { buildTaskPushPayload, ddmmyyyy, initialsOf, pushDecision, vapidFrom } from './payload';
+import { claimPendingSql } from './claim';
+import {
+  buildTaskPushPayload,
+  ddmmyyyy,
+  initialsOf,
+  pushDecision,
+  taskNoticeHref,
+  vapidFrom,
+} from './payload';
+import { vapidProblem } from './vapid';
 
 const NOTICE = '11111111-1111-4111-8111-111111111111';
 const TASK = '22222222-2222-4222-8222-222222222222';
 const base = {
   noticeId: NOTICE,
   taskId: TASK,
+  recipientIsCreator: false,
   code: 'TSK-00123',
   title: 'Check drawing rev C',
   dueDate: '2026-11-20',
@@ -25,11 +37,15 @@ describe('buildTaskPushPayload', () => {
     expect(p.actorInitials).toBe('RP');
   });
 
-  it('completed: remark line only when present, outbox link', () => {
-    const p = buildTaskPushPayload({ ...base, kind: 'task_completed' });
+  it('completed: remark line only when present; Outbox link only for the creator', () => {
+    const p = buildTaskPushPayload({ ...base, kind: 'task_completed', recipientIsCreator: true });
     expect(p.title).toBe('Task completed · TSK-00123');
     expect(p.body).toBe('Rakesh Patel completed "Check drawing rev C"');
     expect(p.href).toBe(`/task-board?view=outbox&task=${TASK}`);
+    // An assigner who did not create it: not in their Outbox → ?task only.
+    expect(buildTaskPushPayload({ ...base, kind: 'task_completed' }).href).toBe(
+      `/task-board?task=${TASK}`,
+    );
     const r = buildTaskPushPayload({
       ...base,
       kind: 'task_completed',
@@ -64,6 +80,69 @@ describe('buildTaskPushPayload', () => {
   });
 });
 
+describe('taskNoticeHref', () => {
+  it('assigned / cancelled → Inbox whoever created it', () => {
+    for (const creator of [true, false]) {
+      expect(taskNoticeHref('task_assigned', TASK, creator)).toBe(
+        `/task-board?view=inbox&task=${TASK}`,
+      );
+      expect(taskNoticeHref('task_cancelled', TASK, creator)).toBe(
+        `/task-board?view=inbox&task=${TASK}`,
+      );
+    }
+  });
+  it('completed → Outbox for the creator, else ?task only', () => {
+    expect(taskNoticeHref('task_completed', TASK, true)).toBe(
+      `/task-board?view=outbox&task=${TASK}`,
+    );
+    expect(taskNoticeHref('task_completed', TASK, false)).toBe(`/task-board?task=${TASK}`);
+  });
+});
+
+describe('claim statement', () => {
+  const q = new PgDialect().sqlToQuery(claimPendingSql(50, 15_000));
+  it('is one UPDATE … IN (SELECT … SKIP LOCKED) with the backoff lease', () => {
+    const text = q.sql.replace(/\s+/g, ' ');
+    expect(text).toMatch(
+      /^ ?UPDATE public\.task_notices n SET push_attempts = n\.push_attempts \+ 1/,
+    );
+    expect(text).toContain("p.push_status = 'pending' AND p.deleted_at IS NULL");
+    expect(text).toContain('p.push_attempts = 0 OR p.updated_at < now() - (');
+    expect(text).toContain('FOR UPDATE SKIP LOCKED');
+    expect(text).toContain('ORDER BY p.event_at');
+    expect(text).toContain('RETURNING');
+    expect(q.params).toEqual([15_000, 50]);
+  });
+});
+
+describe('VAPID validation', () => {
+  const good = webpush.generateVAPIDKeys();
+  it('valid keys and subject: no problem', () => {
+    expect(
+      vapidProblem({
+        publicKey: good.publicKey,
+        privateKey: good.privateKey,
+        subject: 'mailto:a@b.c',
+      }),
+    ).toBeNull();
+  });
+  it('bad subject / bad public key / bad private key: a reason', () => {
+    expect(
+      vapidProblem({
+        publicKey: good.publicKey,
+        privateKey: good.privateKey,
+        subject: 'not a url',
+      }),
+    ).toEqual(expect.any(String));
+    expect(
+      vapidProblem({ publicKey: 'p', privateKey: good.privateKey, subject: 'mailto:a@b.c' }),
+    ).toEqual(expect.any(String));
+    expect(
+      vapidProblem({ publicKey: good.publicKey, privateKey: 'k', subject: 'mailto:a@b.c' }),
+    ).toEqual(expect.any(String));
+  });
+});
+
 describe('sender switches', () => {
   it('missing VAPID keys: off', () => {
     expect(vapidFrom({})).toBeNull();
@@ -91,6 +170,7 @@ describe('bell note', () => {
       id: NOTICE,
       kind: 'task_completed',
       taskId: TASK,
+      recipientIsCreator: true,
       code: 'TSK-00123',
       title: 'Check drawing rev C',
       actor: 'Rakesh Patel',
@@ -103,5 +183,26 @@ describe('bell note', () => {
       { code: 'TSK-00123', href: `/task-board?view=outbox&task=${TASK}` },
       { text: ' · Check drawing rev C' },
     ]);
+  });
+});
+
+describe('bell and pop-up links agree', () => {
+  it('same href for every kind and creator flag', () => {
+    for (const kind of ['task_assigned', 'task_completed', 'task_cancelled'] as const) {
+      for (const recipientIsCreator of [true, false]) {
+        const bell = taskNote({
+          id: NOTICE,
+          kind,
+          taskId: TASK,
+          recipientIsCreator,
+          code: 'TSK-00123',
+          title: 't',
+          actor: 'Rakesh Patel',
+          ts: '2026-11-18T10:00:00.000Z',
+        });
+        const pop = buildTaskPushPayload({ ...base, kind, recipientIsCreator });
+        expect(bell.text[1]).toEqual({ code: 'TSK-00123', href: pop.href });
+      }
+    }
   });
 });

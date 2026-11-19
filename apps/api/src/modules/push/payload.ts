@@ -12,11 +12,19 @@ import {
   taskPushPayloadSchema,
 } from '@innovic/shared';
 
-/** Where a click on a task notice lands: the assignee's Inbox for assigned /
- *  cancelled, the assigner's Outbox for completed. */
-export function taskNoticeHref(kind: TaskNoticeKind, taskId: string): string {
-  const view = kind === 'task_completed' ? 'outbox' : 'inbox';
-  return `/task-board?view=${view}&task=${encodeURIComponent(taskId)}`;
+/** Where a click on a task notice lands. Assigned / cancelled → the
+ *  assignee's Inbox. Completed → the Outbox only for the task's creator (the
+ *  Outbox lists created_by = me); anyone else (an assigner who did not create
+ *  it) gets the board with just ?task, which opens the task's detail on any
+ *  tab. One function for the pop-up AND the bell (task-notes.ts). */
+export function taskNoticeHref(
+  kind: TaskNoticeKind,
+  taskId: string,
+  recipientIsCreator: boolean,
+): string {
+  const task = encodeURIComponent(taskId);
+  if (kind !== 'task_completed') return `/task-board?view=inbox&task=${task}`;
+  return recipientIsCreator ? `/task-board?view=outbox&task=${task}` : `/task-board?task=${task}`;
 }
 
 /** "Rakesh Patel" → "RP". Null when there is no name. */
@@ -40,6 +48,8 @@ export interface TaskNoticeRow {
   noticeId: string;
   kind: TaskNoticeKind;
   taskId: string;
+  /** The recipient is the task's creator (decides the completed link). */
+  recipientIsCreator: boolean;
   code: string;
   title: string;
   dueDate: string | null;
@@ -75,7 +85,7 @@ export function buildTaskPushPayload(r: TaskNoticeRow): TaskPushPayload {
     kind: r.kind,
     title: clip(title, 120),
     body: clip(body, 300),
-    href: clip(taskNoticeHref(r.kind, r.taskId), 300),
+    href: clip(taskNoticeHref(r.kind, r.taskId, r.recipientIsCreator), 300),
     actorInitials: initialsOf(r.actorName),
   });
 }
