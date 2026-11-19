@@ -42,6 +42,7 @@ import {
   renderPlanLink,
 } from '../components/plans-list-columns';
 import { DERIVED_LABEL } from '../lib/derived-status';
+import { plansExportSpec, withPlanExportValues } from '../lib/export';
 
 const searchSchema = z.object({
   search: z.string().optional(),
@@ -146,7 +147,27 @@ function PlansListPage(): React.JSX.Element {
   // ADR-202 — plan ids with a pending edit; their status cell reads "Draft".
   const draftIds = usePendingEditIds('Plan');
   const firstRowNo = pageOffset(page) + 1;
-  const columns = useMemo(() => plansListColumns(draftIds, firstRowNo), [draftIds, firstRowNo]);
+  const columns = useMemo(
+    () => withPlanExportValues(plansListColumns(draftIds, firstRowNo)),
+    [draftIds, firstRowNo],
+  );
+  // ADR-310 — the shared Export: every plan matching the search / status /
+  // type / Pending / column filters. Not offered on the Needs Planning view.
+  const exportSpec = useMemo(
+    () =>
+      needsPlanning
+        ? undefined
+        : plansExportSpec({
+            columns,
+            tableKey: TABLE_KEYS.plansList,
+            search,
+            status,
+            planType,
+            pending: !!pending,
+            sfParam: sf.param,
+          }),
+    [needsPlanning, columns, search, status, planType, pending, sf.param],
+  );
 
   // Status dropdown → URL filter. A status sets `status`; "Needs Planning"
   // flips the body to the unplanned-SO-lines table. Each clears the other so
@@ -229,6 +250,7 @@ function PlansListPage(): React.JSX.Element {
           })
         }
         searchPlaceholder="Search plan no., item code / name, SO no., POL, Production Order, JC…"
+        exportSpec={exportSpec}
         filters={
           <>
             {/* Status — the former KPI tiles, folded in: every option carries

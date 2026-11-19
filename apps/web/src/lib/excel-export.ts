@@ -108,9 +108,11 @@ export async function writeWorkbook(
 }
 
 /** One Activity Log row (action EXPORT) for a file just made. Never throws. */
-export async function postExportLog(input: ListExportLogInput): Promise<void> {
+export async function postExportLog(
+  input: Omit<ListExportLogInput, 'capped'> & { capped?: boolean },
+): Promise<void> {
   try {
-    await apiFetch('/activity-log/export', { method: 'POST', json: input });
+    await apiFetch('/activity-log/export', { method: 'POST', json: { capped: false, ...input } });
   } catch {
     // The file is already with the user; a lost log line is not their problem.
   }

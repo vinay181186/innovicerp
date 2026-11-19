@@ -45,6 +45,7 @@ import { useDeliveryChallanLinesList, useDeliveryChallansList } from '../api';
 import { dcListColumns } from '../components/dc-list-columns';
 import { useOspDcPrint } from '../components/use-ospdc-print';
 import { DC_STATUS_LABEL } from '../lib/dc-status-label';
+import { dcExportSpec, withDcExportValues } from '../lib/export';
 import { printDispatchRegister } from '../lib/print-dispatch-register';
 import { OspAtVendorRegister } from '@/modules/osp-wip/components/osp-at-vendor-register';
 import { TabStrip } from '@/ui/navigation';
@@ -149,8 +150,22 @@ function DeliveryChallansListPage(): React.JSX.Element {
   // ADR-202 — DC ids with a pending edit; their status cell reads "Draft".
   const draftIds = usePendingEditIds('DeliveryChallan');
   const columns = useMemo(
-    () => dcListColumns((search.page - 1) * PAGE_SIZE + 1, draftIds),
+    () => withDcExportValues(dcListColumns((search.page - 1) * PAGE_SIZE + 1, draftIds), draftIds),
     [search.page, draftIds],
+  );
+  // ADR-310 — the shared Export: every DC matching the search / status /
+  // Sort & Filter, the columns the user sees, plus a DC Lines sheet.
+  const exportSpec = useMemo(
+    () =>
+      dcExportSpec({
+        columns,
+        tableKey: TABLE_KEYS.ospOutwardDc,
+        search: search.search,
+        status: search.status,
+        sfParam: sf.param,
+        hideMoney: !perms.price,
+      }),
+    [columns, search.search, search.status, sf.param, perms.price],
   );
   const ospDcPrint = useOspDcPrint();
 
@@ -232,6 +247,7 @@ function DeliveryChallansListPage(): React.JSX.Element {
             onSearch={setSearchInput}
             searchPlaceholder="Search DC, PO / NC, vendor…"
             updating={isFetching && !isLoading}
+            exportSpec={exportSpec}
             filters={
               <select
                 className="innovic-select"

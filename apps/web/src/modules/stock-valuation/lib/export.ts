@@ -5,6 +5,7 @@ import { itemTypeLabel } from '@innovic/shared';
 import type { StockValuationRow } from '@innovic/shared';
 import * as XLSX from 'xlsx';
 import { todayIst } from '@/lib/date';
+import { postExportLog } from '@/lib/excel-export';
 
 /** Screen word for a stored category code (`component` → `Component`). */
 export function categoryLabel(c: string): string {
@@ -31,10 +32,7 @@ export function exportStockValuation(rows: StockValuationRow[], priceHidden: boo
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(detail), 'Stock Detail');
   if (!priceHidden) {
-    const catMap = new Map<
-      string,
-      { 'Item Type': string; Items: number; 'Total Value': number }
-    >();
+    const catMap = new Map<string, { 'Item Type': string; Items: number; 'Total Value': number }>();
     for (const r of withStock) {
       const c = catMap.get(r.category) ?? {
         'Item Type': categoryLabel(r.category),
@@ -52,4 +50,5 @@ export function exportStockValuation(rows: StockValuationRow[], priceHidden: boo
     );
   }
   XLSX.writeFile(wb, `stock-valuation-${todayIst()}.xlsx`);
+  void postExportLog({ listTitle: 'Stock Valuation', rowCount: rows.length });
 }

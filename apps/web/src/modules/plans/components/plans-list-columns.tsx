@@ -37,7 +37,7 @@ export const STATUS_BADGE: Record<PlanStatus, { cls: string; label: string }> = 
   cancelled: { cls: STORED_BADGE.cancelled, label: 'Cancelled' },
 };
 
-const TYPE_LABEL: Record<PlanType, string> = {
+export const TYPE_LABEL: Record<PlanType, string> = {
   manufacture: 'Manufacture',
   direct_purchase: 'Buy',
   full_outsource: 'Full Outsource',

@@ -33,10 +33,18 @@ function toQueryString(q: ListJwReturnChallansQuery): string {
   return params.toString();
 }
 
+/** One page of GET /jw-returns — the list hook's fetcher, also used by the
+ *  shared Export (ADR-310). */
+export function fetchJwReturnsPage(
+  query: ListJwReturnChallansQuery,
+): Promise<ListJwReturnChallansResponse> {
+  return apiFetch<ListJwReturnChallansResponse>(`/jw-returns?${toQueryString(query)}`);
+}
+
 export function useJwReturnsList(query: ListJwReturnChallansQuery) {
   return useQuery<ListJwReturnChallansResponse>({
     queryKey: jwReturnsKeys.list(query),
-    queryFn: () => apiFetch<ListJwReturnChallansResponse>(`/jw-returns?${toQueryString(query)}`),
+    queryFn: () => fetchJwReturnsPage(query),
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
     placeholderData: (prev) => prev,

@@ -21,6 +21,7 @@ import { ToolHoldersView } from './tool-holders-view';
 import { ToolIssueViewModal } from './tool-issue-view-modal';
 import { ToolWriteoffsView } from './tool-writeoffs-view';
 import { TabStrip } from '@/ui/navigation';
+import { toolIssueExportSpec } from '../lib/export';
 
 type FilterKey = 'all' | 'out' | 'overdue' | 'returned' | 'cancelled';
 const FILTER_LABELS: Record<FilterKey, string> = {
@@ -70,6 +71,22 @@ export function ToolIssueRegisterView({
   useClampPage(page, data?.total, setPage);
   const firstRowNo = pageOffset(page) + 1;
   const columns = useMemo(() => toolIssueColumns(firstRowNo), [firstRowNo]);
+  // ADR-310 — the shared Export: every row matching the search / filters /
+  // Sort & Filter, in the columns the user sees.
+  const exportSpec = useMemo(
+    () =>
+      toolIssueExportSpec({
+        columns,
+        defaultHidden: [...TOOL_ISSUE_HIDDEN_COLUMNS],
+        tableKey: TABLE_KEYS.toolIssues,
+        filter,
+        filterWord: filter === 'all' ? undefined : FILTER_LABELS[filter],
+        search: search.trim() || undefined,
+        sfParam: sf.param,
+        hideMoney: !perms.price,
+      }),
+    [columns, filter, search, sf.param, perms.price],
+  );
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / LIST_PAGE_SIZE));
 
   if (eff && !perms.view) {
@@ -117,6 +134,7 @@ export function ToolIssueRegisterView({
       ) : (
         <>
           <ListHeader
+            exportSpec={exportSpec}
             title="Tool Issue Register"
             icon="🔧"
             count={data?.total}

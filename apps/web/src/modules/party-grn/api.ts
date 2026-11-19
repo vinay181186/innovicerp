@@ -90,7 +90,7 @@ function buildSearch(q: ListPartyGrnQuery): string {
 export function usePartyGrnList(query: ListPartyGrnQuery) {
   return useQuery<ListPartyGrnResponse>({
     queryKey: partyGrnKeys.list(query),
-    queryFn: () => apiFetch<ListPartyGrnResponse>(`/party-grn?${buildSearch(query)}`),
+    queryFn: () => fetchPartyGrnPage(query),
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
     placeholderData: (prev) => prev,
@@ -101,7 +101,7 @@ export function usePartyGrnList(query: ListPartyGrnQuery) {
 export function usePartyGrnLines(query: ListPartyGrnQuery) {
   return useQuery<ListPartyGrnLinesResponse>({
     queryKey: partyGrnKeys.lines(query),
-    queryFn: () => apiFetch<ListPartyGrnLinesResponse>(`/party-grn/lines?${buildSearch(query)}`),
+    queryFn: () => fetchPartyGrnLinesPage(query),
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
     placeholderData: (prev) => prev,
@@ -295,4 +295,18 @@ export function useQcPartyGrn(saveKey?: SaveKey) {
       invalidateSoCustomerParts(qc);
     },
   });
+}
+
+/** ADR-310 — one page of GET /party-grn: the list hook and the shared Export
+ *  both read it. */
+export function fetchPartyGrnPage(query: ListPartyGrnQuery): Promise<ListPartyGrnResponse> {
+  return apiFetch<ListPartyGrnResponse>(`/party-grn?${buildSearch(query)}`);
+}
+
+/** ADR-310 — one page of GET /party-grn/lines: the list hook and the shared Export
+ *  both read it. */
+export function fetchPartyGrnLinesPage(
+  query: ListPartyGrnQuery,
+): Promise<ListPartyGrnLinesResponse> {
+  return apiFetch<ListPartyGrnLinesResponse>(`/party-grn/lines?${buildSearch(query)}`);
 }

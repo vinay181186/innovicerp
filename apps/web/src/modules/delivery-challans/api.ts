@@ -54,14 +54,30 @@ function toQueryString(q: ListDeliveryChallansQuery): string {
   return params.toString();
 }
 
+/** One page of GET /delivery-challans — the list hook's fetcher, also used by
+ *  the shared Export (ADR-310) to page through every matching DC. */
+export function fetchDeliveryChallansPage(
+  query: ListDeliveryChallansQuery,
+): Promise<ListDeliveryChallansResponse> {
+  return apiFetch<ListDeliveryChallansResponse>(`/delivery-challans?${toQueryString(query)}`);
+}
+
+/** One page of GET /delivery-challans/lines (one row per DC line). */
+export function fetchDeliveryChallanLinesPage(
+  query: ListDeliveryChallansQuery,
+): Promise<ListDeliveryChallanLinesResponse> {
+  return apiFetch<ListDeliveryChallanLinesResponse>(
+    `/delivery-challans/lines?${toQueryString(query)}`,
+  );
+}
+
 export function useDeliveryChallansList(
   query: ListDeliveryChallansQuery,
   options?: Omit<UseQueryOptions<ListDeliveryChallansResponse>, 'queryKey' | 'queryFn'>,
 ) {
   return useQuery<ListDeliveryChallansResponse>({
     queryKey: deliveryChallansKeys.list(query),
-    queryFn: () =>
-      apiFetch<ListDeliveryChallansResponse>(`/delivery-challans?${toQueryString(query)}`),
+    queryFn: () => fetchDeliveryChallansPage(query),
     placeholderData: (prev) => prev,
     ...options,
   });
@@ -75,10 +91,7 @@ export function useDeliveryChallanLinesList(
 ) {
   return useQuery<ListDeliveryChallanLinesResponse>({
     queryKey: deliveryChallansKeys.lines(query),
-    queryFn: () =>
-      apiFetch<ListDeliveryChallanLinesResponse>(
-        `/delivery-challans/lines?${toQueryString(query)}`,
-      ),
+    queryFn: () => fetchDeliveryChallanLinesPage(query),
     placeholderData: (prev) => prev,
     ...options,
   });

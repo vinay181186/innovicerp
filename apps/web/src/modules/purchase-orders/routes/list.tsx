@@ -54,6 +54,7 @@ import { usePurchaseOrdersList } from '../api';
 import { purchaseOrderListColumns } from '../components/po-list-columns';
 import { usePoPrint } from '../components/use-po-print';
 import { PO_STATUS_CHOICES, PO_STATUS_LABELS, PO_TYPE_LABELS } from '../lib/po-labels';
+import { poExportSpec } from '../lib/export';
 
 // ADR-201 (2026-10-02): 25 POs per page, loaded from the SERVER (was one
 // 200-row fetch); search / filters / Sort & Filter run on the server over ALL
@@ -170,6 +171,22 @@ function PurchaseOrdersListPage(): React.JSX.Element {
     () => purchaseOrderListColumns({ firstRowNo: offset + 1, canSeePrice: perms.price, draftIds }),
     [offset, perms.price, draftIds],
   );
+  // ADR-310 — the shared Export: every row matching the search / filters /
+  // Sort & Filter, in the columns the user sees.
+  const exportSpec = useMemo(
+    () =>
+      poExportSpec({
+        columns,
+        draftIds,
+        tableKey: TABLE_KEYS.poList,
+        search: search.search,
+        status: search.status,
+        poType: search.poType,
+        sfParam: sf.param,
+        hideMoney: !perms.price,
+      }),
+    [columns, draftIds, search.search, search.status, search.poType, sf.param, perms.price],
+  );
 
   // Row ⋯ menu — Preview · Download PDF · Edit · Create DC · Assign Task. No
   // View: the row click opens the PO. Preview / Download print the same sheet
@@ -259,6 +276,7 @@ function PurchaseOrdersListPage(): React.JSX.Element {
       {/* THE list header (ui/layout ListHeader): title · count · + New PO, then
           the filter bar (search · status · type · Clear). */}
       <ListHeader
+        exportSpec={exportSpec}
         orderFilter={<OrderSfFilter sf={sf} field="soCode" />}
         title="Purchase Orders"
         icon="📋"

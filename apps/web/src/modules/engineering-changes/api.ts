@@ -50,10 +50,16 @@ function toQueryString(q: ListEcrQuery): string {
   return p.toString();
 }
 
+/** One page of GET /ecrs — the list hook's fetcher, also used by the shared
+ *  Export (ADR-310). */
+export function fetchEcrPage(q: ListEcrQuery): Promise<ListEcrResponse> {
+  return apiFetch<ListEcrResponse>(`/ecrs?${toQueryString(q)}`);
+}
+
 export function useEcrList(q: ListEcrQuery) {
   return useQuery<ListEcrResponse>({
     queryKey: ecrKeys.list(q),
-    queryFn: () => apiFetch<ListEcrResponse>(`/ecrs?${toQueryString(q)}`),
+    queryFn: () => fetchEcrPage(q),
     placeholderData: (prev) => prev,
     // ADR-230 safety refresh: approvals and holds change by other people.
     refetchInterval: LIVE_FALLBACK_POLL_MS,

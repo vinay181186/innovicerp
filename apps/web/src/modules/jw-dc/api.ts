@@ -86,10 +86,40 @@ function buildInwardSearch(q: ListJwDcInwardQuery): string {
   return params.toString();
 }
 
+/** One page of GET /jw-dc/outward — the register hook's fetcher, also used by
+ *  the shared Export (ADR-310). */
+export function fetchJwDcOutwardPage(
+  query: ListJwDcOutwardQuery,
+): Promise<ListJwDcOutwardResponse> {
+  return apiFetch<ListJwDcOutwardResponse>(`/jw-dc/outward?${buildOutwardSearch(query)}`);
+}
+
+/** One page of GET /jw-dc/outward/lines (one row per DC line). */
+export function fetchJwDcOutwardLinesPage(
+  query: ListJwDcOutwardQuery,
+): Promise<ListJwDcOutwardLinesResponse> {
+  return apiFetch<ListJwDcOutwardLinesResponse>(
+    `/jw-dc/outward/lines?${buildOutwardSearch(query)}`,
+  );
+}
+
+/** One page of GET /jw-dc/inward — the register hook's fetcher, also used by
+ *  the shared Export (ADR-310). */
+export function fetchJwDcInwardPage(query: ListJwDcInwardQuery): Promise<ListJwDcInwardResponse> {
+  return apiFetch<ListJwDcInwardResponse>(`/jw-dc/inward?${buildInwardSearch(query)}`);
+}
+
+/** One page of GET /jw-dc/inward/lines (one row per receipt line). */
+export function fetchJwDcInwardLinesPage(
+  query: ListJwDcInwardQuery,
+): Promise<ListJwDcInwardLinesResponse> {
+  return apiFetch<ListJwDcInwardLinesResponse>(`/jw-dc/inward/lines?${buildInwardSearch(query)}`);
+}
+
 export function useJwDcOutwardList(query: ListJwDcOutwardQuery) {
   return useQuery<ListJwDcOutwardResponse>({
     queryKey: jwDcKeys.outwardList(query),
-    queryFn: () => apiFetch<ListJwDcOutwardResponse>(`/jw-dc/outward?${buildOutwardSearch(query)}`),
+    queryFn: () => fetchJwDcOutwardPage(query),
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
     placeholderData: (prev) => prev,
@@ -100,8 +130,7 @@ export function useJwDcOutwardList(query: ListJwDcOutwardQuery) {
 export function useJwDcOutwardLines(query: ListJwDcOutwardQuery) {
   return useQuery<ListJwDcOutwardLinesResponse>({
     queryKey: jwDcKeys.outwardLines(query),
-    queryFn: () =>
-      apiFetch<ListJwDcOutwardLinesResponse>(`/jw-dc/outward/lines?${buildOutwardSearch(query)}`),
+    queryFn: () => fetchJwDcOutwardLinesPage(query),
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
     placeholderData: (prev) => prev,
@@ -112,8 +141,7 @@ export function useJwDcOutwardLines(query: ListJwDcOutwardQuery) {
 export function useJwDcInwardLines(query: ListJwDcInwardQuery) {
   return useQuery<ListJwDcInwardLinesResponse>({
     queryKey: jwDcKeys.inwardLines(query),
-    queryFn: () =>
-      apiFetch<ListJwDcInwardLinesResponse>(`/jw-dc/inward/lines?${buildInwardSearch(query)}`),
+    queryFn: () => fetchJwDcInwardLinesPage(query),
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
     placeholderData: (prev) => prev,
@@ -186,7 +214,7 @@ export function useNextInwardCode() {
 export function useJwDcInwardList(query: ListJwDcInwardQuery) {
   return useQuery<ListJwDcInwardResponse>({
     queryKey: jwDcKeys.inwardList(query),
-    queryFn: () => apiFetch<ListJwDcInwardResponse>(`/jw-dc/inward?${buildInwardSearch(query)}`),
+    queryFn: () => fetchJwDcInwardPage(query),
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
     placeholderData: (prev) => prev,

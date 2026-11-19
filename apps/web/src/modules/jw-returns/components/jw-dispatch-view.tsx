@@ -31,6 +31,7 @@ import { useJwReturnsList } from '../api';
 import { jwReturnColumns } from './jw-returns-columns';
 import { NewJwReturnModal } from './new-jw-return-modal';
 import { usePrintJwReturn } from './use-print-jw-return';
+import { jwReturnExportSpec } from '../lib/export';
 
 // ADR-201: 25 returns a page with Prev / Next (the page lives in this tab's
 // state — the tab has no route of its own). The search box and the column ▾
@@ -103,6 +104,19 @@ export function JwDispatchView({
   const printReturn = usePrintJwReturn();
 
   const columns = useMemo(() => jwReturnColumns(pageOffset(page) + 1), [page]);
+  // ADR-310 — the shared Export: every JW return matching the search / Sort &
+  // Filter, the columns the user sees.
+  const exportSpec = useMemo(
+    () =>
+      jwReturnExportSpec({
+        columns,
+        tableKey: TABLE_KEYS.jwReturns,
+        search: term || undefined,
+        sfParam: sf.param,
+        hideMoney: !jwPerms.price,
+      }),
+    [columns, term, sf.param, jwPerms.price],
+  );
 
   const toggleExpand = useCallback((id: string): void => {
     setExpanded((prev) => {
@@ -121,6 +135,7 @@ export function JwDispatchView({
         icon="📦"
         count={total}
         noun="JW return"
+        exportSpec={exportSpec}
         search={searchInput}
         onSearch={setSearchInput}
         searchPlaceholder="Search return no., date, JWSO, customer, item, transport, status…"

@@ -62,8 +62,7 @@ function toQueryString(q: ListPartyMaterialIssuesQuery): string {
 export function usePartyMaterialIssuesList(query: ListPartyMaterialIssuesQuery) {
   return useQuery<ListPartyMaterialIssuesResponse>({
     queryKey: partyMaterialIssuesKeys.list(query),
-    queryFn: () =>
-      apiFetch<ListPartyMaterialIssuesResponse>(`/party-material-issues?${toQueryString(query)}`),
+    queryFn: () => fetchPartyMaterialIssuesPage(query),
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
     placeholderData: (prev) => prev,
@@ -120,4 +119,14 @@ export function useReturnPartyMaterialIssueToStore() {
       void qc.invalidateQueries({ queryKey: jobWorkOrdersKeys.all });
     },
   });
+}
+
+/** ADR-310 — one page of GET /party-material-issues: the list hook and the shared Export
+ *  both read it. */
+export function fetchPartyMaterialIssuesPage(
+  query: ListPartyMaterialIssuesQuery,
+): Promise<ListPartyMaterialIssuesResponse> {
+  return apiFetch<ListPartyMaterialIssuesResponse>(
+    `/party-material-issues?${toQueryString(query)}`,
+  );
 }

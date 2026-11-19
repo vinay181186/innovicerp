@@ -38,7 +38,7 @@ const QC_OPTIONS = [
 ];
 
 // Our snake_case enum values, shown in Title Case (legacy L11359-L11368).
-const OUTSOURCE_STATUS_LABELS: Record<string, string> = {
+export const OUTSOURCE_STATUS_LABELS: Record<string, string> = {
   pending: 'Pending',
   pr_raised: 'PR Raised',
   po_created: 'PO Created',
@@ -55,8 +55,8 @@ const OUTSOURCE_STATUS_COLOR: Record<string, string> = {
   received: 'var(--green)',
 };
 
-const isOutsource = (o: JcOpsBoardRow): boolean => o.opType === 'outsource';
-const outsourceStatusOf = (o: JcOpsBoardRow): string => o.outsourceStatus || 'pending';
+export const isOutsource = (o: JcOpsBoardRow): boolean => o.opType === 'outsource';
+export const outsourceStatusOf = (o: JcOpsBoardRow): string => o.outsourceStatus || 'pending';
 const dash = <span className="text3">—</span>;
 
 function OpStatusBadge({ status }: { status: string }): React.JSX.Element {

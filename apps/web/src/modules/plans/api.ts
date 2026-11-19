@@ -69,13 +69,19 @@ function buildPlansSearch(q: ListPlansQuery): string {
   return s.length > 0 ? `?${s}` : '';
 }
 
+/** One page of GET /plans — the list hook's fetcher, also used by the shared
+ *  Export (ADR-310) to page through every matching plan. */
+export function fetchPlansPage(query: ListPlansQuery): Promise<ListPlansResponse> {
+  return apiFetch<ListPlansResponse>(`/plans${buildPlansSearch(query)}`);
+}
+
 export function usePlansList(
   query: ListPlansQuery,
   options?: Omit<UseQueryOptions<ListPlansResponse>, 'queryKey' | 'queryFn'>,
 ) {
   return useQuery<ListPlansResponse>({
     queryKey: plansKeys.list(query),
-    queryFn: () => apiFetch<ListPlansResponse>(`/plans${buildPlansSearch(query)}`),
+    queryFn: () => fetchPlansPage(query),
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
     placeholderData: (prev) => prev,

@@ -30,6 +30,7 @@ import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useCustomerMaterialReturnsList } from '../api';
 import { cmrColumns } from '../components/cmr-columns';
 import { usePrintCmr } from '../components/use-print-cmr';
+import { cmrExportSpec } from '../lib/export';
 
 /** The fit table's saved-layout key (kebab-case, stable — never rename). */
 const CMR_TABLE_KEY = 'customer-material-returns-doc'; // ADR-303: new key, one row per document
@@ -93,6 +94,19 @@ function CustomerMaterialReturnsListPage(): React.JSX.Element {
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / LIST_PAGE_SIZE));
   const rows = data?.items ?? [];
   const columns = useMemo(() => cmrColumns(pageOffset(page) + 1), [page]);
+  // ADR-310 — the shared Export: every row matching the search / filters /
+  // Sort & Filter, in the columns the user sees.
+  const exportSpec = useMemo(
+    () =>
+      cmrExportSpec({
+        columns,
+        tableKey: CMR_TABLE_KEY,
+        search: routeSearch.search,
+        sfParam: sf.param,
+        hideMoney: !perms.price,
+      }),
+    [columns, routeSearch.search, sf.param, perms.price],
+  );
 
   const [cancelRow, setCancelRow] = useState<CustomerMaterialReturn | null>(null);
   const printCmr = usePrintCmr();
@@ -109,6 +123,7 @@ function CustomerMaterialReturnsListPage(): React.JSX.Element {
   return (
     <div className="page-fill">
       <ListHeader
+        exportSpec={exportSpec}
         orderFilter={<OrderSfFilter sf={sf} field="jwCode" kind="jwso" />}
         title="Customer Material Return"
         icon="📤"

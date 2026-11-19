@@ -5,6 +5,7 @@
 import type { SoStatusJcStatus, SoStatusLineStatus, SoStatusResponse } from '@innovic/shared';
 import * as XLSX from 'xlsx';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { postExportLog } from '@/lib/excel-export';
 
 // Status codes → the words the SO Status screen shows (so-status-detail.tsx).
 const LINE_STATUS_LABEL: Record<SoStatusLineStatus, string> = {
@@ -93,4 +94,5 @@ export function exportSoStatusExcel(data: SoStatusResponse): void {
     'Job Cards',
   );
   XLSX.writeFile(wb, `SO Status Export ${header.code}.xlsx`);
+  void postExportLog({ listTitle: `SO Status · ${header.code}`, rowCount: 1 });
 }

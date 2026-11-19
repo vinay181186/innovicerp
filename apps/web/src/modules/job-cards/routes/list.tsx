@@ -72,6 +72,7 @@ import {
   useJcStatusCounts,
   useJobCardsList,
 } from '../api';
+import { jcExportSpec, withJcExportValues } from '../lib/export';
 import { JC_STATUS_LABEL } from '../components/jc-status-badge';
 import { JcRowMenu } from '../components/jc-row-menu';
 import {
@@ -301,8 +302,14 @@ function JobCardsListPage(): React.JSX.Element {
   // ADR-202 — JC ids with a pending edit; their status cell reads "Draft".
   const draftIds = usePendingEditIds('JobCard');
   const columns = useMemo(
-    () => jobCardListColumns(offset + 1, today, draftIds),
+    () => withJcExportValues(jobCardListColumns(offset + 1, today, draftIds), draftIds),
     [offset, today, draftIds],
+  );
+  // ADR-310 — the shared Export: every card matching the search / JC Status /
+  // Overdue / Machine / Operator / dates / column filters (the list's own query).
+  const exportSpec = useMemo(
+    () => jcExportSpec({ columns, tableKey: TABLE_KEYS.jobCardsList, query }),
+    [columns, query],
   );
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
@@ -332,6 +339,7 @@ function JobCardsListPage(): React.JSX.Element {
         search={searchInput}
         onSearch={setSearchInput}
         searchPlaceholder="Search JC no., item code / name, customer, SO no.…"
+        exportSpec={exportSpec}
         updating={isFetching && !isLoading}
         onClearFilters={clearFilters}
         filtersActive={filtersActive}

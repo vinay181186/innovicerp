@@ -18,6 +18,7 @@ import { itemCodeWithRev } from '@/lib/item-code';
 import { coerceDate } from '@/lib/xlsx-import';
 import { soLinePendingQty } from '../components/so-list-columns';
 import { SO_STATUS_LABEL, SO_TYPE_LABEL } from './so-status-label';
+import { postExportLog } from '@/lib/excel-export';
 
 // Minimal type for the File System Access API (Chromium-only), used to pop a
 // real "Save As" file-explorer dialog. Absent in Firefox/Safari → we fall back.
@@ -93,6 +94,7 @@ export async function exportSoListExcel(rows: SalesOrderLineListItem[]): Promise
       const writable = await handle.createWritable();
       await writable.write(blob);
       await writable.close();
+      void postExportLog({ listTitle: 'SO Master', rowCount: rows.length });
       return;
     } catch (e) {
       // User cancelled the dialog → stop quietly. Any other error → fall back.
@@ -109,6 +111,7 @@ export async function exportSoListExcel(rows: SalesOrderLineListItem[]): Promise
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+  void postExportLog({ listTitle: 'SO Master', rowCount: rows.length });
 }
 
 // ── In-form line-items import (adds lines to the SO being created/edited) ──

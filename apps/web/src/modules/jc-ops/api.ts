@@ -31,10 +31,16 @@ function buildQs(q: ListJcOpsBoardQuery): string {
   return p.toString();
 }
 
+/** One page of GET /jc-ops — the board hook's fetcher, also used by the
+ *  shared Export (ADR-310). */
+export function fetchJcOpsBoardPage(query: ListJcOpsBoardQuery): Promise<ListJcOpsBoardResponse> {
+  return apiFetch<ListJcOpsBoardResponse>(`/jc-ops?${buildQs(query)}`);
+}
+
 export function useJcOpsBoard(query: ListJcOpsBoardQuery) {
   return useQuery<ListJcOpsBoardResponse>({
     queryKey: jcOpsBoardKeys.list(query),
-    queryFn: () => apiFetch<ListJcOpsBoardResponse>(`/jc-ops?${buildQs(query)}`),
+    queryFn: () => fetchJcOpsBoardPage(query),
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
     placeholderData: (prev) => prev,

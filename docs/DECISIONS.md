@@ -16377,3 +16377,46 @@ also when the ERP tab is closed. Before this, task assign / complete did not eve
 - Negative: one new dependency and two env keys per stack (owner approved). Browser fully quit or
   Windows Do Not Disturb → no pop-up (bell / Windows notification centre keep it).
 - No backfill: only events after release make notices.
+
+## ADR-310: One Export on every list (Excel, logged)
+
+**Date:** 2026-11-19
+**Status:** Accepted (owner decisions 18-11-2026: D1 a, D2 a, D3 log every export, D4 a; two sheets for document lists)
+
+### Context
+
+Only 7 lists had an Export button (SO Master, Production Orders, Customer Dispatch, Op Log, TPI,
+QC Call Register, QC History), each hand-made. JWSO Master and most masters had none, and no export
+was recorded anywhere.
+
+### Decision
+
+- ONE shared Export in `ListHeader` (`exportSpec` prop; `ui/data/list-export.tsx`,
+  `lib/excel-export.ts`). Columns = the user's visible columns in their order (saved layout, or
+  the on-screen layout while its save is still pending). Rows = every row matching the list's own
+  search / filters / Sort & Filter, read 200 per page, capped at 10,000 with a "first N of M" note.
+- Document lists with a per-line endpoint add a second sheet `<Doc> Lines`: fixed line headings,
+  every line of exactly the sheet-1 documents (lines read with the status filter only, never the
+  search, then kept to sheet-1 docs; read in parallel with sheet 1).
+- Anyone who can open the list may export it. No-price users: money columns are left out of both
+  sheets (not blanked), as on the price-hidden print.
+- Every export writes one Activity Log row: action `EXPORT` ("Exported"), entity `List Export`,
+  detail "<List> — N rows / M lines · filters". POST /activity-log/export (204); Reports and Saved
+  Reports downloads log server-side. Written only after the file is made; a failed log never stops
+  the file. No migration (activity_log.action is plain text).
+- The 7 hand-made exports keep their own columns and now also write the log row.
+- Guard: `ui/data/list-export.guard.test.ts` fails when a list draws ListHeader without
+  exportSpec and is not on its exclusion list (dashboards, Gantt, Trash, Approvals, ZIP dossier).
+- File name `<List> YYYY-MM-DD.xlsx` (IST date); the `xlsx` library loads only on click.
+
+### Alternatives Considered
+
+- One server-side export endpoint per list — rejected: ~70 new routes; the list endpoints already
+  page and filter (§21.2 reuse).
+- Fixed export columns per list — rejected by the owner (D1 a: what you see is what you get).
+
+### Consequences
+
+- Positive: every list exports the same way; every export is traceable.
+- Negative: Excel cells carry no alignment (community xlsx build has no styles, §24 gap).
+- Risk: the lines sheet's 10,000 cap counts all lines of that status, not only sheet-1 docs.

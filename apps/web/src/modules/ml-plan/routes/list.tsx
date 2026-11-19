@@ -20,6 +20,7 @@ import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Banner } from '@/ui/feedback';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useMlPlansList, useRefreshMlPlan } from '../api';
+import { mlPlanExportSpec } from '../lib/export';
 import { CancelMlPlanDialog } from '../components/cancel-ml-plan-dialog';
 import { mlPlanListColumns } from '../components/ml-plan-list-columns';
 import { useMlPlanPrint } from '../components/use-ml-plan-print';
@@ -86,6 +87,11 @@ function MlPlansListPage(): React.JSX.Element {
   const [actionError, setActionError] = useState<string | null>(null);
 
   const columns = useMemo(() => mlPlanListColumns(offset), [offset]);
+  // ADR-310 — the shared Export: every plan matching the search / column filters.
+  const exportSpec = useMemo(
+    () => mlPlanExportSpec({ columns, tableKey: TABLE_KEYS.mlPlanList, search, sfParam: sf.param }),
+    [columns, search, sf.param],
+  );
 
   if (eff && !perms.view) {
     return <PageState as="page" state="noaccess" />;
@@ -110,6 +116,7 @@ function MlPlansListPage(): React.JSX.Element {
         search={searchInput}
         onSearch={setSearchInput}
         searchPlaceholder="Search MLP no., SO no., item code, item name, BOM no.…"
+        exportSpec={exportSpec}
         updating={isFetching && !isLoading}
         onClearFilters={() => {
           setSearchInput('');

@@ -23,6 +23,7 @@ import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc
 import { useJwDcOutwardList } from '../api';
 import { isJwDcCancelled, outwardColumns } from './outward-columns';
 import { useJwDcPrint } from './use-jwdc-print';
+import { jwOutwardExportSpec } from '../lib/export';
 
 const TABLE_KEY = TABLE_KEYS.jwDcOutward;
 
@@ -85,6 +86,19 @@ export function OutwardView({
   useClampPage(page, data?.total, setPage);
 
   const columns = useMemo(() => outwardColumns(pageOffset(page) + 1), [page]);
+  // ADR-310 — the shared Export: every DC matching the search / Sort & Filter
+  // (Cancelled included, as on screen), plus an Outward DC Lines sheet.
+  const exportSpec = useMemo(
+    () =>
+      jwOutwardExportSpec({
+        columns,
+        tableKey: TABLE_KEY,
+        search: term || undefined,
+        sfParam: sf.param,
+        hideMoney: !perms.price,
+      }),
+    [columns, term, sf.param, perms.price],
+  );
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / LIST_PAGE_SIZE));
 
   return (
@@ -97,6 +111,7 @@ export function OutwardView({
         icon="📤"
         count={data?.total}
         noun="DC"
+        exportSpec={exportSpec}
         search={search}
         onSearch={setSearch}
         filtersActive={sf.filtering || search !== ''}

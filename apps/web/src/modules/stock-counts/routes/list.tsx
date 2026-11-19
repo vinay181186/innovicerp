@@ -27,6 +27,7 @@ import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useStockCounts } from '../api';
+import { stockCountExportSpec } from '../lib/export';
 
 // Sort & Filter tick lists (ADR-200): the stored code + the label shown.
 const PURPOSE_OPTIONS = Object.entries(STOCK_COUNT_PURPOSE_LABELS).map(([value, label]) => ({
@@ -196,12 +197,27 @@ function StockCountsListPage(): React.JSX.Element {
     ],
     [firstRowNo],
   );
+  // ADR-310 — the shared Export: every row matching the search / filters /
+  // Sort & Filter, in the columns the user sees.
+  const exportSpec = useMemo(
+    () =>
+      stockCountExportSpec({
+        columns,
+        tableKey: TABLE_KEYS.stockCounts,
+        search: urlSearch.search,
+        status: status || undefined,
+        sfParam: sf.param,
+        hideMoney: !perms.price,
+      }),
+    [columns, urlSearch.search, status, sf.param, perms.price],
+  );
 
   return (
     // `page-fill` (ADR-202): the page fills the content area and the TABLE is the
     // only scrollbox, so the column header cannot ride off the top at the last row.
     <div className="page-fill">
       <ListHeader
+        exportSpec={exportSpec}
         title="Stock Count"
         icon="🧮"
         count={data?.total}

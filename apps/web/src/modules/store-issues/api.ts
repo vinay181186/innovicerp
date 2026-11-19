@@ -54,7 +54,7 @@ export function useStoreIssuesList(query: ListStoreIssuesQuery, enabled = true) 
   return useQuery<ListStoreIssuesResponse>({
     enabled,
     queryKey: storeIssuesKeys.list(query),
-    queryFn: () => apiFetch<ListStoreIssuesResponse>(`/store-issues?${buildSearch(query)}`),
+    queryFn: () => fetchStoreIssuesPage(query),
     refetchInterval: 60_000,
     placeholderData: (prev) => prev,
   });
@@ -65,8 +65,7 @@ export function useStoreIssueLines(query: ListStoreIssuesQuery, enabled = true) 
   return useQuery<ListStoreIssueLinesResponse>({
     enabled,
     queryKey: storeIssuesKeys.lines(query),
-    queryFn: () =>
-      apiFetch<ListStoreIssueLinesResponse>(`/store-issues/lines?${buildSearch(query)}`),
+    queryFn: () => fetchStoreIssueLinesPage(query),
     refetchInterval: 60_000,
     placeholderData: (prev) => prev,
   });
@@ -112,4 +111,20 @@ export function useReturnStoreIssue() {
       apiFetch<StoreIssueDetail>(`/store-issues/${id}/returns`, { method: 'POST', json: body }),
     onSuccess: () => invalidate(qc),
   });
+}
+
+/** ADR-310 — one page of GET /store-issues: the list hook and the shared Export
+ *  both read it. */
+export function fetchStoreIssuesPage(
+  query: ListStoreIssuesQuery,
+): Promise<ListStoreIssuesResponse> {
+  return apiFetch<ListStoreIssuesResponse>(`/store-issues?${buildSearch(query)}`);
+}
+
+/** ADR-310 — one page of GET /store-issues/lines: the list hook and the shared Export
+ *  both read it. */
+export function fetchStoreIssueLinesPage(
+  query: ListStoreIssuesQuery,
+): Promise<ListStoreIssueLinesResponse> {
+  return apiFetch<ListStoreIssueLinesResponse>(`/store-issues/lines?${buildSearch(query)}`);
 }

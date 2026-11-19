@@ -34,6 +34,7 @@ import { useNcRegisterList, useNcRegisterSummary } from '../api';
 import { BulkRtvDialog } from '../components/bulk-rtv-dialog';
 import { useNcRtvSelection } from '../lib/use-nc-rtv-selection';
 import { NcListHeader } from '../components/nc-list-header';
+import { ncExportSpec, withNcExportValues } from '../lib/export';
 import { useNcPrint } from '../components/use-nc-print';
 import {
   NC_LIST_HIDDEN_COLUMNS,
@@ -166,7 +167,16 @@ function NcRegisterListPage(): React.JSX.Element {
   // ADR-202 — NC ids with a pending edit; their status cell reads "Draft".
   const draftIds = usePendingEditIds('NonConformance');
   const firstRowNo = (search.page - 1) * PAGE_SIZE + 1;
-  const columns = useMemo(() => ncListColumns(firstRowNo, draftIds), [firstRowNo, draftIds]);
+  const columns = useMemo(
+    () => withNcExportValues(ncListColumns(firstRowNo, draftIds), draftIds),
+    [firstRowNo, draftIds],
+  );
+  // ADR-310 — the shared Export: every NC matching the search / NC status /
+  // reason / column filters (the list's own query).
+  const exportSpec = useMemo(
+    () => ncExportSpec({ columns, tableKey: TABLE_KEYS.ncRegister, query }),
+    [columns, query],
+  );
   // ⋯ Preview / Download PDF — the NC Report, fetched fresh per click.
   const ncPrint = useNcPrint();
 
@@ -219,6 +229,7 @@ function NcRegisterListPage(): React.JSX.Element {
         <>
           <NcListHeader
             tabs={tabBar}
+            exportSpec={exportSpec}
             orderFilter={<OrderSfFilter sf={sf} field="orderCode" columnField="soCode" />}
             count={data ? total : undefined}
             searchInput={searchInput}

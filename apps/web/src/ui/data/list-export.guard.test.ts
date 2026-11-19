@@ -22,7 +22,6 @@ const HAND_MADE = new Set([
 ]);
 
 const A = 'ADR-310 batch A (masters)';
-const B = 'ADR-310 batch B (documents)';
 const C = 'ADR-310 batch C (registers)';
 const NOT_A_LIST = 'permanent: not a row list';
 
@@ -61,31 +60,8 @@ const ALLOW: Record<string, string> = {
   'users/routes/list.tsx': A,
   'vendors/routes/list.tsx': A,
   // ── batch B ──
-  'assembly/routes/list.tsx': B,
-  'capa/components/capa-view.tsx': B,
-  'customer-material-returns/routes/list.tsx': B,
-  'delivery-challans/routes/list.tsx': B,
-  'engineering-changes/routes/list.tsx': B,
-  'goods-receipt-notes/routes/list.tsx': B,
-  'invoices/routes/list.tsx': B,
-  'jc-ops/routes/list.tsx': B,
-  'job-cards/components/jc-list-filters.tsx': B,
-  'job-cards/routes/list.tsx': B,
-  'jw-dc/components/inward-register.tsx': B,
-  'jw-dc/components/outward-register.tsx': B,
-  'jw-invoices/components/jw-invoice-view.tsx': B,
-  'jw-returns/components/jw-dispatch-view.tsx': B,
-  'ml-plan/routes/list.tsx': B,
-  'nc-register/components/nc-list-header.tsx': B,
-  'outsource-jobs/components/outsource-jobs-view.tsx': B,
-  'party-grn/routes/list.tsx': B,
-  'party-material-issues/components/party-material-issue-view.tsx': B,
-  'plans/routes/list.tsx': B,
-  'purchase-orders/routes/list.tsx': B,
-  'purchase-requests/routes/list.tsx': B,
-  'stock-counts/routes/list.tsx': B,
-  'store-issues/routes/list.tsx': B,
-  'tool-issues/components/tool-issue-register-view.tsx': B,
+  'job-cards/components/jc-list-filters.tsx':
+    'permanent: filter slot only (comment names <ListHeader>); the JC list Export is in job-cards/routes/list.tsx',
   // ── batch C ──
   'activity-log/routes/list.tsx': C,
   'approvals/components/approval-history-list.tsx': C,

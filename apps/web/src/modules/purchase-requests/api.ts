@@ -47,8 +47,7 @@ export function usePurchaseRequestsList(
 ) {
   return useQuery<ListPurchaseRequestsResponse>({
     queryKey: purchaseRequestsKeys.list(query),
-    queryFn: () =>
-      apiFetch<ListPurchaseRequestsResponse>(`/purchase-requests?${toQueryString(query)}`),
+    queryFn: () => fetchPurchaseRequestsPage(query),
     placeholderData: (prev) => prev,
     ...options,
   });
@@ -150,4 +149,12 @@ export function useSoftDeletePurchaseRequest() {
       qc.removeQueries({ queryKey: purchaseRequestsKeys.detail(id) });
     },
   });
+}
+
+/** ADR-310 — one page of GET /purchase-requests: the list hook and the shared Export
+ *  both read it. */
+export function fetchPurchaseRequestsPage(
+  query: ListPurchaseRequestsQuery,
+): Promise<ListPurchaseRequestsResponse> {
+  return apiFetch<ListPurchaseRequestsResponse>(`/purchase-requests?${toQueryString(query)}`);
 }

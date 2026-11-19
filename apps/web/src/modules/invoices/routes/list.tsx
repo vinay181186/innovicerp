@@ -32,6 +32,7 @@ import { TabStrip } from '@/ui/navigation';
 import { useInvoiceList } from '../api';
 import { invoiceListColumns, type InvoiceStatusCounts } from '../components/invoice-list-columns';
 import { useInvoicePrint } from '../components/use-invoice-print';
+import { invoiceExportSpec, withInvoiceExportValues } from '../lib/export';
 import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
 
 // Deep-link seed for Global Search: `?tab=jw&search=IN-JI-26-0001` opens the
@@ -118,6 +119,38 @@ function InvoiceListPage(): React.JSX.Element {
   const [cancelTarget, setCancelTarget] = useState<{ id: string; code: string } | null>(null);
   // ADR-232: Add Payment is the Entry tick on Invoices alone.
 
+  // Money hidden for L1 Viewers: the API nulls the row amounts, so the
+  // Amount column is dropped. Told by the server, not inferred from a null
+  // money field: a null also means "no value yet", so probing it hid money
+  // from users entitled to see it.
+  const priceHidden = data ? !data.priceVisible : false;
+
+  const cs = countData?.summary;
+  const statusCounts: InvoiceStatusCounts | undefined = useMemo(
+    () =>
+      cs ? { unpaid: cs.unpaidCount, partial: cs.partialCount, paid: cs.paidCount } : undefined,
+    [cs],
+  );
+  const columns = useMemo(
+    () =>
+      withInvoiceExportValues(invoiceListColumns(pageOffset(page) + 1, priceHidden, statusCounts)),
+    [page, priceHidden, statusCounts],
+  );
+  // ADR-310 — the shared Export: every invoice matching the search / Sort &
+  // Filter, the columns the user sees, plus an Invoice Lines sheet. A
+  // no-price user gets no money columns on either sheet.
+  const exportSpec = useMemo(
+    () =>
+      invoiceExportSpec({
+        columns,
+        tableKey: TABLE_KEYS.invoicesList,
+        search: term || undefined,
+        sfParam: sf.param,
+        hideMoney: !perms.price || priceHidden,
+      }),
+    [columns, term, sf.param, perms.price, priceHidden],
+  );
+
   if (eff && !perms.view) return <PageState as="page" state="noaccess" />;
 
   const tabs = (
@@ -144,22 +177,9 @@ function InvoiceListPage(): React.JSX.Element {
     );
   }
 
-  // Money hidden for L1 Viewers: the API nulls the row amounts, so the
-  // Amount column is dropped. Told by the server, not inferred from a null
-  // money field: a null also means "no value yet", so probing it hid money
-  // from users entitled to see it.
-  const priceHidden = data ? !data.priceVisible : false;
-
-  const cs = countData?.summary;
-  const statusCounts: InvoiceStatusCounts | undefined = cs
-    ? { unpaid: cs.unpaidCount, partial: cs.partialCount, paid: cs.paidCount }
-    : undefined;
-
   const openInvoice = (id: string): void => {
     void navigate({ to: '/invoices/$id', params: { id } });
   };
-
-  const columns = invoiceListColumns(pageOffset(page) + 1, priceHidden, statusCounts);
 
   return (
     // `page-fill` (ADR-202): the SO invoice tab fills the content area and the
@@ -172,6 +192,7 @@ function InvoiceListPage(): React.JSX.Element {
         count={data ? data.total : undefined}
         noun="invoice"
         updating={!isLoading && isFetching}
+        exportSpec={exportSpec}
         search={searchInput}
         onSearch={setSearchInput}
         searchPlaceholder="Search invoice no., SO no., customer, item code, POL…"

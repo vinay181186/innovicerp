@@ -43,6 +43,7 @@ import {
   outsourceJobsColumns,
 } from './outsource-jobs-columns';
 import { ospCanOrder } from '../lib/osp-band';
+import { ospExportSpec, withOspExportValues } from '../lib/export';
 
 type Band = 'open' | 'po_created';
 
@@ -73,6 +74,8 @@ export function OutsourceJobsView({ tabs }: { tabs?: React.ReactNode }): React.J
   // /purchase-orders/from-pr itself guards on.
   const { data: eff } = useMyAccess();
   const canEdit = effectiveFormPerms(eff, 'po_create').entry;
+  // Est. Rate is a price: a no-price user's Export leaves it out (ADR-310).
+  const canSeePrice = effectiveFormPerms(eff, 'pr_create').price;
 
   const query: ListPurchaseRequestsQuery = useMemo(
     () => ({
@@ -111,7 +114,24 @@ export function OutsourceJobsView({ tabs }: { tabs?: React.ReactNode }): React.J
     [rows, sel],
   );
 
-  const columns = useMemo(() => outsourceJobsColumns(pageOffset(page) + 1), [page]);
+  const columns = useMemo(
+    () => withOspExportValues(outsourceJobsColumns(pageOffset(page) + 1)),
+    [page],
+  );
+  // ADR-310 — the shared Export: every OSP request matching the band / JC /
+  // search / column filters (the tab's own query).
+  const exportSpec = useMemo(
+    () =>
+      ospExportSpec({
+        columns,
+        tableKey: TABLE_KEYS.outsourceJobs,
+        query,
+        bandLabel:
+          statusBand === 'open' ? 'Open' : statusBand === 'po_created' ? 'PO Created' : undefined,
+        hideMoney: !canSeePrice,
+      }),
+    [columns, query, statusBand, canSeePrice],
+  );
   const filtering = statusBand !== undefined || jcNo !== undefined || searchText !== '';
 
   return (
@@ -133,6 +153,7 @@ export function OutsourceJobsView({ tabs }: { tabs?: React.ReactNode }): React.J
         search={searchText}
         onSearch={setSearchText}
         searchPlaceholder="Search PR No., JC, item, process, vendor, due, status…"
+        exportSpec={exportSpec}
         updating={isFetching && !isLoading}
         filters={
           <>

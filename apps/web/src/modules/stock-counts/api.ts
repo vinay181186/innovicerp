@@ -27,16 +27,22 @@ export const stockCountKeys = {
   detail: (id: string) => [...stockCountKeys.all, 'detail', id] as const,
 };
 
-export function useStockCounts(q: ListStockCountsQuery) {
+/** ADR-310 — one page of GET /stock-counts: the list hook and the shared Export
+ *  both read it. */
+export function fetchStockCountsPage(q: ListStockCountsQuery): Promise<ListStockCountsResponse> {
   const p = new URLSearchParams();
   if (q.status) p.set('status', q.status);
   if (q.search) p.set('search', q.search);
   if (q.sf) p.set('sf', q.sf);
   p.set('limit', String(q.limit));
   p.set('offset', String(q.offset));
+  return apiFetch<ListStockCountsResponse>(`/stock-counts?${p.toString()}`);
+}
+
+export function useStockCounts(q: ListStockCountsQuery) {
   return useQuery<ListStockCountsResponse>({
     queryKey: stockCountKeys.list(q),
-    queryFn: () => apiFetch<ListStockCountsResponse>(`/stock-counts?${p.toString()}`),
+    queryFn: () => fetchStockCountsPage(q),
     placeholderData: (prev) => prev,
   });
 }

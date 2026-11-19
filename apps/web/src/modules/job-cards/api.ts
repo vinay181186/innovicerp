@@ -62,13 +62,19 @@ function toQueryString(q: JobCardsListArgs): string {
   return params.toString();
 }
 
+/** One page of GET /job-cards — the list hook's fetcher, also used by the
+ *  shared Export (ADR-310). */
+export function fetchJobCardsPage(query: JobCardsListArgs): Promise<ListJobCardsResponse> {
+  return apiFetch<ListJobCardsResponse>(`/job-cards?${toQueryString(query)}`);
+}
+
 export function useJobCardsList(
   query: JobCardsListArgs,
   options?: Omit<UseQueryOptions<ListJobCardsResponse>, 'queryKey' | 'queryFn'>,
 ) {
   return useQuery<ListJobCardsResponse>({
     queryKey: jobCardsKeys.list(query),
-    queryFn: () => apiFetch<ListJobCardsResponse>(`/job-cards?${toQueryString(query)}`),
+    queryFn: () => fetchJobCardsPage(query),
     placeholderData: (prev) => prev,
     ...options,
   });

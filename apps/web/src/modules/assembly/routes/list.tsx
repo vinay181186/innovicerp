@@ -43,6 +43,7 @@ import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useAssembliesList } from '../api';
+import { assemblyExportSpec, withAssemblyExportValues } from '../lib/export';
 import { assemblyListColumns, ROW_TINT_BY_STATUS } from '../components/assembly-list-columns';
 
 const searchSchema = z.object({
@@ -132,7 +133,17 @@ function AssemblyListPage(): React.JSX.Element {
   }, []);
 
   const firstRowNo = pageOffset(search.page) + 1;
-  const columns = useMemo(() => assemblyListColumns(today, firstRowNo), [today, firstRowNo]);
+  const columns = useMemo(
+    () => withAssemblyExportValues(assemblyListColumns(today, firstRowNo)),
+    [today, firstRowNo],
+  );
+  // ADR-310 — the shared Export: every assembly order matching the search /
+  // status / column filters (the list's own query).
+  const statusLabel = filter !== 'all' ? TILES.find((t) => t.key === filter)?.label : undefined;
+  const exportSpec = useMemo(
+    () => assemblyExportSpec({ columns, tableKey: TABLE_KEYS.assemblies, query, statusLabel }),
+    [columns, query, statusLabel],
+  );
   const rows = data?.items ?? [];
   const counts = data?.counts;
   const filtersActive = searchInput !== '' || filter !== 'all' || sf.filtering;
@@ -155,6 +166,7 @@ function AssemblyListPage(): React.JSX.Element {
         search={searchInput}
         onSearch={setSearchInput}
         searchPlaceholder="Search SO no., customer, BOM no. / name…"
+        exportSpec={exportSpec}
         updating={isFetching && !isLoading}
         filters={
           <select
