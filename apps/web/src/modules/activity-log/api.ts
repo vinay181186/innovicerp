@@ -15,21 +15,27 @@ export const activityLogKeys = {
     [...activityLogKeys.all, 'history', entity, entityId, refId] as const,
 };
 
+/** One page of GET /activity-log — the list hook's fetcher, also used by the
+ *  shared Export (ADR-310). */
+export function fetchActivityLogPage(
+  query: ListActivityLogQuery,
+): Promise<ListActivityLogResponse> {
+  const params = new URLSearchParams();
+  if (query.search) params.set('search', query.search);
+  if (query.action) params.set('action', query.action);
+  if (query.userId) params.set('userId', query.userId);
+  if (query.fromDate) params.set('fromDate', query.fromDate);
+  if (query.toDate) params.set('toDate', query.toDate);
+  if (query.sf) params.set('sf', query.sf);
+  params.set('limit', String(query.limit));
+  params.set('offset', String(query.offset));
+  return apiFetch<ListActivityLogResponse>(`/activity-log?${params.toString()}`);
+}
+
 export function useActivityLog(query: ListActivityLogQuery) {
   return useQuery<ListActivityLogResponse>({
     queryKey: activityLogKeys.list(query),
-    queryFn: () => {
-      const params = new URLSearchParams();
-      if (query.search) params.set('search', query.search);
-      if (query.action) params.set('action', query.action);
-      if (query.userId) params.set('userId', query.userId);
-      if (query.fromDate) params.set('fromDate', query.fromDate);
-      if (query.toDate) params.set('toDate', query.toDate);
-      if (query.sf) params.set('sf', query.sf);
-      params.set('limit', String(query.limit));
-      params.set('offset', String(query.offset));
-      return apiFetch<ListActivityLogResponse>(`/activity-log?${params.toString()}`);
-    },
+    queryFn: () => fetchActivityLogPage(query),
     placeholderData: (prev) => prev,
   });
 }

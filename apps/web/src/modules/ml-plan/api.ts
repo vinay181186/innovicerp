@@ -46,13 +46,19 @@ function toQueryString(q: ListMlPlansQuery): string {
   return params.toString();
 }
 
+/** One page of GET /ml-plans — the list hook's fetcher, also used by the
+ *  shared Export (ADR-310). */
+export function fetchMlPlansPage(query: ListMlPlansQuery): Promise<ListMlPlansResponse> {
+  return apiFetch<ListMlPlansResponse>(`/ml-plans?${toQueryString(query)}`);
+}
+
 export function useMlPlansList(
   query: ListMlPlansQuery,
   options?: Omit<UseQueryOptions<ListMlPlansResponse>, 'queryKey' | 'queryFn'>,
 ) {
   return useQuery<ListMlPlansResponse>({
     queryKey: mlPlansKeys.list(query),
-    queryFn: () => apiFetch<ListMlPlansResponse>(`/ml-plans?${toQueryString(query)}`),
+    queryFn: () => fetchMlPlansPage(query),
     placeholderData: (prev) => prev,
     ...options,
   });

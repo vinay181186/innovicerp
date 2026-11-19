@@ -43,6 +43,7 @@ import {
 import { DOC_QC_LABELS } from '../components/doc-qc-badge';
 import { useGrnPrint } from '../components/use-grn-print';
 import { GRN_QC_STATUS_LABELS } from '../lib/grn-labels';
+import { grnExportSpec } from '../lib/export';
 
 // Pagination is KEPT here (unlike SO Master): the GRN API is paginated and the
 // receipt book grows every day, so the whole list is not loaded in one go.
@@ -136,6 +137,22 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
     () => goodsReceiptNoteListColumns((search.page - 1) * PAGE_SIZE + 1, draftIds),
     [search.page, draftIds],
   );
+  // ADR-310 — the shared Export: every row matching the search / filters /
+  // Sort & Filter, in the columns the user sees.
+  const exportSpec = useMemo(
+    () =>
+      grnExportSpec({
+        columns,
+        draftIds,
+        tableKey: TABLE_KEYS.grnList,
+        search: search.search,
+        qcStatus: search.qcStatus,
+        docQcStatus: search.docQc,
+        sfParam: sf.param,
+        hideMoney: !perms.price,
+      }),
+    [columns, draftIds, search.search, search.qcStatus, search.docQc, sf.param, perms.price],
+  );
 
   // ⋯ row menu — Assign Task (link a task to this GRN), the same gate the
   // retired card used: shown only while a line still awaits QC
@@ -213,6 +230,7 @@ function GoodsReceiptNotesListPage(): React.JSX.Element {
           the filter bar (search · QC status with counts · Clear), with the
           read-only "Today" tile inside the same band. */}
       <ListHeader
+        exportSpec={exportSpec}
         orderFilter={<OrderSfFilter sf={sf} field="soCode" />}
         title="GRN"
         icon="📥"

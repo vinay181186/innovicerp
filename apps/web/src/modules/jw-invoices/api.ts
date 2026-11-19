@@ -42,10 +42,16 @@ function toQueryString(q: ListJwInvoicesQuery): string {
   return params.toString();
 }
 
+/** One page of GET /jw-invoices — the list hook's fetcher, also used by the
+ *  shared Export (ADR-310). */
+export function fetchJwInvoicesPage(query: ListJwInvoicesQuery): Promise<ListJwInvoicesResponse> {
+  return apiFetch<ListJwInvoicesResponse>(`/jw-invoices?${toQueryString(query)}`);
+}
+
 export function useJwInvoicesList(query: ListJwInvoicesQuery) {
   return useQuery<ListJwInvoicesResponse>({
     queryKey: jwInvoicesKeys.list(query),
-    queryFn: () => apiFetch<ListJwInvoicesResponse>(`/jw-invoices?${toQueryString(query)}`),
+    queryFn: () => fetchJwInvoicesPage(query),
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
     placeholderData: (prev) => prev,

@@ -25,18 +25,21 @@ export function useUserAccessList(opts?: { enabled?: boolean }) {
   });
 }
 
+/** One page of Access Control — the hook below and the list's Export (ADR-310) both call it. */
+export function fetchUserAccessPage(q: ListUserAccessQuery): Promise<ListUserAccessResponse> {
+  const params = new URLSearchParams();
+  if (q.search) params.set('search', q.search);
+  if (q.sf) params.set('sf', q.sf);
+  if (q.limit !== undefined) params.set('limit', String(q.limit));
+  if (q.offset !== undefined) params.set('offset', String(q.offset));
+  return apiFetch<ListUserAccessResponse>(`/access-control/users?${params.toString()}`);
+}
+
 /** One page of the Access Control screen (ADR-201): search + sf on the server. */
 export function useUserAccessPage(q: ListUserAccessQuery) {
   return useQuery<ListUserAccessResponse>({
     queryKey: accessControlKeys.page(q),
-    queryFn: () => {
-      const params = new URLSearchParams();
-      if (q.search) params.set('search', q.search);
-      if (q.sf) params.set('sf', q.sf);
-      if (q.limit !== undefined) params.set('limit', String(q.limit));
-      if (q.offset !== undefined) params.set('offset', String(q.offset));
-      return apiFetch<ListUserAccessResponse>(`/access-control/users?${params.toString()}`);
-    },
+    queryFn: () => fetchUserAccessPage(q),
     placeholderData: (prev) => prev,
   });
 }

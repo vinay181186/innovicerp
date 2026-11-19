@@ -49,10 +49,18 @@ function buildQs(q: ListDesignProjectsQuery): string {
   return p.toString();
 }
 
+/** One page of GET /design-projects — the list hook's fetcher, also used by
+ *  the shared Export (ADR-310). */
+export function fetchDesignProjectsPage(
+  query: ListDesignProjectsQuery,
+): Promise<ListDesignProjectsResponse> {
+  return apiFetch<ListDesignProjectsResponse>(`/design-projects?${buildQs(query)}`);
+}
+
 export function useDesignProjectsList(query: ListDesignProjectsQuery) {
   return useQuery<ListDesignProjectsResponse>({
     queryKey: designProjectsKeys.list(query),
-    queryFn: () => apiFetch<ListDesignProjectsResponse>(`/design-projects?${buildQs(query)}`),
+    queryFn: () => fetchDesignProjectsPage(query),
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
     placeholderData: (prev) => prev,

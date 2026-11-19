@@ -16,6 +16,7 @@ import { apiFetch } from '@/lib/api';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { toQueryString, type ListOpLogQuery, type ListOpLogResponse } from '../api';
+import { postExportLog } from '@/lib/excel-export';
 
 const PAGE = 200;
 export const EXPORT_CAP = 10_000;
@@ -72,5 +73,11 @@ export async function exportOpLog(
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Operation Log');
   XLSX.writeFile(wb, `Operation-Log-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  void postExportLog({
+    listTitle: 'Operation Log',
+    rowCount: sheet.length,
+    capped: total > EXPORT_CAP,
+    ...(total > EXPORT_CAP ? { totalCount: total } : {}),
+  });
   return { written: sheet.length, total };
 }

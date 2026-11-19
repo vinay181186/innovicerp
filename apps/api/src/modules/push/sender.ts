@@ -1,7 +1,7 @@
 // ADR-309 — the task pop-up sender. Reads pending task_notices and sends each
 // to the recipient's switched-on browsers via Web Push (VAPID).
 //
-// - Woken by kickPushSender() (debounced ~1 s, after the task write commits)
+// - Woken by kickPushSender() (after the task write commits, debounced 150 ms)
 //   and by a retry tick every PUSH_RETRY_INTERVAL_MS — the tick also picks up
 //   a notice whose kick fired before its task transaction committed. Started
 //   from server.ts only (never under test).
@@ -39,7 +39,8 @@ import { type VapidConfig, buildTaskPushPayload, pushDecision, vapidFrom } from 
 import { vapidProblem } from './vapid';
 
 const CLAIM_BATCH = 50;
-const KICK_DEBOUNCE_MS = 1_000;
+/** Kicks now arrive after commit; this only batches a burst of them. */
+const KICK_DEBOUNCE_MS = 150;
 const SEND_TIMEOUT_MS = 10_000;
 const PUSH_TTL_SECONDS = 24 * 3600;
 /** Notices sent at the same time within one flush. */

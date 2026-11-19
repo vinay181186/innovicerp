@@ -28,10 +28,18 @@ function toQuery(f: DailyReportFilters): string {
   return s ? `?${s}` : '';
 }
 
+/** One page of GET /daily-task-reports — the list hook's fetcher, also used by
+ *  the shared Export (ADR-310). */
+export function fetchDailyReportPage(
+  filters: DailyReportFilters,
+): Promise<ListDailyTaskReportsResponse> {
+  return apiFetch<ListDailyTaskReportsResponse>(`/daily-task-reports${toQuery(filters)}`);
+}
+
 export function useDailyReportList(filters: DailyReportFilters) {
   return useQuery<ListDailyTaskReportsResponse>({
     queryKey: dailyTaskReportKeys.list(filters),
-    queryFn: () => apiFetch<ListDailyTaskReportsResponse>(`/daily-task-reports${toQuery(filters)}`),
+    queryFn: () => fetchDailyReportPage(filters),
     staleTime: 15_000,
     // The old page stays on screen while the next one loads.
     placeholderData: (prev) => prev,

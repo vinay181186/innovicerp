@@ -60,13 +60,19 @@ export function useInvoiceList(q: ListInvoicesQuery) {
   });
 }
 
+/** One page of SO invoice LINES (GET /invoices/lines) — the line hook's
+ *  fetcher, also used by the shared Export (ADR-310) for its Lines sheet. */
+export function fetchInvoiceLinesPage(q: ListInvoicesQuery): Promise<ListInvoiceLinesResponse> {
+  return apiFetch<ListInvoiceLinesResponse>(`/invoices/lines?${invoiceListQs(q)}`);
+}
+
 /** ADR-261 — one page of SO invoice LINES (GET /invoices/lines). */
 export function useInvoiceLineList(q: ListInvoicesQuery) {
   return useQuery<ListInvoiceLinesResponse>({
     queryKey: invoiceKeys.lineList(q),
     // Not a live table (CLAUDE.md §22): the safety refresh keeps the list current.
     refetchInterval: LIVE_FALLBACK_POLL_MS,
-    queryFn: () => apiFetch<ListInvoiceLinesResponse>(`/invoices/lines?${invoiceListQs(q)}`),
+    queryFn: () => fetchInvoiceLinesPage(q),
     staleTime: 15_000,
     placeholderData: (prev) => prev,
   });

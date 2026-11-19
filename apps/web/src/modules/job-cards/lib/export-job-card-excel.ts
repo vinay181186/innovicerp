@@ -10,6 +10,7 @@ import { resolveActualMachine } from '@/components/shared/machine-split';
 import { itemCodeWithRev, docDrawingRev } from '@/lib/item-code';
 import { JC_STATUS_LABEL } from '../components/jc-status-badge';
 import { OP_STATUS } from './jc-op-labels';
+import { postExportLog } from '@/lib/excel-export';
 
 // Log type code → the word the Op Log screens show (op-log/routes/list.tsx).
 const LOG_TYPE_LABEL: Record<OpLog['logType'], string> = {
@@ -192,4 +193,5 @@ export function exportJobCardExcel(args: {
   XLSX.utils.book_append_sheet(wb, wsOps, 'Operations');
   XLSX.utils.book_append_sheet(wb, wsLog, 'Production Log');
   XLSX.writeFile(wb, `Job Card Export ${jc.code}.xlsx`);
+  void postExportLog({ listTitle: `Job Card · ${jc.code}`, rowCount: 1 });
 }

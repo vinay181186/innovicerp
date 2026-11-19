@@ -31,13 +31,20 @@ function toQueryString(q: ListCostCentersQuery): string {
   return params.toString();
 }
 
+/** One page of the list — the hook below and the list's Export (ADR-310) both call it. */
+export function fetchCostCentersPage(
+  query: ListCostCentersQuery,
+): Promise<ListCostCentersResponse> {
+  return apiFetch<ListCostCentersResponse>(`/cost-centers?${toQueryString(query)}`);
+}
+
 export function useCostCentersList(
   query: ListCostCentersQuery,
   options?: Omit<UseQueryOptions<ListCostCentersResponse>, 'queryKey' | 'queryFn'>,
 ) {
   return useQuery<ListCostCentersResponse>({
     queryKey: costCentersKeys.list(query),
-    queryFn: () => apiFetch<ListCostCentersResponse>(`/cost-centers?${toQueryString(query)}`),
+    queryFn: () => fetchCostCentersPage(query),
     placeholderData: (prev) => prev,
     ...options,
   });

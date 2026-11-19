@@ -20,6 +20,7 @@ import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader } from '@/ui/layout';
 import { useDailyReportList } from '../api';
+import { dailyReportExportSpec, withDailyReportExportValues } from '../lib/export';
 import { ReportLinesExpand } from '../components/report-lines-expand';
 import { EditReportModal, NewReportModal, ViewReportModal } from '../components/report-modals';
 import { SearchableSelect } from '@/ui/forms';
@@ -124,7 +125,7 @@ function DailyTaskReportsPage(): React.JSX.Element {
   // One page of reports; the server already applied search + filters + sf.
   const rows = data.reports;
 
-  const columns: DataTableColumn<DailyTaskReportRow>[] = [
+  const columns: DataTableColumn<DailyTaskReportRow>[] = withDailyReportExportValues([
     srNoColumn<DailyTaskReportRow>(pageOffset(page) + 1),
     {
       id: 'report_date',
@@ -175,7 +176,19 @@ function DailyTaskReportsPage(): React.JSX.Element {
       nowrap: true,
       render: (r) => <span style={{ color: 'var(--cyan)' }}>{r.totalHours.toFixed(1)}h</span>,
     },
-  ];
+  ]);
+  // ADR-310 — the shared Export: every report matching the search / filters
+  // (the same query as the list). Built after the loading returns, no hook.
+  const exportSpec = dailyReportExportSpec({
+    columns,
+    tableKey: TABLE_KEYS.dailyTaskReports,
+    userId: userFilter || undefined,
+    userName: data.userOptions.find((u) => u.id === userFilter)?.name,
+    dateFrom: dateFrom || undefined,
+    dateTo: dateTo || undefined,
+    search: search || undefined,
+    sfParam: sf.param,
+  });
 
   return (
     // `page-fill` (ADR-202): the page fills the content area and the TABLE is
@@ -191,6 +204,7 @@ function DailyTaskReportsPage(): React.JSX.Element {
         onSearch={setTerm}
         searchPlaceholder="Search report date, user, shift…"
         updating={isFetching}
+        exportSpec={exportSpec}
         filters={
           <>
             {data.canSeeAll ? (

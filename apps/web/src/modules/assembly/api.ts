@@ -34,10 +34,16 @@ function listQueryString(q: ListAssembliesQuery): string {
 }
 
 /** One page of the Assembly Tracker list (ADR-201) + its server-side counts. */
+/** One page of GET /assemblies — the list hook's fetcher, also used by the
+ *  shared Export (ADR-310). */
+export function fetchAssembliesPage(query: ListAssembliesQuery): Promise<AssemblyListResponse> {
+  return apiFetch<AssemblyListResponse>(`/assemblies?${listQueryString(query)}`);
+}
+
 export function useAssembliesList(query: ListAssembliesQuery) {
   return useQuery<AssemblyListResponse>({
     queryKey: assemblyKeys.list(query),
-    queryFn: () => apiFetch<AssemblyListResponse>(`/assemblies?${listQueryString(query)}`),
+    queryFn: () => fetchAssembliesPage(query),
     placeholderData: (prev) => prev,
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,

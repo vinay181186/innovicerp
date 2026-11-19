@@ -18,6 +18,7 @@ import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useEcrList } from '../api';
+import { ecrExportSpec, withEcrExportValues } from '../lib/export';
 import { EcrCancelDialog } from '../components/ecr-cancel-dialog';
 import { ecrListColumns } from '../components/ecr-list-columns';
 
@@ -76,7 +77,12 @@ function EcrListPage(): React.JSX.Element {
   const rows = useMemo(() => data?.items ?? [], [data?.items]);
   const total = data?.total ?? 0;
   useClampPage(page, data?.total, gotoPage);
-  const columns = useMemo(() => ecrListColumns(offset), [offset]);
+  const columns = useMemo(() => withEcrExportValues(ecrListColumns(offset)), [offset]);
+  // ADR-310 — the shared Export: every ECR matching the search / column filters.
+  const exportSpec = useMemo(
+    () => ecrExportSpec({ columns, tableKey: TABLE_KEYS.ecrList, search, sfParam: sf.param }),
+    [columns, search, sf.param],
+  );
   const [toCancel, setToCancel] = useState<EcrListRow | null>(null);
 
   if (eff && !perms.view) {
@@ -100,6 +106,7 @@ function EcrListPage(): React.JSX.Element {
         search={searchInput}
         onSearch={setSearchInput}
         searchPlaceholder="Search ECR No., item code, item name, Drawing Rev, replacement item…"
+        exportSpec={exportSpec}
         updating={isFetching && !isLoading}
         onClearFilters={() => {
           setSearchInput('');

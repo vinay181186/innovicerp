@@ -42,6 +42,7 @@ import {
   designTrackerRowMenu,
   designTrackerRowTint,
 } from '../components/design-tracker-columns';
+import { designTrackerExportSpec, withDesignTrackerExportValues } from '../lib/export';
 import { EditDesignModal } from '../components/edit-design-modal';
 import { LogTimeModal } from '../components/log-time-modal';
 
@@ -165,7 +166,24 @@ function DesignTrackerListPage(): React.JSX.Element {
   const today = todayIst();
   const rows = data?.items ?? [];
   const firstRowNo = pageOffset(page) + 1;
-  const columns = useMemo(() => designTrackerColumns({ today, firstRowNo }), [today, firstRowNo]);
+  const columns = useMemo(
+    () => withDesignTrackerExportValues(designTrackerColumns({ today, firstRowNo })),
+    [today, firstRowNo],
+  );
+  // ADR-310 — the shared Export: every design matching the search / filter
+  // (the same query as the list).
+  const exportSpec = useMemo(
+    () =>
+      designTrackerExportSpec({
+        columns,
+        tableKey: TABLE_KEYS.designTracker,
+        search: term,
+        filter,
+        filterLabel: filter === 'all' ? undefined : FILTER_LABEL[filter],
+        sfParam: sf.param,
+      }),
+    [columns, term, filter, sf.param],
+  );
 
   if (eff && !perms.view) {
     return (
@@ -185,6 +203,7 @@ function DesignTrackerListPage(): React.JSX.Element {
         orderFilter={<OrderSfFilter sf={sf} field="soCode" kind="so" />}
         title="Design Tracker"
         icon="🎨"
+        exportSpec={exportSpec}
         count={data?.total}
         noun="design"
         filterNote={filter === 'all' ? undefined : FILTER_LABEL[filter]}

@@ -22,7 +22,6 @@ import type { ReorderListRow, ReorderPrResult } from '@innovic/shared';
 import { createRoute, Link } from '@tanstack/react-router';
 import { useCallback, useMemo, useState } from 'react';
 import { z } from 'zod';
-import { matchesSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -31,6 +30,7 @@ import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useRaiseReorderPrs, useReorderList } from '../api';
+import { reorderExportSpec, reorderRowMatches, withReorderExportValues } from '../lib/export';
 import { reorderListColumns, type Draft } from '../components/reorder-list-columns';
 
 export const reorderListRoute = createRoute({
@@ -68,24 +68,7 @@ function ReorderListPage(): React.JSX.Element {
 
   const rows = useMemo(() => data?.items ?? [], [data]);
   const [term, setTerm] = useState('');
-  const shownRows = useMemo(
-    () =>
-      rows.filter((r) =>
-        matchesSearchTerm(
-          [
-            r.itemCode,
-            r.itemName,
-            r.uom,
-            r.itemType,
-            r.suggestedVendor?.code,
-            r.suggestedVendor?.name,
-            ...r.openPrs.map((p) => p.code),
-          ],
-          term,
-        ),
-      ),
-    [rows, term],
-  );
+  const shownRows = useMemo(() => rows.filter((r) => reorderRowMatches(r, term)), [rows, term]);
 
   const draftOf = useCallback(
     (r: ReorderListRow): Draft =>
@@ -114,8 +97,13 @@ function ReorderListPage(): React.JSX.Element {
 
   const firstRowNo = pageOffset(search.page) + 1;
   const columns = useMemo(
-    () => reorderListColumns({ draftOf, setDraft, canRaise, firstRowNo }),
+    () => withReorderExportValues(reorderListColumns({ draftOf, setDraft, canRaise, firstRowNo })),
     [draftOf, setDraft, canRaise, firstRowNo],
+  );
+  // ADR-310 — the shared Export: every row matching the column filters and the box.
+  const exportSpec = useMemo(
+    () => reorderExportSpec({ columns, tableKey: TABLE_KEYS.reorderList, sfParam: sf.param, term }),
+    [columns, sf.param, term],
   );
 
   // A row can be ticked only when the user may raise PRs and it has no open PR.
@@ -186,6 +174,7 @@ function ReorderListPage(): React.JSX.Element {
     <div className="page-fill">
       <ListHeader
         title="Reorder List"
+        exportSpec={exportSpec}
         icon="🔁"
         count={isLoading ? undefined : total}
         noun="item below reorder"

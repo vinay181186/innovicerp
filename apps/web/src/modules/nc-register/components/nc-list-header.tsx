@@ -13,6 +13,7 @@ import {
 } from '@innovic/shared';
 import { Link } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
+import type { AnyListExportSpec } from '@/ui/data/list-export';
 import { ListHeader } from '@/ui/layout';
 
 export interface NcListHeaderProps {
@@ -31,6 +32,8 @@ export interface NcListHeaderProps {
   orderFilter: ReactNode;
   /** The page's tab strip, drawn under the header. */
   tabs?: ReactNode;
+  /** ADR-310 — the shared Export for the NC list. */
+  exportSpec?: AnyListExportSpec | undefined;
 }
 
 export function NcListHeader({
@@ -47,6 +50,7 @@ export function NcListHeader({
   canReportNc,
   orderFilter,
   tabs,
+  exportSpec,
 }: NcListHeaderProps): React.JSX.Element {
   return (
     <ListHeader
@@ -70,6 +74,7 @@ export function NcListHeader({
       search={searchInput}
       onSearch={onSearch}
       searchPlaceholder="Search NC No., JC No., SO / JWSO No., item code, item name, reason…"
+      exportSpec={exportSpec}
       updating={updating}
       filters={
         <>

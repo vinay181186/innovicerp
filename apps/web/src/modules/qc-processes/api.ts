@@ -28,13 +28,19 @@ function toQueryString(q: ListQcProcessesQuery): string {
   return params.toString();
 }
 
+/** One page of the list — the list hook's fetcher, also used by the shared
+ *  Export (ADR-310). */
+export function fetchQcProcessesPage(q: ListQcProcessesQuery): Promise<ListQcProcessesResponse> {
+  return apiFetch<ListQcProcessesResponse>(`/qc-processes?${toQueryString(q)}`);
+}
+
 export function useQcProcessesList(
   query: ListQcProcessesQuery,
   options?: Omit<UseQueryOptions<ListQcProcessesResponse>, 'queryKey' | 'queryFn'>,
 ) {
   return useQuery<ListQcProcessesResponse>({
     queryKey: qcProcessesKeys.list(query),
-    queryFn: () => apiFetch<ListQcProcessesResponse>(`/qc-processes?${toQueryString(query)}`),
+    queryFn: () => fetchQcProcessesPage(query),
     placeholderData: (prev) => prev,
     ...options,
   });

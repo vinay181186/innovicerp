@@ -61,10 +61,18 @@ function toQs(q: ListRevSubstitutionsQuery): string {
   return p.toString();
 }
 
+/** One page of the list — the list hook's fetcher, also used by the shared
+ *  Export (ADR-310). */
+export function fetchRevSubstitutionsPage(
+  q: ListRevSubstitutionsQuery,
+): Promise<ListRevSubstitutionsResponse> {
+  return apiFetch<ListRevSubstitutionsResponse>(`/rev-substitutions?${toQs(q)}`);
+}
+
 export function useRevSubstitutions(q: ListRevSubstitutionsQuery) {
   return useQuery<ListRevSubstitutionsResponse>({
     queryKey: revSubstitutionKeys.list(q),
-    queryFn: () => apiFetch<ListRevSubstitutionsResponse>(`/rev-substitutions?${toQs(q)}`),
+    queryFn: () => fetchRevSubstitutionsPage(q),
     placeholderData: (prev) => prev,
   });
 }

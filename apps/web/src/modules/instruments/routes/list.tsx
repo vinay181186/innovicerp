@@ -32,6 +32,7 @@ import { Banner } from '@/ui/feedback';
 import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader } from '@/ui/layout';
 import { useInstrumentsList, useUnregisteredInstruments } from '../api';
+import { instrumentExportSpec } from '../lib/export';
 import { InstrumentDetailModal } from '../components/instrument-detail-modal';
 import {
   RegisterInstrumentModal,
@@ -230,6 +231,24 @@ function InstrumentsListPage(): React.JSX.Element {
     [offset],
   );
 
+  // ADR-310 — the shared Export: every row matching the search / filters / ▾.
+  const exportSpec = useMemo(
+    () =>
+      instrumentExportSpec({
+        columns,
+        tableKey: TABLE_KEYS.instruments,
+        query: {
+          search: urlSearch.search,
+          sf: sf.param,
+          status: status || undefined,
+          due: due || undefined,
+          limit: LIST_PAGE_SIZE,
+          offset,
+        },
+      }),
+    [columns, urlSearch.search, sf.param, status, due, offset],
+  );
+
   if (!allowed) {
     return (
       <div className="empty-state" style={{ color: 'var(--amber2)', padding: 40 }}>
@@ -243,6 +262,7 @@ function InstrumentsListPage(): React.JSX.Element {
     // column header cannot ride off the top of the screen at the last row.
     <div className="page-fill">
       <ListHeader
+        exportSpec={exportSpec}
         title="Instrument Register"
         icon="📏"
         count={data?.total}

@@ -27,6 +27,7 @@ import {
 } from '../components/jc-ops-columns';
 import { ChangeMachineModal, CreatePrModal } from '../components/jc-ops-machine-pr-modals';
 import { OutsourceBalanceModal } from '../components/jc-ops-outsource-modal';
+import { jcOpsExportSpec, withJcOpsExportValues } from '../lib/export';
 import '../jc-ops.css';
 
 export const jcOpsRoute = createRoute({
@@ -73,7 +74,20 @@ function JcOpsPage(): React.JSX.Element {
   const [editRow, setEditRow] = useState<JcOpsBoardRow | null>(null);
   const [prRow, setPrRow] = useState<JcOpsBoardRow | null>(null);
   const [outsourceRow, setOutsourceRow] = useState<JcOpsBoardRow | null>(null);
-  const columns = useMemo(() => jcOpsColumns(pageOffset(page) + 1), [page]);
+  const columns = useMemo(() => withJcOpsExportValues(jcOpsColumns(pageOffset(page) + 1)), [page]);
+  // ADR-310 — the shared Export: every operation matching the JC / search /
+  // column filters (the board's own query).
+  const exportSpec = useMemo(
+    () =>
+      jcOpsExportSpec({
+        columns,
+        tableKey: TABLE_KEYS.jcOpsBoard,
+        jcCode: jcCode || undefined,
+        search: searchTerm || undefined,
+        sfParam: sf.param,
+      }),
+    [columns, jcCode, searchTerm, sf.param],
+  );
   const actionProps: JcOpsActionProps = {
     canWrite,
     canCreatePr,
@@ -126,6 +140,7 @@ function JcOpsPage(): React.JSX.Element {
         search={searchInput}
         onSearch={setSearchInput}
         searchPlaceholder="Search JC no., operation, item code, POL…"
+        exportSpec={exportSpec}
         updating={isFetching && !isLoading}
         onClearFilters={() => {
           setSearchInput('');

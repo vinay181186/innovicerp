@@ -18,6 +18,7 @@ import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useOspWip } from '../api';
+import { ospAtVendorExportSpec } from '../lib/export';
 import { ospAtVendorColumns } from './osp-at-vendor-columns';
 
 type FilterKey = 'all' | 'at_vendor' | 'not_sent' | 'ready_to_send';
@@ -59,6 +60,19 @@ export function OspAtVendorRegister({ tabs }: { tabs?: React.ReactNode }): React
     offset: pageOffset(page),
   });
   useClampPage(page, data?.total, setPage);
+  // ADR-310 — the shared Export: every op matching the search / Bucket / column filters.
+  const exportSpec = useMemo(
+    () =>
+      ospAtVendorExportSpec({
+        columns,
+        tableKey: TABLE_KEYS.ospAtVendorRegister,
+        filter,
+        filterLabel: FILTER_LABELS[filter],
+        search: term,
+        sfParam: sf.param,
+      }),
+    [columns, filter, term, sf.param],
+  );
 
   return (
     <div>
@@ -75,6 +89,7 @@ export function OspAtVendorRegister({ tabs }: { tabs?: React.ReactNode }): React
         onSearch={setSearch}
         searchPlaceholder="Search JC, item, SO, vendor…"
         updating={isFetching && !isLoading}
+        exportSpec={exportSpec}
         filters={
           // The qty buckets that used to be clickable strip tiles, now one
           // dropdown with the same numbers in the option labels (owner

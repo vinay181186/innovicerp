@@ -45,6 +45,7 @@ import { Banner } from '@/ui/feedback';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { clientListColumns } from '../components/client-list-columns';
 import { useBulkCreateClients, useClientsList, useSoftDeleteClient } from '../api';
+import { clientExportSpec } from '../lib/export';
 import { TrashReasonDialog } from '@/modules/items/components/trash-reason-dialog';
 import { parseClientImportFile } from '../lib/import-export';
 
@@ -185,6 +186,11 @@ function ClientsListPage(): React.JSX.Element {
   const total = data?.total ?? 0;
 
   const columns = useMemo(() => clientListColumns(offset), [offset]);
+  // ADR-310 — the shared Export: every row matching the search / filters / ▾.
+  const exportSpec = useMemo(
+    () => clientExportSpec({ columns, tableKey: TABLE_KEYS.clientsList, query }),
+    [columns, query],
+  );
 
   if (eff && !perms.view) {
     return <PageState as="page" state="noaccess" />;
@@ -199,6 +205,7 @@ function ClientsListPage(): React.JSX.Element {
           bar (search · status with counts · Clear) stay put while the rows
           scroll underneath. */}
       <ListHeader
+        exportSpec={exportSpec}
         title="Customer Master"
         count={total}
         noun="customer"

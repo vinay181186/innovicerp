@@ -31,6 +31,7 @@ import * as XLSX from 'xlsx';
 import { todayIst } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { fmtDate } from '@/lib/print/doc-print';
+import { postExportLog } from '@/lib/excel-export';
 
 /** Shift code ('day') → the word the screens show ('Day'); unknown text passes through. */
 function shiftLabel(code: string | null): string {
@@ -55,6 +56,7 @@ function download(rows: Record<string, unknown>[], sheetName: string, filename: 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, sheetName);
   XLSX.writeFile(wb, filename);
+  void postExportLog({ listTitle: `QC History · ${sheetName}`, rowCount: rows.length });
 }
 
 /** Prefix the Source / GRN columns only when the export mixes both kinds of row. */

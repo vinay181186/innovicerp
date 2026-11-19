@@ -45,6 +45,7 @@ import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib
 import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useBomMaster, useBomMastersList } from '../api';
+import { bomExportSpec } from '../lib/export';
 
 const searchSchema = z.object({
   search: z.string().optional(),
@@ -125,6 +126,18 @@ function BomMastersListPage(): React.JSX.Element {
   }, []);
 
   const columns = useMemo(() => bomListColumns(offset), [offset]);
+  // ADR-310 — the shared Export: every row matching the search / filters / ▾.
+  const exportSpec = useMemo(
+    () =>
+      bomExportSpec({
+        columns,
+        tableKey: TABLE_KEYS.bomMasterList,
+        search,
+        status,
+        sfParam: sf.param,
+      }),
+    [columns, search, status, sf.param],
+  );
 
   if (eff && !perms.view) {
     return <PageState as="page" state="noaccess" />;
@@ -137,6 +150,7 @@ function BomMastersListPage(): React.JSX.Element {
       {/* The frozen header band: title, count, primary action and the filter
           bar stay put while the rows scroll underneath. */}
       <ListHeader
+        exportSpec={exportSpec}
         title="BOM Master"
         count={total}
         noun="BOM"

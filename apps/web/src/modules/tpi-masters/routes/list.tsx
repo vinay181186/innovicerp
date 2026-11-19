@@ -50,6 +50,7 @@ import { Banner } from '@/ui/feedback';
 import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useSoftDeleteTpiMaster, useTpiMastersList } from '../api';
+import { tpiExportSpec, withTpiExportValues } from '../lib/export';
 
 const listSearchSchema = z.object({
   search: z.string().optional(),
@@ -212,6 +213,18 @@ function TpiMastersListPage(): React.JSX.Element {
     ],
     [offset],
   );
+  // ADR-310 — the shared Export: every row matching the search / filters / ▾.
+  const exportSpec = useMemo(
+    () =>
+      tpiExportSpec({
+        columns: withTpiExportValues(columns),
+        tableKey: TABLE_KEYS.tpiMastersList,
+        search: search.search,
+        isActive: search.isActive,
+        sfParam: sf.param,
+      }),
+    [columns, search.search, search.isActive, sf.param],
+  );
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
   // VIEW was removed for this page sees the no-access panel, not the page. `eff`
@@ -230,6 +243,7 @@ function TpiMastersListPage(): React.JSX.Element {
           the primary action stay put while the rows scroll underneath. */}
       <ListHeader
         title="TPI Master"
+        exportSpec={exportSpec}
         icon="🔍"
         // Count is the list response's `total` — the only aggregate the
         // endpoint returns.

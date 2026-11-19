@@ -55,7 +55,7 @@ function buildSearch(q: ListToolIssuesQuery): string {
 export function useToolIssuesList(query: ListToolIssuesQuery) {
   return useQuery<ListToolIssuesResponse>({
     queryKey: toolIssuesKeys.list(query),
-    queryFn: () => apiFetch<ListToolIssuesResponse>(`/tool-issues?${buildSearch(query)}`),
+    queryFn: () => fetchToolIssuesPage(query),
     refetchInterval: 60_000,
     placeholderData: (prev) => prev,
   });
@@ -148,4 +148,10 @@ export function useDecideToolWriteoff() {
       apiFetch(`/tool-writeoffs/${id}/decide`, { method: 'POST', json: body }),
     onSuccess: () => invalidate(qc),
   });
+}
+
+/** ADR-310 — one page of GET /tool-issues: the list hook and the shared Export
+ *  both read it. */
+export function fetchToolIssuesPage(query: ListToolIssuesQuery): Promise<ListToolIssuesResponse> {
+  return apiFetch<ListToolIssuesResponse>(`/tool-issues?${buildSearch(query)}`);
 }

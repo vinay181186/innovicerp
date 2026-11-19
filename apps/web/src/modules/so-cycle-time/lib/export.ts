@@ -39,6 +39,7 @@ function istDate(v: string | null | undefined): string {
   );
 }
 import { soStatusLabel } from '@/modules/sales-orders/lib/so-status-label';
+import { postExportLog } from '@/lib/excel-export';
 
 // SO type code → the word the SO Cycle Time screen shows (routes/page.tsx).
 const TYPE_LABEL: Record<string, string> = {
@@ -86,4 +87,5 @@ export function exportSoCycleTime(rows: SoCycleTimeRow[]): void {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'SO Cycle Time');
   XLSX.writeFile(wb, `SO Cycle Time Export ${stamp()}.xlsx`);
+  void postExportLog({ listTitle: 'SO Cycle Time', rowCount: out.length });
 }

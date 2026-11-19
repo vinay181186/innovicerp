@@ -28,6 +28,7 @@ import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useDrawingRegister } from '../api';
+import { drawingRegisterExportSpec, withRegisterExportValues } from '../lib/export';
 import {
   drawingRegisterColumns,
   drawingRegisterRowMenu,
@@ -98,7 +99,16 @@ function DrawingRegisterPage(): React.JSX.Element {
 
   const rows = data?.items ?? [];
   const total = data?.total ?? 0;
-  const columns = drawingRegisterColumns(pageOffset(page) + 1);
+  const columns = withRegisterExportValues(drawingRegisterColumns(pageOffset(page) + 1));
+  // ADR-310 — the shared Export: every Drawing Rev matching the search /
+  // status / column filters (the same query as the list).
+  const exportSpec = drawingRegisterExportSpec({
+    columns,
+    tableKey: TABLE_KEYS.drawingRegister,
+    search: term,
+    status,
+    sfParam: sf.param,
+  });
   const filtering = Boolean(term) || Boolean(status) || sf.filtering;
 
   // "Hide page": no View → the no-access panel. `eff` undefined only while
@@ -125,6 +135,7 @@ function DrawingRegisterPage(): React.JSX.Element {
         onSearch={setInput}
         searchPlaceholder="Search item code, item name, customer part no., drawing no.…"
         updating={isFetching && !isLoading}
+        exportSpec={exportSpec}
         filters={
           <Select
             aria-label="Drawing Rev Status"

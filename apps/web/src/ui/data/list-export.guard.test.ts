@@ -21,9 +21,6 @@ const HAND_MADE = new Set([
   'qc-history/routes/index.tsx',
 ]);
 
-const A = 'ADR-310 batch A (masters)';
-const B = 'ADR-310 batch B (documents)';
-const C = 'ADR-310 batch C (registers)';
 const NOT_A_LIST = 'permanent: not a row list';
 
 const ALLOW: Record<string, string> = {
@@ -40,75 +37,11 @@ const ALLOW: Record<string, string> = {
   'trash/routes/list.tsx': 'permanent: Trash holds deleted records',
   'approvals/components/approvals-list.tsx': 'permanent: Approvals waiting list',
   'ui-kit/routes/page.tsx': 'permanent: /__ui-kit preview page',
-  // ── batch A ──
-  'access-control/routes/list.tsx': A,
-  'bom-master/routes/list.tsx': A,
-  'clients/routes/list.tsx': A,
-  'cost-centers/routes/list.tsx': A,
-  'instruments/routes/list.tsx': A,
-  'items/routes/list.tsx': A,
-  'machines/components/machine-group-tab.tsx': A,
-  'machines/routes/list.tsx': A,
-  'ml-bom/routes/list.tsx': A,
-  'operators/routes/list.tsx': A,
-  'party-materials/routes/list.tsx': A,
-  'qc-processes/routes/list.tsx': A,
-  'raw-material/components/material-master-panel.tsx': A,
-  'rev-substitutions/routes/list.tsx': A,
-  'route-cards/routes/list.tsx': A,
-  'saved-reports/routes/list.tsx': A,
-  'tpi-masters/routes/list.tsx': A,
-  'users/routes/list.tsx': A,
-  'vendors/routes/list.tsx': A,
-  // ── batch B ──
-  'assembly/routes/list.tsx': B,
-  'capa/components/capa-view.tsx': B,
-  'customer-material-returns/routes/list.tsx': B,
-  'delivery-challans/routes/list.tsx': B,
-  'engineering-changes/routes/list.tsx': B,
-  'goods-receipt-notes/routes/list.tsx': B,
-  'invoices/routes/list.tsx': B,
-  'jc-ops/routes/list.tsx': B,
-  'job-cards/components/jc-list-filters.tsx': B,
-  'job-cards/routes/list.tsx': B,
-  'jw-dc/components/inward-register.tsx': B,
-  'jw-dc/components/outward-register.tsx': B,
-  'jw-invoices/components/jw-invoice-view.tsx': B,
-  'jw-returns/components/jw-dispatch-view.tsx': B,
-  'ml-plan/routes/list.tsx': B,
-  'nc-register/components/nc-list-header.tsx': B,
-  'outsource-jobs/components/outsource-jobs-view.tsx': B,
-  'party-grn/routes/list.tsx': B,
-  'party-material-issues/components/party-material-issue-view.tsx': B,
-  'plans/routes/list.tsx': B,
-  'purchase-orders/routes/list.tsx': B,
-  'purchase-requests/routes/list.tsx': B,
-  'stock-counts/routes/list.tsx': B,
-  'store-issues/routes/list.tsx': B,
-  'tool-issues/components/tool-issue-register-view.tsx': B,
-  // ── batch C ──
-  'activity-log/routes/list.tsx': C,
-  'approvals/components/approval-history-list.tsx': C,
-  'daily-task-reports/routes/list.tsx': C,
-  'design-issues/routes/list.tsx': C,
-  'design-projects/routes/list.tsx': C,
-  'design-tracker/routes/list.tsx': C,
-  'design-work-log/routes/list.tsx': C,
-  'item-revisions/routes/fix-list.tsx': C,
-  'item-revisions/routes/register.tsx': C,
-  'job-queue/routes/list.tsx': C,
-  'machine-loading/routes/list.tsx': C,
-  'osp-wip/components/osp-at-vendor-register.tsx': C,
-  'party-stock-ledger/routes/list.tsx': C,
-  'qc-documents/components/register-view.tsx': C,
-  'qc-documents/components/so-status-view.tsx': C,
-  'so-costing/routes/list.tsx': C,
-  'so-overview/routes/list.tsx': C,
-  'so-planning/routes/workflow.tsx': C,
-  'store-inventory/routes/list.tsx': C,
-  'store-inventory/routes/reorder-list.tsx': C,
-  'store-transactions/components/stock-ledger.tsx': C,
-  'tasks/routes/board.tsx': C,
+  'job-cards/components/jc-list-filters.tsx':
+    'permanent: filter slot only (comment names <ListHeader>); the JC list Export is in job-cards/routes/list.tsx',
+  // ── still open ──
+  'design-work-log/routes/list.tsx':
+    'ADR-310 open: five tabs (My Log, Daily, Weekly, Project Hours, Alerts), each its own table — needs a per-tab Export',
 };
 
 function tsxFiles(dir: string): string[] {

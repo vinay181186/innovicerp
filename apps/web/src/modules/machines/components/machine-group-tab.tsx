@@ -43,6 +43,7 @@ import {
   useSoftDeleteMachineGroup,
   useUpdateMachineGroup,
 } from '../api';
+import { machineGroupExportSpec } from '../lib/export';
 import { MachineGroupModal } from './machine-group-modal';
 
 type ModalState = { kind: 'none' } | { kind: 'new' } | { kind: 'edit'; row: MachineGroup };
@@ -194,10 +195,16 @@ export function MachineGroupTab({ tabs }: { tabs: React.ReactNode }): React.JSX.
     ],
     [pendingIds, offset],
   );
+  // ADR-310 — the shared Export: every row matching the search / filters / ▾.
+  const exportSpec = useMemo(
+    () => machineGroupExportSpec({ columns, tableKey: TABLE_KEYS.machineGroups, query }),
+    [columns, query],
+  );
 
   return (
     <div>
       <ListHeader
+        exportSpec={exportSpec}
         title="Machine Master"
         icon="⚙"
         count={list.isLoading ? undefined : total}

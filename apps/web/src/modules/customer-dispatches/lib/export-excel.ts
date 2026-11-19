@@ -7,6 +7,7 @@ import type { CustomerDispatchRegisterRow, CustomerDispatchStatus } from '@innov
 import * as XLSX from 'xlsx';
 import { todayIst } from '@/lib/date';
 import { docDrawingRev, itemCodeWithRev } from '@/lib/item-code';
+import { postExportLog } from '@/lib/excel-export';
 
 // Status code → the word the user reads (no shared label map exists yet).
 const DISPATCH_STATUS_LABEL: Record<CustomerDispatchStatus, string> = {
@@ -36,7 +37,10 @@ const COLUMNS = [
   'Dispatch Status',
 ] as const;
 
-export function exportDispatchRegister(rows: CustomerDispatchRegisterRow[], soFilter?: string): void {
+export function exportDispatchRegister(
+  rows: CustomerDispatchRegisterRow[],
+  soFilter?: string,
+): void {
   const data = rows.map((r) => [
     r.dispatchCode,
     r.date,
@@ -58,8 +62,10 @@ export function exportDispatchRegister(rows: CustomerDispatchRegisterRow[], soFi
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Dispatch Register');
   const suffix = soFilter ? ` ${soFilter}` : '';
-  XLSX.writeFile(
-    wb,
-    `Dispatch Register Export${suffix} ${todayIst()}.xlsx`,
-  );
+  XLSX.writeFile(wb, `Dispatch Register Export${suffix} ${todayIst()}.xlsx`);
+  void postExportLog({
+    listTitle: 'Dispatch Register',
+    rowCount: rows.length,
+    ...(soFilter ? { filterSummary: `SO ${soFilter}` } : {}),
+  });
 }

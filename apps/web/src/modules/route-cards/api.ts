@@ -36,13 +36,19 @@ function toQueryString(q: ListRouteCardsQuery): string {
   return params.toString();
 }
 
+/** One page of the list — the list hook's fetcher, also used by the shared
+ *  Export (ADR-310). */
+export function fetchRouteCardsPage(q: ListRouteCardsQuery): Promise<ListRouteCardsResponse> {
+  return apiFetch<ListRouteCardsResponse>(`/route-cards?${toQueryString(q)}`);
+}
+
 export function useRouteCardsList(
   query: ListRouteCardsQuery,
   options?: Omit<UseQueryOptions<ListRouteCardsResponse>, 'queryKey' | 'queryFn'>,
 ) {
   return useQuery<ListRouteCardsResponse>({
     queryKey: routeCardsKeys.list(query),
-    queryFn: () => apiFetch<ListRouteCardsResponse>(`/route-cards?${toQueryString(query)}`),
+    queryFn: () => fetchRouteCardsPage(query),
     placeholderData: (prev) => prev,
     ...options,
   });

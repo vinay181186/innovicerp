@@ -28,6 +28,7 @@ import { jwInvoiceColumns } from './jw-invoice-columns';
 import { JwInvoiceExpand } from './jw-invoice-expand';
 import { NewJwInvoiceModal } from './new-jw-invoice-modal';
 import { usePrintJwInvoice } from './use-print-jw-invoice';
+import { jwInvoiceExportSpec, withJwInvoiceExportValues } from '../lib/export';
 
 // ADR-201: 25 invoices a page with Prev / Next (the page lives in this tab's
 // state — the tab has no route of its own). The search box and the column ▾
@@ -116,8 +117,21 @@ export function JwInvoiceView({
   // "no value yet", so probing it hid money from users entitled to see it.
   const priceHidden = data ? !data.priceVisible : false;
   const columns = useMemo(
-    () => jwInvoiceColumns(pageOffset(page) + 1, priceHidden),
+    () => withJwInvoiceExportValues(jwInvoiceColumns(pageOffset(page) + 1, priceHidden)),
     [page, priceHidden],
+  );
+  // ADR-310 — the shared Export: every JW invoice matching the search / Sort &
+  // Filter, the columns the user sees; money left out for a no-price user.
+  const exportSpec = useMemo(
+    () =>
+      jwInvoiceExportSpec({
+        columns,
+        tableKey: TABLE_KEYS.jwInvoices,
+        search: term || undefined,
+        sfParam: sf.param,
+        hideMoney: !invPerms.price || priceHidden,
+      }),
+    [columns, term, sf.param, invPerms.price, priceHidden],
   );
   // Preview / Download PDF: no permission gate — anyone who can see the row can print it, as on
   // the DC detail page. Money a viewer may not see is already gone from the row
@@ -132,6 +146,7 @@ export function JwInvoiceView({
         icon="🔧"
         count={total}
         noun="JW invoice"
+        exportSpec={exportSpec}
         search={searchInput}
         onSearch={setSearchInput}
         searchPlaceholder="Search invoice no., date, JWSO, customer, part…"

@@ -50,8 +50,7 @@ export function useGoodsReceiptNotesList(
 ) {
   return useQuery<ListGoodsReceiptNotesResponse>({
     queryKey: goodsReceiptNotesKeys.list(query),
-    queryFn: () =>
-      apiFetch<ListGoodsReceiptNotesResponse>(`/goods-receipt-notes?${toQueryString(query)}`),
+    queryFn: () => fetchGoodsReceiptNotesPage(query),
     placeholderData: (prev) => prev,
     ...options,
   });
@@ -65,10 +64,7 @@ export function useGoodsReceiptNoteLinesList(
 ) {
   return useQuery<ListGoodsReceiptNoteLinesResponse>({
     queryKey: goodsReceiptNotesKeys.lineList(query),
-    queryFn: () =>
-      apiFetch<ListGoodsReceiptNoteLinesResponse>(
-        `/goods-receipt-notes/lines?${toQueryString(query)}`,
-      ),
+    queryFn: () => fetchGoodsReceiptNoteLinesPage(query),
     placeholderData: (prev) => prev,
     ...options,
   });
@@ -183,4 +179,22 @@ export function useSoftDeleteGoodsReceiptNote() {
       invalidatePoCaches(qc);
     },
   });
+}
+
+/** ADR-310 — one page of GET /goods-receipt-notes: the list hook and the shared Export
+ *  both read it. */
+export function fetchGoodsReceiptNotesPage(
+  query: ListGoodsReceiptNotesQuery,
+): Promise<ListGoodsReceiptNotesResponse> {
+  return apiFetch<ListGoodsReceiptNotesResponse>(`/goods-receipt-notes?${toQueryString(query)}`);
+}
+
+/** ADR-310 — one page of GET /goods-receipt-notes/lines: the list hook and the shared Export
+ *  both read it. */
+export function fetchGoodsReceiptNoteLinesPage(
+  query: ListGoodsReceiptNotesQuery,
+): Promise<ListGoodsReceiptNoteLinesResponse> {
+  return apiFetch<ListGoodsReceiptNoteLinesResponse>(
+    `/goods-receipt-notes/lines?${toQueryString(query)}`,
+  );
 }

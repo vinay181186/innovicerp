@@ -15,6 +15,7 @@ import { downloadCsv, rowsToCsv } from '@/modules/reports/lib/csv';
 import { fmtDate } from '@/lib/date';
 import { istStamp, weekday } from './format';
 import { sortEntries } from './sheet';
+import { postExportLog } from '@/lib/excel-export';
 
 export interface ExportTable {
   /** Column keys deliberately avoid a `status` / `type` suffix: rowsToCsv
@@ -160,6 +161,7 @@ export function fileSlug(s: string): string {
 export function exportCsv(t: ExportTable, baseName: string): void {
   const cols = t.columns.map((c) => ({ ...c, type: 'text' as const }));
   downloadCsv(`${baseName}.csv`, rowsToCsv(cols, t.rows));
+  void postExportLog({ listTitle: `Day Log · ${baseName}`, rowCount: t.rows.length });
 }
 
 export async function exportXlsx(t: ExportTable, baseName: string, sheet: string): Promise<void> {
@@ -169,4 +171,5 @@ export async function exportXlsx(t: ExportTable, baseName: string, sheet: string
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, sheet);
   XLSX.writeFile(wb, `${baseName}.xlsx`);
+  void postExportLog({ listTitle: `Day Log · ${baseName}`, rowCount: t.rows.length });
 }

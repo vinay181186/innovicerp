@@ -22,19 +22,23 @@ export function useNextCapaCode() {
   });
 }
 
+/** One page of GET /capa — the list hook's fetcher, also used by the shared
+ *  Export (ADR-310). */
+export function fetchCapaPage(q: ListCapaQuery = {}): Promise<ListCapaResponse> {
+  const params = new URLSearchParams();
+  if (q.search) params.set('search', q.search);
+  if (q.sf) params.set('sf', q.sf);
+  if (q.limit !== undefined) params.set('limit', String(q.limit));
+  if (q.offset) params.set('offset', String(q.offset));
+  const qs = params.toString();
+  return apiFetch<ListCapaResponse>(qs ? `/capa?${qs}` : '/capa');
+}
+
 /** No args → every CAPA (New CAPA modal); the list screen passes a 25-row page. */
 export function useCapaList(q: ListCapaQuery = {}) {
   return useQuery<ListCapaResponse>({
     queryKey: capaKeys.list(q),
-    queryFn: () => {
-      const params = new URLSearchParams();
-      if (q.search) params.set('search', q.search);
-      if (q.sf) params.set('sf', q.sf);
-      if (q.limit !== undefined) params.set('limit', String(q.limit));
-      if (q.offset) params.set('offset', String(q.offset));
-      const qs = params.toString();
-      return apiFetch<ListCapaResponse>(qs ? `/capa?${qs}` : '/capa');
-    },
+    queryFn: () => fetchCapaPage(q),
     placeholderData: (prev) => prev,
   });
 }

@@ -30,13 +30,17 @@ function buildQs(q: JobQueueQuery): string {
   return p.toString();
 }
 
+/** One page of GET /job-queue — the queue hook's fetcher, also used by the
+ *  shared Export (ADR-310). */
+export function fetchJobQueuePage(query: JobQueueQuery): Promise<JobQueueResponse> {
+  const qs = buildQs(query);
+  return apiFetch<JobQueueResponse>(`/job-queue${qs ? `?${qs}` : ''}`);
+}
+
 export function useJobQueue(query: JobQueueQuery) {
   return useQuery<JobQueueResponse>({
     queryKey: jobQueueKeys.view(query),
-    queryFn: () => {
-      const qs = buildQs(query);
-      return apiFetch<JobQueueResponse>(`/job-queue${qs ? `?${qs}` : ''}`);
-    },
+    queryFn: () => fetchJobQueuePage(query),
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
     placeholderData: (prev) => prev,

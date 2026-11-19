@@ -25,7 +25,6 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
-import { apiFetch } from '@/lib/api';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { inrFormat } from '@/lib/print/doc-print';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
@@ -35,6 +34,8 @@ import { createdByColumn, DataTable, leadColumns, Panel, type DataTableColumn } 
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
+import { fetchSoCostingPage, soCostingQueryString } from '../api';
+import { soCostingExportSpec } from '../lib/export';
 
 export const soCostingListRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -224,17 +225,14 @@ function SoCostingListPage(): React.JSX.Element {
     void routeNavigate({ search: (p) => ({ ...p, page: 1 }), replace: true });
   });
   const offset = pageOffset(urlSearch.page);
-  const qs = useMemo(() => {
-    const q = new URLSearchParams();
-    if (urlSearch.q) q.set('search', urlSearch.q);
-    if (sf.param) q.set('sf', sf.param);
-    q.set('limit', String(LIST_PAGE_SIZE));
-    q.set('offset', String(offset));
-    return q.toString();
-  }, [urlSearch.q, sf.param, offset]);
+  const pageQuery = useMemo(
+    () => ({ search: urlSearch.q, sf: sf.param, limit: LIST_PAGE_SIZE, offset }),
+    [urlSearch.q, sf.param, offset],
+  );
+  const qs = soCostingQueryString(pageQuery);
   const { data, isLoading, isFetching, isError, error } = useQuery<ListSoCostingResponse>({
     queryKey: ['so-costing', 'list', qs],
-    queryFn: () => apiFetch<ListSoCostingResponse>(`/so-costing?${qs}`),
+    queryFn: () => fetchSoCostingPage(pageQuery),
     staleTime: 30_000,
     placeholderData: (prev) => prev,
   });
@@ -247,6 +245,19 @@ function SoCostingListPage(): React.JSX.Element {
   // "no value yet", so probing it hid money from users entitled to see it.
   const priceHidden = data ? !data.priceVisible : false;
   const columns = useMemo(() => soCostingColumns(priceHidden, offset + 1), [priceHidden, offset]);
+  // ADR-310 — the shared Export: every SO matching the search / column filters;
+  // money left out of the file for a user the server hides prices from.
+  const exportSpec = useMemo(
+    () =>
+      soCostingExportSpec({
+        columns,
+        tableKey: TABLE_KEYS.soCosting,
+        search: urlSearch.q,
+        sfParam: sf.param,
+        priceHidden,
+      }),
+    [columns, urlSearch.q, sf.param, priceHidden],
+  );
 
   const header = (
     <ListHeader
@@ -259,6 +270,7 @@ function SoCostingListPage(): React.JSX.Element {
       onSearch={setSearch}
       searchPlaceholder="Search SO No., customer, cost centre…"
       updating={isFetching && !isLoading}
+      exportSpec={exportSpec}
     />
   );
 

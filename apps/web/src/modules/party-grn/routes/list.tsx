@@ -40,6 +40,7 @@ import { usePartyGrnPrint } from '../components/use-party-grn-print';
 import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
 import { PartyMaterialIssueView } from '@/modules/party-material-issues/components/party-material-issue-view';
 import { TabStrip } from '@/ui/navigation';
+import { partyGrnExportSpec } from '../lib/export';
 
 // Deep-link seed (Global Search's Party Material Issue hits): `?tab=issue&search=
 // IN-PMI-26-0001` opens the Issue tab with its box pre-filled. Read ONCE into
@@ -139,6 +140,19 @@ function PartyGrnListPage(): React.JSX.Element {
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / LIST_PAGE_SIZE));
   const rows = data?.items ?? [];
   const columns = useMemo(() => partyGrnColumns(pageOffset(page) + 1), [page]);
+  // ADR-310 — the shared Export: every row matching the search / filters /
+  // Sort & Filter, in the columns the user sees.
+  const exportSpec = useMemo(
+    () =>
+      partyGrnExportSpec({
+        columns,
+        tableKey: TABLE_KEYS.partyGrn,
+        search: term || undefined,
+        sfParam: sf.param,
+        hideMoney: !perms.price,
+      }),
+    [columns, term, sf.param, perms.price],
+  );
   const editRow = editId ? (rows.find((r) => r.id === editId) ?? null) : null;
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
@@ -186,6 +200,7 @@ function PartyGrnListPage(): React.JSX.Element {
               + New Party GRN, with the read-only totals pinned inside the
               same band. */}
           <ListHeader
+            exportSpec={exportSpec}
             orderFilter={<OrderSfFilter sf={sf} field="jwCode" kind="jwso" />}
             title="Party GRN"
             icon="📥"

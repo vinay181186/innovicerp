@@ -30,6 +30,7 @@ import { NewPartyMaterialIssueModal } from './new-party-material-issue-modal';
 import { isIssueCancelled, partyMaterialIssueColumns } from './party-material-issue-columns';
 import { PartyMaterialIssueExpand } from './party-material-issue-expand';
 import { ReturnToStoreModal } from './return-to-store-modal';
+import { pmiExportSpec } from '../lib/export';
 
 // ADR-201: 25 issues a page with Prev / Next (the page lives in this tab's
 // state — the tab has no route of its own). The search box and the column ▾
@@ -96,6 +97,19 @@ export function PartyMaterialIssueView({
   const onPage = useCallback((p: number) => setPage(p), []);
   useClampPage(page, data?.total, onPage);
   const columns = useMemo(() => partyMaterialIssueColumns(pageOffset(page) + 1), [page]);
+  // ADR-310 — the shared Export: every row matching the search / filters /
+  // Sort & Filter, in the columns the user sees.
+  const exportSpec = useMemo(
+    () =>
+      pmiExportSpec({
+        columns,
+        tableKey: TABLE_KEYS.partyMaterialIssues,
+        search: term || undefined,
+        sfParam: sf.param,
+        hideMoney: !perms.price,
+      }),
+    [columns, term, sf.param, perms.price],
+  );
 
   // ▸ expand — Remarks are already on the row, so no extra fetch.
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -128,6 +142,7 @@ export function PartyMaterialIssueView({
       {/* THE list header (ui/layout ListHeader): title · count · search ·
           + New Issue. */}
       <ListHeader
+        exportSpec={exportSpec}
         orderFilter={<OrderSfFilter sf={sf} field="jwsoCode" kind="jwso" />}
         title="Customer Material Issue"
         icon="📤"

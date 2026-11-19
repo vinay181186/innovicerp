@@ -35,13 +35,18 @@ function toQueryString(q: ListBomMastersQuery): string {
   return params.toString();
 }
 
+/** One page of the list — the hook below and the list's Export (ADR-310) both call it. */
+export function fetchBomMastersPage(query: ListBomMastersQuery): Promise<ListBomMastersResponse> {
+  return apiFetch<ListBomMastersResponse>(`/bom-masters?${toQueryString(query)}`);
+}
+
 export function useBomMastersList(
   query: ListBomMastersQuery,
   options?: Omit<UseQueryOptions<ListBomMastersResponse>, 'queryKey' | 'queryFn'>,
 ) {
   return useQuery<ListBomMastersResponse>({
     queryKey: bomMastersKeys.list(query),
-    queryFn: () => apiFetch<ListBomMastersResponse>(`/bom-masters?${toQueryString(query)}`),
+    queryFn: () => fetchBomMastersPage(query),
     placeholderData: (prev) => prev,
     ...options,
   });

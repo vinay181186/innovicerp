@@ -40,6 +40,7 @@ import {
   jobQueueRowActions,
   jobQueueRowTint,
 } from '../components/job-queue-columns';
+import { jobQueueExportSpec, withJobQueueExportValues } from '../lib/export';
 import { useBackfillMachineIds, useJobQueue, useMoveJobQueueOp } from '../api';
 
 const searchSchema = z.object({
@@ -160,7 +161,34 @@ function JobQueuePage(): React.JSX.Element {
 
   const today = todayIst();
   const firstRowNo = pageOffset(search.page) + 1;
-  const columns = useMemo(() => jobQueueColumns({ today, firstRowNo }), [today, firstRowNo]);
+  const columns = useMemo(
+    () => withJobQueueExportValues(jobQueueColumns({ today, firstRowNo })),
+    [today, firstRowNo],
+  );
+  // ADR-310 — the shared Export: every pending op matching the machine / order
+  // / search (the same query as the list).
+  const exportSpec = useMemo(
+    () =>
+      jobQueueExportSpec({
+        columns,
+        tableKey: TABLE_KEYS.jobQueue,
+        defaultHidden: [...JOB_QUEUE_HIDDEN_IDS],
+        machineId,
+        machineCode: selectedMachineCode || undefined,
+        blocked: waitingForMachineId || machineNotFound,
+        search: search.search,
+        orderCode: orderCode ?? undefined,
+      }),
+    [
+      columns,
+      machineId,
+      selectedMachineCode,
+      waitingForMachineId,
+      machineNotFound,
+      search.search,
+      orderCode,
+    ],
+  );
   const emptyText = machineNotFound
     ? `Machine ${selectedMachineCode} not found.`
     : selectedMachine && orderCode === null
@@ -188,6 +216,7 @@ function JobQueuePage(): React.JSX.Element {
         search={searchInput}
         onSearch={setSearchInput}
         searchPlaceholder="Search JC no., POL, item, SO no., customer, operation…"
+        exportSpec={exportSpec}
         orderFilter={<OrderSelect value={orderCode} onChange={setOrder} />}
         // The machine picker (owner's filter-bar decision 2026-09-26): the
         // clickable machine-card strip became this dropdown — each label carries

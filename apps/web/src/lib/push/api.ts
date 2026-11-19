@@ -2,7 +2,8 @@
 
 import type { PushConfigResponse, PushTestResponse } from '@innovic/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { create } from 'zustand';
+import { useToast } from '@/ui/feedback';
 import { apiFetch } from '@/lib/api';
 import {
   currentSubscription,
@@ -46,12 +47,23 @@ function useBrowserPush(enabled: boolean) {
 
 export type DesktopPopupsState = 'unsupported' | 'not-ready' | 'off' | 'on' | 'blocked';
 
+/** ONE copy of the switch's own state, shared by the every-page band and the
+ *  bell row, so they never disagree and one click blocks the other. */
+const usePushUi = create<{ busy: boolean; noAnswer: boolean }>(() => ({
+  busy: false,
+  noAnswer: false,
+}));
+
+/** True while Turn on / Turn off / test runs (PushSync must not subscribe then). */
+export const pushSwitchBusy = (): boolean => usePushUi.getState().busy;
+
 export function useDesktopPopups() {
   const supported = pushSupported();
   const qc = useQueryClient();
+  const toast = useToast();
   const config = usePushConfig(supported);
   const browser = useBrowserPush(supported);
-  const [busy, setBusy] = useState(false);
+  const { busy, noAnswer } = usePushUi();
 
   let state: DesktopPopupsState;
   if (!supported) state = 'unsupported';
@@ -63,25 +75,35 @@ export function useDesktopPopups() {
   const refresh = (): Promise<void> => qc.invalidateQueries({ queryKey: pushKeys.browser() });
 
   const run = async <T>(work: () => Promise<T>): Promise<T> => {
-    setBusy(true);
+    usePushUi.setState({ busy: true });
     try {
       return await work();
     } finally {
       await refresh();
-      setBusy(false);
+      usePushUi.setState({ busy: false });
     }
   };
 
   return {
     state,
     busy,
-    /** Call straight from the click: the browser only asks for permission on a user gesture. */
-    turnOn: (): Promise<void> => {
+    /** The browser's Allow box is (probably) open right now. */
+    asking: busy && supported && Notification.permission === 'default',
+    /** The last Turn on got no answer (box closed or hidden): show where it is. */
+    noAnswer: state === 'off' && noAnswer,
+    /** Call straight from the click: the browser only asks for permission on a
+     *  user gesture. A second click while one runs does nothing. Errors go to a toast. */
+    turnOn: (): void => {
+      if (usePushUi.getState().busy) return;
       const publicKey = config.data?.publicKey;
       const asked = Notification.requestPermission();
-      return run(async () => {
-        if ((await asked) !== 'granted' || !publicKey) return;
-        await subscribeThisBrowser(publicKey);
+      usePushUi.setState({ noAnswer: false });
+      run(async () => {
+        const answer = await asked;
+        if (answer === 'granted' && publicKey) await subscribeThisBrowser(publicKey);
+        usePushUi.setState({ noAnswer: answer === 'default' });
+      }).catch(() => {
+        toast.error('Could not turn on desktop pop-ups. Reload the page and try again.');
       });
     },
     turnOff: (): Promise<void> => run(unsubscribeThisBrowser),

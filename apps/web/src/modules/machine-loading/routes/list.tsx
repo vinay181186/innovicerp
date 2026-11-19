@@ -42,6 +42,7 @@ import { CapacitySummary, MachineLoadCardView } from '../components/machine-load
 import { OpsExpanded, opRowTint, opsColumns } from '../components/machine-loading-columns';
 import { useMyCompany } from '../../settings/api';
 import { fetchMachineLoading, useMachineLoading } from '../api';
+import { machineLoadingExportSpec } from '../lib/export';
 import { printMachineQueue } from '../lib/print-machine-queue';
 import { useToast } from '@/ui/feedback';
 
@@ -161,6 +162,20 @@ function MachineLoadingPage(): React.JSX.Element {
     });
 
   const columns = useMemo(() => opsColumns(pageOffset(search.page) + 1), [search.page]);
+  // ADR-310 — the shared Export: every op matching the machine pick, the
+  // search and the column Sort & Filter, in the columns the user sees.
+  const exportSpec = useMemo(
+    () =>
+      machineLoadingExportSpec({
+        columns: opsColumns(1),
+        tableKey: TABLE_KEYS.machineLoading,
+        machineId: selMachineId ?? undefined,
+        machineCode: selMachineCode ?? undefined,
+        search: search.search,
+        sfParam: sf.param,
+      }),
+    [selMachineId, selMachineCode, search.search, sf.param],
+  );
 
   const tab: MlTab = search.tab ?? 'ops';
   function setTab(k: string): void {
@@ -187,6 +202,7 @@ function MachineLoadingPage(): React.JSX.Element {
         icon="▣"
         count={total}
         noun="open operation"
+        exportSpec={exportSpec}
         filterNote={selMachineCode ?? undefined}
         search={searchInput}
         onSearch={setSearchInput}

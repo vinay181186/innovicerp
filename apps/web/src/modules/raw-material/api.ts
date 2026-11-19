@@ -48,13 +48,21 @@ function toQueryString(q: ListMaterialGradesQuery | ListMaterialSizesQuery): str
 
 /* ─────────────────────────── GRADES ─────────────────────────── */
 
+/** One page of the list — the list hook's fetcher, also used by the shared
+ *  Export (ADR-310). */
+export function fetchMaterialGradesPage(
+  q: ListMaterialGradesQuery,
+): Promise<ListMaterialGradesResponse> {
+  return apiFetch<ListMaterialGradesResponse>(`/material-grades?${toQueryString(q)}`);
+}
+
 export function useMaterialGradesList(
   query: ListMaterialGradesQuery,
   options?: Omit<UseQueryOptions<ListMaterialGradesResponse>, 'queryKey' | 'queryFn'>,
 ) {
   return useQuery<ListMaterialGradesResponse>({
     queryKey: materialGradesKeys.list(query),
-    queryFn: () => apiFetch<ListMaterialGradesResponse>(`/material-grades?${toQueryString(query)}`),
+    queryFn: () => fetchMaterialGradesPage(query),
     placeholderData: (prev) => prev,
     ...options,
   });
@@ -127,13 +135,21 @@ export function useSoftDeleteMaterialGrade() {
 
 /* ─────────────────────────── SIZES ─────────────────────────── */
 
+/** One page of the list — the list hook's fetcher, also used by the shared
+ *  Export (ADR-310). */
+export function fetchMaterialSizesPage(
+  q: ListMaterialSizesQuery,
+): Promise<ListMaterialSizesResponse> {
+  return apiFetch<ListMaterialSizesResponse>(`/material-sizes?${toQueryString(q)}`);
+}
+
 export function useMaterialSizesList(
   query: ListMaterialSizesQuery,
   options?: Omit<UseQueryOptions<ListMaterialSizesResponse>, 'queryKey' | 'queryFn'>,
 ) {
   return useQuery<ListMaterialSizesResponse>({
     queryKey: materialSizesKeys.list(query),
-    queryFn: () => apiFetch<ListMaterialSizesResponse>(`/material-sizes?${toQueryString(query)}`),
+    queryFn: () => fetchMaterialSizesPage(query),
     placeholderData: (prev) => prev,
     ...options,
   });

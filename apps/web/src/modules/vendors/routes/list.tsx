@@ -57,6 +57,7 @@ import { vendorListColumns } from '../components/vendor-list-columns';
 import { Banner } from '@/ui/feedback';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useBulkCreateVendors, useSoftDeleteVendor, useVendorsList } from '../api';
+import { vendorExportSpec, withVendorExportValues } from '../lib/export';
 import { TrashReasonDialog } from '@/modules/items/components/trash-reason-dialog';
 import { parseVendorImportFile } from '../lib/import-export';
 
@@ -203,6 +204,18 @@ function VendorsListPage(): React.JSX.Element {
 
   const columns = useMemo(() => vendorListColumns(offset), [offset]);
 
+  // ADR-310 — the shared Export: every row matching the search / filters / ▾.
+  const exportSpec = useMemo(
+    () =>
+      vendorExportSpec({
+        columns: withVendorExportValues(columns),
+        tableKey: TABLE_KEYS.vendorsList,
+        search: search.search,
+        isActive,
+        sfParam: sf.param,
+      }),
+    [columns, search.search, isActive, sf.param],
+  );
   // "Hide page" (Access Control → Config): once access has loaded, a user
   // whose VIEW was removed for this page sees the no-access panel, not the
   // page. `eff` is undefined only while access is still loading — don't block
@@ -219,6 +232,7 @@ function VendorsListPage(): React.JSX.Element {
           bar stay put while the rows scroll underneath. */}
       <ListHeader
         title="Vendor Master"
+        exportSpec={exportSpec}
         icon="🚚"
         count={total}
         noun="vendor"

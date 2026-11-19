@@ -43,11 +43,19 @@ function buildSearch(q: ListStoreInventoryQuery): string {
   return params.toString();
 }
 
+/** One page of Store Inventory — the list's query and the shared Export
+ *  (ADR-310) both call this, so they send the same URL. */
+export function fetchStoreInventoryPage(
+  query: ListStoreInventoryQuery,
+): Promise<ListStoreInventoryResponse> {
+  return apiFetch<ListStoreInventoryResponse>(`/store-inventory?${buildSearch(query)}`);
+}
+
 export function useStoreInventory(query: ListStoreInventoryQuery, enabled = true) {
   return useQuery<ListStoreInventoryResponse>({
     enabled,
     queryKey: storeInventoryKeys.list(query),
-    queryFn: () => apiFetch<ListStoreInventoryResponse>(`/store-inventory?${buildSearch(query)}`),
+    queryFn: () => fetchStoreInventoryPage(query),
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
     placeholderData: (prev) => prev,
@@ -161,16 +169,20 @@ export function useSetReorder() {
 
 /** One page of the items Below Reorder (ADR-201), with suggested PR qty and
  *  vendor, + how many there are in all. */
+/** One page of the Reorder List — the list's query and the shared Export
+ *  (ADR-310) both call this, so they send the same URL. */
+export function fetchReorderPage(query: ReorderListQuery): Promise<ReorderListResponse> {
+  const p = new URLSearchParams();
+  if (query.sf) p.set('sf', query.sf);
+  p.set('limit', String(query.limit));
+  p.set('offset', String(query.offset));
+  return apiFetch<ReorderListResponse>(`/store-inventory/reorder-list?${p.toString()}`);
+}
+
 export function useReorderList(query: ReorderListQuery) {
   return useQuery<ReorderListResponse>({
     queryKey: [...storeInventoryKeys.all, 'reorder-list', query],
-    queryFn: () => {
-      const p = new URLSearchParams();
-      if (query.sf) p.set('sf', query.sf);
-      p.set('limit', String(query.limit));
-      p.set('offset', String(query.offset));
-      return apiFetch<ReorderListResponse>(`/store-inventory/reorder-list?${p.toString()}`);
-    },
+    queryFn: () => fetchReorderPage(query),
     placeholderData: (prev) => prev,
   });
 }

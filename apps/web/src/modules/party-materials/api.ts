@@ -34,13 +34,21 @@ function buildSearch(q: ListPartyMaterialsQuery): string {
   return params.toString();
 }
 
+/** One page of the list — the list hook's fetcher, also used by the shared
+ *  Export (ADR-310). */
+export function fetchPartyMaterialsPage(
+  q: ListPartyMaterialsQuery,
+): Promise<ListPartyMaterialsResponse> {
+  return apiFetch<ListPartyMaterialsResponse>(`/party-materials?${buildSearch(q)}`);
+}
+
 export function usePartyMaterialsList(
   query: ListPartyMaterialsQuery,
   options?: { enabled?: boolean },
 ) {
   return useQuery<ListPartyMaterialsResponse>({
     queryKey: partyMaterialsKeys.list(query),
-    queryFn: () => apiFetch<ListPartyMaterialsResponse>(`/party-materials?${buildSearch(query)}`),
+    queryFn: () => fetchPartyMaterialsPage(query),
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
     placeholderData: (prev) => prev,

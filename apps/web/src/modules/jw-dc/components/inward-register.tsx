@@ -28,6 +28,7 @@ import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useJwDcInwardList } from '../api';
 import { inwardColumns, isJwDcInwardCancelled } from './inward-columns';
+import { jwInwardExportSpec, withInwardExportValues } from '../lib/export';
 
 const TABLE_KEY = TABLE_KEYS.jwDcInward;
 
@@ -78,7 +79,23 @@ export function InwardView({
   });
   useClampPage(page, data?.total, setPage);
 
-  const columns = useMemo(() => inwardColumns(pageOffset(page) + 1), [page]);
+  const columns = useMemo(
+    () => withInwardExportValues(inwardColumns(pageOffset(page) + 1)),
+    [page],
+  );
+  // ADR-310 — the shared Export: every receipt matching the search / Sort &
+  // Filter (Cancelled included, as on screen), plus an Inward Lines sheet.
+  const exportSpec = useMemo(
+    () =>
+      jwInwardExportSpec({
+        columns,
+        tableKey: TABLE_KEY,
+        search: term || undefined,
+        sfParam: sf.param,
+        hideMoney: !perms.price,
+      }),
+    [columns, term, sf.param, perms.price],
+  );
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / LIST_PAGE_SIZE));
 
   return (
@@ -91,6 +108,7 @@ export function InwardView({
         icon="📥"
         count={data?.total}
         noun="receipt"
+        exportSpec={exportSpec}
         search={search}
         onSearch={setSearch}
         filtersActive={sf.filtering || search !== ''}

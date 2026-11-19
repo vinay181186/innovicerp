@@ -18,7 +18,7 @@ export type InvoiceListRow = InvoiceRow;
 const inr = (v: number): string => `₹${Math.round(v).toLocaleString('en-IN')}`;
 
 /** Invoice status → the words the user reads; the stored codes are unchanged. */
-const INVOICE_STATUS_LABEL: Record<string, string> = {
+export const INVOICE_STATUS_LABEL: Record<string, string> = {
   unpaid: 'Unpaid',
   partial: 'Partly Paid',
   paid: 'Paid',

@@ -6,6 +6,7 @@
 
 import { type TpiCompletedRow, opSrNo } from '@innovic/shared';
 import { todayIst } from '@/lib/date';
+import { postExportLog } from '@/lib/excel-export';
 
 export async function exportTpiRecords(rows: TpiCompletedRow[]): Promise<void> {
   const { utils: xlsxUtils, write: xlsxWrite } = await import('xlsx');
@@ -73,4 +74,5 @@ export async function exportTpiRecords(rows: TpiCompletedRow[]): Promise<void> {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+  void postExportLog({ listTitle: 'TPI Records', rowCount: rows.length });
 }

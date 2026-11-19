@@ -26,6 +26,7 @@ import { issueRegisterColumns } from '../components/issue-register-columns';
 import { IssueViewModal } from '../components/issue-view-modal';
 import { useStoreIssuePrint } from '../components/use-store-issue-print';
 import { TabStrip } from '@/ui/navigation';
+import { issueExportSpec } from '../lib/export';
 
 // Deep-link seed for Global Search (no detail page here): `?tab=tools&search=
 // TIS-00003` opens the Tool Issues tab with its box pre-filled. Read ONCE into
@@ -127,6 +128,19 @@ function StoreIssuesListPage(): React.JSX.Element {
   useClampPage(page, data?.total, setPage);
 
   const columns = useMemo(() => issueRegisterColumns(pageOffset(page) + 1), [page]);
+  // ADR-310 — the shared Export: every row matching the search / filters /
+  // Sort & Filter, in the columns the user sees.
+  const exportSpec = useMemo(
+    () =>
+      issueExportSpec({
+        columns,
+        tableKey: TABLE_KEYS.issueRegister,
+        search: term || undefined,
+        sfParam: sf.param,
+        hideMoney: !perms.price,
+      }),
+    [columns, term, sf.param, perms.price],
+  );
   // Row ⋯ Preview / Download PDF — the Item Issue Slip (use-store-issue-print.ts).
   const issuePrint = useStoreIssuePrint();
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / LIST_PAGE_SIZE));
@@ -173,6 +187,7 @@ function StoreIssuesListPage(): React.JSX.Element {
           {/* THE list header (ui/layout ListHeader): title · count · search ·
               + New Issue. */}
           <ListHeader
+            exportSpec={exportSpec}
             orderFilter={<OrderSfFilter sf={sf} field="soCode" />}
             title="Item Issue Register"
             icon="📋"

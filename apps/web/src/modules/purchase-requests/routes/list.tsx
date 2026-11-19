@@ -44,6 +44,7 @@ import { usePrPrint } from '../components/use-pr-print';
 import { prOrderBalance } from '../lib/pr-balance';
 import { PR_STATUS_LABELS } from '../lib/pr-labels';
 import { usePrSelection } from '../lib/use-pr-selection';
+import { prExportSpec } from '../lib/export';
 
 const PAGE_SIZE = 25;
 
@@ -159,6 +160,21 @@ function PurchaseRequestsListPage(): React.JSX.Element {
     () => prListColumns((currentPage - 1) * PAGE_SIZE + 1, draftIds),
     [currentPage, draftIds],
   );
+  // ADR-310 — the shared Export: every row matching the search / filters /
+  // Sort & Filter, in the columns the user sees.
+  const exportSpec = useMemo(
+    () =>
+      prExportSpec({
+        columns,
+        draftIds,
+        tableKey: TABLE_KEYS.prList,
+        search: search.search,
+        status: search.status,
+        sfParam: sf.param,
+        hideMoney: !perms.price,
+      }),
+    [columns, draftIds, search.search, search.status, sf.param, perms.price],
+  );
 
   // Selection: one vendor per PO (sel.isRowSelectable locks to the first vendor).
   const sel = usePrSelection(rows, canCreatePo);
@@ -240,6 +256,7 @@ function PurchaseRequestsListPage(): React.JSX.Element {
       ) : (
         <>
           <ListHeader
+            exportSpec={exportSpec}
             orderFilter={<OrderSfFilter sf={sf} field="soCode" />}
             title="Purchase Requests"
             icon="📄"

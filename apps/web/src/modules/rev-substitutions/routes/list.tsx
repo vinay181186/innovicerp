@@ -18,6 +18,7 @@ import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ConfirmDialog, useToast } from '@/ui/feedback';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { type RevSubstitutionRow, useCancelRevSubstitution, useRevSubstitutions } from '../api';
+import { revSubExportSpec } from '../lib/export';
 import { NewRevSubDialog } from '../components/new-rev-sub-dialog';
 import { revSubColumns, scopeText } from '../components/rev-sub-columns';
 
@@ -80,6 +81,17 @@ function RevSubstitutionsPage(): React.JSX.Element {
   const total = data?.total ?? 0;
   useClampPage(page, data?.total, gotoPage);
   const columns = useMemo(() => revSubColumns(offset), [offset]);
+  // ADR-310 — the shared Export: every row matching the search / filters / ▾.
+  const exportSpec = useMemo(
+    () =>
+      revSubExportSpec({
+        columns,
+        tableKey: TABLE_KEYS.revSubstitutions,
+        search,
+        sfParam: sf.param,
+      }),
+    [columns, search, sf.param],
+  );
   const [newOpen, setNewOpen] = useState(false);
   const [toCancel, setToCancel] = useState<RevSubstitutionRow | null>(null);
   const cancel = useCancelRevSubstitution();
@@ -93,6 +105,7 @@ function RevSubstitutionsPage(): React.JSX.Element {
     <div className="page-fill">
       <ListHeader
         title="Rev Substitutions"
+        exportSpec={exportSpec}
         icon="🔀"
         count={total}
         noun="substitution"

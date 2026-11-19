@@ -68,6 +68,7 @@ import { Select } from '@/ui/forms';
 import { Banner } from '@/ui/feedback';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { useBulkCreateItems, useItemsList, useItemsTotals, useSoftDeleteItem } from '../api';
+import { itemExportSpec } from '../lib/export';
 import { TrashReasonDialog } from '../components/trash-reason-dialog';
 import { parseItemImportFile } from '../lib/import-export';
 
@@ -221,6 +222,11 @@ function ItemsListPage(): React.JSX.Element {
   const total = data?.total ?? 0;
 
   const columns = useMemo(() => itemListColumns(offset), [offset]);
+  // ADR-310 — the shared Export: every row matching the search / filters / ▾.
+  const exportSpec = useMemo(
+    () => itemExportSpec({ columns, tableKey: TABLE_KEYS.itemsList, query }),
+    [columns, query],
+  );
 
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
   // VIEW was removed for this page sees the no-access panel, not the page. `eff`
@@ -238,6 +244,7 @@ function ItemsListPage(): React.JSX.Element {
           bar (search, item type, Source) stay put while the rows scroll
           underneath. */}
       <ListHeader
+        exportSpec={exportSpec}
         title="Item Master"
         icon="◉"
         count={total}

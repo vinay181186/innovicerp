@@ -8,6 +8,7 @@ import * as XLSX from 'xlsx';
 import { fmtDate, todayIst } from '@/lib/date';
 import { itemCodeWithRev, docDrawingRev } from '@/lib/item-code';
 import { isProCancelled } from '../components/po-list-columns';
+import { postExportLog } from '@/lib/excel-export';
 
 export const PRO_REGISTER_COLUMNS = [
   'Sr No',
@@ -63,4 +64,5 @@ export function exportProductionOrders(rows: ProductionOrderListItem[]): void {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Production Orders');
   XLSX.writeFile(wb, `Production Orders ${todayIst()}.xlsx`);
+  void postExportLog({ listTitle: 'Production Orders', rowCount: rows.length });
 }

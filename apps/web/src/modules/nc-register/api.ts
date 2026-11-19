@@ -106,13 +106,19 @@ function toQueryString(q: ListNcRegisterQuery): string {
   return params.toString();
 }
 
+/** One page of GET /nc-register — the list hook's fetcher, also used by the
+ *  shared Export (ADR-310). */
+export function fetchNcRegisterPage(query: ListNcRegisterQuery): Promise<ListNcRegisterResponse> {
+  return apiFetch<ListNcRegisterResponse>(`/nc-register?${toQueryString(query)}`);
+}
+
 export function useNcRegisterList(
   query: ListNcRegisterQuery,
   options?: Omit<UseQueryOptions<ListNcRegisterResponse>, 'queryKey' | 'queryFn'>,
 ) {
   return useQuery<ListNcRegisterResponse>({
     queryKey: ncRegisterKeys.list(query),
-    queryFn: () => apiFetch<ListNcRegisterResponse>(`/nc-register?${toQueryString(query)}`),
+    queryFn: () => fetchNcRegisterPage(query),
     placeholderData: (prev) => prev,
     ...options,
   });

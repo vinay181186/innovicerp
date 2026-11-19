@@ -48,6 +48,7 @@ import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader, PageState, RowActions } from '@/ui/layout';
 import { TabStrip } from '@/ui/navigation';
 import { useQcProcessesList, useSoftDeleteQcProcess } from '../api';
+import { qcProcessExportSpec, withQcProcessExportValues } from '../lib/export';
 import { buildQcProcessColumns } from '../components/qc-process-columns';
 
 const PAGE_SIZE = 25;
@@ -137,6 +138,18 @@ function QcProcessesListPage(): React.JSX.Element {
 
   const columns = useMemo(() => buildQcProcessColumns(currentPage, PAGE_SIZE), [currentPage]);
 
+  // ADR-310 — the shared Export: every row matching the search / filters / ▾.
+  const exportSpec = useMemo(
+    () =>
+      qcProcessExportSpec({
+        columns: withQcProcessExportValues(columns),
+        tableKey: TABLE_KEYS.qcProcessesList,
+        search: search.search,
+        isActive: search.isActive,
+        sfParam: sf.param,
+      }),
+    [columns, search.search, search.isActive, sf.param],
+  );
   // "Hide page" (Access Control → Config): once access has loaded, a user whose
   // VIEW was removed for this page sees the no-access panel, not the page. `eff`
   // is undefined only while access loads — don't block then, or every legitimate
@@ -179,6 +192,7 @@ function QcProcessesListPage(): React.JSX.Element {
               underneath. */}
           <ListHeader
             title="QC Process Master"
+            exportSpec={exportSpec}
             icon="⚙"
             // Count is the list response's `total` — the only aggregate the
             // endpoint returns.

@@ -52,7 +52,8 @@ import {
 } from '../components/task-action-modals';
 import { TaskDetailModal } from '../components/task-detail-modal';
 import { TaskFilters } from '../components/board-filters';
-import { TaskTable, type RowAction } from '../components/task-table';
+import { TaskTable, taskColumns, type RowAction } from '../components/task-table';
+import { taskBoardExportSpec, withTaskExportValues } from '../lib/export';
 import { TodoModal } from '../components/todo-modal';
 import {
   DayLogBoardBody,
@@ -254,6 +255,17 @@ function TaskBoardPage(): React.JSX.Element {
   );
   const { data, isLoading, isFetching, isError, error } = useTaskList(query, canTasks);
   useClampPage(page, data?.total, gotoPage);
+  // ADR-310 — the shared Export: every task matching the tab / search / filters
+  // (the same query the board sends). Not on a Day Log tab.
+  const exportSpec = useMemo(() => {
+    if (!canTasks || dayTab) return undefined;
+    // The page's own limit / offset are overridden page by page by the Export.
+    return taskBoardExportSpec({
+      columns: withTaskExportValues(taskColumns(view, 1)),
+      tableKey: view === 'all' ? TABLE_KEYS.taskBoardAll : TABLE_KEYS.taskBoard,
+      query,
+    });
+  }, [canTasks, dayTab, query, view]);
   const { data: userOpts } = useTaskUserOptions(canTasks);
   const users = userOpts?.options ?? [];
   const departments = useMemo(
@@ -314,6 +326,7 @@ function TaskBoardPage(): React.JSX.Element {
     <div>
       <ListHeader
         title={canTasks ? 'Task Board' : 'Day Log'}
+        exportSpec={exportSpec}
         icon={canTasks ? '📋' : '📝'}
         count={dayTab ? undefined : data?.total}
         noun="task"

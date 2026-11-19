@@ -27,14 +27,21 @@ function toQueryString(q: ListStoreTransactionsQuery): string {
   return params.toString();
 }
 
+/** One page of the Stock Ledger — the list's query and the shared Export
+ *  (ADR-310) both call this, so they send the same URL. */
+export function fetchStoreTransactionsPage(
+  query: ListStoreTransactionsQuery,
+): Promise<ListStoreTransactionsResponse> {
+  return apiFetch<ListStoreTransactionsResponse>(`/store-transactions?${toQueryString(query)}`);
+}
+
 export function useStoreTransactionsList(
   query: ListStoreTransactionsQuery,
   options?: Omit<UseQueryOptions<ListStoreTransactionsResponse>, 'queryKey' | 'queryFn'>,
 ) {
   return useQuery<ListStoreTransactionsResponse>({
     queryKey: storeTransactionsKeys.list(query),
-    queryFn: () =>
-      apiFetch<ListStoreTransactionsResponse>(`/store-transactions?${toQueryString(query)}`),
+    queryFn: () => fetchStoreTransactionsPage(query),
     placeholderData: (prev) => prev,
     ...options,
   });

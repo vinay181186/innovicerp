@@ -12,6 +12,7 @@ import { srNoColumn } from '@/ui/data/lead-columns';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useApprovalHistory } from '../api';
+import { approvalHistoryExportSpec, withApprovalHistoryExportValues } from '../lib/export';
 import '../approvals.css';
 import { ApprovalDocLink } from './approval-doc-link';
 import { ALL_TYPES, ApprovalTypeSelect, effectiveType } from './approval-type-select';
@@ -99,7 +100,10 @@ export function ApprovalHistoryList({
     offset,
   });
   // Sr No leads (owner 2026-11-15) and continues across pages: offset + 1.
-  const columns = useMemo(() => [srNoColumn<ApprovalHistoryRow>(offset + 1), ...COLUMNS], [offset]);
+  const columns = useMemo(
+    () => withApprovalHistoryExportValues([srNoColumn<ApprovalHistoryRow>(offset + 1), ...COLUMNS]),
+    [offset],
+  );
   const counts = useMemo(() => q.data?.counts ?? [], [q.data?.counts]);
   const allCount = counts.reduce((s, c) => s + c.n, 0);
   const type = q.data ? effectiveType(pickedType, counts) : pickedType;
@@ -108,6 +112,22 @@ export function ApprovalHistoryList({
     if (type !== pickedType) setPickedType(type);
   }, [type, pickedType]);
   const total = q.data?.total ?? 0;
+  // ADR-310 — the shared Export: every decision matching Show / type / search
+  // (the same query the list sends — the picked type, not the fallback).
+  const exportType = pickedType !== ALL_TYPES ? pickedType : undefined;
+  const exportTypeLabel = counts.find((c) => c.typeKey === exportType)?.typeLabel;
+  const exportSpec = useMemo(
+    () =>
+      approvalHistoryExportSpec({
+        columns,
+        tableKey: TABLE_KEYS.approvalsHistory,
+        decision,
+        type: exportType,
+        typeLabel: exportTypeLabel,
+        search,
+      }),
+    [columns, decision, exportType, exportTypeLabel, search],
+  );
   const onPage = useCallback((p: number) => setPage(p), []);
   useClampPage(page, q.data?.total, onPage);
 
@@ -124,6 +144,7 @@ export function ApprovalHistoryList({
         onSearch={setTerm}
         searchPlaceholder="Search document, request, decided by, reason…"
         updating={q.isFetching && !q.isLoading}
+        exportSpec={exportSpec}
         filters={
           <>
             {showSelect}

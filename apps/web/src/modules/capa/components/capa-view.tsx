@@ -28,6 +28,7 @@ import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { AssignTaskModal } from '@/modules/tasks/components/assign-task-modal';
 import { useCapaList } from '../api';
+import { capaExportSpec, withCapaExportValues } from '../lib/export';
 import { capaListColumns, capaRowMenu, capaRowTint } from './capa-list-columns';
 import { NewCapaModal } from './capa-new-modal';
 import { EditCapaModal } from './capa-edit-modal';
@@ -96,6 +97,19 @@ export function CapaView(props: {
       ),
     [page, counters],
   );
+  // ADR-310 — the shared Export: every CAPA matching the search / column filters.
+  const exportTitle = props.title ?? 'CAPA';
+  const exportSpec = useMemo(
+    () =>
+      capaExportSpec({
+        title: exportTitle,
+        columns: withCapaExportValues(columns),
+        tableKey: TABLE_KEYS.capaList,
+        search: search || undefined,
+        sfParam: sf.param,
+      }),
+    [exportTitle, columns, search, sf.param],
+  );
 
   // A link that names one CAPA (NC chip, Global Search) opens that CAPA, not
   // just the filtered list. Once, when the list first arrives.
@@ -133,6 +147,7 @@ export function CapaView(props: {
         search={term}
         onSearch={setTerm}
         searchPlaceholder="Search CAPA no., type, NC no., problem, responsible, status…"
+        exportSpec={exportSpec}
         updating={isFetching && !isLoading}
         onClearFilters={() => {
           sf.clearFilters();

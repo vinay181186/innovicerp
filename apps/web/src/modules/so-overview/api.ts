@@ -28,10 +28,16 @@ function buildSearch(q: SoOverviewQuery): string {
   return s.length > 0 ? `?${s}` : '';
 }
 
+/** One page of SO Overview — the list's query and the shared Export (ADR-310)
+ *  both call this, so they send the same URL. */
+export function fetchSoOverviewPage(query: SoOverviewQuery): Promise<SoOverviewResponse> {
+  return apiFetch<SoOverviewResponse>(`/so-overview${buildSearch(query)}`);
+}
+
 export function useSoOverview(query: SoOverviewQuery) {
   return useQuery<SoOverviewResponse>({
     queryKey: soOverviewKeys.list(query),
-    queryFn: () => apiFetch<SoOverviewResponse>(`/so-overview${buildSearch(query)}`),
+    queryFn: () => fetchSoOverviewPage(query),
     // Read-only summary; refresh on focus + every 60s for floor liveness.
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,

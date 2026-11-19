@@ -1,7 +1,11 @@
 // My Day Log print (ADR-288): the same data as before, in the Job Card layout.
 
 import type { DayLogDetail } from '@innovic/shared';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+// print-my-day-log → export.ts → the Export log call → apiFetch → env.
+vi.mock('@/lib/env', () => ({ env: {} }));
+vi.mock('@/lib/supabase', () => ({ supabase: {} }));
 import { myDayLogHtml } from './print-my-day-log';
 
 type Entry = DayLogDetail['entries'][number];

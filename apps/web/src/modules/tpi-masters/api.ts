@@ -36,13 +36,19 @@ function toQueryString(q: ListTpiMastersQuery): string {
   return params.toString();
 }
 
+/** One page of the list — the list hook's fetcher, also used by the shared
+ *  Export (ADR-310). */
+export function fetchTpiMastersPage(q: ListTpiMastersQuery): Promise<ListTpiMastersResponse> {
+  return apiFetch<ListTpiMastersResponse>(`/tpi-masters?${toQueryString(q)}`);
+}
+
 export function useTpiMastersList(
   query: ListTpiMastersQuery,
   options?: Omit<UseQueryOptions<ListTpiMastersResponse>, 'queryKey' | 'queryFn'>,
 ) {
   return useQuery<ListTpiMastersResponse>({
     queryKey: tpiMastersKeys.list(query),
-    queryFn: () => apiFetch<ListTpiMastersResponse>(`/tpi-masters?${toQueryString(query)}`),
+    queryFn: () => fetchTpiMastersPage(query),
     placeholderData: (prev) => prev,
     ...options,
   });

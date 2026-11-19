@@ -69,10 +69,7 @@ function buildSearch(q: ListCustomerMaterialReturnsQuery): string {
 export function useCustomerMaterialReturnsList(query: ListCustomerMaterialReturnsQuery) {
   return useQuery<ListCustomerMaterialReturnsResponse>({
     queryKey: customerMaterialReturnKeys.list(query),
-    queryFn: () =>
-      apiFetch<ListCustomerMaterialReturnsResponse>(
-        `/customer-material-returns?${buildSearch(query)}`,
-      ),
+    queryFn: () => fetchCustomerMaterialReturnsPage(query),
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
     placeholderData: (prev) => prev,
@@ -83,10 +80,7 @@ export function useCustomerMaterialReturnsList(query: ListCustomerMaterialReturn
 export function useCustomerMaterialReturnLines(query: ListCustomerMaterialReturnsQuery) {
   return useQuery<ListCustomerMaterialReturnLinesResponse>({
     queryKey: customerMaterialReturnKeys.lines(query),
-    queryFn: () =>
-      apiFetch<ListCustomerMaterialReturnLinesResponse>(
-        `/customer-material-returns/lines?${buildSearch(query)}`,
-      ),
+    queryFn: () => fetchCustomerMaterialReturnLinesPage(query),
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
     placeholderData: (prev) => prev,
@@ -151,3 +145,23 @@ export function useCreateCustomerMaterialReturn(saveKey?: SaveKey) {
 // ADR-235 — Cancel moved to the ONE standard Cancel (cancel-requests module:
 // CancelDocDialog, docType 'customer_material_return'). The old POST
 // /customer-material-returns/:id/cancel hook is gone.
+
+/** ADR-310 — one page of GET /customer-material-returns: the list hook and the shared Export
+ *  both read it. */
+export function fetchCustomerMaterialReturnsPage(
+  query: ListCustomerMaterialReturnsQuery,
+): Promise<ListCustomerMaterialReturnsResponse> {
+  return apiFetch<ListCustomerMaterialReturnsResponse>(
+    `/customer-material-returns?${buildSearch(query)}`,
+  );
+}
+
+/** ADR-310 — one page of GET /customer-material-returns/lines: the list hook and the shared Export
+ *  both read it. */
+export function fetchCustomerMaterialReturnLinesPage(
+  query: ListCustomerMaterialReturnsQuery,
+): Promise<ListCustomerMaterialReturnLinesResponse> {
+  return apiFetch<ListCustomerMaterialReturnLinesResponse>(
+    `/customer-material-returns/lines?${buildSearch(query)}`,
+  );
+}

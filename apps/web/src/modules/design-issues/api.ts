@@ -26,10 +26,18 @@ function buildQs(q: ListDesignIssuesQuery): string {
   return p.toString();
 }
 
+/** One page of GET /design-issues — the list hook's fetcher, also used by the
+ *  shared Export (ADR-310). */
+export function fetchDesignIssuesPage(
+  query: ListDesignIssuesQuery,
+): Promise<ListDesignIssuesResponse> {
+  return apiFetch<ListDesignIssuesResponse>(`/design-issues?${buildQs(query)}`);
+}
+
 export function useDesignIssuesAll(query: ListDesignIssuesQuery) {
   return useQuery<ListDesignIssuesResponse>({
     queryKey: designIssuesKeys.list(query),
-    queryFn: () => apiFetch<ListDesignIssuesResponse>(`/design-issues?${buildQs(query)}`),
+    queryFn: () => fetchDesignIssuesPage(query),
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
     placeholderData: (prev) => prev,

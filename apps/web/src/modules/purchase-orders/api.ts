@@ -47,7 +47,7 @@ export function usePurchaseOrdersList(
 ) {
   return useQuery<ListPurchaseOrdersResponse>({
     queryKey: purchaseOrdersKeys.list(query),
-    queryFn: () => apiFetch<ListPurchaseOrdersResponse>(`/purchase-orders?${toQueryString(query)}`),
+    queryFn: () => fetchPurchaseOrdersPage(query),
     placeholderData: (prev) => prev,
     ...options,
   });
@@ -61,8 +61,7 @@ export function usePurchaseOrderLinesList(
 ) {
   return useQuery<ListPurchaseOrderLinesResponse>({
     queryKey: purchaseOrdersKeys.lineList(query),
-    queryFn: () =>
-      apiFetch<ListPurchaseOrderLinesResponse>(`/purchase-orders/lines?${toQueryString(query)}`),
+    queryFn: () => fetchPurchaseOrderLinesPage(query),
     placeholderData: (prev) => prev,
     ...options,
   });
@@ -258,4 +257,20 @@ export function useShortClosePurchaseOrder() {
       void qc.invalidateQueries({ queryKey: ['purchase-requests'] });
     },
   });
+}
+
+/** ADR-310 — one page of GET /purchase-orders: the list hook and the shared Export
+ *  both read it. */
+export function fetchPurchaseOrdersPage(
+  query: ListPurchaseOrdersQuery,
+): Promise<ListPurchaseOrdersResponse> {
+  return apiFetch<ListPurchaseOrdersResponse>(`/purchase-orders?${toQueryString(query)}`);
+}
+
+/** ADR-310 — one page of GET /purchase-orders/lines: the list hook and the shared Export
+ *  both read it. */
+export function fetchPurchaseOrderLinesPage(
+  query: ListPurchaseOrdersQuery,
+): Promise<ListPurchaseOrderLinesResponse> {
+  return apiFetch<ListPurchaseOrderLinesResponse>(`/purchase-orders/lines?${toQueryString(query)}`);
 }

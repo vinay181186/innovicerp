@@ -56,6 +56,7 @@ import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { ConfirmDialog } from '@/ui/feedback';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useDeleteRouteCard, useRouteCard, useRouteCardsList } from '../api';
+import { routeCardExportSpec, withRouteCardExportValues } from '../lib/export';
 import { RcSubmitDialog, canSubmitRouteCard } from '../components/rc-approval-actions';
 import { routeCardListColumns } from '../components/route-card-list-columns';
 import { RouteCardRowMenu } from '../components/route-card-row-menu';
@@ -147,6 +148,17 @@ function RouteCardsListPage(): React.JSX.Element {
 
   const columns = useMemo(() => routeCardListColumns(offset), [offset]);
 
+  // ADR-310 — the shared Export: every row matching the search / filters / ▾.
+  const exportSpec = useMemo(
+    () =>
+      routeCardExportSpec({
+        columns: withRouteCardExportValues(columns),
+        tableKey: TABLE_KEYS.routeCardsList,
+        search,
+        sfParam: sf.param,
+      }),
+    [columns, search, sf.param],
+  );
   if (eff && !perms.view) {
     return <PageState as="page" state="noaccess" />;
   }
@@ -160,6 +172,7 @@ function RouteCardsListPage(): React.JSX.Element {
           stay put while the rows scroll underneath. */}
       <ListHeader
         title="Route Card Master"
+        exportSpec={exportSpec}
         icon="🗒"
         count={total}
         noun="card"

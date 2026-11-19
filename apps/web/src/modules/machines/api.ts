@@ -34,13 +34,18 @@ function toQueryString(q: ListMachinesQuery): string {
   return params.toString();
 }
 
+/** One page of the list — the hook below and the list's Export (ADR-310) both call it. */
+export function fetchMachinesPage(query: ListMachinesQuery): Promise<ListMachinesResponse> {
+  return apiFetch<ListMachinesResponse>(`/machines?${toQueryString(query)}`);
+}
+
 export function useMachinesList(
   query: ListMachinesQuery,
   options?: Omit<UseQueryOptions<ListMachinesResponse>, 'queryKey' | 'queryFn'>,
 ) {
   return useQuery<ListMachinesResponse>({
     queryKey: machinesKeys.list(query),
-    queryFn: () => apiFetch<ListMachinesResponse>(`/machines?${toQueryString(query)}`),
+    queryFn: () => fetchMachinesPage(query),
     placeholderData: (prev) => prev,
     ...options,
   });
@@ -165,14 +170,20 @@ function groupsToQueryString(q: ListMachineGroupsQuery): string {
   return params.toString();
 }
 
+/** One page of the list — the hook below and the list's Export (ADR-310) both call it. */
+export function fetchMachineGroupsPage(
+  query: ListMachineGroupsQuery,
+): Promise<ListMachineGroupsResponse> {
+  return apiFetch<ListMachineGroupsResponse>(`/machine-groups?${groupsToQueryString(query)}`);
+}
+
 export function useMachineGroupsList(
   query: ListMachineGroupsQuery,
   options?: Omit<UseQueryOptions<ListMachineGroupsResponse>, 'queryKey' | 'queryFn'>,
 ) {
   return useQuery<ListMachineGroupsResponse>({
     queryKey: machineGroupsKeys.list(query),
-    queryFn: () =>
-      apiFetch<ListMachineGroupsResponse>(`/machine-groups?${groupsToQueryString(query)}`),
+    queryFn: () => fetchMachineGroupsPage(query),
     placeholderData: (prev) => prev,
     ...options,
   });
