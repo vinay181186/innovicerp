@@ -12,7 +12,7 @@ type V = { qty: number; note: string };
 function mount(initial: { values: V; version?: string; apply?: (v: V) => void }) {
   const apply = initial.apply ?? vi.fn();
   const hook = renderHook(
-    (p: { values: V; version?: string }) =>
+    (p: { values: V; version?: string | undefined }) =>
       useFormDraft<V>({
         key: 'po-edit:1',
         ready: true,
