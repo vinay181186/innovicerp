@@ -27,6 +27,10 @@ export interface OpenTab {
   /** Exact last-visited path under this base — the tab's click target, so
    *  clicking a tab returns you to where you were in that section. */
   path: string;
+  /** ADR-313: the query of that visit (search text, page, filters, ?tab=).
+   *  Without it every tab click landed on a clean list. Absent on tabs saved
+   *  by an older build — those simply open without a query, as before. */
+  search?: Record<string, unknown> | undefined;
 }
 
 interface OpenTabsState {

@@ -127,7 +127,15 @@ export function setupAuthListener(queryClient: QueryClient, router: AnyRouter): 
  * one that leaves a sort order behind.
  */
 function clearLocalIdentityState(): void {
-  const PREFIXES = ['innovic.sf:', 'innovic.sf-server:', 'innovic.reports.prefs.'];
+  // ADR-313: view choices, scroll positions and form drafts are per person too.
+  const PREFIXES = [
+    'innovic.sf:',
+    'innovic.sf-server:',
+    'innovic.reports.prefs.',
+    'innovic.ui:',
+    'innovic.scroll:',
+    'innovic.draft:',
+  ];
   const EXACT = ['innovic-open-tabs', 'innovic.topnav.open'];
   for (const store of [globalThis.localStorage, globalThis.sessionStorage]) {
     try {
