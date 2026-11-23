@@ -16474,3 +16474,40 @@ could be saved with no drawing at all, and Design could not release a Rev that h
 - Positive: no Rev waits unseen; Design sees every drawing to check in one list.
 - Negative: an SO line can no longer be saved first and the drawing added later.
 - Risk: a line with a Plan still needs its new Rev released first (ADR-290 Step 3) — unchanged.
+
+## ADR-312: Home check "View all N" = the check's own list; the number opens the next step (owner 2026-11-23)
+
+**Date:** 2026-11-23
+**Status:** Accepted (owner approved the real-kit mockup and Phase 1 with "go")
+
+### Context
+
+Home › QC › "QC reports to upload" › "View all 48" opened `/qc-docs?view=dossier`, which is blank
+until an order is picked. Audit of all 42 checks: 2 opened a page with the same rows, 26 an
+unfiltered or differently-grained list (counts differ), 14 a wrong page (other document type,
+empty picker, folder tree). Cause: each check counts with its own query and links to an ordinary
+list page that counts with another. Owner also asked for the page to be actionable.
+
+### Decision
+
+- `GET /dashboard/checks/:key` pages the check's OWN inner query (same `checkSummarySql`
+  wrapper, same row order) with search; visibility = the home's. `/checks/$key` shows it in the
+  SAME table as the home check (no row actions, owner 31-Oct) with ListHeader / ListFooter.
+  "View all N" on every check opens it, so N always equals the page total.
+- Actionable = the document number opens the page where the check's next step is done
+  (`CheckDef.actionHref`, gated by the next-step right; otherwise the document). Phase 1 covers
+  the checks whose ids are already in the SQL; Phase 2 adds the missing ids (ops over time,
+  OSP send / at vendor, RC pending) and auto-open for TPI / new BOM.
+- No migration, no new write path: every next step runs on its existing page.
+
+### Alternatives Considered
+
+- Fix each `href` to a filtered list page — rejected: 14 checks have no such page, and two
+  counts could still drift.
+- Row ⋯ menus / buttons on the page — rejected by the owner: the home check list has no row
+  actions.
+
+### Consequences
+
+- Positive: count and list can never disagree; a new check gets its page for free.
+- Negative: the check page shows the check's columns, not the full list page's columns.

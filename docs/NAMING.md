@@ -449,6 +449,7 @@ with no live `xxx` to fall back from is a defect (C-13).
 | Approvals Review panel (ADR-265) one requested change: the field, its value now, the requested value | `Field` / `Now` / `Requested` | `label` / `before` / `after` | document_edit_requests changes | `Old` / `New`, `Before` / `After` |
 | Approvals history (ADR-265) the reject reason or approve remark given with a decision | `Reason` | `reason` | the request's decision note / activity_log detail | `Remarks`, `Note` |
 | Home (ADR-264) save button of the Create to-do form | `Save to-do` | — | POST /tasks/personal or POST /tasks | `Add`, `Submit` |
+| Home (ADR-312) the full list behind one check, opened by its `View all N` link | the check's own label as page title (e.g. `QC reports to upload`) | `/checks/$key`, `DashCheckPageResponse` | GET /dashboard/checks/:key (the check's own query) | `View all page`, `Check details`, `Drill-down` |
 | Home count strip entry (ADR-250) | — (one per list) | `cues[]` (`count` = the list's `total`) | the same query as its list | `KPI`, `Tile` |
 | QC Documents view: one order → POL folders → report folders → files (ADR-252) | `Dossier` | `QcDossierResponse` | GET /qc-documents/dossier | `QC Folder`, `QC Repository`, `Document Tree` |
 | Home list: QC entries saved without their report (ADR-252) | `Reports to upload` | `qc_report_missing` | GET /dashboard/home | `Missing Reports`, `Pending Reports` |

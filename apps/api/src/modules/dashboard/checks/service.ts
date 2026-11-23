@@ -110,8 +110,8 @@ const logCheckFailed: CheckFailHandler = (d, err) => {
 
 /** A check result → the contract check, money masked for a caller without
  *  the Price right on its page (canSeePrice). */
-const finish = (d: CheckDef, res: CheckResult, c: CheckCtx, a: DashAccess): DashCheck =>
-  toCheck(d, res, c.today, canSeePrice(a, d.priceForm));
+export const finish = (d: CheckDef, res: CheckResult, c: CheckCtx, a: DashAccess): DashCheck =>
+  toCheck(d, res, c.today, canSeePrice(a, d.priceForm), a);
 
 /** Run `defs` CHECKS_PARALLEL at a time through `run`. A check that throws is
  *  handed to `onFail` (logged) and left out; the rest still build. Registry

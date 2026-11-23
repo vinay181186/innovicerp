@@ -36,6 +36,7 @@ import {
 import { partyCommittedQtySql } from '../../party-grn/service';
 import { rcPendingSql } from '../personal/rows-route-card';
 import { PLAN_RC_PENDING_CHECK } from './production';
+import { nextStep } from './next-step';
 import { orderHref } from './sales';
 import type { CheckCtx, CheckDef } from './types';
 
@@ -130,6 +131,12 @@ export const PLANNING_CHECKS: readonly CheckDef[] = [
     href: '/planning',
     query: soLinesUnplannedSql,
     docHref: orderHref,
+    // ADR-312: Planning with this order and line open (as plan_pgrn_received).
+    actionHref: nextStep(
+      'plan_create',
+      'entry',
+      (r) => `/planning?soId=${r.id}&planLine=${r.rowKey}`,
+    ),
     refCode: (r) => r.x1,
     dated: true,
   },

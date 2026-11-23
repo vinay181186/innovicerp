@@ -30,6 +30,7 @@ import { pendingFrom as tpiPendingFrom } from '../../tpi/service';
 import type { RawRow } from '../personal/list-query';
 import { capaOpenSql, grnQcSql, qcReportMissingSql } from '../personal/rows-qc';
 import { entityHref } from '../personal/util';
+import { enc, nextStep } from './next-step';
 import { type CheckCtx, type CheckDef, narrow } from './types';
 
 /** One pending QC op row over a pendingFrom feed (aliases vos / jo / jc / i /
@@ -109,6 +110,11 @@ export const QC_CHECKS: readonly CheckDef[] = [
       r.kind === 'party_grn'
         ? (entityHref('PartyGrn', r.id, r.code) ?? '/party-grn')
         : docNavPage('grn', r.id),
+    // ADR-312: a purchase GRN opens Incoming QC on its line; Party GRN rows
+    // keep the Party GRN page.
+    actionHref: nextStep('qc_incoming', 'entry', (r) =>
+      r.kind !== 'party_grn' && r.x1 ? `/incoming-qc?line=${enc(r.x1)}` : null,
+    ),
     dated: false,
   },
   {
@@ -178,6 +184,13 @@ export const QC_CHECKS: readonly CheckDef[] = [
     // party = the report's name (qcReportMissingSql).
     query: (c) => qcReportMissingSql(c.cid, {}),
     docHref: jcHref,
+    // ADR-312: the order's QC Dossier (personal/lists.ts qc_report_missing);
+    // a standalone job card (no order) keeps the card.
+    actionHref: nextStep('qcdocs_upload', 'entry', (r) =>
+      r.x1
+        ? `/qc-docs?view=dossier&kind=${r.kind === 'jwso' ? 'jwso' : 'so'}&orderId=${r.x1}&lineId=${r.x2 ?? ''}`
+        : null,
+    ),
     dated: false,
   },
   {

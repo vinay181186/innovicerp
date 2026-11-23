@@ -190,6 +190,10 @@ export const TABLE_KEYS = {
   revSubstitutions: 'rev-substitutions',
   /** Home (ADR-264): the documents under one opened department check. */
   dashCheck: 'dash-check',
+  /** ADR-312 — one check's "View all" page (/checks/<key>): the same columns as
+   *  dashCheck, its own key so the full-width page's layout never resizes the
+   *  home's 8-row tables. */
+  dashCheckPage: 'dash-check-page',
   /** Home (ADR-264) Day Log view: today's entries. */
   dashDayLog: 'dash-day-log',
   /** +New DC (owner 2026-11-01, several NCs on one return DC): the Against NC
