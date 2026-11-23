@@ -191,7 +191,9 @@ export async function createDrawingRev(
         entityId: res.id,
         refId: label,
         reason: input.changeNote,
-        detail: `${label} added in the Drawing Register — Not released`,
+        detail: `${label} added in the Drawing Register — ${
+          input.drawingFilePath ? 'Under Review (drawing file attached, ADR-311)' : 'Not released'
+        }`,
       },
       companyId,
       user,

@@ -128,6 +128,14 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 
 2. **Continue building modules per "build first, audit later" approach.** Phase A foundation masters per ADR-028: BOM Master ✅ (2026-05-20), Route Cards ✅ (2026-05-20). Remaining: **QC Process Master UI** (backend already migrated via T-038, just needs web pages — smallest next slice), **Cost Center Master**, **Settings / Users / Access Control**. Pick whatever module the user wants next; the audit pass works from `docs/ISSUES.md` once the build phase wraps.
 
+## Done on TEST — ADR-311 drawing file compulsory + straight to Under Review (2026-11-23)
+
+- New SO / JWSO make lines (and new Equipment SO line, typed Rev) need a drawing file.
+- A Rev with a file is Under Review at once (all sources); Send for Review removed.
+- Home › Approvals: Drawing Rev — Approve / Release, Drawing correction; bell notices.
+- Self-approval of drawing corrections allowed. Migration 0260 (TEST applied; PROD via release script).
+- Open: Approvals › History for the new types; Rev-change reason box on the equipment line.
+
 ## Closed — SO / WO list: frozen header band (2026-08-11)
 
 **Status:** [x] Done. UI only, one file:

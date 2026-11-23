@@ -361,7 +361,7 @@ describe('ADR-290 Drawing Register', () => {
         reason: 'first file',
       }),
     );
-    await act(r1, 'submit', 'first issue');
+    // ADR-311 — the first file moves the Rev straight to Under Review (no submit).
     expect((await revRow(r1)).releaseStatus).toBe('under_review');
     await act(r1, 'approve');
     await act(r1, 'release');
@@ -373,7 +373,7 @@ describe('ADR-290 Drawing Register', () => {
 
   it('releasing Rev 2 supersedes released Rev 1; lookup names the latest', async () => {
     r2 = (await newRev('2', path2))!.id;
-    await act(r2, 'submit');
+    expect((await revRow(r2)).releaseStatus).toBe('under_review'); // ADR-311
     await act(r2, 'approve');
     await act(r2, 'release');
     expect((await revRow(r2)).releaseStatus).toBe('released');
@@ -383,8 +383,7 @@ describe('ADR-290 Drawing Register', () => {
   });
 
   it('two approves at the same moment → exactly one wins, the other is 409 (§20.2)', async () => {
-    const r = (await newRev('3', path3))!.id;
-    await act(r, 'submit');
+    const r = (await newRev('3', path3))!.id; // born with a file → Under Review (ADR-311)
     const res = await Promise.allSettled([act(r, 'approve'), act(r, 'approve')]);
     expect(res.filter((x) => x.status === 'fulfilled')).toHaveLength(1);
     const lost = res.find((x) => x.status === 'rejected') as PromiseRejectedResult;
@@ -394,8 +393,7 @@ describe('ADR-290 Drawing Register', () => {
   });
 
   it('release without the "Can release drawings" switch → 403', async () => {
-    const r = (await newRev('4', path3))!.id;
-    await act(r, 'submit');
+    const r = (await newRev('4', path3))!.id; // born with a file → Under Review (ADR-311)
     await act(r, 'approve');
     const designer = asAccess(admin, { departments: { design: 'L5' } }, 'manager');
     await expect(act(r, 'release', undefined, designer)).rejects.toBeInstanceOf(
@@ -423,11 +421,7 @@ describe('ADR-290 Drawing Register', () => {
     const detail = await service.getItemRevision(r2, admin);
     expect(detail.corrections).toHaveLength(1);
     expect(detail.corrections[0]!.status).toBe('pending');
-    // ADR-290 — a second person approves: hand the request to another user.
-    await db.execute(sql`
-      UPDATE public.drawing_corrections SET requested_by = (
-        SELECT id FROM public.users WHERE company_id = ${companyId}::uuid AND id <> ${admin.id}::uuid
-         LIMIT 1) WHERE id = ${detail.corrections[0]!.id}::uuid`);
+    // ADR-311 — self-approval allowed: the requester approves their own correction.
     await decideDrawingCorrection(detail.corrections[0]!.id, { decision: 'approve' }, admin);
     const after = await revRow(r2);
     expect(after.drawingFilePath).toBe(path1);

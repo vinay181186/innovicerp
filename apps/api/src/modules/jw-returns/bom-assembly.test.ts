@@ -53,6 +53,7 @@ async function makeItem(code: string, name: string): Promise<string> {
       code: `${P}${code}`,
       name,
       revision: 'A',
+      drawingFilePath: 'test/adr311-drawing.pdf', // ADR-311: a new line needs a drawing file
       uom: 'NOS',
       itemType: 'component',
       createdBy: admin.id,

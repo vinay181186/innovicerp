@@ -175,6 +175,11 @@ function hrefOf(r: Record<string, unknown>): string | null {
       return cancelDocHref(r['doc_type'] as CancelDocType, docId, code);
     case 'ecr':
       return entityHref('EngineeringChange', docId, code);
+    // ADR-311 — Drawing Register rows open the Rev's page (doc_id = item_revisions.id).
+    case 'rev':
+    case 'revRelease':
+    case 'drawingCorrection':
+      return `/drawings/${docId}`;
     default:
       return null;
   }

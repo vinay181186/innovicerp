@@ -26,7 +26,7 @@ import {
 } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { requireAnyFormAccess, requireFormAccess } from '../../lib/access';
+import { hasFormAccess, requireAnyFormAccess, requireFormAccess } from '../../lib/access';
 import { AuthorizationError, ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
 import { fmtDateTime } from '../../lib/format-date';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
@@ -190,7 +190,19 @@ export async function revStatusAction(
   input: RevStatusActionInput,
   user: AuthContext,
 ): Promise<void> {
-  await requireRight(action, user);
+  // ADR-311 — a person with the Drawing Release switch (no Approve tick) may
+  // reject an APPROVED Rev from the Release row (Home › Approvals offers ✗).
+  let rejectByReleaser = false;
+  if (
+    action === 'reject' &&
+    user.role !== 'admin' &&
+    !(await hasFormAccess(user, 'drawingreg_create', 'approve')) &&
+    canReleaseDrawings(await getMyAccess(user), user.role)
+  ) {
+    rejectByReleaser = true;
+  } else {
+    await requireRight(action, user);
+  }
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
   const companyId = user.companyId;
   const note = input.note?.trim() || null;
@@ -223,6 +235,11 @@ export async function revStatusAction(
     const label = itemRevLabel(cur.itemCode, cur.rev);
     if (!move.from.includes(cur.status)) {
       throw new ConflictError(`Cannot ${action} ${label}: it ${await stateText(tx, cur)}. Reload the page.`);
+    }
+    if (rejectByReleaser && cur.status !== 'approved') {
+      throw new AuthorizationError(
+        'Rejecting a drawing under review needs the Drawing Register Approve tick. Ask an admin.',
+      );
     }
     if (editConflicts(cur.updatedAt, input.expectedUpdatedAt)) {
       assertUnchangedSinceOpened(

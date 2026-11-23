@@ -11,6 +11,9 @@
 //   edit     useDecideDocumentEdit         (per change; Review panel)
 //   ecr      useDecideEcr                  (ADR-291; one row per sign-off role,
 //                                           role = typeKey 'ecr:<role>')
+//   rev        useRevStatusAction approve | reject   (ADR-311; expectedUpdatedAt = row.version)
+//   revRelease useRevStatusAction release | reject
+//   drawingCorrection useDecideDrawingCorrection
 //
 // A row locks the INSTANT it is clicked and stays locked until the refetch
 // drops it (no double tick); a refused row unlocks at once and shows the
@@ -25,6 +28,11 @@ import { dashboardKeys, notificationKeys } from '@/modules/dashboard/api';
 import { dayLogKeys, useApproveDayLogEdit, useRejectDayLogEdit } from '@/modules/day-logs/api';
 import { documentEditsKeys, useDecideDocumentEdit } from '@/modules/document-edits/api';
 import { ecrKeys, invalidateEcrScreens, useDecideEcr } from '@/modules/engineering-changes/api';
+import {
+  itemRevisionKeys,
+  useDecideDrawingCorrection,
+  useRevStatusAction,
+} from '@/modules/item-revisions/api';
 import { opEntryKeys, useDecideOpLogTimeChange } from '@/modules/op-entry/api';
 import {
   purchaseOrdersKeys,
@@ -60,6 +68,9 @@ const MODULE_ROOT = {
   dayLog: dayLogKeys.all,
   edit: documentEditsKeys.all,
   ecr: ecrKeys.all,
+  rev: itemRevisionKeys.all,
+  revRelease: itemRevisionKeys.all,
+  drawingCorrection: itemRevisionKeys.all,
 } as const;
 
 /** `rows`: the waiting rows on screen now — a locked row that is gone
@@ -77,6 +88,8 @@ export function useDecideApproval(rows: readonly WaitingApprovalRow[]) {
   const rejectDay = useRejectDayLogEdit();
   const decideEdit = useDecideDocumentEdit();
   const decideEcr = useDecideEcr();
+  const revAction = useRevStatusAction();
+  const decideCorrection = useDecideDrawingCorrection();
   const [busy, setBusy] = useState<Set<string>>(new Set());
 
   const presentKeys = rows.map(approvalKey).join('|');
@@ -131,6 +144,17 @@ export function useDecideApproval(rows: readonly WaitingApprovalRow[]) {
       case 'ecr':
         await decideEcr.mutateAsync({ id: r.id, role: ecrRoleOf(r), decision: 'approved' });
         return;
+      case 'rev':
+      case 'revRelease':
+        await revAction.mutateAsync({
+          id: r.id,
+          action: r.kind === 'rev' ? 'approve' : 'release',
+          input: v ? { expectedUpdatedAt: v } : {},
+        });
+        return;
+      case 'drawingCorrection':
+        await decideCorrection.mutateAsync({ correctionId: r.id, input: { decision: 'approve' } });
+        return;
       case 'edit':
         // Change requests are decided field by field in the Review panel only.
         throw new Error('Open Review to decide this change request.');
@@ -161,6 +185,20 @@ export function useDecideApproval(rows: readonly WaitingApprovalRow[]) {
           role: ecrRoleOf(r),
           decision: 'rejected',
           note: reason,
+        });
+        return;
+      case 'rev':
+      case 'revRelease':
+        await revAction.mutateAsync({
+          id: r.id,
+          action: 'reject',
+          input: { ...(v ? { expectedUpdatedAt: v } : {}), note: reason },
+        });
+        return;
+      case 'drawingCorrection':
+        await decideCorrection.mutateAsync({
+          correctionId: r.id,
+          input: { decision: 'reject', note: reason },
         });
         return;
       case 'edit':

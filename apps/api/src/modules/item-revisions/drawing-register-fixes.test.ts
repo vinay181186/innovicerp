@@ -28,8 +28,11 @@ import {
   users,
 } from '../../db/schema';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
-import { AuthorizationError, ConflictError, ValidationError } from '../../lib/errors';
+import { drawingFileRequiredMessage } from '@innovic/shared';
+import { ConflictError, ValidationError } from '../../lib/errors';
 import { replaceItemRevisionDrawing } from '../../lib/item-revision';
+import { getWaitingApprovals } from '../approvals/waiting';
+import { resolveLineRevision } from './line-rev';
 import { supabaseAdmin } from '../../lib/supabase-admin';
 import { NOTE_RULES, ruleCond } from '../dashboard/personal/note-rules';
 import { decideDrawingCorrection } from './corrections';
@@ -279,7 +282,7 @@ describe('ADR-290 Drawing Register fixes', () => {
     expect(f.total).toBe(2);
   });
 
-  it('5. createDrawingRev: draft + note + source register; second add 409; Buy item refused', async () => {
+  it('5. createDrawingRev: with a file → Under Review (ADR-311) + note + source register; second add 409; Buy item refused', async () => {
     const item = await mkItem(`${P}NEW`);
     const id = await createDrawingRev(
       {
@@ -292,7 +295,7 @@ describe('ADR-290 Drawing Register fixes', () => {
       admin,
     );
     const row = await revRow(id);
-    expect(row.releaseStatus).toBe('draft');
+    expect(row.releaseStatus).toBe('under_review');
     expect(row.sourceType).toBe('register');
     expect(row.changeNote).toBe('Hole moved 2 mm');
     expect(row.drawingFilePath).toBe(path1);
@@ -301,7 +304,7 @@ describe('ADR-290 Drawing Register fixes', () => {
       admin,
     );
     await expect(again).rejects.toBeInstanceOf(ConflictError);
-    await expect(again).rejects.toThrow(`${P}NEW/2 already exists (Not released)`);
+    await expect(again).rejects.toThrow(`${P}NEW/2 already exists (Under Review)`);
     const buy = await mkItem(`${P}BUY`, 'buy');
     await expect(
       createDrawingRev(
@@ -341,31 +344,95 @@ describe('ADR-290 Drawing Register fixes', () => {
     const r = await oldRev(item, '1', path1);
     await act(r, 'release');
     const res = await replace(r, path2);
-    // ADR-290 — the requester cannot approve their own correction.
-    const own = decideDrawingCorrection(res.correctionId!, { decision: 'approve' }, admin);
-    await expect(own).rejects.toBeInstanceOf(AuthorizationError);
-    await expect(own).rejects.toThrow(
-      'You asked for this correction — another person with the Drawing Release button must approve it.',
-    );
-    const still = (
+    // The file changes only when the correction is approved.
+    expect((await revRow(r)).drawingFilePath).toBe(path1);
+    // ADR-311 — self-approval allowed (owner 23-Nov): the requester approves it.
+    await decideDrawingCorrection(res.correctionId!, { decision: 'approve' }, admin);
+    const done = (
       await db
         .select({ status: drawingCorrections.status })
         .from(drawingCorrections)
         .where(eq(drawingCorrections.id, res.correctionId!))
     )[0]!;
-    expect(still.status).toBe('pending');
-    expect((await revRow(r)).drawingFilePath).toBe(path1);
-    // Requested by someone else → admin may approve.
-    await db
-      .update(drawingCorrections)
-      .set({ requestedBy: otherUserId })
-      .where(eq(drawingCorrections.id, res.correctionId!));
-    await decideDrawingCorrection(res.correctionId!, { decision: 'approve' }, admin);
+    expect(done.status).toBe('approved');
     expect((await revRow(r)).drawingFilePath).toBe(path2);
     const rows = await db
       .select({ action: activityLog.action })
       .from(activityLog)
       .where(eq(activityLog.entityId, res.correctionId!));
     expect(rows.map((x) => x.action)).toEqual(['APPROVE']);
+  });
+
+  // ─── ADR-311 ──────────────────────────────────────────────────────────────
+
+  const newLine = (itemId: string, rev: string, file: string | null) =>
+    withUserContext(admin, (tx) =>
+      resolveLineRevision(tx, admin, companyId, {
+        kind: 'so',
+        orderId: '00000000-0000-0000-0000-000000000000',
+        docCode: `${P}SO-311`,
+        lineNo: 1,
+        itemId,
+        rev,
+        sentFile: file,
+        sentDrawingNo: null,
+        stored: null,
+      }),
+    );
+
+  it('8. ADR-311: a new SO line of a make item without a drawing file is refused; a buy item saves', async () => {
+    const make = await mkItem(`${P}F311`);
+    await expect(newLine(make, '1', null)).rejects.toThrow(
+      drawingFileRequiredMessage(1, `${P}F311/1`),
+    );
+    // Refused inside the transaction → no register record was left behind.
+    const left = await db.select().from(itemRevisions).where(eq(itemRevisions.itemId, make));
+    expect(left).toHaveLength(0);
+    const buy = await mkItem(`${P}B311`, 'buy');
+    const res = await newLine(buy, '1', null);
+    expect(res.itemRevisionId).toBeNull();
+  });
+
+  it('8. ADR-311: a new SO line with a file → Rev Under Review at once, logged as automatic', async () => {
+    const make = await mkItem(`${P}U311`);
+    const res = await newLine(make, '1', path1);
+    const row = await revRow(res.itemRevisionId!);
+    expect(row.releaseStatus).toBe('under_review');
+    expect(row.submittedBy).toBe(admin.id);
+    const logs = await db
+      .select({ action: activityLog.action, detail: activityLog.detail })
+      .from(activityLog)
+      .where(eq(activityLog.entityId, res.itemRevisionId!));
+    expect(logs.some((l) => l.action === 'SUBMIT' && /automatically/.test(l.detail ?? ''))).toBe(true);
+    // It is waiting in Approvals for the Approve-tick holder (raiser not excluded).
+    const waiting = await getWaitingApprovals(admin);
+    expect(waiting.rows.some((w) => w.kind === 'rev' && w.id === res.itemRevisionId)).toBe(true);
+  });
+
+  it('8. ADR-311: Reject, then Replace drawing → back to Under Review by itself', async () => {
+    const make = await mkItem(`${P}R311`);
+    const res = await newLine(make, '1', path1);
+    const id = res.itemRevisionId!;
+    await act(id, 'reject', 'wrong scan');
+    expect((await revRow(id)).releaseStatus).toBe('rejected');
+    await replace(id, path2);
+    const row = await revRow(id);
+    expect(row.releaseStatus).toBe('under_review');
+    expect(row.drawingFilePath).toBe(path2);
+    expect(row.rejectReason).toBeNull();
+  });
+
+  it('8. ADR-311: approve → Release row in Approvals; replace on Approved → Under Review again', async () => {
+    const make = await mkItem(`${P}A311`);
+    const res = await newLine(make, '1', path1);
+    const id = res.itemRevisionId!;
+    await act(id, 'approve');
+    const waiting = await getWaitingApprovals(admin);
+    expect(waiting.rows.some((w) => w.kind === 'revRelease' && w.id === id)).toBe(true);
+    expect(waiting.rows.some((w) => w.kind === 'rev' && w.id === id)).toBe(false);
+    await replace(id, path2);
+    const row = await revRow(id);
+    expect(row.releaseStatus).toBe('under_review');
+    expect(row.approvedBy).toBeNull();
   });
 });

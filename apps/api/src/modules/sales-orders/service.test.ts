@@ -105,6 +105,7 @@ describe('sales-orders service', () => {
             partName: 'Widget Alpha',
             clientPoLineNo: '1',
             revision: 'A',
+            drawingFilePath: 'test/adr311-drawing.pdf', // ADR-311: a new line needs a drawing file
             itemId: firstItemId,
             uom: 'NOS',
             orderQty: 10,
@@ -114,6 +115,7 @@ describe('sales-orders service', () => {
             partName: 'Widget Beta',
             clientPoLineNo: '1',
             revision: 'A',
+            drawingFilePath: 'test/adr311-drawing.pdf', // ADR-311: a new line needs a drawing file
             itemCodeText: 'NONEXISTENT-CODE',
             uom: 'NOS',
             orderQty: 5,
@@ -156,6 +158,7 @@ describe('sales-orders service', () => {
             partName: 'Coded',
             clientPoLineNo: '1',
             revision: 'A',
+            drawingFilePath: 'test/adr311-drawing.pdf', // ADR-311: a new line needs a drawing file
             itemId: firstItemId,
             uom: 'NOS',
             orderQty: 3,
@@ -191,6 +194,7 @@ describe('sales-orders service', () => {
               partName: 'Auto',
               clientPoLineNo: '1',
               revision: 'A',
+              drawingFilePath: 'test/adr311-drawing.pdf', // ADR-311: a new line needs a drawing file
               itemId: firstItemId,
               uom: 'NOS',
               orderQty: 1,
@@ -233,6 +237,7 @@ describe('sales-orders service', () => {
               partName: 'X',
               clientPoLineNo: '1',
               revision: 'A',
+              drawingFilePath: 'test/adr311-drawing.pdf', // ADR-311: a new line needs a drawing file
               itemId: firstItemId,
               uom: 'NOS',
               orderQty: 1,
@@ -268,6 +273,7 @@ describe('sales-orders service', () => {
               partName: 'X',
               clientPoLineNo: '1',
               revision: 'A',
+              drawingFilePath: 'test/adr311-drawing.pdf', // ADR-311: a new line needs a drawing file
               itemId: firstItemId,
               uom: 'NOS',
               orderQty: 1,
@@ -354,6 +360,7 @@ describe('sales-orders service', () => {
               partName: 'X',
               clientPoLineNo: '1',
               revision: 'A',
+              drawingFilePath: 'test/adr311-drawing.pdf', // ADR-311: a new line needs a drawing file
               itemId: firstItemId,
               uom: 'NOS',
               orderQty: 1,
@@ -383,6 +390,7 @@ describe('sales-orders service', () => {
             partName: 'Line One',
             clientPoLineNo: '1',
             revision: 'A',
+            drawingFilePath: 'test/adr311-drawing.pdf', // ADR-311: a new line needs a drawing file
             itemId: firstItemId,
             uom: 'NOS',
             orderQty: 3,
@@ -392,6 +400,7 @@ describe('sales-orders service', () => {
             partName: 'Line Two',
             clientPoLineNo: '1',
             revision: 'A',
+            drawingFilePath: 'test/adr311-drawing.pdf', // ADR-311: a new line needs a drawing file
             itemId: firstItemId,
             uom: 'NOS',
             orderQty: 7,
@@ -423,6 +432,7 @@ describe('sales-orders service', () => {
             partName: 'X',
             clientPoLineNo: '1',
             revision: 'A',
+            drawingFilePath: 'test/adr311-drawing.pdf', // ADR-311: a new line needs a drawing file
             itemId: firstItemId,
             uom: 'NOS',
             orderQty: 1,
@@ -465,6 +475,7 @@ describe('sales-orders service', () => {
             partName: 'Equip',
             clientPoLineNo: '1',
             revision: 'A',
+            drawingFilePath: 'test/adr311-drawing.pdf', // ADR-311: a new line needs a drawing file
             itemId: firstItemId,
             uom: 'NOS',
             orderQty: 4,
@@ -474,6 +485,7 @@ describe('sales-orders service', () => {
             partName: 'Spare',
             clientPoLineNo: '1',
             revision: 'A',
+            drawingFilePath: 'test/adr311-drawing.pdf', // ADR-311: a new line needs a drawing file
             itemId: firstItemId,
             uom: 'NOS',
             orderQty: 6,
@@ -512,6 +524,7 @@ describe('sales-orders service', () => {
             partName: 'Stay',
             clientPoLineNo: '1',
             revision: 'A',
+            drawingFilePath: 'test/adr311-drawing.pdf', // ADR-311: a new line needs a drawing file
             itemId: firstItemId,
             uom: 'NOS',
             orderQty: 9,
@@ -550,6 +563,7 @@ describe('sales-orders service', () => {
             partName: 'Keep+Update',
             clientPoLineNo: '1',
             revision: 'A',
+            drawingFilePath: 'test/adr311-drawing.pdf', // ADR-311: a new line needs a drawing file
             itemId: firstItemId,
             uom: 'NOS',
             orderQty: 10,
@@ -559,6 +573,7 @@ describe('sales-orders service', () => {
             partName: 'Drop Me',
             clientPoLineNo: '1',
             revision: 'A',
+            drawingFilePath: 'test/adr311-drawing.pdf', // ADR-311: a new line needs a drawing file
             itemId: firstItemId,
             uom: 'NOS',
             orderQty: 20,
@@ -581,6 +596,7 @@ describe('sales-orders service', () => {
             partName: 'Keep+Updated',
             clientPoLineNo: '1',
             revision: 'A',
+            drawingFilePath: 'test/adr311-drawing.pdf', // ADR-311: a new line needs a drawing file
             itemId: firstItemId,
             uom: 'NOS',
             orderQty: 11,
@@ -591,6 +607,7 @@ describe('sales-orders service', () => {
             partName: 'Brand New',
             clientPoLineNo: '1',
             revision: 'A',
+            drawingFilePath: 'test/adr311-drawing.pdf', // ADR-311: a new line needs a drawing file
             itemId: firstItemId,
             uom: 'NOS',
             orderQty: 30,
@@ -639,6 +656,7 @@ describe('sales-orders service', () => {
             partName: 'L1',
             clientPoLineNo: '1',
             revision: 'A',
+            drawingFilePath: 'test/adr311-drawing.pdf', // ADR-311: a new line needs a drawing file
             itemId: firstItemId,
             uom: 'NOS',
             orderQty: 1,
@@ -648,6 +666,7 @@ describe('sales-orders service', () => {
             partName: 'L2',
             clientPoLineNo: '1',
             revision: 'A',
+            drawingFilePath: 'test/adr311-drawing.pdf', // ADR-311: a new line needs a drawing file
             itemId: firstItemId,
             uom: 'NOS',
             orderQty: 2,
@@ -683,6 +702,7 @@ describe('sales-orders service', () => {
             partName: 'L1',
             clientPoLineNo: '1',
             revision: 'A',
+            drawingFilePath: 'test/adr311-drawing.pdf', // ADR-311: a new line needs a drawing file
             itemId: firstItemId,
             uom: 'NOS',
             orderQty: 1,
@@ -733,6 +753,7 @@ describe('sales-orders service', () => {
               partName: 'L',
               clientPoLineNo: '1',
               revision: 'A',
+              drawingFilePath: 'test/adr311-drawing.pdf', // ADR-311: a new line needs a drawing file
               itemId: firstItemId,
               uom: 'NOS',
               orderQty: 1,
@@ -762,6 +783,7 @@ describe('sales-orders service', () => {
             partName: 'L1',
             clientPoLineNo: '1',
             revision: 'A',
+            drawingFilePath: 'test/adr311-drawing.pdf', // ADR-311: a new line needs a drawing file
             itemId: firstItemId,
             uom: 'NOS',
             orderQty: 1,
@@ -866,6 +888,7 @@ describe('SO line POL + Remarks (ADR-236)', () => {
             clientPoLineNo: '20',
             remarks: 'urgent',
             revision: 'A',
+            drawingFilePath: 'test/adr311-drawing.pdf', // ADR-311: a new line needs a drawing file
             itemId: firstItemId,
             uom: 'NOS',
             orderQty: 2,
@@ -889,6 +912,7 @@ describe('SO line POL + Remarks (ADR-236)', () => {
             clientPoLineNo: '21',
             remarks: null,
             revision: 'A',
+            drawingFilePath: 'test/adr311-drawing.pdf', // ADR-311: a new line needs a drawing file
             itemId: firstItemId,
             uom: 'NOS',
             orderQty: 2,
@@ -921,6 +945,7 @@ describe('SO line POL + Remarks (ADR-236)', () => {
             clientPoLineNo: '5',
             remarks: 'keep me',
             revision: 'A',
+            drawingFilePath: 'test/adr311-drawing.pdf', // ADR-311: a new line needs a drawing file
             itemId: firstItemId,
             uom: 'NOS',
             orderQty: 1,
@@ -940,6 +965,7 @@ describe('SO line POL + Remarks (ADR-236)', () => {
             partName: 'Keep Note',
             clientPoLineNo: '5',
             revision: 'A',
+            drawingFilePath: 'test/adr311-drawing.pdf', // ADR-311: a new line needs a drawing file
             itemId: firstItemId,
             uom: 'NOS',
             orderQty: 1,
@@ -1027,6 +1053,7 @@ describe('SO edit-approval — in-use rule + line / lot boxes', () => {
           partName: 'Gate Part',
           clientPoLineNo: l.pol,
           revision: 'A',
+          drawingFilePath: 'test/adr311-drawing.pdf', // ADR-311: a new line needs a drawing file
           itemId: firstItemId,
           uom: 'NOS' as const,
           orderQty: l.qty,
@@ -1063,6 +1090,7 @@ describe('SO edit-approval — in-use rule + line / lot boxes', () => {
     partName: 'Gate Part',
     clientPoLineNo: pol,
     revision: 'A',
+    drawingFilePath: 'test/adr311-drawing.pdf', // ADR-311: a new line needs a drawing file
     itemId: firstItemId,
     uom: 'NOS',
     orderQty: qty,

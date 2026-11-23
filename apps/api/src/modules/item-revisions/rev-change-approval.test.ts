@@ -164,6 +164,7 @@ describe('ADR-289 Rev change through edit approval', () => {
         partName: 'Rev part',
         clientPoLineNo: '10',
         revision: rev,
+        drawingFilePath: 'test/adr311-drawing.pdf', // ADR-311: a new line needs a drawing file
         itemId,
         uom: 'NOS',
         orderQty: 2,

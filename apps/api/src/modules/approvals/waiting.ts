@@ -42,6 +42,7 @@ import { markStale } from '../document-edits/list';
 import { decidableEcrRoles } from '../engineering-changes/workflow';
 import { approvableEditEntities, decidableCancelTypes } from './scope';
 import { readApprovalInbox } from './service';
+import { readDrawingApprovals } from './waiting-drawings';
 import { fmtDate } from '../../lib/format-date';
 import {
   cancelRequestText,
@@ -179,12 +180,13 @@ export async function getWaitingApprovals(user: AuthContext): Promise<WaitingApp
   const companyId = requireCompany(user);
   // Fill the per-request access memo once, before the sources ask in parallel.
   await primeAccess(user);
-  const [inbox, edits, cancels, dayLog, ecrs] = await Promise.all([
+  const [inbox, edits, cancels, dayLog, ecrs, drawings] = await Promise.all([
     readApprovalInbox(user),
     readEdits(user, companyId),
     readCancels(user, companyId),
     readDayLog(user),
     readEcrApprovals(user, companyId),
+    readDrawingApprovals(user, companyId),
   ]);
 
   const rows: WaitingApprovalRow[] = [];
@@ -311,6 +313,9 @@ export async function getWaitingApprovals(user: AuthContext): Promise<WaitingApp
     });
   }
 
+  // ADR-311 — Drawing Rev approve / release and drawing corrections.
+  rows.push(...drawings.rows);
+
   const byType = new Map<string, number>([
     ['po', inbox.po.length],
     ['rc', inbox.rc.length],
@@ -320,6 +325,7 @@ export async function getWaitingApprovals(user: AuthContext): Promise<WaitingApp
     ['cancel', cancels.rows.length],
     ['dayLog', dayLog.response.rows.length],
     ...ecrCount,
+    ...drawings.counts,
   ]);
   const counts = orderedCounts(byType);
   const total = counts.reduce((s, c) => s + c.n, 0);
@@ -332,7 +338,8 @@ export async function getWaitingApprovals(user: AuthContext): Promise<WaitingApp
     // Day Log heads only while an old edit waits (ADR-256 makes no new ones),
     // so an L5 / Super Admin with no Approve tick gets no empty Approvals item.
     dayLog.response.rows.length > 0 ||
-    ecrs.roles.length > 0;
+    ecrs.roles.length > 0 ||
+    drawings.canApprove;
 
   return {
     rows: sortOldestFirst(rows).slice(0, WAITING_APPROVALS_LIMIT),

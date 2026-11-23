@@ -10,7 +10,7 @@
 // The list holds every waiting row (≤ WAITING_APPROVALS_LIMIT), so search and
 // the Approval Type filter run in the browser over the rows on screen.
 
-import { type WaitingApprovalRow } from '@innovic/shared';
+import { REV_CHANGE_REASON_MIN, type WaitingApprovalRow } from '@innovic/shared';
 import { type ReactNode, useMemo, useState } from 'react';
 import { matchesSearchTerm } from '@/components/shared/search-match';
 import { fmtDate } from '@/lib/date';
@@ -240,7 +240,15 @@ export function ApprovalsList({
                   busy={actions.busy.has(approvalKey(r))}
                   onApprove={() => approve([r])}
                   onReject={() => setRejecting(r)}
-                  rejectLabel={r.kind === 'rc' ? ROUTE_CARD_RETURN_ACTION : undefined}
+                  rejectLabel={
+                    r.kind === 'rc'
+                      ? ROUTE_CARD_RETURN_ACTION
+                      : r.kind === 'rev' || r.kind === 'revRelease'
+                        ? 'Reject drawing'
+                        : r.kind === 'drawingCorrection'
+                          ? 'Reject correction'
+                          : undefined
+                  }
                 />
               )
             }
@@ -266,7 +274,24 @@ export function ApprovalsList({
                   placeholder:
                     'At least 5 characters. Rejecting lifts the holds this ECR put on the work.',
                 }
-              : { title: `Reject — ${rejecting.docCode}`, prompt: 'Why is this rejected?' })}
+              : rejecting.kind === 'rev' || rejecting.kind === 'revRelease'
+                ? {
+                    // ADR-311 — a Drawing Rev waiting for Design.
+                    title: `Reject drawing — ${rejecting.docCode}`,
+                    prompt: 'Reject Reason',
+                    confirmLabel: 'Reject drawing',
+                    minLength: REV_CHANGE_REASON_MIN,
+                    placeholder: `At least ${REV_CHANGE_REASON_MIN} characters. The Rev goes back to Design with your reason.`,
+                  }
+                : rejecting.kind === 'drawingCorrection'
+                  ? {
+                      title: `Reject correction — ${rejecting.docCode}`,
+                      prompt: 'Reject Reason',
+                      confirmLabel: 'Reject correction',
+                      minLength: REV_CHANGE_REASON_MIN,
+                      placeholder: `At least ${REV_CHANGE_REASON_MIN} characters. The released drawing stays as it is.`,
+                    }
+                  : { title: `Reject — ${rejecting.docCode}`, prompt: 'Why is this rejected?' })}
           onCancel={() => setRejecting(null)}
           onReject={(reason) => {
             const r = rejecting;

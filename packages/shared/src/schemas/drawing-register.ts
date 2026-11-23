@@ -58,6 +58,25 @@ export function isRevWorkAllowed(status: RevReleaseStatus | null | undefined): b
   return REV_WORK_ALLOWED.includes(status);
 }
 
+/** ADR-311 — a Rev in one of these statuses goes STRAIGHT to under_review the
+ *  moment it holds a drawing file (born with one, first file adopted, file
+ *  replaced, or replaced after a Reject). There is no "Send for Review" step.
+ *  under_review / approved move back to under_review on a replace (checked
+ *  again). unverified / released / superseded / obsolete are never moved here. */
+export const REV_AUTO_REVIEW_FROM: readonly RevReleaseStatus[] = [
+  'draft',
+  'rejected',
+  'under_review',
+  'approved',
+];
+
+/** ADR-311 — the refusal when a new SO / JWSO line (make item) has no drawing
+ *  file, or its Item / Rev changed and the new Rev has none. One sentence for
+ *  the server and the forms. */
+export function drawingFileRequiredMessage(lineNo: number, label: string): string {
+  return `Ln ${lineNo}: upload the drawing file for ${label} — it is compulsory on every Sales Order / JWSO line.`;
+}
+
 /** The sentence every refusal uses, so all create paths say the same thing. */
 export function revNotReleasedMessage(label: string, status: RevReleaseStatus): string {
   return `${label} is ${REV_RELEASE_STATUS_LABELS[status]} — Design must release it in the Drawing Register before Plan, PRO or Job Card.`;
@@ -67,7 +86,9 @@ export function revNotReleasedMessage(label: string, status: RevReleaseStatus): 
 //
 // §20.2 — every action is a conditional UPDATE on the expected FROM status;
 // 0 rows = 409 naming who acted. Rights:
-//   submit            — Drawing Register Entry or Edit (draft | rejected | unverified → under_review; needs a file)
+//   submit            — Drawing Register Entry or Edit (draft | rejected | unverified → under_review; needs a file).
+//                       ADR-311: no screen offers it any more — a Rev with a file is moved to
+//                       under_review automatically (REV_AUTO_REVIEW_FROM). Kept for old clients.
 //   approve / reject  — Drawing Register Approve tick (under_review → approved | rejected)
 //   release           — per-person "Drawing Release button" switch (approved → released, or
 //                       unverified → released = "Verify & Release" for records made before
