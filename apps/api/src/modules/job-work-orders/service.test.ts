@@ -322,6 +322,7 @@ describe('job-work-orders service', () => {
             uom: 'NOS',
             orderQty: 3,
             revision: 'B',
+            drawingFilePath: 'test/adr311-drawing.pdf', // ADR-311: a new line needs a drawing file
             dueDate: '2026-06-01',
           },
           { partName: 'L2', clientPoLineNo: '20', itemId: firstItemId, uom: 'NOS', orderQty: 5 },

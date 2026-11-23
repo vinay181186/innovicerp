@@ -20,6 +20,7 @@ import {
   PO_TYPES,
   poSendsMaterialOut,
   ROUTE_CARD_APPROVAL_LABEL,
+  canReleaseDrawings,
 } from '@innovic/shared';
 import { type SQL, sql } from 'drizzle-orm';
 import { rtvReadyForChallanSql } from '../../../lib/rtv-predicates';
@@ -48,7 +49,10 @@ export type Open =
   | 'qc_report_missing'
   | 'nc_dispose'
   | 'nc_rtv_dc'
-  | 'stock_count_approve';
+  | 'stock_count_approve'
+  | 'approval_rev'
+  | 'release_rev'
+  | 'approval_correction';
 
 /** The document a raiser rule's note belongs to: its table and the column
  *  naming its person (created_by, or the Day Log's owner). */
@@ -102,6 +106,9 @@ export interface NoteRule {
    *  no tail: a call to action ("— waiting for your approval") is dropped,
    *  leaving the plain past fact ("Jinal raised IN-PO-0421"). */
   doneTail?: string;
+  /** ADR-311 — an extra gate beside `right` (the Drawing Release switch is a
+   *  per-person flag, not a form tick). */
+  gate?: (a: DashAccess) => boolean;
 }
 
 /** ADR-253 — the one `changes` entry a resubmitted Route Card's EDIT carries
@@ -410,6 +417,41 @@ export const NOTE_RULES: readonly NoteRule[] = [
       ...(action === 'REJECT' ? { withReason: true as const } : {}),
     }),
   ),
+  // ADR-311 — a Rev with a file goes to Under Review on its own: the Drawing
+  // Register approvers are told; once approved, the releasers are told; a
+  // correction asked on a released file reaches the releasers. Self-approval
+  // allowed (owner 23-Nov) — but, like every non-raiser rule, the actor does
+  // not hear their own event.
+  {
+    entity: 'ItemRevision',
+    action: 'SUBMIT',
+    right: ['drawingreg_create', 'approve'],
+    open: 'approval_rev',
+    verb: 'sent for review',
+    tail: ' — Drawing Rev waiting for your approval',
+    tone: 'due',
+  },
+  {
+    entity: 'ItemRevision',
+    action: 'APPROVE',
+    right: ['drawingreg_create', 'view'],
+    gate: (a) => canReleaseDrawings(a.eff, a.isAdmin ? 'admin' : a.role),
+    open: 'release_rev',
+    verb: 'approved',
+    tail: ' — Drawing Rev waiting for Release',
+    tone: 'due',
+  },
+  {
+    entity: 'ItemRevision',
+    action: 'EDIT',
+    right: ['drawingreg_create', 'view'],
+    gate: (a) => canReleaseDrawings(a.eff, a.isAdmin ? 'admin' : a.role),
+    open: 'approval_correction',
+    verb: 'drawing correction requested',
+    tail: ' — waiting for your approval',
+    tone: 'due',
+    when: () => sql`a.detail LIKE 'Drawing correction requested%'`,
+  },
   // ADR-291 — an Engineering Change approved (all sign-offs) or rejected: its
   // creator and the person who submitted it hear it (decision-notify rule).
   ...(
@@ -512,7 +554,9 @@ export const seesAll = (a: DashAccess): boolean => a.isAdmin || a.eff.fullAccess
 export function rulesFor(a: DashAccess): NoteRule[] {
   if (seesAll(a)) return [...NOTE_RULES];
   return NOTE_RULES.filter(
-    (r) => (r.raiser && !r.raiser.needsRight) || hasTick(a, r.right[0], r.right[1]),
+    (r) =>
+      ((r.raiser && !r.raiser.needsRight) || hasTick(a, r.right[0], r.right[1])) &&
+      (!r.gate || r.gate(a)),
   );
 }
 
@@ -621,6 +665,17 @@ export function openSql(
       return sql`SELECT d.id::text AS id FROM public.nc_register d
         WHERE d.company_id = ${cid}::uuid AND d.deleted_at IS NULL
           AND ${rtvReadyForChallanSql('d')} ${idIn}`;
+    case 'approval_rev':
+    case 'release_rev':
+      return sql`SELECT d.id::text AS id FROM public.item_revisions d
+        WHERE d.company_id = ${cid}::uuid AND d.deleted_at IS NULL
+          AND d.release_status = ${open === 'approval_rev' ? 'under_review' : 'approved'} ${idIn}`;
+    case 'approval_correction':
+      return sql`SELECT d.id::text AS id FROM public.item_revisions d
+        WHERE d.company_id = ${cid}::uuid AND d.deleted_at IS NULL
+          AND EXISTS (SELECT 1 FROM public.drawing_corrections c
+                       WHERE c.item_revision_id = d.id AND c.status = 'pending'
+                         AND c.deleted_at IS NULL) ${idIn}`;
     case 'stock_count_approve':
       return sql`SELECT d.id::text AS id FROM public.stock_counts d
         WHERE d.company_id = ${cid}::uuid AND d.deleted_at IS NULL

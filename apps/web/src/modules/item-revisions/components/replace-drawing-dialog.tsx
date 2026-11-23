@@ -84,7 +84,7 @@ export function ReplaceDrawingDialog({
           ) : null}
           {resetsReview ? (
             <span className="amber fw-700">
-              The Rev goes back to Not released and must be reviewed again.
+              The Rev goes back to Under Review and must be approved again.
             </span>
           ) : null}
           <span>

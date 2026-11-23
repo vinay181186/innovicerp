@@ -1,7 +1,8 @@
 // ADR-290 — "+ New Drawing Rev" on the Drawing Register. A customer's new Rev
 // that no order names yet (ABC/2 arriving while the SO line still runs on
 // ABC/1) is added here so Design can review and release it before work moves
-// to it. It starts "Not released". Drawing Register Entry right.
+// to it. With a drawing file it goes straight to Under Review (ADR-311);
+// without one it stays "Not released". Drawing Register Entry right.
 //
 // Built on the shared ConfirmDialog, like Replace drawing and Set Rev: a thrown
 // error stays inside the dialog, so the server's 409 ("ABC/2 already exists")
@@ -97,8 +98,9 @@ export function NewDrawingRevDialog({
         message={
           <div style={{ display: 'grid', gap: 'var(--sp-2)', marginTop: 'var(--sp-2)' }}>
             <span>
-              The new Drawing Rev starts Not released. Send it for review, then release it, before
-              Plan, PRO or Job Card use it.
+              With a drawing file attached, the new Drawing Rev goes straight to Under Review for
+              Design to approve and release before Plan, PRO or Job Card use it. Without a file it
+              stays Not released until one is added.
             </span>
             <FormField label="Item Code" required htmlFor="ndr-item">
               <SearchableSelect

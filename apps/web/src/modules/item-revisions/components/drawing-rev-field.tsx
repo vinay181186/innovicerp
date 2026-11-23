@@ -20,15 +20,17 @@
 // building a save the server will refuse ("Drawing differs from ABC/1 …").
 
 import { Icon } from '@/ui/core';
-import type { DrawingSource, ItemRevision } from '@innovic/shared';
-import { itemRevLabel } from '@innovic/shared';
+import type { DrawingSource, ItemRevision, LookupItemRevisionResponse } from '@innovic/shared';
+import { drawingFileRequiredMessage, itemRevLabel } from '@innovic/shared';
+import { useQueryClient } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { apiFetch } from '@/lib/api';
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useSession } from '@/lib/session';
 import { uploadFile } from '@/lib/storage';
-import { cleanDrawingRev, useItemRevisionLookup } from '../api';
+import { cleanDrawingRev, itemRevisionKeys, useItemRevisionLookup } from '../api';
 import { ITEM_REVISION_DRAWING_FOLDER, ReplaceDrawingDialog } from './replace-drawing-dialog';
 import { RevStatusBadge } from './rev-status-badge';
 
@@ -53,6 +55,79 @@ export interface DrawingRevFieldProps {
    *  Owned by the form's useRevConfirmGate (so a collapsed line is still
    *  checked at Save). Without it the note shows with no tick (Route Card). */
   confirm?: { checked: boolean; onChange: (checked: boolean) => void } | undefined;
+}
+
+/** One order line as the ADR-311 drawing-file check sees it. */
+export interface DrawingFileCheckLine {
+  /** 1-based line number for the message. */
+  lineNo: number;
+  itemId: string | null | undefined;
+  itemCode: string | null | undefined;
+  rev: string | null | undefined;
+  drawingFilePath: string | null | undefined;
+  /** Saved line only: the Item and Rev it was loaded with. Absent = new line. */
+  saved?:
+    | {
+        itemId: string | null | undefined;
+        rev: string | null | undefined;
+        drawingFilePath?: string | null | undefined;
+      }
+    | undefined;
+}
+
+/** ADR-311 — the drawing file is compulsory on a NEW SO / JWSO line of a make
+ *  item, and on a saved line whose Item or Rev changed. A saved line where
+ *  only other fields changed is never refused. Make or buy is answered by the
+ *  same lookup the drawing control already runs (`revRequired`), read from its
+ *  cache when warm. Returns the first refusal sentence (shared with the
+ *  server), or null. `force` skips the make check (new Equipment SO line). */
+export function useDrawingFileCheck(): (
+  lines: readonly DrawingFileCheckLine[],
+  opts?: { force?: boolean },
+) => Promise<string | null> {
+  const qc = useQueryClient();
+  return useCallback(
+    async (lines: readonly DrawingFileCheckLine[], opts?: { force?: boolean }) => {
+      for (const l of lines) {
+        if (l.drawingFilePath) continue;
+        const cleaned = cleanDrawingRev(l.rev);
+        const id = l.itemId ?? '';
+        const changed =
+          !l.saved ||
+          (l.saved.itemId ?? '') !== id ||
+          cleanDrawingRev(l.saved.rev) !== cleaned ||
+          // A saved file the user cleared — the server refuses that too.
+          Boolean(l.saved.drawingFilePath);
+        if (!changed) continue;
+        if (!opts?.force) {
+          // No item picked = not an Item Master line; the item check refuses it.
+          if (!id || !cleaned) continue;
+          let needs = true;
+          try {
+            const data = await qc.fetchQuery<LookupItemRevisionResponse>({
+              queryKey: itemRevisionKeys.lookup(id, cleaned),
+              queryFn: () => {
+                const p = new URLSearchParams({ itemId: id, rev: cleaned });
+                return apiFetch<LookupItemRevisionResponse>(
+                  `/item-revisions/lookup?${p.toString()}`,
+                );
+              },
+              staleTime: 30_000,
+            });
+            // The register already holds a file → the line inherits it (server: sent ?? register).
+            needs = data.revRequired && !data.revision?.drawingFilePath;
+          } catch {
+            // Lookup failed: let the save go; the server applies the same rule.
+            needs = false;
+          }
+          if (!needs) continue;
+        }
+        return drawingFileRequiredMessage(l.lineNo, itemRevLabel(l.itemCode ?? '', cleaned));
+      }
+      return null;
+    },
+    [qc],
+  );
 }
 
 export function DrawingRevField(props: DrawingRevFieldProps): React.JSX.Element {
@@ -293,7 +368,9 @@ export function DrawingRevField(props: DrawingRevFieldProps): React.JSX.Element 
             status={release.releaseStatus}
             {...(release.releaseStatus === 'draft'
               ? { text: 'Not released — Plan/PRO/Job Card wait for Design' }
-              : {})}
+              : release.releaseStatus === 'under_review'
+                ? { text: 'Under Review — waiting for Design approval' }
+                : {})}
           />
         </div>
       ) : null}

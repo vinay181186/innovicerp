@@ -34,7 +34,18 @@ export const APPROVAL_TYPE_ORDER: readonly string[] = [
   'dayLog',
   // ADR-291 — one Approval Type per ECR sign-off role.
   ...ECR_APPROVER_ROLES.map((r) => ecrTypeKey(r)),
+  // ADR-311 — Drawing Register.
+  'rev',
+  'revRelease',
+  'drawingCorrection',
 ];
+
+/** ADR-311 — Drawing Register Approval Types (the one copy). */
+export const DRAWING_TYPE_LABELS = {
+  rev: 'Drawing Rev — Approve',
+  revRelease: 'Drawing Rev — Release',
+  drawingCorrection: 'Drawing correction',
+} as const;
 
 const FIXED_LABELS: Readonly<Record<string, string>> = {
   po: 'PO',
@@ -42,6 +53,7 @@ const FIXED_LABELS: Readonly<Record<string, string>> = {
   logEntry: 'Op Entry time change',
   cancel: 'Cancel Request',
   dayLog: 'Day Log edit',
+  ...DRAWING_TYPE_LABELS,
 };
 
 /** The Approval Type as shown for a typeKey. */

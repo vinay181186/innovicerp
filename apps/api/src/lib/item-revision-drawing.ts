@@ -8,6 +8,7 @@ import { itemRevisionDrawings, itemRevisions, items, users } from '../db/schema'
 import type { AuthContext, DbTransaction } from '../db/with-user-context';
 import { emitActivityLog } from '../modules/activity-log/service';
 import { assertUnchangedSinceOpened } from './edit-conflict';
+import { autoSubmitRevIfFile } from './item-revision';
 import { ConflictError, NotFoundError, ValidationError } from './errors';
 
 export interface ReplaceItemRevisionDrawingArgs {
@@ -319,12 +320,13 @@ export async function replaceItemRevisionDrawing(
     return { soLines: 0, jwLines: 0, correctionId };
   }
 
-  const backToDraft = row.releaseStatus === 'under_review' || row.releaseStatus === 'approved';
+  // ADR-311 — a replaced file is checked again: draft / rejected / under_review /
+  // approved all go (back) to Under Review (autoSubmitRevIfFile), never to draft.
   const res = await applyDrawingReplacement(tx, user, companyId, row, change, {
-    ...(backToDraft ? { releaseStatus: 'draft' as const } : {}),
     fileHash: null,
     detail: 'Drawing replaced',
   });
+  await autoSubmitRevIfFile(tx, user, companyId, id, `Replace drawing: ${change.reason}`);
   return { ...res, correctionId: null };
 }
 

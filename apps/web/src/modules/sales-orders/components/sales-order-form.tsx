@@ -98,6 +98,7 @@ import {
   useRevConfirmGate,
 } from '@/modules/item-revisions/components/rev-confirm-gate';
 import { SoLineDrawingCell } from './so-line-drawing-cell';
+import { useDrawingFileCheck } from '@/modules/item-revisions/components/drawing-rev-field';
 import {
   CustomerAddressField,
   OrderSupplyFormFields,
@@ -485,6 +486,8 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
   const [lineError, setLineError] = useState<string | null>(null);
   // ADR-290 — "Confirmed" ticks for lines on an older Rev than the latest released.
   const revConfirm = useRevConfirmGate();
+  // ADR-311 — drawing file compulsory on new / Item-or-Rev-changed lines.
+  const checkDrawingFiles = useDrawingFileCheck();
   // At least one of Client PO No. / Email Ref must be provided (create form).
   const [poEmailError, setPoEmailError] = useState<string | null>(null);
   // Client-PO document (legacy _cpoFileSelected L12315) — captured here, the
@@ -742,6 +745,42 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
         }
       }
 
+      // ADR-311: the Equipment line now carries its own typed Drawing Rev.
+      if (equip && !String(values.lines[0]?.revision ?? '').trim()) {
+        setLineError(
+          "Equipment line: enter the Drawing Rev — the revision printed on the customer's drawing.",
+        );
+        return;
+      }
+
+      // ADR-311: drawing file compulsory on a new line (make item) and on a
+      // saved line whose Item or Rev changed — also refuses clearing the file
+      // on such a line. Old saved lines with only other edits pass. On a NEW
+      // Equipment SO the file is compulsory outright.
+      {
+        const savedById = new Map(
+          (props.mode === 'edit' ? props.detail.lines : []).map((d) => [d.id, d]),
+        );
+        const checkLines = (equip ? values.lines.slice(0, 1) : values.lines).map((l, i) => {
+          const saved = l.id ? savedById.get(l.id) : undefined;
+          return {
+            lineNo: i + 1,
+            itemId: l.itemId,
+            itemCode: l.itemCodeText,
+            rev: String(l.revision ?? ''),
+            drawingFilePath: l.drawingFilePath,
+            saved: saved
+              ? { itemId: saved.itemId, rev: saved.revision, drawingFilePath: saved.drawingFilePath }
+              : undefined,
+          };
+        });
+        const fileMsg = await checkDrawingFiles(checkLines, { force: equip && isCreate });
+        if (fileMsg) {
+          setLineError(fileMsg);
+          return;
+        }
+      }
+
       // ADR-236: POL (the customer's PO line number) is compulsory on every
       // line — the equipment line included. Same rule and words as the API
       // (shared polError), named by line like the checks above.
@@ -807,11 +846,9 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
           // makes the removal show up in the drawing history.
           drawingFilePath: l.drawingFilePath || null,
           // Trimmed and always sent; the form is the only source of it and the API
-          // requires a non-empty string. The '0' fallback is unreachable for a
-          // component line — the compulsory check above has already refused the
-          // save — and exists only for the EQUIPMENT path, which has no Rev box of
-          // its own and so has nobody to ask.
-          revision: normalizeRevision(String(l.revision ?? '')) || '0',
+          // requires a non-empty string. ADR-311: the equipment line has its own
+          // Rev box now, and both paths refuse a blank Rev above — no fallback.
+          revision: normalizeRevision(String(l.revision ?? '')),
           // ADR-289: only when this saved line's Rev really changed.
           ...(() => {
             const savedRev =
@@ -1300,6 +1337,40 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
                 maxLength={POL_MAX}
                 style={{ color: 'var(--purple)', fontWeight: 600 }}
                 {...register('lines.0.clientPoLineNo')}
+              />
+            </FormField>
+            {/* ADR-311: the equipment line's own Drawing Rev + drawing file,
+                both compulsory on a new Equipment SO (onValid). */}
+            <FormField label="Drawing Rev" required size="sm" htmlFor="so-equip-rev">
+              <input
+                id="so-equip-rev"
+                className="innovic-input"
+                autoComplete="off"
+                placeholder="Rev"
+                maxLength={32}
+                style={{ textTransform: 'uppercase' }}
+                pattern={REV_INPUT_PATTERN}
+                title={REV_INPUT_TITLE}
+                {...upperCaseRevField(register('lines.0.revision'))}
+              />
+            </FormField>
+            <FormField label="Drawing File" required={isCreate} size="md">
+              <SoLineDrawingCell
+                value={watch('lines.0.drawingFilePath')}
+                onChange={(p) => setValue('lines.0.drawingFilePath', p, { shouldDirty: true })}
+                refCode={`${watch('header.code') || 'new SO'} L1`}
+                itemId={equipItemId}
+                itemCode={watch('lines.0.itemCodeText')}
+                rev={watch('lines.0.revision')}
+                {...(() => {
+                  const saved =
+                    props.mode === 'edit' && props.detail.type === 'equipment'
+                      ? props.detail.lines[0]
+                      : undefined;
+                  return saved
+                    ? { savedRev: saved.revision, savedPath: saved.drawingFilePath }
+                    : {};
+                })()}
               />
             </FormField>
             <FormField label="Remarks" size="md" htmlFor="so-equip-remarks">

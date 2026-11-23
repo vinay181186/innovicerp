@@ -16432,3 +16432,45 @@ steps; "No box? Click the 🔔 …" hint when the Allow box got no answer (also 
 without Task Board access, browsers that cannot show pop-ups, and a server without keys. Mockup
 https://claude.ai/artifact/XCBvQjZpJSMK12ZMqkMZc1. A browser never lets a site switch pop-ups on without the
 person's click, so "on by default" is this band.
+
+## ADR-311: Drawing file compulsory on new SO / JWSO lines; a Rev with a file goes straight to Under Review
+
+**Date:** 2026-11-23
+**Status:** Accepted (owner, 23-Nov)
+
+### Context
+
+A Rev typed on an SO line started "Not released" and waited for somebody to press **Send for Review**.
+Nobody was told when a Rev waited for Approve or Release (no Approvals row, no bell notice), the SO line
+could be saved with no drawing at all, and Design could not release a Rev that had no file.
+
+### Decision
+
+1. **File compulsory:** every NEW SO line and NEW JWSO line of a Make item must carry a drawing file;
+   so must a saved line whose Item or Rev changes, and such a file cannot be cleared. Old lines edited
+   for other fields are not blocked (owner D3). Equipment SO: the Rev is typed (no `'0'` fallback) and
+   the equipment line's file is compulsory on a new SO. One sentence: `drawingFileRequiredMessage`.
+   Enforced in `resolveLineRevision` (one point for create, edit and approved edit requests).
+2. **No Send for Review:** a Rev that holds a file is `under_review` (`REV_AUTO_REVIEW_FROM`) — born with
+   a file, first file adopted, file replaced (also after a Reject, and from Under Review / Approved), from
+   every source: SO, JWSO, Route Card, + New Drawing Rev (owner D2 = A). One helper in
+   `lib/item-revision.ts`; Activity Log `SUBMIT … sent for review automatically`. The button is gone;
+   the endpoint stays for old clients. Unverified records keep Verify & Release.
+3. **Approvals:** Home › Approvals lists `rev` (Approve / Reject, Drawing Register Approve tick),
+   `revRelease` (Release, Drawing Release switch) and `drawingCorrection` (Drawing Release switch), plus
+   bell notices to the same people. Decided through the existing endpoints (§20.2 conditional update,
+   `updatedAt` version).
+4. **Self-approval (owner D4):** the raiser may Approve, Release, and approve their own drawing correction
+   (lifts the ADR-290 second-person rule on corrections).
+5. **Backfill 0260:** `draft` + file → `under_review`, one Activity Log row each.
+
+### Alternatives Considered
+
+- SO lines only, keep Send for Review elsewhere — rejected by the owner (D2 = A: one rule).
+- Block every edit of an old SO line with no file — rejected (D3: only new lines / Item or Rev change).
+
+### Consequences
+
+- Positive: no Rev waits unseen; Design sees every drawing to check in one list.
+- Negative: an SO line can no longer be saved first and the drawing added later.
+- Risk: a line with a Plan still needs its new Rev released first (ADR-290 Step 3) — unchanged.

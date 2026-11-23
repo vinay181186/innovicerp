@@ -14,6 +14,7 @@ export function ApprovalRejectDialog({
   prompt,
   confirmLabel = 'Reject',
   placeholder = 'The document is left unchanged and this reason is shown to the person who asked.',
+  minLength = 1,
   onReject,
   onCancel,
 }: {
@@ -25,12 +26,14 @@ export function ApprovalRejectDialog({
   confirmLabel?: string | undefined;
   /** Hint inside the reason box. */
   placeholder?: string | undefined;
+  /** Shortest reason the server accepts (Drawing Rev / correction: 5). */
+  minLength?: number | undefined;
   /** Fire with the typed reason (already trimmed). */
   onReject: (reason: string) => void;
   onCancel: () => void;
 }): React.JSX.Element {
   const [reason, setReason] = useState('');
-  const canSubmit = reason.trim().length > 0;
+  const canSubmit = reason.trim().length >= Math.max(1, minLength);
 
   return (
     <Modal
@@ -50,7 +53,14 @@ export function ApprovalRejectDialog({
             variant="danger"
             size="sm"
             disabled={!canSubmit}
-            {...(canSubmit ? {} : { title: 'Type the reason first' })}
+            {...(canSubmit
+              ? {}
+              : {
+                  title:
+                    minLength > 1
+                      ? `Type the reason first — at least ${minLength} characters`
+                      : 'Type the reason first',
+                })}
             onClick={() => onReject(reason.trim())}
           >
             {confirmLabel}

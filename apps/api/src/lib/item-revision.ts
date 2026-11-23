@@ -17,6 +17,9 @@ import {
   isRevWorkAllowed,
   itemRevLabel,
   revNotReleasedMessage,
+  REV_AUTO_REVIEW_FROM,
+  REV_RELEASE_STATUS_LABELS,
+  ActivityAction,
   type ItemRevisionSource,
   type RevReleaseStatus,
 } from '@innovic/shared';
@@ -24,6 +27,7 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import { itemRevisionDrawings, itemRevisions, items } from '../db/schema';
 import type { AuthContext, DbTransaction } from '../db/with-user-context';
 import { ValidationError } from './errors';
+import { emitActivityLog } from '../modules/activity-log/service';
 
 export interface ResolveItemRevisionInput {
   itemId: string | null | undefined;
@@ -109,6 +113,8 @@ export async function resolveItemRevision(
         createdBy: user.id,
         updatedBy: user.id,
       });
+      // ADR-311 — born with a file → Under Review at once.
+      await autoSubmitRevIfFile(tx, user, companyId, insertedId, input.sourceRef);
     }
     return {
       id: insertedId,
@@ -161,6 +167,8 @@ export async function resolveItemRevision(
       createdBy: user.id,
       updatedBy: user.id,
     });
+    // ADR-311 — first file adopted → Under Review at once.
+    await autoSubmitRevIfFile(tx, user, companyId, row.id, input.sourceRef);
     return {
       id: row.id,
       rev,
@@ -176,6 +184,64 @@ export async function resolveItemRevision(
     drawingNo: row.drawingNo,
     created: false,
   };
+}
+
+/**
+ * ADR-311 — a Rev that holds a drawing file is Under Review: there is no
+ * "Send for Review" step. ONE conditional UPDATE (§20.2): only a live row in
+ * REV_AUTO_REVIEW_FROM (draft / rejected / under_review / approved) that has a
+ * file moves; every other status (unverified, released, superseded, obsolete)
+ * is left alone. Clears the earlier decision stamps and the stored hash so the
+ * Rev is checked again. Writes one SUBMIT activity row when a row moved.
+ * Returns true when the Rev was moved.
+ */
+export async function autoSubmitRevIfFile(
+  tx: DbTransaction,
+  user: AuthContext,
+  companyId: string,
+  revId: string,
+  sourceRef: string | null,
+): Promise<boolean> {
+  const moved = (await tx.execute(sql`
+    UPDATE public.item_revisions r
+       SET release_status = 'under_review', submitted_at = now(), submitted_by = ${user.id}::uuid,
+           rejected_at = NULL, rejected_by = NULL, reject_reason = NULL,
+           approved_at = NULL, approved_by = NULL, file_hash = NULL, updated_by = ${user.id}::uuid
+      FROM public.item_revisions o
+      JOIN public.items i ON i.id = o.item_id
+     WHERE r.id = ${revId}::uuid AND o.id = r.id
+       AND r.company_id = ${companyId}::uuid AND r.deleted_at IS NULL
+       AND r.release_status = ANY(${sql.param([...REV_AUTO_REVIEW_FROM])}::text[])
+       AND NULLIF(btrim(r.drawing_file_path), '') IS NOT NULL
+    RETURNING o.release_status AS before, i.code AS item_code, r.rev AS rev`)) as unknown as Array<{
+    before: RevReleaseStatus;
+    item_code: string;
+    rev: string;
+  }>;
+  const m = moved[0];
+  if (!m) return false;
+  const label = itemRevLabel(m.item_code, m.rev);
+  await emitActivityLog(
+    tx,
+    {
+      action: ActivityAction.Submit,
+      entity: 'ItemRevision',
+      entityId: revId,
+      refId: label,
+      changes: [
+        {
+          field: 'releaseStatus',
+          label: 'Release Status',
+          before: REV_RELEASE_STATUS_LABELS[m.before],
+          after: REV_RELEASE_STATUS_LABELS.under_review,
+        },
+      ],
+      detail: `${label} sent for review automatically — ${sourceRef ?? 'drawing file added'}`,
+    },
+    companyId,
+    user,
+  );
+  return true;
 }
 
 /** Read-only: the live ABC/<rev> row (no lock, no write), or null. Used by the

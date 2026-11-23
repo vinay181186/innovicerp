@@ -2,8 +2,8 @@
 // Drawing Register's row ⋯ menu and the drawing page's buttons, so both offer
 // exactly the same actions for the same status and rights.
 //
-//   Send for Review  draft | rejected | unverified → under_review (needs a file)
-//                    Drawing Register Entry or Edit
+//   (ADR-311: no Send for Review — a Rev with a drawing file goes straight to
+//   Under Review on the server when the file is saved.)
 //   Approve / Reject under_review → approved | rejected — Drawing Register Approve tick
 //   Release          approved → released — the per-person Drawing Release switch
 //   Verify & Release unverified → released (records made before release
@@ -62,18 +62,15 @@ export interface RevActionChoice {
   disabledReason?: string | undefined;
 }
 
-const SUBMIT_FROM: readonly RevReleaseStatus[] = ['draft', 'rejected', 'unverified'];
-
 /** The actions this user may take on this Rev in its current status. */
 export function revActionsFor(t: RevActionTarget, r: RevActionRights): RevActionChoice[] {
   const out: RevActionChoice[] = [];
   const s = t.releaseStatus;
-  if (r.submit && SUBMIT_FROM.includes(s)) {
-    out.push({
-      action: 'submit',
-      label: 'Send for Review',
-      disabledReason: t.hasFile ? undefined : 'No drawing file',
-    });
+  // ADR-311 — a Rev with a file goes to Under Review by itself. Only a Rejected
+  // (or old Not released) Rev whose file is already right — e.g. only the
+  // Drawing No. was wrong — is sent back by hand, without re-uploading it.
+  if (r.submit && t.hasFile && (s === 'rejected' || s === 'draft')) {
+    out.push({ action: 'submit', label: 'Send for Review again' });
   }
   if (r.approve && s === 'under_review') {
     out.push({ action: 'approve', label: 'Approve' });
@@ -107,6 +104,8 @@ const TEXT: Record<
   RevStatusAction,
   { title: string; confirm: string; pending: string; message: string; done: string }
 > = {
+  // ADR-311: no screen offers 'submit' any more; kept only because the shared
+  // RevStatusAction type still lists it (old clients).
   submit: {
     title: 'Send {label} for review?',
     confirm: 'Send for Review',
@@ -145,10 +144,8 @@ const TEXT: Record<
   },
 };
 
-/** Reject and Mark Obsolete need a reason; Send for Review takes an optional
- *  change note. */
+/** Reject and Mark Obsolete need a reason. */
 const NOTE: Partial<Record<RevStatusAction, { label: string; required: boolean }>> = {
-  submit: { label: 'Change Note', required: false },
   reject: { label: 'Reject Reason', required: true },
   obsolete: { label: 'Obsolete Reason', required: true },
 };

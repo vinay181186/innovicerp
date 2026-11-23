@@ -13,13 +13,33 @@
 //   edit     POST /document-edits/:id/decide             (per change, `changes[]`)
 //   cancel   POST /cancel-requests/:id/decide
 //   dayLog   POST /day-logs/entries/:id/approve | /reject (requestedAt = version)
+//   ecr      (Engineering Change approval)
+//   ADR-311 — Drawing Register:
+//   rev        Drawing Rev Under Review → POST /item-revisions/:id/approve | /reject
+//              (Drawing Register Approve tick; expectedUpdatedAt = version)
+//   revRelease Drawing Rev Approved     → POST /item-revisions/:id/release | /reject
+//              (Drawing Release switch; expectedUpdatedAt = version)
+//   drawingCorrection pending correction of a released file
+//              → POST /item-revisions/corrections/:id/decide (Drawing Release switch)
+//   The raiser is NOT excluded (owner 23-Nov: self-approval allowed).
 //
 // PRs have no approval (owner rule 2026-10-31) and are never listed.
 
 import { z } from 'zod';
 import { documentEditChangeSchema } from './document-edit';
 
-export const APPROVAL_KINDS = ['po', 'rc', 'logEntry', 'edit', 'cancel', 'dayLog', 'ecr'] as const;
+export const APPROVAL_KINDS = [
+  'po',
+  'rc',
+  'logEntry',
+  'edit',
+  'cancel',
+  'dayLog',
+  'ecr',
+  'rev',
+  'revRelease',
+  'drawingCorrection',
+] as const;
 export type ApprovalKind = (typeof APPROVAL_KINDS)[number];
 
 /** `direct` = ✓ / ✗ on the row (and tickable for "✓ Approve N").
@@ -59,7 +79,8 @@ export const waitingApprovalRowSchema = z.object({
    *  its captured `before` (approving it would be refused). */
   isStale: z.boolean(),
   /** The version stamp the decide endpoint checks (§20.2): Route Card
-   *  `updatedAt`, Day Log `requestedAt`; null for the other kinds. */
+   *  `updatedAt`, Day Log `requestedAt`, Drawing Rev (`rev` / `revRelease`)
+   *  `updatedAt`; null for the other kinds. */
   version: z.string().nullable(),
 });
 export type WaitingApprovalRow = z.infer<typeof waitingApprovalRowSchema>;
