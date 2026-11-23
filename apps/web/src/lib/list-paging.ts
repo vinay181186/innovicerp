@@ -66,20 +66,38 @@ export async function fetchAllPages<T>(
  * the cap) and a progress callback after every page — for the shared list
  * Export (ADR-310), which says "first 10,000 of N" and counts up on its button.
  */
+/** Pages read at once after the first (shared list Export, ADR-310). */
+const PARALLEL = 4;
+
 export async function fetchAllPagesCounted<T>(
   fetchPage: (limit: number, offset: number) => Promise<{ items: T[]; total: number }>,
   chunk = 200,
   onProgress?: (fetched: number, total: number) => void,
   cap = EXPORT_CAP,
 ): Promise<{ items: T[]; total: number }> {
-  const out: T[] = [];
-  let total = 0;
-  for (let offset = 0; offset < cap; offset += chunk) {
-    const res = await fetchPage(chunk, offset);
-    total = res.total;
-    out.push(...res.items);
+  // Page 1 tells the total; the rest are read PARALLEL pages at a time (in
+  // order), not one after another — a 6,000-row log is 30 round trips.
+  const first = await fetchPage(chunk, 0);
+  const out: T[] = [...first.items];
+  let total = first.total;
+  onProgress?.(Math.min(out.length, cap), total);
+  let offset = chunk;
+  let more = first.items.length === chunk && out.length < total;
+  while (more && offset < cap) {
+    const offsets: number[] = [];
+    for (let o = offset; o < Math.min(total, cap) && offsets.length < PARALLEL; o += chunk) {
+      offsets.push(o);
+    }
+    if (offsets.length === 0) break;
+    const pages = await Promise.all(offsets.map((o) => fetchPage(chunk, o)));
+    for (const res of pages) {
+      total = res.total;
+      out.push(...res.items);
+      if (res.items.length < chunk) more = false;
+    }
     onProgress?.(Math.min(out.length, cap), total);
-    if (res.items.length < chunk || out.length >= res.total) break;
+    offset += offsets.length * chunk;
+    if (out.length >= total) more = false;
   }
   return { items: out.slice(0, cap), total: Math.max(total, out.length) };
 }
