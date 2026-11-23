@@ -18,7 +18,12 @@ import {
 import { sql } from 'drizzle-orm';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
-import { AuthorizationError, ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
+import {
+  AuthorizationError,
+  ConflictError,
+  NotFoundError,
+  ValidationError,
+} from '../../lib/errors';
 import { resolveItemRevision } from '../../lib/item-revision';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { emitActivityLog } from '../activity-log/service';
@@ -58,7 +63,11 @@ const COUNTS = sql`
                       AND c.deleted_at IS NULL) AS pending) pc ON TRUE`;
 
 /** Sort & Filter fields read from COUNTS (sf-columns.ts ol / oj / pc). */
-const COUNT_FIELDS: ReadonlySet<string> = new Set(['openLines', 'openJobCards', 'pendingCorrection']);
+const COUNT_FIELDS: ReadonlySet<string> = new Set([
+  'openLines',
+  'openJobCards',
+  'pendingCorrection',
+]);
 
 export async function listDrawingRegister(
   q: ListDrawingRegisterQuery,
@@ -150,7 +159,9 @@ export async function createDrawingRev(
     if (!item) throw new NotFoundError('Item not found');
     const label = itemRevLabel(item.code, input.rev);
     if (item.procurementType !== 'make') {
-      throw new ValidationError(`${item.code} is not a make item — a Drawing Rev is only for make items`);
+      throw new ValidationError(
+        `${item.code} is not a make item — a Drawing Rev is only for make items`,
+      );
     }
     const existing = async (): Promise<never> => {
       const [r] = (await tx.execute(sql`

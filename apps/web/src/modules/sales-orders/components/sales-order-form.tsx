@@ -770,7 +770,11 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
             rev: String(l.revision ?? ''),
             drawingFilePath: l.drawingFilePath,
             saved: saved
-              ? { itemId: saved.itemId, rev: saved.revision, drawingFilePath: saved.drawingFilePath }
+              ? {
+                  itemId: saved.itemId,
+                  rev: saved.revision,
+                  drawingFilePath: saved.drawingFilePath,
+                }
               : undefined,
           };
         });

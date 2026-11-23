@@ -303,7 +303,8 @@ export async function replaceItemRevisionDrawing(
       ON CONFLICT (item_revision_id) WHERE status = 'pending' AND deleted_at IS NULL DO NOTHING
       RETURNING id`)) as unknown as { id: string }[];
     const correctionId = ins[0]?.id;
-    if (!correctionId) throw new ConflictError(`A correction for ${change.label} is already waiting`);
+    if (!correctionId)
+      throw new ConflictError(`A correction for ${change.label} is already waiting`);
     await emitActivityLog(
       tx,
       {
@@ -349,4 +350,3 @@ export async function applyDrawingCorrection(
     detail: 'Drawing correction approved',
   });
 }
-

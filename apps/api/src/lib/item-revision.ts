@@ -304,5 +304,7 @@ export async function assertRevReleasedForWork(
   const status = row.status as RevReleaseStatus;
   if (isRevWorkAllowed(status)) return;
   const label = itemRevLabel(row.itemCode, row.rev);
-  throw new ValidationError(refusal ? refusal(label, status) : revNotReleasedMessage(label, status));
+  throw new ValidationError(
+    refusal ? refusal(label, status) : revNotReleasedMessage(label, status),
+  );
 }

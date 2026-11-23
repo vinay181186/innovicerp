@@ -47,7 +47,11 @@ export const REV_RELEASE_STATUS_LABELS: Record<RevReleaseStatus, string> = {
 };
 
 /** Statuses a NEW Plan / PRO / Job Card may be made on. */
-export const REV_WORK_ALLOWED: readonly RevReleaseStatus[] = ['released', 'superseded', 'unverified'];
+export const REV_WORK_ALLOWED: readonly RevReleaseStatus[] = [
+  'released',
+  'superseded',
+  'unverified',
+];
 /** Of those, the ones that carry a warning. */
 export const REV_WORK_WARN: readonly RevReleaseStatus[] = ['superseded', 'unverified'];
 
