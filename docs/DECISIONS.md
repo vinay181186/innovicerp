@@ -16511,3 +16511,15 @@ list page that counts with another. Owner also asked for the page to be actionab
 
 - Positive: count and list can never disagree; a new check gets its page for free.
 - Negative: the check page shows the check's columns, not the full list page's columns.
+
+## ADR-310 addendum: group-heading facts and always-exported columns (Job Queue)
+
+**Date:** 2026-11-23 (owner: "master export missed necessary fields like machine"; plan choices 1a 2a 3b).
+Job Queue shows its machine only as the group heading, which is not a column, so the Export had no machine at
+all; Actual Machine (a component cell with no `exportValue`) came out blank. Two opt-in fields on
+`ListExportSpec`: `groupColumns` (facts drawn outside the columns, written right after the lead block, never on
+screen) and `alwaysExport` (column ids written even while hidden in Columns ▾, beside their neighbour). Job Queue
+writes `Planned Machine` + `Machine Name` (NAMING.md), always writes the ▸ detail facts (Customer, Priority, Order
+Qty, Completed, Actual Machine) — a Job Queue exception to D1 — and Actual Machine as `CNC-01` or
+`CNC-01: 5 pcs · CNC-02: 3 pcs`. Machine Load stays out (whole-machine summary). Guard: a list with `groupRow` and
+`exportSpec` must give `groupColumns`. Web only, no migration. Other lists' exports unchanged.

@@ -15,6 +15,7 @@ import {
   exportCell,
   linesForDocs,
   selectExportColumns,
+  withAlwaysExported,
 } from './list-export';
 
 interface Row {
@@ -125,6 +126,47 @@ describe('rows', () => {
     );
     expect(sheet.header).toEqual(['Sr No', 'Code', 'Item Name', 'Order Qty', 'Created On']);
     expect(sheet.rows[0]).toEqual([1, 'IN-JW-00001', 'Shaft 50mm', 12, '18-11-2026']);
+  });
+
+  it('writes always-exported hidden columns beside their neighbour', () => {
+    const ids = ['sr_no', 'code', 'name', 'qty', 'amount', 'created_on'];
+    expect(withAlwaysExported(['sr_no', 'code', 'created_on'], ids, ['qty', 'amount'])).toEqual([
+      'sr_no',
+      'code',
+      'qty',
+      'amount',
+      'created_on',
+    ]);
+    expect(withAlwaysExported(['sr_no'], ids, undefined)).toEqual(['sr_no']);
+    expect(withAlwaysExported(['qty', 'code'], ids, ['sr_no'])).toEqual(['sr_no', 'qty', 'code']);
+  });
+
+  it('puts group-heading columns right after the lead block', () => {
+    const lead: DataTableColumn<Row>[] = [
+      { ...COLS[0]!, lead: true },
+      { ...COLS[1]!, lead: true },
+      ...COLS.slice(2),
+    ];
+    const sheet = buildMainSheet(
+      {
+        fileName: 'Job Queue',
+        columns: lead,
+        defaultHidden: ['amount', 'qty'],
+        alwaysExport: ['qty'],
+        groupColumns: [{ id: 'm', header: 'Planned Machine', exportValue: () => 'VMC-1' }],
+      },
+      [ROW],
+      undefined,
+    );
+    expect(sheet.header).toEqual([
+      'Sr No',
+      'Code',
+      'Planned Machine',
+      'Item Name',
+      'Order Qty',
+      'Created On',
+    ]);
+    expect(sheet.rows[0]?.[2]).toBe('VMC-1');
   });
 
   it('names the limit, with the sheet when it is a lines sheet', () => {
