@@ -29,6 +29,7 @@ import { Modal } from '@/ui/feedback';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useJwReturnsList } from '../api';
 import { jwReturnColumns } from './jw-returns-columns';
+import { useLinkOpen } from '@/lib/use-link-open';
 import { NewJwReturnModal } from './new-jw-return-modal';
 import { usePrintJwReturn } from './use-print-jw-return';
 import { jwReturnExportSpec } from '../lib/export';
@@ -44,10 +45,15 @@ import { jwReturnExportSpec } from '../lib/export';
 export function JwDispatchView({
   tabs,
   initialSearch,
+  linkJwId,
+  onLinkOpened,
 }: {
   /** The page's tab strip, drawn under this view's header. */
   tabs?: React.ReactNode;
   initialSearch?: string | undefined;
+  /** ADR-312 — ?jw=<jwsoId>: open New JW Return on that JWSO once, then strip it. */
+  linkJwId?: string | undefined;
+  onLinkOpened?: () => void;
 }): React.JSX.Element {
   // ADR-232 — the ticks alone, matching the server (jw-returns service):
   // New Return = jw_create Entry; Cancel JW Return = jw_create Edit OR Approve
@@ -59,6 +65,17 @@ export function JwDispatchView({
   const [searchInput, setSearchInput] = useState(() => initialSearch ?? '');
   const [term, setTerm] = useState(() => normalizeSearchTerm(initialSearch ?? ''));
   const [showModal, setShowModal] = useState(false);
+  const [modalJwId, setModalJwId] = useState<string | undefined>(undefined);
+  useLinkOpen(
+    linkJwId,
+    eff !== undefined,
+    (jw) => {
+      if (!canCreate) return;
+      setModalJwId(jw);
+      setShowModal(true);
+    },
+    () => onLinkOpened?.(),
+  );
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(1);
 
@@ -147,7 +164,14 @@ export function JwDispatchView({
         filtersActive={sf.filtering || searchInput !== ''}
         primary={
           canCreate ? (
-            <button type="button" className="btn btn-primary" onClick={() => setShowModal(true)}>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => {
+                setModalJwId(undefined);
+                setShowModal(true);
+              }}
+            >
               <Icon name="plus" size={14} /> New Return
             </button>
           ) : null
@@ -244,7 +268,9 @@ export function JwDispatchView({
           onClose={() => setCancelTarget(null)}
         />
       ) : null}
-      {showModal && canCreate ? <NewJwReturnModal onClose={() => setShowModal(false)} /> : null}
+      {showModal && canCreate ? (
+        <NewJwReturnModal initialJwId={modalJwId} onClose={() => setShowModal(false)} />
+      ) : null}
     </div>
   );
 }

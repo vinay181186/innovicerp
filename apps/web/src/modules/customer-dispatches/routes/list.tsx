@@ -69,6 +69,8 @@ const searchSchema = z.object({
   tab: z.enum(['so', 'jw']).optional(),
   search: z.string().optional(),
   page: pageSearchParam,
+  // ADR-312 — ?tab=jw&jw=<jwsoId> opens New JW Return on that JWSO once.
+  jw: z.string().uuid().optional().catch(undefined),
 });
 
 export const customerDispatchListRoute = createRoute({
@@ -97,7 +99,10 @@ function CustomerDispatchListPage(): React.JSX.Element {
   // machined goods against a JWSO line. Its own hooks/mutations are unchanged.
   const routeSearch = customerDispatchListRoute.useSearch();
   const navigate = customerDispatchListRoute.useNavigate();
-  const [tab, setTab] = useState<'so' | 'jw'>(() => routeSearch.tab ?? 'so');
+  // ADR-313 — the tab lives in ?tab= so it is still there after a tab-bar switch.
+  const tab: 'so' | 'jw' = routeSearch.tab ?? 'so';
+  const setTab = (t: 'so' | 'jw'): void =>
+    void navigate({ search: (prev) => ({ ...prev, tab: t }), replace: true });
   const { data: company } = useMyCompany();
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'dispatch_create');
@@ -200,6 +205,10 @@ function CustomerDispatchListPage(): React.JSX.Element {
         <JwDispatchView
           key={routeSearch.search ?? ''}
           initialSearch={routeSearch.search}
+          linkJwId={routeSearch.jw}
+          onLinkOpened={() =>
+            void navigate({ search: (prev) => ({ ...prev, jw: undefined }), replace: true })
+          }
           tabs={tabBar}
         />
       </div>

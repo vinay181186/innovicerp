@@ -8,6 +8,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useDraftSink } from '@/lib/use-form-draft';
 import { useSaveKey } from '@/lib/use-save-key';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { PageState } from '@/ui/layout';
@@ -36,7 +37,12 @@ function MlPlanNewPage(): React.JSX.Element {
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'mlplan_create');
   const goBack = useCallback(() => void navigate({ to: '/ml-plans' }), [navigate]);
-  const exit = useExitConfirm({ onExit: goBack });
+  // ADR-313 — the form below keeps a draft; it lands in the sink for the guard.
+  const { sink: draftSink, draft: pageDraft } = useDraftSink();
+  const exit = useExitConfirm({
+    onExit: goBack,
+    draft: pageDraft,
+  });
   const toast = useToast();
 
   // The preselected line, looked up in the server's eligible list (the SO's
@@ -83,6 +89,10 @@ function MlPlanNewPage(): React.JSX.Element {
     <>
       {exit.dialog}
       <MlPlanForm
+        draftSlot={{
+          key: `ml-plan-new:${salesOrderId ?? ''}:${soLineId ?? ''}`,
+          sink: draftSink,
+        }}
         mode="create"
         initialLine={preLine}
         preselectMissing={preselectMissing}

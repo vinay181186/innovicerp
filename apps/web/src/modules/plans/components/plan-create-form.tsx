@@ -25,6 +25,7 @@ import {
 } from '@/modules/raw-material/components/raw-material-pickers';
 import { usePlanningSoDetail, usePlanningSoList } from '@/modules/so-planning/api';
 import { soNoWithInternal } from '@/lib/so-number';
+import { type FormDraft, useDraftSinkFill, useFormDraft } from '@/lib/use-form-draft';
 import { Banner } from '@/ui/feedback';
 import { SearchableSelect } from '@/ui/forms';
 import { FormActions, PageHeader, useSaveShortcut } from '@/ui/layout';
@@ -53,6 +54,15 @@ interface Props {
   onCancel: () => void;
   isSubmitting: boolean;
   submitError: string | null;
+  /** ADR-313 — keep a draft of what is typed (lib/use-form-draft.tsx). The page
+   *  names the draft and gets it back through `sink` for its exit guard. */
+  draftSlot?:
+    | {
+        key: string | null;
+        version?: string | null | undefined;
+        sink: { current: FormDraft | null };
+      }
+    | undefined;
 }
 
 export function PlanCreateForm({
@@ -60,6 +70,7 @@ export function PlanCreateForm({
   onCancel,
   isSubmitting,
   submitError,
+  draftSlot,
 }: Props): React.JSX.Element {
   const [dirty, setDirty] = useState(false);
   const onDirty = (): void => setDirty(true);
@@ -195,8 +206,36 @@ export function PlanCreateForm({
       onDirty();
     };
 
+  // ADR-313 — what is typed survives a tab switch; Save / Cancel / Exit clear it.
+  const formDraft = useFormDraft({
+    key: draftSlot?.key ?? null,
+    ready: true,
+    values: {
+      soId,
+      soLineId,
+      planQty,
+      plannedStartDate,
+      plannedEndDate,
+      customerDispatchDate,
+      remarks,
+    },
+    apply: (v) => {
+      setSoId(v.soId);
+      setSoLineId(v.soLineId);
+      setPlanQty(v.planQty);
+      setPlannedStartDate(v.plannedStartDate);
+      setPlannedEndDate(v.plannedEndDate);
+      setCustomerDispatchDate(v.customerDispatchDate);
+      setRemarks(v.remarks);
+      setDirty(true);
+    },
+    version: draftSlot?.version,
+  });
+  useDraftSinkFill(draftSlot?.sink, formDraft);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)' }}>
+      {formDraft.band}
       <PageHeader title="New Plan" icon="📅" backLabel="Back to Plans" onBack={onCancel}>
         {shownError ? (
           <Banner tone="error" role="alert" flush>

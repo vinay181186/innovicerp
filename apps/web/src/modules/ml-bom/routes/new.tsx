@@ -2,6 +2,7 @@ import { createRoute, useNavigate } from '@tanstack/react-router';
 import { useCallback, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useDraftSink } from '@/lib/use-form-draft';
 import { useSaveKey } from '@/lib/use-save-key';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { PageState } from '@/ui/layout';
@@ -29,7 +30,12 @@ function MlBomNewPage(): React.JSX.Element {
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'mlbom_create');
   const goBack = useCallback(() => void navigate({ to: '/ml-boms' }), [navigate]);
-  const exit = useExitConfirm({ onExit: goBack });
+  // ADR-313 — the form below keeps a draft; it lands in the sink for the guard.
+  const { sink: draftSink, draft: pageDraft } = useDraftSink();
+  const exit = useExitConfirm({
+    onExit: goBack,
+    draft: pageDraft,
+  });
 
   const submit = async (
     header: MlBomFormHeaderDraft,
@@ -67,6 +73,7 @@ function MlBomNewPage(): React.JSX.Element {
     <>
       {exit.dialog}
       <MlBomForm
+        draftSlot={{ key: 'ml-bom-new', sink: draftSink }}
         mode="create"
         initialHeader={{ code: '', itemId: '', itemCodeText: '', isDefault: true, remarks: '' }}
         initialLines={[]}

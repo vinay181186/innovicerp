@@ -24,7 +24,9 @@ import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDateTime } from '@/lib/date';
 import { runPrint } from '@/lib/print/preview-host';
+import { hardError, RefreshFailedNote } from '@/lib/refresh-failed-note';
 import { useSession } from '@/lib/session';
+import { oneOf, usePersistentState } from '@/lib/use-persistent-state';
 import { DrawingStatusLink, ItemRevLink } from '@/modules/item-revisions/components/item-rev-link';
 import { usePendingEditForDoc } from '@/modules/document-edits/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -59,7 +61,8 @@ type TabKey = 'ops' | 'revisions';
 function RouteCardDetailPage(): React.JSX.Element {
   const { id } = routeCardDetailRoute.useParams();
   const navigate = useNavigate();
-  const { data: detail, isLoading, isError, error } = useRouteCard(id);
+  const detailQuery = useRouteCard(id);
+  const { data: detail, isLoading, isError, error } = detailQuery;
   const { data: eff } = useMyAccess();
   const { data: me } = useSession();
   const perms = effectiveFormPerms(eff, 'routecard_create');
@@ -81,7 +84,12 @@ function RouteCardDetailPage(): React.JSX.Element {
   const [notice, setNotice] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleteReason, setDeleteReason] = useState('');
-  const [tab, setTab] = useState<TabKey>('ops');
+  // ADR-313 — the sub-tab stays when you switch tabs and come back.
+  const [tab, setTab] = usePersistentState<TabKey>(
+    `rc-detail:${id}:tab`,
+    'ops',
+    oneOf(['ops', 'revisions']),
+  );
 
   const onPrint = (): void => {
     if (!detail) return;
@@ -113,7 +121,7 @@ function RouteCardDetailPage(): React.JSX.Element {
       </div>
     );
   }
-  if (isError || !detail) {
+  if (!detail || hardError(detailQuery)) {
     return (
       <div className="panel">
         <div className="panel-body">
@@ -140,6 +148,7 @@ function RouteCardDetailPage(): React.JSX.Element {
 
   return (
     <div>
+      <RefreshFailedNote show={isError} />
       {/* Header: the number, its revision, and the next step (Edit / Revise)
           as the one primary button. Print and Delete fold into the ⋯ menu. */}
       <DetailHeader
@@ -347,7 +356,12 @@ function RouteCardDetailPage(): React.JSX.Element {
         {tab === 'revisions' ? <RouteCardRevisionHistory revisions={detail.revisions} /> : null}
       </Panel>
 
-      <RelatedDocsTabs module="route-cards" id={detail.id} extraTabs={[historyTab]} />
+      <RelatedDocsTabs
+        module="route-cards"
+        id={detail.id}
+        extraTabs={[historyTab]}
+        rememberKey={`route-card:${detail.id}`}
+      />
 
       <ConfirmDialog
         open={confirmDelete}

@@ -9,6 +9,7 @@ import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateTpiMaster } from '../api';
 import { TpiMasterForm } from '../components/tpi-master-form';
 import { useToast } from '@/ui/feedback';
+import { usePageDraft } from '@/lib/use-form-draft';
 
 export const tpiMasterNewRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -23,7 +24,9 @@ function TpiMasterNewPage(): React.JSX.Element {
   const create = useCreateTpiMaster(saveKey);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const goBack = useCallback(() => void navigate({ to: '/tpi-masters' }), [navigate]);
-  const exit = useExitConfirm({ onExit: goBack });
+  // ADR-313 — the half-typed form survives a tab switch (lib/use-form-draft.tsx).
+  const { draft, link: draftLink } = usePageDraft({ key: 'tpi-master-new' });
+  const exit = useExitConfirm({ onExit: goBack, draft });
   // Tier-driven, per department (QC). The + Add Inspector button is hidden from
   // anyone without entry rights; this gate stops the form appearing at all when
   // the URL is typed directly (an L1 Viewer, an L4 Approver).
@@ -58,10 +61,12 @@ function TpiMasterNewPage(): React.JSX.Element {
   return (
     <div>
       {exit.dialog}
+      {draft.band}
       <Link to="/tpi-masters" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
         <ArrowLeft size={14} /> Back to TPI Master
       </Link>
       <TpiMasterForm
+        draftLink={draftLink}
         panelHeader={
           <div>
             <div className="panel-title">🔍 Add Inspector</div>

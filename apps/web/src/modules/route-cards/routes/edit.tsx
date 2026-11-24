@@ -4,6 +4,8 @@ import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useDraftSink } from '@/lib/use-form-draft';
+import { hardError, RefreshFailedNote } from '@/lib/refresh-failed-note';
 import { useSession } from '@/lib/session';
 import { useOpenedVersion } from '@/lib/use-opened-version';
 import { useSaveKey } from '@/lib/use-save-key';
@@ -31,7 +33,8 @@ export const routeCardEditRoute = createRoute({
 function RouteCardEditPage(): React.JSX.Element {
   const { id } = routeCardEditRoute.useParams();
   const navigate = useNavigate();
-  const { data: detail, isLoading, isError, error } = useRouteCard(id);
+  const detailQuery = useRouteCard(id);
+  const { data: detail, isLoading, isError, error } = detailQuery;
   const saveKey = useSaveKey();
   const update = useUpdateRouteCard(id, saveKey);
   // R5 — the version this form opened with; a save over someone else's newer
@@ -50,7 +53,12 @@ function RouteCardEditPage(): React.JSX.Element {
     () => void navigate({ to: '/route-cards/$id', params: { id } }),
     [navigate, id],
   );
-  const exit = useExitConfirm({ onExit: goBack });
+  // ADR-313 — the form below keeps a draft; it lands in the sink for the guard.
+  const { sink: draftSink, draft: pageDraft } = useDraftSink();
+  const exit = useExitConfirm({
+    onExit: goBack,
+    draft: pageDraft,
+  });
 
   const initialOps = useMemo<RouteCardFormOpDraft[]>(
     () => detailOpsToDrafts(detail?.ops ?? []),
@@ -102,7 +110,7 @@ function RouteCardEditPage(): React.JSX.Element {
       </div>
     );
   }
-  if (isError || !detail) {
+  if (!detail || hardError(detailQuery)) {
     return (
       <div className="panel">
         <div className="panel-body">
@@ -151,7 +159,13 @@ function RouteCardEditPage(): React.JSX.Element {
   return (
     <>
       {exit.dialog}
+      <RefreshFailedNote show={isError} />
       <RouteCardForm
+        draftSlot={{
+          key: `rc-edit:${id}`,
+          version: opened.expected() ?? null,
+          sink: draftSink,
+        }}
         mode="edit"
         routeCard={detail}
         initialHeader={{

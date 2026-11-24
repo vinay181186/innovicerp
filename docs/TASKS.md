@@ -128,6 +128,14 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 
 2. **Continue building modules per "build first, audit later" approach.** Phase A foundation masters per ADR-028: BOM Master ✅ (2026-05-20), Route Cards ✅ (2026-05-20). Remaining: **QC Process Master UI** (backend already migrated via T-038, just needs web pages — smallest next slice), **Cost Center Master**, **Settings / Users / Access Control**. Pick whatever module the user wants next; the audit pass works from `docs/ISSUES.md` once the build phase wraps.
 
+## Done on TEST — ADR-313 page stays when you switch tabs (2026-11-24)
+
+- Tab bar keeps the list query; sub-tabs / pickers / expanded rows kept (sessionStorage); list + page scroll back on a tab return.
+- ~50 create/edit forms keep a version-checked draft (never auto-saved, cleared on Save/Cancel/Exit/sign-out).
+- A failed background refresh keeps the loaded screen (note above it); 401/403/404/410 and placeholder rows still show the error box.
+- Browser-checked on TEST (non-admin): list view, Dispatch tab, JC sub-tab, New Item + Edit Item drafts, exit question, scroll — all PASS; page-open check 125/125.
+- Open: pop-up forms (owner: later); TEST admin password rejected (erp-test could not log in as admin); lead-columns guard fails on drawing-register-columns.tsx (from the Drawing Register SO No. commit f1a7bbd6 — now ADR-315; fix proposed to the owner).
+
 ## Done on TEST — ADR-311 drawing file compulsory + straight to Under Review (2026-11-23)
 
 - New SO / JWSO make lines (and new Equipment SO line, typed Rev) need a drawing file.

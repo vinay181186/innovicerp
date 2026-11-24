@@ -354,3 +354,15 @@ export function pageDept(href: string): AccessDeptKey | undefined {
 }
 
 export { hasDeptAccess };
+
+/** Does this person see the department's menu? THE one rule for the top menu
+ *  and the home's left menu (owner 2026-11-24): any access tier in the
+ *  department (Full Access / Auditor see all), or Super Admin. The pages inside
+ *  are then filtered one by one with canOpenPage. */
+export function canSeeDeptMenu(
+  eff: EffectiveAccess | null | undefined,
+  isSuperAdmin: boolean,
+  dept: AccessDeptKey,
+): boolean {
+  return isSuperAdmin || hasDeptAccess(eff, dept);
+}

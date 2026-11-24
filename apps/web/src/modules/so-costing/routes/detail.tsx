@@ -13,6 +13,7 @@
 //    cycleTime×qty in the browser. No hourRate is exposed on SoCostingOpRow,
 //    so the rate is omitted rather than computed here.
 
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
 import { type SoCostingDetail, opSrNo } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
@@ -57,7 +58,7 @@ function Stat({
 
 function SoCostingDetailPage(): React.JSX.Element {
   const { id } = soCostingDetailRoute.useParams();
-  const { data, isLoading, isError, error } = useQuery<SoCostingDetail>({
+  const { data, isLoading, isError, error, isPlaceholderData } = useQuery<SoCostingDetail>({
     queryKey: ['so-costing', id],
     queryFn: () => apiFetch<SoCostingDetail>(`/so-costing/${id}`),
   });
@@ -69,7 +70,7 @@ function SoCostingDetailPage(): React.JSX.Element {
       </div>
     );
   }
-  if (isError || !data) {
+  if (!data || hardError({ isError, error, isPlaceholderData })) {
     return (
       <div className="empty-state" style={{ padding: 40, color: 'var(--red2)' }}>
         {error instanceof Error ? error.message : 'Could not load SO costing. Try again.'}
@@ -85,6 +86,7 @@ function SoCostingDetailPage(): React.JSX.Element {
 
   return (
     <div>
+      <RefreshFailedNote show={isError} />
       <Link to="/so-costing" className="btn btn-ghost" style={{ marginBottom: 14 }}>
         <ArrowLeft size={14} /> Back to SO Costing
       </Link>

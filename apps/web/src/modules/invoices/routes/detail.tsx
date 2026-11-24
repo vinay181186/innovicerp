@@ -29,6 +29,7 @@
 // columns (invoice_date / due_date / payment_date) are `date`, not timestamptz,
 // so no UTC-shift bug exists at these render sites.
 
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
 import {
   PAYMENT_MODES,
   PLACE_OF_SUPPLY_UNKNOWN_NOTE,
@@ -38,6 +39,8 @@ import {
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { z } from 'zod';
+import { useLinkOpen } from '@/lib/use-link-open';
 import { useCanOpen } from '@/components/shared/action-link';
 import { useHistoryTab } from '@/components/shared/document-history';
 import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
@@ -71,6 +74,8 @@ const INVOICE_STATUS_LABEL: Record<string, string> = {
 export const invoiceDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'invoices/$id',
+  // ADR-312 — ?open=payment opens the Add Payment form once (where its button shows).
+  validateSearch: z.object({ open: z.enum(['payment']).optional().catch(undefined) }),
   component: InvoiceDetailPage,
 });
 
@@ -85,7 +90,7 @@ const todayStr = (): string => todayIst();
 
 function InvoiceDetailPage(): React.JSX.Element {
   const { id } = invoiceDetailRoute.useParams();
-  const { data: inv, isLoading, isError, error } = useInvoice(id);
+  const { data: inv, isLoading, isError, error, isPlaceholderData } = useInvoice(id);
   const { data: company } = useMyCompany();
   const addPayment = useAddPayment(id);
   const toast = useToast();
@@ -116,6 +121,17 @@ function InvoiceDetailPage(): React.JSX.Element {
   const perms = effectiveFormPerms(eff, 'invoice_create');
   // ADR-197 — who did what to this invoice. Before the early returns (hooks rule).
   const historyTab = useHistoryTab({ entity: 'Invoice', entityId: inv?.id, refId: inv?.code });
+  const linkOpen = invoiceDetailRoute.useSearch().open;
+  const navigate = invoiceDetailRoute.useNavigate();
+  useLinkOpen(
+    linkOpen,
+    Boolean(eff && inv),
+    () => {
+      if (perms.entry && inv && inv.status !== 'paid' && inv.status !== 'cancelled')
+        setPayOpen(true);
+    },
+    () => void navigate({ search: (prev) => ({ ...prev, open: undefined }), replace: true }),
+  );
 
   if (eff && !perms.view) {
     return (
@@ -132,7 +148,7 @@ function InvoiceDetailPage(): React.JSX.Element {
       </div>
     );
   }
-  if (isError || !inv) {
+  if (!inv || hardError({ isError, error, isPlaceholderData })) {
     return (
       <div className="empty-state" style={{ padding: 40, color: 'var(--red2)' }}>
         {error instanceof Error ? error.message : 'Could not load invoice. Try again.'}
@@ -224,6 +240,7 @@ function InvoiceDetailPage(): React.JSX.Element {
 
   return (
     <div>
+      <RefreshFailedNote show={isError} />
       <DetailHeader
         backTo="/invoices"
         backLabel="Back to Invoices"

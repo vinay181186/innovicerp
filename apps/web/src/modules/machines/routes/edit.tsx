@@ -13,6 +13,8 @@ import { useToast } from '@/ui/feedback';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateMachine, useFetchMachine, useMachine, useUpdateMachine } from '../api';
 import { MachineForm } from '../components/machine-form';
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
+import { usePageDraft } from '@/lib/use-form-draft';
 
 // ADR-226 — the fields THIS screen can edit, and what the user calls each one.
 //
@@ -70,7 +72,9 @@ function MachineNewPage(): React.JSX.Element {
   const { data: eff } = useMyAccess();
   const [submitError, setSubmitError] = useState<string | null>(null);
   const goBack = useCallback(() => void navigate({ to: '/machines' }), [navigate]);
-  const exit = useExitConfirm({ onExit: goBack });
+  // ADR-313 — the half-typed form survives a tab switch (lib/use-form-draft.tsx).
+  const { draft, link: draftLink } = usePageDraft({ key: 'machine-new' });
+  const exit = useExitConfirm({ onExit: goBack, draft });
 
   const onSubmit = async (values: CreateMachineInput): Promise<void> => {
     setSubmitError(null);
@@ -97,10 +101,12 @@ function MachineNewPage(): React.JSX.Element {
   return (
     <div>
       {exit.dialog}
+      {draft.band}
       <Link to="/machines" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
         <ArrowLeft size={14} /> Back
       </Link>
       <MachineForm
+        draftLink={draftLink}
         panelHeader={
           <div>
             {/* Legacy modal title: showModal('Add Machine', …) L13137. */}
@@ -119,7 +125,8 @@ function MachineNewPage(): React.JSX.Element {
 function MachineEditPage(): React.JSX.Element {
   const { id } = machineEditRoute.useParams();
   const navigate = useNavigate();
-  const { data: machine, isLoading, isError, error } = useMachine(id);
+  const query = useMachine(id);
+  const { data: machine, isLoading, isError, error } = query;
   const update = useUpdateMachine(id);
   const toast = useToast();
   const { data: eff } = useMyAccess();
@@ -143,7 +150,12 @@ function MachineEditPage(): React.JSX.Element {
     () => void navigate({ to: '/machines/$id', params: { id } }),
     [navigate, id],
   );
-  const exit = useExitConfirm({ onExit: goBack });
+  // ADR-313 — the half-typed form survives a tab switch (lib/use-form-draft.tsx).
+  const { draft, link: draftLink } = usePageDraft({
+    key: `machine-edit:${id}`,
+    version: machine?.updatedAt,
+  });
+  const exit = useExitConfirm({ onExit: goBack, draft });
 
   const onSubmit = async (values: UpdateMachineInput): Promise<void> => {
     setSubmitError(null);
@@ -187,7 +199,7 @@ function MachineEditPage(): React.JSX.Element {
     );
   }
 
-  if (isError || !machine) {
+  if (!machine || hardError(query)) {
     return (
       <div className="panel">
         <div className="panel-body">
@@ -206,7 +218,9 @@ function MachineEditPage(): React.JSX.Element {
 
   return (
     <div>
+      <RefreshFailedNote show={isError} />
       {exit.dialog}
+      {draft.band}
       <Link
         to="/machines/$id"
         params={{ id }}
@@ -216,6 +230,7 @@ function MachineEditPage(): React.JSX.Element {
         <ArrowLeft size={14} /> Back
       </Link>
       <MachineForm
+        draftLink={draftLink}
         panelHeader={
           <div>
             <div

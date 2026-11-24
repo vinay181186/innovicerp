@@ -25,6 +25,8 @@ import { type ServerFieldErrors, serverFieldErrorsOf } from '@/modules/settings/
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateItem, useItem, useUpdateItem } from '../api';
 import { ItemForm } from '../components/item-form';
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
+import { usePageDraft } from '@/lib/use-form-draft';
 
 export const itemNewRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -53,7 +55,9 @@ function ItemNewPage(): React.JSX.Element {
   const { data: eff, isLoading: accessLoading } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'item_create');
   const goBack = useCallback(() => void navigate({ to: '/items' }), [navigate]);
-  const exit = useExitConfirm({ onExit: goBack });
+  // ADR-313 — the half-typed form survives a tab switch (lib/use-form-draft.tsx).
+  const { draft, link: draftLink } = usePageDraft({ key: 'item-new' });
+  const exit = useExitConfirm({ onExit: goBack, draft });
   const toast = useToast();
 
   const onSubmit = async (values: CreateItemInput): Promise<void> => {
@@ -90,7 +94,9 @@ function ItemNewPage(): React.JSX.Element {
   return (
     <>
       {exit.dialog}
+      {draft.band}
       <ItemForm
+        draftLink={draftLink}
         mode="create"
         title="New Item"
         backLabel={BACK_TO_LIST}
@@ -109,7 +115,8 @@ function ItemNewPage(): React.JSX.Element {
 function ItemEditPage(): React.JSX.Element {
   const { id } = itemEditRoute.useParams();
   const navigate = useNavigate();
-  const { data: item, isLoading, isError, error } = useItem(id);
+  const query = useItem(id);
+  const { data: item, isLoading, isError, error } = query;
   const saveKey = useSaveKey();
   const update = useUpdateItem(id, saveKey);
   // R5: the version this form was opened from — a save after someone else
@@ -127,7 +134,12 @@ function ItemEditPage(): React.JSX.Element {
     [navigate, id],
   );
   const goToList = useCallback(() => void navigate({ to: '/items' }), [navigate]);
-  const exit = useExitConfirm({ onExit: goBack });
+  // ADR-313 — the half-typed form survives a tab switch (lib/use-form-draft.tsx).
+  const { draft, link: draftLink } = usePageDraft({
+    key: `item-edit:${id}`,
+    version: item?.updatedAt,
+  });
+  const exit = useExitConfirm({ onExit: goBack, draft });
   const toast = useToast();
 
   const onSubmit = async (values: UpdateItemInput): Promise<void> => {
@@ -168,7 +180,7 @@ function ItemEditPage(): React.JSX.Element {
     );
   }
 
-  if (isError || !item) {
+  if (!item || hardError(query)) {
     return (
       <>
         <PageHeader title="Edit Item" backLabel={BACK_TO_LIST} onBack={goToList} />
@@ -182,8 +194,11 @@ function ItemEditPage(): React.JSX.Element {
 
   return (
     <>
+      <RefreshFailedNote show={isError} />
       {exit.dialog}
+      {draft.band}
       <ItemForm
+        draftLink={draftLink}
         mode="edit"
         item={item}
         title="Edit Item"

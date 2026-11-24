@@ -22,7 +22,8 @@ import {
 } from '@innovic/shared';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Loader2 } from 'lucide-react';
-import { useCallback, useEffect, type ReactNode } from 'react';
+import { type ReactNode, useCallback, useEffect } from 'react';
+import { type FormDraftLink, useFormDraftLink } from '@/lib/use-form-draft';
 import { type FieldErrors, type UseFormRegister, useForm } from 'react-hook-form';
 import {
   GST_CATEGORY_OPTIONS,
@@ -43,6 +44,8 @@ import { useNextVendorCode } from '../api';
 import { FormActions } from '@/ui/layout';
 
 type CreateMode = {
+  /** ADR-313 — the page's draft of this form. */
+  draftLink?: FormDraftLink | undefined;
   mode: 'create';
   /** The title band of the form's panel; the form owns the panel so its button bar can sit outside it. */
   panelHeader: ReactNode;
@@ -56,6 +59,8 @@ type CreateMode = {
 };
 
 type EditMode = {
+  /** ADR-313 — the page's draft of this form. */
+  draftLink?: FormDraftLink | undefined;
   mode: 'edit';
   /** The title band of the form's panel; the form owns the panel so its button bar can sit outside it. */
   panelHeader: ReactNode;
@@ -122,6 +127,12 @@ function CreateVendorForm(props: CreateMode): React.JSX.Element {
   });
   const { register, formState, watch, setValue } = form;
   const errors = formState.errors;
+  // ADR-313 — tell the page about every change (its draft), and let it put one back.
+  const { draftLink } = props;
+  const resetForm = form.reset;
+  useFormDraftLink(draftLink, form.watch(), (v) =>
+    resetForm(v as Parameters<typeof resetForm>[0], { keepDefaultValues: true }),
+  );
   // Create and edit carry the same fields with the same types; the shared
   // field components take the update-form types (same cast as client-form).
   const fieldRegister = register as unknown as UseFormRegister<UpdateVendorInput>;
@@ -358,6 +369,12 @@ function EditVendorForm(props: EditMode): React.JSX.Element {
   });
   const { register, formState, watch, setValue } = form;
   const errors = formState.errors;
+  // ADR-313 — tell the page about every change (its draft), and let it put one back.
+  const { draftLink } = props;
+  const resetForm = form.reset;
+  useFormDraftLink(draftLink, form.watch(), (v) =>
+    resetForm(v as Parameters<typeof resetForm>[0], { keepDefaultValues: true }),
+  );
   const { vendor } = props;
   const fieldRegister = register;
   const fieldErrors = errors;

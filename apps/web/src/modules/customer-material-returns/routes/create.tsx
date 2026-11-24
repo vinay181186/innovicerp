@@ -26,6 +26,7 @@ import { Loader2 } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import { todayLocal } from '@/lib/date';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useFormDraft } from '@/lib/use-form-draft';
 import { useSaveKey } from '@/lib/use-save-key';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Panel } from '@/ui/data';
@@ -59,7 +60,6 @@ function CustomerMaterialReturnNewPage(): React.JSX.Element {
   const goBack = useCallback(() => void navigate({ to: '/customer-material-returns' }), [navigate]);
   const [saved, setSaved] = useState<CustomerMaterialReturn | null>(null);
   // Once saved there is nothing left to lose, so leaving never asks.
-  const exit = useExitConfirm({ onExit: goBack, enabled: saved === null });
   const docPrint = usePrintCmr();
 
   const [returnDate, setReturnDate] = useState(todayLocal());
@@ -74,6 +74,23 @@ function CustomerMaterialReturnNewPage(): React.JSX.Element {
   const [qtys, setQtys] = useState<Record<string, string>>({});
   const [err, setErr] = useState<string | null>(null);
   const [printing, setPrinting] = useState<'preview' | 'download' | null>(null);
+  // ADR-313 — a half-typed return survives a tab switch.
+  const draft = useFormDraft({
+    key: 'cmr-new',
+    ready: true,
+    values: { returnDate, jwSearch, against, jwId, soId, vehicleNo, remarks, qtys },
+    apply: (v) => {
+      setReturnDate(v.returnDate);
+      setJwSearch(v.jwSearch);
+      setAgainst(v.against);
+      setJwId(v.jwId);
+      setSoId(v.soId);
+      setVehicleNo(v.vehicleNo);
+      setRemarks(v.remarks);
+      setQtys(v.qtys);
+    },
+  });
+  const exit = useExitConfirm({ onExit: goBack, enabled: saved === null, draft });
 
   // No status filter: a JWSO that has closed still has the customer's spare
   // or rejected material sitting in the store.
@@ -167,7 +184,11 @@ function CustomerMaterialReturnNewPage(): React.JSX.Element {
     if (remarks.trim()) input.remarks = remarks.trim();
 
     createMut.mutate(input, {
-      onSuccess: (row) => setSaved(row),
+      onSuccess: (row) => {
+        // Saved: the draft is no longer wanted (this screen stays on the result).
+        draft.clear();
+        setSaved(row);
+      },
       onError: (e) =>
         setErr(e instanceof Error ? e.message : 'Could not save the return. Try again.'),
     });
@@ -241,6 +262,7 @@ function CustomerMaterialReturnNewPage(): React.JSX.Element {
         backLabel="Back to Customer Material Return"
         onBack={goBack}
       />
+      {draft.band}
 
       <Panel>
         <FormGrid>

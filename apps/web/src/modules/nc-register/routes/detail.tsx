@@ -24,6 +24,7 @@ import {
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, CheckCircle2, Loader2, Shield, Stamp, Truck } from 'lucide-react';
 import { useState } from 'react';
+import { z } from 'zod';
 import { useCanOpen } from '@/components/shared/action-link';
 import { undecidedChangesOf, usePendingEditForDoc } from '@/modules/document-edits/api';
 import {
@@ -56,6 +57,7 @@ import {
 } from '../api';
 import { CreateNcDcPanel } from '../components/create-nc-dc-panel';
 import { DisposeNcPanel } from '../components/dispose-nc-panel';
+import { useNcOpenLink } from '../components/use-nc-open-link';
 import { NcDispositionBadge } from '../components/nc-disposition-badge';
 import { NcLinksBlock } from '../components/nc-links-block';
 import { Note } from '../components/nc-note';
@@ -63,10 +65,13 @@ import { NcStatusBadge } from '../components/nc-status-badge';
 import { useNcPrint } from '../components/use-nc-print';
 import { ncOpenQty } from '../nc-qty';
 import { NcTimelinePanel } from '@/modules/flow-views/components/nc-timeline-panel';
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
 
 export const ncRegisterDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: 'nc-register/$id',
+  // ADR-312 — ?open=dispose | dc opens that pop-up once (useNcOpenLink).
+  validateSearch: z.object({ open: z.enum(['dispose', 'dc']).optional().catch(undefined) }),
   component: NcRegisterDetailPage,
 });
 
@@ -78,7 +83,8 @@ const SIBLING_PAGE = 200;
 function NcRegisterDetailPage(): React.JSX.Element {
   const { id } = ncRegisterDetailRoute.useParams();
   const navigate = useNavigate();
-  const { data: detail, isLoading, isError, error } = useNcRegister(id);
+  const query = useNcRegister(id);
+  const { data: detail, isLoading, isError, error } = query;
   const { data: eff } = useMyAccess();
   // ADR-234 — the saved DC's code links only for someone who may open DCs.
   const canOpenDc = useCanOpen()('/delivery-challans/$id');
@@ -117,6 +123,15 @@ function NcRegisterDetailPage(): React.JSX.Element {
   const [reworkDoneQty, setReworkDoneQty] = useState<number | ''>('');
   const [closeError, setCloseError] = useState<string | null>(null);
   const [capaError, setCapaError] = useState<string | null>(null);
+  const linkOpen = ncRegisterDetailRoute.useSearch().open;
+  useNcOpenLink({
+    open: linkOpen,
+    updatedAt: detail?.updatedAt,
+    canDispose: eff ? effectiveFormPerms(eff, 'nc_dispose').advance : undefined,
+    onDispose: () => setShowDispose(true),
+    onDc: setCreateDcOn,
+    strip: () => void navigate({ to: '/nc-register/$id', params: { id }, replace: true }),
+  });
 
   // Full op list for the NC's JC — drives the dispose panel's legacy rework-op
   // dropdown (legacy `_disposeNC` renders every op of the JC, HTML L22637) and
@@ -145,7 +160,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
       </div>
     );
   }
-  if (isError || !detail) {
+  if (!detail || hardError(query)) {
     return (
       <div className="panel">
         <div className="panel-body">
@@ -291,6 +306,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
 
   return (
     <div>
+      <RefreshFailedNote show={isError} />
       <DetailHeader
         backLabel="Back to NC Register"
         backTo="/nc-register"

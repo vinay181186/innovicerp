@@ -9,6 +9,7 @@ import { isStagedResult } from '@/modules/document-edits/api';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { useEditConflict } from '@/lib/use-edit-conflict';
+import { useDraftSink } from '@/lib/use-form-draft';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useToast } from '@/ui/feedback';
 import { FormActions, PageHeader, useSaveShortcut } from '@/ui/layout';
@@ -159,7 +160,10 @@ function GoodsReceiptNoteEditPage(): React.JSX.Element {
     () => void navigate({ to: '/goods-receipt-notes/$id', params: { id } }),
     [navigate, id],
   );
-  const exit = useExitConfirm({ onExit: goBack });
+  // ADR-313 — the form keeps its own draft and puts it in `formDraft`; the
+  // guard forwards Save / Cancel / Exit to it.
+  const { sink: formDraft, draft } = useDraftSink();
+  const exit = useExitConfirm({ onExit: goBack, draft });
   // Save lives in FormActions; the form reports whether it can submit.
   const [formStatus, setFormStatus] = useState({
     submitting: false,
@@ -289,6 +293,7 @@ function GoodsReceiptNoteEditPage(): React.JSX.Element {
         onCancel={() => exit.leave(goBack)}
         formId={GRN_EDIT_FORM_ID}
         onStatusChange={setFormStatus}
+        draftSlot={formDraft}
       />
       <FormActions dirty={formStatus.dirty}>
         <button type="button" className="btn btn-ghost" onClick={() => exit.leave(goBack)}>

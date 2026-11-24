@@ -43,6 +43,7 @@ import { grnTypeLabel } from '../components/grn-list-columns';
 import { QcStatusBadge } from '../components/qc-status-badge';
 import { printGrn } from '../lib/print-grn';
 import { runPrint } from '@/lib/print/preview-host';
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
 
 export const goodsReceiptNoteDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -54,12 +55,8 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
   const toast = useToast();
   const { id } = goodsReceiptNoteDetailRoute.useParams();
   const navigate = useNavigate();
-  const {
-    data: detail,
-    isLoading,
-    isError,
-    error,
-  } = useGoodsReceiptNote(id, { refetchInterval: LIVE_FALLBACK_POLL_MS });
+  const query = useGoodsReceiptNote(id, { refetchInterval: LIVE_FALLBACK_POLL_MS });
+  const { data: detail, isLoading, isError, error } = query;
   // ADR-202 — the edit(s) staged against this GRN and still waiting for a
   // decision. Their per-field changes drive the inline amber chips next to the
   // record fields in the header grid. Flattened across requests (usually one).
@@ -112,7 +109,7 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
       </div>
     );
   }
-  if (isError || !detail) {
+  if (!detail || hardError(query)) {
     return (
       <div className="panel">
         <div className="panel-body">
@@ -225,6 +222,7 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
 
   return (
     <div>
+      <RefreshFailedNote show={isError} />
       <Link to="/goods-receipt-notes" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
         <ArrowLeft size={14} /> Back to GRN list
       </Link>

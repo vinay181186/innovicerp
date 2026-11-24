@@ -48,6 +48,7 @@ import {
 import { FilePreviewModal } from '@/components/shared/file-preview-modal';
 import { SearchableSelect } from '@/ui/forms';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useFormDraft } from '@/lib/use-form-draft';
 import { useEditConflict } from '@/lib/use-edit-conflict';
 import { useOpFlow } from '@/modules/flow-views/api';
 import { useItemsList } from '@/modules/items/api';
@@ -216,7 +217,6 @@ function JcStatusEditForm({
     () => void navigate({ to: '/job-cards/$id', params: { id } }),
     [navigate, id],
   );
-  const exit = useExitConfirm({ onExit: goBack });
   const toast = useToast();
   const queryClient = useQueryClient();
   const update = useUpdateJobCard(id);
@@ -425,6 +425,46 @@ function JcStatusEditForm({
       available: o.available ?? 0,
     })),
   );
+
+  // ADR-313 — a half-typed edit survives a tab switch. The draft's version is
+  // the edit model's `updatedAt` AS THIS SCREEN OPENED IT, frozen for the
+  // mount — the same value useEditConflict's useOpenedVersion freezes and sends
+  // back on Save. A live re-read that brings a newer `model` must NOT move it:
+  // a draft stamped with the newer version would come back over a record this
+  // screen never saw and its save would skip the 409 (§20.4). On return, a
+  // record saved by anyone since makes the draft stale, so it is dropped and
+  // the form opens on the fresh read. The form seeds from `model` in its
+  // useState initialisers, so it is ready on the first render. The ADR-226
+  // diff baseline is the model this mount opened, which is the record the
+  // draft was typed over (same version), so the merge is unchanged.
+  const [openedVersion] = useState(model.updatedAt);
+  const draft = useFormDraft({
+    key: `jc-edit:${id}`,
+    ready: true,
+    values: { itemCode, orderQty, dueDate, priority, remarks, ops },
+    version: openedVersion,
+    apply: (v) => {
+      // The op's server facts (started, available, stored Op No.) come from
+      // the current read, not the draft: logging work does not move the card's
+      // version. Rows added here get fresh keys (the counter restarts on reload).
+      const fromModel = new Map(model.ops.map((o) => [o.id, o]));
+      setItemCode(v.itemCode);
+      setOrderQty(v.orderQty);
+      setDueDate(v.dueDate);
+      setPriority(v.priority);
+      setRemarks(v.remarks);
+      setOps(
+        v.ops.map((o) => {
+          const m = o.id ? fromModel.get(o.id) : undefined;
+          if (!o.id) return { ...o, rowKey: nextEditOpRowKey() };
+          return m
+            ? { ...o, opSeq: m.opSeq, hasStarted: m.hasStarted, available: m.available ?? 0 }
+            : o;
+        }),
+      );
+    },
+  });
+  const exit = useExitConfirm({ onExit: goBack, draft });
 
   // Edit-page gap (test row R3-07b-1): an op's saved vendor past the first 200
   // rows (VND-959) is on no page this form has fetched, so knownVendors had no
@@ -921,6 +961,7 @@ function JcStatusEditForm({
           </>
         }
       >
+        {draft.band}
         <JcStoppedBanner order={productionOrder} />
         <RecoveryBanner jc={jc} />
         <JcEditFactBlock

@@ -34,7 +34,14 @@ import {
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, type ReactNode } from 'react';
-import { type FieldErrors, type UseFormRegister, useForm } from 'react-hook-form';
+import {
+  type FieldErrors,
+  type FieldValues,
+  type UseFormRegister,
+  type UseFormReturn,
+  useForm,
+} from 'react-hook-form';
+import { useDraftSinkFill, useFormDraft, type FormDraft } from '@/lib/use-form-draft';
 import {
   GST_CATEGORY_OPTIONS,
   type PartyGstNotes,
@@ -62,7 +69,29 @@ export interface ClientFormHeader {
   backLabel: string;
 }
 
-type CreateMode = {
+/** ADR-313 — keep a draft of the typed values across a tab switch. The page
+ *  passes the key + loaded version, and a sink that receives the draft so its
+ *  exit guard can clear it. */
+type DraftProps = {
+  draftKey?: string | undefined;
+  draftVersion?: string | null | undefined;
+  draftSink?: { current: FormDraft | null } | undefined;
+};
+
+function useSinkedDraft<V extends FieldValues>(form: UseFormReturn<V>, p: DraftProps): FormDraft {
+  // The form starts from its defaults at mount, so it is ready at once.
+  const draft = useFormDraft({
+    key: p.draftKey ?? null,
+    ready: true,
+    values: form.watch(),
+    apply: (v) => form.reset(v, { keepDefaultValues: true }),
+    version: p.draftVersion,
+  });
+  useDraftSinkFill(p.draftSink, draft);
+  return draft;
+}
+
+type CreateMode = DraftProps & {
   mode: 'create';
   header: ClientFormHeader;
   defaultValues?: Partial<CreateClientInput>;
@@ -74,7 +103,7 @@ type CreateMode = {
   onCancel: () => void;
 };
 
-type EditMode = {
+type EditMode = DraftProps & {
   mode: 'edit';
   header: ClientFormHeader;
   client: Client;
@@ -134,6 +163,7 @@ function CreateClientForm(props: CreateMode): React.JSX.Element {
     resolver: zodResolver(createClientInputSchema),
     defaultValues: { ...CREATE_DEFAULTS, ...props.defaultValues },
   });
+  const draft = useSinkedDraft(form, props);
   const { register, formState, watch, setValue } = form;
   const errors = formState.errors;
   const setStateCode = useCallback(
@@ -188,6 +218,7 @@ function CreateClientForm(props: CreateMode): React.JSX.Element {
       submitLabel={props.submitLabel ?? 'Save Customer'}
       submitError={props.submitError ?? null}
       onCancel={props.onCancel}
+      band={draft.band}
     >
       <ClientFields
         // Both forms carry the same fields with the same types; the union of
@@ -227,6 +258,7 @@ function EditClientForm(props: EditMode): React.JSX.Element {
     resolver: zodResolver(updateClientInputSchema),
     defaultValues: clientToUpdateDefaults(props.client),
   });
+  const draft = useSinkedDraft(form, props);
   const { register, formState, watch, setValue } = form;
   const errors = formState.errors;
   const { client } = props;
@@ -258,6 +290,7 @@ function EditClientForm(props: EditMode): React.JSX.Element {
       submitLabel={props.submitLabel ?? 'Save Changes'}
       submitError={props.submitError ?? null}
       onCancel={props.onCancel}
+      band={draft.band}
     >
       <ClientFields
         register={register}
@@ -287,6 +320,7 @@ function ClientFormShell(props: {
   submitLabel: string;
   submitError: string | null;
   onCancel: () => void;
+  band?: ReactNode;
   children: ReactNode;
 }): React.JSX.Element {
   const formRef = useRef<HTMLFormElement>(null);
@@ -302,6 +336,7 @@ function ClientFormShell(props: {
         backLabel={props.header.backLabel}
         onBack={props.onCancel}
       />
+      {props.band}
       {props.submitError ? (
         <Banner tone="error" role="alert">
           {props.submitError}

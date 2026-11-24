@@ -6,6 +6,7 @@
 // The page body IS the challan: the same Innovic Sheet markup the print window
 // emits, previewed in an iframe (screen = print, as on the invoice detail).
 
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
 import { Icon } from '@/ui/core';
 import { itemRevLabel } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
@@ -48,7 +49,7 @@ export const customerDispatchDetailRoute = createRoute({
 
 function CustomerDispatchDetailPage(): React.JSX.Element {
   const { id } = customerDispatchDetailRoute.useParams();
-  const { data: d, isLoading, isError, error } = useDispatchDetail(id);
+  const { data: d, isLoading, isError, error, isPlaceholderData } = useDispatchDetail(id);
   const { data: client } = useClient(d?.clientId ?? undefined);
   const { data: company } = useMyCompany();
   const { data: eff } = useMyAccess();
@@ -82,7 +83,7 @@ function CustomerDispatchDetailPage(): React.JSX.Element {
       </div>
     );
   }
-  if (isError || !d) {
+  if (!d || hardError({ isError, error, isPlaceholderData })) {
     return (
       <div className="empty-state" style={{ padding: 40, color: 'var(--red2)' }}>
         {error instanceof Error ? error.message : 'Could not load the dispatch. Try again.'}
@@ -96,6 +97,7 @@ function CustomerDispatchDetailPage(): React.JSX.Element {
 
   return (
     <div>
+      <RefreshFailedNote show={isError} />
       <DetailHeader
         backTo="/customer-dispatches"
         backLabel="Back to Customer Dispatch"

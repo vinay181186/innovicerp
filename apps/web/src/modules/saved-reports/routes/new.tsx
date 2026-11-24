@@ -3,6 +3,7 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { apiDownload } from '@/lib/api';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useDraftSink } from '@/lib/use-form-draft';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateSavedReport, usePreviewSpec, useSourceCatalog } from '../api';
 import { Builder, type SaveInput } from '../components/builder';
@@ -22,7 +23,9 @@ function SavedReportNewPage() {
   const createMutation = useCreateSavedReport();
   const [saveError, setSaveError] = useState<string | undefined>(undefined);
   const [excelLoading, setExcelLoading] = useState(false);
-  const exit = useExitConfirm();
+  // ADR-313 — the draft lives in <Builder>; the exit guard forgets it through this stand-in.
+  const { sink: draftSink, draft } = useDraftSink();
+  const exit = useExitConfirm({ draft });
 
   const onExcel = async (spec: AdHocSpec) => {
     setExcelLoading(true);
@@ -98,6 +101,8 @@ function SavedReportNewPage() {
         <Builder
           sources={sourcesQ.data.sources}
           initial={{ name: '', description: '', isShared: false, spec: null }}
+          draftKey="saved-report-new"
+          draftSink={draftSink}
           onSave={onSave}
           onPreview={(spec) => previewMutation.mutate(spec)}
           preview={previewMutation.data}

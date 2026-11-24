@@ -38,6 +38,8 @@ import type { OpFlowRow } from '@/modules/flow-views/types';
 import { ReworkTreePanel } from '@/modules/flow-views/components/jc-flow-panels';
 import { JcMaterialPanel } from '@/modules/material/components/jc-material-panel';
 import { runPrint } from '@/lib/print/preview-host';
+import { hardError, RefreshFailedNote } from '@/lib/refresh-failed-note';
+import { oneOf, usePersistentState } from '@/lib/use-persistent-state';
 import { useJcOpsEnriched, useOpLog } from '@/modules/op-entry/api';
 import { useProductionOrderForJobCard } from '@/modules/production-orders/api';
 import { useMyCompany } from '@/modules/settings/api';
@@ -66,12 +68,8 @@ const TAB_KEYS: readonly TabKey[] = ['ops', 'docs', 'material', 'related', 'hist
 
 export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
   const navigate = useNavigate();
-  const {
-    data: jc,
-    isLoading,
-    isError,
-    error,
-  } = useJobCard(id, { refetchInterval: LIVE_FALLBACK_POLL_MS });
+  const detailQuery = useJobCard(id, { refetchInterval: LIVE_FALLBACK_POLL_MS });
+  const { data: jc, isLoading, isError, error } = detailQuery;
   // `opsLoading` gates the Print button: the ops come from their own query, so
   // a click landing between "job card loaded" and "ops loaded" printed a Job
   // Card whose Operation Routing table said "No operations".
@@ -120,7 +118,8 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
   // ADR-202 — any pending edit overlays grey "Draft" on the status chip.
   const isDraft = (pendingEdit.data?.rows?.length ?? 0) > 0;
 
-  const [tab, setTab] = useState<TabKey>('ops');
+  // ADR-313 — the sub-tab stays when you switch tabs and come back.
+  const [tab, setTab] = usePersistentState<TabKey>(`jc-detail:${id}:tab`, 'ops', oneOf(TAB_KEYS));
   const [drawingPreviewOpen, setDrawingPreviewOpen] = useState(false);
   // Option 4 (owner, 2026-11-02): page scroll + collapsible fact block.
   const [collapsed, setCollapsed] = useFactsCollapsed();
@@ -161,7 +160,7 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
       </div>
     );
   }
-  if (isError || !jc) {
+  if (!jc || hardError(detailQuery)) {
     return (
       <div className="empty-state" style={{ color: 'var(--red2)' }}>
         {error instanceof Error ? error.message : 'Job Card not found.'}
@@ -205,6 +204,7 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
 
   return (
     <div className="jc-detail" ref={band.rootRef}>
+      <RefreshFailedNote show={isError} />
       <DetailHeader
         backLabel="Back"
         backTo="/job-cards"
@@ -389,7 +389,7 @@ export function JcStatusViewContent({ id }: { id: string }): React.JSX.Element {
           </div>
         ) : tab === 'related' ? (
           <div className="jc-tab-pad">
-            <RelatedDocsTabs module="job-cards" id={jc.id} />
+            <RelatedDocsTabs module="job-cards" id={jc.id} rememberKey={`job-card:${jc.id}`} />
           </div>
         ) : (
           <JcHistoryTable jobCardId={id} />

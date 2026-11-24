@@ -16524,7 +16524,7 @@ Qty, Completed, Actual Machine) — a Job Queue exception to D1 — and Actual M
 `CNC-01: 5 pcs · CNC-02: 3 pcs`. Machine Load stays out (whole-machine summary). Guard: a list with `groupRow` and
 `exportSpec` must give `groupColumns`. Web only, no migration. Other lists' exports unchanged.
 
-## ADR-312: SO No. column on the Drawing Register
+## ADR-315: SO No. column on the Drawing Register (first filed as a second "ADR-312" — renumbered 24-Nov; ADR-312 is the Home check record)
 
 **Date:** 2026-11-24 · **Status:** Accepted (owner, 23-Nov "approve")
 
@@ -16533,3 +16533,85 @@ The Drawing Register shows **SO No.** after Sr No: every live SO / JWSO line nam
 order) and "+N" for more; the tooltip and Excel list them all. Register search matches SO / JWSO
 No.; Sort & Filter on `orders` (`so.codes`). Field `orders: {kind, id, code}[]` on
 `DrawingRegisterRow`. No migration — reuses the SO / JWSO line → Rev link (`item_revision_id`).
+## ADR-313: A page stays as you left it when you switch tabs
+
+**Date:** 2026-11-23
+**Status:** Accepted (owner approved the plan 2026-11-23)
+
+### Context
+
+Owner: "multiple tabs open, I switch to another tab, come back — what I had open on that page is
+gone." Audit found four causes: (1) the open-pages tab saved only the pathname, so a list's search,
+page, filters and `?tab=` were dropped; (2) every tab click unmounts the page, so sub-tabs, pickers
+and expanded rows (all `useState`) reset, and the scroll went to wherever; (3) no form kept a draft —
+"Are you sure you want to exit?" only warned; (4) on returning to a Chrome tab, a failed background
+refetch made 60+ screens early-return on `isError` and replace the loaded screen with the error box.
+
+### Decision
+
+1. `stores/open-tabs.ts` keeps the visit's `search` beside `path`; the tab link and close-navigation
+   pass it back.
+2. `lib/use-persistent-state.ts` — one sessionStorage-backed `useState` for VIEW choices (sub-tabs,
+   order pickers, expanded rows), keyed screen + record, validated on read.
+3. `lib/use-scroll-keeper.ts` — #content scroll per address; restored only on a tab-bar switch
+   (`lib/tab-switch.ts` marks it).
+4. `lib/use-form-draft.tsx` — the ~50 forms behind `useExitConfirm` keep a draft per person + form +
+   record. Never auto-saved; carries the loaded `updatedAt` and is NOT restored if the record changed
+   since (§20.4); files are not stored; removed on Save / Cancel / Exit / Discard and at sign-out.
+   With a draft, a tab-bar switch no longer asks "exit?" (owner answer 1); other ways out still ask.
+5. Screens show the error box only when there is no data; with data a failed refresh shows
+   `RefreshFailedNote` above the screen.
+6. Pop-up forms: later (owner answer 2). Chrome Memory Saver logout (ADR one-login, 2026-09-19):
+   unchanged; PCs add the ERP to "Always keep these sites active" (owner answer 3).
+
+### Alternatives Considered
+
+- Keep-alive (render every open tab hidden) — rejected: 8 mounted pages with live queries, and no
+  router support; drafts + saved view state cover the loss for a fraction of the cost (§21).
+- localStorage drafts — rejected: two Chrome tabs would overwrite each other, and drafts would outlive
+  the browser session on shared PCs.
+
+### Consequences
+
+- Positive: coming back through a tab shows the same list view, sub-tab, scroll and half-typed form.
+- Negative: a draft is per browser tab; closing the Chrome tab still loses it (browser prompt warns).
+- Risk: a form whose `apply` misses a field restores partially — each wired form was opened on TEST.
+
+
+## ADR-314: Per-person Desktop Pop-ups switch (owner 2026-11-23)
+
+**Date:** 2026-11-23
+**Status:** Accepted
+
+### Context
+
+The owner wants one login (Vinay N Makwana) never to get desktop (Web Push) pop-ups on any laptop, and never to see
+the every-page "Desktop pop-ups are off" band, while still getting task notes in the bell and keeping Task Board.
+
+### Decision
+
+New column `users.desktop_popups` (`allowed` default | `disabled`, migration 0261), set on User Management › Edit
+("Desktop Pop-ups: Allowed / Disabled") through the normal user update (same lock / edit-conflict path as
+`is_active`). For a disabled login: GET /me/push answers `{ enabled: false, publicKey: null }`, so the web hides the
+band and the bell switch with no web change there; POST /me/push/subscription and /me/push/test answer 403 "Desktop
+pop-ups are disabled for your login."; the sender's claim returns `popups_off` and those notices are settled `off`
+without sending or retrying. `task_notices` (bell notes) are still written for everyone. Stored subscriptions are kept,
+so setting the login back to Allowed resumes pop-ups with no re-subscribe.
+
+### Consequences
+
+- Positive: one switch, enforced on the server; no new infrastructure.
+- Negative: GET /me/push reads the caller's users row (one small query).
+
+## ADR-312 addendum: the home's departments follow the top menu's rule (owner 2026-11-24)
+
+**Date:** 2026-11-24
+**Status:** Accepted (owner chose option a)
+
+One shared rule, `canSeeDeptMenu` (packages/shared page-access), decides both the top
+menu's department menus and the home's left-menu departments: any access tier in the
+department (Full Access / Auditor see all) or Super Admin. The API's `hasDept` and the
+web's `shouldShowSection` both call it; the rule itself is unchanged. The home lists
+departments in the top menu's order (Quality before Store) under the top menu's names
+(Sales & CRM, Quality). Option b (hide a department whose every real page is hidden)
+was not chosen.

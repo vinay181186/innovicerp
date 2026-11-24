@@ -17,7 +17,10 @@ import { Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
 import { useEditConflict } from '@/lib/use-edit-conflict';
+import { useFormDraft } from '@/lib/use-form-draft';
+import { useOpenedVersion } from '@/lib/use-opened-version';
 import { useSaveKey } from '@/lib/use-save-key';
 import { isStagedResult } from '@/modules/document-edits/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -161,7 +164,7 @@ export const deliveryChallanEditRoute = createRoute({
 function DeliveryChallanEditPage(): React.JSX.Element {
   const { id } = deliveryChallanEditRoute.useParams();
   const navigate = useNavigate();
-  const { data: dc, isLoading, isError, error } = useDeliveryChallan(id);
+  const { data: dc, isLoading, isError, error, isPlaceholderData } = useDeliveryChallan(id);
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'ospdc_create');
   const saveKey = useSaveKey();
@@ -206,7 +209,6 @@ function DeliveryChallanEditPage(): React.JSX.Element {
     () => void navigate({ to: '/delivery-challans/$id', params: { id } }),
     [navigate, id],
   );
-  const exit = useExitConfirm({ onExit: goBack });
 
   // Caps come from the PO's sendable lines (same source the create form uses).
   // An NC return challan has no PO, so this stays empty and caps fall back to the
@@ -238,6 +240,22 @@ function DeliveryChallanEditPage(): React.JSX.Element {
       })),
     );
   }, [dc]);
+  // ADR-313 — a half-typed edit survives a tab switch; dropped if the DC was
+  // saved by anyone since it was loaded (the version as first loaded).
+  const opened = useOpenedVersion(dc?.updatedAt);
+  const draft = useFormDraft({
+    key: `dc-edit:${id}`,
+    ready: !!dc && seeded.current,
+    values: { dcDate, transport, vehicleNo, cards },
+    apply: (v) => {
+      setDcDate(v.dcDate);
+      setTransport(v.transport);
+      setVehicleNo(v.vehicleNo);
+      setCards(v.cards);
+    },
+    version: opened.expected(),
+  });
+  const exit = useExitConfirm({ onExit: goBack, draft });
 
   const savedById = useMemo(() => new Map((dc?.lines ?? []).map((l) => [l.id, l])), [dc]);
   const slByPoLine = useMemo(
@@ -372,7 +390,7 @@ function DeliveryChallanEditPage(): React.JSX.Element {
       </div>
     );
   }
-  if (isError || !dc) {
+  if (!dc || hardError({ isError, error, isPlaceholderData })) {
     return (
       <div className="empty-state" style={{ padding: 40, color: 'var(--red2)' }}>
         {error instanceof Error ? error.message : 'Could not load the DC. Try again.'}
@@ -400,11 +418,13 @@ function DeliveryChallanEditPage(): React.JSX.Element {
   return (
     <div>
       {exit.dialog}
+      <RefreshFailedNote show={isError} />
       <PageHeader
         title={`Edit Delivery Challan — ${dc.code}`}
         backLabel="Back to Delivery Challan"
         onBack={goBack}
       />
+      {draft.band}
 
       <Panel title="DC Details">
         <FormGrid>

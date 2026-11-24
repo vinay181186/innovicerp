@@ -15,6 +15,7 @@
 // line. What changed is that this screen no longer draws its own panels,
 // tables, badges, buttons, empty states or delete confirmation.
 
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
 import type {
   DocumentEditChange,
   DrawingSource,
@@ -25,6 +26,7 @@ import { SO_CLOSABLE_STATUSES, TOTAL_VALUE_BASIC_LABEL } from '@innovic/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useRef, useState } from 'react';
+import { oneOf, usePersistentState } from '@/lib/use-persistent-state';
 import { z } from 'zod';
 import { undecidedChangesOf, usePendingEditForDoc } from '@/modules/document-edits/api';
 import {
@@ -114,6 +116,7 @@ function SalesOrderDetailPage(): React.JSX.Element {
     isLoading,
     isError,
     error,
+    isPlaceholderData,
   } = useSalesOrder(id, { refetchInterval: LIVE_FALLBACK_POLL_MS });
   const { data: me } = useSession();
   const { data: eff } = useMyAccess();
@@ -158,7 +161,7 @@ function SalesOrderDetailPage(): React.JSX.Element {
   if (isLoading) {
     return <PageState state="loading" message="Loading sales order…" />;
   }
-  if (isError || !detail) {
+  if (!detail || hardError({ isError, error, isPlaceholderData })) {
     return (
       <>
         <Link to="/sales-orders" className="btn btn-ghost btn-sm">
@@ -221,6 +224,7 @@ function SalesOrderDetailPage(): React.JSX.Element {
   } as const;
   return (
     <div>
+      <RefreshFailedNote show={isError} />
       <DetailHeader
         backTo="/sales-orders"
         backLabel="Back to Sales Orders"
@@ -689,7 +693,12 @@ function SoReadGrid(props: {
   const { detail, pendingChanges } = props;
   // Remarks can be long; collapse to one line with a "more"/"less" toggle so the
   // grid stays one compact band. Presentation only — no data change.
-  const [showAllRemarks, setShowAllRemarks] = useState(false);
+  // ADR-313 — kept per record across a tab switch.
+  const [showAllRemarks, setShowAllRemarks] = usePersistentState(
+    `so-detail:${detail.id}:remarks`,
+    false,
+    oneOf([true, false]),
+  );
   const remarks = detail.remarks ?? '';
   const remarksLong = remarks.length > 80;
   const toggleStyle: React.CSSProperties = {

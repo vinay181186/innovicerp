@@ -23,7 +23,8 @@
 
 import type { CreateQcProcessInput, QcProcess, UpdateQcProcessInput } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
-import { useEffect, type ReactNode } from 'react';
+import { type ReactNode, useEffect } from 'react';
+import { type FormDraftLink, useFormDraftLink } from '@/lib/use-form-draft';
 import { useForm } from 'react-hook-form';
 import { useReportTypes } from '@/modules/report-types/api';
 import { SearchableSelect } from '@/ui/forms';
@@ -67,15 +68,18 @@ type EditMode = {
   onCancel?: () => void;
 };
 
-export type QcProcessFormProps = CreateMode | EditMode;
+export type QcProcessFormProps = (CreateMode | EditMode) & { draftLink?: FormDraftLink };
 
 export function QcProcessForm(props: QcProcessFormProps): React.JSX.Element {
   const isEdit = props.mode === 'edit';
   const defaults: FormValues = isEdit ? detailToFormValues(props.detail) : DEFAULTS;
-  const { register, handleSubmit, formState, setValue, watch } = useForm<FormValues>({
+  const { register, handleSubmit, formState, setValue, watch, reset } = useForm<FormValues>({
     defaultValues: defaults,
   });
   const errors = formState.errors;
+  // ADR-313 — tell the page about every change (its draft), and let it put one back.
+  const { draftLink } = props;
+  useFormDraftLink(draftLink, watch(), (v) => reset(v as FormValues, { keepDefaultValues: true }));
   // ADR-252 — Report Type options: the Active ones. The saved one stays visible
   // as "<name> (inactive)" when it is no longer in the active list, so an edit
   // never silently changes or blanks it.

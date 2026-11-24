@@ -5,6 +5,7 @@
 // left list; the right pane fetches GET /so-status/$id on selection.
 // The selected SO lives in the URL (`?so=<id>`) so refresh and Back keep it.
 
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
@@ -48,7 +49,7 @@ function SoStatusIndexPage(): React.JSX.Element {
   const selectSo = (id: string): void => {
     void navigate({ search: (prev) => ({ ...prev, so: id }), replace: true });
   };
-  const { data, isLoading, isError, error } = useSoOverview({});
+  const { data, isLoading, isError, error, isPlaceholderData } = useSoOverview({});
 
   // The left pane holds every SO the overview returns (one fetch, no paging),
   // so the search matches in the browser across everything a card shows — SO
@@ -79,7 +80,7 @@ function SoStatusIndexPage(): React.JSX.Element {
       </div>
     );
   }
-  if (isError || !data) {
+  if (!data || hardError({ isError, error, isPlaceholderData })) {
     return (
       <div className="empty-state" style={{ color: 'var(--red2)', padding: 'var(--sp-5)' }}>
         {error instanceof Error ? error.message : 'Could not load SO list. Try again.'}
@@ -112,6 +113,7 @@ function SoStatusIndexPage(): React.JSX.Element {
           background: 'var(--bg2)',
         }}
       >
+        <RefreshFailedNote show={isError} />
         <div
           style={{
             padding: '10px 14px',

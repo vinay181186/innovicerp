@@ -10,6 +10,8 @@ import { useToast } from '@/ui/feedback';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useFetchQcProcess, useQcProcess, useUpdateQcProcess } from '../api';
 import { QcProcessForm } from '../components/qc-process-form';
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
+import { usePageDraft } from '@/lib/use-form-draft';
 
 // ADR-226 — the fields THIS screen can edit, and what the user calls each one.
 //
@@ -46,7 +48,8 @@ function QcProcessEditPage(): React.JSX.Element {
   const { id } = qcProcessEditRoute.useParams();
   const navigate = useNavigate();
   const toast = useToast();
-  const { data: detail, isLoading, isError, error } = useQcProcess(id);
+  const query = useQcProcess(id);
+  const { data: detail, isLoading, isError, error } = query;
   const update = useUpdateQcProcess(id);
   const fetchQcProcess = useFetchQcProcess();
   // ADR-226 / §20.4 — sends only what changed, merges onto someone else's save
@@ -67,7 +70,12 @@ function QcProcessEditPage(): React.JSX.Element {
     () => void navigate({ to: '/qc-processes/$id', params: { id } }),
     [navigate, id],
   );
-  const exit = useExitConfirm({ onExit: goBack });
+  // ADR-313 — the half-typed form survives a tab switch (lib/use-form-draft.tsx).
+  const { draft, link: draftLink } = usePageDraft({
+    key: `qc-process-edit:${id}`,
+    version: detail?.updatedAt,
+  });
+  const exit = useExitConfirm({ onExit: goBack, draft });
   // Tier-driven, per department (QC). This screen had no gate at all — typing
   // the URL handed the form to anyone, including an L1 Viewer and an L4
   // Approver, who deliberately cannot change a saved record.
@@ -98,7 +106,7 @@ function QcProcessEditPage(): React.JSX.Element {
       </div>
     );
   }
-  if (isError || !detail) {
+  if (!detail || hardError(query)) {
     return (
       <div className="panel">
         <div className="panel-body">
@@ -117,7 +125,9 @@ function QcProcessEditPage(): React.JSX.Element {
 
   return (
     <div>
+      <RefreshFailedNote show={isError} />
       {exit.dialog}
+      {draft.band}
       <Link
         to="/qc-processes/$id"
         params={{ id: detail.id }}
@@ -127,6 +137,7 @@ function QcProcessEditPage(): React.JSX.Element {
         <ArrowLeft size={14} /> Back to {detail.code}
       </Link>
       <QcProcessForm
+        draftLink={draftLink}
         panelHeader={
           <div>
             <div className="fw-700" style={{ color: 'var(--green2)', fontSize: 'var(--fs-sm)' }}>

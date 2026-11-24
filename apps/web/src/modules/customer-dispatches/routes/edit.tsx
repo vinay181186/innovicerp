@@ -17,6 +17,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { isStagedResult } from '@/modules/document-edits/api';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
+import { useFormDraft } from '@/lib/use-form-draft';
+import { useOpenedVersion } from '@/lib/use-opened-version';
 import { useEditConflict } from '@/lib/use-edit-conflict';
 import { useSaveKey } from '@/lib/use-save-key';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -122,7 +125,7 @@ export const customerDispatchEditRoute = createRoute({
 function CustomerDispatchEditPage(): React.JSX.Element {
   const { id } = customerDispatchEditRoute.useParams();
   const navigate = useNavigate();
-  const { data: d, isLoading, isError, error } = useDispatchDetail(id);
+  const { data: d, isLoading, isError, error, isPlaceholderData } = useDispatchDetail(id);
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'dispatch_create');
   const saveKey = useSaveKey();
@@ -167,7 +170,6 @@ function CustomerDispatchEditPage(): React.JSX.Element {
     () => void navigate({ to: '/customer-dispatches/$id', params: { id } }),
     [navigate, id],
   );
-  const exit = useExitConfirm({ onExit: goBack });
 
   // Caps come from the SO's dispatchable lines (same source the create form uses).
   const { data: dispatchable } = useDispatchableSo(d?.salesOrderId);
@@ -192,6 +194,23 @@ function CustomerDispatchEditPage(): React.JSX.Element {
     setRemarks(d.remarks ?? '');
     setCards(d.lines.map((l) => ({ id: l.id, qty: String(l.qty) })));
   }, [d]);
+  // ADR-313 — a half-typed edit survives a tab switch; dropped if the dispatch
+  // was saved by anyone since it was loaded (the version as first loaded).
+  const opened = useOpenedVersion(d?.updatedAt);
+  const draft = useFormDraft({
+    key: `dispatch-edit:${id}`,
+    ready: !!d && seeded.current,
+    values: { dispatchDate, transport, vehicleNo, remarks, cards },
+    apply: (v) => {
+      setDispatchDate(v.dispatchDate);
+      setTransport(v.transport);
+      setVehicleNo(v.vehicleNo);
+      setRemarks(v.remarks);
+      setCards(v.cards);
+    },
+    version: opened.expected(),
+  });
+  const exit = useExitConfirm({ onExit: goBack, draft });
 
   const savedById = useMemo(() => new Map((d?.lines ?? []).map((l) => [l.id, l])), [d]);
   const dlBySoLine = useMemo(
@@ -334,7 +353,7 @@ function CustomerDispatchEditPage(): React.JSX.Element {
       </div>
     );
   }
-  if (isError || !d) {
+  if (!d || hardError({ isError, error, isPlaceholderData })) {
     return (
       <div className="empty-state" style={{ padding: 40, color: 'var(--red2)' }}>
         {error instanceof Error ? error.message : 'Could not load the dispatch. Try again.'}
@@ -354,11 +373,13 @@ function CustomerDispatchEditPage(): React.JSX.Element {
   return (
     <div>
       {exit.dialog}
+      <RefreshFailedNote show={isError} />
       <PageHeader
         title={`Edit Customer Dispatch — ${d.code}`}
         backLabel="Back to Dispatch"
         onBack={goBack}
       />
+      {draft.band}
 
       <Panel title="Dispatch Details">
         <FormGrid>

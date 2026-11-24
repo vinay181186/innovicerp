@@ -6,6 +6,8 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
+import { useDraftSink } from '@/lib/use-form-draft';
 import { useOpenedVersion } from '@/lib/use-opened-version';
 import { useSaveKey } from '@/lib/use-save-key';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -38,7 +40,9 @@ function ClientNewPage(): React.JSX.Element {
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'client_create');
   const goBack = useCallback(() => void navigate({ to: '/clients' }), [navigate]);
-  const exit = useExitConfirm({ onExit: goBack });
+  // ADR-313 — the form keeps the draft; this hands its clear() to the exit guard.
+  const { sink: draftSink, draft } = useDraftSink();
+  const exit = useExitConfirm({ onExit: goBack, draft });
 
   const onSubmit = async (values: CreateClientInput): Promise<void> => {
     setSubmitError(null);
@@ -68,6 +72,8 @@ function ClientNewPage(): React.JSX.Element {
       {exit.dialog}
       <ClientForm
         mode="create"
+        draftKey="client-new"
+        draftSink={draftSink}
         header={{
           title: 'New Customer',
           backLabel: 'Back to Customer Master',
@@ -84,7 +90,7 @@ function ClientNewPage(): React.JSX.Element {
 function ClientEditPage(): React.JSX.Element {
   const { id } = clientEditRoute.useParams();
   const navigate = useNavigate();
-  const { data: client, isLoading, isError, error } = useClient(id);
+  const { data: client, isLoading, isError, error, isPlaceholderData } = useClient(id);
   const saveKey = useSaveKey();
   const update = useUpdateClient(id, saveKey);
   // R5: the version this form was opened from — a save after someone else
@@ -100,7 +106,9 @@ function ClientEditPage(): React.JSX.Element {
     () => void navigate({ to: '/clients/$id', params: { id } }),
     [navigate, id],
   );
-  const exit = useExitConfirm({ onExit: goBack });
+  // ADR-313 — the form keeps the draft; this hands its clear() to the exit guard.
+  const { sink: draftSink, draft } = useDraftSink();
+  const exit = useExitConfirm({ onExit: goBack, draft });
 
   const onSubmit = async (values: UpdateClientInput): Promise<void> => {
     setSubmitError(null);
@@ -140,7 +148,7 @@ function ClientEditPage(): React.JSX.Element {
     );
   }
 
-  if (isError || !client) {
+  if (!client || hardError({ isError, error, isPlaceholderData })) {
     return (
       <div className="panel">
         <div className="panel-body">
@@ -160,8 +168,12 @@ function ClientEditPage(): React.JSX.Element {
   return (
     <div>
       {exit.dialog}
+      <RefreshFailedNote show={isError} />
       <ClientForm
         mode="edit"
+        draftKey={`client-edit:${id}`}
+        draftVersion={opened.expected()}
+        draftSink={draftSink}
         header={{
           title: 'Edit Customer',
           subtitle: (

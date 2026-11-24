@@ -7,6 +7,8 @@ import { useCallback, useState } from 'react';
 import { ML_PLAN_STATUS_LABEL } from '@innovic/shared';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useDraftSink } from '@/lib/use-form-draft';
+import { hardError, RefreshFailedNote } from '@/lib/refresh-failed-note';
 import { useOpenedVersion } from '@/lib/use-opened-version';
 import { useSaveKey } from '@/lib/use-save-key';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -25,7 +27,8 @@ export const mlPlanEditRoute = createRoute({
 function MlPlanEditPage(): React.JSX.Element {
   const { id } = mlPlanEditRoute.useParams();
   const navigate = useNavigate();
-  const { data: detail, isLoading, isError, error } = useMlPlan(id);
+  const detailQuery = useMlPlan(id);
+  const { data: detail, isLoading, isError, error } = detailQuery;
   const saveKey = useSaveKey();
   const update = useUpdateMlPlan(id, saveKey);
   const opened = useOpenedVersion(detail?.updatedAt);
@@ -36,7 +39,12 @@ function MlPlanEditPage(): React.JSX.Element {
     () => void navigate({ to: '/ml-plans/$id', params: { id } }),
     [navigate, id],
   );
-  const exit = useExitConfirm({ onExit: goBack });
+  // ADR-313 — the form below keeps a draft; it lands in the sink for the guard.
+  const { sink: draftSink, draft: pageDraft } = useDraftSink();
+  const exit = useExitConfirm({
+    onExit: goBack,
+    draft: pageDraft,
+  });
   const toast = useToast();
 
   const submit = async (_line: MlPlanFormLine, draft: MlPlanFormDraft): Promise<void> => {
@@ -69,7 +77,7 @@ function MlPlanEditPage(): React.JSX.Element {
   if (isLoading) {
     return <PageState state="loading" message="⟳ Loading plan…" />;
   }
-  if (isError || !detail || detail.status !== 'draft') {
+  if (!detail || detail.status !== 'draft' || hardError(detailQuery)) {
     return (
       <div>
         <Link
@@ -82,7 +90,7 @@ function MlPlanEditPage(): React.JSX.Element {
         <PageState
           state="error"
           message={
-            detail
+            detail && !hardError(detailQuery)
               ? `${detail.code} is ${ML_PLAN_STATUS_LABEL[detail.status]} — only a Draft plan can be edited.`
               : error instanceof Error
                 ? error.message
@@ -96,7 +104,13 @@ function MlPlanEditPage(): React.JSX.Element {
   return (
     <>
       {exit.dialog}
+      <RefreshFailedNote show={isError} />
       <MlPlanForm
+        draftSlot={{
+          key: `ml-plan-edit:${id}`,
+          version: opened.expected() ?? null,
+          sink: draftSink,
+        }}
         mode="edit"
         code={detail.code}
         initialLine={{

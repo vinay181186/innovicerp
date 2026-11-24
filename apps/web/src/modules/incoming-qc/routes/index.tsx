@@ -7,6 +7,8 @@
 import { createRoute } from '@tanstack/react-router';
 import { useCallback } from 'react';
 import { authenticatedRoute } from '@/routes/_authenticated';
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 import {
   type QcScreenPatch,
   QcRegisterScreen,
@@ -16,6 +18,8 @@ import {
 // the page by writing `undefined` back (exactOptionalPropertyTypes).
 type IncomingQcSearch = {
   line?: string | undefined;
+  /** ADR-312 — ?pgrn=<partyGrnId> opens that Party GRN's QC popup once. */
+  pgrn?: string | undefined;
   search?: string;
   /** 1-based page (ADR-201); absent = page 1. */
   page?: number | undefined;
@@ -31,6 +35,7 @@ export const incomingQcRoute = createRoute({
   validateSearch: (search: Record<string, unknown>): IncomingQcSearch => {
     const out: IncomingQcSearch = {};
     if (typeof search.line === 'string') out.line = search.line;
+    if (typeof search.pgrn === 'string' && UUID_RE.test(search.pgrn)) out.pgrn = search.pgrn;
     if (typeof search.search === 'string' && search.search.trim()) out.search = search.search;
     const page = Number(search.page);
     if (Number.isInteger(page) && page > 1) out.page = page;
@@ -50,6 +55,7 @@ function IncomingQcPage(): React.JSX.Element {
           ...prev,
           ...('page' in patch ? { page: patch.page } : {}),
           ...('line' in patch ? { line: undefined } : {}),
+          ...('pgrn' in patch ? { pgrn: undefined } : {}),
         }),
         replace: true,
       }),

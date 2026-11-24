@@ -5,6 +5,8 @@ import { useMemo } from 'react';
 import { isStagedResult } from '@/modules/document-edits/api';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useDraftSink } from '@/lib/use-form-draft';
+import { hardError, RefreshFailedNote } from '@/lib/refresh-failed-note';
 import { useOpenedVersion } from '@/lib/use-opened-version';
 import { useSaveKey } from '@/lib/use-save-key';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -22,7 +24,8 @@ export const planEditRoute = createRoute({
 function PlanEditPage(): React.JSX.Element {
   const { id } = planEditRoute.useParams();
   const navigate = useNavigate();
-  const { data: plan, isLoading, isError, error } = usePlan(id);
+  const detailQuery = usePlan(id);
+  const { data: plan, isLoading, isError, error } = detailQuery;
   const saveKey = useSaveKey();
   const update = useUpdatePlan(id, saveKey);
   // R5 — the version this form opened with; a save over someone else's newer
@@ -31,7 +34,9 @@ function PlanEditPage(): React.JSX.Element {
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'plan_create');
   // No Cancel button on this screen, so ESC → Exit falls back to history.
-  const exit = useExitConfirm();
+  // ADR-313 — the form below keeps a draft; it lands in the sink for the guard.
+  const { sink: draftSink, draft: pageDraft } = useDraftSink();
+  const exit = useExitConfirm({ draft: pageDraft });
   const toast = useToast();
   // ONE stable object per loaded version of the plan. PlanForm resets its
   // values AND its RM "touched" flags whenever this prop's identity changes, so
@@ -72,7 +77,7 @@ function PlanEditPage(): React.JSX.Element {
       </div>
     );
   }
-  if (isError || !plan || !initialValues) {
+  if (!plan || !initialValues || hardError(detailQuery)) {
     return (
       <div className="panel">
         <div className="panel-body">
@@ -107,6 +112,7 @@ function PlanEditPage(): React.JSX.Element {
   return (
     <div>
       {exit.dialog}
+      <RefreshFailedNote show={isError} />
       <Link
         to="/plans/$id"
         params={{ id: plan.id }}
@@ -120,6 +126,11 @@ function PlanEditPage(): React.JSX.Element {
       </div>
 
       <PlanForm
+        draftSlot={{
+          key: `plan-edit:${id}`,
+          version: opened.expected() ?? null,
+          sink: draftSink,
+        }}
         initialValues={initialValues}
         isEdit
         // ADR-170 — route-card-driven plans carry no operations; the ops

@@ -6,6 +6,7 @@ import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useCallback, useRef, useState } from 'react';
 import { isStagedResult } from '@/modules/document-edits/api';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useDraftSink } from '@/lib/use-form-draft';
 import { useLiveChangeNotice } from '@/lib/use-live-change-notice';
 import { useOpenedVersion } from '@/lib/use-opened-version';
 import { useSaveKey } from '@/lib/use-save-key';
@@ -92,7 +93,9 @@ function SalesOrderNewPage(): React.JSX.Element {
   const poFileRef = useRef<File | null>(null);
   const emailFileRef = useRef<File | null>(null);
   const goBack = useCallback(() => void navigate({ to: '/sales-orders' }), [navigate]);
-  const exit = useExitConfirm({ onExit: goBack });
+  // ADR-313 — the form keeps the draft; this hands its clear() to the exit guard.
+  const { sink: draftSink, draft } = useDraftSink();
+  const exit = useExitConfirm({ onExit: goBack, draft });
 
   const onSubmit = async (values: CreateSalesOrderInput): Promise<void> => {
     setSubmitError(null);
@@ -143,6 +146,8 @@ function SalesOrderNewPage(): React.JSX.Element {
         mode="create"
         /* Legacy addSO L12425 modal title. */
         title="New SO / WO"
+        draftKey="so-new"
+        draftSink={draftSink}
         backLabel="Back to SO Master"
         onBack={goBack}
         onSubmit={onSubmit}
@@ -185,7 +190,9 @@ function SalesOrderEditPage(): React.JSX.Element {
     () => void navigate({ to: '/sales-orders/$id', params: { id } }),
     [navigate, id],
   );
-  const exit = useExitConfirm({ onExit: goBack });
+  // ADR-313 — the form keeps the draft; this hands its clear() to the exit guard.
+  const { sink: draftSink, draft } = useDraftSink();
+  const exit = useExitConfirm({ onExit: goBack, draft });
 
   // ADR-232 (owner D1): the Edit tick on SO Master alone opens the editor
   // (also enforced server-side) — no separate admin-only wall any more.
@@ -272,6 +279,9 @@ function SalesOrderEditPage(): React.JSX.Element {
         title={`Edit SO — ${soNoWithInternal(detail.code, detail.internalSoNo)} (${detail.lines.length} lines)`}
         backLabel="Back to SO"
         onBack={goBack}
+        draftKey={`so-edit:${id}`}
+        draftVersion={opened.expected()}
+        draftSink={draftSink}
         onSubmit={onSubmit}
         onPoFileChange={(f) => {
           poFileRef.current = f;

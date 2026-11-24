@@ -12,6 +12,8 @@ import { authenticatedRoute } from '@/routes/_authenticated';
 import { useToast } from '@/ui/feedback';
 import { useFetchNcRegister, useNcRegister, useUpdateNcRegister } from '../api';
 import { NcRegisterForm } from '../components/nc-register-form';
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
+import { usePageDraft } from '@/lib/use-form-draft';
 
 // ADR-226 — the fields THIS screen can edit, and what the user calls each one.
 //
@@ -53,7 +55,8 @@ export const ncRegisterEditRoute = createRoute({
 function NcRegisterEditPage(): React.JSX.Element {
   const { id } = ncRegisterEditRoute.useParams();
   const navigate = useNavigate();
-  const { data: detail, isLoading, isError, error } = useNcRegister(id);
+  const query = useNcRegister(id);
+  const { data: detail, isLoading, isError, error } = query;
   const update = useUpdateNcRegister(id);
   const fetchNc = useFetchNcRegister();
   // ADR-226 / §20.4 — sends only what changed, merges onto someone else's save
@@ -75,7 +78,12 @@ function NcRegisterEditPage(): React.JSX.Element {
     () => void navigate({ to: '/nc-register/$id', params: { id } }),
     [navigate, id],
   );
-  const exit = useExitConfirm({ onExit: goBack });
+  // ADR-313 — the half-typed form survives a tab switch (lib/use-form-draft.tsx).
+  const { draft, link: draftLink } = usePageDraft({
+    key: `nc-edit:${id}`,
+    version: detail?.updatedAt,
+  });
+  const exit = useExitConfirm({ onExit: goBack, draft });
   // Tier-driven, per department (QC). This screen had no gate at all — typing
   // the URL handed the form to anyone, including an L1 Viewer, an L2 Data Entry
   // hand (who may raise an NC but not rewrite a saved one) and an L4 Approver.
@@ -106,7 +114,7 @@ function NcRegisterEditPage(): React.JSX.Element {
       </div>
     );
   }
-  if (isError || !detail) {
+  if (!detail || hardError(query)) {
     return (
       <div className="panel">
         <div className="panel-body">
@@ -150,8 +158,11 @@ function NcRegisterEditPage(): React.JSX.Element {
 
   return (
     <div>
+      <RefreshFailedNote show={isError} />
       {exit.dialog}
+      {draft.band}
       <NcRegisterForm
+        draftLink={draftLink}
         mode="edit"
         title={`Edit NC — ${detail.code}`}
         subtitle="Only NC Date, Reason Category, Defect Description and Reported By can be changed."

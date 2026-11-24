@@ -32,10 +32,12 @@ import {
   roundQty,
 } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { type MutableRefObject, useEffect, useRef, useState } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
 import { VendorPicker } from '@/components/shared/vendor-picker';
 import { todayIst } from '@/lib/date';
+import { type FormDraft, useDraftSinkFill, useFormDraft } from '@/lib/use-form-draft';
+import { useOpenedVersion } from '@/lib/use-opened-version';
 import { usePurchaseOrder, usePurchaseOrdersList } from '@/modules/purchase-orders/api';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
@@ -166,6 +168,9 @@ type EditMode = {
 interface HeaderSaveProps {
   formId?: string;
   onStatusChange?: (s: { submitting: boolean; canSubmit: boolean; dirty: boolean }) => void;
+  /** ADR-313 (edit mode): the form puts its kept draft here, so the page's exit
+   *  guard lets a tab switch through and forgets the draft on Save / Cancel. */
+  draftSlot?: MutableRefObject<FormDraft | null>;
 }
 
 export type GoodsReceiptNoteFormProps = CreateMode | EditMode;
@@ -251,6 +256,19 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
         ),
     );
   }, [isEdit, selectedPoDetail, setValue, replace]);
+
+  // ADR-313 — a half-typed GRN edit survives a tab switch. Edit mode only (the
+  // create mode is not reached from any route). Dropped when the GRN was saved
+  // by anyone since it was opened: the version is the one first loaded.
+  const opened = useOpenedVersion(props.mode === 'edit' ? props.detail.updatedAt : undefined);
+  const draft = useFormDraft({
+    key: props.mode === 'edit' ? `grn-edit:${props.detail.id}` : null,
+    ready: true,
+    values: form.watch(),
+    apply: (v) => form.reset(v, { keepDefaultValues: true }),
+    version: opened.expected(),
+  });
+  useDraftSinkFill(props.draftSlot, draft);
 
   // ── the header's read-only facts ────────────────────────────────────────
   const detail = props.mode === 'edit' ? props.detail : undefined;
@@ -471,6 +489,7 @@ export function GoodsReceiptNoteForm(props: GoodsReceiptNoteFormProps): React.JS
 
   return (
     <form id={props.formId} onSubmit={handleSubmit(onValid)}>
+      {draft.band}
       {/* Save error summary at the top of the form. */}
       {(formError ?? props.submitError) ? (
         <Banner tone="error" role="alert">

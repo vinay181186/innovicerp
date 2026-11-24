@@ -42,6 +42,8 @@ const searchSchema = z.object({
   salesOrderId: z.string().uuid().optional(),
   // The Item Issues register's page (ADR-201: 25 rows a page, in the URL).
   page: pageSearchParam,
+  // ADR-312 — ?tab=tools&open=<toolIssueId> opens that Tool Issue's view once.
+  open: z.string().uuid().optional().catch(undefined),
 });
 
 export const storeIssuesListRoute = createRoute({
@@ -180,6 +182,10 @@ function StoreIssuesListPage(): React.JSX.Element {
         <ToolIssueRegisterView
           key={routeSearch.search ?? ''}
           initialSearch={routeSearch.search}
+          linkOpenId={routeSearch.open}
+          onLinkOpened={() =>
+            void navigate({ search: (prev) => ({ ...prev, open: undefined }), replace: true })
+          }
           tabs={tabBar}
         />
       ) : (

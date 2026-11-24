@@ -21,6 +21,7 @@ import { PendingFact } from '@/modules/document-edits/components/pending-fact';
 import { Cluster, ClusterGrid } from '@/ui/forms';
 import { DetailHeader, PageState } from '@/ui/layout';
 import { useCostCenter, useSoftDeleteCostCenter } from '../api';
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
 
 export const costCenterDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -49,7 +50,8 @@ function BackToMaster(): React.JSX.Element {
 function CostCenterDetailPage(): React.JSX.Element {
   const { id } = costCenterDetailRoute.useParams();
   const navigate = useNavigate();
-  const { data, isLoading, isError, error } = useCostCenter(id);
+  const query = useCostCenter(id);
+  const { data, isLoading, isError, error } = query;
   const { data: eff } = useMyAccess();
   const softDelete = useSoftDeleteCostCenter();
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -77,7 +79,7 @@ function CostCenterDetailPage(): React.JSX.Element {
     return <PageState state="loading" message="Loading cost centre…" />;
   }
 
-  if (isError || !data) {
+  if (!data || hardError(query)) {
     return (
       <div>
         <BackToMaster />
@@ -108,6 +110,7 @@ function CostCenterDetailPage(): React.JSX.Element {
 
   return (
     <div>
+      <RefreshFailedNote show={isError} />
       <DetailHeader
         backTo="/cost-centers"
         backLabel={BACK_LABEL}

@@ -133,10 +133,16 @@ export const colsOf = (a: string): SQL => sql.raw(LIST_COLUMNS.map((c) => `${a}.
 
 export const COLS = colsOf('x');
 
+/** ADR-312: the optional x4 column (an extra id for CheckDef.actionHref) of
+ *  row alias `a`, read through the row's json so an inner query that does
+ *  not carry x4 reads NULL — shared rows-*.ts fragments need no change. */
+export const x4Of = (a: string): SQL => sql.raw(`to_jsonb(${a})->>'x4' AS x4`);
+
 /** `inner` narrowed by `where` (a condition over the inner columns, alias x),
- *  keeping the list-query column set — for "the same rule, plus …" checks. */
+ *  keeping every inner column (the list-query set, plus x4 when present) —
+ *  for "the same rule, plus …" checks. */
 export function narrow(inner: SQL, where: SQL): SQL {
-  return sql`SELECT ${COLS} FROM (${inner}) x WHERE ${where}`;
+  return sql`SELECT x.* FROM (${inner}) x WHERE ${where}`;
 }
 
 export interface CheckResult {
@@ -165,7 +171,7 @@ export function checkSummarySql(inner: SQL, today: string, limit = DASH_CHECK_RO
       'late', (SELECT COALESCE(SUM(x.is_late), 0) FROM x)::int,
       'dueToday', (SELECT COUNT(*) FROM x WHERE x.is_late = 0 AND x.due_date = ${today})::int,
       'rows', (SELECT COALESCE(json_agg(r ORDER BY ${ROW_ORDER('r')}), '[]'::json)
-               FROM (SELECT ${COLS} FROM x ORDER BY ${ROW_ORDER('x')} LIMIT ${limit}) r)))`;
+               FROM (SELECT ${COLS}, ${x4Of('x')} FROM x ORDER BY ${ROW_ORDER('x')} LIMIT ${limit}) r)))`;
 }
 
 /** One row of the summary's `rows` (or any list-query row) → RawRow. */
@@ -188,6 +194,7 @@ function toRawRow(r: Record<string, unknown>): RawRow {
     x1: str(r['x1']),
     x2: str(r['x2']),
     x3: str(r['x3']),
+    x4: str(r['x4']),
   };
 }
 

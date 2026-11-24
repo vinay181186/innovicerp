@@ -4,7 +4,7 @@
 // 2026-09-21) but the breadcrumbs, the open-page tabs and the header menus
 // all still read the SAME list, so a page named here is named everywhere.
 
-import { canOpenPage } from '@innovic/shared';
+import { canOpenPage, canSeeDeptMenu } from '@innovic/shared';
 import { hasDeptAccess, type AccessDeptKey, type EffectiveAccess } from '@/lib/access-control';
 
 export interface NavItem {
@@ -443,9 +443,9 @@ export function shouldShowSection(
   isAdmin: boolean,
   eff: Parameters<typeof hasDeptAccess>[0],
 ): boolean {
-  if (isAdmin) return true;
-  // Section keys align 1:1 with ACCESS_DEPTS keys.
-  return hasDeptAccess(eff, sectionKey as AccessDeptKey);
+  // Section keys align 1:1 with ACCESS_DEPTS keys. The same rule decides the
+  // home's left menu (canSeeDeptMenu, packages/shared page-access).
+  return canSeeDeptMenu(eff, isAdmin, sectionKey as AccessDeptKey);
 }
 
 /** ADR-234: the groups of one module's menu this user sees — each link only if

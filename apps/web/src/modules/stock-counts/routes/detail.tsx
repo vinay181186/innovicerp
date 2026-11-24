@@ -11,6 +11,7 @@ import {
   STOCK_COUNT_PURPOSE_LABELS,
   STOCK_COUNT_PURPOSES,
   STOCK_COUNT_STATUS_LABELS,
+  type StockCount,
   type StockCountPurpose,
 } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
@@ -22,6 +23,8 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate, todayLocal } from '@/lib/date';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { useSession } from '@/lib/session';
+import { useFormDraft } from '@/lib/use-form-draft';
+import { useOpenedVersion } from '@/lib/use-opened-version';
 import { CancelDocDialog } from '@/modules/cancel-requests/components/cancel-doc-dialog';
 import { CancelPendingBanner } from '@/modules/cancel-requests/components/cancel-pending-banner';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -51,6 +54,18 @@ export const stockCountDetailRoute = createRoute({
 
 const errText = (e: unknown, fallback: string): string =>
   e instanceof Error ? e.message : fallback;
+
+/** ADR-313 — the count as saved, for the kept draft's version check. The
+ *  Stock Count record carries no `updatedAt`, so the saved fields themselves
+ *  are the version: any save by anyone changes them, and the draft is dropped. */
+const savedVersion = (c: StockCount): string =>
+  JSON.stringify([
+    c.status,
+    c.countDate,
+    c.purpose,
+    c.remarks,
+    (c.lines ?? []).map((l) => [l.itemId, l.itemRevisionId ?? null, l.countedQty, l.reason]),
+  ]);
 
 function StockCountPage(): React.JSX.Element {
   const { id } = stockCountDetailRoute.useParams();
@@ -100,9 +115,26 @@ function StockCountPage(): React.JSX.Element {
   // Keyed-in lines must not be lost to a stray sidebar / Back click
   // (stock-count-create#2); Ctrl+S = Save Draft.
   const canEdit = editable && perms.entry;
+  // ADR-313 — a half-keyed count survives a tab switch. Only while the count
+  // can still be edited; a saved count's draft is dropped if anyone saved it
+  // since it was opened (version = the count as first loaded).
+  const opened = useOpenedVersion(sc ? savedVersion(sc) : undefined);
+  const draft = useFormDraft({
+    key: canEdit ? `stock-count:${id}` : null,
+    ready: isNew || (!!sc && loadedFor.current === sc.id),
+    values: { countDate, purpose, remarks, lines },
+    apply: (v) => {
+      setCountDate(v.countDate);
+      setPurpose(v.purpose);
+      setRemarks(v.remarks);
+      setLines(v.lines);
+    },
+    version: isNew ? undefined : opened.expected(),
+  });
   const exit = useExitConfirm({
     onExit: () => void navigate({ to: '/stock-counts' }),
     enabled: canEdit,
+    draft,
   });
   useSaveShortcut(() => void save(), canEdit && !busy);
 
@@ -168,7 +200,11 @@ function StockCountPage(): React.JSX.Element {
         );
         return c.id;
       }
-      await replace.mutateAsync({ id, remarks: remarks.trim(), lines: ls });
+      const saved = await replace.mutateAsync({ id, remarks: remarks.trim(), lines: ls });
+      // Saved and staying on the page: the kept draft is spent, and the count
+      // now stands at the version just saved.
+      opened.saved(savedVersion(saved));
+      draft.clear();
       if (!quiet) toast.ok(`Stock Count ${sc?.code ?? ''} saved`);
       return id;
     } catch (e) {
@@ -274,6 +310,7 @@ function StockCountPage(): React.JSX.Element {
             {...(canCancel ? { onOpen: () => setCancelOpen(true) } : {})}
           />
         ) : null}
+        {draft.band}
 
         {editable ? (
           <div className="form-grid">

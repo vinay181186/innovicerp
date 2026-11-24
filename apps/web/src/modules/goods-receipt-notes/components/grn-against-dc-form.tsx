@@ -43,6 +43,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { matchesSearchTerm } from '@/components/shared/search-match';
 import { fmtDate, todayIst } from '@/lib/date';
 import { docItemsSummary, itemLineLabel, partyDocName } from '@/lib/item-code';
+import { useDraftSinkFill, useFormDraft } from '@/lib/use-form-draft';
 import { useSaveKey } from '@/lib/use-save-key';
 import {
   useDeliveryChallan,
@@ -95,6 +96,7 @@ export function GrnAgainstDcForm({
   onLeave,
   typeField,
   onStatusChange,
+  draftSlot,
 }: GrnAgainstDcFormProps): React.JSX.Element {
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -131,7 +133,12 @@ export function GrnAgainstDcForm({
   // challan; one raised before it has none and appears only while no JW PO is
   // picked. A row with neither a PO nor an NC behind it is still dropped:
   // nothing on this screen could show what it belongs to.
-  const dcList = useDeliveryChallansList({ withLineItems: true, status: 'issued', limit: 200, offset: 0 });
+  const dcList = useDeliveryChallansList({
+    withLineItems: true,
+    status: 'issued',
+    limit: 200,
+    offset: 0,
+  });
   const eligibleDcs = useMemo(
     () => (dcList.data?.items ?? []).filter((d) => d.purchaseOrderId !== null || d.ncId !== null),
     [dcList.data],
@@ -266,6 +273,27 @@ export function GrnAgainstDcForm({
         .filter((l): l is LineDraft => l !== null),
     );
   }, [dc]);
+
+  // ADR-313 — a half-typed receipt survives a tab switch. The picked JW PO and
+  // challan travel with their own lines, so a draft never crosses challans.
+  // Restoring marks the challan as already seeded so the reseed above does not
+  // wipe the restored lines.
+  const draft = useFormDraft({
+    key: 'grn-new:job_work_return',
+    ready: true,
+    values: { jwpoId, dcId, receiptDate, vendorInvoiceText, remarks, lines, linesTouched },
+    apply: (v) => {
+      seededFor.current = v.dcId;
+      setJwpoId(v.jwpoId);
+      setDcId(v.dcId);
+      setReceiptDate(v.receiptDate);
+      setVendorInvoiceText(v.vendorInvoiceText);
+      setRemarks(v.remarks);
+      setLines(v.lines);
+      setLinesTouched(v.linesTouched);
+    },
+  });
+  useDraftSinkFill(draftSlot, draft);
 
   // DEPENDENT-FIELD RULE (JWPO → DC): any change to the JWPO drops the picked
   // challan, which in turn drops vendor + lines + errors via the effect above.
@@ -473,6 +501,7 @@ export function GrnAgainstDcForm({
 
   return (
     <form id={GRN_CREATE_FORM_ID} onSubmit={(e) => void handleSubmit(e)}>
+      {draft.band}
       {/* Validation summary at the top of the form; it scrolls itself into view. */}
       {errorText ? (
         <Banner tone="error" role="alert">

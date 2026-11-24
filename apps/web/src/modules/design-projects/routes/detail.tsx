@@ -12,10 +12,10 @@
 
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
-import { useState } from 'react';
 import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { soNoWithInternal } from '@/lib/so-number';
+import { oneOf, usePersistentState } from '@/lib/use-persistent-state';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Cluster, ClusterFact, ClusterGrid } from '@/ui/forms';
 import { DetailHeader } from '@/ui/layout';
@@ -39,7 +39,12 @@ export const designProjectDetailRoute = createRoute({
 function DesignProjectDetailPage(): React.JSX.Element {
   const { id } = designProjectDetailRoute.useParams();
   const { data, isLoading, isError, error } = useDesignProjectDetail(id);
-  const [tab, setTab] = useState<TabKey>('tasks');
+  // ADR-313 — the sub-tab stays when you switch tabs and come back.
+  const [tab, setTab] = usePersistentState<TabKey>(
+    `design-project-detail:${id}:tab`,
+    'tasks',
+    oneOf(['tasks', 'issues', 'checklist', 'dcr']),
+  );
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'dsnproj_create');
 
@@ -140,7 +145,7 @@ function DesignProjectDetailPage(): React.JSX.Element {
       {tab === 'checklist' ? <ChecklistTab detail={data} checkDone={checkDone} /> : null}
       {tab === 'dcr' ? <DcrDcnTab detail={data} /> : null}
 
-      <RelatedDocsTabs module="design-projects" id={id} />
+      <RelatedDocsTabs module="design-projects" id={id} rememberKey={`design-project:${id}`} />
     </div>
   );
 }

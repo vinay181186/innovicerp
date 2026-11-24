@@ -3,6 +3,8 @@ import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useDraftSink } from '@/lib/use-form-draft';
+import { hardError, RefreshFailedNote } from '@/lib/refresh-failed-note';
 import { useOpenedVersion } from '@/lib/use-opened-version';
 import { useSaveKey } from '@/lib/use-save-key';
 import { isStagedResult } from '@/modules/document-edits/api';
@@ -25,7 +27,8 @@ export const bomMasterEditRoute = createRoute({
 function BomMasterEditPage(): React.JSX.Element {
   const { id } = bomMasterEditRoute.useParams();
   const navigate = useNavigate();
-  const { data: detail, isLoading, isError, error } = useBomMaster(id);
+  const detailQuery = useBomMaster(id);
+  const { data: detail, isLoading, isError, error } = detailQuery;
   const saveKey = useSaveKey();
   const update = useUpdateBomMaster(id, saveKey);
   // R5 — the version this form opened with; a save over someone else's newer
@@ -39,7 +42,12 @@ function BomMasterEditPage(): React.JSX.Element {
     () => void navigate({ to: '/bom-masters/$id', params: { id } }),
     [navigate, id],
   );
-  const exit = useExitConfirm({ onExit: goBack });
+  // ADR-313 — the form below keeps a draft; it lands in the sink for the guard.
+  const { sink: draftSink, draft: pageDraft } = useDraftSink();
+  const exit = useExitConfirm({
+    onExit: goBack,
+    draft: pageDraft,
+  });
 
   const initialLines = useMemo<BomFormLineDraft[]>(
     () =>
@@ -109,7 +117,7 @@ function BomMasterEditPage(): React.JSX.Element {
       </div>
     );
   }
-  if (isError || !detail) {
+  if (!detail || hardError(detailQuery)) {
     return (
       <div className="panel">
         <div className="panel-body">
@@ -129,7 +137,13 @@ function BomMasterEditPage(): React.JSX.Element {
   return (
     <>
       {exit.dialog}
+      <RefreshFailedNote show={isError} />
       <BomForm
+        draftSlot={{
+          key: `bom-edit:${id}`,
+          version: opened.expected() ?? null,
+          sink: draftSink,
+        }}
         mode="edit"
         bom={detail}
         initialHeader={{

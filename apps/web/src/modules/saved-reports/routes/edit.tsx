@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { apiDownload } from '@/lib/api';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { useEditConflict } from '@/lib/use-edit-conflict';
+import { useDraftSink } from '@/lib/use-form-draft';
+import { useOpenedVersion } from '@/lib/use-opened-version';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import {
   useFetchSavedReport,
@@ -70,7 +72,11 @@ function SavedReportEditPage() {
   });
   const [saveError, setSaveError] = useState<string | undefined>(undefined);
   const [excelLoading, setExcelLoading] = useState(false);
-  const exit = useExitConfirm();
+  // ADR-313 — the draft lives in <Builder>; the exit guard forgets it through this
+  // stand-in. Dropped if the report was saved by anyone since it was loaded.
+  const opened = useOpenedVersion(reportQ.data?.updatedAt);
+  const { sink: draftSink, draft } = useDraftSink();
+  const exit = useExitConfirm({ draft });
 
   const onExcel = async (spec: AdHocSpec) => {
     setExcelLoading(true);
@@ -158,6 +164,9 @@ function SavedReportEditPage() {
             isShared: reportQ.data.isShared,
             spec: reportQ.data.spec,
           }}
+          draftKey={`saved-report-edit:${id}`}
+          draftVersion={opened.expected()}
+          draftSink={draftSink}
           onSave={onSave}
           onPreview={(spec) => previewMutation.mutate(spec)}
           preview={previewMutation.data}

@@ -40,6 +40,7 @@ import { useQueries, useQueryClient } from '@tanstack/react-query';
 import { Copy, Upload } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { apiDownload, apiFetch } from '@/lib/api';
+import { type FormDraft, useDraftSinkFill, useFormDraft } from '@/lib/use-form-draft';
 import { getCol, normalizeHeaderKey, readSheetRows } from '@/lib/xlsx-import';
 import { itemsKeys, useItemsList } from '@/modules/items/api';
 import { useMaterialGradesList, useMaterialSizesList } from '@/modules/raw-material/api';
@@ -152,6 +153,15 @@ interface BomFormProps {
   submitting: boolean;
   submitError: string | null;
   onCancel: () => void;
+  /** ADR-313 — keep a draft of what is typed (lib/use-form-draft.tsx). The page
+   *  names the draft and gets it back through `sink` for its exit guard. */
+  draftSlot?:
+    | {
+        key: string | null;
+        version?: string | null | undefined;
+        sink: { current: FormDraft | null };
+      }
+    | undefined;
 }
 
 // Plain labels — the two factory emoji were identical, so "🏭 Manufacture" and
@@ -980,8 +990,23 @@ export function BomForm(props: BomFormProps): React.JSX.Element {
   // colSpan left is the empty-state cell.
   const childCols = 9;
 
+  // ADR-313 — what is typed survives a tab switch; Save / Cancel / Exit clear it.
+  const formDraft = useFormDraft({
+    key: props.draftSlot?.key ?? null,
+    ready: true,
+    values: { header, lines, revisionNote },
+    apply: (v) => {
+      setHeader(v.header);
+      setLines(v.lines);
+      setRevisionNote(v.revisionNote);
+    },
+    version: props.draftSlot?.version,
+  });
+  useDraftSinkFill(props.draftSlot?.sink, formDraft);
+
   return (
     <form onSubmit={submit}>
+      {formDraft.band}
       <PageHeader
         title={mode === 'create' ? 'New BOM' : `Edit BOM — ${bom?.bomNo ?? ''}`}
         /* ADR-223 — nothing under "New BOM": the BOM does not exist yet and its

@@ -83,6 +83,8 @@ export const FINANCE_CHECKS: readonly CheckDef[] = [
     href: '/invoices',
     query: invoiceOverdueCheckSql,
     docHref: (r) => docNavPage('invoice', r.id),
+    // ADR-312: Add Payment — invoices/service.ts addPayment's right.
+    actionHref: nextStep('invoice_create', 'entry', (r) => `/invoices/${r.id}?open=payment`),
     dated: true,
     priceForm: 'invoice_create',
   },

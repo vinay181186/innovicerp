@@ -22,7 +22,7 @@ export const DRAWING_REGISTER_SF_COLUMNS: SfColumnMap = {
     sql: sql`COALESCE(NULLIF(btrim(ru.full_name), ''), split_part(ru.email, '@', 1))`,
     type: 'text',
   },
-  // ADR-312 — SO No. (alias so: the order codes, newest first).
+  // ADR-315 — SO No. (alias so: the order codes, newest first).
   orders: { sql: sql`so.codes`, type: 'text' },
   openLines: { sql: sql`ol.n`, type: 'num' },
   openJobCards: { sql: sql`oj.n`, type: 'num' },

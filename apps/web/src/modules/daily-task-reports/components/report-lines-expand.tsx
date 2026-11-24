@@ -3,6 +3,7 @@
 // list row carries only the summary (task count, hours), so the lines are
 // fetched on open — a collapsed row never fires the request.
 
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
 import type { DailyReportLineStatus, DailyTaskReportLine } from '@innovic/shared';
 import { DAILY_REPORT_LINE_STATUS_LABELS } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
@@ -73,7 +74,7 @@ const lineColumns: DataTableColumn<DailyTaskReportLine>[] = [
 ];
 
 export function ReportLinesExpand({ id }: { id: string }): React.JSX.Element {
-  const { data, isLoading, isError, error } = useDailyReportDetail(id);
+  const { data, isLoading, isError, error, isPlaceholderData } = useDailyReportDetail(id);
 
   if (isLoading) {
     return (
@@ -82,7 +83,7 @@ export function ReportLinesExpand({ id }: { id: string }): React.JSX.Element {
       </div>
     );
   }
-  if (isError || !data) {
+  if (!data || hardError({ isError, error, isPlaceholderData })) {
     return (
       <div
         className="empty-state"
@@ -95,6 +96,7 @@ export function ReportLinesExpand({ id }: { id: string }): React.JSX.Element {
 
   return (
     <div style={{ padding: 'var(--sp-2)' }}>
+      <RefreshFailedNote show={isError} />
       <DataTable<DailyTaskReportLine>
         columns={lineColumns}
         rows={data.lines}

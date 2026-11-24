@@ -10,6 +10,8 @@ import { useToast } from '@/ui/feedback';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCostCenter, useFetchCostCenter, useUpdateCostCenter } from '../api';
 import { CostCenterForm } from '../components/cost-center-form';
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
+import { usePageDraft } from '@/lib/use-form-draft';
 
 // ADR-226 — the fields THIS screen can edit, and what the user calls each one.
 //
@@ -40,7 +42,8 @@ export const costCenterEditRoute = createRoute({
 function CostCenterEditPage(): React.JSX.Element {
   const { id } = costCenterEditRoute.useParams();
   const navigate = useNavigate();
-  const { data: detail, isLoading, isError, error } = useCostCenter(id);
+  const query = useCostCenter(id);
+  const { data: detail, isLoading, isError, error } = query;
   const update = useUpdateCostCenter(id);
   const fetchCostCenter = useFetchCostCenter();
   // ADR-226 / §20.4 — sends only what changed, merges onto someone else's save
@@ -62,7 +65,12 @@ function CostCenterEditPage(): React.JSX.Element {
     () => void navigate({ to: '/cost-centers/$id', params: { id } }),
     [navigate, id],
   );
-  const exit = useExitConfirm({ onExit: goBack });
+  // ADR-313 — the half-typed form survives a tab switch (lib/use-form-draft.tsx).
+  const { draft, link: draftLink } = usePageDraft({
+    key: `cost-center-edit:${id}`,
+    version: detail?.updatedAt,
+  });
+  const exit = useExitConfirm({ onExit: goBack, draft });
   // Changing a saved record is `edit` on cc_create (Finance), so L2 Data Entry
   // (create-only) is correctly refused. Checked here too because the route is
   // reachable by URL, not just from the Edit button.
@@ -84,7 +92,7 @@ function CostCenterEditPage(): React.JSX.Element {
       </div>
     );
   }
-  if (isError || !detail) {
+  if (!detail || hardError(query)) {
     return (
       <div className="panel">
         <div className="panel-body">
@@ -103,7 +111,9 @@ function CostCenterEditPage(): React.JSX.Element {
 
   return (
     <div>
+      <RefreshFailedNote show={isError} />
       {exit.dialog}
+      {draft.band}
       <Link
         to="/cost-centers/$id"
         params={{ id: detail.id }}
@@ -113,6 +123,7 @@ function CostCenterEditPage(): React.JSX.Element {
         <ArrowLeft size={14} /> Back to {detail.code}
       </Link>
       <CostCenterForm
+        draftLink={draftLink}
         panelHeader={
           <div>
             <div

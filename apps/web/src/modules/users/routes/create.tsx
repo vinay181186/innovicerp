@@ -15,6 +15,7 @@ import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useFormDraft } from '@/lib/use-form-draft';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Banner, useToast } from '@/ui/feedback';
@@ -46,7 +47,7 @@ function UserCreatePage(): React.JSX.Element {
   const create = useCreateUser();
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const { register, handleSubmit, formState } = useForm<FormValues>({
+  const { register, handleSubmit, formState, watch, reset, getValues } = useForm<FormValues>({
     defaultValues: {
       email: '',
       password: '',
@@ -56,7 +57,21 @@ function UserCreatePage(): React.JSX.Element {
     },
   });
   const goBack = useCallback(() => void navigate({ to: '/users' }), [navigate]);
-  const exit = useExitConfirm({ onExit: goBack });
+  // ADR-313 — the half-typed form survives a tab switch. The password is NEVER
+  // put in the draft: it is left out here and kept as typed when a draft returns.
+  const watched = watch();
+  const draft = useFormDraft({
+    key: 'user-new',
+    ready: true,
+    values: {
+      email: watched.email,
+      fullName: watched.fullName,
+      phone: watched.phone,
+      isActive: watched.isActive,
+    },
+    apply: (v) => reset({ ...v, password: getValues('password') }, { keepDefaultValues: true }),
+  });
+  const exit = useExitConfirm({ onExit: goBack, draft });
 
   if (!isAdmin) {
     return (
@@ -97,6 +112,7 @@ function UserCreatePage(): React.JSX.Element {
   return (
     <div>
       {exit.dialog}
+      {draft.band}
       <button
         type="button"
         className="btn btn-ghost btn-sm"

@@ -7,6 +7,8 @@ import { ECR_STATUS_LABELS } from '@innovic/shared';
 import { useCallback, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useDraftSink } from '@/lib/use-form-draft';
+import { hardError, RefreshFailedNote } from '@/lib/refresh-failed-note';
 import { useOpenedVersion } from '@/lib/use-opened-version';
 import { useSaveKey } from '@/lib/use-save-key';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -25,7 +27,8 @@ export const ecrEditRoute = createRoute({
 function EcrEditPage(): React.JSX.Element {
   const { id } = ecrEditRoute.useParams();
   const navigate = useNavigate();
-  const { data: ecr, isLoading, isError, error } = useEcr(id);
+  const detailQuery = useEcr(id);
+  const { data: ecr, isLoading, isError, error } = detailQuery;
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'ecr_create');
   const saveKey = useSaveKey();
@@ -36,7 +39,12 @@ function EcrEditPage(): React.JSX.Element {
     () => void navigate({ to: '/ecrs/$id', params: { id } }),
     [navigate, id],
   );
-  const exit = useExitConfirm({ onExit: goBack });
+  // ADR-313 — the form below keeps a draft; it lands in the sink for the guard.
+  const { sink: draftSink, draft: pageDraft } = useDraftSink();
+  const exit = useExitConfirm({
+    onExit: goBack,
+    draft: pageDraft,
+  });
   const toast = useToast();
 
   if (eff && !perms.entry && !perms.edit) {
@@ -49,7 +57,7 @@ function EcrEditPage(): React.JSX.Element {
     );
   }
   if (isLoading) return <PageState state="loading" message="⟳ Loading ECR…" />;
-  if (isError || !ecr || ecr.status !== 'draft') {
+  if (!ecr || ecr.status !== 'draft' || hardError(detailQuery)) {
     return (
       <div>
         <Link to="/ecrs" className="btn btn-ghost btn-sm" style={{ marginBottom: 'var(--sp-2)' }}>
@@ -58,7 +66,7 @@ function EcrEditPage(): React.JSX.Element {
         <PageState
           state="error"
           message={
-            ecr
+            ecr && !hardError(detailQuery)
               ? `${ecr.code} is ${ECR_STATUS_LABELS[ecr.status]} — only a Draft ECR can be edited.`
               : error instanceof Error
                 ? error.message
@@ -72,7 +80,13 @@ function EcrEditPage(): React.JSX.Element {
   return (
     <>
       {exit.dialog}
+      <RefreshFailedNote show={isError} />
       <EcrForm
+        draftSlot={{
+          key: `ecr-edit:${id}`,
+          version: opened.expected() ?? null,
+          sink: draftSink,
+        }}
         title={`Edit ${ecr.code}`}
         initial={{
           itemId: ecr.itemId,

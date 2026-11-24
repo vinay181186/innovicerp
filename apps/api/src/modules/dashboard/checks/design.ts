@@ -26,6 +26,7 @@ import {
 } from '../../../lib/design-status';
 import type { RawRow } from '../personal/list-query';
 import { bomPendingSql } from '../personal/rows-planning';
+import { nextStep } from './next-step';
 import type { CheckCtx, CheckDef } from './types';
 
 export function designProjectsSql(c: CheckCtx): SQL {
@@ -111,6 +112,8 @@ export const DESIGN_CHECKS: readonly CheckDef[] = [
     href: '/bom-masters',
     query: (c) => bomPendingSql(c.cid, c.today, {}),
     docHref: (r) => docNavPage('sales-order', r.id),
+    // ADR-312: New BOM for that SO.
+    actionHref: nextStep('bom_create', 'entry', (r) => `/bom-masters/new?soId=${r.id}`),
     dated: true,
   },
   {

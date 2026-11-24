@@ -54,6 +54,7 @@ import {
 } from '@innovic/shared';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useCallback, useEffect, useRef } from 'react';
+import { type FormDraftLink, useFormDraftLink } from '@/lib/use-form-draft';
 import { useForm } from 'react-hook-form';
 import { Button } from '@/ui/core';
 import { Banner } from '@/ui/feedback';
@@ -89,12 +90,16 @@ type CommonProps = {
 };
 
 type CreateMode = CommonProps & {
+  /** ADR-313 — the page's draft of this form. */
+  draftLink?: FormDraftLink | undefined;
   mode: 'create';
   defaultValues?: Partial<CreateItemInput>;
   onSubmit: (values: CreateItemInput) => Promise<void> | void;
 };
 
 type EditMode = CommonProps & {
+  /** ADR-313 — the page's draft of this form. */
+  draftLink?: FormDraftLink | undefined;
   mode: 'edit';
   item: Item;
   onSubmit: (values: UpdateItemInput) => Promise<void> | void;
@@ -228,6 +233,12 @@ function CreateItemForm(props: CreateMode): React.JSX.Element {
     serverFieldErrors: props.serverFieldErrors,
   });
   const errors = formState.errors;
+  // ADR-313 — tell the page about every change (its draft), and let it put one back.
+  const { draftLink } = props;
+  const resetForm = form.reset;
+  useFormDraftLink(draftLink, form.watch(), (v) =>
+    resetForm(v as Parameters<typeof resetForm>[0], { keepDefaultValues: true }),
+  );
 
   // Prefill the next ITM-#### in the series (editable). The user may keep it,
   // type their own (e.g. a customer part number — still validated by the code
@@ -471,6 +482,12 @@ function EditItemForm(props: EditMode): React.JSX.Element {
     serverFieldErrors: props.serverFieldErrors,
   });
   const errors = formState.errors;
+  // ADR-313 — tell the page about every change (its draft), and let it put one back.
+  const { draftLink } = props;
+  const resetForm = form.reset;
+  useFormDraftLink(draftLink, form.watch(), (v) =>
+    resetForm(v as Parameters<typeof resetForm>[0], { keepDefaultValues: true }),
+  );
 
   return (
     <form

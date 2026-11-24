@@ -4,13 +4,16 @@
 // task-notes.ts) uses the same href so a click lands in the same place.
 
 import {
+  type DesktopPopups,
   PUSH_MAX_AGE_HOURS,
+  type PushConfigResponse,
   TASK_PRIORITY_LABELS,
   type TaskNoticeKind,
   type TaskPriority,
   type TaskPushPayload,
   taskPushPayloadSchema,
 } from '@innovic/shared';
+import { AuthorizationError } from '../../lib/errors';
 
 /** Where a click on a task notice lands. Assigned / cancelled → the
  *  assignee's Inbox. Completed → the Outbox only for the task's creator (the
@@ -122,4 +125,22 @@ export function pushDecision(
   if (opts.now.getTime() - eventAt.getTime() > PUSH_MAX_AGE_HOURS * 3_600_000) return 'failed';
   if (!opts.hasSubscription) return 'off';
   return 'send';
+}
+
+/** ADR-314 — the caller's Desktop Pop-ups switch. 'disabled' = this person
+ *  gets no pop-up on any laptop: the config says off (the web hides the band
+ *  and the bell switch), subscribe / test are refused. Bell notes are kept. */
+export const DESKTOP_POPUPS_DISABLED_MESSAGE = 'Desktop pop-ups are disabled for your login.';
+
+export function pushConfigFor(
+  desktopPopups: DesktopPopups | null,
+  keys: Pick<VapidConfig, 'publicKey'> | null,
+): PushConfigResponse {
+  if (desktopPopups === 'disabled' || !keys) return { enabled: false, publicKey: null };
+  return { enabled: true, publicKey: keys.publicKey };
+}
+
+/** ADR-314 — subscribe / test refusal: 403 for a disabled login. */
+export function assertDesktopPopupsAllowed(desktopPopups: DesktopPopups | null): void {
+  if (desktopPopups === 'disabled') throw new AuthorizationError(DESKTOP_POPUPS_DISABLED_MESSAGE);
 }

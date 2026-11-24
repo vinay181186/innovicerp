@@ -11,6 +11,7 @@ import { useSession } from '@/lib/session';
 import { PendingBanner } from '@/modules/day-logs/components/pending-banner';
 import { DesktopPopupsBanner } from '@/modules/dashboard/components/desktop-popups-banner';
 import { supabase } from '@/lib/supabase';
+import { useScrollKeeper } from '@/lib/use-scroll-keeper';
 import { useUiSettings } from '@/lib/use-ui-settings';
 import { SortFilterScope } from '@/ui/data/sort-filter/scope';
 import { ToastProvider } from '@/ui/feedback';
@@ -66,6 +67,7 @@ export const authenticatedRoute = createRoute({
 function AuthenticatedLayout(): React.JSX.Element {
   useEffect(() => installCellOverflowTitles(), []); // ADR-199: tooltip on ellipsised table cells
   useUiSettings(); // ADR-199: the user's Comfortable/Compact choice reaches EVERY table
+  useScrollKeeper(); // ADR-313: a tab switch puts #content back where it was left
   // ADR-226 — ToastProvider belongs here, once, around the whole shell.
   // ui/feedback/Toast.tsx has been written and token-styled since Phase 3, with
   // a 3000 ms auto-dismiss and a close X, but NOTHING mounted its provider

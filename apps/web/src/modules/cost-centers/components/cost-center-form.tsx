@@ -9,7 +9,8 @@ import {
   type UpdateCostCenterInput,
 } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { type ReactNode } from 'react';
+import { type FormDraftLink, useFormDraftLink } from '@/lib/use-form-draft';
 import { useForm } from 'react-hook-form';
 import { FormActions } from '@/ui/layout';
 
@@ -53,15 +54,20 @@ type EditMode = {
   onCancel?: () => void;
 };
 
-export type CostCenterFormProps = CreateMode | EditMode;
+export type CostCenterFormProps = (CreateMode | EditMode) & { draftLink?: FormDraftLink };
 
 export function CostCenterForm(props: CostCenterFormProps): React.JSX.Element {
   const isEdit = props.mode === 'edit';
   const defaults: FormValues = isEdit
     ? detailToFormValues(props.detail)
     : { ...DEFAULTS, code: props.suggestedCode ?? DEFAULTS.code };
-  const { register, handleSubmit, formState } = useForm<FormValues>({ defaultValues: defaults });
+  const { register, handleSubmit, formState, reset, watch } = useForm<FormValues>({
+    defaultValues: defaults,
+  });
   const errors = formState.errors;
+  // ADR-313 — tell the page about every change (its draft), and let it put one back.
+  const { draftLink } = props;
+  useFormDraftLink(draftLink, watch(), (v) => reset(v as FormValues, { keepDefaultValues: true }));
 
   const onValid = async (values: FormValues): Promise<void> => {
     if (isEdit) {

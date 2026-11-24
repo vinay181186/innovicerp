@@ -42,6 +42,7 @@ import { DataTable, Panel, type DataTableColumn } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
 import { TABLE_KEYS } from '@/ui/data/table-keys';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
+import { usePersistentState } from '@/lib/use-persistent-state';
 import { Select } from '@/ui/forms';
 import { ListFooter, ListHeader, PageState } from '@/ui/layout';
 import { useBomMaster, useBomMastersList } from '../api';
@@ -65,7 +66,19 @@ const STATUS_PILLS: BomStatus[] = ['draft', 'active', 'obsolete'];
 function BomMastersListPage(): React.JSX.Element {
   const navigate = useNavigate();
   const { search, status, page } = bomMastersListRoute.useSearch();
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // ADR-313 — the opened rows stay when you switch tabs and come back (kept as
+  // an array: storage holds JSON only).
+  const [expandedIds, setExpandedIds] = usePersistentState<string[]>(
+    'bom-list:expanded',
+    [],
+    (v) => Array.isArray(v) && v.every((x) => typeof x === 'string'),
+  );
+  const expanded = useMemo(() => new Set(expandedIds), [expandedIds]);
+  const setExpanded = useCallback(
+    (next: Set<string> | ((prev: Set<string>) => Set<string>)) =>
+      setExpandedIds((prev) => [...(typeof next === 'function' ? next(new Set(prev)) : next)]),
+    [setExpandedIds],
+  );
 
   // Search lives in the URL (`search` param) so it survives refresh and Back;
   // the input mirrors it and a debounce writes it back — the SO list shape.

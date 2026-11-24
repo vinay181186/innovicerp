@@ -22,6 +22,7 @@ import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
+import { useLinkOpen } from '@/lib/use-link-open';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel, ROW_TINT, type DataTableColumn } from '@/ui/data';
@@ -57,6 +58,7 @@ export const instrumentsListRoute = createRoute({
     status: z.enum(INSTRUMENT_STATUSES).optional(),
     due: z.enum(['week', 'overdue']).optional(),
     page: pageSearchParam,
+    open: z.string().uuid().optional().catch(undefined), // ADR-312: open its detail pop-up
   }),
   component: InstrumentsListPage,
 });
@@ -94,6 +96,9 @@ function InstrumentsListPage(): React.JSX.Element {
   // undefined = closed; null = open with no item chosen.
   const [registerSeed, setRegisterSeed] = useState<RegisterSeed | null | undefined>(undefined);
   const [viewId, setViewId] = useState<string | null>(null);
+  useLinkOpen(urlSearch.open, true, setViewId, () =>
+    navigate({ search: (prev) => ({ ...prev, open: undefined }), replace: true }),
+  );
 
   const allowed = !eff || perms.view;
   // Sort & Filter runs on the SERVER here (ADR-200): the register is paged, so

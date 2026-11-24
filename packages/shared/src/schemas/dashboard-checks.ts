@@ -9,7 +9,8 @@
 import { z } from 'zod';
 import { dashTextSchema, dashToneSchema } from './dashboard-home';
 
-/** Departments that carry checks, in menu order. Labels come from ACCESS_DEPTS.
+/** Departments that carry checks, in the TOP MENU's order (nav-sections
+ *  SECTION_ORDER — the home's left menu matches it, owner 2026-11-24).
  *  ADR-264 phase 2 (owner-approved mockup 2026-11-02): + design, qc, finance. */
 export const DASH_CHECK_DEPTS = [
   'sales',
@@ -17,8 +18,8 @@ export const DASH_CHECK_DEPTS = [
   'planning',
   'production',
   'purchase',
-  'store',
   'qc',
+  'store',
   'finance',
 ] as const;
 export const dashCheckDeptSchema = z.enum(DASH_CHECK_DEPTS);
@@ -163,8 +164,10 @@ export const dashCheckPageResponseSchema = z.object({
 });
 export type DashCheckPageResponse = z.infer<typeof dashCheckPageResponseSchema>;
 
-/** GET /dashboard/checks — only departments the caller has a tier in, and
- *  inside them only checks whose "View all" page the caller can open. */
+/** GET /dashboard/checks — only departments the caller has a tier in (any
+ *  level, or Super Admin / Full Access / Auditor), and every check of each such
+ *  department (owner "follow access tier"). The level decides only where a row's
+ *  number goes (CheckDef.actionHref, ADR-312), never which checks show. */
 export const dashChecksResponseSchema = z.object({
   depts: z.array(dashCheckDeptBlockSchema),
 });

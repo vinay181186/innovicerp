@@ -171,13 +171,20 @@ async function settle(status: Settled, which: readonly string[]): Promise<void> 
  *  rows it claimed (a row left pending is leased, so the loop calling this
  *  does not re-claim it). */
 async function flushBatch(log: Logger): Promise<number> {
-  const claimed = rowsOf(await db.execute(claimPendingSql(CLAIM_BATCH, PUSH_RETRY_BACKOFF_MS)));
-  if (claimed.length === 0) return 0;
+  const all = rowsOf(await db.execute(claimPendingSql(CLAIM_BATCH, PUSH_RETRY_BACKOFF_MS)));
+  if (all.length === 0) return 0;
+  // ADR-314 — recipient's Desktop Pop-ups disabled: settle 'off', never send.
+  await settle(
+    'off',
+    all.filter((r) => r['popups_off'] === true).map((r) => String(r['id'])),
+  );
+  const claimed = all.filter((r) => r['popups_off'] !== true);
+  if (claimed.length === 0) return all.length;
   const ids = claimed.map((r) => String(r['id']));
   const keys = vapid();
   if (!keys) {
     await settle('off', ids);
-    return claimed.length;
+    return all.length;
   }
 
   const recipients = [...new Set(claimed.map((r) => String(r['recipient_id'])))];
@@ -259,7 +266,7 @@ async function flushBatch(log: Logger): Promise<number> {
   await settle('sent', out.sent);
   await settle('failed', out.failed);
   await settle('off', out.off);
-  return claimed.length;
+  return all.length;
 }
 
 let running = false;

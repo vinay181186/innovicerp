@@ -42,6 +42,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { matchesSearchTerm } from '@/components/shared/search-match';
 import { todayIst } from '@/lib/date';
 import { partyDocName } from '@/lib/item-code';
+import { useDraftSinkFill, useFormDraft } from '@/lib/use-form-draft';
 import { useSaveKey } from '@/lib/use-save-key';
 import {
   useDeliveryChallan,
@@ -90,6 +91,7 @@ export function GrnAgainstNcForm({
   onLeave,
   typeField,
   onStatusChange,
+  draftSlot,
 }: GrnAgainstNcFormProps): React.JSX.Element {
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -115,7 +117,12 @@ export function GrnAgainstNcForm({
   // but keeping ONLY the return-to-vendor rows (ncId set — the is-return flag).
   // One row per challan; a challan may carry several NCs of one SO. 200 is the API's max page
   // and is far above the number of issued-but-unreceived challans at any time.
-  const dcList = useDeliveryChallansList({ withLineItems: true, status: 'issued', limit: 200, offset: 0 });
+  const dcList = useDeliveryChallansList({
+    withLineItems: true,
+    status: 'issued',
+    limit: 200,
+    offset: 0,
+  });
   const ncRows = useMemo(
     () => (dcList.data?.items ?? []).filter((d) => d.ncId !== null),
     [dcList.data],
@@ -267,6 +274,26 @@ export function GrnAgainstNcForm({
     );
   }, [dc]);
 
+  // ADR-313 — a half-typed return receipt survives a tab switch. The picked
+  // return challan travels with its own lines, so a draft never crosses
+  // challans. Restoring marks it as already seeded so the reseed above does
+  // not wipe the restored lines.
+  const draft = useFormDraft({
+    key: 'grn-new:nc_return',
+    ready: true,
+    values: { pickedDcId, receiptDate, vendorInvoiceText, remarks, lines, linesTouched },
+    apply: (v) => {
+      seededFor.current = v.pickedDcId;
+      setPickedDcId(v.pickedDcId);
+      setReceiptDate(v.receiptDate);
+      setVendorInvoiceText(v.vendorInvoiceText);
+      setRemarks(v.remarks);
+      setLines(v.lines);
+      setLinesTouched(v.linesTouched);
+    },
+  });
+  useDraftSinkFill(draftSlot, draft);
+
   const onNcChange = (id: string | null): void => {
     setPickedDcId(id);
     setFormError(null);
@@ -386,6 +413,7 @@ export function GrnAgainstNcForm({
 
   return (
     <form id={GRN_CREATE_FORM_ID} onSubmit={(e) => void handleSubmit(e)}>
+      {draft.band}
       {/* Validation summary at the top of the form; it scrolls itself into view. */}
       {errorText ? (
         <Banner tone="error" role="alert">

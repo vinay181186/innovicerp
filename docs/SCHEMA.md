@@ -166,6 +166,7 @@ Mirror of `auth.users` with org context. PK matches `auth.users.id` exactly.
 | `role`                                                               | `user_role`     | not null, default `'viewer'`                                              |
 | `phone`                                                              | `text`          | nullable                                                                  |
 | `is_active`                                                          | `boolean`       | not null, default `false`. Set true by admin after company assignment     |
+| `desktop_popups` | `text` | not null, default `'allowed'`; check in ('allowed','disabled'). ADR-314 (0261): 'disabled' = no Web Push pop-ups for this login; bell notes unchanged |
 | `created_at`, `created_by`, `updated_at`, `updated_by`, `deleted_at` | (audit pattern) | `created_by`/`updated_by` reference `users(id)`                           |
 
 **Enum:**

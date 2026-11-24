@@ -30,6 +30,7 @@ import { useState } from 'react';
 import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate, todayIst } from '@/lib/date';
+import { hardError, RefreshFailedNote } from '@/lib/refresh-failed-note';
 import { soNoWithInternal } from '@/lib/so-number';
 import { renderJcOpsLink } from '@/modules/jc-ops/components/jc-ops-columns';
 import { SoMaterialPanel } from '@/modules/material/components/so-material-panel';
@@ -54,7 +55,8 @@ export const assemblyDetailRoute = createRoute({
 
 function AssemblyDetailPage(): React.JSX.Element {
   const { soId } = assemblyDetailRoute.useParams();
-  const { data, isLoading, isError, error } = useAssemblyTracker(soId);
+  const detailQuery = useAssemblyTracker(soId);
+  const { data, isLoading, isError, error } = detailQuery;
   const start = useStartAssembly(soId);
   const undo = useUndoLastUnit(soId);
   const toast = useToast();
@@ -86,7 +88,7 @@ function AssemblyDetailPage(): React.JSX.Element {
       </div>
     );
   }
-  if (isError || !data) {
+  if (!data || hardError(detailQuery)) {
     return (
       <div className="panel">
         <div className="panel-body">
@@ -181,6 +183,7 @@ function AssemblyDetailPage(): React.JSX.Element {
 
   return (
     <div>
+      <RefreshFailedNote show={isError} />
       <HeaderPanel data={data} />
 
       {actionError ? (
@@ -440,7 +443,7 @@ function AssemblyDetailPage(): React.JSX.Element {
 
       <UnitsPanel units={data.units} soId={soId} />
 
-      <RelatedDocsTabs module="assembly" id={soId} />
+      <RelatedDocsTabs module="assembly" id={soId} rememberKey={`assembly:${soId}`} />
     </div>
   );
 }

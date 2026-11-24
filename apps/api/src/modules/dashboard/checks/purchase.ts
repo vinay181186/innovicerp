@@ -118,6 +118,10 @@ export const PURCHASE_CHECKS: readonly CheckDef[] = [
     href: '/purchase-requests',
     query: ospOpsNoPrSql,
     docHref: (r) => docNavPage('job-card', r.id),
+    // ADR-312: raise the op's outsource PR (x1 = op id).
+    actionHref: nextStep('pr_create', 'entry', (r) =>
+      r.x1 ? `/jc-ops?op=${r.x1}&open=pr&jc=${encodeURIComponent(r.code)}` : null,
+    ),
     refCode: (r) => r.x3,
     dated: true,
   },
@@ -129,6 +133,8 @@ export const PURCHASE_CHECKS: readonly CheckDef[] = [
     href: '/delivery-challans',
     query: rtvChallanSql,
     docHref: (r) => docNavPage('nc', r.id),
+    // ADR-312: the NC's Create DC (return challan) pop-up.
+    actionHref: nextStep('ospdc_create', 'entry', (r) => `/nc-register/${r.id}?open=dc`),
     dated: false,
   },
 ];

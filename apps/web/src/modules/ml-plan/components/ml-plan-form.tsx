@@ -11,6 +11,7 @@
 import type { MlPlanEligibleLine } from '@innovic/shared';
 import { useMemo, useRef, useState } from 'react';
 import { itemLineLabel } from '@/lib/item-code';
+import { type FormDraft, useDraftSinkFill, useFormDraft } from '@/lib/use-form-draft';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
 import {
@@ -68,6 +69,15 @@ interface MlPlanFormProps {
   submitting: boolean;
   submitError: string | null;
   onCancel: () => void;
+  /** ADR-313 — keep a draft of what is typed (lib/use-form-draft.tsx). The page
+   *  names the draft and gets it back through `sink` for its exit guard. */
+  draftSlot?:
+    | {
+        key: string | null;
+        version?: string | null | undefined;
+        sink: { current: FormDraft | null };
+      }
+    | undefined;
 }
 
 export function MlPlanForm(props: MlPlanFormProps): React.JSX.Element {
@@ -128,6 +138,19 @@ export function MlPlanForm(props: MlPlanFormProps): React.JSX.Element {
   const isDirty =
     JSON.stringify({ l: line?.soLineId ?? null, d: draft }) !== initialSnapshot.current;
 
+  // ADR-313 — what is typed survives a tab switch; Save / Cancel / Exit clear it.
+  const formDraft = useFormDraft({
+    key: props.draftSlot?.key ?? null,
+    ready: true,
+    values: { line, draft },
+    apply: (v) => {
+      setLine(v.line);
+      setDraft(v.draft);
+    },
+    version: props.draftSlot?.version,
+  });
+  useDraftSinkFill(props.draftSlot?.sink, formDraft);
+
   return (
     <form
       onSubmit={(e) => {
@@ -135,6 +158,7 @@ export function MlPlanForm(props: MlPlanFormProps): React.JSX.Element {
         void save();
       }}
     >
+      {formDraft.band}
       <PageHeader title={mode === 'create' ? 'New Multi-Level Plan' : `Edit ${code}`} />
 
       {props.preselectMissing && !line ? (

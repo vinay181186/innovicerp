@@ -40,6 +40,7 @@ import { PendingFact } from '@/modules/document-edits/components/pending-fact';
 import { Cluster, ClusterGrid } from '@/ui/forms';
 import { DetailHeader, PageState } from '@/ui/layout';
 import { useMachine, useMachineGroupLookup, useSoftDeleteMachine } from '../api';
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
 
 export const machineDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -64,7 +65,8 @@ function BackToMaster(): React.JSX.Element {
 function MachineDetailPage(): React.JSX.Element {
   const { id } = machineDetailRoute.useParams();
   const navigate = useNavigate();
-  const { data: machine, isLoading, isError, error } = useMachine(id);
+  const query = useMachine(id);
+  const { data: machine, isLoading, isError, error } = query;
   const softDelete = useSoftDeleteMachine();
   const [confirmDelete, setConfirmDelete] = useState(false);
   // Read access with the other hooks, ABOVE the isLoading / isError gates below.
@@ -86,7 +88,7 @@ function MachineDetailPage(): React.JSX.Element {
     return <PageState state="loading" message="⟳ Loading machine…" />;
   }
 
-  if (isError || !machine) {
+  if (!machine || hardError(query)) {
     return (
       <div>
         <BackToMaster />
@@ -139,6 +141,7 @@ function MachineDetailPage(): React.JSX.Element {
 
   return (
     <div>
+      <RefreshFailedNote show={isError} />
       <DetailHeader
         backTo="/machines"
         backLabel={BACK_LABEL}

@@ -20,6 +20,7 @@ import {
 import { todayIst } from '@/lib/date';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { type FormDraftLink, useFormDraftLink } from '@/lib/use-form-draft';
 import { useForm } from 'react-hook-form';
 import { SearchableSelect } from '@/ui/forms';
 import { docDrawingRev, itemCodeWithRev } from '@/lib/item-code';
@@ -69,6 +70,8 @@ type HeaderProps = {
 };
 
 type CreateMode = HeaderProps & {
+  /** ADR-313 — the page's draft of this form. */
+  draftLink?: FormDraftLink | undefined;
   mode: 'create';
   /** Seed values, laid OVER the blank defaults. Used when the form is opened
    *  from a QC operation card, which already knows the job card, the item, the
@@ -81,6 +84,8 @@ type CreateMode = HeaderProps & {
 };
 
 type EditMode = HeaderProps & {
+  /** ADR-313 — the page's draft of this form. */
+  draftLink?: FormDraftLink | undefined;
   mode: 'edit';
   detail: NcRegister;
   onSubmit: (values: UpdateNcRegisterInput) => Promise<void> | void;
@@ -99,6 +104,12 @@ export function NcRegisterForm(props: NcRegisterFormProps): React.JSX.Element {
   const form = useForm<FormValues>({ defaultValues: defaults });
   const { register, handleSubmit, formState, watch, setValue } = form;
   const errors = formState.errors;
+  // ADR-313 — tell the page about every change (its draft), and let it put one back.
+  const { draftLink } = props;
+  const resetForm = form.reset;
+  useFormDraftLink(draftLink, form.watch(), (v) =>
+    resetForm(v as Parameters<typeof resetForm>[0], { keepDefaultValues: true }),
+  );
 
   // JC No. is a searchable picker (server search), not a fixed list of the
   // latest 200 — older JCs were unreachable. The picked row is kept so the

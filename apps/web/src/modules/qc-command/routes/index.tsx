@@ -8,6 +8,7 @@ import type { OrderOption, QcCommandQueueRow, QcCommandTotals, QcQueueSort } fro
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useCallback, useState } from 'react';
+import { usePersistentState } from '@/lib/use-persistent-state';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
@@ -82,7 +83,12 @@ function QcCommandPage(): React.JSX.Element {
   const [queueSort, setQueueSort] = useState<QcQueueSort>('age');
   // ADR-267: one order pick for the Queue and Rework tabs. Sent only while on them:
   // the header's queue count must not stay narrowed under a tab with no dropdown.
-  const [orderCode, setOrderCode] = useState<string | null>(null);
+  // ADR-313: kept for this browser tab (sessionStorage), not in the URL.
+  const [orderCode, setOrderCode] = usePersistentState<string | null>(
+    'qc-command:order',
+    null,
+    (v) => v === null || typeof v === 'string',
+  );
   const orderTab = tab === 'queue' || tab === 'rework';
   const setOrder = (option: OrderOption | null): void => {
     if (!option && orderCode === null) return;

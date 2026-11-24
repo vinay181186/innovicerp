@@ -10,6 +10,8 @@ import { useToast } from '@/ui/feedback';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useFetchTpiMaster, useTpiMaster, useUpdateTpiMaster } from '../api';
 import { TpiMasterForm } from '../components/tpi-master-form';
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
+import { usePageDraft } from '@/lib/use-form-draft';
 
 // ADR-226 — the fields THIS screen can edit, and what the user calls each one.
 //
@@ -44,7 +46,8 @@ function TpiMasterEditPage(): React.JSX.Element {
   const { id } = tpiMasterEditRoute.useParams();
   const navigate = useNavigate();
   const toast = useToast();
-  const { data: detail, isLoading, isError, error } = useTpiMaster(id);
+  const query = useTpiMaster(id);
+  const { data: detail, isLoading, isError, error } = query;
   const update = useUpdateTpiMaster(id);
   const fetchTpiMaster = useFetchTpiMaster();
   // ADR-226 / §20.4 — sends only what changed, merges onto someone else's save
@@ -65,7 +68,12 @@ function TpiMasterEditPage(): React.JSX.Element {
     () => void navigate({ to: '/tpi-masters/$id', params: { id } }),
     [navigate, id],
   );
-  const exit = useExitConfirm({ onExit: goBack });
+  // ADR-313 — the half-typed form survives a tab switch (lib/use-form-draft.tsx).
+  const { draft, link: draftLink } = usePageDraft({
+    key: `tpi-master-edit:${id}`,
+    version: detail?.updatedAt,
+  });
+  const exit = useExitConfirm({ onExit: goBack, draft });
   // Tier-driven, per department (QC) — without this the URL alone would hand
   // the form to an L1 Viewer or an L4 Approver, who deliberately cannot change
   // a saved record.
@@ -96,7 +104,7 @@ function TpiMasterEditPage(): React.JSX.Element {
       </div>
     );
   }
-  if (isError || !detail) {
+  if (!detail || hardError(query)) {
     return (
       <div className="panel">
         <div className="panel-body">
@@ -115,7 +123,9 @@ function TpiMasterEditPage(): React.JSX.Element {
 
   return (
     <div>
+      <RefreshFailedNote show={isError} />
       {exit.dialog}
+      {draft.band}
       <Link
         to="/tpi-masters/$id"
         params={{ id: detail.id }}
@@ -125,6 +135,7 @@ function TpiMasterEditPage(): React.JSX.Element {
         <ArrowLeft size={14} /> Back to {detail.code}
       </Link>
       <TpiMasterForm
+        draftLink={draftLink}
         panelHeader={
           <div>
             <div className="fw-700" style={{ color: 'var(--green2)', fontSize: 'var(--fs-sm)' }}>

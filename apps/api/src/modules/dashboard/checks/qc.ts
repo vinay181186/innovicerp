@@ -30,7 +30,7 @@ import { pendingFrom as tpiPendingFrom } from '../../tpi/service';
 import type { RawRow } from '../personal/list-query';
 import { capaOpenSql, grnQcSql, qcReportMissingSql } from '../personal/rows-qc';
 import { entityHref } from '../personal/util';
-import { enc, nextStep } from './next-step';
+import { enc, nextStep, nextStepAll } from './next-step';
 import { type CheckCtx, type CheckDef, narrow } from './types';
 
 /** One pending QC op row over a pendingFrom feed (aliases vos / jo / jc / i /
@@ -110,10 +110,14 @@ export const QC_CHECKS: readonly CheckDef[] = [
       r.kind === 'party_grn'
         ? (entityHref('PartyGrn', r.id, r.code) ?? '/party-grn')
         : docNavPage('grn', r.id),
-    // ADR-312: a purchase GRN opens Incoming QC on its line; Party GRN rows
-    // keep the Party GRN page.
+    // ADR-312: a purchase GRN opens Incoming QC on its line; a Party GRN
+    // opens Incoming QC on that Party GRN (r.id).
     actionHref: nextStep('qc_incoming', 'entry', (r) =>
-      r.kind !== 'party_grn' && r.x1 ? `/incoming-qc?line=${enc(r.x1)}` : null,
+      r.kind === 'party_grn'
+        ? `/incoming-qc?pgrn=${r.id}`
+        : r.x1
+          ? `/incoming-qc?line=${enc(r.x1)}`
+          : null,
     ),
     dated: false,
   },
@@ -147,6 +151,18 @@ export const QC_CHECKS: readonly CheckDef[] = [
     href: '/qc-call-register?tab=tpi',
     query: qcTpiSql,
     docHref: qcCallHref,
+    // ADR-312: the TPI tab on that op (x1 = op id). A TPI save needs QC Submit
+    // entry AND TPI entry (tpi-pending-card.tsx), so the link asks for both.
+    actionHref: nextStepAll(
+      [
+        ['qc_submit', 'entry'],
+        ['tpi_submit', 'entry'],
+      ],
+      (r) =>
+        r.x1
+          ? `/qc-call-register?tab=tpi&tpiOp=${r.x1}&search=${encodeURIComponent(r.code)}`
+          : null,
+    ),
     refCode: (r) => r.kind,
     dated: true,
   },
@@ -158,6 +174,8 @@ export const QC_CHECKS: readonly CheckDef[] = [
     href: '/nc-register',
     query: ncPendingSql,
     docHref: (r) => docNavPage('nc', r.id),
+    // ADR-312: Dispose NC (ADR-231 Advance right).
+    actionHref: nextStep('nc_dispose', 'advance', (r) => `/nc-register/${r.id}?open=dispose`),
     // The job card the pieces were rejected on (the item is its own column).
     refCode: (r) => r.x2,
     refHref: (r) => (r.x1 ? docNavPage('job-card', r.x1) : null),
@@ -201,6 +219,9 @@ export const QC_CHECKS: readonly CheckDef[] = [
     href: '/instruments',
     query: calibrationDueCheckSql,
     docHref: (r) => `/instruments?search=${encodeURIComponent(r.code)}`,
+    // ADR-312: the instrument, to record its calibration — the right
+    // instruments/service.ts recordCalibration demands (toolissue_create·entry).
+    actionHref: nextStep('toolissue_create', 'entry', (r) => `/instruments?open=${r.id}`),
     dated: true,
     noQty: true,
   },

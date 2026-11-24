@@ -12,6 +12,7 @@ import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateNcRegister } from '../api';
 import { NcRegisterForm } from '../components/nc-register-form';
 import { useToast } from '@/ui/feedback';
+import { usePageDraft } from '@/lib/use-form-draft';
 
 // Everything is OPTIONAL: this screen is still opened bare from "+ Report NC".
 // When a QC operation card sends the user here it hands over the job card, the
@@ -53,7 +54,9 @@ function NcRegisterNewPage(): React.JSX.Element {
   const toast = useToast();
   const [submitError, setSubmitError] = useState<string | null>(null);
   const goBack = useCallback(() => void navigate({ to: '/nc-register' }), [navigate]);
-  const exit = useExitConfirm({ onExit: goBack });
+  // ADR-313 — the half-typed form survives a tab switch (lib/use-form-draft.tsx).
+  const { draft, link: draftLink } = usePageDraft({ key: `nc-new:${JSON.stringify(search)}` });
+  const exit = useExitConfirm({ onExit: goBack, draft });
   // Tier-driven, per department (QC). The ⚠️ Report NC button is hidden from
   // anyone without entry rights, but this screen had no gate of its own —
   // typing the URL still handed over the form (an L1 Viewer, an L4 Approver).
@@ -110,7 +113,9 @@ function NcRegisterNewPage(): React.JSX.Element {
   return (
     <div>
       {exit.dialog}
+      {draft.band}
       <NcRegisterForm
+        draftLink={draftLink}
         mode="create"
         title="⚠️ Report Non-Conformance"
         backLabel="Back to NC Register"

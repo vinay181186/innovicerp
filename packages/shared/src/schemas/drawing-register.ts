@@ -167,7 +167,7 @@ export const drawingRegisterRowSchema = z.object({
   openLines: z.number().int().nonnegative(),
   openJobCards: z.number().int().nonnegative(),
   pendingCorrection: z.boolean().default(false),
-  /** ADR-312 — "SO No.": every live SO / JWSO naming this Rev, newest first
+  /** ADR-315 — "SO No.": every live SO / JWSO naming this Rev, newest first
    *  (closed ones included — history). `kind` picks the page the number opens. */
   orders: z
     .array(z.object({ kind: z.enum(['so', 'jw']), id: z.string().uuid(), code: z.string() }))

@@ -14,6 +14,8 @@ type QcCallRegisterSearch = {
   line?: string | undefined;
   op?: string | undefined;
   tab?: 'qc' | 'tpi';
+  /** ADR-312 — ?tab=tpi&tpiOp=<jcOpId> opens that op's TPI card once. */
+  tpiOp?: string | undefined;
   search?: string;
   /** 1-based register page (ADR-201); absent = page 1. */
   page?: number | undefined;
@@ -36,6 +38,7 @@ export const qcCallRegisterRoute = createRoute({
     if (typeof search.line === 'string') out.line = search.line;
     if (typeof search.op === 'string') out.op = search.op;
     if (search.tab === 'qc' || search.tab === 'tpi') out.tab = search.tab;
+    if (typeof search.tpiOp === 'string') out.tpiOp = search.tpiOp;
     if (typeof search.search === 'string' && search.search.trim()) out.search = search.search;
     const page = Number(search.page);
     if (Number.isInteger(page) && page > 1) out.page = page;

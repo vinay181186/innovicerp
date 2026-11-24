@@ -5,6 +5,8 @@
 // API instance — until `backoffMs` has passed. A never-tried row (attempts 0)
 // is claimable at once. SKIP LOCKED keeps two instances off the same rows
 // while the claim itself runs. No network call ever happens inside it.
+// ADR-314: each row also says whether its recipient's Desktop Pop-ups are
+// disabled (popups_off); the sender settles those 'off' and never sends.
 
 import { type SQL, sql } from 'drizzle-orm';
 
@@ -20,5 +22,7 @@ export function claimPendingSql(batch: number, backoffMs: number): SQL {
       LIMIT ${batch}
       FOR UPDATE SKIP LOCKED)
     RETURNING n.id::text AS id, n.company_id::text AS company_id,
-      n.recipient_id::text AS recipient_id, n.event_at, n.push_attempts`;
+      n.recipient_id::text AS recipient_id, n.event_at, n.push_attempts,
+      COALESCE((SELECT u.desktop_popups = 'disabled' FROM public.users u
+        WHERE u.id = n.recipient_id), false) AS popups_off`;
 }

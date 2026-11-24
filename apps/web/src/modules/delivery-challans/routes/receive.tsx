@@ -9,12 +9,15 @@ import type { CreateDeliveryChallanReceiptInput } from '@innovic/shared';
 import { qtyStepForUom, qtyUomProblem, roundQty } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { todayIst } from '@/lib/date';
 import { fmtQty } from '@/lib/qty-format';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
+import { useFormDraft } from '@/lib/use-form-draft';
+import { useOpenedVersion } from '@/lib/use-opened-version';
 import { useSaveKey } from '@/lib/use-save-key';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Banner, useToast } from '@/ui/feedback';
@@ -57,7 +60,7 @@ interface LineDraft {
 function DeliveryChallanReceivePage(): React.JSX.Element {
   const { id } = deliveryChallanReceiveRoute.useParams();
   const navigate = useNavigate();
-  const { data: detail, isLoading, isError, error } = useDeliveryChallan(id);
+  const { data: detail, isLoading, isError, error, isPlaceholderData } = useDeliveryChallan(id);
   const toast = useToast();
   // R2 — one idempotency key per open form, reused on a retry after a dropped save.
   const saveKey = useSaveKey();
@@ -75,7 +78,6 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
     () => void navigate({ to: '/delivery-challans/$id', params: { id } }),
     [navigate, id],
   );
-  const exit = useExitConfirm({ onExit: goBack });
 
   const [receiptDate, setReceiptDate] = useState(todayIst());
   const [vendorInvoiceText, setVendorInvoiceText] = useState('');
@@ -84,8 +86,10 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  const seeded = useRef(false);
   useEffect(() => {
     if (!detail) return;
+    seeded.current = true;
     const receivedByLine = computeReceivedByLine(detail);
     const rejectedByLine = new Map<string, number>();
     for (const r of detail.receipts) {
@@ -121,6 +125,32 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
       }),
     );
   }, [detail]);
+
+  // ADR-313 — a half-typed receipt survives a tab switch. Only what the user
+  // typed is kept (header + Receive Now per DC line); Sent / Received / Pending
+  // always come fresh from the DC. Dropped if the DC changed since it was loaded.
+  const opened = useOpenedVersion(detail?.updatedAt);
+  const draft = useFormDraft({
+    key: `dc-receive:${id}`,
+    ready: !!detail && seeded.current,
+    values: {
+      receiptDate,
+      vendorInvoiceText,
+      remarks,
+      qty: lineDrafts.map((d) => [d.dcLineId, d.receivedQty] as [string, string]),
+    },
+    apply: (v) => {
+      setReceiptDate(v.receiptDate);
+      setVendorInvoiceText(v.vendorInvoiceText);
+      setRemarks(v.remarks);
+      const typed = new Map(v.qty);
+      setLineDrafts((prev) =>
+        prev.map((d) => ({ ...d, receivedQty: typed.get(d.dcLineId) ?? d.receivedQty })),
+      );
+    },
+    version: opened.expected(),
+  });
+  const exit = useExitConfirm({ onExit: goBack, draft });
 
   const updateDraft = (idx: number, patch: Partial<LineDraft>): void => {
     setLineDrafts((prev) => prev.map((d, i) => (i === idx ? { ...d, ...patch } : d)));
@@ -208,7 +238,7 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
       </div>
     );
   }
-  if (isError || !detail) {
+  if (!detail || hardError({ isError, error, isPlaceholderData })) {
     return (
       <div className="panel">
         <div className="panel-body">
@@ -228,12 +258,14 @@ function DeliveryChallanReceivePage(): React.JSX.Element {
   return (
     <div>
       {exit.dialog}
+      <RefreshFailedNote show={isError} />
       <PageHeader
         title={`Receive against ${detail.vendorName ?? detail.vendorCodeText}`}
         subtitle={<span className="td-code">{detail.code}</span>}
         backLabel="Back to DC"
         onBack={goBack}
       />
+      {draft.band}
 
       <form id={RECEIVE_FORM_ID} onSubmit={(e) => void onSubmit(e)}>
         <div className="panel">

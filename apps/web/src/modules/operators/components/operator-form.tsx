@@ -16,7 +16,8 @@ import {
 } from '@innovic/shared';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Loader2 } from 'lucide-react';
-import { useEffect, type ReactNode } from 'react';
+import { type ReactNode, useEffect } from 'react';
+import { type FormDraftLink, useFormDraftLink } from '@/lib/use-form-draft';
 import { type Control, Controller, useForm } from 'react-hook-form';
 import { useTaskUserOptions } from '@/modules/tasks/api';
 import { useNextOperatorCode } from '../api';
@@ -24,6 +25,8 @@ import { SearchableSelect } from '@/ui/forms';
 import { FormActions } from '@/ui/layout';
 
 type CreateMode = {
+  /** ADR-313 — the page's draft of this form. */
+  draftLink?: FormDraftLink | undefined;
   mode: 'create';
   /** The title band of the form's panel; the form owns the panel so its button bar can sit outside it. */
   panelHeader: ReactNode;
@@ -35,6 +38,8 @@ type CreateMode = {
 };
 
 type EditMode = {
+  /** ADR-313 — the page's draft of this form. */
+  draftLink?: FormDraftLink | undefined;
   mode: 'edit';
   /** The title band of the form's panel; the form owns the panel so its button bar can sit outside it. */
   panelHeader: ReactNode;
@@ -121,6 +126,12 @@ function CreateOperatorForm(props: CreateMode): React.JSX.Element {
   });
   const { register, formState } = form;
   const errors = formState.errors;
+  // ADR-313 — tell the page about every change (its draft), and let it put one back.
+  const { draftLink } = props;
+  const resetForm = form.reset;
+  useFormDraftLink(draftLink, form.watch(), (v) =>
+    resetForm(v as Parameters<typeof resetForm>[0], { keepDefaultValues: true }),
+  );
 
   // Show the next server-assigned OP-### before save.
   // ADR-227 — the box is a PREVIEW and is never sent, so this follows the
@@ -258,6 +269,12 @@ function EditOperatorForm(props: EditMode): React.JSX.Element {
   });
   const { register, formState } = form;
   const errors = formState.errors;
+  // ADR-313 — tell the page about every change (its draft), and let it put one back.
+  const { draftLink } = props;
+  const resetForm = form.reset;
+  useFormDraftLink(draftLink, form.watch(), (v) =>
+    resetForm(v as Parameters<typeof resetForm>[0], { keepDefaultValues: true }),
+  );
 
   return (
     <form

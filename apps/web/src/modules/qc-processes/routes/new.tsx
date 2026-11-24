@@ -8,6 +8,7 @@ import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateQcProcess } from '../api';
 import { QcProcessForm } from '../components/qc-process-form';
 import { useToast } from '@/ui/feedback';
+import { usePageDraft } from '@/lib/use-form-draft';
 
 export const qcProcessNewRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -21,7 +22,9 @@ function QcProcessNewPage(): React.JSX.Element {
   const create = useCreateQcProcess();
   const [submitError, setSubmitError] = useState<string | null>(null);
   const goBack = useCallback(() => void navigate({ to: '/qc-processes' }), [navigate]);
-  const exit = useExitConfirm({ onExit: goBack });
+  // ADR-313 — the half-typed form survives a tab switch (lib/use-form-draft.tsx).
+  const { draft, link: draftLink } = usePageDraft({ key: 'qc-process-new' });
+  const exit = useExitConfirm({ onExit: goBack, draft });
   // Tier-driven, per department (QC). The + Add QC Process button is hidden
   // from anyone without entry rights, but this screen had no gate of its own —
   // typing the URL still handed over the create form (an L1 Viewer, an L4
@@ -58,10 +61,12 @@ function QcProcessNewPage(): React.JSX.Element {
   return (
     <div>
       {exit.dialog}
+      {draft.band}
       <Link to="/qc-processes" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
         <ArrowLeft size={14} /> Back to QC Process Master
       </Link>
       <QcProcessForm
+        draftLink={draftLink}
         panelHeader={
           <div>
             <div className="panel-title">⚙ Add QC Process</div>

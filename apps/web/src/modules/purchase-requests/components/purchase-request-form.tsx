@@ -29,6 +29,7 @@ import {
 } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useRef } from 'react';
+import { type FormDraftLink, useFormDraftLink } from '@/lib/use-form-draft';
 import { type Path, type PathValue, useForm } from 'react-hook-form';
 import {
   type CascadeField,
@@ -84,6 +85,8 @@ export interface PrKeepValues {
 }
 
 type CreateMode = HeaderProps & {
+  /** ADR-313 — the page's draft of this form. */
+  draftLink?: FormDraftLink | undefined;
   mode: 'create';
   onSubmit: (values: CreatePurchaseRequestInput) => Promise<void> | void;
   /** Given → a ghost "Save & New" button sits beside Save. It saves the same
@@ -100,6 +103,8 @@ type CreateMode = HeaderProps & {
 };
 
 type EditMode = HeaderProps & {
+  /** ADR-313 — the page's draft of this form. */
+  draftLink?: FormDraftLink | undefined;
   mode: 'edit';
   detail: PurchaseRequestDetail;
   onSubmit: (values: UpdatePurchaseRequestInput) => Promise<void> | void;
@@ -119,6 +124,12 @@ export function PurchaseRequestForm(props: PurchaseRequestFormProps): React.JSX.
   const form = useForm<FormValues>({ defaultValues: defaults });
   const { register, handleSubmit, formState, watch } = form;
   const errors = formState.errors;
+  // ADR-313 — tell the page about every change (its draft), and let it put one back.
+  const { draftLink } = props;
+  const resetForm = form.reset;
+  useFormDraftLink(draftLink, form.watch(), (v) =>
+    resetForm(v as Parameters<typeof resetForm>[0], { keepDefaultValues: true }),
+  );
 
   // Free text already stored on this PR. Its presence is what lets the vendor
   // picker be left empty — see the rule in <PrVendorField>.

@@ -52,12 +52,19 @@
 
 import { useBlocker, useNavigate, useRouter } from '@tanstack/react-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { clearTabSwitch, isTabSwitch } from './tab-switch';
+import type { FormDraft } from './use-form-draft';
 
 export interface ExitConfirmOptions {
   /** Where ESC's Exit goes. Defaults to history back, then the parent path. */
   onExit?: () => void;
   /** Switch the guard off, e.g. while the record is still loading. */
   enabled?: boolean;
+  /** ADR-313: the form keeps a draft (lib/use-form-draft.tsx). Then a click on
+   *  the open-pages tab bar goes through WITHOUT the question — the typing comes
+   *  back when the user returns — and every real exit (Save, Cancel, Exit)
+   *  forgets the draft. */
+  draft?: FormDraft | undefined;
 }
 
 export interface ExitConfirm {
@@ -176,9 +183,17 @@ export function useExitConfirm(opts: ExitConfirmOptions = {}): ExitConfirm {
     };
   }, [enabled]);
 
-  const armed = (): boolean => enabled && mounted.current && dirty.current && !bypass.current;
+  const draftRef = useRef(opts.draft);
+  draftRef.current = opts.draft;
+  // A brought-back draft is unsaved work too, though no key was pressed yet.
+  const armed = (): boolean =>
+    enabled &&
+    mounted.current &&
+    (dirty.current || (draftRef.current?.hasDraft() ?? false)) &&
+    !bypass.current;
   const blocker = useBlocker({
-    shouldBlockFn: armed,
+    // A tab switch loses nothing only when a draft is REALLY stored.
+    shouldBlockFn: () => armed() && !(isTabSwitch() && (draftRef.current?.hasDraft() ?? false)),
     enableBeforeUnload: armed,
     withResolver: true,
   });
@@ -187,6 +202,8 @@ export function useExitConfirm(opts: ExitConfirmOptions = {}): ExitConfirm {
   // so a navigation that never happened (a mutation that threw before
   // navigating, say) does not leave it open for the next click.
   const allow = useCallback(() => {
+    // Save / Cancel / Exit: a deliberate way out, so the draft is no longer wanted.
+    draftRef.current?.clear();
     bypass.current = true;
     window.setTimeout(() => {
       bypass.current = false;
@@ -252,8 +269,20 @@ export function useExitConfirm(opts: ExitConfirmOptions = {}): ExitConfirm {
   }, [enabled, blocker.status]);
 
   const open = escOpen || blocker.status === 'blocked';
-  const onExit = blocker.status === 'blocked' ? blocker.proceed : escExit;
-  const onStay = blocker.status === 'blocked' ? blocker.reset : () => setEscOpen(false);
+  const onExit =
+    blocker.status === 'blocked'
+      ? () => {
+          draftRef.current?.clear();
+          blocker.proceed();
+        }
+      : escExit;
+  const onStay =
+    blocker.status === 'blocked'
+      ? () => {
+          clearTabSwitch(); // that tab click did not happen; the next click is an ordinary one
+          blocker.reset();
+        }
+      : () => setEscOpen(false);
 
   // Always an element, even when nothing is open: its mounting is what arms
   // the guard (see `mounted`).

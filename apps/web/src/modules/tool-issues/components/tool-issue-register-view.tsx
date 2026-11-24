@@ -18,6 +18,7 @@ import { useToolIssuesList } from '../api';
 import { NewToolIssueModal } from './new-tool-issue-modal';
 import { TOOL_ISSUE_HIDDEN_COLUMNS, toolIssueColumns } from './tool-issue-columns';
 import { ToolHoldersView } from './tool-holders-view';
+import { useLinkOpen } from '@/lib/use-link-open';
 import { ToolIssueViewModal } from './tool-issue-view-modal';
 import { ToolWriteoffsView } from './tool-writeoffs-view';
 import { TabStrip } from '@/ui/navigation';
@@ -38,10 +39,15 @@ const withCount = (label: string, n: number | undefined): string =>
 export function ToolIssueRegisterView({
   tabs,
   initialSearch,
+  linkOpenId,
+  onLinkOpened,
 }: {
   /** The page's Item | Tool Issues tabs, drawn under this view's header. */
   tabs?: React.ReactNode;
   initialSearch?: string | undefined;
+  /** ADR-312 — ?open=<toolIssueId>: open that slip's view once, then strip it. */
+  linkOpenId?: string | undefined;
+  onLinkOpened?: () => void;
 }): React.JSX.Element {
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'toolissue_create');
@@ -51,6 +57,7 @@ export function ToolIssueRegisterView({
   const [page, setPage] = useState(1);
   const [showNew, setShowNew] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
+  useLinkOpen(linkOpenId, true, setOpenId, () => onLinkOpened?.());
   // ADR-235 — the issue whose standard Cancel dialog is open (row ⋯ or the view).
   const [cancelTarget, setCancelTarget] = useState<{ id: string; code: string } | null>(null);
   // Cancel Issue: the Edit tick raises the request, the Approve tick decides it.

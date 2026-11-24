@@ -21,6 +21,8 @@
 // ctrl-click / "open in new tab" still handled by the browser.
 import { Link, useLocation, useNavigate } from '@tanstack/react-router';
 import { useEffect } from 'react';
+import { markTabSwitch } from '@/lib/tab-switch';
+import { isPlainLeftClick } from '@/ui/is-plain-left-click';
 import { useOpenTabs } from '@/stores/open-tabs';
 import { PageTabs, type PageTab } from '@/ui/navigation';
 import { ORDERED_SECTIONS, SECTIONS } from './nav-sections';
@@ -72,7 +74,7 @@ function resolve(pathname: string): { base: string; label: string; icon: string 
 }
 
 export function OpenTabsBar(): React.JSX.Element | null {
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const navigate = useNavigate();
   const tabs = useOpenTabs((s) => s.tabs);
   const openTab = useOpenTabs((s) => s.openTab);
@@ -80,10 +82,17 @@ export function OpenTabsBar(): React.JSX.Element | null {
 
   const current = resolve(pathname);
 
-  // Record / refresh the tab for the page we're on now.
+  // Record / refresh the tab for the page we're on now — the path AND its query
+  // (ADR-313), so coming back keeps the list's search, page and filters.
   useEffect(() => {
-    openTab({ base: current.base, label: current.label, icon: current.icon, path: pathname });
-  }, [pathname, current.base, current.label, current.icon, openTab]);
+    openTab({
+      base: current.base,
+      label: current.label,
+      icon: current.icon,
+      path: pathname,
+      search: search as Record<string, unknown>,
+    });
+  }, [pathname, search, current.base, current.label, current.icon, openTab]);
 
   if (tabs.length === 0) return null;
 
@@ -101,13 +110,18 @@ export function OpenTabsBar(): React.JSX.Element | null {
     if (wasActive) {
       const rest = shown.filter((t) => t.base !== base);
       const target = rest[idx - 1] ?? rest[0];
-      void navigate({ to: target ? target.path : '/' });
+      // The tab's own saved query; the router cannot type a query it only
+      // knows at run time, hence `as never` (same as `search` on the Link below).
+      void navigate(
+        target ? { to: target.path, search: (target.search ?? {}) as never } : { to: '/' },
+      );
     }
   };
 
   // The store's tab shape → the primitive's. `base` is the identity (one tab
   // per nav section); `path` is the click target (the last URL visited under
   // that section), which is why they are two different fields.
+  const searchByPath = new Map(shown.map((t) => [t.path, t.search] as const));
   const items: PageTab[] = shown.map((t) => ({
     key: t.base,
     label: t.label,
@@ -124,7 +138,19 @@ export function OpenTabsBar(): React.JSX.Element | null {
       tabs={items}
       activeKey={current.base}
       onClose={onClose}
-      renderLink={(p) => <Link {...p} />}
+      renderLink={(p) => (
+        <Link
+          {...p}
+          search={(searchByPath.get(p.to) ?? {}) as never}
+          onClick={(e: React.MouseEvent) => {
+            // ADR-313: tell the arriving page this is a tab switch (scroll back,
+            // and a form with a draft does not ask "exit?"). Not for the tab
+            // you are already on, nor a Ctrl / middle click (opens elsewhere).
+            if (isPlainLeftClick(e) && p.to !== pathname) markTabSwitch();
+            p.onClick?.();
+          }}
+        />
+      )}
     />
   );
 }

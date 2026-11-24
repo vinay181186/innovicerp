@@ -20,6 +20,7 @@ import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate } from '@/lib/date';
 import { itemCodeWithRev } from '@/lib/item-code';
+import { hardError, RefreshFailedNote } from '@/lib/refresh-failed-note';
 import { soNoWithInternal } from '@/lib/so-number';
 import { ItemRevLink } from '@/modules/item-revisions/components/item-rev-link';
 import { undecidedChangesOf, usePendingEditForDoc } from '@/modules/document-edits/api';
@@ -61,7 +62,8 @@ const BOM_TYPE_WORD: Record<string, string> = {
 function BomMasterDetailPage(): React.JSX.Element {
   const { id } = bomMasterDetailRoute.useParams();
   const navigate = useNavigate();
-  const { data: detail, isLoading, isError, error } = useBomMaster(id);
+  const detailQuery = useBomMaster(id);
+  const { data: detail, isLoading, isError, error } = detailQuery;
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'bom_create');
   const del = useDeleteBomMaster();
@@ -126,7 +128,7 @@ function BomMasterDetailPage(): React.JSX.Element {
       </div>
     );
   }
-  if (isError || !detail) {
+  if (!detail || hardError(detailQuery)) {
     return (
       <div className="panel">
         <div className="panel-body">
@@ -159,6 +161,7 @@ function BomMasterDetailPage(): React.JSX.Element {
 
   return (
     <div>
+      <RefreshFailedNote show={isError} />
       <DetailHeader
         backLabel="Back"
         backTo="/bom-masters"
@@ -441,7 +444,12 @@ function BomMasterDetailPage(): React.JSX.Element {
         </div>
       ) : null}
 
-      <RelatedDocsTabs module="bom-masters" id={detail.id} extraTabs={[historyTab]} />
+      <RelatedDocsTabs
+        module="bom-masters"
+        id={detail.id}
+        extraTabs={[historyTab]}
+        rememberKey={`bom-master:${detail.id}`}
+      />
 
       {showLinked ? (
         <LinkedSoLinesModal

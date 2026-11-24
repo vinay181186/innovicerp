@@ -33,7 +33,8 @@ import {
 } from '@innovic/shared';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Loader2 } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { type ReactNode } from 'react';
+import { type FormDraftLink, useFormDraftLink } from '@/lib/use-form-draft';
 import { useForm } from 'react-hook-form';
 import { useMachineGroupLookup } from '../api';
 import { MachineGroupPicker } from './machine-group-picker';
@@ -44,6 +45,8 @@ const MACHINE_STATUSES = ['Idle', 'Running', 'Down', 'Maintenance'] as const;
 const SHIFTS_PER_DAY = [1, 2, 3] as const;
 
 type CreateMode = {
+  /** ADR-313 — the page's draft of this form. */
+  draftLink?: FormDraftLink | undefined;
   mode: 'create';
   /** The title band of the form's panel; the form owns the panel so its button bar can sit outside it. */
   panelHeader: ReactNode;
@@ -55,6 +58,8 @@ type CreateMode = {
 };
 
 type EditMode = {
+  /** ADR-313 — the page's draft of this form. */
+  draftLink?: FormDraftLink | undefined;
   mode: 'edit';
   /** The title band of the form's panel; the form owns the panel so its button bar can sit outside it. */
   panelHeader: ReactNode;
@@ -133,6 +138,12 @@ function CreateMachineForm(props: CreateMode): React.JSX.Element {
   });
   const { register, formState } = form;
   const errors = formState.errors;
+  // ADR-313 — tell the page about every change (its draft), and let it put one back.
+  const { draftLink } = props;
+  const resetForm = form.reset;
+  useFormDraftLink(draftLink, form.watch(), (v) =>
+    resetForm(v as Parameters<typeof resetForm>[0], { keepDefaultValues: true }),
+  );
 
   // The group's own word ('VMC') for the picker to show. The lookup is the whole
   // group master in one cached fetch, shared with the list and detail pages, so
@@ -304,6 +315,12 @@ function EditMachineForm(props: EditMode): React.JSX.Element {
   });
   const { register, formState } = form;
   const errors = formState.errors;
+  // ADR-313 — tell the page about every change (its draft), and let it put one back.
+  const { draftLink } = props;
+  const resetForm = form.reset;
+  useFormDraftLink(draftLink, form.watch(), (v) =>
+    resetForm(v as Parameters<typeof resetForm>[0], { keepDefaultValues: true }),
+  );
 
   // The group's own word ('VMC') for the picker to show. The lookup is the whole
   // group master in one cached fetch, shared with the list and detail pages, so

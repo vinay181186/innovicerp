@@ -10,6 +10,7 @@ import { Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { todayLocal } from '@/lib/date';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useFormDraft } from '@/lib/use-form-draft';
 import { itemCodeWithRev, partyDocName } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Panel } from '@/ui/data';
@@ -50,7 +51,6 @@ function JwDcInwardNewPage(): React.JSX.Element {
     () => void navigate({ to: '/jw-dc', search: { tab: 'inward' } }),
     [navigate],
   );
-  const exit = useExitConfirm({ onExit: goBack });
 
   const [date, setDate] = useState(todayLocal());
   const [dcId, setDcId] = useState<string | null>(null);
@@ -79,6 +79,10 @@ function JwDcInwardNewPage(): React.JSX.Element {
   // Seed the lines once per DC. A refetch of the SAME DC (window focus, a live
   // update) must not reset the Received Qty being typed (ADR-230).
   const seededFor = useRef<string | null>(null);
+  // ADR-313 — Received Qty a kept draft put back, per DC line, for one DC. The
+  // first fill for that DC uses them instead of the pending default (the lines
+  // are empty while the DC loads, so restoring them directly would be wiped).
+  const restoredQty = useRef<{ dcId: string; qty: Map<string, number> } | null>(null);
   useEffect(() => {
     if (!detail || !dcId) {
       seededFor.current = null;
@@ -87,6 +91,8 @@ function JwDcInwardNewPage(): React.JSX.Element {
     }
     if (seededFor.current === dcId) return;
     seededFor.current = dcId;
+    const kept = restoredQty.current?.dcId === dcId ? restoredQty.current.qty : null;
+    restoredQty.current = null;
     setLines(
       detail.lines.map((l) => ({
         outwardLineId: l.id,
@@ -98,10 +104,43 @@ function JwDcInwardNewPage(): React.JSX.Element {
         sentQty: l.sentQty,
         alreadyReturned: l.alreadyReturned,
         pending: l.pending,
-        receivedQty: l.pending,
+        receivedQty: kept?.get(l.id) ?? l.pending,
       })),
     );
   }, [detail, dcId]);
+
+  // ADR-313 — a half-typed inward survives a tab switch. Only what the user
+  // typed is kept; Sent / Returned / Pending always come fresh from the DC.
+  const draft = useFormDraft({
+    key: 'jw-dc-inward-new',
+    ready: true,
+    values: {
+      date,
+      dcId,
+      vendorChallan,
+      vehicleNo,
+      remarks,
+      qty: lines.map((l) => [l.outwardLineId, l.receivedQty] as [string, number]),
+    },
+    apply: (v) => {
+      setDate(v.date);
+      setVendorChallan(v.vendorChallan);
+      setVehicleNo(v.vehicleNo);
+      setRemarks(v.remarks);
+      if (v.dcId) {
+        const qty = new Map(v.qty);
+        if (seededFor.current === v.dcId) {
+          setLines((prev) =>
+            prev.map((l) => ({ ...l, receivedQty: qty.get(l.outwardLineId) ?? l.receivedQty })),
+          );
+        } else {
+          restoredQty.current = { dcId: v.dcId, qty };
+        }
+      }
+      setDcId(v.dcId);
+    },
+  });
+  const exit = useExitConfirm({ onExit: goBack, draft });
 
   const saveKey = useSaveKey();
   const createMut = useCreateJwDcInward(saveKey);
@@ -162,6 +201,7 @@ function JwDcInwardNewPage(): React.JSX.Element {
     <div>
       {exit.dialog}
       <PageHeader title="New Inward Entry" backLabel="Back to JW DC" onBack={goBack} />
+      {draft.band}
 
       <Panel>
         {/* ADR-189 — Incoming QC is the only inspector. The store records what

@@ -13,6 +13,8 @@ import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { canDeleteRecords, effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { hardError, RefreshFailedNote } from '@/lib/refresh-failed-note';
+import { oneOf, usePersistentState } from '@/lib/use-persistent-state';
 import { useDocumentHistory } from '@/modules/activity-log/api';
 import { isStagedResult, usePendingEditForDoc } from '@/modules/document-edits/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -44,13 +46,19 @@ const MAX_TREE_QTY = 1_000_000;
 function MlBomDetailPage(): React.JSX.Element {
   const { id } = mlBomDetailRoute.useParams();
   const navigate = useNavigate();
-  const { data: detail, isLoading, isError, error } = useMlBom(id);
+  const detailQuery = useMlBom(id);
+  const { data: detail, isLoading, isError, error } = detailQuery;
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'mlbom_create');
   const makeDefault = useMakeDefaultMlBom();
   const del = useDeleteMlBom();
   const toast = useToast();
-  const [tab, setTab] = useState<TabKey>('lines');
+  // ADR-313 — the sub-tab stays when you switch tabs and come back.
+  const [tab, setTab] = usePersistentState<TabKey>(
+    `ml-bom-detail:${id}:tab`,
+    'lines',
+    oneOf(['lines', 'tree', 'exploded', 'cost', 'used-in', 'history']),
+  );
   const [confirmDelete, setConfirmDelete] = useState(false);
   // ADR-197: a delete carries a reason — it is the Reason on the History row.
   const [deleteReason, setDeleteReason] = useState('');
@@ -99,7 +107,7 @@ function MlBomDetailPage(): React.JSX.Element {
   if (isLoading) {
     return <PageState state="loading" message="⟳ Loading BOM…" />;
   }
-  if (isError || !detail) {
+  if (!detail || hardError(detailQuery)) {
     return (
       <div>
         <Link
@@ -178,6 +186,7 @@ function MlBomDetailPage(): React.JSX.Element {
 
   return (
     <div>
+      <RefreshFailedNote show={isError} />
       <DetailHeader
         backTo="/ml-boms"
         renderLink={(p) => <Link {...p} />}

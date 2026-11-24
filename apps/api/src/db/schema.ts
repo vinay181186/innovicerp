@@ -6,6 +6,7 @@ import {
   DAY_LOG_ENTRY_KINDS,
   DAY_LOG_STATUSES,
   DC_STATUSES,
+  DESKTOP_POPUPS,
   DOCUMENT_EDIT_STATUSES,
   GRN_QC_STATUSES,
   INVOICE_STATUSES,
@@ -217,6 +218,8 @@ export const users = pgTable(
     role: userRoleEnum('role').notNull().default('viewer'),
     phone: text('phone'),
     isActive: boolean('is_active').notNull().default(false),
+    // ADR-314 (0261) — Desktop Pop-ups: 'disabled' = no Web Push on any laptop.
+    desktopPopups: text('desktop_popups', { enum: DESKTOP_POPUPS }).notNull().default('allowed'),
     // Per-user PO approval limit (0046). NULL ⇒ fall back to
     // approval_config.po_manager_limit for non-admin approvers.
     // Admin is always unlimited per service-layer check.

@@ -29,6 +29,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { todayLocal } from '@/lib/date';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useFormDraft } from '@/lib/use-form-draft';
 import { useSaveKey } from '@/lib/use-save-key';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Panel } from '@/ui/data';
@@ -68,7 +69,6 @@ function PartyGrnNewPage(): React.JSX.Element {
   const { jw: initialJwId, so: initialSoId } = partyGrnNewRoute.useSearch();
   const navigate = useNavigate();
   const goBack = useCallback(() => void navigate({ to: '/party-grn' }), [navigate]);
-  const exit = useExitConfirm({ onExit: goBack });
 
   const [date, setDate] = useState(todayLocal());
   const toast = useToast();
@@ -86,6 +86,26 @@ function PartyGrnNewPage(): React.JSX.Element {
   // JWSO line ids the user Deleted — not rendered, not sent.
   const [removed, setRemoved] = useState<Set<string>>(() => new Set());
   const [err, setErr] = useState<string | null>(null);
+
+  // ADR-313 — a half-typed Party GRN survives a tab switch. One draft per
+  // ?jw= / ?so= link; the picked JWSO / SO travels with its own typed lines,
+  // so a draft never puts one order's quantities under another.
+  const draft = useFormDraft({
+    key: `party-grn-new:${initialJwId ?? ''}:${initialSoId ?? ''}`,
+    ready: true,
+    values: { date, against, jwId, soId, dcNo, remarks, entries, removed: [...removed] },
+    apply: (v) => {
+      setDate(v.date);
+      setAgainst(v.against);
+      setJwId(v.jwId);
+      setSoId(v.soId);
+      setDcNo(v.dcNo);
+      setRemarks(v.remarks);
+      setEntries(v.entries);
+      setRemoved(new Set(v.removed));
+    },
+  });
+  const exit = useExitConfirm({ onExit: goBack, draft });
 
   const nextCodeQ = useNextPartyGrnCode();
   const jwQuery = useJobWorkOrdersList({
@@ -316,6 +336,7 @@ function PartyGrnNewPage(): React.JSX.Element {
     <div>
       {exit.dialog}
       <PageHeader title="New Party GRN" backLabel="Back to Party GRN" onBack={goBack} />
+      {draft.band}
 
       <Panel>
         <FormGrid>

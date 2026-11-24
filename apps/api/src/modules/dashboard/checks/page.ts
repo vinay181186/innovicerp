@@ -19,7 +19,6 @@ import type { RawRow } from '../personal/list-query';
 import { istToday } from '../personal/util';
 import { finish, visibleChecks } from './service';
 import {
-  COLS,
   type CheckCtx,
   type CheckDef,
   ROW_ORDER,
@@ -27,6 +26,7 @@ import {
   parseCheckSummary,
   runCheck,
   toCheckRow,
+  x4Of,
 } from './types';
 
 /** dashCheckPageQuerySchema, parsed (defaults applied). */
@@ -82,12 +82,12 @@ export function searchWhere(d: Pick<CheckDef, 'refCode'>, search: string | undef
 /** One page of a check's rows as a summary json (parseCheckSummary reads it):
  *  total = rows matching the search; rows = that page in ROW_ORDER. */
 export function checkPageSql(inner: SQL, where: SQL, limit: number, offset: number): SQL {
-  return sql`(WITH x AS (${inner}), f AS (SELECT ${COLS} FROM x WHERE ${where})
+  return sql`(WITH x AS (${inner}), f AS (SELECT x.* FROM x WHERE ${where})
     SELECT json_build_object(
       'total', (SELECT COUNT(*) FROM f)::int,
       'late', 0, 'dueToday', 0,
       'rows', (SELECT COALESCE(json_agg(r ORDER BY ${ROW_ORDER('r')}), '[]'::json)
-               FROM (SELECT ${colsOf('f')} FROM f ORDER BY ${ROW_ORDER('f')}
+               FROM (SELECT ${colsOf('f')}, ${x4Of('f')} FROM f ORDER BY ${ROW_ORDER('f')}
                      LIMIT ${limit} OFFSET ${offset}) r)))`;
 }
 

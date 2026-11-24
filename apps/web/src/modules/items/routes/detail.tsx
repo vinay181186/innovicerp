@@ -58,6 +58,7 @@ import { Cluster, ClusterGrid } from '@/ui/forms';
 import { useItem, useSoftDeleteItem } from '../api';
 import { ItemDrawingRevs } from '../components/item-drawing-revs';
 import { TrashReasonDialog } from '../components/trash-reason-dialog';
+import { RefreshFailedNote, hardError } from '@/lib/refresh-failed-note';
 
 // Rows pulled for the ledger sub-panel. The panel discloses the cap against the
 // server's `total` whenever there are more (legacy lists every txn, L11816).
@@ -72,7 +73,8 @@ export const itemDetailRoute = createRoute({
 function ItemDetailPage(): React.JSX.Element {
   const { id } = itemDetailRoute.useParams();
   const navigate = useNavigate();
-  const { data: item, isLoading, isError, error } = useItem(id);
+  const query = useItem(id);
+  const { data: item, isLoading, isError, error } = query;
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'item_create');
   const softDelete = useSoftDeleteItem();
@@ -105,7 +107,7 @@ function ItemDetailPage(): React.JSX.Element {
     );
   }
 
-  if (isError || !item) {
+  if (!item || hardError(query)) {
     return (
       <div className="panel">
         <div className="panel-body">
@@ -141,6 +143,7 @@ function ItemDetailPage(): React.JSX.Element {
 
   return (
     <div>
+      <RefreshFailedNote show={isError} />
       <Link to="/items" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
         <ArrowLeft size={14} /> Back to Item Master
       </Link>
