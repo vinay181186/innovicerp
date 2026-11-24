@@ -28,8 +28,9 @@
 //   });
 //   const exit = useExitConfirm({ onExit, draft });
 //   ... {draft.band} at the top of the form.
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Banner } from '@/ui/feedback';
+import { clickIsAnEdit } from './exit-guard';
 import { useSession } from './session';
 
 export const FORM_DRAFT_PREFIX = 'innovic.draft:';
@@ -63,6 +64,10 @@ export interface FormDraft {
   band: React.ReactNode;
   /** Forget the draft (Save / Cancel / Exit). Safe to call any time. */
   clear: () => void;
+  /** Is a draft really stored right now? The exit guard lets a tab switch
+   *  through quietly ONLY then, and treats a brought-back draft as unsaved
+   *  work (asks on the other ways out, browser prompt on close). */
+  hasDraft: () => boolean;
 }
 
 /** JSON text of the values, File/Blob dropped. `files` reports whether any were. */
@@ -117,6 +122,8 @@ export function useFormDraft<V>(opts: FormDraftOptions<V>): FormDraft {
   // Only a change the USER made is worth keeping. A form that fills its own
   // defaults after mounting (today's date, a picked-up default) fires no input
   // event, so an untouched form never leaves a draft behind.
+  // Same idea of "an edit" as the exit guard: typing, a list pick, or a click on
+  // a form control (add line, tick) — never a click on blank page or the menu.
   const touched = useRef(false);
   useEffect(() => {
     if (!storageKey) return;
@@ -128,17 +135,25 @@ export function useFormDraft<V>(opts: FormDraftOptions<V>): FormDraft {
       if (e.target instanceof Element && e.target.closest('[role="option"]'))
         touched.current = true;
     };
+    const onClick = (e: Event): void => {
+      if (clickIsAnEdit(e.target)) touched.current = true;
+    };
     document.addEventListener('input', onEdit, true);
     document.addEventListener('change', onEdit, true);
     document.addEventListener('mousedown', onPick, true);
-    document.addEventListener('click', onEdit, true);
+    document.addEventListener('click', onClick, true);
     return () => {
       document.removeEventListener('input', onEdit, true);
       document.removeEventListener('change', onEdit, true);
       document.removeEventListener('mousedown', onPick, true);
-      document.removeEventListener('click', onEdit, true);
+      document.removeEventListener('click', onClick, true);
     };
   }, [storageKey]);
+  // The version as it was when the form OPENED (§20.4). A live update can bring
+  // a newer record while the user types; stamping the draft with that newer
+  // version would let old typing come back over it and save with no 409.
+  // null = take the current one at the next write (after a Save that stayed).
+  const frozenVersion = useRef<{ key: string; version: string | null } | null>(null);
 
   // 1) First time the form is ready for this key: take the baseline, then put
   //    the draft back (same version) or drop it (record changed since).
@@ -146,6 +161,8 @@ export function useFormDraft<V>(opts: FormDraftOptions<V>): FormDraft {
     if (!storageKey || !opts.ready) return;
     if (baseline.current?.key === storageKey) return;
     baseline.current = { key: storageKey, json };
+    frozenVersion.current = { key: storageKey, version };
+    touched.current = false;
     const d = readDraft(storageKey);
     if (!d) {
       setNotice(null);
@@ -169,7 +186,15 @@ export function useFormDraft<V>(opts: FormDraftOptions<V>): FormDraft {
   useEffect(() => {
     if (!storageKey || baseline.current?.key !== storageKey) return;
     if (Date.now() < settleUntil.current) return;
-    if (!touched.current) return;
+    if (!touched.current) {
+      // Not the user: the form filling itself (a default, a seed, a reset after
+      // Save & New). That is the new starting point, never "unsaved changes".
+      baseline.current = { key: storageKey, json };
+      return;
+    }
+    if (frozenVersion.current?.key !== storageKey) {
+      frozenVersion.current = { key: storageKey, version };
+    }
     if (json === baseline.current.json) {
       removeDraft(storageKey);
       return;
@@ -177,7 +202,7 @@ export function useFormDraft<V>(opts: FormDraftOptions<V>): FormDraft {
     const { files } = snapshot(opts.values);
     const d: StoredDraft = {
       v: 1,
-      version,
+      version: frozenVersion.current?.version ?? version,
       savedAt: Date.now(),
       hadFiles: files,
       values: JSON.parse(json) as unknown,
@@ -201,8 +226,23 @@ export function useFormDraft<V>(opts: FormDraftOptions<V>): FormDraft {
     // What is on screen now is the new starting point: an unmount right after
     // Save / Cancel must not write the draft again.
     if (keyRef.current) baseline.current = { key: keyRef.current, json: jsonRef.current };
+    // A reset that follows (Save & New) is the form's doing, not the user's.
+    touched.current = false;
+    // After a Save that stays on the page the record has a new version: take it
+    // at the next write.
+    frozenVersion.current = null;
     settleUntil.current = 0;
     setNotice(null);
+  }, []);
+
+  const hasDraft = useCallback((): boolean => {
+    const k = keyRef.current;
+    if (!k) return false;
+    try {
+      return sessionStorage.getItem(k) !== null;
+    } catch {
+      return false;
+    }
   }, []);
 
   const discard = useCallback(() => {
@@ -243,5 +283,84 @@ export function useFormDraft<V>(opts: FormDraftOptions<V>): FormDraft {
     );
   }
 
-  return { band, clear };
+  return { band, clear, hasDraft };
+}
+
+// ── Wiring helpers: one copy for every screen (§21.4) ───────────────────────
+
+/** A form whose values live in a CHILD component that calls useFormDraft
+ *  itself: the page hands the exit guard this stand-in, and the child puts its
+ *  real draft into `sink` with useDraftSinkFill. */
+export function useDraftSink(): { sink: { current: FormDraft | null }; draft: FormDraft } {
+  const sink = useRef<FormDraft | null>(null);
+  const draft = useMemo<FormDraft>(
+    () => ({
+      band: null,
+      clear: () => sink.current?.clear(),
+      hasDraft: () => sink.current?.hasDraft() ?? false,
+    }),
+    [],
+  );
+  return { sink, draft };
+}
+
+/** Child side of useDraftSink. */
+export function useDraftSinkFill(
+  sink: { current: FormDraft | null } | null | undefined,
+  draft: FormDraft,
+): void {
+  useEffect(() => {
+    if (sink) sink.current = draft;
+  });
+}
+
+/** The opposite split: the PAGE holds the draft, the child form reports its
+ *  values through `onValues` and registers how to put them back with `bind`. */
+export interface FormDraftLink {
+  onValues: (values: unknown) => void;
+  bind: (apply: (values: unknown) => void) => void;
+}
+
+/** Page side of FormDraftLink. Ready once the child has reported its values. */
+export function usePageDraft(opts: { key: string | null; version?: string | null | undefined }): {
+  draft: FormDraft;
+  link: FormDraftLink;
+} {
+  const [values, setValues] = useState<unknown>(null);
+  const applyRef = useRef<(v: unknown) => void>(() => undefined);
+  const link = useMemo<FormDraftLink>(
+    () => ({
+      onValues: setValues,
+      bind: (apply) => {
+        applyRef.current = apply;
+      },
+    }),
+    [],
+  );
+  const draft = useFormDraft({
+    key: opts.key,
+    ready: values !== null,
+    values,
+    apply: (v) => applyRef.current(v),
+    version: opts.version,
+  });
+  return { draft, link };
+}
+
+/** Child side of FormDraftLink: reports `values` on every change and registers
+ *  `apply`. `link` undefined = this form keeps no draft. */
+export function useFormDraftLink(
+  link: FormDraftLink | undefined,
+  values: unknown,
+  apply: (values: unknown) => void,
+): void {
+  const json = JSON.stringify(values) ?? 'null';
+  const applyRef = useRef(apply);
+  applyRef.current = apply;
+  useEffect(() => {
+    link?.bind((v) => applyRef.current(v));
+  }, [link]);
+  useEffect(() => {
+    link?.onValues(JSON.parse(json) as unknown);
+  }, [link, json]);
 }

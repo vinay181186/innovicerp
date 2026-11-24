@@ -52,7 +52,7 @@
 
 import { useBlocker, useNavigate, useRouter } from '@tanstack/react-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { isTabSwitch } from './tab-switch';
+import { clearTabSwitch, isTabSwitch } from './tab-switch';
 import type { FormDraft } from './use-form-draft';
 
 export interface ExitConfirmOptions {
@@ -183,12 +183,17 @@ export function useExitConfirm(opts: ExitConfirmOptions = {}): ExitConfirm {
     };
   }, [enabled]);
 
-  const armed = (): boolean => enabled && mounted.current && dirty.current && !bypass.current;
   const draftRef = useRef(opts.draft);
   draftRef.current = opts.draft;
+  // A brought-back draft is unsaved work too, though no key was pressed yet.
+  const armed = (): boolean =>
+    enabled &&
+    mounted.current &&
+    (dirty.current || (draftRef.current?.hasDraft() ?? false)) &&
+    !bypass.current;
   const blocker = useBlocker({
-    // A tab switch on a form that keeps a draft loses nothing: let it through.
-    shouldBlockFn: () => armed() && !(draftRef.current && isTabSwitch()),
+    // A tab switch loses nothing only when a draft is REALLY stored.
+    shouldBlockFn: () => armed() && !(isTabSwitch() && (draftRef.current?.hasDraft() ?? false)),
     enableBeforeUnload: armed,
     withResolver: true,
   });
@@ -271,7 +276,13 @@ export function useExitConfirm(opts: ExitConfirmOptions = {}): ExitConfirm {
           blocker.proceed();
         }
       : escExit;
-  const onStay = blocker.status === 'blocked' ? blocker.reset : () => setEscOpen(false);
+  const onStay =
+    blocker.status === 'blocked'
+      ? () => {
+          clearTabSwitch(); // that tab click did not happen; the next click is an ordinary one
+          blocker.reset();
+        }
+      : () => setEscOpen(false);
 
   // Always an element, even when nothing is open: its mounting is what arms
   // the guard (see `mounted`).

@@ -22,6 +22,7 @@
 import { Link, useLocation, useNavigate } from '@tanstack/react-router';
 import { useEffect } from 'react';
 import { markTabSwitch } from '@/lib/tab-switch';
+import { isPlainLeftClick } from '@/ui/is-plain-left-click';
 import { useOpenTabs } from '@/stores/open-tabs';
 import { PageTabs, type PageTab } from '@/ui/navigation';
 import { ORDERED_SECTIONS, SECTIONS } from './nav-sections';
@@ -141,10 +142,11 @@ export function OpenTabsBar(): React.JSX.Element | null {
         <Link
           {...p}
           search={(searchByPath.get(p.to) ?? {}) as never}
-          onClick={() => {
+          onClick={(e: React.MouseEvent) => {
             // ADR-313: tell the arriving page this is a tab switch (scroll back,
-            // and a form with a draft does not ask "exit?").
-            markTabSwitch();
+            // and a form with a draft does not ask "exit?"). Not for the tab
+            // you are already on, nor a Ctrl / middle click (opens elsewhere).
+            if (isPlainLeftClick(e) && p.to !== pathname) markTabSwitch();
             p.onClick?.();
           }}
         />
