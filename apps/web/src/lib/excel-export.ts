@@ -20,8 +20,17 @@ export type ExcelCell = string | number | null;
 export interface ExcelSheet {
   /** Tab name — cleaned and cut to Excel's 31 characters. */
   name: string;
+  /** Heading lines written above the column headings (which sheet, when,
+   *  which filter — owner 24-11-2026); one blank row follows them. */
+  title?: string[] | undefined;
   header: string[];
   rows: ExcelCell[][];
+}
+
+/** The sheet as rows: heading lines, a blank row, the column headings, the data. */
+export function sheetRows(s: ExcelSheet): ExcelCell[][] {
+  const head = s.title && s.title.length > 0 ? [...s.title.map((t) => [t]), []] : [];
+  return [...head, s.header, ...s.rows];
 }
 
 type SaveFilePicker = (opts: {
@@ -72,7 +81,7 @@ export async function writeWorkbook(
   for (const s of sheets) {
     const name = safeSheetName(s.name, taken);
     taken.add(name.toLowerCase());
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([s.header, ...s.rows]), name);
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(sheetRows(s)), name);
   }
   const filename = exportFileName(fileName);
   const buffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer;

@@ -1,4 +1,5 @@
-import { and, asc, eq, isNull, like, ne, notLike } from 'drizzle-orm';
+import { and, asc, eq, isNull, like, ne, notLike, sql } from 'drizzle-orm';
+import { listPurchaseRequestsQuerySchema } from '@innovic/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../../db/client';
 import {
@@ -24,6 +25,7 @@ import {
 import { AUDITOR, asAccess } from '../../lib/test-access';
 import { loadPoInboxAccess } from './approval-inbox';
 import * as service from './service';
+import * as prService from '../purchase-requests/service';
 
 const TEST_PREFIX = 'T036B-';
 const ADMIN_EMAIL = 'innovic.technology@gmail.com';
@@ -1056,5 +1058,236 @@ describe('softDeletePurchaseOrder — Super Admin only (ADR-232)', () => {
     await expect(service.softDeletePurchaseOrder(UNKNOWN_ID, admin, 'test')).rejects.toBeInstanceOf(
       NotFoundError,
     );
+  });
+});
+
+// ─── ADR-316 — one PO = PRs of one order and of the PO's vendor ───────────
+// Fixtures borrow two live SO lines (two different SOs), one live JWSO-sourced
+// job-card op and a second vendor from the TEST data; the PRs and POs are
+// TEST_PREFIX rows the afterAll above removes. Every refusal fires before any
+// PO line is written, so no borrowed row is touched.
+describe('ADR-316 — one order, one vendor per PO', () => {
+  let so1Line: string;
+  let so2Line: string;
+  let jwOp: string | null = null;
+  let otherVendorId: string;
+  let n = 0;
+
+  beforeAll(async () => {
+    const lines = (await db.execute(sql`
+      SELECT DISTINCT ON (so.id) sol.id
+      FROM public.sales_order_lines sol
+      JOIN public.sales_orders so ON so.id = sol.sales_order_id AND so.deleted_at IS NULL
+      WHERE sol.company_id = ${admin.companyId}::uuid AND sol.deleted_at IS NULL
+      ORDER BY so.id, sol.id LIMIT 2`)) as unknown as Array<{ id: string }>;
+    if (lines.length < 2) throw new Error('ADR-316 tests need two live SOs on TEST');
+    so1Line = lines[0]!.id;
+    so2Line = lines[1]!.id;
+    const jw = (await db.execute(sql`
+      SELECT jo.id FROM public.jc_ops jo
+      JOIN public.job_cards jc ON jc.id = jo.job_card_id AND jc.deleted_at IS NULL
+      JOIN public.job_work_order_lines jwl
+        ON jwl.id = jc.source_jw_line_id AND jwl.deleted_at IS NULL
+      JOIN public.job_work_orders jwo
+        ON jwo.id = jwl.job_work_order_id AND jwo.deleted_at IS NULL
+      WHERE jo.company_id = ${admin.companyId}::uuid AND jo.deleted_at IS NULL
+      LIMIT 1`)) as unknown as Array<{ id: string }>;
+    jwOp = jw[0]?.id ?? null;
+    const v = await db
+      .select({ id: vendors.id })
+      .from(vendors)
+      .where(
+        and(
+          eq(vendors.companyId, admin.companyId!),
+          isNull(vendors.deletedAt),
+          ne(vendors.id, firstVendorId),
+        ),
+      )
+      .limit(1);
+    otherVendorId = v[0]!.id;
+  });
+
+  async function mkPr(opts: {
+    soLine?: string | null;
+    jcOp?: string | null;
+    vendorId?: string | null;
+    vendorCodeText?: string | null;
+  }) {
+    n += 1;
+    const rows = await db
+      .insert(purchaseRequests)
+      .values({
+        companyId: admin.companyId!,
+        code: `${TEST_PREFIX}OO-PR${n}`,
+        prDate: '2026-11-24',
+        status: 'approved',
+        vendorId: opts.vendorId === undefined ? firstVendorId : opts.vendorId,
+        vendorCodeText: opts.vendorCodeText ?? null,
+        itemId: firstItemId,
+        itemName: 'One-order item',
+        qty: 10,
+        sourceSoLineId: opts.soLine ?? null,
+        sourceJcOpId: opts.jcOp ?? null,
+        createdBy: admin.id,
+        updatedBy: admin.id,
+      })
+      .returning();
+    return rows[0]!;
+  }
+
+  const line = (sourcePrId: string, extra: { id?: string; rate?: number } = {}) => ({
+    itemId: firstItemId,
+    itemName: 'One-order item',
+    qty: 1,
+    rate: extra.rate ?? 10,
+    sourcePrId,
+    ...(extra.id ? { id: extra.id } : {}),
+  });
+
+  function createWith(prIds: string[], vendorId = firstVendorId) {
+    n += 1;
+    return service.createPurchaseOrder(
+      {
+        header: {
+          code: `${TEST_PREFIX}OO-PO${n}`,
+          poDate: '2026-11-24',
+          poType: 'standard',
+          vendorId,
+          status: 'draft',
+          sgstPct: 0,
+          cgstPct: 0,
+          igstPct: 0,
+        },
+        lines: prIds.map((id) => line(id)),
+      },
+      admin,
+    );
+  }
+
+  it('create: two PRs of the same SO + vendor → OK', async () => {
+    const a = await mkPr({ soLine: so1Line });
+    const b = await mkPr({ soLine: so1Line });
+    const po = await createWith([a.id, b.id]);
+    expect(po.lines).toHaveLength(2);
+  });
+
+  it('create: PRs of two SOs → 409 with the shared message', async () => {
+    const a = await mkPr({ soLine: so1Line });
+    const b = await mkPr({ soLine: so2Line });
+    const err = await createWith([a.id, b.id]).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ConflictError);
+    expect((err as Error).message).toMatch(/One PO takes PRs of one SO only/);
+  });
+
+  it('create: stock + stock → OK; stock + SO → 409', async () => {
+    const s1 = await mkPr({});
+    const s2 = await mkPr({});
+    await expect(createWith([s1.id, s2.id])).resolves.toBeTruthy();
+    const s3 = await mkPr({});
+    const so = await mkPr({ soLine: so1Line });
+    await expect(createWith([s3.id, so.id])).rejects.toThrow(/is for no SO/);
+  });
+
+  it('create: SO + JWSO → 409', async (ctx) => {
+    if (!jwOp) ctx.skip();
+    const so = await mkPr({ soLine: so1Line });
+    const jw = await mkPr({ jcOp: jwOp });
+    await expect(createWith([so.id, jw.id])).rejects.toThrow(ConflictError);
+  });
+
+  it('create: vendor-TBD PR fits the PO vendor; a PR of another vendor → 409', async () => {
+    const tbd = await mkPr({ vendorId: null, vendorCodeText: 'TBD' });
+    await expect(createWith([tbd.id])).resolves.toBeTruthy();
+    const other = await mkPr({ vendorId: otherVendorId });
+    await expect(createWith([other.id])).rejects.toThrow(/is for vendor .* this PO is for/);
+  });
+
+  it('edit: adding a PR of a different SO → 409', async () => {
+    const a = await mkPr({ soLine: so1Line });
+    const po = await createWith([a.id]);
+    const b = await mkPr({ soLine: so2Line });
+    await expect(
+      service.updatePurchaseOrder(
+        po.id,
+        { header: {}, lines: [line(a.id, { id: po.lines[0]!.id }), line(b.id)] },
+        admin,
+      ),
+    ).rejects.toThrow(/One PO takes PRs of one SO only/);
+  });
+
+  it('edit: a legacy PO already mixing two SOs still saves a rate change', async () => {
+    const a = await mkPr({ soLine: so1Line });
+    const b = await mkPr({ soLine: so2Line });
+    const po = await createWith([a.id]);
+    // The legacy state the rule now forbids, written straight to the table.
+    const extra = await db
+      .insert(purchaseOrderLines)
+      .values({
+        companyId: admin.companyId!,
+        purchaseOrderId: po.id,
+        lineNo: 2,
+        itemId: firstItemId,
+        itemName: 'One-order item',
+        qty: 1,
+        rate: '10',
+        sourcePrId: b.id,
+        createdBy: admin.id,
+        updatedBy: admin.id,
+      })
+      .returning();
+    const saved = await service.updatePurchaseOrder(
+      po.id,
+      {
+        header: {},
+        lines: [
+          line(a.id, { id: po.lines[0]!.id, rate: 12 }),
+          line(b.id, { id: extra[0]!.id, rate: 12 }),
+        ],
+      },
+      admin,
+    );
+    expect(saved.lines).toHaveLength(2);
+  });
+
+  it('batch: PRs of two SOs → 409', async () => {
+    const a = await mkPr({ soLine: so1Line });
+    const b = await mkPr({ soLine: so2Line });
+    n += 1;
+    await expect(
+      service.createPurchaseOrderFromPrBatch(
+        {
+          prIds: [a.id, b.id],
+          vendorId: firstVendorId,
+          header: { code: `${TEST_PREFIX}OO-PO${n}`, poDate: '2026-11-24' },
+        },
+        admin,
+      ),
+    ).rejects.toThrow(/One PO takes PRs of one SO only/);
+  });
+
+  it('PR list sameOrderAs: only PRs of that order; unknown id → empty', async () => {
+    const a = await mkPr({ soLine: so1Line });
+    const b = await mkPr({ soLine: so1Line });
+    const c = await mkPr({ soLine: so2Line });
+    const list = await prService.listPurchaseRequests(
+      listPurchaseRequestsQuerySchema.parse({
+        sameOrderAs: a.id,
+        search: `${TEST_PREFIX}OO-`,
+        limit: 100,
+      }),
+      admin,
+    );
+    const ids = list.items.map((r) => r.id);
+    expect(ids).toEqual(expect.arrayContaining([a.id, b.id]));
+    expect(ids).not.toContain(c.id);
+    expect(list.total).toBe(list.items.length);
+    const none = await prService.listPurchaseRequests(
+      listPurchaseRequestsQuerySchema.parse({
+        sameOrderAs: '00000000-0000-4000-8000-000000000000',
+        limit: 100,
+      }),
+      admin,
+    );
+    expect(none.items).toHaveLength(0);
   });
 });

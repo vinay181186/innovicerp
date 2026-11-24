@@ -99,6 +99,9 @@ export interface PrPickerProps {
    *  distinct from "still loading". Lets the caller show the same message
    *  outside the dropdown, where it is readable. */
   onNoOptions?: ((none: boolean) => void) | undefined;
+  /** ADR-316: a PR already on the document. When set, only PRs of the same SO
+   *  as that PR are offered (server-side `sameOrderAs`) — one PO = one SO. */
+  sameOrderAs?: string | null | undefined;
 }
 
 export function PrPicker({
@@ -116,6 +119,7 @@ export function PrPicker({
   vendorId,
   vendorName = '',
   onNoOptions,
+  sameOrderAs,
 }: PrPickerProps): React.JSX.Element {
   const [search, setSearch] = useState('');
   const base = {
@@ -125,6 +129,7 @@ export function PrPicker({
     // (ADR-152). The old browser-side `poId === null` test could not see a
     // part-ordered PR at all.
     convertibleOnly: true,
+    ...(sameOrderAs ? { sameOrderAs } : {}),
     limit: 50,
     offset: 0,
   };
@@ -185,12 +190,16 @@ export function PrPicker({
     !isFetching &&
     search.trim() === '' &&
     convertible.length === 0;
+  // ADR-316 — filtered to the PO's SO and nothing left: the vendor may still
+  // have PRs of OTHER SOs, so never say it has none (and never tell the line).
+  const noneForVendorAll = noneForVendor && !sameOrderAs;
+  const noneForThisSo = noneForVendor && Boolean(sameOrderAs);
   const reported = useRef<boolean | null>(null);
   useEffect(() => {
-    if (reported.current === noneForVendor) return;
-    reported.current = noneForVendor;
-    onNoOptions?.(noneForVendor);
-  }, [noneForVendor, onNoOptions]);
+    if (reported.current === noneForVendorAll) return;
+    reported.current = noneForVendorAll;
+    onNoOptions?.(noneForVendorAll);
+  }, [noneForVendorAll, onNoOptions]);
 
   return (
     <div className={className}>
@@ -214,7 +223,8 @@ export function PrPicker({
         loading={isFetching}
         options={convertible.map((p) => ({ id: p.id, code: p.code, name: labelFor(p) }))}
         placeholder={placeholder}
-        {...(noneForVendor ? { emptyText: noOpenPrsMessage(vendorName) } : {})}
+        {...(noneForVendorAll ? { emptyText: noOpenPrsMessage(vendorName) } : {})}
+        {...(noneForThisSo ? { emptyText: 'No pending PRs of this SO for this vendor.' } : {})}
         {...(codeOnly ? { selectedLabel: (o: SearchableOption) => o.code ?? o.name } : {})}
         valueLabel={
           selected

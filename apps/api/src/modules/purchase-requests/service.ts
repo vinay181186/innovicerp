@@ -31,6 +31,7 @@ import {
 } from '../../db/schema';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { createdByNameSql } from '../../lib/created-by-sql';
+import { prOrderCodeSql, prOrderKeySql } from '../../lib/pr-order-key';
 import { canSeeFormPrice, requireDeleteRight, requireFormAccess } from '../../lib/access';
 import { readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { assertActiveParty } from '../../lib/active-party';
@@ -646,6 +647,15 @@ export async function listPurchaseRequests(
         ? sql`AND (pr.vendor_id = ${input.vendorId}::uuid OR upper(btrim(pr.vendor_code_text)) = ${vendorCode})`
         : sql`AND pr.vendor_id = ${input.vendorId}::uuid`
       : sql``;
+    // ADR-316 — the PO form's per-line PR picker: only PRs of the SAME order
+    // (SO / JWSO / none) as the PR already on the PO. Unknown or other-company
+    // id → the subquery is NULL and nothing matches. Applied to list AND count.
+    const sameOrderFrag = input.sameOrderAs
+      ? sql`AND ${prOrderKeySql('pr')} = (SELECT ${prOrderKeySql('ref')}
+          FROM public.purchase_requests ref
+          WHERE ref.id = ${input.sameOrderAs}::uuid
+            AND ref.company_id = ${companyId}::uuid AND ref.deleted_at IS NULL)`
+      : sql``;
     const jcOpFrag = input.sourceJcOpId
       ? sql`AND pr.source_jc_op_id = ${input.sourceJcOpId}::uuid`
       : sql``;
@@ -734,6 +744,8 @@ export async function listPurchaseRequests(
         jo.op_seq AS "sourceJcOpSeq",
         po.code AS "poCode",
         ${PR_ORDER_CODE} AS "soCode",
+        ${prOrderKeySql('pr')} AS "orderKey",
+        ${prOrderCodeSql('pr')} AS "orderCode",
         so.internal_so_no AS "soInternalNo",
         sol.line_no AS "soLineNo",
         -- Ordered / balance quantity (ADR-152). Two scalar subqueries per row,
@@ -765,6 +777,7 @@ export async function listPurchaseRequests(
         ${searchFrag}
         ${statusFrag}
         ${vendorFrag}
+        ${sameOrderFrag}
         ${jcOpFrag}
         ${fromFrag}
         ${toFrag}
@@ -817,6 +830,7 @@ export async function listPurchaseRequests(
         ${searchFrag}
         ${statusFrag}
         ${vendorFrag}
+        ${sameOrderFrag}
         ${jcOpFrag}
         ${fromFrag}
         ${toFrag}
@@ -889,6 +903,8 @@ function toListItem(r: Record<string, unknown>): PurchaseRequestListItem {
     sourceJcOpSeq: r['sourceJcOpSeq'] != null ? Number(r['sourceJcOpSeq']) : null,
     poCode: (r['poCode'] as string | null) ?? null,
     soCode: (r['soCode'] as string | null) ?? null,
+    orderKey: (r['orderKey'] as string | null) ?? 'none',
+    orderCode: (r['orderCode'] as string | null) ?? null,
     soInternalNo: (r['soInternalNo'] as string | null) ?? null,
     soLineNo: r['soLineNo'] != null ? Number(r['soLineNo']) : null,
   };
@@ -959,6 +975,9 @@ export async function getPurchaseRequest(
         sourceJcOpSeq: jcOps.opSeq,
         soCode: salesOrders.code,
         soInternalNo: salesOrders.internalSoNo,
+        // ADR-316 — the PR's one order (same rule as the list and the PO save).
+        orderKey: sql<string>`${prOrderKeySql('purchase_requests')}`,
+        orderCode: sql<string | null>`${prOrderCodeSql('purchase_requests')}`,
         soLineNo: salesOrderLines.lineNo,
         // Ordered / balance quantity (ADR-152) — same two subqueries the list
         // uses, combined by deriveOrderedQty below.
@@ -1027,6 +1046,8 @@ export async function getPurchaseRequest(
       sourceJcOpSeq: found.sourceJcOpSeq,
       soCode: found.soCode,
       soInternalNo: found.soInternalNo,
+      orderKey: found.orderKey,
+      orderCode: found.orderCode,
       soLineNo: found.soLineNo,
     };
   });

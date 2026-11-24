@@ -90,6 +90,9 @@ export interface PoFormLineProps {
   colCount: number;
   /** PR ids used on the OTHER lines — never offered in this row's picker. */
   excludePrIds: string[];
+  /** ADR-316: the first PR on the OTHER lines — the picker then offers only PRs
+   *  of that PR's SO. Null when no other line has a PR yet. */
+  sameOrderAsPrId: string | null;
   /** The header's vendor. When set, the picker offers only that vendor's PRs
    *  (plus the vendor-less OSP ones) — the PR's vendor is what ties it here.
    *  Changing it re-queries this line's picker; a line whose PR belongs to the
@@ -113,6 +116,7 @@ export function PoFormLine({
   isEdit,
   colCount,
   excludePrIds,
+  sameOrderAsPrId,
   headerVendorId,
   vendorName,
   showPrHints,
@@ -312,7 +316,7 @@ export function PoFormLine({
               // `placeholderData` to carry over, so the vendor you just left can
               // never have its PRs shown — and the picker's own search box and
               // cached label are reset with it.
-              key={`${headerVendorId ?? 'no-vendor'}|${prCodeKey.current}`}
+              key={`${headerVendorId ?? 'no-vendor'}|${prCodeKey.current}|${sameOrderAsPrId ?? ''}`}
               id={`pof-pr-${idx}`}
               className=""
               showLabel={false}
@@ -322,6 +326,7 @@ export function PoFormLine({
               value={line?.sourcePrId ?? null}
               initialLabel={line?.sourcePrCode ?? ''}
               excludeIds={excludePrIds}
+              sameOrderAs={sameOrderAsPrId}
               vendorId={headerVendorId}
               vendorName={vendorName}
               onNoOptions={setNoPrsForVendor}

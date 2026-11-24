@@ -4,6 +4,7 @@
 // against.
 
 import { sql } from 'drizzle-orm';
+import { jcOpenSql } from '../../../lib/jc-open-sql';
 import type { RegisteredReport } from '../registry';
 import { likeFilter, numCell, REPORT_ROW_CAP, textCell, type SqlRow } from './report-helpers';
 
@@ -57,6 +58,7 @@ export const affectedWipOspStockReport: RegisteredReport = {
          WHERE v.company_id = ${companyId}::uuid
            AND js.computed_status NOT IN ('complete', 'closed')
            AND v.computed_status <> 'complete'
+           AND ${jcOpenSql('jc')}
            AND (v.input_avail - v.completed_qty - v.at_vendor_qty > 0 OR o.hold_kind IS NOT NULL)
            ${itemFrag}
         UNION ALL

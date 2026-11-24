@@ -11,11 +11,20 @@ import type { JobQueueMachine, JobQueueRow } from '@innovic/shared';
 import type { DbTransaction } from '../../db/with-user-context';
 import { createdByNameSql } from '../../lib/created-by-sql';
 import { polSql } from '../../lib/pol';
+import { jcOpenSql } from '../../lib/jc-open-sql';
 
 export function num(v: unknown): number {
   if (v == null) return 0;
   const n = typeof v === 'number' ? v : Number(v);
   return Number.isFinite(n) ? n : 0;
+}
+
+/** The raw driver returns timestamptz as text ('2026-11-01 05:16:00.515278+00');
+ *  send ISO like every other list. Unparseable text is passed through as-is. */
+export function isoOrRaw(v: unknown): string | null {
+  if (v == null) return null;
+  const d = new Date(v as string | Date);
+  return Number.isNaN(d.getTime()) ? String(v) : d.toISOString();
 }
 
 /** Every machine (or just `machineId`) with its FULL pending queue in order. */
@@ -113,6 +122,8 @@ export async function loadMachineQueues(
         AND (op.machine_id IS NOT NULL OR op.machine_code_text IS NOT NULL)
         AND op.op_type <> 'outsource'
         AND COALESCE(s.computed_status, 'waiting') <> 'complete'
+        -- A Closed card's leftover ops are not pending work (decision 2a).
+        AND ${jcOpenSql('jc')}
       ORDER BY
         op.queue_position ASC NULLS LAST,
         op.op_seq ASC,
@@ -148,10 +159,7 @@ export async function loadMachineQueues(
       itemName: (r['itemName'] as string | null) ?? null,
       soCode: (r['soCode'] as string | null) ?? null,
       soInternalNo: (r['soInternalNo'] as string | null) ?? null,
-      createdAt:
-        r['createdAt'] instanceof Date
-          ? (r['createdAt'] as Date).toISOString()
-          : ((r['createdAt'] as string | null) ?? null),
+      createdAt: isoOrRaw(r['createdAt']),
       createdByName: (r['createdByName'] as string | null) ?? null,
       soCustomer: (r['soCustomer'] as string | null) ?? null,
       opSeq: num(r['opSeq']),

@@ -14,6 +14,7 @@ import type {
 } from '@innovic/shared';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError } from '../../lib/errors';
+import { jcOpenSql } from '../../lib/jc-open-sql';
 import { readBelowReorder } from '../store-inventory/reorder-rule';
 
 function requireCompany(user: AuthContext): string {
@@ -29,21 +30,27 @@ export async function getProductionDashboard(
     // ── Op-level counters (enrichedOps in legacy) ──────────────────────────
     const opCountRows = await tx.execute(sql`
       SELECT
+        -- In-house pending counters skip a Closed card's leftover ops (decision
+        -- 2a). Outsource / At Vendor / Running stay physical: no card filter.
         COALESCE(SUM(CASE WHEN op_type <> 'outsource' AND computed_status <> 'complete'
+                           AND ${jcOpenSql('jc')}
                           THEN GREATEST(available, 0) ELSE 0 END), 0)::int AS "pendingQty",
         COUNT(*) FILTER (
           WHERE op_type <> 'outsource' AND (available > 0 OR computed_status = 'in_progress')
+            AND ${jcOpenSql('jc')}
         )::int AS "readyOps",
         COALESCE(SUM(CASE WHEN op_type <> 'outsource'
                            AND (available > 0 OR computed_status = 'in_progress')
+                           AND ${jcOpenSql('jc')}
                           THEN available ELSE 0 END), 0)::int AS "readyQty",
         COUNT(*) FILTER (WHERE op_type = 'outsource' AND computed_status <> 'complete')::int
           AS "outsourceOps",
         COUNT(*) FILTER (WHERE op_type = 'outsource'
                           AND computed_status IN ('at_vendor', 'po_created'))::int AS "atVendor",
         COUNT(*) FILTER (WHERE computed_status = 'running')::int AS "runningOps"
-      FROM public.v_jc_op_status
-      WHERE company_id = ${companyId}::uuid
+      FROM public.v_jc_op_status s
+      LEFT JOIN public.job_cards jc ON jc.id = s.job_card_id
+      WHERE s.company_id = ${companyId}::uuid
     `);
     const oc = (opCountRows as unknown as Array<Record<string, unknown>>)[0] ?? {};
 

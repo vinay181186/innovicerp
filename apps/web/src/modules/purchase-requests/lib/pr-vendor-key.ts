@@ -2,10 +2,7 @@
 // Purchase Requests cards and the Outsource Jobs table), so the two "Create PO
 // from Selected" buttons refuse the same mixes.
 
-import type { PurchaseRequestListItem } from '@innovic/shared';
-
-/** Vendor text that means "not chosen yet" (Planning / BOM cascade / OSP). */
-const VENDOR_TBD = new Set(['', 'TBD', '(VENDOR TBD)']);
+import { isPrVendorTbdText, type PurchaseRequestListItem } from '@innovic/shared';
 
 /** Which vendor a PR belongs to, for the one-vendor-per-PO tick rule — ONE key,
  *  the vendor code: the master's code (vendorCode, resolved by the server from
@@ -14,7 +11,8 @@ const VENDOR_TBD = new Set(['', 'TBD', '(VENDOR TBD)']);
  *  the same key. Null when the vendor is still TBD. */
 export function prVendorKey(pr: PurchaseRequestListItem): string | null {
   const t = (pr.vendorCode ?? pr.vendorCodeText ?? '').trim().toUpperCase();
-  if (!VENDOR_TBD.has(t)) return t;
+  // Blank or a TBD placeholder = not chosen yet (shared list, ADR-316).
+  if (!isPrVendorTbdText(t)) return t;
   // Linked to a master row whose code did not resolve (deleted vendor): the
   // id is still one vendor.
   return pr.vendorId ? `id:${pr.vendorId}` : null;

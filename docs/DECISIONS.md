@@ -16615,3 +16615,50 @@ web's `shouldShowSection` both call it; the rule itself is unchanged. The home l
 departments in the top menu's order (Quality before Store) under the top menu's names
 (Sales & CRM, Quality). Option b (hide a department whose every real page is hidden)
 was not chosen.
+
+## ADR-316: One PO = one vendor + one SO (owner 2026-11-24)
+
+**Date:** 2026-11-24
+**Status:** Accepted (owner: "1 go")
+
+### Context
+
+One PO could take PRs of several SOs as long as the vendor matched, and even the vendor rule lived only in
+the browser (PR list tick lock, PO form banner). The owner wants several PRs on one PO only when they share
+the same vendor AND the same SO.
+
+### Decision
+
+- A PR's order is worked out once, on the server (`apps/api/src/lib/pr-order-key.ts`), with the same
+  precedence as the SO No. column (PR_ORDER_CODE): the PR's own SO, else its Job Card's JWSO, else the Job
+  Card's SO, else none. Keyed by id: `so:<id>` | `jw:<id>` | `none`. Sent on PR list rows and the PR detail
+  as `orderKey` / `orderCode`; the screens key on it and never re-derive it.
+- A PR with no SO combines only with other no-SO PRs (owner option 1). Same JWSO counts as same order; SO
+  and JWSO never mix.
+- Server checks, inside the save transaction with the PR rows locked (CLAUDE.md §20.3): create, edit (only
+  when the save brings in an order the PO did not have, so an old mixed PO stays editable), batch create.
+  The vendor rule moves to the server too: a PR whose own vendor is set must match the PO's; blank / 'TBD' /
+  '(vendor TBD)' PRs fit any vendor (shared `isPrVendorTbdText`).
+- Screens: PR list and Outsource Jobs lock the SO of the first ticked PR; the PO form blocks a line of a
+  second SO; the per-line PR picker asks the server for PRs of the same order (`sameOrderAs`).
+- Not changed: the single-PR `/from-pr` door (Job Card op "Create PO") keeps its deliberate vendor
+  override — one PR, so no order mix is possible.
+
+### Consequences
+
+- Positive: one rule in one place, enforced by the server; no migration.
+- Negative: batch create now refuses PRs whose own vendor is not the chosen vendor.
+
+## ADR-310 addendum 2: Excel sheet heading + raw-time dates; a Closed Job Card has no pending work
+
+**Date:** 2026-11-24 (owner: Job Queue Excel showed `2026-11-01 05:16:00.515278+00`, no title, only Closed JCs,
+"Sr No from 14", POL blanks; decisions 1a + 2a, mockup https://claude.ai/artifact/WnGuPgpUhJ78FBfH6VAMuT).
+(1) Every shared Export sheet now starts with a heading: row 1 the list name, row 2
+`Exported dd-mm-yyyy hh:mm AM · <filters | ListExportSpec.allLabel> · N rows`, a blank row, then the column
+headings (`ExcelSheet.title`, `sheetRows`). The Export date check also reads a raw Postgres `+00` time (made ISO
+first, for Safari); Job Queue's server sends ISO. (2) `lib/jc-open-sql.ts` `jcOpenSql`/`jcOpenCond` =
+`closed_at IS NULL AND deleted_at IS NULL` is THE rule for "this card's leftover ops are pending work", used by Job
+Queue (+▲/▼ clears a Closed card's queue_position so a reopen joins at the back), Machine Loading list + cards,
+Production Dashboard in-house counters (Outsource / At Vendor / Running stay physical) + Ready list, Home Ready for
+You, Home JC Status (a Closed card with leftovers is neither Open nor Completed; Total unchanged), Stuck dashboard,
+WIP by Operation, Affected WIP (WIP part only). "Sr No from 14" was Queue No. behind 13 Closed-card ops. No migration.

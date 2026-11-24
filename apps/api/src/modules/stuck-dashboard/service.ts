@@ -10,6 +10,7 @@ import { sql } from 'drizzle-orm';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { createdByNameSql } from '../../lib/created-by-sql';
 import { AuthorizationError } from '../../lib/errors';
+import { jcOpenCond } from '../../lib/jc-open-sql';
 import { loadSoPhaseData } from '../../lib/so-phase-data';
 import { pageStuckItems } from './paging';
 import { type OpStuckCandidate, classifyOpStuck, derivePhaseStuckItems } from './rules';
@@ -53,7 +54,7 @@ async function loadOpCandidates(tx: DbTransaction, companyId: string): Promise<O
       LEFT JOIN clients cl ON cl.id = so.client_id
       WHERE vs.company_id = ${cid}
         AND so.deleted_at IS NULL AND so.status NOT IN ('closed', 'cancelled')
-        AND jc.deleted_at IS NULL AND o.deleted_at IS NULL
+        AND ${jcOpenCond('jc')} AND o.deleted_at IS NULL
         AND vs.computed_status <> 'complete'
         AND (vs.available > 0 OR vs.qc_pending > 0)
     `),

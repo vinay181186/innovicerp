@@ -29,6 +29,7 @@ import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
 import { useDebounce } from '@/lib/use-debounce';
 import { usePurchaseRequestsList } from '@/modules/purchase-requests/api';
 import { usePrSelection } from '@/modules/purchase-requests/lib/use-pr-selection';
+import { PR_DIFFERENT_ORDER_TIP } from '@/modules/purchase-requests/lib/pr-order-key';
 import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { DataTable, Panel } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
@@ -217,6 +218,16 @@ export function OutsourceJobsView({ tabs }: { tabs?: React.ReactNode }): React.J
                 {sel.lockedVendor ? (
                   <span className="text3" style={{ fontSize: 'var(--fs-xs)' }}>
                     Vendor <span className="text2 fw-700">{sel.lockedVendor.label}</span>
+                  </span>
+                ) : null}
+                {sel.lockedOrder ? (
+                  <span
+                    className="text3"
+                    style={{ fontSize: 'var(--fs-xs)' }}
+                    title={PR_DIFFERENT_ORDER_TIP}
+                  >
+                    {sel.lockedOrder.label === 'No SO' ? null : 'SO '}
+                    <span className="text2 fw-700">{sel.lockedOrder.label}</span>
                   </span>
                 ) : null}
                 <button type="button" className="btn btn-ghost btn-sm" onClick={sel.clear}>

@@ -7,6 +7,7 @@ import { DASHBOARD_WIDGETS } from '@innovic/shared';
 import { sql } from 'drizzle-orm';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError } from '../../lib/errors';
+import { jcOpenCond } from '../../lib/jc-open-sql';
 import { canSeeWidget, type DashAccess, hasDept, loadAccess } from './access';
 import { getConfig } from './config-service';
 import { getMachineLoading } from '../machine-loading/service';
@@ -77,10 +78,11 @@ async function computeWidget(
         await q(
           tx,
           `SELECT
-          COUNT(*) FILTER (WHERE open_ops > 0)::int AS open_jcs,
+          COUNT(*) FILTER (WHERE open_ops > 0 AND is_open)::int AS open_jcs,
           COUNT(*) FILTER (WHERE open_ops = 0)::int AS done_jcs,
           COUNT(*)::int AS total FROM (
-            SELECT jc.id, COUNT(*) FILTER (WHERE vs.computed_status <> 'complete')::int AS open_ops
+            SELECT jc.id, ${jcOpenCond('jc')} AS is_open,
+              COUNT(*) FILTER (WHERE vs.computed_status <> 'complete')::int AS open_ops
             FROM job_cards jc JOIN v_jc_op_status vs ON vs.job_card_id=jc.id
             WHERE jc.company_id='${cid}'::uuid AND jc.deleted_at IS NULL GROUP BY jc.id) y`,
         )

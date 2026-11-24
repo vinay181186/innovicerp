@@ -9,6 +9,7 @@ import { drawingRevOf } from '../../lib/drawing-rev';
 import type { MachineLoadOp, MachineLoadingQuery } from '@innovic/shared';
 import type { DbTransaction } from '../../db/with-user-context';
 import { createdByNameSql } from '../../lib/created-by-sql';
+import { jcOpenSql } from '../../lib/jc-open-sql';
 import { likeEscape, readSf, sfOrderBy, sfWhere, type SfColumnMap } from '../../lib/list-query';
 import { soOrJwCodeSql } from '../../lib/order-code';
 import { polSql } from '../../lib/pol';
@@ -107,6 +108,7 @@ const FROM_WHERE = (companyId: string): SQL => sql`
         AND jo.deleted_at IS NULL
         AND jo.op_type <> 'outsource'
         AND vos.computed_status <> 'complete'
+        AND ${jcOpenSql('jc')}
 `;
 
 function toOp(r: Record<string, unknown>): MachineLoadOp {

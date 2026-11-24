@@ -4,6 +4,7 @@
 // Modelled on ERPNext's "Work Order Summary" / "Job Card Summary" (WIP) report.
 
 import { OP_TYPES } from '@innovic/shared';
+import { jcOpenSql } from '../../../lib/jc-open-sql';
 import { sql } from 'drizzle-orm';
 import { drawingRevOf } from '../../../lib/drawing-rev';
 import type { RegisteredReport } from '../registry';
@@ -122,6 +123,7 @@ export const wipByOperationReport: RegisteredReport = {
       WHERE v.company_id = ${companyId}::uuid
         AND js.computed_status NOT IN ('complete', 'closed')
         AND v.computed_status <> 'complete'
+        AND ${jcOpenSql('jc')}
         ${machineFrag}
         ${itemFrag}
         ${opTypeFrag}

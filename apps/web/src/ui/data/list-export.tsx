@@ -75,6 +75,8 @@ export interface ListExportSpec<T, L = unknown> {
   moneyColumns?: string[] | undefined;
   /** Plain words for the search / filters, for the Activity Log. */
   filterSummary?: string | undefined;
+  /** The sheet heading's words when nothing is filtered (Job Queue: "All machines"). */
+  allLabel?: string | undefined;
   linesSheet?: ListExportLinesSheet<T, L> | undefined;
   /** Facts the list shows OUTSIDE its columns — a group heading (Job Queue's
    *  machine). Written right after the lead block on every export; never on
@@ -135,7 +137,8 @@ export function selectExportColumns<T>(
 }
 
 const NUMERIC = /^-?(?:₹\s*)?[\d,]*\.?\d+$/;
-const ISO_DAY = /^\d{4}-\d{2}-\d{2}(?:[T ][\d:.]+(?:Z|[+-]\d{2}:?\d{2})?)?$/;
+// `+00` too: a raw Postgres timestamptz text (`2026-11-01 05:16:00.515278+00`).
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}(?:[T ][\d:.]+(?:Z|[+-]\d{2}(?::?\d{2})?)?)?$/;
 
 /** One Excel cell: exportValue, else the words the cell shows. */
 export function exportCell<T>(c: ExportColumn<T>, row: T, index: number): ExcelCell {
@@ -151,8 +154,11 @@ export function exportCell<T>(c: ExportColumn<T>, row: T, index: number): ExcelC
   }
   // A raw ISO date (a filterValue such as Created On) reads as on screen.
   if (kind === 'date' && ISO_DAY.test(text)) {
-    const time = text.length > 10 ? fmtTime12(text, '') : '';
-    return time ? `${fmtDate(text, '')} ${time}` : fmtDate(text, '');
+    // Safari cannot read "… 05:16:00+00": make it ISO first.
+    const hasTime = text.length > 10;
+    const iso = hasTime ? text.replace(' ', 'T').replace(/([+-]\d{2})$/, '$1:00') : text;
+    const time = hasTime ? fmtTime12(iso, '') : '';
+    return time ? `${fmtDate(iso, '')} ${time}` : fmtDate(iso, '');
   }
   return text;
 }
@@ -180,6 +186,24 @@ export function withAlwaysExported(
     out.splice(at, 0, id);
   });
   return out;
+}
+
+/** The heading lines above a sheet's column headings (owner 24-11-2026):
+ *  the list's name, then when it was exported, its filter (else the list's
+ *  own "everything" words, else nothing) and its size. */
+export function exportHeading(
+  title: string,
+  filterSummary: string | undefined,
+  count: number,
+  unit: string,
+  allLabel?: string,
+  at: Date = new Date(),
+): string[] {
+  const iso = at.toISOString();
+  const when = `${fmtDate(iso, '')} ${fmtTime12(iso, '')}`.trim();
+  const filter = filterSummary?.trim() || allLabel?.trim();
+  const size = `${fmtCount(count)} ${unit}`;
+  return [title, ['Exported ' + when, filter, size].filter(Boolean).join(' · ')];
 }
 
 /** First occurrence of each row key wins (a row shifting between pages). */
@@ -296,6 +320,13 @@ export function useListExport<T, L>(
         rows,
         spec.tableKey ? readLayout(spec.tableKey) : undefined,
       );
+      main.title = exportHeading(
+        spec.fileName,
+        spec.filterSummary,
+        rows.length,
+        'rows',
+        spec.allLabel,
+      );
       const sheets: ExcelSheet[] = [main];
 
       let lineCount: number | undefined;
@@ -307,7 +338,12 @@ export function useListExport<T, L>(
         linesCapped = res.total > LIST_EXPORT_CAP;
         if (linesCapped) notes.push(capMessage(lines.length, res.total, ls.name));
         lineCount = lines.length;
-        sheets.push({ name: ls.name, header: ls.header, rows: lines.map((l) => ls.toRow(l)) });
+        sheets.push({
+          name: ls.name,
+          title: exportHeading(ls.name, spec.filterSummary, lines.length, 'lines', spec.allLabel),
+          header: ls.header,
+          rows: lines.map((l) => ls.toRow(l)),
+        });
       }
 
       const saved = await writeWorkbook(spec.fileName, sheets);
