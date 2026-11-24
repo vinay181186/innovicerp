@@ -58,7 +58,9 @@ export function useRcItemRev(args: {
   return { isMake, revLocked, blockingCard, revError };
 }
 
-/** Drawing Rev ★ · Drawing — sits after Item Code on the identity line. */
+/** Drawing Rev ★ · Item Name · Drawing — sits after Item Code on the identity
+ *  line. Item Name goes between the two (owner 2026-11-24), and alone when the
+ *  item has no Drawing Rev (not a make item, or none picked yet). */
 export function RcDrawingRevFields({
   itemId,
   itemCode,
@@ -69,6 +71,7 @@ export function RcDrawingRevFields({
   mode,
   onRevChange,
   onFileChange,
+  itemName,
 }: {
   itemId: string;
   itemCode: string;
@@ -79,8 +82,9 @@ export function RcDrawingRevFields({
   mode: 'create' | 'edit';
   onRevChange: (rev: string) => void;
   onFileChange: (path: string | null) => void;
-}): React.JSX.Element | null {
-  if (!itemId || !isMake) return null;
+  itemName: React.ReactNode;
+}): React.JSX.Element {
+  if (!itemId || !isMake) return <>{itemName}</>;
   return (
     <>
       <label className="rc-id-lb" htmlFor="rc-drawing-rev">
@@ -97,11 +101,12 @@ export function RcDrawingRevFields({
           autoComplete="off"
           maxLength={32}
           style={{ textTransform: 'uppercase' }}
-          placeholder={mode === 'edit' ? 'Set Drawing Rev' : 'e.g. 1, A'}
+          placeholder={mode === 'edit' ? 'Set Drawing Rev' : '1, A'}
           value={drawingRev}
           onChange={(e) => onRevChange(e.target.value.toUpperCase())}
         />
       )}
+      {itemName}
       <span className="rc-id-lb">Drawing</span>
       <DrawingRevField
         itemId={itemId}
