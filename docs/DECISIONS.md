@@ -16706,3 +16706,21 @@ queues and value reports stay as they are.
    history timeline.
 5. **Guard:** `list-order.guard.unit.test.ts` fails when a module calls sfOrderBy without
    list-order.ts and is not on KEEP. No migration.
+
+## ADR-319: Upload drawing — a Rev with no file gets its first file from the Drawing Register (owner 2026-11-24)
+
+Owner: "if user want to upload drawing file from drawing register in case of missing file — is it
+possible. File must sync and update to every doc."
+
+1. **Drawing Register ⋯ and the drawing page** show **"Upload drawing…"** on a Rev with no file
+   (same right as "Replace drawing…": Route Card Master Edit; not on Obsolete). A Rev with a file keeps
+   "Replace drawing…". One label per control.
+2. **Same server call** (`replaceItemRevisionDrawing` → `applyDrawingReplacement`, §20.1 one writer):
+   the file goes on the drawing record, every SO line (plus its so_line_drawing_revisions row), every
+   JWSO line; Route Card reads the record live, Job Card reads its SO / JWSO line live. §20.4 version check
+   unchanged.
+3. **First file:** no reason needed (stored as "First drawing uploaded"); history action `adopted`;
+   log "Drawing uploaded". Not released / Rejected → Under Review at once (ADR-311). Unverified stays
+   Unverified (Verify & Release now possible). A replace still needs a reason (min 5).
+4. Shared `replaceItemRevisionDrawingInputSchema.reason` defaults to '' — the server enforces the
+   min-5 rule only when the Rev already has a file. No migration.

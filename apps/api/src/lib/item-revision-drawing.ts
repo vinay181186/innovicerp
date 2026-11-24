@@ -77,7 +77,12 @@ interface DrawingChange {
   newNo: string | null;
   reason: string;
   label: string;
+  /** ADR-319 — the Rev had no file: this is its first drawing, not a replace. */
+  first: boolean;
 }
+
+/** ADR-319 — the reason stored when the first file of a Rev is uploaded with none typed. */
+export const FIRST_DRAWING_REASON = 'First drawing uploaded';
 
 /** The new file + reason, checked the same way for a direct replace and a
  *  correction. */
@@ -87,7 +92,10 @@ function checkReplacement(
 ): DrawingChange {
   const label = itemRevLabel(row.itemCode, row.rev);
   const newPath = args.drawingFilePath.trim();
-  const reason = args.reason.trim();
+  const first = !row.drawingFilePath?.trim();
+  const typed = args.reason.trim();
+  // ADR-319 — a first file needs no reason; a replace still does.
+  const reason = first && typed === '' ? FIRST_DRAWING_REASON : typed;
   if (reason.length < REV_CHANGE_REASON_MIN)
     throw new ValidationError('Reason is required (at least 5 characters)');
   if (newPath === '') throw new ValidationError('Choose the new drawing file');
@@ -95,7 +103,7 @@ function checkReplacement(
     throw new ValidationError(`This file is already the drawing of ${label}`);
   }
   const newNo = args.drawingNo !== undefined ? args.drawingNo?.trim() || null : row.drawingNo;
-  return { newPath, newNo, reason, label };
+  return { newPath, newNo, reason, label, first };
 }
 
 /**
@@ -149,7 +157,8 @@ async function applyDrawingReplacement(
   await tx.insert(itemRevisionDrawings).values({
     companyId,
     itemRevisionId: id,
-    action: 'replaced',
+    // ADR-319 — the first file of a Rev is 'adopted' (as a line save adopts one).
+    action: change.first ? 'adopted' : 'replaced',
     drawingFilePath: newPath,
     drawingNo: newNo,
     reason,
@@ -325,9 +334,15 @@ export async function replaceItemRevisionDrawing(
   // approved all go (back) to Under Review (autoSubmitRevIfFile), never to draft.
   const res = await applyDrawingReplacement(tx, user, companyId, row, change, {
     fileHash: null,
-    detail: 'Drawing replaced',
+    detail: change.first ? 'Drawing uploaded' : 'Drawing replaced',
   });
-  await autoSubmitRevIfFile(tx, user, companyId, id, `Replace drawing: ${change.reason}`);
+  await autoSubmitRevIfFile(
+    tx,
+    user,
+    companyId,
+    id,
+    change.first ? 'Drawing uploaded' : `Replace drawing: ${change.reason}`,
+  );
   return { ...res, correctionId: null };
 }
 

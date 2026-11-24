@@ -21,7 +21,11 @@
 import { z } from 'zod';
 import { REVISION_PATTERN } from '../lib/revision';
 import { expectedUpdatedAtSchema } from '../lib/edit-conflict';
-import { drawingCorrectionSchema, REV_RELEASE_STATUSES, type RevReleaseInfo } from './drawing-register';
+import {
+  drawingCorrectionSchema,
+  REV_RELEASE_STATUSES,
+  type RevReleaseInfo,
+} from './drawing-register';
 
 /** The Drawing Rev typed by a user: trimmed, upper-cased, same pattern as the
  *  SO line Rev (lib/revision.ts). */
@@ -34,20 +38,37 @@ export const drawingRevInputSchema = z
   .refine((s) => REVISION_PATTERN.test(s), 'Drawing Rev: letters, digits, . - / only');
 
 /** "ABC/1" — the one way an Item + Rev is written on every screen and print. */
-export function itemRevLabel(itemCode: string | null | undefined, rev: string | null | undefined): string {
+export function itemRevLabel(
+  itemCode: string | null | undefined,
+  rev: string | null | undefined,
+): string {
   const code = (itemCode ?? '').trim() || '—';
   const r = (rev ?? '').trim();
   return r ? `${code}/${r}` : code;
 }
 
 /** Where a register record (or a drawing change) came from. */
-export const ITEM_REVISION_SOURCES = ['so_line', 'jw_line', 'route_card', 'bom_line', 'ml_bom_line', 'legacy', 'register'] as const;
+export const ITEM_REVISION_SOURCES = [
+  'so_line',
+  'jw_line',
+  'route_card',
+  'bom_line',
+  'ml_bom_line',
+  'legacy',
+  'register',
+] as const;
 export type ItemRevisionSource = (typeof ITEM_REVISION_SOURCES)[number];
 
 /** Drawing history actions. `born` = first file; `adopted` = a record that had
  *  no file got one; `copied` = "Use as is" carried another Rev's file;
  *  `replaced` = wrong file fixed with a reason; `cleared` = file removed. */
-export const ITEM_REVISION_DRAWING_ACTIONS = ['born', 'adopted', 'copied', 'replaced', 'cleared'] as const;
+export const ITEM_REVISION_DRAWING_ACTIONS = [
+  'born',
+  'adopted',
+  'copied',
+  'replaced',
+  'cleared',
+] as const;
 export type ItemRevisionDrawingAction = (typeof ITEM_REVISION_DRAWING_ACTIONS)[number];
 
 // ─── Read shapes ───────────────────────────────────────────────────────────
@@ -161,7 +182,9 @@ export interface LookupItemRevisionResponse {
 export const replaceItemRevisionDrawingInputSchema = z.object({
   drawingFilePath: z.string().min(1).max(512),
   drawingNo: z.string().trim().max(64).nullable().optional(),
-  reason: z.string().trim().min(5, 'Reason is required (at least 5 characters)').max(500),
+  /** Required (min 5) when the Rev already has a file. ADR-319: optional for the
+   *  FIRST file of a Rev that has none — the server fills "First drawing uploaded". */
+  reason: z.string().trim().max(500).default(''),
   /** §20.4 — the record's updatedAt as loaded. */
   expectedUpdatedAt: expectedUpdatedAtSchema,
 });
@@ -198,7 +221,10 @@ export const listItemRevisionChangesQuerySchema = z
     salesOrderId: z.string().uuid().optional(),
     jobWorkOrderId: z.string().uuid().optional(),
   })
-  .refine((v) => Boolean(v.soLineId || v.jwLineId || v.salesOrderId || v.jobWorkOrderId), 'Give a line or order id');
+  .refine(
+    (v) => Boolean(v.soLineId || v.jwLineId || v.salesOrderId || v.jobWorkOrderId),
+    'Give a line or order id',
+  );
 export type ListItemRevisionChangesQuery = z.infer<typeof listItemRevisionChangesQuerySchema>;
 
 // ─── Phase D: hand-fix lists ───────────────────────────────────────────────
@@ -249,7 +275,9 @@ export const fixListStockSchema = z.object({
   itemName: z.string().nullable(),
   onHandQty: z.number(),
   /** Revs already known for this item, to choose from. */
-  knownRevs: z.array(z.object({ itemRevisionId: z.string().uuid(), drawingRev: z.string() })).default([]),
+  knownRevs: z
+    .array(z.object({ itemRevisionId: z.string().uuid(), drawingRev: z.string() }))
+    .default([]),
 });
 export type FixListStock = z.infer<typeof fixListStockSchema>;
 

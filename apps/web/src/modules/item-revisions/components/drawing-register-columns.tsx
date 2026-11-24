@@ -212,11 +212,13 @@ export function drawingRegisterRowMenu(
       disabledReason: c.disabledReason,
       onSelect: () => onAction(r, c),
     })),
+    // ADR-319 — a Rev with no file gets "Upload drawing…" (its first file);
+    // one with a file keeps "Replace drawing…". Same right, same server call.
     {
       key: 'replace',
-      label: 'Replace drawing…',
+      label: r.hasFile ? 'Replace drawing…' : 'Upload drawing…',
       icon: 'upload',
-      hidden: !rights.replace || !r.hasFile || r.releaseStatus === 'obsolete',
+      hidden: !rights.replace || r.releaseStatus === 'obsolete',
       onSelect: () => onReplace(r),
     },
   ];
