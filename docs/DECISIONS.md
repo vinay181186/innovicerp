@@ -16524,7 +16524,7 @@ Qty, Completed, Actual Machine) — a Job Queue exception to D1 — and Actual M
 `CNC-01: 5 pcs · CNC-02: 3 pcs`. Machine Load stays out (whole-machine summary). Guard: a list with `groupRow` and
 `exportSpec` must give `groupColumns`. Web only, no migration. Other lists' exports unchanged.
 
-## ADR-312: SO No. column on the Drawing Register
+## ADR-315: SO No. column on the Drawing Register (first filed as a second "ADR-312" — renumbered 24-Nov; ADR-312 is the Home check record)
 
 **Date:** 2026-11-24 · **Status:** Accepted (owner, 23-Nov "approve")
 

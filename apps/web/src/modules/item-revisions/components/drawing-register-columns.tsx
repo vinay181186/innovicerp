@@ -39,7 +39,7 @@ export function drawingRegisterColumns(firstRowNo: number): DataTableColumn<Draw
       render: (_r, i) => firstRowNo + i,
     },
     {
-      // ADR-312 — every live SO / JWSO naming this Rev, newest first. The
+      // ADR-315 — every live SO / JWSO naming this Rev, newest first. The
       // first number opens its order; "+N" when there are more (all in the tooltip).
       id: 'so_no',
       header: 'SO No.',

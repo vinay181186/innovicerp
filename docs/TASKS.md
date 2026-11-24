@@ -134,7 +134,7 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 - ~50 create/edit forms keep a version-checked draft (never auto-saved, cleared on Save/Cancel/Exit/sign-out).
 - A failed background refresh keeps the loaded screen (note above it); 401/403/404/410 and placeholder rows still show the error box.
 - Browser-checked on TEST (non-admin): list view, Dispatch tab, JC sub-tab, New Item + Edit Item drafts, exit question, scroll — all PASS; page-open check 125/125.
-- Open: pop-up forms (owner: later); TEST admin password rejected (erp-test could not log in as admin); lead-columns guard fails on drawing-register-columns.tsx (from ADR-312 commit f1a7bbd6, not this work).
+- Open: pop-up forms (owner: later); TEST admin password rejected (erp-test could not log in as admin); lead-columns guard fails on drawing-register-columns.tsx (from the Drawing Register SO No. commit f1a7bbd6 — now ADR-315; fix proposed to the owner).
 
 ## Done on TEST — ADR-311 drawing file compulsory + straight to Under Review (2026-11-23)
 

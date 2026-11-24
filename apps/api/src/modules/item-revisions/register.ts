@@ -39,7 +39,7 @@ const BASE_FROM = sql`
   JOIN public.items i ON i.id = ir.item_id
   LEFT JOIN public.users ru ON ru.id = ir.released_by`;
 
-/** ADR-312 — "SO No.": every live SO / JWSO naming this Rev, newest first
+/** ADR-315 — "SO No.": every live SO / JWSO naming this Rev, newest first
  *  (alias so: `list` for the cell, `codes` for Sort & Filter). */
 const ORDERS = sql`
   LEFT JOIN LATERAL (
