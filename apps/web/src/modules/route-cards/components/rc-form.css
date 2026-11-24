@@ -172,8 +172,13 @@
     justify-self: start;
     max-width: 100%;
   }
+  /* Plan Type's "Old setting" note: its own line across the cell, and its
+     width never widens the column (contain). */
   .rc-form .cl-grid > .cl-row > .form-grp > .form-help {
-    justify-self: end;
+    grid-column: 1 / -1;
+    justify-self: stretch;
+    text-align: right;
+    contain: inline-size;
   }
   /* Box = its text. A picker's box sits in a wrapper div; size the box. */
   .rc-form .cl-grid > .cl-row > .form-grp > .innovic-input,
@@ -186,7 +191,7 @@
     margin-left: 0;
   }
   .rc-form .cl-grid > .cl-row > .form-grp > div > .innovic-input {
-    min-width: 140px;
+    min-width: 96px;
   }
   .rc-form .cl-grid > .cl-row > .form-grp > .innovic-select {
     padding-right: var(--sp-5);
@@ -199,7 +204,8 @@
     text-align: left;
   }
   /* Wide cells (Remarks, Revision Note) lay out on their own: label, then the
-     box to the cell's end — a long label here must not widen column 1. */
+     box to the cell's end. `contain` keeps their width (a long label, a long
+     note) from widening the columns they span. */
   .rc-form .cl-grid > .cl-row > .cl-span-2 {
     grid-column: span 4;
   }
@@ -208,6 +214,9 @@
   }
   .rc-form .cl-grid > .cl-row > .cl-span-4 {
     grid-column: span 8;
+  }
+  .rc-form .cl-grid > .cl-row > [class*='cl-span-'] {
+    contain: inline-size;
   }
   .rc-form .cl-grid > .cl-row > [class*='cl-span-'] > textarea {
     flex: 1 1 auto;

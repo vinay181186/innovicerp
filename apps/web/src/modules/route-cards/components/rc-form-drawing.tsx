@@ -97,7 +97,7 @@ export function RcDrawingRevFields({
       ) : (
         <input
           id="rc-drawing-rev"
-          className="innovic-input mono fw-xs"
+          className="innovic-input mono"
           autoComplete="off"
           maxLength={32}
           style={{ textTransform: 'uppercase' }}
