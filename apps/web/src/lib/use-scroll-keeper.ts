@@ -1,18 +1,41 @@
 // Scroll position back on a tab switch (ADR-313).
 //
-// #content is the app's scroll container (innovic-theme.css), not the window,
-// so the router's own scroll restoration does not apply. This remembers
-// #content's scrollTop per address (path + query) in sessionStorage and, when
-// the user comes back through the open-pages tab bar, scrolls there again.
-// Rows arrive after the page mounts, so it waits (up to 4 s) for the page to be
-// tall enough; the user's own wheel / touch / key stops the wait at once.
-// Any other navigation behaves exactly as before.
+// Two things scroll in this app: #content (the page area, innovic-theme.css)
+// and, on FIT lists, the table's own box (`.tbl-wrap`, ADR-199) — the page
+// itself does not move there. The router's scroll restoration knows neither.
+// This remembers #content's scrollTop AND every table box's, per address
+// (path + query), in sessionStorage, and when the user comes back through the
+// open-pages tab bar scrolls them there again. Rows arrive after the page
+// mounts, so it waits (up to 4 s) until each one is tall enough; the user's own
+// wheel / touch / key stops the wait at once. Any other navigation behaves
+// exactly as before.
 import { useLocation } from '@tanstack/react-router';
 import { useEffect } from 'react';
 import { clearTabSwitch, isTabSwitch } from './tab-switch';
 
 export const SCROLL_PREFIX = 'innovic.scroll:';
 const WAIT_MS = 4_000;
+const BOX = '.tbl-wrap';
+
+interface Saved {
+  page: number;
+  boxes: number[];
+}
+
+function read(key: string): Saved | null {
+  try {
+    const raw = sessionStorage.getItem(key);
+    if (!raw) return null;
+    const v = JSON.parse(raw) as Partial<Saved> | number;
+    if (typeof v === 'number') return { page: v, boxes: [] };
+    return {
+      page: Number(v.page) || 0,
+      boxes: Array.isArray(v.boxes) ? v.boxes.map((n) => Number(n) || 0) : [],
+    };
+  } catch {
+    return null;
+  }
+}
 
 export function useScrollKeeper(): void {
   const href = useLocation({ select: (l) => l.href });
@@ -20,6 +43,7 @@ export function useScrollKeeper(): void {
     const el = document.getElementById('content');
     if (!el) return;
     const key = SCROLL_PREFIX + href;
+    const boxes = (): HTMLElement[] => Array.from(el.querySelectorAll<HTMLElement>(BOX));
     let stopped = false;
     let frame = 0;
     const stop = (): void => {
@@ -29,48 +53,59 @@ export function useScrollKeeper(): void {
 
     if (isTabSwitch()) {
       clearTabSwitch();
-      let saved = 0;
-      try {
-        saved = Number(sessionStorage.getItem(key) ?? 0) || 0;
-      } catch {
-        saved = 0;
-      }
-      if (saved > 0) {
+      const saved = read(key);
+      if (saved && (saved.page > 0 || saved.boxes.some((n) => n > 0))) {
         const start = Date.now();
+        const fits = (node: HTMLElement, top: number): boolean =>
+          node.scrollHeight - node.clientHeight >= top;
         const tick = (): void => {
           frame = 0;
           if (stopped) return;
-          if (el.scrollHeight - el.clientHeight >= saved) {
-            el.scrollTop = saved;
-            return;
+          const late = Date.now() - start >= WAIT_MS;
+          let pending = false;
+          if (saved.page > 0) {
+            if (fits(el, saved.page) || late) el.scrollTop = saved.page;
+            else pending = true;
           }
-          if (Date.now() - start < WAIT_MS) frame = requestAnimationFrame(tick);
-          else el.scrollTop = saved; // as far as the page goes
+          const list = boxes();
+          saved.boxes.forEach((top, i) => {
+            if (top <= 0) return;
+            const node = list[i];
+            if (node && (fits(node, top) || late)) node.scrollTop = top;
+            else pending = true;
+          });
+          if (pending && !late) frame = requestAnimationFrame(tick);
         };
         tick();
       }
     }
 
     let pending = 0;
-    const onScroll = (): void => {
+    const save = (): void => {
       if (pending) return;
       pending = requestAnimationFrame(() => {
         pending = 0;
+        const value: Saved = {
+          page: Math.round(el.scrollTop),
+          boxes: boxes().map((b) => Math.round(b.scrollTop)),
+        };
         try {
-          sessionStorage.setItem(key, String(Math.round(el.scrollTop)));
+          sessionStorage.setItem(key, JSON.stringify(value));
         } catch {
           // storage blocked — nothing to restore later, nothing breaks
         }
       });
     };
-    el.addEventListener('scroll', onScroll, { passive: true });
+    // `scroll` does not bubble; a capture listener on #content also hears the
+    // table boxes inside it.
+    el.addEventListener('scroll', save, { passive: true, capture: true });
     el.addEventListener('wheel', stop, { passive: true });
     el.addEventListener('touchstart', stop, { passive: true });
     window.addEventListener('keydown', stop);
     return () => {
       stop();
       if (pending) cancelAnimationFrame(pending);
-      el.removeEventListener('scroll', onScroll);
+      el.removeEventListener('scroll', save, { capture: true });
       el.removeEventListener('wheel', stop);
       el.removeEventListener('touchstart', stop);
       window.removeEventListener('keydown', stop);
