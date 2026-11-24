@@ -479,3 +479,46 @@ describe('ADR-290 Drawing Register', () => {
     expect(res.createdJobCardCodes).toHaveLength(1);
   });
 });
+
+describe('ADR-319 Upload drawing — first file of a Rev that has none', () => {
+  it('no reason needed; file reaches the SO line; Rev goes to Under Review; history says adopted', async () => {
+    const rev = (await newRev('U9', null))!.id;
+    const lineId = await makeSoLine('U9', itemId, rev);
+    expect((await revRow(rev)).releaseStatus).toBe('draft');
+    const res = await service.replaceDrawing(
+      rev,
+      {
+        drawingFilePath: path2,
+        reason: '',
+        expectedUpdatedAt: (await revRow(rev)).updatedAt.toISOString(),
+      },
+      admin,
+    );
+    expect('correction' in res).toBe(false);
+    const after = await revRow(rev);
+    expect(after.drawingFilePath).toBe(path2);
+    expect(after.releaseStatus).toBe('under_review');
+    const [line] = await db
+      .select({ path: salesOrderLines.drawingFilePath })
+      .from(salesOrderLines)
+      .where(eq(salesOrderLines.id, lineId));
+    expect(line!.path).toBe(path2);
+    const hist = await db
+      .select({ action: itemRevisionDrawings.action, reason: itemRevisionDrawings.reason })
+      .from(itemRevisionDrawings)
+      .where(eq(itemRevisionDrawings.itemRevisionId, rev));
+    expect(hist).toContainEqual({ action: 'adopted', reason: 'First drawing uploaded' });
+  });
+
+  it('a Rev that already has a file still needs a reason', async () => {
+    const rev = (await newRev('U8', path1))!.id;
+    await expect(
+      withUserContext(admin, (tx) =>
+        replaceItemRevisionDrawing(tx, admin, companyId, rev, {
+          drawingFilePath: path3,
+          reason: '',
+        }),
+      ),
+    ).rejects.toThrow('Reason is required');
+  });
+});

@@ -128,6 +128,11 @@ Goal: Migrate `salesOrders` + `jobWorkOrders`, build SO/JW list+detail+edit scre
 
 2. **Continue building modules per "build first, audit later" approach.** Phase A foundation masters per ADR-028: BOM Master ✅ (2026-05-20), Route Cards ✅ (2026-05-20). Remaining: **QC Process Master UI** (backend already migrated via T-038, just needs web pages — smallest next slice), **Cost Center Master**, **Settings / Users / Access Control**. Pick whatever module the user wants next; the audit pass works from `docs/ISSUES.md` once the build phase wraps.
 
+## Done on TEST — ADR-319 Upload drawing for a Rev with no file (2026-11-24)
+
+Drawing Register ⋯ and drawing page: "Upload drawing…" when the Rev has no file (no reason needed);
+file reaches every SO / JWSO line, Route Card and Job Card; Not released → Under Review. No migration.
+
 ## Done on TEST — ADR-318 every list opens newest first (2026-11-24)
 
 Default order of every list = Created On time newest first (`lib/list-order.ts` newestFirst), ~100

@@ -36,83 +36,191 @@
   text-overflow: ellipsis;
 }
 
-/* ── Identity line: RC No. · Item Code ★ · item name … prefill note ─────── */
+/* ── Compact header (owner mock-up H1, approved 2026-11-24) ──────────────────
+   Small letters, darker lines, boxes only as wide as their text, and every
+   value in a column starting at one point. Header panel only: the identity
+   line (.cl-ident) and the fact rows (.cl-grid); the table below is unchanged. */
+
+/* Identity line: RC No. · Item Code ★ · Drawing Rev ★ · Item Name · Drawing */
 .rc-form .cl-ident {
   align-items: center;
   flex-wrap: wrap;
-  gap: var(--sp-1) var(--sp-3);
+  gap: var(--sp-1) var(--sp-2);
+  padding-bottom: var(--sp-1);
+  border-bottom: 1px solid var(--border3);
 }
 .rc-form .rc-id-lb {
   color: var(--text3);
+  font-size: var(--fs-xs);
   white-space: nowrap;
 }
 .rc-form .rc-id-code {
-  width: 240px;
+  width: calc(11ch + 2 * var(--sp-2) + 2px);
   flex: none;
 }
+/* The Item Code picker: as wide as the code (or its search hint), no wider. */
 .rc-form .rc-id-item {
-  width: 230px;
   flex: none;
 }
+.rc-form .rc-id-item > .innovic-input {
+  field-sizing: content;
+  min-width: 140px;
+  max-width: 260px;
+}
+.rc-form #rc-drawing-rev {
+  field-sizing: content;
+  width: auto;
+  min-width: 40px;
+  max-width: 140px;
+  text-align: center;
+}
+/* A long Item Name wraps instead of being cut. */
 .rc-form .rc-id-name {
   color: var(--text2);
   font-weight: 600;
   min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }
-.rc-form .rc-id-note {
-  margin-left: auto;
-  min-width: 0;
-  font-size: var(--fs-xs);
-  color: var(--text3);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.rc-form .rc-id-note b {
-  color: var(--text);
+/* Every header control one size smaller (24px). */
+.rc-form .cl-ident .innovic-input,
+.rc-form .cl-grid .innovic-input,
+.rc-form .cl-grid .innovic-select {
+  height: var(--control-h-sm);
+  min-height: var(--control-h-sm);
 }
 
 /* ── Fact rows holding inputs: the view's one-line fact, a control in place
-   of the value. Label left, control right, hairline between cells. ─────── */
+   of the value. Label, then control; a darker hairline between cells. ───── */
 .rc-form .cl-row {
   align-items: center;
+  padding: var(--sp-1) 0;
+  border-top-color: var(--border3);
 }
-.rc-form .cl-grid > .cl-row > .form-grp {
+.rc-form .cl-gut {
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  padding-top: 0;
+  border-right: 1px solid var(--border3);
+  letter-spacing: 0.06em;
+}
+.rc-form .cl-grid > .cl-row > .form-grp,
+.rc-form .cl-grid > .cl-row > .cl-fact {
   flex-direction: row;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--sp-1) var(--sp-3);
-  padding-left: var(--sp-3);
-  border-left: 1px solid var(--border);
+  gap: var(--sp-1) var(--sp-2);
+  padding-left: var(--sp-2);
+  border-left: 1px solid var(--border3);
 }
-.rc-form .cl-grid > .cl-row > .cl-gut + .form-grp {
+.rc-form .cl-grid > .cl-row > .cl-gut + .form-grp,
+.rc-form .cl-grid > .cl-row > .cl-gut + .cl-fact {
   border-left: none;
   padding-left: 0;
 }
-.rc-form .cl-grid > .cl-row > .form-grp > .form-label {
+.rc-form .cl-grid > .cl-row > .form-grp > .form-label,
+.rc-form .cl-grid > .cl-row > .cl-fact > .cl-fact-k {
   flex: none;
   white-space: nowrap;
   color: var(--text3);
+  font-size: var(--fs-xs);
   font-weight: 400;
 }
 .rc-form .cl-grid > .cl-row > .form-grp > :not(.form-label):not(.form-help) {
   flex: 1 1 0;
   min-width: 0;
 }
-/* A short control (a select, a qty) keeps its capped width and sits at the
-   right of its cell, under the view's values. */
-.rc-form .cl-grid > .cl-row > .form-grp > .cl-cap,
-.rc-form .cl-grid > .cl-row > .form-grp > .cl-cap-md {
-  margin-left: auto;
-}
 /* A note under a control (Plan Type's "Old setting") takes the full cell. */
 .rc-form .cl-grid > .cl-row > .form-grp > .form-help {
   flex-basis: 100%;
   margin: 0;
-  text-align: right;
+}
+
+/* Wide screens: ONE grid for the whole header; each row and each cell is a
+   subgrid of it. A column's label space = its own longest label, so Plan Type /
+   RM Item, Operations / RM Grade … each start at one point, and a box is only
+   as wide as its text (a long RM Grade widens its column, never gets cut).
+   Narrow screens keep the stacked cluster layout above. */
+@media (min-width: 1100px) {
+  .rc-form .cl-grid {
+    display: grid;
+    grid-template-columns: max-content repeat(4, max-content auto);
+  }
+  .rc-form .cl-grid > .cl-row {
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+    column-gap: var(--sp-2);
+  }
+  .rc-form .cl-grid > .cl-row > .cl-gut {
+    grid-column: 1;
+    padding-right: var(--sp-1);
+  }
+  .rc-form .cl-grid > .cl-row > .form-grp:not(.cl-span-2):not(.cl-span-3):not(.cl-span-4),
+  .rc-form .cl-grid > .cl-row > .cl-fact {
+    grid-column: span 2;
+    display: grid;
+    grid-template-columns: subgrid;
+    column-gap: var(--sp-2);
+  }
+  .rc-form .cl-grid > .cl-row > .form-grp > .form-label,
+  .rc-form .cl-grid > .cl-row > .cl-fact > .cl-fact-k {
+    grid-column: 1;
+  }
+  .rc-form .cl-grid > .cl-row > .form-grp > :not(.form-label),
+  .rc-form .cl-grid > .cl-row > .cl-fact > :not(.cl-fact-k) {
+    grid-column: 2 / -1;
+    justify-self: start;
+    max-width: 100%;
+  }
+  /* Plan Type's "Old setting" note: its own line across the cell, and its
+     width never widens the column (contain). */
+  .rc-form .cl-grid > .cl-row > .form-grp > .form-help {
+    grid-column: 1 / -1;
+    justify-self: stretch;
+    text-align: right;
+    contain: inline-size;
+  }
+  /* Box = its text. A picker's box sits in a wrapper div; size the box. */
+  .rc-form .cl-grid > .cl-row > .form-grp > .innovic-input,
+  .rc-form .cl-grid > .cl-row > .form-grp > .innovic-select,
+  .rc-form .cl-grid > .cl-row > .form-grp > div > .innovic-input {
+    field-sizing: content;
+    width: auto;
+    min-width: 64px;
+    max-width: 100%;
+    margin-left: 0;
+  }
+  .rc-form .cl-grid > .cl-row > .form-grp > div > .innovic-input {
+    min-width: 96px;
+  }
+  .rc-form .cl-grid > .cl-row > .form-grp > .innovic-select {
+    padding-right: var(--sp-5);
+  }
+  /* A read-only value starts where the text inside the box below it starts
+     (box border 1px + padding --sp-2), not at the far right of its cell. */
+  .rc-form .cl-grid > .cl-row > .cl-fact > .cl-fact-v {
+    margin-left: 0;
+    padding-left: calc(var(--sp-2) + 1px);
+    text-align: left;
+  }
+  /* Wide cells (Remarks, Revision Note) lay out on their own: label, then the
+     box to the cell's end. `contain` keeps their width (a long label, a long
+     note) from widening the columns they span. */
+  .rc-form .cl-grid > .cl-row > .cl-span-2 {
+    grid-column: span 4;
+  }
+  .rc-form .cl-grid > .cl-row > .cl-span-3 {
+    grid-column: span 6;
+  }
+  .rc-form .cl-grid > .cl-row > .cl-span-4 {
+    grid-column: span 8;
+  }
+  .rc-form .cl-grid > .cl-row > [class*='cl-span-'] {
+    contain: inline-size;
+  }
+  .rc-form .cl-grid > .cl-row > [class*='cl-span-'] > textarea {
+    flex: 1 1 auto;
+  }
 }
 .rc-form .rc-ops-split {
   font-size: var(--fs-xs);
@@ -155,13 +263,13 @@
 /* Route Card Remarks / Revision Note: one row tall like an input, but a textarea
    (Enter = new line, never submit). The user can drag it taller. */
 .rc-form textarea.rc-one-row {
-  height: var(--control-h);
-  min-height: var(--control-h);
+  height: var(--control-h-sm);
+  min-height: var(--control-h-sm);
   resize: vertical;
   overflow: hidden;
   line-height: 1.35;
-  padding-top: 4px;
-  padding-bottom: 4px;
+  padding-top: var(--sp-0);
+  padding-bottom: var(--sp-0);
 }
 
 /* ── Collapsible header (owner mock-up 2026-11-17) ─────────────────────────

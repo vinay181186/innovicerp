@@ -12,8 +12,13 @@
 // ADR-290 — on a Released / Superseded Rev the file is never swapped here: the
 // server files a drawing correction for the Drawing Release approver and the
 // drawing stays as it is until that is approved (onDone gets null). On an
-// Under Review / Approved Rev the swap happens and the Rev goes back to Not
-// released.
+// Under Review / Approved Rev the swap happens and the Rev goes back to Under
+// Review (ADR-311).
+//
+// ADR-319 — `firstFile`: the Rev has no file yet. The same dialog uploads its
+// FIRST drawing ("Upload drawing of ABC/1"): no reason needed, nothing goes for
+// correction approval, and the file reaches every SO / JWSO line, Route Card
+// and Job Card on that Rev.
 
 import { REV_CHANGE_REASON_MIN, type ItemRevision } from '@innovic/shared';
 import { useState } from 'react';
@@ -28,10 +33,13 @@ export const ITEM_REVISION_DRAWING_FOLDER = 'item-revision-drawings';
 
 export function ReplaceDrawingDialog({
   revision,
+  firstFile = false,
   onDone,
   onCancel,
 }: {
   revision: Pick<ItemRevision, 'id' | 'label' | 'drawingNo' | 'updatedAt' | 'releaseStatus'>;
+  /** ADR-319 — the Rev has no file: upload its first drawing (no reason). */
+  firstFile?: boolean;
   /** Called with the new file path once the server swapped the file, or with
    *  null when it filed a correction instead (the drawing has not changed). */
   onDone: (path: string | null) => void;
@@ -46,9 +54,13 @@ export function ReplaceDrawingDialog({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const correction =
-    revision.releaseStatus === 'released' || revision.releaseStatus === 'superseded';
+    !firstFile &&
+    (revision.releaseStatus === 'released' || revision.releaseStatus === 'superseded');
   const resetsReview =
-    revision.releaseStatus === 'under_review' || revision.releaseStatus === 'approved';
+    !firstFile &&
+    (revision.releaseStatus === 'under_review' || revision.releaseStatus === 'approved');
+  const toReview =
+    firstFile && (revision.releaseStatus === 'draft' || revision.releaseStatus === 'rejected');
 
   async function onPick(file: File | null): Promise<void> {
     if (!file) return;
@@ -70,10 +82,18 @@ export function ReplaceDrawingDialog({
 
   return (
     <ConfirmDialog
-      title={`Replace drawing of ${revision.label}?`}
+      title={
+        firstFile ? `Upload drawing of ${revision.label}` : `Replace drawing of ${revision.label}?`
+      }
       tone="primary"
-      confirmLabel={correction ? 'Send correction for approval' : 'Replace drawing'}
-      pendingLabel={correction ? 'Sending…' : 'Replacing…'}
+      confirmLabel={
+        firstFile
+          ? 'Upload drawing'
+          : correction
+            ? 'Send correction for approval'
+            : 'Replace drawing'
+      }
+      pendingLabel={firstFile ? 'Uploading…' : correction ? 'Sending…' : 'Replacing…'}
       message={
         <div style={{ display: 'grid', gap: 'var(--sp-2)', marginTop: 'var(--sp-2)' }}>
           {correction ? (
@@ -87,12 +107,20 @@ export function ReplaceDrawingDialog({
               The Rev goes back to Under Review and must be approved again.
             </span>
           ) : null}
-          <span>
-            The old file stays in this drawing&apos;s history. For a new revision of the drawing,
-            use a new Drawing Rev instead.
-          </span>
+          {firstFile ? (
+            <span>
+              This drawing has no file yet. The file goes on every SO / JWSO line, Route Card and
+              Job Card of {revision.label}.
+              {toReview ? ' It then goes to Under Review for approval.' : ''}
+            </span>
+          ) : (
+            <span>
+              The old file stays in this drawing&apos;s history. For a new revision of the drawing,
+              use a new Drawing Rev instead.
+            </span>
+          )}
           <FormField
-            label="New drawing file"
+            label={firstFile ? 'Drawing File' : 'New drawing file'}
             required
             htmlFor="ir-replace-file"
             error={err ?? undefined}
@@ -116,25 +144,27 @@ export function ReplaceDrawingDialog({
               onChange={(e) => setDrawingNo(e.target.value)}
             />
           </FormField>
-          <FormField label="Replace Reason" required htmlFor="ir-replace-reason">
-            <textarea
-              id="ir-replace-reason"
-              className="innovic-input"
-              rows={2}
-              maxLength={500}
-              placeholder={`Why the drawing is being replaced (at least ${REV_CHANGE_REASON_MIN} characters)`}
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-            />
-          </FormField>
+          {firstFile ? null : (
+            <FormField label="Replace Reason" required htmlFor="ir-replace-reason">
+              <textarea
+                id="ir-replace-reason"
+                className="innovic-input"
+                rows={2}
+                maxLength={500}
+                placeholder={`Why the drawing is being replaced (at least ${REV_CHANGE_REASON_MIN} characters)`}
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+              />
+            </FormField>
+          )}
         </div>
       }
       onCancel={onCancel}
       onConfirm={async () => {
         // Thrown, not returned: ConfirmDialog shows it and stays open.
         if (busy) throw new Error('Wait for the file to finish uploading.');
-        if (!path) throw new Error('Choose the new drawing file.');
-        if (reason.trim().length < REV_CHANGE_REASON_MIN) {
+        if (!path) throw new Error('Choose the drawing file.');
+        if (!firstFile && reason.trim().length < REV_CHANGE_REASON_MIN) {
           throw new Error(`Reason is required (at least ${REV_CHANGE_REASON_MIN} characters).`);
         }
         await replace.mutateAsync({
@@ -147,7 +177,7 @@ export function ReplaceDrawingDialog({
           toast.ok('Correction sent for approval');
           onDone(null);
         } else {
-          toast.ok('Drawing replaced');
+          toast.ok(firstFile ? 'Drawing uploaded' : 'Drawing replaced');
           onDone(path);
         }
       }}

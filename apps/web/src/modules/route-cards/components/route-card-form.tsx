@@ -6,8 +6,8 @@
 // order so Create, Edit and View line up (screen-layout-method rule 8):
 //   header      ← Back · [code] · New / Edit Route Card · Rev badge (Rev N → N+1,
 //               or plain Rev N on a Draft: a Draft save adds no revision)
-//   identity   RC No. · Item Code ★ (the one decision) · item name · the
-//               "prefilled from plan" note (DocIdent)
+//   identity   RC No. · Item Code ★ (the one decision) · Drawing Rev ★ ·
+//               Item Name · Drawing (DocIdent)
 //   facts       Route (Plan Type ★ · Operations split · Last Updated By ·
 //               Last Updated) ·
 //               Material (RM Item · RM Grade · RM Size · RM Qty per piece) ·
@@ -453,11 +453,11 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
   // and then had to type grade and size a second time (user, 2026-09-24).
   //
   // So: while BOTH boxes are still empty, fill them from the newest plan for
-  // this item that has either, and say which plan it came from. It is a
+  // this item that has either. It is a
   // prefill, not a link — typing over it is the point, and nothing is written
   // back to the plan. Once either box holds a value this never fires again, so
-  // it can only ever fill a blank, never overwrite a choice.
-  const [rmPrefillFrom, setRmPrefillFrom] = useState<string | null>(null);
+  // it can only ever fill a blank, never overwrite a choice. No note says so
+  // (owner 2026-11-24: "unnecessary text") — the filled boxes speak for it.
   const rmBlank =
     !header.rawMaterialGradeId &&
     !header.rawMaterialGradeText &&
@@ -493,13 +493,7 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
       rawMaterialItemCode: source.rawMaterialItemCode,
       rmQtyPerPiece: source.rmQtyPerPiece != null ? String(source.rmQtyPerPiece) : '',
     }));
-    setRmPrefillFrom(source.code);
   }, [plansForItem, header.itemId, rmBlank, mode]);
-
-  // A different item means the old prefill note no longer applies.
-  useEffect(() => {
-    setRmPrefillFrom(null);
-  }, [header.itemId]);
 
   const updateOp = (idx: number, patch: Partial<RouteCardFormOpDraft>): void => {
     setOps((prev) => prev.map((o, i) => (i === idx ? { ...o, ...patch } : o)));
@@ -832,20 +826,17 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
             mode={mode}
             onRevChange={(drawingRev) => setHeader((prev) => ({ ...prev, drawingRev }))}
             onFileChange={(drawingFilePath) => setHeader((prev) => ({ ...prev, drawingFilePath }))}
+            itemName={
+              // Item Name — read-only, follows the picked item. Labelled: a bare
+              // name beside the code read as unexplained text (owner 2026-11-24).
+              <>
+                <span className="rc-id-lb">Item Name</span>
+                <span className="rc-id-name" title={header.itemName || undefined}>
+                  {header.itemName || '—'}
+                </span>
+              </>
+            }
           />
-          {/* Item Name — read-only, follows the picked item. */}
-          <span className="rc-id-name" title={header.itemName || undefined}>
-            {header.itemName || '—'}
-          </span>
-          {rmPrefillFrom ? (
-            <span
-              className="rc-id-note"
-              title={`Raw material prefilled from plan ${rmPrefillFrom} — change it if the routing calls for something else.`}
-            >
-              Raw material prefilled from plan <b className="mono">{rmPrefillFrom}</b> — change it
-              if the routing calls for something else.
-            </span>
-          ) : null}
         </DocIdent>
 
         <ClusterGrid>

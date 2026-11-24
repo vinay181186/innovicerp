@@ -235,6 +235,7 @@ function DrawingRegisterPage(): React.JSX.Element {
       {replacing ? (
         <ReplaceDrawingDialog
           revision={replacing}
+          firstFile={!replacing.hasFile}
           onCancel={() => setReplacing(null)}
           onDone={() => setReplacing(null)}
         />

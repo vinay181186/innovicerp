@@ -105,7 +105,8 @@ function DrawingPage(): React.JSX.Element {
   };
   const actions = revActionsFor(target, rights);
   const corrections = rev.corrections ?? [];
-  const mayReplace = rights.replace && Boolean(path) && rev.releaseStatus !== 'obsolete';
+  // ADR-319 — also on a Rev with no file: "Upload drawing…" gives it its first file.
+  const mayReplace = rights.replace && rev.releaseStatus !== 'obsolete';
 
   const onPrint = async (): Promise<void> => {
     setNotice(null);
@@ -182,7 +183,7 @@ function DrawingPage(): React.JSX.Element {
         ))}
         {mayReplace ? (
           <button type="button" className="btn btn-ghost" onClick={() => setReplacing(true)}>
-            Replace drawing…
+            {path ? 'Replace drawing…' : 'Upload drawing…'}
           </button>
         ) : null}
         {mayPrint ? (
@@ -284,6 +285,7 @@ function DrawingPage(): React.JSX.Element {
       {replacing ? (
         <ReplaceDrawingDialog
           revision={rev}
+          firstFile={!path}
           onCancel={() => setReplacing(false)}
           onDone={() => setReplacing(false)}
         />
