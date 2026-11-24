@@ -41,6 +41,8 @@ const ROW_IS_ORDER = new Set([
   'qc-documents/components/so-status-columns.tsx',
   'qc-documents/components/register-columns.tsx',
   'item-revisions/components/fix-list-columns.tsx',
+  // ADR-317 — one row per drawing (Item + Rev); it has no document number.
+  'item-revisions/components/drawing-register-columns.tsx',
   'sc-dashboard/components/vendor-so-columns.tsx',
 ]);
 

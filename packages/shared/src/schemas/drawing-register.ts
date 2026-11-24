@@ -172,6 +172,9 @@ export const drawingRegisterRowSchema = z.object({
   orders: z
     .array(z.object({ kind: z.enum(['so', 'jw']), id: z.string().uuid(), code: z.string() }))
     .default([]),
+  /** ADR-317 — lead block (ADR-261): when the Rev record was made, and by whom. */
+  createdAt: z.string(),
+  createdByName: z.string().nullable().default(null),
   updatedAt: z.string(),
 });
 export type DrawingRegisterRow = z.infer<typeof drawingRegisterRowSchema>;

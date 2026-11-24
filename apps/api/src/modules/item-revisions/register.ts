@@ -37,7 +37,8 @@ const DONE = sql`('closed', 'dispatched', 'cancelled')`;
 const BASE_FROM = sql`
   FROM public.item_revisions ir
   JOIN public.items i ON i.id = ir.item_id
-  LEFT JOIN public.users ru ON ru.id = ir.released_by`;
+  LEFT JOIN public.users ru ON ru.id = ir.released_by
+  LEFT JOIN public.users cu ON cu.id = ir.created_by`;
 
 /** ADR-315 — "SO No.": every live SO / JWSO naming this Rev, newest first
  *  (alias so: `list` for the cell, `codes` for Sort & Filter). */
@@ -129,7 +130,11 @@ export async function listDrawingRegister(
                   ELSE COALESCE(NULLIF(btrim(ru.full_name), ''), split_part(ru.email, '@', 1)) END
                AS "releasedByName",
              ol.n AS "openLines", oj.n AS "openJobCards", pc.pending AS "pendingCorrection",
-             so.list AS "orders", ir.updated_at AS "updatedAt"
+             so.list AS "orders", ir.updated_at AS "updatedAt",
+             ir.created_at AS "createdAt",
+             CASE WHEN cu.id IS NULL THEN NULL
+                  ELSE COALESCE(NULLIF(btrim(cu.full_name), ''), split_part(cu.email, '@', 1)) END
+               AS "createdByName"
       ${BASE_FROM} ${COUNTS} ${ORDERS} ${where}
       ORDER BY ${sfOrderBy(DRAWING_REGISTER_SF_COLUMNS, sf, sql`i.code, ir.rev, ir.id`)}
       LIMIT ${q.limit} OFFSET ${q.offset}`)) as unknown as Array<Record<string, unknown>>;
@@ -160,6 +165,8 @@ export async function listDrawingRegister(
       openJobCards: Number(r['openJobCards'] ?? 0),
       pendingCorrection: r['pendingCorrection'] === true,
       orders: (r['orders'] as DrawingRegisterRow['orders'] | null) ?? [],
+      createdAt: iso(r['createdAt'])!,
+      createdByName: (r['createdByName'] as string | null) ?? null,
       updatedAt: iso(r['updatedAt'])!,
     }));
     return { items, total: Number(total[0]?.n ?? 0) };

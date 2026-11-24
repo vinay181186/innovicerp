@@ -45,6 +45,10 @@
 | Customer's own part number for one of our items (ADR-290) | `Customer Part No.` | `customerPartNo` | `items.customer_part_no` | `Cust Part`, `Part No.` (that is our Item Code) |
 | Item that replaces this one after a non-interchangeable change (ADR-290) | `Replacement Item` | `replacementItemId` / `replacementItemCode` | `items.replacement_item_id` | `New Item`, `Superseded By` |
 | Live SO / JWSO lines and open Job Cards on one Drawing Rev (ADR-290) | `Open Lines`, `Open Job Cards` | `openLines`, `openJobCards` | — (counted) | `Used On` |
+| When a Drawing Rev went to review — by hand or automatically on a file (ADR-311/317) | `Sent for Review On` | `submittedAt` | `item_revisions.submitted_at` | `Sent On`, `Submitted On` |
+| When a Drawing Rev was approved, before release (ADR-317) | `Drawing Approved On` | `approvedAt` | `item_revisions.approved_at` | `Approved On` (alone — reads as Released On) |
+| Why / when a drawing correction was asked (ADR-290/317) | `Correction Reason`, `Correction Asked On` | `reason`, `requestedAt` | `drawing_corrections.reason`, `created_at` | `Reason`, `Asked On` |
+| Design home checks on drawings (ADR-317) | `Drawing Revs waiting approval`, `Drawing Revs waiting release`, `Drawing corrections waiting`, `Order lines blocked by drawing`, `Old drawings to verify` | `des_rev_review`, `des_rev_release`, `des_rev_correction`, `des_rev_blocking`, `des_rev_unverified` | — | — |
 | Number of live lines on a document, one-row-per-document lists (ADR-303) | `Lines` | `lineCount` | — (counted, deleted lines out) | `Items`, `Line Count`, `No. of Lines` |
 | One QC state for a whole GRN / Party GRN on its list, rolled up from its lines (ADR-303); cancelled = — | `QC Status` with values `Pending` (no line inspected) · `Partly done` · `Done` | `docQcStatus` (`pending` / `partly_done` / `done`) | computed from the lines | `QC In Progress` on the list |
 | A document whose lines cover more than one order: first SO No. + count of the others (ADR-303) | `<SO No.> +n` | `soCode` + `soExtraCount` | computed | `(multiple)` |

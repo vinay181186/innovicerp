@@ -26,6 +26,16 @@ export const DRAWING_REGISTER_SF_COLUMNS: SfColumnMap = {
   orders: { sql: sql`so.codes`, type: 'text' },
   openLines: { sql: sql`ol.n`, type: 'num' },
   openJobCards: { sql: sql`oj.n`, type: 'num' },
+  // ADR-317 — lead block: Created On (IST date) / Created By.
+  createdOn: {
+    sql: sql`(ir.created_at AT TIME ZONE 'Asia/Kolkata')::date`,
+    sortSql: sql`ir.created_at`,
+    type: 'date',
+  },
+  createdBy: {
+    sql: sql`COALESCE(NULLIF(btrim(cu.full_name), ''), split_part(cu.email, '@', 1))`,
+    type: 'text',
+  },
   updatedAt: {
     sql: sql`(ir.updated_at AT TIME ZONE 'Asia/Kolkata')::date`,
     sortSql: sql`ir.updated_at`,
