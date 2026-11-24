@@ -11,6 +11,7 @@ import {
 import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
 import type { DataTableColumn, RowMenuItem } from '@/ui/data';
+import { createdByColumn, leadColumns } from '@/ui/data';
 import { ItemRevLink } from './item-rev-link';
 import { RevStatusBadge } from './rev-status-badge';
 import {
@@ -28,64 +29,53 @@ const STATUS_OPTIONS = REV_RELEASE_STATUSES.map((v) => ({
 const dash = <span className="text3">—</span>;
 
 export function drawingRegisterColumns(firstRowNo: number): DataTableColumn<DrawingRegisterRow>[] {
+  const soCodes = (r: DrawingRegisterRow): string => r.orders.map((o) => o.code).join(', ');
   return [
-    {
-      id: 'sr_no',
-      header: 'Sr No',
-      kind: 'num',
-      className: 'mono',
-      nowrap: true,
-      filterable: false,
-      render: (_r, i) => firstRowNo + i,
-    },
-    {
-      // ADR-315 — every live SO / JWSO naming this Rev, newest first. The
-      // first number opens its order; "+N" when there are more (all in the tooltip).
-      id: 'so_no',
-      header: 'SO No.',
-      kind: 'code',
-      nowrap: true,
-      sortFilterField: 'orders',
-      filterValue: (r) => r.orders.map((o) => o.code).join(', '),
-      title: (r) => r.orders.map((o) => o.code).join(', '),
-      render: (r) => {
-        const first = r.orders[0];
-        if (!first) return dash;
-        const more = r.orders.length - 1;
-        return (
-          <>
-            {first.kind === 'so' ? (
-              <Link to="/sales-orders/$id" params={{ id: first.id }} className="td-code">
-                {first.code}
-              </Link>
-            ) : (
-              <Link to="/job-work-orders/$id" params={{ id: first.id }} className="td-code">
-                {first.code}
-              </Link>
-            )}
-            {more > 0 ? <span className="text3"> +{more}</span> : null}
-          </>
-        );
+    // ADR-317 — the standard lead block (ADR-261): Sr No · SO No. · Created On ·
+    // Item Code (ABC/1, links to the drawing page) · Item Name. The row is a
+    // drawing, not a document, so there is no own No.
+    ...leadColumns<DrawingRegisterRow>({
+      firstRowNo,
+      // ADR-315 — every live SO / JWSO naming this Rev, newest first; the first
+      // number opens its order, "+N" when there are more (all in the tooltip).
+      soNo: (r) => r.orders[0]?.code ?? null,
+      createdOn: (r) => r.createdAt,
+      itemCode: (r) => r.label,
+      itemName: (r) => r.itemName,
+      overrides: {
+        so_no: {
+          sortFilterField: 'orders',
+          filterValue: soCodes,
+          title: soCodes,
+          render: (r) => {
+            const first = r.orders[0];
+            if (!first) return dash;
+            const more = r.orders.length - 1;
+            return (
+              <>
+                {first.kind === 'so' ? (
+                  <Link to="/sales-orders/$id" params={{ id: first.id }} className="td-code">
+                    {first.code}
+                  </Link>
+                ) : (
+                  <Link to="/job-work-orders/$id" params={{ id: first.id }} className="td-code">
+                    {first.code}
+                  </Link>
+                )}
+                {more > 0 ? <span className="text3"> +{more}</span> : null}
+              </>
+            );
+          },
+        },
+        created_on: { sortFilterField: 'createdOn' },
+        item_code: {
+          sortFilterField: 'itemCode',
+          filterValue: (r) => r.label,
+          render: (r) => <ItemRevLink itemRevisionId={r.id} label={r.label} />,
+        },
+        item_name: { sortFilterField: 'itemName' },
       },
-    },
-    {
-      id: 'item_code',
-      header: 'Item Code',
-      kind: 'code',
-      nowrap: true,
-      sortFilterField: 'itemCode',
-      filterValue: (r) => r.label,
-      render: (r) => <ItemRevLink itemRevisionId={r.id} label={r.label} />,
-    },
-    {
-      id: 'item_name',
-      header: 'Item Name',
-      kind: 'text',
-      ellipsis: true,
-      sortFilterField: 'itemName',
-      title: (r) => r.itemName ?? '',
-      render: (r) => r.itemName ?? dash,
-    },
+    }),
     {
       id: 'customer_part_no',
       header: 'Customer Part No.',
@@ -185,6 +175,10 @@ export function drawingRegisterColumns(firstRowNo: number): DataTableColumn<Draw
           dash
         ),
     },
+    createdByColumn<DrawingRegisterRow>({
+      createdByName: (r) => r.createdByName,
+      overrides: { sortFilterField: 'createdBy' },
+    }),
   ];
 }
 

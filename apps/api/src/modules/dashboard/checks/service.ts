@@ -67,7 +67,11 @@ export function visibleChecks(a: DashAccess): CheckDef[] {
 
 /** Checks whose lines another check already counts (ADR-279): they show their
  *  own count, but adding them to the menu badge would count a line twice. */
-const NOT_IN_DEPT_TOTAL: ReadonlySet<string> = new Set<DashCheckKey>(['plan_pgrn_received']);
+// ADR-317: des_rev_blocking lists order LINES on Revs the two Rev checks already count.
+const NOT_IN_DEPT_TOTAL: ReadonlySet<string> = new Set<DashCheckKey>([
+  'plan_pgrn_received',
+  'des_rev_blocking',
+]);
 
 /** Group built checks into department blocks; departments with no check are
  *  left out. `total` = the sum of the department's counts (the menu badge),

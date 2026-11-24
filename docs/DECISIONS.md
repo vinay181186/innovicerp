@@ -16662,3 +16662,24 @@ Queue (+▲/▼ clears a Closed card's queue_position so a reopen joins at the b
 Production Dashboard in-house counters (Outsource / At Vendor / Running stay physical) + Ready list, Home Ready for
 You, Home JC Status (a Closed card with leftovers is neither Open nor Completed; Total unchanged), Stuck dashboard,
 WIP by Operation, Affected WIP (WIP part only). "Sr No from 14" was Queue No. behind 13 Closed-card ops. No migration.
+
+## ADR-317: Drawing Register checks on the Design home; Drawing Register on the standard lead block
+
+**Date:** 2026-11-24 · **Status:** Accepted (owner "approve. go build")
+
+1. **Five Design checks** (`dashboard/checks/design.ts`, keys in `DASH_CHECK_KEYS`), each read with the
+   SAME status rule as Home › Approvals (ADR-311) so the counts agree:
+   `des_rev_review` Drawing Revs waiting approval (Under Review, by Sent On) ·
+   `des_rev_release` Drawing Revs waiting release (Approved, by Approved On) ·
+   `des_rev_correction` Drawing corrections waiting (pending, by Asked On) ·
+   `des_rev_blocking` Order lines blocked by drawing (one row per open SO / JWSO line — drafts left out — whose
+   Rev is Not released / Under Review / Approved / Rejected, by Due Date; the SO No. opens the order, the Drawing
+   Rev the drawing; NOT in the Design badge, its Revs are already counted) ·
+   `des_rev_unverified` Old drawings to verify (one row per Unverified Rev with an open line, by earliest Due Date).
+   Rev rows open the drawing page (`/drawings/<id>`), whose buttons follow the reader's rights; no
+   `actionHref`. The SO No. shown beside a Rev prefers an open order. Visible by Design department tier, as the other Design checks.
+2. **Drawing Register lead block (ADR-261):** `leadColumns()` — Sr No · SO No. (ADR-315 "+N" cell via
+   overrides) · Created On · Item Code (ABC/1 link) · Item Name, `createdByColumn` last. Row gains
+   `createdAt` / `createdByName` (item_revisions.created_at / created_by). The register has no own
+   document number, so it joins the guard's no-own-No. list. Fixes the lead-columns guard.
+No migration.
