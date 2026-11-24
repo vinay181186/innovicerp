@@ -3,7 +3,7 @@
 // list and holds the affected work. One save key per open form (ADR-172).
 
 import { createRoute, useNavigate } from '@tanstack/react-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { useSaveKey } from '@/lib/use-save-key';
@@ -27,7 +27,12 @@ function EcrNewPage(): React.JSX.Element {
   const create = useCreateEcr(saveKey);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const goBack = useCallback(() => void navigate({ to: '/ecrs' }), [navigate]);
-  const exit = useExitConfirm({ onExit: goBack });
+  // ADR-313 — the form below keeps a draft; its `clear` lands here for the guard.
+  const draftClear = useRef<() => void>(() => undefined);
+  const exit = useExitConfirm({
+    onExit: goBack,
+    draft: { band: null, clear: () => draftClear.current() },
+  });
   const toast = useToast();
 
   if (eff && !perms.entry) {
@@ -44,6 +49,7 @@ function EcrNewPage(): React.JSX.Element {
     <>
       {exit.dialog}
       <EcrForm
+        draftSlot={{ key: 'ecr-new', clearRef: draftClear }}
         title="New Engineering Change"
         initial={EMPTY_ECR_DRAFT}
         submitting={create.isPending}

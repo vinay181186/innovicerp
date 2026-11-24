@@ -9,7 +9,7 @@ vi.mock('./session', () => ({ useSession: () => ({ data: { id: 'u1' } }) }));
 const KEY = `${FORM_DRAFT_PREFIX}u1:po-edit:1`;
 type V = { qty: number; note: string };
 
-function mount(initial: { values: V; version?: string; apply?: (v: V) => void }) {
+function mount(initial: { values: V; version?: string | undefined; apply?: (v: V) => void }) {
   const apply = initial.apply ?? vi.fn();
   const hook = renderHook(
     (p: { values: V; version?: string | undefined }) =>
@@ -79,9 +79,12 @@ describe('useFormDraft', () => {
   });
 
   it('drops files instead of storing them', () => {
-    const { rerender } = mount({ values: { qty: 1, note: '' } });
+    const { rerender } = mount({ values: { qty: 1, note: '' }, version: undefined });
     fireEvent.input(document.body);
-    rerender({ values: { qty: 2, note: new Blob(['x']) as unknown as string } });
+    rerender({
+      values: { qty: 2, note: new Blob(['x']) as unknown as string },
+      version: undefined,
+    });
     const stored = JSON.parse(sessionStorage.getItem(KEY) ?? '{}') as { hadFiles: boolean };
     expect(stored.hadFiles).toBe(true);
   });

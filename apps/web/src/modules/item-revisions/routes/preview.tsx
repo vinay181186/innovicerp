@@ -48,6 +48,8 @@ import {
   type RevActionTarget,
 } from '../components/rev-status-actions';
 import { printDrawing } from '../lib/print-drawing';
+import { RefreshFailedNote } from '@/lib/refresh-failed-note';
+import { oneOf, usePersistentState } from '@/lib/use-persistent-state';
 
 export const itemRevisionPreviewRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -70,7 +72,11 @@ function DrawingPage(): React.JSX.Element {
   const mayPrint = canPrintDrawings(eff, me?.role);
   const path = rev?.drawingFilePath ?? null;
   const view = useDrawingViewUrl(path, rev?.label ?? '');
-  const [tab, setTab] = useState<TabKey>('drawing');
+  const [tab, setTab] = usePersistentState<TabKey>(
+    `rev-preview:${itemRevisionId}:tab`,
+    'drawing',
+    oneOf(['drawing', 'history', 'linked', 'corrections']),
+  );
   const [notice, setNotice] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [printing, setPrinting] = useState(false);
@@ -80,7 +86,7 @@ function DrawingPage(): React.JSX.Element {
   const [replacing, setReplacing] = useState(false);
 
   if (isLoading) return <PageState state="loading" message="Loading drawing…" />;
-  if (isError || !rev) {
+  if (!rev) {
     return (
       <PageState
         state="error"
@@ -139,6 +145,7 @@ function DrawingPage(): React.JSX.Element {
 
   return (
     <div className="page-fill">
+      <RefreshFailedNote show={isError} />
       <div
         style={{
           display: 'flex',

@@ -18,7 +18,8 @@ import {
   type EcrCustomerApproval,
 } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useFormDraft } from '@/lib/use-form-draft';
 import { useItemRevisions } from '@/modules/item-revisions/api';
 import { useItemsList } from '@/modules/items/api';
 import { Banner } from '@/ui/feedback';
@@ -106,6 +107,7 @@ export function EcrForm({
   saveLabel,
   onSubmit,
   onCancel,
+  draftSlot,
 }: {
   title: string;
   initial: EcrFormDraft;
@@ -114,6 +116,11 @@ export function EcrForm({
   saveLabel: string;
   onSubmit: (input: CreateEcrInput) => void;
   onCancel: () => void;
+  /** ADR-313 — keep a draft of what is typed (lib/use-form-draft.tsx). The page
+   *  names the draft and gets `clear` back for its exit guard. */
+  draftSlot?:
+    | { key: string | null; version?: string | null | undefined; clearRef: { current: () => void } }
+    | undefined;
 }): React.JSX.Element {
   const [d, setD] = useState<EcrFormDraft>(initial);
   const [dirty, setDirty] = useState(false);
@@ -147,8 +154,25 @@ export function EcrForm({
     setD((prev) => ({ ...prev, ...patch }));
   };
 
+  // ADR-313 — what is typed survives a tab switch; Save / Cancel / Exit clear it.
+  const formDraft = useFormDraft({
+    key: draftSlot?.key ?? null,
+    ready: true,
+    values: { d },
+    apply: (v) => {
+      setD(v.d);
+      setDirty(true);
+    },
+    version: draftSlot?.version,
+  });
+  const draftClearRef = draftSlot?.clearRef;
+  useEffect(() => {
+    if (draftClearRef) draftClearRef.current = formDraft.clear;
+  }, [draftClearRef, formDraft.clear]);
+
   return (
     <div>
+      {formDraft.band}
       <PageHeader title={title} backLabel="Back" onBack={onCancel} dirty={dirty} />
       {submitError ? (
         <Banner tone="error" role="alert">

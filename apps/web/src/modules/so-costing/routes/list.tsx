@@ -20,6 +20,7 @@
 // (ListSoCostingResponse.rows) carries neither, so none is invented here, and
 // there is no real status to tint a "done" row by.
 
+import { RefreshFailedNote } from '@/lib/refresh-failed-note';
 import type { ListSoCostingResponse, SoCostingRow } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
@@ -274,7 +275,7 @@ function SoCostingListPage(): React.JSX.Element {
     />
   );
 
-  if (isError || !data) {
+  if (!data) {
     return (
       <div>
         {header}
@@ -297,6 +298,7 @@ function SoCostingListPage(): React.JSX.Element {
     // the only thing that scrolls, so the column header stays on screen down
     // to the last row.
     <div className="page-fill">
+      <RefreshFailedNote show={isError} />
       {header}
       <Panel fill bodyPadding="none">
         <DataTable<SoCostingRow>

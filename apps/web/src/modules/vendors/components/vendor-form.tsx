@@ -22,7 +22,7 @@ import {
 } from '@innovic/shared';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Loader2 } from 'lucide-react';
-import { useCallback, useEffect, type ReactNode } from 'react';
+import { type ReactNode, useCallback, useEffect } from 'react';
 import { type FieldErrors, type UseFormRegister, useForm } from 'react-hook-form';
 import {
   GST_CATEGORY_OPTIONS,
@@ -42,7 +42,15 @@ import {
 import { useNextVendorCode } from '../api';
 import { FormActions } from '@/ui/layout';
 
+/** ADR-313 — lets the page keep a draft of this form (lib/use-form-draft.tsx). */
+export interface FormDraftLink {
+  onValues: (values: unknown) => void;
+  bind: (apply: (values: unknown) => void) => void;
+}
+
 type CreateMode = {
+  /** ADR-313 — the page's draft of this form. */
+  draftLink?: FormDraftLink | undefined;
   mode: 'create';
   /** The title band of the form's panel; the form owns the panel so its button bar can sit outside it. */
   panelHeader: ReactNode;
@@ -56,6 +64,8 @@ type CreateMode = {
 };
 
 type EditMode = {
+  /** ADR-313 — the page's draft of this form. */
+  draftLink?: FormDraftLink | undefined;
   mode: 'edit';
   /** The title band of the form's panel; the form owns the panel so its button bar can sit outside it. */
   panelHeader: ReactNode;
@@ -122,6 +132,18 @@ function CreateVendorForm(props: CreateMode): React.JSX.Element {
   });
   const { register, formState, watch, setValue } = form;
   const errors = formState.errors;
+  // ADR-313 — tell the page about every change (its draft), and let it put one back.
+  const { draftLink } = props;
+  const resetForm = form.reset;
+  const watched = JSON.stringify(form.watch());
+  useEffect(() => {
+    draftLink?.bind((v) =>
+      resetForm(v as Parameters<typeof resetForm>[0], { keepDefaultValues: true }),
+    );
+  }, [draftLink, resetForm]);
+  useEffect(() => {
+    draftLink?.onValues(JSON.parse(watched) as unknown);
+  }, [draftLink, watched]);
   // Create and edit carry the same fields with the same types; the shared
   // field components take the update-form types (same cast as client-form).
   const fieldRegister = register as unknown as UseFormRegister<UpdateVendorInput>;
@@ -358,6 +380,18 @@ function EditVendorForm(props: EditMode): React.JSX.Element {
   });
   const { register, formState, watch, setValue } = form;
   const errors = formState.errors;
+  // ADR-313 — tell the page about every change (its draft), and let it put one back.
+  const { draftLink } = props;
+  const resetForm = form.reset;
+  const watched = JSON.stringify(form.watch());
+  useEffect(() => {
+    draftLink?.bind((v) =>
+      resetForm(v as Parameters<typeof resetForm>[0], { keepDefaultValues: true }),
+    );
+  }, [draftLink, resetForm]);
+  useEffect(() => {
+    draftLink?.onValues(JSON.parse(watched) as unknown);
+  }, [draftLink, watched]);
   const { vendor } = props;
   const fieldRegister = register;
   const fieldErrors = errors;

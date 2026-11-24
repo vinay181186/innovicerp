@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { todayLocal } from '@/lib/date';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useFormDraft } from '@/lib/use-form-draft';
 import { partyDocName } from '@/lib/item-code';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Panel } from '@/ui/data';
@@ -50,7 +51,6 @@ function JwDcOutwardNewPage(): React.JSX.Element {
   const { jw: forJwId } = jwDcOutwardNewRoute.useSearch();
   const navigate = useNavigate();
   const goBack = useCallback(() => void navigate({ to: '/jw-dc' }), [navigate]);
-  const exit = useExitConfirm({ onExit: goBack });
 
   const { data: forJw } = useJobWorkOrder(forJwId);
   const [date, setDate] = useState(todayLocal());
@@ -66,8 +66,18 @@ function JwDcOutwardNewPage(): React.JSX.Element {
   // picker). Two calls rather than one: the list query's `poType` filter takes a
   // single value, and dropping the filter to sort client-side would risk the
   // 200-row cap hiding job-work POs behind a wall of ordinary buys.
-  const { data: poDataJw } = usePurchaseOrdersList({ withLineItems: true, poType: 'job_work', limit: 200, offset: 0 });
-  const { data: poDataSvc } = usePurchaseOrdersList({ withLineItems: true, poType: 'service', limit: 200, offset: 0 });
+  const { data: poDataJw } = usePurchaseOrdersList({
+    withLineItems: true,
+    poType: 'job_work',
+    limit: 200,
+    offset: 0,
+  });
+  const { data: poDataSvc } = usePurchaseOrdersList({
+    withLineItems: true,
+    poType: 'service',
+    limit: 200,
+    offset: 0,
+  });
   // `?jw=` — the job-work / service POs carrying this JWSO's work.
   const { data: poDataForJw } = usePurchaseOrdersList(
     { withLineItems: true, jobWorkOrderId: forJwId, limit: 200, offset: 0 },
@@ -109,6 +119,13 @@ function JwDcOutwardNewPage(): React.JSX.Element {
   // update, another DC against it) must not reset the Send Qty being typed
   // (ADR-230); picking another PO reloads them.
   const seededFor = useRef<string | null>(null);
+  // ADR-313 — Send Qty / tick a kept draft put back, per PO line, for one PO.
+  // The first fill for that PO uses them instead of the defaults (the lines are
+  // empty while the PO loads, so restoring them directly would be wiped).
+  const restoredLines = useRef<{
+    poId: string;
+    typed: Map<string, { sendQty: number; checked: boolean }>;
+  } | null>(null);
   useEffect(() => {
     if (!poLines || !poId) {
       seededFor.current = null;
@@ -117,6 +134,8 @@ function JwDcOutwardNewPage(): React.JSX.Element {
     }
     if (seededFor.current === poId) return;
     seededFor.current = poId;
+    const kept = restoredLines.current?.poId === poId ? restoredLines.current.typed : null;
+    restoredLines.current = null;
     setLines(
       poLines.lines.map((l) => ({
         purchaseOrderLineId: l.purchaseOrderLineId,
@@ -129,11 +148,47 @@ function JwDcOutwardNewPage(): React.JSX.Element {
         poQty: l.poQty,
         alreadySent: l.alreadySent,
         available: l.available,
-        sendQty: l.available,
-        checked: l.available > 0,
+        sendQty: kept?.get(l.purchaseOrderLineId)?.sendQty ?? l.available,
+        checked: kept?.get(l.purchaseOrderLineId)?.checked ?? l.available > 0,
       })),
     );
   }, [poLines, poId]);
+
+  // ADR-313 — a half-typed outward DC survives a tab switch. Only what the user
+  // typed is kept; PO Qty / Sent / Available always come fresh from the PO.
+  // One draft per ?jw= so a DC started from another JWSO never shares it.
+  const draft = useFormDraft({
+    key: `jw-dc-outward-new:${forJwId ?? ''}`,
+    ready: true,
+    values: {
+      date,
+      poId,
+      vehicleNo,
+      remarks,
+      typed: lines.map(
+        (l) => [l.purchaseOrderLineId, l.sendQty, l.checked] as [string, number, boolean],
+      ),
+    },
+    apply: (v) => {
+      setDate(v.date);
+      setVehicleNo(v.vehicleNo);
+      setRemarks(v.remarks);
+      if (v.poId) {
+        // The restored PO is the user's pick — the one-PO preselect must not replace it.
+        setPrePicked(true);
+        const typed = new Map(v.typed.map(([id, sendQty, checked]) => [id, { sendQty, checked }]));
+        if (seededFor.current === v.poId) {
+          setLines((prev) =>
+            prev.map((l) => ({ ...l, ...(typed.get(l.purchaseOrderLineId) ?? {}) })),
+          );
+        } else {
+          restoredLines.current = { poId: v.poId, typed };
+        }
+      }
+      setPoId(v.poId);
+    },
+  });
+  const exit = useExitConfirm({ onExit: goBack, draft });
 
   const rtv = useOutwardRtv(poId, lines);
 
@@ -204,6 +259,7 @@ function JwDcOutwardNewPage(): React.JSX.Element {
     <div>
       {exit.dialog}
       <PageHeader title="New Outward DC" backLabel="Back to JW DC" onBack={goBack} />
+      {draft.band}
 
       <Panel>
         {forJw ? (

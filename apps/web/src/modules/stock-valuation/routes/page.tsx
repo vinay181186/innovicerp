@@ -8,6 +8,7 @@
 // totals row over every MATCHING item — never the 25 on screen. The Excel
 // export fetches every matching row.
 
+import { RefreshFailedNote } from '@/lib/refresh-failed-note';
 import { ITEM_TYPES, type StockValuationRow } from '@innovic/shared';
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
@@ -221,7 +222,7 @@ function StockValuationPage(): React.JSX.Element {
       </div>,
     );
   }
-  if (isError || !data) {
+  if (!data) {
     return shell(
       <div className="empty-state" style={{ color: 'var(--red2)' }}>
         {error instanceof Error ? error.message : 'Could not load stock valuation. Try again.'}
@@ -309,6 +310,7 @@ function StockValuationPage(): React.JSX.Element {
         />
       }
     >
+      <RefreshFailedNote show={isError} />
       <Panel fill bodyPadding="none">
         {/* Shared FIT table (ADR-199). The totals row is drawn by the engine
             (showTotals + the Stock Value column's `total`), so it follows the

@@ -48,6 +48,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { apiFetch } from '@/lib/api';
 import { todayLocal } from '@/lib/date';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useFormDraft } from '@/lib/use-form-draft';
 import { uploadFile } from '@/lib/storage';
 import { useSession } from '@/lib/session';
 import { itemLineLabel } from '@/lib/item-code';
@@ -55,6 +56,7 @@ import { soNoWithInternal } from '@/lib/so-number';
 import { useItemsList } from '@/modules/items/api';
 import { FilePreviewModal, fileNameFromPath } from '@/components/shared/file-preview-modal';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { oneOf, usePersistentState } from '@/lib/use-persistent-state';
 import { useItemRevisionLookup } from '@/modules/item-revisions/api';
 import { ReplaceDrawingDialog } from '@/modules/item-revisions/components/replace-drawing-dialog';
 import { useDefaultRouteOps } from '@/modules/plans/api';
@@ -185,7 +187,6 @@ export function JobCardForm({
 }): React.JSX.Element {
   const navigate = useNavigate();
   const goBack = useCallback(() => void navigate({ to: '/job-cards' }), [navigate]);
-  const exit = useExitConfirm({ onExit: goBack });
   const toast = useToast();
   const { data: me } = useSession();
   const companyId = me?.companyId ?? '';
@@ -368,7 +369,12 @@ export function JobCardForm({
     jcCode: string;
     rc: JcRouteCardWriteBack;
   } | null>(null);
-  const [tab, setTab] = useState<TabKey>('ops');
+  // ADR-313 — the sub-tab stays when you switch tabs and come back.
+  const [tab, setTab] = usePersistentState<TabKey>(
+    `jc-new:${initialSourceLineId ?? ''}:tab`,
+    'ops',
+    oneOf(['ops', 'docs']),
+  );
 
   // Machine picker: only one row's dropdown is open at a time, so a shared
   // search term is fine.
@@ -643,6 +649,66 @@ export function JobCardForm({
       : null;
   const canReplaceStaleSeed = !!staleSeed && (itemRouteDefaults?.ops.length ?? 0) > 0;
 
+  // ADR-313 — a half-typed card survives a tab switch. Declared AFTER the
+  // Route Card seed effect on purpose: when both land in one commit, the
+  // restore's setters run last and win. `seededFrom` travels with the draft,
+  // so the seed effect sees "already seeded from this item" and neither
+  // re-fills nor swaps the restored rows. Ready only after the one-time
+  // deep-link source fill, so that fill never runs over a restored draft.
+  // Uploaded drawing / QC document paths are already in storage (strings),
+  // so they come back and save as they are; only the drawing's in-browser
+  // thumbnail does not.
+  const draft = useFormDraft({
+    key: `jc-new:${initialSourceLineId ?? ''}`,
+    ready: !initialSourceLineId || appliedInitialSource,
+    values: {
+      jcDate,
+      sourceLineId,
+      sourceType,
+      sourceText,
+      itemCode,
+      itemId,
+      orderQty,
+      priority,
+      dueDate,
+      drawingFilePath,
+      drawingName,
+      remarks,
+      rmGradeId,
+      rmGradeText,
+      rmSizeId,
+      rmSizeText,
+      ops,
+      docs,
+      seededFrom,
+    },
+    apply: (v) => {
+      // Row keys are display-only; fresh ones avoid a clash with rows added
+      // after a page reload restarted the counter.
+      const rekey = (rows: FormOp[]): FormOp[] => rows.map((o) => ({ ...o, rowKey: nextRowKey() }));
+      setJcDate(v.jcDate);
+      setSourceLineId(v.sourceLineId);
+      setSourceType(v.sourceType);
+      setSourceText(v.sourceText);
+      setItemCode(v.itemCode);
+      setItemId(v.itemId);
+      setOrderQty(v.orderQty);
+      setPriority(v.priority);
+      setDueDate(v.dueDate);
+      setDrawingFilePath(v.drawingFilePath);
+      setDrawingName(v.drawingName);
+      setRemarks(v.remarks);
+      setRmGradeId(v.rmGradeId);
+      setRmGradeText(v.rmGradeText);
+      setRmSizeId(v.rmSizeId);
+      setRmSizeText(v.rmSizeText);
+      setOps(rekey(v.ops));
+      setDocs(v.docs);
+      setSeededFrom(v.seededFrom ? { ...v.seededFrom, ops: rekey(v.seededFrom.ops) } : null);
+    },
+  });
+  const exit = useExitConfirm({ onExit: goBack, draft });
+
   const moveOp = (i: number, dir: -1 | 1): void => {
     setOps((prev) => {
       const next = [...prev];
@@ -757,6 +823,9 @@ export function JobCardForm({
     }
     try {
       const saved = await create.mutateAsync(result.payload);
+      // Saved: the draft is no longer wanted, even while the Route Card note
+      // below holds the page open.
+      draft.clear();
       // No silent write-back (2026-09-28 form audit): when the save also wrote
       // these operations to the item's Route Card, say so before leaving.
       if (saved.routeCardWriteBack) {
@@ -845,6 +914,7 @@ export function JobCardForm({
           </>
         }
       >
+        {draft.band}
         {error ? (
           <Banner tone="error" role="alert">
             {error}

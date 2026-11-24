@@ -60,6 +60,7 @@ import { usePrPrint } from '../components/use-pr-print';
 import { prBalanceClosedText, prBalanceColor, prOrderBalance } from '../lib/pr-balance';
 import { prConvertible } from '../lib/pr-convertible';
 import { PR_TYPE_LABELS } from '../lib/pr-labels';
+import { RefreshFailedNote } from '@/lib/refresh-failed-note';
 
 export const purchaseRequestDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -123,7 +124,7 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
       </div>
     );
   }
-  if (isError || !detail) {
+  if (!detail) {
     return (
       <div className="panel">
         <div className="panel-body">
@@ -214,6 +215,7 @@ function PurchaseRequestDetailPage(): React.JSX.Element {
 
   return (
     <div>
+      <RefreshFailedNote show={isError} />
       <Link to="/purchase-requests" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
         <ArrowLeft size={14} /> Back to Purchase Requests
       </Link>

@@ -97,7 +97,10 @@ function CustomerDispatchListPage(): React.JSX.Element {
   // machined goods against a JWSO line. Its own hooks/mutations are unchanged.
   const routeSearch = customerDispatchListRoute.useSearch();
   const navigate = customerDispatchListRoute.useNavigate();
-  const [tab, setTab] = useState<'so' | 'jw'>(() => routeSearch.tab ?? 'so');
+  // ADR-313 — the tab lives in ?tab= so it is still there after a tab-bar switch.
+  const tab: 'so' | 'jw' = routeSearch.tab ?? 'so';
+  const setTab = (t: 'so' | 'jw'): void =>
+    void navigate({ search: (prev) => ({ ...prev, tab: t }), replace: true });
   const { data: company } = useMyCompany();
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'dispatch_create');

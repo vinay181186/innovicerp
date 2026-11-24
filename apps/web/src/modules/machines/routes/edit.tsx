@@ -3,7 +3,7 @@
 import type { CreateMachineInput, UpdateMachineInput } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { useEditConflict } from '@/lib/use-edit-conflict';
@@ -13,6 +13,8 @@ import { useToast } from '@/ui/feedback';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateMachine, useFetchMachine, useMachine, useUpdateMachine } from '../api';
 import { MachineForm } from '../components/machine-form';
+import { RefreshFailedNote } from '@/lib/refresh-failed-note';
+import { useFormDraft } from '@/lib/use-form-draft';
 
 // ADR-226 — the fields THIS screen can edit, and what the user calls each one.
 //
@@ -70,7 +72,25 @@ function MachineNewPage(): React.JSX.Element {
   const { data: eff } = useMyAccess();
   const [submitError, setSubmitError] = useState<string | null>(null);
   const goBack = useCallback(() => void navigate({ to: '/machines' }), [navigate]);
-  const exit = useExitConfirm({ onExit: goBack });
+  // ADR-313 — the half-typed form survives a tab switch (lib/use-form-draft.tsx).
+  const [draftValues, setDraftValues] = useState<unknown>(null);
+  const draftApply = useRef<(v: unknown) => void>(() => undefined);
+  const draftLink = useMemo(
+    () => ({
+      onValues: setDraftValues,
+      bind: (apply: (v: unknown) => void) => {
+        draftApply.current = apply;
+      },
+    }),
+    [],
+  );
+  const draft = useFormDraft({
+    key: 'machine-new',
+    ready: draftValues !== null,
+    values: draftValues,
+    apply: (v) => draftApply.current(v),
+  });
+  const exit = useExitConfirm({ onExit: goBack, draft });
 
   const onSubmit = async (values: CreateMachineInput): Promise<void> => {
     setSubmitError(null);
@@ -97,10 +117,12 @@ function MachineNewPage(): React.JSX.Element {
   return (
     <div>
       {exit.dialog}
+      {draft.band}
       <Link to="/machines" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
         <ArrowLeft size={14} /> Back
       </Link>
       <MachineForm
+        draftLink={draftLink}
         panelHeader={
           <div>
             {/* Legacy modal title: showModal('Add Machine', …) L13137. */}
@@ -143,7 +165,26 @@ function MachineEditPage(): React.JSX.Element {
     () => void navigate({ to: '/machines/$id', params: { id } }),
     [navigate, id],
   );
-  const exit = useExitConfirm({ onExit: goBack });
+  // ADR-313 — the half-typed form survives a tab switch (lib/use-form-draft.tsx).
+  const [draftValues, setDraftValues] = useState<unknown>(null);
+  const draftApply = useRef<(v: unknown) => void>(() => undefined);
+  const draftLink = useMemo(
+    () => ({
+      onValues: setDraftValues,
+      bind: (apply: (v: unknown) => void) => {
+        draftApply.current = apply;
+      },
+    }),
+    [],
+  );
+  const draft = useFormDraft({
+    key: `machine-edit:${id}`,
+    ready: draftValues !== null,
+    values: draftValues,
+    apply: (v) => draftApply.current(v),
+    version: machine?.updatedAt,
+  });
+  const exit = useExitConfirm({ onExit: goBack, draft });
 
   const onSubmit = async (values: UpdateMachineInput): Promise<void> => {
     setSubmitError(null);
@@ -187,7 +228,7 @@ function MachineEditPage(): React.JSX.Element {
     );
   }
 
-  if (isError || !machine) {
+  if (!machine) {
     return (
       <div className="panel">
         <div className="panel-body">
@@ -206,7 +247,9 @@ function MachineEditPage(): React.JSX.Element {
 
   return (
     <div>
+      <RefreshFailedNote show={isError} />
       {exit.dialog}
+      {draft.band}
       <Link
         to="/machines/$id"
         params={{ id }}
@@ -216,6 +259,7 @@ function MachineEditPage(): React.JSX.Element {
         <ArrowLeft size={14} /> Back
       </Link>
       <MachineForm
+        draftLink={draftLink}
         panelHeader={
           <div>
             <div

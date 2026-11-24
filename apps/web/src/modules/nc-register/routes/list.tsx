@@ -18,6 +18,7 @@ import {
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { usePersistentState } from '@/lib/use-persistent-state';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { usePendingEditIds } from '@/modules/document-edits/api';
@@ -139,15 +140,19 @@ function NcRegisterListPage(): React.JSX.Element {
   // ▸ expand: the caller owns the open set; the fit table's ▸ is the row's one
   // expand control (onToggleExpanded), and renderExpanded returns null for a
   // collapsed row.
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
-  const toggleExpand = useCallback((id: string): void => {
-    setExpandedIds((prev) => {
-      const nextSet = new Set(prev);
-      if (nextSet.has(id)) nextSet.delete(id);
-      else nextSet.add(id);
-      return nextSet;
-    });
-  }, []);
+  // ADR-313: the open rows stay open when you come back to this tab.
+  const [openList, setOpenList] = usePersistentState<string[]>(
+    'nc-list:expanded',
+    [],
+    Array.isArray,
+  );
+  const expandedIds = useMemo(() => new Set(openList), [openList]);
+  const toggleExpand = useCallback(
+    (id: string): void => {
+      setOpenList((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+    },
+    [setOpenList],
+  );
 
   // The NC whose ⋯ → Assign Task is open (one modal for the whole list).
   const [assignTarget, setAssignTarget] = useState<NcRegisterListItem | null>(null);

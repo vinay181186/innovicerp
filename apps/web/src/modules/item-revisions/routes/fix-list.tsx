@@ -16,6 +16,8 @@
 import type { FixListStock } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
+import { RefreshFailedNote } from '@/lib/refresh-failed-note';
+import { oneOf, usePersistentState } from '@/lib/use-persistent-state';
 import { matchesSearchTerm } from '@/components/shared/search-match';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -54,7 +56,11 @@ function DrawingRevFixListPage(): React.JSX.Element {
   // stock onto a Rev is a store stock write (same tick as ± Adjust).
   const canEditRc = effectiveFormPerms(eff, 'routecard_create').edit;
   const canSetRev = effectiveFormPerms(eff, 'item_create').edit;
-  const [tab, setTab] = useState<TabKey>('route-cards');
+  const [tab, setTab] = usePersistentState<TabKey>(
+    'fix-list:tab',
+    'route-cards',
+    oneOf(['route-cards', 'lines', 'stock']),
+  );
   const [stockRow, setStockRow] = useState<FixListStock | null>(null);
   const [term, setTerm] = useState('');
   const routeCards = useMemo(() => data?.routeCards ?? [], [data?.routeCards]);
@@ -75,7 +81,7 @@ function DrawingRevFixListPage(): React.JSX.Element {
       ),
     );
 
-  if (isError) {
+  if (isError && !data) {
     return (
       <PageState
         state="error"
@@ -120,6 +126,7 @@ function DrawingRevFixListPage(): React.JSX.Element {
 
   return (
     <div className="page-fill">
+      <RefreshFailedNote show={isError} />
       <ListHeader
         title="Drawing Rev Fix List"
         icon="🛠"

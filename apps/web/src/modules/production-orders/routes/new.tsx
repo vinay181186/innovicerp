@@ -47,6 +47,7 @@ import { useExitConfirm } from '@/lib/exit-guard';
 import { itemCodeWithRev, docDrawingRev } from '@/lib/item-code';
 import { useSession } from '@/lib/session';
 import { soNoWithInternal } from '@/lib/so-number';
+import { useFormDraft } from '@/lib/use-form-draft';
 import { useSaveKey } from '@/lib/use-save-key';
 import { useRouteCardsList } from '@/modules/route-cards/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -100,7 +101,6 @@ function ProductionOrderNewPage(): React.JSX.Element {
   const toast = useToast();
   const [submitError, setSubmitError] = useState<string | null>(null);
   const goBack = useCallback(() => void navigate({ to: '/production-orders' }), [navigate]);
-  const exit = useExitConfirm({ onExit: goBack });
 
   // Tier-driven, per department (Production). Entry raises a PO; the gate stops
   // the form appearing when the URL is typed directly by a viewer.
@@ -123,6 +123,31 @@ function ProductionOrderNewPage(): React.JSX.Element {
   // Unticked on purpose: a confirmation that starts ticked confirms nothing.
   const [rawMaterialAvailable, setRawMaterialAvailable] = useState(false);
   const [actualSize, setActualSize] = useState('');
+  // ADR-313 — what is typed survives a tab switch; Save / Cancel / Exit clear it.
+  // Ready once a deep-linked plan (?planId=) has landed, so the draft goes on top.
+  const draft = useFormDraft({
+    key: `pro-new:${search.planId ?? ''}`,
+    ready: !accessLoading && (!search.planId || !!preselected),
+    values: {
+      plan,
+      routeCardId,
+      targetDate,
+      remarks,
+      orderQtyText,
+      rawMaterialAvailable,
+      actualSize,
+    },
+    apply: (v) => {
+      setPlan(v.plan);
+      setRouteCardId(v.routeCardId);
+      setTargetDate(v.targetDate);
+      setRemarks(v.remarks);
+      setOrderQtyText(v.orderQtyText);
+      setRawMaterialAvailable(v.rawMaterialAvailable);
+      setActualSize(v.actualSize);
+    },
+  });
+  const exit = useExitConfirm({ onExit: goBack, draft });
 
   // Route cards for the chosen plan's item only. One per item is the rule, so
   // the usual answer is exactly one row — preselected below.
@@ -368,6 +393,7 @@ function ProductionOrderNewPage(): React.JSX.Element {
   return (
     <form className="page-fill po-create" onSubmit={(e) => void onSubmit(e)}>
       {exit.dialog}
+      {draft.band}
       <DetailHeader
         backLabel="Back"
         onBack={goBack}

@@ -17,6 +17,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useFormDraft } from '@/lib/use-form-draft';
 import { itemCodeWithRev } from '@/lib/item-code';
 import { useSaveKey } from '@/lib/use-save-key';
 import { soNoWithInternal } from '@/lib/so-number';
@@ -72,7 +73,6 @@ function InvoiceNewPage(): React.JSX.Element {
   // Where Cancel goes, and where ESC -> Exit goes. Every other way off the
   // screen (Back link, breadcrumb, browser Back) gets "Are you sure?".
   const goBack = useCallback(() => void navigate({ to: '/invoices' }), [navigate]);
-  const exit = useExitConfirm({ onExit: goBack });
   const toast = useToast();
 
   const [soId, setSoId] = useState('');
@@ -104,11 +104,18 @@ function InvoiceNewPage(): React.JSX.Element {
   const [taxTypeSource, setTaxTypeSource] = useState<'gstin' | null>(null);
   // Place of Supply known for the chosen SO's customer (plan D2, 0186).
   const posKnown = !!inv && inv.salesOrderId === soId && !!inv.placeOfSupply;
+  // Set when a kept draft (ADR-313) puts an SO back: its GST % / Tax Type /
+  // Payment Terms were restored too, so the SO fill below must not overwrite them.
+  const restoredFor = useRef<string | null>(null);
   useEffect(() => {
     termsTouched.current = false;
     gstTouched.current = false;
     taxTypeTouched.current = false;
     filledFor.current = null;
+    if (restoredFor.current !== null && restoredFor.current === soId) {
+      filledFor.current = soId;
+      restoredFor.current = null;
+    }
   }, [soId]);
   useEffect(() => {
     if (!inv || inv.salesOrderId !== soId || filledFor.current === soId) return;
@@ -134,6 +141,42 @@ function InvoiceNewPage(): React.JSX.Element {
     setSoId((prev) => prev || fromDispatch.salesOrderId);
     setRemarks((prev) => prev || `Against dispatch ${fromDispatch.code}`);
   }, [fromDispatch]);
+
+  // ADR-313 — a half-typed invoice survives a tab switch. One draft per
+  // ?dispatchId= so an invoice started from another dispatch never shares it.
+  const draft = useFormDraft({
+    key: `invoice-new:${dispatchId ?? ''}`,
+    ready: true,
+    values: {
+      soId,
+      invoiceDate,
+      termsDays,
+      gstPercent,
+      taxType,
+      remarks,
+      cards,
+      termsSource,
+      gstSource,
+      taxTypeSource,
+    },
+    apply: (v) => {
+      restoredFor.current = v.soId || null;
+      // The restored lines are the user's — the dispatch prefill must not replace them.
+      if (v.cards.length > 0) prefilled.current = true;
+      setSoId(v.soId);
+      setInvoiceDate(v.invoiceDate);
+      setTermsDays(v.termsDays);
+      setGstPercent(v.gstPercent);
+      setTaxType(v.taxType);
+      setRemarks(v.remarks);
+      setCards(v.cards);
+      setTermsSource(v.termsSource);
+      setGstSource(v.gstSource);
+      setTaxTypeSource(v.taxTypeSource);
+      nextId.current = Math.max(nextId.current, ...v.cards.map((c) => c.id + 1));
+    },
+  });
+  const exit = useExitConfirm({ onExit: goBack, draft });
 
   const lines: InvoiceableLine[] = inv?.lines ?? [];
 
@@ -276,6 +319,7 @@ function InvoiceNewPage(): React.JSX.Element {
     <div>
       {exit.dialog}
       <PageHeader title="New Invoice" backLabel="Back to Invoices" onBack={goBack} />
+      {draft.band}
 
       {/* Place of Supply unknown (warn mode) — screen only, never printed. */}
       {inv && inv.salesOrderId === soId && !inv.placeOfSupply ? (

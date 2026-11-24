@@ -74,6 +74,7 @@ import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { ApiError } from '@/lib/api';
 import { fmtDate, todayIst } from '@/lib/date';
 import { type ExitConfirm, ExitConfirmDialog, useExitConfirm } from '@/lib/exit-guard';
+import { type FormDraft, useFormDraft } from '@/lib/use-form-draft';
 import { docItemsSummary, itemCodeWithRev, itemLineLabel } from '@/lib/item-code';
 import { usePurchaseOrder, usePurchaseOrdersList } from '@/modules/purchase-orders/api';
 import { poStatusLabel } from '@/modules/purchase-orders/lib/po-labels';
@@ -158,11 +159,39 @@ function DeliveryChallanNewPage(): React.JSX.Element {
   // browser Back) gets "Are you sure?". Picking a document / switching source is
   // in-component state, never a navigation, so none of it trips the guard.
   const goBack = useCallback(() => void navigate({ to: '/delivery-challans' }), [navigate]);
-  const exit = useExitConfirm({ onExit: goBack });
 
   // Arriving with ?poId= means the PO source, preselected. Otherwise default to
   // Against PO so the original flow is unchanged.
   const [source, setSource] = useState<DcSource>('po');
+  // The PO chosen on Against PO (lifted here so a kept draft can put it back).
+  // Preselected from ?poId= (the deep link), else null → picker.
+  const [poId, setPoId] = useState<string | null>(initialPoId ?? null);
+
+  // ADR-313 — a half-typed DC survives a tab switch. This page keeps WHICH
+  // source and PO were open; the PO form body keeps what was typed into it
+  // (its own draft, reported through `draftSink`). Against NC / JW PO picks are
+  // not kept. One draft per ?poId= so a DC started from another PO never shares it.
+  const pageDraft = useFormDraft({
+    key: `dc-new:${initialPoId ?? ''}`,
+    ready: true,
+    values: { source, poId },
+    apply: (v) => {
+      setSource(v.source);
+      setPoId(v.poId);
+    },
+  });
+  const draftSink = useRef<FormDraft | null>(null);
+  const draft = useMemo<FormDraft>(
+    () => ({
+      band: null,
+      clear: () => {
+        pageDraft.clear();
+        draftSink.current?.clear();
+      },
+    }),
+    [pageDraft],
+  );
+  const exit = useExitConfirm({ onExit: goBack, draft });
   // The search the picker on the other side opens with. Set when the Against PO
   // warning's button brings the user over (ADR-219: to the NC No. when exactly
   // one deviation is waiting, so the row it sends them to is already on screen);
@@ -226,7 +255,9 @@ function DeliveryChallanNewPage(): React.JSX.Element {
         {/* Switching source unmounts the other side, dropping its picks/drafts. */}
         {source === 'po' ? (
           <PoDcSection
-            {...(initialPoId ? { initialPoId } : {})}
+            poId={poId}
+            setPoId={setPoId}
+            draftSink={draftSink}
             exit={exit}
             saveCtl={saveCtl}
             onSwitchToNc={switchToNc}
@@ -338,21 +369,22 @@ function sendNowIssue(
 }
 
 function PoDcSection({
-  initialPoId,
+  poId,
+  setPoId,
+  draftSink,
   exit,
   saveCtl,
   onSwitchToNc,
 }: {
-  initialPoId?: string;
+  poId: string | null;
+  setPoId: (poId: string | null) => void;
+  draftSink: { current: FormDraft | null };
   exit: ExitConfirm;
   saveCtl: DcSaveCtl;
   /** ADR-219 — hand the user to Against NC, seeded with the NC No. when exactly
    *  one deviation is waiting (blank when several are). */
   onSwitchToNc: (ncSearch: string, ncIds: string[]) => void;
 }): React.JSX.Element {
-  // The chosen PO. Preselected from ?poId= (the deep link), else null → picker.
-  const [poId, setPoId] = useState<string | null>(initialPoId ?? null);
-
   if (poId === null) {
     return <PoPickerBody onSelect={setPoId} />;
   }
@@ -362,6 +394,7 @@ function PoDcSection({
       key={poId}
       poId={poId}
       onChangePo={() => setPoId(null)}
+      draftSink={draftSink}
       exit={exit}
       saveCtl={saveCtl}
       onSwitchToNc={onSwitchToNc}
@@ -398,7 +431,11 @@ function rtvPendingQty(p: { rtvAwaitingChallanQty?: number }): number {
 // browser; there is no server-side page to hide matching rows behind.)
 function PoPickerBody({ onSelect }: { onSelect: (poId: string) => void }): React.JSX.Element {
   const [search, setSearch] = useState('');
-  const { data, isLoading, isError } = usePurchaseOrdersList({ withLineItems: true, limit: 200, offset: 0 });
+  const { data, isLoading, isError } = usePurchaseOrdersList({
+    withLineItems: true,
+    limit: 200,
+    offset: 0,
+  });
 
   const eligible = useMemo(() => {
     const rows = (data?.items ?? []).filter(
@@ -512,7 +549,10 @@ function PoPickerBody({ onSelect }: { onSelect: (poId: string) => void }): React
                     </td>
                     <td className="td-ctr mono">{fmtDate(p.poDate)}</td>
                     <td>{p.vendorName ?? p.vendorCodeText ?? '—'}</td>
-                    <td style={{ maxWidth: 320 }} title={(p.lineItems ?? []).map(itemLineLabel).join('\n')}>
+                    <td
+                      style={{ maxWidth: 320 }}
+                      title={(p.lineItems ?? []).map(itemLineLabel).join('\n')}
+                    >
                       {docItemsSummary(p.lineItems).label || '—'}
                     </td>
                     <td style={{ color: 'var(--purple)' }}>
@@ -564,12 +604,14 @@ function PoPickerBody({ onSelect }: { onSelect: (poId: string) => void }): React
 function PoDcFormBody({
   poId,
   onChangePo,
+  draftSink,
   exit,
   saveCtl,
   onSwitchToNc,
 }: {
   poId: string;
   onChangePo: () => void;
+  draftSink: { current: FormDraft | null };
   exit: ExitConfirm;
   saveCtl: DcSaveCtl;
   /** ADR-219 — hand the user to Against NC for the pieces waiting to go back. */
@@ -609,8 +651,10 @@ function PoDcFormBody({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  const seeded = useRef(false);
   useEffect(() => {
     if (!po) return;
+    seeded.current = true;
     setLineDrafts(
       po.lines.map((l) => ({
         purchaseOrderLineId: l.id,
@@ -632,6 +676,39 @@ function PoDcFormBody({
       })),
     );
   }, [po]);
+
+  // ADR-313 — what was typed for THIS PO survives a tab switch: header + the
+  // per-line Send Now / Material / Remarks, matched back by PO line. The rest of
+  // each line (item, unit, PO qty) always comes fresh from the PO.
+  const draft = useFormDraft({
+    key: `dc-new:po:${poId}`,
+    ready: !!po && seeded.current,
+    values: {
+      dcDate,
+      transport,
+      vehicleNo,
+      typed: lineDrafts.map(
+        (l) => [l.purchaseOrderLineId, l.shipQty, l.materialText, l.dcRemarks] as const,
+      ),
+    },
+    apply: (v) => {
+      setDcDate(v.dcDate);
+      setTransport(v.transport);
+      setVehicleNo(v.vehicleNo);
+      const typed = new Map(v.typed.map(([lineId, ...rest]) => [lineId, rest] as const));
+      setLineDrafts((prev) =>
+        prev.map((l) => {
+          const t = typed.get(l.purchaseOrderLineId);
+          return t ? { ...l, shipQty: t[0], materialText: t[1], dcRemarks: t[2] } : l;
+        }),
+      );
+    },
+  });
+  // Kept after this body unmounts (source switched) so Cancel / Exit still
+  // forgets the draft — same as sales-order-form.tsx.
+  useEffect(() => {
+    draftSink.current = draft;
+  });
 
   const capByLine = useMemo(() => {
     const m = new Map<string, DcSendableLine>();
@@ -897,6 +974,7 @@ function PoDcFormBody({
 
   return (
     <>
+      {draft.band}
       {/* Save error at the top of the form body. */}
       {submitError ? (
         <Banner tone="error" role="alert">

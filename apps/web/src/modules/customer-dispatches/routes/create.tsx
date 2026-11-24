@@ -18,6 +18,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useFormDraft } from '@/lib/use-form-draft';
 import { useSaveKey } from '@/lib/use-save-key';
 import { soNoWithInternal } from '@/lib/so-number';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -67,7 +68,6 @@ function CustomerDispatchNewPage(): React.JSX.Element {
   // Where Cancel goes, and where ESC -> Exit goes. Every other way off the
   // screen (Back link, breadcrumb, browser Back) gets "Are you sure?".
   const goBack = useCallback(() => void navigate({ to: '/customer-dispatches' }), [navigate]);
-  const exit = useExitConfirm({ onExit: goBack });
 
   const [soId, setSoId] = useState(preselectSo ?? '');
   const [dispatchDate, setDispatchDate] = useState(todayStr());
@@ -81,10 +81,35 @@ function CustomerDispatchNewPage(): React.JSX.Element {
   const { data: dispatchable } = useDispatchableSo(soId || undefined);
 
   // Reset the line cards whenever the SO changes — dispatchable lines differ.
+  // Not when a kept draft (ADR-313) has just put the SO and its lines back.
+  const skipCardReset = useRef(false);
   useEffect(() => {
+    if (skipCardReset.current) {
+      skipCardReset.current = false;
+      return;
+    }
     setCards([]);
     setErr(null);
   }, [soId]);
+
+  // ADR-313 — a half-typed dispatch survives a tab switch. One draft per
+  // ?so= so a dispatch started from another SO never shares it.
+  const draft = useFormDraft({
+    key: `dispatch-new:${preselectSo ?? ''}`,
+    ready: true,
+    values: { soId, dispatchDate, transport, vehicleNo, remarks, cards },
+    apply: (v) => {
+      if (v.soId !== soId) skipCardReset.current = true;
+      setSoId(v.soId);
+      setDispatchDate(v.dispatchDate);
+      setTransport(v.transport);
+      setVehicleNo(v.vehicleNo);
+      setRemarks(v.remarks);
+      setCards(v.cards);
+      nextId.current = Math.max(nextId.current, ...v.cards.map((c) => c.id + 1));
+    },
+  });
+  const exit = useExitConfirm({ onExit: goBack, draft });
 
   const lines: DispatchableLine[] = dispatchable?.lines ?? [];
 
@@ -201,6 +226,7 @@ function CustomerDispatchNewPage(): React.JSX.Element {
         backLabel="Back to Customer Dispatch"
         onBack={goBack}
       />
+      {draft.band}
 
       <Panel title="Dispatch Details">
         <FormGrid>

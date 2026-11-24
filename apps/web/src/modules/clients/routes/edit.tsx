@@ -4,8 +4,10 @@
 import type { CreateClientInput, UpdateClientInput } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { RefreshFailedNote } from '@/lib/refresh-failed-note';
+import type { FormDraft } from '@/lib/use-form-draft';
 import { useOpenedVersion } from '@/lib/use-opened-version';
 import { useSaveKey } from '@/lib/use-save-key';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
@@ -38,7 +40,13 @@ function ClientNewPage(): React.JSX.Element {
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'client_create');
   const goBack = useCallback(() => void navigate({ to: '/clients' }), [navigate]);
-  const exit = useExitConfirm({ onExit: goBack });
+  // ADR-313 — the form keeps the draft; this hands its clear() to the exit guard.
+  const draftSink = useRef<FormDraft | null>(null);
+  const draft = useMemo<FormDraft>(
+    () => ({ band: null, clear: () => draftSink.current?.clear() }),
+    [],
+  );
+  const exit = useExitConfirm({ onExit: goBack, draft });
 
   const onSubmit = async (values: CreateClientInput): Promise<void> => {
     setSubmitError(null);
@@ -68,6 +76,8 @@ function ClientNewPage(): React.JSX.Element {
       {exit.dialog}
       <ClientForm
         mode="create"
+        draftKey="client-new"
+        draftSink={draftSink}
         header={{
           title: 'New Customer',
           backLabel: 'Back to Customer Master',
@@ -100,7 +110,13 @@ function ClientEditPage(): React.JSX.Element {
     () => void navigate({ to: '/clients/$id', params: { id } }),
     [navigate, id],
   );
-  const exit = useExitConfirm({ onExit: goBack });
+  // ADR-313 — the form keeps the draft; this hands its clear() to the exit guard.
+  const draftSink = useRef<FormDraft | null>(null);
+  const draft = useMemo<FormDraft>(
+    () => ({ band: null, clear: () => draftSink.current?.clear() }),
+    [],
+  );
+  const exit = useExitConfirm({ onExit: goBack, draft });
 
   const onSubmit = async (values: UpdateClientInput): Promise<void> => {
     setSubmitError(null);
@@ -140,7 +156,7 @@ function ClientEditPage(): React.JSX.Element {
     );
   }
 
-  if (isError || !client) {
+  if (!client) {
     return (
       <div className="panel">
         <div className="panel-body">
@@ -160,8 +176,12 @@ function ClientEditPage(): React.JSX.Element {
   return (
     <div>
       {exit.dialog}
+      <RefreshFailedNote show={isError} />
       <ClientForm
         mode="edit"
+        draftKey={`client-edit:${id}`}
+        draftVersion={opened.expected()}
+        draftSink={draftSink}
         header={{
           title: 'Edit Customer',
           subtitle: (

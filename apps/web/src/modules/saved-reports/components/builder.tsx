@@ -22,7 +22,8 @@ import type {
   SourceFieldDescriptor,
 } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
-import { useMemo, useState, type CSSProperties, type DragEvent } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties, type DragEvent } from 'react';
+import { useFormDraft, type FormDraft } from '@/lib/use-form-draft';
 import { FormActions } from '@/ui/layout';
 import { ResultTable } from './result-table';
 
@@ -40,6 +41,12 @@ interface Props {
   saving: boolean;
   saveError?: string | undefined;
   saveLabel: string;
+  /** ADR-313 — draft key (`saved-report-new` / `saved-report-edit:<id>`); omit = no draft. */
+  draftKey?: string | undefined;
+  /** ADR-313 — the report's updatedAt as first loaded (edit only). */
+  draftVersion?: string | undefined;
+  /** ADR-313 — the page's exit guard reads this builder's draft through it. */
+  draftSink?: { current: FormDraft | null } | undefined;
 }
 
 export interface BuilderInitial {
@@ -166,6 +173,31 @@ export function Builder(props: Props): JSX.Element {
   const [sumCol, setSumCol] = useState<string | null>(initial.spec?.sumCol ?? null);
   const [sumFn, setSumFn] = useState<AggFunction>(initial.spec?.sumFn ?? 'SUM');
 
+  // ADR-313 — a half-built report survives a tab switch. The builder starts
+  // from `initial` at mount (the page mounts it only once the data is loaded),
+  // so it is ready at once.
+  const draft = useFormDraft({
+    key: props.draftKey ?? null,
+    ready: true,
+    values: { name, description, isShared, sourceKey, columns, filters, groupBy, sumCol, sumFn },
+    apply: (v) => {
+      setName(v.name);
+      setDescription(v.description);
+      setIsShared(v.isShared);
+      setSourceKey(v.sourceKey);
+      setColumns(v.columns);
+      setFilters(v.filters);
+      setGroupBy(v.groupBy);
+      setSumCol(v.sumCol);
+      setSumFn(v.sumFn);
+    },
+    version: props.draftVersion,
+  });
+  const draftSink = props.draftSink;
+  useEffect(() => {
+    if (draftSink) draftSink.current = draft;
+  });
+
   const source = useMemo(
     () => sources.find((s) => s.sourceKey === sourceKey),
     [sources, sourceKey],
@@ -285,6 +317,7 @@ export function Builder(props: Props): JSX.Element {
 
   return (
     <form onSubmit={onSubmit}>
+      {draft.band}
       {/* Report Details — NO legacy counterpart: legacy `_rbSaveTemplate` (L17673)
           collects the name with a prompt() and has no description / shared concept.
           Kept (and not replaced by a prompt) — it is how saving works here. */}

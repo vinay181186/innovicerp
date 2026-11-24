@@ -20,6 +20,7 @@ import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { todayIst } from '@/lib/date';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useFormDraft } from '@/lib/use-form-draft';
 import { soNoWithInternal } from '@/lib/so-number';
 import { useSaveKey } from '@/lib/use-save-key';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -76,7 +77,38 @@ function StoreIssueNewPage(): React.JSX.Element {
 
   // After Save & New only the kept document + person are on screen: nothing to lose yet.
   const edited = lines.length > 0 || Boolean(purpose.trim() || remarks.trim());
-  const exit = useExitConfirm({ onExit: goBack, enabled: !lastSaved || edited });
+  // ADR-313 — a half-typed issue survives a tab switch. One draft per link
+  // (?issueAgainst= / ?jobCardId= / ?salesOrderId=); the picked document
+  // travels with its own lines, so a draft never crosses documents.
+  const draft = useFormDraft({
+    key: `store-issue-new:${seed.issueAgainst ?? ''}:${seed.jobCardId ?? ''}:${seed.salesOrderId ?? ''}`,
+    ready: true,
+    values: {
+      against,
+      jobCardId,
+      salesOrderId,
+      department,
+      date,
+      issuedToUserId,
+      issuedToText,
+      purpose,
+      remarks,
+      lines,
+    },
+    apply: (v) => {
+      setAgainst(v.against);
+      setJobCardId(v.jobCardId);
+      setSalesOrderId(v.salesOrderId);
+      setDepartment(v.department);
+      setDate(v.date);
+      setIssuedToUserId(v.issuedToUserId);
+      setIssuedToText(v.issuedToText);
+      setPurpose(v.purpose);
+      setRemarks(v.remarks);
+      setLines(v.lines);
+    },
+  });
+  const exit = useExitConfirm({ onExit: goBack, enabled: !lastSaved || edited, draft });
 
   // R2 — one idempotency key per open form, reused on a retry after a dropped save.
   const saveKey = useSaveKey();
@@ -161,6 +193,8 @@ function StoreIssueNewPage(): React.JSX.Element {
           return exit.leave(goBack);
         }
         toast.ok(`Item Issue ${created.code} saved — enter the next issue.`);
+        // Saved and staying on the screen: the kept draft is spent.
+        draft.clear();
         // Keep against / document / received-by; clear the lines.
         setLastSaved(created.code);
         setLines([]);
@@ -196,6 +230,7 @@ function StoreIssueNewPage(): React.JSX.Element {
     <div>
       {exit.dialog}
       <PageHeader title="New Item Issue" backLabel="Back to Item Issue Register" onBack={goBack} />
+      {draft.band}
 
       <Panel>
         <div style={{ display: 'flex', gap: 6, marginBottom: 'var(--sp-3)', flexWrap: 'wrap' }}>

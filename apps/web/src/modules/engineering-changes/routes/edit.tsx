@@ -4,9 +4,10 @@
 
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ECR_STATUS_LABELS } from '@innovic/shared';
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { RefreshFailedNote } from '@/lib/refresh-failed-note';
 import { useOpenedVersion } from '@/lib/use-opened-version';
 import { useSaveKey } from '@/lib/use-save-key';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -36,7 +37,12 @@ function EcrEditPage(): React.JSX.Element {
     () => void navigate({ to: '/ecrs/$id', params: { id } }),
     [navigate, id],
   );
-  const exit = useExitConfirm({ onExit: goBack });
+  // ADR-313 — the form below keeps a draft; its `clear` lands here for the guard.
+  const draftClear = useRef<() => void>(() => undefined);
+  const exit = useExitConfirm({
+    onExit: goBack,
+    draft: { band: null, clear: () => draftClear.current() },
+  });
   const toast = useToast();
 
   if (eff && !perms.entry && !perms.edit) {
@@ -49,7 +55,7 @@ function EcrEditPage(): React.JSX.Element {
     );
   }
   if (isLoading) return <PageState state="loading" message="⟳ Loading ECR…" />;
-  if (isError || !ecr || ecr.status !== 'draft') {
+  if (!ecr || ecr.status !== 'draft') {
     return (
       <div>
         <Link to="/ecrs" className="btn btn-ghost btn-sm" style={{ marginBottom: 'var(--sp-2)' }}>
@@ -72,7 +78,13 @@ function EcrEditPage(): React.JSX.Element {
   return (
     <>
       {exit.dialog}
+      <RefreshFailedNote show={isError} />
       <EcrForm
+        draftSlot={{
+          key: `ecr-edit:${id}`,
+          version: opened.expected() ?? null,
+          clearRef: draftClear,
+        }}
         title={`Edit ${ecr.code}`}
         initial={{
           itemId: ecr.itemId,

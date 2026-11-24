@@ -15,6 +15,7 @@
 
 import type { RouteCardListItem } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
+import { RefreshFailedNote } from '@/lib/refresh-failed-note';
 import { useRouteCard } from '@/modules/route-cards/api';
 import { RouteCardOpsTable } from '@/modules/route-cards/components/route-card-ops-table';
 import { EmptyState, Panel } from '@/ui/data';
@@ -77,7 +78,7 @@ export function PoCreateOpsPanel({
         <Loader2 className="inline h-4 w-4 animate-spin" /> Loading operations…
       </EmptyState>
     );
-  } else if (detail.isError || !ops) {
+  } else if (!ops) {
     body = (
       <EmptyState tone="error">
         {detail.error instanceof Error
@@ -86,7 +87,12 @@ export function PoCreateOpsPanel({
       </EmptyState>
     );
   } else {
-    body = <RouteCardOpsTable ops={ops} />;
+    body = (
+      <>
+        <RefreshFailedNote show={detail.isError} />
+        <RouteCardOpsTable ops={ops} />
+      </>
+    );
   }
 
   return (

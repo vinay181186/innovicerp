@@ -1,7 +1,7 @@
 import type { CreateCostCenterInput, ListCostCentersQuery } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft } from 'lucide-react';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { useSaveKey } from '@/lib/use-save-key';
@@ -9,6 +9,7 @@ import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCostCentersList, useCreateCostCenter } from '../api';
 import { CostCenterForm } from '../components/cost-center-form';
 import { useToast } from '@/ui/feedback';
+import { useFormDraft } from '@/lib/use-form-draft';
 
 export const costCenterNewRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -23,7 +24,25 @@ function CostCenterNewPage(): React.JSX.Element {
   const toast = useToast();
   const [submitError, setSubmitError] = useState<string | null>(null);
   const goBack = useCallback(() => void navigate({ to: '/cost-centers' }), [navigate]);
-  const exit = useExitConfirm({ onExit: goBack });
+  // ADR-313 — the half-typed form survives a tab switch (lib/use-form-draft.tsx).
+  const [draftValues, setDraftValues] = useState<unknown>(null);
+  const draftApply = useRef<(v: unknown) => void>(() => undefined);
+  const draftLink = useMemo(
+    () => ({
+      onValues: setDraftValues,
+      bind: (apply: (v: unknown) => void) => {
+        draftApply.current = apply;
+      },
+    }),
+    [],
+  );
+  const draft = useFormDraft({
+    key: 'cost-center-new',
+    ready: draftValues !== null,
+    values: draftValues,
+    apply: (v) => draftApply.current(v),
+  });
+  const exit = useExitConfirm({ onExit: goBack, draft });
   // Creating a master record is `entry` on cc_create (Finance). Checked here as
   // well as on the list button — the route is reachable by URL, so without this
   // an L1 Viewer got the whole form and failed only at the API.
@@ -50,10 +69,12 @@ function CostCenterNewPage(): React.JSX.Element {
   return (
     <div>
       {exit.dialog}
+      {draft.band}
       <Link to="/cost-centers" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
         <ArrowLeft size={14} /> Back to Cost Centre Master
       </Link>
       <CostCenterForm
+        draftLink={draftLink}
         panelHeader={<div className="panel-title">New Cost Centre</div>}
         mode="create"
         suggestedCode={suggestedCode}

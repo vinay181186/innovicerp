@@ -12,6 +12,7 @@ import { useState } from 'react';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDateTime } from '@/lib/date';
+import { RefreshFailedNote } from '@/lib/refresh-failed-note';
 import { useDocumentHistory } from '@/modules/activity-log/api';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Button, Icon, StatusBadge } from '@/ui/core';
@@ -63,7 +64,7 @@ function MlPlanDetailPage(): React.JSX.Element {
   if (isLoading) {
     return <PageState state="loading" message="⟳ Loading plan…" />;
   }
-  if (isError || !detail) {
+  if (!detail) {
     return (
       <div>
         <Link
@@ -107,6 +108,7 @@ function MlPlanDetailPage(): React.JSX.Element {
 
   return (
     <div>
+      <RefreshFailedNote show={isError} />
       <DetailHeader
         backTo="/ml-plans"
         renderLink={(p) => <Link {...p} />}

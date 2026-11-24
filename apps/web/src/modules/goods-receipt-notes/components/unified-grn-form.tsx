@@ -39,8 +39,9 @@ import {
 } from '@innovic/shared';
 import { useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { type FormDraft, useFormDraft } from '@/lib/use-form-draft';
 import { useSaveKey } from '@/lib/use-save-key';
 import { FormField } from '@/ui/forms';
 import { FormActions, PageHeader, useSaveShortcut } from '@/ui/layout';
@@ -82,7 +83,33 @@ export function UnifiedGrnForm({
   // inside this component, so they are handed `exit.leave` (as `onLeave`) for
   // their save rather than a second guard.
   const goBack = useCallback(() => void navigate({ to: '/goods-receipt-notes' }), [navigate]);
-  const exit = useExitConfirm({ onExit: goBack });
+  // ADR-313 — a half-typed GRN survives a tab switch. Two drafts: this one
+  // keeps the GRN Type (per ?poId= preselect); the type form keeps its own
+  // fields under a key naming its type, so a draft never crosses types. The
+  // active type form puts its draft in `typeFormDraft`; the exit guard gets
+  // both, so Save / Cancel / Exit forget both.
+  const typeFormDraft = useRef<FormDraft | null>(null);
+  const typeDraft = useFormDraft({
+    key: `grn-new:${initialPurchaseOrderId ?? ''}`,
+    ready: true,
+    values: { inwardType },
+    apply: (v) => {
+      setStatus(IDLE);
+      setInwardType(v.inwardType);
+    },
+  });
+  const clearTypeDraft = typeDraft.clear;
+  const draft = useMemo<FormDraft>(
+    () => ({
+      band: null,
+      clear: () => {
+        clearTypeDraft();
+        typeFormDraft.current?.clear();
+      },
+    }),
+    [clearTypeDraft],
+  );
+  const exit = useExitConfirm({ onExit: goBack, draft });
   const toast = useToast();
 
   // Purchase branch — the existing create endpoint; the form is the new
@@ -132,6 +159,9 @@ export function UnifiedGrnForm({
         onChange={(e) => {
           const v = e.target.value;
           if (isInwardType(v)) {
+            // The old type's fields are dropped (see below), so is its draft.
+            typeFormDraft.current?.clear();
+            typeFormDraft.current = null;
             setStatus(IDLE);
             setInwardType(v);
           }
@@ -158,15 +188,26 @@ export function UnifiedGrnForm({
           {...(initialPurchaseOrderId ? { initialPurchaseOrderId } : {})}
           typeField={typeField}
           onStatusChange={setStatus}
+          draftSlot={typeFormDraft}
           onSubmit={onPurchaseSubmit}
           submitError={purchaseErr}
         />
       ) : null}
       {inwardType === 'job_work_return' ? (
-        <GrnAgainstDcForm typeField={typeField} onStatusChange={setStatus} onLeave={exit.leave} />
+        <GrnAgainstDcForm
+          typeField={typeField}
+          onStatusChange={setStatus}
+          draftSlot={typeFormDraft}
+          onLeave={exit.leave}
+        />
       ) : null}
       {inwardType === 'nc_return' ? (
-        <GrnAgainstNcForm typeField={typeField} onStatusChange={setStatus} onLeave={exit.leave} />
+        <GrnAgainstNcForm
+          typeField={typeField}
+          onStatusChange={setStatus}
+          draftSlot={typeFormDraft}
+          onLeave={exit.leave}
+        />
       ) : null}
       <FormActions dirty={status.dirty}>
         <button type="button" className="btn btn-ghost" onClick={() => exit.leave(goBack)}>

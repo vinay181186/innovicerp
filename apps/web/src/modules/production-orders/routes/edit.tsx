@@ -32,6 +32,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { DocumentHistory } from '@/components/shared/document-history';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { RefreshFailedNote } from '@/lib/refresh-failed-note';
+import { useFormDraft } from '@/lib/use-form-draft';
 import { useOpenedVersion } from '@/lib/use-opened-version';
 import { useSaveKey } from '@/lib/use-save-key';
 import { useDocumentHistory } from '@/modules/activity-log/api';
@@ -130,6 +132,7 @@ function ProductionOrderEditPage(): React.JSX.Element {
   // Seed the form ONCE from the loaded order — a background refetch must not
   // wipe what the user is typing.
   const seeded = useRef(false);
+  const [seededReady, setSeededReady] = useState(false);
   useEffect(() => {
     if (seeded.current || !detail) return;
     seeded.current = true;
@@ -137,13 +140,28 @@ function ProductionOrderEditPage(): React.JSX.Element {
     setTargetDate(detail.targetDate);
     setActualSize(detail.actualSize ?? '');
     setRawMaterialAvailable(detail.rawMaterialAvailable);
+    setSeededReady(true);
   }, [detail]);
+
+  // ADR-313 — what is typed survives a tab switch; Save / Cancel / Exit clear it.
+  const draft = useFormDraft({
+    key: `pro-edit:${id}`,
+    ready: seededReady,
+    values: { remarks, targetDate, actualSize, rawMaterialAvailable },
+    apply: (v) => {
+      setRemarks(v.remarks);
+      setTargetDate(v.targetDate);
+      setActualSize(v.actualSize);
+      setRawMaterialAvailable(v.rawMaterialAvailable);
+    },
+    version: opened.expected() ?? null,
+  });
 
   const goBack = useCallback(
     () => void navigate({ to: '/production-orders/$id', params: { id } }),
     [navigate, id],
   );
-  const exit = useExitConfirm({ onExit: goBack });
+  const exit = useExitConfirm({ onExit: goBack, draft });
 
   const canSubmit = /^\d{4}-\d{2}-\d{2}$/.test(targetDate);
 
@@ -212,7 +230,7 @@ function ProductionOrderEditPage(): React.JSX.Element {
     );
   }
 
-  if (isError || !detail) {
+  if (!detail) {
     return (
       <div className="panel">
         <div className="panel-body">
@@ -279,6 +297,8 @@ function ProductionOrderEditPage(): React.JSX.Element {
   return (
     <form className="page-fill po-detail po-edit" onSubmit={(e) => void onSubmit(e)}>
       {exit.dialog}
+      <RefreshFailedNote show={isError} />
+      {draft.band}
       <DetailHeader
         backLabel="Back"
         onBack={() => exit.leave(goBack)}

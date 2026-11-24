@@ -6,6 +6,7 @@
 // The page body IS the challan: the same Innovic Sheet markup the print window
 // emits, previewed in an iframe (screen = print, as on the invoice detail).
 
+import { RefreshFailedNote } from '@/lib/refresh-failed-note';
 import { Icon } from '@/ui/core';
 import { itemRevLabel } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
@@ -82,7 +83,7 @@ function CustomerDispatchDetailPage(): React.JSX.Element {
       </div>
     );
   }
-  if (isError || !d) {
+  if (!d) {
     return (
       <div className="empty-state" style={{ padding: 40, color: 'var(--red2)' }}>
         {error instanceof Error ? error.message : 'Could not load the dispatch. Try again.'}
@@ -96,6 +97,7 @@ function CustomerDispatchDetailPage(): React.JSX.Element {
 
   return (
     <div>
+      <RefreshFailedNote show={isError} />
       <DetailHeader
         backTo="/customer-dispatches"
         backLabel="Back to Customer Dispatch"

@@ -48,6 +48,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActionLink } from '@/components/shared/action-link';
 import { rmItemToInput } from '@/components/shared/rm-item-fields';
 import { fmtDateTime } from '@/lib/date';
+import { useFormDraft } from '@/lib/use-form-draft';
 import { useItemsList } from '@/modules/items/api';
 import { useMachineGroupsList, useMachinesList } from '@/modules/machines/api';
 import { usePlansList } from '@/modules/plans/api';
@@ -173,6 +174,11 @@ interface RouteCardFormProps {
   onCancel: () => void;
   /** Header Back — a plain navigation, so the router's exit guard asks first. */
   onBack?: () => void;
+  /** ADR-313 — keep a draft of what is typed (lib/use-form-draft.tsx). The page
+   *  names the draft and gets `clear` back for its exit guard. */
+  draftSlot?:
+    | { key: string | null; version?: string | null | undefined; clearRef: { current: () => void } }
+    | undefined;
 }
 
 /** A saved card's operations as editable form rows — used by the edit page to
@@ -659,8 +665,26 @@ export function RouteCardForm(props: RouteCardFormProps): React.JSX.Element {
   // unmounted, so every picker keeps what was typed in it.
   const [headerCollapsed, setHeaderCollapsed] = useRcHeaderCollapsed();
 
+  // ADR-313 — what is typed survives a tab switch; Save / Cancel / Exit clear it.
+  const formDraft = useFormDraft({
+    key: props.draftSlot?.key ?? null,
+    ready: true,
+    values: { header, ops, revisionNote },
+    apply: (v) => {
+      setHeader(v.header);
+      setOps(v.ops);
+      setRevisionNote(v.revisionNote);
+    },
+    version: props.draftSlot?.version,
+  });
+  const draftClearRef = props.draftSlot?.clearRef;
+  useEffect(() => {
+    if (draftClearRef) draftClearRef.current = formDraft.clear;
+  }, [draftClearRef, formDraft.clear]);
+
   return (
     <form className="page-fill rc-form" onSubmit={(e) => void submit(e)}>
+      {formDraft.band}
       {/* Header: which card and the revision this save creates. */}
       <div className="rc-form-hd">
         <button type="button" className="btn btn-ghost" onClick={onBack ?? onCancel}>

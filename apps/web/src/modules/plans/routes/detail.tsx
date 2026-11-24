@@ -29,6 +29,7 @@ import { useCanOpen } from '@/components/shared/action-link';
 import { fmtDate } from '@/lib/date';
 import { ItemRevLink } from '@/modules/item-revisions/components/item-rev-link';
 import { itemCodeWithRev, docDrawingRev } from '@/lib/item-code';
+import { RefreshFailedNote } from '@/lib/refresh-failed-note';
 import { soNoWithInternal } from '@/lib/so-number';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { Banner, useToast } from '@/ui/feedback';
@@ -104,7 +105,7 @@ function PlanDetailPage(): React.JSX.Element {
       </div>
     );
   }
-  if (isError || !plan) {
+  if (!plan) {
     return (
       <div className="panel">
         <div className="panel-body">
@@ -181,6 +182,7 @@ function PlanDetailPage(): React.JSX.Element {
 
   return (
     <div>
+      <RefreshFailedNote show={isError} />
       <Link to="/plans" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
         <ArrowLeft size={14} /> Back
       </Link>

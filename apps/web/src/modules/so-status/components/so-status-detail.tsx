@@ -4,6 +4,7 @@
 // type + due colour), Equipment-BOM banner, per-line panels (tracker chips +
 // OSP alerts + JC table + Create JC / Create PO), Equipment-BOM items table.
 
+import { RefreshFailedNote } from '@/lib/refresh-failed-note';
 import { Icon } from '@/ui/core';
 import {
   type PlanningLine,
@@ -128,7 +129,7 @@ function SoStatusDetailBody({ soId }: { soId: string }): React.JSX.Element {
       </div>
     );
   }
-  if (isError || !data) {
+  if (!data) {
     return (
       <div className="empty-state" style={{ color: 'var(--red2)', padding: 'var(--sp-5)' }}>
         {error instanceof Error ? error.message : 'Could not load SO status. Try again.'}
@@ -148,6 +149,7 @@ function SoStatusDetailBody({ soId }: { soId: string }): React.JSX.Element {
 
   return (
     <div>
+      <RefreshFailedNote show={isError} />
       {/* Action bar (legacy L4552-4556) */}
       <div
         style={{

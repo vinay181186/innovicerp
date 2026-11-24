@@ -3,9 +3,11 @@
 import type { CreateJobWorkOrderInput, UpdateJobWorkOrderInput } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { isStagedResult } from '@/modules/document-edits/api';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { RefreshFailedNote } from '@/lib/refresh-failed-note';
+import type { FormDraft } from '@/lib/use-form-draft';
 import { useOpenedVersion } from '@/lib/use-opened-version';
 import { useSaveKey } from '@/lib/use-save-key';
 import { useSession } from '@/lib/session';
@@ -78,7 +80,13 @@ function JobWorkOrderNewPage(): React.JSX.Element {
   const poFileRef = useRef<File | null>(null);
   const emailFileRef = useRef<File | null>(null);
   const goBack = useCallback(() => void navigate({ to: '/job-work-orders' }), [navigate]);
-  const exit = useExitConfirm({ onExit: goBack });
+  // ADR-313 — the form keeps the draft; this hands its clear() to the exit guard.
+  const draftSink = useRef<FormDraft | null>(null);
+  const draft = useMemo<FormDraft>(
+    () => ({ band: null, clear: () => draftSink.current?.clear() }),
+    [],
+  );
+  const exit = useExitConfirm({ onExit: goBack, draft });
   const toast = useToast();
 
   const onSubmit = async (values: CreateJobWorkOrderInput): Promise<void> => {
@@ -139,6 +147,8 @@ function JobWorkOrderNewPage(): React.JSX.Element {
         // applies to a saved JWSO (detail.priceVisible on edit).
         priceVisible={perms.price}
         pageTitle="New JWSO"
+        draftKey="jwso-new"
+        draftSink={draftSink}
         backLabel="Back to JWSO Master"
         onBack={goBack}
         onSubmit={onSubmit}
@@ -175,7 +185,13 @@ function JobWorkOrderEditPage(): React.JSX.Element {
     () => void navigate({ to: '/job-work-orders/$id', params: { id } }),
     [navigate, id],
   );
-  const exit = useExitConfirm({ onExit: goBack });
+  // ADR-313 — the form keeps the draft; this hands its clear() to the exit guard.
+  const draftSink = useRef<FormDraft | null>(null);
+  const draft = useMemo<FormDraft>(
+    () => ({ band: null, clear: () => draftSink.current?.clear() }),
+    [],
+  );
+  const exit = useExitConfirm({ onExit: goBack, draft });
   const toast = useToast();
 
   const onSubmit = async (values: UpdateJobWorkOrderInput): Promise<void> => {
@@ -249,7 +265,7 @@ function JobWorkOrderEditPage(): React.JSX.Element {
     );
   }
 
-  if (isError || !detail) {
+  if (!detail) {
     return (
       <div className="panel">
         <div className="panel-body">
@@ -269,12 +285,16 @@ function JobWorkOrderEditPage(): React.JSX.Element {
   return (
     <>
       {exit.dialog}
+      <RefreshFailedNote show={isError} />
       <JobWorkOrderForm
         mode="edit"
         detail={detail}
         pageTitle={`Edit JWSO ${detail.code}`}
         backLabel="Back to JWSO"
         onBack={goBack}
+        draftKey={`jwso-edit:${id}`}
+        draftVersion={opened.expected()}
+        draftSink={draftSink}
         onSubmit={onSubmit}
         onPoFileChange={(f) => {
           poFileRef.current = f;

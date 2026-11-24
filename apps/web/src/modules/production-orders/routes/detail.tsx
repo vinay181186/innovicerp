@@ -40,6 +40,7 @@ import { fmtDate, fmtDateTime } from '@/lib/date';
 import { LIVE_FALLBACK_POLL_MS } from '@/lib/live-updates/constants';
 import { ItemRevLink } from '@/modules/item-revisions/components/item-rev-link';
 import { itemCodeWithRev, docDrawingRev } from '@/lib/item-code';
+import { RefreshFailedNote } from '@/lib/refresh-failed-note';
 import { soNoWithInternal } from '@/lib/so-number';
 import { JC_STATUS_LABEL, JcStatusBadge } from '@/modules/job-cards/components/jc-status-badge';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -148,7 +149,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
       </div>
     );
   }
-  if (isError || !data) {
+  if (!data) {
     return (
       <div className="panel">
         <div className="panel-body">
@@ -281,6 +282,7 @@ function ProductionOrderDetailPage(): React.JSX.Element {
 
   return (
     <div className="po-detail">
+      <RefreshFailedNote show={isError} />
       <DetailHeader
         backLabel="Back"
         backTo="/production-orders"

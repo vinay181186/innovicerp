@@ -3,10 +3,11 @@
 // newer edit is refused with 409 and the server's message shows in the banner.
 
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { ML_PLAN_STATUS_LABEL } from '@innovic/shared';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { RefreshFailedNote } from '@/lib/refresh-failed-note';
 import { useOpenedVersion } from '@/lib/use-opened-version';
 import { useSaveKey } from '@/lib/use-save-key';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -36,7 +37,12 @@ function MlPlanEditPage(): React.JSX.Element {
     () => void navigate({ to: '/ml-plans/$id', params: { id } }),
     [navigate, id],
   );
-  const exit = useExitConfirm({ onExit: goBack });
+  // ADR-313 — the form below keeps a draft; its `clear` lands here for the guard.
+  const draftClear = useRef<() => void>(() => undefined);
+  const exit = useExitConfirm({
+    onExit: goBack,
+    draft: { band: null, clear: () => draftClear.current() },
+  });
   const toast = useToast();
 
   const submit = async (_line: MlPlanFormLine, draft: MlPlanFormDraft): Promise<void> => {
@@ -69,7 +75,7 @@ function MlPlanEditPage(): React.JSX.Element {
   if (isLoading) {
     return <PageState state="loading" message="⟳ Loading plan…" />;
   }
-  if (isError || !detail || detail.status !== 'draft') {
+  if (!detail || detail.status !== 'draft') {
     return (
       <div>
         <Link
@@ -96,7 +102,13 @@ function MlPlanEditPage(): React.JSX.Element {
   return (
     <>
       {exit.dialog}
+      <RefreshFailedNote show={isError} />
       <MlPlanForm
+        draftSlot={{
+          key: `ml-plan-edit:${id}`,
+          version: opened.expected() ?? null,
+          clearRef: draftClear,
+        }}
         mode="edit"
         code={detail.code}
         initialLine={{

@@ -10,6 +10,7 @@ import { useSoMaterial } from '../api';
 import { IssueSlipList } from './issue-slip-list';
 import { ReleasePartModal, ReservePartsModal } from './reserve-parts';
 import { SoMaterialTable } from './so-material-table';
+import { RefreshFailedNote } from '@/lib/refresh-failed-note';
 
 export function SoMaterialPanel({
   salesOrderId,
@@ -42,7 +43,7 @@ export function SoMaterialPanel({
         Your access does not include the Material view.
       </div>
     );
-  if (isError || !data)
+  if (!data)
     return (
       <div style={{ color: 'var(--red2)', fontSize: 'var(--fs-sm)' }}>
         {error instanceof Error ? error.message : 'Could not load material.'}
@@ -50,6 +51,7 @@ export function SoMaterialPanel({
     );
   return (
     <div>
+      <RefreshFailedNote show={isError} />
       <div
         style={{
           display: 'flex',

@@ -9,7 +9,7 @@ import {
   type UpdateCostCenterInput,
 } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
 import { FormActions } from '@/ui/layout';
 
@@ -53,15 +53,32 @@ type EditMode = {
   onCancel?: () => void;
 };
 
-export type CostCenterFormProps = CreateMode | EditMode;
+/** ADR-313 — lets the page keep a draft of this form (lib/use-form-draft.tsx). */
+export interface FormDraftLink {
+  onValues: (values: unknown) => void;
+  bind: (apply: (values: unknown) => void) => void;
+}
+
+export type CostCenterFormProps = (CreateMode | EditMode) & { draftLink?: FormDraftLink };
 
 export function CostCenterForm(props: CostCenterFormProps): React.JSX.Element {
   const isEdit = props.mode === 'edit';
   const defaults: FormValues = isEdit
     ? detailToFormValues(props.detail)
     : { ...DEFAULTS, code: props.suggestedCode ?? DEFAULTS.code };
-  const { register, handleSubmit, formState } = useForm<FormValues>({ defaultValues: defaults });
+  const { register, handleSubmit, formState, reset, watch } = useForm<FormValues>({
+    defaultValues: defaults,
+  });
   const errors = formState.errors;
+  // ADR-313 — tell the page about every change (its draft), and let it put one back.
+  const { draftLink } = props;
+  const watched = JSON.stringify(watch());
+  useEffect(() => {
+    draftLink?.bind((v) => reset(v as FormValues, { keepDefaultValues: true }));
+  }, [draftLink, reset]);
+  useEffect(() => {
+    draftLink?.onValues(JSON.parse(watched) as unknown);
+  }, [draftLink, watched]);
 
   const onValid = async (values: FormValues): Promise<void> => {
     if (isEdit) {

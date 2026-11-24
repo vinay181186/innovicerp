@@ -5,6 +5,7 @@
 // left list; the right pane fetches GET /so-status/$id on selection.
 // The selected SO lives in the URL (`?so=<id>`) so refresh and Back keep it.
 
+import { RefreshFailedNote } from '@/lib/refresh-failed-note';
 import { createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
@@ -79,7 +80,7 @@ function SoStatusIndexPage(): React.JSX.Element {
       </div>
     );
   }
-  if (isError || !data) {
+  if (!data) {
     return (
       <div className="empty-state" style={{ color: 'var(--red2)', padding: 'var(--sp-5)' }}>
         {error instanceof Error ? error.message : 'Could not load SO list. Try again.'}
@@ -112,6 +113,7 @@ function SoStatusIndexPage(): React.JSX.Element {
           background: 'var(--bg2)',
         }}
       >
+        <RefreshFailedNote show={isError} />
         <div
           style={{
             padding: '10px 14px',

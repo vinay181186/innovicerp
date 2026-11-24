@@ -18,6 +18,7 @@
 import { type CreateGoodsReceiptNoteInput, poSendsMaterialOut, roundQty } from '@innovic/shared';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { todayIst } from '@/lib/date';
+import { useFormDraft } from '@/lib/use-form-draft';
 import { partyDocName } from '@/lib/item-code';
 import { usePurchaseOrder, usePurchaseOrdersList } from '@/modules/purchase-orders/api';
 import { poStatusLabel } from '@/modules/purchase-orders/lib/po-labels';
@@ -65,6 +66,7 @@ export function GrnAgainstPoForm({
   submitError,
   typeField,
   onStatusChange,
+  draftSlot,
 }: GrnAgainstPoFormProps): React.JSX.Element {
   const [grnDate, setGrnDate] = useState(todayIst());
   const [poId, setPoId] = useState<string | null>(initialPurchaseOrderId ?? null);
@@ -173,6 +175,27 @@ export function GrnAgainstPoForm({
         .filter((l): l is LineDraft => l !== null),
     );
   }, [po]);
+
+  // ADR-313 — a half-typed receipt survives a tab switch. One draft per
+  // ?poId= preselect; the picked PO travels with its own lines, so a draft
+  // never puts one PO's lines under another. Restoring marks the PO as
+  // already seeded so the reseed above does not wipe the restored lines.
+  const draft = useFormDraft({
+    key: `grn-new:purchase:${initialPurchaseOrderId ?? ''}`,
+    ready: true,
+    values: { grnDate, poId, invoiceNo, dcNo, remarks, lines, linesTouched },
+    apply: (v) => {
+      seededFor.current = v.poId;
+      setGrnDate(v.grnDate);
+      setPoId(v.poId);
+      setInvoiceNo(v.invoiceNo);
+      setDcNo(v.dcNo);
+      setRemarks(v.remarks);
+      setLines(v.lines);
+      setLinesTouched(v.linesTouched);
+    },
+  });
+  draftSlot.current = draft;
 
   const vendorLabel = po ? (po.vendorName ?? po.vendorCodeText ?? '') : '';
 
@@ -308,6 +331,7 @@ export function GrnAgainstPoForm({
 
   return (
     <form id={GRN_CREATE_FORM_ID} onSubmit={(e) => void handleSubmit(e)}>
+      {draft.band}
       {/* Validation summary at the top of the form; it scrolls itself into view. */}
       {errorText ? (
         <Banner tone="error" role="alert">

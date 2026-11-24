@@ -63,6 +63,7 @@ import { NcStatusBadge } from '../components/nc-status-badge';
 import { useNcPrint } from '../components/use-nc-print';
 import { ncOpenQty } from '../nc-qty';
 import { NcTimelinePanel } from '@/modules/flow-views/components/nc-timeline-panel';
+import { RefreshFailedNote } from '@/lib/refresh-failed-note';
 
 export const ncRegisterDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -145,7 +146,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
       </div>
     );
   }
-  if (isError || !detail) {
+  if (!detail) {
     return (
       <div className="panel">
         <div className="panel-body">
@@ -291,6 +292,7 @@ function NcRegisterDetailPage(): React.JSX.Element {
 
   return (
     <div>
+      <RefreshFailedNote show={isError} />
       <DetailHeader
         backLabel="Back to NC Register"
         backTo="/nc-register"

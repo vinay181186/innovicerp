@@ -3,7 +3,7 @@
 import type { CreateOperatorInput, UpdateOperatorInput } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { useEditConflict } from '@/lib/use-edit-conflict';
 import { useSaveKey } from '@/lib/use-save-key';
@@ -13,6 +13,8 @@ import { useToast } from '@/ui/feedback';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { useCreateOperator, useFetchOperator, useOperator, useUpdateOperator } from '../api';
 import { OperatorForm } from '../components/operator-form';
+import { RefreshFailedNote } from '@/lib/refresh-failed-note';
+import { useFormDraft } from '@/lib/use-form-draft';
 
 // ADR-226 — the fields THIS screen can edit, and what the user calls each one.
 //
@@ -61,7 +63,25 @@ function OperatorNewPage(): React.JSX.Element {
   const { data: eff, isLoading: accessLoading } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'operator_create');
   const goBack = useCallback(() => void navigate({ to: '/operators' }), [navigate]);
-  const exit = useExitConfirm({ onExit: goBack });
+  // ADR-313 — the half-typed form survives a tab switch (lib/use-form-draft.tsx).
+  const [draftValues, setDraftValues] = useState<unknown>(null);
+  const draftApply = useRef<(v: unknown) => void>(() => undefined);
+  const draftLink = useMemo(
+    () => ({
+      onValues: setDraftValues,
+      bind: (apply: (v: unknown) => void) => {
+        draftApply.current = apply;
+      },
+    }),
+    [],
+  );
+  const draft = useFormDraft({
+    key: 'operator-new',
+    ready: draftValues !== null,
+    values: draftValues,
+    apply: (v) => draftApply.current(v),
+  });
+  const exit = useExitConfirm({ onExit: goBack, draft });
 
   const onSubmit = async (values: CreateOperatorInput): Promise<void> => {
     setSubmitError(null);
@@ -105,10 +125,12 @@ function OperatorNewPage(): React.JSX.Element {
   return (
     <div>
       {exit.dialog}
+      {draft.band}
       <Link to="/operators" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
         <ArrowLeft size={14} /> Back
       </Link>
       <OperatorForm
+        draftLink={draftLink}
         panelHeader={
           <div>
             <div className="panel-title">+ Add Operator</div>
@@ -152,7 +174,26 @@ function OperatorEditPage(): React.JSX.Element {
     () => void navigate({ to: '/operators/$id', params: { id } }),
     [navigate, id],
   );
-  const exit = useExitConfirm({ onExit: goBack });
+  // ADR-313 — the half-typed form survives a tab switch (lib/use-form-draft.tsx).
+  const [draftValues, setDraftValues] = useState<unknown>(null);
+  const draftApply = useRef<(v: unknown) => void>(() => undefined);
+  const draftLink = useMemo(
+    () => ({
+      onValues: setDraftValues,
+      bind: (apply: (v: unknown) => void) => {
+        draftApply.current = apply;
+      },
+    }),
+    [],
+  );
+  const draft = useFormDraft({
+    key: `operator-edit:${id}`,
+    ready: draftValues !== null,
+    values: draftValues,
+    apply: (v) => draftApply.current(v),
+    version: operator?.updatedAt,
+  });
+  const exit = useExitConfirm({ onExit: goBack, draft });
 
   const onSubmit = async (values: UpdateOperatorInput): Promise<void> => {
     setSubmitError(null);
@@ -213,7 +254,7 @@ function OperatorEditPage(): React.JSX.Element {
     );
   }
 
-  if (isError || !operator) {
+  if (!operator) {
     return (
       <div className="panel">
         <div className="panel-body">
@@ -232,7 +273,9 @@ function OperatorEditPage(): React.JSX.Element {
 
   return (
     <div>
+      <RefreshFailedNote show={isError} />
       {exit.dialog}
+      {draft.band}
       <Link
         to="/operators/$id"
         params={{ id }}
@@ -242,6 +285,7 @@ function OperatorEditPage(): React.JSX.Element {
         <ArrowLeft size={14} /> Back
       </Link>
       <OperatorForm
+        draftLink={draftLink}
         panelHeader={
           <div>
             <div

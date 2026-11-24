@@ -4,7 +4,7 @@
 // planned this way and the picker stays empty.
 
 import { createRoute, useNavigate } from '@tanstack/react-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
@@ -36,7 +36,12 @@ function MlPlanNewPage(): React.JSX.Element {
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'mlplan_create');
   const goBack = useCallback(() => void navigate({ to: '/ml-plans' }), [navigate]);
-  const exit = useExitConfirm({ onExit: goBack });
+  // ADR-313 — the form below keeps a draft; its `clear` lands here for the guard.
+  const draftClear = useRef<() => void>(() => undefined);
+  const exit = useExitConfirm({
+    onExit: goBack,
+    draft: { band: null, clear: () => draftClear.current() },
+  });
   const toast = useToast();
 
   // The preselected line, looked up in the server's eligible list (the SO's
@@ -83,6 +88,10 @@ function MlPlanNewPage(): React.JSX.Element {
     <>
       {exit.dialog}
       <MlPlanForm
+        draftSlot={{
+          key: `ml-plan-new:${salesOrderId ?? ''}:${soLineId ?? ''}`,
+          clearRef: draftClear,
+        }}
         mode="create"
         initialLine={preLine}
         preselectMissing={preselectMissing}

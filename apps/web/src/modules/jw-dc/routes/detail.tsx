@@ -12,6 +12,7 @@
 // Returned/Pending columns + the status label are additions over the legacy
 // modal, carried over from the legacy register's own columns (L24469-24471).
 
+import { RefreshFailedNote } from '@/lib/refresh-failed-note';
 import type { JwDcOutwardDetail } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { ArrowLeft, Ban, Loader2 } from 'lucide-react';
@@ -65,7 +66,7 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
       </div>
     );
   }
-  if (isError || !dc) {
+  if (!dc) {
     return (
       <div className="panel">
         <div className="panel-body">
@@ -121,6 +122,7 @@ function JwDcOutwardDetailPage(): React.JSX.Element {
 
   return (
     <div>
+      <RefreshFailedNote show={isError} />
       <DetailHeader
         backTo="/jw-dc"
         backLabel="Back to JW Delivery Challans"

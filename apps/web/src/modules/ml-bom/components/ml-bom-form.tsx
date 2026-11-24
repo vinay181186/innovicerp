@@ -3,6 +3,7 @@
 // ClusterGrid → Lines panel → FormActions (Cancel + blue Save, Ctrl+S, "Not saved").
 // No Excel import (phase 2).
 
+import { useFormDraft } from '@/lib/use-form-draft';
 import { Icon } from '@/ui/core';
 import { type MlBomLineInput, qtyUomProblem } from '@innovic/shared';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -39,6 +40,11 @@ interface MlBomFormProps {
   submitting: boolean;
   submitError: string | null;
   onCancel: () => void;
+  /** ADR-313 — keep a draft of what is typed (lib/use-form-draft.tsx). The page
+   *  names the draft and gets `clear` back for its exit guard. */
+  draftSlot?:
+    | { key: string | null; version?: string | null | undefined; clearRef: { current: () => void } }
+    | undefined;
 }
 
 export function MlBomForm(props: MlBomFormProps): React.JSX.Element {
@@ -174,6 +180,23 @@ export function MlBomForm(props: MlBomFormProps): React.JSX.Element {
   const filled = resolvedLines.filter((l) => l.childItemId).length;
   const itemName = itemDisplayName(item);
 
+  // ADR-313 — what is typed survives a tab switch; Save / Cancel / Exit clear it.
+  const formDraft = useFormDraft({
+    key: props.draftSlot?.key ?? null,
+    ready: true,
+    values: { header, lines, revisionNote },
+    apply: (v) => {
+      setHeader(v.header);
+      setLines(v.lines);
+      setRevisionNote(v.revisionNote);
+    },
+    version: props.draftSlot?.version,
+  });
+  const draftClearRef = props.draftSlot?.clearRef;
+  useEffect(() => {
+    if (draftClearRef) draftClearRef.current = formDraft.clear;
+  }, [draftClearRef, formDraft.clear]);
+
   return (
     <form
       onSubmit={(e) => {
@@ -181,6 +204,7 @@ export function MlBomForm(props: MlBomFormProps): React.JSX.Element {
         void save();
       }}
     >
+      {formDraft.band}
       <PageHeader
         title={mode === 'create' ? 'New Multi-Level BOM' : `Edit ${header.code}`}
         subtitle={

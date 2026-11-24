@@ -13,6 +13,7 @@
 // Assign Task, and the row opens the Sales Order. Column sort / filter come from
 // the table's own ▾ header menus (ADR-200), alongside the page search.
 
+import { RefreshFailedNote } from '@/lib/refresh-failed-note';
 import type { StuckItem } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
@@ -215,7 +216,7 @@ function StuckDashboardPage(): React.JSX.Element {
       </div>
     );
   }
-  if (isError || !data) {
+  if (!data) {
     return (
       <div className="empty-state" style={{ padding: 40, color: 'var(--red2)' }}>
         {error instanceof Error ? error.message : 'Could not load stuck jobs. Try again.'}
@@ -229,6 +230,7 @@ function StuckDashboardPage(): React.JSX.Element {
     // header can never ride off the top of the screen at the last row. The
     // KPI strip in the header and the thresholds hint stay fixed chrome.
     <div className="page-fill">
+      <RefreshFailedNote show={isError} />
       <ListHeader
         orderFilter={<OrderSfFilter sf={sf} field="soNo" kind="so" />}
         title="Stuck Dashboard"

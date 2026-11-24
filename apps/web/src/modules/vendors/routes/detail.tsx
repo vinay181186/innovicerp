@@ -27,6 +27,7 @@ import { PendingFact } from '@/modules/document-edits/components/pending-fact';
 import { DetailHeader, PageState } from '@/ui/layout';
 import { useSoftDeleteVendor, useVendor } from '../api';
 import { TrashReasonDialog } from '@/modules/items/components/trash-reason-dialog';
+import { RefreshFailedNote } from '@/lib/refresh-failed-note';
 
 export const vendorDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -67,7 +68,7 @@ function VendorDetailPage(): React.JSX.Element {
     return <PageState state="loading" message="⟳ Loading vendor…" />;
   }
 
-  if (isError || !vendor) {
+  if (!vendor) {
     return (
       <div>
         <BackToMaster />
@@ -105,6 +106,7 @@ function VendorDetailPage(): React.JSX.Element {
 
   return (
     <div>
+      <RefreshFailedNote show={isError} />
       <DetailHeader
         backTo="/vendors"
         backLabel={BACK_LABEL}

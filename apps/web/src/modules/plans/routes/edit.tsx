@@ -1,10 +1,11 @@
 import type { PlanDetail } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 import { isStagedResult } from '@/modules/document-edits/api';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { RefreshFailedNote } from '@/lib/refresh-failed-note';
 import { useOpenedVersion } from '@/lib/use-opened-version';
 import { useSaveKey } from '@/lib/use-save-key';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -31,7 +32,9 @@ function PlanEditPage(): React.JSX.Element {
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'plan_create');
   // No Cancel button on this screen, so ESC → Exit falls back to history.
-  const exit = useExitConfirm();
+  // ADR-313 — the form below keeps a draft; its `clear` lands here for the guard.
+  const draftClear = useRef<() => void>(() => undefined);
+  const exit = useExitConfirm({ draft: { band: null, clear: () => draftClear.current() } });
   const toast = useToast();
   // ONE stable object per loaded version of the plan. PlanForm resets its
   // values AND its RM "touched" flags whenever this prop's identity changes, so
@@ -72,7 +75,7 @@ function PlanEditPage(): React.JSX.Element {
       </div>
     );
   }
-  if (isError || !plan || !initialValues) {
+  if (!plan || !initialValues) {
     return (
       <div className="panel">
         <div className="panel-body">
@@ -107,6 +110,7 @@ function PlanEditPage(): React.JSX.Element {
   return (
     <div>
       {exit.dialog}
+      <RefreshFailedNote show={isError} />
       <Link
         to="/plans/$id"
         params={{ id: plan.id }}
@@ -120,6 +124,11 @@ function PlanEditPage(): React.JSX.Element {
       </div>
 
       <PlanForm
+        draftSlot={{
+          key: `plan-edit:${id}`,
+          version: opened.expected() ?? null,
+          clearRef: draftClear,
+        }}
         initialValues={initialValues}
         isEdit
         // ADR-170 — route-card-driven plans carry no operations; the ops

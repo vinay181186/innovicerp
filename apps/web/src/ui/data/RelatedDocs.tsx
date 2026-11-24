@@ -24,11 +24,11 @@
 //   mode 'items'      Item Code | Item Name — the rows ARE items.
 //   mode 'none'       Document No. | [label] | Status | Date — no item columns.
 
-import { useState } from 'react';
 import { TabStrip, type TabStripTab } from '../navigation/TabStrip';
 import { EmptyState } from './EmptyState';
 import { Panel } from './Panel';
 import { fmtDate } from '@/lib/date';
+import { usePersistentState } from '@/lib/use-persistent-state';
 
 /** One item a row concerns. The code is a ReactNode so a caller can link it. */
 export interface RelatedDocItem {
@@ -185,7 +185,13 @@ export function RelatedDocs({
 }: RelatedDocsProps): React.JSX.Element {
   // Uncontrolled fallback: null until something is clicked, so the strip opens
   // on the first category and follows the data if that category later empties.
-  const [ownKey, setOwnKey] = useState<string | null>(null);
+  // ADR-313 — the picked category stays when you switch tabs and come back. The
+  // props carry no document id, so the page address names the document.
+  const [ownKey, setOwnKey] = usePersistentState<string | null>(
+    `related-docs:${typeof window === 'undefined' ? '' : window.location.pathname}`,
+    null,
+    (v) => v === null || typeof v === 'string',
+  );
   const selectedKey = activeKey ?? ownKey;
 
   const shown = showEmptySections

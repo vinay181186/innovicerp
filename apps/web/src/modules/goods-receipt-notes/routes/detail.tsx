@@ -43,6 +43,7 @@ import { grnTypeLabel } from '../components/grn-list-columns';
 import { QcStatusBadge } from '../components/qc-status-badge';
 import { printGrn } from '../lib/print-grn';
 import { runPrint } from '@/lib/print/preview-host';
+import { RefreshFailedNote } from '@/lib/refresh-failed-note';
 
 export const goodsReceiptNoteDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -112,7 +113,7 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
       </div>
     );
   }
-  if (isError || !detail) {
+  if (!detail) {
     return (
       <div className="panel">
         <div className="panel-body">
@@ -225,6 +226,7 @@ function GoodsReceiptNoteDetailPage(): React.JSX.Element {
 
   return (
     <div>
+      <RefreshFailedNote show={isError} />
       <Link to="/goods-receipt-notes" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
         <ArrowLeft size={14} /> Back to GRN list
       </Link>

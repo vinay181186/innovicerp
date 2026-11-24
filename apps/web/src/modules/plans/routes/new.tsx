@@ -1,4 +1,5 @@
 import { createRoute, useNavigate } from '@tanstack/react-router';
+import { useRef } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
 import { useSaveKey } from '@/lib/use-save-key';
@@ -24,7 +25,12 @@ function PlanNewPage(): React.JSX.Element {
   const { data: eff } = useMyAccess();
   const perms = effectiveFormPerms(eff, 'plan_create');
   const goBack = (): void => void navigate({ to: '/plans' });
-  const exit = useExitConfirm({ onExit: goBack });
+  // ADR-313 — the form below keeps a draft; its `clear` lands here for the guard.
+  const draftClear = useRef<() => void>(() => undefined);
+  const exit = useExitConfirm({
+    onExit: goBack,
+    draft: { band: null, clear: () => draftClear.current() },
+  });
 
   if (eff && !perms.entry) {
     return (
@@ -38,6 +44,7 @@ function PlanNewPage(): React.JSX.Element {
     <div>
       {exit.dialog}
       <PlanCreateForm
+        draftSlot={{ key: 'plan-new', clearRef: draftClear }}
         isSubmitting={create.isPending}
         submitError={create.error instanceof Error ? create.error.message : null}
         onCancel={() => exit.leave(goBack)}

@@ -64,9 +64,10 @@ const TABS = [
 function InvoiceListPage(): React.JSX.Element {
   const routeSearch = invoiceListRoute.useSearch();
   const navigate = useNavigate();
-  const [tab, setTab] = useState<'so' | 'jw'>(
-    () => routeSearch.tab ?? (routeSearch.jw ? 'jw' : 'so'),
-  );
+  // ADR-313 — the tab lives in ?tab= so it is still there after a tab-bar switch.
+  const tab: 'so' | 'jw' = routeSearch.tab ?? (routeSearch.jw ? 'jw' : 'so');
+  const setTab = (t: 'so' | 'jw'): void =>
+    void navigate({ to: '/invoices', search: (prev) => ({ ...prev, tab: t }), replace: true });
   // ADR-201: one 25-row page from the server; search + Sort & Filter + the
   // status counts run there over EVERY invoice. Any change → page 1.
   const page = routeSearch.page;

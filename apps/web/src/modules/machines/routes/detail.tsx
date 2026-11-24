@@ -40,6 +40,7 @@ import { PendingFact } from '@/modules/document-edits/components/pending-fact';
 import { Cluster, ClusterGrid } from '@/ui/forms';
 import { DetailHeader, PageState } from '@/ui/layout';
 import { useMachine, useMachineGroupLookup, useSoftDeleteMachine } from '../api';
+import { RefreshFailedNote } from '@/lib/refresh-failed-note';
 
 export const machineDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -86,7 +87,7 @@ function MachineDetailPage(): React.JSX.Element {
     return <PageState state="loading" message="⟳ Loading machine…" />;
   }
 
-  if (isError || !machine) {
+  if (!machine) {
     return (
       <div>
         <BackToMaster />
@@ -139,6 +140,7 @@ function MachineDetailPage(): React.JSX.Element {
 
   return (
     <div>
+      <RefreshFailedNote show={isError} />
       <DetailHeader
         backTo="/machines"
         backLabel={BACK_LABEL}

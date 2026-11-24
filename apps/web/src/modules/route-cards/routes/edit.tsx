@@ -4,6 +4,7 @@ import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { RefreshFailedNote } from '@/lib/refresh-failed-note';
 import { useSession } from '@/lib/session';
 import { useOpenedVersion } from '@/lib/use-opened-version';
 import { useSaveKey } from '@/lib/use-save-key';
@@ -50,7 +51,12 @@ function RouteCardEditPage(): React.JSX.Element {
     () => void navigate({ to: '/route-cards/$id', params: { id } }),
     [navigate, id],
   );
-  const exit = useExitConfirm({ onExit: goBack });
+  // ADR-313 — the form below keeps a draft; its `clear` lands here for the guard.
+  const draftClear = useRef<() => void>(() => undefined);
+  const exit = useExitConfirm({
+    onExit: goBack,
+    draft: { band: null, clear: () => draftClear.current() },
+  });
 
   const initialOps = useMemo<RouteCardFormOpDraft[]>(
     () => detailOpsToDrafts(detail?.ops ?? []),
@@ -102,7 +108,7 @@ function RouteCardEditPage(): React.JSX.Element {
       </div>
     );
   }
-  if (isError || !detail) {
+  if (!detail) {
     return (
       <div className="panel">
         <div className="panel-body">
@@ -151,7 +157,13 @@ function RouteCardEditPage(): React.JSX.Element {
   return (
     <>
       {exit.dialog}
+      <RefreshFailedNote show={isError} />
       <RouteCardForm
+        draftSlot={{
+          key: `rc-edit:${id}`,
+          version: opened.expected() ?? null,
+          clearRef: draftClear,
+        }}
         mode="edit"
         routeCard={detail}
         initialHeader={{

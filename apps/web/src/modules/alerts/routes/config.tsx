@@ -14,6 +14,7 @@
 // Port-only beyond legacy's four columns: the rule `description` sub-line and
 // the Setting column ("Changed" when overridden, blank for default) — both real server fields.
 
+import { RefreshFailedNote } from '@/lib/refresh-failed-note';
 import { createRoute, useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
@@ -81,7 +82,7 @@ function ConfigTable() {
       </div>
     );
   }
-  if (isError || !data) {
+  if (!data) {
     return (
       <div className="panel">
         <div className="empty-state">
@@ -109,6 +110,7 @@ function ConfigTable() {
 
   return (
     <>
+      <RefreshFailedNote show={isError} />
       {/* Table — legacy L22447-22449. Legacy's zebra striping was an inline
           per-row background; our `.innovic-table tbody tr:nth-child(even) td`
           rule does the same job. */}

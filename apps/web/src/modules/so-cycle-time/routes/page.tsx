@@ -16,6 +16,7 @@
 // Every duration rendered here is SERVER-computed (so-cycle-time/service.ts ->
 // lib/so-phase-data.ts computeDurations); this page only renders them.
 
+import { RefreshFailedNote } from '@/lib/refresh-failed-note';
 import { SO_CYCLE_TIME_SHOW, type SoCycleTimeRow, type SoCycleTimeShow } from '@innovic/shared';
 import { createRoute, useNavigate } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
@@ -134,7 +135,7 @@ function SoCycleTimePage(): React.JSX.Element {
       </ReportShell>
     );
   }
-  if (isError || !data) {
+  if (!data) {
     return (
       <ReportShell title={title}>
         <div className="empty-state" style={{ color: 'var(--red2)' }}>
@@ -234,6 +235,7 @@ function SoCycleTimePage(): React.JSX.Element {
         </>
       }
     >
+      <RefreshFailedNote show={isError} />
       <Panel fill bodyPadding="none">
         <DataTable<SoCycleTimeRow>
           tableKey={TABLE_KEYS.soCycleTime}

@@ -71,6 +71,7 @@ import {
   type UseFormReturn,
 } from 'react-hook-form';
 import { todayLocal } from '@/lib/date';
+import { useFormDraft, type FormDraft } from '@/lib/use-form-draft';
 import { Panel } from '@/ui/data';
 import { Banner } from '@/ui/feedback';
 import { FormField, FormGrid, SearchableSelect } from '@/ui/forms';
@@ -233,6 +234,12 @@ type FormChrome = {
   title: string;
   backLabel?: string | undefined;
   onBack?: (() => void) | undefined;
+  /** ADR-313 — keep a draft of the typed values across a tab switch. The page
+   *  passes the key + loaded version, and a sink that receives the draft so its
+   *  exit guard can clear it. Files are not kept (the file check asks again). */
+  draftKey?: string | undefined;
+  draftVersion?: string | null | undefined;
+  draftSink?: { current: FormDraft | null } | undefined;
 };
 type CreateMode = FormChrome & {
   mode: 'create';
@@ -264,7 +271,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
     : { header: HEADER_DEFAULTS, lines: [{ ...NEW_LINE }], milestones: [] };
 
   const form = useForm<FormValues>({ defaultValues: defaults });
-  const { register, control, handleSubmit, formState, watch, setValue, getValues } = form;
+  const { register, control, handleSubmit, formState, watch, setValue, getValues, reset } = form;
   const errors = formState.errors;
   const { fields, append, remove, replace } = useFieldArray({ control, name: 'lines' });
   const {
@@ -366,6 +373,21 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
   const [clientLabel, setClientLabel] = useState<string>(
     props.mode === 'edit' ? (props.detail.customerName ?? '') : '',
   );
+  // ADR-313 — the form starts from its defaults at mount, so it is ready at once.
+  const draft = useFormDraft({
+    key: props.draftKey ?? null,
+    ready: true,
+    values: { form: watch(), clientLabel },
+    apply: (v) => {
+      reset(v.form, { keepDefaultValues: true });
+      setClientLabel(v.clientLabel);
+    },
+    version: props.draftVersion,
+  });
+  const draftSink = props.draftSink;
+  useEffect(() => {
+    if (draftSink) draftSink.current = draft;
+  });
   // Inline client quick-add (legacy addClientQuick) — add + select without
   // leaving the SO form.
   const [showAddClient, setShowAddClient] = useState(false);
@@ -1037,6 +1059,7 @@ export function SalesOrderForm(props: SalesOrderFormProps): React.JSX.Element {
   return (
     <form onSubmit={handleSubmit(onValid(false))}>
       <PageHeader title={props.title} backLabel={props.backLabel} onBack={props.onBack} />
+      {draft.band}
 
       {/* Header — customer first, then the document no. / dates / type, then
           remarks. Row 1: Customer 6 + Customer Address 6; then Client PO 4 + GST 2

@@ -36,6 +36,7 @@ import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { todayIst } from '@/lib/date';
 import { LIST_PAGE_SIZE, pageOffset, pageSearchParam, useClampPage } from '@/lib/list-paging';
+import { usePersistentState } from '@/lib/use-persistent-state';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { OrderSfFilter } from '@/modules/order-options/components/order-sf-filter';
 import { DataTable, Panel } from '@/ui/data';
@@ -76,7 +77,19 @@ function AssemblyListPage(): React.JSX.Element {
   const filter: FilterKey = search.status ?? 'all';
   // The soIds whose ▸ BOM Name row is open. The fit table's ▸ is the row's one
   // expand control: it toggles this set AND its own detail row (ADR-199).
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // ADR-313 — the opened rows stay when you switch tabs and come back (kept as
+  // an array: storage holds JSON only).
+  const [expandedIds, setExpandedIds] = usePersistentState<string[]>(
+    'assembly-list:expanded',
+    [],
+    (v) => Array.isArray(v) && v.every((x) => typeof x === 'string'),
+  );
+  const expanded = useMemo(() => new Set(expandedIds), [expandedIds]);
+  const setExpanded = useCallback(
+    (next: Set<string> | ((prev: Set<string>) => Set<string>)) =>
+      setExpandedIds((prev) => [...(typeof next === 'function' ? next(new Set(prev)) : next)]),
+    [setExpandedIds],
+  );
 
   // Search lives in the URL; the box mirrors it and a 300ms debounce writes it
   // back (and goes to page 1).

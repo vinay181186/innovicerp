@@ -6,6 +6,7 @@
 //
 // State shows "Name (code)" from the State Code, else an old record's free text.
 
+import { RefreshFailedNote } from '@/lib/refresh-failed-note';
 import {
   type Client,
   type DocumentEditChange,
@@ -79,7 +80,7 @@ function ClientDetailPage(): React.JSX.Element {
     return <PageState state="loading" message="Loading customer…" />;
   }
 
-  if (isError || !client) {
+  if (!client) {
     return (
       <div>
         <BackToMaster />
@@ -108,6 +109,7 @@ function ClientDetailPage(): React.JSX.Element {
 
   return (
     <div>
+      <RefreshFailedNote show={isError} />
       <DetailHeader
         backTo="/clients"
         backLabel={BACK_LABEL}

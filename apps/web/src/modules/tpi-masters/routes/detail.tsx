@@ -42,6 +42,7 @@ import { PendingFact } from '@/modules/document-edits/components/pending-fact';
 import { Cluster, ClusterGrid } from '@/ui/forms';
 import { DetailHeader, PageState } from '@/ui/layout';
 import { useSoftDeleteTpiMaster, useTpiMaster } from '../api';
+import { RefreshFailedNote } from '@/lib/refresh-failed-note';
 
 export const tpiMasterDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -90,7 +91,7 @@ function TpiMasterDetailPage(): React.JSX.Element {
     return <PageState state="loading" message="⟳ Loading inspector…" />;
   }
 
-  if (isError || !data) {
+  if (!data) {
     return (
       <div>
         <BackToMaster />
@@ -127,6 +128,7 @@ function TpiMasterDetailPage(): React.JSX.Element {
 
   return (
     <div>
+      <RefreshFailedNote show={isError} />
       <DetailHeader
         backTo="/tpi-masters"
         backLabel={BACK_LABEL}

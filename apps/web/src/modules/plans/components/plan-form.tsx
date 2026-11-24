@@ -31,6 +31,7 @@ import {
   RawMaterialGroup,
 } from '@/modules/raw-material/components/raw-material-pickers';
 import { soNoWithInternal } from '@/lib/so-number';
+import { useFormDraft } from '@/lib/use-form-draft';
 import { useCanOpen } from '@/components/shared/action-link';
 import { FormActions } from '@/ui/layout';
 import { useDefaultRouteOps, useNextPlanCode } from '../api';
@@ -246,6 +247,11 @@ interface PlanFormProps {
   /** The saved plan's Item + Drawing Rev — route-card ops are looked up for
    *  THAT Rev while the item is still the saved one. */
   itemRevisionId?: string | null;
+  /** ADR-313 — keep a draft of what is typed (lib/use-form-draft.tsx). The page
+   *  names the draft and gets `clear` back for its exit guard. */
+  draftSlot?:
+    | { key: string | null; version?: string | null | undefined; clearRef: { current: () => void } }
+    | undefined;
 }
 
 export function PlanForm({
@@ -258,6 +264,7 @@ export function PlanForm({
   hideOps,
   soInternalNo,
   itemRevisionId,
+  draftSlot,
 }: PlanFormProps): React.JSX.Element {
   const [values, setValues] = useState<PlanFormValues>(initialValues);
   // The saved plan's id, for the "Create Production Order" link. The form is
@@ -410,6 +417,21 @@ export function PlanForm({
     [showOps, values.ops],
   );
 
+  // ADR-313 — what is typed survives a tab switch; Save / Cancel / Exit clear it.
+  const formDraft = useFormDraft({
+    key: draftSlot?.key ?? null,
+    ready: true,
+    values: { values },
+    apply: (v) => {
+      setValues(v.values);
+    },
+    version: draftSlot?.version,
+  });
+  const draftClearRef = draftSlot?.clearRef;
+  useEffect(() => {
+    if (draftClearRef) draftClearRef.current = formDraft.clear;
+  }, [draftClearRef, formDraft.clear]);
+
   return (
     <form
       onSubmit={(e) => {
@@ -420,6 +442,7 @@ export function PlanForm({
       }}
       style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)' }}
     >
+      {formDraft.band}
       {submitError ? (
         <div
           style={{

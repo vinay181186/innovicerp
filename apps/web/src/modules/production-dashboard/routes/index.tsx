@@ -30,6 +30,7 @@ import { z } from 'zod';
 import { StatStrip } from '@/components/shared/stat-strip';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { LIST_PAGE_SIZE, pageOffset, useClampPage } from '@/lib/list-paging';
+import { usePersistentState } from '@/lib/use-persistent-state';
 import { authenticatedRoute } from '@/routes/_authenticated';
 import { DataTable, Panel } from '@/ui/data';
 import { useServerSortFilter } from '@/ui/data/sort-filter/server-state';
@@ -131,7 +132,12 @@ function ProductionDashboardPage(): React.JSX.Element {
   // Machine Pending reads the whole board, so its order pick filters in the browser.
   // Only the rows narrow: the Idle line, the tab count and each machine heading
   // stay whole-board figures.
-  const [machineSo, setMachineSo] = useState<string | null>(null);
+  // ADR-313 — the order picked here stays when you switch tabs and come back.
+  const [machineSo, setMachineSo] = usePersistentState<string | null>(
+    'prod-dashboard:machine-so',
+    null,
+    (v) => v === null || typeof v === 'string',
+  );
   const shownMachineGroups = useMemo(
     () =>
       machineSo

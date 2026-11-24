@@ -6,7 +6,8 @@
 // reports back whether it is saving / blocked / dirty so the header button and
 // the "Not saved" pill stay truthful.
 
-import type { ReactNode } from 'react';
+import type { MutableRefObject, ReactNode } from 'react';
+import type { FormDraft } from '@/lib/use-form-draft';
 
 export const GRN_CREATE_FORM_ID = 'grn-create-form';
 
@@ -24,4 +25,7 @@ export interface GrnTypeFormShellProps {
   /** The GRN Type picker, rendered as the first field of the form's header grid. */
   typeField: ReactNode;
   onStatusChange: (s: GrnFormStatus) => void;
+  /** ADR-313: the type form puts its kept draft here, so the shell's exit
+   *  guard lets a tab switch through and forgets the draft on Save / Cancel. */
+  draftSlot: MutableRefObject<FormDraft | null>;
 }

@@ -48,6 +48,7 @@ import { useFieldArray, useForm } from 'react-hook-form';
 import { VendorPicker } from '@/components/shared/vendor-picker';
 import { addDaysLocal, daysBetweenLocal, todayIst } from '@/lib/date';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useFormDraft } from '@/lib/use-form-draft';
 import { partyAddressLines } from '@/lib/print/company';
 import { useDocNumber } from '@/lib/use-doc-number';
 import { useLiveChangeNotice } from '@/lib/use-live-change-notice';
@@ -150,7 +151,6 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
         : void navigate({ to: '/purchase-orders' }),
     [navigate, detailId],
   );
-  const exit = useExitConfirm({ onExit: goBack });
 
   const form = useForm<PoFormValues>({
     defaultValues:
@@ -210,6 +210,23 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
   // the resolver below — this is the "Create PO" button on the PR page working
   // again.
   const [seedVendorCode, setSeedVendorCode] = useState('');
+  // ADR-313 — the half-typed PO survives a tab switch (lib/use-form-draft.tsx).
+  // The vendor box's shown name travels with it, so the restored vendor reads right.
+  const draft = useFormDraft({
+    key:
+      props.mode === 'edit'
+        ? `po-edit:${props.detail.id}`
+        : `po-new:${props.initialPrId ?? ''}:${(props.initialPrIds ?? []).join(',')}:${props.initialVendorId ?? ''}`,
+    ready: true,
+    values: { form: form.watch(), vendorSeedLabel, vendorPickedLabel },
+    apply: (v) => {
+      form.reset(v.form, { keepDefaultValues: true });
+      setVendorSeedLabel(v.vendorSeedLabel);
+      setVendorPickedLabel(v.vendorPickedLabel);
+    },
+    version: props.mode === 'edit' ? props.detail.updatedAt : undefined,
+  });
+  const exit = useExitConfirm({ onExit: goBack, draft });
   const autoRemark = useRef('');
   // PO Type is seeded ONCE, from the first PR seen, and only while the buyer has
   // not picked a type himself. Same mapping the API uses when it converts a PR
@@ -653,6 +670,7 @@ export function PoForm(props: PoFormProps): React.JSX.Element {
   return (
     <form onSubmit={handleSubmit(onValid)} style={{ maxWidth: 1280, margin: '0 auto' }}>
       {exit.dialog}
+      {draft.band}
 
       <PageHeader
         title={isEdit ? 'Edit Purchase Order' : 'New Purchase Order'}

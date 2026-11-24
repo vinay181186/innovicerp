@@ -20,6 +20,7 @@ import {
 } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { usePersistentState } from '@/lib/use-persistent-state';
 import { z } from 'zod';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { todayIst } from '@/lib/date';
@@ -59,6 +60,8 @@ const listSearchSchema = z.object({
   search: z.string().optional(),
   status: z.enum(PR_STATUSES).optional(),
   page: z.coerce.number().int().positive().default(1),
+  // ADR-313: the PR / Outsource Jobs tab stays when you come back.
+  tab: z.enum(['pr', 'osp']).optional(),
 });
 
 export const purchaseRequestsListRoute = createRoute({
@@ -77,7 +80,13 @@ function PurchaseRequestsListPage(): React.JSX.Element {
   const perms = effectiveFormPerms(eff, 'pr_create');
   const canCreatePo = effectiveFormPerms(eff, 'po_create').entry;
 
-  const [tab, setTab] = useState<PrListTab>('pr');
+  const tab: PrListTab = search.tab ?? 'pr';
+  const setTab = (next: PrListTab): void => {
+    void navigate({
+      search: (prev) => ({ ...prev, tab: next === 'pr' ? undefined : next }),
+      replace: true,
+    });
+  };
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   useEffect(() => {
@@ -180,15 +189,19 @@ function PurchaseRequestsListPage(): React.JSX.Element {
   const sel = usePrSelection(rows, canCreatePo);
 
   // ▸ expand — all content is on the row already, so no extra fetch.
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const toggleExpand = useCallback((id: string): void => {
-    setExpanded((prev) => {
-      const nextSet = new Set(prev);
-      if (nextSet.has(id)) nextSet.delete(id);
-      else nextSet.add(id);
-      return nextSet;
-    });
-  }, []);
+  // ADR-313: the open rows stay open when you come back to this tab.
+  const [openList, setOpenList] = usePersistentState<string[]>(
+    'pr-list:expanded',
+    [],
+    Array.isArray,
+  );
+  const expanded = useMemo(() => new Set(openList), [openList]);
+  const toggleExpand = useCallback(
+    (id: string): void => {
+      setOpenList((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+    },
+    [setOpenList],
+  );
 
   // Row tint from the REAL PR status enum + order balance (ADR-199): cancelled →
   // cancelled, overdue-and-still-owing → late, po_created/closed → done,

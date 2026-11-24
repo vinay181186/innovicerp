@@ -1,5 +1,6 @@
 // JW detail page (UI-003-04).
 
+import { RefreshFailedNote } from '@/lib/refresh-failed-note';
 import { Icon, StatusBadge } from '@/ui/core';
 import {
   type DocumentEditChange,
@@ -15,6 +16,7 @@ import {
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { useRef, useState } from 'react';
+import { oneOf, usePersistentState } from '@/lib/use-persistent-state';
 import { z } from 'zod';
 import { undecidedChangesOf, usePendingEditForDoc } from '@/modules/document-edits/api';
 import {
@@ -111,7 +113,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
       </div>
     );
   }
-  if (isError || !detail) {
+  if (!detail) {
     return (
       <div className="panel">
         <div className="panel-body">
@@ -208,6 +210,7 @@ function JobWorkOrderDetailPage(): React.JSX.Element {
   } as const;
   return (
     <div>
+      <RefreshFailedNote show={isError} />
       {/* DetailHeader layout: Back link, code + status badges, customer name.
           One visible action (Edit) and the rest in the Actions menu, Delete
           last. Delete still asks before moving the JWSO to Trash. */}
@@ -862,7 +865,12 @@ function DetailGrid(props: {
   const supplyTax = detail.totals?.taxType ?? detail.taxType;
   // Remarks can be long; collapse to one line with a "more"/"less" toggle so the
   // strip stays one compact band. Presentation only — no data change.
-  const [showAllRemarks, setShowAllRemarks] = useState(false);
+  // ADR-313 — kept per record across a tab switch.
+  const [showAllRemarks, setShowAllRemarks] = usePersistentState(
+    `jwso-detail:${detail.id}:remarks`,
+    false,
+    oneOf([true, false]),
+  );
   const remarks = detail.remarks ?? '';
   const remarksLong = remarks.length > 80;
   const toggleStyle: React.CSSProperties = {

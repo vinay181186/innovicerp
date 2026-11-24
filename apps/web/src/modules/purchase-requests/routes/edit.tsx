@@ -4,7 +4,7 @@ import type { CreatePurchaseRequestInput, UpdatePurchaseRequestInput } from '@in
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { useCanOpen } from '@/components/shared/action-link';
 import { ArrowLeft, Loader2 } from 'lucide-react';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { useExitConfirm } from '@/lib/exit-guard';
@@ -17,6 +17,7 @@ import { useCreatePurchaseRequest, usePurchaseRequest, useUpdatePurchaseRequest 
 import { PrStatusBadge } from '../components/pr-status-badge';
 import type { PrFormValues } from '../components/pr-form-values';
 import { type PrKeepValues, PurchaseRequestForm } from '../components/purchase-request-form';
+import { useFormDraft } from '@/lib/use-form-draft';
 
 // "Raise PR" links (Store Inventory low-stock row, Item Master detail) open this
 // page with the item — and, from Store Inventory, the shortfall qty — already
@@ -57,9 +58,27 @@ function PurchaseRequestNewPage(): React.JSX.Element {
   // Where Cancel goes, and where ESC → Exit goes. Every other way off the
   // screen (Back link, breadcrumb, browser Back) gets "Are you sure?".
   const goBack = useCallback(() => void navigate({ to: '/purchase-requests' }), [navigate]);
-  const exit = useExitConfirm({ onExit: goBack });
-
   const { itemId, qty } = purchaseRequestNewRoute.useSearch();
+  // ADR-313 — the half-typed form survives a tab switch (lib/use-form-draft.tsx).
+  const [draftValues, setDraftValues] = useState<unknown>(null);
+  const draftApply = useRef<(v: unknown) => void>(() => undefined);
+  const draftLink = useMemo(
+    () => ({
+      onValues: setDraftValues,
+      bind: (apply: (v: unknown) => void) => {
+        draftApply.current = apply;
+      },
+    }),
+    [],
+  );
+  const draft = useFormDraft({
+    key: `pr-new:${itemId ?? ''}:${qty ?? ''}`,
+    ready: draftValues !== null,
+    values: draftValues,
+    apply: (v) => draftApply.current(v),
+  });
+  const exit = useExitConfirm({ onExit: goBack, draft });
+
   const itemQ = useItem(itemId);
   // Save & New: bumping `formKey` remounts a blank form; `keep` seeds it.
   const [formKey, setFormKey] = useState(0);
@@ -99,6 +118,7 @@ function PurchaseRequestNewPage(): React.JSX.Element {
         { durationMs: SAVED_LINK_MS },
       );
       setKeep(next);
+      draft.clear();
       setFormKey((k) => k + 1);
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Could not save PR. Try again.');
@@ -153,7 +173,9 @@ function PurchaseRequestNewPage(): React.JSX.Element {
   return (
     <div>
       {exit.dialog}
+      {draft.band}
       <PurchaseRequestForm
+        draftLink={draftLink}
         key={formKey}
         mode="create"
         initialValues={initialValues}
@@ -192,7 +214,26 @@ function PurchaseRequestEditPage(): React.JSX.Element {
     () => void navigate({ to: '/purchase-requests/$id', params: { id } }),
     [navigate, id],
   );
-  const exit = useExitConfirm({ onExit: goBack });
+  // ADR-313 — the half-typed form survives a tab switch (lib/use-form-draft.tsx).
+  const [draftValues, setDraftValues] = useState<unknown>(null);
+  const draftApply = useRef<(v: unknown) => void>(() => undefined);
+  const draftLink = useMemo(
+    () => ({
+      onValues: setDraftValues,
+      bind: (apply: (v: unknown) => void) => {
+        draftApply.current = apply;
+      },
+    }),
+    [],
+  );
+  const draft = useFormDraft({
+    key: `pr-edit:${id}`,
+    ready: draftValues !== null,
+    values: draftValues,
+    apply: (v) => draftApply.current(v),
+    version: detail?.updatedAt,
+  });
+  const exit = useExitConfirm({ onExit: goBack, draft });
 
   const onSubmit = async (values: UpdatePurchaseRequestInput): Promise<void> => {
     setSubmitError(null);
@@ -292,7 +333,9 @@ function PurchaseRequestEditPage(): React.JSX.Element {
   return (
     <div>
       {exit.dialog}
+      {draft.band}
       <PurchaseRequestForm
+        draftLink={draftLink}
         mode="edit"
         title="Edit Purchase Request"
         // The PR No. heads the form's identity line, so the header carries

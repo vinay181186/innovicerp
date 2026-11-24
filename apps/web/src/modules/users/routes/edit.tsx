@@ -13,9 +13,10 @@ import { Icon } from '@/ui/core';
 import type { UpdateUserInput } from '@innovic/shared';
 import { Link, createRoute, useNavigate } from '@tanstack/react-router';
 import { ArrowLeft, KeyRound, Loader2, Lock } from 'lucide-react';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useExitConfirm } from '@/lib/exit-guard';
+import { useFormDraft } from '@/lib/use-form-draft';
 import { useEditConflict } from '@/lib/use-edit-conflict';
 import { useSession } from '@/lib/session';
 import { authenticatedRoute } from '@/routes/_authenticated';
@@ -31,6 +32,7 @@ import {
 import { roleLabel } from '@/lib/role-label';
 import { Banner, ConfirmDialog, useToast } from '@/ui/feedback';
 import { FormActions } from '@/ui/layout';
+import { RefreshFailedNote } from '@/lib/refresh-failed-note';
 
 /** The bottom bar sits outside the form's panel; `form=` keeps Save its submit button. */
 const FORM_ID = 'user-edit-form';
@@ -125,18 +127,36 @@ function UserEditPage(): React.JSX.Element {
   // without ever re-seeding. Every other edit screen in this batch uses
   // `defaultValues`, which is not reactive and needs no ref.
   const seed = useRef<FormValues | null>(null);
+  // ADR-313 — the record version the form was seeded from (the draft's version).
+  const seedVersion = useRef<string | null>(null);
   if (seed.current === null && detail) {
+    seedVersion.current = detail.updatedAt;
     seed.current = {
       fullName: detail.fullName ?? '',
       phone: detail.phone ?? '',
       isActive: detail.isActive,
     };
   }
-  const { register, handleSubmit, formState } = useForm<FormValues>({
+  const { register, handleSubmit, formState, watch, reset } = useForm<FormValues>({
     values: seed.current ?? BLANK_FORM,
   });
   const goBack = useCallback(() => void navigate({ to: '/users' }), [navigate]);
-  const exit = useExitConfirm({ onExit: goBack });
+  // ADR-313 — the half-typed form survives a tab switch (no password in it:
+  // the Set Password box is its own state and is never kept).
+  // react-hook-form puts `values` in on its own effect; this flag turns true
+  // one render later, when the form really holds the loaded user.
+  const [seeded, setSeeded] = useState(false);
+  useEffect(() => {
+    if (detail) setSeeded(true);
+  }, [detail]);
+  const draft = useFormDraft({
+    key: `user-edit:${id}`,
+    ready: seeded,
+    values: watch(),
+    apply: (v) => reset(v, { keepDefaultValues: true }),
+    version: seedVersion.current,
+  });
+  const exit = useExitConfirm({ onExit: goBack, draft });
 
   if (!isAdmin) {
     return (
@@ -155,7 +175,7 @@ function UserEditPage(): React.JSX.Element {
       </div>
     );
   }
-  if (isError || !detail) {
+  if (!detail) {
     return (
       <div className="panel">
         <div className="panel-body">
@@ -236,7 +256,9 @@ function UserEditPage(): React.JSX.Element {
 
   return (
     <div>
+      <RefreshFailedNote show={isError} />
       {exit.dialog}
+      {draft.band}
       <Link to="/users" className="btn btn-ghost btn-sm" style={{ marginBottom: 10 }}>
         <ArrowLeft size={14} /> Back to User Management
       </Link>

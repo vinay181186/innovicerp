@@ -16,14 +16,22 @@ import {
 } from '@innovic/shared';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Loader2 } from 'lucide-react';
-import { useEffect, type ReactNode } from 'react';
+import { type ReactNode, useEffect } from 'react';
 import { type Control, Controller, useForm } from 'react-hook-form';
 import { useTaskUserOptions } from '@/modules/tasks/api';
 import { useNextOperatorCode } from '../api';
 import { SearchableSelect } from '@/ui/forms';
 import { FormActions } from '@/ui/layout';
 
+/** ADR-313 — lets the page keep a draft of this form (lib/use-form-draft.tsx). */
+export interface FormDraftLink {
+  onValues: (values: unknown) => void;
+  bind: (apply: (values: unknown) => void) => void;
+}
+
 type CreateMode = {
+  /** ADR-313 — the page's draft of this form. */
+  draftLink?: FormDraftLink | undefined;
   mode: 'create';
   /** The title band of the form's panel; the form owns the panel so its button bar can sit outside it. */
   panelHeader: ReactNode;
@@ -35,6 +43,8 @@ type CreateMode = {
 };
 
 type EditMode = {
+  /** ADR-313 — the page's draft of this form. */
+  draftLink?: FormDraftLink | undefined;
   mode: 'edit';
   /** The title band of the form's panel; the form owns the panel so its button bar can sit outside it. */
   panelHeader: ReactNode;
@@ -121,6 +131,18 @@ function CreateOperatorForm(props: CreateMode): React.JSX.Element {
   });
   const { register, formState } = form;
   const errors = formState.errors;
+  // ADR-313 — tell the page about every change (its draft), and let it put one back.
+  const { draftLink } = props;
+  const resetForm = form.reset;
+  const watched = JSON.stringify(form.watch());
+  useEffect(() => {
+    draftLink?.bind((v) =>
+      resetForm(v as Parameters<typeof resetForm>[0], { keepDefaultValues: true }),
+    );
+  }, [draftLink, resetForm]);
+  useEffect(() => {
+    draftLink?.onValues(JSON.parse(watched) as unknown);
+  }, [draftLink, watched]);
 
   // Show the next server-assigned OP-### before save.
   // ADR-227 — the box is a PREVIEW and is never sent, so this follows the
@@ -258,6 +280,18 @@ function EditOperatorForm(props: EditMode): React.JSX.Element {
   });
   const { register, formState } = form;
   const errors = formState.errors;
+  // ADR-313 — tell the page about every change (its draft), and let it put one back.
+  const { draftLink } = props;
+  const resetForm = form.reset;
+  const watched = JSON.stringify(form.watch());
+  useEffect(() => {
+    draftLink?.bind((v) =>
+      resetForm(v as Parameters<typeof resetForm>[0], { keepDefaultValues: true }),
+    );
+  }, [draftLink, resetForm]);
+  useEffect(() => {
+    draftLink?.onValues(JSON.parse(watched) as unknown);
+  }, [draftLink, watched]);
 
   return (
     <form

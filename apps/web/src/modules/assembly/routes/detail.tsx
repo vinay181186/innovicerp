@@ -30,6 +30,7 @@ import { useState } from 'react';
 import { RelatedDocsTabs } from '@/components/shared/related-docs-tabs';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { fmtDate, todayIst } from '@/lib/date';
+import { RefreshFailedNote } from '@/lib/refresh-failed-note';
 import { soNoWithInternal } from '@/lib/so-number';
 import { renderJcOpsLink } from '@/modules/jc-ops/components/jc-ops-columns';
 import { SoMaterialPanel } from '@/modules/material/components/so-material-panel';
@@ -86,7 +87,7 @@ function AssemblyDetailPage(): React.JSX.Element {
       </div>
     );
   }
-  if (isError || !data) {
+  if (!data) {
     return (
       <div className="panel">
         <div className="panel-body">
@@ -181,6 +182,7 @@ function AssemblyDetailPage(): React.JSX.Element {
 
   return (
     <div>
+      <RefreshFailedNote show={isError} />
       <HeaderPanel data={data} />
 
       {actionError ? (

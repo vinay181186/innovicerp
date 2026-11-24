@@ -39,6 +39,7 @@ import { PendingFact } from '@/modules/document-edits/components/pending-fact';
 import { Cluster, ClusterGrid } from '@/ui/forms';
 import { DetailHeader, PageState } from '@/ui/layout';
 import { useOperator, useSoftDeleteOperator } from '../api';
+import { RefreshFailedNote } from '@/lib/refresh-failed-note';
 
 export const operatorDetailRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
@@ -77,7 +78,7 @@ function OperatorDetailPage(): React.JSX.Element {
     return <PageState state="loading" message="⟳ Loading operator…" />;
   }
 
-  if (isError || !operator) {
+  if (!operator) {
     return (
       <div>
         <BackToMaster />
@@ -121,6 +122,7 @@ function OperatorDetailPage(): React.JSX.Element {
 
   return (
     <div>
+      <RefreshFailedNote show={isError} />
       <DetailHeader
         backTo="/operators"
         backLabel={BACK_LABEL}

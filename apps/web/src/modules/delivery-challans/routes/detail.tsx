@@ -12,6 +12,7 @@
 // totals row to the lines table. Receipts moved to components/dc-receipts-panel
 // to stay under the 400-line rule.
 
+import { RefreshFailedNote } from '@/lib/refresh-failed-note';
 import { Icon } from '@/ui/core';
 import type { DeliveryChallanLine, DeliveryChallanWithLines } from '@innovic/shared';
 import { Link, createRoute } from '@tanstack/react-router';
@@ -137,7 +138,7 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
       </div>
     );
   }
-  if (isError || !data) {
+  if (!data) {
     return (
       <div className="panel">
         <div className="panel-body">
@@ -215,6 +216,7 @@ function DeliveryChallanDetailPage(): React.JSX.Element {
 
   return (
     <div>
+      <RefreshFailedNote show={isError} />
       <DetailHeader
         backTo="/delivery-challans"
         backLabel="Back to Delivery Challans"

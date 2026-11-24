@@ -43,6 +43,7 @@ import { useBomMastersList } from '@/modules/bom-master/api';
 import { apiDownload, apiFetch } from '@/lib/api';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
 import { todayLocal } from '@/lib/date';
+import { useFormDraft, type FormDraft } from '@/lib/use-form-draft';
 import { inrFormat } from '@/lib/print/doc-print';
 import { useClientPoCheck } from '@/lib/use-client-po-check';
 import { useClientsList } from '@/modules/clients/api';
@@ -270,6 +271,12 @@ type PageHeaderSlot = {
   pageSubtitle?: ReactNode;
   backLabel?: string;
   onBack?: () => void;
+  /** ADR-313 — keep a draft of the typed values across a tab switch. The page
+   *  passes the key + loaded version, and a sink that receives the draft so its
+   *  exit guard can clear it. Files are not kept (the file check asks again). */
+  draftKey?: string | undefined;
+  draftVersion?: string | null | undefined;
+  draftSink?: { current: FormDraft | null } | undefined;
 };
 
 /** One form section: a Panel on a standalone page, a plain titled block when
@@ -337,7 +344,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
     : { header: HEADER_DEFAULTS, lines: [{ ...NEW_LINE }] };
 
   const form = useForm<FormValues>({ defaultValues: defaults });
-  const { register, control, handleSubmit, formState, watch, setValue, getValues } = form;
+  const { register, control, handleSubmit, formState, watch, setValue, getValues, reset } = form;
   const errors = formState.errors;
   const { fields, append, remove, replace } = useFieldArray({ control, name: 'lines' });
 
@@ -400,6 +407,21 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
   const [clientLabel, setClientLabel] = useState<string>(
     props.mode === 'edit' ? (props.detail.customerName ?? '') : '',
   );
+  // ADR-313 — the form starts from its defaults at mount, so it is ready at once.
+  const draft = useFormDraft({
+    key: props.draftKey ?? null,
+    ready: true,
+    values: { form: watch(), clientLabel },
+    apply: (v) => {
+      reset(v.form, { keepDefaultValues: true });
+      setClientLabel(v.clientLabel);
+    },
+    version: props.draftVersion,
+  });
+  const draftSink = props.draftSink;
+  useEffect(() => {
+    if (draftSink) draftSink.current = draft;
+  });
   const [showAddClient, setShowAddClient] = useState(false);
   // ADR-234 — "+ New" customer needs Customer Master Entry; Attach Email Ref /
   // Upload PO Doc go to the JWSO documents API, which takes Entry OR Edit.
@@ -990,6 +1012,7 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
           onBack={props.onBack ?? props.onCancel}
         />
       ) : null}
+      {draft.band}
       {/* Header on the 12-column grid, in reading order: Customer + Customer
           Address, then Client PO, then JWSO No. / dates, GST % and (edit) status, then Remarks.
           No material fields (ADR-203) — each line carries its Customer RM. */}

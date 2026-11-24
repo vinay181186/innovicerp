@@ -15,6 +15,7 @@ import { Icon } from '@/ui/core';
 import type { ListTpiQuery, OrderOption } from '@innovic/shared';
 import { Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { usePersistentState } from '@/lib/use-persistent-state';
 import { normalizeSearchTerm } from '@/components/shared/search-match';
 import { LIST_PAGE_SIZE, fetchAllPages, pageOffset, useClampPage } from '@/lib/list-paging';
 import { OrderSelect } from '@/modules/order-options/components/order-select';
@@ -58,7 +59,12 @@ export function TpiView(props: { title?: string; tabs?: React.ReactNode }): Reac
   }, [term, q]);
 
   // ADR-267: one order pick narrows both lists and the export; both go back to page 1.
-  const [orderCode, setOrderCode] = useState<string | null>(null);
+  // ADR-313: kept for this browser tab (sessionStorage), not in the URL.
+  const [orderCode, setOrderCode] = usePersistentState<string | null>(
+    `tpi-view:${props.title ?? 'TPI'}:order`,
+    null,
+    (v) => v === null || typeof v === 'string',
+  );
   const setOrder = (option: OrderOption | null): void => {
     if (!option && orderCode === null) return;
     setOrderCode(option?.code ?? null);

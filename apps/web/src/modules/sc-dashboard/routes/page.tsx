@@ -21,6 +21,7 @@
 // The active tab lives in the URL (`?tab=`); each tab's label carries its
 // table's server total.
 
+import { RefreshFailedNote } from '@/lib/refresh-failed-note';
 import { Link, createRoute } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { z } from 'zod';
@@ -71,7 +72,7 @@ function ScDashboardPage(): React.JSX.Element {
       </div>
     );
   }
-  if (isError || !data) {
+  if (!data) {
     return (
       <div className="empty-state" style={{ padding: 40, color: 'var(--red2)' }}>
         {error instanceof Error
@@ -93,6 +94,7 @@ function ScDashboardPage(): React.JSX.Element {
     // `page-fill` (ADR-202): header + KPI strip + tabs are fixed chrome; the
     // active tab's table fills the rest of the screen.
     <div className="page-fill">
+      <RefreshFailedNote show={isError} />
       <ListHeader
         title="Supply Chain Dashboard"
         orderFilter={

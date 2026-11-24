@@ -23,6 +23,7 @@ import { Link, createRoute } from '@tanstack/react-router';
 import { useState } from 'react';
 import { fmtDateTime } from '@/lib/date';
 import { effectiveFormPerms, useMyAccess } from '@/lib/access-control';
+import { RefreshFailedNote } from '@/lib/refresh-failed-note';
 import { useSaveKey } from '@/lib/use-save-key';
 import { useSession } from '@/lib/session';
 import { RevStatusBadge } from '@/modules/item-revisions/components/rev-status-badge';
@@ -74,7 +75,7 @@ function EcrDetailPage(): React.JSX.Element {
 
   if (eff && !perms.view) return <PageState as="page" state="noaccess" />;
   if (isLoading) return <PageState state="loading" message="⟳ Loading ECR…" />;
-  if (isError || !ecr) {
+  if (!ecr) {
     return (
       <div>
         <Link to="/ecrs" className="btn btn-ghost btn-sm" style={{ marginBottom: 'var(--sp-2)' }}>
@@ -97,6 +98,7 @@ function EcrDetailPage(): React.JSX.Element {
 
   return (
     <div>
+      <RefreshFailedNote show={isError} />
       <DetailHeader
         backTo="/ecrs"
         backLabel={BACK_LABEL}
