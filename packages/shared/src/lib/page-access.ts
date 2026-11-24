@@ -362,7 +362,7 @@ export { hasDeptAccess };
 export function canSeeDeptMenu(
   eff: EffectiveAccess | null | undefined,
   isSuperAdmin: boolean,
-  dept: string,
+  dept: AccessDeptKey,
 ): boolean {
-  return isSuperAdmin || hasDeptAccess(eff, dept as AccessDeptKey);
+  return isSuperAdmin || hasDeptAccess(eff, dept);
 }

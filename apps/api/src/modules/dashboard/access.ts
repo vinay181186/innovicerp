@@ -4,6 +4,7 @@
 
 import {
   type AccessAction,
+  type AccessDeptKey,
   type AccessFormKey,
   canOpenPage,
   canSeeDeptMenu,
@@ -33,7 +34,7 @@ export function hasDept(a: DashAccess, dept: string | null): boolean {
   if (!dept) return true;
   // THE top-menu rule (canSeeDeptMenu, shared): the home's left menu shows a
   // department exactly when the top menu does (owner 2026-11-24).
-  return canSeeDeptMenu(a.eff, a.isAdmin, dept);
+  return canSeeDeptMenu(a.eff, a.isAdmin, dept as AccessDeptKey);
 }
 
 /** ADR-234: a Home link / widget is shown only if its department is the
