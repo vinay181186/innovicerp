@@ -18,7 +18,12 @@ import {
 import { sql } from 'drizzle-orm';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { requireFormAccess } from '../../lib/access';
-import { AuthorizationError, ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
+import {
+  AuthorizationError,
+  ConflictError,
+  NotFoundError,
+  ValidationError,
+} from '../../lib/errors';
 import { resolveItemRevision } from '../../lib/item-revision';
 import { likeEscape, readSf, sfOrderBy, sfWhere } from '../../lib/list-query';
 import { emitActivityLog } from '../activity-log/service';
@@ -33,6 +38,25 @@ const BASE_FROM = sql`
   FROM public.item_revisions ir
   JOIN public.items i ON i.id = ir.item_id
   LEFT JOIN public.users ru ON ru.id = ir.released_by`;
+
+/** ADR-312 — "SO No.": every live SO / JWSO naming this Rev, newest first
+ *  (alias so: `list` for the cell, `codes` for Sort & Filter). */
+const ORDERS = sql`
+  LEFT JOIN LATERAL (
+    SELECT jsonb_agg(jsonb_build_object('kind', o.kind, 'id', o.id, 'code', o.code)
+                     ORDER BY o.created_at DESC, o.code) AS list,
+           string_agg(o.code, ', ' ORDER BY o.created_at DESC, o.code) AS codes
+      FROM (
+        SELECT DISTINCT 'so'::text AS kind, h.id, h.code, h.created_at
+          FROM public.sales_order_lines l
+          JOIN public.sales_orders h ON h.id = l.sales_order_id
+         WHERE l.item_revision_id = ir.id AND l.deleted_at IS NULL AND h.deleted_at IS NULL
+        UNION
+        SELECT DISTINCT 'jw'::text, h.id, h.code, h.created_at
+          FROM public.job_work_order_lines l
+          JOIN public.job_work_orders h ON h.id = l.job_work_order_id
+         WHERE l.item_revision_id = ir.id AND l.deleted_at IS NULL AND h.deleted_at IS NULL
+      ) o) so ON TRUE`;
 
 /** Open lines / open Job Cards / pending correction (aliases ol, oj, pc). */
 const COUNTS = sql`
@@ -58,7 +82,11 @@ const COUNTS = sql`
                       AND c.deleted_at IS NULL) AS pending) pc ON TRUE`;
 
 /** Sort & Filter fields read from COUNTS (sf-columns.ts ol / oj / pc). */
-const COUNT_FIELDS: ReadonlySet<string> = new Set(['openLines', 'openJobCards', 'pendingCorrection']);
+const COUNT_FIELDS: ReadonlySet<string> = new Set([
+  'openLines',
+  'openJobCards',
+  'pendingCorrection',
+]);
 
 export async function listDrawingRegister(
   q: ListDrawingRegisterQuery,
@@ -80,7 +108,15 @@ export async function listDrawingRegister(
               sql`AND (i.code ILIKE ${term} ESCAPE '\\' OR i.name ILIKE ${term} ESCAPE '\\'
                      OR i.customer_part_no ILIKE ${term} ESCAPE '\\' OR ir.rev ILIKE ${term} ESCAPE '\\'
                      OR ir.drawing_no ILIKE ${term} ESCAPE '\\'
-                     OR (i.code || '/' || ir.rev) ILIKE ${term} ESCAPE '\\')`
+                     OR (i.code || '/' || ir.rev) ILIKE ${term} ESCAPE '\\'
+                     OR EXISTS (SELECT 1 FROM public.sales_order_lines l
+                                  JOIN public.sales_orders h ON h.id = l.sales_order_id
+                                 WHERE l.item_revision_id = ir.id AND l.deleted_at IS NULL
+                                   AND h.deleted_at IS NULL AND h.code ILIKE ${term} ESCAPE '\\')
+                     OR EXISTS (SELECT 1 FROM public.job_work_order_lines l
+                                  JOIN public.job_work_orders h ON h.id = l.job_work_order_id
+                                 WHERE l.item_revision_id = ir.id AND l.deleted_at IS NULL
+                                   AND h.deleted_at IS NULL AND h.code ILIKE ${term} ESCAPE '\\'))`
             : sql``
         }
         ${sfWhere(DRAWING_REGISTER_SF_COLUMNS, sf)}`;
@@ -93,15 +129,16 @@ export async function listDrawingRegister(
                   ELSE COALESCE(NULLIF(btrim(ru.full_name), ''), split_part(ru.email, '@', 1)) END
                AS "releasedByName",
              ol.n AS "openLines", oj.n AS "openJobCards", pc.pending AS "pendingCorrection",
-             ir.updated_at AS "updatedAt"
-      ${BASE_FROM} ${COUNTS} ${where}
+             so.list AS "orders", ir.updated_at AS "updatedAt"
+      ${BASE_FROM} ${COUNTS} ${ORDERS} ${where}
       ORDER BY ${sfOrderBy(DRAWING_REGISTER_SF_COLUMNS, sf, sql`i.code, ir.rev, ir.id`)}
       LIMIT ${q.limit} OFFSET ${q.offset}`)) as unknown as Array<Record<string, unknown>>;
     // The count runs the three LATERAL subqueries only when a filter reads
     // one of them (a sort never changes the count).
     const countNeedsCounts = (sf?.filters ?? []).some((f) => COUNT_FIELDS.has(f.field));
+    const countNeedsOrders = (sf?.filters ?? []).some((f) => f.field === 'orders');
     const total = (await tx.execute(sql`
-      SELECT COUNT(*)::int AS n ${BASE_FROM} ${countNeedsCounts ? COUNTS : sql``} ${where}`)) as unknown as Array<{
+      SELECT COUNT(*)::int AS n ${BASE_FROM} ${countNeedsCounts ? COUNTS : sql``} ${countNeedsOrders ? ORDERS : sql``} ${where}`)) as unknown as Array<{
       n: number;
     }>;
     const iso = (v: unknown): string | null =>
@@ -122,6 +159,7 @@ export async function listDrawingRegister(
       openLines: Number(r['openLines'] ?? 0),
       openJobCards: Number(r['openJobCards'] ?? 0),
       pendingCorrection: r['pendingCorrection'] === true,
+      orders: (r['orders'] as DrawingRegisterRow['orders'] | null) ?? [],
       updatedAt: iso(r['updatedAt'])!,
     }));
     return { items, total: Number(total[0]?.n ?? 0) };
@@ -150,7 +188,9 @@ export async function createDrawingRev(
     if (!item) throw new NotFoundError('Item not found');
     const label = itemRevLabel(item.code, input.rev);
     if (item.procurementType !== 'make') {
-      throw new ValidationError(`${item.code} is not a make item — a Drawing Rev is only for make items`);
+      throw new ValidationError(
+        `${item.code} is not a make item — a Drawing Rev is only for make items`,
+      );
     }
     const existing = async (): Promise<never> => {
       const [r] = (await tx.execute(sql`

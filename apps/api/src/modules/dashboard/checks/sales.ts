@@ -14,6 +14,7 @@
 import { docNavPage } from '@innovic/shared';
 import { type SQL, sql } from 'drizzle-orm';
 import type { RawRow } from '../personal/list-query';
+import { nextStep } from './next-step';
 import { type CheckCtx, type CheckDef, monthEnd, weekEnd } from './types';
 
 type Window = 'overdue' | 'week' | 'month';
@@ -80,6 +81,10 @@ const salesDef = (key: CheckDef['key'], label: string, w: Window): CheckDef => (
   href: '/sales-orders',
   query: (c) => salesLinesSql(c, w),
   docHref: orderHref,
+  // ADR-312: SO rows open New Dispatch for that SO (JWSO rows: the JWSO).
+  actionHref: nextStep('dispatch_create', 'entry', (r) =>
+    r.kind === 'so' ? `/customer-dispatches/new?so=${r.id}` : null,
+  ),
   refCode: (r) => r.x1,
   dated: true,
 });
@@ -118,6 +123,7 @@ export const SALES_CHECKS: readonly CheckDef[] = [
     href: '/sales-orders',
     query: soDraftSql,
     docHref: (r) => docNavPage('sales-order', r.id),
+    actionHref: nextStep('so_create', 'edit', (r) => `/sales-orders/${r.id}/edit`),
     dated: false,
   },
 ];

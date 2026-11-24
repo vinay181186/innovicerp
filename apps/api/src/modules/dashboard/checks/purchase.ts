@@ -27,6 +27,7 @@ import { type SQL, sql } from 'drizzle-orm';
 import { ospOpHasPurchaseSql } from '../../../lib/osp-pr';
 import { NC_SOURCE_VENDOR_JOINS, rtvReadyForChallanSql } from '../../../lib/rtv-predicates';
 import { poDraftSql, poOverdueSql, prToPoSql } from '../personal/rows-purchase';
+import { nextStep } from './next-step';
 import { type CheckCtx, type CheckDef, narrow } from './types';
 
 export function ospOpsNoPrSql(c: CheckCtx): SQL {
@@ -86,6 +87,7 @@ export const PURCHASE_CHECKS: readonly CheckDef[] = [
     href: '/purchase-requests',
     query: (c) => prToPoSql(c.cid, c.today, {}),
     docHref: (r) => docNavPage('purchase-request', r.id),
+    actionHref: nextStep('po_create', 'entry', (r) => `/purchase-orders/from-pr?prId=${r.id}`),
     dated: true,
   },
   {

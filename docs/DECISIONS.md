@@ -16474,3 +16474,62 @@ could be saved with no drawing at all, and Design could not release a Rev that h
 - Positive: no Rev waits unseen; Design sees every drawing to check in one list.
 - Negative: an SO line can no longer be saved first and the drawing added later.
 - Risk: a line with a Plan still needs its new Rev released first (ADR-290 Step 3) — unchanged.
+
+## ADR-312: Home check "View all N" = the check's own list; the number opens the next step (owner 2026-11-23)
+
+**Date:** 2026-11-23
+**Status:** Accepted (owner approved the real-kit mockup and Phase 1 with "go")
+
+### Context
+
+Home › QC › "QC reports to upload" › "View all 48" opened `/qc-docs?view=dossier`, which is blank
+until an order is picked. Audit of all 42 checks: 2 opened a page with the same rows, 26 an
+unfiltered or differently-grained list (counts differ), 14 a wrong page (other document type,
+empty picker, folder tree). Cause: each check counts with its own query and links to an ordinary
+list page that counts with another. Owner also asked for the page to be actionable.
+
+### Decision
+
+- `GET /dashboard/checks/:key` pages the check's OWN inner query (same `checkSummarySql`
+  wrapper, same row order) with search; visibility = the home's. `/checks/$key` shows it in the
+  SAME table as the home check (no row actions, owner 31-Oct) with ListHeader / ListFooter.
+  "View all N" on every check opens it, so N always equals the page total.
+- Actionable = the document number opens the page where the check's next step is done
+  (`CheckDef.actionHref`, gated by the next-step right; otherwise the document). Phase 1 covers
+  the checks whose ids are already in the SQL; Phase 2 adds the missing ids (ops over time,
+  OSP send / at vendor, RC pending) and auto-open for TPI / new BOM.
+- No migration, no new write path: every next step runs on its existing page.
+
+### Alternatives Considered
+
+- Fix each `href` to a filtered list page — rejected: 14 checks have no such page, and two
+  counts could still drift.
+- Row ⋯ menus / buttons on the page — rejected by the owner: the home check list has no row
+  actions.
+
+### Consequences
+
+- Positive: count and list can never disagree; a new check gets its page for free.
+- Negative: the check page shows the check's columns, not the full list page's columns.
+
+## ADR-310 addendum: group-heading facts and always-exported columns (Job Queue)
+
+**Date:** 2026-11-23 (owner: "master export missed necessary fields like machine"; plan choices 1a 2a 3b).
+Job Queue shows its machine only as the group heading, which is not a column, so the Export had no machine at
+all; Actual Machine (a component cell with no `exportValue`) came out blank. Two opt-in fields on
+`ListExportSpec`: `groupColumns` (facts drawn outside the columns, written right after the lead block, never on
+screen) and `alwaysExport` (column ids written even while hidden in Columns ▾, beside their neighbour). Job Queue
+writes `Planned Machine` + `Machine Name` (NAMING.md), always writes the ▸ detail facts (Customer, Priority, Order
+Qty, Completed, Actual Machine) — a Job Queue exception to D1 — and Actual Machine as `CNC-01` or
+`CNC-01: 5 pcs · CNC-02: 3 pcs`. Machine Load stays out (whole-machine summary). Guard: a list with `groupRow` and
+`exportSpec` must give `groupColumns`. Web only, no migration. Other lists' exports unchanged.
+
+## ADR-312: SO No. column on the Drawing Register
+
+**Date:** 2026-11-24 · **Status:** Accepted (owner, 23-Nov "approve")
+
+The Drawing Register shows **SO No.** after Sr No: every live SO / JWSO line naming the Rev
+(closed orders included — history), newest first. The cell shows the first number (opens that
+order) and "+N" for more; the tooltip and Excel list them all. Register search matches SO / JWSO
+No.; Sort & Filter on `orders` (`so.codes`). Field `orders: {kind, id, code}[]` on
+`DrawingRegisterRow`. No migration — reuses the SO / JWSO line → Rev link (`item_revision_id`).

@@ -27,6 +27,7 @@ import { PLAN_PENDING_QTY_SQL, planDerivedStatusSql } from '../../../lib/plan-or
 import type { RawRow } from '../personal/list-query';
 import { planToProSql } from '../personal/rows-planning';
 import { jcRunningSql, opsReadySql, opsRunningSql } from '../personal/rows-production';
+import { enc, nextStep } from './next-step';
 import { OSP_CHECKS } from './osp';
 import { type CheckCtx, type CheckDef, narrow, weekEnd } from './types';
 
@@ -91,6 +92,13 @@ export function proDueWeekSql(c: CheckCtx): SQL {
       AND pro.order_qty - COALESCE(pro.credited_qty, 0) > 0`;
 }
 
+/** ADR-312: an available plan opens New Production Order for it. */
+const newProFromPlan = nextStep(
+  'prodorder_create',
+  'entry',
+  (r) => `/production-orders/new?planId=${r.id}&planCode=${enc(r.code)}`,
+);
+
 const planBase = {
   dept: 'production' as const,
   head: ['Plan No.', 'SO No.', 'Plan Start Date'] as CheckDef['head'],
@@ -129,12 +137,14 @@ export const PRODUCTION_CHECKS: readonly CheckDef[] = [
     key: 'prod_plans_available',
     label: 'Plans available for production',
     query: (c) => planToProSql(c.cid, c.today, {}),
+    actionHref: newProFromPlan,
   },
   {
     ...planBase,
     key: 'prod_plans_overdue',
     label: 'Overdue plans pending for production',
     query: (c) => narrow(planToProSql(c.cid, c.today, {}), sql`x.due_date < ${c.today}`),
+    actionHref: newProFromPlan,
   },
   {
     key: 'prod_due_week',
@@ -144,6 +154,10 @@ export const PRODUCTION_CHECKS: readonly CheckDef[] = [
     href: '/production-orders',
     query: proDueWeekSql,
     docHref: (r) => docNavPage('production-order', r.id),
+    // ADR-312: Close Production Order, its plan picked (needs the plan).
+    actionHref: nextStep('prodorder_create', 'advance', (r) =>
+      r.x1 ? `/production-orders/close?planId=${r.x1}&planCode=${enc(r.x2 ?? '')}` : null,
+    ),
     refCode: (r) => r.x2,
     refHref: (r) => (r.x1 ? docNavPage('plan', r.x1) : null),
     dated: true,
@@ -169,6 +183,10 @@ export const PRODUCTION_CHECKS: readonly CheckDef[] = [
     // ops_ready rule (ready-ops.ts READY_FROM); party = machine.
     query: (c) => opsReadySql(c.cid, c.today, {}),
     docHref: jcHref,
+    // ADR-312: Start Operation (personal/lists.ts ops_ready); x1 = op id.
+    actionHref: nextStep('op_entry', 'entry', (r) =>
+      r.x1 ? `/op-entry?jc=${enc(r.code)}&op=${r.x1}&mode=start` : null,
+    ),
     refCode: (r) => r.x3,
     dated: true,
   },

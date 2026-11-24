@@ -76,6 +76,13 @@ export interface ListExportSpec<T, L = unknown> {
   /** Plain words for the search / filters, for the Activity Log. */
   filterSummary?: string | undefined;
   linesSheet?: ListExportLinesSheet<T, L> | undefined;
+  /** Facts the list shows OUTSIDE its columns — a group heading (Job Queue's
+   *  machine). Written right after the lead block on every export; never on
+   *  screen. A list with `groupRow` must give them (guard test). */
+  groupColumns?: DataTableColumn<T>[] | undefined;
+  /** Column ids written even while hidden in Columns ▾ (the row's ▸ detail),
+   *  each beside its neighbour in column order. */
+  alwaysExport?: string[] | undefined;
 }
 
 // any: ListHeader only passes the spec through; each list types its own rows.
@@ -150,6 +157,31 @@ export function exportCell<T>(c: ExportColumn<T>, row: T, index: number): ExcelC
   return text;
 }
 
+/** The visible ids plus every `always` id still missing, each placed right
+ *  after the nearest column before it (in column order) that is written —
+ *  first when none before it is. */
+export function withAlwaysExported(
+  visible: string[],
+  ids: string[],
+  always: string[] | undefined,
+): string[] {
+  if (!always || always.length === 0) return visible;
+  const out = [...visible];
+  ids.forEach((id, i) => {
+    if (!always.includes(id) || out.includes(id)) return;
+    let at = 0;
+    for (let j = i - 1; j >= 0; j--) {
+      const k = out.indexOf(ids[j] ?? '');
+      if (k >= 0) {
+        at = k + 1;
+        break;
+      }
+    }
+    out.splice(at, 0, id);
+  });
+  return out;
+}
+
 /** First occurrence of each row key wins (a row shifting between pages). */
 export function dedupeRows<T>(rows: T[], keyOf: (row: T, index: number) => string | number): T[] {
   const seen = new Set<string | number>();
@@ -190,7 +222,18 @@ export function buildMainSheet<T>(
   saved: TableLayout | null | undefined,
 ): ExcelSheet {
   const { ids, defaults } = exportLayoutInputs(spec.columns, spec.defaultHidden);
-  const cols = selectExportColumns(spec.columns, visibleColumnIds(saved, ids, defaults), spec);
+  const visible = withAlwaysExported(
+    visibleColumnIds(saved, ids, defaults),
+    ids,
+    spec.alwaysExport,
+  );
+  const cols = selectExportColumns(spec.columns, visible, spec);
+  const group = spec.groupColumns ?? [];
+  if (group.length > 0) {
+    const lead = new Set(defaults.locked);
+    const at = cols.reduce((n, c, i) => (lead.has(c.id) ? i + 1 : n), 0);
+    cols.splice(at, 0, ...selectExportColumns(group, group.map(colId), spec));
+  }
   return {
     name: spec.fileName,
     header: cols.map((c) => c.header),

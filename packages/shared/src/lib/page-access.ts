@@ -72,6 +72,9 @@ export const PAGE_ACCESS: Readonly<Record<string, PageRule>> = {
   '/auth/reset-password': OPEN,
   '/__ui-kit': OPEN,
   '/search': OPEN,
+  // ADR-312 — a home check's "View all" page; the server shows a check only
+  // to someone who sees it on their home (GET /dashboard/checks/:key).
+  '/checks/$key': OPEN,
   '/settings': OPEN, // read-only for everyone but Super Admin
   '/approvals': OPEN, // lists only what the caller may approve
   '/reports': OPEN, // server canSeeReport

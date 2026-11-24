@@ -19,6 +19,7 @@ import { docNavPage } from '@innovic/shared';
 import { type SQL, sql } from 'drizzle-orm';
 import { invoiceBalanceSql, invoiceOverdueSql } from '../../../lib/invoice-overdue';
 import { jwLineLastReturnDateSql, jwLineToInvoiceSql } from '../../../lib/jw-to-invoice';
+import { nextStep } from './next-step';
 import type { CheckCtx, CheckDef } from './types';
 
 export function jwNotInvoicedSql(c: CheckCtx): SQL {
@@ -71,6 +72,7 @@ export const FINANCE_CHECKS: readonly CheckDef[] = [
     href: '/invoices?tab=jw',
     query: jwNotInvoicedSql,
     docHref: (r) => docNavPage('job-work-order', r.id),
+    actionHref: nextStep('invoice_create', 'entry', (r) => `/invoices?tab=jw&jw=${r.id}`),
     dated: false,
   },
   {

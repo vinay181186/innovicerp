@@ -203,8 +203,10 @@ describe('ADR-290 Drawing Register fixes', () => {
     expect(two.releaseStatus).toBe('superseded');
     expect(two.supersededAt).not.toBeNull();
     // 6. lookup: Rev 2 (superseded) names Rev 3; a newer Rev 4 gets no note.
-    expect((await service.lookupItemRevision({ itemId: item, rev: '2' }, admin)).release
-      ?.latestReleasedLabel).toBe(`${P}ORD/3`);
+    expect(
+      (await service.lookupItemRevision({ itemId: item, rev: '2' }, admin)).release
+        ?.latestReleasedLabel,
+    ).toBe(`${P}ORD/3`);
     await createDrawingRev(
       { itemId: item, rev: '4', drawingNo: null, drawingFilePath: null, changeNote: null },
       admin,
@@ -321,7 +323,11 @@ describe('ADR-290 Drawing Register fixes', () => {
     // The Rev was created by someone else; admin asks for the correction.
     await db.update(itemRevisions).set({ createdBy: otherUserId }).where(eq(itemRevisions.id, r));
     const res = await replace(r, path2);
-    await decideDrawingCorrection(res.correctionId!, { decision: 'reject', note: 'not needed' }, admin);
+    await decideDrawingCorrection(
+      res.correctionId!,
+      { decision: 'reject', note: 'not needed' },
+      admin,
+    );
     const rows = await db
       .select({ action: activityLog.action, entity: activityLog.entity })
       .from(activityLog)
@@ -403,7 +409,9 @@ describe('ADR-290 Drawing Register fixes', () => {
       .select({ action: activityLog.action, detail: activityLog.detail })
       .from(activityLog)
       .where(eq(activityLog.entityId, res.itemRevisionId!));
-    expect(logs.some((l) => l.action === 'SUBMIT' && /automatically/.test(l.detail ?? ''))).toBe(true);
+    expect(logs.some((l) => l.action === 'SUBMIT' && /automatically/.test(l.detail ?? ''))).toBe(
+      true,
+    );
     // It is waiting in Approvals for the Approve-tick holder (raiser not excluded).
     const waiting = await getWaitingApprovals(admin);
     expect(waiting.rows.some((w) => w.kind === 'rev' && w.id === res.itemRevisionId)).toBe(true);

@@ -44,12 +44,12 @@ const ALLOW: Record<string, string> = {
     'ADR-310 open: five tabs (My Log, Daily, Weekly, Project Hours, Alerts), each its own table — needs a per-tab Export',
 };
 
-function tsxFiles(dir: string): string[] {
+function tsxFiles(dir: string, ext = /\.tsx$/): string[] {
   const out: string[] = [];
   for (const name of readdirSync(dir)) {
     const p = join(dir, name);
-    if (statSync(p).isDirectory()) out.push(...tsxFiles(p));
-    else if (/\.tsx$/.test(name) && !/\.test\./.test(name)) out.push(p);
+    if (statSync(p).isDirectory()) out.push(...tsxFiles(p, ext));
+    else if (ext.test(name) && !/\.test\./.test(name)) out.push(p);
   }
   return out;
 }
@@ -80,6 +80,20 @@ describe('ADR-310 — one Export on every list', () => {
       (f) => !usesHeader(FILES.get(f) ?? ''),
     );
     expect(stale, 'remove stale entries').toEqual([]);
+  });
+
+  // Owner 23-11-2026 (Job Queue lost its machine): a group heading is not a
+  // column, so a list that draws one must hand its facts to the Export.
+  it('a list with group headings exports their facts (groupColumns)', () => {
+    const missing = [...FILES]
+      .filter(([, src]) => /\bgroupRow=\{/.test(src) && usesSpec(src))
+      .map(([f]) => f)
+      .filter((f) => {
+        const mod = join(MODULES, f.split('/')[0] ?? '');
+        const files = tsxFiles(mod, /\.tsx?$/);
+        return !files.some((p) => /\bgroupColumns:/.test(readFileSync(p, 'utf8')));
+      });
+    expect(missing, 'give exportSpec groupColumns for the group heading').toEqual([]);
   });
 
   it('the pilot (JWSO Master) is on the shared Export', () => {

@@ -1,5 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import {
+  dashCheckKeySchema,
+  dashCheckPageQuerySchema,
+  dashCheckPageResponseSchema,
   dashChecksResponseSchema,
   homeQuerySchema,
   homeResponseSchema,
@@ -12,6 +15,7 @@ import {
 } from '@innovic/shared';
 import { AuthenticationError } from '../../lib/errors';
 import * as configService from './config-service';
+import * as checksPage from './checks/page';
 import * as checksService from './checks/service';
 import * as homeService from './home-service';
 import * as notificationsService from './notifications-service';
@@ -45,6 +49,15 @@ export async function dashboardRoutes(app: FastifyInstance): Promise<void> {
   app.get('/dashboard/checks', async (req) => {
     if (!req.user) throw new AuthenticationError();
     return dashChecksResponseSchema.parse(await checksService.getChecks(req.user));
+  });
+
+  // ADR-312 — the "View all N" page of one check: its own rows, same query
+  // as the home's count. Unknown key → 400 (schema); key not visible → 403.
+  app.get('/dashboard/checks/:key', async (req) => {
+    if (!req.user) throw new AuthenticationError();
+    const key = dashCheckKeySchema.parse((req.params as { key?: unknown }).key);
+    const query = dashCheckPageQuerySchema.parse(req.query);
+    return dashCheckPageResponseSchema.parse(await checksPage.getCheckPage(req.user, key, query));
   });
 
   // ADR-264 — the bell: last 30 IST days, per-item read state.

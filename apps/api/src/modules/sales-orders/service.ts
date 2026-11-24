@@ -1769,9 +1769,7 @@ function createSalesOrderOnce(
     // have no item, so resolveLineRevision does not see it.
     const equipLine = headerType === 'equipment' ? input.lines[0] : undefined;
     if (equipLine && !equipLine.drawingFilePath?.trim()) {
-      throw new ValidationError(
-        drawingFileRequiredMessage(equipLine.lineNo ?? 1, 'the equipment'),
-      );
+      throw new ValidationError(drawingFileRequiredMessage(equipLine.lineNo ?? 1, 'the equipment'));
     }
     // ADR-243 — tax type from the customer's State (unknown only warns).
     const tax = await decideOrderTax(tx, companyId, input.header.clientId);

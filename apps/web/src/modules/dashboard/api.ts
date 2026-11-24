@@ -1,4 +1,7 @@
 import type {
+  DashCheckKey,
+  DashCheckPageQuery,
+  DashCheckPageResponse,
   DashChecksResponse,
   HomeResponse,
   HomeScope,
@@ -24,6 +27,10 @@ export const dashboardKeys = {
   homeScope: (scope: HomeScope) => [...dashboardKeys.home(), scope] as const,
   /** ADR-264 department checks (GET /dashboard/checks). */
   checks: () => [...dashboardKeys.home(), 'checks'] as const,
+  /** ADR-312 — one check's "View all" page (GET /dashboard/checks/:key).
+   *  Under checks(), so whatever refreshes the home refreshes this page too. */
+  checkPage: (key: DashCheckKey, q: DashCheckPageQuery) =>
+    [...dashboardKeys.checks(), 'page', key, q] as const,
   widgets: () => [...dashboardKeys.all, 'widgets'] as const,
   config: () => [...dashboardKeys.all, 'config'] as const,
 };
@@ -58,6 +65,34 @@ export function useDashChecks() {
     queryFn: () => apiFetch<DashChecksResponse>('/dashboard/checks'),
     refetchInterval: LIVE_FALLBACK_POLL_MS,
     refetchOnWindowFocus: true,
+  });
+}
+
+/** ADR-312 — one page of a check's lines (search over document no., reference,
+ *  party, item code / name — matched on the server). */
+export function fetchCheckPage(
+  key: DashCheckKey,
+  q: DashCheckPageQuery,
+): Promise<DashCheckPageResponse> {
+  const p = new URLSearchParams();
+  // The server takes at most 100 characters (dashCheckPageQuerySchema).
+  if (q.search) p.set('search', q.search.slice(0, 100));
+  if (q.limit !== undefined) p.set('limit', String(q.limit));
+  if (q.offset !== undefined) p.set('offset', String(q.offset));
+  const qs = p.toString();
+  return apiFetch<DashCheckPageResponse>(`/dashboard/checks/${key}${qs ? `?${qs}` : ''}`);
+}
+
+export function useCheckPage(key: DashCheckKey | undefined, q: DashCheckPageQuery) {
+  return useQuery<DashCheckPageResponse>({
+    queryKey: key ? dashboardKeys.checkPage(key, q) : [...dashboardKeys.checks(), 'page', 'none'],
+    queryFn: () => fetchCheckPage(key as DashCheckKey, q),
+    enabled: key !== undefined,
+    placeholderData: keepPreviousData,
+    refetchInterval: LIVE_FALLBACK_POLL_MS,
+    refetchOnWindowFocus: true,
+    // A 403 / unknown key will not change on retry.
+    retry: (n, e) => ![400, 403, 404].includes((e as { status?: number }).status ?? 0) && n < 2,
   });
 }
 

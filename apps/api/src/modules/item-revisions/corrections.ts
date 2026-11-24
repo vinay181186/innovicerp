@@ -21,7 +21,12 @@ import {
 } from '@innovic/shared';
 import { type SQL, sql } from 'drizzle-orm';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
-import { AuthorizationError, ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
+import {
+  AuthorizationError,
+  ConflictError,
+  NotFoundError,
+  ValidationError,
+} from '../../lib/errors';
 import { fmtDateTime } from '../../lib/format-date';
 import { applyDrawingCorrection, lockRevForDrawingChange } from '../../lib/item-revision-drawing';
 import { emitActivityLog } from '../activity-log/service';

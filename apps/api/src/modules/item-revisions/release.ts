@@ -27,7 +27,12 @@ import {
 import { sql } from 'drizzle-orm';
 import { type AuthContext, type DbTransaction, withUserContext } from '../../db/with-user-context';
 import { hasFormAccess, requireAnyFormAccess, requireFormAccess } from '../../lib/access';
-import { AuthorizationError, ConflictError, NotFoundError, ValidationError } from '../../lib/errors';
+import {
+  AuthorizationError,
+  ConflictError,
+  NotFoundError,
+  ValidationError,
+} from '../../lib/errors';
 import { fmtDateTime } from '../../lib/format-date';
 import { assertUnchangedSinceOpened } from '../../lib/edit-conflict';
 import { editConflicts, rowChangedByName } from '../../lib/row-changed-by';
@@ -67,13 +72,14 @@ const ALL: readonly RevReleaseStatus[] = [
 ];
 
 /** Allowed FROM statuses → TO status, per action. */
-const MOVES: Record<RevStatusAction, { from: readonly RevReleaseStatus[]; to: RevReleaseStatus }> = {
-  submit: { from: ['draft', 'rejected', 'unverified'], to: 'under_review' },
-  approve: { from: ['under_review'], to: 'approved' },
-  reject: { from: ['under_review', 'approved'], to: 'rejected' },
-  release: { from: ['approved', 'unverified'], to: 'released' },
-  obsolete: { from: ALL, to: 'obsolete' },
-};
+const MOVES: Record<RevStatusAction, { from: readonly RevReleaseStatus[]; to: RevReleaseStatus }> =
+  {
+    submit: { from: ['draft', 'rejected', 'unverified'], to: 'under_review' },
+    approve: { from: ['under_review'], to: 'approved' },
+    reject: { from: ['under_review', 'approved'], to: 'rejected' },
+    release: { from: ['approved', 'unverified'], to: 'released' },
+    obsolete: { from: ALL, to: 'obsolete' },
+  };
 
 const ACTIVITY: Record<RevStatusAction, string> = {
   submit: 'SUBMIT',
@@ -159,7 +165,12 @@ async function requireRight(action: RevStatusAction, user: AuthContext): Promise
 }
 
 /** The columns an action stamps besides release_status. */
-function stamps(action: RevStatusAction, userId: string, note: string | null, fileHash: string | null) {
+function stamps(
+  action: RevStatusAction,
+  userId: string,
+  note: string | null,
+  fileHash: string | null,
+) {
   switch (action) {
     case 'submit':
       return sql`, change_note = COALESCE(${note}, change_note), submitted_at = now(), submitted_by = ${userId}::uuid,
@@ -206,7 +217,10 @@ export async function revStatusAction(
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
   const companyId = user.companyId;
   const note = input.note?.trim() || null;
-  if ((action === 'reject' || action === 'obsolete') && (note?.length ?? 0) < REV_CHANGE_REASON_MIN) {
+  if (
+    (action === 'reject' || action === 'obsolete') &&
+    (note?.length ?? 0) < REV_CHANGE_REASON_MIN
+  ) {
     throw new ValidationError('Reason is required (at least 5 characters)');
   }
   const move = MOVES[action];
@@ -234,7 +248,9 @@ export async function revStatusAction(
     const cur = await readRev(tx, companyId, id);
     const label = itemRevLabel(cur.itemCode, cur.rev);
     if (!move.from.includes(cur.status)) {
-      throw new ConflictError(`Cannot ${action} ${label}: it ${await stateText(tx, cur)}. Reload the page.`);
+      throw new ConflictError(
+        `Cannot ${action} ${label}: it ${await stateText(tx, cur)}. Reload the page.`,
+      );
     }
     if (rejectByReleaser && cur.status !== 'approved') {
       throw new AuthorizationError(

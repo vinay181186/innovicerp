@@ -18,6 +18,7 @@ import {
 } from '@innovic/shared';
 import { type SQL, sql } from 'drizzle-orm';
 import type { DbTransaction } from '../../../db/with-user-context';
+import type { DashAccess } from '../access';
 import type { RawRow } from '../personal/list-query';
 import { addDays, dayDiff, num, plural, shortDate, str } from '../personal/util';
 
@@ -38,6 +39,9 @@ export interface CheckDef {
   href: string;
   query: (c: CheckCtx) => SQL;
   docHref: (r: RawRow) => string;
+  /** ADR-312: the page where the check's next step is done, for a caller
+   *  holding that right (checks/next-step.ts nextStep) — null = docHref. */
+  actionHref?: (r: RawRow, a: DashAccess) => string | null;
   refCode?: (r: RawRow) => string | null;
   refHref?: (r: RawRow) => string | null;
   /** The row's date is a deadline (due_date) — or, when false, the document's
@@ -103,10 +107,31 @@ export function checkTone(lateTotal: number, dueTodayTotal: number): DashTone {
 
 // ── Runner ──
 
-const COLS = sql.raw(
-  'x.row_key, x.id, x.code, x.kind, x.doc_date, x.due_date, x.sort_key, x.party, ' +
-    'x.item_code, x.item_name, x.qty, x.uom, x.amount, x.created_by, x.is_late, x.x1, x.x2, x.x3',
-);
+const LIST_COLUMNS = [
+  'row_key',
+  'id',
+  'code',
+  'kind',
+  'doc_date',
+  'due_date',
+  'sort_key',
+  'party',
+  'item_code',
+  'item_name',
+  'qty',
+  'uom',
+  'amount',
+  'created_by',
+  'is_late',
+  'x1',
+  'x2',
+  'x3',
+] as const;
+
+/** The list-query column set, read from alias `a`. */
+export const colsOf = (a: string): SQL => sql.raw(LIST_COLUMNS.map((c) => `${a}.${c}`).join(', '));
+
+export const COLS = colsOf('x');
 
 /** `inner` narrowed by `where` (a condition over the inner columns, alias x),
  *  keeping the list-query column set — for "the same rule, plus …" checks. */
@@ -123,7 +148,7 @@ export interface CheckResult {
 
 /** The rows order of every check: late first, then oldest (sort_key), then
  *  number, then row key so ties are stable. One definition, both paths. */
-const ROW_ORDER = (a: string): SQL =>
+export const ROW_ORDER = (a: string): SQL =>
   sql.raw(`${a}.is_late DESC, ${a}.sort_key ASC NULLS LAST, ${a}.code ASC, ${a}.row_key ASC`);
 
 /** THE one definition of a check's figures over its inner query, as ONE json
@@ -194,14 +219,21 @@ export async function runCheck(
   return parseCheckSummary(res[0]?.['j']);
 }
 
-/** One raw row → the contract row. */
-export function toCheckRow(d: CheckDef, r: RawRow, today: string, showMoney = true): DashCheckRow {
+/** One raw row → the contract row. With the caller's access `a`, the
+ *  document number opens the next step's page when d.actionHref allows it. */
+export function toCheckRow(
+  d: CheckDef,
+  r: RawRow,
+  today: string,
+  showMoney = true,
+  a?: DashAccess,
+): DashCheckRow {
   const { statusLabel, tone } = rowStatus(d, r, today);
   const hideQty = d.noQty === true || (d.priceForm !== undefined && !showMoney);
   return {
     key: `${d.key}:${r.rowKey}`,
     docCode: r.code,
-    docHref: d.docHref(r),
+    docHref: (a && d.actionHref?.(r, a)) || d.docHref(r),
     refCode: d.refCode?.(r) ?? null,
     refHref: d.refHref?.(r) ?? null,
     party: r.party,
@@ -217,7 +249,13 @@ export function toCheckRow(d: CheckDef, r: RawRow, today: string, showMoney = tr
 
 /** `showMoney` = the caller may see d.priceForm's prices (ignored when the
  *  check carries no priceForm). */
-export function toCheck(d: CheckDef, res: CheckResult, today: string, showMoney = true): DashCheck {
+export function toCheck(
+  d: CheckDef,
+  res: CheckResult,
+  today: string,
+  showMoney = true,
+  a?: DashAccess,
+): DashCheck {
   return {
     key: d.key,
     dept: d.dept,
@@ -226,7 +264,7 @@ export function toCheck(d: CheckDef, res: CheckResult, today: string, showMoney 
     // An undated check (approvals, QC) has no deadline: never orange.
     tone: checkTone(res.lateTotal, d.dated ? res.dueTodayTotal : 0),
     head: d.head,
-    rows: res.rows.map((r) => toCheckRow(d, r, today, showMoney)),
+    rows: res.rows.map((r) => toCheckRow(d, r, today, showMoney, a)),
     href: d.href,
   };
 }

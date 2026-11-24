@@ -804,7 +804,11 @@ export function JobWorkOrderForm(props: JobWorkOrderFormProps): React.JSX.Elemen
             rev: String(l.revision ?? ''),
             drawingFilePath: l.drawingFilePath,
             saved: saved
-              ? { itemId: saved.itemId, rev: saved.revision, drawingFilePath: saved.drawingFilePath }
+              ? {
+                  itemId: saved.itemId,
+                  rev: saved.revision,
+                  drawingFilePath: saved.drawingFilePath,
+                }
               : undefined,
           };
         }),

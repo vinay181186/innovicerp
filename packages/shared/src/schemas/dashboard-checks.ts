@@ -131,6 +131,38 @@ export const dashCheckDeptBlockSchema = z.object({
 });
 export type DashCheckDeptBlock = z.infer<typeof dashCheckDeptBlockSchema>;
 
+// ── ADR-312: the "View all N" page of one check ──
+// "View all N" opens /checks/<key>: the check's OWN rows from the SAME inner
+// query (checks/types.ts checkSummarySql), so the page total always equals the
+// count on the home. Same table as the home check (Sr No · head[0] · head[1] ·
+// Item · Qty · head[2] · Status, no row actions — owner 31-Oct); the document
+// number is the action: `docHref` opens the page where the check's next step is
+// done when the caller holds that right, else the document itself.
+
+export const DASH_CHECK_PAGE_SIZE = 25;
+
+/** The address of a check's "View all" page. */
+export const dashCheckPagePath = (key: DashCheckKey): string => `/checks/${key}`;
+
+/** GET /dashboard/checks/:key */
+export const dashCheckPageQuerySchema = z.object({
+  /** Matches document no., reference, party, item code / name. */
+  search: z.string().trim().max(100).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(DASH_CHECK_PAGE_SIZE),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+export type DashCheckPageQuery = z.input<typeof dashCheckPageQuerySchema>;
+
+export const dashCheckPageResponseSchema = z.object({
+  /** The check as on the home: `count` = every row of the check (no search). */
+  check: dashCheckSchema.omit({ rows: true }),
+  /** One page, in the home's order (late first, then oldest). */
+  rows: z.array(dashCheckRowSchema),
+  /** Rows matching `search` (= check.count when there is no search). */
+  total: z.number().int().nonnegative(),
+});
+export type DashCheckPageResponse = z.infer<typeof dashCheckPageResponseSchema>;
+
 /** GET /dashboard/checks — only departments the caller has a tier in, and
  *  inside them only checks whose "View all" page the caller can open. */
 export const dashChecksResponseSchema = z.object({

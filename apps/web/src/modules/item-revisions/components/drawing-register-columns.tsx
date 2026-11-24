@@ -8,6 +8,7 @@ import {
   REV_RELEASE_STATUS_LABELS,
   type DrawingRegisterRow,
 } from '@innovic/shared';
+import { Link } from '@tanstack/react-router';
 import { fmtDate } from '@/lib/date';
 import type { DataTableColumn, RowMenuItem } from '@/ui/data';
 import { ItemRevLink } from './item-rev-link';
@@ -36,6 +37,36 @@ export function drawingRegisterColumns(firstRowNo: number): DataTableColumn<Draw
       nowrap: true,
       filterable: false,
       render: (_r, i) => firstRowNo + i,
+    },
+    {
+      // ADR-312 — every live SO / JWSO naming this Rev, newest first. The
+      // first number opens its order; "+N" when there are more (all in the tooltip).
+      id: 'so_no',
+      header: 'SO No.',
+      kind: 'code',
+      nowrap: true,
+      sortFilterField: 'orders',
+      filterValue: (r) => r.orders.map((o) => o.code).join(', '),
+      title: (r) => r.orders.map((o) => o.code).join(', '),
+      render: (r) => {
+        const first = r.orders[0];
+        if (!first) return dash;
+        const more = r.orders.length - 1;
+        return (
+          <>
+            {first.kind === 'so' ? (
+              <Link to="/sales-orders/$id" params={{ id: first.id }} className="td-code">
+                {first.code}
+              </Link>
+            ) : (
+              <Link to="/job-work-orders/$id" params={{ id: first.id }} className="td-code">
+                {first.code}
+              </Link>
+            )}
+            {more > 0 ? <span className="text3"> +{more}</span> : null}
+          </>
+        );
+      },
     },
     {
       id: 'item_code',

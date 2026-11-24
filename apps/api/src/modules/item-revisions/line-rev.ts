@@ -89,7 +89,9 @@ async function refuseNoFile(
     .from(items)
     .where(and(eq(items.id, input.itemId!), eq(items.companyId, companyId)))
     .limit(1);
-  throw new ValidationError(drawingFileRequiredMessage(input.lineNo, itemRevLabel(it?.code ?? '', rev)));
+  throw new ValidationError(
+    drawingFileRequiredMessage(input.lineNo, itemRevLabel(it?.code ?? '', rev)),
+  );
 }
 
 export async function resolveLineRevision(

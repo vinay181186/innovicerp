@@ -3,6 +3,7 @@ import { activityLogListRoute } from './modules/activity-log/routes/list';
 import { alertsConfigRoute } from './modules/alerts/routes/config';
 import { alertsDashboardRoute } from './modules/alerts/routes/dashboard';
 import { alertsDrillRoute } from './modules/alerts/routes/drill';
+import { dashCheckPageRoute } from './modules/dashboard/routes/check-page';
 import { bomMastersListRoute } from './modules/bom-master/routes/list';
 import { bomMasterDetailRoute } from './modules/bom-master/routes/detail';
 import { bomMasterNewRoute } from './modules/bom-master/routes/new';
@@ -326,6 +327,8 @@ const routeTree = rootRoute.addChildren([
     alertsDashboardRoute,
     alertsConfigRoute,
     alertsDrillRoute,
+    // ADR-312 — a home check's "View all N" page.
+    dashCheckPageRoute,
     // BOM Master — order: new before $id before $id/edit so static path wins.
     bomMastersListRoute,
     bomMasterNewRoute,

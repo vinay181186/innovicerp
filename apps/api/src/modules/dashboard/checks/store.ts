@@ -35,6 +35,7 @@ import { partyCommittedQtySql } from '../../party-grn/service';
 import { soCustomerPartRowsSql } from '../../../lib/party-so-parts';
 import { ISSUE_SELECT, TOOL_STILL_OUT } from '../../tool-issues/common';
 import { poToDcSql } from '../personal/rows-purchase';
+import { nextStep } from './next-step';
 import type { CheckCtx, CheckDef } from './types';
 
 export function jwsoToReceiveSql(c: CheckCtx): SQL {
@@ -149,6 +150,7 @@ export const STORE_CHECKS: readonly CheckDef[] = [
     href: '/party-grn',
     query: jwsoToReceiveSql,
     docHref: (r) => docNavPage('job-work-order', r.id),
+    actionHref: nextStep('party_create', 'entry', (r) => `/party-grn/new?jw=${r.id}`),
     refCode: (r) => r.x1,
     dated: true,
   },
@@ -161,6 +163,7 @@ export const STORE_CHECKS: readonly CheckDef[] = [
     href: '/party-grn',
     query: soCustomerPartsToReceiveSql,
     docHref: (r) => docNavPage('sales-order', r.id),
+    actionHref: nextStep('party_create', 'entry', (r) => `/party-grn/new?so=${r.id}`),
     refCode: (r) => r.x1,
     dated: false,
   },
@@ -172,6 +175,7 @@ export const STORE_CHECKS: readonly CheckDef[] = [
     href: '/goods-receipt-notes',
     query: poLinesToReceiveSql,
     docHref: (r) => docNavPage('purchase-order', r.id),
+    actionHref: nextStep('grn_create', 'entry', (r) => `/goods-receipt-notes/new?poId=${r.id}`),
     dated: true,
   },
   {
@@ -182,6 +186,7 @@ export const STORE_CHECKS: readonly CheckDef[] = [
     href: '/delivery-challans',
     query: (c) => poToDcSql(c.cid, c.today, {}),
     docHref: (r) => docNavPage('purchase-order', r.id),
+    actionHref: nextStep('ospdc_create', 'entry', (r) => `/delivery-challans/new?poId=${r.id}`),
     dated: false,
   },
   {
