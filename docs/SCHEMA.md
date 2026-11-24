@@ -1230,6 +1230,7 @@ RLS: same pattern as `purchase_requests`.
 | `qty`                | `integer`       | not null, check `> 0`                                                                                                     |
 | `rate`               | `numeric(12,2)` | not null, default `0`                                                                                                     |
 | `received_qty`       | `integer`       | not null, default `0`. Maintained by GRN cascade (T-035c+)                                                                |
+| `approved_qty`       | `numeric(14,3)` | nullable. ADR-320 (`0262_po_line_approved_qty.sql`). Qty last APPROVED; kept while an edit waits re-approval; null = never approved. Only writer: `stampPoApprovedQty`. Read by SO Status |
 | `due_date`           | `date`          | nullable                                                                                                                  |
 | `source_so_line_id`  | `uuid`          | nullable, FK → `sales_order_lines(id) on delete set null`. Cost-rollup link; legacy carries `soRefId` on PO line          |
 | `source_jc_op_id`    | `uuid`          | nullable, FK → `jc_ops(id) on delete set null`. Outsource workflow link; replaces legacy `outsource_po_no` text on jc_ops |

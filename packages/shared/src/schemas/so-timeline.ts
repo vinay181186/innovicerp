@@ -47,6 +47,13 @@ export const soTimelineEventSchema = z.object({
   dept: soTimelineDeptSchema,
   /** Hex or var colour for the left-border accent. */
   color: z.string(),
+  /** ADR-320 — "date_check": this document is dated before the document it
+   *  came from (a PO or GRN dated before its PR). A warning only; the record is
+   *  never changed. Null on every other row. */
+  flag: z.enum(['date_check']).nullable().default(null),
+  /** ADR-320 — one line saying why the row is flagged, e.g.
+   *  "PO date 09-09-2026 is before PR IN-JWPR-00010 (24-10-2026)". */
+  flagReason: z.string().nullable().default(null),
 });
 export type SoTimelineEvent = z.infer<typeof soTimelineEventSchema>;
 

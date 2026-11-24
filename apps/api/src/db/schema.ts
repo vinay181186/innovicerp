@@ -2529,6 +2529,10 @@ export const purchaseOrderLines = pgTable(
     qty: stockQty('qty').notNull(),
     rate: numeric('rate', { precision: 12, scale: 2 }).notNull().default('0'),
     receivedQty: stockQty('received_qty').notNull().default(0),
+    /** ADR-320 (0262) — the qty last APPROVED; null = never approved. Kept
+     *  through an edit that sends the PO back for re-approval. Written ONLY by
+     *  stampPoApprovedQty (modules/purchase-orders). Read by SO Status. */
+    approvedQty: stockQty('approved_qty'),
     dueDate: date('due_date'),
     sourceSoLineId: uuid('source_so_line_id').references(() => salesOrderLines.id, {
       onDelete: 'set null',
