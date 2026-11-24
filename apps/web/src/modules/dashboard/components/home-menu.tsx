@@ -12,8 +12,14 @@ export interface MenuItem {
   badge?: number | undefined;
 }
 
+/** The department's name as the TOP MENU shows it ("Sales & CRM", "Quality"),
+ *  so the home and the header never disagree (owner 2026-11-24). */
 export function deptLabel(dept: string): string {
-  return ACCESS_DEPTS.find((d) => d.key === dept)?.label ?? dept;
+  return (
+    SECTIONS.find((s) => s.key === dept)?.label ??
+    ACCESS_DEPTS.find((d) => d.key === dept)?.label ??
+    dept
+  );
 }
 
 const NAV_ITEMS = SECTIONS.flatMap((s) => s.groups.flatMap((g) => g.items));

@@ -6,8 +6,8 @@ import {
   type AccessAction,
   type AccessFormKey,
   canOpenPage,
+  canSeeDeptMenu,
   effectiveFormPerms,
-  normalizeDeptsMap,
 } from '@innovic/shared';
 import type { AuthContext, FrozenAccess } from '../../db/with-user-context';
 import { getMyAccess } from '../access-control/service';
@@ -31,13 +31,9 @@ export async function loadAccess(user: AuthContext): Promise<DashAccess> {
 
 export function hasDept(a: DashAccess, dept: string | null): boolean {
   if (!dept) return true;
-  if (a.isAdmin) return true;
-  if (a.eff.fullAccess) return true;
-  // L7 Auditor reads every department by definition (0100).
-  if (a.eff.auditor) return true;
-  // Since 0100 the map holds a tier key, not `true` — any tier means the
-  // department is theirs. `normalizeDeptsMap` also accepts pre-0100 rows.
-  return normalizeDeptsMap(a.eff.departments ?? {})[dept] !== undefined;
+  // THE top-menu rule (canSeeDeptMenu, shared): the home's left menu shows a
+  // department exactly when the top menu does (owner 2026-11-24).
+  return canSeeDeptMenu(a.eff, a.isAdmin, dept);
 }
 
 /** ADR-234: a Home link / widget is shown only if its department is the

@@ -235,8 +235,9 @@ describe('phase 2 departments', () => {
       'planning',
       'production',
       'purchase',
-      'store',
+      // The top menu's order (owner 2026-11-24): Quality before Store.
       'qc',
+      'store',
       'finance',
     ]);
   });

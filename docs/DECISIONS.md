@@ -16602,3 +16602,16 @@ so setting the login back to Allowed resumes pop-ups with no re-subscribe.
 
 - Positive: one switch, enforced on the server; no new infrastructure.
 - Negative: GET /me/push reads the caller's users row (one small query).
+
+## ADR-312 addendum: the home's departments follow the top menu's rule (owner 2026-11-24)
+
+**Date:** 2026-11-24
+**Status:** Accepted (owner chose option a)
+
+One shared rule, `canSeeDeptMenu` (packages/shared page-access), decides both the top
+menu's department menus and the home's left-menu departments: any access tier in the
+department (Full Access / Auditor see all) or Super Admin. The API's `hasDept` and the
+web's `shouldShowSection` both call it; the rule itself is unchanged. The home lists
+departments in the top menu's order (Quality before Store) under the top menu's names
+(Sales & CRM, Quality). Option b (hide a department whose every real page is hidden)
+was not chosen.

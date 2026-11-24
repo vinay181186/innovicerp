@@ -9,7 +9,8 @@
 import { z } from 'zod';
 import { dashTextSchema, dashToneSchema } from './dashboard-home';
 
-/** Departments that carry checks, in menu order. Labels come from ACCESS_DEPTS.
+/** Departments that carry checks, in the TOP MENU's order (nav-sections
+ *  SECTION_ORDER — the home's left menu matches it, owner 2026-11-24).
  *  ADR-264 phase 2 (owner-approved mockup 2026-11-02): + design, qc, finance. */
 export const DASH_CHECK_DEPTS = [
   'sales',
@@ -17,8 +18,8 @@ export const DASH_CHECK_DEPTS = [
   'planning',
   'production',
   'purchase',
-  'store',
   'qc',
+  'store',
   'finance',
 ] as const;
 export const dashCheckDeptSchema = z.enum(DASH_CHECK_DEPTS);
