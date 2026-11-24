@@ -122,6 +122,20 @@ export async function moveQueueOp(
         AND o.company_id = ${companyId}::uuid
         AND o.queue_position IS DISTINCT FROM q.pos
     `);
+    // Closed cards' ops left this queue (decision 2a) but kept their old
+    // position; clear it so a reopened card joins at the back (NULLS LAST)
+    // instead of clashing with the 1..N just written. Same transaction.
+    await tx.execute(sql`
+      UPDATE public.jc_ops o
+      SET queue_position = NULL
+      FROM public.job_cards jc
+      WHERE jc.id = o.job_card_id
+        AND jc.closed_at IS NOT NULL
+        AND o.company_id = ${companyId}::uuid
+        AND o.queue_position IS NOT NULL
+        AND (o.machine_id = ${machineId}::uuid
+             OR (o.machine_id IS NULL AND o.machine_code_text = ${machine.machineCode}))
+    `);
     return { ok: true };
   });
 }

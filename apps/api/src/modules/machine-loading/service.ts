@@ -15,6 +15,7 @@ import type {
 } from '@innovic/shared';
 import { type AuthContext, withUserContext } from '../../db/with-user-context';
 import { AuthorizationError } from '../../lib/errors';
+import { jcOpenSql } from '../../lib/jc-open-sql';
 import { allOpenOps, pagedOpenOps } from './ops-query';
 
 function requireCompany(user: AuthContext): string {
@@ -71,7 +72,8 @@ export async function getMachineLoading(
       LEFT JOIN public.jc_ops jo
         ON jo.machine_id = m.id AND jo.deleted_at IS NULL AND jo.op_type <> 'outsource'
       LEFT JOIN public.v_jc_op_status vos ON vos.jc_op_id = jo.id
-      LEFT JOIN public.job_cards jc ON jc.id = jo.job_card_id AND jc.deleted_at IS NULL
+      -- Closed cards' leftover ops are not load (decision 2a) — same rule as the list.
+      LEFT JOIN public.job_cards jc ON jc.id = jo.job_card_id AND ${jcOpenSql('jc')}
       WHERE m.company_id = ${companyId}::uuid AND m.deleted_at IS NULL
       GROUP BY m.id, m.code, m.name, m.machine_type, m.capacity_per_shift, m.shifts_per_day
       ORDER BY m.code

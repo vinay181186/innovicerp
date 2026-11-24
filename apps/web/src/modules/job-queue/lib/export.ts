@@ -99,6 +99,7 @@ export function jobQueueExportSpec(a: JobQueueExportArgs): ListExportSpec<JobQue
     defaultHidden: a.defaultHidden,
     rowKey: (r) => `${r.queueMachine.machineId}:${r.jcOpId}`,
     filterSummary: words.join(' · ') || undefined,
+    allLabel: 'All machines',
     groupColumns: GROUP_COLUMNS,
     alwaysExport: JOB_QUEUE_HIDDEN_IDS,
     ...(a.blocked

@@ -19,6 +19,7 @@ import { createdByNameSql } from '../../lib/created-by-sql';
 import { AuthorizationError } from '../../lib/errors';
 import { readSf, sfOrderBy, sfWhere, type SfColumnMap } from '../../lib/list-query';
 import { polSql } from '../../lib/pol';
+import { jcOpenSql } from '../../lib/jc-open-sql';
 
 function requireCompany(user: AuthContext): string {
   if (!user.companyId) throw new AuthorizationError('User is not assigned to a company');
@@ -159,6 +160,7 @@ export async function listReadyOps(
       AND jo.deleted_at IS NULL
       AND jo.op_type <> 'outsource'
       AND (vos.available > 0 OR vos.computed_status = 'in_progress')
+      AND ${jcOpenSql('jc')}
       ${sfWhere(PROD_READY_SF_COLUMNS, sf)}`;
   const order = sfOrderBy(PROD_READY_SF_COLUMNS, sf, sql`jc.code, jo.op_seq, jo.id`);
   return withUserContext(user, async (tx) => {

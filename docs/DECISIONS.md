@@ -16648,3 +16648,17 @@ the same vendor AND the same SO.
 
 - Positive: one rule in one place, enforced by the server; no migration.
 - Negative: batch create now refuses PRs whose own vendor is not the chosen vendor.
+
+## ADR-310 addendum 2: Excel sheet heading + raw-time dates; a Closed Job Card has no pending work
+
+**Date:** 2026-11-24 (owner: Job Queue Excel showed `2026-11-01 05:16:00.515278+00`, no title, only Closed JCs,
+"Sr No from 14", POL blanks; decisions 1a + 2a, mockup https://claude.ai/artifact/WnGuPgpUhJ78FBfH6VAMuT).
+(1) Every shared Export sheet now starts with a heading: row 1 the list name, row 2
+`Exported dd-mm-yyyy hh:mm AM · <filters | ListExportSpec.allLabel> · N rows`, a blank row, then the column
+headings (`ExcelSheet.title`, `sheetRows`). The Export date check also reads a raw Postgres `+00` time (made ISO
+first, for Safari); Job Queue's server sends ISO. (2) `lib/jc-open-sql.ts` `jcOpenSql`/`jcOpenCond` =
+`closed_at IS NULL AND deleted_at IS NULL` is THE rule for "this card's leftover ops are pending work", used by Job
+Queue (+▲/▼ clears a Closed card's queue_position so a reopen joins at the back), Machine Loading list + cards,
+Production Dashboard in-house counters (Outsource / At Vendor / Running stay physical) + Ready list, Home Ready for
+You, Home JC Status (a Closed card with leftovers is neither Open nor Completed; Total unchanged), Stuck dashboard,
+WIP by Operation, Affected WIP (WIP part only). "Sr No from 14" was Queue No. behind 13 Closed-card ops. No migration.

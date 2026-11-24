@@ -15,8 +15,10 @@ import {
   exportCell,
   linesForDocs,
   selectExportColumns,
+  exportHeading,
   withAlwaysExported,
 } from './list-export';
+import { sheetRows } from '@/lib/excel-export';
 
 interface Row {
   id: string;
@@ -101,6 +103,34 @@ describe('exportCell', () => {
 
   it('writes a raw ISO date as DD-MM-YYYY', () => {
     expect(exportCell(created!, ROW, 0)).toBe('18-11-2026');
+  });
+
+  // Owner 24-11-2026: Job Queue wrote "2026-11-01 05:16:00.515278+00" raw.
+  it('reads a raw Postgres time (+00) as an IST date and time', () => {
+    for (const createdAt of [
+      '2026-11-01 05:16:00.515278+00',
+      '2026-11-01T05:16:00.515Z',
+      '2026-11-01 10:46:00+05:30',
+    ]) {
+      expect(exportCell(created!, { ...ROW, createdAt }, 0)).toBe('01-11-2026 10:46 AM');
+    }
+  });
+
+  it('heads each sheet with its name, export time, filter and size', () => {
+    const at = new Date('2026-11-24T05:00:00Z');
+    expect(exportHeading('Job Queue', 'Machine: VMC-1', 4, 'rows', 'All machines', at)).toEqual([
+      'Job Queue',
+      'Exported 24-11-2026 10:30 AM · Machine: VMC-1 · 4 rows',
+    ]);
+    expect(exportHeading('Job Queue', undefined, 4, 'rows', 'All machines', at)[1]).toBe(
+      'Exported 24-11-2026 10:30 AM · All machines · 4 rows',
+    );
+    expect(exportHeading('JWSO Lines', undefined, 1200, 'lines', undefined, at)[1]).toBe(
+      'Exported 24-11-2026 10:30 AM · 1,200 lines',
+    );
+    const rows = sheetRows({ name: 'X', title: ['X', 'Exported …'], header: ['A'], rows: [[1]] });
+    expect(rows).toEqual([['X'], ['Exported …'], [], ['A'], [1]]);
+    expect(sheetRows({ name: 'X', header: ['A'], rows: [[1]] })).toEqual([['A'], [1]]);
   });
 
   it('prefers exportValue', () => {
